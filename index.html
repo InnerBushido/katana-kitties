@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Katana Kitties</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <!-- ================= loading ================= -->
+    <div id="loading" class="screen">
+      <div class="load-inner">
+        <div class="load-claw"><span></span><span></span><span></span></div>
+        <p id="load-text">Sharpening claws…</p>
+      </div>
+    </div>
+
+    <!-- ================= title ================= -->
+    <div id="title" class="screen hidden">
+      <div class="title-art"></div>
+      <div class="title-art-main"></div>
+      <div class="title-vignette"></div>
+
+      <!-- The cat-head menu panel, straight off the concept drawing:
+           a big rounded cat head with two ears, "OPTIONS:" and three
+           buttons in a row. -->
+      <div class="cat-panel">
+        <svg class="cat-shape" viewBox="0 0 600 270" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M30,205 C30,112 62,76 132,68 L120,8 L208,58
+                   C262,47 338,47 392,58 L480,8 L468,68
+                   C538,76 570,112 570,205 C570,243 542,256 502,256
+                   L98,256 C58,256 30,243 30,205 Z" />
+        </svg>
+        <div class="cat-face">
+          <p class="options-label">OPTIONS:</p>
+          <div class="menu-row">
+            <button class="menu-btn" data-action="settings">SETTINGS</button>
+            <button class="menu-btn primary" data-action="play">PLAY</button>
+            <button class="menu-btn" data-action="help">HELP</button>
+          </div>
+          <p class="press-hint" id="press-hint">press any button to start</p>
+        </div>
+      </div>
+
+      <!-- Shown only when a controller's buttons work but none of its axes
+           ever move — i.e. this browser can't read the sticks. See
+           tools/gamepad-dump.html and the HANDOFF note. -->
+      <div class="browser-warn hidden" id="browser-warn">
+        <b>Sticks not working?</b> This browser isn't reading them from your
+        controller. Buttons arrive, the sticks don't. <b>Open the game in
+        Firefox</b> — same address, and the sticks work there.
+      </div>
+
+      <div class="credit">art &amp; world generated with AI · built with three.js</div>
+    </div>
+
+    <!-- ================= panels ================= -->
+    <div id="panel-help" class="screen overlay hidden">
+      <div class="panel">
+        <h2>HOW TO PLAY</h2>
+        <div class="cols">
+          <div>
+            <h3>ON FOOT</h3>
+            <ul>
+              <li><b>Move</b> — stick / <kbd>WASD</kbd></li>
+              <li><b>Jump</b> — <kbd>A</kbd> / <kbd>Space</kbd> <i>(twice to double jump)</i></li>
+              <li><b>Slash</b> — <kbd>X</kbd> / <kbd>F</kbd> — knock everything over!</li>
+              <li><b>Sprint</b> — <kbd>ZL/ZR</kbd> / <kbd>Shift</kbd></li>
+              <li><b>Ride dragon</b> — <kbd>Y</kbd> / <kbd>Q</kbd> when the ring glows</li>
+              <li><b>Join a clan</b> — <kbd>B</kbd> / <kbd>E</kbd> standing in a shrine ring</li>
+              <li><b>Map zoom</b> — <kbd>Z</kbd> (and <kbd>X</kbd> for Frost when split)</li>
+            </ul>
+          </div>
+          <div>
+            <h3>ON A DRAGON</h3>
+            <ul>
+              <li><b>Fly</b> — stick</li>
+              <li><b>Up</b> — <kbd>A</kbd> / <kbd>Space</kbd></li>
+              <li><b>Down</b> — <kbd>B</kbd> / <kbd>E</kbd></li>
+              <li><b>Boost</b> — <kbd>ZL/ZR</kbd> / <kbd>Shift</kbd></li>
+              <li><b>Breathe</b> — <kbd>X</kbd> / <kbd>F</kbd> — every dragon breathes
+                something different</li>
+              <li><b>Dive low and fast</b> to scatter a whole market</li>
+              <li><b>Hop off anywhere</b> — your dragon flies home by itself</li>
+            </ul>
+          </div>
+        </div>
+        <p class="note">
+          <b>Bamboo can only be cut with a katana</b> — no dragon can burn it. Land,
+          get off, and slash your way through the grove east of town. Every cane is
+          worth double.
+        </p>
+        <p class="note">
+          <b>Five clans, five islands, five powers.</b> Look for a coloured beam of
+          light — that's a shrine. Stand in its ring and press interact to join.
+          <b>Thunderpaw</b> run faster, <b>Riverclaw</b> have a longer katana,
+          <b>Shadowtail</b> can triple jump, <b>Windwhisker</b> dragons breathe
+          twice as far, and <b>Icewhisker</b> can sense mischief — an arrow points
+          at the nearest thing you haven't knocked over yet, which is how you find
+          the last few. You can swap any time by finding another shrine, and you
+          two don't have to pick the same one.
+        </p>
+        <p class="note">
+          Player 2 uses the <b>arrow keys</b> and the <b>numpad</b>, or plug in a
+          second controller. The screen splits automatically when you run apart
+          and joins back up when you're together. The <b>map</b> in the corner
+          shows both of you, every dragon, and everywhere worth going.
+        </p>
+        <button class="menu-btn back" data-close>BACK</button>
+      </div>
+    </div>
+
+    <div id="panel-settings" class="screen overlay hidden">
+      <div class="panel">
+        <h2>SETTINGS</h2>
+        <label class="row">
+          <span>Split screen</span>
+          <select id="set-split">
+            <option value="auto">Automatic (joins when close)</option>
+            <option value="always">Always split</option>
+            <option value="never">Always shared</option>
+          </select>
+        </label>
+        <label class="row">
+          <span>Split direction</span>
+          <select id="set-dir">
+            <option value="vertical">Side by side</option>
+            <option value="horizontal">Top and bottom</option>
+          </select>
+        </label>
+        <label class="row">
+          <span>Render quality</span>
+          <select id="set-quality">
+            <option value="high">High</option>
+            <option value="medium" selected>Medium</option>
+            <option value="low">Low (fastest)</option>
+          </select>
+        </label>
+        <label class="row">
+          <span>Sound effects</span>
+          <input id="set-sfx" type="range" min="0" max="100" value="75">
+        </label>
+        <label class="row">
+          <span>Music</span>
+          <input id="set-music" type="range" min="0" max="100" value="40">
+        </label>
+        <label class="row">
+          <span>Controllers</span>
+          <select id="set-padmode">
+            <option value="auto">Automatic</option>
+            <option value="split">One pad, two players (Joy-Cons)</option>
+            <option value="separate">One pad per player</option>
+          </select>
+        </label>
+        <label class="row">
+          <span>Sideways Joy-Con stick</span>
+          <select id="set-joycon">
+            <option value="auto">Automatic (per left / right)</option>
+            <option value="cw">Rotate clockwise</option>
+            <option value="ccw">Rotate counter-clockwise</option>
+            <option value="none">No rotation</option>
+          </select>
+        </label>
+        <div class="pads">
+          <h3>CONTROLLERS</h3>
+          <p class="tiny">
+            Switch controllers pair over Bluetooth: hold the small <b>sync</b>
+            button until the lights run, then add it from your computer's
+            Bluetooth menu. Press any button here once it's paired to wake it up.
+          </p>
+          <div id="pad-list">No controllers detected — keyboard is ready to go.</div>
+          <div id="pad-map"></div>
+          <p class="tiny" id="pad-help">
+            Press each button and check the right action lights up. If it
+            doesn't, click that action above and press the button you want —
+            it's remembered on this computer.
+          </p>
+        </div>
+        <button class="menu-btn back" data-close>BACK</button>
+      </div>
+    </div>
+
+    <div id="panel-pause" class="screen overlay hidden">
+      <div class="panel pause-panel">
+        <h2>PAUSED</h2>
+        <div class="pause-menu">
+          <button class="menu-btn primary" data-action="resume">RESUME</button>
+          <button class="menu-btn" data-action="settings">SETTINGS</button>
+          <button class="menu-btn" data-action="help">HOW TO PLAY</button>
+          <button class="menu-btn" data-action="restart">RESTART</button>
+          <button class="menu-btn" data-action="title">TITLE SCREEN</button>
+        </div>
+        <p class="note">
+          <b>Esc</b> or <b>+ / Start</b> on a controller opens and closes this.
+        </p>
+      </div>
+    </div>
+
+    <!-- ================= in-game HUD ================= -->
+    <div id="hud" class="hidden">
+      <div class="scoreboard">
+        <div class="score p1">
+          <span class="pip"></span><span class="nm">EMBER</span><b id="s1">0</b>
+          <span class="clan" id="c1"></span>
+        </div>
+        <div class="mischief">MISCHIEF <b id="mtotal">0 / 0</b></div>
+        <div class="score p2">
+          <span class="pip"></span><span class="nm">FROST</span><b id="s2">0</b>
+          <span class="clan" id="c2"></span>
+        </div>
+      </div>
+      <!-- One map when the view is shared; two, one per kitten, when it's
+           split, so neither has to read the other player's corner. -->
+      <div id="minimap-wrap" class="map-box">
+        <canvas id="minimap"></canvas>
+        <span class="map-tag" id="map-tag">Z: zoom</span>
+      </div>
+      <div id="minimap-wrap2" class="map-box hidden">
+        <canvas id="minimap2"></canvas>
+        <span class="map-tag p2">FROST · X</span>
+      </div>
+      <div id="math-board" class="hidden">
+        <div class="mb-title">SIN &amp; COS — LIVE</div>
+      </div>
+      <div id="toasts"></div>
+      <div class="hint" id="hint"></div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

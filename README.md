@@ -1,0 +1,323 @@
+# Katana Kitties
+
+**A split-screen co-op game about two samurai kittens causing trouble across a
+chain of floating Japanese islands — and riding storm dragons between them.**
+
+![Riding a storm dragon over the town](docs/screenshots/02-dragon.jpg)
+
+Two players, one keyboard or two controllers. Run, double-jump, draw a katana,
+knock over absolutely everything that isn't nailed down, then whistle up a
+dragon and go and do it on the next island. It runs in a browser tab.
+
+It was made for — and partly *by* — my nieces. The cat-head menu on the title
+screen is a faithful reproduction of a drawing one of them made, buttons and
+all, and the name was hers too. The rest grew out of the things they like:
+*Warriors*, *Storm Dragons*, Minecraft, Wobbly Life and Untitled Goose Game.
+
+There's a second reason it exists. I'd been teaching one of them sine, cosine
+and the unit circle on graph paper, and this is that lesson made walkable —
+see [Teaching the maths](#teaching-the-maths).
+
+## A look around
+
+| | |
+|---|---|
+| ![The town](docs/screenshots/01-town.jpg) **The town** — a road, a market, a red bridge and 40-odd knockable props | ![A clan shrine](docs/screenshots/03-shrine.jpg) **A clan shrine** — find the beam, stand in the ring, get a power |
+| ![The bamboo grove](docs/screenshots/05-bamboo.jpg) **The bamboo grove** — the one thing no dragon can burn | ![The snow island](docs/screenshots/06-snow.jpg) **The snow island** — icicles to smash and a frost dragon to ride |
+
+![The Dojo of the Turning Circle](docs/screenshots/04-dojo.jpg)
+
+*The Dojo of the Turning Circle: a whole island that is a walkable unit circle.
+Stand on it and you become the point — the game reads your angle and draws sine,
+cosine, the radius and your coordinates, live, from the same numbers that are
+moving you.*
+
+## Play it
+
+```bash
+npm install
+npm run dev
+```
+
+Then open the address it prints. **Use Firefox if you're playing with Joy-Cons**
+— see [Switch 2 controllers](#switch-2-controllers--use-firefox) for why.
+
+---
+
+## Controls
+
+|                  | Player 1 (Ember) | Player 2 (Frost) | Gamepad      |
+| ---------------- | ---------------- | ---------------- | ------------ |
+| Move             | `W A S D`        | Arrow keys       | Left stick   |
+| Jump / fly up    | `Space`          | `Numpad 0`       | `A`          |
+| Slash            | `F`              | `Numpad 1`       | `X`          |
+| Interact / dive  | `E`              | `Numpad 2`       | `B`          |
+| Mount / dismount | `Q`              | `Numpad 3`       | `Y`          |
+| Sprint / boost   | `Left Shift`     | `Right Ctrl`     | `ZL` / `ZR`  |
+
+`M` toggles the maths overlay on the Kotodama Orb. **`Esc`**, or **`+`/Start on a
+controller**, opens the pause menu — resume, settings, how-to-play, restart, or
+back to the title screen.
+
+Jump twice for a double jump. Sprint and slash to send market stalls flying.
+Fly low and fast on a dragon to scatter a whole street at once.
+
+### Switch 2 controllers — use Firefox
+
+> **Play this in Firefox.** With the Joy-Cons arriving through Joy2Win + vJoy,
+> **Chrome cannot read the analog sticks.** Buttons work, the sticks report
+> `0.00000` forever. Firefox reads the same controller on the same machine
+> correctly. This is a Chrome bug in how it parses the device, not something the
+> game can work around — if the sticks are dead, the title screen says so and
+> tells you to switch.
+
+Two sideways Joy-Con is the fastest route to two players. Both halves arrive as
+a **single** vJoy device, so the game splits that one pad down the middle: P1
+drives the left Joy-Con, P2 the right. There is no second controller to pair.
+
+Pairing: hold the little **sync** button until the lights run, add the
+controller from the computer's Bluetooth settings, then start Joy2Win. **Press a
+button afterwards** — browsers hide a gamepad until it sends input.
+
+In Joy2Win's `config.ini`, for two Joy-Cons: `controller = 0`, `orientation = 0`,
+and **`mouse_mode = 0`** — with mouse mode on, a Joy-Con resting on a desk
+switches to mouse control and stops sending its stick entirely.
+
+**Settings → Controllers** is the calibration screen. It shows a live readout
+per pad — which profile matched, which player reads which half, every axis with
+the range it has travelled, the raw index of whatever you press, and which
+action it lit. Nothing needs a code edit:
+
+- **A button does the wrong thing** — click that action in the remap grid and
+  press the button you want. Saved per browser.
+- **A stick does nothing, or is rotated** — wiggle both sticks, then press
+  **DETECT STICKS**. Or bind them by hand: *push RIGHT*, *push UP*.
+- **Started fresh?** **RESET TO DEFAULTS.** A saved map beats the source
+  defaults, so a stale calibration can look like a code change did nothing.
+
+If the sticks look dead, `tools/gamepad-dump.html` opens straight from disk and
+shows exactly what the browser reports, including whether it is receiving
+reports from the device at all.
+
+---
+
+## Sound
+
+There are no audio files. Every sound — the katana, the bamboo crack, the
+dragon's breath, the clan gong — is **synthesised at runtime** from oscillators
+and filtered noise in `src/core/audio.js`, and the music is generated the same
+way: a koto-style pluck wandering a Japanese pentatonic scale over a drone, so
+it never loops exactly.
+
+That means nothing to download, nothing to licence and no asset pipeline. Two
+sliders in **Settings** control effects and music independently.
+
+Browsers won't start audio without a user gesture, so it comes up when you
+press PLAY. If it's ever silent, that's the reason — click into the page first.
+
+## The screen splits itself
+
+Run apart and the view splits; come back together and it joins into one shared
+camera. Configurable in Settings (`auto` / `always split` / `always shared`),
+and side-by-side or top-and-bottom.
+
+---
+
+## Teaching the maths
+
+Two places in the game show trigonometry actually running, with the numbers on
+screen being the numbers moving things.
+
+### The Kotodama Orb
+
+Walk into a floating orb and it starts circling you. It draws its own working
+as it goes: the radius vector, the swept angle, and the two legs of the right
+triangle, labelled with live `cos θ` and `sin θ`. The orb's position is
+literally
+
+```js
+orb.x = centre.x + Math.cos(theta) * r;
+orb.z = centre.z + Math.sin(theta) * r;
+```
+
+(`src/entities/orb.js`) — the overlay is drawn from the same two numbers that
+place the mesh, so it cannot drift out of sync with what she is watching.
+
+### The Dojo of the Turning Circle
+
+A whole island west of town is a walkable unit circle, 24 world units to the
+radius, on graph paper. **Walk onto the circle and you become the point.** The
+game reads your angle from the origin and draws, live:
+
+- the radius vector from `(0, 0)` out to you — **a vector**
+- the swept angle from the `+x` axis — **theta**
+- the horizontal leg, length `cos θ` — **cosine**
+- the vertical leg, length `sin θ` — **sine**
+- your coordinates as `(cos θ, sin θ)` — **a point on the unit circle**
+- axis ticks at ±0.5 and ±1, and `0° = 0`, `90° = π/2`, `180° = π`,
+  `270° = 3π/2` — **degrees and radians side by side**
+
+A HUD board plots both waves with a playhead locked to your angle, and prints
+`cos²θ + sin²θ` so she can watch it sit at `1.000` no matter where she stands.
+
+Two details worth knowing if you extend it:
+
+- Maths `y` maps to world `−Z` (`ZS` in `src/systems/mathdojo.js`). The dojo
+  camera looks down `+Z`, so without the flip the `y` axis would point *down*
+  the screen and every diagram would be mirrored against her graph paper.
+- Entering the dojo swings the camera to yaw `0` and near-top-down, so the
+  world axes line up square with the screen.
+
+---
+
+## How the art works
+
+The look is Super Mario RPG: **hand-drawn 2D characters billboarded inside a
+real 3D world.** No character meshes anywhere.
+
+- **Characters and dragons** are AI-generated anime sprite sheets
+  (`public/sprites/`), turned into clean game atlases at load time by
+  `src/core/spritesheet.js`.
+- **Terrain, buildings and props** are procedural low-poly geometry generated
+  in code (`src/world/build.js`), cel-shaded with a stepped toon ramp and
+  inverted-hull outlines.
+
+### The sprite pipeline
+
+The kitten sheets are a grid: **columns are a full 360° rotation, rows are
+animation poses** (idle, walk, jump, attack). `loadSpriteAtlas()` turns a raw
+generated sheet into a clean game atlas, and four things in it matter:
+
+1. **Background removal floods inward from the image borders** rather than
+   thresholding on white. The cats have cream chests, white paws and white
+   eyes — a global threshold punches holes straight through them. Flooding
+   from the edges stops at the black lineart, so interior whites survive.
+
+2. **Cells are found by connected-component labelling**, rows first then
+   columns within each row. Column projection fails: a swept tail overlaps its
+   neighbour's columns and ten views read as four. Rows must be clustered
+   before columns, or a jumping figure (drawn higher) gets grouped with the
+   walking figure beside it.
+
+3. **The column count is measured, not assumed.** Image models do not reliably
+   honour "exactly 8 columns" — asking for 8 repeatedly returns 10. The loader
+   counts what was actually drawn and the game maps however many cells it gets
+   evenly around the circle, so a sheet with 10 directions just works. The gap
+   threshold for splitting is deliberately small (12% of a figure's width);
+   sheets are packed tightly and a generous threshold silently merges
+   neighbours.
+
+4. **Everything is re-packed** at one scale shared across the whole sheet — not
+   per row, or the character would change size the moment it started walking.
+   Each row is bottom-aligned to *its own* ground line. Baselines are compared
+   within a row and never across rows: rows sit at different absolute heights
+   in the source image, so a sheet-wide baseline lifts the top row clean out of
+   its cell.
+
+The output is a square-celled atlas with transparent padding around each cell.
+Two consequences:
+
+- **Billboard quads must be square** — giving a quad the art's own aspect ratio
+  stretches it a second time.
+- The padding, plus a half-texel UV inset in `Billboard._setCell`, is what stops
+  atlas **bleeding** — without both, mipmaps and bilinear filtering reach across
+  the cell boundary and drag a ghost of the neighbouring frame down one edge.
+
+**Full-turn sheets are not mirrored.** Mirroring a half-turn to cover the other
+side is cheaper, but it flips asymmetric details — Ember's tail and shoulder
+guard swap sides when facing right. `mirror: false` on the `Billboard` uses the
+drawn cell for every direction instead.
+
+### Replacing the art
+
+Drop a new sheet into `public/sprites/` with the same filename and refresh.
+Live files are `ember_grid_v2.png` and `frost_grid.png`; the game logs
+`[art] <file> → N directions x M poses` at boot so you can check what it found.
+
+Ask for a grid of 4 rows (idle, walk, jump, attack) and 8+ columns rotating a
+full turn, starting facing the viewer and turning toward the viewer's right, on
+a white background. Whatever column count comes back is fine. Side-on art that
+faces left (like the dragon) needs `artFacesRight: false`.
+
+**Check that every row turns the same way before you use a sheet.** Image
+models don't guarantee it — `frost_grid_v2.png` came back with its jump and
+attack rows mirrored against its idle and walk rows, which no single setting
+can correct, and it's kept out of the game for that reason. The quickest test:
+column N should be the same direction in all four rows, and one column should
+be a plain back view in all four.
+
+---
+
+## Layout
+
+```
+src/
+  main.js               game loop, split-screen rendering, boot
+  core/
+    gfx.js              toon materials, outlines, Billboard
+    input.js            two players, keyboard + gamepad, Switch 2 remap
+    spritesheet.js      generated turnaround → clean game atlas
+    label.js            world-space text
+  world/
+    build.js            noise, islands, pagodas, torii, trees, merging
+    world.js            assembles the world, height queries, petals
+  systems/
+    mathdojo.js         the walkable unit circle
+  entities/
+    player.js           movement, slash, mounting, camera rig
+    dragon.js           rideable storm dragon
+    orb.js              Kotodama Orb + pickups
+    prop.js             knockable scenery
+```
+
+Every mesh in a category is merged into a single geometry (`mergeParts`), so
+the whole town is a handful of draw calls even at split-screen.
+
+---
+
+## How it was built
+
+**three.js, and nothing else at runtime.** No engine, no physics library, no
+asset store. `npm install` pulls exactly two things: three.js and Vite.
+
+Everything you can see is made by the code, at load time:
+
+- **The islands are maths.** Each one is a rolling noise surface with a rim
+  that falls away to a craggy underside, generated from a seed. The height is
+  queryable analytically, so the kittens collide with the exact surface the
+  mesh was built from rather than an approximation of it.
+- **The town, too.** Houses, pagoda roofs, torii, lanterns, market stalls, the
+  bridge, the bamboo, the shrines — all built from boxes and cylinders in
+  `src/world/build.js`, painted with vertex colours and merged down into a
+  handful of draw calls.
+- **The look is cel-shading over real 3D**: hard-stepped toon ramps and
+  inverted-hull outlines, which is the Super Mario RPG trick.
+- **The characters are 2D drawings in a 3D world.** Each kitten is a sprite
+  sheet of one full turn × four poses, billboarded to face whichever camera is
+  drawing, picking the cell that matches the angle you're seen from. The art
+  was AI-generated; `src/core/spritesheet.js` measures the sheet and slices it
+  by connected-component labelling rather than trusting a grid.
+- **Every sound is synthesised.** No audio files at all — see [Sound](#sound).
+
+The whole thing is about 4,500 lines. `HANDOFF.md` is the companion document:
+it records *why* things are the way they are, and the bugs that cost real time,
+so none of them have to be rediscovered.
+
+There's also `tools/world-check.mjs` — a headless smoke test that builds the
+real world and pokes the real classes:
+
+```bash
+node tools/world-check.mjs
+```
+
+It catches the failures that still look fine in a screenshot: a grove that
+generates zero canes, a dragon that never finishes flying home, a sprite sheet
+read in mirror image, a clan buff that doesn't actually do anything.
+
+## Ideas not built yet
+
+- Enemies and real combat (deliberately left out — the slash currently exists
+  to knock scenery over, which is where the fun is at this size)
+- Clan camp building and kitten customisation
+- More towns on the outer islands
+- A second dragon type with different flight handling

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gamepad raw dump</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 18px 22px; background: #14101c; color: #e6dcc6;
+    font: 13px/1.5 ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  }
+  h1 { font-size: 15px; letter-spacing: 1px; margin: 0 0 4px; color: #f5c341; }
+  .sub { opacity: .65; margin-bottom: 16px; }
+  .pad { border: 1px solid #3a3050; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
+  .id { color: #f5c341; font-weight: 700; }
+  table { border-collapse: collapse; margin: 8px 0; width: 100%; }
+  th { text-align: left; font-weight: 700; opacity: .6; padding: 2px 10px 2px 0; font-size: 11.5px; }
+  td { padding: 1px 10px 1px 0; white-space: nowrap; }
+  .live { color: #57e08a; font-weight: 700; }
+  .dead { opacity: .35; }
+  .warn { color: #ff7a5c; font-weight: 700; }
+  .bar { display: inline-block; width: 120px; height: 9px; background: #2a2138;
+         border-radius: 5px; vertical-align: middle; position: relative; }
+  .bar i { position: absolute; top: 0; bottom: 0; background: #57e08a; border-radius: 5px; }
+  .bar u { position: absolute; top: -2px; bottom: -2px; width: 1px; left: 50%; background: #6b6180; }
+  button { font: inherit; padding: 5px 12px; margin-right: 8px; cursor: pointer;
+           background: #2a2138; color: #e6dcc6; border: 1px solid #574a72; border-radius: 6px; }
+  #verdict { margin: 14px 0; padding: 10px 12px; border-radius: 8px; border: 1px solid #3a3050; }
+  pre { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>GAMEPAD RAW DUMP</h1>
+<div class="sub">
+  Exactly what the browser's Gamepad API reports — nothing interpreted.
+  <b>Press a button on the controller first</b>; browsers hide a pad until it sends input.
+</div>
+
+<div>
+  <button id="reset">RESET RANGES</button>
+  <button id="copy">COPY REPORT</button>
+  <span id="copied" style="opacity:.6"></span>
+</div>
+
+<div id="verdict"></div>
+<div id="out"></div>
+
+<script>
+/* Per-pad history: how far each axis has travelled, and whether the browser is
+   receiving fresh reports at all (gamepad.timestamp advancing). */
+const hist = new Map();
+
+function track(gp) {
+  let h = hist.get(gp.index);
+  if (!h || h.min.length !== gp.axes.length) {
+    h = {
+      min: gp.axes.map(v => v ?? 0),
+      max: gp.axes.map(v => v ?? 0),
+      stamps: new Set(),
+      lastStamp: -1,
+      btnSeen: gp.buttons.map(() => false),
+      frames: 0,
+    };
+    hist.set(gp.index, h);
+  }
+  h.frames++;
+  for (let i = 0; i < gp.axes.length; i++) {
+    const v = gp.axes[i] ?? 0;
+    if (v < h.min[i]) h.min[i] = v;
+    if (v > h.max[i]) h.max[i] = v;
+  }
+  gp.buttons.forEach((b, i) => { if (b && (b.pressed || b.value > 0.5)) h.btnSeen[i] = true; });
+  if (gp.timestamp !== h.lastStamp) {
+    h.lastStamp = gp.timestamp;
+    if (h.stamps.size < 100000) h.stamps.add(gp.timestamp);
+  }
+  return h;
+}
+
+const f5 = v => (v < 0 ? '' : ' ') + v.toFixed(5);
+
+function axisRow(i, v, h) {
+  const span = h.max[i] - h.min[i];
+  const moved = span > 0.02;
+  const pct = Math.max(0, Math.min(1, (v + 1) / 2));
+  return `<tr class="${moved ? 'live' : 'dead'}">
+    <td>axis ${String(i).padStart(2)}</td>
+    <td>${f5(v)}</td>
+    <td><span class="bar"><u></u><i style="left:${(Math.min(pct, .5) * 100).toFixed(1)}%;
+        width:${(Math.abs(pct - .5) * 100).toFixed(1)}%"></i></span></td>
+    <td>min ${f5(h.min[i])}</td>
+    <td>max ${f5(h.max[i])}</td>
+    <td>${moved ? 'MOVED  span ' + span.toFixed(3) : 'never moved'}</td>
+  </tr>`;
+}
+
+function render() {
+  const pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean);
+  const out = document.getElementById('out');
+  const verdict = document.getElementById('verdict');
+
+  if (!pads.length) {
+    out.innerHTML = '<div class="pad">No gamepad visible yet — press a button on it.</div>';
+    verdict.innerHTML = '';
+    requestAnimationFrame(render);
+    return;
+  }
+
+  const blocks = [];
+  const notes = [];
+
+  for (const gp of pads) {
+    const h = track(gp);
+    const pressed = [];
+    gp.buttons.forEach((b, i) => { if (b && (b.pressed || b.value > 0.5)) pressed.push(i); });
+    const everMoved = gp.axes.some((_, i) => h.max[i] - h.min[i] > 0.02);
+    const everPressed = h.btnSeen.some(Boolean);
+    const fresh = h.stamps.size;
+
+    blocks.push(`<div class="pad">
+      <div class="id">${gp.id}</div>
+      <table>
+        <tr><td>index</td><td>${gp.index}</td>
+            <td>mapping</td><td>"${gp.mapping}"</td>
+            <td>connected</td><td>${gp.connected}</td></tr>
+        <tr><td>axes</td><td>${gp.axes.length}</td>
+            <td>buttons</td><td>${gp.buttons.length}</td>
+            <td>timestamp</td><td>${gp.timestamp}</td></tr>
+        <tr><td>polls</td><td>${h.frames}</td>
+            <td colspan="4">distinct timestamps seen: <b class="${
+              fresh > 2 ? 'live' : 'warn'}">${fresh}</b>
+              ${fresh > 2 ? '(browser IS receiving fresh reports)'
+                          : '(browser is NOT receiving new reports)'}</td></tr>
+      </table>
+      <table>
+        <tr><th>axis</th><th>value</th><th>−1 &nbsp; 0 &nbsp; +1</th>
+            <th>min</th><th>max</th><th>verdict</th></tr>
+        ${gp.axes.map((v, i) => axisRow(i, v ?? 0, h)).join('')}
+      </table>
+      <div>buttons down now: <b class="live">${pressed.length ? pressed.join(', ') : '–'}</b></div>
+      <div class="dead">buttons seen at any point: ${
+        h.btnSeen.map((s, i) => s ? i : null).filter(x => x !== null).join(', ') || '–'}</div>
+    </div>`);
+
+    if (everPressed && !everMoved) {
+      notes.push(`<b class="warn">${gp.id}</b>: buttons arrive, no axis has EVER moved.
+        The browser is parsing this device — the axis values are not in what it receives.
+        Not a game bug. Check the feeder (Joy2Win <code>mouse_mode</code>) and the vJoy
+        axis configuration, and try Firefox to see whether it is Chrome-specific.`);
+    } else if (everMoved) {
+      const live = gp.axes.map((_, i) => h.max[i] - h.min[i] > 0.02 ? i : null).filter(x => x !== null);
+      notes.push(`<b class="live">${gp.id}</b>: axes ${live.join(', ')} are live.
+        Paste this report back — those indices are what the game should bind.`);
+    }
+  }
+
+  out.innerHTML = blocks.join('');
+  verdict.innerHTML = notes.join('<br><br>') || 'Move both sticks fully, then read the table.';
+  requestAnimationFrame(render);
+}
+
+document.getElementById('reset').onclick = () => hist.clear();
+document.getElementById('copy').onclick = async () => {
+  const pads = [...(navigator.getGamepads?.() ?? [])].filter(Boolean);
+  const text = pads.map(gp => {
+    const h = hist.get(gp.index);
+    return [
+      `id: ${gp.id}`,
+      `mapping: "${gp.mapping}"  axes: ${gp.axes.length}  buttons: ${gp.buttons.length}`,
+      `timestamp: ${gp.timestamp}  distinct timestamps: ${h?.stamps.size ?? 0}  polls: ${h?.frames ?? 0}`,
+      ...gp.axes.map((v, i) =>
+        `  axis ${String(i).padStart(2)}: now ${f5(v ?? 0)}  min ${f5(h?.min[i] ?? 0)}`
+        + `  max ${f5(h?.max[i] ?? 0)}  span ${((h?.max[i] ?? 0) - (h?.min[i] ?? 0)).toFixed(3)}`),
+      `  buttons ever pressed: ${(h?.btnSeen ?? []).map((s, i) => s ? i : null)
+        .filter(x => x !== null).join(', ') || 'none'}`,
+    ].join('\n');
+  }).join('\n\n') || 'no gamepads';
+  try { await navigator.clipboard.writeText(text); document.getElementById('copied').textContent = 'copied'; }
+  catch { document.getElementById('copied').textContent = 'copy blocked — select the page and copy manually'; }
+  setTimeout(() => { document.getElementById('copied').textContent = ''; }, 2500);
+};
+
+window.addEventListener('gamepadconnected', e => console.log('connected', e.gamepad));
+render();
+</script>
+</body>
+</html>
