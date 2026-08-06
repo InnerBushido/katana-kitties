@@ -5,7 +5,10 @@ to run and extend the game; this file covers *why things are the way they are*
 and what's still open.
 
 **Location:** `C:\Users\Hypot\OneDrive\Desktop\Claude Conversation\katana-kitties`
-**Run:** `npm run dev` → http://localhost:5173
+**Repo:** https://github.com/InnerBushido/katana-kitties (private)
+**Run:** `npm run dev`, then open it in **Firefox** — Chrome cannot read the
+Joy-Con sticks through vJoy (see below).
+**Check:** `node tools/world-check.mjs` — headless smoke test, 71 checks.
 
 ---
 
@@ -238,24 +241,24 @@ tied pair rather than pretending otherwise.
 
 ## Open bugs
 
-**1. Settings screen swallows gamepad input — FIXED.**
-Pressing a Joy-Con button while the settings panel was open started the game
-instead of showing the button in the live controller readout, because the title
-branch of `_tick()` called `startPlay()` on `input.anyPressed()` unconditionally
-and settings is reachable from the title screen.
+**None known.** Everything reported through the last session is fixed and
+verified — sprite directions, slope flicker, dragon loss and clipping, the
+minimap/Dojo overlap, the orb's jittering glyphs. Run the smoke test before
+assuming otherwise:
 
-`startPlay()` is now gated on `_overlayOpen()` — true while any of
-`panel-settings` / `panel-help` / `panel-pause` is visible. Buttons pressed with
-a panel up only feed the readout; close the panel and a press starts the game as
-before.
+```bash
+node tools/world-check.mjs      # 71 checks, all passing
+npm run build                   # clean
+```
 
-**2. vJoy button indices are unverified on real hardware.** Both Joy-Cons arrive
-as ONE vJoy pad (VID 1234 / PID bead, 24 buttons), so `src/core/input.js` splits
-that single pad between the two players — see *Two players, one pad* below. Only
-two indices are confirmed: **left SR = 17, right SR = 14**. The rest of
-`DEFAULT_VJOY_MAP` is inferred from those. Rather than guess again, Settings →
-Controllers now has a **remap grid**: click an action, press the button, done —
-saved to `localStorage` under `kk.vjoy.map.v2`. No code edit needed.
+Two things that are *working as designed* but read like bugs if you forget:
+
+- **Chrome cannot read the vJoy sticks.** Play in Firefox — see the next
+  section. This is a browser bug, not a game bug, and the title screen now
+  detects it and says so.
+- **A saved controller map beats the source defaults.** Editing
+  `DEFAULT_VJOY_MAP` looks like it did nothing until you press RESET TO
+  DEFAULTS in Settings (or clear `kk.vjoy.map.v2` in localStorage).
 
 ---
 
@@ -601,14 +604,37 @@ public/sprites/
 
 ## Next steps Richard flagged
 
-1. Play it with the girls — their feedback beats any spec.
-2. Still open from the last pass: the outer islands have biome colour and
-   flora but no towns; clans are cosmetic (a badge and a ring colour) rather
-   than mechanical; no enemies or combat; no kitten customisation.
-3. Ideas that came out of the bug list and aren't built: clan-specific
-   missions or rival mischief scores, a second thing that resists dragons the
-   way bamboo does, breath types that interact with specific props (frost
-   freezing water, fire lighting lanterns).
+1. **Play it with the girls.** Everything on the last bug list is fixed; their
+   feedback beats any spec from here.
+2. Not built: enemies or combat (deliberately — the slash exists to knock
+   scenery over, and that's where the fun is at this size); kitten
+   customisation; towns on the outer islands; clan camp building.
+3. Ideas that came out of building the clans and aren't built: clan-specific
+   missions or rival mischief scores, a second material that resists dragons
+   the way bamboo does, breath types that interact with specific props (frost
+   freezing water, fire lighting lanterns), a sixth clan on the bamboo island
+   (the only walkable island without a shrine).
 
-Run `node tools/world-check.mjs` after touching the world, dragons or sprite
-directions — it catches the silent breakages that still look fine on screen.
+Run `node tools/world-check.mjs` after touching the world, dragons, clans or
+sprite directions — it catches the silent breakages that still look fine on
+screen, and it grew every time one of those bit us.
+
+---
+
+## Where the code lives
+
+**GitHub: https://github.com/InnerBushido/katana-kitties** (private).
+
+The repo-local git identity is pinned to `InnerBushido <Innerbushido@gmail.com>`
+on purpose, so a change to the global config can't attribute commits here to a
+work account. Pushing needs Git Credential Manager's GUI — a headless
+`git push` fails with "cannot prompt"; `git -c credential.guiPrompt=true push`
+works.
+
+`docs/screenshots/` holds the six README images. They were captured by rendering
+the game to a canvas and POSTing the JPEG to a throwaway local HTTP server —
+browser downloads don't reach disk from the preview pane, and piping ~25KB of
+base64 per image back through the agent is wasteful. If you need new ones, that
+trick is the way; remember `player.group.position` only follows
+`player.position` inside `update()`, so staged shots need an explicit sync or
+the kittens render at their old spot.
