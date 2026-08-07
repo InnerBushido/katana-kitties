@@ -20,6 +20,7 @@ import {
 } from '../src/entities/panda.js';
 import { LEADERS, ELDER, leaderSpot, LEADER_OFFSET } from '../src/entities/leader.js';
 import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
+import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
 import { SHRINE_DAIS } from '../src/world/build.js';
 
 const line = (l, v) => console.log(String(l).padEnd(42) + v);
@@ -142,6 +143,38 @@ console.log('\n--- nothing regrows ---');
     !cane.gone && cane.group.visible && cane.group.position.distanceTo(startedAt) < 0.001);
   ok('and standing, ready to be cut again', cane.knocked === false);
   cane.scored = false;
+}
+
+console.log('\n--- shrine scenes ---');
+/* Every leader introduces herself once, in her own recorded voice, before her
+   clan can be joined. The checks here are about the things that turn a scene
+   into a nuisance rather than about the scene itself. */
+{
+  const ids = CLANS.map((c) => c.id);
+  ok('every clan leader has a recorded line',
+    ids.every((id) => typeof LEADERS[id]?.voice === 'string'
+      && LEADERS[id].voice.endsWith('.mp3')));
+  ok('and no two share a recording',
+    new Set(ids.map((id) => LEADERS[id].voice)).size === ids.length);
+  /* The voice file has to be the leader's OWN line, not the intro line she
+     speaks in the cutscene — they are different pieces of writing and swapping
+     them would have her introduce herself twice with the same words. */
+  ok('the shrine recording is separate from her cutscene line',
+    ids.every((id) => !LEADERS[id].voice.includes(`/${id}.mp3`)));
+
+  /* The trigger must not be reachable by running past. The dwell radius is
+     generous so she can be heard from the ring, which makes the two-second
+     wait the only thing standing between a kitten and six cutscenes. */
+  ok('you have to actually stop for her', DWELL >= 1.5);
+  ok('and the radius reaches the join ring', SCENE_RADIUS >= 8);
+
+  /* Every shrine's trigger ring must sit INSIDE the scene radius, or there is
+     a place you can stand, press interact, be refused for not having met her,
+     and never trigger the scene that would fix it. That is a soft lock on a
+     buff, and it would look exactly like a broken button. */
+  const worstRing = Math.max(...world.clanHalls.map((h) => h.r));
+  line('widest join ring vs scene radius', `${worstRing.toFixed(1)} vs ${SCENE_RADIUS}`);
+  ok('no spot lets you press interact out of her earshot', worstRing <= SCENE_RADIUS);
 }
 
 console.log('\n--- the cutscene never cuts a line off ---');

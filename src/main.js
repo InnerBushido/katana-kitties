@@ -14,6 +14,7 @@ import { Orb, OrbPickup } from './entities/orb.js';
 import { MathDojo } from './systems/mathdojo.js';
 import { Minimap } from './systems/minimap.js';
 import { Cutscene } from './systems/cutscene.js';
+import { ShrineScene } from './systems/shrinescene.js';
 
 /* ---------------------------------------------------------------------------
    Katana Kitties — main loop.
@@ -148,6 +149,12 @@ class Game {
     });
     // Fits each beat to the length of its recorded line — see loadVoices.
     await this.cutscene.loadVoices();
+
+    /* The shrine scenes: each leader introducing herself, once, before her
+       clan can be joined. Same preload discipline as the intro — the clips are
+       buffered here at boot, not fetched at the moment she opens her mouth. */
+    this.shrineScene = new ShrineScene({ world: this.world, audio: this.audio });
+    await this.shrineScene.load(this.leaders);
 
     /* Two maps: `minimap` is the shared/P1 one, `minimap2` only appears when
        the screen splits. They keep their own zoom so each player can be looking
@@ -495,6 +502,12 @@ class Game {
       p.clan = null;
       p.marker.material.color.set(p.index === 0 ? 0xff8a3d : 0xff6fae);
     }
+    /* Un-meet every leader. A restart is the world put back to its opening
+       state, and six introductions already spent is exactly the sort of
+       leftover that makes a "restart" feel like it only half worked. */
+    this.shrineScene?.finish();
+    this.shrineScene?.dwell.clear();
+    for (const L of this.leaders) { L.met = false; L.lookAt(null); }
     for (const id of ['c1', 'c2']) {
       const el = document.getElementById(id);
       if (el) { el.textContent = ''; el.style.background = ''; }
@@ -908,6 +921,11 @@ class Game {
     el.style.background = `#${clan.color.toString(16).padStart(6, '0')}`;
   }
 
+  /** The leader standing at a clan's shrine. Used to gate joining on `met`. */
+  leaderFor(clan) {
+    return this.leaders.find((L) => L.clan.id === clan.id) ?? null;
+  }
+
   /** Entities call this rather than reaching into the audio engine. */
   sfx(name, vol = 1) {
     this.audio.play(name, vol);
@@ -999,6 +1017,27 @@ class Game {
       return;
     }
 
+    /* --- a shrine scene owns the screen the same way ---
+       Same furniture, same rule about the world underneath: she is really
+       standing on that dais with her own beam behind her, and freezing it
+       would turn a place into a slideshow. The kittens are NOT ticked, which
+       is the one difference from a paused game — a stick still pushed when the
+       scene opened must not walk somebody off the island while nobody is
+       looking at her. */
+    if (this.shrineScene?.active) {
+      if (this.input.anyPressed() || this.input.players.some((p) => p.pressed('start'))) {
+        this.shrineScene.skip();
+      }
+      this.shrineScene.update(dt);
+      this.world.update(dt, this.players[0].position);
+      for (const d of this.dragons) d.update(dt, this.world, []);
+      for (const s of this.world.shrines) s.update(dt, this.players);
+      for (const L of this.leaders) L.update(dt, []);
+      this._renderView(this.shrineScene.camera, 0, 0,
+        ...this.renderer.getSize(new THREE.Vector2()).toArray());
+      return;
+    }
+
     // `start` on either pad toggles the pause menu.
     if (this.input.players.some((p) => p.pressed('start'))) this.setPaused(!this.paused);
 
@@ -1049,6 +1088,10 @@ class Game {
     this.dojo.update(dt, this.players);
     for (const s of this.world.shrines) s.update(dt, this.players);
     for (const L of this.leaders) L.update(dt, this.players);
+    /* Loitering at an unmet shrine starts her introduction. Checked after the
+       players have moved, so the dwell is measured against where they actually
+       ended the frame. */
+    this.shrineScene?.watch(dt, this.leaders, this.players);
     this._updateSeek(dt);
 
     // Standing in the dojo frames the whole diagram from above.

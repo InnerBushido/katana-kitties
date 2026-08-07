@@ -36,26 +36,32 @@ export const LEADERS = {
   thunder: {
     name: 'Sunstreak', breed: 'Siamese', art: 'thunderpaw',
     line: "I am Sunstreak of Thunderpaw.\nWe run so fast the rain never\nlands on us. Stand with me and\nyou'll outrun your own shadow.",
+    voice: '/voice/shrine_thunder.mp3',
   },
   river: {
     name: 'Rippleclaw', breed: 'Turkish Van', art: 'riverclaw',
     line: "Rippleclaw of Riverclaw.\nWe never walk around a puddle.\nSwear here and your katana will\nreach what you cannot touch.",
+    voice: '/voice/shrine_river.mp3',
   },
   shadow: {
     name: 'Duskcoat', breed: 'Tuxedo', art: 'shadowtail',
     line: "You didn't hear me arrive,\ndid you? Shadowtail jump three\ntimes before we come down.\nCome and learn the third one.",
+    voice: '/voice/shrine_shadow.mp3',
   },
   wind: {
     name: 'Galemane', breed: 'Maine Coon', art: 'windwhisker',
     line: "Galemane of Windwhisker.\nWe taught the storm dragons to\nbreathe. Ride with us and yours\nwill breathe twice as far.",
+    voice: '/voice/shrine_wind.mp3',
   },
   ice: {
     name: 'Snowmantle', breed: 'Himalayan', art: 'icewhisker',
     line: "Nothing is ever truly lost,\nlittle one. Icewhisker can feel\nthe last unbroken barrel on any\nisland in the sky. Let me show you.",
+    voice: '/voice/shrine_ice.mp3',
   },
   panda: {
     name: 'Bambooheart', breed: 'Ragdoll', art: 'pandapaw',
     line: "Pandapaw hand out no power.\nWe hand out a job. Cut twenty\ncanes of bamboo, and something\nvery small will follow you home.",
+    voice: '/voice/shrine_panda.mp3',
   },
 };
 
@@ -77,6 +83,15 @@ const LEADER_HEIGHT = 4.2;
  * time somebody nudges one of them.
  */
 export const LEADER_OFFSET = 3.4;
+
+/**
+ * The most a leader turns toward a player, in radians (~22 degrees).
+ *
+ * Re-exported from here rather than owned by the scene, because the limit is a
+ * fact about the ART — a front-facing single cell has no drawing for a bigger
+ * turn — not about any one system that uses it.
+ */
+export const FACE_BIAS_MAX = 0.38;
 
 /**
  * Where a leader stands, and the axis the camera should look down to see her.
@@ -226,10 +241,66 @@ export class ClanLeader {
 
     this.t = Math.random() * Math.PI * 2;
     this.show = 0;
+
+    /* Has her shrine scene played? Latches on START, not on finish, so
+       skipping still spends it — see ShrineScene. Joining the clan is gated
+       on this: you cannot swear to somebody you have not met. */
+    this.met = false;
+    /** One line of speech, unwrapped, for the dialogue box's typewriter. */
+    this.textLine = this.spec.line.replace(/\n/g, ' ');
+    /** Current and target turn-toward-you, in radians. See lookAt. */
+    this.faceBias = 0;
+    this.faceWant = 0;
+  }
+
+  /**
+   * Turn slightly toward a point — or back to square when passed null.
+   *
+   * She cannot actually rotate. She is one front-facing drawing that must
+   * never mirror (see the header), so past about a quarter turn there is
+   * simply no art for where she is looking, and a billboard yawed that far
+   * shows its own edge. What DOES work is a small bias on top of the
+   * camera-facing turn, capped well inside that limit: a flat drawing tilted
+   * twenty degrees reads as a character shifting toward you, and the cap is
+   * what keeps it reading that way from every camera angle rather than only
+   * the one it was authored against.
+   *
+   * The horizontal squash is the other half of it — a real turn foreshortens,
+   * and taking half the cosine sells the rotation far better than the yaw
+   * does on its own.
+   */
+  lookAt(target) {
+    if (!target) { this.faceWant = 0; return; }
+    this.faceTarget = target;
+    this.faceWant = null;   // recomputed per frame against the live camera
   }
 
   faceCamera(camera) {
     this.sprite.faceCamera(camera);
+
+    /* Where she'd have to turn to face the target, measured in the CAMERA's
+       frame — "toward you" is a screen direction, and in split screen the two
+       kittens have their own cameras. */
+    if (this.faceTarget && this.faceWant === null) {
+      const camYaw = Math.atan2(
+        camera.position.x - this.position.x,
+        camera.position.z - this.position.z
+      );
+      const toYaw = Math.atan2(
+        this.faceTarget.x - this.position.x,
+        this.faceTarget.z - this.position.z
+      );
+      let d = toYaw - camYaw;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      this.faceWant = THREE.MathUtils.clamp(d, -FACE_BIAS_MAX, FACE_BIAS_MAX);
+    }
+    const want = this.faceWant ?? 0;
+    this.faceBias += (want - this.faceBias) * 0.12;
+    this.sprite.mesh.rotation.y += this.faceBias;
+    const fore = Math.cos(this.faceBias);
+    this.sprite.mesh.scale.x *= 1 - (1 - fore) * 0.5;
+
     // The bubble takes the camera's own orientation rather than a yaw-only
     // turn, so it stays square to the screen when the camera tilts down —
     // which it does hard in the cutscene.

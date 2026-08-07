@@ -371,10 +371,20 @@ export class Player {
     if (pad.pressed('interact')) {
       const hall = world.clanHallNear(this.position.x, this.position.z);
       if (hall && this.clan?.id !== hall.clan.id) {
-        this.clan = hall.clan;
-        this.marker.material.color.set(hall.clan.color);
-        hud?.sfx('clan');
-        hud?.onJoinClan?.(this, hall.clan);
+        /* You cannot swear to somebody you have not met. The leader's shrine
+           scene is the introduction, and it fires on its own after two seconds
+           of standing here — so this branch is only reachable by pressing
+           interact within that window, which is a very small door. Saying so
+           out loud matters more than blocking silently: an interact button
+           that does nothing is indistinguishable from a broken one. */
+        if (hud?.leaderFor && !hud.leaderFor(hall.clan)?.met) {
+          hud?.toast?.('Wait — she has something to say first…', this.index);
+        } else {
+          this.clan = hall.clan;
+          this.marker.material.color.set(hall.clan.color);
+          hud?.sfx('clan');
+          hud?.onJoinClan?.(this, hall.clan);
+        }
       }
     }
 
