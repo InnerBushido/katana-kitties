@@ -1,5 +1,6 @@
 ﻿import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
+import { PANDA_SPEED, PANDA_JUMP } from './panda.js';
 
 /* ---------------------------------------------------------------------------
    A Katana Kitty and the camera that follows it.
@@ -47,7 +48,15 @@ export class Player {
     this.onGround = false;
     this.coyote = 0;
     this.jumpsLeft = 2;
+    /** The storm dragon being flown, or null. Flight is a whole other mode. */
     this.mount = null;
+    /** The panda being ridden, or null. Riding one is still GROUND movement —
+     *  see _updateGround — so it deliberately does not go through `mount`. */
+    this.pandaMount = null;
+    /** This kitten's own panda, once she has raised one. */
+    this.panda = null;
+    /** Lifetime bamboo canes cut. Feeds the panda; see PANDA_TIERS. */
+    this.bambooCut = 0;
     this.score = 0;
     this.radius = 0.75;
     this.height = height;
@@ -157,7 +166,7 @@ export class Player {
     // camera puts it cleanly in front from every angle â€” and it has to happen
     // per view, because the two split-screen cameras see it from different
     // sides.
-    if (this.mount) {
+    if (this.mount || this.pandaMount) {
       const dx = camera.position.x - this.position.x;
       const dz = camera.position.z - this.position.z;
       const len = Math.hypot(dx, dz) || 1;
@@ -194,10 +203,22 @@ export class Player {
     const sprinting = pad.down('sprint') && moving;
     const buff = this.clan?.buff;
     const speedK = buff?.speed ?? 1;
+    /* A grown panda is a mount, not a buff — riding one multiplies whatever
+       you already had, so a Thunderpaw kitten on a panda is the fastest thing
+       in the game. It is ground movement throughout: same gravity, same
+       collisions, same slope snapping, so nothing about the world has to know
+       she is on it. */
+    const rideK = this.pandaMount ? PANDA_SPEED : 1;
     const target = wish.multiplyScalar(
-      moving ? (sprinting ? SPRINT_SPEED : WALK_SPEED) * speedK : 0
+      moving ? (sprinting ? SPRINT_SPEED : WALK_SPEED) * speedK * rideK : 0
     );
-    const rate = (this.onGround ? ACCEL : AIR_ACCEL) * dt;
+    /* Acceleration is scaled by the square root of the speed jump, not by the
+       speed jump itself. At the flat ground figure a panda needs nearly two
+       seconds to reach full pelt, which reads as unresponsive; at the full
+       multiple it hits 10x from a standstill in a frame, which reads as a
+       teleport. The middle keeps the animal's weight — it gathers itself and
+       then goes. */
+    const rate = (this.onGround ? ACCEL : AIR_ACCEL) * Math.sqrt(rideK) * dt;
 
     this.velocity.x += THREE.MathUtils.clamp(target.x - this.velocity.x, -rate, rate);
     this.velocity.z += THREE.MathUtils.clamp(target.z - this.velocity.z, -rate, rate);
@@ -209,7 +230,7 @@ export class Player {
 
     /* Shadowtail grants a third jump and a little more lift. `maxJumps` is
        read wherever the count is refilled, so landing restores all of them. */
-    const jumpK = buff?.jump ?? 1;
+    const jumpK = (buff?.jump ?? 1) * (this.pandaMount ? PANDA_JUMP : 1);
     this.maxJumps = buff?.jumps ?? 2;
     if (pad.pressed('jump')) {
       if (this.coyote > 0 || this.jumpsLeft > 1) {
@@ -231,13 +252,21 @@ export class Player {
       }
     }
 
-    // --- katana slash ---
+    /* --- katana slash, or the panda's claw ---
+       Riding one swaps the attack the way riding a dragon swaps it for the
+       breath. The kitten still plays her attack pose, which reads as the two
+       of them going for it together. */
     this.attackCooldown -= dt;
     if (pad.pressed('attack') && this.attackCooldown <= 0) {
       this.attackTimer = 0.26;
-      this.attackCooldown = 0.36;
-      hud?.sfx('slash');
-      this._doSlash(world, hud);
+      if (this.pandaMount) {
+        this.attackCooldown = 0.45;
+        this._doClaw(world, hud);
+      } else {
+        this.attackCooldown = 0.36;
+        hud?.sfx('slash');
+        this._doSlash(world, hud);
+      }
     }
     if (this.attackTimer > 0) this.attackTimer -= dt;
 
@@ -297,23 +326,41 @@ export class Player {
     // Time spent genuinely airborne, for the animation to threshold against.
     this.airTime = this.onGround ? 0 : (this.airTime ?? 0) + dt;
 
-    // --- mount a dragon ---
+    /* --- mount: a dragon if one is in reach, otherwise your own panda ---
+       Dragons are scanned FIRST and win ties outright. A panda is always at
+       your heel, so letting it match first would mean a kitten who has raised
+       one could never climb onto a dragon again. */
     if (pad.pressed('mount')) {
-      let best = null;
-      let bestD = Infinity;
-      for (const d of dragons) {
-        if (d.mounted) continue;
-        const dist = this.position.distanceTo(d.position);
-        if (dist < d.mountRadius && dist < bestD) { best = d; bestD = dist; }
-      }
-      if (best) {
-        this.mount = best;
-        best.rider = this;
-        best.state = 'ridden';
-        best.facing = this.facing;
-        this.velocity.set(0, 0, 0);
-        hud?.sfx('mount');
-        hud?.toast(`${this.name} is riding ${best.name}!`, this.index);
+      if (this.pandaMount) {
+        const p = this.pandaMount;
+        this.pandaMount = null;
+        p.rider = null;
+        hud?.sfx('dismount');
+        hud?.toast(`${this.name} hopped off ${this.pandaName}`, this.index);
+      } else {
+        let best = null;
+        let bestD = Infinity;
+        for (const d of dragons) {
+          if (d.mounted) continue;
+          const dist = this.position.distanceTo(d.position);
+          if (dist < d.mountRadius && dist < bestD) { best = d; bestD = dist; }
+        }
+        if (best) {
+          this.mount = best;
+          best.rider = this;
+          best.state = 'ridden';
+          best.facing = this.facing;
+          this.velocity.set(0, 0, 0);
+          hud?.sfx('mount');
+          hud?.toast(`${this.name} is riding ${best.name}!`, this.index);
+        } else if (this.panda?.rideable && !this.panda.mounted
+                   && this.position.distanceTo(this.panda.position) < this.panda.mountRadius) {
+          this.pandaMount = this.panda;
+          this.panda.rider = this;
+          this.velocity.set(0, 0, 0);
+          hud?.sfx('mount');
+          hud?.toast(`${this.name} climbed onto ${this.pandaName}!`, this.index);
+        }
       }
     }
 
@@ -332,6 +379,19 @@ export class Player {
     const speed = Math.hypot(this.velocity.x, this.velocity.z);
     if (this.onGround && speed > 0.6) this.stepPhase += dt * (5 + speed * 0.55);
     else this.stepPhase *= 1 - Math.min(1, dt * 6);
+
+    /* Hang the panda off the kitten once her position is final, so the SEAT
+       lands where the player is. Solved the other way round — panda first,
+       rider offset from it — the player's own position lags the thing she is
+       steering, and the camera follows the player. Same reasoning as the
+       dragon's seat in _updateFlight. */
+    if (this.pandaMount) this.pandaMount.carry(this);
+  }
+
+  /** Each kitten's panda has its own name, so the girls aren't both
+   *  shouting about "the panda". */
+  get pandaName() {
+    return this.index === 0 ? 'Bao' : 'Mochi';
   }
 
   _doSlash(world, hud) {
@@ -359,6 +419,46 @@ export class Player {
         this.score += p.points ?? 10;
         hud?.sfx('score');
         hud?.onMischief(this, p);
+      }
+      hits++;
+    }
+    if (hits) this.squash = 0.6;
+  }
+
+  /**
+   * The panda's claw swipe — the ground-level counterpart to dragon breath.
+   *
+   * Wide and heavy but close in, and it swings along the KITTEN's facing
+   * rather than the panda's. The panda's drawn heading is locked broadside so
+   * it only ever points two ways; hanging the hitbox off that would mean the
+   * attack could not be aimed at all. She steers, the panda swings.
+   *
+   * It DOES cut bamboo — the only thing in the game besides the katana that
+   * does. See CLAW in panda.js for why that reversed. Dragon breath and
+   * dive-bombing still can't, so the grove stays the place flight fails.
+   */
+  _doClaw(world, hud) {
+    const c = this.pandaMount.swipe(this.facing);
+    hud?.sfx('claw');
+    const dir = new THREE.Vector2(Math.sin(this.facing), Math.cos(this.facing));
+    let hits = 0;
+    for (const p of world.props) {
+      const dx = p.group.position.x - this.position.x;
+      const dz = p.group.position.z - this.position.z;
+      const dy = p.group.position.y - this.position.y;
+      const dist = Math.hypot(dx, dz);
+      if (dist > c.range || Math.abs(dy) > 5) continue;
+      const dot = (dx * dir.x + dz * dir.y) / (dist || 1);
+      if (dot < 1 - c.spread) continue;
+      const push = new THREE.Vector3(dx, 0, dz).normalize();
+      const fresh = p.knock(push, c.power);
+      // Bamboo keeps its own hollow crack whatever cut it.
+      hud?.sfx(p.kind === 'bamboo' ? 'bamboo' : 'hit');
+      if (fresh && !p.scored) {
+        p.scored = true;
+        this.score += p.points ?? 10;
+        hud?.sfx('score');
+        hud?.onMischief(this, p, 'a panda claw');
       }
       hits++;
     }
@@ -542,8 +642,13 @@ export class Player {
        that still gets through â€” dropping off a kerb shouldn't strobe. Rising
        fast is exempt so a real jump reads instantly. */
     const airborne = !this.onGround && ((this.airTime ?? 0) > 0.09 || this.velocity.y > 1);
+    /* Sitting on a panda holds the IDLE pose. There is no drawn sit, and the
+       walk cycle is the wrong lie — legs pumping while the panda does the
+       running reads as the kitten sliding along above it. Idle plus the
+       animal's own waddle underneath is what sells being carried. */
     if (this.attackTimer > 0) this.sprite.row = a.attack;
     else if (this.mount || airborne) this.sprite.row = a.jump;
+    else if (this.pandaMount) this.sprite.row = a.idle;
     else if (speed > 0.9) this.sprite.row = a.walk;
     else this.sprite.row = a.idle;
 
@@ -572,10 +677,17 @@ export class Player {
        hangs perfectly still while the dragon heaves up and down underneath
        it, which instantly reads as two separate drawings rather than one
        creature carrying another. */
-    this.sprite.mesh.position.y = this.mount ? this.mount.flapBob : 0;
+    /* Riding a panda raises the DRAWING onto its back and leaves the kitten
+       herself on the ground, where all the ground physics still expect her —
+       see Panda.seatHeight. The dragon needs no equivalent because flight
+       moves the whole entity. */
+    this.sprite.mesh.position.y = this.mount ? this.mount.flapBob
+      : this.pandaMount ? this.pandaMount.seatHeight + this.pandaMount.bounce : 0;
 
-    // Slash arc: snap out and fade.
-    if (this.attackTimer > 0) {
+    // Slash arc: snap out and fade. The panda draws its own claw marks, so the
+    // katana arc stays sheathed while she's riding — two overlapping arcs on
+    // one swing just reads as a smear.
+    if (this.attackTimer > 0 && !this.pandaMount) {
       const t = 1 - this.attackTimer / 0.26;
       this.slash.visible = true;
       this.slash.material.opacity = (1 - t) * 0.9;
@@ -592,7 +704,8 @@ export class Player {
       this.slash.visible = false;
     }
 
-    this.marker.visible = !this.mount;
+    // The panda carries its own ring in the same colour, so two would stack.
+    this.marker.visible = !this.mount && !this.pandaMount;
 
     // Blob shadow tracks the ground below and shrinks with altitude.
     const g = world.heightAt(this.position.x, this.position.z, this.position.y);
@@ -612,10 +725,12 @@ export class Player {
 
   _updateCamera(dt) {
     // Look slightly ahead of the kitten so you can see where you're going.
-    const lead = this.mount ? 0.55 : 0.25;
+    const lead = this.mount ? 0.55 : this.pandaMount ? 0.42 : 0.25;
+    // Aim at where the kitten is DRAWN, which on a panda is up on its back.
     const want = new THREE.Vector3(
       this.position.x + this.velocity.x * lead,
-      this.position.y + (this.mount ? 2.5 : 1.4),
+      this.position.y + (this.mount ? 2.5 : 1.4)
+        + (this.pandaMount ? this.pandaMount.seatHeight : 0),
       this.position.z + this.velocity.z * lead
     );
     const follow = this.mount ? 3.2 : 7.5;
@@ -623,9 +738,17 @@ export class Player {
 
     // Distance grows with speed and altitude â€” that's the Dragon Ball Z zoom.
     const speed = this.velocity.length();
+    /* Riding gets its own range, between the walking camera and the flying
+       one — which is exactly where the speed sits. The walking camera tops out
+       at 34 units, close enough that at a panda's pace the next building is on
+       screen only after you have hit it. It also has to start further back
+       than the walking one whatever the speed, because the kitten is sitting
+       four units up and the animal under her is another six wide. */
     let wantDist = this.mount
       ? THREE.MathUtils.clamp(46 + speed * 1.5, 46, 130)
-      : THREE.MathUtils.clamp(24 + speed * 0.35, 24, 34);
+      : this.pandaMount
+        ? THREE.MathUtils.clamp(28 + speed * 0.6, 28, 52)
+        : THREE.MathUtils.clamp(24 + speed * 0.35, 24, 34);
     let pitch = this.mount ? CAM_PITCH_AIR : CAM_PITCH_GROUND;
 
     // Ease into (and out of) a focus area.

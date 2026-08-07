@@ -8,7 +8,7 @@ and what's still open.
 **Repo:** https://github.com/InnerBushido/katana-kitties (private)
 **Run:** `npm run dev`, then open it in **Firefox** — Chrome cannot read the
 Joy-Con sticks through vJoy (see below).
-**Check:** `node tools/world-check.mjs` — headless smoke test, 71 checks.
+**Check:** `node tools/world-check.mjs` — headless smoke test, 150 checks.
 
 ---
 
@@ -68,11 +68,19 @@ should be protected in any refactor:
 - Two players: run, double-jump, sprint, katana slash, mount/dismount dragons.
 - 7 dragons across 5 breeds, each with its own colour and breath (fire, frost,
   lightning, pollen, blossom). Two on the home island so both girls can fly.
-- Five clan shrines, one per island, each granting a different buff — see
+- Six clan shrines, one per island, each granting a different buff — see
   Clans below. Warriors flavour: Thunderpaw, Riverclaw, Shadowtail, Windwhisker,
-  Icewhisker.
-- A bamboo grove east of town, reachable on foot over the red bridge, cuttable
-  only with the katana.
+  Icewhisker, Pandapaw.
+- **A leader standing at every shrine**, with a speech bubble that invites you
+  in and names what her clan gives you. Cast designed by one of the girls.
+- **A 79-second opening cutscene** flown through the real 3D world, skippable
+  with any button, replayable from the pause menu. See The story below.
+- **A raisable, rideable panda** (Pandapaw). Cut 20 bamboo for a cub that
+  follows you, 20 more and it grows big enough to ride at 2x running speed
+  with a claw swipe attack. See The panda below.
+- 150 cuttable bamboo canes: two groves on the home island (east over the red
+  bridge, west across the far slope) and a proper forest on the bamboo island.
+  Katana-only.
 - Minimap: every island in its biome colour, both kitties with heading, every
   perched dragon, clan shrines as coloured diamonds (ringed once you've sworn),
   and the landmarks worth walking to. Three zoom steps on `Z`; in split screen
@@ -90,7 +98,7 @@ should be protected in any refactor:
 
 ## Clans
 
-Five clans, each at a **shrine on a different island** (`_buildShrines`).
+Six clans, each at a **shrine on a different island** (`_buildShrines`).
 Thunderpaw is on the home island so a pair who never work out the dragons can
 still get a buff; the other three are a flight away, which is the point — the
 beam is what makes a kid ask "what's that green light?" and go.
@@ -105,6 +113,7 @@ swapping clans changes how the game plays rather than recolouring a badge:
 | Shadowtail | ash | three jumps instead of two |
 | Windwhisker | dusk | dragon breath 1.9x range, and the cone is drawn bigger |
 | Icewhisker | frost | "Sense mischief" — see below |
+| Pandapaw | bamboo | "Raise a panda" — see The panda below |
 
 **Icewhisker exists to end the 100% hunt.** Chasing the last three unbroken
 barrels across six islands stops being a game and starts being a chore, so this
@@ -140,6 +149,251 @@ a board that can be 42vw wide. `hud-math` on `#hud` lifts the map to the top of
 its own half while the board is up — the lesson is what you came to the Dojo
 for, so it keeps the corner.
 
+## The story — leaders and the opening cutscene
+
+**The cast came off a sheet of paper.** One of the girls drew a page headed
+CHARECTERS: eight cats, each labelled with its breed, each tagged "use". Six
+became clan leaders, matched to the clan their breed already suggested — and
+the match is the point, because it means the roster is hers rather than a set
+of names invented to fill a table:
+
+| her drawing | clan | leader | why that clan |
+| --- | --- | --- | --- |
+| Siamese | Thunderpaw | Sunstreak | the loudest, fastest breed there is |
+| Turkish Van | Riverclaw | Rippleclaw | the breed famous for swimming |
+| Tuxedo | Shadowtail | Duskcoat | black-and-white, and you never hear it |
+| Maine Coon | Windwhisker | Galemane | huge and maned — a dragon tamer |
+| Himalayan | Icewhisker | Snowmantle | long white coat, blue eyes, snow |
+| Ragdoll | Pandapaw | Bambooheart | big, soft and slow, like the panda |
+| Calico | — | **Patchfur** | patchwork of every colour: the storyteller |
+
+The eighth, the **orange tabby, is already in the game — that one is Ember.**
+Worth telling her.
+
+**Leaders are FRONT-FACING single cells: `cols: 1, rows: 1, mirror: false`.**
+That is the one combination that never flips — the full-turn path with a single
+cell always picks index 0 and never sets `flip`. The dragon and the panda are
+side-on drawings that *want* to mirror toward their heading; a character
+standing still and talking to you must not, or she turns her back the moment
+the camera crosses her axis, and on a cat with a sash over one shoulder that is
+instantly obvious.
+
+**She stands on the FAR side of the dais** (`leaderSpot`, 3.4 out along the
+axis from the island's centre) so a kitten walking up from the island meets her
+across the ring with the gate and the beam behind her, rather than arriving at
+her back. `leaderSpot` is exported and the cutscene's shot framing uses the
+same function, so the camera can never drift off her.
+
+**Her feet are on the STONE, not on the hillside.** The dais is decorative
+geometry merged into the world mesh — `world.heightAt` knows nothing about it
+and returns the terrain underneath, which planted every leader knee-deep in the
+top step. Her height is the ground under the middle of the shrine (flat by
+construction) **plus `SHRINE_DAIS.y`**, exported from `build.js` off the same
+numbers that build it, and `LEADER_OFFSET` is asserted to be inside
+`SHRINE_DAIS.r` so she can't walk off the edge of the platform she's standing
+on. A cat sunk halfway into a stone plinth still reads as a cat at a shrine,
+which is exactly why this needed a check rather than an eye.
+
+**Her bubble names the buff.** Asserted per clan in the smoke test against a
+keyword list. A shrine that says only "join us" makes a nine-year-old guess at
+what she is choosing.
+
+### The cutscene
+
+`systems/cutscene.js`. 11 beats, 79 seconds, any button skips, **WATCH THE
+STORY AGAIN** in the pause menu replays it.
+
+**The stage is the real world.** No second canvas, no pre-rendered video: it
+drives its own camera through the same scene the game is played in, and the
+leaders it flies to are the same billboards standing at those shrines
+afterwards. That is where the depth comes from — islands slide past each other,
+a shrine beam you haven't reached yet stands up over the horizon behind whoever
+is talking — and it means the intro can never show a world that doesn't match
+the one it hands you at the end of it. The Pokemon framing sits on top: the
+speaker large against the live 3D backdrop, bordered dialogue box, portrait,
+text typed a letter at a time.
+
+**It plays from `startPlay`, not from the title screen.** That is the first
+gesture a browser guarantees, and the intro has music and voices — starting it
+any earlier means starting it silent.
+
+**The elder is the only one on a "stage".** She has no shrine to stand at, so
+she is a billboard parked a fixed distance in front of the camera and slid in
+from the side. The six leaders don't need it: the camera has really flown to
+where they really are.
+
+**Shots frame her at ~14 units, filling about 40% of frame height.** The first
+pass sat at 19 and she was under a third of the screen — technically in shot,
+but you are looking at an island with someone standing on it rather than at a
+character talking to you.
+
+**The world keeps ticking underneath it.** Petals drift, shrine crystals turn,
+dragons breathe on their perches. A frozen world behind a moving camera reads
+as a video, which is exactly what this isn't.
+
+**Her world speech bubble is suppressed during the cutscene** (`update(dt, [])`
+with no players). Her bubble line is the shrine *invitation* — a different line
+from the one she speaks in the intro — and two blocks of unrelated text on
+screen at once is clutter. The dialogue box owns the words there.
+
+**The music is still synthesised.** The intro has its own piece: the same
+runtime synthesis in the **insen** scale rather than hirajoshi, slower, an
+octave down, with a taiko thud on the downbeat (`MUSIC` in `audio.js`). It
+shares only the root and the fifth with the game theme, which is why it reads
+as a different piece rather than the same tune played slowly.
+
+**`public/voice/*.mp3` are the ONLY audio files in the project.** Eleven
+ElevenLabs lines, one per beat, ~1MB total, generated through the Higgsfield
+`text2speech_v2` model with `variant: 'elevenlabs'` and a preset voice per
+character (Patchfur=Mabel, Sunstreak=Quinn, Rippleclaw=Maya, Duskcoat=Vesper,
+Galemane=Onyx, Snowmantle=Imogen, Bambooheart=Hana). The first version used
+synthesised blips instead — cheap, no files, no licence — and it sounded like a
+machine reading out a story rather than a cat telling one. **The blips are
+still the fallback**: a clone with no `public/voice` folder plays them and runs
+on the authored timings, so the intro never breaks on a missing asset.
+
+**Beats fit themselves to their line, not the other way round.**
+`Cutscene.loadVoices()` reads each clip's duration at boot and sets
+`dur = max(authored, clipLength + 1.5)`, and paces the typewriter so the text
+lands with the speech (`typeRate`). Nothing in the scene is a hardcoded timing,
+so re-recording a line can never desynchronise it — and a beat that ends
+mid-sentence, which is what fixed durations eventually produce, can't happen.
+
+**The clan beats are FIRST PERSON.** They were third-person — Patchfur
+describing each chief — while the box underneath showed that chief's own name
+and portrait, so the scene claimed she was speaking and the words said
+otherwise. She's standing right there; she introduces herself.
+
+**No `animation-fill-mode` anywhere in the cutscene CSS** — see the preview-pane
+gotcha below. Final states are authored as the default and animations only add
+motion on top of something already correct.
+
+## The panda (Pandapaw)
+
+**The only buff you have to earn after swearing.** Every other clan hands you
+its power the moment you stand in the ring. Pandapaw hands you a job:
+
+```
+ 20 canes cut  ->  a CUB appears and follows you        (size 2.2, not rideable)
+ 40 canes cut  ->  it grows up and can be RIDDEN        (size 5.6, 2x speed,
+                                                         1.5x jump, claw swipe)
+```
+
+`entities/panda.js` owns the animal, `PANDA_TIERS` owns the ladder, and
+`Game._updatePanda` is the *single* place that decides whether a panda exists
+and how big it is — called on swearing the oath and on every cane cut.
+
+**`bambooCut` is a LIFETIME tally, not one that starts when you join.** A kid
+who spends the afternoon in the grove before she ever finds the shrine is not
+told none of it counted; she swears the oath and a cub is already there.
+
+**Pandapaw is sticky (`player.raisedPanda`).** Swear somewhere else afterwards
+and you keep the panda. Every other buff switches off when you re-swear, but a
+panda you fed forty canes to is not a stat — confiscating it for changing your
+mind about a shrine is the kind of punishment that stops a kid experimenting.
+
+**Riding is GROUND movement, not a second flight mode.** It deliberately does
+*not* go through `player.mount`, which everything in the game reads as "is
+flying a dragon" — the split-screen rule, the shrine trigger, the dragon
+come-home check. It's `player.pandaMount`, and it multiplies into the existing
+ground code, so gravity, slope snapping, `resolveSolids` and the katana all
+keep working untouched.
+
+**The seat lifts the DRAWING, not the kitten.** This is the opposite of the
+dragon and it has to be. A dragon rider is in the air, so the whole entity
+moves; a panda rider is standing on the ground, where gravity and the ground
+snap expect her. `Panda.seatHeight` raises her *sprite* onto the panda's back
+(`sprite.mesh.position.y`), and `carry()` puts the panda at exactly the rider's
+Y. Hanging the panda a seat-height *below* her — the dragon's arithmetic —
+buries it 4.5 units underground on flat terrain.
+
+**Sizes and the seat were MEASURED off the loaded atlas, not reasoned about.**
+`size` in `PANDA_TIERS` is the animal's drawn height in world units, which
+works because both sheets came back with their content height filling almost
+exactly `contentScale` of the cell (0.727 vs 0.731, 0.688 vs 0.693). Copying
+the dragon's `size: 13` across put a panda in the world **12.9 units tall next
+to a 2.9-unit kitten** — and nothing about that looks wrong in a screenshot,
+it just looks like a panda photographed from further away. The probe:
+
+```js
+// alpha bbox of game.pandaArt.adult.texture.image -> heightFrac, feet row
+// then scan for the saddle's crimson (r>110 && r>g*1.7 && r>b*1.5):
+//   saddle top     0.638 of the cell above the drawn feet  -> seatHeight 0.55*quad
+//   saddle centre  0.167 of a cell BEHIND the body centre  -> seatOffset -0.14*quad
+```
+
+**She sits on the BACK (0.66), not tucked under the saddle and not on top of
+it.** Both failure modes look exactly like a panda in a screenshot and neither
+looks like a bug. 0.55 was the first guess — feet 1.1 units below the back top,
+which is a 2.9-unit kitten buried to the thigh, and it read as a cat *sunk into*
+a bear. But the fix isn't to double it: the saddle is draped over the upper
+flank, not the spine, so 0.72 already floats her clear and 1.10 would park her
+three units above an animal 5.6 tall. **The back is the thing to land on**, and
+the smoke test asserts the seat falls between the two measured fractions.
+
+**The claw swipe (`CLAW` in `panda.js`, `Player._doClaw`)** is the ground
+answer to dragon breath: range 8 (katana is 3.4, breath is 15–20), a ~145
+degree arc, power 2.1. Three raked ring wedges rather than the dragon's cloud
+of instanced shards, because a claw is a shape and not a spray.
+
+**The claw swings along the KITTEN's facing, not the panda's.** The panda's
+drawn heading is locked broadside so it only ever points two ways; hanging the
+hitbox off that would mean the attack could not be aimed at all. She steers,
+the panda swings.
+
+**The claw DOES cut bamboo — the only exception to `katanaOnly` in the game,
+and a deliberate reversal.** The first version refused, on the grounds that an
+animal which harvests its own food turns the Pandapaw arc into a machine that
+feeds itself. Playing it settled the argument the other way, and the original
+reasoning was simply wrong: **you cannot ride a panda until it is fully grown**,
+and fully grown is the end of the ladder, so there is no further tier the extra
+canes could buy and nothing is being short-circuited. What the refusal actually
+did was make the reward for forty canes useless in the only place you spend all
+your time, and leave a 150-cane grove as a job for one kitten with a short
+sword. Measured: four canes per swipe-cycle from the middle of the grove
+against the katana's one.
+
+**A dragon still cannot,** by breath or by dive-bomb, and there's a check for
+that too. The grove being the one place flight fails is what makes landing
+worth doing, and that survives the panda getting an exemption.
+
+**Leaving Pandapaw stops a GROWN panda following (`Panda.follows`).** It waits
+exactly where it is, stays yours and stays rideable — the difference between a
+pet and a mount, and the same deal the dragons offer. A **cub** follows
+regardless: it's a baby, and stranding one somewhere a kid then has to remember
+is worse than the rule being slightly inconsistent. Two consequences that are
+not optional: a toast fires on leaving (a pet that silently isn't behind you is
+something a kid notices two islands later and concludes she has lost), and a
+waiting panda is **drawn on the minimap** — a stationary rideable animal you
+cannot find is precisely the failure the dragons' perch rule exists to prevent.
+
+**A follower must actively back off, not just stop accelerating.** Cutting the
+throttle at `followDist` only stops it speeding up — a panda arriving at speed
+then coasts, and ends up standing *inside* the kitten, where the two sprites
+fight the depth sort and flicker. There's a reverse term below 60% of the gap.
+
+**`mountRadius` must be bigger than `followDist`.** A pet that parks itself
+just outside its own mount prompt can never be climbed onto without first
+walking at it, which is a baffling thing to have to work out about your own
+panda. Asserted per tier in the smoke test.
+
+**Its drawn heading is locked BROADSIDE**, exactly like the ridden dragon and
+for exactly the same reason: it's a single side-on drawing, so moving "into"
+the screen puts it edge-on at the billboard's mirror threshold and the animal
+snaps back and forth. `_aim` takes the sign of sideways velocity with a dead
+zone, measured against **the owner's `camYaw`** — "sideways" is a screen
+direction, and in split screen the two kittens have their own cameras.
+
+**A pet can never be lost** — the dragons' rule. It follows on foot, and past
+90 units it simply meets you where you are (`_catchUp`). **Never while she is
+flying:** it waits, still, where it is. Chasing the point under a flying kitten
+walks it off the nearest rim and out over open sky, and a pet materialising
+mid-flight reads as a bug.
+
+**A dragon wins the mount button.** Dragons are scanned first and win outright,
+because a panda is always at your heel — letting it match first means a kitten
+who has raised one can never climb onto a dragon again.
+
 ## Gameplay rules worth not breaking
 
 **A dragon can never be lost, and the home island always has two.** Dragons
@@ -170,6 +424,17 @@ was meant to fix.
 **Bamboo is katana-only.** Not dive-bombable, not burnable (`Prop.katanaOnly`).
 The grove is the one place the dragon doesn't work, which is what makes it
 worth landing. Flying is more fun for having somewhere it fails.
+
+**There must be enough bamboo for BOTH kittens to raise a panda on the home
+island alone.** 40 canes each, so 80, and the smoke test asserts it. Swearing
+the oath is a flight away and that's the point, but the *food* must not be —
+with only one kitten's worth at home, the second girl watches her counter
+stick while her sister's panda grows up. There are 150 canes now: 48 east of
+town, 34 on the west slope, 68 on the bamboo island. Bamboo is also planted
+with a **solid check** now that groves reach past their flattened clearings —
+a cane grown inside a house is one you can see and can't walk up to, and when
+forty of them are the price of a panda that's a kid convinced the counter is
+broken.
 
 **Ground snapping, not gravity, keeps you on a hill.** Running downhill,
 gravity alone leaves the kitten a hair above the falling surface every frame —
@@ -430,8 +695,9 @@ like it did nothing until you hit **RESET TO DEFAULTS** in Settings (or clear
 
 ## Sound
 
-Every sound is **synthesised at runtime** in `src/core/audio.js` — oscillators
-and filtered noise, no audio files at all. Nothing to download, nothing to
+Every sound *except the eleven cutscene voice lines* is **synthesised at
+runtime** in `src/core/audio.js` — oscillators and filtered noise. The
+exception is `public/voice/*.mp3`; see The story above for why it earned one. Nothing to download, nothing to
 licence, no asset pipeline, a few KB of source. The music is generated the same
 way: a koto-ish pluck wandering the **hirajoshi** scale over a drone, scheduled
 a beat ahead on a `setInterval` (never off the render loop, or it stutters
@@ -580,8 +846,11 @@ src/
   systems/
     mathdojo.js         the walkable unit circle
     minimap.js          canvas-2D archipelago map over the HUD (x2 when split)
+    cutscene.js         the opening story, flown through the real world
   entities/
     shrine.js           the animated half of a clan shrine
+    panda.js            the raisable, rideable Pandapaw panda
+    leader.js           the six clan chiefs + Patchfur, and their bubbles
 tools/
   gamepad-dump.html     raw Gamepad API readout — open from disk, no server
   world-check.mjs       headless smoke test: node tools/world-check.mjs
@@ -596,6 +865,11 @@ public/sprites/
   frost_grid_v2.png     UNUSED — rows contradict each other, see above
   dragon_sheet.png      LIVE — perched pose
   dragon_fly.png        LIVE — flight pose
+  panda_cub.png         LIVE — single side-on cell, faces LEFT
+  panda_adult.png       LIVE — single side-on cell, faces LEFT, saddled
+  leader_*.png          LIVE — 7 front-facing single cells, never mirrored
+                               (thunderpaw riverclaw shadowtail windwhisker
+                                icewhisker pandapaw elder)
   title_art.png         LIVE — title screen key art
   (kitten_*_sheet.png, ember_grid.png are superseded and unused)
 ```
@@ -612,8 +886,11 @@ public/sprites/
 3. Ideas that came out of building the clans and aren't built: clan-specific
    missions or rival mischief scores, a second material that resists dragons
    the way bamboo does, breath types that interact with specific props (frost
-   freezing water, fire lighting lanterns), a sixth clan on the bamboo island
-   (the only walkable island without a shrine).
+   freezing water, fire lighting lanterns).
+4. **`PANDA_SPEED` was 10 and is now 2.** 10x looked right on paper and was
+   unplayable: 105 units a second crosses the whole home island in under two
+   seconds and arrives at the far rim before you have finished pushing the
+   stick. The smoke test now bounds it at 1.5–3 so it can't creep back.
 
 Run `node tools/world-check.mjs` after touching the world, dragons, clans or
 sprite directions — it catches the silent breakages that still look fine on

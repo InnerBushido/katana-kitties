@@ -661,3 +661,131 @@ html, body {
   letter-spacing: 1.4px;
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
 }
+
+/* ============================ opening cutscene ============================
+   Furniture around a live 3D shot: the WebGL canvas underneath is being
+   flown through by the cutscene camera, so everything here is deliberately
+   pinned to the edges and leaves the middle of the frame alone.
+
+   Nothing here uses animation-fill-mode to hold an element visible. The
+   document timeline does not always start in an embedded preview pane, and
+   an entrance animation that never runs leaves whatever it was revealing
+   invisible forever — which blanked the title screen once already. Final
+   states are authored as the default and animations only ever add motion on
+   top of something that is already correct.
+   ======================================================================== */
+
+#cutscene {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  font-family: 'Nunito', system-ui, sans-serif;
+}
+#cutscene.hidden { display: none; }
+
+/* Black at each end, and nothing else — the scene fades from and to it. */
+#cs-fade {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 1;
+}
+
+/* Letterbox. Cheap, and it does more than look cinematic: it gives the
+   dialogue box and the skip hint a solid place to sit over a bright sunset
+   sky that would otherwise eat white text. */
+.cs-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 9vh;
+  background: #0b0710;
+}
+.cs-top { top: 0; box-shadow: 0 3px 0 rgba(255, 214, 150, 0.18); }
+.cs-bottom { bottom: 0; box-shadow: 0 -3px 0 rgba(255, 214, 150, 0.18); }
+
+#cs-box {
+  --cs-accent: var(--gold);
+  position: absolute;
+  left: 50%;
+  bottom: calc(9vh + 26px);
+  transform: translateX(-50%);
+  width: min(880px, 88vw);
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  padding: 14px 18px;
+  background: rgba(20, 12, 18, 0.88);
+  border: 4px solid var(--cs-accent);
+  border-radius: 14px;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.55), inset 0 0 30px rgba(0, 0, 0, 0.5);
+}
+
+#cs-portrait {
+  width: 96px;
+  height: 96px;
+  flex: 0 0 96px;
+  align-self: center;
+  border: 3px solid var(--cs-accent);
+  border-radius: 10px;
+  background: rgba(255, 244, 221, 0.10);
+  image-rendering: auto;
+}
+
+.cs-body { min-width: 0; }
+
+#cs-name {
+  font-family: 'Bangers', cursive;
+  font-size: 22px;
+  letter-spacing: 1.6px;
+  margin-bottom: 4px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7);
+}
+
+#cs-text {
+  color: #fff4dd;
+  font-size: clamp(15px, 1.7vw, 20px);
+  font-weight: 600;
+  line-height: 1.45;
+  /* The script carries its own line breaks so a line always lands where it
+     was written, rather than rewrapping mid-word as the box types itself
+     out — which makes text jump around while you are reading it. */
+  white-space: pre-wrap;
+  min-height: 4.4em;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+}
+
+#cs-skip {
+  position: absolute;
+  right: 22px;
+  bottom: calc(9vh - 26px);
+  color: rgba(255, 240, 214, 0.65);
+  font-size: 12px;
+  letter-spacing: 2px;
+  animation: csBlink 2.4s ease-in-out infinite;
+}
+@keyframes csBlink { 50% { opacity: 0.35; } }
+
+/* How much is left. A nine-year-old deciding whether to sit through this is
+   entitled to know it is seventy seconds and not ten minutes. */
+#cs-track {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: calc(9vh - 8px);
+  height: 3px;
+  background: rgba(255, 240, 214, 0.16);
+  border-radius: 2px;
+}
+#cs-progress {
+  height: 100%;
+  width: 0;
+  background: var(--gold);
+  border-radius: 2px;
+}
+
+@media (max-width: 700px) {
+  #cs-portrait { width: 64px; height: 64px; flex-basis: 64px; }
+  #cs-box { bottom: calc(9vh + 14px); padding: 10px 12px; }
+}

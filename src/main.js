@@ -4,13 +4,16 @@ import './style.css';
 import { InputManager, HALVES, MAP_FIELDS, VJOY_AXIS_NAMES } from './core/input.js';
 import { Audio } from './core/audio.js';
 import { loadSpriteAtlas } from './core/spritesheet.js';
-import { placeholderCatAtlas, placeholderDragonTexture } from './core/gfx.js';
+import { placeholderCatAtlas, placeholderDragonTexture, placeholderPandaTexture } from './core/gfx.js';
 import { World } from './world/world.js';
 import { Player } from './entities/player.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
+import { Panda, tierFor, toNextTier } from './entities/panda.js';
+import { ClanLeader, LEADERS } from './entities/leader.js';
 import { Orb, OrbPickup } from './entities/orb.js';
 import { MathDojo } from './systems/mathdojo.js';
 import { Minimap } from './systems/minimap.js';
+import { Cutscene } from './systems/cutscene.js';
 
 /* ---------------------------------------------------------------------------
    Katana Kitties — main loop.
@@ -80,7 +83,7 @@ class Game {
     /* The kitten sheets are a full 360-degree rotation across the columns and
        one animation pose per row. The column count is detected rather than
        assumed — see loadSpriteAtlas. */
-    const [ember, frost, dragonTex, dragonFlyTex] = await Promise.all([
+    const [ember, frost, dragonTex, dragonFlyTex, pandaCub, pandaAdult] = await Promise.all([
       this._loadSprite('/sprites/ember_grid_v2.png', 'auto', 4,
         () => placeholderCatAtlas('#f2683c', '#c33a22', '#33408c')),
       /* frost_grid.png, NOT the v2 sheet. v2's four rows disagree with each
@@ -94,7 +97,28 @@ class Game {
         () => ({ texture: placeholderDragonTexture(), cols: 1, rows: 1, aspect: 1.9 })),
       this._loadSprite('/sprites/dragon_fly.png', 1, 1,
         () => ({ texture: placeholderDragonTexture(), cols: 1, rows: 1, aspect: 1.9 })),
+      /* The two panda tiers. Single side-on cells like the dragon, not
+         turnarounds — the billboard mirrors them and the heading is locked
+         broadside, so one drawing per tier is all there is to read. */
+      this._loadSprite('/sprites/panda_cub.png', 1, 1,
+        () => ({ texture: placeholderPandaTexture(true), cols: 1, rows: 1, aspect: 1 })),
+      this._loadSprite('/sprites/panda_adult.png', 1, 1,
+        () => ({ texture: placeholderPandaTexture(false), cols: 1, rows: 1, aspect: 1 })),
     ]);
+    this.pandaArt = { cub: pandaCub, adult: pandaAdult };
+
+    setLoad('Waking the clan leaders…');
+    /* The six chiefs and the storyteller. Front-facing single cells — one
+       drawing each, never mirrored. A missing one falls back to the kitten
+       placeholder rather than taking the whole boot down with it: a shrine
+       with no leader is a smaller loss than a game that won't start. */
+    const leaderNames = ['thunderpaw', 'riverclaw', 'shadowtail', 'windwhisker',
+      'icewhisker', 'pandapaw', 'elder'];
+    const leaderArt = await Promise.all(leaderNames.map((n) => this._loadSprite(
+      `/sprites/leader_${n}.png`, 1, 1,
+      () => ({ texture: placeholderCatAtlas(), cols: 4, rows: 1, aspect: 1 }),
+    )));
+    this.leaderArt = Object.fromEntries(leaderNames.map((n, i) => [n, leaderArt[i]]));
 
     setLoad('Raising the floating islands…');
     await frame();
@@ -111,6 +135,19 @@ class Game {
     this._spawnPlayers(ember, frost);
     this._spawnDragons(dragonTex, dragonFlyTex);
     this._spawnPickups();
+    this._spawnLeaders();
+
+    setLoad('Writing the story…');
+    await frame();
+    this.cutscene = new Cutscene({
+      scene: this.scene,
+      world: this.world,
+      audio: this.audio,
+      leaders: this.leaders,
+      elderArt: this.leaderArt.elder,
+    });
+    // Fits each beat to the length of its recorded line — see loadVoices.
+    await this.cutscene.loadVoices();
 
     /* Two maps: `minimap` is the shared/P1 one, `minimap2` only appears when
        the screen splits. They keep their own zoom so each player can be looking
@@ -232,6 +269,31 @@ class Game {
     }
   }
 
+  /**
+   * Stand a leader at every shrine.
+   *
+   * They go on the FAR side of the dais, on the axis running out from the
+   * island's centre, so a kitten walking up from the island meets her across
+   * the ring with the gate and the beam behind her — rather than arriving
+   * behind her back, which is what putting her on the near side does. The
+   * cutscene camera frames the same axis, so the shot composes itself.
+   */
+  _spawnLeaders() {
+    this.leaders = [];
+    for (const hall of this.world.clanHalls) {
+      const spec = LEADERS[hall.clan.id];
+      const art = spec && this.leaderArt[spec.art];
+      if (!art) continue;
+      const L = new ClanLeader(hall.clan, art, hall, this.world);
+      L.art = art;
+      this.scene.add(L.group);
+      this.leaders.push(L);
+      // Solid, so you can't stand inside her — but small, and well clear of
+      // the trigger ring, which is the whole 6.4-unit dais.
+      this.world.solids.push({ x: L.position.x, z: L.position.z, r: 0.85 });
+    }
+  }
+
   _spawnPickups() {
     // Kotodama Orbs — walk into one and it starts orbiting you, showing its
     // own sin/cos working as it goes.
@@ -259,6 +321,7 @@ class Game {
         if (a === 'settings') { this._refreshPads(); show('panel-settings'); }
         if (a === 'resume') this.setPaused(false);
         if (a === 'restart') this.restart();
+        if (a === 'story') this.replayIntro();
         if (a === 'title') this.toTitle();
       });
     });
@@ -344,6 +407,9 @@ class Game {
     });
 
     window.addEventListener('keydown', (e) => {
+      // Any key at all skips the intro — including Escape, which must not
+      // open the pause menu over the top of it instead.
+      if (this.cutscene?.active) { this.cutscene.skip(); e.preventDefault(); return; }
       if (e.code === 'KeyM' && this.state === 'play') this._toggleMath();
       /* Z zooms both maps, X only player 2's — so in split screen each kid can
          set their own scale without fighting over one control. */
@@ -403,6 +469,13 @@ class Game {
       p.orbs = [];
       p.score = 0;
       p.mount = null;
+      // The panda goes back in the bamboo it came from — a restart puts the
+      // world back to its opening state, and an un-raised panda is part of it.
+      p.pandaMount = null;
+      if (p.panda) this.scene.remove(p.panda.group);
+      p.panda = null;
+      p.raisedPanda = false;
+      p.bambooCut = 0;
       p.velocity.set(0, 0, 0);
       p.setFocus(null);
       p.focusT = 0;
@@ -648,13 +721,32 @@ class Game {
     // Browsers won't let audio start without a gesture, and pressing PLAY is
     // the first one we're guaranteed to get.
     this.audio.resume();
-    this.audio.startMusic();
+
+    /* The story, once per session. It plays here rather than on the title
+       screen because this is the first guaranteed user gesture — the intro
+       has music and voices, and starting it a moment earlier would mean
+       starting it silently. Restarting the world doesn't replay it; the
+       pause menu has a button for people who want it again. */
+    if (this.cutscene && !this.introPlayed) {
+      this.introPlayed = true;
+      this.cutscene.play();
+    } else {
+      this.audio.startMusic('play');
+    }
+  }
+
+  /** Watch it again — from the pause menu. */
+  replayIntro() {
+    this.setPaused(false);
+    this.audio.resume();
+    this.cutscene?.play();
   }
 
   _updateHint() {
     const src = this.input.describe().join('   ·   ');
     document.getElementById('hint').textContent =
       `${src}   ·   M: math overlay   ·   cut the bamboo east of town`
+      + `   ·   fly south-east to Pandapaw and raise a panda`
       + `   ·   fly west to the Dojo of the Turning Circle`;
   }
 
@@ -731,6 +823,75 @@ class Game {
     }
   }
 
+  /**
+   * Pandapaw's payout: give this kitten the panda her bamboo tally has earned.
+   *
+   * Called on swearing the oath and on every cane cut, so it is the single
+   * place that decides whether a panda exists and how big it is. `bambooCut`
+   * is a LIFETIME tally rather than one that starts when you join, because a
+   * kid who spent the afternoon in the grove before she ever found the shrine
+   * should not be told none of it counted.
+   */
+  _updatePanda(player) {
+    if (!player.raisedPanda) return;
+    const want = tierFor(player.bambooCut);
+    if (want < 0) return;
+
+    if (!player.panda) {
+      const panda = new Panda(this.pandaArt, { owner: player, tier: want });
+      // Beside her, on ground it can actually stand on — not inside the house
+      // she happens to be leaning against.
+      const spot = this.world.findOpenSpot(player.position.x, player.position.z, 3)
+        ?? { x: player.position.x, z: player.position.z };
+      const g = this.world.heightAt(spot.x, spot.z);
+      panda.position.set(spot.x, g ? g.y : player.position.y, spot.z);
+      this.scene.add(panda.group);
+      player.panda = panda;
+      this.sfx('orb');
+      this.toast(
+        `${player.name} raised ${player.pandaName} the panda ${panda.spec.name}! `
+        + panda.spec.blurb,
+        player.index
+      );
+      this._updateClanBadge(player);
+      return;
+    }
+
+    if (want > player.panda.tier) {
+      const spec = player.panda.setTier(want);
+      this.sfx('clan');
+      this.toast(`${player.pandaName} grew into a ${spec.name}! ${spec.blurb}`, player.index);
+      this._updateClanBadge(player);
+    }
+  }
+
+  /**
+   * The clan badge, which for Pandapaw doubles as the bamboo counter.
+   *
+   * Every other clan's badge can be written once, at the shrine: the buff
+   * never changes. Pandapaw's is a job in progress, and "go and cut bamboo"
+   * with no visible count is the sort of instruction a nine-year-old follows
+   * for six canes and then abandons.
+   */
+  _updateClanBadge(player) {
+    const el = document.getElementById(player.index === 0 ? 'c1' : 'c2');
+    if (!el) return;
+    const clan = player.clan;
+    if (!clan) { el.textContent = ''; el.style.background = ''; return; }
+    let text = `${clan.name} · ${clan.buff.label}`;
+    if (clan.buff.panda) {
+      const left = toNextTier(player.bambooCut);
+      /* Name the panda as soon as there IS one. "20 more bamboo" under a cub
+         that has just appeared reads as though the cub still hasn't arrived —
+         the counter has to say what it is counting toward. */
+      if (!left) text = `${player.pandaName} is fully grown`;
+      else if (player.panda) text = `${player.pandaName} the ${player.panda.spec.name} · ${left} more bamboo`;
+      else text = `${clan.name} · ${left} bamboo for a cub`;
+    }
+    el.textContent = text;
+    el.style.background = `#${clan.color.toString(16).padStart(6, '0')}`;
+  }
+
   /** Entities call this rather than reaching into the audio engine. */
   sfx(name, vol = 1) {
     this.audio.play(name, vol);
@@ -753,11 +914,25 @@ class Game {
     document.getElementById(player.index === 0 ? 's1' : 's2').textContent = player.score;
     const pts = prop.points ?? 10;
     if (prop.kind === 'bamboo') {
+      /* Bamboo is panda food. The tally runs whether or not she has sworn to
+         Pandapaw yet — _updatePanda is what decides if any of it hatches. */
+      player.bambooCut += 1;
+      const left = toNextTier(player.bambooCut);
+      this._updatePanda(player);
+      this._updateClanBadge(player);
+      if (player.raisedPanda && left > 0 && left % 5 === 0) {
+        // Only every fifth cane: a countdown that fires on every swing buries
+        // everything else in the toast stack.
+        this.toast(`${left} more bamboo for ${player.pandaName}…`, player.index);
+        return;
+      }
       this.toast(`${player.name} cut a bamboo cane clean through!  +${pts}`, player.index);
       return;
     }
     const verbs = ['knocked over', 'scattered', 'pounced on', 'sent flying'];
-    const verb = breath ? `hit a ${prop.kind} with ${breath}` : `${verbs[done % verbs.length]} a ${prop.kind}`;
+    const verb = breath === 'a panda claw' ? `clawed a ${prop.kind} to bits`
+      : breath ? `hit a ${prop.kind} with ${breath}`
+        : `${verbs[done % verbs.length]} a ${prop.kind}`;
     this.toast(`${player.name} ${verb}!  +${pts}`, player.index);
   }
 
@@ -783,6 +958,25 @@ class Game {
       // point of the Controllers readout is pressing buttons at it.
       if (!this._overlayOpen() && this.input.anyPressed()) this.startPlay();
       this._renderTitleIdle(dt);
+      return;
+    }
+
+    /* --- the opening cutscene owns the screen while it runs ---
+       The world keeps ticking underneath it: petals drift, shrine crystals
+       turn, dragons breathe on their perches. A frozen world behind a moving
+       camera reads as a pre-rendered video, and the whole point of this one
+       is that it is the real place. */
+    if (this.cutscene?.active) {
+      if (this.input.anyPressed() || this.input.players.some((p) => p.pressed('start'))) {
+        this.cutscene.skip();
+      }
+      this.cutscene.update(dt);
+      this.world.update(dt, { x: 0, z: 40 });
+      for (const d of this.dragons) d.update(dt, this.world, []);
+      for (const s of this.world.shrines) s.update(dt, []);
+      for (const L of this.leaders) L.update(dt, []);
+      this._renderView(this.cutscene.camera, 0, 0,
+        ...this.renderer.getSize(new THREE.Vector2()).toArray());
       return;
     }
 
@@ -829,8 +1023,13 @@ class Game {
       }
       d.update(dt, this.world, this.players);
     }
+    /* Pandas run AFTER the players, because a ridden one is slaved to its
+       rider's final position for the frame (Player.carry) and a following one
+       is chasing where she actually ended up, not where she started. */
+    for (const p of this.players) p.panda?.update(dt, this.world, p);
     this.dojo.update(dt, this.players);
     for (const s of this.world.shrines) s.update(dt, this.players);
+    for (const L of this.leaders) L.update(dt, this.players);
     this._updateSeek(dt);
 
     // Standing in the dojo frames the whole diagram from above.
@@ -880,14 +1079,35 @@ class Game {
 
   /** Swearing to a clan: a toast, a coloured badge, and a recoloured ring. */
   onJoinClan(player, clan) {
-    const el = document.getElementById(player.index === 0 ? 'c1' : 'c2');
-    if (el) {
-      // Name the BUFF, not just the clan — the whole reason to cross an island
-      // is what you get, and a nine-year-old shouldn't have to infer it.
-      el.textContent = `${clan.name} · ${clan.buff.label}`;
-      el.style.background = `#${clan.color.toString(16).padStart(6, '0')}`;
+    /* Pandapaw is sticky. Every other clan's buff switches off the moment you
+       swear somewhere else, but a panda you fed forty canes to is not a stat —
+       taking it away for changing your mind about a shrine is the kind of
+       punishment that makes a kid stop experimenting. She keeps it. */
+    if (clan.buff.panda) player.raisedPanda = true;
+    /* Leaving Pandapaw with a grown panda: say so. It stops heeling the
+       instant she swears somewhere else, and a pet that silently isn't behind
+       you any more is the kind of thing a kid notices two islands later and
+       concludes she has lost. */
+    if (!clan.buff.panda && player.panda?.rideable) {
+      this.toast(
+        `${player.pandaName} won't follow you now — it's waiting where you left it`,
+        player.index
+      );
     }
+    // Name the BUFF, not just the clan — the whole reason to cross an island
+    // is what you get, and a nine-year-old shouldn't have to infer it.
+    this._updateClanBadge(player);
     this.toast(`${player.name} joined ${clan.name} — ${clan.buff.label}!`, player.index);
+    if (clan.buff.panda) {
+      this._updatePanda(player);
+      const left = toNextTier(player.bambooCut);
+      if (left) {
+        this.toast(
+          `Cut ${left} bamboo and a panda cub will follow ${player.name}!`,
+          player.index
+        );
+      }
+    }
   }
 
   _giveOrb(player) {
@@ -962,9 +1182,12 @@ class Game {
   _faceAll(camera) {
     for (const p of this.players) {
       p.faceCamera(camera);
+      p.panda?.faceCamera(camera);
       for (const o of p.orbs ?? []) o.faceCamera(camera);
     }
     for (const d of this.dragons) d.faceCamera(camera);
+    for (const L of this.leaders ?? []) L.faceCamera(camera);
+    this.cutscene?.faceCamera(camera);
     for (const s of this.world.shrines) s.faceCamera(camera);
     for (const pk of this.pickups) if (!pk.taken) pk.faceCamera(camera);
     this.dojo.faceCamera(camera);

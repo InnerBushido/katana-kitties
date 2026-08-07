@@ -675,12 +675,23 @@ export function buildRoad(pts, height, opts = {}) {
  * the beam) are NOT here: they're live objects on the ClanShrine entity, since
  * this returns static geometry to be merged away.
  */
+/**
+ * The stepped stone dais a shrine stands on, as built below.
+ *
+ * Exported because the clan leader stands ON it. Planting her at the terrain
+ * height under her feet — which is what you get from `world.heightAt`, since
+ * the dais is decorative geometry and not a platform — buried her to the knee
+ * in the top step. `y` is the height of the upper surface above the ground the
+ * shrine was placed on, and `r` is how far out that surface reaches.
+ */
+export const SHRINE_DAIS = { r: 5.2, y: 0.885 };
+
 export function buildShrine(color, seed = 0) {
   const parts = [];
 
   // Stepped stone dais — reads as "something was built here on purpose".
   parts.push(cyl(6.2, 6.8, 0.5, PALETTE.stone, 0, 0.25, 0, 12));
-  parts.push(cyl(5.2, 5.8, 0.45, 0xb0a89e, 0, 0.66, 0, 12));
+  parts.push(cyl(SHRINE_DAIS.r, 5.8, 0.45, 0xb0a89e, 0, 0.66, 0, 12));
 
   // A ring of standing stones around the rim.
   for (let i = 0; i < 8; i++) {

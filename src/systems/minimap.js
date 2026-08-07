@@ -52,9 +52,15 @@ export class Minimap {
        map's most useful information was the least readable thing on it. */
     this.marks = [
       { x: 0, z: 40, label: 'Town', dy: -7 },
-      { x: 58, z: 44, label: 'Bamboo', dy: 11 },
       { x: world.dojoCentre.x, z: world.dojoCentre.z, label: 'Dojo', dy: -7 },
     ];
+    /* Every grove gets a label, read straight off the world rather than typed
+       in here — raising a panda costs forty canes, so "where is the bamboo"
+       becomes the single most asked question on the map, and a hardcoded list
+       that silently misses a grove is worse than no label at all. */
+    for (const g of world.groves ?? []) {
+      this.marks.push({ x: g.x, z: g.z, label: 'Bamboo', dy: 11 });
+    }
     // Shrines get a proper labelled marker — they're a destination, not a dot.
     for (const h of world.clanHalls) {
       this.marks.push({
@@ -213,6 +219,39 @@ export class Minimap {
       c.lineWidth = 1.2 * this.dpr;
       c.strokeStyle = 'rgba(28,16,22,0.8)';
       c.stroke();
+    }
+
+    /* --- a panda that has stopped following ---
+       Only the waiting ones. A panda at your heel is already where your own
+       marker is, so drawing it there is a second dot that tells you nothing —
+       but one you left on another island is exactly as findable as a dragon
+       needs to be, and for the same reason. Drawn as a rounded blob so it
+       can't be confused with a dragon's triangle. */
+    for (const p of players) {
+      const pet = p.panda;
+      if (!pet || pet.follows || pet.mounted) continue;
+      const x = this._px(pet.position.x);
+      const y = this._py(pet.position.z);
+      const s = 4.2 * this.dpr;
+      c.beginPath();
+      c.arc(x, y, s, 0, Math.PI * 2);
+      c.fillStyle = '#f4f1e8';
+      c.fill();
+      c.lineWidth = 1.4 * this.dpr;
+      c.strokeStyle = '#1c1016';
+      c.stroke();
+      // Two ears, so it reads as a panda rather than a plain dot.
+      for (const sx of [-1, 1]) {
+        c.beginPath();
+        c.arc(x + sx * s * 0.72, y - s * 0.72, s * 0.42, 0, Math.PI * 2);
+        c.fillStyle = '#1c1016';
+        c.fill();
+      }
+      // A pip in its owner's colour, so you can tell whose it is.
+      c.beginPath();
+      c.arc(x, y + s * 0.15, s * 0.34, 0, Math.PI * 2);
+      c.fillStyle = p.index === 0 ? '#ff8a3d' : '#ff6fae';
+      c.fill();
     }
 
     // --- the kitties, drawn last so they're never hidden ---

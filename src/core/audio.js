@@ -20,7 +20,23 @@
 const HIRAJOSHI = [0, 2, 3, 7, 8];
 const ROOT = 146.83; // D3
 
-const semi = (n) => ROOT * Math.pow(2, n / 12);
+/* Insen — the same five-note idea a fourth darker. It shares only the root
+   and the fifth with hirajoshi, which is why the intro reads as a different
+   PIECE rather than the same tune played slowly: the minor second at the
+   bottom is doing all the work. */
+const INSEN = [0, 1, 5, 7, 10];
+
+/**
+ * The two things the music can be doing. Slower, lower and sparser is what
+ * makes the intro feel like a story being told rather than a level being
+ * played, and it hands over to the normal theme the moment the cutscene ends.
+ */
+const MUSIC = {
+  play: { scale: HIRAJOSHI, beat: 0.52, oct: 1, drone: 0.14, taiko: 0 },
+  intro: { scale: INSEN, beat: 0.78, oct: 0.5, drone: 0.20, taiko: 8 },
+};
+
+const semi = (n, scaleRoot = ROOT) => scaleRoot * Math.pow(2, n / 12);
 
 /** See sfxBus — turns the relative per-sound gains into real loudness. */
 const SFX_MAKEUP = 3.2;
@@ -36,6 +52,59 @@ export class Audio {
     this._musicTimer = null;
     this._nextNote = 0;
     this._step = 0;
+    this._mode = 'play';
+  }
+
+  /**
+   * A character's speaking blip.
+   *
+   * Every line in the cutscene is typed out a letter at a time and every few
+   * letters fires one of these, pitched to the speaker — the Animal Crossing
+   * trick. It is not voice acting and does not pretend to be; it is the thing
+   * that makes text feel like somebody talking, and unlike recorded voice it
+   * costs nothing, needs no files and can never be the wrong language.
+   *
+   * @param {number} pitch multiplier on the base blip, per character
+   */
+  voice(pitch = 1) {
+    if (!this.ready) return;
+    // Relative gain like every other cue — sfxBus already carries the volume
+    // setting and SFX_MAKEUP, so applying either here doubles it.
+    const f = 420 * pitch;
+    this._tone({ type: 'square', from: f, to: f * 0.86, dur: 0.055, gain: 0.05 });
+  }
+
+  /**
+   * Speak a recorded line.
+   *
+   * THE ONLY AUDIO FILES IN THE GAME. Everything else here is oscillators and
+   * noise, and that stays true — but the intro is eleven lines of dialogue and
+   * synthesised blips under them read as a machine reading out a story rather
+   * than a cat telling one. About a megabyte for the whole cutscene, loaded
+   * once, and the fallback if any of it is missing is the blips.
+   *
+   * Deliberately an <audio> element rather than a buffer through the WebAudio
+   * graph: these are long compared to every other cue, they never overlap
+   * (one speaker at a time, by definition), and a MediaElementSource would
+   * have to be torn down and rebuilt per line for no audible gain.
+   */
+  speak(url) {
+    this.stopSpeaking();
+    if (!url) return null;
+    const el = new window.Audio(url);
+    // Lifted relative to the effects bus: dialogue has to sit over the music
+    // and the wind, and it is the thing the player is actually listening to.
+    el.volume = Math.min(1, this.sfxVolume * 1.35);
+    el.play().catch(() => {});
+    this._speaking = el;
+    return el;
+  }
+
+  stopSpeaking() {
+    if (!this._speaking) return;
+    this._speaking.pause();
+    this._speaking.currentTime = 0;
+    this._speaking = null;
   }
 
   /** Called from a real user gesture. Safe to call repeatedly. */
@@ -196,6 +265,19 @@ export class Audio {
         this._tone({ type: 'sine', from: 1560, to: 900, dur: 0.2, gain: 0.07 * v, delay: 0.01 });
         break;
       }
+      case 'claw':
+        /* Three claws, not one blade. The katana is a single bright sweep;
+           this is three shorter, lower rips staggered a few milliseconds
+           apart, which is what stops it sounding like the sword again. The
+           growl underneath is what makes it come from an animal. */
+        for (let i = 0; i < 3; i++) {
+          this._noise({
+            from: 2600 - i * 300, to: 500, dur: 0.13, gain: 0.42 * v,
+            q: 1.6, delay: i * 0.022,
+          });
+        }
+        this._tone({ type: 'sawtooth', from: 130, to: 58, dur: 0.22, gain: 0.13 * v });
+        break;
       case 'breath':
         // A long exhale that opens up and closes again.
         this._noise({ from: 400, to: 2600, dur: 0.38, gain: 0.55 * v, type: 'lowpass', q: 0.9 });
@@ -242,8 +324,14 @@ export class Audio {
 
   /* ------------------------------- music --------------------------------- */
 
-  startMusic() {
-    if (!this.ready || this._musicTimer) return;
+  /** @param {'play'|'intro'} mode which piece to generate — see MUSIC. */
+  startMusic(mode = 'play') {
+    if (!this.ready) return;
+    // Switching pieces tears the old schedule down first, or the two run
+    // together and the intro plays underneath the game theme.
+    if (this._musicTimer && this._mode !== mode) this.stopMusic();
+    this._mode = mode;
+    if (this._musicTimer) return;
     this.musicBus.gain.setTargetAtTime(this.musicVolume, this.ctx.currentTime, 0.8);
     this._nextNote = this.ctx.currentTime + 0.1;
     this._step = 0;
@@ -268,7 +356,7 @@ export class Audio {
   }
 
   _schedule() {
-    const beat = 0.52;
+    const beat = (MUSIC[this._mode] ?? MUSIC.play).beat;
     while (this._nextNote < this.ctx.currentTime + 0.6) {
       this._pluck(this._nextNote, this._step);
       this._nextNote += beat;
@@ -278,29 +366,48 @@ export class Audio {
 
   _pluck(t, step) {
     const bar = Math.floor(step / 8);
+    const M = MUSIC[this._mode] ?? MUSIC.play;
 
     // A low drone every couple of bars, holding the key down.
     if (step % 16 === 0) {
       const d = this.ctx.createOscillator();
       const g = this.ctx.createGain();
       d.type = 'sine';
-      d.frequency.value = ROOT / 2;
+      d.frequency.value = (ROOT * M.oct) / 2;
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.14, t + 0.6);
+      g.gain.linearRampToValueAtTime(M.drone, t + 0.6);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 8);
       d.connect(g).connect(this.musicBus);
       d.start(t);
       d.stop(t + 8.1);
     }
 
+    /* A taiko thud on the downbeat — intro only. One drum is what turns a
+       wandering koto line into an opening, and it's the cheapest possible
+       version: a pitch-swept sine for the skin and a noise burst for the
+       stick. */
+    if (M.taiko && step % M.taiko === 0) {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(128, t);
+      o.frequency.exponentialRampToValueAtTime(46, t + 0.24);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.30, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+      o.connect(g).connect(this.musicBus);
+      o.start(t);
+      o.stop(t + 0.55);
+    }
+
     // Rests are what make it feel like music rather than an arpeggiator.
     const r = Math.sin(step * 12.9898 + bar * 78.233) * 43758.5453;
     const rnd = r - Math.floor(r);
-    if (rnd > 0.72) return;
+    if (rnd > (this._mode === 'intro' ? 0.62 : 0.72)) return;
 
     const octave = rnd > 0.55 ? 12 : rnd > 0.2 ? 0 : 24;
-    const note = HIRAJOSHI[Math.floor(rnd * 5 * 3) % 5] + octave;
-    const freq = semi(note);
+    const note = M.scale[Math.floor(rnd * 5 * 3) % 5] + octave;
+    const freq = semi(note, ROOT * M.oct);
 
     /* A plucked string: two detuned triangles through a lowpass that closes
        as the note decays — the filter sweep is what reads as "plucked"

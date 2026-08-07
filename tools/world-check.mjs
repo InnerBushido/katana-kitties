@@ -15,6 +15,11 @@ import { World, CLANS } from '../src/world/world.js';
 import { Dragon, BREEDS } from '../src/entities/dragon.js';
 import { Billboard } from '../src/core/gfx.js';
 import { Player } from '../src/entities/player.js';
+import {
+  Panda, PANDA_TIERS, PANDA_SPEED, CLAW, tierFor, toNextTier,
+} from '../src/entities/panda.js';
+import { LEADERS, ELDER, leaderSpot, LEADER_OFFSET } from '../src/entities/leader.js';
+import { SHRINE_DAIS } from '../src/world/build.js';
 
 const line = (l, v) => console.log(String(l).padEnd(42) + v);
 let fails = 0;
@@ -64,6 +69,40 @@ ok('nothing else is katana-only',
 const homeGrove = bamboo.filter((p) => Math.hypot(p.home.x - 58, p.home.z - 44) < 12);
 ok('a grove is on the HOME island (no dragon needed)', homeGrove.length >= 10,
   `${homeGrove.length} canes`);
+
+/* Raising a panda costs 40 canes per kitten and there are two kittens, so the
+   world has to carry 80 before either of them has knocked over anything for
+   the fun of it. Checked as a hard floor with room to spare: a grove that
+   silently generates short (canes landing off a rim, or inside a solid) is
+   exactly the kind of failure that still looks completely fine on screen. */
+const NEED = PANDA_TIERS[PANDA_TIERS.length - 1].at * 2;
+line('bamboo needed to raise two pandas', NEED);
+ok('enough bamboo in the world for both kittens', bamboo.length >= NEED * 1.4,
+  `${bamboo.length} canes, need ${NEED}`);
+{
+  const home = world.islands[0];
+  const onHome = bamboo.filter(
+    (p) => Math.hypot(p.home.x - home.x, p.home.z - home.z) < home.radius
+  );
+  line('bamboo on the home island', onHome.length);
+  /* BOTH kittens must be able to raise a panda to full size without leaving
+     the home island. Swearing the oath is a flight away and that's the point,
+     but the FOOD must not be: they fly out to Pandapaw once, come home, and
+     can then finish the job in the groves either side of their own town. With
+     only one kitten's worth here, the second girl watches her counter stick
+     while her sister's panda grows up. */
+  ok('both kittens can fully grow a panda without leaving home',
+    onHome.length >= PANDA_TIERS[PANDA_TIERS.length - 1].at * 2, `${onHome.length} canes`);
+  ok('the home island has two separate groves', world.groves.length >= 2);
+  const isl = world.islands.find((i) => i.biome === 'bamboo');
+  const onIsl = bamboo.filter(
+    (p) => Math.hypot(p.home.x - isl.x, p.home.z - isl.z) < isl.radius
+  );
+  line('bamboo on the bamboo island', onIsl.length);
+  ok('the bamboo island is actually a bamboo forest', onIsl.length >= 40);
+}
+ok('no cane is planted inside a solid', bamboo.every((p) => world.solids.every(
+  (s) => Math.hypot(p.home.x - s.x, p.home.z - s.z) >= s.r)));
 
 console.log('\n--- dragons get somewhere you can see them ---');
 {
@@ -178,6 +217,347 @@ console.log('\n--- clan buffs actually do something ---');
   ok('Windwhisker breathes past the normal range', far.knocked,
     `range ${BREEDS[1].breath.range} -> ${(BREEDS[1].breath.range * 1.9).toFixed(0)}`);
   far._reset();
+}
+
+console.log('\n--- Pandapaw: the clan you have to earn ---');
+{
+  const isl = world.islands.find((i) => i.biome === 'bamboo');
+  const hall = world.clanHalls.find((h) => h.clan.buff.panda);
+  ok('Pandapaw has a shrine', !!hall);
+  ok('and it is on the bamboo island',
+    hall && Math.hypot(hall.x - isl.x, hall.z - isl.z) < isl.radius);
+  ok('the food is where the shrine is', world.props.some(
+    (p) => p.kind === 'bamboo'
+      && Math.hypot(p.home.x - isl.x, p.home.z - isl.z) < isl.radius));
+
+  // The growth ladder. Nothing until 20, cub at 20, grown at 40.
+  line('tier at 0 / 19 / 20 / 39 / 40 canes',
+    [0, 19, 20, 39, 40].map(tierFor).join(', '));
+  ok('no panda before the first tier is paid for', tierFor(0) === -1 && tierFor(19) === -1);
+  ok('twenty canes buys a cub', tierFor(20) === 0);
+  ok('forty canes grows it up', tierFor(40) === 1 && tierFor(400) === 1);
+  ok('the countdown counts down', toNextTier(0) === 20 && toNextTier(31) === 9
+    && toNextTier(40) === 0);
+
+  const art = { cub: { texture: new THREE.Texture() }, adult: { texture: new THREE.Texture() } };
+  const mkP = (spawn) => new Player({
+    texture: new THREE.Texture(), index: 0, spawn: spawn.clone(), cols: 8, rows: 4, mirror: false,
+  });
+  const gy = world.heightAt(0, 40).y;
+
+  // A cub must NOT be rideable — the whole second half of the arc is that you
+  // have to keep feeding it.
+  {
+    const owner = mkP(new THREE.Vector3(0, gy, 40));
+    const cub = new Panda(art, { owner, tier: 0 });
+    ok('a cub cannot be ridden', !cub.rideable);
+    ok('a grown panda can', new Panda(art, { owner, tier: 1 }).rideable);
+    ok('growing swaps which drawing is visible', (() => {
+      const before = cub.poses.map((b) => b.visible).join();
+      cub.setTier(1);
+      return before === 'true,false' && cub.poses.map((b) => b.visible).join() === 'false,true';
+    })());
+    ok('and the grown one is bigger', PANDA_TIERS[1].size > PANDA_TIERS[0].size);
+
+    /* `size` is the panda's drawn height in world units (see PANDA_TIERS), and
+       a kitten is 2.9. Copying the dragon's 13 across put a panda in the world
+       four and a half times the height of the girl riding it, which no
+       screenshot check would ever have caught — it just looked like a panda,
+       photographed from further away. */
+    line('drawn heights vs a 2.9 kitten',
+      PANDA_TIERS.map((t) => `${t.id} ${t.size}`).join(', '));
+    ok('a cub is smaller than the kitten', PANDA_TIERS[0].size < 2.9);
+    ok('a grown panda is big enough to ride but not a building',
+      PANDA_TIERS[1].size > 2.9 * 1.4 && PANDA_TIERS[1].size < 2.9 * 3);
+
+    /* A pet parks itself at followDist. If that lands OUTSIDE its own mount
+       radius you can never climb onto your own panda without first walking at
+       it, which is a baffling thing to have to discover. */
+    for (const t of PANDA_TIERS) {
+      const pet = new Panda(art, { owner, tier: PANDA_TIERS.indexOf(t) });
+      ok(`a ${t.id} parks within reach of its own mount prompt`,
+        pet.mountRadius > t.followDist, `radius ${pet.mountRadius} vs gap ${t.followDist}`);
+    }
+  }
+
+  /* Riding must measurably change how the game plays, exactly like every other
+     clan's buff — this is the check that a refactor which quietly stops
+     applying PANDA_SPEED can't slip past. */
+  {
+    const pad = { mx: 1, my: 0, down: () => false, pressed: () => false };
+    const runFor = (rider) => {
+      const x0 = rider.position.x;
+      const z0 = rider.position.z;
+      for (let i = 0; i < 60; i++) rider.update(1 / 60, pad, world, [], null);
+      return Math.hypot(rider.position.x - x0, rider.position.z - z0);
+    };
+    const onFoot = runFor(mkP(new THREE.Vector3(0, gy, 40)));
+    const rider = mkP(new THREE.Vector3(0, gy, 40));
+    const mountP = new Panda(art, { owner: rider, tier: 1 });
+    rider.pandaMount = mountP;
+    mountP.rider = rider;
+    const riding = runFor(rider);
+    line('run in 1s: on foot vs on a panda', `${onFoot.toFixed(1)} vs ${riding.toFixed(1)}`);
+    ok('a grown panda is measurably faster than running', riding > onFoot * 1.5);
+    /* Fast enough to be a mount, slow enough to aim. This was 10x first and a
+       panda crossed the entire home island in under two seconds — it arrived
+       at the far rim before you finished pushing the stick. The upper bound is
+       the check that stops that creeping back in. */
+    line('PANDA_SPEED', PANDA_SPEED);
+    ok('but still steerable by a nine-year-old', PANDA_SPEED >= 1.5 && PANDA_SPEED <= 3);
+    ok('the panda goes where the rider goes',
+      Math.hypot(mountP.position.x - rider.position.x,
+        mountP.position.z - rider.position.z) < 2);
+  }
+
+  // ...and jumps higher.
+  {
+    const jumpOnce = (rider) => {
+      const jump = { mx: 0, my: 0, down: () => false, pressed: (a) => a === 'jump' };
+      const hold = { mx: 0, my: 0, down: () => false, pressed: () => false };
+      for (let i = 0; i < 5; i++) rider.update(1 / 60, hold, world, [], null);
+      const y0 = rider.position.y;
+      rider.update(1 / 60, jump, world, [], null);
+      let peak = rider.position.y;
+      for (let i = 0; i < 90; i++) {
+        rider.update(1 / 60, hold, world, [], null);
+        peak = Math.max(peak, rider.position.y);
+      }
+      return peak - y0;
+    };
+    const plain = jumpOnce(mkP(new THREE.Vector3(0, gy, 40)));
+    const rider = mkP(new THREE.Vector3(0, gy, 40));
+    const p2 = new Panda(art, { owner: rider, tier: 1 });
+    rider.pandaMount = p2;
+    p2.rider = rider;
+    const high = jumpOnce(rider);
+    line('jump height: on foot vs on a panda', `${plain.toFixed(2)} vs ${high.toFixed(2)}`);
+    ok('a panda jumps higher', high > plain * 1.2);
+  }
+
+  /* Where the kitten is DRAWN when riding. Both failure modes look like a
+     panda in a screenshot and neither looks like a bug: too low and her legs
+     are buried to the thigh, too high and she floats over its back. The two
+     fractions are read off the adult atlas — saddle top 0.638 of the cell
+     above the drawn feet, back top 0.688 — and her feet have to land between
+     them. See Panda.seatHeight. */
+  {
+    const owner = mkP(new THREE.Vector3(0, gy, 40));
+    const pet = new Panda(art, { owner, tier: 1 });
+    const q = pet.quad;
+    const seat = pet.seatHeight;
+    line('seat / saddle top / back top',
+      `${seat.toFixed(2)} / ${(q * 0.638).toFixed(2)} / ${(q * 0.688).toFixed(2)}`);
+    ok('the rider sits above the saddle, not sunk into the flank',
+      seat > q * 0.638);
+    ok('and on the back, not floating over it', seat < q * 0.688);
+  }
+
+  /* The claw swipe: the panda's answer to dragon breath. Wide and heavy but
+     close in, and above all it must NOT cut bamboo — a panda that harvested
+     its own food would turn the whole Pandapaw arc into a machine that feeds
+     itself. */
+  {
+    const rider = mkP(new THREE.Vector3(0, gy, 40));
+    rider.clan = world.clanHalls.find((h) => h.clan.buff.panda).clan;
+    const pet = new Panda(art, { owner: rider, tier: 1 });
+    rider.pandaMount = pet;
+    pet.rider = rider;
+
+    line('claw range / katana reach', `${CLAW.range} / 3.4`);
+    ok('the claw out-reaches the katana', CLAW.range > 3.4);
+    ok('but not the dragon breath', CLAW.range < BREEDS[0].breath.range);
+    ok('and hits harder than the katana', CLAW.power > 1.15);
+
+    // It reaches something a plain katana cannot.
+    const target = world.props.find((pr) => !pr.katanaOnly);
+    target._reset();
+    const t = target.group.position;
+    rider.position.set(t.x - 6, t.y, t.z);
+    rider.facing = Math.PI / 2;
+    rider._doClaw(world, null);
+    ok('a claw swipe reaches 6 units and scatters things', target.knocked);
+    ok('and it draws claw marks', pet.clawTimer > 0);
+    target._reset();
+    target.scored = false;
+
+    /* The claw DOES fell bamboo — the one exception to katanaOnly in the game,
+       and a deliberate reversal (see CLAW). You cannot ride a panda until it
+       is fully grown, so there is no further tier the extra canes could buy
+       and nothing is short-circuited; what refusing actually did was make the
+       reward for forty canes useless in the only place you spend your time. */
+    const cane = world.props.find((pr) => pr.katanaOnly);
+    const canes = world.props.filter((pr) => pr.katanaOnly);
+    canes.forEach((pr) => pr._reset());
+    rider.position.set(cane.home.x - 1.5, cane.home.y, cane.home.z);
+    rider.facing = Math.PI / 2;
+    rider._doClaw(world, null);
+    ok('a panda CAN cut bamboo — clearing a grove is what riding it is for',
+      canes.some((pr) => pr.knocked),
+      `${canes.filter((pr) => pr.knocked).length} canes in one swipe`);
+    canes.forEach((pr) => pr._reset());
+
+    /* But a DRAGON still cannot, by breath or by dive. The grove being the one
+       place flight fails is what makes landing worth doing, and that survives
+       the panda getting an exemption. */
+    canes.forEach((pr) => { pr._reset(); pr.scored = false; });
+    const flier = mkP(new THREE.Vector3(cane.home.x - 4, cane.home.y + 6, cane.home.z));
+    const dr = new Dragon(new THREE.Texture(), 0, gy, 40, { breed: BREEDS[1] });
+    flier.mount = dr; dr.rider = flier;
+    flier.facing = Math.PI / 2;
+    flier._doBreath(world, null);
+    ok('dragon breath still cannot touch bamboo', canes.every((pr) => !pr.knocked));
+    canes.forEach((pr) => pr._reset());
+  }
+
+  /* Leaving the clan: a grown panda stops heeling and waits where it is. You
+     keep it and can still ride it — that's the difference between a pet and a
+     mount, and it's the deal the dragons already offer. */
+  {
+    const owner = mkP(new THREE.Vector3(0, gy, 40));
+    const panda = world.clanHalls.find((h) => h.clan.buff.panda).clan;
+    const other = CLANS.find((c) => !c.buff.panda);
+
+    const cub = new Panda(art, { owner, tier: 0 });
+    const grown = new Panda(art, { owner, tier: 1 });
+    owner.clan = panda;
+    ok('sworn to Pandapaw, both tiers follow', cub.follows && grown.follows);
+    owner.clan = other;
+    ok('sworn elsewhere, a grown panda stops following', !grown.follows);
+    ok('but a cub still does — it is a baby', cub.follows);
+    ok('and the grown one is still rideable', grown.rideable);
+
+    // It must genuinely hold position rather than drifting.
+    grown.position.set(20, world.heightAt(20, 40).y, 40);
+    const at = grown.position.clone();
+    for (let i = 0; i < 240; i++) grown.update(1 / 60, world, owner);
+    const drift = grown.position.distanceTo(at);
+    line('drift over 4s after leaving the clan', drift.toFixed(3));
+    ok('a waiting panda stays exactly put', drift < 0.01);
+
+    // ...and starts following again the moment she re-swears.
+    owner.clan = panda;
+    for (let i = 0; i < 240; i++) grown.update(1 / 60, world, owner);
+    ok('re-swearing to Pandapaw brings it back to heel',
+      grown.position.distanceTo(owner.position) < PANDA_TIERS[1].followDist + 1);
+  }
+
+  /* A pet can never be lost — the same contract the dragons have, and for the
+     same reason: a nine-year-old cannot recover from, or even understand, a
+     panda stranded on an island she flew away from. */
+  {
+    const owner = mkP(new THREE.Vector3(-20, world.heightAt(-20, 20).y, 20));
+    const pet = new Panda(art, { owner, tier: 0 });
+    pet.position.set(400, 300, -400);
+    for (let i = 0; i < 4; i++) pet.update(1 / 60, world, owner);
+    const miss = Math.hypot(pet.position.x - owner.position.x, pet.position.z - owner.position.z);
+    ok('a panda abandoned across the map comes back to you', miss < 20,
+      `${miss.toFixed(1)} away`);
+    ok('and it lands on solid ground, not in the sky',
+      Math.abs(pet.position.y - world.heightAt(pet.position.x, pet.position.z).y) < 0.01);
+
+    // But NOT while she's in the air — nothing to stand on, and a pet
+    // materialising mid-flight reads as a bug.
+    owner.mount = {};
+    pet.position.set(400, 300, -400);
+    for (let i = 0; i < 4; i++) pet.update(1 / 60, world, owner);
+    ok('it never teleports to a kitten who is flying', pet.position.x === 400);
+    owner.mount = null;
+  }
+
+  // Walking follow: it closes the gap and then holds station behind her.
+  {
+    const owner = mkP(new THREE.Vector3(0, gy, 40));
+    const pet = new Panda(art, { owner, tier: 0 });
+    pet.position.set(30, world.heightAt(30, 40).y, 40);
+    for (let i = 0; i < 180; i++) pet.update(1 / 60, world, owner);
+    const gap = Math.hypot(pet.position.x - owner.position.x, pet.position.z - owner.position.z);
+    line('gap after trotting in from 30 units', gap.toFixed(2));
+    ok('it catches up on foot', gap < PANDA_TIERS[0].followDist + 1);
+    /* Not zero. Cutting the throttle at followDist only stops it
+       ACCELERATING — a panda that arrives at speed and then coasts ends up
+       standing inside the kitten, where the two sprites fight the depth sort
+       and flicker against each other. It has to actively back off. */
+    ok('but does not end up standing inside her',
+      gap > PANDA_TIERS[0].followDist * 0.5);
+    ok('it stays glued to the ground',
+      Math.abs(pet.position.y - world.heightAt(pet.position.x, pet.position.z).y) < 0.01);
+  }
+
+  /* Broadside only. It is a single side-on drawing, so steering the drawn
+     heading with the full movement vector puts it edge-on at the billboard's
+     mirror threshold and the animal snaps back and forth — the exact bug the
+     ridden dragon had. */
+  {
+    const owner = mkP(new THREE.Vector3(0, gy, 40));
+    owner.camYaw = -Math.PI * 0.25;
+    const pet = new Panda(art, { owner, tier: 1 });
+    const headings = new Set();
+    for (const [vx, vz] of [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, -1]]) {
+      pet.velocity.set(vx * 20, 0, vz * 20);
+      pet._aim(owner.camYaw);
+      headings.add(pet.facing.toFixed(4));
+    }
+    line('distinct drawn headings over 6 directions', headings.size);
+    ok('the panda only ever faces two ways', headings.size === 2);
+  }
+}
+
+console.log('\n--- clan leaders (the cast from her drawing) ---');
+{
+  const ids = CLANS.map((c) => c.id);
+  line('leaders', CLANS.map((c) => `${LEADERS[c.id]?.name ?? '??'}(${LEADERS[c.id]?.breed})`)
+    .join(', '));
+  ok('every clan has somebody standing at its shrine',
+    ids.every((id) => !!LEADERS[id]));
+  ok('no two leaders share a name',
+    new Set(Object.values(LEADERS).map((l) => l.name)).size === ids.length);
+  ok('no two leaders share a breed',
+    new Set(Object.values(LEADERS).map((l) => l.breed)).size === ids.length);
+  ok('the storyteller is not also a clan leader',
+    !Object.values(LEADERS).some((l) => l.name === ELDER.name));
+  ok('every leader has a sprite of her own',
+    new Set(Object.values(LEADERS).map((l) => l.art)).size === ids.length
+    && !Object.values(LEADERS).some((l) => l.art === ELDER.art));
+
+  /* Her line has to NAME THE BUFF. The whole reason to cross an island is
+     what you get, and a shrine that says only "join us" makes the player
+     guess. This is the check that a rewrite can't quietly drop it. */
+  const buffWords = {
+    thunder: ['fast', 'run'], river: ['katana', 'reach'], shadow: ['jump', 'third'],
+    wind: ['breathe', 'dragon'], ice: ['feel', 'unbroken'], panda: ['bamboo', 'cane'],
+  };
+  for (const id of ids) {
+    const l = LEADERS[id].line.toLowerCase();
+    ok(`${LEADERS[id].name} says what her clan actually gives you`,
+      buffWords[id].some((w) => l.includes(w)));
+  }
+  ok('every line fits the bubble', Object.values(LEADERS).every(
+    (l) => l.line.split('\n').every((row) => row.length <= 46)));
+
+  /* Where she stands. Inside the trigger ring, so walking up to her IS
+     walking into the shrine — and on the far side of it, so a kitten
+     arriving from the island meets her face on rather than at her back. */
+  for (const hall of world.clanHalls) {
+    const s = leaderSpot(hall, world);
+    const isl = world.heightAt(hall.x, hall.z)?.island;
+    const dOut = Math.hypot(s.x - (isl?.x ?? 0), s.z - (isl?.z ?? 0));
+    const dHall = Math.hypot(hall.x - (isl?.x ?? 0), hall.z - (isl?.z ?? 0));
+    ok(`${LEADERS[hall.clan.id].name} stands in her own shrine ring`,
+      Math.hypot(s.x - hall.x, s.z - hall.z) < hall.r,
+      `${LEADER_OFFSET} out, ring is ${hall.r}`);
+    ok(`...on the far side of it`, dOut > dHall);
+    ok('...on real ground', world.heightAt(s.x, s.z) != null);
+    /* ...and ON TOP of the stonework, not in it. The dais is decorative
+       geometry merged into the world mesh, so heightAt returns the hillside
+       underneath and using it planted every leader knee-deep in the top step.
+       This is the check that catches it, because a cat standing half inside a
+       stone platform still looks like a cat standing at a shrine. */
+    ok('...on top of the dais, not sunk into it',
+      Math.abs(s.y - (world.heightAt(hall.x, hall.z).y + SHRINE_DAIS.y)) < 0.001,
+      `+${SHRINE_DAIS.y} above the shrine floor`);
+    ok('...well inside the stone she is standing on', LEADER_OFFSET < SHRINE_DAIS.r);
+  }
 }
 
 console.log('\n--- one-way platforms (bridge deck) ---');

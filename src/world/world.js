@@ -121,6 +121,19 @@ export const CLANS = [
        chore — this points at the nearest one you haven't knocked over yet. */
     buff: { id: 'seek', label: 'Sense mischief', seek: true },
   },
+  {
+    id: 'panda',
+    name: 'Pandapaw',
+    color: 0xbfe36a,
+    tile: 0x2f3a24,
+    motto: 'never hurries, always arrives',
+    /* The only buff you have to EARN after swearing. Every other clan hands
+       you its power the moment you stand in the ring; this one hands you a
+       job — go and cut bamboo — and pays it out twice, as a cub that follows
+       you and then as an animal big enough to ride. It lives on the bamboo
+       island because the reward and the work are the same place. */
+    buff: { id: 'panda', label: 'Raise a panda', panda: true },
+  },
 ];
 
 export class World {
@@ -210,12 +223,12 @@ export class World {
   }
 
   /**
-   * One clan shrine per island, on FOUR DIFFERENT islands.
+   * One clan shrine per island, on SIX DIFFERENT islands.
    *
    * Thunderpaw is on the home island, well out of town, so a pair who never
-   * work out the dragons can still find a clan and get a buff. The other three
-   * are a flight away, which is the point: the beam is visible from the air,
-   * so "what's that green light over there?" is the thing that makes them go.
+   * work out the dragons can still find a clan and get a buff. The rest are a
+   * flight away, which is the point: the beam is visible from the air, so
+   * "what's that green light over there?" is the thing that makes them go.
    */
   _buildShrines() {
     const wanted = [
@@ -224,6 +237,7 @@ export class World {
       { clan: CLANS[2], island: 4, x: -120, z: 140 }, // ash
       { clan: CLANS[3], island: 5, x: 235, z: 60 },   // dusk
       { clan: CLANS[4], island: 2, x: -140, z: -60 }, // frost
+      { clan: CLANS[5], island: 3, x: 78, z: 150 },   // bamboo
     ];
 
     const parts = [];
@@ -403,7 +417,11 @@ export class World {
           // leads to. Without these the road ribbon rides over rolling hills
           // and the grove has nowhere level to stand and swing a katana.
           { x: 34, z: 46, r: 9, falloff: 12, y: 2.6 },
-          { x: 58, z: 44, r: 17, falloff: 15, y: 2.2 },
+          { x: 58, z: 44, r: 20, falloff: 15, y: 2.2 },
+          // The west grove. Level ground matters here for the same reason it
+          // does at the east one: you cannot line a katana up on a cane while
+          // sliding down a hillside.
+          { x: -72, z: -30, r: 15, falloff: 16, y: 3.4 },
         ],
       },
       { x: 150, z: -95, baseY: 26, radius: 40, seed: 11, hill: 5, plateau: 0.5, biome: 'autumn' },
@@ -618,7 +636,8 @@ export class World {
          cannot even see what you're stuck on. */
       this.keepClear = [
         { x: BRIDGE.x, z: BRIDGE.z, r: 16 },
-        { x: 58, z: 44, r: 14 },
+        { x: 58, z: 44, r: 17 },
+        { x: -72, z: -30, r: 16 },
       ];
     }
 
@@ -627,9 +646,19 @@ export class World {
        ring around the outside to save draw calls, but a grove where some canes
        fall and others shrug off a katana just reads as broken — and to a kid
        it reads as "I'm doing it wrong". Consistency beats the draw calls. */
-    this.groves = [{ x: 58, z: 44, r: 17 }];
-    // A little torii at the grove mouth so it reads as a destination.
+    /* TWO groves on the home island, not one.
+       Raising a panda costs forty canes per kitten, and with a single grove
+       the two girls end up swinging katanas at the same three plants and
+       taking each other's. A second stand on the west slope means they can
+       each go and work on their own — and it gives the quiet half of the
+       island something to walk to, which it never had. */
+    this.groves = [
+      { x: 58, z: 44, r: 20, n: 48 },
+      { x: -72, z: -30, r: 15, n: 36 },
+    ];
+    // A little torii at each grove mouth so they read as destinations.
     put(buildTorii(0.7), 46, 44, Math.PI / 2, 1, 0, decor);
+    put(buildTorii(0.7), -72, -47, 0, 1, 0, decor);
 
     // --- cherry trees scattered over the whole island ---
     let planted = 0;
@@ -728,8 +757,16 @@ export class World {
     /* Cuttable bamboo. Only the katana fells these — no dive-bombing, no
        dragon breath — so the grove is where you have to land, and they're
        worth more for the trouble. */
+    /* Bamboo is planted with a solid check now that groves reach past the
+       flattened clearings they started in. A cane grown inside a house or
+       through a tree trunk is a prop you can see and cannot walk up to, and
+       when forty of them are the price of a panda, one unreachable cane is a
+       kid convinced the counter is broken. */
+    const clearOfSolids = (x, z) => !this.solids.some(
+      (s) => Math.hypot(x - s.x, z - s.z) < s.r + 1.2
+    );
     for (const grove of this.groves) {
-      const N = 34;
+      const N = grove.n ?? 34;
       for (let i = 0; i < N; i++) {
         // Golden-angle spiral: even spacing without clumps or a visible ring.
         const a = i * 2.39996 + valueNoise(i, 2, 431) * 0.5;
@@ -738,6 +775,7 @@ export class World {
         const z = grove.z + Math.sin(a) * r;
         const g = home.heightAt(x, z);
         if (g == null) continue;
+        if (!clearOfSolids(x, z)) continue;
         const p = new Prop('bamboo', x, g, z, i * 13 + 7);
         this.scene.add(p.group);
         this.props.push(p);
@@ -765,7 +803,12 @@ export class World {
       const themed = isl.biome === 'bamboo' ? 'bamboo'
         : isl.biome === 'frost' ? 'icicle' : null;
       if (!themed) continue;
-      const n = themed === 'icicle' ? 22 : 14;
+      /* The bamboo island is now a bamboo FOREST. It carries the Pandapaw
+         shrine, so it's where a kitten who has just sworn the oath is
+         standing when she's told to go and cut forty canes — a dozen plants
+         would send her straight back to the mainland to do it, which makes
+         the flight out here pointless. */
+      const n = themed === 'icicle' ? 22 : 70;
       for (let i = 0; i < n; i++) {
         // Golden-angle spiral so they fill the island instead of clumping.
         const a = i * 2.39996 + valueNoise(i, k, 71) * 0.6;
@@ -775,6 +818,7 @@ export class World {
         const g = isl.heightAt(x, z);
         if (g == null) continue;
         if (this.clanHalls.some((h) => Math.hypot(x - h.x, z - h.z) < h.r + 3)) continue;
+        if (!clearOfSolids(x, z)) continue;
         const p = new Prop(themed, x, g, z, i * 5 + k);
         this.scene.add(p.group);
         this.props.push(p);

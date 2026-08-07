@@ -11,8 +11,10 @@ dragon and go and do it on the next island. It runs in a browser tab.
 
 It was made for — and partly *by* — my nieces. The cat-head menu on the title
 screen is a faithful reproduction of a drawing one of them made, buttons and
-all, and the name was hers too. The rest grew out of the things they like:
-*Warriors*, *Storm Dragons*, Minecraft, Wobbly Life and Untitled Goose Game.
+all, and the name was hers too. **The six clan leaders came off a page of her
+character designs** — eight cats, each labelled with its breed. The rest grew
+out of the things they like: *Warriors*, *Storm Dragons*, Minecraft, Wobbly
+Life and Untitled Goose Game.
 
 There's a second reason it exists. I'd been teaching one of them sine, cosine
 and the unit circle on graph paper, and this is that lesson made walkable —
@@ -23,7 +25,7 @@ see [Teaching the maths](#teaching-the-maths).
 | | |
 |---|---|
 | ![The town](docs/screenshots/01-town.jpg) **The town** — a road, a market, a red bridge and 40-odd knockable props | ![A clan shrine](docs/screenshots/03-shrine.jpg) **A clan shrine** — find the beam, stand in the ring, get a power |
-| ![The bamboo grove](docs/screenshots/05-bamboo.jpg) **The bamboo grove** — the one thing no dragon can burn | ![The snow island](docs/screenshots/06-snow.jpg) **The snow island** — icicles to smash and a frost dragon to ride |
+| ![The bamboo grove](docs/screenshots/05-bamboo.jpg) **The bamboo grove** — the one thing no dragon can burn, and what a panda eats | ![The snow island](docs/screenshots/06-snow.jpg) **The snow island** — icicles to smash and a frost dragon to ride |
 
 ![The Dojo of the Turning Circle](docs/screenshots/04-dojo.jpg)
 
@@ -55,12 +57,63 @@ Then open the address it prints. **Use Firefox if you're playing with Joy-Cons**
 | Mount / dismount | `Q`              | `Numpad 3`       | `Y`          |
 | Sprint / boost   | `Left Shift`     | `Right Ctrl`     | `ZL` / `ZR`  |
 
-`M` toggles the maths overlay on the Kotodama Orb. **`Esc`**, or **`+`/Start on a
-controller**, opens the pause menu — resume, settings, how-to-play, restart, or
-back to the title screen.
+Mount climbs onto whichever dragon is in reach, or onto your own panda if
+there isn't one. `M` toggles the maths overlay on the Kotodama Orb. **`Esc`**,
+or **`+`/Start on a controller**, opens the pause menu — resume, settings,
+how-to-play, restart, or back to the title screen.
 
 Jump twice for a double jump. Sprint and slash to send market stalls flying.
 Fly low and fast on a dragon to scatter a whole street at once.
+
+## The story
+
+Press PLAY and an old calico called **Patchfur** tells you where you live, then
+flies you past every clan in the sky. It runs about 70 seconds, any button
+skips it, and **WATCH THE STORY AGAIN** in the pause menu plays it back.
+
+There's no video file and no second canvas: the cutscene drives its own camera
+through the *same 3D world you're about to play in*, and the leaders it flies
+to are the same characters standing at those shrines when you walk up to them
+afterwards. Islands slide past each other, and the beam of a shrine you haven't
+reached yet stands up over the horizon behind whoever is talking.
+
+| clan | leader | breed |
+| --- | --- | --- |
+| Thunderpaw | Sunstreak | Siamese |
+| Riverclaw | Rippleclaw | Turkish Van |
+| Shadowtail | Duskcoat | Tuxedo |
+| Windwhisker | Galemane | Maine Coon |
+| Icewhisker | Snowmantle | Himalayan |
+| Pandapaw | Bambooheart | Ragdoll |
+
+Every one of them is standing at her own shrine for the rest of the game. Walk
+up and she'll tell you what her clan gives you before you commit to it.
+
+## Raise a panda
+
+Five of the six clans hand you a power the moment you stand in their ring.
+**Pandapaw** hands you a job instead.
+
+Its shrine is on the bamboo island. Swear the oath, then go and cut bamboo —
+**20 canes** and a panda cub trots out and follows you everywhere. **20 more**
+and it grows big enough to climb on. A grown panda runs twice as fast as you
+do, jumps higher, and has a **claw swipe** on the attack button that hits far
+wider and harder than the katana. Your clan badge counts the canes down for you.
+
+The claw is also the only thing besides a katana that cuts bamboo, and it cuts
+about four canes to the katana's one — so once you've raised a panda, clearing
+a whole grove on its back is much faster than doing it on foot. A dragon still
+can't touch bamboo from the air.
+
+You each raise your own — Ember's is **Bao**, Frost's is **Mochi** — and the
+count is a lifetime tally, so bamboo you cut before you ever found the shrine
+still counts. A cub can't be lost: it follows you on foot, waits where it is
+while you're off on a dragon, and meets you wherever you land.
+
+**Join a different clan and your grown panda stops following you.** It's still
+yours and you can still ride it, but it waits where you left it — so it turns
+up on the map, like a dragon on its perch. Swear to Pandapaw again and it comes
+back to heel.
 
 ### Switch 2 controllers — use Firefox
 
@@ -103,11 +156,16 @@ reports from the device at all.
 
 ## Sound
 
-There are no audio files. Every sound — the katana, the bamboo crack, the
-dragon's breath, the clan gong — is **synthesised at runtime** from oscillators
-and filtered noise in `src/core/audio.js`, and the music is generated the same
-way: a koto-style pluck wandering a Japanese pentatonic scale over a drone, so
-it never loops exactly.
+Every sound — the katana, the bamboo crack, the dragon's breath, the panda's
+claw, the clan gong — is **synthesised at runtime** from oscillators and
+filtered noise in `src/core/audio.js`, and the music is generated the same way:
+a koto-style pluck wandering a Japanese pentatonic scale over a drone, so it
+never loops exactly. The intro has its own piece — same synthesis, darker
+scale, slower, an octave down, taiko on the downbeat.
+
+The **only** audio files in the whole project are the eleven voice lines in the
+opening cutscene (`public/voice/`, about a megabyte). If they're missing, the
+cast falls back to pitched blips and the intro still runs.
 
 That means nothing to download, nothing to licence and no asset pipeline. Two
 sliders in **Settings** control effects and music independently.
@@ -263,9 +321,12 @@ src/
     world.js            assembles the world, height queries, petals
   systems/
     mathdojo.js         the walkable unit circle
+    cutscene.js         the opening story, flown through the real world
   entities/
     player.js           movement, slash, mounting, camera rig
     dragon.js           rideable storm dragon
+    panda.js            the raisable, rideable Pandapaw panda
+    leader.js           the six clan chiefs + Patchfur the storyteller
     orb.js              Kotodama Orb + pickups
     prop.js             knockable scenery
 ```
@@ -321,3 +382,5 @@ read in mirror image, a clan buff that doesn't actually do anything.
 - Clan camp building and kitten customisation
 - More towns on the outer islands
 - A second dragon type with different flight handling
+- More pets to raise the way the panda is raised, each fed by a different
+  material

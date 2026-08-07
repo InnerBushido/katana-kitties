@@ -525,3 +525,104 @@ export function placeholderDragonTexture(body = '#3d5a9e', belly = '#f0e6c8') {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+
+/**
+ * Stand-in panda, drawn side-on facing LEFT to match the generated art.
+ *
+ * `cub` swaps to baby proportions — a huge head on a small body — because the
+ * whole point of the two tiers is that you can tell at a glance which one is
+ * trotting after you.
+ */
+export function placeholderPandaTexture(cub = false) {
+  const S = 768;
+  const cv = document.createElement('canvas');
+  cv.width = S;
+  cv.height = S;
+  const g = cv.getContext('2d');
+  g.translate(S / 2, S / 2 + (cub ? 40 : 20));
+  const k = cub ? 0.78 : 1;
+  g.scale(k, k);
+  g.lineWidth = 13 / k;
+  g.lineJoin = 'round';
+  g.strokeStyle = '#161018';
+
+  const FUR = '#f6f3ec';
+  const INK = '#23202a';
+  const shape = (path, fill) => { g.fillStyle = fill; g.fill(path); g.stroke(path); };
+
+  // back legs, then body, then front legs — so the near pair reads in front
+  const leg = (x, w, h) => {
+    const l = new Path2D();
+    l.roundRect(x - w / 2, 40, w, h, 14);
+    return l;
+  };
+  shape(leg(150, 62, 130), INK);
+  shape(leg(-90, 62, 130), INK);
+
+  const body = new Path2D();
+  body.ellipse(30, -30, cub ? 170 : 210, cub ? 118 : 130, 0, 0, Math.PI * 2);
+  shape(body, INK);
+
+  // white saddle band across the middle, the panda's own marking
+  const band = new Path2D();
+  band.ellipse(90, -34, cub ? 92 : 110, cub ? 104 : 116, 0, 0, Math.PI * 2);
+  shape(band, FUR);
+
+  shape(leg(120, 60, 128), INK);
+  shape(leg(-58, 60, 128), INK);
+
+  // head, facing left
+  const headX = cub ? -170 : -190;
+  const headY = cub ? -110 : -80;
+  const hr = cub ? 128 : 110;
+  const ear = new Path2D();
+  ear.ellipse(headX + 22, headY - hr * 0.82, 42, 42, 0, 0, Math.PI * 2);
+  shape(ear, INK);
+  const head = new Path2D();
+  head.ellipse(headX, headY, hr, hr * 0.92, 0, 0, Math.PI * 2);
+  shape(head, FUR);
+
+  // eye patch, eye, muzzle
+  const patch = new Path2D();
+  patch.ellipse(headX - hr * 0.24, headY - hr * 0.12, hr * 0.34, hr * 0.40, -0.3, 0, Math.PI * 2);
+  shape(patch, INK);
+  g.fillStyle = '#ffffff';
+  const eye = new Path2D();
+  eye.ellipse(headX - hr * 0.28, headY - hr * 0.14, hr * 0.10, hr * 0.12, 0, 0, Math.PI * 2);
+  g.fill(eye);
+  const nose = new Path2D();
+  nose.ellipse(headX - hr * 0.86, headY + hr * 0.20, 20, 15, 0, 0, Math.PI * 2);
+  shape(nose, INK);
+
+  // Grown pandas wear the saddle; cubs wear the collar and bell.
+  if (cub) {
+    g.strokeStyle = '#c8324a';
+    g.lineWidth = 22;
+    const collar = new Path2D();
+    collar.moveTo(headX + 70, headY + hr * 0.72);
+    collar.quadraticCurveTo(headX + 96, headY + hr * 1.02, headX + 128, headY + hr * 0.74);
+    g.stroke(collar);
+    g.strokeStyle = '#161018';
+    g.lineWidth = 13 / k;
+    const bell = new Path2D();
+    bell.ellipse(headX + 98, headY + hr * 1.02, 24, 24, 0, 0, Math.PI * 2);
+    shape(bell, '#f0b93c');
+  } else {
+    const blanket = new Path2D();
+    blanket.moveTo(0, -140);
+    blanket.lineTo(160, -132);
+    blanket.lineTo(148, -8);
+    blanket.lineTo(8, -20);
+    blanket.closePath();
+    shape(blanket, '#a8283c');
+    g.strokeStyle = '#f0b93c';
+    g.lineWidth = 12;
+    g.stroke(blanket);
+    g.strokeStyle = '#161018';
+    g.lineWidth = 13;
+  }
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}

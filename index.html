@@ -66,9 +66,10 @@
             <ul>
               <li><b>Move</b> — stick / <kbd>WASD</kbd></li>
               <li><b>Jump</b> — <kbd>A</kbd> / <kbd>Space</kbd> <i>(twice to double jump)</i></li>
-              <li><b>Slash</b> — <kbd>X</kbd> / <kbd>F</kbd> — knock everything over!</li>
+              <li><b>Slash</b> — <kbd>X</kbd> / <kbd>F</kbd> — knock everything over!
+                <i>(a claw swipe when you're on a panda)</i></li>
               <li><b>Sprint</b> — <kbd>ZL/ZR</kbd> / <kbd>Shift</kbd></li>
-              <li><b>Ride dragon</b> — <kbd>Y</kbd> / <kbd>Q</kbd> when the ring glows</li>
+              <li><b>Ride dragon or panda</b> — <kbd>Y</kbd> / <kbd>Q</kbd> when the ring glows</li>
               <li><b>Join a clan</b> — <kbd>B</kbd> / <kbd>E</kbd> standing in a shrine ring</li>
               <li><b>Map zoom</b> — <kbd>Z</kbd> (and <kbd>X</kbd> for Frost when split)</li>
             </ul>
@@ -93,7 +94,7 @@
           worth double.
         </p>
         <p class="note">
-          <b>Five clans, five islands, five powers.</b> Look for a coloured beam of
+          <b>Six clans, six islands, six powers.</b> Look for a coloured beam of
           light — that's a shrine. Stand in its ring and press interact to join.
           <b>Thunderpaw</b> run faster, <b>Riverclaw</b> have a longer katana,
           <b>Shadowtail</b> can triple jump, <b>Windwhisker</b> dragons breathe
@@ -101,6 +102,22 @@
           at the nearest thing you haven't knocked over yet, which is how you find
           the last few. You can swap any time by finding another shrine, and you
           two don't have to pick the same one.
+        </p>
+        <p class="note">
+          <b>Pandapaw is different — you have to earn it.</b> Its shrine is on the
+          bamboo island. Swear the oath, then go and cut <b>20 bamboo</b> and a
+          <b>panda cub</b> will come and follow you around. Cut <b>20 more</b> and
+          it grows big enough to <b>ride</b> — twice as fast as you can run,
+          jumps higher, and <b>slash</b> becomes a huge <b>claw swipe</b> that
+          cuts about four bamboo at once. Your badge counts down the canes for
+          you.
+        </p>
+        <p class="note">
+          You each raise your own — Ember's is <b>Bao</b>, Frost's is
+          <b>Mochi</b> — and it stays yours even if you join a different clan
+          later. But a <b>grown</b> panda only follows a Pandapaw kitten: join
+          somewhere else and it waits where you left it, like a dragon on its
+          perch, and shows up on the map so you can go back for it.
         </p>
         <p class="note">
           Player 2 uses the <b>arrow keys</b> and the <b>numpad</b>, or plug in a
@@ -189,6 +206,7 @@
           <button class="menu-btn primary" data-action="resume">RESUME</button>
           <button class="menu-btn" data-action="settings">SETTINGS</button>
           <button class="menu-btn" data-action="help">HOW TO PLAY</button>
+          <button class="menu-btn" data-action="story">WATCH THE STORY AGAIN</button>
           <button class="menu-btn" data-action="restart">RESTART</button>
           <button class="menu-btn" data-action="title">TITLE SCREEN</button>
         </div>
@@ -226,6 +244,24 @@
       </div>
       <div id="toasts"></div>
       <div class="hint" id="hint"></div>
+    </div>
+
+    <!-- ================= opening cutscene =================
+         Overlaid on the live 3D scene, which the cutscene camera is flying
+         through underneath — everything here is furniture around it. -->
+    <div id="cutscene" class="hidden">
+      <div id="cs-fade"></div>
+      <div class="cs-bar cs-top"></div>
+      <div class="cs-bar cs-bottom"></div>
+      <div id="cs-box">
+        <canvas id="cs-portrait" width="150" height="150"></canvas>
+        <div class="cs-body">
+          <div id="cs-name"></div>
+          <div id="cs-text"></div>
+        </div>
+      </div>
+      <div id="cs-skip">PRESS ANY BUTTON TO SKIP</div>
+      <div id="cs-track"><div id="cs-progress"></div></div>
     </div>
 
     <script type="module" src="/src/main.js"></script>
