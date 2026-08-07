@@ -880,9 +880,22 @@ timeline may never start (`playState: "running"` but `currentTime: 0` forever).
 Never use `animation-fill-mode` to hold an element visible — author the final
 state as the default. This blanked the whole title screen once.
 
-**The preview pane doesn't recomposite injected DOM.** Only the WebGL canvas
-updates in screenshots. Debug overlays added via `javascript_tool` never appear —
-verify numerically, or draw into the 3D scene.
+**A hidden preview pane is a MOMENT, not a session.** Screenshots fail with
+"the Browser pane is not displayed, so the page is not compositing frames"
+whenever the pane is collapsed — and that is the same condition that stops
+`requestAnimationFrame`. But it changes: the pane can be hidden at boot and
+shown ten minutes later. **Retry before concluding visual checks are
+unavailable**, which is a mistake that has cost a whole session's worth of
+eyeballing and sent the work down the numeric-only path unnecessarily.
+
+**Injected DOM DOES recomposite once the pane is displayed.** An earlier note
+here claimed otherwise, and it is wrong: a `position: fixed` div appended to
+`body` from `javascript_tool` shows up in screenshots fine. This is the way to
+inspect anything small — `computer{action: "zoom", region}` is not supported in
+this pane and silently returns the whole frame instead, so blow the thing up
+into a big canvas and screenshot that. Drawing the seven leader portraits into
+a 100px strip across the top of the screen is how the portrait crop was checked
+by eye.
 
 ---
 
