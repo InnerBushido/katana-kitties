@@ -17,7 +17,7 @@ import { Cutscene } from './systems/cutscene.js';
 import { ShrineScene } from './systems/shrinescene.js';
 import { SummonScene } from './systems/summonscene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from './entities/dragonball.js';
-import { Ryuuseki, HOVER } from './entities/ryuuseki.js';
+import { Ryuuseki, HOVER, RYU_VIEW } from './entities/ryuuseki.js';
 
 /* ---------------------------------------------------------------------------
    Katana Kitties — main loop.
@@ -1469,14 +1469,26 @@ class Game {
       this.sharedFocusT += ((inDojo ? 1 : 0) - this.sharedFocusT) * Math.min(1, dt * 2.2);
       const ft = this.sharedFocusT;
 
-      const want = mid.clone();
-      want.y += 1.6;
+      /* Riding Ryuuseki forces this view, and this rig sizes its distance from
+         how far APART the two kittens are — on him they share one point, so it
+         read a separation of zero and clamped to its 26-unit minimum, framing
+         a 28-unit dragon from 26 units away. It also aimed at their positions,
+         which are his origin (their seats are draw offsets), so the animal ran
+         off the side of the screen.
+         Both are fixed here rather than in Player._updateCamera, because that
+         camera is not the one drawing while merged. */
+      const onRyu = this.ryu?.ridden ? this.ryu : null;
+      const ryuMid = onRyu?.ridersMidpoint();
+
+      const want = ryuMid ? ryuMid.clone() : mid.clone().setY(mid.y + 1.6);
       if (ft > 0.001) want.lerp(dc, ft);
       this.sharedTarget.lerp(want, Math.min(1, dt * 6));
 
-      const wantDist = THREE.MathUtils.lerp(
-        THREE.MathUtils.clamp(26 + dist * 0.85, 26, 52), 104, ft
-      );
+      const wantDist = ryuMid
+        ? onRyu.quad * RYU_VIEW
+        : THREE.MathUtils.lerp(
+          THREE.MathUtils.clamp(26 + dist * 0.85, 26, 52), 104, ft
+        );
       this.sharedDist += (wantDist - this.sharedDist) * Math.min(1, dt * 4);
 
       const yaw = THREE.MathUtils.lerp(-Math.PI * 0.25, 0, ft);

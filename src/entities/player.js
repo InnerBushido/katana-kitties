@@ -813,13 +813,30 @@ export class Player {
        gunner, who rides through `rideAlong` and never touches this line, was
        fine. It read exactly like a depth-sorting problem and was not one. Any
        future mount that misses a field must fall back, not vanish. */
-    this.sprite.mesh.position.y = this.mount ? (this.mount.flapBob ?? 0)
+    /* `mount ?? rideAlong`, so BOTH seats ride the animal's motion. Reading
+       `mount` alone meant the gunner sat perfectly still on a creature that was
+       swelling underneath her — two drawings sliding past each other, which is
+       the exact thing flapBob exists to prevent, and it was only ever wired up
+       for the seat that steers.
+       `?? 0` is load-bearing too: flapBob is a storm-dragon field, and when
+       Ryuuseki lacked one this line NaN'd the rider's local Y and three.js
+       silently refused to draw her. Any mount missing a field must degrade,
+       not vanish. */
+    const ride = this.mount ?? this.rideAlong;
+    this.sprite.mesh.position.y = ride ? (ride.flapBob ?? 0)
       : this.pandaMount ? this.pandaMount.seatHeight + this.pandaMount.bounce : 0;
 
     // Slash arc: snap out and fade. The panda draws its own claw marks, so the
     // katana arc stays sheathed while she's riding — two overlapping arcs on
     // one swing just reads as a smear.
-    if (this.attackTimer > 0 && !this.pandaMount) {
+    /* Sheathed whenever she is riding ANYTHING. The panda draws its own claw
+       marks and a dragon breathes; in both cases the katana arc is a second
+       overlapping effect for one button press. On Ryuuseki it was unmissable —
+       a two-metre sword swipe going off in the middle of a thirty-metre dragon
+       every time the beams fired. The dragon case was there before he was, it
+       was just small enough on a storm dragon to look like part of the breath. */
+    const riding = this.pandaMount || this.mount || this.rideAlong;
+    if (this.attackTimer > 0 && !riding) {
       const t = 1 - this.attackTimer / 0.26;
       this.slash.visible = true;
       this.slash.material.opacity = (1 - t) * 0.9;
@@ -859,12 +876,21 @@ export class Player {
     // Look slightly ahead of the kitten so you can see where you're going.
     const flying = !!(this.mount || this.rideAlong);
     const lead = flying ? 0.55 : this.pandaMount ? 0.42 : 0.25;
+    /* On a big mount, look at and orbit THE RIDERS AS DRAWN.
+       Their `position` is the animal's centre — the seats are draw offsets —
+       so aiming at "the rider" and aiming at "the dragon" are the same point,
+       which is why pulling the camera back never re-framed anything. The place
+       a player is actually watching is the pair of kittens on his neck.
+       `camScale` marks the mounts that want this. */
+    const big = (this.mount ?? this.rideAlong);
+    const mid = big?.camScale ? big.ridersMidpoint() : null;
+    const aim = mid ?? this.position;
     // Aim at where the kitten is DRAWN, which on a panda is up on its back.
     const want = new THREE.Vector3(
-      this.position.x + this.velocity.x * lead,
-      this.position.y + (flying ? 2.5 : 1.4)
+      aim.x + this.velocity.x * lead,
+      aim.y + (mid ? 0 : (flying ? 2.5 : 1.4))
         + (this.pandaMount ? this.pandaMount.seatHeight : 0),
-      this.position.z + this.velocity.z * lead
+      aim.z + this.velocity.z * lead
     );
     const follow = flying ? 3.2 : 7.5;
     this.camTarget.lerp(want, Math.min(1, dt * follow));
@@ -878,12 +904,20 @@ export class Player {
        than the walking one whatever the speed, because the kitten is sitting
        four units up and the animal under her is another six wide. */
     /* The flying range is sized for a storm dragon, whose quad is about 24
-       units across. Ryuuseki's is 60, and at 46 units back the camera sits
-       INSIDE him — you fly a green wall. So the ride distance scales with
-       whatever you are actually on rather than assuming every flying thing is
-       the same size. `mountScale` is 1 for a storm dragon by construction. */
+       units across. The ride distance scales with whatever you are actually on
+       rather than assuming every flying thing is the same size — `mountScale`
+       is 1 for a storm dragon by construction.
+
+       A mount may ask for MORE than its size implies, and Ryuuseki does. A
+       yaw-only billboard only really faces you at its centre; the further its
+       edges are off the view axis the more the perspective keystones them, and
+       on a creature nearly thirty units wide that reads as the whole dragon
+       being rotated twenty degrees away from you rather than as perspective.
+       Pulling the camera back shrinks the angle he subtends, which is the only
+       thing that actually fixes it short of abandoning yaw-only billboards —
+       and it is also what lets you see the ground he is flying over. */
     const seat = this.mount ?? this.rideAlong;
-    const mountScale = seat ? Math.max(1, seat.quad / 24) : 1;
+    const mountScale = seat ? (seat.camScale ?? Math.max(1, seat.quad / 24)) : 1;
     let wantDist = seat
       ? THREE.MathUtils.clamp((46 + speed * 1.5) * mountScale, 46 * mountScale, 320)
       : this.pandaMount

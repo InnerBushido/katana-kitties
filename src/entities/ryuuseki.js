@@ -116,6 +116,37 @@ export const RYU_MOUTH = { fwd: 0.438, up: 0.292 };
 /** How high above the ground he waits when nobody is riding. */
 export const HOVER = 11;
 
+/**
+ * How far back the follow camera sits while he is ridden, as a multiple of the
+ * storm dragon's range. Read by Player._updateCamera.
+ *
+ * Deliberately larger than his size alone would ask for (quad/24 = 1.35). Two
+ * things need the extra distance and neither is about fitting him in frame:
+ *
+ *  - A yaw-only billboard is only truly square to the view at its centre. The
+ *    further its edges sit off the view axis the harder perspective keystones
+ *    them, and across thirty units that stops reading as perspective and
+ *    starts reading as a dragon turned twenty degrees away from you. Distance
+ *    is the only lever short of abandoning yaw-only billboards, which every
+ *    other sprite in the game depends on.
+ *  - You are flying him over a town you are supposed to be flattening. At the
+ *    old distance he filled the screen and the thing you were aiming at did
+ *    not fit on it.
+ */
+export const RYU_CAM = 2.3;
+
+/**
+ * How far the SHARED camera sits from him, in multiples of his quad.
+ *
+ * Riding him forces a merged view, and the merged camera is a different rig
+ * from the per-player one — it frames the two kittens and sizes its distance
+ * from how far apart they are. On him they are both at his origin, so it saw a
+ * separation of nearly zero and clamped to its 26-unit minimum: a 28-unit
+ * dragon viewed from 26 units. Every adjustment I made to the per-player
+ * camera did nothing at all, because that camera is not the one drawing.
+ */
+export const RYU_VIEW = 3.4;
+
 export class Ryuuseki {
   constructor(art, x, y, z) {
     const quad = RYU_SIZE / (art.contentScale || 1);
@@ -135,6 +166,8 @@ export class Ryuuseki {
        called: Player reads `mount.flapBob`, and leaving it undefined NaN'd the
        rider's sprite and made her invisible. */
     this.flapBob = 0;
+    /** How far back the follow camera sits on him. See RYU_CAM. */
+    this.camScale = RYU_CAM;
 
     /** The two seats. */
     this.pilot = null;
@@ -281,6 +314,34 @@ export class Ryuuseki {
       y: 0,
       z: Math.cos(this.facing) * q * s.fwd,
     };
+  }
+
+  /**
+   * The point the camera should look at and orbit: where the GIRLS are, not
+   * where the animal's origin is.
+   *
+   * Both riders' positions sit at his centre — their seats are draw offsets —
+   * so pointing the camera at "the rider" and pointing it at "the dragon" are
+   * the same point, which is why pulling back alone never re-framed anything.
+   * The place a player is actually watching is the pair of kittens on his
+   * neck, and that is `drawOffset` forward of centre.
+   *
+   * Averaged across whichever seats are filled, so a solo pilot gets her own
+   * seat rather than a midpoint with an empty one.
+   */
+  ridersMidpoint() {
+    const seats = [];
+    if (this.pilot) seats.push('pilot');
+    if (this.gunner) seats.push('gunner');
+    if (!seats.length) return null;
+    const p = new THREE.Vector3();
+    for (const s of seats) {
+      const d = this.drawOffset(s);
+      p.x += this.position.x + d.x;
+      p.z += this.position.z + d.z;
+      p.y += this.position.y + this.quad * RYU_BACK[s].up;
+    }
+    return p.multiplyScalar(1 / seats.length);
   }
 
   /** Slaved to the pilot each frame, exactly like a ridden storm dragon. */

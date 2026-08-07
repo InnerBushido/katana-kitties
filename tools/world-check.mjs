@@ -22,7 +22,7 @@ import { LEADERS, ELDER, leaderSpot, LEADER_OFFSET } from '../src/entities/leade
 import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
 import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from '../src/entities/dragonball.js';
-import { Ryuuseki, DUO_BEAMS, SOLO_BEAMS, BEAM, RYU_SIZE, FAN, RYU_BACK, HOVER, RYU_MOUTH } from '../src/entities/ryuuseki.js';
+import { Ryuuseki, DUO_BEAMS, SOLO_BEAMS, BEAM, RYU_SIZE, FAN, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
 import { SHRINE_DAIS } from '../src/world/build.js';
 
@@ -350,6 +350,82 @@ console.log('\n--- Ryuuseki, and why two seats beat one ---');
      to, stepping off once means never getting back on — a mount you can lose
      by dismounting is worse than no mount at all. */
   ok('he waits within reach of the ground', HOVER > 4 && HOVER < 18);
+
+  /* BOTH riders have to bob with him. `flapBob` was only ever read through
+     `mount`, so the gunner — who rides through `rideAlong` — sat perfectly
+     still on a creature swelling underneath her, which is the exact thing
+     flapBob exists to prevent. Driven for a second so it is genuinely moving
+     rather than merely present. */
+  {
+    // Local, because the Pandapaw section's factory is scoped to its own block.
+    const mkRider = () => new Player({
+      texture: new THREE.Texture(), index: 0,
+      spawn: new THREE.Vector3(0, world.heightAt(0, 40).y, 40),
+      cols: 8, rows: 4, mirror: false,
+    });
+    const owner = mkRider();
+    const gun = mkRider();
+    owner.mount = R; gun.rideAlong = R;
+    R.pilot = owner; R.gunner = gun;
+    const seen = new Set();
+    for (let i = 0; i < 60; i++) {
+      R.update(1 / 60, world);
+      owner._updateFeedback(1 / 60, world);
+      gun._updateFeedback(1 / 60, world);
+      seen.add(gun.sprite.mesh.position.y.toFixed(3));
+    }
+    line('gunner bob values over a second', seen.size);
+    ok('the gunner rides his swell, not just the pilot', seen.size > 5);
+    ok('and both seats read the same motion',
+      Math.abs(owner.sprite.mesh.position.y - gun.sprite.mesh.position.y) < 1e-9);
+    ok('neither seat is NaN', Number.isFinite(owner.sprite.mesh.position.y)
+      && Number.isFinite(gun.sprite.mesh.position.y));
+
+    /* The katana stays sheathed while riding. Two overlapping effects for one
+       button press, and on a thirty-unit dragon a two-unit sword swipe going
+       off in his middle is unmissable. */
+    owner.attackTimer = 0.2;
+    gun.attackTimer = 0.2;
+    owner._updateFeedback(1 / 60, world);
+    gun._updateFeedback(1 / 60, world);
+    ok('no katana arc while flying him', !owner.slash.visible && !gun.slash.visible);
+    // ...but it still comes out on foot, which is the point of having one.
+    owner.mount = null; gun.rideAlong = null;
+    R.pilot = null; R.gunner = null;
+    owner.attackTimer = 0.2;
+    owner._updateFeedback(1 / 60, world);
+    ok('and it still swings on the ground', owner.slash.visible);
+  }
+
+  /* He asks the camera for more room than his size alone implies — a yaw-only
+     billboard keystones at its edges, and across thirty units that reads as a
+     dragon rotated away from you rather than as perspective. */
+  line('camera pull-back on him', `${RYU_CAM}x a storm dragon`);
+  ok('the camera pulls back further than his size alone asks',
+    R.camScale > R.quad / 24);
+
+  /* And it looks at THE GIRLS, not at his origin. Their positions are his
+     origin — the seats are draw offsets — so "aim at the rider" and "aim at
+     the dragon" are the same point, and pulling back alone re-framed nothing.
+     The midpoint has to actually sit forward of his centre, on his neck. */
+  {
+    R.position.set(0, 50, 0);
+    R.facing = Math.PI / 2;                 // pointing down +x
+    R.pilot = null; R.gunner = null;
+    ok('no midpoint with nobody aboard', R.ridersMidpoint() === null);
+    R.pilot = {};
+    const solo = R.ridersMidpoint();
+    ok('a lone pilot gets her OWN seat, not a midpoint with an empty one',
+      Math.abs(solo.x - R.quad * RYU_BACK.pilot.fwd) < 1e-6);
+    R.gunner = {};
+    const duo = R.ridersMidpoint();
+    const wantFwd = R.quad * (RYU_BACK.pilot.fwd + RYU_BACK.gunner.fwd) / 2;
+    line('camera aim, forward of his centre', `${duo.x.toFixed(1)} units`);
+    ok('with both aboard it sits between them', Math.abs(duo.x - wantFwd) < 1e-6);
+    ok('and that is genuinely forward of his origin', duo.x > R.quad * 0.15);
+    ok('at the height they are drawn', duo.y > R.position.y && duo.y < R.position.y + R.quad * 0.45);
+    R.pilot = null; R.gunner = null;
+  }
 }
 
 console.log('\n--- the summoning ---');

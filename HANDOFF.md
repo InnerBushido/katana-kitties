@@ -414,7 +414,26 @@ no gunner's attack, so the two-player set-piece could not be reached on the
 machine the game is built on. `KEYSETS[1].alt` adds `, . / ;` next to the arrow
 keys as ALTERNATES; the numpad still works.
 
-**Three bugs the 60-unit dragon exposed, all worth knowing:**
+**MERGED MODE DRAWS WITH `sharedCamera`, NOT `player.camera`.** This cost more
+time than anything else in the feature. Riding Ryuuseki forces a merged view,
+so every adjustment made to `Player._updateCamera` — pull-back, aim point, all
+of it — changed nothing at all, because that camera is not the one rendering.
+The merged rig is its own thing in `_updateSplit` and it sizes its distance
+from **how far apart the two kittens are**: on him they share one point, so it
+saw a separation of zero, clamped to its 26-unit minimum, and framed a 28-unit
+dragon from 26 units. It also aimed at their positions, which are his origin,
+so the animal ran off the side of the screen.
+
+Both are fixed in the merged rig (`RYU_VIEW`, `ridersMidpoint()`). **If a
+camera change appears to do nothing, check which camera is actually drawing
+before changing anything else.**
+
+**The camera looks at the RIDERS, not at the animal.** Their positions are his
+origin — the seats are draw offsets — so "aim at the rider" and "aim at the
+dragon" are the same point and neither frames him. `ridersMidpoint()` returns
+where the girls are *drawn*, averaged over whichever seats are filled.
+
+**Three bugs the big dragon exposed, all worth knowing:**
 
 - **`mount.flapBob` was undefined on him, and it made the PILOT invisible.**
   `Player._updateFeedback` sets `sprite.mesh.position.y = this.mount.flapBob`,
