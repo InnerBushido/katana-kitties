@@ -15,6 +15,9 @@ import { MathDojo } from './systems/mathdojo.js';
 import { Minimap } from './systems/minimap.js';
 import { Cutscene } from './systems/cutscene.js';
 import { ShrineScene } from './systems/shrinescene.js';
+import { SummonScene } from './systems/summonscene.js';
+import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from './entities/dragonball.js';
+import { Ryuuseki } from './entities/ryuuseki.js';
 
 /* ---------------------------------------------------------------------------
    Katana Kitties — main loop.
@@ -155,6 +158,26 @@ class Game {
        buffered here at boot, not fetched at the moment she opens her mouth. */
     this.shrineScene = new ShrineScene({ world: this.world, audio: this.audio });
     await this.shrineScene.load(this.leaders);
+
+    /* The dragon hunt: seven stars, one per island, and the animal they call.
+       The art is loaded here rather than with the other sprites because a
+       missing Ryuuseki must not take the boot down — the hunt simply has no
+       payoff, which is a far smaller loss than a game that won't start. */
+    setLoad('Scattering the seven stars…');
+    await frame();
+    this.balls = this.world.placeDragonBalls(
+      (stars, x, y, z, isl) => new DragonBall(stars, x, y, z, isl)
+    );
+    this.ballsHeld = 0;
+    this.ryu = null;
+    this.ryuArt = await loadSpriteAtlas('/sprites/ryuuseki.png', { views: 1, rows: 1 })
+      .catch(() => null);
+    this.summonScene = new SummonScene({ world: this.world, audio: this.audio });
+    await this.summonScene.load();
+    /* Bigger than any storm dragon's because he IS bigger — a mount radius
+       scaled to a 13-unit animal is unreachable on a 26-unit one, since the
+       drawn creature extends well past the point you have to stand at. */
+    this.ryuMountRadius = 16;
 
     /* Two maps: `minimap` is the shared/P1 one, `minimap2` only appears when
        the screen splits. They keep their own zoom so each player can be looking
@@ -508,6 +531,24 @@ class Game {
     this.shrineScene?.finish();
     this.shrineScene?.dwell.clear();
     for (const L of this.leaders) { L.met = false; L.lookAt(null); }
+
+    /* The dragon hunt goes back in its box too: stars back on their islands,
+       Ryuuseki gone, sky back to sunset, both story scenes unspent. Leaving
+       the dragon parked over a restarted town would be the loudest possible
+       leftover. */
+    for (const b of this.balls) b.reset();
+    this.ballsHeld = 0;
+    if (this.ryu) {
+      this.ryu.pilot = null;
+      this.ryu.gunner = null;
+      this.scene.remove(this.ryu.group);
+      this.ryu = null;
+    }
+    for (const p of this.players) p.rideAlong = null;
+    this.summonScene?.finish();
+    this.summonScene.played = { found: false, summon: false };
+    this.summonScene.clearDusk();
+    this._updateBallHud();
     for (const id of ['c1', 'c2']) {
       const el = document.getElementById(id);
       if (el) { el.textContent = ''; el.style.background = ''; }
@@ -921,9 +962,121 @@ class Game {
     el.style.background = `#${clan.color.toString(16).padStart(6, '0')}`;
   }
 
+  /**
+   * Hide the playing HUD while any scene owns the screen.
+   *
+   * The minimap, the scores and the zoom tag all sat on top of the opening
+   * cutscene too — a bordered dialogue box with a live minimap poking out from
+   * behind it is the difference between a story and a pause menu. Driven from
+   * one place because there are three scenes now and they all want it.
+   */
+  _hudDuringScenes() {
+    const scene = !!(this.cutscene?.active || this.shrineScene?.active
+      || this.summonScene?.active);
+    document.getElementById('hud')?.classList.toggle('scene-hidden', scene);
+  }
+
   /** The leader standing at a clan's shrine. Used to gate joining on `met`. */
   leaderFor(clan) {
     return this.leaders.find((L) => L.clan.id === clan.id) ?? null;
+  }
+
+  /* ------------------------- the dragon hunt ----------------------------- */
+
+  /**
+   * Stars picked up, the seventh one calling Patchfur, and the dragon.
+   *
+   * The counter is SHARED between the two kittens rather than one each. Seven
+   * split two ways is three and a half, and a hunt where your sister finding
+   * one sets you back is a hunt that ends in an argument — this is the one
+   * thing in the game they are explicitly doing together, and the payoff needs
+   * both of them on it.
+   */
+  _updateBalls(dt) {
+    for (const b of this.balls) {
+      b.update(dt);
+      if (b.taken) continue;
+      for (const p of this.players) {
+        // Reachable from a dragon too: a star on a rim you can only hover over
+        // would be a star you can see and never collect.
+        const d = Math.hypot(p.position.x - b.position.x, p.position.z - b.position.z);
+        if (d > PICKUP_RADIUS + (p.mount ? 4 : 0)) continue;
+        if (Math.abs(p.position.y - b.position.y) > 14) continue;
+        b.take();
+        this.ballsHeld++;
+        this.sfx('star');
+        this._updateBallHud();
+        const left = BALL_COUNT - this.ballsHeld;
+        this.toast(
+          left ? `${p.name} found the ${b.stars}★ dragon ball!  ${left} to go`
+            : `${p.name} found the last dragon ball!`,
+          p.index
+        );
+        if (this.ballsHeld >= BALL_COUNT) this._onAllBalls();
+        break;
+      }
+    }
+  }
+
+  _updateBallHud() {
+    const el = document.getElementById('balls');
+    if (!el) return;
+    el.classList.toggle('hidden', this.ballsHeld === 0 && !this.ryu);
+    el.textContent = this.ryu
+      ? 'RYUUSEKI IS HERE'
+      : `★ ${this.ballsHeld} / ${BALL_COUNT}`;
+  }
+
+  /** The seventh star: Patchfur speaks, and the dragon appears over the town. */
+  _onAllBalls() {
+    const torii = { x: 0, z: -46 };
+    const g = this.world.heightAt(torii.x, torii.z);
+    const y = (g ? g.y : 6) + 34;
+    if (this.ryuArt) {
+      this.ryu = new Ryuuseki(this.ryuArt, torii.x, y, torii.z);
+      this.scene.add(this.ryu.group);
+    }
+    this._updateBallHud();
+    this.sfx('ryuroar');
+    const focus = new THREE.Vector3(torii.x, g ? g.y : 6, torii.z);
+    /* The scene is a bonus, not the mechanism. If the voices never loaded the
+       dragon is still there and still rideable — a missing mp3 must not be the
+       difference between a summoned dragon and none. */
+    this.summonScene.start('found', focus);
+  }
+
+  /** Walking up to him the first time. The sky is already on its way down. */
+  _checkSummonScene() {
+    if (!this.ryu || this.summonScene.played.summon) return;
+    for (const p of this.players) {
+      if (this.ryu.position.distanceTo(p.position) < 46) {
+        /* Framed off his own quad — see SummonScene.start. 0.85 rather than
+           the obvious 0.5, because he is a WORM: the drawn creature is only
+           about a third of the cell tall but nearly all of it wide, so a
+           radius taken from his height puts the camera close enough to crop
+           the head off, and the head is the whole shot. */
+        this.summonScene.start('summon', this.ryu.position.clone(), this.ryu.quad * 0.85);
+        return;
+      }
+    }
+  }
+
+  onRyuMount(player, seat) {
+    this.audio.startMusic('ryu');
+    this.toast(
+      seat === 'pilot'
+        ? `${player.name} takes the reins of Ryuuseki — steer!`
+        : `${player.name} mans the beams — press ATTACK!`,
+      player.index
+    );
+    if (this.ryu.pilot && this.ryu.gunner) {
+      this.toast('Both aboard — the full seven beams!', 0);
+    }
+  }
+
+  onRyuDismount(player) {
+    this.toast(`${player.name} let go of Ryuuseki`, player.index);
+    if (!this.ryu?.ridden) this.audio.startMusic('play');
   }
 
   /** Entities call this rather than reaching into the audio engine. */
@@ -1017,6 +1170,24 @@ class Game {
       return;
     }
 
+    /* --- the dragon-hunt scenes own the screen the same way --- */
+    this._hudDuringScenes();
+    if (this.summonScene?.active) {
+      if (this.input.anyPressed() || this.input.players.some((p) => p.pressed('start'))) {
+        this.summonScene.skip();
+      }
+      this.summonScene.update(dt);
+      this.world.setDusk(this.summonScene.updateDusk(dt));
+      this.world.update(dt, this.players[0].position);
+      for (const d of this.dragons) d.update(dt, this.world, []);
+      this.ryu?.update(dt, this.world);
+      for (const s of this.world.shrines) s.update(dt, []);
+      for (const L of this.leaders) L.update(dt, []);
+      this._renderView(this.summonScene.camera, 0, 0,
+        ...this.renderer.getSize(new THREE.Vector2()).toArray());
+      return;
+    }
+
     /* --- a shrine scene owns the screen the same way ---
        Same furniture, same rule about the world underneath: she is really
        standing on that dais with her own beam behind her, and freezing it
@@ -1092,6 +1263,16 @@ class Game {
        players have moved, so the dwell is measured against where they actually
        ended the frame. */
     this.shrineScene?.watch(dt, this.leaders, this.players);
+    this._updateBalls(dt);
+    /* Ryuuseki is carried by his PILOT, so he ticks after the players for the
+       same reason the pandas do: a ridden animal is slaved to where its rider
+       actually ended the frame, not to where she started it. */
+    if (this.ryu) {
+      if (this.ryu.pilot) this.ryu.carry(this.ryu.pilot);
+      this.ryu.update(dt, this.world);
+      this._checkSummonScene();
+    }
+    this.world.setDusk(this.summonScene.updateDusk(dt));
     this._updateSeek(dt);
 
     // Standing in the dojo frames the whole diagram from above.
@@ -1200,8 +1381,17 @@ class Game {
       (p) => !p.mount && Math.hypot(p.position.x - dc0.x, p.position.z - dc0.z) < DOJO_VIEW_R
     );
 
-    if (this.settings.split === 'always') this.merged = false;
-    else if (this.settings.split === 'never' || bothInDojo) this.merged = true;
+    /* Anybody on Ryuuseki forces ONE camera, and it outranks even "always
+       split". Two half-screens of the same animal is the worst possible view
+       of him: the flyer's turns yank the gunner's camera around, the gunner
+       cannot see what she is aiming at, and the one moment the game asks the
+       two girls to be in the same seat is rendered as though they are not.
+       Same rule as the dojo, and for the same reason — a shared thing gets a
+       shared view. */
+    const onRyu = !!(this.ryu && this.ryu.ridden);
+
+    if (onRyu || this.settings.split === 'never' || bothInDojo) this.merged = true;
+    else if (this.settings.split === 'always') this.merged = false;
     else {
       // hysteresis so it doesn't flicker at the boundary
       if (this.merged && (dist > MERGE_OUT || anyFlying)) this.merged = false;
@@ -1252,6 +1442,8 @@ class Game {
     this.cutscene?.faceCamera(camera);
     for (const s of this.world.shrines) s.faceCamera(camera);
     for (const pk of this.pickups) if (!pk.taken) pk.faceCamera(camera);
+    for (const b of this.balls ?? []) b.faceCamera(camera);
+    this.ryu?.faceCamera(camera);
     this.dojo.faceCamera(camera);
   }
 

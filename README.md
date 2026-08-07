@@ -89,6 +89,36 @@ reached yet stands up over the horizon behind whoever is talking.
 Every one of them is standing at her own shrine for the rest of the game. Walk
 up and she'll tell you what her clan gives you before you commit to it.
 
+## Meet the clan leaders
+
+Walk up to a shrine and **stand there**. After a couple of seconds the leader
+stops you, fills the screen and tells you who she is — out loud, in her own
+voice. It happens once per leader, any button skips it, and **you can't swear
+to a clan you haven't met**, so the introduction is the way in rather than
+something in the way.
+
+## Collect the seven dragon balls
+
+**There is one star on every island — seven islands, seven stars.** Each one
+stands a thin column of amber light, so you can spot them from a dragon. The
+count is shared between the two of you: you're hunting together.
+
+Find all seven and Patchfur tells you where to take them. Then **the sky goes
+dark**, and a very long green dragon called **Ryuuseki** is waiting over the
+great torii.
+
+He seats **both of you, and you do different jobs**:
+
+| | |
+|---|---|
+| **First one on** | flies him — same controls as a storm dragon |
+| **Second one on** | works the beams — your stick aims, ATTACK fires |
+
+One kitten alone can fly him and fire **one** beam. With both of you aboard it
+opens into **seven**, in a fan wide enough to flatten a whole market street in
+one press. He outreaches and outhits every storm dragon in the game, the screen
+joins into one shared view while you're on him, and he has his own music.
+
 ## Raise a panda
 
 Five of the six clans hand you a power the moment you stand in their ring.

@@ -31,9 +31,18 @@ const INSEN = [0, 1, 5, 7, 10];
  * makes the intro feel like a story being told rather than a level being
  * played, and it hands over to the normal theme the moment the cutscene ends.
  */
+/* Ryuuseki's theme. The koto is still a koto and the root is still D, so it
+   belongs to the same game — but everything else is pushed: the beat is nearly
+   twice the game tempo, the taiko lands on every other step instead of every
+   eighth, and it plays an octave UP where the intro went down. That contrast is
+   the point. The intro is the slowest thing in the game and this is the
+   fastest, and a kid who has heard both knows within one bar which one is
+   playing. `fifths` doubles each pluck a fifth above, which is the cheapest
+   way to make a single oscillator sound like a fanfare rather than a plink. */
 const MUSIC = {
   play: { scale: HIRAJOSHI, beat: 0.52, oct: 1, drone: 0.14, taiko: 0 },
   intro: { scale: INSEN, beat: 0.78, oct: 0.5, drone: 0.20, taiko: 8 },
+  ryu: { scale: INSEN, beat: 0.28, oct: 2, drone: 0.26, taiko: 2, fifths: true },
 };
 
 const semi = (n, scaleRoot = ROOT) => scaleRoot * Math.pow(2, n / 12);
@@ -288,6 +297,34 @@ export class Audio {
         this._noise({ from: 400, to: 2600, dur: 0.38, gain: 0.55 * v, type: 'lowpass', q: 0.9 });
         this._tone({ type: 'sawtooth', from: 90, to: 42, dur: 0.36, gain: 0.1 * v });
         break;
+      case 'ryubeam':
+        /* Ryuuseki's fan. It has to be audibly a bigger event than 'breath',
+           and louder alone would just be louder — so it is built the other way
+           round: a hard bright transient on top of a long descending sweep,
+           which is what makes a beam read as a beam rather than as a gust.
+           `vol` carries the solo/duo difference, so one kitten firing sounds
+           like a smaller version of the same weapon rather than a different
+           one. */
+        this._noise({ from: 5200, to: 300, dur: 0.5, gain: 0.5 * v, type: 'bandpass', q: 1.6 });
+        this._tone({ type: 'sawtooth', from: 1400, to: 120, dur: 0.42, gain: 0.2 * v });
+        this._tone({ type: 'square', from: 220, to: 70, dur: 0.5, gain: 0.1 * v, delay: 0.03 });
+        break;
+      case 'ryuroar':
+        /* The summon. Very low, very long, and it is the only cue in the game
+           allowed to be — everything else is a blip because everything else
+           happens constantly. This happens once. */
+        this._tone({ type: 'sawtooth', from: 70, to: 28, dur: 1.5, gain: 0.34 * v });
+        this._tone({ type: 'square', from: 104, to: 41, dur: 1.3, gain: 0.14 * v, delay: 0.05 });
+        this._noise({ from: 900, to: 120, dur: 1.6, gain: 0.3 * v, type: 'lowpass', q: 1.1 });
+        break;
+      case 'star':
+        // Picking up a dragon ball: a bright rising arpeggio, unmistakably
+        // "you got one of the things".
+        [0, 4, 7, 12].forEach((n, i) => this._tone({
+          type: 'triangle', from: semi(n + 24), dur: 0.2,
+          gain: 0.17 * v, delay: i * 0.048,
+        }));
+        break;
       case 'mount':
         [0, 3, 7].forEach((n, i) => this._tone({
           type: 'triangle', from: semi(n + 12), dur: 0.22,
@@ -432,6 +469,17 @@ export class Audio {
       o.connect(f);
       o.start(t);
       o.stop(t + 2.0);
+    }
+    /* Ryuuseki's theme doubles every pluck a fifth up. One extra oscillator,
+       and it is the whole difference between a koto line and a fanfare — a
+       bare fifth is the interval every heroic theme leans on. */
+    if (M.fifths) {
+      const o = this.ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = freq * 1.4983;   // a just fifth, slightly flat
+      o.connect(f);
+      o.start(t);
+      o.stop(t + 1.4);
     }
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(0.16, t + 0.012);

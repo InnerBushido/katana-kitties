@@ -21,6 +21,9 @@ import {
 import { LEADERS, ELDER, leaderSpot, LEADER_OFFSET } from '../src/entities/leader.js';
 import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
 import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
+import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from '../src/entities/dragonball.js';
+import { Ryuuseki, DUO_BEAMS, SOLO_BEAMS, BEAM, RYU_SIZE, FAN, RYU_BACK } from '../src/entities/ryuuseki.js';
+import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
 import { SHRINE_DAIS } from '../src/world/build.js';
 
 const line = (l, v) => console.log(String(l).padEnd(42) + v);
@@ -41,7 +44,19 @@ globalThis.document = {
     width: 1,
     height: 1,
     getContext: () => new Proxy({}, {
-      get: (_, k) => (k === 'measureText' ? () => ({ width: 10 }) : () => {}),
+      /* Most 2D calls can be no-ops, but the two that RETURN something have to
+         return something usable or the caller explodes on the next line:
+         `measureText` is read for a width, and `createLinearGradient` gets
+         `addColorStop` called on it (the dragon balls paint their glass that
+         way). A no-op proxy returning undefined for those is a stub that
+         breaks exactly the code it is meant to let run headlessly. */
+      get: (_, k) => {
+        if (k === 'measureText') return () => ({ width: 10 });
+        if (k === 'createLinearGradient' || k === 'createRadialGradient') {
+          return () => ({ addColorStop: () => {} });
+        }
+        return () => {};
+      },
       set: () => true,
     }),
   }),
@@ -175,6 +190,119 @@ console.log('\n--- shrine scenes ---');
   const worstRing = Math.max(...world.clanHalls.map((h) => h.r));
   line('widest join ring vs scene radius', `${worstRing.toFixed(1)} vs ${SCENE_RADIUS}`);
   ok('no spot lets you press interact out of her earshot', worstRing <= SCENE_RADIUS);
+}
+
+console.log('\n--- the seven dragon balls ---');
+{
+  const balls = world.placeDragonBalls((s, x, y, z, isl) => new DragonBall(s, x, y, z, isl));
+  line('dragon balls placed', balls.length);
+  ok('there are seven', balls.length === BALL_COUNT);
+  ok('and seven islands to put them on', world.islands.length === BALL_COUNT);
+
+  /* One per island, and no island with two. The hunt sends the girls to every
+     island in the game exactly once — two on the home island and none on the
+     ash island is a pair flying in circles over a rock they have already
+     stripped, with nothing telling them it is the wrong rock. */
+  const perIsland = new Map();
+  for (const b of balls) {
+    let owner = null;
+    for (const isl of world.islands) {
+      if (Math.hypot(b.position.x - isl.x, b.position.z - isl.z) < isl.radius) owner = isl;
+    }
+    perIsland.set(owner, (perIsland.get(owner) ?? 0) + 1);
+  }
+  ok('every ball is ON an island', !perIsland.has(null));
+  ok('exactly one per island',
+    perIsland.size === world.islands.length
+    && [...perIsland.values()].every((n) => n === 1));
+  ok('and their star counts are 1..7',
+    balls.map((b) => b.stars).sort((a, b2) => a - b2).join(',') === '1,2,3,4,5,6,7');
+
+  /* Standable ground, checked at the ball's own radius the way dragon perches
+     are. A star on a rim reads perfectly in a screenshot and cannot be walked
+     up to — and unlike a dragon there is no flying it home to try again. */
+  ok('every ball stands on solid ground',
+    balls.every((b) => world.heightAt(b.position.x, b.position.z) != null));
+  ok('none is buried in a solid', balls.every((b) => world.solids.every(
+    (s) => Math.hypot(b.position.x - s.x, b.position.z - s.z) >= s.r)));
+  /* And none inside a clan's join ring: a star collected by accident on the
+     way to swearing an oath is a star that never got found. */
+  ok('none sits in a clan join ring', balls.every((b) => world.clanHalls.every(
+    (h) => Math.hypot(b.position.x - h.x, b.position.z - h.z) > h.r)));
+  ok('the pickup radius is reachable on foot', PICKUP_RADIUS >= 2 && PICKUP_RADIUS <= 6);
+}
+
+console.log('\n--- Ryuuseki, and why two seats beat one ---');
+{
+  const art = { texture: new THREE.Texture(), contentScale: 0.7, pad: 0.06, cols: 1 };
+  const R = new Ryuuseki(art, 0, 60, -46);
+
+  ok('he starts with both seats empty', R.freeSeat() === 'pilot' && !R.ridden);
+  R.pilot = {};
+  ok('the second rider gets the gunner seat', R.freeSeat() === 'gunner');
+  R.gunner = {};
+  ok('and a third is turned away', R.freeSeat() === null);
+  ok('he counts as ridden', R.ridden);
+
+  /* The whole feature. Two seats have to be MEASURABLY better than one, or the
+     teamwork framing is decoration — and it has to be visible, not a damage
+     number, because nobody reads damage numbers at nine years old. */
+  line('beams: solo vs duo', `${SOLO_BEAMS} vs ${DUO_BEAMS}`);
+  ok('two riders fire more beams than one', DUO_BEAMS > SOLO_BEAMS);
+  ok('but one rider is not locked out', SOLO_BEAMS >= 1);
+  ok('the fan is wide enough to read as a fan', FAN > 1 && DUO_BEAMS >= 5);
+
+  /* He must outrange the storm dragons, or the reward for the whole hunt is a
+     dragon that does less than the one perched outside your house. */
+  const best = Math.max(...BREEDS.map((b) => b.breath.range));
+  line('reach: best storm dragon vs Ryuuseki', `${best} vs ${BEAM.range}`);
+  ok('he outreaches every storm dragon', BEAM.range > best);
+  ok('and hits harder', BEAM.power > Math.max(...BREEDS.map((b) => b.breath.power)));
+
+  // Big enough to read as legendary next to a 13-unit storm dragon.
+  ok('he is visibly bigger than a storm dragon', RYU_SIZE > 13 * 1.5);
+
+  /* The two seats must not be drawn at the same spot, or the girls overlap
+     into one smear and the depth sort flickers between them. */
+  R.facing = 0;
+  const a = R.seatOffset('pilot');
+  const b = R.seatOffset('gunner');
+  const gap = Math.hypot(a.x - b.x, a.z - b.z);
+  line('gap between the two seats', gap.toFixed(2));
+  ok('the riders do not sit inside each other', gap > 2.9 * 0.6);
+
+  /* BOTH SEATS MUST BE ON THE HUMP, not near his origin. He is drawn as an
+     S-curve, so the middle of the sprite is the hole between two coils — the
+     measured thickness there is 0.104 against 0.371 at the hump. Seated at the
+     centre (which is the obvious place, and where they started) the girls
+     float in a ring of dragon with daylight under them. See RYU_BACK. */
+  line('seats, fwd toward the head', `pilot ${RYU_BACK.pilot.fwd} / gunner ${RYU_BACK.gunner.fwd}`);
+  for (const [who, s] of Object.entries(RYU_BACK)) {
+    ok(`the ${who} sits on the hump, not in the coil`, s.fwd >= 0.18 && s.fwd <= 0.36);
+    ok(`and on the ${who === 'pilot' ? 'back' : 'back too'}, above the drawn belly`,
+      s.up > 0.25 && s.up < 0.45);
+  }
+  ok('the pilot sits ahead of the gunner', RYU_BACK.pilot.fwd > RYU_BACK.gunner.fwd);
+  ok('and the seats are world-space, not quad-space',
+    a.y > 0 && a.y < R.quad * 0.45);
+}
+
+console.log('\n--- the summoning ---');
+{
+  ok('both scripts have lines', SCRIPTS.found.length >= 2 && SCRIPTS.summon.length >= 2);
+  ok('every line names a recording',
+    [...SCRIPTS.found, ...SCRIPTS.summon].every((b) => b.voice?.endsWith('.mp3')));
+  ok('and no two share one',
+    new Set([...SCRIPTS.found, ...SCRIPTS.summon].map((b) => b.voice)).size
+      === SCRIPTS.found.length + SCRIPTS.summon.length);
+  /* The teamwork instruction has to be SAID. The two-seat split is the one
+     mechanic in the game a player cannot discover by pressing buttons — there
+     is no prompt that explains why the second kitten should climb on. */
+  const spoken = SCRIPTS.summon.map((b) => b.text).join(' ').toLowerCase();
+  ok('the dragon explains the two seats out loud',
+    spoken.includes('steer') && spoken.includes('burn'));
+  ok('and that together is better', spoken.includes('together'));
+  ok('the sky goes properly dark, but not black', DUSK_DEEP > 0.6 && DUSK_DEEP < 1);
 }
 
 console.log('\n--- the cutscene never cuts a line off ---');

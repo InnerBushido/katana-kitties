@@ -325,6 +325,88 @@ its cell (bottom-aligned above `pad`, horizontally centred, `contentScale` of
 the height), so all seven leaders frame identically instead of each being
 framed by however loosely its own sheet happened to pack.
 
+## The shrine scenes
+
+Stand within `SCENE_RADIUS` (10) of a leader you have not met for `DWELL` (2s)
+and she takes the screen in the opening cutscene's own furniture and says her
+line in a recorded voice (`public/voice/shrine_*.mp3`, same preset voice per
+character as the intro). `systems/shrinescene.js`.
+
+**It fires ONCE, and `met` latches on START rather than on finish** — skipping
+spends the introduction. The dais is exactly where both girls stand around,
+because that is where the join ring is, and a scene that replayed there would
+be the most irritating thing in the game.
+
+**It GATES JOINING.** You cannot swear to a clan you have not met, which is
+what lets the scene be full-screen: it is not an interruption on the way to the
+buff, it is the way to the buff. Pressing interact early toasts rather than
+doing nothing, because a button that silently fails reads as broken.
+`world-check` asserts **every join ring sits inside the scene radius**, so
+there is no spot where you can be refused and never trigger the fix.
+
+**The dwell RESETS on leaving rather than decaying.** Kittens sprint over
+shrines constantly on the way somewhere else.
+
+**She turns toward whoever stopped, and it is not a rotation.** She is a
+front-facing single cell that must never mirror, so past about a quarter turn
+there is no art for where she is looking. `ClanLeader.lookAt` biases the
+camera-facing yaw by at most `FACE_BIAS_MAX` (0.38 rad) and squashes x by half
+the cosine — which is what a real turn does to a flat drawing. Measured against
+the **camera**, because "toward you" is a screen direction and in split screen
+the two kittens have their own.
+
+## The seven dragon balls and Ryuuseki
+
+Seven stars, **one per island — which is why there are seven of each**, and
+`world-check` asserts one per island and no island with two. `entities/
+dragonball.js` is procedural (canvas-drawn stars on an amber sphere), like
+every other prop; each stands a short amber column so it is findable from the
+air, deliberately thinner and shorter than a shrine beam.
+
+**The tally is SHARED between the two kittens.** Seven split two ways is three
+and a half, and a hunt where your sister finding one sets you back ends in an
+argument. This is the one thing in the game they do together.
+
+Collect all seven and Patchfur speaks (`systems/summonscene.js`, `found`), and
+**Ryuuseki appears over the great torii**. Walk up to him and he introduces
+himself (`summon`) while the sky falls to `DUSK_DEEP` and stays there until he
+leaves. `World.setDusk` lerps the sky uniforms, the fog AND the light
+intensities from a remembered day palette — leaving the lights alone put bright
+afternoon islands under a black sky, which reads as a broken shader rather than
+as nightfall.
+
+**TWO SEATS, DOING DIFFERENT JOBS.** The pilot takes `player.mount`, so every
+line of the existing flight controller applies unchanged. The gunner takes
+`player.rideAlong` — deliberately not `mount`, which everything in the game
+reads as "is steering a flying thing" — steers nothing, and aims the fan with
+her stick. She is a turret. **A lone pilot still fires, but one beam**
+(`SOLO_BEAMS` 1 vs `DUO_BEAMS` 7): a kid playing while her sister is off
+cutting bamboo must not have summoned a legendary taxi.
+
+**Anybody aboard forces ONE camera, outranking even "always split".** Two
+half-screens of the same animal is the worst possible view of him — the flyer's
+turns yank the gunner's screen around and the gunner cannot see what she is
+aiming at. Same rule as the dojo.
+
+**THE SEATS WERE MEASURED, AND THE OBVIOUS PLACE IS THE WRONG ONE.** He is
+drawn as an S-curve, so the middle of the sprite is the *hole between two
+coils*: measured thickness 0.104 there against 0.371 at the hump behind his
+neck. Seated near his origin — which is where the storm dragon's numbers put
+them — both girls floated inside a ring of dragon with daylight under them, and
+nothing about the numbers looked wrong. See `RYU_BACK`; the column that matters
+is thickness, not height.
+
+**Anything sized for a storm dragon breaks on him.** His quad is 60 units
+across against a storm dragon's ~24, and three separate things were tuned to
+the smaller number: the follow camera sat *inside* him at 46 units, the
+rider's depth-sort nudge (2.4) left both girls buried in his billboard, and
+the summon shot cropped his head off. All three now scale off `mount.quad`
+rather than assuming every flying thing is the same size.
+
+**A new music track** (`MUSIC.ryu`) plays while he is ridden: insen like the
+intro, but nearly twice the game tempo, an octave up, taiko every other step,
+and every pluck doubled a fifth above. Same synthesis, no new files.
+
 ## The panda (Pandapaw)
 
 **The only buff you have to earn after swearing.** Every other clan hands you

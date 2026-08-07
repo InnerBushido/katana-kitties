@@ -369,6 +369,53 @@ export class World {
     this.scene.add(sky);
 
     this.scene.fog = new THREE.Fog(0xe8a878, 420, 1900);
+
+    /* Keep the sunset as the thing to come BACK to. `setDusk` lerps toward the
+       storm palette from these, so the day is never lost to rounding after a
+       few summonings — a sky that drifts a shade darker every time the dragon
+       comes and goes is the sort of bug nobody can point at. */
+    this._daySky = {
+      top: this.skyMat.uniforms.top.value.clone(),
+      mid: this.skyMat.uniforms.mid.value.clone(),
+      horizon: this.skyMat.uniforms.horizon.value.clone(),
+      sun: this.skyMat.uniforms.sunColor.value.clone(),
+      fog: this.scene.fog.color.clone(),
+      fogNear: this.scene.fog.near,
+    };
+    this._duskSky = {
+      top: new THREE.Color(0x05060f),
+      mid: new THREE.Color(0x0d1430),
+      horizon: new THREE.Color(0x2a1c4a),
+      sun: new THREE.Color(0x6a5aa0),
+      fog: new THREE.Color(0x140f28),
+      fogNear: 260,
+    };
+    this.dusk = 0;
+  }
+
+  /**
+   * Darken the sky for Ryuuseki, 0 = sunset, 1 = storm.
+   *
+   * The lights come down with it. Leaving them alone made the islands sit in
+   * bright afternoon sunshine under a black sky, which reads as a broken
+   * shader rather than as nightfall — the give-away is that everything keeps
+   * its warm rim light while the sky behind it says midnight.
+   */
+  setDusk(k) {
+    if (k === this.dusk) return;
+    this.dusk = k;
+    const U = this.skyMat.uniforms;
+    const D = this._daySky;
+    const N = this._duskSky;
+    U.top.value.copy(D.top).lerp(N.top, k);
+    U.mid.value.copy(D.mid).lerp(N.mid, k);
+    U.horizon.value.copy(D.horizon).lerp(N.horizon, k);
+    U.sunColor.value.copy(D.sun).lerp(N.sun, k);
+    this.scene.fog.color.copy(D.fog).lerp(N.fog, k);
+    this.scene.fog.near = THREE.MathUtils.lerp(D.fogNear, N.fogNear, k);
+    for (const L of this.lights ?? []) {
+      L.intensity = L.userData.dayIntensity * (1 - k * 0.62);
+    }
   }
 
   _buildLights() {
@@ -389,10 +436,17 @@ export class World {
     this.sun = sun;
 
     // Warm bounce from below (the sunset) + cool sky fill.
-    this.scene.add(new THREE.HemisphereLight(0x86bfe8, 0xe8834a, 0.72));
+    const hemi = new THREE.HemisphereLight(0x86bfe8, 0xe8834a, 0.72);
+    this.scene.add(hemi);
     const rim = new THREE.DirectionalLight(0x7fc4ff, 0.38);
     rim.position.set(-1, 0.35, 1).multiplyScalar(100);
     this.scene.add(rim);
+
+    /* Remembered so setDusk can bring them down together. Storing the day
+       value on the light rather than recomputing means the dusk ramp can be
+       driven to any point and back without accumulating error. */
+    this.lights = [sun, hemi, rim];
+    for (const L of this.lights) L.userData.dayIntensity = L.intensity;
   }
 
   /** Keeps the shadow frustum wrapped around wherever the players are. */
@@ -826,6 +880,49 @@ export class World {
     }
 
     this.mischiefTotal = this.props.length;
+  }
+
+  /* ---------------------------- dragon balls ----------------------------- */
+
+  /**
+   * One star on every island — which is why there are seven of each.
+   *
+   * Placed through `findOpenSpot`, the same check the dragon perches use: it
+   * wants solid level ground all the way round at the object's own radius, not
+   * merely under the centre point. A ball on a rim looks fine in a screenshot
+   * and cannot be walked up to, and unlike a dragon there is no flying to it.
+   *
+   * They avoid the shrines deliberately. A star sitting in a clan's join ring
+   * would be picked up by accident by a kitten going to swear an oath, and the
+   * one thing this hunt has going for it is that finding each one is a
+   * decision.
+   */
+  placeDragonBalls(make) {
+    this.dragonBalls = [];
+    this.islands.forEach((isl, i) => {
+      const away = (x, z) => !this.clanHalls.some(
+        (h) => Math.hypot(x - h.x, z - h.z) < h.r + 8
+      );
+      let spot = null;
+      // Walk out around the island until a clear, shrine-free place turns up.
+      for (let k = 0; k < 40 && !spot; k++) {
+        const a = k * 2.39996 + i;
+        const r = 6 + (k / 40) * isl.radius * 0.72;
+        const x = isl.x + Math.cos(a) * r;
+        const z = isl.z + Math.sin(a) * r;
+        if (!away(x, z)) continue;
+        const open = this.findOpenSpot(x, z, 2.2);
+        if (open && away(open.x, open.z)) spot = open;
+      }
+      if (!spot) spot = { x: isl.x, z: isl.z };
+      const g = this.heightAt(spot.x, spot.z);
+      const ball = make(i + 1, spot.x, g ? g.y : 0, spot.z, isl);
+      this.scene.add(ball.group);
+      this.dragonBalls.push(ball);
+      // Nothing else grows on top of a star.
+      this.keepClear.push({ x: spot.x, z: spot.z, r: 4 });
+    });
+    return this.dragonBalls;
   }
 
   /* --------------------------- distant scenery --------------------------- */

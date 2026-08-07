@@ -60,6 +60,10 @@ export class Player {
     /** `bambooCut` at the moment the panda was last granted or grown. Growth
      *  above the cub is charged from here, not from zero — see tierFor. */
     this.pandaFedFrom = null;
+    /** Ryuuseki's second seat. Deliberately NOT `mount`: everything in the
+     *  game reads `mount` as "is steering a flying thing", and a gunner is
+     *  aboard without steering anything. See Player._updatePassenger. */
+    this.rideAlong = null;
     this.score = 0;
     this.radius = 0.75;
     this.height = height;
@@ -169,11 +173,16 @@ export class Player {
     // camera puts it cleanly in front from every angle â€” and it has to happen
     // per view, because the two split-screen cameras see it from different
     // sides.
-    if (this.mount || this.pandaMount) {
+    if (this.mount || this.pandaMount || this.rideAlong) {
       const dx = camera.position.x - this.position.x;
       const dz = camera.position.z - this.position.z;
       const len = Math.hypot(dx, dz) || 1;
-      this.sprite.position.set((dx / len) * 2.4, 0, (dz / len) * 2.4);
+      /* Ryuuseki's quad is 60 units across, so the 2.4 that lifts a kitten
+         clear of a storm dragon leaves her buried inside him. The nudge is
+         scaled to whatever she is sitting on. */
+      const seat = this.mount ?? this.rideAlong;
+      const out = seat ? Math.max(2.4, seat.quad * 0.10) : 2.4;
+      this.sprite.position.set((dx / len) * out, 0, (dz / len) * out);
     } else if (this.sprite.position.lengthSq() > 0) {
       this.sprite.position.set(0, 0, 0);
     }
@@ -182,7 +191,8 @@ export class Player {
   /* ------------------------------- update ------------------------------- */
 
   update(dt, pad, world, dragons, hud) {
-    if (this.mount) this._updateFlight(dt, pad, world, hud);
+    if (this.rideAlong) this._updatePassenger(dt, pad, world, hud);
+    else if (this.mount) this._updateFlight(dt, pad, world, hud);
     else this._updateGround(dt, pad, world, dragons, hud);
 
     this.group.position.copy(this.position);
@@ -340,6 +350,25 @@ export class Player {
         p.rider = null;
         hud?.sfx('dismount');
         hud?.toast(`${this.name} hopped off ${this.pandaName}`, this.index);
+      } else if (hud?.ryu && hud.ryu.freeSeat()
+                 && this.position.distanceTo(hud.ryu.position) < hud.ryuMountRadius) {
+        /* Ryuuseki wins the mount button outright when he is in reach and has
+           a seat free. He is one summoned animal parked over the town, and a
+           storm dragon perched nearby stealing the button would be baffling —
+           there are seven of those and one of him. */
+        const R = hud.ryu;
+        const seat = R.freeSeat();
+        this.velocity.set(0, 0, 0);
+        if (seat === 'pilot') {
+          R.pilot = this;
+          this.mount = R;
+          this.flySide = 1;
+        } else {
+          R.gunner = this;
+          this.rideAlong = R;
+        }
+        hud.sfx('mount');
+        hud.onRyuMount?.(this, seat);
       } else {
         let best = null;
         let bestD = Infinity;
@@ -487,6 +516,11 @@ export class Player {
    * doesn't work.
    */
   _doBreath(world, hud) {
+    /* Ryuuseki fires a fan of beams rather than a cone of breath, and owns
+       that code because the fan's width depends on how many seats are filled —
+       which is a fact about the dragon, not about the kitten pressing the
+       button. A lone pilot still gets one beam: see SOLO_BEAMS. */
+    if (this.mount.fire) { this.mount.fire(world, hud, this); return; }
     // Windwhisker makes the flame itself bigger, so the dragon draws a longer
     // cone as well as hitting further.
     const k = this.clan?.buff?.breath ?? 1;
@@ -513,6 +547,55 @@ export class Player {
       hits++;
     }
     if (hits) this.squash = 0.5;
+  }
+
+  /**
+   * The gunner's seat on Ryuuseki.
+   *
+   * She steers NOTHING. Her position is whatever the dragon says it is, which
+   * is the only honest way to do it — giving the second seat any influence
+   * over where the animal goes means two kittens fighting over one heading,
+   * and the loser concludes the controls are broken.
+   *
+   * What she does own is the fan. It is aimed along HER facing, and her stick
+   * turns that facing, so she is a turret: she cannot go anywhere but she
+   * chooses what gets hit. That division is the whole feature — neither girl
+   * can do both, and the dragon only does its best trick when both are aboard.
+   */
+  _updatePassenger(dt, pad, world, hud) {
+    const R = this.rideAlong;
+    const seat = R.seatOffset('gunner');
+    this.position.set(
+      R.position.x + seat.x,
+      R.position.y + seat.y,
+      R.position.z + seat.z
+    );
+    this.velocity.set(0, 0, 0);
+    this.onGround = false;
+    this.airTime = 0;
+
+    // Her stick aims the guns. No stick, and she keeps the last heading.
+    const { fwd, right } = this._basis();
+    if (Math.abs(pad.mx) + Math.abs(pad.my) > 0.15) {
+      const ax = right.x * pad.mx + fwd.x * -pad.my;
+      const az = right.z * pad.mx + fwd.z * -pad.my;
+      this.facing = Math.atan2(ax, az);
+    }
+
+    this.attackCooldown -= dt;
+    if (pad.pressed('attack') && this.attackCooldown <= 0) {
+      this.attackTimer = 0.26;
+      this.attackCooldown = 0.55;
+      R.fire(world, hud, this);
+    }
+    if (this.attackTimer > 0) this.attackTimer -= dt;
+
+    if (pad.pressed('mount')) {
+      R.gunner = null;
+      this.rideAlong = null;
+      hud?.sfx('dismount');
+      hud?.onRyuDismount?.(this);
+    }
   }
 
   _updateFlight(dt, pad, world, hud) {
@@ -614,6 +697,19 @@ export class Player {
     );
 
     if (pad.pressed('mount')) {
+      /* Ryuuseki has no perch to go back to and cannot be lost — there is one
+         of him and he was summoned to the town. He simply stops where he is
+         and waits, with his mount ring lit, which is also what a gunner still
+         aboard needs him to do. */
+      if (d.pilot !== undefined) {
+        d.pilot = null;
+        this.mount = null;
+        this.velocity.set(0, 0, 0);
+        this.dismountEase = 1;
+        hud?.sfx('dismount');
+        hud?.onRyuDismount?.(this);
+        return;
+      }
       /* If there is ANY ground under you, the dragon comes down to it â€” right
          beside you if you stepped off, following you down if you bailed out
          from height. It only goes back to its own perch when you let go over
@@ -738,15 +834,16 @@ export class Player {
 
   _updateCamera(dt) {
     // Look slightly ahead of the kitten so you can see where you're going.
-    const lead = this.mount ? 0.55 : this.pandaMount ? 0.42 : 0.25;
+    const flying = !!(this.mount || this.rideAlong);
+    const lead = flying ? 0.55 : this.pandaMount ? 0.42 : 0.25;
     // Aim at where the kitten is DRAWN, which on a panda is up on its back.
     const want = new THREE.Vector3(
       this.position.x + this.velocity.x * lead,
-      this.position.y + (this.mount ? 2.5 : 1.4)
+      this.position.y + (flying ? 2.5 : 1.4)
         + (this.pandaMount ? this.pandaMount.seatHeight : 0),
       this.position.z + this.velocity.z * lead
     );
-    const follow = this.mount ? 3.2 : 7.5;
+    const follow = flying ? 3.2 : 7.5;
     this.camTarget.lerp(want, Math.min(1, dt * follow));
 
     // Distance grows with speed and altitude â€” that's the Dragon Ball Z zoom.
@@ -757,15 +854,22 @@ export class Player {
        screen only after you have hit it. It also has to start further back
        than the walking one whatever the speed, because the kitten is sitting
        four units up and the animal under her is another six wide. */
-    let wantDist = this.mount
-      ? THREE.MathUtils.clamp(46 + speed * 1.5, 46, 130)
+    /* The flying range is sized for a storm dragon, whose quad is about 24
+       units across. Ryuuseki's is 60, and at 46 units back the camera sits
+       INSIDE him — you fly a green wall. So the ride distance scales with
+       whatever you are actually on rather than assuming every flying thing is
+       the same size. `mountScale` is 1 for a storm dragon by construction. */
+    const seat = this.mount ?? this.rideAlong;
+    const mountScale = seat ? Math.max(1, seat.quad / 24) : 1;
+    let wantDist = seat
+      ? THREE.MathUtils.clamp((46 + speed * 1.5) * mountScale, 46 * mountScale, 320)
       : this.pandaMount
         ? THREE.MathUtils.clamp(28 + speed * 0.6, 28, 52)
         : THREE.MathUtils.clamp(24 + speed * 0.35, 24, 34);
-    let pitch = this.mount ? CAM_PITCH_AIR : CAM_PITCH_GROUND;
+    let pitch = flying ? CAM_PITCH_AIR : CAM_PITCH_GROUND;
 
     // Ease into (and out of) a focus area.
-    const active = this.focus && !this.mount;
+    const active = this.focus && !flying;
     this.focusT += ((active ? 1 : 0) - this.focusT) * Math.min(1, dt * 2.2);
     let yaw = CAM_YAW;
     if (this.focusT > 0.001 && this.focus) {

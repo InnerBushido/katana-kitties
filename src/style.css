@@ -596,6 +596,31 @@ html, body {
 }
 .mischief b { color: var(--gold); font-size: 16px; margin-left: 4px; }
 
+/* While a cutscene, shrine scene or summoning owns the screen. Not `display`,
+   so nothing in the HUD relayouts on the way in and out. */
+#hud.scene-hidden { opacity: 0; pointer-events: none; }
+
+/* The dragon-ball tally. Sits under the mischief counter at the top middle,
+   in the amber of the balls themselves rather than the HUD's gold, so it reads
+   as its own hunt rather than as a second score. */
+#balls {
+  position: absolute;
+  top: 46px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: rgba(40, 20, 8, 0.9);
+  border: 2px solid #f2a52a;
+  color: #ffe0a0;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  z-index: 6;
+}
+
 /* Live sin/cos board — shown while a kitten is inside the Unit Circle Dojo. */
 #math-board {
   position: absolute;
