@@ -19,6 +19,7 @@ import {
   Panda, PANDA_TIERS, PANDA_SPEED, CLAW, tierFor, toNextTier, FULL_PANDA_COST,
 } from '../src/entities/panda.js';
 import { LEADERS, ELDER, leaderSpot, LEADER_OFFSET } from '../src/entities/leader.js';
+import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
 import { SHRINE_DAIS } from '../src/world/build.js';
 
 const line = (l, v) => console.log(String(l).padEnd(42) + v);
@@ -141,6 +142,65 @@ console.log('\n--- nothing regrows ---');
     !cane.gone && cane.group.visible && cane.group.position.distanceTo(startedAt) < 0.001);
   ok('and standing, ready to be cut again', cane.knocked === false);
   cane.scored = false;
+}
+
+console.log('\n--- the cutscene never cuts a line off ---');
+/* The beat used to end on a timer alone, and `dur` is only `voiceDur + TAIL` —
+   so it assumed the audio started the instant the beat did. It doesn't: `speak`
+   used to build an Audio element from cold per beat, and every millisecond of
+   fetch-and-decode past TAIL came off the end of the sentence. Intermittent in
+   Firefox, invisible in Chrome, and impossible to see in a screenshot.
+   The rule is now "authored time has run AND the line has finished". */
+{
+  const VOICE = 5.6;
+  const dur = VOICE + TAIL;          // how loadVoices sizes a beat
+
+  // On time: the line ends at 5.6, the beat still runs its authored length.
+  ok('a line that starts on time keeps the authored tail',
+    !beatOver(VOICE + 0.1, dur, VOICE) && beatOver(dur, dur, VOICE),
+    `ends at ${dur}s`);
+
+  /* Late by more than TAIL: this is the bug. The old rule ended the beat at
+     `dur` regardless, chopping the last (slip - TAIL) seconds off the line. */
+  const slip = 2.4;
+  const endsAt = slip + VOICE;       // when a line delayed by `slip` finishes
+  ok('a late line is NOT cut off at the authored end',
+    !beatOver(dur, dur, null), `still speaking at ${dur}s`);
+  ok('and the beat waits for it to finish',
+    !beatOver(endsAt, dur, endsAt) && beatOver(endsAt + LINE_TAIL, dur, endsAt),
+    `ends at ${(endsAt + LINE_TAIL).toFixed(2)}s, not ${dur}s`);
+
+  // A late line still gets a breath of silence before the next speaker.
+  ok('a slipped beat still ends on a pause',
+    !beatOver(endsAt + LINE_TAIL * 0.5, dur, endsAt));
+
+  /* The escape hatch. A play() the browser refused never reports a finish, and
+     a nine-year-old cannot be stranded on beat four with only the skip button.
+     It has to give up on its own. */
+  ok('a line that never starts cannot strand the scene',
+    beatOver(dur + MAX_SLIP, dur, null, false), `gives up after ${MAX_SLIP}s`);
+  ok('but not before it has genuinely waited',
+    !beatOver(dur + MAX_SLIP - 0.1, dur, null, false));
+
+  /* The cap must not become a second way to cut a line off. A clip that is
+     audibly playing gets to finish however late it started — capping on
+     elapsed time alone reintroduces the exact bug, it just needs a slower
+     start to trigger it. */
+  {
+    const veryLate = 6, ends = veryLate + VOICE;   // 11.6s, well past dur+MAX_SLIP
+    ok('a line playing past the cap is still not cut off',
+      !beatOver(dur + MAX_SLIP + 0.1, dur, null, true), 'started, so it waits');
+    ok('and it ends when the line does, not when the cap says',
+      beatOver(ends + LINE_TAIL, dur, ends, true)
+      && !beatOver(ends - 0.1, dur, null, true),
+      `ends at ${(ends + LINE_TAIL).toFixed(2)}s`);
+    ok('but a clip that stalls mid-word still gives up eventually',
+      beatOver(dur + MAX_SLIP * 2, dur, null, true));
+  }
+
+  // Beats with no recording at all fall back to the authored timing exactly.
+  ok('an unvoiced beat runs its authored length',
+    beatOver(7, 7, 0, false) && !beatOver(6.9, 7, 0, false));
 }
 
 console.log('\n--- dragons get somewhere you can see them ---');

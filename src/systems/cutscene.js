@@ -30,7 +30,47 @@ import { LEADERS, ELDER, leaderSpot } from '../entities/leader.js';
 const TYPE_SPEED = 34;      // characters per second, when there's no recording
 const FADE = 0.6;           // seconds of black at each end
 /** Silence left after a line finishes before the camera cuts away. */
-const TAIL = 1.5;
+export const TAIL = 1.5;
+/* Breath after a line finishes before the beat turns over. Small, because the
+   authored `dur` already carries TAIL for a line that started on time; this is
+   only what a LATE line gets, so that a slipped beat still ends on a beat of
+   silence rather than cutting straight to the next speaker. */
+export const LINE_TAIL = 0.35;
+/* Hard cap on waiting for a line that is never going to finish — a rejected
+   play(), a file that stalls. The scene must always reach its end on its own. */
+export const MAX_SLIP = 4;
+
+/**
+ * Is this beat over?
+ *
+ * Pulled out as a pure function because it is the rule the whole cut-off bug
+ * turned on, and it is the one part of the cutscene that can be checked
+ * without a DOM, an audio device or a GPU.
+ *
+ * Two conditions, and it needs BOTH: the authored time has run, and the line
+ * has actually finished speaking. `dur` is only `voiceDur + TAIL`, so a timer
+ * on its own quietly assumes the audio began the instant the beat did — and
+ * every millisecond of start latency past TAIL came off the end of the
+ * sentence. The third term is the escape hatch: a line that never finishes,
+ * because the browser refused `play()` or the element never buffered, must not
+ * strand the scene.
+ *
+ * The cap keys off whether the line ever STARTED, not off elapsed time alone.
+ * A cap on elapsed time is itself a way to cut a line off — it just needs a
+ * slower start to do it — and a line you can hear playing must always be
+ * allowed to finish. The far looser second bound is for the one case that
+ * leaves: a clip that began and then stalled mid-word.
+ *
+ * @param {number}  t           seconds since this beat began
+ * @param {number}  dur         authored beat length
+ * @param {?number} lineEndedAt `t` at which the voice finished, null if not yet
+ * @param {boolean} started     has the voice actually begun playing?
+ */
+export function beatOver(t, dur, lineEndedAt, started = false) {
+  const spoken = lineEndedAt != null && t >= lineEndedAt + LINE_TAIL;
+  if (t >= dur && spoken) return true;
+  return t >= dur + (started ? MAX_SLIP * 2 : MAX_SLIP);
+}
 
 /* Each speaker gets a blip pitch, so you can tell who is talking with your
    eyes shut. Low and slow for the elder, bright for the Siamese. */
@@ -251,16 +291,37 @@ export class Cutscene {
         if (ok && Number.isFinite(el.duration) && el.duration > 0) {
           b.voiceDur = el.duration;
           b.dur = Math.max(b.dur, el.duration + TAIL);
+          /* KEEP THE ELEMENT. It used to be read for its duration and dropped,
+             and `speak` then built a fresh Audio(url) on every beat — so the
+             fetch and the decode happened inside that beat's own time budget,
+             while its clock was already running. Six of the eleven beats have
+             exactly TAIL (1.5s) of slack, so any start delay past that cut the
+             line off mid-sentence. Worse, it was invisible in Chrome and
+             intermittent in Firefox, because `loadedmetadata` fires as soon as
+             the header lands: the file could look loaded while the body had
+             never been fetched, and a brand-new element would go and get it
+             again. Holding the element that has actually buffered the clip is
+             what makes playback start immediately. */
+          b.el = el;
           /* Type the line so it lands with the speech instead of racing it:
              text finished and sitting still while a voice keeps talking looks
              like the audio belongs to something else. */
           b.typeRate = b.text.length / Math.max(0.6, el.duration * 0.72);
         } else {
           b.voice = null;
+          b.el = null;
         }
         resolve();
       };
-      el.addEventListener('loadedmetadata', () => done(true), { once: true });
+      /* Resolve on canplaythrough, not loadedmetadata — that is the event that
+         means the whole clip is buffered and will not stall on play. Metadata
+         is the fallback: some browsers decline to prefetch the body and never
+         fire canplaythrough at all, and a usable duration still beats none. */
+      el.addEventListener('canplaythrough', () => done(true), { once: true });
+      el.addEventListener('loadedmetadata', () => {
+        // Give the body a moment to arrive before settling for metadata alone.
+        setTimeout(() => done(true), 1500);
+      }, { once: true });
       el.addEventListener('error', () => done(false), { once: true });
       // A file that never answers must not hold the loading screen forever.
       setTimeout(() => done(Number.isFinite(el.duration)), 4000);
@@ -281,6 +342,8 @@ export class Cutscene {
     this.done = false;
     this.beat = -1;
     this.fadeIn = FADE;
+    this.voiceEl = null;
+    this.lineEndedAt = null;
     this.el.classList.remove('hidden');
     this.audio?.startMusic('intro');
     this._nextBeat();
@@ -316,8 +379,26 @@ export class Cutscene {
        standing at the place the camera has just flown to. */
     this._setStage(b.speaker === 'elder' ? this.elderArt : null);
 
-    // Say it. Blips are the fallback for a line with no recording.
-    this.audio?.speak(b.voice);
+    /* Say it, from the element preloaded at boot. Blips are the fallback for a
+       line with no recording. `voiceEl` is what the beat's end is judged
+       against — see update. */
+    this.voiceEl = this.audio?.speak(b.el ?? b.voice) ?? null;
+    this.lineEndedAt = null;
+  }
+
+  /**
+   * Has the recorded line actually finished?
+   *
+   * `ended` is the honest signal but it can be missed between frames, so the
+   * playhead is checked too. A voice that never starts at all — a rejected
+   * `play()`, a wedged element — reports false forever, which is why the
+   * caller also has a hard cap.
+   */
+  _lineFinished(b) {
+    const el = this.voiceEl;
+    if (!el || !b.voiceDur) return true;
+    if (el.ended) return true;
+    return el.currentTime > 0 && el.currentTime >= b.voiceDur - 0.06;
   }
 
   _setStage(art) {
@@ -350,6 +431,12 @@ export class Cutscene {
     // mean skipping, not "hide the box and keep listening to her".
     this.audio?.stopSpeaking();
     this.audio?.startMusic('play');
+    /* Drop the reference, not the element — the clips are reused when WATCH
+       THE STORY AGAIN replays the intro, and rebuffering them would put the
+       start-delay bug straight back. stopSpeaking pauses and rewinds, which is
+       all a reused element needs. */
+    this.voiceEl = null;
+    this.lineEndedAt = null;
   }
 
   faceCamera(camera) {
@@ -399,8 +486,15 @@ export class Cutscene {
       this.stageSprite.mat.transparent = true;
     }
 
-    // --- typewriter, paced to the recording when there is one
-    const want = Math.floor(this.t * (b.typeRate ?? TYPE_SPEED));
+    /* --- typewriter, paced to the recording when there is one.
+       Against the AUDIO's own playhead, not the beat clock, so a line that
+       starts a little late types a little late with it. Keyed to the beat
+       clock, a late start meant the text finished and sat there while she was
+       still talking — the exact desynchronisation typeRate exists to stop. */
+    const clock = (this.voiceEl && b.voiceDur && this.voiceEl.currentTime > 0)
+      ? this.voiceEl.currentTime
+      : this.t;
+    const want = Math.floor(clock * (b.typeRate ?? TYPE_SPEED));
     if (want > this.typed && this.typed < b.text.length) {
       const next = Math.min(b.text.length, want);
       /* Blips ONLY when nobody recorded this line. A blip track under an
@@ -424,7 +518,10 @@ export class Cutscene {
       this.beat === this.beats.length - 1 ? fadeOut : 0
     );
 
-    if (this.t >= b.dur) this._nextBeat();
+    // --- when is the beat over? See beatOver.
+    if (this.lineEndedAt == null && this._lineFinished(b)) this.lineEndedAt = this.t;
+    const started = !!this.voiceEl && this.voiceEl.currentTime > 0;
+    if (beatOver(this.t, b.dur, this.lineEndedAt, started)) this._nextBeat();
     return this.active;
   }
 }

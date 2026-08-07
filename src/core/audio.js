@@ -88,10 +88,15 @@ export class Audio {
    * (one speaker at a time, by definition), and a MediaElementSource would
    * have to be torn down and rebuilt per line for no audible gain.
    */
-  speak(url) {
+  speak(clip) {
     this.stopSpeaking();
-    if (!url) return null;
-    const el = new window.Audio(url);
+    if (!clip) return null;
+    /* Takes a PRELOADED element by preference, a url only as a fallback. The
+       url path builds and buffers an element from cold at the moment the line
+       is supposed to start, which is exactly the delay that used to clip the
+       ends off cutscene lines — see Cutscene.loadVoices. */
+    const el = typeof clip === 'string' ? new window.Audio(clip) : clip;
+    try { el.currentTime = 0; } catch { /* not seekable yet; it starts at 0 */ }
     // Lifted relative to the effects bus: dialogue has to sit over the music
     // and the wind, and it is the thing the player is actually listening to.
     el.volume = Math.min(1, this.sfxVolume * 1.35);

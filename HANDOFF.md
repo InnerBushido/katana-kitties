@@ -257,8 +257,53 @@ on the authored timings, so the intro never breaks on a missing asset.
 `Cutscene.loadVoices()` reads each clip's duration at boot and sets
 `dur = max(authored, clipLength + 1.5)`, and paces the typewriter so the text
 lands with the speech (`typeRate`). Nothing in the scene is a hardcoded timing,
-so re-recording a line can never desynchronise it — and a beat that ends
-mid-sentence, which is what fixed durations eventually produce, can't happen.
+so re-recording a line can never desynchronise it.
+
+**A BEAT ENDS ON ITS LINE, NOT ON A TIMER — and that took two goes to get
+right.** The rule above sizes the beat correctly and then quietly assumes the
+audio starts the instant the beat does. It didn't. `speak()` built a fresh
+`Audio(url)` per beat and called `play()` on it, so the fetch and the decode
+happened *inside* that beat's own budget — while six of the eleven beats have
+exactly `TAIL` (1.5s) of slack, because `voiceDur + TAIL` won the max. Any
+start delay past 1.5s came straight off the end of the sentence.
+
+Three things made it hard to see. It was **intermittent**, because it depended
+on whether the file happened to be warm. It was **worse in Firefox**, which is
+where the game is played. And `loadVoices` *looked* like it had already solved
+it: it built elements with `preload = 'auto'` — but it resolved on
+`loadedmetadata`, which fires as soon as the header lands, and then **threw the
+elements away**. A file could report a perfectly good duration having never
+had its body fetched at all.
+
+The fix is both halves, and it needs both:
+
+- `loadVoices` **keeps** the element (`b.el`) and waits for `canplaythrough`,
+  so the clip is fully buffered before PLAY is ever pressed. `speak()` takes a
+  preloaded element by preference and rewinds it; the url path survives only as
+  a fallback. Verified: all eleven at `HAVE_ENOUGH_DATA` with `buffered.end`
+  equal to the full duration, starting in ~110ms.
+- `beatOver()` ends the beat when the authored time has run **and** the line
+  has actually finished. That makes start latency irrelevant by construction
+  rather than by being generous with the tail — which is the trap, because a
+  bigger `TAIL` only moves the threshold.
+
+**The give-up cap must key off whether the line ever STARTED, not off elapsed
+time.** First version capped the wait at `dur + 4s` flat, which is just a
+slower way to cut a line off — a 6s-late line lost half a second to the cap
+that was supposed to protect it. A clip you can hear playing is always allowed
+to finish; the cap exists for a `play()` the browser refused, which never
+starts at all. There is a far looser second bound for the one case left, a clip
+that begins and then stalls mid-word.
+
+The typewriter is keyed to `voiceEl.currentTime` too, not the beat clock — a
+late line has to type late *with* the speech, or the text finishes and sits
+there while she is still talking, which is the desynchronisation `typeRate`
+exists to prevent.
+
+`tools/world-check.mjs` covers this without a DOM or an audio device: `beatOver`
+is a pure function, and the checks assert an on-time line is unchanged, a late
+one is not cut, a slipped beat still ends on a pause, and neither cap can
+strand the scene or clip a playing line.
 
 **The clan beats are FIRST PERSON.** They were third-person — Patchfur
 describing each chief — while the box underneath showed that chief's own name
