@@ -39,8 +39,16 @@ export const FAN = 1.9;
 /** Reach and clout. Far longer than any storm dragon's 15–20. */
 export const BEAM = { range: 34, power: 3.2, color: 0xfff0a0, name: 'a star beam' };
 
-/** Drawn height in world units. A storm dragon is 13; a kitten is 2.9. */
-export const RYU_SIZE = 26;
+/**
+ * Drawn height in world units. A storm dragon is 13; a kitten is 2.9.
+ *
+ * HALVED from 26. He is a worm, so his height is the small dimension: at 26
+ * the drawn creature was 53 units long, which is most of the town, and no
+ * camera distance framed him and the ground he was flying over at the same
+ * time. 14 keeps him a head longer than a storm dragon — unmistakably the big
+ * one — while fitting on screen with room to see what he is burning.
+ */
+export const RYU_SIZE = 14;
 
 /**
  * Where the two girls sit, in fractions of the quad.
@@ -74,29 +82,24 @@ export const RYU_SIZE = 26;
  */
 export const RYU_BACK = {
   /**
-   * THE PILOT SITS ON THE BODY CENTRE LINE (`fwd: 0`), and that is a
-   * correctness requirement, not a taste one.
-   *
-   * `carry()` places the dragon at `rider - seatOffset`, and `seatOffset`
-   * rotates with `facing`. His drawn heading is locked broadside and SWAPS
-   * between two values, so any non-zero `fwd` means the whole 60-unit animal
-   * jumps `2 * fwd * quad` sideways the instant a turn crosses the threshold —
-   * at the 0.31 it started with, that is a 37-unit lurch every time you steer
-   * left after steering right. It read as the dragon flipping wildly around
-   * its own shadow, which is exactly what it was doing.
-   *
-   * With `fwd: 0` the flip moves nothing but the drawing, and the rider stays
-   * over the centre of the shadow. The body is thinner along the middle of an
-   * S-curve (0.104 of a cell against 0.371 at the hump) but it is still solid
-   * dragon, and being visibly ON him beats being on the thickest part of him.
+   * EMBER, on top of his back — the hump behind his neck, which the profile
+   * above says is both the highest point (0.410) and the thickest (0.371).
    */
-  pilot: { fwd: 0, up: 0.33 },
+  pilot: { fwd: 0.18, up: 0.330 },
   /**
-   * The gunner sits behind on the same line. Her offset DOES flip with his
-   * heading, which is correct and costs nothing: she is one kitten moving to
-   * his other side, not the animal teleporting.
+   * FROST, up on his neck just behind the jaw, because she is the one working
+   * his mouth. The fan leaves from `RYU_MOUTH` (0.438 forward) and a gunner
+   * sitting behind the pilot had no visible relationship to where her own
+   * attack came out.
+   *
+   * These read about 0.07–0.15 further forward than they are set, because
+   * `faceCamera` also pushes every rider a tenth of a quad TOWARD the camera
+   * to keep her out of his billboard, and part of that push lands along his
+   * body. It varies with the viewing angle, so it cannot be cancelled — the
+   * numbers here are chosen against where the girls actually end up on screen,
+   * not against where the arithmetic alone would put them.
    */
-  gunner: { fwd: -0.13, up: 0.33 },
+  gunner: { fwd: 0.30, up: 0.375 },
 };
 
 /**
@@ -256,13 +259,39 @@ export class Ryuuseki {
     );
   }
 
+  /**
+   * The pilot's seat, applied to her DRAWING rather than to her position.
+   *
+   * This is the panda's trick and it is here for a harder reason. `carry` puts
+   * the animal at `rider - offset`; if that offset has a horizontal term, and
+   * the term rotates with a heading that SWAPS between two values, then every
+   * flip throws the whole animal `2 * fwd * quad` sideways. Ember cannot sit
+   * on his hump and have the dragon hang off her at the same time.
+   *
+   * So `carry` only ever uses the vertical part — the animal's position is
+   * rock steady under her — and this horizontal part moves her sprite onto the
+   * hump instead. A flip now slides one small kitten across his back, which is
+   * what a rider on a turning animal should look like anyway.
+   */
+  drawOffset(seat = 'pilot') {
+    const q = this.quad;
+    const s = RYU_BACK[seat] ?? RYU_BACK.pilot;
+    return {
+      x: Math.sin(this.facing) * q * s.fwd,
+      y: 0,
+      z: Math.cos(this.facing) * q * s.fwd,
+    };
+  }
+
   /** Slaved to the pilot each frame, exactly like a ridden storm dragon. */
   carry(rider) {
+    // VERTICAL ONLY — see drawOffset for why the horizontal part cannot live
+    // here without making him lurch on every heading flip.
     const seat = this.seatOffset('pilot');
     this.position.set(
-      rider.position.x - seat.x,
+      rider.position.x,
       rider.position.y - seat.y,
-      rider.position.z - seat.z
+      rider.position.z
     );
     /* His DRAWN heading is broadside-only and comes from `flySide`, not from
        the rider's facing. Copying her facing straight across spun the drawing
@@ -352,9 +381,13 @@ export class Ryuuseki {
       const want = (g ? g.y : this.spawn.y) + HOVER;
       this.position.y += (want - this.position.y) * Math.min(1, dt * 1.4);
       this.position.y += Math.sin(this.bob * 0.7) * 0.05;
-      // A slow idle turn, broadside either way — never a full spin.
-      this.flySide = Math.sin(this.bob * 0.22) > 0 ? 1 : -1;
-      this.facing += (this.flySide * (Math.PI / 2) - this.facing) * Math.min(1, dt * 0.9);
+      /* HE DOES NOT TURN WHILE HE WAITS, and that is the storm dragon's own
+         hard-won rule (see Dragon._perch): a single side-on cell mirrors the
+         instant its facing crosses the camera axis, so anything idly rotating
+         flips left-right every few seconds for no reason a player can see. The
+         first version eased `facing` between +90 and -90 degrees, which walks
+         straight through that threshold twice a cycle — it was the jarring
+         flip. He holds his heading and the billboard just faces you. */
     }
 
     this.group.position.copy(this.position);

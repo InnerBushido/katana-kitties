@@ -177,12 +177,24 @@ export class Player {
       const dx = camera.position.x - this.position.x;
       const dz = camera.position.z - this.position.z;
       const len = Math.hypot(dx, dz) || 1;
-      /* Ryuuseki's quad is 60 units across, so the 2.4 that lifts a kitten
-         clear of a storm dragon leaves her buried inside him. The nudge is
+      /* Ryuuseki's quad is far bigger than a storm dragon's, so the 2.4 that
+         lifts a kitten clear of one leaves her buried inside him. The nudge is
          scaled to whatever she is sitting on. */
       const seat = this.mount ?? this.rideAlong;
       const out = seat ? Math.max(2.4, seat.quad * 0.10) : 2.4;
-      this.sprite.position.set((dx / len) * out, 0, (dz / len) * out);
+      /* ...and on top of that, a Ryuuseki rider's place ALONG his body is a
+         draw offset rather than a position — so the animal under the pilot
+         never lurches when his drawn heading flips, and both girls resolve
+         their seat against the same heading in the same frame. See
+         Ryuuseki.drawOffset. */
+      const s = seat?.drawOffset
+        ? seat.drawOffset(this.rideAlong ? 'gunner' : 'pilot')
+        : null;
+      this.sprite.position.set(
+        (dx / len) * out + (s ? s.x : 0),
+        0,
+        (dz / len) * out + (s ? s.z : 0)
+      );
     } else if (this.sprite.position.lengthSq() > 0) {
       this.sprite.position.set(0, 0, 0);
     }
@@ -564,12 +576,16 @@ export class Player {
    */
   _updatePassenger(dt, pad, world, hud) {
     const R = this.rideAlong;
+    /* VERTICAL ONLY, exactly like the pilot — her place along his body is a
+       DRAW offset (Ryuuseki.drawOffset), applied in faceCamera.
+       Doing it here instead put her seat and Ember's on two different clocks:
+       this runs in the update phase and the pilot's runs at render, so the two
+       were resolved against different values of a heading that swaps. She
+       measured 0.112 along his body when the number said 0.38, and no amount
+       of staring at the constant would have explained it. Same offset, same
+       place, same frame. */
     const seat = R.seatOffset('gunner');
-    this.position.set(
-      R.position.x + seat.x,
-      R.position.y + seat.y,
-      R.position.z + seat.z
-    );
+    this.position.set(R.position.x, R.position.y + seat.y, R.position.z);
     this.velocity.set(0, 0, 0);
     this.onGround = false;
     this.airTime = 0;

@@ -22,7 +22,7 @@ import { LEADERS, ELDER, leaderSpot, LEADER_OFFSET } from '../src/entities/leade
 import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
 import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from '../src/entities/dragonball.js';
-import { Ryuuseki, DUO_BEAMS, SOLO_BEAMS, BEAM, RYU_SIZE, FAN, RYU_BACK, HOVER } from '../src/entities/ryuuseki.js';
+import { Ryuuseki, DUO_BEAMS, SOLO_BEAMS, BEAM, RYU_SIZE, FAN, RYU_BACK, HOVER, RYU_MOUTH } from '../src/entities/ryuuseki.js';
 import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
 import { SHRINE_DAIS } from '../src/world/build.js';
 
@@ -234,7 +234,12 @@ console.log('\n--- the seven dragon balls ---');
 
 console.log('\n--- Ryuuseki, and why two seats beat one ---');
 {
-  const art = { texture: new THREE.Texture(), contentScale: 0.7, pad: 0.06, cols: 1 };
+  /* contentScale is the REAL measured value off ryuuseki.png, not a round
+     number. It matters: he is a worm, so his drawn content fills only 43% of
+     the cell's height, and a stub guessing 0.7 shrinks his computed quad by a
+     third — which would let a size that is far too big on screen sail through
+     the framing check below. */
+  const art = { texture: new THREE.Texture(), contentScale: 0.433, pad: 0.06, cols: 1 };
   const R = new Ryuuseki(art, 0, 60, -46);
 
   ok('he starts with both seats empty', R.freeSeat() === 'pilot' && !R.ridden);
@@ -259,8 +264,13 @@ console.log('\n--- Ryuuseki, and why two seats beat one ---');
   ok('he outreaches every storm dragon', BEAM.range > best);
   ok('and hits harder', BEAM.power > Math.max(...BREEDS.map((b) => b.breath.power)));
 
-  // Big enough to read as legendary next to a 13-unit storm dragon.
-  ok('he is visibly bigger than a storm dragon', RYU_SIZE > 13 * 1.5);
+  /* Big enough to read as legendary next to a 13-unit storm dragon — measured
+     along his LENGTH, which is the honest dimension for a worm. Comparing
+     `RYU_SIZE` to a storm dragon's `size` compares two heights, and his height
+     is the small one: at RYU_SIZE 26 he was half as tall again as a storm
+     dragon and more than four times as long. That check said "bigger" while
+     the thing that made him unusable on screen went unmeasured. */
+  ok('he is visibly longer than a storm dragon', R.quad * 0.879 > 13 * 1.5);
 
   /* The two seats must not be drawn at the same spot, or the girls overlap
      into one smear and the depth sort flickers between them. */
@@ -271,21 +281,21 @@ console.log('\n--- Ryuuseki, and why two seats beat one ---');
   line('gap between the two seats', gap.toFixed(2));
   ok('the riders do not sit inside each other', gap > 2.9 * 0.6);
 
-  /* THE PILOT'S SEAT MUST HAVE NO HORIZONTAL OFFSET, and this replaces an
-     earlier check that asserted the opposite.
+  /* THE ANIMAL MUST NOT MOVE WHEN HIS DRAWN HEADING FLIPS.
 
-     That check said both seats had to sit on the hump behind his neck, which
-     is where the thickest drawn body is (0.371 of a cell against 0.104 along
-     the middle) and is genuinely the best place to be DRAWN. It was still
-     wrong, because it ignored what `carry` does with the number: the dragon is
-     placed at `rider - seatOffset`, that offset rotates with his heading, and
-     his heading is broadside-only and SWAPS. A seat 0.31 out therefore threw
-     the whole 60-unit animal 37 units sideways every time a turn crossed the
-     threshold. Being on the prettiest part of his back is worth nothing if
-     steering left makes him teleport.
+     This has been got wrong twice from opposite directions, so it is worth
+     stating as the rule rather than as a number. `carry` places him at
+     `rider - offset`; his heading is broadside-only and SWAPS between two
+     values; so any horizontal term in that offset throws the whole animal
+     `2 * fwd * quad` sideways the instant a turn crosses the threshold.
 
-     So this is checked by SIMULATING THE FLIP rather than by asserting a
-     number — the number is a means, the stillness is the requirement. */
+     First attempt: seat both girls on the hump, which is the best place to be
+     DRAWN and made him lurch. Second attempt: seat the pilot at `fwd 0`, which
+     was steady and put her in the thin gap between two coils. Neither is
+     needed — `carry` takes only the VERTICAL part now and the horizontal part
+     moves her sprite (Ryuuseki.drawOffset), so she can sit anywhere on him
+     without the animal caring. Checked by simulating the flip, because the
+     stillness is the requirement and the numbers are just a means to it. */
   line('seats, fwd toward the head', `pilot ${RYU_BACK.pilot.fwd} / gunner ${RYU_BACK.gunner.fwd}`);
   {
     const rider = { position: new THREE.Vector3(10, 80, -20), facing: 0, camYaw: 0, flySide: 1 };
@@ -298,11 +308,30 @@ console.log('\n--- Ryuuseki, and why two seats beat one ---');
     ok('flipping his heading does not move the animal', lurch < 0.001,
       'a non-zero pilot fwd throws him 2*fwd*quad sideways');
   }
-  ok('the gunner sits behind the pilot', RYU_BACK.gunner.fwd < RYU_BACK.pilot.fwd);
+  /* ...and the seat still has to be a real place on him. The flip-stillness
+     check above passes trivially if both seats are zero, so the positions get
+     asserted too — otherwise "he does not lurch" would be satisfied by two
+     kittens hovering at his origin. */
+  ok('the pilot rides the hump, the high thick part of his back',
+    RYU_BACK.pilot.fwd >= 0.15 && RYU_BACK.pilot.fwd < 0.34);
+  /* The gunner works his mouth, so she sits by his head — a kitten firing a
+     beam out of a jaw thirty units in front of her reads as unrelated to it. */
+  line('gunner vs mouth, forward of centre',
+    `${RYU_BACK.gunner.fwd} vs ${RYU_MOUTH.fwd}`);
+  ok('the gunner sits up by the mouth she is firing',
+    RYU_BACK.gunner.fwd > RYU_BACK.pilot.fwd
+    && Math.abs(RYU_BACK.gunner.fwd - RYU_MOUTH.fwd) < 0.16);
+  ok('but not past the end of his snout', RYU_BACK.gunner.fwd < RYU_MOUTH.fwd);
   ok('both sit on the drawn body, not under or over it',
     Object.values(RYU_BACK).every((s) => s.up > 0.25 && s.up < 0.45));
   ok('and the seats are world-space, not quad-space',
     a.y > 0 && a.y < R.quad * 0.45);
+
+  /* He must fit on screen with the ground under him. At 26 the drawn creature
+     was 53 units long — most of the town — and no camera distance framed both. */
+  line('drawn length vs a 2.9 kitten', `${(R.quad * 0.879).toFixed(0)} units`);
+  ok('he is longer than a storm dragon but still framable',
+    R.quad * 0.879 > 20 && R.quad * 0.879 < 36);
 
   /* The beams leave his MOUTH. Firing from his origin put them three coils
      back, erupting out of his ribs. */
