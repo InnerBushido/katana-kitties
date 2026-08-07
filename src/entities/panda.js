@@ -43,6 +43,7 @@ export const PANDA_TIERS = [
   {
     id: 'cub',
     name: 'cub',
+    /** Bought with LIFETIME canes — see tierFor. */
     at: 20,
     size: 2.2,
     followDist: 2.0,
@@ -52,7 +53,8 @@ export const PANDA_TIERS = [
   {
     id: 'adult',
     name: 'grown panda',
-    at: 40,
+    /** Bought with canes cut SINCE the cub arrived — see tierFor. */
+    after: 20,
     size: 5.6,
     followDist: 3.4,
     rideable: true,
@@ -60,19 +62,50 @@ export const PANDA_TIERS = [
   },
 ];
 
-/** Tier a tally has earned, or -1 for none yet. */
-export function tierFor(bambooCut) {
-  let t = -1;
-  for (let i = 0; i < PANDA_TIERS.length; i++) {
-    if (bambooCut >= PANDA_TIERS[i].at) t = i;
-  }
-  return t;
+/**
+ * Total canes one kitten must cut to go from nothing to a rideable panda.
+ *
+ * Exported because the two rungs are priced in different currencies and the
+ * sum is not something a caller should be re-deriving: the world builder has
+ * to guarantee twice this much bamboo within reach, and reading `.at` off the
+ * last tier — which is what it used to do — silently returned NaN the moment
+ * the adult stopped having one.
+ */
+export const FULL_PANDA_COST = PANDA_TIERS[0].at
+  + PANDA_TIERS.slice(1).reduce((n, t) => n + t.after, 0);
+
+/**
+ * The tier this player has earned.
+ *
+ * The two rungs are paid for in deliberately different currencies.
+ *
+ * **The cub costs LIFETIME canes.** A kid who spent the afternoon in the grove
+ * before she ever found the shrine should not be told none of it counted; she
+ * swears the oath and a cub is already there.
+ *
+ * **Every rung above it costs canes cut SINCE the panda last grew** — that is
+ * what `fedFrom` records. Charging lifetime canes for the adult too meant a
+ * player who had banked forty before joining watched her cub appear and grow
+ * up in the same breath, so the cub stage — the whole point of raising the
+ * thing — lasted a single frame and she never saw it. Raising an animal is a
+ * job you do in front of the animal; you cannot pre-pay for it.
+ *
+ * @param {number}  bambooCut lifetime canes cut
+ * @param {?number} fedFrom   the tally when the current panda was granted
+ * @param {number}  tier      the panda's current tier, -1 for no panda
+ * @returns {number} tier earned, or -1 for none yet
+ */
+export function tierFor(bambooCut, fedFrom = null, tier = -1) {
+  if (tier < 0 || fedFrom == null) return bambooCut >= PANDA_TIERS[0].at ? 0 : -1;
+  const next = PANDA_TIERS[tier + 1];
+  return next && bambooCut - fedFrom >= next.after ? tier + 1 : tier;
 }
 
-/** Bamboo still to cut before the next growth, or 0 when fully grown. */
-export function toNextTier(bambooCut) {
-  const next = PANDA_TIERS.find((t) => bambooCut < t.at);
-  return next ? next.at - bambooCut : 0;
+/** Canes still to cut before the next growth, or 0 when fully grown. */
+export function toNextTier(bambooCut, fedFrom = null, tier = -1) {
+  if (tier < 0 || fedFrom == null) return Math.max(0, PANDA_TIERS[0].at - bambooCut);
+  const next = PANDA_TIERS[tier + 1];
+  return next ? Math.max(0, next.after - (bambooCut - fedFrom)) : 0;
 }
 
 /**
@@ -298,18 +331,35 @@ export class Panda {
   /**
    * How far up the drawn animal the kitten sits.
    *
-   * Measured, not guessed: scanning the loaded adult atlas puts the crimson
-   * saddle blanket's top edge at 0.638 of the cell above the drawn feet, and
-   * the top of the animal's back at 0.688.
+   * Measured, and then measured again along the body rather than at a single
+   * point. Scanning the adult atlas for the topmost drawn pixel at each offset
+   * gives the animal's upper profile, in cell fractions above its feet
+   * (positive = toward the rump, which is the direction `seatOffset` moves the
+   * rider):
    *
-   * She sits on the BACK, a whisker under 0.688, so her soles disappear into
-   * the fur and nothing hangs in the air. Tucking her under the saddle (0.55)
-   * to overlap the flank was the wrong call — it hid 1.1 units of a 2.9-unit
-   * kitten, which is her legs to the thigh, and read as a cat sunk into a bear
-   * rather than riding one. But it cannot simply be doubled either: the saddle
-   * is draped over the upper flank, not the spine, so even 0.72 floats her
-   * clear of the animal and 1.10 would park her three units above a panda that
-   * is only 5.6 tall. The back, not the saddle, is the thing to land on.
+   * ```
+   *   behind centre   0.20   0.14   0.10   0.06   0.00  -0.05  -0.08
+   *   silhouette top  0.600  0.615  0.628  0.643  0.661  0.680  0.688
+   *                          ^ she was here            the shoulders ^
+   * ```
+   *
+   * The original 0.688 was read off the sheet as one global maximum and used
+   * as though the rider sat under it. She didn't: `seatOffset` put her 0.14
+   * back, in the middle of the saddle blanket, where the profile has already
+   * fallen to ~0.615 and is still falling. So the number that bounded the seat
+   * described a part of the animal she was nowhere near, and no value of it
+   * could have framed her correctly. **Height and offset only mean anything
+   * together** — that is the actual lesson here, and it is why the smoke test
+   * now checks the pair.
+   *
+   * 0.74, with the offset pulled forward to 0.06, is set to Richard's eye on
+   * the running game after 0.66 still read as sitting in the animal rather
+   * than on it. The profile is the guardrail, not the source: a straddling
+   * rider's feet belong somewhat above the silhouette, because her legs hang
+   * down the far side of it, and how far above is a judgement about a drawing.
+   * The bounds that are NOT judgement: tucking her under the saddle (0.55)
+   * buried 1.1 units of a 2.9-unit kitten, her legs to the thigh, and 1.10
+   * would park her three units clear of an animal only 5.6 tall.
    *
    * This LIFTS THE DRAWING ONLY. Unlike the dragon, riding a panda is ground
    * movement, so the player's own position has to stay on the ground where
@@ -317,24 +367,39 @@ export class Panda {
    * up here would put her physically inside the hillside on every slope.
    */
   get seatHeight() {
-    return this.quad * 0.66;
+    return this.quad * 0.74;
   }
 
   /**
    * Horizontal offset from the rider to the panda's centre.
    *
-   * The saddle is drawn 0.167 of a cell BEHIND the middle of the animal (also
-   * measured), so the panda's body has to sit that far forward of the kitten
-   * or she ends up riding its rump. World-space along `facing`, which is
-   * correct from every camera angle because the billboard mirrors itself so
-   * the drawn head always points the way the panda is facing.
+   * `carry()` does `panda = rider - seat`, so this offset moves the panda
+   * FORWARD of the rider — which is to say it seats her that far BACK along
+   * its body. Easy to read the wrong way round, and worth stating, because
+   * getting the sign wrong moves her the full 0.12 the wrong way.
+   *
+   * The crimson saddle blanket runs from 0.04 to 0.293 of a cell behind the
+   * body centre (measured off the atlas). 0.14 sat her in the middle of it,
+   * which is where a saddle says to sit and is the lowest useful place on the
+   * animal: the back profile there is ~0.615 and dropping toward the rump,
+   * with the shoulder hump rising in front of her. That is most of why she
+   * read as sunk.
+   *
+   * 0.06 keeps her on the blanket — just inside its leading edge — but at the
+   * front of it, where the back is climbing toward the shoulders. Going
+   * further, past 0.04, would take her off the drawn saddle altogether and
+   * onto bare fur, which looks like a rider who has slipped forward.
+   *
+   * World-space along `facing`, which is correct from every camera angle
+   * because the billboard mirrors itself so the drawn head always points the
+   * way the panda is facing.
    */
   seatOffset() {
     const q = this.quad;
     return {
-      x: -Math.sin(this.facing) * q * 0.14,
+      x: -Math.sin(this.facing) * q * 0.06,
       y: 0,
-      z: -Math.cos(this.facing) * q * 0.14,
+      z: -Math.cos(this.facing) * q * 0.06,
     };
   }
 

@@ -105,10 +105,17 @@ about four canes to the katana's one — so once you've raised a panda, clearing
 a whole grove on its back is much faster than doing it on foot. A dragon still
 can't touch bamboo from the air.
 
-You each raise your own — Ember's is **Bao**, Frost's is **Mochi** — and the
-count is a lifetime tally, so bamboo you cut before you ever found the shrine
-still counts. A cub can't be lost: it follows you on foot, waits where it is
-while you're off on a dragon, and meets you wherever you land.
+You each raise your own — Ember's is **Bao**, Frost's is **Mochi**. Bamboo you
+cut before you ever found the shrine still counts toward **the cub**, so an
+afternoon in the grove is never wasted — but the **20 that grow it up start
+from the day the cub arrives.** You have to actually raise the animal; you
+can't turn up with a full sack and skip straight to riding one. A cub can't be
+lost: it follows you on foot, waits where it is while you're off on a dragon,
+and meets you wherever you land.
+
+Nothing you knock over comes back. Cut a cane and it's cut — if it topples off
+the edge of the island it stays gone, so what's still standing in the grove is
+exactly what's still left to score.
 
 **Join a different clan and your grown panda stops following you.** It's still
 yours and you can still ride it, but it waits where you left it — so it turns

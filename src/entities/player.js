@@ -57,6 +57,9 @@ export class Player {
     this.panda = null;
     /** Lifetime bamboo canes cut. Feeds the panda; see PANDA_TIERS. */
     this.bambooCut = 0;
+    /** `bambooCut` at the moment the panda was last granted or grown. Growth
+     *  above the cub is charged from here, not from zero — see tierFor. */
+    this.pandaFedFrom = null;
     this.score = 0;
     this.radius = 0.75;
     this.height = height;

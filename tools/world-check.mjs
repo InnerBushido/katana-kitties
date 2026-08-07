@@ -16,7 +16,7 @@ import { Dragon, BREEDS } from '../src/entities/dragon.js';
 import { Billboard } from '../src/core/gfx.js';
 import { Player } from '../src/entities/player.js';
 import {
-  Panda, PANDA_TIERS, PANDA_SPEED, CLAW, tierFor, toNextTier,
+  Panda, PANDA_TIERS, PANDA_SPEED, CLAW, tierFor, toNextTier, FULL_PANDA_COST,
 } from '../src/entities/panda.js';
 import { LEADERS, ELDER, leaderSpot, LEADER_OFFSET } from '../src/entities/leader.js';
 import { SHRINE_DAIS } from '../src/world/build.js';
@@ -77,7 +77,7 @@ ok('a grove is on the HOME island (no dragon needed)', homeGrove.length >= 10,
    the fun of it. Checked as a hard floor with room to spare: a grove that
    silently generates short (canes landing off a rim, or inside a solid) is
    exactly the kind of failure that still looks completely fine on screen. */
-const NEED = PANDA_TIERS[PANDA_TIERS.length - 1].at * 2;
+const NEED = FULL_PANDA_COST * 2;
 line('bamboo needed to raise two pandas', NEED);
 ok('enough bamboo in the world for both kittens', bamboo.length >= NEED * 1.4,
   `${bamboo.length} canes, need ${NEED}`);
@@ -94,7 +94,7 @@ ok('enough bamboo in the world for both kittens', bamboo.length >= NEED * 1.4,
      only one kitten's worth here, the second girl watches her counter stick
      while her sister's panda grows up. */
   ok('both kittens can fully grow a panda without leaving home',
-    onHome.length >= PANDA_TIERS[PANDA_TIERS.length - 1].at * 2, `${onHome.length} canes`);
+    onHome.length >= FULL_PANDA_COST * 2, `${onHome.length} canes`);
   ok('the home island has two separate groves', world.groves.length >= 2);
   const isl = world.islands.find((i) => i.biome === 'bamboo');
   const onIsl = bamboo.filter(
@@ -105,6 +105,43 @@ ok('enough bamboo in the world for both kittens', bamboo.length >= NEED * 1.4,
 }
 ok('no cane is planted inside a solid', bamboo.every((p) => world.solids.every(
   (s) => Math.hypot(p.home.x - s.x, p.home.z - s.z) >= s.r)));
+
+console.log('\n--- nothing regrows ---');
+/* A prop knocked clean off the rim used to fall to y < -140 and reappear
+   standing at `home`, un-knocked. For bamboo that is indistinguishable from
+   regrowth, and it quietly breaks the one number the game asks a kid to trust:
+   `scored` latches on the first hit, so the second cane she cuts in the same
+   spot pays nothing and reads as a broken katana. Whatever is standing in the
+   grove has to be exactly what still counts. */
+{
+  const cane = bamboo.find((p) => Math.hypot(p.home.x - 58, p.home.z - 44) < 12) ?? bamboo[0];
+  const startedAt = cane.home.clone();
+  cane.knock(new THREE.Vector3(1, 0, 0), 40);   // hard enough to clear the rim
+  cane.scored = true;
+  let fell = false;
+  for (let i = 0; i < 3000 && !cane.gone; i++) {
+    cane.update(1 / 60, world);
+    if (cane.group.position.y < -140) fell = true;
+  }
+  line('cane cleared the island and fell', String(fell));
+  ok('a prop knocked off the world is retired', fell && cane.gone === true);
+  ok('it does NOT reappear standing at home',
+    cane.group.position.distanceTo(startedAt) > 100);
+  ok('and it is not drawn any more', cane.group.visible === false);
+  ok('it stays scored, so the mischief total cannot shrink', cane.scored === true);
+
+  /* Simulating it further must not undo any of that — the update early-out is
+     the thing that keeps a retired prop retired. */
+  for (let i = 0; i < 600; i++) cane.update(1 / 60, world);
+  ok('and further frames leave it retired', cane.gone && !cane.group.visible);
+
+  // The restart path is the ONE thing that may bring it back.
+  cane._reset();
+  ok('a restart puts it back in the grove',
+    !cane.gone && cane.group.visible && cane.group.position.distanceTo(startedAt) < 0.001);
+  ok('and standing, ready to be cut again', cane.knocked === false);
+  cane.scored = false;
+}
 
 console.log('\n--- dragons get somewhere you can see them ---');
 {
@@ -232,14 +269,29 @@ console.log('\n--- Pandapaw: the clan you have to earn ---');
     (p) => p.kind === 'bamboo'
       && Math.hypot(p.home.x - isl.x, p.home.z - isl.z) < isl.radius));
 
-  // The growth ladder. Nothing until 20, cub at 20, grown at 40.
-  line('tier at 0 / 19 / 20 / 39 / 40 canes',
-    [0, 19, 20, 39, 40].map(tierFor).join(', '));
+  /* The growth ladder, and the two different currencies it is paid in.
+     The cub costs 20 LIFETIME canes, so an afternoon in the grove before she
+     ever found the shrine still counts. The adult costs 20 canes cut SINCE the
+     cub arrived, so those same banked canes cannot buy both rungs at once —
+     the check that matters most here is the 400-cane player, who used to get a
+     fully grown panda the instant she swore and never saw a cub at all. */
+  line('tier at 0 / 19 / 20 / 400 canes, no panda yet',
+    [0, 19, 20, 400].map((n) => tierFor(n)).join(', '));
   ok('no panda before the first tier is paid for', tierFor(0) === -1 && tierFor(19) === -1);
   ok('twenty canes buys a cub', tierFor(20) === 0);
-  ok('forty canes grows it up', tierFor(40) === 1 && tierFor(400) === 1);
-  ok('the countdown counts down', toNextTier(0) === 20 && toNextTier(31) === 9
-    && toNextTier(40) === 0);
+  ok('a fresh panda is ALWAYS a cub, however deep the bank',
+    tierFor(400) === 0 && tierFor(400, null, -1) === 0);
+  ok('banked canes cannot also buy the adult',
+    tierFor(400, 400, 0) === 0, 'sworn at 400 -> still a cub');
+  ok('twenty more AFTER the cub grows it up',
+    tierFor(419, 400, 0) === 0 && tierFor(420, 400, 0) === 1);
+  ok('and it stops at the top', tierFor(9999, 420, 1) === 1);
+  ok('the countdown counts down to the cub',
+    toNextTier(0) === 20 && toNextTier(11) === 9 && toNextTier(20) === 0);
+  ok('and then counts down to the adult',
+    toNextTier(400, 400, 0) === 20 && toNextTier(411, 400, 0) === 9
+    && toNextTier(420, 400, 0) === 0);
+  ok('a grown panda asks for nothing more', toNextTier(9999, 420, 1) === 0);
 
   const art = { cub: { texture: new THREE.Texture() }, adult: { texture: new THREE.Texture() } };
   const mkP = (spawn) => new Player({
@@ -337,22 +389,48 @@ console.log('\n--- Pandapaw: the clan you have to earn ---');
     ok('a panda jumps higher', high > plain * 1.2);
   }
 
-  /* Where the kitten is DRAWN when riding. Both failure modes look like a
-     panda in a screenshot and neither looks like a bug: too low and her legs
-     are buried to the thigh, too high and she floats over its back. The two
-     fractions are read off the adult atlas — saddle top 0.638 of the cell
-     above the drawn feet, back top 0.688 — and her feet have to land between
-     them. See Panda.seatHeight. */
+  /* Where the kitten is DRAWN when riding, which is two numbers and not one.
+     Both failure modes look like a panda in a screenshot and neither looks
+     like a bug: too low and her legs are buried to the thigh, too high and she
+     floats over its back.
+
+     The fractions come from scanning the adult atlas for the topmost drawn
+     pixel at each offset along the body — the animal's upper profile, in cell
+     fractions above its feet, measured toward the RUMP because that is the
+     direction seatOffset moves the rider:
+
+       behind centre   0.20   0.14   0.10   0.06   0.00  -0.08
+       silhouette top  0.600  0.615  0.628  0.643  0.661  0.688
+
+     Height alone was never enough to pin this down, which is exactly how the
+     previous check passed a bad seat: it bounded the height against the 0.688
+     crest while seatOffset sat her at 0.14 back, over a part of the back
+     around 0.615 and falling away. The number described a piece of the animal
+     she was nowhere near. So the PAIR is what gets checked. */
   {
     const owner = mkP(new THREE.Vector3(0, gy, 40));
     const pet = new Panda(art, { owner, tier: 1 });
     const q = pet.quad;
-    const seat = pet.seatHeight;
-    line('seat / saddle top / back top',
-      `${seat.toFixed(2)} / ${(q * 0.638).toFixed(2)} / ${(q * 0.688).toFixed(2)}`);
-    ok('the rider sits above the saddle, not sunk into the flank',
-      seat > q * 0.638);
-    ok('and on the back, not floating over it', seat < q * 0.688);
+    const seat = pet.seatHeight / q;
+
+    /* seatOffset is world-space along `facing`; at facing 0 it lands entirely
+       on z, and carry() does `panda = rider - seat`, so the panda ends up
+       forward of the rider — this is how far BACK along the body she sits. */
+    pet.facing = 0;
+    const back = -pet.seatOffset().z / q;
+
+    const SADDLE_FRONT = 0.04;    // blanket's leading edge, behind centre
+    const SADDLE_REAR = 0.293;    // and its trailing edge
+    const CREST = 0.688;          // top of the shoulders
+
+    line('seat / offset back / saddle span',
+      `${seat.toFixed(3)} / ${back.toFixed(3)} / ${SADDLE_FRONT}..${SADDLE_REAR}`);
+    ok('the rider is on the drawn saddle, not on bare fur',
+      back >= SADDLE_FRONT && back <= SADDLE_REAR);
+    ok('and toward its front, not back over the rump', back < 0.10);
+    ok('her feet clear the back where she actually sits',
+      seat > 0.643, 'profile at 0.06 back');
+    ok('but she is not perched above the animal', seat < CREST + 0.10);
   }
 
   /* The claw swipe: the panda's answer to dragon breath. Wide and heavy but

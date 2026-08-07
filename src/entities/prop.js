@@ -135,6 +135,8 @@ export class Prop {
     this.home = new THREE.Vector3(x, y, z);
     this.knocked = false;
     this.scored = false;
+    /** Fell off the world and was retired. Never comes back — see _retire. */
+    this.gone = false;
     this.settleTimer = 0;
 
     this.group = new THREE.Group();
@@ -177,7 +179,7 @@ export class Prop {
   }
 
   update(dt, world) {
-    if (!this.knocked) return;
+    if (this.gone || !this.knocked) return;
 
     this.vel.y -= 22 * dt;
     this.group.position.addScaledVector(this.vel, dt);
@@ -187,8 +189,8 @@ export class Prop {
 
     const g = world.heightAt(this.group.position.x, this.group.position.z);
     if (g == null) {
-      // Knocked clean off the island — let it fall, then respawn at home.
-      if (this.group.position.y < -140) this._reset();
+      // Knocked clean off the island. It falls, and it STAYS gone — see _retire.
+      if (this.group.position.y < -140) this._retire();
       return;
     }
 
@@ -216,12 +218,39 @@ export class Prop {
     }
   }
 
+  /**
+   * Gone for good, because it fell off the edge of the world.
+   *
+   * It used to reappear standing at `home`, which is the wrong answer for
+   * every prop and a badly wrong one for bamboo. A cane you cut, watched
+   * topple over the rim and then found standing in the grove again is a cane
+   * you cut twice and were paid for once — `scored` latches on the first hit,
+   * so the second swing does nothing at all. From the floor that is
+   * indistinguishable from a broken katana, and it makes the one number the
+   * game asks a kid to trust — her Mischief count — impossible to reconcile
+   * with what she can see standing in front of her.
+   *
+   * It stays in `world.props`, because it was scored on the way over the edge
+   * and the mischief total must not shrink underneath her. Nothing collides
+   * with props (`world.solids` holds the trees and buildings), so hiding one
+   * where it fell has no other consequence.
+   */
+  _retire() {
+    this.gone = true;
+    this.group.visible = false;
+    this.vel.set(0, 0, 0);
+    this.spin.set(0, 0, 0);
+  }
+
+  /** Put it back as it started. The restart path only — see _retire. */
   _reset() {
     this.group.position.copy(this.home);
     this.group.rotation.set(0, Math.random() * 6.28, 0);
     this.vel.set(0, 0, 0);
     this.spin.set(0, 0, 0);
     this.knocked = false;
+    this.gone = false;
+    this.group.visible = true;
     this.settleTimer = 0;
   }
 }

@@ -476,6 +476,7 @@ class Game {
       p.panda = null;
       p.raisedPanda = false;
       p.bambooCut = 0;
+      p.pandaFedFrom = null;
       p.velocity.set(0, 0, 0);
       p.setFocus(null);
       p.focusT = 0;
@@ -827,14 +828,19 @@ class Game {
    * Pandapaw's payout: give this kitten the panda her bamboo tally has earned.
    *
    * Called on swearing the oath and on every cane cut, so it is the single
-   * place that decides whether a panda exists and how big it is. `bambooCut`
-   * is a LIFETIME tally rather than one that starts when you join, because a
-   * kid who spent the afternoon in the grove before she ever found the shrine
-   * should not be told none of it counted.
+   * place that decides whether a panda exists and how big it is.
+   *
+   * `bambooCut` is a LIFETIME tally, so banked canes still buy the cub the
+   * moment she swears. Growing that cub UP is charged from `pandaFedFrom`, the
+   * tally at the instant the panda was last granted, so those same banked
+   * canes cannot also pay for the adult — see tierFor. One consequence worth
+   * knowing: a fresh panda can only ever be a cub, because tierFor with no
+   * panda yet returns tier 0 or nothing.
    */
   _updatePanda(player) {
     if (!player.raisedPanda) return;
-    const want = tierFor(player.bambooCut);
+    const has = player.panda ? player.panda.tier : -1;
+    const want = tierFor(player.bambooCut, player.pandaFedFrom, has);
     if (want < 0) return;
 
     if (!player.panda) {
@@ -847,6 +853,8 @@ class Game {
       panda.position.set(spot.x, g ? g.y : player.position.y, spot.z);
       this.scene.add(panda.group);
       player.panda = panda;
+      // The clock for growing it up starts HERE, not at zero.
+      player.pandaFedFrom = player.bambooCut;
       this.sfx('orb');
       this.toast(
         `${player.name} raised ${player.pandaName} the panda ${panda.spec.name}! `
@@ -859,6 +867,8 @@ class Game {
 
     if (want > player.panda.tier) {
       const spec = player.panda.setTier(want);
+      // ...and restarts on every growth, so each rung is paid for separately.
+      player.pandaFedFrom = player.bambooCut;
       this.sfx('clan');
       this.toast(`${player.pandaName} grew into a ${spec.name}! ${spec.blurb}`, player.index);
       this._updateClanBadge(player);
@@ -880,11 +890,17 @@ class Game {
     if (!clan) { el.textContent = ''; el.style.background = ''; return; }
     let text = `${clan.name} · ${clan.buff.label}`;
     if (clan.buff.panda) {
-      const left = toNextTier(player.bambooCut);
+      const left = toNextTier(player.bambooCut, player.pandaFedFrom, player.panda?.tier ?? -1);
       /* Name the panda as soon as there IS one. "20 more bamboo" under a cub
          that has just appeared reads as though the cub still hasn't arrived —
          the counter has to say what it is counting toward. */
-      if (!left) text = `${player.pandaName} is fully grown`;
+      /* The `player.panda` guard matters now that the second count is relative:
+         a sworn player with 20+ banked canes and no panda yet also reports 0
+         left, and "Bao is fully grown" under a kitten who has never seen a
+         panda is the worst thing this badge could say. _updatePanda hands her
+         the cub in the same breath, so it is a single frame — but it is the
+         frame she is looking at when she swears. */
+      if (player.panda && !left) text = `${player.pandaName} is fully grown`;
       else if (player.panda) text = `${player.pandaName} the ${player.panda.spec.name} · ${left} more bamboo`;
       else text = `${clan.name} · ${left} bamboo for a cub`;
     }
@@ -917,7 +933,10 @@ class Game {
       /* Bamboo is panda food. The tally runs whether or not she has sworn to
          Pandapaw yet — _updatePanda is what decides if any of it hatches. */
       player.bambooCut += 1;
-      const left = toNextTier(player.bambooCut);
+      /* Read BEFORE _updatePanda: growing the panda moves pandaFedFrom, so
+         asking afterwards reports the countdown to the rung after the one this
+         very cane just bought. */
+      const left = toNextTier(player.bambooCut, player.pandaFedFrom, player.panda?.tier ?? -1);
       this._updatePanda(player);
       this._updateClanBadge(player);
       if (player.raisedPanda && left > 0 && left % 5 === 0) {
@@ -1100,8 +1119,8 @@ class Game {
     this.toast(`${player.name} joined ${clan.name} — ${clan.buff.label}!`, player.index);
     if (clan.buff.panda) {
       this._updatePanda(player);
-      const left = toNextTier(player.bambooCut);
-      if (left) {
+      const left = toNextTier(player.bambooCut, player.pandaFedFrom, player.panda?.tier ?? -1);
+      if (left && !player.panda) {
         this.toast(
           `Cut ${left} bamboo and a panda cub will follow ${player.name}!`,
           player.index

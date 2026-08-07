@@ -79,11 +79,26 @@ export class Cutscene {
   }
 
   /**
-   * Draw a speaker's head into the little portrait box.
+   * Draw a speaker's head and shoulders into the little portrait box.
    *
    * The atlas texture's image is already a canvas, so this is a crop rather
-   * than a second set of art: take the top third of the drawn character,
-   * which on a standing full-body sprite is reliably the head.
+   * than a second set of art.
+   *
+   * **The crop has to be SQUARE, and it has to be measured off the cell.** The
+   * first version took the full width of the atlas by the top 42% of its
+   * height and drew that into a square canvas — a 2.4:1 source squeezed into
+   * 1:1, which flattened every cat's face by well over half. That reads as bad
+   * art rather than a bad crop, which is why it survived a look: nobody
+   * inspects a 96px portrait for aspect ratio, they just think the drawing is
+   * odd.
+   *
+   * Taking it off the whole image is wrong for a second reason. `contentScale`
+   * and `pad` say where the figure actually sits inside its cell: bottom-
+   * aligned above `pad`, horizontally centred, occupying `contentScale` of the
+   * height. Cropping from the image's own top edge starts in the transparent
+   * margin above her ears and slides down her chest by however loosely that
+   * particular sheet happened to pack — so the seven leaders would each be
+   * framed differently. From the cell, they all frame identically.
    */
   _setPortrait(art, color) {
     const cv = this.portraitEl;
@@ -91,9 +106,20 @@ export class Cutscene {
     const g = cv.getContext('2d');
     g.clearRect(0, 0, cv.width, cv.height);
     if (!img) return;
-    const sw = img.width;
-    const sh = img.height * 0.42;
-    g.drawImage(img, 0, 0, sw, sh, 0, 0, cv.width, cv.height);
+
+    const cell = img.width / (art.cols || 1);
+    const figure = cell * (art.contentScale ?? 0.7);       // her drawn height
+    const feet = cell * (1 - (art.pad ?? 0.06));           // her ground line
+    const head = feet - figure;                            // top of her ears
+
+    /* Head and upper body: a square 55% of her height. Much tighter crops the
+       ears on the maned breeds; much looser and Galemane is a full-length cat
+       in a thumbnail. */
+    const side = Math.min(figure * 0.55, cell);
+    const sx = Math.max(0, Math.min(cell - side, cell / 2 - side / 2));
+    const sy = Math.max(0, Math.min(img.height - side, head - side * 0.08));
+
+    g.drawImage(img, sx, sy, side, side, 0, 0, cv.width, cv.height);
     cv.style.borderColor = color;
   }
 

@@ -269,16 +269,41 @@ otherwise. She's standing right there; she introduces herself.
 gotcha below. Final states are authored as the default and animations only add
 motion on top of something already correct.
 
+**The speaker portrait is a SQUARE crop taken off the CELL, not off the image.**
+`_setPortrait` first took the atlas's full width by the top 42% of its height
+and drew that into a square canvas — a 2.4:1 source squashed to 1:1, flattening
+every cat's face by more than half. It reads as bad art rather than a bad crop,
+which is exactly why it survived being looked at: nobody audits a 96px portrait
+for aspect ratio, they just think the drawing is odd. The crop is now derived
+from `contentScale` and `pad`, which say where the figure really sits inside
+its cell (bottom-aligned above `pad`, horizontally centred, `contentScale` of
+the height), so all seven leaders frame identically instead of each being
+framed by however loosely its own sheet happened to pack.
+
 ## The panda (Pandapaw)
 
 **The only buff you have to earn after swearing.** Every other clan hands you
 its power the moment you stand in the ring. Pandapaw hands you a job:
 
 ```
- 20 canes cut  ->  a CUB appears and follows you        (size 2.2, not rideable)
- 40 canes cut  ->  it grows up and can be RIDDEN        (size 5.6, 2x speed,
-                                                         1.5x jump, claw swipe)
+ 20 canes cut LIFETIME    ->  a CUB appears and follows you   (size 2.2)
+ 20 more AFTER the cub    ->  it grows up and can be RIDDEN   (size 5.6, 2x
+                                                               speed, 1.5x
+                                                               jump, claw)
 ```
+
+**The two rungs are paid for in different currencies, and that is deliberate.**
+The cub costs *lifetime* canes; the adult costs canes cut *since the cub
+arrived* (`player.pandaFedFrom`, the tally at the moment the panda was last
+granted). Charging lifetime canes for both meant a player who had banked forty
+before finding the shrine watched her cub appear and grow up in the same
+breath — the cub stage, which is the whole point of raising the thing, lasted a
+single frame and she never saw it. **You cannot pre-pay for raising an animal.**
+`tierFor(400)` is asserted to be a cub, not an adult.
+
+`FULL_PANDA_COST` is exported for this reason: the total is no longer something
+a caller can derive by reading `.at` off the last tier, and the world builder's
+"enough bamboo for two pandas" check silently went `NaN` when it tried.
 
 `entities/panda.js` owns the animal, `PANDA_TIERS` owns the ladder, and
 `Game._updatePanda` is the *single* place that decides whether a panda exists
@@ -286,7 +311,8 @@ and how big it is — called on swearing the oath and on every cane cut.
 
 **`bambooCut` is a LIFETIME tally, not one that starts when you join.** A kid
 who spends the afternoon in the grove before she ever finds the shrine is not
-told none of it counted; she swears the oath and a cub is already there.
+told none of it counted; she swears the oath and a cub is already there. That
+credit buys the **cub only** — see the ladder above.
 
 **Pandapaw is sticky (`player.raisedPanda`).** Swear somewhere else afterwards
 and you keep the panda. Every other buff switches off when you re-swear, but a
@@ -323,14 +349,31 @@ it just looks like a panda photographed from further away. The probe:
 //   saddle centre  0.167 of a cell BEHIND the body centre  -> seatOffset -0.14*quad
 ```
 
-**She sits on the BACK (0.66), not tucked under the saddle and not on top of
-it.** Both failure modes look exactly like a panda in a screenshot and neither
-looks like a bug. 0.55 was the first guess — feet 1.1 units below the back top,
-which is a 2.9-unit kitten buried to the thigh, and it read as a cat *sunk into*
-a bear. But the fix isn't to double it: the saddle is draped over the upper
-flank, not the spine, so 0.72 already floats her clear and 1.10 would park her
-three units above an animal 5.6 tall. **The back is the thing to land on**, and
-the smoke test asserts the seat falls between the two measured fractions.
+**Seat height and seat offset only mean anything TOGETHER.** This is the real
+lesson of the seat, and getting it wrong twice is what taught it. The first
+pass measured 0.688 as the top of the back — a single maximum over the whole
+sheet — and bounded the seat height against it. But `seatOffset` sat her 0.14
+*behind* the body centre, in the middle of the saddle blanket, and the back
+there is nowhere near 0.688. Scanning for the topmost drawn pixel *at each
+offset along the body* gives the profile the number should have come from:
+
+```
+  behind centre   0.20   0.14   0.10   0.06   0.00  -0.05  -0.08
+  silhouette top  0.600  0.615  0.628  0.643  0.661  0.680  0.688
+                         ^ she was here             the shoulders ^
+```
+
+So she was pinned to the lowest useful part of the animal, with the shoulder
+hump rising in front of her, and **no value of the height alone could have
+fixed it** — the bound described a piece of panda she was not sitting on. She
+is now at 0.06 back (the front of the blanket, where the back climbs toward the
+shoulders) and 0.74 up. The smoke test checks the **pair**: on the drawn saddle
+(0.04–0.293), toward its front, and clear of the profile where she actually
+sits.
+
+The bounds that are not judgement: 0.55 was the first guess and buried 1.1
+units of a 2.9-unit kitten — her legs to the thigh, a cat *sunk into* a bear —
+and 1.10 would park her three units above an animal only 5.6 tall.
 
 **The claw swipe (`CLAW` in `panda.js`, `Player._doClaw`)** is the ground
 answer to dragon breath: range 8 (katana is 3.4, breath is 15–20), a ~145
@@ -421,6 +464,18 @@ Its terrain clearance has to **flare out on approach** — held at a flat 3 unit
 it also holds the dragon 3 units above the perch it's landing on, and it
 circles just out of reach forever. That failure looks exactly like the bug it
 was meant to fix.
+
+**NOTHING REGROWS.** A prop knocked clean off the rim fell to `y < -140` and
+used to reappear standing at `home`, un-knocked (`Prop._reset`). For bamboo
+that is simply regrowth, and it quietly poisons the one number the game asks a
+kid to trust: `scored` latches on the first hit, so the cane standing in front
+of her again pays nothing when she cuts it, which from the floor is
+indistinguishable from a broken katana. **Whatever is standing in the grove has
+to be exactly what still counts.** It is retired where it fell now
+(`Prop._retire` — hidden, no longer simulated, still `scored` so the mischief
+total can't shrink under her). `_reset` survives for the restart path only, and
+that is the one thing allowed to bring it back. Props are not in `world.solids`,
+so a hidden one blocks nothing.
 
 **Bamboo is katana-only.** Not dive-bombable, not burnable (`Prop.katanaOnly`).
 The grove is the one place the dragon doesn't work, which is what makes it
