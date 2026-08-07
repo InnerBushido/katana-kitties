@@ -790,7 +790,14 @@ export class Player {
        herself on the ground, where all the ground physics still expect her —
        see Panda.seatHeight. The dragon needs no equivalent because flight
        moves the whole entity. */
-    this.sprite.mesh.position.y = this.mount ? this.mount.flapBob
+    /* `?? 0` is load-bearing, not defensive noise. `flapBob` is a storm-dragon
+       field; Ryuuseki has no wings and did not have one, so this produced
+       `undefined`, NaN'd the rider's local Y, and three.js silently refused to
+       draw her — the PILOT was invisible on the legendary dragon while the
+       gunner, who rides through `rideAlong` and never touches this line, was
+       fine. It read exactly like a depth-sorting problem and was not one. Any
+       future mount that misses a field must fall back, not vanish. */
+    this.sprite.mesh.position.y = this.mount ? (this.mount.flapBob ?? 0)
       : this.pandaMount ? this.pandaMount.seatHeight + this.pandaMount.bounce : 0;
 
     // Slash arc: snap out and fade. The panda draws its own claw marks, so the

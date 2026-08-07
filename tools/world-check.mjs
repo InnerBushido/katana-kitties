@@ -22,7 +22,7 @@ import { LEADERS, ELDER, leaderSpot, LEADER_OFFSET } from '../src/entities/leade
 import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
 import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from '../src/entities/dragonball.js';
-import { Ryuuseki, DUO_BEAMS, SOLO_BEAMS, BEAM, RYU_SIZE, FAN, RYU_BACK } from '../src/entities/ryuuseki.js';
+import { Ryuuseki, DUO_BEAMS, SOLO_BEAMS, BEAM, RYU_SIZE, FAN, RYU_BACK, HOVER } from '../src/entities/ryuuseki.js';
 import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
 import { SHRINE_DAIS } from '../src/world/build.js';
 
@@ -271,20 +271,56 @@ console.log('\n--- Ryuuseki, and why two seats beat one ---');
   line('gap between the two seats', gap.toFixed(2));
   ok('the riders do not sit inside each other', gap > 2.9 * 0.6);
 
-  /* BOTH SEATS MUST BE ON THE HUMP, not near his origin. He is drawn as an
-     S-curve, so the middle of the sprite is the hole between two coils — the
-     measured thickness there is 0.104 against 0.371 at the hump. Seated at the
-     centre (which is the obvious place, and where they started) the girls
-     float in a ring of dragon with daylight under them. See RYU_BACK. */
+  /* THE PILOT'S SEAT MUST HAVE NO HORIZONTAL OFFSET, and this replaces an
+     earlier check that asserted the opposite.
+
+     That check said both seats had to sit on the hump behind his neck, which
+     is where the thickest drawn body is (0.371 of a cell against 0.104 along
+     the middle) and is genuinely the best place to be DRAWN. It was still
+     wrong, because it ignored what `carry` does with the number: the dragon is
+     placed at `rider - seatOffset`, that offset rotates with his heading, and
+     his heading is broadside-only and SWAPS. A seat 0.31 out therefore threw
+     the whole 60-unit animal 37 units sideways every time a turn crossed the
+     threshold. Being on the prettiest part of his back is worth nothing if
+     steering left makes him teleport.
+
+     So this is checked by SIMULATING THE FLIP rather than by asserting a
+     number — the number is a means, the stillness is the requirement. */
   line('seats, fwd toward the head', `pilot ${RYU_BACK.pilot.fwd} / gunner ${RYU_BACK.gunner.fwd}`);
-  for (const [who, s] of Object.entries(RYU_BACK)) {
-    ok(`the ${who} sits on the hump, not in the coil`, s.fwd >= 0.18 && s.fwd <= 0.36);
-    ok(`and on the ${who === 'pilot' ? 'back' : 'back too'}, above the drawn belly`,
-      s.up > 0.25 && s.up < 0.45);
+  {
+    const rider = { position: new THREE.Vector3(10, 80, -20), facing: 0, camYaw: 0, flySide: 1 };
+    R.carry(rider);
+    const before = R.position.clone();
+    rider.flySide = -1;              // the same turn, mirrored
+    R.carry(rider);
+    const lurch = R.position.distanceTo(before);
+    line('how far he moves when his heading flips', lurch.toFixed(3));
+    ok('flipping his heading does not move the animal', lurch < 0.001,
+      'a non-zero pilot fwd throws him 2*fwd*quad sideways');
   }
-  ok('the pilot sits ahead of the gunner', RYU_BACK.pilot.fwd > RYU_BACK.gunner.fwd);
+  ok('the gunner sits behind the pilot', RYU_BACK.gunner.fwd < RYU_BACK.pilot.fwd);
+  ok('both sit on the drawn body, not under or over it',
+    Object.values(RYU_BACK).every((s) => s.up > 0.25 && s.up < 0.45));
   ok('and the seats are world-space, not quad-space',
     a.y > 0 && a.y < R.quad * 0.45);
+
+  /* The beams leave his MOUTH. Firing from his origin put them three coils
+     back, erupting out of his ribs. */
+  R.position.set(0, 0, 0);
+  R.facing = Math.PI / 2;            // pointing down +x
+  const mouth = R.mouthPos();
+  line('mouth offset from his centre', `${mouth.x.toFixed(1)}, ${mouth.y.toFixed(1)}`);
+  ok('the mouth is out at the head, not at his middle',
+    Math.abs(mouth.x) > R.quad * 0.35);
+  ok('and it tracks his heading', (() => {
+    R.facing = -Math.PI / 2;
+    return Math.sign(R.mouthPos().x) === -1;
+  })());
+
+  /* He must come DOWN when nobody is on him. Left at the height he is summoned
+     to, stepping off once means never getting back on — a mount you can lose
+     by dismounting is worse than no mount at all. */
+  ok('he waits within reach of the ground', HOVER > 4 && HOVER < 18);
 }
 
 console.log('\n--- the summoning ---');

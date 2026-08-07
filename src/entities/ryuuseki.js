@@ -73,9 +73,45 @@ export const RYU_SIZE = 26;
  * adds them to.
  */
 export const RYU_BACK = {
-  pilot: { fwd: 0.31, up: 0.375 },
-  gunner: { fwd: 0.20, up: 0.345 },
+  /**
+   * THE PILOT SITS ON THE BODY CENTRE LINE (`fwd: 0`), and that is a
+   * correctness requirement, not a taste one.
+   *
+   * `carry()` places the dragon at `rider - seatOffset`, and `seatOffset`
+   * rotates with `facing`. His drawn heading is locked broadside and SWAPS
+   * between two values, so any non-zero `fwd` means the whole 60-unit animal
+   * jumps `2 * fwd * quad` sideways the instant a turn crosses the threshold —
+   * at the 0.31 it started with, that is a 37-unit lurch every time you steer
+   * left after steering right. It read as the dragon flipping wildly around
+   * its own shadow, which is exactly what it was doing.
+   *
+   * With `fwd: 0` the flip moves nothing but the drawing, and the rider stays
+   * over the centre of the shadow. The body is thinner along the middle of an
+   * S-curve (0.104 of a cell against 0.371 at the hump) but it is still solid
+   * dragon, and being visibly ON him beats being on the thickest part of him.
+   */
+  pilot: { fwd: 0, up: 0.33 },
+  /**
+   * The gunner sits behind on the same line. Her offset DOES flip with his
+   * heading, which is correct and costs nothing: she is one kitten moving to
+   * his other side, not the animal teleporting.
+   */
+  gunner: { fwd: -0.13, up: 0.33 },
 };
+
+/**
+ * Where his mouth is, in quad fractions — `fwd` toward the head, `up` from the
+ * drawn bottom. Measured off the atlas by taking the opaque pixels in the
+ * leading 6% of the body and averaging their height.
+ *
+ * The beams come out of HERE. They were firing from his origin, which on a
+ * creature this long is the middle of his back — three coils and forty units
+ * behind the head, so the attack appeared to erupt from his ribs.
+ */
+export const RYU_MOUTH = { fwd: 0.438, up: 0.292 };
+
+/** How high above the ground he waits when nobody is riding. */
+export const HOVER = 11;
 
 export class Ryuuseki {
   constructor(art, x, y, z) {
@@ -89,6 +125,13 @@ export class Ryuuseki {
     this.flySide = 1;
     this.bob = 0;
     this.hovering = false;
+    /* The rider rides the animal's motion — a kitten hanging perfectly still
+       over a moving creature reads as two drawings, not one. A storm dragon
+       calls this its wingbeat; he has no wings, so it is the slow swell of a
+       body that swims through the air. The field has to EXIST whatever it is
+       called: Player reads `mount.flapBob`, and leaving it undefined NaN'd the
+       rider's sprite and made her invisible. */
+    this.flapBob = 0;
 
     /** The two seats. */
     this.pilot = null;
@@ -111,18 +154,20 @@ export class Ryuuseki {
       footOffset: (art.pad ?? 0) * quad,
       artFacesRight: false,   // drawn facing left, like every dragon here
     });
+    /* Draw him BEFORE the kittens. Both are transparent billboards, and at a
+       60-unit quad the riders sit well inside his bounding box — near enough
+       to his own depth that the sort flips between frames and the girls
+       disappear into him. The outward nudge in Player.faceCamera handles the
+       geometry; this makes the order deterministic on top of it. */
+    this.sprite.renderOrder = -4;
     this.group.add(this.sprite);
 
-    // A halo of its own light, so it reads as lit rather than painted even
-    // once the sky has gone dark for it.
-    this.glow = new THREE.Mesh(
-      new THREE.SphereGeometry(quad * 0.30, 16, 12),
-      new THREE.MeshBasicMaterial({
-        color: 0xffe9a0, transparent: true, opacity: 0.13,
-        side: THREE.BackSide, depthWrite: false, toneMapped: false,
-      })
-    );
-    this.group.add(this.glow);
+    /* NO GLOW SPHERE. There was one — an 18-unit backside sphere meant to make
+       him read as lit against the dark sky — and it was the single most
+       obviously wrong thing on screen: a 3D ball hanging in the air around a
+       flat drawing, lining up with nothing from any angle, because a sphere
+       around a billboard is a sphere around a plane. Anything glowing here has
+       to be a billboard too, or it isn't part of the same creature. */
 
     const shadowGeo = new THREE.CircleGeometry(RYU_SIZE * 0.22, 22);
     shadowGeo.rotateX(-Math.PI / 2);
@@ -195,6 +240,22 @@ export class Ryuuseki {
     };
   }
 
+  /**
+   * Where his mouth is in world space, for the beams to leave from.
+   *
+   * `fwd` runs along `facing`, which is the DRAWN heading — locked broadside
+   * and mirrored, so the head really is at `+fwd` along it whichever way he is
+   * pointing. That is the whole reason the drawn heading exists.
+   */
+  mouthPos() {
+    const q = this.quad;
+    return new THREE.Vector3(
+      this.position.x + Math.sin(this.facing) * q * RYU_MOUTH.fwd,
+      this.position.y + q * RYU_MOUTH.up,
+      this.position.z + Math.cos(this.facing) * q * RYU_MOUTH.fwd
+    );
+  }
+
   /** Slaved to the pilot each frame, exactly like a ridden storm dragon. */
   carry(rider) {
     const seat = this.seatOffset('pilot');
@@ -203,8 +264,13 @@ export class Ryuuseki {
       rider.position.y - seat.y,
       rider.position.z - seat.z
     );
-    this.facing = rider.facing;
+    /* His DRAWN heading is broadside-only and comes from `flySide`, not from
+       the rider's facing. Copying her facing straight across spun the drawing
+       with every stick nudge, which on a single side-on cell means a mirror
+       flip on every crossing — the "flipping too much" the whole creature was
+       doing. She aims; he faces the way he is travelling. */
     this.flySide = rider.flySide ?? this.flySide;
+    this.facing = (rider.camYaw ?? 0) + this.flySide * (Math.PI / 2);
   }
 
   /**
@@ -226,8 +292,13 @@ export class Ryuuseki {
     this.beamCount = n;
 
     const base = shooter.facing;
-    const origin = this.position.clone();
-    origin.y += this.quad * 0.10;
+    // Out of the MOUTH, not out of his middle — see RYU_MOUTH.
+    const origin = this.mouthPos();
+    const local = {
+      x: Math.sin(this.facing) * this.quad * RYU_MOUTH.fwd,
+      y: this.quad * RYU_MOUTH.up,
+      z: Math.cos(this.facing) * this.quad * RYU_MOUTH.fwd,
+    };
 
     let hits = 0;
     for (let i = 0; i < this.beams.length; i++) {
@@ -237,7 +308,7 @@ export class Ryuuseki {
       const spread = n === 1 ? 0 : (i / (n - 1) - 0.5) * FAN;
       const a = base + spread;
       m.visible = true;
-      m.position.set(0, this.quad * 0.10, 0);
+      m.position.set(local.x, local.y, local.z);
       m.rotation.set(0, a, 0);
       m.material.opacity = 0.85;
 
@@ -271,9 +342,19 @@ export class Ryuuseki {
     this.bob += dt;
 
     if (!this.ridden) {
-      // Waiting to be climbed on: it hangs over the town, turning slowly.
-      this.position.y = this.spawn.y + Math.sin(this.bob * 0.7) * 0.9;
-      this.facing = Math.sin(this.bob * 0.25) * 0.5;
+      /* HE COMES DOWN TO BE CLIMBED ON. He used to hang at whatever height he
+         was summoned to, which was well over the town — you could see him,
+         you could not reach him, and stepping off once meant never getting
+         back on. A mount you can lose by dismounting is worse than no mount.
+         So when nobody is aboard he settles to HOVER above the ground under
+         him, which is inside `ryuMountRadius` from a kitten standing there. */
+      const g = world?.heightAt(this.position.x, this.position.z);
+      const want = (g ? g.y : this.spawn.y) + HOVER;
+      this.position.y += (want - this.position.y) * Math.min(1, dt * 1.4);
+      this.position.y += Math.sin(this.bob * 0.7) * 0.05;
+      // A slow idle turn, broadside either way — never a full spin.
+      this.flySide = Math.sin(this.bob * 0.22) > 0 ? 1 : -1;
+      this.facing += (this.flySide * (Math.PI / 2) - this.facing) * Math.min(1, dt * 0.9);
     }
 
     this.group.position.copy(this.position);
@@ -284,7 +365,11 @@ export class Ryuuseki {
        movement vector puts it edge-on at the billboard's mirror threshold and
        the whole creature snaps back and forth. */
     this.sprite.mesh.scale.y = 1 - Math.sin(this.bob * 2.1) * 0.035;
-    this.glow.material.opacity = 0.11 + Math.sin(this.bob * 1.6) * 0.035;
+    /* NEGATIVE of the swell, like the storm dragon's rider bob and for the
+       same reason: squashing the sprite drops his back exactly when the sine
+       is positive, so following it directly lifts the girls as he dips and the
+       two read as separate drawings sliding past each other. */
+    this.flapBob = -Math.sin(this.bob * 2.1) * this.quad * 0.012;
 
     // Ground shadow and the mount ring track the terrain under it.
     const g = world?.heightAt(this.position.x, this.position.z, this.position.y);

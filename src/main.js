@@ -17,7 +17,7 @@ import { Cutscene } from './systems/cutscene.js';
 import { ShrineScene } from './systems/shrinescene.js';
 import { SummonScene } from './systems/summonscene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from './entities/dragonball.js';
-import { Ryuuseki } from './entities/ryuuseki.js';
+import { Ryuuseki, HOVER } from './entities/ryuuseki.js';
 
 /* ---------------------------------------------------------------------------
    Katana Kitties — main loop.
@@ -170,7 +170,7 @@ class Game {
     );
     this.ballsHeld = 0;
     this.ryu = null;
-    this.ryuArt = await loadSpriteAtlas('/sprites/ryuuseki.png', { views: 1, rows: 1 })
+    this.ryuArt = await loadSpriteAtlas('/sprites/ryuuseki.png', { views: 1, rows: 1, clearPockets: true })
       .catch(() => null);
     this.summonScene = new SummonScene({ world: this.world, audio: this.audio });
     await this.summonScene.load();
@@ -454,6 +454,7 @@ class Game {
         this.audio.play('menu');
         this.toast(`Map zoom ${z === 1 ? 'whole world' : `${z}x`}`, 1);
       }
+      if (this.state === 'play') this._debugKey(e.code);
       if (e.code === 'Escape') {
         // Back out of a sub-panel first, otherwise toggle the pause menu.
         const helpOpen = !document.getElementById('panel-help').classList.contains('hidden');
@@ -981,6 +982,67 @@ class Game {
     return this.leaders.find((L) => L.clan.id === clan.id) ?? null;
   }
 
+  /* ---------------------------- debug keys ------------------------------- */
+
+  /**
+   * Shortcuts for testing the dragon, which is otherwise about ten minutes of
+   * flying away and needs two players to see at its best.
+   *
+   * `7` collects all seven stars, `8` seats both kittens, `9` fires. They are
+   * deliberately unbound from anything a player would press by accident and
+   * they toast loudly, so nobody can trip one and wonder what happened.
+   *
+   * `9` exists because the DUO attack is the whole point of the feature and
+   * the hardest thing in the game to reach: it needs the second kitten's
+   * attack button while both are aboard. On a laptop that button was on a
+   * numpad that isn't there — the same gap the `alt` keys in `KEYSETS` close
+   * properly. This is the version that needs no hands on the other side of the
+   * keyboard at all.
+   */
+  _debugKey(code) {
+    if (code === 'Digit7') {
+      let n = 0;
+      for (const b of this.balls) {
+        if (b.taken) continue;
+        b.take();
+        this.ballsHeld++;
+        n++;
+      }
+      this._updateBallHud();
+      if (n && this.ballsHeld >= BALL_COUNT && !this.ryu) this._onAllBalls();
+      this.toast(`[debug] took ${n} star${n === 1 ? '' : 's'} — Ryuuseki summoned`, 0);
+    }
+
+    if (code === 'Digit8') {
+      if (!this.ryu) { this.toast('[debug] no dragon yet — press 7', 0); return; }
+      const R = this.ryu;
+      // Put him somewhere with room, then drop both kittens into their seats.
+      for (const p of this.players) {
+        if (p.mount === R || p.rideAlong === R) continue;
+        p.mount = null;
+        p.rideAlong = null;
+        p.pandaMount = null;
+        const seat = R.freeSeat();
+        if (!seat) break;
+        p.velocity.set(0, 0, 0);
+        if (seat === 'pilot') { R.pilot = p; p.mount = R; p.flySide = 1; }
+        else { R.gunner = p; p.rideAlong = R; }
+        const o = R.seatOffset(seat);
+        p.position.set(R.position.x + o.x, R.position.y + o.y, R.position.z + o.z);
+        p.group.position.copy(p.position);
+      }
+      this.audio.startMusic('ryu');
+      this.toast('[debug] both kittens aboard — press 9 to fire', 0);
+    }
+
+    if (code === 'Digit9') {
+      if (!this.ryu?.ridden) { this.toast('[debug] nobody is riding — press 8', 0); return; }
+      const shooter = this.ryu.gunner ?? this.ryu.pilot;
+      const n = this.ryu.fire(this.world, this, shooter);
+      this.toast(`[debug] fired ${n} beam${n === 1 ? '' : 's'}`, shooter.index);
+    }
+  }
+
   /* ------------------------- the dragon hunt ----------------------------- */
 
   /**
@@ -1031,7 +1093,7 @@ class Game {
   _onAllBalls() {
     const torii = { x: 0, z: -46 };
     const g = this.world.heightAt(torii.x, torii.z);
-    const y = (g ? g.y : 6) + 34;
+    const y = (g ? g.y : 6) + HOVER;
     if (this.ryuArt) {
       this.ryu = new Ryuuseki(this.ryuArt, torii.x, y, torii.z);
       this.scene.add(this.ryu.group);

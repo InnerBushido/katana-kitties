@@ -251,6 +251,9 @@ export class ClanLeader {
     /** Current and target turn-toward-you, in radians. See lookAt. */
     this.faceBias = 0;
     this.faceWant = 0;
+    /** Breathing scale before the turn squash. Set in update, read in
+     *  faceCamera — which runs once per VIEW, so it must not compound. */
+    this.baseScaleX = 1;
   }
 
   /**
@@ -298,8 +301,13 @@ export class ClanLeader {
     const want = this.faceWant ?? 0;
     this.faceBias += (want - this.faceBias) * 0.12;
     this.sprite.mesh.rotation.y += this.faceBias;
+    /* Set from the breathing scale, never multiplied into it. `faceCamera`
+       runs ONCE PER VIEW and `update` only once per frame, so `*=` compounds
+       in split screen: player 2 would see a leader squashed twice as hard as
+       player 1's, from the same bias. Billboard.faceCamera assigns rotation.y
+       but never touches scale.x, so nothing else resets it either. */
     const fore = Math.cos(this.faceBias);
-    this.sprite.mesh.scale.x *= 1 - (1 - fore) * 0.5;
+    this.sprite.mesh.scale.x = this.baseScaleX * (1 - (1 - fore) * 0.5);
 
     // The bubble takes the camera's own orientation rather than a yaw-only
     // turn, so it stays square to the screen when the camera tilts down —
@@ -335,8 +343,10 @@ export class ClanLeader {
     this.bubble.scale.setScalar(0.7 + this.show * 0.3);
 
     // A slow breathing bob, and a lean toward whoever she's talking to.
+    // `baseScaleX` is what faceCamera applies the turn squash to — see there.
+    this.baseScaleX = 1 - Math.sin(this.t * 1.5) * 0.012;
     this.sprite.mesh.scale.set(
-      1 - Math.sin(this.t * 1.5) * 0.012,
+      this.baseScaleX,
       1 + Math.sin(this.t * 1.5) * 0.018,
       1
     );

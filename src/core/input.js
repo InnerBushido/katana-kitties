@@ -243,6 +243,21 @@ const KEYSETS = [
     up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight',
     jump: 'Numpad0', attack: 'Numpad1', interact: 'Numpad2', mount: 'Numpad3',
     sprint: 'ControlRight', start: 'NumpadEnter',
+    /* LAPTOPS HAVE NO NUMPAD, and player 2's whole action set was on it — so
+       on a laptop the second kitten could walk and nothing else. She could not
+       slash, could not swear an oath, could not climb onto a dragon, and could
+       not fire Ryuuseki's beams, which made the one two-player set-piece in the
+       game impossible to reach on the machine it is developed on.
+       These are ALTERNATES, not replacements: the numpad still works, and this
+       is the cluster your right hand can reach without leaving the arrow keys. */
+    alt: {
+      jump: 'Slash',          //  /
+      attack: 'Period',       //  .
+      interact: 'Comma',      //  ,
+      mount: 'Semicolon',     //  ;
+      sprint: 'ShiftRight',
+      start: 'Backslash',
+    },
   },
 ];
 
@@ -721,7 +736,10 @@ export class InputManager {
         if (this.keys.has(k.right)) mx += 1;
         if (this.keys.has(k.up)) my -= 1;
         if (this.keys.has(k.down)) my += 1;
-        for (const a of ACTIONS) next[a] = this.keys.has(k[a]);
+        // Either the primary key OR the laptop alternate — see KEYSETS.
+        for (const a of ACTIONS) {
+          next[a] = this.keys.has(k[a]) || (!!k.alt?.[a] && this.keys.has(k.alt[a]));
+        }
       }
 
       // While a remap capture is armed, the button you press is being BOUND,

@@ -50,12 +50,17 @@ Then open the address it prints. **Use Firefox if you're playing with Joy-Cons**
 
 |                  | Player 1 (Ember) | Player 2 (Frost) | Gamepad      |
 | ---------------- | ---------------- | ---------------- | ------------ |
-| Move             | `W A S D`        | Arrow keys       | Left stick   |
-| Jump / fly up    | `Space`          | `Numpad 0`       | `A`          |
-| Slash            | `F`              | `Numpad 1`       | `X`          |
-| Interact / dive  | `E`              | `Numpad 2`       | `B`          |
-| Mount / dismount | `Q`              | `Numpad 3`       | `Y`          |
-| Sprint / boost   | `Left Shift`     | `Right Ctrl`     | `ZL` / `ZR`  |
+| Move             | `W A S D`        | Arrow keys           | Left stick   |
+| Jump / fly up    | `Space`          | `Numpad 0` or `/`    | `A`          |
+| Slash            | `F`              | `Numpad 1` or `.`    | `X`          |
+| Interact / dive  | `E`              | `Numpad 2` or `,`    | `B`          |
+| Mount / dismount | `Q`              | `Numpad 3` or `;`    | `Y`          |
+| Sprint / boost   | `Left Shift`     | `Right Ctrl` / `RShift` | `ZL` / `ZR` |
+
+**Player 2 works on a laptop.** Her buttons used to be numpad-only, so on a
+machine without one the second kitten could walk and nothing else — no slash,
+no clan, no dragon. The keys next to the arrows (`, . / ;`) do the same jobs,
+and the numpad still works if you have one.
 
 Mount climbs onto whichever dragon is in reach, or onto your own panda if
 there isn't one. `M` toggles the maths overlay on the Kotodama Orb. **`Esc`**,

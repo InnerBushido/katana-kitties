@@ -29,8 +29,67 @@ function isBackgroundish(d, i) {
   return mx - mn < 26;
 }
 
+/**
+ * Clear SEALED pockets of background the border flood could never reach.
+ *
+ * The flood is the right algorithm and the reason is in the header: the cats
+ * have cream chests and white paws, so a global white threshold punches holes
+ * through them. But it has one blind spot by construction — background that
+ * the drawn lineart completely encloses. Ryuuseki's whiskers meet his jaw and
+ * seal a pocket under his chin, which came through as a solid white blob
+ * hanging off the front of the dragon.
+ *
+ * The rule that separates those pockets from actual white ART is two-part,
+ * and both halves are needed. Measured on that sheet:
+ *
+ * ```
+ *   the two chin pockets   3886 px, 2552 px   mean 254,254,254   <- background
+ *   the whiskers           1038 px            mean 235,244,229   <- drawn
+ *   the teeth                190 px           mean 250,250,250   <- drawn
+ * ```
+ *
+ * Purity alone would eat the teeth. Size alone would eat the whiskers. Both
+ * together take the background and nothing else. It is opt-in (`clearPockets`)
+ * rather than automatic, because the four sheets already in the game do not
+ * need it and a loader change that silently repaints working art is exactly
+ * the kind of thing this file has been bitten by before.
+ */
+function clearSealedPockets(d, w, h, minFrac = 0.0005) {
+  const seen = new Uint8Array(w * h);
+  const stack = new Int32Array(w * h);
+  const minPx = Math.max(64, Math.floor(w * h * minFrac));
+  // Near-PURE white only. The drawn whites on these sheets all carry a tint.
+  const pure = (p) => {
+    const i = p * 4;
+    return d[i + 3] > 200 && d[i] > 246 && d[i + 1] > 246 && d[i + 2] > 246;
+  };
+
+  for (let s = 0; s < w * h; s++) {
+    if (seen[s] || !pure(s)) continue;
+    let sp = 0;
+    let n = 0;
+    stack[sp++] = s;
+    seen[s] = 1;
+    const found = [];
+    while (sp > 0) {
+      const p = stack[--sp];
+      found.push(p);
+      n++;
+      const x = p % w;
+      const y = (p / w) | 0;
+      for (const q of [x < w - 1 ? p + 1 : -1, x > 0 ? p - 1 : -1,
+        y < h - 1 ? p + w : -1, y > 0 ? p - w : -1]) {
+        if (q < 0 || seen[q] || !pure(q)) continue;
+        seen[q] = 1;
+        stack[sp++] = q;
+      }
+    }
+    if (n >= minPx) for (const p of found) d[p * 4 + 3] = 0;
+  }
+}
+
 /** Flood transparency inward from every border pixel. */
-function keyOutBackground(ctx, w, h) {
+function keyOutBackground(ctx, w, h, clearPockets = false) {
   const img = ctx.getImageData(0, 0, w, h);
   const d = img.data;
   const seen = new Uint8Array(w * h);
@@ -65,6 +124,9 @@ function keyOutBackground(ctx, w, h) {
     pushIf(x, y + 1);
     pushIf(x, y - 1);
   }
+
+  // ...and then the pockets the flood is structurally unable to reach.
+  if (clearPockets) clearSealedPockets(d, w, h);
 
   // Soften the cut edge: any surviving pale pixel touching transparency gets
   // partial alpha, so the sprite doesn't get a hard white fringe.
@@ -313,6 +375,10 @@ export async function loadSpriteAtlas(url, opts = {}) {
      the half-texel UV inset in Billboard._setCell keeps frames isolated. */
   const {
     views = 4, rows: wantRows = 1, cell = 512, footroom = 0.02, pad = 0.06,
+    /* Also clear background the lineart has completely sealed in — see
+       clearSealedPockets. Opt-in, because the sheets already in the game do
+       not need it. */
+    clearPockets = false,
   } = opts;
 
   const img = await new Promise((res, rej) => {
@@ -329,7 +395,7 @@ export async function loadSpriteAtlas(url, opts = {}) {
   const sctx = src.getContext('2d', { willReadFrequently: true });
   sctx.drawImage(img, 0, 0);
 
-  const keyed = keyOutBackground(sctx, src.width, src.height);
+  const keyed = keyOutBackground(sctx, src.width, src.height, clearPockets);
   const grid = findViewBoxes(keyed, src.width, src.height, views, wantRows);
 
   const flat = grid.flat();

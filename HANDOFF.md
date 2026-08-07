@@ -403,6 +403,37 @@ rider's depth-sort nudge (2.4) left both girls buried in his billboard, and
 the summon shot cropped his head off. All three now scale off `mount.quad`
 rather than assuming every flying thing is the same size.
 
+**DEBUG KEYS, in play: `7` `8` `9`.** Collect all seven stars and summon him,
+seat both kittens, fire. The dragon is otherwise ten minutes of flying away and
+needs two players to see at its best, and the DUO attack — the entire point of
+the feature — was the single hardest thing in the game to reach. `Game._debugKey`.
+
+**Player 2's actions were numpad-only, which meant she had none on a laptop.**
+She could walk and do nothing else: no slash, no oath, no dragon, and above all
+no gunner's attack, so the two-player set-piece could not be reached on the
+machine the game is built on. `KEYSETS[1].alt` adds `, . / ;` next to the arrow
+keys as ALTERNATES; the numpad still works.
+
+**Three bugs the 60-unit dragon exposed, all worth knowing:**
+
+- **`mount.flapBob` was undefined on him, and it made the PILOT invisible.**
+  `Player._updateFeedback` sets `sprite.mesh.position.y = this.mount.flapBob`,
+  a storm-dragon field. Undefined NaN'd the local Y and three.js silently
+  declined to draw her — while the gunner, who rides through `rideAlong` and
+  never touches that line, was perfectly fine. It looked exactly like a
+  depth-sorting problem and was not one. It is `?? 0` now AND he has a real
+  `flapBob`. **A missing field on a mount must degrade, not vanish.**
+- **A sealed white pocket under his chin survived background removal.** The
+  flood fills inward from the borders and cannot reach background the lineart
+  encloses — his whiskers meet his jaw and seal it. `clearPockets` in
+  `loadSpriteAtlas` clears pure-white components over a size floor; both halves
+  of that test are needed, since purity alone eats the teeth and size alone
+  eats the whiskers. No new art was required.
+- **`ClanLeader.faceCamera` multiplied its turn squash into `scale.x`.**
+  `faceCamera` runs once per VIEW and `update` once per frame, so in split
+  screen player 2 saw a leader squashed twice as hard. It is set from
+  `baseScaleX` now, never compounded.
+
 **A new music track** (`MUSIC.ryu`) plays while he is ridden: insen like the
 intro, but nearly twice the game tempo, an octave up, taiko every other step,
 and every pluck doubled a fifth above. Same synthesis, no new files.
