@@ -8,7 +8,8 @@ and what's still open.
 **Repo:** https://github.com/InnerBushido/katana-kitties (private)
 **Run:** `npm run dev`, then open it in **Firefox** — Chrome cannot read the
 Joy-Con sticks through vJoy (see below).
-**Check:** `node tools/world-check.mjs` — headless smoke test, 150 checks.
+**Check:** `node tools/world-check.mjs` — headless smoke test. It prints its own
+total on the last line; don't quote a number here, it drifts.
 
 ---
 
@@ -512,7 +513,7 @@ minimap/Dojo overlap, the orb's jittering glyphs. Run the smoke test before
 assuming otherwise:
 
 ```bash
-node tools/world-check.mjs      # 71 checks, all passing
+node tools/world-check.mjs      # all passing (it prints the count)
 npm run build                   # clean
 ```
 
@@ -904,9 +905,24 @@ screen, and it grew every time one of those bit us.
 
 The repo-local git identity is pinned to `InnerBushido <Innerbushido@gmail.com>`
 on purpose, so a change to the global config can't attribute commits here to a
-work account. Pushing needs Git Credential Manager's GUI — a headless
-`git push` fails with "cannot prompt"; `git -c credential.guiPrompt=true push`
-works.
+work account.
+
+**Pushing goes through the `gh` CLI's credential helper, not GCM.** A headless
+`git push` fails with "cannot prompt", and `credential.guiPrompt=true` no longer
+rescues it: the agent shell sets `GCM_INTERACTIVE=never` and
+`GIT_TERMINAL_PROMPT=0`, so Git Credential Manager refuses to open its window at
+all. `gh` holds its own token in the keyring and never needs to prompt, so the
+repo-local config now points github.com at it:
+
+```
+credential.https://github.com.helper = !"C:/Program Files/GitHub CLI/gh.exe" auth git-credential
+```
+
+That is set with `--local`, deliberately — the global config is left alone. A
+plain `git push` works from a headless shell now. Two things that will look like
+this broke: `gh auth status` reporting logged out (re-run `gh auth login`), and
+the quoting — the path has a space in it, so setting this key from PowerShell
+mangles it into `git: 'Files/GitHub' is not a git command`. Set it from bash.
 
 `docs/screenshots/` holds the six README images. They were captured by rendering
 the game to a canvas and POSTing the JPEG to a throwaway local HTTP server —

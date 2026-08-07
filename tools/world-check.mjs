@@ -23,7 +23,9 @@ import { SHRINE_DAIS } from '../src/world/build.js';
 
 const line = (l, v) => console.log(String(l).padEnd(42) + v);
 let fails = 0;
+let checks = 0;
 const ok = (label, cond, extra = '') => {
+  checks++;
   if (!cond) fails++;
   line(label, (cond ? 'ok   ' : 'FAIL ') + extra);
 };
@@ -816,5 +818,11 @@ for (const [name, cells, cols] of [['ember', em, 10], ['frost', fr, 8]]) {
     `checked ${pairs.length} of 3 pairs; the rest fall between drawn cells`);
 }
 
-console.log(fails ? `\n${fails} CHECK(S) FAILED` : '\nall checks passed');
+/* Print the total. HANDOFF.md quoted it in two places and they disagreed (150
+   and 71) because it was only ever counted by hand — and counting the output by
+   hand gets it wrong too: labels longer than the 42-char pad push the status
+   past the column you'd grep for. The script knows; let it say. */
+console.log(fails
+  ? `\n${fails} of ${checks} CHECK(S) FAILED`
+  : `\nall ${checks} checks passed`);
 process.exit(fails ? 1 : 0);
