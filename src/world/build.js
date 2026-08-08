@@ -719,6 +719,216 @@ export function buildShrine(color, seed = 0) {
   return parts;
 }
 
+/* ---------------------------------------------------------------------------
+   The three dragon-ball locks that are made of WORLD rather than of ward.
+
+   `ice` and `boulder` are things standing in front of a star and they belong
+   to the star (see dragonball.js — they break, and a break needs an owner).
+   These three lock a star by WHERE IT IS, which makes them island furniture:
+   a grotto you have to walk into, a spire only a dragon reaches, and a stack
+   of shards spaced for a third jump.
+
+   All three are built here, merged into the world mesh, and register their own
+   `solids`. None of them knows what a dragon ball is.
+--------------------------------------------------------------------------- */
+
+/**
+ * The grotto: a ring of rock with a roof and one doorway.
+ *
+ * IT IS ABOVE GROUND, NOT DUG IN, and that is a constraint rather than a
+ * choice. The islands are an analytic height field — `world.heightAt` answers
+ * with one surface height per column and the kittens collide against exactly
+ * that — so there is no way to express a hole with ground both above and below
+ * it. A real cave would need a second collision system for the one feature
+ * that uses it. A rock dome gets the same thing the cave was for: you cannot
+ * see in from the air, you cannot fly in, and you have to find the mouth and
+ * walk through it.
+ *
+ * THE MOUTH GLOWS. A grey lump on a grey hillside is not findable from a
+ * dragon, and the star inside has no light column precisely because it is
+ * under a roof — so the doorway is the advertisement, and it is lit warm
+ * against the rock so it reads as "something is in there" from the air.
+ *
+ * @returns {{parts: THREE.BufferGeometry[], solids: {x,z,r}[], mouth: {x,z}}}
+ *          `mouth` is the outside of the doorway, in local coordinates — the
+ *          caller needs it to keep trees and props from growing across the
+ *          entrance, which is a way to lose a star nobody would ever diagnose.
+ */
+export function buildGrotto(seed = 0, opts = {}) {
+  const { r = 8.2, h = 7.0, door = 0.62 } = opts;
+  const parts = [];
+  const solids = [];
+
+  /* The doorway faces +Z. The caller rotates the whole thing, so everything
+     here is written against one fixed opening and the rotation is the only
+     place the direction lives. */
+  const N = 14;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    // The gap: a wedge centred on +Z, wide enough to run through without
+    // catching a shoulder on the solids either side of it.
+    const toDoor = Math.abs(Math.atan2(Math.sin(a - Math.PI / 2), Math.cos(a - Math.PI / 2)));
+    if (toDoor < door) continue;
+
+    const n = valueNoise(seed, i, 17);
+    const bh = h * (0.72 + n * 0.5);
+    const bw = 3.0 + n * 1.6;
+    const g = new THREE.BoxGeometry(bw, bh, 2.8 + n);
+    /* PALE STONE, not the grey it wants to be. The toon ramp steps hard and
+       these faces mostly point away from the sun, so mid-grey rock lands on
+       the bottom step and the whole outcrop renders as one black lump with no
+       readable shape — worse on the dusk island, which is where one of them
+       is. Painted this light it reads as rock in every biome. */
+    paint(g, i % 3 === 0 ? 0xa79d95 : i % 3 === 1 ? 0xb3a99f : 0x968c85);
+    g.applyMatrix4(new THREE.Matrix4()
+      .makeTranslation(Math.cos(a) * r, bh / 2 - 0.6, Math.sin(a) * r)
+      .multiply(new THREE.Matrix4().makeRotationY(-a)));
+    parts.push(g);
+    solids.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, r: 1.9 });
+  }
+
+  /* The roof. A squashed dome sitting on the ring — this is what stops you
+     seeing in and flying in, so it overlaps the wall tops generously rather
+     than meeting them (coplanar faces z-fight; see the house). */
+  const dome = new THREE.SphereGeometry(r * 1.04, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5);
+  dome.scale(1, 0.62, 1);
+  paint(dome, 0x9d938b);
+  dome.translate(0, h * 0.58, 0);
+  parts.push(dome);
+
+  /* AND A CEILING, because the outer dome is invisible from underneath.
+     The world mesh is FrontSide, so standing inside the grotto you looked
+     straight up through the roof at open sky — which is the one thing the
+     roof exists to prevent, and it made the interior read as a ring of
+     standing stones rather than as somewhere you had gone in.
+     Mirroring on x reverses the winding and leaves a dome symmetric in x
+     unchanged in shape, which is the cheapest honest way to get an inward-
+     facing copy without a second material on the merged mesh. Darker,
+     because it is a rock ceiling in shadow. */
+  const roof = new THREE.SphereGeometry(r * 1.0, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5);
+  roof.scale(-1, 0.60, 1);
+  paint(roof, 0x584f4a);
+  roof.translate(0, h * 0.57, 0);
+  parts.push(roof);
+
+  // A couple of boulders outside, so it reads as an outcrop rather than a hut.
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + 1.1;
+    const s = 1.6 + valueNoise(seed, i, 29) * 1.4;
+    const g = new THREE.IcosahedronGeometry(s, 0);
+    paint(g, 0xa9a099);
+    g.translate(Math.cos(a) * (r + 3.4), s * 0.4, Math.sin(a) * (r + 3.4));
+    parts.push(g);
+    solids.push({ x: Math.cos(a) * (r + 3.4), z: Math.sin(a) * (r + 3.4), r: s * 0.8 });
+  }
+
+  /* The lintel over the mouth, and the warm light under it. The glow is a
+     plain unlit quad rather than a real light: the scene has one directional
+     sun and adding a point light per grotto for a doorway is a lot of shader
+     for a thing you look at from two hundred units away. */
+  parts.push(box(5.6, 1.1, 2.4, 0x6b625c, 0, h * 0.52, r));
+  /* NOT ROTATED. A PlaneGeometry faces +Z, the doorway faces +Z, and the
+     merged world mesh is FrontSide — so the first version, which turned the
+     quad to face the interior, was a light you could only see by already
+     being inside the cave it exists to advertise. */
+  const glow = new THREE.PlaneGeometry(4.4, 4.2);
+  paint(glow, 0xffc061);
+  glow.translate(0, 2.1, r + 1.25);
+  parts.push(glow);
+  /* And one facing IN as well, so the mouth still glows from inside — the
+     interior is otherwise a windowless dome and the way out should read. */
+  const inner = new THREE.PlaneGeometry(4.4, 4.2);
+  paint(inner, 0xffc061);
+  inner.rotateY(Math.PI);
+  inner.translate(0, 2.1, r + 1.05);
+  parts.push(inner);
+
+  return { parts, solids, mouth: { x: 0, z: r + 4.5 } };
+}
+
+/**
+ * The spire: a stone finger with a flat top, too tall to jump onto.
+ *
+ * THE HEIGHT IS THE LOCK, so it is checked rather than eyeballed. A kitten's
+ * best standing jump is two jumps' worth of `JUMP_V`, and Shadowtail's third
+ * takes that to about 8.7 units — so a top at `SPIRE_H` above the ground
+ * around it cannot be reached on foot by anybody, with any buff, and the only
+ * way up is a dragon. `world-check` asserts the margin against the real
+ * numbers out of player.js rather than against a copy of them.
+ */
+export const SPIRE_H = 21;
+
+export function buildSpire(seed = 0) {
+  const parts = [];
+  // Tapered, and stacked in drums so the silhouette has some shape to it —
+  // a plain cone reads as a traffic bollard at this scale.
+  const drums = 5;
+  for (let i = 0; i < drums; i++) {
+    const t = i / drums;
+    const rt = 4.6 - t * 2.6;
+    const rb = 5.2 - t * 2.6;
+    const hh = SPIRE_H / drums;
+    const n = valueNoise(seed, i, 53);
+    parts.push(cyl(rt, rb, hh * 1.06, i % 2 ? 0x776e68 : 0x6b625d,
+      (n - 0.5) * 0.7, hh * (i + 0.5), (n - 0.5) * 0.7, 9));
+  }
+  // A flat cap to stand on, and a lip so a landing dragon has an edge to read.
+  parts.push(cyl(3.4, 2.9, 0.7, 0x8a817a, 0, SPIRE_H + 0.35, 0, 10));
+  parts.push(cyl(3.0, 3.4, 0.4, 0x9c938b, 0, SPIRE_H + 0.85, 0, 10));
+  return { parts, solids: [{ x: 0, z: 0, r: 4.4 }] };
+}
+
+/**
+ * The jump shards: three small floating platforms in a rising staircase.
+ *
+ * `rise` IS THE WHOLE MECHANIC AND IT IS MEASURED, not chosen for feel. With
+ * `GRAVITY` 26 and `JUMP_V` 11.2 out of player.js:
+ *
+ * ```
+ *   two jumps  (nobody)      11.2^2/2g + (11.2*0.86)^2/2g            = 4.20
+ *   three jumps (Shadowtail) 2 x (11.2*1.15)^2/2g + (11.2*.86*1.15)^2/2g = 8.74
+ * ```
+ *
+ * A rise of 6.0 sits between them with room on both sides: 43% past what two
+ * jumps can ever do even chained perfectly at the apex, and 69% of what three
+ * jumps give, which is the slack a nine-year-old's timing needs. Anything
+ * tighter than that gap is a platform that *sometimes* works, which is the
+ * worst possible thing to build a gate out of. `world-check` recomputes both
+ * numbers from the real constants and asserts the rise falls between them —
+ * so retuning the jump can't quietly open or close this without failing.
+ *
+ * THE STEP IS ALSO HORIZONTAL. A vertical stack means jumping straight up with
+ * a ceiling of rock over your head; stepping each shard outward gives her
+ * something to aim at and makes the climb read as a staircase.
+ */
+export const SHARD_RISE = 6.0;
+export const SHARD_STEP = 7.0;
+export const SHARD_COUNT = 3;
+
+export function buildShards(seed = 0) {
+  const parts = [];
+  const solids = [];
+  const pads = [];
+  for (let i = 0; i < SHARD_COUNT; i++) {
+    const y = SHARD_RISE * (i + 1);
+    const x = SHARD_STEP * (i + 1);
+    const r = 3.6 - i * 0.35;
+    // The pad you land on...
+    parts.push(cyl(r, r * 0.92, 0.9, 0x7f8a72, x, y, 0, 10));
+    parts.push(cyl(r * 0.94, r * 0.86, 0.34, 0x9ab488, x, y + 0.55, 0, 10));
+    // ...and the crag hanging under it, so it reads as a piece of broken
+    // island rather than as a disc floating in the air.
+    const cone = new THREE.ConeGeometry(r * 0.88, r * 2.1, 8);
+    cone.rotateX(Math.PI);
+    paint(cone, 0x6a5f5a);
+    cone.translate(x, y - r * 1.1, 0);
+    parts.push(cone);
+    solids.push({ x, z: 0, r: r * 0.55, top: y + 0.72 });
+    pads.push({ x, y: y + 0.72, r });
+  }
+  return { parts, solids, pads };
+}
+
 export function buildStall(seed = 0) {
   const parts = [];
   const w = 3.2;

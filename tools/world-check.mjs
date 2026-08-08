@@ -21,10 +21,10 @@ import {
 import { LEADERS, ELDER, leaderSpot, LEADER_OFFSET } from '../src/entities/leader.js';
 import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
 import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
-import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from '../src/entities/dragonball.js';
+import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../src/entities/dragonball.js';
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
-import { SHRINE_DAIS } from '../src/world/build.js';
+import { SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H } from '../src/world/build.js';
 
 const line = (l, v) => console.log(String(l).padEnd(42) + v);
 let fails = 0;
@@ -194,7 +194,7 @@ console.log('\n--- shrine scenes ---');
 
 console.log('\n--- the seven dragon balls ---');
 {
-  const balls = world.placeDragonBalls((s, x, y, z, isl) => new DragonBall(s, x, y, z, isl));
+  const balls = world.dragonBalls;      // built by the World constructor now
   line('dragon balls placed', balls.length);
   ok('there are seven', balls.length === BALL_COUNT);
   ok('and seven islands to put them on', world.islands.length === BALL_COUNT);
@@ -222,14 +222,176 @@ console.log('\n--- the seven dragon balls ---');
      are. A star on a rim reads perfectly in a screenshot and cannot be walked
      up to — and unlike a dragon there is no flying it home to try again. */
   ok('every ball stands on solid ground',
-    balls.every((b) => world.heightAt(b.position.x, b.position.z) != null));
+    balls.every((b) => world.heightAt(b.position.x, b.position.z, b.position.y + 0.5) != null));
+  /* Buried in a solid — but a solid you are standing ON TOP of does not count,
+     which is the whole reason solids grew a `top`. The spire's star is 21
+     units above a 4.4-radius column and is in plan view dead centre of it. */
   ok('none is buried in a solid', balls.every((b) => world.solids.every(
-    (s) => Math.hypot(b.position.x - s.x, b.position.z - s.z) >= s.r)));
+    (s) => Math.hypot(b.position.x - s.x, b.position.z - s.z) >= s.r
+      || (s.top != null && b.position.y >= s.top - 0.35))));
   /* And none inside a clan's join ring: a star collected by accident on the
      way to swearing an oath is a star that never got found. */
   ok('none sits in a clan join ring', balls.every((b) => world.clanHalls.every(
     (h) => Math.hypot(b.position.x - h.x, b.position.z - h.z) > h.r)));
   ok('the pickup radius is reachable on foot', PICKUP_RADIUS >= 2 && PICKUP_RADIUS <= 6);
+
+  /* ------------------------- the locks ---------------------------------- */
+  /* The hunt's whole point is that the seven stars ask for seven different
+     things. Six identical stars and one cave is not a difficulty curve, it is
+     a cave. */
+  const kinds = balls.map((b) => b.lock);
+  line('locks, in island order', kinds.join(' '));
+  ok('every lock kind in LOCKS is actually used',
+    Object.keys(LOCKS).every((k) => kinds.includes(k)));
+  /* NO LOCK MAY SILENTLY FALL BACK. `placeDragonBalls` drops a lock to a plain
+     star when it cannot find room for the furniture, which is the right
+     behaviour — a grotto in the market square is worse than a star on a
+     hillside — but it is a failure, not an outcome, and it is invisible in
+     play. The dojo island did exactly this and shipped two free stars. */
+  ok('every island got the lock it was assigned',
+    kinds.join(' ') === ISLAND_LOCKS.join(' '),
+    `wanted ${ISLAND_LOCKS.join(' ')}`);
+  ok('exactly one star is free', kinds.filter((k) => k === 'none').length === 1);
+  /* THE FREE ONE IS ON THE HOME ISLAND. A locked star teaches nothing to a
+     player who has never picked up an unlocked one — she has to know what a
+     star is and what the counter does before a ward can read as a ward. */
+  ok('and it is the one on the home island',
+    balls[0].lock === 'none' && balls[0].island === world.islands[0]);
+  ok('no other star is free', balls.slice(1).every((b) => b.lock !== 'none'));
+
+  /* THE FURNITURE MUST NOT LAND ON SOMETHING ELSE, and this is the check that
+     did not exist when it did. The dusk grotto went up eight units behind the
+     Windwhisker gate with a perched dragon inside the dome, wings out through
+     the roof, and every check here passed — because "is the ball on solid
+     ground, clear of solids, outside a join ring" is true of a rock dome built
+     around a dragon. Two things were missing:
+
+       - a shrine advertises itself at three distances precisely so it reads
+         from a long way off, and a dome the same size parked behind it wrecks
+         the far one;
+       - DRAGONS ARE NOT SOLIDS. Nothing in the world model records that an
+         animal is standing anywhere, so `findOpenSpot` cannot see a perch, and
+         the grotto is built after the dragons are placed.
+
+     `world.dragonPerches()` exists so both the spawner and the builder resolve
+     the same spots. Checked here at the radius the FURNITURE occupies, not the
+     ball's — a grotto is 11.6 across and the star inside it is a point. */
+  {
+    const FOOT = { cave: 11.6, perch: 5.2, sky: 4.2, none: 1, ice: 2, boulder: 2.4 };
+    const perches = world.dragonPerches();
+    line('dragon perches resolved', perches.length);
+    ok('every dragon perch found real ground', perches.length === 8);
+    for (const b of balls) {
+      const f = FOOT[b.lock];
+      if (f < 4) continue;                     // only the built furniture
+      const shrine = Math.min(...world.clanHalls.map(
+        (h) => Math.hypot(b.position.x - h.x, b.position.z - h.z) - h.r));
+      const dragon = Math.min(...perches.map(
+        (p) => Math.hypot(b.position.x - p.x, b.position.z - p.z)));
+      line(`${b.stars}* ${b.lock}: to shrine / to dragon`,
+        `${shrine.toFixed(1)} / ${dragon.toFixed(1)}`);
+      ok(`the ${b.lock} furniture is clear of every shrine`, shrine > f,
+        `needs ${f} for its own footprint`);
+      ok('and not built around a perched dragon', dragon > f + 5,
+        `needs ${(f + 5).toFixed(1)}`);
+    }
+  }
+
+  /* A LOCK MUST SAY WHAT IT WANTS, in words, and as an INSTRUCTION. Every one
+     of these was first written as a noun ("SEALED IN ICE") and every one had
+     to be rewritten: a kid who can name what she is looking at still does not
+     know what to do about it. Checked against a verb list rather than for
+     mere presence, because a hint that describes is the failure mode. */
+  const VERBS = ['GO', 'BURN', 'CRACK', 'FLY', 'JUMPS', 'RIDE', 'GET', 'HOP'];
+  for (const b of balls) {
+    if (b.lock === 'none') continue;
+    ok(`the ${b.lock} lock tells you what to do`,
+      !!b.rule.hint && VERBS.some((w) => b.rule.hint.includes(w)), b.rule.hint);
+  }
+
+  /* Breakable wards break to ONE thing. A ward that answers to anything is
+     scenery with extra steps — and one that answers to the katana would make
+     the panda and the dragon pointless, since every kitten has a katana. */
+  for (const b of balls) {
+    if (!b.rule.breaks) { ok(`the ${b.lock} star needs no ward broken`, b.open); continue; }
+    ok(`the ${b.lock} star starts sealed`, !b.open);
+    ok(`and a katana does nothing to it`, !b.strike('slash') && !b.open);
+    const wrong = b.rule.breaks === 'claw' ? 'breath' : 'claw';
+    ok(`nor does the ${wrong}`, !b.strike(wrong) && !b.open);
+    ok(`but the ${b.rule.breaks} opens it`, b.strike(b.rule.breaks) && b.open);
+    ok('and it cannot be broken twice', !b.strike(b.rule.breaks));
+    b.reset();
+    ok('a restart seals it again', !b.open);
+  }
+
+  /* The `foot` locks refuse a rider, and say why. This is the rule that makes
+     a cave a cave: a billboarded dragon is a flat drawing with a POINT for a
+     position, and that point fits through any doorway a kitten fits through,
+     so the geometry alone cannot enforce "come in on foot". */
+  {
+    const onFoot = { position: new THREE.Vector3(), mount: null, rideAlong: null, pandaMount: null };
+    const onDragon = { ...onFoot, mount: {} };
+    const onPanda = { ...onFoot, pandaMount: {} };
+    for (const b of balls) {
+      if (!b.rule.foot) continue;
+      ok(`the ${b.lock} star refuses a dragon rider`, !b.canTake(onDragon).ok);
+      ok('and refuses a panda rider', !b.canTake(onPanda).ok);
+      ok('and both refusals explain themselves',
+        !!b.canTake(onDragon).why && !!b.canTake(onPanda).why);
+      ok('but takes her on her own two feet', b.canTake(onFoot).ok);
+    }
+    /* ...and the ones that DON'T say foot must still be takeable from a
+       dragon, or the ice star — which you can only open from the air — would
+       be a star you unlock and then cannot reach. */
+    const ice = balls.find((b) => b.lock === 'ice');
+    ice.strike('breath');
+    ok('the ice star can be taken from the dragon that freed it',
+      ice.canTake(onDragon).ok);
+    ice.reset();
+  }
+}
+
+console.log('\n--- the jump gate is measured, not guessed ---');
+{
+  /* SHARD_RISE has to sit strictly between what two jumps can do and what
+     three can, and both numbers are recomputed HERE from the real constants
+     rather than copied. Retuning JUMP_V or the Shadowtail buff must fail this
+     check rather than silently opening or closing the gate — a platform that
+     is reachable "most of the time" is the worst possible thing to hang a
+     collectible on.
+
+     Apex of a jump from velocity v is v^2 / 2g. Chaining is best-case: each
+     press fired exactly at the previous apex, which is the most generous
+     reading and therefore the right one for an upper bound. */
+  const GRAVITY = 26;
+  const JUMP_V = 11.2;
+  const LATER = 0.86;                       // later jumps are a little weaker
+  const apex = (v) => (v * v) / (2 * GRAVITY);
+
+  const leap = CLANS.find((c) => c.buff.jumps)?.buff ?? {};
+  const jk = leap.jump ?? 1;
+  const two = apex(JUMP_V) + apex(JUMP_V * LATER);
+  const three = apex(JUMP_V * jk) * 2 + apex(JUMP_V * LATER * jk);
+
+  line('best climb on two jumps', two.toFixed(2));
+  line('best climb on three (Shadowtail)', three.toFixed(2));
+  line('shard rise', SHARD_RISE.toFixed(2));
+  ok('two jumps cannot reach the first shard', SHARD_RISE > two * 1.25,
+    `${SHARD_RISE} vs ${two.toFixed(2)}`);
+  ok('three jumps can, with slack for a nine-year-old', SHARD_RISE < three * 0.8,
+    `${SHARD_RISE} vs ${three.toFixed(2)}`);
+  ok('and the triple jump is a real clan buff somebody can get', leap.jumps === 3);
+
+  /* The spire is the opposite gate: NO jump may reach it, so the dragon is
+     the only way. Checked against the best climb in the game, which is the
+     triple jump — not against a number somebody remembered. */
+  line('spire height vs the best climb in the game', `${SPIRE_H} vs ${three.toFixed(2)}`);
+  ok('nothing on foot can jump onto the spire', SPIRE_H > three * 1.8);
+
+  /* And the shard staircase must be climbable in stages rather than needing
+     one impossible leap — three hops of SHARD_RISE, not one of 3x. */
+  ok('the shards are a staircase, not a wall', SHARD_COUNT >= 2);
+  ok('every step is the same reachable size', SHARD_RISE * SHARD_COUNT > two * 2);
 }
 
 console.log('\n--- Ryuuseki, and why two seats beat one ---');

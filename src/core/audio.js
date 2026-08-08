@@ -325,6 +325,37 @@ export class Audio {
           gain: 0.17 * v, delay: i * 0.048,
         }));
         break;
+      case 'starfound':
+        /* The Zelda beat, and it has to be a BIGGER event than 'star' was.
+           Finding one of these now costs a cave, a claw or a third jump, and
+           the four-note arpeggio that used to mark it is the same length as
+           the noise a barrel makes. This is the full fanfare: the arpeggio
+           opens it, a held fifth underneath gives it a floor, and a bell on
+           top rings out over the two seconds she is holding it up. */
+        [0, 4, 7, 12, 16, 19].forEach((n, i) => this._tone({
+          type: 'triangle', from: semi(n + 24), dur: 0.26,
+          gain: 0.17 * v, delay: i * 0.055,
+        }));
+        this._tone({ type: 'sine', from: semi(0), dur: 1.6, gain: 0.13 * v, delay: 0.02 });
+        this._tone({ type: 'sine', from: semi(7), dur: 1.6, gain: 0.10 * v, delay: 0.02 });
+        this._tone({ type: 'sine', from: semi(36), dur: 1.9, gain: 0.15 * v, delay: 0.34 });
+        this._tone({ type: 'sine', from: semi(43), dur: 1.7, gain: 0.08 * v, delay: 0.34 });
+        break;
+      case 'icecrack':
+        /* Ice off a star. Bright, brittle, and it has to be legible over a
+           dragon's breath still roaring — hence the top end rather than a
+           low crunch, which the breath would swallow whole. */
+        this._noise({ from: 5200, to: 1400, dur: 0.5, gain: 0.34 * v, type: 'highpass', q: 0.8 });
+        [24, 31, 36].forEach((n, i) => this._tone({
+          type: 'triangle', from: semi(n), to: semi(n - 2), dur: 0.22,
+          gain: 0.12 * v, delay: i * 0.035,
+        }));
+        break;
+      case 'rockbreak':
+        // A boulder off a star: the opposite end, all body and grit.
+        this._noise({ from: 700, to: 90, dur: 0.7, gain: 0.4 * v, type: 'lowpass', q: 1.2 });
+        this._tone({ type: 'square', from: 96, to: 38, dur: 0.42, gain: 0.16 * v });
+        break;
       case 'mount':
         [0, 3, 7].forEach((n, i) => this._tone({
           type: 'triangle', from: semi(n + 12), dur: 0.22,

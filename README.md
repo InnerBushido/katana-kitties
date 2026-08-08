@@ -113,9 +113,32 @@ something in the way.
 
 ## Collect the seven dragon balls
 
-**There is one star on every island — seven islands, seven stars.** Each one
-stands a thin column of amber light, so you can spot them from a dragon. The
-count is shared between the two of you: you're hunting together.
+**There is one star on every island — seven islands, seven stars.** The count is
+shared between the two of you: you're hunting together.
+
+**Only the first one is just lying there.** The other six are locked, and each
+lock wants something different — so finishing the hunt means using nearly
+everything the game has taught you, not just flying over seven islands and
+looking down:
+
+| star | where | how you get it |
+| --- | --- | --- |
+| 1★ | home | lying in the open, by the town |
+| 2★ | autumn | in a **grotto** — land, find the glowing doorway, walk in |
+| 3★ | frost | **sealed in ice**. Fly a dragon at it and breathe |
+| 4★ | bamboo | **under a boulder**. Only a panda's claw will crack it |
+| 5★ | ash | on top of a **stone spire** far too tall to jump. Fly up |
+| 6★ | dusk | another **grotto** |
+| 7★ | dojo | up three **floating shards**. You need Shadowtail's triple jump |
+
+Each locked star tells you what it wants when you get close, and the colour of
+its light says which kind it is from the air. **Two of them you have to take on
+your own two feet** — you can ride your panda up to the shards, but you have to
+hop off to pick the star up.
+
+Find one and your kitten stops and **holds it over her head** while the camera
+swings in. It only happens on her screen: if your sister is off cutting bamboo,
+her half of the split carries on as normal.
 
 Find all seven and Patchfur tells you where to take them. Then **the sky goes
 dark**, and a very long green dragon called **Ryuuseki** is waiting over the

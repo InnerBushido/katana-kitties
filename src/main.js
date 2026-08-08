@@ -37,6 +37,8 @@ const QUALITY = {
 const MERGE_IN = 30;     // join the screens when the kitties are this close
 const MERGE_OUT = 46;    // split again beyond this
 const DOJO_VIEW_R = 52;  // inside this, the camera frames the unit circle
+/** How long the found-a-star pose runs. Matches Player.holdAloft's default. */
+const STAR_POSE = 2.0;
 
 class Game {
   constructor() {
@@ -165,9 +167,10 @@ class Game {
        payoff, which is a far smaller loss than a game that won't start. */
     setLoad('Scattering the seven stars…');
     await frame();
-    this.balls = this.world.placeDragonBalls(
-      (stars, x, y, z, isl) => new DragonBall(stars, x, y, z, isl)
-    );
+    /* Built with the world, not after it — see the World constructor. The
+       locks register keepClear, and those have to exist before anything is
+       scattered on the ground. */
+    this.balls = this.world.dragonBalls;
     this.ballsHeld = 0;
     this.ryu = null;
     this.ryuArt = await loadSpriteAtlas('/sprites/ryuuseki.png', { views: 1, rows: 1, clearPockets: true })
@@ -267,27 +270,14 @@ class Game {
    * one — you can see the colour from a long way off.
    */
   _spawnDragons(art, flyArt) {
-    const spots = [
-      { x: 26, z: 78, breed: 0 },     // home island, east of the plaza
-      { x: -26, z: 74, breed: 1 },    // home island, west of the plaza
-      { x: 150, z: -95, breed: 2 },
-      { x: -120, z: 140, breed: 3 },
-      { x: 235, z: 60, breed: 4 },
-      { x: 60, z: 165, breed: 2 },
-      { x: -230, z: 118, breed: 0 },
-      // The snow island had no dragon of its own, which made the one island
-      // with a matching breed the one place you couldn't meet it.
-      { x: -140, z: -60, breed: 3 },   // Frost, on the frost island
-    ];
-    for (const s of spots) {
-      // Never perch one inside a house or jammed against the clan hall — a
-      // dragon you can't see is a dragon that doesn't exist.
-      const open = this.world.findOpenSpot(s.x, s.z, 10) ?? s;
-      const g = this.world.heightAt(open.x, open.z);
-      if (!g) continue;
-      s.x = open.x;
-      s.z = open.z;
-      const d = new Dragon(art.texture, s.x, g.y, s.z, {
+    /* The perches come from `world.dragonPerches()`, not from a list here.
+       The spots and the "never inside a house" tidy-up used to live in this
+       function, which meant the WORLD had no idea where any dragon was — and
+       dragons are not solids, so anything built afterwards could not avoid
+       them. The dragon-ball grotto proved it by going up around one. Same
+       resolved list, both callers. */
+    for (const s of this.world.dragonPerches()) {
+      const d = new Dragon(art.texture, s.x, s.y, s.z, {
         size: 13,
         breed: BREEDS[s.breed % BREEDS.length],
         flyTexture: flyArt?.texture ?? null,
@@ -1056,18 +1046,39 @@ class Game {
    */
   _updateBalls(dt) {
     for (const b of this.balls) {
-      b.update(dt);
+      b.update(dt, this.players);
       if (b.taken) continue;
       for (const p of this.players) {
         // Reachable from a dragon too: a star on a rim you can only hover over
-        // would be a star you can see and never collect.
+        // would be a star you can see and never collect. The locks that DO
+        // require two feet on the ground say so themselves, in `canTake`.
         const d = Math.hypot(p.position.x - b.position.x, p.position.z - b.position.z);
         if (d > PICKUP_RADIUS + (p.mount ? 4 : 0)) continue;
         if (Math.abs(p.position.y - b.position.y) > 14) continue;
+
+        /* A REFUSAL HAS TO SAY SOMETHING. Reaching a star and having nothing
+           happen is indistinguishable from a broken star, and this hunt now
+           has five different ways to be refused — the same rule the shrine
+           join button follows. Rate-limited per ball rather than per frame,
+           or standing next to a boulder is a toast forty times a second. */
+        const verdict = b.canTake(p);
+        if (!verdict.ok) {
+          if (verdict.why && (this._wardNagT ?? 0) <= 0) {
+            this._wardNagT = 3.0;
+            this.toast(`${b.stars}★ — ${verdict.why}`, p.index);
+          }
+          continue;
+        }
+
         b.take();
         this.ballsHeld++;
-        this.sfx('star');
         this._updateBallHud();
+        /* The Zelda beat. She stops, lifts it, the camera comes in — and the
+           star she holds up is this star's own face, so a kid can see which
+           one she just got without reading the toast. */
+        p.holdAloft(b.ball.material.map);
+        this.starShot = { player: p, t: STAR_POSE };
+        this.sfx('starfound');
         const left = BALL_COUNT - this.ballsHeld;
         this.toast(
           left ? `${p.name} found the ${b.stars}★ dragon ball!  ${left} to go`
@@ -1077,6 +1088,31 @@ class Game {
         if (this.ballsHeld >= BALL_COUNT) this._onAllBalls();
         break;
       }
+    }
+    this._wardNagT = Math.max(0, (this._wardNagT ?? 0) - dt);
+    if (this.starShot) {
+      this.starShot.t -= dt;
+      if (this.starShot.t <= 0) this.starShot = null;
+    }
+  }
+
+  /**
+   * An attack went off — see whether it broke the ward over a star.
+   *
+   * Called from `Player._doBreath` and `Player._doClaw` rather than from the
+   * ball, because the attack knows its own reach and the ball does not. The
+   * kind is matched inside `DragonBall.strike`, so a katana sweeping past an
+   * ice shell does nothing at all: there is exactly one answer per lock and
+   * finding it is the puzzle.
+   */
+  strikeWards(player, kind, range) {
+    for (const b of this.balls) {
+      if (b.taken || b.open) continue;
+      const d = Math.hypot(player.position.x - b.position.x, player.position.z - b.position.z);
+      if (d > range + 2.5 || Math.abs(player.position.y - b.position.y) > 16) continue;
+      if (!b.strike(kind)) continue;
+      this.sfx(kind === 'claw' ? 'rockbreak' : 'icecrack');
+      this.toast(`${player.name} broke the ${b.stars}★ free!`, player.index);
     }
   }
 
@@ -1501,13 +1537,34 @@ class Game {
 
       const want = ryuMid ? ryuMid.clone() : mid.clone().setY(mid.y + 1.6);
       if (ft > 0.001) want.lerp(dc, ft);
-      this.sharedTarget.lerp(want, Math.min(1, dt * 6));
 
-      const wantDist = ryuMid
+      let wantDist = ryuMid
         ? onRyu.quad * RYU_VIEW
         : THREE.MathUtils.lerp(
           THREE.MathUtils.clamp(26 + dist * 0.85, 26, 52), 104, ft
         );
+
+      /* THE STAR SHOT AGAIN, BECAUSE THIS IS THE CAMERA THAT DRAWS WHEN
+         MERGED. `Player.holdAloft` pulls the per-player camera in, and when
+         the girls are together — which is most of the time, and is exactly
+         when they are hunting a star as a pair — that camera is not on screen.
+         Same trap as Ryuuseki's framing: if a camera change appears to do
+         nothing, check which camera is actually drawing.
+         It swings to the finder rather than to the midpoint, because the shot
+         is about her holding it up; her sister slides off frame for two
+         seconds and comes back. */
+      const shot = this.starShot;
+      if (shot && !ryuMid) {
+        const k = Math.sin(Math.min(1, (STAR_POSE - shot.t) / 0.3) * Math.PI * 0.5)
+          * Math.min(1, shot.t / 0.45);
+        want.lerp(
+          new THREE.Vector3(shot.player.position.x, shot.player.position.y + 2.2, shot.player.position.z),
+          k
+        );
+        wantDist = THREE.MathUtils.lerp(wantDist, 15, k);
+      }
+
+      this.sharedTarget.lerp(want, Math.min(1, dt * 6));
       this.sharedDist += (wantDist - this.sharedDist) * Math.min(1, dt * 4);
 
       const yaw = THREE.MathUtils.lerp(-Math.PI * 0.25, 0, ft);

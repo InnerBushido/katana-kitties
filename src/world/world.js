@@ -4,9 +4,12 @@ import {
   Island, PALETTE, BIOMES, buildHouse, buildTorii, buildLantern, buildTree, buildStall,
   buildBridge, buildBamboo, buildRoad, buildShrine, mergeParts, transformParts,
   valueNoise, fbm,
+  buildGrotto, buildSpire, buildShards, SPIRE_H,
 } from './build.js';
 import { Prop } from '../entities/prop.js';
 import { ClanShrine } from '../entities/shrine.js';
+import { DragonBall, ISLAND_LOCKS } from '../entities/dragonball.js';
+import { DRAGON_SPOTS } from '../entities/dragon.js';
 
 /* ---------------------------------------------------------------------------
    The world: a cluster of floating islands under a sunset sky, with one
@@ -160,6 +163,16 @@ export class World {
     this._buildIslands();
     this._buildTown();
     this._buildShrines();
+    /* BEFORE the ground detail, and that ordering is the whole point.
+       The stars' locks build real furniture — a grotto, a spire, a stack of
+       shards — and each registers `keepClear` so nothing is scattered on top
+       of it. Called from main.js after the world was finished, as it used to
+       be, those entries arrived too late to mean anything: the dusk island had
+       already grown a field of boulders, and the grotto came up in the middle
+       of them with its doorway completely walled in. Same class of bug as the
+       dragon perches, and the fix is the same one — do it while the world is
+       still being built, so everything downstream can see it. */
+    this.placeDragonBalls();
     this._buildGroundDetail();
     this._buildDistantScenery();
     this._buildPetals();
@@ -688,11 +701,16 @@ export class World {
       /* Keep the approaches clear. A cherry tree grown across the foot of the
          bridge blocks the only road to the grove, and from a low camera you
          cannot even see what you're stuck on. */
-      this.keepClear = [
+      /* PUSH, not assign. This used to replace the array outright, which is a
+         landmine rather than a bug today only because nothing happens to add
+         to it before the town is built. Anything that ever does would be
+         silently discarded here, and the symptom — one cherry tree grown
+         somewhere it shouldn't be — is not something you would trace back. */
+      this.keepClear.push(
         { x: BRIDGE.x, z: BRIDGE.z, r: 16 },
         { x: 58, z: 44, r: 17 },
         { x: -72, z: -30, r: 16 },
-      ];
+      );
     }
 
     /* --- the bamboo grove the road leads to ---
@@ -897,31 +915,216 @@ export class World {
    * one thing this hunt has going for it is that finding each one is a
    * decision.
    */
-  placeDragonBalls(make) {
+  /**
+   * IT BUILDS THE BALLS ITSELF. This used to take a `make` callback, and the
+   * callback was written out twice — once in main.js and once in the smoke
+   * test. When the locks were added, only the test's copy learned to forward
+   * the new `lock` argument, so `world-check` reported seven correctly locked
+   * stars while the actual game handed out seven unlocked ones. Every check
+   * passed. The bug was the duplication, not either copy of it, and there is
+   * no principle being upheld by the indirection — world.js already imports
+   * Prop and ClanShrine and builds those directly.
+   */
+  /**
+   * Where every dragon actually ends up, resolved once and shared.
+   *
+   * Two callers need the same answer and for opposite reasons: `_spawnDragons`
+   * puts an animal there, and `placeDragonBalls` must not build a grotto on
+   * top of it. Dragons are not `solids`, so without this the world has no
+   * record that anything is standing there at all — and the first grotto went
+   * up around one, wings out through the roof.
+   */
+  dragonPerches() {
+    if (this._perches) return this._perches;
+    this._perches = DRAGON_SPOTS.map((s) => {
+      const open = this.findOpenSpot(s.x, s.z, 10) ?? s;
+      const g = this.heightAt(open.x, open.z);
+      return g ? { ...s, x: open.x, z: open.z, y: g.y } : null;
+    }).filter(Boolean);
+    return this._perches;
+  }
+
+  placeDragonBalls() {
     this.dragonBalls = [];
+    /** Rock built for the locks, merged in one go at the end. */
+    const rock = [];
+
     this.islands.forEach((isl, i) => {
-      const away = (x, z) => !this.clanHalls.some(
-        (h) => Math.hypot(x - h.x, z - h.z) < h.r + 8
-      );
+      const lock = ISLAND_LOCKS[i] ?? 'none';
+      /* A BALL needs only to stay out of a join ring. A BUILDING needs to stay
+         out of the whole scene: the first dusk grotto went up eight units
+         behind the Windwhisker gate, so the shrine, its leader, its beam and a
+         rock dome the size of the shrine itself were all one heap — and the
+         shrine advertises itself at three distances precisely so it reads from
+         a long way off, which a dome parked behind it wrecks.
+         The furniture also has to dodge the DRAGON PERCHES. Dragons are not
+         solids, so nothing in `findOpenSpot` knows one is standing there; the
+         same grotto enclosed a perched dragon, wings out through the roof. */
+      /* Sized per lock from how much room the thing actually takes up, not
+         picked. A grotto is 8.2 of dome with outlying boulders to 11.6, and a
+         shrine is about 7 across, so they need roughly 19 between centres
+         before they stop being one heap; the spire and the shards are much
+         smaller. A flat generous number is what broke it the other way — 30
+         units of exclusion deletes the whole ash island, which is 28 across. */
+      /* The BREAKABLE wards get a separation too, smaller. They build nothing,
+         but they are things you have to see and then hit — and a perched
+         dragon is a 24-unit sprite that will happily stand in front of one.
+         The bamboo island put its boulder directly under one. */
+      const SEP = { cave: 24, perch: 17, sky: 15, ice: 13, boulder: 13 };
+      const sep0 = SEP[lock] ?? 0;
+      const perches = sep0 ? this.dragonPerches() : [];
+      /* THE DOJO'S CIRCLE IS NOT A BUILDING SITE. Its flattened disc is the
+         maths lesson — a grotto standing on the graph paper would be a rock in
+         the middle of the diagram the whole island exists to draw, and the
+         dojo camera frames that disc. Clear of `dojoRadius` and it is out on
+         the rim where the island has nothing else to do. */
+      const dc = this.dojoCentre;
+      const offCircle = (x, z) => isl !== this.dojoIsland
+        || Math.hypot(x - dc.x, z - dc.z) > 52;
+
+      /* The locks that build furniture need more room than a ball does, and
+         they need it CLEAR — a grotto half inside a hillside has a doorway you
+         cannot walk through, and the star is then unreachable with no visible
+         reason why. */
+      /* 6 for a plain star, not 2.2. `findOpenSpot` measures against a tree's
+         SOLID, which is its trunk at radius 0.9 — but what hides a star is the
+         canopy, and those are about four across. At 2.2 the frost island put
+         snow trees 3.5 units from the ice ward and buried the thing you are
+         meant to spot from a dragon and burn. The trees are planted before the
+         stars are placed (see the World constructor), so the star is the one
+         that has to move. */
+      const clearance = lock === 'cave' ? 11 : lock === 'perch' ? 6 : lock === 'sky' ? 5 : 6;
+
+      /* RELAXING BEATS FALLING BACK. The first version made one pass at the
+         full clearance and, failing that, dropped the lock and placed a plain
+         star — which is how the dojo island silently ended up with a second
+         free star and the game shipped one cave instead of two. A grotto
+         squeezed into nine units of level ground is still a grotto; a lock
+         that quietly isn't there is a hole in the design nobody sees.
+         So: try the ideal, then tighter, then tighter again. */
       let spot = null;
-      // Walk out around the island until a clear, shrine-free place turns up.
-      for (let k = 0; k < 40 && !spot; k++) {
-        const a = k * 2.39996 + i;
-        const r = 6 + (k / 40) * isl.radius * 0.72;
-        const x = isl.x + Math.cos(a) * r;
-        const z = isl.z + Math.sin(a) * r;
-        if (!away(x, z)) continue;
-        const open = this.findOpenSpot(x, z, 2.2);
-        if (open && away(open.x, open.z)) spot = open;
+      for (const squeeze of [1, 0.82, 0.66, 0.5]) {
+        const need = Math.max(4, clearance * squeeze);
+        // The separation relaxes with the clearance. On a small island already
+        // carrying a shrine and a dragon there may be no spot that satisfies
+        // the ideal, and a slightly crowded grotto beats no grotto at all.
+        const sep = sep0 * squeeze;
+        const away = (x, z) => !this.clanHalls.some(
+          (h) => Math.hypot(x - h.x, z - h.z) < h.r + Math.max(8, sep)
+        ) && !perches.some((p) => Math.hypot(x - p.x, z - p.z) < sep * 0.82);
+
+        for (let k = 0; k < 72 && !spot; k++) {
+          const a = k * 2.39996 + i;
+          const r = 6 + (k / 72) * isl.radius * 0.82;
+          const x = isl.x + Math.cos(a) * r;
+          const z = isl.z + Math.sin(a) * r;
+          if (!away(x, z) || !offCircle(x, z)) continue;
+          const open = this.findOpenSpot(x, z, need);
+          if (open && away(open.x, open.z) && offCircle(open.x, open.z)) spot = open;
+        }
+        if (spot) break;
       }
-      if (!spot) spot = { x: isl.x, z: isl.z };
-      const g = this.heightAt(spot.x, spot.z);
-      const ball = make(i + 1, spot.x, g ? g.y : 0, spot.z, isl);
+      /* And only if all three passes failed. The old fallback was the island's
+         own centre, which on the home island is the middle of the market —
+         a grotto in the town square is the kind of thing that ships. */
+      let kind = lock;
+      if (!spot) {
+        spot = this.findOpenSpot(isl.x, isl.z, 3) ?? { x: isl.x, z: isl.z };
+        if (clearance > 6) kind = 'none';
+      }
+
+      const ground = this.heightAt(spot.x, spot.z);
+      const gy = ground ? ground.y : 0;
+      // Where the star itself ends up. Most locks leave it on the ground; the
+      // spire and the shards lift it.
+      let bx = spot.x;
+      let by = gy;
+      let bz = spot.z;
+      // Which way the furniture faces: in toward the island, so a staircase
+      // climbs over grass rather than out over open sky, and a grotto's mouth
+      // faces the way a kitten walks up to it.
+      const inward = Math.atan2(isl.x - spot.x, isl.z - spot.z);
+
+      if (kind === 'cave') {
+        const G = buildGrotto(i * 7 + 3);
+        rock.push(...transformParts(G.parts, spot.x, gy, spot.z, inward));
+        for (const s of G.solids) {
+          const c = Math.cos(inward);
+          const sn = Math.sin(inward);
+          this.solids.push({
+            x: spot.x + s.x * c + s.z * sn,
+            z: spot.z - s.x * sn + s.z * c,
+            r: s.r,
+          });
+        }
+        /* Nothing grows in the doorway or inside the dome. A cherry tree
+           across the mouth is a star you can see the glow of and cannot reach,
+           and it would look like level design rather than like a bug. */
+        this.keepClear.push({ x: spot.x, z: spot.z, r: 15 });
+      } else if (kind === 'perch') {
+        const S = buildSpire(i * 11 + 5);
+        rock.push(...transformParts(S.parts, spot.x, gy, spot.z, 0));
+        by = gy + SPIRE_H + 1.05;
+        /* `top` so it stops pushing once you are up there. A solid this wide
+           with a deck on it is the case World.resolveSolids grew a height for:
+           without it, landing on the spire shoves you straight back off. */
+        for (const s of S.solids) {
+          this.solids.push({ x: spot.x + s.x, z: spot.z + s.z, r: s.r, top: by });
+        }
+        /* The spire IS a platform — without this the top is decoration and a
+           dragon hovering over it has nothing to put the kitten down on. */
+        this.platforms.push({
+          x0: spot.x - 2.1, x1: spot.x + 2.1,
+          z0: spot.z - 2.1, z1: spot.z + 2.1,
+          y: by,
+        });
+        this.keepClear.push({ x: spot.x, z: spot.z, r: 9 });
+      } else if (kind === 'sky') {
+        const S = buildShards(i * 13 + 9);
+        rock.push(...transformParts(S.parts, spot.x, gy, spot.z, inward));
+        const c = Math.cos(inward);
+        const sn = Math.sin(inward);
+        for (const p of S.pads) {
+          const px = spot.x + p.x * c;
+          const pz = spot.z - p.x * sn;
+          /* Square platforms inscribed in a round pad. `platforms` are
+             axis-aligned boxes and the pads are discs, so the deck is the
+             biggest square that fits inside one — erring small, because a
+             corner of walkable air off the edge of a visible platform is far
+             more confusing than a rim you cannot quite stand on. */
+          const half = p.r * 0.62;
+          this.platforms.push({
+            x0: px - half, x1: px + half, z0: pz - half, z1: pz + half,
+            y: gy + p.y,
+          });
+          this.keepClear.push({ x: px, z: pz, r: p.r + 2 });
+        }
+        const top = S.pads[S.pads.length - 1];
+        bx = spot.x + top.x * c;
+        bz = spot.z - top.x * sn;
+        by = gy + top.y;
+        this.keepClear.push({ x: spot.x, z: spot.z, r: 10 });
+      }
+
+      const ball = new DragonBall(i + 1, bx, by, bz, isl, kind);
       this.scene.add(ball.group);
       this.dragonBalls.push(ball);
-      // Nothing else grows on top of a star.
-      this.keepClear.push({ x: spot.x, z: spot.z, r: 4 });
+      /* A CLEARING, not just "nothing on the exact spot". At 4 the frost
+         island planted snow trees five units away whose canopies are four
+         across, and the ice ward — a thing you are supposed to spot from a
+         dragon and then burn — was completely hidden underneath them. The
+         clearing is also the tell: a bare circle with something glowing in
+         the middle of it reads as deliberate from a long way off. */
+      this.keepClear.push({ x: bx, z: bz, r: 9 });
     });
+
+    if (rock.length) {
+      const mesh = new THREE.Mesh(mergeParts(rock), toonVertexMat());
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+      this.lockMesh = mesh;
+    }
     return this.dragonBalls;
   }
 
@@ -1023,8 +1226,24 @@ export class World {
   }
 
   /** Push a position out of any solid it's inside. Returns the corrected xz. */
-  resolveSolids(x, z, radius) {
+  /**
+   * Push a body out of anything solid it has walked into.
+   *
+   * `fromY` IS NOT OPTIONAL FOR ANYTHING THAT CAN GET ON TOP OF A SOLID.
+   * These are infinite cylinders — that was fine while every solid was a tree
+   * or a house you can only ever walk around, and it broke the moment
+   * something in the world became both solid AND climbable. The spire holding
+   * the ash island's star is a 4.4-radius column with a 2.1-radius deck on
+   * top: a kitten who flies up and lands on it is, in plan view, deep inside
+   * the solid, so the old version shoved her straight off the thing she had
+   * just landed on. It looked like the platform was rejecting her.
+   *
+   * A solid with a `top` stops pushing once you are standing above it. Solids
+   * without one are unchanged and still infinite, which is right for a tree.
+   */
+  resolveSolids(x, z, radius, fromY = Infinity) {
     for (const s of this.solids) {
+      if (s.top != null && fromY >= s.top - 0.35) continue;
       const dx = x - s.x;
       const dz = z - s.z;
       const d = Math.hypot(dx, dz);

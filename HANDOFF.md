@@ -355,6 +355,184 @@ the cosine — which is what a real turn does to a flat drawing. Measured agains
 the **camera**, because "toward you" is a screen direction and in split screen
 the two kittens have their own.
 
+## The seven locks
+
+**Every star but the first is behind a gate, and each gate asks for a different
+verb.** They used to sit in the open on seven hillsides, which made the hunt one
+long flight with a lot of looking down: the dragon did all seven, and nothing
+else in the game was needed to finish the thing the whole game builds toward.
+
+| # | island | lock | how you open it |
+| --- | --- | --- | --- |
+| 1★ | home | `none` | lying in the open — the one that teaches what a star is |
+| 2★ | autumn | `cave` | a grotto. Walk in on foot |
+| 3★ | frost | `ice` | sealed in a crystal. Any dragon's breath |
+| 4★ | bamboo | `boulder` | under a rock. A panda's claw, and nothing else |
+| 5★ | ash | `perch` | on a spire nothing can jump. Fly |
+| 6★ | dusk | `cave` | a second grotto |
+| 7★ | dojo | `sky` | up three floating shards. Triple jump, on your own feet |
+
+`LOCKS` and `ISLAND_LOCKS` in `entities/dragonball.js` own the table. The order
+is a difficulty curve, not a shuffle: the dragon gates come first because a
+dragon is the first thing either girl learns to use, and the panda and the
+triple jump are last because both cost a clan oath and one costs forty canes.
+
+**THE FIRST STAR IS FREE and that is not laziness.** A locked star teaches
+nothing to somebody who has never picked up an unlocked one — you have to know
+what a star is, what the counter does and that it is worth crossing an island
+for before a ward can read as a ward rather than as scenery.
+
+**A LOCK MUST SAY WHAT IT WANTS, in words, and as an instruction.** Every hint
+was first written as a noun ("SEALED IN ICE") and every one had to be rewritten:
+a kid who can name what she is looking at still does not know what to do about
+it. `world-check` asserts each hint against a verb list rather than merely
+checking one exists, because describing is the failure mode. The hint shows
+inside `HINT_RADIUS` **and only while the answer is still no** — a hint telling
+you to go in on foot while you are standing there on foot is noise, and noise is
+what teaches a kid to stop reading the hints, which costs her the four that are
+load-bearing.
+
+**A refusal toasts.** Reaching a star and having nothing happen is
+indistinguishable from a broken star, and there are now five ways to be refused.
+Same rule as the shrine join button. Rate-limited per three seconds or standing
+next to a boulder is forty toasts a second.
+
+**The beam is tinted by the lock**, so the colour over an island is a readable
+promise about what that star will ask for. **A cave star has no beam at all**: it
+is under a roof, so the column would either be swallowed by the rock or stand on
+top of it pointing at an empty hillside, which is worse than no beam — it is a
+beam that lies. The grotto's own glowing mouth is its advertisement.
+
+### The grotto is above ground, and it had to be
+
+The islands are an analytic height field: `heightAt` answers with one surface
+per column and the kittens collide with exactly that, so **there is no way to
+express a hole with ground both above and below it.** A real dug cave needs a
+second collision system for the one feature that uses it. A rock dome gets
+everything the cave was for — you cannot see in from the air, you cannot fly in,
+you have to find the mouth and walk through it — for a ring of boxes and a
+squashed sphere.
+
+**It needs a SECOND dome, wound inside-out.** The world mesh is `FrontSide`, so
+from inside the grotto you looked straight up through the roof at open sky,
+which is the one thing the roof exists to prevent. Mirroring a dome on x
+reverses its winding and leaves a shape symmetric in x unchanged, which is the
+cheapest honest way to get an inward-facing copy without a second material on a
+merged mesh.
+
+**The doorway glow was facing the wrong way** for the same reason: a
+`PlaneGeometry` faces +Z, it was rotated to face the interior, and the result
+was a light you could only see by already being inside the cave it advertises.
+There are two quads now, one each way.
+
+### The jump gate is measured, not chosen
+
+`SHARD_RISE` is 6.0 and it sits between two numbers computed from the real
+constants in `player.js`:
+
+```
+two jumps  (anybody)      11.2²/2g + (11.2·0.86)²/2g              = 4.20
+three jumps (Shadowtail)  2·(11.2·1.15)²/2g + (11.2·0.86·1.15)²/2g = 8.74
+```
+
+43% past what two jumps can *ever* do chained perfectly at the apex, and 69% of
+what three give — which is the slack a nine-year-old's timing needs. `world-check`
+recomputes both from the constants and asserts the rise falls between them, so
+retuning the jump fails the check instead of silently opening or closing the
+gate. A platform that works *most* of the time is the worst possible thing to
+hang a collectible on. `SPIRE_H` is bounded the other way: 21, against the best
+climb in the game at 8.74, so nothing on foot can ever reach it.
+
+**A PANDA JUMPS HIGHER THAN A TRIPLE JUMP — 9.43 — and that is allowed.** No
+shard height can separate the two, so the gate is enforced at pickup instead:
+`sky` and `cave` require `foot`, meaning no dragon and no panda. A kid who works
+out that she can ride her panda up and then hop off to take it has solved it,
+and that is a better outcome than punishing her for it. What the rule stops is
+riding *up to* a star and collecting it without ever leaving the saddle.
+
+**The `foot` rule is enforced, not left to the geometry.** A billboarded dragon
+is a flat drawing with a POINT for a position, and that point fits through any
+doorway a kitten fits through.
+
+### Four ordering bugs, all the same bug
+
+Everything below was one mistake wearing four hats: **the stars were placed
+after the world was already built.**
+
+- **A grotto went up around a perched dragon**, wings out through the roof.
+  Dragons are not `solids` — nothing in the world model records that an animal
+  is standing anywhere — so `findOpenSpot` cannot see a perch. `DRAGON_SPOTS`
+  moved to `dragon.js` and `World.dragonPerches()` resolves them once, so the
+  spawner and the builder read the same answer.
+- **The same grotto was eight units behind the Windwhisker gate.** A shrine
+  advertises itself at three distances precisely so it reads from far off, and a
+  dome the same size parked behind it wrecks the far one. Furniture now keeps
+  `SEP` from every clan hall — sized from what each thing actually occupies,
+  because a flat generous number broke it the other way and 30 units of
+  exclusion deletes the whole ash island, which is 28 across.
+- **The dusk grotto came up inside a field of boulders** with its doorway walled
+  in. Its `keepClear` was registered *after* the ground detail had scattered.
+  `placeDragonBalls()` is called from the World constructor now, before
+  `_buildGroundDetail`, so everything downstream can see it.
+- **The ice ward was buried under snow trees.** `findOpenSpot` measures against
+  a tree's *solid*, which is its trunk at radius 0.9 — but what hides a star is
+  the canopy, four across. A plain star's clearance went 2.2 → 6, and its
+  `keepClear` 4 → 9. The clearing is also the tell: a bare circle with something
+  glowing in it reads as deliberate from a long way off.
+
+**`world-check` now asserts furniture separation from both shrines and perches
+at the radius the FURNITURE occupies**, not the ball's — a grotto is 11.6 across
+and the star inside it is a point. Every one of these passed the old checks.
+
+**And it asserts no lock may silently fall back.** `placeDragonBalls` drops a
+lock to a plain star when it cannot find room, which is right — a grotto in the
+market square is worse than a star on a hillside — but it is a failure, not an
+outcome, and it is invisible in play. The dojo island did exactly that and
+shipped two free stars and one cave. Placement relaxes its clearance in four
+passes before it ever gives up.
+
+**A ward must read against its own biome, not against the thing it is made of.**
+The ice crystal was a perfectly convincing pale `0xcfeeff` and completely
+invisible, because the only island with an ice ward is the snow one.
+
+### `resolveSolids` grew a height
+
+Solids are infinite cylinders, which was fine while every one of them was a tree
+or a house you can only walk around. The spire is the first thing in the world
+that is both **solid and climbable**: a 4.4-radius column with a 2.1-radius deck
+on top, so a kitten who flies up and lands on it is, in plan view, deep inside
+the solid — and the old version shoved her straight off the thing she had just
+landed on. It looked like the platform was rejecting her. A solid with a `top`
+stops pushing once you are above it; solids without one are unchanged.
+
+### The found-a-star moment
+
+`Player.holdAloft` — she stops, lifts the star over her head, the camera comes
+in, and a fanfare plays (`starfound`, a bigger cue than the old four-note blip,
+because finding one now costs a cave or a claw or a third jump).
+
+**IT IS PER PLAYER, NOT A CUTSCENE.** Every other scripted moment in the game
+takes the whole screen from both girls, which is right when the thing being said
+is said to both of them. A star is found by ONE kitten, usually while her sister
+is two islands away — stopping that sister's game to show her a cutscene about
+something she did not do is the exact interruption the split screen exists to
+avoid.
+
+**It pulls the merged camera too.** Same trap as Ryuuseki's framing: when the
+girls are together — which is most of the time, and exactly when they are
+hunting as a pair — `Player._updateCamera` is not the camera drawing. If a
+camera change appears to do nothing, check which camera is actually drawing.
+
+**She is frozen with a dead pad, but never while flying.** A dead stick on a
+dragon is a dragon nobody is steering, thirty units up, for two seconds — and
+the ice star is deliberately taken from the air, so that case really happens.
+
+**The star draws with `depthTest: false`.** She is a transparent billboard and it
+sits at very nearly her own depth, so without it the sort decides frame by frame
+which is in front and the prize flickers *inside* the cat holding it. The cost
+is that it shows through anything between her and the camera for two seconds,
+which is the better trade.
+
 ## The seven dragon balls and Ryuuseki
 
 Seven stars, **one per island — which is why there are seven of each**, and
@@ -799,7 +977,14 @@ verified — sprite directions, slope flicker, dragon loss and clipping, the
 minimap/Dojo overlap, the orb's jittering glyphs, and the three Ryuuseki bugs
 above (a solo rider stealing the split screen, the beam count reading the crew
 instead of the seat, and the fan firing backwards out of his mouth). Run the
-smoke test before assuming otherwise:
+smoke test before assuming otherwise.
+
+**The seven locks are built and verified but have NOT been played by the girls
+yet** — which is the only test that counts for difficulty. The two things most
+likely to come back are the 7★ (it needs a Shadowtail oath *and* three chained
+jumps, the hardest thing in the game to reach) and whether the hints are read at
+all. `SHARD_RISE` and `ISLAND_LOCKS` are the two knobs; both are checked, so
+turning them down will tell you if it breaks something.
 
 ```bash
 node tools/world-check.mjs      # all passing (it prints the count)

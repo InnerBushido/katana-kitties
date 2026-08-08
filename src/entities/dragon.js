@@ -13,6 +13,35 @@ import { Billboard } from '../core/gfx.js';
    lost: see returnHome().
 --------------------------------------------------------------------------- */
 
+/**
+ * Where the dragons perch, before `world.findOpenSpot` tidies each one up.
+ *
+ * IT LIVES HERE RATHER THAN IN main.js BECAUSE THE WORLD HAS TO KNOW. Dragons
+ * are not `solids` — nothing in the world model records that an animal is
+ * standing somewhere — so anything the world builds later has no idea a perch
+ * is there. The dragon-ball grotto found that out the hard way: it was placed
+ * after the dragons and dropped a rock dome straight on top of one, with the
+ * dragon's wings poking out through the roof.
+ *
+ * `World.dragonPerches()` resolves these once and both callers read the same
+ * answer, so the furniture avoids exactly the spots the dragons end up on.
+ *
+ * TWO on the home island, deliberately: with one, the second kitten could
+ * never follow the first into the sky.
+ */
+export const DRAGON_SPOTS = [
+  { x: 26, z: 78, breed: 0 },     // home island, east of the plaza
+  { x: -26, z: 74, breed: 1 },    // home island, west of the plaza
+  { x: 150, z: -95, breed: 2 },
+  { x: -120, z: 140, breed: 3 },
+  { x: 235, z: 60, breed: 4 },
+  { x: 60, z: 165, breed: 2 },
+  { x: -230, z: 118, breed: 0 },
+  // The snow island had no dragon of its own, which made the one island with
+  // a matching breed the one place you couldn't meet it.
+  { x: -140, z: -60, breed: 3 },  // Frost, on the frost island
+];
+
 /** The breeds, in the order they're handed out. Home island always gets [0]. */
 export const BREEDS = [
   {

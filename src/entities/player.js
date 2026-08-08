@@ -27,6 +27,12 @@ const AIR_ACCEL = 26;
 const JUMP_V = 11.2;
 const COYOTE = 0.12;
 
+/** A dead controller, for the frames a kitten is not in charge of herself.
+ *  Shaped exactly like a real pad so nothing downstream has to check. */
+const FROZEN_PAD = {
+  mx: 0, my: 0, down: () => false, pressed: () => false,
+};
+
 const FLY_SPEED = 34;
 const FLY_BOOST = 62;
 const FLY_LIFT = 20;
@@ -72,6 +78,10 @@ export class Player {
     this.attackCooldown = 0;
     this.stepPhase = 0;
     this.squash = 0;
+    /** Seconds left of the star-found pose. See Player.holdAloft. */
+    this.aloftT = 0;
+    /** The star she is holding up, parented to her group for the duration. */
+    this.aloft = null;
 
     this.group = new THREE.Group();
 
@@ -203,14 +213,103 @@ export class Player {
   /* ------------------------------- update ------------------------------- */
 
   update(dt, pad, world, dragons, hud) {
+    /* A kitten holding a star over her head is not also sprinting off with it.
+       Feeding the ground controller a dead stick freezes her without any of
+       the three movement modes needing to know this pose exists.
+
+       NOT WHILE SHE IS FLYING. A dead stick on a dragon is a dragon nobody is
+       steering, thirty units up, for two seconds — and one of the seven stars
+       is deliberately taken from the air, so this is a case that really
+       happens rather than a hypothetical. She keeps the reins; she just gets
+       the camera and the noise. */
+    if (this.aloftT > 0 && !this.mount && !this.rideAlong) pad = FROZEN_PAD;
+
     if (this.rideAlong) this._updatePassenger(dt, pad, world, hud);
     else if (this.mount) this._updateFlight(dt, pad, world, hud);
     else this._updateGround(dt, pad, world, dragons, hud);
 
     this.group.position.copy(this.position);
     this.sprite.facing = this.facing;
+    this._updateAloft(dt);
     this._updateFeedback(dt, world);
     this._updateCamera(dt);
+  }
+
+  /**
+   * The Zelda beat: she stops where she is and holds the star over her head.
+   *
+   * IT IS PER PLAYER, NOT A CUTSCENE, and that is deliberate. Every other
+   * scripted moment in this game (the intro, the shrines, the summoning) takes
+   * the whole screen from both girls, which is right when the thing being said
+   * is said to both of them. A star is found by ONE kitten, usually while her
+   * sister is two islands away doing something else — stopping that sister's
+   * game to show her a cutscene about something she did not do is the exact
+   * interruption the split screen exists to avoid. So this rides her own
+   * camera, and in split screen the other half never notices.
+   *
+   * @param {THREE.Texture} map the star's own face, so the thing over her head
+   *        is visibly the 4★ she just picked up and not a generic orb.
+   */
+  holdAloft(map, dur = 2.0) {
+    this.aloftT = dur;
+    this.aloftDur = dur;
+    if (!this.aloft) {
+      this.aloft = new THREE.Mesh(
+        new THREE.SphereGeometry(0.62, 20, 14),
+        new THREE.MeshBasicMaterial({ toneMapped: false })
+      );
+      /* Over everything. She is a transparent billboard and the star sits at
+         very nearly her own depth, so without this the sort decides which of
+         the two is in front on a frame-by-frame basis and the prize flickers
+         inside the cat holding it. */
+      this.aloft.renderOrder = 8;
+      this.aloft.material.depthTest = false;
+      this.group.add(this.aloft);
+
+      this.aloftGlow = new THREE.Mesh(
+        new THREE.SphereGeometry(1.5, 16, 12),
+        new THREE.MeshBasicMaterial({
+          color: 0xffe9a8, transparent: true, opacity: 0.3,
+          side: THREE.BackSide, depthWrite: false, depthTest: false,
+          toneMapped: false,
+        })
+      );
+      this.aloftGlow.renderOrder = 7;
+      this.group.add(this.aloftGlow);
+    }
+    this.aloft.material.map = map ?? null;
+    this.aloft.material.color.set(map ? 0xffffff : 0xffcf6a);
+    this.aloft.material.needsUpdate = true;
+    this.aloft.visible = true;
+    this.aloftGlow.visible = true;
+  }
+
+  _updateAloft(dt) {
+    if (this.aloftT <= 0) return;
+    this.aloftT = Math.max(0, this.aloftT - dt);
+    const dur = this.aloftDur || 2.0;
+    const t = 1 - this.aloftT / dur;              // 0 at the start, 1 at the end
+
+    /* Up fast, hold, then away. The rise overshoots by a hair and settles —
+       a linear lift to a stop reads as an object being positioned, and the
+       whole point of this pose is that she is presenting it. */
+    const rise = t < 0.22 ? Math.sin((t / 0.22) * Math.PI * 0.62) * 1.08 : 1;
+    const y = this.height * 0.55 + rise * (this.height * 0.85);
+    const bob = Math.sin(t * 9) * 0.06 * (t > 0.22 ? 1 : 0);
+    this.aloft.position.set(0, y + bob, 0);
+    this.aloft.rotation.y += dt * 3.4;
+    this.aloftGlow.position.copy(this.aloft.position);
+
+    const fade = this.aloftT < 0.4 ? this.aloftT / 0.4 : 1;
+    const pop = 1 + Math.sin(Math.min(1, t / 0.22) * Math.PI) * 0.35;
+    this.aloft.scale.setScalar(fade * pop);
+    this.aloftGlow.scale.setScalar(fade * (0.7 + Math.sin(t * 7) * 0.12));
+    this.aloftGlow.material.opacity = 0.3 * fade;
+
+    if (this.aloftT <= 0) {
+      this.aloft.visible = false;
+      this.aloftGlow.visible = false;
+    }
   }
 
   _updateGround(dt, pad, world, dragons, hud) {
@@ -300,7 +399,12 @@ export class Player {
     const wasZ = this.position.z;
     this.position.addScaledVector(this.velocity, dt);
 
-    const fixed = world.resolveSolids(this.position.x, this.position.z, this.radius);
+    /* Her own height goes in, so a solid she is standing ON TOP of stops
+       shoving her sideways — see World.resolveSolids. Without it the spire
+       holding one of the seven stars throws her off its own deck. */
+    const fixed = world.resolveSolids(
+      this.position.x, this.position.z, this.radius, this.position.y
+    );
     this.position.x = fixed.x;
     this.position.z = fixed.z;
 
@@ -516,6 +620,8 @@ export class Player {
       }
       hits++;
     }
+    // The boulder over a star answers to this and to nothing else.
+    if (hud?.strikeWards) hud.strikeWards(this, 'claw', c.range);
     if (hits) this.squash = 0.6;
   }
 
@@ -558,6 +664,8 @@ export class Player {
       }
       hits++;
     }
+    // The ice over a star cracks to any breath. See LOCKS.ice.
+    if (hud?.strikeWards) hud.strikeWards(this, 'breath', range);
     if (hits) this.squash = 0.5;
   }
 
@@ -947,6 +1055,23 @@ export class Player {
       // however far around the circle the player walks.
       this.camTarget.lerp(this.focus.centre, Math.min(1, dt * 3.4) * t);
     }
+
+    /* THE STAR SHOT. Applied on top of whatever the camera was already doing
+       rather than through `setFocus`, because `focus` is the Dojo's and the
+       two overlap: the dojo island has a star on it, and a kitten can be
+       standing on the unit circle when she finds it. Composing means the shot
+       pulls in from wherever the dojo had put the camera instead of the two
+       systems fighting over one field.
+       Eased in and out on a sine so it never snaps — the pose is two seconds
+       long and half a second of that is the camera moving. */
+    if (this.aloftT > 0) {
+      const dur = this.aloftDur || 2;
+      const k = Math.sin(Math.min(1, (1 - this.aloftT / dur) / 0.25) * Math.PI * 0.5)
+        * Math.min(1, this.aloftT / 0.45);
+      wantDist = THREE.MathUtils.lerp(wantDist, flying ? wantDist * 0.62 : 12, k);
+      pitch = THREE.MathUtils.lerp(pitch, 0.42, k);
+    }
+
     this.camYaw = yaw;
 
     /* Easing back down after a dismount. The flight camera sits up to 130
