@@ -254,8 +254,25 @@ Every sound — the katana, the bamboo crack, the dragon's breath, the panda's
 claw, the clan gong — is **synthesised at runtime** from oscillators and
 filtered noise in `src/core/audio.js`, and the music is generated the same way:
 a koto-style pluck wandering a Japanese pentatonic scale over a drone, so it
-never loops exactly. The intro has its own piece — same synthesis, darker
-scale, slower, an octave down, taiko on the downbeat.
+never loops exactly.
+
+**Every island has its own music, and it changes when you walk onto it.** The
+autumn island is warm and low, the snow island is high and almost all silence
+with a bell over each note, the bamboo island is the fastest thing you can walk
+around in, the ash island is the darkest scale in the game, and the Dojo is
+deliberately the quietest — there's a lesson on screen there and a tune with an
+opinion would compete with it. The home island keeps the theme you already know.
+
+If the two of you are on different islands, the music follows **whoever most
+recently arrived somewhere new** — so a kitten flying off alone still gets her
+island's tune.
+
+**Get on a dragon and it turns into a chase theme.** Storm dragons have their
+own piece: the only one in the game with a proper bassline and a backbeat under
+it, which is what makes it sound like a cartoon about flying rather than the
+game theme played fast. Ryuuseki has a different one again — darker, higher, a
+taiko instead of a drum kit. The intro has its own piece too: same synthesis,
+darker scale, slower, an octave down.
 
 The **only** audio files in the whole project are the eleven voice lines in the
 opening cutscene (`public/voice/`, about a megabyte). If they're missing, the

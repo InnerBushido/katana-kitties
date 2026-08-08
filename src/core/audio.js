@@ -26,6 +26,17 @@ const ROOT = 146.83; // D3
    bottom is doing all the work. */
 const INSEN = [0, 1, 5, 7, 10];
 
+/* Three more Japanese pentatonics, because seven islands need seven pieces and
+   tempo alone will not do it — two tunes in the same scale at different speeds
+   are the same tune. Each of these has a different interval doing the work:
+
+     KUMOI  a major second over a minor third: bright but not sweet
+     IWATO  two minor seconds: the darkest of the five, genuinely uneasy
+     YO     no semitones at all, so nothing in it can sound sad             */
+const KUMOI = [0, 2, 3, 7, 9];
+const IWATO = [0, 1, 5, 6, 10];
+const YO = [0, 2, 5, 7, 9];
+
 /**
  * The two things the music can be doing. Slower, lower and sparser is what
  * makes the intro feel like a story being told rather than a level being
@@ -39,11 +50,111 @@ const INSEN = [0, 1, 5, 7, 10];
    fastest, and a kid who has heard both knows within one bar which one is
    playing. `fifths` doubles each pluck a fifth above, which is the cheapest
    way to make a single oscillator sound like a fanfare rather than a plink. */
-const MUSIC = {
+/**
+ * Every piece the game can be playing.
+ *
+ * ONE PER ISLAND, keyed by biome, plus the two dragons and the intro. Six
+ * biomes and the dojo is seven places, and an archipelago where every island
+ * sounds the same is one island drawn six times — the biomes already change
+ * the ground, the trees and the thing you break there, and this is the last
+ * sense that had not noticed.
+ *
+ * They are all the same instrument in the same key family, so flying between
+ * them is a key change rather than a different game. What separates them:
+ *
+ *   scale  the interval doing the emotional work (see the five above)
+ *   root   transposition. The biggest single lever for "somewhere else"
+ *   beat   seconds per step
+ *   oct    octave multiplier on the melody
+ *   rest   0..1 — how often a step is silence. High is sparse and airy
+ *   drone  the held low note under it all
+ *   taiko  drum every N steps, 0 for none
+ *   fifths double every pluck a fifth up: a koto becomes a fanfare
+ *   bass   a driving low riff every N steps — the thing that makes the
+ *          dragon themes move rather than drift
+ *   snare  a noise tick every N steps, offset half a step (a backbeat)
+ *   bell   a high shimmering partial over each pluck (frost, and only frost)
+ */
+export const MUSIC = {
+  /* ---- the two story pieces, unchanged ---- */
+  intro: { scale: INSEN, beat: 0.78, oct: 0.5, drone: 0.20, taiko: 8, rest: 0.62 },
+
+  /* ---- the islands ---- */
+  /* HOME KEEPS THE TUNE THEY ALREADY KNOW. `play` is still the theme from
+     before this existed, note for note, because the home island is where both
+     girls start every session and changing that is changing what the game
+     sounds like. Everything else is new. */
   play: { scale: HIRAJOSHI, beat: 0.52, oct: 1, drone: 0.14, taiko: 0 },
-  intro: { scale: INSEN, beat: 0.78, oct: 0.5, drone: 0.20, taiko: 8 },
+  /* Autumn: the warmest of them. YO has no semitones, so nothing in it can
+     come out sad, and dropping a fourth to A puts it under the home theme. */
+  autumn: { scale: YO, beat: 0.58, root: 110.0, oct: 1, drone: 0.16, taiko: 0, rest: 0.68 },
+  /* Frost: high, slow and mostly silence, with a bell over every note. The
+     sparseness is the biome — a busy tune on an empty white island fights it. */
+  frost: { scale: KUMOI, beat: 0.66, root: 196.0, oct: 1, drone: 0.10, taiko: 0, rest: 0.80, bell: true },
+  /* Bamboo: the busiest island in the game and the busiest piece. Faster,
+     lower, and it keeps going — you are in there swinging a katana. */
+  bamboo: { scale: HIRAJOSHI, beat: 0.34, root: 130.81, oct: 1, drone: 0.18, taiko: 8, rest: 0.60 },
+  /* Ash: iwato is the darkest of the five and this is the darkest place. Slow,
+     an octave down, heavy on the drone, a drum every bar. */
+  ash: { scale: IWATO, beat: 0.70, root: 98.0, oct: 1, drone: 0.30, taiko: 8, rest: 0.70 },
+  /* Dusk: insen again, like the intro, but at tempo and with fifths — the
+     island the story keeps pointing at should sound like the story. */
+  dusk: { scale: INSEN, beat: 0.46, root: 164.81, oct: 1, drone: 0.22, taiko: 0, rest: 0.66, fifths: true },
+  /* The Dojo: DELIBERATELY the quietest thing in the game. There is a lesson
+     on screen there, a board of live sine and cosine, and a tune with an
+     opinion competes with it. High, slow, very sparse, almost no drone —
+     present enough that the island is not silent, and nothing more. */
+  dojo: { scale: YO, beat: 0.86, root: 220.0, oct: 1, drone: 0.08, taiko: 0, rest: 0.84, bell: true },
+
+  /* ---- the dragons ---- */
+  /* STORM DRAGON FLIGHT. The Dragon Ball brief, finally cashed in: this is the
+     one moment in the game that should sound like a cartoon about flying, so
+     it is the only piece with a real BASSLINE. `bass` walks the low end every
+     other step and `snare` puts a tick on the offbeat, which between them turn
+     the koto into a band — that driving eighth-note bass under a bright
+     pentatonic over a backbeat is the whole trick, and it is why this reads as
+     rock rather than as the game theme played fast.
+     YO keeps it heroic: no semitones, nothing wistful, straight up. */
+  flight: {
+    scale: YO, beat: 0.26, root: 146.83, oct: 1, drone: 0.16, taiko: 0,
+    rest: 0.58, fifths: true, bass: 2, snare: 4,
+  },
+  /* RYUUSEKI. Fast like the flight theme and deliberately NOT the same piece:
+     insen against the flight theme's yo — the darkest scale against the
+     brightest — an octave up, a taiko instead of a snare, and no bass at all.
+     He is legendary rather than exciting, and the two must not blur into each
+     other in the one part of the game where you might hear both in a minute. */
   ryu: { scale: INSEN, beat: 0.28, oct: 2, drone: 0.26, taiko: 2, fifths: true },
 };
+
+/** Biome → piece. Anything unrecognised falls back to the home theme. */
+export const ISLAND_MUSIC = {
+  meadow: 'play', autumn: 'autumn', frost: 'frost',
+  bamboo: 'bamboo', ash: 'ash', dusk: 'dusk',
+};
+
+/**
+ * Which piece an island plays.
+ *
+ * THE DOJO IS NOT A BIOME AND HAS TO BE ASKED FOR BY NAME. Its island
+ * definition sets no biome at all, and `Island` defaults an unset one to
+ * `meadow` — so a plain `ISLAND_MUSIC[isl.biome]` lookup hands the maths
+ * island the HOME theme, which is the one island in the game where the music
+ * most needs to get out of the way. It is a silent wrong answer: the right
+ * number of themes exist, every biome maps to one, and the dojo just quietly
+ * plays the wrong one.
+ *
+ * Exported as a function rather than left inline in the game loop because the
+ * smoke test has to resolve it the same way the game does. Two copies of a
+ * rule with a special case in it is how the dragon-ball locks shipped
+ * unlocked — the test had its own copy of the factory and only that one
+ * learned the new argument.
+ */
+export function trackForIsland(isl, dojoIsland) {
+  if (!isl) return null;
+  if (dojoIsland && isl === dojoIsland) return 'dojo';
+  return ISLAND_MUSIC[isl.biome] ?? 'play';
+}
 
 const semi = (n, scaleRoot = ROOT) => scaleRoot * Math.pow(2, n / 12);
 
@@ -413,6 +524,10 @@ export class Audio {
     this._musicTimer = setInterval(() => this._schedule(), 120);
   }
 
+  /** Which piece is playing, or null if none is. Read by Game._updateMusic,
+   *  which is the one thing allowed to decide what should be. */
+  get mode() { return this._musicTimer ? this._mode : null; }
+
   stopMusic() {
     if (!this._musicTimer) return;
     clearInterval(this._musicTimer);
@@ -440,13 +555,17 @@ export class Audio {
   _pluck(t, step) {
     const bar = Math.floor(step / 8);
     const M = MUSIC[this._mode] ?? MUSIC.play;
+    /* Every island transposes. `root` is the piece's own key; without it all
+       seven would be different tunes in the same key, which from a hillside
+       two hundred units away is one tune. */
+    const root = M.root ?? ROOT;
 
     // A low drone every couple of bars, holding the key down.
     if (step % 16 === 0) {
       const d = this.ctx.createOscillator();
       const g = this.ctx.createGain();
       d.type = 'sine';
-      d.frequency.value = (ROOT * M.oct) / 2;
+      d.frequency.value = (root * M.oct) / 2;
       g.gain.setValueAtTime(0, t);
       g.gain.linearRampToValueAtTime(M.drone, t + 0.6);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 8);
@@ -473,14 +592,60 @@ export class Audio {
       o.stop(t + 0.55);
     }
 
+    /* THE BASSLINE. Only the storm-dragon theme has one, and it is the single
+       thing that makes that piece read as a band rather than as the koto going
+       faster: a short square note walking the bottom of the scale on a steady
+       pulse. Square rather than sine because it has to be heard under a full
+       mix at speed, and short rather than held so it drives instead of drones. */
+    if (M.bass && step % M.bass === 0) {
+      const n = M.scale[Math.floor((step / M.bass) * 1.6) % 5];
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = 900;
+      o.type = 'square';
+      o.frequency.value = semi(n, root / 2);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.13, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + M.beat * 0.85);
+      o.connect(f).connect(g).connect(this.musicBus);
+      o.start(t);
+      o.stop(t + M.beat);
+    }
+
+    /* The backbeat, half a step LATE on purpose — a tick on the beat just
+       doubles the bass and disappears into it; between the beats it is the
+       thing your head nods to. */
+    if (M.snare && step % M.snare === 0) {
+      const src = this.ctx.createBufferSource();
+      const g = this.ctx.createGain();
+      const f = this.ctx.createBiquadFilter();
+      /* The shared noise buffer directly, NOT `_noise()` — that helper plays a
+         one-shot on the SFX bus at `currentTime`, and a backbeat has to be
+         scheduled ahead onto the MUSIC bus like every other note here.
+         Routing drums through the sfx bus would also duck them with the sound
+         effects slider, which is not what that slider means. */
+      src.buffer = this._noiseBuf;
+      src.loop = true;
+      f.type = 'highpass';
+      f.frequency.value = 1800;
+      g.gain.setValueAtTime(0, t + M.beat * 0.5);
+      g.gain.linearRampToValueAtTime(0.13, t + M.beat * 0.5 + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + M.beat * 0.5 + 0.13);
+      src.connect(f).connect(g).connect(this.musicBus);
+      src.start(t + M.beat * 0.5);
+      src.stop(t + M.beat * 0.5 + 0.16);
+    }
+
     // Rests are what make it feel like music rather than an arpeggiator.
     const r = Math.sin(step * 12.9898 + bar * 78.233) * 43758.5453;
     const rnd = r - Math.floor(r);
-    if (rnd > (this._mode === 'intro' ? 0.62 : 0.72)) return;
+    if (rnd > (M.rest ?? 0.72)) return;
 
     const octave = rnd > 0.55 ? 12 : rnd > 0.2 ? 0 : 24;
     const note = M.scale[Math.floor(rnd * 5 * 3) % 5] + octave;
-    const freq = semi(note, ROOT * M.oct);
+    const freq = semi(note, root * M.oct);
 
     /* A plucked string: two detuned triangles through a lowpass that closes
        as the note decays — the filter sweep is what reads as "plucked"
@@ -511,6 +676,22 @@ export class Audio {
       o.connect(f);
       o.start(t);
       o.stop(t + 1.4);
+    }
+    /* The frost shimmer: two octaves up, quiet, on its own gain so it rings
+       on past the pluck rather than being closed off by the filter sweep with
+       it. Frost and the Dojo only — it is glass, and glass everywhere is
+       wind chimes. */
+    if (M.bell) {
+      const o = this.ctx.createOscillator();
+      const bg = this.ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq * 4;
+      bg.gain.setValueAtTime(0, t);
+      bg.gain.linearRampToValueAtTime(0.035, t + 0.02);
+      bg.gain.exponentialRampToValueAtTime(0.0001, t + 2.6);
+      o.connect(bg).connect(this.musicBus);
+      o.start(t);
+      o.stop(t + 2.7);
     }
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(0.16, t + 0.012);

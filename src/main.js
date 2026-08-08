@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import './style.css';
 
 import { InputManager, HALVES, MAP_FIELDS, VJOY_AXIS_NAMES } from './core/input.js';
-import { Audio } from './core/audio.js';
+import { Audio, trackForIsland } from './core/audio.js';
 import { loadSpriteAtlas } from './core/spritesheet.js';
 import { placeholderCatAtlas, placeholderDragonTexture, placeholderPandaTexture } from './core/gfx.js';
 import { World } from './world/world.js';
@@ -39,6 +39,8 @@ const MERGE_OUT = 46;    // split again beyond this
 const DOJO_VIEW_R = 52;  // inside this, the camera frames the unit circle
 /** How long the found-a-star pose runs. Matches Player.holdAloft's default. */
 const STAR_POSE = 2.0;
+/** Seconds on an island before its theme takes over. See Game._islandTrack. */
+const ISLAND_DWELL = 1.1;
 
 class Game {
   constructor() {
@@ -382,7 +384,11 @@ class Game {
     vol('set-sfx', (v) => this.audio.setSfxVolume(v), () => this.audio.play('menu'));
     vol('set-music', (v) => {
       this.audio.setMusicVolume(v);
-      if (v > 0) this.audio.startMusic();
+      /* Turning it back up must resume THIS island's piece, not the home
+         theme. `startMusic()` defaults to 'play', which was harmless when that
+         was the only track and would now silently move you back to the meadow
+         from wherever you actually are. */
+      if (v > 0) this.audio.startMusic(this._wantedTrack() ?? 'play');
       else this.audio.stopMusic();
     });
 
@@ -773,11 +779,21 @@ class Game {
        has music and voices, and starting it a moment earlier would mean
        starting it silently. Restarting the world doesn't replay it; the
        pause menu has a button for people who want it again. */
+    /* Seed each kitten's island claim as already SETTLED, so the first frame
+       of play picks her island's theme instead of 1.1 seconds of silence while
+       the dwell counts up. It matters on restart too, which can drop them
+       somewhere other than home. */
+    for (const p of this.players) {
+      p._musicIsland = this._islandUnder(p);
+      p._musicSince = ISLAND_DWELL;
+    }
+
     if (this.cutscene && !this.introPlayed) {
       this.introPlayed = true;
       this.cutscene.play();
     } else {
-      this.audio.startMusic('play');
+      // _updateMusic takes it from here; this just avoids a silent first frame.
+      this.audio.startMusic(this._wantedTrack(0) ?? 'play');
     }
   }
 
@@ -1021,7 +1037,6 @@ class Game {
         p.position.set(R.position.x + o.x, R.position.y + o.y, R.position.z + o.z);
         p.group.position.copy(p.position);
       }
-      this.audio.startMusic('ryu');
       this.toast('[debug] both kittens aboard — press 9 to fire', 0);
     }
 
@@ -1160,7 +1175,6 @@ class Game {
   }
 
   onRyuMount(player, seat) {
-    this.audio.startMusic('ryu');
     this.toast(
       seat === 'pilot'
         ? `${player.name} takes the reins of Ryuuseki — steer! (one beam)`
@@ -1177,7 +1191,95 @@ class Game {
 
   onRyuDismount(player) {
     this.toast(`${player.name} let go of Ryuuseki`, player.index);
-    if (!this.ryu?.ridden) this.audio.startMusic('play');
+    /* No startMusic call here, and none in onRyuMount either. `_updateMusic`
+       is the single authority now and it re-decides every frame — a mount
+       handler that also sets the track is a second opinion that gets it wrong
+       exactly when the two disagree, which is the frame you dismount over a
+       different island than the one you took off from. */
+  }
+
+  /* ------------------------------- music --------------------------------- */
+
+  /**
+   * Decide what should be playing, and change it only when the answer changes.
+   *
+   * ONE PLACE DECIDES. This used to be four scattered `startMusic` calls in
+   * mount and dismount handlers, which was survivable while there were two
+   * tracks and is not now that there are ten: a handler fires on an event and
+   * the right track is a function of STATE, and the two come apart the moment
+   * anything changes without an event to announce it — landing on a new
+   * island, say, which is the entire feature below.
+   *
+   * The order is a priority list, and riding outranks standing because a
+   * dragon crosses four islands in twenty seconds and a theme that changed
+   * under you each time would be unlistenable.
+   */
+  _updateMusic(dt) {
+    if (!this.audio?.ready || this.state !== 'play') return;
+    // The intro owns the music while it runs, and hands back on its own.
+    if (this.cutscene?.active) return;
+    /* Music turned off means OFF. Without this, deciding a track every frame
+       quietly undoes the slider: `startMusic` is happy to run a full schedule
+       into a bus at zero gain, so the setting looks respected and the engine
+       is scheduling oscillators forever for nobody. The slider restarts it. */
+    if (this.audio.musicVolume <= 0) return;
+    const want = this._wantedTrack(dt);
+    if (want && want !== this.audio.mode) this.audio.startMusic(want);
+  }
+
+  /** What should be playing right now, or null for "leave it alone". */
+  _wantedTrack(dt = 0) {
+    if (!this.players?.length) return null;
+    if (this.ryu?.ridden
+      && this.players.some((p) => p.mount === this.ryu || p.rideAlong === this.ryu)) {
+      return 'ryu';
+    }
+    if (this.players.some((p) => p.mount)) return 'flight';
+    return this._islandTrack(dt);
+  }
+
+  /**
+   * Which island's theme, with two kittens who can be on two islands.
+   *
+   * THE MUSIC FOLLOWS WHOEVER MOST RECENTLY ARRIVED SOMEWHERE NEW. Every other
+   * rule I tried is worse: "player 1's island" means the second girl can fly to
+   * the snow island and nothing happens, which reads as the feature being
+   * broken for her; "whichever island holds both" means nothing changes at all
+   * while they are apart, which is most of the time. Arriving is an event
+   * either of them can cause, and the answer is stable between arrivals — it
+   * cannot oscillate, because the tiebreak only moves when somebody's island
+   * actually changes.
+   *
+   * DWELL exists for the rims. Kittens cross island boundaries constantly on
+   * the way somewhere, and a track that restarted every time a toe crossed a
+   * line would be a stutter rather than a soundtrack.
+   */
+  _islandTrack(dt) {
+    let best = null;
+    for (const p of this.players) {
+      // A kitten in the air belongs to no island; the flight theme has her.
+      const isl = (p.mount || p.rideAlong) ? null : this._islandUnder(p);
+      if (isl !== p._musicIsland) {
+        p._musicIsland = isl;
+        p._musicSince = 0;
+      } else {
+        p._musicSince = (p._musicSince ?? 0) + dt;
+      }
+      if (!isl || p._musicSince < ISLAND_DWELL) continue;
+      // Smaller `_musicSince` is the more recent arrival, and it wins.
+      if (!best || p._musicSince < best.since) best = { isl, since: p._musicSince };
+    }
+    // Nobody settled anywhere: keep playing whatever is playing.
+    if (!best) return null;
+    return trackForIsland(best.isl, this.world.dojoIsland);
+  }
+
+  /** The island a kitten is standing on, or null out over open sky. */
+  _islandUnder(p) {
+    for (const isl of this.world.islands) {
+      if (Math.hypot(p.position.x - isl.x, p.position.z - isl.z) < isl.radius) return isl;
+    }
+    return null;
   }
 
   /** Entities call this rather than reaching into the audio engine. */
@@ -1365,6 +1467,9 @@ class Game {
        ended the frame. */
     this.shrineScene?.watch(dt, this.leaders, this.players);
     this._updateBalls(dt);
+    /* After the players have moved and after the mounts are resolved, so the
+       track is decided from where everybody actually IS this frame. */
+    this._updateMusic(dt);
     /* Ryuuseki is carried by his PILOT, so he ticks after the players for the
        same reason the pandas do: a ridden animal is slaved to where its rider
        actually ended the frame, not to where she started it. */

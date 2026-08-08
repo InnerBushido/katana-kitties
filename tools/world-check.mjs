@@ -25,6 +25,7 @@ import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../s
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
 import { SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H } from '../src/world/build.js';
+import { ISLAND_MUSIC, MUSIC, trackForIsland } from '../src/core/audio.js';
 
 const line = (l, v) => console.log(String(l).padEnd(42) + v);
 let fails = 0;
@@ -1441,6 +1442,93 @@ console.log('\n--- running downhill (the animation flicker) ---');
   ok('stays glued to the ground running downhill', airFrames === 0);
   ok('never flips to the jump pose', flips === 0);
   ok('and it really did run down a slope', startY - p.position.y > 1.5);
+}
+
+console.log('\n--- a piece of music per island ---');
+/* None of this is visible, which is exactly why it needs checking: a biome
+   whose theme quietly falls back to the home tune is indistinguishable from
+   one that has its own, and nobody would ever notice by playing. */
+{
+  const biomes = world.islands.map((i) => i.biome).filter(Boolean);
+  line('biomes with an island', biomes.join(' '));
+  ok('every biome in the world has a piece',
+    biomes.every((b) => ISLAND_MUSIC[b]),
+    biomes.filter((b) => !ISLAND_MUSIC[b]).join(' ') || 'all covered');
+  ok('and every piece it names really exists',
+    Object.values(ISLAND_MUSIC).every((m) => MUSIC[m]));
+
+  /* RESOLVED THE WAY THE GAME RESOLVES IT, through the same function, because
+     the interesting case is a special one: the Dojo sets no biome and `Island`
+     defaults an unset biome to `meadow`, so a plain biome lookup hands the
+     maths island the HOME theme. That is a silent wrong answer — every biome
+     still maps to a piece and the right number of pieces still exist. */
+  const tracks = world.islands.map((i) => trackForIsland(i, world.dojoIsland));
+  line('island -> piece', tracks.join(' '));
+  ok('the Dojo gets its own piece despite defaulting to the meadow biome',
+    trackForIsland(world.dojoIsland, world.dojoIsland) === 'dojo'
+    && world.dojoIsland.biome === 'meadow');
+
+  /* THE POINT IS THAT THEY SOUND DIFFERENT. Seven entries that are all the
+     same numbers is seven islands playing one tune, which is the failure this
+     feature exists to fix and would pass any "does it have a theme" check. */
+  ok('no two islands share a piece', new Set(tracks).size === world.islands.length);
+  const sig = (m) => [MUSIC[m].scale.join(','), MUSIC[m].root ?? 146.83,
+    MUSIC[m].beat, MUSIC[m].rest ?? 0.72].join('|');
+  ok('and no two pieces are the same piece',
+    new Set(tracks.map(sig)).size === tracks.length);
+  /* Each one has to differ from the HOME theme in something a listener can
+     hear — not merely differ in some field. Scale, key or tempo. */
+  for (const m of tracks) {
+    if (m === 'play') continue;
+    const A = MUSIC[m];
+    const B = MUSIC.play;
+    const audible = A.scale !== B.scale
+      || Math.abs((A.root ?? 146.83) - 146.83) > 1
+      || Math.abs(A.beat - B.beat) > 0.06;
+    ok(`the ${m} theme is audibly not the home theme`, audible);
+  }
+
+  /* Tempo and key have to stay somewhere sane, or a bad edit gives one island
+     a 4-second gap between notes or a piece two octaves out of the set. */
+  for (const m of tracks) {
+    ok(`${m} sits at a playable tempo`, MUSIC[m].beat >= 0.2 && MUSIC[m].beat <= 1.0,
+      `${MUSIC[m].beat}s per step`);
+    const r = MUSIC[m].root ?? 146.83;
+    ok(`${m} is in a key near the others`, r >= 80 && r <= 260, `${r}Hz`);
+    ok(`${m} is not a solid wall of notes`, (MUSIC[m].rest ?? 0.72) <= 0.9);
+  }
+  /* The Dojo has a lesson on screen. It must be the sparsest thing in the game
+     — a tune with an opinion competes with a live sine wave. */
+  ok('the Dojo theme is the sparsest of them',
+    MUSIC.dojo.rest > Math.max(...tracks.filter((m) => m !== 'dojo').map((m) => MUSIC[m].rest ?? 0.72)));
+}
+
+console.log('\n--- the two dragon themes ---');
+{
+  /* A storm dragon and Ryuuseki must not blur into each other: you can hear
+     both inside a minute, and the whole reason he has his own is that he is
+     not a storm dragon. */
+  const F = MUSIC.flight;
+  const R = MUSIC.ryu;
+  ok('a storm dragon has its own piece', !!F);
+  ok('it is not Ryuuseki\'s', F.scale !== R.scale);
+  line('flight vs ryu: beat / octave', `${F.beat}/${F.oct} vs ${R.beat}/${R.oct}`);
+  ok('and it differs in more than tempo',
+    F.oct !== R.oct || !!F.bass !== !!R.bass || !!F.snare !== !!R.snare);
+
+  /* BOTH ARE FASTER THAN ANY ISLAND. Riding is the exciting thing in the game
+     and a flight theme slower than the ground theme would be a joke. */
+  const slowestRide = Math.max(F.beat, R.beat);
+  const fastestIsland = Math.min(...[...new Set(Object.values(ISLAND_MUSIC))]
+    .concat('dojo').map((m) => MUSIC[m].beat));
+  line('slowest ride vs fastest island', `${slowestRide} vs ${fastestIsland}`);
+  ok('riding is always faster than walking anywhere', slowestRide < fastestIsland);
+
+  /* The bassline is the Dragon Ball part, and the flight theme is the only
+     thing that has one — it is what makes it a band rather than a koto. */
+  ok('the flight theme is the one with a bassline', !!F.bass && !R.bass);
+  ok('and a backbeat', !!F.snare);
+  ok('both dragon themes push the fanfare fifth', F.fifths && R.fifths);
 }
 
 console.log('\n--- sprite directions ---');
