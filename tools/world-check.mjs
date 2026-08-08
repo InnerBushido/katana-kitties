@@ -22,7 +22,7 @@ import { LEADERS, ELDER, leaderSpot, LEADER_OFFSET } from '../src/entities/leade
 import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
 import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from '../src/entities/dragonball.js';
-import { Ryuuseki, DUO_BEAMS, SOLO_BEAMS, BEAM, RYU_SIZE, FAN, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
+import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
 import { SHRINE_DAIS } from '../src/world/build.js';
 
@@ -243,19 +243,78 @@ console.log('\n--- Ryuuseki, and why two seats beat one ---');
   const R = new Ryuuseki(art, 0, 60, -46);
 
   ok('he starts with both seats empty', R.freeSeat() === 'pilot' && !R.ridden);
-  R.pilot = {};
+  const flyer = {};
+  const gunGirl = {};
+  R.pilot = flyer;
   ok('the second rider gets the gunner seat', R.freeSeat() === 'gunner');
-  R.gunner = {};
+  ok('one rider is ridden but NOT duo', R.ridden && !R.duo);
+  R.gunner = gunGirl;
   ok('and a third is turned away', R.freeSeat() === null);
   ok('he counts as ridden', R.ridden);
+  ok('and now he is duo', R.duo);
 
   /* The whole feature. Two seats have to be MEASURABLY better than one, or the
      teamwork framing is decoration — and it has to be visible, not a damage
      number, because nobody reads damage numbers at nine years old. */
-  line('beams: solo vs duo', `${SOLO_BEAMS} vs ${DUO_BEAMS}`);
-  ok('two riders fire more beams than one', DUO_BEAMS > SOLO_BEAMS);
-  ok('but one rider is not locked out', SOLO_BEAMS >= 1);
-  ok('the fan is wide enough to read as a fan', FAN > 1 && DUO_BEAMS >= 5);
+  line('beams: pilot vs gunner', `${PILOT_BEAMS} vs ${GUNNER_BEAMS}`);
+  ok('the gunner fires more beams than the pilot', GUNNER_BEAMS > PILOT_BEAMS);
+  ok('but the pilot is not locked out', PILOT_BEAMS >= 1);
+  ok('the fan is wide enough to read as a fan', FAN > 1 && GUNNER_BEAMS >= 5);
+
+  /* THE COUNT IS A FACT ABOUT THE SEAT, NOT ABOUT THE CREW.
+     It used to read `pilot && gunner` and hand whoever pressed the button the
+     full fan, so the pilot's one beam silently became seven the moment her
+     sister climbed on — which both makes the gunner's only job redundant and
+     means the two girls' attacks are indistinguishable in the one set-piece
+     built around them doing different things. */
+  ok('the pilot fires one beam with both aboard', R.beamsFor(flyer) === PILOT_BEAMS);
+  ok('and the gunner fires the fan', R.beamsFor(gunGirl) === GUNNER_BEAMS);
+  R.gunner = null;
+  ok('a lone pilot still fires, and still just one',
+    R.beamsFor(flyer) === PILOT_BEAMS && PILOT_BEAMS >= 1);
+  R.gunner = gunGirl;
+
+  /* THE BEAMS COME OUT OF HIS MOUTH, SO THEY MUST NOT GO BACKWARDS.
+     The fan was aimed on the shooter's raw facing. His drawn heading is
+     broadside and flips, so a gunner pushing her stick the other way fired
+     seven beams out of his jaw travelling back over his own body. The bound is
+     asserted as a RELATIONSHIP — widening FAN later must not quietly let a
+     beam point behind him again. */
+  line('worst beam angle off his head',
+    `${(((AIM_ARC + FAN / 2) * 180) / Math.PI).toFixed(0)} degrees`);
+  ok('no beam can ever leave the mouth pointing backwards',
+    AIM_ARC + FAN / 2 < Math.PI / 2);
+  ok('but the gunner can still swing the fan', AIM_ARC > 0.3);
+  {
+    R.facing = 0;                                 // head down +z
+    ok('an aim within the arc is untouched',
+      Math.abs(R.aimFor({ facing: 0.3 }) - 0.3) < 1e-9);
+    ok('an aim behind him is pulled back to the arc',
+      Math.abs(R.aimFor({ facing: Math.PI }) - AIM_ARC) < 1e-9);
+    ok('and it clamps the short way round, not through his tail',
+      Math.abs(R.aimFor({ facing: -Math.PI * 0.9 }) + AIM_ARC) < 1e-9);
+    /* The clamp is relative to his HEADING, so it has to follow the flip —
+       that is the exact case the bug appeared in (drawn left, aiming right). */
+    R.facing = Math.PI;
+    const flipped = R.aimFor({ facing: 0 });
+    ok('the arc follows his heading when he flips',
+      Math.abs(Math.abs(flipped - Math.PI) - AIM_ARC) < 1e-9);
+
+    /* THE CLAMP MUST BE A NO-OP FOR THE PILOT, by construction rather than by
+       luck: `_updateFlight` sets her facing to `camYaw + flySide * PI/2`, and
+       `carry` gives him the same expression from the same two numbers. If that
+       ever drifts apart, her single beam starts coming out at an angle to the
+       head she is steering, which is a much harder thing to spot than the
+       gunner's version of the same bug. */
+    for (const side of [1, -1]) {
+      const pilot = { position: new THREE.Vector3(0, 70, 0), camYaw: 0.7, flySide: side };
+      pilot.facing = pilot.camYaw + side * (Math.PI / 2);
+      R.carry(pilot);
+      ok(`the pilot's aim is unclamped flying ${side > 0 ? 'right' : 'left'}`,
+        Math.abs(R.aimFor(pilot) - pilot.facing) < 1e-9);
+    }
+    R.facing = 0;
+  }
 
   /* He must outrange the storm dragons, or the reward for the whole hunt is a
      dragon that does less than the one perched outside your house. */
@@ -345,6 +404,34 @@ console.log('\n--- Ryuuseki, and why two seats beat one ---');
     R.facing = -Math.PI / 2;
     return Math.sign(R.mouthPos().x) === -1;
   })());
+
+  /* A FAN STILL FADING HAS TO STAY ON THE MOUTH WHEN HE FLIPS. The beams are
+     children of his group, which travels with him for free — but the mouth is
+     `RYU_MOUTH.fwd` along a heading that SWAPS, so a fan pinned to the local
+     offset it was born with hangs off his tail for the rest of its fade.
+     Their ANGLE is deliberately left alone: a beam already out of the mouth is
+     in the world, and re-deriving it would sweep the fan across the town. */
+  {
+    R.position.set(0, 60, 0);
+    R.facing = Math.PI / 2;
+    R.pilot = flyer;
+    R.gunner = null;
+    R.fire({ props: [] }, null, flyer);
+    const bornAt = R.beams[0].position.x;
+    const bornAim = R.beams[0].rotation.y;
+    R.facing = -Math.PI / 2;               // the same turn, mirrored
+    R.update(1 / 60, null);
+    line('live beam, mouth side before/after the flip',
+      `${bornAt.toFixed(1)} -> ${R.beams[0].position.x.toFixed(1)}`);
+    ok('a fading beam follows his mouth across a flip',
+      Math.sign(R.beams[0].position.x) === -Math.sign(bornAt)
+      && Math.abs(R.beams[0].position.x + bornAt) < 1e-9);
+    ok('but does not swing its aim round with him',
+      Math.abs(R.beams[0].rotation.y - bornAim) < 1e-9);
+    R.beamT = 0;
+    for (const m of R.beams) m.visible = false;
+    R.pilot = null;
+  }
 
   /* He must come DOWN when nobody is on him. Left at the height he is summoned
      to, stepping off once means never getting back on — a mount you can lose

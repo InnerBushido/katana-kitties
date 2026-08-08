@@ -379,14 +379,69 @@ as nightfall.
 line of the existing flight controller applies unchanged. The gunner takes
 `player.rideAlong` — deliberately not `mount`, which everything in the game
 reads as "is steering a flying thing" — steers nothing, and aims the fan with
-her stick. She is a turret. **A lone pilot still fires, but one beam**
-(`SOLO_BEAMS` 1 vs `DUO_BEAMS` 7): a kid playing while her sister is off
-cutting bamboo must not have summoned a legendary taxi.
+her stick. She is a turret. **A lone pilot still fires, but one beam**: a kid
+playing while her sister is off cutting bamboo must not have summoned a
+legendary taxi.
 
-**Anybody aboard forces ONE camera, outranking even "always split".** Two
-half-screens of the same animal is the worst possible view of him — the flyer's
-turns yank the gunner's screen around and the gunner cannot see what she is
-aiming at. Same rule as the dojo.
+**THE BEAM COUNT IS A FACT ABOUT THE SEAT, NOT ABOUT THE CREW**
+(`PILOT_BEAMS` 1, `GUNNER_BEAMS` 7, `Ryuuseki.beamsFor`). It read
+`pilot && gunner` and handed *whoever pressed the button* seven, so the pilot's
+single beam silently became the whole fan the moment her sister climbed on.
+Two things wrong with that, and the second is the real one: the two girls'
+attacks became indistinguishable in the one set-piece built entirely around
+them doing different jobs, and the gunner's only contribution was something
+the pilot could now do without her. The pilot always fires one; the gunner
+always fires seven; climbing into the second seat is what puts the fan in the
+game and the girl in that seat is the one who owns it.
+
+**BOTH aboard forces ONE camera, outranking even "always split" — `duo`, not
+`ridden`, and confusing the two cost the split screen.** The rule fired on
+anybody being aboard, so one kitten climbing on collapsed the whole screen to a
+single camera locked to the dragon while her sister, who had done nothing, was
+still down in the town with no view of her own. Two half-screens of the same
+animal *is* the worst possible view of him — the flyer's turns yank the
+gunner's screen around and the gunner cannot see what she is aiming at — but
+that is an argument about a **shared** subject. One rider is not one. Same rule
+as the dojo, which is also "both of them or neither".
+
+`Ryuuseki.duo` exists so the two questions can't be spelled the same way again,
+and it gates the merged rig's framing as well as the merge itself: with one
+girl aboard and one on the ground, `split = never` still reaches that rig, and
+framing it on `ridersMidpoint()` there loses the kitten who isn't on him.
+`rideAlong` also counts as flying in the auto-merge distance test now — a
+gunner thirty units up is not "close to" her sister on the ground below.
+
+**THE BEAMS COME OUT OF HIS MOUTH, SO THEY MUST GO WHERE HIS MOUTH POINTS**
+(`AIM_ARC`, `Ryuuseki.aimFor`). The fan was aimed on the shooter's raw facing,
+copied from the panda's claw — which is right for a claw, because that comes
+out of the rider, and wrong here, because a beam comes out of the head. His
+drawn heading is broadside and *flips*, so with her stick free the gunner could
+fire seven beams out of his jaw travelling backwards over his own coils: the
+"wrong direction" Frost saw whenever he was drawn facing left and she pushed
+right. A hard lock to his head would have made the second seat a spectator, so
+she aims within an arc of it instead, and **the bound is set against `FAN`
+rather than picked** — the outermost beam sits at `AIM_ARC + FAN/2` off the
+head, and `world-check` asserts that stays under a quarter turn so widening the
+fan later can't quietly reintroduce it. The clamp is applied in
+`_updatePassenger` every frame as well as inside `fire`, because the thing she
+is clamped against moves: an aim that was correct against his old side is 180
+degrees out the instant the pilot flips him, and a gunner drawn aiming one way
+while seven beams leave the jaw another reads as broken even when the beams are
+the part that's right.
+
+It is a no-op for the pilot by construction — `_updateFlight` sets her facing
+to `camYaw + flySide * PI/2` and `carry` builds his heading from the same two
+numbers — and there is a check that keeps it that way, because her version of
+this bug (one beam leaving at a slight angle to the head she is steering) is
+far harder to notice than the gunner's.
+
+**A fan still fading re-anchors to the mouth every frame.** The beams are
+children of his group so they travel with him for free, but the mouth is
+`RYU_MOUTH.fwd` along a heading that swaps — fire while flying left, flip
+right, and a fan pinned to the local offset it was born with hangs off his
+tail for the rest of its fade. Their **angle** is deliberately left alone: a
+beam already out of the mouth is in the world, and re-deriving it would sweep
+the whole fan across everything between.
 
 **THE SEATS WERE MEASURED, AND THE OBVIOUS PLACE IS THE WRONG ONE.** He is
 drawn as an S-curve, so the middle of the sprite is the *hole between two
@@ -741,8 +796,10 @@ tied pair rather than pretending otherwise.
 
 **None known.** Everything reported through the last session is fixed and
 verified — sprite directions, slope flicker, dragon loss and clipping, the
-minimap/Dojo overlap, the orb's jittering glyphs. Run the smoke test before
-assuming otherwise:
+minimap/Dojo overlap, the orb's jittering glyphs, and the three Ryuuseki bugs
+above (a solo rider stealing the split screen, the beam count reading the crew
+instead of the seat, and the fan firing backwards out of his mouth). Run the
+smoke test before assuming otherwise:
 
 ```bash
 node tools/world-check.mjs      # all passing (it prints the count)
@@ -1105,19 +1162,22 @@ tools/
     dragon.js           rideable storm dragon (perched + flying poses)
     orb.js              Kotodama Orb + pickups
     prop.js             knockable scenery
-public/sprites/
+public/sprites/          EVERYTHING HERE SHIPS — Vite copies public/ into dist
   ember_grid_v2.png     LIVE — 10 directions x 4 poses
   frost_grid.png        LIVE — 8 directions x 4 poses (the OLDER sheet)
-  frost_grid_v2.png     UNUSED — rows contradict each other, see above
   dragon_sheet.png      LIVE — perched pose
   dragon_fly.png        LIVE — flight pose
   panda_cub.png         LIVE — single side-on cell, faces LEFT
   panda_adult.png       LIVE — single side-on cell, faces LEFT, saddled
+  ryuuseki.png          LIVE — single side-on cell, faces LEFT
   leader_*.png          LIVE — 7 front-facing single cells, never mirrored
                                (thunderpaw riverclaw shadowtail windwhisker
                                 icewhisker pandapaw elder)
   title_art.png         LIVE — title screen key art
-  (kitten_*_sheet.png, ember_grid.png are superseded and unused)
+docs/unused-art/         NOT SHIPPED — kept as reference, see its README
+  frost_grid_v2.png     rows contradict each other, see above
+  ember_grid.png        superseded by ember_grid_v2
+  kitten_*_sheet.png    first-generation art, superseded
 ```
 
 ---
@@ -1143,6 +1203,55 @@ sprite directions — it catches the silent breakages that still look fine on
 screen, and it grew every time one of those bit us.
 
 ---
+
+## It's hosted — katana-kitties.vercel.app
+
+**https://katana-kitties.vercel.app**, public, no login. Static Vite build, no
+backend, no database, no environment variables — Vercel runs `npm run build`
+and serves `dist`. Redeploy with one command from the project root:
+
+```bash
+vercel --prod
+```
+
+**It is on the `dream-dojo` TEAM scope, not the personal account.** `--yes`
+accepted the CLI's stored default scope. Nothing is wrong with it there and the
+alias is the one we wanted, but `vercel` commands about this project need
+`--scope dream-dojo` if the CLI's default ever changes. `.vercel/project.json`
+holds the link and is gitignored.
+
+**19MB OF DEAD SPRITE SHEETS ARE OUT OF `public/`, AND WHERE THEY WENT IS THE
+POINT.** `ember_grid.png`, `frost_grid_v2.png` and the two `kitten_*_sheet.png`
+are referenced only from comments, but `public/` is copied wholesale into
+`dist`, so every player was downloading all four. They now live in
+`docs/unused-art/` with a README explaining what each one is.
+
+The first fix was a `.vercelignore` entry, and it would have quietly stopped
+working the moment this project was connected to GitHub: **`.vercelignore` only
+applies to CLI uploads.** A Git deployment clones the repo, so nothing in that
+file is consulted and the exclusion evaporates without an error — the site just
+gets 19MB heavier and nobody looks. Moving the files out of `public/` works for
+both deploy paths, because Vite only ever copies `public/` into `dist`. If you
+ever need to keep a big file in the repo and out of the game, that is the
+mechanism — location, not an ignore list.
+
+**A first load is 35MB across 39 files**, which is the price of AI-generated
+sprite sheets at full resolution: `frost_grid` 6.1MB, `title_art` 5.5MB,
+`ember_grid_v2` 5.2MB, `dragon_sheet` 4.5MB, `dragon_fly` 3.8MB. It caches, so
+it's slow once. The obvious win if that ever matters is recompressing the PNGs
+— they are flat-colour lineart on transparency, which quantises extremely well
+— but it touches the art, and `loadSpriteAtlas` measures cells by
+connected-component labelling on the alpha channel, so anything that softens
+edges risks changing how a sheet slices. Verify with `node tools/world-check.mjs`
+(the sprite-direction section reads the real files) before trusting it.
+
+**The controller map does NOT follow you from localhost.** It lives in
+`localStorage`, which is keyed by origin, so the hosted game starts from
+`DEFAULT_VJOY_MAP` however carefully the local copy was calibrated. Everything
+else about the input path is unchanged: Joy2Win and vJoy are local processes
+and the browser reads the pad whatever page is open, so the Chrome axis bug
+travels too and it is still Firefox. Gamepad API needs a secure context in
+Chrome, which HTTPS satisfies.
 
 ## Where the code lives
 

@@ -1,0 +1,29 @@
+# What NOT to upload to Vercel. This replaces .gitignore for the CLI's upload,
+# so the ordinary build junk has to be repeated here.
+node_modules
+dist
+dist-ssr
+*.log
+*.local
+.vscode
+.idea
+.DS_Store
+
+# ---------------------------------------------------------------------------
+# The 19MB of dead sprite sheets that used to be excluded here now live in
+# docs/unused-art/ instead, and this file no longer has anything to say about
+# them. That move is deliberate and this comment is the reason:
+#
+# .vercelignore ONLY APPLIES TO CLI UPLOADS. The project is connected to the
+# GitHub repo for auto-deploys, and a Git deployment clones the repo rather
+# than uploading from disk — so an exclusion listed here would have been
+# silently ignored and the dead art would have gone straight back into every
+# player's first load. Keeping them out of `public/` works for both paths,
+# because Vite only ever copies `public/` into `dist`.
+#
+# Don't re-add art exclusions here. Move the file instead.
+# ---------------------------------------------------------------------------
+
+# 19MB of reference sheets the game never loads. Fine in the repo, no reason to
+# upload them on a CLI deploy either.
+docs/unused-art

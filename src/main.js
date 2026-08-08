@@ -1127,12 +1127,15 @@ class Game {
     this.audio.startMusic('ryu');
     this.toast(
       seat === 'pilot'
-        ? `${player.name} takes the reins of Ryuuseki — steer!`
-        : `${player.name} mans the beams — press ATTACK!`,
+        ? `${player.name} takes the reins of Ryuuseki — steer! (one beam)`
+        : `${player.name} mans the beams — press ATTACK for all seven!`,
       player.index
     );
-    if (this.ryu.pilot && this.ryu.gunner) {
-      this.toast('Both aboard — the full seven beams!', 0);
+    /* Name who has the fan, not just that it exists. The count belongs to the
+       SEAT now, so "both aboard, seven beams" would tell the pilot she had
+       something she hasn't got. */
+    if (this.ryu.duo) {
+      this.toast(`Both aboard — ${this.ryu.gunner.name} works the seven beams!`, 0);
     }
   }
 
@@ -1434,7 +1437,10 @@ class Game {
 
   _updateSplit(dt, mid) {
     const dist = this.players[0].position.distanceTo(this.players[1].position);
-    const anyFlying = this.players.some((p) => p.mount);
+    /* `rideAlong` counts as flying too. The gunner is thirty units up on a
+       dragon; standing next to where her sister happens to be on the ground is
+       not a reason to merge the view. */
+    const anyFlying = this.players.some((p) => p.mount || p.rideAlong);
 
     // Both kitties inside the dojo always share one view — the whole point is
     // that they read the same diagram together.
@@ -1443,14 +1449,21 @@ class Game {
       (p) => !p.mount && Math.hypot(p.position.x - dc0.x, p.position.z - dc0.z) < DOJO_VIEW_R
     );
 
-    /* Anybody on Ryuuseki forces ONE camera, and it outranks even "always
+    /* BOTH girls on Ryuuseki force ONE camera, and it outranks even "always
        split". Two half-screens of the same animal is the worst possible view
        of him: the flyer's turns yank the gunner's camera around, the gunner
        cannot see what she is aiming at, and the one moment the game asks the
        two girls to be in the same seat is rendered as though they are not.
        Same rule as the dojo, and for the same reason — a shared thing gets a
-       shared view. */
-    const onRyu = !!(this.ryu && this.ryu.ridden);
+       shared view.
+
+       IT IS `duo`, NOT `ridden`, AND THE DIFFERENCE IS THE WHOLE BUG. The rule
+       fired on anybody being aboard, so one kitten climbing on collapsed the
+       screen to a single camera locked to the dragon — while her sister, who
+       had done nothing, was still down in the town with no view of her own,
+       following a dragon she was not on until she happened to walk back into
+       frame. A shared view is only right when the thing is actually shared. */
+    const onRyu = !!this.ryu?.duo;
 
     if (onRyu || this.settings.split === 'never' || bothInDojo) this.merged = true;
     else if (this.settings.split === 'always') this.merged = false;
@@ -1476,8 +1489,14 @@ class Game {
          which are his origin (their seats are draw offsets), so the animal ran
          off the side of the screen.
          Both are fixed here rather than in Player._updateCamera, because that
-         camera is not the one drawing while merged. */
-      const onRyu = this.ryu?.ridden ? this.ryu : null;
+         camera is not the one drawing while merged.
+
+         `duo` again, not `ridden`: with one girl aboard and one on the ground
+         this rig can still be reached (split = never, or the two of them close
+         together), and framing on the dragon there loses the kitten who isn't
+         on him. One rider is not a shared subject — the ordinary midpoint is
+         the right frame, exactly as it is for a storm dragon. */
+      const onRyu = this.ryu?.duo ? this.ryu : null;
       const ryuMid = onRyu?.ridersMidpoint();
 
       const want = ryuMid ? ryuMid.clone() : mid.clone().setY(mid.y + 1.6);

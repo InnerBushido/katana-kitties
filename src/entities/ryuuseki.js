@@ -12,12 +12,21 @@ import { Billboard } from '../core/gfx.js';
 
    THE SEATS DO DIFFERENT JOBS.
 
-     PILOT   steers. Ordinary flight — she takes `player.mount`, so every line
-             of the existing flight controller applies unchanged.
-     GUNNER  fires. She takes `player.rideAlong`, steers nothing, and her
-             attack button opens the fan of beams.
+     PILOT   steers, and fires ONE beam. She takes `player.mount`, so every
+             line of the existing flight controller applies unchanged.
+     GUNNER  fires the FAN. She takes `player.rideAlong`, steers nothing, and
+             her attack button opens all seven.
 
-   A LONE PILOT CAN STILL FIRE, but one beam (`SOLO_BEAMS`). The alternative —
+   THE BEAM COUNT IS A FACT ABOUT THE SEAT, NOT ABOUT HOW MANY SEATS ARE
+   FILLED. It read the crew before: whoever pressed the button got seven the
+   moment both girls were aboard, so a pilot who could only manage one beam
+   alone suddenly fired the gunner's whole fan the instant her sister climbed
+   on — and the gunner's job, the only thing she has, was something her sister
+   could do without her. Now the pilot always fires one and the gunner always
+   fires seven, so climbing into the second seat is what unlocks the fan and
+   the girl in that seat is the one who owns it.
+
+   A LONE PILOT CAN STILL FIRE, but one beam (`PILOT_BEAMS`). The alternative —
    no breath without a gunner — was rejected: a kid playing while her sister is
    off cutting bamboo would have summoned a legendary dragon and be flying a
    very slow taxi. One beam is a real weapon. Seven is a spectacle, and the
@@ -29,12 +38,34 @@ import { Billboard } from '../core/gfx.js';
    never lost because there is exactly one and it is summoned to the town.
 --------------------------------------------------------------------------- */
 
-/** Beams in the fan when both seats are filled, and when only one is. */
-export const DUO_BEAMS = 7;
-export const SOLO_BEAMS = 1;
+/** Beams per SEAT. The gunner owns the fan; the pilot always gets one. */
+export const GUNNER_BEAMS = 7;
+export const PILOT_BEAMS = 1;
 
 /** How wide the full fan opens, in radians. Just under a third of a turn. */
 export const FAN = 1.9;
+
+/**
+ * How far off his head a shooter may aim, in radians.
+ *
+ * THE BEAMS LEAVE HIS MOUTH, SO THEY HAVE TO GO WHERE HIS MOUTH POINTS. The
+ * fan was aimed along the shooter's own facing with nothing tying it to the
+ * animal, which is correct for the panda's claw — a kitten on a panda's back
+ * can swing anywhere — and wrong here, because a claw comes out of the rider
+ * and a beam comes out of the head. With the gunner's stick free, pointing it
+ * back down his body fired seven beams out of his jaw travelling *backwards
+ * over his own coils*: the thing Frost saw whenever he was drawn facing left
+ * and she pushed right.
+ *
+ * A hard lock to the head instead would have made the second seat pointless —
+ * a turret that cannot turn is a spectator. So she aims within an arc of the
+ * mouth, and the bound is set against the FAN rather than picked: with the
+ * outermost beam at `AIM_ARC + FAN / 2` off the head, keeping that under a
+ * quarter turn is what guarantees nothing ever leaves the mouth pointing
+ * behind him. `world-check` asserts the relationship, not the number, so
+ * widening the fan later can't quietly reintroduce the bug.
+ */
+export const AIM_ARC = 0.55;
 
 /** Reach and clout. Far longer than any storm dragon's 15–20. */
 export const BEAM = { range: 34, power: 3.2, color: 0xfff0a0, name: 'a star beam' };
@@ -223,7 +254,7 @@ export class Ryuuseki {
     /* The beams. Built once and hidden, because a fan of seven allocated per
        shot is seven geometries a second at the fire rate this thing allows. */
     this.beams = [];
-    for (let i = 0; i < DUO_BEAMS; i++) {
+    for (let i = 0; i < GUNNER_BEAMS; i++) {
       const g = new THREE.CylinderGeometry(0.5, 1.5, BEAM.range, 8, 1, true);
       g.translate(0, BEAM.range / 2, 0);
       g.rotateX(Math.PI / 2);
@@ -237,6 +268,8 @@ export class Ryuuseki {
     }
     this.beamT = 0;
     this.beamCount = 0;
+    /** Centre of the fan currently fading, in world yaw. See `fire`. */
+    this.beamAim = 0;
   }
 
   /** Whichever seat is empty, or null when it is full. */
@@ -247,6 +280,46 @@ export class Ryuuseki {
   }
 
   get ridden() { return !!(this.pilot || this.gunner); }
+
+  /**
+   * BOTH seats filled — the only state that gets the shared camera.
+   *
+   * `ridden` is not the same question and the two were confused, which cost
+   * the split screen: a solo pilot forced a merged view, so the sister still
+   * walking around town lost her own half of the screen to a dragon she wasn't
+   * on. See `_updateSplit`.
+   */
+  get duo() { return !!(this.pilot && this.gunner); }
+
+  /** Which seat this kitten is in, or null if she isn't aboard. */
+  seatOf(who) {
+    if (who && who === this.pilot) return 'pilot';
+    if (who && who === this.gunner) return 'gunner';
+    return null;
+  }
+
+  /**
+   * How many beams this shooter opens. A fact about her SEAT — see the header.
+   * An unseated caller (the debug key, a test) gets the gunner's fan.
+   */
+  beamsFor(shooter) {
+    return this.seatOf(shooter) === 'pilot' ? PILOT_BEAMS : GUNNER_BEAMS;
+  }
+
+  /**
+   * The centre of the fan: the shooter's aim, clamped to `AIM_ARC` either side
+   * of the way his head is pointing. See AIM_ARC for why the clamp exists.
+   *
+   * The pilot is unaffected by construction — `_updateFlight` sets her facing
+   * to `camYaw + flySide * PI/2`, which is exactly the heading `carry` gives
+   * him, so her difference is zero. It is the gunner's free stick this bounds.
+   */
+  aimFor(shooter) {
+    let d = (shooter?.facing ?? this.facing) - this.facing;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return this.facing + Math.max(-AIM_ARC, Math.min(AIM_ARC, d));
+  }
 
   /**
    * Where a rider is drawn, relative to the dragon's own position.
@@ -284,12 +357,20 @@ export class Ryuuseki {
    * pointing. That is the whole reason the drawn heading exists.
    */
   mouthPos() {
-    const q = this.quad;
+    const m = this.mouthLocal();
     return new THREE.Vector3(
-      this.position.x + Math.sin(this.facing) * q * RYU_MOUTH.fwd,
-      this.position.y + q * RYU_MOUTH.up,
-      this.position.z + Math.cos(this.facing) * q * RYU_MOUTH.fwd
+      this.position.x + m.x, this.position.y + m.y, this.position.z + m.z
     );
+  }
+
+  /** The same point relative to his group, which is where the beams live. */
+  mouthLocal() {
+    const q = this.quad;
+    return {
+      x: Math.sin(this.facing) * q * RYU_MOUTH.fwd,
+      y: q * RYU_MOUTH.up,
+      z: Math.cos(this.facing) * q * RYU_MOUTH.fwd,
+    };
   }
 
   /**
@@ -368,27 +449,21 @@ export class Ryuuseki {
    *
    * @param {object} world  for the props
    * @param {object} hud    for the score and the noise
-   * @param {object} shooter the kitten who pressed it — the fan is aimed along
-   *        HER facing, not the dragon's, for the same reason the panda's claw
-   *        is: the dragon's drawn heading is locked broadside and only ever
-   *        points two ways, so hanging the aim off it means the attack cannot
-   *        be aimed at all.
+   * @param {object} shooter the kitten who pressed it. Her SEAT decides how
+   *        many beams open, and her facing aims them — within `AIM_ARC` of the
+   *        way his head is pointing, because they come out of his mouth.
    * @returns {number} beams fired, so the caller can say what happened
    */
   fire(world, hud, shooter) {
-    const duo = !!(this.pilot && this.gunner);
-    const n = duo ? DUO_BEAMS : SOLO_BEAMS;
+    const n = this.beamsFor(shooter);
     this.beamT = 0.42;
     this.beamCount = n;
 
-    const base = shooter.facing;
+    const base = this.aimFor(shooter);
+    this.beamAim = base;
     // Out of the MOUTH, not out of his middle — see RYU_MOUTH.
     const origin = this.mouthPos();
-    const local = {
-      x: Math.sin(this.facing) * this.quad * RYU_MOUTH.fwd,
-      y: this.quad * RYU_MOUTH.up,
-      z: Math.cos(this.facing) * this.quad * RYU_MOUTH.fwd,
-    };
+    const local = this.mouthLocal();
 
     let hits = 0;
     for (let i = 0; i < this.beams.length; i++) {
@@ -424,7 +499,7 @@ export class Ryuuseki {
         }
       }
     }
-    hud?.sfx('ryubeam', duo ? 1 : 0.7);
+    hud?.sfx('ryubeam', n > 1 ? 1 : 0.7);
     return n;
   }
 
@@ -475,13 +550,24 @@ export class Ryuuseki {
     const pulse = 0.22 + Math.sin(this.bob * 3) * 0.12;
     this.ring.material.opacity = this.freeSeat() ? pulse : 0;
 
-    // Beams fade rather than blink out.
+    /* Beams fade rather than blink out — and they stay ON THE MOUTH while they
+       do. They are children of his group, so they travel with him for free,
+       but the mouth is `RYU_MOUTH.fwd` along a heading that SWAPS: fire while
+       flying left, flip right, and a fan pinned to the local offset it was
+       born with hangs off his tail for the rest of its fade. Re-anchoring is
+       one vector a frame and it is only ever done while something is visible.
+
+       Their ANGLE is deliberately not re-derived: a beam already out of the
+       mouth is in the world, and swinging the whole fan round to follow his
+       head would sweep it across everything between. */
     if (this.beamT > 0) {
       this.beamT -= dt;
       const k = Math.max(0, this.beamT / 0.42);
+      const local = this.mouthLocal();
       for (let i = 0; i < this.beams.length; i++) {
         const m = this.beams[i];
         if (i >= this.beamCount) { m.visible = false; continue; }
+        m.position.set(local.x, local.y, local.z);
         m.material.opacity = 0.85 * k;
         m.visible = k > 0.02;
       }

@@ -529,9 +529,9 @@ export class Player {
    */
   _doBreath(world, hud) {
     /* Ryuuseki fires a fan of beams rather than a cone of breath, and owns
-       that code because the fan's width depends on how many seats are filled —
-       which is a fact about the dragon, not about the kitten pressing the
-       button. A lone pilot still gets one beam: see SOLO_BEAMS. */
+       that code because the count and the aim are facts about the dragon and
+       the seat, not about the kitten pressing the button. From here it is one
+       call either way. The PILOT always gets one beam — see PILOT_BEAMS. */
     if (this.mount.fire) { this.mount.fire(world, hud, this); return; }
     // Windwhisker makes the flame itself bigger, so the dragon draws a longer
     // cone as well as hitting further.
@@ -597,6 +597,15 @@ export class Player {
       const az = right.z * pad.mx + fwd.z * -pad.my;
       this.facing = Math.atan2(ax, az);
     }
+    /* CLAMPED TO HIS HEAD, every frame rather than only when she pushes the
+       stick, because the thing she is clamped against MOVES — his drawn
+       heading flips whenever the pilot turns decisively, and an aim left
+       correct against the old side is 180 degrees out against the new one.
+       `Ryuuseki.aimFor` is the same call `fire` makes, so what she is drawn
+       pointing at is exactly where the beams will go: a gunner visibly aiming
+       one way while seven beams leave the jaw another reads as broken even
+       when the beams are the part that's right. */
+    this.facing = R.aimFor(this);
 
     this.attackCooldown -= dt;
     if (pad.pressed('attack') && this.attackCooldown <= 0) {

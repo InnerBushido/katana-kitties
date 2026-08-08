@@ -36,13 +36,22 @@ moving you.*
 
 ## Play it
 
+**It's online: [katana-kitties.vercel.app](https://katana-kitties.vercel.app)** —
+nothing to install, just open it. **Use Firefox if you're playing with
+Joy-Cons**, same as locally; see
+[Switch 2 controllers](#switch-2-controllers--use-firefox) for why.
+
+The first load pulls about 35MB of sprite sheets and voice lines and then sits
+in the browser cache, so it's slow once and instant afterwards.
+
+To run it locally instead:
+
 ```bash
 npm install
 npm run dev
 ```
 
-Then open the address it prints. **Use Firefox if you're playing with Joy-Cons**
-— see [Switch 2 controllers](#switch-2-controllers--use-firefox) for why.
+Then open the address it prints.
 
 ---
 
@@ -116,13 +125,23 @@ He seats **both of you, and you do different jobs**:
 
 | | |
 |---|---|
-| **First one on** | flies him — same controls as a storm dragon |
-| **Second one on** | works the beams — your stick aims, ATTACK fires |
+| **First one on** | flies him — same controls as a storm dragon, and fires **one** beam |
+| **Second one on** | works the beams — your stick aims, ATTACK fires **all seven** |
 
-One kitten alone can fly him and fire **one** beam. With both of you aboard it
-opens into **seven**, in a fan wide enough to flatten a whole market street in
-one press. He outreaches and outhits every storm dragon in the game, the screen
-joins into one shared view while you're on him, and he has his own music.
+The fan belongs to the **second seat**. Whoever is flying gets one beam whether
+she's alone up there or not; the seven — wide enough to flatten a whole market
+street in one press — only ever come from the kitten in the gunner's seat. So
+climbing on second isn't tagging along, it's the job.
+
+Wherever she points, the beams leave **his mouth** and go where his head is
+pointing: she can swing the fan a good way either side, but never back down his
+own body.
+
+He outreaches and outhits every storm dragon in the game, he has his own music,
+and **once you're both aboard the screen joins into one shared view** — one
+dragon on two half-screens is the worst way to look at him. With only one of
+you on him the screen splits as usual, so whoever is still on the ground keeps
+her own half.
 
 ## Raise a panda
 
@@ -173,6 +192,16 @@ drives the left Joy-Con, P2 the right. There is no second controller to pair.
 Pairing: hold the little **sync** button until the lights run, add the
 controller from the computer's Bluetooth settings, then start Joy2Win. **Press a
 button afterwards** — browsers hide a gamepad until it sends input.
+
+**On the hosted version the controllers work exactly the same.** Joy2Win and
+vJoy run on your machine and the browser reads the pad whatever page is open,
+so hosting changes nothing about the input path — including the Chrome bug, so
+it's still Firefox. One thing does change: **your saved calibration doesn't
+come with you.** The button and stick map lives in `localStorage`, which
+browsers key by site, so `katana-kitties.vercel.app` starts from the built-in
+defaults no matter how carefully you tuned it on `localhost`. Wiggle both
+sticks and press **DETECT STICKS** once on the new address and it's saved there
+from then on.
 
 In Joy2Win's `config.ini`, for two Joy-Cons: `controller = 0`, `orientation = 0`,
 and **`mouse_mode = 0`** — with mouse mode on, a Joy-Con resting on a desk
