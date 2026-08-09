@@ -733,7 +733,84 @@ export function buildShrine(color, seed = 0) {
 --------------------------------------------------------------------------- */
 
 /**
- * The grotto: a ring of rock with a roof and one doorway.
+ * A curved wall: one seamless annular-sector solid.
+ *
+ * THIS REPLACED A ROW OF OVERLAPPING BOXES, AND THE REASON IS Z-FIGHTING.
+ * Stepping little boxes round an arc is the obvious way to draw a curved wall
+ * and it looks fine from the side — but every box overlaps its neighbours, so
+ * along the top the two flat faces are coplanar and the depth buffer cannot
+ * choose between them. The result is a shimmering dashed line down the top of
+ * every wall in the grotto, which is exactly where the eye goes once the roof
+ * is off. One mesh has no interior faces to fight over.
+ *
+ * Built by hand rather than with ExtrudeGeometry: this needs position, normal
+ * and colour and nothing else (see mergeParts), and a lathe/extrude brings UVs
+ * and seam handling that would only have to be stripped again.
+ *
+ * @param {number} rIn   inner radius
+ * @param {number} rOut  outer radius
+ * @param {number} y0    floor
+ * @param {number} y1    ceiling
+ * @param {number} a0    start angle
+ * @param {number} a1    end angle (may be less than a0; it just winds the
+ *                       other way)
+ */
+function curvedWall(rIn, rOut, y0, y1, a0, a1, color, segs = 0) {
+  const span = a1 - a0;
+  const n = segs || Math.max(3, Math.ceil(Math.abs(span) * rOut * 0.7));
+  const pos = [];
+  const idx = [];
+  // Four rings of vertices: inner/outer x bottom/top, one column per segment.
+  for (let i = 0; i <= n; i++) {
+    const a = a0 + (span * i) / n;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    pos.push(rIn * c, y0, rIn * s);   // 0: inner bottom
+    pos.push(rIn * c, y1, rIn * s);   // 1: inner top
+    pos.push(rOut * c, y0, rOut * s); // 2: outer bottom
+    pos.push(rOut * c, y1, rOut * s); // 3: outer top
+  }
+  const V = (i, k) => i * 4 + k;
+  for (let i = 0; i < n; i++) {
+    const A = V(i, 0);
+    const B = V(i, 1);
+    const C = V(i, 2);
+    const D = V(i, 3);
+    const A2 = V(i + 1, 0);
+    const B2 = V(i + 1, 1);
+    const C2 = V(i + 1, 2);
+    const D2 = V(i + 1, 3);
+    // inner face (normals point toward the middle of the room)
+    idx.push(A, B, B2, A, B2, A2);
+    // outer face
+    idx.push(C2, D2, D, C2, D, C);
+    // top
+    idx.push(B, D, D2, B, D2, B2);
+    // bottom (rarely seen, but an open solid shades wrong from below)
+    idx.push(A2, C2, C, A2, C, A);
+  }
+  // End caps, so the wall ends in a face rather than a hole at a gap.
+  const cap = (i, flip) => {
+    const A = V(i, 0);
+    const B = V(i, 1);
+    const C = V(i, 2);
+    const D = V(i, 3);
+    if (flip) idx.push(A, C, D, A, D, B);
+    else idx.push(A, D, C, A, B, D);
+  };
+  cap(0, span > 0);
+  cap(n, span < 0);
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  paint(g, color);
+  return g;
+}
+
+/**
+ * The grotto: a ring of rock with a roof, one doorway, and a maze inside it.
  *
  * IT IS ABOVE GROUND, NOT DUG IN, and that is a constraint rather than a
  * choice. The islands are an analytic height field — `world.heightAt` answers
@@ -749,7 +826,19 @@ export function buildShrine(color, seed = 0) {
  * under a roof — so the doorway is the advertisement, and it is lit warm
  * against the rock so it reads as "something is in there" from the air.
  *
- * @returns {{parts: THREE.BufferGeometry[], solids: {x,z,r}[], mouth: {x,z}}}
+ * THREE PART LISTS COME BACK, and which list a piece is in decides how it is
+ * drawn:
+ *
+ *   parts      merged into the island's rock mesh like any other scenery —
+ *              the outlying boulders, the lintel, the doorway glow.
+ *   wallParts  the walls, inside and out. Their own mesh with the X-RAY
+ *              material, so a wall between the camera and a kitten opens a
+ *              hole around her instead of hiding the whole building.
+ *   roofParts  the dome and the ceiling under it. Their own mesh, hidden while
+ *              somebody is inside — you cannot see down into a room through a
+ *              roof, and no shader trick changes that.
+ *
+ * @returns {{parts, wallParts, roofParts, solids, lamps, r, mouth}}
  *          `mouth` is the outside of the doorway, in local coordinates — the
  *          caller needs it to keep trees and props from growing across the
  *          entrance, which is a way to lose a star nobody would ever diagnose.
@@ -759,133 +848,96 @@ export function buildGrotto(seed = 0, opts = {}) {
      back. 0.62 was measured at r 8.2; holding the opening at the same number
      of world units keeps "find the mouth" true instead of leaving a third of
      the wall missing. */
-  const { r = 10.5, h = 7.0, door = 0.62 * (8.2 / r) } = opts;
+  const { r = 12.4, h = 7.0, door = 0.62 * (8.2 / r) } = opts;
   const parts = [];
-  /**
-   * The SHELL: the outer wall ring, the dome and the ceiling under it. Merged
-   * into its own mesh by the caller and hidden the moment somebody walks in.
-   *
-   * THE WALLS GO WITH THE ROOF, and getting that wrong cost two rounds of
-   * this. Hiding only the roof leaves the ring, and the ring is 5 to 8.5 units
-   * tall at radius 10.5 — so the sight line from a follow camera down to a
-   * kitten inside still crosses it. The only pitch steep enough to clear it is
-   * about 76 degrees, and these characters are BILLBOARDS: vertical quads that
-   * turn on Y only, so at 76 degrees they are seen edge-on and both kittens
-   * render as flat streaks on the floor. There is no camera angle that both
-   * clears the wall and keeps a billboard readable, so the wall is what has to
-   * go. Collision is untouched — the solids are still there, the maze still
-   * blocks, and `LOCKS.cave.foot` still keeps dragons out. It is purely what
-   * is drawn.
-   */
-  const shellParts = [];
+  const wallParts = [];
+  const roofParts = [];
   const solids = [];
   const lamps = [];
 
   /* The inside of the roof, as a function of distance from the middle. The
      ceiling is a squashed dome, so "how tall is a wall here" has an answer and
-     it is not a constant — see `wall()` below, which uses it to run every
-     interior wall right up into the rock. */
+     it is not a constant. */
   const ceilAt = (d) => h * 0.57 + 0.60 * Math.sqrt(Math.max(0, r * r - d * d));
 
-  /* The doorway faces +Z. The caller rotates the whole thing, so everything
+  /** Solids along an arc, spaced closely enough that nothing slips between. */
+  const arcSolids = (rad, a0, a1, sr) => {
+    const span = a1 - a0;
+    const n = Math.max(1, Math.ceil((Math.abs(span) * rad) / (sr * 1.3)));
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + (span * i) / n;
+      solids.push({ x: Math.cos(a) * rad, z: Math.sin(a) * rad, r: sr });
+    }
+  };
+
+  /* --- the outer ring ---
+     The doorway faces +Z. The caller rotates the whole thing, so everything
      here is written against one fixed opening and the rotation is the only
      place the direction lives. */
-  /* Blocks every 3.68 units around the ring, DERIVED rather than a count.
-     It was a flat 14, which is exactly right at the radius the grotto used to
-     be and wrong at any other: growing the room with a fixed count spreads the
-     same 14 blocks thinner, so their 1.9-radius solids stop overlapping and
-     the wall develops gaps you can walk through. The spacing is what has to
-     stay constant, so that is what is written down. */
-  const N = Math.max(12, Math.round((Math.PI * 2 * r) / 3.68));
-  for (let i = 0; i < N; i++) {
-    const a = (i / N) * Math.PI * 2;
-    // The gap: a wedge centred on +Z, wide enough to run through without
-    // catching a shoulder on the solids either side of it.
-    const toDoor = Math.abs(Math.atan2(Math.sin(a - Math.PI / 2), Math.cos(a - Math.PI / 2)));
-    if (toDoor < door) continue;
-
-    const n = valueNoise(seed, i, 17);
-    const bh = h * (0.72 + n * 0.5);
-    const bw = 3.0 + n * 1.6;
-    const g = new THREE.BoxGeometry(bw, bh, 2.8 + n);
-    /* PALE STONE, not the grey it wants to be. The toon ramp steps hard and
-       these faces mostly point away from the sun, so mid-grey rock lands on
-       the bottom step and the whole outcrop renders as one black lump with no
-       readable shape — worse on the dusk island, which is where one of them
-       is. Painted this light it reads as rock in every biome. */
-    paint(g, i % 3 === 0 ? 0xa79d95 : i % 3 === 1 ? 0xb3a99f : 0x968c85);
-    g.applyMatrix4(new THREE.Matrix4()
-      .makeTranslation(Math.cos(a) * r, bh / 2 - 0.6, Math.sin(a) * r)
-      .multiply(new THREE.Matrix4().makeRotationY(-a)));
-    shellParts.push(g);
-    solids.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, r: 1.9 });
-  }
+  const DOOR_A = Math.PI / 2;
+  const WT = 1.15;                       // wall thickness
+  const SR = 0.66;                       // solid radius that matches it
+  wallParts.push(curvedWall(
+    r - WT / 2, r + WT / 2, -0.6, ceilAt(r) + 1.0,
+    DOOR_A + door, DOOR_A + Math.PI * 2 - door, 0x9d938b,
+  ));
+  arcSolids(r, DOOR_A + door, DOOR_A + Math.PI * 2 - door, SR);
 
   /* --- the maze ---
-     A star lying in the middle of an empty room is a star you can see from the
-     doorway, which makes the grotto a corridor with a prize at the end of it
-     rather than somewhere you go IN to. So the inside is a spiral: an arc wall
-     with its gap on the far side, and one spur across the corridor that turns
-     the obvious way in into a dead end.
+     Two more rings inside the outer one, each with its gap somewhere else, and
+     a radial spur in each corridor that turns one way round into a dead end.
+     Walk it: in at the mouth, one way is blocked so you take the other, round
+     to the gap, and again, and again. Four legs and two wrong turns.
 
-     Walk it: in at the mouth, right is blocked, so left, all the way round the
-     back, through the gap, and the star is in the middle. Three legs and one
-     wrong turn — enough to have to look, nowhere near enough to get lost in.
+     THE RINGS ARE 3.7 APART, WHICH IS NOT A LOOK — it is the smallest spacing
+     that leaves a corridor a kitten fits down. Wall thickness is 1.15 and she
+     is 1.5 across, so 3.7 gives 2.55 of corridor and 1.05 of slack. Anything
+     tighter and she scrapes both walls; the first version of this maze used
+     four rings at 2.8 and was unwalkable.
 
      IT CANNOT BE JUMPED, AND THAT IS FREE RATHER THAN TUNED. Solids are
      infinite cylinders unless they are given a `top`, and these are not: a
      kitten is pushed out of one at any height at all, so Shadowtail's 8.7-unit
-     triple jump is no more use in here than a hop. The geometry is run up into
-     the ceiling anyway (`ceilAt`), because a wall you cannot cross but can see
-     over reads as a bug even when the rule is the one you want.
+     triple jump is no more use in here than a hop. The geometry runs up into
+     the ceiling anyway, because a wall you cannot cross but can see over reads
+     as a bug even when the rule is the one you want.
 
-     IT CANNOT BE CUT, EITHER. These are world geometry merged into the island
-     mesh, not `props` — the katana only ever knocks over a Prop, so there is
-     nothing here for it to bite on. Same reason a dragon cannot burn its way
-     in. Between the roof, the solids and `LOCKS.cave.foot`, the mouth is the
-     only way to the star. */
-  const wall = (a0, a1, rad, thick = 0.95, step = 0.55) => {
-    const span = a1 - a0;
-    const n = Math.max(2, Math.ceil((Math.abs(span) * rad) / step));
-    for (let i = 0; i <= n; i++) {
-      const a = a0 + (span * i) / n;
-      const x = Math.cos(a) * rad;
-      const z = Math.sin(a) * rad;
-      // Up into the rock. The blocks overlap generously; a merged mesh does
-      // not care and a visible seam between two of them would.
-      const hh = ceilAt(rad) + 1.0;
-      const g = new THREE.BoxGeometry(thick * 2.1, hh, thick * 2.4);
-      paint(g, i % 2 ? 0x8d837c : 0x7d746d);
-      g.applyMatrix4(new THREE.Matrix4()
-        .makeTranslation(x, hh / 2 - 0.6, z)
-        .multiply(new THREE.Matrix4().makeRotationY(-a)));
-      parts.push(g);
-      solids.push({ x, z, r: thick });
+     IT CANNOT BE CUT, EITHER. These are world geometry, not `props` — the
+     katana only ever knocks over a Prop, so there is nothing here for it to
+     bite on. Same reason a dragon cannot burn its way in. */
+  const GAP = 0.62;                      // half-width of a ring's gap, radians
+  const rings = [
+    { rad: r - 3.7, gap: DOOR_A + Math.PI * 0.72 },
+    { rad: r - 7.4, gap: DOOR_A - Math.PI * 0.66 },
+  ];
+  for (const [i, ring] of rings.entries()) {
+    const top = ceilAt(ring.rad) + 1.0;
+    wallParts.push(curvedWall(
+      ring.rad - WT / 2, ring.rad + WT / 2, -0.6, top,
+      ring.gap + GAP, ring.gap + Math.PI * 2 - GAP,
+      i % 2 ? 0x8d837c : 0x857b74,
+    ));
+    arcSolids(ring.rad, ring.gap + GAP, ring.gap + Math.PI * 2 - GAP, SR);
+  }
+
+  /* The spurs. Each one crosses a corridor at an angle roughly opposite that
+     corridor's exit, so the short way round is the one that dies. */
+  const spurs = [
+    { a: DOOR_A - Math.PI * 0.42, r0: rings[0].rad, r1: r },
+    { a: DOOR_A + Math.PI * 0.30, r0: rings[1].rad, r1: rings[0].rad },
+  ];
+  for (const s of spurs) {
+    const top = ceilAt((s.r0 + s.r1) / 2) + 1.0;
+    // A short arc rather than a true radial box: same helper, no new geometry
+    // path, and it meets the rings it spans with the same curvature they have.
+    const half = (WT / 2) / ((s.r0 + s.r1) / 2);
+    wallParts.push(curvedWall(
+      s.r0 - WT / 2, s.r1 + WT / 2, -0.6, top,
+      s.a - half, s.a + half, 0x7d746d, 2,
+    ));
+    for (let d = s.r0; d <= s.r1; d += SR * 1.2) {
+      solids.push({ x: Math.cos(s.a) * d, z: Math.sin(s.a) * d, r: SR });
     }
-  };
-
-  const HALF = Math.PI / 2;
-  /* The arc: everything except a gap centred on -Z, which is directly opposite
-     the mouth. The player has to reach the far side of the room to get in.
-
-     0.42 of the radius, not half. The corridor outside it has to be walkable —
-     the outer wall's solids reach 1.9 inward, so at 0.5 the gap between the
-     two rings left a 0.9-unit lane for a kitten 1.5 across. It is 1.9 now, and
-     the chamber inside is still wider than the star's own pickup radius. */
-  const ringR = r * 0.42;
-  wall(-HALF + 0.55, HALF * 3 - 0.55, ringR, 0.8);
-  /* The spur, from the arc out to the outer wall on the +X side. This is what
-     makes it a maze rather than a ring: one of the two ways round is a dead
-     end, so the first choice she makes is a real one. Both ends overlap what
-     they meet, because a corridor with a hand's width of daylight at the end
-     of it is a maze a kid solves by running at the wall. */
-  for (let d = ringR + 1.0; d <= r - 2.6; d += 0.62) {
-    const hh = ceilAt(d) + 1.0;
-    const g = new THREE.BoxGeometry(2.0, hh, 1.9);
-    paint(g, 0x857b74);
-    g.translate(d, hh / 2 - 0.6, 0);
-    parts.push(g);
-    solids.push({ x: d, z: 0, r: 0.95 });
   }
 
   /* --- light to see it by ---
@@ -893,44 +945,41 @@ export function buildGrotto(seed = 0, opts = {}) {
      black, and walk out. Crystals on the walls are the SOURCE, and the caller
      hangs a real point light on each so the rock around them actually lifts —
      glowing meshes on their own light nothing and read as stickers stuck to a
-     dark wall. Three of them, spread round the spiral, so each leg of the
-     walk has something ahead of it to move toward. */
-  for (const [la, ld] of [[HALF, r * 0.82], [Math.PI, r * 0.70], [-HALF, r * 0.66]]) {
+     dark wall. One per corridor, so each leg of the walk has something ahead
+     of it to move toward. */
+  for (const [la, ld] of [
+    [DOOR_A + 0.9, r - 1.9],
+    [DOOR_A + Math.PI, r - 1.9],
+    [rings[0].gap + 0.8, rings[0].rad - 1.9],
+    [rings[1].gap + Math.PI, rings[1].rad - 1.6],
+  ]) {
     lamps.push({ x: Math.cos(la) * ld, y: 3.1, z: Math.sin(la) * ld });
   }
 
   /* The roof. A squashed dome sitting on the ring — this is what stops you
-     seeing in and flying in, so it overlaps the wall tops generously rather
-     than meeting them (coplanar faces z-fight; see the house).
-
-     IT IS RETURNED SEPARATELY (`roofParts`), AND THAT IS THE WHOLE REASON THE
-     GROTTO IS PLAYABLE. The follow camera sits about 19 units out and 18 up,
-     which is outside a 10.5-radius dome — so walking in put the kitten under
-     an opaque grey lump and the player spent the entire cave looking at a
-     rock with no idea where she was. Lighting the inside did not touch that;
-     you cannot light your way through a roof. The caller merges these into
-     their own mesh per grotto and hides it while somebody is inside, which is
-     the same thing every top-down dungeon has always done. */
-  const dome = new THREE.SphereGeometry(r * 1.04, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5);
+     seeing in and flying in from outside, so it overlaps the wall tops
+     generously rather than meeting them (coplanar faces z-fight; see the
+     house). Hidden by the caller while anybody is inside. */
+  const dome = new THREE.SphereGeometry(r * 1.04, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
   dome.scale(1, 0.62, 1);
   paint(dome, 0x9d938b);
   dome.translate(0, h * 0.58, 0);
-  shellParts.push(dome);
+  roofParts.push(dome);
 
-  /* AND A CEILING, because the outer dome is invisible from underneath.
-     The world mesh is FrontSide, so standing inside the grotto you looked
-     straight up through the roof at open sky — which is the one thing the
-     roof exists to prevent, and it made the interior read as a ring of
-     standing stones rather than as somewhere you had gone in.
-     Mirroring on x reverses the winding and leaves a dome symmetric in x
-     unchanged in shape, which is the cheapest honest way to get an inward-
-     facing copy without a second material on the merged mesh. Darker,
-     because it is a rock ceiling in shadow. */
-  const roof = new THREE.SphereGeometry(r * 1.0, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5);
-  roof.scale(-1, 0.60, 1);
-  paint(roof, 0x6b615a);
-  roof.translate(0, h * 0.57, 0);
-  shellParts.push(roof);
+  /* THERE IS NO SECOND, INWARD-FACING CEILING ANY MORE, and removing it is
+     what fixed the shimmer over the whole dome.
+
+     It used to be there for a good reason: the world mesh is FrontSide, so
+     from inside you looked straight up through the roof at open sky. The fix
+     was a mirrored copy at r*1.0 against the outer dome's r*1.04 — which puts
+     two surfaces 0.5 apart radially and **0.07 apart vertically near the rim**,
+     and the depth buffer cannot separate that. The result was dark bands
+     crawling across the roof of every grotto.
+
+     It is dead geometry now regardless. The roof mesh is hidden the instant
+     anybody steps inside, so the underside of it is never on screen — the
+     ceiling existed to be looked at from a position that no longer renders it.
+     One dome, one surface, nothing to fight. */
 
   // A couple of boulders outside, so it reads as an outcrop rather than a hut.
   for (let i = 0; i < 3; i++) {
@@ -938,16 +987,22 @@ export function buildGrotto(seed = 0, opts = {}) {
     const s = 1.6 + valueNoise(seed, i, 29) * 1.4;
     const g = new THREE.IcosahedronGeometry(s, 0);
     paint(g, 0xa9a099);
-    g.translate(Math.cos(a) * (r + 3.4), s * 0.4, Math.sin(a) * (r + 3.4));
+    g.translate(Math.cos(a) * (r + 2.4), s * 0.4, Math.sin(a) * (r + 2.4));
     parts.push(g);
-    solids.push({ x: Math.cos(a) * (r + 3.4), z: Math.sin(a) * (r + 3.4), r: s * 0.8 });
+    solids.push({ x: Math.cos(a) * (r + 2.4), z: Math.sin(a) * (r + 2.4), r: s * 0.8 });
   }
 
   /* The lintel over the mouth, and the warm light under it. The glow is a
      plain unlit quad rather than a real light: the scene has one directional
      sun and adding a point light per grotto for a doorway is a lot of shader
-     for a thing you look at from two hundred units away. */
-  parts.push(box(5.6, 1.1, 2.4, 0x6b625c, 0, h * 0.52, r));
+     for a thing you look at from two hundred units away.
+
+     ALL THREE GO IN `wallParts`, not `parts`. They sit at the mouth, which is
+     exactly where a camera looking into the room sits behind — so left in the
+     ordinary rock mesh they are the one thing at the doorway the x-ray cannot
+     cut, and a lintel a metre from the lens blocks more of the room than the
+     wall it is set into. */
+  wallParts.push(box(5.6, 1.1, 2.4, 0x6b625c, 0, h * 0.52, r));
   /* NOT ROTATED. A PlaneGeometry faces +Z, the doorway faces +Z, and the
      merged world mesh is FrontSide — so the first version, which turned the
      quad to face the interior, was a light you could only see by already
@@ -955,16 +1010,16 @@ export function buildGrotto(seed = 0, opts = {}) {
   const glow = new THREE.PlaneGeometry(4.4, 4.2);
   paint(glow, 0xffc061);
   glow.translate(0, 2.1, r + 1.25);
-  parts.push(glow);
+  wallParts.push(glow);
   /* And one facing IN as well, so the mouth still glows from inside — the
      interior is otherwise a windowless dome and the way out should read. */
   const inner = new THREE.PlaneGeometry(4.4, 4.2);
   paint(inner, 0xffc061);
   inner.rotateY(Math.PI);
   inner.translate(0, 2.1, r + 1.05);
-  parts.push(inner);
+  wallParts.push(inner);
 
-  return { parts, shellParts, solids, lamps, r, mouth: { x: 0, z: r + 4.5 } };
+  return { parts, wallParts, roofParts, solids, lamps, r, mouth: { x: 0, z: r + 4.5 } };
 }
 
 /**

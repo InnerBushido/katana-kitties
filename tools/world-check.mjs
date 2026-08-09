@@ -276,10 +276,10 @@ console.log('\n--- the seven dragon balls ---');
 
      `world.dragonPerches()` exists so both the spawner and the builder resolve
      the same spots. Checked here at the radius the FURNITURE occupies, not the
-     ball's — a grotto reaches 15.9 with its boulders and the star inside
+     ball's — a grotto reaches 17.2 with its boulders and the star inside
      it is a point. */
   {
-    const FOOT = { cave: 15.9, perch: 5.2, sky: 4.2, none: 1, ice: 2, boulder: 2.4 };
+    const FOOT = { cave: 17.2, perch: 5.2, sky: 4.2, none: 1, ice: 2, boulder: 2.4 };
     const perches = world.dragonPerches();
     line('dragon perches resolved', perches.length);
     ok('every dragon perch found real ground', perches.length === 8);
@@ -393,6 +393,46 @@ console.log('\n--- the seven dragon balls ---');
       if (!standable(x, z)) blocked = true;
     }
     ok('  and you cannot see or walk straight in', blocked);
+
+    /* THE MOUTH MUST BE WALKABLE. Both grottos shipped with trees across the
+       doorway — the outlying scatter ran before the stars were placed AND
+       never consulted `keepClear`, so the one bit of ground the grotto cannot
+       do without was the one bit nothing was protecting. Checked from the
+       outside in, along the doorway axis. */
+    const G = world.grottoAt(b.position.x, b.position.z);
+    ok(`${b.stars}* cave: the world knows about this grotto`, !!G);
+    if (G) {
+      let clear = true;
+      for (let d = G.r + 7; d > G.r - 1; d -= 0.5) {
+        const x = G.x + Math.sin(G.yaw) * d;
+        const z = G.z + Math.cos(G.yaw) * d;
+        if (!standable(x, z)) { clear = false; break; }
+      }
+      ok('  the doorway is not grown over', clear);
+      ok('  and it has a roof and walls as separate meshes',
+        !!G.roof && !!G.walls && G.roof !== G.walls);
+    }
+  }
+
+  /* NOTHING IS PLACED AT ITS ISLAND'S EXACT CENTRE, and this is a check
+     because four shrines and five dragon perches were, written out as world
+     coordinates that happened to equal the island's own origin. It never
+     showed while the outlying trees were planted first and shoved the
+     placement search off centre by accident; moving them after the stars took
+     the accident away. A shrine or a dragon in the dead middle of an island is
+     arbitrary, it leaves no clear side for the star's furniture, and at zero
+     `leaderSpot` has no axis to stand its leader along. */
+  {
+    const atCentre = (x, z) => world.islands.some(
+      (isl) => Math.hypot(x - isl.x, z - isl.z) < 2.5,
+    );
+    for (const hall of world.clanHalls) {
+      ok(`${hall.clan.name}'s shrine is not at the island's centre`,
+        !atCentre(hall.x, hall.z));
+    }
+    for (const [i, p] of world.dragonPerches().entries()) {
+      ok(`dragon perch ${i} is not at the island's centre`, !atCentre(p.x, p.z));
+    }
   }
 
   /* A LOCK MUST SAY WHAT IT WANTS, in words, and as an INSTRUCTION. Every one

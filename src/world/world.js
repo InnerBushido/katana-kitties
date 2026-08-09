@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { toonVertexMat, paint } from '../core/gfx.js';
+import { toonVertexMat, xrayVertexMat, paint } from '../core/gfx.js';
 import {
   Island, PALETTE, BIOMES, buildHouse, buildTorii, buildLantern, buildTree, buildStall,
   buildBridge, buildBamboo, buildRoad, buildShrine, mergeParts, transformParts,
@@ -153,9 +153,12 @@ export class World {
     this.shrines = [];
     /** Places nothing may be planted — bridge feet, grove mouth. */
     this.keepClear = [];
-    /** [{x, z, y, r, roof, yaw}] — the star grottos. The game hides `roof`
-     *  and steepens the camera while somebody is inside one. */
+    /** [{x, z, y, r, roof, walls, yaw}] — the star grottos. The game hides
+     *  `roof` while somebody is inside and points the x-ray cut on `walls`
+     *  at whoever is in there. */
     this.grottos = [];
+    /** Every material that wants a per-view x-ray cut. See Game._renderView. */
+    this.xrayMats = [];
     /** Road corridors: no grass, flowers or rocks grow through paving. */
     this.roadMask = [];
     this.mischiefTotal = 0;
@@ -176,6 +179,9 @@ export class World {
        dragon perches, and the fix is the same one — do it while the world is
        still being built, so everything downstream can see it. */
     this.placeDragonBalls();
+    /* AFTER the stars, because the grotto mouths reserve ground and this is
+       what was burying them. See _scatterOutlying. */
+    this._scatterOutlying();
     this._buildGroundDetail();
     this._buildDistantScenery();
     this._buildPetals();
@@ -231,6 +237,62 @@ export class World {
   }
 
   /**
+   * Trees and lanterns on the outlying islands.
+   *
+   * IT RUNS AFTER `placeDragonBalls`, AND IT CHECKS `keepClear`. It used to do
+   * neither, and both grottos shipped with their doorways behind trees. Two
+   * separate mistakes stacking into one bug: this scatter lived inside
+   * `_buildTown`, which runs BEFORE the stars are placed, so the grotto's
+   * exclusion zone did not exist yet to be checked — and the loop did not
+   * consult `keepClear` in the first place, unlike the home-island loop right
+   * above it, so it would not have mattered if it had.
+   *
+   * This is the fourth time the same shape of bug has bitten this file (see
+   * the four ordering bugs in HANDOFF): anything that decides WHERE something
+   * goes has to run after everything that reserves ground.
+   *
+   * The dojo island (last) stays clear so the circle painted on it is
+   * readable, and each island dresses itself from its biome so flying
+   * somewhere new looks like somewhere new rather than the same island moved.
+   */
+  _scatterOutlying() {
+    const FLORA = {
+      meadow: 'blossom', bamboo: 'pine', autumn: 'autumn',
+      frost: 'frost', ash: 'ash', dusk: 'dusk',
+    };
+    const decor = [];
+    for (let k = 1; k < this.islands.length - 1; k++) {
+      const isl = this.islands[k];
+      const leaf = FLORA[isl.biome] ?? 'blossom';
+      for (let i = 0; i < 18; i++) {
+        const a = valueNoise(i, k, 13) * Math.PI * 2;
+        const r = Math.sqrt(valueNoise(i, k, 29)) * isl.radius * 0.72;
+        const x = isl.x + Math.cos(a) * r;
+        const z = isl.z + Math.sin(a) * r;
+        const g = isl.heightAt(x, z);
+        if (g == null) continue;
+        // The grotto mouth, the shrines, the stars — everything that reserved
+        // ground before this ran.
+        if (this.keepClear.some((c) => Math.hypot(x - c.x, z - c.z) < c.r)) continue;
+        if (this.solids.some((s) => Math.hypot(x - s.x, z - s.z) < s.r + 2.5)) continue;
+        // No decorative bamboo anywhere: if it looks like bamboo it must cut,
+        // so every cane in the game is a prop. Trees and lanterns only here.
+        const parts = i % 6 === 0
+          ? buildLantern(0.8)
+          : buildTree(i * 7 + k, 0.8 + valueNoise(i, k, 3) * 0.5, leaf);
+        transformParts(parts, x, g, z, valueNoise(i, k, 9) * 6);
+        decor.push(...parts);
+        this.solids.push({ x, z, r: isl.biome === 'bamboo' ? 0.7 : 0.9 });
+      }
+    }
+    if (!decor.length) return;
+    const mesh = new THREE.Mesh(mergeParts(decor), toonVertexMat());
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    this.scene.add(mesh);
+  }
+
+  /**
    * The grotto a kitten is standing in, or null.
    *
    * Slightly INSIDE the wall ring (0.94), so the roof does not blink off while
@@ -261,20 +323,60 @@ export class World {
    * "what's that green light over there?" is the thing that makes them go.
    */
   _buildShrines() {
+    /* FOUR OF THESE USED TO BE THE ISLAND'S OWN CENTRE, written out as world
+       coordinates — `{x: 150, z: -95}` IS island 1. A shrine in the dead
+       middle of an island is somewhere you trip over rather than somewhere you
+       walk to, and it breaks `leaderSpot`, which stands the leader 3.4 further
+       out along the axis from the centre and has no axis at zero.
+
+       It never showed because the outlying TREES were planted before this ran,
+       so `findOpenSpot` was shoved off centre by whichever trunk it happened
+       to land on. Moving them after the stars took the accident away.
+
+       `out` is a BEARING and a fraction of the island's radius, so a shrine is
+       always somewhere on its island whatever the island's size or position
+       becomes. The two that were already placed by hand keep their exact
+       coordinates — those were deliberate and they read well. */
     const wanted = [
-      { clan: CLANS[0], island: 0, x: -62, z: 40 },   // home, west meadow
-      { clan: CLANS[1], island: 1, x: 150, z: -95 },  // autumn
-      { clan: CLANS[2], island: 4, x: -120, z: 140 }, // ash
-      { clan: CLANS[3], island: 5, x: 235, z: 60 },   // dusk
-      { clan: CLANS[4], island: 2, x: -140, z: -60 }, // frost
-      { clan: CLANS[5], island: 3, x: 78, z: 150 },   // bamboo
+      { clan: CLANS[0], island: 0, x: -62, z: 40 },     // home, west meadow
+      { clan: CLANS[1], island: 1, out: 0.55, a: 0.6 },  // autumn
+      { clan: CLANS[2], island: 4, out: 0.52, a: 2.4 },  // ash
+      { clan: CLANS[3], island: 5, out: 0.55, a: 3.7 },  // dusk
+      { clan: CLANS[4], island: 2, out: 0.55, a: 5.0 },  // frost
+      { clan: CLANS[5], island: 3, x: 78, z: 150 },     // bamboo
     ];
 
     const parts = [];
     for (const w of wanted) {
+      /* A WANTED POSITION THAT IS OFF ITS ISLAND LANDS THE SHRINE DEAD CENTRE,
+         and four of these six were. `findOpenSpot` spirals outward from where
+         it is asked and takes the first valid ground — asked from out over
+         open sky, the nearest valid ground is the middle of the island, so
+         Riverclaw, Shadowtail, Windwhisker and Icewhisker all sat at exactly
+         (isl.x, isl.z). That is bad on its own (a shrine you walk to should be
+         somewhere, not in the middle) and it breaks `leaderSpot`, which puts
+         the leader 3.4 further out along the axis from the island's centre and
+         has no axis at all at zero.
+
+         It went unnoticed because the outlying TREES used to be planted before
+         this ran and shoved the search off centre by accident. Moving them
+         after the stars (see _scatterOutlying) took the accident away and this
+         surfaced — the coordinates had been wrong the whole time.
+
+         So: keep the BEARING, which is the part that carries intent (which
+         side of the island the shrine is on), and pull the radius back onto
+         the island. Only when the wanted point really is off it — the two that
+         were already on their island are left exactly where they were. */
+      const isl = this.islands[w.island];
+      const wx = w.out != null
+        ? isl.x + Math.cos(w.a) * isl.radius * w.out
+        : w.x;
+      const wz = w.out != null
+        ? isl.z + Math.sin(w.a) * isl.radius * w.out
+        : w.z;
       // Same clearance search the dragons use, so a shrine never lands inside
       // a house or half off the rim of an island.
-      const spot = this.findOpenSpot(w.x, w.z, 9) ?? { x: w.x, z: w.z };
+      const spot = this.findOpenSpot(wx, wz, 9) ?? { x: wx, z: wz };
       const g = this.heightAt(spot.x, spot.z);
       if (g == null) continue;
 
@@ -460,7 +562,15 @@ export class World {
     c.left = -95; c.right = 95; c.top = 95; c.bottom = -95;
     c.near = 20; c.far = 520;
     sun.shadow.bias = -0.0012;
-    sun.shadow.normalBias = 0.05;
+    /* 0.05 was fine while every shadow-receiving surface in the game was a
+       small flat-shaded box or a hillside. The grotto dome is the first big
+       SMOOTH curved thing in the world, and a smooth surface at a grazing
+       angle to the sun is the classic shadow-acne case: the whole roof came
+       out banded with dark crawling arcs that read exactly like z-fighting and
+       are not. `normalBias` pushes the shadow lookup along the surface normal,
+       which is the fix that costs nothing on flat geometry and everything on
+       curved — hence why it was never needed before. */
+    sun.shadow.normalBias = 0.9;
     this.scene.add(sun);
     this.scene.add(sun.target);
     this.sun = sun;
@@ -769,34 +879,9 @@ export class World {
       planted++;
     }
 
-    // Trees and lanterns on the outlying islands too. The dojo island (last)
-    // stays clear so the circle painted on it is readable.
-    /* Each island dresses itself from its biome, so flying somewhere new
-       actually looks like somewhere new rather than the same island moved. */
-    const FLORA = {
-      meadow: 'blossom', bamboo: 'pine', autumn: 'autumn',
-      frost: 'frost', ash: 'ash', dusk: 'dusk',
-    };
     const scatterEnd = this.islands.length - 1;
     for (let k = 1; k < scatterEnd; k++) {
       const isl = this.islands[k];
-      const leaf = FLORA[isl.biome] ?? 'blossom';
-      for (let i = 0; i < 18; i++) {
-        const a = valueNoise(i, k, 13) * Math.PI * 2;
-        const r = Math.sqrt(valueNoise(i, k, 29)) * isl.radius * 0.72;
-        const x = isl.x + Math.cos(a) * r;
-        const z = isl.z + Math.sin(a) * r;
-        const g = isl.heightAt(x, z);
-        if (g == null) continue;
-        // No decorative bamboo anywhere: if it looks like bamboo it must cut,
-        // so every cane in the game is a prop. Trees and lanterns only here.
-        const parts = i % 6 === 0
-          ? buildLantern(0.8)
-          : buildTree(i * 7 + k, 0.8 + valueNoise(i, k, 3) * 0.5, leaf);
-        transformParts(parts, x, g, z, valueNoise(i, k, 9) * 6);
-        decor.push(...parts);
-        this.solids.push({ x, z, r: isl.biome === 'bamboo' ? 0.7 : 0.9 });
-      }
       if (k % 2 === 1) {
         const g = isl.heightAt(isl.x, isl.z) ?? 0;
         const parts = buildHouse({ w: 6, d: 5, floors: 1, tile: k % 4 === 1 ? PALETTE.tileIndigo : PALETTE.tileRed });
@@ -993,7 +1078,7 @@ export class World {
          but they are things you have to see and then hit — and a perched
          dragon is a 24-unit sprite that will happily stand in front of one.
          The bamboo island put its boulder directly under one. */
-      const SEP = { cave: 27, perch: 17, sky: 15, ice: 13, boulder: 13 };
+      const SEP = { cave: 30, perch: 17, sky: 15, ice: 13, boulder: 13 };
       const sep0 = SEP[lock] ?? 0;
       const perches = sep0 ? this.dragonPerches() : [];
       /* THE DOJO'S CIRCLE IS NOT A BUILDING SITE. Its flattened disc is the
@@ -1016,7 +1101,7 @@ export class World {
          meant to spot from a dragon and burn. The trees are planted before the
          stars are placed (see the World constructor), so the star is the one
          that has to move. */
-      const clearance = lock === 'cave' ? 13 : lock === 'perch' ? 6 : lock === 'sky' ? 5 : 6;
+      const clearance = lock === 'cave' ? 15 : lock === 'perch' ? 6 : lock === 'sky' ? 5 : 6;
 
       /* RELAXING BEATS FALLING BACK. The first version made one pass at the
          full clearance and, failing that, dropped the lock and placed a plain
@@ -1071,24 +1156,48 @@ export class World {
       if (kind === 'cave') {
         const G = buildGrotto(i * 7 + 3);
         rock.push(...transformParts(G.parts, spot.x, gy, spot.z, inward));
-        /* THE ROOF IS ITS OWN MESH so the game can take it off. Everything
-           else about a grotto is merged into the one big rock mesh, which is
-           right — but a roof you cannot hide is a roof the follow camera sits
-           on top of, and the kitten underneath it is invisible. Registered in
-           `grottos` with the radius that decides "inside". */
+        /* TWO EXTRA MESHES PER GROTTO, doing two different jobs.
+
+           `roof` is the dome and the ceiling, and it is simply HIDDEN while
+           somebody is inside. There is no shader trick for a roof: you cannot
+           look down into a room through one, and an x-ray hole in the middle
+           of a dome is a hole in the sky.
+
+           `walls` are the outer ring and the maze, and they STAY DRAWN — with
+           the x-ray material, so a wall standing between the camera and a
+           kitten opens a soft porthole around her instead of the whole
+           building disappearing. That is the difference between a room you
+           can see into and a room that stops existing when you enter it. */
         const roof = new THREE.Mesh(
-          mergeParts(transformParts(G.shellParts, spot.x, gy, spot.z, inward)),
+          mergeParts(transformParts(G.roofParts, spot.x, gy, spot.z, inward)),
           toonVertexMat()
         );
         roof.castShadow = true;
         roof.receiveShadow = true;
         this.scene.add(roof);
+
+        const walls = new THREE.Mesh(
+          mergeParts(transformParts(G.wallParts, spot.x, gy, spot.z, inward)),
+          xrayVertexMat()
+        );
+        walls.castShadow = true;
+        walls.receiveShadow = true;
+        this.scene.add(walls);
+        this.xrayMats.push(walls.material);
+
         this.grottos.push({
-          x: spot.x, z: spot.z, y: gy, r: G.r, roof,
+          x: spot.x, z: spot.z, y: gy, r: G.r, roof, walls,
           /* Which way the doorway faces, so the camera inside can look along
              the axis a player walked in on rather than at the back wall. */
           yaw: inward,
         });
+        /* NOTHING GROWS ACROSS THE MOUTH. `mouth` is `r + 4.5` out along the
+           doorway axis, so a keepClear centred on the dome has to reach past
+           it — and the trees that were burying both entrances are planted from
+           `_scatterOutlying`, which now runs AFTER this. */
+        const mx = spot.x + Math.sin(inward) * G.mouth.z;
+        const mz = spot.z + Math.cos(inward) * G.mouth.z;
+        this.keepClear.push({ x: mx, z: mz, r: 9 });
         for (const s of G.solids) {
           const c = Math.cos(inward);
           const sn = Math.sin(inward);
@@ -1137,9 +1246,9 @@ export class World {
         /* Nothing grows in the doorway or inside the dome. A cherry tree
            across the mouth is a star you can see the glow of and cannot reach,
            and it would look like level design rather than like a bug.
-           Sized off the dome (10.5) plus its outlying boulders (to ~15.9),
+           Sized off the dome (13) plus its outlying boulders (to ~18.4),
            not a round number — it grew when the grotto did. */
-        this.keepClear.push({ x: spot.x, z: spot.z, r: 18 });
+        this.keepClear.push({ x: spot.x, z: spot.z, r: 21 });
       } else if (kind === 'perch') {
         const S = buildSpire(i * 11 + 5);
         rock.push(...transformParts(S.parts, spot.x, gy, spot.z, 0));

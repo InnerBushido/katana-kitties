@@ -51,17 +51,16 @@ const ISLAND_DWELL = 1.1;
 const SKIP_KEYS = new Set(['Space', 'Enter', 'NumpadEnter']);
 
 /* The camera inside a grotto.
-   `yaw` puts it on the DOORWAY side, over her shoulder, so the room opens away
-   from her exactly as it does when she walks in. The opposite (`yaw + PI`) was
-   the first try and it frames the door itself: you get a lovely shot of the
-   way out and the maze is behind the camera.
-   `CAVE_DIST` is a compromise, and both ends of it are real. Far enough and
-   the whole 21-unit room is on screen, which hands her the maze from the
-   doorway and makes the spiral a formality. Close enough and the near wall is
-   back in the way. 18 shows a little over half the room, so she has to move to
-   see the rest — and the sight line to a kitten inside clears the 8.5-unit
-   wall tops by a wide margin at this pitch. */
-const G_YAW = (grotto) => grotto.yaw;
+   IT DOES NOT TURN. Two earlier versions swung the yaw to face along the
+   doorway axis, and both were worse than leaving it alone: the camera whips
+   round as you cross the threshold, and inside a round room "along the door"
+   stops meaning anything after the first corner. The x-ray cut is what makes
+   the walls stop mattering, so the view can simply stay the one the rest of
+   the game uses.
+   The pitch lifts a little so you look DOWN into the room rather than across
+   it, and the distance opens up so a corridor is not framed nose-first. Both
+   are gentle on purpose — these characters are billboards, and steep pitches
+   flatten them (see xrayVertexMat for the measurements). */
 const CAVE_DIST = 30;
 const CAVE_PITCH = 0.82;
 
@@ -1768,6 +1767,16 @@ class Game {
         (p) => !p.mount && Math.hypot(p.position.x - G.x, p.position.z - G.z) < G.r * 0.94
       );
       G.roof.visible = !inside;
+      /* The star's indoor marker: on only while somebody is in THIS grotto.
+         It draws through the maze walls, so leaving it on outside would put a
+         column of light up through the roof and hand the star away from the
+         air — which is the whole reason a cave star has no ordinary beam. */
+      for (const b of this.balls) {
+        if (b.lock !== 'cave' || !b.indoorMark) continue;
+        if (Math.hypot(b.position.x - G.x, b.position.z - G.z) < G.r) {
+          b.indoorMark.visible = inside && !b.taken;
+        }
+      }
     }
 
     // Standing in the dojo frames the whole diagram from above.
@@ -1787,7 +1796,7 @@ class Game {
            the star on screen from the doorway and hand her the maze for
            nothing; this is an ordinary follow camera that has been tilted over
            far enough to see past the wall. */
-        p.setFocus({ centre: p.position, dist: CAVE_DIST, pitch: CAVE_PITCH, yaw: G_YAW(cave) });
+        p.setFocus({ centre: p.position, dist: CAVE_DIST, pitch: CAVE_PITCH });
       } else p.setFocus(null);
     }
     this.mathBoard.classList.toggle('hidden', !anyInDojo);
@@ -2019,7 +2028,6 @@ class Game {
         const ct = this.caveT;
         pitch = THREE.MathUtils.lerp(pitch, CAVE_PITCH, ct);
         this.sharedDist = THREE.MathUtils.lerp(this.sharedDist, CAVE_DIST, ct * Math.min(1, dt * 4));
-        if (cave) yaw = THREE.MathUtils.lerp(yaw, G_YAW(cave), ct);
       }
       this.sharedCamera.position.set(
         this.sharedTarget.x + Math.sin(yaw) * Math.cos(pitch) * this.sharedDist,
@@ -2031,6 +2039,28 @@ class Game {
   }
 
   /* ------------------------------ render -------------------------------- */
+
+  /**
+   * Point every x-ray material at the players, for THIS camera.
+   *
+   * Per view, exactly like `_faceAll`, and for the same reason: the cut is
+   * defined by the line from the camera to the player, so in split screen the
+   * two halves want two different cuts. Setting it once per frame would mean
+   * player 2's wall opened a hole around player 1.
+   *
+   * A kitten who is not inside this grotto is left OUT of the cut. Without
+   * that, the sister standing outside the mouth carves a tunnel through the
+   * wall from every angle, and the building looks perforated for no reason
+   * anybody watching can see.
+   */
+  _aimXray(camera) {
+    const mats = this.world.xrayMats;
+    if (!mats?.length) return;
+    const seen = this.players
+      .filter((p) => this.world.grottoAt(p.position.x, p.position.z))
+      .map((p) => new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
+    for (const m of mats) m.setCuts(camera.position, seen);
+  }
 
   /** Everything billboarded must be turned toward *this* camera first. */
   _faceAll(camera) {
@@ -2054,6 +2084,7 @@ class Game {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     this._faceAll(camera);
+    this._aimXray(camera);
     this.renderer.setViewport(x, y, w, h);
     this.renderer.setScissor(x, y, w, h);
     this.renderer.setScissorTest(true);

@@ -29,17 +29,33 @@ import { Billboard } from '../core/gfx.js';
  * TWO on the home island, deliberately: with one, the second kitten could
  * never follow the first into the sky.
  */
+/* FIVE OF THESE WERE THE ISLAND'S OWN CENTRE, spelled out as world
+   coordinates — `{x: 150, z: -95}` IS island 1, and so on down the list. Two
+   things wrong with that, and the second is the one that bit.
+
+   A dragon parked in the dead middle of a small island is arbitrary: it is not
+   at a landmark, not on a rim you fly in over, just at the centroid. And
+   everything else that needs room on those islands — the shrine, the grotto,
+   the spire — is placed AROUND the perch, because `placeDragonBalls` keeps its
+   furniture clear of one. With the perch at the centre there is no side of the
+   island left that is far enough from it, so a 26-unit grotto on a 72-unit
+   island could not find anywhere legal and the placer started relaxing.
+
+   They now sit about half a radius out, roughly OPPOSITE their island's
+   shrine, which leaves the whole far side clear for the star's furniture. The
+   home island's two were always placed by hand either side of the plaza and
+   are untouched. */
 export const DRAGON_SPOTS = [
-  { x: 26, z: 78, breed: 0 },     // home island, east of the plaza
-  { x: -26, z: 74, breed: 1 },    // home island, west of the plaza
-  { x: 150, z: -95, breed: 2 },
-  { x: -120, z: 140, breed: 3 },
-  { x: 235, z: 60, breed: 4 },
-  { x: 60, z: 165, breed: 2 },
-  { x: -230, z: 118, breed: 0 },
+  { x: 26, z: 78, breed: 0 },        // home island, east of the plaza
+  { x: -26, z: 74, breed: 1 },       // home island, west of the plaza
+  { x: 133.5, z: -106.3, breed: 2 }, // autumn
+  { x: -109.8, z: 130.4, breed: 3 }, // ash
+  { x: 254.7, z: 72.4, breed: 4 },   // dusk — further out; see below
+  { x: 41.5, z: 180.3, breed: 2 },   // bamboo
+  { x: -230, z: 118, breed: 0 },     // dojo
   // The snow island had no dragon of its own, which made the one island with
   // a matching breed the one place you couldn't meet it.
-  { x: -140, z: -60, breed: 3 },  // Frost, on the frost island
+  { x: -144.7, z: -44.2, breed: 3 }, // Frost, on the frost island
 ];
 
 /** The breeds, in the order they're handed out. Home island always gets [0]. */

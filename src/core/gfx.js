@@ -37,6 +37,137 @@ export function toonVertexMat(opts = {}) {
   });
 }
 
+/* ------------------------------ x-ray walls ------------------------------- */
+
+/**
+ * A toon material that cuts a hole around whoever it is standing in front of.
+ *
+ * THE PROBLEM IT SOLVES. Interior walls hide the player. The cheap answer is
+ * to hide the whole building while somebody is inside, which the grotto did
+ * for one round and which reads exactly as badly as it sounds — the room stops
+ * being a room. The next cheapest is to tilt the camera over the wall, and
+ * that fails here for a reason specific to this game: the characters are
+ * BILLBOARDS, vertical quads that turn on Y only, so any pitch steep enough to
+ * clear a wall renders both kittens as flat streaks on the floor. Measured at
+ * 1.16 and 1.32; both unusable.
+ *
+ * So this is the third answer, and it is the one Super Mario RPG's descendants
+ * use: leave the wall standing and take a bite out of the bit that is in the
+ * way. Every fragment inside a capsule running from the camera to the player
+ * is discarded, so a soft-edged porthole follows her along the wall and the
+ * rest of the building is untouched.
+ *
+ * IT IS A DISCARD, NOT ALPHA. Transparency here would need this mesh sorted
+ * against the world it is embedded in, and a half-transparent wall in front of
+ * a half-transparent wall is a mess of blending order. `discard` is
+ * order-independent, and the ragged edge that would otherwise give it away is
+ * hidden by dithering the boundary against a 4x4 Bayer matrix — at the width
+ * this fades over, that reads as a soft edge rather than as a pattern.
+ *
+ * WORLD SPACE, NOT SCREEN SPACE. The obvious version projects the player to
+ * pixels and works in `gl_FragCoord`, which then has to know about the split
+ * screen's viewport offsets — one more thing to get wrong per view. Distance
+ * from a fragment to the camera→player SEGMENT needs only two positions and is
+ * automatically correct for whichever camera is drawing.
+ *
+ * @returns {THREE.MeshToonMaterial} with `setCuts(camPos, points)` attached.
+ */
+export function xrayVertexMat(opts = {}) {
+  const MAX = 2;                       // two kittens, and never more
+  const mat = new THREE.MeshToonMaterial({
+    gradientMap: RAMP,
+    vertexColors: true,
+    ...opts,
+  });
+
+  const u = {
+    uCamPos: { value: new THREE.Vector3() },
+    uCutPos: { value: Array.from({ length: MAX }, () => new THREE.Vector3()) },
+    uCutOn: { value: new Float32Array(MAX) },
+    /* The hole is a cone, not a tube: `uCutR` is its radius AT THE PLAYER, and
+       it widens toward the camera. A constant radius punches a neat circle out
+       of a wall two units from her face and a tiny pinprick out of one twenty
+       units away, because the same world radius covers wildly different
+       amounts of screen at different depths. */
+    uCutR: { value: 2.6 },
+    uCutFlare: { value: 0.55 },
+    uCutSoft: { value: 1.1 },
+  };
+
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, u);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vXrayWorld;`)
+      .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+        vXrayWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vXrayWorld;
+        uniform vec3 uCamPos;
+        uniform vec3 uCutPos[${MAX}];
+        uniform float uCutOn[${MAX}];
+        uniform float uCutR;
+        uniform float uCutFlare;
+        uniform float uCutSoft;
+
+        // 4x4 Bayer, so the cut edge dissolves instead of stair-stepping.
+        float xrayDither(vec2 p) {
+          int x = int(mod(p.x, 4.0));
+          int y = int(mod(p.y, 4.0));
+          int i = x + y * 4;
+          float m[16];
+          m[0]=0.0;   m[1]=8.0;  m[2]=2.0;  m[3]=10.0;
+          m[4]=12.0;  m[5]=4.0;  m[6]=14.0; m[7]=6.0;
+          m[8]=3.0;   m[9]=11.0; m[10]=1.0; m[11]=9.0;
+          m[12]=15.0; m[13]=7.0; m[14]=13.0; m[15]=5.0;
+          for (int k = 0; k < 16; k++) { if (k == i) return (m[k] + 0.5) / 16.0; }
+          return 0.5;
+        }`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        {
+          float cut = 0.0;
+          for (int i = 0; i < ${MAX}; i++) {
+            if (uCutOn[i] < 0.5) continue;
+            vec3 a = uCamPos;
+            vec3 b = uCutPos[i];
+            vec3 ab = b - a;
+            float len2 = max(dot(ab, ab), 1e-4);
+            // How far along the camera->player segment this fragment sits.
+            float t = dot(vXrayWorld - a, ab) / len2;
+            // Only geometry IN FRONT of her is in the way; t > 1 is behind
+            // her and must keep drawing or the far wall vanishes too.
+            if (t <= 0.0 || t >= 1.0) continue;
+            float d = length(vXrayWorld - (a + ab * clamp(t, 0.0, 1.0)));
+            // Widen toward the camera so the hole is a steady size on screen.
+            float rad = uCutR * mix(uCutFlare, 1.0, t);
+            cut = max(cut, 1.0 - smoothstep(rad, rad + uCutSoft, d));
+          }
+          if (cut > 0.001 && cut > xrayDither(gl_FragCoord.xy)) discard;
+        }`);
+    mat.userData.shader = shader;
+  };
+  // three keys its program cache on this; without it every material sharing
+  // the same source would collide with the plain toon one.
+  mat.customProgramCacheKey = () => 'xray-toon';
+
+  /**
+   * Point the cut at whoever is on screen. Call once per view, before drawing.
+   * @param {THREE.Vector3} camPos
+   * @param {THREE.Vector3[]} points world positions to keep visible
+   */
+  mat.setCuts = (camPos, points) => {
+    u.uCamPos.value.copy(camPos);
+    for (let i = 0; i < MAX; i++) {
+      const p = points[i];
+      u.uCutOn.value[i] = p ? 1 : 0;
+      if (p) u.uCutPos.value[i].copy(p);
+    }
+  };
+  return mat;
+}
+
 /* --------------------------------- outlines ------------------------------ */
 
 const OUTLINE_MAT = new THREE.MeshBasicMaterial({

@@ -148,11 +148,13 @@ looking down:
 Each locked star tells you what it wants when you get close, and the colour of
 its light says which kind it is from the air.
 
-**The grottos are little mazes.** Inside the doorway there's a wall with its
-gap on the far side and a spur that turns one way round into a dead end, so
-you have to walk it rather than see the star from the entrance. Glowing
-crystals light the way, and **the roof lifts off as you step inside** so you
-can actually see where you're going. You can't jump the walls, cut them, or
+**The grottos are little mazes.** Two rings of rock inside the doorway, each
+with its gap somewhere else, and a spur in each corridor that turns one way
+round into a dead end — so you have to walk it rather than see the star from
+the entrance. Glowing crystals light the way, the star shows as a soft column
+through the walls so you know roughly where you're heading, and **the roof
+lifts off as you step inside**. Where a wall would hide you, it opens a hole
+around your kitten instead of vanishing. You can't jump the walls, cut them, or
 burn them — the mouth is the only way in.
 
 **The 7★ really does need three jumps.** You have to be standing on the top

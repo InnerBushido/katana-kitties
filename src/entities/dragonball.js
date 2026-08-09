@@ -247,6 +247,31 @@ export class DragonBall {
        either be swallowed by the rock or stand on top of it pointing at a
        hillside with nothing on it, which is worse than no beam: it is a beam
        that lies. The grotto's own glowing mouth is its advertisement. */
+    /* THE CAVE STAR GETS AN INDOOR MARKER, and it is a different thing from
+       the beam. Once the maze went in you could stand two corridors away with
+       no idea which way the star was — the walls run to the ceiling, so it is
+       hidden until you are in the same ring as it. That is not exploration,
+       it is a guess, and the wrong guess is a full lap of a corridor.
+       So: a slim column at the star, drawn with `depthTest: false` so it reads
+       THROUGH the maze, shown only while somebody is actually inside the
+       grotto (the game toggles it). It tells you where, never how — you still
+       have to find the gaps. Outside, it is off, so it can never poke up
+       through the roof and give the game away from the air, which is the
+       reason a cave star has no ordinary beam in the first place. */
+    this.indoorMark = null;
+    if (this.lock === 'cave') {
+      const g = new THREE.CylinderGeometry(0.14, 0.30, 13, 8, 1, true);
+      g.translate(0, 6.5 + 1.4, 0);
+      this.indoorMark = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+        color: 0xffd9a0, transparent: true, opacity: 0.34,
+        depthWrite: false, depthTest: false, side: THREE.DoubleSide,
+        toneMapped: false,
+      }));
+      this.indoorMark.renderOrder = 4;
+      this.indoorMark.visible = false;
+      this.group.add(this.indoorMark);
+    }
+
     this.beam = null;
     if (this.lock !== 'cave') {
       const beamGeo = new THREE.CylinderGeometry(0.22, 0.42, 22, 10, 1, true);

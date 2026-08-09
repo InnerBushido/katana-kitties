@@ -975,41 +975,91 @@ Cost: roughly 85MB more texture memory across the single-figure sheets.
 
 ## The grotto is a maze now, and you can see inside it
 
-### THE ROOF AND THE WALLS COME OFF — this is the load-bearing part
+### Seeing in: the roof comes off, the walls get an X-RAY
 
-**The first fix was lighting, and lighting was not the problem.** Measured from
-inside: the interior really was 98.3% near-black, so brightening it was right —
-but it changed nothing you could see, because **the camera was never in there**.
-The follow camera sits about 19 units out and 18 up; the dome is 10.5 across.
-Walking in put the kitten under an opaque grey lump and the player spent the
-whole cave looking at a rock. You cannot light your way through a roof.
+This took three goes and the first two are worth knowing, because each one is
+the obvious answer.
 
-`buildGrotto` returns a `shellParts` list — the outer wall ring, the dome and
-the ceiling — which the world merges into **its own mesh per grotto**
-(`world.grottos`), hidden the moment somebody is inside. Collision is untouched:
-the solids are still there, the maze still blocks, `LOCKS.cave.foot` still keeps
-dragons out. It is purely what is drawn.
+**Lighting was the first fix and it was not the problem.** The interior really
+was 98.3% near-black (measured by rendering a frame from inside and reading the
+pixels back), so brightening it was right — but it changed nothing you could
+see, because **the camera was never in there**. The follow camera sits ~19 out
+and ~18 up; the dome is 12.4 across. Walking in put the kitten under an opaque
+grey lump. You cannot light your way through a roof.
 
-**THE WALLS HAD TO GO WITH THE ROOF, AND THAT TOOK TWO GOES.** Hiding only the
-roof leaves the ring, which is 5 to 8.5 units tall at radius 10.5 — so the sight
-line from the camera down to a kitten inside still crosses it. The slope of that
-line is set by the pitch alone, and clearing the wall needs about **76 degrees**.
-These characters are **billboards**: vertical quads that turn on Y only. At 76
-degrees they are edge-on, and both kittens render as flat streaks on the floor —
-verified in a screenshot, twice, at pitch 1.32 and again at the Dojo's own 1.16.
-There is no pitch that both clears the wall and keeps a billboard readable, so
-the wall is the thing that has to go. With the shell hidden the camera needs
-almost no help at all: `CAVE_PITCH` is 0.82, barely steeper than normal.
+**Hiding the whole building was the second, and it reads exactly as badly as it
+sounds** — the room stops being a room. Tilting the camera over the wall
+instead does not work either, and the reason is specific to this game: the
+characters are **billboards**, vertical quads that turn on Y only, so any pitch
+steep enough to clear an 8-unit wall renders both kittens as flat streaks on
+the floor. Measured at 1.16 and again at 1.32; both unusable. There is no
+camera angle that clears a wall and keeps a billboard readable.
 
-The cost is that you can see the autumn forest through where the wall was, so it
-reads as a rocky hollow rather than a sealed cave. Against "you see literally
-nothing", that is not a close call.
+**So the walls stay up and the shader takes a bite out of them**
+(`xrayVertexMat` in `gfx.js`). Every fragment inside a capsule running from the
+camera to a player is discarded, so a soft porthole follows her along the wall
+and the rest of the building is untouched. Three details that matter:
 
-**The interior walls stay ceiling-height on purpose.** With the roof off they
-look like a canyon maze, and the honest reason to keep them tall is that their
-solids have no `top` — they cannot be jumped at any height. A wall drawn low
-enough to look hoppable and then refusing a triple jump is the exact "you can
-see over it but not cross it" bug this codebase has been bitten by before.
+- **A discard, not alpha.** Transparency would need this mesh sorted against
+  the world it is embedded in. `discard` is order-independent, and the ragged
+  edge is hidden by dithering the boundary against a 4x4 Bayer matrix.
+- **World space, not screen space.** The obvious version projects the player to
+  pixels and works in `gl_FragCoord`, which then has to know about the split
+  screen's viewport offsets. Distance from a fragment to the camera→player
+  *segment* needs only two positions and is right for whichever camera is
+  drawing. `Game._aimXray` sets it per view, exactly like `_faceAll`.
+- **The hole is a cone.** A constant world radius punches a neat circle out of
+  a wall two units from her face and a pinprick out of one twenty units away.
+  It widens toward the camera so the hole is a steady size on screen.
+- **A kitten NOT in this grotto is left out of the cut**, or the sister
+  standing outside carves a tunnel through the wall from every angle.
+
+**The ROOF is still simply hidden**, because there is no shader trick for a
+roof: you cannot look down into a room through one, and an x-ray hole in the
+middle of a dome is a hole in the sky. The camera only needs a nudge now —
+`CAVE_PITCH` 0.82, barely steeper than normal, and **no yaw swing at all** (two
+versions turned the camera to face along the doorway; both whip round as you
+cross the threshold, and inside a round room "along the door" stops meaning
+anything after the first corner).
+
+### The walls are one mesh each, and that is the z-fighting fix
+
+`curvedWall` builds an annular sector as a single solid. It replaced a row of
+overlapping boxes stepped round the arc — which looks fine from the side, but
+every box overlaps its neighbours, so along the top two coplanar faces fight
+and every wall grew a shimmering dashed line down its spine. One mesh has no
+interior faces to argue about.
+
+**The second shimmer was NOT z-fighting and chasing it as such wasted a pass.**
+The dome came out banded with dark crawling arcs. Two causes, both fixed:
+
+- A second, inward-facing ceiling dome sat 0.5 from the outer one radially and
+  **0.07 vertically near the rim**, which no depth buffer separates. It was
+  also dead geometry by then — the roof is hidden whenever anybody is inside,
+  so its underside is never on screen. Deleted.
+- **Shadow acne.** `normalBias` was 0.05, which is fine while every
+  shadow-receiving surface is a small flat box or a hillside. The dome is the
+  first big *smooth* curved thing in the world, and a smooth surface at a
+  grazing angle to the sun is the textbook case. 0.9 now.
+
+### The maze
+
+Two concentric rings inside the outer wall, each with its gap somewhere else,
+plus a radial spur in each corridor that turns one way round into a dead end.
+`world-check` walks it with the real `resolveSolids` at the real player radius:
+**2.46x and 2.65x the straight line**, up from 2.0x for the single arc.
+
+**THE RINGS ARE 3.7 APART AND THAT IS NOT A LOOK.** Wall thickness is 1.15 and
+a kitten is 1.5 across, so 3.7 leaves 2.55 of corridor and 1.05 of slack.
+Tighter and she scrapes both walls.
+
+**The star gets an indoor marker** (`DragonBall.indoorMark`): a slim column
+drawn with `depthTest: false` so it reads *through* the maze, shown only while
+somebody is actually inside that grotto. Without it the walls run to the
+ceiling and you cannot tell which ring the star is in — that is not
+exploration, it is a guess, and a wrong guess costs a full lap. It tells you
+where, never how. Off outside, so it can never poke up through the roof and
+give the star away from the air.
 
 ### And it is lit, which still matters once you can see in
 
@@ -1288,11 +1338,23 @@ thing being built. Until it ships this is a promise the game has made out loud t
 a nine-year-old — a different kind of TODO from the rest of this list. The line
 to soften if it slips is `done4`.
 
-**The grotto reads as a rocky hollow, not a sealed cave,** because the whole
-shell is hidden while you are inside it (see above for why nothing less works).
-If that ever matters, the fix is not to bring the wall back — it is to hide only
-the wall segments between the camera and the player, which is a real piece of
-work and was not worth it for two rooms.
+**A FIFTH ORDERING BUG, and the same shape as the other four.** Both grottos
+shipped with trees across the doorway. Two mistakes stacking: the outlying-island
+tree scatter lived inside `_buildTown`, which runs BEFORE the stars are placed,
+so the grotto's `keepClear` did not exist yet to be checked — and that loop never
+consulted `keepClear` anyway, unlike the home-island loop directly above it. It
+is `_scatterOutlying` now and runs after `placeDragonBalls`.
+
+**Moving it exposed something that had been wrong the whole time.** Four shrines
+and five dragon perches were written as world coordinates that were *literally
+their island's centre* (`{x: 150, z: -95}` IS island 1). `findOpenSpot` was being
+shoved off centre by whichever tree it happened to land on; take the trees away
+and everything snapped to the middle. A shrine in the dead centre of an island is
+arbitrary, it leaves no clear side for the star's furniture, and `leaderSpot` has
+no axis to stand its leader along at zero. Shrines now carry a bearing and a
+fraction of the island radius; the perches were rewritten off-centre, roughly
+opposite their shrine. `world-check` asserts nothing sits within 2.5 of an
+island's origin.
 
 **The seven locks are built and verified but have NOT been played by the girls
 yet** — which is the only test that counts for difficulty. The two things most
