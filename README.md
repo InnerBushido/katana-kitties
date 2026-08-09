@@ -246,6 +246,43 @@ If the sticks look dead, `tools/gamepad-dump.html` opens straight from disk and
 shows exactly what the browser reports, including whether it is receiving
 reports from the device at all.
 
+### PS4, Xbox and other controllers
+
+**They work, and two of them at once is the easiest way to play.** Plug in or
+pair two pads, press a button on each, and the first becomes Ember and the
+second Frost — independent sticks, independent buttons, no settings to change.
+
+| | PS4 / DualSense | Xbox |
+| --- | --- | --- |
+| Move | left stick / d-pad | left stick / d-pad |
+| Jump | Cross | A |
+| Slash | Square | X |
+| Interact | Circle | B |
+| Mount | Triangle | Y |
+| Sprint | L2 / R2 / stick click | LT / RT / stick click |
+| Pause | Options | Menu |
+
+The right stick does nothing — the camera follows you, there's nothing to aim.
+
+**The Firefox rule doesn't apply to these.** That's a vJoy problem, and a PS4
+pad doesn't go through vJoy — Chrome reads it fine. Use whichever browser you
+like unless you're on Joy-Cons.
+
+Three things to know:
+
+- **Don't mix a Joy-Con pair with another controller.** The two Joy-Cons arrive
+  as one pad that gets split down the middle, and that only happens when it's
+  the only controller connected. Add a PS4 pad and the right Joy-Con goes dead.
+  Two Joy-Cons, or two other pads — not one of each.
+- **Leave `padMode` on `auto`** in Settings → Controllers. It's there for the
+  Joy-Cons and does nothing useful for anything else.
+- **The remap grid is Joy-Con only.** A PS4 or Xbox pad can't be rebound in
+  game, because it doesn't need to be — the browser already reports it in a
+  standard layout. A no-name USB pad might land its face buttons in a different
+  order, and there's no fix for that short of a code change.
+
+`node tools/pad-check.mjs` checks all of this without any hardware attached.
+
 ---
 
 ## Sound

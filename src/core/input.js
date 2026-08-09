@@ -389,6 +389,9 @@ export class InputManager {
       gp = bnd.pad != null ? (navigator.getGamepads?.() ?? [])[bnd.pad] : null;
     }
     if (!gp) return null;
+    // Same rule as beginCapture: this writes vjoyMap, so it may only ever read
+    // a pad that vjoyMap describes. A PS4 pad's axes are not the Joy-Cons'.
+    if (this.profileNameFor(gp) !== 'vjoyDual') return null;
 
     // Preferred evidence: axes that have actually TRAVELLED. Resting values
     // are not the tell they look like — on Richard's vJoy every axis rests at
@@ -462,6 +465,12 @@ export class InputManager {
 
     const gp = (navigator.getGamepads?.() ?? [])[pad];
     if (!gp) return false;
+    /* The grid edits `vjoyMap`, and only `vjoyDual` ever reads it. Capturing
+       against any other pad cannot rebind that pad — but it WILL overwrite the
+       Joy-Con calibration on the way past. The UI hides the grid unless a pad
+       has two slots, which now implies vJoy; this is the invariant stated where
+       it can't be routed around. */
+    if (this.profileNameFor(gp) !== 'vjoyDual') return false;
 
     this._capture = {
       half,
@@ -600,14 +609,25 @@ export class InputManager {
 
     const next = [{ pad: null, half: null }, { pad: null, half: null }];
     const merged = live.find((gp) => this.profileNameFor(gp) === 'vjoyDual');
-    const split = this.padMode === 'split'
-      || (this.padMode === 'auto' && !!merged && live.length === 1);
+    /* ONLY A MERGED vJOY PAD CAN BE SPLIT, and `padMode: 'split'` does not get
+       to override that. `half` is read by exactly one profile — `vjoyDual`,
+       through readHalf — so splitting anything else hands BOTH players the same
+       pad and the same profile, which ignores `half` entirely and returns one
+       identical snapshot to both slots. The two kittens then move as one: every
+       press jumps both, and the second player has no controller at all while
+       appearing to have one. It used to fall back to `live[0]`, so selecting
+       SPLIT in Settings with a PS4 or Xbox pad plugged in did exactly that —
+       and it also handed that pad two slots, which is what puts the vJoy remap
+       grid on screen, so calibrating a PS4 button silently overwrote the
+       Joy-Con map it can never be read from. */
+    const split = !!merged
+      && (this.padMode === 'split'
+        || (this.padMode === 'auto' && live.length === 1));
 
-    if (split && (merged ?? live[0])) {
+    if (split) {
       // One pad, two players: P1 drives the left half, P2 the right.
-      const gp = merged ?? live[0];
-      next[0] = { pad: gp.index, half: 'left' };
-      next[1] = { pad: gp.index, half: 'right' };
+      next[0] = { pad: merged.index, half: 'left' };
+      next[1] = { pad: merged.index, half: 'right' };
     } else {
       live.slice(0, 2).forEach((gp, i) => { next[i] = { pad: gp.index, half: null }; });
     }

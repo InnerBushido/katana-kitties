@@ -1168,6 +1168,65 @@ CLEAR AXIS RANGES restarts the measurement.
 like it did nothing until you hit **RESET TO DEFAULTS** in Settings (or clear
 `kk.vjoy.map.v2`).
 
+## Other controllers — PS4, Xbox, two pads at once
+
+**Verified headlessly, not on hardware.** `node tools/pad-check.mjs` drives the
+real `InputManager` with synthetic `navigator.getGamepads()` fixtures — real id
+strings, real button counts, real HID orders — so everything below is about code
+rather than about which pad happened to be on the desk. It cannot tell you a
+stick *feels* right; it settles which profile matches, which slot binds to which
+pad, which physical button lights which action, and whether two pads stay
+independent. The Joy-Con path is a regression case in it.
+
+**A DualShock 4, a DualSense and an Xbox pad all land on `standard`,** because
+Windows and both browsers carry a remap table for them, and the mapping is
+correct as it stands: Cross jump, Square attack, Circle interact, Triangle
+mount, L2/R2/L3/R3 sprint, Options pause, d-pad moves. No button fires two
+actions. **The right stick is unused by design** — nothing in the game consumes
+`cx`/`cy`, the camera is scripted — so a PS4 player pushing it gets nothing, and
+that is not a bug.
+
+**TWO PADS WORK, and the Firefox rule does not apply to them.** Two of anything
+plug in and bind P1 → first pad, P2 → second pad, in connection order, with
+independent sticks and buttons. **The Chrome axis bug is a vJoy bug, not a game
+bug** — a PS4 pad is a native HID device Chrome has a table for, so with two PS4
+pads Chrome is fine. Firefox is only required when the Joy-Cons are coming
+through Joy2Win + vJoy.
+
+**`padMode: 'split'` used to clone one pad onto BOTH players, and that was the
+real find.** `half` is read by exactly one profile — `vjoyDual`, through
+`readHalf`. Every other profile ignores it and returns one identical snapshot,
+so splitting a PS4 pad gave both slots the same input: the two kittens moved as
+one, every press jumped both, and player 2 had no controller while appearing to
+have one. `_syncBindings` now refuses to split anything that is not a merged
+vJoy pad, `padMode` included — the setting cannot override the invariant.
+
+That one bug had a second face. A pad with two slots is exactly what puts the
+**vJoy remap grid** on screen, so with SPLIT selected and a PS4 pad connected,
+calibrating a PS4 button wrote into `vjoyMap` — a map that pad can never be read
+through — and **silently overwrote the Joy-Con calibration**, which persists to
+`localStorage`. Fixing the split closes it, and `beginCapture` and
+`autoDetectSticks` now refuse a non-vJoy pad outright, so the invariant is
+stated where it can't be routed around by a fourth UI path.
+
+**A pad the browser has NO table for falls back to `generic`, and its face
+cluster is shuffled.** Raw DS4 HID order is Square-Cross-Circle-Triangle, so the
+fallback reads Square as jump and Cross as interact. Sticks, triggers and start
+are fine, and the resting-at-−1 analog triggers correctly move nothing. This is
+left alone deliberately: `generic` serves *unknown* pads and there is no order
+that is right for all of them. It should not fire in practice — both browsers
+know the DS4 and the DualSense. **A cheap USB pad is where it will bite.**
+
+**There is no remap escape hatch for a non-vJoy pad.** The Settings grid edits
+`vjoyMap` only. If a generic pad ever needs rebinding, the honest fix is a
+per-profile map rather than widening the vJoy one, which is a real piece of work
+and not worth doing before something actually needs it.
+
+**Mixing a vJoy Joy-Con pad with a second controller costs you a Joy-Con.** Two
+live pads means no split, so the merged pad binds to P1 with `half: null`, and
+`readHalf` defaults to `'left'` — the right Joy-Con is unreachable. Use two
+Joy-Cons, or two other pads, not one of each.
+
 ## Sound
 
 Every sound *except the eleven cutscene voice lines* is **synthesised at
@@ -1430,6 +1489,8 @@ src/
 tools/
   gamepad-dump.html     raw Gamepad API readout — open from disk, no server
   world-check.mjs       headless smoke test: node tools/world-check.mjs
+  pad-check.mjs         controller compatibility: node tools/pad-check.mjs
+                        (PS4 / Xbox / generic / two pads, vJoy as regression)
   entities/
     player.js           movement, slash, mounting, camera rig, anim state
     dragon.js           rideable storm dragon (perched + flying poses)
