@@ -761,6 +761,23 @@ export function buildGrotto(seed = 0, opts = {}) {
      the wall missing. */
   const { r = 10.5, h = 7.0, door = 0.62 * (8.2 / r) } = opts;
   const parts = [];
+  /**
+   * The SHELL: the outer wall ring, the dome and the ceiling under it. Merged
+   * into its own mesh by the caller and hidden the moment somebody walks in.
+   *
+   * THE WALLS GO WITH THE ROOF, and getting that wrong cost two rounds of
+   * this. Hiding only the roof leaves the ring, and the ring is 5 to 8.5 units
+   * tall at radius 10.5 — so the sight line from a follow camera down to a
+   * kitten inside still crosses it. The only pitch steep enough to clear it is
+   * about 76 degrees, and these characters are BILLBOARDS: vertical quads that
+   * turn on Y only, so at 76 degrees they are seen edge-on and both kittens
+   * render as flat streaks on the floor. There is no camera angle that both
+   * clears the wall and keeps a billboard readable, so the wall is what has to
+   * go. Collision is untouched — the solids are still there, the maze still
+   * blocks, and `LOCKS.cave.foot` still keeps dragons out. It is purely what
+   * is drawn.
+   */
+  const shellParts = [];
   const solids = [];
   const lamps = [];
 
@@ -800,7 +817,7 @@ export function buildGrotto(seed = 0, opts = {}) {
     g.applyMatrix4(new THREE.Matrix4()
       .makeTranslation(Math.cos(a) * r, bh / 2 - 0.6, Math.sin(a) * r)
       .multiply(new THREE.Matrix4().makeRotationY(-a)));
-    parts.push(g);
+    shellParts.push(g);
     solids.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, r: 1.9 });
   }
 
@@ -884,12 +901,21 @@ export function buildGrotto(seed = 0, opts = {}) {
 
   /* The roof. A squashed dome sitting on the ring — this is what stops you
      seeing in and flying in, so it overlaps the wall tops generously rather
-     than meeting them (coplanar faces z-fight; see the house). */
+     than meeting them (coplanar faces z-fight; see the house).
+
+     IT IS RETURNED SEPARATELY (`roofParts`), AND THAT IS THE WHOLE REASON THE
+     GROTTO IS PLAYABLE. The follow camera sits about 19 units out and 18 up,
+     which is outside a 10.5-radius dome — so walking in put the kitten under
+     an opaque grey lump and the player spent the entire cave looking at a
+     rock with no idea where she was. Lighting the inside did not touch that;
+     you cannot light your way through a roof. The caller merges these into
+     their own mesh per grotto and hides it while somebody is inside, which is
+     the same thing every top-down dungeon has always done. */
   const dome = new THREE.SphereGeometry(r * 1.04, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5);
   dome.scale(1, 0.62, 1);
   paint(dome, 0x9d938b);
   dome.translate(0, h * 0.58, 0);
-  parts.push(dome);
+  shellParts.push(dome);
 
   /* AND A CEILING, because the outer dome is invisible from underneath.
      The world mesh is FrontSide, so standing inside the grotto you looked
@@ -902,9 +928,9 @@ export function buildGrotto(seed = 0, opts = {}) {
      because it is a rock ceiling in shadow. */
   const roof = new THREE.SphereGeometry(r * 1.0, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5);
   roof.scale(-1, 0.60, 1);
-  paint(roof, 0x584f4a);
+  paint(roof, 0x6b615a);
   roof.translate(0, h * 0.57, 0);
-  parts.push(roof);
+  shellParts.push(roof);
 
   // A couple of boulders outside, so it reads as an outcrop rather than a hut.
   for (let i = 0; i < 3; i++) {
@@ -938,7 +964,7 @@ export function buildGrotto(seed = 0, opts = {}) {
   inner.translate(0, 2.1, r + 1.05);
   parts.push(inner);
 
-  return { parts, solids, lamps, mouth: { x: 0, z: r + 4.5 } };
+  return { parts, shellParts, solids, lamps, r, mouth: { x: 0, z: r + 4.5 } };
 }
 
 /**

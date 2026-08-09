@@ -153,6 +153,9 @@ export class World {
     this.shrines = [];
     /** Places nothing may be planted — bridge feet, grove mouth. */
     this.keepClear = [];
+    /** [{x, z, y, r, roof, yaw}] — the star grottos. The game hides `roof`
+     *  and steepens the camera while somebody is inside one. */
+    this.grottos = [];
     /** Road corridors: no grass, flowers or rocks grow through paving. */
     this.roadMask = [];
     this.mischiefTotal = 0;
@@ -223,6 +226,20 @@ export class World {
         const z = wz + Math.sin(a) * r;
         if (ok(x, z)) return { x, z };
       }
+    }
+    return null;
+  }
+
+  /**
+   * The grotto a kitten is standing in, or null.
+   *
+   * Slightly INSIDE the wall ring (0.94), so the roof does not blink off while
+   * she is still walking up the outside of it — the mouth is a gap in that
+   * ring, so a flat radius test is true a step before she is actually through.
+   */
+  grottoAt(x, z) {
+    for (const G of this.grottos) {
+      if (Math.hypot(x - G.x, z - G.z) < G.r * 0.94) return G;
     }
     return null;
   }
@@ -1054,6 +1071,24 @@ export class World {
       if (kind === 'cave') {
         const G = buildGrotto(i * 7 + 3);
         rock.push(...transformParts(G.parts, spot.x, gy, spot.z, inward));
+        /* THE ROOF IS ITS OWN MESH so the game can take it off. Everything
+           else about a grotto is merged into the one big rock mesh, which is
+           right — but a roof you cannot hide is a roof the follow camera sits
+           on top of, and the kitten underneath it is invisible. Registered in
+           `grottos` with the radius that decides "inside". */
+        const roof = new THREE.Mesh(
+          mergeParts(transformParts(G.shellParts, spot.x, gy, spot.z, inward)),
+          toonVertexMat()
+        );
+        roof.castShadow = true;
+        roof.receiveShadow = true;
+        this.scene.add(roof);
+        this.grottos.push({
+          x: spot.x, z: spot.z, y: gy, r: G.r, roof,
+          /* Which way the doorway faces, so the camera inside can look along
+             the axis a player walked in on rather than at the back wall. */
+          yaw: inward,
+        });
         for (const s of G.solids) {
           const c = Math.cos(inward);
           const sn = Math.sin(inward);

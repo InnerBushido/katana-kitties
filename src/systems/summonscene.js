@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { beatOver, TAIL } from './cutscene.js';
+import { beatOver, TAIL, drawPortrait } from './cutscene.js';
 
 /* ---------------------------------------------------------------------------
    The two story beats of the dragon hunt.
@@ -65,10 +65,17 @@ export const SCRIPTS = {
      IT IS NOT A "YOU WIN" SCREEN, AND THAT IS THE POINT. Nothing is taken
      away, no credits roll, the world is not reset — the last beat exists to
      say out loud that she can keep playing, because a nine-year-old who sees a
-     completion screen reasonably concludes the game is over and stops. The
-     arena is named as something COMING rather than something here: it is not
-     built yet, and promising a kid a thing that does not exist is how you lose
-     her trust in everything else the game has told her.
+     completion screen reasonably concludes the game is over and stops.
+
+     THE LAST BEAT SENDS THEM TO THE ARENA, and it speaks about it as a place
+     that is open. Richard asked for that deliberately: the arena is the next
+     thing being built, and the finale is the natural door into it — a
+     tournament where the two of them stop knocking over furniture and find out
+     which of them is the stronger fighter. **Until it exists, this line is a
+     promise the game has made out loud to a nine-year-old**, which is a
+     sharper kind of TODO than the rest of the list. If the arena slips, soften
+     this line back to "there is a ring being marked out" rather than leaving
+     her looking for a place she cannot find.
 
      WHY IT TALKS ABOUT ENTROPY. The maths in this game is not decoration — it
      has a walkable unit circle in it — and the mischief counter is the one
@@ -79,27 +86,27 @@ export const SCRIPTS = {
      reading of what they actually did rather than a moral bolted on at the
      end.
 
-     NO RECORDED VOICE, BY DESIGN FOR NOW. `voice: null` takes the synthesised
-     fallback the whole cast already degrades to, so the scene ships and works
-     today; dropping four mp3s into public/voice and naming them here is all it
-     would take to give her the real one. `dur` is authored because there is no
-     clip length to size it from. */
+     RECORDED, like every other scene. Patchfur's preset voice is Mabel, the
+     same one she uses for the intro and for `found` — a narrator who is
+     ElevenLabs for seven lines and synthesised blips for the ending would make
+     the ending sound like the part nobody finished. `dur` is still authored as
+     a floor; `load()` grows it to the real clip length plus TAIL. */
   finale: [
     {
-      id: 'done1', who: 'Patchfur', sub: 'Calico', voice: null, dur: 7.5,
+      id: 'done1', who: 'Patchfur', sub: 'Calico', voice: '/voice/done1.mp3', dur: 7.5,
       text: 'Every barrel. Every lantern. Every last cane of bamboo. There is nothing left standing on any of these islands that you two have not put your paws through.',
     },
     {
-      id: 'done2', who: 'Patchfur', sub: 'Calico', voice: null, dur: 8.5,
+      id: 'done2', who: 'Patchfur', sub: 'Calico', voice: '/voice/done2.mp3', dur: 8.5,
       text: 'The elders called it mischief. I think it is simpler than that. A tidy town is only one way for a town to be. Every other way is the rest of them — and you have been counting your way through the rest of them all afternoon.',
     },
     {
-      id: 'done3', who: 'Patchfur', sub: 'Calico', voice: null, dur: 8.5,
+      id: 'done3', who: 'Patchfur', sub: 'Calico', voice: '/voice/done3.mp3', dur: 8.5,
       text: 'The islands did not drift apart because something broke. They drifted because nobody was crossing between them any more. You crossed. An angle, a circle, and the nerve to jump — that is all a bridge has ever been.',
     },
     {
-      id: 'done4', who: 'Patchfur', sub: 'Calico', voice: null, dur: 8.0,
-      text: 'So stay. Fly. Knock it all down again tomorrow. And when you would rather test what you have learned on each other than on the furniture — there is a ring being marked out. Bring your katanas.',
+      id: 'done4', who: 'Patchfur', sub: 'Calico', voice: '/voice/done4.mp3', dur: 9.0,
+      text: 'So stay. Fly. Knock it all down again tomorrow. And when you would rather test what you have learned on each other than on the furniture — the arena is open. Go and find out which of you is the strongest fighter on this world.',
     },
   ],
 };
@@ -177,7 +184,7 @@ export class SummonScene {
    *        put the camera inside him and filled the screen with a green wall.
    *        A shot of something enormous has to know it is enormous.
    */
-  start(which, focus, radius = 30) {
+  start(which, focus, radius = 30, art = null) {
     this.radius = radius;
     if (this.active || this.played[which]) return false;
     this.played[which] = true;
@@ -188,10 +195,16 @@ export class SummonScene {
     this.beat = -1;
     this.fadeIn = FADE;
     this.el.classList.remove('hidden');
-    // No portrait: the speaker is either off flying somewhere or filling the
-    // screen behind the box. A blank 96px square would be furniture for its
-    // own sake.
-    this.portraitEl.style.display = 'none';
+    /* THE FINALE SHOWS PATCHFUR; THE OTHER TWO SHOW NOBODY, and the difference
+       is who the camera is on. `found` and `summon` frame a place or a dragon
+       and the speaker is elsewhere, so a portrait would be furniture for its
+       own sake. The finale is Patchfur talking directly to them over a shot of
+       the world — she is the one thing NOT on screen, which is exactly when
+       the little box earns its place and what every other scene she speaks in
+       already does. */
+    const showPortrait = which === 'finale' && art;
+    this.portraitEl.style.display = showPortrait ? '' : 'none';
+    if (showPortrait) drawPortrait(this.portraitEl, art, '#e8c98a');
     if (which === 'summon') this.duskWant = DUSK_DEEP;
     this._next();
     return true;

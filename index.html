@@ -18,7 +18,7 @@
     </div>
 
     <!-- ================= title ================= -->
-    <div id="title" class="screen hidden">
+    <div id="title" class="screen hidden" data-nav="horizontal">
       <div class="title-art"></div>
       <div class="title-art-main"></div>
       <div class="title-vignette"></div>
@@ -57,7 +57,7 @@
     </div>
 
     <!-- ================= panels ================= -->
-    <div id="panel-help" class="screen overlay hidden">
+    <div id="panel-help" class="screen overlay hidden" data-nav="scroll">
       <div class="panel">
         <h2>HOW TO PLAY</h2>
         <div class="cols">
@@ -264,7 +264,11 @@
           <div id="cs-text"></div>
         </div>
       </div>
-      <div id="cs-skip">PRESS ANY BUTTON TO SKIP</div>
+      <!-- It stopped being any button when a resting thumb started throwing
+           away the story; a prompt that names the wrong control is worse than
+           no prompt, because she presses it, nothing happens, and concludes
+           the scene cannot be skipped at all. -->
+      <div id="cs-skip">START, SPACE OR ENTER TO SKIP</div>
       <div id="cs-track"><div id="cs-progress"></div></div>
     </div>
 

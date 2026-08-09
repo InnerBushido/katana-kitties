@@ -75,7 +75,8 @@ should be protected in any refactor:
 - **A leader standing at every shrine**, with a speech bubble that invites you
   in and names what her clan gives you. Cast designed by one of the girls.
 - **A 79-second opening cutscene** flown through the real 3D world, skippable
-  with any button, replayable from the pause menu. See The story below.
+  with Start (or Space/Enter), replayable from the pause menu. See The story
+  below.
 - **A raisable, rideable panda** (Pandapaw). Cut 20 bamboo for a cub that
   follows you, 20 more and it grows big enough to ride at 2x running speed
   with a claw swipe attack. See The panda below.
@@ -201,7 +202,8 @@ what she is choosing.
 
 ### The cutscene
 
-`systems/cutscene.js`. 11 beats, 79 seconds, any button skips, **WATCH THE
+`systems/cutscene.js`. 11 beats, 79 seconds, Start skips (see the controller
+pass below), **WATCH THE
 STORY AGAIN** in the pause menu replays it.
 
 **The stage is the real world.** No second canvas, no pre-rendered video: it
@@ -853,6 +855,14 @@ who has raised one can never climb onto a dragon again.
 Everything in this section came out of one round of feedback after the girls
 had the game on real hardware.
 
+**THE HUD IS HIDDEN FOR EVERY SCENE, FROM ONE CALL.** `_hudDuringScenes` asks
+`_sceneActive()` rather than keeping its own list of scenes, and it is called
+*before* the scene blocks rather than between two of them — it used to sit after
+the opening cutscene's early `return`, so the intro was the one scene it never
+ran for. The minimap goes with it because the minimap lives inside `#hud`. Two
+copies of a rule, and the copy nobody remembers, is the same failure
+`trackForIsland` exists to prevent.
+
 **A SCENE IS SKIPPED BY `start`, SPACE OR ENTER — NOT BY ANY BUTTON.** It used
 to be any key and any button, which sounds forgiving and is the opposite: they
 hold a stick and mash the whole time a scene is running, so the 79-second intro
@@ -897,6 +907,19 @@ forth. Three rules in it are load-bearing:
 
 Either player drives it: there is one screen and one cursor, and making player 1
 the only one who can press RESUME locks the other girl out of her own pause menu.
+
+**WHICH AXIS MOVES THE CURSOR IS DECLARED IN THE MARKUP** (`data-nav`), not
+guessed from CSS. The title's three buttons sit in a flex ROW, so pressing *down*
+to reach a button that is visibly to the *left* reads to a nine-year-old as the
+controller not working — `data-nav="horizontal"` puts them on left/right.
+`#panel-help` is `data-nav="scroll"`: it is a wall of text with one button in it,
+so up/down belongs to the text.
+
+**A page you open to read opens at the TOP.** `_paint` scrolls the focused item
+into view and the only focusable thing on the help page is BACK, at the very
+bottom — so opening Help jumped straight past everything it exists to say. The
+scroller is the `.panel` box rather than the page, because these overlays are
+`position: fixed` and the document behind them has nothing to scroll.
 
 **THE SHARED CAMERA IS UPDATED EVERY FRAME, SPLIT OR NOT.** This is the whole
 fix for the jarring rejoin. The block lerps `sharedTarget`/`sharedDist` toward
@@ -952,12 +975,43 @@ Cost: roughly 85MB more texture memory across the single-figure sheets.
 
 ## The grotto is a maze now, and you can see inside it
 
-**IT WAS 98.3% NEAR-BLACK.** Measured by rendering a frame from inside one and
-reading the pixels back: the dome seals the sun out, so the only thing reaching
-the interior was the hemisphere fill, at about a third of outdoor light, on rock
-painted to read in daylight. That was survivable while the star was the one
-bright thing in an empty room and you walked straight at it. A maze you cannot
-see is not a maze, it is a wall you bump along.
+### THE ROOF AND THE WALLS COME OFF — this is the load-bearing part
+
+**The first fix was lighting, and lighting was not the problem.** Measured from
+inside: the interior really was 98.3% near-black, so brightening it was right —
+but it changed nothing you could see, because **the camera was never in there**.
+The follow camera sits about 19 units out and 18 up; the dome is 10.5 across.
+Walking in put the kitten under an opaque grey lump and the player spent the
+whole cave looking at a rock. You cannot light your way through a roof.
+
+`buildGrotto` returns a `shellParts` list — the outer wall ring, the dome and
+the ceiling — which the world merges into **its own mesh per grotto**
+(`world.grottos`), hidden the moment somebody is inside. Collision is untouched:
+the solids are still there, the maze still blocks, `LOCKS.cave.foot` still keeps
+dragons out. It is purely what is drawn.
+
+**THE WALLS HAD TO GO WITH THE ROOF, AND THAT TOOK TWO GOES.** Hiding only the
+roof leaves the ring, which is 5 to 8.5 units tall at radius 10.5 — so the sight
+line from the camera down to a kitten inside still crosses it. The slope of that
+line is set by the pitch alone, and clearing the wall needs about **76 degrees**.
+These characters are **billboards**: vertical quads that turn on Y only. At 76
+degrees they are edge-on, and both kittens render as flat streaks on the floor —
+verified in a screenshot, twice, at pitch 1.32 and again at the Dojo's own 1.16.
+There is no pitch that both clears the wall and keeps a billboard readable, so
+the wall is the thing that has to go. With the shell hidden the camera needs
+almost no help at all: `CAVE_PITCH` is 0.82, barely steeper than normal.
+
+The cost is that you can see the autumn forest through where the wall was, so it
+reads as a rocky hollow rather than a sealed cave. Against "you see literally
+nothing", that is not a close call.
+
+**The interior walls stay ceiling-height on purpose.** With the roof off they
+look like a canyon maze, and the honest reason to keep them tall is that their
+solids have no `top` — they cannot be jumped at any height. A wall drawn low
+enough to look hoppable and then refusing a triple jump is the exact "you can
+see over it but not cross it" bug this codebase has been bitten by before.
+
+### And it is lit, which still matters once you can see in
 
 Each grotto carries **three crystals and three point lights, together**. Either
 alone is worse than neither: light with no visible source looks like a shader
@@ -1027,6 +1081,25 @@ more ways onto an animal than there are lines that say `this.mount =`.
 panda up and hop off has solved it"). Richard asked for the gate to mean what it
 says; the panda shortcut goes with the dragon one.
 
+## The scene viewer, and why it exists
+
+**`` ` `` opens a debug panel in play; `-` / `=` choose a scene and `0` plays
+it.** Every cutscene in the game is gated behind hours of play *and* fires once
+per session, which makes the last thing anybody writes also the hardest thing to
+look at — checking one word of the finale meant knocking over 213 props. The
+viewer clears the `played` latch before starting, which is precisely why it
+cannot just call the same entry points the game does.
+
+It also lists `7` `8` `9` and the map/maths keys, so the debug shortcuts are
+documented in the place you use them rather than only in this file. Deliberately
+plain and deliberately ugly: it is a developer tool sitting on top of a game made
+for a nine-year-old and it must never be mistaken for part of it.
+
+The one scene it treats carefully is `shrine`: it clears `met` **for the nearest
+leader only**, because that flag is also what gates joining her clan, and
+clearing all six would silently undo the player's progress through the
+introductions.
+
 ## The 100% ending
 
 `SCRIPTS.finale` in `summonscene.js` — Patchfur again, because the person who
@@ -1054,12 +1127,29 @@ the whole archipelago is in frame. Measured: 176 → 329 units out, 85 → 183 u
 against a world radius of 284. It is sized from `_worldBounds()` so an eighth
 island cannot quietly crop it.
 
-**No recorded voice yet, by design.** `voice: null` takes the synthesised
-fallback the whole cast already degrades to, so it ships and works today;
-dropping four mp3s into `public/voice` and naming them is all it needs. `dur` is
-authored per beat because there is no clip length to size it from, and
-`world-check` asserts each line finishes typing inside its own beat at the
-fallback type rate.
+**Patchfur is RECORDED here like she is everywhere else** — `done1`..`done4`,
+ElevenLabs through the Higgsfield `text2speech_v2` model, preset voice **Mabel**,
+the same one she uses for the intro and for `found`. She already had seven lines
+(`sky`, `break`, `elder1`, `elder2`, `close`, `balls1`, `balls2`); a narrator who
+is recorded for those and synthesised blips for the ending makes the ending sound
+like the part nobody finished. `dur` survives as a **floor** — `load()` raises it
+to the real clip plus TAIL, and the four clips run 10.2–15.7s, so the scene is
+about 63 seconds rather than the 33 the authored numbers suggest.
+
+**It shows her portrait; `found` and `summon` do not.** The difference is who the
+camera is on. Those two frame a place or a dragon and the speaker is elsewhere,
+so a portrait would be furniture for its own sake. Here she is talking directly
+to them over a shot of the world — she is the one thing *not* on screen, which is
+exactly when the little box earns its place. `drawPortrait` is exported from
+`cutscene.js` for this; `shrinescene.js` still carries its own copy of that crop
+maths, and a fourth caller should collapse both onto the shared one.
+
+**THE LAST BEAT SENDS THEM TO AN ARENA THAT DOES NOT EXIST YET.** Richard asked
+for it to speak as though it is open, because it is the next thing being built
+and the finale is the natural door into it. Until it ships this is a promise the
+game has made out loud to a nine-year-old. If the arena slips, soften the line
+back to "there is a ring being marked out" rather than leaving her looking for a
+place she cannot find.
 
 ## Gameplay rules worth not breaking
 
@@ -1192,16 +1282,17 @@ above (a solo rider stealing the split screen, the beam count reading the crew
 instead of the seat, and the fan firing backwards out of his mouth). Run the
 smoke test before assuming otherwise.
 
-**The 100% ending has no recorded voice.** It runs on the synthesised fallback,
-which is the same deal the whole cast has when `public/voice` is missing — but
-every other scene in the game has real ElevenLabs lines and this one will sound
-like the odd one out next to them. Four clips (`done1`..`done4`, Patchfur =
-Mabel, same as the intro) and a `voice:` path each is the whole job.
+**The arena the finale sends them to does not exist.** The last beat now speaks
+about it as a place that is open, at Richard's request, because it is the next
+thing being built. Until it ships this is a promise the game has made out loud to
+a nine-year-old — a different kind of TODO from the rest of this list. The line
+to soften if it slips is `done4`.
 
-**The arena the finale promises does not exist.** That is deliberate — it is
-named as something coming — but it is now a promise the game has made out loud
-to a nine-year-old, which is a different kind of TODO from the rest of this
-list.
+**The grotto reads as a rocky hollow, not a sealed cave,** because the whole
+shell is hidden while you are inside it (see above for why nothing less works).
+If that ever matters, the fix is not to bring the wall back — it is to hide only
+the wall segments between the camera and the player, which is a real piece of
+work and was not worth it for two rooms.
 
 **The seven locks are built and verified but have NOT been played by the girls
 yet** — which is the only test that counts for difficulty. The two things most

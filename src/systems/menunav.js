@@ -139,7 +139,8 @@ export class MenuNav {
     /* A panel that has just opened starts on its default. Settings and Help
        start on BACK — the thing you most want after reading them — while the
        title and the pause menu start on their primary action. */
-    if (this.lastPanel !== panel.id) {
+    const justOpened = this.lastPanel !== panel.id;
+    if (justOpened) {
       this.lastPanel = panel.id;
       if (!this.index.has(panel.id)) {
         const primary = items.findIndex((el) => el.classList.contains('primary'));
@@ -152,22 +153,57 @@ export class MenuNav {
 
     let i = Math.min(this.index.get(panel.id) ?? 0, items.length - 1);
     const nav = this._read(panel);
-
     const dy = this._step(nav.y, 'y', dt);
-    if (dy) {
-      i = (i + dy + items.length) % items.length;
+    const dx = this._step(nav.x, 'x', dt);
+
+    /* WHICH AXIS MOVES THE CURSOR IS A PROPERTY OF THE LAYOUT, and it is
+       declared in the markup (`data-nav`) rather than guessed from CSS. The
+       title's three buttons sit in a flex ROW — pressing down to get from PLAY
+       to SETTINGS when SETTINGS is visibly to the left is the kind of thing a
+       nine-year-old reads as the controller not working. Help is a wall of
+       text with one button in it, so up/down belongs to the text. */
+    const mode = panel.dataset.nav ?? 'vertical';
+    const move = mode === 'horizontal' ? dx : dy;
+    if (move) {
+      i = (i + move + items.length) % items.length;
       this.game.audio?.play('menu');
     }
-
-    const dx = this._step(nav.x, 'x', dt);
-    if (dx) this._adjust(items[i], dx);
+    if (mode === 'scroll' && dy) this._scroll(panel, dy);
+    // Left/right only edits a value on a vertical list; on a horizontal one it
+    // is the cursor, and there is nothing there with a value anyway.
+    if (mode !== 'horizontal' && dx) this._adjust(items[i], dx);
 
     if (nav.confirm) this._activate(items[i]);
     if (nav.back) this._back(panel);
 
     this.index.set(panel.id, i);
     this._paint(items, i);
+
+    /* A PAGE YOU OPEN TO READ OPENS AT THE TOP. `_paint` scrolls the focused
+       item into view, and the only focusable thing on the help page is the
+       BACK button at the very bottom — so opening it jumped straight past
+       everything it exists to say. Done after the paint, and only on the frame
+       the panel opens, so scrolling away from the top afterwards sticks. */
+    if (justOpened && mode === 'scroll') {
+      const box = panel.querySelector('.panel');
+      if (box) box.scrollTop = 0;
+    }
     return true;
+  }
+
+  /**
+   * Scroll a long panel with the stick.
+   *
+   * The scroller is the `.panel` box, not the screen: these overlays are
+   * `position: fixed`, so the document behind them has nothing to scroll and a
+   * kid on a controller had no way at all to reach the bottom of the help
+   * page. A step is most of a line of text — small enough to read as scrolling
+   * rather than paging, and with `_step`'s repeat it runs smoothly when held.
+   */
+  _scroll(panel, dir) {
+    const box = panel.querySelector('.panel');
+    if (!box || box.scrollHeight <= box.clientHeight) return;
+    box.scrollTop += dir * 48;
   }
 
   /** Left/right on a control that has a value. Buttons ignore it. */

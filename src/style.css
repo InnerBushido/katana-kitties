@@ -843,3 +843,65 @@ html, body {
   #cs-portrait { width: 64px; height: 64px; flex-basis: 64px; }
   #cs-box { bottom: calc(9vh + 14px); padding: 10px 12px; }
 }
+
+/* ---- the debug panel (systems: Game._refreshDebugPanel) ----
+   Backquote toggles it in play. Deliberately plain and deliberately ugly: it
+   is a developer tool sitting on top of a game made for a nine-year-old, and
+   it should never be mistaken for part of it. */
+#debug-panel {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  font: 12px/1.55 ui-monospace, "Cascadia Mono", Menlo, monospace;
+  color: #d7ffe6;
+  background: rgba(8, 14, 12, 0.88);
+  border: 1px solid #2f6b4c;
+  border-radius: 6px;
+  padding: 8px 12px;
+  pointer-events: none;
+  max-width: 92vw;
+}
+#debug-panel .dbg-row { white-space: nowrap; opacity: 0.72; }
+#debug-panel .dbg-row.on { opacity: 1; color: #ffd98a; }
+#debug-panel .dbg-sep {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid #2f6b4c;
+  opacity: 0.9;
+}
+#debug-panel .k {
+  display: inline-block;
+  min-width: 1.1em;
+  text-align: center;
+  padding: 0 3px;
+  border: 1px solid #4e8f6b;
+  border-radius: 3px;
+  color: #eafff2;
+}
+
+/* ---- the help panel scrolls ----
+   It is the longest thing in the game and it ran off the bottom of a laptop
+   screen with no way to reach the rest — the panel is `position: fixed`
+   furniture, so the page behind it has nothing to scroll. The BOX scrolls
+   instead, and `overscroll-behavior` stops a flick at the end of the list
+   from chaining out into the document underneath. */
+#panel-help .panel {
+  max-height: 82vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#panel-settings .panel {
+  max-height: 86vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* Visible on the dark panel, and wide enough to grab with a mouse. */
+#panel-help .panel::-webkit-scrollbar,
+#panel-settings .panel::-webkit-scrollbar { width: 10px; }
+#panel-help .panel::-webkit-scrollbar-thumb,
+#panel-settings .panel::-webkit-scrollbar-thumb {
+  background: var(--ink);
+  border-radius: 6px;
+}

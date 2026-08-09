@@ -18,7 +18,7 @@ import { Cutscene } from './systems/cutscene.js';
 import { ShrineScene } from './systems/shrinescene.js';
 import { SummonScene } from './systems/summonscene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from './entities/dragonball.js';
-import { Ryuuseki, HOVER, RYU_VIEW } from './entities/ryuuseki.js';
+import { Ryuuseki, HOVER, RYU_VIEW, RYU_SIZE } from './entities/ryuuseki.js';
 
 /* ---------------------------------------------------------------------------
    Katana Kitties — main loop.
@@ -49,6 +49,21 @@ const ISLAND_DWELL = 1.1;
    watches, which is how a 79-second intro with seven recorded voices was being
    thrown away by a thumb resting on jump. */
 const SKIP_KEYS = new Set(['Space', 'Enter', 'NumpadEnter']);
+
+/* The camera inside a grotto.
+   `yaw` puts it on the DOORWAY side, over her shoulder, so the room opens away
+   from her exactly as it does when she walks in. The opposite (`yaw + PI`) was
+   the first try and it frames the door itself: you get a lovely shot of the
+   way out and the maze is behind the camera.
+   `CAVE_DIST` is a compromise, and both ends of it are real. Far enough and
+   the whole 21-unit room is on screen, which hands her the maze from the
+   doorway and makes the spiral a formality. Close enough and the near wall is
+   back in the way. 18 shows a little over half the room, so she has to move to
+   see the rest — and the sight line to a kitten inside clears the 8.5-unit
+   wall tops by a wide margin at this pitch. */
+const G_YAW = (grotto) => grotto.yaw;
+const CAVE_DIST = 30;
+const CAVE_PITCH = 0.82;
 
 class Game {
   constructor() {
@@ -1041,10 +1056,18 @@ class Game {
    * behind it is the difference between a story and a pause menu. Driven from
    * one place because there are three scenes now and they all want it.
    */
+  /**
+   * The HUD — scoreboard, both minimaps, the maths board — is hidden whenever
+   * a scene owns the screen.
+   *
+   * It asks `_sceneActive()` rather than listing the scenes itself. The list
+   * here used to be its own copy, and a fourth scene (the finale) would have
+   * been added to one and not the other — which is exactly the class of bug
+   * `trackForIsland` exists to prevent elsewhere in this codebase: two copies
+   * of a rule, and the copy nobody remembers.
+   */
   _hudDuringScenes() {
-    const scene = !!(this.cutscene?.active || this.shrineScene?.active
-      || this.summonScene?.active);
-    document.getElementById('hud')?.classList.toggle('scene-hidden', scene);
+    document.getElementById('hud')?.classList.toggle('scene-hidden', this._sceneActive());
   }
 
   /** The leader standing at a clan's shrine. Used to gate joining on `met`. */
@@ -1110,6 +1133,110 @@ class Game {
       const n = this.ryu.fire(this.world, this, shooter);
       this.toast(`[debug] fired ${n} beam${n === 1 ? '' : 's'}`, shooter.index);
     }
+
+    /* --- the scene viewer ---
+       Every cutscene in the game is gated behind hours of play and fires ONCE
+       per session, which makes the last thing anybody writes also the hardest
+       thing to look at: the finale needs all 213 props knocked over, and
+       checking one word of it meant a fresh run. `0` replays whichever scene
+       is selected and `-`/`=` walk the list. */
+    if (code === 'Digit0') this._playScene();
+    if (code === 'Minus') this._pickScene(-1);
+    if (code === 'Equal') this._pickScene(1);
+    if (code === 'Backquote') this._toggleDebugPanel();
+  }
+
+  /** The scenes the viewer can replay, in the order they happen in a playthrough. */
+  get _scenes() {
+    return [
+      { id: 'intro', label: 'opening story' },
+      { id: 'shrine', label: 'a clan leader introduces herself' },
+      { id: 'found', label: 'all seven stars found' },
+      { id: 'summon', label: 'Ryuuseki arrives' },
+      { id: 'finale', label: '100% mischief — the ending' },
+    ];
+  }
+
+  _pickScene(dir) {
+    const list = this._scenes;
+    this._sceneIx = ((this._sceneIx ?? list.length - 1) + dir + list.length) % list.length;
+    this.toast(`[debug] scene: ${list[this._sceneIx].label}  —  0 to play`, 0);
+    this._refreshDebugPanel();
+  }
+
+  /**
+   * Replay the selected scene, right now, from wherever the game is.
+   *
+   * EVERY SCENE HERE LATCHES "PLAYED" so it can only happen once — which is
+   * correct in a game and useless in a viewer, so this clears the latch first.
+   * That is the whole reason this cannot just call the same entry points the
+   * game does.
+   */
+  _playScene() {
+    if (this._sceneActive()) { this.toast('[debug] a scene is already running', 0); return; }
+    const pick = this._scenes[this._sceneIx ?? this._scenes.length - 1];
+    const B = this._worldBounds();
+    switch (pick.id) {
+      case 'intro':
+        // `play()` already clears `done` and refuses if it is running.
+        this.cutscene.play();
+        break;
+      case 'shrine': {
+        /* The nearest leader to player 1, so the shot has a real subject —
+           and `met` is cleared for her only, because that flag is also what
+           gates joining her clan and clearing all six would silently undo the
+           player's progress through the introductions. */
+        const p = this.players[0].position;
+        const L = this.leaders
+          .filter((x) => x.clan)
+          .sort((a, b) => a.position.distanceTo(p) - b.position.distanceTo(p))[0];
+        if (!L) { this.toast('[debug] no leader found', 0); return; }
+        L.met = false;
+        this.shrineScene.start(L, this.players[0]);
+        break;
+      }
+      case 'found':
+      case 'summon':
+        this.summonScene.played[pick.id] = false;
+        this.summonScene.start(pick.id, this.ryu?.position ?? B.centre,
+          this.ryu ? RYU_SIZE : 30);
+        break;
+      case 'finale':
+        this.summonScene.played.finale = false;
+        this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder);
+        break;
+      default:
+        return;
+    }
+    this.toast(`[debug] playing: ${pick.label}`, 0);
+    this._refreshDebugPanel();
+  }
+
+  /* ---- the on-screen list, so the keys don't have to be memorised ---- */
+
+  _toggleDebugPanel() {
+    this._debugOpen = !this._debugOpen;
+    this._refreshDebugPanel();
+  }
+
+  _refreshDebugPanel() {
+    let el = document.getElementById('debug-panel');
+    if (!this._debugOpen) { el?.remove(); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'debug-panel';
+      document.body.appendChild(el);
+    }
+    const ix = this._sceneIx ?? this._scenes.length - 1;
+    el.innerHTML = `
+      <b>DEBUG</b> <span class="k">\`</span> closes
+      <div class="dbg-row"><span class="k">7</span> take all seven stars &amp; summon Ryuuseki</div>
+      <div class="dbg-row"><span class="k">8</span> seat both kittens on him</div>
+      <div class="dbg-row"><span class="k">9</span> fire his beams</div>
+      <div class="dbg-row"><span class="k">M</span> maths overlay &nbsp; <span class="k">Z</span>/<span class="k">X</span> map zoom</div>
+      <div class="dbg-sep">SCENE VIEWER — <span class="k">-</span>/<span class="k">=</span> choose, <span class="k">0</span> play</div>
+      ${this._scenes.map((s, i) => `
+        <div class="dbg-row${i === ix ? ' on' : ''}">${i === ix ? '&#9656;' : '&nbsp;'} ${s.label}</div>`).join('')}`;
   }
 
   /* ------------------------- the dragon hunt ----------------------------- */
@@ -1460,6 +1587,14 @@ class Game {
       return;
     }
 
+    /* BEFORE the scene blocks, not between two of them. It used to sit after
+       the opening cutscene's early `return`, so the intro was the one scene it
+       never ran for — the HUD happened to be hidden there for an unrelated
+       reason, which is why that went unnoticed. Every scene hides the HUD now,
+       from one call, and the minimap goes with it because the minimap lives
+       inside `#hud`. */
+    this._hudDuringScenes();
+
     /* --- the opening cutscene owns the screen while it runs ---
        The world keeps ticking underneath it: petals drift, shrine crystals
        turn, dragons breathe on their perches. A frozen world behind a moving
@@ -1480,7 +1615,6 @@ class Game {
     }
 
     /* --- the dragon-hunt scenes own the screen the same way --- */
-    this._hudDuringScenes();
     if (this.summonScene?.active) {
       if (this._skipPressed()) {
         this.summonScene.skip();
@@ -1544,7 +1678,7 @@ class Game {
     if (this._finaleDue && !this._sceneActive()) {
       this._finaleDue = false;
       const B = this._worldBounds();
-      if (this.summonScene.start('finale', B.centre, B.radius)) {
+      if (this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder)) {
         this.sfx('starfound');
         this.toast('100% MISCHIEF — every last thing, knocked over', 0);
         this.toast('100% MISCHIEF — nothing left standing', 1);
@@ -1611,15 +1745,50 @@ class Game {
     this.world.setDusk(this.summonScene.updateDusk(dt));
     this._updateSeek(dt);
 
+    /* --- inside a grotto: take the roof off and look down into it ---
+
+       A grotto is a sealed dome 21 units across and the follow camera sits ~19
+       out and ~18 up, which is OUTSIDE it. Walking in put the kitten under an
+       opaque grey lump: you could not see her, the maze, the crystals or the
+       star — just rock. Two things fix it and it needs both.
+
+       THE ROOF COMES OFF. Its own mesh (see World.placeDragonBalls) so it can
+       simply stop drawing. Nothing about collision changes: the walls are
+       solids and the `foot` rule still keeps dragons out, so this is purely
+       what you can SEE.
+
+       AND THE CAMERA STEEPENS, because taking the roof off is not enough on
+       its own — at the normal pitch the sight line from the camera to a kitten
+       inside passes through the outer wall on the near side at about 5 units
+       up, and those blocks are 5 to 8.5 tall. Measured: at pitch 1.32 the same
+       line clears the wall tops by a comfortable margin. The dojo does exactly
+       this, for exactly this reason. */
+    for (const G of this.world.grottos) {
+      const inside = this.players.some(
+        (p) => !p.mount && Math.hypot(p.position.x - G.x, p.position.z - G.z) < G.r * 0.94
+      );
+      G.roof.visible = !inside;
+    }
+
     // Standing in the dojo frames the whole diagram from above.
     const dc = this.world.dojoCentre;
     let anyInDojo = false;
     for (const p of this.players) {
       const near = Math.hypot(p.position.x - dc.x, p.position.z - dc.z) < DOJO_VIEW_R;
       anyInDojo = anyInDojo || near;
-      // yaw 0 squares the world x/z axes up with the screen, so the diagram
-      // reads exactly like the graph paper it's teaching.
-      p.setFocus(near ? { centre: dc, dist: 104, pitch: 1.16, yaw: 0 } : null);
+      /* The dojo wins if somehow both apply — there is no grotto on the maths
+         island, so this can only ever be one of the two. yaw 0 squares the
+         world x/z axes up with the screen, so the diagram reads exactly like
+         the graph paper it's teaching. */
+      const cave = near ? null : this.world.grottoAt(p.position.x, p.position.z);
+      if (near) p.setFocus({ centre: dc, dist: 104, pitch: 1.16, yaw: 0 });
+      else if (cave && !p.mount) {
+        /* Centred on HER, not on the room. Framing the whole grotto would put
+           the star on screen from the doorway and hand her the maze for
+           nothing; this is an ordinary follow camera that has been tilted over
+           far enough to see past the wall. */
+        p.setFocus({ centre: p.position, dist: CAVE_DIST, pitch: CAVE_PITCH, yaw: G_YAW(cave) });
+      } else p.setFocus(null);
     }
     this.mathBoard.classList.toggle('hidden', !anyInDojo);
 
@@ -1830,8 +1999,28 @@ class Game {
       this.sharedTarget.lerp(want, Math.min(1, dt * 6));
       this.sharedDist += (wantDist - this.sharedDist) * Math.min(1, dt * 4);
 
-      const yaw = THREE.MathUtils.lerp(-Math.PI * 0.25, 0, ft);
-      const pitch = THREE.MathUtils.lerp(0.66, 1.16, ft);
+      let yaw = THREE.MathUtils.lerp(-Math.PI * 0.25, 0, ft);
+      let pitch = THREE.MathUtils.lerp(0.66, 1.16, ft);
+
+      /* THE GROTTO AGAIN, HERE, BECAUSE THIS IS THE CAMERA THAT DRAWS WHEN
+         THEY ARE TOGETHER — and inside a 21-unit room they always are. The
+         per-player `setFocus` above is the split-screen half of this rule and
+         it does nothing at all while merged, which is the trap this file has
+         fallen into three times now (Ryuuseki's framing, the star shot, and
+         now this). Same numbers, so the view does not change as the screen
+         joins and splits. */
+      const cave = this.world.grottoAt(this.sharedTarget.x, this.sharedTarget.z);
+      if (cave) {
+        this.caveT = Math.min(1, (this.caveT ?? 0) + dt * 2.4);
+      } else {
+        this.caveT = Math.max(0, (this.caveT ?? 0) - dt * 2.4);
+      }
+      if (this.caveT > 0.001) {
+        const ct = this.caveT;
+        pitch = THREE.MathUtils.lerp(pitch, CAVE_PITCH, ct);
+        this.sharedDist = THREE.MathUtils.lerp(this.sharedDist, CAVE_DIST, ct * Math.min(1, dt * 4));
+        if (cave) yaw = THREE.MathUtils.lerp(yaw, G_YAW(cave), ct);
+      }
       this.sharedCamera.position.set(
         this.sharedTarget.x + Math.sin(yaw) * Math.cos(pitch) * this.sharedDist,
         this.sharedTarget.y + Math.sin(pitch) * this.sharedDist,

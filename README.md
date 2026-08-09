@@ -95,8 +95,9 @@ Fly low and fast on a dragon to scatter a whole street at once.
 ## The story
 
 Press PLAY and an old calico called **Patchfur** tells you where you live, then
-flies you past every clan in the sky. It runs about 70 seconds, any button
-skips it, and **WATCH THE STORY AGAIN** in the pause menu plays it back.
+flies you past every clan in the sky. It runs about 70 seconds, **Start (or
+`Space`/`Enter`) skips it**, and **WATCH THE STORY AGAIN** in the pause menu
+plays it back.
 
 There's no video file and no second canvas: the cutscene drives its own camera
 through the *same 3D world you're about to play in*, and the leaders it flies
@@ -120,7 +121,7 @@ up and she'll tell you what her clan gives you before you commit to it.
 
 Walk up to a shrine and **stand there**. After a couple of seconds the leader
 stops you, fills the screen and tells you who she is — out loud, in her own
-voice. It happens once per leader, any button skips it, and **you can't swear
+voice. It happens once per leader, Start skips it, and **you can't swear
 to a clan you haven't met**, so the introduction is the way in rather than
 something in the way.
 
@@ -150,7 +151,8 @@ its light says which kind it is from the air.
 **The grottos are little mazes.** Inside the doorway there's a wall with its
 gap on the far side and a spur that turns one way round into a dead end, so
 you have to walk it rather than see the star from the entrance. Glowing
-crystals on the walls light the way. You can't jump the walls, cut them, or
+crystals light the way, and **the roof lifts off as you step inside** so you
+can actually see where you're going. You can't jump the walls, cut them, or
 burn them — the mouth is the only way in.
 
 **The 7★ really does need three jumps.** You have to be standing on the top
@@ -159,8 +161,10 @@ hopping off onto it doesn't count, and neither does grabbing it at the top of
 a double jump on the way past.
 
 **Knock over absolutely everything** — all of it, on every island — and
-Patchfur has something to say about what you've done. Nothing stops when she's
-finished; that's rather the point of what she says.
+Patchfur has something to say about what you've done, in her own voice, over a
+shot that pulls back until all seven islands are on screen at once. Nothing
+stops when she's finished; that's rather the point of what she says. Then she
+points you at the arena.
 
 Find one and your kitten stops and **holds it over her head** while the camera
 swings in. It only happens on her screen: if your sister is off cutting bamboo,

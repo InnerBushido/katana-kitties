@@ -887,18 +887,28 @@ console.log('\n--- the 100% ending ---');
   const said = F.map((b) => b.text).join(' ').toLowerCase();
   ok('it tells her she can keep playing',
     ['stay', 'again', 'tomorrow'].some((w) => said.includes(w)));
-  /* ...and it points at the arena that is coming, without pretending it is
-     here. "ring" is the word the last beat uses. */
-  ok('it points at the arena to come', said.includes('ring'));
+  /* ...and it sends them to the arena. This is the door into the next thing
+     being built, so the word has to actually be there — a finale that ends on
+     "well done" and nothing else leaves a kid who has finished the game with
+     nowhere to go. */
+  ok('it sends them to the arena', said.includes('arena'));
   ok('it thanks them for what they actually DID',
     said.includes('you') && (said.includes('crossed') || said.includes('paws')));
 
-  /* No recording yet, so every beat must carry its own length — `dur` is
-     normally derived from the clip and there is no clip. A beat with neither
-     would end on `undefined` and the scene would run its whole script in one
-     frame. */
-  ok('every finale beat is authored with a length',
-    F.every((b) => b.voice == null && b.dur > 3),
+  /* PATCHFUR IS RECORDED, like she is everywhere else. A narrator who is
+     ElevenLabs for seven lines and synthesised blips for the ending makes the
+     ending sound like the part nobody finished. */
+  ok('every finale line is recorded',
+    F.every((b) => b.voice?.endsWith('.mp3')),
+    F.map((b) => b.voice ?? 'none').join(' '));
+  ok('and no two share a recording',
+    new Set(F.map((b) => b.voice)).size === F.length);
+  /* `dur` survives as a FLOOR. `load()` raises it to the real clip length plus
+     TAIL, but a beat with no authored length at all would end on `undefined`
+     the moment a file went missing, and the scene would run its whole script
+     in a single frame. */
+  ok('every finale beat still has an authored floor',
+    F.every((b) => b.dur > 3),
     F.map((b) => b.dur).join('/'));
   ok('and the whole thing is a scene, not an essay',
     F.reduce((s, b) => s + b.dur, 0) < 45,
