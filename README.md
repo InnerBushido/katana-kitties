@@ -153,9 +153,12 @@ with its gap somewhere else, and a spur in each corridor that turns one way
 round into a dead end — so you have to walk it rather than see the star from
 the entrance. Glowing crystals light the way, the star shows as a soft column
 through the walls so you know roughly where you're heading, and **the roof
-lifts off as you step inside**. Where a wall would hide you, it opens a hole
-around your kitten instead of vanishing. You can't jump the walls, cut them, or
-burn them — the mouth is the only way in.
+lifts off as you step inside**. Any wall that would hide your kitten — inside
+or out, including the dome when you're only walking past — opens a soft hole
+around her instead of the whole building disappearing. **Look for the lit
+doorway**: it juts out from the dome with a lantern either side, so you can
+pick it out from the air. You can't jump the walls, cut them, or burn them —
+the mouth is the only way in.
 
 **The 7★ really does need three jumps.** You have to be standing on the top
 shard to take it, and you have to have climbed there yourself: flying up and

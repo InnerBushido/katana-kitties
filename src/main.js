@@ -2054,12 +2054,28 @@ class Game {
    * anybody watching can see.
    */
   _aimXray(camera) {
-    const mats = this.world.xrayMats;
-    if (!mats?.length) return;
-    const seen = this.players
-      .filter((p) => this.world.grottoAt(p.position.x, p.position.z))
-      .map((p) => new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
-    for (const m of mats) m.setCuts(camera.position, seen);
+    const list = this.world.grottos;
+    if (!list?.length) return;
+    for (const G of list) {
+      /* PER GROTTO, AND IT INCLUDES KITTENS STANDING OUTSIDE IT.
+         The first version cut only for players who were INSIDE, which fixed
+         the room and left the actual common case broken: a grotto is a
+         25-unit dome sitting on a small island, so walking PAST one puts it
+         between the camera and you and swallows you whole. You do not have to
+         be in a building for it to hide you.
+         The bound is generous but not unlimited — a kitten on the far side of
+         the island does not get a tunnel bored through a grotto she is nowhere
+         near, because the hole would be a hole in a wall for somebody who is a
+         few pixels tall. */
+      const reach = G.r * 2.8;
+      const seen = [];
+      for (const p of this.players) {
+        if (Math.hypot(p.position.x - G.x, p.position.z - G.z) > reach) continue;
+        seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
+      }
+      G.walls.material.setCuts(camera.position, seen);
+      G.roof.material.setCuts?.(camera.position, seen);
+    }
   }
 
   /** Everything billboarded must be turned toward *this* camera first. */

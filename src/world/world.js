@@ -157,8 +157,6 @@ export class World {
      *  `roof` while somebody is inside and points the x-ray cut on `walls`
      *  at whoever is in there. */
     this.grottos = [];
-    /** Every material that wants a per-view x-ray cut. See Game._renderView. */
-    this.xrayMats = [];
     /** Road corridors: no grass, flowers or rocks grow through paving. */
     this.roadMask = [];
     this.mischiefTotal = 0;
@@ -264,6 +262,45 @@ export class World {
     for (let k = 1; k < this.islands.length - 1; k++) {
       const isl = this.islands[k];
       const leaf = FLORA[isl.biome] ?? 'blossom';
+
+      /* ONE LITTLE HOUSE per odd island, and it moved here for two reasons —
+         both of which had already gone wrong.
+
+         It used to sit at the island's exact CENTRE, built during `_buildTown`
+         and therefore before the stars were placed, and it registered NO
+         SOLID. So nothing downstream knew it was there: `findOpenSpot` walked
+         straight over it, and the dusk grotto came up with a house planted
+         directly across its doorway. A building nobody can see in the collision
+         model is worse than no building — it is a wall the game does not
+         believe in.
+
+         Now: after the stars, off centre, `keepClear`-checked, and it leaves a
+         solid behind like every other structure in the game. */
+      if (k % 2 === 1) {
+        const ha = valueNoise(k, 5, 41) * Math.PI * 2;
+        const hd = isl.radius * 0.42;
+        const hx = isl.x + Math.cos(ha) * hd;
+        const hz = isl.z + Math.sin(ha) * hd;
+        const hg = isl.heightAt(hx, hz);
+        /* ...and it has to dodge the PROPS as well, which nothing else in this
+           file needs to do. Props are not solids, so they are invisible to
+           every placement test — but the bamboo grove is props, it is planted
+           before this runs, and a house dropped on it puts a building around
+           forty canes a kid then cannot reach. */
+        const blocked = this.keepClear.some((c) => Math.hypot(hx - c.x, hz - c.z) < c.r + 6)
+          || this.solids.some((s) => Math.hypot(hx - s.x, hz - s.z) < s.r + 7)
+          || this.props.some((pr) => Math.hypot(hx - pr.home.x, hz - pr.home.z) < 7);
+        if (hg != null && !blocked) {
+          const parts = buildHouse({
+            w: 6, d: 5, floors: 1,
+            tile: k % 4 === 1 ? PALETTE.tileIndigo : PALETTE.tileRed,
+          });
+          transformParts(parts, hx, hg, hz, valueNoise(k, 1, 1) * 6);
+          decor.push(...parts);
+          this.solids.push({ x: hx, z: hz, r: 4.2 });
+        }
+      }
+
       for (let i = 0; i < 18; i++) {
         const a = valueNoise(i, k, 13) * Math.PI * 2;
         const r = Math.sqrt(valueNoise(i, k, 29)) * isl.radius * 0.72;
@@ -879,16 +916,6 @@ export class World {
       planted++;
     }
 
-    const scatterEnd = this.islands.length - 1;
-    for (let k = 1; k < scatterEnd; k++) {
-      const isl = this.islands[k];
-      if (k % 2 === 1) {
-        const g = isl.heightAt(isl.x, isl.z) ?? 0;
-        const parts = buildHouse({ w: 6, d: 5, floors: 1, tile: k % 4 === 1 ? PALETTE.tileIndigo : PALETTE.tileRed });
-        transformParts(parts, isl.x, g, isl.z, valueNoise(k, 1, 1) * 6);
-        structural.push(...parts);
-      }
-    }
 
     const sMesh = new THREE.Mesh(mergeParts(structural), toonVertexMat());
     sMesh.castShadow = true;
@@ -1168,9 +1195,15 @@ export class World {
            kitten opens a soft porthole around her instead of the whole
            building disappearing. That is the difference between a room you
            can see into and a room that stops existing when you enter it. */
+        /* BOTH GET THE X-RAY MATERIAL, and each gets its OWN instance because
+           the cut lives in that material's uniforms — one shared material
+           would mean both grottos opening the same hole in the same place.
+           The roof needs it as much as the walls do: it is the widest part of
+           the building, so walking PAST a grotto is what the dome hides you
+           behind, and that happens far more often than being inside one. */
         const roof = new THREE.Mesh(
           mergeParts(transformParts(G.roofParts, spot.x, gy, spot.z, inward)),
-          toonVertexMat()
+          xrayVertexMat()
         );
         roof.castShadow = true;
         roof.receiveShadow = true;
@@ -1183,7 +1216,6 @@ export class World {
         walls.castShadow = true;
         walls.receiveShadow = true;
         this.scene.add(walls);
-        this.xrayMats.push(walls.material);
 
         this.grottos.push({
           x: spot.x, z: spot.z, y: gy, r: G.r, roof, walls,

@@ -24,7 +24,7 @@ import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../src/entities/dragonball.js';
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
-import { SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H } from '../src/world/build.js';
+import { SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest } from '../src/world/build.js';
 import { ISLAND_MUSIC, MUSIC, trackForIsland } from '../src/core/audio.js';
 
 const line = (l, v) => console.log(String(l).padEnd(42) + v);
@@ -412,6 +412,37 @@ console.log('\n--- the seven dragon balls ---');
       ok('  and it has a roof and walls as separate meshes',
         !!G.roof && !!G.walls && G.roof !== G.walls);
     }
+  }
+
+  /* THE GROTTO WALLS ARE NOT INSIDE-OUT.
+     `curvedWall` is hand-wound, and the first version had every face backwards
+     — all four groups, consistently. The world material is FrontSide, so a
+     back-facing wall is culled from the side you look at it from and drawn
+     from the side you don't: the grotto rendered inside-out, lit wrong, with
+     the far side of the room showing through the near side. It shipped, and it
+     took a player to spot it, because "the walls look a bit odd" is not
+     something a screenshot makes obvious.
+     Normals are geometry, so they can just be measured. */
+  {
+    const g = __curvedWallForTest(5, 6, 0, 4, 0, Math.PI / 2, 0x888888);
+    const pos = g.attributes.position.array;
+    const nrm = g.attributes.normal.array;
+    let outIn = 0;
+    let outOut = 0;
+    let topUp = 0;
+    let topDown = 0;
+    for (let v = 0; v < pos.length / 3; v++) {
+      const x = pos[v * 3];
+      const y = pos[v * 3 + 1];
+      const z = pos[v * 3 + 2];
+      const rad = Math.hypot(x, z) || 1;
+      const radial = (x * nrm[v * 3] + z * nrm[v * 3 + 2]) / rad;
+      if (rad > 5.5) { if (radial > 0.2) outOut++; else if (radial < -0.2) outIn++; }
+      if (y > 3.9) { if (nrm[v * 3 + 1] > 0.2) topUp++; else if (nrm[v * 3 + 1] < -0.2) topDown++; }
+    }
+    ok('a curved wall faces OUTWARD on its outer side', outOut > 0 && outIn === 0,
+      `${outOut} out / ${outIn} in`);
+    ok('...and UP on top', topUp > 0 && topDown === 0, `${topUp} up / ${topDown} down`);
   }
 
   /* NOTHING IS PLACED AT ITS ISLAND'S EXACT CENTRE, and this is a check

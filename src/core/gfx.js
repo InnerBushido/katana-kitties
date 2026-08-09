@@ -89,9 +89,13 @@ export function xrayVertexMat(opts = {}) {
        of a wall two units from her face and a tiny pinprick out of one twenty
        units away, because the same world radius covers wildly different
        amounts of screen at different depths. */
-    uCutR: { value: 2.6 },
-    uCutFlare: { value: 0.55 },
-    uCutSoft: { value: 1.1 },
+    /* 2.1 at the player. She is 2.9 tall, so the hole is about one and a half
+       times her height — enough to read her and her ring without turning the
+       building into a doughnut. 2.6 was the first try and from twenty units
+       away it took most of the dome with it. */
+    uCutR: { value: 2.1 },
+    uCutFlare: { value: 0.5 },
+    uCutSoft: { value: 1.0 },
   };
 
   mat.onBeforeCompile = (shader) => {

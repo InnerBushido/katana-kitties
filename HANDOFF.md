@@ -1011,8 +1011,19 @@ and the rest of the building is untouched. Three details that matter:
 - **The hole is a cone.** A constant world radius punches a neat circle out of
   a wall two units from her face and a pinprick out of one twenty units away.
   It widens toward the camera so the hole is a steady size on screen.
-- **A kitten NOT in this grotto is left out of the cut**, or the sister
-  standing outside carves a tunnel through the wall from every angle.
+- **IT CUTS FOR KITTENS OUTSIDE THE GROTTO TOO, and that was the miss.** The
+  first version only cut for players who were *inside*, which fixed the room
+  and left the commoner case broken: a grotto is a 25-unit dome on a small
+  island, so walking PAST one puts it between the camera and you and swallows
+  you whole. You do not have to be in a building for it to hide you. The bound
+  is `r * 2.8` — generous, but not unlimited, so a kitten on the far side of
+  the island does not get a tunnel bored through a grotto she is nowhere near.
+- **The ROOF carries the material as well as the walls.** It is the widest part
+  of the building, so the dome is what hides you when you walk past — which
+  happens far more often than being inside one.
+- **Each grotto gets its OWN material instance.** The cut lives in that
+  material's uniforms, so one shared material would mean both grottos opening
+  the same hole in the same place.
 
 **The ROOF is still simply hidden**, because there is no shader trick for a
 roof: you cannot look down into a room through one, and an x-ray hole in the
@@ -1029,6 +1040,24 @@ overlapping boxes stepped round the arc — which looks fine from the side, but
 every box overlaps its neighbours, so along the top two coplanar faces fight
 and every wall grew a shimmering dashed line down its spine. One mesh has no
 interior faces to argue about.
+
+**AND EVERY FACE OF IT WAS WOUND BACKWARDS — all four groups, consistently.**
+The world material is `FrontSide`, so a back-facing wall is culled from the
+side you are meant to look at it from and drawn from the side you are not: the
+grotto rendered inside-out, lit wrong, with the far side of the room showing
+through the near side. It shipped, and a player spotted it before any check
+did, because "the walls look a bit odd" is not something a screenshot makes
+obvious. Measured on a test wall: 16 of 16 outer normals pointing inward, 14 of
+14 top normals pointing down. `world-check` asserts both now — normals are
+geometry, so there is no excuse for eyeballing them.
+
+**And the walls poked out through the roof.** `ceilAt` described the *inner*
+ceiling dome, and when that was deleted the formula stayed, describing a
+surface that no longer existed. The dome that replaced it is higher at the rim
+and lower toward the middle, so the inner maze rings — sized against the old
+numbers plus a unit of headroom — stood 0.33 proud of it, and the grotto wore
+two grey rings like a crown. `ceilAt` is taken off the dome's own geometry now,
+less a margin.
 
 **The second shimmer was NOT z-fighting and chasing it as such wasted a pass.**
 The dome came out banded with dark crawling arcs. Two causes, both fixed:
@@ -1052,6 +1081,15 @@ plus a radial spur in each corridor that turns one way round into a dead end.
 **THE RINGS ARE 3.7 APART AND THAT IS NOT A LOOK.** Wall thickness is 1.15 and
 a kitten is 1.5 across, so 3.7 leaves 2.55 of corridor and 1.05 of slack.
 Tighter and she scrapes both walls.
+
+**THE ENTRANCE STICKS OUT PAST THE DOME.** A dome is a dome from every angle:
+the mouth was a gap in a wall *under an overhanging roof*, so from anywhere but
+dead in front of it there was nothing to see, and finding the way in meant
+walking a full circle round a grey lump. Colour alone does not fix that — the
+whole island is warm rock. The doorway now projects `PORCH` (4.6) beyond the
+wall on two jambs with a lintel, the warm quad sits at the *outer* end of it,
+and there is a lantern each side. It breaks the silhouette, which is the only
+thing that reads at distance.
 
 **The star gets an indoor marker** (`DragonBall.indoorMark`): a slim column
 drawn with `depthTest: false` so it reads *through* the maze, shown only while
@@ -1344,6 +1382,16 @@ tree scatter lived inside `_buildTown`, which runs BEFORE the stars are placed,
 so the grotto's `keepClear` did not exist yet to be checked — and that loop never
 consulted `keepClear` anyway, unlike the home-island loop directly above it. It
 is `_scatterOutlying` now and runs after `placeDragonBalls`.
+
+**And the one little house per odd island had the same disease, twice over.**
+It sat at the island's exact centre, was built during `_buildTown` (so before
+the stars), and **registered no solid at all** — so nothing downstream knew it
+was there, `findOpenSpot` walked straight over it, and the dusk grotto came up
+with a house planted across its doorway. A building the collision model does
+not believe in is worse than no building. It moved into `_scatterOutlying`,
+off centre, `keepClear`-checked, and it leaves a solid behind. It also has to
+dodge PROPS, which nothing else in that file needs to do: the bamboo grove is
+props, it is planted earlier, and a house dropped on it walls in forty canes.
 
 **Moving it exposed something that had been wrong the whole time.** Four shrines
 and five dragon perches were written as world coordinates that were *literally

@@ -755,6 +755,8 @@ export function buildShrine(color, seed = 0) {
  * @param {number} a1    end angle (may be less than a0; it just winds the
  *                       other way)
  */
+export const __curvedWallForTest = (...a) => curvedWall(...a);
+
 function curvedWall(rIn, rOut, y0, y1, a0, a1, color, segs = 0) {
   const span = a1 - a0;
   const n = segs || Math.max(3, Math.ceil(Math.abs(span) * rOut * 0.7));
@@ -780,14 +782,23 @@ function curvedWall(rIn, rOut, y0, y1, a0, a1, color, segs = 0) {
     const B2 = V(i + 1, 1);
     const C2 = V(i + 1, 2);
     const D2 = V(i + 1, 3);
-    // inner face (normals point toward the middle of the room)
-    idx.push(A, B, B2, A, B2, A2);
-    // outer face
-    idx.push(C2, D2, D, C2, D, C);
+    /* WINDING IS COUNTER-CLOCKWISE SEEN FROM THE OUTSIDE OF EACH FACE, and
+       every one of these was backwards on the first pass — all four groups,
+       consistently. The world material is `FrontSide`, so a back-facing wall
+       is culled from the side you are meant to look at it from and drawn from
+       the side you are not: the grotto read as inside-out, lit wrong, with the
+       far side of the room showing through the near side.
+       Do not eyeball this. `world-check` builds a test wall and asserts the
+       outer face's normals point away from the axis and the top's point up —
+       which is how the bug was found, after it had already shipped once. */
+    // inner face — normals toward the middle of the room
+    idx.push(A, B2, B, A, A2, B2);
+    // outer face — normals away from it
+    idx.push(C2, D, D2, C2, C, D);
     // top
-    idx.push(B, D, D2, B, D2, B2);
+    idx.push(B, D2, D, B, B2, D2);
     // bottom (rarely seen, but an open solid shades wrong from below)
-    idx.push(A2, C2, C, A2, C, A);
+    idx.push(A2, C, C2, A2, A, C);
   }
   // End caps, so the wall ends in a face rather than a hole at a gap.
   const cap = (i, flip) => {
@@ -795,8 +806,8 @@ function curvedWall(rIn, rOut, y0, y1, a0, a1, color, segs = 0) {
     const B = V(i, 1);
     const C = V(i, 2);
     const D = V(i, 3);
-    if (flip) idx.push(A, C, D, A, D, B);
-    else idx.push(A, D, C, A, B, D);
+    if (flip) idx.push(A, D, C, A, B, D);
+    else idx.push(A, C, D, A, D, B);
   };
   cap(0, span > 0);
   cap(n, span < 0);
@@ -855,10 +866,17 @@ export function buildGrotto(seed = 0, opts = {}) {
   const solids = [];
   const lamps = [];
 
-  /* The inside of the roof, as a function of distance from the middle. The
-     ceiling is a squashed dome, so "how tall is a wall here" has an answer and
-     it is not a constant. */
-  const ceilAt = (d) => h * 0.57 + 0.60 * Math.sqrt(Math.max(0, r * r - d * d));
+  /* How tall a wall may be at distance `d` from the middle.
+     IT IS DERIVED FROM THE DOME THAT IS ACTUALLY THERE. This used to describe
+     a second, inward-facing ceiling at r*1.0 — and when that was deleted the
+     formula stayed, describing a surface that no longer existed. The dome it
+     was replaced by is HIGHER at the rim and LOWER toward the middle, so the
+     inner maze rings, sized against the old numbers plus a unit of headroom,
+     stood 0.33 proud of the roof: from outside, the grotto had two grey rings
+     sticking up out of its dome like a crown.
+     One formula, taken off the dome's own geometry, less a margin. */
+  const domeR = r * 1.04;
+  const ceilAt = (d) => h * 0.58 + 0.62 * Math.sqrt(Math.max(0, domeR * domeR - d * d)) - 0.45;
 
   /** Solids along an arc, spaced closely enough that nothing slips between. */
   const arcSolids = (rad, a0, a1, sr) => {
@@ -878,7 +896,7 @@ export function buildGrotto(seed = 0, opts = {}) {
   const WT = 1.15;                       // wall thickness
   const SR = 0.66;                       // solid radius that matches it
   wallParts.push(curvedWall(
-    r - WT / 2, r + WT / 2, -0.6, ceilAt(r) + 1.0,
+    r - WT / 2, r + WT / 2, -0.6, ceilAt(r),
     DOOR_A + door, DOOR_A + Math.PI * 2 - door, 0x9d938b,
   ));
   arcSolids(r, DOOR_A + door, DOOR_A + Math.PI * 2 - door, SR);
@@ -911,7 +929,7 @@ export function buildGrotto(seed = 0, opts = {}) {
     { rad: r - 7.4, gap: DOOR_A - Math.PI * 0.66 },
   ];
   for (const [i, ring] of rings.entries()) {
-    const top = ceilAt(ring.rad) + 1.0;
+    const top = ceilAt(ring.rad);
     wallParts.push(curvedWall(
       ring.rad - WT / 2, ring.rad + WT / 2, -0.6, top,
       ring.gap + GAP, ring.gap + Math.PI * 2 - GAP,
@@ -927,7 +945,7 @@ export function buildGrotto(seed = 0, opts = {}) {
     { a: DOOR_A + Math.PI * 0.30, r0: rings[1].rad, r1: rings[0].rad },
   ];
   for (const s of spurs) {
-    const top = ceilAt((s.r0 + s.r1) / 2) + 1.0;
+    const top = ceilAt((s.r0 + s.r1) / 2);
     // A short arc rather than a true radial box: same helper, no new geometry
     // path, and it meets the rings it spans with the same curvature they have.
     const half = (WT / 2) / ((s.r0 + s.r1) / 2);
@@ -992,34 +1010,55 @@ export function buildGrotto(seed = 0, opts = {}) {
     solids.push({ x: Math.cos(a) * (r + 2.4), z: Math.sin(a) * (r + 2.4), r: s * 0.8 });
   }
 
-  /* The lintel over the mouth, and the warm light under it. The glow is a
-     plain unlit quad rather than a real light: the scene has one directional
-     sun and adding a point light per grotto for a doorway is a lot of shader
-     for a thing you look at from two hundred units away.
+  /* --- THE PORCH: the entrance has to be findable from outside ---
 
-     ALL THREE GO IN `wallParts`, not `parts`. They sit at the mouth, which is
-     exactly where a camera looking into the room sits behind — so left in the
-     ordinary rock mesh they are the one thing at the doorway the x-ray cannot
-     cut, and a lintel a metre from the lens blocks more of the room than the
-     wall it is set into. */
+     A dome is a dome from every angle. The mouth was a gap in a wall UNDER an
+     overhanging roof, so from anywhere but dead in front of it there was
+     nothing to see — you walked a full circle round a grey lump looking for
+     the way in, which is the opposite of what the glowing doorway was supposed
+     to buy. A kid should be able to point at the entrance from the air.
+
+     So the doorway now sticks OUT past the dome's silhouette: two jambs and a
+     lintel projecting `PORCH` beyond the wall, with the warm quad at the far
+     end of it and a lantern on each side. It breaks the dome's outline from
+     every direction, which is the only thing that actually reads at distance —
+     colour alone does not, because the whole island is warm rock. */
+  const PORCH = 4.6;
+  const jamb = 1.5;
+  for (const sx of [-1, 1]) {
+    wallParts.push(box(jamb, h * 0.62, PORCH, 0x8d837c,
+      sx * (2.8 + jamb / 2), h * 0.31 - 0.6, r + PORCH / 2 - 0.6));
+    solids.push({ x: sx * (2.8 + jamb / 2), z: r + PORCH / 2 - 0.6, r: 0.85 });
+  }
+  // The lintel across the top of the porch, and the one in the wall behind it.
+  wallParts.push(box(5.6 + jamb * 2, 1.2, PORCH, 0x6b625c,
+    0, h * 0.62 - 0.6, r + PORCH / 2 - 0.6));
   wallParts.push(box(5.6, 1.1, 2.4, 0x6b625c, 0, h * 0.52, r));
+  // Lanterns either side of the opening — the game's own "somebody lives here"
+  // vocabulary, and they read as a doorway long before the rock does.
+  for (const sx of [-1, 1]) {
+    const L = buildLantern(0.85);
+    transformParts(L, sx * (2.8 + jamb + 0.9), -0.4, r + PORCH - 0.2, 0);
+    parts.push(...L);
+  }
   /* NOT ROTATED. A PlaneGeometry faces +Z, the doorway faces +Z, and the
      merged world mesh is FrontSide — so the first version, which turned the
      quad to face the interior, was a light you could only see by already
      being inside the cave it exists to advertise. */
   const glow = new THREE.PlaneGeometry(4.4, 4.2);
   paint(glow, 0xffc061);
-  glow.translate(0, 2.1, r + 1.25);
+  glow.translate(0, 2.1, r + PORCH + 0.1);
   wallParts.push(glow);
   /* And one facing IN as well, so the mouth still glows from inside — the
      interior is otherwise a windowless dome and the way out should read. */
   const inner = new THREE.PlaneGeometry(4.4, 4.2);
   paint(inner, 0xffc061);
   inner.rotateY(Math.PI);
-  inner.translate(0, 2.1, r + 1.05);
+  inner.translate(0, 2.1, r + 0.9);
   wallParts.push(inner);
 
-  return { parts, wallParts, roofParts, solids, lamps, r, mouth: { x: 0, z: r + 4.5 } };
+  return { parts, wallParts, roofParts, solids, lamps, r,
+    mouth: { x: 0, z: r + PORCH + 3.5 } };
 }
 
 /**
