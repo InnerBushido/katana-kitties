@@ -375,6 +375,11 @@ export async function loadSpriteAtlas(url, opts = {}) {
      the half-texel UV inset in Billboard._setCell keeps frames isolated. */
   const {
     views = 4, rows: wantRows = 1, cell = 512, footroom = 0.02, pad = 0.06,
+    /* Ceiling on the packed atlas in either dimension. `cell` is a FLOOR, not
+       the answer: the real cell size is worked out below from how big the art
+       actually is, because a fixed cell throws away resolution on exactly the
+       sheets that need it most. See the note above `cellPx`. */
+    maxAtlas = 2048,
     /* Also clear background the lineart has completely sealed in — see
        clearSealedPockets. Opt-in, because the sheets already in the game do
        not need it. */
@@ -406,15 +411,49 @@ export async function loadSpriteAtlas(url, opts = {}) {
      instant it started walking. */
   const tallest = Math.max(...flat.map((b) => b.h));
   const widest = Math.max(...flat.map((b) => b.w));
-  const usable = cell * (1 - pad * 2);
-  const scale = Math.min(usable / tallest, usable / widest);
 
   const cols = Math.max(...grid.map((r) => r.length));
   const rows = grid.length;
 
+  /* THE CELL SIZE IS DERIVED, AND THIS IS WHY THE DRAGONS LOOKED LOW-RES.
+     Every sheet used to be packed into the same fixed cell — 384 through
+     `_loadSprite`. That is roughly right for a kitten, because ten directions
+     across four poses fill a 384-cell atlas honestly. It is badly wrong for a
+     dragon, and the reason is the SHAPE of the drawing rather than its size:
+     the dragon is one long horizontal creature squeezed into a SQUARE cell, so
+     the fit is decided by its width and its height gets whatever falls out.
+
+       dragon_sheet.png   2752x1536 source, one figure
+       packed into 384    ~338 px wide -> about 127 px TALL
+
+     127 pixels, stretched across an animal that fills a third of the screen
+     when you are riding it. The art was never the problem — it is 2752 wide on
+     disk, which is exactly why it looks sharp opened in a viewer and soft in
+     the game.
+
+     So `cell` becomes a FLOOR and the real size is the largest of:
+       - `ideal`: big enough that the art is not downscaled at all (scale ~ 1),
+       - clamped by `maxAtlas` so the texture stays a sane size,
+       - never below whatever the caller asked for.
+
+     A single-figure sheet (both dragons, Ryuuseki, the pandas, the leaders)
+     goes to its own resolution. A ten-by-four kitten sheet is limited by
+     `maxAtlas / cols` to less than the floor, so it lands on the floor and is
+     BYTE-FOR-BYTE UNCHANGED — which matters, because the sprite-direction
+     checks measure real cells out of these sheets and a repack would move
+     every number they assert. */
+  const ideal = Math.ceil(Math.max(tallest, widest) / (1 - pad * 2));
+  const roomPerCell = Math.floor(maxAtlas / Math.max(cols, rows));
+  const cellPx = Math.max(cell, Math.min(ideal, roomPerCell));
+
+  const usable = cellPx * (1 - pad * 2);
+  /* Capped at 1: upscaling the source into a bigger cell would invent detail
+     that isn't there and cost the memory of pretending otherwise. */
+  const scale = Math.min(usable / tallest, usable / widest, 1);
+
   const out = document.createElement('canvas');
-  out.width = cell * cols;
-  out.height = cell * rows;
+  out.width = cellPx * cols;
+  out.height = cellPx * rows;
   const octx = out.getContext('2d');
   octx.imageSmoothingEnabled = true;
   octx.imageSmoothingQuality = 'high';
@@ -428,13 +467,13 @@ export async function loadSpriteAtlas(url, opts = {}) {
      lifts the top row clean out of its cell. */
   grid.forEach((rowBoxes, ri) => {
     const rowBase = Math.max(...rowBoxes.map((b) => b.y1));
-    const cellBottom = ri * cell + cell - cell * pad;
+    const cellBottom = ri * cellPx + cellPx - cellPx * pad;
     rowBoxes.forEach((b, ci) => {
       const dw = b.w * scale;
       const dh = b.h * scale;
-      const dx = ci * cell + (cell - dw) / 2;
+      const dx = ci * cellPx + (cellPx - dw) / 2;
       const lift = (rowBase - b.y1) * scale;
-      const dy = Math.max(ri * cell, cellBottom - dh - lift);
+      const dy = Math.max(ri * cellPx, cellBottom - dh - lift);
       octx.drawImage(src, b.x0, b.y0, b.w, b.h, dx, dy, dw, dh);
     });
   });
@@ -456,7 +495,7 @@ export async function loadSpriteAtlas(url, opts = {}) {
        height it asked for no matter how loosely the sheet happened to pack.
        Without it, apparent size silently tracks the packing: two sheets that
        pack differently give two characters of visibly different size. */
-    contentScale: (tallest * scale) / cell,
+    contentScale: (tallest * scale) / cellPx,
     /** Transparent margin left around each cell, as a fraction of the cell. */
     pad,
   };

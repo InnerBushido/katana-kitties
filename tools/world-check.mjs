@@ -276,9 +276,10 @@ console.log('\n--- the seven dragon balls ---');
 
      `world.dragonPerches()` exists so both the spawner and the builder resolve
      the same spots. Checked here at the radius the FURNITURE occupies, not the
-     ball's — a grotto is 11.6 across and the star inside it is a point. */
+     ball's — a grotto reaches 15.9 with its boulders and the star inside
+     it is a point. */
   {
-    const FOOT = { cave: 11.6, perch: 5.2, sky: 4.2, none: 1, ice: 2, boulder: 2.4 };
+    const FOOT = { cave: 15.9, perch: 5.2, sky: 4.2, none: 1, ice: 2, boulder: 2.4 };
     const perches = world.dragonPerches();
     line('dragon perches resolved', perches.length);
     ok('every dragon perch found real ground', perches.length === 8);
@@ -296,6 +297,102 @@ console.log('\n--- the seven dragon balls ---');
       ok('and not built around a perched dragon', dragon > f + 5,
         `needs ${(f + 5).toFixed(1)}`);
     }
+  }
+
+  /* --- the grotto maze is a MAZE, and it is SOLVABLE ---
+
+     Two ways this feature can fail and neither is visible in a screenshot:
+     the maze can seal the star in (a wall segment overlapping one unit too
+     far, and a star that is simply unreachable — the worst bug the game could
+     ship, because a kid would hunt for it forever), or it can fail to block
+     anything (the arc's gap lining up with the mouth, and the "maze" being a
+     doorway you walk straight through).
+
+     Both are settled by walking it. The walk is the REAL collision routine —
+     `world.resolveSolids` at the player's real radius — so this is not a model
+     of the maze, it is the maze. A cell is standable when resolving it does
+     not move you; the flood is 4-connected, which is stricter than a kitten
+     who can slide along a wall, so a route found here definitely exists. */
+  for (const b of balls.filter((x) => x.lock === 'cave')) {
+    const R = 0.75;                       // Player.radius
+    const STEP = 0.5;
+    const REACH = 26;                     // dome + boulders, comfortably
+    const key = (i, j) => `${i},${j}`;
+    const standable = (x, z) => {
+      const f2 = world.resolveSolids(x, z, R);
+      return Math.hypot(f2.x - x, f2.z - z) < 1e-6;
+    };
+
+    /* Start OUTSIDE, on the approach a kitten actually walks up from — but
+       the exact point `REACH` out along that bearing is just a spot on a
+       hillside, and it is allowed to have a tree on it. Sweep the bearing
+       until one is clear rather than asserting the first guess: a start inside
+       a trunk would make this measure a walk nobody takes. */
+    const isl = b.island;
+    const inward = Math.atan2(isl.x - b.position.x, isl.z - b.position.z);
+    let start = null;
+    for (let k = 0; k < 24 && !start; k++) {
+      // 0, +15, -15, +30, -30 ... degrees off the approach.
+      const a = inward + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.26;
+      const x = b.position.x + Math.sin(a) * REACH;
+      const z = b.position.z + Math.cos(a) * REACH;
+      if (standable(x, z) && world.heightAt(x, z)) start = { x, z };
+    }
+    ok(`${b.stars}* cave: there is somewhere to start outside`, !!start);
+    if (!start) continue;
+    const si = Math.round(start.x / STEP);
+    const sj = Math.round(start.z / STEP);
+
+    const seen = new Set([key(si, sj)]);
+    const dist = new Map([[key(si, sj), 0]]);
+    const queue = [[si, sj]];
+    let reached = null;
+    while (queue.length) {
+      const [i, j] = queue.shift();
+      const x = i * STEP;
+      const z = j * STEP;
+      if (Math.hypot(x - b.position.x, z - b.position.z) < PICKUP_RADIUS) {
+        reached = dist.get(key(i, j)) * STEP;
+        break;
+      }
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const ni = i + di;
+        const nj = j + dj;
+        const k = key(ni, nj);
+        if (seen.has(k)) continue;
+        const nx = ni * STEP;
+        const nz = nj * STEP;
+        // Stay in the neighbourhood: this is a maze check, not a world walk.
+        if (Math.hypot(nx - b.position.x, nz - b.position.z) > REACH + 2) continue;
+        seen.add(k);
+        if (!standable(nx, nz)) continue;
+        dist.set(k, dist.get(key(i, j)) + 1);
+        queue.push([ni, nj]);
+      }
+    }
+
+    const straight = Math.hypot(start.x - b.position.x, start.z - b.position.z);
+    ok(`${b.stars}* cave: the star can actually be walked to`, reached != null,
+      reached == null ? 'SEALED IN — nobody can ever finish the hunt' : '');
+    if (reached != null) {
+      line('  walked / straight line', `${reached.toFixed(1)} / ${straight.toFixed(1)}`);
+      /* The maze has to COST something. A ratio near 1 means the star is on a
+         sight line from the mouth and the walls are decoration. 1.35 is a
+         low bar deliberately — this is asserting that a detour exists, not
+         grading how clever it is. */
+      ok('  and the maze makes her go the long way', reached > straight * 1.35,
+        `${(reached / straight).toFixed(2)}x the straight line`);
+    }
+
+    /* ...and the straight line really is blocked, which is the same claim
+       from the other side and catches a maze that is merely long. */
+    let blocked = false;
+    for (let t = 0.02; t < 1 && !blocked; t += 0.01) {
+      const x = start.x + (b.position.x - start.x) * t;
+      const z = start.z + (b.position.z - start.z) * t;
+      if (!standable(x, z)) blocked = true;
+    }
+    ok('  and you cannot see or walk straight in', blocked);
   }
 
   /* A LOCK MUST SAY WHAT IT WANTS, in words, and as an INSTRUCTION. Every one
@@ -330,9 +427,13 @@ console.log('\n--- the seven dragon balls ---');
      position, and that point fits through any doorway a kitten fits through,
      so the geometry alone cannot enforce "come in on foot". */
   {
-    const onFoot = { position: new THREE.Vector3(), mount: null, rideAlong: null, pandaMount: null };
-    const onDragon = { ...onFoot, mount: {} };
-    const onPanda = { ...onFoot, pandaMount: {} };
+    const onFoot = {
+      position: new THREE.Vector3(),
+      mount: null, rideAlong: null, pandaMount: null,
+      onGround: true, footClimb: true,
+    };
+    const onDragon = { ...onFoot, mount: {}, footClimb: false };
+    const onPanda = { ...onFoot, pandaMount: {}, footClimb: false };
     for (const b of balls) {
       if (!b.rule.foot) continue;
       ok(`the ${b.lock} star refuses a dragon rider`, !b.canTake(onDragon).ok);
@@ -340,7 +441,38 @@ console.log('\n--- the seven dragon balls ---');
       ok('and both refusals explain themselves',
         !!b.canTake(onDragon).why && !!b.canTake(onPanda).why);
       ok('but takes her on her own two feet', b.canTake(onFoot).ok);
+
+      /* MID-AIR IS NOT ON FOOT, and this is the check that would have caught
+         the 7★ shipping open. The pickup test allows 14 units of vertical
+         slack so a dragon can sweep past a star on a rim — which means a
+         double jump topping out well short of the top shard was still inside
+         the window, and the third jump the island exists for was optional. */
+      const jumping = { ...onFoot, onGround: false };
+      ok('and refuses her in mid-air', !b.canTake(jumping).ok,
+        b.canTake(jumping).why ?? '(no reason given)');
+      ok('...with a reason', !!b.canTake(jumping).why);
     }
+
+    /* The `sky` star asks a second question: not "are you on a dragon" but
+       "did you get up here on one". Landing on the top shard after a dismount
+       satisfies every `foot` rule and still has to be refused. */
+    const sky = balls.find((b) => b.lock === 'sky');
+    ok('the sky lock asks how she got there', !!sky.rule.climbed);
+    ok('a dragon that DROPPED her on the shard is refused',
+      !sky.canTake({ ...onFoot, footClimb: false }).ok);
+    ok('...and says so', !!sky.canTake({ ...onFoot, footClimb: false }).why);
+    ok('but a kitten who climbed it is not',
+      sky.canTake({ ...onFoot, footClimb: true }).ok);
+    /* Only `sky` may ask it. A grotto has a roof, so `climbed` there would
+       refuse a player who walked in perfectly legitimately after a flight. */
+    for (const b of balls) {
+      if (b.lock === 'sky') continue;
+      ok(`the ${b.lock} star does NOT require a climb`, !b.rule.climbed);
+    }
+    const cave = balls.find((b) => b.lock === 'cave');
+    ok('a cave takes her whether or not she flew to the island',
+      cave.canTake({ ...onFoot, footClimb: false }).ok);
+
     /* ...and the ones that DON'T say foot must still be takeable from a
        dragon, or the ice star — which you can only open from the air — would
        be a star you unlock and then cannot reach. */
@@ -348,6 +480,8 @@ console.log('\n--- the seven dragon balls ---');
     ice.strike('breath');
     ok('the ice star can be taken from the dragon that freed it',
       ice.canTake(onDragon).ok);
+    ok('and in mid-air, since that is where a dragon is',
+      ice.canTake({ ...onDragon, onGround: false }).ok);
     ice.reset();
   }
 }
@@ -393,6 +527,50 @@ console.log('\n--- the jump gate is measured, not guessed ---');
      one impossible leap — three hops of SHARD_RISE, not one of 3x. */
   ok('the shards are a staircase, not a wall', SHARD_COUNT >= 2);
   ok('every step is the same reachable size', SHARD_RISE * SHARD_COUNT > two * 2);
+
+  /* SHARD_RISE IS THE DESIGN INTENT; THE BUILT WORLD IS THE ANSWER.
+     Everything above checks a constant. What a player actually jumps is the
+     gap between the deck she is standing on and the next one — and the first
+     of those is measured against the TERRAIN under the bottom shard, which is
+     not the ground at the placement spot the stack was positioned from. Those
+     two are the same number only by luck of where the placer landed, so the
+     real staircase is measured here out of `world.platforms`. */
+  const skyBall = world.dragonBalls.find((b) => b.lock === 'sky');
+  const pads = world.platforms
+    .filter((p) => Math.hypot(
+      (p.x0 + p.x1) / 2 - skyBall.position.x, (p.z0 + p.z1) / 2 - skyBall.position.z,
+    ) < 34)
+    .sort((a, b) => a.y - b.y);
+  ok('the shard stack is really in the world', pads.length === SHARD_COUNT,
+    `found ${pads.length}`);
+
+  let below = null;
+  pads.forEach((p, i) => {
+    const cx = (p.x0 + p.x1) / 2;
+    const cz = (p.z0 + p.z1) / 2;
+    /* -1e9 asks for TERRAIN ONLY: heightAt skips a platform whose deck is
+       above where the query says it is coming from, so an impossibly low
+       `fromY` sees straight through the shards to the hillside beneath. */
+    const terrain = world.heightAt(cx, cz, -1e9);
+    const from = below ?? terrain?.y;
+    const gap = p.y - from;
+    line(`  hop ${i + 1} (real)`, gap.toFixed(2));
+    ok(`  hop ${i + 1} is out of reach of two jumps`, gap > two,
+      `${gap.toFixed(2)} vs ${two.toFixed(2)}`);
+    ok(`  hop ${i + 1} is inside a triple jump`, gap < three,
+      `${gap.toFixed(2)} vs ${three.toFixed(2)}`);
+    below = p.y;
+  });
+
+  /* The star has to be ON the top deck. If it floated above it, standing on
+     the shard would not be close enough and the climb would end in a refusal
+     with nowhere left to go. */
+  const top = pads[pads.length - 1];
+  ok('the star sits on the top shard', Math.abs(skyBall.position.y - top.y) < PICKUP_RADIUS,
+    `${(skyBall.position.y - top.y).toFixed(2)} apart`);
+  ok('and over it horizontally',
+    Math.hypot((top.x0 + top.x1) / 2 - skyBall.position.x,
+      (top.z0 + top.z1) / 2 - skyBall.position.z) < PICKUP_RADIUS);
 }
 
 console.log('\n--- Ryuuseki, and why two seats beat one ---');
@@ -694,6 +872,50 @@ console.log('\n--- the summoning ---');
     spoken.includes('steer') && spoken.includes('burn'));
   ok('and that together is better', spoken.includes('together'));
   ok('the sky goes properly dark, but not black', DUSK_DEEP > 0.6 && DUSK_DEEP < 1);
+}
+
+console.log('\n--- the 100% ending ---');
+{
+  const F = SCRIPTS.finale;
+  ok('the finale has lines', F.length >= 3);
+
+  /* IT MUST SAY SHE CAN KEEP PLAYING. This is the load-bearing line of the
+     whole scene: nothing is taken away at 100%, but a kid who reads a
+     completion screen concludes the game is finished and stops, and the
+     Kotodama Orb and the Dojo are the two things she is most likely to still
+     have in front of her. Checked against the words rather than assumed. */
+  const said = F.map((b) => b.text).join(' ').toLowerCase();
+  ok('it tells her she can keep playing',
+    ['stay', 'again', 'tomorrow'].some((w) => said.includes(w)));
+  /* ...and it points at the arena that is coming, without pretending it is
+     here. "ring" is the word the last beat uses. */
+  ok('it points at the arena to come', said.includes('ring'));
+  ok('it thanks them for what they actually DID',
+    said.includes('you') && (said.includes('crossed') || said.includes('paws')));
+
+  /* No recording yet, so every beat must carry its own length — `dur` is
+     normally derived from the clip and there is no clip. A beat with neither
+     would end on `undefined` and the scene would run its whole script in one
+     frame. */
+  ok('every finale beat is authored with a length',
+    F.every((b) => b.voice == null && b.dur > 3),
+    F.map((b) => b.dur).join('/'));
+  ok('and the whole thing is a scene, not an essay',
+    F.reduce((s, b) => s + b.dur, 0) < 45,
+    `${F.reduce((s, b) => s + b.dur, 0).toFixed(1)}s`);
+
+  /* The typewriter falls back to TYPE_SPEED (34 chars/s) with no clip to pace
+     against, so a line has to be short enough to finish typing inside its own
+     beat — otherwise the text is still appearing when the scene moves on and
+     nobody ever reads the end of it. */
+  for (const b of F) {
+    ok(`  "${b.id}" finishes typing before its beat ends`,
+      b.text.length / 34 < b.dur - 0.5,
+      `${(b.text.length / 34).toFixed(1)}s of typing in ${b.dur}s`);
+  }
+
+  ok('it is a separate scene from the two dragon ones',
+    !SCRIPTS.found.concat(SCRIPTS.summon).some((b) => F.includes(b)));
 }
 
 console.log('\n--- the cutscene never cuts a line off ---');

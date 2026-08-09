@@ -56,6 +56,52 @@ export const SCRIPTS = {
       text: 'One of you will steer. One of you will burn. Alone, you may ride me. Together, you will light the whole sky.',
     },
   ],
+
+  /* --- 100% mischief: the one ending the game has ---
+     Fires when the last knockable thing in the world has been scored. Patchfur
+     again, because she opened the story and the person who tells you what a
+     place is should be the one who tells you what you did to it.
+
+     IT IS NOT A "YOU WIN" SCREEN, AND THAT IS THE POINT. Nothing is taken
+     away, no credits roll, the world is not reset — the last beat exists to
+     say out loud that she can keep playing, because a nine-year-old who sees a
+     completion screen reasonably concludes the game is over and stops. The
+     arena is named as something COMING rather than something here: it is not
+     built yet, and promising a kid a thing that does not exist is how you lose
+     her trust in everything else the game has told her.
+
+     WHY IT TALKS ABOUT ENTROPY. The maths in this game is not decoration — it
+     has a walkable unit circle in it — and the mischief counter is the one
+     number the girls have been watching all afternoon. Order is one
+     arrangement of a town; every other arrangement is the rest of them, and
+     they have been working through the rest of them with a katana. It is a
+     real idea, said in words a nine-year-old can hold, and it is the honest
+     reading of what they actually did rather than a moral bolted on at the
+     end.
+
+     NO RECORDED VOICE, BY DESIGN FOR NOW. `voice: null` takes the synthesised
+     fallback the whole cast already degrades to, so the scene ships and works
+     today; dropping four mp3s into public/voice and naming them here is all it
+     would take to give her the real one. `dur` is authored because there is no
+     clip length to size it from. */
+  finale: [
+    {
+      id: 'done1', who: 'Patchfur', sub: 'Calico', voice: null, dur: 7.5,
+      text: 'Every barrel. Every lantern. Every last cane of bamboo. There is nothing left standing on any of these islands that you two have not put your paws through.',
+    },
+    {
+      id: 'done2', who: 'Patchfur', sub: 'Calico', voice: null, dur: 8.5,
+      text: 'The elders called it mischief. I think it is simpler than that. A tidy town is only one way for a town to be. Every other way is the rest of them — and you have been counting your way through the rest of them all afternoon.',
+    },
+    {
+      id: 'done3', who: 'Patchfur', sub: 'Calico', voice: null, dur: 8.5,
+      text: 'The islands did not drift apart because something broke. They drifted because nobody was crossing between them any more. You crossed. An angle, a circle, and the nerve to jump — that is all a bridge has ever been.',
+    },
+    {
+      id: 'done4', who: 'Patchfur', sub: 'Calico', voice: null, dur: 8.0,
+      text: 'So stay. Fly. Knock it all down again tomorrow. And when you would rather test what you have learned on each other than on the furniture — there is a ring being marked out. Bring your katanas.',
+    },
+  ],
 };
 
 export class SummonScene {
@@ -65,7 +111,7 @@ export class SummonScene {
     this.active = false;
     this.script = null;
     this.beat = 0;
-    this.played = { found: false, summon: false };
+    this.played = { found: false, summon: false, finale: false };
 
     /** 0..1, how dark the sky is right now. Owned here, applied by the game. */
     this.dusk = 0;
@@ -84,9 +130,17 @@ export class SummonScene {
     this.barEl = document.getElementById('cs-progress');
   }
 
-  /** Preload every line of both scripts. Same discipline as the intro. */
+  /**
+   * Preload every line that HAS one. Same discipline as the intro.
+   *
+   * Beats with `voice: null` are skipped rather than fed a null src — an
+   * `<audio>` pointed at nothing resolves against the page URL and fetches the
+   * document itself, which then fails to decode several seconds later. The
+   * finale is authored that way today, so this is not a hypothetical.
+   */
   async load() {
-    const all = [...SCRIPTS.found, ...SCRIPTS.summon];
+    const all = [...SCRIPTS.found, ...SCRIPTS.summon, ...SCRIPTS.finale]
+      .filter((b) => b.voice);
     await Promise.all(all.map((b) => new Promise((resolve) => {
       const el = new window.Audio();
       el.preload = 'auto';
@@ -211,6 +265,26 @@ export class SummonScene {
         F.z + Math.cos(a) * dist
       );
       this._look.set(F.x, F.y + this.radius * 0.06, F.z);
+    } else if (this.which === 'finale') {
+      /* THE SHOT IS THE ARGUMENT. She is talking about islands that drifted
+         apart and two kittens who crossed between them, so the camera does the
+         one thing the other two shots never do: it keeps going UP and BACK,
+         beat after beat, until the whole archipelago is in frame at once and
+         the town they have spent the afternoon flattening is a detail on it.
+         Continuous across beats rather than reset per beat — the pull-back has
+         to feel like one long breath, and four separate slow zooms read as
+         four cuts. `radius` carries the world's own size in, so this cannot be
+         quietly wrong if the archipelago grows. */
+      const span = this.beat + ease;              // 0 -> script.length
+      const out = span / Math.max(1, this.script.length);
+      const a = 0.35 + span * 0.16;               // a slow, steady turn
+      const dist = this.radius * (0.62 + out * 0.72);
+      this.camera.position.set(
+        F.x + Math.sin(a) * dist,
+        F.y + this.radius * (0.30 + out * 0.46),
+        F.z + Math.cos(a) * dist
+      );
+      this._look.set(F.x, F.y, F.z);
     } else {
       const a = 0.5 + ease * 0.35 + this.beat * 0.5;
       this.camera.position.set(

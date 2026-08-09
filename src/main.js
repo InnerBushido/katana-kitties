@@ -13,6 +13,7 @@ import { ClanLeader, LEADERS } from './entities/leader.js';
 import { Orb, OrbPickup } from './entities/orb.js';
 import { MathDojo } from './systems/mathdojo.js';
 import { Minimap } from './systems/minimap.js';
+import { MenuNav } from './systems/menunav.js';
 import { Cutscene } from './systems/cutscene.js';
 import { ShrineScene } from './systems/shrinescene.js';
 import { SummonScene } from './systems/summonscene.js';
@@ -41,6 +42,13 @@ const DOJO_VIEW_R = 52;  // inside this, the camera frames the unit circle
 const STAR_POSE = 2.0;
 /** Seconds on an island before its theme takes over. See Game._islandTrack. */
 const ISLAND_DWELL = 1.1;
+
+/* THE ONLY KEYS THAT SKIP A STORY SCENE. On a pad it is `start` and nothing
+   else (Game._skipPressed). Both are buttons you press to mean "get me out of
+   this"; every other control is one a kid is already holding while she
+   watches, which is how a 79-second intro with seven recorded voices was being
+   thrown away by a thumb resting on jump. */
+const SKIP_KEYS = new Set(['Space', 'Enter', 'NumpadEnter']);
 
 class Game {
   constructor() {
@@ -74,6 +82,9 @@ class Game {
 
     this.pickups = [];
     this.dragons = [];
+    /* Menus on a controller. Built before _bindUI so nothing can reference a
+       half-made one from a listener that fires during setup. */
+    this.menuNav = new MenuNav(this);
 
     this._bindUI();
     window.addEventListener('resize', () => this._resize());
@@ -433,23 +444,24 @@ class Game {
     });
 
     window.addEventListener('keydown', (e) => {
-      // Any key at all skips the intro — including Escape, which must not
-      // open the pause menu over the top of it instead.
-      if (this.cutscene?.active) { this.cutscene.skip(); e.preventDefault(); return; }
+      /* A SCENE IS SKIPPED BY A DELIBERATE KEY, NOT BY ANY KEY.
+         It used to be any key at all, which sounds forgiving and isn't: the
+         girls hold a stick and mash buttons the whole time a scene is playing,
+         so the seventy-nine-second story their uncle recorded seven voices for
+         was being thrown away by a thumb resting on jump. A skip has to be
+         something you can only do on purpose. Escape still lands here rather
+         than opening the pause menu over the top of a scene. */
+      if (this._sceneActive()) {
+        if (SKIP_KEYS.has(e.code)) this._skipScene();
+        e.preventDefault();
+        return;
+      }
       if (e.code === 'KeyM' && this.state === 'play') this._toggleMath();
       /* Z zooms both maps, X only player 2's — so in split screen each kid can
-         set their own scale without fighting over one control. */
-      if (e.code === 'KeyZ' && this.state === 'play') {
-        const z = this.minimap.cycleZoom();
-        if (this.merged) this.minimap2.zoom = z;
-        this.audio.play('menu');
-        this.toast(`Map zoom ${z === 1 ? 'whole world' : `${z}x`}`, 0);
-      }
-      if (e.code === 'KeyX' && this.state === 'play' && !this.merged) {
-        const z = this.minimap2.cycleZoom();
-        this.audio.play('menu');
-        this.toast(`Map zoom ${z === 1 ? 'whole world' : `${z}x`}`, 1);
-      }
+         set their own scale without fighting over one control. Both go through
+         _zoomMap, which is also what the pad's `map` action calls. */
+      if (e.code === 'KeyZ' && this.state === 'play') this._zoomMap(0);
+      if (e.code === 'KeyX' && this.state === 'play' && !this.merged) this._zoomMap(1);
       if (this.state === 'play') this._debugKey(e.code);
       if (e.code === 'Escape') {
         // Back out of a sub-panel first, otherwise toggle the pause menu.
@@ -465,6 +477,50 @@ class Game {
         }
       }
     });
+  }
+
+  /**
+   * Cycle one player's minimap zoom. Keyboard (Z / X) and the pad's `map`
+   * action both land here.
+   *
+   * Player 2 only owns a map of her own while the screen is split — merged,
+   * there is one map on screen and both controls drive it, which is why
+   * player 1's path also copies the zoom onto `minimap2`: it is the map that
+   * takes over the moment they run apart, and inheriting the zoom means the
+   * split doesn't silently reset it under her.
+   */
+  _zoomMap(index) {
+    if (this.state !== 'play') return;
+    const target = (index === 1 && !this.merged) ? this.minimap2 : this.minimap;
+    const z = target.cycleZoom();
+    if (target === this.minimap && this.merged) this.minimap2.zoom = z;
+    this.audio.play('menu');
+    this.toast(`Map zoom ${z === 1 ? 'whole world' : `${z}x`}`, index);
+  }
+
+  /** True while any full-screen story scene owns the screen. */
+  _sceneActive() {
+    return !!(this.cutscene?.active || this.summonScene?.active
+      || this.shrineScene?.active || this.finaleScene?.active);
+  }
+
+  /** Skip whichever scene is up. Harmless if none is. */
+  _skipScene() {
+    if (this.cutscene?.active) this.cutscene.skip();
+    if (this.summonScene?.active) this.summonScene.skip();
+    if (this.shrineScene?.active) this.shrineScene.skip();
+    if (this.finaleScene?.active) this.finaleScene.skip();
+  }
+
+  /**
+   * True on the frame a player asks to skip a scene ON A CONTROLLER.
+   *
+   * `start` only — the pause button, the one button on a pad that already
+   * means "I want out of what is on screen". Every other action is something
+   * she is holding while she watches.
+   */
+  _skipPressed() {
+    return this.input.players.some((p) => p.pressed('start'));
   }
 
   /** True while any overlay panel is on screen and should own the input. */
@@ -565,6 +621,14 @@ class Game {
     document.getElementById('toasts').replaceChildren();
     this.merged = true;
     this.sharedFocusT = 0;
+    // Re-seed the shared rig: the kittens are back at the town and the camera
+    // must be there with them, not lerping in from wherever the last run ended.
+    this._sharedSeeded = false;
+    /* Restart puts every prop back up, so the 100% is on the table again and
+       its ending has to be too. `found` and `summon` are deliberately NOT
+       reset: those are tied to Ryuuseki, who is still in the world. */
+    this._finaleDue = false;
+    if (this.summonScene) this.summonScene.played.finale = false;
     this.setPaused(false);
     this.toast('Adventure restarted!', 0);
   }
@@ -1298,9 +1362,43 @@ class Game {
     while (wrap.children.length > 4) wrap.firstChild.remove();
   }
 
+  /**
+   * The whole archipelago: its middle, and how big it is.
+   *
+   * The finale frames every island at once, and the numbers for that have to
+   * come off the world rather than be typed in — adding an eighth island must
+   * not quietly crop the one shot in the game whose entire job is showing all
+   * of them.
+   */
+  _worldBounds() {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const isl of this.world.islands) {
+      minX = Math.min(minX, isl.x - isl.radius);
+      maxX = Math.max(maxX, isl.x + isl.radius);
+      minZ = Math.min(minZ, isl.z - isl.radius);
+      maxZ = Math.max(maxZ, isl.z + isl.radius);
+    }
+    return {
+      centre: new THREE.Vector3((minX + maxX) / 2, 0, (minZ + maxZ) / 2),
+      radius: Math.max(maxX - minX, maxZ - minZ) * 0.5,
+    };
+  }
+
   onMischief(player, prop, breath = null) {
     const done = this.world.props.filter((p) => p.scored).length;
     document.getElementById('mtotal').textContent = `${done} / ${this.world.mischiefTotal}`;
+    /* 100%. QUEUED, NOT STARTED HERE — this runs from inside a prop being hit,
+       which can perfectly well happen while a shrine introduction or the
+       summon scene already owns the screen. `SummonScene.start` refuses when
+       one is running, and refusing here would lose the ending outright: there
+       are no props left to hit, so nothing would ever ask again. The loop
+       picks it up on the first frame the screen is free. */
+    if (done >= this.world.mischiefTotal && !this.summonScene?.played.finale) {
+      this._finaleDue = true;
+    }
     document.getElementById(player.index === 0 ? 's1' : 's2').textContent = player.score;
     const pts = prop.points ?? 10;
     if (prop.kind === 'bamboo') {
@@ -1346,10 +1444,18 @@ class Game {
     const warn = document.getElementById('browser-warn');
     if (warn) warn.classList.toggle('hidden', !this.input.sticksUnreadable());
 
+    /* MENUS OWN THE PAD WHILE THEY ARE UP. Runs before everything else and
+       before the title's any-button shortcut, because the alternative is a
+       press that both moves the cursor and does whatever the game underneath
+       thinks that button means. Returns true while it is holding the input. */
+    const inMenu = this.menuNav.update(dt);
+
     if (this.state === 'title') {
-      // Any button starts the game — but not while a panel is up. The whole
-      // point of the Controllers readout is pressing buttons at it.
-      if (!this._overlayOpen() && this.input.anyPressed()) this.startPlay();
+      /* Any button still starts the game, because the cursor starts on PLAY
+         and `confirm` activates whatever is under it — a kid who mashes gets
+         exactly the old behaviour. The one exception is the Controllers
+         readout, whose entire purpose is pressing buttons at it. */
+      if (!this._overlayOpen() && this.input.anyPressed() && !inMenu) this.startPlay();
       this._renderTitleIdle(dt);
       return;
     }
@@ -1360,7 +1466,7 @@ class Game {
        camera reads as a pre-rendered video, and the whole point of this one
        is that it is the real place. */
     if (this.cutscene?.active) {
-      if (this.input.anyPressed() || this.input.players.some((p) => p.pressed('start'))) {
+      if (this._skipPressed()) {
         this.cutscene.skip();
       }
       this.cutscene.update(dt);
@@ -1376,7 +1482,7 @@ class Game {
     /* --- the dragon-hunt scenes own the screen the same way --- */
     this._hudDuringScenes();
     if (this.summonScene?.active) {
-      if (this.input.anyPressed() || this.input.players.some((p) => p.pressed('start'))) {
+      if (this._skipPressed()) {
         this.summonScene.skip();
       }
       this.summonScene.update(dt);
@@ -1399,7 +1505,7 @@ class Game {
        scene opened must not walk somebody off the island while nobody is
        looking at her. */
     if (this.shrineScene?.active) {
-      if (this.input.anyPressed() || this.input.players.some((p) => p.pressed('start'))) {
+      if (this._skipPressed()) {
         this.shrineScene.skip();
       }
       this.shrineScene.update(dt);
@@ -1415,10 +1521,34 @@ class Game {
     // `start` on either pad toggles the pause menu.
     if (this.input.players.some((p) => p.pressed('start'))) this.setPaused(!this.paused);
 
+    /* The two controls that used to exist only on the keyboard. Each kitten
+       zooms HER OWN map — the whole reason there are two of them in split
+       screen — while the maths overlay is one global thing on screen, so
+       either pad toggles it. Read before the pause check so they are inert
+       behind the menu, like every other in-world control. */
+    if (!this.paused) {
+      this.input.players.forEach((p, i) => {
+        if (p.pressed('map')) this._zoomMap(i);
+        if (p.pressed('math')) this._toggleMath();
+      });
+    }
+
     if (this.paused) {
       // Keep drawing the world behind the menu, but freeze it.
       this._render();
       return;
+    }
+
+    /* The ending, cashed in on the first frame nothing else owns the screen.
+       See onMischief for why it is queued rather than fired there. */
+    if (this._finaleDue && !this._sceneActive()) {
+      this._finaleDue = false;
+      const B = this._worldBounds();
+      if (this.summonScene.start('finale', B.centre, B.radius)) {
+        this.sfx('starfound');
+        this.toast('100% MISCHIEF — every last thing, knocked over', 0);
+        this.toast('100% MISCHIEF — nothing left standing', 1);
+      }
     }
 
     for (let i = 0; i < 2; i++) {
@@ -1614,7 +1744,25 @@ class Game {
       else if (!this.merged && dist < MERGE_IN && !anyFlying) this.merged = true;
     }
 
-    if (this.merged) {
+    /* THE SHARED RIG IS UPDATED EVERY FRAME, SPLIT OR NOT, AND THAT IS THE
+       WHOLE FIX FOR THE JARRING REJOIN.
+
+       This block used to sit inside `if (this.merged)`. `sharedTarget` and
+       `sharedDist` are lerped toward their targets rather than set, so while
+       the screen was split they were not stale by a little — they were frozen
+       at wherever the girls happened to be standing at the *moment the screen
+       split*, however long ago and however many islands away that was. Coming
+       back together then started the lerp from that abandoned spot and flew
+       the camera across the archipelago to catch up, which is the "teleport"
+       — it is really the tail of a lerp that should have finished minutes ago.
+       Worse, the rejoin is the one moment the camera must be trustworthy: it
+       happens exactly when two kittens have just run back to each other.
+
+       Running it always costs two vector lerps a frame on a camera that isn't
+       drawing, and means the shared rig is ALREADY framed correctly at the
+       instant it takes the screen. There is no transition to smooth, because
+       there is no longer a discontinuity to hide. */
+    {
       const dc = this.world.dojoCentre;
       const inDojo = this.players.some(
         (p) => !p.mount && Math.hypot(p.position.x - dc.x, p.position.z - dc.z) < DOJO_VIEW_R
@@ -1669,6 +1817,16 @@ class Game {
         wantDist = THREE.MathUtils.lerp(wantDist, 15, k);
       }
 
+      /* The lerp needs a seed. `sharedTarget` starts at the origin and
+         `sharedDist` at a constant, so the first frame of a new game — or of a
+         restart, which puts the kittens back at the town — would otherwise fly
+         in from (0,0,0) exactly the way the rejoin used to. Snap once, then
+         lerp forever after. */
+      if (!this._sharedSeeded) {
+        this.sharedTarget.copy(want);
+        this.sharedDist = wantDist;
+        this._sharedSeeded = true;
+      }
       this.sharedTarget.lerp(want, Math.min(1, dt * 6));
       this.sharedDist += (wantDist - this.sharedDist) * Math.min(1, dt * 4);
 

@@ -65,6 +65,9 @@ Then open the address it prints.
 | Interact / dive  | `E`              | `Numpad 2` or `,`    | `B`          |
 | Mount / dismount | `Q`              | `Numpad 3` or `;`    | `Y`          |
 | Sprint / boost   | `Left Shift`     | `Right Ctrl` / `RShift` | `ZL` / `ZR` |
+| Zoom the map     | `Z`              | `X`                  | `R` / View   |
+| Maths overlay    | `M`              | `M`                  | `L` / Home   |
+| Pause            | `Esc`            | `Esc`                | `+` / Start  |
 
 **Player 2 works on a laptop.** Her buttons used to be numpad-only, so on a
 machine without one the second kitten could walk and nothing else — no slash,
@@ -72,9 +75,19 @@ no clan, no dragon. The keys next to the arrows (`, . / ;`) do the same jobs,
 and the numpad still works if you have one.
 
 Mount climbs onto whichever dragon is in reach, or onto your own panda if
-there isn't one. `M` toggles the maths overlay on the Kotodama Orb. **`Esc`**,
-or **`+`/Start on a controller**, opens the pause menu — resume, settings,
-how-to-play, restart, or back to the title screen.
+there isn't one. **`Esc`**, or **`+`/Start on a controller**, opens the pause
+menu — resume, settings, how-to-play, restart, or back to the title screen.
+
+**You can play the whole game without touching the mouse.** The title screen,
+the pause menu, settings and the help page all take a controller: the stick or
+d-pad moves the highlight, `A` picks, `B` goes back, and left/right change a
+setting in place without opening a dropdown you couldn't get out of. The
+highlight starts on the button you probably wanted, so on the title screen
+pressing anything still just starts the game.
+
+**Cutscenes only skip on Start** (or `Space` / `Enter` on a keyboard). Any
+button used to do it, which meant a thumb resting on jump threw away a
+79-second story with seven recorded voices in it.
 
 Jump twice for a double jump. Sprint and slash to send market stalls flying.
 Fly low and fast on a dragon to scatter a whole street at once.
@@ -124,7 +137,7 @@ looking down:
 | star | where | how you get it |
 | --- | --- | --- |
 | 1★ | home | lying in the open, by the town |
-| 2★ | autumn | in a **grotto** — land, find the glowing doorway, walk in |
+| 2★ | autumn | in a **grotto** — land, find the glowing doorway, walk the maze |
 | 3★ | frost | **sealed in ice**. Fly a dragon at it and breathe |
 | 4★ | bamboo | **under a boulder**. Only a panda's claw will crack it |
 | 5★ | ash | on top of a **stone spire** far too tall to jump. Fly up |
@@ -132,9 +145,22 @@ looking down:
 | 7★ | dojo | up three **floating shards**. You need Shadowtail's triple jump |
 
 Each locked star tells you what it wants when you get close, and the colour of
-its light says which kind it is from the air. **Two of them you have to take on
-your own two feet** — you can ride your panda up to the shards, but you have to
-hop off to pick the star up.
+its light says which kind it is from the air.
+
+**The grottos are little mazes.** Inside the doorway there's a wall with its
+gap on the far side and a spur that turns one way round into a dead end, so
+you have to walk it rather than see the star from the entrance. Glowing
+crystals on the walls light the way. You can't jump the walls, cut them, or
+burn them — the mouth is the only way in.
+
+**The 7★ really does need three jumps.** You have to be standing on the top
+shard to take it, and you have to have climbed there yourself: flying up and
+hopping off onto it doesn't count, and neither does grabbing it at the top of
+a double jump on the way past.
+
+**Knock over absolutely everything** — all of it, on every island — and
+Patchfur has something to say about what you've done. Nothing stops when she's
+finished; that's rather the point of what she says.
 
 Find one and your kitten stops and **holds it over her head** while the camera
 swings in. It only happens on her screen: if your sister is off cutting bamboo,

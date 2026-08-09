@@ -77,8 +77,19 @@ export const LOCKS = {
   boulder: { tint: 0xc9a06a, hint: "CRACK IT — A PANDA'S CLAW", breaks: 'claw' },
   /** On a spire too tall to jump. This one WANTS you on a dragon. */
   perch: { tint: 0xffb03a, hint: 'FLY UP TO IT' },
-  /** Up a stack of floating shards, spaced for a third jump. */
-  sky: { tint: 0xc8a8ff, hint: 'THREE JUMPS — ON YOUR OWN FEET', foot: true },
+  /**
+   * Up a stack of floating shards, spaced for a third jump.
+   *
+   * `climbed` IS A SEPARATE RULE FROM `foot`, and it has to be. `foot` asks
+   * where she is *right now*; `climbed` asks how she GOT there. Every other
+   * foot lock is happy with the first question — you cannot ride a dragon into
+   * a grotto — but this star is in open sky, so "not on a dragon" was
+   * satisfied by flying up, hopping off and landing on the top shard. The
+   * gate the whole island exists for was a dismount.
+   */
+  sky: {
+    tint: 0xc8a8ff, hint: 'THREE JUMPS — ON YOUR OWN FEET', foot: true, climbed: true,
+  },
 };
 
 /**
@@ -353,11 +364,34 @@ export class DragonBall {
   canTake(player) {
     if (this.taken) return { ok: false, why: null };
     if (!this.open) return { ok: false, why: this.rule.hint };
-    if (this.rule.foot && (player.mount || player.rideAlong)) {
+    if (!this.rule.foot) return { ok: true, why: null };
+
+    if (player.mount || player.rideAlong) {
       return { ok: false, why: 'GET OFF THE DRAGON — THIS ONE IS ON FOOT' };
     }
-    if (this.rule.foot && player.pandaMount) {
+    if (player.pandaMount) {
       return { ok: false, why: 'HOP OFF THE PANDA — TAKE IT ON YOUR OWN FEET' };
+    }
+    /* SHE HAS TO BE STANDING ON SOMETHING, and this is what actually closed
+       the 7★. The pickup test allows FOURTEEN units of vertical slack, so that
+       a kitten on a dragon can sweep past a star on a rim and still collect it
+       — right for the five locks that want a dragon, and a hole under the two
+       that don't. A double jump from the middle shard tops out 1.8 below the
+       star, which is comfortably inside fourteen, so the third jump the whole
+       island is built around was never needed: she grabbed it at the apex of
+       her second and fell back down. Requiring both feet on a surface makes
+       the vertical window irrelevant by construction rather than by tuning it,
+       which is the trap — any number big enough for a dragon fly-by is big
+       enough for a jump. */
+    if (!player.onGround) {
+      return { ok: false, why: 'LAND ON IT — NOT IN MID-AIR' };
+    }
+    /* And she has to have got up here herself. `footClimb` is false from the
+       moment she touches any mount and is only restored by standing on real
+       TERRAIN again, so hopping off a dragon onto the top shard leaves it
+       false: the shards are platforms, not ground. */
+    if (this.rule.climbed && !player.footClimb) {
+      return { ok: false, why: 'CLIMB IT YOURSELF — NO DRAGON, NO PANDA' };
     }
     return { ok: true, why: null };
   }

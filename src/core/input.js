@@ -25,7 +25,16 @@
    here — calibrate there.
 --------------------------------------------------------------------------- */
 
-export const ACTIONS = ['jump', 'attack', 'interact', 'mount', 'sprint', 'start'];
+/* `map` (cycle this player's minimap zoom) and `math` (toggle the Kotodama
+   Orb's working) are PAD-ONLY actions, and deliberately have no KEYSETS entry.
+   On the keyboard they stay on Z / X / M in the keydown handler, which keeps
+   working while somebody else is on a pad — routing them through a player slot
+   would mean the keyboard shortcut dies the moment that slot binds a
+   controller. `this.keys.has(undefined)` is false, so the two paths cannot
+   double-fire. */
+export const ACTIONS = [
+  'jump', 'attack', 'interact', 'mount', 'sprint', 'start', 'map', 'math',
+];
 
 const MAP_STORAGE_KEY = 'kk.vjoy.map.v2';
 
@@ -76,6 +85,13 @@ const DEFAULT_VJOY_MAP = {
     mount: [10],      // Up
     sprint: [16, 17], // SL / SR  (17 confirmed)
     start: [13],       // Minus
+    /* GUESSES, like most of this table — the top-edge shoulder buttons (L/ZL)
+       and Capture are the only things left on a sideways left Joy-Con once the
+       d-pad, the rail and Minus are spoken for. Calibrate in Settings ->
+       Controllers if they land somewhere else; that grid is why these don't
+       need to be right. */
+    map: [0],          // L
+    math: [2],         // ZL
   },
   right: {
     axX: 4, invX: true, axY: 3, invY: false,     // Ry / Rx
@@ -85,16 +101,22 @@ const DEFAULT_VJOY_MAP = {
     mount: [5],       // X
     sprint: [14, 15], // SR / SL  (14 confirmed)
     start: [12],       // Plus
+    map: [1],          // R
+    math: [3],         // ZR
   },
 };
 
 export const HALVES = ['left', 'right'];
 
+/** Spelled out where the bare action name wouldn't tell a nine-year-old what
+ *  the row is for. Anything absent shows its action name unchanged. */
+const ACTION_LABELS = { map: 'map zoom', math: 'maths overlay' };
+
 /** Field labels for the Settings remap grid — order is the display order. */
 export const MAP_FIELDS = [
   { key: 'stickX', label: 'Stick — push RIGHT', kind: 'axisX' },
   { key: 'stickY', label: 'Stick — push UP', kind: 'axisY' },
-  ...ACTIONS.map((a) => ({ key: a, label: a, kind: 'button' })),
+  ...ACTIONS.map((a) => ({ key: a, label: ACTION_LABELS[a] ?? a, kind: 'button' })),
 ];
 
 function cloneMap(m) {
@@ -129,6 +151,15 @@ const PROFILES = {
       mount: b(gp, 3),
       sprint: b(gp, 6) || b(gp, 7) || b(gp, 10) || b(gp, 11),
       start: b(gp, 9),
+      /* The shoulder BUMPERS were the only two buttons on a standard pad this
+         game never used — the triggers already carry sprint. Guide (16) is
+         included for math because it is the "not used much" button, but it is
+         NOT the only binding on purpose: browsers report it inconsistently and
+         Windows can swallow it into the Game Bar, so a control bound to it
+         alone would be dead on some machines with nothing on screen to say so.
+         View/Share (8) backs up the map for the same reason. */
+      map: b(gp, 5) || b(gp, 8),     // R1 / View
+      math: b(gp, 4) || b(gp, 16),   // L1 / Guide
       dpad: [b(gp, 14) ? -1 : b(gp, 15) ? 1 : 0, b(gp, 12) ? -1 : b(gp, 13) ? 1 : 0],
     }),
   },
@@ -176,6 +207,9 @@ const PROFILES = {
         mount: b(gp, 10) || b(gp, 5),
         sprint: b(gp, 16) || b(gp, 17) || b(gp, 14) || b(gp, 15), // SL / SR
         start: b(gp, 6) || b(gp, 9),
+        // Capture / Home — the two a sideways Joy-Con has left over.
+        map: b(gp, 12),
+        math: b(gp, 13),
         dpad: [0, 0],
       };
     },
@@ -196,6 +230,10 @@ const PROFILES = {
       mount: b(gp, 3),
       sprint: b(gp, 6) || b(gp, 7),
       start: b(gp, 9) || b(gp, 8),
+      // Bumpers only. `start` already claims 8 here, so View is not available
+      // as a second binding the way it is under `standard`.
+      map: b(gp, 5),
+      math: b(gp, 4),
       dpad: [0, 0],
     }),
   },

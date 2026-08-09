@@ -54,6 +54,14 @@ export class Player {
     this.onGround = false;
     this.coyote = 0;
     this.jumpsLeft = 2;
+    /**
+     * True while everything between her and the ground was done on her own
+     * feet. Cleared by touching ANY mount, and restored only by standing on
+     * real terrain again — not on a platform, which is the whole point: the
+     * jump shards are platforms, so a dragon that drops her on the top one
+     * leaves this false and the 7★ still refuses her. See LOCKS.sky.climbed.
+     */
+    this.footClimb = true;
     /** The storm dragon being flown, or null. Flight is a whole other mode. */
     this.mount = null;
     /** The panda being ridden, or null. Riding one is still GROUND movement —
@@ -454,6 +462,17 @@ export class Player {
 
     // Time spent genuinely airborne, for the animation to threshold against.
     this.airTime = this.onGround ? 0 : (this.airTime ?? 0) + dt;
+
+    /* `footClimb` — did she get where she is under her own power?
+       Written here rather than at each of the four places a mount is taken,
+       because the question is about STATE and there are more ways onto an
+       animal than there are lines that say `this.mount =`: a storm dragon, a
+       panda, and both of Ryuuseki's seats. Being on any of them clears it.
+       Only TERRAIN restores it — `g.platform` is set when she is standing on a
+       shard deck or a spire cap, and treating those as ground would hand the
+       7★ back to anyone who can fly. */
+    if (this.mount || this.rideAlong || this.pandaMount) this.footClimb = false;
+    else if (this.onGround && g && !g.platform) this.footClimb = true;
 
     /* --- mount: a dragon if one is in reach, otherwise your own panda ---
        Dragons are scanned FIRST and win ties outright. A panda is always at

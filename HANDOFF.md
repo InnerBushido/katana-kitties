@@ -848,6 +848,219 @@ mid-flight reads as a bug.
 because a panda is always at your heel — letting it match first means a kitten
 who has raised one can never climb onto a dragon again.
 
+## The controller pass, and five things it turned up
+
+Everything in this section came out of one round of feedback after the girls
+had the game on real hardware.
+
+**A SCENE IS SKIPPED BY `start`, SPACE OR ENTER — NOT BY ANY BUTTON.** It used
+to be any key and any button, which sounds forgiving and is the opposite: they
+hold a stick and mash the whole time a scene is running, so the 79-second intro
+with seven recorded voices in it was being thrown away by a thumb resting on
+jump. `SKIP_KEYS` and `Game._skipPressed` are the only two places that decide
+it, and all four scenes (intro, shrine, summon, finale) go through them.
+
+**`map` AND `math` ARE PAD-ONLY ACTIONS, DELIBERATELY.** Minimap zoom and the
+maths overlay existed on Z / X / M and nowhere else. They are `ACTIONS` now, so
+the remap grid picks them up for free — but with **no `KEYSETS` entry**, which
+is the part worth not undoing: the keyboard keeps Z / X / M in the keydown
+handler, so those still work while somebody else is on a pad. Routing them
+through a player slot would kill the keyboard shortcut the moment that slot
+binds a controller. `this.keys.has(undefined)` is false, so the two paths
+cannot double-fire.
+
+On a standard pad they are the **bumpers** — the only two buttons the game
+never used, since the triggers already carry sprint. Guide (16) is a second
+binding for `math` rather than the only one: browsers report it inconsistently
+and Windows can eat it into the Game Bar, so a control bound to it alone is
+dead on some machines with nothing on screen to say why.
+
+**MENUS TAKE A CONTROLLER (`systems/menunav.js`).** The game was fully playable
+on a pad and completely unreachable on one — PLAY, SETTINGS, RESTART and every
+setting were mouse-only, so two kids on two Joy-Cons passed a laptop back and
+forth. Three rules in it are load-bearing:
+
+- **The highlight starts on the default action, which is what keeps "PRESS ANY
+  BUTTON TO START" true.** Title focus begins on PLAY and, *on the title screen
+  only*, every button confirms. A kid who has never thought about a menu
+  presses something and the game starts, exactly as before. Inside a real panel
+  only `jump` confirms, so the other buttons stay free to mean nothing.
+- **A `<select>` is changed in place, never opened.** A native dropdown is an OS
+  window the Gamepad API cannot reach — opening one with a pad is how you get a
+  menu you can enter and not leave. Left/right cycle the options and dispatch
+  the same `change` event a mouse would, so every listener in `main.js` works
+  untouched.
+- **`_paint` clears the ring globally before lighting one.** Toggling the class
+  across only the current panel's items is the obvious version and it leaves the
+  ring on the title's SETTINGS button when Settings opens — two highlights, the
+  stale one drawn first, so it is also the one that looks like the cursor.
+
+Either player drives it: there is one screen and one cursor, and making player 1
+the only one who can press RESUME locks the other girl out of her own pause menu.
+
+**THE SHARED CAMERA IS UPDATED EVERY FRAME, SPLIT OR NOT.** This is the whole
+fix for the jarring rejoin. The block lerps `sharedTarget`/`sharedDist` toward
+their targets, and it used to sit inside `if (this.merged)` — so while the
+screen was split those were not stale by a little, they were **frozen at
+wherever the girls were standing the moment the screen split**, however long ago
+and however many islands away. Coming back together started the lerp from that
+abandoned spot and flew the camera across the archipelago, which is the
+"teleport": it is really the tail of a lerp that should have finished minutes
+ago. Running it always costs two vector lerps a frame on a camera that isn't
+drawing, and there is now no transition to smooth because there is no
+discontinuity to hide. `_sharedSeeded` snaps it once at boot and on restart, or
+the first frame flies in from the origin the same way.
+
+## The dragons looked low-res because of the CELL, not the art
+
+`loadSpriteAtlas` packed every sheet into a fixed cell — 384 through
+`_loadSprite`. That is honest for a kitten, where ten directions across four
+poses fill the atlas. It is badly wrong for a dragon, and the reason is the
+**shape** of the drawing rather than its size: the dragon is one long horizontal
+creature squeezed into a **square** cell, so the fit is decided by its width and
+its height gets whatever falls out.
+
+```
+dragon_sheet.png    2752x1536 on disk, one figure
+packed into 384     338 px wide  ->  193 px TALL
+```
+
+193 pixels, stretched over an animal that fills a third of the screen when you
+are riding it — which is exactly why it looks sharp opened in a viewer and soft
+in the game. The art was never the problem.
+
+`cell` is a **floor** now and the real size is derived: big enough not to
+downscale the source at all, clamped by `maxAtlas` (2048), never below what the
+caller asked for. Measured after:
+
+```
+dragon perched   384x384  ->  2048x2048 atlas,  drawn 1798 x 1027 px
+ryuuseki         512x512  ->  1387x1387,        drawn 1220 x  596 px
+panda adult      384      ->  1046
+ember / frost    3840x1536 and 3072x1536  —  BYTE-FOR-BYTE UNCHANGED
+```
+
+**The kitten sheets landing on the floor is not luck, it is the design.** Ten
+columns hit `maxAtlas / cols` well below 384, so they take the floor — which
+matters, because the sprite-direction checks measure real cells out of those
+sheets and a repack would move every number they assert. `scale` is also capped
+at 1: upscaling into a bigger cell invents detail that isn't there and pays
+memory for the pretence.
+
+Cost: roughly 85MB more texture memory across the single-figure sheets.
+`maxAtlas` is the knob if that ever matters on a weak laptop.
+
+## The grotto is a maze now, and you can see inside it
+
+**IT WAS 98.3% NEAR-BLACK.** Measured by rendering a frame from inside one and
+reading the pixels back: the dome seals the sun out, so the only thing reaching
+the interior was the hemisphere fill, at about a third of outdoor light, on rock
+painted to read in daylight. That was survivable while the star was the one
+bright thing in an empty room and you walked straight at it. A maze you cannot
+see is not a maze, it is a wall you bump along.
+
+Each grotto carries **three crystals and three point lights, together**. Either
+alone is worse than neither: light with no visible source looks like a shader
+bug, and glowing meshes that light nothing look like stickers on a dark wall.
+Same frame with the lamps off vs on: mean luma 30.8 → 108.4, near-black pixels
+98.3% → 0.0%.
+
+They are **deliberately not in `world.lights`**, which is what `setDusk` dims. A
+crystal burning inside a cave has nothing to do with the sky over the island,
+and dimming it when Ryuuseki arrives would put the interior back where it
+started at the exact point in the game somebody is most likely to be in one.
+
+**The maze is an arc with its gap on the far side, plus one spur that makes one
+way round a dead end.** Three legs and a single wrong turn — enough to have to
+look, nowhere near enough to get lost in. Two properties come for free rather
+than from tuning:
+
+- **It cannot be jumped.** Solids are infinite cylinders unless given a `top`,
+  and these have none, so Shadowtail's 8.7-unit triple jump is no more use in
+  here than a hop. The geometry still runs up into the ceiling (`ceilAt`),
+  because a wall you cannot cross but can see over reads as a bug.
+- **It cannot be cut or burned.** These are world geometry merged into the
+  island mesh, not `props` — the katana only ever hits a Prop.
+
+**The dome went 8.2 → 10.5 to fit the maze, and three numbers had to move with
+it.** The wall-block count is `2πr / 3.68` now rather than a flat 14: growing
+the room with a fixed count spreads the same blocks thinner until their
+1.9-radius solids stop overlapping and the wall develops gaps you can walk
+through. `door` is an angle, so it is scaled by `8.2/r` to hold the opening at
+the same number of world units. And `SEP.cave` went 24 → 27 with `keepClear` 15
+→ 18, both derived from the dome rather than picked.
+
+**`world-check` now WALKS it.** A flood fill through the real `resolveSolids` at
+the real player radius, from outside the mouth to the star. It asserts the star
+is reachable at all (a sealed grotto is the worst bug this game could ship — a
+kid would hunt forever), that the walk is at least 1.35x the straight line, and
+that the straight line is genuinely blocked. Currently 2.0x on both.
+
+## The 7★ was open, and the pickup radius is why
+
+The shard geometry was never the problem — every hop measures 6.0 to 6.7
+against a two-jump best of 4.20. The hole was in `_updateBalls`: the pickup test
+allows **fourteen units of vertical slack** so a kitten on a dragon can sweep
+past a star on a rim and still collect it. Right for the five locks that want a
+dragon; a hole under the two that don't. A double jump from the middle shard
+tops out 1.8 below the star, comfortably inside fourteen — so the third jump the
+whole island is built around was optional, and a dragon could simply fly her up.
+
+Two rules close it, and they answer different questions:
+
+- **`foot` locks now require `player.onGround`.** This makes the vertical window
+  irrelevant *by construction* rather than by tuning it — which is the trap, since
+  any number big enough for a dragon fly-by is big enough for a jump.
+- **`LOCKS.sky.climbed` requires `player.footClimb`.** `foot` asks where she is
+  right now; `climbed` asks how she GOT there. Every other foot lock is happy
+  with the first question — you cannot ride a dragon into a grotto — but this
+  star is in open sky, so "not on a dragon" was satisfied by flying up, hopping
+  off and landing on the top shard. `footClimb` is cleared by touching any mount
+  and restored **only by standing on real terrain**; the shards are `platforms`,
+  so a dragon that drops her up there leaves it false.
+
+`footClimb` is written in one place in `Player.update` rather than at each of the
+four sites that take a mount, because the question is about state and there are
+more ways onto an animal than there are lines that say `this.mount =`.
+
+**This reverses the earlier panda ruling** ("a kid who works out she can ride her
+panda up and hop off has solved it"). Richard asked for the gate to mean what it
+says; the panda shortcut goes with the dragon one.
+
+## The 100% ending
+
+`SCRIPTS.finale` in `summonscene.js` — Patchfur again, because the person who
+tells you what a place is should be the one who tells you what you did to it.
+Four beats, ~32s, fires once when the last knockable thing is scored.
+
+**IT IS NOT A "YOU WIN" SCREEN.** Nothing is taken away, no credits, no reset —
+and the last beat exists to say out loud that she can keep playing, because a
+nine-year-old who sees a completion screen reasonably concludes the game is over
+and stops. `world-check` asserts that line is actually present rather than
+assuming it. The arena is named as something **coming**, not something here:
+promising a kid a thing that doesn't exist is how you lose her trust in
+everything else the game has told her.
+
+**IT IS QUEUED, NOT FIRED FROM `onMischief`.** That runs from inside a prop being
+hit, which can happen while a shrine introduction already owns the screen —
+`SummonScene.start` refuses when one is running, and refusing there would lose
+the ending outright, because there are no props left to hit and nothing would
+ever ask again. `_finaleDue` is picked up on the first frame the screen is free.
+
+**The shot is the argument.** She is talking about islands that drifted apart and
+two kittens who crossed between them, so the camera does the one thing the other
+two shots never do: it keeps going up and back, continuously across beats, until
+the whole archipelago is in frame. Measured: 176 → 329 units out, 85 → 183 up,
+against a world radius of 284. It is sized from `_worldBounds()` so an eighth
+island cannot quietly crop it.
+
+**No recorded voice yet, by design.** `voice: null` takes the synthesised
+fallback the whole cast already degrades to, so it ships and works today;
+dropping four mp3s into `public/voice` and naming them is all it needs. `dur` is
+authored per beat because there is no clip length to size it from, and
+`world-check` asserts each line finishes typing inside its own beat at the
+fallback type rate.
+
 ## Gameplay rules worth not breaking
 
 **A dragon can never be lost, and the home island always has two.** Dragons
@@ -978,6 +1191,17 @@ minimap/Dojo overlap, the orb's jittering glyphs, and the three Ryuuseki bugs
 above (a solo rider stealing the split screen, the beam count reading the crew
 instead of the seat, and the fan firing backwards out of his mouth). Run the
 smoke test before assuming otherwise.
+
+**The 100% ending has no recorded voice.** It runs on the synthesised fallback,
+which is the same deal the whole cast has when `public/voice` is missing — but
+every other scene in the game has real ElevenLabs lines and this one will sound
+like the odd one out next to them. Four clips (`done1`..`done4`, Patchfur =
+Mabel, same as the intro) and a `voice:` path each is the whole job.
+
+**The arena the finale promises does not exist.** That is deliberate — it is
+named as something coming — but it is now a promise the game has made out loud
+to a nine-year-old, which is a different kind of TODO from the rest of this
+list.
 
 **The seven locks are built and verified but have NOT been played by the girls
 yet** — which is the only test that counts for difficulty. The two things most
@@ -1481,6 +1705,7 @@ src/
   systems/
     mathdojo.js         the walkable unit circle
     minimap.js          canvas-2D archipelago map over the HUD (x2 when split)
+    menunav.js          menus on a controller — cursor, confirm, back
     cutscene.js         the opening story, flown through the real world
   entities/
     shrine.js           the animated half of a clan shrine

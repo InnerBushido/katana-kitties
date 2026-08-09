@@ -204,6 +204,35 @@ html, body {
   transform: translateY(4px);
   box-shadow: 0 1px 0 var(--ink);
 }
+
+/* ---- the controller cursor ----
+   Menus are driven by a pad as well as a mouse (systems/menunav.js), so the
+   highlight has to be visible from across a room on a 9-year-old's screen —
+   the browser's own focus ring is a hairline and reads as nothing. It is
+   deliberately LOUDER than :hover: hover follows a mouse somebody is already
+   looking at, and this is the only thing on screen telling a kid holding a
+   Joy-Con where her button press is about to go.
+   No `animation-fill-mode` anywhere near it — see the preview-pane note in
+   HANDOFF.md. The lit state is the default and the pulse only adds motion. */
+.nav-focus {
+  outline: 4px solid var(--vermillion);
+  outline-offset: 3px;
+  border-radius: 10px;
+  animation: nav-pulse 1.1s ease-in-out infinite;
+}
+.menu-btn.nav-focus {
+  background: #ffe9a8;
+  transform: translateY(-2px);
+  box-shadow: 0 7px 0 var(--ink);
+}
+.menu-btn.primary.nav-focus { background: #f4632f; }
+@keyframes nav-pulse {
+  50% { outline-color: var(--gold); }
+}
+/* A focused row highlights the whole setting, not just the control, so it is
+   obvious WHICH thing left/right is about to change. */
+.row select.nav-focus,
+.row input[type="range"].nav-focus { background: #ffe9a8; }
 .menu-btn.primary {
   background: var(--vermillion);
   color: #fff5e2;

@@ -178,9 +178,12 @@ const EXPECT_STANDARD = {
   r2: ['sprint'],
   l3: ['sprint'],
   options: ['start'],
-  l1: [],
-  r1: [],
-  share: [],
+  // The two bumpers were the only buttons a standard pad never used, so map
+  // zoom and the maths overlay went there rather than onto a modifier combo.
+  r1: ['map'],
+  l1: ['math'],
+  share: ['map'],   // second binding; Guide (16) backs up `math` the same way
+  ps: ['math'],
 };
 for (const [btn, want] of Object.entries(EXPECT_STANDARD)) {
   const got = actionFor('ds4Chrome', STANDARD[btn]);

@@ -961,16 +961,22 @@ export class World {
          solids, so nothing in `findOpenSpot` knows one is standing there; the
          same grotto enclosed a perched dragon, wings out through the roof. */
       /* Sized per lock from how much room the thing actually takes up, not
-         picked. A grotto is 8.2 of dome with outlying boulders to 11.6, and a
-         shrine is about 7 across, so they need roughly 19 between centres
+         picked. A grotto is 10.5 of dome with outlying boulders to ~15.9, and
+         a shrine is about 7 across, so they need roughly 27 between centres
          before they stop being one heap; the spire and the shards are much
          smaller. A flat generous number is what broke it the other way — 30
-         units of exclusion deletes the whole ash island, which is 28 across. */
+         units of exclusion deletes the whole ash island, which is 28 across.
+         The cave number went 24 -> 27 when the dome went 8.2 -> 10.5 to make
+         room for the maze inside it; it is derived from the dome, so it has to
+         move when the dome does. `placeDragonBalls` relaxes it in four passes
+         before giving up, and `world-check` fails outright on a lock that
+         falls back to a plain star, so an over-tight number here is loud
+         rather than silent. */
       /* The BREAKABLE wards get a separation too, smaller. They build nothing,
          but they are things you have to see and then hit — and a perched
          dragon is a 24-unit sprite that will happily stand in front of one.
          The bamboo island put its boulder directly under one. */
-      const SEP = { cave: 24, perch: 17, sky: 15, ice: 13, boulder: 13 };
+      const SEP = { cave: 27, perch: 17, sky: 15, ice: 13, boulder: 13 };
       const sep0 = SEP[lock] ?? 0;
       const perches = sep0 ? this.dragonPerches() : [];
       /* THE DOJO'S CIRCLE IS NOT A BUILDING SITE. Its flattened disc is the
@@ -993,7 +999,7 @@ export class World {
          meant to spot from a dragon and burn. The trees are planted before the
          stars are placed (see the World constructor), so the star is the one
          that has to move. */
-      const clearance = lock === 'cave' ? 11 : lock === 'perch' ? 6 : lock === 'sky' ? 5 : 6;
+      const clearance = lock === 'cave' ? 13 : lock === 'perch' ? 6 : lock === 'sky' ? 5 : 6;
 
       /* RELAXING BEATS FALLING BACK. The first version made one pass at the
          full clearance and, failing that, dropped the lock and placed a plain
@@ -1057,10 +1063,48 @@ export class World {
             r: s.r,
           });
         }
+        /* LIGHT TO EXPLORE BY. The grotto is a sealed dome, so the sun is
+           shadowed out of it and the only thing reaching the inside is the
+           hemisphere fill — about a third of the light outside, on rock
+           painted to read in daylight. Before the maze that was survivable,
+           because the star was the one bright thing in an otherwise empty room
+           and you walked straight at it. A maze you cannot see is not a maze,
+           it is a wall you bump along, so each grotto now carries its own
+           light.
+
+           A POINT LIGHT AND A VISIBLE SOURCE, TOGETHER. Either alone is worse
+           than neither: light with nothing making it looks like a shader bug,
+           and glowing crystals that light nothing look like stickers on a dark
+           wall. The crystals are unlit meshes (their own material, outside the
+           merged toon mesh) and the lamp is a real light hung at the same
+           spot.
+
+           DELIBERATELY NOT IN `this.lights`, which is what `setDusk` dims. A
+           crystal burning inside a cave has nothing to do with the sky over
+           the island, and dimming it when Ryuuseki turns up would put the
+           interior back where it started at exactly the point in the game
+           somebody is most likely to be in one. */
+        for (const L of G.lamps ?? []) {
+          const c = Math.cos(inward);
+          const sn = Math.sin(inward);
+          const lx = spot.x + L.x * c + L.z * sn;
+          const lz = spot.z - L.x * sn + L.z * c;
+          const lamp = new THREE.PointLight(0xffc98a, 26, 26, 2);
+          lamp.position.set(lx, gy + L.y, lz);
+          this.scene.add(lamp);
+          const crystal = new THREE.Mesh(
+            new THREE.IcosahedronGeometry(0.5, 0),
+            new THREE.MeshBasicMaterial({ color: 0xffd9a0, toneMapped: false })
+          );
+          crystal.position.copy(lamp.position);
+          this.scene.add(crystal);
+        }
         /* Nothing grows in the doorway or inside the dome. A cherry tree
            across the mouth is a star you can see the glow of and cannot reach,
-           and it would look like level design rather than like a bug. */
-        this.keepClear.push({ x: spot.x, z: spot.z, r: 15 });
+           and it would look like level design rather than like a bug.
+           Sized off the dome (10.5) plus its outlying boulders (to ~15.9),
+           not a round number — it grew when the grotto did. */
+        this.keepClear.push({ x: spot.x, z: spot.z, r: 18 });
       } else if (kind === 'perch') {
         const S = buildSpire(i * 11 + 5);
         rock.push(...transformParts(S.parts, spot.x, gy, spot.z, 0));
