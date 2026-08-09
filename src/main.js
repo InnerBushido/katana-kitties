@@ -6,7 +6,7 @@ import { Audio, trackForIsland } from './core/audio.js';
 import { loadSpriteAtlas } from './core/spritesheet.js';
 import { placeholderCatAtlas, placeholderDragonTexture, placeholderPandaTexture } from './core/gfx.js';
 import { World } from './world/world.js';
-import { Player } from './entities/player.js';
+import { Player, ATTACKS, MAX_HP, KO_TIME } from './entities/player.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, tierFor, toNextTier } from './entities/panda.js';
 import { ClanLeader, LEADERS } from './entities/leader.js';
@@ -19,6 +19,12 @@ import { ShrineScene } from './systems/shrinescene.js';
 import { SummonScene } from './systems/summonscene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from './entities/dragonball.js';
 import { Ryuuseki, HOVER, RYU_VIEW, RYU_SIZE } from './entities/ryuuseki.js';
+import { MrSatan } from './entities/satan.js';
+import { Griffin } from './entities/griffin.js';
+import { Announcer } from './systems/announce.js';
+import { Tournament } from './systems/tournament.js';
+import { ArenaQuest, SATAN_TOWN, MILESTONES } from './systems/arenaquest.js';
+import { loadBoard } from './systems/leaderboard.js';
 
 /* ---------------------------------------------------------------------------
    Katana Kitties — main loop.
@@ -49,6 +55,15 @@ const ISLAND_DWELL = 1.1;
    watches, which is how a 79-second intro with seven recorded voices was being
    thrown away by a thumb resting on jump. */
 const SKIP_KEYS = new Set(['Space', 'Enter', 'NumpadEnter']);
+
+/* A pad that reports nothing, shaped exactly like a real one so nothing
+   downstream has to check. Used for the tournament's frozen states — the
+   round card, the countdown, the knockout, the results screen. `Player` has
+   its own copy for hit-stun and the star pose; this is the same idea applied
+   from the outside, and keeping it here rather than exporting theirs is
+   deliberate: the two freeze for unrelated reasons and merging them would tie
+   a change in one to the other. */
+const DEAD_PAD = { mx: 0, my: 0, down: () => false, pressed: () => false };
 
 /* The camera inside a grotto.
    IT DOES NOT TURN. Two earlier versions swung the yaw to face along the
@@ -209,6 +224,68 @@ class Game {
        drawn creature extends well past the point you have to stand at. */
     this.ryuMountRadius = 16;
 
+    /* --- the tournament ---
+       Loaded after the dragon hunt because it is gated behind it. Both new
+       sheets fall back the same way every other one does: a missing griffin
+       or a missing champion costs the tournament, not the boot. */
+    setLoad('Building the arena…');
+    await frame();
+    const [satanArt, griffinArt] = await Promise.all([
+      loadSpriteAtlas('/sprites/leader_satan.png', { views: 1, rows: 1, clearPockets: true })
+        .catch(() => null),
+      loadSpriteAtlas('/sprites/griffin.png', { views: 1, rows: 1, clearPockets: true })
+        .catch(() => null),
+    ]);
+
+    this.announcer = new Announcer({ audio: this.audio });
+    this.announcer.art = satanArt;
+    /* Every line he says outside a full-screen scene, buffered at boot. These
+       fire mid-play with nothing waiting on them, so a clip fetched at the
+       moment he opens his mouth arrives over a game that has moved on. */
+    await this.announcer.load({
+      ...Object.fromEntries(MILESTONES.map((m) => [m.id, `/voice/${m.id}.mp3`])),
+      sat_board: '/voice/sat_board.mp3',
+      sat_r1: '/voice/sat_r1.mp3',
+      sat_r2: '/voice/sat_r2.mp3',
+      sat_r3: '/voice/sat_r3.mp3',
+      sat_fight: '/voice/sat_fight.mp3',
+      sat_ko: '/voice/sat_ko.mp3',
+      sat_win1: '/voice/sat_win1.mp3',
+      sat_win2: '/voice/sat_win2.mp3',
+    });
+
+    if (satanArt) {
+      const sg = this.world.heightAt(SATAN_TOWN.x, SATAN_TOWN.z);
+      const spot = this.world.findOpenSpot(SATAN_TOWN.x, SATAN_TOWN.z, 4)
+        ?? { x: SATAN_TOWN.x, z: SATAN_TOWN.z };
+      const g2 = this.world.heightAt(spot.x, spot.z) ?? sg;
+      this.satan = new MrSatan(satanArt, { x: spot.x, y: g2 ? g2.y : 4, z: spot.z });
+      this.satan.art = satanArt;
+      /* Remembered, because he MOVES: he stands in the town to invite them
+         and in his box at the arena to call the rounds, and `reset` has to be
+         able to put him back without recomputing a spot that depends on a
+         world search. */
+      this.satan.homeAt = { x: spot.x, y: g2 ? g2.y : 4, z: spot.z };
+      this.satan.group.visible = false;
+      this.scene.add(this.satan.group);
+      // He is solid, like a clan leader — you cannot stand inside him.
+      this.world.solids.push({ x: spot.x, z: spot.z, r: 0.95 });
+    }
+
+    if (griffinArt) {
+      this.griffin = new Griffin(griffinArt);
+      this.scene.add(this.griffin.group);
+    }
+
+    this.tournament = new Tournament({
+      game: this, world: this.world, audio: this.audio, announcer: this.announcer,
+    });
+    this.quest = new ArenaQuest({
+      game: this, world: this.world, satan: this.satan, announcer: this.announcer,
+    });
+    /** 'out' | 'home' while the griffin is carrying them, else null. */
+    this.travel = null;
+
     /* Two maps: `minimap` is the shared/P1 one, `minimap2` only appears when
        the screen splits. They keep their own zoom so each player can be looking
        at a different scale. */
@@ -366,6 +443,7 @@ class Game {
         if (a === 'play') this.startPlay();
         if (a === 'help') show('panel-help');
         if (a === 'settings') { this._refreshPads(); show('panel-settings'); }
+        if (a === 'board') { this._paintBoard(); show('panel-board'); }
         if (a === 'resume') this.setPaused(false);
         if (a === 'restart') this.restart();
         if (a === 'story') this.replayIntro();
@@ -377,6 +455,7 @@ class Game {
         this.input.cancelCapture();
         hide('panel-help');
         hide('panel-settings');
+        hide('panel-board');
       });
     });
 
@@ -465,8 +544,21 @@ class Game {
          was being thrown away by a thumb resting on jump. A skip has to be
          something you can only do on purpose. Escape still lands here rather
          than opening the pause menu over the top of a scene. */
-      if (this._sceneActive()) {
+      /* The griffin ride skips on the same three keys and the same button as
+         every scene does. It is not a scene — no dialogue box, no `played`
+         latch — but from a player's side it is the same kind of thing: a
+         thing playing at you that you might have seen already. Routing it
+         through `SKIP_KEYS` rather than "any key" matters for exactly the
+         reason it does everywhere else: both girls are holding sticks. */
+      if (this._sceneActive() || this.travel) {
         if (SKIP_KEYS.has(e.code)) this._skipScene();
+        e.preventDefault();
+        return;
+      }
+      /* The name entry owns the keyboard while it is up, so a champion can
+         type her name instead of scrolling to it. Before the debug keys, or
+         spelling "E" would open the scene viewer. */
+      if (this.tournament?.modal && this.tournament.key(e.code)) {
         e.preventDefault();
         return;
       }
@@ -479,12 +571,13 @@ class Game {
       if (this.state === 'play') this._debugKey(e.code);
       if (e.code === 'Escape') {
         // Back out of a sub-panel first, otherwise toggle the pause menu.
-        const helpOpen = !document.getElementById('panel-help').classList.contains('hidden');
-        const setOpen = !document.getElementById('panel-settings').classList.contains('hidden');
-        if (helpOpen || setOpen) {
+        const sub = ['panel-help', 'panel-settings', 'panel-board'];
+        const subOpen = sub.some((id) => !document.getElementById(id).classList.contains('hidden'));
+        if (subOpen) {
           this.input.cancelCapture();
           hide('panel-help');
           hide('panel-settings');
+          hide('panel-board');
           if (this.state === 'title') this.paused = false;
         } else if (this.state === 'play') {
           this.setPaused(!this.paused);
@@ -524,6 +617,7 @@ class Game {
     if (this.summonScene?.active) this.summonScene.skip();
     if (this.shrineScene?.active) this.shrineScene.skip();
     if (this.finaleScene?.active) this.finaleScene.skip();
+    if (this.travel) this.griffin?.skip();
   }
 
   /**
@@ -539,7 +633,7 @@ class Game {
 
   /** True while any overlay panel is on screen and should own the input. */
   _overlayOpen() {
-    return ['panel-settings', 'panel-help', 'panel-pause'].some(
+    return ['panel-settings', 'panel-help', 'panel-pause', 'panel-board'].some(
       (id) => !document.getElementById(id).classList.contains('hidden'),
     );
   }
@@ -554,6 +648,7 @@ class Game {
     if (!on) {
       document.getElementById('panel-help').classList.add('hidden');
       document.getElementById('panel-settings').classList.add('hidden');
+      document.getElementById('panel-board').classList.add('hidden');
       // Drop the frame the pause ate, or everything lurches on resume.
       this.clock.getDelta();
     }
@@ -643,6 +738,26 @@ class Game {
        reset: those are tied to Ryuuseki, who is still in the world. */
     this._finaleDue = false;
     if (this.summonScene) this.summonScene.played.finale = false;
+
+    /* The tournament goes back in its box too — and the ARENA CLOSES with it.
+       A restart is the world put back to its opening state, and an eighth
+       island still hanging in the sky over a town with 216 props standing
+       again is the loudest possible leftover: the girls would fly straight
+       to a ring Mr Satan has not offered them yet. `quest.reset` is what puts
+       him back in the town, hides him, and shuts the ground off out there.
+       The RECORD BOARD is deliberately NOT cleared. It is the one thing in
+       the game that survives a reload on purpose, and wiping it because
+       somebody pressed RESTART would throw away every tournament they have
+       ever won to put some barrels back up. */
+    this.tournament?.finish();
+    this.quest?.reset();
+    this.travel = null;
+    this.griffin?.skip();
+    if (this.summonScene) {
+      this.summonScene.played.satanAnnounce = false;
+      this.summonScene.played.satanOpen = false;
+    }
+
     this.setPaused(false);
     this.toast('Adventure restarted!', 0);
   }
@@ -1066,7 +1181,14 @@ class Game {
    * of a rule, and the copy nobody remembers.
    */
   _hudDuringScenes() {
-    document.getElementById('hud')?.classList.toggle('scene-hidden', this._sceneActive());
+    /* ...and for the tournament, and for the griffin ride. Same one call and
+       the same one class, because this is the rule that has already been
+       written twice in this file once: `_sceneActive()` exists precisely so
+       the list of things that take the screen lives in one place. Mischief
+       points and a minimap mean nothing in a ring, and two scoreboards on one
+       screen is the kind of clutter that gets neither of them read. */
+    const away = this._sceneActive() || !!this.travel || !!this.tournament?.active;
+    document.getElementById('hud')?.classList.toggle('scene-hidden', away);
   }
 
   /** The leader standing at a clan's shrine. Used to gate joining on `met`. */
@@ -1153,6 +1275,12 @@ class Game {
       { id: 'found', label: 'all seven stars found' },
       { id: 'summon', label: 'Ryuuseki arrives' },
       { id: 'finale', label: '100% mischief — the ending' },
+      { id: 'satanAnnounce', label: 'Mr. Satan announces the tournament' },
+      { id: 'satanOpen', label: 'Mr. Satan opens the arena' },
+      /* Not a scene, but it belongs in the same list for the same reason the
+         others do: it is gated behind the entire game and fires once, which
+         makes it the hardest thing in the feature to look at twice. */
+      { id: 'arena', label: 'go to the arena NOW (skips the whole unlock)' },
     ];
   }
 
@@ -1203,6 +1331,29 @@ class Game {
       case 'finale':
         this.summonScene.played.finale = false;
         this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder);
+        break;
+      case 'satanAnnounce':
+        this.summonScene.played.satanAnnounce = false;
+        if (this.satan) this.satan.group.visible = true;
+        this.summonScene.start('satanAnnounce', this.townCentre(), 74, this.satan?.art);
+        break;
+      case 'satanOpen':
+        this.summonScene.played.satanOpen = false;
+        this.world.openArena(true);
+        this.summonScene.start('satanOpen', this.world.arenaCentre, 96, this.satan?.art);
+        break;
+      case 'arena':
+        /* THE WHOLE UNLOCK, SKIPPED. Reaching the tournament honestly needs
+           seven stars, a ride on Ryuuseki and 80% of a world knocked over —
+           which is right for a player and impossible for anybody checking
+           whether a round card is centred. It fast-forwards the quest rather
+           than calling `enterArena` directly, so what gets tested is the real
+           path: the griffin, the landing, `Tournament.begin`, all of it. */
+        this.world.openArena(true);
+        if (this.satan) this.satan.group.visible = true;
+        this.quest.stage = 'open';
+        this.quest.rodeRyu = true;
+        this.enterArena();
         break;
       default:
         return;
@@ -1321,6 +1472,52 @@ class Game {
     }
   }
 
+  /**
+   * One kitten's blade reaching the other.
+   *
+   * THE SINGLE GATE ON PLAYER-VERSUS-PLAYER DAMAGE. `Player._doSlash` calls
+   * this on every swing in the game — in the market square, in the bamboo
+   * grove, on a mountainside — and this is the only thing standing between
+   * that and two sisters able to knock each other down anywhere. It is one
+   * `if`, in one function, on purpose: the rule "you may only fight in the
+   * ring, during a round" is the sort of thing that gets checked in four
+   * places and then quietly missed in a fifth.
+   *
+   * `Tournament.fighting` is true only while a round is actually LIVE — not
+   * during the countdown, not between rounds, not while a scene is up, and
+   * not merely because both kittens happen to be standing on the arena
+   * island. See Tournament.fighting.
+   */
+  strikePlayers(attacker, kind, reach, dir) {
+    if (!this.tournament?.fighting) return;
+    const A = ATTACKS[kind] ?? ATTACKS.stand;
+    /* The clan buff still multiplies, and the round card shows both badges so
+       the asymmetry is visible rather than mysterious. Riverclaw really does
+       out-reach an unsworn kitten in here — that is the payoff for having
+       flown out and sworn, and the answer to it is to go and get one. What
+       must not happen is a girl losing to a reach she cannot see. */
+    const clanK = reach / 3.4;
+    const range = A.reach * clanK;
+
+    for (const target of this.players) {
+      if (target === attacker || target.ko) continue;
+      const dx = target.position.x - attacker.position.x;
+      const dz = target.position.z - attacker.position.z;
+      const dy = target.position.y - attacker.position.y;
+      const dist = Math.hypot(dx, dz);
+      if (dist > range || Math.abs(dy) > 4.5) continue;
+      // Same forward-arc test the props get, widened for the dash so a charge
+      // that visibly connects is not refused on a half-degree of facing.
+      const dot = (dx * dir.x + dz * dir.y) / (dist || 1);
+      if (dot < A.arc) continue;
+
+      const dealt = target.hurt(A.dmg, attacker.position, A, this);
+      if (!dealt) continue;
+      attacker.dmgDealt += dealt;
+      this.tournament.onHit(attacker, target, dealt, kind);
+    }
+  }
+
   _updateBallHud() {
     const el = document.getElementById('balls');
     if (!el) return;
@@ -1386,6 +1583,168 @@ class Game {
        handler that also sets the track is a second opinion that gets it wrong
        exactly when the two disagree, which is the frame you dismount over a
        different island than the one you took off from. */
+  }
+
+  /* ---------------------------- the tournament ---------------------------- */
+
+  /** The middle of the town, for shots that are about the place. */
+  townCentre() {
+    const g = this.world.heightAt(0, 20);
+    return new THREE.Vector3(0, g ? g.y : 4, 20);
+  }
+
+  /**
+   * Both kittens accept: the griffin picks them up and flies them north.
+   *
+   * IT TAKES THEM OFF WHATEVER THEY WERE ON FIRST. A kitten who accepts while
+   * sitting on her panda would otherwise arrive at the arena still mounted,
+   * with a panda standing in the ring and a claw attack instead of a katana —
+   * and the round would post her on her mark and leave the animal wherever
+   * the ride dropped it. The tournament is fought on foot by both of them,
+   * and that has to be true from the moment they board rather than checked
+   * again at every place it could go wrong.
+   */
+  enterArena() {
+    if (this.travel) return;
+    for (const p of this.players) {
+      if (p.pandaMount) { p.pandaMount.rider = null; p.pandaMount = null; }
+      if (p.mount) {
+        if (p.mount === this.ryu) this.ryu.pilot = null;
+        else { p.mount.rider = null; p.mount.returnHome(); }
+        p.mount = null;
+      }
+      if (p.rideAlong) { this.ryu.gunner = null; p.rideAlong = null; }
+    }
+
+    const L = this.world.arenaLanding;
+    this._ride('out', new THREE.Vector3(L.x, L.y, L.z));
+  }
+
+  /** The tournament is over. Fly them home. */
+  leaveArena() {
+    if (this.travel) return;
+    const t = this.townCentre();
+    this._ride('home', new THREE.Vector3(t.x, t.y, t.z + 14));
+  }
+
+  /**
+   * Put both kittens on the griffin and send it somewhere.
+   *
+   * A MISSING GRIFFIN MUST NOT STRAND THEM. Every sheet in this game falls
+   * back rather than taking the boot down with it, and this one has a sharper
+   * failure than most: the arena is 330 units from anywhere and the ride is
+   * the only way in or out of it. With no griffin and an early `return`, a
+   * pair who reached the tournament could never leave — the results screen
+   * would send them home and nothing would happen, forever. So a lost sprite
+   * costs the fly-through and nothing else: they simply arrive.
+   */
+  _ride(dir, to) {
+    this.travel = dir;
+    if (!this.griffin) { this._arrive(); return; }
+    const mid = this.players[0].position.clone()
+      .add(this.players[1].position).multiplyScalar(0.5);
+    this.griffin.fly(mid, to, this.players);
+    this.sfx('mount');
+  }
+
+  /** The griffin has landed. Put them down and hand over. */
+  _arrive() {
+    const going = this.travel;
+    this.travel = null;
+    /* Set down side by side rather than both on one point. Two billboards at
+       the same coordinates fight the depth sort and read as one flickering
+       cat, and the very first thing either girl does on landing is look for
+       herself. */
+    const spread = 4;
+    for (const [i, p] of this.players.entries()) {
+      const at = going === 'out' ? this.world.arenaLanding : this.townCentre();
+      const x = at.x + (i === 0 ? -spread : spread);
+      const g = this.world.heightAt(x, at.z);
+      p.position.set(x, (g ? g.y : at.y) + 0.1, at.z);
+      p.group.position.copy(p.position);
+      p.velocity.set(0, 0, 0);
+      p.camTarget.copy(p.position);
+      p.onGround = true;
+      p.footClimb = true;
+    }
+    this._sharedSeeded = false;
+    this.clock.getDelta();
+
+    if (going === 'out') {
+      this.satan?.moveTo(this.world.arenaBooth.x, this.world.arenaBooth.y, this.world.arenaBooth.z);
+      this.satan?.setLine('');
+      this.tournament.begin();
+    } else {
+      this.tournament.finish();
+      this.satan?.moveTo(this.satan.homeAt.x, this.satan.homeAt.y, this.satan.homeAt.z);
+      this.quest.onReturn();
+      this.toast('Back in town — Mr. Satan will run it again whenever you like', 0);
+    }
+  }
+
+  /**
+   * A blow landed: throw a spark where it connected.
+   *
+   * Purely feedback, and it is the third of the three things that say "that
+   * hit" — the sound, the flash on the sprite, and this. Any one alone is
+   * missable in a scrap where both kittens are moving; a hit that a kid is
+   * not sure landed is a control she stops trusting.
+   */
+  hitSpark(target, kind) {
+    if (!this._sparks) {
+      this._sparks = [];
+      for (let i = 0; i < 6; i++) {
+        const m = new THREE.Mesh(
+          new THREE.RingGeometry(0.5, 1.5, 12, 1, 0, Math.PI * 1.4),
+          new THREE.MeshBasicMaterial({
+            color: 0xfff0b0, transparent: true, opacity: 0,
+            depthWrite: false, depthTest: false, side: THREE.DoubleSide,
+            toneMapped: false,
+          })
+        );
+        m.renderOrder = 26;
+        m.visible = false;
+        this.scene.add(m);
+        this._sparks.push({ mesh: m, t: 0 });
+      }
+      this._sparkIx = 0;
+    }
+    const s = this._sparks[this._sparkIx];
+    this._sparkIx = (this._sparkIx + 1) % this._sparks.length;
+    s.t = 0.26;
+    s.big = kind === 'dash' ? 1.5 : kind === 'air' ? 1.3 : 1;
+    s.mesh.visible = true;
+    s.mesh.position.set(target.position.x, target.position.y + target.height * 0.55, target.position.z);
+  }
+
+  _updateSparks(dt) {
+    if (!this._sparks) return;
+    for (const s of this._sparks) {
+      if (s.t <= 0) continue;
+      s.t -= dt;
+      if (s.t <= 0) { s.mesh.visible = false; continue; }
+      const k = 1 - s.t / 0.26;
+      s.mesh.scale.setScalar((0.5 + k * 1.5) * (s.big ?? 1));
+      s.mesh.material.opacity = (1 - k) * 0.9;
+      s.mesh.rotation.z += dt * 6;
+    }
+  }
+
+  /** Paint the record board into the pause-menu panel. */
+  _paintBoard() {
+    const el = document.getElementById('board-body');
+    if (!el) return;
+    const rows = loadBoard();
+    el.innerHTML = rows.length
+      ? `<table class="lb">${rows.map((r, i) => `
+          <tr>
+            <td class="lb-rank">${i + 1}</td>
+            <td class="lb-name">${escapeHtml(r.name)}</td>
+            <td class="lb-score">${r.score}</td>
+            <td class="lb-detail">${r.wins}W · ${r.dealt} dealt · ${r.taken} taken · ${r.seconds}s</td>
+          </tr>`).join('')}</table>`
+      : '<p class="lb-empty">Nobody has won the tournament yet.<br>'
+        + 'Collect the seven stars, ride Ryuuseki, and knock over 80% of the world.</p>';
   }
 
   /* ------------------------------- music --------------------------------- */
@@ -1501,7 +1860,16 @@ class Game {
     let maxX = -Infinity;
     let minZ = Infinity;
     let maxZ = -Infinity;
+    /* THE ARENA IS NOT PART OF THE ARCHIPELAGO THIS SHOT IS ABOUT.
+       The finale pulls back until every island is in frame while Patchfur
+       talks about islands that drifted apart and two kittens who crossed
+       between them — and the tournament grounds are 330 units north of all of
+       it, so including them nearly doubles the pull-back and shrinks the town
+       the girls just flattened into four pixels. Excluding it is not a fudge
+       to protect a hardcoded number: the arena is somewhere else, built by
+       somebody else, and it is not open when this scene plays. */
     for (const isl of this.world.islands) {
+      if (isl.kind === 'arena') continue;
       minX = Math.min(minX, isl.x - isl.radius);
       maxX = Math.max(maxX, isl.x + isl.radius);
       minZ = Math.min(minZ, isl.z - isl.radius);
@@ -1651,6 +2019,24 @@ class Game {
       return;
     }
 
+    /* --- the griffin ride ---
+       A scripted flight rather than a scene, so it lives here rather than in
+       the scene block above: `_sceneActive` is about the dialogue furniture
+       and the skip rules, and this has neither. What it shares with a scene
+       is that the kittens are NOT ticked — they are cargo, the griffin owns
+       their positions, and a stick still pushed when the ride started must
+       not walk somebody off its back. */
+    if (this.travel) {
+      if (this._skipPressed()) this.griffin.skip();
+      const flying = this.griffin.update(dt);
+      this.world.update(dt, this.griffin.position);
+      this.announcer?.update(dt);
+      if (!flying) this._arrive();
+      this._renderView(this.griffin.camera, 0, 0,
+        ...this.renderer.getSize(new THREE.Vector2()).toArray());
+      return;
+    }
+
     // `start` on either pad toggles the pause menu.
     if (this.input.players.some((p) => p.pressed('start'))) this.setPaused(!this.paused);
 
@@ -1684,8 +2070,17 @@ class Game {
       }
     }
 
+    /* THE FIGHTERS ARE FROZEN FOR THE ROUND CARD AND THE COUNTDOWN, and it is
+       the same dead-pad trick the star pose and hit-stun use: hand the
+       controller a pad that reports nothing and none of the three movement
+       modes has to learn that a tournament exists. The countdown is the one
+       that really matters — without it a kitten mashing attack through
+       "3 … 2 … 1" opens the round with a free hit on a sister who cannot
+       move, which is not a tactic, it is a bug she will find in ten seconds. */
+    const frozen = this.tournament?.frozen;
     for (let i = 0; i < 2; i++) {
-      this.players[i].update(dt, this.input.players[i], this.world, this.dragons, this);
+      const pad = frozen ? DEAD_PAD : this.input.players[i];
+      this.players[i].update(dt, pad, this.world, this.dragons, this);
     }
 
     // Orbs, pickups, dragons, dojo.
@@ -1743,6 +2138,23 @@ class Game {
     }
     this.world.setDusk(this.summonScene.updateDusk(dt));
     this._updateSeek(dt);
+
+    /* --- the tournament ---
+       AFTER the players have moved, like the music and the pandas, so the
+       ring-out test and the camera both read where everybody actually ended
+       the frame rather than where they started it. The quest runs whatever
+       the tournament is doing (it is what opens the arena in the first
+       place); the announcer runs always, because his card is allowed to sit
+       over anything that is not a full-screen scene. */
+    this.quest?.update(dt, this.players, this.input.players, this);
+    this.tournament?.update(dt, this.input.players);
+    this.announcer?.update(dt);
+    this._updateSparks(dt);
+    /* One flag, set where the fact becomes true. `ArenaQuest` needs to know
+       Ryuuseki has been RIDDEN, not merely summoned, and there are two seats
+       and four ways into them — asking here, every frame, is cheaper than
+       finding all four. */
+    if (this.ryu?.ridden) this.quest.rodeRyu = true;
 
     /* --- inside a grotto: take the roof off and look down into it ---
 
@@ -1914,7 +2326,16 @@ class Game {
        frame. A shared view is only right when the thing is actually shared. */
     const onRyu = !!this.ryu?.duo;
 
-    if (onRyu || this.settings.split === 'never' || bothInDojo) this.merged = true;
+    /* A ROUND IS ONE SCREEN, outranking "always split" exactly as the dojo
+       and a crewed Ryuuseki do — and for the same reason both of those give:
+       a shared subject gets a shared view. Two half-screens of one 56-unit
+       ring is the worst possible way to watch a fight, because each girl gets
+       half the width to judge a knockback across and neither can see how much
+       ring is behind the other. It is the one moment in the game where both
+       players are looking at exactly the same thing. */
+    const inRing = !!this.tournament?.active;
+
+    if (onRyu || inRing || this.settings.split === 'never' || bothInDojo) this.merged = true;
     else if (this.settings.split === 'always') this.merged = false;
     else {
       // hysteresis so it doesn't flicker at the boundary
@@ -2000,6 +2421,23 @@ class Game {
          restart, which puts the kittens back at the town — would otherwise fly
          in from (0,0,0) exactly the way the rejoin used to. Snap once, then
          lerp forever after. */
+      /* THE RING HAS ITS OWN RIG, and it has to, because this one cannot
+         frame it. `wantDist` above clamps at 52 — a bound written for two
+         kittens running around a town — and the deck is 56 across, so at full
+         separation the ordinary camera frames rather less than half of it and
+         one of the two fighters is simply off screen. Exactly the trap
+         Ryuuseki fell into (a 28-unit dragon framed from a 26-unit minimum),
+         and the same fix: a rig that knows how big its own subject is.
+         It is applied here rather than through `setFocus` for the reason this
+         file has now learned three times — when the girls are together the
+         per-player camera is NOT the one drawing, and in a ring they are
+         always together. */
+      const ring = this.tournament?.cameraWant();
+      if (ring) {
+        want.set(ring.x, ring.y, ring.z);
+        wantDist = ring.dist;
+      }
+
       if (!this._sharedSeeded) {
         this.sharedTarget.copy(want);
         this.sharedDist = wantDist;
@@ -2009,7 +2447,7 @@ class Game {
       this.sharedDist += (wantDist - this.sharedDist) * Math.min(1, dt * 4);
 
       let yaw = THREE.MathUtils.lerp(-Math.PI * 0.25, 0, ft);
-      let pitch = THREE.MathUtils.lerp(0.66, 1.16, ft);
+      let pitch = ring ? ring.pitch : THREE.MathUtils.lerp(0.66, 1.16, ft);
 
       /* THE GROTTO AGAIN, HERE, BECAUSE THIS IS THE CAMERA THAT DRAWS WHEN
          THEY ARE TOGETHER — and inside a 21-unit room they always are. The
@@ -2092,6 +2530,8 @@ class Game {
     for (const pk of this.pickups) if (!pk.taken) pk.faceCamera(camera);
     for (const b of this.balls ?? []) b.faceCamera(camera);
     this.ryu?.faceCamera(camera);
+    this.satan?.faceCamera(camera);
+    this.griffin?.faceCamera(camera);
     this.dojo.faceCamera(camera);
   }
 

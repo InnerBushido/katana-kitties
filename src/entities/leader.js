@@ -124,7 +124,14 @@ export function leaderSpot(hall, world) {
 }
 
 /** Wrapped speech, drawn to a canvas and hung in the air. */
-function bubbleTexture(text, color) {
+/* Exported so Mr Satan can use the same bubble the clan leaders do. He is not
+   a `ClanLeader` — he has no clan, no shrine and no dais to stand on, and
+   bending that class round him would mean six leaders carrying fields that
+   only the announcer uses. The BUBBLE is the part that should be shared: a
+   character who speaks to you in the world should look the same doing it
+   whoever they are, and a second hand-rolled speech balloon is how two
+   things that mean the same thing end up looking different. */
+export function bubbleTexture(text, color) {
   const LINE = 40;
   const lines = text.split('\n');
   const cv = document.createElement('canvas');

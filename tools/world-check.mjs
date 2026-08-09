@@ -26,6 +26,14 @@ import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_
 import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
 import { SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest } from '../src/world/build.js';
 import { ISLAND_MUSIC, MUSIC, trackForIsland } from '../src/core/audio.js';
+import { existsSync } from 'node:fs';
+import { ATTACKS, MAX_HP } from '../src/entities/player.js';
+import { WINS_NEEDED, MAX_ROUNDS } from '../src/systems/tournament.js';
+import { MILESTONES, OPEN_AT } from '../src/systems/arenaquest.js';
+import {
+  scoreOf, loadBoard, saveResult, clearBoard, BOARD_SIZE,
+  NameEntry, NAME_MIN, NAME_MAX,
+} from '../src/systems/leaderboard.js';
 
 const line = (l, v) => console.log(String(l).padEnd(42) + v);
 let fails = 0;
@@ -61,7 +69,25 @@ globalThis.document = {
       set: () => true,
     }),
   }),
+  /* The tournament reaches for its HUD elements in its constructor. Every use
+     of them downstream is `?.`-guarded, so `null` is the honest stub — and it
+     is a better one than a fake element, because a fake would let a check
+     pass that only works because the DOM silently swallowed it. */
+  getElementById: () => null,
 };
+
+/* The record board is the one thing in the game that persists, so testing it
+   needs somewhere to persist TO. A Map behind the real API rather than a
+   no-op: the checks below assert a save/load ROUND TRIP, and a stub that
+   throws everything away would pass "loadBoard returns an array" while
+   proving nothing about the thing that actually breaks. */
+const _store = new Map();
+globalThis.localStorage = {
+  getItem: (k) => (_store.has(k) ? _store.get(k) : null),
+  setItem: (k, v) => _store.set(k, String(v)),
+  removeItem: (k) => _store.delete(k),
+};
+globalThis.window = { localStorage: globalThis.localStorage };
 
 const world = new World(new THREE.Scene());
 
@@ -198,7 +224,15 @@ console.log('\n--- the seven dragon balls ---');
   const balls = world.dragonBalls;      // built by the World constructor now
   line('dragon balls placed', balls.length);
   ok('there are seven', balls.length === BALL_COUNT);
-  ok('and seven islands to put them on', world.islands.length === BALL_COUNT);
+  /* `playIslands`, NOT `islands`. The arena is the eighth island and it
+     deliberately has no star: it is shut until the tournament opens, and the
+     dragon who opens it is summoned by the seventh star, so a star out there
+     would be one the hunt can never finish. Asserting against the raw island
+     count would now be asserting the world has seven islands, which is no
+     longer the fact this check is about. */
+  ok('and seven islands to put them on', world.questIslands.length === BALL_COUNT);
+  ok('the arena has no star and is not one of them',
+    world.arenaIsland != null && !world.questIslands.includes(world.arenaIsland));
 
   /* One per island, and no island with two. The hunt sends the girls to every
      island in the game exactly once — two on the home island and none on the
@@ -207,14 +241,14 @@ console.log('\n--- the seven dragon balls ---');
   const perIsland = new Map();
   for (const b of balls) {
     let owner = null;
-    for (const isl of world.islands) {
+    for (const isl of world.questIslands) {
       if (Math.hypot(b.position.x - isl.x, b.position.z - isl.z) < isl.radius) owner = isl;
     }
     perIsland.set(owner, (perIsland.get(owner) ?? 0) + 1);
   }
   ok('every ball is ON an island', !perIsland.has(null));
   ok('exactly one per island',
-    perIsland.size === world.islands.length
+    perIsland.size === world.questIslands.length
     && [...perIsland.values()].every((n) => n === 1));
   ok('and their star counts are 1..7',
     balls.map((b) => b.stars).sort((a, b2) => a - b2).join(',') === '1,2,3,4,5,6,7');
@@ -1896,6 +1930,335 @@ for (const [name, cells, cols] of [['ember', em, 10], ['frost', fr, 8]]) {
   const pairs = [1, 2, 3].filter((i) => !tied(cols, i));
   ok(`${name} is left/right symmetric`, pairs.every((i) => mirrors(cells, cols, i)),
     `checked ${pairs.length} of 3 pairs; the rest fall between drawn cells`);
+}
+
+/* ===========================================================================
+   THE WORLD MARTIAL ARTS TOURNAMENT
+
+   The three things here that would be invisible on screen, in order of how
+   badly they would bite:
+
+   1. COMBAT LEAKING OUT OF THE RING. `Player._doSlash` calls into the damage
+      path on every swing in the game. If the gate ever comes off, two sisters
+      can knock each other down in the middle of the town — and it would look
+      completely normal, because a slash already plays there.
+   2. THE ARENA BEING REACHABLE EARLY. Hidden mesh, no ground, no platforms,
+      no solids: four separate facts, and three of them are lists that know
+      nothing about an island.
+   3. THE SCORE BEING WRONG. Four terms, and a weight that cannot change the
+      ordering is a term that is not really being scored.
+   =========================================================================== */
+
+console.log('\n--- the arena ---');
+{
+  const R = world.arenaRing;
+  line('ring (half-width, deck y)', `${R.half} @ ${R.y.toFixed(1)}`);
+  line('arena centre', `${world.arenaCentre.x}, ${world.arenaCentre.z}`);
+
+  /* FAR ENOUGH AWAY THAT NOBODY ARRIVES BY ACCIDENT. The whole design of the
+     griffin rests on this: the arena is somewhere you are TAKEN. If it ever
+     drifts to within a normal dragon hop of the archipelago, the ride stops
+     being the way in and the lock becomes the feature instead. */
+  const nearest = Math.min(...world.questIslands.map(
+    (i) => Math.hypot(i.x - world.arenaCentre.x, i.z - world.arenaCentre.z) - i.radius
+  ));
+  line('gap to the nearest island', nearest.toFixed(0));
+  ok('the arena is well clear of the archipelago', nearest > 150,
+    `${nearest.toFixed(0)} units of open sky`);
+
+  ok('both starting posts are inside the ring',
+    world.arenaPosts.every((p) => world.arenaOutBy(p.x, p.z) < -4));
+  ok('the posts are on OPPOSITE sides, facing each other',
+    Math.sign(world.arenaPosts[0].x - R.x) === -Math.sign(world.arenaPosts[1].x - R.x)
+    && Math.hypot(world.arenaPosts[0].x - world.arenaPosts[1].x,
+      world.arenaPosts[0].z - world.arenaPosts[1].z) > R.half);
+
+  /* The out test is a CHEBYSHEV distance, because the deck is a square. A
+     radial test calls the corners out while a fighter is still standing on
+     stone — and the corners are exactly where a knockback puts you. */
+  ok('the middle of the ring is well inside', world.arenaOutBy(R.x, R.z) < -20);
+  ok('the corners are IN, not out',
+    world.arenaOutBy(R.x + R.half - 2, R.z + R.half - 2) < 0);
+  ok('past the painted line is out',
+    world.arenaOutBy(R.x + R.half + 2, R.z) > 0);
+
+  /* Nothing the girls have to walk through on the way in, and — the part
+     that matters for every round — nothing between the fight and the camera.
+     This game's camera yaw is fixed at -PI/4, so it always sits at -x/+z of
+     what it is watching: anything built at +z of the ring is permanently in
+     front of the lens. The booth was, once. */
+  ok('the announcer is NOT between the fight and the camera',
+    world.arenaBooth.z < R.z, 'he is north; the camera is south');
+  ok('the record board is off the camera axis too', world.arenaBoard.x < R.x);
+  ok('the landing spot is outside the ring and clear of the stands',
+    world.arenaOutBy(world.arenaLanding.x, world.arenaLanding.z) > 20);
+}
+
+console.log('\n--- the arena is SHUT until it is opened ---');
+{
+  const A = world.arenaCentre;
+  const R = world.arenaRing;
+  ok('starts shut', world.arenaOpen === false);
+  ok('no ground out there while shut', world.heightAt(A.x, A.z) == null);
+  /* The deck is a PLATFORM, which is a separate list that never consulted an
+     island. Hiding the island alone left a solid stone square floating in
+     empty sky — a far worse bug than an arena you can reach early, because it
+     looks like the world is broken. */
+  ok('and no invisible deck to land on',
+    world.heightAt(R.x, R.z, R.y + 1) == null);
+  /* ...and the record board is a solid with NO `top`, i.e. an infinite
+     cylinder, which would shove a kitten flying past the empty coordinates. */
+  const shoved = world.resolveSolids(world.arenaBoard.x, world.arenaBoard.z, 0.75, 400);
+  ok('and no invisible walls to be shoved by',
+    Math.hypot(shoved.x - world.arenaBoard.x, shoved.z - world.arenaBoard.z) < 0.001);
+
+  world.openArena(true);
+  ok('opening it puts real ground there', world.heightAt(A.x, A.z) != null);
+  ok('and the deck becomes standable',
+    world.heightAt(R.x, R.z, R.y + 1)?.y === R.y);
+  world.openArena(false);
+  ok('and it can be shut again (restart)', world.heightAt(A.x, A.z) == null);
+  world.openArena(true);
+}
+
+console.log('\n--- combat ---');
+{
+  const mk = (i) => new Player({
+    texture: new THREE.Texture(), index: i, rows: 4, cols: 8,
+    spawn: new THREE.Vector3(0, 0, i * 2), name: i ? 'B' : 'A', height: 2.9,
+  });
+  const A = mk(0);
+  const B = mk(1);
+
+  line('attacks (dmg / knock)', Object.entries(ATTACKS)
+    .map(([k, a]) => `${k} ${a.dmg}/${a.knock}`).join('  '));
+
+  /* THE THREE ATTACKS HAVE TO BE DIFFERENT, and different in the way the
+     design says: the dash is the throw, the aerial is the damage, the
+     standing slash is neither and is the one that is always available. Three
+     entries with the same numbers is one attack with three names, which
+     would pass any "does it hit" check. */
+  ok('the dash throws hardest', ATTACKS.dash.knock > ATTACKS.air.knock
+    && ATTACKS.air.knock > ATTACKS.stand.knock);
+  ok('the standing slash is the weakest', ATTACKS.stand.dmg < ATTACKS.air.dmg
+    && ATTACKS.stand.dmg < ATTACKS.dash.dmg);
+  ok('no attack can end a full-health round in one hit',
+    Math.max(...Object.values(ATTACKS).map((a) => a.dmg)) < MAX_HP / 3);
+
+  B.position.set(2, 0, 0);
+  const dealt = B.hurt(ATTACKS.stand.dmg, A.position, ATTACKS.stand, null);
+  ok('a hit takes health and is credited', dealt === ATTACKS.stand.dmg
+    && B.hp === MAX_HP - ATTACKS.stand.dmg);
+  ok('...and throws her AWAY from the attacker', B.velocity.x > 0);
+  ok('...and lifts her off the ground', B.velocity.y > 0 && !B.onGround);
+  ok('...and stuns her briefly', B.hitT > 0 && B.invulnT > 0);
+
+  ok('a second hit inside the invulnerability does nothing',
+    B.hurt(ATTACKS.dash.dmg, A.position, ATTACKS.dash, null) === 0);
+
+  /* Two fighters standing at exactly the same point is not a hypothetical in
+     a game where they are trying to hit each other, and a zero-length vector
+     normalises to NaN — which teleports somebody to the origin. */
+  B.invulnT = 0;
+  B.position.copy(A.position);
+  B.hurt(5, A.position, ATTACKS.stand, null);
+  ok('a hit at zero range does not produce NaN',
+    Number.isFinite(B.velocity.x) && Number.isFinite(B.velocity.z));
+
+  // Rage: the same blow throws a hurt fighter further.
+  const throwAt = (hp) => {
+    const C = mk(1);
+    C.position.set(2, 0, 0);
+    C.hp = hp;
+    C.hurt(1, new THREE.Vector3(0, 0, 0), ATTACKS.dash, null);
+    return C.velocity.x;
+  };
+  const fresh = throwAt(MAX_HP);
+  const hurt = throwAt(MAX_HP * 0.2);
+  line('knockback fresh vs nearly out', `${fresh.toFixed(1)} vs ${hurt.toFixed(1)}`);
+  ok('a hurt fighter flies further', hurt > fresh * 1.2);
+
+  // A knockout, and what it leaves behind.
+  const C = mk(1);
+  C.position.set(2, 0, 0);
+  C.hurt(MAX_HP, A.position, ATTACKS.dash, null);
+  ok('zero health is a knockout', C.ko && C.hp === 0 && C.koT > 0);
+  ok('a knockout throws further than the blow', Math.abs(C.velocity.x) > ATTACKS.dash.knock);
+
+  /* `resetForRound` must NOT clear the tournament totals — the score is
+     computed across every round, and clearing them here would silently score
+     only the last one. */
+  C.dmgDealt = 55;
+  C.dmgTaken = 77;
+  C.resetForRound(1, 2, 3, 0);
+  ok('a new round restores health and clears the knockout',
+    C.hp === MAX_HP && !C.ko && C.koT === 0 && C.hitT === 0);
+  ok('...but keeps the tournament damage totals',
+    C.dmgDealt === 55 && C.dmgTaken === 77);
+}
+
+console.log('\n--- the score ---');
+{
+  const base = { wins: 2, dealt: 200, taken: 100, seconds: 60, rounds: 3, maxHp: MAX_HP };
+  const s = scoreOf(base);
+  line('a 2-1 win, 200 dealt, 100 taken, 60s', s);
+
+  /* Every term has to be able to MOVE the total, and winning has to dominate.
+     A weight small enough that no realistic value changes the ordering is a
+     term that is in the formula and not in the game. */
+  ok('winning another round is worth more than any other term',
+    scoreOf({ ...base, wins: 3 }) - s > Math.abs(scoreOf({ ...base, dealt: 400 }) - s));
+  ok('dealing more damage scores more', scoreOf({ ...base, dealt: 400 }) > s);
+  ok('taking less damage scores more', scoreOf({ ...base, taken: 20 }) > s);
+  ok('winning faster scores more', scoreOf({ ...base, seconds: 20 }) > s);
+
+  /* The speed term is a BONUS that runs out, not a penalty that keeps going.
+     A pair who spend ten minutes messing about should score less than a brisk
+     pair — they should not be driven negative for enjoying themselves. */
+  ok('a very slow tournament is not punished below zero',
+    scoreOf({ ...base, seconds: 100000 }) > 0);
+  ok('a flawless win beats a scrappy one',
+    scoreOf({ ...base, taken: 0, seconds: 30 }) > scoreOf({ ...base, taken: 280, seconds: 110 }));
+}
+
+console.log('\n--- the record board ---');
+{
+  clearBoard();
+  ok('an empty board is an empty list', loadBoard().length === 0);
+
+  const saved = saveResult({ name: 'REK', score: 4200, wins: 2, dealt: 300, taken: 40, seconds: 55 });
+  ok('a result is saved and comes back', saved.rows.length === 1 && saved.rank === 0);
+  ok('...and survives a reload', loadBoard()[0]?.name === 'REK');
+
+  for (let i = 0; i < BOARD_SIZE + 6; i++) {
+    saveResult({ name: `P${i}`, score: 1000 + i * 10, wins: 1, dealt: 1, taken: 1, seconds: 1 });
+  }
+  const rows = loadBoard();
+  ok(`the board keeps only the top ${BOARD_SIZE}`, rows.length === BOARD_SIZE);
+  ok('...sorted best first', rows.every((r, i) => i === 0 || rows[i - 1].score >= r.score));
+  ok('...and the best score is still on it', rows[0].score === 4200);
+
+  const low = saveResult({ name: 'LOW', score: 1, wins: 0, dealt: 0, taken: 0, seconds: 999 });
+  ok('a score that misses the board reports rank -1', low.rank === -1);
+
+  /* THE ONE THING IN THIS GAME THAT SURVIVES A RELOAD is also the one thing
+     that can be sitting in storage in a shape this build has never written —
+     an older version, a half-finished write, somebody poking at devtools. A
+     board that throws takes the results screen down at the exact moment
+     somebody has just won a tournament. */
+  globalThis.localStorage.setItem('kk.arena.board.v2', 'not json at all');
+  ok('a corrupt board reads as empty rather than throwing', loadBoard().length === 0);
+  globalThis.localStorage.setItem('kk.arena.board.v2', '{"not":"an array"}');
+  ok('...and so does the wrong shape', loadBoard().length === 0);
+  globalThis.localStorage.setItem('kk.arena.board.v2',
+    '[{"name":"OK","score":5},{"nope":true},{"name":"X","score":"abc"}]');
+  ok('...and junk rows are dropped, good ones kept',
+    loadBoard().length === 1 && loadBoard()[0].name === 'OK');
+  clearBoard();
+}
+
+console.log('\n--- signing the board ---');
+{
+  const ne = new NameEntry();
+  const pad = (mx, my, btn = null) => ({ mx, my, pressed: (a) => a === btn, down: () => false });
+
+  ok('it opens at the minimum length', ne.slots.length === NAME_MIN);
+  ok('...and a default name is already valid', ne.valid);
+
+  ne.update(0.016, [pad(0, 1)]);
+  ok('down walks the alphabet', ne.name[0] === 'B');
+
+  // Right past the end GROWS the name — that is how you get four or five
+  // letters without a separate control for it.
+  for (let i = 0; i < NAME_MAX + 3; i++) ne.update(1, [pad(1, 0)]);
+  ok(`right grows the name, capped at ${NAME_MAX}`, ne.slots.length === NAME_MAX);
+  const at = ne.cursor;
+  ne.update(1, [pad(1, 0)]);
+  ok('...and cannot run off the end', ne.cursor === at);
+
+  const back = new NameEntry();
+  back.update(1, [pad(-1, 0)]);
+  ok('left off the front does nothing rather than wrapping', back.cursor === 0);
+
+  const done = new NameEntry();
+  const r = done.update(0.016, [pad(0, 0, 'jump')]);
+  ok('jump confirms', r.confirmed && done.done);
+  ok('...and a confirmed entry stops responding',
+    done.update(0.016, [pad(0, 1)]).moved === false);
+
+  /* EITHER PLAYER DRIVES IT. The winner types her own name and this screen
+     cannot know which pad she is holding — locking it to player 1 means the
+     younger sister wins the tournament and cannot sign for it. */
+  const two = new NameEntry();
+  two.update(0.016, [pad(0, 0), pad(0, 1)]);
+  ok('player 2 can drive it too', two.name[0] === 'B');
+
+  const kb = new NameEntry();
+  for (const k of ['KeyR', 'KeyE', 'KeyK']) kb.key(k);
+  ok('a keyboard still works', kb.name === 'REK');
+}
+
+console.log('\n--- the tournament ---');
+{
+  line('best of', `${WINS_NEEDED} wins, max ${MAX_ROUNDS} rounds`);
+  /* Two wins out of three. If these ever drift apart — three wins needed out
+     of three rounds, say — a 1-1-1 outcome could never be decided and the
+     third round would end in a state with nowhere to go. */
+  ok('the rounds can actually produce a winner', WINS_NEEDED <= MAX_ROUNDS);
+  ok('...and a decider is possible without being certain',
+    WINS_NEEDED * 2 > MAX_ROUNDS);
+
+  /* THE UNLOCK LADDER HAS TO CLIMB. Milestones out of order would fire in a
+     jumble, and one at or above the opening threshold would be an
+     announcement that can never be heard — the arena opens first. */
+  line('milestones', MILESTONES.map((m) => `${Math.round(m.at * 100)}%`).join(' '));
+  ok('the milestones are in ascending order',
+    MILESTONES.every((m, i) => i === 0 || m.at > MILESTONES[i - 1].at));
+  ok('...and all of them fire before the arena opens',
+    MILESTONES.every((m) => m.at < OPEN_AT));
+  ok('the arena opens short of 100%', OPEN_AT > 0.5 && OPEN_AT < 1,
+    `${Math.round(OPEN_AT * 100)}% of ${world.mischiefTotal} props`);
+
+  /* The arena carries no props of its own, and this is not cosmetic: the
+     tournament unlocks at 80% of `mischiefTotal`, so a single crate out there
+     would be a crate you need in order to open the place it is standing in. */
+  const inArena = world.props.filter(
+    (p) => Math.hypot(p.home.x - world.arenaCentre.x, p.home.z - world.arenaCentre.z)
+      < world.arenaIsland.radius
+  );
+  ok('nothing knockable is inside the arena', inArena.length === 0,
+    'or the unlock would need props only reachable after unlocking');
+}
+
+console.log('\n--- Mr. Satan has a voice ---');
+{
+  /* Every line in every script, checked against the files on disk. A missing
+     mp3 does not throw — `SummonScene.load` falls back to the authored
+     duration and the scene plays on silently, cutting nothing and reporting
+     nothing. It is exactly the sort of failure that ships. */
+  const scripted = [...SCRIPTS.satanAnnounce, ...SCRIPTS.satanOpen];
+  const missing = scripted.filter(
+    (b) => !existsSync(new URL(`../public${b.voice}`, import.meta.url))
+  );
+  ok('every scripted line has a recording', missing.length === 0,
+    missing.map((b) => b.id).join(' '));
+
+  const popIn = [...MILESTONES.map((m) => m.id),
+    'sat_board', 'sat_r1', 'sat_r2', 'sat_r3', 'sat_fight', 'sat_ko', 'sat_win1', 'sat_win2'];
+  const missingPop = popIn.filter(
+    (id) => !existsSync(new URL(`../public/voice/${id}.mp3`, import.meta.url))
+  );
+  ok('every pop-in line has one too', missingPop.length === 0, missingPop.join(' '));
+
+  /* One round call per round the tournament can actually reach. Three rounds
+     and two recordings is a final round that opens in silence. */
+  ok('there is a round call for every round',
+    Array.from({ length: MAX_ROUNDS }, (_, i) => `sat_r${i + 1}`)
+      .every((id) => existsSync(new URL(`../public/voice/${id}.mp3`, import.meta.url))));
+
+  ok('the champion and the griffin both have art',
+    existsSync(new URL('../public/sprites/leader_satan.png', import.meta.url))
+    && existsSync(new URL('../public/sprites/griffin.png', import.meta.url)));
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

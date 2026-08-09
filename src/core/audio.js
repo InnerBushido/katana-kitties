@@ -105,6 +105,20 @@ export const MUSIC = {
      opinion competes with it. High, slow, very sparse, almost no drone —
      present enough that the island is not silent, and nothing more. */
   dojo: { scale: YO, beat: 0.86, root: 220.0, oct: 1, drone: 0.08, taiko: 0, rest: 0.84, bell: true },
+  /* THE ARENA: a matsuri, not a battle theme. It is the fastest thing you can
+     stand still in — the only island that outruns the bamboo grove — with a
+     taiko on every other step, which is the sound a tournament crowd makes.
+     HIRAJOSHI is the HOME scale on purpose and it is the one deliberate
+     re-use in the set: this is still their world, three hundred units north,
+     and the fight is a festival rather than somewhere foreign. What separates
+     it from the home theme is everything else — up a fifth to F, nearly twice
+     the tempo, a drum the home theme has never had, and fifths under the
+     pluck. NO BASS: the storm dragon owns the only bassline in the game and
+     a second one would blur the two. */
+  arena: {
+    scale: HIRAJOSHI, beat: 0.32, root: 174.61, oct: 1, drone: 0.20,
+    taiko: 2, rest: 0.52, fifths: true,
+  },
 
   /* ---- the dragons ---- */
   /* STORM DRAGON FLIGHT. The Dragon Ball brief, finally cashed in: this is the
@@ -130,7 +144,7 @@ export const MUSIC = {
 /** Biome → piece. Anything unrecognised falls back to the home theme. */
 export const ISLAND_MUSIC = {
   meadow: 'play', autumn: 'autumn', frost: 'frost',
-  bamboo: 'bamboo', ash: 'ash', dusk: 'dusk',
+  bamboo: 'bamboo', ash: 'ash', dusk: 'dusk', arena: 'arena',
 };
 
 /**
@@ -466,6 +480,61 @@ export class Audio {
         // A boulder off a star: the opposite end, all body and grit.
         this._noise({ from: 700, to: 90, dur: 0.7, gain: 0.4 * v, type: 'lowpass', q: 1.2 });
         this._tone({ type: 'square', from: 96, to: 38, dur: 0.42, gain: 0.16 * v });
+        break;
+
+      /* ---- the tournament ----
+         These have one job the rest of the library does not: they have to be
+         told apart from `hit` while both are firing several times a second.
+         A blow that lands on a BARREL and a blow that lands on your SISTER
+         must not sound alike, or a nine-year-old cannot tell whether she is
+         winning without looking away from what she is doing. So the whole
+         group is pitched — bodies, not wood — where `hit` is noise. */
+      case 'hurt':
+        // A body: a soft low thump with a short bright yelp over the top.
+        this._tone({ type: 'sine', from: 190, to: 70, dur: 0.16, gain: 0.30 * v });
+        this._noise({ from: 900, to: 260, dur: 0.09, gain: 0.14 * v, q: 0.9 });
+        this._tone({ type: 'triangle', from: 900, to: 1350, dur: 0.07, gain: 0.09 * v });
+        break;
+      case 'ko':
+        /* Bigger, and it FALLS. The last hit of a round has to be audibly the
+           last hit — a descending fifth under a crash reads as something
+           going down in a way no amount of extra gain on `hurt` would. */
+        this._tone({ type: 'square', from: 300, to: 60, dur: 0.55, gain: 0.26 * v });
+        this._tone({ type: 'triangle', from: 200, to: 40, dur: 0.7, gain: 0.16 * v, delay: 0.03 });
+        this._noise({ from: 2400, to: 200, dur: 0.5, gain: 0.26 * v, q: 0.7 });
+        break;
+      case 'ringout':
+        // Thrown off the stage: a rising whoosh that leaves, then a gong.
+        this._noise({ from: 400, to: 3000, dur: 0.34, gain: 0.24 * v, q: 1.4 });
+        this._tone({ type: 'sine', from: semi(0), dur: 1.3, gain: 0.20 * v, delay: 0.22 });
+        this._tone({ type: 'sine', from: semi(7), dur: 1.1, gain: 0.11 * v, delay: 0.22, detune: 8 });
+        break;
+      case 'count':
+        // One tick of the pre-round countdown. Dry and short on purpose —
+        // three of these in a row have to read as three, not as a chord.
+        this._tone({ type: 'square', from: semi(12), dur: 0.12, gain: 0.20 * v });
+        this._noise({ from: 2600, to: 1400, dur: 0.05, gain: 0.10 * v, q: 2.0 });
+        break;
+      case 'gong':
+        /* FIGHT. The one sound in the game that starts something. A big
+           struck bell: fundamental, fifth and octave together with a noise
+           transient on the strike, and a long tail under the first exchange. */
+        this._noise({ from: 3200, to: 400, dur: 0.16, gain: 0.30 * v, q: 0.6 });
+        this._tone({ type: 'sine', from: semi(-12), dur: 2.4, gain: 0.24 * v });
+        this._tone({ type: 'sine', from: semi(-5), dur: 2.1, gain: 0.14 * v, detune: 5 });
+        this._tone({ type: 'sine', from: semi(0), dur: 1.8, gain: 0.11 * v, detune: -7 });
+        break;
+      case 'victory':
+        /* Winning the whole tournament. Deliberately a FANFARE rather than
+           the star's bell — a star is a thing you found, this is a thing you
+           beat your sister at, and it should sound like a crowd. */
+        [0, 4, 7, 12, 12, 16, 19, 24].forEach((n, i) => this._tone({
+          type: 'square', from: semi(n + 12), dur: 0.3,
+          gain: 0.12 * v, delay: i * 0.11,
+        }));
+        this._tone({ type: 'sine', from: semi(0), dur: 2.6, gain: 0.13 * v });
+        this._tone({ type: 'sine', from: semi(7), dur: 2.4, gain: 0.09 * v });
+        this._noise({ from: 1200, to: 300, dur: 0.5, gain: 0.10 * v, q: 0.5, delay: 0.88 });
         break;
       case 'mount':
         [0, 3, 7].forEach((n, i) => this._tone({

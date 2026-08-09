@@ -169,7 +169,8 @@ a double jump on the way past.
 Patchfur has something to say about what you've done, in her own voice, over a
 shot that pulls back until all seven islands are on screen at once. Nothing
 stops when she's finished; that's rather the point of what she says. Then she
-points you at the arena.
+points you at [the arena](#the-world-martial-arts-tournament) — which by then
+has been open for a while, since Mr. Satan unlocks it at 80%.
 
 Find one and your kitten stops and **holds it over her head** while the camera
 swings in. It only happens on her screen: if your sister is off cutting bamboo,
@@ -200,6 +201,56 @@ and **once you're both aboard the screen joins into one shared view** — one
 dragon on two half-screens is the worst way to look at him. With only one of
 you on him the screen splits as usual, so whoever is still on the ground keeps
 her own half.
+
+## The World Martial Arts Tournament
+
+**When you've done everything else, there's a ring.**
+
+Find all seven dragon balls, ride Ryuuseki, and half a minute later a very
+loud cat in a championship belt interrupts your afternoon. **Mr. Satan** —
+strongest cat in the world, and he'd like you to know it — is building an
+arena, and he'll open it once you've knocked over **80% of everything**. He
+calls out your progress as you go.
+
+At 80% an eighth island appears in the sky, far to the north. **You can't fly
+there** — it isn't there until he opens it. Go and find him in the town,
+**both of you together**, say yes, and his griffin carries you north while you
+watch. (It takes eight seconds and Start skips it.)
+
+Then you fight each other.
+
+| | |
+|---|---|
+| **Health** | 100 each, shown over your head and along the top of the screen |
+| **Rounds** | best of three — two wins takes it |
+| **Standing slash** | quick and safe |
+| **Sprint + slash** | the big one — this is how you throw your sister across the ring |
+| **Jump + slash** | hurts most, hardest to land |
+
+**No new buttons.** It's the same attack button you've been knocking over
+barrels with all afternoon; what changes it is whether you're running or in
+the air when you press it.
+
+**Don't fall off.** The painted red border is the edge of the stage. Step past
+it and you lose a third of your health and get thrown back into the middle —
+your foot ring flashes red first, so you get a warning. And the more health
+you've lost, the further you fly when you're hit, so rounds get wilder as they
+go on.
+
+**You can only fight in the ring, during a round.** Nothing you do to each
+other anywhere else in the world does anything at all — not in the town, not
+during the countdown, not between rounds.
+
+**The winner signs the board.** Three to five letters, picked with the stick:
+up and down change the letter, left and right move along. Your score comes from
+how many rounds you won, how much damage you dealt, how fast you did it and how
+little you took. **The board is saved** — it's the only thing in the game that
+survives closing the tab, so a win last Saturday is still there today. Top ten,
+and you can look at it any time from the pause menu (**RECORD BOARD**) or by
+walking up to the big board beside the ring.
+
+When it's over the griffin takes you home, and you can go straight back and do
+it again.
 
 ## Raise a panda
 
@@ -346,9 +397,15 @@ game theme played fast. Ryuuseki has a different one again — darker, higher, a
 taiko instead of a drum kit. The intro has its own piece too: same synthesis,
 darker scale, slower, an octave down.
 
-The **only** audio files in the whole project are the eleven voice lines in the
-opening cutscene (`public/voice/`, about a megabyte). If they're missing, the
-cast falls back to pitched blips and the intro still runs.
+The **only** audio files in the whole project are the recorded voices in
+`public/voice/` — the opening cutscene, the six clan leaders, the dragon hunt,
+and Mr. Satan calling the tournament. If they're missing the cast falls back to
+pitched blips and everything still runs.
+
+**The arena has its own music too**, and it's the fastest thing you can stand
+still in: the home island's scale, up a fifth, nearly twice the tempo, with a
+taiko on every other beat. A festival rather than a battle theme — it's still
+their world, just three hundred units north.
 
 That means nothing to download, nothing to licence and no asset pipeline. Two
 sliders in **Settings** control effects and music independently.
@@ -505,11 +562,18 @@ src/
   systems/
     mathdojo.js         the walkable unit circle
     cutscene.js         the opening story, flown through the real world
+    tournament.js       rounds, ring-outs, scoring — and the one gate that
+                        decides whether the two of you can hurt each other
+    arenaquest.js       how the tournament unlocks
+    announce.js         Mr. Satan's pop-in card
+    leaderboard.js      the saved record board + joystick name entry
   entities/
-    player.js           movement, slash, mounting, camera rig
+    player.js           movement, slash, mounting, camera rig, health
     dragon.js           rideable storm dragon
     panda.js            the raisable, rideable Pandapaw panda
     leader.js           the six clan chiefs + Patchfur the storyteller
+    satan.js            the tournament announcer
+    griffin.js          the ride to the arena
     orb.js              Kotodama Orb + pickups
     prop.js             knockable scenery
 ```
@@ -560,8 +624,9 @@ read in mirror image, a clan buff that doesn't actually do anything.
 
 ## Ideas not built yet
 
-- Enemies and real combat (deliberately left out — the slash currently exists
-  to knock scenery over, which is where the fun is at this size)
+- Enemies in the world (still deliberately left out — the slash exists to knock
+  scenery over, and the fighting is fenced off inside the tournament ring,
+  which is a different thing from putting monsters on the islands)
 - Clan camp building and kitten customisation
 - More towns on the outer islands
 - A second dragon type with different flight handling

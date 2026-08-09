@@ -112,15 +112,35 @@ export const BIOMES = {
     name: 'Dusk', grass: 0x7a6ea8, grassDark: 0x453c66, grassWarm: 0xa294cc,
     rock: 0x8a7a9c, rockDark: 0x453a58, dirt: 0x9384ad, map: 0x7a6ea8,
   },
+  /* The tournament grounds. Deliberately the most ARTIFICIAL palette in the
+     game — raked sand and dressed stone rather than grass — because every
+     other island is somewhere that grew and this is somewhere that was BUILT.
+     A kid arriving should be able to tell at a glance that people made it. */
+  arena: {
+    name: 'Arena', grass: 0xd9c48c, grassDark: 0xb09a63, grassWarm: 0xefdcae,
+    rock: 0xa89478, rockDark: 0x5f5343, dirt: 0xc9b184, map: 0xd9c48c,
+  },
 };
 
 export class Island {
   constructor(opts) {
     const {
       x = 0, z = 0, baseY = 0, radius = 60, seed = 1,
-      hill = 4.5, plateau = 0.5, flatten = null, biome = 'meadow',
+      hill = 4.5, plateau = 0.5, flatten = null, biome = 'meadow', kind = null,
     } = opts;
 
+    /**
+     * What this island is FOR, when that is not derivable from its biome.
+     *
+     * `null` for the six ordinary adventure islands, `'dojo'` for the maths
+     * island and `'arena'` for the tournament grounds. It exists because this
+     * file has already been bitten twice by places that identify a special
+     * island by its INDEX — "the last one is the dojo" — which is true right
+     * up until something is appended after it. Every loop that used to say
+     * `k < islands.length - 1` now asks `isl.kind` instead, so adding a ninth
+     * island cannot quietly plant trees on the unit circle.
+     */
+    this.kind = kind;
     this.biome = BIOMES[biome] ? biome : 'meadow';
     this.palette = BIOMES[this.biome];
     this.x = x;
@@ -1184,6 +1204,235 @@ export function buildBridge(len = 14, wide = 3.4) {
     }
   }
   return parts;
+}
+
+/* ---------------------------------------------------------------------------
+   The World Martial Arts Tournament arena.
+
+   A square dressed-stone ring on a stepped plinth, four banner posts, tiered
+   stands all the way round, the announcer's box and the record board. It is
+   the only built place in the game outside the home town, and that contrast
+   is the point: you arrive somewhere that people made on purpose.
+--------------------------------------------------------------------------- */
+
+/** Half-width of the square fighting ring. The deck is ARENA_RING*2 across. */
+export const ARENA_RING = 28;
+/** How far the ring's deck stands above the island under it. */
+export const ARENA_RISE = 2.4;
+/**
+ * How far past the deck edge a fighter has to be before it counts as out.
+ *
+ * A fighter is a point and the ring is 56 across, so a bare edge test fires
+ * while she is still visibly standing on stone — the sprite is nearly three
+ * units wide and its feet are what a player reads as "on the ring". The
+ * margin is measured from the deck rather than picked: it is a little over
+ * one player radius (0.75), so the whole drawn kitten has to have cleared the
+ * edge before the ring lets go of her.
+ */
+export const ARENA_OUT = 1.1;
+
+/**
+ * Where the announcer stands, and where the record board faces the ring.
+ *
+ * THE BOOTH SITS BETWEEN THE RING AND THE STANDS, not behind them. The first
+ * pass put it out at `ARENA_RING + 19`, which is inside the seating ring —
+ * so the stands swallowed its walls and all that was left on screen was a
+ * pagoda roof the width of the stand it was buried in, hanging out over the
+ * deck like a tarpaulin. An announcer has to be visibly ABOVE the fight and
+ * clearly not in it, which means close to the ring and raised, not far back
+ * and tall.
+ *
+ * AND IT IS ON THE FAR SIDE, WHICH IS THE PART THAT IS NOT DECORATION. This
+ * game's camera has a FIXED yaw of -PI/4 (`CAM_YAW` in player.js) and only
+ * ever changes its distance — that is what keeps the billboards seen from the
+ * angle they were drawn for, and it means the camera is always at -x/+z of
+ * whatever it is watching. So anything built at +z is permanently between the
+ * players and the lens. The booth was there first, and a six-unit roof parked
+ * across the middle of the deck is a roof across the middle of every round.
+ * North for the announcer (he reads as a backdrop over the ring, which is
+ * where a commentator belongs), west for the board, and the entrance keeps
+ * the south — a torii you walk in through is the one thing that EARNS being
+ * in the foreground.
+ */
+export const ARENA_BOOTH = { x: 0, z: -(ARENA_RING + 8) };
+export const ARENA_BOARD = { x: -(ARENA_RING + 20), z: 0 };
+
+/**
+ * The four corners a fighter can be posted at, as fractions of the ring.
+ *
+ * Rounds start with the two of them on OPPOSITE sides facing in, which is the
+ * one arrangement that reads as a duel rather than as two kittens who happen
+ * to be standing near each other. They are pulled well inside the edge (0.62)
+ * so nobody opens a round already halfway out of the ring.
+ */
+export const ARENA_POSTS = [
+  { x: -ARENA_RING * 0.62, z: 0 },
+  { x: ARENA_RING * 0.62, z: 0 },
+];
+
+export function buildArena() {
+  const parts = [];
+  const solids = [];
+  const platforms = [];
+  const R = ARENA_RING;
+  const H = ARENA_RISE;
+
+  /* --- the ring ---
+     Three stacked slabs, each wider than the one above. A single extruded
+     square reads as a box dropped on the grass; the step is what makes it
+     masonry somebody laid. The TOP slab's surface is exactly H, because that
+     is the number the platform and every spawn point is derived from. */
+  parts.push(box(R * 2 + 4.4, 0.85, R * 2 + 4.4, PALETTE.rockDark, 0, H - 2.03, 0));
+  parts.push(box(R * 2 + 2.2, 0.85, R * 2 + 2.2, PALETTE.rock, 0, H - 1.18, 0));
+  parts.push(box(R * 2, 0.75, R * 2, PALETTE.sand, 0, H - 0.375, 0));
+
+  /* Raked tiling. Thin proud strips rather than a checker of 64 quads: the
+     lines are what tell you the deck is a measured square, and they also give
+     the eye something to judge a knockback against on an otherwise blank
+     surface — 56 units of flat sand has no scale to it at all. */
+  for (let i = 1; i < 8; i++) {
+    const t = (i / 8 - 0.5) * R * 2;
+    parts.push(box(R * 2, 0.05, 0.28, PALETTE.rockDark, 0, H + 0.02, t));
+    parts.push(box(0.28, 0.05, R * 2, PALETTE.rockDark, t, H + 0.02, 0));
+  }
+
+  /* THE BOUNDARY IS DRAWN, because it is a rule. A fighter thrown toward the
+     rim has to be able to see how much ring is left without looking away from
+     the fight, so the last stride of it is a bright vermillion frame with a
+     white inner line — the two together read at a distance where either alone
+     is a smudge. `ARENA_OUT` is what the game actually measures, and the
+     stripe sits on the same number so what she can see is what is enforced. */
+  const edge = R - ARENA_OUT;
+  for (const s of [-1, 1]) {
+    parts.push(box(R * 2, 0.07, ARENA_OUT * 2, PALETTE.vermillion, 0, H + 0.03, s * (R - ARENA_OUT)));
+    parts.push(box(ARENA_OUT * 2, 0.07, R * 2, PALETTE.vermillion, s * (R - ARENA_OUT), H + 0.03, 0));
+    parts.push(box(R * 2, 0.09, 0.34, PALETTE.paper, 0, H + 0.05, s * edge));
+    parts.push(box(0.34, 0.09, R * 2, PALETTE.paper, s * edge, H + 0.05, 0));
+  }
+
+  /* The deck. One platform, so `heightAt` answers with it and every piece of
+     ground physics the rest of the game already has — gravity, the slope
+     snap, `resolveSolids` — works up here untouched. */
+  platforms.push({ x0: -R, x1: R, z0: -R, z1: R, y: H });
+
+  /* Steps up, on the two sides the fighters walk in from. The deck is 2.4 up
+     and a single jump clears 4.2, so these are not strictly needed — but a
+     kitten who has to jump onto the stage every time she wanders off it reads
+     the stage as a wall, and between rounds both girls are walking around
+     down here. Two treads a side, each comfortably inside a stride. */
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < 2; i++) {
+      const y = H * ((i + 1) / 3);
+      const z = s * (R + 1.4 + (1 - i) * 1.9);
+      parts.push(box(16, y + 0.4, 2.0, PALETTE.stone, 0, (y + 0.4) / 2 - 0.2, z));
+      platforms.push({ x0: -8, x1: 8, z0: z - 1.0, z1: z + 1.0, y });
+    }
+  }
+
+  /* --- the four corner posts ---
+     Vermillion columns with gold caps and a hanging banner. They are the
+     silhouette: from the air the ring is a pale square, and these are what
+     make it read as a venue rather than as a patio. Solids with a `top`, so
+     a fighter knocked into one is stopped by it and can still be thrown on
+     top of it — see resolveSolids. */
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const x = sx * (R + 1.1);
+      const z = sz * (R + 1.1);
+      parts.push(box(1.5, 11, 1.5, PALETTE.vermillion, x, H + 5.5, z));
+      parts.push(box(2.2, 0.7, 2.2, PALETTE.gold, x, H + 11.3, z));
+      parts.push(box(2.6, 0.5, 2.6, PALETTE.vermillion, x, H + 11.85, z));
+      // The banner, hanging inward toward the ring.
+      parts.push(box(0.16, 5.2, 2.4, PALETTE.paper, x - sx * 0.9, H + 7.4, z));
+      parts.push(box(0.18, 0.5, 2.4, PALETTE.tileIndigo, x - sx * 0.94, H + 9.8, z));
+      solids.push({ x, z, r: 1.5, top: H + 11.6 });
+    }
+  }
+
+  /* --- the stands ---
+     Three tiers of benching on all four sides, set well back so nothing can
+     crowd the ring or block a camera that has to see two fighters at once.
+     They are solid, which matters: without them a knockback sends a kitten
+     out across an empty island and the arena stops being a room. */
+  for (let side = 0; side < 4; side++) {
+    const a = (side * Math.PI) / 2;
+    const nx = Math.round(Math.sin(a));
+    const nz = Math.round(Math.cos(a));
+    for (let tier = 0; tier < 3; tier++) {
+      const d = R + 13 + tier * 3.4;
+      const y = 1.1 + tier * 1.7;
+      const len = R * 2 + 22 + tier * 7;
+      const w = 3.4;
+      const g = new THREE.BoxGeometry(
+        nz ? len : w, y * 2, nz ? w : len
+      );
+      paint(g, tier % 2 ? PALETTE.wood : PALETTE.woodDark);
+      g.translate(nx * d, y, nz * d);
+      parts.push(g);
+      // A stripe of seated colour on top, so the stands don't read as crates.
+      const s = new THREE.BoxGeometry(nz ? len - 1 : 1.2, 0.5, nz ? 1.2 : len - 1);
+      paint(s, [PALETTE.tileIndigo, PALETTE.tileRed, PALETTE.tileGreen][tier]);
+      s.translate(nx * d, y * 2 + 0.25, nz * d);
+      parts.push(s);
+      solids.push({ x: nx * d, z: nz * d, r: tier === 2 ? 4.6 : 3.2, top: y * 2 + 0.5 });
+    }
+  }
+
+  /* --- the announcer's box ---
+     Raised, facing the ring, on the side the fighters do NOT enter from. Mr
+     Satan stands on it for the whole tournament, which is why it is a real
+     platform with a real height rather than a decorative lump: his billboard
+     is placed off `ARENA_BOOTH.y`, and a booth whose top nobody can query
+     puts him standing in mid-air over it. */
+  const B = ARENA_BOOTH;
+  parts.push(box(10, 6.2, 5.6, PALETTE.plaster, B.x, 3.1, B.z));
+  parts.push(box(11, 0.6, 6.6, PALETTE.tileRed, B.x, 6.4, B.z));
+  // The rail, on the RING side of the booth — he leans on it to shout at them.
+  parts.push(box(10.6, 0.5, 0.5, PALETTE.gold, B.x, 6.95, B.z + 2.9));
+  for (const sx of [-1, 1]) {
+    parts.push(box(0.5, 3.4, 0.5, PALETTE.woodDark, B.x + sx * 4.8, 8.4, B.z));
+  }
+  /* `pagodaRoof` hands back ONE unpainted geometry, not a list of parts — it
+     is the odd one out in this file, and every other caller paints it before
+     pushing it. Merging an unpainted geometry throws on the missing colour
+     attribute rather than drawing something grey, which is at least loud.
+     Sized so the eave stops SHORT of the deck: half-width 4.4 with the 0.5
+     overhang reaches 6.6, against the 8 units of clear ground between the
+     booth's centre and the ring edge. A roof that oversails the ring is a
+     roof that hides the fight from every camera south of it. */
+  const boothRoof = pagodaRoof(4.4, 3.2, 2.2, { overhang: 0.5, cornerLift: 0.5 });
+  paint(boothRoof, PALETTE.tileIndigo);
+  boothRoof.translate(B.x, 10.1, B.z);
+  parts.push(boothRoof);
+  solids.push({ x: B.x, z: B.z, r: 5.2, top: 6.7 });
+  platforms.push({ x0: B.x - 5, x1: B.x + 5, z0: B.z - 2.8, z1: B.z + 2.8, y: 6.7 });
+
+  /* --- the record board ---
+     The leaderboard exists as a real object in the world as well as on the
+     HUD. A score that only lives in a menu is a score a nine-year-old forgets
+     she has; a board she can walk up to and stand in front of is a thing she
+     can show her sister. The names themselves are drawn on a canvas label at
+     runtime — see ArenaBoard. */
+  /* Built along Z and thin in X, because it stands on the WEST side and has
+     to face the ring across +x. Its own axes rather than a rotation of the
+     north-facing version: `box` takes a yaw, but every offset below would
+     then need rotating with it, and a board whose posts are 90 degrees out
+     from its face is exactly the sort of thing that looks fine until you walk
+     round it. */
+  const D = ARENA_BOARD;
+  for (const sz of [-1, 1]) {
+    parts.push(box(1.1, 9, 1.1, PALETTE.woodDark, D.x, 4.5, D.z + sz * 7.6));
+  }
+  parts.push(box(0.9, 9.4, 17, PALETTE.plaster, D.x, 8.2, D.z));
+  parts.push(box(1.4, 1.0, 18, PALETTE.tileRed, D.x, 13.3, D.z));
+  parts.push(box(1.4, 0.5, 18, PALETTE.gold, D.x, 3.4, D.z));
+  solids.push({ x: D.x, z: D.z, r: 8.4, top: 13.8 });
+
+  /* The way in: a torii on the fighters' axis, so the approach from the
+     griffin's landing side is framed exactly like the great torii at home. */
+  parts.push(...transformParts(buildTorii(1.5), 0, 0, R + 34, 0));
+
+  return { parts, solids, platforms };
 }
 
 /** Merge a pile of painted geometries into one BufferGeometry. */

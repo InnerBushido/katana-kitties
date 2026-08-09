@@ -5,6 +5,7 @@ import {
   buildBridge, buildBamboo, buildRoad, buildShrine, mergeParts, transformParts,
   valueNoise, fbm,
   buildGrotto, buildSpire, buildShards, SPIRE_H,
+  buildArena, ARENA_RING, ARENA_RISE, ARENA_OUT, ARENA_POSTS, ARENA_BOOTH, ARENA_BOARD,
 } from './build.js';
 import { Prop } from '../entities/prop.js';
 import { ClanShrine } from '../entities/shrine.js';
@@ -161,11 +162,14 @@ export class World {
     this.roadMask = [];
     this.mischiefTotal = 0;
     this.time = 0;
+    /** True once Mr Satan has opened the tournament. See openArena. */
+    this.arenaOpen = false;
 
     this._buildSky();
     this._buildLights();
     this._buildIslands();
     this._buildTown();
+    this._buildArena();
     this._buildShrines();
     /* BEFORE the ground detail, and that ordering is the whole point.
        The stars' locks build real furniture — a grotto, a spire, a stack of
@@ -259,8 +263,12 @@ export class World {
       frost: 'frost', ash: 'ash', dusk: 'dusk',
     };
     const decor = [];
-    for (let k = 1; k < this.islands.length - 1; k++) {
+    for (let k = 1; k < this.islands.length; k++) {
       const isl = this.islands[k];
+      // The dojo keeps its circle readable and the arena is dressed stone —
+      // neither wants a forest. See World.playIslands for why this is a `kind`
+      // test rather than a `length - 1`.
+      if (isl.kind) continue;
       const leaf = FLORA[isl.biome] ?? 'blossom';
 
       /* ONE LITTLE HOUSE per odd island, and it moved here for two reasons —
@@ -441,6 +449,109 @@ export class World {
     this.scene.add(mesh);
   }
 
+  /* ------------------------------ the arena ------------------------------ */
+
+  /**
+   * Raise the World Martial Arts Tournament grounds.
+   *
+   * Built at boot with everything else — it is 330 units away and merged into
+   * one mesh, so building it eagerly costs a draw call nobody sees, and the
+   * alternative (assembling an island the first time somebody opens the
+   * tournament) is a frame-long hitch at the exact moment a cutscene is
+   * playing. What is deferred is not the geometry, it is the VISIBILITY and
+   * the ground under it — see `heightAt` and `openArena`.
+   */
+  _buildArena() {
+    const isl = this.arenaIsland;
+    const g = isl.heightAt(isl.x, isl.z) ?? isl.baseY;
+    const { parts, solids, platforms } = buildArena();
+    transformParts(parts, isl.x, g, isl.z, 0, 1);
+
+    const mesh = new THREE.Mesh(mergeParts(parts), toonVertexMat());
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.visible = false;
+    this.scene.add(mesh);
+    this.arenaProps = mesh;
+
+    /* The builder works in ARENA-LOCAL coordinates, because every number in
+       it is measured against the ring's own centre and half-width. The world
+       wants absolute ones, so the offset is applied here, once, in the same
+       place the geometry is moved — two separate translations of the same
+       pile of numbers is how a collider ends up 330 units from the wall it
+       describes. */
+    for (const s of solids) {
+      this.solids.push({
+        x: isl.x + s.x, z: isl.z + s.z, r: s.r,
+        top: s.top == null ? undefined : g + s.top,
+        arena: true,
+      });
+    }
+    /* Tagged `arena`, and `heightAt` skips them while the tournament is shut.
+       Hiding the ISLAND is not enough on its own: platforms are a separate
+       list that never consulted an island at all, so the ring deck and the
+       announcer's box stayed perfectly solid 2.4 units above nothing. A
+       kitten flown to the coordinates would have landed on an invisible
+       stone square in open sky — which is a far worse bug than an arena you
+       can reach early, because it looks like the world is broken. */
+    for (const p of platforms) {
+      this.platforms.push({
+        x0: isl.x + p.x0, x1: isl.x + p.x1,
+        z0: isl.z + p.z0, z1: isl.z + p.z1,
+        y: g + p.y, arena: true,
+      });
+    }
+
+    /** The fighting deck, in world coordinates. The tournament reads this. */
+    this.arenaRing = {
+      x: isl.x, z: isl.z, y: g + ARENA_RISE, half: ARENA_RING, out: ARENA_OUT,
+    };
+    /** Where a fighter is posted at the top of a round, and who announces it. */
+    this.arenaPosts = ARENA_POSTS.map((p) => ({
+      x: isl.x + p.x, z: isl.z + p.z, y: g + ARENA_RISE,
+    }));
+    this.arenaBooth = { x: isl.x + ARENA_BOOTH.x, y: g + 6.7, z: isl.z + ARENA_BOOTH.z };
+    this.arenaBoard = { x: isl.x + ARENA_BOARD.x, y: g + 4.2, z: isl.z + ARENA_BOARD.z };
+    /* Where the griffin sets both kittens down: through the torii, outside the
+       stands, facing the ring — so the walk in is the shot. Clear of the
+       outermost seating (which reaches ARENA_RING + 24.4) and short of the
+       torii at + 34. */
+    this.arenaLanding = { x: isl.x, y: g, z: isl.z + ARENA_RING + 30 };
+  }
+
+  /**
+   * Open the tournament grounds, or shut them again.
+   *
+   * One call, because "the arena exists" is three separate facts — the island
+   * mesh, the furniture, and whether `heightAt` answers out there — and three
+   * facts set from three places is how you get an island you can stand on and
+   * cannot see.
+   */
+  openArena(on = true) {
+    this.arenaOpen = on;
+    if (this.arenaMesh) this.arenaMesh.visible = on;
+    if (this.arenaProps) this.arenaProps.visible = on;
+  }
+
+  /**
+   * How far OUTSIDE the fighting deck a point is, in world units.
+   *
+   * Negative inside, zero on the painted line, positive once she is out. It
+   * returns a distance rather than a boolean so the tournament can warn at
+   * the edge and only rule at the line — a ring-out that fires with no
+   * build-up reads as the game taking the round away from you.
+   *
+   * Measured on the SQUARE (a Chebyshev distance), because the ring is a
+   * square and a radial test would call the corners out while she is still
+   * standing on stone — the corners are where a knockback puts you.
+   */
+  arenaOutBy(x, z) {
+    const R = this.arenaRing;
+    if (!R) return Infinity;
+    const d = Math.max(Math.abs(x - R.x), Math.abs(z - R.z));
+    return d - (R.half - R.out);
+  }
+
   /* Grass tufts, boulders and flowers. Scattered over every walkable island
      and merged into a single mesh — without them the terrain reads as a bare
      coloured plane no matter how good the vertex shading is. */
@@ -464,8 +575,14 @@ export class World {
       parts.push(g);
     };
 
-    for (let k = 0; k < this.islands.length - 1; k++) {
+    for (let k = 0; k < this.islands.length; k++) {
       const isl = this.islands[k];
+      /* Not on the dojo, and not on the arena. Grass tufts and boulders would
+         push straight up through a dressed stone ring — this loop tests the
+         road mask but nothing else, so a scattered rock has no idea the deck
+         is above it. Bare is also correct: the arena is the one place in the
+         world somebody swept. */
+      if (isl.kind) continue;
       const n = Math.round(isl.radius * isl.radius * 0.16);
       for (let i = 0; i < n; i++) {
         const a = valueNoise(i, k * 13 + 1, 101) * Math.PI * 2;
@@ -664,14 +781,41 @@ export class World {
       // painted on it is a true plane you can walk.
       {
         x: -230, z: 70, baseY: 30, radius: 66, seed: 71, hill: 1.2, plateau: 0.82,
+        kind: 'dojo',
         flatten: [{ x: -230, z: 70, r: 46, falloff: 14, y: 0.9 }],
+      },
+      /* The tournament grounds — and the distance is the feature.
+         It sits 330 units from the town and 259 from the nearest island,
+         which is well past anything a kid reaches by wandering: every other
+         island in the game is a visible hop from one you are already on, and
+         this one is not on the way to anywhere. That is what lets the arena be
+         a place you are TAKEN to rather than a place you find, and it is why
+         the griffin exists — see `World.arenaReachable`, which keeps a dragon
+         off it until Mr Satan opens the tournament.
+         Flatter than the dojo (hill 0.9) because a fighting ring laid on a
+         rolling surface is a fighting ring with a lip you trip over, and the
+         one thing a knockback must never do is snag. */
+      {
+        x: 40, z: -330, baseY: 46, radius: 90, seed: 89, hill: 0.9, plateau: 0.86,
+        kind: 'arena', biome: 'arena',
+        flatten: [{ x: 40, z: -330, r: 74, falloff: 13, y: 0.6 }],
       },
     ];
 
     const parts = [];
+    /* THE ARENA ISLAND IS ITS OWN MESH, and that is the whole locking
+       mechanism. Everything else in the archipelago is merged into one
+       geometry for the draw-call budget, which is right — and it is also why
+       an island cannot be hidden once it is in there. The tournament grounds
+       have to not exist until Mr Satan opens them: "blocked" enforced as a
+       barrier you bounce off is a wall a kid can see and be baffled by,
+       whereas an island that simply is not in the sky yet asks no questions.
+       `heightAt` skips it too while it is shut, so a dragon flown out to the
+       coordinates finds open air rather than an invisible floor. */
+    const arenaParts = [];
     for (const d of defs) {
       const isl = new Island(d);
-      parts.push(isl.buildMesh());
+      (isl.kind === 'arena' ? arenaParts : parts).push(isl.buildMesh());
       this.islands.push(isl);
     }
 
@@ -682,10 +826,44 @@ export class World {
     this.scene.add(mesh);
     this.terrainMesh = mesh;
 
-    // Where the maths lesson lives. Last island in the list.
-    this.dojoIsland = this.islands[this.islands.length - 1];
+    const arenaMesh = new THREE.Mesh(mergeParts(arenaParts), toonVertexMat());
+    arenaMesh.castShadow = true;
+    arenaMesh.receiveShadow = true;
+    arenaMesh.visible = false;
+    this.scene.add(arenaMesh);
+    this.arenaMesh = arenaMesh;
+
+    /* BY KIND, NOT BY INDEX. This read `islands[islands.length - 1]`, which
+       was true for exactly as long as the dojo was the last thing in the
+       list — appending the arena after it silently handed every dojo query
+       the tournament grounds instead, and the maths island is the one place
+       in the game where being quietly wrong is worst. Same lesson as
+       `trackForIsland`: a special case has to be asked for by name. */
+    this.dojoIsland = this.islands.find((i) => i.kind === 'dojo');
     const dy = this.dojoIsland.heightAt(this.dojoIsland.x, this.dojoIsland.z);
     this.dojoCentre = new THREE.Vector3(this.dojoIsland.x, dy ?? 30, this.dojoIsland.z);
+
+    this.arenaIsland = this.islands.find((i) => i.kind === 'arena');
+    const ay = this.arenaIsland.heightAt(this.arenaIsland.x, this.arenaIsland.z);
+    this.arenaCentre = new THREE.Vector3(this.arenaIsland.x, ay ?? 46, this.arenaIsland.z);
+  }
+
+  /**
+   * The islands the seven-star hunt covers — everything but the arena.
+   *
+   * THE DOJO IS IN HERE. It is a built place like the arena and it is skipped
+   * by the tree and prop scatters for that reason, but it carries the 7★ and
+   * is very much part of the adventure — so "is this island special" and "does
+   * this island hold a star" are two different questions and must not share
+   * one list. Writing this filter as `!i.kind` looked tidy and quietly moved
+   * the 7★ off the maths island.
+   *
+   * The scatters ask `isl.kind` at their own call sites instead, because what
+   * they actually mean is "nothing grows on dressed stone" — a different rule
+   * again, and one a ninth island should inherit by default.
+   */
+  get questIslands() {
+    return this.islands.filter((i) => i.kind !== 'arena');
   }
 
   /**
@@ -699,10 +877,18 @@ export class World {
   heightAt(x, z, fromY = Infinity) {
     let best = null;
     for (const isl of this.islands) {
+      /* A SHUT ARENA HAS NO GROUND. This is what stops a kid flying a dragon
+         out to the tournament before it opens: not a barrier, not a refusal —
+         there is simply nothing under her out there, exactly as if the island
+         had not been raised yet, which is the story the game is telling. It
+         has to be here rather than only on the mesh, or the place would be
+         invisible and still perfectly walkable. */
+      if (isl.kind === 'arena' && !this.arenaOpen) continue;
       const h = isl.heightAt(x, z);
       if (h != null && (best == null || h > best.y)) best = { y: h, island: isl };
     }
     for (const p of this.platforms) {
+      if (p.arena && !this.arenaOpen) continue;
       if (x < p.x0 || x > p.x1 || z < p.z0 || z > p.z1) continue;
       if (fromY + 0.4 < p.y) continue;
       if (best == null || p.y > best.y) best = { y: p.y, platform: p };
@@ -985,8 +1171,15 @@ export class World {
 
     // A few crates on the outer islands so exploring pays off, plus a stand of
     // bamboo on the bamboo island for anyone who flies out that far.
-    for (let k = 1; k < this.islands.length - 1; k++) {
+    for (let k = 1; k < this.islands.length; k++) {
       const isl = this.islands[k];
+      /* NO KNOCKABLE PROPS IN THE ARENA, and this one is not cosmetic.
+         `mischiefTotal` counts every prop in the world, and the tournament
+         unlocks at 80% of it — so a crate that can only be reached by going
+         to the arena would be a crate you need in order to open the place it
+         is standing in. The 100% ending has the same circular problem. The
+         dojo is excluded for the older reason: a clean floor to draw on. */
+      if (isl.kind) continue;
       for (let i = 0; i < 3; i++) {
         const a = valueNoise(i, k, 61) * Math.PI * 2;
         const r = Math.sqrt(valueNoise(i, k, 67)) * isl.radius * 0.5;
@@ -1079,6 +1272,14 @@ export class World {
     const rock = [];
 
     this.islands.forEach((isl, i) => {
+      /* SEVEN STARS, SEVEN ISLANDS — the arena is the eighth and gets none.
+         `ISLAND_LOCKS[7]` is undefined and the `?? 'none'` below would have
+         turned that into a free eighth star lying in the open on a ring
+         nobody can reach yet: the hunt would read 7/7 with one still on the
+         ground, and Ryuuseki — who is what OPENS the arena — could never be
+         summoned. The `?? 'none'` fallback is exactly the kind of quiet
+         default that makes a new island look like it works. */
+      if (isl.kind === 'arena') return;
       const lock = ISLAND_LOCKS[i] ?? 'none';
       /* A BALL needs only to stay out of a join ring. A BUILDING needs to stay
          out of the whole scene: the first dusk grotto went up eight units
@@ -1362,6 +1563,17 @@ export class World {
       const y = -60 + valueNoise(i, 3, 21) * 320;
       const s = 22 + valueNoise(i, 4, 33) * 70;
 
+      /* THIS RING IS CENTRED ON THE ORIGIN, AND THE ARENA IS NOT.
+         These silhouettes exist to sell distance, which works while the only
+         place you stand is the archipelago in the middle of them — the
+         nearest is 620 units from the town. The tournament grounds are 330
+         units north, so the same "far away" island can be 290 units from a
+         fighter, and 90 units of it is a solid cone: from the ring one of
+         them hung over the announcer's box looking like a piece of the venue
+         that had come loose. Dropping the few that crowd the arena is
+         invisible — they are procedural scenery, and there are 22 of them. */
+      if (Math.hypot(x - this.arenaCentre.x, z - this.arenaCentre.z) < 560 + s * 2) continue;
+
       const top = new THREE.SphereGeometry(s, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.5);
       top.scale(1, 0.42, 1);
       paint(top, 0x6d8f6a);
@@ -1463,6 +1675,12 @@ export class World {
    */
   resolveSolids(x, z, radius, fromY = Infinity) {
     for (const s of this.solids) {
+      /* The arena's stonework does not exist while the tournament is shut,
+         for the same reason its ground does not. A solid with no `top` is an
+         INFINITE cylinder — the record board is one — so leaving these live
+         would let a kitten flying past the empty coordinates be shoved
+         sideways by a building that has not been built. */
+      if (s.arena && !this.arenaOpen) continue;
       if (s.top != null && fromY >= s.top - 0.35) continue;
       const dx = x - s.x;
       const dz = z - s.z;

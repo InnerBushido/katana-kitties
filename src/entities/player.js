@@ -37,6 +37,52 @@ const FLY_SPEED = 34;
 const FLY_BOOST = 62;
 const FLY_LIFT = 20;
 
+/* ---------------------------------------------------------------------------
+   Tournament combat.
+
+   THE THREE ATTACKS ARE THE THREE THINGS SHE ALREADY DOES. There is no new
+   button: a standing slash, a slash while sprinting, and a slash in the air.
+   Two kids who have spent an afternoon knocking over barrels already know all
+   three, so the tournament teaches a game rather than a control scheme — and
+   the one that hits hardest is the one that costs the most to set up, which
+   is the whole of the depth here and as much as this needs.
+
+     standing   quick, short, safe
+     dash       sprint into it — most knockback, and how you throw her out
+     aerial     jump into it — most damage, hardest to land
+
+   `hp` IS THE ONLY LOSS CONDITION. A ring-out hurts rather than ending the
+   round (see Tournament._updateOut): two ways to lose, one of them instant,
+   is two things for a nine-year-old to read on a screen where she is already
+   watching her sister — and an instant one turns a two-minute round into a
+   two-second one on a mistimed knockback.
+--------------------------------------------------------------------------- */
+
+export const MAX_HP = 100;
+
+export const ATTACKS = {
+  stand: { dmg: 10, knock: 9, lift: 3.5, reach: 3.4, arc: -0.25 },
+  dash: { dmg: 15, knock: 19, lift: 5.0, reach: 3.9, arc: -0.1 },
+  air: { dmg: 14, knock: 13, lift: 7.5, reach: 3.7, arc: -0.35 },
+};
+
+/** Seconds a hit takes control away, and how long she cannot be hit again. */
+const HIT_STUN = 0.26;
+const INVULN = 0.55;
+/** How long she lies there after a knockout, before the round can move on. */
+export const KO_TIME = 1.8;
+
+/**
+ * How much harder a hurt kitten flies.
+ *
+ * Smash's percent rule, borrowed on purpose: knockback grows as she loses
+ * health, so a round that has been going a while starts throwing people
+ * around and the ring's edge stops being decoration. Capped, and gentle at
+ * the start — this is the difference between a fight that builds and a fight
+ * that is the same exchange twelve times.
+ */
+const RAGE_MAX = 1.6;
+
 export class Player {
   constructor(opts) {
     const {
@@ -86,6 +132,30 @@ export class Player {
     this.attackCooldown = 0;
     this.stepPhase = 0;
     this.squash = 0;
+
+    /* --- tournament combat ---
+       All of this is inert outside a live round. Nothing here is gated on the
+       PLAYER, though: `hurt` is only ever called from `Game.strikePlayers`,
+       which is the single place that asks whether fighting is allowed. Two
+       copies of that question is how you end up able to cut your sister down
+       in the middle of the town. */
+    this.maxHp = MAX_HP;
+    this.hp = MAX_HP;
+    /** Seconds of hit-stun left — she keeps her momentum and loses her stick. */
+    this.hitT = 0;
+    /** Seconds of invulnerability left. Stops a fast blade chain-locking her. */
+    this.invulnT = 0;
+    /** Seconds left lying knocked out. Zero means she is up. */
+    this.koT = 0;
+    /** True from the moment she is knocked out until the round resets her. */
+    this.ko = false;
+    /** Scoring, per tournament. See Tournament.score. */
+    this.dmgDealt = 0;
+    this.dmgTaken = 0;
+    /** Drives the white hit-flash on the sprite. */
+    this.flashT = 0;
+    /** Which way the last hit threw her, for the recoil lean. */
+    this.hitLean = 0;
     /** Seconds left of the star-found pose. See Player.holdAloft. */
     this.aloftT = 0;
     /** The star she is holding up, parented to her group for the duration. */
@@ -154,6 +224,44 @@ export class Player {
     this.marker.position.y = 0.04;
     this.group.add(this.marker);
 
+    /* --- the health bar ---
+       Over her head rather than only in the corner, and that is the important
+       half. In split screen each girl reads her own corner fine; what neither
+       of them can read is the OTHER kitten's health, which is the number that
+       decides whether you press the attack or back off. Above the target, in
+       the target's own colour, is the only place that works from both halves
+       of the screen at once.
+       Hidden outside the tournament — a permanent health bar over a kitten
+       knocking over barrels states a threat the rest of the game does not
+       have. `depthTest: false` so it reads through the ring's corner posts:
+       a bar you lose behind scenery is worse than no bar. */
+    this.hpGroup = new THREE.Group();
+    this.hpGroup.visible = false;
+    const barW = 3.0;
+    const barMesh = (w, color, z, opacity = 1) => {
+      const g = new THREE.PlaneGeometry(w, 0.42);
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity, depthTest: false, depthWrite: false,
+        toneMapped: false, side: THREE.DoubleSide,
+      }));
+      m.renderOrder = 20 + z;
+      return m;
+    };
+    this.hpBack = barMesh(barW + 0.22, 0x1c1016, 0, 0.85);
+    this.hpFill = barMesh(barW, index === 0 ? 0xff8a3d : 0xff6fae, 1);
+    /* The fill shrinks from the LEFT EDGE, not from its centre. A plane
+       scaled on x contracts toward its own origin, so a bar built centred
+       eats itself from both ends and reads as half the damage it is showing.
+       Parenting the quad to a pivot at the left end and scaling the pivot is
+       the cheap fix that keeps the geometry untouched. */
+    this.hpPivot = new THREE.Group();
+    this.hpPivot.position.x = -barW / 2;
+    this.hpFill.position.x = barW / 2;
+    this.hpPivot.add(this.hpFill);
+    this.hpGroup.add(this.hpBack, this.hpPivot);
+    this.group.add(this.hpGroup);
+    this._barW = barW;
+
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 4000);
     this.camDist = 26;
     this.camTarget = this.position.clone();
@@ -186,19 +294,37 @@ export class Player {
 
   faceCamera(camera) {
     this.sprite.faceCamera(camera);
+
+    /* THE HEALTH BAR IS A FLAT QUAD AND HAS TO BE TURNED, like the leaders'
+       speech bubbles are. It is parented to `group`, which never rotates, so
+       without this it stays facing +Z for ever: from the game's fixed -PI/4
+       camera every bar rendered as a thin diagonal streak above a kitten,
+       which reads as a rendering fault rather than as a health bar.
+       A FULL quaternion copy, not a yaw — `Billboard.faceCamera` turns on Y
+       only, which is right for a character standing on the ground and wrong
+       for a strip of UI. The fight camera looks down at ~0.55 radians and a
+       yaw-only bar is foreshortened to about half its height there. */
+    if (this.hpGroup.visible) this.hpGroup.quaternion.copy(camera.quaternion);
     // A mounted kitten sits inside the dragon's billboard quad, so at equal
     // depth it loses the sort and disappears. Nudging the rider toward the
     // camera puts it cleanly in front from every angle â€” and it has to happen
     // per view, because the two split-screen cameras see it from different
     // sides.
-    if (this.mount || this.pandaMount || this.rideAlong) {
+    /* `carried` is the griffin. It is deliberately NOT `mount` — everything
+       in this game reads `mount` as "is steering a flying thing", and a
+       passenger on a scripted taxi steers nothing — but it needs this one
+       piece of mount behaviour: the outward nudge. Without it both kittens
+       sit at the animal's own depth inside a quad three times their height,
+       lose the sort, and vanish into the thing carrying them. Exactly the bug
+       Ryuuseki had, and the same fix. */
+    if (this.mount || this.pandaMount || this.rideAlong || this.carried) {
       const dx = camera.position.x - this.position.x;
       const dz = camera.position.z - this.position.z;
       const len = Math.hypot(dx, dz) || 1;
       /* Ryuuseki's quad is far bigger than a storm dragon's, so the 2.4 that
          lifts a kitten clear of one leaves her buried inside him. The nudge is
          scaled to whatever she is sitting on. */
-      const seat = this.mount ?? this.rideAlong;
+      const seat = this.mount ?? this.rideAlong ?? this.carried;
       const out = seat ? Math.max(2.4, seat.quad * 0.10) : 2.4;
       /* ...and on top of that, a Ryuuseki rider's place ALONG his body is a
          draw offset rather than a position — so the animal under the pilot
@@ -232,6 +358,14 @@ export class Player {
        the camera and the noise. */
     if (this.aloftT > 0 && !this.mount && !this.rideAlong) pad = FROZEN_PAD;
 
+    /* A HIT TAKES THE STICK, AND A KNOCKOUT KEEPS IT. Same trick as the star
+       pose: hand the ground controller a dead pad and none of the three
+       movement modes has to know combat exists. It is the stick and not the
+       physics — she keeps every bit of the momentum the blow gave her, which
+       is the difference between being knocked across the ring and being
+       switched off in mid-air. */
+    if (this.hitT > 0 || this.ko) pad = FROZEN_PAD;
+
     if (this.rideAlong) this._updatePassenger(dt, pad, world, hud);
     else if (this.mount) this._updateFlight(dt, pad, world, hud);
     else this._updateGround(dt, pad, world, dragons, hud);
@@ -239,8 +373,128 @@ export class Player {
     this.group.position.copy(this.position);
     this.sprite.facing = this.facing;
     this._updateAloft(dt);
+    this._updateCombat(dt);
     this._updateFeedback(dt, world);
     this._updateCamera(dt);
+  }
+
+  /* ---------------------------- combat ---------------------------------- */
+
+  /**
+   * Take a hit. Called ONLY from `Game.strikePlayers`.
+   *
+   * Returns the damage actually dealt, so the attacker can be credited with
+   * it — 0 when the hit was eaten by invulnerability, which the caller needs
+   * to know so a whiffed swing does not score.
+   *
+   * @param {number} dmg
+   * @param {{x:number,z:number}} from where the blow came from
+   * @param {{knock:number, lift:number}} force
+   */
+  hurt(dmg, from, force, hud) {
+    if (this.invulnT > 0 || this.ko) return 0;
+
+    const before = this.hp;
+    this.hp = Math.max(0, this.hp - dmg);
+    const dealt = before - this.hp;
+    this.dmgTaken += dealt;
+
+    /* THE PUSH IS AWAY FROM THE ATTACKER, and it needs a fallback. Two
+       kittens standing in exactly the same spot give a zero-length vector,
+       which normalises to NaN and teleports somebody to the origin — and two
+       kittens standing in the same spot is not a hypothetical in a game where
+       they are trying to hit each other. */
+    let dx = this.position.x - from.x;
+    let dz = this.position.z - from.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.001) { dx = Math.sin(this.facing) * -1; dz = Math.cos(this.facing) * -1; }
+    else { dx /= len; dz /= len; }
+
+    // Smash's percent rule: the more she has taken, the further she flies.
+    const rage = 1 + (1 - this.hp / this.maxHp) * (RAGE_MAX - 1);
+    this.velocity.x = dx * force.knock * rage;
+    this.velocity.z = dz * force.knock * rage;
+    this.velocity.y = Math.max(this.velocity.y, force.lift * rage);
+
+    this.hitT = HIT_STUN;
+    this.invulnT = INVULN;
+    this.flashT = 0.3;
+    this.squash = 1;
+    this.hitLean = Math.sign(dx * Math.cos(this.camYaw) - dz * Math.sin(this.camYaw)) || 1;
+    this.onGround = false;
+
+    if (this.hp <= 0) {
+      this.ko = true;
+      this.koT = KO_TIME;
+      /* A knockout throws her further than the blow that caused it. The last
+         hit of a round has to look different from the eleven before it, and
+         this is the cheapest way to say so with no new art. */
+      this.velocity.x *= 1.5;
+      this.velocity.z *= 1.5;
+      this.velocity.y = Math.max(this.velocity.y, force.lift * 2.2);
+      hud?.sfx('ko');
+    } else {
+      hud?.sfx('hurt');
+    }
+    return dealt;
+  }
+
+  /**
+   * Put her back on her feet for a fresh round: full health, no timers.
+   *
+   * Deliberately NOT a general reset — it leaves `dmgDealt`/`dmgTaken` alone,
+   * because those are tournament totals and the score is computed across all
+   * three rounds. Clearing them here would silently score only the last one.
+   */
+  resetForRound(x, y, z, facing) {
+    this.hp = this.maxHp;
+    this.hitT = 0;
+    this.invulnT = 0;
+    this.koT = 0;
+    this.ko = false;
+    this.flashT = 0;
+    this.outT = 0;
+    this.position.set(x, y, z);
+    this.group.position.copy(this.position);
+    this.velocity.set(0, 0, 0);
+    this.facing = facing;
+    this.camTarget.copy(this.position);
+    this.onGround = true;
+    this.attackTimer = 0;
+    this.attackCooldown = 0;
+  }
+
+  /** Which of the three attacks this swing is. See ATTACKS. */
+  attackKind(pad) {
+    if (!this.onGround) return 'air';
+    const moving = Math.abs(pad.mx) + Math.abs(pad.my) > 0.2;
+    return (pad.down('sprint') && moving) ? 'dash' : 'stand';
+  }
+
+  _updateCombat(dt) {
+    this.hitT = Math.max(0, this.hitT - dt);
+    this.invulnT = Math.max(0, this.invulnT - dt);
+    this.flashT = Math.max(0, this.flashT - dt);
+    if (this.koT > 0) this.koT = Math.max(0, this.koT - dt);
+
+    const bar = this.hpGroup;
+    if (!bar.visible) return;
+    // Above her head, clear of the star she might be holding.
+    bar.position.set(0, this.height * 1.32, 0);
+    const k = Math.max(0, this.hp / this.maxHp);
+    this.hpPivot.scale.x = k;
+    /* THE BAR CHANGES COLOUR BEFORE IT RUNS OUT. Her own colour down to a
+       third, then amber, then red — so "I am nearly out" is something she
+       reads from the corner of her eye rather than by measuring a stripe
+       against a stripe. The pulse is what carries it in peripheral vision;
+       a static red bar at 12% and a static red bar at 30% look the same. */
+    const low = k <= 0.34;
+    this.hpFill.material.color.set(
+      k > 0.34 ? (this.index === 0 ? 0xff8a3d : 0xff6fae) : k > 0.18 ? 0xffc23d : 0xff3b30
+    );
+    this.hpFill.material.opacity = low
+      ? 0.65 + Math.abs(Math.sin((this.idlePhase ?? 0) * 4.5)) * 0.35
+      : 1;
   }
 
   /**
@@ -352,8 +606,24 @@ export class Player {
        then goes. */
     const rate = (this.onGround ? ACCEL : AIR_ACCEL) * Math.sqrt(rideK) * dt;
 
-    this.velocity.x += THREE.MathUtils.clamp(target.x - this.velocity.x, -rate, rate);
-    this.velocity.z += THREE.MathUtils.clamp(target.z - this.velocity.z, -rate, rate);
+    /* KNOCKBACK IS NOT STEERED, AND IT MUST NOT BE BRAKED EITHER.
+       While she is stunned the pad is dead, so `target` is zero — and the
+       ordinary controller reads a zero target as "stop", decelerating at
+       ACCEL (60/s). That erases a 19-unit knockback in about a third of a
+       second, which is shorter than the stun itself: every blow landed, every
+       health bar moved, and nobody ever went anywhere. Being hit has to
+       LOOK like being hit.
+       So during the stun the movement accel is skipped entirely and the
+       throw decays on its own gentle drag instead. Gravity is untouched, so
+       she still falls, still lands, and still slides to a stop. */
+    if (this.hitT > 0 || this.ko) {
+      const drag = Math.min(1, dt * (this.onGround ? 3.4 : 0.7));
+      this.velocity.x -= this.velocity.x * drag;
+      this.velocity.z -= this.velocity.z * drag;
+    } else {
+      this.velocity.x += THREE.MathUtils.clamp(target.x - this.velocity.x, -rate, rate);
+      this.velocity.z += THREE.MathUtils.clamp(target.z - this.velocity.z, -rate, rate);
+    }
     this.velocity.y -= GRAVITY * dt;
 
     // --- jump / double jump ---
@@ -397,7 +667,12 @@ export class Player {
       } else {
         this.attackCooldown = 0.36;
         hud?.sfx('slash');
-        this._doSlash(world, hud);
+        /* The kind is read from the pad AT THE MOMENT OF THE PRESS, not
+           recomputed later. `onGround` and the stick both change during the
+           rest of this function — the ground snap runs below — so asking
+           afterwards can turn the aerial she actually threw into a standing
+           slash on the frame she lands. */
+        this._doSlash(world, hud, this.attackKind(pad));
       }
     }
     if (this.attackTimer > 0) this.attackTimer -= dt;
@@ -571,11 +846,19 @@ export class Player {
     return this.index === 0 ? 'Bao' : 'Mochi';
   }
 
-  _doSlash(world, hud) {
+  _doSlash(world, hud, kind = 'stand') {
     const dir = new THREE.Vector2(Math.sin(this.facing), Math.cos(this.facing));
     // Riverclaw's blade reaches further — and the drawn arc grows with it, so
     // the buff is something you can see rather than just feel.
     const reach = 3.4 * (this.clan?.buff?.reach ?? 1);
+
+    /* THE OTHER KITTEN, FIRST — and through the game, not from here.
+       `strikePlayers` is the ONE place that asks whether the two of them are
+       allowed to hurt each other, exactly like `strikeWards` is the one place
+       that knows what a lock answers to. Testing "am I in the arena?" here
+       would put that rule in a second place, and the copy nobody remembers is
+       how you end up able to cut your sister down in the market square. */
+    hud?.strikePlayers?.(this, kind, reach, dir);
     let hits = 0;
     for (const p of world.props) {
       const dx = p.group.position.x - this.position.x;
@@ -962,6 +1245,65 @@ export class Player {
     this.sprite.mesh.position.y = ride ? (ride.flapBob ?? 0)
       : this.pandaMount ? this.pandaMount.seatHeight + this.pandaMount.bounce : 0;
 
+    /* ---- what being hit LOOKS like ----
+
+       NO NEW ART, AND THAT IS A DECISION RATHER THAN A SHORTCUT. The obvious
+       answer to "how do we show a hit" is to generate a hurt pose and a KO
+       pose and add two rows to each sheet. Both live sheets are 4x8-or-10
+       turnarounds whose rows have to agree with each other about which way
+       the character turns, and one of the two sheets in this project is
+       already unusable because its rows DON'T (see frost_grid_v2 in
+       HANDOFF). Regenerating either to add rows risks the direction mapping
+       that every one of the sprite checks in world-check exists to protect —
+       to buy two poses that the material can express anyway.
+
+       So all three states are transforms of the drawn cell:
+         hit    a hot flash and a recoil lean, away from the blow
+         invuln a hard flicker — the arcade convention, and the only one a
+                nine-year-old already knows means "can't be hit"
+         KO     laid flat on her side, darkened, still visibly herself */
+    /* Both live kitten sheets ship untinted (`tint` defaults to white and
+       main.js passes none), so this block owns the material colour outright.
+       If a sheet ever DOES want a tint, it has to become the rest value here
+       rather than a one-off `set` in the constructor — otherwise the first
+       hit would wash it out permanently. */
+    const mat = this.sprite.mat;
+    const base = 1;
+
+    if (this.ko) {
+      /* Flat on her back. The JUMP row, not idle: it is the one pose with the
+         limbs away from the body, and an idle cell rotated 90 degrees reads
+         as a cat standing on a wall rather than as a cat who has been knocked
+         over. Which WAY she falls follows the blow. */
+      this.sprite.row = a.jump;
+      const fall = Math.min(1, (KO_TIME - this.koT) / 0.35);
+      this.sprite.mesh.rotation.z = (this.hitLean || 1) * 1.42 * fall;
+      this.sprite.mesh.position.y -= this.height * 0.30 * fall;
+      mat.color.setRGB(base * 0.52, base * 0.46, base * 0.55);
+      this.sprite.mesh.visible = true;
+    } else if (this.flashT > 0) {
+      /* Brighter than white. `toneMapped: false` on this material means the
+         renderer hands the colour straight through, so pushing the red
+         channel past 1 blows the sprite out into a hot flash instead of
+         merely tinting it — a tint at these sizes is invisible. */
+      const f = this.flashT / 0.3;
+      mat.color.setRGB(base * (1 + f * 1.5), base * (1 - f * 0.42), base * (1 - f * 0.5));
+      this.sprite.mesh.rotation.z = lean + (this.hitLean || 1) * 0.42 * f;
+      this.sprite.mesh.visible = true;
+    } else if (this.invulnT > 0) {
+      /* A HARD FLICKER, NOT A FADE. Fading is the natural reach and it does
+         not work here: the material runs `alphaTest: 0.35`, so any opacity
+         below that discards every pixel of the sprite at once and she does
+         not fade out, she disappears in one step. Toggling visibility is
+         honest about what the material can actually do, and it is also the
+         convention every game a kid has played uses for exactly this. */
+      mat.color.setRGB(base, base, base);
+      this.sprite.mesh.visible = Math.floor(this.invulnT * 16) % 2 === 0;
+    } else {
+      mat.color.setRGB(base, base, base);
+      this.sprite.mesh.visible = true;
+    }
+
     // Slash arc: snap out and fade. The panda draws its own claw marks, so the
     // katana arc stays sheathed while she's riding — two overlapping arcs on
     // one swing just reads as a smear.
@@ -991,6 +1333,33 @@ export class Player {
 
     // The panda carries its own ring in the same colour, so two would stack.
     this.marker.visible = !this.mount && !this.pandaMount;
+
+    /* THE EDGE WARNING GOES ON HER FEET, because that is what is about to
+       leave the stage. `Tournament._updateOut` sets `nearEdge` inside the
+       last few units of deck and rules at the line, and the gap between the
+       two is the entire point: a thirty-point penalty that arrives with no
+       warning reads as the game taking health off you for no reason.
+       Her own colour ring is already the thing a player uses to find herself
+       in a scrap, so flashing THAT red needs no new object and no new place
+       to look — she is watching it anyway. */
+    const edgeLit = !!(this.nearEdge && this.hpGroup.visible);
+    if (edgeLit) {
+      /* SAVED ON THE WAY IN, not reconstructed on the way out. This ring is
+         also the clan badge — `_updateGround` recolours it the moment she
+         swears an oath — so restoring it to "her player colour" would
+         silently strip a Thunderpaw kitten's green the first time she backed
+         toward the edge of the ring. Remember what it actually was. */
+      if (!this._edgeLit) this._edgeSaved = this.marker.material.color.getHex();
+      const beat = Math.sin((this.idlePhase ?? 0) * 11) > 0;
+      this.marker.material.color.set(beat ? 0xff2a20 : 0xfff0a0);
+      this.marker.material.opacity = 0.95;
+      this.marker.scale.setScalar(1.25);
+    } else if (this._edgeLit) {
+      this.marker.material.color.set(this._edgeSaved ?? (this.index === 0 ? 0xff8a3d : 0xff6fae));
+      this.marker.material.opacity = 0.75;
+      this.marker.scale.setScalar(1);
+    }
+    this._edgeLit = edgeLit;
 
     // Blob shadow tracks the ground below and shrinks with altitude.
     const g = world.heightAt(this.position.x, this.position.z, this.position.y);

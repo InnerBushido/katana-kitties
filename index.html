@@ -206,6 +206,7 @@
           <button class="menu-btn primary" data-action="resume">RESUME</button>
           <button class="menu-btn" data-action="settings">SETTINGS</button>
           <button class="menu-btn" data-action="help">HOW TO PLAY</button>
+          <button class="menu-btn" data-action="board">RECORD BOARD</button>
           <button class="menu-btn" data-action="story">WATCH THE STORY AGAIN</button>
           <button class="menu-btn" data-action="restart">RESTART</button>
           <button class="menu-btn" data-action="title">TITLE SCREEN</button>
@@ -270,6 +271,43 @@
            the scene cannot be skipped at all. -->
       <div id="cs-skip">START, SPACE OR ENTER TO SKIP</div>
       <div id="cs-track"><div id="cs-progress"></div></div>
+    </div>
+
+    <!-- ================= the tournament =================
+         Deliberately OUTSIDE #hud. The playing HUD is hidden wholesale
+         whenever a scene owns the screen (`_hudDuringScenes`), and the arena
+         furniture has to survive that rule on its own terms: the round banner
+         and the health bars belong to a round, not to the scoreboard, and
+         nesting them would switch them off every time Mr. Satan speaks. -->
+
+    <!-- Mr. Satan's pop-in card. Not a scene: the game keeps running and the
+         girls keep their controls, which is the whole reason it exists. -->
+    <div id="announce" class="hidden">
+      <canvas id="an-portrait" width="150" height="150"></canvas>
+      <div class="an-body">
+        <div id="an-name"></div>
+        <div id="an-text"></div>
+      </div>
+    </div>
+
+    <!-- Both fighters' health, and the round pips. -->
+    <div id="arena-hud" class="hidden"></div>
+
+    <!-- ROUND 1 / 3 / 2 / 1 / FIGHT! / K.O. — big, central, brief. -->
+    <div id="arena-banner" class="hidden"></div>
+
+    <!-- The result, the name entry and the board. This one DOES take the
+         screen: it is the only moment in the tournament that is about
+         something other than the fight. -->
+    <div id="arena-result" class="hidden"></div>
+
+    <!-- The record board, on its own, from the pause menu and the town. -->
+    <div id="panel-board" class="screen overlay hidden" data-nav="scroll">
+      <div class="panel">
+        <h2>WORLD MARTIAL ARTS TOURNAMENT</h2>
+        <div id="board-body"></div>
+        <button class="menu-btn" data-close>BACK</button>
+      </div>
     </div>
 
     <script type="module" src="/src/main.js"></script>

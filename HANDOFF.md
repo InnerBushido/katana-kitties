@@ -1232,12 +1232,405 @@ exactly when the little box earns its place. `drawPortrait` is exported from
 `cutscene.js` for this; `shrinescene.js` still carries its own copy of that crop
 maths, and a fourth caller should collapse both onto the shared one.
 
-**THE LAST BEAT SENDS THEM TO AN ARENA THAT DOES NOT EXIST YET.** Richard asked
-for it to speak as though it is open, because it is the next thing being built
-and the finale is the natural door into it. Until it ships this is a promise the
-game has made out loud to a nine-year-old. If the arena slips, soften the line
-back to "there is a ring being marked out" rather than leaving her looking for a
-place she cannot find.
+**THE LAST BEAT SENDS THEM TO THE ARENA, AND THE ARENA NOW EXISTS.** This line
+was written before it did, deliberately, because the finale is the natural door
+into the next thing being built — and for one session it was a promise the game
+had made out loud to a nine-year-old with nothing behind it. It is kept now: see
+The World Martial Arts Tournament below. The line needs no softening and
+`done4` should be left alone.
+
+One thing it does still overstate: the finale fires at 100% mischief and the
+arena opens at 80%, so by the time she hears this she has been able to go for a
+while. That is the right way round — being told about a place you can already
+get to is an invitation, not a tease.
+
+## The World Martial Arts Tournament
+
+The arena the finale promised. Two kittens, a ring, three rounds, and a record
+board that outlives the tab.
+
+**IT IS THE FIRST COMBAT IN THE GAME, AND IT IS FENCED OFF FROM THE REST OF
+IT.** The whole project has deliberately had no fighting in it — the katana
+exists to knock scenery over, and adding enemies was rejected repeatedly for
+forking the tone. Nothing about that changed: what changed is that the two
+players asked to fight *each other*, which is a different thing from enemies in
+the world. So combat exists in exactly one place and at exactly one time.
+
+**`Game.strikePlayers` IS THE ONLY GATE, AND IT IS ONE `if`.** `Player._doSlash`
+calls it on every swing in the game — in the market square, in the grove, on a
+hillside — and the first line asks `Tournament.fighting`. That property is
+deliberately narrow: not "are we at the arena", not "is a tournament running",
+but **is a round LIVE this frame**. The countdown is the case that proves why:
+without it, a kitten mashing attack through "3 … 2 … 1" opens the round with a
+free hit on a sister who cannot move. `world-check` asserts a full-power dash
+lands for zero damage with the tournament off.
+
+### Getting there
+
+| rung | what opens it |
+| --- | --- |
+| 1 | all seven stars found **and** Ryuuseki ridden at least once |
+| 2 | thirty seconds later, Mr Satan announces the tournament |
+| 3 | pop-in calls at 50 / 60 / 70 / 75% mischief |
+| 4 | at **80%**, the arena appears in the sky and he opens it |
+| 5 | both kittens stand with him in the town and press interact |
+
+**BOTH HALVES OF RUNG 1 MATTER.** Collecting the seventh star is an achievement
+with its own scene and its own dragon; cutting from that straight into an
+advertisement for a different feature spends the payoff the whole game has been
+building toward. The thirty seconds exist so the flight happens first.
+`ArenaQuest` reads `ryu.ridden` every frame rather than hooking the four places
+a seat is taken — there are more ways onto that animal than there are lines
+that say `this.mount =`.
+
+**THE MISCHIEF LADDER IS THE CHEAPEST THING IN THE FEATURE AND IT CHANGES WHAT
+THE COUNTER MEANS.** That number is what the girls have watched all afternoon,
+and until now it led nowhere: 100% got an ending, and everything in between got
+nothing. Five recorded lines turn the back half of the bar into a countdown.
+
+**Milestones already passed are spent SILENTLY** when the announcement fires. A
+pair who reach the dragon at 78% would otherwise get four announcements inside
+four seconds — a queue of Mr Satan shouting percentages nobody is at any more.
+
+### The arena is SHUT, and that is four separate facts
+
+The island is 330 units north of the town and 259 from the nearest island —
+well past anything a kid reaches by wandering, which is what lets it be a place
+you are *taken* to. Before Mr Satan opens it there is nothing out there at all:
+
+- the island mesh is **its own `THREE.Mesh`**, not merged into `terrainMesh`,
+  so it can simply not draw. This is the only reason the lock works;
+- `heightAt` skips `kind === 'arena'` islands while shut;
+- **platforms are a separate list that never consulted an island.** Hiding the
+  mesh alone left the ring deck standable — a solid stone square floating in
+  empty sky, which is a far worse bug than an arena you can reach early because
+  it looks like the world is broken;
+- **solids too.** The record board has no `top`, which makes it an *infinite
+  cylinder*: it would have shoved a kitten flying past the empty coordinates.
+
+`world-check` asserts all four, shut and open, and that it can be shut again —
+which is what `restart` does.
+
+**A BARRIER WOULD HAVE BEEN WORSE.** The obvious lock is a wall you bounce off.
+The moment a kid can aim at a place and be refused, the refusal is the thing
+she remembers; an island that is not in the sky yet asks no questions.
+
+### The eighth island broke four things that looked nothing like each other
+
+All four were the same mistake: **"the dojo is the last island" written as
+`k < islands.length - 1`.** Append anything after the dojo and it inherits the
+dojo's exemption while the dojo loses it.
+
+- the tree scatter would have forested the unit circle;
+- so would the ground detail;
+- the crate loop would have put **knockable props inside the arena** — and
+  since the tournament unlocks at 80% of `mischiefTotal`, that is a crate you
+  need in order to open the place it is standing in. The 100% ending has the
+  same circularity;
+- `placeDragonBalls` reads `ISLAND_LOCKS[i] ?? 'none'`, so island 7 would have
+  got a free **eighth star** lying in the open: the hunt reads 7/7 with one
+  still on the ground and Ryuuseki — who is what opens the arena — can never be
+  summoned.
+
+Islands carry a `kind` now (`null`, `'dojo'`, `'arena'`) and every one of those
+loops asks it. `dojoIsland` is found by kind rather than by index.
+
+**`questIslands` IS NOT "ISLANDS WITHOUT A KIND", and getting that wrong moved
+the 7★.** The dojo is a built place like the arena and is skipped by the
+scatters for that reason — but it carries a star and is very much part of the
+adventure. "Is this island special" and "does this island hold a star" are two
+different questions; writing the filter as `!i.kind` looked tidy and quietly
+took the star off the maths island. It is `kind !== 'arena'`.
+
+**Two more things the distance broke.** `_worldBounds` sizes the finale's
+pull-back off every island, and an island 330 units north nearly doubled it —
+the town they had just flattened became four pixels. The arena is excluded:
+it is somewhere else, built by somebody else, and shut when that scene plays.
+And `_buildDistantScenery` rings the **origin** at 620–1320 units, so a
+silhouette 620 out is only 290 from the arena: one of them hung over the
+announcer's box looking like a piece of the venue that had come loose. Any that
+crowd the arena are dropped.
+
+### The ring
+
+56 units square, on a stepped plinth 2.4 up, registered as a **platform** so
+every piece of ground physics the game already has works on it untouched.
+
+**THE BOUNDARY IS PAINTED BECAUSE IT IS A RULE.** `ARENA_OUT` (1.1) is what the
+game measures and the vermillion frame sits on the same number, so what she can
+see is what is enforced. It is a little over one player radius, because a
+fighter is a *point* and a bare edge test fires while she is visibly still
+standing on stone.
+
+**Out is a CHEBYSHEV distance, not a radial one.** The deck is a square; a
+radial test calls the corners out while she is on stone, and the corners are
+exactly where a knockback puts you.
+
+**A RING-OUT HURTS RATHER THAN ENDING THE ROUND, and this is the biggest
+balance call in the feature.** Falling off is the loss condition in both Smash
+and the DBZ tournament, and it is the more exciting rule — but this game
+already has health bars, and two loss conditions where one is instant means a
+kid watching her sister's bar can still lose in a frame she did not understand.
+One currency, one bar, one way to lose. The ring still matters because 30 is a
+third of it, there is a **half-second grace** so a clipped corner does not
+fire, and she is thrown back to the **middle** rather than to her post — her
+post is on one side of a square and she went off some other edge.
+
+**The warning goes on her FEET.** `nearEdge` lights inside the last few units
+and the rule fires at the line; the gap between them is the whole point,
+because a penalty with no build-up reads as the game taking health for no
+reason. Her own colour ring is what a player already uses to find herself in a
+scrap, so flashing *that* needs no new object and no new place to look. It
+**saves the colour on the way in** — that ring is also the clan badge, and
+reconstructing it as "her player colour" would strip a Thunderpaw kitten's
+green the first time she backed toward the edge.
+
+### Three attacks, and not one new button
+
+```
+standing slash   10 dmg, knock  9     always available
+sprint + slash   15 dmg, knock 19     the throw — this is how you ring somebody out
+jump + slash     14 dmg, knock 13     the damage, and the hardest to land
+```
+
+Two kids who have spent an afternoon knocking over barrels already know all
+three, so the tournament teaches a *game* rather than a control scheme — and
+the one that hits hardest costs the most to set up, which is as much depth as
+this needs. The kind is read from the pad **at the moment of the press**:
+`onGround` changes further down the same function, so asking afterwards turns
+the aerial she actually threw into a standing slash on the frame she lands.
+
+**KNOCKBACK MUST NOT BE BRAKED, AND THE ORDINARY CONTROLLER BRAKES IT.** Hit
+stun hands her a dead pad — the same trick the star pose uses — which makes
+`target` zero, and the movement code reads a zero target as *stop*, decelerating
+at `ACCEL` (60/s). That erased a 19-unit throw in about a third of a second,
+which is shorter than the stun itself: every blow landed, every bar moved, and
+nobody ever went anywhere. During the stun the movement accel is skipped
+entirely and the throw decays on its own drag. Gravity is untouched.
+
+**Rage, borrowed from Smash:** knockback grows as she loses health, capped at
+1.6x. It is what makes a long round start throwing people around and the ring's
+edge stop being decoration.
+
+**Invulnerability (0.55s) is what stops a fast blade chain-locking a
+nine-year-old.** `hurt` returns the damage actually dealt so a hit eaten by
+i-frames does not score.
+
+### Telling her what happened, with no new art
+
+**THE OBVIOUS ANSWER IS TO GENERATE HURT AND KO ROWS, AND IT IS THE WRONG ONE.**
+Both live kitten sheets are 4×8-or-10 turnarounds whose rows have to agree about
+which way the character turns, and one of the two sheets in this project is
+already unusable because its rows *don't* (`frost_grid_v2`). Regenerating either
+to add rows risks the direction mapping that every sprite check in `world-check`
+exists to protect — to buy two poses the material can express anyway. So all
+three states are transforms of the drawn cell:
+
+- **hit** — a flash *brighter than white*. `toneMapped: false` means the colour
+  goes straight through, so pushing red past 1 blows the sprite out; a tint at
+  these sizes is invisible. Plus a recoil lean away from the blow.
+- **invulnerable** — a **hard flicker**, not a fade. Fading is the natural reach
+  and it cannot work: the material runs `alphaTest: 0.35`, so any opacity under
+  that discards every pixel at once and she does not fade, she vanishes in one
+  step. Toggling visibility is honest about what the material can do and is the
+  convention every game a kid has played already uses.
+- **knocked out** — laid flat with the **jump** row (the one pose with the limbs
+  away from the body; an idle cell rotated 90° reads as a cat standing on a
+  wall), darkened, falling the way the blow threw her.
+
+**The health bar over her head had to be turned, and with a full quaternion.**
+It is parented to `group`, which never rotates, so it stayed facing +Z: from
+this game's fixed −π/4 camera every bar rendered as a thin diagonal streak,
+which reads as a rendering fault rather than as a health bar. A *yaw-only* turn
+is not enough either — that is right for a character standing on the ground and
+wrong for a strip of UI, which the fight camera's downward pitch foreshortens
+to about half its height.
+
+**And it is over her head as well as in the corner.** In split screen each girl
+reads her own corner fine; what neither can read is the *other* kitten's health,
+which is the number that decides whether to press the attack or back off.
+
+**The fill shrinks from the LEFT EDGE.** A plane scaled on x contracts toward
+its own origin, so a centred bar eats itself from both ends and shows half the
+damage it has taken. It is parented to a pivot at the left end.
+
+### Rounds
+
+Best of three: `WINS_NEEDED` 2, `MAX_ROUNDS` 3. **Not three rounds played.** A
+dead third round after a 2-0 is worse than it sounds — the girls have been told
+who won, and the card that opens it says "everything comes down to this one",
+which by then is a lie. The third round happens only at one apiece, which is
+exactly when that line is true.
+
+**ROUND STARTS ARE A BANNER, NOT A CUTSCENE.** The thing the screen most needs
+to show at that moment is the two of them standing on opposite sides of a ring,
+which a full-screen dialogue box is precisely in the way of. Both fighters are
+posted facing each other and frozen — `Tournament.frozen` swaps in a dead pad
+from `Game`, so none of the three movement modes has to learn a tournament
+exists. Only the **opening** and the **result** take the screen, and both are
+about something other than the fight.
+
+**A ROUND CANNOT RUN FOREVER.** Two bored kittens, or one sitting on the
+announcer's box, would otherwise hold the tournament open with no way out but
+the pause menu. At `ROUND_LIMIT` (120s) whoever has dealt the most damage takes
+it, and an exact tie is a draw.
+
+**A whole tournament can be a draw** — three rounds with one timed out level on
+damage. Nobody signs the board, and it says so out loud rather than silently
+crowning player 1.
+
+**THE RING NEEDS ITS OWN CAMERA RIG.** The merged camera clamps at
+`26 + separation * 0.85` capped at **52**, written for two kittens in a town —
+against a deck 56 across and a diagonal of 79. At full spread it framed rather
+less than half the ring with one fighter off screen. Exactly the trap Ryuuseki
+fell into (a 28-unit dragon framed from a 26-unit minimum) and the same fix: a
+rig that knows how big its subject is, 52–104 units, pulled 42% toward the
+ring's centre so two fighters in one corner do not point the camera at the
+island outside. **Flatter, too** (0.52 against the walking camera's 0.66): a
+steep pitch fills the screen with empty stone *and* squashes billboards, which
+is the same reason the grotto camera could not simply tilt over a wall.
+
+**A round is one screen**, outranking "always split" exactly as the dojo and a
+crewed Ryuuseki do. It is the one moment in the game where both players are
+looking at the same thing.
+
+### The furniture is placed against the CAMERA, not against the ring
+
+This game's camera yaw is fixed at −π/4 and only ever changes distance — that
+is what keeps the billboards seen from the angle they were drawn for, and it
+means the camera is **always at −x/+z of what it is watching**. So anything
+built at +z of the ring is permanently between the players and the lens.
+
+The announcer's box was there first, and a six-unit pagoda roof parked across
+the middle of the deck is a roof across the middle of every round. North for
+the announcer (he reads as a backdrop over the ring, which is where a
+commentator belongs), west for the record board, and the **entrance keeps the
+south** — a torii you walk in through is the one thing that earns being in the
+foreground. `world-check` asserts both.
+
+It was also *inside* the seating ring at first, at `ARENA_RING + 19`, so the
+stands swallowed its walls and all that was left was the roof. An announcer has
+to be visibly above the fight and clearly not in it: close and raised, not far
+back and tall.
+
+### The griffin
+
+**IT IS NOT A MOUNT, AND THAT IS THE DESIGN.** Every other animal here is
+something you climb onto and steer. If the girls could fly themselves north,
+"the arena is shut" would have to be a wall. Being *carried* means the question
+never comes up — there is nowhere to go until somebody takes you.
+
+It also solves a two-player problem the dragons never had: the tournament needs
+**both** kittens there, together, at the same moment. Two independently flown
+dragons arrive whenever they arrive, and one girl alone in a ring waiting for
+her sister to find north is the worst possible opening for the best thing in
+the game.
+
+8 seconds, skippable on the same keys and the same button as every scene
+(`SKIP_KEYS` and `_skipPressed`, routed through `_skipScene`). A fly-through is
+worth watching once; by the third tournament of an afternoon it is a loading
+screen with a griffin on it.
+
+**Both riders were invisible for the whole first flight.** Two things, and it
+needed both: the seats were 0.02 apart — the same point to within half a kitten,
+so the depth sort picked one — and neither had the **outward nudge** that
+`Player.faceCamera` gives a mount. `carried` is that flag. It is deliberately
+not `mount`, which everything in the game reads as "is steering a flying thing",
+and it is cleared on landing or `faceCamera` keeps nudging her sideways for the
+rest of the game.
+
+**A missing griffin must not strand them.** The arena is 330 units from
+anywhere and the ride is the only way in or out. With an early `return` on a
+failed sprite load, a pair who reached the tournament could never leave — the
+results screen would send them home and nothing would happen, forever. A lost
+sprite costs the fly-through and nothing else: `_ride` puts them down directly.
+
+### The record board
+
+**THE ONLY PERSISTENT THING IN THE PROJECT.** Everything else is gone when the
+tab closes — the clan, the panda, the stars — and that is right for a world you
+are meant to knock over again. A tournament win is the one thing the girls do
+that is a *result* rather than a state, and a result nobody can look up next
+Saturday is a result that did not happen. `localStorage`, so it is per-browser
+and per-origin exactly like the controller calibration.
+
+```
+score = wins x 1000            winning dominates; a 2-1 loser never outranks a winner
+      + damage dealt x 2
+      + max(0, 600 - seconds x 4)      a bonus that runs out, never a penalty
+      + damage avoided x 3             weighted above damage dealt: it is the harder one
+```
+
+`world-check` asserts each term can actually move the total and that winning
+outweighs any of them — a weight too small to change the ordering is a term
+that is in the formula and not in the game.
+
+**The board is validated on the way IN, not trusted.** It is the one thing that
+can be sitting in storage in a shape this build never wrote: an older version, a
+half-finished write, somebody poking at devtools. A board that throws takes the
+results screen down at the exact moment somebody has just won. Junk rows are
+dropped and good ones kept.
+
+**RESTART DOES NOT CLEAR IT.** Putting some barrels back up must not throw away
+every tournament they have ever won.
+
+**The name entry is the arcade layout, not a text field.** An `<input>` needs a
+keyboard, and the whole point of the controller work in this project is that two
+kids on two Joy-Cons never reach for the laptop. Up/down changes the letter,
+left/right moves — and **right off the end grows the name** up to five, which is
+how you get four or five letters without a separate control for it. Left off the
+front does nothing rather than wrapping, which would put the cursor at the far
+end of a name she is halfway through. **Either player drives it**, like the pause
+menu: the winner types her own name and this screen cannot know which pad she is
+holding.
+
+### Mr Satan
+
+**HE IS THE ONLY VOICE IN THE GAME THAT IS NOT SINCERE.** Patchfur narrates, the
+six leaders introduce themselves, Ryuuseki pronounces — all of them mean it. He
+is a showman selling tickets, and the tonal gap is what makes the tournament
+feel like a different kind of thing from the story the rest of the game tells.
+It is also cover: a game for a nine-year-old about her and her sister hitting
+each other needs the person proposing it to be ridiculous.
+
+Seventeen ElevenLabs lines through the Higgsfield `text2speech_v2` model,
+preset voice **Harrison** — the only male voice in a cast of seven women, which
+is most of why he lands as a different thread the moment he opens his mouth.
+**That voice is the knob** if he ever sounds wrong.
+
+**He is not a `ClanLeader`,** though he is built the same way: that class is
+welded to a clan, a shrine, a dais and an oath and he has none of the four. What
+he *does* share is the speech bubble, imported rather than reimplemented — a
+character speaking to you in the world should look the same doing it whoever
+they are.
+
+**MOST OF WHAT HE SAYS IS NOT WORTH A CUTSCENE.** He calls the tournament five
+times on the way to 80%, announces each round, and shouts when somebody goes
+down; every one of those through the full-screen furniture would be eleven
+interruptions to a game about knocking things over. `Announcer` is a pop-in card
+that **never takes the input** — the girls keep playing straight through, which
+is the whole difference between it and a scene, and why `_sceneActive` knows
+nothing about it. Lines are **queued rather than interrupting**: a dragon
+strafing a market street can cross 70, 75 and 80% inside four seconds, and
+cutting him off mid-word three times is worse than hearing him three times.
+
+His two full-screen moments reuse `SummonScene` rather than adding a fourth
+scene class — it already has beats, preloaded voice, the portrait box, the skip
+rules and the HUD hiding. **Its `load()` now derives the line list from
+`SCRIPTS` instead of naming three scripts by hand**, which is what would
+otherwise have silently skipped his five: the scenes would still play, on their
+authored durations, cutting every line off mid-word, and nothing would report it.
+
+**His shots are about the PLACE, not about him.** He is a flat billboard and
+there is no framing of one that carries three beats — so the camera does what he
+is actually doing: the announcement circles the town he is telling them to
+flatten, the opening circles the arena that has just appeared. He speaks from
+the portrait box over the top, which is the same rule the finale established:
+the portrait earns its space exactly when the speaker is the one thing *not* on
+screen.
+
+**The door asks for BOTH of them**, and says so when only one turns up. A prompt
+that simply does not appear is indistinguishable from a broken one.
 
 ## Gameplay rules worth not breaking
 
@@ -1370,11 +1763,17 @@ above (a solo rider stealing the split screen, the beam count reading the crew
 instead of the seat, and the fan firing backwards out of his mouth). Run the
 smoke test before assuming otherwise.
 
-**The arena the finale sends them to does not exist.** The last beat now speaks
-about it as a place that is open, at Richard's request, because it is the next
-thing being built. Until it ships this is a promise the game has made out loud to
-a nine-year-old — a different kind of TODO from the rest of this list. The line
-to soften if it slips is `done4`.
+**The arena exists now** — see The World Martial Arts Tournament below. The
+promise `done4` makes is kept, and this entry is left here only so anybody who
+remembers the old TODO can see it was closed rather than dropped.
+
+**The tournament has NOT been played by the girls yet.** Every part of it is
+verified headlessly and driven through in a browser, which settles whether it
+works and says nothing at all about whether it is fun. The three numbers most
+likely to come back are `OUT_DAMAGE` (30 — how much a ring-out hurts),
+`ATTACKS.dash.knock` (19, which is what makes ring-outs happen at all) and
+`OPEN_AT` (0.80). All three are checked, so turning them will tell you if it
+breaks something.
 
 **A FIFTH ORDERING BUG, and the same shape as the other four.** Both grottos
 shipped with trees across the doorway. Two mistakes stacking: the outlying-island
@@ -1908,10 +2307,17 @@ src/
     minimap.js          canvas-2D archipelago map over the HUD (x2 when split)
     menunav.js          menus on a controller — cursor, confirm, back
     cutscene.js         the opening story, flown through the real world
+    tournament.js       rounds, the ring-out rule, scoring — and `fighting`,
+                        the ONE gate on player-vs-player damage
+    arenaquest.js       how the tournament unlocks: the ladder to 80%
+    announce.js         Mr Satan's pop-in card (never takes the input)
+    leaderboard.js      localStorage board + the joystick name entry
   entities/
     shrine.js           the animated half of a clan shrine
     panda.js            the raisable, rideable Pandapaw panda
     leader.js           the six clan chiefs + Patchfur, and their bubbles
+    satan.js            the champion — announcer, and the joke
+    griffin.js          the scripted ride to the arena (NOT a mount)
 tools/
   gamepad-dump.html     raw Gamepad API readout — open from disk, no server
   world-check.mjs       headless smoke test: node tools/world-check.mjs
@@ -1930,9 +2336,10 @@ public/sprites/          EVERYTHING HERE SHIPS — Vite copies public/ into dist
   panda_cub.png         LIVE — single side-on cell, faces LEFT
   panda_adult.png       LIVE — single side-on cell, faces LEFT, saddled
   ryuuseki.png          LIVE — single side-on cell, faces LEFT
-  leader_*.png          LIVE — 7 front-facing single cells, never mirrored
+  leader_*.png          LIVE — 8 front-facing single cells, never mirrored
                                (thunderpaw riverclaw shadowtail windwhisker
-                                icewhisker pandapaw elder)
+                                icewhisker pandapaw elder satan)
+  griffin.png           LIVE — single side-on cell, faces LEFT, saddled
   title_art.png         LIVE — title screen key art
 docs/unused-art/         NOT SHIPPED — kept as reference, see its README
   frost_grid_v2.png     rows contradict each other, see above
@@ -1944,10 +2351,12 @@ docs/unused-art/         NOT SHIPPED — kept as reference, see its README
 
 ## Next steps Richard flagged
 
-1. **Play it with the girls.** Everything on the last bug list is fixed; their
-   feedback beats any spec from here.
-2. Not built: enemies or combat (deliberately — the slash exists to knock
-   scenery over, and that's where the fun is at this size); kitten
+1. **Play the tournament with the girls.** It is verified and it has never been
+   played. Difficulty is the only thing left to settle and no amount of
+   headless checking touches it — see the three knobs under Open bugs.
+2. Not built: **enemies** or combat against the world (still deliberate — the
+   tournament is player-versus-player and fenced off inside one ring, which is
+   a different thing from putting monsters on the islands); kitten
    customisation; towns on the outer islands; clan camp building.
 3. Ideas that came out of building the clans and aren't built: clan-specific
    missions or rival mischief scores, a second material that resists dragons

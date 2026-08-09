@@ -109,6 +109,56 @@ export const SCRIPTS = {
       text: 'So stay. Fly. Knock it all down again tomorrow. And when you would rather test what you have learned on each other than on the furniture — the arena is open. Go and find out which of you is the strongest fighter on this world.',
     },
   ],
+
+  /* --- MR. SATAN ANNOUNCES THE TOURNAMENT ---
+     Fires thirty seconds after Ryuuseki has been summoned AND ridden. Both
+     halves of that gate matter: the seven stars are the achievement, but a
+     kid who has collected them and not yet climbed on has not seen the payoff
+     yet, and interrupting her walk toward a legendary dragon to advertise a
+     different feature is the worst possible moment for this. The thirty
+     seconds let the flight happen first.
+
+     HE IS THE ONLY VOICE IN THE GAME THAT IS NOT SINCERE. Patchfur narrates,
+     the six leaders introduce themselves, Ryuuseki pronounces — all of them
+     mean it. He is a showman selling tickets, and the tonal gap is what makes
+     the tournament feel like a different kind of thing from the story the
+     rest of the game tells. It is also cover: a game for a nine-year-old
+     about her and her sister hitting each other needs the person proposing it
+     to be ridiculous. */
+  satanAnnounce: [
+    {
+      id: 'sat_ann1', who: 'MR. SATAN', sub: 'World Champion',
+      voice: '/voice/sat_ann1.mp3', dur: 7.0,
+      text: 'AHEM! Is this thing on? Citizens of the floating islands — it is I, MISTER SATAN! Strongest cat in the world, and yes, this magnificent moustache is absolutely real.',
+    },
+    {
+      id: 'sat_ann2', who: 'MR. SATAN', sub: 'World Champion',
+      voice: '/voice/sat_ann2.mp3', dur: 6.5,
+      text: 'I have seen a green dragon as long as a street. I have seen two kittens climb on and ride it. And I thought — hoo hoo hoo! — those two need a proper stage.',
+    },
+    {
+      id: 'sat_ann3', who: 'MR. SATAN', sub: 'World Champion',
+      voice: '/voice/sat_ann3.mp3', dur: 7.0,
+      text: 'So I am building one! The World Martial Arts Tournament returns! Knock this town flat, prove to me you are ready, and I will fly you there myself. Ho ho HO!',
+    },
+  ],
+
+  /* --- AND OPENS IT, at 80% mischief ---
+     The one moment the arena island actually appears in the sky. Short on
+     purpose: everything that needed saying was said in the announcement, and
+     what a kid wants at 80% is to go, not to be told again. */
+  satanOpen: [
+    {
+      id: 'sat_open1', who: 'MR. SATAN', sub: 'World Champion',
+      voice: '/voice/sat_open1.mp3', dur: 6.0,
+      text: 'IT IS DONE! Every barrel, every lantern, every last cane of bamboo — and the arena is OPEN!',
+    },
+    {
+      id: 'sat_open2', who: 'MR. SATAN', sub: 'World Champion',
+      voice: '/voice/sat_open2.mp3', dur: 7.0,
+      text: 'Come and find me in the town, both of you, together. Say the word, and my griffin will carry you to the ring. Ho ho ho hooo!',
+    },
+  ],
 };
 
 export class SummonScene {
@@ -118,7 +168,10 @@ export class SummonScene {
     this.active = false;
     this.script = null;
     this.beat = 0;
-    this.played = { found: false, summon: false, finale: false };
+    this.played = {
+      found: false, summon: false, finale: false,
+      satanAnnounce: false, satanOpen: false,
+    };
 
     /** 0..1, how dark the sky is right now. Owned here, applied by the game. */
     this.dusk = 0;
@@ -146,8 +199,12 @@ export class SummonScene {
    * finale is authored that way today, so this is not a hypothetical.
    */
   async load() {
-    const all = [...SCRIPTS.found, ...SCRIPTS.summon, ...SCRIPTS.finale]
-      .filter((b) => b.voice);
+    /* EVERY SCRIPT IN THE TABLE, derived rather than listed. This was a
+       hand-written list of three, and adding Mr Satan's two would have made
+       it a hand-written list of three that silently skipped them — the
+       scenes would still play, on their authored durations, cutting every
+       line off mid-word, and nothing anywhere would report a problem. */
+    const all = Object.values(SCRIPTS).flat().filter((b) => b.voice);
     await Promise.all(all.map((b) => new Promise((resolve) => {
       const el = new window.Audio();
       el.preload = 'auto';
@@ -202,9 +259,18 @@ export class SummonScene {
        the world — she is the one thing NOT on screen, which is exactly when
        the little box earns its place and what every other scene she speaks in
        already does. */
-    const showPortrait = which === 'finale' && art;
+    /* THE PORTRAIT SHOWS WHEN THE SPEAKER IS NOT ON SCREEN, which is the same
+       rule the finale established and the reason Mr Satan gets one too. His
+       shots frame the TOWN and then the arena — the places he is talking
+       about — so he is the one thing not in the picture, and that is exactly
+       when the little box earns its space. `found` and `summon` still show
+       nobody: those already frame their own subject. */
+    const showPortrait = (which === 'finale' || which === 'satanAnnounce' || which === 'satanOpen')
+      && !!art;
     this.portraitEl.style.display = showPortrait ? '' : 'none';
-    if (showPortrait) drawPortrait(this.portraitEl, art, '#e8c98a');
+    if (showPortrait) {
+      drawPortrait(this.portraitEl, art, which.startsWith('satan') ? '#ffd24a' : '#e8c98a');
+    }
     if (which === 'summon') this.duskWant = DUSK_DEEP;
     this._next();
     return true;
@@ -218,7 +284,11 @@ export class SummonScene {
     this.typed = 0;
     this.lineEndedAt = null;
     this.textEl.textContent = '';
-    const color = this.which === 'summon' ? '#ffe07a' : '#e8c98a';
+    /* His gold, so the tournament reads as a different thread from the story
+       the moment the box opens — the girls know a Patchfur scene from a
+       Ryuuseki scene by its colour already. */
+    const color = this.which === 'summon' ? '#ffe07a'
+      : this.which.startsWith('satan') ? '#ffd24a' : '#e8c98a';
     this.nameEl.textContent = `${b.who}  ·  ${b.sub}`;
     this.nameEl.style.color = color;
     this.boxEl.style.setProperty('--cs-accent', color);
@@ -298,6 +368,25 @@ export class SummonScene {
         F.z + Math.cos(a) * dist
       );
       this._look.set(F.x, F.y, F.z);
+    } else if (this.which === 'satanAnnounce' || this.which === 'satanOpen') {
+      /* HIS SHOTS ARE ABOUT THE PLACE, NOT ABOUT HIM. He is a billboard
+         standing in a town square and there is no framing of a flat drawing
+         that carries three beats — so the camera does what he is actually
+         doing: showing you somewhere. The announcement circles the town he is
+         telling them to flatten; the opening circles the arena, which has
+         just appeared in the sky and is the only thing either girl wants to
+         look at. He speaks from the portrait box over the top of it.
+         Slow and steady, continuous across beats, so three beats read as one
+         move rather than three cuts. */
+      const span = this.beat + ease;
+      const a = 0.6 + span * 0.30;
+      const dist = this.radius * (1.5 - span * 0.10);
+      this.camera.position.set(
+        F.x + Math.sin(a) * dist,
+        F.y + this.radius * (0.52 - span * 0.05),
+        F.z + Math.cos(a) * dist
+      );
+      this._look.set(F.x, F.y + this.radius * 0.06, F.z);
     } else {
       const a = 0.5 + ease * 0.35 + this.beat * 0.5;
       this.camera.position.set(

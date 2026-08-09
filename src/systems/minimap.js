@@ -35,6 +35,13 @@ export class Minimap {
     let maxX = -Infinity;
     let minZ = Infinity;
     let maxZ = -Infinity;
+    /* THE ARENA IS IN THE BOUNDS EVEN THOUGH IT IS HIDDEN, and that is
+       deliberate. The fit is computed once at build time and the map's scale
+       has to be the same before and after the tournament opens — recomputing
+       it on `openArena` would shrink the whole archipelago under the girls
+       the moment Mr Satan finishes his announcement, which reads as the map
+       breaking. It costs some empty space to the north; the arena is drawn
+       only once it is real (see draw). */
     for (const isl of world.islands) {
       minX = Math.min(minX, isl.x - isl.radius);
       maxX = Math.max(maxX, isl.x + isl.radius);
@@ -53,6 +60,8 @@ export class Minimap {
     this.marks = [
       { x: 0, z: 40, label: 'Town', dy: -7 },
       { x: world.dojoCentre.x, z: world.dojoCentre.z, label: 'Dojo', dy: -7 },
+      // Skipped in `draw` until the tournament opens, like the island itself.
+      { x: world.arenaCentre.x, z: world.arenaCentre.z, label: 'Arena', dy: -7, arena: true },
     ];
     /* Every grove gets a label, read straight off the world rather than typed
        in here — raising a panda costs forty canes, so "where is the bamboo"
@@ -128,6 +137,10 @@ export class Minimap {
 
     // --- islands ---
     for (const isl of this.world.islands) {
+      // An island that is not in the sky yet is not on the map either — a
+      // ring drawn out there before the tournament opens is a place the girls
+      // would fly to and find nothing.
+      if (isl.kind === 'arena' && !this.world.arenaOpen) continue;
       const r = isl.radius * this.scale;
       c.beginPath();
       c.arc(this._px(isl.x), this._py(isl.z), r, 0, Math.PI * 2);
@@ -142,6 +155,7 @@ export class Minimap {
 
     // --- landmarks ---
     for (const m of this.marks) {
+      if (m.arena && !this.world.arenaOpen) continue;
       const x = this._px(m.x);
       const y = this._py(m.z);
       if (m.kind === 'clan') {
