@@ -309,7 +309,13 @@ export class Tournament {
          side of a 56-unit square and she went off some other edge; sending
          her there can drop her straight back out of the far side, and it also
          hands her a free retreat across the ring. */
-      const dealt = p.hurt(OUT_DAMAGE, { x: R.x, z: R.z }, { knock: 0, lift: 0 }, this.game);
+      /* `pierce` — the ward does not stop the edge of the world. Without it a
+         kitten wearing the orb parks herself off the side of the ring and
+         takes nothing for the whole round, because the bubble runs longer
+         than its own cooldown. See Player.hurt. */
+      const dealt = p.hurt(
+        OUT_DAMAGE, { x: R.x, z: R.z }, { knock: 0, lift: 0, pierce: true }, this.game
+      );
       p.position.set(R.x, R.y + 3, R.z);
       p.group.position.copy(p.position);
       p.velocity.set(0, 0, 0);

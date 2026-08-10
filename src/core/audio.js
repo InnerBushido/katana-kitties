@@ -570,6 +570,49 @@ export class Audio {
       case 'menu':
         this._tone({ type: 'sine', from: 900, to: 1300, dur: 0.07, gain: 0.22 * v });
         break;
+
+      /* --- Powerup Kotodama ---
+         THE THREE WARD CUES ARE ONE SOUND IN THREE STATES, not three sounds.
+         Up sweeps in, a block is the same pitch struck, down sweeps out — so
+         a kid who has heard the bubble go up once already knows the other two
+         mean the same object. Three unrelated noises around one three-second
+         ability is the fastest way to make an ability feel like a bug. */
+      case 'wardup':
+        this._tone({ type: 'sine', from: semi(7), to: semi(19), dur: 0.26, gain: 0.17 * v });
+        this._tone({ type: 'triangle', from: semi(19), dur: 0.5, gain: 0.07 * v, delay: 0.1 });
+        break;
+      case 'warddown':
+        this._tone({ type: 'sine', from: semi(19), to: semi(5), dur: 0.3, gain: 0.13 * v });
+        break;
+      case 'wardhit':
+        // Struck glass: bright, short, and gone before the next blow lands.
+        this._tone({ type: 'sine', from: semi(31), dur: 0.22, gain: 0.16 * v });
+        this._tone({ type: 'sine', from: semi(38), dur: 0.14, gain: 0.07 * v, detune: 9 });
+        this._noise({ from: 5200, to: 2600, dur: 0.08, gain: 0.1 * v, q: 2.0 });
+        break;
+      case 'powerorb':
+        /* Bigger than `orb`, and it has to be: the plain one was a pickup, this
+           one changes how she moves for the rest of the game. Same bell an
+           octave up with a fifth stacked on it, so it is recognisably the same
+           family of object. */
+        this._tone({ type: 'sine', from: semi(24), dur: 1.2, gain: 0.18 * v });
+        this._tone({ type: 'sine', from: semi(31), dur: 1.0, gain: 0.12 * v, delay: 0.05 });
+        this._tone({ type: 'sine', from: semi(36), dur: 0.8, gain: 0.09 * v, delay: 0.1 });
+        this._tone({ type: 'triangle', from: semi(43), dur: 0.6, gain: 0.05 * v, delay: 0.16 });
+        break;
+      case 'coin':
+        this._tone({ type: 'square', from: semi(24), dur: 0.06, gain: 0.09 * v });
+        this._tone({ type: 'square', from: semi(31), dur: 0.16, gain: 0.09 * v, delay: 0.06 });
+        break;
+      case 'trade':
+        [0, 4, 7, 12].forEach((n, i) => this._tone({
+          type: 'triangle', from: semi(n + 12), dur: 0.3 - i * 0.04,
+          gain: 0.11 * v, delay: i * 0.055,
+        }));
+        break;
+      case 'deny':
+        this._tone({ type: 'square', from: semi(3), to: semi(-4), dur: 0.16, gain: 0.13 * v });
+        break;
       default:
         break;
     }

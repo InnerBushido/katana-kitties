@@ -1220,6 +1220,13 @@ export class World {
     }
 
     this.mischiefTotal = this.props.length;
+    /* EVERY POINT EITHER KITTEN WILL EVER HAVE. The whole game's currency is
+       knocking things over, so this is not a statistic — it is the size of the
+       economy, and the Kotodama stall's prices are computed from it rather
+       than picked (see `orbPrice`). Summed from the props themselves so
+       retuning what a barrel is worth moves the shop with it instead of
+       silently making orbs cheap. */
+    this.pointsTotal = this.props.reduce((n, p) => n + (p.points ?? 10), 0);
   }
 
   /* ---------------------------- dragon balls ----------------------------- */

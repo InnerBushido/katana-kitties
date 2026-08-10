@@ -63,7 +63,7 @@ Then open the address it prints.
 | Jump / fly up    | `Space`          | `Numpad 0` or `/`    | `A`          |
 | Slash            | `F`              | `Numpad 1` or `.`    | `X`          |
 | Interact / dive  | `E`              | `Numpad 2` or `,`    | `B`          |
-| Mount / dismount | `Q`              | `Numpad 3` or `;`    | `Y`          |
+| Mount / dismount / ward | `Q`       | `Numpad 3` or `;`    | `Y`          |
 | Sprint / boost   | `Left Shift`     | `Right Ctrl` / `RShift` | `ZL` / `ZR` |
 | Zoom the map     | `Z`              | `X`                  | `R` / View   |
 | Maths overlay    | `M`              | `M`                  | `L` / Home   |
@@ -251,6 +251,48 @@ walking up to the big board beside the ring.
 
 When it's over the griffin takes you home, and you can go straight back and do
 it again.
+
+## The Powerup Kotodama
+
+**Knock over every last thing in the world and the Kotodama wake up.** Whoever
+collected more of the little sin/cos orbs is handed a **Powerup Kotodama** —
+and if you both collected the same number, you *both* get one, including if
+that number is zero. It's random: you get a thing you *have*, not a thing you
+picked, which is what makes trading worth doing.
+
+The old orbs dissolve. From then on there are **eight kinds** hidden around the
+islands, and you can wear up to **eight at once** — they stack, so two Gale
+orbs make you twice as much faster, and a kitten in a full set is visibly
+wrapped in them.
+
+| | orb | what it does |
+| --- | --- | --- |
+| 疾 | **Hayate** — Gale | run faster |
+| 斬 | **Nagagiri** — Long Cut | longer katana |
+| 剛 | **Kongo** — Adamant | more health in the ring |
+| 跳 | **Tobi** — Leap | an extra jump |
+| 壁 | **Kabe** — Ward | mount button with nothing to climb on: a shield nothing gets through, and you float while it's up |
+| 落 | **Otoshi** — Power Dive | interact in the air — drop like a hammer |
+| 三 | **Sanzan** — Triple Slash | *hold* slash for three cuts. You can't move through them |
+| 突 | **Totsugeki** — Charge | slash while sprinting — straight through everything, gravity off |
+
+The three attacks are new moves, not new buttons: they are the buttons you
+already use, in a situation you already understand.
+
+**Sixteen are scattered across the islands** and show up on the map in their
+own colours, so the answer to "where's the last Ward" is never "fly over
+everything again".
+
+**A dealer opens a stall in the market.** He buys and sells for the points you
+earned knocking things over — but he is expensive on purpose: every point in
+the world is 4550, so a fair split buys you *three* orbs, and **he only stocks
+one of each**. Selling gives you 75% back, which is also the only way to get
+back under eight slots.
+
+**So you trade.** Open **CHARACTER PROFILE** from the pause menu and you each
+get your own cursor, in your own colour: pick the orb you're offering, and you
+*both* have to confirm before anything moves. Nobody can take one off you, and
+either of you can just give one away.
 
 ## Raise a panda
 
@@ -441,6 +483,12 @@ orb.z = centre.z + Math.sin(theta) * r;
 (`src/entities/orb.js`) — the overlay is drawn from the same two numbers that
 place the mesh, so it cannot drift out of sync with what she is watching.
 
+At 100% mischief these are replaced by the **Powerup Kotodama** (below), which
+are much smaller and carry a compressed version of the same idea: a rain of
+katakana around a live `cos θ  sin θ` readout, still computed from the two
+numbers placing the orb. The decoration is around the maths, never instead of
+it — and the Dojo, which is the other half of the lesson, is untouched.
+
 ### The Dojo of the Turning Circle
 
 A whole island west of town is a walkable unit circle, 24 world units to the
@@ -567,6 +615,9 @@ src/
     arenaquest.js       how the tournament unlocks
     announce.js         Mr. Satan's pop-in card
     leaderboard.js      the saved record board + joystick name entry
+    kotodama.js         the Awakening, the sixteen scattered orbs, the economy
+    profile.js          Character Profile / trading / the shop — the one menu
+                        with TWO cursors, because a trade needs both girls
   entities/
     player.js           movement, slash, mounting, camera rig, health
     dragon.js           rideable storm dragon
@@ -575,6 +626,8 @@ src/
     satan.js            the tournament announcer
     griffin.js          the ride to the arena
     orb.js              Kotodama Orb + pickups
+    powerorb.js         the eight Powerup Kotodama, worn and lying about
+    stall.js            the dealer's market stall
     prop.js             knockable scenery
 ```
 
@@ -621,7 +674,8 @@ node tools/world-check.mjs
 It catches the failures that still look fine in a screenshot: a grove that
 generates zero canes, a dragon that never finishes flying home, a sprite sheet
 read in mirror image, a clan buff that doesn't actually do anything, a
-background remover that eats a character's eyes. That last one reads the actual
+trade that quietly destroys an orb, a background remover that eats a
+character's eyes. That last one reads the actual
 PNGs through `tools/png.mjs` — a dependency-free decoder, because a check on a
 fixture only proves the rule agrees with itself.
 

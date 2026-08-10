@@ -119,6 +119,36 @@
           somewhere else and it waits where you left it, like a dragon on its
           perch, and shows up on the map so you can go back for it.
         </p>
+        <!-- Written for after 100% mischief, and deliberately in the same
+             voice as the panda note above it: what it is, what it costs, and
+             what the button does. The three attack orbs each get their exact
+             input, because "hold attack" and "tap attack" are the same button
+             and nothing on screen can tell you which one you just did. -->
+        <p class="note">
+          <b>Knock over EVERYTHING and the Kotodama wake up.</b> Whoever collected
+          more of the little orbs gets a <b>Powerup Kotodama</b> — and if you both
+          collected the same number, you <i>both</i> get one. The old orbs
+          disappear; from then on there are <b>eight new kinds</b> hidden around
+          the islands, and you can wear up to <b>eight at once</b>. They stack:
+          two Gale orbs make you twice as much faster.
+        </p>
+        <p class="note">
+          <b>疾 Gale</b> run faster · <b>斬 Long Cut</b> longer katana ·
+          <b>剛 Adamant</b> more health · <b>跳 Leap</b> an extra jump ·
+          <b>壁 Ward</b> press <kbd>Y</kbd>/<kbd>Q</kbd> with nothing to climb on
+          for a shield nothing can hurt you through (you float while it's up) ·
+          <b>落 Power Dive</b> press <kbd>B</kbd>/<kbd>E</kbd> in the air to drop
+          like a hammer · <b>三 Triple Slash</b> <i>hold</i> slash for three cuts ·
+          <b>突 Charge</b> slash while sprinting to charge straight through.
+        </p>
+        <p class="note">
+          <b>Trade with each other.</b> Open <b>CHARACTER PROFILE</b> from the
+          pause menu: you each pick an orb with <kbd>A</kbd>/<kbd>Space</kbd> and
+          you <i>both</i> have to press slash to confirm, so nobody can take one
+          off you. There's also a <b>dealer's stall</b> in the market who buys and
+          sells for points — but he's expensive, and he only has one of each. The
+          rest you have to find, or swap for.
+        </p>
         <p class="note">
           Player 2 uses the <b>arrow keys</b> and the <b>numpad</b>, or plug in a
           second controller. The screen splits automatically when you run apart
@@ -207,6 +237,7 @@
           <button class="menu-btn" data-action="settings">SETTINGS</button>
           <button class="menu-btn" data-action="help">HOW TO PLAY</button>
           <button class="menu-btn" data-action="board">RECORD BOARD</button>
+          <button class="menu-btn" data-action="profile">CHARACTER PROFILE</button>
           <button class="menu-btn" data-action="story">WATCH THE STORY AGAIN</button>
           <button class="menu-btn" data-action="restart">RESTART</button>
           <button class="menu-btn" data-action="title">TITLE SCREEN</button>
@@ -307,6 +338,19 @@
         <h2>WORLD MARTIAL ARTS TOURNAMENT</h2>
         <div id="board-body"></div>
         <button class="menu-btn" data-close>BACK</button>
+      </div>
+    </div>
+
+    <!-- Character Profile / Kotodama dealer. ONE panel, two screens: the
+         second column is either your sister's eight slots or the dealer's
+         shelf. It carries no `.menu-btn`, which is how MenuNav knows to keep
+         its single merged cursor off a surface that needs two — see
+         systems/profile.js. -->
+    <div id="panel-profile" class="screen overlay hidden">
+      <div class="panel kd-panel">
+        <h2 id="kd-title">CHARACTER PROFILE</h2>
+        <div id="kd-body" class="kd-body"></div>
+        <p id="kd-help" class="kd-help"></p>
       </div>
     </div>
 

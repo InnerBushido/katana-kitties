@@ -24,8 +24,17 @@
    existing listener in main.js works untouched.
 --------------------------------------------------------------------------- */
 
-/** Panels that own the input when they are up, in priority order. */
-const PANELS = ['panel-settings', 'panel-help', 'panel-pause'];
+/** Panels that own the input when they are up, in priority order.
+ *
+ *  `panel-profile` is FIRST and carries no `.menu-btn` on purpose. It is the
+ *  one screen in the game that must not have a single merged cursor — a trade
+ *  needs both girls to say yes on their own side, and consent cannot be
+ *  expressed through a cursor they are both pushing. Listing it here means
+ *  `panel()` finds it, `items()` comes back empty, and this class reports that
+ *  it does not own the input — so the pause menu underneath does not quietly
+ *  keep taking presses while a trade is on screen. One place, rather than a
+ *  second copy of "which panel is up" living in profile.js. */
+const PANELS = ['panel-profile', 'panel-settings', 'panel-help', 'panel-pause'];
 
 /* Stick/d-pad repeat. The first step is instant, then it waits, then it runs —
    the shape every menu in every console game uses, because a list that scrolls

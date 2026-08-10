@@ -1699,6 +1699,227 @@ they were measured on — a discriminator tuned on a single example is a
 description of that example. Ask what the two things *are* before asking how big
 they are.
 
+## The Powerup Kotodama — the endgame
+
+`entities/powerorb.js`, `systems/kotodama.js`, `systems/profile.js`,
+`entities/stall.js`. Everything here is inert until 100% mischief, and
+`Kotodama.awakened` is the single flag that says whether any of it exists —
+the loop, the minimap and the stall prompt all read that rather than each
+keeping their own idea of whether the endgame has started.
+
+**Debug: `6` awakens them and fills both purses; `5` opens the profile
+screen.** Same argument as `7` `8` `9` — the whole feature is behind 216 props.
+
+### The Awakening
+
+On the frame the last knockable thing goes over: the plain Kotodama Orbs each
+kitten collected are counted, whoever has more is given a Powerup Kotodama
+drawn at random, every plain orb is dissolved off both kittens and out of the
+world, sixteen Powerup Kotodama are scattered over the seven islands, and a
+dealer's stall appears in the market.
+
+**IT FIRES FROM `onMischief`, NOT WITH THE FINALE SCENE, and the two are
+deliberately opposite.** `_finaleDue` is *queued* because a cutscene cannot
+start over another one. This cannot be queued and cannot wait, for the same
+reason: the finale is 63 seconds and is skippable on its first frame, so
+hanging the world's biggest state change off the end of it hands a kid who
+presses Start no orbs at all. `awaken()` is idempotent so the guard is belt
+and braces, and the scene then plays over a world that has already turned.
+
+**A TIE GIVES THE PRIZE TO BOTH, AND THAT INCLUDES 0-0.** Same argument as the
+shared dragon-ball tally: two sisters, one of them younger, and a prize exactly
+one of them can win produces an argument rather than a game. Two kittens who
+never touched a plain orb both get one anyway — the alternative is an endgame
+that opens by telling both of them they lost, with nothing to trade.
+
+**THE PRIZE IS RANDOM, WHICH IS THE POINT.** A chosen prize is a menu, both
+girls pick the same obvious thing, and the trading never happens. A random one
+is the first card in the hand: a thing you *have* rather than a thing you
+wanted, which is what makes "I'll swap you" occur to a nine-year-old unprompted.
+
+**WHY THE PLAIN ORBS GO, given that the maths is the point of the project.**
+Two kinds of Kotodama in the world at once, one of which does nothing, and the
+useless one six units across with a full geometry lesson attached — it would
+drown the thing replacing it. The lesson keeps both its homes: the **Dojo of
+the Turning Circle is untouched**, and the worn orbs still print live
+`cos θ` / `sin θ` computed from the same two numbers that place them. The
+katakana rain is decoration *around* a real readout, never instead of one. A
+prettier orb that lied about its own position would be worse than no orb.
+
+### The eight
+
+Each changes a **different verb** — the clans' rule, and `world-check` asserts
+it the same way: every orb must change exactly one field of `aggregate()`, and
+no two the same one.
+
+| | orb | effect |
+| --- | --- | --- |
+| 疾 | Hayate / GALE | run speed ×(1 + 0.22n) |
+| 斬 | Nagagiri / LONG CUT | katana reach ×(1 + 0.30n) |
+| 剛 | Kongo / ADAMANT | max health 100 + 30n |
+| 跳 | Tobi / LEAP | +n jumps |
+| 壁 | Kabe / WARD | 3s shield, 1.5s wait, ¼ gravity |
+| 落 | Otoshi / POWER DIVE | interact in the air — a driven fall |
+| 三 | Sanzan / TRIPLE SLASH | hold attack — three cuts, planted |
+| 突 | Totsugeki / CHARGE | sprint + attack — straight through, no gravity |
+
+**STACKING IS ADDITIVE, NOT MULTIPLICATIVE.** Eight Gale orbs compounded at
+×1.22 each is ×4.9 and a kitten who physically cannot turn a corner on an
+island 56 units across; `1 + 0.22n` gives ×2.76, which is fast enough to be the
+joke. The check asserts the *shape* — eight orbs must be exactly eight times one
+— so a compounding rule fails it however the per-orb number is tuned.
+
+**Clan buffs MULTIPLY with orbs rather than being replaced.** Thunderpaw on
+four Gale orbs is ×2.54. That is absurd and correct: the orbs only exist after
+100%, the clans are a mid-game choice, and a kid who has done both has earned
+the silly number.
+
+### Three moves, and not one new button
+
+Same rule the tournament set. Every one of them is an entry in `ATTACKS` and
+goes through `Game.strikePlayers`, which is still the *single* gate that asks
+whether the two of them may hurt each other — these are new ways to swing, not
+a new damage path. `world-check` asserts all three ask the gate and that with
+the tournament off they take nothing off anybody.
+
+**THE WARD IS ON THE DRAGON BUTTON AND THE DRAGON STILL WINS IT.** `mount`
+already means "get on the thing next to me". A kitten standing beside a storm
+dragon who presses it and gets a bubble reads as the game refusing to let her
+fly, and nothing on screen would tell her the orb she is wearing is why. It is
+the last `else` in the mount chain, which is nearly always reached, because a
+dragon is a place you walk to.
+
+**THE WAIT STARTS WHEN THE BUBBLE DROPS, NOT WHEN IT GOES UP.** Charged from
+the press, a 3s shield on a 1.5s cooldown is already available again by the
+time it pops — the two numbers stop meaning what they say.
+
+**`force.pierce` — the ward stops blades, not the edge of the world.** Exactly
+one caller sets it, `Tournament._updateOut`, and it has to: without it a kitten
+wearing the orb parks off the side of the ring and takes nothing for the whole
+round, which deletes the ring.
+
+**NO POWER MOVE SURVIVES GETTING ON AN ANIMAL.** `_stepSpecials` only runs in
+the ground controller, so a ward popped a frame before mounting a dragon keeps
+its three seconds *for ever* — a permanently invincible kitten, produced by a
+button press that looks like climbing onto a dragon. `update` clears them, and
+so does `resetForRound`: a charge that survives a round reset carries its
+committed direction and its zero gravity across the teleport to her post and
+flies her off the ring before the gong.
+
+**THE TRIPLE SLASH IS ARMED BY THE SWING AND FIRED BY THE HOLD.** The obvious
+version gates on the swing animation still running, which leaves a usable
+window of `TRIPLE.hold` (0.22s) to `attackTimer` (0.26s) — two frames. The move
+would work about a third of the time and read as the game ignoring her.
+`_triArm` lives from the press until she lets go. There is a check that walks a
+real held button through the real controller and asserts it fires, and that a
+tap never does.
+
+**A CHARGE IS A VELOCITY, NOT A TARGET**, set flat every frame: fed through the
+accelerator it ramps over a third of a second and never gets near
+`CHARGE.speed`, so the move looks like a brisk walk. It hands back 35% of that
+velocity at the end, or she skates half an island afterwards.
+
+**THE DIVE IS THE DIVE-BOMB `prop.js` ALREADY NAMED.** "Bamboo answers to the
+katana and nothing else — not a dive-bomb, not dragon breath" was written
+before there was a dive to bomb with, and it is still the rule that makes a
+150-cane grove the one place flight and force fail. The charge keeps its blade
+out and does cut; a falling body does not. Both are checked.
+
+### The economy is derived from the world, not picked
+
+Every point either kitten will ever have comes from knocking something over,
+and the orbs only exist once *everything* has been knocked over — so the whole
+economy is a fixed pot. `World.pointsTotal` is summed from the props
+themselves: **4550 across 216**. An even split is 2275 each and the brief is
+that all of it buys three or four orbs, so `orbPrice = pointsTotal / 2 / 3.5`
+= **650**, sell **488** (75%).
+
+That number does more than it looks. Eight types, a stall that stocks **one of
+each**, and a wallet that reaches three is what makes **trading** the way you
+build a set rather than an extra you can ignore: there is no amount of playing
+that buys a stack, and the only other copies in the world are the sixteen lying
+on the islands and the ones in your sister's hand. Twenty-six exist in total,
+against sixteen slots across two kittens.
+
+**Buying and selling back must LOSE money** (checked), or the two of them
+bounce one orb off the counter and buy the shelf. **A sold orb goes back on the
+shelf**, or they can destroy the world's supply between them — and it makes
+selling a spare a 25% fee rather than a mistake you cannot undo, which is the
+difference between a shop a nine-year-old will experiment with and one she is
+afraid of. Selling is also the only way to get *under* eight slots.
+
+**A pickup a full kitten walks over is LEFT WHERE IT IS and she is told why.**
+Deleting it would destroy one of twenty-six because she happened to walk past;
+doing nothing reads as a broken collectible. Rate-limited to one toast per three
+seconds — the locked stars' rule.
+
+### The dealer's stall came up inside the cherry grove
+
+`findOpenSpot(-16, 58, 5)` returned a spot in the trees and the whole 4.8-unit
+stall was invisible behind a canopy. **This is the ice-ward bug again, and it
+is easier to hit here than anywhere else in the project**: `findOpenSpot`
+measures against a tree's SOLID, which is its trunk at radius 0.9, and what
+hides things is the four-unit canopy above it — and this code runs at 100%
+mischief on a world that is already fully dressed. The stall now seeds from the
+middle of the market street at clearance 8 (which clears a canopy *and* the
+market's own four stalls at r 2.0), the orbs at 7, and `world-check` asserts
+every one of them has 4 units of clear air. That check caught it first try.
+
+**The stall is turned to `-PI/4`**, the camera's fixed yaw. This game's camera
+never rotates, so "the front of a building" is a known direction here — left at
+zero the counter is edge-on and the noren, which is the thing that says *shop*,
+hangs entirely out of sight behind it.
+
+**It is furniture, not a character, and that is a decision.** Every talking
+figure in this game is a generated sprite sheet with a matched recorded voice;
+a ninth cat with neither would read as the one placeholder in a finished world.
+The eight orbs hovering over the counter **are** the stock — sold out goes dark,
+so "he hasn't got a Ward left" is visible from across the plaza.
+
+### The trade screen is the one menu with TWO cursors
+
+`systems/profile.js`, and it deliberately does **not** go through `MenuNav`.
+Every other menu merges both pads into one cursor on purpose — one screen, one
+cursor, and making player 1 the only one who can press RESUME locks the other
+girl out of her own pause menu. A trade is the one surface where that is
+exactly wrong: **consent cannot be expressed through a cursor both players are
+pushing.** Two cursors, each in that player's own marker colour, and nothing
+moves until both have confirmed on their own side.
+
+`MenuNav` is kept off it by listing `panel-profile` **first** in `PANELS` with
+no `.menu-btn` inside: it finds the panel, finds no items, and reports that it
+does not own the input — so the pause menu underneath does not quietly keep
+taking presses. One place, rather than a second copy of "which panel is up".
+
+**Three buttons, one meaning each**: `jump` offer / un-offer, `attack` confirm,
+`interact` back out (confirm, then offer, then the screen). A fourth is a fourth
+thing to explain to a nine-year-old.
+
+**Moving your offer CLEARS YOUR CONFIRM.** A girl who agreed to swap her Ward
+and then moved the highlight to her Gale has not agreed to *that* trade, and
+letting the tick survive the change is precisely the forced trade the whole
+screen exists to prevent.
+
+**A trade is atomic and checked before anything moves.** Both kittens are at
+eight slots more often than not by the time they are trading, so the naive
+"give hers to him, give his to her" overflows on the first half and leaves one
+of them a copy down with nothing to show for it. Both are removed first;
+`world-check` asserts a trade can neither create nor destroy an orb, that a
+gift into a full kitten fails *whole*, and that a swap with a full kitten still
+works. **Either side may offer nothing** — the older sister handing the younger
+one a spare is the single most likely thing to happen at this screen.
+
+**Health is the one stat with a current value as well as a maximum.** Taking a
+vigor stack off a kitten at 130/130 must leave her at 100/100, not 130/100; and
+putting one on mid-round must not be a free heal. `setPowerOrbs` keeps the
+FRACTION. Both wrong answers are things two sisters will produce within a
+minute of finding the trade screen.
+
+**`syncOrbMeshes` rebuilds the worn geometry wholesale rather than patching
+it.** Each orb's shell radius, orbit speed and starting phase come from its slot
+and from how many she is wearing, so adding a fifth changes where the other four
+belong. Eight icosahedrons is nothing; a wrong-looking constellation is not.
+
 ## Gameplay rules worth not breaking
 
 **A dragon can never be lost, and the home island always has two.** Dragons

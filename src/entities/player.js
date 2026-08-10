@@ -1,6 +1,7 @@
 ﻿import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
 import { PANDA_SPEED, PANDA_JUMP } from './panda.js';
+import { aggregate, WARD, DIVE, TRIPLE, CHARGE } from './powerorb.js';
 
 /* ---------------------------------------------------------------------------
    A Katana Kitty and the camera that follows it.
@@ -64,6 +65,21 @@ export const ATTACKS = {
   stand: { dmg: 10, knock: 9, lift: 3.5, reach: 3.4, arc: -0.25 },
   dash: { dmg: 15, knock: 19, lift: 5.0, reach: 3.9, arc: -0.1 },
   air: { dmg: 14, knock: 13, lift: 7.5, reach: 3.7, arc: -0.35 },
+
+  /* THE THREE POWER-ORB MOVES ARE ENTRIES IN THIS TABLE AND NOT A SECOND
+     SYSTEM, which is the whole reason they cannot leak out of the ring.
+     `Game.strikePlayers` is still the one gate that asks whether the two of
+     them are allowed to hurt each other; giving these their own damage path
+     would put that question in a second place, and the copy nobody remembers
+     is how a nine-year-old ends up able to power-dive her sister in the
+     market square. `world-check` asserts a full-power charge does zero damage
+     with the tournament off, exactly as it does for a dash.
+
+     `arc` is the cosine floor on the forward test. The dive is -1 — it lands
+     on everything under her, and a falling body has no facing. */
+  tri: { dmg: 9, knock: 7, lift: 2.6, reach: 3.4, arc: -0.25 },
+  dive: { dmg: DIVE.dmg, knock: DIVE.knock, lift: DIVE.lift, reach: DIVE.radius, arc: -1 },
+  charge: { dmg: CHARGE.dmg, knock: CHARGE.knock, lift: CHARGE.lift, reach: CHARGE.radius, arc: -0.6 },
 };
 
 /** Seconds a hit takes control away, and how long she cannot be hit again. */
@@ -160,6 +176,32 @@ export class Player {
     this.aloftT = 0;
     /** The star she is holding up, parented to her group for the duration. */
     this.aloft = null;
+
+    /* --- Powerup Kotodama ---
+       `powerOrbs` is the ONE piece of truth about what she is wearing: an
+       array of orb ids, duplicates and all. Everything else — the buff
+       numbers, the profile screen, the worn geometry, what the stall will buy
+       back — is derived from it, and `setPowerOrbs` is the only way it moves.
+       Anything that edits the array in place gets a kitten whose maximum
+       health and whose displayed inventory disagree. */
+    this.powerOrbs = [];
+    /** Folded buff totals. Never null: an empty list aggregates to the
+     *  identity, so every read site is `this.power.speed` with no `?? 1`. */
+    this.power = aggregate([]);
+    /** Seconds the ward bubble has left, and the wait after it drops. */
+    this.wardT = 0;
+    this.wardCool = 0;
+    /** Seconds left of a charge, and the direction it is committed to. */
+    this.chargeT = 0;
+    this.chargeDir = new THREE.Vector2(0, 1);
+    this.chargeLeft = 0;
+    /** Triple-slash sequencer: cuts still to throw and the clock to the next. */
+    this.triLeft = 0;
+    this.triT = 0;
+    /** True while falling as a power dive. */
+    this.diving = false;
+    /** Seconds the attack button has been held, for the triple-slash arm. */
+    this.attackHeld = 0;
 
     this.group = new THREE.Group();
 
@@ -262,6 +304,27 @@ export class Player {
     this.group.add(this.hpGroup);
     this._barW = barW;
 
+    /* --- the ward bubble ---
+       Two shells, both BackSide, both additive-ish through low opacity: from
+       inside you see the far wall of the sphere, which is what makes it read
+       as being INSIDE something rather than as a ball stuck to her. Built
+       once and hidden, because a kitten with the orb pops this every few
+       seconds and allocating a sphere per press is how you get a hitch every
+       time she defends herself. */
+    this.wardMesh = new THREE.Group();
+    const shell = (r, c, o) => new THREE.Mesh(
+      new THREE.IcosahedronGeometry(r, 2),
+      new THREE.MeshBasicMaterial({
+        color: c, transparent: true, opacity: o, side: THREE.BackSide,
+        depthWrite: false, toneMapped: false,
+      })
+    );
+    this.wardShell = shell(WARD.radius, 0x9fd8ff, 0.22);
+    this.wardCore = shell(WARD.radius * 0.82, 0xe8f6ff, 0.10);
+    this.wardMesh.add(this.wardShell, this.wardCore);
+    this.wardMesh.visible = false;
+    this.group.add(this.wardMesh);
+
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 4000);
     this.camDist = 26;
     this.camTarget = this.position.clone();
@@ -278,6 +341,43 @@ export class Player {
   /** @param {{centre: THREE.Vector3, dist: number, pitch: number}|null} f */
   setFocus(f) {
     this.focus = f;
+  }
+
+  /* ------------------------ Powerup Kotodama ---------------------------- */
+
+  /**
+   * Equip a list of orb ids. The ONLY way `powerOrbs` ever changes.
+   *
+   * HEALTH IS THE ONE STAT THAT CANNOT SIMPLY BE RECOMPUTED, because it has a
+   * current value as well as a maximum. Taking a vigor orb off a kitten
+   * standing at 130 of 130 has to leave her at 100 of 100 and not at 130 of
+   * 100; putting one on mid-round must not be a free heal either, so the
+   * CURRENT value keeps its share of the bar rather than its absolute number.
+   * Trading a stack away in the middle of a fight is a real thing two sisters
+   * will try, and both of the obvious implementations of it are wrong.
+   *
+   * @param {string[]} ids
+   */
+  setPowerOrbs(ids) {
+    const frac = this.maxHp > 0 ? this.hp / this.maxHp : 1;
+    this.powerOrbs = [...ids];
+    this.power = aggregate(this.powerOrbs);
+    this.maxHp = this.power.hp;
+    this.hp = Math.round(this.maxHp * frac);
+    return this.powerOrbs;
+  }
+
+  /** How much of gravity applies this frame. See WARD / TRIPLE / CHARGE. */
+  _gravityK() {
+    if (this.chargeT > 0) return 0;
+    if (this.wardT > 0) return WARD.gravity;
+    if (this.triLeft > 0 && !this.onGround) return TRIPLE.gravity;
+    return 1;
+  }
+
+  /** True while a special move owns her feet — no stick, no jump. */
+  get busy() {
+    return this.triLeft > 0 || this.chargeT > 0;
   }
 
   /* ------------------------------ helpers ------------------------------- */
@@ -366,6 +466,15 @@ export class Player {
        switched off in mid-air. */
     if (this.hitT > 0 || this.ko) pad = FROZEN_PAD;
 
+    /* NO POWER MOVE SURVIVES GETTING ON AN ANIMAL. `_stepSpecials` only runs
+       inside the ground controller, so a ward popped a frame before mounting
+       a dragon would keep `wardT` at three seconds for ever — a permanently
+       invincible kitten, produced by a button press that looks like getting
+       on a dragon. Same for a charge, which would hold gravity at zero. */
+    if ((this.mount || this.rideAlong) && (this.wardT > 0 || this.busy || this.diving)) {
+      this._clearSpecials();
+    }
+
     if (this.rideAlong) this._updatePassenger(dt, pad, world, hud);
     else if (this.mount) this._updateFlight(dt, pad, world, hud);
     else this._updateGround(dt, pad, world, dragons, hud);
@@ -393,6 +502,18 @@ export class Player {
    */
   hurt(dmg, from, force, hud) {
     if (this.invulnT > 0 || this.ko) return 0;
+
+    /* THE WARD STOPS BLADES, NOT THE EDGE OF THE WORLD. `force.pierce` is set
+       by exactly one caller — the ring-out — and it has to be, because the
+       bubble runs 3s on a 1.5s wait: without this a kitten with the orb can
+       stand off the side of the arena for the whole round and take nothing,
+       which deletes the ring. Blocking a blade is what she bought; blocking
+       the floor is not. */
+    if (this.wardT > 0 && !force?.pierce) {
+      this.wardFlash = 0.25;
+      hud?.sfx?.('wardhit');
+      return 0;
+    }
 
     const before = this.hp;
     this.hp = Math.max(0, this.hp - dmg);
@@ -462,6 +583,24 @@ export class Player {
     this.onGround = true;
     this.attackTimer = 0;
     this.attackCooldown = 0;
+    /* Every power move dies with the round too. A charge that survives the
+       reset carries its committed direction and its zero gravity across the
+       teleport to her post and flies her straight back off the ring before
+       the countdown has finished. */
+    this._clearSpecials();
+  }
+
+  /** Drop every power move on the floor. Safe to call at any time. */
+  _clearSpecials() {
+    this.wardT = 0;
+    this.wardCool = 0;
+    this.chargeT = 0;
+    this.chargeLeft = 0;
+    this.triLeft = 0;
+    this.triT = 0;
+    this.diving = false;
+    this.attackHeld = 0;
+    this.wardMesh.visible = false;
   }
 
   /** Which of the three attacks this swing is. See ATTACKS. */
@@ -575,20 +714,34 @@ export class Player {
   }
 
   _updateGround(dt, pad, world, dragons, hud) {
+    /* THE POWER MOVES ARE STEPPED BEFORE THE STICK IS READ, because two of
+       them take the stick away. Running the sequencers afterwards means a
+       charge that ended this frame still eats this frame's input, which is
+       one frame of unresponsiveness per charge — small, constant, and exactly
+       the kind of thing that makes a control scheme feel soft. */
+    this._stepSpecials(dt, pad, world, hud);
+
     const { fwd, right } = this._basis();
     const wish = new THREE.Vector3()
       .addScaledVector(right, pad.mx)
       .addScaledVector(fwd, -pad.my);
 
-    const moving = wish.lengthSq() > 0.0001;
+    let moving = wish.lengthSq() > 0.0001;
     if (moving) {
       wish.normalize();
       this.facing = Math.atan2(wish.x, wish.z);
     }
+    /* Planted. She keeps her facing from the frame the move started — a
+       triple slash you can steer is a triple slash with no cost. */
+    if (this.busy) { wish.set(0, 0, 0); moving = false; }
 
     const sprinting = pad.down('sprint') && moving;
     const buff = this.clan?.buff;
-    const speedK = buff?.speed ?? 1;
+    /* Clan buff and orbs MULTIPLY. Thunderpaw's 1.35 on top of four Gale orbs
+       is 2.54, which is absurd and correct: the orbs only exist after 100%
+       mischief, the clans are a mid-game choice, and a kid who has done both
+       has earned the silly number. Nothing downstream reads speed as bounded. */
+    const speedK = (buff?.speed ?? 1) * this.power.speed;
     /* A grown panda is a mount, not a buff — riding one multiplies whatever
        you already had, so a Thunderpaw kitten on a panda is the fastest thing
        in the game. It is ground movement throughout: same gravity, same
@@ -616,7 +769,16 @@ export class Player {
        So during the stun the movement accel is skipped entirely and the
        throw decays on its own gentle drag instead. Gravity is untouched, so
        she still falls, still lands, and still slides to a stop. */
-    if (this.hitT > 0 || this.ko) {
+    if (this.chargeT > 0) {
+      /* A CHARGE IS A VELOCITY, NOT A TARGET. Feeding it through the ordinary
+         accelerator makes it ramp up over a third of a second and arrive
+         nowhere near CHARGE.speed before the timer runs out — the move looks
+         like a brisk walk. It is set flat, every frame, in the direction it
+         committed to at the press. */
+      this.velocity.x = this.chargeDir.x * CHARGE.speed;
+      this.velocity.z = this.chargeDir.y * CHARGE.speed;
+      this.velocity.y = 0;
+    } else if (this.hitT > 0 || this.ko) {
       const drag = Math.min(1, dt * (this.onGround ? 3.4 : 0.7));
       this.velocity.x -= this.velocity.x * drag;
       this.velocity.z -= this.velocity.z * drag;
@@ -624,7 +786,11 @@ export class Player {
       this.velocity.x += THREE.MathUtils.clamp(target.x - this.velocity.x, -rate, rate);
       this.velocity.z += THREE.MathUtils.clamp(target.z - this.velocity.z, -rate, rate);
     }
-    this.velocity.y -= GRAVITY * dt;
+    /* A power dive is a fall she is DRIVING. Gravity alone tops out around
+       terminal for the height of a double jump and reads as an ordinary drop
+       with a sound effect on it; pinning the speed is what makes it a move. */
+    if (this.diving) this.velocity.y = -DIVE.speed;
+    else this.velocity.y -= GRAVITY * this._gravityK() * dt;
 
     // --- jump / double jump ---
     if (this.onGround) this.coyote = COYOTE;
@@ -633,8 +799,11 @@ export class Player {
     /* Shadowtail grants a third jump and a little more lift. `maxJumps` is
        read wherever the count is refilled, so landing restores all of them. */
     const jumpK = (buff?.jump ?? 1) * (this.pandaMount ? PANDA_JUMP : 1);
-    this.maxJumps = buff?.jumps ?? 2;
-    if (pad.pressed('jump')) {
+    /* Leap orbs ADD to whatever the clan gave her, so a Shadowtail kitten
+       wearing three of them has six. The count is read wherever jumps are
+       refilled, so landing restores all of them however many that is. */
+    this.maxJumps = (buff?.jumps ?? 2) + this.power.jumps;
+    if (pad.pressed('jump') && !this.busy) {
       if (this.coyote > 0 || this.jumpsLeft > 1) {
         this.velocity.y = JUMP_V * jumpK;
         this.jumpsLeft = Math.max(1, this.jumpsLeft - 1);
@@ -659,11 +828,18 @@ export class Player {
        breath. The kitten still plays her attack pose, which reads as the two
        of them going for it together. */
     this.attackCooldown -= dt;
-    if (pad.pressed('attack') && this.attackCooldown <= 0) {
+    if (pad.pressed('attack') && this.attackCooldown <= 0 && !this.busy) {
       this.attackTimer = 0.26;
       if (this.pandaMount) {
         this.attackCooldown = 0.45;
         this._doClaw(world, hud);
+      } else if (this.power.charge && sprinting) {
+        /* CHARGE OUTRANKS THE HOLD, and the reason is that it is the one the
+           stick already says out loud. She is sprinting in a direction with
+           the trigger down; a hold-detector that stole that press would make
+           the sprint attack unreachable for anyone wearing both orbs, and the
+           sprint attack is the one two kids already know from the barrels. */
+        this._startCharge(hud);
       } else {
         this.attackCooldown = 0.36;
         hud?.sfx('slash');
@@ -673,9 +849,41 @@ export class Player {
            afterwards can turn the aerial she actually threw into a standing
            slash on the frame she lands. */
         this._doSlash(world, hud, this.attackKind(pad));
+        // That swing is the first of three if she keeps the button down.
+        this._triArm = !!this.power.tri;
       }
     }
     if (this.attackTimer > 0) this.attackTimer -= dt;
+
+    /* --- the triple slash arms on the HOLD, and fires after the first cut ---
+       Tapping still throws the ordinary swing above; keeping the button down
+       past TRIPLE.hold turns that swing into the first of three. Arming on the
+       press instead would put a 0.22s delay on every attack in the game for
+       anyone wearing the orb, which is a worse trade than it sounds: the
+       ordinary slash is what she uses on barrels a hundred times an hour. */
+    if (this.power.tri && !this.pandaMount) {
+      const held = pad.down('attack');
+      this.attackHeld = held ? this.attackHeld + dt : 0;
+      if (!held) this._triArm = false;
+      /* ARMED BY THE SWING, FIRED BY THE HOLD, and the arming flag is what
+         makes the window usable. Gating on `attackTimer > 0` instead — the
+         obvious version — leaves 40 milliseconds between the hold threshold
+         and the end of the swing animation, which is two frames: the move
+         would work about a third of the time and read as the game ignoring
+         her. The flag lives from the press until she lets go. */
+      if (this._triArm && this.attackHeld > TRIPLE.hold && this.triLeft === 0) {
+        this._startTriple(hud);
+      }
+    }
+
+    /* --- the power dive ---
+       Airborne only, which is what keeps `interact` free for the oath and the
+       stall: neither of those is reachable off the floor, so the two meanings
+       of the button can never both be live at once. */
+    if (this.power.dive && pad.pressed('interact') && !this.onGround
+        && !this.diving && !this.busy) {
+      this._startDive(hud);
+    }
 
     // --- move + collide ---
     const wasX = this.position.x;
@@ -714,6 +922,10 @@ export class Player {
     const snap = 0.35 + travelled * 2.6;
 
     if (g && this.position.y <= g.y) {
+      /* THE DIVE LANDS BEFORE THE VELOCITY IS ZEROED. Two lines further down
+         `velocity.y = 0` and `onGround = true`, and a shockwave that asks
+         afterwards how fast she was falling gets nothing. */
+      if (this.diving) this._diveImpact(world, hud);
       if (!wasGrounded && this.velocity.y < -12) this.squash = 1;
       // Only a real fall gets a landing thump â€” the ground snapping below
       // means brief slope blips must not fire one every stride.
@@ -802,6 +1014,14 @@ export class Player {
           this.velocity.set(0, 0, 0);
           hud?.sfx('mount');
           hud?.toast(`${this.name} climbed onto ${this.pandaName}!`, this.index);
+        } else {
+          /* NOTHING TO CLIMB ON — so this is the ward. The animal wins the
+             button outright and always will: a kitten standing beside a storm
+             dragon who presses mount and gets a bubble reads as the game
+             refusing to let her fly, and she has no way to tell that the orb
+             she is wearing is the reason. It falls through to here, which is
+             nearly always, because a dragon is a place you walk to. */
+          this._popWard(hud);
         }
       }
     }
@@ -846,11 +1066,206 @@ export class Player {
     return this.index === 0 ? 'Bao' : 'Mochi';
   }
 
+  /* ------------------------- the power moves ---------------------------- */
+
+  /**
+   * Step every power-move clock. Runs before the stick is read.
+   *
+   * ONE FUNCTION FOR ALL FOUR, and the ordering inside it is the contract:
+   * the ward is stepped first because it is the only one that can be up at
+   * the same time as another, and the charge last because ending it has to
+   * leave a velocity the ordinary controller can take back over.
+   */
+  _stepSpecials(dt, pad, world, hud) {
+    // --- ward ---
+    if (this.wardT > 0) {
+      this.wardT = Math.max(0, this.wardT - dt);
+      if (this.wardT === 0) {
+        /* THE WAIT STARTS WHEN THE BUBBLE DROPS, NOT WHEN IT GOES UP. Charging
+           the cooldown from the press means a 3s shield on a 1.5s cooldown is
+           off for nothing at all — it is already available again by the time
+           it pops. Read the other way round the two numbers say what they look
+           like they say: three seconds of cover, then one and a half of not. */
+        this.wardCool = this.power.ward?.cool ?? WARD.cool;
+        hud?.sfx?.('warddown');
+      }
+    } else if (this.wardCool > 0) {
+      this.wardCool = Math.max(0, this.wardCool - dt);
+    }
+    this.wardFlash = Math.max(0, (this.wardFlash ?? 0) - dt);
+
+    // --- triple slash ---
+    if (this.triLeft > 0) {
+      this.triT -= dt;
+      if (this.triT <= 0) {
+        this.triLeft--;
+        this.attackTimer = 0.2;
+        hud?.sfx('slash');
+        this._doSlash(world, hud, 'tri');
+        this.triT = TRIPLE.gap;
+        if (this.triLeft === 0) this.attackCooldown = 0.3;
+      }
+    }
+
+    // --- charge ---
+    if (this.chargeT > 0) {
+      this.chargeT -= dt;
+      this.chargeLeft -= CHARGE.speed * dt;
+      this._chargeStrike(world, hud);
+      if (this.chargeT <= 0 || this.chargeLeft <= 0) this._endCharge();
+    }
+
+    /* --- the dive ends when she stops falling ---
+       Landing is handled where the ground snap happens, because the impact
+       needs the speed. This is the OTHER way out: a dive that clips a wall,
+       gets shoved by `resolveSolids` and ends up rising, or one thrown while
+       a round ends. Without it `diving` latches and pins her downward
+       velocity for the rest of the afternoon. */
+    if (this.diving && (this.onGround || this.hitT > 0 || this.ko)) this.diving = false;
+  }
+
+  /** Put the bubble up, if she has the orb and the wait has run out. */
+  _popWard(hud) {
+    if (!this.power.ward || this.wardT > 0 || this.wardCool > 0) return false;
+    this.wardT = this.power.ward.dur;
+    this.wardMesh.visible = true;
+    hud?.sfx?.('wardup');
+    return true;
+  }
+
+  /**
+   * Commit to a charge.
+   *
+   * THE DIRECTION IS TAKEN ONCE, AT THE PRESS. A charge you can steer is a
+   * sprint with a hitbox — the whole shape of the move is that she picks a
+   * line and lives with it, which is what makes dodging one a skill her
+   * sister can learn rather than a coin flip.
+   */
+  _startCharge(hud) {
+    this.chargeDir.set(Math.sin(this.facing), Math.cos(this.facing));
+    this.chargeLeft = this.power.charge.dist;
+    this.chargeT = this.power.charge.dist / CHARGE.speed;
+    this.attackTimer = this.chargeT;
+    this.attackCooldown = this.chargeT + 0.28;
+    this._chargeHit = new Set();
+    hud?.sfx('slash');
+    hud?.sfx('mount', 0.5);
+  }
+
+  _endCharge() {
+    this.chargeT = 0;
+    this.chargeLeft = 0;
+    /* Hand her back a velocity the controller can decelerate, not the 42/s
+       the charge was running at — released at full pelt she skates halfway
+       across the island afterwards, which reads as ice rather than as a stop. */
+    this.velocity.x *= 0.35;
+    this.velocity.z *= 0.35;
+  }
+
+  _startTriple(hud) {
+    this.triLeft = TRIPLE.cuts - 1;   // the swing that armed it was the first
+    this.triT = TRIPLE.gap;
+    this.attackHeld = 0;
+    this._triArm = false;
+    hud?.toast?.(`${this.name} — TRIPLE SLASH!`, this.index);
+  }
+
+  _startDive(hud) {
+    this.diving = true;
+    /* PINNED HERE AS WELL AS IN THE CONTROLLER. The controller's pin runs near
+       the top of `_updateGround`, next to gravity, and this is called from
+       further down it — so on the frame she presses the button she keeps
+       whatever upward velocity the jump left her with, and the drop starts one
+       frame late. One frame is not much; it is enough to see, because the
+       thing she is watching for is an instant change of direction. */
+    this.velocity.y = -DIVE.speed;
+    this.velocity.x *= 0.3;
+    this.velocity.z *= 0.3;
+    this.squash = 1;
+    hud?.sfx('slash');
+  }
+
+  /**
+   * The charge's moving hitbox, tested every frame it is live.
+   *
+   * REPEAT HITS ARE STOPPED BY INVULNERABILITY, not by a per-charge set —
+   * `hurt` already refuses for INVULN seconds after a blow lands, and a
+   * charge is over in under half a second. Props get their own set, because
+   * `knock` has no equivalent guard and a barrel hit forty times in one pass
+   * scores once and rattles forty times.
+   */
+  _chargeStrike(world, hud) {
+    hud?.strikePlayers?.(this, 'charge', this._reach(), this.chargeDir);
+    for (const p of world.props) {
+      if (this._chargeHit.has(p)) continue;
+      const dx = p.group.position.x - this.position.x;
+      const dz = p.group.position.z - this.position.z;
+      if (Math.abs(p.group.position.y - this.position.y) > 3) continue;
+      const dist = Math.hypot(dx, dz);
+      if (dist > CHARGE.radius) continue;
+      this._chargeHit.add(p);
+      this._knockProp(p, dx, dz, 1.5, world, hud);
+    }
+  }
+
+  /** The dive's landing: everything around her feet goes over. */
+  _diveImpact(world, hud) {
+    this.diving = false;
+    this.squash = 1;
+    hud?.sfx('rockbreak');
+    /* Straight down has no facing, so the strike is fed the direction she is
+       pointed and ATTACKS.dive's arc of -1 ignores it. Passing the UNSCALED
+       katana reach is deliberate: this is a falling body, not a blade, so a
+       Riverclaw oath must not widen the crater. */
+    hud?.strikePlayers?.(this, 'dive', 3.4, new THREE.Vector2(Math.sin(this.facing), Math.cos(this.facing)));
+    for (const p of world.props) {
+      /* THE DIVE IS THE DIVE-BOMB `prop.js` ALREADY NAMES. "Bamboo answers to
+         the katana and nothing else — not a dive-bomb, not dragon breath" was
+         written before there was a dive to bomb with, and it is still the
+         rule that makes a 150-cane grove the one place flight and force fail
+         and a girl has to stand there and cut. The charge keeps its blade out
+         and does cut; a falling body does not. */
+      if (p.katanaOnly) continue;
+      const dx = p.group.position.x - this.position.x;
+      const dz = p.group.position.z - this.position.z;
+      if (Math.abs(p.group.position.y - this.position.y) > 3.5) continue;
+      if (Math.hypot(dx, dz) > DIVE.radius) continue;
+      this._knockProp(p, dx, dz, 1.9, world, hud);
+    }
+  }
+
+  /** Her katana's real reach, clan and orbs folded in. One place. */
+  _reach() {
+    return 3.4 * (this.clan?.buff?.reach ?? 1) * this.power.reach;
+  }
+
+  /**
+   * Knock one prop over and score it.
+   *
+   * Lifted out of `_doSlash` when the dive and the charge arrived: three
+   * copies of "push it, play a noise, score it if it is fresh" is three places
+   * for the bamboo tally or the mischief hook to be forgotten in.
+   */
+  _knockProp(p, dx, dz, power, world, hud) {
+    const push = new THREE.Vector3(dx, 0, dz).normalize();
+    const fresh = p.knock(push, power);
+    hud?.sfx(p.kind === 'bamboo' ? 'bamboo' : 'hit');
+    if (fresh && !p.scored) {
+      p.scored = true;
+      this.score += p.points ?? 10;
+      hud?.sfx('score');
+      hud?.onMischief(this, p);
+    }
+    return fresh;
+  }
+
   _doSlash(world, hud, kind = 'stand') {
     const dir = new THREE.Vector2(Math.sin(this.facing), Math.cos(this.facing));
-    // Riverclaw's blade reaches further — and the drawn arc grows with it, so
-    // the buff is something you can see rather than just feel.
-    const reach = 3.4 * (this.clan?.buff?.reach ?? 1);
+    // Riverclaw's blade reaches further, and so does every Long Cut orb — and
+    // the drawn arc grows with both, so the buff is something you can see
+    // rather than just feel. One accessor, so the arc can never disagree with
+    // the hitbox it is drawing.
+    const reach = this._reach();
 
     /* THE OTHER KITTEN, FIRST — and through the game, not from here.
        `strikePlayers` is the ONE place that asks whether the two of them are
@@ -869,17 +1284,9 @@ export class Player {
       // 150-degree arc in front
       const dot = (dx * dir.x + dz * dir.y) / (dist || 1);
       if (dot < -0.25) continue;
-      const push = new THREE.Vector3(dx, 0, dz).normalize();
-      const fresh = p.knock(push, 1.15);
       // Bamboo gets its own crack; everything else a wooden knock. One per
       // prop is fine â€” the voice cap in the audio engine handles a big hit.
-      hud?.sfx(p.kind === 'bamboo' ? 'bamboo' : 'hit');
-      if (fresh && !p.scored) {
-        p.scored = true;
-        this.score += p.points ?? 10;
-        hud?.sfx('score');
-        hud?.onMischief(this, p);
-      }
+      this._knockProp(p, dx, dz, 1.15, world, hud);
       hits++;
     }
     if (hits) this.squash = 0.6;
@@ -1175,6 +1582,33 @@ export class Player {
     this.velocity.set(0, 0, 0);
   }
 
+  /**
+   * Draw the ward.
+   *
+   * IT HAS TO SAY WHEN IT IS ABOUT TO GO OUT. A bubble that vanishes without
+   * warning teaches nothing except that the game is unfair — the last 0.7s
+   * flicker at 9Hz, which is early enough to run and unmistakable next to the
+   * steady breath it holds for the rest of its life. The white flash on a
+   * blocked blow is the other half: a shield you cannot tell is working is
+   * indistinguishable from a sister who keeps missing.
+   */
+  _updateWardMesh(dt) {
+    const up = this.wardT > 0;
+    this.wardMesh.visible = up;
+    if (!up) return;
+    this.wardMesh.position.set(0, this.height * 0.55, 0);
+    const dying = this.wardT < 0.7;
+    const flick = dying ? 0.45 + 0.55 * (Math.sin(this.wardT * 56) > 0 ? 1 : 0) : 1;
+    const hit = (this.wardFlash ?? 0) > 0 ? 1 + this.wardFlash * 2.4 : 1;
+    this.wardShell.material.opacity = 0.22 * flick * hit;
+    this.wardCore.material.opacity = 0.10 * flick * hit;
+    // A slow swell, and a pop on the frame it goes up.
+    const born = Math.min(1, (this.power.ward.dur - this.wardT) / 0.18);
+    this.wardMesh.scale.setScalar(born * (1 + Math.sin(this.wardT * 3.1) * 0.04));
+    this.wardShell.rotation.y += dt * 0.7;
+    this.wardCore.rotation.y -= dt * 1.1;
+  }
+
   _updateFeedback(dt, world) {
     /* ---- pick the animation row ----
        Attack wins over everything so a slash always reads, then airborne,
@@ -1205,6 +1639,8 @@ export class Player {
        and a lean that rocks in time with the footstep bob when walking. One
        drawn walk frame plus this reads as a walk cycle; without it the pose
        just slides along the ground. */
+    this._updateWardMesh(dt);
+
     this.idlePhase = (this.idlePhase ?? 0) + dt * 2.1;
     const idling = this.onGround && !this.mount && speed <= 0.9 && this.attackTimer <= 0;
     const breathe = idling ? Math.sin(this.idlePhase) * 0.018 : 0;

@@ -31,6 +31,11 @@ import {
   floodBackground, clearSealedPockets, purelyWhite, pocketFloor,
 } from '../src/core/spritesheet.js';
 import { readPNG, blobs } from './png.mjs';
+import {
+  POWER_ORBS, ORB_IDS, MAX_EQUIPPED, aggregate, orbPrice, orbSellPrice,
+  WARD, DIVE, TRIPLE, CHARGE,
+} from '../src/entities/powerorb.js';
+import { Kotodama } from '../src/systems/kotodama.js';
 import { ATTACKS, MAX_HP } from '../src/entities/player.js';
 import { WINS_NEEDED, MAX_ROUNDS } from '../src/systems/tournament.js';
 import { MILESTONES, OPEN_AT } from '../src/systems/arenaquest.js';
@@ -2306,6 +2311,407 @@ console.log('\n--- background removal keeps the drawn whites ---');
     ok(`${s.file}: ${s.bigWhites} big drawn white(s) kept`, kept === s.bigWhites,
       `${kept} of ${bigBefore.length} over the ${floor}px floor`);
   }
+}
+
+console.log('\n--- the Powerup Kotodama ---');
+{
+  const ids = ORB_IDS;
+  line('the eight', POWER_ORBS.map((o) => `${o.kanji} ${o.name}`).join(', '));
+  ok('there are eight of them', ids.length === 8);
+  ok('every id is unique', new Set(ids).size === ids.length);
+  ok('every one has a kanji, a colour and a blurb',
+    POWER_ORBS.every((o) => o.kanji && o.color && o.blurb && o.label));
+  ok('no two share a colour', new Set(POWER_ORBS.map((o) => o.color)).size === 8);
+
+  /* EVERY ORB CHANGES A DIFFERENT VERB — the rule the clans follow, checked
+     the same way. A roster where two of the eight both make her faster is a
+     roster with seven things in it, and worse, it makes trading pointless:
+     the whole feature turns on each orb being the only way to get its thing. */
+  const base = aggregate([]);
+  const changed = (id) => {
+    const a = aggregate([id]);
+    return Object.keys(base).filter(
+      (k) => k !== 'counts' && k !== 'total' && JSON.stringify(a[k]) !== JSON.stringify(base[k])
+    );
+  };
+  const fields = ids.map(changed);
+  ok('every orb changes something', fields.every((f) => f.length > 0),
+    ids.filter((id, i) => !fields[i].length).join(' '));
+  ok('...exactly one thing each', fields.every((f) => f.length === 1));
+  const flat = fields.flat();
+  ok('...and no two change the same thing', new Set(flat).size === flat.length,
+    flat.join(' '));
+
+  /* STACKING IS ADDITIVE. Eight Gale orbs compounded at x1.22 each is x4.9 and
+     a kitten who physically cannot turn a corner on an island 56 units across;
+     the additive rule gives x2.76, which is fast enough to be the joke. This
+     asserts the SHAPE of the maths, not the constant: a compounding rule fails
+     it however the per-orb number is tuned. */
+  const one = aggregate(['swift']).speed - 1;
+  const eight = aggregate(Array(8).fill('swift')).speed - 1;
+  line('one Gale vs eight', `+${one.toFixed(2)} vs +${eight.toFixed(2)}`);
+  ok('eight orbs are exactly eight times one', Math.abs(eight - one * 8) < 1e-9);
+  ok('...and a full stack stays under x3', aggregate(Array(8).fill('swift')).speed < 3);
+  ok('eight Adamant orbs are a survivable amount of health',
+    aggregate(Array(8).fill('vigor')).hp <= 400);
+
+  /* The ward's two numbers only mean anything together. A shield that lasts
+     longer than its own wait is a shield that is never down — and stacking
+     makes both numbers move, in opposite directions, so the eight-stack case
+     is the one that has to be checked rather than the one. */
+  const w8 = aggregate(Array(8).fill('ward')).ward;
+  line('ward at 1 vs 8',
+    `${WARD.dur.toFixed(1)}s up / ${WARD.cool.toFixed(2)}s wait`
+    + `  vs  ${w8.dur.toFixed(1)}s / ${w8.cool.toFixed(2)}s`);
+  ok('the ward has a real wait even at eight', w8.cool >= WARD.coolMin && w8.cool > 0);
+
+  /* --- the economy --- */
+  const price = orbPrice(world.pointsTotal);
+  const sell = orbSellPrice(world.pointsTotal);
+  const purse = world.pointsTotal / 2;
+  line('points in the world', `${world.pointsTotal} across ${world.props.length} props`);
+  line('buy / sell', `${price} / ${sell}  (an even share is ${Math.round(purse)})`);
+  ok('a whole even share buys 3 orbs', Math.floor(purse / price) === 3);
+  ok('...and never 5', Math.floor(purse / price) < 5);
+  ok('selling returns 75%', Math.abs(sell / price - 0.75) < 0.002);
+  /* BUY-THEN-SELL MUST LOSE MONEY. At 100% or more the two girls can bounce
+     one orb off the counter for ever and buy the whole shelf, which deletes
+     both the scarcity and the reason to trade with each other. */
+  ok('...so buying and selling back is a loss', sell < price);
+  ok('the price is derived from the world, not typed in',
+    orbPrice(world.pointsTotal * 2) === price * 2);
+
+  /* --- the Awakening --- */
+  const fakeGame = {
+    world,
+    scene: new THREE.Scene(),
+    pickups: [],
+    players: [],
+    sfx: () => {},
+    toast: () => {},
+    syncOrbMeshes: () => {},
+    onScoreChanged: () => {},
+  };
+  const mkKit = (i, orbs = 0) => {
+    const p = new Player({
+      texture: new THREE.Texture(), index: i,
+      spawn: new THREE.Vector3(0, world.heightAt(0, 40).y, 40),
+      cols: 8, rows: 4, mirror: false,
+    });
+    p.name = i === 0 ? 'Ember' : 'Frost';
+    p.orbs = Array.from({ length: orbs }, () => ({ group: new THREE.Group() }));
+    return p;
+  };
+
+  /* ONLY ONE OF THESE IS ALLOWED TO DRESS THE WORLD. `spawnPickups` pushes
+     into the real `world.keepClear` and `raiseStall` pushes a real solid, so
+     running the prize logic three times over would leave 48 orbs and three
+     stalls in one town — and the clearance assertions below would then be
+     measuring each run against the last one's furniture. */
+  const run = (aOrbs, bOrbs, place = false) => {
+    const g = { ...fakeGame, pickups: [], players: [mkKit(0, aOrbs), mkKit(1, bOrbs)] };
+    g.syncOrbMeshes = () => {};
+    const K = new Kotodama(g);
+    if (!place) { K.spawnPickups = () => {}; K.raiseStall = () => {}; }
+    g.kotodama = K;
+    const res = K.awaken();
+    return { g, K, res };
+  };
+
+  const lead = run(4, 1, true);
+  ok('the kitten with more plain orbs gets the prize', lead.res.prizes.length === 1
+    && lead.res.prizes[0].player.index === 0);
+  ok('...and the other one does not', lead.g.players[1].powerOrbs.length === 0);
+
+  const tied = run(3, 3);
+  ok('a tie gives one to BOTH', tied.res.tie && tied.res.prizes.length === 2
+    && tied.g.players.every((p) => p.powerOrbs.length === 1));
+
+  /* 0-0 IS A TIE AND IT HAS TO PAY OUT. Two girls who never picked up a plain
+     orb — entirely possible, they are optional and there are six of them in a
+     world this size — would otherwise be told at the top of the endgame that
+     they both lost, and handed nothing to trade with. */
+  const nil = run(0, 0);
+  ok('...including nobody having collected any',
+    nil.res.tie && nil.g.players.every((p) => p.powerOrbs.length === 1));
+
+  const { g: aw, K } = lead;
+  ok('every plain orb is gone from both kittens',
+    aw.players.every((p) => p.orbs.length === 0));
+  ok('...and out of the world', aw.pickups.length === 0);
+  ok('the world is reseeded', K.pickups.length === 16);
+  ok('...with at least one of every kind',
+    new Set(K.pickups.map((p) => p.id)).size === 8);
+  ok('...spread over every island but the arena',
+    new Set(K.pickups.map((p) => world.heightAt(p.position.x, p.position.z)?.island)).size
+      >= world.questIslands.length - 1);
+  /* THE CANOPY, NOT THE TRUNK. `findOpenSpot` measures against a tree's SOLID,
+     which is 0.9 across, and what hides a glowing ball is the four-unit canopy
+     over it. This is the check that would have caught the dealer's stall
+     coming up inside the cherry grove — which it did, first try. */
+  const clearOf = (x, z, skip) => Math.min(...world.solids
+    .filter((s) => Math.hypot(x - s.x, z - s.z) > skip)
+    .map((s) => Math.hypot(x - s.x, z - s.z) - s.r));
+  ok('no orb is under a canopy',
+    K.pickups.every((p) => clearOf(p.position.x, p.position.z, 0.01) >= 4));
+  ok('the dealer is not either',
+    K.stall && clearOf(K.stall.position.x, K.stall.position.z, 0.01) >= 4);
+  ok('the dealer stocks exactly one of each',
+    ids.every((id) => K.stock[id] === 1));
+  ok('the whole shelf costs more than one purse holds',
+    price * 8 > purse);
+  ok('awakening twice is a no-op', K.awaken() === null && K.pickups.length === 16);
+
+  /* --- carrying, buying, trading --- */
+  const [A, B] = aw.players;
+  A.setPowerOrbs([]);
+  B.setPowerOrbs([]);
+  for (let i = 0; i < MAX_EQUIPPED; i++) K.give(A, 'swift');
+  ok(`a kitten carries at most ${MAX_EQUIPPED}`, A.powerOrbs.length === MAX_EQUIPPED);
+  ok('...and the ninth is REFUSED rather than dropped', K.give(A, 'leap') === false
+    && A.powerOrbs.length === MAX_EQUIPPED);
+
+  A.score = price;
+  ok('a full kitten cannot buy either', K.buyRefusal(A, 'leap') !== null);
+  ok('...and her points are still hers', A.score === price);
+
+  A.setPowerOrbs(['swift', 'ward']);
+  B.setPowerOrbs(['leap']);
+  const total = () => A.powerOrbs.length + B.powerOrbs.length;
+  const before = total();
+  ok('a straight swap goes through', K.trade(A, 'swift', B, 'leap'));
+  ok('...and conserves the count', total() === before);
+  ok('...moving exactly the two named orbs',
+    A.powerOrbs.includes('leap') && !A.powerOrbs.includes('swift')
+    && B.powerOrbs.includes('swift') && !B.powerOrbs.includes('leap'));
+  ok('a gift one way is allowed', K.trade(A, 'ward', B, null));
+  ok('...and still conserves the count', total() === before);
+  ok('offering something you do not have is refused',
+    K.trade(A, 'charge', B, null) === false);
+  ok('two empty offers are refused', K.trade(A, null, B, null) === false);
+
+  /* A GIFT INTO A FULL KITTEN MUST FAIL WHOLE. Both girls are at eight slots
+     more often than not by the time they are trading, and the naive
+     "give hers to him, give his to her" overflows on the first half and
+     leaves one of them a copy down with nothing to show for it. */
+  B.setPowerOrbs(Array(MAX_EQUIPPED).fill('vigor'));
+  A.setPowerOrbs(['charge']);
+  const bBefore = [...B.powerOrbs];
+  ok('a gift into a full kitten is refused', K.trade(A, 'charge', B, null) === false);
+  ok('...and neither side lost anything', A.powerOrbs.length === 1
+    && B.powerOrbs.join() === bBefore.join());
+  ok('a SWAP with a full kitten still works', K.trade(A, 'charge', B, 'vigor'));
+
+  /* --- health is the one stat with a current value as well as a maximum --- */
+  const H = mkKit(0);
+  H.setPowerOrbs(['vigor', 'vigor']);
+  ok('vigor raises the maximum', H.maxHp === 160);
+  H.hp = 80;                                   // half
+  H.setPowerOrbs([]);
+  ok('...and dropping it keeps the FRACTION, not the number',
+    H.maxHp === MAX_HP && H.hp === 50);
+  ok('...so it can never leave her over full', H.hp <= H.maxHp);
+}
+
+console.log('\n--- the three power moves ---');
+{
+  const spawn = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
+  const mk = (orbs = []) => {
+    const p = new Player({
+      texture: new THREE.Texture(), index: 0, spawn: spawn.clone(),
+      cols: 8, rows: 4, mirror: false,
+    });
+    p.setPowerOrbs(orbs);
+    return p;
+  };
+  const PAD = (over = {}) => ({
+    mx: 0, my: 0, down: () => false, pressed: () => false, ...over,
+  });
+
+  ok('all three are entries in ATTACKS',
+    ATTACKS.tri && ATTACKS.dive && ATTACKS.charge);
+  ok('the dive has no forward arc — it lands on everything below',
+    ATTACKS.dive.arc === -1);
+  ok('no power move out-damages the tournament cap',
+    Math.max(ATTACKS.tri.dmg, ATTACKS.dive.dmg, ATTACKS.charge.dmg) < MAX_HP / 3);
+
+  /* COMBAT STAYS FENCED OFF. `Game.strikePlayers` is the single gate and it
+     asks `Tournament.fighting`; these moves are new ways to swing, not a new
+     damage path. A kitten with every attack orb standing on top of her sister
+     in the market square must not be able to take a single point off her. */
+  const attacker = mk(['dive', 'charge', 'tri']);
+  const victim = mk([]);
+  victim.position.copy(attacker.position);
+  /* The hud stands in for `Game` with the tournament OFF, which is what the
+     real `strikePlayers` collapses to: it returns before touching anybody.
+     What this asserts is that there is no SECOND route — that none of the
+     three moves reaches `hurt` on its own. */
+  const asked = [];
+  const offGame = {
+    sfx: () => {}, onMischief: () => {},
+    strikePlayers: (a, kind) => { asked.push(kind); },
+  };
+  attacker._diveImpact(world, offGame);
+  attacker._chargeHit = new Set();
+  attacker.chargeDir.set(0, 1);
+  attacker._chargeStrike(world, offGame);
+  attacker._doSlash(world, offGame, 'tri');
+  ok('all three ask the gate rather than hitting her themselves',
+    ['dive', 'charge', 'tri'].every((k) => asked.includes(k)), asked.join(' '));
+  ok('...so with the tournament off they do nothing at all',
+    victim.hp === victim.maxHp && !victim.ko);
+
+  /* --- the ward --- */
+  const w = mk(['ward']);
+  ok('the ward will not go up without the orb', mk([])._popWard(null) === false);
+  ok('...and does with it', w._popWard(null) === true && w.wardT > 0);
+  ok('...but not twice at once', w._popWard(null) === false);
+  ok('gravity is quartered while it is up', w._gravityK() === WARD.gravity);
+  ok('a blade is refused',
+    w.hurt(40, { x: 5, z: 0 }, ATTACKS.stand, null) === 0 && w.hp === w.maxHp);
+  /* The ring-out is the one caller that pierces it. Without that a kitten
+     wearing the orb parks herself off the side of the arena and takes nothing
+     for the whole round, because the bubble lasts longer than its own wait. */
+  ok('the edge of the ring is not',
+    w.hurt(30, { x: 5, z: 0 }, { knock: 0, lift: 0, pierce: true }, null) === 30);
+
+  /* THE WAIT STARTS WHEN THE BUBBLE DROPS. Charged from the press instead, a
+     3s shield on a 1.5s cooldown is already available again the moment it
+     pops — the two numbers stop meaning what they say. */
+  for (let i = 0; i < 400 && w.wardT > 0; i++) w._stepSpecials(1 / 60, PAD(), world, null);
+  ok('the bubble does run out', w.wardT === 0);
+  ok('...and the wait starts THEN', Math.abs(w.wardCool - WARD.cool) < 0.02);
+  ok('...so it cannot be popped again immediately', w._popWard(null) === false);
+  for (let i = 0; i < 200 && w.wardCool > 0; i++) w._stepSpecials(1 / 60, PAD(), world, null);
+  ok('...and can once the wait is over', w._popWard(null) === true);
+
+  /* --- the charge --- */
+  const c = mk(['charge']);
+  c.facing = Math.PI / 2;                       // +x
+  c._startCharge(null);
+  ok('a charge turns gravity off', c._gravityK() === 0);
+  ok('...and takes her feet', c.busy);
+  const cx = c.position.x;
+  for (let i = 0; i < 120 && c.chargeT > 0; i++) {
+    c.update(1 / 60, PAD(), world, [], null);
+  }
+  const went = Math.abs(c.position.x - cx);
+  line('charge distance', `${went.toFixed(1)} of a nominal ${CHARGE.dist}`);
+  ok('she really travels', went > CHARGE.dist * 0.5);
+  ok('...and it ends', c.chargeT === 0 && !c.busy);
+  ok('...handing back a velocity the controller can stop',
+    Math.hypot(c.velocity.x, c.velocity.z) < CHARGE.speed);
+  ok('a kitten without the orb cannot charge', mk([]).power.charge === null);
+
+  /* --- the triple slash --- */
+  /* THE ARMING WINDOW IS THE WHOLE MOVE. Gated on the swing animation instead
+     of on a flag, the usable window is TRIPLE.hold to attackTimer — about two
+     frames — and the move fires roughly a third of the time, which reads as
+     the game ignoring her rather than as a timing she could learn. This walks
+     a real held button through the real controller. */
+  {
+    const held = mk(['tri']);
+    const down = PAD({ down: (a) => a === 'attack', pressed: (a) => a === 'attack' });
+    const stay = PAD({ down: (a) => a === 'attack' });
+    held.update(1 / 60, down, world, [], null);          // the press
+    let armedAt = -1;
+    for (let i = 0; i < 60 && held.triLeft === 0; i++) {
+      held.update(1 / 60, stay, world, [], null);
+      if (held.triLeft > 0) armedAt = (i + 1) / 60;
+    }
+    line('hold to triple slash', `${armedAt.toFixed(2)}s (threshold ${TRIPLE.hold})`);
+    ok('holding attack really does fire it', held.triLeft > 0);
+    ok('...promptly after the threshold', armedAt > 0 && armedAt < TRIPLE.hold + 0.12);
+
+    const tapOnly = mk(['tri']);
+    tapOnly.update(1 / 60, down, world, [], null);
+    for (let i = 0; i < 60; i++) tapOnly.update(1 / 60, PAD(), world, [], null);
+    ok('...and a plain tap never does', tapOnly.triLeft === 0);
+  }
+
+  const t = mk(['tri']);
+  t._startTriple(null);
+  ok('three cuts, and the swing that armed it was the first',
+    t.triLeft === TRIPLE.cuts - 1);
+  ok('she cannot move or jump through it', t.busy);
+  let cuts = 0;
+  const spy = { sfx: (n) => { if (n === 'slash') cuts++; }, strikePlayers: () => {} };
+  for (let i = 0; i < 120 && t.triLeft > 0; i++) t._stepSpecials(1 / 60, PAD(), world, spy);
+  ok('...and the other two land', cuts === TRIPLE.cuts - 1);
+  ok('...then she gets her feet back', !t.busy);
+
+  /* --- the dive --- */
+  const d = mk(['dive']);
+  d.diving = true;
+  ok('a dive is a driven fall, not a faster one', DIVE.speed > 26);
+  /* BAMBOO IS THE ONE THING IT CANNOT TOUCH, and `prop.js` said so before
+     there was a dive: "bamboo answers to the katana and nothing else — not a
+     dive-bomb, not dragon breath". The grove being the one place force fails
+     is what makes landing worth doing. The charge keeps its blade out and
+     does cut. */
+  const cane = world.props.find((p) => p.katanaOnly);
+  cane._reset();
+  d.position.set(cane.group.position.x, cane.group.position.y, cane.group.position.z);
+  d._diveImpact(world, { sfx: () => {}, strikePlayers: () => {}, onMischief: () => {} });
+  ok('a power dive cannot cut bamboo', !cane.knocked);
+  const ch = mk(['charge']);
+  ch.position.set(cane.group.position.x, cane.group.position.y, cane.group.position.z);
+  ch._chargeHit = new Set();
+  ch.chargeDir.set(0, 1);
+  ch._chargeStrike(world, { sfx: () => {}, strikePlayers: () => {}, onMischief: () => {} });
+  ok('...but a charge can', cane.knocked);
+  cane._reset();
+
+  /* NO POWER MOVE SURVIVES GETTING ON AN ANIMAL. `_stepSpecials` only runs in
+     the ground controller, so a ward popped a frame before mounting a dragon
+     keeps its three seconds for ever: a permanently invincible kitten,
+     produced by a button press that looks like climbing onto a dragon. */
+  const m = mk(['ward', 'charge']);
+  m._popWard(null);
+  m._startCharge(null);
+  m.mount = { quad: 24, seatOffset: () => ({ x: 0, y: 0, z: 0 }), flapBob: 0 };
+  try { m.update(1 / 60, PAD(), world, [], null); } catch { /* flight needs a real dragon */ }
+  ok('mounting drops the ward and the charge', m.wardT === 0 && m.chargeT === 0);
+
+  /* A round reset has to clear them for the same reason: a charge that
+     survives carries its committed direction and its zero gravity across the
+     teleport to her post and flies her off the ring before the gong. */
+  const r = mk(['ward', 'charge', 'tri']);
+  r._popWard(null);
+  r._startCharge(null);
+  r._startTriple(null);
+  r.resetForRound(0, 0, 0, 0);
+  ok('so does a round reset',
+    r.wardT === 0 && r.chargeT === 0 && r.triLeft === 0 && !r.diving);
+
+  /* --- the buffs stack ON TOP of the clan, they do not replace it --- */
+  const runFor = (p) => {
+    const pad = PAD({ mx: 1 });
+    const x0 = p.position.x;
+    const z0 = p.position.z;
+    for (let i = 0; i < 60; i++) p.update(1 / 60, pad, world, [], null);
+    return Math.hypot(p.position.x - x0, p.position.z - z0);
+  };
+  const plain = runFor(mk([]));
+  const orbed = runFor(mk(['swift', 'swift']));
+  const both = (() => {
+    const p = mk(['swift', 'swift']);
+    p.clan = CLANS.find((c) => c.buff.id === 'speed');
+    return runFor(p);
+  })();
+  line('run in 1s: plain / 2 Gale / + Thunderpaw',
+    `${plain.toFixed(1)} / ${orbed.toFixed(1)} / ${both.toFixed(1)}`);
+  ok('orbs make her measurably faster', orbed > plain * 1.2);
+  ok('...and the clan buff MULTIPLIES with them', both > orbed * 1.15);
+
+  const jumper = mk(['leap', 'leap']);
+  for (let i = 0; i < 10; i++) jumper.update(1 / 60, PAD(), world, [], null);
+  ok('two Leap orbs land her with four jumps', jumper.jumpsLeft === 4);
+
+  const long = mk(['reach']);
+  ok('a Long Cut orb really lengthens the swing', long._reach() > mk([])._reach());
+  ok('...and the drawn arc is derived from the same number',
+    long._reach() === 3.4 * long.power.reach);
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

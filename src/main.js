@@ -25,6 +25,8 @@ import { Announcer } from './systems/announce.js';
 import { Tournament } from './systems/tournament.js';
 import { ArenaQuest, SATAN_TOWN, MILESTONES } from './systems/arenaquest.js';
 import { loadBoard } from './systems/leaderboard.js';
+import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
+import { ProfileScreen } from './systems/profile.js';
 
 /* ---------------------------------------------------------------------------
    Katana Kitties — main loop.
@@ -283,6 +285,13 @@ class Game {
     this.quest = new ArenaQuest({
       game: this, world: this.world, satan: this.satan, announcer: this.announcer,
     });
+    /* The Powerup Kotodama, and the screen the girls swap them on. Both are
+       built at boot and inert until 100% mischief — `Kotodama.awakened` is the
+       one flag that says whether any of it exists, and the update loop, the
+       minimap and the stall prompt all read that rather than each keeping
+       their own idea of whether the endgame has started. */
+    this.kotodama = new Kotodama(this);
+    this.profile = new ProfileScreen(this);
     /** 'out' | 'home' while the griffin is carrying them, else null. */
     this.travel = null;
 
@@ -444,6 +453,7 @@ class Game {
         if (a === 'help') show('panel-help');
         if (a === 'settings') { this._refreshPads(); show('panel-settings'); }
         if (a === 'board') { this._paintBoard(); show('panel-board'); }
+        if (a === 'profile') this.profile.open('profile', { fromPause: true });
         if (a === 'resume') this.setPaused(false);
         if (a === 'restart') this.restart();
         if (a === 'story') this.replayIntro();
@@ -570,6 +580,11 @@ class Game {
       if (e.code === 'KeyX' && this.state === 'play' && !this.merged) this._zoomMap(1);
       if (this.state === 'play') this._debugKey(e.code);
       if (e.code === 'Escape') {
+        /* The Character Profile is checked before the other sub-panels
+           because it can be open WITHOUT the pause menu behind it — it is
+           reachable from the world at the dealer's stall — so closing it has
+           to hand the game back rather than fall through to a pause toggle. */
+        if (this.profile.active) { this.profile.close(); e.preventDefault(); return; }
         // Back out of a sub-panel first, otherwise toggle the pause menu.
         const sub = ['panel-help', 'panel-settings', 'panel-board'];
         const subOpen = sub.some((id) => !document.getElementById(id).classList.contains('hidden'));
@@ -633,7 +648,7 @@ class Game {
 
   /** True while any overlay panel is on screen and should own the input. */
   _overlayOpen() {
-    return ['panel-settings', 'panel-help', 'panel-pause', 'panel-board'].some(
+    return ['panel-settings', 'panel-help', 'panel-pause', 'panel-board', 'panel-profile'].some(
       (id) => !document.getElementById(id).classList.contains('hidden'),
     );
   }
@@ -649,6 +664,7 @@ class Game {
       document.getElementById('panel-help').classList.add('hidden');
       document.getElementById('panel-settings').classList.add('hidden');
       document.getElementById('panel-board').classList.add('hidden');
+      if (this.profile.active) this.profile.close();
       // Drop the frame the pause ate, or everything lurches on resume.
       this.clock.getDelta();
     }
@@ -659,6 +675,15 @@ class Game {
     for (const p of this.players) {
       for (const o of p.orbs ?? []) this.scene.remove(o.group);
       p.orbs = [];
+      /* The Powerup Kotodama go back too. A restart puts the world back to
+         its opening state, and the opening state is one where they do not
+         exist yet — leaving eight buffs on a kitten standing in a world with
+         216 props back up is the same class of bug as an un-raised panda
+         surviving one. `syncOrbMeshes` after the list is emptied is what
+         takes the geometry out of the scene with it. */
+      p.setPowerOrbs([]);
+      this.syncOrbMeshes(p);
+      p._clearSpecials();
       p.score = 0;
       p.mount = null;
       // The panda goes back in the bamboo it came from — a restart puts the
@@ -951,6 +976,10 @@ class Game {
     this.mathVisible = !this.mathVisible;
     for (const p of this.players) {
       for (const o of p.orbs ?? []) o.setMathVisible(this.mathVisible);
+      /* Only the LEAD worn orb prints its working. Eight copies of the same
+         two figures orbiting one cat is noise, and the reason the plain orb's
+         overlay was legible in the first place was that there was one of it. */
+      (p.wornOrbs ?? []).forEach((o, i) => o.setMathVisible(this.mathVisible && i === 0));
     }
     this.toast(this.mathVisible ? 'Math overlay ON' : 'Math overlay OFF', 0);
   }
@@ -1261,6 +1290,29 @@ class Game {
        thing to look at: the finale needs all 213 props knocked over, and
        checking one word of it meant a fresh run. `0` replays whichever scene
        is selected and `-`/`=` walk the list. */
+    /* --- the endgame, in one key ---
+       Same argument as `7` `8` `9`. The Powerup Kotodama only exist after 216
+       props have been knocked over, which is most of an afternoon; without
+       this, checking one colour on one orb means playing the whole game.
+       `6` awakens them and hands both kittens the world's points, so the
+       stall, the sixteen pickups, the profile screen and the trade are all
+       one press away. */
+    if (code === 'Digit6') {
+      if (this.kotodama.awakened) {
+        this.toast('[debug] already awakened — walk to the stall in the market', 0);
+      } else {
+        for (const p of this.players) p.score = Math.round(this.world.pointsTotal / 2);
+        for (const p of this.players) this.onScoreChanged(p);
+        this._announceAwakening(this.kotodama.awaken());
+        this.toast('[debug] Kotodama awakened, purses filled', 0);
+      }
+    }
+    if (code === 'Digit5') {
+      /* And the screen they are traded on, which is otherwise behind the
+         pause menu and only interesting when both girls have orbs. */
+      if (!this.kotodama.awakened) { this.toast('[debug] press 6 first', 0); return; }
+      this.profile.open('profile');
+    }
     if (code === 'Digit0') this._playScene();
     if (code === 'Minus') this._pickScene(-1);
     if (code === 'Equal') this._pickScene(1);
@@ -1498,6 +1550,10 @@ class Game {
        must not happen is a girl losing to a reach she cannot see. */
     const clanK = reach / 3.4;
     const range = A.reach * clanK;
+    /* Sanzan stacks make each of the three cuts hit harder rather than adding
+       a fourth. Four cuts is a different move; the same three landing for more
+       is the same move, better — which is what a stack should always be. */
+    const dmg = A.dmg * (kind === 'tri' ? (attacker.power?.tri?.dmgK ?? 1) : 1);
 
     for (const target of this.players) {
       if (target === attacker || target.ko) continue;
@@ -1511,7 +1567,7 @@ class Game {
       const dot = (dx * dir.x + dz * dir.y) / (dist || 1);
       if (dot < A.arc) continue;
 
-      const dealt = target.hurt(A.dmg, attacker.position, A, this);
+      const dealt = target.hurt(dmg, attacker.position, A, this);
       if (!dealt) continue;
       attacker.dmgDealt += dealt;
       this.tournament.onHit(attacker, target, dealt, kind);
@@ -1893,6 +1949,15 @@ class Game {
     if (done >= this.world.mischiefTotal && !this.summonScene?.played.finale) {
       this._finaleDue = true;
     }
+    /* THE AWAKENING FIRES HERE, NOT WITH THE SCENE. `_finaleDue` is queued
+       because a cutscene cannot start over another one; this cannot wait for
+       the same reason it cannot be queued — the finale is 63 seconds and can
+       be skipped on its first frame, so hanging the world's biggest state
+       change off the end of it hands a kid who presses Start no orbs at all.
+       `awaken()` is idempotent, so the guard is belt and braces. */
+    if (done >= this.world.mischiefTotal && !this.kotodama.awakened) {
+      this._announceAwakening(this.kotodama.awaken());
+    }
     document.getElementById(player.index === 0 ? 's1' : 's2').textContent = player.score;
     const pts = prop.points ?? 10;
     if (prop.kind === 'bamboo') {
@@ -2037,6 +2102,37 @@ class Game {
       return;
     }
 
+    /* --- the Character Profile owns the input while it is up ---
+       Before the `start` handler below, or the same press that closes the
+       screen also opens the pause menu behind it. It is not a scene and not a
+       pause: the world is frozen the way a paused game is, but the two pads
+       are read SEPARATELY rather than merged, which is the whole reason it
+       does not go through MenuNav. See systems/profile.js. */
+    if (this.profile.active) {
+      this.profile.update(dt);
+      this._render();
+      return;
+    }
+
+    /* Walk up to the dealer and press interact. Guarded on `paused` so the
+       prompt cannot fire through the pause menu, and on the ground state
+       inside `shopperNear` so you cannot shop from a dragon. */
+    if (!this.paused && this.kotodama.stall) {
+      /* THE KITTEN WHO PRESSED IS THE ONE WHO SHOPS, not whichever of them the
+         proximity test happened to find first. Both girls stand at the same
+         stall; opening her sister's purse because she was closer to the
+         counter is the sort of thing that ends an afternoon. */
+      const shopper = this.players.find(
+        (p) => this.input.players[p.index]?.pressed('interact')
+          && this.kotodama.canShop(p)
+      );
+      if (shopper) {
+        this.profile.open('shop', { shopper });
+        this._render();
+        return;
+      }
+    }
+
     // `start` on either pad toggles the pause menu.
     if (this.input.players.some((p) => p.pressed('start'))) this.setPaused(!this.paused);
 
@@ -2086,7 +2182,9 @@ class Game {
     // Orbs, pickups, dragons, dojo.
     for (const p of this.players) {
       for (const o of p.orbs ?? []) o.update(dt, p.position);
+      for (const o of p.wornOrbs ?? []) o.update(dt, p.position);
     }
+    this.kotodama.update(dt);
     for (const pk of this.pickups) {
       if (pk.taken) continue;
       pk.update(dt);
@@ -2242,8 +2340,8 @@ class Game {
 
     // Shared view: centre on the pair. Split: each map follows its own kitten.
     this.minimap.focusIndex = this.merged ? null : 0;
-    this.minimap.draw(this.players, this.dragons);
-    if (!this.merged) this.minimap2.draw(this.players, this.dragons);
+    this.minimap.draw(this.players, this.dragons, this.kotodama);
+    if (!this.merged) this.minimap2.draw(this.players, this.dragons, this.kotodama);
   }
 
   /** Swearing to a clan: a toast, a coloured badge, and a recoloured ring. */
@@ -2277,6 +2375,56 @@ class Game {
         );
       }
     }
+  }
+
+  /**
+   * Rebuild the worn geometry from `player.powerOrbs`.
+   *
+   * THE MESHES ARE REBUILT WHOLESALE, NOT PATCHED, and that is not laziness:
+   * each orb's shell radius, orbit speed and starting phase are derived from
+   * its SLOT and from how many she is wearing (see `PowerOrb`), so adding a
+   * fifth orb changes where the other four should be. Patching one in leaves
+   * eight orbs bunched into the three phases the first three were given.
+   * Eight icosahedrons is nothing; a wrong-looking constellation is not.
+   */
+  syncOrbMeshes(player) {
+    for (const o of player.wornOrbs ?? []) this.scene.remove(o.group);
+    player.wornOrbs = buildWornOrbs(player.powerOrbs);
+    player.wornOrbs.forEach((o, i) => {
+      // Only the lead orb prints the numbers — see PowerOrb._buildRain.
+      o.setMathVisible(this.mathVisible && i === 0);
+      this.scene.add(o.group);
+    });
+  }
+
+  /** The scoreboard, after anything that moves a purse rather than earns it. */
+  onScoreChanged(player) {
+    document.getElementById(player.index === 0 ? 's1' : 's2').textContent = player.score;
+  }
+
+  /**
+   * Say out loud what the Awakening just did.
+   *
+   * IT NAMES THE COUNT EVEN WHEN IT WAS 0-0. The prize is handed out on a tie
+   * and a tie includes neither of them having collected anything, so without
+   * this the two girls get an orb each for no stated reason and learn nothing
+   * about where it came from. Two toasts, one per half of the screen, because
+   * in split screen a single toast is a message half the players never see.
+   */
+  _announceAwakening(result) {
+    if (!result) return;
+    this.sfx('powerorb');
+    const [a, b] = result.counts;
+    for (const p of this.players) {
+      this.toast(`THE KOTODAMA AWAKEN — ${this.players[0].name} ${a}, ${this.players[1].name} ${b}`, p.index);
+    }
+    for (const { player, spec } of result.prizes) {
+      this.toast(
+        `${player.name} is given ${spec.name} ${spec.kanji} — ${spec.blurb}`, player.index
+      );
+    }
+    this.toast('Powerup Kotodama are scattered across the islands', 0);
+    this.toast('A dealer has opened a stall in the market', 1);
   }
 
   _giveOrb(player) {
@@ -2522,7 +2670,9 @@ class Game {
       p.faceCamera(camera);
       p.panda?.faceCamera(camera);
       for (const o of p.orbs ?? []) o.faceCamera(camera);
+      for (const o of p.wornOrbs ?? []) o.faceCamera(camera);
     }
+    this.kotodama.faceCamera(camera);
     for (const d of this.dragons) d.faceCamera(camera);
     for (const L of this.leaders ?? []) L.faceCamera(camera);
     this.cutscene?.faceCamera(camera);

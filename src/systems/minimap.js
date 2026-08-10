@@ -121,8 +121,9 @@ export class Minimap {
   /**
    * @param players two Player instances
    * @param dragons all Dragons
+   * @param kotodama the Kotodama system, or null before 100% mischief
    */
-  draw(players, dragons) {
+  draw(players, dragons, kotodama = null) {
     const focus = this.focusIndex != null
       ? players[this.focusIndex].position
       : {
@@ -266,6 +267,51 @@ export class Minimap {
       c.arc(x, y + s * 0.15, s * 0.34, 0, Math.PI * 2);
       c.fillStyle = p.index === 0 ? '#ff8a3d' : '#ff6fae';
       c.fill();
+    }
+
+    /* --- Powerup Kotodama lying in the world ---
+       SIXTEEN OF THEM ACROSS SEVEN ISLANDS, and only twenty-six exist in the
+       whole game — a collectible you cannot find is a collectible that does
+       not exist, and the answer to "where is the last Ward" must not be
+       "fly over everything again". Small hollow rings in the orb's own
+       colour, so a kid can look at the map and say "the blue one is on the
+       snow island". They vanish from the map as they are taken, which is what
+       makes the map a to-do list rather than a picture.
+       Deliberately drawn BEFORE the kittens and after everything else: it is
+       the least important thing on here and must never hide a sister. */
+    for (const pk of kotodama?.pickups ?? []) {
+      if (pk.taken) continue;
+      const x = this._px(pk.position.x);
+      const y = this._py(pk.position.z);
+      const s = 3.4 * this.dpr;
+      c.beginPath();
+      c.arc(x, y, s, 0, Math.PI * 2);
+      c.lineWidth = 2.2 * this.dpr;
+      c.strokeStyle = `#${pk.spec.color.toString(16).padStart(6, '0')}`;
+      c.stroke();
+      c.beginPath();
+      c.arc(x, y, s * 0.34, 0, Math.PI * 2);
+      c.fillStyle = `#${pk.spec.color.toString(16).padStart(6, '0')}`;
+      c.fill();
+    }
+
+    /* The dealer, once he has turned up. One stall, in the market, and the
+       only place either girl can turn points into an orb. */
+    if (kotodama?.stall) {
+      const x = this._px(kotodama.stall.position.x);
+      const y = this._py(kotodama.stall.position.z);
+      const s = 4 * this.dpr;
+      c.beginPath();
+      c.moveTo(x, y - s);
+      c.lineTo(x + s, y);
+      c.lineTo(x, y + s);
+      c.lineTo(x - s, y);
+      c.closePath();
+      c.fillStyle = '#f5c341';
+      c.fill();
+      c.lineWidth = 1.6 * this.dpr;
+      c.strokeStyle = '#1c1016';
+      c.stroke();
     }
 
     // --- the kitties, drawn last so they're never hidden ---

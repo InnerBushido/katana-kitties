@@ -1185,3 +1185,125 @@ html, body {
    and reads as another row of the table. */
 #panel-board .menu-btn { margin-top: 18px; }
 #panel-board .lb-empty { display: block; padding: 14px 0; opacity: 0.7; }
+
+/* ------------------- Character Profile / Kotodama dealer ------------------ */
+
+/* TWO CURSORS ON ONE SCREEN, so each girl's highlight has to be HERS. The
+   ring is drawn in the player's own marker colour — the same orange and pink
+   that ring their feet in the world and colour their health bars — because
+   "which of these two glowing boxes is me" is a question the screen must never
+   make anybody ask. Everything else here is the game's existing paper-and-ink
+   panel; only the two accents are new. */
+.kd-panel { width: min(920px, 94vw); }
+.kd-body { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+@media (max-width: 720px) { .kd-body { grid-template-columns: 1fr; } }
+
+.kd-card {
+  border: 4px solid var(--ink);
+  border-radius: 14px;
+  padding: 14px 16px 16px;
+  background: rgba(255, 255, 255, 0.42);
+}
+.kd-p0 { --me: #ff8a3d; }
+.kd-p1 { --me: #ff6fae; }
+.kd-card { box-shadow: inset 0 0 0 3px var(--me); }
+
+.kd-name {
+  font-family: 'Bangers', cursive;
+  font-size: 30px;
+  letter-spacing: 2px;
+  color: var(--me);
+  -webkit-text-stroke: 1px var(--ink);
+}
+.kd-meta { font-size: 13px; opacity: 0.75; margin-bottom: 10px; }
+.kd-dim { opacity: 0.62; }
+
+/* Eight slots, always drawn. Four across on two rows reads as a rack; eight
+   across is a strip nobody can count at a glance. */
+.kd-slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.kd-slot {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 3px dashed rgba(29, 18, 22, 0.3);
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 900;
+  /* DARK INK WITH A WHITE HALO, not white. Eight hues from a pale cyan to a
+     deep violet go behind this glyph, and white text is unreadable on half of
+     them — the yellow Leap orb was a blank circle. Ink on a light rim reads on
+     all eight, which is the same trick the minimap's landmark labels use to
+     survive being drawn over snow, ash and grass. */
+  color: #1a1016;
+  text-shadow:
+     0 1px 0 rgba(255, 255, 255, 0.85),
+     0 -1px 0 rgba(255, 255, 255, 0.6),
+     1px 0 0 rgba(255, 255, 255, 0.6),
+    -1px 0 0 rgba(255, 255, 255, 0.6);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.kd-slot.full {
+  border: 3px solid var(--ink);
+  border-style: solid;
+  background: radial-gradient(circle at 34% 30%, #fff6, var(--orb) 62%);
+}
+.kd-slot.cursor { transform: scale(1.12); box-shadow: 0 0 0 4px var(--me); }
+/* An OFFERED orb is lifted and outlined in gold — deliberately a different
+   channel from the cursor ring, because at the moment that matters both are
+   on the same slot and one must not hide the other. */
+.kd-slot.offered {
+  box-shadow: 0 0 0 4px var(--me), 0 0 0 8px #f5c341;
+  transform: scale(1.12) translateY(-4px);
+}
+
+.kd-detail { margin-top: 12px; font-size: 14px; min-height: 40px; }
+.kd-state { margin-top: 6px; font-size: 14px; }
+.kd-ready {
+  font-family: 'Bangers', cursive;
+  letter-spacing: 2px;
+  font-size: 19px;
+  color: #1c7a3e;
+}
+
+.kd-help {
+  margin: 16px 0 0;
+  font-size: 13px;
+  text-align: center;
+  opacity: 0.8;
+  border-top: 2px solid rgba(29, 18, 22, 0.18);
+  padding-top: 12px;
+}
+.kd-help em { font-style: normal; font-weight: 900; color: var(--vermillion); }
+
+/* --- the dealer --- */
+.kd-shop { grid-column: 1 / -1; }
+.kd-purse {
+  font-size: 15px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid rgba(29, 18, 22, 0.18);
+}
+.kd-row {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+.kd-row.cursor { background: rgba(245, 195, 65, 0.45); box-shadow: inset 0 0 0 3px var(--ink); }
+.kd-row.out { opacity: 0.45; }
+.kd-dot {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: radial-gradient(circle at 34% 30%, #fff6, var(--orb) 62%);
+  display: grid;
+  place-items: center;
+  color: #1a1016;
+  font-weight: 900;
+  font-size: 17px;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.85), 0 -1px 0 rgba(255, 255, 255, 0.6);
+}
+.kd-row-num { text-align: right; font-size: 13px; }

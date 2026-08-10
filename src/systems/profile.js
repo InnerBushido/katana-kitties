@@ -1,0 +1,367 @@
+import { POWER_ORBS, ORB_BY_ID, ORB_IDS, MAX_EQUIPPED } from '../entities/powerorb.js';
+
+/* ---------------------------------------------------------------------------
+   THE CHARACTER PROFILE — inventory, trading, and the dealer's counter.
+
+   Two screens out of one class, because they are the same screen with a
+   different second column: your eight slots on the left, and either your
+   sister's eight or the dealer's shelf on the right.
+
+   IT DOES NOT GO THROUGH `MenuNav`, AND THAT IS THE WHOLE REASON IT EXISTS AS
+   ITS OWN FILE. Every other menu in this game merges both pads into ONE cursor
+   on purpose — there is one screen, and making player 1 the only one who can
+   press RESUME locks the other girl out of her own pause menu. A trade is the
+   one surface where that is exactly wrong: the brief is that neither kitten
+   can be made to trade against her will, and consent cannot be expressed
+   through a cursor both players are pushing. So this screen reads the two pads
+   SEPARATELY, gives each girl her own highlight in her own colour, and will
+   not move an orb until both have pressed confirm on their own side.
+
+   `MenuNav` is kept off it by listing these panels first in its own PANELS
+   array: it finds them, finds no `.menu-btn` inside, reports that it does not
+   own the input, and gets out of the way. One place, rather than a second
+   copy of "which panel is up" living here.
+
+   THREE BUTTONS, ONE MEANING EACH.
+     jump      pick / unpick the orb you are offering
+     attack    confirm — and when both have confirmed, the swap happens
+     interact  back out: your confirm, then your offer, then the screen
+   A fourth would be a fourth thing to explain to a nine-year-old, and the two
+   things this screen has to teach are "that one is mine" and "we both have to
+   say yes".
+--------------------------------------------------------------------------- */
+
+/** Stick deflection before a nudge counts, and how fast a held stick repeats. */
+const NAV_DEAD = 0.55;
+const REPEAT_DELAY = 0.34;
+const REPEAT_RATE = 0.12;
+
+/** Per-player cursor state. One of these each; never shared. */
+class Side {
+  constructor() {
+    this.i = 0;
+    this.offer = null;   // index into her own orb list, or null for "nothing"
+    this.ready = false;
+    this.hold = 0;
+    this.repeatT = 0;
+  }
+
+  reset() {
+    this.offer = null;
+    this.ready = false;
+    this.hold = 0;
+  }
+}
+
+export class ProfileScreen {
+  constructor(game) {
+    this.game = game;
+    /** null | 'profile' | 'shop' */
+    this.mode = null;
+    /** Which kitten opened the shop. Both drive the profile screen. */
+    this.shopper = null;
+    /** True when it was opened from the pause menu, so closing goes back
+     *  there rather than dropping the girls straight into the world. */
+    this.fromPause = false;
+    this.sides = [new Side(), new Side()];
+    this._sig = '';
+    this._flash = '';
+    this._flashT = 0;
+
+    this.el = document.getElementById('panel-profile');
+    this.body = document.getElementById('kd-body');
+    this.title = document.getElementById('kd-title');
+    this.help = document.getElementById('kd-help');
+  }
+
+  get active() { return this.mode !== null; }
+
+  /* -------------------------------- open --------------------------------- */
+
+  open(mode, { shopper = null, fromPause = false } = {}) {
+    this.mode = mode;
+    this.shopper = shopper;
+    this.fromPause = fromPause;
+    for (const s of this.sides) s.reset();
+    this.sides.forEach((s, i) => {
+      s.i = Math.min(s.i, Math.max(0, this._rowCount(i) - 1));
+    });
+    this._sig = '';
+    this.el.classList.remove('hidden');
+    this.game.audio?.play('menu');
+    this._paint();
+  }
+
+  close() {
+    this.mode = null;
+    this.shopper = null;
+    this.el.classList.add('hidden');
+    this.game.audio?.play('menu');
+    /* Opened from the world, closing has to hand the frame back or the first
+       tick after the shop is however long the girl spent in it — every kitten
+       teleports and every dragon jumps. Same trap `setPaused` avoids. */
+    if (!this.fromPause) this.game.clock.getDelta();
+  }
+
+  /* ------------------------------- input --------------------------------- */
+
+  update(dt) {
+    if (!this.mode) return;
+    this._flashT = Math.max(0, this._flashT - dt);
+
+    const pads = this.game.input.players;
+    for (let i = 0; i < 2; i++) {
+      if (this.mode === 'shop' && this.game.players[i] !== this.shopper) continue;
+      this._drive(i, pads[i], dt);
+      if (!this.mode) return;      // she closed it
+    }
+
+    /* THE SWAP IS CHECKED AFTER BOTH PADS HAVE BEEN READ, not inside one of
+       them. Firing it from whoever pressed second means the trade happens on
+       her frame with her side's state and the other girl's confirm read one
+       frame stale — which is invisible 99 times and produces one baffling
+       failed trade on the hundredth. */
+    if (this.mode === 'profile') this._maybeTrade();
+    this._paint();
+  }
+
+  _drive(index, pad, dt) {
+    if (!pad) return;
+    const side = this.sides[index];
+    const rows = this._rowCount(index);
+
+    // --- cursor, with console-style repeat ---
+    const raw = Math.abs(pad.mx) > NAV_DEAD ? Math.sign(pad.mx)
+      : Math.abs(pad.my) > NAV_DEAD ? Math.sign(pad.my) : 0;
+    let step = 0;
+    if (raw === 0) side.hold = 0;
+    else if (side.hold !== raw) { side.hold = raw; side.repeatT = REPEAT_DELAY; step = raw; }
+    else {
+      side.repeatT -= dt;
+      if (side.repeatT <= 0) { side.repeatT = REPEAT_RATE; step = raw; }
+    }
+    if (step && rows > 0) {
+      side.i = (side.i + step + rows) % rows;
+      this.game.audio?.play('menu');
+    }
+
+    if (pad.pressed('start')) { this.close(); return; }
+
+    if (this.mode === 'shop') this._shopButtons(index, pad, side);
+    else this._tradeButtons(index, pad, side);
+  }
+
+  _tradeButtons(index, pad, side) {
+    const player = this.game.players[index];
+    const owned = player.powerOrbs;
+
+    if (pad.pressed('jump')) {
+      if (!owned.length) {
+        this._say(`${player.name} has nothing to offer yet`);
+        this.game.audio?.play('deny');
+      } else {
+        /* Picking a new orb CLEARS HER CONFIRM. A girl who has said yes to
+           swapping her Ward and then moves the offer to her Gale has not
+           agreed to that trade, and letting the tick survive the change is
+           precisely the "traded against her will" the brief rules out. */
+        side.offer = side.offer === side.i ? null : side.i;
+        side.ready = false;
+        this.game.audio?.play('menu');
+      }
+    }
+
+    if (pad.pressed('attack')) {
+      if (side.offer === null && this.sides[1 - index].offer === null) {
+        this._say('Somebody has to offer something first');
+        this.game.audio?.play('deny');
+      } else {
+        side.ready = !side.ready;
+        this.game.audio?.play(side.ready ? 'score' : 'menu');
+      }
+    }
+
+    if (pad.pressed('interact')) {
+      if (side.ready) side.ready = false;
+      else if (side.offer !== null) side.offer = null;
+      else this.close();
+    }
+  }
+
+  _maybeTrade() {
+    const [A, B] = this.sides;
+    if (!A.ready || !B.ready) return;
+    const [pa, pb] = this.game.players;
+    const aId = A.offer === null ? null : pa.powerOrbs[A.offer];
+    const bId = B.offer === null ? null : pb.powerOrbs[B.offer];
+    if (!aId && !bId) return;
+
+    if (this.game.kotodama.trade(pa, aId, pb, bId)) {
+      const parts = [];
+      if (aId) parts.push(`${pa.name} gave ${ORB_BY_ID[aId].name}`);
+      if (bId) parts.push(`${pb.name} gave ${ORB_BY_ID[bId].name}`);
+      this._say(parts.join('  ·  '));
+      this.game.toast(parts.join(' — '), 0);
+      this.game.toast(parts.join(' — '), 1);
+    } else {
+      this._say('That would leave somebody carrying nine');
+      this.game.audio?.play('deny');
+    }
+    for (const s of this.sides) s.reset();
+  }
+
+  _shopButtons(index, pad, side) {
+    const player = this.game.players[index];
+    const K = this.game.kotodama;
+    const id = ORB_IDS[side.i];
+
+    if (pad.pressed('jump')) {
+      const why = K.buyRefusal(player, id);
+      if (why) { this._say(why); this.game.audio?.play('deny'); }
+      else { K.buy(player, id); this._say(`Bought ${ORB_BY_ID[id].name}`); }
+    }
+    if (pad.pressed('attack')) {
+      if (!player.powerOrbs.includes(id)) {
+        this._say(`${player.name} has no ${ORB_BY_ID[id].name} to sell`);
+        this.game.audio?.play('deny');
+      } else {
+        K.sell(player, id);
+        this._say(`Sold ${ORB_BY_ID[id].name} for ${K.sellPrice}`);
+      }
+    }
+    if (pad.pressed('interact')) this.close();
+  }
+
+  _say(text) {
+    this._flash = text;
+    this._flashT = 2.6;
+  }
+
+  _rowCount(index) {
+    if (this.mode === 'shop') return ORB_IDS.length;
+    /* HER CURSOR RANGES OVER WHAT SHE HAS, NOT OVER EIGHT SLOTS. Letting it
+       land on an empty slot means the most common action on this screen —
+       press jump to offer — does nothing most of the time, which reads as the
+       controller not working rather than as an empty slot. */
+    return Math.max(1, this.game.players[index]?.powerOrbs.length ?? 0);
+  }
+
+  /* -------------------------------- paint -------------------------------- */
+
+  /**
+   * Redraw, but only when something changed.
+   *
+   * The signature is every value on screen. Rebuilding this markup every frame
+   * at 138fps is what would make a menu the most expensive thing in the game —
+   * and worse, it re-creates the elements under the CSS transitions, so the
+   * cursor's glow restarts sixty times a second and stops looking like it is
+   * anywhere. Same guard `MrSatan.setLine` uses, and for the same reason.
+   */
+  _paint() {
+    const sig = this._signature();
+    if (sig === this._sig) return;
+    this._sig = sig;
+
+    if (this.mode === 'shop') {
+      this.title.textContent = 'KOTODAMA DEALER';
+      this.body.innerHTML = this._shopMarkup();
+      this.help.innerHTML = this._flashT > 0
+        ? `<em>${this._flash}</em>`
+        : 'JUMP <b>buy</b> · ATTACK <b>sell</b> · INTERACT <b>leave</b>';
+    } else {
+      this.title.textContent = 'CHARACTER PROFILE';
+      this.body.innerHTML = this.game.players.map((p, i) => this._cardMarkup(p, i)).join('');
+      this.help.innerHTML = this._flashT > 0
+        ? `<em>${this._flash}</em>`
+        : 'JUMP <b>offer this orb</b> · ATTACK <b>confirm</b> · INTERACT <b>back</b>'
+          + ' — <b>both</b> must confirm';
+    }
+  }
+
+  _signature() {
+    const K = this.game.kotodama;
+    return [
+      this.mode,
+      this.game.players.map((p) => `${p.powerOrbs.join(',')}|${p.score}|${p.clan?.id ?? ''}`).join(';'),
+      this.sides.map((s) => `${s.i}/${s.offer}/${s.ready}`).join(';'),
+      this.mode === 'shop' ? ORB_IDS.map((id) => K.stock[id]).join(',') : '',
+      this._flashT > 0 ? this._flash : '',
+    ].join('#');
+  }
+
+  /** One kitten's column: who she is, what she is wearing, what she is offering. */
+  _cardMarkup(player, index) {
+    const side = this.sides[index];
+    const owned = player.powerOrbs;
+    const cls = `kd-card kd-p${index}`;
+
+    /* EIGHT SLOTS ARE ALWAYS DRAWN, filled or not. The cap is a rule she has
+       to be able to see coming: three orbs in a row of eight says "five more"
+       in a way that three orbs on their own cannot, and it is the same
+       argument the dragon-ball counter makes by printing "/ 7". */
+    const slots = [];
+    for (let k = 0; k < MAX_EQUIPPED; k++) {
+      const id = owned[k];
+      const spec = id ? ORB_BY_ID[id] : null;
+      const on = [
+        'kd-slot',
+        spec ? 'full' : 'empty',
+        k === side.i && k < owned.length ? 'cursor' : '',
+        side.offer === k ? 'offered' : '',
+      ].filter(Boolean).join(' ');
+      const style = spec ? `style="--orb:#${spec.color.toString(16).padStart(6, '0')}"` : '';
+      slots.push(`<div class="${on}" ${style}><span>${spec ? spec.kanji : ''}</span></div>`);
+    }
+
+    const here = owned[side.i] ? ORB_BY_ID[owned[side.i]] : null;
+    const n = here ? owned.filter((x) => x === here.id).length : 0;
+    const detail = here
+      ? `<b>${here.name}</b> · ${here.label}<br><span class="kd-dim">${here.detail(n)}${n > 1 ? `  (x${n})` : ''}</span>`
+      : '<span class="kd-dim">No Kotodama yet — go and find one.</span>';
+
+    const state = side.ready
+      ? '<span class="kd-ready">CONFIRMED</span>'
+      : side.offer !== null
+        ? `offering <b>${ORB_BY_ID[owned[side.offer]]?.name ?? '—'}</b>`
+        : '<span class="kd-dim">offering nothing</span>';
+
+    return `<div class="${cls}">
+      <div class="kd-name">${player.name}</div>
+      <div class="kd-meta">${player.clan?.name ?? 'no clan'} · ${player.score} pts
+        · ${owned.length}/${MAX_EQUIPPED}</div>
+      <div class="kd-slots">${slots.join('')}</div>
+      <div class="kd-detail">${detail}</div>
+      <div class="kd-state">${state}</div>
+    </div>`;
+  }
+
+  _shopMarkup() {
+    const K = this.game.kotodama;
+    const p = this.shopper;
+    const side = this.sides[p.index];
+
+    const rows = POWER_ORBS.map((spec, k) => {
+      const stock = K.stock[spec.id] ?? 0;
+      const mine = p.powerOrbs.filter((x) => x === spec.id).length;
+      const cls = ['kd-row', k === side.i ? 'cursor' : '', stock ? '' : 'out']
+        .filter(Boolean).join(' ');
+      return `<div class="${cls}" style="--orb:#${spec.color.toString(16).padStart(6, '0')}">
+        <div class="kd-dot"><span>${spec.kanji}</span></div>
+        <div class="kd-row-main">
+          <b>${spec.name}</b> — ${spec.label}
+          <div class="kd-dim">${spec.blurb}</div>
+        </div>
+        <div class="kd-row-num">
+          <div>${stock ? `in stock ${stock}` : 'SOLD OUT'}</div>
+          <div class="kd-dim">you have ${mine}</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div class="kd-shop">
+      <div class="kd-purse">${p.name} · <b>${p.score}</b> points
+        · buy <b>${K.price}</b> · sell <b>${K.sellPrice}</b>
+        · carrying ${p.powerOrbs.length}/${MAX_EQUIPPED}</div>
+      ${rows}
+    </div>`;
+  }
+}
