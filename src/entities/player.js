@@ -2,6 +2,7 @@
 import { Billboard } from '../core/gfx.js';
 import { PANDA_SPEED, PANDA_JUMP } from './panda.js';
 import { aggregate, WARD, DIVE, TRIPLE, CHARGE } from './powerorb.js';
+import { ANGEL_ALPHA } from './angel.js';
 
 /* ---------------------------------------------------------------------------
    A Katana Kitty and the camera that follows it.
@@ -98,6 +99,29 @@ export const KO_TIME = 1.8;
  * that is the same exchange twelve times.
  */
 const RAGE_MAX = 1.6;
+
+/* ---------------------------------------------------------------------------
+   The angel between rounds.
+
+   A knocked-out kitten used to spend the gap watching a banner. She flies it
+   off instead — which is the point of the feast: her sister is down on the
+   deck hunting rats with the health she has left, and the two of them are
+   doing different things at the same time for once.
+
+   Slower than a dragon and much slower than running, because there is nowhere
+   to be: this is a victory lap for the girl who lost, not a mode with a job.
+--------------------------------------------------------------------------- */
+const ANGEL_SPEED = 13;
+const ANGEL_LIFT = 11;
+/** Never lower than this above whatever is under her — an angel does not walk. */
+const ANGEL_FLOOR = 1.6;
+/** ...and never higher than this above the ring deck, or she leaves the shot. */
+const ANGEL_CEIL = 34;
+/** How far past the edge of the deck she may drift before she is reeled in. */
+const ANGEL_ROAM = 26;
+
+/** How tall the crouched eating drawing is, against her standing height. */
+const EAT_CROUCH = 0.86;
 
 export class Player {
   constructor(opts) {
@@ -210,6 +234,16 @@ export class Player {
     /** Seconds the attack button has been held, for the triple-slash arm. */
     this.attackHeld = 0;
 
+    /* --- the ring's two tournament-only states ---
+       `eatT` is seconds left of a snack she is swallowing, owned by
+       `Menagerie` and read here only to hold the pose. `angel` is true while
+       she is dead between rounds and flying it off. Both are inert everywhere
+       else in the game because nothing outside the arena ever sets them. */
+    this.eatT = 0;
+    this.angel = false;
+    /** Wings and a halo, built once at boot. See AngelForm. */
+    this.angelForm = null;
+
     this.group = new THREE.Group();
 
     /* `height` is how tall the KITTEN should be in world units. The quad has
@@ -286,6 +320,9 @@ export class Player {
        a bar you lose behind scenery is worse than no bar. */
     this.hpGroup = new THREE.Group();
     this.hpGroup.visible = false;
+    /** Should she have a bar over her head at all? The tournament owns this;
+     *  `_updateCombat` derives `hpGroup.visible` from it and her angel state. */
+    this.barOn = false;
     const barW = 3.0;
     const barMesh = (w, color, z, opacity = 1) => {
       const g = new THREE.PlaneGeometry(w, 0.42);
@@ -350,6 +387,48 @@ export class Player {
     this.focus = f;
   }
 
+  /**
+   * Give her the crouched eating drawing. One cell, front-facing, never
+   * mirrored — the clan leaders' combination, and the only one that cannot
+   * flip.
+   *
+   * A SEPARATE FILE, NOT A ROW ON HER TURNAROUND SHEET, and this is the same
+   * decision the hit and KO states made for the same reason: both live kitten
+   * sheets are 4-row turnarounds whose rows have to agree about which way the
+   * character turns, one of the two in this project is already unusable
+   * because its rows don't, and every sprite-direction check in `world-check`
+   * measures real cells out of them. A single-cell file bolted alongside
+   * cannot touch any of that.
+   *
+   * The difference from the hit and KO states is that this one really did need
+   * new art. Being hit is a flash and a lean, and being knocked out is the
+   * jump pose rotated — both are things the material can express. "Hunched
+   * over eating with both paws" is a pose, and there is no transform of a
+   * standing cat that produces one.
+   *
+   * @param {?object} art loaded atlas, or null — a missing sheet costs the
+   *        pose and nothing else; she just keeps her attack row.
+   */
+  setEatArt(art) {
+    if (!art?.texture) return;
+    /* SHORTER THAN SHE IS, because she is crouching. `contentScale` makes the
+       drawn figure exactly `height` tall whatever the sheet's packing, which
+       is right for every standing pose and wrong for this one: a squatting cat
+       drawn to a standing cat's height is a cat that got bigger in order to
+       crouch. */
+    const quad = this.height * EAT_CROUCH / (art.contentScale || 1);
+    this.eatPose = new Billboard(art.texture, {
+      cols: 1,
+      rows: 1,
+      mirror: false,
+      width: quad,
+      height: quad,
+      footOffset: (art.pad ?? 0) * quad,
+    });
+    this.eatPose.visible = false;
+    this.group.add(this.eatPose);
+  }
+
   /* ------------------------ Powerup Kotodama ---------------------------- */
 
   /**
@@ -406,6 +485,10 @@ export class Player {
 
   faceCamera(camera) {
     this.sprite.faceCamera(camera);
+    /* The eating pose turns to the lens too. One cell and `mirror: false`, so
+       `faceCamera` only ever squares the quad up — it can never pick a
+       different cell and it can never flip. */
+    if (this.eatPose?.visible) this.eatPose.faceCamera(camera);
 
     /* THE HEALTH BAR IS A FLAT QUAD AND HAS TO BE TURNED, like the leaders'
        speech bubbles are. It is parented to `group`, which never rotates, so
@@ -417,6 +500,11 @@ export class Player {
        for a strip of UI. The fight camera looks down at ~0.55 radians and a
        yaw-only bar is foreshortened to about half its height there. */
     if (this.hpGroup.visible) this.hpGroup.quaternion.copy(camera.quaternion);
+    /* The wings are turned and pushed BEHIND her here for the same reason the
+       mount nudge below is done here: "behind" is a direction from a camera,
+       and this function is the one thing in the entity that runs once per
+       view. Same computation as the nudge with the sign reversed. */
+    if (this.angel) this.angelForm?.aim(camera, this.position);
     // A mounted kitten sits inside the dragon's billboard quad, so at equal
     // depth it loses the sort and disappears. Nudging the rider toward the
     // camera puts it cleanly in front from every angle â€” and it has to happen
@@ -489,12 +577,18 @@ export class Player {
       this._clearSpecials();
     }
 
-    if (this.rideAlong) this._updatePassenger(dt, pad, world, hud);
+    /* THE ANGEL OUTRANKS EVERY OTHER MODE, and it is checked first rather than
+       last on purpose. She has just been knocked out; `becomeAngel` drops
+       whatever she was riding, and putting the test here means no later branch
+       can ever see a half-cleared mount on a dead kitten. */
+    if (this.angel) this._updateAngel(dt, pad, world);
+    else if (this.rideAlong) this._updatePassenger(dt, pad, world, hud);
     else if (this.mount) this._updateFlight(dt, pad, world, hud);
     else this._updateGround(dt, pad, world, dragons, hud);
 
     this.group.position.copy(this.position);
     this.sprite.facing = this.facing;
+    this.angelForm?.update(dt);
     this._updateAloft(dt);
     this._updateCombat(dt);
     this._updateFeedback(dt, world);
@@ -574,15 +668,134 @@ export class Player {
     return dealt;
   }
 
+  /* ------------------------- the angel between rounds --------------------- */
+
   /**
-   * Put her back on her feet for a fresh round: full health, no timers.
+   * Knocked out, and the round is over: sprout wings and take the sky.
+   *
+   * SHE IS NOT DEAD AND SHE IS NOT ALIVE — she is out of the fight and out of
+   * the way, which is the job. `ko` is cleared because every KO-shaped rule in
+   * the game (the dead pad, the flat-on-her-back pose, being skipped by the
+   * ring-out test) is exactly wrong for a cat who is now flying; `angel` takes
+   * over as the thing everything asks. What she cannot do is the part that
+   * matters: no attack, no mount, no oath, no snack — see `_updateAngel`.
+   */
+  becomeAngel() {
+    if (this.angel) return;
+    /* Whatever she was on, she is off it. A knockout can land on a kitten who
+       is standing on a platform or — through a ring-out — mid-air, and an
+       angel still holding a mount is a mount nobody is steering. */
+    if (this.pandaMount) { this.pandaMount.rider = null; this.pandaMount = null; }
+    this.angel = true;
+    this.ko = false;
+    this.koT = 0;
+    this.hitT = 0;
+    this.invulnT = 0;
+    this.flashT = 0;
+    this.velocity.set(0, 0, 0);
+    this._clearSpecials();
+    this.angelForm?.show();
+  }
+
+  /** Back to earth, and back to being a cat. */
+  landAngel() {
+    this.angel = false;
+    this.angelForm?.hide();
+    this.sprite.mesh.rotation.z = 0;
+  }
+
+  /**
+   * Free flight with no animal under her.
+   *
+   * A FOURTH MOVEMENT MODE, DELIBERATELY TINY. It could have been three more
+   * conditionals inside the ground controller, and that is the version that
+   * rots: gravity, the ground snap, `resolveSolids`, the mount button, the
+   * oath and the katana would all have grown an `if (!angel)`, and the one
+   * that got missed would be a dead kitten swearing to a clan. Nothing here
+   * calls anything: she drifts, she rises, she sinks, and that is the mode.
+   */
+  _updateAngel(dt, pad, world) {
+    const { fwd, right } = this._basis();
+    const wish = new THREE.Vector3()
+      .addScaledVector(right, pad.mx)
+      .addScaledVector(fwd, -pad.my);
+    if (wish.lengthSq() > 0.0001) {
+      wish.normalize();
+      this.facing = Math.atan2(wish.x, wish.z);
+    }
+
+    /* Jump climbs, interact descends — the two buttons that already mean up
+       and down on a dragon. There is no new control to learn for a state that
+       lasts fifteen seconds. */
+    const lift = (pad.down('jump') ? 1 : 0) - (pad.down('interact') ? 1 : 0);
+    const target = wish.multiplyScalar(ANGEL_SPEED * (pad.down('sprint') ? 1.6 : 1));
+    const rate = 26 * dt;
+    this.velocity.x += THREE.MathUtils.clamp(target.x - this.velocity.x, -rate, rate);
+    this.velocity.z += THREE.MathUtils.clamp(target.z - this.velocity.z, -rate, rate);
+    this.velocity.y += THREE.MathUtils.clamp(
+      lift * ANGEL_LIFT - this.velocity.y, -rate, rate
+    );
+    this.position.addScaledVector(this.velocity, dt);
+
+    /* SHE FLOATS RATHER THAN FALLING, and she cannot be pushed through
+       anything either — there is no `resolveSolids` here, because a ghost that
+       bumps into the announcer's box is a ghost. The only bound is the one
+       that stops her leaving: a ceiling so she cannot vanish upward out of
+       shot, and a floor so she cannot sink through the deck.
+       Both are measured off the ARENA, not off the world, because the angel
+       only ever exists there and a camera framing two fighters cannot follow
+       somebody who has flown to another island. */
+    const g = world.heightAt(this.position.x, this.position.z, this.position.y);
+    const floor = (g ? g.y : this.position.y) + ANGEL_FLOOR;
+    if (this.position.y < floor) {
+      this.position.y = floor;
+      this.velocity.y = Math.max(0, this.velocity.y);
+    }
+    const R = world.arenaRing;
+    if (R) {
+      const ceil = R.y + ANGEL_CEIL;
+      if (this.position.y > ceil) {
+        this.position.y = ceil;
+        this.velocity.y = Math.min(0, this.velocity.y);
+      }
+      /* Reeled back in at the rim of the island rather than stopped at it.
+         A wall you bounce off reads as a bug on a ghost; a gentle pull home
+         reads as her not being allowed to leave, which is the truth. */
+      const dx = this.position.x - R.x;
+      const dz = this.position.z - R.z;
+      const far = Math.hypot(dx, dz);
+      const leash = R.half + ANGEL_ROAM;
+      if (far > leash) {
+        const k = Math.min(1, dt * 2.2);
+        this.position.x -= (dx / far) * (far - leash) * k;
+        this.position.z -= (dz / far) * (far - leash) * k;
+      }
+    }
+
+    this.onGround = false;
+    this.airTime = (this.airTime ?? 0) + dt;
+    this.stepPhase = 0;
+    this.coyote = 0;
+  }
+
+  /**
+   * Put her back on her feet for a fresh round.
    *
    * Deliberately NOT a general reset — it leaves `dmgDealt`/`dmgTaken` alone,
    * because those are tournament totals and the score is computed across all
    * three rounds. Clearing them here would silently score only the last one.
+   *
+   * `hp` IS AN ARGUMENT, AND THAT IS THE FEAST. It used to refill to the top
+   * unconditionally, which made a round a self-contained bout; now the kitten
+   * who WON the round carries her damage into the next one and the kitten who
+   * was knocked out comes back full. That looks backwards for about a second
+   * and is the whole balance: winning costs something, the fifteen seconds
+   * between rounds is where she pays it back, and a 2-0 stops being the
+   * default shape of a match. See Tournament.
    */
-  resetForRound(x, y, z, facing) {
-    this.hp = this.maxHp;
+  resetForRound(x, y, z, facing, hp = null) {
+    this.landAngel();
+    this.hp = hp == null ? this.maxHp : THREE.MathUtils.clamp(hp, 1, this.maxHp);
     this.hitT = 0;
     this.invulnT = 0;
     this.koT = 0;
@@ -616,6 +829,10 @@ export class Player {
     this.triT = 0;
     this.diving = false;
     this.attackHeld = 0;
+    /* The eat pose goes with them. `Menagerie` owns the hold itself and lets
+       go on its own terms, but this flag is only ever a DRAWING — leaving it
+       set after a mount or a round reset holds the attack row for ever. */
+    this.eatT = 0;
     this.wardMesh.visible = false;
   }
 
@@ -632,7 +849,20 @@ export class Player {
     this.flashT = Math.max(0, this.flashT - dt);
     if (this.koT > 0) this.koT = Math.max(0, this.koT - dt);
 
+    /* AN ANGEL HAS NO HEALTH BAR OVER HER HEAD. It reads zero, which is true
+       and useless — the bar exists so the OTHER kitten can decide whether to
+       press the attack, and there is no attack to press during a feast. It was
+       also drawing straight through the halo, and a black stripe across a gold
+       ring reads as a rendering fault rather than as either of them. The
+       corner HUD still shows her at zero, which is where that fact belongs.
+
+       `barOn` IS THE INTENT AND `visible` IS DERIVED FROM IT, which is the
+       whole reason the flag exists. Writing `visible = visible && !angel`
+       looks equivalent and is a latch: the frame she lands there is nothing
+       left saying the bar was ever meant to be on, and she spends the rest of
+       the tournament with no bar over her head. */
     const bar = this.hpGroup;
+    bar.visible = this.barOn && !this.angel;
     if (!bar.visible) return;
     // Above her head, clear of the star she might be holding.
     bar.position.set(0, this.height * 1.32, 0);
@@ -1314,6 +1544,11 @@ export class Player {
        would put that rule in a second place, and the copy nobody remembers is
        how you end up able to cut your sister down in the market square. */
     hud?.strikePlayers?.(this, kind, reach, dir);
+    /* ...and the ring's wildlife, through the game for the same reason. A rat
+       is pinned, a rabbit is knocked out of its hop and a bird ends up in her
+       mouth — three outcomes of one swing, none of which may happen anywhere
+       but the arena, so the question is asked in the one place that knows. */
+    hud?.strikeCritters?.(this, reach);
     let hits = 0;
     for (const p of world.props) {
       const dx = p.group.position.x - this.position.x;
@@ -1674,7 +1909,13 @@ export class Player {
        walk cycle is the wrong lie — legs pumping while the panda does the
        running reads as the kitten sliding along above it. Idle plus the
        animal's own waddle underneath is what sells being carried. */
-    if (this.attackTimer > 0) this.sprite.row = a.attack;
+    /* Eating holds the ATTACK row for the whole two seconds. There is no drawn
+       chew and there is not going to be one — see the note below on why no
+       kitten sheet in this project gets new rows — and the attack pose is the
+       one where her paws are already up in front of her. The wobble under it
+       is what turns a held pose into a cat working at something. */
+    if (this.eatT > 0) this.sprite.row = a.attack;
+    else if (this.attackTimer > 0) this.sprite.row = a.attack;
     else if (this.mount || airborne) this.sprite.row = a.jump;
     else if (this.pandaMount) this.sprite.row = a.idle;
     else if (speed > 0.9) this.sprite.row = a.walk;
@@ -1697,9 +1938,16 @@ export class Player {
     const lean = this.onGround && speed > 0.9 ? Math.sin(this.stepPhase) * 0.05 : 0;
     this.sprite.mesh.rotation.z = lean;
 
+    /* The chew. Squash on a fast beat, on top of everything else — she is
+       stock still for two seconds (the pad she is handed is dead), so without
+       this the eat reads as the game having frozen rather than as her eating.
+       It is deliberately the same squash-and-stretch the jump and the landing
+       use, one octave up: the vocabulary is already established. */
+    const chew = this.eatT > 0 ? Math.sin(this.idlePhase * 9) * 0.09 : 0;
+
     this.sprite.mesh.scale.set(
-      1 + sq * 0.22 + bob * 0.4 - breathe,
-      1 - sq * 0.24 + bob + breathe,
+      1 + sq * 0.22 + bob * 0.4 - breathe + chew,
+      1 - sq * 0.24 + bob + breathe - chew,
       1
     );
     /* Riding: the seat is solved in _updateFlight, so the sprite sits at the
@@ -1756,7 +2004,30 @@ export class Player {
     const mat = this.sprite.mat;
     const base = 1;
 
-    if (this.ko) {
+    /* SHE REALLY IS TRANSLUCENT AS AN ANGEL, and the first pass wrongly
+       concluded she could not be. The reasoning was the invulnerability
+       flicker's, which is correct for what IT does and does not generalise:
+       `alphaTest: 0.35` is tested against the fragment alpha with
+       `material.opacity` already folded in, so opacity *below* 0.35 kills the
+       whole sprite — but `ANGEL_ALPHA` (0.62) sits comfortably above it and
+       simply makes her see-through. The flicker fades to zero, which is why it
+       cannot do this; the ghost never goes near the threshold. Reset to 1 for
+       everybody else, unconditionally, or a kitten who was ever an angel stays
+       half-there for the rest of the afternoon. */
+    mat.opacity = this.angel ? ANGEL_ALPHA : 1;
+
+    if (this.angel) {
+      /* WASHED OUT, NOT TINTED. `toneMapped: false` hands the colour straight
+         through, so pushing all three channels past 1 blows her toward white
+         the way the hit flash blows her toward red — which is what makes a
+         pale kitten read as pale from ninety-six units away instead of just
+         looking slightly cold. The blue is a hair ahead of the red, so the
+         wash is moonlight rather than paper. */
+      const shimmer = 1 + Math.sin((this.idlePhase ?? 0) * 3.2) * 0.07;
+      mat.color.setRGB(base * 1.18 * shimmer, base * 1.30 * shimmer, base * 1.55 * shimmer);
+      this.sprite.mesh.rotation.z = lean;
+      this.sprite.mesh.visible = true;
+    } else if (this.ko) {
       /* Flat on her back. The JUMP row, not idle: it is the one pose with the
          limbs away from the body, and an idle cell rotated 90 degrees reads
          as a cat standing on a wall rather than as a cat who has been knocked
@@ -1846,6 +2117,33 @@ export class Player {
       this.marker.scale.setScalar(1);
     }
     this._edgeLit = edgeLit;
+
+    /* --- the meal takes the whole drawing over ---
+
+       SHE TURNS TO FACE THE CAMERA AND STAYS THERE for the two seconds, which
+       is what makes this read as a moment rather than as a stance. It is the
+       one pose in the game that ignores her heading entirely: `eatPose` is a
+       single front-facing cell that can never flip, so whichever way she was
+       running when she grabbed the thing, she is hunched over facing you while
+       she eats it — and `Critter._updatePinned` puts the animal on the ground
+       between her and the lens for the same reason.
+
+       Applied at the END, after every other branch above has had its say about
+       the ordinary sprite, so there is exactly one place that decides which of
+       the two drawings is on screen. The colour and opacity are copied across
+       so anything the material is doing — a hit flash landing on the frame the
+       meal is interrupted — carries onto the pose instead of popping. */
+    if (this.eatPose) {
+      const eating = this.eatT > 0;
+      this.eatPose.visible = eating;
+      if (eating) {
+        this.sprite.mesh.visible = false;
+        this.eatPose.mesh.scale.set(1 + chew * 1.4, 1 - chew * 1.4, 1);
+        this.eatPose.mesh.rotation.z = Math.sin((this.idlePhase ?? 0) * 4.5) * 0.03;
+        this.eatPose.mat.color.copy(mat.color);
+        this.eatPose.mat.opacity = mat.opacity;
+      }
+    }
 
     // Blob shadow tracks the ground below and shrinks with altitude.
     const g = world.heightAt(this.position.x, this.position.z, this.position.y);

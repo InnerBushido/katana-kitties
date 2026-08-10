@@ -1040,6 +1040,17 @@ html, body {
   border: 3px solid var(--ink);
   border-radius: 9px;
 }
+/* The feast clock lives in the round slot rather than getting a box of its
+   own: it is the one spot on this HUD both girls are already reading, and a
+   second counter somewhere else is a second place to look during the fifteen
+   seconds they most need to be looking at the deck.
+   NO `animation-fill-mode` ANYWHERE — see the preview-pane note in HANDOFF.
+   The green is the resting state and the pulse only adds motion on top. */
+#arena-hud .ah-feast {
+  color: #2e7d32;
+  animation: feastTick 1s steps(2, end) infinite;
+}
+@keyframes feastTick { 50% { opacity: 0.55; } }
 
 /* --- ROUND 1 / 3 / 2 / 1 / FIGHT! / K.O. ---------------------------------- */
 #arena-banner {
@@ -1071,6 +1082,13 @@ html, body {
   font-size: 88px;
   color: #ff3b30;
   animation: bannerShake 0.5s ease-out;
+}
+/* The feast is the friendly one. Green rather than the round card's gold, so
+   the fifteen seconds where nobody can be hurt do not look like a round. */
+#arena-banner.banner-feast {
+  font-size: 74px;
+  color: #8fe07a;
+  animation: bannerPop 0.4s cubic-bezier(0.34, 1.8, 0.64, 1);
 }
 @keyframes bannerPop { from { transform: scale(2.1); opacity: 0; } }
 @keyframes bannerShake {

@@ -243,6 +243,80 @@ function keyOutBackground(ctx, w, h, clearPockets = false) {
 }
 
 /**
+ * Work out the atlas cell size, how far the source is scaled into it, and the
+ * two measurements the game sizes quads from.
+ *
+ * Pure arithmetic over measured boxes, and lifted out of `loadSpriteAtlas` so
+ * `tools/world-check.mjs` can ask what a sheet WILL pack to without a canvas —
+ * the drawn size of a critter's poses is now a rule with a check on it, and a
+ * check that re-derives the packing by hand is a check that can agree with
+ * itself while disagreeing with the game.
+ *
+ * THE CELL SIZE IS DERIVED, AND THIS IS WHY THE DRAGONS LOOKED LOW-RES. Every
+ * sheet used to be packed into the same fixed cell — 384 through
+ * `_loadSprite`. That is roughly right for a kitten, because ten directions
+ * across four poses fill a 384-cell atlas honestly. It is badly wrong for a
+ * dragon, and the reason is the SHAPE of the drawing rather than its size: the
+ * dragon is one long horizontal creature squeezed into a SQUARE cell, so the
+ * fit is decided by its width and its height gets whatever falls out.
+ *
+ *     dragon_sheet.png   2752x1536 source, one figure
+ *     packed into 384    ~338 px wide -> about 127 px TALL
+ *
+ * 127 pixels, stretched across an animal that fills a third of the screen when
+ * you are riding it. The art was never the problem — it is 2752 wide on disk,
+ * which is exactly why it looks sharp opened in a viewer and soft in the game.
+ *
+ * So `cell` is a FLOOR and the real size is the largest of:
+ *   - `ideal`: big enough that the art is not downscaled at all (scale ~ 1),
+ *   - clamped by `maxAtlas` so the texture stays a sane size,
+ *   - never below whatever the caller asked for.
+ *
+ * A single-figure sheet (both dragons, Ryuuseki, the pandas, the leaders) goes
+ * to its own resolution. A ten-by-four kitten sheet is limited by
+ * `maxAtlas / cols` to less than the floor, so it lands on the floor and is
+ * BYTE-FOR-BYTE UNCHANGED — which matters, because the sprite-direction checks
+ * measure real cells out of these sheets and a repack would move every number
+ * they assert.
+ */
+export function packMetrics({
+  tallest, widest, inked = 0, cols = 1, rows = 1,
+  cell = 512, pad = 0.06, maxAtlas = 2048,
+}) {
+  const ideal = Math.ceil(Math.max(tallest, widest) / (1 - pad * 2));
+  const roomPerCell = Math.floor(maxAtlas / Math.max(cols, rows));
+  const cellPx = Math.max(cell, Math.min(ideal, roomPerCell));
+
+  const usable = cellPx * (1 - pad * 2);
+  /* Capped at 1: upscaling the source into a bigger cell would invent detail
+     that isn't there and cost the memory of pretending otherwise. */
+  const scale = Math.min(usable / tallest, usable / widest, 1);
+
+  return {
+    cellPx,
+    scale,
+    contentScale: (tallest * scale) / cellPx,
+    contentArea: (Math.sqrt(inked) * scale) / cellPx,
+  };
+}
+
+/**
+ * How many pixels inside `box` survived the background key.
+ *
+ * Pixel data in, a number out — no canvas — so `tools/world-check.mjs` can
+ * measure the real sheets the same way the loader does. `imgData` is either an
+ * ImageData or anything with a `.data` of RGBA bytes.
+ */
+export function countInk(imgData, w, box) {
+  const d = imgData.data ?? imgData;
+  let n = 0;
+  for (let y = box.y0; y <= box.y1; y++) {
+    for (let x = box.x0; x <= box.x1; x++) if (d[(y * w + x) * 4 + 3] > 8) n++;
+  }
+  return n;
+}
+
+/**
  * Find one bounding box per drawn view.
  *
  * Projecting occupied columns is the obvious approach and it fails here: a cat
@@ -504,45 +578,20 @@ export async function loadSpriteAtlas(url, opts = {}) {
      instant it started walking. */
   const tallest = Math.max(...flat.map((b) => b.h));
   const widest = Math.max(...flat.map((b) => b.w));
+  /* How much INK the biggest frame has in it, in source pixels. A bounding box
+     says how far a drawing reaches; it does not say how big the animal is. See
+     `contentArea` below. */
+  const inked = Math.max(...flat.map((b) => countInk(keyed, src.width, b)));
 
   const cols = Math.max(...grid.map((r) => r.length));
   const rows = grid.length;
 
-  /* THE CELL SIZE IS DERIVED, AND THIS IS WHY THE DRAGONS LOOKED LOW-RES.
-     Every sheet used to be packed into the same fixed cell — 384 through
-     `_loadSprite`. That is roughly right for a kitten, because ten directions
-     across four poses fill a 384-cell atlas honestly. It is badly wrong for a
-     dragon, and the reason is the SHAPE of the drawing rather than its size:
-     the dragon is one long horizontal creature squeezed into a SQUARE cell, so
-     the fit is decided by its width and its height gets whatever falls out.
-
-       dragon_sheet.png   2752x1536 source, one figure
-       packed into 384    ~338 px wide -> about 127 px TALL
-
-     127 pixels, stretched across an animal that fills a third of the screen
-     when you are riding it. The art was never the problem — it is 2752 wide on
-     disk, which is exactly why it looks sharp opened in a viewer and soft in
-     the game.
-
-     So `cell` becomes a FLOOR and the real size is the largest of:
-       - `ideal`: big enough that the art is not downscaled at all (scale ~ 1),
-       - clamped by `maxAtlas` so the texture stays a sane size,
-       - never below whatever the caller asked for.
-
-     A single-figure sheet (both dragons, Ryuuseki, the pandas, the leaders)
-     goes to its own resolution. A ten-by-four kitten sheet is limited by
-     `maxAtlas / cols` to less than the floor, so it lands on the floor and is
-     BYTE-FOR-BYTE UNCHANGED — which matters, because the sprite-direction
-     checks measure real cells out of these sheets and a repack would move
-     every number they assert. */
-  const ideal = Math.ceil(Math.max(tallest, widest) / (1 - pad * 2));
-  const roomPerCell = Math.floor(maxAtlas / Math.max(cols, rows));
-  const cellPx = Math.max(cell, Math.min(ideal, roomPerCell));
-
-  const usable = cellPx * (1 - pad * 2);
-  /* Capped at 1: upscaling the source into a bigger cell would invent detail
-     that isn't there and cost the memory of pretending otherwise. */
-  const scale = Math.min(usable / tallest, usable / widest, 1);
+  /* The cell size is DERIVED from how big the art actually is, and `cell` is
+     only a floor — see `packMetrics`, which owns that arithmetic and the
+     reason for it. */
+  const { cellPx, scale, contentScale, contentArea } = packMetrics({
+    tallest, widest, inked, cols, rows, cell, pad, maxAtlas,
+  });
 
   const out = document.createElement('canvas');
   out.width = cellPx * cols;
@@ -588,7 +637,24 @@ export async function loadSpriteAtlas(url, opts = {}) {
        height it asked for no matter how loosely the sheet happened to pack.
        Without it, apparent size silently tracks the packing: two sheets that
        pack differently give two characters of visibly different size. */
-    contentScale: (tallest * scale) / cellPx,
+    contentScale,
+    /* THE SIDE OF A SQUARE WITH THE SAME AREA AS THE DRAWN INK, as a fraction
+       of the cell — an orientation-free measure of how big the animal is,
+       where `contentScale` measures only how far up the cell it reaches.
+
+       It exists because `contentScale` is the wrong yardstick the moment one
+       creature has more than one drawing. Normalising on height means every
+       pose is scaled until its bounding box is the same height, so a rabbit
+       drawn flat out mid-run comes out the same height as one drawn sitting up
+       — which makes the running one enormously longer, and the two read as two
+       animals of different sizes. Ink area does not care which way the drawing
+       is stretched: the same rabbit drawn in any pose covers about the same
+       amount of paper. Measured on the three rabbit sheets, whose bounding
+       boxes disagree by 45% and whose ink areas agree inside 9%.
+
+       `Critter.poseQuad` is the consumer; everything with a single drawing is
+       untouched, because a sheet has nothing to be consistent with. */
+    contentArea,
     /** Transparent margin left around each cell, as a fraction of the cell. */
     pad,
   };

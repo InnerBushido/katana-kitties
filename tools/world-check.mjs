@@ -29,6 +29,7 @@ import { ISLAND_MUSIC, MUSIC, trackForIsland } from '../src/core/audio.js';
 import { existsSync } from 'node:fs';
 import {
   floodBackground, clearSealedPockets, purelyWhite, pocketFloor,
+  packMetrics, countInk,
 } from '../src/core/spritesheet.js';
 import { readPNG, blobs } from './png.mjs';
 import {
@@ -38,7 +39,16 @@ import {
 } from '../src/entities/powerorb.js';
 import { Kotodama } from '../src/systems/kotodama.js';
 import { ATTACKS, MAX_HP } from '../src/entities/player.js';
-import { WINS_NEEDED, MAX_ROUNDS } from '../src/systems/tournament.js';
+import {
+  Tournament, WINS_NEEDED, MAX_ROUNDS, FEAST_TIME, REGEN_FRAC,
+} from '../src/systems/tournament.js';
+import {
+  Critter, CRITTERS, CRITTER_BY_ID, EAT_TIME, MOUTH_TIME, CATCH_RADIUS, STUN_TIME,
+  poseQuad,
+} from '../src/entities/critter.js';
+import {
+  Menagerie, MAX_ON_STAGE, MAX_PER_SPECIES, RESPAWN_MIN, RESPAWN_MAX,
+} from '../src/systems/menagerie.js';
 import { MILESTONES, OPEN_AT } from '../src/systems/arenaquest.js';
 import {
   scoreOf, loadBoard, saveResult, clearBoard, BOARD_SIZE,
@@ -2850,6 +2860,686 @@ console.log('\n--- the three power moves ---');
   ok('a Long Cut orb really lengthens the swing', long._reach() > mk([])._reach());
   ok('...and the drawn arc is derived from the same number',
     long._reach() === 3.4 * long.power.reach);
+}
+
+/* --------------------------------------------------------------------------
+   The ring's wildlife, and the feast between rounds.
+
+   None of this needs a GPU: a Critter is a Billboard over a bare THREE.Texture
+   and the Menagerie is arithmetic over positions, so the REAL classes run
+   headlessly and the checks below poke the real state machine rather than a
+   description of it. What they are guarding is the pair of rules that are
+   invisible on screen — that a snack cannot be eaten outside the ring, and
+   that the health a kitten carries into the next round is the health she
+   actually finished the feast with.
+-------------------------------------------------------------------------- */
+{
+  console.log('\n--- the ring snacks ---');
+
+  const art = () => ({
+    calm: { texture: new THREE.Texture(), contentScale: 0.7, pad: 0.06 },
+    shock: { texture: new THREE.Texture(), contentScale: 0.7, pad: 0.06, facesRight: true },
+  });
+  const ART = { rat: art(), rabbit: art(), bird: art() };
+
+  const PADS = [0, 1].map(() => ({
+    mx: 0, my: 0, held: new Set(),
+    down(a) { return this.held.has(a); },
+    pressed() { return false; },
+  }));
+
+  world.openArena(true);
+  const R = world.arenaRing;
+
+  const mkFighter = (i) => {
+    const p = new Player({
+      texture: new THREE.Texture(), index: i, rows: 4, cols: 8, height: 2.9,
+      spawn: new THREE.Vector3(R.x + (i ? 6 : -6), R.y, R.z), name: i ? 'Frost' : 'Ember',
+    });
+    p.onGround = true;
+    return p;
+  };
+  const fighters = [mkFighter(0), mkFighter(1)];
+
+  const stubGame = {
+    scene: new THREE.Scene(),
+    players: fighters,
+    input: { players: PADS },
+    toast() {},
+    sfx() {},
+    hitSpark() {},
+  };
+  const men = new Menagerie({ game: stubGame, world, art: ART });
+  stubGame.menagerie = men;
+
+  line('critters', CRITTERS.map((c) => `${c.id} ${c.heal}hp`).join('  '));
+
+  /* --- the reward is bounded, and ordered by how hard the animal is ---
+     Richard's brief was "10-20% max off the BASE health", which is the part a
+     percentage of `player.maxHp` would have broken silently: an Adamant orb
+     raises that, so a fraction of it would make every snack in the ring
+     stronger for whichever kitten is wearing more armour. */
+  ok('every snack heals 10-20% of the base bar',
+    CRITTERS.every((c) => c.heal >= MAX_HP * 0.10 - 0.5 && c.heal <= MAX_HP * 0.20 + 0.5));
+  ok('...and the harder the catch, the bigger it is',
+    CRITTER_BY_ID.rat.heal < CRITTER_BY_ID.rabbit.heal
+    && CRITTER_BY_ID.rabbit.heal < CRITTER_BY_ID.bird.heal);
+  ok('no two are worth the same', new Set(CRITTERS.map((c) => c.heal)).size === CRITTERS.length);
+
+  line('hold / mouth / stun', `${EAT_TIME}s  ${MOUTH_TIME}s  ${STUN_TIME}s`);
+  /* TWO SECONDS ROOTED IS THE PRICE, and it has to stay long enough to be a
+     gamble in a live round. Trimming it is the obvious way to make the feature
+     "feel better" and it is the one change that would delete the risk. */
+  ok('the hold is a full two seconds', EAT_TIME === 2.0);
+  /* A rabbit knocked out of its hop has to stay down long enough to walk over
+     and START the hold — the hold itself replaces the stun, so this is about
+     reaching it, not about eating it. Under EAT_TIME and the stun would be a
+     window that closes before she can use it. */
+  ok('a stunned rabbit stays down long enough to reach', STUN_TIME > EAT_TIME);
+  /* ...and a bird in her mouth has to give her longer than the swallow, or the
+     20hp snack would be impossible rather than merely urgent. */
+  ok('a mouthed bird gives her more than one swallow', MOUTH_TIME > EAT_TIME * 2);
+
+  /* --- ONE VERB: a swing reaches all three ---
+     This is the correction that made the rat catchable at all. `swattable`
+     used to ask what SPECIES it was and answer no for a rat, which left the
+     slowest animal — the one that is supposed to teach the whole mechanic —
+     as the one the katana could not touch: it flees at 8.2 against a 10.5
+     walk, so closing to a 3.4 grab radius means cornering something that runs
+     the moment you are near enough to try. If this ever goes back to asking
+     about the species, that bug comes back with it. */
+  const one = (id) => new Critter(CRITTER_BY_ID[id], ART[id]);
+  const rat = one('rat');
+  const rabbit = one('rabbit');
+  const bird = one('bird');
+  rat.onGround = true;
+  rabbit.onGround = true;
+  bird.onGround = false;
+  ok('a swing stops ANY loose animal',
+    rat.swattable && rabbit.swattable && bird.swattable);
+  ok('...and nothing already caught', (() => {
+    const c = one('rat');
+    c.onGround = true;
+    c.pin({ position: new THREE.Vector3(), facing: 0 });
+    return !c.swattable;
+  })());
+
+  /* The grab survives underneath the swing: walk into a grounded animal, press
+     attack, and it is pinned outright with no stun step. `Menagerie.strike`
+     checks that FIRST, so the easy path stays open for anyone who gets close. */
+  ok('a rat on the ground can still be pinned outright', rat.pinnable);
+  ok('a grounded rabbit too', rabbit.pinnable);
+  rabbit.onGround = false;
+  ok('...but not one in mid-hop', !rabbit.pinnable && rabbit.swattable);
+  ok('a bird is never taken off the floor', !bird.pinnable && bird.swattable);
+  rabbit.stun();
+  ok('a stunned rabbit is pinnable however it was drawn', rabbit.pinnable);
+  ok('...and it is drawn startled while it is', rabbit.sprite === rabbit.poses[1]);
+  rabbit.release();
+  ok('letting go puts the loose drawing back', rabbit.sprite === rabbit.poses[2]);
+
+  /* --- A RABBIT HAS A GROUND DRAWING AS WELL AS A LEAPING ONE ---
+     It shipped with only the leap, so the animal was permanently frozen in a
+     jumping pose while scampering along the floor: it reads as a broken sprite
+     rather than as a rabbit, and it threw away the one visual cue that says
+     whether it can be pinned right now. The pose is picked from `onGround`
+     every frame in `_paint` rather than at the places that change it, because
+     a rabbit crosses that boundary twice a second in three different movement
+     branches and one of them would end up forgotten. */
+  ok('a rabbit in the air is drawn leaping', (() => {
+    const c = one('rabbit');
+    c.onGround = false;
+    c._setPose(c._loosePose());
+    return c.sprite === c.poses[2];
+  })());
+  ok('...and on the ground it is drawn running', (() => {
+    const c = one('rabbit');
+    c.onGround = true;
+    c._setPose(c._loosePose());
+    return c.sprite === c.poses[0];
+  })());
+  /* A rat never leaves the ground and a bird never touches it, so neither has
+     its own air sheet — both fall back to `calm` rather than becoming a
+     special case inside Critter. */
+  ok('a rat has no separate leaping drawing to fall out of',
+    rat.poses[2].tex.image === rat.poses[0].tex.image);
+
+  /* --- EVERY DRAWING OF ONE ANIMAL IS THE SAME SIZE ---
+     Measured on the REAL sheets, because this is a bug that lived entirely in
+     the art's proportions and nothing synthetic would have caught it: the
+     rabbit visibly grew and shrank between running and hopping.
+
+     `contentScale` is a height, so sizing each pose by it stretches every
+     drawing until its bounding box is the same height — and a rabbit drawn
+     flat out mid-run is 1.8 times as long as it is tall while one drawn
+     bunched up mid-leap is 1.2. Equalising the heights therefore made the
+     running one 38% longer than the leaping one. `poseQuad` matches them on
+     drawn INK AREA instead, which does not care which way a pose is stretched.
+
+     The packing options here must match the ones `main.js` loads critter
+     sheets with; `packMetrics` is shared with the loader so only those four
+     numbers are repeated, not the arithmetic. */
+  {
+    const OPTS = { cell: 256, maxAtlas: 768, pad: 0.06 };
+    const measure = (file) => {
+      const { w, h, d } = readPNG(new URL(`../public/sprites/${file}`, import.meta.url));
+      floodBackground(d, w, h);
+      let x0 = 1e9; let y0 = 1e9; let x1 = -1; let y1 = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (d[(y * w + x) * 4 + 3] > 8) {
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          }
+        }
+      }
+      const box = { x0, y0, x1, y1 };
+      const bw = x1 - x0 + 1;
+      const bh = y1 - y0 + 1;
+      const m = packMetrics({
+        tallest: bh, widest: bw, inked: countInk({ data: d }, w, box), ...OPTS,
+      });
+      // Both as a fraction of the cell, which is what a quad multiplies.
+      return { ...m, w: (bw * m.scale) / m.cellPx, h: (bh * m.scale) / m.cellPx };
+    };
+
+    const SHEETS = {
+      rabbit: ['rabbit_run.png', 'rabbit.png', 'rabbit_shock.png'],
+      rat: ['rat.png', 'rat_shock.png'],
+      bird: ['bird.png', 'bird_shock.png'],
+    };
+    const spread = (v) => Math.max(...v) / Math.min(...v);
+
+    for (const [id, files] of Object.entries(SHEETS)) {
+      if (!files.every((f) => existsSync(new URL(`../public/sprites/${f}`, import.meta.url)))) {
+        line(`${id} sheets`, 'skipped (art not present)');
+        continue;
+      }
+      const size = CRITTER_BY_ID[id].size;
+      const arts = files.map(measure);
+      const drawn = arts.map((a) => {
+        const q = poseQuad(size, arts[0], a);
+        return { w: a.w * q, h: a.h * q };
+      });
+      line(`${id} poses (w x h)`, drawn.map((d) => `${d.w.toFixed(2)}x${d.h.toFixed(2)}`).join('  '));
+
+      /* The calm drawing is the anchor and its size may not move: every number
+         in CRITTERS — the ring radius, the shadow, the poof — was tuned
+         against the animal you see running around. */
+      ok(`the ${id} you chase is still exactly ${size} tall`,
+        Math.abs(drawn[0].h - size) < 1e-9);
+      /* THE REAL CHECK, and it is deliberately measured on the BOUNDING BOX
+         rather than on the ink. Ink area is equalised by construction, so
+         asserting it would only be asking `poseQuad` to repeat itself; the box
+         is the thing an eye actually compares, and it still lands inside a
+         quarter because the sheets are honest — a rabbit's silhouette is about
+         as densely filled whichever way it is drawn. Before the fix these were
+         2.3 times apart. */
+      ok(`...and every ${id} pose fills the screen within a quarter of another`,
+        spread(drawn.map((d) => d.w * d.h)) < 1.25);
+      /* And the failure mode this replaced, stated as itself: sizing on height
+         alone put the poses 45% apart on length. */
+      ok(`...so no ${id} pose is half as long as another`,
+        spread(drawn.map((d) => d.w)) < 1.6);
+    }
+  }
+
+  /* --- the difficulty ladder is SPEED now, not the button ---
+     With one verb for all three, the only thing separating them is how hard
+     the swing is to land. If the rat stopped being the slowest, the easiest
+     animal would stop being the cheapest one and the ladder would invert. */
+  line('flee speeds', CRITTERS.map((c) => `${c.id} ${c.speed}`).join('  '));
+  ok('the rat is the slowest thing on the deck',
+    CRITTER_BY_ID.rat.speed < CRITTER_BY_ID.rabbit.speed
+    && CRITTER_BY_ID.rat.speed < CRITTER_BY_ID.bird.speed);
+  /* A kitten WALKS at 10.5. Anything faster than that can never be closed on
+     at all without a sprint, which is how the rat got into trouble. */
+  ok('nothing outruns a walking kitten', CRITTERS.every((c) => c.speed < 10.5));
+
+  /* A rabbit hops twice as high as it first did — and height is v²/2g, so that
+     is the launch times root two, not times two. Bounded at the top by the
+     vertical window `Menagerie.strike` allows, or it would stop being
+     catchable rather than becoming harder to catch. */
+  const hopH = CRITTER_BY_ID.rabbit.hopV ** 2 / (2 * 24);
+  line('rabbit hop height', `${hopH.toFixed(2)} units`);
+  ok('a rabbit hop clears most of a kitten', hopH > 2.4);
+  ok('...and stays inside the swing\'s upward reach', hopH + 1.2 < 6.5);
+
+  /* THE STARTLED RABBIT IS DRAWN FACING THE OTHER WAY, and the loader cannot
+     know that — `facesRight` is declared per file in main.js. If the two poses
+     of one animal ever share a flag again, it spins round at the exact instant
+     a player pins it. */
+  ok('facing is read per DRAWING, not per species',
+    rabbit.poses[0].artFacesRight !== rabbit.poses[1].artFacesRight);
+
+  /* --- the gate: no eating outside a running tournament --- */
+  const A = fighters[0];
+  men.on = false;
+  men.list.length = 0;
+  const stray = one('rat');
+  stray.onGround = true;
+  stray.position.copy(A.position);
+  men.list.push(stray);
+  ok('a swing outside the ring catches nothing', men.strike(A, 3.4) === false);
+  ok('...and nothing is held', !men.held[0]);
+
+  /* --- spawning --- */
+  men.start();
+  line('on the deck at the gong', men.list.map((c) => c.id).join(', '));
+  ok('the deck opens stocked, not empty', men.list.length === MAX_ON_STAGE);
+  ok('...with no more than the cap', men.list.length <= MAX_ON_STAGE);
+  ok('the respawn wait is 45-75s',
+    RESPAWN_MIN === 45 && RESPAWN_MAX === 75 && men.spawnT >= 45 && men.spawnT <= 75);
+  /* THE OPENING DECK HAS ONE OF EACH, AND EVERY DECK AFTER IT IS A LOTTERY.
+     The spawn used to prefer a species that was not already out there, which
+     at a cap of three made the deck permanently one rat, one rabbit and one
+     bird — the same picture every round of every tournament. It is a straight
+     uniform draw now; the seeding in `start` is the one exception, so the
+     girls meet all three difficulties before the randomness takes over. */
+  ok('the opening deck has one of every animal',
+    new Set(men.list.map((c) => c.id)).size === men.species.length);
+  /* ...and a run of luck may not delete an animal from a tournament. */
+  ok('never more than half the deck of one kind', men.list.every((c) => (
+    men.list.filter((o) => o.id === c.id).length <= MAX_PER_SPECIES
+  )));
+  {
+    /* Twenty fresh decks: the mix has to actually vary, or "randomised" is a
+       comment rather than a behaviour. */
+    const shapes = new Set();
+    for (let i = 0; i < 20; i++) {
+      men.clear();
+      men.topUp();
+      shapes.add(men.list.map((c) => c.id).sort().join('+'));
+    }
+    line('distinct decks in 20 top-ups', shapes.size);
+    ok('a topped-up deck is not always the same animals', shapes.size > 3);
+    ok('...and never breaks the per-species cap', [...shapes].every((s) => {
+      const n = {};
+      for (const id of s.split('+')) n[id] = (n[id] ?? 0) + 1;
+      return Object.values(n).every((v) => v <= MAX_PER_SPECIES);
+    }));
+    men.start();
+  }
+  ok('nothing spawns off the stone', men.list.every((c) => (
+    Math.abs(c.position.x - R.x) < R.half && Math.abs(c.position.z - R.z) < R.half
+  )));
+  ok('nothing spawns in a kitten\'s lap', men.list.every((c) => fighters.every((p) => (
+    Math.hypot(p.position.x - c.position.x, p.position.z - c.position.z) > CATCH_RADIUS
+  ))));
+
+  /* --- catching one, all the way through ---
+     THE DECK IS EMPTIED DOWN TO THE ONE ANIMAL UNDER TEST for each of these,
+     and that is not tidiness. The cap went from three to six and the spawn
+     became a uniform draw, and every one of these checks used to reach into a
+     shared deck with `list.find(...)`: three of them started failing about a
+     third of the time, because the pin is radius-only and searched before the
+     air, so any OTHER animal that happened to spawn near her won the swing.
+     The behaviour was right and the staging was lying. `only()` is what stops
+     these checks depending on a dice roll. */
+  const step = (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) men.update(dt, fighters); };
+  const putBeside = (c, p) => {
+    c.position.set(p.position.x + 1.2, p.position.y, p.position.z);
+    /* SAVED ONCE, NOT ON EVERY CALL. Overwriting `__flee` each time meant the
+       second `putBeside` on a species banked the ZERO the first one had
+       written, so `restoreFlee` "restored" a flee radius of 0 and the rat was
+       fearless for the rest of the run — which is what made the flee check
+       fail about half the time, on a behaviour that was never broken. */
+    if (c.spec.__flee == null) c.spec.__flee = c.spec.flee;
+    c.spec.flee = 0;
+    c.onGround = true;
+  };
+  const restoreFlee = () => CRITTERS.forEach((s) => {
+    if (s.__flee != null) { s.flee = s.__flee; delete s.__flee; }
+  });
+  /** Clear the deck and put exactly one animal of `id` on it. */
+  const only = (id) => {
+    for (let i = 0; i < men.held.length; i++) if (men.held[i]) men._drop(i);
+    for (const c of men.list) c.dispose(men.scene);
+    men.list.length = 0;
+    return men._spawn(CRITTER_BY_ID[id]);
+  };
+
+  const theRat = only('rat');
+  putBeside(theRat, A);
+  A.hp = 40;
+  PADS[0].held.add('attack');
+  ok('pressing attack beside one pins it', men.strike(A, 3.4) && theRat.state === 'pinned');
+  ok('...and that freezes her where she stands', men.eating(0) === true);
+  step(60);
+  ok('one second in, it is not eaten yet', men.list.includes(theRat) && A.hp === 40);
+  step(70);
+  ok('two seconds in, it is', !men.list.includes(theRat));
+  ok('...and she is 10 health better off', A.hp === 40 + CRITTER_BY_ID.rat.heal);
+  ok('...and she has her feet back', men.eating(0) === false);
+
+  /* --- A SWING THROWN ON THE MOVE STUNS, IT DOES NOT PIN ---
+     This is the fix for "it stunned the rat the first time and never again".
+     The pin is searched first and it reaches CATCH_RADIUS (3.4), which is
+     exactly the katana's reach — so a kitten CHASING an animal, which is the
+     normal way anybody meets one, spent every swing on a pin that the next
+     frame cancelled for moving. Nothing was stunned, nothing was held, and the
+     swing did nothing you could see. It worked the first time only because
+     that first swing tends to be thrown from a standstill.
+
+     `_canHold` is now asked before the pin is offered AND every frame to keep
+     one, so the two answers cannot drift apart again. */
+  {
+    const moving = only('rat');
+    putBeside(moving, A);
+    A.velocity.set(9, 0, 0);
+    A.onGround = true;
+    ok('swinging while running stuns it instead of pinning it',
+      men.strike(A, 3.4) && moving.state === 'stunned');
+    ok('...so the swing is not thrown away on a hold she cannot keep',
+      !men.held[0]);
+    step(2);
+    ok('...and two frames later it is still down, not roaming', moving.state === 'stunned');
+
+    const jumped = only('rat');
+    putBeside(jumped, A);
+    A.velocity.set(0, 0, 0);
+    A.onGround = false;
+    ok('a swing from the air stuns it too',
+      men.strike(A, 3.4) && jumped.state === 'stunned' && !men.held[0]);
+
+    /* ...and the fast path is untouched: stand over it and it is pinned
+       outright, with no stun step. That is the whole reason `strike` looks at
+       the floor before the air. */
+    const standing = only('rat');
+    putBeside(standing, A);
+    A.onGround = true;
+    ok('standing still over one still pins it outright',
+      men.strike(A, 3.4) && standing.state === 'pinned');
+    men._drop(0);
+    restoreFlee();
+  }
+
+  /* THE HOLD IS READ FROM THE REAL PAD, and this is the check that keeps it
+     that way. Eating hands her a dead controller, so a hold-detector reading
+     the pad she was GIVEN would see the button come up on the frame the freeze
+     started and cancel itself instantly, every time. */
+  const rat2 = only('rat');
+  putBeside(rat2, A);
+  rat2.onGround = true;
+  A.hp = 50;
+  men.strike(A, 3.4);
+  step(30);
+  PADS[0].held.delete('attack');
+  step(4);
+  ok('letting go drops it', !men.held[0] && rat2.state === 'roam');
+  ok('...and heals nothing', A.hp === 50);
+
+  /* --- one animal at a time ---
+     THE FLOOR IS SEARCHED BEFORE THE AIR, so nothing pinnable may be within
+     reach of her when the bird is tested — otherwise the swing correctly takes
+     the easier target and this becomes a check about the wrong rule. */
+  const bird2 = only('bird');
+  bird2.spec.flee = 0;
+  bird2.position.set(A.position.x + 1.5, A.position.y + 4.2, A.position.z);
+  ok('a swing under a bird puts it in her mouth',
+    men.strike(A, 3.4) && bird2.state === 'mouthed');
+  ok('...which does NOT root her — she may run somewhere safe', men.eating(0) === false);
+  const rat3 = men._spawn(CRITTER_BY_ID.rat);
+  putBeside(rat3, A);
+  ok('she cannot grab a second animal while holding one',
+    men.strike(A, 3.4) === false && rat3.state === 'roam');
+
+  /* THE SWALLOW RESETS RATHER THAN BANKING. A bird has five seconds in there
+     and the hold is two, so a chew you can chip away at in half-second slices
+     while running is the same snack with the risk taken out. */
+  PADS[0].held.add('attack');
+  step(60);
+  ok('holding starts the swallow, and roots her', men.chew[0] > 0.9 && men.eating(0));
+  PADS[0].held.delete('attack');
+  step(4);
+  ok('...and letting go resets it to zero, not pausing it', men.chew[0] === 0);
+
+  /* A bird that is not swallowed inside MOUTH_TIME gets away with it. */
+  A.hp = 50;
+  step(Math.ceil(MOUTH_TIME * 60) + 20);
+  ok('an un-eaten bird escapes on its own five seconds', bird2.state === 'roam');
+  ok('...and nobody is healed for it', A.hp === 50 && !men.held[0]);
+
+  /* --- eating cannot overflow the bar --- */
+  const rat4 = only('rat');
+  putBeside(rat4, A);
+  A.hp = A.maxHp - 2;
+  men.strike(A, 3.4);
+  PADS[0].held.add('attack');
+  step(140);
+  ok('a full kitten is not healed past her own bar', A.hp === A.maxHp);
+  PADS[0].held.delete('attack');
+  restoreFlee();
+
+  /* --- they are frightened of you, and they stay on the stone ---
+     Measured on a RAT, deliberately. It is the one that runs flat along the
+     ground, so "did it get further away" is a clean question — a rabbit is
+     airborne half the time and a bird is fleeing in three dimensions, so
+     either would make this a check with a dice roll in it. */
+  const runner = only('rat');
+  restoreFlee();
+  runner.position.set(A.position.x + 2, A.position.y, A.position.z);
+  runner.onGround = true;
+  const d0 = runner.position.distanceTo(A.position);
+  step(60);
+  ok('a critter runs away from a kitten', runner.position.distanceTo(A.position) > d0 + 1);
+  men.start();
+  restoreFlee();
+  step(60 * 30);
+  ok('none of them ever leaves the deck', men.list.every((c) => (
+    Math.abs(c.position.x - R.x) <= R.half && Math.abs(c.position.z - R.z) <= R.half
+  )));
+
+  men.stop();
+  ok('the tournament ending clears the deck', men.list.length === 0 && !men.on);
+
+  /* --- the crouched eating pose ---
+     Its own single front-facing cell rather than a row on her turnaround
+     sheet: both live kitten sheets are 4-row turnarounds whose rows have to
+     agree about which way the character turns, one of the two is already
+     unusable because its rows don't, and every sprite-direction check above
+     measures real cells out of them. */
+  {
+    const P = fighters[0];
+    ok('a missing eating sheet costs the pose and nothing else', (() => {
+      const q2 = new Player({ texture: new THREE.Texture(), index: 0, rows: 4, cols: 8 });
+      q2.setEatArt(null);
+      return q2.eatPose == null;
+    })());
+
+    P.setEatArt({ texture: new THREE.Texture(), contentScale: 0.7, pad: 0.06 });
+    ok('the eating pose exists once she has the art', !!P.eatPose);
+    /* `mirror: false` with ONE cell is the only combination that can never
+       flip — the clan leaders' combination. She is drawn head-on holding food
+       to her face; a mirror would be invisible, but a second cell would not
+       be, and this is the setting that forbids both. */
+    ok('...and it can never flip or pick another cell',
+      P.eatPose.mirror === false && P.eatPose.cols === 1 && P.eatPose.rows === 1);
+    /* SHORTER THAN SHE IS, because she is crouching. `contentScale` normally
+       makes the drawn figure exactly `height` tall, which is right for every
+       standing pose and wrong for this one — a squatting cat drawn to a
+       standing cat's height is a cat that got bigger in order to crouch. */
+    ok('...and she is drawn shorter than when she stands',
+      P.eatPose.height * 0.7 < P.height && P.eatPose.height * 0.7 > P.height * 0.7);
+
+    const dead = { mx: 0, my: 0, down: () => false, pressed: () => false };
+    P.angel = false;
+    P.eatT = 1.0;
+    P.update(1 / 60, dead, world, [], null);
+    ok('eating swaps the drawing over', P.eatPose.visible && !P.sprite.mesh.visible);
+    P.eatT = 0;
+    P.update(1 / 60, dead, world, [], null);
+    ok('...and finishing puts her back', !P.eatPose.visible && P.sprite.mesh.visible);
+
+    /* THE ANIMAL GOES BETWEEN HER AND THE CAMERA, not along her facing. She
+       turns head-on for the whole meal, so a snack placed along `facing` sits
+       behind her from the one angle anybody is watching from. */
+    const c = new Critter(CRITTER_BY_ID.rat, ART.rat);
+    P.position.set(0, 0, 0);
+    P.facing = Math.PI;                     // pointedly NOT toward the camera
+    P.camYaw = -Math.PI * 0.25;
+    c.position.set(30, 0, 30);
+    c.pin(P);
+    for (let i = 0; i < 40; i++) c.update(1 / 60, world, [], { x: 0, z: 0, y: 0, half: 28 }, P.camYaw);
+    const toCam = { x: Math.sin(P.camYaw), z: Math.cos(P.camYaw) };
+    const dot = c.position.x * toCam.x + c.position.z * toCam.z;
+    ok('a pinned animal is dragged in front of her mouth',
+      c.position.length() < 2 && dot > 0.9);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   The feast, the carried health and the angel.
+-------------------------------------------------------------------------- */
+{
+  console.log('\n--- the feast ---');
+
+  line('feast / regen', `${FEAST_TIME}s  +${Math.round(MAX_HP * REGEN_FRAC)}hp`);
+  ok('the gap between rounds is 10-20s', FEAST_TIME >= 10 && FEAST_TIME <= 20);
+  ok('the free regen is a tenth of the base bar', Math.abs(REGEN_FRAC - 0.10) < 1e-9);
+  /* IT HAS TO BE WORTH LESS THAN GOING AND CATCHING SOMETHING. The regen is
+     the floor that stops a spiral; the snacks are the mechanic. If the free
+     ten were the biggest number on the deck, the right play would be to stand
+     still for fifteen seconds. */
+  ok('...and smaller than every snack on the deck',
+    CRITTERS.every((c) => c.heal >= MAX_HP * REGEN_FRAC));
+  /* And the deck has to be able to cover a bad round. Three animals plus the
+     regen against a kitten who won on her last two health. */
+  const feastMax = Math.round(MAX_HP * REGEN_FRAC)
+    + CRITTERS.map((c) => c.heal).sort((a, b) => b - a).slice(0, MAX_ON_STAGE)
+      .reduce((n, h) => n + h, 0);
+  line('most a feast can be worth', `${feastMax} of ${MAX_HP}`);
+  ok('a perfect feast is worth about half a bar, not a whole one',
+    feastMax > MAX_HP * 0.4 && feastMax < MAX_HP * 0.75);
+
+  /* --- resetForRound carries, clamps, and never starts her dead --- */
+  const mkF = (i) => new Player({
+    texture: new THREE.Texture(), index: i, rows: 4, cols: 8, height: 2.9,
+    spawn: new THREE.Vector3(0, 0, 0), name: i ? 'Frost' : 'Ember',
+  });
+  const p = mkF(0);
+  p.resetForRound(1, 2, 3, 0);
+  ok('no carried health means a full bar', p.hp === p.maxHp);
+  p.resetForRound(1, 2, 3, 0, 37);
+  ok('a carried number is what she starts with', p.hp === 37);
+  p.resetForRound(1, 2, 3, 0, 0);
+  ok('...and it can never start her dead', p.hp >= 1);
+  p.resetForRound(1, 2, 3, 0, 9999);
+  ok('...nor above her own bar', p.hp === p.maxHp);
+
+  /* --- the angel --- */
+  const q = mkF(1);
+  q.hp = 0;
+  q.ko = true;
+  q.koT = 1.4;
+  q.pandaMount = { rider: q };
+  q.becomeAngel();
+  ok('a knockout becomes an angel', q.angel === true);
+  /* `ko` MUST BE CLEARED. Every KO-shaped rule in the game — the dead pad, the
+     flat-on-her-back pose, being skipped by the ring-out test — is exactly
+     wrong for a cat who is now flying. */
+  ok('...and stops being knocked out', q.ko === false && q.koT === 0);
+  ok('...and lets go of whatever she was riding', q.pandaMount === null);
+
+  /* SHE MUST NOT BE ABLE TO INTERFERE. The whole point of the fifteen seconds
+     is that the kitten who WON the round gets them to herself. */
+  const men2 = new Menagerie({
+    game: {
+      scene: new THREE.Scene(), players: [p, q], input: { players: [] },
+      toast() {}, sfx() {}, hitSpark() {},
+    },
+    world,
+    art: {},
+  });
+  men2.on = true;
+  ok('an angel cannot catch anything', men2.strike(q, 3.4) === false);
+
+  /* She flies, and she is bounded — a ghost who leaves the arena is a ghost
+     the fight camera cannot follow back. */
+  const R2 = world.arenaRing;
+  q.position.set(R2.x, R2.y + 4, R2.z);
+  const airPad = { mx: 0, my: -1, down: (a) => a === 'jump', pressed: () => false };
+  for (let i = 0; i < 60 * 8; i++) q.update(1 / 60, airPad, world, [], null);
+  ok('an angel really does fly', q.position.y > R2.y + 6);
+  ok('...and cannot leave the top of the shot', q.position.y < R2.y + 40);
+  ok('...nor drift off the island', Math.hypot(q.position.x - R2.x, q.position.z - R2.z)
+    < R2.half + 40);
+
+  /* THE BAR OVER HER HEAD IS DERIVED, NOT LATCHED. `barOn` is the tournament's
+     intent and `hpGroup.visible` is computed from it every frame — written the
+     obvious way (`visible = visible && !angel`) the flag has nowhere to come
+     back from, and she spends the rest of the tournament with no bar. */
+  q.barOn = true;
+  q.angel = true;
+  q.update(1 / 60, { mx: 0, my: 0, down: () => false, pressed: () => false }, world, [], null);
+  ok('an angel has no bar over her head', q.hpGroup.visible === false);
+  q.landAngel();
+  q.update(1 / 60, { mx: 0, my: 0, down: () => false, pressed: () => false }, world, [], null);
+  ok('...and it comes straight back when she lands', q.hpGroup.visible === true);
+  q.barOn = false;
+
+  ok('landing puts the cat back', q.angel === false);
+
+  /* --- the deck still catches you during the feast, it just costs nothing ---
+     Before the feast existed every non-live tournament state was a frozen one,
+     so there was no way to walk off the arena at all. The island out there is
+     finite: a kitten chasing a rat over the rim would fall for fifteen seconds
+     and respawn in the town, three hundred units from a tournament that is
+     about to post her back on her mark. */
+  {
+    const R3 = world.arenaRing;
+    const T2 = new Tournament({
+      game: { players: [p, q], menagerie: null, toast() {}, sfx() {} },
+      world,
+      audio: null,
+      announcer: null,
+    });
+    const shove = (state, dmg) => {
+      T2.state = state;
+      p.landAngel();
+      p.hp = p.maxHp;
+      p.invulnT = 0;
+      p.outT = 0;
+      p.position.set(R3.x + R3.half + 12, R3.y, R3.z);
+      T2._updateOut(1.0, dmg);
+      return { hp: p.hp, back: Math.abs(p.position.x - R3.x) < 1 };
+    };
+    const live = shove('live', 30);
+    ok('a ring-out in a live round still hurts', live.hp < p.maxHp && live.back);
+    const feast = shove('feast', 0);
+    ok('...and during the feast it is free', feast.hp === p.maxHp);
+    ok('...but she is still put back on the stone', feast.back);
+    ok('...and no edge warning flashes while nothing is at stake', p.nearEdge === false);
+
+    /* An angel is ALLOWED off the deck — flying over the rim is most of what
+       the wings are for, and she has her own leash. */
+    q.becomeAngel();
+    q.position.set(R3.x + R3.half + 12, R3.y + 10, R3.z);
+    T2.state = 'feast';
+    T2._updateOut(1.0, 0);
+    ok('an angel is not dragged back into the ring',
+      Math.abs(q.position.x - (R3.x + R3.half + 12)) < 0.01);
+    q.landAngel();
+  }
+
+  /* THE WINGS COME OFF WHEN THE TOURNAMENT DOES. `angel` is what routes her
+     into the flight mode, so a kitten flown home still holding it would drift
+     through the town with no gravity and no katana for the rest of the
+     afternoon. `Tournament.finish` is the one place that has to remember. */
+  const T = new Tournament({
+    game: { players: [p, q], menagerie: men2, toast() {} },
+    world,
+    audio: null,
+    announcer: null,
+  });
+  p.becomeAngel();
+  q.becomeAngel();
+  T.finish();
+  ok('going home clears both angels', !p.angel && !q.angel);
+  ok('...and puts the wildlife away', men2.list.length === 0 && !men2.on);
+  ok('...and hands both of them a full bar back', p.hp === p.maxHp && q.hp === q.maxHp);
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

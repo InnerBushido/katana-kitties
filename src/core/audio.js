@@ -503,6 +503,25 @@ export class Audio {
         this._tone({ type: 'triangle', from: 200, to: 40, dur: 0.7, gain: 0.16 * v, delay: 0.03 });
         this._noise({ from: 2400, to: 200, dur: 0.5, gain: 0.26 * v, q: 0.7 });
         break;
+      case 'squeak':
+        /* A critter objecting. Two quick rising blips an octave apart, high
+           enough to sit right above everything else in the mix without being
+           loud — this fires whenever one is grabbed, dropped or knocked out of
+           the air, which in a busy feast is several times a second. */
+        this._tone({ type: 'triangle', from: semi(31), to: semi(38), dur: 0.07, gain: 0.10 * v });
+        this._tone({ type: 'triangle', from: semi(36), to: semi(43), dur: 0.06, gain: 0.07 * v, delay: 0.06 });
+        break;
+      case 'chomp':
+        /* Swallowed. A cartoon gulp: a short filtered noise bite for the teeth
+           and a fat downward blip under it for the swallow, then one bright
+           bell so the moment reads as a REWARD rather than as an impact. That
+           last note is the whole difference in tone — without it this is the
+           same sound as hitting a barrel. */
+        this._noise({ from: 1800, to: 300, dur: 0.09, gain: 0.20 * v, q: 0.9 });
+        this._tone({ type: 'sine', from: semi(12), to: semi(-4), dur: 0.16, gain: 0.20 * v });
+        this._tone({ type: 'sine', from: semi(28), dur: 0.34, gain: 0.13 * v, delay: 0.13 });
+        this._tone({ type: 'sine', from: semi(35), dur: 0.26, gain: 0.07 * v, delay: 0.17 });
+        break;
       case 'ringout':
         // Thrown off the stage: a rising whoosh that leaves, then a gong.
         this._noise({ from: 400, to: 3000, dur: 0.34, gain: 0.24 * v, q: 1.4 });

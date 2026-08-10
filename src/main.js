@@ -23,6 +23,8 @@ import { MrSatan } from './entities/satan.js';
 import { Griffin } from './entities/griffin.js';
 import { Announcer } from './systems/announce.js';
 import { Tournament } from './systems/tournament.js';
+import { Menagerie } from './systems/menagerie.js';
+import { AngelForm } from './entities/angel.js';
 import { ArenaQuest, SATAN_TOWN, MILESTONES } from './systems/arenaquest.js';
 import { loadBoard } from './systems/leaderboard.js';
 import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
@@ -251,6 +253,7 @@ class Game {
       sat_r2: '/voice/sat_r2.mp3',
       sat_r3: '/voice/sat_r3.mp3',
       sat_fight: '/voice/sat_fight.mp3',
+      sat_feast: '/voice/sat_feast.mp3',
       sat_ko: '/voice/sat_ko.mp3',
       sat_win1: '/voice/sat_win1.mp3',
       sat_win2: '/voice/sat_win2.mp3',
@@ -278,6 +281,93 @@ class Game {
       this.griffin = new Griffin(griffinArt);
       this.scene.add(this.griffin.group);
     }
+
+    /* --- the ring's wildlife, and the wings you get when you lose a round ---
+
+       EIGHT SINGLE-CELL SHEETS, NOT ONE GRID, and that is the same call every
+       animal in this project has made. A multi-cell sheet has to be measured by
+       connected-component labelling and the count has to come back right; that
+       machinery exists for the kitten turnarounds because they genuinely need
+       ten directions, and one of the two kitten sheets in this project is
+       already unusable because a generated grid disagreed with itself. A rat is
+       one drawing. Two drawings, counting the startled one. There is nothing to
+       measure and therefore nothing to get wrong.
+
+       `maxAtlas: 768` IS DELIBERATE AND IT IS NOT THE DEFAULT. `cell` is a
+       floor and the real size is derived from the source, so a 2048 sheet packs
+       into a 2048 atlas — 16MB of texture for an animal drawn 0.9 units tall
+       next to a 2.9-unit kitten. The dragons needed that headroom because you
+       ride one and it fills a third of the screen. A rat never will.
+
+       `facesRight` is per FILE. Six came back drawn facing left as the prompt
+       asked and the startled rabbit came back facing right; see Critter. */
+    setLoad('Letting the rats in…');
+    await frame();
+    const CRITTER_ART = [
+      ['rat', 'rat.png', false],
+      ['rat_shock', 'rat_shock.png', false],
+      /* TWO RABBIT BODIES: one scampering along the floor and one mid-leap.
+         It shipped with only the leap, so the animal was frozen in a jumping
+         pose while running along the ground — which reads as a broken sprite
+         rather than as a rabbit, and it also threw away the one visual cue
+         that says whether it can be pinned right now. */
+      ['rabbit_run', 'rabbit_run.png', false],
+      ['rabbit_air', 'rabbit.png', false],
+      ['rabbit_shock', 'rabbit_shock.png', true],
+      ['bird', 'bird.png', false],
+      ['bird_shock', 'bird_shock.png', false],
+      ['angel_wings', 'angel_wings.png', false],
+      /* The kittens' own crouched eating pose. Loaded here rather than with
+         the turnaround sheets because it is the same KIND of thing as the rest
+         of this block — a single front-facing cell that never mirrors — and
+         because a missing one costs the pose and nothing else. */
+      ['ember_eat', 'ember_eat.png', false],
+      ['frost_eat', 'frost_eat.png', false],
+    ];
+    const critterArt = {};
+    await Promise.all(CRITTER_ART.map(async ([key, file, facesRight]) => {
+      /* NO `clearPockets` ON ANY OF THESE, and the startled sheets are exactly
+         why. Every one of them is drawn with big white cartoon eyes sealed
+         inside the lineart — which is the shape `clearSealedPockets` was built
+         to remove, and the shape it wrongly removed from Mr Satan's face until
+         the depth test was added. The rule is safe now, but these sheets have
+         no sealed background to clear in the first place, so switching it on
+         would be risk with no upside. */
+      const a = await loadSpriteAtlas(`/sprites/${file}`, {
+        views: 1, rows: 1, cell: 256, maxAtlas: 768,
+      }).catch(() => null);
+      if (a) critterArt[key] = { ...a, facesRight };
+    }));
+    /* Logged like every other sheet, because "drop a new PNG in and refresh"
+       is only a workflow if the game says what it found. */
+    console.log(`[art] critters → ${Object.keys(critterArt).length}/${CRITTER_ART.length} sheets`);
+
+    /* A species with no art simply never spawns (see Menagerie.species), and a
+       missing wings sheet costs the wings and not the angel — the halo, the
+       glow and the flight are all geometry and code. Same rule as everywhere
+       else here: a lost PNG must degrade, never take the boot down. */
+    /* `calm` is the only required pose; `shock` and `air` fall back to it.
+       That is what lets a rat have no air pose (it never leaves the ground)
+       and a bird have no ground pose (it never touches it) without either
+       becoming a special case in `Critter`. */
+    this.critterArt = {
+      rat: critterArt.rat && { calm: critterArt.rat, shock: critterArt.rat_shock ?? critterArt.rat },
+      rabbit: critterArt.rabbit_run && {
+        calm: critterArt.rabbit_run,
+        air: critterArt.rabbit_air ?? critterArt.rabbit_run,
+        shock: critterArt.rabbit_shock ?? critterArt.rabbit_run,
+      },
+      bird: critterArt.bird && { calm: critterArt.bird, shock: critterArt.bird_shock ?? critterArt.bird },
+    };
+    for (const p of this.players) {
+      p.angelForm = new AngelForm(critterArt.angel_wings, p.height);
+      p.group.add(p.angelForm.group);
+      p.setEatArt(p.index === 0 ? critterArt.ember_eat : critterArt.frost_eat);
+    }
+
+    this.menagerie = new Menagerie({
+      game: this, world: this.world, art: this.critterArt,
+    });
 
     this.tournament = new Tournament({
       game: this, world: this.world, audio: this.audio, announcer: this.announcer,
@@ -1284,6 +1374,24 @@ class Game {
       this.toast(`[debug] fired ${n} beam${n === 1 ? '' : 's'}`, shooter.index);
     }
 
+    /* --- the feast, in one key ---
+       Same argument as `7` `8` `9` and `6`. The fifteen seconds between rounds
+       are behind the whole unlock AND a round somebody has to actually win, and
+       they are where the snacks and the angel both live — so the two newest
+       things in the game were also the two hardest to look at. `4` ends the
+       live round on the spot by knocking player 2 down, which drops straight
+       into `_startFeast` through the real path rather than around it. */
+    if (code === 'Digit4') {
+      if (!this.tournament?.fighting) {
+        this.toast('[debug] not in a live round — pick "arena" with -/= and press 0', 0);
+        return;
+      }
+      const [a, b] = this.players;
+      b.hurt(b.hp, a.position, ATTACKS.dash, this);
+      this.tournament.onHit(a, b, 1, 'dash');
+      this.toast('[debug] round ended — feast in a moment', 0);
+    }
+
     /* --- the scene viewer ---
        Every cutscene in the game is gated behind hours of play and fires ONCE
        per session, which makes the last thing anybody writes also the hardest
@@ -1572,6 +1680,25 @@ class Game {
       attacker.dmgDealt += dealt;
       this.tournament.onHit(attacker, target, dealt, kind);
     }
+  }
+
+  /**
+   * The same swing, reaching for a snack.
+   *
+   * A SECOND GATE ALONGSIDE `strikePlayers`, NOT INSIDE IT. The two answer
+   * genuinely different questions — "may these two hurt each other" and "is
+   * there an animal in reach" — and the first is allowed only during a LIVE
+   * round while the second is allowed through the whole tournament, including
+   * the feast between rounds, which is the entire point of the feast. Folding
+   * them together would mean one of the two rules quietly acquiring the
+   * other's timing.
+   *
+   * It is called from `Player._doSlash` on every swing in the game, exactly
+   * like its neighbour, and `Menagerie` answers no everywhere but the ring.
+   */
+  strikeCritters(attacker, reach) {
+    if (!this.tournament?.active) return;
+    this.menagerie?.strike(attacker, reach);
   }
 
   _updateBallHud() {
@@ -2173,9 +2300,17 @@ class Game {
        that really matters — without it a kitten mashing attack through
        "3 … 2 … 1" opens the round with a free hit on a sister who cannot
        move, which is not a tactic, it is a bug she will find in ten seconds. */
+    /* EATING FREEZES HER TOO, THROUGH THE SAME ONE LINE. Holding an animal
+       down roots her for two seconds, which is what makes doing it in a live
+       round a gamble rather than a free top-up — and it is the dead pad again
+       rather than a fifth thing the movement code has to know about.
+       `Menagerie` reads the REAL pad (`this.input.players[i]`) for the hold,
+       precisely because the pad handed over here reports nothing: a
+       hold-detector on this side would see the button come up on the frame the
+       freeze started and cancel itself instantly, every single time. */
     const frozen = this.tournament?.frozen;
     for (let i = 0; i < 2; i++) {
-      const pad = frozen ? DEAD_PAD : this.input.players[i];
+      const pad = (frozen || this.menagerie?.eating(i)) ? DEAD_PAD : this.input.players[i];
       this.players[i].update(dt, pad, this.world, this.dragons, this);
     }
 
@@ -2245,6 +2380,12 @@ class Game {
        place); the announcer runs always, because his card is allowed to sit
        over anything that is not a full-screen scene. */
     this.quest?.update(dt, this.players, this.input.players, this);
+    /* BEFORE the tournament, and it matters at exactly one moment: eating is
+       what tops a health bar up, and `Tournament._startFeast` reads those bars
+       to decide what each kitten carries into the next round. Run the other way
+       round, a rat swallowed on the last frame of the feast is a rat she
+       watched vanish for nothing. */
+    this.menagerie?.update(dt, this.players);
     this.tournament?.update(dt, this.input.players);
     this.announcer?.update(dt);
     this._updateSparks(dt);
@@ -2679,6 +2820,7 @@ class Game {
     for (const s of this.world.shrines) s.faceCamera(camera);
     for (const pk of this.pickups) if (!pk.taken) pk.faceCamera(camera);
     for (const b of this.balls ?? []) b.faceCamera(camera);
+    this.menagerie?.faceCamera(camera);
     this.ryu?.faceCamera(camera);
     this.satan?.faceCamera(camera);
     this.griffin?.faceCamera(camera);

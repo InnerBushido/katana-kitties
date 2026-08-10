@@ -88,6 +88,11 @@ should be protected in any refactor:
   and the landmarks worth walking to. Three zoom steps on `Z`; in split screen
   there are two maps, one per half, each following its own kitten, with `X`
   zooming player 2's.
+- **Up to six rats, rabbits and birds on the tournament deck**, stunned by a
+  swing and eaten by holding attack for two seconds. **Fifteen seconds between
+  rounds** in which the kitten who won it — and is carrying the damage — hunts,
+  while the kitten who lost it flies around as a translucent **angel cat** with
+  wings and a DBZ halo. See Ring snacks and the feast below.
 - Six biomes — meadow, bamboo, autumn, frost, ash, dusk — driving ground
   colour, foliage and detail scatter per island.
 - Dynamic split-screen: splits when players separate, rejoins when together,
@@ -1456,6 +1461,10 @@ damage it has taken. It is parented to a pivot at the left end.
 
 ### Rounds
 
+**A ROUND NO LONGER OPENS WITH TWO FULL BARS.** Everything below still holds,
+but what each kitten starts a round with is now decided by the fifteen seconds
+before it — see *Ring snacks and the feast between rounds*.
+
 Best of three: `WINS_NEEDED` 2, `MAX_ROUNDS` 3. **Not three rounds played.** A
 dead third round after a 2-0 is worse than it sounds — the girls have been told
 who won, and the card that opens it says "everything comes down to this one",
@@ -1698,6 +1707,463 @@ measured, both were real, and the pair was still a coincidence of the one sheet
 they were measured on — a discriminator tuned on a single example is a
 description of that example. Ask what the two things *are* before asking how big
 they are.
+
+## Ring snacks and the feast between rounds
+
+`entities/critter.js`, `systems/menagerie.js`, `entities/angel.js`, plus a new
+`feast` state in `tournament.js`. Two features that arrived together because
+they are one: a health bar you can refill, and fifteen seconds in which to
+refill it.
+
+**THE TOURNAMENT NEEDED A REASON FOR THE GAP BETWEEN ROUNDS.** Rounds used to
+be self-contained — a knockout, a three-second hold, both bars back to full —
+and the loser spent that hold watching a banner. Both halves of this feature
+attack that: the survivor now *carries her damage into the next round*, so the
+gap is when she does something about it, and the kitten who was knocked out
+spends it flying around as an angel instead of watching.
+
+### One verb, three difficulties
+
+```
+hit it        it STOPS DEAD, stunned (a bird goes in your mouth instead)
+stand by it   hold attack for two seconds
+eat
+
+rat      slowest (8.2), always on the floor        easiest   +10
+rabbit   fast (9.0), airborne half the time        harder    +15
+bird     overhead (9.4), then a 5-second fuse      hardest   +20
+```
+
+**THE SWING IS THE CATCH, AND THAT IS A CORRECTION.** The first version had
+three different ways in — a rat grabbed off the floor, a rabbit knocked out of
+its hop, a bird taken out of the air — and it shipped with the *easiest* animal
+uncatchable. A rat flees at 8.2 against a 10.5 walk, so closing to a 3.4 grab
+radius meant cornering something that runs the moment you are near enough to
+try; the animal that exists to teach the whole mechanic was the one the katana
+could not touch. Three separate verbs also meant working out which animal
+wanted which before any of them worked at all.
+
+So a swing that reaches any of them stops it, and **the difficulty lives in how
+hard the swing is to land** rather than in what the button does — which is the
+tournament's own principle, where the three attacks are three things she
+already does. `world-check` asserts `swattable` is true for all three and that
+the rat stays the slowest thing on the deck, because if the easiest animal
+stopped being the cheapest the whole ladder would invert.
+
+**The grab survives underneath it.** Walking into a grounded animal and
+pressing attack still pins it outright, no stun step — `Menagerie.strike`
+checks the pin *first*. That is the fast path for anyone who gets close.
+
+**...BUT ONLY WHEN SHE COULD ACTUALLY HOLD IT, and that is the fix for "it
+stunned the rat once and then never again".** The pin is searched first and it
+reaches `CATCH_RADIUS` (3.4), which is *exactly* the katana's reach — so a
+kitten **chasing** an animal, which is the only way anybody ever meets one, had
+every swing spent on a pin, and `_updateHold` then cancelled it on the very
+next frame for moving (`STILL_SPEED` 3.0) or for being in the air. Nothing was
+stunned, nothing was held, the animal bolted, and the swing did nothing you
+could see. It worked the first time only because a first swing tends to be
+thrown standing still at range, which is the one case that fell through to the
+stun.
+
+`Menagerie._canHold` is asked before the pin is offered **and** every frame to
+keep one, so the two answers cannot drift apart again — the bug was two copies
+of that rule with one frame between them. Standing over an animal still takes
+it outright; everyone else now stuns it and walks up, which is also how it
+reads. Deliberately *not* part of it: whether the attack button is still down.
+At the instant she swings she has just pressed the thing.
+
+**A stunned animal says what to do next, once per kitten per tournament.** The
+first time a nine-year-old lands this she has a rat frozen in front of her and
+no reason to know the hold exists. Once, because after that it is noise.
+
+### The meal is its own drawing
+
+`Player.setEatArt`, `ember_eat.png` / `frost_eat.png`. She crouches down facing
+the viewer, hunched over, both paws up at her mouth, eyes squeezed shut, and
+the animal sits on the ground in front of her going bug-eyed.
+
+**A SEPARATE SINGLE CELL, NOT A ROW ON HER TURNAROUND SHEET.** Same decision
+the hit and KO states made and for the same reason — both live kitten sheets
+are 4-row turnarounds whose rows have to agree about which way the character
+turns, one of the two in this project is already unusable because its rows
+don't, and every sprite-direction check in `world-check` measures real cells out
+of them. `cols: 1, rows: 1, mirror: false` is the clan leaders' combination and
+the only one that can never flip or pick another cell.
+
+**The difference from the hit and KO states is that this one really did need
+new art**, and it is worth being clear about why the "no new art" rule does not
+apply. Being hit is a flash and a lean; being knocked out is the jump row
+rotated flat. Both are things the *material* can express. "Hunched over eating
+with both paws" is a pose, and there is no transform of a standing cat that
+produces one.
+
+**Generated against a REFERENCE CROP of the kitten's own idle cell**, uploaded
+as an image input rather than described in words. Ember is an orange tabby in a
+blue kimono with a brown shoulder guard and a woven tan belt, and a prompt that
+tries to say all of that gets a cat that is *nearly* her — which on a character
+a nine-year-old drew is worse than no pose at all. `tools/` has no script for
+the crop; it was 15 lines of System.Drawing against cell (0,0) of each sheet.
+
+**She is drawn SHORTER than she stands** (`EAT_CROUCH`, 0.86). `contentScale`
+normally makes the drawn figure exactly `height` tall, which is right for every
+standing pose and wrong for this one: a squatting cat drawn to a standing cat's
+height is a cat that got bigger in order to crouch.
+
+**The animal goes between her and the CAMERA, not along her facing.** She turns
+head-on for the whole meal, so a snack placed along `facing` — which is what
+`_updatePinned` did — sits behind her from the one angle anybody is watching
+from. It uses `camYaw`; the arena is always drawn merged, so there is exactly
+one of those.
+
+**The swap happens at the END of `_updateFeedback`**, after every other branch
+has had its say about the ordinary sprite, so exactly one place decides which
+of the two drawings is on screen. Colour and opacity are copied across so a hit
+flash landing on the frame the meal is interrupted carries onto the pose
+instead of popping.
+
+**The rabbit hops twice as high as it first did** — and hop height is `v²/2g`,
+so that is the launch times **root two** (8.4 → 11.88), not times two. 2.94
+units, most of a kitten. It is bounded at the top by the vertical window
+`strike` allows (6.5) or the rabbit would stop being catchable rather than
+becoming harder to catch, and `world-check` checks both ends.
+
+**AND IT RUNS BETWEEN THE HOPS.** It used to move *only* by hopping, which was
+wrong twice over: the only rabbit drawing was the mid-leap one, so the animal
+was permanently frozen in a jump pose whether it was airborne or sitting on the
+floor (that reads as a broken sprite, not as a rabbit), and a creature that is
+airborne on a fixed cadence is a metronome you can set your watch by. It
+scampers along the ground like the rat now and bursts into a hop every so
+often, which also gives the hop back its job: being in the air is what makes it
+un-pinnable, so a leap is an evasion the animal chooses rather than the way it
+gets about.
+
+```
+chased   0.7-1.4s on the ground  ->  a hop every ~2s, about half air
+calm     2.9-5.8s on the ground  ->  a hop every ~5s, about a fifth
+```
+
+Both intervals are re-rolled with 100% jitter every time, so the beat can never
+be counted. Two things about those numbers are load-bearing and both were got
+wrong first:
+
+- **It has to RUN more than it hops.** At a chased gap of 0.35 it was airborne
+  two thirds of the time and read as a bouncing ball rather than as an animal
+  running away that occasionally leaps — and the ground drawing, the whole
+  reason there are two, barely appeared.
+- **Being frightened cuts a PENDING CALM timer short, and the threshold is the
+  scared MAXIMUM rather than the minimum.** Without the cut, the steady state
+  is right and the start is wrong: a rabbit that has just been noticed is still
+  holding whatever idle interval it rolled, so its first hop can be five
+  seconds after a kitten started chasing it — measured at 3.4 seconds of
+  running in a straight line before it thought to jump. But tested against
+  `hopGap` instead of `hopGap * 2`, the cut also chops down the interval the
+  last launch just rolled, every frame, and the gap collapses to nothing: 82%
+  airborne. Only a calm roll, which cannot be below `hopGap * 2`, is stale.
+
+**The pose is decided in `_paint`, every frame, from `onGround`** — not at the
+places that change it. A rabbit crosses that boundary twice a second across
+three different movement branches, and setting the drawing at each of them is
+how one ends up forgotten and the animal runs along the floor in its leaping
+pose. `air` is optional: a rat never leaves the ground and a bird never touches
+it, so both fall back to `calm` rather than becoming a special case.
+
+**Nothing may outrun a WALK.** Everything on the deck is under 10.5. That bound
+is the general form of the rat bug: an animal faster than a walking kitten can
+only ever be caught by a sprint, and a nine-year-old chasing something she
+cannot close on concludes the game is broken rather than that she needs a
+different button.
+
+**`heal` IS AN ABSOLUTE NUMBER OFF `MAX_HP`, NOT A FRACTION OF HER OWN BAR.**
+An Adamant orb raises `player.maxHp`, so a percentage of that would quietly
+make every snack in the ring stronger for whichever kitten is wearing more
+armour — the orb would be buffing her *healing* as well as her health, a stack
+nobody asked for and nobody could see. 10 / 15 / 20 against the base hundred,
+clamped to her real bar at the moment of eating.
+
+**TWO SECONDS ROOTED IS THE PRICE, and trimming it is the one change that
+would delete the feature.** She is handed a dead pad for the whole hold, she
+cannot block, and her sister can see exactly what she is doing — so eating
+mid-round is a gamble. Between rounds, with nobody to punish it, the same two
+seconds is just the pace of the feast. `world-check` pins `EAT_TIME` at 2.0 for
+that reason.
+
+**THE HOLD IS READ FROM THE REAL PAD, AND THAT IS WHY THE EAT STATE LIVES IN
+THE SYSTEM RATHER THAN ON THE PLAYER.** Eating freezes her through the game's
+existing dead-pad trick (`Game._tick`, alongside `Tournament.frozen`). A
+hold-detector reading the pad the player was *handed* would see the button come
+up on the very frame the freeze started and cancel itself — every time, on the
+first frame, invisibly. `Menagerie` reads `Game.input.players[i]` directly,
+before the swap.
+
+**A BIRD IN HER MOUTH DOES NOT ROOT HER.** She may run somewhere safe with it;
+only the swallow roots her. And **the swallow resets rather than pausing** — a
+bird has five seconds in there and the hold is two, so a chew she could chip
+away at in half-second slices while running would be the same snack with the
+risk taken out. Same rule as the shrine dwell.
+
+**THE FLOOR IS SEARCHED BEFORE THE AIR, and one animal at a time.** Without the
+second rule a kitten with a bird in her mouth pins a rat with the same button
+and the two share one `t`, one freeze and one release.
+
+**THE PIN IS RADIUS-ONLY, NO FORWARD ARC** — unlike every other swing in the
+game. The animal's own ground ring is what tells her she can grab it and that
+ring lights on distance, so an arc test would put the promise and the rule in
+two different places: she would see the ring, press the button and get nothing.
+
+**Every animal has exactly TWO drawings — normal and comically startled — and
+no third.** The panda's two-tier pattern, for the panda's mechanical reason (a
+Billboard bakes its size into its geometry, so two sheets that packed at
+different scales cannot share a quad) and for the reason no kitten sheet in
+this project ever gets new rows. The startled drawing is the last thing you see
+before the poof, the poof is soft white smoke with nothing red or sharp in it,
+and **the moment this reads as cruelty rather than slapstick the feature has
+failed**. That is the whole reason the animals are rats, birds and rabbits
+rather than anything a nine-year-old has a name for.
+
+**EVERY DRAWING OF ONE ANIMAL IS SIZED BY AREA, NOT BY HEIGHT** (`poseQuad` in
+`critter.js`, `contentArea` off `loadSpriteAtlas`). `contentScale` is the
+fraction of its cell a drawing reaches *up*, and dividing by it makes any
+single figure exactly `size` tall — right, and the whole reason it exists, for
+a creature with one drawing. Give that creature a second pose and it becomes
+actively wrong:
+
+```
+rabbit_run.png   bbox 665 x 368   ->  1.35 tall, 2.44 LONG
+rabbit.png       bbox 656 x 534   ->  1.35 tall, 1.66 long
+```
+
+Both are the same rabbit at the same drawn scale — the body is 660-odd pixels
+long in each — but one is stretched flat out and one is bunched up mid-leap, so
+equalising their **heights** made the running one 47% longer than the leaping
+one. The animal visibly changed size every time it landed.
+
+So `size` means the drawn height of the **calm** pose, which is what is on
+screen most of the time and what every other number in `CRITTERS` was tuned
+against, and every other pose is scaled to cover the same amount of **ink**.
+Ink area does not care which way a pose is stretched; the three rabbit sheets'
+bounding boxes disagree by 45% and their ink areas agree inside 9%. A rabbit
+mid-leap therefore comes out taller and shorter than one mid-run, which is what
+a rabbit mid-leap is. The startled drawings were wrong the same way and by
+more — every one of them shrank at the exact moment it was pinned.
+
+`world-check` measures the real PNGs and asserts the poses land within a
+quarter of each other on drawn area, against 2.3x before. It shares
+`packMetrics` with the loader rather than re-deriving the packing, because a
+check that re-does that arithmetic can agree with itself while disagreeing with
+the game.
+
+**`facesRight` IS DECLARED PER FILE, NOT PER SPECIES.** Six of the seven
+generated sheets came back drawn facing left as the prompt asked and the
+startled rabbit came back facing right. Image models honour "facing left" about
+as reliably as they honour "exactly eight columns", which is the same lesson
+`loadSpriteAtlas` learned by counting cells instead of trusting the prompt. Two
+poses of one animal disagreeing means the rabbit spins round at the instant a
+player pins it — which is exactly the frame she is looking at it. The flag sits
+beside the filename in `main.js` and `world-check` asserts the two rabbit poses
+do not share it.
+
+**`maxAtlas: 768` on these sheets is deliberate and it is not the default.**
+`cell` is a floor and the real size is derived from the source, so a 2048 sheet
+packs into a 2048 atlas — 16MB of texture for an animal drawn 0.9 units tall
+next to a 2.9-unit kitten. The dragons need that headroom because you ride one;
+a rat never will. The PNGs on disk were also downscaled 2048 → 768, which took
+the seven new files from 17.5MB to 3.6MB.
+
+**No `clearPockets` on any of them.** Every startled sheet is drawn with big
+white cartoon eyes sealed inside the lineart — the exact shape
+`clearSealedPockets` was built to remove and did wrongly remove from Mr Satan's
+face until the depth test was added. The rule is safe now; these sheets have no
+sealed background to clear in the first place, so switching it on would be risk
+with no upside.
+
+**They flee the SUM of both kittens, not the nearest one.** Two fighters
+converging on the same rat from opposite sides cancel out under a nearest-only
+rule and it stands perfectly still between them, which looks broken. Summing
+makes it squirt out sideways, which is what a rat does and is much funnier.
+
+**They are turned back at the painted line rather than clamped to it.** A
+critter pressed flat against an invisible wall reads as a bug; one that veers
+away along the edge reads as an animal that knows where the drop is. There is a
+hard clamp underneath as a backstop, and `world-check` runs thirty seconds of
+roaming and asserts nothing ever leaves the deck.
+
+**Spawning: SIX max, 45–75s apart, and the mix is a lottery.** Both numbers
+moved together and for the same reason. Three was sized against the version
+where every animal wanted a different button, so finding the right one was most
+of the job; now a swing stops anything, the deck is a place you hunt rather than
+a puzzle you solve, and three animals spread over 56 units of stone left long
+stretches with nothing in sight — worst during a fifteen-second feast, where
+crossing the deck to the only rabbit on it is most of the time you have.
+
+**And the species is a straight uniform draw now, which is the opposite of what
+it was.** The first version deliberately preferred a species that was *not*
+already out there, and at a cap of three that made the deck permanently one
+rat, one rabbit and one bird: the same picture every round of every tournament.
+It was solving a real problem — a bird a pair might never meet — with a rule
+that removed all the variety along with it. Two things replace it:
+
+- `MAX_PER_SPECIES` (3, half the deck) so a run of luck cannot delete an animal
+  from a tournament;
+- **`start` seeds the OPENING deck with one of each**, and only the opening
+  deck. The girls meet all three difficulties in round one and everything after
+  that is random. `world-check` asserts the seeding, the cap, and that twenty
+  top-ups actually produce different decks — "randomised" has to be a
+  behaviour rather than a comment.
+
+`_openSpot` keeps a spawn out of a kitten's lap: an animal that appears inside
+the grab radius is a free 20 health for standing still, which is the exact
+opposite of the risk this is meant to be.
+
+### The feast
+
+`FEAST_TIME` 15s, `REGEN_FRAC` 0.10, between `ko` and the next round.
+
+```
+round ends ─► KO hold ─► FEAST (15s) ─► next round
+                          │
+                          ├── survivor: +10 free, then hunt. She keeps
+                          │   whatever she finishes on.
+                          └── loser: wings. Comes back with a full bar.
+```
+
+**THE WINNER OF A ROUND CARRIES HER DAMAGE AND THE LOSER COMES BACK FULL.** It
+reads backwards for about a second and then it is obviously right: winning a
+round now costs something, a 2-0 stops being the default shape of a match, and
+the girl who is behind has a reason to keep playing. It is also what gives the
+gap a job.
+
+**`REGEN_FRAC` is the floor under the whole thing, not the mechanic.** A round
+that ends with the winner on four health and nothing within reach would send her
+into the next one dead on the first touch — a spiral, not a comeback. Ten per
+cent is handed over free the instant the round ends, and it is asserted to be
+*smaller than every snack on the deck* so that standing still is never the
+right play. A perfect feast is worth 55 of 100: about half a bar, checked at
+both ends.
+
+**`Menagerie.topUp` bypasses the respawn clock at the start of every feast, and
+that is an exception with a reason.** Fifteen seconds of bare stone because
+three animals happened to be eaten late in the round is the feature silently not
+happening, and a nine-year-old cannot tell that from it being broken.
+
+**THE FEAST ONLY RUNS IF THERE IS ANOTHER ROUND TO EAT FOR.** After a decided
+tournament it goes straight to the results — fifteen seconds of collecting
+health that means nothing is worse than no feast at all.
+
+**Round one is a full bar, said out loud.** Since the feast landed,
+`_nextRound` starts each kitten on whatever she is carrying, and for the first
+round of a tournament that is whatever she walked in with — full today only
+because `finish` happens to restore it on the way out of the last one, which is
+a fact about a different function two hundred lines away. `begin` now sets it.
+
+**The feast frames THE RING, not the pair.** Every other tournament state wants
+the two fighters large and pushes in on their midpoint. The feast wants the
+opposite: the subject is the whole deck and the animals on it, and the two
+kittens are deliberately nowhere near each other — one on the stone, one thirty
+units up. A midpoint camera between those frames the empty air between them.
+
+**One line for the announcer, not one per outcome.** `Announcer` prints the text
+it is given while playing the clip that matches the id, so two strings behind
+one id would put words on screen that are not the words being spoken.
+
+### The angel
+
+**NO NEW KITTEN ART, the same call the hit and KO states made.** An angel is the
+same drawn cell, washed out and translucent, plus three things that are not
+her: wings, a halo, and the light around her.
+
+**THE HALO IS THE DBZ ONE, AND IT IS THE WHOLE READ.** A ring over the head is
+the most legible "this one is dead" in any cartoon either girl has watched, and
+it costs no art: from this game's fixed three-quarter camera a flat torus
+already *is* a halo.
+
+**SHE REALLY IS TRANSLUCENT, and the first pass wrongly concluded she could not
+be.** The reasoning was the invulnerability flicker's — `alphaTest: 0.35`, so
+fading kills the sprite outright — which is correct for what the flicker does
+and **does not generalise**. The test is against the fragment alpha with
+`material.opacity` already folded in, so an opacity *below* 0.35 discards
+everything; `ANGEL_ALPHA` (0.62) sits comfortably above it and simply makes her
+see-through. The flicker fades to zero, which is why it cannot do this; a ghost
+that stops at 0.62 never goes near the threshold. The only cost is the outer
+ring of anti-aliased edge pixels (0.5 × 0.62 = 0.31, just under), which tightens
+her silhouette by a texel. **`mat.opacity` is reset to 1 unconditionally for
+everyone else** or a kitten who was ever an angel stays half-there for good.
+
+**WASHED OUT, NOT TINTED.** `toneMapped: false` hands the colour straight
+through, so pushing all three channels past 1 blows her toward white the way the
+hit flash blows her toward red. The first pass cooled her *below* 1 toward
+blue-white and from the feast camera — 96 units out — she read as an ordinary
+kitten with something white behind her.
+
+**Everything here had to be louder than the first pass.** A state that lasts
+fifteen seconds and explains why one player cannot do anything has to be
+unmistakable at the distance it is actually seen from, not at the distance it
+was tuned at.
+
+**Two things collided and both are worth remembering:**
+
+- **The halo drew straight through her health bar.** The bar sits at 1.32h and
+  the halo was at 1.26 — a black stripe across a gold ring, which reads as a
+  rendering fault rather than as either of them. `Player._updateCombat` hides
+  the over-head bar while she is an angel (it says zero, and the bar exists so
+  the *other* kitten can decide whether to attack — there is no attack during a
+  feast), and the halo moved to 1.44 anyway.
+- **`barOn` is the intent and `visible` is derived from it every frame.**
+  Writing `visible = visible && !angel` looks equivalent and is a latch: the
+  frame she lands there is nothing left saying the bar was ever meant to be on,
+  and she spends the rest of the tournament without one.
+
+**The bloom torus has to be THIN or the halo is a coin.** At a tube radius of
+0.13h against a ring radius of 0.34h the two tori closed the middle up and
+additive blending finished the job — it rendered as a solid gold disc. The hole
+is the entire reason a ring reads as a halo. 0.075h.
+
+**The shine spokes have to be SHORT.** At 1.75h and half opacity they reached
+most of a deck tile past her and read as white scratches across the floor:
+hard-edged geometry at that length stops looking like glow. They live inside
+the radial disc now, which is what gives them soft ends.
+
+**The wings are pushed behind her in `faceCamera`, per view.** "Behind" is a
+direction from a camera, and `Player.faceCamera` is the one thing in the entity
+that runs once per viewport — it is the mount's outward nudge with the sign
+reversed. A `renderOrder` alone leaves the sort deciding frame by frame which
+quad is in front and the wings strobe through her chest.
+
+**The halo is geometry, not art**, and it **leans toward whichever camera is
+drawing** (`HALO_TILT`, applied in `aim` like the wings). A perfectly flat ring
+is an ellipse from the feast rig at pitch 0.56 and a *line* from the flatter
+shots the arena also uses; leaning it guarantees it always reads as a ring,
+which is the one thing it exists to do. `rotation.order` is `YXZ` so the yaw
+goes in first and `update` can keep spinning it on Z underneath.
+
+**`becomeAngel` CLEARS `ko`.** Every KO-shaped rule in the game — the dead pad,
+the flat-on-her-back pose, being skipped by the ring-out test — is exactly wrong
+for a cat who is now flying, so `angel` takes over as the thing everything asks.
+It also drops whatever she was riding.
+
+**`_updateAngel` is a fourth movement mode and that is deliberate.** It could
+have been three more conditionals inside the ground controller, and that is the
+version that rots: gravity, the ground snap, `resolveSolids`, the mount button,
+the oath and the katana would all have grown an `if (!angel)`, and the one that
+got missed would be a dead kitten swearing to a clan.
+
+**She is bounded off the ARENA, not off the world** — a ceiling so she cannot
+vanish out of the top of the shot, a floor so she cannot sink through the deck,
+and a soft leash at the rim rather than a wall to bounce off. A ghost who flies
+to another island is a ghost the fight camera cannot follow back.
+
+**`Tournament.finish` calls `landAngel` on both of them**, and that is the
+loudest latch in the feature: `angel` is what routes her into the flight mode,
+so a kitten flown home still holding it would drift through the town with no
+gravity and no katana for the rest of the afternoon. Same class of bug as
+`nearEdge`, and much louder.
+
+### Reaching it
+
+**`4` ends the live round on the spot**, dropping straight into the feast
+through the real path. Same argument as `7` `8` `9` and `6`: the fifteen seconds
+between rounds are behind the whole unlock *and* a round somebody has to
+actually win, so the two newest things in the game were also the two hardest to
+look at.
 
 ## The Powerup Kotodama — the endgame
 
@@ -2114,6 +2580,25 @@ likely to come back are `OUT_DAMAGE` (30 — how much a ring-out hurts),
 `ATTACKS.dash.knock` (19, which is what makes ring-outs happen at all) and
 `OPEN_AT` (0.80). All three are checked, so turning them will tell you if it
 breaks something.
+
+**Nor have the snacks or the feast**, and they are the newer half of it. Five
+numbers to expect back, all checked so turning them fails loudly rather than
+silently: `EAT_TIME` (2.0 — how long she is rooted, and the thing that makes
+eating mid-round a gamble), `FEAST_TIME` (15), `REGEN_FRAC` (0.10), the
+`heal` values (10/15/20) and `MOUTH_TIME` (5 — how long a bird waits).
+
+**One round of feedback has already landed on these** and it is worth knowing
+what it changed, because the first version was wrong in a way no check could
+have caught: **the rat was uncatchable.** It was pin-only and it outruns the
+grab radius, so the easiest animal — the one that teaches the mechanic — was
+the one that never worked. The fix collapsed three catch verbs into one (a
+swing stops anything), doubled the deck to six, made the mix random, and gave
+the rabbit its speed and twice the hop height. `MAX_ON_STAGE`, `MAX_PER_SPECIES`
+and the per-species `speed`/`hopV` are the knobs, all checked. The
+open question that no check can answer is whether *carrying damage into the
+next round* reads as fair to the girl who just won one: it is the right call on
+paper and it is the one rule in the feature a nine-year-old could reasonably
+call cheating. Watch that first.
 
 **A FIFTH ORDERING BUG, and the same shape as the other four.** Both grottos
 shipped with trees across the doorway. Two mistakes stacking: the outlying-island
@@ -2650,9 +3135,13 @@ src/
     tournament.js       rounds, the ring-out rule, scoring — and `fighting`,
                         the ONE gate on player-vs-player damage
     arenaquest.js       how the tournament unlocks: the ladder to 80%
+    menagerie.js        the ring's rats, rabbits and birds — spawning AND
+                        eating, because the two are one question
     announce.js         Mr Satan's pop-in card (never takes the input)
     leaderboard.js      localStorage board + the joystick name entry
   entities/
+    critter.js          one animal on the deck: roam, flee, hop, fly, be eaten
+    angel.js            wings + halo for the kitten who lost the round
     shrine.js           the animated half of a clan shrine
     panda.js            the raisable, rideable Pandapaw panda
     leader.js           the six clan chiefs + Patchfur, and their bubbles
@@ -2680,6 +3169,22 @@ public/sprites/          EVERYTHING HERE SHIPS — Vite copies public/ into dist
                                (thunderpaw riverclaw shadowtail windwhisker
                                 icewhisker pandapaw elder satan)
   griffin.png           LIVE — single side-on cell, faces LEFT, saddled
+  rat.png bird.png      LIVE — one side-on cell each, both face LEFT
+  rabbit_run.png        LIVE — the rabbit ON THE GROUND, faces LEFT. This is
+                        its `calm` pose and the one it uses most
+  rabbit.png            LIVE — the rabbit MID-LEAP, faces LEFT. Its `air`
+                        pose, and only used while it is off the ground
+  rat_shock.png bird_shock.png
+                        LIVE — the startled pose, both face LEFT
+  rabbit_shock.png      LIVE — the startled pose, and it faces RIGHT.
+                        `facesRight: true` in main.js. See the note above:
+                        facing is declared per FILE, not per species
+  angel_wings.png       LIVE — a symmetrical pair, front-on, empty in the
+                        middle where a kitten stands. Never mirrored
+  ember_eat.png frost_eat.png
+                        LIVE — each kitten crouched over eating, front-facing
+                        single cells, never mirrored. Generated against a
+                        reference crop of that kitten's own idle cell
   title_art.png         LIVE — title screen key art
 docs/unused-art/         NOT SHIPPED — kept as reference, see its README
   frost_grid_v2.png     rows contradict each other, see above
@@ -2693,7 +3198,9 @@ docs/unused-art/         NOT SHIPPED — kept as reference, see its README
 
 1. **Play the tournament with the girls.** It is verified and it has never been
    played. Difficulty is the only thing left to settle and no amount of
-   headless checking touches it — see the three knobs under Open bugs.
+   headless checking touches it — see the knobs under Open bugs. The snacks and
+   the feast are the newest part of it and the least play-tested; watch whether
+   carrying damage into the next round reads as fair.
 2. Not built: **enemies** or combat against the world (still deliberate — the
    tournament is player-versus-player and fenced off inside one ring, which is
    a different thing from putting monsters on the islands); kitten

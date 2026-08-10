@@ -55,6 +55,33 @@ const ROUND_LIMIT = 120;
 const OUT_GRACE = 0.5;
 const OUT_DAMAGE = 30;
 
+/* ---------------------------------------------------------------------------
+   The feast — the gap between rounds, and the only reason it is a gap.
+
+   A ROUND NO LONGER HANDS BOTH FIGHTERS A FULL BAR, and everything below is
+   the consequence of that one change. It used to: each round was a clean bout,
+   which is tidy and means nothing that happens in round one can be felt in
+   round two. Now the kitten who WON the round keeps the health she finished it
+   with, and the kitten who was knocked out comes back full.
+
+   That reads backwards for about a second, and then it is obviously right. It
+   makes winning a round cost something, so a 2-0 stops being the default shape
+   of a match; it hands the girl who is behind a reason to keep playing; and it
+   gives the fifteen seconds between rounds a JOB — the survivor spends them
+   hunting rats with whatever bar she has left, while her sister, who has
+   nothing to do, flies around above her as an angel. Two players doing two
+   different things at the same time, which the tournament had never managed.
+
+   `REGEN_FRAC` is the floor under the whole thing. A round that ends with the
+   winner on four health and no animals within reach would otherwise send her
+   into the next one dead on the first touch, which is not a comeback mechanic,
+   it is a spiral — so ten per cent is handed over free the moment the round
+   ends, and `Menagerie.topUp` guarantees there is something out there to catch
+   on top of it.
+--------------------------------------------------------------------------- */
+export const FEAST_TIME = 15;
+export const REGEN_FRAC = 0.10;
+
 export class Tournament {
   constructor({ game, world, audio, announcer }) {
     this.game = game;
@@ -62,7 +89,7 @@ export class Tournament {
     this.audio = audio;
     this.announcer = announcer;
 
-    /** off | card | count | live | ko | result | leaving */
+    /** off | card | count | live | ko | feast | result | leaving */
     this.state = 'off';
     this.t = 0;
     this.round = 0;
@@ -115,9 +142,24 @@ export class Tournament {
     for (const p of this.game.players) {
       p.dmgDealt = 0;
       p.dmgTaken = 0;
-      p.hpGroup.visible = true;
+      /* ROUND ONE IS ALWAYS A FULL BAR, SAID OUT LOUD. Since the feast landed,
+         `_nextRound` starts each kitten on whatever she is carrying — and for
+         the first round of a tournament that is whatever she happened to walk
+         in with. It is full today only because `finish` happens to restore it
+         on the way out of the last one, which is a fact about a different
+         function two hundred lines away. "The first round is clean and every
+         round after it carries" is the rule; this is the half of it that was
+         being left to luck. */
+      p.hp = p.maxHp;
+      p.barOn = true;
+      p.landAngel();
     }
     this.hudEl?.classList.remove('hidden');
+    /* The deck is stocked before the first countdown rather than after it.
+       The first thing either girl has to learn about the snacks is that they
+       exist, and she learns it by watching a rat run past her mark while she
+       is standing frozen on it waiting for the gong. */
+    this.game.menagerie?.start();
     this._nextRound();
   }
 
@@ -128,7 +170,15 @@ export class Tournament {
     this.bannerEl?.classList.add('hidden');
     this.hudEl?.classList.add('hidden');
     this.resultEl?.classList.add('hidden');
+    this.game.menagerie?.stop();
     for (const p of this.game.players) {
+      /* WINGS OFF FIRST. `landAngel` is the only thing that clears the flag,
+         and the flag is what routes her into `_updateAngel` — a kitten flown
+         home from the arena still holding it would drift through the town for
+         the rest of the afternoon with no gravity and no katana. Same class of
+         latch as `nearEdge` below, and a much louder one. */
+      p.landAngel();
+      p.barOn = false;
       p.hpGroup.visible = false;
       p.hp = p.maxHp;
       p.ko = false;
@@ -136,6 +186,7 @@ export class Tournament {
       p.hitT = 0;
       p.invulnT = 0;
       p.outT = 0;
+      p.eatT = 0;
       /* Cleared, or the edge warning latches on. `_updateOut` is the only
          thing that ever sets `nearEdge` false again, and it stops running the
          moment the tournament does — so a kitten who flew home from the last
@@ -145,25 +196,87 @@ export class Tournament {
     }
   }
 
+  /**
+   * The gap between rounds: fifteen seconds, two entirely different jobs.
+   *
+   * IT IS NOT A FROZEN STATE AND IT IS NOT A SCENE. Both girls are in charge of
+   * themselves for the whole thing — one hunting, one flying — which is the
+   * only reason it is worth fifteen seconds instead of the three the knockout
+   * hold used to take. `fighting` stays false throughout, so nothing either of
+   * them does to the other lands.
+   */
+  _startFeast() {
+    this.state = 'feast';
+    this.t = 0;
+
+    const regen = Math.round(MAX_HP * REGEN_FRAC);
+    for (const p of this.game.players) {
+      if (p.ko) {
+        /* SHE IS THE ONE WHO LOST THE ROUND, so she is the one with nothing to
+           do — and giving her the sky is what stops her having nothing to do.
+           Her health is not topped up here: she comes back full at the gong
+           (see `_nextRound`), which is a different thing and happens later. */
+        p.becomeAngel();
+      } else {
+        /* Free, immediate, and off the BASE hundred rather than her own bar:
+           an Adamant orb must not quietly make the regen bigger too. */
+        p.hp = Math.min(p.maxHp, p.hp + regen);
+      }
+    }
+
+    /* Stocked NOW rather than on the respawn clock. Fifteen seconds of bare
+       stone is the feature silently not happening — see Menagerie.topUp. */
+    this.game.menagerie?.topUp();
+
+    this._banner('FEAST!', 'feast');
+    /* ONE LINE, NOT ONE PER OUTCOME, and the reason is the recording rather
+       than the writing. `Announcer` prints the text it is given while playing
+       the clip that matches the id, so two strings behind one id would put
+       words on screen that are not the words being spoken — which is exactly
+       the desynchronisation the cutscene's `typeRate` exists to prevent, in
+       its stupidest possible form. The line is written to be true whether
+       somebody is flying overhead or both of them are still standing. */
+    this.announcer?.say('sat_feast',
+      'Fifteen seconds, fighters! Get your breath back — and if something runs past you, EAT IT!');
+    for (const p of this.game.players) {
+      this.game.toast(p.angel
+        ? 'Knocked out — fly it off! You come back with a full bar'
+        : 'Catch and eat! Hold ATTACK next to a critter — you keep this health',
+      p.index);
+    }
+  }
+
   _nextRound() {
     this.round++;
     this.t = 0;
     this.state = 'card';
 
     /* POSTED ON OPPOSITE SIDES, FACING EACH OTHER, AND FROZEN.
-       `resetForRound` puts each of them on her mark with full health and no
-       timers, and the `card`/`count` states feed a dead pad (see `frozen`) so
-       neither can move until the gong. Two kittens standing still on opposite
-       sides of a ring is the picture that says "this is a duel" — and it is
-       also the only moment either girl gets to see where her sister is
-       before it starts. */
+       `resetForRound` puts each of them on her mark with no timers, and the
+       `card`/`count` states feed a dead pad (see `frozen`) so neither can move
+       until the gong. Two kittens standing still on opposite sides of a ring
+       is the picture that says "this is a duel" — and it is also the only
+       moment either girl gets to see where her sister is before it starts. */
     const posts = this.world.arenaPosts;
+    /* Nobody carries an animal across a round boundary. Both kittens are about
+       to be teleported to their marks, and a rat pinned to a cat who is no
+       longer where she was gets dragged across the deck for the rest of the
+       tournament. */
+    this.game.menagerie?.releaseAll();
     this.game.players.forEach((p, i) => {
       const post = posts[i] ?? posts[0];
       const other = posts[1 - i] ?? posts[0];
+      /* WHAT SHE STARTS WITH IS DECIDED HERE, and it is asked of her state
+         rather than remembered from the last frame of the feast. An angel was
+         knocked out, so she is reborn at the top of her bar; anyone else lived
+         through the round and keeps exactly what she finished the feast with,
+         which is the health she regenerated plus everything she ate. There is
+         no stored copy of either number, so there is nothing for the feast to
+         get out of step with. */
+      const carried = p.angel ? null : p.hp;
       // Facing is atan2(x, z) in this game — 0 is +Z. Point her at the other.
       const facing = Math.atan2(other.x - post.x, other.z - post.z);
-      p.resetForRound(post.x, post.y, post.z, facing);
+      p.resetForRound(post.x, post.y, post.z, facing, carried);
     });
 
     const last = this.round === MAX_ROUNDS;
@@ -245,7 +358,7 @@ export class Tournament {
 
       case 'live':
         this.fightTime += dt;
-        this._updateOut(dt);
+        this._updateOut(dt, OUT_DAMAGE);
         /* A round that never ends. Two kittens who are both bored, or one
            who has climbed the announcer's box and is sitting on it, would
            otherwise hold the tournament open forever with no way out but the
@@ -268,9 +381,27 @@ export class Tournament {
       case 'ko':
         if (this.t >= KO_HOLD) {
           const decided = this.wins.some((w) => w >= WINS_NEEDED);
+          /* THE FEAST ONLY HAPPENS IF THERE IS ANOTHER ROUND TO EAT FOR. It is
+             not a victory lap and it is not a rest — it is fifteen seconds of
+             preparing for the next bout, and running it before the results
+             screen would be fifteen seconds of a decided tournament in which
+             the health both girls are collecting means nothing. */
           if (decided || this.round >= MAX_ROUNDS) this._finishTournament();
-          else this._nextRound();
+          else this._startFeast();
         }
+        break;
+
+      case 'feast':
+        /* THE DECK IS STILL THE DECK, IT JUST DOES NOT COST ANYTHING.
+           Before the feast existed, every non-live tournament state was a
+           frozen one, so there was no way to walk off the arena — and the
+           island out there is finite. A kitten who chases a rat over the rim
+           would otherwise fall for the whole fifteen seconds and respawn in
+           the town, three hundred units from a tournament that is about to
+           post her back on her mark. Same test, same grace, same throw back to
+           the middle; zero damage, because nobody is fighting. */
+        this._updateOut(dt, 0);
+        if (this.t >= FEAST_TIME) this._nextRound();
         break;
 
       case 'result':
@@ -293,11 +424,19 @@ export class Tournament {
    * reads as the game taking health off you for no reason, and the whole
    * point of the painted border is that the rule is visible.
    */
-  _updateOut(dt) {
+  _updateOut(dt, damage) {
     for (const p of this.game.players) {
       if (p.ko) continue;
+      /* An angel is ALLOWED off the deck — flying over the rim is most of what
+         the wings are for, and she has her own leash (`Player._updateAngel`).
+         Throwing her back into the middle of a ring she is not fighting in
+         would be the game taking the one thing she has to do away from her. */
+      if (p.angel) { p.nearEdge = false; continue; }
       const out = this.world.arenaOutBy(p.position.x, p.position.z);
-      p.nearEdge = out > -3.5 && out <= 0;
+      /* The warning ring is a FIGHTING warning. During the feast there is no
+         penalty to warn about, and a red flashing ring round her feet while
+         she is chasing a rabbit reads as damage she cannot find. */
+      p.nearEdge = damage > 0 && out > -3.5 && out <= 0;
 
       if (out <= 0) { p.outT = 0; continue; }
       p.outT = (p.outT ?? 0) + dt;
@@ -313,13 +452,17 @@ export class Tournament {
          kitten wearing the orb parks herself off the side of the ring and
          takes nothing for the whole round, because the bubble runs longer
          than its own cooldown. See Player.hurt. */
-      const dealt = p.hurt(
-        OUT_DAMAGE, { x: R.x, z: R.z }, { knock: 0, lift: 0, pierce: true }, this.game
-      );
+      const dealt = damage > 0 ? p.hurt(
+        damage, { x: R.x, z: R.z }, { knock: 0, lift: 0, pierce: true }, this.game
+      ) : 0;
       p.position.set(R.x, R.y + 3, R.z);
       p.group.position.copy(p.position);
       p.velocity.set(0, 0, 0);
       p.camTarget.copy(p.position);
+      /* A free return during the feast: back on the stone, nothing said, no
+         banner and no toast. It is not an event, it is the arena declining to
+         let her fall off it. */
+      if (damage <= 0) continue;
       /* Longer than an ordinary hit's invulnerability. She is being dropped
          back into the middle of the ring next to somebody who is already
          swinging, and landing straight into a free combo is exactly the sort
@@ -443,6 +586,19 @@ export class Tournament {
     const R = this.world.arenaRing;
     const sep = Math.hypot(a.position.x - b.position.x, a.position.z - b.position.z);
 
+    /* THE FEAST FRAMES THE RING, NOT THE PAIR. Every other tournament state
+       wants the two fighters large, and the dynamic push-in on the midpoint is
+       most of what makes an exchange read. The feast wants the opposite: the
+       subject is the whole deck and the three animals running around on it,
+       and the two kittens are deliberately nowhere near each other — one is on
+       the stone and the other is thirty units up. A midpoint camera between
+       those two frames the empty air between them. Fixed, high and wide, and
+       it never moves for fifteen seconds, which is also the calmest the screen
+       gets all match. */
+    if (this.state === 'feast') {
+      return { x: R.x, y: R.y + 9, z: R.z, dist: 96, pitch: 0.56 };
+    }
+
     /* Pulled toward the middle of the ring rather than sitting on the
        midpoint. With both fighters in one corner, a pure midpoint camera
        looks at that corner and three quarters of the screen is the island
@@ -501,12 +657,21 @@ export class Tournament {
       const cls = k > 0.34 ? '' : k > 0.18 ? ' warn' : ' crit';
       return `<div class="ah-bar"><span class="ah-fill${cls}" style="width:${k * 100}%"></span></div>`;
     };
+    /* THE MIDDLE OF THE BAR IS A CLOCK DURING THE FEAST, because fifteen
+       seconds with nothing counting them down is fifteen seconds a
+       nine-year-old spends wondering whether the game has stopped. It is the
+       one place on this HUD both girls are already looking — the round number
+       lives there — so it costs no new furniture. */
+    const mid = this.state === 'feast'
+      ? `<span class="ah-feast">FEAST ${Math.max(0, Math.ceil(FEAST_TIME - this.t))}</span>`
+      : `ROUND ${this.round}`;
+
     this.hudEl.innerHTML = `
       <div class="ah-side p0">
         <div class="ah-name">${a.name}<span class="ah-pips">${pips(0)}</span></div>
         ${bar(a)}
       </div>
-      <div class="ah-mid">ROUND ${this.round}</div>
+      <div class="ah-mid">${mid}</div>
       <div class="ah-side p1">
         <div class="ah-name"><span class="ah-pips">${pips(1)}</span>${b.name}</div>
         ${bar(b)}

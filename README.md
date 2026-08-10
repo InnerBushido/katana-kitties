@@ -231,6 +231,31 @@ Then you fight each other.
 barrels with all afternoon; what changes it is whether you're running or in
 the air when you press it.
 
+### Something runs past you. Eat it.
+
+**There are up to six animals loose on the deck** — rats, rabbits and birds, a
+different mix every time, and a new one wanders in every minute or so. Catch
+one and you get health back, which is the only way there is to get any.
+
+**Hit it with your katana and it stops dead**, sitting there with stars round
+its head. Then walk up and **hold ATTACK for two seconds** and it's gone. That's
+it — same swing you use on barrels, same button for the meal.
+
+| | | worth |
+| --- | --- | --- |
+| **Rat** | slowest thing out there. The easy one | +10 |
+| **Rabbit** | quick. It runs along the floor, but the moment it spots you it starts leaping — and you can't grab one in mid-air, so you have to time the swing | +15 |
+| **Bird** | flies over your head, and when you hit it, it lands **in your mouth**. Five seconds to swallow it | +20 |
+
+You can skip the swing entirely if you can just walk into one — press attack
+right next to a rat and you've got it.
+
+**Your kitten sits down and eats it with both paws**, hunched over, eyes shut,
+with the poor thing on the floor in front of her looking extremely surprised.
+It takes two seconds and **you can't move for any of them** — your sister can
+see exactly what you're up to, so doing it in the middle of a round is a
+gamble. Let go, or get hit, and it wriggles off and you get nothing.
+
 **Don't fall off.** The painted red border is the edge of the stage. Step past
 it and you lose a third of your health and get thrown back into the middle —
 your foot ring flashes red first, so you get a warning. And the more health
@@ -240,6 +265,24 @@ go on.
 **You can only fight in the ring, during a round.** Nothing you do to each
 other anywhere else in the world does anything at all — not in the town, not
 during the countdown, not between rounds.
+
+### Between rounds: one of you eats, the other one gets wings
+
+**Winning a round doesn't heal you.** You keep the health you finished it with
+and go into the next round on it — so between every round there's a **fifteen
+second FEAST**. You get a tenth of your bar back for free, the deck is restocked
+to six animals, and the rest is up to you.
+
+**And whoever got knocked down turns into an angel cat.** You go pale and
+see-through, big white wings open behind you, a gold halo pops up over your head
+— and you get fifteen seconds of flying anywhere you like over the arena. You
+can't fight, you can't eat, and you can't get in your sister's way, which is
+rather the point of it. When the gong goes you come back **with a full bar.**
+
+So losing a round costs you nothing and winning one costs you whatever it took.
+That's deliberate: it means a match is never over after two minutes, and it
+means the fifteen seconds where nobody can hurt anybody is the busiest part of
+the whole tournament.
 
 **The winner signs the board.** Three to five letters, picked with the stick:
 up and down change the letter, left and right move along. Your score comes from
@@ -442,6 +485,10 @@ game theme played fast. Ryuuseki has a different one again — darker, higher, a
 taiko instead of a drum kit. The intro has its own piece too: same synthesis,
 darker scale, slower, an octave down.
 
+**The animals in the ring are synthesised too** — a two-note squeak when you
+grab one, and a gulp with a bell on the end of it when you swallow it. The bell
+is there on purpose: without it, eating sounds exactly like hitting a barrel.
+
 The **only** audio files in the whole project are the recorded voices in
 `public/voice/` — the opening cutscene, the six clan leaders, the dragon hunt,
 and Mr. Satan calling the tournament. If they're missing the cast falls back to
@@ -613,8 +660,11 @@ src/
   systems/
     mathdojo.js         the walkable unit circle
     cutscene.js         the opening story, flown through the real world
-    tournament.js       rounds, ring-outs, scoring — and the one gate that
-                        decides whether the two of you can hurt each other
+    tournament.js       rounds, ring-outs, scoring, the feast between rounds —
+                        and the one gate that decides whether the two of you
+                        can hurt each other
+    menagerie.js        the rats, rabbits and birds on the arena deck, and
+                        what happens when you grab one
     arenaquest.js       how the tournament unlocks
     announce.js         Mr. Satan's pop-in card
     leaderboard.js      the saved record board + joystick name entry
@@ -625,6 +675,8 @@ src/
     player.js           movement, slash, mounting, camera rig, health
     dragon.js           rideable storm dragon
     panda.js            the raisable, rideable Pandapaw panda
+    critter.js          one arena animal — where it runs and how it's caught
+    angel.js            wings and a halo for the kitten who lost the round
     leader.js           the six clan chiefs + Patchfur the storyteller
     satan.js            the tournament announcer
     griffin.js          the ride to the arena
