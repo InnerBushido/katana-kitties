@@ -30,6 +30,55 @@ function isBackgroundish(d, i) {
 }
 
 /**
+ * Mark every pixel within `radius` of the keyed-out background.
+ *
+ * A multi-source BFS seeded from the transparent pixels that touch something
+ * opaque — not from all of them, which on a sheet that is mostly background
+ * would be millions of starts for the same answer. Any path from deeper
+ * background to an opaque pixel crosses one of those seeds, so the two agree.
+ */
+function nearOutsideMask(d, w, h, radius) {
+  const seen = new Uint8Array(w * h);
+  const q = new Int32Array(w * h);
+  const clear = (p) => d[p * 4 + 3] === 0;
+  let tail = 0;
+
+  for (let p = 0; p < w * h; p++) {
+    if (!clear(p)) continue;
+    const x = p % w;
+    const y = (p / w) | 0;
+    if ((x > 0 && !clear(p - 1)) || (x < w - 1 && !clear(p + 1))
+      || (y > 0 && !clear(p - w)) || (y < h - 1 && !clear(p + w))) {
+      seen[p] = 1;
+      q[tail++] = p;
+    }
+  }
+
+  let head = 0;
+  let edge = tail;
+  for (let step = 0; step < radius; step++) {
+    while (head < edge) {
+      const p = q[head++];
+      const x = p % w;
+      const y = (p / w) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const np = ny * w + nx;
+          if (seen[np]) continue;
+          seen[np] = 1;
+          q[tail++] = np;
+        }
+      }
+    }
+    edge = tail;
+  }
+  return seen;
+}
+
+/**
  * Clear SEALED pockets of background the border flood could never reach.
  *
  * The flood is the right algorithm and the reason is in the header: the cats
@@ -39,30 +88,64 @@ function isBackgroundish(d, i) {
  * seal a pocket under his chin, which came through as a solid white blob
  * hanging off the front of the dragon.
  *
- * The rule that separates those pockets from actual white ART is two-part,
- * and both halves are needed. Measured on that sheet:
+ * SIZE AND PURITY WERE THE FIRST RULE AND THEY ATE MR. SATAN'S FACE. Measured
+ * on Ryuuseki's sheet they looked decisive — the chin pockets were pure and
+ * thousands of pixels, the teeth were 190 — so the rule was "big and pure".
+ * Then a character arrived who is drawn grinning, and his teeth and one eye
+ * are 1155, 621 and 609 px of near-perfect white. He came into the game with
+ * the world showing through his eyes and his mouth. **Size cannot separate
+ * these**, and not by a margin either: as a fraction of its own sheet his
+ * mouth (0.0011) is BIGGER than either of the pockets the rule was built for
+ * (0.00092, 0.0006). Any floor that clears the dragon eats the champion.
+ *
+ * DEPTH IS THE THING THAT ACTUALLY DIFFERS, because it is the thing the two
+ * are: a background pocket is outdoors, pinched shut by a hairline — a whisker
+ * crossing a jaw, a wing meeting a flank — and an eye is indoors, behind a
+ * whole head. Measured as the distance from the pocket to real transparency:
  *
  * ```
- *   the two chin pockets   3886 px, 2552 px   mean 254,254,254   <- background
- *   the whiskers           1038 px            mean 235,244,229   <- drawn
- *   the teeth                190 px           mean 250,250,250   <- drawn
+ *   ryuuseki  chin pockets   3770 px, 2487 px    depth 12,  8   <- background
+ *   griffin   under a wing   1829 px             depth  3       <- background
+ *   satan     mouth, teeth   1155 px,  621 px    depth 53, 49   <- DRAWN
+ *   satan     eye whites      609 px,  347 px    depth 70, 36   <- DRAWN
  * ```
  *
- * Purity alone would eat the teeth. Size alone would eat the whiskers. Both
- * together take the background and nothing else. It is opt-in (`clearPockets`)
- * rather than automatic, because the four sheets already in the game do not
- * need it and a loader change that silently repaints working art is exactly
- * the kind of thing this file has been bitten by before.
+ * Six times the separation, and it is structural rather than lucky. The bound
+ * scales with the sheet because a hairline is a couple of strokes wide and a
+ * stroke scales with the drawing.
+ *
+ * All three tests are kept, since each rejects something the others let past:
+ * purity keeps drawn off-whites, size keeps flecks in the lineart, depth keeps
+ * faces. `tools/world-check.mjs` asserts the outcome on all three sheets.
+ *
+ * It stays opt-in (`clearPockets`), because the sheets already in the game do
+ * not need it and a loader change that silently repaints working art is
+ * exactly the kind of thing this file has been bitten by before.
  */
-function clearSealedPockets(d, w, h, minFrac = 0.0005) {
+export const POCKET_MIN_FRAC = 0.0005;
+export const POCKET_DEPTH_FRAC = 0.025;
+
+/** Near-PURE white. The drawn whites on these sheets all carry a tint.
+ *  Exported so the smoke test asks the sheets the same question the loader
+ *  does rather than a paraphrase of it. */
+export const purelyWhite = (d, p) => {
+  const i = p * 4;
+  return d[i + 3] > 200 && d[i] > 246 && d[i + 1] > 246 && d[i + 2] > 246;
+};
+
+/** The size floor, in pixels, for the sheet's own dimensions. */
+export const pocketFloor = (w, h, minFrac = POCKET_MIN_FRAC) =>
+  Math.max(64, Math.floor(w * h * minFrac));
+
+export function clearSealedPockets(
+  d, w, h, minFrac = POCKET_MIN_FRAC, depthFrac = POCKET_DEPTH_FRAC
+) {
   const seen = new Uint8Array(w * h);
   const stack = new Int32Array(w * h);
-  const minPx = Math.max(64, Math.floor(w * h * minFrac));
-  // Near-PURE white only. The drawn whites on these sheets all carry a tint.
-  const pure = (p) => {
-    const i = p * 4;
-    return d[i + 3] > 200 && d[i] > 246 && d[i + 1] > 246 && d[i + 2] > 246;
-  };
+  const minPx = pocketFloor(w, h, minFrac);
+  const shallow = nearOutsideMask(d, w, h,
+    Math.max(8, Math.round(Math.min(w, h) * depthFrac)));
+  const pure = (p) => purelyWhite(d, p);
 
   for (let s = 0; s < w * h; s++) {
     if (seen[s] || !pure(s)) continue;
@@ -71,10 +154,12 @@ function clearSealedPockets(d, w, h, minFrac = 0.0005) {
     stack[sp++] = s;
     seen[s] = 1;
     const found = [];
+    let outdoors = false;
     while (sp > 0) {
       const p = stack[--sp];
       found.push(p);
       n++;
+      if (shallow[p]) outdoors = true;
       const x = p % w;
       const y = (p / w) | 0;
       for (const q of [x < w - 1 ? p + 1 : -1, x > 0 ? p - 1 : -1,
@@ -84,14 +169,16 @@ function clearSealedPockets(d, w, h, minFrac = 0.0005) {
         stack[sp++] = q;
       }
     }
-    if (n >= minPx) for (const p of found) d[p * 4 + 3] = 0;
+    if (n >= minPx && outdoors) for (const p of found) d[p * 4 + 3] = 0;
   }
 }
 
-/** Flood transparency inward from every border pixel. */
-function keyOutBackground(ctx, w, h, clearPockets = false) {
-  const img = ctx.getImageData(0, 0, w, h);
-  const d = img.data;
+/**
+ * Flood transparency inward from every border pixel. Pixel data in, pixel data
+ * out — no canvas, which is what lets `tools/world-check.mjs` run the real
+ * background removal over the real sheets with no DOM and no GPU.
+ */
+export function floodBackground(d, w, h) {
   const seen = new Uint8Array(w * h);
   const stack = new Int32Array(w * h);
   let sp = 0;
@@ -124,7 +211,13 @@ function keyOutBackground(ctx, w, h, clearPockets = false) {
     pushIf(x, y + 1);
     pushIf(x, y - 1);
   }
+}
 
+function keyOutBackground(ctx, w, h, clearPockets = false) {
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+
+  floodBackground(d, w, h);
   // ...and then the pockets the flood is structurally unable to reach.
   if (clearPockets) clearSealedPockets(d, w, h);
 

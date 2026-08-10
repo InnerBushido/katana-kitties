@@ -27,6 +27,10 @@ import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
 import { SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest } from '../src/world/build.js';
 import { ISLAND_MUSIC, MUSIC, trackForIsland } from '../src/core/audio.js';
 import { existsSync } from 'node:fs';
+import {
+  floodBackground, clearSealedPockets, purelyWhite, pocketFloor,
+} from '../src/core/spritesheet.js';
+import { readPNG, blobs } from './png.mjs';
 import { ATTACKS, MAX_HP } from '../src/entities/player.js';
 import { WINS_NEEDED, MAX_ROUNDS } from '../src/systems/tournament.js';
 import { MILESTONES, OPEN_AT } from '../src/systems/arenaquest.js';
@@ -2259,6 +2263,49 @@ console.log('\n--- Mr. Satan has a voice ---');
   ok('the champion and the griffin both have art',
     existsSync(new URL('../public/sprites/leader_satan.png', import.meta.url))
     && existsSync(new URL('../public/sprites/griffin.png', import.meta.url)));
+}
+
+console.log('\n--- background removal keeps the drawn whites ---');
+{
+  /* THE REAL SHEETS, THROUGH THE REAL LOADER CODE. `clearSealedPockets` exists
+     to delete background the border flood cannot reach — a pocket the lineart
+     has sealed shut — and its first version was tuned on the one sheet that
+     had one. It was "big and pure", and Mr. Satan arrived grinning: his teeth
+     and an eye white are 1155, 621 and 609 px of near-perfect white, so he
+     shipped with the world showing through his face.
+
+     Size cannot tell those apart from a real pocket and not by a hair either —
+     as a fraction of its own sheet his mouth is BIGGER than either of the
+     pockets the rule was built for. Depth can, because it is what they are: a
+     pocket is outdoors behind a hairline, an eye is behind a whole head.
+
+     What makes this a check rather than a restatement of the code is
+     `bigWhites`: on his sheet three white features clear the size floor and
+     none may be removed, so a rule that goes back to size alone fails here
+     instead of in front of a nine-year-old. */
+  const SHEETS = [
+    { file: 'leader_satan.png', pockets: 0, bigWhites: 3, what: 'teeth and eyes' },
+    { file: 'ryuuseki.png', pockets: 2, bigWhites: 0, what: 'sealed under his chin' },
+    { file: 'griffin.png', pockets: 1, bigWhites: 0, what: 'sealed under a wing' },
+  ];
+
+  for (const s of SHEETS) {
+    const { w, h, d } = readPNG(new URL(`../public/sprites/${s.file}`, import.meta.url));
+    floodBackground(d, w, h);
+
+    const floor = pocketFloor(w, h);
+    const bigBefore = blobs(d, w, h, (p) => purelyWhite(d, p)).filter((b) => b.n >= floor);
+
+    clearSealedPockets(d, w, h);
+
+    const gone = bigBefore.filter((b) => d[b.seed * 4 + 3] === 0);
+    const kept = bigBefore.length - gone.length;
+
+    ok(`${s.file}: ${s.pockets} pocket(s) cleared`, gone.length === s.pockets,
+      `${gone.length} (${s.what})`);
+    ok(`${s.file}: ${s.bigWhites} big drawn white(s) kept`, kept === s.bigWhites,
+      `${kept} of ${bigBefore.length} over the ${floor}px floor`);
+  }
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

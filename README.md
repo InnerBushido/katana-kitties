@@ -620,7 +620,10 @@ node tools/world-check.mjs
 
 It catches the failures that still look fine in a screenshot: a grove that
 generates zero canes, a dragon that never finishes flying home, a sprite sheet
-read in mirror image, a clan buff that doesn't actually do anything.
+read in mirror image, a clan buff that doesn't actually do anything, a
+background remover that eats a character's eyes. That last one reads the actual
+PNGs through `tools/png.mjs` — a dependency-free decoder, because a check on a
+fixture only proves the rule agrees with itself.
 
 ## Ideas not built yet
 

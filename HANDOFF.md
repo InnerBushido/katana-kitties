@@ -1632,6 +1632,73 @@ screen.
 **The door asks for BOTH of them**, and says so when only one turns up. A prompt
 that simply does not appear is indistinguishable from a broken one.
 
+### He shipped with holes in his face, and SIZE is why
+
+He arrived with the world showing through the whites of his eyes and through
+his mouth. Nothing was wrong with the drawing — `public/sprites/leader_satan.png`
+is clean — and nothing was wrong with him: the loader ate them.
+
+`clearSealedPockets` in `spritesheet.js` exists because the border flood has one
+blind spot by construction, **background the lineart completely encloses**:
+Ryuuseki's whiskers meet his jaw and seal a pocket under his chin, and the
+griffin's wing seals one against its flank. The rule for telling those from
+drawn white art was **pure AND big**, measured on the one sheet that had the
+problem, where it looked decisive — the chin pockets were thousands of pixels of
+254,254,254 and the dragon's teeth were 190.
+
+Then a character arrived who is **drawn grinning**. Measured on his sheet after
+the flood:
+
+```
+  mouth / lower teeth   1155 px   depth 53      <- DRAWN
+  upper teeth            621 px   depth 49      <- DRAWN
+  eye white (left)       609 px   depth 70      <- DRAWN
+  eye white (right)      347 px   depth 36      <- DRAWN, survived on size alone
+```
+
+Three of the four cleared the size floor and went transparent.
+
+**SIZE CANNOT SEPARATE THESE, and not by a hair either — it is the wrong way
+round.** As a fraction of its own sheet his mouth is 0.0011, *larger* than
+either pocket the rule was built for (0.00092 and 0.0006). There is no floor
+that clears the dragon's chin and spares the champion's teeth. Retuning the
+number would have moved the bug rather than fixed it, which is exactly the trap
+the `TAIL` note further up describes.
+
+**DEPTH separates them, because depth is what they ARE.** A sealed background
+pocket is *outdoors*, pinched shut by a hairline — a whisker crossing a jaw, a
+wing meeting a flank — so it sits a handful of pixels from real transparency. An
+eye is *indoors*, behind a whole head:
+
+```
+  ryuuseki  chin pockets    depth 12,  8   <- background
+  griffin   under a wing    depth  3       <- background
+  satan     face            depth 36 .. 70 <- drawn
+```
+
+Six times the separation, and structural rather than lucky. `nearOutsideMask`
+is a bounded multi-source BFS out from the keyed-out background; a pocket is
+only cleared if it **touches** that band. The bound scales with the sheet
+(`POCKET_DEPTH_FRAC`, 2.5% of the short side) because a hairline is a couple of
+strokes wide and a stroke scales with the drawing. All three tests are kept —
+purity rejects drawn off-whites, size rejects flecks in the lineart, depth
+rejects faces.
+
+**`world-check` runs the real removal over the three real sheets**, which needed
+a PNG decoder with no DOM and no GPU (`tools/png.mjs`, zlib and a defilter loop,
+8-bit non-interlaced only — it throws rather than guessing). A synthetic fixture
+would only have proved the rule is self-consistent with itself. What makes the
+check bite is asserting the count that *would* have been eaten: three white
+features on his sheet clear the size floor and **none** may be removed, against
+two on Ryuuseki's and one on the griffin's that **all** must be. Go back to size
+alone and it fails there instead of in front of a nine-year-old.
+
+**The lesson generalises past this file.** Both of the original tests were
+measured, both were real, and the pair was still a coincidence of the one sheet
+they were measured on — a discriminator tuned on a single example is a
+description of that example. Ask what the two things *are* before asking how big
+they are.
+
 ## Gameplay rules worth not breaking
 
 **A dragon can never be lost, and the home island always has two.** Dragons
