@@ -33,7 +33,8 @@ import {
 import { readPNG, blobs } from './png.mjs';
 import {
   POWER_ORBS, ORB_IDS, MAX_EQUIPPED, aggregate, orbPrice, orbSellPrice,
-  WARD, DIVE, TRIPLE, CHARGE,
+  WARD, DIVE, TRIPLE, CHARGE, stockFor, STOCK_STACKABLE,
+  PowerOrb, PowerOrbPickup, ORB_BY_ID,
 } from '../src/entities/powerorb.js';
 import { Kotodama } from '../src/systems/kotodama.js';
 import { ATTACKS, MAX_HP } from '../src/entities/player.js';
@@ -2355,15 +2356,23 @@ console.log('\n--- the Powerup Kotodama ---');
   ok('eight Adamant orbs are a survivable amount of health',
     aggregate(Array(8).fill('vigor')).hp <= 400);
 
-  /* The ward's two numbers only mean anything together. A shield that lasts
-     longer than its own wait is a shield that is never down — and stacking
-     makes both numbers move, in opposite directions, so the eight-stack case
-     is the one that has to be checked rather than the one. */
+  /* THE BLOCK LENGTH IS THE ONE NUMBER STACKING MUST NOT MOVE. Two seconds is
+     what makes the ward a thing she is doing rather than a state she is in;
+     any count of orbs that extends it turns it back into the second. Stacks
+     buy a shorter WAIT, which is the only half that can grow without the
+     shield eventually being up more than it is down. */
+  const w1 = aggregate(['ward']).ward;
   const w8 = aggregate(Array(8).fill('ward')).ward;
   line('ward at 1 vs 8',
-    `${WARD.dur.toFixed(1)}s up / ${WARD.cool.toFixed(2)}s wait`
-    + `  vs  ${w8.dur.toFixed(1)}s / ${w8.cool.toFixed(2)}s`);
-  ok('the ward has a real wait even at eight', w8.cool >= WARD.coolMin && w8.cool > 0);
+    `${w1.max.toFixed(1)}s block / ${w1.cool.toFixed(2)}s wait`
+    + `  vs  ${w8.max.toFixed(1)}s / ${w8.cool.toFixed(2)}s`);
+  ok('eight Ward orbs do not lengthen the block',
+    w8.max === WARD.max && w1.max === WARD.max);
+  ok('...they shorten the wait instead', w8.cool < w1.cool);
+  ok('...and there is still a real wait at eight',
+    w8.cool >= WARD.coolMin && w8.cool > 0);
+  ok('the tail is much shorter than the block it follows',
+    WARD.tail > 0 && WARD.tail < WARD.max / 4);
 
   /* --- the economy --- */
   const price = orbPrice(world.pointsTotal);
@@ -2439,9 +2448,15 @@ console.log('\n--- the Powerup Kotodama ---');
   ok('every plain orb is gone from both kittens',
     aw.players.every((p) => p.orbs.length === 0));
   ok('...and out of the world', aw.pickups.length === 0);
-  ok('the world is reseeded', K.pickups.length === 16);
-  ok('...with at least one of every kind',
+  /* EIGHT IN THE WORLD, ONE OF EACH, AND NO DUPLICATES — the number that
+     makes trading necessary rather than optional. Sixteen (one of each plus
+     spares) let two girls each wander into a full set without ever speaking
+     to each other, which deletes the only interesting thing in the feature. */
+  ok('the world is reseeded with one of each', K.pickups.length === 8);
+  ok('...every kind, exactly once',
     new Set(K.pickups.map((p) => p.id)).size === 8);
+  ok('...so NOTHING can be stacked by walking',
+    ORB_IDS.every((id) => K.pickups.filter((p) => p.id === id).length === 1));
   ok('...spread over every island but the arena',
     new Set(K.pickups.map((p) => world.heightAt(p.position.x, p.position.z)?.island)).size
       >= world.questIslands.length - 1);
@@ -2456,11 +2471,30 @@ console.log('\n--- the Powerup Kotodama ---');
     K.pickups.every((p) => clearOf(p.position.x, p.position.z, 0.01) >= 4));
   ok('the dealer is not either',
     K.stall && clearOf(K.stall.position.x, K.stall.position.z, 0.01) >= 4);
-  ok('the dealer stocks exactly one of each',
-    ids.every((id) => K.stock[id] === 1));
+  /* THE DEALER IS THE ONLY SOURCE OF A SECOND COPY, so his shelf is where the
+     stacking rule lives. Four of each stat orb — the four whose whole point is
+     a number going up — and one of each move, where a second copy only widens
+     something she can already do. */
+  const stackable = POWER_ORBS.filter((o) => o.stack).map((o) => o.id);
+  line('stackable in stock', stackable.map((id) => `${id} x${K.stock[id]}`).join(', '));
+  ok('the four stat orbs are the stackable ones',
+    stackable.join() === 'swift,reach,vigor,leap');
+  ok(`...and the dealer holds ${STOCK_STACKABLE} of each`,
+    stackable.every((id) => K.stock[id] === STOCK_STACKABLE));
+  ok('...one of every move', ids.filter((id) => !stackable.includes(id))
+    .every((id) => K.stock[id] === 1));
+  ok('stock comes from stockFor, not from a second list',
+    ids.every((id) => K.stock[id] === stockFor(id)));
+  /* A DEEP SHELF MUST NOT MAKE THEM CHEAP. The scarcity is the purse, not the
+     shelf: four Gale orbs on the counter and a wallet that reaches three orbs
+     TOTAL is what turns "I want another one" into a conversation with her
+     sister rather than a walk to the market. */
+  ok('a whole purse still buys only 3', Math.floor(purse / price) === 3);
+  ok('...far short of one full stack of four',
+    price * STOCK_STACKABLE > purse);
   ok('the whole shelf costs more than one purse holds',
     price * 8 > purse);
-  ok('awakening twice is a no-op', K.awaken() === null && K.pickups.length === 16);
+  ok('awakening twice is a no-op', K.awaken() === null && K.pickups.length === 8);
 
   /* --- carrying, buying, trading --- */
   const [A, B] = aw.players;
@@ -2513,6 +2547,65 @@ console.log('\n--- the Powerup Kotodama ---');
   ok('...so it can never leave her over full', H.hp <= H.maxHp);
 }
 
+console.log('\n--- the orbs face the camera ---');
+{
+  /* THE TEXT ON A WORN ORB IS BOLTED TO SOMETHING THAT TURNS, and a quaternion
+     copy is LOCAL. `group` carries the orbit tilt and `orbNode` tumbles on two
+     axes every frame, so `mesh.quaternion.copy(camera.quaternion)` leaves the
+     parent's rotation on top: the kanji and the cos/sin readout arrive sheared,
+     leaning and rolling once a second. That is the exact bug that got the
+     drifting glyphs deleted from the plain Kotodama Orb.
+
+     A SCREENSHOT CANNOT CHECK THIS. A still frame is the one place the fault
+     hides — the text is at some angle, and so is everything else in a 2.5D
+     game. The measurement can: the WORLD rotation of every text quad must equal
+     the camera's, to zero. */
+  const orb = new PowerOrb(ORB_BY_ID.swift, 0, 3);
+  orb.setMathVisible(true);
+  const centre = new THREE.Vector3(4, 1, -7);
+  for (let i = 0; i < 40; i++) orb.update(1 / 60, centre);   // tilt it, tumble it
+
+  const cam = new THREE.PerspectiveCamera(38, 1, 0.5, 100);
+  cam.position.set(-18, 21, 26);
+  cam.lookAt(centre);
+  cam.updateMatrixWorld(true);
+
+  ok('the orb really is tilted and tumbling',
+    Math.abs(orb.group.rotation.z) > 0.05 && Math.abs(orb.orbNode.rotation.y) > 0.05);
+
+  orb.faceCamera(cam);
+  orb.group.updateMatrixWorld(true);
+  const _wq = new THREE.Quaternion();
+  const offBy = (o) => {
+    o.getWorldQuaternion(_wq);
+    return (_wq.angleTo(cam.quaternion) * 180) / Math.PI;
+  };
+  const worst = Math.max(
+    offBy(orb.mark.mesh), offBy(orb.readout.mesh),
+    ...orb.drops.map((d) => offBy(d.mesh))
+  );
+  line('worst text quad, off camera', worst.toFixed(4) + ' degrees');
+  ok('every glyph on a worn orb is square to the camera', worst < 0.01);
+
+  /* Non-vacuity: the obvious version is measurably wrong on the same orb, by
+     roughly the parent rotation it forgot to cancel. */
+  orb.mark.mesh.quaternion.copy(cam.quaternion);
+  orb.group.updateMatrixWorld(true);
+  const naive = offBy(orb.mark.mesh);
+  line('...the same quad, copied naively', naive.toFixed(1) + ' degrees out');
+  ok('...and a plain local copy would NOT be', naive > 5);
+
+  /* The pickup is the easy case and must stay easy: its group never rotates,
+     so Label.faceCamera is already right and must not be "fixed" into
+     cancelling a rotation that was never applied. */
+  const pk = new PowerOrbPickup(ORB_BY_ID.ward, 0, 0, 0);
+  pk.update(0.4);
+  pk.faceCamera(cam);
+  pk.group.updateMatrixWorld(true);
+  ok('a pickup lying in the world faces it too',
+    Math.max(offBy(pk.mark.mesh), offBy(pk.label.mesh)) < 0.01);
+}
+
 console.log('\n--- the three power moves ---');
 {
   const spawn = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
@@ -2561,29 +2654,74 @@ console.log('\n--- the three power moves ---');
   ok('...so with the tournament off they do nothing at all',
     victim.hp === victim.maxHp && !victim.ko);
 
-  /* --- the ward --- */
+  /* --- the ward: HELD, capped, tailed --- */
+  const HOLD = PAD({ down: (a) => a === 'mount' });
+  const step = (p, pad, n) => { for (let i = 0; i < n; i++) p._stepSpecials(1 / 60, pad, world, null); };
+
   const w = mk(['ward']);
   ok('the ward will not go up without the orb', mk([])._popWard(null) === false);
-  ok('...and does with it', w._popWard(null) === true && w.wardT > 0);
+  ok('...and does with it', w._popWard(null) === true && w.warded);
   ok('...but not twice at once', w._popWard(null) === false);
   ok('gravity is quartered while it is up', w._gravityK() === WARD.gravity);
   ok('a blade is refused',
     w.hurt(40, { x: 5, z: 0 }, ATTACKS.stand, null) === 0 && w.hp === w.maxHp);
   /* The ring-out is the one caller that pierces it. Without that a kitten
      wearing the orb parks herself off the side of the arena and takes nothing
-     for the whole round, because the bubble lasts longer than its own wait. */
+     for the whole round. */
   ok('the edge of the ring is not',
     w.hurt(30, { x: 5, z: 0 }, { knock: 0, lift: 0, pierce: true }, null) === 30);
 
-  /* THE WAIT STARTS WHEN THE BUBBLE DROPS. Charged from the press instead, a
-     3s shield on a 1.5s cooldown is already available again the moment it
-     pops — the two numbers stop meaning what they say. */
-  for (let i = 0; i < 400 && w.wardT > 0; i++) w._stepSpecials(1 / 60, PAD(), world, null);
-  ok('the bubble does run out', w.wardT === 0);
-  ok('...and the wait starts THEN', Math.abs(w.wardCool - WARD.cool) < 0.02);
-  ok('...so it cannot be popped again immediately', w._popWard(null) === false);
-  for (let i = 0; i < 200 && w.wardCool > 0; i++) w._stepSpecials(1 / 60, PAD(), world, null);
-  ok('...and can once the wait is over', w._popWard(null) === true);
+  /* SHE HAS TO KEEP HOLDING IT. A block that survives the button coming up is
+     the toggle this replaced, and the toggle is what made it a state she was
+     in rather than something she was doing. */
+  step(w, HOLD, 30);
+  ok('holding keeps it up', w.wardOn && w.warded);
+  step(w, PAD(), 1);
+  ok('letting go ends the block', !w.wardOn);
+  ok('...but it still works for a moment', w.warded && w.wardTail > 0);
+  ok('...and a blow landing in that moment is still blocked',
+    w.hurt(40, { x: 5, z: 0 }, ATTACKS.stand, null) === 0);
+  /* THE WAIT STARTS AT THE RELEASE, and the tail runs INSIDE it. Charged from
+     the press, a 2s block on a 1.5s wait is already back before it runs out;
+     charged when the tail expires, the gap she feels is longer than the number
+     the profile screen showed her. */
+  ok('...and the wait started at the RELEASE',
+    Math.abs(w.wardCool - WARD.cool) < 0.03);
+  step(w, PAD(), Math.ceil(WARD.tail * 60) + 1);
+  ok('the tail runs out', !w.warded);
+  ok('...with most of the wait still to go', w.wardCool > WARD.cool - WARD.tail - 0.05);
+  ok('...so she cannot block again yet', w._popWard(null) === false);
+  step(w, PAD(), 200);
+  ok('...and can once the wait is over', w.wardCool === 0 && w._popWard(null) === true);
+
+  /* TWO SECONDS IS A HARD CAP, thumb down or not — otherwise "2s max" is a
+     suggestion and the button is a toggle again with extra steps. */
+  const capped = mk(['ward']);
+  capped._popWard(null);
+  let heldFor = 0;
+  for (let i = 0; i < 600 && capped.wardOn; i++) {
+    capped._stepSpecials(1 / 60, HOLD, world, null);
+    heldFor += 1 / 60;
+  }
+  line('block length while held down', `${heldFor.toFixed(2)}s (cap ${WARD.max})`);
+  ok('a block held forever still ends at the cap',
+    Math.abs(heldFor - WARD.max) < 0.05);
+  ok('...and charges the same wait', Math.abs(capped.wardCool - WARD.cool) < 0.03);
+
+  /* Losing the orb mid-block is a real case: her sister can trade the Ward out
+     of her hand while the bubble is up, and the block has to fall with it. */
+  const robbed = mk(['ward']);
+  robbed._popWard(null);
+  robbed.setPowerOrbs([]);
+  step(robbed, HOLD, 1);
+  ok('trading the orb away mid-block drops it', !robbed.wardOn);
+
+  /* And the whole thing has to be reachable through the real controller, on
+     the real button, with nothing in reach to climb onto. */
+  const real = mk(['ward']);
+  real.update(1 / 60, PAD({ down: (a) => a === 'mount', pressed: (a) => a === 'mount' }),
+    world, [], null);
+  ok('the mount button really starts it', real.wardOn);
 
   /* --- the charge --- */
   const c = mk(['charge']);
@@ -2671,7 +2809,7 @@ console.log('\n--- the three power moves ---');
   m._startCharge(null);
   m.mount = { quad: 24, seatOffset: () => ({ x: 0, y: 0, z: 0 }), flapBob: 0 };
   try { m.update(1 / 60, PAD(), world, [], null); } catch { /* flight needs a real dragon */ }
-  ok('mounting drops the ward and the charge', m.wardT === 0 && m.chargeT === 0);
+  ok('mounting drops the ward and the charge', !m.warded && m.chargeT === 0);
 
   /* A round reset has to clear them for the same reason: a charge that
      survives carries its committed direction and its zero gravity across the
@@ -2682,7 +2820,7 @@ console.log('\n--- the three power moves ---');
   r._startTriple(null);
   r.resetForRound(0, 0, 0, 0);
   ok('so does a round reset',
-    r.wardT === 0 && r.chargeT === 0 && r.triLeft === 0 && !r.diving);
+    !r.warded && r.chargeT === 0 && r.triLeft === 0 && !r.diving);
 
   /* --- the buffs stack ON TOP of the clan, they do not replace it --- */
   const runFor = (p) => {

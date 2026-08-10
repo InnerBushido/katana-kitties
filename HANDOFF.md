@@ -1715,8 +1715,8 @@ screen.** Same argument as `7` `8` `9` — the whole feature is behind 216 props
 On the frame the last knockable thing goes over: the plain Kotodama Orbs each
 kitten collected are counted, whoever has more is given a Powerup Kotodama
 drawn at random, every plain orb is dissolved off both kittens and out of the
-world, sixteen Powerup Kotodama are scattered over the seven islands, and a
-dealer's stall appears in the market.
+world, **eight** Powerup Kotodama — one of each kind — are scattered over the
+islands, and a dealer's stall appears in the market.
 
 **IT FIRES FROM `onMischief`, NOT WITH THE FINALE SCENE, and the two are
 deliberately opposite.** `_finaleDue` is *queued* because a cutscene cannot
@@ -1758,7 +1758,7 @@ no two the same one.
 | 斬 | Nagagiri / LONG CUT | katana reach ×(1 + 0.30n) |
 | 剛 | Kongo / ADAMANT | max health 100 + 30n |
 | 跳 | Tobi / LEAP | +n jumps |
-| 壁 | Kabe / WARD | 3s shield, 1.5s wait, ¼ gravity |
+| 壁 | Kabe / WARD | **hold** to block, 2s cap, 1.5s wait, ¼ gravity |
 | 落 | Otoshi / POWER DIVE | interact in the air — a driven fall |
 | 三 | Sanzan / TRIPLE SLASH | hold attack — three cuts, planted |
 | 突 | Totsugeki / CHARGE | sprint + attack — straight through, no gravity |
@@ -1789,9 +1789,29 @@ fly, and nothing on screen would tell her the orb she is wearing is why. It is
 the last `else` in the mount chain, which is nearly always reached, because a
 dragon is a place you walk to.
 
-**THE WAIT STARTS WHEN THE BUBBLE DROPS, NOT WHEN IT GOES UP.** Charged from
-the press, a 3s shield on a 1.5s cooldown is already available again by the
-time it pops — the two numbers stop meaning what they say.
+**IT IS HELD, NOT TOGGLED, AND THAT IS THE DIFFERENCE BETWEEN A BLOCK AND AN
+INVULNERABILITY.** The first version was press-once-for-three-seconds. Three
+seconds is a long time in a fight two nine-year-olds are having, and a shield
+that stays up while she does something else is not a decision — it is a state
+she is in. Holding costs her the button for as long as she wants the cover.
+
+**`WARD.max` (2s) IS A HARD CAP AND STACKING DOES NOT MOVE IT.** Thumb down or
+not, the block ends at two seconds; stacks buy a shorter *wait* instead, which
+is the only one of the two numbers that can grow without the shield eventually
+being up more than it is down. `world-check` asserts eight orbs leave `max`
+untouched and only move `cool`.
+
+**`WARD.tail` — it keeps working for 0.2s after she lets go.** A blow landing
+on the exact frame her thumb comes off otherwise reads as the block failing,
+and a kid cannot tell that apart from a block that does not work.
+
+**THE WAIT STARTS AT THE RELEASE, AND THE TAIL RUNS INSIDE IT.** Charged from
+the press, a 2s block on a 1.5s wait is already back before it has finished;
+charged when the tail expires, the gap she feels is 0.2s longer than the number
+the profile screen showed her. `_dropWard` is the single exit — all three ways
+a block can end (she let go, she hit the cap, her sister traded the orb out of
+her hand mid-block) go through it, so the tail and the wait cannot be started
+by one path and forgotten by another. All three are checked.
 
 **`force.pierce` — the ward stops blades, not the edge of the world.** Exactly
 one caller sets it, `Tournament._updateOut`, and it has to: without it a kitten
@@ -1834,12 +1854,30 @@ themselves: **4550 across 216**. An even split is 2275 each and the brief is
 that all of it buys three or four orbs, so `orbPrice = pointsTotal / 2 / 3.5`
 = **650**, sell **488** (75%).
 
-That number does more than it looks. Eight types, a stall that stocks **one of
-each**, and a wallet that reaches three is what makes **trading** the way you
-build a set rather than an extra you can ignore: there is no amount of playing
-that buys a stack, and the only other copies in the world are the sixteen lying
-on the islands and the ones in your sister's hand. Twenty-six exist in total,
-against sixteen slots across two kittens.
+That number does more than it looks. Eight types, **one of each lying in the
+world**, a stall whose stock is deep only on the four stat orbs, and a wallet
+that reaches three is what makes **trading** the way you build a set rather
+than an extra you can ignore: there is no amount of playing that buys a stack,
+and every second copy of anything has to come off the shelf or out of your
+sister's hand.
+
+**EIGHT IN THE WORLD, ONE OF EACH, AND NOTHING STACKABLE BY WALKING.** The
+first version scattered sixteen — one of each plus eight spares — so a stack
+could be built on foot, and that looked like the generous call. It is the wrong
+one: sixteen orbs lying about means two girls can each wander into a full set
+without ever speaking to each other, and the interesting object in this feature
+is not the orb, it is the sentence "I'll swap you my Ward". Eight keeps every
+power *findable* — nothing is locked behind a price a kid might never reach —
+while making a second copy of anything something you buy, sell for, or trade
+out of your sister's hand.
+
+**The dealer is therefore the only source of a second copy, and his shelf is
+where the stacking rule lives** (`stockFor`). Four each of the four *stat* orbs
+— Gale, Long Cut, Adamant, Leap, whose whole point is a number going up — and
+one each of the four *moves*, where a second copy only widens something she can
+already do and the fourth is a slot she could have spent on a verb she has not
+got. A deep shelf does not make them cheap: the scarcity is the purse, and a
+purse buys three orbs **total** against a stack of four costing 2600.
 
 **Buying and selling back must LOSE money** (checked), or the two of them
 bounce one orb off the counter and buy the shelf. **A sold orb goes back on the
@@ -1914,6 +1952,20 @@ vigor stack off a kitten at 130/130 must leave her at 100/100, not 130/100; and
 putting one on mid-round must not be a free heal. `setPowerOrbs` keeps the
 FRACTION. Both wrong answers are things two sisters will produce within a
 minute of finding the trade screen.
+
+**EVERY PIECE OF TEXT ON A WORN ORB CANCELS ITS PARENT BEFORE FACING THE
+CAMERA.** `mesh.quaternion.copy(camera.quaternion)` is a *local* rotation, and
+everything on these orbs hangs off something that turns: `group` carries the
+orbit tilt and `orbNode` tumbles on two axes every frame. Copied straight, the
+kanji and the `cos θ / sin θ` readout arrive sheared, leaning and rolling once a
+second — legible in a still frame and unreadable in motion, which is the worst
+way for it to be wrong. **This is the same bug that got the drifting glyphs
+deleted from the plain Kotodama Orb** (see the note in `orb.js`); the answer
+then was to remove them, and the answer here is to invert the parent's world
+rotation first. The parent quaternions are composed by hand rather than read
+from `getWorldQuaternion`, because this runs per VIEW *before* the render that
+would update the world matrices — `Object3D` keeps `.quaternion` in step with
+`.rotation` on assignment, so the two it needs are always live.
 
 **`syncOrbMeshes` rebuilds the worn geometry wholesale rather than patching
 it.** Each orb's shell radius, orbit speed and starting phase come from its slot

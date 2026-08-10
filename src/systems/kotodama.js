@@ -1,6 +1,6 @@
 import {
   POWER_ORBS, ORB_BY_ID, ORB_IDS, MAX_EQUIPPED, PowerOrb, PowerOrbPickup,
-  orbPrice, orbSellPrice,
+  orbPrice, orbSellPrice, stockFor,
 } from '../entities/powerorb.js';
 import { KotodamaStall } from '../entities/stall.js';
 
@@ -14,7 +14,7 @@ import { KotodamaStall } from '../entities/stall.js';
      2. whoever has more is given a Powerup Kotodama, drawn at random
         (a tie gives one to both — see below)
      3. every plain orb is dissolved: off both kittens, out of the world
-     4. sixteen Powerup Kotodama are scattered across the seven islands
+     4. eight Powerup Kotodama — one of each — are scattered over the islands
      5. a dealer's stall appears in the market
 
    A TIE GIVES THE PRIZE TO BOTH, AND THAT INCLUDES 0-0. This is the rule the
@@ -41,16 +41,22 @@ import { KotodamaStall } from '../entities/stall.js';
 --------------------------------------------------------------------------- */
 
 /**
- * How many lie in the world.
+ * How many lie in the world: EXACTLY ONE OF EACH, and no duplicates.
  *
- * ONE OF EACH FIRST, THEN DUPLICATES. Eight unique means no power is locked
- * behind the shop's prices, which matters because a wallet only reaches three
- * or four of them; eight duplicates on top means STACKING is reachable by
- * walking, which is what stops the stall being the only way to build a set.
- * Sixteen across seven islands is two or three each — enough that finding one
- * is a reason to fly somewhere and not so many that they are scenery.
+ * The first version scattered sixteen — one of each plus eight spares — so a
+ * stack could be built on foot. That was the wrong call and it is worth saying
+ * why, because it looked like the generous one. Sixteen orbs lying about means
+ * two girls can wander into a full set of eight each without ever speaking to
+ * each other, and this whole feature exists so that they do: the interesting
+ * object in it is not the orb, it is the sentence "I'll swap you my Ward".
+ *
+ * Eight means every power is FINDABLE — nothing is locked behind a price a
+ * kid might never reach — and nothing is stackable by walking. A second Gale
+ * has to be bought, sold for, or traded out of her sister's hand. That is the
+ * pressure the dealer's brutal prices are for, and it is why he stocks four of
+ * the four stat orbs (see `stockFor`) while the world stocks one.
  */
-const WORLD_SPAWN = 16;
+const WORLD_SPAWN = ORB_IDS.length;
 
 /** How close you have to be to walk one up. */
 const PICKUP_RADIUS = 2.8;
@@ -71,8 +77,9 @@ export class Kotodama {
     /** @type {KotodamaStall|null} */
     this.stall = null;
 
-    /** What the dealer has left. One of each at open — see the header. */
-    this.stock = Object.fromEntries(ORB_IDS.map((id) => [id, 1]));
+    /** What the dealer has left. Four of each stat orb, one of each move —
+     *  see `stockFor`, which owns that split and the reasoning for it. */
+    this.stock = Object.fromEntries(ORB_IDS.map((id) => [id, stockFor(id)]));
 
     this.price = orbPrice(this.world.pointsTotal);
     this.sellPrice = orbSellPrice(this.world.pointsTotal);
@@ -142,7 +149,7 @@ export class Kotodama {
   }
 
   /**
-   * Scatter the sixteen.
+   * Scatter the eight, one per kind.
    *
    * PLACED THROUGH `findOpenSpot` AND REGISTERED IN `keepClear`, like every
    * other thing that has ever been put on these islands. Four separate bugs in
@@ -156,12 +163,13 @@ export class Kotodama {
     const islands = this.world.questIslands;
     if (!islands.length) return;
 
-    /* Deal the ids out round-robin rather than at random. Random gives you
-       three Gale orbs and no Ward more often than a nine-year-old will accept
-       as chance, and the guarantee that every power is findable on foot is the
-       reason the shop's prices are allowed to be brutal. */
-    const order = [];
-    for (let i = 0; i < WORLD_SPAWN; i++) order.push(ORB_IDS[i % ORB_IDS.length]);
+    /* One of each, in roster order. Not shuffled and not random: random would
+       give you three Gale orbs and no Ward often enough that a nine-year-old
+       reads it as the game cheating, and the guarantee that every power is
+       findable on foot is the reason the shop's prices are allowed to be
+       brutal. Which ISLAND each lands on is decided below by index, so the
+       eight are spread rather than piled. */
+    const order = ORB_IDS.slice(0, WORLD_SPAWN);
 
     for (let i = 0; i < order.length; i++) {
       const isl = islands[i % islands.length];
@@ -379,7 +387,7 @@ export class Kotodama {
     this.pickups = [];
     if (this.stall) this.scene.remove(this.stall.group);
     this.stall = null;
-    this.stock = Object.fromEntries(ORB_IDS.map((id) => [id, 1]));
+    this.stock = Object.fromEntries(ORB_IDS.map((id) => [id, stockFor(id)]));
     this.awakened = false;
   }
 }

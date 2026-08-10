@@ -271,7 +271,7 @@ wrapped in them.
 | 斬 | **Nagagiri** — Long Cut | longer katana |
 | 剛 | **Kongo** — Adamant | more health in the ring |
 | 跳 | **Tobi** — Leap | an extra jump |
-| 壁 | **Kabe** — Ward | mount button with nothing to climb on: a shield nothing gets through, and you float while it's up |
+| 壁 | **Kabe** — Ward | **hold** the mount button with nothing to climb on: a shield nothing gets through, up to 2 seconds, and you float while it's up |
 | 落 | **Otoshi** — Power Dive | interact in the air — drop like a hammer |
 | 三 | **Sanzan** — Triple Slash | *hold* slash for three cuts. You can't move through them |
 | 突 | **Totsugeki** — Charge | slash while sprinting — straight through everything, gravity off |
@@ -279,15 +279,18 @@ wrapped in them.
 The three attacks are new moves, not new buttons: they are the buttons you
 already use, in a situation you already understand.
 
-**Sixteen are scattered across the islands** and show up on the map in their
-own colours, so the answer to "where's the last Ward" is never "fly over
-everything again".
+**One of each is hidden out in the world** — eight orbs across the islands,
+showing on the map in their own colours, so the answer to "where's the Ward" is
+never "fly over everything again". There are no spares lying about: if you want
+*two* of something, you have to buy it or get it off your sister.
 
 **A dealer opens a stall in the market.** He buys and sells for the points you
 earned knocking things over — but he is expensive on purpose: every point in
-the world is 4550, so a fair split buys you *three* orbs, and **he only stocks
-one of each**. Selling gives you 75% back, which is also the only way to get
-back under eight slots.
+the world is 4550, so a fair split buys you *three* orbs. He keeps **four each
+of Gale, Long Cut, Adamant and Leap** — the four worth stacking — and **one
+each of the four moves**. Four of anything costs 2600, which is more than you
+will ever have. Selling gives you 75% back, and it is the only way to get back
+under eight slots.
 
 **So you trade.** Open **CHARACTER PROFILE** from the pause menu and you each
 get your own cursor, in your own colour: pick the orb you're offering, and you
@@ -615,7 +618,7 @@ src/
     arenaquest.js       how the tournament unlocks
     announce.js         Mr. Satan's pop-in card
     leaderboard.js      the saved record board + joystick name entry
-    kotodama.js         the Awakening, the sixteen scattered orbs, the economy
+    kotodama.js         the Awakening, the eight scattered orbs, the economy
     profile.js          Character Profile / trading / the shop — the one menu
                         with TWO cursors, because a trade needs both girls
   entities/

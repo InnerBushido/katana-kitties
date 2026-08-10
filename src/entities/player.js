@@ -188,8 +188,15 @@ export class Player {
     /** Folded buff totals. Never null: an empty list aggregates to the
      *  identity, so every read site is `this.power.speed` with no `?? 1`. */
     this.power = aggregate([]);
-    /** Seconds the ward bubble has left, and the wait after it drops. */
-    this.wardT = 0;
+    /* --- the ward, which is HELD rather than toggled ---
+       `wardOn` is "her thumb is on the button and the block is live";
+       `wardUsed` is how much of WARD.max this block has spent; `wardTail` is
+       the fifth of a second it keeps working after she lets go, so a blow that
+       lands on the release frame is still blocked. `warded` is the one thing
+       anything else should ask. */
+    this.wardOn = false;
+    this.wardUsed = 0;
+    this.wardTail = 0;
     this.wardCool = 0;
     /** Seconds left of a charge, and the direction it is committed to. */
     this.chargeT = 0;
@@ -367,10 +374,15 @@ export class Player {
     return this.powerOrbs;
   }
 
+  /** True while the block is doing anything at all — held, or in its tail. */
+  get warded() {
+    return this.wardOn || this.wardTail > 0;
+  }
+
   /** How much of gravity applies this frame. See WARD / TRIPLE / CHARGE. */
   _gravityK() {
     if (this.chargeT > 0) return 0;
-    if (this.wardT > 0) return WARD.gravity;
+    if (this.warded) return WARD.gravity;
     if (this.triLeft > 0 && !this.onGround) return TRIPLE.gravity;
     return 1;
   }
@@ -468,10 +480,12 @@ export class Player {
 
     /* NO POWER MOVE SURVIVES GETTING ON AN ANIMAL. `_stepSpecials` only runs
        inside the ground controller, so a ward popped a frame before mounting
-       a dragon would keep `wardT` at three seconds for ever — a permanently
-       invincible kitten, produced by a button press that looks like getting
-       on a dragon. Same for a charge, which would hold gravity at zero. */
-    if ((this.mount || this.rideAlong) && (this.wardT > 0 || this.busy || this.diving)) {
+       a dragon would keep `wardOn` true for ever — a permanently invincible
+       kitten, produced by a button press that looks like getting on a dragon.
+       The hold-to-block rework does NOT fix this by itself: the release that
+       would end it is read in the ground controller too. Same for a charge,
+       which would hold gravity at zero. */
+    if ((this.mount || this.rideAlong) && (this.warded || this.busy || this.diving)) {
       this._clearSpecials();
     }
 
@@ -509,7 +523,7 @@ export class Player {
        stand off the side of the arena for the whole round and take nothing,
        which deletes the ring. Blocking a blade is what she bought; blocking
        the floor is not. */
-    if (this.wardT > 0 && !force?.pierce) {
+    if (this.warded && !force?.pierce) {
       this.wardFlash = 0.25;
       hud?.sfx?.('wardhit');
       return 0;
@@ -592,7 +606,9 @@ export class Player {
 
   /** Drop every power move on the floor. Safe to call at any time. */
   _clearSpecials() {
-    this.wardT = 0;
+    this.wardOn = false;
+    this.wardUsed = 0;
+    this.wardTail = 0;
     this.wardCool = 0;
     this.chargeT = 0;
     this.chargeLeft = 0;
@@ -1077,19 +1093,24 @@ export class Player {
    * leave a velocity the ordinary controller can take back over.
    */
   _stepSpecials(dt, pad, world, hud) {
-    // --- ward ---
-    if (this.wardT > 0) {
-      this.wardT = Math.max(0, this.wardT - dt);
-      if (this.wardT === 0) {
-        /* THE WAIT STARTS WHEN THE BUBBLE DROPS, NOT WHEN IT GOES UP. Charging
-           the cooldown from the press means a 3s shield on a 1.5s cooldown is
-           off for nothing at all — it is already available again by the time
-           it pops. Read the other way round the two numbers say what they look
-           like they say: three seconds of cover, then one and a half of not. */
-        this.wardCool = this.power.ward?.cool ?? WARD.cool;
-        hud?.sfx?.('warddown');
-      }
-    } else if (this.wardCool > 0) {
+    /* --- ward: HELD, capped, with a short tail and a wait that starts on the
+       RELEASE ---
+       Three ways out and they are not the same event. Letting go is the
+       ordinary one. Running out the two seconds is the punished one, and it
+       has to drop her block even though her thumb is still down — otherwise
+       "2 seconds max" is a suggestion. Losing the orb mid-block is the third,
+       and it happens: her sister can trade the Ward orb away from her while
+       the bubble is up. */
+    if (this.wardOn) {
+      this.wardUsed += dt;
+      const spent = this.wardUsed >= (this.power.ward?.max ?? WARD.max);
+      if (!pad.down('mount') || spent || !this.power.ward) this._dropWard(hud);
+    } else {
+      /* THE TAIL AND THE WAIT RUN TOGETHER, and that is what makes the wait
+         mean what the profile screen says. The tail is 0.2s of grace inside a
+         1.5s cooldown that started when she let go — not 0.2 and then 1.5, or
+         the gap she feels is longer than the number she was shown. */
+      this.wardTail = Math.max(0, this.wardTail - dt);
       this.wardCool = Math.max(0, this.wardCool - dt);
     }
     this.wardFlash = Math.max(0, (this.wardFlash ?? 0) - dt);
@@ -1124,13 +1145,32 @@ export class Player {
     if (this.diving && (this.onGround || this.hitT > 0 || this.ko)) this.diving = false;
   }
 
-  /** Put the bubble up, if she has the orb and the wait has run out. */
+  /** Start a block. Held from here; `_stepSpecials` ends it. */
   _popWard(hud) {
-    if (!this.power.ward || this.wardT > 0 || this.wardCool > 0) return false;
-    this.wardT = this.power.ward.dur;
+    if (!this.power.ward || this.warded || this.wardCool > 0) return false;
+    this.wardOn = true;
+    this.wardUsed = 0;
     this.wardMesh.visible = true;
     hud?.sfx?.('wardup');
     return true;
+  }
+
+  /**
+   * End a block, whichever of the three ways it ended.
+   *
+   * ONE EXIT, so the tail and the wait cannot be started by one path and
+   * forgotten by another. The wait is charged here — at the RELEASE — rather
+   * than when the tail expires: started at the press a 2s block on a 1.5s
+   * cooldown is already available again before it has finished, and started at
+   * the end of the tail the number on the profile screen is 0.2s short of the
+   * gap she actually feels.
+   */
+  _dropWard(hud) {
+    if (!this.wardOn) return;
+    this.wardOn = false;
+    this.wardTail = WARD.tail;
+    this.wardCool = this.power.ward?.cool ?? WARD.cool;
+    hud?.sfx?.('warddown');
   }
 
   /**
@@ -1593,18 +1633,28 @@ export class Player {
    * indistinguishable from a sister who keeps missing.
    */
   _updateWardMesh(dt) {
-    const up = this.wardT > 0;
-    this.wardMesh.visible = up;
-    if (!up) return;
+    this.wardMesh.visible = this.warded;
+    if (!this.warded) return;
     this.wardMesh.position.set(0, this.height * 0.55, 0);
-    const dying = this.wardT < 0.7;
-    const flick = dying ? 0.45 + 0.55 * (Math.sin(this.wardT * 56) > 0 ? 1 : 0) : 1;
+
+    /* IT HAS TO SAY WHEN IT IS ABOUT TO RUN OUT. A block that vanishes without
+       warning teaches nothing except that the game is unfair, and now that it
+       is held rather than toggled she has no press to count from — the only
+       clock she has is the bubble itself. The last 0.6s of the two seconds
+       flicker at 9Hz, which is early enough to let go and unmistakable next to
+       the steady breath it holds for the rest of its life. */
+    const left = Math.max(0, (this.power.ward?.max ?? WARD.max) - this.wardUsed);
+    const dying = this.wardOn && left < 0.6;
+    const flick = dying ? 0.45 + 0.55 * (Math.sin(left * 56) > 0 ? 1 : 0) : 1;
     const hit = (this.wardFlash ?? 0) > 0 ? 1 + this.wardFlash * 2.4 : 1;
-    this.wardShell.material.opacity = 0.22 * flick * hit;
-    this.wardCore.material.opacity = 0.10 * flick * hit;
-    // A slow swell, and a pop on the frame it goes up.
-    const born = Math.min(1, (this.power.ward.dur - this.wardT) / 0.18);
-    this.wardMesh.scale.setScalar(born * (1 + Math.sin(this.wardT * 3.1) * 0.04));
+    /* The tail fades rather than holding full strength: it is still protecting
+       her, and it should look like a bubble collapsing rather than one that
+       stayed up after she let go. */
+    const tail = this.wardOn ? 1 : this.wardTail / WARD.tail;
+    this.wardShell.material.opacity = 0.22 * flick * hit * tail;
+    this.wardCore.material.opacity = 0.10 * flick * hit * tail;
+    const born = Math.min(1, this.wardUsed / 0.18);
+    this.wardMesh.scale.setScalar(born * (1 + Math.sin(this.wardUsed * 3.1) * 0.04));
     this.wardShell.rotation.y += dt * 0.7;
     this.wardCore.rotation.y -= dt * 1.1;
   }
