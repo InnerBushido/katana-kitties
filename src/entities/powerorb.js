@@ -138,16 +138,25 @@ export const ORB_IDS = POWER_ORBS.map((o) => o.id);
  * the fourth copy of it is a slot she could have spent on something she cannot
  * do at all.
  *
- * IT DOES NOT MAKE THEM CHEAP. There is exactly one of each lying in the
- * world, so the only way to stack is to buy — and a purse buys three orbs
- * TOTAL. The shelf being deep moves the scarcity from "the dealer hasn't got
- * one" to "you cannot afford it and your sister has two", which is the
- * scarcity that produces a conversation instead of a shrug.
+ * IT DOES NOT MAKE THEM CHEAP. The world holds four orbs per player, so the
+ * only way to STACK is to buy — and a purse buys three orbs TOTAL. The shelf
+ * being deep moves the scarcity from "the dealer hasn't got one" to "you
+ * cannot afford it and your sister has two", which is the scarcity that
+ * produces a conversation instead of a shrug.
+ *
+ * THE SHELF GROWS WITH THE PARTY: one more of every kind per player past the
+ * second. Four kittens shopping off a shelf sized for two means the third one
+ * to reach the market finds it empty, which is not scarcity — scarcity is a
+ * price you cannot meet, and an empty shelf is just being late. The four move
+ * orbs go from one to three rather than to four, so they stay the thing you
+ * mostly get by trading.
  */
 export const STOCK_STACKABLE = 4;
 export const STOCK_UNIQUE = 1;
-export const stockFor = (id) =>
-  (ORB_BY_ID[id]?.stack ? STOCK_STACKABLE : STOCK_UNIQUE);
+export const stockFor = (id, players = 2) => {
+  const extra = Math.max(0, players - 2);
+  return (ORB_BY_ID[id]?.stack ? STOCK_STACKABLE : STOCK_UNIQUE) + extra;
+};
 
 /* --------------------------- the three abilities -------------------------- */
 
@@ -312,15 +321,22 @@ export function aggregate(ids = []) {
  * of playing that buys a stack, and the only other copies in the world are the
  * ones lying on the islands and the ones in your sister's hand.
  *
+ * THE SHARE IS PER PLAYER, so the divisor is the party size rather than 2. The
+ * pot is fixed — it is every prop in the world — so four kittens split it four
+ * ways, and leaving the price alone would quietly halve what each of them can
+ * buy and turn "your share buys three or four" into "your share buys one and a
+ * half". Two players give exactly the number they gave before.
+ *
  * @param {number} totalPoints every point earnable in the world
+ * @param {number} players     how many kittens are splitting it
  */
 export const BUYS_PER_PURSE = 3.5;
 export const SELL_FRACTION = 0.75;
 
-export const orbPrice = (totalPoints) =>
-  Math.round(totalPoints / 2 / BUYS_PER_PURSE);
-export const orbSellPrice = (totalPoints) =>
-  Math.round(orbPrice(totalPoints) * SELL_FRACTION);
+export const orbPrice = (totalPoints, players = 2) =>
+  Math.round(totalPoints / Math.max(1, players) / BUYS_PER_PURSE);
+export const orbSellPrice = (totalPoints, players = 2) =>
+  Math.round(orbPrice(totalPoints, players) * SELL_FRACTION);
 
 /* ------------------------- the worn companion orb ------------------------- */
 

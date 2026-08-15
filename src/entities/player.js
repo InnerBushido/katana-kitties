@@ -3,6 +3,7 @@ import { Billboard } from '../core/gfx.js';
 import { PANDA_SPEED, PANDA_JUMP } from './panda.js';
 import { aggregate, WARD, DIVE, TRIPLE, CHARGE } from './powerorb.js';
 import { ANGEL_ALPHA } from './angel.js';
+import { styleFor } from '../core/palette.js';
 
 /* ---------------------------------------------------------------------------
    A Katana Kitty and the camera that follows it.
@@ -86,6 +87,37 @@ export const ATTACKS = {
 /** Seconds a hit takes control away, and how long she cannot be hit again. */
 const HIT_STUN = 0.26;
 const INVULN = 0.55;
+/**
+ * What hitting your own partner costs HER, and then you.
+ *
+ * NO FRIENDLY FIRE USED TO MEAN NOTHING AT ALL HAPPENED, and that is a rule
+ * with no teeth: the safest thing in a tag-team round was to hold attack down
+ * and swing through everybody, because the swing that hit your partner was
+ * free. It also made the protection invisible — you learned it by watching your
+ * attack do nothing, which reads as the attack being broken.
+ *
+ * A daze is the answer that costs the RIGHT person something. Her partner
+ * loses a second and a half of control, which in a ring where a dash crosses
+ * the whole deck is a long time; the attacker loses the swing and gets a screenful
+ * of stars saying exactly whose fault it was. Spamming attacks in a 2v2 now
+ * hurts your own side, which is the teamwork the league was supposed to be
+ * about.
+ *
+ * A SECOND AND A HALF, AND IT HAS BEEN UP TWICE. The first pass was 0.5 and it
+ * was not painful enough to change how anybody swings — you dazed your partner,
+ * she blinked, and you both carried on mashing. A second was long enough to
+ * lose a trade over and still short enough to read as a stumble rather than as
+ * a mistake: the stars were on and off before the girl who caused it had looked
+ * up. At 1.5 the animation is a beat you actually watch, which is the whole job
+ * — the cost is meant to be legible to the person who caused it, not merely
+ * suffered by the person who took it. Still well under a knockout (1.8), so it
+ * can never be the thing that lost you the round.
+ *
+ * TWICE THE LENGTH IN LOCKOUT, so nobody can be held still forever. Dazed for
+ * one beat and immune for two means a partner mashing attack can take at most a
+ * third of anybody's time — painful, survivable, and clearly her fault.
+ */
+export const DAZE_TIME = 1.5;
 /** How long she lies there after a knockout, before the round can move on. */
 export const KO_TIME = 1.8;
 
@@ -122,6 +154,17 @@ const ANGEL_ROAM = 26;
 
 /** How tall the crouched eating drawing is, against her standing height. */
 const EAT_CROUCH = 0.86;
+/**
+ * Where her MOUTH is while she eats, as a fraction of her standing height.
+ *
+ * Exported because the animal has to be drawn at it (`Critter._updatePinned`)
+ * and the two numbers have to come from the same place. A meal is two sprites
+ * pretending to touch: the snack sitting a foot below her chin does not read as
+ * being eaten, it reads as a rat that happens to be standing there. Measured
+ * off the crouch — she is hunched over, so her head is at about three quarters
+ * of `EAT_CROUCH` and her mouth just under it.
+ */
+export const EAT_MOUTH_Y = EAT_CROUCH * 0.62;
 
 export class Player {
   constructor(opts) {
@@ -129,10 +172,23 @@ export class Player {
       texture, index = 0, spawn = new THREE.Vector3(),
       name = 'Kitty', tint = 0xffffff, height = 2.5,
       cols = 4, rows = 1, mirror = true, contentScale = 1, pad = 0,
-      dirSense = 1, rowSense = null,
+      dirSense = 1, rowSense = null, style = null,
     } = opts;
 
     this.index = index;
+    /**
+     * WHICH KITTEN SHE IS, which is deliberately NOT her slot number.
+     *
+     * They matched until players could choose: a third player picking Blossom
+     * leaves Storm unused, so slot 2 is playing style 3 and no lookup by index
+     * can be right. Everything that used to ask `styleFor(this.index)` — her
+     * ring colour, her health bar, her panda's name, where she respawns — asks
+     * this instead.
+     *
+     * It falls back to the style at her index so the many `new Player({index})`
+     * calls in `tools/world-check.mjs` keep meaning what they meant.
+     */
+    this.style = style ?? styleFor(index);
     this.name = name;
     this.position = spawn.clone();
     this.velocity = new THREE.Vector3();
@@ -181,8 +237,15 @@ export class Player {
        in the middle of the town. */
     this.maxHp = MAX_HP;
     this.hp = MAX_HP;
+    /** Tournament handicap on the whole bar — see setHpScale. 1 outside the
+     *  ring and in every mode that is not a handicap league. */
+    this.hpScale = 1;
     /** Seconds of hit-stun left — she keeps her momentum and loses her stick. */
     this.hitT = 0;
+    /** Seconds of PARTNER-daze left, and the lockout after it. No damage, no
+     *  control, and a ring of stars — see `daze`. */
+    this.stunT = 0;
+    this.stunLockT = 0;
     /** Seconds of invulnerability left. Stops a fast blade chain-locking her. */
     this.invulnT = 0;
     /** Seconds left lying knocked out. Zero means she is up. */
@@ -300,7 +363,7 @@ export class Player {
     this.marker = new THREE.Mesh(
       mg,
       new THREE.MeshBasicMaterial({
-        color: index === 0 ? 0xff8a3d : 0xff6fae,
+        color: this.style.colour,
         transparent: true, opacity: 0.75, depthWrite: false, toneMapped: false,
       })
     );
@@ -334,7 +397,7 @@ export class Player {
       return m;
     };
     this.hpBack = barMesh(barW + 0.22, 0x1c1016, 0, 0.85);
-    this.hpFill = barMesh(barW, index === 0 ? 0xff8a3d : 0xff6fae, 1);
+    this.hpFill = barMesh(barW, this.style.colour, 1);
     /* The fill shrinks from the LEFT EDGE, not from its centre. A plane
        scaled on x contracts toward its own origin, so a bar built centred
        eats itself from both ends and reads as half the damage it is showing.
@@ -347,6 +410,75 @@ export class Player {
     this.hpGroup.add(this.hpBack, this.hpPivot);
     this.group.add(this.hpGroup);
     this._barW = barW;
+
+    /* THE TEAM PENNANT — a flat coloured chevron above her head, on in team
+       matches only (`Tournament.setTeamMark`).
+
+       WHO IS ON MY SIDE was a question the game never answered. In a 2v2 you
+       found out by swinging at somebody and watching nothing happen, which is
+       the worst way to learn it: the rule that protects your partner is
+       invisible, so the first thing it teaches you is that your attack is
+       broken.
+
+       A CHEVRON RATHER THAN A DISC, because from this game's fixed
+       three-quarter camera a flat disc above a head reads as the halo the
+       angel already owns, and two round things over two kittens meaning
+       opposite things is worse than no marker. A downward wedge points at the
+       cat it belongs to and is the one shape on screen nothing else uses.
+
+       `depthTest: false` and a high `renderOrder`, exactly like the health bar
+       under it and for the same reason — a marker you lose behind a corner
+       post is worse than no marker. It is parented to `group` rather than to
+       `hpGroup` so it survives the bar being hidden between rounds. */
+    const pen = new THREE.Shape();
+    pen.moveTo(-0.62, 0.52);
+    pen.lineTo(0.62, 0.52);
+    pen.lineTo(0, -0.52);
+    this.teamMark = new THREE.Mesh(
+      new THREE.ShapeGeometry(pen),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.96,
+        depthTest: false, depthWrite: false, toneMapped: false,
+        side: THREE.DoubleSide,
+      })
+    );
+    this.teamMark.renderOrder = 24;
+    this.teamMark.visible = false;
+    this.group.add(this.teamMark);
+
+    /* THE DAZE STARS — three of them, orbiting, while a partner's swing has
+       her. The cartoon shorthand every kid already reads, and the same one the
+       arena's stunned animals wear, so "that one cannot move" means one thing
+       on this deck whether it is a rat or your sister.
+
+       THEY ARE NOT BILLBOARDED, deliberately. A ring of stars has to go BEHIND
+       her head on the far side of the orbit or it is not a ring, it is three
+       stars in a row — so they keep their world orientation and get their
+       depth from scale (see `_updateDaze`) rather than from facing the lens. */
+    this.dazeStars = new THREE.Group();
+    this.dazeStars.visible = false;
+    /* SIZED FOR THE FIGHT CAMERA, NOT FOR A CLOSE-UP — the lesson the angel
+       already paid for. The ring is framed from 96 units out and the first pass
+       here was a 0.24-unit star, which is 8% of a kitten's height: from the
+       deck it read as a speck of dust rather than as "she cannot move". */
+    const star = new THREE.Shape();
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+      const r = i % 2 ? 0.17 : 0.42;
+      if (i === 0) star.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      else star.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    const starGeo = new THREE.ShapeGeometry(star);
+    for (let i = 0; i < 3; i++) {
+      const m = new THREE.Mesh(starGeo, new THREE.MeshBasicMaterial({
+        color: 0xffd83d, transparent: true, opacity: 0.98,
+        depthTest: false, depthWrite: false, toneMapped: false,
+        side: THREE.DoubleSide,
+      }));
+      m.renderOrder = 25;
+      this.dazeStars.add(m);
+    }
+    this.group.add(this.dazeStars);
 
     /* --- the ward bubble ---
        Two shells, both BackSide, both additive-ish through low opacity: from
@@ -409,8 +541,67 @@ export class Player {
    * @param {?object} art loaded atlas, or null — a missing sheet costs the
    *        pose and nothing else; she just keeps her attack row.
    */
+  /**
+   * Take a partner's swing: no damage, no control, and a ring of stars.
+   *
+   * IT REFUSES WHILE SHE IS ALREADY DAZED OR STILL LOCKED OUT, which is what
+   * stops the whole thing becoming a way to hold your own partner still for a
+   * round — and it matters more at a full second than it did at half of one.
+   * One second dazed and two immune caps a sister mashing attack at a third of
+   * anybody's time.
+   *
+   * A KO'd or angel kitten is never dazed: she has nothing to lose control of,
+   * and stars over an angel is two "she is out of it" signals fighting.
+   *
+   * @returns {boolean} true if it landed — the caller uses it for the toast.
+   */
+  daze(seconds = DAZE_TIME) {
+    if (this.ko || this.angel) return false;
+    if (this.stunT > 0 || this.stunLockT > 0) return false;
+    this.stunT = seconds;
+    this.stunLockT = seconds * 2;
+    return true;
+  }
+
+  /** Spin the stars, and switch them on and off with the daze. */
+  _updateDaze(dt) {
+    if (!this.dazeStars) return;
+    const on = this.stunT > 0;
+    this.dazeStars.visible = on;
+    if (!on) return;
+    this._dazeSpin = (this._dazeSpin ?? 0) + dt * 7.5;
+    this.dazeStars.position.set(0, this.height * 1.18, 0);
+    this.dazeStars.children.forEach((s, i) => {
+      const a = this._dazeSpin + (i / this.dazeStars.children.length) * Math.PI * 2;
+      s.position.set(Math.cos(a) * 1.05, Math.sin(a * 2) * 0.16, Math.sin(a) * 1.05);
+      /* Scaled by the SINE of the orbit so the ones going away from the camera
+         shrink. Three flat stars at one size read as a triangle stuck to her
+         head; the same three breathing read as a ring going round it, which is
+         the whole cartoon. */
+      const k = 0.72 + 0.34 * (0.5 + 0.5 * Math.sin(a));
+      s.scale.setScalar(k);
+    });
+  }
+
+  /**
+   * Wear a team colour, or `null` for none.
+   *
+   * ONLY THE TOURNAMENT CALLS THIS, and only in a match where somebody
+   * actually shares a side — a pennant over every head in a free-for-all is
+   * four labels saying nothing. See `Tournament.teamed`.
+   */
+  setTeamMark(colour) {
+    if (!this.teamMark) return;
+    this.teamMark.visible = colour != null;
+    if (colour != null) this.teamMark.material.color.set(colour);
+  }
+
   setEatArt(art) {
     if (!art?.texture) return;
+    // Replacing one rather than stacking a second in the group. Nothing calls
+    // this twice today; a pose drawn on top of a pose is a silent bug if
+    // anything ever does.
+    if (this.eatPose) this.group.remove(this.eatPose);
     /* SHORTER THAN SHE IS, because she is crouching. `contentScale` makes the
        drawn figure exactly `height` tall whatever the sheet's packing, which
        is right for every standing pose and wrong for this one: a squatting cat
@@ -448,9 +639,29 @@ export class Player {
     const frac = this.maxHp > 0 ? this.hp / this.maxHp : 1;
     this.powerOrbs = [...ids];
     this.power = aggregate(this.powerOrbs);
-    this.maxHp = this.power.hp;
+    this.maxHp = Math.round(this.power.hp * this.hpScale);
     this.hp = Math.round(this.maxHp * frac);
     return this.powerOrbs;
+  }
+
+  /**
+   * The tournament handicap: a multiplier on her whole bar.
+   *
+   * IT MULTIPLIES INTO `maxHp` RATHER THAN REPLACING IT, so an Adamant stack
+   * and a 3v1 handicap compose instead of one silently cancelling the other —
+   * the same rule the clan buffs and the orbs already follow. It is a field on
+   * the player rather than a number the tournament applies once, because
+   * `setPowerOrbs` recomputes `maxHp` from scratch: a handicap written straight
+   * into `maxHp` would evaporate the moment she traded an orb mid-match.
+   *
+   * Keeps the FRACTION, for the reason `setPowerOrbs` gives.
+   */
+  setHpScale(k = 1) {
+    if (k === this.hpScale) return;
+    const frac = this.maxHp > 0 ? this.hp / this.maxHp : 1;
+    this.hpScale = k;
+    this.maxHp = Math.round(this.power.hp * k);
+    this.hp = Math.round(this.maxHp * frac);
   }
 
   /** True while the block is doing anything at all — held, or in its tail. */
@@ -500,6 +711,9 @@ export class Player {
        for a strip of UI. The fight camera looks down at ~0.55 radians and a
        yaw-only bar is foreshortened to about half its height there. */
     if (this.hpGroup.visible) this.hpGroup.quaternion.copy(camera.quaternion);
+    // Same full-quaternion turn as the bar, and for the same reason: it is a
+    // flat piece of UI, not a character standing on the ground.
+    if (this.teamMark.visible) this.teamMark.quaternion.copy(camera.quaternion);
     /* The wings are turned and pushed BEHIND her here for the same reason the
        mount nudge below is done here: "behind" is a direction from a camera,
        and this function is the one thing in the entity that runs once per
@@ -564,7 +778,11 @@ export class Player {
        physics — she keeps every bit of the momentum the blow gave her, which
        is the difference between being knocked across the ring and being
        switched off in mid-air. */
-    if (this.hitT > 0 || this.ko) pad = FROZEN_PAD;
+    /* A DAZE TAKES THE STICK THE SAME WAY A HIT DOES. Same one line, same dead
+       pad, so none of the three movement modes has to learn that a partner's
+       swing exists — and she keeps her momentum, which is what stops it reading
+       as being switched off. */
+    if (this.hitT > 0 || this.stunT > 0 || this.ko) pad = FROZEN_PAD;
 
     /* NO POWER MOVE SURVIVES GETTING ON AN ANIMAL. `_stepSpecials` only runs
        inside the ground controller, so a ward popped a frame before mounting
@@ -845,6 +1063,9 @@ export class Player {
 
   _updateCombat(dt) {
     this.hitT = Math.max(0, this.hitT - dt);
+    this.stunT = Math.max(0, (this.stunT ?? 0) - dt);
+    this.stunLockT = Math.max(0, (this.stunLockT ?? 0) - dt);
+    this._updateDaze(dt);
     this.invulnT = Math.max(0, this.invulnT - dt);
     this.flashT = Math.max(0, this.flashT - dt);
     if (this.koT > 0) this.koT = Math.max(0, this.koT - dt);
@@ -861,6 +1082,16 @@ export class Player {
        looks equivalent and is a latch: the frame she lands there is nothing
        left saying the bar was ever meant to be on, and she spends the rest of
        the tournament with no bar over her head. */
+    /* THE PENNANT RIDES ABOVE THE BAR AND SURVIVES IT. It is on whenever she
+       has a team, including while she is a KO'd angel between rounds — that is
+       exactly when "whose side was she on" is being asked, because her partner
+       is down on the deck fighting alone. Its height clears the bar's slot so
+       the two never overlap when both are up. */
+    if (this.teamMark.visible) {
+      this.teamMark.position.set(0, this.height * (this.barOn ? 1.62 : 1.36), 0);
+      this.teamMark.rotation.z = Math.sin((this.idlePhase ?? 0) * 2.2) * 0.09;
+    }
+
     const bar = this.hpGroup;
     bar.visible = this.barOn && !this.angel;
     if (!bar.visible) return;
@@ -875,7 +1106,7 @@ export class Player {
        a static red bar at 12% and a static red bar at 30% look the same. */
     const low = k <= 0.34;
     this.hpFill.material.color.set(
-      k > 0.34 ? (this.index === 0 ? 0xff8a3d : 0xff6fae) : k > 0.18 ? 0xffc23d : 0xff3b30
+      k > 0.34 ? this.style.colour : k > 0.18 ? 0xffc23d : 0xff3b30
     );
     this.hpFill.material.opacity = low
       ? 0.65 + Math.abs(Math.sin((this.idlePhase ?? 0) * 4.5)) * 0.35
@@ -1309,7 +1540,7 @@ export class Player {
   /** Each kitten's panda has its own name, so the girls aren't both
    *  shouting about "the panda". */
   get pandaName() {
-    return this.index === 0 ? 'Bao' : 'Mochi';
+    return this.style.panda;
   }
 
   /* ------------------------- the power moves ---------------------------- */
@@ -1466,6 +1697,14 @@ export class Player {
    */
   _chargeStrike(world, hud) {
     hud?.strikePlayers?.(this, 'charge', this._reach(), this.chargeDir);
+    /* THE WILDLIFE TOO, and this was missing. `_doSlash` asks both questions
+       on every ordinary swing — the other kitten and the deck's animals — and
+       the two power-orb attacks asked only the first, so a rat could be
+       charged straight through and a dive could land on top of one and neither
+       did anything at all. That reads as the move being broken rather than as
+       the animal being fast, and it hit the rat hardest because the rat is the
+       one you chase. */
+    hud?.strikeCritters?.(this, CHARGE.radius);
     for (const p of world.props) {
       if (this._chargeHit.has(p)) continue;
       const dx = p.group.position.x - this.position.x;
@@ -1488,6 +1727,8 @@ export class Player {
        katana reach is deliberate: this is a falling body, not a blade, so a
        Riverclaw oath must not widen the crater. */
     hud?.strikePlayers?.(this, 'dive', 3.4, new THREE.Vector2(Math.sin(this.facing), Math.cos(this.facing)));
+    // ...and the animals, for the reason `_chargeStrike` gives.
+    hud?.strikeCritters?.(this, DIVE.radius);
     for (const p of world.props) {
       /* THE DIVE IS THE DIVE-BOMB `prop.js` ALREADY NAMES. "Bamboo answers to
          the katana and nothing else — not a dive-bomb, not dragon breath" was
@@ -1853,7 +2094,7 @@ export class Player {
 
   _respawn(world) {
     const g = world.heightAt(0, 30);
-    this.position.set(this.index === 0 ? -3 : 3, (g ? g.y : 10) + 2, 30);
+    this.position.set(this.style.spawnX, (g ? g.y : 10) + 2, 30);
     this.velocity.set(0, 0, 0);
   }
 
@@ -2112,7 +2353,7 @@ export class Player {
       this.marker.material.opacity = 0.95;
       this.marker.scale.setScalar(1.25);
     } else if (this._edgeLit) {
-      this.marker.material.color.set(this._edgeSaved ?? (this.index === 0 ? 0xff8a3d : 0xff6fae));
+      this.marker.material.color.set(this._edgeSaved ?? this.style.colour);
       this.marker.material.opacity = 0.75;
       this.marker.scale.setScalar(1);
     }
@@ -2125,8 +2366,8 @@ export class Player {
        one pose in the game that ignores her heading entirely: `eatPose` is a
        single front-facing cell that can never flip, so whichever way she was
        running when she grabbed the thing, she is hunched over facing you while
-       she eats it — and `Critter._updatePinned` puts the animal on the ground
-       between her and the lens for the same reason.
+       she eats it — and `Critter._mealSpot` puts the animal between her and the
+       lens, at `EAT_MOUTH_Y`, for the same reason.
 
        Applied at the END, after every other branch above has had its say about
        the ordinary sprite, so there is exactly one place that decides which of

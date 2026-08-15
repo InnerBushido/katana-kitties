@@ -57,22 +57,66 @@ Then open the address it prints.
 
 ## Controls
 
-|                  | Player 1 (Ember) | Player 2 (Frost) | Gamepad      |
+|                  | Keyboard 1 | Keyboard 2 | Gamepad      |
 | ---------------- | ---------------- | ---------------- | ------------ |
-| Move             | `W A S D`        | Arrow keys           | Left stick   |
-| Jump / fly up    | `Space`          | `Numpad 0` or `/`    | `A`          |
-| Slash            | `F`              | `Numpad 1` or `.`    | `X`          |
-| Interact / dive  | `E`              | `Numpad 2` or `,`    | `B`          |
-| Mount / dismount / ward | `Q`       | `Numpad 3` or `;`    | `Y`          |
-| Sprint / boost   | `Left Shift`     | `Right Ctrl` / `RShift` | `ZL` / `ZR` |
+| Move             | `W A S D`        | `O K L ;` or the arrow keys | Left stick   |
+| Jump / fly up    | `Space`          | `'` or `Right Ctrl`, `Numpad 0` | `A`          |
+| Slash            | `F`              | `J`, `Numpad 1` or `/`    | `X`          |
+| Interact / dive  | `E`              | `I`, `Numpad 2` or `,`    | `B`          |
+| Mount / dismount / ward | `Q`       | `P`, `Numpad 3` or `.`    | `Y`          |
+| Sprint / boost   | `Left Shift`     | `Right Alt` or `Right Shift` | `ZL` / `ZR` |
 | Zoom the map     | `Z`              | `X`                  | `R` / View   |
 | Maths overlay    | `M`              | `M`                  | `L` / Home   |
 | Pause            | `Esc`            | `Esc`                | `+` / Start  |
+| **Join the game** | `Enter`         | `Enter`              | just pick it up |
 
-**Player 2 works on a laptop.** Her buttons used to be numpad-only, so on a
-machine without one the second kitten could walk and nothing else — no slash,
-no clan, no dragon. The keys next to the arrows (`, . / ;`) do the same jobs,
-and the numpad still works if you have one.
+**`Enter` always means join, and `Esc` always means menu.** Press `Enter` and the
+next keyboard player is in; press it again and the one after that joins too —
+first on WASD, then on the arrows. It used to be each set's *own* key, so which
+key let you in moved about depending on how many controllers were plugged in,
+and with one controller `Enter` was player 2's pause key and opened the menu
+instead. Nothing on the keyboard opens the menu now except `Esc`.
+
+**The two keyboard sets are a queue, not two particular players.** Controllers
+fill up from player 1 down, and whoever's left goes on the keyboard: WASD first,
+then the arrow keys. With nothing plugged in that's the game you know — P1 on
+WASD, P2 on the arrows. With one controller, P1 has it and **P2 gets WASD**;
+with two, the keyboard players are P3 and P4. The same keys always do the same
+jobs, for whoever's holding them. See
+[Up to four players](#up-to-four-players) for the full table.
+
+**Player 2 plays with one hand too, on `O K L ;`.** Player 1 has always had
+everything under her left hand — move on `WASD`, with `Q` `E` `F` sitting round
+it. Player 2 had the arrow keys and buttons a whole hand's width away on the
+numpad, so she needed two hands and a full-size keyboard for a game her sister
+plays with four fingers.
+
+Now she has the same shape on her own side of the board:
+
+```
+        O                        W                 · O K L ;   walk
+      K L ;    mirrors         A S D               · P I J     ride, clan, slash
+    P I J                      Q E F               · '  or Right Ctrl   jump
+                                                   · Right Alt          sprint
+```
+
+**`P` `I` `J` are to `O K L ;` what `Q` `E` `F` are to `WASD`** — same three
+jobs, same positions, other hand. Sit side by side and neither of you has to
+reach across.
+
+**Everything she already knew still works.** The arrow keys still walk her, the
+numpad still does all four buttons, and the keys beside the arrows still work on
+a laptop with no numpad — they read `,` `.` `/` `'` for clan, ride, slash, jump.
+Three of them moved, each because the new cluster took its key: `;` is "walk
+right" now so ride went to `.`, jump moved to `'` so slash took `/`, and
+`Right Ctrl` became a second jump key so sprint is `Right Alt` / `Right Shift`.
+
+**And the browser no longer steals her keys.** In Firefox `/` and `'` open Quick
+Find and a tap of `Alt` jumps to the menu bar — so player 2 mashing jump used to
+pop up a search box that ate the keyboard. The game now blocks the browser's own
+shortcut on any key it has bound, so nothing needs turning off in Firefox's
+settings first. `Ctrl`-anything is deliberately left alone, so `Ctrl+L`, reload
+and the dev tools all still work.
 
 Mount climbs onto whichever dragon is in reach, or onto your own panda if
 there isn't one. **`Esc`**, or **`+`/Start on a controller**, opens the pause
@@ -202,6 +246,87 @@ dragon on two half-screens is the worst way to look at him. With only one of
 you on him the screen splits as usual, so whoever is still on the ground keeps
 her own half.
 
+## Up to four players
+
+**Two kittens by default, exactly as before — press PLAY and you're Ember and
+Frost.** Nothing about the two-player game has changed.
+
+**A third and fourth can join at any time, mid-game, without interrupting
+anybody.** A little card appears in the corner: push the stick left and right to
+pick your kitten, press **JUMP** to start playing. The others carry on the whole
+time.
+
+**Just pick up a spare controller.** If it's plugged in and nobody's playing on
+it, the moment you actually use it — press something, move the stick — you're in.
+A pad sitting on the sofa or charging on the side doesn't seat anybody, so
+nothing happens by accident. Pressing **START** on it still works too.
+
+**On the keyboard, press `Enter`.** Once for the next player, again for the one
+after — WASD first, then the arrows.
+
+The bottom of the screen tells you either way: *"P1: gamepad · P2: WASD · press
+ENTER to join as P3"*. It's in the pause menu too, and it goes quiet when the
+party's full.
+
+| | | |
+| --- | --- | --- |
+| **Ember** | orange | the one from the drawing |
+| **Frost** | grey | |
+| **Storm** | teal | *new — she needs a proper name* |
+| **Blossom** | violet | *new — she needs a proper name* |
+
+**There are four dragons on the home island**, one each, standing either side of
+the road at both ends of the town — so a kitten who joins fourth still has
+something to climb onto and nobody is left on the ground watching.
+
+**Storm and Blossom are placeholders.** They're the same two cats in different
+colours, and the girls should name them and pick the colours — it's one small
+table in the code (`src/core/palette.js`).
+
+**Controllers fill up from player 1, then the keyboard takes what's left.** Every
+controller is just a controller — Joy-Con, PS5, Xbox, whatever — and the one that
+connected first is player 1:
+
+| controllers | P1 | P2 | P3 | P4 |
+| --- | --- | --- | --- | --- |
+| none | WASD | arrows | | |
+| one | controller | WASD | arrows | |
+| two | controller | controller | WASD | arrows |
+| three | controller | controller | controller | WASD |
+| four | controller | controller | controller | controller |
+
+**Whoever's first off the controllers gets WASD**, not the arrow keys — WASD has
+the space bar, the arrows have the numpad, and nobody should be handed the worse
+half because of her slot number.
+
+**Mix whatever you like.** Two Joy-Cons, a PS5 pad and the keyboard is four
+players on four different things.
+
+**The screen gives a pane to each GROUP of you, not to each of you.** Stand
+together and you share one view; walk away and you get your own. So three
+kittens in the market and one off on the bamboo island is **two** half-screens,
+not four — the three who are together get a big shared shot of the town, and the
+one who wandered off gets the other half to herself. All four together is still
+one full screen, and all four apart is still quadrants. It re-groups as you
+move, and nothing jumps when it does.
+
+**Standing together never costs you screen.** Two of you sharing a view get a
+full-width strip across the top — *half* the screen, not a quarter — and the two
+playing on their own take a quarter each below. It works out at the same amount
+of screen per kitten however you're grouped, so teaming up is never the worse
+deal. The wide shape is deliberate: the camera looks down at three-quarters, so
+a short wide pane shows the ground either side of you where a tall narrow one
+would show sky and floor.
+
+**There are two minimaps at most**, one for each of the first two panes, rather
+than one per kitten — four maps on four quadrants covers up four corners of the
+game at the moment there's most to look at. Everybody is drawn on both of them.
+Everyone does get her own score badge along the top.
+
+**Anybody can drop out** from the pause menu, and the game carries on for
+everyone else. Whatever Kotodama she was wearing drop back into the world so
+nothing is lost.
+
 ## The World Martial Arts Tournament
 
 **When you've done everything else, there's a ring.**
@@ -219,10 +344,60 @@ watch. (It takes eight seconds and Start skips it.)
 
 Then you fight each other.
 
+### Leagues
+
+**With two of you it's a duel, exactly as it always was.** With three or four,
+you pick a league when you get there — anyone can choose, and **each league keeps
+its own record board**, so a tag-team win and a duel win are separate
+achievements.
+
+| league | players | |
+| --- | --- | --- |
+| **Duel** | 2 | one against one |
+| **Free for all** | 3–4 | everyone for herself, last one standing takes the round |
+| **Tag team 2v2** | 4 | two a side — **your partner can't hurt you** |
+| **Handicap 2v1** | 3 | two against one |
+| **Handicap 3v1** | 4 | three against one |
+| **Free teams 2v1v1** | 4 | a pair against two loners — everybody else is a target |
+
+**The outnumbered fighter gets a slightly bigger bar** — a fifth more health,
+whether she's against two or against three. It's a head start, not a
+compensation: she used to get a *whole extra bar per opponent*, which meant a
+3v1 champion on 300 health nobody could shift, and a round that only ended when
+she got bored. What actually keeps a handicap match alive is the feast, the
+snacks and the fact that you fly further the more hurt you are.
+
+**Then you pick your sides.** Any league where somebody has a partner shows a
+PICK YOUR SIDE screen. **Everybody starts on NO TEAM** and has to walk herself
+out of it: push **your own stick** left and right to move between NO TEAM, RED,
+BLUE and GOLD, and press **JUMP** once everyone has picked and the teams are
+legal — a 2v2 needs two and two. It tells you what's still wrong until they are.
+
+It used to skip itself. The screen opened with everybody already on a side and
+the button you'd just pressed to choose the league counted as the button that
+confirmed it, so a 2v2 jumped straight into the match with whoever picked up a
+controller first as the pair.
+
+**Everyone gets a health bar**, grouped by team along the top, each in her own
+kitten's colour. **And everybody wears her team's colour as a pennant over her
+head**, so you can tell across a busy ring who you're supposed to be helping.
+
+**Hit your own partner and you daze her.** No damage — but she loses a second
+and a half of control and gets a ring of stars over her head, so mashing the
+attack button in a team match costs your own side. Look before you swing.
+
+**In a team match the round isn't over until a whole side is down.** Your partner
+going down leaves you fighting alone, which is rather the point of having one.
+
+**Winning pays.** Everyone on the winning side earns points — about what one
+Kotodama costs — and you can go straight back and do it again. It's the only way
+to earn points once you've knocked over everything in the world.
+
 | | |
 |---|---|
 | **Health** | 100 each, shown over your head and along the top of the screen |
 | **Rounds** | best of three — two wins takes it |
+| **The clock** | two minutes a round, counting down over the round number. If it runs out, whoever's dealt the most damage takes the round |
 | **Standing slash** | quick and safe |
 | **Sprint + slash** | the big one — this is how you throw your sister across the ring |
 | **Jump + slash** | hurts most, hardest to land |
@@ -243,24 +418,30 @@ it — same swing you use on barrels, same button for the meal.
 
 | | | worth |
 | --- | --- | --- |
-| **Rat** | slowest thing out there. The easy one | +10 |
-| **Rabbit** | quick. It runs along the floor, but the moment it spots you it starts leaping — and you can't grab one in mid-air, so you have to time the swing | +15 |
-| **Bird** | flies over your head, and when you hit it, it lands **in your mouth**. Five seconds to swallow it | +20 |
+| **Rat** | slowest thing out there. The easy one — you can catch it at a walk | +12 |
+| **Rabbit** | **faster than you can run.** You have to sprint at it — and when it spots you it starts leaping clean over your head, and you can't grab one in mid-air, so you have to time the swing too | +15 |
+| **Bird** | cruises **well above your swing**, so you have to jump to reach it. Hit it and it lands **in your mouth**. Five seconds to swallow it | +20 |
 
 You can skip the swing entirely if you can just walk into one — press attack
 right next to a rat and you've got it.
 
 **Your kitten sits down and eats it with both paws**, hunched over, eyes shut,
-with the poor thing on the floor in front of her looking extremely surprised.
+with the poor thing held up at her mouth looking extremely surprised. A rabbit
+is too big to lift, so it stays on the floor and shrinks up toward her instead.
 It takes two seconds and **you can't move for any of them** — your sister can
 see exactly what you're up to, so doing it in the middle of a round is a
 gamble. Let go, or get hit, and it wriggles off and you get nothing.
 
-**Don't fall off.** The painted red border is the edge of the stage. Step past
-it and you lose a third of your health and get thrown back into the middle —
-your foot ring flashes red first, so you get a warning. And the more health
-you've lost, the further you fly when you're hit, so rounds get wilder as they
-go on.
+**Don't fall off.** The painted red border is your warning — your foot ring
+flashes red as you reach it — and the **edge of the stone is the rule**. Come
+down on the ground below the ring and you lose a third of your health and get
+thrown straight back into the middle, the moment you land.
+
+Two things that don't count: standing on the last stride of stone outside the
+paint (you're still on the stage), and sailing over the line in the air after a
+big hit — you've got every frame of the arc and all your jumps to get back. And
+the more health you've lost, the further you fly when you're hit, so rounds get
+wilder as they go on.
 
 **You can only fight in the ring, during a round.** Nothing you do to each
 other anywhere else in the world does anything at all — not in the town, not
@@ -284,8 +465,11 @@ That's deliberate: it means a match is never over after two minutes, and it
 means the fifteen seconds where nobody can hurt anybody is the busiest part of
 the whole tournament.
 
-**The winner signs the board.** Three to five letters, picked with the stick:
-up and down change the letter, left and right move along. Your score comes from
+**The winner signs the board — and only the winner.** Three to five letters,
+picked with the stick: up and down change the letter, left and right move along.
+Everybody else's stick is ignored for the whole thing, so nobody can spell your
+name for you or press JUMP on a name you haven't finished. In a team match
+either of the two who won can type it. Your score comes from
 how many rounds you won, how much damage you dealt, how fast you did it and how
 little you took. **The board is saved** — it's the only thing in the game that
 survives closing the tab, so a win last Saturday is still there today. Top ten,
@@ -294,6 +478,12 @@ walking up to the big board beside the ring.
 
 When it's over the griffin takes you home, and you can go straight back and do
 it again.
+
+**Had enough?** **QUIT THE MATCH** appears in the pause menu while you're at the
+arena — it calls the whole thing off and the griffin flies you back to town, with
+everything you've collected untouched. It's there from the moment you land,
+including on the league and team screens, so a match nobody meant to start costs
+nothing.
 
 ## The Powerup Kotodama
 
@@ -322,10 +512,12 @@ wrapped in them.
 The three attacks are new moves, not new buttons: they are the buttons you
 already use, in a situation you already understand.
 
-**One of each is hidden out in the world** — eight orbs across the islands,
-showing on the map in their own colours, so the answer to "where's the Ward" is
-never "fly over everything again". There are no spares lying about: if you want
-*two* of something, you have to buy it or get it off your sister.
+**Four per player are hidden out in the world** — eight with two of you, sixteen
+with four — showing on the map in their own colours, so the answer to "where's
+the Ward" is never "fly over everything again". With two players that's one of
+each and no spares at all: if you want *two* of something you have to buy it or
+get it off your sister. With four there are duplicates, because one Ward between
+four kittens means three of you could never find one.
 
 **A dealer opens a stall in the market.** He buys and sells for the points you
 earned knocking things over — but he is expensive on purpose: every point in
@@ -339,6 +531,15 @@ under eight slots.
 get your own cursor, in your own colour: pick the orb you're offering, and you
 *both* have to confirm before anything moves. Nobody can take one off you, and
 either of you can just give one away.
+
+**You can put points on the table too.** There's a POINTS row under your orbs —
+push the stick left and right to change how many you're offering. So you can buy
+an orb off your sister, or just hand her the points to go and buy her own.
+
+**With more than two of you, the two who trade are the two who confirm.** Everyone
+has her own cursor and her own offer; when exactly two of you have pressed
+confirm, that's the trade. A third confirm is refused rather than guessed at —
+nobody ends up giving an orb to somebody she didn't agree to give it to.
 
 ## Raise a panda
 
@@ -373,22 +574,48 @@ yours and you can still ride it, but it waits where you left it — so it turns
 up on the map, like a dragon on its perch. Swear to Pandapaw again and it comes
 back to heel.
 
-### Switch 2 controllers — use Firefox
+### Switch 2 controllers
 
-> **Play this in Firefox.** With the Joy-Cons arriving through Joy2Win + vJoy,
-> **Chrome cannot read the analog sticks.** Buttons work, the sticks report
-> `0.00000` forever. Firefox reads the same controller on the same machine
-> correctly. This is a Chrome bug in how it parses the device, not something the
-> game can work around — if the sticks are dead, the title screen says so and
-> tells you to switch.
+**Pair each Joy-Con to the computer on its own and it's just a controller** —
+one Joy-Con, one player, dealt in the order they connect, exactly like a PS5 or
+Xbox pad. Nothing to configure. Hold the little **sync** button until the lights
+run and add it from your Bluetooth menu.
 
-Two sideways Joy-Con is the fastest route to two players. Both halves arrive as
-a **single** vJoy device, so the game splits that one pad down the middle: P1
-drives the left Joy-Con, P2 the right. There is no second controller to pair.
+**Press a button on it afterwards** — browsers hide a gamepad until it sends
+input.
 
-Pairing: hold the little **sync** button until the lights run, add the
-controller from the computer's Bluetooth settings, then start Joy2Win. **Press a
-button afterwards** — browsers hide a gamepad until it sends input.
+#### The Joy2Win + vJoy route
+
+> **If you're going through Joy2Win, play in Firefox.** **Chrome cannot read the
+> vJoy analog sticks.** Buttons work, the sticks report `0.00000` forever.
+> Firefox reads the same controller on the same machine correctly. This is a
+> Chrome bug in how it parses the device, not something the game can work
+> around — if the sticks are dead, the title screen says so and tells you to
+> switch. **This doesn't apply to Joy-Cons paired directly**, or to any other
+> pad; it's a vJoy problem.
+
+Joy2Win presents both Joy-Cons as a **single** vJoy device, and the game splits
+it down the middle automatically: P1 drives the left Joy-Con, P2 the right.
+Nothing to set.
+
+**And everything else you plug in still works alongside it.** Two Joy-Cons
+through Joy2Win **plus a PS4 or PS5 pad is three players** — the pad is simply
+the third controller. Splitting is decided **per device**, not as a mode for the
+whole machine, which is what used to make this impossible: the setting asked "do
+we split?" about the computer when it's really a question about one device, so
+splitting the Joy-Cons switched the other pad off and leaving it alone gave both
+Joy-Cons to the same kitten.
+
+**Settings → Controllers** now asks the only question left: whether the pair is
+*one each* (the default) or *both held by one player*. It touches nothing but
+the Joy-Cons.
+
+**A vJoy device shows up whether or not anything is feeding it.** vJoy is a
+driver: once it's installed, Windows reports it forever, with no Joy-Cons paired
+and Joy2Win not running. The game used to hand that phantom player 1 and leave
+you on the keyboard wondering why nothing moved. Now it takes no seat until it
+actually sends something — Settings → Controllers lists it as **asleep** and
+tells you so.
 
 **On the hosted version the controllers work exactly the same.** Joy2Win and
 vJoy run on your machine and the browser reads the pad whatever page is open,
@@ -444,12 +671,12 @@ like unless you're on Joy-Cons.
 
 Three things to know:
 
-- **Don't mix a Joy-Con pair with another controller.** The two Joy-Cons arrive
-  as one pad that gets split down the middle, and that only happens when it's
-  the only controller connected. Add a PS4 pad and the right Joy-Con goes dead.
-  Two Joy-Cons, or two other pads — not one of each.
-- **Leave `padMode` on `auto`** in Settings → Controllers. It's there for the
-  Joy-Cons and does nothing useful for anything else.
+- **Mix whatever you like.** Every controller is one player, dealt in connection
+  order, and a Joy-Con paired on its own is no different from a PS5 pad. A
+  Joy2Win/vJoy device is the one exception and counts as **two** players — it
+  is a feed carrying two Joy-Cons, not a controller.
+- **Leave Controllers on `Joy-Cons: one each`** in Settings. The only reason to
+  change it is one person holding both halves of a pair.
 - **The remap grid is Joy-Con only.** A PS4 or Xbox pad can't be rebound in
   game, because it doesn't need to be — the browser already reports it in a
   standard layout. A no-name USB pad might land its face buttons in a different
@@ -510,6 +737,11 @@ press PLAY. If it's ever silent, that's the reason — click into the page first
 Run apart and the view splits; come back together and it joins into one shared
 camera. Configurable in Settings (`auto` / `always split` / `always shared`),
 and side-by-side or top-and-bottom.
+
+**With three or four of you it works out who is standing with whom** and gives a
+pane to each group rather than to each kitten, so two of you together take one
+half-screen between you and nobody is watching a quarter-screen of somebody
+else's back. See [Up to four players](#up-to-four-players).
 
 ---
 
@@ -648,11 +880,15 @@ be a plain back view in all four.
 
 ```
 src/
-  main.js               game loop, split-screen rendering, boot
+  main.js               game loop, split-screen rendering, boot, joining
   core/
     gfx.js              toon materials, outlines, Billboard
-    input.js            two players, keyboard + gamepad, Switch 2 remap
-    spritesheet.js      generated turnaround → clean game atlas
+    input.js            up to 4 slots, keyboard + gamepad, Switch 2 remap
+    palette.js          who each player is — colour, name, panda, recolour
+    split.js            how N viewports tile the screen
+    cluster.js          who shares a pane with whom, and why a group is
+                        named after its lowest member
+    spritesheet.js      generated turnaround → clean game atlas, + recolouring
     label.js            world-space text
   world/
     build.js            noise, islands, pagodas, torii, trees, merging

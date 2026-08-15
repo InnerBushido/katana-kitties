@@ -169,10 +169,15 @@ export class ArenaQuest {
           (p) => !p.mount && !p.rideAlong
             && Math.hypot(p.position.x - S.position.x, p.position.z - S.position.z) < SATAN_RADIUS
         );
+        /* EVERYONE, not both — `every` already said that, but the words did
+           not. With four kittens playing, "fetch your sister" names one of
+           three and reads as the game not knowing who is here. */
         this.bothHere = near.every(Boolean);
+        const many = players.length > 2;
         S.setLine(this.bothHere
-          ? 'BOTH of you! Excellent!\nPress INTERACT and my griffin will take you.'
-          : 'The ring is ready!\nFetch your sister — I need BOTH of you here.');
+          ? `${many ? 'ALL of you' : 'BOTH of you'}! Excellent!`
+            + '\nPress INTERACT and my griffin will take you.'
+          : `The ring is ready!\nI need ${many ? 'EVERYONE' : 'BOTH of you'} here.`);
 
         // Either of them may say yes once both are standing there.
         if (this.bothHere && pads.some((pad, i) => near[i] && pad.pressed('interact'))) {

@@ -153,11 +153,32 @@
           Cut, Adamant and Leap and one of each attack, and your points only
           stretch to about three orbs — the rest you find, or swap for.
         </p>
+        <!-- PLAYER 2 GETS HER OWN BLOCK, not a sentence at the bottom. Player 1
+             plays one-handed on WASD and reads her keys off every line above;
+             player 2's were "the arrow keys and the numpad", which is two hands,
+             one of them on a numpad half the machines in the house don't have.
+             She has a one-handed cluster of her own now and it has to be as easy
+             to find as player 1's. -->
+        <h3>PLAYER 2 — ONE HAND, YOUR SIDE OF THE KEYBOARD</h3>
         <p class="note">
-          Player 2 uses the <b>arrow keys</b> and the <b>numpad</b>, or plug in a
-          second controller. The screen splits automatically when you run apart
-          and joins back up when you're together. The <b>map</b> in the corner
-          shows both of you, every dragon, and everywhere worth going.
+          <b>Move</b> — <kbd>O</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd> (up, left,
+          down, right), and the <b>arrow keys</b> still work too.<br>
+          <b>Jump</b> — <kbd>'</kbd> or <kbd>Right Ctrl</kbd> &nbsp;·&nbsp;
+          <b>Slash</b> — <kbd>J</kbd> &nbsp;·&nbsp;
+          <b>Join a clan</b> — <kbd>I</kbd> &nbsp;·&nbsp;
+          <b>Ride</b> — <kbd>P</kbd> &nbsp;·&nbsp;
+          <b>Sprint</b> — <kbd>Right Alt</kbd> or <kbd>Right Shift</kbd><br>
+          <kbd>P</kbd><kbd>I</kbd><kbd>J</kbd> sit around <kbd>O</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd>
+          exactly like <kbd>Q</kbd><kbd>E</kbd><kbd>F</kbd> sit around
+          <kbd>WASD</kbd>, so both of you play the same shape with one hand.
+          The <b>numpad</b> (<kbd>0</kbd> jump, <kbd>1</kbd> slash, <kbd>2</kbd>
+          clan, <kbd>3</kbd> ride) and <kbd>,</kbd><kbd>.</kbd><kbd>/</kbd> next to
+          the arrows both still work.
+        </p>
+        <p class="note">
+          Or plug in a second controller. The screen splits automatically when you
+          run apart and joins back up when you're together. The <b>map</b> in the
+          corner shows both of you, every dragon, and everywhere worth going.
         </p>
         <button class="menu-btn back" data-close>BACK</button>
       </div>
@@ -199,10 +220,12 @@
         </label>
         <label class="row">
           <span>Controllers</span>
+          <!-- This setting touches ONE device: a vJoy (Joy2Win) feed. Every
+               ordinary controller is one player either way, so the question is
+               only ever "is this pair two people or one". -->
           <select id="set-padmode">
-            <option value="auto">Automatic</option>
-            <option value="split">One pad, two players (Joy-Cons)</option>
-            <option value="separate">One pad per player</option>
+            <option value="split">Joy-Cons: one each (2 players)</option>
+            <option value="single">Joy-Cons: both held by one player</option>
           </select>
         </label>
         <label class="row">
@@ -233,6 +256,29 @@
       </div>
     </div>
 
+    <!-- Which league, shown in the ring when the party can run more than one.
+         A two-player game never sees it: there is one league it can run. -->
+    <div id="panel-league" class="screen overlay hidden">
+      <div class="panel">
+        <h2>CHOOSE THE LEAGUE</h2>
+        <div class="pause-menu" id="league-list"></div>
+        <p class="note">Any player can choose. Each league keeps its own board.</p>
+      </div>
+    </div>
+
+    <!-- WHO IS ON WHOSE SIDE. Shown after the league in any match where a side
+         holds more than one fighter. It carries NO `.menu-btn`, deliberately —
+         MenuNav drives one shared cursor and this screen needs four, one per
+         kitten, because each girl moves HERSELF. Same reason the trade screen
+         keeps its own cursors. -->
+    <div id="panel-teams" class="screen overlay hidden">
+      <div class="panel">
+        <h2 id="tp-title">PICK YOUR SIDE</h2>
+        <div id="tp-body" class="tp-body"></div>
+        <p class="note" id="tp-help"></p>
+      </div>
+    </div>
+
     <div id="panel-pause" class="screen overlay hidden">
       <div class="panel pause-panel">
         <h2>PAUSED</h2>
@@ -243,41 +289,53 @@
           <button class="menu-btn" data-action="board">RECORD BOARD</button>
           <button class="menu-btn" data-action="profile">CHARACTER PROFILE</button>
           <button class="menu-btn" data-action="story">WATCH THE STORY AGAIN</button>
+          <!-- ONLY WHILE A MATCH IS ON. Shown by Game.setPaused, which asks
+               `tournament.active`, and hidden the rest of the time: an offer to
+               quit a match nobody is fighting is a button that cannot mean
+               anything. MenuNav skips it while it is hidden, because it filters
+               on `offsetParent`. -->
+          <button class="menu-btn hidden" id="btn-quit-match" data-action="quit-match">
+            QUIT THE MATCH</button>
+          <!-- One DROP OUT per extra player, built by Game._buildLeaveButtons
+               and absent entirely in a two-player game: a button offering to
+               remove a kitten from a game that only has two of them is an
+               invitation to break it. -->
+          <div id="leave-buttons"></div>
           <button class="menu-btn" data-action="restart">RESTART</button>
           <button class="menu-btn" data-action="title">TITLE SCREEN</button>
         </div>
         <p class="note">
           <b>Esc</b> or <b>+ / Start</b> on a controller opens and closes this.
+          <span id="join-note"></span>
         </p>
       </div>
     </div>
 
     <!-- ================= in-game HUD ================= -->
     <div id="hud" class="hidden">
+      <!-- The badges are BUILT FROM THE PARTY, not written out here, because
+           the party changes: two kittens normally, up to four, and players may
+           join or leave mid-game. The two groups flank the mischief counter
+           and mirror which SIDE of the screen each player's pane is on, so a
+           kid playing in a left-hand pane looks left for her score. See
+           Game._buildHud. -->
       <div class="scoreboard">
-        <div class="score p1">
-          <span class="pip"></span><span class="nm">EMBER</span><b id="s1">0</b>
-          <span class="clan" id="c1"></span>
-        </div>
+        <div class="score-group" id="scores-left"></div>
         <div class="mischief">MISCHIEF <b id="mtotal">0 / 0</b></div>
-        <div class="score p2">
-          <span class="pip"></span><span class="nm">FROST</span><b id="s2">0</b>
-          <span class="clan" id="c2"></span>
-        </div>
+        <div class="score-group" id="scores-right"></div>
       </div>
-      <!-- One map when the view is shared; two, one per kitten, when it's
-           split, so neither has to read the other player's corner. -->
-      <div id="minimap-wrap" class="map-box">
-        <canvas id="minimap"></canvas>
-        <span class="map-tag" id="map-tag">Z: zoom</span>
-      </div>
-      <div id="minimap-wrap2" class="map-box hidden">
-        <canvas id="minimap2"></canvas>
-        <span class="map-tag p2">FROST · X</span>
-      </div>
+      <!-- One map when the view is shared; one per kitten when it's split, so
+           nobody has to read another player's corner. Built and POSITIONED
+           from the same `splitLayout` the renderer uses — see Game._drawMaps.
+           -->
+      <div id="maps"></div>
       <div id="math-board" class="hidden">
         <div class="mb-title">SIN &amp; COS — LIVE</div>
       </div>
+      <!-- The join card. Deliberately a CARD and not a screen: a third player
+           arriving must not stop the game for the two who are already in it,
+           which is the same rule the star pose follows. -->
+      <div id="join-card" class="hidden"></div>
       <div id="toasts"></div>
       <!-- The dragon-ball tally. Hidden until the first star is found, so it
            is a thing that appears rather than a counter that starts at zero

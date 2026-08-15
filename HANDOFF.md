@@ -68,7 +68,8 @@ should be protected in any refactor:
   great torii, market street, red bridge, 46 cherry trees, 42 knockable props.
 - Two players: run, double-jump, sprint, katana slash, mount/dismount dragons.
 - 7 dragons across 5 breeds, each with its own colour and breath (fire, frost,
-  lightning, pollen, blossom). Two on the home island so both girls can fly.
+  lightning, pollen, blossom). Four on the home island — one per player — so
+  nobody is left on the ground watching.
 - Six clan shrines, one per island, each granting a different buff — see
   Clans below. Warriors flavour: Thunderpaw, Riverclaw, Shadowtail, Windwhisker,
   Icewhisker, Pandapaw.
@@ -95,8 +96,10 @@ should be protected in any refactor:
   wings and a DBZ halo. See Ring snacks and the feast below.
 - Six biomes — meadow, bamboo, autumn, frost, ash, dusk — driving ground
   colour, foliage and detail scatter per island.
-- Dynamic split-screen: splits when players separate, rejoins when together,
-  with hysteresis. Forced merged inside the dojo.
+- Dynamic split-screen: **one pane per GROUP of kittens standing together**,
+  with hysteresis — three in the market and one on another island is two panes,
+  not four. Forced merged inside the dojo, in the ring and on a crewed Ryuuseki.
+- Up to **two** minimaps, one per leading pane, rather than one per kitten.
 - Sprite animation: 4 rows (idle / walk / jump / attack) × 8–10 directions.
 - The Kotodama Orb and the Unit Circle Dojo, both verified numerically.
 - ~138fps, 72 draw calls, 159k triangles.
@@ -2173,8 +2176,87 @@ look at.
 the loop, the minimap and the stall prompt all read that rather than each
 keeping their own idea of whether the endgame has started.
 
-**Debug: `6` awakens them and fills both purses; `5` opens the profile
-screen.** Same argument as `7` `8` `9` — the whole feature is behind 216 props.
+### Debug: `6` is THE WHOLE ENDGAME, in one key
+
+`Game._debugEndgame`. Same argument as `7` `8` `9`, and a bigger version of it:
+everything the 100% moment unlocks is behind 216 props knocked over, so checking
+one colour on one orb, or one word of the ending, or whether a round card is
+centred, meant playing the whole game first. `5` still opens the profile screen.
+
+**THE WORLD'S MISCHIEF IS LEFT ALONE, AND THAT IS THE POINT.** Marking 216 props
+`scored` is the one-line version and it destroys the thing you usually want to
+look at next: the props *are* the world, the counter is the number the whole
+game asks a kid to trust, and `Prop.scored` latches — so a debug key that spent
+them would leave nothing to knock over and no way back short of a restart. It
+drives the four things the 100% moment *causes* and touches none of its cause.
+
+It follows the real code paths rather than reproducing them:
+
+| | |
+| --- | --- |
+| **Purses** | an equal share of `world.pointsTotal` each |
+| **The Awakening** | `kotodama.awaken()` — the same call 100% makes |
+| **The tournament** | `quest.stage = 'open'`: unlocked, not entered |
+| **The ending** | queued through `_finaleDue`, not started inline |
+
+**`/ partySize`, NOT `/ 2`, AND THE OLD VERSION WAS A REAL BUG.** It handed every
+player half the pot regardless of how many there were, so at four players it paid
+out twice the money in the world — and because the PRICE is derived from the pot
+(`pointsTotal / players / 3.5`), that quietly made the whole shop half price for
+everybody. It is the same arithmetic the price already uses, so the two cannot
+drift apart, and `world-check` pins the share at 3.5 orbs at every party size.
+
+**THE TOURNAMENT IS UNLOCKED, NOT ENTERED.** `stage = 'open'` is where the quest
+lands after Mr Satan's second scene, so from there it is a walk to him in the
+town with everybody together — the real path, including the griffin. Every
+milestone is marked **spent**, or he would call out progress the girls have not
+made on a world that is still standing. (The scene viewer's `arena` entry is
+still the one that skips straight there.)
+
+**THE ENDING IS QUEUED, NOT STARTED**, for the reason `onMischief` gives: a scene
+cannot start over another one, and the loop picks it up on the first frame the
+screen is free.
+
+**A KITTEN WHO JOINS AFTERWARDS GETS THE SAME PURSE** (`_debugPurse`, read in
+`_joinPlayer`). Without it she is the one player at the stall who cannot afford
+anything, which reads as the shop being broken rather than as her being late.
+Cleared on restart, or a fresh game would hand the world's money to whoever
+joined a town where nothing has been knocked over yet.
+
+**Known and left alone:** Patchfur's ending speech says *"nothing left standing"*
+over a world that is still standing, and addresses *"you two"* at any party size.
+The first is inherent to keeping the mischief intact; the second is the script,
+and it is wrong on a real four-player run too.
+
+### SKIPPING THE ENDING MUST NOT COST ANYTHING, and it doesn't
+
+Nothing in the game hangs off a scene *finishing*. `SummonScene.finish` tears
+down its own UI and touches no game state, and every stage change is made at the
+moment `start` is **accepted**, not when the scene ends:
+
+| moment | set at |
+| --- | --- |
+| the Awakening | `onMischief`, before the ending is even queued |
+| `stage = 'calling'` | inside `if (start('satanAnnounce'))` |
+| `stage = 'open'` + `openArena(true)` | inside `if (start('satanOpen'))` |
+| the debug unlock | `_debugEndgame`, all of it before `_finaleDue` |
+
+So a thumb on Start during the first frame of any of them loses the words and
+nothing else. Verified by skipping each on frame 1, on the real 100% path and on
+the debug key, at two players and at four.
+
+**One thing was NOT safe, and it was the scene viewer rather than the skip.**
+`SummonScene.start` refuses when `played[which]` is set, and the viewer sets it
+every time somebody previews the ending — so previewing the finale once meant the
+girls could knock over all 216 props and be shown **nothing at all**. The
+100%-queue guard was `!played.finale`, the scene's own once-latch, which is the
+right question asked of the wrong flag: from there a preview is
+indistinguishable from the real thing having already happened.
+
+It is `_endingShown` now — a flag about THIS 100%, cleared only by restart — and
+the queue clears `played.finale` on the way past so `start` cannot refuse.
+**Everything else already survived this**, which is exactly why it went
+unnoticed: the world unlocked correctly and only the ending was missing.
 
 ### The Awakening
 
@@ -2438,9 +2520,920 @@ it.** Each orb's shell radius, orbit speed and starting phase come from its slot
 and from how many she is wearing, so adding a fifth changes where the other four
 belong. Eight icosahedrons is nothing; a wrong-looking constellation is not.
 
+## Four players
+
+**The party is a NUMBER now, not two.** `Game.partySize` is the single fact
+everything scales off — the split screen, the dealer's shelf, the orbs scattered
+at the Awakening, the ring's leagues. It is 2 unless somebody joins, and **the
+two-player game is byte-for-byte the game the girls already know**. That is a
+rule rather than an accident, and it is asserted: `world-check` pins Ember's and
+Frost's colours, spawn and respawn spots, panda names, the two-player split
+geometry, the two-player orb count, the two-player price and the two-player
+shelf. Turning any of them fails loudly.
+
+**The engine was already most of the way there.** Nearly every system was
+already `for (const p of this.players)`, and `strikePlayers` already scanned all
+players and skipped the attacker — so a four-way scrap worked at the damage layer
+before any of this. The hard-coded twos were concentrated, not smeared: two pad
+slots, a `merged` boolean with two viewports, two midpoints, two minimaps, two
+score badges, six `index === 0 ?` colour ternaries, `wins[0]` vs `wins[1]`, and
+two seats on the griffin.
+
+### The two new kittens are RECOLOURS, and that is a risk decision
+
+There are exactly two turnaround sheets and **generating a third is the riskiest
+operation in this project** — `frost_grid_v2.png` is in `docs/unused-art/`
+because its rows contradict each other and no per-sheet setting can fix that. So
+Storm and Blossom are transforms of the drawn cell, the same call the hit flash,
+the KO pose and the angel already make.
+
+**IT RUNS AFTER PACKING, ON THE PACKED CANVAS, AND THAT IS THE WHOLE SAFETY
+ARGUMENT.** Every measured thing about a sheet — the cell grid, `cols`,
+`contentScale`, `contentArea`, `pad`, and the direction mapping every sprite
+check asserts — is computed from the **alpha** channel during packing.
+`recolourPixels` touches red, green and blue and never alpha, on a canvas where
+all of that has already been decided. A recoloured kitten therefore cannot slice,
+size or face differently from the one she was copied from. Doing it to the source
+image instead would put a colour transform upstream of background removal, which
+keys on colour — *that* version is a real risk and this one is not. Verified on
+both real sheets: **0 alpha pixels changed**, and the packed atlases come out the
+same dimensions and the same `cols`/`rows` as their sources.
+
+**TWO KNOBS, BECAUSE ONE CANNOT DO IT.** Measured over cell (0,0):
+
+```
+ember_grid_v2   mean saturation 0.631,   2.5% grey
+                orange fur 0-60, blue kimono 210-240, red trim 330-360
+frost_grid      mean saturation 0.195,  37.0% grey
+                GREY/WHITE FUR, pink kimono 300-360, cream 0-60
+```
+
+Ember is saturated everywhere, so rotating every hue by a constant moves her
+whole palette while preserving the relationships inside it. **Frost is a grey
+cat, and a rotation does nothing to a pixel with no saturation to rotate** — it
+recolours her kimono and hands back the same grey animal.
+
+**And no angle fixes that, which is the part worth knowing.** A grey pixel has no
+hue, so whatever hue the transform gives it is the *same* hue for every grey
+pixel; the distance from there to her rotated kimono is her kimono's original
+hue, **which does not depend on the rotation at all**. Rotating harder moves both
+and separates neither — the first attempt put Storm at 180 and Blossom at 210,
+30 degrees apart, two blue cats. So the greys get their own hue outright
+(`tint`), independent of the rotation applied to coloured pixels, and the
+cross-fade between the two is widened (`greyS`) so her fur commits to it rather
+than landing between. Measured after: **Storm peaks at 180, Blossom at 270.**
+
+Lineart and speculars are protected at both ends by a lightness window — a
+saturation lift on near-black puts a colour cast on every outline, which reads as
+bad printing rather than as a different cat.
+
+**The names are placeholders and the girls should pick them.** Ember and Frost
+were named by one of them; Storm and Blossom were not. They follow the
+dragon-breath set the first two sit in (fire, frost, lightning, blossom), which
+is the best guess available, and they live in one table with nothing outside it
+hardcoding them.
+
+### `PLAYER_STYLE` in `core/palette.js`, and why it is in core/
+
+Ten copies of "there are exactly two of them" collapsed into one table: marker
+ring, health bar, the bar's low-health colour, the colour restored after an edge
+warning, the panda's name, the respawn spot, the minimap pip, the minimap arrow,
+the seek chevron, and the marker reset on restart.
+
+**It lives in `core/` rather than on `Player` because of who reads it.** The
+entity, the panda, the minimap, the HUD and the game loop all want it, and
+`panda.js` importing it from `player.js` closes an import cycle — `player.js`
+already imports `PANDA_SPEED` from `panda.js`. That cycle happens to work today
+because both constants are read inside function bodies rather than at module
+scope, which is a fact about where two lines happen to sit and not a thing worth
+depending on.
+
+**A SLOT IS NOT A STYLE, and that is what character choice cost.** `Player` takes
+a `style` object rather than looking one up by index, because a third player
+picking Blossom leaves Storm unplayed: slot 2 is playing style 3 and no lookup by
+index can be right. `Game.roster` maps slot → style. It falls back to
+`styleFor(index)` so the many `new Player({ index })` calls in `world-check` keep
+meaning what they meant.
+
+### Input: four slots, and the keyboard set is no longer the slot number
+
+The interesting arrangement — the one asked for — is **two players on the
+keyboard and two on controllers**, with **no new profile and no third keyboard
+set invented for the occasion**.
+
+Which means the keyboard set can no longer be the slot number. It used to be:
+slot *i* read `KEYSETS[i]` whenever no pad was bound to it. With two controllers
+on slots 0 and 1, the two keyboard players are slots 2 and 3 — and there is no
+`KEYSETS[2]`. So a binding names its keyboard set explicitly.
+
+**`_assign` deals pads first, then keyboard sets IN ORDER — WASD, then the
+arrows.** See *A controller is a controller* below for the table and for why the
+slot-affinity rule that used to sit here was removed.
+
+**A SLOT PAST THE PARTY SIZE READS NOTHING AT ALL.** It has no pad and no keyset,
+which matters: leaving the old "fall back to `KEYSETS[i]`" rule in place would
+mean WASD quietly driving the controller state of an unseated third kitten.
+
+### Joining happens IN GAME, and the title screen is untouched
+
+The menu panel is a faithful reproduction of a drawing one of the girls made —
+SETTINGS, PLAY, HELP — so a fourth button is not available, and putting a lobby
+in front of PLAY would add a step to the game the two of them already know. So a
+third and fourth player join from inside the world, which is also exactly what
+"players can join without disturbing the ones already playing" asks for: **the
+join mechanic and the character picker are one feature.**
+
+**START, not any button**, for the same reason `SKIP_KEYS` exists — they rest
+their thumbs on things. On a pad it is the pause button; on a keyboard it is that
+set's own start key, which cannot collide with a seated player's because a set
+only qualifies while **nobody is on it**.
+
+#### ENTER JOINS, ESC OPENS THE MENU, AND THAT SEPARATION IS THE FIX
+
+That "cannot collide" clause was doing more work than it looked, and it caught a
+real player out. A keyboard set's `start` used to mean **pause** while somebody
+was seated on it and **join** while nobody was — so which key seated the next
+kitten depended on which sets were already taken, and *that* depended on how many
+controllers were plugged in:
+
+```
+  0 pads   both sets seated       no keyboard join at all
+  1 pad    P2 is on WASD          ENTER was HER PAUSE KEY; the way in was `\`
+  2 pads   both sets free         ENTER joined P3, `\` joined P4
+```
+
+**With one controller connected, pressing the obvious ENTER opened the pause menu
+instead of seating player 3.** It was not a new bug so much as a newly
+*reachable* one: dealing WASD before the arrows moved the free set from WASD to
+the arrows, which moved the join key from ENTER to `\`.
+
+**BOTH SETS ANSWER TO ENTER NOW, AND `_findJoin` HANDS OUT THE LOWEST FREE SET.**
+Two keyboard players join one at a time by pressing it twice — the first press
+takes WASD, the second the arrows. `\` is gone; the numpad's Enter is kept as an
+alt because it is the same key under another name.
+
+**WHICH IS ONLY SAFE BECAUSE `start` NO LONGER PAUSES ON A KEYBOARD.** The pause
+toggle asks `p.source === 'gamepad'`, so **Esc is the keyboard's only menu key**.
+A pad keeps both jobs: it has a real Start button, which is not a letter on a
+keyboard somebody else is also typing on.
+
+**THE EDGE IS LATCHED AGAINST THE ONE KEY, NOT ONE LATCH PER SET.** With a latch
+each, holding Enter down after the first player joined would immediately seat the
+second on the next frame — the arrows' latch has never seen it pressed. There is
+one `kb` entry in `_joinPrev` now, and a check for exactly that case.
+
+`joinHint()` survives the change because it still answers a real question:
+whether there is anywhere left to join at all, and whether a **spare controller**
+is the better answer (it is named first when one exists). The bottom hint strip
+and the pause menu both print it, and it goes quiet on a full party rather than
+naming a key that would be refused.
+
+**THE HINT STRIP USED TO BE WRITTEN ONCE, AT `startPlay`, AND NEVER AGAIN.** That
+was survivable while it only listed devices — plug a pad in mid-game and the line
+was merely out of date. It is not survivable now that it names the join key,
+because a stale line does not go vague, it goes **wrong**: it goes on offering
+`\` to seat player 3 after player 3 has sat down. It rebuilds against a signature
+(`describe` + hint + party size) on the minimap's existing 20Hz throttle, so the
+common case is a compare and no DOM write.
+
+#### A CONNECTED CONTROLLER SHOULD BE A PLAYER (`_autoSeat` / `sparePad`)
+
+**Three pads plugged in used to give two kittens and one controller that did
+nothing.** It was dealt a device slot perfectly correctly and then sat unbound,
+because `slots` was 2 and nothing grows the party on its own — so it read as
+broken hardware rather than as a party nobody had grown. The combination that
+exposed it: two Joy-Cons through Joy2Win (one vJoy device, split) **plus** a PS4
+pad, where `split` looked like it was disabling the pad and `auto` looked like it
+was disabling a Joy-Con. Neither was; the third device simply had no player.
+
+`Game._autoSeat` seats her. START still works and is still the explicit way in;
+this is the same thing happening without anybody having to know that.
+
+**IT WAITS FOR REAL INPUT, NOT FOR CONNECTION.** `sparePad` asks `hasSentInput`
+— the same question the vJoy phantom has to answer, doing the same job here. A
+pad charging on the side or left on the sofa has sent nothing and seats nobody;
+picking it up is the gesture. The character picker still runs, so nothing about
+who she plays is decided for her.
+
+**ONE OFFER PER DEVICE, LATCHED IN `Game` (`_autoSeated`).** `hasSentInput` never
+goes back to false once a pad has been used, so without the latch a player who
+drops out would be re-seated on the very next frame by the controller still in
+her hands — she could never leave. Dropping out is a decision; the latch is what
+makes it stick. She can rejoin with START.
+
+**The picker is a CARD, not a screen.** The world keeps running for everyone
+already in it — the opposite of every other full-screen moment in this game, and
+right for the same reason the star pose is per-player: this is one kid's moment
+and stopping three other people's game for it is the interruption the split
+screen exists to avoid. She is handed a dead pad for the duration and nobody
+else is, so the stick choosing a cat is not also walking her off a rim.
+
+**The join candidate is computed inside `InputManager.update`, not asked for on
+demand.** The edge test compares against the previous frame, and `Game` asks
+after `update` has already run — a version that sampled the pad when called would
+be comparing a frame against itself and could never see a press. That bug was
+written and caught in the same pass; it is the kind that looks like the button
+simply not working.
+
+### Leaving conserves the world's supply
+
+**Her worn orbs go back into the world**, which is the dealer's own rule — a sold
+orb goes back on the shelf so the party cannot destroy the supply between them.
+Only a fixed number exist; a kitten walking out with eight would delete a chunk
+of the endgame for everybody still playing. Her panda waits, her dragon goes
+home, her Ryuuseki seat empties.
+
+**Slots shuffle down**, so the party is always 0..n-1 and nothing downstream has
+to cope with a hole — which means the players after her change index, and the
+claims have to be re-dealt in the same pass or slot 2's controller ends up
+pointing at a player who is now slot 1.
+
+Verified end to end in the browser against a stubbed second pad: join on a free
+keyset gives `P1: gamepad | P2: gamepad | P3: WASD`, the dealer re-prices 650 →
+433, the shelf goes 4/1 → 5/2, and leaving returns both her orbs to the world and
+puts every number back.
+
+### The split screen: ONE PANE PER GROUP
+
+All together → one shared camera. Otherwise **one viewport per group of kittens
+who are standing near each other**: halves at two, **quadrants at three or four
+with one cell empty** when everybody is apart.
+
+**Three players get quadrants rather than three equal columns or a full-width
+pane on top.** Equal area is the fair rule and both alternatives break it:
+columns give three tall slots on a wide screen, which is the worst possible shape
+for a fixed three-quarter camera, and a full-width top pane hands whoever is in
+it twice the screen.
+
+#### A SHARED PANE IS WORTH HALF THE SCREEN, NOT A QUARTER
+
+Equal panes is the fair rule when every pane holds one kitten and the wrong one
+the moment a pane holds two: a pair standing together were given the same quarter
+as somebody on her own, so **teaming up cost them half their screen each**. The
+rule underneath was always **equal area per PLAYER** — equal panes is just what
+that reduces to when everybody is alone.
+
+Three panes out of four players is the only case where those two readings
+disagree (the sizes have to be 2,1,1), so it is the only case `splitLayout`
+weights. The pair takes a full-width strip across the top — half the screen, a
+quarter each — and the two singles split the bottom.
+
+**FULL WIDTH RATHER THAN A TALL HALF**, because the camera is a fixed
+three-quarter view: a wide short pane shows the ground either side of you, a tall
+narrow one shows sky and floor. This is the same "a full-width pane hands whoever
+is in it twice the screen" the paragraph above warns about — the difference is
+that here there really are twice as many players in it.
+
+**THE BIG PANE GOES ON TOP WHEREVER ITS GROUP SITS IN THE ORDER**, so the array
+still lines up index-for-index with the caller's groups. Sorting the panes by
+size instead would silently hand one group another group's camera.
+
+**TWO PANES ARE LEFT ALONE.** Both are already at least half the screen, which is
+the rule; carving a 3:1 split for a trio plus a straggler would hand the lone
+kitten a sliver the camera cannot use.
+
+**`Game._panes` is the only caller**, because the renderer and the HUD must not
+assemble the `sizes` argument separately — that is how a minimap ends up
+positioned for a pane the renderer drew somewhere else.
+
+#### Proximity grouping, and the blocker it had to clear first
+
+This section used to say clustering was deliberately NOT built, and gave the
+reason: *"cluster membership changing mid-flight strands the per-view lerp state,
+which is precisely the frozen-`sharedTarget` bug this file calls the whole fix
+for the jarring rejoin. If it is ever wanted, the camera identity has to be
+stable across a membership change before anything else."*
+
+That is exactly what was done, and the fix is one sentence: **a group is NAMED BY
+ITS LOWEST MEMBER, and there is one camera rig per player index.** Rig `i` draws
+whichever group has player `i` as its lowest member. So a group that gains or
+loses somebody keeps the same rig, and its aim point moves by a lerp rather than
+being handed to a camera that has been sitting frozen somewhere else.
+
+**Identity must not depend on membership, which is the trap.** Name a group by
+its centroid, its size, or the order it fell out of a loop, and one kitten
+crossing the threshold renames every group on screen — which is the frozen-camera
+bug with extra steps. The lowest member is the one label that a join or a leave
+cannot move, and it is why `core/cluster.js` unions by minimum index rather than
+by rank or size: union-by-rank is marginally faster over four elements and hands
+the set a root that moves when somebody joins it.
+
+**EVERY RIG IS UPDATED EVERY FRAME, DRAWING OR NOT** — the same rule, for the
+same reason, as the shared camera's own version of it. A rig whose player is not
+currently leading a group tracks *her alone*, so the instant a group splits and
+she becomes the lowest member of a new one, her rig is already framed on her.
+Four rigs is four vector lerps a frame.
+
+**Measured, because "no jump" is a claim and not an opinion.** Walking a third
+kitten in to a pair and out again over 300 frames: the groups change at exactly
+30 in and 46 out, and the worst one-frame camera move over the whole run is
+**0.88 units** — with **0.87 and 0.80** on the two frames where membership
+actually changed. The membership change costs nothing, because there is nothing
+to catch up on.
+
+**A GROUP OF ONE USES HER OWN FOLLOW CAMERA, not a rig framed on a single
+point.** `Player._updateCamera` and `setFocus` carry the grotto tilt, the dojo
+framing, the star pose and the mount pull-back; a shared rig re-deriving all of
+that for a group of one would be a second copy of every one of those rules — and
+it is also exactly what a lone kitten's pane has always been.
+
+**A FLYING KITTEN IS ALWAYS ALONE, and that now costs ONE pane instead of the
+whole screen.** The old `anyFlying` rule was global: one kitten taking off split
+every view in the game, including two sisters standing next to each other in the
+market who had not moved. The rule itself is unchanged — a gunner thirty units up
+is not "close to" her sister on the ground below — it is just asked per pair.
+
+**SINGLE LINKAGE, ON PURPOSE.** A near B and B near C puts all three in one pane
+even when A and C are not close, because B can see both of them and splitting the
+kitten standing between them into two panes would draw her twice. Requiring
+*every* pair in a group to be close has no stable answer for three players in a
+line: dropping any one of the three is equally valid and nothing says which.
+
+**HYSTERESIS IS ONLY EVER STICKINESS.** `prev` can hold a pair together out to
+`MERGE_OUT`; it can never pull one together, or a group could grow across a gap
+it was never allowed to close. `MERGE_IN`/`MERGE_OUT` moved into `cluster.js`
+with the only code that reads them, at their existing values — the whole
+compatibility claim is that a pair joins and splits at exactly the distances it
+always did, and `world-check` pins that first.
+
+**`merged` still means "one view for everybody"** — the HUD, the minimaps and the
+map-zoom key all read it — but it is now a *consequence* of the grouping
+(`groups.length === 1`) rather than a second thing decided separately. Two
+answers to one question is how a map ends up drawn across somebody else's half.
+
+**The one thing grouping took away is the badge rule.** `_buildHud` used to put
+each score badge on the side of the screen its owner's pane was on. A player's
+pane is no longer her slot number — it depends on who she is standing next to and
+it changes as she walks — so a badge that tracked the pane would slide across the
+screen every time two kittens met. Badges are laid out by PLAYER and stay put: a
+badge you cannot find is worse than a badge on the wrong side. The two-player
+rule (P1 left, P2 right) is unaffected, because at two players the pane order and
+the player order are the same thing.
+
+`splitLayout` in `core/split.js` and `clusterPlayers` in `core/cluster.js` are
+both pure arithmetic with no THREE and no DOM, so `world-check` asserts what
+actually matters. For the layout: every pane inside the frame, none overlapping,
+all the same size, player 1 top-left, and the two-player case identical to the
+hand-written code it replaced. For the grouping: **every kitten in exactly one
+pane in every arrangement** (a player in none is invisible to herself, a player
+in two is drawn twice on a screen where she is hunting her own marker), the
+two-player answer identical to the boolean it replaced *at the same distances*,
+a group keeping its name across a join and a leave, hysteresis that can stick but
+never pull, a flyer alone without splitting the ones still on the ground, and —
+since neither module imports the other — that every grouping is something
+`splitLayout` can actually tile.
+
+**THE HUD READS THE SAME `splitLayout` THE RENDERER DOES.** The minimaps used to
+be positioned by four CSS rules keyed off `hud-split` / `hud-horizontal`, which
+worked while there were two panes in one of two arrangements. With quadrants the
+HUD would have needed its own idea of where pane 3 is, and two copies of that
+rule is how a map ends up drawn across somebody else's half of the screen.
+
+#### TWO MINIMAPS, MAXIMUM — and map `i` is PANE `i`'s map
+
+One map per kitten is the obvious rule and it is the wrong one at four. A
+quadrant is a quarter of the screen; a map sized to stay legible eats a real
+fraction of it, so four maps means four corners of the game covered up at exactly
+the moment there is most to look at. It also stops being a map and starts being
+furniture — nobody reads four.
+
+**It is still "players 1 and 2" in every case where that means anything, and
+that falls out of the grouping rather than being asserted.** Groups are ordered
+by lowest member, so pane 0 always holds Ember and pane 1 always holds the
+lowest-numbered kitten who is *not* with her — which is Frost whenever the two of
+them are apart.
+
+**The case that decides the rule is the one where they are together.** Keying the
+second map to Frost personally hides it the instant she walks over to her sister,
+and leaves the OTHER pane — two kittens on the far side of the archipelago —
+**with no map at all**. Two kids with no map is the failure the minimap exists to
+prevent, and it would happen precisely when they are furthest from everybody
+else. So a map can end up belonging to a pane rather than to a girl, and the tag
+says so: it reads `SHARED` rather than flying one kitten's name over a shot her
+sister is standing in.
+
+**`Minimap.focusIndex = null` used to mean "the midpoint of `players[0]` and
+`players[1]`", written out.** A surviving "there are exactly two of them" that
+reads perfectly at two players and is silently wrong at four: a map shared by
+players 3 and 4 was centred halfway between Ember and Frost, who might be on
+another island — the pane's own two kittens could be off the edge of their own
+map. It takes a `focusOn` list now.
+
+**Players 3 and 4 have no map, and pressing the button SAYS so.** The bumper
+indexes past the end of a two-element array, and a button that silently does
+nothing is indistinguishable from a broken one — the same rule the shrine join
+prompt and the star locks already follow. She gets one toast telling her she is
+on the maps that are up.
+
+### Eight things one four-player match turned up
+
+All of these came out of a single 2v2 played by four kittens, and every one of
+them was invisible at two players — which is the pattern worth noticing more
+than any individual fix.
+
+**THE HEALTH BARS SHOWED TWO FIGHTERS.** `_paintHud` opened with
+`const [a, b] = this.game.players`, written when two was the only number there
+was, so the third and fourth kitten had no bar at all. The pips were worse than
+missing: `wins` counts SIDES and they were being drawn against PLAYER 0 and
+PLAYER 1, which is the same number only in a duel. It is one bar per fighter
+grouped by side now, and the two-player layout comes out byte-for-byte what it
+was — sides are dealt left until the left holds half the fighters, which gives
+`[P1] ROUND [P2]` at two and the pair against the pair at four.
+
+**A BAR KEEPS ITS OWN KITTEN'S COLOUR AND THE TEAM COLOUR IS THE BLOCK AROUND
+IT.** Two different questions — "which bar is mine" and "who is with me" — and
+answering both with one colour loses the first, which is the one a nine-year-old
+needs in a hurry. The fill is set inline from `styleCss`, the same source the
+marker ring and the minimap pip read; it used to be two CSS rules (ember, and
+frost for `.p1`), which is two of the four cats and no way to say the other two.
+
+**WHO IS ON MY SIDE WAS A QUESTION NOTHING ANSWERED.** In a 2v2 you found out by
+swinging at somebody and watching nothing happen — the worst possible way to
+learn it, because the rule that protects your partner is invisible and the first
+thing it teaches you is that your attack is broken. There is a team pennant over
+every head now (`Player.setTeamMark`), red/blue/gold, on only in matches where
+somebody actually shares a side. **A chevron rather than a disc**: from this
+game's fixed three-quarter camera a disc above a head reads as the halo the
+angel already owns, and two round things meaning opposite things is worse than
+no marker.
+
+**STORM AND BLOSSOM HAD NO EATING POSE AND NO WINGS, and there were two separate
+bugs under that.** The pose was picked with `p.index === 0 ? ember_eat :
+frost_eat` — the same mistake `palette.js` has a heading about, **A SLOT IS NOT
+A STYLE** — so Storm, who is drawn from Ember's sheet in slot 2, ate as a grey
+Frost. And because the eat sheet is a separate single-cell file rather than a row
+on the turnaround, it never went through `recolourAtlas` with the rest of her, so
+even the right sheet would have been the wrong colour. Worse: **a player is
+seated in three places and only one of them dressed anybody.** Boot seats two,
+joining seats a third and fourth, and the character picker RE-SEATS one by
+building a whole new `Player` — so a kitten who joined had neither pose nor
+wings, and swapping cat in the picker silently threw away the ones Ember and
+Frost were born with. `Game._dressPlayer` is the one place now.
+
+**THE RING-OUT FIRED IN MID-AIR.** `_updateOut` tested horizontal position
+alone, so the timer ran the moment she crossed the line however she crossed it —
+and the commonest way to cross it is to be hit, which sends her over the edge in
+a long arc with `lift` on it. A kitten sailing across the line five units up, on
+her way back onto the deck, was being counted out of a ring she was about to land
+in the middle of. **Two ways to be down and both are needed:** `onGround` catches
+the case the painted border exists for (she has LANDED past the line, and
+standing there has to cost something), and falling below the deck catches the
+other, because off the rim `onGround` never becomes true again and waiting for it
+would mean falling forever.
+
+**FRIENDLY FIRE DID NOTHING, WHICH IS A RULE WITH NO TEETH.** The safest thing in
+a tag-team round was to hold attack down and swing through everybody, because the
+swing that hit your partner was free. It dazes her now — no damage, a full second
+of no control, and a ring of stars — so it costs her something real and costs you
+the swing. **The ally test moved BELOW the range and arc checks** to make that
+possible: a swing that MISSES your partner must not daze her, so the hit has to
+be established first and only then asked who it landed on. The lockout is twice
+the daze, which caps a sister mashing attack at a third of anybody's time.
+
+**THE RAT WAS THE ANIMAL NOBODY COULD CATCH, FOR THE SECOND TIME.** The first
+version was pin-only and outran the grab radius; the fix made a swing stop
+anything and it was *still* the one that never landed. 8.2 is 78% of a walk,
+which sounds catchable and is not — a kitten closing at 2.3 units a second needs
+four seconds to cross the pin radius, and the rat turns. It is 6.6 now (closing
+at 3.9), worth 12 rather than 10 because it is easier, and still below the
+rabbit's 15 so the ladder holds. **And the two power-orb attacks never reached
+the wildlife at all**: `_doSlash` asks both questions on every ordinary swing and
+`_chargeStrike`/`_diveImpact` asked only about the other kitten, so a rat could
+be charged straight through and a dive could land on top of one and neither did
+anything.
+
+**WHO YOUR PARTNER IS WAS DECIDED BY WHO PICKED UP A CONTROLLER FIRST.**
+`mode.sides(n)` was the only arrangement — the first two kittens were always the
+pair — so the only way to change teams was for somebody to drop out and rejoin.
+There is a team picker now (`_openTeamPicker`), and **each kitten moves herself
+with her own stick**: this is the second screen in the game needing one cursor
+per player rather than one for the room, for the same reason the trade screen
+does — the thing being chosen is personal. `_validSeats` checks the SHAPE rather
+than the seating, so a 2v2 needs two sides of two and does not care which two,
+which is exactly the part the picker owns. Until the shape is legal JUMP is
+refused **and the screen says why**, because a confirm that silently does nothing
+is the failure this file keeps naming.
+
+**`_validSeats` TAKES ITS MODE AS AN ARGUMENT, and that is not tidiness.** The
+picker runs BEFORE `begin`, so at the moment it needs the answer the tournament
+is still carrying whatever league it last ran — the duel, on a fresh game. Read
+off `this.mode` it reported that a perfectly good 2v2 was illegal, and the screen
+sat there telling four kittens to move somebody across when nobody needed to.
+
+### The leagues
+
+A tournament is a set of **sides**, and everything is written against sides
+rather than against two players. `sides` maps fighter index → side index, so a
+free-for-all is every fighter on her own side and **a duel is already a team mode
+with one fighter a side** — which is what lets the whole feature be one code path
+with no "team mode" branch anywhere.
+
+| league | party | sides |
+| --- | --- | --- |
+| DUEL | 2 | `[0, 1]` — unchanged, and the only league two players get |
+| FREE FOR ALL | 3, 4 | `[0, 1, 2, 3]` |
+| TAG TEAM 2v2 | 4 | `[0, 0, 1, 1]` |
+| HANDICAP 2v1 | 3 | `[0, 0, 1]` |
+| HANDICAP 3v1 | 4 | `[0, 0, 0, 1]` |
+
+**A ROUND IS NOT OVER UNTIL A SIDE IS.** In a duel one knockout is one side wiped
+and this is exactly what it always was; in a 2v2 the first kitten down leaves her
+partner fighting alone, which is the whole shape of a tag-team round and the
+reason to have one. Asking "did somebody go down" would end a 2v2 on the first
+knockout and make the second fighter on each side decorative.
+
+**NO FRIENDLY FIRE, as one more clause on the SINGLE gate.** `Game.strikePlayers`
+is still the only place that asks whether two kittens may hurt each other; it now
+also asks whether they share a side. A partner you can cut down is not a partner,
+and with two sisters on a side the first accident becomes an argument about
+whether it was an accident.
+
+**THE HANDICAP IS A BIGGER BAR, NOT A WEAKER OPPONENT**, scaled by how badly the
+side is outnumbered — one against three opens on three bars. Scaling everyone
+else's damage down would make the lone fighter's own numbers lie: she would land
+a dash and see it take less than it takes in every other mode. It is
+`Player.hpScale`, a field on the player rather than a number applied once,
+because `setPowerOrbs` recomputes `maxHp` from scratch — a handicap written
+straight into `maxHp` would evaporate the moment she traded an orb mid-match. It
+**multiplies** with an Adamant stack rather than replacing it, the clan-and-orb
+rule, and all four of those are checked.
+
+**Posts come from the sides**, so teammates open beside each other and the other
+team is across the ring. Spaced evenly by index the four alternate round the
+circle and every 2v2 opens already tangled.
+
+**EACH LEAGUE KEEPS ITS OWN BOARD.** A duel win and a 3v1 win are not the same
+achievement, and one table mixing them makes the number meaningless — a handicap
+fighter with a triple-length bar deals three times the damage of a duellist and
+would sit permanently on top of a board she is not really competing on. **The
+duel keeps the original storage key**, so every tournament the girls have already
+won is still there; only the new leagues get new tables.
+
+**The league picker runs in the ring, after the griffin.** The ride is eight
+seconds and skippable, so a league picked before it would be a decision made and
+then sat on. Two players never see it: there is exactly one league they can run,
+and a menu with one item teaches a kid the game has stopped working.
+
+### The purse, and the fixed pot it breaks
+
+**Winning pays points, and that makes the economy renewable where it was
+deliberately fixed.** Every point came from knocking something over — 4550 across
+216 props — and the orbs only exist once everything has been knocked over, so the
+pot was closed and a stack of four was priced to be unreachable on purpose. A
+tournament can be replayed all afternoon, so this opens it.
+
+That is the point of it: a kitten who has spent her share has something to do
+about it besides asking her sister, and the arena gets a reason to be gone back
+to. **But it does move the ceiling**, so the purse is one orb and it is
+**derived** — `kotodama.price` already knows what an orb costs at this party
+size, so the purse tracks the price instead of being a second number to keep in
+step. Every member of the winning side is paid the same; splitting it would make
+a 2v2 win worth half a duel win each, which teaches two sisters that teaming up
+is worse than fighting.
+
+**This is the number most likely to want turning after a session with the girls.**
+It is the one thing in the feature that can be ground.
+
+### The orb economy scales per player
+
+**Four orbs per player**: two kittens get eight — one of each kind, the number
+this was designed around, unchanged — and four get sixteen.
+
+**The scarcity that matters is per player, and that is what is held fixed.** The
+original argument against sixteen was that two girls could wander into a full set
+each without ever speaking, because the interesting object in this feature is not
+the orb, it is the sentence "I'll swap you my Ward". At four players sixteen is
+the same four-per-kitten it always was.
+
+**IT DOES RELAX "NOTHING IS STACKABLE BY WALKING", DELIBERATELY.** Sixteen across
+eight kinds means two of some, so a lucky circuit can turn up a pair. The
+alternative is worse in a way that is not a trade-off: one Ward between four
+kittens means three of them can never find one, and a power three quarters of the
+party can only watch somebody else use is not scarce, it is absent.
+
+**The price is a share of a fixed pot, so it divides by the party size** —
+`pointsTotal / players / 3.5`. 650 at two players exactly as before, 325 at four,
+so "your share buys three or four" holds per kitten at any size. Leaving it alone
+would have quietly halved what each of four kittens could buy.
+
+**The shelf grows by one of everything per player past the second.** Four kittens
+shopping off a shelf sized for two means the third to reach the market finds it
+empty, which is not scarcity — scarcity is a price you cannot meet, and an empty
+shelf is just being late. The move orbs go one → three rather than to four, so
+they stay the half you mostly get by trading. `Kotodama.forParty` **adjusts** the
+counts by the difference rather than resetting them when somebody joins or
+leaves, or a party change would hand out a free restock or confiscate the stock.
+
+### Trading points, and "exactly two confirmed"
+
+Each side's offer is now an orb **and/or** a quantity of points, so a kitten can
+gift points outright or sell an orb for them. **On the points row left and right
+change the amount and up and down still move the cursor** — splitting the axes is
+what lets one row carry a value with no extra button, the same trick `MenuNav`
+uses on a `<select>`. Moving the amount clears her confirm, the rule picking a
+different orb already followed.
+
+**Points move with the orbs or not at all.** `kotodama.trade` is already atomic —
+it removes both orbs before giving either — and points are inside that same
+all-or-nothing, or a refused swap still empties somebody's purse.
+
+**A trade fires when EXACTLY TWO players have confirmed, which is the two-player
+rule generalised rather than a new one.** With two kittens "both have confirmed"
+and "exactly two have confirmed" are the same sentence, so nothing about the game
+they know changes. With four it answers the question a partner selector would
+otherwise have to ask — *who* is trading with whom — using the thing they were
+already going to do, and it keeps consent exactly where it was. **A third confirm
+is refused rather than guessed**: picking two out of three would move an orb
+somebody agreed to give to a person she did not agree to give it to, which is the
+one thing this screen exists to make impossible.
+
+### Four seats on the griffin, and the fallback that was the bug
+
+`SEATS` had two and `_place` read `SEATS[i] ?? SEATS[0]` — so a third and fourth
+rider were placed at the *first* seat, straight back to the original invisible-
+rider bug: several transparent billboards at one depth, the sort picks one, and
+two kittens are invisible for the whole flight to a tournament they are about to
+fight in. Four seats now, spaced by the measured 0.19 fore and aft, with `up`
+falling toward the tail because that is the shape of the back they sit on. **Two
+riders keep the two seats they were measured into** rather than being spread over
+four: the griffin is drawn for a pair, and pushing them out to the extreme seats
+to make room for kittens who are not on it would change a shot the girls know.
+
+### What is NOT built
+
+- ~~**Proximity clustering in the split screen**~~ — **built.** The camera-identity
+  problem was the blocker and it is solved by naming a group after its lowest
+  member; see The split screen above.
+- **Ryuuseki still has two seats.** The pilot/gunner split is carefully reasoned
+  (the fan belongs to the second seat, and that is the whole set-piece) and adding
+  a third and fourth seat would either dilute it or need a new job inventing. Two
+  of four ride him; the other two watch from the ground with their own panes.
+- **Voice lines for the new leagues.** Mr Satan announces rounds and knockouts
+  from his existing recorded set; the league names are on screen, not spoken.
+
+## The first four-player session, and the ten things it turned up
+
+Everything below came out of one round of play after the four-player pass
+landed. Nine of the ten are in the tournament, which is not a coincidence: it is
+the only part of the game with rules that can be *wrong* rather than merely
+missing, and it had never been played by four people.
+
+### The ring-out fired in the wrong place, twice over
+
+Two complaints that sound opposite and are one bug: **rung out while still
+standing on the stage**, and then **half a second of nothing happening** once
+she really was off it.
+
+`arenaOutBy` measures from the **painted line**, which sits `ARENA_OUT` (1.1)
+*inside* the deck edge — so there is a full stride of real stone past the paint,
+and standing on it was "out". `OUT_GRACE` was the only thing hiding it: half a
+second was long enough to walk back onto the paint, so the false positive
+usually cancelled itself, and what survived was a penalty that arrived at a
+seemingly random moment. Taking the grace out without moving the test would have
+made it fire constantly.
+
+**So the question is now the honest one: HAS SHE COME DOWN ON THE LOWER FLOOR?**
+Three things, all needed — past the line, feet below the deck (`OUT_DROP`, 0.6),
+and either `onGround` or fallen past `OUT_FALL` with nothing under her. Standing
+on stone is standing in the ring, whatever the paint says; the paint keeps the
+job it is good at, which is where `nearEdge` lights a stride before the edge. And
+once all three hold there is **no grace at all** — she is standing on the ground
+outside the ring, and there is nothing left to wait for.
+
+**The feast keeps its grace**, because nothing there is at stake: snapping a
+kitten back to the middle mid-stride for chasing a rabbit down the steps takes
+away the one thing she has to do for fifteen seconds.
+
+### The handicap was three hundred health
+
+`handicapFor` was `biggest / mine`, uncapped, so the lone fighter in a 3v1 opened
+on **three bars** and both loners in a 2v1v1 on two. On paper it is exactly fair
+— one bar each — and in the ring it is a different game: her sisters watch a bar
+that will not move, and because a knockout is also the round, the side with the
+long bar decides how long everybody else's afternoon is.
+
+`HANDICAP_MAX` is **1.2**, and it is deliberately the **same at every shape**.
+Being outnumbered worse is a reason to fight differently, not a reason to hold a
+different amount of health — and two leagues that hand out different bars for the
+same job have record boards that cannot be compared. What actually makes a
+handicap match survivable is the feast, the snacks and rage, and she gets all
+three.
+
+### The round had a clock and it was invisible
+
+`ROUND_LIMIT` (120s) can hand the round to whoever is ahead on damage, and it ran
+silently for its whole life — the one rule in the tournament that can take a
+round off you was the one nobody could see. It is now the **top line of the round
+box**, above `ROUND n`, in the one spot on that HUD both girls already read; red
+and pulsing under fifteen seconds, which is when "ahead on damage" stops being
+trivia and becomes the result. It counts only in `live`, because `this.t` is the
+state's own clock and a timer that runs during the card and the countdown is
+charging her for seconds she is frozen for.
+
+### PICK YOUR SIDE was never seen
+
+Choosing 2v2 went straight to the round card with whoever joined first paired up.
+Two causes, and the fix needs both halves:
+
+- the picker opened on `mode.sides(n)` — the **default arrangement, which is a
+  legal one** — so `_validSeats` was true on its first frame and nothing stood
+  between four kittens and the match but a JUMP;
+- **the JUMP that chose the league is still down on that frame.** `MenuNav`
+  confirms on `jump`, `_openTeamPicker` runs inside that same frame, and
+  `_updateTeamPicker` runs later in it and reads the very same press.
+
+So: everybody starts on **`NO_SIDE`**, which is an illegal seat rather than a
+flag beside the seats (`_validSeats` already refuses anything outside `0..n-1`,
+so an undecided kitten invalidates the arrangement for free — a separate
+`chosen[]` is a second thing to keep in step, and its failure mode is a match
+starting with somebody on a side she never picked). And JUMP is **armed by being
+released** (`jumpArmed`), so a press belonging to the previous screen cannot
+confirm this one.
+
+NO TEAM is drawn as a **column**, not as an absence: it is where a kid looks to
+find herself on the frame it opens, and a name missing from all three teams reads
+as a player the game has lost. The stick walks the whole row `[NO TEAM, RED,
+BLUE, (GOLD)]`, so stepping back off a team is the same gesture as joining one.
+
+**A duel and a free-for-all still get no picker**, unchanged: everybody is her own
+side and there is nothing to arrange.
+
+### There was no way out of a match
+
+Two exits: win it, or RESTART — which throws away every clan, star, orb and point
+of the afternoon, and is the button sitting directly underneath. **QUIT THE
+MATCH** is in the pause menu while `inMatch`, and `inMatch` includes the two
+picker screens, which run *before* `Tournament.begin` and so before `active`:
+leaving those flags set would fly everybody home and go on feeding all four
+kittens a dead pad in the town. Not offered during the griffin ride, because
+`_ride` refuses a second journey while one is in the air.
+
+**`Game._goHome` did not exist.** `Tournament.onPartyChanged` has always called it
+to end a match when somebody joins or drops out mid-tournament, through `?.` — so
+it failed silently and left the girls standing on the deck of an arena three
+hundred units north with no ring, no announcer and no ride. It is a real method
+now, and `quitMatch` goes through it.
+
+### Everybody was typing the champion's name
+
+`NameEntry.update` folds every pad it is handed into one cursor — largest stick
+reading wins, anybody's JUMP confirms. That is right when the question is "which
+of the two of you is holding the pad she won on" and wrong the moment there are
+four, because the three who lost are also holding sticks: the board was signed by
+whoever fidgeted, and a stray JUMP committed a half-typed name. `_signingPads`
+filters to the **winning side** — not to `winner`, who is only the kitten the row
+is filed under — and falls back to every pad if no winner has one, because a
+board nobody can sign is worse than a board signed by the wrong sister.
+
+### The ending unlocked nothing
+
+The scene viewer's *100% mischief — the ending* played the words and nothing
+else: no purses, no Awakening, no orbs, no stall, no arena. Watching all 63
+seconds made no difference either — **nothing was hung off the scene finishing,
+because nothing was hung off it at all.** `_debugEndgame`'s unlock is now
+`_unlockEndgame()`, called from the ending as well, so whichever way that scene
+is reached the world it describes is the world you get back. It is idempotent, so
+on a real 100% run — where `onMischief` has already awakened everything — it is a
+handful of assignments that change nothing, and the purse is a **floor** (`max`)
+rather than an assignment, so a kitten who has earned more in the ring is not
+handed a smaller number by the scene congratulating her.
+
+### The bunny was catchable at a walk and the bird from the floor
+
+Both were measured against the wrong thing.
+
+The rabbit ran at **9.0** against a kitten's 10.5 walk, so holding the stick
+toward it closed at 1.5 a second and caught it eventually, with no decision in
+it: the middle animal was the easy one with a longer chase attached. It is
+**11.6** — above a walk, well under a sprint (17) — so it cannot be caught by
+walking and is always caught by a sprint you commit to. The rat stays under a
+walk, deliberately: it is what teaches the mechanic.
+
+The hop went **11.88 → 14.6**, which is 2.94 → **4.44** high (height is `v²/2g`,
+so the launch does not scale with it). Over a kitten's head rather than level
+with it, and 1.22s of air per hop against 0.99.
+
+The bird cruised at **4.6**, and the comment claiming that was "above a jump" was
+measuring the wrong number: `Menagerie.strike` allows a swing **6.5 above her
+feet**, because a billboard is a flat drawing with a point for a position. So the
+hardest animal on the deck cost nothing but walking under it. **7.8** puts it
+past that window from the floor with the bob accounted for, and comfortably
+inside it at the top of a single jump. `world-check` recomputes both jump heights
+from `JUMP_V` and `GRAVITY`, so retuning the jump fails the check rather than
+quietly making the bird free again.
+
+### The meal was on the floor
+
+An animal being eaten was pinned on the **ground** in front of her — which is
+where you put a thing you are holding *down*, and not a thing you are eating. A
+rat lying a metre below her chin reads as a rat that happens to be standing there
+while a cat crouches nearby. `EAT_MOUTH_Y` is exported from `player.js` off the
+crouch the eating pose is drawn at, so the two cannot drift apart, and `eatLift`
+says per animal where it is held:
+
+- **rat and bird — 1**: at her mouth from the first frame. They are mouthfuls,
+  and that is the joke.
+- **rabbit — 0**: starts on the ground and is drawn **up** to her mouth as the
+  hold runs. It is 1.35 units of animal against a 2.9-unit cat, and hoisting that
+  to her face on frame one reads as a cat holding a dog. It already shrank to 45%
+  over the two seconds; rising as it shrinks points the shrink at something — it
+  is going *into* her rather than merely vanishing.
+
+A mouthed bird is placed **two different ways**, because she is doing two
+different things: riding at her face along her heading while she runs with it,
+and at the mouth spot the instant the swallow starts, because that is when she
+drops into the crouched camera-facing pose and a bird pinned to her old heading
+ends up behind her head.
+
+### The daze was over before anybody looked up
+
+`DAZE_TIME` 1.0 → **1.5**. A second was long enough to lose a trade over and
+still short enough to read as a stumble: the stars were on and off before the
+girl who caused it had looked up, and the cost is meant to be legible to the
+person who caused it, not merely suffered by the person who took it. Still well
+under a knockout (1.8), and the lockout is still twice the daze, so a partner
+mashing attack can take at most a third of anybody's time.
+
+## Player 2 gets a one-handed cluster, and the browser stops eating her keys
+
+**Player 1 has always played one-handed and player 2 never could.** `WASD` with
+`Q` `E` `F` around it is a left hand and nothing else; player 2 had the arrows —
+a right-hand shape — with her buttons on the **numpad**, another hand's width to
+the right and absent from half the machines in the house. The `, . / ;` run
+added later is reachable, but only by taking your hand off the arrows.
+
+So she has the same shape on her own side of the board:
+
+```
+   O K L ;    walk          (mirrors W A S D)
+   P I J      mount, interact, attack   (mirrors Q E F, in that order)
+   ' / RCtrl  jump          (mirrors Space)
+   Right Alt  sprint        (mirrors Left Shift)
+```
+
+**Everything she already knew still works** — arrows, numpad and the punctuation
+run are all still live. Three keys had to move, and each only because something
+else claimed it:
+
+| key | was | is | why |
+| --- | --- | --- | --- |
+| `;` | mount | **walk right** | it is the right-hand end of `O K L ;` |
+| `/` | jump | **attack** | jump moved to `'`, so `/` took `.`'s old job |
+| `.` | attack | **mount** | `;`'s old job had to go somewhere |
+| `RCtrl` | sprint | **jump** | Richard asked for a jump key that isn't `'` |
+
+which leaves `, . / '` reading interact, mount, attack, jump — one contiguous
+run, in the same order relative to each other as before.
+
+### `alt` is gone: every keyset field is a LIST
+
+A keyset used to be one primary code per field plus a single `alt` object, which
+is exactly enough to say "the numpad, or these four keys next to it" and **not
+enough to say what she actually needs**: three ways to press attack and two ways
+to walk. A one-deep alternate cannot express a second complete hand position. So
+every field is an array and `on(field)` asks whether *any* of its codes is down.
+Two call sites read it (`_readKeys` and `_joinKeyDown`) and both got shorter.
+
+**No key may do two jobs, and `pad-check` is where that is enforced.** Every one
+of the three moves above would have fired two actions on one press if the old
+binding had been left behind — `;` moving both the kitten and mounting her, `/`
+jumping *and* slashing. The check walks each set for a duplicate code, and walks
+the two sets against each other so one press can never move both kittens. Enter
+is the one deliberate overlap, because Enter is the JOIN key for both sets.
+
+### The browser was eating her keys, and Firefox is the browser this is played in
+
+`/` and `'` open **Quick Find**; a bare `Alt` focuses the **menu bar**. So player
+2 mashing jump — which was `/` before this pass — popped up a search box that
+took the keyboard away from the game. Richard turned it off in his own Firefox;
+nobody else's copy of the game should need that.
+
+`preventDefault` used to name Space and the arrows, and that was the whole list
+because it was written before player 2 had any punctuation. It is **derived from
+the bindings now** (`BOUND_KEYS`), so a key added to a keyset is protected by
+having been added, and `F5` / `F12` / `Tab` — which the game binds nothing to —
+are untouched. It is prevented on the **keydown**, which is what stops Firefox
+acting on the Alt *keyup* as well.
+
+**Held Ctrl or Meta is deliberately left alone.** `Ctrl+L` is the address bar and
+`L` is now a movement key; a game that eats the browser's own chords is worse
+than one that loses a keypress. It also means `AltGr` (which reports as
+`ControlLeft`+`AltRight`) passes through on international layouts, where it is
+somebody's typing key rather than a sprint button.
+
+### Verifying a key binding needs a HELD key
+
+Worth knowing before you try to test this from a script: the harness's synthetic
+key press is a keydown and keyup with **nothing between them**, and the game
+samples `input.keys` once per animation frame — so a press that starts and ends
+inside one frame is never seen at all, and the binding looks broken when it is
+fine. Dispatch the `keydown`, let a few frames run, then dispatch the `keyup`:
+same listener, same code path, and it is what a hand actually does.
+
 ## Gameplay rules worth not breaking
 
-**A dragon can never be lost, and the home island always has two.** Dragons
+**A dragon can never be lost, and the home island always has one per player.**
+Dragons
 belong to a *perch*. Hop off over solid ground and the dragon simply lands
 beside you (`landAt`) — it only flies back to its perch (`returnHome`) when you
 let go high over open sky, or when nobody is left walking on its island, which
@@ -2451,8 +3444,38 @@ losing it: you could watch it leaving and couldn't stop it.
 Bail out from a height and it **follows you down** (`flyTo`) rather than going
 home, so a long drop never costs you your ride.
 
-Two on the home island, because with one the second kitten can never follow the
-first into the sky. Perches are validated through `world.findOpenSpot`, which
+**FOUR on the home island, and the count is asserted against `MAX_PLAYERS`
+rather than against 4.** The rule has never been "two": it is that no kitten is
+left on the ground watching her sister fly, which is why there were two when the
+game seated two. A third and fourth player can join mid-session at any moment,
+and the failure that produces is silent — she picks her cat, walks to the plaza,
+and finds two dragons with her sisters already on them. Written against
+`MAX_PLAYERS` so seating a fifth kitten one day fails in `world-check`, on a line
+that says why, rather than in front of her.
+
+**The second pair mirrors the first across the plaza rather than being squeezed
+in beside it.** The road runs the length of the town, the original two stand
+either side of its south end, and the new two stand either side of its north end
+— so the four are a gate at each end of a street a kid already walks down. The
+smoke test bounds the closest pair against twice the widest `mountRadius` in the
+game (8.06), because four billboards on one patch of grass are one heap of dragon
+from every angle except directly overhead, and the mount scan would hand her
+whichever it reached first. It also bounds the furthest from the start line: a
+fourth dragon parked on the far rim is not a fourth dragon, it is a hike, and the
+kid who has to take it is the one who joined last.
+
+**Both new perches were MEASURED, not chosen.** Asking `findOpenSpot` for
+anything in the market street funnels it into the plaza's flattened middle, where
+the 1★ and the road already are — so the island was swept for ground that
+`findOpenSpot` leaves exactly where it is (it moves both by 0.0) while staying
+clear of solids, props, bamboo, the shrines and the star.
+
+**The new pair repeats the home breeds instead of introducing two more.** Every
+outer island gets a breed of its own and that is the whole reason to fly to one:
+a colour on the horizon you have not ridden yet. Four of the five breeds at home
+would spend that on the one island nobody has to travel to.
+
+Perches are validated through `world.findOpenSpot`, which
 checks solid, level ground all the way around at the sprite's own radius — not
 just under the centre point. Testing the centre alone put dragons on the rim,
 where the ground falls away under a sprite far wider than its footprint and the
@@ -2727,9 +3750,10 @@ a pad, and both slots can name the same pad with different halves:
 bindings = [ { pad: 0, half: 'left' }, { pad: 0, half: 'right' } ]
 ```
 
-`padMode` (Settings → Controllers) is `auto` | `split` | `separate`. `auto`
-splits only when a merged vJoy pad is the sole device, so a Pro Controller or
-two individually-paired Joy-Cons still get one pad each.
+`padMode` (Settings → Controllers) is `'split'` (default) | `'single'`, and it
+touches **only** a vJoy device — see *Splitting is per device* above. A Pro
+Controller or two individually-paired Joy-Cons are ordinary pads and get one
+player each whatever it is set to.
 
 The sideways 90-degree stick rotation is **not** a rotation step for these — it
 lives in the axis map (`axX`/`invX`/`axY`/`invY`) per half. The remap grid
@@ -2871,10 +3895,116 @@ know the DS4 and the DualSense. **A cheap USB pad is where it will bite.**
 per-profile map rather than widening the vJoy one, which is a real piece of work
 and not worth doing before something actually needs it.
 
-**Mixing a vJoy Joy-Con pad with a second controller costs you a Joy-Con.** Two
-live pads means no split, so the merged pad binds to P1 with `half: null`, and
-`readHalf` defaults to `'left'` — the right Joy-Con is unreachable. Use two
-Joy-Cons, or two other pads, not one of each.
+### A CONTROLLER IS A CONTROLLER, and the vJoy phantom
+
+**One player per connected pad, in connection order, and a Joy-Con is just a
+pad.** Joy-Cons paired to the machine individually are ordinary gamepads and get
+dealt like ordinary gamepads. `auto` splits nothing.
+
+```
+  0 pads   P1 WASD   P2 Arrows
+  1 pad    P1 pad    P2 WASD    P3 Arrows
+  2 pads   P1 pad    P2 pad     P3 WASD    P4 Arrows
+  3 pads   P1 pad    P2 pad     P3 pad     P4 WASD
+```
+
+**THE SLOT-AFFINITY PASS IS GONE.** `_assign` gave slot `i` `KEYSETS[i]` when it
+was free, which preserved what slot 1 got before four players existed and is the
+wrong answer to the question a kid actually asks: one pad put player 2 on the
+ARROW keys and pushed WASD down to player 3. The keyboard sets are a **queue**,
+not player 2's and player 3's property — WASD with a space bar beats the arrows
+with a numpad, so whoever is first out of the controllers gets WASD whatever her
+slot number is. The cost is that one pad plus one keyboard moves player 2 from
+the arrows onto WASD; that is a deliberate change to the two-player game and it
+is the arrangement it improves.
+
+**A vJOY DEVICE IS PRESENT WHETHER OR NOT ANYTHING IS FEEDING IT. THAT IS THE
+PHANTOM, AND IT IS THE BUG THIS SECTION IS REALLY ABOUT.** vJoy is a
+driver-level virtual joystick: once installed, Windows reports it to the browser
+forever — with Joy2Win not running, with no Joy-Con paired, with no Nintendo
+hardware in the building. The game saw a controller that was not there, gave it
+player 1, and left a kid on the keyboard wondering why nothing moved. It looks
+exactly like a connected controller that has stopped working, which is why it
+is confusing rather than merely wrong.
+
+**So a vJoy device must prove it is alive before it can take a seat, and ONLY a
+vJoy device is asked** (`hasSentInput`). Every real pad is already hidden by the
+browser until it sends input — by the time one appears in `getGamepads` somebody
+has used it — so the gate is a no-op for real pads and would only be a source of
+mid-session churn if the test ever misfired. vJoy is the one device that shows up
+without anybody touching anything, so vJoy is the one device that has to answer
+for itself.
+
+**The test measures movement from the FIRST READING, not from zero.** `_watchAxes`
+seeds min and max to whatever the axes said the first time it saw them, so a
+phantom reporting the same constants forever has a range of exactly 0 on every
+axis however odd those constants are. Against zero instead, the vJoy device's
+resting state — three axes at `-1` — reads as "alive" on frame one, which is the
+bug rather than the fix. There is a check for exactly that.
+
+**`_watchAxes` now runs BEFORE `_syncBindings`.** The binder asks `hasSentInput`,
+and that answer is built by the watcher, so binding first decided on evidence one
+frame stale and left the pad asleep for a frame after the button that woke it.
+
+**It is still LISTED in Settings, flagged `asleep`, not hidden.** Hiding it makes
+"why can't the game see my Joy-Cons?" undebuggable from inside the game, which is
+the whole job of that screen. The row says what to do instead of saying "unused".
+
+#### SPLITTING IS PER DEVICE, NOT A MODE — and that took three goes
+
+This was got wrong twice in opposite directions before the shape of the mistake
+was visible, so the two dead ends are worth keeping:
+
+1. **`auto` splits a vJoy pad whenever one is present.** Broke the case where
+   somebody holds both halves themselves: one controller became two players who
+   then both moved the same kitten.
+2. **`auto` splits nothing; splitting is an explicit mode.** Broke the case that
+   actually matters — two Joy-Cons through Joy2Win **plus** an ordinary pad.
+   In `split` the pad looked disabled; in `auto` a Joy-Con looked disabled.
+
+**Both are the same bug: the switch asked "do we split?" about THE MACHINE when
+it is a question about ONE DEVICE.** No global answer can be right when the
+machine holds a vJoy feed *and* a PS4 pad, because the two want opposite
+answers. `_padDevices` now walks the connected pads and decides each on its own:
+a vJoy device becomes two players, everything else becomes one, and they coexist.
+
+**A vJOY DEVICE IS ALWAYS TWO PLAYERS, and that is not a guess.** It is not a
+controller, it is a FEED — nothing has the vJoy driver installed and Joy2Win
+running by accident, and the entire point of that stack is to present two
+Joy-Cons as one device. Two is right in every case where somebody has actually
+set it up. `padMode` survives only for the one person holding both halves
+herself, and it is the only thing that setting touches now: `'split'` (default)
+or `'single'`, with `'auto'`/`'separate'` accepted as the legacy spellings.
+
+**THE HALVES EXPAND IN PLACE, IN CONNECTION ORDER.** The old split branch built
+`[left, right, ...everything else]`, hoisting the Joy-Cons to players 1 and 2
+however late they were plugged in and silently reordering everybody else. A pad
+connected first keeps player 1 now, whatever kind of pad it is.
+
+**Verified in the browser on the setup that prompted it:** vJoy woken by moving
+axes (not a stuck button) plus a PS4 pad gives `P1 left Joy-Con | P2 right
+Joy-Con | P3 gamepad`, and pushing each stick in turn moves exactly one kitten.
+
+**THE OTHER PADS COME AFTER THE TWO HALVES INSTEAD OF BEING DROPPED.** The split
+branch returned the two halves *and nothing else*, so a pad connected alongside
+was not merely last in the queue — it **was not a device at all**, and no amount
+of pressing START could seat anybody on it.
+
+**`_padDevices` is one function because two copies of this rule is how the right
+Joy-Con went dead in the first place.** `_syncBindings` decided whether to split
+and `seatable` decided it again a hundred lines further down in the same words —
+so the join screen could refuse a fourth player onto a device the binder had
+already dealt. Same duplication `trackForIsland` and `_hudDuringScenes` exist to
+prevent.
+
+**NOT SPLITTING BROKE THE CALIBRATION SCREEN, and the proxy is why.** Both
+`beginCapture` and the remap grid found the vJoy pad by asking *"which binding
+holds `half`"* / *"does some pad hold two player slots"* — proxies for "is this
+the vJoy device" that were only true while `auto` always split it. With the pad
+seating one player and `half: null`, the lookup found nothing and the grid never
+rendered: the entire Joy-Con remap screen went unreachable for the one device
+that cannot be played without it. Both ask for the device **by name** now
+(`profileNameFor(gp) === 'vjoyDual'`), which is the question they always meant.
 
 ## Sound
 

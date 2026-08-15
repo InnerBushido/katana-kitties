@@ -1,12 +1,17 @@
 import * as THREE from 'three';
 import './style.css';
 
-import { InputManager, HALVES, MAP_FIELDS, VJOY_AXIS_NAMES } from './core/input.js';
+import {
+  InputManager, HALVES, MAP_FIELDS, VJOY_AXIS_NAMES, deviceId,
+} from './core/input.js';
 import { Audio, trackForIsland } from './core/audio.js';
-import { loadSpriteAtlas } from './core/spritesheet.js';
+import { loadSpriteAtlas, recolourAtlas } from './core/spritesheet.js';
 import { placeholderCatAtlas, placeholderDragonTexture, placeholderPandaTexture } from './core/gfx.js';
 import { World } from './world/world.js';
 import { Player, ATTACKS, MAX_HP, KO_TIME } from './entities/player.js';
+import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss } from './core/palette.js';
+import { splitLayout } from './core/split.js';
+import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, tierFor, toNextTier } from './entities/panda.js';
 import { ClanLeader, LEADERS } from './entities/leader.js';
@@ -22,11 +27,13 @@ import { Ryuuseki, HOVER, RYU_VIEW, RYU_SIZE } from './entities/ryuuseki.js';
 import { MrSatan } from './entities/satan.js';
 import { Griffin } from './entities/griffin.js';
 import { Announcer } from './systems/announce.js';
-import { Tournament } from './systems/tournament.js';
+import {
+  Tournament, MODE_BY_ID, modesFor, teamColour, teamName, NO_SIDE,
+} from './systems/tournament.js';
 import { Menagerie } from './systems/menagerie.js';
 import { AngelForm } from './entities/angel.js';
 import { ArenaQuest, SATAN_TOWN, MILESTONES } from './systems/arenaquest.js';
-import { loadBoard } from './systems/leaderboard.js';
+import { loadBoard, BOARD_MODES } from './systems/leaderboard.js';
 import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
 import { ProfileScreen } from './systems/profile.js';
 
@@ -45,8 +52,6 @@ const QUALITY = {
   low: { pixelRatio: 1, shadows: false, shadowSize: 1024 },
 };
 
-const MERGE_IN = 30;     // join the screens when the kitties are this close
-const MERGE_OUT = 46;    // split again beyond this
 const DOJO_VIEW_R = 52;  // inside this, the camera frames the unit circle
 /** How long the found-a-star pose runs. Matches Player.holdAloft's default. */
 const STAR_POSE = 2.0;
@@ -109,9 +114,44 @@ class Game {
     this.settings = { split: 'auto', dir: 'vertical', quality: 'medium' };
     this.mathVisible = true;
 
-    this.sharedCamera = new THREE.PerspectiveCamera(38, 1, 0.5, 4000);
-    this.sharedTarget = new THREE.Vector3();
-    this.sharedDist = 34;
+    /* HOW MANY KITTENS ARE IN THE WORLD. Two unless somebody claims a third
+       slot, which is the whole of the compatibility story: the girls press PLAY
+       and get Ember and Frost exactly as they always have, and everything that
+       scales with the party — the split screen, the dealer's shelf, the orbs
+       scattered at the Awakening, the ring's team modes — reads this rather
+       than assuming a number. It moves when a player joins or leaves. */
+    this.partySize = 2;
+
+    /* ONE CAMERA RIG PER PLAYER SLOT, AND THE RIG IS NAMED BY A PLAYER RATHER
+       THAN BY A GROUP. Rig `i` draws whichever group of kittens has player `i`
+       as its lowest member, which is how a group can gain or lose somebody
+       without the view being handed to a camera that was somewhere else — see
+       `core/cluster.js` for why that naming is the whole design and not a
+       detail. Rig 0 IS the old `sharedCamera`, byte for byte, and it is still
+       what draws the title screen's fly-over and the one-view cases; the other
+       three did not exist until there was something for them to draw.
+
+       EVERY RIG IS UPDATED EVERY FRAME, DRAWING OR NOT. This file has learned
+       that lesson once already, expensively: a lerped camera left un-updated is
+       not stale by a little, it is frozen wherever the world was when it
+       stopped, and taking the screen from there flies across the archipelago.
+       Four rigs is four vector lerps a frame. */
+    this.rigs = Array.from({ length: MAX_PLAYERS }, () => ({
+      camera: new THREE.PerspectiveCamera(38, 1, 0.5, 4000),
+      target: new THREE.Vector3(),
+      dist: 34,
+      /** Per rig, not per game: two groups can be in two different places, and
+       *  one of them inside a grotto while the other is on a hillside. */
+      focusT: 0,
+      caveT: 0,
+      seeded: false,
+    }));
+    this.sharedCamera = this.rigs[0].camera;
+    /** Player index -> her group's lowest member, last frame. The hysteresis
+     *  reads it; nothing else should. */
+    this._clusterOf = null;
+    /** This frame's groups, as arrays of player indices. One per pane. */
+    this.groups = [[0, 1]];
 
     this.pickups = [];
     this.dragons = [];
@@ -359,11 +399,32 @@ class Game {
       },
       bird: critterArt.bird && { calm: critterArt.bird, shock: critterArt.bird_shock ?? critterArt.bird },
     };
-    for (const p of this.players) {
-      p.angelForm = new AngelForm(critterArt.angel_wings, p.height);
-      p.group.add(p.angelForm.group);
-      p.setEatArt(p.index === 0 ? critterArt.ember_eat : critterArt.frost_eat);
-    }
+    this.critterArt.wings = critterArt.angel_wings;
+
+    /* THE EATING POSE IS PER STYLE, RECOLOURED, AND IT USED TO BE PER SLOT.
+       `p.index === 0 ? ember_eat : frost_eat` is the same mistake `palette.js`
+       already has a heading about — A SLOT IS NOT A STYLE — and here it was
+       wrong twice over. Storm is drawn from Ember's sheet in slot 2, so she ate
+       as a GREY FROST; Blossom got Frost's sheet with none of her violet. And
+       because the eat sheet is a separate single-cell file rather than a row on
+       the turnaround, it never went through `recolourAtlas` with the rest of
+       her, so even the right sheet would have been the wrong colour.
+
+       Derived once, here, for the same reason the turnarounds are: a canvas
+       pass per style is nothing at boot and is not something to do on the frame
+       a third player presses START. Ember and Frost share the loaded atlas
+       outright rather than copying it, so their pose is byte-for-byte what it
+       always was. */
+    this.eatArt = PLAYER_STYLE.map((s) => {
+      const base = s.sheet === 'ember' ? critterArt.ember_eat : critterArt.frost_eat;
+      if (!base) return null;
+      if (!s.recolour) return base;
+      const a = recolourAtlas(base, s.recolour);
+      console.log(`[art] ${s.name} eat pose ← ${s.sheet}_eat recoloured`);
+      return a;
+    });
+
+    for (const p of this.players) this._dressPlayer(p);
 
     this.menagerie = new Menagerie({
       game: this, world: this.world, art: this.critterArt,
@@ -385,11 +446,12 @@ class Game {
     /** 'out' | 'home' while the griffin is carrying them, else null. */
     this.travel = null;
 
-    /* Two maps: `minimap` is the shared/P1 one, `minimap2` only appears when
-       the screen splits. They keep their own zoom so each player can be looking
-       at a different scale. */
-    this.minimap = new Minimap(document.getElementById('minimap'), this.world, 0);
-    this.minimap2 = new Minimap(document.getElementById('minimap2'), this.world, 1);
+    /* One map per seated kitten. `maps[0]` doubles as the SHARED map when the
+       view is merged — it just drops its focus and centres on the party, which
+       is what the single map has always done. Each keeps its own zoom so two
+       players can be looking at different scales. */
+    this.maps = [];
+    this._buildHud();
     // Show the real target from the start — it read "0 / 0" until the first
     // prop was knocked over, which makes the whole scoreboard look broken.
     document.getElementById('mtotal').textContent = `0 / ${this.world.mischiefTotal}`;
@@ -423,42 +485,126 @@ class Game {
     }
   }
 
+  /**
+   * Load the two drawn sheets, derive the recoloured ones, and seat the party.
+   *
+   * THE RECOLOURS ARE DERIVED ONCE, HERE. `recolourAtlas` is a full pass over a
+   * 2048-square canvas, which is nothing at boot and is not something to do on
+   * the frame a third player presses START to join — so every kitten in
+   * `PLAYER_STYLE` gets her atlas built now whether or not anybody is playing
+   * her. Two extra canvases is a cheap price for a join that cannot stutter.
+   */
   _spawnPlayers(ember, frost) {
-    const spawnFor = (dx) => {
-      const g = this.world.heightAt(dx, 34);
-      return new THREE.Vector3(dx, (g ? g.y : 8) + 0.1, 34);
+    /* Height and direction sense are facts about the SHEET, not about the
+       player, so a recolour inherits them by naming its source rather than
+       repeating them. Both live sheets are internally consistent — every row
+       turns the same way, increasing column toward screen-right — so both take
+       dirSense 1 and neither needs a per-row override. Measured off the art,
+       not guessed; the probe is in HANDOFF.md.
+
+       If one ever looks wrong in play, flip it live from the console rather
+       than guessing here:  game.setRowSense(1, 0, -1)   // Frost, idle row */
+    this.sheets = {
+      ember: { art: ember, height: 2.9, dirSense: 1 },
+      frost: { art: frost, height: 2.85, dirSense: 1 },
     };
 
-    // Multi-column sheets are a full turn with nothing mirrored, which is what
-    // keeps Ember's tail and shoulder guard on the correct side when facing
-    // right. Only the 4-cell fallback still mirrors.
-    const cfg = (a) => ({
+    /* One atlas per roster entry. A null recolour shares the loaded atlas
+       object outright rather than copying it — Ember and Frost must come out
+       byte-for-byte the sheet that was loaded, and the cheapest way to
+       guarantee that is not to touch them. */
+    this.kittenArt = PLAYER_STYLE.map((s) => {
+      const base = this.sheets[s.sheet].art;
+      if (!s.recolour) return base;
+      const a = recolourAtlas(base, s.recolour);
+      console.log(`[art] ${s.name} ← ${s.sheet} recoloured `
+        + `${JSON.stringify(s.recolour)}`);
+      return a;
+    });
+
+    /** Which kitten each slot is playing. Slot n starts as style n, but the
+     *  character picker breaks that: a third player choosing Blossom gives
+     *  `[0, 1, 3]` and leaves Storm unplayed. */
+    this.roster = [];
+    this.players = [];
+    for (let i = 0; i < this.partySize; i++) this._seatPlayer(i);
+  }
+
+  /**
+   * Build player `index` and put her in the scene.
+   *
+   * Split out from `_spawnPlayers` because joining mid-game runs exactly this
+   * and nothing else — a join that went through a second construction path is
+   * a join that drifts out of step with the one boot uses.
+   */
+  _seatPlayer(index, styleIndex = index) {
+    const style = styleFor(styleIndex);
+    const sheet = this.sheets[style.sheet];
+    const a = this.kittenArt[styleIndex];
+    const g = this.world.heightAt(style.startX, 34);
+
+    // Replacing a kitten already in the scene — the character picker swapping
+    // her for a different cat. Take the old one out or both are drawn.
+    const old = this.players[index];
+    if (old) this.scene.remove(old.group);
+    this.roster[index] = styleIndex;
+
+    const p = new Player({
       texture: a.texture,
       cols: a.cols,
       rows: a.rows,
       contentScale: a.contentScale ?? 1,
       pad: a.pad ?? 0,
+      // Multi-column sheets are a full turn with nothing mirrored, which keeps
+      // Ember's tail and shoulder guard on the correct side facing right. Only
+      // the 4-cell fallback still mirrors.
       mirror: a.cols <= 4 && a.rows === 1,
+      index,
+      style,
+      spawn: new THREE.Vector3(style.startX, (g ? g.y : 8) + 0.1, 34),
+      name: style.name,
+      height: sheet.height,
+      dirSense: sheet.dirSense,
     });
+    // A swap keeps where she was standing — the picker runs in the world with
+    // everyone else still playing, so the new cat has to appear where the old
+    // one was rather than teleporting back to the start.
+    if (old) {
+      p.position.copy(old.position);
+      p.group.position.copy(old.group.position);
+      p.facing = old.facing;
+    }
+    this.players[index] = p;
+    this.scene.add(p.group);
+    this._dressPlayer(p);
+    return p;
+  }
 
-    /* Both live sheets are internally consistent — every row turns the same
-       way, increasing column toward screen-right — so both take dirSense 1 and
-       neither needs a per-row override. Measured off the art, not guessed; the
-       probe is in HANDOFF.md.
-
-       If one ever looks wrong in play, flip it live from the console rather
-       than guessing here:  game.setRowSense(1, 0, -1)   // Frost, idle row */
-    this.players = [
-      new Player({
-        ...cfg(ember), index: 0, spawn: spawnFor(-3.5), name: 'Ember', height: 2.9,
-        dirSense: 1,
-      }),
-      new Player({
-        ...cfg(frost), index: 1, spawn: spawnFor(3.5), name: 'Frost', height: 2.85,
-        dirSense: 1,
-      }),
-    ];
-    for (const p of this.players) this.scene.add(p.group);
+  /**
+   * The wings and the eating pose — the two pieces of a kitten that are not on
+   * her turnaround sheet.
+   *
+   * IT LIVES HERE BECAUSE A PLAYER IS SEATED IN THREE PLACES, NOT ONE. Boot
+   * seats two; a third and fourth are seated when somebody presses START; and
+   * the character picker RE-SEATS one, building a whole new `Player` for the
+   * cat she switched to. Only the first of those three ever dressed anybody, so
+   * a kitten who joined had no wings and no eating pose at all, and swapping
+   * cat in the picker silently threw away the ones Ember and Frost were born
+   * with. Three ways in and one of them doing the work is the same shape as
+   * every other bug in this file.
+   *
+   * A no-op before the critter sheets have loaded. Boot seats its two players
+   * long before those exist, so the loader dresses them itself once they land;
+   * everybody seated afterwards is dressed here, on the spot.
+   */
+  _dressPlayer(p) {
+    if (!p || !this.critterArt) return;
+    if (!p.angelForm) {
+      p.angelForm = new AngelForm(this.critterArt.wings, p.height);
+      p.group.add(p.angelForm.group);
+    }
+    // By STYLE, not by slot — see the note where `eatArt` is built.
+    p.setEatArt(this.eatArt?.[this.roster[p.index]] ?? null);
   }
 
   /**
@@ -546,6 +692,7 @@ class Game {
         if (a === 'profile') this.profile.open('profile', { fromPause: true });
         if (a === 'resume') this.setPaused(false);
         if (a === 'restart') this.restart();
+        if (a === 'quit-match') this.quitMatch();
         if (a === 'story') this.replayIntro();
         if (a === 'title') this.toTitle();
       });
@@ -695,17 +842,30 @@ class Game {
    * Cycle one player's minimap zoom. Keyboard (Z / X) and the pad's `map`
    * action both land here.
    *
-   * Player 2 only owns a map of her own while the screen is split — merged,
-   * there is one map on screen and both controls drive it, which is why
-   * player 1's path also copies the zoom onto `minimap2`: it is the map that
-   * takes over the moment they run apart, and inheriting the zoom means the
-   * split doesn't silently reset it under her.
+   * Only player 1 owns a map while the view is MERGED — there is one map on
+   * screen and every player's control drives it, which is why the merged path
+   * copies the zoom onto all the others: they are the maps that take over the
+   * moment the party runs apart, and inheriting the zoom means the split does
+   * not silently reset it under somebody.
+   *
+   * PLAYERS 3 AND 4 HAVE NO MAP OF THEIR OWN, and pressing the button has to
+   * SAY so. There are two maps at most now (see `_buildHud`), so the third
+   * kitten's bumper indexes past the end of the array — and a button that
+   * silently does nothing is indistinguishable from a broken one, which is the
+   * same rule the shrine join prompt and the star locks already follow. She is
+   * told once, on her own toast, and told what to look at instead: everybody is
+   * drawn on both maps, so the information is on screen, it is just not in her
+   * corner.
    */
   _zoomMap(index) {
     if (this.state !== 'play') return;
-    const target = (index === 1 && !this.merged) ? this.minimap2 : this.minimap;
+    const target = this.merged ? this.maps[0] : this.maps[index];
+    if (!target) {
+      this.toast('The map follows Ember and Frost — you\'re on it too', index);
+      return;
+    }
     const z = target.cycleZoom();
-    if (target === this.minimap && this.merged) this.minimap2.zoom = z;
+    if (this.merged) for (const m of this.maps) m.zoom = z;
     this.audio.play('menu');
     this.toast(`Map zoom ${z === 1 ? 'whole world' : `${z}x`}`, index);
   }
@@ -749,6 +909,17 @@ class Game {
     this.paused = on;
     this.audio.duck(on);
     this.audio.play('menu');
+    // Rebuilt on the way IN, so the rows match the party as it is right now
+    // rather than as it was the last time somebody joined.
+    if (on) this._buildLeaveButtons();
+    /* THE WAY OUT OF A MATCH, and it only exists while there is one. Before
+       this the ring had exactly two exits — win it, or RESTART the entire world
+       — so a pair who got into a 2v2 they did not mean to pick, or who simply
+       wanted their afternoon back, had to throw away every clan, star and orb
+       to leave. RESTART sitting right underneath is precisely the button they
+       would have reached for. */
+    document.getElementById('btn-quit-match')
+      ?.classList.toggle('hidden', !(on && this.inMatch && !this.travel));
     document.getElementById('panel-pause').classList.toggle('hidden', !on);
     if (!on) {
       document.getElementById('panel-help').classList.add('hidden');
@@ -800,7 +971,7 @@ class Game {
     }
     for (const p of this.players) {
       p.clan = null;
-      p.marker.material.color.set(p.index === 0 ? 0xff8a3d : 0xff6fae);
+      p.marker.material.color.set(p.style.colour);
     }
     /* Un-meet every leader. A restart is the world put back to its opening
        state, and six introductions already spent is exactly the sort of
@@ -826,8 +997,8 @@ class Game {
     this.summonScene.played = { found: false, summon: false };
     this.summonScene.clearDusk();
     this._updateBallHud();
-    for (const id of ['c1', 'c2']) {
-      const el = document.getElementById(id);
+    for (const p of this.players) {
+      const el = document.getElementById(`clan-${p.index}`);
       if (el) { el.textContent = ''; el.style.background = ''; }
     }
     for (const p of this.world.props) {
@@ -839,20 +1010,28 @@ class Game {
       pk.taken = false;
       this.scene.add(pk.group);
     }
-    document.getElementById('s1').textContent = '0';
-    document.getElementById('s2').textContent = '0';
+    for (const p of this.players) {
+      const el = document.getElementById(`score-${p.index}`);
+      if (el) el.textContent = '0';
+    }
     document.getElementById('mtotal').textContent = `0 / ${this.world.mischiefTotal}`;
     document.getElementById('toasts').replaceChildren();
     this.merged = true;
-    this.sharedFocusT = 0;
-    // Re-seed the shared rig: the kittens are back at the town and the camera
-    // must be there with them, not lerping in from wherever the last run ended.
-    this._sharedSeeded = false;
+    // Re-seed EVERY rig: the kittens are back at the town and the cameras must
+    // be there with them, not lerping in from wherever the last run ended. All
+    // four, not just the one that happens to be drawing — an unseeded rig that
+    // takes the screen later flies in from the origin, which is the same bug
+    // one pane further along.
+    this._reseedRigs();
     /* Restart puts every prop back up, so the 100% is on the table again and
        its ending has to be too. `found` and `summon` are deliberately NOT
        reset: those are tied to Ryuuseki, who is still in the world. */
     this._finaleDue = false;
+    this._endingShown = false;
     if (this.summonScene) this.summonScene.played.finale = false;
+    /* And the debug purse, or a restart would hand the world's money to the
+       next kitten who joins a game where nothing has been knocked over yet. */
+    this._debugPurse = null;
 
     /* The tournament goes back in its box too — and the ARENA CLOSES with it.
        A restart is the world put back to its opening state, and an eighth
@@ -911,6 +1090,18 @@ class Game {
       const halves = p.slots.length ? p.slots : [null];
       const rows = halves.map((s) => {
         if (!s) {
+          /* A vJoy device with nothing feeding it is the commonest thing on
+             this screen and the most confusing, because it looks exactly like a
+             connected controller that has stopped working. vJoy is a driver:
+             Windows reports it whether or not Joy2Win is running and whether or
+             not a Joy-Con is paired. Saying "no player is reading this pad"
+             about it is true and useless — this says what to do. */
+          if (p.asleep) {
+            return '<div class="pad-row"><b>asleep</b> the vJoy driver is '
+              + 'reporting this, but nothing is feeding it. Pair the Joy-Cons, '
+              + 'start Joy2Win, then <b>press a button</b> — it takes a seat as '
+              + 'soon as it sends anything.</div>';
+          }
           return '<div class="pad-row"><b>unused</b> no player is reading this pad</div>';
         }
         const acts = Object.entries(s.actions)
@@ -980,14 +1171,22 @@ class Game {
   }
 
   /**
-   * The remap grid. Only shown for the merged Joy-Con pad, because that's the
+   * The remap grid. Only shown for the vJoy Joy-Con pad, because that's the
    * one whose button numbers are decided by whatever is feeding vJoy — they
    * can't be known from here, so they get pressed in instead of guessed.
+   *
+   * IT ASKS FOR THE DEVICE BY NAME RATHER THAN COUNTING SLOTS. The test used to
+   * be "some pad holds two player slots", which was a proxy for "is the vJoy
+   * pad" that held only while `auto` always split it. It no longer splits, so a
+   * vJoy pad holds ONE slot and the grid vanished — taking the whole Joy-Con
+   * calibration screen with it, for the one device that cannot be played
+   * without it. A pad nothing is feeding is still excluded: there is nothing
+   * to press.
    */
   _refreshMapGrid(pads, mapEl) {
     if (!mapEl) return;
-    const split = pads.some((p) => p.slots.length === 2);
-    if (!split) {
+    const hasVjoy = pads.some((p) => p.profile === 'vjoyDual' && !p.asleep);
+    if (!hasVjoy) {
       if (mapEl.innerHTML) { mapEl.innerHTML = ''; this._mapSig = null; }
       return;
     }
@@ -1116,10 +1315,40 @@ class Game {
     this.cutscene?.play();
   }
 
+  /**
+   * The bottom strip: who is on what, and how the next player gets in.
+   *
+   * IT USED TO BE WRITTEN ONCE, AT `startPlay`, AND NEVER AGAIN. That was
+   * survivable while it only listed the devices — plug a pad in mid-game and
+   * the line was merely out of date. It is not survivable now that it names the
+   * JOIN KEY, because a stale line does not go vague, it goes wrong: it goes on
+   * offering `\` to seat player 3 after player 3 has already sat down, and that
+   * is worse than the silence it replaced.
+   *
+   * Rebuilt against a SIGNATURE rather than every frame. `textContent` on a
+   * long string is layout work, and the answer changes only when a device or a
+   * player appears or leaves — so the common case is a cheap compare and no
+   * DOM write at all.
+   */
   _updateHint() {
     const src = this.input.describe().join('   ·   ');
+    /* NAME THE KEY THAT JOINS, because it moves. A keyboard set's start key
+       means "pause" while somebody is on it and "join" while nobody is, so
+       which key seats the next kitten depends on which sets are already taken —
+       and that depends on how many controllers are plugged in. With one
+       controller player 2 is on WASD, so ENTER is her PAUSE key and the join
+       key is the arrow set's `\`; pressing the obvious ENTER opens the pause
+       menu instead, which is exactly what happened to a real player. This strip
+       already lists who is on what, so it is the right place to finish the
+       sentence. */
+    const join = this.input.joinHint();
+    const sig = `${src}|${join}|${this.partySize}`;
+    if (sig === this._hintSig) return;
+    this._hintSig = sig;
+
     document.getElementById('hint').textContent =
-      `${src}   ·   M: math overlay   ·   cut the bamboo east of town`
+      `${src}${join ? `   ·   press ${join} to join as P${this.partySize + 1}` : ''}`
+      + `   ·   M: math overlay   ·   cut the bamboo east of town`
       + `   ·   fly south-east to Pandapaw and raise a panda`
       + `   ·   fly west to the Dojo of the Turning Circle`;
   }
@@ -1157,7 +1386,7 @@ class Game {
         const geo = new THREE.ConeGeometry(0.85, 1.8, 5);
         geo.rotateX(Math.PI);
         p.seekMark = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-          color: p.index === 0 ? 0xff8a3d : 0xff6fae,
+          color: p.style.colour,
           transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false,
         }));
         p.seekMark.visible = false;
@@ -1257,7 +1486,7 @@ class Game {
    * for six canes and then abandons.
    */
   _updateClanBadge(player) {
-    const el = document.getElementById(player.index === 0 ? 'c1' : 'c2');
+    const el = document.getElementById(`clan-${player.index}`);
     if (!el) return;
     const clan = player.clan;
     if (!clan) { el.textContent = ''; el.style.background = ''; return; }
@@ -1398,23 +1627,12 @@ class Game {
        thing to look at: the finale needs all 213 props knocked over, and
        checking one word of it meant a fresh run. `0` replays whichever scene
        is selected and `-`/`=` walk the list. */
-    /* --- the endgame, in one key ---
-       Same argument as `7` `8` `9`. The Powerup Kotodama only exist after 216
-       props have been knocked over, which is most of an afternoon; without
-       this, checking one colour on one orb means playing the whole game.
-       `6` awakens them and hands both kittens the world's points, so the
-       stall, the sixteen pickups, the profile screen and the trade are all
-       one press away. */
-    if (code === 'Digit6') {
-      if (this.kotodama.awakened) {
-        this.toast('[debug] already awakened — walk to the stall in the market', 0);
-      } else {
-        for (const p of this.players) p.score = Math.round(this.world.pointsTotal / 2);
-        for (const p of this.players) this.onScoreChanged(p);
-        this._announceAwakening(this.kotodama.awaken());
-        this.toast('[debug] Kotodama awakened, purses filled', 0);
-      }
-    }
+    /* --- THE WHOLE ENDGAME, IN ONE KEY ---
+       Same argument as `7` `8` `9`. Everything this unlocks sits behind 216
+       props knocked over — most of an afternoon — so checking one colour on
+       one orb, or one word of the ending, or whether a round card is centred,
+       meant playing the whole game first. See `_debugEndgame`. */
+    if (code === 'Digit6') this._debugEndgame();
     if (code === 'Digit5') {
       /* And the screen they are traded on, which is otherwise behind the
          pause menu and only interesting when both girls have orbs. */
@@ -1425,6 +1643,117 @@ class Game {
     if (code === 'Minus') this._pickScene(-1);
     if (code === 'Equal') this._pickScene(1);
     if (code === 'Backquote') this._toggleDebugPanel();
+  }
+
+  /**
+   * Everything 100% mischief unlocks, without knocking anything over.
+   *
+   * THE WORLD'S MISCHIEF IS LEFT ALONE, AND THAT IS THE POINT. Marking 216
+   * props `scored` would be the one-line version and it destroys the thing you
+   * usually want to look at next: the props are the world, the counter is the
+   * number the whole game asks a kid to trust, and `Prop.scored` latches — so a
+   * debug key that spent them would leave nothing to knock over and no way back
+   * short of a restart. This drives the four things the 100% moment *causes*
+   * and touches none of its cause.
+   *
+   * It follows the real code paths rather than reproducing them:
+   *
+   *   1. PURSES — an equal share of `world.pointsTotal` each. Not `/ 2`, which
+   *      is what this key used to do: at four players that handed out twice the
+   *      world's money, and the shop's prices are derived from the pot
+   *      (`pointsTotal / players / 3.5`), so it quietly made everything half
+   *      price for everybody.
+   *   2. THE AWAKENING — `kotodama.awaken()`, which is the same call the real
+   *      100% makes. It dissolves every plain orb (worn and lying about),
+   *      hands each leader a random Powerup, scatters
+   *      `worldSpawnCount(partySize)` orbs — sixteen at four players, eight at
+   *      two — and raises the dealer's stall.
+   *   3. THE TOURNAMENT — unlocked, not entered. `stage = 'open'` is where the
+   *      quest lands after Mr Satan's second scene, so from here the game is a
+   *      walk to him in the town, both kittens together, exactly as it would be
+   *      on a real run. Every milestone is marked SPENT, or he would call out
+   *      progress the girls have not made on a world that is still standing.
+   *   4. THE ENDING — queued through `_finaleDue`, not started here, for the
+   *      reason `onMischief` gives: a scene cannot start over another one, and
+   *      the loop picks it up on the first frame the screen is free.
+   *
+   * IT IS SAFE TO PRESS TWICE. `awaken()` is idempotent and would refuse a
+   * second time anyway; the parts that are not idempotent (the purses, the
+   * finale latch) are the parts you press it again *for*.
+   */
+  _debugEndgame() {
+    const { share, orbs } = this._unlockEndgame();
+
+    // And the ending, on the first frame nothing else owns the screen.
+    this.summonScene.played.finale = false;
+    this._finaleDue = true;
+
+    this.toast(
+      `[debug] endgame: ${share} pts each, ${orbs} orbs out, arena open`, 0
+    );
+  }
+
+  /**
+   * The four things 100% mischief CAUSES, without the mischief.
+   *
+   * SPLIT OUT OF `_debugEndgame` SO THE ENDING CAN CARRY IT TOO, and that is
+   * the bug this fixes. The scene viewer's "100% mischief — the ending" played
+   * the words and nothing else: no purses, no Awakening, no orbs in the world,
+   * no stall, no arena. Patchfur said what they had done, told them where to
+   * take it next, and handed them a world in which none of it had happened —
+   * which is the one failure mode this game has been careful about everywhere
+   * else (a promise made out loud with nothing behind it). Watching the whole
+   * 63 seconds made no difference either, because nothing was ever hung off the
+   * scene FINISHING; there was simply nothing hung off it at all.
+   *
+   * So the unlock belongs to the ending being SHOWN, not to the counter that
+   * usually shows it: whichever way that scene is reached, the world it
+   * describes is the world you get back.
+   *
+   * IT IS IDEMPOTENT, which is what makes that safe on the real path too. On a
+   * genuine 100% run `onMischief` has already awakened the Kotodama and the
+   * quest has already opened the arena, so calling this from the ending is a
+   * handful of assignments that change nothing.
+   *
+   * @returns {{share: number, orbs: number}} for the debug toast
+   */
+  _unlockEndgame() {
+    /* AN EQUAL SHARE EACH, AT WHATEVER THE PARTY SIZE IS NOW. `Math.floor`
+       rather than `round`, so four shares can never add up to more than the
+       world actually contains. */
+    const share = Math.floor(this.world.pointsTotal / Math.max(1, this.partySize));
+    /* Remembered, so a kitten who joins after this was pressed is not the one
+       player at the stall who cannot afford anything — see `_joinPlayer`. */
+    this._debugPurse = share;
+    for (const p of this.players) {
+      /* NEVER DOWNWARD. It is a floor under everybody's purse, not a reset:
+         now that the ending can call this, a kitten who has genuinely earned
+         more than an even share — in the ring, which pays — must not be handed
+         a smaller number by the scene that congratulates her. */
+      p.score = Math.max(p.score ?? 0, share);
+      this.onScoreChanged(p);
+    }
+
+    if (!this.kotodama.awakened) {
+      this._announceAwakening(this.kotodama.awaken());
+    }
+
+    // The tournament, open and waiting in the town.
+    if (this.quest) {
+      this.quest.rodeRyu = true;
+      this.quest.stage = 'open';
+      for (const ms of MILESTONES) this.quest.spent.add(ms.id);
+      this.summonScene.played.satanAnnounce = true;
+      this.summonScene.played.satanOpen = true;
+      this.world.openArena(true);
+      if (this.satan) {
+        this.satan.group.visible = true;
+        this.satan.moveTo(this.satan.homeAt.x, this.satan.homeAt.y, this.satan.homeAt.z);
+        this.satan.setLine('');
+      }
+    }
+
+    return { share, orbs: this.pickups.filter((k) => !k.taken).length };
   }
 
   /** The scenes the viewer can replay, in the order they happen in a playthrough. */
@@ -1489,6 +1818,16 @@ class Game {
           this.ryu ? RYU_SIZE : 30);
         break;
       case 'finale':
+        /* THE ENDING UNLOCKS THE ENDGAME, WHOEVER STARTED IT. Previewing it
+           used to play the words over a world where none of it had happened —
+           see `_unlockEndgame`. Done BEFORE `start`, and not on the scene
+           finishing, for the reason the whole file keeps giving: the scene is
+           skippable on its first frame, so anything hung off the end of it is a
+           thing a thumb on Start can throw away. */
+        this._unlockEndgame();
+        /* And the queue is cleared, or the loop starts a second copy of this
+           scene the moment this one closes. */
+        this._finaleDue = false;
         this.summonScene.played.finale = false;
         this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder);
         break;
@@ -1543,6 +1882,9 @@ class Game {
       <div class="dbg-row"><span class="k">7</span> take all seven stars &amp; summon Ryuuseki</div>
       <div class="dbg-row"><span class="k">8</span> seat both kittens on him</div>
       <div class="dbg-row"><span class="k">9</span> fire his beams</div>
+      <div class="dbg-row"><span class="k">6</span> THE ENDGAME — ending, arena, orbs, purses</div>
+      <div class="dbg-row"><span class="k">5</span> open the trade / profile screen</div>
+      <div class="dbg-row"><span class="k">4</span> end the live round (feast)</div>
       <div class="dbg-row"><span class="k">M</span> maths overlay &nbsp; <span class="k">Z</span>/<span class="k">X</span> map zoom</div>
       <div class="dbg-sep">SCENE VIEWER — <span class="k">-</span>/<span class="k">=</span> choose, <span class="k">0</span> play</div>
       ${this._scenes.map((s, i) => `
@@ -1665,6 +2007,13 @@ class Game {
 
     for (const target of this.players) {
       if (target === attacker || target.ko) continue;
+      /* NO FRIENDLY FIRE, and it is one more clause on the SINGLE gate rather
+         than a rule of its own — the whole reason `strikePlayers` exists is
+         that there is exactly one place asking whether two kittens may hurt
+         each other. A tag-team partner you can cut down is not a partner, and
+         with two sisters on a side the first accident becomes an argument about
+         whether it was an accident. Free-for-all and duel are unaffected:
+         nobody shares a side in either. */
       const dx = target.position.x - attacker.position.x;
       const dz = target.position.z - attacker.position.z;
       const dy = target.position.y - attacker.position.y;
@@ -1674,6 +2023,28 @@ class Game {
       // that visibly connects is not refused on a half-degree of facing.
       const dot = (dx * dir.x + dz * dir.y) / (dist || 1);
       if (dot < A.arc) continue;
+
+      /* A PARTNER IS DAZED, NOT SKIPPED — and the test moved DOWN here to make
+         that possible. It used to sit above the range and arc checks, which was
+         right while the answer was "nothing happens" and is wrong now that
+         something does: a swing that misses your partner must not daze her, so
+         the hit has to be established first and only then asked who it landed
+         on.
+
+         The rule it replaces had no teeth. "No friendly fire" meant the safest
+         thing in a tag-team round was to hold attack down and swing through
+         everybody, because the swing that hit your partner was free — and it
+         made the protection invisible, since you learned it by watching your
+         attack do nothing, which reads as the attack being broken. Now it costs
+         her half a second of control and it costs you the swing, which is the
+         teamwork the league was supposed to be about. */
+      if (this.tournament.allies(attacker, target)) {
+        if (target.daze()) {
+          this.sfx('hit');
+          this.toast(`${attacker.name} dazed ${target.name} — watch your team!`, attacker.index);
+        }
+        continue;
+      }
 
       const dealt = target.hurt(dmg, attacker.position, A, this);
       if (!dealt) continue;
@@ -1811,6 +2182,57 @@ class Game {
   }
 
   /**
+   * Called off — put everything back and fly them home.
+   *
+   * `Tournament.onPartyChanged` has always ended the match this way when
+   * somebody joins or drops out mid-tournament, and it called `_goHome`, which
+   * DID NOT EXIST. Optional chaining meant it failed silently: the tournament
+   * was torn down correctly and the girls were left standing on the deck of an
+   * arena three hundred units north with no ring, no announcer and no ride —
+   * exactly the "stranded" case `_ride`'s missing-griffin fallback exists to
+   * prevent, arrived at from the other direction.
+   */
+  _goHome() {
+    this.tournament?.finish();
+    this.leaveArena();
+  }
+
+  /** True while there is a match to quit — including the two screens that pick
+   *  one, which run before `Tournament.begin` and so before `active`. */
+  get inMatch() {
+    return !!(this.tournament?.active || this.leaguePicking || this.teamPicking);
+  }
+
+  /**
+   * QUIT THE MATCH — the way out of the ring that was not there.
+   *
+   * The tournament had exactly two exits: win it, or RESTART, which throws away
+   * the whole afternoon's clans, stars, orbs and points. So a pair who picked
+   * the wrong league, or whose third player had to go and eat dinner, had to
+   * choose between finishing a match they did not want and losing the game.
+   *
+   * IT CANCELS THE PICKERS TOO. They run before `Tournament.begin`, so a party
+   * that paused on the CHOOSE THE LEAGUE screen is in the arena with no
+   * tournament to end — and leaving those flags set would fly everybody home
+   * and go on feeding all four kittens a dead pad in the town.
+   *
+   * NOT DURING THE RIDE. The griffin is eight seconds and skippable, and
+   * `_ride` refuses a second journey while one is in the air; turning the
+   * animal round mid-flight is a state nothing else in this file has to handle.
+   */
+  quitMatch() {
+    if (!this.inMatch || this.travel) return;
+    this.setPaused(false);
+    document.getElementById('panel-league')?.classList.add('hidden');
+    document.getElementById('panel-teams')?.classList.add('hidden');
+    this.leaguePicking = false;
+    this.teamPicking = false;
+    this.teamPick = null;
+    this._goHome();
+    this.toast('Match called off — the griffin is taking you back to town', 0);
+  }
+
+  /**
    * Put both kittens on the griffin and send it somewhere.
    *
    * A MISSING GRIFFIN MUST NOT STRAND THEM. Every sheet in this game falls
@@ -1824,9 +2246,7 @@ class Game {
   _ride(dir, to) {
     this.travel = dir;
     if (!this.griffin) { this._arrive(); return; }
-    const mid = this.players[0].position.clone()
-      .add(this.players[1].position).multiplyScalar(0.5);
-    this.griffin.fly(mid, to, this.players);
+    this.griffin.fly(this._centroid(), to, this.players);
     this.sfx('mount');
   }
 
@@ -1850,13 +2270,23 @@ class Game {
       p.onGround = true;
       p.footClimb = true;
     }
-    this._sharedSeeded = false;
+    this._reseedRigs();
     this.clock.getDelta();
 
     if (going === 'out') {
       this.satan?.moveTo(this.world.arenaBooth.x, this.world.arenaBooth.y, this.world.arenaBooth.z);
       this.satan?.setLine('');
-      this.tournament.begin();
+      /* WITH MORE THAN TWO FIGHTERS THERE IS A CHOICE TO MAKE, so it is made
+         HERE — standing in the ring, after the griffin, rather than back in the
+         town. The ride is eight seconds long and skippable, so a league picked
+         before it would be a decision made and then sat on; picked here, the
+         answer is one press away from the round card.
+         Two players get no picker at all: there is exactly one league they can
+         run, and a menu with one item on it is a menu that teaches a kid the
+         game has stopped working. */
+      const leagues = modesFor(this.players.length);
+      if (leagues.length > 1) this._openLeaguePicker(leagues);
+      else this.tournament.begin(leagues[0]?.id);
     } else {
       this.tournament.finish();
       this.satan?.moveTo(this.satan.homeAt.x, this.satan.homeAt.y, this.satan.homeAt.z);
@@ -1913,11 +2343,22 @@ class Game {
     }
   }
 
-  /** Paint the record board into the pause-menu panel. */
+  /**
+   * Paint the record board into the pause-menu panel.
+   *
+   * ONE TABLE PER LEAGUE THAT HAS ANYTHING IN IT. An empty league is left out
+   * rather than shown as an empty table: five headed tables with nothing under
+   * four of them is a screen that looks broken, and a pair who have only ever
+   * fought duels should see the board they have always seen.
+   */
   _paintBoard() {
     const el = document.getElementById('board-body');
     if (!el) return;
-    const rows = loadBoard();
+    const leagues = BOARD_MODES
+      .map((m) => ({ mode: m, rows: loadBoard(m) }))
+      .filter((L) => L.rows.length);
+    if (leagues.length > 1) { this._paintLeagues(el, leagues); return; }
+    const rows = leagues[0]?.rows ?? [];
     el.innerHTML = rows.length
       ? `<table class="lb">${rows.map((r, i) => `
           <tr>
@@ -1928,6 +2369,225 @@ class Game {
           </tr>`).join('')}</table>`
       : '<p class="lb-empty">Nobody has won the tournament yet.<br>'
         + 'Collect the seven stars, ride Ryuuseki, and knock over 80% of the world.</p>';
+  }
+
+  /**
+   * Which league are we fighting? Shown only when the party can run more
+   * than one.
+   *
+   * IT GOES THROUGH `MenuNav` LIKE EVERY OTHER MENU, so a stick moves the
+   * highlight and any player may choose — the same rule the pause menu follows,
+   * and for the same reason: there is one screen and one cursor, and making
+   * player 1 the only one who can pick the league locks three other kids out of
+   * the decision about what they are all about to play.
+   */
+  _openLeaguePicker(leagues) {
+    const panel = document.getElementById('panel-league');
+    const list = document.getElementById('league-list');
+    if (!panel || !list) { this.tournament.begin(leagues[0]?.id); return; }
+    list.textContent = '';
+    leagues.forEach((m, i) => {
+      const b = document.createElement('button');
+      b.className = `menu-btn${i === 0 ? ' primary' : ''}`;
+      b.innerHTML = `${m.name}<span class="lg-blurb">${m.blurb}</span>`;
+      b.addEventListener('click', () => {
+        panel.classList.add('hidden');
+        this.leaguePicking = false;
+        this._afterLeague(m);
+      });
+      list.appendChild(b);
+    });
+    panel.classList.remove('hidden');
+    /* The fighters are frozen while it is up — `Tournament.frozen` is false
+       here because no tournament has started yet, so this is the flag that
+       stops four kittens wandering off the deck during the choice. */
+    this.leaguePicking = true;
+  }
+
+  /**
+   * The league is chosen. Do the teams need choosing too?
+   *
+   * ONLY WHEN A SIDE HOLDS MORE THAN ONE FIGHTER. A duel and a free-for-all
+   * have nothing to arrange — everybody is her own side — and putting a screen
+   * in front of them would be a menu with one legal answer, which teaches a kid
+   * that the game has stopped working.
+   */
+  _afterLeague(mode) {
+    const n = this.players.length;
+    const sides = mode.sides(n);
+    const teamed = sides.some((s, i, all) => all.some((t, j) => j !== i && t === s));
+    if (!teamed) { this.tournament.begin(mode.id); return; }
+    this._openTeamPicker(mode, sides);
+  }
+
+  /**
+   * WHO IS ON WHOSE SIDE — chosen by the girls, not by the order they joined in.
+   *
+   * `mode.sides(n)` is the default arrangement and it used to be the only one:
+   * the first two kittens were always the pair and the last one was always the
+   * fighter on her own. Which meant the answer to "who is my partner" was
+   * decided by who picked up a controller first, three menus ago, and the only
+   * way to change it was for somebody to drop out and rejoin.
+   *
+   * EACH KITTEN MOVES HERSELF, WITH HER OWN STICK. There is no shared cursor
+   * here — this is the second screen in the game that needs one cursor per
+   * player rather than one for the room, and for the same reason the trade
+   * screen does: the thing being chosen is personal. Left and right walk her
+   * between the sides; anybody may press JUMP once the sides are legal.
+   *
+   * THE SHAPE IS VALIDATED, NOT THE SEATING. A 2v2 needs two sides of two and
+   * does not care which two — see `Tournament._validSeats`. Until the shape is
+   * right, JUMP is refused and the screen says what is wrong, because a confirm
+   * that silently does nothing is the failure this codebase keeps naming.
+   *
+   * EVERYBODY STARTS ON NO TEAM, AND THAT IS THE FIX FOR THE SCREEN NOBODY
+   * EVER SAW. It opened on `mode.sides(n)` — the default arrangement — which is
+   * a LEGAL one, so `_validSeats` was true on the very first frame and the only
+   * thing left between four kittens and the round card was somebody pressing
+   * JUMP. The press that chose the league is a JUMP: `MenuNav` confirms on it,
+   * this panel opens inside that same frame, and `_updateTeamPicker` runs later
+   * in it and reads the very same press. So picking a 2v2 skipped straight past
+   * the sides and into the match, with whoever joined first paired up — the one
+   * thing this screen exists to stop.
+   *
+   * Two independent locks, because either alone is a coincidence away from
+   * failing again:
+   *
+   *   1. NO SIDE (`NO_SIDE`) is not a legal seat, so the shape cannot be valid
+   *      until every kitten has walked herself onto a team. The screen has to
+   *      be USED, not merely passed through, which is also what makes "pick a
+   *      side" true rather than "confirm the side we picked for you".
+   *   2. JUMP MUST BE PRESSED FRESH — `_jumpArmed` per player, see
+   *      `_updateTeamPicker`. A press that was already down when this opened
+   *      belongs to the screen before it.
+   */
+  _openTeamPicker(mode, defaults) {
+    const panel = document.getElementById('panel-teams');
+    if (!panel) { this.tournament.begin(mode.id); return; }
+    this.teamPick = {
+      mode,
+      /* Nobody on a side. `defaults` is still what says how many sides there
+         are — the picker never invents one the league does not have. */
+      seats: this.players.map(() => NO_SIDE),
+      // How many sides this league has — the picker never invents a new one.
+      sides: Math.max(...defaults) + 1,
+      prev: this.players.map(() => 0),
+      /* Armed only once a player has let JUMP go. Anybody still holding the
+         button that opened this screen is not confirming this one. */
+      jumpArmed: this.players.map((_, i) => !this.input.players[i]?.down?.('jump')),
+    };
+    this.teamPicking = true;
+    panel.classList.remove('hidden');
+    this._paintTeamPicker();
+  }
+
+  _paintTeamPicker() {
+    const T = this.teamPick;
+    if (!T) return;
+    const body = document.getElementById('tp-body');
+    const help = document.getElementById('tp-help');
+    document.getElementById('tp-title').textContent = `${T.mode.name} — PICK YOUR SIDE`;
+    const ok = this.tournament._validSeats(T.seats, this.players.length, T.mode);
+
+    const cat = (p) => `
+      <div class="tp-cat" style="--me:${styleCss(this.roster[p.index])}">
+        <span class="tp-pip"></span>${escapeHtml(p.name)}
+        <span class="tp-keys">◀ ▶</span>
+      </div>`;
+    /* THE UNDECIDED COLUMN IS FIRST, and it is a column rather than an absence.
+       Everybody starts in it (see `_openTeamPicker`), so it is where a kid
+       looks to find herself on the frame this opens — a name that is simply
+       missing from all three teams reads as a player the game has lost. It
+       empties as they pick, and an empty one is the picture that says the sides
+       are settled. */
+    const waiting = this.players.filter((_, i) => T.seats[i] === NO_SIDE);
+    const undecided = `<div class="tp-side tp-none">
+        <div class="tp-head">NO TEAM</div>
+        ${waiting.map(cat).join('') || '<div class="tp-empty">everyone has picked</div>'}</div>`;
+
+    body.innerHTML = undecided + Array.from({ length: T.sides }, (_, s) => {
+      const mates = this.players.filter((_, i) => T.seats[i] === s);
+      const rows = mates.map(cat).join('') || '<div class="tp-empty">nobody</div>';
+      return `<div class="tp-side" style="--team:${teamColour(s)}">
+          <div class="tp-head">${teamName(s)}</div>${rows}</div>`;
+    }).join('');
+
+    /* WHAT IS WRONG, IN THE ORDER IT CAN BE FIXED. "Needs two against two" is
+       unhelpful while three kittens are still standing in NO TEAM — the thing
+       to do first is pick at all, and only once everybody has is the shape the
+       real problem. Two different failures wearing one sentence is how a
+       refusal stops being read. */
+    help.textContent = ok
+      ? 'Push your own stick LEFT and RIGHT to change sides · JUMP to fight'
+      : waiting.length
+        ? `Everybody has to pick — push your own stick LEFT or RIGHT (${waiting.length} still to choose)`
+        : `${T.mode.name} needs ${this._shapeWords(T.mode)} — move somebody across`;
+    help.classList.toggle('tp-bad', !ok);
+  }
+
+  /** "two against two", in words, for the line that says why JUMP is refused. */
+  _shapeWords(mode) {
+    const counts = {};
+    for (const s of mode.sides(this.players.length)) counts[s] = (counts[s] ?? 0) + 1;
+    return Object.values(counts).sort((a, b) => b - a).join(' against ');
+  }
+
+  /**
+   * One frame of the team picker. Each kitten reads HER OWN pad.
+   *
+   * The edge is latched per player (`prev`), not globally: two girls pushing
+   * their sticks on the same frame must both move, and a held stick must move
+   * its owner one side rather than sprinting her round the ring.
+   */
+  _updateTeamPicker() {
+    const T = this.teamPick;
+    if (!T) return;
+    let moved = false;
+    this.players.forEach((p, i) => {
+      const pad = this.input.players[i];
+      if (!pad) return;
+      /* JUMP IS ARMED BY BEING RELEASED, not by time. See `_openTeamPicker`:
+         the press that chose the league is still down on this frame, and it
+         must not be allowed to confirm the screen it opened. */
+      if (!pad.down?.('jump')) T.jumpArmed[i] = true;
+      const dir = pad.mx > 0.55 ? 1 : pad.mx < -0.55 ? -1 : 0;
+      if (dir && dir !== T.prev[i]) {
+        /* NO TEAM IS A POSITION IN THE ROW, not a state outside it. Sides run
+           [NO TEAM, RED, BLUE, (GOLD)] and the stick walks the whole row, so
+           stepping back off a team is the same gesture as joining one — a kid
+           who lands on the wrong colour does not have to work out how to undo
+           it. `NO_SIDE` is -1, so +1 puts her on RED. */
+        const span = T.sides + 1;
+        T.seats[i] = ((T.seats[i] + 1 + dir + span) % span) - 1;
+        moved = true;
+        this.sfx('menu');
+      }
+      T.prev[i] = dir;
+    });
+    if (moved) this._paintTeamPicker();
+
+    if (!this.tournament._validSeats(T.seats, this.players.length, T.mode)) return;
+    if (!this.players.some((_, i) => (
+      T.jumpArmed[i] && this.input.players[i]?.pressed('jump')
+    ))) return;
+    document.getElementById('panel-teams')?.classList.add('hidden');
+    this.teamPicking = false;
+    const { mode, seats } = T;
+    this.teamPick = null;
+    this.tournament.begin(mode.id, seats);
+  }
+
+  /** More than one league has been won: a headed table each. */
+  _paintLeagues(el, leagues) {
+    el.innerHTML = leagues.map((L) => `
+      <h4 class="lb-league">${escapeHtml(MODE_BY_ID[L.mode]?.name ?? L.mode)}</h4>
+      <table class="lb">${L.rows.map((r, i) => `
+        <tr>
+          <td class="lb-rank">${i + 1}</td>
+          <td class="lb-name">${escapeHtml(r.name)}</td>
+          <td class="lb-score">${r.score}</td>
+          <td class="lb-detail">${r.wins}W · ${r.dealt} dealt · ${r.taken} taken · ${r.seconds}s</td>
+        </tr>`).join('')}</table>`).join('');
   }
 
   /* ------------------------------- music --------------------------------- */
@@ -2073,7 +2733,22 @@ class Game {
        one is running, and refusing here would lose the ending outright: there
        are no props left to hit, so nothing would ever ask again. The loop
        picks it up on the first frame the screen is free. */
-    if (done >= this.world.mischiefTotal && !this.summonScene?.played.finale) {
+    /* THE REAL 100% OWNS ITS ENDING, AND A DEBUG PREVIEW MUST NOT EAT IT.
+       The queue guard used to be `!played.finale` — the scene's own once-latch
+       — which is right for "don't fire twice" and wrong for who set it. The
+       scene viewer sets it every time somebody previews the ending, so
+       previewing it once meant the girls could knock over all 216 props and be
+       shown nothing at all: the flag said the ending had happened, and from
+       here that is indistinguishable from it having happened for real.
+
+       `_endingShown` is the honest guard — it is about THIS 100%, and nothing
+       but a restart clears it — and the latch is cleared on the way past so
+       `start` cannot refuse. Everything ELSE already survived this (the
+       Awakening fires below, not with the scene), which is exactly why it went
+       unnoticed: the world unlocked correctly and only the ending was missing. */
+    if (done >= this.world.mischiefTotal && !this._endingShown) {
+      this._endingShown = true;
+      if (this.summonScene) this.summonScene.played.finale = false;
       this._finaleDue = true;
     }
     /* THE AWAKENING FIRES HERE, NOT WITH THE SCENE. `_finaleDue` is queued
@@ -2085,7 +2760,8 @@ class Game {
     if (done >= this.world.mischiefTotal && !this.kotodama.awakened) {
       this._announceAwakening(this.kotodama.awaken());
     }
-    document.getElementById(player.index === 0 ? 's1' : 's2').textContent = player.score;
+    const el = document.getElementById(`score-${player.index}`);
+    if (el) el.textContent = player.score;
     const pts = prop.points ?? 10;
     if (prop.kind === 'bamboo') {
       /* Bamboo is panda food. The tally runs whether or not she has sworn to
@@ -2260,8 +2936,17 @@ class Game {
       }
     }
 
-    // `start` on either pad toggles the pause menu.
-    if (this.input.players.some((p) => p.pressed('start'))) this.setPaused(!this.paused);
+    /* `start` ON A PAD toggles the pause menu — and only on a pad.
+       ESC IS THE KEYBOARD'S ONLY MENU KEY, which is what frees ENTER to mean
+       one thing everywhere: join. A keyboard set's start key used to do both
+       jobs, so which key seated the next player moved about depending on which
+       set was already taken, and with one controller connected the obvious
+       Enter was player 2's PAUSE key — pressing it opened the menu instead of
+       seating player 3. A pad has a real Start button that is not a letter on
+       a keyboard somebody else is also using, so it keeps both jobs. */
+    if (this.input.players.some((p) => p.source === 'gamepad' && p.pressed('start'))) {
+      this.setPaused(!this.paused);
+    }
 
     /* The two controls that used to exist only on the keyboard. Each kitten
        zooms HER OWN map — the whole reason there are two of them in split
@@ -2282,14 +2967,24 @@ class Game {
     }
 
     /* The ending, cashed in on the first frame nothing else owns the screen.
-       See onMischief for why it is queued rather than fired there. */
+       See onMischief for why it is queued rather than fired there.
+
+       THE FLAG IS CLEARED ON SUCCESS, NOT BEFORE THE ATTEMPT — the shape
+       `arenaquest` already uses at its own `satanOpen` call ("the scene was
+       refused; try again next frame rather than losing the stage change").
+       With the queue above clearing `played.finale`, a refusal is currently
+       unreachable; this is the ordering being right rather than a bug being
+       fixed, and the `played` branch is what stops a future refusal turning
+       into a retry every frame forever. */
     if (this._finaleDue && !this._sceneActive()) {
-      this._finaleDue = false;
       const B = this._worldBounds();
       if (this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder)) {
+        this._finaleDue = false;
         this.sfx('starfound');
         this.toast('100% MISCHIEF — every last thing, knocked over', 0);
         this.toast('100% MISCHIEF — nothing left standing', 1);
+      } else if (this.summonScene.played.finale) {
+        this._finaleDue = false;
       }
     }
 
@@ -2308,9 +3003,29 @@ class Game {
        precisely because the pad handed over here reports nothing: a
        hold-detector on this side would see the button come up on the frame the
        freeze started and cancel itself instantly, every single time. */
+    /* A NEW PLAYER JOINS HERE, before anybody is updated, so her first frame
+       is a real one rather than half a frame behind everyone else's. Refused
+       while a scene owns the screen or a round is live — a kitten appearing in
+       the middle of a knockout is a fighter nobody agreed to. */
+    const join = this.input.pendingJoin();
+    if (join && !this._sceneActive() && !this.tournament?.fighting) this._joinPlayer(join);
+    else this._autoSeat();
+    this._updatePicker();
+    /* The team picker reads the raw pads too, for the same reason the character
+       picker does: everybody's stick is dead while it is up (see the dead-pad
+       line below), so a screen that asked the seated player state would be
+       reading four sticks it has just switched off. */
+    if (this.teamPicking) this._updateTeamPicker();
+
     const frozen = this.tournament?.frozen;
-    for (let i = 0; i < 2; i++) {
-      const pad = (frozen || this.menagerie?.eating(i)) ? DEAD_PAD : this.input.players[i];
+    for (let i = 0; i < this.players.length; i++) {
+      /* The picker hands HER a dead pad and nobody else one — the stick that
+         is choosing a cat must not also walk her off a rim, and the other
+         three are still playing. */
+      const picking = this.picking?.index === i;
+      const pad = (frozen || picking || this.leaguePicking || this.teamPicking
+        || this.menagerie?.eating(i))
+        ? DEAD_PAD : this.input.players[i];
       this.players[i].update(dt, pad, this.world, this.dragons, this);
     }
 
@@ -2452,11 +3167,13 @@ class Game {
     }
     this.mathBoard.classList.toggle('hidden', !anyInDojo);
 
-    const mid = this.players[0].position.clone().add(this.players[1].position).multiplyScalar(0.5);
+    const mid = this._centroid();
     this.world.update(dt, mid);
     this.world.focusShadows(mid.x, mid.z);
 
-    this._updateSplit(dt, mid);
+    /* No midpoint passed in any more: each rig works out its OWN group's
+       centroid, and the party-wide one above is the world's, not the camera's. */
+    this._updateSplit(dt);
     this._render();
 
     // The map only needs to be right, not smooth — a third of the frames is
@@ -2465,24 +3182,477 @@ class Game {
     if (this._mapT > 1 / 20) {
       this._mapT = 0;
       this._drawMaps();
+      /* Riding the map's throttle rather than growing a second one. Both
+         answer "what has changed on screen since a moment ago", neither is
+         wanted per frame, and `_updateHint` no-ops unless its signature moved. */
+      this._updateHint();
     }
   }
 
-  /** One map when the view is shared, two when it's split. */
+  /* --------------------------- joining and leaving ---------------------- */
+
+  /**
+   * Seat a new player on `device`, and put her straight into the picker.
+   *
+   * NOBODY ELSE IS INTERRUPTED, which is the whole requirement. The picker is a
+   * card in the joining player's own corner and the world keeps running for
+   * everyone already in it — the opposite of every other full-screen moment in
+   * this game, and right for the same reason the star pose is per-player: this
+   * is one kid's moment and stopping three other people's game for it is the
+   * interruption the split screen exists to avoid.
+   *
+   * She is seated BEFORE she has chosen, on the first free cat, so the picker
+   * can run through her real slot and her real pad rather than needing a second
+   * path that reads a device with no slot.
+   */
+  /**
+   * Seat a player on a controller somebody has picked up but nobody is playing.
+   *
+   * A CONNECTED CONTROLLER SHOULD BE A PLAYER, which is the whole of it. Three
+   * pads plugged in used to give two kittens and one controller that did
+   * nothing — it was dealt a device slot correctly and then sat unbound because
+   * the party was two, so it read as broken hardware rather than as a party
+   * that had not been grown. START still works and is still the explicit way
+   * in; this is the same thing happening without anybody having to know that.
+   *
+   * IT WAITS FOR REAL INPUT, NOT FOR CONNECTION. A pad charging on the side, or
+   * one left on the sofa, has sent nothing and seats nobody — see
+   * `InputManager.sparePad`. Picking it up is the gesture, and the character
+   * picker still runs, so nothing is decided for her.
+   *
+   * ONCE PER DEVICE, LATCHED HERE. `hasSentInput` never goes back to false, so
+   * without the latch a player who drops out would be re-seated on the next
+   * frame by the controller still in her hands and could never leave. Dropping
+   * out is a decision; the latch is what makes it stick.
+   */
+  _autoSeat() {
+    if (this._sceneActive() || this.tournament?.fighting) return;
+    /* ONE AT A TIME. `this.picking` is a single card, so seating a second
+       player while the first is still choosing her cat would overwrite it and
+       leave a kitten nobody picked. Three spare controllers queue up instead:
+       each card appears as the one before it is confirmed. */
+    if (this.picking) return;
+    if (this.partySize >= MAX_PLAYERS || this.partySize >= this.input.seatable) return;
+    this._autoSeated ??= new Set();
+    const device = this.input.sparePad(this._autoSeated);
+    if (!device) return;
+    this._autoSeated.add(deviceId(device));
+    this._joinPlayer(device);
+  }
+
+  _joinPlayer(device) {
+    if (this.partySize >= MAX_PLAYERS) return null;
+    if (this.partySize >= this.input.seatable) {
+      this.toast('No controller free for another player', 0);
+      return null;
+    }
+    const index = this.partySize;
+    this.partySize += 1;
+    this.input.slots = this.partySize;
+    // Bind the joining device to the new slot before anything reads it, or she
+    // spends her first frames on whatever `_assign` would have given her.
+    this.input.claim(index, device);
+
+    const p = this._seatPlayer(index, this._freeStyles()[0] ?? index);
+    // Land her next to the party rather than back at the town: she is joining
+    // a game in progress, and a kitten who appears two islands from her sisters
+    // has to walk before she can play.
+    const at = this._centroid();
+    const g = this.world.heightAt(at.x + 3, at.z + 3);
+    p.position.set(at.x + 3, (g ? g.y : 10) + 1, at.z + 3);
+    p.group.position.copy(p.position);
+
+    this._buildHud();
+    this._updateEconomyForParty();
+    /* A KITTEN WHO JOINS AFTER THE DEBUG ENDGAME GETS THE SAME PURSE. Without
+       this she is the one player standing at the stall who cannot afford
+       anything, which is exactly the confusion that key exists to remove — and
+       it looks like the shop being broken rather than like her being late.
+       Only ever set by `_debugEndgame`; a real run leaves it undefined and this
+       does nothing. */
+    if (this._debugPurse != null) {
+      p.score = this._debugPurse;
+      this.onScoreChanged(p);
+    }
+    this.picking = { index, style: this.roster[index] };
+    this.sfx('orb');
+    return p;
+  }
+
+  /**
+   * A player drops out. The game must not notice beyond her being gone.
+   *
+   * HER ORBS GO BACK INTO THE WORLD rather than vanishing with her, which is
+   * the dealer's own rule — a sold orb goes back on the shelf so the two of
+   * them cannot destroy the world's supply between them. Only twenty-six exist;
+   * a kitten leaving with eight of them would delete a third of the endgame for
+   * everybody still playing.
+   *
+   * HER PANDA WAITS and her dragon goes home, which are the rules those animals
+   * already have for an owner who is no longer there.
+   *
+   * SLOTS SHUFFLE DOWN, so the party is always slots 0..n-1 and nothing
+   * downstream has to cope with a hole. That means the players after her change
+   * index, and every index-keyed thing — her claim, her HUD badge, her map —
+   * is rebuilt from the new order rather than patched.
+   */
+  _leavePlayer(index) {
+    if (this.partySize <= 1 || !this.players[index]) return;
+    const p = this.players[index];
+
+    for (const id of p.powerOrbs ?? []) this._dropOrbInWorld(id, p.position);
+    if (p.mount) { p.mount.returnHome?.(); p.mount = null; }
+    if (p.rideAlong) p.rideAlong = null;
+    if (p.panda) p.panda.follows = false;
+    if (this.ryu?.pilot === p) this.ryu.pilot = null;
+    if (this.ryu?.gunner === p) this.ryu.gunner = null;
+    for (const o of p.orbs ?? []) this.scene.remove(o.group);
+    this.scene.remove(p.group);
+
+    this.players.splice(index, 1);
+    this.roster.splice(index, 1);
+    this.partySize -= 1;
+    this.input.slots = this.partySize;
+
+    /* Re-index everyone after her AND re-deal the claims, in that order. A
+       claim is keyed by slot, so leaving slot 1 of three would otherwise leave
+       slot 2's controller pointing at a player who is now slot 1. */
+    const claims = [];
+    for (let i = 0; i < this.partySize + 1; i++) {
+      if (i !== index) claims.push(this.input.claims[i]);
+    }
+    this.input.claims = {};
+    claims.forEach((c, i) => { if (c) this.input.claim(i, c); });
+    this.players.forEach((q, i) => { q.index = i; });
+
+    if (this.picking?.index === index) this.picking = null;
+    else if (this.picking && this.picking.index > index) this.picking.index -= 1;
+
+    /* THE GROUPING IS KEYED BY SLOT, SO IT CANNOT SURVIVE A RE-INDEX. Every
+       player after her just moved down one, and the hysteresis map still says
+       what was true of the OLD numbering — so a stale entry would hold two
+       kittens in one pane on the strength of a pairing that belonged to
+       somebody who has left. Thrown away rather than patched, for the same
+       reason the badges and the maps are rebuilt: one frame of first-principles
+       grouping is invisible, and a wrong one is not. */
+    this._clusterOf = null;
+    this._reseedRigs();
+
+    this._buildHud();
+    this._updateEconomyForParty();
+    this.tournament?.onPartyChanged?.();
+    this.toast(`${p.name} left the game`, 0);
+  }
+
+  /**
+   * The pause menu's DROP OUT rows, and the line telling a spare controller
+   * how to get in.
+   *
+   * BUILT RATHER THAN WRITTEN OUT, and absent below three players. `MenuNav`
+   * finds its items by querying `.menu-btn` inside the open panel, so buttons
+   * appearing and disappearing here are picked up for free — but a two-player
+   * game must not show any, because the only thing DROP OUT could do there is
+   * leave one kitten alone in a co-op game.
+   */
+  _buildLeaveButtons() {
+    const wrap = document.getElementById('leave-buttons');
+    const note = document.getElementById('join-note');
+    if (!wrap) return;
+    wrap.textContent = '';
+    if (this.partySize > 2) {
+      for (let i = 2; i < this.partySize; i++) {
+        const b = document.createElement('button');
+        b.className = 'menu-btn';
+        b.textContent = `${this.players[i].name.toUpperCase()} — DROP OUT`;
+        /* No cursor fix-up needed after this: `MenuNav.update` re-queries the
+           panel's items every frame and clamps its remembered index, so a row
+           vanishing under the highlight is already handled. */
+        b.addEventListener('click', () => {
+          this._leavePlayer(i);
+          this._buildLeaveButtons();
+        });
+        wrap.appendChild(b);
+      }
+    }
+    if (note) {
+      /* NAME THE KEY rather than describing the mechanism. "A spare controller
+         or keyboard set can press START" is a sentence that assumes you already
+         know which set is spare — and which one that is moves with the number
+         of controllers plugged in. See `InputManager.joinHint`. */
+      const join = this.input.joinHint();
+      note.textContent = join
+        ? ` Press ${join} in game to join as player ${this.partySize + 1}.`
+        : '';
+    }
+  }
+
+  /** Re-price and re-stock the dealer for the party as it is now. One call, so
+   *  joining and leaving cannot each grow their own copy of the rule. */
+  _updateEconomyForParty() {
+    this.kotodama?.forParty(this.partySize);
+  }
+
+  /** An orb belonging to a player who has left, put back where she was. */
+  _dropOrbInWorld(id, at) {
+    this.kotodama?.dropInWorld(id, at);
+  }
+
+  /** Style indices nobody is playing, in roster order. */
+  _freeStyles() {
+    const used = new Set(this.roster.slice(0, this.partySize));
+    return PLAYER_STYLE.map((_, i) => i).filter((i) => !used.has(i));
+  }
+
+  /**
+   * Drive the join card: left/right change the cat, JUMP confirms.
+   *
+   * SHE IS FROZEN WHILE IT IS UP, through the game's existing dead-pad trick,
+   * so the stick that is choosing a cat is not also walking her off a cliff.
+   * Everyone else's pad is untouched.
+   */
+  _updatePicker() {
+    const card = document.getElementById('join-card');
+    if (!this.picking) { card?.classList.add('hidden'); return; }
+
+    const { index } = this.picking;
+    const pad = this.input.players[index];
+    const free = [...this._freeStyles(), this.roster[index]].sort((a, b) => a - b);
+
+    let moved = 0;
+    if (pad?.pressed?.('map') || (pad && pad.mx > 0.6 && !this._pickHeld)) moved = 1;
+    if (pad && pad.mx < -0.6 && !this._pickHeld) moved = -1;
+    this._pickHeld = !!pad && Math.abs(pad.mx) > 0.6;
+
+    if (moved) {
+      const at = free.indexOf(this.roster[index]);
+      const next = free[(at + moved + free.length) % free.length];
+      this._seatPlayer(index, next);
+      this.picking.style = next;
+      this._buildHud();
+      this.sfx('menu');
+    }
+    if (pad?.pressed?.('jump')) {
+      const p = this.players[index];
+      this.picking = null;
+      card?.classList.add('hidden');
+      this.sfx('clan');
+      this.toast(`${p.name} joined the game!`, index);
+      return;
+    }
+
+    const p = this.players[index];
+    card.classList.remove('hidden');
+    card.style.borderColor = styleCss(this.roster[index]);
+    card.innerHTML = `<b>PLAYER ${index + 1}</b>`
+      + `<span class="jc-name" style="color:${styleCss(this.roster[index])}">`
+      + `${p.name.toUpperCase()}</span>`
+      + `<span class="jc-hint">◀ STICK ▶ to change · JUMP to start</span>`;
+  }
+
+  /**
+   * Rebuild the score badges and the minimaps for the CURRENT party.
+   *
+   * Called at boot and again whenever somebody joins or leaves, which is why
+   * none of this is written out in index.html: a scoreboard with two names
+   * hardcoded into the markup cannot grow a third.
+   *
+   * THE BADGES MIRROR WHICH SIDE OF THE SCREEN EACH PANE IS ON, asked of
+   * `splitLayout` rather than assumed, so a kid in a left-hand pane looks left
+   * for her score. With two players that puts P1 left and P2 right, which is
+   * exactly where they already were.
+   *
+   * AND WITH THREE OR FOUR IT IS NOW A SIDE PER PLAYER RATHER THAN PER PANE,
+   * which is a real thing proximity grouping took away and is worth being
+   * honest about. A player's pane is no longer her slot number — it depends on
+   * who she is standing next to, and it changes as she walks — so a badge that
+   * tracked the pane would slide from one side of the screen to the other every
+   * time two kittens met. A badge you cannot find is worse than a badge on the
+   * wrong side, so the badges are laid out by PLAYER and stay put: the two-
+   * player rule above still holds exactly, and above two the badges read as one
+   * scoreboard along the top with a coloured pip and a name on each.
+   */
+  _buildHud() {
+    const left = document.getElementById('scores-left');
+    const right = document.getElementById('scores-right');
+    const maps = document.getElementById('maps');
+    left.textContent = '';
+    right.textContent = '';
+    maps.textContent = '';
+    this.maps = [];
+
+    const n = this.partySize;
+    // Four badges plus the counter overflow a narrow window at the two-player
+    // size, and it is the rightmost kitten's score that falls off the edge.
+    document.getElementById('hud').classList.toggle('hud-four', n > 2);
+    // Ask the layout which half of the screen each pane sits in. The merged
+    // view has one pane, so fall back to the split layout for the ordering.
+    const panes = splitLayout(n, 1000, 1000, 0, this.settings.dir);
+
+    for (let i = 0; i < n; i++) {
+      const style = styleFor(i);
+      const css = styleCss(i);
+
+      const badge = document.createElement('div');
+      badge.className = `score p${i + 1}`;
+      badge.innerHTML = `<span class="pip"></span><span class="nm"></span>`
+        + `<b id="score-${i}">0</b><span class="clan" id="clan-${i}"></span>`;
+      badge.querySelector('.pip').style.background = css;
+      badge.querySelector('.nm').textContent = style.name.toUpperCase();
+      ((panes[i]?.x ?? 0) > 0 ? right : left).appendChild(badge);
+    }
+
+    /* AT MOST TWO MAPS, AND THEY BELONG TO PLAYERS 1 AND 2.
+       One map per kitten is the obvious rule and it is the wrong one at four.
+       A quadrant is a quarter of the screen; a map sized to stay legible eats a
+       real fraction of it, and four of them means four corners of the game
+       covered up at exactly the moment there is most to look at. It also stops
+       being a map and starts being furniture: nobody reads four.
+
+       PLAYERS 1 AND 2 RATHER THAN "WHOEVER IS FURTHEST APART" or any other
+       clever rule, because the map has to be somewhere a kid can rely on
+       finding it. Ember and Frost are the two who are always in the game — the
+       party is 2 unless somebody joins, and slots 3 and 4 come and go
+       mid-session — so keying the maps to the two permanent seats is the only
+       version where the map does not move house when a sister joins or drops
+       out. Everybody is drawn ON both maps regardless; what is capped is how
+       many copies of the archipelago are on screen, not who appears on them.
+
+       The badges above are still one per player: a score badge is a line of
+       text, four of them fit, and a kid with no badge has no way to know what
+       she has scored. */
+    const nMaps = Math.min(n, 2);
+    for (let i = 0; i < nMaps; i++) {
+      const box = document.createElement('div');
+      box.className = 'map-box';
+      box.id = `map-box-${i}`;
+      const canvas = document.createElement('canvas');
+      canvas.id = `minimap-${i}`;
+      const tag = document.createElement('span');
+      tag.className = 'map-tag';
+      tag.id = `map-tag-${i}`;
+      tag.style.color = styleCss(i);
+      box.append(canvas, tag);
+      maps.appendChild(box);
+      this.maps.push(new Minimap(canvas, this.world, i));
+    }
+    this._resize?.();
+  }
+
+  /**
+   * Which pane a player's own view is being drawn in, or -1.
+   *
+   * The HUD needs this and the renderer needs it and they must not work it out
+   * separately — the pane index is `groups`' index, and a second opinion about
+   * it is how a map ends up drawn across somebody else's half of the screen.
+   */
+  _paneOf(index) {
+    return (this.groups ?? []).findIndex((m) => m.includes(index));
+  }
+
+  /**
+   * Up to two maps, each positioned INSIDE THE PANE ITS OWNER IS LOOKING AT.
+   *
+   * The corner is computed from the same `splitLayout` the renderer uses. It
+   * used to be four CSS rules keyed off `hud-split` / `hud-horizontal`, which
+   * was survivable while there were exactly two panes in one of two
+   * arrangements and is not with quadrants: the HUD would have needed its own
+   * idea of where pane 3 is, and two copies of that rule is how a map ends up
+   * drawn over somebody else's half of the screen.
+   *
+   * MAP `i` IS PANE `i`'S MAP, and that is the whole rule. The pane index used
+   * to be the player index — true while there was exactly one pane per kitten,
+   * and false the moment two of them can share one.
+   *
+   * IT IS STILL "PLAYERS 1 AND 2" IN EVERY CASE WHERE THAT MEANS ANYTHING, and
+   * that falls out of `_clusters` rather than being asserted here: groups are
+   * ordered by their lowest member, so pane 0 always holds Ember and pane 1
+   * always holds the lowest-numbered kitten who is NOT with her — which is
+   * Frost whenever the two of them are apart. What the rule adds is the case
+   * where they are together, and it is the case that matters: keying the second
+   * map to Frost personally would hide it the instant she walked over to her
+   * sister, and leave the OTHER pane — two kittens on the far side of the
+   * archipelago — with no map at all. Two kids with no map is the failure the
+   * minimap exists to prevent, and it would happen precisely when they are
+   * furthest from everybody else.
+   *
+   * SO A MAP CAN END UP BELONGING TO A PANE RATHER THAN TO A GIRL, and it says
+   * so — see the tag below. Panes 3 and 4 still get nothing, which is the cap
+   * doing its job: four maps on four quadrants is four corners of the game
+   * covered up at the moment there is most to look at.
+   */
   _drawMaps() {
     const hud = document.getElementById('hud');
     hud.classList.toggle('hud-split', !this.merged);
     hud.classList.toggle('hud-horizontal', this.settings.dir === 'horizontal');
     // Lets the CSS move the map out from under the Dojo's sin/cos board.
-    hud.classList.toggle('hud-math',
-      !document.getElementById('math-board').classList.contains('hidden'));
-    document.getElementById('minimap-wrap2').classList.toggle('hidden', this.merged);
-    document.getElementById('map-tag').textContent = this.merged ? 'Z: ZOOM' : 'EMBER · Z';
+    const mathUp = !document.getElementById('math-board').classList.contains('hidden');
+    hud.classList.toggle('hud-math', mathUp);
 
-    // Shared view: centre on the pair. Split: each map follows its own kitten.
-    this.minimap.focusIndex = this.merged ? null : 0;
-    this.minimap.draw(this.players, this.dragons, this.kotodama);
-    if (!this.merged) this.minimap2.draw(this.players, this.dragons, this.kotodama);
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const groups = this.groups?.length ? this.groups : [this.players.map((_, i) => i)];
+    const panes = this._panes(W, H, groups);
+
+    for (let i = 0; i < this.maps.length; i++) {
+      const box = document.getElementById(`map-box-${i}`);
+      const tag = document.getElementById(`map-tag-${i}`);
+      if (!box) continue;
+      const pane = i;
+      const shown = !!panes[pane] && !!groups[pane]?.length;
+      box.classList.toggle('hidden', !shown);
+      if (!shown) continue;
+
+      const v = panes[pane];
+      /* A map must fit the pane it is in. At a flat 32vw a quadrant's map ate
+         most of a quarter-screen; sized against the PANE it stays the same
+         fraction of what its owner can actually see. */
+      box.style.width = `${Math.min(300, v.w * 0.42)}px`;
+
+      if (this.merged) {
+        /* THE SHARED MAP KEEPS THE BOTTOM RIGHT. The Dojo's sin/cos board owns
+           bottom-left and runs to 42vw, so the one map on screen has always
+           gone the other side and never collided with it. */
+        box.style.left = 'auto';
+        box.style.right = '14px';
+        box.style.top = 'auto';
+        box.style.bottom = '14px';
+      } else {
+        /* Viewport coords are bottom-left origin and CSS is top-left, so the
+           pane's top edge is `H - v.y - v.h` from the top of the page. The map
+           sits in its pane's bottom-left corner — except while the Dojo's
+           board is up, which owns that corner and is the lesson somebody came
+           to the Dojo for, so the map lifts to the top of its own pane. */
+        box.style.left = `${v.x + 14}px`;
+        box.style.right = 'auto';
+        if (mathUp) {
+          box.style.top = `${H - v.y - v.h + 78}px`;
+          box.style.bottom = 'auto';
+        } else {
+          box.style.top = 'auto';
+          box.style.bottom = `${v.y + 14}px`;
+        }
+      }
+
+      /* THE TAG NAMES WHOEVER IS IN THE PANE, read off the group rather than
+         off the map's index. A map shared by a whole pane cannot fly one
+         kitten's name — labelling it EMBER while Frost is standing in the same
+         shot invites the obvious question — and a map that has moved to a pane
+         its index does not own must not claim to be somebody else's. */
+      const members = groups[pane];
+      const shared = members.length > 1;
+      if (tag) {
+        const key = i === 0 ? ' · Z' : ' · X';
+        tag.textContent = this.merged ? 'Z: ZOOM'
+          : `${shared ? 'SHARED' : styleFor(members[0]).name.toUpperCase()}${key}`;
+      }
+
+      /* Centre on the group, not on one kitten, whenever the pane holds more
+         than one — the same rule the merged view has always followed, now asked
+         per pane instead of once for the whole screen. */
+      this.maps[i].focusIndex = shared ? null : members[0];
+      this.maps[i].focusOn = members;
+      this.maps[i].draw(this.players, this.dragons, this.kotodama);
+    }
   }
 
   /** Swearing to a clan: a toast, a coloured badge, and a recoloured ring. */
@@ -2540,7 +3710,8 @@ class Game {
 
   /** The scoreboard, after anything that moves a purse rather than earns it. */
   onScoreChanged(player) {
-    document.getElementById(player.index === 0 ? 's1' : 's2').textContent = player.score;
+    const el = document.getElementById(`score-${player.index}`);
+    if (el) el.textContent = player.score;
   }
 
   /**
@@ -2555,9 +3726,12 @@ class Game {
   _announceAwakening(result) {
     if (!result) return;
     this.sfx('powerorb');
-    const [a, b] = result.counts;
+    // Every kitten's tally, not the first two — the comparison is what decides
+    // who is given a prize, so it has to name everybody it compared.
+    const tally = this.players
+      .map((p, i) => `${p.name} ${result.counts[i] ?? 0}`).join(', ');
     for (const p of this.players) {
-      this.toast(`THE KOTODAMA AWAKEN — ${this.players[0].name} ${a}, ${this.players[1].name} ${b}`, p.index);
+      this.toast(`THE KOTODAMA AWAKEN — ${tally}`, p.index);
     }
     for (const { player, spec } of result.prizes) {
       this.toast(
@@ -2585,52 +3759,183 @@ class Game {
     this.toast(`${player.name} found a Kotodama Orb!`, player.index);
   }
 
-  _updateSplit(dt, mid) {
-    const dist = this.players[0].position.distanceTo(this.players[1].position);
-    /* `rideAlong` counts as flying too. The gunner is thirty units up on a
-       dragon; standing next to where her sister happens to be on the ground is
-       not a reason to merge the view. */
-    const anyFlying = this.players.some((p) => p.mount || p.rideAlong);
+  /**
+   * The distance between the two kittens furthest apart, within `members`.
+   *
+   * With two players sharing a view this is exactly
+   * `players[0].distanceTo(players[1])`, which is what every number tuned
+   * against it — MERGE_IN, MERGE_OUT, the shared camera's pull-back — was tuned
+   * on. With more, the widest pair is the one the camera has to cope with, and
+   * a rig framed on the closest pair crops the rest of its own group out.
+   */
+  _spread(members = this.players.map((_, i) => i)) {
+    let d = 0;
+    for (let a = 0; a < members.length; a++) {
+      for (let b = a + 1; b < members.length; b++) {
+        const p = this.players[members[a]];
+        const q = this.players[members[b]];
+        if (p && q) d = Math.max(d, p.position.distanceTo(q.position));
+      }
+    }
+    return d;
+  }
 
-    // Both kitties inside the dojo always share one view — the whole point is
-    // that they read the same diagram together.
-    const dc0 = this.world.dojoCentre;
-    const bothInDojo = this.players.every(
-      (p) => !p.mount && Math.hypot(p.position.x - dc0.x, p.position.z - dc0.z) < DOJO_VIEW_R
-    );
+  /** Where a set of kittens is, on average. The two-player midpoint
+   *  generalised — same answer for two, and the right one for three or four. */
+  _centroid(members = this.players.map((_, i) => i)) {
+    const c = new THREE.Vector3();
+    let n = 0;
+    for (const i of members) {
+      const p = this.players[i];
+      if (!p) continue;
+      c.add(p.position);
+      n += 1;
+    }
+    return n ? c.divideScalar(n) : c;
+  }
 
-    /* BOTH girls on Ryuuseki force ONE camera, and it outranks even "always
-       split". Two half-screens of the same animal is the worst possible view
-       of him: the flyer's turns yank the gunner's camera around, the gunner
-       cannot see what she is aiming at, and the one moment the game asks the
-       two girls to be in the same seat is rendered as though they are not.
-       Same rule as the dojo, and for the same reason — a shared thing gets a
-       shared view.
+  /** Put every rig back on the next frame it is asked to draw, rather than
+   *  letting it lerp in from wherever the last run left it. */
+  _reseedRigs() {
+    for (const r of this.rigs) r.seeded = false;
+  }
+
+  /**
+   * WHO SHARES A PANE WITH WHOM, this frame.
+   *
+   * The forced rules come first and every one of them is the rule that was
+   * already there, unchanged in meaning: they are the moments where the thing
+   * on screen is SHARED, and a shared subject gets a shared view. What is new
+   * is only what happens when none of them applies.
+   *
+   * `core/cluster.js` owns the arithmetic and the argument for it. This
+   * function owns which questions get asked.
+   */
+  _clusters() {
+    const all = this.players.map((_, i) => i);
+    if (all.length <= 1) {
+      this._clusterOf = all.map(() => 0);
+      return [all];
+    }
+
+    /* BOTH girls on Ryuuseki force ONE view, and it outranks even "always
+       split". Two half-screens of the same animal is the worst possible view of
+       him: the flyer's turns yank the gunner's camera around, the gunner cannot
+       see what she is aiming at, and the one moment the game asks two girls to
+       be in the same seat is rendered as though they are not.
 
        IT IS `duo`, NOT `ridden`, AND THE DIFFERENCE IS THE WHOLE BUG. The rule
        fired on anybody being aboard, so one kitten climbing on collapsed the
        screen to a single camera locked to the dragon — while her sister, who
-       had done nothing, was still down in the town with no view of her own,
-       following a dragon she was not on until she happened to walk back into
-       frame. A shared view is only right when the thing is actually shared. */
+       had done nothing, was still down in the town with no view of her own. A
+       shared view is only right when the thing is actually shared. */
     const onRyu = !!this.ryu?.duo;
 
-    /* A ROUND IS ONE SCREEN, outranking "always split" exactly as the dojo
-       and a crewed Ryuuseki do — and for the same reason both of those give:
-       a shared subject gets a shared view. Two half-screens of one 56-unit
-       ring is the worst possible way to watch a fight, because each girl gets
+    /* A ROUND IS ONE SCREEN, for the same reason: two half-screens of one
+       56-unit ring is the worst way to watch a fight, because each girl gets
        half the width to judge a knockback across and neither can see how much
-       ring is behind the other. It is the one moment in the game where both
-       players are looking at exactly the same thing. */
+       ring is behind the other. */
     const inRing = !!this.tournament?.active;
 
-    if (onRyu || inRing || this.settings.split === 'never' || bothInDojo) this.merged = true;
-    else if (this.settings.split === 'always') this.merged = false;
-    else {
-      // hysteresis so it doesn't flicker at the boundary
-      if (this.merged && (dist > MERGE_OUT || anyFlying)) this.merged = false;
-      else if (!this.merged && dist < MERGE_IN && !anyFlying) this.merged = true;
+    // Everybody inside the dojo shares one view — the whole point is that they
+    // read the same diagram together. Both of them or neither, at any party size.
+    const dc = this.world.dojoCentre;
+    const allInDojo = this.players.every(
+      (p) => !p.mount && Math.hypot(p.position.x - dc.x, p.position.z - dc.z) < DOJO_VIEW_R
+    );
+
+    if (onRyu || inRing || this.settings.split === 'never' || allInDojo) {
+      this._clusterOf = all.map(() => 0);
+      return [all];
     }
+    if (this.settings.split === 'always') {
+      this._clusterOf = all.slice();
+      return all.map((i) => [i]);
+    }
+
+    /* `rideAlong` counts as flying too. The gunner is thirty units up on a
+       dragon; standing over where her sister happens to be on the ground is not
+       a reason to share a camera with her.
+
+       AT FOUR PLAYERS THIS COSTS ONE PANE INSTEAD OF THE WHOLE SCREEN, which is
+       the entire point of doing it per group. The old rule was global — one
+       kitten taking off split every view in the game, including the two
+       sisters still standing next to each other in the market who had not
+       moved. */
+    const { groups, of } = clusterPlayers({
+      pts: this.players.map((p) => p.position),
+      solo: this.players.map((p) => !!(p.mount || p.rideAlong)),
+      prev: this._clusterOf,
+      mergeIn: MERGE_IN,
+      mergeOut: MERGE_OUT,
+    });
+    this._clusterOf = of;
+    return groups;
+  }
+
+  /**
+   * Which camera draws a group.
+   *
+   * A GROUP OF ONE USES HER OWN FOLLOW CAMERA, not a rig framed on a single
+   * point. That is not a shortcut — `Player._updateCamera` and `setFocus` carry
+   * the grotto tilt, the dojo framing, the star pose and the mount pull-back,
+   * and a shared rig re-deriving all of that for a group of one would be a
+   * second copy of every one of those rules. It is also exactly what a lone
+   * kitten's pane has always been.
+   */
+  _cameraFor(members) {
+    if (!members?.length) return null;
+    if (members.length === 1) return this.players[members[0]]?.camera ?? null;
+    return this.rigs[members[0]]?.camera ?? null;
+  }
+
+  _updateSplit(dt) {
+    /* WHO IS SHARING A VIEW WITH WHOM. With two kittens this is exactly the
+       boolean it replaced — one group or two — and nothing about the game the
+       girls know changes. With three or four it is the feature: a pair standing
+       together get a pane between them and the kitten two islands away gets one
+       of her own, instead of the screen being all-or-nothing for everybody. */
+    this.groups = this._clusters();
+    /* `merged` STILL MEANS "ONE VIEW FOR EVERYBODY", which is what the HUD, the
+       minimaps and the map-zoom key all read it for. It is now a consequence of
+       the grouping rather than a thing decided separately — two answers to one
+       question is how a map ends up drawn across somebody else's half. */
+    this.merged = this.groups.length === 1;
+
+    /* EVERY RIG IS UPDATED EVERY FRAME, DRAWING OR NOT — including the ones
+       whose player is not currently leading a group, which track her alone so
+       that the instant a group splits and she becomes the lowest member of a
+       new one, her rig is ALREADY framed on her.
+
+       That is the whole reason HANDOFF listed this feature as not-built: a rig
+       picked up cold at the moment membership changes is the frozen-camera bug
+       one pane further along. It is answered by construction here rather than
+       by smoothing a transition, exactly as the shared rig's own version of it
+       was. */
+    for (let i = 0; i < this.rigs.length; i++) {
+      if (!this.players[i]) continue;
+      const led = this.groups.find((m) => m[0] === i);
+      this._updateRig(this.rigs[i], led ?? [i], dt);
+    }
+  }
+
+  /**
+   * Frame one group of kittens with one rig.
+   *
+   * This is the old shared-camera block, unchanged in what it does and asked a
+   * narrower question: it used to frame THE PARTY and now frames A GROUP. With
+   * two players in one group those are the same set, which is why the
+   * two-player game comes out of it byte for byte.
+   *
+   * @param rig      one of `this.rigs` — its own target, distance and lerp state
+   * @param members  player indices this rig is framing
+   */
+  _updateRig(rig, members, dt) {
+    const mid = this._centroid(members);
+    /* THE SPREAD IS THE WIDEST PAIR IN THE GROUP, NOT THE FIRST TWO. It sizes
+       the pull-back, and a camera framed on the closest pair crops the rest of
+       its own group out of the shot. */
+    const dist = this._spread(members);
 
     /* THE SHARED RIG IS UPDATED EVERY FRAME, SPLIT OR NOT, AND THAT IS THE
        WHOLE FIX FOR THE JARRING REJOIN.
@@ -2652,12 +3957,18 @@ class Game {
        there is no longer a discontinuity to hide. */
     {
       const dc = this.world.dojoCentre;
-      const inDojo = this.players.some(
-        (p) => !p.mount && Math.hypot(p.position.x - dc.x, p.position.z - dc.z) < DOJO_VIEW_R
-      );
-      this.sharedFocusT = (this.sharedFocusT ?? 0);
-      this.sharedFocusT += ((inDojo ? 1 : 0) - this.sharedFocusT) * Math.min(1, dt * 2.2);
-      const ft = this.sharedFocusT;
+      /* THIS GROUP'S OWN KITTENS, not the whole party. A pair reading the
+         diagram in the Dojo gets the Dojo framing; a third player who is
+         nowhere near it does not have her camera swung to an island she is not
+         standing on, which is exactly what asking `this.players` here would
+         do once there is more than one view. */
+      const inDojo = members.some((i) => {
+        const p = this.players[i];
+        return p && !p.mount
+          && Math.hypot(p.position.x - dc.x, p.position.z - dc.z) < DOJO_VIEW_R;
+      });
+      rig.focusT += ((inDojo ? 1 : 0) - rig.focusT) * Math.min(1, dt * 2.2);
+      const ft = rig.focusT;
 
       /* Riding Ryuuseki forces this view, and this rig sizes its distance from
          how far APART the two kittens are — on him they share one point, so it
@@ -2694,8 +4005,15 @@ class Game {
          It swings to the finder rather than to the midpoint, because the shot
          is about her holding it up; her sister slides off frame for two
          seconds and comes back. */
+      /* AND IT ONLY SWINGS THE GROUP SHE IS IN. The pose is per player and
+         always has been — "stopping that sister's game to show her a cutscene
+         about something she did not do is the exact interruption the split
+         screen exists to avoid" — but the merged rig had no way to say that
+         while it was the only shared camera in the game. Now it can: a pair
+         hunting together still get the shot, because the finder is in their
+         group, and a kitten across the archipelago does not. */
       const shot = this.starShot;
-      if (shot && !ryuMid) {
+      if (shot && !ryuMid && members.includes(shot.player.index)) {
         const k = Math.sin(Math.min(1, (STAR_POSE - shot.t) / 0.3) * Math.PI * 0.5)
           * Math.min(1, shot.t / 0.45);
         want.lerp(
@@ -2727,13 +4045,13 @@ class Game {
         wantDist = ring.dist;
       }
 
-      if (!this._sharedSeeded) {
-        this.sharedTarget.copy(want);
-        this.sharedDist = wantDist;
-        this._sharedSeeded = true;
+      if (!rig.seeded) {
+        rig.target.copy(want);
+        rig.dist = wantDist;
+        rig.seeded = true;
       }
-      this.sharedTarget.lerp(want, Math.min(1, dt * 6));
-      this.sharedDist += (wantDist - this.sharedDist) * Math.min(1, dt * 4);
+      rig.target.lerp(want, Math.min(1, dt * 6));
+      rig.dist += (wantDist - rig.dist) * Math.min(1, dt * 4);
 
       let yaw = THREE.MathUtils.lerp(-Math.PI * 0.25, 0, ft);
       let pitch = ring ? ring.pitch : THREE.MathUtils.lerp(0.66, 1.16, ft);
@@ -2745,23 +4063,21 @@ class Game {
          fallen into three times now (Ryuuseki's framing, the star shot, and
          now this). Same numbers, so the view does not change as the screen
          joins and splits. */
-      const cave = this.world.grottoAt(this.sharedTarget.x, this.sharedTarget.z);
-      if (cave) {
-        this.caveT = Math.min(1, (this.caveT ?? 0) + dt * 2.4);
-      } else {
-        this.caveT = Math.max(0, (this.caveT ?? 0) - dt * 2.4);
-      }
-      if (this.caveT > 0.001) {
-        const ct = this.caveT;
+      const cave = this.world.grottoAt(rig.target.x, rig.target.z);
+      rig.caveT = cave
+        ? Math.min(1, rig.caveT + dt * 2.4)
+        : Math.max(0, rig.caveT - dt * 2.4);
+      if (rig.caveT > 0.001) {
+        const ct = rig.caveT;
         pitch = THREE.MathUtils.lerp(pitch, CAVE_PITCH, ct);
-        this.sharedDist = THREE.MathUtils.lerp(this.sharedDist, CAVE_DIST, ct * Math.min(1, dt * 4));
+        rig.dist = THREE.MathUtils.lerp(rig.dist, CAVE_DIST, ct * Math.min(1, dt * 4));
       }
-      this.sharedCamera.position.set(
-        this.sharedTarget.x + Math.sin(yaw) * Math.cos(pitch) * this.sharedDist,
-        this.sharedTarget.y + Math.sin(pitch) * this.sharedDist,
-        this.sharedTarget.z + Math.cos(yaw) * Math.cos(pitch) * this.sharedDist
+      rig.camera.position.set(
+        rig.target.x + Math.sin(yaw) * Math.cos(pitch) * rig.dist,
+        rig.target.y + Math.sin(pitch) * rig.dist,
+        rig.target.z + Math.cos(yaw) * Math.cos(pitch) * rig.dist
       );
-      this.sharedCamera.lookAt(this.sharedTarget);
+      rig.camera.lookAt(rig.target);
     }
   }
 
@@ -2844,22 +4160,34 @@ class Game {
     const W = size.x;
     const H = size.y;
 
-    if (this.merged) {
-      this._renderView(this.sharedCamera, 0, 0, W, H);
-      return;
-    }
+    /* ONE PANE PER GROUP, NOT PER PLAYER — which is the whole feature, and it
+       reads as one line because the two hard parts live somewhere else.
+       `_clusters` decided who is with whom and `splitLayout` decides how many
+       panes tile a screen; neither knows about the other. The merged case is
+       not special-cased any more: everybody together is one group, so it comes
+       out of `splitLayout(1)` as the full frame, which is exactly what the
+       hand-written branch used to do. */
+    const groups = this.groups?.length ? this.groups : [this.players.map((_, i) => i)];
+    const panes = this._panes(W, H, groups);
+    panes.forEach((v, i) => {
+      const cam = this._cameraFor(groups[i]);
+      if (cam) this._renderView(cam, v.x, v.y, v.w, v.h);
+    });
+  }
 
-    const gap = 3;
-    if (this.settings.dir === 'horizontal') {
-      const h = Math.floor((H - gap) / 2);
-      // WebGL viewport origin is bottom-left: player 1 goes on top.
-      this._renderView(this.players[0].camera, 0, H - h, W, h);
-      this._renderView(this.players[1].camera, 0, 0, W, h);
-    } else {
-      const w = Math.floor((W - gap) / 2);
-      this._renderView(this.players[0].camera, 0, 0, w, H);
-      this._renderView(this.players[1].camera, W - w, 0, w, H);
-    }
+  /**
+   * The pane rectangles for a set of groups.
+   *
+   * ONE CALL, BECAUSE THE RENDERER AND THE HUD MUST NOT DISAGREE. `splitLayout`
+   * now takes the group SIZES as well as the count — a pane holding two kittens
+   * is worth half the screen rather than a quarter — and two callers each
+   * assembling that argument themselves is how a minimap ends up positioned for
+   * a pane the renderer drew somewhere else.
+   */
+  _panes(W, H, groups) {
+    return splitLayout(
+      groups.length, W, H, 3, this.settings.dir, groups.map((m) => m.length)
+    );
   }
 
   /** Slow drifting fly-over behind the title screen. */

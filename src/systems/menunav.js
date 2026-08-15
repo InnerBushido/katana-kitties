@@ -34,7 +34,11 @@
  *  it does not own the input — so the pause menu underneath does not quietly
  *  keep taking presses while a trade is on screen. One place, rather than a
  *  second copy of "which panel is up" living in profile.js. */
-const PANELS = ['panel-profile', 'panel-settings', 'panel-help', 'panel-pause'];
+/* Ordered most-modal first: the first one that is open and has items in it
+   owns the input. `panel-league` sits above the pause menu because it can be
+   up while the game is not paused — it is the choice standing between four
+   kittens and the round card. */
+const PANELS = ['panel-profile', 'panel-league', 'panel-settings', 'panel-help', 'panel-pause'];
 
 /* Stick/d-pad repeat. The first step is instant, then it waits, then it runs —
    the shape every menu in every console game uses, because a list that scrolls

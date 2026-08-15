@@ -1,4 +1,5 @@
 import { POWER_ORBS, ORB_BY_ID, ORB_IDS, MAX_EQUIPPED } from '../entities/powerorb.js';
+import { MAX_PLAYERS } from '../core/palette.js';
 
 /* ---------------------------------------------------------------------------
    THE CHARACTER PROFILE — inventory, trading, and the dealer's counter.
@@ -41,6 +42,8 @@ class Side {
   constructor() {
     this.i = 0;
     this.offer = null;   // index into her own orb list, or null for "nothing"
+    /** Points she is putting on the table. Zero means she is offering none. */
+    this.points = 0;
     this.ready = false;
     this.hold = 0;
     this.repeatT = 0;
@@ -48,10 +51,16 @@ class Side {
 
   reset() {
     this.offer = null;
+    this.points = 0;
     this.ready = false;
     this.hold = 0;
   }
 }
+
+/** How much one nudge of the stick moves a points offer. Coarse on purpose:
+ *  the numbers here run to thousands and a nine-year-old is not going to hold
+ *  a stick sideways two hundred times to hand over a fair price. */
+const POINT_STEP = 50;
 
 export class ProfileScreen {
   constructor(game) {
@@ -63,7 +72,11 @@ export class ProfileScreen {
     /** True when it was opened from the pause menu, so closing goes back
      *  there rather than dropping the girls straight into the world. */
     this.fromPause = false;
-    this.sides = [new Side(), new Side()];
+    /* ONE CURSOR PER PLAYER, still never shared — the whole argument for this
+       screen having its own input path is that consent cannot be expressed
+       through a cursor two people are pushing, and that is more true with four
+       of them, not less. */
+    this.sides = Array.from({ length: MAX_PLAYERS }, () => new Side());
     this._sig = '';
     this._flash = '';
     this._flashT = 0;
@@ -110,7 +123,7 @@ export class ProfileScreen {
     this._flashT = Math.max(0, this._flashT - dt);
 
     const pads = this.game.input.players;
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < this.game.players.length; i++) {
       if (this.mode === 'shop' && this.game.players[i] !== this.shopper) continue;
       this._drive(i, pads[i], dt);
       if (!this.mode) return;      // she closed it
@@ -130,8 +143,13 @@ export class ProfileScreen {
     const side = this.sides[index];
     const rows = this._rowCount(index);
 
-    // --- cursor, with console-style repeat ---
-    const raw = Math.abs(pad.mx) > NAV_DEAD ? Math.sign(pad.mx)
+    /* ON THE POINTS ROW, LEFT AND RIGHT CHANGE THE AMOUNT and up and down
+       still move the cursor. Splitting the axes is what lets one row carry a
+       value without a second control to explain — the same trick `MenuNav`
+       uses on a `<select>`, and the reason a points offer needs no extra
+       button. Everywhere else both axes move the cursor, exactly as before. */
+    const onPoints = this._onPoints(index);
+    const raw = (!onPoints && Math.abs(pad.mx) > NAV_DEAD) ? Math.sign(pad.mx)
       : Math.abs(pad.my) > NAV_DEAD ? Math.sign(pad.my) : 0;
     let step = 0;
     if (raw === 0) side.hold = 0;
@@ -145,6 +163,24 @@ export class ProfileScreen {
       this.game.audio?.play('menu');
     }
 
+    if (onPoints && Math.abs(pad.mx) > NAV_DEAD) {
+      side.pointHold = (side.pointHold ?? 0) - dt;
+      if (side.pointHold <= 0) {
+        side.pointHold = side.points === 0 ? REPEAT_DELAY : REPEAT_RATE;
+        const was = side.points;
+        side.points = Math.max(0, Math.min(
+          this.game.players[index]?.score ?? 0,
+          side.points + Math.sign(pad.mx) * POINT_STEP
+        ));
+        /* Moving the offer CLEARS HER CONFIRM, the same rule picking a
+           different orb follows: a girl who agreed to hand over 200 and then
+           dialled it to 800 has not agreed to that. */
+        if (side.points !== was) { side.ready = false; this.game.audio?.play('menu'); }
+      }
+    } else {
+      side.pointHold = 0;
+    }
+
     if (pad.pressed('start')) { this.close(); return; }
 
     if (this.mode === 'shop') this._shopButtons(index, pad, side);
@@ -155,7 +191,14 @@ export class ProfileScreen {
     const player = this.game.players[index];
     const owned = player.powerOrbs;
 
-    if (pad.pressed('jump')) {
+    if (pad.pressed('jump') && this._onPoints(index)) {
+      /* JUMP on the points row is a no-op by design: the amount IS the offer,
+         so there is nothing to toggle. Zero means offering none. */
+      this._say(side.points > 0
+        ? `${player.name} is offering ${side.points} points`
+        : 'Push the stick LEFT and RIGHT to offer points');
+      this.game.audio?.play('menu');
+    } else if (pad.pressed('jump')) {
       if (!owned.length) {
         this._say(`${player.name} has nothing to offer yet`);
         this.game.audio?.play('deny');
@@ -171,7 +214,12 @@ export class ProfileScreen {
     }
 
     if (pad.pressed('attack')) {
-      if (side.offer === null && this.sides[1 - index].offer === null) {
+      /* SOMEBODY has to be offering something — asked of every side rather
+         than of the other one, because with four kittens on this screen the
+         two who are trading are whichever two confirm. */
+      const anything = this.sides.slice(0, this.game.players.length)
+        .some((sd) => sd.offer !== null || sd.points > 0);
+      if (!anything) {
         this._say('Somebody has to offer something first');
         this.game.audio?.play('deny');
       } else {
@@ -183,25 +231,69 @@ export class ProfileScreen {
     if (pad.pressed('interact')) {
       if (side.ready) side.ready = false;
       else if (side.offer !== null) side.offer = null;
+      else if (side.points > 0) side.points = 0;
       else this.close();
     }
   }
 
+  /**
+   * A trade fires when EXACTLY TWO players have confirmed.
+   *
+   * THAT IS THE TWO-PLAYER RULE GENERALISED, NOT A NEW ONE. With two kittens
+   * "both have confirmed" and "exactly two have confirmed" are the same
+   * sentence, so nothing about the game the girls know changes. With four it
+   * answers the question a partner selector would otherwise have to ask —
+   * WHO is trading with whom — using the thing they were already going to do,
+   * and it keeps consent exactly where it was: the two people trading are the
+   * two people who each said yes on their own controller.
+   *
+   * A THIRD CONFIRM IS REFUSED RATHER THAN GUESSED. Picking two out of three
+   * would move an orb somebody agreed to give to a person she did not agree to
+   * give it to, which is the one thing this screen exists to make impossible.
+   */
   _maybeTrade() {
-    const [A, B] = this.sides;
-    if (!A.ready || !B.ready) return;
-    const [pa, pb] = this.game.players;
+    const live = this.sides.slice(0, this.game.players.length);
+    const ready = live.map((s, i) => (s.ready ? i : -1)).filter((i) => i >= 0);
+    if (ready.length < 2) return;
+    if (ready.length > 2) {
+      this._say('Only two at a time — one of you un-confirm');
+      return;
+    }
+
+    const [ia, ib] = ready;
+    const A = this.sides[ia];
+    const B = this.sides[ib];
+    const pa = this.game.players[ia];
+    const pb = this.game.players[ib];
     const aId = A.offer === null ? null : pa.powerOrbs[A.offer];
     const bId = B.offer === null ? null : pb.powerOrbs[B.offer];
-    if (!aId && !bId) return;
+    if (!aId && !bId && !A.points && !B.points) return;
+
+    /* POINTS MOVE WITH THE ORBS OR NOT AT ALL. `kotodama.trade` is already
+       atomic — it removes both orbs before giving either, so a swap into a
+       full kitten cannot leave one of them a copy down — and points have to
+       be inside that same all-or-nothing, or a refused orb swap still empties
+       somebody's purse. Checked first, moved after. */
+    const aPts = Math.min(A.points, pa.score);
+    const bPts = Math.min(B.points, pb.score);
 
     if (this.game.kotodama.trade(pa, aId, pb, bId)) {
-      const parts = [];
-      if (aId) parts.push(`${pa.name} gave ${ORB_BY_ID[aId].name}`);
-      if (bId) parts.push(`${pb.name} gave ${ORB_BY_ID[bId].name}`);
+      if (aPts) { pa.score -= aPts; pb.score += aPts; }
+      if (bPts) { pb.score -= bPts; pa.score += bPts; }
+      if (aPts || bPts) {
+        this.game.onScoreChanged?.(pa);
+        this.game.onScoreChanged?.(pb);
+      }
+      const gave = (p, id, pts) => {
+        const bits = [];
+        if (id) bits.push(ORB_BY_ID[id].name);
+        if (pts) bits.push(`${pts} points`);
+        return bits.length ? `${p.name} gave ${bits.join(' + ')}` : null;
+      };
+      const parts = [gave(pa, aId, aPts), gave(pb, bId, bPts)].filter(Boolean);
       this._say(parts.join('  ·  '));
-      this.game.toast(parts.join(' — '), 0);
-      this.game.toast(parts.join(' — '), 1);
+      this.game.toast(parts.join(' — '), pa.index);
+      this.game.toast(parts.join(' — '), pb.index);
     } else {
       this._say('That would leave somebody carrying nine');
       this.game.audio?.play('deny');
@@ -242,7 +334,18 @@ export class ProfileScreen {
        land on an empty slot means the most common action on this screen —
        press jump to offer — does nothing most of the time, which reads as the
        controller not working rather than as an empty slot. */
-    return Math.max(1, this.game.players[index]?.powerOrbs.length ?? 0);
+    /* ...PLUS ONE ROW FOR POINTS, which is why this is not simply the orb
+       count. Points are the other thing she can put on the table — a kitten
+       who has been to the ring has some and a kitten who has not wants them —
+       and they need somewhere for the cursor to land. It is the LAST row, so
+       the orbs keep the positions they had. */
+    return Math.max(1, this.game.players[index]?.powerOrbs.length ?? 0) + 1;
+  }
+
+  /** True when this side's cursor is on the points row rather than an orb. */
+  _onPoints(index) {
+    return this.mode === 'profile'
+      && this.sides[index].i >= this._rowCount(index) - 1;
   }
 
   /* -------------------------------- paint -------------------------------- */
@@ -282,7 +385,7 @@ export class ProfileScreen {
     return [
       this.mode,
       this.game.players.map((p) => `${p.powerOrbs.join(',')}|${p.score}|${p.clan?.id ?? ''}`).join(';'),
-      this.sides.map((s) => `${s.i}/${s.offer}/${s.ready}`).join(';'),
+      this.sides.map((s) => `${s.i}/${s.offer}/${s.points}/${s.ready}`).join(';'),
       this.mode === 'shop' ? ORB_IDS.map((id) => K.stock[id]).join(',') : '',
       this._flashT > 0 ? this._flash : '',
     ].join('#');
@@ -318,10 +421,20 @@ export class ProfileScreen {
       ? `<b>${here.name}</b> · ${here.label}<br><span class="kd-dim">${here.detail(n)}${n > 1 ? `  (x${n})` : ''}</span>`
       : '<span class="kd-dim">No Kotodama yet — go and find one.</span>';
 
+    /* The points row, drawn as a row rather than as a slot: it is not one of
+       the eight, and putting it in the grid would say it is. */
+    const onPts = this._onPoints(index);
+    const pointsRow = `<div class="kd-points${onPts ? ' cursor' : ''}">`
+      + `<span>POINTS</span><b>${side.points}</b>`
+      + `<span class="kd-dim">${onPts ? '◀ ▶ to change' : ''}</span></div>`;
+
+    const offered = [];
+    if (side.offer !== null) offered.push(ORB_BY_ID[owned[side.offer]]?.name ?? '—');
+    if (side.points > 0) offered.push(`${side.points} points`);
     const state = side.ready
       ? '<span class="kd-ready">CONFIRMED</span>'
-      : side.offer !== null
-        ? `offering <b>${ORB_BY_ID[owned[side.offer]]?.name ?? '—'}</b>`
+      : offered.length
+        ? `offering <b>${offered.join(' + ')}</b>`
         : '<span class="kd-dim">offering nothing</span>';
 
     return `<div class="${cls}">
@@ -329,6 +442,7 @@ export class ProfileScreen {
       <div class="kd-meta">${player.clan?.name ?? 'no clan'} · ${player.score} pts
         · ${owned.length}/${MAX_EQUIPPED}</div>
       <div class="kd-slots">${slots.join('')}</div>
+      ${this.mode === 'profile' ? pointsRow : ''}
       <div class="kd-detail">${detail}</div>
       <div class="kd-state">${state}</div>
     </div>`;

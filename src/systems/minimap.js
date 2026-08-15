@@ -11,6 +11,8 @@
    fight the renderer for state.
 --------------------------------------------------------------------------- */
 
+import { styleCss } from '../core/palette.js';
+
 const PAD = 46;
 
 /** Zoom steps. 1 fits the whole archipelago; the rest close in on a player. */
@@ -21,13 +23,21 @@ export class Minimap {
    * @param canvas the <canvas> to draw into
    * @param world  the World, for islands, shrines and landmarks
    * @param focusIndex which player to centre on when zoomed in, or null to
-   *        centre on the pair (used by the single shared map)
+   *        centre on everybody this map is drawn for — see `focusOn`
    */
   constructor(canvas, world, focusIndex = null) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.world = world;
     this.focusIndex = focusIndex;
+    /* WHO THIS MAP IS CENTRED ON WHEN IT IS NOT CENTRED ON ONE KITTEN.
+       It used to be the midpoint of `players[0]` and `players[1]`, written out
+       — a surviving "there are exactly two of them", and one that reads
+       perfectly at two players and is silently wrong at four. A map shared by
+       players 3 and 4 was centred halfway between Ember and Frost, who might
+       be on another island: the pane's own two kittens could be off the edge of
+       their own map. Null means every player passed to `draw`. */
+    this.focusOn = null;
     this.zoom = 1;
 
     // Fit every island (plus its radius) into the canvas, once, at build time.
@@ -124,12 +134,9 @@ export class Minimap {
    * @param kotodama the Kotodama system, or null before 100% mischief
    */
   draw(players, dragons, kotodama = null) {
-    const focus = this.focusIndex != null
+    const focus = this.focusIndex != null && players[this.focusIndex]
       ? players[this.focusIndex].position
-      : {
-        x: (players[0].position.x + players[1].position.x) / 2,
-        z: (players[0].position.z + players[1].position.z) / 2,
-      };
+      : midpointOf(this.focusOn?.map((i) => players[i]).filter(Boolean) ?? players);
     this._resize(focus);
     this._t = (this._t ?? 0) + 0.09;      // slow pulse for the shrine haloes
     const c = this.ctx;
@@ -265,7 +272,7 @@ export class Minimap {
       // A pip in its owner's colour, so you can tell whose it is.
       c.beginPath();
       c.arc(x, y + s * 0.15, s * 0.34, 0, Math.PI * 2);
-      c.fillStyle = p.index === 0 ? '#ff8a3d' : '#ff6fae';
+      c.fillStyle = styleCss(p.index);
       c.fill();
     }
 
@@ -332,7 +339,7 @@ export class Minimap {
       c.lineTo(0, s * 0.4);
       c.lineTo(-s, s);
       c.closePath();
-      c.fillStyle = i === 0 ? '#ff8a3d' : '#ff6fae';
+      c.fillStyle = styleCss(i);
       c.fill();
       c.lineWidth = 1.6 * this.dpr;
       c.strokeStyle = '#1c1016';
@@ -340,4 +347,18 @@ export class Minimap {
       c.restore();
     });
   }
+}
+
+/** The middle of however many kittens are handed to it. Degrades to the origin
+ *  on an empty list rather than to NaN — a map centred on NaN draws nothing at
+ *  all, which looks exactly like the map being broken. */
+function midpointOf(list) {
+  if (!list.length) return { x: 0, z: 0 };
+  let x = 0;
+  let z = 0;
+  for (const p of list) {
+    x += p.position.x;
+    z += p.position.z;
+  }
+  return { x: x / list.length, z: z / list.length };
 }

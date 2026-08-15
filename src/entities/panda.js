@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
+import { styleFor } from '../core/palette.js';
 
 /* ---------------------------------------------------------------------------
    The Pandapaw panda — a pet you raise rather than a mount you find.
@@ -213,7 +214,7 @@ export class Panda {
     const ringGeo = new THREE.RingGeometry(0.72, 0.95, 26);
     ringGeo.rotateX(-Math.PI / 2);
     this.ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({
-      color: owner?.index === 1 ? 0xff6fae : 0xff8a3d,
+      color: (owner?.style ?? styleFor(0)).colour,
       transparent: true, opacity: 0, depthWrite: false, toneMapped: false,
     }));
     this.group.add(this.ring);

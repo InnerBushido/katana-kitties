@@ -11,8 +11,14 @@
   --paper: #fbeed2;
   --paper-2: #f2ddb4;
   --vermillion: #e0512c;
+  /* The four player colours. `PLAYER_STYLE` in entities/player.js is the
+     source these mirror — they are the same four hues, and a change there
+     wants the same change here. Kept as CSS rather than written onto the
+     elements from JS because most of what uses them is static markup. */
   --ember: #ff8a3d;
   --frost: #ff6fae;
+  --storm: #35d7f0;
+  --blossom: #a96bff;
   --gold: #f5c341;
 }
 
@@ -459,6 +465,55 @@ html, body {
   cursor: pointer;
 }
 
+/* The league picker's per-button explanation. Small and under the name: a
+   nine-year-old choosing between 2v2 and a handicap match needs to be told
+   what the difference is, and the name alone does not say it. */
+.lg-blurb {
+  display: block;
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  opacity: 0.8;
+  margin-top: 3px;
+}
+.lb-league {
+  font-family: 'Bangers', cursive;
+  letter-spacing: 2px;
+  margin: 14px 0 4px;
+  color: var(--vermillion);
+}
+
+/* ------------------------------ join card -------------------------------- */
+
+/* Centred at the TOP, clear of the scoreboard's row and of every pane's
+   bottom-left map. It is small on purpose — three other people are still
+   playing behind it. */
+#join-card {
+  position: absolute;
+  top: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 22px;
+  background: rgba(29, 18, 22, 0.92);
+  border: 4px solid var(--paper);
+  border-radius: 14px;
+  color: var(--paper);
+  font-size: 12px;
+  letter-spacing: 2px;
+  z-index: 6;
+}
+#join-card .jc-name {
+  font-family: 'Bangers', cursive;
+  font-size: 30px;
+  letter-spacing: 2px;
+  line-height: 1.1;
+}
+#join-card .jc-hint { font-size: 10px; opacity: 0.75; letter-spacing: 1px; }
+
 /* ------------------------------- minimap --------------------------------- */
 
 /* Bigger than it was: at 210px the icons were too small to tell apart, and
@@ -476,22 +531,19 @@ html, body {
   z-index: 3;
 }
 .map-box canvas { width: 100%; height: 100%; display: block; }
-/* Shared view: one map, bottom right. */
-#minimap-wrap { right: 14px; }
-#minimap-wrap2 { right: 14px; }
 
-/* Split: each map goes in ITS OWN player's half. Player 1 renders on the left
-   (side by side) or on top (stacked), so its map has to follow — a map in the
-   other kid's half is worse than no map, because you read it by mistake. */
-.hud-split #minimap-wrap { right: auto; left: 14px; }
-.hud-split.hud-horizontal #minimap-wrap { left: auto; right: 14px; top: 14px; bottom: auto; }
+/* WHERE EACH MAP GOES IS SET FROM JS, not from here — see Game._drawMaps. It
+   used to be four rules keyed off `hud-split` / `hud-horizontal`, which worked
+   while there were exactly two panes in one of two arrangements. With up to
+   four panes the HUD would need its own copy of the layout, and two copies of
+   "where is pane 3" is how a map ends up drawn across somebody else's half of
+   the screen. `splitLayout` answers it once, for the renderer and for this.
 
-/* The Dojo's sin/cos board also lives bottom-left, and it's up to 42vw wide —
-   in a side-by-side split it sat directly under player 1's map and neither
-   could be read. The map moves to the top of its own half while the board is
-   up; the lesson is the thing you came to the Dojo for, so it wins the corner.
-   (Merged, the single map is bottom-RIGHT and never collides.) */
-.hud-split.hud-math #minimap-wrap { bottom: auto; top: 78px; }
+   Still true, and enforced there rather than here: the shared map sits bottom
+   RIGHT (the Dojo's sin/cos board owns bottom-left and is up to 42vw wide), a
+   split map sits in the bottom-left of ITS OWN pane, and it lifts to the top of
+   that pane while the board is up — the lesson is what you came to the Dojo
+   for, so it keeps the corner. */
 
 .map-tag {
   position: absolute;
@@ -595,6 +647,14 @@ html, body {
   align-items: stretch;
   gap: 10px;
 }
+/* The badges either side of the mischief counter. One each at two players,
+   two each at four — and they mirror which side of the screen that player's
+   pane is on, so a kid looks toward her own half to find her score. */
+.score-group {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
 .score, .mischief {
   display: flex;
   align-items: center;
@@ -613,8 +673,26 @@ html, body {
   border-radius: 50%;
   border: 3px solid var(--ink);
 }
+/* The pip colour is written on from `styleCss` when the badge is built, so
+   the palette in core/palette.js stays the one place a player colour lives.
+   These are the fallback for a badge that somehow arrives unpainted. */
 .score.p1 .pip { background: var(--ember); }
 .score.p2 .pip { background: var(--frost); }
+.score.p3 .pip { background: var(--storm); }
+.score.p4 .pip { background: var(--blossom); }
+
+/* FOUR BADGES PLUS THE MISCHIEF COUNTER DO NOT FIT AT TWO PLAYERS' SIZE, and
+   what falls off is the RIGHTMOST badge — so at three or four the whole row
+   tightens rather than the last kitten silently losing her score off the edge
+   of the screen. Two players are untouched: this only applies under
+   `.hud-four`, which Game._buildHud sets from the party size. */
+.hud-four .scoreboard,
+.hud-four .score-group { gap: 6px; }
+.hud-four .score,
+.hud-four .mischief { padding: 4px 9px; font-size: 12px; letter-spacing: 0.5px; }
+.hud-four .score .nm { font-size: 14px; letter-spacing: 1px; }
+.hud-four .score b { font-size: 16px; }
+.hud-four .score .pip { width: 10px; height: 10px; border-width: 2px; }
 .score .nm { font-family: 'Bangers', cursive; letter-spacing: 1.5px; font-size: 17px; }
 .score b { font-size: 20px; font-family: 'Bangers', cursive; color: var(--vermillion); }
 .mischief {
@@ -979,20 +1057,63 @@ html, body {
   width: min(900px, 94vw);
   pointer-events: none;
 }
-#arena-hud .ah-side { flex: 1 1 0; }
-#arena-hud .ah-side.p1 { text-align: right; }
+/* ONE COLUMN PER SIDE, SIDES SPLIT AROUND THE ROUND BOX. At two players this
+   is exactly the old two-column layout — one side each way, one fighter in
+   each — which is the point: the girls play two-player and their HUD must not
+   move. Extra fighters stack inside their own side's column. */
+#arena-hud .ah-wing {
+  flex: 1 1 0;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+#arena-hud .ah-wing.r { justify-content: flex-end; }
+#arena-hud .ah-side {
+  flex: 1 1 0;
+  min-width: 0;
+  /* The team colour, as a rule the whole column inherits. In a duel or a free
+     for all this is still set and simply has nothing on it to paint, because
+     the swatch and the name are both suppressed — see `Tournament.teamed`. */
+  border-top: 3px solid var(--team, transparent);
+  padding-top: 3px;
+}
+#arena-hud .ah-side.r { text-align: right; }
+#arena-hud .ah-team {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Bangers', cursive;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: var(--team, var(--paper));
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.9);
+}
+#arena-hud .ah-side.r .ah-team { justify-content: flex-end; }
+#arena-hud .ah-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 2px solid var(--ink);
+  background: var(--team, transparent);
+}
+/* A knocked-out fighter dims rather than disappearing: in a tag team the fact
+   that your partner is DOWN is the shape of the round, and a row that vanishes
+   reads as the HUD losing her rather than as her losing. */
+#arena-hud .ah-f { margin-top: 3px; }
+#arena-hud .ah-f.out { opacity: 0.42; }
 #arena-hud .ah-name {
   display: flex;
   align-items: center;
   gap: 8px;
   font-family: 'Bangers', cursive;
-  font-size: 20px;
+  font-size: 18px;
   letter-spacing: 1.6px;
   color: var(--paper);
   text-shadow: 0 2px 5px rgba(0, 0, 0, 0.85);
 }
-#arena-hud .p1 .ah-name { justify-content: flex-end; }
-#arena-hud .ah-pips { display: inline-flex; gap: 5px; }
+#arena-hud .ah-side.r .ah-name { justify-content: flex-end; }
+#arena-hud .ah-pips { display: inline-flex; gap: 5px; margin-left: auto; }
+#arena-hud .ah-side.r .ah-pips { margin-left: 0; margin-right: auto; order: -1; }
 #arena-hud .ah-pips i {
   width: 13px;
   height: 13px;
@@ -1002,23 +1123,27 @@ html, body {
 }
 #arena-hud .ah-pips i.won { background: var(--gold); border-color: var(--gold); }
 #arena-hud .ah-bar {
-  height: 20px;
-  margin-top: 4px;
+  height: 18px;
+  margin-top: 3px;
   background: rgba(29, 18, 22, 0.85);
   border: 3px solid var(--ink);
   border-radius: 7px;
   overflow: hidden;
 }
-/* Player 2's bar drains toward her own side of the screen, which is the
-   convention and also the only way the two read as facing each other. */
-#arena-hud .p1 .ah-bar { direction: rtl; }
+/* The right-hand side's bars drain toward their own edge of the screen, which
+   is the convention and also the only way two sides read as facing each other. */
+#arena-hud .ah-side.r .ah-bar { direction: rtl; }
+/* The fill colour is set INLINE, per kitten, from the same `styleCss` the
+   marker ring and the minimap pip read. It used to be two CSS rules — ember
+   here, frost for `.p1` — which is two of the four cats and no way to say the
+   other two. The value here is only the fallback for a bar drawn before a
+   style is known. */
 #arena-hud .ah-fill {
   display: block;
   height: 100%;
   background: var(--ember);
   transition: width 0.16s ease-out;
 }
-#arena-hud .p1 .ah-fill { background: var(--frost); }
 /* The colour change is the warning; the pulse is what carries it in the
    corner of an eye that is busy watching the other kitten. A static red bar
    at 12% and a static red bar at 30% look the same from across a sofa. */
@@ -1039,6 +1164,29 @@ html, body {
   background: var(--paper-2);
   border: 3px solid var(--ink);
   border-radius: 9px;
+  /* A column, so the round clock sits ABOVE the round number in the one box
+     both girls already read. Two lines rather than two boxes: a second counter
+     somewhere else on the screen is a second place to look mid-exchange. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.05;
+}
+/* Bigger than the round it sits over, because it is the number that changes.
+   `tabular-nums` so 1:09 and 1:10 are the same width — a clock that jitters
+   sideways every second drags the eye off the fight. */
+#arena-hud .ah-clock {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+#arena-hud .ah-round { font-size: 14px; opacity: 0.82; }
+/* The last fifteen seconds, when "ahead on damage" stops being trivia and
+   starts being the result. Same pulse as a critical health bar, on purpose —
+   one visual language for "this is about to be decided".
+   NO `animation-fill-mode` — see the preview-pane note in HANDOFF. */
+#arena-hud .ah-clock.low {
+  color: #c0281f;
+  animation: critPulse 0.55s ease-in-out infinite;
 }
 /* The feast clock lives in the round slot rather than getting a box of its
    own: it is the one spot on this HUD both girls are already reading, and a
@@ -1222,9 +1370,27 @@ html, body {
   padding: 14px 16px 16px;
   background: rgba(255, 255, 255, 0.42);
 }
-.kd-p0 { --me: #ff8a3d; }
-.kd-p1 { --me: #ff6fae; }
+.kd-p0 { --me: var(--ember); }
+.kd-p1 { --me: var(--frost); }
+.kd-p2 { --me: var(--storm); }
+.kd-p3 { --me: var(--blossom); }
 .kd-card { box-shadow: inset 0 0 0 3px var(--me); }
+
+/* The points row on a trade card. A ROW, not a ninth slot: points are not one
+   of the eight she can wear, and drawing them in the grid would say they are. */
+.kd-points {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+.kd-points b { font-family: 'Bangers', cursive; font-size: 17px; color: var(--vermillion); }
+.kd-points.cursor { border-color: var(--me); background: rgba(255, 255, 255, 0.5); }
 
 .kd-name {
   font-family: 'Bangers', cursive;
@@ -1325,3 +1491,75 @@ html, body {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.85), 0 -1px 0 rgba(255, 255, 255, 0.6);
 }
 .kd-row-num { text-align: right; font-size: 13px; }
+
+/* --- PICK YOUR SIDE ------------------------------------------------------
+   One column per side, each in its team colour, with the kittens standing in
+   it. NO `.menu-btn` anywhere: MenuNav drives one shared cursor and this
+   screen needs one per player, because each girl moves HERSELF. */
+.tp-body {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin: 10px 0 4px;
+  flex-wrap: wrap;
+}
+.tp-side {
+  flex: 1 1 150px;
+  min-width: 140px;
+  padding: 8px 10px 10px;
+  background: var(--paper-2);
+  border: 4px solid var(--team, var(--ink));
+  border-radius: 12px;
+}
+/* THE WAITING ROOM. Everybody starts here and has to walk herself out of it —
+   see `Game._openTeamPicker`. Dashed and grey so it reads as a holding pen
+   rather than as a fourth team somebody might reasonably try to win on. */
+.tp-none {
+  border-style: dashed;
+  border-color: rgba(29, 18, 22, 0.42);
+  background: rgba(29, 18, 22, 0.06);
+}
+.tp-none .tp-head { color: rgba(29, 18, 22, 0.55); }
+.tp-head {
+  font-family: 'Bangers', cursive;
+  font-size: 20px;
+  letter-spacing: 2.4px;
+  color: var(--team, var(--ink));
+  text-align: center;
+  margin-bottom: 6px;
+}
+.tp-cat {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 7px;
+  margin-top: 5px;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  border-radius: 9px;
+  font-family: 'Bangers', cursive;
+  font-size: 17px;
+  letter-spacing: 1.2px;
+  color: var(--ink);
+}
+.tp-pip {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  background: var(--me, var(--ember));
+  flex: 0 0 auto;
+}
+/* The stick prompt rides on her own row rather than in the footer: whose
+   stick moves whom is the one thing this screen has to make obvious. */
+.tp-keys { margin-left: auto; opacity: 0.5; font-size: 14px; }
+.tp-empty {
+  margin-top: 5px;
+  padding: 5px 7px;
+  font-size: 13px;
+  opacity: 0.45;
+  font-style: italic;
+}
+/* Why JUMP is refused, in the same red the health bar uses for trouble. A
+   confirm that silently does nothing is the failure this game keeps naming. */
+.tp-bad { color: #d62b20; font-weight: bold; }

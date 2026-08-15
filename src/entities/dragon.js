@@ -26,8 +26,22 @@ import { Billboard } from '../core/gfx.js';
  * `World.dragonPerches()` resolves these once and both callers read the same
  * answer, so the furniture avoids exactly the spots the dragons end up on.
  *
- * TWO on the home island, deliberately: with one, the second kitten could
- * never follow the first into the sky.
+ * ONE PER PLAYER ON THE HOME ISLAND, deliberately — which is why there are
+ * four. The rule has always been that no kitten can be left on the ground
+ * watching her sister fly, and with two of them that meant two. It is the same
+ * rule at four, not a new one: a third and fourth player can join at any time,
+ * mid-game, and the moment a fourth joins a two-dragon home island is a kid
+ * with nothing to climb on and no way of knowing the game did not simply break
+ * for her. `world-check` asserts the count against `MAX_PLAYERS` rather than
+ * against 4, so seating a fifth kitten one day fails here rather than in play.
+ *
+ * THEY ARE NOT SPAWNED AS PLAYERS JOIN, and that is the choice. A dragon
+ * fading into existence behind a kid who has just picked her cat is the kind of
+ * thing that reads as a glitch; four standing there from the start read as
+ * four dragons. It also keeps the world's furniture placement deterministic —
+ * `placeDragonBalls` keeps its grottos clear of every PERCH, and a perch that
+ * appears twenty minutes into a session is one the grotto was never asked to
+ * avoid.
  */
 /* FIVE OF THESE WERE THE ISLAND'S OWN CENTRE, spelled out as world
    coordinates — `{x: 150, z: -95}` IS island 1, and so on down the list. Two
@@ -43,11 +57,35 @@ import { Billboard } from '../core/gfx.js';
 
    They now sit about half a radius out, roughly OPPOSITE their island's
    shrine, which leaves the whole far side clear for the star's furniture. The
-   home island's two were always placed by hand either side of the plaza and
-   are untouched. */
+   home island's originals were always placed by hand either side of the plaza
+   and are untouched.
+
+   THE SECOND HOME PAIR MIRRORS THE FIRST ACROSS THE PLAZA rather than being
+   squeezed in beside it. The road runs the length of the town, the first two
+   stand either side of its south end, and these two stand either side of its
+   north end — so the four are a gate at each end of the street a kid already
+   walks down, and none of them is more than a stroll from where she starts.
+   Bunching four onto the same patch would have been simpler and reads as one
+   heap of dragon from anywhere except directly overhead.
+
+   BOTH NEW PERCHES WERE MEASURED, NOT CHOSEN. Asking `findOpenSpot` for
+   anything in the market street funnels it into the plaza's flattened middle
+   — which is where the 1-star and the road already are — so these two were
+   picked by sweeping the island for ground that `findOpenSpot` leaves exactly
+   where it is (it moves both by 0.0) while staying clear of solids, props,
+   bamboo, the shrines and the star.
+
+   THE NEW PAIR REPEATS THE HOME BREEDS INSTEAD OF INTRODUCING TWO MORE. Every
+   outer island gets a breed of its own, and that is the whole reason to fly to
+   one: a colour on the horizon you have not ridden yet. Handing the home
+   island four of the five breeds would spend that on the one island nobody has
+   to travel to. The two colours alternate so no two of a kind stand side by
+   side. */
 export const DRAGON_SPOTS = [
-  { x: 26, z: 78, breed: 0 },        // home island, east of the plaza
-  { x: -26, z: 74, breed: 1 },       // home island, west of the plaza
+  { x: 26, z: 78, breed: 0 },        // home island, south gate — east of the road
+  { x: -26, z: 74, breed: 1 },       // home island, south gate — west of the road
+  { x: 33, z: -5, breed: 1 },        // home island, north gate — east of the road
+  { x: -33, z: -2, breed: 0 },       // home island, north gate — west of the road
   { x: 133.5, z: -106.3, breed: 2 }, // autumn
   { x: -109.8, z: 130.4, breed: 3 }, // ash
   { x: 254.7, z: 72.4, breed: 4 },   // dusk — further out; see below

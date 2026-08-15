@@ -1,5 +1,6 @@
 import { MAX_HP, KO_TIME } from '../entities/player.js';
 import { scoreOf, saveResult, loadBoard, NameEntry, ALPHABET, NAME_MAX } from './leaderboard.js';
+import { styleCss } from '../core/palette.js';
 
 /* ---------------------------------------------------------------------------
    The World Martial Arts Tournament.
@@ -23,6 +24,186 @@ import { scoreOf, saveResult, loadBoard, NameEntry, ALPHABET, NAME_MAX } from '.
    other than the fight.
 --------------------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------------------
+   THE LEAGUES.
+
+   A tournament is a set of SIDES, and everything else here is written against
+   sides rather than against two players: a round is won by a side, `wins` is
+   counted per side, and the one gate on player-versus-player damage asks
+   whether two kittens are on the same one.
+
+   `sides` maps FIGHTER INDEX -> SIDE INDEX, so a free-for-all is simply every
+   fighter on her own side and a duel is the two-player case of `pairs`. That is
+   what lets the whole feature be one code path: there is no "team mode" branch
+   anywhere, because a duel already IS a team mode with one fighter a side.
+
+   EACH LEAGUE KEEPS ITS OWN BOARD. A 2v2 win and a free-for-all win are not the
+   same achievement and putting them in one table makes the number meaningless —
+   see `boardKey` and `leaderboard.js`.
+
+   WHICH LEAGUES EXIST DEPENDS ON WHO IS PLAYING, and the two-player game is
+   deliberately unchanged: two kittens get DUEL and nothing else, which is the
+   tournament the girls already know, on the board it is already on.
+--------------------------------------------------------------------------- */
+export const MODES = [
+  {
+    id: 'duel',
+    name: 'DUEL',
+    blurb: 'One against one.',
+    players: [2],
+    /** @param {number} n fighters -> side per fighter */
+    sides: () => [0, 1],
+  },
+  {
+    id: 'ffa',
+    name: 'FREE FOR ALL',
+    blurb: 'Everyone for herself. Last one standing takes the round.',
+    players: [3, 4],
+    sides: (n) => Array.from({ length: n }, (_, i) => i),
+  },
+  {
+    id: 'pairs',
+    name: 'TAG TEAM · 2v2',
+    blurb: 'Two a side. Your partner cannot hurt you.',
+    players: [4],
+    sides: () => [0, 0, 1, 1],
+  },
+  {
+    id: 'two_one',
+    name: 'HANDICAP · 2v1',
+    blurb: 'Two against one. The lone fighter gets a slightly bigger bar.',
+    players: [3],
+    sides: () => [0, 0, 1],
+    /** The outnumbered side is given more health — see `_handicap`. */
+    handicap: true,
+  },
+  {
+    id: 'three_one',
+    name: 'HANDICAP · 3v1',
+    blurb: 'Three against one. The champion had better be good.',
+    players: [4],
+    sides: () => [0, 0, 0, 1],
+    handicap: true,
+  },
+  /* THREE SIDES, WHICH IS NOT A NEW CODE PATH — and that is the whole reason
+     it is one line. `sides` has always been a fighter -> side map rather than a
+     pair of teams, so everything downstream already counted sides rather than
+     twos: `wins` sizes itself off the highest side index, `_sidesUp` is a Set,
+     `postsFor` has bearings for three, and `handicapFor` divides by how big
+     each side actually is. A duel is a team mode with one fighter a side and
+     this is a team mode with an odd number of them.
+
+     THE TWO LONE FIGHTERS GET THE BIGGER BAR, and they need it more than a
+     handicap fighter does: each of them is outnumbered by the pair AND has the
+     other loner to worry about, so the pair wins by default without it.
+     `handicapFor` works that out from the side sizes rather than being told —
+     and it is the same fifth of a bar a 3v1 hands out, because it is capped.
+     See `HANDICAP_MAX`.
+
+     A ROUND ENDS WHEN ONE SIDE IS LEFT, unchanged. With three sides that means
+     two of them have to be wiped, which is what makes this the longest league
+     in the game and the only one where the answer to "who do I hit" is a real
+     question. */
+  {
+    id: 'two_one_one',
+    name: 'FREE TEAMS · 2v1v1',
+    blurb: 'A pair against two loners. Everybody else is a target.',
+    players: [4],
+    sides: () => [0, 0, 1, 2],
+    handicap: true,
+  },
+];
+
+export const MODE_BY_ID = Object.fromEntries(MODES.map((m) => [m.id, m]));
+
+/* ---------------------------------------------------------------------------
+   WHO IS ON MY SIDE — the one question a team match did not answer.
+
+   In a 2v2 there was nothing on screen or in the world that said who your
+   partner was. You found out by swinging at somebody and watching nothing
+   happen, which is the worst possible way to learn it: the rule that protects
+   your partner is invisible, so the first thing it teaches you is that your
+   attack is broken.
+
+   RED AND BLUE, BECAUSE THAT IS WHAT TEAM COLOURS ARE. There is no cleverness
+   available here and none wanted — every game either girl has played uses the
+   same two, and the third side in a 2v1v1 takes gold, which is already this
+   game's "won a round" colour and reads as a third thing rather than as a
+   variation on the first two.
+
+   THEY ARE DELIBERATELY NOT THE PLAYER COLOURS. A kitten's own colour answers
+   "which one is me" — her marker ring, her minimap pip, her score badge and now
+   her health bar all share it — and a team colour answers "who is with me".
+   Painting one with the other loses the question a nine-year-old needs most in
+   a hurry, which is finding herself. */
+export const TEAM_COLOURS = ['#ff4136', '#3d7bff', '#ffc531'];
+export const TEAM_NAMES = ['RED', 'BLUE', 'GOLD'];
+
+/**
+ * "She has not picked a side yet" — the seat every kitten holds when the team
+ * picker opens, and one no league will ever accept.
+ *
+ * IT IS DELIBERATELY AN ILLEGAL SEAT rather than a flag beside the seats.
+ * `_validSeats` already refuses anything outside `0 .. n-1`, so an undecided
+ * kitten makes the whole arrangement invalid for free, and the confirm that
+ * used to fire on the first frame of the picker cannot — see
+ * `Game._openTeamPicker` for what that cost. A separate `chosen[]` would be a
+ * second thing to keep in step with the first, and the failure mode is a match
+ * that starts with somebody on a side she never picked.
+ */
+export const NO_SIDE = -1;
+
+export function teamColour(side) {
+  return TEAM_COLOURS[side % TEAM_COLOURS.length];
+}
+export function teamName(side) {
+  return TEAM_NAMES[side % TEAM_NAMES.length];
+}
+
+/** The leagues a party of `n` can actually run. */
+export function modesFor(n) {
+  return MODES.filter((m) => m.players.includes(n));
+}
+
+/**
+ * The most any fighter's bar may be scaled by, however badly she is outnumbered.
+ *
+ * IT USED TO BE UNCAPPED, AND THAT IS THE BUG THIS CONSTANT EXISTS FOR. The
+ * multiplier was `biggest / mine`, so the lone fighter in a 3v1 opened on
+ * THREE HUNDRED health and the two loners in a 2v1v1 on two hundred. On paper
+ * it is fair — one bar each, three of them, one of her — and on the deck it is
+ * a different game: her sisters watch a bar that will not move while she takes
+ * three rounds to lose one, and the girl who "agreed to be alone" is suddenly
+ * the one nobody can beat. A knockout is also the round, so the side with the
+ * long bar is the side that decides how long everyone else's afternoon is.
+ *
+ * So the handicap is a NUDGE, not a compensation: a fifth of a bar more,
+ * whether she is against two or against three. It is deliberately the SAME
+ * number at both — being outnumbered worse is a reason to fight differently,
+ * not a reason to be handed a different amount of health, and two leagues that
+ * hand out different bars for the same job make the record boards
+ * incomparable. What actually makes a handicap match survivable is the feast,
+ * the snacks and rage, all of which she gets too.
+ */
+export const HANDICAP_MAX = 1.2;
+
+/**
+ * How much health a side starts with, as a multiple of the base bar.
+ *
+ * ONLY THE OUTNUMBERED SIDE IS TOUCHED, and it is CAPPED — see `HANDICAP_MAX`.
+ * Everyone in the ring is on the same bar to within a fifth of it, whoever she
+ * is standing with.
+ *
+ * @returns {number[]} multiplier per fighter
+ */
+export function handicapFor(sides, on = true) {
+  if (!on) return sides.map(() => 1);
+  const counts = {};
+  for (const s of sides) counts[s] = (counts[s] ?? 0) + 1;
+  const biggest = Math.max(...Object.values(counts));
+  return sides.map((s) => Math.min(HANDICAP_MAX, biggest / counts[s]));
+}
+
 /** Round wins needed to take the tournament, and the most rounds it can run. */
 export const WINS_NEEDED = 2;
 export const MAX_ROUNDS = 3;
@@ -33,8 +214,16 @@ const CARD_TIME = 3.4;
 const COUNT_FROM = 3;
 /** Held on the knockout before the next round is set up. */
 const KO_HOLD = KO_TIME + 1.4;
-/** A round cannot run forever — see `_updateLive`. */
-const ROUND_LIMIT = 120;
+/**
+ * A round cannot run forever — see `_updateLive`.
+ *
+ * EXPORTED BECAUSE IT IS NOW ON SCREEN. It ran silently for its whole life,
+ * which meant the one rule in the tournament nobody could see was also the one
+ * that could take a round off you — two kittens circling each other at 118
+ * seconds had no idea anything was about to be decided on damage. The clock in
+ * `_paintHud` counts this down, so what the game measures is what she reads.
+ */
+export const ROUND_LIMIT = 120;
 
 /**
  * A ring-out: what it costs, and how long you have to be off before it counts.
@@ -47,12 +236,43 @@ const ROUND_LIMIT = 120;
  * lose the round in a frame she did not understand. One currency, one bar,
  * one way to lose. The ring still matters because 30 is a third of it.
  *
- * The GRACE is what makes it fair. A fighter is a point and the deck edge is
- * a line, so a knockback that clips the corner would fire instantly; half a
- * second is long enough to scramble back on and short enough that standing
- * off the stage is never a tactic.
+ * THE GRACE IS GONE FROM A LIVE ROUND, AND THE RULE MOVED TO THE STONE
+ * INSTEAD. Half a second bought fairness against a test that was firing in the
+ * wrong place: `out > 0` is the PAINTED LINE, which sits `ARENA_OUT` (1.1)
+ * INSIDE the deck edge — so a kitten standing on the stone margin outside the
+ * paint was being counted out of a ring she was visibly still on, and the only
+ * thing stopping it was a timer she could run out by walking back. Two
+ * complaints, one cause: rung out while still on the stage, and then a
+ * half-second of nothing happening once she really was off it.
+ *
+ * So the penalty asks the honest question — HAS SHE COME DOWN ON THE LOWER
+ * FLOOR? — and fires the moment the answer is yes. The paint keeps the job it
+ * is good at: it is where the warning ring lights, a stride before the edge.
+ * The grace survives only for the feast's free return, where nothing is at
+ * stake and snapping a kitten back mid-stride for chasing a rabbit down the
+ * steps would be the arena taking away the one thing she has to do.
  */
 const OUT_GRACE = 0.5;
+/**
+ * How far below the deck's surface counts as "her feet are not on the ring".
+ *
+ * Small, because the deck is a flat platform and anything under it is the
+ * island — but not zero: a kitten who lands hard dips momentarily under her
+ * own platform, and a threshold of zero turns that frame into a ring-out on
+ * the far side of the deck from any edge.
+ */
+const OUT_DROP = 0.6;
+/**
+ * How far below the deck counts as "she has fallen off it".
+ *
+ * Generous on purpose. It only has to be deeper than the dip a landing can put
+ * her through — a kitten hitting the deck hard is momentarily under its own
+ * surface — and shallower than anywhere she could hang about. Anything past
+ * the rim is a hundred units of open sky, so there is no case in between. It
+ * is the case `onGround` can never answer: out there nothing is under her, so
+ * waiting to land means falling forever.
+ */
+const OUT_FALL = 3;
 const OUT_DAMAGE = 30;
 
 /* ---------------------------------------------------------------------------
@@ -93,13 +313,20 @@ export class Tournament {
     this.state = 'off';
     this.t = 0;
     this.round = 0;
-    /** Round wins, by player index. */
+    /** The league being fought. Set by `begin`; DUEL for two players. */
+    this.mode = MODES[0];
+    /** Side index per fighter — the one structure the whole feature is written
+     *  against. `[0, 1]` is a duel; `[0, 0, 1, 1]` is a 2v2. */
+    this.sides = [0, 1];
+    /** Round wins, BY SIDE. Not by player: in a 2v2 both members of a side win
+     *  the same round, and counting it per kitten would need two rounds to
+     *  reach a "best of three". */
     this.wins = [0, 0];
     /** Total seconds actually spent fighting — the speed term of the score. */
     this.fightTime = 0;
     this.winner = null;
     this.entry = new NameEntry();
-    this.board = loadBoard();
+    this.board = loadBoard(this.mode.id);
     this.rank = -1;
 
     this.bannerEl = document.getElementById('arena-banner');
@@ -125,23 +352,160 @@ export class Tournament {
   /** True from the moment they board the griffin until they are home. */
   get active() { return this.state !== 'off'; }
 
+  /**
+   * Is this a legal way to stand for this league?
+   *
+   * IT COMPARES THE SHAPE, NOT THE SEATING. A 2v2 needs two sides of two; which
+   * two kittens are on which side is exactly what the picker exists to let them
+   * decide, so the test sorts the side sizes and compares those. That is also
+   * what makes 2v1 and 1v2 the same legal answer, which they are.
+   *
+   * The mode's own arrangement is the reference rather than a table written out
+   * here, so a league added later cannot forget to say what shape it wants.
+   *
+   * THE MODE IS AN ARGUMENT, NOT `this.mode`, and that is not tidiness. The
+   * team picker runs BEFORE `begin`, so at the moment it needs this answer the
+   * tournament is still carrying whatever league it last ran — which on a fresh
+   * game is the duel. Read off `this.mode` it happily reported that a perfectly
+   * good 2v2 was illegal, and the screen sat there telling four kittens to move
+   * somebody across when nobody needed to move at all.
+   */
+  _validSeats(seats, n, mode = this.mode) {
+    if (!mode || !Array.isArray(seats) || seats.length !== n) return false;
+    if (seats.some((s) => !Number.isInteger(s) || s < 0 || s >= n)) return false;
+    const shape = (list) => {
+      const c = {};
+      for (const s of list) c[s] = (c[s] ?? 0) + 1;
+      return Object.values(c).sort((a, b) => a - b).join(',');
+    };
+    return shape(seats) === shape(mode.sides(n));
+  }
+
+  /** Which side a fighter is on. */
+  sideOf(player) {
+    const i = this.game.players.indexOf(player);
+    return i < 0 ? -1 : (this.sides[i] ?? i);
+  }
+
+  /**
+   * MAY THESE TWO HURT EACH OTHER? Asked by `Game.strikePlayers`, right after
+   * `fighting`.
+   *
+   * NO FRIENDLY FIRE, and it is one more clause on the single gate rather than
+   * a rule of its own. A tag-team partner you can cut down is not a partner,
+   * and with two sisters on a side the first accident becomes an argument about
+   * whether it was an accident. A duel is unaffected: nobody shares a side.
+   */
+  allies(a, b) {
+    return a !== b && this.sideOf(a) >= 0 && this.sideOf(a) === this.sideOf(b);
+  }
+
+  /** Every fighter on a side, in fighter order. */
+  sideMembers(side) {
+    return this.game.players.filter((_, i) => this.sides[i] === side);
+  }
+
+  /** Sides with at least one fighter still standing. */
+  _sidesUp() {
+    const up = new Set();
+    this.game.players.forEach((p, i) => { if (!p.ko) up.add(this.sides[i]); });
+    return [...up];
+  }
+
+  /** Total damage a side has dealt this tournament — the timeout tiebreak. */
+  _sideDamage(side) {
+    return this.game.players.reduce(
+      (n, p, i) => n + (this.sides[i] === side ? p.dmgDealt : 0), 0
+    );
+  }
+
+  /** Which board this league writes to. See leaderboard.js. */
+  get boardKey() { return this.mode.id; }
+
+  /**
+   * Somebody joined or left mid-game.
+   *
+   * OUTSIDE A TOURNAMENT THIS IS FREE — the sides are rebuilt when `begin`
+   * runs. INSIDE one it cannot be, so a party change during a live tournament
+   * ends it rather than trying to re-deal the teams underneath the girls: a
+   * 2v2 that silently becomes a 2v1 between rounds is a match nobody agreed to
+   * and a scoreboard that means nothing.
+   */
+  onPartyChanged() {
+    if (this.state === 'off') return;
+    this.game.toast('The party changed — the tournament is called off', 0);
+    this.finish();
+    this.game._goHome?.();
+  }
+
   /** True while the tournament owns the whole screen (results + name entry). */
   get modal() { return this.state === 'result'; }
 
   /* ------------------------------- flow ---------------------------------- */
 
-  /** Both kittens have landed at the arena. Start the show. */
-  begin() {
+  /**
+   * Everybody has landed at the arena. Start the show.
+   *
+   * @param {string=} modeId which league. Defaults to the first one this party
+   *        size can run, which for two players is the duel it has always been.
+   */
+  /**
+   * @param {?string} modeId  the league
+   * @param {?number[]} seats one side per fighter, from the team picker —
+   *        who chose to stand where. Null falls back to the mode's own
+   *        arrangement, which is what a duel and a free-for-all always use and
+   *        what a team league gets if the picker was skipped.
+   */
+  begin(modeId = null, seats = null) {
+    const n = this.game.players.length;
+    const available = modesFor(n);
+    this.mode = MODE_BY_ID[modeId] ?? available[0] ?? MODES[0];
+    /* THE PICKER'S ANSWER WINS, IF IT GAVE ONE. `mode.sides(n)` is the default
+       arrangement — the first two kittens are the pair, the last one is alone —
+       and it was the ONLY arrangement, which meant who your partner was fell
+       out of the order you happened to join in. `_validSeats` is what makes it
+       safe to accept: it checks the shape rather than trusting the caller, so a
+       league can never be started with the wrong number of fighters a side. */
+    this.sides = (seats && this._validSeats(seats, n)) ? seats.slice() : this.mode.sides(n);
+    /* A mode whose table does not cover this party — a 2v2 with three players
+       left after somebody dropped out — must not deal a fighter no side at
+       all, which would make her unkillable and the round unwinnable. */
+    while (this.sides.length < n) this.sides.push(this.sides.length);
+    this.sides = this.sides.slice(0, n);
+
     this.state = 'card';
     this.round = 0;
-    this.wins = [0, 0];
+    this.wins = Array.from({ length: Math.max(...this.sides) + 1 }, () => 0);
     this.fightTime = 0;
     this.winner = null;
     this.rank = -1;
     this.entry.reset();
-    for (const p of this.game.players) {
+
+    /* IS THIS A TEAM MATCH AT ALL? Derived from the sides rather than from a
+       flag on the mode, so it cannot disagree with them — and it is what
+       decides whether the team furniture appears. In a duel or a free-for-all
+       everybody is her own side, so a pennant over every head and a colour name
+       on every bar would be four labels saying nothing. */
+    this.teamed = this.sides.slice(0, n).some(
+      (s, i, all) => all.some((t, j) => j !== i && t === s)
+    );
+
+    const hp = handicapFor(this.sides, !!this.mode.handicap);
+    this.game.players.forEach((p, i) => {
       p.dmgDealt = 0;
       p.dmgTaken = 0;
+      /* THE PENNANT OVER HER HEAD, and it is only ever on in a team match —
+         see `teamed`. This is the half of "who is with me" that lives in the
+         world rather than on the HUD, and it is the half that matters while
+         you are swinging: the HUD is at the top of the screen and the kitten
+         you are about to hit is in the middle of it. */
+      p.setTeamMark(this.teamed ? teamColour(this.sides[i]) : null);
+      /* THE HANDICAP IS A BIGGER BAR, NOT A WEAKER OPPONENT. Scaling everyone
+         else's damage down would make the lone fighter's own numbers lie — she
+         would land a dash and see it take less than it takes in every other
+         mode. A slightly longer bar is the same fight, with a head start; see
+         `HANDICAP_MAX` for why it is slight. */
+      p.setHpScale(hp[i]);
       /* ROUND ONE IS ALWAYS A FULL BAR, SAID OUT LOUD. Since the feast landed,
          `_nextRound` starts each kitten on whatever she is carrying — and for
          the first round of a tournament that is whatever she happened to walk
@@ -153,7 +517,7 @@ export class Tournament {
       p.hp = p.maxHp;
       p.barOn = true;
       p.landAngel();
-    }
+    });
     this.hudEl?.classList.remove('hidden');
     /* The deck is stocked before the first countdown rather than after it.
        The first thing either girl has to learn about the snacks is that they
@@ -180,6 +544,10 @@ export class Tournament {
       p.landAngel();
       p.barOn = false;
       p.hpGroup.visible = false;
+      /* The pennant off with the bar, and for the same reason as `nearEdge`
+         below: nothing else ever clears it, so a kitten flown home from a
+         2v2 would wear a red flag over her head round the town all afternoon. */
+      p.setTeamMark(null);
       p.hp = p.maxHp;
       p.ko = false;
       p.koT = 0;
@@ -257,7 +625,10 @@ export class Tournament {
        until the gong. Two kittens standing still on opposite sides of a ring
        is the picture that says "this is a duel" — and it is also the only
        moment either girl gets to see where her sister is before it starts. */
-    const posts = this.world.arenaPosts;
+    /* POSTS COME FROM THE SIDES, so teammates open beside each other and the
+       other team is across the ring. Two fighters fall through to the pair of
+       posts the world already had, unchanged. */
+    const posts = this.world.postsForSides(this.sides);
     /* Nobody carries an animal across a round boundary. Both kittens are about
        to be teleported to their marks, and a rat pinned to a cat who is no
        longer where she was gets dragged across the deck for the rest of the
@@ -265,7 +636,17 @@ export class Tournament {
     this.game.menagerie?.releaseAll();
     this.game.players.forEach((p, i) => {
       const post = posts[i] ?? posts[0];
-      const other = posts[1 - i] ?? posts[0];
+      /* She faces the middle of everybody who is NOT on her side. In a duel
+         that is the other post, exactly as before; in a 2v2 it is the point
+         between the two kittens she is about to fight, which is what makes the
+         opening picture read as two teams rather than four cats in a square. */
+      const foes = posts.filter((_, j) => this.sides[j] !== this.sides[i]);
+      const other = foes.length
+        ? {
+          x: foes.reduce((n, q) => n + q.x, 0) / foes.length,
+          z: foes.reduce((n, q) => n + q.z, 0) / foes.length,
+        }
+        : (posts[1 - i] ?? posts[0]);
       /* WHAT SHE STARTS WITH IS DECIDED HERE, and it is asked of her state
          rather than remembered from the last frame of the feast. An angel was
          knocked out, so she is reborn at the top of her bar; anyone else lived
@@ -304,17 +685,44 @@ export class Tournament {
   onHit(attacker, target, dealt, kind) {
     this.game.hitSpark?.(target, kind);
     if (!target.ko) return;
-    this._roundOver(attacker.index, `${attacker.name} knocks ${target.name} down!`);
+    this._checkRoundOver(`${attacker.name} knocks ${target.name} down!`);
   }
 
-  _roundOver(winnerIndex, message) {
+  /**
+   * A fighter went down — is the ROUND over?
+   *
+   * IT IS NOT OVER UNTIL A SIDE IS, which is the difference between a duel and
+   * every other league. In a duel one knockout is one side wiped and this is
+   * exactly what it always was; in a 2v2 the first kitten down leaves her
+   * partner fighting alone, which is the whole shape of a tag-team round and
+   * the reason to have one. Asking "did somebody go down" instead would end a
+   * 2v2 on the first knockout and make the second fighter on each side
+   * decorative.
+   */
+  _checkRoundOver(message) {
+    if (this.state !== 'live') return;
+    const up = this._sidesUp();
+    if (up.length > 1) {
+      // Still contested — say who went down, because in a four-way scrap it is
+      // not otherwise obvious which side just lost somebody.
+      this.game.toast(message, 0);
+      this.audio?.play('ringout');
+      return;
+    }
+    this._roundOver(up[0] ?? -1, message);
+  }
+
+  _roundOver(winnerSide, message) {
     if (this.state !== 'live') return;
     this.state = 'ko';
     this.t = 0;
-    this.wins[winnerIndex]++;
+    if (winnerSide >= 0) this.wins[winnerSide] = (this.wins[winnerSide] ?? 0) + 1;
     this.announcer?.say('sat_ko', 'DOWN! Oh, that had to hurt!');
     this._banner('K.O.', 'ko');
-    this.game.toast(message, winnerIndex);
+    // Addressed to a side now, so everybody on it hears it.
+    for (const p of winnerSide >= 0 ? this.sideMembers(winnerSide) : this.game.players) {
+      this.game.toast(message, p.index);
+    }
   }
 
   /* ------------------------------ update --------------------------------- */
@@ -365,15 +773,20 @@ export class Tournament {
            pause menu. Whoever has done the most damage takes it — the honest
            reading of who was winning. */
         if (this.t > ROUND_LIMIT) {
-          const [a, b] = this.game.players;
-          const lead = a.dmgDealt === b.dmgDealt ? -1 : (a.dmgDealt > b.dmgDealt ? 0 : 1);
-          if (lead < 0) {
+          /* Ahead on damage takes it, counted PER SIDE — in a 2v2 the honest
+             reading of who was winning is what the team did between them, not
+             which individual happened to land most. */
+          const scores = this.wins.map((_, s) => this._sideDamage(s));
+          const best = Math.max(...scores);
+          const leaders = scores.map((v, s) => (v === best ? s : -1)).filter((s) => s >= 0);
+          if (leaders.length !== 1 || best <= 0) {
             this.state = 'ko';
             this.t = 0;
             this._banner('DRAW', 'ko');
             this.game.toast('Time! Nobody landed enough — the round is a draw', 0);
           } else {
-            this._roundOver(lead, `Time! ${this.game.players[lead].name} was ahead on damage`);
+            const names = this.sideMembers(leaders[0]).map((p) => p.name).join(' and ');
+            this._roundOver(leaders[0], `Time! ${names} was ahead on damage`);
           }
         }
         break;
@@ -438,9 +851,37 @@ export class Tournament {
          she is chasing a rabbit reads as damage she cannot find. */
       p.nearEdge = damage > 0 && out > -3.5 && out <= 0;
 
-      if (out <= 0) { p.outT = 0; continue; }
+      /* SHE IS OUT WHEN SHE IS STANDING ON THE LOWER FLOOR, AND NOT BEFORE.
+         Three separate things have to be true, and each one is a bug that was
+         really in here:
+
+         PAST THE LINE (`out > 0`) — she is outside the ring horizontally.
+
+         OFF THE STONE (`p.position.y < R.y - OUT_DROP`) — her feet are BELOW
+         the deck. This is the half that was missing, and it is what rang
+         kittens out while they were still visibly on the stage: the deck is 56
+         across and the paint sits 1.1 units inside its edge, so there is a
+         full stride of real stone past the line. Standing on stone is standing
+         in the ring, whatever the paint says. The paint is the WARNING (see
+         `nearEdge` above), not the penalty.
+
+         AND SHE HAS COME DOWN — `onGround` on the island below, or fallen past
+         `OUT_FALL` with nothing under her at all. Airborne over the line she
+         keeps her jumps, her dive and every frame of the arc to get back,
+         which is what stops a big hit costing 30 health for an arc that ends
+         on the deck.
+
+         NO GRACE ONCE ALL THREE HOLD. She is standing on the ground outside
+         the ring; there is nothing left to wait for, and half a second of
+         nothing happening reads as the rule being broken. The feast's free
+         return keeps the grace — see `OUT_GRACE`. */
+      const R0 = this.world.arenaRing;
+      const offStone = !R0 || p.position.y < R0.y - OUT_DROP;
+      const fallen = R0 && p.position.y < R0.y - OUT_FALL;
+      const down = offStone && (p.onGround || fallen);
+      if (out <= 0 || !down) { p.outT = 0; continue; }
       p.outT = (p.outT ?? 0) + dt;
-      if (p.outT < OUT_GRACE) continue;
+      if (p.outT < (damage > 0 ? 0 : OUT_GRACE)) continue;
 
       p.outT = 0;
       const R = this.world.arenaRing;
@@ -471,9 +912,40 @@ export class Tournament {
       this.audio?.play('ringout');
       this._banner('RING OUT!', 'ko');
       this.game.toast(`${p.name} was thrown out of the ring! −${dealt}`, p.index);
-      if (p.ko) {
-        this._roundOver(1 - p.index, `${p.name} is out — the round goes to ${this.game.players[1 - p.index].name}`);
-      }
+      if (p.ko) this._checkRoundOver(`${p.name} is out of the ring!`);
+    }
+  }
+
+  /* ------------------------------ the purse ------------------------------ */
+
+  /**
+   * Winning pays, in the points the dealer takes.
+   *
+   * THIS MAKES THE ECONOMY RENEWABLE, AND IT WAS DELIBERATELY FIXED BEFORE.
+   * Every point in the game came from knocking something over — 4550 across 216
+   * props — and the orbs only exist once everything has been knocked over, so
+   * the pot was closed and a stack of four was priced to be unreachable on
+   * purpose. A tournament can be replayed all afternoon, so this opens it.
+   *
+   * That is the point of it: a kitten who has spent her share has something to
+   * do about it besides asking her sister, and the arena gets a reason to be
+   * gone back to. But it does move the ceiling, so the purse is ONE ORB and it
+   * is DERIVED rather than picked — `kotodama.price` already knows what an orb
+   * costs for this party size, so the purse tracks the price automatically
+   * instead of being a second number that has to be kept in step with it.
+   *
+   * EVERY MEMBER OF THE WINNING SIDE IS PAID THE SAME. Splitting it would make
+   * a 2v2 win worth half a duel win each, which teaches two sisters that
+   * teaming up is worse than fighting — the exact opposite of the reason the
+   * team modes exist.
+   */
+  _payPurse(winners) {
+    const purse = this.game.kotodama?.price ?? 0;
+    if (purse <= 0) return;
+    for (const p of winners) {
+      p.score += purse;
+      this.game.onScoreChanged?.(p);
+      this.game.toast(`${p.name} won ${purse} points in the ring!`, p.index);
     }
   }
 
@@ -482,27 +954,43 @@ export class Tournament {
   _finishTournament() {
     this.state = 'result';
     this.t = 0;
-    const wi = this.wins[0] === this.wins[1]
-      /* A dead heat is possible: three rounds, one of them a draw on the
-         clock. Damage decides it, and if that is level too the tournament is
-         a draw and nobody signs the board — which is a real outcome and has
-         to be said out loud rather than silently crowning player 1. */
-      ? (this.game.players[0].dmgDealt === this.game.players[1].dmgDealt
-        ? -1 : (this.game.players[0].dmgDealt > this.game.players[1].dmgDealt ? 0 : 1))
-      : (this.wins[0] > this.wins[1] ? 0 : 1);
 
-    this.winner = wi < 0 ? null : this.game.players[wi];
+    /* THE WINNER IS A SIDE. Most round wins takes it; a dead heat — three
+       rounds with one of them drawn on the clock — falls through to total
+       damage, and if that is level too the tournament is a draw and nobody
+       signs the board. That is a real outcome and has to be said out loud
+       rather than silently crowning whoever happens to be first in the list. */
+    const best = Math.max(...this.wins);
+    let lead = this.wins.map((w, s) => (w === best ? s : -1)).filter((s) => s >= 0);
+    if (lead.length > 1) {
+      const dmg = lead.map((s) => this._sideDamage(s));
+      const top = Math.max(...dmg);
+      lead = dmg.filter((v) => v === top).length > 1
+        ? [] : [lead[dmg.indexOf(top)]];
+    }
+    const ws = lead.length === 1 ? lead[0] : -1;
+
+    /** Everybody on the winning side, or empty for a draw. */
+    this.winners = ws < 0 ? [] : this.sideMembers(ws);
+    /* `winner` stays the single kitten the results screen and the name entry
+       are written against — the highest scorer on the winning side, so a 2v2
+       is signed by whoever actually earned it rather than by the lower index.
+       `winners` is what the purse and the board rows iterate. */
+    this.winner = this.winners.length
+      ? this.winners.reduce((a, b) => (b.dmgDealt > a.dmgDealt ? b : a))
+      : null;
     this.entry.reset();
 
     if (this.winner) {
       this.score = scoreOf({
-        wins: this.wins[wi],
+        wins: this.wins[ws],
         dealt: this.winner.dmgDealt,
         taken: this.winner.dmgTaken,
         seconds: this.fightTime,
         rounds: this.round,
         maxHp: MAX_HP,
       });
+      this._payPurse(this.winners);
       this.audio?.play('victory');
       this.announcer?.say('sat_win1', 'AND THAT IS THE MATCH! What a display!');
       this.announcer?.say('sat_win2', 'Put your name on my board, champion. It stays there.');
@@ -525,10 +1013,43 @@ export class Tournament {
       if (pads.some((p) => p.pressed('jump'))) this.goHome();
       return;
     }
-    const { moved, confirmed } = this.entry.update(dt, pads);
+    const { moved, confirmed } = this.entry.update(dt, this._signingPads(pads));
     if (moved) this.audio?.play('menu');
     if (confirmed) this._commit();
     if (moved || confirmed) this._paintResult();
+  }
+
+  /**
+   * WHOSE STICKS MAY SPELL THE CHAMPION'S NAME — the winning side's, and
+   * nobody else's.
+   *
+   * `NameEntry.update` folds every pad it is given into one cursor: it takes
+   * the largest stick reading of the lot and confirms on anybody's JUMP. That
+   * is exactly right when the question is "which of the two of you is holding
+   * the pad she won on", and it is wrong the moment there are four of them,
+   * because the three who LOST are also holding sticks. In practice the board
+   * was signed by whoever was fidgeting: a losing kitten resting a thumb on her
+   * stick out-voted the winner spelling her own name, and a stray JUMP
+   * committed a half-typed one she could never go back and fix.
+   *
+   * IT IS THE WHOLE WINNING SIDE, NOT `winner`. A 2v2 is won by two kittens and
+   * `winner` is only the one the row is filed under (the higher scorer); both
+   * of them earned it, and locking the letters to one of them is the same
+   * unfairness one step smaller.
+   *
+   * A DRAW AND THE FLY-HOME PRESS ARE UNTOUCHED. Nothing is being decided
+   * there, and making three players watch a fourth press JUMP to leave is the
+   * kind of gate that has one kid holding the controller for everybody.
+   */
+  _signingPads(pads) {
+    const winners = this.winners?.length ? this.winners : (this.winner ? [this.winner] : []);
+    const mine = winners.map((p) => this.game.players.indexOf(p)).filter((i) => i >= 0);
+    const picked = mine.map((i) => pads[i]).filter(Boolean);
+    /* A winner with no pad at all — she is on the keyboard, or her controller
+       was unplugged between the last blow and the results screen — must not
+       leave a board nobody can sign. Falling back to every pad is the old
+       behaviour, which is the right failure: shared, rather than stuck. */
+    return picked.length ? picked : pads;
   }
 
   /** Keyboard route into the same name entry. */
@@ -542,14 +1063,17 @@ export class Tournament {
 
   _commit() {
     const w = this.winner;
+    /* `wins` is per SIDE, so the row records the winning side's round wins —
+       which is what "2-1" means in a team match. Reading `wins[w.index]` was
+       right only while a side and a player were the same thing. */
     const saved = saveResult({
       name: this.entry.name,
       score: this.score,
-      wins: this.wins[w.index],
+      wins: this.wins[this.sideOf(w)] ?? 0,
       dealt: Math.round(w.dmgDealt),
       taken: Math.round(w.dmgTaken),
       seconds: Math.round(this.fightTime),
-    });
+    }, this.boardKey);
     this.board = saved.rows;
     this.rank = saved.rank;
     this.audio?.play('clan');
@@ -646,36 +1170,117 @@ export class Tournament {
     }
   }
 
+  /**
+   * ONE BAR PER FIGHTER, GROUPED BY SIDE.
+   *
+   * It used to be `const [a, b] = this.game.players` — two bars, written when
+   * two was the only number there was. With four kittens in the ring the third
+   * and fourth had no bar at all, so half the fighters could not see their own
+   * health and nobody could see theirs. The pips were worse than missing: they
+   * are indexed by SIDE (`wins` counts sides) and were being drawn against
+   * PLAYER 0 and PLAYER 1, which is the same number only in a duel.
+   *
+   * THE SIDES SPLIT AROUND THE ROUND BOX SO THE TWO-PLAYER LAYOUT IS EXACTLY
+   * WHAT IT WAS. Sides are dealt to the left until the left holds at least half
+   * the fighters, and the rest go right — which gives `[P1] ROUND [P2]` at two,
+   * the pair against the pair at 2v2, and an even 2/2 split in a four-way free
+   * for all. The girls play two-player; their HUD must not move.
+   *
+   * A BAR KEEPS ITS OWN KITTEN'S COLOUR, and the TEAM colour is the block
+   * around it. Those are two different questions — "which bar is mine" and "who
+   * is with me" — and answering both with one colour loses the first, which is
+   * the one a nine-year-old needs in a hurry.
+   */
   _paintHud() {
     if (!this.hudEl || this.state === 'result') return;
-    const [a, b] = this.game.players;
-    const pips = (i) => Array.from({ length: WINS_NEEDED }, (_, k) => (
-      `<i class="${k < this.wins[i] ? 'won' : ''}"></i>`
+    const players = this.game.players;
+    const ids = [...new Set(this.sides.slice(0, players.length))];
+
+    const pips = (side) => Array.from({ length: WINS_NEEDED }, (_, k) => (
+      `<i class="${k < (this.wins[side] ?? 0) ? 'won' : ''}"></i>`
     )).join('');
     const bar = (p) => {
       const k = Math.max(0, p.hp / p.maxHp);
       const cls = k > 0.34 ? '' : k > 0.18 ? ' warn' : ' crit';
-      return `<div class="ah-bar"><span class="ah-fill${cls}" style="width:${k * 100}%"></span></div>`;
+      /* THE FILL IS HER OWN COLOUR, INLINE. It used to be two CSS rules —
+         `.ah-fill` ember, `.p1 .ah-fill` frost — which is two of the four
+         kittens and no way to say the other two. `styleCss` is the same source
+         the marker ring, the minimap pip and the score badge already read, so a
+         bar cannot end up a different orange from the cat it belongs to. */
+      const style = cls ? '' : `background:${styleCss(this.game.roster?.[p.index] ?? p.index)};`;
+      return `<div class="ah-bar"><span class="ah-fill${cls}" `
+        + `style="width:${k * 100}%;${style}"></span></div>`;
     };
-    /* THE MIDDLE OF THE BAR IS A CLOCK DURING THE FEAST, because fifteen
-       seconds with nothing counting them down is fifteen seconds a
-       nine-year-old spends wondering whether the game has stopped. It is the
-       one place on this HUD both girls are already looking — the round number
-       lives there — so it costs no new furniture. */
-    const mid = this.state === 'feast'
-      ? `<span class="ah-feast">FEAST ${Math.max(0, Math.ceil(FEAST_TIME - this.t))}</span>`
-      : `ROUND ${this.round}`;
+    /* A fighter's own line: her name, and a KO cross once she is down. Knowing
+       your partner has gone is the whole shape of a tag-team round. */
+    const fighter = (p) => `
+      <div class="ah-f${p.ko ? ' out' : ''}">
+        <div class="ah-name">${escapeHtml(p.name)}</div>
+        ${bar(p)}
+      </div>`;
+    const sideBlock = (side, align) => {
+      const mates = players.filter((_, i) => this.sides[i] === side);
+      if (!mates.length) return '';
+      const col = teamColour(side);
+      // The team swatch and the round pips ride together: both are facts about
+      // the SIDE rather than about any one kitten in it.
+      const head = `<div class="ah-team" style="--team:${col}">`
+        + `<span class="ah-swatch"></span>${this.teamed ? escapeHtml(teamName(side)) : ''}`
+        + `<span class="ah-pips">${pips(side)}</span></div>`;
+      return `<div class="ah-side ${align}" style="--team:${col}">`
+        + `${head}${mates.map(fighter).join('')}</div>`;
+    };
+
+    // Deal sides left until the left half holds half the fighters.
+    const left = [];
+    const right = [];
+    let got = 0;
+    for (const s of ids) {
+      const n = this.sides.filter((x) => x === s).length;
+      if (got < players.length / 2 && right.length === 0) { left.push(s); got += n; }
+      else right.push(s);
+    }
+    /* THE MIDDLE OF THE BAR IS A CLOCK, because a countdown nobody can see is
+       a rule that arrives as a surprise. The feast had one from the start — its
+       fifteen seconds are the whole point of the state — and the ROUND did not,
+       even though `ROUND_LIMIT` can hand the round to whoever is ahead on
+       damage. Two kittens circling each other at 118 seconds had no idea
+       anything was about to be decided.
+
+       IT SITS ABOVE THE ROUND NUMBER RATHER THAN REPLACING IT. Which round this
+       is and how long is left are two different questions and both are asked
+       during a fight; the round number is also the thing a kid looks at to know
+       the match is progressing at all. One box, two lines — no new furniture and
+       nowhere new to look.
+
+       IT RUNS ONLY WHILE THE ROUND IS LIVE. `this.t` is the state's own clock,
+       so during the card and the countdown it is measuring the card, not the
+       round — a timer ticking down while both fighters are frozen on their
+       marks is time she is being charged for and cannot use. Before the gong it
+       simply shows the full allowance. */
+    const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    let mid;
+    if (this.state === 'feast') {
+      mid = `<span class="ah-feast">FEAST ${Math.max(0, Math.ceil(FEAST_TIME - this.t))}</span>`;
+    } else {
+      /* IT HOLDS WHERE IT STOPPED THROUGH THE KNOCKOUT rather than being
+         recomputed from a clock that is now measuring the KO hold. Reset on the
+         card, run during the round, frozen everywhere else — a clock that snaps
+         back to 2:00 on the frame somebody goes down reads as the round
+         restarting, which is the opposite of what just happened. */
+      if (this.state === 'card' || this.state === 'count') this._roundLeft = ROUND_LIMIT;
+      else if (this.state === 'live') this._roundLeft = Math.max(0, ROUND_LIMIT - this.t);
+      const left = this._roundLeft ?? ROUND_LIMIT;
+      /* Red under fifteen seconds, which is the point at which "who is ahead on
+         damage" stops being trivia and starts being the result. */
+      mid = `<span class="ah-clock${left <= 15 ? ' low' : ''}">${clock(left)}</span>`
+        + `<span class="ah-round">ROUND ${this.round}</span>`;
+    }
 
     this.hudEl.innerHTML = `
-      <div class="ah-side p0">
-        <div class="ah-name">${a.name}<span class="ah-pips">${pips(0)}</span></div>
-        ${bar(a)}
-      </div>
+      <div class="ah-wing">${left.map((s) => sideBlock(s, 'l')).join('')}</div>
       <div class="ah-mid">${mid}</div>
-      <div class="ah-side p1">
-        <div class="ah-name"><span class="ah-pips">${pips(1)}</span>${b.name}</div>
-        ${bar(b)}
-      </div>`;
+      <div class="ah-wing r">${right.map((s) => sideBlock(s, 'r')).join('')}</div>`;
   }
 
   _paintResult() {
@@ -708,7 +1313,11 @@ export class Tournament {
       <div class="ar-box">
         <h2 class="ar-win p${w.index}">${w.name} WINS THE TOURNAMENT</h2>
         <div class="ar-stats">
-          <span><b>${this.wins[w.index]}</b> rounds won</span>
+          <!-- ROUNDS ARE COUNTED PER SIDE. Indexing wins by the PLAYER is the
+               same number only in a duel: in a 2v2 the winner can be fighter 2
+               or 3 and wins has two entries, so the box read "undefined rounds
+               won" for half the champions. Same fix _commit already carries. -->
+          <span><b>${this.wins[this.sideOf(w)] ?? 0}</b> rounds won</span>
           <span><b>${Math.round(w.dmgDealt)}</b> damage dealt</span>
           <span><b>${Math.round(w.dmgTaken)}</b> damage taken</span>
           <span><b>${Math.round(this.fightTime)}s</b> to do it</span>
@@ -720,7 +1329,12 @@ export class Tournament {
             : 'Not quite a top-ten score — the board keeps the best ten.'}</p>`
         : `
           <div class="ne">
-            <p class="ne-label">SIGN THE BOARD — stick up/down picks a letter, left/right moves</p>
+            <!-- NAMED, because the letters only answer to the winning side's
+                 sticks (see _signingPads) and a screen that ignores three of
+                 four players without saying so reads as three broken pads. -->
+            <p class="ne-label">${escapeHtml(this.winners?.length > 1
+    ? `${teamName(this.sideOf(w))} SIGNS THE BOARD` : `${w.name.toUpperCase()} SIGNS THE BOARD`)}
+              — stick up/down picks a letter, left/right moves</p>
             <div class="ne-slots">${slots}</div>
             <p class="ne-hint">${NAME_MAX} letters max · JUMP or ENTER when you're done</p>
           </div>`}

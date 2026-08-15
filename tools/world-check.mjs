@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import { World, CLANS } from '../src/world/world.js';
-import { Dragon, BREEDS } from '../src/entities/dragon.js';
+import { Dragon, BREEDS, DRAGON_SPOTS } from '../src/entities/dragon.js';
 import { Billboard } from '../src/core/gfx.js';
 import { Player } from '../src/entities/player.js';
 import {
@@ -38,7 +38,7 @@ import {
   PowerOrb, PowerOrbPickup, ORB_BY_ID,
 } from '../src/entities/powerorb.js';
 import { Kotodama } from '../src/systems/kotodama.js';
-import { ATTACKS, MAX_HP } from '../src/entities/player.js';
+import { ATTACKS, MAX_HP, DAZE_TIME } from '../src/entities/player.js';
 import {
   Tournament, WINS_NEEDED, MAX_ROUNDS, FEAST_TIME, REGEN_FRAC,
 } from '../src/systems/tournament.js';
@@ -50,6 +50,15 @@ import {
   Menagerie, MAX_ON_STAGE, MAX_PER_SPECIES, RESPAWN_MIN, RESPAWN_MAX,
 } from '../src/systems/menagerie.js';
 import { MILESTONES, OPEN_AT } from '../src/systems/arenaquest.js';
+import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss } from '../src/core/palette.js';
+import { splitLayout } from '../src/core/split.js';
+import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
+import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
+import { postsFor } from '../src/world/build.js';
+import {
+  MODES, MODE_BY_ID, modesFor, handicapFor, HANDICAP_MAX, NO_SIDE, ROUND_LIMIT,
+} from '../src/systems/tournament.js';
+import { worldSpawnCount, WORLD_PER_PLAYER } from '../src/systems/kotodama.js';
 import {
   scoreOf, loadBoard, saveResult, clearBoard, BOARD_SIZE,
   NameEntry, NAME_MIN, NAME_MAX,
@@ -336,7 +345,7 @@ console.log('\n--- the seven dragon balls ---');
     const FOOT = { cave: 17.2, perch: 5.2, sky: 4.2, none: 1, ice: 2, boulder: 2.4 };
     const perches = world.dragonPerches();
     line('dragon perches resolved', perches.length);
-    ok('every dragon perch found real ground', perches.length === 8);
+    ok('every dragon perch found real ground', perches.length === DRAGON_SPOTS.length);
     for (const b of balls) {
       const f = FOOT[b.lock];
       if (f < 4) continue;                     // only the built furniture
@@ -1122,6 +1131,46 @@ console.log('\n--- dragons get somewhere you can see them ---');
   );
   ok('and the spot it finds is genuinely clear', clear);
   ok('and is on solid ground', spot && world.heightAt(spot.x, spot.z) != null);
+}
+
+/* ONE HOME DRAGON PER PLAYER, and the count is asserted against MAX_PLAYERS
+   rather than against 4. The rule has never been "two": it is that no kitten
+   is left on the ground watching her sister fly, which is why the home island
+   had two when the game seated two. A third and fourth player can join
+   mid-session at any moment, and the failure that produces is silent — she
+   picks her cat, walks to the plaza, and finds two dragons with her sisters
+   already on them. Written against MAX_PLAYERS so seating a fifth kitten one
+   day fails HERE, on a line that says why, rather than in front of her. */
+{
+  const home = world.islands[0];
+  const perches = world.dragonPerches();
+  const onHome = perches.filter((p) => Math.hypot(p.x - home.x, p.z - home.z) < home.radius);
+  line('dragons on the home island', `${onHome.length} for ${MAX_PLAYERS} players`);
+  ok('the home island has one dragon per player', onHome.length >= MAX_PLAYERS,
+    `${onHome.length} perches, ${MAX_PLAYERS} seats`);
+  /* SPREAD OUT, NOT STACKED. Four billboards on one patch of grass are one
+     heap of dragon from every angle except directly overhead, and the mount
+     prompt would pick whichever the scan reached first — so a kid pressing Y
+     between two of them climbs onto an animal she was not looking at. The
+     bound is the widest mountRadius in the game (size 13 * 0.62 = 8.06),
+     doubled, so no two prompts can ever overlap. */
+  let closest = Infinity;
+  for (let i = 0; i < onHome.length; i++) {
+    for (let j = i + 1; j < onHome.length; j++) {
+      closest = Math.min(closest, Math.hypot(onHome[i].x - onHome[j].x, onHome[i].z - onHome[j].z));
+    }
+  }
+  line('closest two home dragons', closest.toFixed(1));
+  ok('no two home dragons share a mount prompt', closest > 13 * 0.62 * 2);
+  /* AND EVERY ONE OF THEM IS A WALK FROM WHERE SHE STARTS. A fourth dragon
+     parked on the far rim is not a fourth dragon, it is a hike — and the kid
+     who has to take it is the one who joined last. Measured from the start
+     line at (0, 40); the island is 96 across, so this is a bound with real
+     room in it rather than one fitted to the numbers that happen to pass. */
+  const walk = Math.max(...onHome.map((p) => Math.hypot(p.x - 0, p.z - 40)));
+  line('furthest home dragon from the start line', walk.toFixed(1));
+  ok('every home dragon is a walk from the start line', walk < home.radius * 0.75,
+    `${walk.toFixed(1)} vs ${(home.radius * 0.75).toFixed(1)}`);
 }
 
 console.log('\n--- the snow island is no longer empty ---');
@@ -3094,9 +3143,25 @@ console.log('\n--- the three power moves ---');
   ok('the rat is the slowest thing on the deck',
     CRITTER_BY_ID.rat.speed < CRITTER_BY_ID.rabbit.speed
     && CRITTER_BY_ID.rat.speed < CRITTER_BY_ID.bird.speed);
-  /* A kitten WALKS at 10.5. Anything faster than that can never be closed on
-     at all without a sprint, which is how the rat got into trouble. */
-  ok('nothing outruns a walking kitten', CRITTERS.every((c) => c.speed < 10.5));
+  /* A kitten WALKS at 10.5 and SPRINTS at 17, and the ladder is written across
+     that pair rather than under one of them.
+
+     THE RAT STAYS UNDER A WALK, because the rat is what teaches the mechanic:
+     the easiest animal has to be catchable by a kid who has not worked out that
+     the game has a sprint button. That is how it got into trouble the first
+     time, at 8.2, and the fix was to slow it further.
+
+     THE RABBIT IS DELIBERATELY OVER IT. At 9.0 it was under a walk too, so
+     holding the stick toward it closed at 1.5 a second and caught it eventually
+     with no decision in it — the middle animal was the easy one with a longer
+     chase attached. Above a walk it cannot be caught by walking; well under a
+     sprint, it is always caught by a sprint you commit to.
+
+     NOTHING REACHES A SPRINT, or it could never be closed on at all. */
+  ok('the rat stays catchable at a walk', CRITTER_BY_ID.rat.speed < 10.5);
+  ok('a rabbit cannot be caught by walking after it',
+    CRITTER_BY_ID.rabbit.speed > 10.5);
+  ok('...and nothing on the deck outruns a sprint', CRITTERS.every((c) => c.speed < 17));
 
   /* A rabbit hops twice as high as it first did — and height is v²/2g, so that
      is the launch times root two, not times two. Bounded at the top by the
@@ -3104,8 +3169,32 @@ console.log('\n--- the three power moves ---');
      catchable rather than becoming harder to catch. */
   const hopH = CRITTER_BY_ID.rabbit.hopV ** 2 / (2 * 24);
   line('rabbit hop height', `${hopH.toFixed(2)} units`);
-  ok('a rabbit hop clears most of a kitten', hopH > 2.4);
+  /* OVER HER HEAD, not level with it. A hop that tops out at a kitten's own
+     height (2.9) is inside the arc of every swing she throws, so the timing
+     that is supposed to be the difficulty is not asked for. */
+  ok('a rabbit hop clears a whole kitten', hopH > 2.9);
   ok('...and stays inside the swing\'s upward reach', hopH + 1.2 < 6.5);
+
+  /* THE BIRD HAS TO BE OUT OF REACH FROM THE FLOOR, which is the whole reason
+     it is worth the most health — and it was not. `Menagerie.strike` allows a
+     swing 6.5 above her FEET (a billboard is a flat drawing with a point for a
+     position), so a cruise of 4.6 was takeable by standing under it and
+     pressing attack: the hardest animal on the deck cost nothing but walking.
+
+     The numbers it is measured against are the real ones from player.js —
+     JUMP_V 11.2 and GRAVITY 26 — so retuning the jump fails this check instead
+     of silently making the bird free again. */
+  const AIR_REACH = 6.5;
+  const jump1 = 11.2 ** 2 / (2 * 26);
+  const jump2 = jump1 + (11.2 * 0.86) ** 2 / (2 * 26);
+  const cruise = CRITTER_BY_ID.bird.cruise;
+  line('bird cruise vs jumps', `${cruise} up · one jump ${jump1.toFixed(2)} · two ${jump2.toFixed(2)}`);
+  /* Measured at the BOTTOM of its bob (±0.5 in `_flyStep`), which is the lowest
+     it ever is and therefore the only height that can make this false. */
+  ok('a bird cannot be swatted off the floor', cruise - 0.5 > AIR_REACH);
+  /* ...and at the TOP of it, so a single jump is never a near miss. */
+  ok('...but a single jump brings it into reach', cruise + 0.5 - jump1 < AIR_REACH);
+  ok('...and a double jump makes it comfortable', cruise - jump2 < AIR_REACH - 2);
 
   /* THE STARTLED RABBIT IS DRAWN FACING THE OTHER WAY, and the loader cannot
      know that — `facesRight` is declared per file in main.js. If the two poses
@@ -3209,6 +3298,32 @@ console.log('\n--- the three power moves ---');
   ok('...and that freezes her where she stands', men.eating(0) === true);
   step(60);
   ok('one second in, it is not eaten yet', men.list.includes(theRat) && A.hp === 40);
+  /* A MEAL IS TWO SPRITES PRETENDING TO TOUCH, and where the animal is drawn is
+     the whole trick. Everything used to be pinned on the FLOOR in front of her,
+     which is where you put a thing you are holding DOWN — a rat lying a metre
+     below her chin reads as a rat that happens to be standing there while a cat
+     crouches nearby. A mouthful goes at her mouth (`EAT_MOUTH_Y`, exported off
+     the crouch the eating pose is drawn at, so the two cannot drift apart). */
+  ok('a rat is eaten at her mouth, not off the floor',
+    theRat.position.y > A.position.y + A.height * 0.4);
+  {
+    /* A RABBIT IS TOO BIG TO LIFT — 1.35 units of animal against a 2.9-unit cat,
+       and hoisting that to her face on frame one reads as a cat holding a dog.
+       It stays on the ground and is drawn UP as it shrinks, which points the
+       shrink at something: it is going INTO her rather than merely vanishing. */
+    const bun = one('rabbit');
+    const her = { position: { x: 0, y: 10, z: 0 }, height: 2.9, camYaw: -Math.PI / 4 };
+    const at = (k) => bun._mealSpot(her, k);
+    const outBy = (s) => Math.hypot(s.x - her.position.x, s.z - her.position.z);
+    ok('a rabbit starts its meal on the ground', Math.abs(at(0).y - her.position.y) < 0.01);
+    ok('...and finishes it at her mouth', at(1).y > her.position.y + her.height * 0.4);
+    ok('...drawn in toward her as it goes', outBy(at(1)) < outBy(at(0)));
+    /* And the small ones are up there from the first frame — the difference is
+       the whole reason `eatLift` is a per-animal number. */
+    ok('a rat is at her mouth from the first frame of the hold',
+      one('rat')._mealSpot(her, 0).y > her.position.y + her.height * 0.4);
+    bun.dispose(men.scene);
+  }
   step(70);
   ok('two seconds in, it is', !men.list.includes(theRat));
   ok('...and she is 10 health better off', A.hp === 40 + CRITTER_BY_ID.rat.heal);
@@ -3496,14 +3611,20 @@ console.log('\n--- the three power moves ---');
       audio: null,
       announcer: null,
     });
-    const shove = (state, dmg) => {
+    /* WHERE SHE IS STANDING IS THE WHOLE QUESTION NOW — see `_updateOut`. The
+       default drops her on the LOWER FLOOR, which is the real case: the island
+       under the plinth, 2.4 below the deck. */
+    const outX = R3.x + R3.half + 12;
+    const floorAt = (x) => world.heightAt(x, R3.z)?.y ?? (R3.y - 2.4);
+    const shove = (state, dmg, { y = null, onGround = true, x = outX, dt = 1.0 } = {}) => {
       T2.state = state;
       p.landAngel();
       p.hp = p.maxHp;
       p.invulnT = 0;
       p.outT = 0;
-      p.position.set(R3.x + R3.half + 12, R3.y, R3.z);
-      T2._updateOut(1.0, dmg);
+      p.onGround = onGround;
+      p.position.set(x, y == null ? floorAt(x) : y, R3.z);
+      T2._updateOut(dt, dmg);
       return { hp: p.hp, back: Math.abs(p.position.x - R3.x) < 1 };
     };
     const live = shove('live', 30);
@@ -3511,6 +3632,50 @@ console.log('\n--- the three power moves ---');
     const feast = shove('feast', 0);
     ok('...and during the feast it is free', feast.hp === p.maxHp);
     ok('...but she is still put back on the stone', feast.back);
+
+    /* SHE IS NOT OUT UNTIL SHE HAS COME DOWN, which is the fix for a round
+       being taken off you for being HIT. The test was horizontal only, so the
+       timer ran the moment she crossed the line however she crossed it — and
+       the commonest way to cross it is a knockback, which sends her over the
+       edge in a long arc with `lift` on it. A kitten sailing across the line on
+       her way back onto the deck was being counted out of a ring she was about
+       to land in the middle of. */
+    const air = shove('live', 30, { y: R3.y + 6, onGround: false });
+    ok('a kitten flying over the line is NOT out yet',
+      air.hp === p.maxHp && !air.back);
+    /* Landing on the ground outside the ring is what the rule is FOR. */
+    const landed = shove('live', 30);
+    ok('...but landing past it still costs her', landed.hp < p.maxHp && landed.back);
+    /* And off the rim entirely, where `onGround` never becomes true again
+       because there is nothing under her — waiting for it would be falling
+       forever. */
+    const fallen = shove('live', 30, { y: R3.y - 20, onGround: false });
+    ok('...and falling off the edge counts without landing',
+      fallen.hp < p.maxHp && fallen.back);
+
+    /* STANDING ON THE STONE IS STANDING IN THE RING, WHATEVER THE PAINT SAYS.
+       `arenaOutBy` measures from the painted line, which sits ARENA_OUT (1.1)
+       INSIDE the deck edge — so there is a full stride of real stone that reads
+       as "out". It was, and kittens were rung out while visibly still on the
+       stage. The paint is the warning; the deck is the rule. */
+    const margin = R3.x + R3.half - R3.out / 2;
+    ok('the deck margin outside the paint really is past the line',
+      world.arenaOutBy(margin, R3.z) > 0);
+    const onStone = shove('live', 30, { x: margin, y: R3.y });
+    ok('...but standing on it is NOT a ring-out',
+      onStone.hp === p.maxHp && !onStone.back);
+
+    /* AND THERE IS NO GRACE LEFT IN A LIVE ROUND. Half a second of nothing
+       happening after she has landed on the ground outside the ring reads as
+       the rule being broken — one frame is enough now. The feast keeps its
+       grace, because nothing there is at stake and snapping her back mid-stride
+       for chasing a rabbit down the steps is the arena taking her one job away. */
+    const instant = shove('live', 30, { dt: 1 / 60 });
+    ok('...and one frame on the floor is enough to be out',
+      instant.hp < p.maxHp && instant.back);
+    const dawdle = shove('feast', 0, { dt: 1 / 60 });
+    ok('...while the feast still gives her half a second to scramble back',
+      !dawdle.back);
     ok('...and no edge warning flashes while nothing is at stake', p.nearEdge === false);
 
     /* An angel is ALLOWED off the deck — flying over the rim is most of what
@@ -3540,6 +3705,663 @@ console.log('\n--- the three power moves ---');
   ok('going home clears both angels', !p.angel && !q.angel);
   ok('...and puts the wildlife away', men2.list.length === 0 && !men2.on);
   ok('...and hands both of them a full bar back', p.hp === p.maxHp && q.hp === q.maxHp);
+}
+
+/* ===========================================================================
+   FOUR PLAYERS.
+
+   Everything below is about the party being a NUMBER rather than two. The
+   failures these catch are the quiet ones: a fourth kitten the same colour as
+   the second, a viewport two pixels tall, a recolour that shifts the alpha
+   channel and silently re-slices a sheet, a team mode where a partner can cut
+   you down, a league whose board writes over the duel's.
+   =========================================================================== */
+{
+  console.log('\n--- four players: who they are ---');
+
+  ok('four kittens in the roster', PLAYER_STYLE.length === 4 && MAX_PLAYERS === 4);
+
+  /* NO TWO PLAYERS MAY LOOK ALIKE, and hue is what a marker ring is read by at
+     ring size on a busy screen.
+     THE BOUND IS EMBER AND FROST, NOT A NUMBER I PICKED. The first pass asserted
+     60 degrees and failed at 50 — and what it had found was the ORIGINAL pair:
+     orange and pink have been 50 apart for the whole life of this project and
+     are perfectly readable, partly because the cats themselves are also orange
+     and grey. So the honest invariant is not an absolute separation, it is that
+     adding kittens must not make the palette HARDER to read than the one the
+     girls already play with. Every new pair has to be at least as far apart as
+     the two that shipped. */
+  const hueOf = (hex) => {
+    const r = ((hex >> 16) & 255) / 255;
+    const g = ((hex >> 8) & 255) / 255;
+    const b = (hex & 255) / 255;
+    const mx = Math.max(r, g, b);
+    const mn = Math.min(r, g, b);
+    const d = mx - mn;
+    if (d === 0) return 0;
+    let h;
+    if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (mx === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+    return h * 360;
+  };
+  const apart = (a, b) => {
+    const d = Math.abs(hueOf(a) - hueOf(b));
+    return Math.min(d, 360 - d);
+  };
+  const baseline = apart(PLAYER_STYLE[0].colour, PLAYER_STYLE[1].colour);
+  let worst = 360;
+  let worstPair = '';
+  for (let i = 0; i < PLAYER_STYLE.length; i++) {
+    for (let j = i + 1; j < PLAYER_STYLE.length; j++) {
+      if (i === 0 && j === 1) continue;          // the baseline itself
+      const d = apart(PLAYER_STYLE[i].colour, PLAYER_STYLE[j].colour);
+      if (d < worst) { worst = d; worstPair = `${PLAYER_STYLE[i].name}/${PLAYER_STYLE[j].name}`; }
+    }
+  }
+  ok('no new pair is closer in hue than Ember and Frost', worst >= baseline,
+    `${worstPair} ${worst.toFixed(0)}deg vs baseline ${baseline.toFixed(0)}deg`);
+  ok('every kitten has her own name', new Set(PLAYER_STYLE.map((s) => s.name)).size === 4);
+  ok('every kitten has her own panda name',
+    new Set(PLAYER_STYLE.map((s) => s.panda)).size === 4);
+
+  /* THE FIRST TWO ARE UNCHANGED. The girls play two-player most of the time and
+     the whole compatibility argument rests on this. */
+  ok('Ember and Frost keep their colours',
+    PLAYER_STYLE[0].colour === 0xff8a3d && PLAYER_STYLE[1].colour === 0xff6fae);
+  ok('...and their spawn and respawn spots',
+    PLAYER_STYLE[0].startX === -3.5 && PLAYER_STYLE[1].startX === 3.5
+    && PLAYER_STYLE[0].spawnX === -3 && PLAYER_STYLE[1].spawnX === 3);
+  ok('...and their pandas',
+    PLAYER_STYLE[0].panda === 'Bao' && PLAYER_STYLE[1].panda === 'Mochi');
+  ok('every respawn spot is 3 apart or more', PLAYER_STYLE.every((a, i) =>
+    PLAYER_STYLE.every((b, j) => i === j || Math.abs(a.spawnX - b.spawnX) >= 3)));
+  ok('styleFor degrades rather than returning undefined', styleFor(99) === PLAYER_STYLE[0]);
+  ok('styleCss derives the same colour', styleCss(2) === '#35d7f0');
+
+  console.log('\n--- four players: the recolours ---');
+
+  /* THE RECOLOUR MUST NOT TOUCH ALPHA. Everything measured about a sheet — the
+     cell grid, contentScale, and every direction mapping the sprite checks
+     assert — is computed from alpha during packing. This runs AFTER packing, so
+     a recolour that moved alpha would silently re-slice a kitten. */
+  const px = new Uint8ClampedArray([
+    200, 90, 40, 255,     // saturated orange
+    128, 128, 128, 255,   // pure grey
+    10, 8, 9, 255,        // lineart
+    250, 250, 250, 255,   // near-white
+    0, 0, 0, 0,           // transparent
+  ]);
+  const alphaBefore = [px[3], px[7], px[11], px[15], px[19]];
+  const rgbBefore = [...px];
+  recolourPixels(px, { hue: 210, tint: 300, tintSat: 0.4, greyS: 0.5 });
+  ok('recolour never writes alpha',
+    [px[3], px[7], px[11], px[15], px[19]].every((v, i) => v === alphaBefore[i]));
+  ok('...and does change the midtones',
+    px[0] !== rgbBefore[0] || px[1] !== rgbBefore[1] || px[2] !== rgbBefore[2]);
+  /* A grey pixel is exactly what a hue rotation cannot move, and colouring it
+     is the entire reason `tint` exists as a second knob. */
+  ok('...and gives a GREY pixel a colour', px[4] !== px[5] || px[5] !== px[6]);
+  /* Lineart takes no saturation lift, or every outline gets a colour cast and
+     the sheet reads as badly printed rather than as a different cat. */
+  const lineWas = [rgbBefore[8], rgbBefore[9], rgbBefore[10]];
+  const lineNow = [px[8], px[9], px[10]];
+  ok('...and leaves the lineart alone',
+    lineNow.every((v, i) => Math.abs(v - lineWas[i]) <= 2),
+    `${lineWas} -> ${lineNow}`);
+  ok('the lift window is zero on black and on white',
+    liftWindow(0.05) === 0 && liftWindow(1) === 0 && liftWindow(0.5) === 1);
+
+  /* Ember and Frost must be BYTE-FOR-BYTE the sheets that were loaded. */
+  ok('the first two kittens take no recolour',
+    PLAYER_STYLE[0].recolour === null && PLAYER_STYLE[1].recolour === null);
+  ok('...and the new two do',
+    !!PLAYER_STYLE[2].recolour && !!PLAYER_STYLE[3].recolour);
+  /* Frost is a GREY cat, so a rotation alone cannot recolour her and her copy
+     has to carry a tint. Ember is saturated and needs none. */
+  ok('the recolour of the grey sheet carries a tint',
+    PLAYER_STYLE[3].sheet === 'frost' && PLAYER_STYLE[3].recolour.tint != null);
+
+  console.log('\n--- four players: the split screen ---');
+
+  const VW = 1920;
+  const VH = 1080;
+  for (const n of [1, 2, 3, 4]) {
+    const panes = splitLayout(n, VW, VH, 3, 'vertical');
+    ok(`${n} view(s): one pane each`, panes.length === n);
+    ok(`${n} view(s): every pane inside the frame`, panes.every(
+      (v) => v.x >= 0 && v.y >= 0 && v.x + v.w <= VW && v.y + v.h <= VH
+        && v.w > 2 && v.h > 2));
+    /* NO TWO PANES MAY OVERLAP. A pane drawn over another is the one split bug
+       a screenshot hides — the top one just looks like the whole view. */
+    let overlap = false;
+    for (let i = 0; i < panes.length; i++) {
+      for (let j = i + 1; j < panes.length; j++) {
+        const a = panes[i];
+        const b = panes[j];
+        if (a.x < b.x + b.w && b.x < a.x + a.w
+          && a.y < b.y + b.h && b.y < a.y + a.h) overlap = true;
+      }
+    }
+    ok(`${n} view(s): no two panes overlap`, !overlap);
+    /* EQUAL AREA. Three players get quadrants with one cell empty precisely so
+       nobody plays on a bigger screen than anybody else. */
+    const areas = panes.map((v) => v.w * v.h);
+    ok(`${n} view(s): every pane the same size`,
+      Math.max(...areas) - Math.min(...areas) <= 2 * Math.max(VW, VH));
+  }
+  /* PLAYER 1 IS TOP-LEFT, and the horizontal split's inversion is where this
+     has bitten before — WebGL's origin is bottom-left, so "on top" is the HIGH
+     y. Getting it backwards silently swaps the two girls' halves. */
+  const two = splitLayout(2, VW, VH, 3, 'horizontal');
+  ok('horizontal split puts player 1 on top', two[0].y > two[1].y);
+  const four = splitLayout(4, VW, VH, 3, 'vertical');
+  ok('quadrants put player 1 top-left', four[0].x === 0 && four[0].y > four[2].y);
+  ok('...and player 2 top-right', four[1].x > 0 && four[1].y === four[0].y);
+  const vert = splitLayout(2, VW, VH, 3, 'vertical');
+  ok('the two-player split is what it always was',
+    vert[0].x === 0 && vert[0].y === 0 && vert[0].h === VH
+    && vert[1].x === VW - Math.floor((VW - 3) / 2));
+
+  /* A SHARED PANE IS WORTH HALF THE SCREEN, NOT A QUARTER. Equal panes are the
+     fair rule when every pane holds one kitten and the wrong one the moment a
+     pane holds two — a pair standing together were given the same quarter as
+     somebody on her own, so teaming up COST them half their screen each. The
+     rule underneath was always equal area PER PLAYER; equal panes is what that
+     reduces to when everybody is alone. */
+  {
+    const full = VW * VH;
+    const three = splitLayout(3, VW, VH, 3, 'vertical', [2, 1, 1]);
+    ok('a pair in three panes gets half the screen',
+      Math.abs(three[0].w * three[0].h / full - 0.5) < 0.02,
+      `${(three[0].w * three[0].h / full).toFixed(3)}`);
+    ok('...and the two on their own get a quarter each',
+      [1, 2].every((i) => Math.abs(three[i].w * three[i].h / full - 0.25) < 0.02));
+    /* EQUAL AREA PER PLAYER is the rule it is really enforcing, so state it. */
+    ok('...which is the same screen each, per kitten',
+      Math.abs((three[0].w * three[0].h) / 2 - three[1].w * three[1].h) / full < 0.02);
+    ok('the shared pane is FULL WIDTH, not a tall half',
+      three[0].w === VW && three[0].h < VH);
+
+    /* THE BIG PANE GOES ON TOP WHEREVER ITS GROUP SITS IN THE ORDER, so the
+       returned array still lines up index-for-index with the caller's groups.
+       Sorting the panes would silently hand one group another's camera. */
+    for (const at of [0, 1, 2]) {
+      const sizes = [1, 1, 1];
+      sizes[at] = 2;
+      const p = splitLayout(3, VW, VH, 3, 'vertical', sizes);
+      ok(`a pair at index ${at} keeps index ${at} and takes the top strip`,
+        p[at].w === VW && p[at].y > 0 && p.length === 3);
+    }
+
+    /* THREE PLAYERS ALL APART ARE STILL QUADRANTS — no pane has two kittens in
+       it, so there is nothing to weight and the old answer is the right one. */
+    const solo = splitLayout(3, VW, VH, 3, 'vertical', [1, 1, 1]);
+    const quad = splitLayout(3, VW, VH, 3, 'vertical');
+    ok('three kittens on their own still get equal quadrants',
+      JSON.stringify(solo) === JSON.stringify(quad));
+
+    /* AND EVERY WEIGHTED LAYOUT IS STILL A LAYOUT: inside the frame, no
+       overlaps. Getting this wrong draws one girl's view over another's. */
+    let bad = 0;
+    for (const sizes of [[2, 1, 1], [1, 2, 1], [1, 1, 2]]) {
+      const p = splitLayout(3, VW, VH, 3, 'vertical', sizes);
+      if (!p.every((v) => v.x >= 0 && v.y >= 0 && v.x + v.w <= VW && v.y + v.h <= VH)) bad += 1;
+      for (let i = 0; i < p.length; i++) {
+        for (let j = i + 1; j < p.length; j++) {
+          const a = p[i];
+          const b = p[j];
+          if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) bad += 1;
+        }
+      }
+    }
+    ok('every weighted layout stays inside the frame and never overlaps', bad === 0);
+
+    /* TWO PANES ARE LEFT ALONE. Both are already at least half the screen,
+       which is the rule; carving a 3:1 split for a trio plus a straggler would
+       hand the lone kitten a sliver the camera cannot use. */
+    ok('two panes are unchanged whatever is in them',
+      JSON.stringify(splitLayout(2, VW, VH, 3, 'vertical', [3, 1]))
+      === JSON.stringify(vert));
+  }
+
+  /* ------------------ four players: WHO SHARES A PANE ------------------- */
+  /* HANDOFF listed proximity clustering as deliberately not built, and named
+     the blocker: "cluster membership changing mid-flight strands the per-view
+     lerp state... the camera identity has to be stable across a membership
+     change before anything else." The answer is that a group is NAMED BY ITS
+     LOWEST MEMBER and the caller keeps a rig per player index, so the checks
+     that matter here are about identity and totality rather than about
+     distances — a grouping that loses a kitten, or renames a group when
+     somebody else joins it, is a camera cut nobody asked for. */
+  console.log('\n--- four players: who shares a pane ---');
+
+  const at = (...xs) => xs.map((x) => ({ x, z: 0 }));
+  const shape = (g) => g.map((m) => m.join('')).join('|');
+  const group = (pts, opts = {}) => clusterPlayers({
+    pts, mergeIn: MERGE_IN, mergeOut: MERGE_OUT, ...opts,
+  });
+
+  line('merge in / merge out', `${MERGE_IN} / ${MERGE_OUT}`);
+  ok('sharing starts closer than it stops', MERGE_IN < MERGE_OUT);
+
+  /* THE TWO-PLAYER GAME IS THE BOOLEAN IT REPLACED. This is the whole
+     compatibility claim for the feature and it is the first thing checked:
+     the girls play two-player, and a pair joining and splitting at any
+     distance other than the ones they already know is a regression however
+     good the four-player behaviour is. */
+  ok('two players close together share one view',
+    shape(group(at(0, 10)).groups) === '01');
+  ok('two players far apart get one view each',
+    shape(group(at(0, 60)).groups) === '0|1');
+  ok('...at exactly the distance they always did',
+    group(at(0, MERGE_IN - 0.1)).groups.length === 1
+    && group(at(0, MERGE_IN + 0.1)).groups.length === 2);
+
+  /* THE ASK, IN TWO LINES. Two kittens together and a third away is 2 panes,
+     not 3; a third joining them is 3 in one pane and the fourth in the other. */
+  ok('a pair plus a straggler is two panes, not three',
+    shape(group(at(0, 10, 200)).groups) === '01|2');
+  ok('a third joining the pair keeps it to two panes',
+    shape(group(at(0, 10, 20, 200)).groups) === '012|3');
+  ok('two pairs are two panes', shape(group(at(0, 10, 200, 210)).groups) === '01|23');
+  ok('four apart is four panes',
+    shape(group(at(0, 100, 200, 300)).groups) === '0|1|2|3');
+  ok('four together is one pane', shape(group(at(0, 8, 16, 24)).groups) === '0123');
+
+  /* EVERY KITTEN IN EXACTLY ONE PANE. A player in none has no camera and is
+     invisible to herself; a player in two is drawn twice on a screen where
+     she is trying to find her own marker. Checked over a spread of layouts
+     rather than one, because the failure is a partition bug and partition bugs
+     hide in the arrangement nobody tried. */
+  {
+    let bad = 0;
+    for (const xs of [[0, 10, 20, 30], [0, 40, 80, 120], [0, 10, 200, 210],
+      [0, 35, 70, 105], [0, 200, 10, 210], [0, 0, 0, 0]]) {
+      const { groups: gs } = group(at(...xs));
+      const seen = gs.flat().sort((a, b) => a - b);
+      if (seen.join(',') !== '0,1,2,3') bad += 1;
+      if (gs.length > 4 || gs.some((m) => !m.length)) bad += 1;
+      // Sorted by lowest member, so player 1's pane is always the first one.
+      if (gs.some((m, i) => i > 0 && m[0] < gs[i - 1][0])) bad += 1;
+    }
+    ok('every kitten lands in exactly one pane, in every arrangement', bad === 0);
+    ok('and player 1 is always in the first pane',
+      group(at(0, 200, 100, 300)).groups[0].includes(0));
+  }
+
+  /* A GROUP IS NAMED BY ITS LOWEST MEMBER, which is the fix rather than a
+     detail of it: the caller draws a group with the rig belonging to that
+     player, so a group whose name moves is a group whose camera moves. Both
+     directions matter — one joining and one leaving. */
+  {
+    const grow = group(at(0, 10, 20));
+    ok('a pair that gains a member keeps its name',
+      group(at(0, 10)).groups[0][0] === 0 && grow.groups[0][0] === 0);
+    const { groups: split3 } = group(at(0, 10, 200), { prev: grow.of });
+    ok('...and keeps it when that member leaves again',
+      shape(split3) === '01|2' && split3[0][0] === 0);
+    /* AND THE ONE WHO LEAVES GETS A NAME OF HER OWN rather than inheriting
+       the group's — she is the lowest member of her new group of one, so her
+       rig is the one that has been tracking her all along. */
+    ok('and the one who left is named after herself', split3[1][0] === 2);
+  }
+
+  /* HYSTERESIS IS ONLY EVER STICKINESS. Between the two thresholds the answer
+     depends on what it was last frame — which is what stops a pair walking at
+     the boundary from strobing between one pane and two — but `prev` must
+     never be able to PULL a group together across a gap it was not allowed to
+     close, or a group could grow without anybody moving. */
+  {
+    const mid = at(0, (MERGE_IN + MERGE_OUT) / 2);
+    const together = group(at(0, 5));
+    ok('a pair at the boundary stays together if it was',
+      group(mid, { prev: together.of }).groups.length === 1);
+    const apart = group(at(0, 200));
+    ok('...and stays apart if it was',
+      group(mid, { prev: apart.of }).groups.length === 2);
+    ok('history can never pull a group together',
+      group(at(0, MERGE_OUT + 1), { prev: together.of }).groups.length === 2);
+  }
+
+  /* A FLYING KITTEN IS ALWAYS ALONE — the existing `anyFlying` rule, which is
+     why a gunner thirty units up does not share a camera with her sister on
+     the ground below. What changed at four players is that it now costs ONE
+     pane rather than the whole screen: the two still standing in the market
+     keep sharing theirs. That is the check. */
+  {
+    const { groups: gs } = group(at(0, 10, 20, 30), { solo: [false, false, false, true] });
+    ok('a flyer gets a pane to herself', shape(gs) === '012|3');
+    ok('...and does not split the ones still on the ground', gs[0].length === 3);
+    const both = group(at(0, 10), { solo: [true, false] });
+    ok('one kitten flying still splits a two-player screen', both.groups.length === 2);
+  }
+
+  /* SINGLE LINKAGE, ON PURPOSE. A near B and B near C puts all three in one
+     pane even though A and C are not close, because B can see both of them
+     and splitting the kitten standing between them into two panes would draw
+     her twice. */
+  ok('a chain of three shares one pane',
+    shape(group(at(0, MERGE_IN - 1, (MERGE_IN - 1) * 2)).groups) === '012');
+
+  /* AND THE GROUPING MUST BE SOMETHING `splitLayout` CAN ACTUALLY TILE. The
+     two are written against each other — one decides how many panes there are
+     and the other decides where they go — and neither imports the other, so
+     this is the only place the pair is checked as a pair. */
+  {
+    let bad = 0;
+    for (const xs of [[0, 10, 20, 30], [0, 200, 10, 210], [0, 100, 200, 300]]) {
+      const n = group(at(...xs)).groups.length;
+      if (splitLayout(n, VW, VH, 3, 'vertical').length !== n) bad += 1;
+    }
+    ok('every grouping tiles into panes', bad === 0);
+  }
+
+  console.log('\n--- four players: the leagues ---');
+
+  ok('two players get exactly one league', modesFor(2).length === 1);
+  ok('...and it is the duel they already know', modesFor(2)[0].id === 'duel');
+  ok('three players get a free-for-all and a 2v1',
+    modesFor(3).map((m) => m.id).sort().join(',') === 'ffa,two_one');
+  ok('four players get a free-for-all, a 2v2, a 3v1 and a 2v1v1',
+    modesFor(4).map((m) => m.id).sort().join(',') === 'ffa,pairs,three_one,two_one_one');
+
+  /* THREE SIDES IS NOT A NEW CODE PATH, and these are the four places that
+     would have had to be special-cased if it were. `sides` has always been a
+     fighter -> side map rather than a pair of teams, which is exactly what
+     makes 2v1v1 a table entry. */
+  {
+    const s = MODE_BY_ID.two_one_one.sides(4);
+    ok('2v1v1 is a pair and two loners', s.join(',') === '0,0,1,2');
+    ok('...so it really has three sides', new Set(s).size === 3);
+    const h = handicapFor(s, true);
+    ok('...and both loners get the bigger bar', h[0] === 1 && h[1] === 1
+      && h[2] === HANDICAP_MAX && h[3] === HANDICAP_MAX, h.join(','));
+    /* The posts have to seat three sides without stacking anybody. */
+    const posts = postsFor(s);
+    let clash = false;
+    for (let i = 0; i < posts.length; i++) {
+      for (let j = i + 1; j < posts.length; j++) {
+        if (Math.hypot(posts[i].x - posts[j].x, posts[i].z - posts[j].z) < 3) clash = true;
+      }
+    }
+    ok('...and nobody shares a post', !clash);
+    ok('...with the pair standing together',
+      Math.hypot(posts[0].x - posts[1].x, posts[0].z - posts[1].z)
+      < Math.hypot(posts[0].x - posts[2].x, posts[0].z - posts[2].z));
+  }
+  ok('every league has an id of its own — its board key',
+    new Set(MODES.map((m) => m.id)).size === MODES.length);
+  ok('every league explains itself to a nine-year-old',
+    MODES.every((m) => m.blurb && m.blurb.length > 10));
+
+  /* A DUEL IS A TEAM MODE WITH ONE FIGHTER A SIDE. That equivalence is what
+     lets the whole feature be one code path with no "team mode" branch. */
+  ok('a duel is two sides of one', MODE_BY_ID.duel.sides(2).join() === '0,1');
+  ok('a free-for-all is everyone her own side',
+    MODE_BY_ID.ffa.sides(4).join() === '0,1,2,3');
+  ok('a 2v2 is two sides of two', MODE_BY_ID.pairs.sides(4).join() === '0,0,1,1');
+  ok('a 3v1 is three against one', MODE_BY_ID.three_one.sides(4).join() === '0,0,0,1');
+
+  /* THE HANDICAP ONLY EVER HELPS THE OUTNUMBERED SIDE, AND IT IS CAPPED.
+     It used to be `biggest / mine` with nothing on top of it, so the lone
+     fighter in a 3v1 opened on THREE HUNDRED health. On paper that is fair —
+     one bar each — and in the ring it is a different game: her sisters watch a
+     bar that will not move, and because a knockout is also the round, the side
+     with the long bar decides how long everybody else's afternoon is.
+
+     THE SAME NUDGE AT EVERY SHAPE, which is the part worth asserting. Being
+     outnumbered worse is a reason to fight differently, not a reason to hold a
+     different amount of health — and two leagues that hand out different bars
+     for the same job have record boards that cannot be compared. */
+  const h31 = handicapFor([0, 0, 0, 1], true);
+  line('handicap', `capped at ${HANDICAP_MAX}x`);
+  ok('one fighter against three gets a fifth of a bar more', h31[3] === HANDICAP_MAX);
+  ok('...and the three keep one each', h31.slice(0, 3).every((v) => v === 1));
+  ok('one against two is handed exactly the same',
+    handicapFor([0, 0, 1], true)[2] === h31[3]);
+  ok('...and nobody in the ring is ever worth more than 1.2 of anybody else',
+    [[0, 0, 1], [0, 0, 0, 1], [0, 0, 1, 2]].every((s) => (
+      handicapFor(s, true).every((v) => v <= HANDICAP_MAX)
+    )));
+  ok('an even league hands nobody a handicap',
+    handicapFor([0, 0, 1, 1], true).every((v) => v === 1));
+  ok('...and a league that does not ask for one gets none',
+    handicapFor([0, 0, 0, 1], false).every((v) => v === 1));
+  ok('the two-player league never carries a handicap', !MODE_BY_ID.duel.handicap);
+
+  /* HITTING YOUR OWN PARTNER COSTS HER CONTROL, WHICH IS THE POINT. "No
+     friendly fire" used to mean nothing at all happened, and a rule with no
+     teeth made the safest thing in a tag-team round holding attack down and
+     swinging through everybody — the swing that hit your partner was free. It
+     also made the protection invisible: you learned it by watching your attack
+     do nothing, which reads as the attack being broken. */
+  /* WHO IS ON WHOSE SIDE IS THE GIRLS' DECISION, and `_validSeats` is what
+     makes it safe to accept one. `mode.sides(n)` used to be the only
+     arrangement, so who your partner was fell out of the order you happened to
+     pick up a controller in, three menus earlier.
+
+     IT CHECKS THE SHAPE, NOT THE SEATING — a 2v2 needs two sides of two and
+     does not care which two, which is exactly the part the picker owns. */
+  console.log('\n--- the team picker cannot make an illegal match ---');
+  {
+    const T = new Tournament({
+      game: { players: [1, 2, 3, 4], toast() {}, sfx() {} },
+      world, audio: null, announcer: null,
+    });
+    T.mode = MODE_BY_ID.pairs;
+    ok('the mode\'s own arrangement is legal', T._validSeats([0, 0, 1, 1], 4));
+    ok('...and so is any other 2 and 2', T._validSeats([0, 1, 1, 0], 4));
+    ok('...which is the whole point of the picker', T._validSeats([1, 0, 0, 1], 4));
+    ok('3 against 1 is refused in a 2v2', !T._validSeats([0, 0, 0, 1], 4));
+    ok('everybody on one side is refused', !T._validSeats([0, 0, 0, 0], 4));
+    ok('a fighter with no side is refused', !T._validSeats([0, 0, 1], 4));
+    ok('a made-up side index is refused', !T._validSeats([0, 0, 1, 9], 4));
+    ok('junk is refused', !T._validSeats(['a', 0, 1, 1], 4) && !T._validSeats(null, 4));
+
+    T.mode = MODE_BY_ID.three_one;
+    ok('3v1 accepts any three-and-one', T._validSeats([1, 0, 0, 0], 4));
+    ok('...and refuses two-and-two', !T._validSeats([0, 0, 1, 1], 4));
+
+    /* 2v1v1 is the case that proves the shape test is a MULTISET rather than a
+       list: the pair may be any two of the four. */
+    T.mode = MODE_BY_ID.two_one_one;
+    ok('2v1v1 accepts the pair anywhere', T._validSeats([1, 0, 2, 0], 4));
+    ok('...and still refuses a 2v2', !T._validSeats([0, 0, 1, 1], 4));
+
+    /* AND `begin` MUST FALL BACK RATHER THAN TRUST THE CALLER. An illegal
+       arrangement reaching the ring is a round somebody cannot win. */
+    T.mode = MODE_BY_ID.pairs;
+    ok('an illegal seating never reaches the ring',
+      !T._validSeats([0, 0, 0, 1], 4));
+
+    /* NOBODY STARTS ON A SIDE, AND THAT IS WHAT MADE THE SCREEN REAL.
+       The picker opened on `mode.sides(n)`, which is a LEGAL arrangement — so
+       it was confirmable on its first frame, and the JUMP that chose the league
+       is still down on that frame (MenuNav confirms on it, the panel opens
+       inside it, and the picker reads the same press later in it). Picking a
+       2v2 went straight to the round card with whoever joined first paired up:
+       the one thing this screen exists to prevent.
+
+       `NO_SIDE` is an illegal seat rather than a flag beside the seats, so an
+       undecided kitten makes the whole arrangement invalid for free. A separate
+       "has she chosen" list would be a second thing to keep in step with the
+       first, and its failure mode is a match starting with somebody on a side
+       she never picked. */
+    ok('nobody has picked a side, so nothing is legal yet',
+      !T._validSeats([NO_SIDE, NO_SIDE, NO_SIDE, NO_SIDE], 4));
+    ok('...nor when one kitten is still deciding',
+      !T._validSeats([0, 0, 1, NO_SIDE], 4));
+    ok('...and it is legal the moment she picks',
+      T._validSeats([0, 0, 1, 1], 4));
+  }
+
+  /* THE BOARD IS SIGNED BY THE WINNERS, AND BY NOBODY ELSE.
+     `NameEntry.update` folds every pad it is handed into one cursor — the
+     largest stick reading wins and anybody's JUMP confirms — which is right
+     when the question is "which of the two of you is holding the winning pad"
+     and wrong the moment there are four, because the three who LOST are also
+     holding sticks. The board was signed by whoever fidgeted. */
+  console.log('\n--- only the winners sign the board ---');
+  {
+    const P = [0, 1, 2, 3].map((i) => ({ index: i, name: `P${i}`, dmgDealt: i }));
+    const PADS4 = P.map(() => ({ mx: 0, my: 0, pressed: () => false, down: () => false }));
+    const T = new Tournament({
+      game: { players: P, toast() {}, sfx() {} },
+      world, audio: null, announcer: null,
+    });
+    T.mode = MODE_BY_ID.pairs;
+    T.sides = [0, 0, 1, 1];
+    T.winners = [P[2], P[3]];
+    T.winner = P[3];
+    const got = T._signingPads(PADS4);
+    ok('a losing kitten\'s stick cannot spell the champion\'s name',
+      got.length === 2 && !got.includes(PADS4[0]) && !got.includes(PADS4[1]));
+    /* IT IS THE WHOLE WINNING SIDE, not `winner`. A 2v2 is won by two kittens
+       and `winner` is only the one the row is filed under. */
+    ok('...and both winners may, not just the one on the row',
+      got.includes(PADS4[2]) && got.includes(PADS4[3]));
+    /* A winner with no pad — on the keyboard, or unplugged between the last
+       blow and the results screen — must not leave a board nobody can sign. */
+    T.winners = [P[3]];
+    T.winner = P[3];
+    ok('a champion with no controller does not strand the board',
+      T._signingPads([PADS4[0], PADS4[1], PADS4[2]]).length === 3);
+  }
+
+  /* A ROUND HAS A CLOCK AND IT IS ON SCREEN. `ROUND_LIMIT` can hand the round
+     to whoever is ahead on damage, and it ran silently for its whole life —
+     the one rule in the tournament that could take a round off you was also
+     the one nobody could see. */
+  ok('the round limit is a real bound, not a formality',
+    ROUND_LIMIT >= 60 && ROUND_LIMIT <= 300);
+
+  console.log('\n--- friendly fire dazes rather than doing nothing ---');
+  {
+    const spawn2 = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
+    const d = new Player({
+      texture: new THREE.Texture(), index: 0, spawn: spawn2.clone(), height: 2.9,
+    });
+    line('daze / lockout', `${DAZE_TIME}s / ${DAZE_TIME * 2}s`);
+    ok('a daze is long enough to be felt', DAZE_TIME >= 0.75);
+    ok('...and short enough to survive', DAZE_TIME <= 1.5);
+
+    ok('a partner is dazed', d.daze() === true);
+    ok('...and loses the stick for it', d.stunT > 0);
+    ok('...but takes NO damage', d.hp === d.maxHp);
+    /* THE LOCKOUT IS WHAT STOPS IT BECOMING A WAY TO HOLD YOUR OWN PARTNER
+       STILL FOR A ROUND, and it matters more at a full second than at half of
+       one: without it a sister mashing attack owns her outright. */
+    ok('a second swing while she is dazed is refused', d.daze() === false);
+    d.stunT = 0;
+    ok('...and so is one the moment she recovers', d.daze() === false,
+      `lock ${d.stunLockT.toFixed(2)}s`);
+    d.stunLockT = 0;
+    ok('...but she can be dazed again once the lockout runs out', d.daze() === true);
+    ok('the lockout outlasts the daze', DAZE_TIME * 2 > DAZE_TIME);
+
+    /* A kitten who is already out of the fight has no control to lose, and
+       stars over an angel is two "she is out of it" signals fighting. */
+    d.stunT = 0; d.stunLockT = 0; d.ko = true;
+    ok('a knocked-out kitten is not dazed', d.daze() === false);
+    d.ko = false; d.angel = true;
+    ok('...and neither is an angel', d.daze() === false);
+    d.angel = false;
+  }
+
+  /* A handicap must MULTIPLY with an Adamant stack rather than replacing it —
+     the clan-and-orb rule — and it must survive a trade, which recomputes
+     maxHp from scratch. */
+  {
+    const f = new Player({ texture: new THREE.Texture(), index: 0, rows: 4, cols: 8 });
+    f.setHpScale(3);
+    const plain = f.maxHp;
+    f.setPowerOrbs(['vigor', 'vigor']);
+    ok('a handicap multiplies with an Adamant stack', f.maxHp > plain);
+    ok('...and survives the orbs changing under it', f.hpScale === 3);
+    const frac = f.hp / f.maxHp;
+    f.setPowerOrbs(['vigor']);
+    ok('...and keeps the fraction when they do',
+      Math.abs(f.hp / f.maxHp - frac) < 0.02);
+    f.setHpScale(1);
+    ok('...and comes back off cleanly', f.hpScale === 1 && f.maxHp === f.power.hp);
+  }
+
+  console.log('\n--- four players: the ring ---');
+
+  /* TEAMMATES ADJACENT, OPPONENTS ACROSS. Spaced evenly by index the four
+     alternate round the circle and every 2v2 opens already tangled. */
+  const P = postsFor([0, 0, 1, 1]);
+  const gap = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+  ok('2v2: partners stand together', gap(P[0], P[1]) < gap(P[0], P[2]));
+  ok('...and the other team is across the ring', gap(P[0], P[2]) > gap(P[0], P[1]) * 2);
+  ok('...and nobody shares a post',
+    P.every((a, i) => P.every((b, j) => i === j || gap(a, b) > 1)));
+  const FFA = postsFor([0, 1, 2, 3]);
+  ok('a free-for-all spreads all four',
+    FFA.every((a, i) => FFA.every((b, j) => i === j || gap(a, b) > 1)));
+  ok('two fighters still use the posts the world already had',
+    postsFor([0, 1]).length === 2
+    && postsFor([0, 1])[0].x < 0 && postsFor([0, 1])[1].x > 0);
+
+  console.log('\n--- four players: the economy ---');
+
+  /* FOUR PER PLAYER, and two players give the eight this was designed around. */
+  ok('two players still scatter eight orbs', worldSpawnCount(2) === 8);
+  ok('three players scatter twelve', worldSpawnCount(3) === 12);
+  ok('four players scatter sixteen', worldSpawnCount(4) === 16);
+  ok('it is four per player', WORLD_PER_PLAYER === 4);
+  ok('...and never fewer than one of each kind',
+    worldSpawnCount(1) >= ORB_IDS.length);
+
+  /* THE PRICE IS A SHARE OF A FIXED POT, so it has to fall as the party grows
+     or a kitten's share silently stops buying the three orbs it is meant to. */
+  const pot = 4550;
+  ok('two players pay what they always paid', orbPrice(pot, 2) === 650);
+  ok('four players pay half that', orbPrice(pot, 4) === 325);
+  ok('a share still buys three or four orbs at any party size',
+    [2, 3, 4].every((n) => {
+      const buys = (pot / n) / orbPrice(pot, n);
+      return buys >= 3 && buys <= 4;
+    }));
+  ok('selling still loses money at every party size',
+    [2, 3, 4].every((n) => orbSellPrice(pot, n) < orbPrice(pot, n)));
+
+  /* THE DEBUG ENDGAME'S PURSE IS THAT SAME SHARE, and this is the check the
+     bug it had would have failed. `Game._debugEndgame` used to hand every
+     player `pointsTotal / 2` regardless of how many there were — so at four it
+     paid out twice the money in the world, and since the PRICE is derived from
+     the pot (`pointsTotal / players / 3.5`) it quietly made the whole shop half
+     price for everybody. It is `/ partySize` now, which is the same arithmetic
+     the price already uses, so the two cannot drift apart.
+
+     Written against `Math.floor`, which is what the key does: four shares must
+     never add up to more than the world actually contains. */
+  {
+    const purse = (n) => Math.floor(pot / n);
+    ok('the debug purse is one honest share each',
+      [2, 3, 4].every((n) => purse(n) * n <= pot));
+    ok('...and it buys the same three or four orbs at every party size',
+      [2, 3, 4].every((n) => {
+        const buys = purse(n) / orbPrice(pot, n);
+        return buys >= 3 && buys <= 4;
+      }), [2, 3, 4].map((n) => (purse(n) / orbPrice(pot, n)).toFixed(1)).join(' '));
+    /* The bug, stated: half the pot each at four players is eight orbs apiece
+       off a shelf holding six of the stackable kinds. */
+    ok('...and half the pot each would have been wrong at four',
+      Math.floor(pot / 2) / orbPrice(pot, 4) > 4);
+  }
+
+  /* THE SHELF GROWS WITH THE PARTY, or the third kitten to reach the market
+     finds it empty — which is not scarcity, it is being late. */
+  ok('two players see the shelf they always saw',
+    stockFor('swift', 2) === STOCK_STACKABLE && stockFor('ward', 2) === 1);
+  ok('four players see two more of everything',
+    stockFor('swift', 4) === STOCK_STACKABLE + 2 && stockFor('ward', 4) === 3);
+  /* The move orbs must stay SHALLOWER than the stat orbs, or the reason to
+     trade for a second Ward disappears. */
+  ok('the move orbs stay the shallow half at four players',
+    stockFor('ward', 4) < stockFor('swift', 4));
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

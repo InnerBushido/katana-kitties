@@ -41,22 +41,31 @@ import { KotodamaStall } from '../entities/stall.js';
 --------------------------------------------------------------------------- */
 
 /**
- * How many lie in the world: EXACTLY ONE OF EACH, and no duplicates.
+ * How many lie in the world: FOUR PER PLAYER.
  *
- * The first version scattered sixteen — one of each plus eight spares — so a
- * stack could be built on foot. That was the wrong call and it is worth saying
- * why, because it looked like the generous one. Sixteen orbs lying about means
- * two girls can wander into a full set of eight each without ever speaking to
- * each other, and this whole feature exists so that they do: the interesting
- * object in it is not the orb, it is the sentence "I'll swap you my Ward".
+ * Two kittens get eight — one of each kind, which is the number this was
+ * designed around and is unchanged. Four kittens get sixteen.
  *
- * Eight means every power is FINDABLE — nothing is locked behind a price a
- * kid might never reach — and nothing is stackable by walking. A second Gale
- * has to be bought, sold for, or traded out of her sister's hand. That is the
- * pressure the dealer's brutal prices are for, and it is why he stocks four of
- * the four stat orbs (see `stockFor`) while the world stocks one.
+ * THE SCARCITY THAT MATTERS IS PER PLAYER, AND THAT IS WHAT IS HELD FIXED. The
+ * original reasoning against sixteen was that two girls could wander into a
+ * full set each without ever speaking, because this whole feature exists so
+ * that they do — the interesting object in it is not the orb, it is the
+ * sentence "I'll swap you my Ward". At four players sixteen orbs is the same
+ * four-per-kitten it always was, so that pressure is exactly where it was.
+ *
+ * IT DOES RELAX "NOTHING IS STACKABLE BY WALKING", DELIBERATELY. Sixteen across
+ * eight kinds means two of some of them, so a lucky circuit can turn up a pair.
+ * The alternative is worse in a way that is not a trade-off: one Ward shared
+ * between four kittens means three of them can never find one, and a power that
+ * three quarters of the party can only ever see somebody else use is not
+ * scarce, it is absent. Buying and trading remain the only route to a real
+ * stack, because the shelf is still shallow on the four move orbs.
+ *
+ * @param {number} players how many kittens are in the world
  */
-const WORLD_SPAWN = ORB_IDS.length;
+export const WORLD_PER_PLAYER = 4;
+export const worldSpawnCount = (players = 2) =>
+  Math.max(ORB_IDS.length, WORLD_PER_PLAYER * players);
 
 /** How close you have to be to walk one up. */
 const PICKUP_RADIUS = 2.8;
@@ -77,12 +86,44 @@ export class Kotodama {
     /** @type {KotodamaStall|null} */
     this.stall = null;
 
-    /** What the dealer has left. Four of each stat orb, one of each move —
-     *  see `stockFor`, which owns that split and the reasoning for it. */
-    this.stock = Object.fromEntries(ORB_IDS.map((id) => [id, stockFor(id)]));
+    /** What the dealer has left. Four of each stat orb, one of each move, plus
+     *  one of everything per player past the second — see `stockFor`, which
+     *  owns that split and the reasoning for it. */
+    this.stock = {};
+    this.price = 0;
+    this.sellPrice = 0;
+    this.forParty(game.partySize ?? 2, { restock: true });
+  }
 
-    this.price = orbPrice(this.world.pointsTotal);
-    this.sellPrice = orbSellPrice(this.world.pointsTotal);
+  /**
+   * Re-price the shelf, and re-stock it, for a party of `players`.
+   *
+   * TWO CALLERS WITH DIFFERENT NEEDS, which is what `restock` separates. At
+   * boot the shelf is being created and every count is the opening one. When
+   * somebody JOINS OR LEAVES mid-game the shelf is already half sold, and
+   * resetting it would either hand the party a free restock or confiscate what
+   * the dealer has left — so the counts are ADJUSTED by the difference instead,
+   * and never below zero.
+   *
+   * The price moves either way, because it is a share of a fixed pot and the
+   * number of people splitting it has changed. That is visible to the girls in
+   * the stall, which is the point: a fourth player arriving makes everything
+   * cheaper because everybody's share just got smaller.
+   */
+  forParty(players, { restock = false } = {}) {
+    const n = Math.max(1, players);
+    for (const id of ORB_IDS) {
+      const want = stockFor(id, n);
+      if (restock || this.stock[id] == null) this.stock[id] = want;
+      else {
+        const was = stockFor(id, this._party ?? 2);
+        this.stock[id] = Math.max(0, this.stock[id] + (want - was));
+      }
+    }
+    this._party = n;
+    this.price = orbPrice(this.world.pointsTotal, n);
+    this.sellPrice = orbSellPrice(this.world.pointsTotal, n);
+    this.stall?.setStock(this.stock);
   }
 
   /* ------------------------------ the event ------------------------------ */
@@ -163,13 +204,17 @@ export class Kotodama {
     const islands = this.world.questIslands;
     if (!islands.length) return;
 
-    /* One of each, in roster order. Not shuffled and not random: random would
+    /* In roster order and CYCLED, not shuffled and not random: random would
        give you three Gale orbs and no Ward often enough that a nine-year-old
        reads it as the game cheating, and the guarantee that every power is
        findable on foot is the reason the shop's prices are allowed to be
-       brutal. Which ISLAND each lands on is decided below by index, so the
-       eight are spread rather than piled. */
-    const order = ORB_IDS.slice(0, WORLD_SPAWN);
+       brutal. Cycling is what keeps that guarantee once the count is more than
+       one full set — sixteen orbs come out as two of each rather than as a
+       random draw that could still leave a kind missing. Which ISLAND each
+       lands on is decided below by index, so they are spread rather than
+       piled. */
+    const n = worldSpawnCount(this.game.partySize ?? this.game.players.length);
+    const order = Array.from({ length: n }, (_, i) => ORB_IDS[i % ORB_IDS.length]);
 
     for (let i = 0; i < order.length; i++) {
       const isl = islands[i % islands.length];
@@ -387,8 +432,28 @@ export class Kotodama {
     this.pickups = [];
     if (this.stall) this.scene.remove(this.stall.group);
     this.stall = null;
-    this.stock = Object.fromEntries(ORB_IDS.map((id) => [id, stockFor(id)]));
+    this.forParty(this.game.partySize ?? 2, { restock: true });
     this.awakened = false;
+  }
+
+  /**
+   * Put one orb back into the world at a spot — a player leaving the game.
+   *
+   * The dealer's own rule: a sold orb goes back on the shelf, so the party
+   * cannot destroy the supply between them. Only a fixed number of these exist,
+   * and a kitten walking out of the game with eight of them would delete a
+   * chunk of the endgame for everybody still playing.
+   */
+  dropInWorld(id, at) {
+    const spec = ORB_BY_ID[id];
+    if (!spec || !this.awakened) return null;
+    const spot = this.world.findOpenSpot(at.x, at.z, 5) ?? { x: at.x, z: at.z };
+    const g = this.world.heightAt(spot.x, spot.z);
+    if (!g) return null;
+    const pk = new PowerOrbPickup(spec, spot.x, g.y, spot.z);
+    this.scene.add(pk.group);
+    this.pickups.push(pk);
+    return pk;
   }
 }
 

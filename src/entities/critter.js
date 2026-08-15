@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
-import { MAX_HP } from './player.js';
+import { MAX_HP, EAT_MOUTH_Y } from './player.js';
 
 /* ---------------------------------------------------------------------------
    Ring snacks — the rats, rabbits and birds that live on the tournament deck.
@@ -85,17 +85,48 @@ export const STUN_TIME = 3.2;
  * being redrawn, and a number that means "how big is its atlas cell" does not.
  * The startled and leaping drawings are sized to cover the same area as the
  * calm one rather than to the same height; see `poseQuad`.
+ *
+ * `eatLift` IS HOW HIGH IT IS HELD WHILE SHE EATS IT, and it exists because a
+ * meal is two sprites pretending to touch. Everything used to be pinned on the
+ * FLOOR in front of her, which is where you put an animal you are holding down
+ * and not where you put one you are eating: a rat lying a metre below her chin
+ * reads as a rat that happens to be standing there while a cat crouches nearby.
+ *
+ *   1  — held AT her mouth for the whole two seconds. The small ones: a rat and
+ *        a bird are mouthfuls, and that is exactly the joke.
+ *   0  — starts on the ground and is drawn UP to her mouth as the hold runs.
+ *        The rabbit, which is 1.35 units of animal against a 2.9-unit cat —
+ *        lifting that to her face on frame one reads as a cat holding a dog. It
+ *        already shrinks to 45% over the two seconds (see `_paint`), so rising
+ *        as it shrinks is the same gesture the shrink was always making, now
+ *        pointed somewhere: it is going INTO her, rather than merely vanishing.
  */
 export const CRITTERS = [
   {
     id: 'rat',
     name: 'rat',
     kind: 'ground',
-    heal: Math.round(MAX_HP * 0.10),
+    /* WORTH MORE THAN IT WAS, BECAUSE IT IS EASIER THAN IT WAS. It is still
+       the cheapest animal on the deck and still below the rabbit's 15, which
+       is the ladder that has to hold: rat < rabbit < bird, easiest to hardest.
+       Ten was priced for an animal nobody could catch. */
+    heal: Math.round(MAX_HP * 0.12),
     size: 0.9,
     /** Top speed while bolting away from a kitten. Faster than a walk (10.5)
      *  is unfair; this is caught by walking at it and swinging. */
-    speed: 8.2,
+    /* SLOWER, AND THIS IS THE SECOND TIME THE RAT HAS BEEN THE PROBLEM. The
+       first version was pin-only and outran the grab radius, so the animal
+       that teaches the mechanic was the one that never worked; the fix made a
+       swing stop anything, and it was still the one the girls could not land.
+       8.2 is 78% of a walk, which sounds catchable and is not — a kitten
+       closing at 2.3 units a second needs four seconds to cross the pin
+       radius, and the rat turns. At 6.6 she closes at 3.9 and a chase is
+       a few strides. The rabbit's 9.0 is untouched, so the gap between the
+       easy animal and the middle one is now wider than it has ever been,
+       which is the shape this ladder was always supposed to have. */
+    speed: 6.6,
+    /** A mouthful. Held at her mouth for the whole meal — see `eatLift`. */
+    eatLift: 1,
     /** It notices you at this range and runs. */
     flee: 9,
     /** Cell fraction the drawn animal fills — overwritten from the atlas. */
@@ -107,25 +138,37 @@ export const CRITTERS = [
     kind: 'hopper',
     heal: Math.round(MAX_HP * 0.15),
     size: 1.35,
-    /* FASTER THAN THE RAT, and it has to be now that one swing catches
-       anything. The two used to be separated by what the button did; they are
-       separated by how hard the swing is to land instead, so the middle animal
-       has to be genuinely harder to corner than the easy one. */
-    speed: 9.0,
+    /* FASTER THAN A WALKING KITTEN, WHICH IS THE POINT AND IS DELIBERATELY NOT
+       TRUE OF THE RAT. At 9.0 it was under a walk (10.5), so a kitten who
+       simply held the stick toward it closed at 1.5 a second and caught it
+       eventually with no decision in it — the middle animal was the easy one
+       with a longer chase attached. Above a walk and well under a SPRINT (17)
+       is the whole design: you cannot catch a rabbit by walking after it, and
+       you always catch one you commit a sprint to. The rat keeps the other
+       side of that line, because the rat is what teaches the mechanic. */
+    speed: 11.6,
     flee: 11,
+    /** Too big to lift. It goes up as it goes down — see `eatLift`. */
+    eatLift: 0,
     /**
      * Launch speed of a hop, and the gap between them.
      *
-     * TWICE THE HEIGHT, WHICH IS NOT TWICE THE SPEED. Hop height is v²/2g, so
-     * doubling it means multiplying the launch by √2: 8.4 → 11.88, which puts
-     * the top of a hop 2.94 units up instead of 1.47. That is most of a
-     * kitten's height and it is what makes the rabbit the middle difficulty —
-     * it spends longer in the air, higher, and a swing has to be timed rather
-     * than merely aimed. Deliberately still inside the aerial window
-     * `Menagerie.strike` allows (6.5), or it would stop being catchable
-     * instead of becoming harder to catch.
+     * HEIGHT IS v²/2g, SO RAISING IT IS NOT RAISING THE LAUNCH BY THE SAME
+     * FACTOR. This has been up twice for the same reason both times: the hop is
+     * what makes the rabbit the middle difficulty, and a hop you can swing
+     * through without thinking is not one. 8.4 → 11.88 put the top of a hop at
+     * 2.94; 14.6 puts it at 4.44, which is OVER A KITTEN'S HEAD (2.9) rather
+     * than level with it — so the swing has to catch the animal on the way up
+     * or on the way down instead of anywhere in the arc. It also buys 1.22
+     * seconds of air per hop against 0.99, which is most of what makes a
+     * frightened rabbit hard to corner.
+     *
+     * Deliberately still inside the aerial window `Menagerie.strike` allows
+     * (6.5 above her feet, less the 1.2 the drawing is tall), or it would stop
+     * being catchable instead of becoming harder to catch. `world-check`
+     * recomputes both ends of that from the constants.
      */
-    hopV: 11.88,
+    hopV: 14.6,
     /**
      * Seconds ON THE GROUND between hops — chased, and not chased.
      *
@@ -155,8 +198,27 @@ export const CRITTERS = [
     size: 1.1,
     speed: 9.4,
     flee: 13,
-    /** How far above the deck it cruises. Above a jump, below an aerial. */
-    cruise: 4.6,
+    /** It is IN her mouth already — see `_updateMouthed`. */
+    eatLift: 1,
+    /**
+     * How far above the deck it cruises.
+     *
+     * IT HAS TO BE ABOVE THE SWING, AND 4.6 WAS NOT. The comment here always
+     * claimed "above a jump", and the number was measured against the wrong
+     * thing: a kitten is 2.9 tall, so 4.6 sounds out of reach — but
+     * `Menagerie.strike` allows a swing to land 6.5 above her FEET, because a
+     * billboard is a flat drawing with a point for a position. The bird was
+     * therefore takeable by standing under it and pressing attack, which made
+     * the hardest animal on the deck the one you never had to leave the floor
+     * for, and quietly deleted the difference between it and the rat.
+     *
+     * 7.8 puts it past that window from the ground with room to spare, and a
+     * comfortable 1.3 inside it at the top of a SINGLE jump (2.41) — so the
+     * bird costs exactly what it was always supposed to cost: getting airborne
+     * and timing the swing. A double jump (4.2) makes it easy again, which is
+     * the right shape for the animal worth the most health.
+     */
+    cruise: 7.8,
     colour: 0x5f86a8,
   },
 ];
@@ -614,6 +676,41 @@ export class Critter {
   }
 
   /**
+   * Where the meal is: in front of her ON SCREEN, at the height it is held.
+   *
+   * TOWARD THE CAMERA, NOT ALONG HER FACING. She turns to face the viewer for
+   * the whole meal (`Player.eatPose` is a single front-facing cell), so placing
+   * the animal along `facing` would put it behind her from the one angle
+   * anybody is watching from. `camYaw` is the direction the camera sits in; the
+   * arena is always drawn merged, so there is exactly one of them.
+   *
+   * IT CLOSES IN AS THE HOLD RUNS. Both the distance out and — for a big animal
+   * — the height are functions of `k`, which is how much of the meal is done.
+   * A snack that sits at arm's length for two seconds and then pops is a magic
+   * trick; one that comes toward her mouth as it shrinks is being eaten.
+   *
+   * @param {object} h the kitten holding it
+   * @param {number} k 0 at the start of the hold, 1 at the swallow
+   */
+  _mealSpot(h, k = 1) {
+    const y = h.camYaw ?? -Math.PI * 0.25;
+    /* Far enough out that a 1.35-unit rabbit is not inside her own drawing,
+       and drawn in by a third as she finishes it. */
+    const out = 1.15 * (1 - 0.32 * k);
+    /* `eatLift` 1 is at her mouth from the first frame; 0 starts on the floor
+       and rises with the hold. The mouth is `EAT_MOUTH_Y` of her standing
+       height, exported from player.js off the crouch the eating pose is drawn
+       at, so the two cannot drift apart. */
+    const lift = this.spec.eatLift ?? 1;
+    const mouth = h.height * EAT_MOUTH_Y;
+    return {
+      x: h.position.x + Math.sin(y) * out,
+      y: h.position.y + mouth * (lift + (1 - lift) * k),
+      z: h.position.z + Math.cos(y) * out,
+    };
+  }
+
+  /**
    * Held under a paw, wriggling, while the hold runs.
    *
    * It is dragged to HER rather than her being stopped where it is. She is
@@ -624,34 +721,43 @@ export class Critter {
     this.t += dt;
     const h = this.holder;
     if (!h) return;
-    /* ON THE GROUND IN FRONT OF HER MOUTH — meaning in front of her ON SCREEN,
-       which is toward the camera, not along her facing. She turns to face the
-       viewer for the whole meal (`Player.eatPose` is a single front-facing
-       cell), so placing the animal along `facing` would put it behind her from
-       the one angle anybody is watching from. `camYaw` is the direction the
-       camera sits in; the arena is always drawn merged, so there is exactly
-       one of them. */
-    const y = h.camYaw ?? -Math.PI * 0.25;
-    const fx = h.position.x + Math.sin(y) * 1.15;
-    const fz = h.position.z + Math.cos(y) * 1.15;
+    const to = this._mealSpot(h, Math.min(1, this.t / EAT_TIME));
     const k = Math.min(1, dt * 9);
-    this.position.x += (fx - this.position.x) * k;
-    this.position.z += (fz - this.position.z) * k;
-    this.position.y += (h.position.y - this.position.y) * k;
+    this.position.x += (to.x - this.position.x) * k;
+    this.position.z += (to.z - this.position.z) * k;
+    this.position.y += (to.y - this.position.y) * k;
     this.velocity.set(0, 0, 0);
+    /* It is off the floor now, which is a claim about the DRAWING and not about
+       the animal: `onGround` is what `_loosePose` reads, and a pinned animal is
+       drawn startled whatever this says. The shadow still falls on the real
+       ground under it — see `_paint` — which is what sells the lift. */
     this.onGround = true;
   }
 
-  /** In her mouth: parented in spirit, not in the graph — see _paint. */
+  /**
+   * In her mouth: parented in spirit, not in the graph — see _paint.
+   *
+   * TWO DIFFERENT PLACES, BECAUSE SHE IS DOING TWO DIFFERENT THINGS. Carrying a
+   * bird she is running with, it rides at her face along her heading, which is
+   * where a cat carries a bird. The moment the swallow starts she drops into the
+   * crouched, camera-facing eating pose — and a bird pinned to her old heading
+   * ends up behind her head from the only angle anybody is watching. `eatT` is
+   * the swallow, set by `Menagerie` and read here rather than duplicated.
+   */
   _updateMouthed(dt) {
     this.t -= dt;
     const h = this.holder;
     if (!h) return;
-    this.position.set(
-      h.position.x + Math.sin(h.facing) * 0.55,
-      h.position.y + h.height * 0.78,
-      h.position.z + Math.cos(h.facing) * 0.55
-    );
+    if (h.eatT > 0) {
+      const to = this._mealSpot(h, 1);
+      this.position.set(to.x, to.y, to.z);
+    } else {
+      this.position.set(
+        h.position.x + Math.sin(h.facing) * 0.55,
+        h.position.y + h.height * 0.78,
+        h.position.z + Math.cos(h.facing) * 0.55
+      );
+    }
     this.velocity.set(0, 0, 0);
   }
 

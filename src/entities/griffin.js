@@ -45,10 +45,20 @@ const ARC_LIFT = 120;
  *
  * `up` differs slightly too — the saddle sits on a back that rises toward the
  * shoulders, so the front seat is the higher one.
+ *
+ * FOUR OF THEM, AND THE FALLBACK WAS THE BUG. There were two, and `_place` read
+ * `SEATS[i] ?? SEATS[0]` — so a third and fourth rider were placed at the FIRST
+ * seat, back to exactly the case above: several transparent billboards at one
+ * depth, the sort picks one, and two kittens are invisible for the whole flight
+ * to a tournament they are about to fight in. The spacing is the measured 0.19
+ * continued fore and aft, and `up` keeps falling toward the tail because that
+ * is the shape of the back they are sitting on.
  */
 const SEATS = [
+  { along: -0.29, up: 0.21 },
   { along: -0.10, up: 0.19 },
   { along: 0.09, up: 0.16 },
+  { along: 0.28, up: 0.13 },
 ];
 
 export class Griffin {
@@ -168,8 +178,13 @@ export class Griffin {
        does for a cutscene), so nothing is fighting this for their position —
        and their groups have to be moved explicitly because `Player.update` is
        what normally copies position into group. */
+    /* Two riders keep the two seats they were measured into rather than being
+       spread over four — the griffin is drawn for a pair, and pushing them out
+       to the extreme seats to make room for kittens who are not on it would
+       change the shot the girls already know. */
+    const seats = this.riders.length <= 2 ? SEATS.slice(1, 3) : SEATS;
     this.riders.forEach((p, i) => {
-      const s = SEATS[i] ?? SEATS[0];
+      const s = seats[i] ?? seats[0];
       p.position.set(
         this.position.x + Math.sin(this.facing) * s.along * this.quad,
         this.position.y + s.up * this.quad,

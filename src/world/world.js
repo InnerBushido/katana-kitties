@@ -5,7 +5,8 @@ import {
   buildBridge, buildBamboo, buildRoad, buildShrine, mergeParts, transformParts,
   valueNoise, fbm,
   buildGrotto, buildSpire, buildShards, SPIRE_H,
-  buildArena, ARENA_RING, ARENA_RISE, ARENA_OUT, ARENA_POSTS, ARENA_BOOTH, ARENA_BOARD,
+  buildArena, ARENA_RING, ARENA_RISE, ARENA_OUT, ARENA_POSTS, postsFor,
+  ARENA_BOOTH, ARENA_BOARD,
 } from './build.js';
 import { Prop } from '../entities/prop.js';
 import { ClanShrine } from '../entities/shrine.js';
@@ -508,6 +509,11 @@ export class World {
     };
     /** Where a fighter is posted at the top of a round, and who announces it. */
     this.arenaPosts = ARENA_POSTS.map((p) => ({
+      x: isl.x + p.x, z: isl.z + p.z, y: g + ARENA_RISE,
+    }));
+    /** Where a fighter stands at the top of a round, given the teams. Two
+     *  fighters fall through to `arenaPosts` unchanged — see build.postsFor. */
+    this.postsForSides = (sides) => postsFor(sides).map((p) => ({
       x: isl.x + p.x, z: isl.z + p.z, y: g + ARENA_RISE,
     }));
     this.arenaBooth = { x: isl.x + ARENA_BOOTH.x, y: g + 6.7, z: isl.z + ARENA_BOOTH.z };

@@ -659,3 +659,173 @@ export async function loadSpriteAtlas(url, opts = {}) {
     pad,
   };
 }
+
+/* ---------------------------------------------------------------------------
+   Recolouring — how players 3 and 4 exist without new art.
+
+   There are exactly TWO turnaround sheets in this project and generating a
+   third is the riskiest operation in it: `frost_grid_v2.png` sits in
+   docs/unused-art/ because its jump and attack rows came back mirrored against
+   its idle and walk rows, and no per-sheet setting can correct a sheet that
+   contradicts itself. So a third and fourth kitten are TRANSFORMS OF THE DRAWN
+   CELL — the same call the hit flash, the KO pose and the angel already make,
+   and for the same reason.
+
+   IT RUNS AFTER PACKING, ON THE PACKED CANVAS, AND THAT IS THE WHOLE SAFETY
+   ARGUMENT. Every measured thing about a sheet — the cell grid, `cols`,
+   `contentScale`, `contentArea`, `pad`, and the direction mapping every sprite
+   check in world-check asserts — is computed from the ALPHA channel during
+   packing. This touches red, green and blue and never alpha, on a canvas where
+   all of that has already been decided. A recoloured kitten therefore cannot
+   slice, size or face differently from the one she was copied from. Doing it to
+   the SOURCE image instead would put a colour transform upstream of background
+   removal, which keys on colour — that version is a real risk and this one is
+   not.
+
+   TWO KNOBS, BECAUSE ONE CANNOT DO IT. Measured over cell (0,0) of each sheet:
+
+     ember_grid_v2   mean saturation 0.631,  2.5% grey
+                     orange fur 0-60, blue kimono 210-240, red trim 330-360
+     frost_grid      mean saturation 0.195, 37.0% grey
+                     GREY/WHITE FUR, pink kimono 300-360, cream 0-60
+
+   Ember is saturated everywhere, so rotating every hue by a constant moves her
+   whole palette while preserving the relationships inside it: the fur and the
+   kimono stay as different from each other as they were drawn. Frost is a GREY
+   CAT, and a rotation does nothing to a pixel with no saturation to rotate —
+   it would recolour her kimono and hand back the same grey animal.
+
+   And the gap cannot be closed by choosing a better angle. A grey pixel has no
+   hue, so whatever hue the transform gives it is the SAME hue for every grey
+   pixel; the distance from there to her rotated kimono is her kimono's original
+   hue, which does not depend on the rotation at all. Rotating harder moves both
+   and separates neither. So the greys are given their own hue outright, and the
+   two knobs are independent by construction:
+
+     hue      degrees to rotate pixels that ALREADY have a colour
+     tint     the hue to hand pixels that have none, chosen independently
+     tintSat  how much saturation to give them
+
+   The two are cross-faded on the pixel's own saturation rather than switched at
+   a threshold, or the boundary between "rotated" and "tinted" draws a visible
+   seam across her flank at whatever saturation the cutoff sat at.
+
+   LINEART AND SPECULARS ARE PROTECTED AT BOTH ENDS. A saturation lift applied
+   to near-black puts a colour cast on every outline, which reads as bad
+   printing rather than as a different cat, and one applied to the brightest
+   highlights kills the specular. The lift is windowed on lightness; the hue
+   rotation is not, because rotating the hue of something with no saturation is
+   already a no-op.
+--------------------------------------------------------------------------- */
+
+/** Below this lightness a pixel is lineart and takes no saturation lift. */
+const LINE_L = 0.16;
+/** ...ramping to full effect by here. */
+const LINE_FULL = 0.30;
+/** Above this a pixel is a specular highlight and the lift tapers back out. */
+const SPEC_L = 0.97;
+/** Saturation at which a pixel counts as fully coloured rather than grey. */
+const GREY_S = 0.16;
+
+function rgb2hsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b);
+  const mn = Math.min(r, g, b);
+  const l = (mx + mn) / 2;
+  const d = mx - mn;
+  if (d === 0) return [0, 0, l];
+  const s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  let h;
+  if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (mx === g) h = ((b - r) / d + 2) / 6;
+  else h = ((r - g) / d + 4) / 6;
+  return [h * 360, s, l];
+}
+
+function hue2rgb(p, q, t) {
+  let u = t;
+  if (u < 0) u += 1;
+  if (u > 1) u -= 1;
+  if (u < 1 / 6) return p + (q - p) * 6 * u;
+  if (u < 1 / 2) return q;
+  if (u < 2 / 3) return p + (q - p) * (2 / 3 - u) * 6;
+  return p;
+}
+
+function hsl2rgb(h, s, l) {
+  if (s === 0) { const v = Math.round(l * 255); return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const t = ((h % 360) + 360) / 360 % 1;
+  return [
+    Math.round(hue2rgb(p, q, t + 1 / 3) * 255),
+    Math.round(hue2rgb(p, q, t) * 255),
+    Math.round(hue2rgb(p, q, t - 1 / 3) * 255),
+  ];
+}
+
+/** Shortest-arc blend between two hues, so a cross-fade never sweeps the wheel. */
+function mixHue(a, b, k) {
+  let d = ((b - a) % 360 + 540) % 360 - 180;
+  return ((a + d * k) % 360 + 360) % 360;
+}
+
+/**
+ * How much saturation lift a pixel of this lightness may take: nothing on the
+ * lineart, full through the midtones, tapering back out on the speculars.
+ */
+export function liftWindow(l) {
+  if (l <= LINE_L || l >= 1) return 0;
+  if (l < LINE_FULL) return (l - LINE_L) / (LINE_FULL - LINE_L);
+  if (l > SPEC_L) return Math.max(0, (1 - l) / (1 - SPEC_L));
+  return 1;
+}
+
+/**
+ * The pixel transform, exported on its own so `tools/world-check.mjs` can run
+ * the REAL rule over the REAL sheets with no canvas and no GPU — the same
+ * arrangement `floodBackground` and `packMetrics` already use, and for the same
+ * reason: a check against a fixture only proves the rule agrees with itself.
+ *
+ * Mutates `d` in place. ALPHA IS NEVER READ AND NEVER WRITTEN.
+ */
+export function recolourPixels(d, {
+  hue = 0, tint = null, tintSat = 0, greyS = GREY_S,
+} = {}) {
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] === 0) continue;          // fully transparent: nothing to tint
+    const [h, s, l] = rgb2hsl(d[i], d[i + 1], d[i + 2]);
+    // 1 for a pixel with no colour of its own, 0 for a fully coloured one.
+    const g = tint == null ? 0 : 1 - Math.min(1, s / greyS);
+    const hOut = g > 0 ? mixHue(h + hue, tint, g) : h + hue;
+    const sOut = Math.min(1, s + tintSat * g * liftWindow(l));
+    const [r, gg, b] = hsl2rgb(hOut, sOut, l);
+    d[i] = r; d[i + 1] = gg; d[i + 2] = b;
+  }
+  return d;
+}
+
+/**
+ * A recoloured copy of an already-loaded atlas.
+ *
+ * Shares every measured field with its source by construction — they are copied
+ * across rather than recomputed, so there is no arithmetic here that could
+ * disagree with the packing. Only the texture differs.
+ */
+export function recolourAtlas(atlas, opts = {}) {
+  const src = atlas.texture.image;
+  const out = document.createElement('canvas');
+  out.width = src.width;
+  out.height = src.height;
+  const ctx = out.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(src, 0, 0);
+  const img = ctx.getImageData(0, 0, out.width, out.height);
+  recolourPixels(img.data, opts);
+  ctx.putImageData(img, 0, 0);
+
+  const texture = new THREE.CanvasTexture(out);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
+  return { ...atlas, texture };
+}

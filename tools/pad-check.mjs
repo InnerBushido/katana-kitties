@@ -29,7 +29,7 @@ globalThis.localStorage = {
   removeItem(k) { this._s.delete(k); },
 };
 
-const { InputManager, ACTIONS } = await import('../src/core/input.js');
+const { InputManager, ACTIONS, KEYSETS, BOUND_KEYS } = await import('../src/core/input.js');
 
 const line = (l, v) => console.log(String(l).padEnd(46) + v);
 let fails = 0;
@@ -240,6 +240,48 @@ console.log('\n--- one pad only: player 2 stays on the keyboard ---');
   ok('P2 is not bound to P1 pad', im.bindings[1].pad == null);
 }
 
+/* CONTROLLERS FILL FROM PLAYER 1 DOWN, THEN WASD, THEN THE ARROW KEYS. The
+   keyboard sets are a QUEUE rather than player 2's and player 3's property:
+   whoever is first out of the controllers gets WASD, because WASD with a space
+   bar beats the arrow keys with a numpad and no kid should be handed the worse
+   half on account of her slot number.
+
+   This replaces a slot-affinity rule that gave slot 1 `KEYSETS[1]` whenever it
+   was free — so ONE pad put player 2 on the arrows and pushed WASD down to
+   player 3, which is backwards. */
+console.log('\n--- how many controllers -> who is on what ---');
+{
+  const mkPad = (i) => { const p = DEVICES.ds4Chrome(); p.index = i; return p; };
+  const layout = (im, n) => im.bindings.slice(0, n)
+    .map((b) => (b.pad != null ? 'pad' : b.keyset === 0 ? 'WASD' : b.keyset === 1 ? 'Arrows' : '-'))
+    .join(' ');
+
+  const zero = drive([]);           zero.slots = 2; zero.update();
+  ok('0 controllers: P1 WASD, P2 Arrows', layout(zero, 2) === 'WASD Arrows', layout(zero, 2));
+
+  const one = drive([mkPad(0)]);    one.slots = 3; one.update();
+  ok('1 controller: P1 pad, P2 WASD, P3 Arrows',
+    layout(one, 3) === 'pad WASD Arrows', layout(one, 3));
+
+  const two = drive([mkPad(0), mkPad(1)]); two.slots = 4; two.update();
+  ok('2 controllers: P1 pad, P2 pad, P3 WASD, P4 Arrows',
+    layout(two, 4) === 'pad pad WASD Arrows', layout(two, 4));
+
+  const three = drive([mkPad(0), mkPad(1), mkPad(2)]); three.slots = 4; three.update();
+  ok('3 controllers: P1-P3 pads, P4 WASD',
+    layout(three, 4) === 'pad pad pad WASD', layout(three, 4));
+
+  const four = drive([mkPad(0), mkPad(1), mkPad(2), mkPad(3)]); four.slots = 4; four.update();
+  ok('4 controllers: nobody is on the keyboard',
+    layout(four, 4) === 'pad pad pad pad', layout(four, 4));
+
+  /* A TWO-PLAYER GAME WITH ONE PAD NOW PUTS P2 ON WASD, which is the one thing
+     this rule deliberately changes about the game the girls already know. */
+  const duo = drive([mkPad(0)]);
+  ok('one pad, two players: P2 is on WASD not the arrows',
+    duo.bindings[1].keyset === 0, JSON.stringify(duo.bindings[1]));
+}
+
 /* --------------------- 3. TWO pads, two players -------------------------- */
 
 console.log('\n--- two PS4 pads at once ---');
@@ -308,8 +350,10 @@ for (const dev of ['ds4Chrome', 'xbox', 'genericUsb']) {
 }
 {
   // ...and SPLIT still forces the split on the pad it was written for, even
-  // alongside a second pad that would otherwise switch auto out of split mode.
+  // alongside a second pad. The vJoy device has to be AWAKE to be split at
+  // all now — a phantom is not two players any more than it is one.
   const v = DEVICES.vjoy();
+  v.buttons = buttons(38, [2]);
   const p = DEVICES.ds4Chrome();
   p.index = 1;
   const im = drive([v, p], { padMode: 'split' });
@@ -318,24 +362,164 @@ for (const dev of ['ds4Chrome', 'xbox', 'genericUsb']) {
     JSON.stringify(im.bindings));
 }
 
-console.log('\n--- vJoy + a PS4 pad together ---');
+/* THE vJOY DRIVER IS A PHANTOM CONTROLLER, and this is the check that did not
+   exist. vJoy is a driver-level virtual joystick: once it is installed, Windows
+   reports the device to the browser forever — with or without Joy2Win running,
+   with or without a Joy-Con paired, and with or without any Nintendo hardware
+   in the building. So the game saw a controller that was not there, handed it
+   player 1, and left a kid on the keyboard wondering why nothing moved.
+
+   ONLY A vJOY DEVICE IS ASKED TO PROVE ITSELF. Every real pad is hidden by the
+   browser until it sends input, so by the time one appears somebody has used
+   it — the gate is a no-op for real pads and would only be a source of
+   mid-session churn if it ever misfired. */
+console.log('\n--- a vJoy device nothing is feeding takes no seat ---');
+{
+  const im = drive([DEVICES.vjoy()]);
+  ok('the phantom claims no player', im.bindings[0].pad == null,
+    JSON.stringify(im.bindings[0]));
+  ok('P1 falls through to WASD', im.bindings[0].keyset === 0);
+  ok('P2 gets the arrows', im.bindings[1].keyset === 1);
+  ok('both players are on the keyboard',
+    im.players[0].source === 'keyboard' && im.players[1].source === 'keyboard');
+  ok('and it seats only the two keyboard players', im.seatable === 2, `${im.seatable}`);
+  /* STILL LISTED IN THE READOUT, flagged rather than hidden — otherwise "why
+     can't the game see my Joy-Cons?" is undebuggable from inside the game,
+     which is the whole job of that screen. */
+  const diag = im.diagnostics();
+  ok('...but the settings readout still shows it', diag.length === 1);
+  ok('...flagged asleep', diag[0].asleep === true);
+}
+
+/* AND IT WAKES UP THE MOMENT IT SENDS ANYTHING. Two ways in, and both are
+   needed: a stick can be pushed without a button ever being pressed, and a
+   button can be pressed without a stick ever moving. */
+console.log('\n--- ...and takes one as soon as it sends something ---');
 {
   const v = DEVICES.vjoy();
+  const im = drive([v]);
+  ok('asleep to begin with', im.bindings[0].pad == null);
+  v.buttons = buttons(38, [2]);          // somebody presses a button
+  im.update();
+  ok('a button press wakes it', im.bindings[0].pad === 0, JSON.stringify(im.bindings[0]));
+
+  const v2 = DEVICES.vjoy();
+  const im2 = drive([v2]);
+  v2.axes = v2.axes.slice();
+  v2.axes[0] = 0.9;                      // ...or somebody moves a stick
+  im2.update();
+  ok('a stick moving wakes it', im2.bindings[0].pad === 0, JSON.stringify(im2.bindings[0]));
+
+  /* RESTING VALUES ARE NOT INPUT. The vJoy device rests with three axes at -1,
+     so a liveness test written against zero would call it awake on frame one —
+     which is the bug, not the fix. The range is measured from what the axes
+     FIRST read, not from the origin. */
+  const still = DEVICES.vjoy();
+  const im3 = drive([still]);
+  im3.update();
+  im3.update();
+  ok('resting axes at -1 are not mistaken for input', im3.bindings[0].pad == null,
+    JSON.stringify(im3.bindings[0]));
+}
+
+/* SPLITTING IS PER DEVICE, NOT A MODE, AND THIS IS THE BLOCK THAT MATTERS.
+   It used to be a global switch: either the vJoy pad was cut in half and you
+   were in "split mode", or it wasn't. BOTH settings were wrong for the setup
+   that prompted this — two Joy-Cons through Joy2Win PLUS a PS4 pad — because
+   the question the switch asked ("do we split?") is a question about ONE DEVICE
+   and it was being asked about the whole machine.
+
+   Each pad is decided on its own now: a vJoy feed becomes two players, every
+   ordinary controller becomes one, and they coexist. */
+console.log('\n--- 2 Joy-Cons (Joy2Win) + a PS4 pad: all three at once ---');
+{
+  const v = DEVICES.vjoy();
+  v.buttons = buttons(38, [2]);            // Joy2Win is feeding it
   const p = DEVICES.ds4Chrome();
   p.index = 1;
   const im = drive([v, p]);
-  ok('two live pads means no split', im.bindings[0].half == null);
-  ok('P1 <- vJoy, P2 <- PS4',
-    im.bindings[0].pad === 0 && im.bindings[1].pad === 1);
-  line('  consequence', 'the RIGHT Joy-Con is unreachable in this combination');
+
+  ok('the Joy-Cons are two devices', im.bindings[0].half === 'left'
+    && im.bindings[1].half === 'right', JSON.stringify(im.bindings.slice(0, 2)));
+  ok('...and the PS4 pad is a third', im._padDevices([v, p]).length === 3,
+    JSON.stringify(im._padDevices([v, p])));
+  im.slots = 3;
+  im.update();
+  ok('P1 left Joy-Con, P2 right Joy-Con, P3 the PS4 pad',
+    im.bindings[0].half === 'left' && im.bindings[1].half === 'right'
+    && im.bindings[2].pad === 1 && im.bindings[2].half == null,
+    JSON.stringify(im.bindings.slice(0, 3)));
+  ok('all three slots read a gamepad',
+    [0, 1, 2].every((i) => im.players[i].source === 'gamepad'));
+  ok('no two slots share a device',
+    new Set(im.bindings.slice(0, 3).map((b) => `${b.pad}:${b.half}`)).size === 3);
+  ok('and a fourth player still gets WASD', (im.slots = 4, im.update(),
+    im.bindings[3].keyset === 0), JSON.stringify(im.bindings[3]));
+
+  /* THE HALVES EXPAND IN PLACE, so "whichever connects first is player 1" holds
+     whatever kind of controller that is. Hoisting them to the front was the old
+     shape and it silently reordered everybody else. */
+  const first = DEVICES.ds4Chrome();
+  const second = DEVICES.vjoy();
+  second.index = 1;
+  second.buttons = buttons(38, [2]);
+  const im2 = drive([first, second]);
+  im2.slots = 3;
+  im2.update();
+  ok('a PS4 pad connected FIRST keeps player 1',
+    im2.bindings[0].pad === 0 && im2.bindings[0].half == null,
+    JSON.stringify(im2.bindings[0]));
+  ok('...and the Joy-Cons follow it as P2 and P3',
+    im2.bindings[1].half === 'left' && im2.bindings[2].half === 'right',
+    JSON.stringify(im2.bindings.slice(1, 3)));
 }
 
-console.log('\n--- vJoy alone still splits (regression) ---');
+/* ONE PERSON HOLDING BOTH HALVES is the only thing the setting is still for,
+   and it must not touch any other controller. */
+console.log('\n--- padMode = single: the pair is one player, pads unaffected ---');
 {
-  const im = drive([DEVICES.vjoy()]);
-  ok('P1 <- left half', im.bindings[0].half === 'left');
-  ok('P2 <- right half', im.bindings[1].half === 'right');
-  ok('both on the same pad', im.bindings[0].pad === im.bindings[1].pad);
+  const v = DEVICES.vjoy();
+  v.buttons = buttons(38, [2]);
+  const p = DEVICES.ds4Chrome();
+  p.index = 1;
+  const im = drive([v, p], { padMode: 'single' });
+  ok('the pair is one device', im.bindings[0].half == null);
+  ok('P1 <- the pair, P2 <- the PS4 pad',
+    im.bindings[0].pad === 0 && im.bindings[1].pad === 1);
+  ok('two devices plus two keysets seats four', im.seatable === 4, `${im.seatable}`);
+  // The legacy spelling has to keep meaning the same thing.
+  const legacy = drive([v, p], { padMode: 'separate' });
+  ok('`separate` still means the same', legacy.bindings[0].half == null);
+}
+
+/* A PHANTOM IS NOT TWO PLAYERS ANY MORE THAN IT IS ONE. */
+console.log('\n--- a phantom vJoy is still not split ---');
+{
+  const dead = drive([DEVICES.vjoy()]);
+  ok('a phantom is not split into two players', dead.bindings[0].pad == null,
+    JSON.stringify(dead.bindings[0]));
+  ok('...and P1 falls through to WASD', dead.bindings[0].keyset === 0);
+  const p = DEVICES.ds4Chrome();
+  p.index = 1;
+  const mixed = drive([DEVICES.vjoy(), p]);
+  ok('a real pad beside a phantom still gets player 1',
+    mixed.bindings[0].pad === 1, JSON.stringify(mixed.bindings[0]));
+}
+
+/* SEATABLE MUST AGREE WITH THE BINDER, and it did not: it counted the pads a
+   second way, in its own copy of the split rule. The join screen refuses a
+   claim past `seatable`, so a disagreement means a kid pressing START on a
+   controller the binder has already dealt and being told the party is full. */
+console.log('\n--- seatable counts what the binder deals ---');
+{
+  const none = drive([]);
+  ok('no pads at all seats the two keyboard players', none.seatable === 2,
+    `${none.seatable}`);
+  const one = drive([DEVICES.ds4Chrome()]);
+  ok('one pad plus two keysets seats three', one.seatable === 3, `${one.seatable}`);
+  const mk = (i) => { const p = DEVICES.ds4Chrome(); p.index = i; return p; };
+  const four = drive([mk(0), mk(1), mk(2), mk(3)]);
+  ok('four pads still seats only four', four.seatable === 4, `${four.seatable}`);
 }
 
 /* --------------- 5. what an unremapped pad actually does ----------------- */
@@ -376,8 +560,331 @@ for (const dev of ['ds4Chrome', 'xbox', 'genericUsb']) {
   ok(`${dev}: Joy-Con map untouched`, JSON.stringify(im.vjoyMap) === before);
 }
 {
-  const im = drive([DEVICES.vjoy()]);
-  ok('the vJoy pad is still remappable', im.beginCapture('left', 'jump') === true);
+  /* THE CALIBRATION SCREEN MUST SURVIVE THE PAD NOT BEING SPLIT. `beginCapture`
+     used to find its pad through `bindings.find(x => x.half === half)` — a
+     proxy for "the vJoy device" that only held while `auto` always split it.
+     With the pad seating one player and `half: null`, that lookup found nothing
+     and the whole Joy-Con remap screen went unreachable for the one device that
+     cannot be played without it. It asks for the device by name now.
+     Awake, because a pad nothing is feeding has nothing to press. */
+  const v = DEVICES.vjoy();
+  v.buttons = buttons(38, [2]);
+  const im = drive([v]);
+  ok('the vJoy pad is still remappable unsplit',
+    im.beginCapture('left', 'jump') === true);
+  im.cancelCapture();
+  ok('...and its sticks are still auto-detectable', im.autoDetectSticks() !== null);
+  ok('...but a phantom is not', drive([DEVICES.vjoy()]).beginCapture('left', 'jump') === false);
+}
+
+/* ENTER IS THE JOIN KEY, EVERY TIME, AND ESC IS THE KEYBOARD'S ONLY MENU KEY.
+
+   It used to be each set's own start key, which meant the key that seated the
+   next kitten MOVED depending on which set was already taken: with ONE
+   controller connected, player 2 sits on WASD, so ENTER was HER PAUSE KEY and
+   the only way in was the arrow set's `\`. Pressing the obvious ENTER opened
+   the pause menu instead of seating anybody.
+
+   Both sets answer to Enter now and `_findJoin` hands out the LOWEST FREE SET,
+   so two keyboard players join one at a time by pressing it twice. That is only
+   safe because a keyboard's `start` no longer pauses — see `Game._update`. */
+console.log('\n--- ENTER joins, every time ---');
+{
+  const mkPad = (i) => { const p = DEVICES.ds4Chrome(); p.index = i; return p; };
+
+  const none = drive([]);
+  ok('0 controllers: both keysets are seated, so nothing can join',
+    none.joinHint() === null, `${none.joinHint()}`);
+
+  const one = drive([mkPad(0)]);
+  ok('1 controller: P2 is on WASD...', one.bindings[1].keyset === 0);
+  ok('...and ENTER is still the way in for P3',
+    one.joinHint() === 'ENTER', `${one.joinHint()}`);
+
+  const two = drive([mkPad(0), mkPad(1)]);
+  ok('2 controllers: both keysets are free, so ENTER joins',
+    two.joinHint() === 'ENTER', `${two.joinHint()}`);
+
+  /* THE PRESS ITSELF, through the real edge detector, and it must hand out the
+     LOWEST FREE SET rather than a set of its own choosing. */
+  const press = (im, code) => {
+    im.keys.clear(); im.update();          // clean previous frame for the edge
+    im.keys.add(code); im.update();
+    const c = im.pendingJoin();
+    im.keys.clear();
+    return c;
+  };
+  const solo = drive([mkPad(0)]);
+  ok('ENTER seats the next keyboard player',
+    JSON.stringify(press(solo, 'Enter')) === '{"pad":null,"half":null,"keyset":1}',
+    JSON.stringify(press(solo, 'Enter')));
+
+  /* TWO KEYBOARD PLAYERS JOIN ONE AT A TIME, on two presses of the same key —
+     with two controllers seated, both sets are free, so the first press takes
+     WASD and the second takes the arrows. */
+  const kb = drive([mkPad(0), mkPad(1)]);
+  ok('ENTER hands out WASD first', press(kb, 'Enter')?.keyset === 0,
+    JSON.stringify(press(kb, 'Enter')));
+  kb.slots = 3; kb.update();
+  ok('...and the arrows on the next press', press(kb, 'Enter')?.keyset === 1,
+    JSON.stringify(press(kb, 'Enter')));
+
+  /* THE NUMPAD'S ENTER IS THE SAME KEY UNDER ANOTHER NAME. `\` is gone. */
+  const np = drive([mkPad(0)]);
+  ok('the numpad ENTER works too', press(np, 'NumpadEnter')?.keyset === 1);
+  const bs = drive([mkPad(0)]);
+  ok('`\\` no longer joins anybody', press(bs, 'Backslash') === null,
+    JSON.stringify(press(bs, 'Backslash')));
+
+  /* HOLDING ENTER MUST NOT SEAT BOTH KEYBOARD PLAYERS AT ONCE. The edge is
+     latched against the one key now rather than one latch per set, which is
+     exactly the case that would have slipped through the old spelling. */
+  const held = drive([mkPad(0), mkPad(1)]);
+  held.keys.clear(); held.update();
+  held.keys.add('Enter'); held.update();
+  const first = held.pendingJoin();
+  held.slots = 3; held.update();            // she took WASD; Enter still down
+  ok('holding ENTER seats one player, not two',
+    first?.keyset === 0 && held.pendingJoin() === null,
+    `${JSON.stringify(first)} then ${JSON.stringify(held.pendingJoin())}`);
+
+  /* A SPARE CONTROLLER WINS THE HINT. Pressing START on a pad nobody is using
+     is the easy answer whenever one is available. */
+  const spare = drive([mkPad(0), mkPad(1)]);
+  spare.slots = 1;
+  spare.update();
+  ok('a spare controller is named before a keyboard set',
+    /controller/.test(spare.joinHint()), `${spare.joinHint()}`);
+
+  /* AND IT GOES SILENT WHEN THE PARTY REALLY IS FULL, rather than naming a key
+     that would be refused — the toast for that is a worse experience than the
+     line simply not being there. */
+  const full = drive([mkPad(0), mkPad(1), mkPad(2), mkPad(3)]);
+  full.slots = 4;
+  full.update();
+  ok('a full party names no key', full.joinHint() === null, `${full.joinHint()}`);
+
+  /* A PHANTOM vJOY MUST NOT PROMISE A SEAT. `seatable` counts it out, so the
+     hint has to as well or it advertises a controller that is not there. */
+  const phantom = drive([DEVICES.vjoy()]);
+  ok('a phantom vJoy offers no controller to join on',
+    phantom.joinHint() === null, `${phantom.joinHint()}`);
+}
+
+/* A CONNECTED CONTROLLER SHOULD BE A PLAYER. Three pads plugged in used to give
+   two kittens and one controller that did nothing: it was dealt a device slot
+   correctly and then sat unbound because the party was two, so it read as
+   broken hardware rather than as a party nobody had grown. `Game._autoSeat`
+   seats her from `sparePad` instead. START still works and is still explicit;
+   this is the same thing happening without anybody having to know that. */
+console.log('\n--- a spare controller somebody picks up becomes a player ---');
+{
+  const mkPad = (i, down = []) => {
+    const p = DEVICES.ds4Chrome();
+    p.index = i;
+    p.buttons = buttons(17, down);
+    return p;
+  };
+
+  /* CONNECTION IS NOT ENOUGH. A pad charging on the side, or left on the sofa,
+     has sent nothing and must seat nobody — the same question the vJoy phantom
+     has to answer, doing the same job. */
+  const idle = drive([mkPad(0), mkPad(1), mkPad(2)]);
+  ok('a pad nobody has touched is not offered', idle.sparePad() === null,
+    JSON.stringify(idle.sparePad()));
+
+  const woken = drive([mkPad(0), mkPad(1), mkPad(2, [STANDARD.cross])]);
+  const dev = woken.sparePad();
+  ok('a pad somebody picks up is offered', dev?.pad === 2, JSON.stringify(dev));
+  ok('...and it is a spare, not one already being played',
+    !woken.bindings.slice(0, 2).some((b) => b.pad === 2));
+
+  /* ONE OFFER PER DEVICE. `hasSentInput` never goes back to false, so without
+     the caller's latch a player who drops out would be re-seated on the next
+     frame by the controller still in her hands and could never leave. */
+  ok('an offer already taken is not repeated',
+    woken.sparePad(new Set(['pad:2'])) === null,
+    JSON.stringify(woken.sparePad(new Set(['pad:2']))));
+
+  /* AND IT WORKS FOR THE COMBINATION THAT PROMPTED IT: two Joy-Cons arriving
+     through Joy2Win as one vJoy device that has been split, plus a PS4 pad.
+     The pad is the third device and nothing was seating anybody on it. */
+  const v = DEVICES.vjoy();
+  v.buttons = buttons(38, [2]);
+  const p = mkPad(1, [STANDARD.cross]);
+  const combo = drive([v, p], { padMode: 'split' });
+  ok('split Joy-Cons take P1 and P2',
+    combo.bindings[0].half === 'left' && combo.bindings[1].half === 'right');
+  ok('...and the PS4 pad is offered as P3', combo.sparePad()?.pad === 1,
+    JSON.stringify(combo.sparePad()));
+}
+
+
+/* ---------------------------------------------------------------------------
+   THE KEYBOARD, WHICH IS THE OTHER HALF OF THIS FILE'S JOB.
+
+   Everything above is about controllers, because that is where the surprises
+   are. The keyboard was left to inspection — which was survivable while player
+   2 had one key per action, and stopped being so the moment she got THREE, on
+   two different hand positions, with three of the old keys moving to make room.
+   A key bound twice is not a typo you can see: it is one press doing two things
+   in a game nobody is testing with four people.
+--------------------------------------------------------------------------- */
+console.log('\n--- the keyboard sets ---');
+{
+  const FIELDS = ['up', 'down', 'left', 'right', ...ACTIONS];
+  /* PAD-ONLY ACTIONS HAVE NO KEYSET ENTRY, deliberately: `map` and `math` stay
+     on Z / X / M in the game's own keydown handler, so they keep working while
+     somebody else is on a controller. */
+  const PAD_ONLY = new Set(['map', 'math']);
+
+  for (const ks of KEYSETS) {
+    const bound = FIELDS.filter((f) => !PAD_ONLY.has(f));
+    ok(`${ks.name}: every field is a LIST of codes`,
+      bound.every((f) => Array.isArray(ks[f]) && ks[f].length > 0),
+      bound.filter((f) => !Array.isArray(ks[f])).join(',') || '');
+    ok(`${ks.name}: nothing pad-only leaked onto the keyboard`,
+      [...PAD_ONLY].every((f) => ks[f] == null));
+
+    /* NO KEY MAY DO TWO JOBS IN ONE SET. This is the check the whole block
+       exists for: `;` used to be mount and is now "walk right", `/` used to be
+       jump and is now attack, and Right Ctrl used to be sprint and is now jump.
+       Every one of those is a key that would have fired two actions at once if
+       the old binding had been left behind. */
+    const seen = new Map();
+    let clash = '';
+    for (const f of bound) {
+      for (const code of ks[f]) {
+        if (seen.has(code)) clash = `${code}: ${seen.get(code)} + ${f}`;
+        seen.set(code, f);
+      }
+    }
+    ok(`${ks.name}: no key does two jobs`, !clash, clash);
+  }
+
+  /* AND NO KEY IS SHARED BETWEEN THE TWO SETS — one press must never move both
+     kittens. Enter is the exception and it is the point of Enter: it is the
+     JOIN key for both sets, dealt to the lowest free one, so that which key
+     seats the next player never depends on who is already playing. */
+  {
+    const codes = (ks) => new Set(
+      ['up', 'down', 'left', 'right', ...ACTIONS].flatMap((f) => ks[f] ?? [])
+    );
+    const [a, b2] = KEYSETS.map(codes);
+    const shared = [...a].filter((c) => b2.has(c));
+    ok('the two sets share only the join key',
+      shared.every((c) => KEYSETS[0].start.includes(c)), shared.join(','));
+  }
+
+  /* PLAYER 2 CAN PLAY WITH ONE HAND, which is the whole point of the pass:
+     player 1 has move + three buttons under her left hand alone (WASD, Q E F)
+     and player 2 had nothing equivalent — the arrows are a right-hand shape but
+     her buttons were a hand's width away on the numpad. */
+  const P2 = KEYSETS[1];
+  const has = (f, code) => (P2[f] ?? []).includes(code);
+  ok('P2 walks on O K L ;',
+    has('up', 'KeyO') && has('left', 'KeyK') && has('down', 'KeyL')
+    && has('right', 'Semicolon'));
+  /* P I J mirror Q E F: same three jobs, same shape, other hand. */
+  ok('...with P I J mirroring P1\'s Q E F',
+    has('mount', 'KeyP') && has('interact', 'KeyI') && has('attack', 'KeyJ')
+    && KEYSETS[0].mount.includes('KeyQ') && KEYSETS[0].interact.includes('KeyE')
+    && KEYSETS[0].attack.includes('KeyF'));
+  ok('...and two ways to jump beside it', has('jump', 'Quote') && has('jump', 'ControlRight'));
+  ok('...and sprint off Right Ctrl, which is a jump key now',
+    has('sprint', 'AltRight') && has('sprint', 'ShiftRight')
+    && !has('sprint', 'ControlRight'));
+
+  /* THE OLD KEYS STILL WORK. Nothing a kid has already learned may stop
+     working — the arrows and the numpad are how both girls have always played,
+     and the punctuation run is the laptop's answer to a missing numpad. */
+  ok('the arrows still walk her',
+    has('up', 'ArrowUp') && has('down', 'ArrowDown')
+    && has('left', 'ArrowLeft') && has('right', 'ArrowRight'));
+  ok('the numpad still does all four buttons',
+    has('jump', 'Numpad0') && has('attack', 'Numpad1')
+    && has('interact', 'Numpad2') && has('mount', 'Numpad3'));
+  /* , . / ' — one contiguous run, in the same order relative to each other as
+     the numpad's 2 1 3 0 never was. */
+  ok('the laptop run is , . / \' = interact, mount, attack, jump',
+    has('interact', 'Comma') && has('mount', 'Period')
+    && has('attack', 'Slash') && has('jump', 'Quote'));
+
+  /* IF THE GAME BOUND IT, THE BROWSER MUST NOT ALSO ACT ON IT. Three of player
+     2's keys are Firefox shortcuts — `/` and `'` open Quick Find, and a bare
+     Alt focuses the menu bar — and Firefox is the browser this game is played
+     in. `BOUND_KEYS` is derived from the sets, so a key added to a keyset is
+     protected by having been added. */
+  ok('every bound key is protected from the browser',
+    KEYSETS.every((ks) => FIELDS.filter((f) => ks[f]).every((f) => (
+      ks[f].every((c) => BOUND_KEYS.has(c))
+    ))));
+  for (const c of ['Slash', 'Quote', 'AltRight', 'Space', 'ArrowUp']) {
+    ok(`...including ${c}`, BOUND_KEYS.has(c));
+  }
+  /* ...and nothing the game does NOT bind is swallowed. F5 and F12 are the
+     ones that matter: a game that eats reload is a game you have to kill. */
+  ok('...and F5 / F12 / Tab are left alone',
+    !BOUND_KEYS.has('F5') && !BOUND_KEYS.has('F12') && !BOUND_KEYS.has('Tab'));
+}
+
+/* --- and the real manager reads them, which is the half a table cannot prove --- */
+console.log('\n--- ...read through the real InputManager ---');
+{
+  const im = drive([]);
+  ok('with no pads, P1 is WASD and P2 the arrow set',
+    im.bindings[0].keyset === 0 && im.bindings[1].keyset === 1);
+
+  /** Hold a key, step the manager, and report P2's slot. */
+  const press = (...codes) => {
+    im.keys.clear();
+    for (const c of codes) im.keys.add(c);
+    im.update();
+    const p = im.players[1];
+    return {
+      mx: Math.round(p.mx * 100) / 100,
+      my: Math.round(p.my * 100) / 100,
+      on: ACTIONS.filter((a) => p.down(a)),
+    };
+  };
+
+  ok('O walks P2 up', press('KeyO').my === -1);
+  ok('L walks her down', press('KeyL').my === 1);
+  ok('K walks her left', press('KeyK').mx === -1);
+  ok('; walks her right', press('Semicolon').mx === 1);
+  ok('...and the arrows still do too',
+    press('ArrowUp').my === -1 && press('ArrowRight').mx === 1);
+  /* Both hand positions at once must not double the stick — it is clamped to a
+     circle, and a kid resting a hand on both is a real thing. */
+  ok('holding O and Up is still one unit of walk', press('KeyO', 'ArrowUp').my === -1);
+
+  ok('P mounts', press('KeyP').on.join() === 'mount');
+  ok('I interacts', press('KeyI').on.join() === 'interact');
+  ok('J attacks', press('KeyJ').on.join() === 'attack');
+  ok('\' jumps', press('Quote').on.join() === 'jump');
+  ok('Right Ctrl jumps too', press('ControlRight').on.join() === 'jump');
+  ok('Right Alt sprints', press('AltRight').on.join() === 'sprint');
+  ok('Right Shift still sprints', press('ShiftRight').on.join() === 'sprint');
+  /* The three that MOVED, each asserted to do its new job and only that. */
+  ok('/ is attack now, not jump', press('Slash').on.join() === 'attack');
+  ok('. is mount now, not attack', press('Period').on.join() === 'mount');
+  ok(', is still interact', press('Comma').on.join() === 'interact');
+  ok('the numpad is untouched',
+    press('Numpad0').on.join() === 'jump' && press('Numpad1').on.join() === 'attack'
+    && press('Numpad2').on.join() === 'interact' && press('Numpad3').on.join() === 'mount');
+
+  /* AND NONE OF IT REACHES PLAYER 1. Her hand is on the other side of the
+     keyboard; a stray binding that moved both kittens would be the worst
+     possible version of this feature. */
+  im.keys.clear();
+  for (const c of ['KeyO', 'KeyK', 'KeyP', 'KeyI', 'KeyJ', 'Quote', 'AltRight', 'ControlRight']) {
+    im.keys.add(c);
+  }
+  im.update();
+  const p1 = im.players[0];
+  ok('none of player 2\'s keys move player 1',
+    p1.mx === 0 && p1.my === 0 && ACTIONS.every((a) => !p1.down(a)));
+  im.keys.clear();
 }
 
 console.log('');

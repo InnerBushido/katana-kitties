@@ -17,7 +17,15 @@
    exactly the same reason.
 --------------------------------------------------------------------------- */
 
+/* ONE BOARD PER LEAGUE, and the key carries the league's id.
+   A duel win and a 3v1 win are not the same achievement, and a single table
+   mixing them makes the number on it meaningless — a handicap fighter with a
+   triple-length bar deals three times the damage of a duellist and would sit
+   permanently on top of a board she is not really competing on. The duel keeps
+   the ORIGINAL key so every tournament the girls have already won is still
+   there; only the new leagues get new tables. */
 const KEY = 'kk.arena.board.v2';
+const keyFor = (mode = 'duel') => (mode === 'duel' ? KEY : `${KEY}.${mode}`);
 /** How many rows the board keeps. The brief asked for the top ten. */
 export const BOARD_SIZE = 10;
 
@@ -62,9 +70,9 @@ export function scoreOf({ wins, dealt, taken, seconds, rounds, maxHp }) {
 }
 
 /** Read the board, newest-best first. Never throws — a bad blob is no board. */
-export function loadBoard() {
+export function loadBoard(mode = 'duel') {
   try {
-    const raw = window.localStorage.getItem(KEY);
+    const raw = window.localStorage.getItem(keyFor(mode));
     if (!raw) return [];
     const rows = JSON.parse(raw);
     if (!Array.isArray(rows)) return [];
@@ -99,13 +107,13 @@ export function loadBoard() {
  * can say "not on the board" rather than silently showing a list the player
  * is not in — which reads as the game having lost her win.
  */
-export function saveResult(row) {
+export function saveResult(row, mode = 'duel') {
   const entry = { ...row, at: Date.now() };
-  const rows = [...loadBoard(), entry]
+  const rows = [...loadBoard(mode), entry]
     .sort((a, b) => b.score - a.score)
     .slice(0, BOARD_SIZE);
   try {
-    window.localStorage.setItem(KEY, JSON.stringify(rows));
+    window.localStorage.setItem(keyFor(mode), JSON.stringify(rows));
   } catch {
     /* Storage full, or blocked (private mode, or a browser with cookies off).
        The board is a bonus; losing it must not take the results screen with
@@ -115,10 +123,19 @@ export function saveResult(row) {
   return { rows, rank };
 }
 
-/** Wipe it. Only reachable from the pause menu, and it confirms first. */
-export function clearBoard() {
-  try { window.localStorage.removeItem(KEY); } catch { /* see saveResult */ }
+/** Wipe one league's board, or every league's. Only reachable from the pause
+ *  menu, and it confirms first. */
+export function clearBoard(mode = null) {
+  try {
+    if (mode) window.localStorage.removeItem(keyFor(mode));
+    else for (const m of BOARD_MODES) window.localStorage.removeItem(keyFor(m));
+  } catch { /* see saveResult */ }
 }
+
+/** Every league that can have a board. Kept here rather than imported from
+ *  `tournament.js` so clearing one does not drag the whole tournament into
+ *  the leaderboard's dependencies. */
+export const BOARD_MODES = ['duel', 'ffa', 'pairs', 'two_one', 'three_one'];
 
 /* ---------------------------------------------------------------------------
    Entering a name on a joystick.

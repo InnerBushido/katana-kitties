@@ -269,35 +269,100 @@ function profileFor(gp) {
   return PROFILES.generic;
 }
 
-const KEYSETS = [
+/** Every field of a keyset that holds key codes: the stick, then the buttons. */
+const KEY_FIELDS = ['up', 'down', 'left', 'right', ...ACTIONS];
+
+/* ---------------------------------------------------------------------------
+   THE TWO KEYBOARD SETS.
+
+   EVERY FIELD IS A LIST, and that is not tidiness — it is the second player's
+   whole problem. She used to have one primary key per action plus a single
+   `alt`, which is exactly enough to say "the numpad, or these four keys next to
+   it" and not enough to say what she actually needs: THREE ways to press attack
+   and TWO ways to walk. A one-deep alternate cannot express a second complete
+   hand position, so `alt` is gone and a binding is however many codes it takes.
+
+   PLAYER 2 HAS A ONE-HANDED CLUSTER NOW, and this is the point of the pass.
+   Player 1 plays WASD-and-friends with her LEFT hand alone: move on WASD, and
+   Q / E / F sitting around it under the same fingers. Player 2 had nothing
+   equivalent — the arrows are a right-hand shape, but her buttons were on the
+   numpad (another hand's width to the right, and absent on a laptop) or on
+   , . / ; (which your right hand can only reach by leaving the arrows).
+
+       O K L ;    is the arrows, moved onto the home row for the right hand
+       P I J      mirrors Q E F: mount, interact, attack, same jobs, same shape
+       ' or RCtrl jump — where the space bar is for player 1
+       Right Alt  sprint — where left Shift is for player 1
+
+   So each girl can play the whole game with one hand on her own half of the
+   keyboard, sitting side by side, without either of them reaching across.
+
+   THE OLD KEYS ALL STILL WORK. Arrows, numpad and , . / are unchanged as
+   ways in; nothing a kid has already learned stops working. Three of them had
+   to MOVE, and each only because something else claimed the key:
+
+     `;` was mount    -> it is "walk right" now, so mount went to `.`
+     `/` was jump     -> jump is `'`, so `/` took attack (`.`'s old job)
+     RCtrl was sprint -> it is a jump key now, so sprint is RShift and RAlt
+
+   which leaves the four punctuation keys reading , . / ' = interact, mount,
+   attack, jump: still one contiguous run under the right hand, still in the
+   same order relative to each other.
+--------------------------------------------------------------------------- */
+export const KEYSETS = [
   {
     name: 'WASD',
-    up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD',
-    jump: 'Space', attack: 'KeyF', interact: 'KeyE', mount: 'KeyQ',
-    sprint: 'ShiftLeft', start: 'Enter',
+    up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'],
+    jump: ['Space'], attack: ['KeyF'], interact: ['KeyE'], mount: ['KeyQ'],
+    sprint: ['ShiftLeft'],
+    start: ['Enter', 'NumpadEnter'],
   },
   {
     name: 'Arrows',
-    up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight',
-    jump: 'Numpad0', attack: 'Numpad1', interact: 'Numpad2', mount: 'Numpad3',
-    sprint: 'ControlRight', start: 'NumpadEnter',
-    /* LAPTOPS HAVE NO NUMPAD, and player 2's whole action set was on it — so
-       on a laptop the second kitten could walk and nothing else. She could not
-       slash, could not swear an oath, could not climb onto a dragon, and could
-       not fire Ryuuseki's beams, which made the one two-player set-piece in the
-       game impossible to reach on the machine it is developed on.
-       These are ALTERNATES, not replacements: the numpad still works, and this
-       is the cluster your right hand can reach without leaving the arrow keys. */
-    alt: {
-      jump: 'Slash',          //  /
-      attack: 'Period',       //  .
-      interact: 'Comma',      //  ,
-      mount: 'Semicolon',     //  ;
-      sprint: 'ShiftRight',
-      start: 'Backslash',
-    },
+    /* Two hand positions, one kitten. The arrows are where she has always been;
+       O K L ; is the same shape one row up and under her right hand, so the
+       buttons can sit around it instead of a hand's width away. */
+    up: ['ArrowUp', 'KeyO'],
+    down: ['ArrowDown', 'KeyL'],
+    left: ['ArrowLeft', 'KeyK'],
+    right: ['ArrowRight', 'Semicolon'],
+    /* Three ways to press each of these, in the order they were added: the
+       numpad (which is the best of them and which laptops do not have), the
+       punctuation run next to the arrows, and the letters around O K L ;.
+
+       LAPTOPS HAVE NO NUMPAD, and player 2's whole action set was once on it —
+       so on a laptop the second kitten could walk and nothing else. She could
+       not slash, could not swear an oath, could not climb onto a dragon, and
+       could not fire Ryuuseki's beams, which made the one two-player set-piece
+       in the game impossible to reach on the machine it is developed on. */
+    /* RIGHT CTRL IS A JUMP KEY, AND IT USED TO BE SPRINT. A key cannot be both
+       — it would fire two actions on one press — so freeing it meant moving
+       sprint, which is why sprint is Right Shift and Right Alt and nothing
+       else. It is worth the move: jump is the button she presses most, `'` is a
+       pinky stretch on some keyboards and absent from others, and Right Ctrl is
+       a big key in the bottom corner that her palm finds without looking. */
+    jump: ['Numpad0', 'Quote', 'ControlRight'],
+    attack: ['Numpad1', 'Slash', 'KeyJ'],
+    interact: ['Numpad2', 'Comma', 'KeyI'],
+    mount: ['Numpad3', 'Period', 'KeyP'],
+    sprint: ['ShiftRight', 'AltRight'],
+    /* ENTER IS THE JOIN KEY FOR BOTH SETS, and that is the whole of it. It used
+       to be each set's own key — `Enter` for WASD, `NumpadEnter`/`\` for the
+       arrows — which meant the key that seated the next player MOVED depending
+       on which set was already taken, and with one controller connected the
+       obvious `Enter` was player 2's pause key and opened the menu instead.
+       Both sets answer to Enter now, `_findJoin` hands out the lowest set still
+       free, and two keyboard players join one at a time by pressing it twice.
+       ESC IS THE ONLY MENU KEY on a keyboard, which is what makes this safe —
+       see `Game._update`, where `start` only pauses for a PAD. */
+    start: ['Enter', 'NumpadEnter'],
   },
 ];
+
+/** Every key code any set binds — see `Input`'s keydown handler. */
+export const BOUND_KEYS = new Set(
+  KEYSETS.flatMap((k) => KEY_FIELDS.flatMap((f) => k[f] ?? []))
+);
 
 /** Per-player snapshot with edge detection. */
 class PadState {
@@ -318,22 +383,80 @@ class PadState {
   }
 }
 
+/* ---------------------------------------------------------------------------
+   FOUR SLOTS, AND WHICH DEVICE DRIVES EACH.
+
+   The game seats up to four kittens and there are only two keyboard sets, so
+   the interesting arrangement — the one Richard asked for — is TWO PLAYERS ON
+   THE KEYBOARD AND TWO ON CONTROLLERS, with no new profile and no third
+   keyboard set invented for the occasion.
+
+   CONTROLLERS FILL FROM PLAYER 1 DOWN, THEN THE KEYBOARD TAKES WHAT IS LEFT:
+
+     0 pads   P1 WASD   P2 Arrows
+     1 pad    P1 pad    P2 WASD    P3 Arrows
+     2 pads   P1 pad    P2 pad     P3 WASD    P4 Arrows
+     3 pads   P1 pad    P2 pad     P3 pad     P4 WASD
+
+   WHICH MEANS THE KEYBOARD SET CAN NO LONGER BE THE SLOT NUMBER. It used to be:
+   slot i read `KEYSETS[i]` whenever no pad was bound to it. With four slots and
+   two controllers on 0 and 1, the two keyboard players are slots 2 and 3 — and
+   there is no `KEYSETS[2]`. So a binding names its keyboard set explicitly.
+
+   AND THE SET IS NOT THE SLOT NUMBER EITHER. There was a slot-affinity pass
+   here that gave slot i `KEYSETS[i]` when it was free, so one pad put player 2
+   on the ARROW keys and pushed WASD down to player 3. The sets are a QUEUE, not
+   particular players' property: WASD with a space bar beats the arrows with a
+   numpad, so whoever is first out of the controllers gets WASD. See `_assign`.
+
+   A SLOT PAST THE PARTY SIZE READS NOTHING AT ALL. It has no pad and no keyset,
+   which matters: leaving the old "fall back to KEYSETS[i]" rule in place would
+   mean a two-player game in which WASD is silently also driving an unseated
+   third kitten's controller state.
+--------------------------------------------------------------------------- */
+
+/** The most slots the input layer will track. Matches MAX_PLAYERS. */
+export const MAX_SLOTS = 4;
+
+
+/** A stable name for one input device, used by the join screen. */
+export function deviceId(bnd) {
+  if (bnd.pad != null) return bnd.half ? `pad:${bnd.pad}:${bnd.half}` : `pad:${bnd.pad}`;
+  if (bnd.keyset != null) return `kb:${bnd.keyset}`;
+  return null;
+}
+
 export class InputManager {
   constructor() {
     this.keys = new Set();
-    this.players = [new PadState(), new PadState()];
-    /** Per player slot: which pad and (for a merged pad) which half of it. */
-    this.bindings = [{ pad: null, half: null }, { pad: null, half: null }];
+    this.players = Array.from({ length: MAX_SLOTS }, () => new PadState());
+    /** How many slots are actually in play. The game moves this as players
+     *  join and leave; two is the default and the girls' usual game. */
+    this.slots = 2;
+    /** Per player slot: which pad, which half of a merged pad, and which
+     *  keyboard set — any of which may be null. */
+    this.bindings = Array.from({ length: MAX_SLOTS },
+      () => ({ pad: null, half: null, keyset: null }));
     this.anyKeyThisFrame = false;
     this._anyPressLatch = false;
     this._order = [];        // pad indices in connection order
     this._capture = null;    // active remap capture, see beginCapture()
     this._axisWatch = new Map();   // pad index -> range each axis has covered
     this._buttonsSeen = new Map(); // pad index -> Set of indices ever pressed
+    /** Devices holding START last frame, and this frame's join candidate. */
+    this._joinPrev = new Set();
+    this._joinCandidate = null;
+    /** slot -> device, set by the join flow. Empty means "deal by the default
+     *  order", which is what a two-player game always does. */
+    this.claims = {};
 
-    /** 'auto' | 'split' | 'separate' — how to hand pads out to the two slots.
-     *  auto: split a merged vJoy pad in two when it's the only pad present. */
-    this.padMode = 'auto';
+    /** How a vJoy device is read. It is the ONLY device this setting touches;
+     *  every ordinary pad is one player either way — see `_padDevices`.
+     *    'split'  (default) two Joy-Cons through Joy2Win = two players
+     *    'single'          one person holding both halves = one player
+     *  'auto' and 'separate' are accepted as legacy spellings of 'split' and
+     *  'single'; only a vJoy device ever looked at them. */
+    this.padMode = 'split';
     /** 'auto' | 'cw' | 'ccw' | 'none' — stick rotation for a single Joy-Con
      *  paired as its own gamepad. The vJoy halves don't use this; their
      *  rotation lives in the axis map. */
@@ -346,10 +469,27 @@ export class InputManager {
     this.autoAxesResult = null;
 
     window.addEventListener('keydown', (e) => {
-      // Don't let space/arrows scroll the page out from under the game.
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
-        e.preventDefault();
-      }
+      /* IF THE GAME HAS BOUND IT, THE BROWSER MUST NOT ALSO ACT ON IT.
+         This used to name Space and the arrows — the two that scroll the page
+         out from under the game — and that was the whole list because it was
+         written before player 2 had any punctuation. Three of her keys are
+         browser shortcuts in FIREFOX, which is the browser this game is played
+         in:
+
+           /   opens Quick Find          (was already her jump: mash it and
+           '   opens Quick Find (links)   the find bar eats the keyboard)
+           Alt focuses the menu bar
+
+         All three are prevented on the KEYDOWN, which is what stops Firefox
+         acting on the Alt keyup as well.
+
+         DERIVED FROM THE BINDINGS RATHER THAN LISTED, so a key added to a
+         keyset is protected by being added, and F5 / F12 / Ctrl+R — which the
+         game binds nothing to — are untouched. Held CTRL or META is left alone
+         on purpose: Ctrl+L is the address bar and `L` is now a movement key,
+         and a game that eats the browser's own chords is worse than one that
+         loses a keypress. */
+      if (BOUND_KEYS.has(e.code) && !e.ctrlKey && !e.metaKey) e.preventDefault();
       this.keys.add(e.code);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -423,8 +563,12 @@ export class InputManager {
    */
   autoDetectSticks(gp, { quiet = false, requireMovement = false } = {}) {
     if (!gp) {
-      const bnd = this.bindings.find((x) => x.half === 'left') ?? this.bindings[0];
-      gp = bnd.pad != null ? (navigator.getGamepads?.() ?? [])[bnd.pad] : null;
+      // Same lookup as beginCapture, and for the same reason: the bindings no
+      // longer name a `half` unless the player has explicitly asked for a split.
+      const pads = navigator.getGamepads?.() ?? [];
+      gp = this._order.map((i) => pads[i]).find(
+        (p) => p && this.profileNameFor(p) === 'vjoyDual'
+      ) ?? null;
     }
     if (!gp) return null;
     // Same rule as beginCapture: this writes vjoyMap, so it may only ever read
@@ -497,18 +641,26 @@ export class InputManager {
    */
   beginCapture(half, field) {
     const spec = MAP_FIELDS.find((f) => f.key === field);
-    const pad = this.bindings.find((x) => x.half === half)?.pad
-      ?? this.bindings.find((x) => x.pad != null)?.pad;
-    if (!spec || pad == null) return false;
+    /* THE vJOY PAD IS FOUND DIRECTLY, NOT THROUGH THE BINDINGS. This used to
+       look up whichever pad held `half` and fall back to the first bound pad —
+       a proxy for "the vJoy device" that was only true while `auto` always
+       split it into two halves. It no longer does, so a vJoy pad seats ONE
+       player with `half: null` and the old lookup found nothing: calibration
+       silently became unreachable for the exact device it exists for.
 
-    const gp = (navigator.getGamepads?.() ?? [])[pad];
-    if (!gp) return false;
-    /* The grid edits `vjoyMap`, and only `vjoyDual` ever reads it. Capturing
-       against any other pad cannot rebind that pad — but it WILL overwrite the
-       Joy-Con calibration on the way past. The UI hides the grid unless a pad
-       has two slots, which now implies vJoy; this is the invariant stated where
-       it can't be routed around. */
-    if (this.profileNameFor(gp) !== 'vjoyDual') return false;
+       The grid edits `vjoyMap` and only `vjoyDual` ever reads it, so asking for
+       that device by name is both the correct question and the invariant
+       stated where it cannot be routed around — capturing against any other pad
+       cannot rebind that pad, but it WILL overwrite the Joy-Con calibration on
+       the way past.
+
+       A device nothing is feeding is refused too: there is nothing to press. */
+    const pads = navigator.getGamepads?.() ?? [];
+    const gp = this._order.map((i) => pads[i]).find(
+      (p) => p && this.profileNameFor(p) === 'vjoyDual' && this.hasSentInput(p)
+    );
+    if (!spec || !gp) return false;
+    const pad = gp.index;
 
     this._capture = {
       half,
@@ -638,6 +790,112 @@ export class InputManager {
 
   /* ------------------------------ bindings ------------------------------ */
 
+  /**
+   * Every connected pad turned into the list of DEVICES a player can be seated
+   * on, in the order they get dealt out.
+   *
+   * ONE FUNCTION, BECAUSE TWO COPIES OF THIS RULE IS HOW THE RIGHT JOY-CON
+   * WENT DEAD. `_syncBindings` decided whether to split and `seatable` decided
+   * it again a hundred lines further down, in the same words — so any change
+   * to the rule had to be made twice, and the join screen would happily refuse
+   * a fourth player onto a device the binder had already dealt. It is the same
+   * duplication `trackForIsland` and `_hudDuringScenes` exist to prevent.
+   *
+   * ONLY A MERGED vJOY PAD CAN BE SPLIT, and `padMode: 'split'` does not get to
+   * override that. `half` is read by exactly one profile — `vjoyDual`, through
+   * readHalf — so splitting anything else hands BOTH players the same pad and
+   * the same profile, which ignores `half` entirely and returns one identical
+   * snapshot to both slots. The two kittens then move as one: every press jumps
+   * both, and the second player has no controller at all while appearing to
+   * have one. It used to fall back to `live[0]`, so selecting SPLIT in Settings
+   * with a PS4 or Xbox pad plugged in did exactly that — and it also handed
+   * that pad two slots, which is what puts the vJoy remap grid on screen, so
+   * calibrating a PS4 button silently overwrote the Joy-Con map it can never be
+   * read from.
+   *
+   * SPLITTING IS PER DEVICE, NOT A MODE, AND THAT IS THE WHOLE FIX. It used to
+   * be a global switch: either the vJoy pad was cut in half and you were in
+   * "split mode", or it wasn't. Both settings were wrong for the setup that
+   * matters — two Joy-Cons through Joy2Win PLUS an ordinary pad — because the
+   * question the switch asked ("do we split?") is a question about ONE DEVICE
+   * and it was being asked about the whole machine. Each pad is now decided on
+   * its own: a vJoy device becomes two players, everything else becomes one,
+   * and they coexist.
+   *
+   * EXPANDED IN PLACE, IN CONNECTION ORDER. The two halves go where the vJoy
+   * device itself sits in the connection order rather than being hoisted to the
+   * front, so "whichever connects first is player 1" stays true whatever kind
+   * of controller it is. Hoisting them was the old shape and it silently
+   * reordered everybody else.
+   *
+   * WHY A vJOY DEVICE IS ALWAYS TWO PLAYERS: it is not a controller, it is a
+   * FEED. Nothing has a vJoy driver installed and Joy2Win running by accident —
+   * the entire point of that stack is to present two Joy-Cons as one device, so
+   * two is the answer that is right in every case somebody actually has it set
+   * up. `padMode: 'single'` is there for the one person who holds both halves
+   * herself.
+   *
+   * A vJOY DEVICE IS PRESENT WHETHER OR NOT ANYTHING IS FEEDING IT, AND THAT IS
+   * THE PHANTOM. vJoy is a driver-level virtual joystick: once installed,
+   * Windows reports it to the browser forever — with or without Joy2Win
+   * running, with or without a Joy-Con paired to the machine, and with or
+   * without any Nintendo hardware in the building. The game saw a controller
+   * that was not there, gave it player 1, and left a kid on the keyboard
+   * wondering why nothing moved.
+   *
+   * SO A vJOY DEVICE MUST PROVE IT IS ALIVE BEFORE IT CAN TAKE A SEAT, AND ONLY
+   * A vJOY DEVICE IS ASKED. Every real pad is already hidden by the browser
+   * until it sends input — by the time one appears in `getGamepads` somebody
+   * has used it — so the gate is a no-op for real pads and would only be a
+   * source of mid-session churn if the test ever misfired. vJoy is the one
+   * device that shows up without anybody touching anything, so vJoy is the one
+   * device that has to answer for itself. "Press a button on it" is what the
+   * README already tells players to do.
+   *
+   * THE OTHER PADS COME AFTER THE TWO HALVES INSTEAD OF BEING DROPPED. The
+   * split branch used to return the two halves and nothing else, so a pad
+   * connected alongside the Joy-Cons was not merely last in the queue — it was
+   * not a device at all, and no amount of pressing START could seat anybody on
+   * it.
+   */
+  _padDevices(live) {
+    const out = [];
+    for (const gp of live) {
+      const vjoy = this.profileNameFor(gp) === 'vjoyDual';
+      // The phantom: a vJoy device the driver reports with nothing feeding it.
+      if (vjoy && !this.hasSentInput(gp)) continue;
+      // 'separate' is the legacy spelling of 'single'; everything else splits.
+      const asOne = this.padMode === 'single' || this.padMode === 'separate';
+      if (vjoy && !asOne) {
+        out.push({ pad: gp.index, half: 'left' }, { pad: gp.index, half: 'right' });
+      } else {
+        out.push({ pad: gp.index, half: null });
+      }
+    }
+    return out.slice(0, MAX_SLOTS);
+  }
+
+  /**
+   * Has this pad ever actually sent anything this session?
+   *
+   * Any button seen down, or any axis that has moved off the value it was FIRST
+   * OBSERVED AT — not off zero. `_watchAxes` seeds min and max to whatever the
+   * axes read the first time it saw them, so a phantom reporting the same
+   * constants forever has a range of exactly 0 on every axis however odd those
+   * constants are. Testing against zero instead would call a pad resting with
+   * its analog triggers at -1 "alive" before anybody had touched it, which is
+   * precisely the vJoy device's resting state.
+   *
+   * Both halves are needed: a stick can be pushed without a button ever being
+   * pressed, and a button can be pressed without a stick ever moving.
+   */
+  hasSentInput(gp) {
+    const seen = this._buttonsSeen.get(gp.index);
+    if (seen && seen.size) return true;
+    const w = this._axisWatch.get(gp.index);
+    return !!w && w.min.some((min, i) => w.max[i] - min > 0.02);
+  }
+
   _syncBindings(pads) {
     for (const gp of pads) {
       if (gp && !this._order.includes(gp.index)) this._order.push(gp.index);
@@ -645,31 +903,102 @@ export class InputManager {
     this._order = this._order.filter((i) => pads[i]);
     const live = this._order.map((i) => pads[i]).filter(Boolean);
 
-    const next = [{ pad: null, half: null }, { pad: null, half: null }];
-    const merged = live.find((gp) => this.profileNameFor(gp) === 'vjoyDual');
-    /* ONLY A MERGED vJOY PAD CAN BE SPLIT, and `padMode: 'split'` does not get
-       to override that. `half` is read by exactly one profile — `vjoyDual`,
-       through readHalf — so splitting anything else hands BOTH players the same
-       pad and the same profile, which ignores `half` entirely and returns one
-       identical snapshot to both slots. The two kittens then move as one: every
-       press jumps both, and the second player has no controller at all while
-       appearing to have one. It used to fall back to `live[0]`, so selecting
-       SPLIT in Settings with a PS4 or Xbox pad plugged in did exactly that —
-       and it also handed that pad two slots, which is what puts the vJoy remap
-       grid on screen, so calibrating a PS4 button silently overwrote the
-       Joy-Con map it can never be read from. */
-    const split = !!merged
-      && (this.padMode === 'split'
-        || (this.padMode === 'auto' && live.length === 1));
+    this.bindings = this._assign(this._padDevices(live));
+  }
 
-    if (split) {
-      // One pad, two players: P1 drives the left half, P2 the right.
-      next[0] = { pad: merged.index, half: 'left' };
-      next[1] = { pad: merged.index, half: 'right' };
-    } else {
-      live.slice(0, 2).forEach((gp, i) => { next[i] = { pad: gp.index, half: null }; });
+  /**
+   * Hand `slots` player slots a device each: PADS FIRST, THEN KEYBOARD SETS IN
+   * ORDER — WASD before the arrow keys, every time.
+   *
+   * ```
+   *   0 pads   P1 WASD   P2 Arrows
+   *   1 pad    P1 pad    P2 WASD    P3 Arrows
+   *   2 pads   P1 pad    P2 pad     P3 WASD    P4 Arrows
+   *   3 pads   P1 pad    P2 pad     P3 pad     P4 WASD
+   * ```
+   *
+   * THERE USED TO BE A SLOT-AFFINITY PASS AND IT IS GONE. Slot `i` took
+   * `KEYSETS[i]` when it was free, so a single pad left player 2 on the ARROW
+   * keys and pushed WASD down to player 3 — which preserved what slot 1 got
+   * before four players existed, and is the wrong answer to the question a kid
+   * actually asks. The keyboard sets are not player 2's and player 3's, they
+   * are a queue: the first person on the keyboard gets the good half of it.
+   * WASD with a space bar beats the arrow keys with a numpad, so whoever is
+   * first out of the controllers gets WASD whatever her slot number is.
+   *
+   * The cost is that one pad plus one keyboard moves player 2 from the arrows
+   * onto WASD. That is a deliberate change to the two-player game rather than
+   * an accident, and it is the arrangement it improves: the girl without a
+   * controller stops being handed the numpad half.
+   */
+  _assign(padDevs) {
+    const next = Array.from({ length: MAX_SLOTS },
+      () => ({ pad: null, half: null, keyset: null }));
+    const takenKeysets = new Set();
+    const n = Math.min(this.slots, MAX_SLOTS);
+
+    /* CLAIMS WIN, and they are how a third player gets the device she actually
+       pressed rather than whatever the default order would have handed her.
+       Taken out of the pool first so the passes below cannot deal the same
+       device twice — two slots reading one keyboard set is two kittens moving
+       as one, which is the bug `_syncBindings` already refuses to allow for a
+       non-vJoy pad. */
+    const claimedPads = new Set();
+    for (let i = 0; i < n; i++) {
+      const c = this.claims[i];
+      if (!c) continue;
+      next[i] = { pad: c.pad ?? null, half: c.half ?? null, keyset: c.keyset ?? null };
+      if (c.keyset != null) takenKeysets.add(c.keyset);
+      if (c.pad != null) claimedPads.add(`${c.pad}:${c.half ?? ''}`);
     }
-    this.bindings = next;
+
+    const free = padDevs.filter((d) => !claimedPads.has(`${d.pad}:${d.half ?? ''}`));
+    // Pads first, so the affinity pass below knows which slots still need one.
+    for (let i = 0, k = 0; i < n && k < free.length; i++) {
+      if (this.claims[i]) continue;
+      next[i] = { ...free[k], keyset: null };
+      k += 1;
+    }
+    /* Every padless slot takes the lowest keyboard set still free, in slot
+       order — so the first kitten without a controller gets WASD, the next gets
+       the arrows, and a fifth would get nothing (see below). */
+    for (let i = 0; i < n; i++) {
+      if (next[i].pad != null || next[i].keyset != null) continue;
+      for (let k = 0; k < KEYSETS.length; k++) {
+        if (takenKeysets.has(k)) continue;
+        next[i].keyset = k;
+        takenKeysets.add(k);
+        break;
+      }
+    }
+    return next;
+  }
+
+  /** Bind a specific device to a slot, overriding the default dealing. Used by
+   *  the join flow so a player gets the controller she actually pressed. */
+  claim(slot, device) {
+    if (slot < 0 || slot >= MAX_SLOTS) return;
+    this.claims[slot] = { ...device };
+  }
+
+  /** Forget a slot's claim — she left, and her device goes back in the pool. */
+  release(slot) {
+    delete this.claims[slot];
+  }
+
+  /**
+   * How many players could actually be seated right now — one per available
+   * device. The join screen refuses a claim past this, because a slot with no
+   * device is a kitten nobody can move, which reads as the game being broken
+   * rather than as the party being full.
+   */
+  get seatable() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const live = this._order.map((i) => pads[i]).filter(Boolean);
+    // The SAME list the binder deals from — see `_padDevices`. Counting the
+    // pads a second way here is what let the join screen refuse a player onto
+    // a controller that was sitting in the pool unbound.
+    return Math.min(MAX_SLOTS, this._padDevices(live).length + KEYSETS.length);
   }
 
   /**
@@ -714,6 +1043,12 @@ export class InputManager {
         index: gp.index,
         id: gp.id,
         profile: this.profileNameFor(gp),
+        /* A vJoy device the driver is reporting but nothing is feeding. It is
+           STILL LISTED rather than hidden, and that is deliberate: hiding it
+           would make "why can't the game see my Joy-Cons?" undebuggable from
+           inside the game, which is the whole job of this screen. It just does
+           not get a player. */
+        asleep: this.profileNameFor(gp) === 'vjoyDual' && !this.hasSentInput(gp),
         buttonCount: gp.buttons.length,
         axes: gp.axes.map((v) => (Math.abs(v) < 0.08 ? 0 : +v.toFixed(2))),
         axesRange: gp.axes.map((_, i) => {
@@ -727,19 +1062,101 @@ export class InputManager {
     return out;
   }
 
-  /** Human-readable list of what's currently driving each player. */
+  /** Human-readable list of what's currently driving each seated player.
+   *  Unseated slots are left out rather than listed as empty — a settings line
+   *  reading "P3: nothing" in a two-player game is noise about a feature
+   *  nobody has turned on. */
   describe() {
-    return this.players.map((p, i) => {
-      if (p.source !== 'gamepad') return `P${i + 1}: ${KEYSETS[i].name}`;
-      const half = this.bindings[i].half;
-      return half ? `P${i + 1}: ${half} Joy-Con` : `P${i + 1}: gamepad`;
-    });
+    const out = [];
+    for (let i = 0; i < Math.min(this.slots, MAX_SLOTS); i++) {
+      const bnd = this.bindings[i];
+      if (bnd.pad != null) {
+        out.push(`P${i + 1}: ${bnd.half ? `${bnd.half} Joy-Con` : 'gamepad'}`);
+      } else if (bnd.keyset != null) {
+        out.push(`P${i + 1}: ${KEYSETS[bnd.keyset].name}`);
+      } else {
+        out.push(`P${i + 1}: no controller`);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * WHICH KEY ACTUALLY JOINS THE NEXT PLAYER, in words, or null if nothing can.
+   *
+   * IT IS ALWAYS `ENTER` ON A KEYBOARD NOW, and this function survives the
+   * change because it still has a real question to answer: whether there is
+   * anywhere left to join, and whether a spare CONTROLLER is the better answer.
+   *
+   * The key used to move. A keyboard set's `start` meant "pause" while somebody
+   * was seated on it and "join" while nobody was, so which key joined depended
+   * on which set was already taken — and that depended on how many controllers
+   * were plugged in. With one controller player 2 sits on WASD, so `Enter` was
+   * HER PAUSE KEY and the way in was the arrow set's `\`; pressing the obvious
+   * Enter opened the menu instead of seating player 3. Both sets answer to
+   * Enter now and Esc is the keyboard's only menu key, so the sentence on
+   * screen is the same sentence every time.
+   *
+   * Pads are named first when one is free: pressing START on a controller
+   * nobody is using is the easy answer whenever it is available.
+   */
+  joinHint() {
+    if (this.slots >= MAX_SLOTS || this.slots >= this.seatable) return null;
+    const bound = this.bindings.slice(0, this.slots);
+
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const live = this._order.map((i) => pads[i]).filter(Boolean);
+    const freePad = this._padDevices(live).some(
+      (d) => !bound.some((b) => b.pad === d.pad && b.half === d.half)
+    );
+    if (freePad) return 'START on a spare controller';
+
+    const freeKeyset = KEYSETS.some((_, k) => !bound.some((b) => b.keyset === k));
+    return freeKeyset ? 'ENTER' : null;
+  }
+
+  /**
+   * A controller nobody is playing on that somebody has actually picked up, or
+   * null. `skip` holds device ids that have already been offered.
+   *
+   * THE THIRD CONTROLLER USED TO DO NOTHING UNTIL A THIRD PLAYER JOINED, and
+   * that reads as the controller being broken rather than as the party being
+   * small. Plug a PS4 pad in beside two Joy-Cons and it is dealt a device slot
+   * correctly, sits there unbound because `slots` is 2, and no amount of
+   * pressing anything except START gets a kitten out of it. `Game._autoSeat`
+   * uses this to seat her automatically instead.
+   *
+   * IT ASKS FOR REAL INPUT, NOT MERE CONNECTION (`hasSentInput`), which is the
+   * same question the vJoy phantom has to answer and it is doing the same job
+   * here: a pad that is plugged in to charge, or left on the sofa, has sent
+   * nothing and seats nobody. Picking it up and moving the stick is the gesture.
+   *
+   * ONE OFFER PER DEVICE, and the caller latches it. `hasSentInput` never goes
+   * back to false once a pad has been used, so without a latch a player who
+   * drops out would be re-seated on the next frame by the controller still in
+   * her hands — she could never leave.
+   */
+  sparePad(skip = new Set()) {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const live = this._order.map((i) => pads[i]).filter(Boolean);
+    const bound = this.bindings.slice(0, Math.min(this.slots, MAX_SLOTS));
+    for (const d of this._padDevices(live)) {
+      if (bound.some((b) => b.pad === d.pad && b.half === d.half)) continue;
+      if (skip.has(deviceId(d))) continue;
+      const gp = pads[d.pad];
+      if (gp && this.hasSentInput(gp)) return { ...d, keyset: null };
+    }
+    return null;
   }
 
   update() {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    this._syncBindings(pads);
+    /* WATCH FIRST, THEN BIND. `_padDevices` asks `hasSentInput` whether a vJoy
+       device is a real controller or the driver's phantom, and that answer is
+       built here — so binding first would decide on evidence one frame stale
+       and leave the pad asleep for a frame after the button that woke it. */
     this._watchAxes(pads);
+    this._syncBindings(pads);
 
     // First sight of a merged pad, on a map nobody has hand-calibrated: sniff
     // which axes the sticks are actually on rather than trusting the indices.
@@ -766,7 +1183,7 @@ export class InputManager {
 
     this._anyPressLatch = false;
 
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < MAX_SLOTS; i++) {
       const st = this.players[i];
       st.prev = { ...st.held };
 
@@ -787,17 +1204,24 @@ export class InputManager {
         mx = dead(r.ax) + (r.dpad ? r.dpad[0] : 0);
         my = dead(r.ay) + (r.dpad ? r.dpad[1] : 0);
         for (const a of ACTIONS) next[a] = !!r[a];
-      } else {
+      } else if (bnd.keyset != null) {
         st.source = 'keyboard';
-        const k = KEYSETS[i];
-        if (this.keys.has(k.left)) mx -= 1;
-        if (this.keys.has(k.right)) mx += 1;
-        if (this.keys.has(k.up)) my -= 1;
-        if (this.keys.has(k.down)) my += 1;
-        // Either the primary key OR the laptop alternate — see KEYSETS.
-        for (const a of ACTIONS) {
-          next[a] = this.keys.has(k[a]) || (!!k.alt?.[a] && this.keys.has(k.alt[a]));
-        }
+        const k = KEYSETS[bnd.keyset];
+        /* ANY of the codes bound to a field. Every field is a list — see
+           KEYSETS — because player 2 has two hand positions and up to three
+           keys per button, which a single primary-plus-alternate cannot say. */
+        const on = (field) => (k[field] ?? []).some((code) => this.keys.has(code));
+        if (on('left')) mx -= 1;
+        if (on('right')) mx += 1;
+        if (on('up')) my -= 1;
+        if (on('down')) my += 1;
+        for (const a of ACTIONS) next[a] = on(a);
+      } else {
+        /* NO DEVICE AT ALL — a slot past the party size. It must report
+           nothing: the old code fell back to `KEYSETS[i]` unconditionally, so
+           leaving that in place would have WASD quietly driving the controller
+           state of a third kitten nobody has seated. */
+        st.source = 'none';
       }
 
       // While a remap capture is armed, the button you press is being BOUND,
@@ -820,11 +1244,99 @@ export class InputManager {
 
       for (const a of ACTIONS) if (st.pressed(a)) this._anyPressLatch = true;
     }
+
+    /* Joining, last: the edge is against the PREVIOUS frame, so the candidate
+       has to be found before this frame's held state replaces it. A capture in
+       progress swallows it like everything else — binding a button to START
+       must not also seat a new kitten. */
+    this._joinCandidate = suppress ? null : this._findJoin(pads);
+    this._rememberJoin(pads);
   }
 
   /** True on the frame any player presses any button — used by the title screen. */
   anyPressed() {
     return this._anyPressLatch;
+  }
+
+  /* ------------------------------ joining ------------------------------- */
+
+  /**
+   * A device that nobody is playing on, whose START was just pressed.
+   *
+   * THE TITLE SCREEN IS NOT TOUCHED, AND THAT IS THE POINT. The menu panel is a
+   * faithful reproduction of a drawing one of the girls made — SETTINGS, PLAY,
+   * HELP — so a fourth button is not available, and putting a lobby in front of
+   * PLAY would add a step to the game the two of them already know. So a third
+   * and fourth player join FROM INSIDE THE GAME, which is also exactly what
+   * "players can join without disturbing the ones already playing" asks for:
+   * the join mechanic and the character picker are one feature.
+   *
+   * START RATHER THAN ANY BUTTON, for the reason `SKIP_KEYS` exists: the girls
+   * rest their thumbs on things. On a pad it is the pause button; on a keyboard
+   * it is that set's own start key, which cannot collide with a seated player's
+   * because a set only qualifies here while NOBODY IS ON IT.
+   *
+   * COMPUTED INSIDE `update`, NOT ASKED FOR ON DEMAND. The edge test compares
+   * against the previous frame, and `Game` asks this question after `update`
+   * has already run — so a version that sampled the pad when called would be
+   * comparing a frame against itself and could never see a press.
+   *
+   * @returns { pad, half, keyset } | null
+   */
+  pendingJoin() {
+    return this._joinCandidate;
+  }
+
+  _findJoin(pads) {
+    if (this.slots >= MAX_SLOTS) return null;
+    const bound = this.bindings.slice(0, this.slots);
+
+    // An unbound pad. A split vJoy pad is bound as two halves, so a pad with
+    // one half seated is NOT free — the other half already belongs to a slot
+    // the moment the party grows.
+    for (const gp of this._order.map((i) => pads[i]).filter(Boolean)) {
+      if (bound.some((b) => b.pad === gp.index)) continue;
+      const r = profileFor(gp).read(gp, {
+        rotation: this.joyconRotation, half: null, map: this.vjoyMap,
+      });
+      if (r.start && !this._joinPrev.has(`pad:${gp.index}`)) {
+        return { pad: gp.index, half: null, keyset: null };
+      }
+    }
+    /* ONE JOIN KEY FOR THE WHOLE KEYBOARD, AND IT IS ENTER.
+       This used to walk the sets and ask each one for ITS OWN start key, so the
+       key that seated the next player moved about depending on which set was
+       already taken — Enter while WASD was free, `\` while it was not. Enter is
+       now the only way in and it hands out the LOWEST FREE SET, so two keyboard
+       players join one at a time by pressing it twice: the first press takes
+       WASD, the second takes the arrows.
+       The edge is latched against one key rather than one per set, or holding
+       Enter down after the first join would immediately seat the second. */
+    const free = KEYSETS.findIndex((_, k) => !bound.some((b) => b.keyset === k));
+    if (free >= 0 && this._joinKeyDown() && !this._joinPrev.has('kb')) {
+      return { pad: null, half: null, keyset: free };
+    }
+    return null;
+  }
+
+  /** Enter, on either the main block or the numpad. */
+  _joinKeyDown() {
+    return KEYSETS.some((ks) => ks.start.some((code) => this.keys.has(code)));
+  }
+
+  /** Remember which devices were holding START, so a held button joins one
+   *  player rather than one every frame it stays down. */
+  _rememberJoin(pads) {
+    const now = new Set();
+    for (const gp of pads) {
+      if (!gp) continue;
+      const r = profileFor(gp).read(gp, {
+        rotation: this.joyconRotation, half: null, map: this.vjoyMap,
+      });
+      if (r.start) now.add(`pad:${gp.index}`);
+    }
+    if (this._joinKeyDown()) now.add('kb');
+    this._joinPrev = now;
   }
 }
 

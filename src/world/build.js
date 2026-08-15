@@ -1270,6 +1270,47 @@ export const ARENA_POSTS = [
   { x: ARENA_RING * 0.62, z: 0 },
 ];
 
+/**
+ * Where fighters stand when there are more than two of them.
+ *
+ * TEAMMATES MUST BE ADJACENT AND OPPONENTS ACROSS THE RING, which is the whole
+ * reason this is a table rather than a ring of evenly spaced points. In 2v2 the
+ * pairs open on opposite sides and a kid can see at a glance who is with her;
+ * spaced evenly by index, the four alternate round the circle and every round
+ * opens with both teams already tangled.
+ *
+ * `postsFor` lays sides out as ARCS: side 0 gets the west arc, side 1 the east,
+ * and a third or fourth side (free-for-all) the north and south. Within a side
+ * its members are spread along their own arc, so 2v2 is two pairs facing each
+ * other and a free-for-all is four corners.
+ *
+ * @param {number[]} sides side index per fighter
+ * @returns {{x:number, z:number}[]} one post per fighter, in fighter order
+ */
+export function postsFor(sides) {
+  const n = sides.length;
+  if (n <= 2) return ARENA_POSTS.slice(0, Math.max(1, n));
+
+  const ids = [...new Set(sides)];
+  // Bearings for each side, in the order the sides appear. Two sides face off
+  // across the ring; three or four take the quarters.
+  const BEARINGS = { 2: [Math.PI, 0], 3: [Math.PI, 0, Math.PI / 2], 4: [Math.PI, 0, Math.PI / 2, -Math.PI / 2] };
+  const bearings = BEARINGS[ids.length] ?? ids.map((_, i) => (i / ids.length) * Math.PI * 2);
+  const r = ARENA_RING * 0.62;
+  // How wide a side's own arc opens, so two teammates stand beside each other
+  // rather than on top of one another.
+  const SPREAD = 0.42;
+
+  return sides.map((side, i) => {
+    const s = ids.indexOf(side);
+    const mates = sides.filter((x) => x === side).length;
+    const rank = sides.slice(0, i).filter((x) => x === side).length;
+    const off = mates > 1 ? (rank / (mates - 1) - 0.5) * SPREAD * 2 : 0;
+    const a = bearings[s] + off;
+    return { x: Math.cos(a) * r, z: Math.sin(a) * r };
+  });
+}
+
 export function buildArena() {
   const parts = [];
   const solids = [];
