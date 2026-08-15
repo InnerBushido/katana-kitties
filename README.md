@@ -29,6 +29,71 @@ There's a second reason it exists. I'd been teaching one of them sine, cosine
 and the unit circle on graph paper, and this is that lesson made walkable —
 see [Teaching the maths](#teaching-the-maths).
 
+## Must know
+
+Seven things that are worth knowing before you start. Everything else you can
+work out by playing.
+
+1. **Play it at [katana-kitties.vercel.app](https://katana-kitties.vercel.app)** —
+   nothing to install. The first load pulls about 35MB of sprite sheets and
+   voices, then sits in the browser cache and is instant after that.
+2. **On Joy-Cons through Joy2Win/vJoy, use Firefox.** Chrome reads the buttons
+   and reports the sticks as `0.00000` forever. Joy-Cons paired *directly*, and
+   every other pad, are fine in any browser. See
+   [Switch 2 controllers](#switch-2-controllers).
+3. **Just pick up a controller.** Pads outrank the keyboard and are dealt in
+   connection order; the moment you actually use one, you're playing. On the
+   keyboard, press **`Enter`** to join — first player gets `WASD`, second gets
+   the `O K L ;` cluster (or the arrow keys). Up to **four** of you.
+4. **`Esc`, or `+`/Start on a pad, is the way out of anything** — settings, the
+   record board, dropping out, quitting a match, replaying the story.
+5. **Nothing you knock over comes back.** The MISCHIEF counter at the top is the
+   spine of the whole game: **80%** opens the tournament, **100%** wakes the
+   Powerup Kotodama and gets you the ending.
+6. **The screen splits itself**, by GROUP rather than by player — stand together
+   and you share a view, walk away and you get your own.
+7. **Only the record board survives closing the tab.** Everything else — clans,
+   stars, orbs, points — lives in the session, so finish what you start.
+
+## Contents
+
+**Playing** ·
+[Play it](#play-it) ·
+[Controls](#controls) ·
+[Up to four players](#up-to-four-players) ·
+[The screen splits itself](#the-screen-splits-itself) ·
+[Sound](#sound)
+
+**The game** ·
+[The story](#the-story) ·
+[Meet the clan leaders](#meet-the-clan-leaders) ·
+[Collect the seven dragon balls](#collect-the-seven-dragon-balls) ·
+[Raise a panda](#raise-a-panda) ·
+[The Powerup Kotodama](#the-powerup-kotodama)
+
+**The tournament** ·
+[How it works](#the-world-martial-arts-tournament) ·
+[Leagues](#leagues) ·
+[Eat the animals](#something-runs-past-you-eat-it) ·
+[Between rounds](#between-rounds-one-of-you-eats-the-other-one-gets-wings)
+
+**Controllers** ·
+[Switch 2 / Joy-Con](#switch-2-controllers) ·
+[PS4, Xbox and the rest](#ps4-xbox-and-other-controllers)
+
+**The maths** ·
+[Teaching the maths](#teaching-the-maths) ·
+[The Kotodama Orb](#the-kotodama-orb) ·
+[The Dojo of the Turning Circle](#the-dojo-of-the-turning-circle)
+
+**Under the hood** ·
+[How the art works](#how-the-art-works) ·
+[The sprite pipeline](#the-sprite-pipeline) ·
+[Replacing the art](#replacing-the-art) ·
+[Layout](#layout) ·
+[How it was built](#how-it-was-built) ·
+[Ideas not built yet](#ideas-not-built-yet)
+
 ## A look around
 
 | | |
@@ -48,7 +113,7 @@ moving you.*
 **It's online: [katana-kitties.vercel.app](https://katana-kitties.vercel.app)** —
 nothing to install, just open it. **Use Firefox if you're playing with
 Joy-Cons**, same as locally; see
-[Switch 2 controllers](#switch-2-controllers--use-firefox) for why.
+[Switch 2 controllers](#switch-2-controllers) for why.
 
 The first load pulls about 35MB of sprite sheets and voice lines and then sits
 in the browser cache, so it's slow once and instant afterwards.
@@ -582,6 +647,13 @@ exactly what's still left to score.
 yours and you can still ride it, but it waits where you left it — so it turns
 up on the map, like a dragon on its perch. Swear to Pandapaw again and it comes
 back to heel.
+
+## Controllers
+
+Every pad is one player, dealt in the order it connects, and a pad always
+outranks the keyboard — see [Up to four players](#up-to-four-players) for who
+ends up on what. The two sections below are the per-device detail: the Joy-Con
+route has one real trap in it, and everything else just works.
 
 ### Switch 2 controllers
 
