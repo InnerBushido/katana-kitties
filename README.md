@@ -1,13 +1,22 @@
 # Katana Kitties
 
-**A split-screen co-op game about two samurai kittens causing trouble across a
+**A split-screen co-op game about samurai kittens causing trouble across a
 chain of floating Japanese islands — and riding storm dragons between them.**
 
 ![Riding a storm dragon over the town](docs/screenshots/02-dragon.jpg)
 
-Two players, one keyboard or two controllers. Run, double-jump, draw a katana,
-knock over absolutely everything that isn't nailed down, then whistle up a
-dragon and go and do it on the next island. It runs in a browser tab.
+**Up to four players**, on whatever you have: two on the keyboard, two on
+Joy-Cons, a PS5 pad and an Xbox pad, or any mix of the lot. Run, double-jump,
+draw a katana, knock over absolutely everything that isn't nailed down, then
+whistle up a dragon and go and do it on the next island. When you've flattened
+enough of the world, an eighth island appears in the sky with a tournament ring
+on it and you fight each other in it. It runs in a browser tab.
+
+**Pick up a controller and you're in.** Pads are dealt out in the order they
+connect and always outrank the keyboard, so the moment a spare one is actually
+used it takes a seat — and whoever's left plays on the keyboard, each with a
+complete one-handed set of keys on her own side of it. A third and fourth player
+can join mid-game without interrupting anybody.
 
 It was made for — and partly *by* — my nieces. The cat-head menu on the title
 screen is a faithful reproduction of a drawing one of them made, buttons and
