@@ -4236,6 +4236,90 @@ console.log('\n--- the three power moves ---');
   ok('the round limit is a real bound, not a formality',
     ROUND_LIMIT >= 60 && ROUND_LIMIT <= 300);
 
+  /* --- THE FIGHT CAMERA HAS TO FRAME EVERY FIGHTER ---
+     It read `const [a, b] = this.game.players` and sized itself off the spread
+     between exactly those two: written when two was the only number there was,
+     and missed by the four-player pass. In a free-for-all that aimed the lens
+     at the midpoint of players 1 and 2 and pushed in on their separation, so
+     two kittens fighting in the far corner could be off screen entirely. It is
+     the same bug `_paintHud` was fixed for, in the one place it also lived.
+
+     THE TWO-PLAYER GAME MUST BE UNCHANGED TO THE DECIMAL. The girls play two
+     players; a centroid that is not exactly the old midpoint is a camera that
+     moved for them, which is not a fix, it is a regression with a good reason
+     attached. For two fighters the centroid IS the midpoint and the widest
+     pair IS the two of them, so this is an identity — asserted, not assumed. */
+  console.log('\n--- the fight camera frames everybody ---');
+  {
+    const R = world.arenaRing;
+    const at = (x, z) => ({ position: { x, y: R.y, z }, ko: false });
+    const rig = (pts) => {
+      const T = new Tournament({
+        game: { players: pts, toast() {}, sfx() {} }, world, audio: null, announcer: null,
+      });
+      T.state = 'live';
+      return T.cameraWant();
+    };
+
+    /* Two fighters, one in each corner of the deck: the answer this rig gave
+       before the change, to four decimal places. */
+    const two = rig([at(R.x - 20, R.z - 20), at(R.x + 20, R.z + 20)]);
+    const midX = ((R.x - 20) + (R.x + 20)) / 2;
+    const midZ = ((R.z - 20) + (R.z + 20)) / 2;
+    const sep2 = Math.hypot(40, 40);
+    ok('two fighters frame exactly where they always did',
+      Math.abs(two.x - (midX + (R.x - midX) * 0.42)) < 1e-9
+      && Math.abs(two.z - (midZ + (R.z - midZ) * 0.42)) < 1e-9
+      && Math.abs(two.dist - Math.min(104, Math.max(52, 46 + sep2 * 0.8))) < 1e-9);
+
+    /* Four fighters with a pair huddled in one corner and two in the other:
+       the old rig looked at players 1 and 2 (the huddle) and never widened. */
+    const huddle = [at(R.x - 22, R.z - 22), at(R.x - 20, R.z - 20),
+      at(R.x + 22, R.z + 22), at(R.x + 20, R.z + 20)];
+    const four = rig(huddle);
+    const pairOnly = rig(huddle.slice(0, 2));
+    ok('four fighters pull the camera back further than the first two would',
+      four.dist > pairOnly.dist + 20, `${four.dist.toFixed(1)} vs ${pairOnly.dist.toFixed(1)}`);
+    ok('...and it aims between all four, not between the first two',
+      Math.abs(four.x - R.x) < 1e-6 && Math.abs(four.z - R.z) < 1e-6);
+    /* The widest PAIR, not the widest from the centroid: three in a line and
+       one far out has to fit the line, not half of it. */
+    const line = rig([at(R.x - 24, R.z), at(R.x, R.z), at(R.x + 8, R.z), at(R.x + 24, R.z)]);
+    ok('...sized off the two furthest apart', line.dist >= 46 + 48 * 0.8 - 1e-9);
+  }
+
+  /* --- THE MENAGERIE'S PER-PLAYER ARRAYS ---
+     All four were `[null, null]`, and every consequence is silent: `releaseAll`
+     iterates `held.length`, so an animal pinned by player 3 was never let go at
+     a round reset and got dragged across the deck to her new mark for the rest
+     of the tournament — the exact bug `releaseAll` exists to prevent. */
+  console.log('\n--- the snacks know there are four kittens ---');
+  {
+    const four = [0, 1, 2, 3].map((i) => ({
+      index: i, name: `P${i}`, eatT: 0, hp: 50, maxHp: 100,
+      position: new THREE.Vector3(0, 0, 0),
+    }));
+    const m4 = new Menagerie({
+      game: { scene: new THREE.Scene(), players: four, input: { players: [] },
+        toast() {}, sfx() {} },
+      world,
+      art: {},
+    });
+    ok('there is a seat for every kitten, not just the first two',
+      m4.held.length >= 4 && m4.chew.length >= 4
+      && m4.eaten.length >= 4 && m4._taught.length >= 4);
+    /* The fourth kitten's tally has to be a NUMBER. `eaten[3]++` on undefined
+       is NaN, which the toast and these checks both read. */
+    m4.eaten[3] += 1;
+    ok('...and the fourth kitten\'s tally is a number', m4.eaten[3] === 1);
+    /* And a round reset has to let go of what SHE is holding. */
+    const fake = { state: 'pinned', holder: four[3], release() { this.state = 'roam'; } };
+    m4.held[3] = fake;
+    m4.releaseAll();
+    ok('a round reset releases the fourth kitten\'s animal too',
+      m4.held[3] == null && fake.state === 'roam');
+  }
+
   console.log('\n--- friendly fire dazes rather than doing nothing ---');
   {
     const spawn2 = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);

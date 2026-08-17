@@ -89,7 +89,6 @@ work out by playing.
 **Under the hood** ·
 [How the art works](#how-the-art-works) ·
 [The sprite pipeline](#the-sprite-pipeline) ·
-[Replacing the art](#replacing-the-art) ·
 [Layout](#layout) ·
 [How it was built](#how-it-was-built) ·
 [Ideas not built yet](#ideas-not-built-yet)
@@ -246,7 +245,7 @@ something in the way.
 ## Collect the seven dragon balls
 
 **There is one star on every island — seven islands, seven stars.** The count is
-shared between the two of you: you're hunting together.
+shared by everyone playing: you're hunting together.
 
 **Only the first one is just lying there.** The other six are locked, and each
 lock wants something different — so finishing the hunt means using nearly
@@ -782,7 +781,7 @@ around in, the ash island is the darkest scale in the game, and the Dojo is
 deliberately the quietest — there's a lesson on screen there and a tune with an
 opinion would compete with it. The home island keeps the theme you already know.
 
-If the two of you are on different islands, the music follows **whoever most
+If you're on different islands, the music follows **whoever most
 recently arrived somewhere new** — so a kitten flying off alone still gets her
 island's tune.
 
@@ -895,67 +894,23 @@ real 3D world.** No character meshes anywhere.
 
 The kitten sheets are a grid: **columns are a full 360° rotation, rows are
 animation poses** (idle, walk, jump, attack). `loadSpriteAtlas()` turns a raw
-generated sheet into a clean game atlas, and four things in it matter:
+generated sheet into a clean game atlas — it removes the background by flooding
+inward from the borders (a global threshold punches holes through white paws and
+eyes), finds cells by connected-component labelling rather than trusting a grid,
+**measures the column count** rather than believing the prompt, and repacks
+everything at one shared scale so the character cannot change size when it starts
+walking.
 
-1. **Background removal floods inward from the image borders** rather than
-   thresholding on white. The cats have cream chests, white paws and white
-   eyes — a global threshold punches holes straight through them. Flooding
-   from the edges stops at the black lineart, so interior whites survive.
+**Replacing the art:** drop a new sheet into `public/sprites/` with the same
+filename and refresh. The game logs `[art] <file> → N directions x M poses` at
+boot so you can check what it found. Ask for 4 rows and 8+ columns rotating a
+full turn, on a white background — and **check that every row turns the same way
+before you use a sheet**, because image models do not guarantee it.
 
-2. **Cells are found by connected-component labelling**, rows first then
-   columns within each row. Column projection fails: a swept tail overlaps its
-   neighbour's columns and ten views read as four. Rows must be clustered
-   before columns, or a jumping figure (drawn higher) gets grouped with the
-   walking figure beside it.
-
-3. **The column count is measured, not assumed.** Image models do not reliably
-   honour "exactly 8 columns" — asking for 8 repeatedly returns 10. The loader
-   counts what was actually drawn and the game maps however many cells it gets
-   evenly around the circle, so a sheet with 10 directions just works. The gap
-   threshold for splitting is deliberately small (12% of a figure's width);
-   sheets are packed tightly and a generous threshold silently merges
-   neighbours.
-
-4. **Everything is re-packed** at one scale shared across the whole sheet — not
-   per row, or the character would change size the moment it started walking.
-   Each row is bottom-aligned to *its own* ground line. Baselines are compared
-   within a row and never across rows: rows sit at different absolute heights
-   in the source image, so a sheet-wide baseline lifts the top row clean out of
-   its cell.
-
-The output is a square-celled atlas with transparent padding around each cell.
-Two consequences:
-
-- **Billboard quads must be square** — giving a quad the art's own aspect ratio
-  stretches it a second time.
-- The padding, plus a half-texel UV inset in `Billboard._setCell`, is what stops
-  atlas **bleeding** — without both, mipmaps and bilinear filtering reach across
-  the cell boundary and drag a ghost of the neighbouring frame down one edge.
-
-**Full-turn sheets are not mirrored.** Mirroring a half-turn to cover the other
-side is cheaper, but it flips asymmetric details — Ember's tail and shoulder
-guard swap sides when facing right. `mirror: false` on the `Billboard` uses the
-drawn cell for every direction instead.
-
-### Replacing the art
-
-Drop a new sheet into `public/sprites/` with the same filename and refresh.
-Live files are `ember_grid_v2.png` and `frost_grid.png`; the game logs
-`[art] <file> → N directions x M poses` at boot so you can check what it found.
-
-Ask for a grid of 4 rows (idle, walk, jump, attack) and 8+ columns rotating a
-full turn, starting facing the viewer and turning toward the viewer's right, on
-a white background. Whatever column count comes back is fine. Side-on art that
-faces left (like the dragon) needs `artFacesRight: false`.
-
-**Check that every row turns the same way before you use a sheet.** Image
-models don't guarantee it — `frost_grid_v2.png` came back with its jump and
-attack rows mirrored against its idle and walk rows, which no single setting
-can correct, and it's kept out of the game for that reason. The quickest test:
-column N should be the same direction in all four rows, and one column should
-be a plain back view in all four.
-
----
+Both of those are the short version. The full reasoning — why flooding beats
+thresholding, why rows must be clustered before columns, why quads must be
+square, and why a fixed atlas cell made the dragons look low-res — is in
+[docs/notes/art.md](docs/notes/art.md).
 
 ## Layout
 
@@ -978,16 +933,16 @@ src/
     mathdojo.js         the walkable unit circle
     cutscene.js         the opening story, flown through the real world
     tournament.js       rounds, ring-outs, scoring, the feast between rounds —
-                        and the one gate that decides whether the two of you
-                        can hurt each other
+                        and the one gate that decides whether two
+                        kittens may hurt each other
     menagerie.js        the rats, rabbits and birds on the arena deck, and
                         what happens when you grab one
     arenaquest.js       how the tournament unlocks
     announce.js         Mr. Satan's pop-in card
     leaderboard.js      the saved record board + joystick name entry
     kotodama.js         the Awakening, the eight scattered orbs, the economy
-    profile.js          Character Profile / trading / the shop — the one menu
-                        with TWO cursors, because a trade needs both girls
+    profile.js          Character Profile / trading / the shop — one cursor
+                        per player, because a trade needs both sides
   entities/
     player.js           movement, slash, mounting, camera rig, health
     dragon.js           rideable storm dragon
@@ -1032,24 +987,35 @@ Everything you can see is made by the code, at load time:
   by connected-component labelling rather than trusting a grid.
 - **Every sound is synthesised.** No audio files at all — see [Sound](#sound).
 
-The whole thing is about 4,500 lines. `HANDOFF.md` is the companion document:
-it records *why* things are the way they are, and the bugs that cost real time,
-so none of them have to be rediscovered.
+The whole thing is about 26,000 lines of source. Three companion documents keep
+it maintainable, and they have three different jobs:
 
-There's also `tools/world-check.mjs` — a headless smoke test that builds the
-real world and pokes the real classes:
+| | |
+| --- | --- |
+| [`CLAUDE.md`](CLAUDE.md) | the rules that must not break, and where everything is. Short on purpose — it is read at the start of every session |
+| [`HANDOFF.md`](HANDOFF.md) | what works, what's open, what's next. The present tense |
+| [`docs/notes/`](docs/notes/README.md) | *why* things are the way they are, one file per area — the bugs that cost real time, and the obvious answers that turned out to be wrong |
+
+There are two headless smoke tests that build the real world and poke the real
+classes — no browser, no GPU:
 
 ```bash
 node tools/world-check.mjs
+node tools/pad-check.mjs
 ```
 
-It catches the failures that still look fine in a screenshot: a grove that
+They catch the failures that still look fine in a screenshot: a grove that
 generates zero canes, a dragon that never finishes flying home, a sprite sheet
-read in mirror image, a clan buff that doesn't actually do anything, a
-trade that quietly destroys an orb, a background remover that eats a
-character's eyes. That last one reads the actual
-PNGs through `tools/png.mjs` — a dependency-free decoder, because a check on a
-fixture only proves the rule agrees with itself.
+read in mirror image, a clan buff that doesn't actually do anything, a trade
+that quietly destroys an orb, a fight camera that frames the first two players
+and crops the other two, a background remover that eats a character's eyes. That
+last one reads the actual PNGs through `tools/png.mjs` — a dependency-free
+decoder, because a check on a fixture only proves the rule agrees with itself.
+
+Nearly none of them assert that a number is *set*. They assert that behaviour
+actually **changed**: that a clan buff measurably alters the verb it claims to,
+that a lock really refuses the wrong approach, that the two-player camera comes
+out bit-identical after being generalised to four.
 
 ## Ideas not built yet
 

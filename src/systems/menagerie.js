@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import {
   Critter, CRITTERS, EAT_TIME, MOUTH_TIME, CATCH_RADIUS,
 } from '../entities/critter.js';
+import { MAX_SLOTS } from '../core/input.js';
+
+/** One entry per seat the game can deal, whoever is actually in them. */
+const seats = (v) => Array.from({ length: MAX_SLOTS }, () => v);
 
 /* ---------------------------------------------------------------------------
    The Menagerie — who is on the deck, and what happens when you grab one.
@@ -83,13 +87,36 @@ export class Menagerie {
     this.spawnT = 0;
     this.on = false;
 
+    /* ---------------------------------------------------------------------
+       FOUR PER-PLAYER ARRAYS, SIZED TO THE PARTY THE GAME CAN SEAT.
+
+       All four were written `[null, null]` — two, because two was the only
+       number there was when the snacks landed — and the four-player pass did
+       not come back for them. Every one of the consequences is silent:
+
+         `releaseAll` iterates `held.length`, so a rat pinned by player 3 is
+         never let go at a round reset and `_updatePinned` drags it across the
+         deck to her new mark for the rest of the tournament — which is the
+         exact bug `releaseAll` exists to prevent, reintroduced for half the
+         party;
+
+         `clear` resets to a two-long array, dropping the reference to whatever
+         players 3 and 4 were holding without releasing it;
+
+         `eaten[2]++` on `undefined` is NaN, so the third kitten's tally — which
+         the toast and the checks read — is not a number.
+
+       `MAX_PLAYERS` rather than `game.players.length`, because the party grows
+       while a tournament is not running and an array sized at construction
+       would be a second thing to keep in step. Sized once, correct forever.
+    --------------------------------------------------------------------- */
     /** Per player: what she is holding, and how long she has been chewing. */
-    this.held = [null, null];
-    this.chew = [0, 0];
+    this.held = seats(null);
+    this.chew = seats(0);
     /** How many each kitten has eaten, for the toast and for the checks. */
-    this.eaten = [0, 0];
+    this.eaten = seats(0);
     /** Has this kitten been told what a stunned animal is for? See `strike`. */
-    this._taught = [false, false];
+    this._taught = seats(false);
 
     this._poofs = [];
     this._poofIx = 0;
@@ -112,8 +139,8 @@ export class Menagerie {
    */
   start() {
     this.on = true;
-    this.eaten = [0, 0];
-    this._taught = [false, false];
+    this.eaten = seats(0);
+    this._taught = seats(false);
     this.clear();
     /* THE VERY FIRST DECK IS SEEDED WITH ONE OF EACH, and only the first.
        Everything after this is a straight lottery, which is the point — but a
@@ -136,8 +163,8 @@ export class Menagerie {
   clear() {
     for (const c of this.list) c.dispose(this.scene);
     this.list.length = 0;
-    this.held = [null, null];
-    this.chew = [0, 0];
+    this.held = seats(null);
+    this.chew = seats(0);
     for (const p of this.game.players ?? []) p.eatT = 0;
   }
 

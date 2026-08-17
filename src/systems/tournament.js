@@ -1098,17 +1098,46 @@ export class Tournament {
    * it and one of the two fighters is off screen. Same trap Ryuuseki fell
    * into, and the same fix: a rig that knows how big its own subject is.
    *
-   * It tracks the MIDPOINT rather than the ring's centre, so the pair stay
+   * It tracks the CENTROID rather than the ring's centre, so the fighters stay
    * large on screen when they close — that dynamic push-in is most of what
    * makes a fighting game read — but the distance is floored high enough that
    * the edge of the deck is always somewhere on screen. A fighter who cannot
    * see how much ring is behind her cannot avoid a ring-out.
+   *
+   * IT FRAMES EVERY FIGHTER, AND IT USED TO FRAME THE FIRST TWO. This read
+   * `const [a, b] = this.game.players` and measured the spread between exactly
+   * those two — written when two was the only number there was, and left behind
+   * by the four-player pass. In a free-for-all or a 2v2 the camera was
+   * therefore aimed at the midpoint of players 1 and 2 and sized off their
+   * separation, so two kittens fighting in the far corner could be off screen
+   * entirely while the lens pushed in on a pair standing next to each other.
+   * Exactly the bug `_paintHud` names below, in the one place it also had to be
+   * fixed and was not.
+   *
+   * IT IS A STRICT GENERALISATION: for two fighters the centroid IS the
+   * midpoint and the widest pair IS the two of them, so the two-player game the
+   * girls know is unchanged to the last decimal. Verified in `world-check`.
    */
   cameraWant() {
     if (!this.active || this.state === 'result' || this.state === 'leaving') return null;
-    const [a, b] = this.game.players;
     const R = this.world.arenaRing;
-    const sep = Math.hypot(a.position.x - b.position.x, a.position.z - b.position.z);
+    const all = this.game.players;
+    const mid = {
+      x: all.reduce((n, p) => n + p.position.x, 0) / all.length,
+      z: all.reduce((n, p) => n + p.position.z, 0) / all.length,
+    };
+    /* The WIDEST pair, not the first two: the distance has to cover whoever is
+       furthest apart, or the fighters at the edges of the spread are the ones
+       it crops. */
+    let sep = 0;
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        sep = Math.max(sep, Math.hypot(
+          all[i].position.x - all[j].position.x,
+          all[i].position.z - all[j].position.z
+        ));
+      }
+    }
 
     /* THE FEAST FRAMES THE RING, NOT THE PAIR. Every other tournament state
        wants the two fighters large, and the dynamic push-in on the midpoint is
@@ -1124,11 +1153,11 @@ export class Tournament {
     }
 
     /* Pulled toward the middle of the ring rather than sitting on the
-       midpoint. With both fighters in one corner, a pure midpoint camera
+       centroid. With every fighter in one corner, a pure centroid camera
        looks at that corner and three quarters of the screen is the island
        outside the ring. */
-    const midX = (a.position.x + b.position.x) / 2;
-    const midZ = (a.position.z + b.position.z) / 2;
+    const midX = mid.x;
+    const midZ = mid.z;
     const k = 0.42;
     return {
       x: midX + (R.x - midX) * k,
