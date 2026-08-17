@@ -31,6 +31,7 @@ import {
   floodBackground, clearSealedPockets, purelyWhite, pocketFloor,
   packMetrics, countInk,
 } from '../src/core/spritesheet.js';
+import { profileFor as deviceProfileFor } from '../src/core/device.js';
 import { readPNG, blobs } from './png.mjs';
 import {
   POWER_ORBS, ORB_IDS, MAX_EQUIPPED, aggregate, orbPrice, orbSellPrice,
@@ -49,7 +50,9 @@ import {
 import {
   Menagerie, MAX_ON_STAGE, MAX_PER_SPECIES, RESPAWN_MIN, RESPAWN_MAX,
 } from '../src/systems/menagerie.js';
-import { MILESTONES, OPEN_AT } from '../src/systems/arenaquest.js';
+import {
+  MILESTONES, OPEN_AT, ArenaQuest, SATAN_TOWN,
+} from '../src/systems/arenaquest.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss } from '../src/core/palette.js';
 import { splitLayout } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
@@ -4446,6 +4449,164 @@ console.log('\n--- the three power moves ---');
      trade for a second Ward disappears. */
   ok('the move orbs stay the shallow half at four players',
     stockFor('ward', 4) < stockFor('swift', 4));
+}
+
+/* --- ONE KITTEN ---
+   A phone starts at one player. Almost all of this already worked because the
+   four-player pass made everything read `partySize` instead of assuming 2 —
+   these checks pin the parts where one is genuinely a different answer, and the
+   two-player results alongside them, because "additive" is the invariant. */
+{
+  const W = 1920;
+  const H = 1080;
+  const solo = splitLayout(1, W, H, 3, 'vertical');
+  ok('one player gets one full-screen pane',
+    solo.length === 1 && solo[0].w === W && solo[0].h === H
+    && solo[0].x === 0 && solo[0].y === 0, JSON.stringify(solo[0]));
+  /* Two is untouched by the same call — the fifth invariant, stated where a
+     change to `splitLayout` would trip over it. */
+  ok('...and two players still split exactly as they did',
+    splitLayout(2, W, H, 3, 'vertical').length === 2);
+
+  /* THE GROUPS SEED, which `main.js` builds from the party rather than writing
+     `[[0, 1]]`. A one-kitten game that seeded the old literal would spend its
+     first frame claiming a player 1 who does not exist, and `_buildHud` and
+     `_drawMaps` both size themselves off it. */
+  const seed = (n) => [Array.from({ length: n }, (_, i) => i)];
+  ok('a solo party seeds one group of one', JSON.stringify(seed(1)) === '[[0]]');
+  ok('...and a pair still seeds the pair', JSON.stringify(seed(2)) === '[[0,1]]');
+
+  /* THE ARENA IS SHUT FOR ONE KITTEN, AND IT SAYS SO AS AN INSTRUCTION.
+     Every league wants two fighters or more, so `modesFor(1)` is empty and
+     `begin()` would fall through to a one-sided duel — a round that cannot be
+     lost. The refusal lives at the door rather than in `begin`, or the griffin
+     flies her north to nothing. */
+  {
+    const said = [];
+    const toasts = [];
+    const satan = {
+      position: { x: SATAN_TOWN.x, y: 0, z: SATAN_TOWN.z },
+      group: { visible: true },
+      setLine: (t) => said.push(t),
+      update: () => {},
+    };
+    const q = new ArenaQuest({
+      game: null, world: { openArena: () => {} }, satan, announcer: null,
+    });
+    q.stage = 'open';
+    const at = (x, z) => ({ position: { x, y: 0, z }, mount: null, rideAlong: null });
+    const hud = {
+      _sceneActive: () => false,
+      toast: (t, i) => toasts.push([t, i]),
+      enterArena: () => { throw new Error('the griffin must not fly a solo kitten'); },
+    };
+    const yes = { pressed: () => true, down: () => false };
+
+    // One kitten standing on him, pressing INTERACT as hard as she likes.
+    q.update(0.016, [at(SATAN_TOWN.x, SATAN_TOWN.z)], [yes], hud);
+    ok('a solo kitten cannot board the griffin', q.bothHere === false);
+    ok('...and he asks for a second fighter, by name',
+      /TWO fighters/.test(said.at(-1) ?? '') && /Bring a sister/.test(said.at(-1) ?? ''),
+      JSON.stringify(said.at(-1)));
+    /* A REFUSAL MUST SAY SO: the line is the refusal, so the one thing that
+       must never happen is an empty prompt. */
+    ok('...so the refusal is never silent', (said.at(-1) ?? '').length > 20);
+
+    // Two kittens on the same spot get the old behaviour back, unchanged.
+    const q2 = new ArenaQuest({
+      game: null, world: { openArena: () => {} }, satan, announcer: null,
+    });
+    q2.stage = 'open';
+    let flew = false;
+    q2.update(0.016, [at(SATAN_TOWN.x, SATAN_TOWN.z), at(SATAN_TOWN.x, SATAN_TOWN.z)],
+      [yes, yes], {
+        _sceneActive: () => false,
+        toast: () => {},
+        enterArena: () => { flew = true; },
+      });
+    ok('two kittens together still board it', flew === true && q2.bothHere === true);
+  }
+}
+
+/* --- THE DEVICE ATLAS BUDGET: WHY IT MOVES `maxAtlas` AND NEVER `cell` ---
+
+   A WRONG REASON WAS WRITTEN HERE FIRST AND THIS CHECK IS WHAT CAUGHT IT, so
+   the wrong one is worth naming: the budget was justified by claiming that
+   lowering `cell` would change `contentScale` and resize the kittens. It does
+   not. `contentScale` works out to `(1 - 2*pad) * tallest / max(tallest,
+   widest)` in every branch of `packMetrics` — `cellPx` cancels out of all of
+   them. That is the whole point of the field, and `loadSpriteAtlas` says so:
+   a character comes out the world height it asked for no matter how loosely the
+   sheet happened to pack. Quad size is safe under BOTH knobs.
+
+   The real reason is the one `packMetrics` documents: at `cell: 384` the two
+   kitten sheets are FLOOR-PINNED (maxAtlas/10 and /8 are far below the floor),
+   so they repack byte-for-byte unchanged — and the sprite-direction checks
+   above measure real cells out of those sheets. Move `cell` and every number
+   they assert moves with it. `maxAtlas` cannot do that, because it does not
+   reach a floor-pinned sheet at all.
+
+   So: `maxAtlas` bites exactly the big single-figure sheets that are over
+   budget, and leaves everything the checks measure alone. */
+{
+  const D = { tallest: 1400, widest: 2600 };          // a dragon: wide, single figure
+  const K = { tallest: 384, widest: 275, cols: 10, rows: 4 }; // a kitten sheet
+  const pm = (o) => packMetrics({ cell: 384, maxAtlas: 2048, ...o });
+
+  ok('a single-figure sheet keeps its size at a lower atlas ceiling',
+    Math.abs(pm(D).contentScale - pm({ ...D, maxAtlas: 1024 }).contentScale) < 1e-12,
+    pm(D).contentScale.toFixed(6));
+  /* The resolution really does drop — otherwise the check above would pass by
+     the budget doing nothing at all, which is the failure it cannot see. */
+  ok('...but it really is a smaller texture',
+    pm({ ...D, maxAtlas: 1024 }).cellPx * 2 === pm({ ...D, maxAtlas: 2048 }).cellPx,
+    `${pm({ ...D, maxAtlas: 1024 }).cellPx} vs ${pm({ ...D, maxAtlas: 2048 }).cellPx}`);
+
+  /* THE SAFETY PROPERTY THE BUDGET STANDS ON: the reduced ceiling cannot reach
+     a floor-pinned sheet, so both kitten sheets pack identically on a phone and
+     the sprite-direction checks stay true there. */
+  ok('a kitten sheet is untouched by the atlas ceiling — it is floor-pinned',
+    pm(K).cellPx === 384 && pm({ ...K, maxAtlas: 1024 }).cellPx === 384);
+  ok('...at eight columns too', pm({ ...K, cols: 8 }).cellPx === 384
+    && pm({ ...K, cols: 8, maxAtlas: 1024 }).cellPx === 384);
+  /* THE TRAP, STATED AS A CHECK: `cell` is the knob that REPACKS a kitten
+     sheet, which is what the direction checks forbid. Quad size survives it;
+     their measurements do not. */
+  ok('lowering `cell` WOULD repack a kitten sheet — so nothing may',
+    pm({ ...K, cell: 256 }).cellPx === 256 && pm(K).cellPx === 384);
+  ok('...even though the kitten would still be the same height',
+    Math.abs(pm(K).contentScale - pm({ ...K, cell: 256 }).contentScale) < 1e-12);
+}
+
+/* --- THE DEVICE TIERS ---
+   `profileFor` is pure so it can be asserted here, and the property that
+   matters most is the one a check can state plainly: a desktop gets exactly
+   what was hard-coded in `main.js` before the file existed. */
+{
+  const desk = deviceProfileFor({ coarse: false, touchPoints: 0, cores: 16 });
+  ok('a desktop is unchanged: two kittens, auto split, medium, AA on',
+    desk.defaultParty === 2 && desk.defaultSplit === 'auto'
+    && desk.defaultQuality === 'medium' && desk.antialias === true
+    && desk.atlasMax === 2048);
+  /* Above any real panel, so it never wins the `Math.min` — but FINITE, because
+     `Infinity` JSON-serialises to null and `Math.min(dpr, q, null)` is 0. */
+  ok('...and its pixel-ratio cap is finite and out of the way',
+    Number.isFinite(desk.maxPixelRatio) && desk.maxPixelRatio >= 4);
+  /* A TOUCHSCREEN LAPTOP IS NOT A PHONE. `maxTouchPoints > 0` alone would take
+     antialiasing off a desktop and start it at one player. */
+  ok('a touchscreen laptop is still a desktop',
+    deviceProfileFor({ coarse: false, touchPoints: 10, cores: 8 }).tier === 'desktop');
+
+  const phone = deviceProfileFor({ coarse: true, touchPoints: 5, dpr: 3, cores: 8 });
+  ok('a phone: one kitten, never split, low, AA off, half the atlas',
+    phone.defaultParty === 1 && phone.defaultSplit === 'never'
+    && phone.defaultQuality === 'low' && phone.antialias === false
+    && phone.atlasMax === 1024 && phone.touchPrimary === true);
+  /* The pixel-ratio cap has to be BELOW a modern phone's panel or it is not a
+     cap at all — an S24 Ultra reports 3.0. */
+  ok('and its pixel ratio is capped well under the panel', phone.maxPixelRatio <= 1.5);
+  ok('a weak phone is capped harder still',
+    deviceProfileFor({ coarse: true, touchPoints: 5, cores: 4 }).maxPixelRatio === 1.0);
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

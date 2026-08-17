@@ -7,6 +7,7 @@ import {
 import { Audio, trackForIsland } from './core/audio.js';
 import { loadSpriteAtlas, recolourAtlas } from './core/spritesheet.js';
 import { placeholderCatAtlas, placeholderDragonTexture, placeholderPandaTexture } from './core/gfx.js';
+import { detect as detectDevice } from './core/device.js';
 import { World } from './world/world.js';
 import { Player, ATTACKS, MAX_HP, KO_TIME } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss } from './core/palette.js';
@@ -91,9 +92,15 @@ const CAVE_PITCH = 0.82;
 class Game {
   constructor() {
     this.canvas = document.getElementById('game');
+    /* WHAT THIS MACHINE MAY SPEND, decided once and read by the renderer, the
+       art loader and the quality setting. `antialias` is a CONSTRUCTOR option
+       and cannot be changed afterwards, which is why this is the first line of
+       the constructor rather than part of `_applyQuality`. See core/device.js
+       for why the art budget moves `maxAtlas` and never `cell`. */
+    this.device = detectDevice();
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      antialias: true,
+      antialias: this.device.antialias,
       powerPreference: 'high-performance',
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -111,16 +118,44 @@ class Game {
     this.state = 'loading';
     this.paused = false;
     this.merged = true;
-    this.settings = { split: 'auto', dir: 'vertical', quality: 'medium' };
+    /* The defaults come from the device, not from a literal, so a phone opens
+       on the low tier and unsplit without a kid having to find Settings. Every
+       one of them is still a setting she can change. On a desktop `profileFor`
+       returns exactly the values that were hard-coded here. */
+    this.settings = {
+      split: this.device.defaultSplit,
+      dir: 'vertical',
+      quality: this.device.defaultQuality,
+    };
     this.mathVisible = true;
 
-    /* HOW MANY KITTENS ARE IN THE WORLD. Two unless somebody claims a third
-       slot, which is the whole of the compatibility story: the girls press PLAY
-       and get Ember and Frost exactly as they always have, and everything that
-       scales with the party — the split screen, the dealer's shelf, the orbs
-       scattered at the Awakening, the ring's team modes — reads this rather
-       than assuming a number. It moves when a player joins or leaves. */
-    this.partySize = 2;
+    /* HOW MANY KITTENS ARE IN THE WORLD. Two on a desktop unless somebody
+       claims a third slot, which is the whole of the compatibility story: the
+       girls press PLAY and get Ember and Frost exactly as they always have, and
+       everything that scales with the party — the split screen, the dealer's
+       shelf, the orbs scattered at the Awakening, the ring's team modes — reads
+       this rather than assuming a number. It moves when a player joins or
+       leaves.
+
+       ONE ON A PHONE, and it costs almost nothing because the four-player pass
+       already made every one of those things read the number instead of
+       assuming it. `_leavePlayer` has always guarded at 1, so one kitten is the
+       floor this code stops at rather than a state it cannot hold. The single
+       exception is the tournament, which needs two fighters and says so — see
+       `systems/arenaquest.js`. */
+    this.partySize = this.device.defaultParty;
+    /* AND THE INPUT LAYER HAS TO BE TOLD, at boot and not only on join/leave.
+       These two numbers must always agree — `input.js` is explicit that a slot
+       past the party size reads NOTHING, or a keyboard set silently drives the
+       controller state of a kitten nobody has seated, and `seatable` /
+       `joinHint` are both computed against it.
+
+       They used to agree BY ACCIDENT: both were the literal 2, so nothing had to
+       assign it and nothing did. The moment the party came from the device that
+       accident broke — a phone booted with one kitten and an input layer still
+       tracking two, which handed the arrow keys to a phantom player 2 and made
+       `joinHint` report that nobody could join. */
+    this.input.slots = this.partySize;
 
     /* ONE CAMERA RIG PER PLAYER SLOT, AND THE RIG IS NAMED BY A PLAYER RATHER
        THAN BY A GROUP. Rig `i` draws whichever group of kittens has player `i`
@@ -150,8 +185,11 @@ class Game {
     /** Player index -> her group's lowest member, last frame. The hysteresis
      *  reads it; nothing else should. */
     this._clusterOf = null;
-    /** This frame's groups, as arrays of player indices. One per pane. */
-    this.groups = [[0, 1]];
+    /** This frame's groups, as arrays of player indices. One per pane.
+     *  Seeded from the party rather than written as `[[0, 1]]`, or a one-kitten
+     *  game spends its first frame claiming to hold a player 1 who does not
+     *  exist — and `_drawMaps` and `_buildHud` both size themselves off this. */
+    this.groups = [Array.from({ length: this.partySize }, (_, i) => i)];
 
     this.pickups = [];
     this.dragons = [];
@@ -259,7 +297,8 @@ class Game {
     this.balls = this.world.dragonBalls;
     this.ballsHeld = 0;
     this.ryu = null;
-    this.ryuArt = await loadSpriteAtlas('/sprites/ryuuseki.png', { views: 1, rows: 1, clearPockets: true })
+    this.ryuArt = await loadSpriteAtlas('/sprites/ryuuseki.png',
+      { views: 1, rows: 1, clearPockets: true, maxAtlas: this.device.atlasMax })
       .catch(() => null);
     this.summonScene = new SummonScene({ world: this.world, audio: this.audio });
     await this.summonScene.load();
@@ -275,9 +314,11 @@ class Game {
     setLoad('Building the arena…');
     await frame();
     const [satanArt, griffinArt] = await Promise.all([
-      loadSpriteAtlas('/sprites/leader_satan.png', { views: 1, rows: 1, clearPockets: true })
+      loadSpriteAtlas('/sprites/leader_satan.png',
+        { views: 1, rows: 1, clearPockets: true, maxAtlas: this.device.atlasMax })
         .catch(() => null),
-      loadSpriteAtlas('/sprites/griffin.png', { views: 1, rows: 1, clearPockets: true })
+      loadSpriteAtlas('/sprites/griffin.png',
+        { views: 1, rows: 1, clearPockets: true, maxAtlas: this.device.atlasMax })
         .catch(() => null),
     ]);
 
@@ -373,6 +414,13 @@ class Game {
          the depth test was added. The rule is safe now, but these sheets have
          no sealed background to clear in the first place, so switching it on
          would be risk with no upside. */
+      /* NO DEVICE ATLAS BUDGET ON THESE FOUR NUMBERS, and that is deliberate
+         rather than an oversight. `world-check` measures the real sheets at
+         exactly `cell: 256, maxAtlas: 768` to assert the rabbit you chase is
+         still exactly `size` tall — the options are shared with the loader so
+         only the numbers are repeated, not the arithmetic. Budgeting them would
+         move an assertion rather than save a pixel: at 768 these sheets are
+         already smaller than the reduced ceiling. */
       const a = await loadSpriteAtlas(`/sprites/${file}`, {
         views: 1, rows: 1, cell: 256, maxAtlas: 768,
       }).catch(() => null);
@@ -468,7 +516,17 @@ class Game {
 
   async _loadSprite(url, views, rows, fallback) {
     try {
-      const a = await loadSpriteAtlas(url, { views, rows, cell: 384 });
+      /* `cell` IS FIXED AT 384 ON EVERY DEVICE and only `maxAtlas` moves. Not
+         because `cell` would resize anybody — `contentScale` is packing-
+         invariant, so it would not — but because the two kitten sheets are
+         floor-pinned at this cell and therefore repack byte-for-byte unchanged,
+         and the sprite-direction checks measure real cells out of them. A
+         reduced `maxAtlas` cannot reach a floor-pinned sheet, which is what
+         makes it the safe knob. See core/device.js; the checks are in
+         world-check under "THE DEVICE ATLAS BUDGET". */
+      const a = await loadSpriteAtlas(url, {
+        views, rows, cell: 384, maxAtlas: this.device.atlasMax,
+      });
       if (a.cols < 1) throw new Error('no views found');
       if (rows > 1 && a.rows !== rows) {
         throw new Error(`found ${a.rows}/${rows} animation rows`);
@@ -1250,7 +1308,14 @@ class Game {
 
   _applyQuality() {
     const q = QUALITY[this.settings.quality] ?? QUALITY.medium;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.pixelRatio));
+    /* THREE CAPS, LOWEST WINS: what the panel actually has, what the player
+       asked for, and what this class of machine may spend. The device cap is
+       Infinity on a desktop, so this is the same arithmetic it has always been
+       there — it only bites on a phone, where a 3.0 panel ratio across four
+       viewports is nine times the fragments of a 1.0 buffer. */
+    this.renderer.setPixelRatio(
+      Math.min(window.devicePixelRatio, q.pixelRatio, this.device.maxPixelRatio)
+    );
     this.renderer.shadowMap.enabled = q.shadows;
     if (this.world?.sun) {
       this.world.sun.castShadow = q.shadows;

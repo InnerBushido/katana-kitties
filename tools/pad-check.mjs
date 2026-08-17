@@ -887,6 +887,58 @@ console.log('\n--- ...read through the real InputManager ---');
   im.keys.clear();
 }
 
+/* --- A PARTY OF ONE READS ONE SLOT ---
+   A phone boots with one kitten (`device.defaultParty`), and `Game` has to hand
+   that number to the input layer at BOOT and not only on join/leave.
+
+   The two numbers used to agree BY ACCIDENT — `partySize` and
+   `InputManager.slots` were both the literal 2, so nothing ever had to assign
+   it. Once the party came from the device that accident broke, and the symptom
+   was invisible on a desktop: a phone booted one kitten with an input layer
+   still tracking two, which dealt the ARROW KEYS to a slot no player was
+   sitting in and made `joinHint` claim nobody could join. */
+console.log('\n--- a party of one ---');
+{
+  const solo = drive([]);
+  solo.slots = 1;
+  solo.update();
+
+  ok('the only kitten gets WASD', solo.bindings[0].keyset === 0,
+    JSON.stringify(solo.bindings[0]));
+  /* THE SLOT PAST THE PARTY READS NOTHING — the rule `_assign` exists to keep.
+     Without it the arrows drive a kitten nobody has seated. */
+  ok('slot 1 is dealt no device at all',
+    solo.bindings[1].keyset === null && solo.bindings[1].pad === null,
+    JSON.stringify(solo.bindings[1]));
+
+  solo.keys.add('ArrowUp');
+  solo.keys.add('KeyK');
+  solo.update();
+  ok('...so the arrow keys move nobody',
+    solo.players[1].mx === 0 && solo.players[1].my === 0
+    && ACTIONS.every((a) => !solo.players[1].down(a)));
+  ok('...and they do not reach the only kitten either',
+    solo.players[0].mx === 0 && solo.players[0].my === 0);
+  solo.keys.clear();
+  solo.update();
+
+  /* AND A SECOND PLAYER CAN STILL GET IN, which is the whole point of leaving
+     the party at one rather than locking it there — a Bluetooth pad on the
+     phone, or a second keyboard set on a tablet. */
+  ok('ENTER is offered as the way in for a second player',
+    solo.joinHint() === 'ENTER', `${solo.joinHint()}`);
+  ok('...and one keyset free means two are seatable', solo.seatable === 2,
+    `${solo.seatable}`);
+
+  /* TWO IS UNTOUCHED, stated here because this block is the one that could
+     plausibly break it. */
+  const duo = drive([]);
+  duo.slots = 2;
+  duo.update();
+  ok('a party of two still deals WASD and the arrows',
+    duo.bindings[0].keyset === 0 && duo.bindings[1].keyset === 1);
+}
+
 console.log('');
 line('checks', String(checks));
 line('failures', String(fails));

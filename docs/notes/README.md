@@ -20,6 +20,7 @@ one file it needs — usually five to ten thousand.
 | [story.md](story.md) | the opening cutscene, the six leaders, the shrine scenes, the scene viewer | `systems/cutscene.js`, `systems/shrinescene.js`, `entities/leader.js` |
 | [world.md](world.md) | the six clans and what each buff changes; raising and riding the panda | `world/build.js`, `entities/panda.js`, `entities/shrine.js` |
 | [art.md](art.md) | why the dragons looked low-res, and how atlas cells are sized | `core/spritesheet.js` |
+| [mobile.md](mobile.md) | what a phone may spend, why the art budget moves `maxAtlas` and never `cell`, and why the device test needs two signals | `core/device.js`, any `maxAtlas` argument, the quality tiers |
 | [audio.md](audio.md) | the synthesised sound set, and a piece of music per island | `core/audio.js` |
 | [rules.md](rules.md) | the gameplay invariants in full, with the measurements behind them — bamboo, ground snapping, dragon perches, sprite facing | anything that touches movement, props, dragons or a sprite sheet |
 | [gotchas.md](gotchas.md) | the traps that cost real time and are not obvious from the code | anything, when something inexplicable is happening |

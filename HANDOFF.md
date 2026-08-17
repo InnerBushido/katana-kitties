@@ -92,6 +92,12 @@ two-cursor trade screen. Patchfur closes the story in her own voice.
 piece per island, one per dragon, one for the arena. The only audio files in the
 project are the recorded voice lines in `public/voice/`.
 
+**A device tier.** `core/device.js` decides once what this machine may spend and
+the renderer, the art loader and the quality setting all read it. A touch device
+gets antialias off, a capped pixel ratio, and half-size single-figure atlases
+(147MB of retained texture down to 115MB); a desktop gets byte-for-byte what was
+hard-coded before the file existed. See [docs/notes/mobile.md](docs/notes/mobile.md).
+
 ---
 
 ## Open items
@@ -124,6 +130,55 @@ is listed here is untested-by-players, not untested-by-machine.
 6. **`docs/unused-art/` is 19MB of reference sheets the game never loads.** Fine
    in the repo and excluded from CLI deploys, but it is most of the repo's size
    and nothing reads it. Worth a decision one day; not urgent.
+
+---
+
+## Mobile — the road to a phone
+
+**Where it stands:** the deployed build already boots and renders on a Galaxy
+S24 Ultra. It has **no touch input at all**, and in landscape the minimap and the
+maths board eat the width. The reasoning for everything below —
+the measured VRAM table, and why the art budget moves `maxAtlas` and never
+`cell` — is in **[docs/notes/mobile.md](docs/notes/mobile.md)**.
+
+**The target is one player on a phone.** A second player can still join on a
+Bluetooth pad, and a tablet can still split; a phone does not split by default,
+because half a 6-inch screen is not a pane.
+
+| step | what | state |
+| --- | --- | --- |
+| 1 | device tier: antialias, pixel-ratio cap, `maxAtlas` budget | **done** |
+| 2 | start at one kitten on a touch device; the arena refuses solo | **done** |
+| 3 | touch as a device, on-screen stick and buttons | next |
+| 4 | landscape HUD pass, safe areas, orientation gate, PWA manifest | |
+
+**Steps 1 and 2 are verified end to end** under emulated touch: the game boots on
+the `mobile` tier with one kitten, one badge, one minimap, a full-screen pane and
+`input.slots` of 1, and a desktop is byte-for-byte unchanged. Retained GPU
+texture is 147MB down to 115MB. **What has not been done is a run on real
+hardware** — the S24 Ultra test predates all of it.
+
+**The arena is shut for a solo kitten** and says so as an instruction: *"a
+tournament needs TWO fighters! Bring a sister."* Every league wants two fighters
+or more, so `modesFor(1)` is empty and `begin()` would otherwise fall through to
+a one-sided duel — a round that cannot be lost. Solo keeps everything else: the
+world, the dragons, the clans, the panda, the seven stars and the whole endgame.
+
+**Known, not yet fixed (step 4):** in a narrow viewport the bottom hint text
+wraps across the minimap and both are sized for a desktop. This is the
+misalignment the first phone test reported.
+
+**Later, and wanted:** *phone as a controller* — four people each holding a phone,
+playing on a tablet or a TV. That is a second device feeding a `PadState` over
+the local network, and it is the natural stepping stone to real netcode.
+
+**Steam is the other branch, and it answers the multiplayer wish cheaply.** An
+Electron wrapper plus Steam Direct gets **Remote Play Together**, which streams
+this local split-screen co-op game to friends anywhere and forwards their pad
+input — worldwide multiplayer with no netcode. Steam Input would also normalise
+every controller, which retires the whole vJoy/Joy-Con calibration problem for
+Steam players. Valve requires AI-content disclosure at submission; the title
+screen credit is already honest about it.
 
 **Two things that work as designed but read like bugs:** Chrome cannot read the
 vJoy sticks (play in Firefox — the title screen detects it and says so), and a

@@ -148,7 +148,15 @@ export class ArenaQuest {
           if (hud.summonScene.start('satanOpen', this.world.arenaCentre, 96, S?.art)) {
             this.stage = 'open';
             hud.toast('THE ARENA IS OPEN — find Mr. Satan in the town!', 0);
-            hud.toast('THE ARENA IS OPEN — both of you, together!', 1);
+            /* ONE TOAST PER PLAYER, so the second line is addressed to a kitten
+               who exists. Solo it would have been a toast styled `p1` telling
+               the only player to gather "both of you" — an instruction naming a
+               sister who is not in the game, which reads as her having missed
+               something rather than as the party being small. She still gets the
+               line above, and Mr. Satan tells her the rest at the door. */
+            if (players.length > 1) {
+              hud.toast('THE ARENA IS OPEN — both of you, together!', 1);
+            }
           } else {
             // The scene was refused; the island is open either way. Try the
             // scene again next frame rather than losing the stage change.
@@ -160,6 +168,31 @@ export class ArenaQuest {
 
       case 'open': {
         if (!S) break;
+
+        /* A PARTY OF ONE CANNOT FIGHT A TOURNAMENT, AND HE SAYS SO AS AN
+           INSTRUCTION. Every league in `MODES` wants two fighters or more, so
+           `modesFor(1)` is empty — and `begin()` falls through to
+           `available[0] ?? MODES[0]`, which is a DUEL with one fighter, one
+           side, and a `wins` array of length 1. That is a round that cannot be
+           lost, which is worse than a round that cannot be started: a kid wins
+           the World Martial Arts Tournament by walking into the ring alone and
+           the whole thing stops meaning anything.
+
+           So the door is shut here, at the door, rather than by teaching the
+           leagues to cope with one fighter. Shutting it in `begin` would refuse
+           her AFTER the griffin had flown her north, which is a journey ending
+           in nothing.
+
+           IT NAMES WHAT TO DO, not what is missing — "bring a sister" rather
+           than "two players required". `near` is not even computed: there is no
+           arrangement of one kitten that opens this. */
+        if (players.length < 2) {
+          S.setLine('The ring is ready — but a tournament needs TWO fighters!'
+            + '\nBring a sister. Hand her a controller and press START.');
+          this.bothHere = false;
+          break;
+        }
+
         /* BOTH OF THEM, AND THAT IS THE POINT. The tournament is the one
            thing in this game that cannot be done alone, so the door to it
            asks for both — and it says so out loud when only one is standing

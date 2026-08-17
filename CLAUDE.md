@@ -79,6 +79,7 @@ Break any of these and the thing stops being the game it is. Each is enforced by
 src/
   main.js               game loop, split-screen rendering, boot, joining, debug keys
   core/      gfx  input  palette  split  cluster  spritesheet  label  audio
+             device (what this machine may spend — tiers, atlas budget)
   world/     build (all the geometry)  world (assembly, height queries)
   systems/   tournament  menagerie  arenaquest  announce  leaderboard
              kotodama  profile  cutscene  shrinescene  summonscene
