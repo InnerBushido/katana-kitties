@@ -156,6 +156,34 @@ they point at was moved, not deleted. Grep `docs/notes/` for the phrase.
 
 ---
 
+## Starting a session
+
+**Open the session with `katana-kitties` as the working folder, not its parent.**
+This is the whole trick and it is easy to get wrong: Claude Code loads
+`CLAUDE.md` from the folder it starts in. Opened on
+`Desktop\Claude Conversation` — which also holds MoveQuest — the project's
+`CLAUDE.md` is simply not seen, and the session starts knowing nothing. Opened
+on the project, the invariants, the commands and the code map are already there
+before the first word.
+
+**Then just say what you want.** No "read HANDOFF.md first" — that instruction
+existed because the file was the only orientation there was, and following it
+now costs a page of state nobody asked for.
+
+Worth adding to the first message, when they apply:
+
+- **the area**, if you know it — "the reasoning is in `docs/notes/tournament.md`"
+  saves a search;
+- **how you will judge it** — "the girls should be able to work it out without
+  being told" is a real constraint and changes the design;
+- **plan first** for anything with more than one moving part. A wrong plan costs
+  a paragraph; wrong code costs an afternoon.
+
+Everything else — run it in Firefox, run both checks, add the check that would
+have caught it, update these docs — is in `CLAUDE.md` and does not need saying.
+
+---
+
 ## Handing off to the next session
 
 **Do not write a summary file per session.** They accrete, they go stale, and
