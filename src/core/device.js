@@ -46,6 +46,34 @@
  *  only art number that varies by device. */
 const ATLAS = { full: 2048, reduced: 1024 };
 
+const OVERRIDE_KEY = 'kk.device.override';
+
+/** 'auto' | 'desktop' | 'mobile' — a hand-set answer that beats detection.
+ *
+ *  THIS EXISTS FOR TESTING ON THE MACHINE THE GAME IS BUILT ON, which is the
+ *  only way the touch controls get looked at more than once a week. It is
+ *  persisted rather than held in memory because the two heaviest things it
+ *  decides — `antialias` and `atlasMax` — are read once at boot and cannot
+ *  change afterwards, so a test mode that did not survive a reload could only
+ *  ever test half of itself. */
+export function readOverride() {
+  try {
+    const v = localStorage.getItem(OVERRIDE_KEY);
+    return v === 'desktop' || v === 'mobile' ? v : 'auto';
+  } catch {
+    return 'auto';   // private mode: detection is the only answer available
+  }
+}
+
+export function writeOverride(mode) {
+  try {
+    if (mode === 'auto') localStorage.removeItem(OVERRIDE_KEY);
+    else localStorage.setItem(OVERRIDE_KEY, mode);
+  } catch {
+    /* nothing persists this session; the live half of the switch still works */
+  }
+}
+
 /**
  * Turn raw capabilities into what the game may spend. Pure — no `window`.
  *
@@ -58,18 +86,26 @@ const ATLAS = { full: 2048, reduced: 1024 };
  *            maxPixelRatio: number, atlasMax: number, defaultQuality: string,
  *            defaultParty: number, defaultSplit: string}}
  */
-export function profileFor({ coarse = false, touchPoints = 0, dpr = 1, cores = 0 } = {}) {
+export function profileFor({
+  coarse = false, touchPoints = 0, dpr = 1, cores = 0, override = 'auto',
+} = {}) {
   /* BOTH SIGNALS, NOT EITHER. `maxTouchPoints > 0` alone calls every
      touchscreen laptop a phone and would take antialiasing off a desktop; a
      coarse primary pointer alone misses nothing in practice but costs nothing
      to pair. A machine is touch-primary when the finger is the main pointer AND
      there is a digitiser behind it. */
-  const touchPrimary = coarse && touchPoints > 0;
+  const detected = coarse && touchPoints > 0;
+  /* THE OVERRIDE IS THE WHOLE ANSWER WHEN IT IS SET, not a hint added to the
+     detection. "Test as a phone" has to mean it on a machine that is visibly
+     not one, or it cannot test anything. */
+  const touchPrimary = override === 'auto' ? detected : override === 'mobile';
 
   if (!touchPrimary) {
     return {
       touchPrimary: false,
       tier: 'desktop',
+      override,
+      detected,
       antialias: true,
       /* FINITE, NOT `Infinity`, AND THAT IS NOT FUSSINESS. This means "the
          quality setting is the only cap" — 4 is above any panel that exists, so
@@ -91,10 +127,17 @@ export function profileFor({ coarse = false, touchPoints = 0, dpr = 1, cores = 0
      core count, is what a 20-minute play session runs into. `cores` only
      separates "reduced" from "reduced and do not push it" — it never buys a
      touch device the desktop tier. */
-  const weak = cores > 0 && cores <= 4;
+  /* A FORCED MOBILE TIER IS NEVER THE WEAK ONE. `cores` is a phone signal, and
+     the desktop being tested on has twenty of them — reading it here would make
+     "test as a phone" quietly test the FASTER phone tier on the machine most
+     likely to be checking the slower one. Forced means the ordinary mobile
+     tier; a real weak phone still detects itself. */
+  const weak = override === 'auto' && cores > 0 && cores <= 4;
   return {
     touchPrimary: true,
     tier: weak ? 'mobile-low' : 'mobile',
+    override,
+    detected,
     /* MSAA on a phone costs bandwidth, which is the one thing a mobile GPU has
        least of, and it is invisible at 400+ ppi. It is a WebGLRenderer
        CONSTRUCTOR option — it cannot be changed later — so this has to be
@@ -126,5 +169,6 @@ export function detect() {
     touchPoints: navigator.maxTouchPoints ?? 0,
     dpr: window.devicePixelRatio ?? 1,
     cores: navigator.hardwareConcurrency ?? 0,
+    override: readOverride(),
   });
 }

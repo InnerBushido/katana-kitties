@@ -2,7 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- `viewport-fit=cover` puts the page under the notch and the home
+         indicator, which is what lets the touch pad use the full width — the
+         CSS then keeps the controls out of those areas with env(safe-area-*).
+         `user-scalable=no` and `maximum-scale=1` are for a nine-year-old
+         mashing buttons: a double-tap that zooms the game to 200% looks
+         exactly like the game breaking, and she has no idea how to undo it. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#1b1426" />
+    <!-- Installed to the home screen it runs without a URL bar, which is the
+         only way to get the whole screen on an iPhone: Safari supports neither
+         the Fullscreen API nor orientation lock there. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Katana Kitties</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
@@ -180,6 +194,38 @@
           run apart and joins back up when you're together. The <b>map</b> in the
           corner shows both of you, every dragon, and everywhere worth going.
         </p>
+        <!-- ON A PHONE, AND ONLY ON A PHONE. `body.touch-ui` hides this on a
+             desktop: a paragraph about dragging a thumbstick, on a machine with
+             no touchscreen, is a kid being told to do something impossible. It
+             is written in the same shape as the sections above — what the
+             control is, then what it does — and it names the two controls that
+             have no button of their own, because those are the two she would
+             otherwise never find. -->
+        <div class="touch-only">
+          <h3>ON A PHONE OR TABLET</h3>
+          <p class="note">
+            <b>Move</b> — put your <b>left thumb</b> anywhere on the left half of
+            the screen and drag. The circle appears wherever you touch, so you
+            don't have to aim for it.<br>
+            <b>Jump</b> — the big yellow <kbd>A</kbd> &nbsp;·&nbsp;
+            <b>Slash</b> — red <kbd>X</kbd> &nbsp;·&nbsp;
+            <b>Join a clan</b> — <kbd>B</kbd> &nbsp;·&nbsp;
+            <b>Ride</b> — <kbd>Y</kbd> &nbsp;·&nbsp;
+            <b>Run</b> — <kbd>ZR</kbd>, hold it down<br>
+            <b>Pause</b> — the <kbd>II</kbd> button in the top corner.
+          </p>
+          <p class="note">
+            <b>Tap the map</b> in the corner to zoom it in and out, and
+            <b>tap the sin &amp; cos board</b> in the Dojo to hide or show it.
+            Those two don't have buttons of their own — you press the thing
+            itself.
+          </p>
+          <p class="note">
+            <b>Turn your phone sideways</b> to play. If a friend has a
+            controller, pair it over Bluetooth and press <b>START</b> on it — she
+            joins as the second kitten and you keep the touch controls.
+          </p>
+        </div>
         <button class="menu-btn back" data-close>BACK</button>
       </div>
     </div>
@@ -187,6 +233,25 @@
     <div id="panel-settings" class="screen overlay hidden">
       <div class="panel">
         <h2>SETTINGS</h2>
+        <!-- TOUCH CONTROLS, AND THE TEST MODE. Automatic is right on every real
+             device; the two forced settings exist because the touch pad is
+             built on a desktop and would otherwise be looked at once a week on
+             a phone. Forcing it ON puts the pad on screen with the mouse
+             driving the stick and WASD driving the buttons, so the whole thing
+             can be exercised without leaving the machine it is written on.
+             The note says what needs a reload, because the render tier and the
+             party size are read once at boot and cannot change under a running
+             game — a setting that silently did half of what it says is worse
+             than one that tells you. -->
+        <label class="row">
+          <span>Touch controls</span>
+          <select id="set-touch">
+            <option value="auto">Automatic (on for phones and tablets)</option>
+            <option value="mobile">Force ON — test touch on this computer</option>
+            <option value="desktop">Force OFF — always keyboard and pads</option>
+          </select>
+        </label>
+        <p class="tiny" id="touch-note"></p>
         <label class="row">
           <span>Split screen</span>
           <select id="set-split">
@@ -413,6 +478,31 @@
         <h2 id="kd-title">CHARACTER PROFILE</h2>
         <div id="kd-body" class="kd-body"></div>
         <p id="kd-help" class="kd-help"></p>
+      </div>
+    </div>
+
+    <!-- ================= the on-screen pad =================
+         Built by core/touchpad.js rather than written out here, because the
+         buttons and their arrangement are data (TOUCH_BUTTONS) and the stick
+         floats to wherever the thumb lands. Outside #hud on purpose: the HUD is
+         hidden wholesale whenever a scene owns the screen, and the controls are
+         how you SKIP a scene. -->
+    <div id="touch-pad" class="hidden"></div>
+
+    <!-- TURN IT SIDEWAYS. The camera is a fixed three-quarter view and portrait
+         shows sky and floor, so this is a gate rather than a suggestion — but it
+         is a gate a kid can pass by doing the obvious thing. Not a lock:
+         iOS Safari cannot lock orientation at all, so a prompt is the only
+         mechanism that works everywhere. -->
+    <div id="rotate-gate" class="hidden">
+      <div class="rg-inner">
+        <div class="rg-phone"></div>
+        <!-- Both lines are written by `_updateRotateGate`, because the right
+             instruction depends on whether this is a real phone or the desktop
+             test mode — "turn your phone sideways" in front of somebody holding
+             a mouse names an action they cannot take. -->
+        <p class="rg-main"><b>Turn your phone sideways</b></p>
+        <p class="rg-sub">Katana Kitties needs a wide screen.</p>
       </div>
     </div>
 

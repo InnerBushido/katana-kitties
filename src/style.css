@@ -33,6 +33,22 @@ html, body {
   font-family: 'Nunito', system-ui, sans-serif;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
+  /* PULL-TO-REFRESH RELOADS THE WHOLE GAME, and the gesture that triggers it —
+     a downward drag near the top of the screen — is exactly what pushing the
+     stick "up" looks like if the thumb starts high. It has to be off before the
+     touch pad is worth anything. */
+  overscroll-behavior: none;
+  /* A held button raises the text-selection callout on iOS and the context menu
+     everywhere else, and both swallow the pointerup that would release it. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  /* Kills the 300ms tap delay and double-tap zoom. `touch-action` on the
+     elements does the scroll suppression; this is about the gestures the
+     browser reserves for itself. */
+  touch-action: manipulation;
+  /* No grey flash on tap. */
+  -webkit-tap-highlight-color: transparent;
 }
 
 #game {
@@ -1563,3 +1579,278 @@ html, body {
 /* Why JUMP is refused, in the same red the health bar uses for trouble. A
    confirm that silently does nothing is the failure this game keeps naming. */
 .tp-bad { color: #d62b20; font-weight: bold; }
+
+/* ========================= the on-screen pad =============================
+   Drawn in the same ink-and-paper language as everything else, and sized for a
+   nine-year-old thumb rather than for a screenshot. Every number here was
+   chosen against the one constraint that matters: a kid holding a phone in two
+   hands can reach all of it without shifting her grip.
+
+   `pointer-events` IS THE WHOLE TRICK. The container spans the screen so the
+   stick zone can be half of it, but only the stick zone and the buttons accept
+   pointers — otherwise the pad would eat every tap meant for the world, the
+   minimap or a menu underneath it.
+
+   `touch-action: none` on the interactive parts, NOT on the body. The body keeps
+   `manipulation` so menus and the help page can still be scrolled with a finger;
+   the pad's own surfaces refuse all browser gestures, so a stick drag is never
+   also a scroll or a swipe-back.
+------------------------------------------------------------------------- */
+
+#touch-pad {
+  position: fixed;
+  inset: 0;
+  z-index: 7;               /* over the HUD (5) and the join card (6) */
+  pointer-events: none;
+  touch-action: none;
+  /* Under the notch and the home indicator. `viewport-fit=cover` put the page
+     there; this is what keeps the controls out of it. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+#touch-pad.hidden { display: none; }
+
+/* THE STICK CATCHMENT IS THE WHOLE LEFT HALF, and it is an element rather than
+   a coordinate test in JS so the safe-area inset above applies to it for free. A
+   floating base needs a big zone: she puts her thumb where her thumb lands, not
+   where a circle is drawn. */
+.tp-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 46%;
+  height: 78%;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.tp-stick {
+  position: absolute;
+  width: calc(var(--r) * 2);
+  height: calc(var(--r) * 2);
+  margin: calc(var(--r) * -1) 0 0 calc(var(--r) * -1);
+  border-radius: 50%;
+  border: 3px solid rgba(251, 238, 210, 0.5);
+  background: rgba(29, 18, 22, 0.3);
+  /* DIM AT REST, BRIGHT UNDER A THUMB. It was opacity 0 at rest, which is tidy
+     and assumes she already knows the left half is a stick — she is nine, and an
+     invisible control is one she has to be told about. The resting base sits
+     where a left thumb naturally falls (see `_parkStick`) and jumps to wherever
+     she actually touches.
+     `left`/`top` are transitioned so the jump back to the resting spot glides
+     instead of teleporting, but ONLY while it is not live: a base that eased
+     toward a landing thumb would lag the first frames of a turn. */
+  opacity: 0.28;
+  transition: opacity 0.12s ease, left 0.2s ease, top 0.2s ease;
+}
+.tp-stick.live {
+  opacity: 1;
+  transition: opacity 0.06s ease;
+}
+
+.tp-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46%;
+  height: 46%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 0 3px 0 rgba(29, 18, 22, 0.5);
+}
+
+/* The face cluster, laid out as the diamond a pad has: mount on top, slash and
+   clan either side, jump at the bottom under where the thumb rests. */
+.tp-cluster {
+  position: absolute;
+  right: 3.2%;
+  bottom: 4%;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  grid-template-rows: repeat(2, auto);
+  gap: 8px;
+  align-items: center;
+  justify-items: center;
+  pointer-events: none;     /* the BUTTONS take pointers, not the gaps */
+}
+
+.tp-btn {
+  --size: 1;
+  pointer-events: auto;
+  touch-action: none;
+  width: calc(60px * var(--size));
+  height: calc(60px * var(--size));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  background: rgba(251, 238, 210, 0.86);
+  color: var(--ink);
+  box-shadow: 0 4px 0 var(--ink);
+  font-family: 'Bangers', cursive;
+  cursor: pointer;
+  /* No transition on the press: a 100ms ease on a button a kid taps forty times
+     a minute reads as lag. */
+  transition: transform 0.09s ease, box-shadow 0.09s ease, background 0.09s ease;
+}
+.tp-btn .tp-glyph { font-size: calc(19px * var(--size)); line-height: 1; }
+.tp-btn .tp-label {
+  font-family: 'Nunito', sans-serif;
+  font-weight: 900;
+  font-size: calc(8px * var(--size));
+  letter-spacing: 0.6px;
+  opacity: 0.72;
+}
+
+/* DOWN IS OBVIOUS, and it has to be: it is the only feedback that the tap
+   registered at all, and on a desktop it doubles as the input readout — a
+   keyboard press lights the same state. */
+.tp-btn.down {
+  background: var(--vermillion);
+  color: var(--paper);
+  transform: translateY(4px);
+  box-shadow: 0 0 0 var(--ink);
+}
+
+.tp-jump { background: rgba(245, 195, 65, 0.9); }
+.tp-attack { background: rgba(224, 81, 44, 0.86); color: var(--paper); }
+
+/* Pause sits in the top corner, deliberately far from the thumbs — it is how a
+   kid leaves the game, and a mis-tap next to JUMP costs her the round. */
+.tp-pause {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 10px);
+  right: calc(env(safe-area-inset-right) + 12px);
+  width: 42px;
+  height: 42px;
+  --size: 0.72;
+  letter-spacing: 1px;
+}
+
+/* ---------------------------- the rotate gate ---------------------------- */
+
+#rotate-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 40;              /* over everything, including scenes */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #14101c;
+  color: var(--paper);
+  text-align: center;
+  padding: 24px;
+}
+#rotate-gate.hidden { display: none; }
+#rotate-gate p { margin: 6px 0; font-size: 19px; }
+#rotate-gate .rg-sub { font-size: 14px; opacity: 0.7; }
+.rg-phone {
+  width: 54px;
+  height: 92px;
+  margin: 0 auto 18px;
+  border: 4px solid var(--paper);
+  border-radius: 10px;
+  animation: rgTurn 2s ease-in-out infinite;
+}
+@keyframes rgTurn {
+  0%, 40% { transform: rotate(0deg); }
+  70%, 100% { transform: rotate(-90deg); }
+}
+
+/* ===================== the HUD on a touch device =========================
+   Scoped to `body.touch-ui` so a desktop is untouched — the fifth invariant
+   applies to the stylesheet exactly as it applies to the code.
+
+   THE FIRST PHONE TEST REPORTED TWO THINGS AND THIS IS BOTH OF THEM: the HUD
+   was sized for a desktop, and the bottom hint wrapped across the minimap. On a
+   phone in landscape there is 390px of HEIGHT for a scoreboard, a minimap, a
+   hint line and now a pad — so everything here is about giving that height back.
+------------------------------------------------------------------------- */
+
+/* NO WIDTH AND NO POSITION FOR THE MAP HERE, AND THAT IS DELIBERATE. Both are
+   set INLINE by `Game._drawMaps` — it sizes the map against its pane and moves it
+   out of the thumbs' corners — and an inline style beats every rule in this file.
+   A `width` written here looks like it works and does nothing, which is worse
+   than not writing it: the next person reads the CSS, believes it, and cannot
+   find why the map is still the wrong size. This was written that way once
+   already. All that is left to do here is thin the chrome, because at phone size
+   a 3px border and 6px of padding are a real fraction of the whole map. */
+body.touch-ui .map-box {
+  padding: 3px;
+  border-width: 2px;
+}
+
+body.touch-ui .scoreboard {
+  top: calc(env(safe-area-inset-top) + 6px);
+  gap: 6px;
+  transform: translateX(-50%) scale(0.82);
+  transform-origin: top center;
+}
+
+body.touch-ui .hint {
+  /* CENTRED IN THE GAP BETWEEN THE THUMBS rather than across the full width: at
+     full width the text ran under the stick on one side and the buttons on the
+     other, which is where the reported misalignment came from. Two lines
+     maximum, then it clips — a hint is a nudge, and a five-line paragraph across
+     the bottom of a phone screen is worse than no hint at all. */
+  left: 50%;
+  width: min(52%, 420px);
+  transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + 6px);
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  line-height: 1.25;
+  max-height: 2.6em;
+  overflow: hidden;
+}
+
+body.touch-ui #math-board {
+  /* Tappable — it toggles itself on a touch device (see `_bindTouchHud`), so it
+     has to accept a pointer even though #hud does not. */
+  pointer-events: auto;
+  width: min(300px, 40vw);
+}
+body.touch-ui #maps { pointer-events: auto; }
+
+body.touch-ui #toasts { bottom: auto; top: calc(env(safe-area-inset-top) + 62px); }
+
+/* The HELP page's touch section, and the desktop keyboard sections, are each
+   shown only where they can be acted on. Telling a kid on a phone to press Right
+   Ctrl is the same failure as telling a kid on a laptop to drag her thumb. */
+.touch-only { display: none; }
+body.touch-ui .touch-only { display: block; }
+
+/* The panels are readable but desktop-sized; on a phone in landscape they have
+   to fit inside 390px of height, which means scrolling rather than shrinking the
+   type past legibility. */
+body.touch-ui .panel {
+  max-height: 84vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* A LANDSCAPE PHONE IS SHORT, NOT NARROW, so the breakpoint is on HEIGHT. The
+   existing `max-width` queries never fire at 844x390 — which is exactly why the
+   HUD looked wrong there and fine in every desktop window. */
+@media (max-height: 460px) {
+  /* Again, no map width — `_drawMaps` owns it inline and already derives it from
+     the pane's height, which is the same thing this query is reacting to. */
+  body.touch-ui .scoreboard { transform: translateX(-50%) scale(0.7); }
+  body.touch-ui .tp-btn {
+    width: calc(50px * var(--size));
+    height: calc(50px * var(--size));
+  }
+  body.touch-ui .hint { font-size: 10px; max-height: 2.4em; }
+}
+
+
+/* The gate in test mode is a hint, not a wall: the phone glyph would be a lie
+   in front of a mouse. */
+#rotate-gate.faux .rg-phone { display: none; }
+#rotate-gate .rg-main b { font-family: 'Bangers', cursive; font-size: 26px; letter-spacing: 1.5px; }

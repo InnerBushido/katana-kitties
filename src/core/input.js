@@ -1,9 +1,9 @@
 /* ---------------------------------------------------------------------------
    Input.
 
-   Two players, each bound to either a gamepad or a keyboard set.
+   Up to four players, each bound to a gamepad, a keyboard set, or the screen.
 
-   Four ways to play, all live at once:
+   Five ways to play, all live at once:
 
      keyboard        WASD (P1) and arrows/numpad (P2).
      standard        Pro Controller 2 / anything Chrome remaps to "standard".
@@ -11,6 +11,12 @@
      vjoyDual        BOTH Joy-Cons arriving as a SINGLE vJoy device. One pad,
                      24 buttons, two sticks — split down the middle so each
                      player drives one half. This is the main setup.
+     touch           The on-screen pad, on a phone or a tablet. Not a profile —
+                     it is not a gamepad and there is nothing to sniff — but it
+                     IS a device in the same pool, and it is dealt FIRST, so the
+                     person holding the phone is player 1 and a controller
+                     paired to it seats a second kitten. See `_devices` and
+                     `core/touchpad.js`.
 
    The vJoy split is the odd one out architecturally: a player slot is bound to
    a { pad, half } pair rather than to a pad, and both slots can name the same
@@ -421,6 +427,10 @@ export const MAX_SLOTS = 4;
 
 /** A stable name for one input device, used by the join screen. */
 export function deviceId(bnd) {
+  /* TOUCH FIRST, because a binding can carry both `touch` and a keyset in the
+     desktop test mode — the keyboard is OR'd into the touch pad there — and the
+     device this slot IS is the pad on screen. */
+  if (bnd.touch) return 'touch';
   if (bnd.pad != null) return bnd.half ? `pad:${bnd.pad}:${bnd.half}` : `pad:${bnd.pad}`;
   if (bnd.keyset != null) return `kb:${bnd.keyset}`;
   return null;
@@ -436,7 +446,13 @@ export class InputManager {
     /** Per player slot: which pad, which half of a merged pad, and which
      *  keyboard set — any of which may be null. */
     this.bindings = Array.from({ length: MAX_SLOTS },
-      () => ({ pad: null, half: null, keyset: null }));
+      () => ({ pad: null, half: null, keyset: null, touch: false }));
+    /** The on-screen pad, or null on a machine that has no business drawing
+     *  one. Set by `Game` from the device profile — see `attachTouch`. */
+    this.touch = null;
+    /** True while the touch pad should ALSO read a keyboard set, which is the
+     *  desktop test mode and nothing else. See `TouchPad.read`. */
+    this.touchTestKeys = false;
     this.anyKeyThisFrame = false;
     this._anyPressLatch = false;
     this._order = [];        // pad indices in connection order
@@ -896,6 +912,36 @@ export class InputManager {
     return !!w && w.min.some((min, i) => w.max[i] - min > 0.02);
   }
 
+  /** Hand the input layer its on-screen pad, or take it away. */
+  attachTouch(pad, { testKeys = false } = {}) {
+    this.touch = pad;
+    this.touchTestKeys = testKeys;
+  }
+
+  /**
+   * Every seatable device, in the order they are dealt out.
+   *
+   * TOUCH COMES FIRST, AHEAD OF EVERY CONTROLLER, and that ordering is the
+   * whole point. On a phone the person holding the phone is player 1 — she is
+   * not a guest on her own device. Pads deal from player 2 down, so a Bluetooth
+   * controller paired to the phone seats a SECOND kitten instead of silently
+   * taking the first one's seat, which is what appending it here would do:
+   * `_assign` fills pads from slot 0 up, so the pad would have taken the screen
+   * out from under the thumb that was already playing.
+   *
+   * ONE FUNCTION, for the reason `_padDevices` is one function — the join
+   * screen, the binder and `seatable` all have to agree about what a device is,
+   * and they disagreed once already.
+   *
+   * With no touch pad attached this returns `_padDevices(live)` unchanged, which
+   * is what keeps a desktop bit-identical.
+   */
+  _devices(live) {
+    const pads = this._padDevices(live);
+    if (!this.touch) return pads;
+    return [{ touch: true, pad: null, half: null }, ...pads].slice(0, MAX_SLOTS);
+  }
+
   _syncBindings(pads) {
     for (const gp of pads) {
       if (gp && !this._order.includes(gp.index)) this._order.push(gp.index);
@@ -903,7 +949,7 @@ export class InputManager {
     this._order = this._order.filter((i) => pads[i]);
     const live = this._order.map((i) => pads[i]).filter(Boolean);
 
-    this.bindings = this._assign(this._padDevices(live));
+    this.bindings = this._assign(this._devices(live));
   }
 
   /**
@@ -933,7 +979,7 @@ export class InputManager {
    */
   _assign(padDevs) {
     const next = Array.from({ length: MAX_SLOTS },
-      () => ({ pad: null, half: null, keyset: null }));
+      () => ({ pad: null, half: null, keyset: null, touch: false }));
     const takenKeysets = new Set();
     const n = Math.min(this.slots, MAX_SLOTS);
 
@@ -944,26 +990,55 @@ export class InputManager {
        as one, which is the bug `_syncBindings` already refuses to allow for a
        non-vJoy pad. */
     const claimedPads = new Set();
+    let touchClaimed = false;
     for (let i = 0; i < n; i++) {
       const c = this.claims[i];
       if (!c) continue;
-      next[i] = { pad: c.pad ?? null, half: c.half ?? null, keyset: c.keyset ?? null };
+      next[i] = {
+        pad: c.pad ?? null,
+        half: c.half ?? null,
+        keyset: c.keyset ?? null,
+        touch: !!c.touch,
+      };
       if (c.keyset != null) takenKeysets.add(c.keyset);
       if (c.pad != null) claimedPads.add(`${c.pad}:${c.half ?? ''}`);
+      if (c.touch) touchClaimed = true;
     }
 
-    const free = padDevs.filter((d) => !claimedPads.has(`${d.pad}:${d.half ?? ''}`));
+    const free = padDevs.filter((d) => (
+      d.touch ? !touchClaimed : !claimedPads.has(`${d.pad}:${d.half ?? ''}`)
+    ));
     // Pads first, so the affinity pass below knows which slots still need one.
     for (let i = 0, k = 0; i < n && k < free.length; i++) {
       if (this.claims[i]) continue;
-      next[i] = { ...free[k], keyset: null };
+      next[i] = { ...free[k], keyset: null, touch: !!free[k].touch };
       k += 1;
     }
+    /* IN TEST MODE THE TOUCH PAD OWNS WASD, SO NOBODY ELSE MAY HAVE IT.
+       `touchTestKeys` makes the pad read KEYSETS[0] as well as the screen, which
+       is what lets a desktop exercise the buttons from a keyboard. Leaving that
+       set in the pool as well meant slot 0 read it THROUGH the pad and slot 1
+       read it directly — so pressing W moved both kittens at once, which is the
+       exact "two kittens moving as one" failure `_syncBindings` refuses to allow
+       for a shared pad. Verified by pressing W and watching two cats walk.
+
+       Only while a touch device is actually seated: with the pad detached this
+       adds nothing and the keyboard dealing is untouched. */
+    if (this.touchTestKeys && next.slice(0, n).some((b) => b.touch)) {
+      takenKeysets.add(0);
+    }
+
     /* Every padless slot takes the lowest keyboard set still free, in slot
        order — so the first kitten without a controller gets WASD, the next gets
-       the arrows, and a fifth would get nothing (see below). */
+       the arrows, and a fifth would get nothing (see below).
+       A TOUCH SLOT IS NOT PADLESS. It has a device — the pad on screen — so it
+       must not also be handed WASD: on a tablet with a keyboard attached that
+       would give the girl holding the screen a second, invisible controller and
+       take the arrows away from her sister. The test mode reads a keyset
+       THROUGH the touch pad instead (`touchTestKeys`), which is one device
+       reading two surfaces rather than one slot bound to two devices. */
     for (let i = 0; i < n; i++) {
-      if (next[i].pad != null || next[i].keyset != null) continue;
+      if (next[i].pad != null || next[i].keyset != null || next[i].touch) continue;
       for (let k = 0; k < KEYSETS.length; k++) {
         if (takenKeysets.has(k)) continue;
         next[i].keyset = k;
@@ -995,10 +1070,10 @@ export class InputManager {
   get seatable() {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     const live = this._order.map((i) => pads[i]).filter(Boolean);
-    // The SAME list the binder deals from — see `_padDevices`. Counting the
+    // The SAME list the binder deals from — see `_devices`. Counting the
     // pads a second way here is what let the join screen refuse a player onto
     // a controller that was sitting in the pool unbound.
-    return Math.min(MAX_SLOTS, this._padDevices(live).length + KEYSETS.length);
+    return Math.min(MAX_SLOTS, this._devices(live).length + KEYSETS.length);
   }
 
   /**
@@ -1070,7 +1145,9 @@ export class InputManager {
     const out = [];
     for (let i = 0; i < Math.min(this.slots, MAX_SLOTS); i++) {
       const bnd = this.bindings[i];
-      if (bnd.pad != null) {
+      if (bnd.touch) {
+        out.push(`P${i + 1}: touch${this.touchTestKeys ? ' + keyboard' : ''}`);
+      } else if (bnd.pad != null) {
         out.push(`P${i + 1}: ${bnd.half ? `${bnd.half} Joy-Con` : 'gamepad'}`);
       } else if (bnd.keyset != null) {
         out.push(`P${i + 1}: ${KEYSETS[bnd.keyset].name}`);
@@ -1106,6 +1183,9 @@ export class InputManager {
 
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     const live = this._order.map((i) => pads[i]).filter(Boolean);
+    /* Only real pads are offered as "press START on a spare one". The touch pad
+       cannot be spare — there is one screen, and whoever is holding it is
+       already seated on it. */
     const freePad = this._padDevices(live).some(
       (d) => !bound.some((b) => b.pad === d.pad && b.half === d.half)
     );
@@ -1194,7 +1274,21 @@ export class InputManager {
       let my = 0;
       const next = Object.fromEntries(ACTIONS.map((a) => [a, false]));
 
-      if (gp) {
+      if (bnd.touch && this.touch) {
+        /* THE SAME DEADZONE AS A STICK, deliberately. The touch pad already
+           clamps to the unit circle and applies a tiny centre threshold of its
+           own, but running it through `dead` too is what makes a thumb and a
+           thumbstick accelerate identically — the response curve is a property
+           of the game, not of the device, and `Player` must not be able to tell
+           them apart. */
+        st.source = 'touch';
+        const r = this.touch.read(this.touchTestKeys
+          ? { keyset: KEYSETS[0], keys: this.keys }
+          : {});
+        mx = dead(r.ax);
+        my = dead(r.ay);
+        for (const a of ACTIONS) next[a] = !!r[a];
+      } else if (gp) {
         st.source = 'gamepad';
         const r = profileFor(gp).read(gp, {
           rotation: this.joyconRotation,

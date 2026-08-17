@@ -939,6 +939,107 @@ console.log('\n--- a party of one ---');
     duo.bindings[0].keyset === 0 && duo.bindings[1].keyset === 1);
 }
 
+/* --- TOUCH IS A DEVICE, AND IT IS DEALT FIRST ---
+   The ordering is the whole point. On a phone the person holding the phone is
+   player 1; a Bluetooth pad paired to it seats a SECOND kitten. Appending touch
+   after the pads instead would have `_assign` fill slot 0 from the pad and take
+   the screen out from under the thumb already playing. */
+console.log('\n--- the touch pad as a device ---');
+{
+  /* A stand-in with the one method the binder uses. The real TouchPad needs a
+     DOM, and none of what is asserted here is about the DOM — it is about which
+     slot gets which device. */
+  const stub = () => ({ read: () => ({ ax: 0, ay: 0, cx: 0, cy: 0, dpad: [0, 0] }) });
+  const mkPad = (i) => { const p = DEVICES.ds4Chrome(); p.index = i; return p; };
+
+  const t = drive([]);
+  t.attachTouch(stub());
+  t.slots = 1;
+  t.update();
+  ok('the touch player is P1', t.bindings[0].touch === true,
+    JSON.stringify(t.bindings[0]));
+  /* AND SHE IS NOT ALSO GIVEN WASD. A touch slot is not padless: handing it a
+     keyset too would give the girl holding the screen a second invisible
+     controller and take the arrows from her sister on a tablet. */
+  ok('...and she is not also dealt a keyboard set', t.bindings[0].keyset === null,
+    JSON.stringify(t.bindings[0]));
+  ok('...and touch reports itself in describe()',
+    t.describe()[0] === 'P1: touch', JSON.stringify(t.describe()));
+
+  /* THE CASE THE ORDERING EXISTS FOR: a pad paired to the phone. */
+  const tp = drive([mkPad(0)]);
+  tp.attachTouch(stub());
+  tp.slots = 2;
+  tp.update();
+  ok('a pad on the phone seats P2, not P1',
+    tp.bindings[0].touch === true && tp.bindings[1].pad === 0,
+    JSON.stringify(tp.bindings.slice(0, 2)));
+  ok('...so the pad never steals the touch player\'s seat',
+    tp.bindings[0].pad === null);
+  /* TOUCH COUNTS TOWARD HOW MANY CAN BE SEATED, or the join screen refuses a
+     second kitten the phone could actually carry. Touch + one pad + both
+     keysets is a full house of four — which is the real answer for a tablet
+     propped up with a controller and a keyboard in front of it. */
+  ok('touch, a pad and two keysets seats four', tp.seatable === 4, `${tp.seatable}`);
+  const bare = drive([]);
+  bare.attachTouch(stub());
+  bare.slots = 1;
+  bare.update();
+  ok('...and touch with just the keyboard seats three', bare.seatable === 3,
+    `${bare.seatable}`);
+  /* The touch pad can never be "a spare controller" — there is one screen and
+     whoever holds it is already on it. */
+  ok('touch is never offered as a spare controller',
+    tp.joinHint() !== 'START on a spare controller', `${tp.joinHint()}`);
+
+  /* DETACHING IS GENUINELY NO DEVICE, not a hidden one still reporting — which
+     is what makes the "force off" setting honest. */
+  const off = drive([]);
+  off.attachTouch(stub());
+  off.slots = 2;
+  off.update();
+  off.attachTouch(null);
+  off.update();
+  ok('detaching gives the keyboard its seats back',
+    off.bindings[0].touch === false && off.bindings[0].keyset === 0
+    && off.bindings[1].keyset === 1, JSON.stringify(off.bindings.slice(0, 2)));
+
+  /* --- THE TEST MODE MUST NOT MOVE TWO KITTENS WITH ONE KEY ---
+     `touchTestKeys` makes the pad read WASD as well as the screen, so a desktop
+     can exercise the buttons from a keyboard. Leaving WASD in the pool too meant
+     slot 0 read it THROUGH the pad while slot 1 read it directly, and pressing W
+     walked both cats. Found by pressing W and watching it happen. */
+  const test = drive([]);
+  test.attachTouch(stub(), { testKeys: true });
+  test.slots = 2;
+  test.update();
+  ok('in test mode the touch pad owns WASD',
+    test.bindings[0].touch === true && test.bindings[1].keyset !== 0,
+    JSON.stringify(test.bindings.slice(0, 2)));
+  ok('...so P2 gets the arrows instead', test.bindings[1].keyset === 1,
+    JSON.stringify(test.bindings[1]));
+  /* AND WITHOUT THE TEST FLAG WASD STAYS IN THE POOL — a real phone with a
+     keyboard attached has no reason to reserve it, because nothing is merging
+     it into the pad. */
+  const real = drive([]);
+  real.attachTouch(stub(), { testKeys: false });
+  real.slots = 2;
+  real.update();
+  ok('on a real touch device P2 still gets WASD', real.bindings[1].keyset === 0,
+    JSON.stringify(real.bindings[1]));
+
+  /* THE FIFTH INVARIANT, STATED WHERE THIS BLOCK COULD BREAK IT: with no touch
+     pad attached, the dealing is byte-for-byte what it was before touch
+     existed. */
+  const plain = drive([mkPad(0)]);
+  plain.slots = 3;
+  plain.update();
+  ok('with no touch pad, two players are dealt exactly as before',
+    plain.bindings[0].pad === 0 && plain.bindings[1].keyset === 0
+    && plain.bindings[2].keyset === 1,
+    JSON.stringify(plain.bindings.slice(0, 3)));
+}
+
 console.log('');
 line('checks', String(checks));
 line('failures', String(fails));

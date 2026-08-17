@@ -4607,6 +4607,40 @@ console.log('\n--- the three power moves ---');
   ok('and its pixel ratio is capped well under the panel', phone.maxPixelRatio <= 1.5);
   ok('a weak phone is capped harder still',
     deviceProfileFor({ coarse: true, touchPoints: 5, cores: 4 }).maxPixelRatio === 1.0);
+
+  /* --- THE TEST OVERRIDE ---
+     The touch pad is written on a desktop, so it has to be reachable from one or
+     it gets looked at once a week on a phone. The override is the WHOLE answer
+     when set, not a hint added to detection — "test as a phone" has to mean it on
+     a machine that visibly is not one. */
+  const forced = deviceProfileFor({
+    coarse: false, touchPoints: 0, cores: 20, override: 'mobile',
+  });
+  ok('forcing mobile on a desktop really is the mobile tier',
+    forced.touchPrimary === true && forced.antialias === false
+    && forced.atlasMax === 1024 && forced.defaultParty === 1);
+  /* AND IT REMEMBERS THAT IT WAS FORCED, which is what lets `Game` merge the
+     keyboard into the touch pad for testing without that path ever running on
+     real hardware. */
+  ok('...and it knows detection disagreed',
+    forced.detected === false && forced.override === 'mobile');
+
+  /* A FORCED MOBILE TIER IS NEVER THE WEAK ONE. `cores` is a phone signal and
+     the desktop being tested on has twenty of them — reading it here would make
+     "test as a phone" quietly exercise the FASTER tier on the machine most
+     likely to be checking the slower one. */
+  ok('a forced mobile tier is the ordinary one, not the weak one',
+    deviceProfileFor({ coarse: false, touchPoints: 0, cores: 2, override: 'mobile' })
+      .tier === 'mobile');
+  /* But a real weak phone still finds itself. */
+  ok('...while a real 4-core phone still detects as weak',
+    deviceProfileFor({ coarse: true, touchPoints: 5, cores: 4 }).tier === 'mobile-low');
+
+  const off = deviceProfileFor({
+    coarse: true, touchPoints: 5, cores: 8, override: 'desktop',
+  });
+  ok('forcing desktop on a real phone turns touch off',
+    off.touchPrimary === false && off.defaultParty === 2 && off.detected === true);
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

@@ -80,6 +80,7 @@ src/
   main.js               game loop, split-screen rendering, boot, joining, debug keys
   core/      gfx  input  palette  split  cluster  spritesheet  label  audio
              device (what this machine may spend — tiers, atlas budget)
+             touchpad (the on-screen stick and buttons; a device like any other)
   world/     build (all the geometry)  world (assembly, height queries)
   systems/   tournament  menagerie  arenaquest  announce  leaderboard
              kotodama  profile  cutscene  shrinescene  summonscene

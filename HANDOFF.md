@@ -149,14 +149,23 @@ because half a 6-inch screen is not a pane.
 | --- | --- | --- |
 | 1 | device tier: antialias, pixel-ratio cap, `maxAtlas` budget | **done** |
 | 2 | start at one kitten on a touch device; the arena refuses solo | **done** |
-| 3 | touch as a device, on-screen stick and buttons | next |
-| 4 | landscape HUD pass, safe areas, orientation gate, PWA manifest | |
+| 3 | touch as a device, on-screen stick and buttons | **done** |
+| 4 | landscape HUD pass, safe areas, orientation gate, PWA manifest | **done** |
 
-**Steps 1 and 2 are verified end to end** under emulated touch: the game boots on
-the `mobile` tier with one kitten, one badge, one minimap, a full-screen pane and
-`input.slots` of 1, and a desktop is byte-for-byte unchanged. Retained GPU
-texture is 147MB down to 115MB. **What has not been done is a run on real
-hardware** — the S24 Ultra test predates all of it.
+**All four are verified in the browser**, but **none of it has run on real
+hardware** — the S24 Ultra test predates every line of it, and that is the next
+thing to do. What was checked: the pad reads a mouse drag and a keyboard, the
+kitten actually runs, a second pointer on JUMP holds while the stick is released,
+`pointercancel` releases a held button, the map and maths-board taps work, and a
+desktop with the setting on `auto` is byte-for-byte unchanged (two kittens, WASD
+and arrows, `auto`/`medium`, antialias on, `maxAtlas` 2048, no pad in the DOM).
+
+**Testing it on this computer:** Settings → **Touch controls** → *Force ON*. The
+pad appears immediately with the **mouse driving the stick and WASD / Q E F /
+Space driving the buttons**, and every on-screen button lights up for a keyboard
+press, so the readout shows what a thumb would. Reload to get the rest of the
+phone tier (one kitten, low quality, half-size atlases) — the note under the
+setting says so, because those are read once at boot.
 
 **The arena is shut for a solo kitten** and says so as an instruction: *"a
 tournament needs TWO fighters! Bring a sister."* Every league wants two fighters
@@ -164,9 +173,12 @@ or more, so `modesFor(1)` is empty and `begin()` would otherwise fall through to
 a one-sided duel — a round that cannot be lost. Solo keeps everything else: the
 world, the dragons, the clans, the panda, the seven stars and the whole endgame.
 
-**Known, not yet fixed (step 4):** in a narrow viewport the bottom hint text
-wraps across the minimap and both are sized for a desktop. This is the
-misalignment the first phone test reported.
+**The misalignment the first phone test reported is fixed.** The minimap was
+sized off its pane's *width* (`v.w * 0.42` — 354px of a 390px-tall phone) and set
+**inline** by `_drawMaps`, so no stylesheet rule could touch it; it is now capped
+against the pane's *height* and moved to the top-left, because both bottom
+corners belong to thumbs. The hint is centred in the gap between them and clipped
+to two lines.
 
 **Later, and wanted:** *phone as a controller* — four people each holding a phone,
 playing on a tablet or a TV. That is a second device feeding a `PadState` over

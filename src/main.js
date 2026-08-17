@@ -7,7 +7,8 @@ import {
 import { Audio, trackForIsland } from './core/audio.js';
 import { loadSpriteAtlas, recolourAtlas } from './core/spritesheet.js';
 import { placeholderCatAtlas, placeholderDragonTexture, placeholderPandaTexture } from './core/gfx.js';
-import { detect as detectDevice } from './core/device.js';
+import { detect as detectDevice, readOverride, writeOverride } from './core/device.js';
+import { TouchPad } from './core/touchpad.js';
 import { World } from './world/world.js';
 import { Player, ATTACKS, MAX_HP, KO_TIME } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss } from './core/palette.js';
@@ -197,8 +198,105 @@ class Game {
        half-made one from a listener that fires during setup. */
     this.menuNav = new MenuNav(this);
 
+    /* THE ON-SCREEN PAD EXISTS ON EVERY MACHINE AND IS SHOWN ON SOME. Building
+       it always — rather than only when `touchPrimary` — is what makes the test
+       mode a visibility toggle instead of a construction path that only ever
+       runs on hardware nobody is developing on. It costs a handful of divs.
+
+       `attachTouch` is what actually seats it: the input layer deals it a player
+       slot only while it is attached, so "force off" is genuinely no device
+       rather than a hidden one still reporting. */
+    this.touchPad = new TouchPad(document.getElementById('touch-pad'));
+    this._applyTouchMode();
+
     this._bindUI();
+    this._bindTouchHud();
     window.addEventListener('resize', () => this._resize());
+    /* The rotate gate is a function of orientation, and `resize` is the event
+       that fires for a rotation on every browser — `orientationchange` is
+       unreliable and deprecated in places. The pad's resting stick position is
+       measured off the zone, so it has to be re-measured for the same reason. */
+    window.addEventListener('resize', () => {
+      this._updateRotateGate();
+      this.touchPad?.reflow();
+    });
+  }
+
+  /**
+   * Show or hide the touch pad, and attach or detach it as a device.
+   *
+   * ONE FUNCTION FOR BOTH, because they must never disagree: a visible pad that
+   * is not attached is a control that does nothing (which reads as broken), and
+   * an attached pad that is not visible is a slot held by a device nobody can
+   * see — which on a desktop would silently take player 1's seat away from the
+   * keyboard.
+   */
+  _applyTouchMode() {
+    const on = this.device.touchPrimary;
+    this.touchPad.setVisible(on);
+    /* THE KEYBOARD IS ONLY MERGED WHEN THIS IS A FORCED TEST. On a real phone
+       there is no keyboard to merge and `touchTestKeys` stays false, so nothing
+       about the shipped behaviour depends on the test path. */
+    this.input.attachTouch(on ? this.touchPad : null, {
+      testKeys: on && this.device.override === 'mobile' && !this.device.detected,
+    });
+    document.body.classList.toggle('touch-ui', on);
+    this._updateRotateGate();
+  }
+
+  /**
+   * `map` and `math` on a touch device, tapped on the thing they control.
+   *
+   * NO BUTTONS FOR THESE, and that is a decision rather than an omission — see
+   * `core/touchpad.js`. Eight actions do not fit under two thumbs, and these two
+   * are already drawn on screen: the minimap cycles its own zoom when tapped and
+   * the sin/cos board toggles itself. A control that IS the thing it controls
+   * needs no second copy.
+   *
+   * Delegated from the HUD, because `_buildHud` rebuilds the maps whenever the
+   * party changes and per-element listeners would be lost with them.
+   */
+  _bindTouchHud() {
+    document.getElementById('maps').addEventListener('click', (e) => {
+      if (!this.device.touchPrimary) return;
+      const box = e.target.closest('.map-box');
+      if (!box) return;
+      const i = Number(box.id.slice('map-box-'.length));
+      if (Number.isInteger(i)) this._zoomMap(i);
+    });
+    document.getElementById('math-board').addEventListener('click', () => {
+      if (!this.device.touchPrimary) return;
+      this._toggleMath();
+    });
+  }
+
+  /**
+   * Portrait on a touch device is unplayable, so say so.
+   *
+   * IT NAMES THE RIGHT ACTION FOR THE MACHINE IT IS ON, which is the whole
+   * reason this is not two lines of static markup. In the desktop test mode the
+   * gate still has to fire — otherwise the one thing it does could never be
+   * checked before shipping it to a kid — but "turn your phone sideways" is
+   * nonsense in front of somebody holding a mouse, and a prompt that names an
+   * action you cannot take is the same failure as a refusal that says nothing.
+   * On a desktop the fix is the window, so that is what it asks for.
+   */
+  _updateRotateGate() {
+    const gate = document.getElementById('rotate-gate');
+    if (!gate) return;
+    const portrait = window.innerHeight > window.innerWidth;
+    const show = !!this.device?.touchPrimary && portrait;
+    gate.classList.toggle('hidden', !show);
+    if (!show) return;
+
+    const real = this.device.detected;
+    gate.querySelector('.rg-main').textContent = real
+      ? 'Turn your phone sideways'
+      : 'Make this window wider';
+    gate.querySelector('.rg-sub').textContent = real
+      ? 'Katana Kitties needs a wide screen.'
+      : 'Touch test mode — the game wants a landscape shape.';
+    gate.classList.toggle('faux', !real);
   }
 
   /* ------------------------------- boot --------------------------------- */
@@ -740,6 +838,14 @@ class Game {
     const show = (id) => document.getElementById(id).classList.remove('hidden');
     const hide = (id) => document.getElementById(id).classList.add('hidden');
 
+    /* AUDIO NEEDS A REAL GESTURE, AND ON A PHONE THE FIRST ONE IS A TAP. Every
+       existing unlock hangs off a click or a menu press, which covers a mouse
+       and a keyboard and misses the case where the first thing that ever happens
+       is a thumb on the touch pad — the pad is not a `<button>` the menus know
+       about, so nothing else here would fire. Registered on the window, once,
+       and `resume()` is documented as safe to call repeatedly. */
+    window.addEventListener('pointerdown', () => this.audio.resume(), { passive: true });
+
     document.querySelectorAll('[data-action]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const a = btn.dataset.action;
@@ -775,6 +881,47 @@ class Game {
     bind('set-split', 'split');
     bind('set-dir', 'dir');
     bind('set-quality', 'quality', () => this._applyQuality());
+
+    /* TOUCH CONTROLS. The pad appears or disappears immediately — that is the
+       half of this that matters for testing and it needs no reload. The render
+       tier, the atlas budget and the party size are read once at boot and cannot
+       move under a running game, so the note says which parts are waiting. A
+       setting that silently does half of what its label claims is the thing
+       invariant 6 exists to prevent. */
+    const tc = document.getElementById('set-touch');
+    const note = document.getElementById('touch-note');
+    const describeTouch = () => {
+      const want = tc.value;
+      const live = this.device.touchPrimary;
+      const wantOn = want === 'auto' ? this.device.detected : want === 'mobile';
+      if (wantOn !== live) {
+        note.textContent = 'Reload the page to finish switching — the render '
+          + 'quality and the number of kittens are set when the game starts.';
+        note.classList.add('warn');
+        return;
+      }
+      note.classList.remove('warn');
+      note.textContent = live
+        ? `Touch pad is ON — ${this.input.touchTestKeys
+          ? 'drag the stick with the mouse, and WASD / Q E F / Space work the buttons.'
+          : 'tap and drag to play.'}`
+        : 'Touch pad is OFF — keyboard and controllers.';
+    };
+    tc.value = readOverride();
+    tc.addEventListener('change', () => {
+      writeOverride(tc.value);
+      /* Re-detect rather than patching the profile by hand, so the override goes
+         through exactly the path a reload would take and the two cannot
+         disagree about what "mobile" means. */
+      const next = detectDevice();
+      this.device.touchPrimary = next.touchPrimary;
+      this.device.override = next.override;
+      this.device.detected = next.detected;
+      this._applyTouchMode();
+      describeTouch();
+      this.audio.resume();
+    });
+    describeTouch();
 
     const jc = document.getElementById('set-joycon');
     jc.value = this.input.joyconRotation;
@@ -2860,6 +3007,18 @@ class Game {
     const dt = Math.min(this.clock.getDelta(), 1 / 20);
     this.input.update();
 
+    /* LIGHT THE ON-SCREEN BUTTONS FROM THE RESOLVED PAD, not from the touch
+       pad's own held state. They are the same thing under a thumb and they are
+       NOT the same thing in test mode — pressing `F` on a keyboard has to light
+       SLASH, or the readout is only telling you about half the inputs it
+       accepted. Painting the resolved state also means what lights up is what
+       the game actually acted on, so a suppressed frame (a remap capture) shows
+       as nothing pressed rather than lying. */
+    if (this.touchPad?.visible) {
+      const slot = this.input.bindings.findIndex((b) => b.touch);
+      if (slot >= 0) this.touchPad.paint(this.input.players[slot]);
+    }
+
     // Keep the controller readout live while it's on screen — it's only
     // useful if you can press a button and watch it react.
     const settings = document.getElementById('panel-settings');
@@ -3670,17 +3829,39 @@ class Game {
       const v = panes[pane];
       /* A map must fit the pane it is in. At a flat 32vw a quadrant's map ate
          most of a quarter-screen; sized against the PANE it stays the same
-         fraction of what its owner can actually see. */
-      box.style.width = `${Math.min(300, v.w * 0.42)}px`;
+         fraction of what its owner can actually see.
+
+         AND ON A PHONE IT IS THE HEIGHT THAT IS SCARCE, WHICH IS WHY THIS IS THE
+         ONE PLACE IT COULD BE FIXED. A landscape phone is 844x390: `v.w * 0.42`
+         is 354px of a 390px-tall screen, so the map covered the bottom-right
+         corner entirely and the hint text ran underneath it. That is the
+         misalignment the first phone test reported.
+
+         The width is set INLINE here, so no stylesheet rule can override it —
+         a `body.touch-ui .map-box` width in style.css is silently dead. The
+         limit has to be a third number in this same `Math.min`, and it has to be
+         a fraction of the pane's HEIGHT: a short pane is the case a
+         width-derived size cannot see. */
+      const cap = this.device.touchPrimary ? v.h * 0.34 : Infinity;
+      box.style.width = `${Math.min(300, v.w * 0.42, cap)}px`;
 
       if (this.merged) {
         /* THE SHARED MAP KEEPS THE BOTTOM RIGHT. The Dojo's sin/cos board owns
            bottom-left and runs to 42vw, so the one map on screen has always
-           gone the other side and never collided with it. */
-        box.style.left = 'auto';
-        box.style.right = '14px';
-        box.style.top = 'auto';
-        box.style.bottom = '14px';
+           gone the other side and never collided with it.
+
+           EXCEPT ON A TOUCH DEVICE, WHERE BOTH BOTTOM CORNERS BELONG TO THUMBS.
+           The stick's catchment is the bottom-left and the face cluster is the
+           bottom-right, so a map in either one is under a hand — and worse, it
+           is under a hand that is trying to press something. Top-left is the
+           only corner left: the scoreboard is top-centre and pause is top-right.
+           This is also why it does not simply shrink and stay put; a smaller map
+           in the wrong place is still in the wrong place. */
+        const thumbs = this.device.touchPrimary;
+        box.style.left = thumbs ? '10px' : 'auto';
+        box.style.right = thumbs ? 'auto' : '14px';
+        box.style.top = thumbs ? '46px' : 'auto';
+        box.style.bottom = thumbs ? 'auto' : '14px';
       } else {
         /* Viewport coords are bottom-left origin and CSS is top-left, so the
            pane's top edge is `H - v.y - v.h` from the top of the page. The map

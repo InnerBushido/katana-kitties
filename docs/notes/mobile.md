@@ -190,28 +190,105 @@ now assigns `input.slots` alongside `partySize`, and `pad-check` has a
 
 ---
 
-## Traps waiting in the touch work
+## The touch pad
 
-Written down before the code exists, because each of these has a known shape:
+`core/touchpad.js` produces **exactly what a gamepad profile's `read()`
+produces**, so `InputManager` seats it in a player slot next to a Pro Controller
+and nothing downstream learns a new word. `Player` cannot tell a thumb from a
+Joy-Con — and the pad's stick goes through the same `dead()` curve as a real one,
+because the response is a property of the game, not of the device.
 
-- **Track `pointerId`, never `touches[0]`.** A thumbstick drag plus a jump tap
-  plus a slash tap is three simultaneous pointers. This is the single most
-  common way a virtual pad breaks.
-- **`pointercancel` and `pointerleave` must release the button**, or a held
-  sprint sticks down forever — the browser takes the pointer away and the game
-  never hears the up.
-- **Sprint has to be a real button.** Auto-sprint on full stick deflection is
-  tempting and it is wrong: `ATTACKS.dash` fires on `sprint && moving`, so
-  auto-sprint would turn every moving attack in the ring into a dash attack.
-- **`map` and `math` get no buttons.** They are already HUD elements; make the
-  minimap tappable to cycle zoom and the maths board tappable to toggle. Eight
-  actions do not fit under two thumbs, and two of them already have a place to
-  live.
-- **Touch is a device, claimed to slot 0** via the existing `claims` mechanism,
-  so pads deal into slots 1+ and a Bluetooth controller on the phone becomes
-  player 2 for free. Merging touch into slot 0 as an extra source is the smaller
-  diff and it is wrong: pads fill from player 1 down, so the pad would steal the
-  seat from the girl holding the phone.
+**Pointer events, not touch events, and the reason is the mouse.** One path
+delivers a finger, a mouse and a stylus, which is what makes the desktop test
+mode work at all: dragging the stick with a mouse is not a special case, it is
+the same code with `pointerType: 'mouse'`. `touch-action: none` in the CSS does
+the scroll suppression, so there is no `preventDefault` on a passive listener to
+get wrong.
+
+**Touch is dealt FIRST, ahead of every controller** (`_devices`), and that
+ordering is the whole point: on a phone the person holding the phone is player 1.
+Pads deal from player 2 down, so a Bluetooth controller paired to the phone seats
+a *second* kitten. Appending touch after the pads — the obvious version — would
+have `_assign` fill slot 0 from the pad and take the screen out from under the
+thumb already playing.
+
+**A touch slot is not padless**, so it is not also handed WASD. On a tablet with
+a keyboard attached that would give the girl holding the screen a second
+invisible controller and take the arrows from her sister.
+
+### Decisions that look like omissions
+
+- **Sprint is a real button.** Auto-sprint on full stick deflection removes a
+  button and feels natural right up until the ring: `ATTACKS.dash` fires on
+  `sprint && moving`, so auto-sprint turns *every* moving attack into a dash
+  attack. Sprint has to be something she chooses.
+- **`map` and `math` have no buttons.** Eight actions do not fit under two
+  thumbs, and those two are already drawn on screen — so the minimap cycles its
+  own zoom when tapped and the sin/cos board toggles itself. A control that *is*
+  the thing it controls needs no second copy.
+- **The stick is drawn dimly at rest.** The first version faded it in only once a
+  thumb had landed, which is tidy and assumes the player already knows the left
+  half of the screen is a stick. She is nine. An invisible control is one she has
+  to be told about, so there is a faint base where a left thumb falls; it
+  brightens and jumps to wherever she actually touches.
+
+### Three bugs this turned up, all invisible on a desktop
+
+1. **The stick base was drawn 92px below the thumb.** `.tp-stick` is a child of
+   `.tp-zone`, which is `position: absolute` — so it is the containing block and
+   `left`/`top` resolve against *it*, not against the overlay. Offsets were being
+   measured from the overlay. It was invisible in testing because the direction
+   comes from `_origin` in client space: **the stick read perfectly while being
+   drawn in the wrong place.** `_placeStick` is now the one function both callers
+   use.
+2. **The minimap could not be fixed in CSS.** `Game._drawMaps` sets `width`,
+   `left` and `top` **inline**, so every `body.touch-ui .map-box { width: … }`
+   rule was silently dead. Worse, it sized the map off the pane's *width* —
+   `v.w * 0.42` is 354px of a 390px-tall phone. The cap had to become a third
+   term in that same `Math.min`, derived from the pane's **height**, because a
+   short pane is the case a width-derived size cannot see. It also moves to
+   top-left on a touch device: both bottom corners belong to thumbs, and a
+   smaller map in the wrong place is still in the wrong place.
+3. **The test mode moved two kittens with one key.** `touchTestKeys` makes the pad
+   read WASD as well as the screen; leaving WASD in the pool meant slot 0 read it
+   *through* the pad while slot 1 read it *directly*, so pressing `W` walked both
+   cats. Found by pressing `W` and watching it happen. The pad now owns keyset 0
+   whenever the test flag is on, and only then.
+
+## The mode toggle
+
+Automatic detection is right on every real device. The two forced settings exist
+because **the touch pad is written on a desktop**, and a control that can only be
+exercised on hardware nobody is developing on gets looked at once a week.
+
+The override is persisted, because the two heaviest things it decides —
+`antialias` (a `WebGLRenderer` **constructor** option) and `atlasMax` — are read
+once at boot. A test mode that did not survive a reload could only ever test half
+of itself.
+
+**So the switch is honest about being in two halves.** The pad appears or
+disappears immediately, which is the half that matters for testing. The render
+tier, the atlas budget and the party size cannot move under a running game, so
+the note under the setting says a reload is needed and does not pretend
+otherwise.
+
+**A forced mobile tier is never the *weak* mobile tier.** `cores` is a phone
+signal and the desktop being tested on has twenty of them — reading it under a
+forced override would make "test as a phone" quietly exercise the faster tier on
+the machine most likely to be checking the slower one.
+
+**The rotate gate names the right action for the machine it is on.** It still
+fires in test mode, or the one thing it does could never be checked before a kid
+sees it — but *"turn your phone sideways"* in front of somebody holding a mouse
+names an action they cannot take, which is the same failure as a refusal that
+says nothing. On a desktop it asks for a wider window.
+
+## Still true, and worth keeping in mind
+
 - **iOS Safari supports neither orientation lock nor fullscreen on iPhone.** The
-  rotate prompt has to be a friendly overlay, and the PWA manifest is the only
-  real fix for the URL bar. Android honours both.
+  rotate prompt is a prompt for that reason, and the PWA manifest
+  (`display: fullscreen`, `orientation: landscape`) is the only real fix for the
+  URL bar. Android honours both.
+- **Do not append to `style.css` with PowerShell.** `Add-Content -Encoding utf8`
+  over `Get-Content -Raw` double-encoded nine em dashes into `â€”`
+  (`U+00E2 U+20AC U+201D`). Use the editing tools.
