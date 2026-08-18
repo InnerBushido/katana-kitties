@@ -1039,6 +1039,47 @@ console.log('\n--- the touch pad as a device ---');
   ok('...and touch plus the arrows is two seatable players',
     join.seatable === 2, `${join.seatable}`);
 
+  /* --- ENTER JOINS; IT DOES NOT PAUSE ---
+     The pad reads WASD as its second surface, and merging that keyset WHOLESALE
+     handed it the keyboard's ENTER as well. Touch is treated as a pad for
+     pausing — it has a dedicated corner button that is nothing else — so ENTER
+     started opening the pause menu instead of seating player 2. That is exactly
+     the bug the one-key-for-join rule exists to prevent, arrived at from the
+     other side, and it was reported from a real session.
+
+     `start` is the one action the merge skips. The corner button still reports
+     it; it is simply the only thing that does. */
+  const ent = drive([]);
+  ent.attachTouch({
+    read: (o = {}) => {
+      const out = { ax: 0, ay: 0, cx: 0, cy: 0, dpad: [0, 0] };
+      for (const a of ACTIONS) out[a] = false;
+      // The real merge, reproduced: every action except `start`.
+      if (o.keyset && o.keys) {
+        const on = (f) => (o.keyset[f] ?? []).some((c) => o.keys.has(c));
+        for (const a of ACTIONS) if (a !== 'start' && on(a)) out[a] = true;
+      }
+      return out;
+    },
+  });
+  ent.slots = 1;
+  ent.update();
+  ent.keys.add('Enter');
+  ent.update();
+  ok('ENTER does not press START on the touch player',
+    ent.players[0].down('start') === false);
+  /* And it still means JOIN, which is the whole reason it must not pause. */
+  ent.keys.clear(); ent.update();
+  ent.keys.add('Enter'); ent.update();
+  ok('...it still offers to seat player 2 on the arrows',
+    ent.pendingJoin()?.keyset === 1, JSON.stringify(ent.pendingJoin()));
+  ent.keys.clear();
+  /* WASD ITSELF STILL REACHES THE PAD — the exception is `start` alone, not the
+     keyboard merge. */
+  ent.keys.add('KeyF'); ent.update();
+  ok('...while WASD still drives the pad', ent.players[0].down('attack') === true);
+  ent.keys.clear();
+
   /* THE FIFTH INVARIANT, STATED WHERE THIS BLOCK COULD BREAK IT: with no touch
      pad attached, the dealing is byte-for-byte what it was before touch
      existed. */

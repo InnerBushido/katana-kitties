@@ -1870,6 +1870,24 @@ body.touch-ui .panel {
 #touch-pad.scene .tp-cluster { display: none; }
 body.touch-ui #cs-skip { display: none; }
 
+/* THE SKIP BUTTON HAS TO OUTRANK THE CUTSCENE, and only while one is playing.
+   `#cutscene` is z-index 60 and the pad is 7, so the black letterbox bars — which
+   are opaque — painted straight over the one control a scene leaves on screen.
+   The button was there and receiving taps the whole time; it was simply behind
+   the bar, which reads exactly like a scene that cannot be skipped.
+
+   Scoped to `.scene` rather than raised outright, because the pad must stay
+   BELOW the menu overlays (z-index 20) the rest of the time — a pad drawn over
+   the pause menu would cover the buttons it exists to reach. */
+#touch-pad.scene { z-index: 61; }
+
+/* And it clears the top bar rather than sitting inside it. The bar is 7vh on a
+   phone, so the button starts below that — a control half-swallowed by a black
+   band still looks broken even once it is on top of it. */
+body.touch-ui #touch-pad.scene .tp-pause {
+  top: calc(env(safe-area-inset-top) + 7vh + 8px);
+}
+
 /* The corner button as a SKIP rather than a menu: vermillion, so it reads as
    the one live control on a screen that is otherwise a film. */
 .tp-btn.tp-skip {
@@ -1944,20 +1962,43 @@ body.touch-ui .mb-title { font-size: 9px; letter-spacing: 1px; }
 /* ===================== cutscene dialogue ================================
    The box was two fifths of a phone screen, so the world it is narrating — which
    is the whole reason the camera is flying through it — was behind the words. */
+/* THE BOX SITS ABOVE THE BOTTOM BAR, NOT ON IT. This was `env(safe-area-inset-
+   bottom) + 10px` — measured from the bottom of the SCREEN — which pushed the
+   dialogue down over the progress track and into the black letterbox band. The
+   desktop rule always measured from the top of the bar (`9vh + 26px`) and the
+   mobile override quietly dropped that, which is what put the text on top of
+   both. The bar is 7vh here, so this is the same rule with the same shape. */
 body.touch-ui #cs-box {
   width: min(92vw, 620px);
   padding: 8px 12px;
   gap: 10px;
-  bottom: calc(env(safe-area-inset-bottom) + 10px);
+  bottom: calc(7vh + 16px);
 }
-body.touch-ui #cs-portrait { width: 62px; height: 62px; }
+
+/* The progress track rides the top edge of the bottom bar, under the box rather
+   than through it. */
+body.touch-ui #cs-track {
+  left: 12px;
+  right: 12px;
+  bottom: calc(7vh + 4px);
+}
+/* `flex-basis` TOO, OR THE PORTRAIT COMES OUT SKEWED. The base rule is
+   `flex: 0 0 96px`, and a flex item's basis wins over `width` on the main axis —
+   so setting only width/height gave a 96px-wide, 62px-tall box and every clan
+   leader was stretched sideways. The canvas is square (150x150), so the CSS box
+   has to be square too: a canvas has no `object-fit` to rescue it. */
+body.touch-ui #cs-portrait {
+  width: 62px;
+  height: 62px;
+  flex: 0 0 62px;
+}
 body.touch-ui #cs-name { font-size: 15px; letter-spacing: 1px; }
 body.touch-ui #cs-text { font-size: 12px; line-height: 1.3; }
 body.touch-ui .cs-bar { height: 7vh; }
 
 /* The announcer card gets the same treatment for the same reason. */
 body.touch-ui #announce { width: min(92vw, 560px); padding: 7px 11px; }
-body.touch-ui #an-portrait { width: 56px; height: 56px; }
+body.touch-ui #an-portrait { width: 56px; height: 56px; flex: 0 0 56px; }
 body.touch-ui #an-name { font-size: 14px; }
 body.touch-ui #an-text { font-size: 12px; line-height: 1.3; }
 

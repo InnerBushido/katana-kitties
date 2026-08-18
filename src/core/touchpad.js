@@ -521,7 +521,20 @@ export class TouchPad {
        exercise both at once with one pointer. */
     if (keyset && keys) {
       const on = (f) => (keyset[f] ?? []).some((c) => keys.has(c));
-      for (const a of ACTIONS) if (on(a)) out[a] = true;
+      /* EVERY ACTION EXCEPT `start`, AND THAT EXCEPTION IS THE WHOLE POINT.
+
+         On a keyboard `start` is ENTER and ENTER MEANS JOIN — that is the rule
+         `input.js` spends a page explaining, and the reason Esc is the
+         keyboard's only menu key. The touch pad is treated as a PAD for pausing,
+         because it has a dedicated corner button that is nothing else. Merging
+         the keyset wholesale handed the pad the keyboard's ENTER as well, so
+         pressing it opened the pause menu instead of seating player 2 — exactly
+         the bug the one-key-for-join rule was written to kill, reintroduced from
+         the other side.
+
+         The corner button still reports `start`; it is simply the only thing
+         that does. */
+      for (const a of ACTIONS) if (a !== 'start' && on(a)) out[a] = true;
       let kx = 0;
       let ky = 0;
       if (on('left')) kx -= 1;
