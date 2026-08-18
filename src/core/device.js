@@ -42,6 +42,33 @@
    purpose. A budget applied to them would move an assertion, not a pixel.
 --------------------------------------------------------------------------- */
 
+/* THE THREE RENDER TIERS, and they live here rather than in `main.js` because
+   they are half of an arithmetic this file owns the other half of. The effective
+   pixel ratio is the MINIMUM of three numbers — the panel's, the tier's and the
+   device cap — and keeping the tiers next door is what lets `world-check` assert
+   the product instead of restating the factors. Restating them is how the mobile
+   tier ended up rendering at 1.0 with nothing to catch it. */
+export const QUALITY = {
+  high: { pixelRatio: 2, shadows: true, shadowSize: 2048 },
+  medium: { pixelRatio: 1.5, shadows: true, shadowSize: 1536 },
+  low: { pixelRatio: 1, shadows: false, shadowSize: 1024 },
+};
+
+/**
+ * What this machine will ACTUALLY render at — the number that matters and the
+ * one nobody was looking at.
+ *
+ * THREE CAPS MULTIPLY DOWN, and reading any one of them alone tells you nothing.
+ * `maxPixelRatio: 1.5` looks generous until it is combined with
+ * `defaultQuality: 'low'`, whose tier pins the ratio to 1; the product on a 3.0
+ * panel was 1.0, and the game shipped to a phone at one ninth of its pixels.
+ * Exposed so a check can assert the product.
+ */
+export function effectivePixelRatio(profile, dpr, quality = profile.defaultQuality) {
+  const q = QUALITY[quality] ?? QUALITY.medium;
+  return Math.min(dpr, q.pixelRatio, profile.maxPixelRatio);
+}
+
 /** Atlas ceilings, in pixels, per tier. See the header for why this is the
  *  only art number that varies by device. */
 const ATLAS = { full: 2048, reduced: 1024 };
@@ -123,33 +150,54 @@ export function profileFor({
     };
   }
 
-  /* A phone with plenty of cores is still a phone: the thermal budget, not the
-     core count, is what a 20-minute play session runs into. `cores` only
-     separates "reduced" from "reduced and do not push it" — it never buys a
-     touch device the desktop tier. */
-  /* A FORCED MOBILE TIER IS NEVER THE WEAK ONE. `cores` is a phone signal, and
-     the desktop being tested on has twenty of them — reading it here would make
-     "test as a phone" quietly test the FASTER phone tier on the machine most
-     likely to be checking the slower one. Forced means the ordinary mobile
-     tier; a real weak phone still detects itself. */
+  /* A PHONE WITH FEW CORES IS THE ONLY ONE THAT GETS THE CAUTIOUS TIER, and
+     that split exists because the first version applied the cautious tier to
+     EVERYTHING with a touchscreen. On a Galaxy S24 Ultra that game ran without
+     dropping a frame and looked terrible, which is the wrong trade in both
+     directions — see the numbers on `maxPixelRatio` below. */
   const weak = override === 'auto' && cores > 0 && cores <= 4;
   return {
     touchPrimary: true,
     tier: weak ? 'mobile-low' : 'mobile',
     override,
     detected,
-    /* MSAA on a phone costs bandwidth, which is the one thing a mobile GPU has
-       least of, and it is invisible at 400+ ppi. It is a WebGLRenderer
-       CONSTRUCTOR option — it cannot be changed later — so this has to be
-       decided before the renderer exists. */
-    antialias: false,
-    /* 1.5 rather than the panel's own ratio. An S24 Ultra reports 3.0; at four
-       viewports that is nine times the fragments of a 1.0 buffer for a screen
-       you hold at arm's length. Capped rather than pinned to 1 so the HUD text
-       and the minimap stay crisp. */
-    maxPixelRatio: weak ? 1.0 : 1.5,
-    atlasMax: ATLAS.reduced,
-    defaultQuality: 'low',
+    /* MSAA off only on the cautious tier. It costs bandwidth, which is what a
+       mobile GPU has least of — but a modern phone has plenty, and the thing it
+       fixes is the crunchy edge on every white drifting particle. It is a
+       WebGLRenderer CONSTRUCTOR option and cannot be changed later, which is why
+       this is decided before the renderer exists. */
+    antialias: !weak,
+    /* THIS NUMBER WAS 1.5 AND IT WAS THE SINGLE BIGGEST MISTAKE IN THE MOBILE
+       PASS. Read it together with the quality tier, because they MULTIPLY down:
+       `_applyQuality` takes `Math.min(devicePixelRatio, quality, this)`. At
+       `defaultQuality: 'low'` — which was also set here — `QUALITY.low.pixelRatio`
+       is 1, so the effective ratio on an S24 Ultra was:
+
+         Math.min(3.0, 1.0, 1.5) = 1.0
+
+       One third of the panel's linear resolution, one ninth of its pixels, on a
+       device that turned out to have so much headroom it never dropped a frame.
+       Every "it looks low-res" complaint traced back to this line and to the two
+       below it.
+
+       2.5 rather than 3.0 so a phone that IS struggling has somewhere to fall
+       back to, and because the difference between 2.5 and 3.0 is invisible at
+       arm's length while costing 44% more fragments. `high` caps it at 2.0
+       anyway; this is the ceiling, not the setting. */
+    maxPixelRatio: weak ? 1.25 : 2.5,
+    /* FULL-SIZE SHEETS ON A CAPABLE PHONE. The reduced ceiling halves every
+       single-figure sheet — both dragons, Ryuuseki, the six leaders — and that
+       is exactly the art that gets drawn biggest: a dragon fills a third of the
+       screen when you are riding it. 147MB of texture is nothing to a phone with
+       8GB of RAM, and the saving was never the point on hardware like that. The
+       cautious tier keeps it. */
+    atlasMax: weak ? ATLAS.reduced : ATLAS.full,
+    /* NOT `low`. `low` also turns shadows off, which is most of what makes the
+       world look flat, and pins the pixel ratio to 1. A capable phone should
+       open on the same tier a laptop does and be turned DOWN if it struggles —
+       the setting is right there, and a kid is far more likely to notice a soft
+       picture than a frame rate. */
+    defaultQuality: weak ? 'low' : 'high',
     /* ONE KITTEN ON A PHONE. A second player needs a second device — see
        `defaultSplit`. Additive by construction: nothing reads this on a
        desktop, where `defaultParty` is still 2. */

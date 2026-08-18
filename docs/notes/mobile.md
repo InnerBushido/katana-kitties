@@ -292,3 +292,98 @@ says nothing. On a desktop it asks for a wider window.
 - **Do not append to `style.css` with PowerShell.** `Add-Content -Encoding utf8`
   over `Get-Content -Raw` double-encoded nine em dashes into `â€”`
   (`U+00E2 U+20AC U+201D`). Use the editing tools.
+
+---
+
+## The first real play session, and what it corrected
+
+The game was played on a Galaxy S24 Ultra. **It did not drop a frame, and it
+looked terrible.** Both halves of that sentence mattered.
+
+### The resolution mistake, in one line of arithmetic
+
+`_applyQuality` takes `Math.min(devicePixelRatio, quality.pixelRatio,
+device.maxPixelRatio)`. The mobile tier set `maxPixelRatio: 1.5`, which reads as
+generous, **and** `defaultQuality: low`, whose tier pins the ratio to 1. On a
+3.0 panel:
+
+```
+Math.min(3.0, 1.0, 1.5) = 1.0
+```
+
+One third of the linear resolution, one ninth of the pixels. Add `atlasMax:
+1024` — which halves both dragons, Ryuuseki and all six leaders, the art that is
+drawn *biggest* — and `antialias: false`, and that is every "it looks low-res"
+complaint from one conservative guess.
+
+**Each cap looked reasonable on its own.** That is why `effectivePixelRatio` now
+exists and why `world-check` asserts the **product** rather than the factors: a
+check on `maxPixelRatio` alone would have passed throughout. `QUALITY` moved into
+`device.js` to make that possible — the tiers are half of an arithmetic this file
+owns the other half of, and restating them in a check is how the bug survived.
+
+The capable tier now runs antialiased at up to 2.0 on a 3x panel with full-size
+atlases; a four-core phone keeps the cautious answers. **The tier is a default,
+not a floor** — Settings still turns it down, which is the fallback a struggling
+phone needs and the reason raising it is safe.
+
+### Text was soft for a different reason
+
+`label.js` drew glyphs 1:1 into a canvas. `size` is an authored height, but the
+quad it lands on is sized in **world units**, so how many screen pixels a label
+covers depends on the camera. Standing next to a clan leader, the texture was
+magnified well past 1:1. It is supersampled 3x now, with the mesh size and
+`aspect` deliberately unchanged.
+
+### Three input bugs
+
+1. **Tapping the minimap dropped the thumbstick on it.** The overlay sits above
+   the HUD and the stick catchment is the whole left half, so it claimed every
+   pointer landing there. The passthrough needed *two* rules, not one: `#maps`
+   was given `pointer-events: auto` while `.map-box` sets `none` on itself, so
+   the map stayed invisible to `elementsFromPoint` and the first fix silently
+   did nothing.
+2. **Player 2 joining took WASD, and both kittens walked on one key.** `_assign`
+   reserved the set while `_findJoin` did not — and a claim beats the dealer.
+   Five callers had to agree and did not, so the rule is now one function
+   (`_freeKeysets`) they all ask. **Touch owns WASD whenever the pad is up**, as
+   design rather than as a test affordance: the girl holding the phone is player
+   1, and her sister joins on the arrows.
+3. **There was no way to reach the menu at all.** `start` was gated to
+   `source === gamepad`, which is right for a keyboard — whose start key had to
+   be freed to mean "join" — and wrong for a touch pad, which has a dedicated
+   corner button that is nothing else. On a phone there is no Esc key, so
+   settings, restart, the board and the profile were unreachable once the game
+   began.
+
+### Labels move, because a fixed label is wrong most of the time
+
+`interact` is "join a clan" for about ten seconds of a playthrough and "go down"
+for every minute on a dragon. A button reading CLAN in the air is one a kid
+presses, drops off her dragon, and concludes is broken. `_updateTouchContext`
+renames the cluster from what the buttons would actually do this frame; the
+**glyphs** never move, because those are the pad letters and they are what keep
+the HELP page and a real controller true.
+
+### Double tap latches a hold
+
+Two thumbs cannot hold three things. Sprinting while steering and slashing needs
+the stick, RUN and SLASH at once, which is one thumb short — so sprinting was
+something you could do *or* attack during, never both. A double tap latches;
+another tap releases. **Only actions the game says are lockable**: the Ward is
+offered only while the orb granting it is worn, and released the moment it
+expires, because a button glowing over a dead ability is the control lying.
+
+### Backgrounding the game is not a crash, and HTTPS will not fix it
+
+Android reclaims the WebGL context of a backgrounded tab when it wants the
+memory, and this game holds well over 100MB of texture. There was **no
+`webglcontextlost` handler at all**, so the page had no way back and died
+silently. It now says what happened and offers a reload rather than pretending
+to recover — restoring every repacked CanvasTexture is real work, and doing it
+badly gives white boxes where the kittens were.
+
+**Installing as a PWA genuinely helps** (an installed app is a worse eviction
+candidate than a tab) but it is a reduced likelihood, not a guarantee. Note the
+tension: raising `atlasMax` back to 2048 for fidelity also raises the memory
+pressure that causes this.

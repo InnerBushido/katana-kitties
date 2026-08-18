@@ -18,6 +18,13 @@ const PAD = 46;
 /** Zoom steps. 1 fits the whole archipelago; the rest close in on a player. */
 export const ZOOMS = [1, 2.2, 4.5];
 
+/* WHERE A PHONE STARTS. World zoom draws the whole archipelago into about 200px
+   of screen, which is a decoration rather than a map: the islands are thumbnails
+   and a kitten is one pixel. `2.2` is the first step that shows the island you
+   are standing on, and the tap cycle still reaches world zoom — it just is not
+   where a kid opens the game. */
+export const TOUCH_ZOOM = 2.2;
+
 export class Minimap {
   /**
    * @param canvas the <canvas> to draw into
@@ -25,7 +32,7 @@ export class Minimap {
    * @param focusIndex which player to centre on when zoomed in, or null to
    *        centre on everybody this map is drawn for — see `focusOn`
    */
-  constructor(canvas, world, focusIndex = null) {
+  constructor(canvas, world, focusIndex = null, opts = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.world = world;
@@ -38,7 +45,12 @@ export class Minimap {
        be on another island: the pane's own two kittens could be off the edge of
        their own map. Null means every player passed to `draw`. */
     this.focusOn = null;
-    this.zoom = 1;
+    /* ZOOM IS A SETTING, NOT A CONSTANT, AND ON A PHONE IT STARTS IN. At world
+       zoom the whole archipelago is drawn into ~150px of screen: the islands are
+       thumbnails and the pips on them are single pixels, which is not a map, it
+       is a decoration. The caller passes what this device should open at — see
+       `Game._buildHud`. */
+    this.zoom = opts.zoom ?? 1;
 
     // Fit every island (plus its radius) into the canvas, once, at build time.
     let minX = Infinity;

@@ -1816,7 +1816,13 @@ body.touch-ui #math-board {
   pointer-events: auto;
   width: min(300px, 40vw);
 }
+/* THE BOX, NOT JUST THE CONTAINER. `#maps` was given `pointer-events: auto` and
+   that did nothing, because `.map-box` sets `none` on itself — so the map was
+   invisible to `elementsFromPoint`, the stick's passthrough never saw it, and
+   tapping the map dropped a thumbstick on top of it. Both are needed: the
+   container to be hit-testable at all, and the box because it opts out. */
 body.touch-ui #maps { pointer-events: auto; }
+body.touch-ui .map-box { pointer-events: auto; }
 
 body.touch-ui #toasts { bottom: auto; top: calc(env(safe-area-inset-top) + 62px); }
 
@@ -1854,3 +1860,139 @@ body.touch-ui .panel {
    in front of a mouse. */
 #rotate-gate.faux .rg-phone { display: none; }
 #rotate-gate .rg-main b { font-family: 'Bangers', cursive; font-size: 26px; letter-spacing: 1.5px; }
+
+/* ===================== the pad while a scene is playing ==================
+   A cutscene owns the screen, so the stick and the face cluster are controls she
+   cannot use — and the game already prints "START, SPACE OR ENTER TO SKIP",
+   which on a phone names three things that do not exist. Only the corner button
+   survives, wearing a fast-forward. */
+#touch-pad.scene .tp-zone,
+#touch-pad.scene .tp-cluster { display: none; }
+body.touch-ui #cs-skip { display: none; }
+
+/* The corner button as a SKIP rather than a menu: vermillion, so it reads as
+   the one live control on a screen that is otherwise a film. */
+.tp-btn.tp-skip {
+  background: var(--vermillion);
+  color: var(--paper);
+}
+
+/* ===================== mobile HUD text ===================================
+   Everything here is the same complaint from the first real play session: the
+   text was authored for a 1080p window and is being read on a 6-inch screen held
+   at arm's length, where it covered the kitten it was describing.
+------------------------------------------------------------------------- */
+
+/* THE MISCHIEF COUNTER MUST NEVER WRAP. At three digits ("216 / 216") it broke
+   onto a second line and pushed into the dragon-ball tally underneath it. The
+   fix is `nowrap` rather than a smaller font, because the number only grows to
+   four characters and the box can afford them. */
+.mischief, .mischief b { white-space: nowrap; }
+body.touch-ui .mischief { font-size: 11px; padding: 3px 8px; }
+body.touch-ui .score { font-size: 11px; }
+body.touch-ui .score b { font-size: 13px; }
+
+/* The dragon-ball tally: 35-50% smaller, and out from under the scoreboard. */
+body.touch-ui #balls {
+  font-size: 13px;
+  padding: 3px 9px;
+  top: calc(env(safe-area-inset-top) + 44px);
+}
+
+/* THE TOASTS ARE THE WORST OFFENDER — they are the ones that covered the player
+   at the exact moment she wanted to see what she had just knocked over. Two
+   thirds smaller, one line, and see-through enough to play behind. */
+body.touch-ui .toast {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-width: 2px;
+  border-left-width: 5px;
+  border-radius: 7px;
+  box-shadow: 0 2px 0 rgba(29, 18, 22, 0.6);
+  background: rgba(251, 238, 210, 0.72);
+  white-space: nowrap;
+  max-width: 88vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.touch-ui #toasts { gap: 3px; }
+
+/* THE BOTTOM HINT IS A DESKTOP AFFORDANCE AND A PHONE DOES NOT GET IT. It is a
+   run-on line naming keyboard keys, the maths overlay and three places to fly
+   to — none of which a thumb can act on, and all of which sat across the bottom
+   of the screen between the two thumbs. The HELP page says all of it properly. */
+body.touch-ui .hint { display: none; }
+
+/* ===================== the sin/cos board ================================
+   BOTTOM-LEFT AND BEHIND EVERYTHING. It shared the top-left corner with the
+   minimap and the two stacked, which looked broken and made both unreadable. The
+   map keeps the corner because it is the one you glance at constantly; the board
+   goes to the bottom edge, under the main UI, on the side the stick is NOT.
+   `z-index` below the scoreboard so a toast is never hidden behind maths. */
+body.touch-ui #math-board {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + 4px);
+  top: auto;
+  width: min(260px, 34vw);
+  z-index: 1;
+  opacity: 0.9;
+}
+body.touch-ui .mb-title { font-size: 9px; letter-spacing: 1px; }
+
+/* ===================== cutscene dialogue ================================
+   The box was two fifths of a phone screen, so the world it is narrating — which
+   is the whole reason the camera is flying through it — was behind the words. */
+body.touch-ui #cs-box {
+  width: min(92vw, 620px);
+  padding: 8px 12px;
+  gap: 10px;
+  bottom: calc(env(safe-area-inset-bottom) + 10px);
+}
+body.touch-ui #cs-portrait { width: 62px; height: 62px; }
+body.touch-ui #cs-name { font-size: 15px; letter-spacing: 1px; }
+body.touch-ui #cs-text { font-size: 12px; line-height: 1.3; }
+body.touch-ui .cs-bar { height: 7vh; }
+
+/* The announcer card gets the same treatment for the same reason. */
+body.touch-ui #announce { width: min(92vw, 560px); padding: 7px 11px; }
+body.touch-ui #an-portrait { width: 56px; height: 56px; }
+body.touch-ui #an-name { font-size: 14px; }
+body.touch-ui #an-text { font-size: 12px; line-height: 1.3; }
+
+/* ===================== full-screen panels ===============================
+   The clan-joining card and the dragon-ball card are the two that a kid sees
+   most, and both were authored around a desktop's vertical space — so on a phone
+   they had a screen's worth of dead air above and below the one line that
+   mattered, and did not agree with each other about where the middle was. */
+body.touch-ui #arena-result,
+body.touch-ui #panel-league .panel,
+body.touch-ui #panel-teams .panel { padding: 10px 14px; }
+body.touch-ui #arena-banner { font-size: 34px; }
+
+/* A LATCHED BUTTON HAS TO LOOK LATCHED. It is down with nothing touching it,
+   which is indistinguishable from a stuck control unless it says so — so it
+   keeps the pressed colour AND gains a ring, because "pressed" alone is what it
+   looks like while a thumb is on it. */
+.tp-btn.locked {
+  background: var(--gold);
+  color: var(--ink);
+  transform: translateY(4px);
+  box-shadow: 0 0 0 var(--ink), 0 0 0 3px var(--gold);
+}
+.tp-btn.locked .tp-label { opacity: 1; font-weight: 900; }
+
+/* The five-tap debug corner: invisible, and deliberately in the one part of the
+   screen no control uses. It must never be reachable by accident during play. */
+#debug-corner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 64px;
+  height: 64px;
+  z-index: 8;
+  pointer-events: auto;
+  touch-action: none;
+}
+body:not(.touch-ui) #debug-corner { display: none; }

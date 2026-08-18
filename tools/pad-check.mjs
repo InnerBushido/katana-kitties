@@ -963,8 +963,8 @@ console.log('\n--- the touch pad as a device ---');
      controller and take the arrows from her sister on a tablet. */
   ok('...and she is not also dealt a keyboard set', t.bindings[0].keyset === null,
     JSON.stringify(t.bindings[0]));
-  ok('...and touch reports itself in describe()',
-    t.describe()[0] === 'P1: touch', JSON.stringify(t.describe()));
+  ok('...and describe names both surfaces',
+    t.describe()[0] === 'P1: touch + WASD', JSON.stringify(t.describe()));
 
   /* THE CASE THE ORDERING EXISTS FOR: a pad paired to the phone. */
   const tp = drive([mkPad(0)]);
@@ -980,13 +980,18 @@ console.log('\n--- the touch pad as a device ---');
      second kitten the phone could actually carry. Touch + one pad + both
      keysets is a full house of four — which is the real answer for a tablet
      propped up with a controller and a keyboard in front of it. */
-  ok('touch, a pad and two keysets seats four', tp.seatable === 4, `${tp.seatable}`);
+  /* TOUCH CONSUMES WASD, so the pool is one keyset smaller than it looks: touch
+     + a pad + the ARROWS is three, not four. Counting it as four is what would
+     let the join screen offer a seat that has no device behind it. */
+  ok('touch, a pad and the arrows seats three', tp.seatable === 3, `${tp.seatable}`);
   const bare = drive([]);
   bare.attachTouch(stub());
   bare.slots = 1;
   bare.update();
-  ok('...and touch with just the keyboard seats three', bare.seatable === 3,
+  ok('...and touch with just a keyboard seats two', bare.seatable === 2,
     `${bare.seatable}`);
+  ok('...which is the touch player and the arrows',
+    bare.joinHint() === 'ENTER', `${bare.joinHint()}`);
   /* The touch pad can never be "a spare controller" — there is one screen and
      whoever holds it is already on it. */
   ok('touch is never offered as a spare controller',
@@ -1010,23 +1015,29 @@ console.log('\n--- the touch pad as a device ---');
      slot 0 read it THROUGH the pad while slot 1 read it directly, and pressing W
      walked both cats. Found by pressing W and watching it happen. */
   const test = drive([]);
-  test.attachTouch(stub(), { testKeys: true });
+  test.attachTouch(stub());
   test.slots = 2;
   test.update();
-  ok('in test mode the touch pad owns WASD',
+  ok('the touch pad owns WASD whenever it is up',
     test.bindings[0].touch === true && test.bindings[1].keyset !== 0,
     JSON.stringify(test.bindings.slice(0, 2)));
   ok('...so P2 gets the arrows instead', test.bindings[1].keyset === 1,
     JSON.stringify(test.bindings[1]));
-  /* AND WITHOUT THE TEST FLAG WASD STAYS IN THE POOL — a real phone with a
-     keyboard attached has no reason to reserve it, because nothing is merging
-     it into the pad. */
-  const real = drive([]);
-  real.attachTouch(stub(), { testKeys: false });
-  real.slots = 2;
-  real.update();
-  ok('on a real touch device P2 still gets WASD', real.bindings[1].keyset === 0,
-    JSON.stringify(real.bindings[1]));
+  /* THE BUG ITSELF: JOINING. `_assign` reserved WASD but `_findJoin` did not,
+     and a claim beats the dealer — so pressing ENTER handed player 2 the set the
+     pad was already reading, and both kittens walked on one key. */
+  const join = drive([]);
+  join.attachTouch(stub());
+  join.slots = 1;
+  join.update();
+  join.keys.clear(); join.update();
+  join.keys.add('Enter'); join.update();
+  const cand = join.pendingJoin();
+  join.keys.clear();
+  ok('ENTER seats player 2 on the ARROWS, not on WASD',
+    cand && cand.keyset === 1, JSON.stringify(cand));
+  ok('...and touch plus the arrows is two seatable players',
+    join.seatable === 2, `${join.seatable}`);
 
   /* THE FIFTH INVARIANT, STATED WHERE THIS BLOCK COULD BREAK IT: with no touch
      pad attached, the dealing is byte-for-byte what it was before touch

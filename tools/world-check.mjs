@@ -31,7 +31,9 @@ import {
   floodBackground, clearSealedPockets, purelyWhite, pocketFloor,
   packMetrics, countInk,
 } from '../src/core/spritesheet.js';
-import { profileFor as deviceProfileFor } from '../src/core/device.js';
+import {
+  profileFor as deviceProfileFor, effectivePixelRatio,
+} from '../src/core/device.js';
 import { readPNG, blobs } from './png.mjs';
 import {
   POWER_ORBS, ORB_IDS, MAX_EQUIPPED, aggregate, orbPrice, orbSellPrice,
@@ -4597,16 +4599,43 @@ console.log('\n--- the three power moves ---');
   ok('a touchscreen laptop is still a desktop',
     deviceProfileFor({ coarse: false, touchPoints: 10, cores: 8 }).tier === 'desktop');
 
+  /* --- WHAT A PHONE ACTUALLY RENDERS AT ---
+     THE CHECK THAT WOULD HAVE CAUGHT THE MOBILE PASS'S WORST BUG. Three caps
+     multiply down — the panel's ratio, the quality tier's and the device's — and
+     every one of them looked reasonable alone. `maxPixelRatio: 1.5` reads as
+     generous; `defaultQuality: 'low'` reads as safe. Together, on a 3.0 panel,
+     they rendered the game at 1.0: one ninth of the phone's pixels, on hardware
+     that never dropped a frame. Asserting the factors would have passed. So this
+     asserts the PRODUCT. */
   const phone = deviceProfileFor({ coarse: true, touchPoints: 5, dpr: 3, cores: 8 });
-  ok('a phone: one kitten, never split, low, AA off, half the atlas',
+  ok('a capable phone: one kitten, never split, full atlas, AA on',
     phone.defaultParty === 1 && phone.defaultSplit === 'never'
-    && phone.defaultQuality === 'low' && phone.antialias === false
-    && phone.atlasMax === 1024 && phone.touchPrimary === true);
-  /* The pixel-ratio cap has to be BELOW a modern phone's panel or it is not a
-     cap at all — an S24 Ultra reports 3.0. */
-  ok('and its pixel ratio is capped well under the panel', phone.maxPixelRatio <= 1.5);
-  ok('a weak phone is capped harder still',
-    deviceProfileFor({ coarse: true, touchPoints: 5, cores: 4 }).maxPixelRatio === 1.0);
+    && phone.atlasMax === 2048 && phone.antialias === true
+    && phone.touchPrimary === true);
+  ok('...and it really renders above 1x on a 3x panel',
+    effectivePixelRatio(phone, 3) >= 2,
+    `${effectivePixelRatio(phone, 3)}`);
+  /* The specific historical failure, named so it cannot come back quietly. */
+  ok('...not the 1.0 it shipped at once',
+    effectivePixelRatio(phone, 3) !== 1);
+  /* Turning the setting DOWN must still work — the tier is a default, not a
+     floor, and a phone that struggles has to have somewhere to go. */
+  ok('...and turning quality down still lowers it',
+    effectivePixelRatio(phone, 3, 'low') < effectivePixelRatio(phone, 3, 'high'));
+
+  /* THE CAUTIOUS TIER IS STILL CAUTIOUS. A four-core phone is a real device and
+     it gets the conservative answers the capable tier no longer takes. */
+  const cheap = deviceProfileFor({ coarse: true, touchPoints: 5, dpr: 2, cores: 4 });
+  ok('a weak phone keeps the cautious tier',
+    cheap.tier === 'mobile-low' && cheap.antialias === false
+    && cheap.atlasMax === 1024 && cheap.defaultQuality === 'low');
+  ok('...and renders below a capable one',
+    effectivePixelRatio(cheap, 3) < effectivePixelRatio(phone, 3));
+
+  /* A DESKTOP IS UNMOVED BY ALL OF THIS. Its cap is out of the way, so the
+     quality setting is the only thing deciding. */
+  ok('a desktop still renders at the quality setting alone',
+    effectivePixelRatio(desk, 3, 'high') === 2 && effectivePixelRatio(desk, 1, 'high') === 1);
 
   /* --- THE TEST OVERRIDE ---
      The touch pad is written on a desktop, so it has to be reachable from one or
@@ -4617,8 +4646,8 @@ console.log('\n--- the three power moves ---');
     coarse: false, touchPoints: 0, cores: 20, override: 'mobile',
   });
   ok('forcing mobile on a desktop really is the mobile tier',
-    forced.touchPrimary === true && forced.antialias === false
-    && forced.atlasMax === 1024 && forced.defaultParty === 1);
+    forced.touchPrimary === true && forced.tier === 'mobile'
+    && forced.defaultParty === 1 && forced.defaultSplit === 'never');
   /* AND IT REMEMBERS THAT IT WAS FORCED, which is what lets `Game` merge the
      keyboard into the touch pad for testing without that path ever running on
      real hardware. */

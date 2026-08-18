@@ -114,6 +114,11 @@ const DEFAULT_VJOY_MAP = {
 
 export const HALVES = ['left', 'right'];
 
+/* WHICH KEYBOARD SET THE TOUCH PLAYER OWNS. WASD, because it is the better half
+   — a space bar and a one-handed cluster — and the touch player is player 1.
+   See `_freeKeysets`. */
+export const TOUCH_KEYSET = 0;
+
 /** Spelled out where the bare action name wouldn't tell a nine-year-old what
  *  the row is for. Anything absent shows its action name unchanged. */
 const ACTION_LABELS = { map: 'map zoom', math: 'maths overlay' };
@@ -450,9 +455,6 @@ export class InputManager {
     /** The on-screen pad, or null on a machine that has no business drawing
      *  one. Set by `Game` from the device profile — see `attachTouch`. */
     this.touch = null;
-    /** True while the touch pad should ALSO read a keyboard set, which is the
-     *  desktop test mode and nothing else. See `TouchPad.read`. */
-    this.touchTestKeys = false;
     this.anyKeyThisFrame = false;
     this._anyPressLatch = false;
     this._order = [];        // pad indices in connection order
@@ -913,9 +915,28 @@ export class InputManager {
   }
 
   /** Hand the input layer its on-screen pad, or take it away. */
-  attachTouch(pad, { testKeys = false } = {}) {
+  attachTouch(pad) {
     this.touch = pad;
-    this.touchTestKeys = testKeys;
+  }
+
+  /**
+   * Which keyboard sets are available to slots that are NOT the touch player.
+   *
+   * ONE RULE, ASKED IN FIVE PLACES, AND THAT IS THE WHOLE REASON THIS EXISTS.
+   * `_assign`, `_findJoin`, `seatable`, `joinHint` and `describe` all have to
+   * agree about whether WASD is spoken for, and they did not: `_assign` reserved
+   * it while `_findJoin` did not, and a claim beats the dealer — so player 2
+   * pressed ENTER, claimed WASD, and both kittens walked on one key. That is the
+   * same "two kittens moving as one" failure `_padDevices` exists to prevent,
+   * arrived at from the other end.
+   *
+   * WHEN THE PAD IS UP, TOUCH OWNS WASD. Not as a test affordance — as the
+   * design: the girl holding the phone is player 1, and if that phone or tablet
+   * has a keyboard she should be able to use both without a second kitten
+   * appearing. Her sister joins on the arrows.
+   */
+  _freeKeysets() {
+    return KEYSETS.map((_, k) => k).filter((k) => !(this.touch && k === TOUCH_KEYSET));
   }
 
   /**
@@ -1014,19 +1035,9 @@ export class InputManager {
       next[i] = { ...free[k], keyset: null, touch: !!free[k].touch };
       k += 1;
     }
-    /* IN TEST MODE THE TOUCH PAD OWNS WASD, SO NOBODY ELSE MAY HAVE IT.
-       `touchTestKeys` makes the pad read KEYSETS[0] as well as the screen, which
-       is what lets a desktop exercise the buttons from a keyboard. Leaving that
-       set in the pool as well meant slot 0 read it THROUGH the pad and slot 1
-       read it directly — so pressing W moved both kittens at once, which is the
-       exact "two kittens moving as one" failure `_syncBindings` refuses to allow
-       for a shared pad. Verified by pressing W and watching two cats walk.
-
-       Only while a touch device is actually seated: with the pad detached this
-       adds nothing and the keyboard dealing is untouched. */
-    if (this.touchTestKeys && next.slice(0, n).some((b) => b.touch)) {
-      takenKeysets.add(0);
-    }
+    /* THE TOUCH PAD OWNS WASD WHENEVER IT IS UP — see `_freeKeysets` for why,
+       and for the bug that came of only half the code believing it. */
+    if (this.touch) takenKeysets.add(TOUCH_KEYSET);
 
     /* Every padless slot takes the lowest keyboard set still free, in slot
        order — so the first kitten without a controller gets WASD, the next gets
@@ -1035,11 +1046,11 @@ export class InputManager {
        must not also be handed WASD: on a tablet with a keyboard attached that
        would give the girl holding the screen a second, invisible controller and
        take the arrows away from her sister. The test mode reads a keyset
-       THROUGH the touch pad instead (`touchTestKeys`), which is one device
+       THROUGH the touch pad instead (see `_freeKeysets`), which is one device
        reading two surfaces rather than one slot bound to two devices. */
     for (let i = 0; i < n; i++) {
       if (next[i].pad != null || next[i].keyset != null || next[i].touch) continue;
-      for (let k = 0; k < KEYSETS.length; k++) {
+      for (const k of this._freeKeysets()) {
         if (takenKeysets.has(k)) continue;
         next[i].keyset = k;
         takenKeysets.add(k);
@@ -1073,7 +1084,7 @@ export class InputManager {
     // The SAME list the binder deals from — see `_devices`. Counting the
     // pads a second way here is what let the join screen refuse a player onto
     // a controller that was sitting in the pool unbound.
-    return Math.min(MAX_SLOTS, this._devices(live).length + KEYSETS.length);
+    return Math.min(MAX_SLOTS, this._devices(live).length + this._freeKeysets().length);
   }
 
   /**
@@ -1146,7 +1157,7 @@ export class InputManager {
     for (let i = 0; i < Math.min(this.slots, MAX_SLOTS); i++) {
       const bnd = this.bindings[i];
       if (bnd.touch) {
-        out.push(`P${i + 1}: touch${this.touchTestKeys ? ' + keyboard' : ''}`);
+        out.push(`P${i + 1}: touch + ${KEYSETS[TOUCH_KEYSET].name}`);
       } else if (bnd.pad != null) {
         out.push(`P${i + 1}: ${bnd.half ? `${bnd.half} Joy-Con` : 'gamepad'}`);
       } else if (bnd.keyset != null) {
@@ -1191,7 +1202,7 @@ export class InputManager {
     );
     if (freePad) return 'START on a spare controller';
 
-    const freeKeyset = KEYSETS.some((_, k) => !bound.some((b) => b.keyset === k));
+    const freeKeyset = this._freeKeysets().some((k) => !bound.some((b) => b.keyset === k));
     return freeKeyset ? 'ENTER' : null;
   }
 
@@ -1282,9 +1293,11 @@ export class InputManager {
            of the game, not of the device, and `Player` must not be able to tell
            them apart. */
         st.source = 'touch';
-        const r = this.touch.read(this.touchTestKeys
-          ? { keyset: KEYSETS[0], keys: this.keys }
-          : {});
+        /* ALWAYS MERGED, on a phone as much as on a desktop. On a phone there
+           is no keyboard and this contributes nothing; on a tablet with one
+           attached, or on the desktop test mode, it is player 1's second hand.
+           `_freeKeysets` is what stops anybody else being dealt the same set. */
+        const r = this.touch.read({ keyset: KEYSETS[TOUCH_KEYSET], keys: this.keys });
         mx = dead(r.ax);
         my = dead(r.ay);
         for (const a of ACTIONS) next[a] = !!r[a];
@@ -1406,7 +1419,11 @@ export class InputManager {
        WASD, the second takes the arrows.
        The edge is latched against one key rather than one per set, or holding
        Enter down after the first join would immediately seat the second. */
-    const free = KEYSETS.findIndex((_, k) => !bound.some((b) => b.keyset === k));
+    /* FROM THE FREE LIST, NOT FROM EVERY SET. This line used to walk all of
+       KEYSETS, so with the touch pad up it handed player 2 WASD — which the pad
+       is already reading — and a claim beats `_assign`'s reservation. Pressing
+       ENTER on a phone therefore seated a sister who moved in lockstep with you. */
+    const free = this._freeKeysets().find((k) => !bound.some((b) => b.keyset === k)) ?? -1;
     if (free >= 0 && this._joinKeyDown() && !this._joinPrev.has('kb')) {
       return { pad: null, half: null, keyset: free };
     }

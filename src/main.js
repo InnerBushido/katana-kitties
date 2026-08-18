@@ -7,7 +7,9 @@ import {
 import { Audio, trackForIsland } from './core/audio.js';
 import { loadSpriteAtlas, recolourAtlas } from './core/spritesheet.js';
 import { placeholderCatAtlas, placeholderDragonTexture, placeholderPandaTexture } from './core/gfx.js';
-import { detect as detectDevice, readOverride, writeOverride } from './core/device.js';
+import {
+  detect as detectDevice, readOverride, writeOverride, QUALITY, effectivePixelRatio,
+} from './core/device.js';
 import { TouchPad } from './core/touchpad.js';
 import { World } from './world/world.js';
 import { Player, ATTACKS, MAX_HP, KO_TIME } from './entities/player.js';
@@ -19,7 +21,7 @@ import { Panda, tierFor, toNextTier } from './entities/panda.js';
 import { ClanLeader, LEADERS } from './entities/leader.js';
 import { Orb, OrbPickup } from './entities/orb.js';
 import { MathDojo } from './systems/mathdojo.js';
-import { Minimap } from './systems/minimap.js';
+import { Minimap, TOUCH_ZOOM } from './systems/minimap.js';
 import { MenuNav } from './systems/menunav.js';
 import { Cutscene } from './systems/cutscene.js';
 import { ShrineScene } from './systems/shrinescene.js';
@@ -48,13 +50,32 @@ import { ProfileScreen } from './systems/profile.js';
    rendering goes through _renderView rather than a plain renderer.render.
 --------------------------------------------------------------------------- */
 
-const QUALITY = {
-  high: { pixelRatio: 2, shadows: true, shadowSize: 2048 },
-  medium: { pixelRatio: 1.5, shadows: true, shadowSize: 1536 },
-  low: { pixelRatio: 1, shadows: false, shadowSize: 1024 },
+/** The key each debug action is bound to, for the panel's own labels. */
+const DEBUG_KEY_LABEL = {
+  Digit4: '4', Digit5: '5', Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9',
+  Digit0: '0', KeyM: 'M', KeyZ: 'Z', Minus: '-', Equal: '=', Backquote: '`',
 };
 
 const DOJO_VIEW_R = 52;  // inside this, the camera frames the unit circle
+
+/* HOW FAR BACK THE DOJO CAMERA SITS, and it is a different answer on a phone.
+
+   104 frames the whole unit circle on a desktop, which is the shot the room was
+   designed around: you stand ON the circle and read the diagram around you. The
+   same 104 on a 6-inch screen makes the axis labels a few pixels tall and the
+   kitten a smudge — the lesson is a DIAGRAM, and a diagram you cannot read is
+   not a smaller version of the lesson, it is none of it.
+
+   58 is about 44% closer. It loses the outer edge of the circle at the extremes
+   and keeps every number legible, which is the right trade on a screen held at
+   arm's length. */
+const DOJO_DIST = { desktop: 104, touch: 58 };
+
+/* HOW MUCH THE DOJO SHOT GIVES UP ON FOLLOWING THE PLAYER. On a desktop the
+   camera goes all the way to the circle's centre (1) because the whole circle is
+   in frame anyway. Closer in, that would leave her walking out of shot, so on a
+   phone it only goes most of the way and keeps tracking her. */
+const DOJO_CENTRE_BIAS = { desktop: 1, touch: 0.72 };
 /** How long the found-a-star pose runs. Matches Player.holdAloft's default. */
 const STAR_POSE = 2.0;
 /** Seconds on an island before its theme takes over. See Game._islandTrack. */
@@ -128,7 +149,13 @@ class Game {
       dir: 'vertical',
       quality: this.device.defaultQuality,
     };
-    this.mathVisible = true;
+    /* THE MATHS OVERLAY IS OFF BY DEFAULT ON A PHONE, and it turns itself on
+       when she walks into the Dojo — see `_updateMathForDojo`. It is not a
+       demotion of the feature: on a 6-inch screen the orb's working sits on top
+       of the kitten drawing it, and the thing it is teaching is a diagram you
+       have to be ABLE TO SEE. The Dojo is where that lesson happens, so that is
+       where it appears; the tap on the board still overrides either way. */
+    this.mathVisible = !this.device.touchPrimary;
 
     /* HOW MANY KITTENS ARE IN THE WORLD. Two on a desktop unless somebody
        claims a third slot, which is the whole of the compatibility story: the
@@ -211,6 +238,8 @@ class Game {
 
     this._bindUI();
     this._bindTouchHud();
+    this._bindDebugCorner();
+    this._bindContextLoss();
     window.addEventListener('resize', () => this._resize());
     /* The rotate gate is a function of orientation, and `resize` is the event
        that fires for a rotation on every browser — `orientationchange` is
@@ -234,12 +263,11 @@ class Game {
   _applyTouchMode() {
     const on = this.device.touchPrimary;
     this.touchPad.setVisible(on);
-    /* THE KEYBOARD IS ONLY MERGED WHEN THIS IS A FORCED TEST. On a real phone
-       there is no keyboard to merge and `touchTestKeys` stays false, so nothing
-       about the shipped behaviour depends on the test path. */
-    this.input.attachTouch(on ? this.touchPad : null, {
-      testKeys: on && this.device.override === 'mobile' && !this.device.detected,
-    });
+    /* THE PAD ALWAYS CARRIES WASD AS ITS SECOND SURFACE — see `_freeKeysets` in
+       core/input.js. On a phone there is no keyboard and that costs nothing; on
+       a tablet with one attached it is player 1's other hand, and on this desktop
+       it is how the pad gets tested at all. Player 2 joins on the arrows. */
+    this.input.attachTouch(on ? this.touchPad : null);
     document.body.classList.toggle('touch-ui', on);
     this._updateRotateGate();
   }
@@ -267,6 +295,204 @@ class Game {
     document.getElementById('math-board').addEventListener('click', () => {
       if (!this.device.touchPrimary) return;
       this._toggleMath();
+    });
+  }
+
+  /**
+   * Rename the touch buttons for what they would actually do this frame, and
+   * tell the corner button whether it is a menu or a skip.
+   *
+   * WHY THE LABELS MOVE AT ALL: `interact` is "join a clan" for about ten
+   * seconds of a whole playthrough and "go down" for every minute spent on a
+   * dragon. A fixed CLAN is a label that is wrong more often than it is right,
+   * and a kid reads it, presses it, drops off her dragon and concludes the
+   * button is broken. The GLYPHS never move — those are the pad's letters, and
+   * they are how the HELP page and a real controller stay true.
+   *
+   * READ OFF PLAYER 1, because she is the touch player: `_devices` deals touch
+   * to slot 0 ahead of every pad, so the buttons on screen are hers. In a
+   * two-player game on a tablet, player 2 is on a pad or the arrows and has no
+   * on-screen labels to be wrong about.
+   *
+   * CHEAP ENOUGH TO RUN EVERY FRAME: `setLabels` compares before it writes, so a
+   * frame in which nothing changed touches no DOM at all.
+   */
+  _updateTouchContext() {
+    if (!this.touchPad?.visible) return;
+
+    const scene = this._sceneActive();
+    this.touchPad.setPauseMode(scene ? 'skip' : 'menu');
+    this.touchPad.setSceneMode(scene);
+    if (scene) return;
+
+    const p = this.players[0];
+    if (!p) return;
+
+    /* ON A DRAGON THE WHOLE CLUSTER CHANGES JOB. Jump is climb, interact is
+       dive, and slash is the breath weapon — three buttons whose ground names
+       are all wrong at once, which is why this case is first. */
+    if (p.mount || p.rideAlong) {
+      this.touchPad.setLabels({
+        jump: 'UP', interact: 'DOWN', attack: 'FIRE', mount: 'OFF', sprint: 'BOOST',
+      });
+      return;
+    }
+
+    if (p.pandaMount) {
+      this.touchPad.setLabels({ attack: 'CLAW', mount: 'OFF' });
+      return;
+    }
+
+    /* IN THE RING. `mount` is the feast's EAT during the break and nothing at
+       all during a round — and a button labelled RIDE in an arena with nothing
+       to ride is the clearest case of a label lying. */
+    if (this.tournament?.active) {
+      this.touchPad.setLabels({
+        mount: this.menagerie?.feasting ? 'EAT' : '—',
+        interact: p.power?.dive ? 'DIVE' : 'ACTION',
+      });
+      return;
+    }
+
+    /* STANDING IN A SHRINE RING is the one moment CLAN is the right word, so it
+       is the one moment it is used. Asked with the shrine's OWN radius, the same
+       number the oath itself tests, rather than a second copy of it here. */
+    const labels = {};
+    if (this._shrineUnderfoot(p)) labels.interact = 'CLAN';
+    else if (p.power?.dive) labels.interact = 'DIVE';
+    if (p.power?.ward) labels.mount = 'SHIELD';
+    this.touchPad.setLabels(labels);
+
+    /* THE WARD IS LOCKABLE ONLY WHILE THE ORB IS WORN. A double tap that latches
+       a button which does nothing is worse than no latch at all: she has no way
+       to tell a held control from a broken one. `sprint` is always lockable
+       because sprinting is always a thing you can do. */
+    this.touchPad.setLockable(p.power?.ward ? ['sprint', 'mount'] : ['sprint']);
+
+    /* AND IT UNLATCHES ITSELF WHEN IT RUNS OUT. The shield lasts about two
+       seconds and then stops; a button still glowing over an expired ability is
+       the control lying about the game. `warded` is the same field the damage
+       gate reads, so this cannot disagree with whether she is actually
+       protected. */
+    if (!p.warded && !p.power?.ward) this.touchPad.release('mount');
+  }
+
+  /**
+   * On a phone, the maths overlay follows the Dojo.
+   *
+   * ON THE PHONE ONLY, AND THAT IS THE POINT. On a desktop the overlay is a
+   * toggle a kid leaves on, because there is room for it; on a phone it draws
+   * two live numbers over the character she is steering. The Dojo of the Turning
+   * Circle is where the lesson is, so that is where it appears — walking in
+   * turns it on and walking out turns it off, which is also the clearest
+   * possible statement of what the room is FOR.
+   *
+   * IT YIELDS TO A DELIBERATE TAP. `_mathAuto` remembers whether the last change
+   * was this function's doing; once she taps the board herself, that choice
+   * stands until she leaves the Dojo. A rule that overrode her every frame would
+   * make the board look broken.
+   */
+  _updateMathForDojo() {
+    if (!this.device.touchPrimary || !this.world) return;
+    const dc = this.world.dojoCentre;
+    const p = this.players[0];
+    if (!p) return;
+    const inside = Math.hypot(p.position.x - dc.x, p.position.z - dc.z) < DOJO_VIEW_R;
+    if (inside === this._mathWasInDojo) return;
+    this._mathWasInDojo = inside;
+    /* Silent: `_toggleMath` toasts, and a toast every time she crosses the Dojo
+       boundary is noise about something she can already see happen. */
+    this.mathVisible = inside;
+    for (const q of this.players) {
+      for (const o of q.orbs ?? []) o.setMathVisible(this.mathVisible);
+      (q.wornOrbs ?? []).forEach((o, i) => o.setMathVisible(this.mathVisible && i === 0));
+    }
+  }
+
+  /** The shrine whose ring this player is standing in, or null. */
+  _shrineUnderfoot(p) {
+    for (const sh of this.world?.shrines ?? []) {
+      const d = Math.hypot(p.position.x - sh.position.x, p.position.z - sh.position.z);
+      if (d < sh.radius) return sh;
+    }
+    return null;
+  }
+
+  /**
+   * The GPU taking its context back, which on Android is what "the game
+   * restarted when I switched apps" actually is.
+   *
+   * IT IS NOT A CRASH AND HTTPS DOES NOT FIX IT. Android reclaims the WebGL
+   * context of a backgrounded tab whenever it wants the memory, and this game
+   * holds well over a hundred megabytes of texture — exactly the kind of tab it
+   * looks for. Being served over HTTPS changes nothing. Being INSTALLED as a PWA
+   * helps, because an installed app is a worse eviction candidate than a browser
+   * tab, but that is a reduced likelihood and not a guarantee.
+   *
+   * WITHOUT A HANDLER THE PAGE SIMPLY DIES. `preventDefault` on the loss event
+   * is what tells the browser we intend to recover; without it, restoration is
+   * never offered and the canvas stays blank until something reloads the page.
+   * That silent reload is the bug as reported.
+   *
+   * WHAT THIS DOES NOT DO IS RESTORE THE GAME. Every texture in the scene is a
+   * CanvasTexture built at boot from art that was decoded, keyed and repacked —
+   * re-uploading all of it is a real piece of work, and doing it badly gives a
+   * world with white boxes where the kittens were, which is worse than an honest
+   * restart. So this SAYS what happened and offers the reload rather than
+   * pretending to recover. Prefer a rule that degrades over one that vanishes.
+   */
+  _bindContextLoss() {
+    this.canvas.addEventListener('webglcontextlost', (e) => {
+      // Tells the browser we want a restore event. Without it there is no way back.
+      e.preventDefault();
+      this.renderer.setAnimationLoop(null);
+      const el = document.getElementById('load-text');
+      if (el) {
+        el.innerHTML = 'The phone took the graphics back while you were away.'
+          + '<br><b>Tap to start again.</b>';
+      }
+      const screen = document.getElementById('loading');
+      screen?.classList.remove('hidden');
+      screen?.addEventListener('pointerdown', () => window.location.reload(), { once: true });
+      console.warn('[gfx] WebGL context lost — the OS reclaimed it');
+    });
+    this.canvas.addEventListener('webglcontextrestored', () => {
+      /* Logged rather than acted on — see above. If this ever becomes a real
+         restore path, this is where it starts. */
+      console.warn('[gfx] WebGL context restored — a reload is still needed');
+    });
+  }
+
+  /**
+   * Five taps in the top-left corner opens the debug panel.
+   *
+   * A PHONE HAS NO BACKTICK KEY, so every debug tool in the game — the endgame
+   * unlock, the scene viewer, ending a live round — was unreachable on the one
+   * platform where they are most wanted, because it is the platform that cannot
+   * be poked at from a console.
+   *
+   * FIVE TAPS RATHER THAN A BUTTON, in the corner the HUD leaves empty: this
+   * must be impossible to reach by accident during play. It is the same gesture
+   * Android itself uses for developer options, so it is a shape a grown-up
+   * already knows and a nine-year-old will not stumble into.
+   *
+   * The run resets after a pause, so four stray taps spread over a minute never
+   * add up to a fifth.
+   */
+  _bindDebugCorner() {
+    const el = document.createElement('div');
+    el.id = 'debug-corner';
+    document.body.appendChild(el);
+    let n = 0;
+    let last = 0;
+    el.addEventListener('pointerdown', () => {
+      const now = performance.now();
+      n = now - last > 600 ? 1 : n + 1;
+      last = now;
+      if (n < 5) return;
+      n = 0;
+      this._toggleDebugPanel();
+      this.toast(this._debugOpen ? 'debug panel' : 'debug closed', 0);
     });
   }
 
@@ -902,9 +1128,9 @@ class Game {
       }
       note.classList.remove('warn');
       note.textContent = live
-        ? `Touch pad is ON — ${this.input.touchTestKeys
-          ? 'drag the stick with the mouse, and WASD / Q E F / Space work the buttons.'
-          : 'tap and drag to play.'}`
+        ? 'Touch pad is ON — tap and drag to play, or drag the stick with the '
+          + 'mouse and work the buttons from WASD / Q E F / Space. A second '
+          + 'player joins on the ARROW keys.'
         : 'Touch pad is OFF — keyboard and controllers.';
     };
     tc.value = readOverride();
@@ -2075,6 +2301,8 @@ class Game {
 
   /* ---- the on-screen list, so the keys don't have to be memorised ---- */
 
+  /** What each debug row prints as its key. Separate from the row list so the
+   *  panel reads the same on a phone, where the letter is decoration. */
   _toggleDebugPanel() {
     this._debugOpen = !this._debugOpen;
     this._refreshDebugPanel();
@@ -2089,18 +2317,66 @@ class Game {
       document.body.appendChild(el);
     }
     const ix = this._sceneIx ?? this._scenes.length - 1;
+    /* EVERY ROW CARRIES ITS OWN KEY CODE, and that is what makes this usable on
+       a phone. The panel used to be a printed list of keyboard shortcuts, which
+       is exactly as useful as a printed list of keyboard shortcuts is on a
+       device with no keyboard — the debug tools were desktop-only by accident
+       rather than by decision. A row is now a control: tapping it runs the same
+       `_debugKey` the key runs, so there is one implementation and the two can
+       never drift. */
+    const row = (code, label, on = false) =>
+      `<div class="dbg-row${on ? ' on' : ''}" data-debug="${code}">`
+      + `<span class="k">${DEBUG_KEY_LABEL[code] ?? ''}</span> ${label}</div>`;
+
     el.innerHTML = `
       <b>DEBUG</b> <span class="k">\`</span> closes
-      <div class="dbg-row"><span class="k">7</span> take all seven stars &amp; summon Ryuuseki</div>
-      <div class="dbg-row"><span class="k">8</span> seat both kittens on him</div>
-      <div class="dbg-row"><span class="k">9</span> fire his beams</div>
-      <div class="dbg-row"><span class="k">6</span> THE ENDGAME — ending, arena, orbs, purses</div>
-      <div class="dbg-row"><span class="k">5</span> open the trade / profile screen</div>
-      <div class="dbg-row"><span class="k">4</span> end the live round (feast)</div>
-      <div class="dbg-row"><span class="k">M</span> maths overlay &nbsp; <span class="k">Z</span>/<span class="k">X</span> map zoom</div>
-      <div class="dbg-sep">SCENE VIEWER — <span class="k">-</span>/<span class="k">=</span> choose, <span class="k">0</span> play</div>
-      ${this._scenes.map((s, i) => `
-        <div class="dbg-row${i === ix ? ' on' : ''}">${i === ix ? '&#9656;' : '&nbsp;'} ${s.label}</div>`).join('')}`;
+      ${row('Digit7', 'take all seven stars &amp; summon Ryuuseki')}
+      ${row('Digit8', 'seat both kittens on him')}
+      ${row('Digit9', 'fire his beams')}
+      ${row('Digit6', 'THE ENDGAME — ending, arena, orbs, purses')}
+      ${row('Digit5', 'open the trade / profile screen')}
+      ${row('Digit4', 'end the live round (feast)')}
+      ${row('KeyM', 'maths overlay')}
+      ${row('KeyZ', 'map zoom')}
+      <div class="dbg-sep">SCENE VIEWER — choose, then play</div>
+      ${row('Minus', '&#9664; previous scene')}
+      ${row('Equal', 'next scene &#9654;')}
+      ${row('Digit0', '&#9654; PLAY THIS SCENE')}
+      ${this._scenes.map((sc, i) => `
+        <div class="dbg-row dbg-scene${i === ix ? ' on' : ''}" data-scene="${i}">${
+          i === ix ? '&#9656;' : '&nbsp;'} ${sc.label}</div>`).join('')}
+      <div class="dbg-row dbg-close" data-debug="Backquote">CLOSE</div>`;
+
+    /* Delegated once, on the panel, because `innerHTML` above replaces every row
+       each time this runs — per-row listeners would be rebound constantly and
+       leak. Guarded so it is attached only once. */
+    if (!el._bound) {
+      el._bound = true;
+      el.addEventListener('click', (e) => {
+        const scene = e.target.closest('[data-scene]');
+        if (scene) {
+          this._sceneIx = Number(scene.dataset.scene);
+          this._refreshDebugPanel();
+          return;
+        }
+        const hit = e.target.closest('[data-debug]');
+        if (!hit) return;
+        const code = hit.dataset.debug;
+        if (code === 'Backquote') { this._toggleDebugPanel(); return; }
+        /* TWO OF THESE ARE NOT `_debugKey` ACTIONS AND MUST NOT BE MADE INTO
+           ONE. `M` and `Z` are handled in the keydown listener rather than in
+           `_debugKey`, and the listener calls BOTH — so moving them into
+           `_debugKey` would make the physical key toggle twice and appear dead.
+           They are called here the same way the key calls them. */
+        if (code === 'KeyM') this._toggleMath();
+        else if (code === 'KeyZ') this._zoomMap(0);
+        /* Everything else IS a `_debugKey` action, and goes through the one
+           entry point so a tap cannot do a subtly different thing from the key
+           it is labelled with. */
+        else this._debugKey(code);
+        this._refreshDebugPanel();
+      });
+    }
   }
 
   /* ------------------------- the dragon hunt ----------------------------- */
@@ -3017,6 +3293,8 @@ class Game {
     if (this.touchPad?.visible) {
       const slot = this.input.bindings.findIndex((b) => b.touch);
       if (slot >= 0) this.touchPad.paint(this.input.players[slot]);
+      this._updateTouchContext();
+      this._updateMathForDojo();
     }
 
     // Keep the controller readout live while it's on screen — it's only
@@ -3168,7 +3446,16 @@ class Game {
        Enter was player 2's PAUSE key — pressing it opened the menu instead of
        seating player 3. A pad has a real Start button that is not a letter on
        a keyboard somebody else is also using, so it keeps both jobs. */
-    if (this.input.players.some((p) => p.source === 'gamepad' && p.pressed('start'))) {
+    /* TOUCH COUNTS AS A PAD HERE, and on a phone it is the ONLY way in. There
+       is no Esc key on a touchscreen, so before this the menu — settings,
+       restart, the record board, the character profile, the whole of it — was
+       simply unreachable once the game had started. The reason `start` is
+       gated to a pad at all is that a KEYBOARD's start key had to be freed to
+       mean "join"; a touch pad has a dedicated corner button that is nothing
+       else, exactly like a real Start button, so it keeps both jobs. */
+    if (this.input.players.some(
+      (p) => (p.source === 'gamepad' || p.source === 'touch') && p.pressed('start')
+    )) {
       this.setPaused(!this.paused);
     }
 
@@ -3757,7 +4044,10 @@ class Game {
       tag.style.color = styleCss(i);
       box.append(canvas, tag);
       maps.appendChild(box);
-      this.maps.push(new Minimap(canvas, this.world, i));
+      /* A phone opens zoomed IN — see TOUCH_ZOOM. Tapping the map still cycles
+         all the way out to world zoom; this is only where it starts. */
+      this.maps.push(new Minimap(canvas, this.world, i,
+        { zoom: this.device.touchPrimary ? TOUCH_ZOOM : 1 }));
     }
     this._resize?.();
   }
@@ -3842,7 +4132,12 @@ class Game {
          limit has to be a third number in this same `Math.min`, and it has to be
          a fraction of the pane's HEIGHT: a short pane is the case a
          width-derived size cannot see. */
-      const cap = this.device.touchPrimary ? v.h * 0.34 : Infinity;
+      /* 0.34 -> 0.50 of the pane height on a touch device. The first pass
+         shrank the map to get it out of the way of the hint text; played on a
+         phone it was too small to read at all, which is the opposite failure.
+         Half the height of a 390px landscape phone is ~195px, which is about
+         what a Switch gives its own map. */
+      const cap = this.device.touchPrimary ? v.h * 0.50 : Infinity;
       box.style.width = `${Math.min(300, v.w * 0.42, cap)}px`;
 
       if (this.merged) {
@@ -4234,12 +4529,17 @@ class Game {
       const ryuMid = onRyu?.ridersMidpoint();
 
       const want = ryuMid ? ryuMid.clone() : mid.clone().setY(mid.y + 1.6);
-      if (ft > 0.001) want.lerp(dc, ft);
+      /* Closer in on a phone, and still following her — see DOJO_CENTRE_BIAS. */
+      const bias = this.device.touchPrimary
+        ? DOJO_CENTRE_BIAS.touch : DOJO_CENTRE_BIAS.desktop;
+      if (ft > 0.001) want.lerp(dc, ft * bias);
 
       let wantDist = ryuMid
         ? onRyu.quad * RYU_VIEW
         : THREE.MathUtils.lerp(
-          THREE.MathUtils.clamp(26 + dist * 0.85, 26, 52), 104, ft
+          THREE.MathUtils.clamp(26 + dist * 0.85, 26, 52),
+          this.device.touchPrimary ? DOJO_DIST.touch : DOJO_DIST.desktop,
+          ft
         );
 
       /* THE STAR SHOT AGAIN, BECAUSE THIS IS THE CAMERA THAT DRAWS WHEN

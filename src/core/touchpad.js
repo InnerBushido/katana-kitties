@@ -82,10 +82,51 @@ export const TOUCH_BUTTONS = [
   { action: 'sprint', label: 'RUN', glyph: 'ZR', grid: [1, 3], size: 0.86 },
 ];
 
+/* HUD CONTROLS THE STICK ZONE MUST NOT SWALLOW.
+
+   The overlay sits ABOVE the HUD (z-index 7 over 5) so the buttons are never
+   covered, and the stick's catchment is the whole left half of the screen — so
+   anything the HUD puts in that corner is underneath a surface that claims every
+   pointer landing on it. Tapping the minimap dropped the thumbstick on top of it
+   instead of cycling the zoom, which reads as the map being dead.
+
+   Listed as SELECTORS rather than solved by moving the HUD, because the map
+   wants to be in the top-left corner (it is the only corner two thumbs and a
+   scoreboard leave free) and it is about to get bigger. The overlap is the
+   correct layout; the pointer just has to be handed over.
+
+   `elementsFromPoint` rather than `e.target`, because `e.target` is always the
+   zone — that is the whole problem. */
+const HUD_PASSTHROUGH = '.map-box, #math-board';
+
+/* WHAT EACH BUTTON IS CALLED RIGHT NOW.
+
+   A BUTTON THAT DOES FOUR JOBS MUST NOT BE LABELLED WITH ONE OF THEM. `interact`
+   is "join a clan" for about ten seconds of a whole playthrough and is "go down"
+   for every minute spent on a dragon; calling it CLAN the rest of the time is a
+   label that is wrong more often than it is right, and a nine-year-old reads it
+   and concludes the button is for something she has already done.
+
+   So the label is a function of what the button would actually DO if pressed
+   this frame, and `Game._touchContext` is what works that out — it is the only
+   place that knows whether she is flying, standing in a shrine ring or in the
+   ring. The default is the generic verb rather than the most common one:
+   ACTION, not CLAN.
+
+   `glyph` never changes. It is the pad's face-button letter, and its whole job
+   is to be the same symbol the HELP page and a real controller use. */
+const DEFAULT_LABELS = {
+  jump: 'JUMP', attack: 'SLASH', interact: 'ACTION', mount: 'RIDE', sprint: 'RUN',
+};
+
 /** How far the knob travels before the stick reads full deflection, in CSS px.
  *  Deliberately short: a thumb on glass does not move far, and the deadzone in
  *  `InputManager` already eats the first fifth of it. */
 const STICK_RADIUS = 46;
+
+/** How close two taps have to be to latch a button on. Generous, because the
+ *  hands this is for are small and not fast. */
+const DOUBLE_TAP_MS = 340;
 
 /** Below this fraction of the radius the stick reads as centred. Smaller than
  *  the pad deadzone on purpose — `InputManager.dead` is what actually shapes
@@ -107,6 +148,12 @@ export class TouchPad {
     this._ay = 0;
     /** Where the floating stick base was placed, in client px. */
     this._origin = { x: 0, y: 0 };
+    /** Actions currently LATCHED ON by a double tap. See `_down`. */
+    this._locked = new Set();
+    /** action -> time of its last press, for double-tap detection. */
+    this._lastTap = new Map();
+    /** Which actions a double tap is allowed to latch, set by the game. */
+    this.lockable = new Set(['sprint']);
     this.visible = false;
 
     this._build();
@@ -165,7 +212,11 @@ export class TouchPad {
     this.pause.type = 'button';
     this.pause.tabIndex = -1;
     this.pause.dataset.action = 'start';
-    this.pause.innerHTML = '<span class="tp-glyph">II</span>';
+    /* A HAMBURGER, NOT A PAUSE BAR. On a phone this is the only way into the
+       menu at all — there is no Esc key — so it has to look like a menu. It
+       becomes a fast-forward while a scene is playing; see `setPauseMode`. */
+    this.pause.innerHTML = '<span class="tp-glyph">≡</span>';
+    this._pauseMode = 'menu';
     this.buttons.set('start', this.pause);
 
     this.root.append(this.zone, this.cluster, this.pause);
@@ -194,11 +245,47 @@ export class TouchPad {
     if (!this.visible) return;
     const btn = e.target.closest?.('.tp-btn');
     if (btn) {
-      this._active.set(e.pointerId, { kind: 'button', action: btn.dataset.action });
-      this._held[btn.dataset.action] = true;
+      const action = btn.dataset.action;
+      this._active.set(e.pointerId, { kind: 'button', action });
+      this._held[action] = true;
+
+      /* DOUBLE TAP LATCHES A HOLD, and it exists because two thumbs cannot hold
+         three things. Sprinting while steering and slashing needs the stick, the
+         RUN button and SLASH at once — which is one thumb short on a phone, so
+         sprinting was something you could do OR attack during, never both.
+
+         A second tap inside the window latches it on; a tap after that releases
+         it. Only actions the game has said are lockable, because a latched JUMP
+         or a latched CLAN is a stuck control with no way to read that it is
+         stuck — see `Game._updateTouchContext`, which only offers the Ward
+         while the orb granting it is actually worn. */
+      if (this.lockable.has(action)) {
+        const now = performance.now();
+        const prev = this._lastTap.get(action) ?? -1e9;
+        if (this._locked.has(action)) {
+          this._locked.delete(action);
+          btn.classList.remove('locked');
+        } else if (now - prev < DOUBLE_TAP_MS) {
+          this._locked.add(action);
+          btn.classList.add('locked');
+        }
+        this._lastTap.set(action, now);
+      }
       return;
     }
     if (!this.zone.contains(e.target)) return;
+
+    /* A HUD CONTROL UNDER THIS POINT WINS IT. The stick would otherwise claim
+       every tap in its half of the screen, including the ones meant for the map
+       sitting in the corner. Clicked rather than merely skipped: the HUD's own
+       delegated handlers listen for `click`, and a pointer that is refused here
+       and does nothing at all is the same dead control from the player's side. */
+    const hud = document.elementsFromPoint(e.clientX, e.clientY)
+      .find((el) => el.closest?.(HUD_PASSTHROUGH));
+    if (hud) {
+      hud.closest(HUD_PASSTHROUGH).click();
+      return;
+    }
 
     /* THE BASE GOES WHERE THE THUMB IS. */
     this._active.set(e.pointerId, { kind: 'stick' });
@@ -232,7 +319,8 @@ export class TouchPad {
     const stillHeld = [...this._active.values()].some(
       (o) => o.kind === 'button' && o.action === a.action
     );
-    if (!stillHeld) this._held[a.action] = false;
+    // A latched action stays down with nothing touching it. That is the point.
+    if (!stillHeld && !this._locked.has(a.action)) this._held[a.action] = false;
   }
 
   _moveStick(cx, cy) {
@@ -262,6 +350,8 @@ export class TouchPad {
 
   _releaseAll() {
     this._active.clear();
+    for (const a of this._locked) this.buttons.get(a)?.classList.remove('locked');
+    this._locked.clear();
     for (const a of ACTIONS) this._held[a] = false;
     this._ax = 0;
     this._ay = 0;
@@ -330,6 +420,85 @@ export class TouchPad {
   }
 
   /**
+   * Rename the buttons for what they do right now.
+   *
+   * Takes a PARTIAL map and fills the rest from `DEFAULT_LABELS`, so a caller
+   * describing a dragon only has to say the three that change — and cannot leave
+   * a stale label behind by forgetting one, which is the failure mode of setting
+   * them individually.
+   */
+  setLabels(labels = {}) {
+    for (const [action, el] of this.buttons) {
+      if (action === 'start') continue;
+      const want = labels[action] ?? DEFAULT_LABELS[action];
+      if (!want) continue;
+      const node = el.querySelector('.tp-label');
+      if (node && node.textContent !== want) node.textContent = want;
+    }
+  }
+
+  /**
+   * What the corner button means: pause the game, or skip the scene that is
+   * playing over it.
+   *
+   * THE GLYPH CHANGES WITH THE JOB, because this is the one button whose two
+   * jobs are genuinely different actions rather than two names for one. A pause
+   * bar that skips a cutscene is a control that lies, and it was the only way in
+   * to the menu — so it also has to look like a way in when that is what it is.
+   */
+  setPauseMode(mode) {
+    if (this._pauseMode === mode) return;
+    this._pauseMode = mode;
+    const glyph = this.pause.querySelector('.tp-glyph');
+    glyph.textContent = mode === 'skip' ? '▶▶' : '≡';
+    this.pause.classList.toggle('tp-skip', mode === 'skip');
+    this.pause.setAttribute('aria-label', mode === 'skip' ? 'Skip' : 'Menu');
+  }
+
+  /**
+   * Drop a latch from the outside — the game does this when the thing being
+   * held has run out.
+   *
+   * THE WARD IS THE CASE THIS EXISTS FOR. It lasts about two seconds and then
+   * stops working; a button still glowing "locked" over an ability that has
+   * already expired is a control lying about the state of the game, and she
+   * would keep not-pressing it wondering why nothing happened.
+   */
+  release(action) {
+    if (!this._locked.delete(action)) return;
+    this.buttons.get(action)?.classList.remove('locked');
+    if (![...this._active.values()].some((o) => o.action === action)) {
+      this._held[action] = false;
+    }
+  }
+
+  /** Which actions a double tap may latch. */
+  setLockable(actions) {
+    this.lockable = new Set(actions);
+    // Anything no longer lockable must not stay latched.
+    for (const a of [...this._locked]) if (!this.lockable.has(a)) this.release(a);
+  }
+
+  /** Hide the stick and the face cluster, keeping only the corner button.
+   *  A scene owns the screen; the controls under it are noise she cannot use. */
+  setSceneMode(on) {
+    this.root.classList.toggle('scene', on);
+    if (on) {
+      /* Release first. A thumb still down on JUMP when the scene starts would
+         otherwise stay held for the whole cutscene with nothing on screen. */
+      for (const [id, a] of [...this._active]) {
+        if (a.kind !== 'button' || a.action !== 'start') {
+          this._active.delete(id);
+          if (a.kind === 'button') this._held[a.action] = false;
+        }
+      }
+      this._ax = 0;
+      this._ay = 0;
+      this.stick.classList.remove('live');
+    }
+  }
+
+  /**
    * The pad, in the same shape a gamepad profile returns.
    *
    * @param {object=} opts
@@ -344,7 +513,7 @@ export class TouchPad {
       cy: 0,
       dpad: [0, 0],
     };
-    for (const a of ACTIONS) out[a] = this._held[a];
+    for (const a of ACTIONS) out[a] = this._held[a] || this._locked.has(a);
 
     /* THE KEYBOARD IS ADDITIVE, NEVER A REPLACEMENT. On a phone `keyset` is
        null and this loop does not run; in test mode it means the mouse can hold
