@@ -13,7 +13,21 @@
 
 import { styleCss } from '../core/palette.js';
 
-const PAD = 46;
+/* MARGIN ROUND THE ARCHIPELAGO AT WORLD ZOOM, AS A FRACTION OF THE BOX.
+
+   IT WAS A FLAT 46 DEVICE PIXELS AND THAT QUIETLY BROKE WHEN THE MAP SHRANK.
+   46px of a 300px desktop canvas is 15% and looks like a margin; the same 46px
+   of a 174px phone canvas is 26%, and the whole archipelago was drawn into two
+   thirds of the width of a box it was supposed to fill. Measured: 0.66 of the
+   width and 0.74 of the height, which is what "too zoomed out" actually was —
+   not the zoom level, the padding.
+
+   A FRACTION SCALES; A CONSTANT DOES NOT. The floor is what keeps the labels
+   ("Town", "Bamboo", "Dojo") from being clipped on the smallest box, because
+   those are drawn at their marks and reach past them — the margin exists for
+   the words, not for the islands. */
+const PAD_FRAC = 0.055;
+const PAD_MIN = 10;
 
 /** Zoom steps. 1 fits the whole archipelago; the rest close in on a player. */
 export const ZOOMS = [1, 2.2, 4.5];
@@ -115,7 +129,17 @@ export class Minimap {
     const spanX = b.maxX - b.minX;
     const spanZ = b.maxZ - b.minZ;
     // One uniform scale, so the archipelago keeps its real shape.
-    const fit = Math.min((w - PAD) / spanX, (h - PAD) / spanZ);
+    /* CLAMPED SO THE MARGIN CAN NEVER EXCEED THE BOX. A canvas smaller than
+       `PAD_MIN` — which happens for a frame whenever the map is laid out before
+       it has a size, and would happen for real on a very small pane — makes
+       `w - pad` NEGATIVE, and a negative scale draws the whole archipelago
+       mirrored and inside out. The old flat 46 had the same hole and a wider
+       one. Half the box is the most a margin may ever eat. */
+    const pad = Math.min(
+      Math.max(PAD_MIN, Math.min(w, h) * PAD_FRAC),
+      Math.min(w, h) * 0.5
+    );
+    const fit = Math.min((w - pad) / spanX, (h - pad) / spanZ);
     this.scale = fit * this.zoom;
 
     if (this.zoom <= 1 || !centre) {
