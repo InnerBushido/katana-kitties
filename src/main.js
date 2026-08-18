@@ -4132,12 +4132,19 @@ class Game {
          limit has to be a third number in this same `Math.min`, and it has to be
          a fraction of the pane's HEIGHT: a short pane is the case a
          width-derived size cannot see. */
-      /* 0.34 -> 0.50 of the pane height on a touch device. The first pass
-         shrank the map to get it out of the way of the hint text; played on a
-         phone it was too small to read at all, which is the opposite failure.
-         Half the height of a 390px landscape phone is ~195px, which is about
-         what a Switch gives its own map. */
-      const cap = this.device.touchPrimary ? v.h * 0.50 : Infinity;
+      /* A THIRD OF THE PANE HEIGHT ON A TOUCH DEVICE, and the journey to that
+         number is worth recording because two of the three steps were wrong.
+
+         It started at 0.34 to get the map out from under the hint text. Played
+         on a phone it was unreadable, so it went to 0.50 — and that was fixing
+         the wrong thing: the map was illegible because it opened at WORLD zoom,
+         drawing eight islands into 200px, not because the box was small. Once it
+         opened zoomed in (see TOUCH_ZOOM) the same box was perfectly readable
+         and merely enormous, eating half the screen it is drawn over.
+
+         So it is back to a third. The lesson is that a HUD element that cannot
+         be read has two possible causes and only one of them is its size. */
+      const cap = this.device.touchPrimary ? v.h * 0.33 : Infinity;
       box.style.width = `${Math.min(300, v.w * 0.42, cap)}px`;
 
       if (this.merged) {
