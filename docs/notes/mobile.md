@@ -550,3 +550,100 @@ ranking is not ambiguous — the board is why the island exists and the map is a
 glance. The map crosses to top-right (under the pause button, the last free
 edge: both bottom corners are thumbs and top-centre is the scoreboard) and drops
 to 24% of the pane, since the Dojo is a flat disc with nothing to navigate to.
+
+---
+
+## The third pass: eight things, and three of them were the same bug
+
+The touch controls and the Dojo were fixed. What came back next was mostly
+layout, plus two screens that turned out to be **completely unusable on a
+phone** for the same structural reason.
+
+### The two screens nobody could operate
+
+`.overlay` is `z-index: 20` and `#touch-pad` is `7`. **A full-screen panel
+covers the on-screen controls.** A pad player never notices, because a real
+controller is not covered by anything — so the profile screen and the dealer
+were shipped reading `pad.pressed('jump')` for every action while, on the device
+they were being played on, JUMP was drawn underneath the panel.
+
+The debug panel had the mirror of it: its rows are deliberately built as
+controls ("tapping it runs the same `_debugKey` the key runs") and the container
+carried `pointer-events: none`, so no tap ever arrived. On a device with no
+backquote key that made the debug tools a printed list of keyboard shortcuts.
+
+Both fixes are the same shape — **the container stays inert, the things you aim
+at catch pointers** — and for the profile screen the actions the pad would press
+now exist as real buttons that call the same `_offerHere` / `_confirmHere` /
+`_buyHere` / `_sellHere`. Nothing re-implements a rule, which matters most for
+the one rule this screen exists to protect: changing your offer clears your
+confirm. Verified through the tap path, not just the pad path.
+
+### "There is no button to leave that screen"
+
+Measured before touching it: the help line naming the way out rendered at
+**y=493 on a 400px screen**. `.panel` is one scrolling block and the help is the
+last thing in it, so the single sentence explaining how to leave was the one
+thing that could never be on screen.
+
+The panel is a flex column now — cards scroll, title and footer are pinned — and
+there is a real CLOSE button on every device. `min-height: 0` on the scrolling
+child is the part that is easy to omit and silently restores the old behaviour.
+
+### The cutscene box was mostly empty box
+
+The text element was **241px wide inside a 620px box** — 39% used — because
+`.cs-body` had no `flex: 1` and shrink-wrapped to its longest line. On top of
+that the script carries hard line breaks authored for a ~42-character desktop
+box, and `pre-wrap` faithfully reproduced them on a phone: four short rows in a
+box wide enough for two.
+
+Those breaks existed to stop the typewriter re-wrapping as it typed. **The
+better fix removes the reason for them**: the full line is in the DOM from the
+first frame with the untyped tail merely `visibility: hidden`, so it still takes
+up space and the layout is final before a single character appears. Nothing can
+reflow, because nothing moves. `reflow()` then turns single breaks into spaces
+(double breaks are a deliberate beat and survive), and the line uses the width
+it is given.
+
+| | before | after |
+| --- | --- | --- |
+| text width in the box | 241px (39%) | 659px (87%) |
+| typical beat, box height | 90px | 52px |
+| letterbox bars on mobile | 7vh top and bottom | none |
+| world visible | — | **+88px, 22% of a phone screen** |
+
+### The rest
+
+**The Dojo camera** is 25% closer (`DOJO_DIST` 104 → 78) and less steep
+(`DOJO_PITCH` 1.16 → 1.00). Steep is what the diagram wants — closer to straight
+down means the painted circle is closer to a circle — and steep is also what
+made the kitten look like a sheet of paper, because she is a billboard and her
+on-screen height is `cos(pitch)`. At 1.16 that is 0.40: two fifths of her height,
+seen almost edge-on. At 1.00 she is **35% taller** and the circle's squash goes
+from 8% to 16%, which still reads as a circle. Both camera sites now share one
+constant; they had already drifted, with `dist: 104` hard-coded at one and
+`DOJO_DIST` read at the other.
+
+**The board's text was 5.5px**, and no amount of resizing the box was going to
+fix it: a canvas stretched to a CSS width renders a number at `authored px *
+(cssWidth / canvasWidth)`, and 1280 in a 260px box is a factor of 0.20. Widening
+the box to 320 only reaches 6.8px. A phone gets a **640x400 canvas and a stacked
+layout** instead, which is a factor of 0.50 — the same authored text lands at
+**12px**. The two layouts are genuinely different shapes, so they are two
+methods sharing the wave plot rather than one method with a scale factor.
+
+**The face cluster** was spread wide enough that RUN sat a reach from JUMP.
+JUMP came down 1.18 → 1.06, the gap 0.13 → 0.07 of a unit, and `CLUSTER_EDGE`
+6 → 16 so the outermost button is not against the bezel.
+
+**The minimap** went to the very corner and up 25% (`0.33` → `0.41` of pane
+height); inside the Dojo it is back to `0.33` rather than the `0.24` it was
+briefly given, which was an over-correction — the board had just moved to the
+top-left and the map is on the other side of the screen entirely.
+
+**Toasts** were being drawn under the dragon-ball tally, which shares their strip
+and is the one that *appears* — so the toast announcing a star was covered by the
+counter that had arrived to report it. `has-balls` on `#hud` moves them down.
+A class rather than a sibling selector because `#toasts` comes before `#balls`
+in the markup and no combinator reaches backwards.

@@ -69,7 +69,28 @@ const DOJO_VIEW_R = 52;  // inside this, the camera frames the unit circle
    58 is about 44% closer. It loses the outer edge of the circle at the extremes
    and keeps every number legible, which is the right trade on a screen held at
    arm's length. */
-const DOJO_DIST = { desktop: 104, touch: 58 };
+const DOJO_DIST = { desktop: 78, touch: 44 };
+
+/* HOW STEEPLY THE DOJO CAMERA LOOKS DOWN, and it is a compromise between two
+   things that genuinely fight.
+
+   Steep is what the diagram wants. This is graph paper drawn on the floor, and
+   the closer the camera is to straight down the closer the painted circle is to
+   a circle rather than an ellipse.
+
+   Steep is also what makes the kitten look like a sheet of paper. She is a
+   BILLBOARD — a flat quad standing up in the world — so how tall she reads on
+   screen is `cos(pitch)`, and at the old 1.16 that is 0.40: she was drawn at two
+   fifths of her height, seen almost edge-on, which is exactly the "piece of
+   paper" in the report.
+
+   1.00 is where the trade sits. `cos` goes 0.40 -> 0.54, so she is about a third
+   taller on screen; `sin` goes 0.92 -> 0.84, so the circle's squash goes from 8%
+   to 16% and still reads as a circle. Both numbers are why this is one named
+   constant and not two literals in two files — the per-player camera and the
+   merged rig each set it, and they were already drifting: one said `dist: 104`
+   inline while the other read DOJO_DIST. */
+const DOJO_PITCH = 1.0;
 
 /* HOW MUCH THE DOJO SHOT GIVES UP ON FOLLOWING THE PLAYER. On a desktop the
    camera goes all the way to the circle's centre (1) because the whole circle is
@@ -586,7 +607,9 @@ class Game {
 
     setLoad('Painting the unit circle…');
     await frame();
-    this.dojo = new MathDojo(this.scene, this.world.dojoCentre);
+    this.dojo = new MathDojo(this.scene, this.world.dojoCentre, {
+      compact: this.device.touchPrimary,
+    });
     this.mathBoard = document.getElementById('math-board');
     this.mathBoard.appendChild(this.dojo.boardCanvas);
 
@@ -2569,7 +2592,15 @@ class Game {
   _updateBallHud() {
     const el = document.getElementById('balls');
     if (!el) return;
-    el.classList.toggle('hidden', this.ballsHeld === 0 && !this.ryu);
+    const up = !(this.ballsHeld === 0 && !this.ryu);
+    el.classList.toggle('hidden', !up);
+    /* TOASTS HAVE TO GET OUT FROM UNDER IT. On a phone both live in the strip
+       under the scoreboard, and the tally is the one that APPEARS — so the
+       moment a first star was picked up, the toast saying so was drawn behind
+       the counter that had just arrived to cover it. The class is on `#hud`
+       rather than solved with a sibling selector because `#toasts` comes BEFORE
+       `#balls` in the markup, so no sibling combinator can reach backwards. */
+    document.getElementById('hud')?.classList.toggle('has-balls', up);
     el.textContent = this.ryu
       ? 'RYUUSEKI IS HERE'
       : `★ ${this.ballsHeld} / ${BALL_COUNT}`;
@@ -3673,7 +3704,18 @@ class Game {
          world x/z axes up with the screen, so the diagram reads exactly like
          the graph paper it's teaching. */
       const cave = near ? null : this.world.grottoAt(p.position.x, p.position.z);
-      if (near) p.setFocus({ centre: dc, dist: 104, pitch: 1.16, yaw: 0 });
+      if (near) {
+        p.setFocus({
+          centre: dc,
+          /* Was a hard-coded 104 while the merged rig read DOJO_DIST — so a
+             solo kitten and a pair standing in the same room were framed by two
+             different numbers, and changing "the Dojo distance" moved only one
+             of them. */
+          dist: this.device.touchPrimary ? DOJO_DIST.touch : DOJO_DIST.desktop,
+          pitch: DOJO_PITCH,
+          yaw: 0,
+        });
+      }
       else if (cave && !p.mount) {
         /* Centred on HER, not on the room. Framing the whole grotto would put
            the star on screen from the doorway and hand her the maze for
@@ -4152,11 +4194,20 @@ class Game {
 
          So it is back to a third. The lesson is that a HUD element that cannot
          be read has two possible causes and only one of them is its size. */
-      /* AND SMALLER AGAIN INSIDE THE DOJO, which is the one island where the
-         map is the least useful thing on screen: it is a single flat disc with
-         nothing to navigate to, and the board next to it is the reason anyone
-         flew here. A third of the pane crowds a corner it does not need. */
-      const cap = this.device.touchPrimary ? v.h * (mathUp ? 0.24 : 0.33) : Infinity;
+      /* A BIGGER MAP, AND THE DOJO NO LONGER GETS A SPECIAL SMALL ONE.
+
+         0.33 was picked when the map shared the top-left corner with nothing and
+         had to stay out of the hint text (see the note above, which is the
+         history). It is the only thing you navigate by, it is read at a glance
+         on a moving phone, and 0.41 is about a quarter bigger for a corner that
+         is otherwise empty.
+
+         Inside the Dojo it drops back to that old 0.33 rather than the 0.24 it
+         was briefly given. 0.24 was over-corrected: the board had just moved to
+         the top-left and the map was being kept out of its way, but the map is
+         on the other side of the screen entirely, and the only thing it has to
+         clear there is the face cluster — which it does at 0.33 with room. */
+      const cap = this.device.touchPrimary ? v.h * (mathUp ? 0.33 : 0.41) : Infinity;
       box.style.width = `${Math.min(300, v.w * 0.42, cap)}px`;
 
       if (this.merged) {
@@ -4186,9 +4237,14 @@ class Game {
           box.style.top = '58px';
           box.style.bottom = 'auto';
         } else {
-          box.style.left = thumbs ? '10px' : 'auto';
+          /* HARD INTO THE CORNER ON A PHONE. It sat at 46px to stay under the
+             scoreboard — but the scoreboard is CENTRED and the map is at the
+             left edge, so at any party size the two only meet if a name grows
+             far enough to reach across, and a name clipping the corner of a map
+             is a better trade than giving up the corner permanently. */
+          box.style.left = thumbs ? '8px' : 'auto';
           box.style.right = thumbs ? 'auto' : '14px';
-          box.style.top = thumbs ? '46px' : 'auto';
+          box.style.top = thumbs ? `${Math.round(v.h * 0.02) + 8}px` : 'auto';
           box.style.bottom = thumbs ? 'auto' : '14px';
         }
       } else {
@@ -4647,7 +4703,7 @@ class Game {
       rig.dist += (wantDist - rig.dist) * Math.min(1, dt * 4);
 
       let yaw = THREE.MathUtils.lerp(-Math.PI * 0.25, 0, ft);
-      let pitch = ring ? ring.pitch : THREE.MathUtils.lerp(0.66, 1.16, ft);
+      let pitch = ring ? ring.pitch : THREE.MathUtils.lerp(0.66, DOJO_PITCH, ft);
 
       /* THE GROTTO AGAIN, HERE, BECAUSE THIS IS THE CAMERA THAT DRAWS WHEN
          THEY ARE TOGETHER — and inside a 21-unit room they always are. The

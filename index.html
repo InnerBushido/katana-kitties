@@ -477,7 +477,20 @@
       <div class="panel kd-panel">
         <h2 id="kd-title">CHARACTER PROFILE</h2>
         <div id="kd-body" class="kd-body"></div>
-        <p id="kd-help" class="kd-help"></p>
+        <!-- The footer is PINNED, not scrolled with the cards. On a landscape
+             phone the help line rendered at y=493 on a 400px screen, so the one
+             sentence that says how to leave was the one thing you could never
+             read — which is exactly how "there is no way out of this screen"
+             happens. -->
+        <div class="kd-foot">
+          <p id="kd-help" class="kd-help"></p>
+          <!-- Deliberately NOT `.menu-btn`. MenuNav lists `panel-profile` and
+               finds no items on purpose: a trade needs both girls to agree on
+               their own side, and one merged cursor cannot express that. This
+               button is a plain tap target and nothing navigates to it. -->
+          <div id="kd-actions" class="kd-actions"></div>
+          <button id="kd-close" class="kd-close" type="button">CLOSE</button>
+        </div>
       </div>
     </div>
 

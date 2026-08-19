@@ -75,7 +75,11 @@ import { ACTIONS } from './input.js';
  *  `grid` is a row/column in the right-hand cluster; `size` is a multiplier on
  *  the base button diameter. JUMP is biggest because it is pressed most. */
 export const TOUCH_BUTTONS = [
-  { action: 'jump', label: 'JUMP', glyph: 'A', grid: [2, 2], size: 1.18 },
+  /* JUMP CAME DOWN FROM 1.18. It is still the biggest — it is pressed most —
+     but at the new unit size 1.18 made it a target the neighbouring buttons had
+     to be pushed away from, and RUN ended up a thumb-stretch from JUMP. A
+     smaller centre pulls the whole diamond in. */
+  { action: 'jump', label: 'JUMP', glyph: 'A', grid: [2, 2], size: 1.06 },
   { action: 'attack', label: 'SLASH', glyph: 'X', grid: [2, 1], size: 1.0 },
   { action: 'interact', label: 'CLAN', glyph: 'B', grid: [2, 3], size: 0.86 },
   { action: 'mount', label: 'RIDE', glyph: 'Y', grid: [1, 2], size: 0.86 },
@@ -149,8 +153,12 @@ const STICK_REST_Y = 0.62;
  *  The mirror is exact until the cluster is wider than the room the reflected
  *  point leaves it — the cluster is three buttons across and the stick is one
  *  circle, so on a narrow phone the true mirror would hang off the screen. This
- *  is the clamp, and it is the only place the symmetry is allowed to give. */
-const CLUSTER_EDGE = 6;
+ *  is the clamp, and it is the only place the symmetry is allowed to give.
+ *
+ *  16 rather than 6: at 6 the outermost button sat visually ON the screen edge,
+ *  which reads as clipped and puts a thumb against the bezel. It is a floor, not
+ *  the usual value — the mirror normally lands well inside it. */
+const CLUSTER_EDGE = 16;
 
 export class TouchPad {
   /**

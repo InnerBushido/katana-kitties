@@ -85,6 +85,84 @@ export class ProfileScreen {
     this.body = document.getElementById('kd-body');
     this.title = document.getElementById('kd-title');
     this.help = document.getElementById('kd-help');
+    this.actions = document.getElementById('kd-actions');
+    this._bindTaps();
+  }
+
+  /**
+   * The same screen, reachable with a thumb.
+   *
+   * DELEGATED ON THE PANEL, because `_paint` replaces the whole card markup
+   * whenever anything changes — per-element listeners would be rebound on every
+   * repaint and leak. Same pattern, and same reason, as the debug panel.
+   *
+   * EVERY TAP GOES THROUGH THE FUNCTION THE PAD ALREADY CALLS. A tap on an orb
+   * is "move this side's cursor there, then press JUMP"; a tap on +/- is the
+   * stick being pushed. Nothing here re-implements a trade rule, so the rules
+   * that protect a girl from being traded against her will — picking a new orb
+   * clears her confirm, changing the points clears it too — hold for a thumb
+   * without being written down a second time.
+   */
+  _bindTaps() {
+    if (!this.el || this.el._bound) return;
+    this.el._bound = true;
+    this.el.addEventListener('click', (e) => {
+      if (!this.mode) return;
+      const close = e.target.closest('#kd-close');
+      if (close) { this.close(); return; }
+
+      const act = e.target.closest('[data-act]');
+      if (act) {
+        const i = Number(act.dataset.side);
+        if (act.dataset.act === 'offer') this._offerHere(i);
+        else if (act.dataset.act === 'confirm') this._confirmHere(i);
+        else if (act.dataset.act === 'buy') this._buyHere(i);
+        else if (act.dataset.act === 'sell') this._sellHere(i);
+        this._sig = '';           // the flash line and the cards both moved
+        this._paint();
+        return;
+      }
+
+      const step = e.target.closest('[data-pts]');
+      if (step) {
+        this._bumpPoints(Number(step.dataset.side), Number(step.dataset.pts));
+        this._sig = '';
+        this._paint();
+        return;
+      }
+
+      const cell = e.target.closest('[data-slot]');
+      if (!cell) return;
+      const index = Number(cell.dataset.side);
+      const side = this.sides[index];
+      if (!side) return;
+      side.i = Number(cell.dataset.slot);
+      /* A tap on the points row only moves the cursor there — the steppers are
+         what change the number. Anywhere else it selects, which for a trade
+         means offering, and `_offerHere` is the same body JUMP runs. */
+      if (!this._onPoints(index)) this._offerHere(index);
+      this._sig = '';
+      this._paint();
+    });
+  }
+
+  /**
+   * Move a side's points offer by one step, clamped to what she actually has.
+   *
+   * Split out of the stick handler so the on-screen steppers cannot drift from
+   * it — in particular the CLEARED CONFIRM, which is a consent rule and not a
+   * detail: a girl who agreed to hand over 200 and then dialled it to 800 has
+   * not agreed to that.
+   */
+  _bumpPoints(index, dir) {
+    const side = this.sides[index];
+    if (!side) return;
+    const was = side.points;
+    side.points = Math.max(0, Math.min(
+      this.game.players[index]?.score ?? 0,
+      side.points + Math.sign(dir) * POINT_STEP
+    ));
+    if (side.points !== was) { side.ready = false; this.game.audio?.play('menu'); }
   }
 
   get active() { return this.mode !== null; }
@@ -167,15 +245,9 @@ export class ProfileScreen {
       side.pointHold = (side.pointHold ?? 0) - dt;
       if (side.pointHold <= 0) {
         side.pointHold = side.points === 0 ? REPEAT_DELAY : REPEAT_RATE;
-        const was = side.points;
-        side.points = Math.max(0, Math.min(
-          this.game.players[index]?.score ?? 0,
-          side.points + Math.sign(pad.mx) * POINT_STEP
-        ));
-        /* Moving the offer CLEARS HER CONFIRM, the same rule picking a
-           different orb follows: a girl who agreed to hand over 200 and then
-           dialled it to 800 has not agreed to that. */
-        if (side.points !== was) { side.ready = false; this.game.audio?.play('menu'); }
+        /* Shared with the on-screen steppers — see `_bumpPoints`, which also
+           carries the rule that moving the offer clears her confirm. */
+        this._bumpPoints(index, pad.mx);
       }
     } else {
       side.pointHold = 0;
@@ -183,7 +255,7 @@ export class ProfileScreen {
 
     if (pad.pressed('start')) { this.close(); return; }
 
-    if (this.mode === 'shop') this._shopButtons(index, pad, side);
+    if (this.mode === 'shop') this._shopButtons(index, pad);
     else this._tradeButtons(index, pad, side);
   }
 
@@ -191,42 +263,8 @@ export class ProfileScreen {
     const player = this.game.players[index];
     const owned = player.powerOrbs;
 
-    if (pad.pressed('jump') && this._onPoints(index)) {
-      /* JUMP on the points row is a no-op by design: the amount IS the offer,
-         so there is nothing to toggle. Zero means offering none. */
-      this._say(side.points > 0
-        ? `${player.name} is offering ${side.points} points`
-        : 'Push the stick LEFT and RIGHT to offer points');
-      this.game.audio?.play('menu');
-    } else if (pad.pressed('jump')) {
-      if (!owned.length) {
-        this._say(`${player.name} has nothing to offer yet`);
-        this.game.audio?.play('deny');
-      } else {
-        /* Picking a new orb CLEARS HER CONFIRM. A girl who has said yes to
-           swapping her Ward and then moves the offer to her Gale has not
-           agreed to that trade, and letting the tick survive the change is
-           precisely the "traded against her will" the brief rules out. */
-        side.offer = side.offer === side.i ? null : side.i;
-        side.ready = false;
-        this.game.audio?.play('menu');
-      }
-    }
-
-    if (pad.pressed('attack')) {
-      /* SOMEBODY has to be offering something — asked of every side rather
-         than of the other one, because with four kittens on this screen the
-         two who are trading are whichever two confirm. */
-      const anything = this.sides.slice(0, this.game.players.length)
-        .some((sd) => sd.offer !== null || sd.points > 0);
-      if (!anything) {
-        this._say('Somebody has to offer something first');
-        this.game.audio?.play('deny');
-      } else {
-        side.ready = !side.ready;
-        this.game.audio?.play(side.ready ? 'score' : 'menu');
-      }
-    }
+    if (pad.pressed('jump')) this._offerHere(index);
+    if (pad.pressed('attack')) this._confirmHere(index);
 
     if (pad.pressed('interact')) {
       if (side.ready) side.ready = false;
@@ -234,6 +272,77 @@ export class ProfileScreen {
       else if (side.points > 0) side.points = 0;
       else this.close();
     }
+  }
+
+  /** JUMP, or a tap on an orb: offer the row this side's cursor is on. */
+  _offerHere(index) {
+    const player = this.game.players[index];
+    const side = this.sides[index];
+    if (!player || !side) return;
+    const owned = player.powerOrbs;
+    if (this._onPoints(index)) {
+      /* The points row is a no-op by design: the amount IS the offer, so there
+         is nothing to toggle. Zero means offering none. */
+      this._say(side.points > 0
+        ? `${player.name} is offering ${side.points} points`
+        : 'Use − and + to offer points');
+      this.game.audio?.play('menu');
+      return;
+    }
+    if (!owned.length) {
+      this._say(`${player.name} has nothing to offer yet`);
+      this.game.audio?.play('deny');
+      return;
+    }
+    /* Picking a new orb CLEARS HER CONFIRM. A girl who has said yes to swapping
+       her Ward and then moves the offer to her Gale has not agreed to that
+       trade, and letting the tick survive the change is precisely the "traded
+       against her will" the brief rules out. */
+    side.offer = side.offer === side.i ? null : side.i;
+    side.ready = false;
+    this.game.audio?.play('menu');
+  }
+
+  /** ATTACK, or a tap on CONFIRM: this side says yes. */
+  _confirmHere(index) {
+    const side = this.sides[index];
+    if (!side) return;
+    /* SOMEBODY has to be offering something — asked of every side rather than
+       of the other one, because with four kittens on this screen the two who
+       are trading are whichever two confirm. */
+    const anything = this.sides.slice(0, this.game.players.length)
+      .some((sd) => sd.offer !== null || sd.points > 0);
+    if (!anything) {
+      this._say('Somebody has to offer something first');
+      this.game.audio?.play('deny');
+      return;
+    }
+    side.ready = !side.ready;
+    this.game.audio?.play(side.ready ? 'score' : 'menu');
+  }
+
+  /** JUMP, or a tap on BUY. */
+  _buyHere(index) {
+    const player = this.game.players[index];
+    const K = this.game.kotodama;
+    const id = ORB_IDS[this.sides[index].i];
+    const why = K.buyRefusal(player, id);
+    if (why) { this._say(why); this.game.audio?.play('deny'); }
+    else { K.buy(player, id); this._say(`Bought ${ORB_BY_ID[id].name}`); }
+  }
+
+  /** ATTACK, or a tap on SELL. */
+  _sellHere(index) {
+    const player = this.game.players[index];
+    const K = this.game.kotodama;
+    const id = ORB_IDS[this.sides[index].i];
+    if (!player.powerOrbs.includes(id)) {
+      this._say(`${player.name} has no ${ORB_BY_ID[id].name} to sell`);
+      this.game.audio?.play('deny');
+      return;
+    }
+    K.sell(player, id);
+    this._say(`Sold ${ORB_BY_ID[id].name} for ${K.sellPrice}`);
   }
 
   /**
@@ -301,25 +410,9 @@ export class ProfileScreen {
     for (const s of this.sides) s.reset();
   }
 
-  _shopButtons(index, pad, side) {
-    const player = this.game.players[index];
-    const K = this.game.kotodama;
-    const id = ORB_IDS[side.i];
-
-    if (pad.pressed('jump')) {
-      const why = K.buyRefusal(player, id);
-      if (why) { this._say(why); this.game.audio?.play('deny'); }
-      else { K.buy(player, id); this._say(`Bought ${ORB_BY_ID[id].name}`); }
-    }
-    if (pad.pressed('attack')) {
-      if (!player.powerOrbs.includes(id)) {
-        this._say(`${player.name} has no ${ORB_BY_ID[id].name} to sell`);
-        this.game.audio?.play('deny');
-      } else {
-        K.sell(player, id);
-        this._say(`Sold ${ORB_BY_ID[id].name} for ${K.sellPrice}`);
-      }
-    }
+  _shopButtons(index, pad) {
+    if (pad.pressed('jump')) this._buyHere(index);
+    if (pad.pressed('attack')) this._sellHere(index);
     if (pad.pressed('interact')) this.close();
   }
 
@@ -378,6 +471,50 @@ export class ProfileScreen {
         : 'JUMP <b>offer this orb</b> · ATTACK <b>confirm</b> · INTERACT <b>back</b>'
           + ' — <b>both</b> must confirm';
     }
+    this._paintActions();
+  }
+
+  /**
+   * The footer's own buttons, and they are not a convenience.
+   *
+   * THIS PANEL COVERS THE TOUCH PAD. `.overlay` is z-index 20 and `#touch-pad`
+   * is 7, so while this screen is up every on-screen button is underneath it —
+   * JUMP, ATTACK and INTERACT are all drawn and all unreachable. On a phone that
+   * left no way to offer, no way to confirm and no way out, which is exactly
+   * what was reported. A pad player never noticed because a real controller is
+   * not covered by anything.
+   *
+   * So the actions the pad would press live in the footer as real buttons, and
+   * they call the same `_offerHere` / `_confirmHere` / `_buyHere` / `_sellHere`
+   * the pad calls. Built only where they are needed: on a desktop the help line
+   * already names the keys and a second row of buttons would be clutter.
+   */
+  _paintActions() {
+    if (!this.actions) return;
+    if (!this.game.device?.touchPrimary) { this.actions.innerHTML = ''; return; }
+    const i = this._touchSide();
+    const sig = `${this.mode}|${i}|${this.sides[i]?.ready}`;
+    if (sig === this._actionSig) return;
+    this._actionSig = sig;
+    const btn = (act, label, cls = '') =>
+      `<button type="button" class="kd-act ${cls}" data-act="${act}" data-side="${i}">${label}</button>`;
+    this.actions.innerHTML = this.mode === 'shop'
+      ? btn('buy', 'BUY') + btn('sell', 'SELL')
+      : btn('offer', 'OFFER') + btn('confirm', this.sides[i]?.ready ? 'UNCONFIRM' : 'CONFIRM', 'go');
+  }
+
+  /**
+   * Which side the on-screen pad drives.
+   *
+   * Asked of the input layer rather than assumed to be 0: the touch pad is
+   * seated in a slot like any other device, and on a tablet with a keyboard
+   * player 1 can be the keyboard. Falls back to 0, because a screen that
+   * refuses to work is worse than one that guesses the only seat a phone has.
+   */
+  _touchSide() {
+    const b = this.game.input?.bindings ?? [];
+    const i = b.findIndex((x) => x?.touch);
+    return i >= 0 ? i : 0;
   }
 
   _signature() {
@@ -412,7 +549,12 @@ export class ProfileScreen {
         side.offer === k ? 'offered' : '',
       ].filter(Boolean).join(' ');
       const style = spec ? `style="--orb:#${spec.color.toString(16).padStart(6, '0')}"` : '';
-      slots.push(`<div class="${on}" ${style}><span>${spec ? spec.kanji : ''}</span></div>`);
+      /* `data-side` / `data-slot` are what make this reachable with a thumb. A
+         tap moves that side's cursor and offers the orb — the same two things
+         the stick and JUMP do, routed through the same code, so a phone cannot
+         end up with subtly different trade rules from a pad. */
+      slots.push(`<div class="${on}" ${style} data-side="${index}" data-slot="${k}">`
+        + `<span>${spec ? spec.kanji : ''}</span></div>`);
     }
 
     const here = owned[side.i] ? ORB_BY_ID[owned[side.i]] : null;
@@ -424,8 +566,16 @@ export class ProfileScreen {
     /* The points row, drawn as a row rather than as a slot: it is not one of
        the eight, and putting it in the grid would say it is. */
     const onPts = this._onPoints(index);
-    const pointsRow = `<div class="kd-points${onPts ? ' cursor' : ''}">`
-      + `<span>POINTS</span><b>${side.points}</b>`
+    /* THE STEPPERS ARE TOUCH-ONLY IN PRACTICE AND HARMLESS EVERYWHERE. On a pad
+       the points row says "◀ ▶ to change" and the stick does it; a thumb has no
+       stick to push while the trade screen is up, so the row carries its own
+       two buttons. They call the same `_bumpPoints` the stick does. */
+    const pointsRow = `<div class="kd-points${onPts ? ' cursor' : ''}" `
+      + `data-side="${index}" data-slot="${this._rowCount(index) - 1}">`
+      + `<span>POINTS</span>`
+      + `<button class="kd-step" type="button" data-side="${index}" data-pts="-1">−</button>`
+      + `<b>${side.points}</b>`
+      + `<button class="kd-step" type="button" data-side="${index}" data-pts="1">+</button>`
       + `<span class="kd-dim">${onPts ? '◀ ▶ to change' : ''}</span></div>`;
 
     const offered = [];
@@ -458,7 +608,8 @@ export class ProfileScreen {
       const mine = p.powerOrbs.filter((x) => x === spec.id).length;
       const cls = ['kd-row', k === side.i ? 'cursor' : '', stock ? '' : 'out']
         .filter(Boolean).join(' ');
-      return `<div class="${cls}" style="--orb:#${spec.color.toString(16).padStart(6, '0')}">
+      return `<div class="${cls}" style="--orb:#${spec.color.toString(16).padStart(6, '0')}"
+        data-side="${p.index}" data-slot="${k}">
         <div class="kd-dot"><span>${spec.kanji}</span></div>
         <div class="kd-row-main">
           <b>${spec.name}</b> — ${spec.label}

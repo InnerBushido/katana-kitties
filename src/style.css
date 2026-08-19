@@ -881,7 +881,16 @@ html, body {
   image-rendering: auto;
 }
 
-.cs-body { min-width: 0; }
+/* `flex: 1` IS WHAT MAKES THE BOX WORTH ITS SIZE. Without it the body shrinks
+   to its longest line, so the text sat in a 241px column inside a 620px box and
+   wrapped early — the box looked full and was 39% used. `min-width: 0` is the
+   companion that lets a flex item actually shrink below its content. */
+.cs-body { flex: 1 1 auto; min-width: 0; }
+
+/* The tail of the line that has not been typed yet. HIDDEN, NOT ABSENT: it still
+   takes up space, which is what fixes the layout before the first character
+   appears so nothing re-wraps while it types. See Cutscene's saidEl/restEl. */
+.cs-rest { visibility: hidden; }
 
 #cs-name {
   font-family: 'Bangers', cursive;
@@ -900,7 +909,13 @@ html, body {
      was written, rather than rewrapping mid-word as the box types itself
      out — which makes text jump around while you are reading it. */
   white-space: pre-wrap;
-  min-height: 4.4em;
+  /* A FLOOR SO THE BOX DOES NOT RESIZE BETWEEN BEATS, not a reservation for the
+     longest line. It was 4.4em, sized for the old hard-wrapped script; now that
+     a line reflows to the full width, most beats are one or two rows and the
+     rest of that was empty box sitting over the world. A rare long beat still
+     grows past this — the box is bottom-anchored, so it grows upward, away from
+     the character it is covering. */
+  min-height: 3.1em;
   text-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
 }
 
@@ -954,9 +969,22 @@ html, body {
   border: 1px solid #2f6b4c;
   border-radius: 6px;
   padding: 8px 12px;
+  /* THE CONTAINER STAYS INERT, THE ROWS DO NOT. `_refreshDebugPanel` builds
+     every row as a control — "tapping it runs the same `_debugKey` the key
+     runs" — and delegates a click handler for exactly that. `pointer-events:
+     none` on the panel meant no click ever arrived, so on a phone, which has no
+     backquote, the debug tools were a printed list of keyboard shortcuts you
+     could read and not use. Same split as `.tp-cluster`: the box lets pointers
+     through, the things you aim at catch them. */
   pointer-events: none;
   max-width: 92vw;
 }
+#debug-panel .dbg-row { pointer-events: auto; cursor: pointer; }
+/* A thumb is not a mouse pointer. The rows are a 12px monospace list, which is
+   fine to click and far too fine to tap, so on a touch device they get a real
+   target height and spacing without changing the desktop panel at all. */
+body.touch-ui #debug-panel { font-size: 13px; max-width: 84vw; }
+body.touch-ui #debug-panel .dbg-row { padding: 5px 4px; line-height: 1.5; }
 #debug-panel .dbg-row { white-space: nowrap; opacity: 0.72; }
 #debug-panel .dbg-row.on { opacity: 1; color: #ffd98a; }
 #debug-panel .dbg-sep {
@@ -1376,7 +1404,90 @@ html, body {
    "which of these two glowing boxes is me" is a question the screen must never
    make anybody ask. Everything else here is the game's existing paper-and-ink
    panel; only the two accents are new. */
-.kd-panel { width: min(920px, 94vw); }
+/* A COLUMN, SO THE FOOTER CANNOT SCROLL AWAY.
+
+   `.panel` is `overflow: auto`, which made the whole screen one scrolling block
+   — and the help line is the LAST thing in it. On a landscape phone that put the
+   sentence naming the way out at y=493 on a 400px screen: the one instruction
+   you could never reach was the one telling you how to leave. Measured, and it
+   is the whole of "there is no button to leave that screen".
+
+   So the panel is a flex column, the CARDS scroll, and the title and footer are
+   pinned. `min-height: 0` on the body is the part that is easy to leave out and
+   silently breaks it — a flex child will not shrink below its content without
+   it, so the body would push the footer off exactly as before. */
+.kd-panel {
+  width: min(920px, 94vw);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.kd-panel > #kd-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.kd-panel > h2 { flex: 0 0 auto; }
+.kd-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.kd-foot .kd-help { flex: 1 1 200px; margin-top: 12px; }
+
+/* CLOSE is always there, on every device. A pad player has INTERACT and the
+   help line says so; a mouse had nothing, and a thumb had nothing AND could not
+   reach the pad underneath (see ProfileScreen._paintActions). */
+.kd-close,
+.kd-act {
+  flex: 0 0 auto;
+  margin-top: 12px;
+  padding: 9px 16px;
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 0 4px 0 var(--ink);
+  font-family: 'Bangers', cursive;
+  font-size: 16px;
+  letter-spacing: 1.4px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.kd-close:active,
+.kd-act:active { transform: translateY(4px); box-shadow: 0 0 0 var(--ink); }
+.kd-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.kd-act.go { background: var(--gold); }
+
+/* The points steppers. Only ever tapped, but styled for both so a mouse can
+   use them too — a control that exists on one device and not the other is how
+   the two drift. */
+.kd-step {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: 7px;
+  background: var(--paper);
+  font-weight: 900;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ink);
+  cursor: pointer;
+}
+.kd-step:active { background: var(--gold); }
+
+/* A thumb needs a bigger target than a mouse, and a landscape phone has 400px
+   of height to give — so the cards get tighter while the things you press get
+   larger. Both directions at once, which is the point. */
+body.touch-ui .kd-panel { padding: 12px 14px 14px; max-height: 92vh; }
+body.touch-ui .kd-panel > h2 { font-size: 20px; margin: 0 0 8px; }
+body.touch-ui .kd-body { gap: 10px; }
+body.touch-ui .kd-card { padding: 8px 10px 10px; }
+body.touch-ui .kd-foot .kd-help { font-size: 11px; margin-top: 8px; padding-top: 8px; }
+body.touch-ui .kd-close,
+body.touch-ui .kd-act { margin-top: 8px; padding: 11px 18px; font-size: 17px; }
+body.touch-ui .kd-step { width: 34px; height: 34px; font-size: 19px; }
+/* The orb slots are what she actually aims at. */
+body.touch-ui .kd-slot { min-width: 42px; min-height: 42px; }
+body.touch-ui .kd-row { padding: 9px 6px; }
 .kd-body { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 @media (max-width: 720px) { .kd-body { grid-template-columns: 1fr; } }
 
@@ -1689,9 +1800,10 @@ html, body {
   display: grid;
   grid-template-columns: repeat(3, auto);
   grid-template-rows: repeat(2, auto);
-  /* Scales with the buttons — a fixed 8px between 84px circles reads as one
-     welded lump, and a kid's thumb needs the gap to tell them apart. */
-  gap: calc(var(--tp-unit) * 0.13);
+  /* Scales with the buttons, but TIGHTER than it was. At 0.13 the diamond was
+     spread far enough that RUN sat a reach away from JUMP; the gap only has to
+     be wide enough that a thumb lands on one button rather than between two. */
+  gap: calc(var(--tp-unit) * 0.07);
   align-items: center;
   justify-items: center;
   pointer-events: none;     /* the BUTTONS take pointers, not the gaps */
@@ -1851,7 +1963,13 @@ body.touch-ui #math-board {
 body.touch-ui #maps { pointer-events: auto; }
 body.touch-ui .map-box { pointer-events: auto; }
 
+/* The toast strip sits under the scoreboard. 62px clears the scoreboard alone;
+   when the dragon-ball tally is up it occupies that same strip (top 44, about
+   19 tall) and the toast announcing the star you just picked up was drawn
+   underneath the counter that had appeared to report it. `has-balls` is set in
+   `Game._updateBallHud`. */
 body.touch-ui #toasts { bottom: auto; top: calc(env(safe-area-inset-top) + 62px); }
+body.touch-ui #hud.has-balls #toasts { top: calc(env(safe-area-inset-top) + 72px); }
 
 /* The HELP page's touch section, and the desktop keyboard sections, are each
    shown only where they can be acted on. Telling a kid on a phone to press Right
@@ -1988,15 +2106,21 @@ body.touch-ui .hint { display: none; }
    flush to the top, because the scoreboard is centred and the two would touch on
    a narrow phone. `z-index` stays below the scoreboard so a toast is never
    hidden behind maths. */
+/* AND IT TAKES THE WHOLE CORNER, not the space under the scoreboard. It was
+   dropped 42px to clear the scoreboard, which is centred — and at this width the
+   board ends well left of where the scoreboard starts, so those 42px were being
+   given away for a collision that does not happen. Reclaiming them is what pays
+   for the extra size: 260 -> 320 wide, about 23%, and every number on the canvas
+   scales with it. */
 body.touch-ui #math-board {
   left: calc(env(safe-area-inset-left) + 8px);
   right: auto;
   transform: none;
-  top: calc(env(safe-area-inset-top) + 42px);
+  top: calc(env(safe-area-inset-top) + 8px);
   bottom: auto;
-  width: min(260px, 34vw);
+  width: min(320px, 38vw);
   z-index: 1;
-  opacity: 0.92;
+  opacity: 0.94;
 }
 body.touch-ui .mb-title { font-size: 9px; letter-spacing: 1px; }
 
@@ -2009,19 +2133,33 @@ body.touch-ui .mb-title { font-size: 9px; letter-spacing: 1px; }
    desktop rule always measured from the top of the bar (`9vh + 26px`) and the
    mobile override quietly dropped that, which is what put the text on top of
    both. The bar is 7vh here, so this is the same rule with the same shape. */
+/* NO LETTERBOX BARS ON A PHONE. They are a cinema affordance that costs 14% of
+   a 400px-tall screen — 7vh top and bottom — to say "this is a cutscene", which
+   the dialogue box and the frozen controls already say. On a desktop they frame
+   a big window; here they were eating the world the camera is flying through,
+   which is the entire thing the scene exists to show. */
+body.touch-ui .cs-bar { display: none; }
+
+/* WIDER, SHORTER, AND ON THE FLOOR. With the bars gone there is no 7vh band to
+   sit above, so the box goes to the bottom edge and the text gets the width it
+   was always being given credit for. */
 body.touch-ui #cs-box {
-  width: min(92vw, 620px);
-  padding: 8px 12px;
-  gap: 10px;
-  bottom: calc(7vh + 16px);
+  width: min(96vw, 760px);
+  padding: 7px 11px;
+  gap: 9px;
+  bottom: calc(env(safe-area-inset-bottom) + 12px);
 }
+/* Roughly a quarter off, on top of what reflowing the script already saved. */
+body.touch-ui #cs-text { min-height: 2.3em; }
+body.touch-ui #cs-name { font-size: 15px; margin-bottom: 2px; }
 
 /* The progress track rides the top edge of the bottom bar, under the box rather
    than through it. */
+/* The track rides the very bottom now that there is no bar for it to sit on. */
 body.touch-ui #cs-track {
-  left: 12px;
-  right: 12px;
-  bottom: calc(7vh + 4px);
+  left: 10px;
+  right: 10px;
+  bottom: calc(env(safe-area-inset-bottom) + 4px);
 }
 /* `flex-basis` TOO, OR THE PORTRAIT COMES OUT SKEWED. The base rule is
    `flex: 0 0 96px`, and a flex item's basis wins over `width` on the main axis —

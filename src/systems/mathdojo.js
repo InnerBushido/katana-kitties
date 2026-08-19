@@ -60,7 +60,9 @@ const SIN_C = 0x8bff9a;             // opposite / sine
 const VEC_C = 0x7fe3ff;             // the radius vector
 
 export class MathDojo {
-  constructor(scene, centre) {
+  constructor(scene, centre, opts = {}) {
+    /* A PHONE GETS A DIFFERENT BOARD, NOT A SMALLER ONE. See `_buildBoard`. */
+    this.compact = !!opts.compact;
     this.scene = scene;
     this.centre = centre.clone();
     this.theta = 0;
@@ -296,10 +298,31 @@ export class MathDojo {
 
   /* ------------------------------- board -------------------------------- */
 
+  /* THE CANVAS SIZE IS THE FONT SIZE, AND THAT IS THE WHOLE PROBLEM ON A PHONE.
+
+     The board is a canvas stretched to a CSS width, so what a number actually
+     measures on screen is `authored px * (cssWidth / canvasWidth)`. At 1280 wide
+     in a 320px box that factor is 0.25: the row labels are authored at 27px and
+     land at SEVEN. Widening the box does almost nothing — going 260 -> 320 moves
+     5.5px to 6.8px — because the ratio is what is wrong, not the box.
+
+     So a phone gets a canvas a THIRD the width and a layout to match: 640 wide
+     in the same 320px box is a factor of 0.5, and the same authored 26px reads
+     at 13. It is also stacked rather than side-by-side, because the readout and
+     the waves each want the full width when the full width is 320 real pixels.
+
+     Not "detect and scale": the two layouts are genuinely different shapes, and
+     a single layout that tried to be both is how you get a wave graph 40 pixels
+     tall with the axis captions on top of it. */
   _buildBoard() {
     this.boardCv = document.createElement('canvas');
-    this.boardCv.width = 1280;
-    this.boardCv.height = 720;
+    this.boardCv.width = this.compact ? 640 : 1280;
+    /* 400, not 430, and the 30 is not cosmetic: at 430 the board's bottom-left
+       corner reached 10px into where the thumbstick rests. The stick draws over
+       it (pad z-index 7, board 1), so the wave graph's axis captions were the
+       thing underneath. Measured against the resting circle rather than guessed
+       — see TouchPad.STICK_REST_Y. */
+    this.boardCv.height = this.compact ? 400 : 720;
     this.boardCanvas = this.boardCv;
     this.boardCtx = this.boardCv.getContext('2d');
 
@@ -434,7 +457,134 @@ export class MathDojo {
 
   /* --------------------------- the wave board ---------------------------- */
 
+  /** Both layouts print the same six facts; only the arrangement differs. */
+  _boardRows(c, s, deg, rad) {
+    return [
+      ['θ', `${deg.toFixed(1)}°`, '#ffe27a'],
+      ['θ in radians', `${rad.toFixed(3)}  (${(rad / Math.PI).toFixed(2)}π)`, '#ffe27a'],
+      ['cos θ  →  x', c.toFixed(3), '#ffb347'],
+      ['sin θ  →  y', s.toFixed(3), '#8bff9a'],
+      ['point on circle', `( ${c.toFixed(2)} , ${s.toFixed(2)} )`, '#7fe3ff'],
+      ['cos²θ + sin²θ', (c * c + s * s).toFixed(3), '#ffffff'],
+    ];
+  }
+
+  /**
+   * The two sine waves with a playhead on the current angle.
+   *
+   * Taken out of `_drawBoard` when the phone got its own arrangement, because
+   * this part is identical in both and is the fiddly half — a second copy would
+   * be the one that drifted.
+   */
+  _boardWaves(g, gx, gy, gw, gh, c, s, rad, fs) {
+    const midY = gy + gh / 2;
+    const amp = gh / 2 - Math.max(8, fs * 0.5);
+
+    g.strokeStyle = 'rgba(255,255,255,0.14)';
+    g.lineWidth = 1;
+    for (let i = 0; i <= 8; i++) {
+      const x = gx + (i / 8) * gw;
+      g.beginPath(); g.moveTo(x, gy); g.lineTo(x, gy + gh); g.stroke();
+    }
+    for (const v of [-1, -0.5, 0, 0.5, 1]) {
+      const y = midY - v * amp;
+      g.beginPath(); g.moveTo(gx, y); g.lineTo(gx + gw, y); g.stroke();
+    }
+    g.strokeStyle = 'rgba(255,255,255,0.5)';
+    g.beginPath(); g.moveTo(gx, midY); g.lineTo(gx + gw, midY); g.stroke();
+
+    const curve = (fn, color) => {
+      g.strokeStyle = color;
+      g.lineWidth = Math.max(2, fs * 0.14);
+      g.beginPath();
+      for (let i = 0; i <= 240; i++) {
+        const a = (i / 240) * Math.PI * 2;
+        const x = gx + (a / (Math.PI * 2)) * gw;
+        const y = midY - fn(a) * amp;
+        if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+      }
+      g.stroke();
+    };
+    curve(Math.cos, '#ffb347');
+    curve(Math.sin, '#8bff9a');
+
+    const phx = gx + (rad / (Math.PI * 2)) * gw;
+    g.strokeStyle = '#ffe27a';
+    g.lineWidth = Math.max(2, fs * 0.1);
+    g.setLineDash([8, 7]);
+    g.beginPath(); g.moveTo(phx, gy); g.lineTo(phx, gy + gh); g.stroke();
+    g.setLineDash([]);
+
+    const dot = (val, color) => {
+      const y = midY - val * amp;
+      g.fillStyle = color;
+      g.beginPath(); g.arc(phx, y, Math.max(5, fs * 0.4), 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#141026';
+      g.lineWidth = Math.max(2, fs * 0.14);
+      g.stroke();
+    };
+    dot(c, '#ffb347');
+    dot(s, '#8bff9a');
+
+    g.fillStyle = 'rgba(255,255,255,0.6)';
+    g.font = `bold ${Math.round(fs * 0.8)}px Nunito, sans-serif`;
+    g.textAlign = 'center';
+    ['0', 'π/2', 'π', '3π/2', '2π'].forEach((t, i) => {
+      g.fillText(t, gx + (i / 4) * gw, gy + gh + fs * 1.15);
+    });
+    g.textAlign = 'right';
+    g.fillText('+1', gx - 6, midY - amp + fs * 0.3);
+    g.fillText('0', gx - 6, midY + fs * 0.3);
+    g.fillText('-1', gx - 6, midY + amp + fs * 0.3);
+
+    g.textAlign = 'left';
+    g.fillStyle = '#ffb347';
+    g.font = `bold ${Math.round(fs)}px Nunito, sans-serif`;
+    g.fillText('cos θ', gx + fs * 0.5, gy + fs * 1.1);
+    g.fillStyle = '#8bff9a';
+    g.fillText('sin θ', gx + fs * 3.4, gy + fs * 1.1);
+  }
+
+  /**
+   * The phone board: everything stacked, everything twice the relative size.
+   *
+   * The readout is what she actually reads while walking — the waves are the
+   * picture that makes it make sense — so the readout gets the top of the box
+   * and the full width, at a size that survives being a third of a phone.
+   */
+  _drawBoardTall(c, s, deg) {
+    const g = this.boardCtx;
+    const W = this.boardCv.width;
+    const H = this.boardCv.height;
+    const rad = this.theta;
+
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = '#141026';
+    g.fillRect(0, 0, W, H);
+
+    g.fillStyle = '#ffe27a';
+    g.font = 'bold 34px Bangers, sans-serif';
+    g.textAlign = 'left';
+    g.fillText('SIN & COS — THE SAME ANGLE', 18, 34);
+
+    const rows = this._boardRows(c, s, deg, rad);
+    rows.forEach(([k, v, col], i) => {
+      const y = 78 + i * 34;
+      g.fillStyle = 'rgba(255,255,255,0.55)';
+      g.font = 'bold 24px Nunito, sans-serif';
+      g.textAlign = 'left';
+      g.fillText(k, 18, y);
+      g.fillStyle = col;
+      g.font = 'bold 27px Nunito, sans-serif';
+      g.textAlign = 'right';
+      g.fillText(v, W - 18, y);
+    });
+
+    this._boardWaves(g, 46, 282, W - 64, 88, c, s, rad, 20);
+  }
+
   _drawBoard(c, s, deg) {
+    if (this.compact) { this._drawBoardTall(c, s, deg); return; }
     const g = this.boardCtx;
     const W = this.boardCv.width;
     const H = this.boardCv.height;

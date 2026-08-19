@@ -82,6 +82,25 @@ const VOICE = {
 const ease = (t) => t * t * (3 - 2 * t);           // smoothstep
 const lerp = (a, b, t) => a + (b - a) * t;
 
+/**
+ * Turn an authored line into one that can use the width it is given.
+ *
+ * THE SCRIPT'S SINGLE LINE BREAKS ARE TYPOGRAPHY, NOT MEANING. They were placed
+ * to make a pleasing shape in the box the writer had — around 42 characters —
+ * and carrying them onto a phone produced four rows of half-empty box. A single
+ * break becomes a space and the line re-wraps to whatever room it actually has.
+ *
+ * A DOUBLE break is different: that is a deliberate beat between two thoughts
+ * ("...since you could walk." / "Good. Go and find them.") and it survives.
+ * `pre-wrap` in the stylesheet is still what renders it.
+ */
+export function reflow(text) {
+  return String(text)
+    .split(/\n{2,}/)
+    .map((para) => para.replace(/\s*\n\s*/g, ' ').trim())
+    .join('\n\n');
+}
+
 export class Cutscene {
   /**
    * @param {object} deps { scene, world, players, renderer, audio, leaders,
@@ -113,6 +132,26 @@ export class Cutscene {
     this.boxEl = document.getElementById('cs-box');
     this.nameEl = document.getElementById('cs-name');
     this.textEl = document.getElementById('cs-text');
+    /* TWO SPANS, AND THE HIDDEN ONE IS THE WHOLE TRICK.
+
+       The typewriter used to assign `textContent = text.slice(0, n)`, so the
+       element grew a character at a time and every word re-wrapped as it went.
+       The old defence against that was authoring hard line breaks into the
+       script and setting `pre-wrap` — which stops the reflow but fixes the line
+       length at whatever the writer's box was, and that is why a phone showed
+       four short rows in a box wide enough for two.
+
+       Instead the FULL line is in the DOM from the first frame, with the
+       not-yet-typed tail merely `visibility: hidden`. Hidden text still takes up
+       space, so the layout is final before a single character appears: nothing
+       can reflow, because nothing moves. Two inline spans rather than two
+       elements, so a word split across the boundary is still one word to the
+       line breaker. */
+    this.saidEl = document.createElement('span');
+    this.restEl = document.createElement('span');
+    this.restEl.className = 'cs-rest';
+    this.textEl.textContent = '';
+    this.textEl.append(this.saidEl, this.restEl);
     this.portraitEl = document.getElementById('cs-portrait');
     this.fadeEl = document.getElementById('cs-fade');
     this.barEl = document.getElementById('cs-progress');
@@ -320,7 +359,9 @@ export class Cutscene {
     const b = this.beats[this.beat];
     this.t = 0;
     this.typed = 0;
-    this.textEl.textContent = '';
+    this.flow = reflow(b.text);
+    this.saidEl.textContent = '';
+    this.restEl.textContent = this.flow;
 
     const art = b.speaker === 'elder' ? this.elderArt
       : b.speaker ? this.leaders.find((l) => l.clan.id === b.speaker)?.art : null;
@@ -460,8 +501,8 @@ export class Cutscene {
       ? this.voiceEl.currentTime
       : this.t;
     const want = Math.floor(clock * (b.typeRate ?? TYPE_SPEED));
-    if (want > this.typed && this.typed < b.text.length) {
-      const next = Math.min(b.text.length, want);
+    if (want > this.typed && this.typed < this.flow.length) {
+      const next = Math.min(this.flow.length, want);
       /* Blips ONLY when nobody recorded this line. A blip track under an
          actual voice is the worst of both. One per character is a machine gun
          either way, so it's every third letter. */
@@ -469,7 +510,8 @@ export class Cutscene {
         this.audio?.voice(this.pitch * (0.94 + Math.random() * 0.12));
       }
       this.typed = next;
-      this.textEl.textContent = b.text.slice(0, this.typed);
+      this.saidEl.textContent = this.flow.slice(0, this.typed);
+      this.restEl.textContent = this.flow.slice(this.typed);
     }
 
     // --- progress, so a kid can see how much is left
