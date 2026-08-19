@@ -152,9 +152,25 @@ because half a 6-inch screen is not a pane.
 | 3 | touch as a device, on-screen stick and buttons | **done** |
 | 4 | landscape HUD pass, safe areas, orientation gate, PWA manifest | **done** |
 
-**All four are verified in the browser**, but **none of it has run on real
-hardware** — the S24 Ultra test predates every line of it, and that is the next
-thing to do. What was checked: the pad reads a mouse drag and a keyboard, the
+**All four have now run on a Galaxy S24 Ultra, and the touch controls worked.**
+Three things came back from that session; all three are fixed, and the reasoning
+is in [docs/notes/mobile.md](docs/notes/mobile.md) under *The second play
+session*.
+
+1. **Flying to the Dojo killed the tab** — the maths UI appeared, the frame rate
+   collapsed, and the page died a few seconds later on every quality setting.
+   The five live readouts were minting a never-freed canvas texture per distinct
+   string: **972 MB per lap of the circle**, measured. Labels that change now own
+   their canvas (`Label`'s `live` option) instead of using the shared cache. The
+   Kotodama orb and the power orb had the identical bug and are fixed too.
+2. **The face cluster was too small and too far into the corner.** It is now
+   centred on the reflection of the stick's resting point — same height, same
+   inset — and about 40% bigger.
+3. **The sin/cos board covered the middle of the screen**, which in the Dojo is
+   the diagram itself. Board to top-left; the minimap crosses to top-right and
+   shrinks.
+
+What was checked before that: the pad reads a mouse drag and a keyboard, the
 kitten actually runs, a second pointer on JUMP holds while the stick is released,
 `pointercancel` releases a held button, the map and maths-board taps work, and a
 desktop with the setting on `auto` is byte-for-byte unchanged (two kittens, WASD
@@ -178,7 +194,8 @@ sized off its pane's *width* (`v.w * 0.42` — 354px of a 390px-tall phone) and 
 **inline** by `_drawMaps`, so no stylesheet rule could touch it; it is now capped
 against the pane's *height* and moved to the top-left, because both bottom
 corners belong to thumbs. The hint is centred in the gap between them and clipped
-to two lines.
+to two lines. *(Inside the Dojo it gives that corner to the sin/cos board and
+takes the top-right instead — see the note above.)*
 
 **Later, and wanted:** *phone as a controller* — four people each holding a phone,
 playing on a tablet or a TV. That is a second device feeding a `PadState` over

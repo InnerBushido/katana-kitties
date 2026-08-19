@@ -60,6 +60,9 @@ import { splitLayout } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
 import { postsFor } from '../src/world/build.js';
+import { MathDojo, DOJO_RADIUS } from '../src/systems/mathdojo.js';
+import { Orb } from '../src/entities/orb.js';
+import { Label, labelCacheStats } from '../src/core/label.js';
 import {
   MODES, MODE_BY_ID, modesFor, handicapFor, HANDICAP_MAX, NO_SIDE, ROUND_LIMIT,
 } from '../src/systems/tournament.js';
@@ -4670,6 +4673,121 @@ console.log('\n--- the three power moves ---');
   });
   ok('forcing desktop on a real phone turns touch off',
     off.touchPrimary === false && off.defaultParty === 2 && off.detected === true);
+}
+
+/* ===========================================================================
+   LIVE TEXT DOES NOT ALLOCATE.
+
+   THIS SECTION EXISTS BECAUSE THE DOJO CRASHED PHONES AND NOTHING CAUGHT IT.
+
+   `makeLabelTexture` caches by content and never evicts, which is correct for
+   text written once and catastrophic for text rewritten every frame. The Dojo's
+   point readout is `( cos , sin )` to two places — 201 x 201 reachable strings —
+   so one lap of the circle minted 568 supersampled canvases at 1.71 MB each and
+   held all of them. Measured in a browser: 972 MB per lap from one label. The
+   tab lagged for a few seconds and died, on every quality setting, because
+   quality has nothing to do with it.
+
+   Nothing about that is visible on screen until it is fatal, and no check here
+   was watching allocation — every existing assertion asks whether a number came
+   out right. So these ask a different question: does playing the lesson ALLOCATE
+   anything? A canvas is the honest unit, because it is what the leak was made
+   of, and `document.createElement` is the only door to one.
+   =========================================================================== */
+{
+  console.log('\n--- the dojo allocates nothing while you walk it ---');
+
+  /* Count every canvas the game asks for. Wrapping the stub rather than
+     counting textures, because a texture is what three.js sees and a CANVAS is
+     what the browser has to find memory for — and the second is the one that
+     killed the tab. */
+  const realCreate = globalThis.document.createElement;
+  let created = 0;
+  globalThis.document.createElement = (...a) => { created += 1; return realCreate(...a); };
+
+  const dojo = new MathDojo(new THREE.Scene(), world.dojoCentre);
+  const dc = world.dojoCentre;
+  /* Enough of a player for the Dojo: it reads `mount`, `position` and `name`.
+     Blossom because it is the longest kitten name, which is what the hint
+     label's reserve has to cover. */
+  const walker = {
+    mount: null, name: 'Blossom',
+    position: new THREE.Vector3(dc.x + DOJO_RADIUS, dc.y, dc.z),
+  };
+
+  const liveLabels = [dojo.lblTheta, dojo.lblCos, dojo.lblSin, dojo.lblPoint, dojo.lblHint];
+  ok('every readout in the Dojo owns its canvas rather than the shared cache',
+    liveLabels.every((l) => !!l._live));
+
+  const arcBefore = dojo.arc.geometry;
+  const cacheBefore = labelCacheStats().entries;
+  const afterBuild = created;
+
+  /* One full lap at 60fps — the exact motion that took the tab down, and long
+     enough that a per-frame allocation cannot hide inside it. */
+  const widest = new Map(liveLabels.map((l) => [l, 0]));
+  for (let i = 0; i < 600; i++) {
+    const a = (i / 600) * Math.PI * 2;
+    walker.position.set(
+      dc.x + Math.cos(a) * DOJO_RADIUS, dc.y, dc.z + Math.sin(a) * DOJO_RADIUS
+    );
+    dojo.update(1 / 60, [walker]);
+    for (const l of liveLabels) widest.set(l, Math.max(widest.get(l), l._text.length));
+  }
+
+  ok('a lap of the circle creates no canvases at all', created - afterBuild === 0,
+    `${created - afterBuild}`);
+  ok('...and adds nothing to the shared label cache',
+    labelCacheStats().entries === cacheBefore);
+  /* The arc used to dispose and rebuild its geometry every frame for the same
+     reason nobody noticed: it still drew correctly. */
+  ok('...and the swept arc reuses one buffer instead of rebuilding it',
+    dojo.arc.geometry === arcBefore
+    && dojo.arc.geometry.drawRange.count <= dojo.arc.geometry.attributes.position.count);
+
+  /* A RESERVE THAT IS TOO SHORT CLIPS THE TEXT, and that is the one way a live
+     label can be wrong where the cached one could not — so it is checked against
+     what the Dojo ACTUALLY printed over the lap, not against a guess. Length
+     rather than pixels because the headless canvas cannot measure, and these are
+     all the same string shape with the digits varying. */
+  for (const l of liveLabels) {
+    ok(`"${l._opts.live}" is wide enough for every value it showed`,
+      l._opts.live.length >= widest.get(l), `${widest.get(l)} chars`);
+  }
+
+  /* The idle line is longer than any driven one, and it is the reserve — so it
+     has to be checked against a real player standing there too. */
+  dojo.update(1 / 60, []);
+  ok('...including the line shown with nobody on the circle',
+    dojo.lblHint._opts.live.length >= dojo.lblHint._text.length);
+
+  /* THE SAME BUG, TWICE MORE. The Kotodama orb and the power orb print the same
+     kind of live trig, and the power orb's is `cos X  sin Y` — the identical
+     combinatorial shape, on up to sixteen orbs at once. */
+  const orb = new Orb({});
+  ok('the Kotodama orb\u2019s readouts are live too',
+    !!orb.thetaLabel._live && !!orb.cosLabel._live && !!orb.sinLabel._live);
+  const orbArc = orb.arc.geometry;
+  const beforeOrb = created;
+  const centre = new THREE.Vector3(0, 0, 0);
+  for (let i = 0; i < 240; i++) orb.update(1 / 60, centre);
+  ok('...and an orbiting orb allocates nothing either', created - beforeOrb === 0,
+    `${created - beforeOrb}`);
+  ok('...reusing its arc buffer as well', orb.arc.geometry === orbArc);
+
+  const po = new PowerOrb(POWER_ORBS[0], 0, 1);
+  ok('the power orb\u2019s cos/sin readout is live', !!po.readout._live);
+
+  /* A CACHED LABEL MUST STILL CACHE. The fix would be worthless if it had
+     quietly turned every static label into its own canvas — that is the same
+     leak wearing the other hat. */
+  const twiceA = new Label('WORLD CHECK STATIC', { size: 40 });
+  const beforeSecond = created;
+  const twiceB = new Label('WORLD CHECK STATIC', { size: 40 });
+  ok('static text still shares one texture between two labels',
+    twiceA.mat.map === twiceB.mat.map && created - beforeSecond === 0);
+
+  globalThis.document.createElement = realCreate;
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

@@ -3,9 +3,35 @@ import * as THREE from 'three';
 /* ---------------------------------------------------------------------------
    Crisp world-space text. Canvas textures on camera-facing quads — used for
    the axis numbers, angle labels and live readouts in the Unit Circle Dojo.
+
+   TWO KINDS OF LABEL, and picking the wrong one is how the Dojo used to kill a
+   phone. See `CACHE` and `live` below; the short version is that text written
+   once shares a cached texture, and text that changes every frame owns one.
 --------------------------------------------------------------------------- */
 
+/* CONTENT-KEYED AND DELIBERATELY NEVER EVICTED.
+
+   Every entry here is text that is written once and read for the rest of the
+   session — axis numbers, clan names, the gate sign, the falling kana. Those
+   are shared by reference across materials, so disposing one to make room
+   would blank whatever else still had it mapped. "Never evict" is the price of
+   "share freely", and it is the right trade *for static text*.
+
+   It is catastrophic for text that changes every frame, which is why `live`
+   labels exist and why the budget guard below exists to catch the next one. */
 const CACHE = new Map();
+
+/* THE GUARD THAT WOULD HAVE CAUGHT THE DOJO.
+
+   A volatile `setText` does not throw, does not slow down at first, and does
+   not look like anything at all until the tab dies — so the only useful defence
+   is to say so out loud the moment the cache stops looking like static text.
+   48 MB is far above anything the real static set reaches (a few dozen labels,
+   comfortably under 10 MB) and far below the ~1 GB a single volatile readout
+   reached in ten seconds. */
+const CACHE_WARN_BYTES = 48 * 1024 * 1024;
+let cacheBytes = 0;
+let warned = false;
 
 /* HOW MANY TEXTURE PIXELS PER AUTHORED PIXEL.
 
@@ -26,35 +52,45 @@ const CACHE = new Map();
    a rounding error next to one dragon sheet at 16MB. */
 const SS = 3;
 
-export function makeLabelTexture(text, opts = {}) {
-  const {
-    size = 88, color = '#fff6de', stroke = '#1d1216', strokeWidth = 8,
-    font = 'Bangers', italic = false, pad = 18,
-  } = opts;
-
-  const key = `${text}|${size}|${color}|${stroke}|${strokeWidth}|${font}|${italic}`;
-  if (CACHE.has(key)) return CACHE.get(key);
-
+/** The authored (pre-supersample) box a string needs.
+ *
+ *  THE HEIGHT IGNORES THE TEXT ENTIRELY, which is not an accident and is what
+ *  makes a `live` label possible at all: only the width moves with the string,
+ *  so reserving the widest string reserves every string. */
+function measureBox(text, opts = {}) {
+  const { size = 88, font = 'Bangers', italic = false, pad = 18 } = opts;
   /* Measured at the AUTHORED size and then scaled, rather than measured at the
      supersampled size. Both give the same aspect, but measuring small and
      multiplying keeps `aspect` bit-identical to what it was before
      supersampling existed — and `aspect` is what sizes the quad, so a drift here
      would silently resize every label in the game. */
   const measure = document.createElement('canvas').getContext('2d');
-  const fontSpec = `${italic ? 'italic ' : ''}${size}px ${font}, sans-serif`;
-  measure.font = fontSpec;
-  const w = Math.ceil(measure.measureText(text).width) + pad * 2;
-  const h = Math.ceil(size * 1.4) + pad * 2;
+  measure.font = `${italic ? 'italic ' : ''}${size}px ${font}, sans-serif`;
+  return {
+    w: Math.ceil(measure.measureText(text).width) + pad * 2,
+    h: Math.ceil(size * 1.4) + pad * 2,
+  };
+}
 
-  const cv = document.createElement('canvas');
-  cv.width = w * SS;
-  cv.height = h * SS;
-  const g = cv.getContext('2d');
+/* ONE PAINTER FOR BOTH PATHS. A cached label and a live label have to come out
+   pixel-identical, or the Dojo's readouts would visibly differ from the axis
+   numbers standing next to them — and two copies of this is how that happens. */
+function paint(g, text, w, h, opts) {
+  const {
+    size = 88, color = '#fff6de', stroke = '#1d1216', strokeWidth = 8,
+    font = 'Bangers', italic = false,
+  } = opts;
+  /* `setTransform` before `clearRect`, because a live canvas is repainted and
+     the previous pass left `scale(SS, SS)` on the context — clearing under that
+     scale would wipe the top-left ninth and leave the rest of the last string
+     on screen, behind the new one. */
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, w * SS, h * SS);
   /* One scale on the context and every coordinate below stays in authored
      units — so the drawing code is untouched and cannot disagree with the
      measurement above. */
   g.scale(SS, SS);
-  g.font = fontSpec;
+  g.font = `${italic ? 'italic ' : ''}${size}px ${font}, sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.lineJoin = 'round';
@@ -66,35 +102,111 @@ export function makeLabelTexture(text, opts = {}) {
   }
   g.fillStyle = color;
   g.fillText(text, w / 2, h / 2);
+}
 
+function newTexture(cv) {
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   /* 8, not 4: these quads are read at a slant whenever the camera is not square
      to them, which for a label standing in the world is most of the time. */
   tex.anisotropy = 8;
   tex.needsUpdate = true;
+  return tex;
+}
+
+export function makeLabelTexture(text, opts = {}) {
+  const {
+    size = 88, color = '#fff6de', stroke = '#1d1216', strokeWidth = 8,
+    font = 'Bangers', italic = false,
+  } = opts;
+
+  const key = `${text}|${size}|${color}|${stroke}|${strokeWidth}|${font}|${italic}`;
+  if (CACHE.has(key)) return CACHE.get(key);
+
+  const { w, h } = measureBox(text, opts);
+  const cv = document.createElement('canvas');
+  cv.width = w * SS;
+  cv.height = h * SS;
+  paint(cv.getContext('2d'), text, w, h, opts);
+
   /* `aspect` is deliberately the AUTHORED ratio, not the canvas ratio. They are
      equal — SS scales both axes — and saying so here is what stops somebody
      "fixing" it to `cv.width / cv.height` and getting the same number by luck. */
-  const out = { texture: tex, aspect: w / h };
+  const out = { texture: newTexture(cv), aspect: w / h };
   CACHE.set(key, out);
+
+  cacheBytes += cv.width * cv.height * 4;
+  if (cacheBytes > CACHE_WARN_BYTES && !warned) {
+    warned = true;
+    console.warn(
+      `[label] static texture cache passed ${(cacheBytes / 1048576) | 0} MB across `
+      + `${CACHE.size} entries, most recently "${text}". Cached labels are never `
+      + 'freed, so this means something is calling setText with text that moves — '
+      + 'pass `live: "<widest string>"` to Label instead.'
+    );
+  }
   return out;
+}
+
+/** What the shared cache is holding. Exists for `tools/world-check.mjs`, which
+ *  asserts that walking the Dojo does not grow it. */
+export function labelCacheStats() {
+  return { entries: CACHE.size, bytes: cacheBytes };
 }
 
 /**
  * A label that always faces the camera and keeps a constant on-screen size
  * regardless of distance — so it stays readable when the camera pulls back.
+ *
+ * Pass `live: '<the widest string this will ever show>'` for text that changes
+ * while the game runs. That is not an optimisation; see `_live` below.
  */
 export class Label extends THREE.Object3D {
   constructor(text, opts = {}) {
     super();
-    const { height = 1.6, fixedScreenSize = false, refDistance = 70 } = opts;
+    const { height = 1.6, fixedScreenSize = false, refDistance = 70, live = null } = opts;
     this.fixedScreenSize = fixedScreenSize;
     /** Camera distance at which the label draws at its authored size. */
     this.refDistance = refDistance;
     this.baseHeight = height;
 
-    const { texture, aspect } = makeLabelTexture(text, opts);
+    let texture;
+    let aspect;
+    if (live) {
+      /* WHY A CHANGING LABEL OWNS ITS CANVAS.
+
+         `CACHE` is keyed by the string and never evicts (see the note on it),
+         so a `setText` whose text moves every frame mints a texture per distinct
+         value and holds every one of them forever. The Dojo's point readout is
+         the worst case in the game: `( 0.71 , 0.71 )` has 201 x 201 possible
+         values, so one lap of the circle — about ten seconds of walking — minted
+         568 supersampled canvases at 1.71 MB each. Measured: 972 MB per lap,
+         from a single label. A phone is dead in about four seconds, which is
+         precisely the "it lags and then the tab crashes" the Dojo shipped with.
+
+         So: size the canvas ONCE from `live`, which the caller promises is the
+         widest string it will ever draw, and repaint it in place. The quad's
+         aspect is then fixed, so no geometry is rebuilt; and the material keeps
+         the SAME texture object, so `mat.needsUpdate` is never set and three.js
+         never re-resolves the shader program. That program churn was the other
+         half of the stall and it cost frames well before memory did.
+
+         Shorter text just leaves more transparent margin — nothing shifts. The
+         glyphs are painted centred and the quad is centred on its origin, so a
+         label is anchored by its middle either way. */
+      const box = measureBox(live, opts);
+      this._live = { w: box.w, h: box.h, opts };
+      const cv = document.createElement('canvas');
+      cv.width = box.w * SS;
+      cv.height = box.h * SS;
+      this._liveCtx = cv.getContext('2d');
+      paint(this._liveCtx, text, box.w, box.h, opts);
+      texture = newTexture(cv);
+      aspect = box.w / box.h;
+    } else {
+      ({ texture, aspect } = makeLabelTexture(text, opts));
+    }
+
     this.mat = new THREE.MeshBasicMaterial({
       map: texture,
       transparent: true,
@@ -115,6 +227,15 @@ export class Label extends THREE.Object3D {
   setText(text) {
     if (text === this._text) return;
     this._text = text;
+    if (this._live) {
+      const { w, h, opts } = this._live;
+      paint(this._liveCtx, text, w, h, opts);
+      /* The texture object is unchanged — only its pixels are — so this is a
+         re-upload and nothing else. Touching `mat.needsUpdate` here would throw
+         away half the reason a live label exists. */
+      this.mat.map.needsUpdate = true;
+      return;
+    }
     const { texture, aspect } = makeLabelTexture(text, this._opts);
     this.mat.map = texture;
     this.mat.needsUpdate = true;

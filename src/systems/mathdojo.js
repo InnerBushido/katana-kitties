@@ -24,6 +24,9 @@ import { Label } from '../core/label.js';
 
 const R = 24;                       // world units per 1.0 on the circle
 const AXIS = R * 1.42;
+/* The swept-angle arc at a full turn: 96 segments plus the closing point. The
+   buffer is allocated at this length once and drawn short. */
+const ARC_MAX = 97;
 
 /* Maths y maps to world -Z.
    The dojo camera looks down the +Z axis, so world -Z is screen-up. Without
@@ -209,8 +212,18 @@ export class MathDojo {
     this.dropX = this._line(0xffffff, 0.35, true);
     this.dropY = this._line(0xffffff, 0.35, true);
 
+    /* THE ARC IS ONE BUFFER, RESIZED BY `drawRange`, NEVER REBUILT.
+
+       It used to dispose its geometry and construct a new one every frame,
+       because the arc gets longer as theta sweeps. That is a fresh
+       Float32Array, a fresh BufferGeometry and a fresh GPU buffer sixty times a
+       second for a line that never exceeds 97 points — so it is allocated at
+       full length once and the tail is simply not drawn. `frustumCulled` is off
+       (below), which is also what lets the bounding sphere go stale safely. */
+    const arcGeo = new THREE.BufferGeometry();
+    arcGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARC_MAX * 3), 3));
     this.arc = new THREE.Line(
-      new THREE.BufferGeometry(),
+      arcGeo,
       new THREE.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 1, toneMapped: false })
     );
     this.arc.frustumCulled = false;
@@ -233,19 +246,33 @@ export class MathDojo {
     );
     this.point.add(halo);
 
-    const L = (color, stroke, size = 66, height = 2.4) => {
+    /* EVERY ONE OF THESE IS `live`, AND THAT IS LOAD-BEARING.
+
+       These five are rewritten every frame from a float. Through the shared
+       label cache that is a texture per distinct value, kept forever: the point
+       readout alone measured 972 MB for one lap of the circle and took the tab
+       down with it in about four seconds — the crash the Dojo shipped with. The
+       reserve string each one passes is the widest it can ever draw, so the
+       canvas is allocated once and repainted in place. See `Label`'s `_live`.
+
+       The reserves are the worst case spelled out, not a guess with slack added:
+       theta goes to three digits, every trig value can be negative and is fixed
+       to two places, and the idle hint is longer than any name plus its radius
+       ("Blossom" is the longest kitten). Reserve short and the text clips. */
+    const L = (color, stroke, live, size = 66, height = 2.4) => {
       const l = new Label('', {
-        height, size, color, stroke, strokeWidth: 9, fixedScreenSize: true,
+        height, size, color, stroke, strokeWidth: 9, fixedScreenSize: true, live,
       });
       this.group.add(l);
       this.labels.push(l);
       return l;
     };
-    this.lblTheta = L('#ffe27a', '#2a1c06');
-    this.lblCos = L('#ffb347', '#2a1c06');
-    this.lblSin = L('#8bff9a', '#0e2a12');
-    this.lblPoint = L('#7fe3ff', '#0c2733', 72, 2.9);
-    this.lblHint = L('#fff0d0', '#1d1216', 56, 1.7);
+    this.lblTheta = L('#ffe27a', '#2a1c06', 'θ = 360°');
+    this.lblCos = L('#ffb347', '#2a1c06', 'cos θ = -0.00');
+    this.lblSin = L('#8bff9a', '#0e2a12', 'sin θ = -0.00');
+    this.lblPoint = L('#7fe3ff', '#0c2733', '( -0.00 , -0.00 )', 72, 2.9);
+    this.lblHint = L('#fff0d0', '#1d1216',
+      'nobody on the circle — spinning by itself', 56, 1.7);
   }
 
   /* ------------------------------- board -------------------------------- */
@@ -329,20 +356,16 @@ export class MathDojo {
     this._setLine(this.dropX, px, pz, px, 0, 0.04);
     this._setLine(this.dropY, px, pz, 0, pz, 0.04);
 
-    // swept angle arc
-    const steps = Math.max(2, Math.ceil((this.theta / (Math.PI * 2)) * 96) + 1);
-    const arr = new Float32Array(steps * 3);
+    // swept angle arc — written into the buffer built in _buildLiveTriangle
+    const steps = Math.min(ARC_MAX, Math.max(2, Math.ceil((this.theta / (Math.PI * 2)) * 96) + 1));
+    const ap = this.arc.geometry.attributes.position;
     const ar = R * 0.26;
     for (let i = 0; i < steps; i++) {
       const a = (i / (steps - 1)) * this.theta;
-      arr[i * 3] = Math.cos(a) * ar;
-      arr[i * 3 + 1] = 0.07;
-      arr[i * 3 + 2] = ZS * Math.sin(a) * ar;
+      ap.setXYZ(i, Math.cos(a) * ar, 0.07, ZS * Math.sin(a) * ar);
     }
-    this.arc.geometry.dispose();
-    const ag = new THREE.BufferGeometry();
-    ag.setAttribute('position', new THREE.BufferAttribute(arr, 3));
-    this.arc.geometry = ag;
+    ap.needsUpdate = true;
+    this.arc.geometry.setDrawRange(0, steps);
 
     const deg = (this.theta * 180) / Math.PI;
     const half = this.theta / 2;

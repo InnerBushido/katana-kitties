@@ -446,9 +446,14 @@ export class PowerOrb {
       this.drops.push({ mesh: m, t: Math.random(), swap: 0 });
     }
 
+    /* `live`. This one is `cos X  sin Y` — 201 x 201 reachable strings, the same
+       combinatorial shape as the Dojo's point readout that took the tab down at
+       roughly a gigabyte per lap, and there are up to sixteen orbs. The cached
+       path would mint a never-freed texture per value. See `Label`'s `_live`. */
     this.readout = new Label('cos θ', {
       height: 0.34, size: 60, color: hex,
       stroke: '#06131a', strokeWidth: 7, depthTest: false,
+      live: 'cos -0.00  sin -0.00',
     });
     this.rain.add(this.readout);
     this.rain.visible = false;

@@ -20,8 +20,8 @@ look. Everything else is one level down and read on demand.
 
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
-node tools/world-check.mjs    # 868 checks: world, dragons, clans, sprites, tournament
-node tools/pad-check.mjs      # 167 checks: controllers and the keyboard sets
+node tools/world-check.mjs    # 912 checks: world, dragons, clans, sprites, tournament
+node tools/pad-check.mjs      # 192 checks: controllers and the keyboard sets
 npm run build                 # must stay clean; Vercel builds this on push to main
 ```
 
@@ -101,7 +101,7 @@ trade screen, `-`/`=`/`0` are the scene viewer.
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 868 assertions and why almost none of them are about
+  why `world-check` is 912 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have

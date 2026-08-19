@@ -57,11 +57,15 @@ It now has icicles (its own prop kind), a shrine and a Frost-breed dragon,
 which is the pattern every outer island should follow: something to smash,
 something to find, something to ride.
 
-**The Dojo's sin/cos board and the minimap both want the bottom-left corner.**
-In a side-by-side split, player 1's map moves there and sat straight on top of
-a board that can be 42vw wide. `hud-math` on `#hud` lifts the map to the top of
-its own half while the board is up — the lesson is what you came to the Dojo
-for, so it keeps the corner.
+**The Dojo's sin/cos board and the minimap keep colliding, and the board keeps
+winning.** In a side-by-side split, player 1's map lands in the bottom-left and
+sat straight on top of a board that can be 42vw wide, so `_drawMaps` lifts the
+map to the top of its own half while the board is up. On a phone the board is
+top-LEFT instead (it was bottom-centre and covered the diagram), so there the
+map crosses to the top-RIGHT and shrinks — the lesson is what you came to the
+Dojo for, so it gets the corner every time. All of that placement is in
+`Game._drawMaps`; there is no CSS class carrying it. An earlier `hud-math` class
+on `#hud` claimed to and was never read by any rule.
 
 ---
 

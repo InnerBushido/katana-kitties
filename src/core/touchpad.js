@@ -134,6 +134,24 @@ const DOUBLE_TAP_MS = 340;
  *  dead. */
 const STICK_DEAD = 0.06;
 
+/** Where the stick's base rests inside its zone, as a fraction of the zone.
+ *
+ *  NAMED, BECAUSE THE FACE CLUSTER IS NOW THE MIRROR OF IT. `_parkStick` puts
+ *  the base here and `_placeCluster` reflects the same point across the pad, so
+ *  the two thumbs sit on one row. Inlining these back into `_parkStick` puts the
+ *  right hand's anchor and the left hand's anchor in two places, and the next
+ *  person to nudge the resting spot moves one of them. */
+const STICK_REST_X = 0.3;
+const STICK_REST_Y = 0.62;
+
+/** Smallest gap the face cluster may leave against the pad's right edge.
+ *
+ *  The mirror is exact until the cluster is wider than the room the reflected
+ *  point leaves it — the cluster is three buttons across and the stick is one
+ *  circle, so on a narrow phone the true mirror would hang off the screen. This
+ *  is the clamp, and it is the only place the symmetry is allowed to give. */
+const CLUSTER_EDGE = 6;
+
 export class TouchPad {
   /**
    * @param {HTMLElement} root  the overlay container, already in the document
@@ -390,10 +408,66 @@ export class TouchPad {
    * viewport would sit under the notch on a phone held in landscape.
    */
   _parkStick() {
-    const z = this.zone.getBoundingClientRect();
-    if (!z.width) return;
-    this._origin = { x: z.x + z.width * 0.3, y: z.y + z.height * 0.62 };
+    const rest = this._stickRest();
+    if (!rest) return;
+    this._origin = rest;
     this._placeStick(this._origin.x, this._origin.y);
+  }
+
+  /** The stick's resting centre in CLIENT coordinates, or null if unmeasurable.
+   *  Split out so the cluster can mirror the same point — see `_placeCluster`. */
+  _stickRest() {
+    const z = this.zone.getBoundingClientRect();
+    if (!z.width) return null;
+    return { x: z.x + z.width * STICK_REST_X, y: z.y + z.height * STICK_REST_Y };
+  }
+
+  /** The overlay's CONTENT box in client coordinates — the box `position:
+   *  absolute` children are actually resolved against.
+   *
+   *  NOT `getBoundingClientRect()`, which is the border box. `#touch-pad` carries
+   *  the safe-area insets as PADDING (that is what keeps the controls out from
+   *  under the notch and the home indicator), so the border box is the whole
+   *  screen and positioning against it would push the cluster into the inset the
+   *  padding exists to avoid. */
+  _padBox() {
+    const r = this.root.getBoundingClientRect();
+    const cs = getComputedStyle(this.root);
+    const l = parseFloat(cs.paddingLeft) || 0;
+    const t = parseFloat(cs.paddingTop) || 0;
+    const rt = parseFloat(cs.paddingRight) || 0;
+    const b = parseFloat(cs.paddingBottom) || 0;
+    return { x: r.x + l, y: r.y + t, w: r.width - l - rt, h: r.height - t - b };
+  }
+
+  /**
+   * Put the face cluster where the stick would be if you reflected it.
+   *
+   * TWO THUMBS ON ONE ROW. The cluster used to be pinned to the bottom-right
+   * corner while the stick rested well above the bottom edge and a good way in
+   * from the side, so the right thumb had to reach down and out to a spot the
+   * left thumb never went — awkward on a big phone, which is where this was
+   * found. Reflecting the stick's resting CENTRE across the pad and centring the
+   * cluster on it puts both hands at the same height and the same inset.
+   *
+   * IN JS RATHER THAN AS CSS PERCENTAGES, because the stick's rest point is
+   * `STICK_REST_*` of a zone that is itself a percentage of the pad — so a CSS
+   * mirror would have to restate all four numbers and would silently stop being
+   * a mirror the moment `.tp-zone` was resized. Here it is one expression that
+   * reads the real measured box, and it re-runs on `reflow`.
+   */
+  _placeCluster() {
+    const rest = this._stickRest();
+    const box = this._padBox();
+    if (!rest || !box.w) return;
+    const c = this.cluster.getBoundingClientRect();
+    if (!c.width) return;
+    // The stick sits `rest.x - box.x` in from the left, so its reflection sits
+    // that far in from the right; same idea for the bottom.
+    this.cluster.style.right =
+      `${Math.max(CLUSTER_EDGE, (rest.x - box.x) - c.width / 2)}px`;
+    this.cluster.style.bottom =
+      `${Math.max(CLUSTER_EDGE, (box.y + box.h - rest.y) - c.height / 2)}px`;
   }
 
   /* -------------------------------- state ------------------------------- */
@@ -410,13 +484,21 @@ export class TouchPad {
     }
     /* Park it AFTER it is displayed: the zone has no bounding box while the
        overlay is `display: none`, so measuring first parks it at 0,0 and the
-       resting base sits in the corner. */
+       resting base sits in the corner. Same for the cluster, which is measured
+       to be centred on the stick's reflection. */
     this._parkStick();
+    this._placeCluster();
   }
 
   /** The zone moves when the window does, so the resting base has to follow. */
   reflow() {
-    if (this.visible && !this._active.size) this._parkStick();
+    if (!this.visible) return;
+    if (!this._active.size) this._parkStick();
+    /* The cluster moves even with a thumb down. Nothing tracks a button by
+       position — `_active` keys on `pointerId` — so a held press survives it,
+       and skipping the move would leave the buttons in the old corner for as
+       long as the finger stayed put. */
+    this._placeCluster();
   }
 
   /**

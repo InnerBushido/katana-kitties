@@ -387,3 +387,110 @@ badly gives white boxes where the kittens were.
 candidate than a tab) but it is a reduced likelihood, not a guarantee. Note the
 tension: raising `atlasMax` back to 2048 for fidelity also raises the memory
 pressure that causes this.
+
+---
+
+## The second play session: one crash and two reaches
+
+The touch controls worked. Three things came back, and the first is the only one
+that was a bug rather than a layout opinion.
+
+### Flying to the Dojo killed the tab, and quality settings could not help
+
+The symptom was specific and it is worth keeping: the maths UI appeared, the
+frame rate collapsed for a few seconds, and then the tab died — **on the lowest
+quality setting too**, which is the clue. Nothing that scales with quality was
+involved.
+
+`makeLabelTexture` caches world-space text by its string and **never evicts**,
+which is correct: those textures are shared by reference across materials, so
+freeing one to make room blanks whatever else still has it mapped. The cache
+was built for text written once — axis numbers, clan names, the falling kana.
+
+The Dojo rewrites five of those labels **every frame, from a float**. The worst
+is the point readout, `( cos , sin )` at two decimal places: 201 x 201 reachable
+strings, each one a fresh supersampled canvas.
+
+Measured in the browser, walking one lap of the circle:
+
+| | |
+| --- | --- |
+| new textures per lap (point readout alone) | **568** |
+| size of one, at `size: 72` and `SS: 3` | 1092x411x4 = **1.71 MB** |
+| retained per lap | **972 MB** |
+| time to a lap at walking pace | about 10 seconds |
+
+A phone has nowhere near a gigabyte to give, so it died in about four. On a
+desktop it merely ate memory nobody was watching, which is why it survived
+every session before a phone found it.
+
+**The fix is a second kind of label.** `new Label(text, { live: '<widest
+string>' })` allocates one canvas from the reserve string and repaints it in
+place. Nothing is allocated after construction, nothing enters the cache, and —
+this is the half that was costing frames before memory did — the material keeps
+the **same texture object**, so `mat.needsUpdate` is never set and three.js
+never re-resolves the shader program.
+
+The reserve is the worst case spelled out (`( -0.00 , -0.00 )`), not a guess
+with slack: reserve short and the text clips, which is the one failure mode a
+live label has that a cached one does not. `world-check` asserts each reserve
+against every string the Dojo actually printed over a full lap.
+
+Two more places had the identical bug and were found by looking rather than by
+crashing: the Kotodama orb's three readouts, and the power orb's `cos X  sin Y`
+— the same combinatorial shape, on up to sixteen orbs at once.
+
+**Two defences, because this is invisible until it is fatal.** `world-check`
+counts canvas creations across a simulated lap and requires zero; and
+`makeLabelTexture` warns once, naming the offending string, if the shared cache
+ever passes 48 MB. Reverting the fix trips both.
+
+The same pass removed the arc geometry churn next door — the swept angle arc
+disposed and rebuilt a `BufferGeometry` every frame because the arc grows with
+theta. It is one buffer at full length now, shortened with `setDrawRange`.
+
+### The face cluster is the stick's reflection, not a corner
+
+The buttons were pinned to the bottom-right while the stick rests well above the
+bottom edge and a good way in from the side, so the right thumb reached down and
+out to somewhere the left thumb never went. `TouchPad._placeCluster` now centres
+the cluster on the stick's resting centre reflected across the pad: **same
+height, same inset, measured rather than restated.**
+
+In JS rather than CSS percentages on purpose — the rest point is `STICK_REST_*`
+of a zone that is itself a percentage of the pad, so a CSS mirror would restate
+four numbers and stop being a mirror the moment `.tp-zone` was resized. The only
+place the symmetry gives is `CLUSTER_EDGE`: the cluster is three buttons wide
+and the stick is one circle, so on a narrow phone the exact reflection would
+hang off the screen.
+
+**And they grew about 40%.** A landscape phone is SHORT, which is what the
+`max-height: 460px` breakpoint reacted to — but it is not SMALL, and shrinking
+the controls on the biggest phones was backwards. One `--tp-unit` now sizes the
+circle, the glyph and the gap together; they were separate literals, which is
+how the breakpoint shrank the buttons from 60px to 50px and left the letters at
+19px.
+
+**An ordering bug fell out of making `setVisible` measure.** `_applyTouchMode`
+showed the pad and *then* set `body.touch-ui` — so the cluster was measured at
+the tablet size, placed for a box 184px tall, and shrank to 148 underneath its
+own position. It sat 18px low with nothing on screen to say why. The class goes
+on first now.
+
+### The board took the middle of the screen, which is the lesson
+
+The sin/cos board has now been in three places and the first two were both wrong
+the same way: they were chosen to keep it clear of something *else* rather than
+clear of the *player*.
+
+Top-left stacked it under the minimap and both were unreadable. Bottom-centre is
+clear of both thumbs and clear of the map — and is exactly where the kitten is
+drawn. In the Dojo the camera pulls back and looks straight down at the circle,
+so the middle of the screen **is** the lesson: the board hid the point moving
+round the rim, which is the one thing she flew there to watch.
+
+So the board takes top-left and the **map moves**, because on this island the
+ranking is not ambiguous — the board is why the island exists and the map is a
+glance. The map crosses to top-right (under the pause button, the last free
+edge: both bottom corners are thumbs and top-centre is the scoreboard) and drops
+to 24% of the pane, since the Dojo is a flat disc with nothing to navigate to.

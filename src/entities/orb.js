@@ -15,6 +15,10 @@ import { Label } from '../core/label.js';
    pretending to be maths; the numbers on screen are the numbers moving the orb.
 --------------------------------------------------------------------------- */
 
+/* The swept-angle arc at a full turn: 64 segments plus the closing point. The
+   buffer is allocated at this length once and drawn short — see `_buildMathOverlay`. */
+const ARC_MAX = 65;
+
 export class Orb {
   /**
    * @param {object} opts
@@ -111,9 +115,18 @@ export class Orb {
     this.circle.renderOrder = 14;
     this.overlay.add(this.circle);
 
-    // the swept angle arc, rebuilt every frame
+    /* THE SWEPT ARC IS ONE BUFFER, SHORTENED BY `drawRange`.
+
+       It used to dispose and rebuild its geometry every frame because the arc
+       grows with theta — a fresh typed array, BufferGeometry and GPU buffer per
+       frame, per orb, and there are up to sixteen. It never exceeds 65 points,
+       so it is allocated full length once and the tail is left undrawn.
+       `frustumCulled` is off below, which is what makes the stale bounding
+       sphere harmless. */
+    const arcGeo = new THREE.BufferGeometry();
+    arcGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARC_MAX * 3), 3));
     this.arc = new THREE.Line(
-      new THREE.BufferGeometry(),
+      arcGeo,
       new THREE.LineBasicMaterial({
         color: 0xffe27a, transparent: true, opacity: 0.95,
         depthTest: false, toneMapped: false,
@@ -123,19 +136,26 @@ export class Orb {
     this.arc.frustumCulled = false;
     this.overlay.add(this.arc);
 
+    /* `live`, because all three are rewritten from the orb's angle every frame.
+       Through the shared label cache that is one never-freed texture per
+       distinct value — the same leak that crashed the Dojo. Bounded here (361
+       and 201 values) rather than combinatorial, so it killed the tab slowly
+       instead of quickly, which is worse to find. Reserves are the widest
+       reachable string: three digits of degrees, and a negative two-place
+       value. See `Label`'s `_live`. */
     this.thetaLabel = new Label('θ', {
       height: 0.72, size: 72, color: '#ffe27a', stroke: '#2a1c06', strokeWidth: 8,
-      depthTest: false,
+      depthTest: false, live: 'θ 360°',
     });
     this.overlay.add(this.thetaLabel);
 
     this.cosLabel = new Label('cos', {
       height: 0.6, size: 64, color: '#ffb347', stroke: '#2a1c06', strokeWidth: 8,
-      depthTest: false,
+      depthTest: false, live: 'cos θ = -0.00',
     });
     this.sinLabel = new Label('sin', {
       height: 0.6, size: 64, color: '#8bff9a', stroke: '#0e2a12', strokeWidth: 8,
-      depthTest: false,
+      depthTest: false, live: 'sin θ = -0.00',
     });
     this.overlay.add(this.cosLabel, this.sinLabel);
   }
@@ -188,18 +208,15 @@ export class Orb {
     setLine(this.lineSin, x, 0, 0, x, 0, z);
 
     // arc from the +X axis round to theta
-    const steps = Math.max(2, Math.ceil((this.theta / (Math.PI * 2)) * 64) + 1);
-    const pts = new Float32Array(steps * 3);
+    const steps = Math.min(ARC_MAX, Math.max(2, Math.ceil((this.theta / (Math.PI * 2)) * 64) + 1));
+    const ap = this.arc.geometry.attributes.position;
     const ar = this.r * 0.3;
     for (let i = 0; i < steps; i++) {
       const a = (i / (steps - 1)) * this.theta;
-      pts[i * 3] = Math.cos(a) * ar;
-      pts[i * 3 + 2] = Math.sin(a) * ar;
+      ap.setXYZ(i, Math.cos(a) * ar, 0, Math.sin(a) * ar);
     }
-    this.arc.geometry.dispose();
-    const ag = new THREE.BufferGeometry();
-    ag.setAttribute('position', new THREE.BufferAttribute(pts, 3));
-    this.arc.geometry = ag;
+    ap.needsUpdate = true;
+    this.arc.geometry.setDrawRange(0, steps);
 
     const half = this.theta / 2;
     this.thetaLabel.position.set(Math.cos(half) * ar * 1.45, 0.1, Math.sin(half) * ar * 1.45);

@@ -262,13 +262,19 @@ class Game {
    */
   _applyTouchMode() {
     const on = this.device.touchPrimary;
+    /* THE CLASS GOES ON BEFORE THE PAD IS SHOWN, and the order is load-bearing
+       now that `setVisible` MEASURES. `body.touch-ui` is what selects the phone
+       button size (`--tp-unit`), so toggling it afterwards meant the cluster was
+       measured at the tablet size, placed for a box 184px tall, and then shrank
+       to 148 underneath its own position — it sat 18px low with nothing to say
+       why. Class first, then show and measure. */
+    document.body.classList.toggle('touch-ui', on);
     this.touchPad.setVisible(on);
     /* THE PAD ALWAYS CARRIES WASD AS ITS SECOND SURFACE — see `_freeKeysets` in
        core/input.js. On a phone there is no keyboard and that costs nothing; on
        a tablet with one attached it is player 1's other hand, and on this desktop
        it is how the pad gets tested at all. Player 2 joins on the arrows. */
     this.input.attachTouch(on ? this.touchPad : null);
-    document.body.classList.toggle('touch-ui', on);
     this._updateRotateGate();
   }
 
@@ -4098,9 +4104,11 @@ class Game {
     const hud = document.getElementById('hud');
     hud.classList.toggle('hud-split', !this.merged);
     hud.classList.toggle('hud-horizontal', this.settings.dir === 'horizontal');
-    // Lets the CSS move the map out from under the Dojo's sin/cos board.
+    /* Is the Dojo's sin/cos board up? Every branch below that moves a map out
+       from under it reads this directly. It used to also set a `hud-math` class
+       on `#hud` "so the CSS can move the map" — no rule ever consumed it, and a
+       class nobody reads is a comment that lies about where the layout lives. */
     const mathUp = !document.getElementById('math-board').classList.contains('hidden');
-    hud.classList.toggle('hud-math', mathUp);
 
     const W = window.innerWidth;
     const H = window.innerHeight;
@@ -4144,7 +4152,11 @@ class Game {
 
          So it is back to a third. The lesson is that a HUD element that cannot
          be read has two possible causes and only one of them is its size. */
-      const cap = this.device.touchPrimary ? v.h * 0.33 : Infinity;
+      /* AND SMALLER AGAIN INSIDE THE DOJO, which is the one island where the
+         map is the least useful thing on screen: it is a single flat disc with
+         nothing to navigate to, and the board next to it is the reason anyone
+         flew here. A third of the pane crowds a corner it does not need. */
+      const cap = this.device.touchPrimary ? v.h * (mathUp ? 0.24 : 0.33) : Infinity;
       box.style.width = `${Math.min(300, v.w * 0.42, cap)}px`;
 
       if (this.merged) {
@@ -4160,22 +4172,50 @@ class Game {
            This is also why it does not simply shrink and stay put; a smaller map
            in the wrong place is still in the wrong place. */
         const thumbs = this.device.touchPrimary;
-        box.style.left = thumbs ? '10px' : 'auto';
-        box.style.right = thumbs ? 'auto' : '14px';
-        box.style.top = thumbs ? '46px' : 'auto';
-        box.style.bottom = thumbs ? 'auto' : '14px';
+        if (thumbs && mathUp) {
+          /* IN THE DOJO THE MAP GIVES UP THE CORNER. The board is now top-left
+             (see style.css) because bottom-centre put it over the diagram the
+             island exists to teach, so the map crosses to top-right — the last
+             free edge, since both bottom corners are thumbs and top-centre is
+             the scoreboard. Below the pause button, which is 42px tall at the
+             top of that side, rather than beside it: a map tucked under pause
+             is still tappable, a map overlapping it steals the tap that leaves
+             the game. */
+          box.style.left = 'auto';
+          box.style.right = '10px';
+          box.style.top = '58px';
+          box.style.bottom = 'auto';
+        } else {
+          box.style.left = thumbs ? '10px' : 'auto';
+          box.style.right = thumbs ? 'auto' : '14px';
+          box.style.top = thumbs ? '46px' : 'auto';
+          box.style.bottom = thumbs ? 'auto' : '14px';
+        }
       } else {
         /* Viewport coords are bottom-left origin and CSS is top-left, so the
            pane's top edge is `H - v.y - v.h` from the top of the page. The map
            sits in its pane's bottom-left corner — except while the Dojo's
            board is up, which owns that corner and is the lesson somebody came
            to the Dojo for, so the map lifts to the top of its own pane. */
-        box.style.left = `${v.x + 14}px`;
         box.style.right = 'auto';
         if (mathUp) {
+          /* AND ON A TOUCH DEVICE IT CROSSES TO THE RIGHT OF ITS PANE, because
+             there the board is top-LEFT rather than bottom-left (see the
+             stylesheet) — so lifting the map to the top of a left-hand pane
+             moves it out from under the board and straight back on top of it.
+             The board spans the screen, not a pane, so the only reliably clear
+             side is the far one.
+
+             Hard to reach and worth keeping right anyway: a phone seats one
+             player and never splits, so this needs a tablet with a keyboard
+             and the split setting changed by hand. */
+          const thumbs = this.device.touchPrimary;
+          const w = box.getBoundingClientRect().width || 0;
+          box.style.left = `${thumbs ? v.x + v.w - w - 14 : v.x + 14}px`;
           box.style.top = `${H - v.y - v.h + 78}px`;
           box.style.bottom = 'auto';
         } else {
+          box.style.left = `${v.x + 14}px`;
           box.style.top = 'auto';
           box.style.bottom = `${v.y + 14}px`;
         }

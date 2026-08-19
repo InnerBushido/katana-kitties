@@ -1601,6 +1601,18 @@ html, body {
   position: fixed;
   inset: 0;
   z-index: 7;               /* over the HUD (5) and the join card (6) */
+  /* ONE NUMBER SIZES EVERY BUTTON, INCLUDING ITS TEXT.
+
+     The diameter and the glyph used to be separate literals, so the landscape
+     breakpoint below shrank the circles from 60px to 50px and left the letters
+     at 19px — the buttons got tighter around type that did not move. Everything
+     is a fraction of `--tp-unit` now, so a breakpoint sets one value and the
+     whole control scales together.
+
+     THE VALUE WENT UP ABOUT 40%. Tested on a Galaxy S24 Ultra: a phone in
+     landscape is SHORT, which is what the breakpoint reacted to, but it is not
+     SMALL — and shrinking the controls on the biggest phones was backwards. */
+  --tp-unit: 84px;
   pointer-events: none;
   touch-action: none;
   /* Under the notch and the home indicator. `viewport-fit=cover` put the page
@@ -1662,7 +1674,14 @@ html, body {
 }
 
 /* The face cluster, laid out as the diamond a pad has: mount on top, slash and
-   clan either side, jump at the bottom under where the thumb rests. */
+   clan either side, jump at the bottom under where the thumb rests.
+
+   `right` AND `bottom` HERE ARE ONLY THE FALLBACK. `TouchPad._placeCluster`
+   overwrites both with measured pixels the moment the pad is shown, so that the
+   cluster's centre lands on the reflection of the stick's resting centre and the
+   two thumbs sit on one row. The old corner values are kept as what gets drawn
+   in the frame before anything has been measured — and they are the corner this
+   used to be pinned to, which is exactly what felt like a reach on a big phone. */
 .tp-cluster {
   position: absolute;
   right: 3.2%;
@@ -1670,7 +1689,9 @@ html, body {
   display: grid;
   grid-template-columns: repeat(3, auto);
   grid-template-rows: repeat(2, auto);
-  gap: 8px;
+  /* Scales with the buttons — a fixed 8px between 84px circles reads as one
+     welded lump, and a kid's thumb needs the gap to tell them apart. */
+  gap: calc(var(--tp-unit) * 0.13);
   align-items: center;
   justify-items: center;
   pointer-events: none;     /* the BUTTONS take pointers, not the gaps */
@@ -1680,8 +1701,8 @@ html, body {
   --size: 1;
   pointer-events: auto;
   touch-action: none;
-  width: calc(60px * var(--size));
-  height: calc(60px * var(--size));
+  width: calc(var(--tp-unit) * var(--size));
+  height: calc(var(--tp-unit) * var(--size));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1699,11 +1720,13 @@ html, body {
      a minute reads as lag. */
   transition: transform 0.09s ease, box-shadow 0.09s ease, background 0.09s ease;
 }
-.tp-btn .tp-glyph { font-size: calc(19px * var(--size)); line-height: 1; }
+/* 0.317 and 0.133 are the ratios the 60px button was authored at (19px and
+   8px), kept exactly so nothing about the look changes except the scale. */
+.tp-btn .tp-glyph { font-size: calc(var(--tp-unit) * 0.317 * var(--size)); line-height: 1; }
 .tp-btn .tp-label {
   font-family: 'Nunito', sans-serif;
   font-weight: 900;
-  font-size: calc(8px * var(--size));
+  font-size: calc(var(--tp-unit) * 0.133 * var(--size));
   letter-spacing: 0.6px;
   opacity: 0.72;
 }
@@ -1727,8 +1750,12 @@ html, body {
   position: absolute;
   top: calc(env(safe-area-inset-top) + 10px);
   right: calc(env(safe-area-inset-right) + 12px);
-  width: 42px;
-  height: 42px;
+  /* ITS OWN UNIT, so growing the face cluster leaves it alone. It is not a
+     thumb control — it is deliberately far from them, because a mis-tap next to
+     JUMP costs her the round — so it neither wants the extra size nor the extra
+     reach. 58 x 0.72 is the 42px this has always been, now expressed so the
+     glyph inside scales with the circle instead of being a second literal. */
+  --tp-unit: 58px;
   --size: 0.72;
   letter-spacing: 1px;
 }
@@ -1848,10 +1875,10 @@ body.touch-ui .panel {
   /* Again, no map width — `_drawMaps` owns it inline and already derives it from
      the pane's height, which is the same thing this query is reacting to. */
   body.touch-ui .scoreboard { transform: translateX(-50%) scale(0.7); }
-  body.touch-ui .tp-btn {
-    width: calc(50px * var(--size));
-    height: calc(50px * var(--size));
-  }
+  /* Still a step down from a tablet, but nothing like the old 50px — see
+     `--tp-unit`. At 68px the cluster is about 147px tall, which clears a 360px
+     landscape phone with the whole upper half of the screen still free. */
+  body.touch-ui #touch-pad { --tp-unit: 68px; }
   body.touch-ui .hint { font-size: 10px; max-height: 2.4em; }
 }
 
@@ -1942,20 +1969,34 @@ body.touch-ui #toasts { gap: 3px; }
 body.touch-ui .hint { display: none; }
 
 /* ===================== the sin/cos board ================================
-   BOTTOM-LEFT AND BEHIND EVERYTHING. It shared the top-left corner with the
-   minimap and the two stacked, which looked broken and made both unreadable. The
-   map keeps the corner because it is the one you glance at constantly; the board
-   goes to the bottom edge, under the main UI, on the side the stick is NOT.
-   `z-index` below the scoreboard so a toast is never hidden behind maths. */
+   TOP-LEFT, AND THE MAP GIVES IT THE CORNER RATHER THAN THE OTHER WAY ROUND.
+
+   This has now been in three places and the first two were both wrong for the
+   same reason — they were chosen to keep the board out of something else's way
+   instead of out of the PLAYER's way.
+
+   It started top-left, stacked under the minimap, and the two were unreadable.
+   So it went bottom-centre, which is clear of both thumbs and clear of the map
+   — and is exactly where the kitten is drawn. In the Dojo the camera pulls back
+   and looks straight down at the circle, so the middle of the screen is the
+   whole lesson: a board parked across the bottom of it hid the point moving
+   round the rim, which is the one thing she is there to watch.
+
+   So the board takes the corner and the MAP moves (see `_drawMaps`), because on
+   this island the ranking is unambiguous: the board is the reason the island
+   exists and the map is a thing you glance at. Below the scoreboard rather than
+   flush to the top, because the scoreboard is centred and the two would touch on
+   a narrow phone. `z-index` stays below the scoreboard so a toast is never
+   hidden behind maths. */
 body.touch-ui #math-board {
-  left: 50%;
+  left: calc(env(safe-area-inset-left) + 8px);
   right: auto;
-  transform: translateX(-50%);
-  bottom: calc(env(safe-area-inset-bottom) + 4px);
-  top: auto;
+  transform: none;
+  top: calc(env(safe-area-inset-top) + 42px);
+  bottom: auto;
   width: min(260px, 34vw);
   z-index: 1;
-  opacity: 0.9;
+  opacity: 0.92;
 }
 body.touch-ui .mb-title { font-size: 9px; letter-spacing: 1px; }
 
