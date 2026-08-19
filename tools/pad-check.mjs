@@ -790,10 +790,20 @@ console.log('\n--- the keyboard sets ---');
     has('mount', 'KeyP') && has('interact', 'KeyI') && has('attack', 'KeyJ')
     && KEYSETS[0].mount.includes('KeyQ') && KEYSETS[0].interact.includes('KeyE')
     && KEYSETS[0].attack.includes('KeyF'));
-  ok('...and two ways to jump beside it', has('jump', 'Quote') && has('jump', 'ControlRight'));
+  /* RIGHT ALT JUMPS AND `'` SPRINTS, which is the swap the second real
+     two-player session asked for and the opposite of how it shipped. The hand
+     is the argument: played on O K L ; the right hand sits over the letter row,
+     where Right Alt falls under the thumb and `'` is a pinky reach up and
+     across — so the button pressed most often takes the thumb key. */
+  ok('...and two ways to jump beside it', has('jump', 'AltRight') && has('jump', 'ControlRight'));
   ok('...and sprint off Right Ctrl, which is a jump key now',
-    has('sprint', 'AltRight') && has('sprint', 'ShiftRight')
+    has('sprint', 'Quote') && has('sprint', 'ShiftRight')
     && !has('sprint', 'ControlRight'));
+  /* THE SWAP HAS TO BE A SWAP. A key on both actions would fire two things on
+     one press, which is the exact trap Right Ctrl fell into and the reason
+     sprint moved off it in the first place. */
+  ok('...and the two swapped keys did not land on the same action',
+    !has('sprint', 'AltRight') && !has('jump', 'Quote'));
 
   /* THE OLD KEYS STILL WORK. Nothing a kid has already learned may stop
      working — the arrows and the numpad are how both girls have always played,
@@ -804,11 +814,12 @@ console.log('\n--- the keyboard sets ---');
   ok('the numpad still does all four buttons',
     has('jump', 'Numpad0') && has('attack', 'Numpad1')
     && has('interact', 'Numpad2') && has('mount', 'Numpad3'));
-  /* , . / ' — one contiguous run, in the same order relative to each other as
-     the numpad's 2 1 3 0 never was. */
-  ok('the laptop run is , . / \' = interact, mount, attack, jump',
-    has('interact', 'Comma') && has('mount', 'Period')
-    && has('attack', 'Slash') && has('jump', 'Quote'));
+  /* , . / — one contiguous run beside the arrows. `'` used to close it as jump
+     and is sprint now: still four keys under one hand, the last doing a
+     different job. */
+  ok('the laptop run is , . / = interact, mount, attack',
+    has('interact', 'Comma') && has('mount', 'Period') && has('attack', 'Slash'));
+  ok("...with ' beside it for sprint", has('sprint', 'Quote'));
 
   /* IF THE GAME BOUND IT, THE BROWSER MUST NOT ALSO ACT ON IT. Three of player
      2's keys are Firefox shortcuts — `/` and `'` open Quick Find, and a bare
@@ -861,9 +872,9 @@ console.log('\n--- ...read through the real InputManager ---');
   ok('P mounts', press('KeyP').on.join() === 'mount');
   ok('I interacts', press('KeyI').on.join() === 'interact');
   ok('J attacks', press('KeyJ').on.join() === 'attack');
-  ok('\' jumps', press('Quote').on.join() === 'jump');
+  ok("' sprints", press('Quote').on.join() === 'sprint');
   ok('Right Ctrl jumps too', press('ControlRight').on.join() === 'jump');
-  ok('Right Alt sprints', press('AltRight').on.join() === 'sprint');
+  ok('Right Alt jumps', press('AltRight').on.join() === 'jump');
   ok('Right Shift still sprints', press('ShiftRight').on.join() === 'sprint');
   /* The three that MOVED, each asserted to do its new job and only that. */
   ok('/ is attack now, not jump', press('Slash').on.join() === 'attack');

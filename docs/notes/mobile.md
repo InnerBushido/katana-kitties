@@ -647,3 +647,49 @@ and is the one that *appears* — so the toast announcing a star was covered by 
 counter that had arrived to report it. `has-balls` on `#hud` moves them down.
 A class rather than a sibling selector because `#toasts` comes before `#balls`
 in the markup and no combinator reaches backwards.
+
+---
+
+## The desktop lag that was never about the labels
+
+The maths overlay was reported as lagging the PC build again, after the upload
+fix. The ask was to revert the orb readouts to the old cached-texture path,
+"which did not lag". It was not the readouts.
+
+**`Line.computeLineDistances()` allocates.** three.js rebuilds the whole
+attribute and hands the geometry a **brand new `Float32BufferAttribute` on every
+call**, so the GPU buffer is destroyed and recreated each time. Both the Dojo and
+every orb called it from their `setLine` helpers — on **two-point lines that move
+every frame**. With the overlay up there are **sixteen dashed lines** in the
+scene: sixteen buffer create/destroy cycles per frame, for a number that is one
+subtraction.
+
+A two-point line's distances are exactly `[0, length]`. They are allocated once
+at build time and written in place now. Measured before the fix by calling it
+twice and comparing identity: two different attribute objects.
+
+**Reverting the labels would have been the wrong fix twice over** — it would have
+restored the leak the phone died of, and it would not have touched this. Worth
+recording as the general lesson: *"it lagged before I changed X" is evidence
+about when, not about what.* The upload path was measured at 0.69 MB/frame with
+three orbs each and the Dojo on screen, which is not a stall.
+
+The `world-check` assertion is on **attribute identity, not on the numbers** —
+the numbers were always right, which is precisely why nothing caught it.
+
+### Two smaller things from the same session
+
+**Toasts moved to the top on desktop**, which is where the phone already put
+them. They had been at `bottom: 86px` since the first commit and that was fine
+while the bottom of the screen was empty — but the minimap sits in the
+bottom-left of *each pane*, so on a vertical split the right pane's map is just
+right of centre, exactly where a centred toast lands. The top strip is the one
+band that keeps its shape however many panes there are.
+
+**Player 2's `'` and `Right Alt` swapped**, so Right Alt jumps and `'` sprints.
+The hand is the argument: played on `O K L ;` her right hand sits over the letter
+row, where Right Alt falls under the thumb and `'` is a pinky reach up and
+across — so the button pressed most often should have the thumb key. `pad-check`
+pinned the old assignment in five places and caught the change immediately, which
+is the check doing its job; they now also assert the swap *is* a swap, since a
+key on both actions would fire two things on one press.

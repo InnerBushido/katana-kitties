@@ -4825,6 +4825,44 @@ console.log('\n--- the three power moves ---');
   const po = new PowerOrb(POWER_ORBS[0], 0, 1);
   ok('the power orb\u2019s cos/sin readout is live', !!po.readout._live);
 
+  /* THE DASHED LEGS MUST NOT REBUILD THEIR OWN BUFFERS.
+
+     `Line.computeLineDistances()` hands the geometry a BRAND NEW attribute every
+     call, so the GPU buffer is destroyed and recreated — and both the Dojo and
+     every orb were calling it on two-point lines that move every frame. Sixteen
+     dashed lines in a scene with the maths overlay up is sixteen buffer
+     create/destroy cycles per frame, which is what the second desktop lag report
+     turned out to be. The distances are `[0, length]`; they are written in place.
+
+     Asserted on IDENTITY, not on the numbers, because the numbers were always
+     right — which is exactly why nothing caught it. */
+  const dashedOf = (root) => {
+    const out = [];
+    root.traverse((o) => { if (o.isLine && o.material?.isLineDashedMaterial) out.push(o); });
+    return out;
+  };
+  const dojoDashed = dashedOf(dojo.group);
+  const orbDashed = dashedOf(orb.group);
+  ok('the Dojo and the orb both draw dashed legs',
+    dojoDashed.length > 0 && orbDashed.length > 0, `${dojoDashed.length} + ${orbDashed.length}`);
+  const allDashed = [...dojoDashed, ...orbDashed];
+  ok('...and every one has its dash distances allocated up front',
+    allDashed.every((l) => !!l.geometry.attributes.lineDistance));
+  const dashBefore = allDashed.map((l) => l.geometry.attributes.lineDistance);
+  for (let i = 0; i < 120; i++) {
+    walker.position.set(
+      dc.x + Math.cos(i / 20) * DOJO_RADIUS, dc.y, dc.z + Math.sin(i / 20) * DOJO_RADIUS
+    );
+    dojo.update(1 / 60, [walker]);
+    orb.update(1 / 60, centre);
+  }
+  ok('...and moving them for two seconds rebuilds none of those buffers',
+    allDashed.every((l, k) => l.geometry.attributes.lineDistance === dashBefore[k]));
+  /* And the value is still real, or every dash would render as a solid line. */
+  const legs = orbDashed.map((l) => l.geometry.attributes.lineDistance);
+  ok('...while the dash lengths are still measured, not left at zero',
+    legs.some((d) => d.getX(1) > 0) && legs.every((d) => d.getX(0) === 0));
+
   /* A CACHED LABEL MUST STILL CACHE. The fix would be worthless if it had
      quietly turned every static label into its own canvas — that is the same
      leak wearing the other hat. */

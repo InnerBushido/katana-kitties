@@ -80,6 +80,8 @@ export class Orb {
     const line = (c, dashed = false) => {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3));
+      // See `setLine` in _updateOverlay: written in place, never rebuilt.
+      if (dashed) geo.setAttribute('lineDistance', new THREE.Float32BufferAttribute(new Float32Array(2), 1));
       const mat = dashed
         ? new THREE.LineDashedMaterial({
             color: c, dashSize: 0.34, gapSize: 0.26,
@@ -192,12 +194,29 @@ export class Orb {
   }
 
   _updateOverlay(x, z, c, s) {
+    /* WHY THIS DOES NOT CALL `computeLineDistances()`.
+    
+       IT ALLOCATES. three.js's version rebuilds the whole attribute and hands the
+       geometry a BRAND NEW `Float32BufferAttribute` on every call — so the GPU
+       buffer is destroyed and recreated each time. These are two-point lines being
+       moved every frame, and with the maths overlay up there are SIXTEEN dashed
+       lines in the scene between the orbs and the Dojo: sixteen buffer
+       create/destroy cycles per frame, for a number that is one subtraction.
+    
+       A two-point line's distances are exactly `[0, length]`, so the attribute is
+       allocated once at build time and written in place. Measured: the allocation
+       was real — calling it twice returns two different attribute objects. */
     const setLine = (line, ax, ay, az, bx, by, bz) => {
       const p = line.geometry.attributes.position;
       p.setXYZ(0, ax, ay, az);
       p.setXYZ(1, bx, by, bz);
       p.needsUpdate = true;
-      if (line.material.isLineDashedMaterial) line.computeLineDistances();
+      const d = line.geometry.attributes.lineDistance;
+      if (d) {
+        d.setX(0, 0);
+        d.setX(1, Math.hypot(bx - ax, by - ay, bz - az));
+        d.needsUpdate = true;
+      }
     };
 
     // hypotenuse: origin → orb

@@ -133,11 +133,11 @@ Then open the address it prints.
 |                  | Keyboard 1 | Keyboard 2 | Gamepad      |
 | ---------------- | ---------------- | ---------------- | ------------ |
 | Move             | `W A S D`        | `O K L ;` or the arrow keys | Left stick   |
-| Jump / fly up    | `Space`          | `'` or `Right Ctrl`, `Numpad 0` | `A`          |
+| Jump / fly up    | `Space`          | `Right Alt` or `Right Ctrl`, `Numpad 0` | `A`  |
 | Slash            | `F`              | `J`, `Numpad 1` or `/`    | `X`          |
 | Interact / dive  | `E`              | `I`, `Numpad 2` or `,`    | `B`          |
 | Mount / dismount / ward | `Q`       | `P`, `Numpad 3` or `.`    | `Y`          |
-| Sprint / boost   | `Left Shift`     | `Right Alt` or `Right Shift` | `ZL` / `ZR` |
+| Sprint / boost   | `Left Shift`     | `'` or `Right Shift`      | `ZL` / `ZR` |
 | Zoom the map     | `Z`              | `X`                  | `R` / View   |
 | Maths overlay    | `M`              | `M`                  | `L` / Home   |
 | Pause            | `Esc`            | `Esc`                | `+` / Start  |
@@ -169,8 +169,8 @@ Now she has the same shape on her own side of the board:
 ```
         O                        W                 · O K L ;   walk
       K L ;    mirrors         A S D               · P I J     ride, clan, slash
-    P I J                      Q E F               · '  or Right Ctrl   jump
-                                                   · Right Alt          sprint
+    P I J                      Q E F               · Right Alt or Right Ctrl  jump
+                                                   · '                        sprint
 ```
 
 **`P` `I` `J` are to `O K L ;` what `Q` `E` `F` are to `WASD`** — same three
@@ -179,10 +179,14 @@ reach across.
 
 **Everything she already knew still works.** The arrow keys still walk her, the
 numpad still does all four buttons, and the keys beside the arrows still work on
-a laptop with no numpad — they read `,` `.` `/` `'` for clan, ride, slash, jump.
-Three of them moved, each because the new cluster took its key: `;` is "walk
-right" now so ride went to `.`, jump moved to `'` so slash took `/`, and
-`Right Ctrl` became a second jump key so sprint is `Right Alt` / `Right Shift`.
+a laptop with no numpad — they read `,` `.` `/` for clan, ride and slash.
+Each moved because the new cluster took its key: `;` is "walk right" now so ride
+went to `.`, slash took `/`, and `Right Ctrl` became a second jump key.
+
+**`Right Alt` jumps and `'` sprints**, and it is that way round because of the
+hand. Playing her on `O K L ;` puts her right hand over the letter row, and from
+there `Right Alt` falls under the thumb while `'` is a pinky reach up and across
+— so the button she presses most often gets the thumb key.
 
 **And the browser no longer steals her keys.** In Firefox `/` and `'` open Quick
 Find and a tap of `Alt` jumps to the menu bar — so player 2 mashing jump used to

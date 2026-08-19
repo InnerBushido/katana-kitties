@@ -348,15 +348,21 @@ export const KEYSETS = [
        in the game impossible to reach on the machine it is developed on. */
     /* RIGHT CTRL IS A JUMP KEY, AND IT USED TO BE SPRINT. A key cannot be both
        — it would fire two actions on one press — so freeing it meant moving
-       sprint, which is why sprint is Right Shift and Right Alt and nothing
-       else. It is worth the move: jump is the button she presses most, `'` is a
-       pinky stretch on some keyboards and absent from others, and Right Ctrl is
-       a big key in the bottom corner that her palm finds without looking. */
-    jump: ['Numpad0', 'Quote', 'ControlRight'],
+       sprint, which is why sprint is Right Shift and one other key and nothing
+       else. It is worth the move: jump is the button she presses most, and
+       Right Ctrl is a big key in the bottom corner that her palm finds without
+       looking. */
+    jump: ['Numpad0', 'AltRight', 'ControlRight'],
     attack: ['Numpad1', 'Slash', 'KeyJ'],
     interact: ['Numpad2', 'Comma', 'KeyI'],
     mount: ['Numpad3', 'Period', 'KeyP'],
-    sprint: ['ShiftRight', 'AltRight'],
+    /* `'` AND RIGHT ALT SWAPPED, and the reason is the O K L ; hand.
+       Playing the second kitten on the letter row rather than the arrows puts
+       her right hand over O K L ; — and from there Right Alt is under the thumb
+       while `'` is a pinky reach up and across. Jump is the button she presses
+       most and sprint is one she holds occasionally, so jump takes the thumb
+       key. Right Shift keeps sprint for the arrows hand, where it always was. */
+    sprint: ['ShiftRight', 'Quote'],
     /* ENTER IS THE JOIN KEY FOR BOTH SETS, and that is the whole of it. It used
        to be each set's own key — `Enter` for WASD, `NumpadEnter`/`\` for the
        arrows — which meant the key that seated the next player MOVED depending

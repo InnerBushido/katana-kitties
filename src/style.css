@@ -771,9 +771,22 @@ html, body {
   padding-left: 2px;
 }
 
+/* TOP-CENTRE, UNDER THE SCOREBOARD, ON EVERY DEVICE.
+
+   These sat at `bottom: 86px` from the first commit, and it was fine for as
+   long as the bottom of the screen was empty. It is not any more: in a split the
+   minimap sits in the bottom-left of EACH pane, so on a vertical split the
+   right-hand pane's map is just right of centre — exactly where a centred toast
+   lands. The message a kid is meant to read ended up behind a map.
+
+   The top strip is the one place that is the same shape however many panes there
+   are, because the scoreboard is the only thing in it and it is centred too. The
+   phone had already been moved here for the same reason; this makes the desktop
+   agree rather than keeping two answers. */
 #toasts {
   position: absolute;
-  bottom: 86px;
+  top: 64px;
+  bottom: auto;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -781,6 +794,11 @@ html, body {
   align-items: center;
   gap: 8px;
 }
+/* And down again when the dragon-ball tally is up, which shares this strip and
+   is the one that APPEARS — see `Game._updateBallHud`. This was a touch-only
+   rule while the desktop toasts were at the bottom and had nothing to collide
+   with; now both need it. */
+#hud.has-balls #toasts { top: 88px; }
 .toast {
   background: rgba(251, 238, 210, 0.96);
   border: 4px solid var(--ink);
@@ -1968,7 +1986,9 @@ body.touch-ui .map-box { pointer-events: auto; }
    19 tall) and the toast announcing the star you just picked up was drawn
    underneath the counter that had appeared to report it. `has-balls` is set in
    `Game._updateBallHud`. */
-body.touch-ui #toasts { bottom: auto; top: calc(env(safe-area-inset-top) + 62px); }
+/* The phone's strip is tighter than the desktop's, so it keeps its own numbers —
+   only the safe-area inset and the smaller scoreboard differ. */
+body.touch-ui #toasts { top: calc(env(safe-area-inset-top) + 62px); }
 body.touch-ui #hud.has-balls #toasts { top: calc(env(safe-area-inset-top) + 72px); }
 
 /* The HELP page's touch section, and the desktop keyboard sections, are each
