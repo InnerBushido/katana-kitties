@@ -52,6 +52,38 @@ let warned = false;
    a rounding error next to one dragon sheet at 16MB. */
 const SS = 3;
 
+/* A LIVE LABEL IS SUPERSAMPLED LESS, AND THE REASON IS THE CLAMP.
+
+   SS = 3 buys headroom for MAGNIFICATION — a label the camera has come close to,
+   drawn far past 1:1. A live label is `fixedScreenSize`, and `faceCamera` clamps
+   that scale to 1.75, so it is the one kind of label that is *structurally
+   prevented* from being magnified much. Paying 3x for headroom it cannot use
+   costs 2.25x the pixels on every single re-upload, which for text that changes
+   every frame is the whole cost.
+
+   Checked on screen against the axis numbers beside them, which are still SS 3:
+   at 2 there is no readable difference on these readouts. */
+const LIVE_SS = 2;
+
+/* HOW OFTEN A LIVE LABEL MAY ACTUALLY REPAINT, in milliseconds.
+
+   THE REGRESSION THIS FIXES: making labels repaint in place stopped the texture
+   LEAK and replaced it with a texture UPLOAD, once per changed label per frame.
+   Measured with three orbs each and the Dojo on screen — 7.3 repaints a frame
+   across 33 MB of live canvas, about 1.3 ms of pure upload every frame, on a
+   desktop GPU. It made the orbs and the Dojo island lag badly.
+
+   A NUMBER A CHILD IS READING DOES NOT NEED SIXTY UPDATES A SECOND. At 80 ms it
+   is still visibly live — it tracks her as she walks — and it is 5x less upload.
+   This is the knob that matters; the size reduction above is the multiplier on
+   top of it.
+
+   Deliberately NOT driven by the game's `dt`: every caller would have to thread
+   it through, and a label that is updated from two places (the Dojo's readouts
+   are, once per pane) would then advance its own clock twice as fast. Wall time
+   is the thing actually being rationed. */
+const LIVE_MS = 80;
+
 /** The authored (pre-supersample) box a string needs.
  *
  *  THE HEIGHT IGNORES THE TEXT ENTIRELY, which is not an accident and is what
@@ -75,21 +107,22 @@ function measureBox(text, opts = {}) {
 /* ONE PAINTER FOR BOTH PATHS. A cached label and a live label have to come out
    pixel-identical, or the Dojo's readouts would visibly differ from the axis
    numbers standing next to them — and two copies of this is how that happens. */
-function paint(g, text, w, h, opts) {
+function paint(g, text, w, h, opts, ss) {
   const {
     size = 88, color = '#fff6de', stroke = '#1d1216', strokeWidth = 8,
     font = 'Bangers', italic = false,
   } = opts;
   /* `setTransform` before `clearRect`, because a live canvas is repainted and
-     the previous pass left `scale(SS, SS)` on the context — clearing under that
-     scale would wipe the top-left ninth and leave the rest of the last string
+     the previous pass left `scale(ss, ss)` on the context — clearing under that
+     scale would wipe the top-left corner and leave the rest of the last string
      on screen, behind the new one. */
   g.setTransform(1, 0, 0, 1, 0, 0);
-  g.clearRect(0, 0, w * SS, h * SS);
+  g.clearRect(0, 0, w * ss, h * ss);
   /* One scale on the context and every coordinate below stays in authored
      units — so the drawing code is untouched and cannot disagree with the
-     measurement above. */
-  g.scale(SS, SS);
+     measurement above. `ss` differs between the two paths (see LIVE_SS) and
+     nothing else in here has to know that. */
+  g.scale(ss, ss);
   g.font = `${italic ? 'italic ' : ''}${size}px ${font}, sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
@@ -127,7 +160,7 @@ export function makeLabelTexture(text, opts = {}) {
   const cv = document.createElement('canvas');
   cv.width = w * SS;
   cv.height = h * SS;
-  paint(cv.getContext('2d'), text, w, h, opts);
+  paint(cv.getContext('2d'), text, w, h, opts, SS);
 
   /* `aspect` is deliberately the AUTHORED ratio, not the canvas ratio. They are
      equal — SS scales both axes — and saying so here is what stops somebody
@@ -196,11 +229,19 @@ export class Label extends THREE.Object3D {
          label is anchored by its middle either way. */
       const box = measureBox(live, opts);
       this._live = { w: box.w, h: box.h, opts };
+      /** Last text ASKED for. `_text` is the last text actually PAINTED, and the
+       *  throttle is the gap between them. */
+      this._want = text;
+      /* Negative, not 0. `performance.now()` is small for the first moments of a
+         page, so a zero here would make the throttle swallow the first change on
+         any label built during boot — briefly, and only once, which is exactly
+         the kind of thing that gets diagnosed as something else. */
+      this._paintedAt = -LIVE_MS;
       const cv = document.createElement('canvas');
-      cv.width = box.w * SS;
-      cv.height = box.h * SS;
+      cv.width = box.w * LIVE_SS;
+      cv.height = box.h * LIVE_SS;
       this._liveCtx = cv.getContext('2d');
-      paint(this._liveCtx, text, box.w, box.h, opts);
+      paint(this._liveCtx, text, box.w, box.h, opts, LIVE_SS);
       texture = newTexture(cv);
       aspect = box.w / box.h;
     } else {
@@ -225,17 +266,33 @@ export class Label extends THREE.Object3D {
   }
 
   setText(text) {
-    if (text === this._text) return;
-    this._text = text;
     if (this._live) {
+      /* THROTTLED, AND COMPARED AGAINST `_want` RATHER THAN `_text`.
+
+         The naive version compares against the last PAINTED text and returns
+         early when they match — which, once the throttle drops a frame, means a
+         label that stops changing never paints its final value and sits showing
+         a stale number forever. `_want` is what the game asked for; `_text` is
+         what is on the canvas; the repaint happens when they differ and enough
+         time has passed. Callers keep calling this every frame with the same
+         value when the player stands still, so the last value always lands —
+         within LIVE_MS of being asked for. */
+      this._want = text;
+      if (text === this._text) return;
+      const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      if (now - this._paintedAt < LIVE_MS) return;
+      this._paintedAt = now;
+      this._text = text;
       const { w, h, opts } = this._live;
-      paint(this._liveCtx, text, w, h, opts);
+      paint(this._liveCtx, text, w, h, opts, LIVE_SS);
       /* The texture object is unchanged — only its pixels are — so this is a
          re-upload and nothing else. Touching `mat.needsUpdate` here would throw
          away half the reason a live label exists. */
       this.mat.map.needsUpdate = true;
       return;
     }
+    if (text === this._text) return;
+    this._text = text;
     const { texture, aspect } = makeLabelTexture(text, this._opts);
     this.mat.map = texture;
     this.mat.needsUpdate = true;

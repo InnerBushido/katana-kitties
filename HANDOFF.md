@@ -163,6 +163,11 @@ session*.
    string: **972 MB per lap of the circle**, measured. Labels that change now own
    their canvas (`Label`'s `live` option) instead of using the shared cache. The
    Kotodama orb and the power orb had the identical bug and are fixed too.
+   *Follow-up:* that first fix traded the leak for a per-frame texture UPLOAD and
+   made the orbs and the Dojo lag on a desktop — the Dojo was re-uploading 9.5 MB
+   of text every frame **from other islands**, because `dojo.update` runs
+   unconditionally. A reading-distance gate, an 80 ms repaint throttle and a
+   smaller supersample took it from 10.4 MB a frame to 0.66.
 2. **The face cluster was too small and too far into the corner.** It is now
    centred on the reflection of the stick's resting point — same height, same
    inset — and about 40% bigger.

@@ -28,6 +28,25 @@ const AXIS = R * 1.42;
    buffer is allocated at this length once and drawn short. */
 const ARC_MAX = 97;
 
+/* HOW CLOSE SOMEBODY HAS TO BE BEFORE THE WORDS ARE WORTH REDRAWING.
+
+   `update` runs from the main loop EVERY FRAME, unconditionally, wherever the
+   party is standing — and on the title screen, which calls it with no players at
+   all. That is correct for the geometry: it is a few hundred bytes of buffer and
+   the diagram should be turning when you fly in. It is badly wrong for the text.
+
+   The five readouts are 9.5 MB of live canvas between them, and repainting one
+   re-uploads it. Measured: the Dojo was re-uploading all of that every frame from
+   244 units away on a different island. The board is worse in kind — a 1280x720
+   2D canvas redrawn thirty times a second for a HUD element that is `display:
+   none` unless somebody is actually standing in the Dojo.
+
+   170 rather than something tight: the Dojo camera frames the diagram from 104
+   units back, so anything at or under that is INSIDE the readable range and the
+   gate must clear it comfortably. The nearest other island is hundreds away, so
+   this excludes the whole rest of the world. */
+const READ_R = 170;
+
 /* Maths y maps to world -Z.
    The dojo camera looks down the +Z axis, so world -Z is screen-up. Without
    this flip the y axis would point *down* the screen and every diagram would
@@ -319,11 +338,18 @@ export class MathDojo {
     // the angle away from the one deliberately walking the rim.
     let driver = null;
     let bestErr = Infinity;
+    /* Is anybody near enough for the words to be worth redrawing? Answered in
+       the loop that is already walking the players rather than in a second one
+       — see READ_R for why the answer gates the text and not the geometry.
+       A mounted player counts here even though she cannot DRIVE: she can read
+       the diagram perfectly well from a dragon. */
+    let readable = false;
     for (const p of players) {
-      if (p.mount) continue;
       const dx = p.position.x - this.centre.x;
       const dz = p.position.z - this.centre.z;
       const d = Math.hypot(dx, dz);
+      if (d < READ_R) readable = true;
+      if (p.mount) continue;
       if (d < AXIS + 6 && d > 2.5) {
         const err = Math.abs(d - R);
         if (err < bestErr) {
@@ -332,6 +358,7 @@ export class MathDojo {
         }
       }
     }
+    this.readable = readable;
 
     this.driver = driver ? driver.p : null;
     if (driver) {
@@ -369,26 +396,35 @@ export class MathDojo {
 
     const deg = (this.theta * 180) / Math.PI;
     const half = this.theta / 2;
-    this.lblTheta.position.set(Math.cos(half) * ar * 1.45, 1.3, ZS * Math.sin(half) * ar * 1.45);
-    this.lblTheta.setText(`θ = ${deg.toFixed(0)}°`);
 
+    /* EVERYTHING FROM HERE DOWN IS TEXT, AND TEXT IS THE EXPENSIVE PART.
+
+       Positions are moved regardless — they are three floats each and a label
+       parked in the wrong place for the first frame after you arrive would be
+       visible. Only the CONTENT is gated, because setting it re-uploads a
+       canvas. See READ_R. */
+    this.lblTheta.position.set(Math.cos(half) * ar * 1.45, 1.3, ZS * Math.sin(half) * ar * 1.45);
     // Park the leg labels clear of the triangle they annotate.
     this.lblCos.position.set(px / 2, 1.3, ZS * -3.6 * Math.sign(s || 1));
-    this.lblCos.setText(`cos θ = ${c.toFixed(2)}`);
-
     this.lblSin.position.set(px + 6.4 * Math.sign(c || 1), 1.3, pz / 2);
-    this.lblSin.setText(`sin θ = ${s.toFixed(2)}`);
-
     this.lblPoint.position.set(px * 1.2, 3.4, pz * 1.2);
-    this.lblPoint.setText(`( ${c.toFixed(2)} , ${s.toFixed(2)} )`);
-
     this.lblHint.position.set(0, 2.6, wz(-0.46));
+
+    if (!this.readable) return;
+
+    this.lblTheta.setText(`θ = ${deg.toFixed(0)}°`);
+    this.lblCos.setText(`cos θ = ${c.toFixed(2)}`);
+    this.lblSin.setText(`sin θ = ${s.toFixed(2)}`);
+    this.lblPoint.setText(`( ${c.toFixed(2)} , ${s.toFixed(2)} )`);
     this.lblHint.setText(
       this.driver
         ? `${this.driver.name} is at ${(this.playerRadius).toFixed(2)} × radius`
         : 'nobody on the circle — spinning by itself'
     );
 
+    /* The board is a 1280x720 2D redraw feeding a HUD element that is
+       `display: none` unless somebody is standing in the Dojo. It ran thirty
+       times a second for the whole session regardless. */
     this._boardAcc += dt;
     if (this._boardAcc > 1 / 30) {
       this._boardAcc = 0;

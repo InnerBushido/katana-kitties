@@ -4732,7 +4732,12 @@ console.log('\n--- the three power moves ---');
       dc.x + Math.cos(a) * DOJO_RADIUS, dc.y, dc.z + Math.sin(a) * DOJO_RADIUS
     );
     dojo.update(1 / 60, [walker]);
-    for (const l of liveLabels) widest.set(l, Math.max(widest.get(l), l._text.length));
+    /* `_want`, NOT `_text`. `_text` is what the throttle actually painted, and
+       in a tight loop like this one that is a handful of values — so measuring
+       it would quietly stop sampling the wide strings and the reserve check
+       would pass by never having been tested. `_want` is every value the Dojo
+       asked to display, which is the set the reserve has to cover. */
+    for (const l of liveLabels) widest.set(l, Math.max(widest.get(l), l._want.length));
   }
 
   ok('a lap of the circle creates no canvases at all', created - afterBuild === 0,
@@ -4756,10 +4761,52 @@ console.log('\n--- the three power moves ---');
   }
 
   /* The idle line is longer than any driven one, and it is the reserve — so it
-     has to be checked against a real player standing there too. */
-  dojo.update(1 / 60, []);
+     has to be checked against a real player standing there too. Driven from a
+     player who is present but off the circle, because `update([])` with nobody
+     at all now returns before the text runs (see below). */
+  walker.position.set(dc.x, dc.y, dc.z);
+  dojo.update(1 / 60, [walker]);
   ok('...including the line shown with nobody on the circle',
-    dojo.lblHint._opts.live.length >= dojo.lblHint._text.length);
+    dojo.lblHint._opts.live.length >= dojo.lblHint._want.length);
+
+  /* THE GATE. The Dojo's `update` is called every frame from anywhere in the
+     world and from the title screen, so the text and the board — the only
+     expensive things in it — must not run unless somebody could read them.
+     Re-uploading 9.5 MB of canvas from another island is what this stops. */
+  const fair = { mount: null, name: 'Ember', position: new THREE.Vector3(dc.x + 900, dc.y, dc.z) };
+  dojo.update(1 / 60, [fair]);
+  ok('nobody within reading distance means the Dojo does no text work',
+    dojo.readable === false);
+  const boardBefore = dojo._boardAcc;
+  dojo.update(1 / 60, [fair]);
+  ok('...and the 1280x720 wave board is not redrawn either',
+    dojo._boardAcc === boardBefore);
+  ok('...but the diagram itself still turns, so it is right when you arrive',
+    (() => { const before = dojo.theta; dojo.update(1 / 60, [fair]); return dojo.theta !== before; })());
+  dojo.update(1 / 60, [walker]);
+  ok('standing on the island turns the text back on', dojo.readable === true);
+
+  /* THE THROTTLE. A live label repaints at most every LIVE_MS, which is what
+     turned 7.3 uploads a frame back into something a GPU does not notice. A
+     tight loop asks for 600 different values inside one millisecond; almost
+     none of them may reach the canvas. */
+  const spam = new Label('', { size: 40, live: 'xxxxxxxxxxxx' });
+  let painted = 0;
+  const seen = new Set();
+  for (let i = 0; i < 600; i++) {
+    spam.setText(`v${i}`);
+    if (spam._text === `v${i}`) painted += 1;
+    seen.add(spam._text);
+  }
+  ok('a live label refuses to repaint 600 times in one millisecond', painted <= 2, `${painted}`);
+  /* AND THE LAST VALUE STILL LANDS. The throttle compares `_want` against
+     `_text`, so a label that stops changing paints its final value on the next
+     tick past the interval — rather than sitting on a stale number forever,
+     which is what comparing against `_text` alone would have done. */
+  spam._paintedAt = 0;
+  spam.setText('final');
+  ok('...but the value it settles on is the one that gets painted',
+    spam._text === 'final');
 
   /* THE SAME BUG, TWICE MORE. The Kotodama orb and the power orb print the same
      kind of live trig, and the power orb's is `cos X  sin Y` — the identical

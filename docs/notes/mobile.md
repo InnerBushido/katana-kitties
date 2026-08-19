@@ -445,6 +445,62 @@ counts canvas creations across a simulated lap and requires zero; and
 `makeLabelTexture` warns once, naming the offending string, if the shared cache
 ever passes 48 MB. Reverting the fix trips both.
 
+#### And then it lagged on a desktop, because a leak had been traded for an upload
+
+Worth recording in full, because the first fix was right about the cause and
+wrong about the cost. Repainting in place removed the allocation and replaced it
+with a **texture upload**, once per changed label per frame — and the naive
+version repaints whenever the string differs, which while walking is every
+frame. Measured with three orbs each and the Dojo on screen: **7.3 repaints a
+frame across 33 MB of live canvas, roughly 10.4 MB re-uploaded every frame**.
+That made the orbs and the Dojo island lag badly on a PC.
+
+The worst part was not the orbs. `Game._tick` calls `dojo.update` **every frame,
+unconditionally, wherever the party is standing** — and `_renderTitleIdle` calls
+it on the title screen. So the Dojo's five readouts, 9.5 MB between them, were
+being repainted and re-uploaded **from 244 units away on a different island**,
+and the 1280x720 wave board was being redrawn thirty times a second to feed a
+HUD element that is `display: none` unless somebody is standing in the Dojo.
+
+Three changes, in order of what they were worth:
+
+| | |
+| --- | --- |
+| `READ_R` gate — no text or board work unless somebody is within reading distance | removes 5 of the 7.3 repaints, everywhere in the game |
+| `LIVE_MS` throttle — a live label repaints at most every 80 ms | 5x fewer of what is left |
+| `LIVE_SS = 2` instead of 3 for live labels | 2.25x less data per upload |
+
+Result, measured the same way: **10.4 MB per frame to 0.66 MB per frame, about
+15x.** Live label memory went 32.8 MB to 14.6 MB with it.
+
+**The gate covers text only, never geometry.** The lines, the arc and the label
+*positions* are a few hundred bytes and still run every frame, so the diagram is
+turning and correctly laid out the moment you fly in; it is only the words that
+wait. `READ_R` is 170 rather than something tight because the Dojo camera frames
+the diagram from 104 units back — a gate that did not comfortably clear the
+camera's own framing distance would switch the text off while you were reading
+it.
+
+**`LIVE_SS = 2` is not a quality compromise, and that was checked rather than
+assumed.** `SS = 3` buys headroom for magnification; a live label is
+`fixedScreenSize` and `faceCamera` clamps that scale to 1.75, so it is the one
+kind of label structurally prevented from being magnified much. Measured at the
+Dojo's own framing, the live labels are still oversampled **3.5x to 6x** against
+the pixels they actually cover.
+
+**The throttle compares `_want` against `_text`, and the distinction is the
+whole bug it avoids.** The obvious version returns early when the requested text
+matches the last *painted* text — so the first frame the throttle drops, a label
+that then stops changing never paints its final value and sits on a stale number
+forever. `_want` is what the game asked for, `_text` is what is on the canvas,
+and the repaint happens when they differ and the interval has passed. Callers
+keep calling every frame with the same value when the player stands still, so
+the last value always lands, within 80 ms.
+
+That distinction also caught a weakened check: the reserve-width assertion
+sampled `_text`, which under the throttle is a handful of values, so it had
+quietly stopped testing the wide strings it exists to test. It reads `_want` now.
+
 The same pass removed the arc geometry churn next door — the swept angle arc
 disposed and rebuilt a `BufferGeometry` every frame because the arc grows with
 theta. It is one buffer at full length now, shortened with `setDrawRange`.
