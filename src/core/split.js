@@ -88,3 +88,97 @@ export function splitLayout(n, W, H, gap = 3, dir = 'vertical', sizes = null) {
   ];
   return cells.slice(0, Math.min(n, 4));
 }
+
+/* ===========================================================================
+   HOW BIG THE MINIMAP IS.
+
+   IT LIVES HERE BECAUSE IT IS PANE GEOMETRY, and because a rule written inline
+   in `_drawMaps` could only ever be checked by looking at it. `splitLayout`
+   next door decides the pane; this decides what fits in the corner of one, and
+   both are pure for the same reason.
+=========================================================================== */
+
+/** The desktop ceiling, in px, and the fraction of a pane's width it may take.
+ *  Neither has moved since the map existed. */
+const MAP_MAX = 300;
+const MAP_WIDE = 0.42;
+/** A phone's cap, as a fraction of the PANE's height. */
+const MAP_TALL = 0.41;
+/** ...and inside the Dojo, where the map shares the screen with the board. */
+const MAP_DOJO = 0.33;
+/** ...and again when a phone is split side by side. See below. */
+const MAP_SPLIT = 0.67;
+
+/* A map must fit the pane it is in. At a flat 32vw a quadrant's map ate
+   most of a quarter-screen; sized against the PANE it stays the same
+   fraction of what its owner can actually see.
+
+   AND ON A PHONE IT IS THE HEIGHT THAT IS SCARCE, WHICH IS WHY THIS IS THE
+   ONE PLACE IT COULD BE FIXED. A landscape phone is 844x390: `paneW * 0.42`
+   is 354px of a 390px-tall screen, so the map covered the bottom-right
+   corner entirely and the hint text ran underneath it. That is the
+   misalignment the first phone test reported.
+
+   What comes out of here is written to `style.width` INLINE by `_drawMaps`,
+   so no stylesheet rule can override it — a `body.touch-ui .map-box` width
+   in style.css is silently dead. The limit therefore has to be a third
+   number in the `Math.min` below, and it has to be a fraction of the pane's
+   HEIGHT: a short pane is the case a width-derived size cannot see. */
+/* A THIRD OF THE PANE HEIGHT ON A TOUCH DEVICE, and the journey to that
+   number is worth recording because two of the three steps were wrong.
+
+   It started at 0.34 to get the map out from under the hint text. Played
+   on a phone it was unreadable, so it went to 0.50 — and that was fixing
+   the wrong thing: the map was illegible because it opened at WORLD zoom,
+   drawing eight islands into 200px, not because the box was small. Once it
+   opened zoomed in (see TOUCH_ZOOM) the same box was perfectly readable
+   and merely enormous, eating half the screen it is drawn over.
+
+   So it is back to a third. The lesson is that a HUD element that cannot
+   be read has two possible causes and only one of them is its size. */
+/* A BIGGER MAP, AND THE DOJO NO LONGER GETS A SPECIAL SMALL ONE.
+
+   0.33 was picked when the map shared the top-left corner with nothing and
+   had to stay out of the hint text (see the note above, which is the
+   history). It is the only thing you navigate by, it is read at a glance
+   on a moving phone, and 0.41 is about a quarter bigger for a corner that
+   is otherwise empty.
+
+   Inside the Dojo it drops back to that old 0.33 rather than the 0.24 it
+   was briefly given. 0.24 was over-corrected: the board had just moved to
+   the top-left and the map was being kept out of its way, but the map is
+   on the other side of the screen entirely, and the only thing it has to
+   clear there is the face cluster — which it does at 0.33 with room. */
+/* AND A THIRD SMALLER AGAIN WHEN THE PHONE IS SPLIT SIDE BY SIDE, which
+   is a case the cap above cannot see. It is a fraction of the pane's
+   HEIGHT, and a side-by-side split does not change the pane's height —
+   so 41% of `paneH` is the same 160px map it always was, now crammed into
+   half the width, and there are two of them. Reported from a tablet with
+   two players on it.
+
+   GATED ON THE PANE STILL BEING FULL HEIGHT rather than simply on
+   `!merged`, because a top-and-bottom split has already taken the cut:
+   `paneH` halved, so the cap halved with it, and cutting a 195px pane's map
+   by another third leaves 54px of unreadable islands. One rule, applied
+   where the thing it corrects for is actually happening. */
+
+/** How wide the minimap box is, in CSS pixels. Pure, so `world-check` can
+ *  assert it — this is layout arithmetic and `_drawMaps` only writes the
+ *  result to `style.width`.
+ *
+ *  @param paneW,paneH  the pane this map belongs to
+ *  @param screenH      the whole window's height — the only way to tell a
+ *                      side-by-side split (paneH unchanged) from a stacked one
+ *  @param touch        is this a phone? The caps below apply to nothing else
+ *  @param merged       one pane for everybody
+ *  @param mathUp       the Dojo's sin/cos board is on screen
+ */
+export function mapWidth({
+  paneW, paneH, screenH, touch = false, merged = true, mathUp = false,
+}) {
+  const fullHeight = paneH > screenH * 0.75;
+  const cap = touch
+    ? paneH * (mathUp ? MAP_DOJO : MAP_TALL) * (merged || !fullHeight ? 1 : MAP_SPLIT)
+    : Infinity;
+  return Math.min(MAP_MAX, paneW * MAP_WIDE, cap);
+}

@@ -233,22 +233,29 @@
     <div id="panel-settings" class="screen overlay hidden">
       <div class="panel">
         <h2>SETTINGS</h2>
-        <!-- TOUCH CONTROLS, AND THE TEST MODE. Automatic is right on every real
-             device; the two forced settings exist because the touch pad is
+        <!-- THE ON-SCREEN STICK, AND THE TEST MODE. Automatic is right on every
+             real device; the two forced settings exist because the touch pad is
              built on a desktop and would otherwise be looked at once a week on
              a phone. Forcing it ON puts the pad on screen with the mouse
              driving the stick and WASD driving the buttons, so the whole thing
              can be exercised without leaving the machine it is written on.
+
+             OFF MEANS "HIDE THE STICK", NOT "PRETEND THIS IS A LAPTOP", and the
+             wording matters because it used to mean both. Picking OFF on a phone
+             to play on a controller also threw away the phone-sized HUD — see
+             `padOn` in core/device.js. Tapping the map, the sin/cos board and
+             the menus all still work with it off; that is the whole point of it.
+
              The note says what needs a reload, because the render tier and the
              party size are read once at boot and cannot change under a running
              game — a setting that silently did half of what it says is worse
              than one that tells you. -->
         <label class="row">
-          <span>Touch controls</span>
+          <span>On-screen stick</span>
           <select id="set-touch">
             <option value="auto">Automatic (on for phones and tablets)</option>
-            <option value="mobile">Force ON — test touch on this computer</option>
-            <option value="desktop">Force OFF — always keyboard and pads</option>
+            <option value="mobile">Always ON — test touch on this computer</option>
+            <option value="desktop">Always OFF — controller or keyboard</option>
           </select>
         </label>
         <p class="tiny" id="touch-note"></p>

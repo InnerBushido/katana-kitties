@@ -14,7 +14,7 @@ import { TouchPad } from './core/touchpad.js';
 import { World } from './world/world.js';
 import { Player, ATTACKS, MAX_HP, KO_TIME } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss } from './core/palette.js';
-import { splitLayout } from './core/split.js';
+import { splitLayout, mapWidth } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, tierFor, toNextTier } from './entities/panda.js';
@@ -141,6 +141,14 @@ class Game {
        the constructor rather than part of `_applyQuality`. See core/device.js
        for why the art budget moves `maxAtlas` and never `cell`. */
     this.device = detectDevice();
+    /* WHAT THE GAME ACTUALLY BOOTED AS, kept because `this.device.touchPrimary`
+       is PATCHED LIVE when the setting changes and is therefore useless for
+       answering "does this need a reload". Comparing the setting against a value
+       the setting had just written made the reload note dead code — it could
+       never disagree with itself. The renderer, the atlas budget and the party
+       size were all decided from this snapshot and cannot move under a running
+       game, so this is the thing to compare against. */
+    this._bootPhone = this.device.touchPrimary;
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
       antialias: this.device.antialias,
@@ -280,22 +288,38 @@ class Game {
    * an attached pad that is not visible is a slot held by a device nobody can
    * see — which on a desktop would silently take player 1's seat away from the
    * keyboard.
+   *
+   * TWO FLAGS, NOT ONE, AND THE SPLIT IS THE WHOLE POINT OF THIS FUNCTION NOW.
+   * `touchPrimary` is "this is a phone" and drives the LAYOUT; `padOn` is "the
+   * stick is on screen" and drives the CONTROL. They used to be one boolean, so
+   * hiding the stick to play on a controller also threw away the phone-sized
+   * HUD — see `profileFor` in core/device.js for the report that found it.
    */
   _applyTouchMode() {
-    const on = this.device.touchPrimary;
+    const phone = this.device.touchPrimary;
+    const pad = this.device.padOn;
     /* THE CLASS GOES ON BEFORE THE PAD IS SHOWN, and the order is load-bearing
        now that `setVisible` MEASURES. `body.touch-ui` is what selects the phone
        button size (`--tp-unit`), so toggling it afterwards meant the cluster was
        measured at the tablet size, placed for a box 184px tall, and then shrank
        to 148 underneath its own position — it sat 18px low with nothing to say
        why. Class first, then show and measure. */
-    document.body.classList.toggle('touch-ui', on);
-    this.touchPad.setVisible(on);
+    document.body.classList.toggle('touch-ui', phone);
+    /* NO SECOND CLASS FOR "PHONE WITH THE STICK OFF", AND IT WAS TRIED.
+       A `body.no-pad` looked obviously right — with no thumbs on the glass, the
+       bottom corners and the full width are free again — and every rule written
+       for it turned out to be styling something already hidden or already moved
+       for a different reason. The bottom hint is `display: none` on touch
+       because it names KEYBOARD KEYS, not because a thumb was over it; the map
+       is top-left because that is where it was asked to be. A class the
+       stylesheet does not read is a comment that lies about where the layout
+       lives, so there isn't one. */
+    this.touchPad.setVisible(pad);
     /* THE PAD ALWAYS CARRIES WASD AS ITS SECOND SURFACE — see `_freeKeysets` in
        core/input.js. On a phone there is no keyboard and that costs nothing; on
        a tablet with one attached it is player 1's other hand, and on this desktop
        it is how the pad gets tested at all. Player 2 joins on the arrows. */
-    this.input.attachTouch(on ? this.touchPad : null);
+    this.input.attachTouch(pad ? this.touchPad : null);
     this._updateRotateGate();
   }
 
@@ -1145,21 +1169,36 @@ class Game {
        invariant 6 exists to prevent. */
     const tc = document.getElementById('set-touch');
     const note = document.getElementById('touch-note');
+    /* THIS SETTING IS ABOUT THE STICK, NOT ABOUT WHAT KIND OF MACHINE THIS IS,
+       and the note has to say so or the phone case reads as a bug. Turning the
+       pad off on a phone leaves the phone-sized HUD exactly where it was — that
+       is the fix, and a kid who has just hidden the stick to use a controller
+       needs to be told the rest of the screen is meant to stay. */
     const describeTouch = () => {
       const want = tc.value;
-      const live = this.device.touchPrimary;
-      const wantOn = want === 'auto' ? this.device.detected : want === 'mobile';
-      if (wantOn !== live) {
+      const phone = this.device.touchPrimary;
+      const pad = this.device.padOn;
+      /* ONLY A DESKTOP CAN CHANGE TIER FROM HERE. A real phone is a phone
+         whichever way this is set, so the reload warning is now reachable in
+         exactly one case: claiming to be a phone on a machine that is not one,
+         or dropping that claim. Compared against the BOOT value — see
+         `_bootPhone` — because `this.device` has already been patched. */
+      if (phone !== this._bootPhone) {
         note.textContent = 'Reload the page to finish switching — the render '
           + 'quality and the number of kittens are set when the game starts.';
         note.classList.add('warn');
         return;
       }
       note.classList.remove('warn');
-      note.textContent = live
-        ? 'Touch pad is ON — tap and drag to play, or drag the stick with the '
-          + 'mouse and work the buttons from WASD / Q E F / Space. A second '
-          + 'player joins on the ARROW keys.'
+      if (pad) {
+        note.textContent = 'Touch pad is ON — tap and drag to play, or drag the '
+          + 'stick with the mouse and work the buttons from WASD / Q E F / '
+          + 'Space. A second player joins on the ARROW keys.';
+        return;
+      }
+      note.textContent = phone
+        ? 'Touch pad is OFF — play on a controller. The screen stays phone-sized, '
+          + 'and you can still tap the map, the sin/cos board and every menu.'
         : 'Touch pad is OFF — keyboard and controllers.';
     };
     tc.value = readOverride();
@@ -1170,6 +1209,7 @@ class Game {
          disagree about what "mobile" means. */
       const next = detectDevice();
       this.device.touchPrimary = next.touchPrimary;
+      this.device.padOn = next.padOn;
       this.device.override = next.override;
       this.device.detected = next.detected;
       this._applyTouchMode();
@@ -4167,48 +4207,21 @@ class Game {
       if (!shown) continue;
 
       const v = panes[pane];
-      /* A map must fit the pane it is in. At a flat 32vw a quadrant's map ate
-         most of a quarter-screen; sized against the PANE it stays the same
-         fraction of what its owner can actually see.
+      /* The map's size is `mapWidth` in core/split.js — pure, next door to the
+         pane geometry it is a function of, and therefore assertable. It used to
+         be forty lines of comment and one expression inline here, which is why
+         nothing checked it.
 
-         AND ON A PHONE IT IS THE HEIGHT THAT IS SCARCE, WHICH IS WHY THIS IS THE
-         ONE PLACE IT COULD BE FIXED. A landscape phone is 844x390: `v.w * 0.42`
-         is 354px of a 390px-tall screen, so the map covered the bottom-right
-         corner entirely and the hint text ran underneath it. That is the
-         misalignment the first phone test reported.
-
-         The width is set INLINE here, so no stylesheet rule can override it —
-         a `body.touch-ui .map-box` width in style.css is silently dead. The
-         limit has to be a third number in this same `Math.min`, and it has to be
-         a fraction of the pane's HEIGHT: a short pane is the case a
-         width-derived size cannot see. */
-      /* A THIRD OF THE PANE HEIGHT ON A TOUCH DEVICE, and the journey to that
-         number is worth recording because two of the three steps were wrong.
-
-         It started at 0.34 to get the map out from under the hint text. Played
-         on a phone it was unreadable, so it went to 0.50 — and that was fixing
-         the wrong thing: the map was illegible because it opened at WORLD zoom,
-         drawing eight islands into 200px, not because the box was small. Once it
-         opened zoomed in (see TOUCH_ZOOM) the same box was perfectly readable
-         and merely enormous, eating half the screen it is drawn over.
-
-         So it is back to a third. The lesson is that a HUD element that cannot
-         be read has two possible causes and only one of them is its size. */
-      /* A BIGGER MAP, AND THE DOJO NO LONGER GETS A SPECIAL SMALL ONE.
-
-         0.33 was picked when the map shared the top-left corner with nothing and
-         had to stay out of the hint text (see the note above, which is the
-         history). It is the only thing you navigate by, it is read at a glance
-         on a moving phone, and 0.41 is about a quarter bigger for a corner that
-         is otherwise empty.
-
-         Inside the Dojo it drops back to that old 0.33 rather than the 0.24 it
-         was briefly given. 0.24 was over-corrected: the board had just moved to
-         the top-left and the map was being kept out of its way, but the map is
-         on the other side of the screen entirely, and the only thing it has to
-         clear there is the face cluster — which it does at 0.33 with room. */
-      const cap = this.device.touchPrimary ? v.h * (mathUp ? 0.33 : 0.41) : Infinity;
-      box.style.width = `${Math.min(300, v.w * 0.42, cap)}px`;
+         THE WIDTH IS SET INLINE, so no stylesheet rule can override it — a
+         `body.touch-ui .map-box` width in style.css is silently dead. */
+      box.style.width = `${mapWidth({
+        paneW: v.w,
+        paneH: v.h,
+        screenH: H,
+        touch: this.device.touchPrimary,
+        merged: this.merged,
+        mathUp,
+      })}px`;
 
       if (this.merged) {
         /* THE SHARED MAP KEEPS THE BOTTOM RIGHT. The Dojo's sin/cos board owns

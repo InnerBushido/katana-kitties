@@ -75,14 +75,18 @@ const ATLAS = { full: 2048, reduced: 1024 };
 
 const OVERRIDE_KEY = 'kk.device.override';
 
-/** 'auto' | 'desktop' | 'mobile' — a hand-set answer that beats detection.
+/** 'auto' | 'desktop' | 'mobile' — a hand-set answer about THE ON-SCREEN PAD.
  *
  *  THIS EXISTS FOR TESTING ON THE MACHINE THE GAME IS BUILT ON, which is the
  *  only way the touch controls get looked at more than once a week. It is
  *  persisted rather than held in memory because the two heaviest things it
  *  decides — `antialias` and `atlasMax` — are read once at boot and cannot
  *  change afterwards, so a test mode that did not survive a reload could only
- *  ever test half of itself. */
+ *  ever test half of itself.
+ *
+ *  IT NO LONGER DECIDES WHAT KIND OF MACHINE THIS IS. See `padOn` below: on a
+ *  real phone, 'desktop' means "take the stick away", not "pretend this is a
+ *  laptop". */
 export function readOverride() {
   try {
     const v = localStorage.getItem(OVERRIDE_KEY);
@@ -109,7 +113,8 @@ export function writeOverride(mode) {
  * @param {number}  caps.touchPoints  navigator.maxTouchPoints
  * @param {number}  caps.dpr       devicePixelRatio
  * @param {number}  caps.cores     navigator.hardwareConcurrency, 0 if unknown
- * @returns {{touchPrimary: boolean, tier: string, antialias: boolean,
+ * @returns {{touchPrimary: boolean, padOn: boolean, tier: string,
+ *            antialias: boolean,
  *            maxPixelRatio: number, atlasMax: number, defaultQuality: string,
  *            defaultParty: number, defaultSplit: string}}
  */
@@ -122,14 +127,38 @@ export function profileFor({
      to pair. A machine is touch-primary when the finger is the main pointer AND
      there is a digitiser behind it. */
   const detected = coarse && touchPoints > 0;
-  /* THE OVERRIDE IS THE WHOLE ANSWER WHEN IT IS SET, not a hint added to the
-     detection. "Test as a phone" has to mean it on a machine that is visibly
-     not one, or it cannot test anything. */
-  const touchPrimary = override === 'auto' ? detected : override === 'mobile';
+
+  /* TWO QUESTIONS, NOT ONE, AND CONFLATING THEM IS THE BUG THIS SPLIT FIXES.
+     They were a single boolean, and it did double duty:
+
+       WHAT KIND OF MACHINE IS THIS?  -> `touchPrimary`. Everything about SIZE
+         and LAYOUT reads this: `body.touch-ui`, the minimap's cap, the Dojo's
+         camera distance, the render tier, the atlas budget, the split default.
+
+       IS THE STICK ON SCREEN?        -> `padOn`. Only two things read this:
+         whether the pad is drawn, and whether the input layer deals it a slot.
+
+     Turning the pad OFF on a phone — which is what you do the moment you pick
+     up a real controller, because the stick and the face cluster are then just
+     clutter over the game — took the whole PHONE UI with it. Desktop-sized
+     minimap eating a quarter of a 390px-tall screen, desktop panels, desktop
+     camera. Reported from a Galaxy S24 Ultra with a pad in hand.
+
+     A phone with the stick hidden is still a phone. `touchPrimary` therefore
+     asks about the HARDWARE (plus the desktop test mode, which has to be able
+     to claim to be one), and `padOn` asks about the CONTROL.
+
+     Every other combination is bit-identical to what it was: a desktop on
+     'auto' is false/false, the desktop test mode is true/true, a phone on
+     'auto' is true/true. Only "phone + force off" moves, and it moves from
+     false/false to true/false — which is what it always should have been. */
+  const touchPrimary = detected || override === 'mobile';
+  const padOn = override === 'auto' ? detected : override === 'mobile';
 
   if (!touchPrimary) {
     return {
       touchPrimary: false,
+      padOn: false,
       tier: 'desktop',
       override,
       detected,
@@ -155,9 +184,20 @@ export function profileFor({
      EVERYTHING with a touchscreen. On a Galaxy S24 Ultra that game ran without
      dropping a frame and looked terrible, which is the wrong trade in both
      directions — see the numbers on `maxPixelRatio` below. */
-  const weak = override === 'auto' && cores > 0 && cores <= 4;
+  /* `detected`, NOT `override === 'auto'`, AND THE DIFFERENCE NOW MATTERS.
+     Both spellings kept the desktop test mode off the cautious tier — which is
+     the point, since the machine being tested on has twenty cores and would
+     otherwise quietly exercise the FASTER path. But `override === 'auto'` also
+     said a real four-core phone stops being weak the moment its owner hides the
+     stick, which is nonsense: the override is about a control, and this is
+     about silicon. `detected` asks the hardware question directly. */
+  const weak = detected && cores > 0 && cores <= 4;
   return {
     touchPrimary: true,
+    /* SEPARATE FROM THE TIER ON PURPOSE — see the note above. A phone whose
+       owner has plugged a controller in still wants every phone-sized answer
+       below; it just does not want a thumbstick drawn over the game. */
+    padOn,
     tier: weak ? 'mobile-low' : 'mobile',
     override,
     detected,

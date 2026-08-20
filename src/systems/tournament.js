@@ -276,6 +276,47 @@ const OUT_FALL = 3;
 const OUT_DAMAGE = 30;
 
 /* ---------------------------------------------------------------------------
+   HOW FAR BACK THE RING CAMERA SITS, and why a phone gets its own pair.
+
+   THE PHONE ANSWER IS NOT A TASTE SETTING — it falls out of the lens. The
+   camera's 38 degrees is a VERTICAL field of view, so how much WORLD fits
+   across the screen depends on the aspect ratio:
+
+     ground width at distance d  =  2 * d * aspect * tan(fov / 2)
+
+   tan(19 degrees) is 0.3443. A desktop pane is about 16:9, so that is 1.226*d.
+   A landscape phone is 844x390 — and it is always landscape, because the rotate
+   gate says so, and always one pane, because `defaultSplit` is 'never' — which
+   is 2.16, so 1.487*d. THE PHONE ALREADY SHOWS 21% MORE WORLD AT THE SAME
+   DISTANCE, on a screen a fifth the physical size. `dist: 52` put the whole
+   56-unit deck on a six-inch panel with room around it: the fight was four
+   little sprites in the middle of a lot of stone.
+
+   Turn the formula round and ask what distance FITS the fighters, with about
+   ten units of air past the widest pair:
+
+     d = (sep / 2 + 10) / (2.16 * 0.3443)      i.e.  / 0.744
+
+       sep  0  ->  13     sep 40  ->  40
+       sep 20  ->  27     sep 56  ->  51      (across the deck)
+                          sep 79  ->  67      (corner to corner)
+
+   `20 + sep * 0.6` tracks that line, a shade wider up close, landing on it at
+   full spread. Clamped to [26, 66]: 26 is half the desktop minimum, which is
+   the "at least twice as close" the phone test asked for, and 66 is the corner-
+   to-corner fit rather than a number picked to look safe.
+
+   The feast is the one shot that frames the deck rather than the fighters, so
+   it takes the same treatment by hand: 68 holds all 56 units of stone AND the
+   dragon thirty units above it (vertical coverage is 0.689*d, so 47 units).
+
+   THE DESKTOP PAIR IS THE OLD EXPRESSION, DIGIT FOR DIGIT. Invariant 5. */
+const RING_DIST = {
+  desktop: { min: 52, max: 104, base: 46, k: 0.8 },
+  touch: { min: 26, max: 66, base: 20, k: 0.6, feast: 68 },
+};
+
+/* ---------------------------------------------------------------------------
    The feast — the gap between rounds, and the only reason it is a gap.
 
    A ROUND NO LONGER HANDS BOTH FIGHTERS A FULL BAR, and everything below is
@@ -332,6 +373,43 @@ export class Tournament {
     this.bannerEl = document.getElementById('arena-banner');
     this.hudEl = document.getElementById('arena-hud');
     this.resultEl = document.getElementById('arena-result');
+    this._bindResultTaps();
+  }
+
+  /**
+   * The results screen under a thumb.
+   *
+   * WHY IT NEEDED ONE AT ALL: this screen is `z-index: 60` and the touch pad is
+   * 7, so on a phone every control it names — the stick that picks a letter,
+   * the JUMP that commits it, the JUMP that flies home — is drawn UNDERNEATH
+   * the screen asking for them. Winning the tournament on a phone was a dead
+   * end: a champion could not sign the board and could not leave the screen.
+   * The character profile had the same shape of bug and the same fix.
+   *
+   * DELEGATED, AND BOUND ONCE. `_paintResult` replaces the whole `innerHTML`
+   * on every letter, so a listener on a key would be thrown away the moment it
+   * was used. The container survives.
+   */
+  _bindResultTaps() {
+    this.resultEl?.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-ne]');
+      if (!el) return;
+      const v = el.dataset.ne;
+      /* HOME IS CHECKED BEFORE THE ENTRY IS, because it is the only one of
+         these that is live after the name is committed — and after `_commit`
+         every `entry` method refuses. A button that stops working the instant
+         it becomes the only one on screen is the dead end all over again. */
+      if (v === 'home') { this.goHome(); return; }
+      let moved = false;
+      if (v === 'del') moved = this.entry.del();
+      else if (v === 'ok') moved = this.entry.accept();
+      else if (v.startsWith('s')) moved = this.entry.pick(Number(v.slice(1)));
+      else moved = this.entry.type(v);
+      if (!moved) return;
+      this.audio?.play('menu');
+      if (this.entry.done) this._commit();
+      this._paintResult();
+    });
   }
 
   /* ------------------------------ questions ------------------------------ */
@@ -1120,6 +1198,7 @@ export class Tournament {
    */
   cameraWant() {
     if (!this.active || this.state === 'result' || this.state === 'leaving') return null;
+    const touch = !!this.game.device?.touchPrimary;
     const R = this.world.arenaRing;
     const all = this.game.players;
     const mid = {
@@ -1149,7 +1228,9 @@ export class Tournament {
        it never moves for fifteen seconds, which is also the calmest the screen
        gets all match. */
     if (this.state === 'feast') {
-      return { x: R.x, y: R.y + 9, z: R.z, dist: 96, pitch: 0.56 };
+      return {
+        x: R.x, y: R.y + 9, z: R.z, dist: touch ? RING_DIST.touch.feast : 96, pitch: 0.56,
+      };
     }
 
     /* Pulled toward the middle of the ring rather than sitting on the
@@ -1159,6 +1240,7 @@ export class Tournament {
     const midX = mid.x;
     const midZ = mid.z;
     const k = 0.42;
+    const D = touch ? RING_DIST.touch : RING_DIST.desktop;
     return {
       x: midX + (R.x - midX) * k,
       y: R.y + 2.4,
@@ -1167,7 +1249,7 @@ export class Tournament {
       // spread with air around it. Measured against the deck: the diagonal of
       // a 56-unit square is 79, and a camera at 79 puts a fighter in each
       // corner of the frame with nothing to spare.
-      dist: Math.min(104, Math.max(52, 46 + sep * 0.8)),
+      dist: Math.min(D.max, Math.max(D.min, D.base + sep * D.k)),
       /* FLATTER THAN THE WALKING CAMERA, because the fight is horizontal and
          these are billboards. The first pass looked down at 0.72 and filled
          two thirds of the screen with an empty stone floor while squashing
@@ -1314,6 +1396,25 @@ export class Tournament {
 
   _paintResult() {
     if (!this.resultEl) return;
+    /* A PHONE GETS BUTTONS FOR EVERY INSTRUCTION THIS SCREEN GIVES — see
+       `_bindResultTaps` for why the ones it used to name are unreachable. Gated
+       on the device rather than rendered always and hidden by CSS, so the
+       desktop screen the girls know comes out of here byte for byte. */
+    const touch = !!this.game.device?.touchPrimary;
+    /* THE KEYPAD IS THE ALPHABET, NOT A COPY OF IT. Building it from a second
+       list of letters is how a keypad ends up offering a glyph the name entry
+       will not accept — the trailing blank is dropped because DEL is what
+       shortens a name, and `ALPHABET`'s 36 real glyphs land exactly as three
+       rows of ten plus a short row that DEL and OK finish. */
+    const keypad = touch ? `
+      <div class="ne-pad">
+        ${ALPHABET.slice(0, 36).map((c) => `<button class="ne-key" data-ne="${c}">${c}</button>`).join('')}
+        <button class="ne-key wide" data-ne="del">DEL</button>
+        <button class="ne-key wide go" data-ne="ok">OK</button>
+      </div>` : '';
+    const flyHome = touch
+      ? '<button class="ar-go" data-ne="home">FLY HOME</button>'
+      : '<p class="ar-hint">PRESS JUMP TO FLY HOME</p>';
     const rows = this.board.map((r, i) => `
       <tr class="${i === this.rank ? 'me' : ''}">
         <td class="lb-rank">${i + 1}</td>
@@ -1328,14 +1429,17 @@ export class Tournament {
           <h2>A DRAW</h2>
           <p class="ar-sub">Nobody could be separated. Mr. Satan is delighted — it means he is still the champion.</p>
           <table class="lb">${rows}</table>
-          <p class="ar-hint">PRESS JUMP TO FLY HOME</p>
+          ${flyHome}
         </div>`;
       return;
     }
 
     const w = this.winner;
+    /* THE SLOTS ARE TAPPABLE TOO, and that is not decoration: the stick can only
+       WALK the cursor, so fixing the first letter of a five-letter name means
+       four presses in the right direction. A thumb goes straight there. */
     const slots = this.entry.done ? '' : this.entry.slots.map((ix, i) => `
-      <span class="ne-slot${i === this.entry.cursor ? ' on' : ''}">${
+      <span class="ne-slot${i === this.entry.cursor ? ' on' : ''}" data-ne="s${i}">${
       ALPHABET[ix] === ' ' ? '&nbsp;' : ALPHABET[ix]}</span>`).join('');
 
     this.resultEl.innerHTML = `
@@ -1363,12 +1467,15 @@ export class Tournament {
                  four players without saying so reads as three broken pads. -->
             <p class="ne-label">${escapeHtml(this.winners?.length > 1
     ? `${teamName(this.sideOf(w))} SIGNS THE BOARD` : `${w.name.toUpperCase()} SIGNS THE BOARD`)}
-              — stick up/down picks a letter, left/right moves</p>
+              — ${touch ? 'tap a letter, or tap a box to go back to it'
+    : 'stick up/down picks a letter, left/right moves'}</p>
             <div class="ne-slots">${slots}</div>
-            <p class="ne-hint">${NAME_MAX} letters max · JUMP or ENTER when you're done</p>
+            ${keypad}
+            <p class="ne-hint">${NAME_MAX} letters max · ${touch
+    ? 'tap a letter, then OK' : "JUMP or ENTER when you're done"}</p>
           </div>`}
         <table class="lb">${rows}</table>
-        ${this.entry.done ? '<p class="ar-hint">PRESS JUMP TO FLY HOME</p>' : ''}
+        ${this.entry.done ? flyHome : ''}
       </div>`;
   }
 }

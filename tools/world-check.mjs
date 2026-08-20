@@ -56,7 +56,7 @@ import {
   MILESTONES, OPEN_AT, ArenaQuest, SATAN_TOWN,
 } from '../src/systems/arenaquest.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss } from '../src/core/palette.js';
-import { splitLayout } from '../src/core/split.js';
+import { splitLayout, mapWidth } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
 import { postsFor } from '../src/world/build.js';
@@ -69,7 +69,7 @@ import {
 import { worldSpawnCount, WORLD_PER_PLAYER } from '../src/systems/kotodama.js';
 import {
   scoreOf, loadBoard, saveResult, clearBoard, BOARD_SIZE,
-  NameEntry, NAME_MIN, NAME_MAX,
+  NameEntry, NAME_MIN, NAME_MAX, ALPHABET,
 } from '../src/systems/leaderboard.js';
 
 const line = (l, v) => console.log(String(l).padEnd(42) + v);
@@ -2273,6 +2273,74 @@ console.log('\n--- signing the board ---');
   const kb = new NameEntry();
   for (const k of ['KeyR', 'KeyE', 'KeyK']) kb.key(k);
   ok('a keyboard still works', kb.name === 'REK');
+
+  /* --- AND A THUMB, WHICH IT COULD NOT TAKE AT ALL ---
+     THE DEAD END: `#arena-result` is z-index 60 and `#touch-pad` is 7, so on a
+     phone every control this screen names — the stick that picks a letter, the
+     JUMP that commits it, the JUMP that flies home — is drawn UNDERNEATH the
+     screen asking for them. A champion on a phone could neither sign the board
+     nor leave it. The character profile had the same shape of bug.
+
+     THE KEYPAD CALLS THE SAME METHODS THE KEYBOARD DOES rather than
+     synthesising `KeyA` events, so there is one implementation of what a letter
+     means — and that is the thing worth asserting, because two would drift. */
+  {
+    const tapped = new NameEntry();
+    for (const c of 'REK') tapped.type(c);
+    ok('tapping spells the same name typing does', tapped.name === kb.name);
+    ok('...and leaves the cursor in the same place', tapped.cursor === kb.cursor);
+
+    /* DEL SHORTENS, and at the minimum length it blanks instead — there is
+       nothing to remove from a three-letter name, and a DEL that did nothing
+       at all reads as a broken button. */
+    const five = new NameEntry();
+    for (const c of 'REKTX') five.type(c);
+    ok('a tapped name still stops at the cap', five.slots.length === NAME_MAX);
+    five.del();
+    ok('...and DEL takes a letter back off it', five.slots.length === NAME_MAX - 1);
+    const short = new NameEntry();
+    for (const c of 'ABC') short.type(c);
+    while (short.slots.length > NAME_MIN) short.del();
+    const was = short.slots.length;
+    ok('...but never below the minimum', short.del() && short.slots.length === was);
+
+    /* A TAP GOES STRAIGHT TO A SLOT. The stick can only WALK the cursor, so
+       fixing the first letter of a five-letter name is four presses in the
+       right direction; a thumb goes there. */
+    const pick = new NameEntry();
+    for (const c of 'REKT') pick.type(c);
+    ok('a tap on a slot moves the cursor straight to it',
+      pick.pick(0) && pick.cursor === 0);
+    pick.type('Z');
+    ok('...and the next letter lands there', pick.name[0] === 'Z');
+    ok('...but not onto a slot that does not exist yet', pick.pick(NAME_MAX) === false);
+
+    /* OK REFUSES RATHER THAN COMMITTING SOMETHING UNREADABLE, which is the same
+       rule JUMP has always followed — invariant 6: a refusal has to be a
+       refusal, not a button that quietly does nothing different. */
+    const half = new NameEntry();
+    for (const c of 'ABC') half.type(c);
+    while (half.slots.length > NAME_MIN) half.del();
+    for (let i = 0; i < NAME_MIN; i++) { half.pick(i); half.type(' '); }
+    ok('OK refuses a name that is all blanks', half.valid === false && half.accept() === false);
+    half.pick(0);
+    half.type('R');
+    half.pick(1);
+    half.type('E');
+    half.pick(2);
+    half.type('K');
+    ok('...and takes it once there are letters in it', half.accept() && half.done);
+    ok('...after which nothing else moves', half.type('Z') === false && half.del() === false);
+
+    /* THE KEYPAD IS THE ALPHABET, NOT A SECOND COPY OF IT — 36 real glyphs,
+       which is what makes the grid three rows of ten plus a short row that DEL
+       and OK finish. A hand-written key list is how a keypad ends up offering a
+       glyph the entry will not take. */
+    ok('the keypad slice is 36 glyphs with no blank in it',
+      ALPHABET.slice(0, 36).length === 36
+      && !ALPHABET.slice(0, 36).includes(' ')
+      && ALPHABET[36] === ' ');
+  }
 }
 
 console.log('\n--- the tournament ---');
@@ -4294,6 +4362,53 @@ console.log('\n--- the three power moves ---');
        one far out has to fit the line, not half of it. */
     const line = rig([at(R.x - 24, R.z), at(R.x, R.z), at(R.x + 8, R.z), at(R.x + 24, R.z)]);
     ok('...sized off the two furthest apart', line.dist >= 46 + 48 * 0.8 - 1e-9);
+
+    /* --- AND A PHONE SITS TWICE AS CLOSE ---
+       The lens is a VERTICAL 38 degrees, so a 2.16 landscape phone already
+       shows 21% more world than a 16:9 desktop at the same distance — on a
+       screen a fifth the size. `dist: 52` put the whole 56-unit deck on a
+       six-inch panel and the fight was four small sprites in the middle of a
+       lot of stone. See RING_DIST in tournament.js for the arithmetic. */
+    const phoneRig = (pts) => {
+      const T = new Tournament({
+        game: {
+          players: pts, toast() {}, sfx() {}, device: { touchPrimary: true },
+        },
+        world,
+        audio: null,
+        announcer: null,
+      });
+      T.state = 'live';
+      return T.cameraWant();
+    };
+    const close = [at(R.x - 3, R.z), at(R.x + 3, R.z)];
+    ok('a phone frames a close exchange from half the distance',
+      phoneRig(close).dist * 2 <= rig(close).dist + 1e-9,
+      `${phoneRig(close).dist} vs ${rig(close).dist}`);
+    /* IT STILL OPENS UP. "Zoom in" that could not pull back would crop a
+       fighter the moment the two of them ran to opposite corners, which is the
+       trap the desktop rig was written to avoid in the first place. */
+    const wide = [at(R.x - 28, R.z - 28), at(R.x + 28, R.z + 28)];
+    ok('...and still opens up when they run to opposite corners',
+      phoneRig(wide).dist > phoneRig(close).dist * 2.4,
+      `${phoneRig(wide).dist} vs ${phoneRig(close).dist}`);
+    /* THE FIT, NOT A FEELING. At full spread the fighters must actually reach
+       the edges of a 2.16 screen rather than sitting in the middle of it:
+       ground width is 2 * d * aspect * tan(19deg), and the pair plus a little
+       air has to be most of that. */
+    {
+      const d = phoneRig(wide).dist;
+      const across = 2 * d * 2.16 * Math.tan((38 / 2) * Math.PI / 180);
+      const sep = Math.hypot(56, 56);
+      ok('...with the widest pair filling most of the phone screen',
+        sep / across > 0.75 && sep / across < 1,
+        `${(sep / across * 100).toFixed(0)}% of the frame`);
+    }
+    /* THE DESKTOP PAIR IS UNTOUCHED, and a rig with no `device` at all — which
+       is every existing caller in this file — takes the desktop path. Invariant
+       five, asserted where it could break. */
+    ok('a rig that is not told what device it is on is a desktop',
+      rig(close).dist === Math.min(104, Math.max(52, 46 + 6 * 0.8)));
   }
 
   /* --- THE MENAGERIE'S PER-PLAYER ARRAYS ---
@@ -4668,11 +4783,111 @@ console.log('\n--- the three power moves ---');
   ok('...while a real 4-core phone still detects as weak',
     deviceProfileFor({ coarse: true, touchPoints: 5, cores: 4 }).tier === 'mobile-low');
 
+  /* --- THE STICK AND THE MACHINE ARE TWO QUESTIONS ---
+     THIS SECTION IS A BUG REPORT. `touchPrimary` answered both — "is this a
+     phone" and "is the on-screen stick up" — so turning the stick off on a
+     phone to play on a controller ALSO threw away the phone-sized HUD: a
+     desktop minimap eating a quarter of a 390px-tall screen, desktop panels,
+     the desktop camera. Reported from a Galaxy S24 Ultra with a pad in hand.
+
+     Every assertion below is about the pair moving independently, because
+     asserting either one alone is what let them be one boolean for so long. */
   const off = deviceProfileFor({
     coarse: true, touchPoints: 5, cores: 8, override: 'desktop',
   });
-  ok('forcing desktop on a real phone turns touch off',
-    off.touchPrimary === false && off.defaultParty === 2 && off.detected === true);
+  ok('hiding the stick on a phone hides ONLY the stick',
+    off.padOn === false && off.touchPrimary === true && off.detected === true);
+  /* THE CONSEQUENCES, NAMED. `touchPrimary` is not read for its own sake — it
+     is read for these, and these are what came back desktop-sized. */
+  ok('...so the phone keeps its tier, its atlas and its one kitten',
+    off.tier === 'mobile' && off.atlasMax === 2048
+    && off.defaultParty === 1 && off.defaultSplit === 'never');
+
+  /* AND THE OTHER THREE CORNERS ARE BIT-IDENTICAL TO WHAT THEY WERE. Only the
+     case above moves; if any of these did, the split would be a rewrite rather
+     than a fix. */
+  const deskAuto = deviceProfileFor({ coarse: false, touchPoints: 0, cores: 16 });
+  ok('a desktop on automatic: no phone UI, no stick',
+    deskAuto.touchPrimary === false && deskAuto.padOn === false);
+  ok('the desktop test mode still claims to be a phone AND draws the stick',
+    forced.touchPrimary === true && forced.padOn === true);
+  const phoneAuto = deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8 });
+  ok('a phone on automatic: phone UI and a stick',
+    phoneAuto.touchPrimary === true && phoneAuto.padOn === true);
+  /* Forcing the stick OFF on a desktop is the one setting that changes nothing
+     at all, and it has to stay that way — it is the default answer spelled out. */
+  ok('forcing the stick off on a desktop changes nothing',
+    JSON.stringify(deviceProfileFor({
+      coarse: false, touchPoints: 0, cores: 16, override: 'desktop',
+    })) === JSON.stringify({ ...deskAuto, override: 'desktop' }));
+
+  /* THE WEAK TIER IS ABOUT SILICON, NOT ABOUT A CONTROL. It used to key off
+     `override === 'auto'`, which meant a real four-core phone stopped being
+     weak the moment its owner hid the stick — a rendering decision made by a
+     button that is not about rendering. */
+  ok('a weak phone stays weak when the stick is hidden',
+    deviceProfileFor({
+      coarse: true, touchPoints: 5, cores: 4, override: 'desktop',
+    }).tier === 'mobile-low');
+  /* ...while the desktop test mode still must not reach it: the machine being
+     tested on has twenty cores and would exercise the FASTER path. */
+  ok('...and the desktop test mode still cannot reach the weak tier',
+    deviceProfileFor({
+      coarse: false, touchPoints: 0, cores: 2, override: 'mobile',
+    }).tier === 'mobile');
+}
+
+/* ===========================================================================
+   THE MINIMAP FITS THE PANE IT IS IN.
+
+   `mapWidth` is pure and lives beside `splitLayout` for exactly this reason —
+   it used to be one expression buried in `_drawMaps` with forty lines of
+   comment around it and nothing checking any of them.
+=========================================================================== */
+console.log('\n--- the minimap fits its pane ---');
+{
+  /* A landscape phone, which is the only shape a phone is ever in: the rotate
+     gate says so. */
+  const PW = 844;
+  const PH = 390;
+  const full = { paneW: PW, paneH: PH, screenH: PH };
+
+  ok('a desktop map is capped by width alone, exactly as it always was',
+    mapWidth({ paneW: 1920, paneH: 1080, screenH: 1080 }) === 300
+    && mapWidth({ paneW: 600, paneH: 800, screenH: 800 }) === 600 * 0.42);
+  /* THE PHONE CAP IS ON HEIGHT, and that is the whole reason it exists: at
+     844x390 the width rule alone asks for 354px of a 390px-tall screen. */
+  ok('a phone map is capped by the pane HEIGHT, not its width',
+    mapWidth({ ...full, touch: true }) < PW * 0.42);
+  ok('...and the Dojo board makes it smaller still',
+    mapWidth({ ...full, touch: true, mathUp: true })
+      < mapWidth({ ...full, touch: true }));
+
+  /* THE REPORT: two players side by side on a phone. `paneH` does not move in a
+     vertical split, so the height cap does not either — the same 160px map,
+     now in half the width, twice over. */
+  const vert = { paneW: PW / 2, paneH: PH, screenH: PH, touch: true, merged: false };
+  ok('a side-by-side split shrinks the phone map by a third',
+    Math.abs(mapWidth(vert) / mapWidth({ ...full, touch: true }) - 0.67) < 1e-9,
+    `${mapWidth(vert).toFixed(1)} vs ${mapWidth({ ...full, touch: true }).toFixed(1)}`);
+  /* AND A STACKED SPLIT DOES NOT TAKE THE CUT TWICE. `paneH` already halved, so
+     the height cap already halved with it; a second third leaves 54px of
+     islands nobody can read. */
+  const horiz = { paneW: PW, paneH: PH / 2, screenH: PH, touch: true, merged: false };
+  ok('...but a stacked split does not, having already lost the height',
+    Math.abs(mapWidth(horiz) - (PH / 2) * 0.41) < 1e-9,
+    `${mapWidth(horiz).toFixed(1)}`);
+  /* Spelled as the number the double cut WOULD have produced, because "it is
+     bigger than 54" is the whole claim and a ratio hides which 54. */
+  ok('...which would have left 54 unreadable pixels if it had',
+    Math.abs((PH / 2) * 0.41 * 0.67 - 54) < 1 && mapWidth(horiz) > 70,
+    `${mapWidth(horiz).toFixed(1)}`);
+
+  /* NOTHING ABOUT A DESKTOP MOVED. The fifth invariant, asserted rather than
+     hoped for: the split factor is inside the `touch` branch. */
+  ok('splitting a desktop screen does not shrink its map',
+    mapWidth({ paneW: 960, paneH: 1080, screenH: 1080, merged: false })
+      === mapWidth({ paneW: 960, paneH: 1080, screenH: 1080 }));
 }
 
 /* ===========================================================================

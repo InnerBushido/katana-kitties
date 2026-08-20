@@ -181,7 +181,7 @@ kitten actually runs, a second pointer on JUMP holds while the stick is released
 desktop with the setting on `auto` is byte-for-byte unchanged (two kittens, WASD
 and arrows, `auto`/`medium`, antialias on, `maxAtlas` 2048, no pad in the DOM).
 
-**Testing it on this computer:** Settings → **Touch controls** → *Force ON*. The
+**Testing it on this computer:** Settings → **On-screen stick** → *Always ON*. The
 pad appears immediately with the **mouse driving the stick and WASD / Q E F /
 Space driving the buttons**, and every on-screen button lights up for a keyboard
 press, so the readout shows what a thumb would. Reload to get the rest of the
@@ -193,6 +193,35 @@ tournament needs TWO fighters! Bring a sister."* Every league wants two fighters
 or more, so `modesFor(1)` is empty and `begin()` would otherwise fall through to
 a one-sided duel — a round that cannot be lost. Solo keeps everything else: the
 world, the dragons, the clans, the panda, the seven stars and the whole endgame.
+
+**A controller in one hand and a phone in the other** is the case nothing had
+been designed for, and it is where the fourth phone session's five reports all
+came from. Fixed; the reasoning is in
+[docs/notes/mobile.md](docs/notes/mobile.md) under *The fourth pass*.
+
+- **`device.touchPrimary` was answering two questions** — "is this a phone"
+  (which decides every size on screen) and "is the on-screen stick up" (which
+  decides two things). Hiding the stick to use a controller therefore gave back
+  the whole desktop HUD. They are `touchPrimary` and `padOn` now; every
+  combination except *phone + stick off* comes out bit-identical, and the setting
+  is renamed **On-screen stick**.
+- **Signing the leaderboard was a dead end on a phone.** `#arena-result` is
+  `z-index: 60` and the pad is `7`, so every control the screen named was drawn
+  underneath it — the same bug the character profile had. It has a **36-key
+  keypad** and a **FLY HOME** button now, calling the same `type` / `del` /
+  `accept` the keyboard does.
+- **The ring camera framed the deck rather than the fight.** A landscape phone is
+  2.16 against a desktop's 1.78, and the lens's 38 degrees is *vertical* — so the
+  phone was already showing 21% more world at the same distance, on a screen a
+  fifth the size. It sits at half the distance up close now and opens to a fitted
+  66 at full spread.
+- **A side-by-side split does not shrink a pane's height**, so the phone map's
+  height cap did not notice the split at all. It takes a third off — but only
+  when the pane is still full height, since a stacked split has already paid it.
+  The rule moved to `mapWidth` in `core/split.js`, pure and checkable.
+- **The menu cursor was drawn and invisible.** `nav-pulse` faded the ring to gold
+  on a pale button; it holds vermillion and animates the *offset* now, and the
+  focused button grows, because PLAY is red whether it is focused or not.
 
 **The misalignment the first phone test reported is fixed.** The minimap was
 sized off its pane's *width* (`v.w * 0.42` — 354px of a 390px-tall phone) and set

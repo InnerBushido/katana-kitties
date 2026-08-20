@@ -242,15 +242,39 @@ html, body {
   border-radius: 10px;
   animation: nav-pulse 1.1s ease-in-out infinite;
 }
+/* THE RING BREATHES, IT DOES NOT CHANGE COLOUR, AND THAT IS A BUG REPORT.
+   It used to pulse `outline-color` to `--gold` — a pale warm yellow, on a
+   `--paper-2` button, on a phone, at arm's length. Half of every cycle the
+   cursor simply was not there: measured mid-pulse at rgb(242,180,62) on
+   rgb(255,233,168). Reported as "it doesn't highlight SETTINGS even though it
+   works", and it really was highlighting it, for about half a second at a time.
+
+   Swinging to `--ink` instead was the obvious repair and is barely better: the
+   buttons are ALREADY bordered in ink, so at that end of the cycle the ring
+   reads as a slightly thicker border rather than as a cursor.
+
+   So the colour holds at vermillion — which contrasts with the paper it sits on
+   AND with the ink border it sits outside — and the OFFSET is what animates.
+   Motion without a contrast floor to fall through. */
+@keyframes nav-pulse {
+  50% { outline-offset: 7px; }
+}
 .menu-btn.nav-focus {
   background: #ffe9a8;
-  transform: translateY(-2px);
+  /* AND IT GROWS, because on the title screen colour alone could not carry it:
+     PLAY is solid vermillion whether it is focused or not, so a kid looking for
+     "the one that is lit" found the red button every time and the outlined
+     neighbour read as decoration. Size is the one channel PLAY's own styling
+     does not already spend. */
+  transform: translateY(-2px) scale(1.07);
   box-shadow: 0 7px 0 var(--ink);
 }
 .menu-btn.primary.nav-focus { background: #f4632f; }
-@keyframes nav-pulse {
-  50% { outline-color: var(--gold); }
-}
+/* THICKER ON A PHONE. Same ring, a third of the physical size — and the title
+   screen is the one place a pad has to be legible before anything has started,
+   because it is where you find out the pad works at all. */
+body.touch-ui .nav-focus { outline-width: 5px; outline-offset: 4px; }
+body.touch-ui .menu-btn.nav-focus { transform: translateY(-2px) scale(1.1); }
 /* A focused row highlights the whole setting, not just the control, so it is
    obvious WHICH thing left/right is about to change. */
 .row select.nav-focus,
@@ -1389,6 +1413,73 @@ body.touch-ui #debug-panel .dbg-row { padding: 5px 4px; line-height: 1.5; }
 }
 .ne-hint { margin: 10px 0 0; font-size: 12.5px; opacity: 0.72; }
 
+/* --- the same name entry under a thumb -----------------------------------
+   RENDERED ONLY ON A TOUCH DEVICE (see `Tournament._paintResult`), because the
+   screen it sits on is z-index 60 and the touch pad is 7 — every control this
+   screen named was drawn underneath it, so a champion on a phone could neither
+   sign the board nor leave. The desktop screen is untouched.
+
+   36 GLYPHS IN TEN COLUMNS: three full rows and a short one that DEL and OK
+   finish at two columns each. The grid is what makes that exact — no wrapping
+   to guess at, and the two wide keys always land together on the last row. */
+.ne-pad {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 5px;
+  margin: 12px auto 0;
+  width: min(560px, 96%);
+}
+.ne-key {
+  /* `aspect-ratio` rather than a height, so ten keys across a narrow phone
+     stay square as the column width falls out of the grid. */
+  aspect-ratio: 1;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Bangers', cursive;
+  font-size: 19px;
+  letter-spacing: 1px;
+  color: var(--ink);
+  background: var(--paper-2);
+  border: 3px solid var(--ink);
+  border-radius: 8px;
+  cursor: pointer;
+  /* A key must not double as a browser gesture: ten of them in a row across a
+     phone is a swipe waiting to happen. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.ne-key:active { background: var(--gold); transform: translateY(2px); }
+.ne-key.wide {
+  grid-column: span 2;
+  aspect-ratio: auto;
+  font-size: 16px;
+}
+.ne-key.go { background: var(--gold); }
+/* The slots are targets too — a stick can only walk the cursor, a thumb goes
+   straight to the letter it wants to change. */
+.ne-slot { cursor: pointer; touch-action: manipulation; }
+
+/* FLY HOME, WHICH USED TO BE A SENTENCE. "PRESS JUMP TO FLY HOME" is true on a
+   desktop and was the whole dead end on a phone. */
+.ar-go {
+  margin: 14px auto 0;
+  display: block;
+  padding: 11px 30px;
+  font-family: 'Bangers', cursive;
+  font-size: 20px;
+  letter-spacing: 2px;
+  color: #fff5e2;
+  background: var(--vermillion);
+  border: 4px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: 0 5px 0 var(--ink);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.ar-go:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--ink); }
+
 /* The board. Rendered here and, unchanged, into #panel-board from the pause
    menu — one set of rules, so the record a kid checks between tournaments
    looks exactly like the one she just signed. */
@@ -1973,6 +2064,7 @@ body.touch-ui #math-board {
   pointer-events: auto;
   width: min(300px, 40vw);
 }
+
 /* THE BOX, NOT JUST THE CONTAINER. `#maps` was given `pointer-events: auto` and
    that did nothing, because `.map-box` sets `none` on itself — so the map was
    invisible to `elementsFromPoint`, the stick's passthrough never saw it, and
@@ -2210,6 +2302,49 @@ body.touch-ui #arena-result,
 body.touch-ui #panel-league .panel,
 body.touch-ui #panel-teams .panel { padding: 10px 14px; }
 body.touch-ui #arena-banner { font-size: 34px; }
+
+/* THE RESULTS SCREEN HAS TO FIT A KEYPAD NOW, on a screen 390px tall. Everything
+   here is giving that height back to the two things a champion has to reach —
+   the letters and the OK — rather than to the four stat lines she has already
+   read on the way in. The box still scrolls; this is about not NEEDING to. */
+body.touch-ui .ar-box { padding: 10px 12px 12px; max-height: 94vh; }
+body.touch-ui .ar-box h2 { font-size: 21px; letter-spacing: 1.6px; }
+body.touch-ui .ar-sub { font-size: 12px; margin: 2px 0 8px; }
+body.touch-ui .ar-stats { font-size: 11.5px; gap: 3px 12px; margin-bottom: 5px; }
+body.touch-ui .ar-stats b { font-size: 15px; }
+body.touch-ui .ar-score { margin: 3px 0 8px; font-size: 17px; }
+body.touch-ui .ar-score b { font-size: 26px; }
+body.touch-ui .ne { margin: 2px 0 8px; }
+body.touch-ui .ne-label { font-size: 11px; margin-bottom: 6px; }
+body.touch-ui .ne-hint { font-size: 10.5px; margin-top: 6px; }
+body.touch-ui .ne-slot {
+  width: 38px;
+  height: 42px;
+  font-size: 27px;
+  border-width: 3px;
+}
+body.touch-ui .ne-slots { gap: 7px; }
+/* SQUARE KEYS DO NOT FIT AND HEIGHT IS THE SCARCE THING. Ten columns across
+   660px is a 63px key, and four square rows of that is 260px of a 390px-tall
+   screen — OK ended up below the fold, which is the dead end again with a
+   scrollbar in front of it. A fixed 30px height makes the same key a wide flat
+   one: still a comfortable target under a thumb, at 40% of the height. */
+body.touch-ui .ne-pad { width: min(660px, 98%); gap: 4px; }
+body.touch-ui .ne-key {
+  aspect-ratio: auto;
+  height: 30px;
+  min-height: 0;
+  font-size: 15px;
+  border-width: 2px;
+}
+body.touch-ui .ne-key.wide { font-size: 13px; }
+body.touch-ui .lb { font-size: 11px; margin-top: 8px; }
+/* THE DETAIL COLUMN IS THE FIRST THING TO GO. `2W · 431 dealt · 96 taken · 74s`
+   is four facts in a table that has to fit beside a name and a score on a
+   360px-wide box — it wrapped to three lines per row and pushed the OK button
+   two screens down. The rank, the name and the score are the board. */
+body.touch-ui .lb .lb-detail { display: none; }
+body.touch-ui .ar-go { margin-top: 10px; padding: 9px 24px; font-size: 18px; }
 
 /* A LATCHED BUTTON HAS TO LOOK LATCHED. It is down with nothing touching it,
    which is indistinguishable from a stuck control unless it says so — so it

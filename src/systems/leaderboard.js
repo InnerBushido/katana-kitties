@@ -255,33 +255,26 @@ export class NameEntry {
       }
     }
 
-    let confirmed = false;
-    if (confirm && this.valid) {
-      this.done = true;
-      confirmed = true;
-    }
+    const confirmed = confirm ? this.accept() : false;
     return { moved, confirmed };
   }
 
-  /** A keyboard is still allowed — see the note on `NameEntry`. */
-  key(code) {
+  /* -------------------- the three things a name can do --------------------
+
+     PULLED OUT OF `key` SO A FINGER CAN REACH THEM. The results screen sits at
+     z-index 60 and the touch pad at 7, so on a phone the JUMP button that
+     commits a name is drawn UNDERNEATH the screen asking for it — a champion
+     spelled nothing, confirmed nothing and could not leave. Exactly the trap
+     the character profile fell into.
+
+     The on-screen keypad therefore calls the SAME three methods the keyboard
+     does, rather than synthesising `KeyA` events at it. One implementation of
+     what a letter means, and a stick, a keyboard and a thumb all arrive at it.
+     ---------------------------------------------------------------------- */
+
+  /** Put a glyph in the lit slot and walk forward, growing the name. */
+  type(ch) {
     if (this.done) return false;
-    if (code === 'Backspace') {
-      if (this.slots.length > NAME_MIN) {
-        this.slots.pop();
-        this.cursor = Math.min(this.cursor, this.slots.length - 1);
-      } else {
-        this.slots[this.cursor] = ALPHABET.indexOf(' ');
-      }
-      return true;
-    }
-    if (code === 'Enter' || code === 'NumpadEnter') {
-      if (this.valid) { this.done = true; return true; }
-      return false;
-    }
-    const m = /^(?:Key([A-Z])|Digit([0-9]))$/.exec(code);
-    if (!m) return false;
-    const ch = m[1] ?? m[2];
     const ix = ALPHABET.indexOf(ch);
     if (ix < 0) return false;
     this.slots[this.cursor] = ix;
@@ -291,5 +284,44 @@ export class NameEntry {
       this.cursor++;
     }
     return true;
+  }
+
+  /** Backspace. At the minimum length it blanks rather than shortening — a
+   *  three-letter name is the shortest there is, so there is nothing to remove
+   *  and a DEL that did nothing at all would read as broken. */
+  del() {
+    if (this.done) return false;
+    if (this.slots.length > NAME_MIN) {
+      this.slots.pop();
+      this.cursor = Math.min(this.cursor, this.slots.length - 1);
+    } else {
+      this.slots[this.cursor] = ALPHABET.indexOf(' ');
+    }
+    return true;
+  }
+
+  /** Commit, if the name is long enough. Refuses rather than committing a
+   *  one-letter name — see `valid`. */
+  accept() {
+    if (this.done || !this.valid) return false;
+    this.done = true;
+    return true;
+  }
+
+  /** Move the cursor straight to a slot. Only a tap can do this; a stick walks. */
+  pick(i) {
+    if (this.done || !(i >= 0 && i < this.slots.length)) return false;
+    this.cursor = i;
+    return true;
+  }
+
+  /** A keyboard is still allowed — see the note on `NameEntry`. */
+  key(code) {
+    if (this.done) return false;
+    if (code === 'Backspace') return this.del();
+    if (code === 'Enter' || code === 'NumpadEnter') return this.accept();
+    const m = /^(?:Key([A-Z])|Digit([0-9]))$/.exec(code);
+    if (!m) return false;
+    return this.type(m[1] ?? m[2]);
   }
 }

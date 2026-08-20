@@ -693,3 +693,182 @@ across — so the button pressed most often should have the thumb key. `pad-chec
 pinned the old assignment in five places and caught the change immediately, which
 is the check doing its job; they now also assert the swap *is* a swap, since a
 key on both actions would fire two things on one press.
+
+---
+
+## The fourth pass: a controller in one hand and a phone in the other
+
+Tested on the phone with a real controller paired. It worked — and every problem
+in this round came out of that one combination, which nothing had been designed
+for: the game knew about *a phone* and about *a controller* and had no idea what
+to do when both were true at once.
+
+### One boolean was answering two questions
+
+**The report:** turning the on-screen stick off in Settings — which is the first
+thing you do when you pick up a controller, because the stick and the face
+cluster are then just clutter over the game — gave back the **desktop-sized HUD**.
+A minimap eating a quarter of a 390px-tall screen, desktop panels, the desktop
+camera. "It's basing its size on the input type rather than on whether it is a
+mobile device."
+
+That is exactly what it was doing. `device.touchPrimary` meant both:
+
+| the question | who reads it |
+| --- | --- |
+| **what kind of machine is this?** | `body.touch-ui`, the minimap cap, the Dojo camera distance, the render tier, the atlas budget, `defaultParty`, `defaultSplit` |
+| **is the stick on screen?** | `touchPad.setVisible`, `input.attachTouch` |
+
+They are now `touchPrimary` and `padOn`, and the whole fix is two lines:
+
+```js
+const touchPrimary = detected || override === 'mobile';
+const padOn = override === 'auto' ? detected : override === 'mobile';
+```
+
+**Every other combination comes out bit-identical.** Desktop on auto is
+`false/false`; the desktop test mode is `true/true`; a phone on auto is
+`true/true`. Only *phone + stick off* moves, from `false/false` to `true/false`,
+which is what it always should have been. The checks assert all four corners,
+because asserting only the one that changed is how they became one boolean.
+
+**A phone with the stick hidden is still a phone**, so it keeps the mobile tier,
+the full atlas, one kitten and `split: never`. The setting is renamed to
+**On-screen stick** and its OFF option no longer says "always keyboard and pads",
+because on a phone it does not mean that.
+
+**`weak` moved from `override === 'auto'` to `detected` at the same time.** Both
+spellings keep the desktop test mode off the cautious tier — the point, since the
+machine being tested on has twenty cores — but the old one also said a real
+four-core phone stops being weak the moment its owner hides the stick. A
+rendering decision made by a button that is not about rendering.
+
+**A `body.no-pad` class was tried and removed.** With no thumbs on the glass the
+bottom corners and the full width are free again, so it looked obviously useful —
+and every rule written for it turned out to be styling something already hidden
+or already moved for a different reason. The bottom hint is `display: none` on
+touch because it *names keyboard keys*, not because a thumb was over it. A class
+the stylesheet does not read is a comment that lies about where the layout lives.
+
+### Winning the tournament on a phone was a dead end
+
+**The report:** "the page where you type your name after winning does not work
+with touch input and the player gets stuck on that screen."
+
+Both halves are literally true and it is the same bug as the character profile
+one pass earlier: **`#arena-result` is `z-index: 60` and `#touch-pad` is `7`.**
+Every control the screen names — the stick that picks a letter, the JUMP that
+commits it, the JUMP that flies home — is drawn *underneath* the screen asking
+for them. A champion could not sign the board and could not leave.
+
+So the screen grew a keypad: **36 glyphs in ten columns**, three full rows and a
+short one that DEL and OK finish at two columns each. The slots are tappable too,
+because a stick can only *walk* the cursor — fixing the first letter of a
+five-letter name is four presses in the right direction, and a thumb goes
+straight there. `PRESS JUMP TO FLY HOME` becomes a **FLY HOME** button.
+
+**The keypad calls the same three methods the keyboard does.** `type` / `del` /
+`accept` were pulled out of `NameEntry.key`, which now delegates to them; the
+keypad does not synthesise `KeyA` events at it. One implementation of what a
+letter means, reached by a stick, a keyboard and a thumb — two would drift, and a
+check asserts a tapped name and a typed one come out identical.
+
+The keypad is **built from `ALPHABET`**, not from a second list of letters. A
+hand-written key list is how a keypad ends up offering a glyph the entry will not
+take. It is `ALPHABET.slice(0, 36)`: the trailing blank is dropped, because DEL
+is what shortens a name.
+
+**Square keys did not fit.** Ten columns across 660px is a 63px key, and four
+square rows of that is 260px of a 390px-tall screen — OK ended up below the fold,
+which is the same dead end with a scrollbar in front of it. A fixed 30px height
+makes the same key a wide flat one at 40% of the height. The board's detail
+column (`2W · 431 dealt · 96 taken · 74s`) is hidden on a phone for the same
+reason: four facts in a table that has to fit beside a name and a score.
+
+### The ring camera was framing the deck, not the fight
+
+**The report:** "in the arena on mobile the camera is zoomed out too far, can we
+zoom in at least twice as much — Smash Brothers style, close to the action and
+only far out if they are on opposite sides."
+
+This is not a taste setting; it falls out of the lens. The camera's 38 degrees is
+a **vertical** field of view, so how much world fits *across* the screen depends
+on the aspect ratio:
+
+```
+ground width at distance d  =  2 · d · aspect · tan(fov / 2)
+```
+
+`tan(19°)` is 0.3443. A desktop pane is about 16:9, so that is `1.226·d`. A
+landscape phone is 844×390 — always landscape, because the rotate gate says so,
+and always one pane, because `defaultSplit` is `never` — which is 2.16, so
+`1.487·d`. **The phone already showed 21% more world at the same distance**, on a
+screen a fifth the physical size. `dist: 52` put the whole 56-unit deck on a
+six-inch panel and the fight was four small sprites in the middle of a lot of
+stone.
+
+Turn it round and ask what distance *fits* the fighters, with ten units of air
+past the widest pair — `d = (sep/2 + 10) / 0.744`:
+
+| separation | fit | what shipped |
+| --- | --- | --- |
+| 0 | 13 | 26 (the floor) |
+| 20 | 27 | 32 |
+| 40 | 40 | 44 |
+| 56 (across the deck) | 51 | 54 |
+| 79 (corner to corner) | 67 | 66 (the ceiling) |
+
+`20 + sep · 0.6` tracks that line, a shade wider up close and landing on it at
+full spread, clamped to `[26, 66]`. The floor is half the desktop minimum, which
+is the "at least twice as close" that was asked for; the ceiling is the
+corner-to-corner fit rather than a number picked to look safe. **The desktop pair
+is the old expression digit for digit** and a rig that is not told what device it
+is on takes it — asserted, because every existing camera check builds one.
+
+The feast is the one shot that frames the deck rather than the fighters, so it
+takes the same treatment by hand: 68 holds all 56 units of stone *and* the dragon
+thirty units above it (vertical coverage is `0.689·d`, so 47 units).
+
+### A side-by-side split does not shrink the pane's height
+
+**The report:** "with split screen on mobile the minimap is too big, should be
+33% smaller."
+
+The phone cap is a fraction of the pane's **height** — which is the whole reason
+it exists, since at 844×390 the width rule alone asks for 354px of a 390px-tall
+screen. But a side-by-side split *does not change the pane's height*: 41% of
+`v.h` is the same 160px map it always was, now crammed into half the width, and
+there are two of them.
+
+So the cut is gated on the pane **still being full height**, rather than simply on
+`!merged`. A top-and-bottom split has already taken it — `v.h` halved, so the cap
+halved with it — and cutting a 195px pane's map by another third leaves 54px of
+unreadable islands.
+
+**The rule moved out of `_drawMaps` and into `core/split.js` as `mapWidth`,**
+next to `splitLayout`, pure and therefore assertable. It had been one expression
+inline with forty lines of comment around it and nothing checking any of them.
+
+### The menu cursor was there and could not be seen
+
+**The report:** "on the main menu on mobile with a controller it doesn't
+highlight the SETTINGS option, even though it works."
+
+It *was* highlighting it. `.nav-focus` was applied and the ring was drawn — but
+`nav-pulse` animated `outline-color` to `--gold`, a pale warm yellow, on a
+`--paper-2` button, on a phone, at arm's length. Measured mid-pulse:
+`rgb(242,180,62)` on `rgb(255,233,168)`. Half of every cycle the cursor was
+genuinely not there.
+
+Swinging to `--ink` instead was the obvious repair and is barely better: the
+buttons are **already bordered in ink**, so at that end of the cycle the ring
+reads as a slightly thicker border rather than as a cursor. So the colour holds
+at vermillion — which contrasts with the paper it sits on *and* with the ink
+border it sits outside — and the **offset** is what animates. Motion without a
+contrast floor to fall through.
+
+The focused button also **grows**. On the title screen colour alone could not
+carry it: PLAY is solid vermillion whether it is focused or not, so a kid looking
+for "the one that is lit" found the red button every time and the outlined
+neighbour read as decoration. Size is the one channel PLAY's own styling does not
+already spend.
