@@ -40,7 +40,7 @@ import { AngelForm } from './entities/angel.js';
 import { ArenaQuest, SATAN_TOWN, MILESTONES } from './systems/arenaquest.js';
 import { loadBoard, BOARD_MODES } from './systems/leaderboard.js';
 import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
-import { ORB_IDS } from './entities/powerorb.js';
+import { ORB_IDS, TRIPLE } from './entities/powerorb.js';
 import { ProfileScreen } from './systems/profile.js';
 
 /* ---------------------------------------------------------------------------
@@ -150,6 +150,11 @@ const DEAD_PAD = { mx: 0, my: 0, down: () => false, pressed: () => false };
    flatten them (see xrayVertexMat for the measurements). */
 const CAVE_DIST = 30;
 const CAVE_PITCH = 0.82;
+
+/** How long the triple slash's burst lives. Longer than `hitSpark`'s 0.26 by
+ *  design: this one has to cover a kitten switching from frozen to flying, and
+ *  an effect shorter than the change it is hiding does not hide it. */
+const BOOM_TIME = 0.5;
 
 class Game {
   constructor() {
@@ -3026,6 +3031,19 @@ class Game {
       const dot = (dx * dir.x + dz * dir.y) / (dist || 1);
       if (dot < A.arc) continue;
 
+      /* --- HELD IN SOMEBODY'S TRIPLE SLASH: NOTHING ELSE TOUCHES HER ---
+         She is frozen in the air with three cuts landing on her and a payment
+         due at the end of them, and a third kitten wandering past and knocking
+         her out of it would delete the whole technique — including the damage
+         already banked, which would simply be lost. So while `heldBy` is set
+         she is out of everybody's reach except the kitten holding her, and
+         even that one only through the cuts themselves.
+         The test sits BELOW the range and arc checks for the same reason the
+         friendly-fire test does: a swing that misses her must not be told
+         anything about her, or a future rule hung off "the swing that hit a
+         held kitten" fires on swings that never connected. */
+      if (target.heldBy && (target.heldBy !== attacker || kind !== 'tri')) continue;
+
       /* A PARTNER IS DAZED, NOT SKIPPED — and the test moved DOWN here to make
          that possible. It used to sit above the range and arc checks, which was
          right while the answer was "nothing happens" and is wrong now that
@@ -3044,6 +3062,26 @@ class Game {
         if (target.daze()) {
           this.sfx('hit');
           this.toast(`${attacker.name} dazed ${target.name} — watch your team!`, attacker.index);
+        }
+        continue;
+      }
+
+      /* --- A CUT OF THE TRIPLE SLASH CATCHES HER, IT DOES NOT HIT HER ---
+         The whole rework is this branch. `hurt` throws her clear, which is
+         exactly right for every other attack in the game and exactly wrong for
+         this one: the first of three cuts landing meant the other two swung at
+         a body that had already gone, and the technique was strictly worse
+         than the single slash it cost more to throw. `triCapture` freezes her
+         instead and banks the number; `_freeTripleHold` pays all of it at once
+         when the last cut has landed and the pause after it has run out. */
+      if (kind === 'tri') {
+        const nx = dist > 0.001 ? dx / dist : Math.sin(attacker.facing);
+        const nz = dist > 0.001 ? dz / dist : Math.cos(attacker.facing);
+        if (target.triCapture(attacker, dmg, nx, nz)) {
+          this.hitSpark(target, 'tri');
+          this.sfx('hit');
+        } else if (target.warded) {
+          this.sfx('wardhit');
         }
         continue;
       }
@@ -3351,6 +3389,196 @@ class Game {
       s.mesh.material.opacity = (1 - k) * 0.9;
       s.mesh.rotation.z += dt * 6;
     }
+  }
+
+  /* ------------------- the triple slash lets go -------------------------- */
+
+  /**
+   * Everybody caught in a triple slash, and whether it is over yet.
+   *
+   * THE RELEASE IS DRIVEN BY THE HOLDER'S STATE, NOT BY A CALLBACK. The
+   * sequencer in `Player._stepSpecials` never hands anybody back; this asks
+   * every frame whether the kitten holding her is still running the technique,
+   * and lets go the moment she is not. That covers the ending everybody thinks
+   * of — three cuts and the pause — and, for free, every ending nobody does: a
+   * holder knocked out between two cuts, rung out, turned into an angel, or
+   * dragged onto a dragon by `_clearSpecials`. A callback would have been one
+   * path per ending and one of them would have been missed, and the cost of
+   * missing one is a kitten frozen in mid-air with gravity off for the rest of
+   * the afternoon. NOTHING MAY BE STRANDED — the watchdog on `heldT` is the
+   * floor under even this.
+   */
+  _updateTripleHolds(dt) {
+    let landed = false;
+    let freed = 0;
+    for (const t of this.players) {
+      if (!t?.heldBy) continue;
+      t.heldT -= dt;
+      const by = t.heldBy;
+      const over = !by.triAt || by.ko || by.angel;
+      if (!over && t.heldT > 0) continue;
+      if (this._freeTripleHold(t)) landed = true;
+      freed++;
+    }
+    if (!freed) return;
+    /* ALL THREE, OR IT IS JUST A HIT. The bang and the shake are the reward
+       for landing the whole technique — a kid who caught her sister on the
+       last cut only gets the throw. Fired ONCE however many kittens went
+       flying: four booms on top of each other is mush, and the screen cannot
+       shake four times as hard. */
+    if (landed) {
+      this.sfx('smash');
+      this.shakeCameras(0.85, 0.5);
+    }
+  }
+
+  /**
+   * One held kitten, thrown.
+   *
+   * THE LAUNCH IS AN ORDINARY `hurt`, and reusing it is the point: the percent
+   * rule, the knockout test, the white flash, the sound, the damage credit and
+   * the invulnerability that follows are all already right in there and none
+   * of them wants a second implementation that can drift. The only sleight of
+   * hand is the direction — `hurt` computes the push as (target - from), so it
+   * is handed a point one unit BEHIND her along the direction the cuts came
+   * from, and throws her exactly that way.
+   *
+   * @returns {boolean} true if she took all three cuts.
+   */
+  _freeTripleHold(target) {
+    const by = target.heldBy;
+    const hits = target.heldHits;
+    const dmg = target.heldDmg;
+    const dx = target.heldDx;
+    const dz = target.heldDz;
+    /* THE EXPLOSION GOES WHERE SHE WAS, NOT WHERE SHE LANDS. It is the last
+       frame of the freeze and the first of the throw at the same time, which
+       is what covers the switch: without it a kitten who has hung motionless
+       for most of a second simply teleports into a knockback, and the eye
+       reads that as a dropped frame rather than as a hit. */
+    this._boom(
+      target.position.x, target.position.y + target.height * 0.55, target.position.z,
+      hits >= TRIPLE.cuts
+    );
+    target.releaseHold();
+    const from = { x: target.position.x - dx, z: target.position.z - dz };
+    const dealt = target.hurt(dmg, from, { knock: TRIPLE.knock, lift: TRIPLE.lift }, this);
+    if (dealt && by) {
+      by.dmgDealt += dealt;
+      this.tournament?.onHit(by, target, dealt, 'tri');
+    }
+    return hits >= TRIPLE.cuts;
+  }
+
+  /**
+   * A procedural burst: three shells on three axes, blooming outward.
+   *
+   * THREE AXES BECAUSE THERE IS NO BILLBOARD HERE. Up to four cameras are
+   * looking at this from four directions and a flat ring — which is all
+   * `hitSpark` is — would be edge-on to at least one of them. A shell on each
+   * axis has the same silhouette from everywhere, which is cheaper than
+   * turning the thing per view and looks more like a bang than a disc does.
+   *
+   * Everything is generated. There is no explosion sprite and there is not
+   * going to be one: nine rings of `RingGeometry` and a colour ramp is the
+   * whole effect.
+   */
+  _boom(x, y, z, full = false) {
+    if (!this._booms) {
+      this._booms = [];
+      const COL = [0xffffff, 0xffd166, 0xff6b2c];
+      for (let i = 0; i < 4; i++) {
+        const g = new THREE.Group();
+        const rings = [];
+        for (let r = 0; r < 3; r++) {
+          const m = new THREE.Mesh(
+            new THREE.RingGeometry(0.6, 1, 22),
+            new THREE.MeshBasicMaterial({
+              color: COL[r], transparent: true, opacity: 0,
+              depthWrite: false, depthTest: false, side: THREE.DoubleSide,
+              toneMapped: false,
+            })
+          );
+          if (r === 1) m.rotation.y = Math.PI / 2;
+          if (r === 2) m.rotation.x = Math.PI / 2;
+          m.renderOrder = 27 + r;
+          g.add(m);
+          rings.push(m);
+        }
+        g.visible = false;
+        this.scene.add(g);
+        this._booms.push({ group: g, rings, t: 0, big: 1 });
+      }
+      this._boomIx = 0;
+    }
+    const b = this._booms[this._boomIx];
+    this._boomIx = (this._boomIx + 1) % this._booms.length;
+    b.t = BOOM_TIME;
+    b.big = full ? 1 : 0.62;
+    b.group.visible = true;
+    b.group.position.set(x, y, z);
+  }
+
+  _updateBooms(dt) {
+    if (!this._booms) return;
+    for (const b of this._booms) {
+      if (b.t <= 0) continue;
+      b.t -= dt;
+      if (b.t <= 0) { b.group.visible = false; continue; }
+      const k = 1 - b.t / BOOM_TIME;
+      b.group.rotation.y += dt * 1.7;
+      b.rings.forEach((m, i) => {
+        /* STAGGERED SO IT BLOOMS RATHER THAN POPS. Three shells starting
+           together at three sizes is one thick ring; each starting a beat
+           after the one inside it is an explosion, and the difference is
+           entirely in these two lines. */
+        const lead = i * 0.14;
+        const kk = k <= lead ? 0 : (k - lead) / (1 - lead);
+        m.scale.setScalar((0.4 + kk * (3.6 + i * 1.2)) * b.big);
+        m.material.opacity = kk <= 0 ? 0 : (1 - kk) * (0.95 - i * 0.15);
+      });
+    }
+  }
+
+  /**
+   * Shake every camera for a moment.
+   *
+   * EVERY camera, and that is deliberate rather than lazy. This only ever
+   * fires from a live tournament round, where all four kittens are inside a
+   * 56-unit ring and every pane is looking at the same fight — so a shake on
+   * one screen and not the others would read as one player's game glitching.
+   *
+   * It is applied as a POSITION offset after `lookAt`, so the whole world
+   * translates and the framing is untouched. Rotating the camera instead
+   * swings the horizon, which on a fixed isometric view looks like the ground
+   * tilting rather than like an impact.
+   */
+  shakeCameras(amp = 0.8, secs = 0.45) {
+    this._shakeAmp = Math.max(this._shakeAmp ?? 0, amp);
+    this._shakeMax = Math.max(this._shakeMax ?? 0.001, secs);
+    this._shakeT = Math.max(this._shakeT ?? 0, secs);
+  }
+
+  _updateShake(dt) {
+    if (!(this._shakeT > 0)) return;
+    this._shakeT = Math.max(0, this._shakeT - dt);
+    this._shakeClock = (this._shakeClock ?? 0) + dt;
+  }
+
+  /** The offset for this frame, or null. Read once per rig — see `_updateRig`. */
+  _shakeOffset() {
+    if (!(this._shakeT > 0)) return null;
+    /* Three incommensurate sine rates rather than `Math.random()`. A random
+       offset per frame is white noise, which at 60fps reads as the picture
+       buzzing; sines at prime-ish rates read as something heavy landing and,
+       being continuous, survive a frame rate that is not 60. */
+    const t = this._shakeClock ?? 0;
+    const k = this._shakeAmp * (this._shakeT / this._shakeMax);
+    return {
+      x: Math.sin(t * 61) * k,
+      y: Math.sin(t * 83 + 1.7) * k * 0.7,
+      z: Math.sin(t * 47 + 3.1) * k,
+    };
   }
 
   /**
@@ -4184,6 +4412,12 @@ class Game {
     this.tournament?.update(dt, this.input.players);
     this.announcer?.update(dt);
     this._updateSparks(dt);
+    /* AFTER the tournament, because the tournament is what ends a round, and a
+       round ending is one of the ways a triple slash stops being run. Asking
+       first would hold everybody it caught for one extra frame past the gong. */
+    this._updateTripleHolds(dt);
+    this._updateBooms(dt);
+    this._updateShake(dt);
     /* One flag, set where the fact becomes true. `ArenaQuest` needs to know
        Ryuuseki has been RIDDEN, not merely summoned, and there are two seats
        and four ways into them — asking here, every frame, is cheaper than
@@ -5266,6 +5500,16 @@ class Game {
         rig.target.z + Math.cos(yaw) * Math.cos(pitch) * rig.dist
       );
       rig.camera.lookAt(rig.target);
+      /* AFTER `lookAt`, so the shake moves the camera without re-aiming it.
+         Offsetting before would have `lookAt` cancel most of it out — the
+         camera would swing back onto the same target and only the parallax
+         would survive, which is a tenth of the effect for the same work. */
+      const shake = this._shakeOffset();
+      if (shake) {
+        rig.camera.position.x += shake.x;
+        rig.camera.position.y += shake.y;
+        rig.camera.position.z += shake.z;
+      }
     }
   }
 

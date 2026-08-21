@@ -503,6 +503,23 @@ export class Audio {
         this._tone({ type: 'triangle', from: 200, to: 40, dur: 0.7, gain: 0.16 * v, delay: 0.03 });
         this._noise({ from: 2400, to: 200, dur: 0.5, gain: 0.26 * v, q: 0.7 });
         break;
+      case 'smash':
+        /* THE TRIPLE SLASH LANDING ALL THREE CUTS, and it has exactly one job:
+           to be unmistakably bigger than `ko`, which is otherwise the loudest
+           thing in this library. A kid who lands the whole technique on her
+           sister has to hear that she landed it from the other end of the sofa,
+           and she has to hear that it was not just another knockout.
+           FOUR LAYERS, LOW TO HIGH, because a single fat sine is a thud and not
+           a bang — what makes an explosion an explosion is the bright crack
+           arriving with the body and decaying about three times faster. */
+        this._tone({ type: 'square', from: 170, to: 26, dur: 0.75, gain: 0.30 * v });
+        this._tone({ type: 'triangle', from: 92, to: 22, dur: 0.95, gain: 0.20 * v, delay: 0.02 });
+        this._noise({ from: 4200, to: 140, dur: 0.55, gain: 0.42 * v, q: 0.6 });
+        this._noise({
+          from: 260, to: 55, dur: 1.0, gain: 0.24 * v,
+          type: 'lowpass', q: 1.0, delay: 0.04,
+        });
+        break;
       case 'squeak':
         /* A critter objecting. Two quick rising blips an octave apart, high
            enough to sit right above everything else in the mix without being

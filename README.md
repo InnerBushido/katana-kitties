@@ -583,7 +583,7 @@ wrapped in them.
 | 跳 | **Tobi** — Leap | an extra jump |
 | 壁 | **Kabe** — Ward | **hold** the mount button with nothing to climb on: a shield nothing gets through, up to 2 seconds, and you float while it's up |
 | 落 | **Otoshi** — Power Dive | interact in the air — drop like a hammer |
-| 三 | **Sanzan** — Triple Slash | *hold* slash for three cuts. You can't move through them |
+| 三 | **Sanzan** — Triple Slash | *hold* slash: three cuts that freeze whoever they catch, then blow her away. Tap for an ordinary swing. You can turn on the spot but not walk |
 | 突 | **Totsugeki** — Charge | slash while sprinting — straight through everything, gravity off |
 
 The three attacks are new moves, not new buttons: they are the buttons you

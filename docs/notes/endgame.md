@@ -208,7 +208,7 @@ no two the same one.
 | 跳 | Tobi / LEAP | +n jumps |
 | 壁 | Kabe / WARD | **hold** to block, 2s cap, 1.5s wait, ¼ gravity |
 | 落 | Otoshi / POWER DIVE | interact in the air — a driven fall |
-| 三 | Sanzan / TRIPLE SLASH | hold attack — three cuts, planted |
+| 三 | Sanzan / TRIPLE SLASH | hold attack — three cuts that HOLD, then a launch |
 | 突 | Totsugeki / CHARGE | sprint + attack — straight through, no gravity |
 
 **STACKING IS ADDITIVE, NOT MULTIPLICATIVE.** Eight Gale orbs compounded at
@@ -274,13 +274,69 @@ so does `resetForRound`: a charge that survives a round reset carries its
 committed direction and its zero gravity across the teleport to her post and
 flies her off the ring before the gong.
 
-**THE TRIPLE SLASH IS ARMED BY THE SWING AND FIRED BY THE HOLD.** The obvious
-version gates on the swing animation still running, which leaves a usable
-window of `TRIPLE.hold` (0.22s) to `attackTimer` (0.26s) — two frames. The move
-would work about a third of the time and read as the game ignoring her.
-`_triArm` lives from the press until she lets go. There is a check that walks a
-real held button through the real controller and asserts it fires, and that a
-tap never does.
+### The triple slash holds you. It did not always.
+
+**THE MOVE USED TO BE THREE CUTS AT A CORPSE.** She threw an ordinary slash on
+the press; if she was still holding 0.22s later that swing became the first of
+three. But the ordinary slash had already *knocked the target away* — so cuts
+two and three swung at empty air, and the technique was strictly worse than the
+single slash it cost more to throw. Every part of the rework follows from that
+one fact.
+
+**A TAP AND A HOLD ARE ALTERNATIVES, NOT A SEQUENCE.** With the orb on, the
+swing is thrown on the RELEASE: let go inside `TRIPLE.hold` and the ordinary
+slash goes out then, keep holding and the technique starts instead and the
+ordinary swing never happens. That is the only shape in which the technique has
+anybody left to cut.
+
+**`TRIPLE.hold` CAME DOWN FROM 0.22s TO 0.05s** because the cost changed hands.
+At 0.22 the swing had already gone, so the delay was free; now every ordinary
+slash by a kitten wearing the orb waits three frames to find out what the button
+meant. 50ms you cannot feel; 220ms you can, and she uses the ordinary slash on
+barrels a hundred times an hour. A kitten with no Sanzan orb — which is both of
+them until 100% mischief — still fires on the frame she presses, and there is a
+check pinning exactly that.
+
+**THE CUTS CATCH, THEY DO NOT HIT.** `Player.triCapture` freezes the target
+where she stands: gravity off, pad dead, damage banked in `heldDmg` rather than
+taken, and `heldBy` set — which makes her untouchable by everybody else,
+including her own partner's daze and including the ring-out. Three cuts, a
+0.25s pause for effect, and then the whole bill is paid at once and she is
+thrown. That pause is Smash's charged bat: a big hit needs a moment of nothing
+in front of it.
+
+**THE CAP IS THREE, AND IT IS ASSERTED.** A Sanzan stack makes each cut hurt
+more, never adds a fourth. A fourth landing would be invisible until the day it
+one-shot somebody.
+
+**THE RELEASE IS DRIVEN BY THE HOLDER'S STATE, NOT BY A CALLBACK.**
+`Game._updateTripleHolds` asks every frame whether the kitten holding her is
+still running the technique. That covers the ending everybody thinks of — three
+cuts and the pause — and, for free, every ending nobody does: a holder knocked
+out between two cuts, rung out, turned into an angel, or dragged onto a dragon
+by `_clearSpecials`. A callback would have been one path per ending and one of
+them would have been missed, and the cost of missing one is a kitten frozen in
+mid-air with gravity off for the rest of the afternoon. `heldT` is a watchdog
+under even that. **Nothing may be stranded** — same rule as the dragons.
+
+**THE LAUNCH IS AN ORDINARY `hurt`.** The percent rule, the knockout test, the
+flash, the sound, the damage credit and the invulnerability afterwards are all
+already right in there. `_freeTripleHold` hands it a point one unit *behind* the
+target along the stored direction, so `hurt`'s own (target − from) throws her
+exactly the way the cuts were coming from.
+
+**ALL THREE LANDING BUYS THE BANG.** A procedural burst — three `RingGeometry`
+shells on three axes, blooming outward, no billboard needed because a shell has
+the same silhouette from all four cameras — plus a screen shake and `smash`, the
+one sound in the library bigger than `ko`. Catch her on the last cut only and
+you get the throw and nothing else.
+
+**THE CUTS ARE A THIRD SLOWER** (`gap` 0.16 → 0.21). At 0.16 the whole technique
+was over before a nine-year-old could see there had been three of them.
+
+Measured end to end in the browser: press → 60ms deferred → cuts at 91/302/510ms
+→ 27 damage banked, target motionless at the same coordinates throughout → 250ms
+hang → launch at 781ms for 27 damage in one payment, screen shake, `smash`.
 
 **A CHARGE IS A VELOCITY, NOT A TARGET**, set flat every frame: fed through the
 accelerator it ramps over a third of a second and never gets near

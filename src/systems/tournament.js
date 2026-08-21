@@ -923,6 +923,14 @@ export class Tournament {
          Throwing her back into the middle of a ring she is not fighting in
          would be the game taking the one thing she has to do away from her. */
       if (p.angel) { p.nearEdge = false; continue; }
+      /* NOR IS A KITTEN HELD IN A TRIPLE SLASH, for the same reason nobody
+         else can hit her: she is frozen with gravity off in the middle of
+         somebody's technique, and the edge of the world is not allowed to be
+         the one thing that reaches into that. Caught over the rim she hangs
+         there, takes the launch when the cuts finish, and gets rung out on her
+         own account a moment later if that is where she lands — which is the
+         same order of events a kid watching would expect. */
+      if (p.heldBy) { p.nearEdge = false; p.outT = 0; continue; }
       const out = this.world.arenaOutBy(p.position.x, p.position.z);
       /* The warning ring is a FIGHTING warning. During the feast there is no
          penalty to warn about, and a red flashing ring round her feet while

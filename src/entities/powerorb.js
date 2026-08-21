@@ -230,12 +230,42 @@ export const DIVE = {
  * having. In the air she gets quarter gravity for the duration instead of
  * being frozen — freezing a falling kitten in mid-air reads as the game
  * hanging, and a slow drift through three cuts reads as the move.
+ *
+ * IT USED TO BE THREE CUTS AT A CORPSE. The first swing knocked the target
+ * away with ordinary knockback and the other two hit the air where she had
+ * been — so the move was strictly worse than one slash, and read as the game
+ * stuttering. The three cuts now HOLD whoever they catch: stunned in place,
+ * gravity off, untouchable by anybody else, damage banking up. When the last
+ * one lands there is a beat, and then everything held goes flying at once.
+ *
+ * That is Smash's charged bat, and it is deliberate — a big hit needs a moment
+ * of nothing before it to be worth landing. `hang` is that moment.
+ *
+ * `hold` IS 0.05 AND NOT 0.22, which changes what the button means. Past 0.22
+ * the ordinary swing had already been thrown, so the move could only ever be a
+ * slash PLUS three; at 0.05 the press has not committed to anything yet, so a
+ * tap is a slash and a hold is the technique, and they are alternatives rather
+ * than a sequence. The cost is that wearing this orb puts 50ms — three frames —
+ * on every ordinary slash, which is the trade the whole rework is.
+ *
+ * `gap` IS A THIRD LONGER THAN IT WAS. At 0.16 the three cuts were over before
+ * a nine-year-old could see there had been three of them.
  */
 export const TRIPLE = {
   cuts: 3,
-  gap: 0.16,
-  hold: 0.22,
+  gap: 0.21,
+  hold: 0.05,
   gravity: 0.25,
+  /** The beat between the last cut and the launch. Smash's pause-for-effect. */
+  hang: 0.25,
+  /** ...and how long she cannot attack at all once it is over. */
+  cool: 0.5,
+  /** THE LAUNCH IS NOT `tri.knock`. That number is per-cut and deliberately
+     feeble — nine damage and a nudge — because the cuts are not supposed to
+     move anybody any more; they are supposed to HOLD. All the force the move
+     ever had is spent here, once, on everything it caught. */
+  knock: 30,
+  lift: 13,
 };
 
 /**

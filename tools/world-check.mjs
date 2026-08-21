@@ -2888,41 +2888,166 @@ console.log('\n--- the three power moves ---');
   ok('a kitten without the orb cannot charge', mk([]).power.charge === null);
 
   /* --- the triple slash --- */
-  /* THE ARMING WINDOW IS THE WHOLE MOVE. Gated on the swing animation instead
-     of on a flag, the usable window is TRIPLE.hold to attackTimer — about two
-     frames — and the move fires roughly a third of the time, which reads as
-     the game ignoring her rather than as a timing she could learn. This walks
-     a real held button through the real controller. */
+  /* A TAP AND A HOLD ARE ALTERNATIVES, NOT A SEQUENCE, and that is the whole
+     rework. The old shape threw the ordinary swing on the PRESS and turned it
+     into the first of three if the button was still down 0.22s later — so the
+     technique could only ever start on somebody the first swing had already
+     knocked out of reach of the other two, and it was strictly worse than the
+     single slash it cost more to throw.
+     Now the press only starts a stopwatch. These walk a real button through
+     the real controller, because the bug being guarded against is a timing
+     one and a timing bug does not show up in a unit call. */
+  const SWINGS = () => {
+    const kinds = [];
+    return {
+      kinds,
+      sfx: () => {}, toast: () => {}, onMischief: () => {},
+      strikePlayers: (_a, kind) => { kinds.push(kind); },
+      strikeCritters: () => {},
+    };
+  };
   {
     const held = mk(['tri']);
     const down = PAD({ down: (a) => a === 'attack', pressed: (a) => a === 'attack' });
     const stay = PAD({ down: (a) => a === 'attack' });
-    held.update(1 / 60, down, world, [], null);          // the press
+    const spy = SWINGS();
+    held.update(1 / 60, down, world, [], spy);          // the press
+    /* THE PRESS ITSELF THROWS NOTHING. If it did, the move would be a slash
+       plus three cuts again and every target would be gone before cut two. */
+    ok('with the orb on, the press alone swings at nobody', spy.kinds.length === 0);
     let armedAt = -1;
     for (let i = 0; i < 60 && held.triLeft === 0; i++) {
-      held.update(1 / 60, stay, world, [], null);
+      held.update(1 / 60, stay, world, [], spy);
       if (held.triLeft > 0) armedAt = (i + 1) / 60;
     }
     line('hold to triple slash', `${armedAt.toFixed(2)}s (threshold ${TRIPLE.hold})`);
     ok('holding attack really does fire it', held.triLeft > 0);
     ok('...promptly after the threshold', armedAt > 0 && armedAt < TRIPLE.hold + 0.12);
+    ok('...having thrown no ordinary swing on the way there',
+      spy.kinds.every((k) => k === 'tri'), spy.kinds.join(' ') || '(none)');
 
-    const tapOnly = mk(['tri']);
-    tapOnly.update(1 / 60, down, world, [], null);
-    for (let i = 0; i < 60; i++) tapOnly.update(1 / 60, PAD(), world, [], null);
-    ok('...and a plain tap never does', tapOnly.triLeft === 0);
+    /* AND A TAP STILL SWINGS — on the release, but it swings. A kitten who
+       picked up the orb and found her katana had stopped working on barrels
+       would put it straight back. */
+    const tap = mk(['tri']);
+    const tspy = SWINGS();
+    tap.update(1 / 60, down, world, [], tspy);
+    tap.update(1 / 60, PAD(), world, [], tspy);          // let go
+    ok('...and a tap swings on the release', tspy.kinds.length === 1, tspy.kinds.join(' '));
+    for (let i = 0; i < 60; i++) tap.update(1 / 60, PAD(), world, [], tspy);
+    ok('...without ever becoming the technique', tap.triLeft === 0 && !tap.triAt);
+
+    /* THE TAX IS ONLY PAID BY THE ORB. Two sisters on the desktop game they
+       already know have no Sanzan orb between them until 100% mischief, and
+       their katana must still fire on the frame they press it — see the fifth
+       non-negotiable. */
+    const plain = mk([]);
+    const pspy = SWINGS();
+    plain.update(1 / 60, down, world, [], pspy);
+    ok('without the orb the swing is still on the PRESS', pspy.kinds.length === 1);
+    ok('...and 50ms is all the orb costs an ordinary swing',
+      TRIPLE.hold <= 4 / 60, `${(TRIPLE.hold * 1000).toFixed(0)}ms`);
+    /* Slowed by a third so a nine-year-old can see there were three of them.
+       At 0.16 the whole technique was over in half a second. */
+    ok('...and the cuts are a third slower than they were', TRIPLE.gap > 0.16 * 1.28,
+      `${TRIPLE.gap}s`);
   }
 
   const t = mk(['tri']);
   t._startTriple(null);
-  ok('three cuts, and the swing that armed it was the first',
-    t.triLeft === TRIPLE.cuts - 1);
+  ok('the technique owns all three cuts', t.triLeft === TRIPLE.cuts);
   ok('she cannot move or jump through it', t.busy);
   let cuts = 0;
   const spy = { sfx: (n) => { if (n === 'slash') cuts++; }, strikePlayers: () => {} };
   for (let i = 0; i < 120 && t.triLeft > 0; i++) t._stepSpecials(1 / 60, PAD(), world, spy);
-  ok('...and the other two land', cuts === TRIPLE.cuts - 1);
-  ok('...then she gets her feet back', !t.busy);
+  ok('...and every one of them lands', cuts === TRIPLE.cuts);
+  /* THE PAUSE FOR EFFECT IS NOT DEAD TIME. She is still planted through it and
+     everything she caught is still frozen — it is the beat before the launch
+     that makes the launch read as one, and a `busy` that went false here would
+     let her walk away mid-technique. */
+  ok('...then a beat before the launch', t.triHangT > 0 && t.busy);
+  let hang = 0;
+  for (let i = 0; i < 120 && t.triAt; i++) { t._stepSpecials(1 / 60, PAD(), world, spy); hang++; }
+  line('pause for effect', `${(hang / 60).toFixed(2)}s (nominal ${TRIPLE.hang})`);
+  ok('...then she gets her feet back', !t.busy && !t.triAt);
+  ok('...and cannot swing again for half a second',
+    Math.abs(t.attackCooldown - TRIPLE.cool) < 0.02, t.attackCooldown.toFixed(2));
+
+  /* --- caught in one: frozen, banked, and nobody else's business ---
+     EVERY ONE OF THESE IS THE OLD BUG STATED AS A RULE. The cuts used to
+     `hurt`, which threw the target clear on the first one; the whole point of
+     the rework is that they hold instead, so what has to be pinned is that
+     holding really holds — she does not fall, does not act, takes nothing yet,
+     cannot be stolen, and cannot be cut a fourth time. */
+  {
+    const by = mk(['tri']);
+    const her = mk([]);
+    const dmg = ATTACKS.tri.dmg;
+    ok('a cut catches her rather than hurting her',
+      her.triCapture(by, dmg, 1, 0) && her.heldBy === by && her.hp === her.maxHp);
+    ok('...weightless while she is held', her._gravityK() === 0);
+    /* A FULL-TILT STICK AND SHE GOES NOWHERE. `heldBy` reaches the controller
+       through the same dead-pad line a hit and a daze use, so no movement mode
+       has to learn the technique exists — but that line is one `||` and this is
+       what notices if somebody removes it. */
+    const hx = her.position.x;
+    const hz = her.position.z;
+    const FULL = PAD({ mx: 1, my: 1, down: () => true, pressed: () => true });
+    for (let i = 0; i < 30; i++) her.update(1 / 60, FULL, world, [], SWINGS());
+    ok('...and the stick does nothing at all',
+      Math.hypot(her.position.x - hx, her.position.z - hz) < 0.01);
+    ok('...nor does she fall out from under the other two cuts',
+      Math.abs(her.velocity.y) < 0.01);
+
+    her.triCapture(by, dmg, 1, 0);
+    her.triCapture(by, dmg, 1, 0);
+    ok('three cuts bank three lots of damage',
+      her.heldHits === TRIPLE.cuts && Math.abs(her.heldDmg - dmg * TRIPLE.cuts) < 0.001);
+    /* THE CAP IS THE CONTRACT. A fourth cut landing would be invisible right
+       up until the day it one-shot somebody, and a Sanzan stack is supposed to
+       make each cut hurt MORE, never to add one. */
+    ok('...and a fourth never lands', her.triCapture(by, dmg, 1, 0) === false
+      && her.heldHits === TRIPLE.cuts);
+
+    const thief = mk(['tri']);
+    ok('nobody else can take her mid-technique',
+      thief !== by && her.triCapture(thief, dmg, 1, 0) === false && her.heldBy === by);
+
+    /* THE LAUNCH DIRECTION IS `hurt`'S OWN CONTRACT, and `Game._freeTripleHold`
+       leans on it: it hands `hurt` a point one unit BEHIND her along the stored
+       direction so the push comes back out along it. If `hurt` ever stopped
+       computing the throw as (target - from), the technique would fire everyone
+       it caught the wrong way and nothing else in the game would notice. */
+    const dx = her.heldDx;
+    const dz = her.heldDz;
+    const banked = her.heldDmg;
+    her.releaseHold();
+    ok('letting go clears every scrap of the hold',
+      !her.heldBy && her.heldHits === 0 && her.heldDmg === 0);
+    const dealt = her.hurt(banked, { x: her.position.x - dx, z: her.position.z - dz },
+      { knock: TRIPLE.knock, lift: TRIPLE.lift }, null);
+    ok('...and the banked damage is paid all at once', dealt === banked, `${dealt}`);
+    ok('...throwing her the way the cuts were coming from',
+      her.velocity.x > 1 && Math.abs(her.velocity.z) < 0.001);
+    ok('...and hard enough to be worth the wait', her.velocity.y >= TRIPLE.lift);
+
+    /* THE WATCHDOG IS A FLOOR UNDER A BUG, NOT A TIMER ANYBODY PLAYS AGAINST.
+       It has to outlast a healthy technique by a clear margin or it becomes
+       the thing that ends the move — and a kitten released early is a kitten
+       the last cut misses, which is the bug this whole file is about. */
+    const fresh = mk([]);
+    fresh.triCapture(by, dmg, 1, 0);
+    ok('the stranding watchdog outlasts the whole technique',
+      fresh.heldT > TRIPLE.cuts * TRIPLE.gap + TRIPLE.hang + 1,
+      `${fresh.heldT.toFixed(2)}s`);
+
+    /* The ward stops this the way it stops any other blade. An exception here
+       would read to a kid as the bubble being broken. */
+    const blocked = mk(['ward']);
+    blocked._popWard(null);
+    ok('a raised ward refuses the catch',
+      blocked.triCapture(by, dmg, 1, 0) === false && !blocked.heldBy);
+  }
 
   /* --- the dive --- */
   const d = mk(['dive']);

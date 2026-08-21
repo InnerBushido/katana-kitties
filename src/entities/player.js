@@ -292,10 +292,33 @@ export class Player {
     /** Triple-slash sequencer: cuts still to throw and the clock to the next. */
     this.triLeft = 0;
     this.triT = 0;
+    /** Seconds of pause-for-effect left AFTER the last cut, before the launch.
+     *  She is still planted through it — see `busy`. */
+    this.triHangT = 0;
     /** True while falling as a power dive. */
     this.diving = false;
-    /** Seconds the attack button has been held, for the triple-slash arm. */
+    /** Seconds the attack button has been held, and whether a press is still
+     *  waiting to find out whether it was a tap or a hold. See TRIPLE.hold. */
     this.attackHeld = 0;
+    this._triPend = false;
+    this._triKind = 'stand';
+
+    /* --- caught in somebody's triple slash ---
+       SHE IS NOT HURT YET, WHICH IS THE WHOLE POINT. `heldBy` is the kitten
+       running the technique; while it is set she is frozen, weightless,
+       untouchable by anybody else, and the damage the cuts are worth is
+       banking up in `heldDmg` to be paid all at once when it finishes.
+       `heldT` is a WATCHDOG and not a timer anything counts on: the release is
+       driven by the holder's own state (see Game._updateTripleHolds), and this
+       is only here so that no way of the holder disappearing — knocked out,
+       rung out, round over, dragged onto a dragon — can leave a kitten frozen
+       in mid-air for the rest of the afternoon. Nothing may be stranded. */
+    this.heldBy = null;
+    this.heldDmg = 0;
+    this.heldHits = 0;
+    this.heldT = 0;
+    this.heldDx = 0;
+    this.heldDz = 1;
 
     /* --- the ring's two tournament-only states ---
        `eatT` is seconds left of a snack she is swallowing, owned by
@@ -672,14 +695,24 @@ export class Player {
   /** How much of gravity applies this frame. See WARD / TRIPLE / CHARGE. */
   _gravityK() {
     if (this.chargeT > 0) return 0;
+    /* CAUGHT MID-AIR AND STAYING THERE. Weightless is not a detail of the
+       hold, it IS the hold — a kitten who keeps falling while the other three
+       cuts land is a kitten the other three cuts miss, which is the bug the
+       whole rework exists to kill. */
+    if (this.heldBy) return 0;
     if (this.warded) return WARD.gravity;
-    if (this.triLeft > 0 && !this.onGround) return TRIPLE.gravity;
+    if (this.triAt && !this.onGround) return TRIPLE.gravity;
     return 1;
+  }
+
+  /** True while a triple slash is running, INCLUDING its pause-for-effect. */
+  get triAt() {
+    return this.triLeft > 0 || this.triHangT > 0;
   }
 
   /** True while a special move owns her feet — no stick, no jump. */
   get busy() {
-    return this.triLeft > 0 || this.chargeT > 0;
+    return this.triAt || this.chargeT > 0;
   }
 
   /* ------------------------------ helpers ------------------------------- */
@@ -782,7 +815,10 @@ export class Player {
        pad, so none of the three movement modes has to learn that a partner's
        swing exists — and she keeps her momentum, which is what stops it reading
        as being switched off. */
-    if (this.hitT > 0 || this.stunT > 0 || this.ko) pad = FROZEN_PAD;
+    /* AND SO DOES BEING CAUGHT. Same one line again, for the same reason: a
+       kitten held in the middle of a triple slash may not act, and no movement
+       mode has to learn what a triple slash is to know that. */
+    if (this.hitT > 0 || this.stunT > 0 || this.ko || this.heldBy) pad = FROZEN_PAD;
 
     /* NO POWER MOVE SURVIVES GETTING ON AN ANIMAL. `_stepSpecials` only runs
        inside the ground controller, so a ward popped a frame before mounting
@@ -1045,8 +1081,10 @@ export class Player {
     this.chargeLeft = 0;
     this.triLeft = 0;
     this.triT = 0;
+    this.triHangT = 0;
     this.diving = false;
     this.attackHeld = 0;
+    this._triPend = false;
     /* The eat pose goes with them. `Menagerie` owns the hold itself and lets
        go on its own terms, but this flag is only ever a DRAWING — leaving it
        set after a mount or a round reset holds the attack row for ever. */
@@ -1208,8 +1246,16 @@ export class Player {
       wish.normalize();
       this.facing = Math.atan2(wish.x, wish.z);
     }
-    /* Planted. She keeps her facing from the frame the move started — a
-       triple slash you can steer is a triple slash with no cost. */
+    /* PLANTED, BUT NOT POINTED. Her FEET are taken and her aim is not, and
+       the order of these two lines is what does it: the facing above is set
+       from the stick before the stick is thrown away here, so through a whole
+       triple slash she turns on the spot and goes nowhere. That is deliberate
+       and it is the move — three cuts you can sweep round you catch the sister
+       who ran in behind you, and three cuts you could also WALK with would be
+       a dash attack with no downside.
+       (The comment that used to sit here said she kept the facing from the
+        frame the move started. She never did; the code has always been in
+        this order. It was describing a triple slash nobody could aim.) */
     if (this.busy) { wish.set(0, 0, 0); moving = false; }
 
     const sprinting = pad.down('sprint') && moving;
@@ -1305,9 +1351,25 @@ export class Player {
        breath. The kitten still plays her attack pose, which reads as the two
        of them going for it together. */
     this.attackCooldown -= dt;
+    /* --- WITH THE SANZAN ORB ON, THE SWING IS THROWN ON THE RELEASE ---
+       The button has to mean two different things and it cannot know which
+       until it is let go, so the press only starts a stopwatch: let go inside
+       TRIPLE.hold and the ordinary swing goes out then, keep holding and the
+       technique starts instead and the ordinary swing never happens at all.
+       IT USED TO ARM AFTER THE SWING. The old shape threw the ordinary slash
+       on the press and turned it into the first of three if you were still
+       holding 0.22s later, which made the move a slash PLUS three cuts and
+       meant it could only ever start on a target the first slash had already
+       knocked away. A tap and a hold have to be ALTERNATIVES for the technique
+       to have anybody left to cut.
+       The cost is 50ms — three frames — on every ordinary slash, and only for
+       a kitten wearing the orb. That is the trade, it is paid knowingly, and
+       it is why TRIPLE.hold came down from 0.22 to 0.05: at 0.22 you can feel
+       it, at 0.05 you cannot. */
+    const deferred = !!this.power.tri && !this.pandaMount;
     if (pad.pressed('attack') && this.attackCooldown <= 0 && !this.busy) {
-      this.attackTimer = 0.26;
       if (this.pandaMount) {
+        this.attackTimer = 0.26;
         this.attackCooldown = 0.45;
         this._doClaw(world, hud);
       } else if (this.power.charge && sprinting) {
@@ -1316,42 +1378,42 @@ export class Player {
            the trigger down; a hold-detector that stole that press would make
            the sprint attack unreachable for anyone wearing both orbs, and the
            sprint attack is the one two kids already know from the barrels. */
+        this.attackTimer = 0.26;
         this._startCharge(hud);
+      } else if (deferred) {
+        /* The kind is read from the pad AT THE MOMENT OF THE PRESS, not
+           recomputed later — and now it has to be STORED, because the swing it
+           belongs to may not go out for another three frames. `onGround` and
+           the stick both change in that time, so asking again at the release
+           can turn the aerial she actually asked for into a standing slash on
+           the frame she lands. */
+        this._triPend = true;
+        this._triKind = this.attackKind(pad);
+        this.attackHeld = 0;
       } else {
+        this.attackTimer = 0.26;
         this.attackCooldown = 0.36;
         hud?.sfx('slash');
-        /* The kind is read from the pad AT THE MOMENT OF THE PRESS, not
-           recomputed later. `onGround` and the stick both change during the
-           rest of this function — the ground snap runs below — so asking
-           afterwards can turn the aerial she actually threw into a standing
-           slash on the frame she lands. */
         this._doSlash(world, hud, this.attackKind(pad));
-        // That swing is the first of three if she keeps the button down.
-        this._triArm = !!this.power.tri;
       }
     }
-    if (this.attackTimer > 0) this.attackTimer -= dt;
 
-    /* --- the triple slash arms on the HOLD, and fires after the first cut ---
-       Tapping still throws the ordinary swing above; keeping the button down
-       past TRIPLE.hold turns that swing into the first of three. Arming on the
-       press instead would put a 0.22s delay on every attack in the game for
-       anyone wearing the orb, which is a worse trade than it sounds: the
-       ordinary slash is what she uses on barrels a hundred times an hour. */
-    if (this.power.tri && !this.pandaMount) {
-      const held = pad.down('attack');
-      this.attackHeld = held ? this.attackHeld + dt : 0;
-      if (!held) this._triArm = false;
-      /* ARMED BY THE SWING, FIRED BY THE HOLD, and the arming flag is what
-         makes the window usable. Gating on `attackTimer > 0` instead — the
-         obvious version — leaves 40 milliseconds between the hold threshold
-         and the end of the swing animation, which is two frames: the move
-         would work about a third of the time and read as the game ignoring
-         her. The flag lives from the press until she lets go. */
-      if (this._triArm && this.attackHeld > TRIPLE.hold && this.triLeft === 0) {
+    /* --- and here is where that press finds out what it was --- */
+    if (this._triPend) {
+      this.attackHeld += dt;
+      if (!pad.down('attack')) {
+        // A TAP. The swing she asked for, thrown now, with the kind she had.
+        this._triPend = false;
+        this.attackTimer = 0.26;
+        this.attackCooldown = 0.36;
+        hud?.sfx('slash');
+        this._doSlash(world, hud, this._triKind);
+      } else if (this.attackHeld >= TRIPLE.hold) {
+        this._triPend = false;
         this._startTriple(hud);
       }
     }
+    if (this.attackTimer > 0) this.attackTimer -= dt;
 
     /* --- the power dive ---
        Airborne only, which is what keeps `interact` free for the oath and the
@@ -1576,7 +1638,18 @@ export class Player {
     }
     this.wardFlash = Math.max(0, (this.wardFlash ?? 0) - dt);
 
-    // --- triple slash ---
+    /* --- triple slash: three cuts, then a beat, then everything goes ---
+       THE HANG IS NOT DEAD TIME. It is the moment of nothing that makes the
+       launch land — Smash's charged bat, the same trick every time. `busy`
+       stays true through it so she is still planted, and the kittens the cuts
+       caught are still frozen; `Game._updateTripleHolds` watches `triAt` go
+       false and throws them all at once.
+       THE RELEASE IS NOT CALLED FROM HERE, and that is on purpose. If this
+       function had to hand the held kittens back, then every other way this
+       move can end — a knockout mid-technique, a ring-out, the round finishing
+       between two cuts, `_clearSpecials` firing because she got on a dragon —
+       would be a separate path that has to remember to do the same thing, and
+       one of them would not. The game watches the state instead. */
     if (this.triLeft > 0) {
       this.triT -= dt;
       if (this.triT <= 0) {
@@ -1585,8 +1658,16 @@ export class Player {
         hud?.sfx('slash');
         this._doSlash(world, hud, 'tri');
         this.triT = TRIPLE.gap;
-        if (this.triLeft === 0) this.attackCooldown = 0.3;
+        if (this.triLeft === 0) this.triHangT = TRIPLE.hang;
       }
+    } else if (this.triHangT > 0) {
+      this.triHangT -= dt;
+      /* The cooldown is charged HERE and not when the last cut lands, so the
+         half second she cannot attack for starts after the launch rather than
+         overlapping the pause that precedes it. Otherwise the gap she feels is
+         a quarter of a second short of the number, and the move ends with her
+         already swinging again. */
+      if (this.triHangT <= 0) this.attackCooldown = TRIPLE.cool;
     }
 
     // --- charge ---
@@ -1663,12 +1744,99 @@ export class Player {
     this.velocity.z *= 0.35;
   }
 
+  /**
+   * Commit to the technique. All three cuts, none of them thrown yet.
+   *
+   * `cuts` AND NOT `cuts - 1`, which is the arithmetic the rework turned over.
+   * The old version fired on a swing that had already gone out, so it only had
+   * two of its own left; now nothing has been thrown when this is called and
+   * the sequencer owns all three. `triT` starts at zero so the first one lands
+   * on the very next frame — `_stepSpecials` runs at the TOP of the controller
+   * and this is called from further down it, so a positive start value would
+   * put a whole extra gap in front of a move that is meant to feel like a
+   * decision she already made.
+   */
   _startTriple(hud) {
-    this.triLeft = TRIPLE.cuts - 1;   // the swing that armed it was the first
-    this.triT = TRIPLE.gap;
+    this.triLeft = TRIPLE.cuts;
+    this.triT = 0;
+    this.triHangT = 0;
     this.attackHeld = 0;
-    this._triArm = false;
+    this._triPend = false;
     hud?.toast?.(`${this.name} — TRIPLE SLASH!`, this.index);
+  }
+
+  /* ---------------------- caught in one of them -------------------------- */
+
+  /**
+   * A cut from somebody's triple slash landed on her.
+   *
+   * SHE TAKES NO DAMAGE HERE. She is frozen, floated and BANKED — the number
+   * goes into `heldDmg` and is not paid until the technique finishes, which is
+   * what lets all three cuts land on the same kitten instead of the first one
+   * throwing her out of reach of the other two. That was the bug: three cuts
+   * at a body that had already gone.
+   *
+   * THE CAP IS THE CONTRACT. Three cuts, three hits, no more, whatever else
+   * calls this — a stacked Sanzan orb makes each cut hurt more, not a fourth
+   * cut appear, and a bug that let a fourth land would be invisible right up
+   * until it one-shot somebody.
+   *
+   * The ward still stops it, the same way it stops an ordinary blade. A block
+   * that held against every attack in the game except this one would be the
+   * kind of exception a nine-year-old reads as the bubble being broken.
+   *
+   * @returns {boolean} true if this cut counted.
+   */
+  triCapture(by, dmg, dx, dz) {
+    if (this.ko || this.angel) return false;
+    if (this.heldBy && this.heldBy !== by) return false;
+    if (this.warded) { this.wardFlash = 0.25; return false; }
+    if (this.heldBy === by && this.heldHits >= TRIPLE.cuts) return false;
+
+    if (!this.heldBy) {
+      this.heldBy = by;
+      this.heldDmg = 0;
+      this.heldHits = 0;
+      /* Whatever she was doing, she is not doing it. Her own charge or dive
+         would otherwise keep driving her velocity straight through the freeze,
+         and a "frozen" kitten sliding across the ring is worse than no freeze
+         at all. */
+      this._clearSpecials();
+      this.velocity.set(0, 0, 0);
+      this.onGround = false;
+    }
+    /* The watchdog is reset by every cut, so it can only ever expire on a
+       technique that has actually stopped landing. Generous on purpose: it is
+       a floor under a bug, not a rule anybody plays against. */
+    this.heldT = TRIPLE.cuts * TRIPLE.gap + TRIPLE.hang + 1.5;
+    this.heldHits++;
+    this.heldDmg += dmg;
+    this.heldDx = dx;
+    this.heldDz = dz;
+    /* THE FREEZE HAS TO BE READABLE. A kitten hanging motionless in mid-air
+       with nothing happening to her looks like the game locking up, so each
+       cut flashes her the same white an ordinary hit does — three flashes on a
+       body that is not moving is hit-stop, which every kid who has played
+       Smash already reads without being told. */
+    this.flashT = 0.22;
+    this.squash = 1;
+    /* Invulnerability is CLEARED here rather than granted. The protection
+       while she is held comes from `heldBy` (see Game.strikePlayers); a
+       leftover `invulnT` from the blow before would make the LAUNCH — which is
+       an ordinary `hurt` call — silently do nothing at the end of a technique
+       that visibly landed three times. */
+    this.invulnT = 0;
+    this.hitT = 0;
+    return true;
+  }
+
+  /** Let her go. The damage and the throw are the caller's job — see
+   *  `Game._freeTripleHold`, the only thing that calls this. */
+  releaseHold() {
+    this.heldBy = null;
+    this.heldDmg = 0;
+    this.heldHits = 0;
+    this.heldT = 0;
   }
 
   _startDive(hud) {
