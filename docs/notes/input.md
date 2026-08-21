@@ -401,6 +401,73 @@ know the DS4 and the DualSense. **A cheap USB pad is where it will bite.**
 per-profile map rather than widening the vJoy one, which is a real piece of work
 and not worth doing before something actually needs it.
 
+## The Steam Controller is not a gamepad until Steam says so
+
+**The symptom, and it looks like a possessed controller.** A Steam Controller
+(the 2025/2026 one) plugged into a laptop over USB, detected by Steam, does not
+appear in Settings → CONTROLLERS at all — and meanwhile the right stick and right
+trackpad move the mouse cursor, the left stick walks **Frost**, and Y makes
+**Ember** jump.
+
+Every part of that is one cause. The controller ships in what Valve's firmware
+calls **lizard mode**: the device itself emulates a keyboard and a mouse. It has
+**no XInput and no DirectInput mode and no standard HID gamepad descriptor** —
+game input rides on a *vendor* HID collection (usage page `0xFF00`, report ID
+`0x42`, 54 bytes at about 60 Hz) that only Steam knows how to read. So
+`navigator.getGamepads()` never sees it, however long you mash buttons, and
+"press any button on it to wake it up" is a dead end.
+
+The stray movement is the same thing seen from the other side. Lizard mode sends
+**arrow keys and Space** — which in this game are player 2's stick and player 1's
+jump. One controller therefore walks Frost and jumps Ember, which reads as random
+until you know it is a keyboard.
+
+**A DualSense is the opposite case and that is why it needed no setup.** It
+carries a real HID gamepad descriptor, so Windows, Firefox and Android all read
+it directly and Steam Input is an optional layer on top rather than the only way
+in.
+
+### What actually works
+
+**Closing Steam is the wrong move.** Steam is the thing that turns lizard mode
+*off*; without it the controller is a keyboard and a mouse and nothing else.
+
+The route that works is to make Steam emit a virtual Xbox pad *at the browser*:
+
+1. Steam → **Games → Add a Non-Steam Game** → add **Firefox**.
+2. On that shortcut: gear → **Properties → Controller → Steam Input = On**, and
+   set the layout to a **Gamepad** template (an Xbox-style one), not the
+   keyboard/mouse default a non-Steam shortcut gets.
+3. **Quit Firefox completely**, then launch it *from Steam*.
+
+Step 3 is not fussiness. Firefox is single-instance: launching a second copy
+hands the URL to the running one and exits, Steam sees the "game" close a second
+later, and the layout goes back to Desktop with nothing on screen to say why. If
+that keeps happening, give the shortcut its own profile —
+`firefox.exe -no-remote -P steam` — so Steam has a process to hold on to.
+
+**Changing the Desktop Layout to a Gamepad template does not work.** Steam's
+desktop configuration does not drive XInput emulation, so the pad comes out doing
+nothing at all. It has to be a game shortcut.
+
+Once it is emitting XInput, the browser reports an Xbox 360 pad, `mapping` is
+`standard`, and the game's `standard` profile is already correct for it: A jump,
+X attack, B interact, Y mount, triggers sprint, Start pause. No code needed.
+
+**The Steam-free alternative** is a third-party shim — `SteamlessController` and
+similar — which sends the HID feature reports that disable lizard mode itself and
+republishes the pad through ViGEmBus. It works, and it means installing a virtual
+bus driver, so it is the answer for a machine that should not have Steam running
+rather than the first thing to try.
+
+### On a phone, it will not work at all
+
+Lizard mode is the *firmware's* behaviour, so an Android phone pairing the
+controller over Bluetooth sees a keyboard and a mouse — and there is no Steam on
+the phone to tell it otherwise. Nothing the game can do reaches this. **The PS5
+pad is the controller for the phone**, and it needs no setup there for exactly
+the reason above.
+
 ### A CONTROLLER IS A CONTROLLER, and the vJoy phantom
 
 **One player per connected pad, in connection order, and a Joy-Con is just a

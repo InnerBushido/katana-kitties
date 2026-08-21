@@ -1573,9 +1573,22 @@ class Game {
     const pads = this.input.diagnostics();
 
     if (!pads.length) {
+      /* THE STEAM CONTROLLER LINE IS HERE BECAUSE "PRESS ANY BUTTON" IS A DEAD
+         END FOR IT, and a screen that gives an instruction which cannot work is
+         worse than one that says nothing. It is not a gamepad until Steam makes
+         it one: out of the box it ships in `lizard mode`, where the firmware
+         itself types on a keyboard and moves the mouse, so nothing ever reaches
+         `getGamepads` however long you mash it. In THIS game that reads as a
+         possessed controller — lizard mode sends ARROW KEYS and SPACE, which
+         are player 2's stick and player 1's jump, so one pad walks Frost and
+         jumps Ember. See docs/notes/input.md. */
       el.innerHTML = '<div class="pad-empty">No controllers detected — '
         + 'keyboard is ready to go.<br>Pair one, then <b>press any button on '
-        + 'it</b> — browsers hide a gamepad until it sends input.</div>';
+        + 'it</b> — browsers hide a gamepad until it sends input.'
+        + '<br><b>Steam Controller?</b> It types on a keyboard until Steam tells '
+        + 'it otherwise. Add this browser to Steam as a non-Steam game, give that '
+        + 'shortcut a <b>Gamepad</b> layout, and launch the browser from Steam.'
+        + '</div>';
       if (mapEl) mapEl.innerHTML = '';
       return;
     }
