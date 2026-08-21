@@ -9,6 +9,7 @@ import { loadSpriteAtlas, recolourAtlas } from './core/spritesheet.js';
 import { placeholderCatAtlas, placeholderDragonTexture, placeholderPandaTexture } from './core/gfx.js';
 import {
   detect as detectDevice, readOverride, writeOverride, QUALITY, effectivePixelRatio,
+  autoQualityVerdict, AUTO_GRACE_MS,
 } from './core/device.js';
 import { TouchPad } from './core/touchpad.js';
 import { World } from './world/world.js';
@@ -62,6 +63,7 @@ const DEBUG_KEY_LABEL = {
    that walking into a heavy room changes the number while you are still
    standing in it. */
 const PERF_WINDOW = 120;
+
 
 const DOJO_VIEW_R = 52;  // inside this, the camera frames the unit circle
 
@@ -188,6 +190,13 @@ class Game {
     this._perfLast = 0;
     this._perfPaint = 0;
     this._perfOn = false;
+    /* AUTO-DOWNGRADE, ON UNTIL A HUMAN HAS AN OPINION. The moment somebody
+       picks a quality in Settings this goes false and stays false for the
+       session: a setting that argues back with the person using it is worse
+       than no setting. See `_autoQualityCheck`. */
+    this._autoQuality = true;
+    this._autoBadSince = 0;
+    this._autoNextAt = 0;
 
     this.scene = new THREE.Scene();
     this.input = new InputManager();
@@ -305,6 +314,15 @@ class Game {
     window.addEventListener('resize', () => {
       this._updateRotateGate();
       this.touchPad?.reflow();
+    });
+    /* COMING BACK FROM ANOTHER TAB IS NOT A PERFORMANCE EVENT. A hidden tab has
+       its animation frames throttled to about half a hertz; every one of those
+       is recorded as a two-second frame, and the auto-downgrade read a ring
+       full of them as a machine that could not cope. Alt-tab away, come back,
+       and the game had quietly turned itself down. Discard the history instead
+       of trying to interpret it. */
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') this._discardPerf(performance.now());
     });
   }
 
@@ -1187,7 +1205,17 @@ class Game {
     };
     bind('set-split', 'split');
     bind('set-dir', 'dir');
-    bind('set-quality', 'quality', () => this._applyQuality());
+    /* CHOOSING A QUALITY TURNS THE AUTOMATION OFF, for the session and for good.
+       Somebody who has just set this to `high` on a machine the watcher thinks
+       is struggling means it — they may be about to plug the monitor into the
+       right card, or they may simply prefer the picture to the frame rate. A
+       setting that gets overruled four seconds after you touch it is broken.
+       Note this fires on ANY change, including one back down to `low`: the
+       point is that a human is now steering, not which way they steered. */
+    bind('set-quality', 'quality', () => {
+      this._autoQuality = false;
+      this._applyQuality();
+    });
 
     /* TOUCH CONTROLS. The pad appears or disappears immediately — that is the
        half of this that matters for testing and it needs no reload. The render
@@ -2472,11 +2500,106 @@ class Game {
       this._perfIx = (slot + 1) % PERF_WINDOW;
     }
     this._perfLast = now;
+    this._autoQualityCheck(now);
     if (this._perfOn && now - this._perfPaint >= 250) {
       this._perfPaint = now;
       this._paintPerf();
     }
     return slot;
+  }
+
+  /** The middle frame time in the window, in ms, or 0 before there is one.
+   *
+   *  Shared by the readout and the auto-downgrade so they can never disagree
+   *  about how fast the game is running — a panel saying 58fps while the game
+   *  turns itself down would read as the game being broken, and it would be
+   *  right to. */
+  _frameMedian() {
+    /* Unwritten slots are 0 in a preallocated ring and would sort to the front
+       and be reported as an infinite frame rate. */
+    const s = Array.from(this._perfRing).filter((v) => v > 0).sort((a, b) => a - b);
+    return s.length ? s[s.length >> 1] : 0;
+  }
+
+  /**
+   * Notice that this machine cannot afford the picture it was given, and take
+   * it down one step.
+   *
+   * WHY THIS EXISTS AT ALL: the desktop default went from `medium` to `high` on
+   * the strength of one machine getting its GPU sorted out. That is a real fix
+   * and it belongs in the default — but it cannot be checked from in here, and
+   * a browser on the wrong adapter renders this game at a third of the speed
+   * with every other number looking perfectly normal. So the default is
+   * optimistic and this is the thing that pays for the optimism.
+   *
+   * It steps DOWN only, one rung at a time, and never climbs back. Climbing
+   * needs hysteresis or the game oscillates between two settings forever, and a
+   * picture that changes sharpness every eight seconds is worse than one that
+   * is a bit soft — which is the same reason nothing in this game regrows.
+   *
+   * It refuses to judge a frame it cannot fairly judge: the title screen, a
+   * scene that owns the display, a pause menu, or the three seconds after it
+   * last changed something. `_sceneActive()` rather than listing the scenes,
+   * for the reason that helper exists.
+   */
+  _autoQualityCheck(now) {
+    if (!this._autoQuality) return;
+    const { verdict, next } = autoQualityVerdict({
+      quality: this.settings.quality,
+      medianMs: this._frameMedian(),
+      /* A HIDDEN TAB IS NOT A SLOW MACHINE. See the note on `autoQualityVerdict`
+         — this is the gate that was missing, and `_discardPerf` is its other
+         half. */
+      visible: document.visibilityState === 'visible',
+      playable: this.state === 'play' && !this.paused && !this._sceneActive(),
+      now,
+      badSince: this._autoBadSince,
+      notBefore: this._autoNextAt,
+    });
+    if (verdict === 'reset') { this._autoBadSince = 0; return; }
+    if (verdict === 'start') { this._autoBadSince = now; return; }
+    if (verdict === 'wait') return;
+
+    this.settings.quality = next;
+    this._applyQuality();
+    /* Settings has to agree with the game. A dropdown still reading "High"
+       while the game renders `medium` is a lie the next person to open that
+       menu will act on. */
+    const sel = document.getElementById('set-quality');
+    if (sel) sel.value = next;
+    this._autoNextAt = now + AUTO_GRACE_MS;
+    this._autoBadSince = 0;
+    /* SAYS SO, like every other thing this game does on a player's behalf. A
+       picture that quietly gets softer reads as the game breaking; the same
+       change announced reads as the game helping, and it names where to undo
+       it. Invariant 6, applied to something that is not a refusal.
+
+       Capitalised from the value, not from a list of two: a fourth tier added
+       to QUALITY_ORDER should appear in this sentence without anyone
+       remembering that this sentence exists. */
+    const shown = next[0].toUpperCase() + next.slice(1);
+    this.toast(`Graphics set to ${shown} so it plays smoothly — change in Settings`, 0);
+  }
+
+  /** Throw the frame history away and stand down for a moment.
+   *
+   *  CALLED WHEN THE TAB COMES BACK, and it is the other half of the visibility
+   *  gate. While hidden, `requestAnimationFrame` is throttled to roughly half a
+   *  hertz, so the ring fills with 2000 ms samples that describe the browser's
+   *  power saving and nothing about this machine. Judging those on the first
+   *  visible frame is exactly the bug the gate exists to stop, one frame later.
+   *
+   *  `_perfLast = 0` makes the next frame write no delta at all, which discards
+   *  the enormous gap spanning the hidden period rather than recording it as
+   *  one monstrous frame. It also keeps the `P` readout honest after an
+   *  alt-tab. */
+  _discardPerf(now) {
+    this._perfRing.fill(0);
+    this._perfJs.fill(0);
+    this._perfIx = 0;
+    this._perfLast = 0;
+    this._autoBadSince = 0;
+    this._autoNextAt = now + AUTO_GRACE_MS;
   }
 
   /** Mean absolute change between CONSECUTIVE frame times, in ms.
@@ -2522,7 +2645,7 @@ class Game {
        than sorted to the front and reported as an infinite frame rate. */
     const s = Array.from(this._perfRing).filter((v) => v > 0).sort((a, b) => a - b);
     if (!s.length) return;
-    const mid = s[s.length >> 1];
+    const mid = this._frameMedian();
     const worst = s[s.length - 1];
     /* HOW UNEVEN THE PACING IS — which is a different complaint from how fast
        it is, and the one that gets described as "the fps is fine but it chugs".

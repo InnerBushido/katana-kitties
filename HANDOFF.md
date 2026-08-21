@@ -406,6 +406,40 @@ label only pays this **while it is on screen** (three.js uploads at bind time, s
 measuring from the title screen shows nothing at all), and the two runs have to
 do the **same number of repaints**.
 
+### And then the defaults went up, because the machine could afford them
+
+With the adapter fixed the same desktop went from chugging to smooth with room
+to spare, so **the desktop default is now `high`** (a capable phone already was).
+Two things had to happen first:
+
+- **`high` had to mean something.** On a 1:1 panel it rendered at exactly 1.0 —
+  the same as `medium` — because the effective ratio is a `Math.min` against
+  `devicePixelRatio`. Same bug as `low` having nothing to cut, at the other end.
+  `QUALITY.high` now has a **`minRatio` floor of 1.5**: it renders above the
+  panel and the browser scales down, which is supersampling, and it is the only
+  antialiasing that touches sprite alpha edges and the dashed legs on the unit
+  circle. The desktop ladder at dpr 1 is now **1.5 / 1.0 / 0.75**, strictly
+  decreasing, asserted.
+- **Something had to watch the bet.** `autoQualityVerdict` in `core/device.js`
+  steps the quality down one rung after a **median over 25 ms held 4 seconds**,
+  waits 3 seconds after any change, never climbs back, toasts what it did, and
+  switches itself off for good the moment a human touches the dropdown. It
+  watches the **median and never the stutter** — fewer pixels cannot fix uneven
+  pacing, and the label bug above proves it.
+
+It is a pure function in `device.js` rather than `if`s in the game loop because
+the hard part is every case where it must NOT act, and **the first version got
+one badly wrong**: a hidden tab has rAF throttled to ~0.5 Hz, so the ring filled
+with 2000 ms frames (measured: a median of **2006 ms**) and the watcher read it
+as a slow machine. Alt-tab away, come back, the game had quietly turned itself
+down. `visible` is now the first gate and `_discardPerf` throws the ring away
+when the tab returns. world-check asserts all ten gates.
+
+**Chrome and Edge need the same Windows fix as Firefox** — the graphics
+preference is per-executable — and no page can pick its own adapter:
+`powerPreference` is advisory and is the whole API. Paths and verification in
+[performance.md](docs/notes/performance.md).
+
 Full numbers and the next lever — `dt` from the rAF timestamp rather than
 `Clock.getDelta()`, measured and deliberately not taken — in
 [performance.md](docs/notes/performance.md).

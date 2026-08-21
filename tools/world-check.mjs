@@ -34,6 +34,8 @@ import {
 } from '../src/core/spritesheet.js';
 import {
   profileFor as deviceProfileFor, effectivePixelRatio,
+  QUALITY, QUALITY_ORDER, nextQualityDown,
+  autoQualityVerdict, AUTO_BAD_MS, AUTO_HOLD_MS,
 } from '../src/core/device.js';
 import { readPNG, blobs, writePNG, writeICO } from './png.mjs';
 import {
@@ -4713,10 +4715,17 @@ console.log('\n--- the three power moves ---');
    what was hard-coded in `main.js` before the file existed. */
 {
   const desk = deviceProfileFor({ coarse: false, touchPoints: 0, cores: 16 });
-  ok('a desktop is unchanged: two kittens, auto split, medium, AA on',
+  /* THE QUALITY DEFAULT MOVED TO `high` AND THE OTHER FOUR DID NOT, which is
+     the distinction worth pinning. Two kittens, auto split, AA and the full
+     atlas are the game the girls know and none of them are a performance guess;
+     the quality default IS a guess, and it was re-made once the browser started
+     using the GPU the machine actually has. `_autoQualityCheck` in main.js is
+     what walks it back on a machine where the guess is wrong. */
+  ok('a desktop is unchanged: two kittens, auto split, AA on, full atlas',
     desk.defaultParty === 2 && desk.defaultSplit === 'auto'
-    && desk.defaultQuality === 'medium' && desk.antialias === true
-    && desk.atlasMax === 2048);
+    && desk.antialias === true && desk.atlasMax === 2048);
+  ok('...and opens on the sharpest setting, which is the optimistic default',
+    desk.defaultQuality === 'high');
   /* Above any real panel, so it never wins the `Math.min` — but FINITE, because
      `Infinity` JSON-serialises to null and `Math.min(dpr, q, null)` is 0. */
   ok('...and its pixel-ratio cap is finite and out of the way',
@@ -4762,7 +4771,7 @@ console.log('\n--- the three power moves ---');
   /* A DESKTOP IS UNMOVED BY ALL OF THIS. Its cap is out of the way, so the
      quality setting is the only thing deciding. */
   ok('a desktop still renders at the quality setting alone',
-    effectivePixelRatio(desk, 3, 'high') === 2 && effectivePixelRatio(desk, 1, 'high') === 1);
+    effectivePixelRatio(desk, 3, 'high') === 2 && effectivePixelRatio(desk, 1, 'high') === 1.5);
 
   /* THE QUALITY SETTING HAS TO BUY PIXELS ON THE COMMONEST DESKTOP THERE IS,
      and for a long time it bought none. `low` was `pixelRatio: 1`, and the
@@ -4780,11 +4789,100 @@ console.log('\n--- the three power moves ---');
      monitor that is the whole reason somebody picked it. */
   ok('...the same on any panel, however many pixels it has',
     effectivePixelRatio(desk, 1, 'low') === effectivePixelRatio(desk, 3, 'low'));
-  /* AND THE GAME THE GIRLS KNOW IS BIT-IDENTICAL. `medium` is the desktop
-     default and nothing above touched it. */
-  ok('...while the desktop DEFAULT is untouched',
-    effectivePixelRatio(desk, 1) === 1 && effectivePixelRatio(desk, 2) === 1.5
-    && desk.defaultQuality === 'medium');
+  /* AND `medium` — what the desktop used to open on — IS BIT-IDENTICAL. The
+     default moved; the setting it moved off did not, so anybody who picks it
+     gets exactly the game that shipped. */
+  ok('...while `medium` itself renders exactly what it always did',
+    effectivePixelRatio(desk, 1, 'medium') === 1
+    && effectivePixelRatio(desk, 2, 'medium') === 1.5
+    && effectivePixelRatio(desk, 3, 'medium') === 1.5);
+
+  /* ---- `high` HAS TO BE SHARPER THAN `medium`, ON THE COMMONEST PANEL -----
+     The same bug as `low` having nothing to cut, at the other end of the range:
+     the effective ratio is a `Math.min` against dpr, so on a 1:1 desktop panel
+     `high` and `medium` both came out at 1.0 and "High — sharpest" bought
+     nothing but a bigger shadow map. A floor renders ABOVE the panel and lets
+     the browser scale down, which is what supersampling is. */
+  ok('`high` is genuinely sharper than `medium` on a 1:1 panel',
+    effectivePixelRatio(desk, 1, 'high') > effectivePixelRatio(desk, 1, 'medium'));
+  ok('...by rendering ABOVE the panel, which is the only way to be sharper than it',
+    effectivePixelRatio(desk, 1, 'high') > 1);
+  /* EVERY RUNG COSTS FEWER PIXELS THAN THE ONE ABOVE, on the panel where this
+     has gone wrong twice. This is the check that would have caught both. */
+  ok('every step down the ladder actually renders fewer pixels',
+    QUALITY_ORDER.every((q, i) => i === 0
+      || effectivePixelRatio(desk, 1, q) < effectivePixelRatio(desk, 1, QUALITY_ORDER[i - 1])),
+    QUALITY_ORDER.map((q) => `${q} ${effectivePixelRatio(desk, 1, q)}`).join(' '));
+
+  /* ---- THE LADDER THE AUTO-DOWNGRADE WALKS ------------------------------
+     It has to terminate. A `nextQualityDown` that cycled, or that returned a
+     name `QUALITY` does not hold, would have the game stepping down for ever
+     while it drops frames — turning a slow machine into a slow machine that
+     also toasts at the player every four seconds. */
+  ok('the quality ladder steps down and stops',
+    nextQualityDown('high') === 'medium' && nextQualityDown('medium') === 'low'
+    && nextQualityDown('low') === null);
+  ok('...and every rung on it is a real quality tier',
+    QUALITY_ORDER.every((q) => !!QUALITY[q]));
+  ok('...and an unknown setting cannot start a slide',
+    nextQualityDown('ultra') === null && nextQualityDown(undefined) === null);
+
+  /* ---- WHEN THE GAME MAY TURN ITSELF DOWN, AND WHEN IT MAY NOT ------------
+     Every one of these is about NOT acting, which is why the decision is a pure
+     function in device.js rather than a pile of `if`s in the game loop where no
+     check could reach it. The hidden-tab one is not hypothetical: it is the bug
+     this function was extracted after. */
+  const V = (over) => autoQualityVerdict({
+    quality: 'high', medianMs: 40, visible: true, playable: true,
+    now: 100000, badSince: 0, notBefore: 0, ...over,
+  }).verdict;
+
+  ok('a slow frame, held long enough, turns the picture down',
+    autoQualityVerdict({
+      quality: 'high', medianMs: 40, visible: true, playable: true,
+      now: 100000, badSince: 100000 - AUTO_HOLD_MS - 1, notBefore: 0,
+    }).next === 'medium');
+  ok('...but the first bad reading only starts the clock',
+    V({ badSince: 0 }) === 'start');
+  ok('...and a bad stretch shorter than the hold does nothing yet',
+    V({ badSince: 100000 - AUTO_HOLD_MS + 500 }) === 'wait');
+
+  /* A HIDDEN TAB IS NOT A SLOW MACHINE. `requestAnimationFrame` is throttled to
+     roughly half a hertz in a background tab, so the frame ring fills with
+     2000 ms samples; the first version of this read that as a machine that
+     could not cope and stepped the quality down. Alt-tab away, come back, find
+     the game had made itself uglier — measured at a median of 2006 ms while
+     hidden, on the machine this was written on. */
+  ok('a backgrounded tab NEVER turns the picture down, however bad it looks',
+    V({ visible: false, medianMs: 2006, badSince: 1 }) === 'reset');
+  ok('...nor does the title screen, a cutscene, or the pause menu',
+    V({ playable: false, badSince: 1 }) === 'reset');
+  ok('...nor the grace period just after it last changed something',
+    V({ notBefore: 100001, badSince: 1 }) === 'reset');
+
+  ok('a frame rate that is merely short of 60 is left alone',
+    V({ medianMs: AUTO_BAD_MS - 1, badSince: 1 }) === 'reset');
+  ok('...and so is a game that has no frames measured yet',
+    V({ medianMs: 0, badSince: 1 }) === 'reset');
+  /* NOTHING LEFT TO GIVE. `reset` rather than `wait`, so a machine already at
+     the bottom is not holding a clock that can never fire. */
+  ok('...and the bottom of the ladder stops trying instead of spinning',
+    V({ quality: 'low', badSince: 1 }) === 'reset');
+  /* IT ONLY EVER GOES DOWN. Climbing back needs hysteresis or the game
+     oscillates between two settings for ever, and a picture that changes
+     sharpness every eight seconds is worse than one that is slightly soft. */
+  ok('...and a fast machine is never offered a step UP',
+    ['reset', 'start', 'wait'].includes(V({ quality: 'low', medianMs: 5 })));
+
+  /* A PHONE'S SUPERSAMPLE FLOOR IS STILL CAPPED BY WHAT A PHONE MAY SPEND.
+     `Math.max(cap, floor)` applied naively would let `high` push a weak phone
+     past `maxPixelRatio`, which is the single number that exists to stop that —
+     and the cautious tier is a four-core phone, the exact machine this game is
+     for. */
+  ok('the sharpest setting cannot push a weak phone past its cap',
+    effectivePixelRatio(cheap, 3, 'high') <= cheap.maxPixelRatio);
+  ok('...and a capable phone is unmoved by the floor entirely',
+    effectivePixelRatio(phone, 3, 'high') === 2);
 
   /* --- THE TEST OVERRIDE ---
      The touch pad is written on a desktop, so it has to be reachable from one or

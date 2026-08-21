@@ -249,6 +249,38 @@ machine, not in this repo.
 string should name the 4060. Firefox's own `about:support` → *Graphics* →
 **`WebGL 2 Driver Renderer`** is the same string from the other side.
 
+### Chrome and Edge want the same fix, per executable
+
+**The Windows graphics preference is per-EXE, so fixing Firefox fixes only
+Firefox.** Chrome and Edge each need their own entry in the same list:
+
+| browser | path to browse to |
+| --- | --- |
+| Firefox | `C:\Program Files\Mozilla Firefox\firefox.exe` |
+| Chrome | `C:\Program Files\Google\Chrome\Application\chrome.exe` |
+| Edge | `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe` |
+
+Then quit that browser completely — **including its background processes**,
+which both Chromium browsers leave running by default (`Settings → System →
+"Continue running background apps when the browser is closed"`, or the tray
+icon) — and start it again. Verify with `chrome://gpu` / `edge://gpu`, whose
+**GL_RENDERER** line is the same string `P` prints.
+
+Chromium *does* act on `powerPreference: 'high-performance'`, which the renderer
+already asks for, so Chrome and Edge are more often right by default. They are
+not reliably right: the flag is a hint, and on laptops the OS policy, the power
+plan and "battery saver" all outrank it. If `P` says `⚠ INTEGRATED GPU` in
+Chrome, the fix above is the same fix.
+
+**And no, the page cannot do this itself.** Adapter selection is deliberately
+outside the reach of a web page — `powerPreference` is the entire API surface a
+browser gives it, it is advisory, and `WEBGL_debug_renderer_info` (how `P` even
+learns the GPU's name) is a fingerprinting surface some browsers refuse
+outright. A page that could force a discrete GPU could also drain a laptop
+battery from a background tab. This is why the readout names the adapter and the
+auto-downgrade exists: neither can fix the machine, and both make the problem
+say its own name instead of arriving as "it lags".
+
 ### Check the cable first, on a desktop
 
 UHD 770 is a *desktop* iGPU, which means the machine has both outputs live. **If
@@ -320,6 +352,67 @@ why that is dangerous — "Restating them is how the mobile tier ended up
 rendering at 1.0 with nothing to catch it" — and world-check asserts the PRODUCT
 that function returns, so a second copy in `main.js` was a copy no check could
 see. There is one now.
+
+---
+
+## The defaults are optimistic now, and something watches them
+
+Once the adapter was fixed the same machine went from chugging to smooth with
+room to spare, so **the desktop default moved from `medium` to `high`** and a
+capable phone was already there. That is a bet on the player's browser being on
+the right GPU, and it is a bet this file cannot check from the inside — so it is
+paired with a watcher.
+
+### `high` had to be made to mean something first
+
+Same bug as `low` having nothing to cut, at the other end of the range. The
+effective ratio is a `Math.min` against `devicePixelRatio`, so on a 1:1 desktop
+panel `high` and `medium` both came out at **exactly 1.0**: the two settings
+differed only in shadow-map size, and "High — sharpest" was a label that bought
+nothing on the commonest monitor there is.
+
+`QUALITY.high` now carries a **`minRatio` floor of 1.5**. Rendering above the
+panel and letting the browser scale down is supersampling — the one form of
+antialiasing that also cleans up sprite alpha edges and the thin dashed legs on
+the unit circle, neither of which MSAA touches. 1.5 rather than 2.0 because fill
+is quadratic in this number: 2.0 is 4× the fragments of 1.0, 1.5 is 2.25×, and
+the difference between them is invisible at desk distance.
+
+The floor is clamped by the same two ceilings as everything else
+(`Math.min(minRatio, pixelRatio, maxPixelRatio)`), so it can never push a phone
+past what its tier may spend. On a 1:1 desktop the ladder is now **1.5 / 1.0 /
+0.75**, strictly decreasing, which world-check asserts — that is the check that
+would have caught both ends of this.
+
+### The watcher, and the gate that matters
+
+`autoQualityVerdict` in `core/device.js` decides, and it is **pure and outside
+`main.js` on purpose**: the hard part is all the cases where it must *not* act,
+and in the game loop no check could reach them. It steps down one rung after a
+**median over 25 ms held for 4 seconds**, waits 3 seconds after any change, and
+never climbs back — climbing needs hysteresis or the picture changes sharpness
+every eight seconds, which is worse than being slightly soft.
+
+**It watches the median, never the stutter.** Fewer pixels cure a long median
+and do nothing whatsoever for uneven pacing; the label-upload stall had an
+identical median with the overlay on and off, and downgrading for it would have
+made the game uglier to fix a bug that was never about fill.
+
+**A hidden tab is not a slow machine, and that is the bug this was extracted
+after.** A backgrounded tab has `requestAnimationFrame` throttled to about half
+a hertz, so the frame ring fills with 2000 ms samples — measured at a median of
+**2006 ms** while hidden. The first version read that as a machine that could
+not cope and stepped the quality down: alt-tab away, come back, find the game
+had quietly made itself uglier. `visible` is now the first gate, and
+`_discardPerf` is its other half — the ring is **thrown away** when the tab
+returns rather than interpreted, which also keeps the `P` readout honest after
+an alt-tab.
+
+Everything it does, it says: the downgrade toasts, names the new setting, and
+points at Settings. And **any manual change to the quality dropdown switches the
+watcher off for the session** — somebody who has just chosen `high` on a machine
+the watcher dislikes means it, and a setting that gets overruled four seconds
+after you touch it is broken.
 
 ---
 

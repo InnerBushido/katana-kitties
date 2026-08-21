@@ -49,7 +49,26 @@
    the product instead of restating the factors. Restating them is how the mobile
    tier ended up rendering at 1.0 with nothing to catch it. */
 export const QUALITY = {
-  high: { pixelRatio: 2, shadows: true, shadowSize: 2048 },
+  /* `minRatio` IS A FLOOR, AND IT IS WHAT MAKES `high` MEAN ANYTHING ON THE
+     COMMONEST MONITOR THERE IS.
+
+     The effective ratio is a `Math.min` against `devicePixelRatio`, so on a 1:1
+     desktop panel — dpr exactly 1 — `high` came out at 1.0 and so did `medium`.
+     The two settings were bit-identical apart from the shadow map, on the
+     hardware most of this game's desktop players are using. "High — sharpest"
+     was a label that did nothing, which is the same class of bug as `low`
+     having nothing to cut.
+
+     A floor renders ABOVE the panel and lets the browser scale down, which is
+     supersampling: the one form of antialiasing that also cleans up the sprite
+     alpha edges and the thin dashed legs on the unit circle, neither of which
+     MSAA touches. 1.5, not 2, because fill is quadratic in this number and 2.0
+     is 4x the fragments of 1.0 for a difference nobody sees at desk distance;
+     1.5 is 2.25x and is plainly sharper.
+
+     The floor is capped by the same two ceilings as everything else, so it can
+     never push a phone or a weak tier past what it may spend. */
+  high: { pixelRatio: 2, minRatio: 1.5, shadows: true, shadowSize: 2048 },
   medium: { pixelRatio: 1.5, shadows: true, shadowSize: 1536 },
   /* 0.75, NOT 1, AND THAT NUMBER IS THE WHOLE OF THE LOW TIER.
 
@@ -95,7 +114,94 @@ export const QUALITY = {
  */
 export function effectivePixelRatio(profile, dpr, quality = profile.defaultQuality) {
   const q = QUALITY[quality] ?? QUALITY.medium;
-  return Math.min(dpr, q.pixelRatio, profile.maxPixelRatio);
+  const cap = Math.min(dpr, q.pixelRatio, profile.maxPixelRatio);
+  /* THE FLOOR IS CLAMPED BY THE SAME CEILINGS, not applied over the top of
+     them. `Math.max(cap, floor)` alone would let `high` supersample a weak
+     phone past `maxPixelRatio`, which is the one number that exists to stop
+     exactly that. Only the panel's own dpr is allowed to be exceeded — that is
+     what supersampling IS — and never the tier or the device cap. */
+  const floor = Math.min(q.minRatio ?? 0, q.pixelRatio, profile.maxPixelRatio);
+  return Math.max(cap, floor);
+}
+
+/** Sharpest first. The auto-downgrade walks this and Settings lists it in this
+ *  order; both reading one array is what keeps "the next one down" from being
+ *  written out twice and drifting. */
+export const QUALITY_ORDER = ['high', 'medium', 'low'];
+
+/** The next setting down, or `null` at the bottom — which is the signal to stop
+ *  trying rather than a value to apply. */
+export function nextQualityDown(quality) {
+  const i = QUALITY_ORDER.indexOf(quality);
+  return i >= 0 && i < QUALITY_ORDER.length - 1 ? QUALITY_ORDER[i + 1] : null;
+}
+
+/* ---------------------------------------------------------------------------
+   TURNING THE PICTURE DOWN BY ITSELF, and the three numbers that decide when.
+
+   The desktop default is `high`, which is optimistic on purpose: a browser
+   using the GPU it should be has fill rate to spare. But nobody can fix a
+   graphics preference on a friend's laptop or at school, so the optimism needs
+   something watching it.
+
+   IT WATCHES THE MEDIAN, NOT THE STUTTER. Those are the two different
+   complaints in docs/notes/performance.md and only one is fixable from here:
+   fewer pixels cure a long median and do nothing at all for uneven pacing. The
+   label-upload stall had an IDENTICAL median with the overlay on and off, so
+   downgrading on stutter would have made the game uglier to fix a bug that was
+   never about fill.
+
+   25 ms is 40fps. Not 16.7 — a player a few frames under 60 is fine and does
+   not want the picture quietly degraded around them; it has to be bad enough
+   that a kid has already noticed.
+
+   4 seconds so one heavy moment cannot trip it: flying into town, a tournament
+   starting, twenty props going over at once. All are done in well under a
+   second, and the window itself is only two seconds long, so a trip needs the
+   game to stay bad long after the heavy moment has washed out of the ring.
+
+   3 seconds of grace after a change, because APPLYING one costs a frame —
+   `_applyQuality` resizes the drawing buffer and throws the shadow map away.
+   Measuring that frame and concluding things are still bad is how one downgrade
+   becomes a slide to `low` in nine seconds. */
+export const AUTO_BAD_MS = 25;
+export const AUTO_HOLD_MS = 4000;
+export const AUTO_GRACE_MS = 3000;
+
+/**
+ * Should the game turn itself down this frame?
+ *
+ * PURE, AND HERE RATHER THAN IN `main.js`, BECAUSE THE GATES ARE THE HARD PART
+ * AND THEY ARE ALL ABOUT *NOT* ACTING. The first version of this lived in the
+ * game loop where no check could reach it, and it immediately did the thing it
+ * most needed not to: a backgrounded tab has `requestAnimationFrame` throttled
+ * to about half a hertz, so the frame ring filled with 2000 ms samples and the
+ * watcher read that as a slow machine and stepped the quality down. Alt-tab
+ * away, come back, and the game has quietly made itself uglier. Measured, on
+ * the machine this was written on, at a median of 2006 ms while hidden.
+ *
+ * `visible` is therefore not a nicety, it is the main gate — and the caller
+ * must also THROW THE RING AWAY when the tab comes back, or the stale throttled
+ * samples get judged the moment it does.
+ *
+ * @returns {{verdict: 'reset'|'start'|'wait'|'step', next?: string}}
+ *   `reset` stop the clock, nothing is wrong or nothing is judgeable.
+ *   `start` first bad reading — remember when.
+ *   `wait`  still bad, not for long enough yet.
+ *   `step`  turn it down to `next`.
+ */
+export function autoQualityVerdict({
+  quality, medianMs, visible, playable, now, badSince, notBefore,
+}) {
+  if (!visible || !playable || now < notBefore) return { verdict: 'reset' };
+  /* Nothing left to give. Returning `reset` rather than `wait` so a machine
+     already at the bottom is not holding a clock that can never fire. */
+  const next = nextQualityDown(quality);
+  if (!next) return { verdict: 'reset' };
+  if (!medianMs || medianMs < AUTO_BAD_MS) return { verdict: 'reset' };
+  if (!badSince) return { verdict: 'start' };
+  if (now - badSince < AUTO_HOLD_MS) return { verdict: 'wait' };
+  return { verdict: 'step', next };
 }
 
 /** Atlas ceilings, in pixels, per tier. See the header for why this is the
@@ -200,7 +306,19 @@ export function profileFor({
          that degrades over one that vanishes. */
       maxPixelRatio: 4,
       atlasMax: ATLAS.full,
-      defaultQuality: 'medium',
+      /* `high`, SINCE THE BROWSER STARTED USING THE GPU IT WAS ALWAYS MEANT TO.
+         This was `medium`, set when a desktop meant "an integrated GPU doing
+         5.7 ns a pixel" — a machine with an RTX 4060 in it was rendering the
+         whole game on an Intel UHD 770 because Windows hands the browser
+         whichever adapter it likes and Firefox does not act on
+         `powerPreference`. Fixed per-machine (see docs/notes/performance.md),
+         and the fixed machine has fill rate to burn.
+
+         A desktop that DOESN'T have it fixed is the reason `_autoQualityCheck`
+         exists in main.js: the default is now optimistic, so something has to
+         notice when the optimism was wrong and walk it back. Prefer a rule that
+         degrades over one that vanishes. */
+      defaultQuality: 'high',
       /* TWO KITTENS, UNCHANGED. This is the number the girls press PLAY and
          get, and every check that pins the two-player game reads it. */
       defaultParty: 2,
