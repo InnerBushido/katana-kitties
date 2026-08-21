@@ -59,7 +59,7 @@ import {
   MILESTONES, OPEN_AT, ArenaQuest, SATAN_TOWN,
 } from '../src/systems/arenaquest.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss } from '../src/core/palette.js';
-import { splitLayout, mapWidth } from '../src/core/split.js';
+import { splitLayout, mapWidth, fitDistance } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
 import { postsFor } from '../src/world/build.js';
@@ -4004,12 +4004,83 @@ console.log('\n--- the three power moves ---');
     }
     ok('every weighted layout stays inside the frame and never overlaps', bad === 0);
 
-    /* TWO PANES ARE LEFT ALONE. Both are already at least half the screen,
-       which is the rule; carving a 3:1 split for a trio plus a straggler would
-       hand the lone kitten a sliver the camera cannot use. */
-    ok('two panes are unchanged whatever is in them',
-      JSON.stringify(splitLayout(2, VW, VH, 3, 'vertical', [3, 1]))
+    /* ---- TWO PANES HOLDING DIFFERENT NUMBERS OF KITTENS -------------------
+       THIS USED TO ASSERT THE OPPOSITE, and the reason it gave was sound but
+       incomplete: "carving a 3:1 split for a trio plus a straggler would hand
+       the lone kitten a sliver the camera cannot use." True of a 3:1 split, and
+       that is why this one is 0.62/0.38 rather than proportional.
+
+       What the old answer missed is that the even split was not neutral — it
+       was actively broken for the trio. Four players, three together and one
+       away, is two groups, so it fell through to a 50/50 VERTICAL split: three
+       kittens sharing half a screen (a sixth each against the solo's half), in
+       a pane whose aspect drops from about 1.78 to 0.58. The camera's fov is
+       vertical, so that collapses the horizontal field to a third of what every
+       framing constant in main.js was tuned against, and two of the three were
+       cropped off the sides of their own pane. Reported from a four-player game
+       as "only Frost is visible — it thinks all three are, but that assumes the
+       whole screen width". */
+    const uneven = splitLayout(2, VW, VH, 3, 'vertical', [3, 1]);
+    ok('an uneven pair of panes is STACKED, so both stay wide',
+      uneven.every((v) => v.w === VW && v.x === 0));
+    ok('...and the bigger group gets the bigger strip',
+      uneven[0].h > uneven[1].h);
+    /* THE OLD OBJECTION, KEPT AS A CHECK. A solo pane must stay a shape a
+       camera can work in — this is the number that stops somebody "fixing" the
+       fairness by making it proportional. */
+    ok('...while the lone kitten still gets a pane, not a sliver',
+      uneven[1].h > VH * 0.3, `${(uneven[1].h / VH).toFixed(2)} of the height`);
+    ok('...and the two of them tile the frame exactly',
+      uneven[0].y === VH - uneven[0].h && uneven[1].y === 0
+      && uneven[0].h + uneven[1].h <= VH);
+    /* WHICHEVER PANE IS FIRST GOES ON TOP, so the array still lines up
+       index-for-index with the caller's groups. Sorting by size would hand one
+       group another's camera. */
+    const unevenB = splitLayout(2, VW, VH, 3, 'vertical', [1, 3]);
+    ok('...and a group listed second keeps the second pane',
+      unevenB[1].h > unevenB[0].h && unevenB[0].y === VH - unevenB[0].h);
+
+    /* TWO EVEN PANES ARE UNTOUCHED, WHICH IS THE TWO-PLAYER GAME. The sizes are
+       always 1 and 1 there, so it never reaches the branch above and keeps the
+       `dir` setting it has always had. This is the compatibility claim. */
+    ok('two even panes are exactly what they always were',
+      JSON.stringify(splitLayout(2, VW, VH, 3, 'vertical', [1, 1]))
+      === JSON.stringify(vert)
+      && JSON.stringify(splitLayout(2, VW, VH, 3, 'vertical')) === JSON.stringify(vert));
+    ok('...including stacked, when that is what she asked for',
+      JSON.stringify(splitLayout(2, VW, VH, 3, 'horizontal', [1, 1]))
+      === JSON.stringify(splitLayout(2, VW, VH, 3, 'horizontal')));
+    ok('...and two pairs are even, so they split down the middle',
+      JSON.stringify(splitLayout(2, VW, VH, 3, 'vertical', [2, 2]))
       === JSON.stringify(vert));
+
+    /* ---- AND THE CAMERA HAS TO KNOW HOW WIDE ITS PANE IS ------------------
+       The layout above is half the fix. The other half is that `_updateRig`
+       sized its pull-back from world spread alone — `clamp(26 + spread*0.85,
+       26, 52)`, an empirical fit tuned on a full-width screen — so ANY pane
+       narrower than that would crop its own group however it was shaped. */
+    const FOV = 38;
+    const wide = fitDistance({ spread: 30, fovDeg: FOV, aspect: 16 / 9 });
+    const narrow = fitDistance({ spread: 30, fovDeg: FOV, aspect: 0.58 });
+    ok('a narrow pane needs the camera much further back than a wide one',
+      narrow > wide * 2, `${wide.toFixed(1)} vs ${narrow.toFixed(1)}`);
+    /* THE WHOLE COMPATIBILITY ARGUMENT FOR THE FLOOR. On a full-width pane it
+       comes out BELOW the distance the game already uses, so `Math.max` picks
+       the tuned number and nothing about the two-player game moves. */
+    ok('...and on a full-width pane it asks for less than the tuned distance',
+      wide < 26 + 30 * 0.85, `${wide.toFixed(1)} < 51.5`);
+    ok('...so it can only ever pull further out, never closer in',
+      fitDistance({ spread: 0, fovDeg: FOV, aspect: 0.5 }) === 0);
+    /* DEGRADE, DON'T VANISH. A missing or nonsense argument must not return
+       NaN and hand the camera a NaN distance, which would silently undraw the
+       entire pane rather than merely framing it badly. */
+    ok('...and nonsense in gives zero out rather than a NaN camera',
+      [{ spread: 30, fovDeg: FOV, aspect: 0 }, { spread: NaN, fovDeg: FOV, aspect: 1 },
+        { spread: 30, fovDeg: 0, aspect: 1 }]
+        .every((a) => fitDistance(a) === 0));
+    ok('...and a wider spread always needs more room than a narrower one',
+      fitDistance({ spread: 40, fovDeg: FOV, aspect: 1 })
+      > fitDistance({ spread: 20, fovDeg: FOV, aspect: 1 }));
   }
 
   /* ------------------ four players: WHO SHARES A PANE ------------------- */

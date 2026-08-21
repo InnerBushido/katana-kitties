@@ -66,6 +66,51 @@ export function splitLayout(n, W, H, gap = 3, dir = 'vertical', sizes = null) {
     ));
   }
 
+  /* TWO PANES HOLDING DIFFERENT NUMBERS OF KITTENS IS THE SAME UNFAIRNESS AS
+     ABOVE, ONE CASE FURTHER ALONG, AND IT IS ALSO A CAMERA BUG.
+
+     Four players, three of them together and one off on her own, is two groups
+     — so this fell through to the plain 50/50 vertical split and handed three
+     kittens half a screen between them while one had the other half to herself.
+     Per player that is a sixth against a half.
+
+     THE SHAPE WAS THE WORSE HALF OF IT. A vertical split makes each pane half
+     as wide and just as tall, so the camera's aspect goes from about 1.78 to
+     0.58 and the horizontal field of view collapses to a third of what every
+     framing constant in `main.js` was tuned against. Three kittens standing
+     comfortably apart went from all visible to one visible, with the other two
+     cropped off the sides of their own pane — reported as "it thinks all three
+     are visible, but that assumes the whole screen width".
+
+     So an uneven pair of panes is STACKED, for exactly the reason the n === 3
+     case above gives: a wide short pane shows the ground either side of you,
+     which is where the rest of your group is standing, and a tall narrow one
+     shows sky and floor. The bigger group also gets the bigger strip.
+
+     0.62 RATHER THAN STRICT PROPORTION. Three-versus-one in proportion is
+     0.75/0.25, which leaves the solo player a slit a quarter of the screen tall
+     — fair by area and unplayable. 0.62 is most of the way to fair for 2v1,
+     kinder than fair to the solo at 3v1, and leaves both panes a shape the
+     camera can actually work in. Two even panes are untouched, so the
+     two-player game — where the sizes are always 1 and 1 — never reaches this
+     branch and keeps the `dir` setting it has always had. */
+  if (n === 2 && sizes && sizes[0] !== sizes[1]) {
+    const big = sizes[0] > sizes[1] ? 0 : 1;
+    const bh = Math.round((H - gap) * 0.62);
+    const sh = H - gap - bh;
+    const tall = { x: 0, y: 0, w: W, h: bh };
+    const short = { x: 0, y: 0, w: W, h: sh };
+    /* Whichever pane is FIRST goes on top — bottom-left origin, so the high y —
+       so the returned array still lines up index-for-index with the caller's
+       groups. Sorting by size instead would hand one group another's camera. */
+    const first = big === 0 ? tall : short;
+    const second = big === 0 ? short : tall;
+    return [
+      { ...first, y: H - first.h },
+      { ...second, y: 0 },
+    ];
+  }
+
   if (n === 2) {
     if (dir === 'horizontal') {
       const h = Math.floor((H - gap) / 2);
@@ -87,6 +132,40 @@ export function splitLayout(n, W, H, gap = 3, dir = 'vertical', sizes = null) {
     { x: W - w, y: 0, w, h },        // bottom-right — player 4
   ];
   return cells.slice(0, Math.min(n, 4));
+}
+
+/** Headroom past the last kitten. She is drawn about two units tall and stands
+ *  at the centre of her sprite, so framing her exactly at the edge puts half of
+ *  her outside it — and a player pinned to the very edge of a pane reads as
+ *  about to be lost even when she is not. */
+const FIT_MARGIN = 1.35;
+
+/**
+ * How far back a camera has to sit for a group to FIT ACROSS ITS PANE.
+ *
+ * WHY THIS IS NOT OPTIONAL: `main.js` sizes its pull-back from world spread
+ * alone — `clamp(26 + spread * 0.85, 26, 52)` — which is an empirical fit tuned
+ * on a full-width screen and has no idea how wide the pane actually is. The
+ * moment a pane is narrower than the one those constants were tuned against,
+ * that distance frames a screen the game does not have and the players on the
+ * outside are cropped out of their own view.
+ *
+ * A perspective camera's fov is VERTICAL, so the horizontal half-extent it can
+ * see at distance `d` is `d * tan(fov/2) * aspect`. Invert that for the
+ * distance that fits a spread. Only the horizontal is solved for: the camera
+ * has no roll, so a spread lying along its right vector projects at full
+ * length and is the worst case, while spread along the view direction is
+ * foreshortened and cheaper. A narrow pane — the case this exists for — is
+ * short of width and not of height.
+ *
+ * The caller takes the MAX of this and its own formula, never the sum and never
+ * a replacement: on a wide pane this comes out well under the tuned distance
+ * and changes nothing, which is what keeps the two-player game identical.
+ */
+export function fitDistance({ spread, fovDeg, aspect, margin = FIT_MARGIN }) {
+  if (!(spread > 0) || !(aspect > 0) || !(fovDeg > 0)) return 0;
+  const halfV = Math.tan((fovDeg * Math.PI) / 360);
+  return ((spread / 2) * margin) / (halfV * aspect);
 }
 
 /* ===========================================================================

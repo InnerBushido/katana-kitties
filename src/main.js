@@ -15,7 +15,7 @@ import { TouchPad } from './core/touchpad.js';
 import { World } from './world/world.js';
 import { Player, ATTACKS, MAX_HP, KO_TIME } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss } from './core/palette.js';
-import { splitLayout, mapWidth } from './core/split.js';
+import { splitLayout, mapWidth, fitDistance } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, tierFor, toNextTier } from './entities/panda.js';
@@ -40,6 +40,7 @@ import { AngelForm } from './entities/angel.js';
 import { ArenaQuest, SATAN_TOWN, MILESTONES } from './systems/arenaquest.js';
 import { loadBoard, BOARD_MODES } from './systems/leaderboard.js';
 import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
+import { ORB_IDS } from './entities/powerorb.js';
 import { ProfileScreen } from './systems/profile.js';
 
 /* ---------------------------------------------------------------------------
@@ -53,7 +54,7 @@ import { ProfileScreen } from './systems/profile.js';
 
 /** The key each debug action is bound to, for the panel's own labels. */
 const DEBUG_KEY_LABEL = {
-  Digit4: '4', Digit5: '5', Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9',
+  Digit3: '3', Digit4: '4', Digit5: '5', Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9',
   Digit0: '0', KeyM: 'M', KeyZ: 'Z', KeyP: 'P', Minus: '-', Equal: '=',
   Backquote: '`',
 };
@@ -63,6 +64,15 @@ const DEBUG_KEY_LABEL = {
    that walking into a heavy room changes the number while you are still
    standing in it. */
 const PERF_WINDOW = 120;
+
+/* HOW LONG A TOAST STAYS UP. See `Game.toast` — the hold is a function of how
+   much there is to read, and TOAST_MIN is the flat 1700ms every toast used to
+   get, kept as the floor so short ones are bit-identical. */
+const TOAST_MIN = 1700;
+const TOAST_BASE = 600;
+const TOAST_PER_CHAR = 55;
+const TOAST_MAX = 7000;
+const TOAST_FADE = 500;
 
 
 const DOJO_VIEW_R = 52;  // inside this, the camera frames the unit circle
@@ -2214,6 +2224,15 @@ class Game {
        one orb, or one word of the ending, or whether a round card is centred,
        meant playing the whole game first. See `_debugEndgame`. */
     if (code === 'Digit6') this._debugEndgame();
+    /* --- EVERY ABILITY ON EVERY KITTEN, IN ONE KEY ---
+       The eight orbs are the endgame collectible, so trying one of them meant
+       either playing to 100% mischief or pressing `6` and then trading orbs
+       around the profile screen one at a time — and the abilities are exactly
+       the thing that needs trying repeatedly, because they change verbs rather
+       than numbers. Wearing all eight at once is also the stack case every
+       `1 + k*n` rule in powerorb.js is written for and the hardest one to reach
+       by hand. */
+    if (code === 'Digit3') this._debugAllOrbs();
     if (code === 'Digit5') {
       /* And the screen they are traded on, which is otherwise behind the
          pause menu and only interesting when both girls have orbs. */
@@ -2268,6 +2287,36 @@ class Game {
    * second time anyway; the parts that are not idempotent (the purses, the
    * finale latch) are the parts you press it again *for*.
    */
+  /**
+   * Put all eight kotodama on everybody who is playing.
+   *
+   * IT DOES NOT UNLOCK THE ENDGAME AND MUST NOT. `6` is that key, and the two
+   * do different jobs: this one is for testing what the abilities DO, and
+   * hanging the world state off it would mean anybody who wanted a triple slash
+   * also got the ending played at them. They compose — press 6 then 3 — which
+   * is the point of keeping them apart.
+   *
+   * Every player, not just player 1: half of what these do only shows up
+   * against somebody else, and a stun that cannot be tested on a second kitten
+   * is a stun nobody can see working.
+   */
+  _debugAllOrbs() {
+    if (!this.players.length) return;
+    for (const p of this.players) {
+      p.setPowerOrbs([...ORB_IDS]);
+      /* THE MESHES DO NOT FOLLOW BY THEMSELVES. `setPowerOrbs` is the truth
+         about what she is WEARING; the constellation around her is rebuilt
+         from it, and skipping this leaves eight abilities working on a kitten
+         with nothing orbiting her — which reads as the key having failed. */
+      this.syncOrbMeshes(p);
+    }
+    /* If the trade screen is open it is now showing a stale set of slots.
+       `_paint` is what redraws it — there is no public refresh, and leaving it
+       stale is the kind of thing that reads as the key not having worked. */
+    if (this.profile?.active) this.profile._paint();
+    this.toast(`[debug] every kitten wearing all ${ORB_IDS.length} kotodama`, 0);
+  }
+
   _debugEndgame() {
     const { share, orbs } = this._unlockEndgame();
 
@@ -2797,6 +2846,7 @@ class Game {
       ${row('Digit8', 'seat both kittens on him')}
       ${row('Digit9', 'fire his beams')}
       ${row('Digit6', 'THE ENDGAME — ending, arena, orbs, purses')}
+      ${row('Digit3', 'give EVERY kitten all 8 kotodama')}
       ${row('Digit5', 'open the trade / profile screen')}
       ${row('Digit4', 'end the live round (feast)')}
       ${row('KeyM', 'maths overlay')}
@@ -3639,14 +3689,37 @@ class Game {
     this.audio.play(name, vol);
   }
 
+  /**
+   * A line of text at the top of the screen, for however long it takes to READ.
+   *
+   * IT USED TO HOLD FOR 1700ms WHATEVER IT SAID, which is fine for "Math
+   * overlay ON" and much too short for the panda's growth blurb or a clan's
+   * description — the long ones were gone before a nine-year-old had finished
+   * them, which is the whole complaint. The messages that most need reading are
+   * the longest ones, so a fixed hold is backwards.
+   *
+   * TOAST_MIN IS THE OLD NUMBER AND SHORT TOASTS STILL GET EXACTLY IT. The
+   * curve only starts biting past about twenty characters, so every one-liner
+   * the girls already know the rhythm of is unchanged; only the ones that were
+   * unreadable move. 55ms a character is around 200 words a minute, which is
+   * brisk for an adult and about right for a kid who is also playing a game at
+   * the time — the cap stops a paragraph parking itself over the picture.
+   */
   toast(text, playerIndex = 0) {
     const wrap = document.getElementById('toasts');
     const el = document.createElement('div');
     el.className = `toast p${playerIndex}`;
     el.textContent = text;
     wrap.appendChild(el);
-    setTimeout(() => el.classList.add('fade'), 1700);
-    setTimeout(() => el.remove(), 2200);
+    const hold = Math.min(
+      TOAST_MAX,
+      Math.max(TOAST_MIN, TOAST_BASE + String(text).length * TOAST_PER_CHAR)
+    );
+    setTimeout(() => el.classList.add('fade'), hold);
+    setTimeout(() => el.remove(), hold + TOAST_FADE);
+    /* THE STACK CAP STAYS AT FOUR even though toasts now live longer. It is
+       about how much of the picture a pile of them may cover, which has not
+       changed; dropping the OLDEST is right for the same reason it always was. */
     while (wrap.children.length > 4) wrap.firstChild.remove();
   }
 
@@ -4988,10 +5061,21 @@ class Game {
        one pane further along. It is answered by construction here rather than
        by smoothing a transition, exactly as the shared rig's own version of it
        was. */
+    /* THE PANES ARE WORKED OUT HERE TOO, BECAUSE A RIG HAS TO KNOW HOW WIDE ITS
+       OWN PANE IS. `_panes` is the same call the renderer makes a few lines
+       later — one function, so the two can never disagree about who got which
+       rectangle. See `_updateRig` for what the aspect is FOR. */
+    const size = this.renderer.getSize(new THREE.Vector2());
+    const panes = this._panes(size.x, size.y, this.groups);
     for (let i = 0; i < this.rigs.length; i++) {
       if (!this.players[i]) continue;
-      const led = this.groups.find((m) => m[0] === i);
-      this._updateRig(this.rigs[i], led ?? [i], dt);
+      const g = this.groups.findIndex((m) => m[0] === i);
+      const pane = g >= 0 ? panes[g] : null;
+      /* A rig that is not leading a group has no pane. It is framing one
+         kitten, so the spread is zero and the aspect cannot change its answer;
+         the full frame is the honest neutral value. */
+      const aspect = pane && pane.h > 0 ? pane.w / pane.h : size.x / Math.max(1, size.y);
+      this._updateRig(this.rigs[i], this.groups[g] ?? [i], dt, aspect);
     }
   }
 
@@ -5005,8 +5089,11 @@ class Game {
    *
    * @param rig      one of `this.rigs` — its own target, distance and lerp state
    * @param members  player indices this rig is framing
+   * @param aspect   the width/height of the PANE this rig draws into. See
+   *                 `_fitDistance` — a camera that does not know this frames
+   *                 for a screen it does not have.
    */
-  _updateRig(rig, members, dt) {
+  _updateRig(rig, members, dt, aspect = 16 / 9) {
     const mid = this._centroid(members);
     /* THE SPREAD IS THE WIDEST PAIR IN THE GROUP, NOT THE FIRST TWO. It sizes
        the pull-back, and a camera framed on the closest pair crops the rest of
@@ -5077,6 +5164,21 @@ class Game {
           ft
         );
 
+      /* AND THEN FAR ENOUGH BACK THAT THE GROUP ACTUALLY FITS THE PANE.
+         Everything above sizes the shot from world distances and knows nothing
+         about the rectangle it is drawn into; the clamp at 52 in particular is
+         a number tuned on a full-width screen. `fitDistance` asks the only
+         question those constants cannot: at THIS pane's aspect, how far back
+         does the widest pair have to be to both be on screen?
+
+         A MAX, NEVER A REPLACEMENT. On a wide pane it comes out well under the
+         tuned distance and changes nothing at all, which is what keeps the
+         two-player game bit-identical — it can only ever pull further out, and
+         only when somebody would otherwise be cropped. */
+      wantDist = Math.max(wantDist, fitDistance({
+        spread: dist, fovDeg: rig.camera.fov, aspect,
+      }));
+
       /* THE STAR SHOT AGAIN, BECAUSE THIS IS THE CAMERA THAT DRAWS WHEN
          MERGED. `Player.holdAloft` pulls the per-player camera in, and when
          the girls are together — which is most of the time, and is exactly
@@ -5123,7 +5225,12 @@ class Game {
       const ring = this.tournament?.cameraWant();
       if (ring) {
         want.set(ring.x, ring.y, ring.z);
-        wantDist = ring.dist;
+        /* THE RING KNOWS HOW BIG THE DECK IS AND STILL NOT HOW WIDE THE PANE
+           IS. Its 56-unit deck is exactly the subject that gets cropped first
+           in a narrow pane, so it takes the same floor as everything else. */
+        wantDist = Math.max(ring.dist, fitDistance({
+          spread: dist, fovDeg: rig.camera.fov, aspect,
+        }));
       }
 
       if (!rig.seeded) {

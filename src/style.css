@@ -781,14 +781,29 @@ body.touch-ui .options-label {
    what falls off is the RIGHTMOST badge — so at three or four the whole row
    tightens rather than the last kitten silently losing her score off the edge
    of the screen. Two players are untouched: this only applies under
-   `.hud-four`, which Game._buildHud sets from the party size. */
-.hud-four .scoreboard,
-.hud-four .score-group { gap: 6px; }
-.hud-four .score,
-.hud-four .mischief { padding: 4px 9px; font-size: 12px; letter-spacing: 0.5px; }
-.hud-four .score .nm { font-size: 14px; letter-spacing: 1px; }
-.hud-four .score b { font-size: 16px; }
-.hud-four .score .pip { width: 10px; height: 10px; border-width: 2px; }
+   `.hud-four`, which Game._buildHud sets from the party size.
+
+   ...AND "DO NOT FIT" WAS NEVER TRUE OF A DESKTOP, which is the bug. Measured
+   with four players seated: the row is 729px at full size, which is 57% of a
+   1280px window and 38% of a 1920 one. It was tightening a row that had half
+   the screen spare, so playing four-up on a PC shrank the names, the scores and
+   the mischief counter for no reason anybody could see — reported as "the UI
+   got smaller on the Windows version".
+
+   1000px is the gate because 729 plus its margins needs about 800, so below a
+   thousand the tightening is doing real work and above it there is nothing to
+   buy. A phone keeps its own smaller sizes regardless: `body.touch-ui` sets
+   them further down and does not go through here at all, which is why this can
+   be a plain width query rather than a width-and-not-touch one. */
+@media (max-width: 1000px) {
+  .hud-four .scoreboard,
+  .hud-four .score-group { gap: 6px; }
+  .hud-four .score,
+  .hud-four .mischief { padding: 4px 9px; font-size: 12px; letter-spacing: 0.5px; }
+  .hud-four .score .nm { font-size: 14px; letter-spacing: 1px; }
+  .hud-four .score b { font-size: 16px; }
+  .hud-four .score .pip { width: 10px; height: 10px; border-width: 2px; }
+}
 .score .nm { font-family: 'Bangers', cursive; letter-spacing: 1.5px; font-size: 17px; }
 .score b { font-size: 20px; font-family: 'Bangers', cursive; color: var(--vermillion); }
 .mischief {
@@ -822,6 +837,46 @@ body.touch-ui .options-label {
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
   pointer-events: none;
   z-index: 6;
+}
+
+/* ---------------------------------------------------------------------------
+   A DESK IS FURTHER AWAY THAN A PHONE, AND THESE TWO NEVER ACCOUNTED FOR IT.
+
+   Unlike the scoreboard above, neither of these ever shrank — they have been
+   these sizes since they were built, and they were authored against a window,
+   not against a 1920 monitor two feet away with the game fullscreen under
+   Steam. At that size a 13px ball tally and a 14.5px announcement are a squint,
+   which is what "the Dragon Balls UI and Mr Satan's announcements got smaller"
+   is describing: not a regression, but a size that was never right for the
+   screen the game ended up being played on.
+
+   `min-width` rather than `body:not(.touch-ui)` so a small desktop WINDOW keeps
+   the compact sizes too — the constraint is how much room there is, not what
+   kind of machine it is, which is the same rule the scoreboard gate uses. A
+   phone is never this wide and keeps its own rules either way. */
+@media (min-width: 1001px) {
+  /* THE ROW ABOVE IS TALLER NOW AND THIS SITS UNDER IT. With the four-player
+     tightening gated off, the scoreboard is 42px tall and ends at 56px, so the
+     old `top: 46px` put the tally 10px INSIDE it — measured, not guessed. 64
+     clears it with room, and the two stacked push the toasts down in turn.
+     Below 1001px none of this applies and the compact geometry still fits. */
+  #balls {
+    top: 64px;
+    font-size: 16px;
+    padding: 5px 18px;
+    border-width: 3px;
+    letter-spacing: 2.5px;
+  }
+
+  #announce {
+    max-width: min(680px, 56vw);
+    padding: 13px 22px 13px 13px;
+    gap: 15px;
+    border-radius: 16px;
+  }
+  #an-portrait { width: 88px; height: 88px; border-radius: 12px; }
+  #an-name { font-size: 21px; letter-spacing: 1.9px; }
+  #an-text { font-size: 17px; line-height: 1.38; }
 }
 
 /* Live sin/cos board — shown while a kitten is inside the Unit Circle Dojo. */
@@ -879,6 +934,14 @@ body.touch-ui .options-label {
    rule while the desktop toasts were at the bottom and had nothing to collide
    with; now both need it. */
 #hud.has-balls #toasts { top: 88px; }
+/* AND FURTHER DOWN AGAIN ON A DESKTOP, where the row above is at full size and
+   the tally under it is bigger. Has to come after the 88px rule rather than
+   live with the rest of the desktop block further up: same specificity, so
+   source order is the only thing deciding, and the earlier copy silently lost.
+   Measured: scoreboard ends at 56, tally runs 64 to 103. */
+@media (min-width: 1001px) {
+  #hud.has-balls #toasts { top: 112px; }
+}
 .toast {
   background: rgba(251, 238, 210, 0.96);
   border: 4px solid var(--ink);
@@ -1081,7 +1144,31 @@ body.touch-ui .options-label {
 /* A thumb is not a mouse pointer. The rows are a 12px monospace list, which is
    fine to click and far too fine to tap, so on a touch device they get a real
    target height and spacing without changing the desktop panel at all. */
-body.touch-ui #debug-panel { font-size: 13px; max-width: 84vw; }
+/* A PHONE RAN OUT OF SCREEN BEFORE THE PANEL RAN OUT OF ROWS, and there was no
+   way to reach the rest. Landscape is 390px tall; the list is longer than that,
+   so everything below the scene picker was simply off the bottom — reported as
+   "on mobile I can only see down to the prev/next scene text".
+
+   IT NEEDS BOTH OF THESE AND ONE ALONE DOES NOTHING. `overflow-y: auto` on a
+   box that is `pointer-events: none` is a scrollable box no finger can touch —
+   the container is deliberately inert so pointers reach the game underneath
+   (see the note on the base rule), and that is exactly what stops a drag from
+   scrolling it. So touch gets the box back. The trade is that taps landing on
+   the panel no longer fall through, which is right: it is only ever up while
+   the debug tools are open, and every row in it is a control.
+
+   `dvh` because a mobile browser's toolbars slide in and out of `vh`, and a
+   panel sized to the tall reading is clipped again the moment they appear. */
+body.touch-ui #debug-panel {
+  font-size: 13px;
+  max-width: 84vw;
+  max-height: calc(100vh - 20px);
+  max-height: calc(100dvh - 20px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  pointer-events: auto;
+}
 body.touch-ui #debug-panel .dbg-row { padding: 5px 4px; line-height: 1.5; }
 #debug-panel .dbg-row { white-space: nowrap; opacity: 0.72; }
 #debug-panel .dbg-row.on { opacity: 1; color: #ffd98a; }
