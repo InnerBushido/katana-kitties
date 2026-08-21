@@ -14,13 +14,14 @@ look. Everything else is one level down and read on demand.
 | what works, what's open, what's next | [HANDOFF.md](HANDOFF.md) |
 | why some code is the way it is | [docs/notes/](docs/notes/README.md) — one file per area |
 | how a player experiences it | [README.md](README.md) |
+| how it runs under Steam, and its artwork | [docs/notes/steam.md](docs/notes/steam.md) |
 | what changed and why | `git log` — the commit messages are the session log |
 
 ## Run it, check it
 
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
-node tools/world-check.mjs    # 952 checks: world, dragons, clans, sprites, tournament
+node tools/world-check.mjs    # 959 checks: world, dragons, clans, sprites, tournament
 node tools/pad-check.mjs      # 194 checks: controllers and the keyboard sets
 npm run build                 # must stay clean; Vercel builds this on push to main
 ```
@@ -87,7 +88,8 @@ src/
              mathdojo  minimap  menunav
   entities/  player  dragon  ryuuseki  panda  critter  angel  leader  satan
              griffin  orb  powerorb  dragonball  prop  shrine  stall
-tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free decoder)
+tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
+             steam-art.mjs (the Steam shelf and the icons, from title_art.png)
 docs/notes/  the design notes — why things are the way they are
 ```
 
@@ -101,7 +103,7 @@ trade screen, `-`/`=`/`0` are the scene viewer.
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 952 assertions and why almost none of them are about
+  why `world-check` is 959 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have

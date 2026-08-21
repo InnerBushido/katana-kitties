@@ -26,7 +26,8 @@ import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_
 import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
 import { SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest } from '../src/world/build.js';
 import { ISLAND_MUSIC, MUSIC, trackForIsland } from '../src/core/audio.js';
-import { existsSync } from 'node:fs';
+import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import {
   floodBackground, clearSealedPockets, purelyWhite, pocketFloor,
   packMetrics, countInk,
@@ -34,7 +35,7 @@ import {
 import {
   profileFor as deviceProfileFor, effectivePixelRatio,
 } from '../src/core/device.js';
-import { readPNG, blobs } from './png.mjs';
+import { readPNG, blobs, writePNG, writeICO } from './png.mjs';
 import {
   POWER_ORBS, ORB_IDS, MAX_EQUIPPED, aggregate, orbPrice, orbSellPrice,
   WARD, DIVE, TRIPLE, CHARGE, stockFor, STOCK_STACKABLE,
@@ -5088,6 +5089,108 @@ console.log('\n--- the minimap fits its pane ---');
     twiceA.mat.map === twiceB.mat.map && created - beforeSecond === 0);
 
   globalThis.document.createElement = realCreate;
+}
+
+/* ===========================================================================
+   THE PNG WRITER, WHICH IS THE ONLY NEW THING IN png.mjs THAT NOBODY LOOKS AT.
+
+   `tools/steam-art.mjs` builds the Steam shelf and the desktop icon out of
+   title_art.png, and its output is judged by eye — which means a codec bug in
+   here would be seen as "the icon looks a bit washed out" and shrugged at. The
+   decoder in this file has been trusted for a year because THIS file leans on
+   it; the encoder gets the same treatment. Round-trip, including alpha, which
+   is the channel an icon is entirely about.
+=========================================================================== */
+console.log('\n--- the PNG writer round-trips ---');
+{
+  const tmp = `${tmpdir()}/kk-png-check-${process.pid}.png`;
+  const W = 7;
+  const H = 5;
+  const src = new Uint8ClampedArray(W * H * 4);
+  for (let i = 0; i < W * H; i++) {
+    src[i * 4] = (i * 37) % 256;
+    src[i * 4 + 1] = (i * 11) % 256;
+    src[i * 4 + 2] = 255 - ((i * 5) % 256);
+    /* Deliberately includes 0 and 255 and things in between: a writer that
+       drops the alpha channel still passes a test made of opaque pixels. */
+    src[i * 4 + 3] = [0, 1, 128, 254, 255][i % 5];
+  }
+  writeFileSync(tmp, writePNG(W, H, src));
+  const back = readPNG(tmp);
+  ok('a written PNG reads back at the same size', back.w === W && back.h === H);
+  ok('...with every byte of every channel intact',
+    back.d.length === src.length && src.every((v, i) => back.d[i] === v));
+  /* NOT PREMULTIPLIED. A fully transparent pixel keeps its colour, because the
+     resampler in steam-art divides by alpha and a zero would take the colour
+     with it — that is the halo bug, and it starts here if the codec lies. */
+  ok('...including the colour under a fully transparent pixel',
+    back.d[3] === 0 && back.d[0] === src[0] && back.d[2] === src[2]);
+
+  /* AN ODD WIDTH IS THE CASE THAT BREAKS A HAND-ROLLED WRITER. Each PNG row
+     carries a leading filter byte, so the row stride is `w * 4 + 1` and not
+     `w * 4`; get that wrong and the picture reads back sheared by one pixel
+     per row — which on a diagonal is unmistakable and on a photograph is
+     "hmm, looks a bit soft". So the fixture IS a diagonal. */
+  const D = 5;
+  const diag = new Uint8ClampedArray(D * D * 4);
+  for (let y = 0; y < D; y++) {
+    for (let x = 0; x < D; x++) {
+      const i = (y * D + x) * 4;
+      diag[i] = x === y ? 255 : 0;
+      diag[i + 3] = 255;
+    }
+  }
+  writeFileSync(tmp, writePNG(D, D, diag));
+  const read = readPNG(tmp);
+  let straight = true;
+  for (let y = 0; y < D; y++) {
+    for (let x = 0; x < D; x++) {
+      if (read.d[(y * D + x) * 4] !== (x === y ? 255 : 0)) straight = false;
+    }
+  }
+  ok('...and an odd-width image comes back square, not sheared', straight);
+
+  /* THE ICON IS PNG-IN-ICO, which is the only form that can carry a 256px
+     entry — the directory's width field is one BYTE, and 0 means 256. Every
+     offset has to land exactly, because Windows does not repair a bad one, it
+     draws the generic blank page instead and gives no reason. */
+  const entries = [256, 32, 16].map((size) => {
+    const n = size * size * 4;
+    const d = new Uint8ClampedArray(n);
+    for (let i = 0; i < n; i += 4) { d[i] = 255; d[i + 3] = i % 511 > 255 ? 255 : 0; }
+    return { size, png: writePNG(size, size, d) };
+  });
+  const ico = writeICO(entries);
+  ok('an .ico declares itself an icon with the right count',
+    ico.readUInt16LE(0) === 0 && ico.readUInt16LE(2) === 1 && ico.readUInt16LE(4) === 3);
+  /* AND THE DIRECTORY IS CHECKED AGAINST THE PAYLOAD, not against itself. The
+     failure that matters is an offset that points a few bytes wide: Windows
+     does not report it, it draws the generic blank-page icon and says nothing,
+     and from the outside that is indistinguishable from "the .ico is fine, the
+     shortcut just didn't pick it up". So follow each offset, decode whatever
+     is actually there, and make it agree with the size the entry CLAIMS —
+     remembering that a claim of 256 is written as the byte 0. */
+  let walked = 6 + entries.length * 16;
+  let laidOut = true;
+  for (let i = 0; i < entries.length; i++) {
+    const at = 6 + i * 16;
+    const claimed = ico[at] === 0 ? 256 : ico[at];
+    const len = ico.readUInt32LE(at + 8);
+    const off = ico.readUInt32LE(at + 12);
+    if (off !== walked || ico.readUInt16LE(at + 6) !== 32) laidOut = false;
+    writeFileSync(tmp, ico.subarray(off, off + len));
+    /* try/catch, because a wrong offset does not come back as wrong pixels —
+       it comes back as "not a PNG" from the decoder, and a check that dies
+       takes the other 950 with it and reports nothing at all. */
+    try {
+      const got = readPNG(tmp);
+      if (got.w !== claimed || got.h !== claimed) laidOut = false;
+    } catch { laidOut = false; }
+    walked += len;
+  }
+  unlinkSync(tmp);
+  ok('...and each entry decodes to exactly the size it claims', laidOut);
+  ok('...with nothing left over at the end', walked === ico.length);
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

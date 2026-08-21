@@ -275,6 +275,62 @@ html, body {
    because it is where you find out the pad works at all. */
 body.touch-ui .nav-focus { outline-width: 5px; outline-offset: 4px; }
 body.touch-ui .menu-btn.nav-focus { transform: translateY(-2px) scale(1.1); }
+
+/* ---- THE HEAD IS SMALLER ON A PHONE, AND YOU CAN SEE THROUGH IT ----
+   `74vw` is a good number on a laptop and a terrible one on a phone, and the
+   reason is the art behind it. `.title-art-main` is `contain`, so on a 844x390
+   landscape phone the painting is only 699px wide inside an 844px window — the
+   panel at 74vw is 624px, which is EIGHTY-NINE PER CENT OF THE PICTURE. The
+   kittens, the torii and the islands were all behind it, and the report was
+   exactly that: "it takes up the entire screen and you can't see the nice
+   background with the cat samurais in it".
+
+   Two changes, and they do different jobs. The width takes the panel down to
+   about two thirds of the picture, which gives back the cliffs at both sides.
+   That alone does not give back the DRAGON, because the dragon is dead centre
+   of the painting and the panel is centred too — no width that still fits three
+   buttons will clear it. So the paper goes translucent as well, and the dragon
+   reads through the head instead of from beside it.
+
+   The FILL only, and it is a GRADIENT rather than a flat alpha, because the two
+   halves of the head want opposite things. The top half is empty — it is where
+   the dragon is — and can be nearly gone. The bottom half is behind OPTIONS:,
+   three buttons and the hint, and has to stay paper. A flat value that let the
+   dragon through made the label muddy, and a flat value that kept the label
+   crisp did not let the dragon through. The ink stroke stays solid at both
+   ends, and so do the buttons, which have their own `--paper-2` behind their
+   text: a menu that is hard to read at arm's length would be a bad trade for a
+   nicer background.
+
+   THE SHAPE IS NOT TOUCHED. It is one of the kids' drawings (CLAUDE.md, second
+   non-negotiable) and `preserveAspectRatio="none"` means it would be trivial
+   and wrong to squash it shorter to save the vertical space. Repainting is not
+   redrawing; squashing her cat is. */
+body.touch-ui .cat-panel {
+  width: min(470px, 56vw);
+  /* AND IT HANGS OFF THE BOTTOM RATHER THAN OFF A `vh` MARGIN. Dropping the
+     panel is what actually uncovered the dragon — the head is see-through at
+     the top and solid at the chin, so the dragon has to end up under the TOP of
+     it — and `margin-top: 32vh` did that on a 390px-tall screen and collided
+     with the credit line on a 320px one. The credit is `position: absolute;
+     bottom: 14px`, so the panel's distance from the BOTTOM is the thing that
+     has to be fixed. `align-self: end` measures from the edge the constraint
+     is against, and then every phone gets the same 20px of clearance. */
+  align-self: end;
+  margin-top: 0;
+  margin-bottom: 34px;
+}
+body.touch-ui .cat-shape path {
+  fill: url(#cat-fill);
+}
+/* OPTIONS: is the one bit of text that ends up over the thin part of the
+   gradient, because it sits directly in front of the dragon. A cream halo is
+   what buys the head its transparency: without it the label had to be kept on
+   solid paper, and keeping the label on solid paper is what was hiding the
+   dragon in the first place. */
+body.touch-ui .options-label {
+  text-shadow: 0 0 7px var(--paper), 0 0 14px var(--paper);
+}
 /* A focused row highlights the whole setting, not just the control, so it is
    obvious WHICH thing left/right is about to change. */
 .row select.nav-focus,

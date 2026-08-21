@@ -872,3 +872,72 @@ carry it: PLAY is solid vermillion whether it is focused or not, so a kid lookin
 for "the one that is lit" found the red button every time and the outlined
 neighbour read as decoration. Size is the one channel PLAY's own styling does not
 already spend.
+
+---
+
+## The fifth pass: the menu was standing in front of the picture
+
+**The report:** "make the white cat head background smaller on Mobile — it takes
+up the entire screen and you can't see the nice artistic background with the cat
+samurais in it. Also the dragon in the middle is usually covered up."
+
+Both halves are one number. `.cat-panel` is `width: min(660px, 74vw)`, which is
+a good value on a laptop and a terrible one on a phone, and the reason is what
+sits behind it. `.title-art-main` is `background-size: contain`, so on an
+844x390 landscape phone the painting is only **699px wide inside an 844px
+window** — the panel at 74vw is 624px, which is **89% of the picture**. The
+kittens, the torii, both pagodas and the islands were all behind the cat's head.
+On a 1920-wide laptop the same rule gives 660px over a 1920px-wide painting:
+34%. One expression, two completely different pictures.
+
+### Two changes, doing two different jobs
+
+**`width: min(470px, 56vw)`** takes the panel down to about two thirds of the
+painting and gives back the cliffs at both sides.
+
+**A translucent fill** gives back the dragon, which the width alone never could:
+the dragon is dead centre of the painting and the panel is centred too, so no
+width that still fits three buttons will clear it.
+
+**The fill is a GRADIENT, not a flat alpha,** because the two halves of the head
+want opposite things. Measured in the live layout, as fractions of the panel's
+own height: `OPTIONS:` runs 0.39–0.49, the button row 0.51–0.74, the hint
+0.75–0.82. **The top 38% of the head has nothing in it at all** — and that is
+exactly where the dragon's wings are. So it is 0.10 opaque at the ears, 0.26 at
+the label and 0.88 by the buttons. A flat value that let the dragon through made
+the label muddy; a flat value that kept the label crisp did not let the dragon
+through.
+
+`OPTIONS:` is the one piece of text over the thin part, and it gets a cream halo
+(`text-shadow`). That halo is what BUYS the transparency: without it the label
+had to sit on solid paper, and keeping the label on solid paper is what was
+hiding the dragon in the first place.
+
+**The stroke stays solid and so do the buttons,** which have their own
+`--paper-2` behind their text. A menu that is hard to read at arm's length would
+be a bad trade for a nicer background.
+
+**The shape is not touched.** It is one of the kids' drawings — CLAUDE.md's
+second non-negotiable — and `preserveAspectRatio="none"` means it would be one
+line and completely wrong to squash it shorter to save vertical space.
+Repainting is not redrawing; squashing her cat is.
+
+### Dropping it is what actually uncovered the dragon
+
+Shrinking and fading it were not enough on their own, and the reason is that the
+head is see-through at the top and solid at the chin — so **the dragon has to
+end up under the top of it**, not under the middle. At `margin-top: 17vh` the
+panel started at y=122 on a 390px screen and the dragon's wings begin at y=165,
+which is 20% down the panel and already half-opaque. Dropping the panel to
+y≈144 put the wings at 10% and they came through.
+
+**But the drop is anchored to the BOTTOM, not written as a `vh` margin.**
+`margin-top: 32vh` measured right on a 390px-tall screen and collided with the
+credit line on a 320px one, because the constraint is not "so far from the top",
+it is "clear of `.credit`, which is `position: absolute; bottom: 14px`".
+`align-self: end` with a fixed `margin-bottom` measures from the edge the
+constraint is actually against, and every phone then gets the same clearance.
+
+**None of this is scoped anywhere near a desktop** — every rule is under
+`body.touch-ui`, and the desktop title screen renders byte for byte what it did
+before. Fifth invariant.

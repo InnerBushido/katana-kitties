@@ -24,3 +24,8 @@ dist-ssr
 *.sw?
 
 .vercel
+
+# Generated artwork — `node tools/steam-art.mjs` remakes all of it in seconds,
+# and it is 9MB of PNG that Vite would never ship anyway (only `public/` is
+# copied into `dist`). The tool is the thing worth versioning.
+out

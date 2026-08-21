@@ -25,6 +25,7 @@ one file it needs — usually five to ten thousand.
 | [rules.md](rules.md) | the gameplay invariants in full, with the measurements behind them — bamboo, ground snapping, dragon perches, sprite facing | anything that touches movement, props, dragons or a sprite sheet |
 | [gotchas.md](gotchas.md) | the traps that cost real time and are not obvious from the code | anything, when something inexplicable is happening |
 | [hosting.md](hosting.md) | Vercel, the Git deploy, and what does and does not travel with it | deploys, `.vercelignore` |
+| [steam.md](steam.md) | the non-Steam shortcut and every launch flag on it, the shelf artwork and the icon, what Remote Play is and is not | `tools/steam-art.mjs`, the launch options, anything about Steam |
 
 **Cross-references saying "above" or "below" may point at a sibling file.** These
 were one document; the prose was moved verbatim rather than rewritten, because

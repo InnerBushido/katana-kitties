@@ -223,6 +223,17 @@ came from. Fixed; the reasoning is in
   on a pale button; it holds vermillion and animates the *offset* now, and the
   focused button grows, because PLAY is red whether it is focused or not.
 
+**The fifth pass was the title screen standing in front of the painting.** The
+cat-head panel is `min(660px, 74vw)`, which on a laptop covers a third of the
+art and on an 844x390 phone covers **89% of it** — because `.title-art-main` is
+`contain`, so the picture is only 699px wide inside an 844px window. It is
+`min(470px, 56vw)` on touch now, its paper fades from 0.10 opaque at the ears to
+0.88 by the buttons (the top 38% of the head has no UI in it and is where the
+dragon is), and it hangs off the *bottom* rather than off a `vh` margin, because
+the thing it has to stay clear of is `.credit`, which is anchored there. The
+kid's shape is untouched — repainting is not redrawing. *The fifth pass* in
+[docs/notes/mobile.md](docs/notes/mobile.md).
+
 **The misalignment the first phone test reported is fixed.** The minimap was
 sized off its pane's *width* (`v.w * 0.42` — 354px of a 390px-tall phone) and set
 **inline** by `_drawMaps`, so no stylesheet rule could touch it; it is now capped
@@ -235,18 +246,71 @@ takes the top-right instead — see the note above.)*
 playing on a tablet or a TV. That is a second device feeding a `PadState` over
 the local network, and it is the natural stepping stone to real netcode.
 
-**Steam is the other branch, and it answers the multiplayer wish cheaply.** An
-Electron wrapper plus Steam Direct gets **Remote Play Together**, which streams
-this local split-screen co-op game to friends anywhere and forwards their pad
-input — worldwide multiplayer with no netcode. Steam Input would also normalise
-every controller, which retires the whole vJoy/Joy-Con calibration problem for
-Steam players. Valve requires AI-content disclosure at submission; the title
-screen credit is already honest about it.
+**Steam is the other branch, and half of it has now happened.** Firefox runs as
+a non-Steam shortcut, which does retire the vJoy/Joy-Con calibration problem —
+Steam Input normalises every pad, including the 2026 Steam Controller, which is
+otherwise not a gamepad at all. See [It runs from Steam now](#it-runs-from-steam-now).
+
+**What that route does NOT get is Remote Play Together**, and this is the
+correction to what used to be written here. Steam exposes no way to enable it
+for a non-Steam shortcut; it needs a real appid, which means Steam Direct and an
+Electron or Tauri wrapper. The prize is unchanged and still the cheapest
+multiplayer there is — RPT streams local split-screen co-op to friends anywhere
+and forwards up to four pads, with no netcode at all, which is exactly the shape
+this game already has. Valve requires AI-content disclosure at submission; the
+title screen credit is already honest about it.
 
 **Two things that work as designed but read like bugs:** Chrome cannot read the
 vJoy sticks (play in Firefox — the title screen detects it and says so), and a
 saved controller map beats the source defaults, so editing `DEFAULT_VJOY_MAP`
 looks like it did nothing until you press RESET TO DEFAULTS.
+
+---
+
+## It runs from Steam now
+
+**Not a port — a shortcut.** Firefox is added as a non-Steam game so that Steam
+Input hands the browser a virtual Xbox pad, which is the only way the 2026 Steam
+Controller becomes a gamepad at all (it ships in firmware lizard mode: keyboard
+and mouse, no HID gamepad descriptor). The Switch 2 pads come along for free.
+**Zero game code was needed and none was written.** Full reasoning in
+[docs/notes/steam.md](docs/notes/steam.md).
+
+The Launch Options box takes arguments only — no `firefox.exe`, no wrapping
+quotes:
+
+```
+-no-remote -P steam -kiosk "https://katana-kitties.vercel.app"
+```
+
+- **`-P steam` needs the profile to exist first**, or Firefox opens the Profile
+  Manager on every single launch and the "don't ask at startup" checkbox does
+  not suppress it. One-time: `firefox.exe -CreateProfile "steam"`.
+- **A separate profile is a separate `localStorage`**, so the Steam route has
+  its own leaderboard, its own vJoy map and its own device override. Nothing is
+  lost; it is a second save file.
+- **`-kiosk` is the fullscreen.** No URL bar, no tabs. Alt+F4 quits. Do not add
+  `-private-window` — private browsing throws its `localStorage` away on exit,
+  and the leaderboard with it.
+- **Point it at the deployed URL, not `localhost:5173`**, or the shortcut only
+  works when somebody remembered to start Vite.
+
+**The artwork is generated, not drawn:** `node tools/steam-art.mjs` builds the
+background, the logo, both covers and a 16–256px `.ico` out of
+`public/sprites/title_art.png`, into `out/` (gitignored — the tool is the thing
+worth versioning). **Steam does not make the desktop icon for you**, for
+non-Steam shortcuts or for real ones; set it by hand in the shortcut's
+Properties.
+
+The same run replaced `public/favicon.svg` — a purple lightning bolt from the
+project scaffold, referenced by the web manifest and nothing else, so the tab
+had no icon at all and "add to home screen" installed a stranger's logo.
+
+**Remote Play to your own devices works** with a non-Steam shortcut (Steam Link
+on the phone streams the PC game and forwards a pad). **Remote Play Together —
+the four-friends one — does not**: Steam exposes no way to enable it for a
+non-Steam shortcut. Neither is networking; both are one machine simulating
+everything and shipping pixels.
 
 ---
 
@@ -268,6 +332,7 @@ are about to touch, not all of them.
 | [rules.md](docs/notes/rules.md) | the gameplay invariants in full, and the measurements behind them |
 | [gotchas.md](docs/notes/gotchas.md) | traps that cost real time and are invisible in the code |
 | [hosting.md](docs/notes/hosting.md) | Vercel, the Git deploy, the `gh` credential setup, how the screenshots were taken |
+| [steam.md](docs/notes/steam.md) | the non-Steam shortcut and its launch flags, the shelf artwork, what Remote Play is and is not |
 
 **Older source comments saying "see HANDOFF.md" mean these notes** — the text
 they point at was moved, not deleted. Grep `docs/notes/` for the phrase.

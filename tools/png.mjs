@@ -148,3 +148,99 @@ export function blobs(d, w, h, hit) {
   }
   return out.sort((a, b) => b.n - a.n);
 }
+
+/* ---------------------------------------------------------------------------
+   ...AND A WRITER, ADDED FOR tools/steam-art.mjs.
+
+   Steam wants four fixed sizes and Windows wants a `.ico`, and the source for
+   all of them is `public/sprites/title_art.png` — the game's own art, which is
+   the point: the shortcut should be the game, not a picture of a game. So the
+   art gets cropped, scaled and composited by a script that can be re-run, and
+   that needs the other half of this file.
+
+   PNG output is deliberately the dullest possible: 8-bit RGBA, no interlace,
+   filter 0 on every row. Filters exist to make zlib's job easier and would save
+   maybe a third of the bytes on artwork this size; artwork this size is written
+   once, by hand, into a repo. Not worth a bug.
+--------------------------------------------------------------------------- */
+
+const CRC_TABLE = (() => {
+  const t = new Int32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c;
+  }
+  return t;
+})();
+
+function crc32(buf) {
+  let c = -1;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ -1) >>> 0;
+}
+
+function chunk(type, data) {
+  const head = Buffer.alloc(8);
+  head.writeUInt32BE(data.length, 0);
+  head.write(type, 4, 'ascii');
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0);
+  return Buffer.concat([head, data, crc]);
+}
+
+/**
+ * @param {number} w
+ * @param {number} h
+ * @param {Uint8ClampedArray} d RGBA, one byte each — the shape `readPNG` returns.
+ * @returns {Buffer}
+ */
+export function writePNG(w, h, d) {
+  const stride = w * 4;
+  const raw = Buffer.alloc((stride + 1) * h);
+  for (let y = 0; y < h; y++) {
+    raw[y * (stride + 1)] = 0; // filter: none
+    Buffer.from(d.buffer, d.byteOffset + y * stride, stride)
+      .copy(raw, y * (stride + 1) + 1);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;  // bit depth
+  ihdr[9] = 6;  // colour type: RGBA
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/**
+ * A Windows icon, as PNG-in-ICO — supported since Vista and the only sane way
+ * to carry a 256px entry, since the old BMP form has no room for one (the
+ * width byte is literally a byte, and 0 means 256).
+ *
+ * @param {{size:number, png:Buffer}[]} entries
+ * @returns {Buffer}
+ */
+export function writeICO(entries) {
+  const head = Buffer.alloc(6 + entries.length * 16);
+  head.writeUInt16LE(0, 0);
+  head.writeUInt16LE(1, 2); // 1 = icon
+  head.writeUInt16LE(entries.length, 4);
+  let offset = head.length;
+  entries.forEach((e, i) => {
+    const p = 6 + i * 16;
+    head[p] = e.size >= 256 ? 0 : e.size;
+    head[p + 1] = e.size >= 256 ? 0 : e.size;
+    head[p + 2] = 0;   // palette size: none
+    head[p + 3] = 0;   // reserved
+    head.writeUInt16LE(1, p + 4);  // colour planes
+    head.writeUInt16LE(32, p + 6); // bits per pixel
+    head.writeUInt32LE(e.png.length, p + 8);
+    head.writeUInt32LE(offset, p + 12);
+    offset += e.png.length;
+  });
+  return Buffer.concat([head, ...entries.map((e) => e.png)]);
+}
