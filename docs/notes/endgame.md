@@ -208,7 +208,7 @@ no two the same one.
 | 跳 | Tobi / LEAP | +n jumps |
 | 壁 | Kabe / WARD | **hold** to block, 2s cap, 1.5s wait, ¼ gravity |
 | 落 | Otoshi / POWER DIVE | interact in the air — a driven fall |
-| 三 | Sanzan / TRIPLE SLASH | hold attack — three cuts that HOLD, then a launch |
+| 十 | Juuji / CROSS SLASH | hold attack — three cuts that HOLD, then a launch |
 | 突 | Totsugeki / CHARGE | sprint + attack — straight through, no gravity |
 
 **STACKING IS ADDITIVE, NOT MULTIPLICATIVE.** Eight Gale orbs compounded at
@@ -274,7 +274,14 @@ so does `resetForRound`: a charge that survives a round reset carries its
 committed direction and its zero gravity across the teleport to her post and
 flies her off the ring before the gong.
 
-### The triple slash holds you. It did not always.
+### The Cross Slash holds you. It did not always.
+
+Cloud's, by way of a nine-year-old who has played Smash — it was Sanzan / 三 /
+TRIPLE SLASH until the move learned to hold what it catches, at which point it
+earned his name for it. **The orb's id is still `tri`**, and so is its entry in
+`ATTACKS`: those two strings are in every saved profile and in the dealer's
+stock table, and renaming them would silently cost every existing profile its
+orb. `world-check` pins the id and the display name separately.
 
 **THE MOVE USED TO BE THREE CUTS AT A CORPSE.** She threw an ordinary slash on
 the press; if she was still holding 0.22s later that swing became the first of
@@ -289,13 +296,20 @@ slash goes out then, keep holding and the technique starts instead and the
 ordinary swing never happens. That is the only shape in which the technique has
 anybody left to cut.
 
-**`TRIPLE.hold` CAME DOWN FROM 0.22s TO 0.05s** because the cost changed hands.
-At 0.22 the swing had already gone, so the delay was free; now every ordinary
-slash by a kitten wearing the orb waits three frames to find out what the button
-meant. 50ms you cannot feel; 220ms you can, and she uses the ordinary slash on
-barrels a hundred times an hour. A kitten with no Sanzan orb — which is both of
-them until 100% mischief — still fires on the frame she presses, and there is a
-check pinning exactly that.
+**`CROSS.hold` HAS BEEN 0.22, 0.05 AND 0.25, AND ONLY THE MIDDLE ONE WAS NEVER
+TESTED IN A HAND.** It started at 0.22 for the old shape, came down to 0.05 with
+the release-driven rewrite on the theory that a shorter wait meant a snappier
+ordinary slash, and went to 0.25 the first time somebody played it: at 0.05 the
+*technique* came out when a kid meant to slash, because three frames is shorter
+than a deliberate tap, never mind the grip of somebody mashing. That makes the
+ordinary swing the hard one to throw, which is backwards.
+
+The latency argument that justified 0.05 does not survive contact either. **The
+swing goes out when she LETS GO**, so a 90ms tap is a 90ms slash — this number
+is not a delay anybody pays, it is only how long a hold has to be to mean she
+wanted the other move. A kitten with no orb — which is both of them until 100%
+mischief — still fires on the frame she presses, and there is a check pinning
+exactly that.
 
 **THE CUTS CATCH, THEY DO NOT HIT.** `Player.triCapture` freezes the target
 where she stands: gravity off, pad dead, damage banked in `heldDmg` rather than
@@ -305,7 +319,7 @@ including her own partner's daze and including the ring-out. Three cuts, a
 thrown. That pause is Smash's charged bat: a big hit needs a moment of nothing
 in front of it.
 
-**THE CAP IS THREE, AND IT IS ASSERTED.** A Sanzan stack makes each cut hurt
+**THE CAP IS THREE, AND IT IS ASSERTED.** A Juuji stack makes each cut hurt
 more, never adds a fourth. A fourth landing would be invisible until the day it
 one-shot somebody.
 
@@ -331,8 +345,30 @@ the same silhouette from all four cameras — plus a screen shake and `smash`, t
 one sound in the library bigger than `ko`. Catch her on the last cut only and
 you get the throw and nothing else.
 
-**THE CUTS ARE A THIRD SLOWER** (`gap` 0.16 → 0.21). At 0.16 the whole technique
-was over before a nine-year-old could see there had been three of them.
+**EVERY CUT OWNS `CROSS.gap`, THE THIRD ONE INCLUDED**, so the cutting takes
+`cuts * gap` — 0.9s at the current 0.3, near enough the second it is meant to
+be. Starting the hang the instant the last cut lands gives that cut none of the
+time the other two got and brings the whole move in a third short. `gap` has
+been 0.16 and 0.21 and both were over before a nine-year-old could count three
+of anything.
+
+**THE BLOCK IS LOCKED OUT FOR THE WHOLE MOVE AND `CROSS.cool` AFTER IT**, and a
+bubble already up is dropped when the technique starts — through `_dropWard`, so
+she is charged the ordinary wait and it is not a free cancel. The entire price
+of a cross slash is that she is planted and open for about a second; a shield
+she can pop on the second cut, or on the frame the launch goes out, refunds that
+and makes the move free. `triLockT` is a separate clock from `attackCooldown`
+because that one is shared with every ordinary swing, and hanging the lock off
+it would kill the bubble for a third of a second after every barrel she cuts.
+The refusal toasts — sixth non-negotiable, and this one is invisible otherwise.
+
+**A BLOW MAY ONLY EVER MAKE AN ANIMAL MORE STUNNED.** `Critter.swattable` used
+to be `roam` only, so a second swing at a stunned rat fell past it into the PIN,
+which `_updateHold` cancelled on the next frame — the blow *woke it up*. It went
+unnoticed until three cuts started landing on the same animal inside a second.
+`stun()` is now a full reset of the clock and safe to call on something already
+down, and `_canHold` refuses while `player.busy`: she is a second into a
+committed technique and is not also reaching down to put a paw on a rat.
 
 Measured end to end in the browser: press → 60ms deferred → cuts at 91/302/510ms
 → 27 damage banked, target motionless at the same coordinates throughout → 250ms

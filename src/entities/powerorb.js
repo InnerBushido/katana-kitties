@@ -105,12 +105,17 @@ export const POWER_ORBS = [
     detail: (n) => `Dive damage ${DIVE.dmg + 6 * (n - 1)}`,
   },
   {
+    /* `tri` FOR EVER. The id is written into every save file and read by the
+       trade screen's stock table; the name beside it is free to change, and
+       has — this was Sanzan / 三 / TRIPLE SLASH until the move learned to hold
+       what it catches, at which point it was Cloud's and got his name for it.
+       十 is the kanji for ten and is also, conveniently, a drawn cross. */
     id: 'tri',
-    name: 'Sanzan',
-    kanji: '三',
-    label: 'TRIPLE SLASH',
+    name: 'Juuji',
+    kanji: '十',
+    label: 'CROSS SLASH',
     color: 0xff6fae,
-    blurb: 'Hold attack for three cuts. You cannot move through them.',
+    blurb: 'Hold attack for three cuts that freeze whoever they catch, then send her flying. Tap for an ordinary swing.',
     detail: (n) => `3 cuts, x${(1 + 0.15 * (n - 1)).toFixed(2)} damage`,
   },
   {
@@ -224,7 +229,14 @@ export const DIVE = {
 };
 
 /**
- * The triple slash. Hold attack; she plants and cuts three times.
+ * The CROSS SLASH — Cloud's, by way of a nine-year-old who has played Smash.
+ * Hold attack; she plants and cuts three times.
+ *
+ * The orb's id is still `tri` and so is its entry in `ATTACKS`. Those two
+ * strings are written into save files and read by the trade screen, and
+ * renaming them would cost every profile already on a machine its orb. The
+ * name a player sees lives in POWER_ORBS below; this is the only note tying
+ * the two together.
  *
  * SHE CANNOT MOVE OR JUMP THROUGH IT, which is the cost that makes it worth
  * having. In the air she gets quarter gravity for the duration instead of
@@ -241,24 +253,36 @@ export const DIVE = {
  * That is Smash's charged bat, and it is deliberate — a big hit needs a moment
  * of nothing before it to be worth landing. `hang` is that moment.
  *
- * `hold` IS 0.05 AND NOT 0.22, which changes what the button means. Past 0.22
- * the ordinary swing had already been thrown, so the move could only ever be a
- * slash PLUS three; at 0.05 the press has not committed to anything yet, so a
- * tap is a slash and a hold is the technique, and they are alternatives rather
- * than a sequence. The cost is that wearing this orb puts 50ms — three frames —
- * on every ordinary slash, which is the trade the whole rework is.
+ * `hold` IS THE TAP/HOLD LINE, AND IT HAS BEEN BOTH WAYS.
+ * It started at 0.22, which was wrong for a different reason: back then the
+ * ordinary swing had ALREADY been thrown by the time the line was crossed, so
+ * the move could only ever be a slash PLUS three cuts, at a target the slash
+ * had already knocked out of reach. Making the swing fire on the RELEASE fixed
+ * that and the line came down to 0.05 with it, on the theory that a shorter
+ * wait meant a snappier ordinary slash.
+ * THAT THEORY WAS WRONG IN THE HAND. At 0.05 a kid who means to slash gets the
+ * technique — three frames is shorter than a deliberate tap, let alone the
+ * grip of somebody mashing — so the ordinary swing became the hard one to
+ * throw, which is backwards. It is 0.25 now, and the latency argument that
+ * justified 0.05 does not survive contact either: the swing goes out WHEN SHE
+ * LETS GO, so a 90ms tap is a 90ms slash. This number is not a delay she pays,
+ * it is only the length of hold that means she wanted the other move.
  *
- * `gap` IS A THIRD LONGER THAN IT WAS. At 0.16 the three cuts were over before
- * a nine-year-old could see there had been three of them.
+ * `gap` IS THE LENGTH OF ONE CUT, and every cut gets one, the third included —
+ * so the cutting is `cuts * gap` end to end, near enough a second. It has been
+ * 0.16 and 0.21 and both were too fast to see three of anything happen.
  */
-export const TRIPLE = {
+export const CROSS = {
   cuts: 3,
-  gap: 0.21,
-  hold: 0.05,
+  gap: 0.3,
+  hold: 0.25,
   gravity: 0.25,
   /** The beat between the last cut and the launch. Smash's pause-for-effect. */
   hang: 0.25,
-  /** ...and how long she cannot attack at all once it is over. */
+  /** ...and how long she cannot attack, or block, once it is over. See
+   *  `Player.triLockT` — the block is locked out for the whole technique and
+   *  this long afterwards, because a bubble popped out of the recovery would
+   *  make the move free. */
   cool: 0.5,
   /** THE LAUNCH IS NOT `tri.knock`. That number is per-cut and deliberately
      feeble — nine damage and a nudge — because the cuts are not supposed to

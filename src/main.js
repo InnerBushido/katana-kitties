@@ -40,7 +40,7 @@ import { AngelForm } from './entities/angel.js';
 import { ArenaQuest, SATAN_TOWN, MILESTONES } from './systems/arenaquest.js';
 import { loadBoard, BOARD_MODES } from './systems/leaderboard.js';
 import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
-import { ORB_IDS, TRIPLE } from './entities/powerorb.js';
+import { ORB_IDS, CROSS } from './entities/powerorb.js';
 import { ProfileScreen } from './systems/profile.js';
 
 /* ---------------------------------------------------------------------------
@@ -3007,7 +3007,7 @@ class Game {
        must not happen is a girl losing to a reach she cannot see. */
     const clanK = reach / 3.4;
     const range = A.reach * clanK;
-    /* Sanzan stacks make each of the three cuts hit harder rather than adding
+    /* Juuji stacks make each of the three cuts hit harder rather than adding
        a fourth. Four cuts is a different move; the same three landing for more
        is the same move, better — which is what a stack should always be. */
     const dmg = A.dmg * (kind === 'tri' ? (attacker.power?.tri?.dmgK ?? 1) : 1);
@@ -3031,7 +3031,7 @@ class Game {
       const dot = (dx * dir.x + dz * dir.y) / (dist || 1);
       if (dot < A.arc) continue;
 
-      /* --- HELD IN SOMEBODY'S TRIPLE SLASH: NOTHING ELSE TOUCHES HER ---
+      /* --- HELD IN SOMEBODY'S CROSS SLASH: NOTHING ELSE TOUCHES HER ---
          She is frozen in the air with three cuts landing on her and a payment
          due at the end of them, and a third kitten wandering past and knocking
          her out of it would delete the whole technique — including the damage
@@ -3066,7 +3066,7 @@ class Game {
         continue;
       }
 
-      /* --- A CUT OF THE TRIPLE SLASH CATCHES HER, IT DOES NOT HIT HER ---
+      /* --- A CUT OF THE CROSS SLASH CATCHES HER, IT DOES NOT HIT HER ---
          The whole rework is this branch. `hurt` throws her clear, which is
          exactly right for every other attack in the game and exactly wrong for
          this one: the first of three cuts landing meant the other two swung at
@@ -3458,16 +3458,16 @@ class Game {
        reads that as a dropped frame rather than as a hit. */
     this._boom(
       target.position.x, target.position.y + target.height * 0.55, target.position.z,
-      hits >= TRIPLE.cuts
+      hits >= CROSS.cuts
     );
     target.releaseHold();
     const from = { x: target.position.x - dx, z: target.position.z - dz };
-    const dealt = target.hurt(dmg, from, { knock: TRIPLE.knock, lift: TRIPLE.lift }, this);
+    const dealt = target.hurt(dmg, from, { knock: CROSS.knock, lift: CROSS.lift }, this);
     if (dealt && by) {
       by.dmgDealt += dealt;
       this.tournament?.onHit(by, target, dealt, 'tri');
     }
-    return hits >= TRIPLE.cuts;
+    return hits >= CROSS.cuts;
   }
 
   /**

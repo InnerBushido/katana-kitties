@@ -325,6 +325,17 @@ export class Menagerie {
     if (!air) return false;
 
     this.game.hitSpark?.({ position: air.position, height: air.spec.size }, 'stand');
+    /* ALREADY DOWN: TOP THE CLOCK UP AND SAY NOTHING ELSE. Every branch below
+       is about an animal that was loose a moment ago — a mouthful, a first
+       stun, a lesson — and none of them is true of one that is already sitting
+       there cross-eyed. Running them anyway is how a stunned rat ended up
+       being re-taught, re-announced, or (before `_canHold` learned about power
+       moves) picked up and dropped. */
+    if (air.state === 'stunned') {
+      air.stun();
+      this.game.sfx?.('squeak');
+      return true;
+    }
     if (air.spec.kind === 'flier') {
       air.mouth(player);
       this.held[player.index] = air;
@@ -370,6 +381,14 @@ export class Menagerie {
   _canHold(player) {
     if (player.ko || player.angel || player.hitT > 0) return false;
     if (!player.onGround || player.mount || player.pandaMount) return false;
+    /* NOT IN THE MIDDLE OF A POWER MOVE, and the cross slash is why. She is
+       planted with a velocity of zero and both feet on the deck, so every
+       other test here says yes — and a kitten reaching down to put a paw on a
+       rat is not what is happening: she is a second into a committed
+       three-cut technique. Without this the second cut GRABBED the rat the
+       first one stunned, and the pin was cancelled the moment the launch threw
+       her, which read as the animal shrugging the whole move off. */
+    if (player.busy) return false;
     return Math.hypot(player.velocity.x, player.velocity.z) < STILL_SPEED;
   }
 

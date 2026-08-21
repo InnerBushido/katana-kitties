@@ -1,7 +1,7 @@
 ﻿import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
 import { PANDA_SPEED, PANDA_JUMP } from './panda.js';
-import { aggregate, WARD, DIVE, TRIPLE, CHARGE } from './powerorb.js';
+import { aggregate, WARD, DIVE, CROSS, CHARGE } from './powerorb.js';
 import { ANGEL_ALPHA } from './angel.js';
 import { styleFor } from '../core/palette.js';
 
@@ -295,10 +295,16 @@ export class Player {
     /** Seconds of pause-for-effect left AFTER the last cut, before the launch.
      *  She is still planted through it — see `busy`. */
     this.triHangT = 0;
+    /** Seconds of "no block" left. Runs from the moment the cross slash starts
+     *  until CROSS.cool after it ends, and it is a SEPARATE clock from
+     *  `attackCooldown` on purpose: that one is shared with every ordinary
+     *  swing, so hanging the ward lock off it would lock the bubble out for a
+     *  third of a second after every barrel she cuts. See `_popWard`. */
+    this.triLockT = 0;
     /** True while falling as a power dive. */
     this.diving = false;
     /** Seconds the attack button has been held, and whether a press is still
-     *  waiting to find out whether it was a tap or a hold. See TRIPLE.hold. */
+     *  waiting to find out whether it was a tap or a hold. See CROSS.hold. */
     this.attackHeld = 0;
     this._triPend = false;
     this._triKind = 'stand';
@@ -692,7 +698,7 @@ export class Player {
     return this.wardOn || this.wardTail > 0;
   }
 
-  /** How much of gravity applies this frame. See WARD / TRIPLE / CHARGE. */
+  /** How much of gravity applies this frame. See WARD / CROSS / CHARGE. */
   _gravityK() {
     if (this.chargeT > 0) return 0;
     /* CAUGHT MID-AIR AND STAYING THERE. Weightless is not a detail of the
@@ -701,13 +707,24 @@ export class Player {
        whole rework exists to kill. */
     if (this.heldBy) return 0;
     if (this.warded) return WARD.gravity;
-    if (this.triAt && !this.onGround) return TRIPLE.gravity;
+    if (this.triAt && !this.onGround) return CROSS.gravity;
     return 1;
   }
 
-  /** True while a triple slash is running, INCLUDING its pause-for-effect. */
+  /**
+   * True while a cross slash is running, INCLUDING the third cut's own time on
+   * screen and the pause-for-effect after it.
+   *
+   * `triT > 0` IS IN HERE FOR THE THIRD CUT. Every cut owns `CROSS.gap`, the
+   * last one included, so that three cuts take `cuts * gap` rather than
+   * `(cuts - 1) * gap` — otherwise the third one is over the instant it lands
+   * and the technique runs a third shorter than the number says. Between that
+   * cut and the hang, `triLeft` is already zero and `triHangT` is not yet set,
+   * and without this clause she would get her feet back for those frames in
+   * the middle of her own move.
+   */
   get triAt() {
-    return this.triLeft > 0 || this.triHangT > 0;
+    return this.triLeft > 0 || this.triT > 0 || this.triHangT > 0;
   }
 
   /** True while a special move owns her feet — no stick, no jump. */
@@ -1064,6 +1081,12 @@ export class Player {
     this.onGround = true;
     this.attackTimer = 0;
     this.attackCooldown = 0;
+    /* And the block's lock with them. `_clearSpecials` leaves this one running
+       on purpose (see there), which is right everywhere except here: a kitten
+       standing on her post waiting for the gong is not in anybody's recovery
+       frames, and starting a round unable to block would be invisible and
+       unexplainable. */
+    this.triLockT = 0;
     /* Every power move dies with the round too. A charge that survives the
        reset carries its committed direction and its zero gravity across the
        teleport to her post and flies her straight back off the ring before
@@ -1082,6 +1105,11 @@ export class Player {
     this.triLeft = 0;
     this.triT = 0;
     this.triHangT = 0;
+    /* `triLockT` is deliberately NOT cleared here. This fires when a round
+       resets or she climbs onto a dragon, and both of those already end the
+       move; what it must not also do is hand the bubble straight back to a
+       kitten still inside the recovery frames of one. It runs down on its own,
+       and a round reset zeroes it explicitly where the rest of combat is. */
     this.diving = false;
     this.attackHeld = 0;
     this._triPend = false;
@@ -1354,7 +1382,7 @@ export class Player {
     /* --- WITH THE SANZAN ORB ON, THE SWING IS THROWN ON THE RELEASE ---
        The button has to mean two different things and it cannot know which
        until it is let go, so the press only starts a stopwatch: let go inside
-       TRIPLE.hold and the ordinary swing goes out then, keep holding and the
+       CROSS.hold and the ordinary swing goes out then, keep holding and the
        technique starts instead and the ordinary swing never happens at all.
        IT USED TO ARM AFTER THE SWING. The old shape threw the ordinary slash
        on the press and turned it into the first of three if you were still
@@ -1364,7 +1392,7 @@ export class Player {
        to have anybody left to cut.
        The cost is 50ms — three frames — on every ordinary slash, and only for
        a kitten wearing the orb. That is the trade, it is paid knowingly, and
-       it is why TRIPLE.hold came down from 0.22 to 0.05: at 0.22 you can feel
+       it is why CROSS.hold came down from 0.22 to 0.05: at 0.22 you can feel
        it, at 0.05 you cannot. */
     const deferred = !!this.power.tri && !this.pandaMount;
     if (pad.pressed('attack') && this.attackCooldown <= 0 && !this.busy) {
@@ -1408,7 +1436,7 @@ export class Player {
         this.attackCooldown = 0.36;
         hud?.sfx('slash');
         this._doSlash(world, hud, this._triKind);
-      } else if (this.attackHeld >= TRIPLE.hold) {
+      } else if (this.attackHeld >= CROSS.hold) {
         this._triPend = false;
         this._startTriple(hud);
       }
@@ -1657,9 +1685,16 @@ export class Player {
         this.attackTimer = 0.2;
         hud?.sfx('slash');
         this._doSlash(world, hud, 'tri');
-        this.triT = TRIPLE.gap;
-        if (this.triLeft === 0) this.triHangT = TRIPLE.hang;
+        this.triT = CROSS.gap;
       }
+    } else if (this.triT > 0) {
+      /* THE THIRD CUT'S OWN TIME ON SCREEN. Starting the hang the instant the
+         last cut lands gives that cut none of the `gap` the other two got, so
+         "three cuts at 0.3 each" would really be two at 0.3 and one at nothing
+         — and the whole technique would come in a third under the second it is
+         supposed to take. */
+      this.triT -= dt;
+      if (this.triT <= 0) { this.triT = 0; this.triHangT = CROSS.hang; }
     } else if (this.triHangT > 0) {
       this.triHangT -= dt;
       /* The cooldown is charged HERE and not when the last cut lands, so the
@@ -1667,8 +1702,15 @@ export class Player {
          overlapping the pause that precedes it. Otherwise the gap she feels is
          a quarter of a second short of the number, and the move ends with her
          already swinging again. */
-      if (this.triHangT <= 0) this.attackCooldown = TRIPLE.cool;
+      if (this.triHangT <= 0) this.attackCooldown = CROSS.cool;
     }
+    /* THE BLOCK IS LOCKED OUT FOR THE WHOLE MOVE AND THE RECOVERY AFTER IT.
+       Topped up every frame the technique is live rather than set once, so
+       however the move ends — three cuts, or a `_clearSpecials` halfway through
+       — the lock is already correct and simply runs down from wherever it got
+       to. See `_popWard` for why it must exist at all. */
+    if (this.triAt) this.triLockT = CROSS.cool;
+    else this.triLockT = Math.max(0, this.triLockT - dt);
 
     // --- charge ---
     if (this.chargeT > 0) {
@@ -1687,8 +1729,27 @@ export class Player {
     if (this.diving && (this.onGround || this.hitT > 0 || this.ko)) this.diving = false;
   }
 
-  /** Start a block. Held from here; `_stepSpecials` ends it. */
+  /**
+   * Start a block. Held from here; `_stepSpecials` ends it.
+   *
+   * NOT THROUGH A CROSS SLASH, AND NOT OUT OF ITS RECOVERY. The whole price of
+   * the technique is that she is planted and open for about a second; a bubble
+   * she can pop on the second cut, or on the frame the launch goes out, refunds
+   * that price and makes the move free. `triLockT` covers the move and
+   * `CROSS.cool` after it — the same window she cannot attack in.
+   *
+   * IT SAYS SO. The other three refusals below are all things she can see: no
+   * orb on the profile screen, a bubble already round her, a wait she just
+   * spent. This one is invisible — she is mid-swing, the button does nothing,
+   * and there is no way to find out why. A refusal that says nothing reads as
+   * a broken button.
+   */
   _popWard(hud) {
+    if (this.triLockT > 0 && this.power.ward) {
+      hud?.sfx?.('deny');
+      hud?.toast?.(`${this.name} — finish the Cross Slash before you block`, this.index);
+      return false;
+    }
     if (!this.power.ward || this.warded || this.wardCool > 0) return false;
     this.wardOn = true;
     this.wardUsed = 0;
@@ -1757,12 +1818,20 @@ export class Player {
    * decision she already made.
    */
   _startTriple(hud) {
-    this.triLeft = TRIPLE.cuts;
+    /* THE BUBBLE COMES DOWN WITH THE FIRST CUT. A kitten who blocks and then
+       starts a cross slash would otherwise be untouchable for the whole second
+       she is planted, which is the one window in the move where she is meant
+       to be committed and open — that is the cost the three cuts are paid for.
+       Dropped through `_dropWard` rather than by clearing the flag, so she is
+       charged the ordinary wait for it too and this is not a free cancel. */
+    if (this.wardOn) this._dropWard(hud);
+    this.triLeft = CROSS.cuts;
     this.triT = 0;
     this.triHangT = 0;
+    this.triLockT = CROSS.cool;
     this.attackHeld = 0;
     this._triPend = false;
-    hud?.toast?.(`${this.name} — TRIPLE SLASH!`, this.index);
+    hud?.toast?.(`${this.name} — CROSS SLASH!`, this.index);
   }
 
   /* ---------------------- caught in one of them -------------------------- */
@@ -1777,7 +1846,7 @@ export class Player {
    * at a body that had already gone.
    *
    * THE CAP IS THE CONTRACT. Three cuts, three hits, no more, whatever else
-   * calls this — a stacked Sanzan orb makes each cut hurt more, not a fourth
+   * calls this — a stacked Juuji orb makes each cut hurt more, not a fourth
    * cut appear, and a bug that let a fourth land would be invisible right up
    * until it one-shot somebody.
    *
@@ -1791,7 +1860,7 @@ export class Player {
     if (this.ko || this.angel) return false;
     if (this.heldBy && this.heldBy !== by) return false;
     if (this.warded) { this.wardFlash = 0.25; return false; }
-    if (this.heldBy === by && this.heldHits >= TRIPLE.cuts) return false;
+    if (this.heldBy === by && this.heldHits >= CROSS.cuts) return false;
 
     if (!this.heldBy) {
       this.heldBy = by;
@@ -1808,7 +1877,7 @@ export class Player {
     /* The watchdog is reset by every cut, so it can only ever expire on a
        technique that has actually stopped landing. Generous on purpose: it is
        a floor under a bug, not a rule anybody plays against. */
-    this.heldT = TRIPLE.cuts * TRIPLE.gap + TRIPLE.hang + 1.5;
+    this.heldT = CROSS.cuts * CROSS.gap + CROSS.hang + 1.5;
     this.heldHits++;
     this.heldDmg += dmg;
     this.heldDx = dx;

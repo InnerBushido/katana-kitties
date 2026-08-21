@@ -40,7 +40,7 @@ import {
 import { readPNG, blobs, writePNG, writeICO } from './png.mjs';
 import {
   POWER_ORBS, ORB_IDS, MAX_EQUIPPED, aggregate, orbPrice, orbSellPrice,
-  WARD, DIVE, TRIPLE, CHARGE, stockFor, STOCK_STACKABLE,
+  WARD, DIVE, CROSS, CHARGE, stockFor, STOCK_STACKABLE,
   PowerOrb, PowerOrbPickup, ORB_BY_ID,
 } from '../src/entities/powerorb.js';
 import { Kotodama } from '../src/systems/kotodama.js';
@@ -2920,9 +2920,9 @@ console.log('\n--- the three power moves ---');
       held.update(1 / 60, stay, world, [], spy);
       if (held.triLeft > 0) armedAt = (i + 1) / 60;
     }
-    line('hold to triple slash', `${armedAt.toFixed(2)}s (threshold ${TRIPLE.hold})`);
+    line('hold to triple slash', `${armedAt.toFixed(2)}s (threshold ${CROSS.hold})`);
     ok('holding attack really does fire it', held.triLeft > 0);
-    ok('...promptly after the threshold', armedAt > 0 && armedAt < TRIPLE.hold + 0.12);
+    ok('...promptly after the threshold', armedAt > 0 && armedAt < CROSS.hold + 0.12);
     ok('...having thrown no ordinary swing on the way there',
       spy.kinds.every((k) => k === 'tri'), spy.kinds.join(' ') || '(none)');
 
@@ -2945,22 +2945,51 @@ console.log('\n--- the three power moves ---');
     const pspy = SWINGS();
     plain.update(1 / 60, down, world, [], pspy);
     ok('without the orb the swing is still on the PRESS', pspy.kinds.length === 1);
-    ok('...and 50ms is all the orb costs an ordinary swing',
-      TRIPLE.hold <= 4 / 60, `${(TRIPLE.hold * 1000).toFixed(0)}ms`);
-    /* Slowed by a third so a nine-year-old can see there were three of them.
-       At 0.16 the whole technique was over in half a second. */
-    ok('...and the cuts are a third slower than they were', TRIPLE.gap > 0.16 * 1.28,
-      `${TRIPLE.gap}s`);
+    /* THE TAP/HOLD LINE HAS BEEN 0.22, 0.05 AND 0.25, AND ONLY THE MIDDLE ONE
+       WAS TESTED IN A HAND. At 0.05 the technique came out when a kid meant to
+       slash — three frames is shorter than a deliberate tap, never mind the
+       grip of somebody mashing — so the ORDINARY swing became the hard one to
+       throw, which is backwards.
+       The latency worry that argued for 0.05 does not survive either: the
+       swing goes out WHEN SHE LETS GO, so a 90ms tap is a 90ms slash and this
+       number is not a delay anybody pays. It is only how long a hold has to be
+       to mean she wanted the other move. */
+    ok('...and the hold has to be meant, not brushed', CROSS.hold >= 0.2,
+      `${(CROSS.hold * 1000).toFixed(0)}ms`);
+    /* Slow enough to SEE three of something happen. It has been 0.16 and 0.21
+       and both were over before a nine-year-old could count them. */
+    ok('...and the three cuts take about a second', CROSS.cuts * CROSS.gap >= 0.85,
+      `${(CROSS.cuts * CROSS.gap).toFixed(2)}s`);
+
+    /* THE ORB'S ID MAY NEVER CHANGE. It is written into every saved profile
+       and read by the dealer's stock table; the name beside it is free to move
+       and has (Sanzan / TRIPLE SLASH became Juuji / CROSS SLASH). Renaming the
+       id would cost every profile already on a machine its orb, silently. */
+    const sanzan = ORB_BY_ID.tri;
+    ok('the cross slash orb is still id `tri` whatever it is called',
+      !!sanzan && sanzan.id === 'tri' && ATTACKS.tri);
+    ok('...and the name a player sees is the Cross Slash',
+      sanzan.label === 'CROSS SLASH' && sanzan.kanji === '十', sanzan.label);
   }
 
   const t = mk(['tri']);
   t._startTriple(null);
-  ok('the technique owns all three cuts', t.triLeft === TRIPLE.cuts);
+  ok('the technique owns all three cuts', t.triLeft === CROSS.cuts);
   ok('she cannot move or jump through it', t.busy);
   let cuts = 0;
   const spy = { sfx: (n) => { if (n === 'slash') cuts++; }, strikePlayers: () => {} };
   for (let i = 0; i < 120 && t.triLeft > 0; i++) t._stepSpecials(1 / 60, PAD(), world, spy);
-  ok('...and every one of them lands', cuts === TRIPLE.cuts);
+  ok('...and every one of them lands', cuts === CROSS.cuts);
+  /* THE THIRD CUT GETS THE SAME TIME ON SCREEN AS THE OTHER TWO. Starting the
+     hang the instant it lands gives it none of the gap the first two got, so
+     "three cuts at 0.3 each" would really be two at 0.3 and one at nothing —
+     and she would be free a third of a second early, mid-move. */
+  ok('...and the third one is on screen as long as the others',
+    t.triT > 0 && t.triHangT === 0 && t.busy);
+  let third = 0;
+  for (let i = 0; i < 120 && t.triT > 0; i++) { t._stepSpecials(1 / 60, PAD(), world, spy); third++; }
+  line('one cut', `${(third / 60).toFixed(2)}s (nominal ${CROSS.gap})`);
+  ok('...she is still planted while it finishes', t.busy);
   /* THE PAUSE FOR EFFECT IS NOT DEAD TIME. She is still planted through it and
      everything she caught is still frozen — it is the beat before the launch
      that makes the launch read as one, and a `busy` that went false here would
@@ -2968,10 +2997,49 @@ console.log('\n--- the three power moves ---');
   ok('...then a beat before the launch', t.triHangT > 0 && t.busy);
   let hang = 0;
   for (let i = 0; i < 120 && t.triAt; i++) { t._stepSpecials(1 / 60, PAD(), world, spy); hang++; }
-  line('pause for effect', `${(hang / 60).toFixed(2)}s (nominal ${TRIPLE.hang})`);
+  line('pause for effect', `${(hang / 60).toFixed(2)}s (nominal ${CROSS.hang})`);
   ok('...then she gets her feet back', !t.busy && !t.triAt);
   ok('...and cannot swing again for half a second',
-    Math.abs(t.attackCooldown - TRIPLE.cool) < 0.02, t.attackCooldown.toFixed(2));
+    Math.abs(t.attackCooldown - CROSS.cool) < 0.02, t.attackCooldown.toFixed(2));
+
+  /* --- the block may not be used to cancel the price of the move ---
+     The whole cost of a cross slash is that she is planted and open for about
+     a second. A bubble she can pop on the second cut, or on the frame the
+     launch goes out, refunds that and makes the technique free. */
+  {
+    const both = mk(['tri', 'ward']);
+    ok('a kitten wearing both can normally block', both._popWard(null) === true);
+    both._dropWard(null);
+    both.wardCool = 0;
+    both.wardTail = 0;
+    both._popWard(null);
+    ok('...and a live block is dropped by starting a cross slash',
+      both.wardOn && (both._startTriple(null), !both.wardOn));
+    ok('...which charges her the ordinary wait for it, not a free cancel',
+      both.wardCool > 0);
+    let refusals = 0;
+    const denied = { sfx: () => {}, toast: () => { refusals++; }, strikePlayers: () => {} };
+    ok('...and she cannot put it back up mid-technique',
+      both._popWard(denied) === false && !both.wardOn);
+    /* A REFUSAL MUST SAY SO — sixth non-negotiable. This one is invisible
+       otherwise: she is mid-swing, the button does nothing, and there is no
+       way to find out why. */
+    ok('...and the refusal says so out loud', refusals === 1);
+    /* Run the whole move out, and the lock outlives it by the cooldown. */
+    for (let i = 0; i < 600 && both.triAt; i++) both._stepSpecials(1 / 60, PAD(), world, spy);
+    both.wardCool = 0;
+    ok('...nor on the frame the launch goes out',
+      !both.triAt && both.triLockT > 0 && both._popWard(denied) === false);
+    for (let i = 0; i < 600 && both.triLockT > 0; i++) both._stepSpecials(1 / 60, PAD(), world, spy);
+    ok('...but she gets it back once the recovery is over',
+      both._popWard(null) === true);
+    /* Starting a round unable to block would be invisible and unexplainable,
+       so the reset clears the lock even though `_clearSpecials` leaves it. */
+    const posted = mk(['tri', 'ward']);
+    posted._startTriple(null);
+    posted.resetForRound(0, world.heightAt(0, 40).y, 40, 0);
+    ok('...and a round reset hands it straight back', posted.triLockT === 0);
+  }
 
   /* --- caught in one: frozen, banked, and nobody else's business ---
      EVERY ONE OF THESE IS THE OLD BUG STATED AS A RULE. The cuts used to
@@ -3002,12 +3070,12 @@ console.log('\n--- the three power moves ---');
     her.triCapture(by, dmg, 1, 0);
     her.triCapture(by, dmg, 1, 0);
     ok('three cuts bank three lots of damage',
-      her.heldHits === TRIPLE.cuts && Math.abs(her.heldDmg - dmg * TRIPLE.cuts) < 0.001);
+      her.heldHits === CROSS.cuts && Math.abs(her.heldDmg - dmg * CROSS.cuts) < 0.001);
     /* THE CAP IS THE CONTRACT. A fourth cut landing would be invisible right
        up until the day it one-shot somebody, and a Sanzan stack is supposed to
        make each cut hurt MORE, never to add one. */
     ok('...and a fourth never lands', her.triCapture(by, dmg, 1, 0) === false
-      && her.heldHits === TRIPLE.cuts);
+      && her.heldHits === CROSS.cuts);
 
     const thief = mk(['tri']);
     ok('nobody else can take her mid-technique',
@@ -3025,11 +3093,11 @@ console.log('\n--- the three power moves ---');
     ok('letting go clears every scrap of the hold',
       !her.heldBy && her.heldHits === 0 && her.heldDmg === 0);
     const dealt = her.hurt(banked, { x: her.position.x - dx, z: her.position.z - dz },
-      { knock: TRIPLE.knock, lift: TRIPLE.lift }, null);
+      { knock: CROSS.knock, lift: CROSS.lift }, null);
     ok('...and the banked damage is paid all at once', dealt === banked, `${dealt}`);
     ok('...throwing her the way the cuts were coming from',
       her.velocity.x > 1 && Math.abs(her.velocity.z) < 0.001);
-    ok('...and hard enough to be worth the wait', her.velocity.y >= TRIPLE.lift);
+    ok('...and hard enough to be worth the wait', her.velocity.y >= CROSS.lift);
 
     /* THE WATCHDOG IS A FLOOR UNDER A BUG, NOT A TIMER ANYBODY PLAYS AGAINST.
        It has to outlast a healthy technique by a clear margin or it becomes
@@ -3038,7 +3106,7 @@ console.log('\n--- the three power moves ---');
     const fresh = mk([]);
     fresh.triCapture(by, dmg, 1, 0);
     ok('the stranding watchdog outlasts the whole technique',
-      fresh.heldT > TRIPLE.cuts * TRIPLE.gap + TRIPLE.hang + 1,
+      fresh.heldT > CROSS.cuts * CROSS.gap + CROSS.hang + 1,
       `${fresh.heldT.toFixed(2)}s`);
 
     /* The ward stops this the way it stops any other blade. An exception here
@@ -3580,6 +3648,45 @@ console.log('\n--- the three power moves ---');
     ok('standing still over one still pins it outright',
       men.strike(A, 3.4) && standing.state === 'pinned');
     men._drop(0);
+
+    /* --- HITTING A STUNNED ANIMAL MAY ONLY EVER MAKE IT MORE STUNNED ---
+       A second swing at a stunned rat used to fall past `swattable` — which
+       was `roam` only — into the PIN, which `_updateHold` then cancelled on
+       the next frame. So the blow WOKE IT UP. It went unnoticed until the
+       cross slash, where three cuts land on the same animal inside a second:
+       the first stunned it and the second handed it straight back, and the
+       technique looked like it did nothing to wildlife at all. */
+    const twice = only('rat');
+    putBeside(twice, A);
+    A.velocity.set(9, 0, 0);
+    A.onGround = true;
+    men.strike(A, 3.4);
+    ok('a swing on the move stuns it', twice.state === 'stunned');
+    step(30);
+    const halfway = twice.t;
+    ok('...and its clock has been running', halfway < STUN_TIME);
+    ok('...a second swing does NOT wake it up',
+      men.strike(A, 3.4) === true && twice.state === 'stunned');
+    ok('...it resets the clock instead', Math.abs(twice.t - STUN_TIME) < 0.02,
+      `${halfway.toFixed(2)}s -> ${twice.t.toFixed(2)}s`);
+    ok('...and the swing was not spent starting a hold', !men.held[0]);
+
+    /* THE CROSS SLASH'S OWN CUTS, THROUGH THE SAME DOOR. She is planted with a
+       velocity of zero and both feet down, so every other clause of `_canHold`
+       says yes — `busy` is the one that knows she is a second into a committed
+       technique and cannot also be putting a paw on a rat. */
+    const midMove = only('rat');
+    putBeside(midMove, A);
+    A.velocity.set(0, 0, 0);
+    A.onGround = true;
+    A._startTriple(null);
+    ok('a cross-slash cut cannot pin, only stun',
+      men.strike(A, 3.4) && midMove.state === 'stunned' && !men.held[0]);
+    step(20);
+    ok('...and the next cut keeps it down rather than freeing it',
+      men.strike(A, 3.4) && midMove.state === 'stunned'
+      && Math.abs(midMove.t - STUN_TIME) < 0.02);
+    A._clearSpecials();
     restoreFlee();
   }
 

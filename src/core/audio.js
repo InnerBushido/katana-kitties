@@ -504,7 +504,7 @@ export class Audio {
         this._noise({ from: 2400, to: 200, dur: 0.5, gain: 0.26 * v, q: 0.7 });
         break;
       case 'smash':
-        /* THE TRIPLE SLASH LANDING ALL THREE CUTS, and it has exactly one job:
+        /* THE CROSS SLASH LANDING ALL THREE CUTS, and it has exactly one job:
            to be unmistakably bigger than `ko`, which is otherwise the loudest
            thing in this library. A kid who lands the whole technique on her
            sister has to hear that she landed it from the other end of the sofa,

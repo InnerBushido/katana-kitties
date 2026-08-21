@@ -92,14 +92,16 @@ two-cursor trade screen. Patchfur closes the story in her own voice.
 piece per island, one per dragon, one for the arena. The only audio files in the
 project are the recorded voice lines in `public/voice/`.
 
-**The triple slash holds you.** The Sanzan orb's three cuts used to knock the
-target away on the first one and swing at empty air for the other two. They now
-freeze whoever they catch — gravity off, untouchable by anybody else, damage
-banking — and pay the whole bill in one throw after a pause, with a procedural
-burst, a screen shake and the one sound bigger than a knockout. With the orb on,
-the swing is thrown on the button's *release*, so a tap and a hold are
-alternatives rather than a sequence. See
-[docs/notes/endgame.md](docs/notes/endgame.md).
+**The Cross Slash holds you.** The orb's three cuts used to knock the target
+away on the first one and swing at empty air for the other two. They now freeze
+whoever they catch — gravity off, untouchable by anybody else, damage banking —
+and pay the whole bill in one throw after a pause, with a procedural burst, a
+screen shake and the one sound bigger than a knockout. With the orb on, the
+swing is thrown on the button's *release*, so a tap and a hold are alternatives
+rather than a sequence. Named for Cloud's after the rework; **the orb's id is
+still `tri`** and must stay so — it is in every saved profile. It also fixed a
+bug nothing else had found: hitting an already-stunned animal used to *wake it
+up*. See [docs/notes/endgame.md](docs/notes/endgame.md).
 
 **A device tier.** `core/device.js` decides once what this machine may spend and
 the renderer, the art loader and the quality setting all read it. A touch device
@@ -128,11 +130,12 @@ is listed here is untested-by-players, not untested-by-machine.
 3. **The open question no check can answer:** whether carrying damage into the
    next round reads as fair to the girl who just won one. It is right on paper
    and it is the one rule a nine-year-old could reasonably call cheating.
-   The triple slash's rework has the same shape of question in it: a kitten it
-   catches loses about three quarters of a second of control before anything
-   visibly happens to her, which is the longest anybody is ever switched off in
-   this game. It measures right and it plays right in a two-player test; whether
-   it reads as unfair when it is your sister doing it is a thing to watch for.
+   The Cross Slash has the same shape of question in it: a kitten it catches is
+   frozen for about 1.4 seconds before anything visibly happens to her — the
+   cutting is `cuts * gap` (0.9s) plus the pause (0.25s) — which is much the
+   longest anybody is ever switched off in this game. It measures right and it
+   played right in the first two-player pass; whether it reads as unfair when it
+   is your sister doing it is the thing to watch for.
 4. **Storm and Blossom are placeholders** — the same two cats recoloured. The
    girls should name them and pick the colours; it is one table in
    `src/core/palette.js`.

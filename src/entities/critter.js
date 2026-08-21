@@ -381,16 +381,23 @@ export class Critter {
 
   /**
    * True when a swing can stop it — which is any of them, any time they are
-   * loose.
+   * loose, AND one that is already stunned.
    *
    * IT USED TO DEPEND ON THE SPECIES and that is what made the rat
    * uncatchable: a rat was pin-only, so the one animal slow enough to teach
    * the mechanic was the one the katana could not touch. There is no reading
    * of "hit the animal" under which a sword swing passing through a rat should
    * do nothing.
+   *
+   * AND `stunned` IS IN HERE FOR THE SAME REASON, one bug later. A second
+   * swing at a stunned animal used to fall through this into the pin, which
+   * `_updateHold` then cancelled — so hitting a stunned rat WOKE IT UP. It
+   * showed up on the cross slash, where all three cuts land on the same animal
+   * in under a second: the first stunned it and the second handed it back. A
+   * blow can only ever make an animal MORE stunned. See `Menagerie.strike`.
    */
   get swattable() {
-    return this.state === 'roam';
+    return this.state === 'roam' || this.state === 'stunned';
   }
 
   /**
@@ -418,12 +425,21 @@ export class Critter {
     return this.onGround === false ? 'air' : 'calm';
   }
 
-  /** Knocked out of the air. It drops, sits down and goes cross-eyed. */
+  /**
+   * Knocked out of the air. It drops, sits down and goes cross-eyed.
+   *
+   * SAFE TO CALL ON SOMETHING ALREADY STUNNED — that is a full reset of the
+   * clock, which is exactly what a second blow should do. Three cross-slash
+   * cuts on one rat keep it down for STUN_TIME from the LAST of them, not from
+   * the first.
+   */
   stun() {
+    const again = this.state === 'stunned';
     this.state = 'stunned';
     this.t = STUN_TIME;
     this.velocity.set(0, 0, 0);
     this.setShocked(true);
+    return !again;
   }
 
   /** Held under a paw. `t` counts UP toward EAT_TIME. */

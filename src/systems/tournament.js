@@ -923,7 +923,7 @@ export class Tournament {
          Throwing her back into the middle of a ring she is not fighting in
          would be the game taking the one thing she has to do away from her. */
       if (p.angel) { p.nearEdge = false; continue; }
-      /* NOR IS A KITTEN HELD IN A TRIPLE SLASH, for the same reason nobody
+      /* NOR IS A KITTEN HELD IN A CROSS SLASH, for the same reason nobody
          else can hit her: she is frozen with gravity off in the middle of
          somebody's technique, and the edge of the world is not allowed to be
          the one thing that reaches into that. Caught over the rim she hangs
