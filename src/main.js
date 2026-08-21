@@ -177,6 +177,13 @@ class Game {
        you have to turn on before the problem is a profiler that never sees the
        problem. */
     this._perfRing = new Float64Array(PERF_WINDOW);
+    /* AND THE SAME WINDOW OF JS TIME, WHICH IS THE HALF THAT NAMES THE CULPRIT.
+       A frame time on its own cannot tell "our update loop is slow" from "the
+       GPU is a frame behind" from "the garbage collector stopped the world",
+       and those three want three completely different fixes. `_tick` measures
+       itself; the GAP between that and the frame is everything the browser did
+       — compositing, GC, waiting on the driver. See `_paintPerf`. */
+    this._perfJs = new Float64Array(PERF_WINDOW);
     this._perfIx = 0;
     this._perfLast = 0;
     this._perfPaint = 0;
@@ -2450,16 +2457,22 @@ class Game {
    * It repaints four times a second, not sixty. A readout that measures the
    * frame has to be far too cheap to appear in its own numbers.
    */
-  _samplePerf() {
-    const now = performance.now();
+  /** @returns the ring slot this frame was written to, so `_tick` can put the
+   *  JS cost of the same frame beside it. -1 on the very first frame, which has
+   *  no previous timestamp to subtract and therefore no frame time at all. */
+  _samplePerf(now) {
+    let slot = -1;
     if (this._perfLast) {
-      this._perfRing[this._perfIx] = now - this._perfLast;
-      this._perfIx = (this._perfIx + 1) % PERF_WINDOW;
+      slot = this._perfIx;
+      this._perfRing[slot] = now - this._perfLast;
+      this._perfIx = (slot + 1) % PERF_WINDOW;
     }
     this._perfLast = now;
-    if (!this._perfOn || now - this._perfPaint < 250) return;
-    this._perfPaint = now;
-    this._paintPerf();
+    if (this._perfOn && now - this._perfPaint >= 250) {
+      this._perfPaint = now;
+      this._paintPerf();
+    }
+    return slot;
   }
 
   _togglePerf() {
@@ -2485,6 +2498,27 @@ class Game {
     if (!s.length) return;
     const mid = s[s.length >> 1];
     const worst = s[s.length - 1];
+    /* HOW MANY FRAMES IN THE WINDOW WERE LONG ENOUGH TO SEE, which is the whole
+       of the difference between "slow" and "chugging". A game can hold a median
+       of 16 ms and still feel terrible if one frame in ten takes 60 — the eye
+       reads that as stutter, not as a lower frame rate, and a median alone
+       reports it as perfectly healthy. 33 ms is two missed frames at 60 Hz,
+       which is the point a dropped frame stops being invisible. */
+    const hitches = s.filter((v) => v > 33).length;
+    /* THE JS HALF, AND THE GAP, WHICH IS EVERYTHING ELSE.
+
+       `js` is our update loop and our `renderer.render` calls — the part this
+       codebase can fix by writing different code. The GAP is the browser:
+       compositing, garbage collection, and above all WAITING FOR THE GPU, since
+       `render` only queues commands and the driver blocks at the swap.
+
+         js small,  gap large   -> the GPU or the driver. Fewer pixels, or a
+                                   browser that has picked the wrong adapter.
+         js large               -> the update loop. Profile it, do not guess.
+         both fine, hitches high -> stalls: GC, a texture upload, a shader
+                                   compiling on first use. */
+    const js = Array.from(this._perfJs).filter((v) => v > 0).sort((a, b) => a - b);
+    const jsMid = js.length ? js[js.length >> 1] : 0;
     const R = this.renderer.info.render;
     const cv = this.renderer.domElement;
     const q = QUALITY[this.settings.quality] ?? QUALITY.medium;
@@ -2496,7 +2530,10 @@ class Game {
     const dev = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
     el.innerHTML = [
       `<b>${(1000 / mid).toFixed(0)} fps</b> &nbsp; ${mid.toFixed(1)} ms`
-        + ` &nbsp; worst ${worst.toFixed(1)} ms`,
+        + ` &nbsp; worst ${worst.toFixed(1)} ms`
+        + (hitches ? ` &nbsp; <b>${hitches} hitch${hitches === 1 ? '' : 'es'}</b>` : ''),
+      `js ${jsMid.toFixed(1)} ms &nbsp; gap ${Math.max(0, mid - jsMid).toFixed(1)} ms`
+        + ` &nbsp; <span class="pf-dim">(gap = GPU + browser)</span>`,
       `${R.calls} draws &nbsp; ${Math.round(R.triangles / 1000)}k tris`
         + ` &nbsp; ${panes} pane${panes === 1 ? '' : 's'}`,
       `${cv.width}&times;${cv.height} &nbsp; <b>${((cv.width * cv.height) / 1e6).toFixed(2)}`
@@ -2506,8 +2543,43 @@ class Game {
         + ` &middot; shadows ${q.shadows ? 'on' : 'off'}`,
       `<span class="pf-dim">${dev ? 'DEV SERVER (unminified)' : 'built'}`
         + ` &middot; ${window.location.host || 'file'}</span>`,
-      `<span class="pf-dim">${this._gpuName()}</span>`,
+      `<span class="${this._gpuClass() ? 'pf-warn' : 'pf-dim'}">`
+        + `${this._gpuClass() ? `&#9888; ${this._gpuClass()} &mdash; ` : ''}`
+        + `${this._gpuName()}</span>`,
     ].join('<br>');
+  }
+
+  /**
+   * Is this the adapter the machine's owner thinks it is?
+   *
+   * THE QUESTION THAT COST THIS PROJECT TWO SESSIONS. A desktop with an RTX
+   * 4060 in it was rendering the game on the CPU's Intel UHD 770, because on
+   * Windows a browser gets whichever GPU the OS hands it and Firefox has no
+   * preference of its own — `powerPreference: 'high-performance'` is set on the
+   * renderer and Firefox does not act on it. Every number on this readout looked
+   * ordinary; the only clue was in the driver string, and nobody reads a driver
+   * string unless something points at it.
+   *
+   * So it points at it. Matched against NAMED patterns rather than guessed at,
+   * and the worst a false positive can do is put one extra word on a debug
+   * overlay, which is the right way round for a check that would otherwise never
+   * fire. See docs/notes/performance.md for what to do about it.
+   */
+  _gpuClass() {
+    if (this._gpuCls != null) return this._gpuCls;
+    const n = this._gpuName().toLowerCase();
+    /* Software first: llvmpipe and SwiftShader are what a browser falls back to
+       when it cannot talk to any GPU at all, and they are far slower than the
+       weakest real one. */
+    this._gpuCls = /swiftshader|llvmpipe|softwarerasterizer|basic render|microsoft basic/.test(n)
+      ? 'SOFTWARE RENDERER'
+      /* Integrated: Intel's HD/UHD/Iris line, and AMD's iGPUs, which name
+         themselves "Radeon(TM) Graphics" or "Vega N Graphics" with no model
+         number where a discrete card would put one. */
+      : /intel.*(uhd|hd graphics|iris)|radeon\(tm\) graphics|vega \d+ graphics/.test(n)
+        ? 'INTEGRATED GPU'
+        : '';
+    return this._gpuCls;
   }
 
   /** The GPU as the driver names it. Read once — it cannot change, and the
@@ -3515,13 +3587,32 @@ class Game {
 
   /* ------------------------------- loop --------------------------------- */
 
+  /**
+   * The frame, wrapped in its own stopwatch.
+   *
+   * A WRAPPER RATHER THAN A TIMER INSIDE `_tickBody`, because that method has
+   * seven early `return`s in it — the title screen, each scene that owns the
+   * screen, the pause menu — and a stop-the-clock line before each of them is
+   * a line somebody will forget to add to the eighth. Wrapping cannot miss a
+   * path.
+   *
+   * The number it produces is the half that names the culprit: the JS cost of
+   * the whole update loop, against the wall-clock frame measured in
+   * `_samplePerf`. See `_paintPerf` for what the gap between them means.
+   */
   _tick() {
-    const dt = Math.min(this.clock.getDelta(), 1 / 20);
-    /* FIRST, AND FROM ITS OWN CLOCK RATHER THAN FROM `dt`. `dt` is clamped to
-       1/20 above so a long stall cannot teleport anybody through a wall — which
-       means it is exactly the wrong number to measure stalls with. It would cap
+    /* FROM ITS OWN CLOCK AND NOT FROM `dt`, WHICH IS CLAMPED BELOW. The clamp
+       exists so a long stall cannot teleport anybody through a wall, and that
+       makes `dt` exactly the wrong number to measure stalls with — it would cap
        the readout at 50 ms and report 20 fps for a frame that took a second. */
-    this._samplePerf();
+    const t0 = performance.now();
+    const slot = this._samplePerf(t0);
+    this._tickBody();
+    if (slot >= 0) this._perfJs[slot] = performance.now() - t0;
+  }
+
+  _tickBody() {
+    const dt = Math.min(this.clock.getDelta(), 1 / 20);
     this.input.update();
 
     /* LIGHT THE ON-SCREEN BUTTONS FROM THE RESOLVED PAD, not from the touch

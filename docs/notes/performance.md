@@ -85,12 +85,25 @@ nobody here can see used to leave two moves: guess at a recent change, or ask a
 player to open a devtools profiler. The first is how a session gets spent
 reverting work that was never the cause.
 
-Six lines, chosen so one look SEPARATES the causes rather than confirming a
+Seven lines, chosen so one look SEPARATES the causes rather than confirming a
 suspicion:
 
-- **fps / ms / worst** — the complaint as a number, plus the hitch the median
-  hides. A bad median is a budget problem; a good median with an ugly worst is a
-  stall, which is a different bug.
+- **fps / ms / worst / hitches** — the complaint as a number, plus the hitch the
+  median hides. A bad median is a budget problem; a good median with an ugly
+  worst is a stall, which is a different bug. `hitches` counts frames over 33 ms
+  in the window — two missed frames at 60 Hz, the point a drop stops being
+  invisible — because a game can hold a median of 16 ms and still feel terrible
+  if one frame in ten takes 60.
+- **js / gap** — the half that names the culprit. `js` is the whole update loop
+  and the `render` calls, measured by wrapping `_tickBody`; the **gap** is
+  everything the browser did, which is mostly WAITING FOR THE GPU, since
+  `render` only queues commands and the driver blocks at the swap.
+
+  | | |
+  | --- | --- |
+  | js small, gap large | the GPU or the driver — fewer pixels, or the wrong adapter |
+  | js large | the update loop. Profile it, do not guess |
+  | both fine, hitches high | stalls: GC, a texture upload, a shader compiling |
 - **draws / triangles / panes** — what the scene is asking for. Flat while the
   frame time climbs means the scene is not what changed. Panes matter because
   two kittens who walk apart cost two full passes over the world.
@@ -103,9 +116,13 @@ suspicion:
   client attached. A Steam shortcut left pointing at `localhost:5173` instead of
   the deployed URL is a real and completely invisible cause; see
   [steam.md](steam.md).
-- **the GPU string** — the one that catches a browser that has quietly fallen
-  back to software rendering, where every other number on the readout looks
-  perfectly normal.
+- **the GPU string, flagged** — the one that catches a browser on the wrong
+  adapter, where every other number on the readout looks perfectly normal. It
+  is matched against named patterns for software rasterisers (SwiftShader,
+  llvmpipe) and for integrated parts (Intel HD/UHD/Iris, AMD's model-less
+  "Radeon(TM) Graphics"), and says so in warm text. A false positive costs one
+  extra word on a debug overlay, which is the right way round for a check that
+  would otherwise never fire.
 
 The ring of frame times is written **every frame whether or not the readout is
 up** — one store into a preallocated `Float64Array`. That is what makes it
@@ -120,6 +137,70 @@ cap the readout at 50 ms and report 20 fps for a frame that took a second.
 
 It repaints four times a second, not sixty: a readout that measures the frame
 has to be far too cheap to appear in its own numbers.
+
+---
+
+## The browser was on the wrong GPU, and that is most of it
+
+A desktop with an **RTX 4060** in it was rendering the game on the CPU's
+**Intel UHD Graphics 770** (device `0x0000A78B` — the iGPU on a 13th/14th-gen
+desktop Intel). Every number on the `P` readout looked ordinary. The only sign
+was in the driver string, and nobody reads a driver string unless something
+points at it — so now the readout points at it, in warm text with a `⚠`.
+
+**On Windows the browser gets whichever adapter the OS hands it.** The renderer
+already asks for the fast one — `powerPreference: 'high-performance'` is set in
+the `WebGLRenderer` constructor in `main.js` — and Chromium acts on that while
+**Firefox on Windows does not**. There is no Firefox pref that picks the
+adapter either; it follows the operating system. So this is fixed on the
+machine, not in this repo.
+
+### The three-line fix
+
+1. **Windows Settings → System → Display → Graphics.** Find Firefox in the list,
+   or **Browse** to `C:\Program Files\Mozilla Firefox\firefox.exe`. →
+   **Options** → **High performance** → **Save**.
+2. **NVIDIA Control Panel → Manage 3D settings → Program Settings.** Add
+   Firefox, set the preferred processor to **High-performance NVIDIA**. Modern
+   drivers let the Windows setting win, but setting both costs nothing.
+3. **Quit every Firefox process and start it again** — including the one Steam
+   launched. The preference is read at process start.
+
+**Verify it took**: press `P` — the warning line should be gone and the driver
+string should name the 4060. Firefox's own `about:support` → *Graphics* →
+**`WebGL 2 Driver Renderer`** is the same string from the other side.
+
+### Check the cable first, on a desktop
+
+UHD 770 is a *desktop* iGPU, which means the machine has both outputs live. **If
+the monitor is plugged into the motherboard's HDMI/DisplayPort rather than into
+the RTX 4060's own ports, the iGPU is the display adapter** and no software
+setting fixes it properly. That is thirty seconds to check and it makes
+everything above moot.
+
+### Why this looked like "the maths overlay" and "the tournament"
+
+Because both are things you notice, and neither is a cause:
+
+- **The tournament arena is the CHEAPEST scene in the game and the worst to
+  play.** Measured in a live round with six critters on the mat: **73 draw calls
+  and 67,194 triangles**, against 254 and 210,444 standing in the town. Every
+  system update in the arena put together is **2.8 ms**, of which 1.6 ms is
+  `renderer.render` submitting those 73 calls. The critters cost **0.059 ms for
+  all six**, and their shadows are `CircleGeometry` meshes built once in the
+  constructor — nothing about them is rebuilt per frame.
+
+  What the arena *is* is a big flat mat that fills the entire screen at close
+  range, lit and shadowed, with almost nothing in front of it to reject pixels
+  early. It is the most expensive scene in the game **per pixel** and the
+  cheapest per object, which is exactly backwards from where anybody looks.
+
+- **"The frame rate stays the same but it chugs"** is what a GPU-bound frame
+  feels like when the CPU is idle. `requestAnimationFrame` keeps firing on
+  schedule, so the fps reads fine, while frames are presented late and unevenly
+  and the stick feels a beat behind. The `js` / `gap` split on the readout is
+  there to say so out loud: on the machine above it reads **js 1.8 ms, gap
+  10.4 ms**, and the gap is the GPU.
 
 ---
 
@@ -167,6 +248,9 @@ see. There is one now.
 
 In this order, because it is the order of how much they are worth:
 
+0. **Check what GPU the browser is on** — see above. If it says INTEGRATED and
+   the machine has a discrete card, nothing else on this list is worth doing
+   first.
 1. **Fewer pixels.** The quality setting, then the window. This is 90% of the
    available headroom and everything else is rounding.
 2. **MSAA.** `antialias` is a `WebGLRenderer` CONSTRUCTOR option — it cannot be

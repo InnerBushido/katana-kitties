@@ -1138,12 +1138,18 @@ body.touch-ui #debug-panel .dbg-row { padding: 5px 4px; line-height: 1.5; }
   font-variant-numeric: tabular-nums;
 }
 #perf b { color: #ffd98a; }
+/* The adapter warning. Warm rather than red: this is a note about the machine,
+   not an error in the game, and there is nothing here for the game to fix. */
+#perf .pf-warn { color: #ffb08a; }
+/* Both of the prose lines wrap inside the cap — an ANGLE driver string runs to
+   sixty characters and the warning prefixes it with more. */
+#perf .pf-warn,
 #perf .pf-dim {
-  opacity: 0.66;
   display: inline-block;
   white-space: normal;
   max-width: 100%;
 }
+#perf .pf-dim { opacity: 0.66; }
 /* Same argument as the debug panel: a 12px monospace block is fine to read at
    a desk and too fine to read on a phone held at arm's length. */
 body.touch-ui #perf { font-size: 13px; }

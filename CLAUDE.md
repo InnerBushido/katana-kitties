@@ -101,10 +101,14 @@ fps, draw calls, buffer size, quality, dev-or-built, and the GPU string.
 
 **If somebody says it lags, press `P` before changing anything.** The game is
 fill-bound: frame time is a straight line in the size of the drawing buffer and
-everything else is rounding. The maths overlay and the drifting petals have both
-been accused and both measured innocent — see
-[performance.md](docs/notes/performance.md) for the numbers, so the next session
-does not spend itself re-accusing them.
+everything else is rounding. **Read the last line first** — a Windows Firefox
+will happily render this on the CPU's integrated GPU with a discrete card idle
+in the machine, which is what "it lags" turned out to mean, and the readout now
+says `⚠ INTEGRATED GPU` when it does. Then read `js` vs `gap`: a small `js` and
+a large `gap` is the GPU, not this codebase. The maths overlay, the drifting
+petals and the tournament's critters have all been accused and all measured
+innocent — see [performance.md](docs/notes/performance.md) for the numbers, so
+the next session does not spend itself re-accusing them.
 
 ## House style
 

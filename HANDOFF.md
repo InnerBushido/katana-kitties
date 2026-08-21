@@ -345,12 +345,35 @@ up: **54 → 102 fps at 1080p, 33 → 64 fps at 1440p.** The desktop default
 (`medium`) is bit-identical to what it always was, and world-check now asserts
 all four of those facts.
 
-**Two things to check on the machine that lags, before touching any code:**
-press `P` and read the last two lines. If it says `DEV SERVER (unminified) ·
-localhost:5173`, the Steam shortcut is still pointing at Vite instead of the
-deployed URL (see [steam.md](docs/notes/steam.md)); if the GPU string names
-something software rather than a real adapter, the browser has fallen back and
-no setting in this game will help.
+**And then the actual answer turned up on the readout's last line: the browser
+was on the wrong GPU.** A desktop with an RTX 4060 in it was rendering the game
+on the CPU's Intel UHD 770. On Windows a browser gets whichever adapter the OS
+hands it; `powerPreference: 'high-performance'` is already set on the renderer
+and **Firefox does not act on it**, and there is no Firefox pref that picks an
+adapter. Fixed on the machine, not here:
+
+1. **Windows Settings → System → Display → Graphics** → Browse to
+   `C:\Program Files\Mozilla Firefox\firefox.exe` → Options → **High
+   performance** → Save.
+2. **NVIDIA Control Panel → Manage 3D settings → Program Settings** → Firefox →
+   High-performance NVIDIA.
+3. Quit **every** Firefox process, including Steam's, and start it again.
+4. Press `P`: the ⚠ line should be gone and the string should name the 4060.
+   `about:support` → Graphics → `WebGL 2 Driver Renderer` says the same thing.
+
+On a desktop, **check the monitor cable first** — UHD 770 is a desktop iGPU, so
+if the cable is in the motherboard rather than in the 4060, the iGPU is the
+display adapter and no setting fixes it properly.
+
+**The tournament is the proof, not a second bug.** A live round with six
+critters on the mat is **73 draw calls and 67,194 triangles** — the cheapest
+scene in the game, against 254 and 210,444 standing in the town — and the whole
+update loop there is 2.8 ms, of which the critters are 0.059 ms for all six. It
+is the worst place to play because it is a flat mat filling the screen at close
+range: most expensive per PIXEL, cheapest per object, which is backwards from
+where anybody looks. And "the fps stays the same but it chugs" is what a
+GPU-bound frame feels like with an idle CPU — measured on that machine as
+**js 1.8 ms, gap 10.4 ms**.
 
 Full numbers and the next two levers in
 [performance.md](docs/notes/performance.md).
