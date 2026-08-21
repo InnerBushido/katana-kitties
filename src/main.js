@@ -53,8 +53,15 @@ import { ProfileScreen } from './systems/profile.js';
 /** The key each debug action is bound to, for the panel's own labels. */
 const DEBUG_KEY_LABEL = {
   Digit4: '4', Digit5: '5', Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9',
-  Digit0: '0', KeyM: 'M', KeyZ: 'Z', Minus: '-', Equal: '=', Backquote: '`',
+  Digit0: '0', KeyM: 'M', KeyZ: 'Z', KeyP: 'P', Minus: '-', Equal: '=',
+  Backquote: '`',
 };
+
+/* HOW MANY FRAMES THE COST READOUT AVERAGES OVER. Two seconds at 60fps, which
+   is long enough that the median is not chasing a single hitch and short enough
+   that walking into a heavy room changes the number while you are still
+   standing in it. */
+const PERF_WINDOW = 120;
 
 const DOJO_VIEW_R = 52;  // inside this, the camera frames the unit circle
 
@@ -160,6 +167,20 @@ class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.setClearColor(0x1b1426);
+
+    /* THE FRAME TIMES BEHIND THE `P` READOUT, WRITTEN WHETHER OR NOT IT IS UP.
+
+       One store into a preallocated array per frame, which is nothing, and it
+       buys the thing that matters when somebody says "it just stuttered": the
+       readout opens showing the two seconds that have ALREADY happened rather
+       than starting a fresh sample from the moment you asked for it. A profiler
+       you have to turn on before the problem is a profiler that never sees the
+       problem. */
+    this._perfRing = new Float64Array(PERF_WINDOW);
+    this._perfIx = 0;
+    this._perfLast = 0;
+    this._perfPaint = 0;
+    this._perfOn = false;
 
     this.scene = new THREE.Scene();
     this.input = new InputManager();
@@ -1764,12 +1785,17 @@ class Game {
   _applyQuality() {
     const q = QUALITY[this.settings.quality] ?? QUALITY.medium;
     /* THREE CAPS, LOWEST WINS: what the panel actually has, what the player
-       asked for, and what this class of machine may spend. The device cap is
-       Infinity on a desktop, so this is the same arithmetic it has always been
-       there — it only bites on a phone, where a 3.0 panel ratio across four
-       viewports is nine times the fragments of a 1.0 buffer. */
+       asked for, and what this class of machine may spend.
+
+       THROUGH `effectivePixelRatio`, NOT RESTATED HERE. It used to be spelled
+       out inline — the identical `Math.min` of the identical three numbers —
+       which is the exact duplication `core/device.js` says at the top of itself
+       that it exists to prevent, and the reason it exports this function at
+       all: "Restating them is how the mobile tier ended up rendering at 1.0
+       with nothing to catch it." world-check asserts the PRODUCT this returns,
+       so a copy over here is a copy no check can see. */
     this.renderer.setPixelRatio(
-      Math.min(window.devicePixelRatio, q.pixelRatio, this.device.maxPixelRatio)
+      effectivePixelRatio(this.device, window.devicePixelRatio, this.settings.quality)
     );
     this.renderer.shadowMap.enabled = q.shadows;
     if (this.world?.sun) {
@@ -2162,6 +2188,12 @@ class Game {
     if (code === 'Digit0') this._playScene();
     if (code === 'Minus') this._pickScene(-1);
     if (code === 'Equal') this._pickScene(1);
+    /* IN HERE RATHER THAN NEXT TO `M` AND `Z` IN THE KEY LISTENER, and the
+       difference is that those two are also real player controls bound to the
+       pad. `P` is not: it is a debug tool like the rest of this method, so it
+       goes through the one entry point the panel's rows call and cannot drift
+       from the row that is labelled with it. */
+    if (code === 'KeyP') this._togglePerf();
     if (code === 'Backquote') this._toggleDebugPanel();
   }
 
@@ -2381,6 +2413,119 @@ class Game {
     this._refreshDebugPanel();
   }
 
+  /* ------------------------ what the frame costs ------------------------ */
+
+  /**
+   * The frame cost, in the corner, on `P`.
+   *
+   * BECAUSE "IT LAGS" IS NOT A MEASUREMENT AND THIS GAME IS FILL-BOUND.
+   * A report of lag on a machine nobody here can see used to leave exactly two
+   * moves: guess at a recent change, or ask the player to open a devtools
+   * profiler. The first is how a session gets spent reverting work that was
+   * never the cause — the maths overlay and the drifting petals were both
+   * accused, and both measured innocent — and the second is not a thing to ask
+   * of somebody who just wants to play.
+   *
+   * SO IT PRINTS THE FIVE NUMBERS THAT ACTUALLY DECIDE THE ANSWER, and they are
+   * chosen so that one look separates the causes rather than confirming a
+   * suspicion:
+   *
+   *   fps / ms / worst   the complaint, as a number, plus the hitch the median
+   *                      hides. A bad median is a budget problem; a good median
+   *                      with an ugly worst is a stall.
+   *   draws / triangles  what the scene is asking for. Flat while the frame
+   *                      time climbs means the scene is not what changed.
+   *   the buffer         WIDTH x HEIGHT and megapixels — the number that has
+   *                      actually moved every time this has been chased. A
+   *                      fullscreen 4K panel is four times a 1080p window for
+   *                      the same game, and nothing on screen said so.
+   *   quality / tier     which is the lever, and whether it is being pulled.
+   *   the GPU string     the one that catches a browser that has quietly fallen
+   *                      back to software rendering, where every other number
+   *                      looks completely normal.
+   *   dev or built       a Vite dev server is unminified with a hot-reload
+   *                      client attached; a shortcut left pointing at
+   *                      `localhost:5173` is a real and invisible cause.
+   *
+   * It repaints four times a second, not sixty. A readout that measures the
+   * frame has to be far too cheap to appear in its own numbers.
+   */
+  _samplePerf() {
+    const now = performance.now();
+    if (this._perfLast) {
+      this._perfRing[this._perfIx] = now - this._perfLast;
+      this._perfIx = (this._perfIx + 1) % PERF_WINDOW;
+    }
+    this._perfLast = now;
+    if (!this._perfOn || now - this._perfPaint < 250) return;
+    this._perfPaint = now;
+    this._paintPerf();
+  }
+
+  _togglePerf() {
+    this._perfOn = !this._perfOn;
+    document.getElementById('perf')?.remove();
+    if (!this._perfOn) { this.toast('[debug] frame cost off', 0); return; }
+    const el = document.createElement('div');
+    el.id = 'perf';
+    document.body.appendChild(el);
+    /* Zeroed so the first paint is immediate rather than up to 250ms later —
+       a readout that takes a moment to appear reads as a key that did nothing,
+       which is the one thing every refusal in this game is careful not to do. */
+    this._perfPaint = 0;
+    this._paintPerf();
+  }
+
+  _paintPerf() {
+    const el = document.getElementById('perf');
+    if (!el) return;
+    /* The ring is preallocated, so unwritten slots are 0 and are dropped rather
+       than sorted to the front and reported as an infinite frame rate. */
+    const s = Array.from(this._perfRing).filter((v) => v > 0).sort((a, b) => a - b);
+    if (!s.length) return;
+    const mid = s[s.length >> 1];
+    const worst = s[s.length - 1];
+    const R = this.renderer.info.render;
+    const cv = this.renderer.domElement;
+    const q = QUALITY[this.settings.quality] ?? QUALITY.medium;
+    /* HOW MANY PANES THE SCENE IS DRAWN INTO, because every one of them is
+       another full pass over the world and it is the one multiplier a player
+       controls without knowing it — two kittens who walk apart cost twice the
+       draw calls of two who stay together. */
+    const panes = this.groups?.length || 1;
+    const dev = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
+    el.innerHTML = [
+      `<b>${(1000 / mid).toFixed(0)} fps</b> &nbsp; ${mid.toFixed(1)} ms`
+        + ` &nbsp; worst ${worst.toFixed(1)} ms`,
+      `${R.calls} draws &nbsp; ${Math.round(R.triangles / 1000)}k tris`
+        + ` &nbsp; ${panes} pane${panes === 1 ? '' : 's'}`,
+      `${cv.width}&times;${cv.height} &nbsp; <b>${((cv.width * cv.height) / 1e6).toFixed(2)}`
+        + ` Mpx</b> &nbsp; ratio ${this.renderer.getPixelRatio()}`,
+      `${this.settings.quality} &middot; ${this.device.tier}`
+        + ` &middot; AA ${this.device.antialias ? 'on' : 'off'}`
+        + ` &middot; shadows ${q.shadows ? 'on' : 'off'}`,
+      `<span class="pf-dim">${dev ? 'DEV SERVER (unminified)' : 'built'}`
+        + ` &middot; ${window.location.host || 'file'}</span>`,
+      `<span class="pf-dim">${this._gpuName()}</span>`,
+    ].join('<br>');
+  }
+
+  /** The GPU as the driver names it. Read once — it cannot change, and the
+   *  extension that carries it is a fingerprinting surface a browser is allowed
+   *  to refuse, so this degrades to the generic string and then to a word. */
+  _gpuName() {
+    if (this._gpu) return this._gpu;
+    let name = '';
+    try {
+      const gl = this.renderer.getContext();
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      name = (ext && gl.getParameter(ext.UNMASKED_RENDERER_WEBGL))
+        || gl.getParameter(gl.RENDERER) || '';
+    } catch { /* refused: the other five numbers are still worth having */ }
+    this._gpu = String(name || 'GPU unknown');
+    return this._gpu;
+  }
+
   /* ---- the on-screen list, so the keys don't have to be memorised ---- */
 
   /** What each debug row prints as its key. Separate from the row list so the
@@ -2420,6 +2565,7 @@ class Game {
       ${row('Digit4', 'end the live round (feast)')}
       ${row('KeyM', 'maths overlay')}
       ${row('KeyZ', 'map zoom')}
+      ${row('KeyP', 'frame cost — fps, draws, pixels, GPU', this._perfOn)}
       <div class="dbg-sep">SCENE VIEWER — choose, then play</div>
       ${row('Minus', '&#9664; previous scene')}
       ${row('Equal', 'next scene &#9654;')}
@@ -3371,6 +3517,11 @@ class Game {
 
   _tick() {
     const dt = Math.min(this.clock.getDelta(), 1 / 20);
+    /* FIRST, AND FROM ITS OWN CLOCK RATHER THAN FROM `dt`. `dt` is clamped to
+       1/20 above so a long stall cannot teleport anybody through a wall — which
+       means it is exactly the wrong number to measure stalls with. It would cap
+       the readout at 50 ms and report 20 fps for a frame that took a second. */
+    this._samplePerf();
     this.input.update();
 
     /* LIGHT THE ON-SCREEN BUTTONS FROM THE RESOLVED PAD, not from the touch

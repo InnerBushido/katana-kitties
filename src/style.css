@@ -1101,6 +1101,53 @@ body.touch-ui #debug-panel .dbg-row { padding: 5px 4px; line-height: 1.5; }
   color: #eafff2;
 }
 
+/* ---- the frame cost, on `P` ----
+   TOP LEFT, WHICH IS THE ONE CORNER OF THE HUD NOTHING ELSE WANTS. Every other
+   one is spoken for and the two obvious choices are both already full: the map
+   sits bottom-right, and bottom-LEFT is where the Dojo's sin/cos board is
+   pinned on a desktop — under a hint line that spans the whole bottom edge, so
+   a readout there is unreadable in exactly the room somebody chasing frames is
+   most likely to be standing in.
+
+   The five-tap debug corner is also here, and that is fine rather than a
+   collision: `pointer-events: none` below means taps go straight through to it.
+   Unlike the debug panel this is a readout and not a control — there is nothing
+   to aim at, and a box you cannot click through sitting over the world is a box
+   that eventually swallows something. */
+#perf {
+  position: fixed;
+  left: 10px;
+  top: 10px;
+  z-index: 90;
+  pointer-events: none;
+  font: 12px/1.5 ui-monospace, "Cascadia Mono", Menlo, monospace;
+  color: #d7ffe6;
+  background: rgba(8, 14, 12, 0.86);
+  border: 1px solid #2f6b4c;
+  border-radius: 6px;
+  padding: 7px 10px;
+  /* The five number lines are short and must never wrap — a frame counter that
+     reflows as the digits change is unreadable. The two dim lines below them
+     are prose of unpredictable length (an ANGLE driver string runs to sixty
+     characters) and wrap instead, inside a cap, so the box cannot grow across
+     the scoreboard on a narrow window. */
+  white-space: nowrap;
+  max-width: min(52ch, 62vw);
+  /* The numbers change four times a second and half of them are digits of
+     different widths — proportional figures make the whole block twitch. */
+  font-variant-numeric: tabular-nums;
+}
+#perf b { color: #ffd98a; }
+#perf .pf-dim {
+  opacity: 0.66;
+  display: inline-block;
+  white-space: normal;
+  max-width: 100%;
+}
+/* Same argument as the debug panel: a 12px monospace block is fine to read at
+   a desk and too fine to read on a phone held at arm's length. */
+body.touch-ui #perf { font-size: 13px; }
+
 /* ---- the help panel scrolls ----
    It is the longest thing in the game and it ran off the bottom of a laptop
    screen with no way to reach the rest — the panel is `position: fixed`

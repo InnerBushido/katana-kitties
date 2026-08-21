@@ -51,7 +51,36 @@
 export const QUALITY = {
   high: { pixelRatio: 2, shadows: true, shadowSize: 2048 },
   medium: { pixelRatio: 1.5, shadows: true, shadowSize: 1536 },
-  low: { pixelRatio: 1, shadows: false, shadowSize: 1024 },
+  /* 0.75, NOT 1, AND THAT NUMBER IS THE WHOLE OF THE LOW TIER.
+
+     THIS GAME IS FILL-BOUND, MEASURED. Same scene, same 600 draw calls and
+     287,776 triangles, only the buffer size moving:
+
+       0.20 Mpx   6.1 ms      1.45 Mpx  11.6 ms
+       0.36 Mpx   6.1 ms      2.27 Mpx  15.7 ms
+       0.82 Mpx   8.4 ms      3.27 Mpx  22.9 ms
+
+     which is a straight line in PIXELS with the CPU flat underneath it. Every
+     other knob is noise beside it: turning shadows off saved 1.0 ms of 11.6,
+     and hiding all 700 drifting petals saved nothing measurable at all.
+
+     So the one thing a player who is dropping frames needs is fewer pixels —
+     and until this line said 0.75, `low` COULD NOT GIVE THEM ANY. The effective
+     ratio is `min(devicePixelRatio, tier, deviceCap)`, so on the commonest
+     desktop there is — a 1:1 panel, `devicePixelRatio` exactly 1 — `high`,
+     `medium` and `low` all came out at 1.0 and the setting bought nothing but
+     the shadows. A monitor is what decides the cost, and the setting could not
+     reach it.
+
+     Below 1 the buffer is smaller than the panel and the browser scales it up,
+     which is what every game's resolution slider does and is the only lever
+     that works on hardware that is out of fill rate. 0.75 is 44% fewer
+     fragments; it reads as soft rather than as broken, and the HUD, the menus
+     and the maths board are all DOM and stay razor sharp through it.
+
+     It also reaches the cautious phone tier, whose default quality is `low` —
+     which is right: a four-core phone is exactly who this is for. */
+  low: { pixelRatio: 0.75, shadows: false, shadowSize: 1024 },
 };
 
 /**

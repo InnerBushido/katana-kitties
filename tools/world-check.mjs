@@ -4756,6 +4756,28 @@ console.log('\n--- the three power moves ---');
   ok('a desktop still renders at the quality setting alone',
     effectivePixelRatio(desk, 3, 'high') === 2 && effectivePixelRatio(desk, 1, 'high') === 1);
 
+  /* THE QUALITY SETTING HAS TO BUY PIXELS ON THE COMMONEST DESKTOP THERE IS,
+     and for a long time it bought none. `low` was `pixelRatio: 1`, and the
+     effective ratio is a `Math.min` — so on a 1:1 panel `high`, `medium` and
+     `low` all came out at exactly 1.0 and the only thing turning quality down
+     changed was the shadows. Reported as "badly lagging on PC" and chased
+     through the maths overlay and the drifting petals first, because nothing
+     said the one lever a fill-bound game has was inert. */
+  ok('turning quality down on a 1:1 desktop actually costs fewer pixels',
+    effectivePixelRatio(desk, 1, 'low') < effectivePixelRatio(desk, 1, 'medium'),
+    `low ${effectivePixelRatio(desk, 1, 'low')} vs medium ${effectivePixelRatio(desk, 1, 'medium')}`);
+  ok('...by rendering BELOW the panel, which is the only lever left',
+    effectivePixelRatio(desk, 1, 'low') < 1);
+  /* A low tier that still scaled with the panel would be no help on the big
+     monitor that is the whole reason somebody picked it. */
+  ok('...the same on any panel, however many pixels it has',
+    effectivePixelRatio(desk, 1, 'low') === effectivePixelRatio(desk, 3, 'low'));
+  /* AND THE GAME THE GIRLS KNOW IS BIT-IDENTICAL. `medium` is the desktop
+     default and nothing above touched it. */
+  ok('...while the desktop DEFAULT is untouched',
+    effectivePixelRatio(desk, 1) === 1 && effectivePixelRatio(desk, 2) === 1.5
+    && desk.defaultQuality === 'medium');
+
   /* --- THE TEST OVERRIDE ---
      The touch pad is written on a desktop, so it has to be reachable from one or
      it gets looked at once a week on a phone. The override is the WHOLE answer

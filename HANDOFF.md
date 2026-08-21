@@ -314,6 +314,49 @@ everything and shipping pixels.
 
 ---
 
+## Why it lags, and what it is not
+
+**It is fill rate, and `P` now says so on screen.** Reported as "badly lagging
+on PC", suspected to be the Kotodama Orb's maths UI or the drifting particles,
+and it is neither — both were measured and both are innocent:
+
+- **The petals cost nothing.** 700 instanced quads, one draw call; hiding every
+  one of them changed the frame time by less than the noise.
+- **The maths overlay costs almost nothing.** A live label repaint measures
+  0.068 ms and they are throttled to one per 80 ms each. Everything the mobile
+  pass did there is strictly LESS work than what it replaced, on a desktop as
+  much as on a phone — checked against the pre-pass build, which draws the
+  identical scene, the identical 600 draw calls and the identical 287,776
+  triangles.
+- **The whole per-frame JavaScript is under a millisecond**, against 15.7 ms of
+  `renderer.render` at 2.27 Mpx.
+
+What frame time actually tracks is the **size of the drawing buffer**, in a
+straight line, and the thing that changed on the PC is that the game now runs
+FULLSCREEN under Steam's `-kiosk` Firefox instead of in a window. A 1080p
+fullscreen is 2.07 Mpx; a 1440p one is 3.7 Mpx. On an integrated GPU that is
+54 fps and 33 fps respectively.
+
+**So `low` was made to actually be low.** `QUALITY.low.pixelRatio` was 1, and
+because the effective ratio is a `Math.min`, on a 1:1 desktop panel `high`,
+`medium` and `low` all rendered at exactly 1.0 — the setting bought the shadows
+(9%) and nothing else. At 0.75 it renders below the panel and the browser scales
+up: **54 → 102 fps at 1080p, 33 → 64 fps at 1440p.** The desktop default
+(`medium`) is bit-identical to what it always was, and world-check now asserts
+all four of those facts.
+
+**Two things to check on the machine that lags, before touching any code:**
+press `P` and read the last two lines. If it says `DEV SERVER (unminified) ·
+localhost:5173`, the Steam shortcut is still pointing at Vite instead of the
+deployed URL (see [steam.md](docs/notes/steam.md)); if the GPU string names
+something software rather than a real adapter, the browser has fallen back and
+no setting in this game will help.
+
+Full numbers and the next two levers in
+[performance.md](docs/notes/performance.md).
+
+---
+
 ## Where the reasoning lives
 
 One file per area in **[docs/notes/](docs/notes/README.md)** — read the one you
@@ -333,6 +376,7 @@ are about to touch, not all of them.
 | [gotchas.md](docs/notes/gotchas.md) | traps that cost real time and are invisible in the code |
 | [hosting.md](docs/notes/hosting.md) | Vercel, the Git deploy, the `gh` credential setup, how the screenshots were taken |
 | [steam.md](docs/notes/steam.md) | the non-Steam shortcut and its launch flags, the shelf artwork, what Remote Play is and is not |
+| [performance.md](docs/notes/performance.md) | why the frame time is a straight line in pixels, what is measured NOT to be a cause, the `P` readout |
 
 **Older source comments saying "see HANDOFF.md" mean these notes** — the text
 they point at was moved, not deleted. Grep `docs/notes/` for the phrase.

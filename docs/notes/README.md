@@ -21,6 +21,7 @@ one file it needs — usually five to ten thousand.
 | [world.md](world.md) | the six clans and what each buff changes; raising and riding the panda | `world/build.js`, `entities/panda.js`, `entities/shrine.js` |
 | [art.md](art.md) | why the dragons looked low-res, and how atlas cells are sized | `core/spritesheet.js` |
 | [mobile.md](mobile.md) | what a phone may spend, why the art budget moves `maxAtlas` and never `cell`, the on-screen pad, the desktop test mode, and why the minimap could not be fixed in CSS | `core/device.js`, `core/touchpad.js`, any `maxAtlas` argument, `_drawMaps`, the `body.touch-ui` rules |
+| [performance.md](performance.md) | why the frame time is a straight line in pixels, what is measured NOT to be a cause, the `P` readout, and why `low` renders below the panel | the quality tiers, anything accused of costing frames, `_applyQuality` |
 | [audio.md](audio.md) | the synthesised sound set, and a piece of music per island | `core/audio.js` |
 | [rules.md](rules.md) | the gameplay invariants in full, with the measurements behind them — bamboo, ground snapping, dragon perches, sprite facing | anything that touches movement, props, dragons or a sprite sheet |
 | [gotchas.md](gotchas.md) | the traps that cost real time and are not obvious from the code | anything, when something inexplicable is happening |
