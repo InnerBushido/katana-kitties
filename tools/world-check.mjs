@@ -87,10 +87,16 @@ const ok = (label, cond, extra = '') => {
    has to be assigned before the World is BUILT, not before the imports: ESM
    hoists those, and the DOM is only touched at construction time. */
 globalThis.document = {
-  createElement: () => ({
+  createElement: () => {
+    const cv = {
     width: 1,
     height: 1,
-    getContext: () => new Proxy({}, {
+    /* The OPTIONS are kept, not just answered. `willReadFrequently` decides
+       whether a canvas is CPU- or GPU-backed, and a live label re-uploading
+       from a GPU-backed one stalls the pipeline on every repaint — invisible
+       to every other check here, because it changes pacing and not a single
+       number. Recording the argument is what lets that be asserted at all. */
+    getContext: (_type, opts) => { cv.ctxOpts = opts ?? null; return new Proxy({}, {
       /* Most 2D calls can be no-ops, but the two that RETURN something have to
          return something usable or the caller explodes on the next line:
          `measureText` is read for a width, and `createLinearGradient` gets
@@ -105,8 +111,10 @@ globalThis.document = {
         return () => {};
       },
       set: () => true,
-    }),
-  }),
+    }); },
+    };
+    return cv;
+  },
   /* The tournament reaches for its HUD elements in its constructor. Every use
      of them downstream is `?.`-guarded, so `null` is the honest stub — and it
      is a better one than a fake element, because a fake would let a check
@@ -4956,6 +4964,31 @@ console.log('\n--- the minimap fits its pane ---');
   const liveLabels = [dojo.lblTheta, dojo.lblCos, dojo.lblSin, dojo.lblPoint, dojo.lblHint];
   ok('every readout in the Dojo owns its canvas rather than the shared cache',
     liveLabels.every((l) => !!l._live));
+
+  /* ---- and that canvas is CPU-backed, which is a PACING check ------------
+     Owning a canvas is what makes a live label re-upload; being GPU-backed is
+     what makes each re-upload sync the pipeline. The second cost never showed
+     up in a frame-rate number — median frame time was identical with the
+     overlay on and off — so it read as "the game chugs" with the fps counter
+     insisting nothing was wrong. Measured as consecutive-frame jitter, flipping
+     the flag back and forth on the same labels at a matched repaint rate: 12.6
+     and 14.5 ms against a ~11 ms median, versus 3.8 and 3.6 ms once these
+     canvases stopped living on the GPU. See `_liveCtx` in core/label.js.
+
+     Asserting the REQUEST rather than the effect, because Node has no canvas
+     to have an effect on — but the request is the whole of the fix, and
+     deleting it is exactly how this comes back. */
+  ok('...and asks for it CPU-backed, so repainting one never stalls the GPU',
+    liveLabels.every((l) => l.mat.map.image.ctxOpts?.willReadFrequently === true),
+    liveLabels.map((l) => JSON.stringify(l.mat.map.image.ctxOpts)).join(' '));
+
+  /* The contrast matters: the flag is not free — it software-rasterises the
+     drawing — so it belongs only where a canvas is painted MORE THAN ONCE.
+     A static label uploads once and should stay on the fast side of that
+     trade. This is the check that stops a future "apply it everywhere". */
+  const staticLbl = new Label('LEDGER', { height: 1 });
+  ok('...while a static label, which uploads once, stays GPU-backed',
+    !staticLbl.mat.map.image.ctxOpts?.willReadFrequently);
 
   const arcBefore = dojo.arc.geometry;
   const cacheBefore = labelCacheStats().entries;

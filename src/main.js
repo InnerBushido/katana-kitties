@@ -2437,9 +2437,13 @@ class Game {
    * chosen so that one look separates the causes rather than confirming a
    * suspicion:
    *
-   *   fps / ms / worst   the complaint, as a number, plus the hitch the median
-   *                      hides. A bad median is a budget problem; a good median
-   *                      with an ugly worst is a stall.
+   *   fps / ms / worst   the complaint, as a number, plus the long frame the
+   *                      median hides. A bad median is a budget problem; a good
+   *                      median with an ugly worst is a stall.
+   *   stutter            whether the frames are EVENLY spaced, which is a
+   *                      separate question from whether they are quick, and the
+   *                      only one of these numbers that catches a game the fps
+   *                      counter is calling healthy while it grinds.
    *   draws / triangles  what the scene is asking for. Flat while the frame
    *                      time climbs means the scene is not what changed.
    *   the buffer         WIDTH x HEIGHT and megapixels — the number that has
@@ -2475,6 +2479,28 @@ class Game {
     return slot;
   }
 
+  /** Mean absolute change between CONSECUTIVE frame times, in ms.
+   *
+   *  Has to walk the ring in the order the frames happened, which is why it is
+   *  not computed from the sorted array the other numbers come from — sorting
+   *  is exactly what destroys the thing being measured. Oldest sample is the
+   *  next slot due to be overwritten; wrap from there.
+   *
+   *  Pairs where either sample is 0 are skipped rather than counted as a huge
+   *  swing: 0 means "not written yet" in a preallocated ring, and the seam
+   *  between written and unwritten slots would otherwise report one enormous
+   *  jitter spike for the first two seconds after the panel opens. */
+  _frameJitter() {
+    let sum = 0;
+    let n = 0;
+    for (let i = 1; i < PERF_WINDOW; i++) {
+      const a = this._perfRing[(this._perfIx + i - 1) % PERF_WINDOW];
+      const b = this._perfRing[(this._perfIx + i) % PERF_WINDOW];
+      if (a > 0 && b > 0) { sum += Math.abs(b - a); n++; }
+    }
+    return n ? sum / n : 0;
+  }
+
   _togglePerf() {
     this._perfOn = !this._perfOn;
     document.getElementById('perf')?.remove();
@@ -2498,13 +2524,26 @@ class Game {
     if (!s.length) return;
     const mid = s[s.length >> 1];
     const worst = s[s.length - 1];
-    /* HOW MANY FRAMES IN THE WINDOW WERE LONG ENOUGH TO SEE, which is the whole
-       of the difference between "slow" and "chugging". A game can hold a median
-       of 16 ms and still feel terrible if one frame in ten takes 60 — the eye
-       reads that as stutter, not as a lower frame rate, and a median alone
-       reports it as perfectly healthy. 33 ms is two missed frames at 60 Hz,
-       which is the point a dropped frame stops being invisible. */
-    const hitches = s.filter((v) => v > 33).length;
+    /* HOW UNEVEN THE PACING IS — which is a different complaint from how fast
+       it is, and the one that gets described as "the fps is fine but it chugs".
+
+       THIS USED TO COUNT FRAMES OVER 33 ms AND THAT MEASURED THE WRONG THING.
+       A hitch is one long frame; stutter is persistent uneven pacing. Frames
+       alternating 12/21/12/21 read as a 60 fps median, a 21 ms worst and ZERO
+       frames over 33 — a completely healthy readout for a game that is
+       grinding every second you watch it. The Dojo's overlay did exactly this:
+       identical median with it on and off, and the counter said nothing.
+
+       Mean |dt(n) - dt(n-1)| sees it, because it asks whether each frame
+       matched the one before instead of whether any frame was long. Reported
+       against the median as well as in ms, since 3 ms of unevenness is
+       invisible at 60 fps and ruinous at 144. Measured on this game: about 30%
+       is its ordinary noise floor, and the overlay bug ran at 107%. */
+    const jitter = this._frameJitter();
+    const jpct = Math.round((jitter / mid) * 100);
+    /* 40, above the 30% the game idles at, so the ordinary floor is not
+       permanently lit up — a warning that is always on is not a warning. */
+    const rough = jpct >= 40;
     /* THE JS HALF, AND THE GAP, WHICH IS EVERYTHING ELSE.
 
        `js` is our update loop and our `renderer.render` calls — the part this
@@ -2515,8 +2554,9 @@ class Game {
          js small,  gap large   -> the GPU or the driver. Fewer pixels, or a
                                    browser that has picked the wrong adapter.
          js large               -> the update loop. Profile it, do not guess.
-         both fine, hitches high -> stalls: GC, a texture upload, a shader
-                                   compiling on first use. */
+         both fine, stutter high -> stalls: GC, a texture upload, a shader
+                                   compiling on first use. None of these move
+                                   a median; all of them wreck the pacing. */
     const js = Array.from(this._perfJs).filter((v) => v > 0).sort((a, b) => a - b);
     const jsMid = js.length ? js[js.length >> 1] : 0;
     const R = this.renderer.info.render;
@@ -2531,7 +2571,8 @@ class Game {
     el.innerHTML = [
       `<b>${(1000 / mid).toFixed(0)} fps</b> &nbsp; ${mid.toFixed(1)} ms`
         + ` &nbsp; worst ${worst.toFixed(1)} ms`
-        + (hitches ? ` &nbsp; <b>${hitches} hitch${hitches === 1 ? '' : 'es'}</b>` : ''),
+        + ` &nbsp; <span class="${rough ? 'pf-warn' : ''}">stutter`
+        + ` ${rough ? '<b>' : ''}${jitter.toFixed(1)} ms (${jpct}%)${rough ? '</b>' : ''}</span>`,
       `js ${jsMid.toFixed(1)} ms &nbsp; gap ${Math.max(0, mid - jsMid).toFixed(1)} ms`
         + ` &nbsp; <span class="pf-dim">(gap = GPU + browser)</span>`,
       `${R.calls} draws &nbsp; ${Math.round(R.triangles / 1000)}k tris`

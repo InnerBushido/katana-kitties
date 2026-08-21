@@ -240,7 +240,43 @@ export class Label extends THREE.Object3D {
       const cv = document.createElement('canvas');
       cv.width = box.w * LIVE_SS;
       cv.height = box.h * LIVE_SS;
-      this._liveCtx = cv.getContext('2d');
+      /* `willReadFrequently`, ON A CANVAS NOTHING EVER READS. The flag's name
+         is about `getImageData`; what it actually asks for is a CPU-backed
+         surface, and that is the point here.
+
+         The default is a GPU-backed surface, so `map.needsUpdate` below makes
+         three.js upload with `texImage2D` FROM a live GPU surface — which on
+         Windows (Firefox/ANGLE) has to sync the pipeline to read it back. The
+         average cost is nothing; the PACING cost is the whole problem, and it
+         lands every LIVE_MS on a beat that has no relationship to vsync.
+
+         Measured standing in the Dojo with all five readouts on screen and
+         churning at the rate walking produces (~234 repaints per 4 s window),
+         flipping the flag back and forth on the same labels — mean
+         |dt(n) - dt(n-1)| over 120 frames, `_frameJitter` in main.js:
+
+            GPU-backed   median 10.8 ms   worst 42.5   jitter 12.61 (117%)
+            CPU-backed   median 10.6 ms   worst 22.0   jitter  3.77  (36%)
+            GPU-backed   median 10.9 ms   worst 47.2   jitter 14.53 (133%)
+            CPU-backed   median 11.2 ms   worst 20.4   jitter  3.58  (32%)
+
+         THE MEDIAN IS THE SAME IN ALL FOUR ROWS. That is the whole reason this
+         went unfound for so long: the fps counter reads 91 either way and the
+         only thing that changes is whether the frames arrive evenly.
+
+         A label only pays this WHILE IT IS BEING DRAWN — three.js uploads when
+         the texture is next bound, so an off-screen label repaints for free.
+         Measuring this from anywhere but inside the Dojo shows nothing at all,
+         which is a good way to conclude the wrong thing.
+
+         The trade is that painting is now software-rasterised, so a repaint
+         costs about 0.1 ms more of CPU — spent where there are ten idle
+         milliseconds, to buy back a stall on the thread that has none.
+
+         Static labels deliberately DON'T get this: they upload once, so there
+         is no repeated sync to avoid, and GPU-backed drawing is the faster
+         side of the trade when you only draw once. */
+      this._liveCtx = cv.getContext('2d', { willReadFrequently: true });
       paint(this._liveCtx, text, box.w, box.h, opts, LIVE_SS);
       texture = newTexture(cv);
       aspect = box.w / box.h;

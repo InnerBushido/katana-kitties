@@ -15,14 +15,14 @@ look. Everything else is one level down and read on demand.
 | why some code is the way it is | [docs/notes/](docs/notes/README.md) — one file per area |
 | how a player experiences it | [README.md](README.md) |
 | how it runs under Steam, and its artwork | [docs/notes/steam.md](docs/notes/steam.md) |
-| why it lags, and what is measured NOT to be why | [docs/notes/performance.md](docs/notes/performance.md) |
+| why it lags or stutters, and what is measured NOT to be why | [docs/notes/performance.md](docs/notes/performance.md) |
 | what changed and why | `git log` — the commit messages are the session log |
 
 ## Run it, check it
 
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
-node tools/world-check.mjs    # 963 checks: world, dragons, clans, sprites, tournament
+node tools/world-check.mjs    # 965 checks: world, dragons, clans, sprites, tournament
 node tools/pad-check.mjs      # 194 checks: controllers and the keyboard sets
 npm run build                 # must stay clean; Vercel builds this on push to main
 ```
@@ -97,7 +97,8 @@ docs/notes/  the design notes — why things are the way they are
 **Debug keys, in play:** `` ` `` opens the panel and lists them. `6` unlocks the
 whole endgame, `7`/`8`/`9` are Ryuuseki, `4` ends a live round, `5` opens the
 trade screen, `-`/`=`/`0` are the scene viewer, **`P` prints the frame cost** —
-fps, draw calls, buffer size, quality, dev-or-built, and the GPU string.
+fps, stutter, draw calls, buffer size, quality, dev-or-built, and the GPU
+string.
 
 **If somebody says it lags, press `P` before changing anything.** The game is
 fill-bound: frame time is a straight line in the size of the drawing buffer and
@@ -110,13 +111,20 @@ petals and the tournament's critters have all been accused and all measured
 innocent — see [performance.md](docs/notes/performance.md) for the numbers, so
 the next session does not spend itself re-accusing them.
 
+**"Lag" is two bugs.** Slow is a long median; stutter is a normal median with
+frames arriving unevenly, and the fps counter reads healthy the whole time it is
+happening — so believe a player who says the frame rate is fine and the game
+still chugs. The `stutter` figure on the readout is what sees it. The one found
+this way was the live labels re-uploading from GPU-backed canvases: same median,
+four times the jitter, fixed by one flag in [label.js](src/core/label.js).
+
 ## House style
 
 - **Comments explain WHY, and name the thing that was tried and failed.** This
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 963 assertions and why almost none of them are about
+  why `world-check` is 965 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have

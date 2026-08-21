@@ -322,12 +322,14 @@ and it is neither — both were measured and both are innocent:
 
 - **The petals cost nothing.** 700 instanced quads, one draw call; hiding every
   one of them changed the frame time by less than the noise.
-- **The maths overlay costs almost nothing.** A live label repaint measures
-  0.068 ms and they are throttled to one per 80 ms each. Everything the mobile
-  pass did there is strictly LESS work than what it replaced, on a desktop as
-  much as on a phone — checked against the pre-pass build, which draws the
-  identical scene, the identical 600 draw calls and the identical 287,776
-  triangles.
+- **The maths overlay costs almost nothing TO DRAW.** A live label repaint
+  measures 0.068 ms and they are throttled to one per 80 ms each. Everything the
+  mobile pass did there is strictly LESS work than what it replaced, on a
+  desktop as much as on a phone — checked against the pre-pass build, which
+  draws the identical scene, the identical 600 draw calls and the identical
+  287,776 triangles. *(Its UPLOADS were a separate and real bug — see the
+  stutter section below. Cheap to draw was the right answer to the wrong
+  question.)*
 - **The whole per-frame JavaScript is under a millisecond**, against 15.7 ms of
   `renderer.render` at 2.27 Mpx.
 
@@ -371,11 +373,41 @@ scene in the game, against 254 and 210,444 standing in the town — and the whol
 update loop there is 2.8 ms, of which the critters are 0.059 ms for all six. It
 is the worst place to play because it is a flat mat filling the screen at close
 range: most expensive per PIXEL, cheapest per object, which is backwards from
-where anybody looks. And "the fps stays the same but it chugs" is what a
-GPU-bound frame feels like with an idle CPU — measured on that machine as
-**js 1.8 ms, gap 10.4 ms**.
+where anybody looks.
 
-Full numbers and the next two levers in
+### "The fps stays the same but it chugs" was two things, and only one was the GPU
+
+A GPU-bound frame with an idle CPU feels exactly like that — measured on that
+machine as **js 1.8 ms, gap 10.4 ms**. But that was not all of it, and the rest
+was found only after the report *"not a hitch problem, but a stutter problem"*,
+which was correct and which the readout could not see: it counted frames over
+33 ms, and **a threshold count is structurally blind to stutter**. Frames
+alternating 12/21/12/21 give a 60 fps median, a 21 ms worst and zero hitches.
+
+`hitches` is now `stutter` — mean `|dt(n) − dt(n−1)|`, in ms and as a % of the
+median — and it found the cause in minutes. **The live labels were re-uploading
+from GPU-backed canvases.** A 2D canvas is GPU-backed by default, so repainting
+one and setting `needsUpdate` makes three.js `texImage2D` from a live GPU
+surface, which under Firefox/ANGLE on Windows syncs the pipeline. Measured in
+the Dojo at a matched repaint rate, flipping the flag back and forth:
+
+| backing | median | worst | jitter |
+| --- | --- | --- | --- |
+| GPU (default) | 10.8 ms | 42.5 ms | **12.61 ms (117%)** |
+| CPU (`willReadFrequently`) | 10.6 ms | 22.0 ms | **3.77 ms (36%)** |
+| GPU (default) | 10.9 ms | 47.2 ms | **14.53 ms (133%)** |
+| CPU (`willReadFrequently`) | 11.2 ms | 20.4 ms | **3.58 ms (32%)** |
+
+Same median in all four rows — 91 fps throughout — which is why every number
+anyone was watching said the game was fine. The fix is one flag on one
+`getContext` in [label.js](src/core/label.js); static labels deliberately do not
+get it, and world-check asserts both halves. Two traps if you re-measure it: a
+label only pays this **while it is on screen** (three.js uploads at bind time, so
+measuring from the title screen shows nothing at all), and the two runs have to
+do the **same number of repaints**.
+
+Full numbers and the next lever — `dt` from the rAF timestamp rather than
+`Clock.getDelta()`, measured and deliberately not taken — in
 [performance.md](docs/notes/performance.md).
 
 ---
@@ -399,7 +431,7 @@ are about to touch, not all of them.
 | [gotchas.md](docs/notes/gotchas.md) | traps that cost real time and are invisible in the code |
 | [hosting.md](docs/notes/hosting.md) | Vercel, the Git deploy, the `gh` credential setup, how the screenshots were taken |
 | [steam.md](docs/notes/steam.md) | the non-Steam shortcut and its launch flags, the shelf artwork, what Remote Play is and is not |
-| [performance.md](docs/notes/performance.md) | why the frame time is a straight line in pixels, what is measured NOT to be a cause, the `P` readout |
+| [performance.md](docs/notes/performance.md) | why the frame time is a straight line in pixels, slow vs stutter and why they need different numbers, what is measured NOT to be a cause, the `P` readout |
 
 **Older source comments saying "see HANDOFF.md" mean these notes** — the text
 they point at was moved, not deleted. Grep `docs/notes/` for the phrase.

@@ -36,6 +36,84 @@ content of most "it lags now" reports.
 
 ---
 
+## Two different complaints: slow, and uneven
+
+**"It lags" is two bugs and they have opposite fixes.** Everything above this
+line is about SPEED — how long a frame takes. The other one is PACING, and the
+frame rate counter cannot see it at all:
+
+> *"Not a hitch problem, but a stutter problem. Stutter is like lag, but more
+> persistent. Since FPS stays the same when it happens, it is not really a
+> hitch but a stutter."*
+
+That is exactly right and it is worth being precise about, because the readout
+originally measured the wrong one:
+
+| | what it is | what sees it |
+| --- | --- | --- |
+| **slow** | every frame takes too long | the median. fps |
+| **hitch** | one frame in a while takes far too long | the worst frame; a count over a threshold |
+| **stutter** | frames are quick but arrive UNEVENLY | jitter: mean `\|dt(n) − dt(n−1)\|` |
+
+Frames alternating 12/21/12/21 ms give a 60 fps median, a 21 ms worst, and
+**zero** frames over any sane hitch threshold — a perfectly healthy readout for
+a game that is grinding every second you watch it. A threshold count is
+structurally incapable of seeing stutter, which is why `hitches` was replaced by
+`stutter` in the `P` panel.
+
+### What was actually stuttering: the live labels' canvases
+
+The Dojo's five readouts and the Kotodama Orb's three are *live labels* — one
+canvas each, repainted in place and re-uploaded, throttled to one repaint per
+80 ms (`LIVE_MS`). By default a 2D canvas is **GPU-backed**, so `needsUpdate`
+makes three.js call `texImage2D` from a live GPU surface, and on Windows under
+Firefox/ANGLE that has to sync the pipeline to read it back. The average cost is
+nothing. The pacing cost is the entire problem, and it lands every 80 ms on a
+beat with no relationship to vsync.
+
+The fix is one flag — `getContext('2d', { willReadFrequently: true })` — whose
+name is about `getImageData` but whose actual effect is to ask for a **CPU-backed
+surface**, so there is nothing to sync. Measured in the Dojo with all five
+readouts churning at the rate walking produces, flipping the flag back and forth
+on the same labels at a matched ~234 repaints per window:
+
+| backing | median | worst | jitter | % of median |
+| --- | --- | --- | --- | --- |
+| GPU (default) | 10.8 ms | 42.5 ms | 12.61 ms | 117% |
+| CPU (`willReadFrequently`) | 10.6 ms | 22.0 ms | 3.77 ms | 36% |
+| GPU (default) | 10.9 ms | 47.2 ms | 14.53 ms | 133% |
+| CPU (`willReadFrequently`) | 11.2 ms | 20.4 ms | 3.58 ms | 32% |
+
+**The median is the same in all four rows.** 91 fps either way. That is why this
+survived so long: every number anyone was looking at said the game was fine.
+
+Two things worth knowing before you re-measure this:
+
+- **A label only pays it while it is being DRAWN.** three.js uploads when the
+  texture is next bound, so an off-screen label repaints for free. Measuring
+  from the title screen — where the Dojo's labels exist, are `visible`, and are
+  outside the frustum — shows no difference whatsoever, and is a very easy way
+  to conclude the flag does nothing.
+- **Match the repaint rate between runs.** An early A/B looked like a 10× win
+  and was really a 6× difference in how many repaints each run did.
+
+The flag is deliberately **not** applied to static labels: it software-rasterises
+the drawing, which is the wrong side of the trade for a canvas painted once and
+uploaded once. `world-check` asserts both halves of that.
+
+### The other clock, measured and left alone
+
+`dt` comes from `Clock.getDelta()` read at callback entry, which is a noisier
+clock than the timestamp `requestAnimationFrame` hands in — in the bad state,
+entry-clock jitter ran 17.0 ms against the presentation interval's 12.9. Driving
+`dt` from the rAF timestamp instead is a real and standard improvement. It was
+not taken, because once the upload stall was gone the two clocks measured the
+same (1.6 vs 1.5 ms) and there was nothing left to win. If a machine is still
+GPU-bound — an unfixed adapter, say — this is the next lever, and it is about
+five lines in `_tick`.
+
+---
+
 ## What is NOT the cause, with the numbers
 
 This section exists because two innocent things have already been accused, and
@@ -88,12 +166,13 @@ reverting work that was never the cause.
 Seven lines, chosen so one look SEPARATES the causes rather than confirming a
 suspicion:
 
-- **fps / ms / worst / hitches** — the complaint as a number, plus the hitch the
-  median hides. A bad median is a budget problem; a good median with an ugly
-  worst is a stall, which is a different bug. `hitches` counts frames over 33 ms
-  in the window — two missed frames at 60 Hz, the point a drop stops being
-  invisible — because a game can hold a median of 16 ms and still feel terrible
-  if one frame in ten takes 60.
+- **fps / ms / worst / stutter** — the complaint as a number, plus the long
+  frame the median hides, plus whether the frames arrive EVENLY. A bad median is
+  a budget problem; a good median with an ugly worst is a stall; a good median
+  with high stutter is the thing described below, and they are three different
+  bugs. `stutter` is mean `|dt(n) − dt(n−1)|` over the window, printed in ms and
+  as a percentage of the median, and it lights up past 40% — above the ~30% this
+  game idles at, because a warning that is always on is not a warning.
 - **js / gap** — the half that names the culprit. `js` is the whole update loop
   and the `render` calls, measured by wrapping `_tickBody`; the **gap** is
   everything the browser did, which is mostly WAITING FOR THE GPU, since
@@ -103,7 +182,7 @@ suspicion:
   | --- | --- |
   | js small, gap large | the GPU or the driver — fewer pixels, or the wrong adapter |
   | js large | the update loop. Profile it, do not guess |
-  | both fine, hitches high | stalls: GC, a texture upload, a shader compiling |
+  | both fine, stutter high | stalls: GC, a texture upload, a shader compiling |
 - **draws / triangles / panes** — what the scene is asking for. Flat while the
   frame time climbs means the scene is not what changed. Panes matter because
   two kittens who walk apart cost two full passes over the world.
