@@ -2955,6 +2955,51 @@ console.log('\n--- the balance file, and what a typo in it may do ---');
   } else {
     line('src/tuning.json', 'empty — this is the shipped balance');
   }
+
+  /* --- and the way IN to the page, which must not follow it onto the web ---
+     THE PAGE HAD NO DOOR. It was documented in CLAUDE.md and in endgame.md and
+     still came back as "I don't see any information about that", because a
+     tool you have to remember a URL for is a tool nobody opens. So the debug
+     panel has a row that opens it.
+
+     THAT ROW IS THE ONE THING HERE A PLAYER COULD SEE. The page itself is
+     unreachable on Vercel twice over already — `vite build` reads its inputs
+     from index.html alone, and the save endpoint is a `configureServer` hook a
+     production build never runs — but a LINK is markup in main.js, which very
+     much is built. `import.meta.env.DEV` is replaced by the literal `false` at
+     build time, so the whole string is constant-folded away rather than
+     hidden; what is pinned here is that the guard is still what builds it.
+     A row moved outside that ternary would ship a dead link on the front page
+     of a game children play, and nothing else in this file would notice. */
+  /* NORMALISED, BECAUSE THIS REPO IS CHECKED OUT WITH CRLF. `core.autocrlf`
+     is true on Richard's machine, so every source file on disk ends its
+     lines with \r@LF and a pattern spanning a line break silently never
+     matches — which is a check that passes by failing to look. The
+     single-line patterns elsewhere in this file are accidentally immune;
+     anything that reads across lines must do this. */
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+    .replace(/\r/g, '');
+  ok('the debug panel can reach the balance page', /data-open="\/tuning\.html"/.test(main));
+  ok('...and clicking it opens a tab rather than doing something to the game',
+    /window\.open\(open\.dataset\.open, '_blank', 'noopener'\)/.test(main));
+  /* The link and the DEV guard have to be the same expression, not merely both
+     present somewhere in a 6,000-line file. */
+  /* Sliced rather than regexed to a `;`, because the markup is full of HTML
+     entities and every one of them ends in a semicolon. */
+  const rowFrom = main.indexOf('const TUNING_ROW =');
+  const rowEnd = rowFrom < 0 ? -1 : main.indexOf('\n\n', rowFrom);
+  const row = rowFrom < 0 ? '' : main.slice(rowFrom, rowEnd);
+  ok('...and the link only exists in a dev build',
+    row.includes('import.meta.env?.DEV') && row.includes('/tuning.html'));
+  ok('...with nothing to show when it is not', /\n\s*:\s*'';$/.test(row));
+
+  /* AND THE PAGE IS STILL NOT AN ENTRY POINT. `vite build` bundles what
+     index.html references; tuning.html is a sibling file it never reads. If
+     somebody ever adds a `rollupOptions.input` listing both, this fails. */
+  const vite = readFileSync(new URL('../vite.config.js', import.meta.url), 'utf8');
+  ok('...and nothing has made tuning.html a build input', !/input\s*:/.test(vite));
+  ok('...and the save endpoint is still dev-server only',
+    /configureServer\(server\)/.test(vite) && !/apply:\s*'build'/.test(vite));
 }
 
 console.log('\n--- background removal keeps the drawn whites ---');

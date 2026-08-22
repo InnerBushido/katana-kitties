@@ -126,6 +126,22 @@ npm run dev
 
 Then open the address it prints.
 
+### Changing how the fighting feels
+
+Running locally gets you one thing the web version does not: a **balance page**
+at **`/tuning.html`**, alongside the game on the same dev server. Every
+ability's timings and damage on sliders — the Cross Slash, the charge, the
+bubble, the power dive, the numbers for getting hit, and each kind of swing —
+with a sentence on each saying what it does and a live timeline of the Cross
+Slash. Saving writes `src/tuning.json` and the running game reloads.
+
+You can also reach it from inside the game: press `` ` `` for the debug panel
+and click **BALANCE PAGE**.
+
+It is a development tool and it cannot be deployed — the built site does not
+contain the page, the link, or the endpoint that saves. Full write-up in
+[docs/notes/endgame.md](docs/notes/endgame.md#the-balance-page).
+
 ---
 
 ## Controls
