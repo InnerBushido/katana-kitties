@@ -158,17 +158,56 @@ hard-coded before the file existed. See [docs/notes/mobile.md](docs/notes/mobile
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
-1. **The four-player game has been played once, and the tournament twice.** The
-   first four-player session produced ten fixes (see
-   [docs/notes/four-players.md](docs/notes/four-players.md)); the second pass
-   produced the one-handed keyboard cluster. What has *not* been watched is a
-   real 2v2 or 2v1v1 with four kids in a room, which is the only test that
-   settles the league balance.
+**Uncommitted as of the second four-player pass — the whole batch, nothing is
+committed.** The clan call-to-action, pane stability and pane colour, the arena
+floor and the camera ceiling, the Cross Slash rebalance, `/tuning.html`,
+`public/voice/cross0-3.mp3`, the vendor split into a personal inspector
+([systems/inspector.js](src/systems/inspector.js)) and a shared trade screen
+that other players opt into with MOUNT, the clan-join celebration, and the
+eight new sprite sheets it needs (`ember_bless`, `frost_bless` and six
+`clan_*.png`).
+
+**Two standing rules came out of this batch and are worth knowing before you
+generate any sprite.** New player poses are drawn for **all four kittens** —
+two sheets plus two `recolourAtlas` derivations, expanded by PLAYER_STYLE and
+never by roster slot. And new art is generated with a **transparent
+background**, through Higgsfield's `remove_background`, rather than relying on
+the loader's white-keyer: the flood fill cannot reach background the lineart has
+sealed shut, which is a real risk on anything drawn inside a ring. The loader
+needs no change to accept alpha — its flood only seeds from near-white pixels,
+and a transparent one reads (0, 0, 0, 0). Both are written up in
+[docs/notes/art.md](docs/notes/art.md#two-rules-for-generating-new-sprites).
+
+**A licensing decision is attached to `public/voice/cross0-3.mp3`.** They are
+graded from the same reference recording as the trailer's demon laugh, which is
+somebody else's clip off a social post and is not in the repo. Until now the
+only derived thing shipped was three seconds baked into an MP4; these are four
+files served to every player. `tools/kitten-cackle.mjs --game` synthesises its
+own ladder when the reference is absent and `Audio.sample` falls through to
+four synthesised stand-ins, so deleting them costs nothing but polish — see
+[docs/notes/voices.md](docs/notes/voices.md).
+
+1. **The four-player game has been played twice, and the tournament twice.** The
+   first four-player session produced ten fixes; the second — four adults on PCs
+   in a browser — produced six more, and both are written up in
+   [docs/notes/four-players.md](docs/notes/four-players.md). What has *not* been
+   watched is a real 2v2 or 2v1v1 with four kids in a room, which is the only
+   test that settles the league balance.
+   **The thing to watch next time is whether anybody joins a clan.** Nobody did,
+   in a whole afternoon, and the fix is in two halves: a prompt over her head
+   naming the button she is holding, and two and a half seconds of celebration
+   when she presses it — she takes the blessing with both paws, her own camera
+   pulls in, her leader dances in her own clan's style, and the other panes
+   never notice. So if it happens again the problem is not visibility and the
+   next question is a different one.
 2. **Numbers most likely to come back, all of them checked** so turning one
    fails loudly rather than silently: `OUT_DAMAGE` (30), `ATTACKS.dash.knock`
    (19), `HANDICAP_MAX` (1.2), `ROUND_LIMIT` (120), `FEAST_TIME` (15),
    `REGEN_FRAC` (0.10), `EAT_TIME` (2.0), the critter `speed`/`hopV`/`cruise`
    values, and `OPEN_AT` (0.80).
+   **Most of the combat ones no longer need a code edit** — `npm run dev` and
+   `/tuning.html` has every ability's timings and damage on sliders, saving to
+   `src/tuning.json`. See [endgame.md](docs/notes/endgame.md#the-balance-page).
 3. **The open question no check can answer:** whether carrying damage into the
    next round reads as fair to the girl who just won one. It is right on paper
    and it is the one rule a nine-year-old could reasonably call cheating.
@@ -178,6 +217,10 @@ is listed here is untested-by-players, not untested-by-machine.
    longest anybody is ever switched off in this game. It measures right and it
    played right in the first two-player pass; whether it reads as unfair when it
    is your sister doing it is the thing to watch for.
+   **Four adults have now said the move was too strong**, and the answer was a
+   quarter-second planted wind-up before the first cut plus a longer recovery —
+   see [endgame.md](docs/notes/endgame.md). Whether that is enough is the next
+   thing a real game settles, and it is one slider away either way.
 4. **Storm and Blossom are placeholders** — the same two cats recoloured. The
    girls should name them and pick the colours; it is one table in
    `src/core/palette.js`.
@@ -626,7 +669,7 @@ are about to touch, not all of them.
 | [input.md](docs/notes/input.md) | controllers, vJoy, the Chrome bug, the keyboard sets, menus on a pad |
 | [tournament.md](docs/notes/tournament.md) | the ring, rounds, ring-outs, the board, the animals, the feast |
 | [dragon-hunt.md](docs/notes/dragon-hunt.md) | the seven locks, the grottos, the spire, Ryuuseki |
-| [endgame.md](docs/notes/endgame.md) | the ending, the Awakening, the eight orbs, the economy |
+| [endgame.md](docs/notes/endgame.md) | the ending, the Awakening, the eight orbs, the economy, the Cross Slash rebalance, **and `/tuning.html`** — the balance page every ability's numbers are edited on |
 | [story.md](docs/notes/story.md) | the cutscene, the leaders, the shrine scenes, the scene viewer |
 | [world.md](docs/notes/world.md) | the clans and their buffs; the panda |
 | [art.md](docs/notes/art.md) · [audio.md](docs/notes/audio.md) | atlas cells; the synthesised music |

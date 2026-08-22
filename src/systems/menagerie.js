@@ -295,34 +295,13 @@ export class Menagerie {
        which stops it dead and lets her walk up and start the hold properly.
        Running past something and swinging is now the ordinary way to catch it,
        which is also how it reads. */
-    let pick = null;
-    let pickD = CATCH_RADIUS;
-    if (this._canHold(player)) {
-      for (const c of this.list) {
-        if (!c.pinnable) continue;
-        const d = player.position.distanceTo(c.position);
-        if (d < pickD) { pick = c; pickD = d; }
-      }
-    }
-    if (pick) {
-      this._grab(player, pick);
+    const found = this._findTarget(player, reach);
+    if (!found) return false;
+    if (found.kind === 'pin') {
+      this._grab(player, found.c);
       return true;
     }
-
-    /* Nothing on the floor — is there something in the air? A rabbit gets
-       knocked down and a bird ends up in her mouth, which is the difference
-       between the 15 and the 20: one costs a swing and then a hold, the other
-       costs a swing and then a place to stand. The vertical window is generous
-       because a billboard is a flat drawing with a point for a position. */
-    let air = null;
-    let airD = reach * 1.35;
-    for (const c of this.list) {
-      if (!c.swattable) continue;
-      const d = Math.hypot(c.position.x - player.position.x, c.position.z - player.position.z);
-      const dy = c.position.y - player.position.y;
-      if (d < airD && dy > -1.5 && dy < 6.5) { air = c; airD = d; }
-    }
-    if (!air) return false;
+    const air = found.c;
 
     this.game.hitSpark?.({ position: air.position, height: air.spec.size }, 'stand');
     /* ALREADY DOWN: TOP THE CLOCK UP AND SAY NOTHING ELSE. Every branch below
@@ -363,6 +342,73 @@ export class Menagerie {
       }
     }
     return true;
+  }
+
+  /**
+   * What this swing WOULD land on, without landing it.
+   *
+   * ONE SEARCH, ASKED IN TWO PLACES — the same shape as `_canHold` below and
+   * added for the same reason. `strike` acts on the answer; `wouldCatch` only
+   * reports it, and the caller of that is the attack button deciding whether
+   * this press is a snack or the start of a Cross Slash. Two copies of the
+   * radii would drift, and the failure would be a kitten standing over a rat
+   * being told she is too far from it.
+   *
+   * THE FLOOR IS SEARCHED FIRST AND WINS OUT TO `CATCH_RADIUS`, which is the
+   * katana's own reach — see the long note in `strike` for why the pin is
+   * radius-only with no forward arc, and why it is offered only when she could
+   * actually keep hold of it.
+   *
+   * @returns {{kind: 'pin'|'air', c: object}|null}
+   */
+  _findTarget(player, reach) {
+    let pick = null;
+    let pickD = CATCH_RADIUS;
+    if (this._canHold(player)) {
+      for (const c of this.list) {
+        if (!c.pinnable) continue;
+        const d = player.position.distanceTo(c.position);
+        if (d < pickD) { pick = c; pickD = d; }
+      }
+    }
+    if (pick) return { kind: 'pin', c: pick };
+
+    /* Nothing on the floor — is there something in the air? A rabbit gets
+       knocked down and a bird ends up in her mouth, which is the difference
+       between the 15 and the 20: one costs a swing and then a hold, the other
+       costs a swing and then a place to stand. The vertical window is generous
+       because a billboard is a flat drawing with a point for a position. */
+    let air = null;
+    let airD = reach * 1.35;
+    for (const c of this.list) {
+      if (!c.swattable) continue;
+      const d = Math.hypot(c.position.x - player.position.x, c.position.z - player.position.z);
+      const dy = c.position.y - player.position.y;
+      if (d < airD && dy > -1.5 && dy < 6.5) { air = c; airD = d; }
+    }
+    return air ? { kind: 'air', c: air } : null;
+  }
+
+  /**
+   * Is there an animal this press should be spent on?
+   *
+   * THE CROSS SLASH ATE THE SNACK BUTTON, and this is the fix. Wearing the orb
+   * makes ATTACK a deferred press — it waits `CROSS.hold` to find out whether
+   * it was a tap or the start of the technique (see the `deferred` branch in
+   * `Player.update`) — and `_doSlash`, which is the only thing that ever calls
+   * `strike`, does not run at all on a hold. So a kitten wearing the orb who
+   * stood over a rat and held the button got a wind-up instead of a snack, and
+   * the feast was simply unplayable for her. Reported from four-player play.
+   *
+   * Asked at the MOMENT OF THE PRESS, before anything is armed: an animal in
+   * range means this press is an ordinary swing, thrown now, and the technique
+   * is not offered. Standing next to an animal is exactly where you want the
+   * cheap swing and exactly where you do not want a 2.4-second commitment.
+   */
+  wouldCatch(player, reach) {
+    if (!this.on || player.angel || player.ko) return false;
+    if (this.held[player.index]) return false;
+    return !!this._findTarget(player, reach);
   }
 
   /**

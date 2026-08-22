@@ -12,10 +12,10 @@ import {
   autoQualityVerdict, AUTO_GRACE_MS,
 } from './core/device.js';
 import { TouchPad } from './core/touchpad.js';
-import { World } from './world/world.js';
+import { World, CLANS } from './world/world.js';
 import { Player, ATTACKS, MAX_HP, KO_TIME } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss } from './core/palette.js';
-import { splitLayout, mapWidth, fitDistance } from './core/split.js';
+import { splitLayout, mapWidth, fitDistance, stablePanes, paneSeats } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, tierFor, toNextTier } from './entities/panda.js';
@@ -44,6 +44,7 @@ import { loadBoard, BOARD_MODES } from './systems/leaderboard.js';
 import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
 import { ORB_IDS, CROSS } from './entities/powerorb.js';
 import { ProfileScreen } from './systems/profile.js';
+import { Inspector } from './systems/inspector.js';
 
 /* ---------------------------------------------------------------------------
    Katana Kitties — main loop.
@@ -120,6 +121,17 @@ const DOJO_PITCH = 1.0;
 const DOJO_CENTRE_BIAS = { desktop: 1, touch: 0.72 };
 /** How long the found-a-star pose runs. Matches Player.holdAloft's default. */
 const STAR_POSE = 2.0;
+/**
+ * How long the joined-a-clan celebration runs.
+ *
+ * LONGER THAN A STAR, because there is more to look at: a star is one object
+ * over her head and this is an object, a change of pose, a camera move AND a
+ * leader dancing behind her. It is still deliberately short — she is standing
+ * in a shrine with her sisters playing on, and the celebration must be over
+ * before it becomes a thing she is waiting out. Same clock drives the kitten's
+ * pose, the emblem, the camera and the leader, so they cannot drift apart.
+ */
+const CLAN_POSE = 2.4;
 /** Seconds on an island before its theme takes over. See Game._islandTrack. */
 const ISLAND_DWELL = 1.1;
 
@@ -312,6 +324,11 @@ class Game {
     /** Player index -> her group's lowest member, last frame. The hysteresis
      *  reads it; nothing else should. */
     this._clusterOf = null;
+    /** Where every player's pane was last frame, as frame fractions. Fed to
+     *  `stablePanes` so a pane that could stay put does. Empty on the first
+     *  frame and after a resize, which simply means nobody has an opinion yet
+     *  and `splitLayout`'s own order stands. */
+    this._paneSeats = {};
     /** This frame's groups, as arrays of player indices. One per pane.
      *  Seeded from the party rather than written as `[[0, 1]]`, or a one-kitten
      *  game spends its first frame claiming to hold a player 1 who does not
@@ -543,6 +560,62 @@ class Game {
     for (const q of this.players) {
       for (const o of q.orbs ?? []) o.setMathVisible(this.mathVisible);
       (q.wornOrbs ?? []).forEach((o, i) => o.setMathVisible(this.mathVisible && i === 0));
+    }
+  }
+
+  /**
+   * "You can join this clan. Press this." Over each kitten's own head.
+   *
+   * THE BUG WAS SILENCE. Four adults played a whole session and nobody joined
+   * a clan. Not because it is hard — you stand in the ring and press one
+   * button — but because nothing ever said so. The shrine scene introduces the
+   * leader and then the game goes quiet, and standing in a shrine ring with a
+   * power one press away looks exactly like standing anywhere else.
+   *
+   * OVER HER HEAD, NOT IN THE CORNER. A toast is one line at the top of a
+   * screen four people are sharing, addressed to whoever happens to look. This
+   * is addressed to one kitten and drawn on her, which means it is right in
+   * every pane at once: her own, and her sisters', who can now see what she is
+   * standing on and go and find their own. The touch labels change too (see
+   * `_updateTouchContext`), but only for player one, who is the only one
+   * holding the screen.
+   *
+   * THE BUTTON IS NAMED PER DEVICE. `InputManager.promptFor` answers for the
+   * device that slot is actually bound to this frame, so the girl on WASD is
+   * told E, her sister on the arrows is told I, a sideways left Joy-Con is told
+   * RIGHT and the right half is told A. A prompt that names the wrong button is
+   * worse than none: she presses what it says, nothing happens, and the
+   * conclusion is that the game is broken.
+   *
+   * THREE CONDITIONS, AND THE MIDDLE ONE IS THE INTERESTING ONE. She must be in
+   * range, the leader must have introduced herself, and she must not already be
+   * in this clan. The `met` test is the same gate the oath itself uses in
+   * `Player.update` — asked here rather than copied, so the prompt cannot offer
+   * something the button will refuse. Standing in a ring you have just walked
+   * into shows nothing for two seconds while the scene fires, which is correct:
+   * there is nothing to press yet.
+   *
+   * SILENT WHILE ANYTHING ELSE OWNS THE SCREEN. A scene, the tournament, or a
+   * kitten on a dragon — `interact` means DIVE up there, and a caption telling
+   * her to press it to swear an oath is the label lying again.
+   */
+  _updateClanPrompt() {
+    const busy = this._sceneActive() || this.tournament?.active;
+    for (const p of this.players) {
+      if (!p) continue;
+      if (busy || p.mount || p.rideAlong || p.pandaMount || p.angel
+        || this.inspector?.busy(p.index)) { p.setCallout(null); continue; }
+      const hall = this.world?.clanHallNear(p.position.x, p.position.z);
+      if (!hall || p.clan?.id === hall.clan.id || !this.leaderFor(hall.clan)?.met) {
+        p.setCallout(null);
+        continue;
+      }
+      const key = this.input.promptFor(p.index, 'interact');
+      /* NO BUTTON, NO PROMPT. A slot with nothing bound to it cannot be told
+         what to press, and "press ? to swear" is worse than the silence this
+         whole function exists to fix. */
+      if (!key) { p.setCallout(null); continue; }
+      p.setCallout(`[${key}]  ${hall.clan.oath.toUpperCase()}`);
     }
   }
 
@@ -867,6 +940,16 @@ class Game {
          because a missing one costs the pose and nothing else. */
       ['ember_eat', 'ember_eat.png', false],
       ['frost_eat', 'frost_eat.png', false],
+      /* THE RECEIVING POSE — both paws to the sky, taking the thing above her
+         head. Worn for a dragon ball and for a first clan oath, which are the
+         same moment twice: see `Player.setBlessArt`.
+         TWO FILES FOR FOUR KITTENS, exactly like the eating pose. Storm draws
+         from Ember's sheet and Blossom from Frost's, and both go through
+         `recolourAtlas` below — so "generate a new player sprite" is two
+         drawings and four cats, and the two recolours cannot be forgotten
+         because nothing has to remember them. */
+      ['ember_bless', 'ember_bless.png', false],
+      ['frost_bless', 'frost_bless.png', false],
     ];
     const critterArt = {};
     await Promise.all(CRITTER_ART.map(async ([key, file, facesRight]) => {
@@ -934,6 +1017,36 @@ class Game {
       console.log(`[art] ${s.name} eat pose ← ${s.sheet}_eat recoloured`);
       return a;
     });
+    /* THE SAME DERIVATION, BY STYLE AND NOT BY SLOT. The comment above is the
+       argument in full; it is repeated as a loop rather than as prose because
+       the failure it describes — Storm eating as a grey Frost — is one line of
+       copy-paste away from happening again to any pose added after it. */
+    this.blessArt = PLAYER_STYLE.map((s) => {
+      const base = s.sheet === 'ember' ? critterArt.ember_bless : critterArt.frost_bless;
+      if (!base) return null;
+      if (!s.recolour) return base;
+      const a = recolourAtlas(base, s.recolour);
+      console.log(`[art] ${s.name} blessing pose ← ${s.sheet}_bless recoloured`);
+      return a;
+    });
+
+    /* --- one emblem per clan, shown over her head when she swears ---
+       A MISSING SHEET COSTS A PICTURE AND NOTHING ELSE. `holdAloft(null)`
+       already draws a sphere and `_celebrateClan` tints it in the clan's own
+       colour, so an absent file leaves a Thunderpaw kitten holding a gold orb
+       rather than nothing at all. Ninth non-negotiable, same rule as the
+       voices and the trailer.
+       Loaded with the critters rather than with the leaders because they are
+       the same KIND of thing — one square cell, no rows, no facing to get
+       wrong — and the leaders' loader measures turnarounds. */
+    this.clanArt = {};
+    await Promise.all(CLANS.map(async (c) => {
+      const a = await loadSpriteAtlas(`/sprites/clan_${c.id}.png`, {
+        views: 1, rows: 1, cell: 256, maxAtlas: 768,
+      }).catch(() => null);
+      if (a) this.clanArt[c.id] = a;
+    }));
+    console.log(`[art] clan emblems → ${Object.keys(this.clanArt).length}/${CLANS.length}`);
 
     for (const p of this.players) this._dressPlayer(p);
 
@@ -954,6 +1067,9 @@ class Game {
        their own idea of whether the endgame has started. */
     this.kotodama = new Kotodama(this);
     this.profile = new ProfileScreen(this);
+    /* The personal, pane-sized half of the dealer. Built after the profile
+       screen because choosing TRADE hands straight over to it. */
+    this.inspector = new Inspector(this);
     /** 'out' | 'home' while the griffin is carrying them, else null. */
     this.travel = null;
 
@@ -1126,6 +1242,7 @@ class Game {
     }
     // By STYLE, not by slot — see the note where `eatArt` is built.
     p.setEatArt(this.eatArt?.[this.roster[p.index]] ?? null);
+    p.setBlessArt(this.blessArt?.[this.roster[p.index]] ?? null);
   }
 
   /**
@@ -1685,6 +1802,12 @@ class Game {
     document.getElementById('btn-quit-match')
       ?.classList.toggle('hidden', !(on && this.inMatch && !this.travel));
     document.getElementById('panel-pause').classList.toggle('hidden', !on);
+    /* THE PAUSE MENU TAKES EVERY PERSONAL CARD DOWN WITH IT. It is a global
+       modal over a frozen world, and a card is the opposite of that — hers,
+       over a world that is running. Leaving one up would put a menu she can
+       still see behind a menu she can no longer reach it through, with the
+       pad it needs claimed by `_claimMenu`. */
+    if (on) this.inspector.closeAll();
     if (!on) {
       document.getElementById('panel-help').classList.add('hidden');
       document.getElementById('panel-settings').classList.add('hidden');
@@ -1750,6 +1873,10 @@ class Game {
       p._respawn(this.world);
       p.camTarget.copy(p.position);
     }
+    /* Every personal card down. A restart is the world put back to its opening
+       state, and there is no dealer in it — the stall does not exist until
+       100% mischief. */
+    this.inspector.closeAll();
     for (const d of this.dragons) {
       d.rider = null;
       d.state = 'perched';
@@ -1760,7 +1887,27 @@ class Game {
     }
     for (const p of this.players) {
       p.clan = null;
+      /* AND SHE HAS NEVER SWORN TO ANY OF THEM. A restart is the world put back
+         to its opening state, and "already celebrated" is exactly the sort of
+         quiet leftover that would make a second playthrough feel flatter than
+         the first for no reason anybody could name. The pose and the thing
+         over her head go with it, or a restart mid-ceremony leaves a kitten
+         standing with her paws up holding an orb nobody gave her. */
+      p.clansSworn.clear();
+      p.aloftT = 0;
+      if (p.aloft) p.aloft.visible = false;
+      if (p.aloftFlat) p.aloftFlat.visible = false;
+      if (p.aloftGlow) p.aloftGlow.visible = false;
+      if (p.blessPose) p.blessPose.visible = false;
+      /* `marker` is her own colour and is no longer repainted by swearing, so
+         this restore is now only undoing the ring-edge flash. Kept for exactly
+         that: a restart during a ring-out would otherwise leave somebody red.
+         The CLAN ring is a separate mesh and simply goes away. */
       p.marker.material.color.set(p.style.colour);
+      p.clanRing.visible = false;
+      p.setCallout(null);
+      p.calloutT = 0;
+      p.callout.visible = false;
     }
     /* Un-meet every leader. A restart is the world put back to its opening
        state, and six introductions already spent is exactly the sort of
@@ -3380,6 +3527,11 @@ class Game {
         if (target.triCapture(attacker, dmg, nx, nz)) {
           this.hitSpark(target, 'tri');
           this.sfx('hit');
+          /* THIS CUT CONNECTED. Read and cleared by the sequencer around each
+             `_doSlash`, and set rather than counted so that one cut catching
+             two sisters still counts as one of the three — see
+             `Player.triHits`, which decides which cackle she gets. */
+          attacker._triLanded = true;
         } else if (target.warded) {
           this.sfx('wardhit');
         }
@@ -3410,6 +3562,19 @@ class Game {
   strikeCritters(attacker, reach) {
     if (!this.tournament?.active) return;
     this.menagerie?.strike(attacker, reach);
+  }
+
+  /**
+   * Would this swing land on an animal? Asked by the attack button, not by a
+   * swing — see `Menagerie.wouldCatch` for the bug that needed it.
+   *
+   * GATED ON THE SAME `tournament.active` AS `strikeCritters`, deliberately:
+   * the two answers have to agree, or the button would decline to arm the
+   * technique for an animal the swing then refuses to catch.
+   */
+  critterNear(attacker, reach) {
+    if (!this.tournament?.active) return false;
+    return !!this.menagerie?.wouldCatch(attacker, reach);
   }
 
   _updateBallHud() {
@@ -4218,6 +4383,19 @@ class Game {
   }
 
   /**
+   * A recorded sound effect — the same door as `sfx`, one shelf along.
+   *
+   * SEPARATE FROM `sfx` BECAUSE THE FALLBACK RUNS THE OTHER WAY. `sfx` is a
+   * name that is always synthesised; this is a name that is a file, and
+   * becomes synthesised only when the file is missing. Every entity reaches
+   * the audio through `hud`, so this exists for the same reason `sfx` does:
+   * one door, so a Player never holds an Audio.
+   */
+  sample(name, vol = 1) {
+    this.audio.sample(name, vol);
+  }
+
+  /**
    * A line of text at the top of the screen, for however long it takes to READ.
    *
    * IT USED TO HOLD FOR 1700ms WHATEVER IT SAID, which is fine for "Math
@@ -4537,9 +4715,17 @@ class Game {
           && this.kotodama.canShop(p)
       );
       if (shopper) {
-        this.profile.open('shop', { shopper });
-        this._render();
-        return;
+        /* THE STALL ASKS A QUESTION NOW RATHER THAN OPENING A SHOP.
+           Reported from four-player play: one kitten wanting to look at her
+           own orbs threw all four onto a full-screen modal and froze the
+           world. The chooser is drawn in HER pane, takes only HER pad, and the
+           other three never see it — and if she does pick TRADE, the shared
+           counter opens exactly as it always did. See systems/inspector.js.
+
+           NO `return` AND NO `_render` HERE, unlike the profile branch above:
+           this does not freeze anything, so the rest of the frame must run.
+           `Inspector.busy` is what takes her stick, further down. */
+        this.inspector.open(shopper.index);
       }
     }
 
@@ -4564,7 +4750,16 @@ class Game {
     const asked = this.input.players.findIndex(
       (p) => (p.source === 'gamepad' || p.source === 'touch') && p.pressed('start'),
     );
-    if (asked >= 0) {
+    /* HER OWN START CLOSES HER OWN CARD, and does not also open the pause menu
+       behind it. The card is read later in the frame (`Inspector.update`), so
+       without this the press would be taken twice — the card would close and
+       four kittens would be looking at a pause menu one of them opened by
+       putting a screen away. Only the OWNER is exempt: a sister with no card
+       up still pauses the game with her own Start, which is the rule
+       everywhere else. */
+    if (asked >= 0 && this.inspector.busy(asked)) {
+      // fall through to Inspector.update, which reads the same press
+    } else if (asked >= 0) {
       const opening = !this.paused;
       this.setPaused(opening);
       if (opening) this._claimMenu(asked);
@@ -4639,14 +4834,22 @@ class Game {
        reading four sticks it has just switched off. */
     if (this.teamPicking) this._updateTeamPicker();
 
+    /* BEFORE THE PLAYERS, because the pads it reads are the pads blanked in
+       the loop below — one press must not both choose a menu row and swing a
+       katana. Same ordering, and the same reason, as `_updatePicker`. */
+    this.inspector.update(dt);
+
     const frozen = this.tournament?.frozen;
     for (let i = 0; i < this.players.length; i++) {
       /* The picker hands HER a dead pad and nobody else one — the stick that
          is choosing a cat must not also walk her off a rim, and the other
          three are still playing. */
       const picking = this.picking?.index === i;
+      /* `inspector.busy` is the personal card: her stick is driving a menu in
+         her own pane and must not also walk her into the stall. Only hers —
+         that is the whole point of the thing. */
       const pad = (frozen || picking || this.leaguePicking || this.teamPicking
-        || this.menagerie?.eating(i))
+        || this.menagerie?.eating(i) || this.inspector?.busy(i))
         ? DEAD_PAD : this.input.players[i];
       this.players[i].update(dt, pad, this.world, this.dragons, this);
     }
@@ -4708,6 +4911,7 @@ class Game {
     }
     this.world.setDusk(this.summonScene.updateDusk(dt));
     this._updateSeek(dt);
+    this._updateClanPrompt();
 
     /* --- the tournament ---
        AFTER the players have moved, like the music and the pandas, so the
@@ -5150,6 +5354,11 @@ class Game {
       badge.innerHTML = `<span class="pip"></span><span class="nm"></span>`
         + `<b id="score-${i}">0</b><span class="clan" id="clan-${i}"></span>`;
       badge.querySelector('.pip').style.background = css;
+      /* THE SAME COLOUR THE PANE IS FRAMED IN — that pairing is the whole
+         point, so it is written from `styleCss` here rather than restated in
+         the stylesheet, exactly as the pip already was. `--seat` is what the
+         inset ring in `.score` reads. */
+      badge.style.setProperty('--seat', css);
       badge.querySelector('.nm').textContent = style.name.toUpperCase();
       ((panes[i]?.x ?? 0) > 0 ? right : left).appendChild(badge);
     }
@@ -5387,6 +5596,14 @@ class Game {
     // is what you get, and a nine-year-old shouldn't have to infer it.
     this._updateClanBadge(player);
     this.toast(`${player.name} joined ${clan.name} — ${clan.buff.label}!`, player.index);
+    /* AND SAY IT AGAIN OVER HER HEAD, because the toast is at the top of a
+       screen she is not looking at: she is looking at her kitten, in her own
+       quarter, having just pressed a button. Six seconds and then it fades —
+       long enough to read twice, short enough that it is gone before she has
+       walked out of the ring. Ten would be too long; a caption parked over the
+       picture stops being read and starts being in the way, which is the whole
+       risk of putting text on a character. */
+    player.setCallout(`${clan.name.toUpperCase()} — ${clan.buff.label.toUpperCase()}`, 6);
     if (clan.buff.panda) {
       this._updatePanda(player);
       const left = toNextTier(player.bambooCut, player.pandaFedFrom, player.panda?.tier ?? -1);
@@ -5397,6 +5614,69 @@ class Game {
         );
       }
     }
+    this._celebrateClan(player, clan);
+  }
+
+  /**
+   * The two and a half seconds after a kitten swears to a clan for the first
+   * time: she takes the blessing, her leader dances, and her own camera pulls
+   * in to watch.
+   *
+   * IT IS PER PLAYER AND NOT A CUTSCENE, which is the same decision — and the
+   * same paragraph — as the found-a-star pose it is built on. `holdAloft`
+   * already owns the camera move (see `Player._updateCamera`), so in split
+   * screen the other three panes never notice: they are playing, and the girl
+   * who did the thing is the only one being shown it. Stopping four kittens'
+   * game to congratulate one of them is exactly the interruption the split
+   * screen exists to avoid.
+   *
+   * ONCE PER CLAN PER KITTEN. Swearing somewhere you have sworn before is a
+   * correction — you wandered into the wrong hall, or you are swapping back —
+   * and the oath still works every time. Only the ceremony is spent once.
+   * `clansSworn` lives on the player so a restart clears it with everything
+   * else.
+   *
+   * IT REFUSES OFF THE FLOOR. A kitten mounted, carried or knocked out cannot
+   * reach a hall anyway; the guard is here so that if one ever can, the pose
+   * degrades to nothing rather than drawing a cat standing in mid-air with her
+   * paws up. Prefer a rule that degrades over one that vanishes.
+   */
+  _celebrateClan(player, clan) {
+    if (!player || !clan) return;
+    if (player.clansSworn.has(clan.id)) return;
+    /* THE GUARD COMES BEFORE THE SPEND, so a ceremony she could not watch is
+       not counted as one she has had. She cannot reach a hall mounted or
+       knocked out today; if she ever can, the right outcome is that the
+       moment waits for her rather than being burned in a frame she was a
+       ghost for. */
+    if (player.mount || player.rideAlong || player.ko || player.angel) return;
+    player.clansSworn.add(clan.id);
+
+    /* THE EMBLEM IS THE CLAN'S OWN, AND A COLOURED ORB IF IT IS MISSING.
+       `holdAloft(null)` already draws a warm sphere, so a clan with no emblem
+       sheet loses a picture and keeps the moment — ninth non-negotiable, same
+       rule as the voices. The halo carries the clan's colour either way, so
+       even the fallback is Thunderpaw gold rather than a generic prize.
+
+       `flat` BECAUSE AN EMBLEM IS A DRAWING AND NOT A PRIZE. The dragon ball
+       route paints its stars round the sphere, which is right for a sphere and
+       wrong for a logo — see the note in `holdAloft`.
+
+       AND THE ORB IS TINTED ONLY WHEN THERE IS NO EMBLEM. A texture goes
+       through the same `color` as a multiply, so tinting a gold bolt gold
+       burns it to brown and tinting the panda's cream face green ruins the
+       one emblem that is deliberately not its clan's colour. The fallback
+       sphere has no texture to spoil, so it takes the colour and reads as
+       "this clan" without a picture at all. */
+    const emblem = this.clanArt?.[clan.id]?.texture ?? null;
+    player.holdAloft(emblem, CLAN_POSE, { flat: true, tint: clan.color });
+    if (!emblem && player.aloft) player.aloft.material.color.set(clan.color);
+
+    /* HER LEADER, NOT EVERY LEADER. Four kittens can be in four different
+       halls, and six cats bouncing because one of them swore somewhere else is
+       the tell that this is a global flag rather than a reaction. */
+    this.leaderFor(clan)?.cheer(CLAN_POSE);
+    this.sfx('clanJoin');
   }
 
   /**
@@ -5491,6 +5771,30 @@ class Game {
     return d;
   }
 
+  /**
+   * The biggest island, corner to corner, in world units. 192, as it happens.
+   *
+   * Measured off `world.islands` rather than written down, for the same reason
+   * the minimap measures its own bounds: the islands are generated, so a
+   * constant here would be a number that used to be true. Cached because they
+   * do not move — the arena is among them from the start, hidden or not.
+   */
+  _islandSpan() {
+    if (this._islandSpanCache != null) return this._islandSpanCache;
+    const isl = this.world?.islands ?? [];
+    if (!isl.length) return 0;    // no world yet; the caller falls back
+    this._islandSpanCache = Math.max(...isl.map((i) => i.radius)) * 2;
+    return this._islandSpanCache;
+  }
+
+  /** How far back a camera may EVER sit: the distance that fits one whole
+   *  island across this pane. See the note at its one call site. */
+  _maxViewDist(fovDeg, aspect) {
+    const span = this._islandSpan();
+    if (!(span > 0)) return Infinity;   // degrade to the old behaviour
+    return fitDistance({ spread: span, fovDeg, aspect });
+  }
+
   /** Where a set of kittens is, on average. The two-player midpoint
    *  generalised — same answer for two, and the right one for three or four. */
   _centroid(members = this.players.map((_, i) => i)) {
@@ -5575,7 +5879,14 @@ class Game {
        moved. */
     const { groups, of } = clusterPlayers({
       pts: this.players.map((p) => p.position),
-      solo: this.players.map((p) => !!(p.mount || p.rideAlong)),
+      /* A GIRL READING HER OWN CARD GETS HER OWN PANE, for the same reason a
+         girl on a dragon does: she is not sharing a view with her sister right
+         now, and a card drawn over a shared pane covers half of somebody
+         else's game. `stablePanes` is what makes this bearable — the other
+         panes do not shuffle when hers appears. */
+      solo: this.players.map(
+        (p) => !!(p.mount || p.rideAlong || this.inspector?.busy(p.index))
+      ),
       prev: this._clusterOf,
       mergeIn: MERGE_IN,
       mergeOut: MERGE_OUT,
@@ -5795,6 +6106,41 @@ class Game {
         }));
       }
 
+      /* AND NEVER FURTHER BACK THAN THE WHOLE WORLD.
+         Reported from four-player play: "sometimes players get knocked so far
+         they fall off the island entirely and then the camera zooms out
+         infinitely far away."
+
+         IT IS `fitDistance` THAT RUNS AWAY, and it is not a bug in it — it is
+         doing exactly what it is asked. Every other term above is bounded:
+         `clamp(26 + dist * 0.85, 26, 52)` has a ceiling in it, the Dojo and
+         Ryuuseki distances are constants, and the ring's is the size of its
+         own deck. `fitDistance` is the only one that is a function of an
+         UNBOUNDED input — the spread between the furthest two kittens — and a
+         kitten falling out of the world puts a hundred and sixty units into
+         it before `Player._respawn` catches her at y = -160.
+
+         The ceiling is the one Richard named: "from both opposite ends of the
+         entire island to be covered, if camera zooms out that far, it cant
+         zoom out any further". One whole island — 192 units, the home one —
+         asked of the same `fitDistance` at the same aspect, so a narrow pane
+         still gets a bigger ceiling than a wide one and the two answers cannot
+         drift apart.
+
+         BE HONEST ABOUT WHAT IT BOUNDS. Measured, at 16:9:
+
+           the widest legitimate group (four single-linked at MERGE_OUT)  152
+           THIS CEILING                                                   212
+           a kitten falling the 160 units to `Player._respawn`            176
+           respawned in the town while the others are at the arena        375
+
+         So it clamps the cross-map case and NOT the long fall, which is
+         genuinely under it. THIS IS A FAILSAFE, NOT THE FIX — the fix is
+         `Tournament._catchFallers`, which stops the fall happening at all.
+         Both are wanted: that one removes the way we know about, this one
+         bounds the damage of every way nobody has thought of yet. */
+      wantDist = Math.min(wantDist, this._maxViewDist(rig.camera.fov, aspect));
+
       if (!rig.seeded) {
         rig.target.copy(want);
         rig.dist = wantDist;
@@ -5933,6 +6279,71 @@ class Game {
       const cam = this._cameraFor(groups[i]);
       if (cam) this._renderView(cam, v.x, v.y, v.w, v.h);
     });
+    /* WRITTEN ONCE, HERE, AT THE END OF THE FRAME. `_panes` is asked the same
+       question by the HUD and the minimaps as well, and if any of them updated
+       the seats then the three callers would be answering from different
+       states and could disagree about where a pane is. */
+    this._paneSeats = paneSeats(panes, groups, W, H);
+    this._paintPaneEdges(panes, groups, W, H);
+    /* THE SAME RECTANGLES, so a card and the frame around it can never
+       disagree about where a pane is. */
+    this.inspector.layout(panes, groups, W, H);
+  }
+
+  /**
+   * Frame every pane in the colour of whoever is in it.
+   *
+   * FOUR SMALL PANES AND A 13px PIP IS NOT ENOUGH TO FIND YOURSELF BY. Reported
+   * from four-player play on a PC: nobody could reliably tell which quarter of
+   * the screen was theirs, or which of the four scores along the top was
+   * theirs. Both are the same question — "which one am I" — and one answer
+   * fixes both, as long as the answer is the same in both places. So the pane
+   * gets a band of her colour and the score badge gets an inset ring of the
+   * same colour, and neither is subtle.
+   *
+   * NOT WHEN THERE IS ONLY ONE PANE. A single frame around the whole screen
+   * answers a question nobody is asking and puts a coloured box round the game.
+   *
+   * A SHARED PANE IS A GRADIENT ACROSS ITS MEMBERS, not one member's colour and
+   * not a neutral grey. Two kittens standing together are both in there, and
+   * picking one of them to name the pane after would be wrong for the other
+   * exactly half the time — which is worse than no answer, because it is a
+   * confident wrong one.
+   *
+   * THE COORDINATES COME IN WEBGL-SIDE-UP. `splitLayout` works in the
+   * renderer's bottom-left origin because that is what `setViewport` wants;
+   * CSS counts from the top. Getting that inversion wrong does not look
+   * broken — it looks like the frames belong to the wrong players, which is
+   * the one failure this whole feature exists to prevent.
+   */
+  _paintPaneEdges(panes, groups, W, H) {
+    const host = document.getElementById('pane-edges');
+    if (!host) return;
+    const show = panes.length > 1 && this.state === 'play' && !this.paused;
+    host.classList.toggle('hidden', !show);
+    if (!show) { if (host.childElementCount) host.textContent = ''; return; }
+
+    while (host.childElementCount < panes.length) {
+      const d = document.createElement('div');
+      d.className = 'pane-edge';
+      host.appendChild(d);
+    }
+    while (host.childElementCount > panes.length) host.lastElementChild.remove();
+
+    panes.forEach((v, i) => {
+      const el = host.children[i];
+      el.style.left = `${v.x}px`;
+      el.style.top = `${H - v.y - v.h}px`;      // WebGL bottom-left -> CSS top-left
+      el.style.width = `${v.w}px`;
+      el.style.height = `${v.h}px`;
+      const members = groups[i] ?? [];
+      const cols = members.map((m) => styleCss(m));
+      /* One member still goes through the gradient, with the same colour at
+         both ends. A separate solid-colour path would be a second way of
+         saying the same thing and a second place for it to go wrong. */
+      const stops = cols.length > 1 ? cols.join(', ') : `${cols[0]}, ${cols[0]}`;
+      el.style.borderImageSource = `linear-gradient(135deg, ${stops})`;
+    });
   }
 
   /**
@@ -5945,9 +6356,20 @@ class Game {
    * a pane the renderer drew somewhere else.
    */
   _panes(W, H, groups) {
-    return splitLayout(
+    const panes = splitLayout(
       groups.length, W, H, 3, this.settings.dir, groups.map((m) => m.length)
     );
+    /* ...AND THEN GIVEN TO WHOEVER WAS ALREADY STANDING THERE. `splitLayout`
+       decides the shapes; `stablePanes` decides who gets which, so a player
+       does not get thrown across the screen because two OTHER kittens walked
+       towards each other. See core/split.js for the worked example.
+
+       IT IS PURE AND DETERMINISTIC, WHICH IS WHY IT CAN LIVE IN HERE. This is
+       called three times a frame — renderer, HUD, minimaps — and all three
+       must agree; a function of (panes, groups, seats) gives the same answer
+       every time, and `_paneSeats` is only rewritten once, at the end of the
+       frame, by `_render`. */
+    return stablePanes(panes, groups, this._paneSeats, W, H);
   }
 
   /** Slow drifting fly-over behind the title screen. */

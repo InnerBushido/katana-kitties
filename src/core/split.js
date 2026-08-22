@@ -134,6 +134,146 @@ export function splitLayout(n, W, H, gap = 3, dir = 'vertical', sizes = null) {
   return cells.slice(0, Math.min(n, 4));
 }
 
+/* ===========================================================================
+   AND WHICH GROUP GETS WHICH PANE.
+
+   `splitLayout` decides the SHAPES. It hands them back in group order, which
+   is the obvious thing to do and is also a bug: a group's index moves when
+   anybody else on the screen joins or leaves a pane, so a player who has been
+   sitting in the bottom right all afternoon is teleported to the bottom left
+   because two OTHER kittens walked towards each other.
+
+   Reported from four-player play, and it is worse than it sounds. The whole
+   reason for split screen is that you know where to look; a pane that moves
+   costs you a second of hunting for yourself, and it moves for a reason that
+   has nothing to do with you.
+
+   Worked example, four players, everybody alone — panes are TL TR BL BR by
+   index, so 0123 sit in reading order. Players 1 and 2 walk together:
+
+     groups become [0] [1,2] [3]        (sorted by lowest member)
+     sizes 1,2,1, so the PAIR takes the full-width top strip
+     the two singles take the two bottom cells, in group order
+     -> player 0 goes top-left  -> bottom-LEFT
+     -> player 3 stays bottom-right
+
+   Player 0 has been thrown across the screen by somebody else's walk. The pair
+   genuinely has to move — its pane did not exist a frame ago — but player 0's
+   did, and there was a free bottom cell in the same corner she was already in.
+
+   SO THE PANES ARE ASSIGNED, NOT DEALT OUT IN ORDER. Every valid permutation
+   of the returned rectangles is scored by how far it drags each group from
+   where that group's members were last frame, and the cheapest one wins.
+   Four panes is at most 24 permutations of four items, once a frame, on a
+   machine drawing a 3D world — the cost is not worth a cleverer algorithm, and
+   a Hungarian solver here would be three times the code and impossible to read
+   at a glance.
+
+   ONLY PANES OF IDENTICAL SHAPE MAY SWAP, which is the constraint that keeps
+   `splitLayout`'s rules intact. Its uneven layouts put the big rectangle at the
+   big group's index on purpose — the pair that earned half the screen must not
+   be handed a quarter because a quarter happened to be nearer. Restricting
+   swaps to same-size rectangles means every permutation this considers is one
+   `splitLayout` itself would have been willing to return.
+
+   TIES GO TO THE IDENTITY, so behaviour is unchanged wherever this has no
+   opinion: one pane, two even panes, or a frame where nobody has moved. The
+   two-player game never reaches a case where two same-shaped panes have
+   different costs unless the players actually swapped sides, which is the
+   fifth non-negotiable satisfied by construction rather than by a special case.
+=========================================================================== */
+
+/** Permutations of 0..n-1, n <= 4. Written out rather than generated because
+ *  this runs every frame and n is never large enough for cleverness to pay. */
+function permutations(n) {
+  if (n <= 1) return [[0]];
+  const out = [];
+  const walk = (used, acc) => {
+    if (acc.length === n) { out.push(acc.slice()); return; }
+    for (let i = 0; i < n; i++) {
+      if (used[i]) continue;
+      used[i] = 1; acc.push(i);
+      walk(used, acc);
+      acc.pop(); used[i] = 0;
+    }
+  };
+  walk(new Array(n).fill(0), []);
+  return out;
+}
+
+/** Centre of a rect, in fractions of the frame, so a window resize does not
+ *  read as everybody moving. */
+const centreOf = (v, W, H) => ({ cx: (v.x + v.w / 2) / W, cy: (v.y + v.h / 2) / H });
+
+/**
+ * Reorder `panes` so each group lands as near as possible to where its members
+ * were.
+ *
+ * @param panes  what `splitLayout` returned, in group order
+ * @param groups arrays of player indices, same order as `panes`
+ * @param prev   player index -> { cx, cy } she occupied last frame, in frame
+ *               fractions. Missing entries are players who were not on screen,
+ *               and a group of only those has no opinion and costs nothing.
+ * @param W,H    the frame the panes were laid out in
+ * @returns a new array of the SAME rects, permuted; index still means group
+ */
+export function stablePanes(panes, groups, prev, W, H) {
+  const n = panes.length;
+  if (n < 2 || !prev || !(W > 0) || !(H > 0)) return panes;
+
+  /* Where each group wants to be: the mean of its members' old centres. A
+     group that has just formed out of two panes lands between the two, which
+     is the right answer — whichever of them it is nearest to is the one that
+     moves least, and the other was going to move whatever we did. */
+  const want = groups.map((m) => {
+    const seen = m.map((i) => prev[i]).filter(Boolean);
+    if (!seen.length) return null;
+    return {
+      cx: seen.reduce((s, p) => s + p.cx, 0) / seen.length,
+      cy: seen.reduce((s, p) => s + p.cy, 0) / seen.length,
+    };
+  });
+  if (want.every((w) => !w)) return panes;
+
+  const at = panes.map((v) => centreOf(v, W, H));
+  /* A pane may only take another's place if the two are the same rectangle.
+     See the header: this is what keeps splitLayout's size rules true. */
+  const shape = panes.map((v) => `${v.w}x${v.h}`);
+
+  let best = null;
+  let bestCost = Infinity;
+  for (const p of permutations(n)) {
+    let ok = true;
+    let cost = 0;
+    for (let g = 0; g < n; g++) {
+      if (shape[p[g]] !== shape[g]) { ok = false; break; }
+      const w = want[g];
+      if (!w) continue;
+      /* Weighted by how many kittens are being moved: dragging a pair across
+         the screen is twice the disruption of dragging one player. */
+      cost += Math.hypot(at[p[g]].cx - w.cx, at[p[g]].cy - w.cy) * groups[g].length;
+    }
+    /* STRICTLY cheaper, and the identity is tried first, so a tie leaves
+       everything exactly where it is. */
+    if (ok && cost < bestCost - 1e-9) { bestCost = cost; best = p; }
+  }
+  if (!best) return panes;
+  return best.map((src) => panes[src]);
+}
+
+/** Where every player sat, as frame fractions, ready to feed back in as
+ *  `prev`. Kept next to `stablePanes` because the two are one mechanism and a
+ *  caller assembling this itself is a caller that can assemble it wrong. */
+export function paneSeats(panes, groups, W, H) {
+  const seats = {};
+  if (!(W > 0) || !(H > 0)) return seats;
+  panes.forEach((v, g) => {
+    const c = centreOf(v, W, H);
+    for (const i of groups[g] ?? []) seats[i] = c;
+  });
+  return seats;
+}
+
 /** Headroom past the last kitten. She is drawn about two units tall and stands
  *  at the centre of her sprite, so framing her exactly at the edge puts half of
  *  her outside it — and a player pinned to the very edge of a pane reads as

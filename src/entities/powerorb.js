@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Label, makeLabelTexture } from '../core/label.js';
+import { tune } from '../core/tuning.js';
 
 /* ---------------------------------------------------------------------------
    POWERUP KOTODAMA — the endgame collectible.
@@ -202,14 +203,14 @@ export const stockFor = (id, players = 2) => {
  * float, which is how you cross to a shard or hang over a sister winding up a
  * dash — and now it costs her the two seconds she is holding it for.
  */
-export const WARD = {
+export const WARD = tune('WARD', {
   max: 2.0,
   tail: 0.2,
   cool: 1.5,
   coolMin: 0.4,
   gravity: 0.25,
   radius: 2.6,
-};
+});
 
 /**
  * The power dive. Interact, in the air, and she drops.
@@ -220,13 +221,13 @@ export const WARD = {
  * set and the one worth keeping — two kids on Joy-Cons have six buttons
  * between them and every one is already spoken for.
  */
-export const DIVE = {
+export const DIVE = tune('DIVE', {
   speed: 46,
   dmg: 22,
   knock: 14,
   lift: 6.5,
   radius: 4.2,
-};
+});
 
 /**
  * The CROSS SLASH — Cloud's, by way of a nine-year-old who has played Smash.
@@ -271,26 +272,58 @@ export const DIVE = {
  * `gap` IS THE LENGTH OF ONE CUT, and every cut gets one, the third included —
  * so the cutting is `cuts * gap` end to end, near enough a second. It has been
  * 0.16 and 0.21 and both were too fast to see three of anything happen.
+ *
+ * `wind` IS THE WIND-UP, AND IT IS THE PRICE OF THE REWORK. Four adults played
+ * a round of this and the verdict was that the move had become too good: the
+ * cuts hold now, so the whole technique lands as one unavoidable lump, and the
+ * only thing standing between a kitten and that lump was a quarter-second of
+ * hold she could pay while still walking around. So she plants for `wind`
+ * BEFORE the first cut, visibly, and anybody watching has that long to move.
+ *
+ * IT IS A SEPARATE NUMBER FROM `hold` AND MUST STAY ONE, however much
+ * `hold + wind` looks like it wants to be a single 0.5. They are two different
+ * questions asked of the same press. `hold` is "did she mean the other move?"
+ * — it has to stay short and she has to stay MOBILE through it, because every
+ * ordinary slash pays it and a kitten who freezes for half a second every time
+ * she taps attack has lost the ordinary slash. `wind` is "she meant it, and
+ * now she is committed" — she is planted, and its length is a balance knob
+ * that will get turned again. Collapsing them would mean either freezing the
+ * tap window or shortening the tell, and the tell is the whole fix.
+ *
+ * LETTING GO DURING `wind` ABORTS, and this is deliberately NOT a cancel of
+ * the technique proper. Nothing has been thrown yet and nobody has been caught
+ * yet; she has spent the wind-up planted and gets nothing for it, which is the
+ * risk that makes the commitment mean something. Once the first cut is out she
+ * is in it to the end — see `Player._stepSpecials`, and `Player.hurt`, which
+ * is the one thing that CAN stop it.
  */
-export const CROSS = {
+export const CROSS = tune('CROSS', {
   cuts: 3,
   gap: 0.3,
   hold: 0.25,
+  /** Planted, committed, and nothing thrown yet. See above. `hold + wind` is
+   *  the half second of holding the button before the first cut. */
+  wind: 0.25,
   gravity: 0.25,
   /** The beat between the last cut and the launch. Smash's pause-for-effect. */
   hang: 0.25,
   /** ...and how long she cannot attack, or block, once it is over. See
    *  `Player.triLockT` — the block is locked out for the whole technique and
    *  this long afterwards, because a bubble popped out of the recovery would
-   *  make the move free. */
-  cool: 0.5,
+   *  make the move free.
+   *  0.75, UP FROM 0.5 — the other half of the same playtest as `wind`. Half a
+   *  second of recovery is under two of the technique's own cuts, so a kitten
+   *  who landed one could simply throw another before anybody had got back up.
+   *  `crossReady` chimes when it runs out, because a recovery long enough to
+   *  matter is long enough to lose track of mid-fight. */
+  cool: 0.75,
   /** THE LAUNCH IS NOT `tri.knock`. That number is per-cut and deliberately
      feeble — nine damage and a nudge — because the cuts are not supposed to
      move anybody any more; they are supposed to HOLD. All the force the move
      ever had is spent here, once, on everything it caught. */
   knock: 30,
   lift: 13,
-};
+});
 
 /**
  * The charge. Sprint into an attack and she goes straight through it.
@@ -301,14 +334,14 @@ export const CROSS = {
  * anything solid, so charging a clan hall stops at the wall rather than
  * pushing a kitten through it.
  */
-export const CHARGE = {
+export const CHARGE = tune('CHARGE', {
   dist: 16,
   speed: 42,
   dmg: 18,
   knock: 22,
   lift: 5.5,
   radius: 2.4,
-};
+});
 
 /* ------------------------------- aggregation ------------------------------ */
 

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Katana Kitties — balance</title>
+<!--
+  THE BALANCE PAGE. `npm run dev`, then open /tuning.html.
+
+  WHY IT IS A SEPARATE PAGE AND NOT A DEBUG PANEL IN THE GAME. The game already
+  has one (the backtick key), and this does not belong in it: a debug panel is
+  for something you want to see WHILE playing, and balancing is something you
+  do BETWEEN plays, with both hands, reading. Putting sliders on the play
+  screen would also mean shipping them, and these write to a file.
+
+  IT ONLY EXISTS UNDER `npm run dev`, TWICE OVER. `vite build` takes its inputs
+  from index.html and nothing else, so this file is not in the bundle Vercel
+  serves; and the save is a POST to /__tuning, which is a `configureServer`
+  hook in vite.config.js, a hook the production build never runs. Either alone
+  would do. Both, because a page that writes files into the source tree is a
+  fine thing on a laptop and an appalling one on the open internet, and the
+  cheap way to be sure it is not deployed is for it not to be built. If it is
+  ever opened against a built copy anyway, the save button says plainly that
+  there is nobody to save to rather than failing silently.
+
+  EVERYTHING IT SHOWS COMES OUT OF THE GAME'S OWN MODULES. Defaults are read
+  from `DEFAULTS` in core/tuning.js, which `tune()` fills in as the entity
+  files are imported; the live values are the real `CROSS`, `ATTACKS` and so
+  on. No number on this page is a second copy of a number in the game, so the
+  page cannot drift out of agreement with the thing it tunes. What IS written
+  here and nowhere else is one short sentence per field — the code comments are
+  paragraphs about why a number is what it is, which is what you want when
+  changing the code and not what you want while dragging a slider.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #1d1216;
+  --paper: #fbeed2;
+  --paper-2: #f2ddb4;
+  --vermillion: #e0512c;
+  --ember: #ff8a3d;
+  --storm: #35d7f0;
+  --gold: #f5c341;
+  --edge: #4a3038;
+  --panel: #2a1a20;
+  --well: #16090d;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: 'Nunito', system-ui, sans-serif;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 0 0 5rem;
+}
+header {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--ink);
+  border-bottom: 4px solid var(--vermillion);
+  padding: 0.9rem clamp(1rem, 4vw, 3rem);
+  display: flex; flex-wrap: wrap; gap: 0.9rem; align-items: center;
+}
+h1 {
+  font-family: 'Bangers', cursive; font-weight: 400;
+  font-size: clamp(1.3rem, 3.4vw, 2rem); margin: 0; letter-spacing: 0.04em;
+  color: var(--gold); line-height: 1.15;
+}
+h1 small {
+  display: block; font-family: 'Nunito', sans-serif; font-size: 0.78rem;
+  letter-spacing: 0; color: var(--paper-2); opacity: 0.75; font-weight: 400;
+}
+.spacer { flex: 1 1 auto; }
+button {
+  font-family: 'Bangers', cursive; font-size: 1.02rem; letter-spacing: 0.05em;
+  padding: 0.42rem 1.05rem; border: 3px solid var(--ink); border-radius: 10px;
+  background: var(--paper-2); color: var(--ink); cursor: pointer;
+  box-shadow: 0 4px 0 #00000066;
+}
+button:hover { transform: translateY(-1px); box-shadow: 0 5px 0 #00000066; }
+button:active { transform: translateY(2px); box-shadow: 0 2px 0 #00000066; }
+button.go { background: var(--gold); }
+button.warn { background: var(--vermillion); color: var(--paper); }
+button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+#status { font-size: 0.84rem; min-height: 1.2em; color: var(--gold); font-weight: 700; }
+main { padding: 1.4rem clamp(1rem, 4vw, 3rem); max-width: 1520px; margin: 0 auto; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.4rem; }
+@media (min-width: 1150px) {
+  .cols { grid-template-columns: minmax(0, 1fr) 470px; align-items: start; }
+}
+section {
+  background: var(--panel); border: 3px solid var(--edge); border-radius: 14px;
+  padding: 1rem 1.2rem 1.1rem; margin-bottom: 1.2rem;
+}
+section > h2 {
+  font-family: 'Bangers', cursive; font-weight: 400; letter-spacing: 0.04em;
+  margin: 0 0 0.15rem; font-size: 1.35rem; color: var(--gold);
+}
+section > p.blurb {
+  margin: 0 0 0.9rem; font-size: 0.86rem; color: var(--paper-2);
+  opacity: 0.85; line-height: 1.5;
+}
+.field { padding: 0.65rem 0; border-top: 1px solid var(--edge); }
+.field.changed {
+  background: #3a2410; margin: 0 -0.65rem; padding: 0.65rem;
+  border-radius: 8px; border-top-color: transparent;
+}
+.frow { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
+.fname { font-weight: 900; font-size: 0.93rem; min-width: 9rem; }
+.fname code { color: var(--storm); font-size: 0.82rem; font-weight: 400; display: block; }
+.help { font-size: 0.82rem; color: var(--paper-2); opacity: 0.8; line-height: 1.45; margin-top: 0.3rem; }
+input[type=range] { flex: 1 1 150px; min-width: 110px; accent-color: var(--vermillion); }
+input[type=number] {
+  width: 5.4rem; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.93rem;
+  padding: 0.24rem 0.4rem; border-radius: 7px; border: 2px solid var(--edge);
+  background: var(--ink); color: var(--paper); font-variant-numeric: tabular-nums;
+}
+.was { font-size: 0.76rem; color: var(--gold); white-space: nowrap; }
+.unit { font-size: 0.76rem; opacity: 0.6; }
+button.reset {
+  font-family: 'Nunito', sans-serif; font-size: 0.7rem; font-weight: 700;
+  padding: 0.14rem 0.5rem; box-shadow: none; border-width: 2px;
+  background: transparent; color: var(--paper-2); border-color: var(--edge);
+}
+aside { position: sticky; top: 6rem; }
+canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: var(--well); }
+.legend { display: flex; flex-wrap: wrap; gap: 0.4rem 0.85rem; font-size: 0.76rem; margin-top: 0.6rem; }
+.legend i { display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 3px; margin-right: 0.28rem; vertical-align: -1px; }
+table.phases { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.8rem; }
+table.phases th, table.phases td { text-align: left; padding: 0.28rem 0.4rem; border-bottom: 1px solid var(--edge); }
+table.phases th { color: var(--gold); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+table.phases td.n { text-align: right; font-variant-numeric: tabular-nums; }
+.note { font-size: 0.8rem; color: var(--paper-2); opacity: 0.85; line-height: 1.55; }
+.note code, pre code { color: var(--gold); }
+pre {
+  background: var(--well); border: 2px solid var(--edge); border-radius: 8px;
+  padding: 0.6rem 0.8rem; overflow-x: auto; font-size: 0.79rem;
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Katana Kitties — balance
+    <small>every ability's numbers and what they do. Saves to <code>src/tuning.json</code>.</small>
+  </h1>
+  <div class="spacer"></div>
+  <div id="status"></div>
+  <button id="revert" class="warn">reset everything</button>
+  <button id="save" class="go">save to tuning.json</button>
+</header>
+<main>
+  <div class="cols">
+    <div id="groups"></div>
+    <aside>
+      <section>
+        <h2>The Cross Slash, in time</h2>
+        <p class="blurb">Drawn live from the values on the left. The kitten is
+          schematic, but her timing and her crouch are computed from the same
+          numbers the game runs — so if the wind-up looks too short here, it is
+          too short there.</p>
+        <canvas id="viz" width="900" height="360"></canvas>
+        <div class="legend">
+          <span><i style="background:#7f8ea3"></i>tap window — she can still walk</span>
+          <span><i style="background:#f5c341"></i>wind-up — planted</span>
+          <span><i style="background:#e0512c"></i>the three cuts</span>
+          <span><i style="background:#9b5de5"></i>hang</span>
+          <span><i style="background:#3aa17e"></i>recovery</span>
+        </div>
+        <table class="phases">
+          <thead><tr><th>phase</th><th class="n">from</th><th class="n">to</th><th>she can</th></tr></thead>
+          <tbody id="phases"></tbody>
+        </table>
+        <p class="note" id="totals"></p>
+      </section>
+      <section>
+        <h2>Committing it</h2>
+        <p class="note">Save writes <code>src/tuning.json</code> and Vite reloads
+          the running game with it — no restart. When you like what you have:</p>
+<pre><code>git add src/tuning.json
+git commit -m "Retune the Cross Slash"
+git push</code></pre>
+        <p class="note">Only the numbers you actually moved are written, so the
+          diff is the change. An empty <code>{}</code> is the shipped balance.</p>
+      </section>
+    </aside>
+  </div>
+</main>
+<script type="module" src="/src/tuning-page.js"></script>
+</body>
+</html>

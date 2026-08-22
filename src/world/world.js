@@ -82,9 +82,26 @@ const SKY_FRAG = /* glsl */`
  * re-swear at any other shrine, and the two kittens can belong to different
  * clans — arguing about who picked the best one is the point.
  */
+/*
+ * `oath` IS THE CALL TO ACTION, AND IT IS PER CLAN ON PURPOSE.
+ *
+ * Four adults played this and nobody joined a clan, because nothing ever said
+ * they could. The shrine scene introduces the leader and then the game goes
+ * quiet: standing in the ring with the power one button press away looks
+ * exactly like standing anywhere else. So a kitten who CAN swear here now gets
+ * a line over her head with the button on it — see `Game._updateClanPrompt`.
+ *
+ * SIX LINES AND NOT ONE TEMPLATE. "Press E to join the Thunderpaw clan" six
+ * times is a form to fill in; this is meant to be an oath. Each one names what
+ * the clan actually GIVES — run, blade, shadow, breath, eyes, patience — so the
+ * prompt is also the answer to "why would I", which is the question the
+ * silence was really failing to answer. The clan's own `buff.label` says it
+ * plainly straight afterwards, when she has sworn.
+ */
 export const CLANS = [
   {
     id: 'thunder',
+    oath: 'Swear to run with Thunderpaw',
     name: 'Thunderpaw',
     color: 0xf5c341,
     tile: 0x8f3038,
@@ -93,6 +110,7 @@ export const CLANS = [
   },
   {
     id: 'river',
+    oath: 'Bow beneath the long blade of Riverclaw',
     name: 'Riverclaw',
     color: 0x6fd0f0,
     tile: 0x37477d,
@@ -101,6 +119,7 @@ export const CLANS = [
   },
   {
     id: 'shadow',
+    oath: 'Vanish into the Shadowtail clan',
     name: 'Shadowtail',
     color: 0xb98ce0,
     tile: 0x3d3050,
@@ -109,6 +128,7 @@ export const CLANS = [
   },
   {
     id: 'wind',
+    oath: 'Pledge your breath to Windwhisker',
     name: 'Windwhisker',
     color: 0x8fe0a0,
     tile: 0x3d6b57,
@@ -117,6 +137,7 @@ export const CLANS = [
   },
   {
     id: 'ice',
+    oath: 'Open your eyes with Icewhisker',
     name: 'Icewhisker',
     color: 0xdff4ff,
     tile: 0x4e6f86,
@@ -128,6 +149,7 @@ export const CLANS = [
   },
   {
     id: 'panda',
+    oath: 'Promise your patience to Pandapaw',
     name: 'Pandapaw',
     color: 0xbfe36a,
     tile: 0x2f3a24,

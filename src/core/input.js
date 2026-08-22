@@ -471,6 +471,58 @@ class PadState {
 export const MAX_SLOTS = 4;
 
 
+/**
+ * What this action's button is CALLED on the device a given player is holding.
+ *
+ * WHY IT CANNOT BE ONE STRING. "Press E" is right for the girl on WASD, wrong
+ * for her sister on the arrows, wrong for both Joy-Con halves, and meaningless
+ * on a tablet. A prompt that names the wrong button is worse than no prompt:
+ * she presses the named key, nothing happens, and the conclusion is that the
+ * game is broken rather than that the label is.
+ *
+ * THE HALVES DISAGREE WITH EACH OTHER, which is the case that makes this a
+ * table rather than a lookup. A sideways left Joy-Con has no face cluster at
+ * all — its d-pad is doing that job — so `interact` is a DIRECTION on one half
+ * and a letter on the other, and the two girls holding them are looking at
+ * genuinely different controllers.
+ *
+ * SHORT ENOUGH TO SIT IN A BADGE. These are drawn over a kitten's head in a
+ * quarter of the screen; "the button on the right of the d-pad" is true and
+ * useless. Where a name will not fit, the direction does.
+ */
+const PROMPTS = {
+  vjoyDual: {
+    left: { jump: 'DOWN', attack: 'LEFT', interact: 'RIGHT', mount: 'UP', sprint: 'SL', start: '-', map: 'L', math: 'ZL' },
+    right: { jump: 'B', attack: 'Y', interact: 'A', mount: 'X', sprint: 'SR', start: '+', map: 'R', math: 'ZR' },
+  },
+  joyconSideways: {
+    left: { jump: 'DOWN', attack: 'LEFT', interact: 'RIGHT', mount: 'UP', sprint: 'SL', start: '-', map: 'L', math: 'ZL' },
+    right: { jump: 'B', attack: 'Y', interact: 'A', mount: 'X', sprint: 'SR', start: '+', map: 'R', math: 'ZR' },
+  },
+  /* Xbox lettering, because that is what a browser reporting `mapping:
+     "standard"` is describing and what most PC pads are silk-screened with. A
+     PlayStation pad shows ○ where this says B, which is a wrong LETTER on a
+     button in the right PLACE — the least bad of the available errors, and one
+     no amount of sniffing the id string fixes reliably. */
+  standard: { jump: 'A', attack: 'X', interact: 'B', mount: 'Y', sprint: 'ZR', start: 'START', map: 'RB', math: 'LB' },
+  /* An unknown pad reads any face button for `interact`, so say that. */
+  generic: { jump: 'A', attack: 'ANY', interact: 'ANY', mount: 'ANY', sprint: 'L/R', start: 'START', map: 'RB', math: 'LB' },
+};
+
+/** `KeyE` -> `E`, `Numpad2` -> `NUM 2`, `Comma` -> `,`. */
+function keyGlyph(code) {
+  if (!code) return '?';
+  if (code.startsWith('Key')) return code.slice(3);
+  if (code.startsWith('Digit')) return code.slice(5);
+  if (code.startsWith('Numpad')) return `NUM ${code.slice(6)}`;
+  const named = {
+    Space: 'SPACE', Enter: 'ENTER', NumpadEnter: 'ENTER', ShiftLeft: 'SHIFT',
+    Comma: ',', Period: '.', Semicolon: ';', Slash: '/', Quote: "'",
+    ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT',
+  };
+  return named[code] ?? code.toUpperCase();
+}
+
 /** A stable name for one input device, used by the join screen. */
 export function deviceId(bnd) {
   /* TOUCH FIRST, because a binding can carry both `touch` and a keyset in the
@@ -570,6 +622,37 @@ export class InputManager {
       this._buttonsSeen.delete(e.gamepad.index);
       this._axisWatch.delete(e.gamepad.index);
     });
+  }
+
+  /**
+   * The button prompt for one player's `action`, e.g. 'E' or 'A' or 'RIGHT'.
+   *
+   * ASKED PER SLOT AND NOT PER DEVICE TYPE, because the answer changes when a
+   * girl swaps a keyboard for a pad mid-game, which she does. Returns null when
+   * the slot holds nothing — a prompt with no button on it should not be drawn
+   * at all rather than drawn with a question mark.
+   *
+   * A keyboard set lists several codes per action (the numpad, the punctuation
+   * run and the letters around OKL;) and this prefers the LETTER: it is the one
+   * a laptop definitely has, and 'NUM 2' on a machine with no numpad is the
+   * prompt naming a button that is not there.
+   */
+  promptFor(slot, action) {
+    const bnd = this.bindings[slot];
+    if (!bnd) return null;
+    if (bnd.touch) return this.touch?.labelFor?.(action) ?? action.toUpperCase();
+    if (bnd.pad != null) {
+      const gp = (navigator.getGamepads?.() ?? [])[bnd.pad];
+      const table = PROMPTS[gp ? this.profileNameFor(gp) : 'standard'] ?? PROMPTS.standard;
+      const half = bnd.half ? table[bnd.half] : table;
+      return half?.[action] ?? PROMPTS.standard[action] ?? null;
+    }
+    if (bnd.keyset != null) {
+      const codes = KEYSETS[bnd.keyset]?.[action];
+      if (!codes?.length) return null;
+      return keyGlyph(codes.find((c) => c.startsWith('Key')) ?? codes[0]);
+    }
+    return null;
   }
 
   profileNameFor(gp) {
