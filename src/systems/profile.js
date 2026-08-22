@@ -45,6 +45,18 @@ class Side {
     /** Points she is putting on the table. Zero means she is offering none. */
     this.points = 0;
     this.ready = false;
+    /**
+     * The question this side is being asked right now, or null.
+     *
+     * `{ kind: 'buy'|'sell'|'trade', id, text }`. IT IS PER SIDE AND NOT A
+     * PANEL, which is the whole reason this screen does not use the shared
+     * `Confirm` dialog: that one is a single modal with a single cursor, and
+     * the rule here is that only the girl being asked can answer. A modal over
+     * a four-player trade screen would be answerable by whoever was nearest.
+     */
+    this.pending = null;
+    /** She has answered the final trade question with yes. */
+    this.sure = false;
     this.hold = 0;
     this.repeatT = 0;
   }
@@ -53,6 +65,8 @@ class Side {
     this.offer = null;
     this.points = 0;
     this.ready = false;
+    this.pending = null;
+    this.sure = false;
     this.hold = 0;
   }
 }
@@ -118,6 +132,8 @@ export class ProfileScreen {
         else if (act.dataset.act === 'confirm') this._confirmHere(i);
         else if (act.dataset.act === 'buy') this._buyHere(i);
         else if (act.dataset.act === 'sell') this._sellHere(i);
+        else if (act.dataset.act === 'yes') this._answerHere(i, true);
+        else if (act.dataset.act === 'no') this._answerHere(i, false);
         this._sig = '';           // the flash line and the cards both moved
         this._paint();
         return;
@@ -162,7 +178,13 @@ export class ProfileScreen {
       this.game.players[index]?.score ?? 0,
       side.points + Math.sign(dir) * POINT_STEP
     ));
-    if (side.points !== was) { side.ready = false; this.game.audio?.play('menu'); }
+    if (side.points !== was) {
+      side.ready = false;
+      /* Same consent rule one step further along — see `_offerHere`. */
+      side.sure = false;
+      side.pending = null;
+      this.game.audio?.play('menu');
+    }
   }
 
   get active() { return this.mode !== null; }
@@ -255,6 +277,17 @@ export class ProfileScreen {
 
     if (pad.pressed('start')) { this.close(); return; }
 
+    /* A QUESTION OWNS THIS SIDE'S BUTTONS UNTIL SHE ANSWERS IT, and only this
+       side's — the other girls carry on shopping. JUMP is yes because JUMP is
+       what she pressed to get here; everything else that is not the stick is
+       no, because "I did not mean that" is the answer a wrong press wants and
+       every other button on this screen is a wrong press now. */
+    if (side.pending) {
+      if (pad.pressed('jump')) this._answerHere(index, true);
+      else if (pad.pressed('attack') || pad.pressed('interact')) this._answerHere(index, false);
+      return;
+    }
+
     if (this.mode === 'shop') this._shopButtons(index, pad);
     else this._tradeButtons(index, pad, side);
   }
@@ -300,6 +333,8 @@ export class ProfileScreen {
        against her will" the brief rules out. */
     side.offer = side.offer === side.i ? null : side.i;
     side.ready = false;
+    side.sure = false;
+    side.pending = null;
     this.game.audio?.play('menu');
   }
 
@@ -318,7 +353,34 @@ export class ProfileScreen {
       return;
     }
     side.ready = !side.ready;
+    /* UN-CONFIRMING THROWS AWAY HER ANSWER TOO. Otherwise a girl who backs out
+       and comes back in is already half-way through agreeing to a trade she
+       has since changed — the same "traded against her will" the offer clears
+       for, one step further along. */
+    if (!side.ready) { side.sure = false; side.pending = null; }
     this.game.audio?.play(side.ready ? 'score' : 'menu');
+  }
+
+  /**
+   * ASK, THEN DO — the one place on this screen where money changes hands.
+   *
+   * Buying and selling used to happen on the press. Both are one button in a
+   * list of eight identical-looking rows that a stick scrolls through, sell is
+   * a LOSS (the orb goes for less than it cost), and neither can be undone.
+   * A girl aiming for the row below hers sold her Ward and there was nothing
+   * on screen that had told her she was about to.
+   *
+   * THE QUESTION IS PER SIDE, NOT A MODAL. See `Side.pending` — only the girl
+   * being asked can answer it, and the rest of the screen keeps working while
+   * she thinks about it.
+   *
+   * REFUSALS ARE STILL IMMEDIATE. Asking "buy this?" and then answering "you
+   * cannot afford it" is two presses to be told no; the refusal has to come
+   * first, exactly where it did before.
+   */
+  _ask(index, pending) {
+    this.sides[index].pending = pending;
+    this.game.audio?.play('menu');
   }
 
   /** JUMP, or a tap on BUY. */
@@ -327,8 +389,11 @@ export class ProfileScreen {
     const K = this.game.kotodama;
     const id = ORB_IDS[this.sides[index].i];
     const why = K.buyRefusal(player, id);
-    if (why) { this._say(why); this.game.audio?.play('deny'); }
-    else { K.buy(player, id); this._say(`Bought ${ORB_BY_ID[id].name}`); }
+    if (why) { this._say(why); this.game.audio?.play('deny'); return; }
+    this._ask(index, {
+      kind: 'buy', id,
+      text: `Buy ${ORB_BY_ID[id].name} for ${K.price} points?`,
+    });
   }
 
   /** ATTACK, or a tap on SELL. */
@@ -341,8 +406,83 @@ export class ProfileScreen {
       this.game.audio?.play('deny');
       return;
     }
-    K.sell(player, id);
-    this._say(`Sold ${ORB_BY_ID[id].name} for ${K.sellPrice}`);
+    this._ask(index, {
+      kind: 'sell', id,
+      text: `Sell ${ORB_BY_ID[id].name} for ${K.sellPrice} points? You paid ${K.price}.`,
+    });
+  }
+
+  /**
+   * She said yes. Do the thing she was asked about.
+   *
+   * THE ORB ID IS TAKEN FROM THE QUESTION, NOT FROM HER CURSOR. Between the
+   * question and the answer she can have moved — the stick is not frozen, and
+   * on a phone the confirm button is somewhere else on screen entirely — and
+   * a confirmation that acts on the cursor rather than on what it asked about
+   * is worse than no confirmation at all: it puts a yes-press behind the wrong
+   * orb, which is the exact accident it was added to prevent.
+   */
+  _answerHere(index, ok) {
+    const side = this.sides[index];
+    const q = side.pending;
+    if (!q) return false;
+    side.pending = null;
+    if (!ok) {
+      this.game.audio?.play('deny');
+      /* SAYING NO TO A TRADE CALLS THE WHOLE TRADE OFF, rather than only
+         closing her own box.
+
+         This was a live bug and it is the kind that is invisible from the
+         code: `_maybeTrade` runs every frame, and every frame it found two
+         girls still ticked and one of them without a question up — so it put
+         the same question straight back. She pressed no, the box blinked, and
+         it was still there. The only escape was to work out that un-ticking
+         CONFIRM was a separate control.
+
+         Clearing only her own tick would fix the loop and leave a worse bug:
+         her sister is still ticked AND still holding a `sure`, so re-ticking
+         would fire a trade off an agreement she gave to different terms.
+         `sure` is exactly the thing that must not survive a change she did not
+         see, so a no drops both of them and both sides start again. */
+      if (q.kind === 'trade') {
+        for (const sd of this.sides.slice(0, this.game.players.length)) {
+          sd.ready = false;
+          sd.sure = false;
+          sd.pending = null;
+        }
+        /* And it says who and why. A screen that silently un-ticks two boxes
+           is indistinguishable from one that crashed; sixth non-negotiable. */
+        this._say(`${this.game.players[index]?.name ?? 'She'} said no — trade is off`);
+      }
+      return true;
+    }
+
+    const player = this.game.players[index];
+    const K = this.game.kotodama;
+    if (q.kind === 'buy') {
+      /* Asked AGAIN on the way through. Between question and answer somebody
+         else can have bought the last one, or she can have spent the points
+         somewhere else on this same screen. */
+      const why = K.buyRefusal(player, q.id);
+      if (why) { this._say(why); this.game.audio?.play('deny'); return true; }
+      K.buy(player, q.id);
+      this._say(`Bought ${ORB_BY_ID[q.id].name}`);
+    } else if (q.kind === 'sell') {
+      if (!player.powerOrbs.includes(q.id)) {
+        this._say(`${player.name} has no ${ORB_BY_ID[q.id].name} to sell`);
+        this.game.audio?.play('deny');
+        return true;
+      }
+      K.sell(player, q.id);
+      this._say(`Sold ${ORB_BY_ID[q.id].name} for ${K.sellPrice}`);
+    } else if (q.kind === 'trade') {
+      /* Nothing to do here — `_maybeTrade` looks at who is still `ready` and
+         has answered, and fires on the frame the last one does. Answering is
+         the whole action. */
+      this.game.audio?.play('score');
+      side.sure = true;
+    }
+    return true;
   }
 
   /**
@@ -363,7 +503,13 @@ export class ProfileScreen {
   _maybeTrade() {
     const live = this.sides.slice(0, this.game.players.length);
     const ready = live.map((s, i) => (s.ready ? i : -1)).filter((i) => i >= 0);
-    if (ready.length < 2) return;
+    if (ready.length < 2) {
+      /* Somebody backed out while the question was up. Take it down — a
+         dialog asking about a trade that no longer has two sides is a yes she
+         cannot mean. */
+      for (const sd of live) { if (sd.pending?.kind === 'trade') { sd.pending = null; sd.sure = false; } }
+      return;
+    }
     if (ready.length > 2) {
       this._say('Only two at a time — one of you un-confirm');
       return;
@@ -377,6 +523,46 @@ export class ProfileScreen {
     const aId = A.offer === null ? null : pa.powerOrbs[A.offer];
     const bId = B.offer === null ? null : pb.powerOrbs[B.offer];
     if (!aId && !bId && !A.points && !B.points) return;
+
+    /* ---- and now each of them is asked, separately -----------------------
+       CONFIRM used to be the last press: two ticks and the orbs moved. That
+       is one press per girl for something permanent, on a screen where the
+       same button also means "un-confirm", and what she agreed to can have
+       changed underneath her between her tick and her sister's — a points
+       offer is edited with a stick, and editing it does not clear the OTHER
+       girl's tick. So the tick means "I am ready", and this asks the actual
+       question, in words, naming exactly what leaves and what arrives.
+
+       BOTH DIALOGS ARE UP AT ONCE AND EACH ONLY ANSWERS TO ITS OWN PAD. That
+       is the rule this screen exists for, restated at the last possible
+       moment: consent cannot be expressed through somebody else's controller.
+       `_drive` routes a pending side's buttons to `_answerHere`. */
+    const what = (id, pts) => {
+      const bits = [];
+      if (id) bits.push(ORB_BY_ID[id].name);
+      if (pts) bits.push(`${pts} points`);
+      return bits.length ? bits.join(' + ') : 'nothing';
+    };
+    const askSide = (i, mineId, minePts, hersId, herPts, her) => {
+      const sd = this.sides[i];
+      if (sd.pending || sd.sure) return 0;
+      sd.pending = {
+        kind: 'trade',
+        text: `Give ${what(mineId, minePts)} to ${her.name} for ${what(hersId, herPts)}?`,
+      };
+      return 1;
+    };
+    const aPtsAsk = Math.min(A.points, pa.score);
+    const bPtsAsk = Math.min(B.points, pb.score);
+    if (!A.sure || !B.sure) {
+      /* Asked once, not once a frame: `_maybeTrade` runs every tick for as
+         long as the question is on screen, and a menu blip at 138Hz is a tone.
+         `askSide` returns whether it actually put something up. */
+      const opened = askSide(ia, aId, aPtsAsk, bId, bPtsAsk, pb)
+        | askSide(ib, bId, bPtsAsk, aId, aPtsAsk, pa);
+      if (opened) this.game.audio?.play('menu');
+      return;
+    }
 
     /* POINTS MOVE WITH THE ORBS OR NOT AT ALL. `kotodama.trade` is already
        atomic — it removes both orbs before giving either, so a swap into a
@@ -457,18 +643,38 @@ export class ProfileScreen {
     if (sig === this._sig) return;
     this._sig = sig;
 
+    /* THE FOOTER STOPS NAMING THE OTHER MEANINGS WHILE SOMEBODY IS BEING
+       ASKED. Down here JUMP means "buy" or "offer"; in the strip that has just
+       appeared, JUMP means "yes" — and both sentences cannot be on screen at
+       once without one of them being a lie. The strip wins because it is where
+       she is looking, so the footer has to give way.
+
+       It says WHOSE controller rather than restating the keys as if they were
+       everybody's: with four kittens on this screen one of them is being asked
+       and three are still shopping, and there is no single true instruction to
+       print. Naming the rule is the only honest thing that fits. */
+    const asked = this.sides.slice(0, this.game.players.length)
+      .map((sd, i) => (sd.pending ? this.game.players[i]?.name : null))
+      .filter(Boolean);
+    const many = asked.length > 1;
+    const keys = asked.length
+      ? `${asked.join(' and ')} ${many ? 'are' : 'is'} being asked`
+        + ' — JUMP <b>yes</b>, ATTACK or INTERACT <b>no</b>,'
+        + `${many ? ' <b>each on her own controller</b>' : ' <b>on her own controller</b>'}`
+      : null;
+
     if (this.mode === 'shop') {
       this.title.textContent = 'KOTODAMA DEALER';
       this.body.innerHTML = this._shopMarkup();
       this.help.innerHTML = this._flashT > 0
         ? `<em>${this._flash}</em>`
-        : 'JUMP <b>buy</b> · ATTACK <b>sell</b> · INTERACT <b>leave</b>';
+        : keys ?? 'JUMP <b>buy</b> · ATTACK <b>sell</b> · INTERACT <b>leave</b>';
     } else {
       this.title.textContent = 'CHARACTER PROFILE';
       this.body.innerHTML = this.game.players.map((p, i) => this._cardMarkup(p, i)).join('');
       this.help.innerHTML = this._flashT > 0
         ? `<em>${this._flash}</em>`
-        : 'JUMP <b>offer this orb</b> · ATTACK <b>confirm</b> · INTERACT <b>back</b>'
+        : keys ?? 'JUMP <b>offer this orb</b> · ATTACK <b>confirm</b> · INTERACT <b>back</b>'
           + ' — <b>both</b> must confirm';
     }
     this._paintActions();
@@ -493,9 +699,15 @@ export class ProfileScreen {
     if (!this.actions) return;
     if (!this.game.device?.touchPrimary) { this.actions.innerHTML = ''; return; }
     const i = this._touchSide();
-    const sig = `${this.mode}|${i}|${this.sides[i]?.ready}`;
+    const sig = `${this.mode}|${i}|${this.sides[i]?.ready}|${!!this.sides[i]?.pending}`;
     if (sig === this._actionSig) return;
     this._actionSig = sig;
+    /* EMPTIED WHILE SHE IS BEING ASKED. The YES/NO pair lives in her card, next
+       to the question it answers; leaving BUY and SELL down here as well would
+       put four buttons on a phone, two of which start a second question on top
+       of the one she has not answered. The pad has the same rule — see the
+       `side.pending` branch in `_drive`. */
+    if (this.sides[i]?.pending) { this.actions.innerHTML = ''; return; }
     const btn = (act, label, cls = '') =>
       `<button type="button" class="kd-act ${cls}" data-act="${act}" data-side="${i}">${label}</button>`;
     this.actions.innerHTML = this.mode === 'shop'
@@ -522,7 +734,7 @@ export class ProfileScreen {
     return [
       this.mode,
       this.game.players.map((p) => `${p.powerOrbs.join(',')}|${p.score}|${p.clan?.id ?? ''}`).join(';'),
-      this.sides.map((s) => `${s.i}/${s.offer}/${s.points}/${s.ready}`).join(';'),
+      this.sides.map((s) => `${s.i}/${s.offer}/${s.points}/${s.ready}/${s.sure}/${s.pending?.text ?? ''}`).join(';'),
       this.mode === 'shop' ? ORB_IDS.map((id) => K.stock[id]).join(',') : '',
       this._flashT > 0 ? this._flash : '',
     ].join('#');
@@ -591,10 +803,52 @@ export class ProfileScreen {
       <div class="kd-name">${player.name}</div>
       <div class="kd-meta">${player.clan?.name ?? 'no clan'} · ${player.score} pts
         · ${owned.length}/${MAX_EQUIPPED}</div>
+      ${this._askMarkup(index)}
       <div class="kd-slots">${slots.join('')}</div>
       ${this.mode === 'profile' ? pointsRow : ''}
       <div class="kd-detail">${detail}</div>
       <div class="kd-state">${state}</div>
+    </div>`;
+  }
+
+  /**
+   * One side's question, drawn INSIDE HER OWN CARD rather than over the screen.
+   *
+   * THAT PLACEMENT IS THE POINT. `Confirm` is a modal because the things it
+   * guards belong to nobody in particular; this one belongs to exactly one
+   * girl, and a box in the middle of a four-player trade screen would be
+   * answered by whoever was nearest. In her card, ringed in her colour, it is
+   * obvious whose turn it is to speak — and the other three keep shopping
+   * underneath it, which a modal cannot allow.
+   *
+   * AND IT SITS DIRECTLY UNDER HER NAME, not at the bottom of the card. `kd-body`
+   * scrolls, a card with eight orb slots and a points row is taller than a
+   * laptop half-window, and a question below the fold is a CONFIRM press that
+   * appears to do nothing — which is the silent refusal the sixth
+   * non-negotiable exists to forbid, reintroduced by layout rather than by
+   * code. Under the name it is the first thing in the card either way, and the
+   * name says whose question it is before the colour does.
+   *
+   * IT NAMES THE BUTTONS, NOT "YES" AND "NO". The footer's help line is
+   * telling her JUMP means buy at the same moment this is telling her JUMP
+   * means yes, and only one of those can be true; this one is closer to her
+   * eyes and it wins, so it has to say which key it means. Sixth
+   * non-negotiable: an instruction, not a noun.
+   */
+  _askMarkup(index) {
+    const q = this.sides[index]?.pending;
+    if (!q) return '';
+    /* Two real buttons on a phone, because the pad this screen covers is where
+       JUMP and ATTACK live — the same hole `_paintActions` fills. On desktop
+       the keys are named and buttons would be clutter. */
+    const touch = !!this.game.device?.touchPrimary;
+    const keys = touch
+      ? `<button type="button" class="kd-act go" data-act="yes" data-side="${index}">YES</button>`
+        + `<button type="button" class="kd-act" data-act="no" data-side="${index}">NO</button>`
+      : '<span>JUMP <b>yes</b> · ATTACK or INTERACT <b>no</b></span>';
+    return `<div class="kd-ask kd-p${index}">
+      <div class="kd-ask-q">${q.text}</div>
+      <div class="kd-ask-keys">${keys}</div>
     </div>`;
   }
 
@@ -626,6 +880,7 @@ export class ProfileScreen {
       <div class="kd-purse">${p.name} · <b>${p.score}</b> points
         · buy <b>${K.price}</b> · sell <b>${K.sellPrice}</b>
         · carrying ${p.powerOrbs.length}/${MAX_EQUIPPED}</div>
+      ${this._askMarkup(p.index)}
       ${rows}
     </div>`;
   }

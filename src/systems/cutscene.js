@@ -7,7 +7,7 @@ import { LEADERS, ELDER, leaderSpot } from '../entities/leader.js';
 
    An old calico called Patchfur tells two kittens where they live, and then
    flies them past every clan in the sky. It runs once at the start of a
-   session, takes about seventy seconds, and any button skips it.
+   session, takes about seventy seconds, and Start or Escape skips it.
 
    THE STAGE IS THE REAL WORLD. There is no separate 2D cutscene canvas and no
    pre-rendered video: this drives its own camera through the same scene the

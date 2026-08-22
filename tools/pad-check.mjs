@@ -120,12 +120,31 @@ const DEVICES = {
   }),
 };
 
-/** Run the real update loop over a fixed set of pads. */
+/**
+ * Run the real update loop over a fixed set of pads.
+ *
+ * IT ARRIVES WITH NOTHING HELD, AND THEN SOMEBODY PRESSES. That extra first
+ * frame is not ceremony — without it these tests describe a physically
+ * impossible pad, one that has been holding a button since before it existed,
+ * and they were passing on exactly the state that shipped Richard's bug: vJoy
+ * reporting button 9 down at 1.00 forever, and the title screen's any-button
+ * rule starting the game on it. `InputManager` now masks the buttons a vJoy pad
+ * is ALREADY holding when it first appears (see LATCHED in core/input.js), so a
+ * harness that never lets go is asking the code to ignore its press and then
+ * failing it for doing so.
+ *
+ * Buttons are lifted rather than the pads being swapped, so identity, index and
+ * axes are untouched and only the thing under discussion changes.
+ */
 function drive(pads, { padMode = 'auto' } = {}) {
   const im = new InputManager();
   im.padMode = padMode;
   globalThis.navigator = { getGamepads: () => pads };
-  im.update();   // first pass binds and seeds `prev`
+  const held = pads.map((p) => p.buttons);
+  pads.forEach((p) => { p.buttons = buttons(p.buttons.length, []); });
+  im.update();   // the pad appears, holding nothing
+  pads.forEach((p, i) => { p.buttons = held[i]; });
+  im.update();   // ...and now she presses, which seeds `prev`
   im.update();
   return im;
 }
@@ -330,6 +349,69 @@ console.log('\n--- three pads: the first two win, in connection order ---');
   const im = drive(pads);
   ok('P1 <- pad 0 and P2 <- pad 1',
     im.bindings[0].pad === 0 && im.bindings[1].pad === 1);
+}
+
+/* --------------- 3b. the pad that arrives already pressing ---------------- */
+
+/* REPORTED AS "2 controllers connected and one of them autostarts the game",
+   and it was not a phantom. vJoy reported button 9 held at 1.00 permanently -
+   button 9 is `attack` on the left Joy-Con half - and the title screen's
+   any-button rule started the game on it, every time, before anybody had
+   touched anything. There is no way to play the game from that state and no
+   way to see why from inside it.
+
+   THE MASK IS TAKEN ON ARRIVAL AND ONLY FOR VJOY, which is the asymmetry worth
+   spelling out. A real HID pad is not surfaced by the browser at all until a
+   human presses something on it, so its very first frame legitimately has a
+   button down and latching it would eat the wake-up press - the pad would look
+   dead. vJoy is a driver device that is simply always there, so a button down
+   on its first frame is a stuck axis, not a person.
+
+   It clears the moment she lets go, so this costs a stuck pad nothing except
+   the one press it was never making. */
+console.log('\n--- a pad that arrives holding a button is not pressing it ---');
+{
+  /* NOT through `drive` - the whole point is the arrival frame `drive` now
+     inserts, so this has to hand the pad over with the button already down. */
+  const raw = (pads, opts = {}) => {
+    const im = new InputManager();
+    im.padMode = opts.padMode ?? 'auto';
+    globalThis.navigator = { getGamepads: () => pads };
+    im.update();
+    im.update();
+    return im;
+  };
+
+  const v = DEVICES.vjoy();
+  v.buttons = buttons(38, [9]);
+  const stuck = raw([v]);
+  ok('a vJoy pad holding a button on arrival seats nobody',
+    stuck.bindings.every((b) => b.pad == null), JSON.stringify(stuck.bindings));
+  ok('...and the stuck button reads as up', !stuck.players[0].down('attack'));
+  ok('...and it is named, so the readout can say why',
+    stuck.latchedButtons(0).includes(9));
+
+  /* AND IT LETS GO. A mask that outlived the stick would be the same bug with
+     the sign flipped: a pad nobody could ever press. */
+  v.buttons = buttons(38, []);
+  stuck.update();
+  ok('...until she releases it', stuck.latchedButtons(0).length === 0);
+  v.buttons = buttons(38, [9]);
+  stuck.update();
+  stuck.update();
+  ok('...and then the very same button works', stuck.players[0].down('attack'),
+    JSON.stringify(stuck.bindings));
+
+  /* A REAL PAD IS NOT LATCHED, and this is the check that stops somebody
+     "simplifying" the vJoy gate away. Chrome and Firefox both withhold a HID
+     pad from `getGamepads()` until it is used, so its first frame IS the
+     press; masking it would make every controller in the house look broken. */
+  const ds = DEVICES.ds4Chrome();
+  ds.buttons = buttons(ds.buttons.length, [STANDARD.cross]);
+  const live = raw([ds]);
+  ok('a REAL pad arriving mid-press is seated on that press',
+    live.bindings[0].pad === 0, JSON.stringify(live.bindings));
+  ok('...and its button is not masked', live.latchedButtons(0).length === 0);
 }
 
 /* ------------------------ 4. the known traps ----------------------------- */

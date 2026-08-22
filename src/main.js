@@ -25,6 +25,8 @@ import { MathDojo } from './systems/mathdojo.js';
 import { Minimap, TOUCH_ZOOM } from './systems/minimap.js';
 import { MenuNav } from './systems/menunav.js';
 import { Cutscene } from './systems/cutscene.js';
+import { Trailer } from './systems/trailer.js';
+import { Confirm } from './systems/confirm.js';
 import { ShrineScene } from './systems/shrinescene.js';
 import { SummonScene } from './systems/summonscene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from './entities/dragonball.js';
@@ -121,12 +123,25 @@ const STAR_POSE = 2.0;
 /** Seconds on an island before its theme takes over. See Game._islandTrack. */
 const ISLAND_DWELL = 1.1;
 
-/* THE ONLY KEYS THAT SKIP A STORY SCENE. On a pad it is `start` and nothing
+/* THE ONLY KEY THAT SKIPS A STORY SCENE. On a pad it is `start` and nothing
    else (Game._skipPressed). Both are buttons you press to mean "get me out of
    this"; every other control is one a kid is already holding while she
    watches, which is how a 79-second intro with seven recorded voices was being
-   thrown away by a thumb resting on jump. */
-const SKIP_KEYS = new Set(['Space', 'Enter', 'NumpadEnter']);
+   thrown away by a thumb resting on jump.
+
+   IT USED TO BE SPACE AND ENTER TOO, AND FOUR PLAYERS IS WHY IT ISN'T. Space
+   is player 1's JUMP and Enter is how a player joins — both are keys somebody
+   at this keyboard has a finger on for reasons that have nothing to do with
+   the scene. With two girls that was survivable; with four people round one
+   machine, one of whom is not watching, the scene belongs to whoever twitches
+   first. Escape is the only key on a keyboard that means "get me out of this"
+   and nothing else, which is exactly the property `start` has on a pad.
+
+   NOTE `_skipPressed` HAS TO AGREE, and it does not do it by reading this set:
+   a keyboard slot's `start` action IS Enter (see KEYSETS), so a keyboard
+   player would have gone on skipping with Enter through the pad path however
+   this line were written. It filters by device instead. */
+const SKIP_KEYS = new Set(['Escape']);
 
 /* A pad that reports nothing, shaped exactly like a real one so nothing
    downstream has to check. Used for the tournament's frozen states — the
@@ -220,6 +235,9 @@ class Game {
 
     this.state = 'loading';
     this.paused = false;
+    /* WHICH PLAYER IS DRIVING THE MENU, as a slot index, or null for "anybody".
+       See `_claimMenu` — this is the whole of the one-cursor rule. */
+    this.menuOwner = null;
     this.merged = true;
     /* The defaults come from the device, not from a literal, so a phone opens
        on the low tier and unsplit without a kid having to find Settings. Every
@@ -305,6 +323,13 @@ class Game {
     /* Menus on a controller. Built before _bindUI so nothing can reference a
        half-made one from a listener that fires during setup. */
     this.menuNav = new MenuNav(this);
+    /* Built here rather than with the world systems because it owns no world:
+       it is a `<video>` and four listeners, and it has to exist before the
+       title screen's buttons are bound below. */
+    this.trailer = new Trailer(this);
+    /* Same reasoning as Trailer: no world, and it has to exist before the
+       buttons below are bound. */
+    this.confirm = new Confirm(this);
 
     /* THE ON-SCREEN PAD EXISTS ON EVERY MACHINE AND IS SHOWN ON SOME. Building
        it always — rather than only when `touchPrimary` — is what makes the test
@@ -1195,10 +1220,59 @@ class Game {
         if (a === 'board') { this._paintBoard(); show('panel-board'); }
         if (a === 'profile') this.profile.open('profile', { fromPause: true });
         if (a === 'resume') this.setPaused(false);
-        if (a === 'restart') this.restart();
-        if (a === 'quit-match') this.quitMatch();
+        /* EVERY IRREVERSIBLE BUTTON IN THIS MENU ASKS FIRST, and each of them
+           asks in words that say what happens rather than "are you sure?" —
+           the person answering is nine and is answering while excited. The
+           dialog's cancel button is the one under the cursor when it opens;
+           see systems/confirm.js. */
+        if (a === 'restart') {
+          this.confirm.ask({
+            title: 'START THE WHOLE GAME OVER?',
+            body: 'Every prop stands back up, and the clans, stars, orbs, '
+              + 'points and dragons you have found all go back to the '
+              + 'beginning. The record board is kept.',
+            no: 'NO, KEEP PLAYING',
+            yes: 'YES, START OVER',
+            onYes: () => this.restart(),
+          });
+        }
+        if (a === 'quit-match') {
+          this.confirm.ask({
+            title: 'LEAVE THIS MATCH?',
+            body: 'The round ends with no winner and nothing goes on the '
+              + 'record board. Everything outside the ring is kept.',
+            no: 'NO, KEEP FIGHTING',
+            yes: 'YES, LEAVE THE RING',
+            onYes: () => this.quitMatch(),
+          });
+        }
+        if (a === 'quit') {
+          this.confirm.ask({
+            title: 'QUIT THE GAME?',
+            body: 'This closes the window. Nothing is saved except the record '
+              + 'board, which is always kept.',
+            no: 'NO, KEEP PLAYING',
+            yes: 'YES, QUIT',
+            onYes: () => this.quitGame(),
+          });
+        }
         if (a === 'story') this.replayIntro();
-        if (a === 'title') this.toTitle();
+        if (a === 'trailer') this.openTrailer();
+        if (a === 'trailer-close') this.trailer.close();
+        if (a === 'trailer-download') this.trailer.download();
+        if (a === 'offer-watch') this._answerTrailerOffer('watch');
+        if (a === 'offer-skip') this._answerTrailerOffer('skip');
+        if (a === 'offer-download') this._answerTrailerOffer('download');
+        if (a === 'title') {
+          this.confirm.ask({
+            title: 'GO BACK TO THE TITLE SCREEN?',
+            body: 'This ends the game and puts the world back to the '
+              + 'beginning, exactly like RESTART. The record board is kept.',
+            no: 'NO, KEEP PLAYING',
+            yes: 'YES, END THE GAME',
+            onYes: () => this.toTitle(),
+          });
+        }
       });
     });
     document.querySelectorAll('[data-close]').forEach((btn) => {
@@ -1360,14 +1434,30 @@ class Game {
          girls hold a stick and mash buttons the whole time a scene is playing,
          so the seventy-nine-second story their uncle recorded seven voices for
          was being thrown away by a thumb resting on jump. A skip has to be
-         something you can only do on purpose. Escape still lands here rather
-         than opening the pause menu over the top of a scene. */
-      /* The griffin ride skips on the same three keys and the same button as
+         something you can only do on purpose — which is now Escape and nothing
+         else; see SKIP_KEYS. Escape lands HERE rather than opening the pause
+         menu over the top of a scene, which is what the early return is for. */
+      /* The griffin ride skips on the same key and the same button as
          every scene does. It is not a scene — no dialogue box, no `played`
          latch — but from a player's side it is the same kind of thing: a
          thing playing at you that you might have seen already. Routing it
          through `SKIP_KEYS` rather than "any key" matters for exactly the
          reason it does everywhere else: both girls are holding sticks. */
+      /* THE TRAILER IS CHECKED FIRST, and it is checked separately from
+         `_sceneActive()` on purpose. It is not a story scene — there is no 3D
+         camera, no dialogue box, nothing ticking underneath — and half a dozen
+         places in this file ask `_sceneActive()` to mean "a scene is running in
+         the world", which would start being false the moment a video counted.
+         What it DOES share is the skip rule, so it shares `SKIP_KEYS` and
+         nothing else. Escape is now the whole of that set, and it must land
+         here rather than at the pause toggle below: the trailer can be opened
+         from the pause menu, and Escape must not close that menu underneath a
+         video that is still playing. */
+      if (this.trailer?.active) {
+        if (SKIP_KEYS.has(e.code)) this.trailer.skip();
+        e.preventDefault();
+        return;
+      }
       if (this._sceneActive() || this.travel) {
         if (SKIP_KEYS.has(e.code)) this._skipScene();
         e.preventDefault();
@@ -1388,6 +1478,13 @@ class Game {
       if (e.code === 'KeyX' && this.state === 'play' && !this.merged) this._zoomMap(1);
       if (this.state === 'play') this._debugKey(e.code);
       if (e.code === 'Escape') {
+        /* THE QUESTION IS ANSWERED BEFORE ANYTHING ELSE READS ESCAPE, and it
+           is answered NO. It is the most modal thing on screen, it is sitting
+           over the menu that Escape would otherwise close, and Escape on a
+           dialog means cancel in every program a nine-year-old will ever use.
+           Falling through would close the pause menu with the question still
+           on top of it. */
+        if (this.confirm.active) { this.confirm.close(); e.preventDefault(); return; }
         /* The Character Profile is checked before the other sub-panels
            because it can be open WITHOUT the pause menu behind it — it is
            reachable from the world at the dealer's stall — so closing it has
@@ -1403,7 +1500,19 @@ class Game {
           hide('panel-board');
           if (this.state === 'title') this.paused = false;
         } else if (this.state === 'play') {
-          this.setPaused(!this.paused);
+          const opening = !this.paused;
+          this.setPaused(opening);
+          /* ESC BELONGS TO WHOEVER IS AT THE KEYBOARD, so the menu goes to the
+             lowest slot playing on one. If nobody is on a keyboard at all,
+             `_claimMenu(null)` leaves it shared: the person who pressed Esc has
+             a mouse and no slot, and handing her cursor to an arbitrary pad
+             would lock out the only player who asked for the menu. */
+          if (opening) {
+            const kb = this.input.players.findIndex(
+              (p, i) => i < this.players.length && p.source === 'keyboard',
+            );
+            this._claimMenu(kb >= 0 ? kb : null);
+          }
         }
       }
     });
@@ -1462,21 +1571,105 @@ class Game {
    * `start` only — the pause button, the one button on a pad that already
    * means "I want out of what is on screen". Every other action is something
    * she is holding while she watches.
+   *
+   * KEYBOARD SLOTS ARE EXCLUDED, and that is not a tidy-up — it is half of the
+   * rule in `SKIP_KEYS`. A keyboard set's `start` action is ENTER, so without
+   * this filter Enter would still skip every scene in the game through here,
+   * and removing it from `SKIP_KEYS` would have looked like it worked while
+   * changing nothing. The keyboard's way out is Escape, handled in the keydown
+   * listener. Touch keeps its `start`: the on-screen pad has a real button
+   * with that name on it and no Escape key anywhere.
    */
   _skipPressed() {
-    return this.input.players.some((p) => p.pressed('start'));
+    return this.input.players.some(
+      (p) => p.source !== 'keyboard' && p.pressed('start'),
+    );
   }
 
   /** True while any overlay panel is on screen and should own the input. */
   _overlayOpen() {
-    return ['panel-settings', 'panel-help', 'panel-pause', 'panel-board', 'panel-profile'].some(
+    /* `panel-trailer` is in here for the title screen's any-button shortcut:
+       without it, a kid mashing a pad through the trailer starts the game
+       behind the video she is watching. */
+    return ['panel-settings', 'panel-help', 'panel-pause', 'panel-board', 'panel-profile',
+      'panel-trailer', 'panel-trailer-offer', 'panel-confirm'].some(
       (id) => !document.getElementById(id).classList.contains('hidden'),
     );
   }
 
   /* --------------------------- pause / restart --------------------------- */
 
+  /**
+   * THE PLAYER WHO OPENS THE MENU IS THE PLAYER WHO DRIVES IT.
+   *
+   * Menus used to merge every pad into one cursor — deliberately, so that the
+   * girl holding the other Joy-Con was not locked out of her own pause menu.
+   * That is the right answer for two sisters sitting together and the wrong
+   * one for four people: with four sticks feeding one cursor, the person who
+   * pressed Start cannot get through a three-item list, because somebody who
+   * is not looking at the screen is resting a thumb on an axis. It is not even
+   * a fight — one idle stick beats one deliberate one, every time, because
+   * `_read` takes the LARGEST input rather than the newest.
+   *
+   * `null` means shared, and it is the right answer in two cases that are not
+   * oversights: the TITLE SCREEN, where nobody is playing yet and "press any
+   * button to start" has to keep meaning that, and a menu opened from a
+   * keyboard nobody is seated on — picking an arbitrary pad to hand it to
+   * would be worse than sharing, and would strand whoever actually pressed
+   * Esc. Prefer a rule that degrades over one that vanishes.
+   *
+   * @param slot  the player who asked, or null for shared
+   */
+  _claimMenu(slot) {
+    this.menuOwner = slot;
+    this._paintMenuOwner();
+  }
+
+  /**
+   * Say whose menu it is, because a cursor that ignores you is a refusal.
+   *
+   * Sixth non-negotiable. Without this line, three of the four players push a
+   * stick, nothing moves, and the only available conclusion is that the game
+   * has frozen — which is exactly what a silent lock always reads as. It only
+   * appears when there is more than one player to be confused about it.
+   */
+  _paintMenuOwner() {
+    const el = document.getElementById('menu-owner');
+    if (!el) return;
+    const show = this.menuOwner != null && this.players.length > 1;
+    el.classList.toggle('hidden', !show);
+    if (!show) return;
+    const style = styleFor(this.menuOwner);
+    el.textContent = `${style.name} is driving this menu`;
+    el.style.color = styleCss(this.menuOwner);
+  }
+
+  /**
+   * The owner's controller went away mid-menu. Hand it on rather than leaving
+   * a menu nobody can drive — a pad running out of battery on the pause screen
+   * must not be able to lock four people out of RESUME.
+   *
+   * Lowest seated slot wins: Ember, then Frost, then whoever else is here.
+   * There is no cleverer answer — "who pressed most recently" needs a history
+   * nobody is keeping, and any order at all beats a dead cursor.
+   */
+  _checkMenuOwner() {
+    if (this.menuOwner == null) return;
+    const owner = this.input.players[this.menuOwner];
+    if (owner && owner.source !== 'none') return;
+    const next = this.input.players.findIndex(
+      (p, i) => i < this.players.length && p.source !== 'none',
+    );
+    this._claimMenu(next >= 0 ? next : null);
+  }
+
   setPaused(on) {
+    /* Opened by a mouse, or by any route that did not name a player: shared.
+       `_claimMenu` is called again by the pad and Esc paths below with the
+       slot that actually asked, so this is the floor rather than the answer.
+       Closing always gives it back, or the next person to open the menu
+       inherits a cursor that belongs to somebody who has stopped playing. */
+    if (!on) this._claimMenu(null);
     this.paused = on;
     this.audio.duck(on);
     this.audio.play('menu');
@@ -1500,6 +1693,31 @@ class Game {
       // Drop the frame the pause ate, or everything lurches on resume.
       this.clock.getDelta();
     }
+  }
+
+  /**
+   * QUIT — as far as a web page is allowed to.
+   *
+   * `window.close()` only works on a window a SCRIPT opened. Firefox and
+   * Chrome both refuse it for a tab a person opened themselves, silently, with
+   * no exception to catch — so a QUIT button that calls it and stops there is
+   * a button that does nothing at all, which is the exact failure the sixth
+   * non-negotiable exists to forbid. It IS worth calling: launched from the
+   * Steam shortcut, or from any window the game opened, it genuinely closes.
+   *
+   * So: try, wait a beat, and if we are still running, say so and do the
+   * closest honest thing — put her back on the title screen and name the
+   * keystroke that actually closes a tab. Prefer a rule that degrades over one
+   * that vanishes.
+   */
+  quitGame() {
+    window.close();
+    setTimeout(() => {
+      if (window.closed) return;
+      this.toTitle();
+      const key = navigator.platform?.startsWith('Mac') ? '⌘W' : 'Ctrl+W';
+      this.toast(`Your browser will not let the game close its own window — press ${key} to close the tab.`);
+    }, 350);
   }
 
   /** Put the world back to its opening state without a page reload. */
@@ -1634,6 +1852,10 @@ class Game {
     document.getElementById('title').classList.remove('hidden');
     this.state = 'title';
     this._titleT = 0;
+    /* BACK AT THE MAIN MENU IS WHEN THE TRAILER OFFER COMES BACK. See
+       `_trailerOfferDue`: this one line is the whole difference between
+       "offered once ever" and "offered whenever you start a new game". */
+    this._offerAnswered = false;
   }
 
   /** Redraws the live controller readout while the settings panel is open. */
@@ -1680,6 +1902,18 @@ class Game {
              Windows reports it whether or not Joy2Win is running and whether or
              not a Joy-Con is paired. Saying "no player is reading this pad"
              about it is true and useless — this says what to do. */
+          /* A LATCHED DEVICE IS NOT AN ASLEEP ONE AND MUST NOT SAY IT IS.
+             "Press a button" is the wrong instruction for a pad that is
+             already holding one down — pressing more buttons will not clear
+             it, and the player would keep doing it. */
+          if (p.latched?.length) {
+            return '<div class="pad-row"><b>stuck</b> this vJoy device arrived '
+              + `holding button ${p.latched.join(', ')} down and has never `
+              + 'released it, so the game is ignoring that button — otherwise '
+              + 'it would swing the katana forever and start the game by '
+              + 'itself. Close Joy2Win and reopen it, or reset the vJoy device; '
+              + 'the button starts working the instant it reports up.</div>';
+          }
           if (p.asleep) {
             return '<div class="pad-row"><b>asleep</b> the vJoy driver is '
               + 'reporting this, but nothing is feeding it. Pair the Joy-Cons, '
@@ -1870,6 +2104,17 @@ class Game {
   }
 
   startPlay() {
+    /* THE OFFER GOES BEFORE ANY OF THIS, and returns without touching the
+       state. The title screen stays up behind the panel, the HUD stays hidden,
+       and nothing has been half-started if she takes ten seconds to choose.
+       `audio.resume()` still happens here because the PLAY click is the first
+       guaranteed gesture and the trailer wants the context alive. */
+    if (this._trailerOfferDue()) {
+      this.audio.resume();
+      document.getElementById('panel-trailer-offer').classList.remove('hidden');
+      return;
+    }
+
     document.getElementById('title').classList.add('hidden');
     document.getElementById('panel-help').classList.add('hidden');
     document.getElementById('panel-settings').classList.add('hidden');
@@ -1902,6 +2147,61 @@ class Game {
       // _updateMusic takes it from here; this just avoids a silent first frame.
       this.audio.startMusic(this._wantedTrack(0) ?? 'play');
     }
+  }
+
+  /**
+   * Open the trailer. From the title screen, and from the pause menu.
+   *
+   * From the pause menu the game STAYS PAUSED — closing the trailer puts you
+   * back on the pause menu rather than into a live world you stopped watching
+   * a minute ago. That is the opposite of `replayIntro`, which unpauses,
+   * because the intro is a thing that happens in the world and this is not.
+   */
+  openTrailer() {
+    this.audio.resume();
+    this.trailer.open();
+  }
+
+  /**
+   * Is the "watch the trailer first?" offer due?
+   *
+   * ONCE PER VISIT TO THE TITLE SCREEN. It used to be once per BROWSER, in a
+   * localStorage flag, and that was wrong in the way that is hardest to spot:
+   * it worked perfectly the first time and then the offer was gone forever —
+   * not after a refresh, not after clearing the game, never. Somebody who
+   * pressed STRAIGHT TO THE GAME by accident on their first ever launch had
+   * permanently lost a screen they never saw. A thing you can only be shown
+   * once had better be worth being sure about, and this isn't; it is a
+   * question with three answers, and asking it again costs one button press.
+   *
+   * `_offerAnswered` is cleared in `toTitle()`, so the rule is exactly "coming
+   * back to the main menu and starting a new game asks again". Within one
+   * press it stays true, which is what stops `_answerTrailerOffer`'s second
+   * call to `startPlay` from reopening the panel it just closed.
+   *
+   * `state === 'title'` keeps `restart()` from asking at all: restart goes
+   * through `startPlay` too and is not somebody arriving at the game.
+   */
+  _trailerOfferDue() {
+    return this.state === 'title' && !this._offerAnswered;
+  }
+
+  /** NO, START THE GAME / YES, WATCH IT / DOWNLOAD IT INSTEAD. */
+  _answerTrailerOffer(choice) {
+    /* THE ANSWER IS RECORDED NOW, NOT WHEN THE TRAILER FINISHES. Nothing may
+       hang off a scene ending — seventh non-negotiable — and this is the same
+       trap in a new place: hung off the video's `ended` event, a girl who
+       skipped it or whose connection dropped would be asked the question again
+       the moment the trailer she was already watching went away. The choice is
+       the event. */
+    this._offerAnswered = true;
+    document.getElementById('panel-trailer-offer').classList.add('hidden');
+
+    if (choice === 'download') this.trailer.download();
+    /* `startPlay` runs either way, and runs again from the top — the flag
+       above is what makes the second pass fall straight through the gate. */
+    if (choice === 'watch') this.trailer.open(() => this.startPlay());
+    else this.startPlay();
   }
 
   /** Watch it again — from the pause menu. */
@@ -4109,6 +4409,14 @@ class Game {
        before the title's any-button shortcut, because the alternative is a
        press that both moves the cursor and does whatever the game underneath
        thinks that button means. Returns true while it is holding the input. */
+    /* Before MenuNav, and before the title screen's early return below it:
+       the trailer can be up while the state is still `title`, and a skip that
+       only got polled in the play state would be a video you cannot leave. */
+    this.trailer.update();
+    /* Also before MenuNav, and for the same shape of reason: the cursor has to
+       have an owner that still exists before anybody reads it this frame. */
+    this._checkMenuOwner();
+
     const inMenu = this.menuNav.update(dt);
 
     if (this.state === 'title') {
@@ -4250,10 +4558,16 @@ class Game {
        gated to a pad at all is that a KEYBOARD's start key had to be freed to
        mean "join"; a touch pad has a dedicated corner button that is nothing
        else, exactly like a real Start button, so it keeps both jobs. */
-    if (this.input.players.some(
-      (p) => (p.source === 'gamepad' || p.source === 'touch') && p.pressed('start')
-    )) {
-      this.setPaused(!this.paused);
+    /* WHICH pad, not whether any pad — see `_claimMenu`. `findIndex` rather
+       than `some` is the entire difference between a menu one player drives
+       and a menu four players wrestle over. */
+    const asked = this.input.players.findIndex(
+      (p) => (p.source === 'gamepad' || p.source === 'touch') && p.pressed('start'),
+    );
+    if (asked >= 0) {
+      const opening = !this.paused;
+      this.setPaused(opening);
+      if (opening) this._claimMenu(asked);
     }
 
     /* The two controls that used to exist only on the keyboard. Each kitten
@@ -4693,8 +5007,22 @@ class Game {
            panel's items every frame and clamps its remembered index, so a row
            vanishing under the highlight is already handled. */
         b.addEventListener('click', () => {
-          this._leavePlayer(i);
-          this._buildLeaveButtons();
+          /* Asked for the same reason as RESTART, and it matters MORE here:
+             this row sits directly above RESTART in the list, it is the only
+             button whose words change depending on who joined, and what it
+             throws away belongs to one specific child. */
+          this.confirm.ask({
+            title: `${this.players[i].name.toUpperCase()} LEAVES THE GAME?`,
+            body: `${this.players[i].name}'s kitten goes away and the screen `
+              + 'splits between the ones who are left. Her points and her orbs '
+              + 'go with her.',
+            no: 'NO, SHE STAYS',
+            yes: `YES, ${this.players[i].name.toUpperCase()} DROPS OUT`,
+            onYes: () => {
+              this._leavePlayer(i);
+              this._buildLeaveButtons();
+            },
+          });
         });
         wrap.appendChild(b);
       }

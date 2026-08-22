@@ -73,10 +73,35 @@
         </svg>
         <div class="cat-face">
           <p class="options-label">OPTIONS:</p>
-          <div class="menu-row">
-            <button class="menu-btn" data-action="settings">SETTINGS</button>
-            <button class="menu-btn primary" data-action="play">PLAY</button>
-            <button class="menu-btn" data-action="help">HELP</button>
+          <!-- ONE GRID, TWO ROWS, AND THAT IS WHAT PUTS PLAY IN THE MIDDLE OF
+               THE CAT'S MOUTH. The three buttons used to be a centred flex row,
+               which centres the ROW and not the button in it: SETTINGS is a
+               third wider than HELP, so PLAY sat 15px right of the OPTIONS:
+               label above it — measured, not guessed. A three-column grid with
+               equal outer tracks puts the middle button dead centre whatever
+               the words on either side are, which also means renaming HELP
+               cannot quietly knock the drawing off centre again.
+
+               The stack shrink-wraps to the wider row, so the trailer button
+               below can be exactly as wide as the three above it without
+               anybody having to know how wide that is. -->
+          <div class="menu-stack">
+            <div class="menu-row">
+              <button class="menu-btn" data-action="settings">SETTINGS</button>
+              <button class="menu-btn primary" data-action="play">PLAY</button>
+              <button class="menu-btn" data-action="help">HELP</button>
+            </div>
+            <!-- THE TRAILER SITS ON ITS OWN ROW, NOT AS A FOURTH BUTTON.
+                 SETTINGS / PLAY / HELP is the menu the girls drew; a fourth
+                 button in that row pushes PLAY off centre and quietly redesigns
+                 their artwork. Second non-negotiable. On its own line
+                 underneath it is also honestly ranked — it is the one button
+                 here that is not about playing. MenuNav picks it up from
+                 `button.menu-btn` like any other, so left/right on a pad
+                 reaches it with nothing to change there. -->
+            <div class="menu-row menu-row-2">
+              <button class="menu-btn small" data-action="trailer">WATCH THE TRAILER</button>
+            </div>
           </div>
           <p class="press-hint" id="press-hint">press any button to start</p>
         </div>
@@ -379,6 +404,17 @@
     <div id="panel-pause" class="screen overlay hidden">
       <div class="panel pause-panel">
         <h2>PAUSED</h2>
+        <!-- WHOSE CURSOR THIS IS. Filled by Game._paintMenuOwner and hidden in
+             a one-player game. A menu that ignores three of the four sticks
+             pushing at it has to say so, or it reads as a frozen game - sixth
+             non-negotiable. It is coloured with the owner's kitten colour, the
+             same colour as her HUD badge and her pane border, so it can be
+             read from across a room without reading the words.
+
+             AT THE TOP. It sat at the bottom first, under QUIT GAME, and on a
+             half-height window that measured 200px below the fold - see
+             style.css, which also records why sticky was tried and dropped. -->
+        <p class="menu-owner hidden" id="menu-owner"></p>
         <div class="pause-menu">
           <button class="menu-btn primary" data-action="resume">RESUME</button>
           <button class="menu-btn" data-action="settings">SETTINGS</button>
@@ -386,6 +422,7 @@
           <button class="menu-btn" data-action="board">RECORD BOARD</button>
           <button class="menu-btn" data-action="profile">CHARACTER PROFILE</button>
           <button class="menu-btn" data-action="story">WATCH THE STORY AGAIN</button>
+          <button class="menu-btn" data-action="trailer">WATCH THE TRAILER</button>
           <!-- ONLY WHILE A MATCH IS ON. Shown by Game.setPaused, which asks
                `tournament.active`, and hidden the rest of the time: an offer to
                quit a match nobody is fighting is a button that cannot mean
@@ -400,6 +437,12 @@
           <div id="leave-buttons"></div>
           <button class="menu-btn" data-action="restart">RESTART</button>
           <button class="menu-btn" data-action="title">TITLE SCREEN</button>
+          <!-- QUIT GAME IS LAST, UNDER TITLE SCREEN, and that ordering is the
+               point: the list runs from least to most final, so a thumb that
+               overshoots RESUME by one row lands on SETTINGS rather than on
+               the end of the afternoon. What it can actually DO depends on the
+               browser — see Game.quitGame. -->
+          <button class="menu-btn" data-action="quit">QUIT GAME</button>
         </div>
         <p class="note">
           <b>Esc</b> or <b>+ / Start</b> on a controller opens and closes this.
@@ -456,10 +499,13 @@
         </div>
       </div>
       <!-- It stopped being any button when a resting thumb started throwing
-           away the story; a prompt that names the wrong control is worse than
-           no prompt, because she presses it, nothing happens, and concludes
-           the scene cannot be skipped at all. -->
-      <div id="cs-skip">START, SPACE OR ENTER TO SKIP</div>
+           away the story, and it stopped being Space or Enter when there were
+           four people at one machine: Space is player 1's jump and Enter is
+           how somebody joins. A prompt that names the wrong control is worse
+           than no prompt, because she presses it, nothing happens, and
+           concludes the scene cannot be skipped at all — so this string has to
+           be edited in the same breath as SKIP_KEYS, every time. -->
+      <div id="cs-skip">START OR ESC TO SKIP</div>
       <div id="cs-track"><div id="cs-progress"></div></div>
     </div>
 
@@ -490,6 +536,73 @@
          screen: it is the only moment in the tournament that is about
          something other than the fight. -->
     <div id="arena-result" class="hidden"></div>
+
+    <!-- ===================== are you sure? =====================
+         One panel for every irreversible button in the pause menu. See
+         systems/confirm.js for the rules — the important one being that this
+         panel carries NO `.primary`, so MenuNav opens the cursor on the
+         `.back` button and a mashed pad always lands on "no". Adding `primary`
+         to the yes button to make it look better removes the entire safety
+         property of the dialog.
+
+         z-index above the pause menu it is asked from, like the trailer. -->
+    <div id="panel-confirm" class="screen overlay hidden">
+      <div class="panel confirm-panel">
+        <h2 id="confirm-title">ARE YOU SURE?</h2>
+        <p class="note" id="confirm-body"></p>
+        <div class="pause-menu">
+          <button class="menu-btn back" id="confirm-no" data-close-confirm>NO</button>
+          <button class="menu-btn danger" id="confirm-yes">YES</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== the trailer ===================== -->
+    <!-- NO `src` ATTRIBUTE. That is the whole point of this markup: the file is
+         20MB and an element carrying a src is a request waiting to happen, so
+         systems/trailer.js attaches it on open and removes it again on close.
+         `preload="none"` alone is only a hint and browsers are free to ignore
+         it. `playsinline` keeps iOS from throwing it into its own full-screen
+         player, which would take the skip rule away from us. -->
+    <div id="panel-trailer" class="screen hidden">
+      <video id="trailer-video" preload="none" playsinline
+             poster="trailer/poster.jpg"></video>
+      <p id="trailer-status" class="trailer-status hidden"></p>
+      <div id="trailer-hint" class="trailer-hint hidden">
+        <button class="menu-btn small" data-action="trailer-close">CLOSE</button>
+        <button class="menu-btn small" data-action="trailer-download">DOWNLOAD</button>
+        <span>or press <b>Start</b> / <b>Esc</b></span>
+      </div>
+    </div>
+
+    <!-- Offered every time somebody presses PLAY from the main menu. Not once
+         per browser: that version could only ever be seen once, and a wrong
+         press on a first launch removed it permanently. See
+         `Game._trailerOfferDue`.
+
+         "NO" IS FIRST AND "NO" IS THE DEFAULT, and the ordering is the whole
+         reason this is safe to show every time. The cursor opens on `.primary`
+         (systems/menunav.js), so a kid who mashes through the title screen
+         mashes straight into the game — which is what she was trying to do.
+         Putting WATCH IT under the pad's thumb instead would make a mashed
+         button start a 68-second video, every single launch. The least painful
+         answer is the one that is already selected; that rule applies to every
+         confirm dialog in this file. -->
+    <div id="panel-trailer-offer" class="screen overlay hidden">
+      <div class="panel">
+        <h2>WATCH THE TRAILER FIRST?</h2>
+        <p class="note">
+          About a minute. It streams from here — nothing is downloaded unless
+          you ask for it, and you can skip it at any point with <b>Start</b>
+          or <b>Esc</b>.
+        </p>
+        <div class="pause-menu">
+          <button class="menu-btn primary" data-action="offer-skip">NO, START THE GAME</button>
+          <button class="menu-btn" data-action="offer-watch">YES, WATCH IT</button>
+          <button class="menu-btn" data-action="offer-download">DOWNLOAD IT INSTEAD</button>
+        </div>
+      </div>
+    </div>
 
     <!-- The record board, on its own, from the pause menu and the town. -->
     <div id="panel-board" class="screen overlay hidden" data-nav="scroll">

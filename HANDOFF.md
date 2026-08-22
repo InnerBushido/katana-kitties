@@ -103,6 +103,48 @@ still `tri`** and must stay so — it is in every saved profile. It also fixed a
 bug nothing else had found: hitting an already-stunned animal used to *wake it
 up*. See [docs/notes/endgame.md](docs/notes/endgame.md).
 
+**Nothing irreversible happens on one press.** Every destructive button in the
+pause menu — RESTART, TITLE SCREEN, QUIT THE MATCH, DROP OUT and the new QUIT
+GAME — goes through `systems/confirm.js`, whose one real safety property is that
+the panel has **no `.primary`**, so `MenuNav` opens the cursor on cancel. Buying,
+selling and trading Kotodama ask each girl **separately, in her own card, on her
+own controller**; the record board is signed twice. Scenes skip on **Escape or a
+pad's Start and nothing else** — Space and Enter are out, because four kids round
+a laptop find Space with an elbow. And a menu is driven by **one** player, the
+one who opened it, with her name on screen in her own colour. All of it came out
+of one afternoon of four-player play; the reasoning, and the two live bugs the
+checks found on the way, are in
+[docs/notes/consent.md](docs/notes/consent.md).
+
+**A stuck vJoy button no longer starts the game by itself.** Reported as "2
+controllers connected and one of them autostarts the game" and assumed to be a
+phantom device; it was real, and it is still on Richard's machine — vJoy holding
+button 9 at 1.00 from boot, which is `attack` on the left Joy-Con half. Masked at
+the source in `core/input.js`, for vJoy only, cleared the instant the button is
+released. `pad-check` grew an arrival frame for this: its harness had been
+handing pads over with a button already down, which is a device that has been
+pressing since before it existed.
+
+**A voice-acting registry.** [docs/notes/voices.md](docs/notes/voices.md) — which
+ElevenLabs preset is which character, with the `voice_id`s, so a session cannot
+cast a character who already has a voice. Five of the eight were confirmed by
+measurement rather than transcribed from a commit message.
+
+**The trailer has two narrators now, and the handover is the joke.** A straight
+trailer voice is narrating it and Mr. Satan keeps grabbing his microphone —
+which is what "AHEM! Is this thing on?" always was, and it only reads that way
+now that somebody else is plainly meant to be holding it. Mr. Satan takes shots
+1-3, the narrator has 4-8 (the pets, the dragons and both maths shots, because
+a boast about sine and cosine is a joke at the expense of the one part of this
+that is not a joke), Mr. Satan barges back for the arena, and the narrator
+reclaims the mic to say "right meow" with a straight face. **The narrator's six
+takes are the FIRST cut's, copied byte-for-byte out of
+`out/trailer/vo-desmond/`** — free, and exactly the takes that were chosen.
+`trailer-vo.mjs --check` compares them against that archive, because they are
+the whole structure and nothing else on disk can tell them from the Harrison
+ones. Four Harrison lines were regenerated, 0.6 credits, and the picture was
+never re-rendered: `trailer-cut.sh --audio` re-muxes the existing segments.
+
 **A device tier.** `core/device.js` decides once what this machine may spend and
 the renderer, the art loader and the quality setting all read it. A touch device
 gets antialias off, a capped pixel ratio, and half-size single-figure atlases
@@ -144,7 +186,36 @@ is listed here is untested-by-players, not untested-by-machine.
    came out of the clans and are not built: clan-specific missions, a second
    material that resists dragons the way bamboo does, breath types that interact
    with specific props.
-6. **`docs/unused-art/` is 19MB of reference sheets the game never loads.** Fine
+6. **The trailer has been played in a browser but not by a child.** Every
+   route through it was exercised on desktop Chrome — the title button, the
+   pause entry, the one-time offer, skipping, the pause menu surviving
+   underneath, and the missing-file path. What has not been watched is a
+   nine-year-old meeting the offer screen once and choosing, or the same screen
+   on a phone where `start` does not exist and the on-screen CLOSE button is
+   the only way out. It is also the only place in the game where a slow
+   connection is visible, and nobody has seen it on one.
+7. **The confirm dialogs have not been mashed at by four children**, which is
+   the only test that matters for them. Verified in the browser: the title
+   layout to the pixel, the offer returning on every new game, Space/Enter no
+   longer skipping the intro while Escape does, RESTART and QUIT GAME opening
+   on their cancel button, the trade question rendering under each kitten's
+   name, the record board asking before it signs, and the owner badge naming
+   Frost while she drove the menu. What that does not tell you is whether a
+   nine-year-old *reads* "no, keep playing" before pressing something, or
+   whether one more press between her and RESTART is enough. Watch for the
+   opposite failure too: a dialog she has learned to mash through is worse than
+   no dialog, because it costs a press and buys nothing.
+8. **DROP OUT's confirm is the one route not exercised by hand** — it only
+   exists with three or more players and the browser session had two. It is the
+   same code path as the other four and `world-check` pins it, but it is also
+   the one whose words change per player, so read them once with a third kitten
+   in the game.
+9. **Ryuuseki's voice is lost.** His two lines exist and sound right; the preset
+   that made them was never written down, and five auditions on his own line
+   missed by two and a half semitones or more. Desmond is nearest. Do not recast
+   him casually — see [docs/notes/voices.md](docs/notes/voices.md), which now
+   exists so this cannot happen to anybody else.
+10. **`docs/unused-art/` is 19MB of reference sheets the game never loads.** Fine
    in the repo and excluded from CLI deploys, but it is most of the repo's size
    and nothing reads it. Worth a decision one day; not urgent.
 
@@ -331,6 +402,87 @@ everything and shipping pixels.
 
 ---
 
+## There is a trailer now, and a second set of Steam art
+
+**`out/trailer/katana-kitties-trailer.mp4` — 1:08.** Twelve five-second animated
+shots and eight seconds of the kids' title painting, scored from the game's own
+music table. Made on 2026-08-21 with Higgsfield: Nano Banana Pro for the twelve
+keyframes, `grok_video` for the animation. Full account, including the three
+arguments that had to be settled and the models that did not work, in
+[docs/notes/trailer.md](docs/notes/trailer.md).
+
+Four exports. Three live under `out/trailer/`, which is **gitignored** like the
+rest of `out/` — the tools are what is versioned — and the fourth is the only
+one committed:
+
+| file | for |
+| --- | --- |
+| `out/.../katana-kitties-trailer.mp4` | the master, crf 17, ~135MB |
+| `out/.../katana-kitties-trailer-web.mp4` | YouTube and the store page, 1080p crf 22, ~70MB |
+| `out/.../katana-kitties-trailer-720.mp4` | sending to a phone, ~28MB |
+| **`public/trailer/katana-kitties-trailer.mp4`** | **in the game**, 720p crf 28, **20MB** |
+
+The in-game one is re-encoded harder than the phone copy on purpose: it is
+watched once, in a browser, often on whatever wifi is in the room, and eighteen
+megabytes is already the biggest thing in the repo.
+
+Remake the lot with:
+
+```bash
+node tools/steam-art.mjs
+node tools/trailer-vo.mjs --check      # do the narration takes still fit?
+node tools/trailer-score.mjs out/trailer/score.wav
+bash  tools/trailer-cut.sh
+bash  tools/steam-capsules.sh
+```
+
+**The generated stills, clips and narration cannot be re-derived** — they cost
+credits and none of the models are deterministic — so `out/trailer/shots/`,
+`out/trailer/clips/` and `out/trailer/vo/` are the things in `out/` worth
+backing up. Their job ids are in `out/trailer/jobs_img.txt`, `jobs_vid.txt` and
+`vo/jobs.txt`. Everything else in there regenerates from the tools.
+
+**`src/core/audio.js` gained one line and no behaviour:** `ROOT` is now
+exported, so `tools/trailer-score.mjs` can render the trailer's music from the
+same table the game plays from rather than from a transcription of it. That is
+the only game-code change in the whole exercise.
+
+**The generated art did not touch the shelf.** `tools/steam-art.mjs` still cuts
+the library cover, the icon and the wordmark out of `public/sprites/title_art.png`,
+and `tools/steam-capsules.sh` is additive — it writes a separate
+`out/steam/capsules/` for the store page and composites the kids' wordmark onto
+every capsule that carries the name. The wordmark is never generated. Second
+non-negotiable.
+
+**It is in the game, and it costs nothing until somebody asks for it.**
+`public/trailer/katana-kitties-trailer.mp4` (720p, **20MB** — the largest single
+file in the project) plus `src/systems/trailer.js`. Three ways in: a row of its
+own on the title screen, an entry in the pause menu beside WATCH THE STORY
+AGAIN, and a one-time WATCH IT / STRAIGHT TO THE GAME / DOWNLOAD IT INSTEAD
+before the first game, remembered in `localStorage` under `kk.trailerOffer`.
+
+The `<video>` has **`preload="none"` and no `src` attribute at all** until
+`open()` attaches one, and `close()` removes it again. Measured in the browser:
+one `206 Partial Content` request, aborted mid-stream on close, so skipping it
+stops the download instead of letting 20MB finish in the background. Four
+`world-check` assertions pin that, because every one of those failures is
+invisible while playing — the game would look identical and simply cost 20MB
+more to start, on a phone, on data.
+
+It skips on `SKIP_KEYS` and `_skipPressed()` like every scene, and is checked
+*before* and separately from `_sceneActive()` — that predicate means "a scene is
+running in the world" in half a dozen places and a video must not start
+answering it. `MenuNav.panel()` returns null while it plays.
+
+**Mr. Satan narrates it** (ElevenLabs via Higgsfield, ~0.15 credits a line;
+thirteen lines and their timings in `tools/trailer-vo.mjs`), and the score now
+has a trailer orchestra over the game's pentatonic pieces — horns, braam,
+timpani, ostinato, choir. Higgsfield could not write the music: its audio models
+are speech-only. Full reasoning, and the measured voice casting, in
+[docs/notes/trailer.md](docs/notes/trailer.md).
+
+---
+
 ## Why it lags, and what it is not
 
 **It is fill rate, and `P` now says so on screen.** Reported as "badly lagging
@@ -478,10 +630,13 @@ are about to touch, not all of them.
 | [story.md](docs/notes/story.md) | the cutscene, the leaders, the shrine scenes, the scene viewer |
 | [world.md](docs/notes/world.md) | the clans and their buffs; the panda |
 | [art.md](docs/notes/art.md) · [audio.md](docs/notes/audio.md) | atlas cells; the synthesised music |
+| [voices.md](docs/notes/voices.md) | **which ElevenLabs preset is which character**, with the ids; how the castings were verified; why Ryuuseki's is lost; why there is no style prompt; why per-line pitch cannot identify a voice |
+| [consent.md](docs/notes/consent.md) | why nothing irreversible happens on one press — the confirm dialog and why it has no primary, the per-side trade questions, the two-stage name entry, who drives a menu, and the vJoy button that started the game by itself |
 | [rules.md](docs/notes/rules.md) | the gameplay invariants in full, and the measurements behind them |
 | [gotchas.md](docs/notes/gotchas.md) | traps that cost real time and are invisible in the code |
 | [hosting.md](docs/notes/hosting.md) | Vercel, the Git deploy, the `gh` credential setup, how the screenshots were taken |
 | [steam.md](docs/notes/steam.md) | the non-Steam shortcut and its launch flags, the shelf artwork, what Remote Play is and is not |
+| [trailer.md](docs/notes/trailer.md) | the 1:08 trailer: how Mr. Satan was cast by measurement, why the orchestra is synthesised, why the 十 is drawn rather than typed, why the player downloads nothing until asked, and why generated art may go on the store page but not the shelf |
 | [performance.md](docs/notes/performance.md) | why the frame time is a straight line in pixels, slow vs stutter and why they need different numbers, what is measured NOT to be a cause, the `P` readout |
 
 **Older source comments saying "see HANDOFF.md" mean these notes** — the text

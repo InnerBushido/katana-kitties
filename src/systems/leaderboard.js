@@ -164,6 +164,19 @@ export class NameEntry {
     this.slots = Array.from({ length: NAME_MIN }, () => 0);
     this.cursor = 0;
     this.done = false;
+    /**
+     * She has pressed OK and is being asked whether the name is right.
+     *
+     * A SEPARATE STAGE RATHER THAN A `Confirm` DIALOG, because this screen is
+     * already a modal and the second one would have to be driven by the same
+     * folded-together sticks (see `update`) while the first still owned them.
+     * The name goes on a board that survives the browser closing and there is
+     * no route back to fix it — `_commit` is one-way — so the one press that
+     * makes it permanent gets a question in front of it. Everything the entry
+     * can do is refused while this is true, so a stray letter cannot land
+     * behind the question she is reading.
+     */
+    this.confirming = false;
     this._holdT = 0;
     this._holdDir = 0;
     this._holdAxis = null;
@@ -182,6 +195,7 @@ export class NameEntry {
     this.slots = Array.from({ length: NAME_MIN }, () => 0);
     this.cursor = 0;
     this.done = false;
+    this.confirming = false;
   }
 
   _step(axis, dir) {
@@ -217,6 +231,27 @@ export class NameEntry {
        winner types her own name, but which pad she is holding is not
        something this screen can know, and locking it to player 1 means the
        younger sister wins the tournament and cannot sign the board. */
+    /* THE QUESTION OWNS EVERY BUTTON AND THE STICK. Held apart from the
+       editing path below rather than folded into it: while she is reading
+       "sign the board as ABC?" the stick must not still be scrolling the
+       letter under it, or she answers yes to a name that changed while she
+       looked at the question. JUMP is yes because JUMP is what raised it;
+       ATTACK and INTERACT are both no, because "I did not mean that" is the
+       answer a wrong press wants. */
+    if (this.confirming) {
+      let yes = false;
+      let no = false;
+      for (const p of pads) {
+        if (p.pressed('jump')) yes = true;
+        if (p.pressed('attack') || p.pressed('interact')) no = true;
+      }
+      /* No before yes: a pad reporting both in one frame is a mash, and a mash
+         must not sign a board. */
+      if (no) return { moved: this.cancel(), confirmed: false };
+      if (yes) return { moved: false, confirmed: this.accept() };
+      return { moved: false, confirmed: false };
+    }
+
     let mx = 0;
     let my = 0;
     let confirm = false;
@@ -255,8 +290,11 @@ export class NameEntry {
       }
     }
 
-    const confirmed = confirm ? this.accept() : false;
-    return { moved, confirmed };
+    /* `accept` only raises the question here — `confirmed` stays false and the
+       branch above is what finally returns it true. It is reported as `moved`
+       so the caller repaints and she can see what she is being asked. */
+    if (confirm && this.accept()) moved = true;
+    return { moved, confirmed: false };
   }
 
   /* -------------------- the three things a name can do --------------------
@@ -274,7 +312,7 @@ export class NameEntry {
 
   /** Put a glyph in the lit slot and walk forward, growing the name. */
   type(ch) {
-    if (this.done) return false;
+    if (this.done || this.confirming) return false;
     const ix = ALPHABET.indexOf(ch);
     if (ix < 0) return false;
     this.slots[this.cursor] = ix;
@@ -290,7 +328,7 @@ export class NameEntry {
    *  three-letter name is the shortest there is, so there is nothing to remove
    *  and a DEL that did nothing at all would read as broken. */
   del() {
-    if (this.done) return false;
+    if (this.done || this.confirming) return false;
     if (this.slots.length > NAME_MIN) {
       this.slots.pop();
       this.cursor = Math.min(this.cursor, this.slots.length - 1);
@@ -300,17 +338,35 @@ export class NameEntry {
     return true;
   }
 
-  /** Commit, if the name is long enough. Refuses rather than committing a
-   *  one-letter name — see `valid`. */
+  /**
+   * Commit, if the name is long enough. Refuses rather than committing a
+   * one-letter name — see `valid`.
+   *
+   * TWO PRESSES, NOT ONE. The first raises the question (`confirming`), the
+   * second answers it. Callers do not need to know that: every one of them
+   * already does its work on `entry.done` rather than on this return value,
+   * so a screen that has not been taught about the question simply shows one
+   * that nobody can answer — which is visible, rather than silently signing
+   * the board on the first press.
+   */
   accept() {
     if (this.done || !this.valid) return false;
+    if (!this.confirming) { this.confirming = true; return true; }
+    this.confirming = false;
     this.done = true;
+    return true;
+  }
+
+  /** "No, let me fix it." Back to the letters, nothing lost. */
+  cancel() {
+    if (this.done || !this.confirming) return false;
+    this.confirming = false;
     return true;
   }
 
   /** Move the cursor straight to a slot. Only a tap can do this; a stick walks. */
   pick(i) {
-    if (this.done || !(i >= 0 && i < this.slots.length)) return false;
+    if (this.done || this.confirming || !(i >= 0 && i < this.slots.length)) return false;
     this.cursor = i;
     return true;
   }
@@ -318,6 +374,15 @@ export class NameEntry {
   /** A keyboard is still allowed — see the note on `NameEntry`. */
   key(code) {
     if (this.done) return false;
+    /* Escape does NOT leave the results screen from here — there is nowhere to
+       go, the name is not signed yet, and `Game`'s Escape handler is what owns
+       that key everywhere else. It answers the question, which is the only
+       thing on screen to answer. */
+    if (this.confirming) {
+      if (code === 'Enter' || code === 'NumpadEnter' || code === 'Space') return this.accept();
+      if (code === 'Escape' || code === 'Backspace') return this.cancel();
+      return false;
+    }
     if (code === 'Backspace') return this.del();
     if (code === 'Enter' || code === 'NumpadEnter') return this.accept();
     const m = /^(?:Key([A-Z])|Digit([0-9]))$/.exec(code);

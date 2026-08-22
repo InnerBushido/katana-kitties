@@ -26,7 +26,7 @@ import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_
 import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
 import { SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest } from '../src/world/build.js';
 import { ISLAND_MUSIC, MUSIC, trackForIsland } from '../src/core/audio.js';
-import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
   floodBackground, clearSealedPockets, purelyWhite, pocketFloor,
@@ -2268,11 +2268,44 @@ console.log('\n--- signing the board ---');
   back.update(1, [pad(-1, 0)]);
   ok('left off the front does nothing rather than wrapping', back.cursor === 0);
 
+  /* JUMP ASKS, AND THE SECOND JUMP SIGNS. The board outlives the browser
+     closing and `_commit` is one-way — there is no screen anywhere that can
+     edit a name once it is on the list — so the press that makes it permanent
+     has a question in front of it. Richard asked for this on the same list as
+     RESTART and QUIT.
+
+     THE FIRST PRESS MUST NOT COMMIT. That is the whole assertion: a one-stage
+     `accept` and a two-stage one are indistinguishable from the second press
+     onwards, so a check that only looked at the end state would pass on the
+     bug. `confirmed` is false and `done` is false after press one. */
   const done = new NameEntry();
-  const r = done.update(0.016, [pad(0, 0, 'jump')]);
-  ok('jump confirms', r.confirmed && done.done);
+  const r1 = done.update(0.016, [pad(0, 0, 'jump')]);
+  ok('jump raises the question rather than signing',
+    r1.confirmed === false && done.done === false && done.confirming === true);
+  /* ...and while it is up, the letters are frozen. A stick that still scrolled
+     would change the name under a question that quotes it. */
+  ok('...and the stick stops moving the letters while it is up',
+    done.update(0.016, [pad(0, 1)]).moved === false && done.name[0] === 'A');
+  const r2 = done.update(0.016, [pad(0, 0, 'jump')]);
+  ok('...and the second jump signs it', r2.confirmed && done.done);
   ok('...and a confirmed entry stops responding',
     done.update(0.016, [pad(0, 1)]).moved === false);
+
+  /* NO GETS OUT, WITH THE NAME INTACT. A question you cannot decline is not a
+     question, and losing the spelling on the way back would make declining
+     worse than saying yes. */
+  const backOut = new NameEntry();
+  for (const c of 'REK') backOut.type(c);
+  backOut.update(0.016, [pad(0, 0, 'jump')]);
+  backOut.update(0.016, [pad(0, 0, 'interact')]);
+  ok('interact answers no and hands the letters back',
+    backOut.confirming === false && backOut.done === false && backOut.name === 'REK');
+  /* A MASH MUST NOT SIGN. A pad reporting jump AND attack in one frame is a
+     child mashing, and the answer to a mash is no. `_answer` reads no first. */
+  const mash = new NameEntry();
+  mash.update(0.016, [pad(0, 0, 'jump')]);
+  mash.update(0.016, [{ mx: 0, my: 0, pressed: (a) => a === 'jump' || a === 'attack', down: () => false }]);
+  ok('...and jump+attack in one frame answers NO', mash.done === false && mash.confirming === false);
 
   /* EITHER PLAYER DRIVES IT. The winner types her own name and this screen
      cannot know which pad she is holding — locking it to player 1 means the
@@ -2340,7 +2373,10 @@ console.log('\n--- signing the board ---');
     half.type('E');
     half.pick(2);
     half.type('K');
-    ok('...and takes it once there are letters in it', half.accept() && half.done);
+    /* Two presses here as well — `accept` raising the question IS the true
+       return, so the check has to run it twice to get to `done`. */
+    ok('...and takes it once there are letters in it',
+      half.accept() && half.confirming && half.accept() && half.done);
     ok('...after which nothing else moves', half.type('Z') === false && half.del() === false);
 
     /* THE KEYPAD IS THE ALPHABET, NOT A SECOND COPY OF IT — 36 real glyphs,
@@ -5647,6 +5683,445 @@ console.log('\n--- the PNG writer round-trips ---');
   unlinkSync(tmp);
   ok('...and each entry decodes to exactly the size it claims', laidOut);
   ok('...with nothing left over at the end', walked === ico.length);
+}
+
+/* ---------------------------------------------------------------------------
+   The trailer costs nothing until somebody asks for it.
+
+   `public/trailer/katana-kitties-trailer.mp4` is 20MB, which is a third of
+   everything else in `public/` put together and forty times the JS bundle.
+   The entire design rests on two attributes in one tag, and both of them are
+   the kind of thing an editor or a tidy-up "fixes":
+
+     - NO `src`. A <video> carrying a src is a request waiting to happen, and
+       adding one back would make every player download 20MB on boot whether
+       they ever open the trailer or not.
+     - `preload="none"`. On its own this is only a hint — several browsers
+       ignore it — which is exactly why the src is withheld as well, and why
+       both are checked rather than either.
+
+   Neither failure is visible while playing. The game would look and behave
+   identically; it would simply cost 20MB more to start, on a phone, on data.
+   Measured in the browser once and confirmed: opening it makes one 206 range
+   request, and closing it aborts that request mid-stream rather than letting
+   20MB finish downloading behind a video nobody is watching any more.
+--------------------------------------------------------------------------- */
+console.log('\n--- the trailer is opt-in ---');
+{
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const tag = html.match(/<video[^>]*id="trailer-video"[\s\S]*?>/);
+  ok('index.html has the trailer <video>', !!tag);
+  if (tag) {
+    const t = tag[0];
+    ok('...and it carries NO src attribute', !/\ssrc\s*=/.test(t));
+    ok('...and preload is none', /preload="none"/.test(t));
+    /* iOS otherwise hoists it into the system player, which takes the skip
+       rule away from us — there, the only way out is Apple's Done button. */
+    ok('...and it plays inline', /playsinline/.test(t));
+  }
+
+  const js = readFileSync(new URL('../src/systems/trailer.js', import.meta.url), 'utf8');
+  ok('close() detaches the source', /removeAttribute\('src'\)/.test(js));
+  /* The one-time offer is answered when she CHOOSES, never when the video
+     ends: a girl who skips it, or whose connection drops, must not be asked
+     again every time she opens the game. Seventh non-negotiable, one floor up
+     from the scenes it was written for. */
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const answer = main.slice(main.indexOf('_answerTrailerOffer(choice)'));
+  ok('the offer is recorded on the CHOICE, not on the video ending',
+    answer.indexOf('_offerAnswered = true') < answer.indexOf('trailer.open('));
+  /* IT IS ASKED AGAIN EVERY TIME SHE COMES BACK TO THE TITLE, and that is a
+     change from the first version, which remembered the answer in
+     `localStorage` under `kk.trailerOffer`. Richard's report: "that option only
+     ever appears once and never returns. Even if I refresh the browser, it
+     still will not reappear." Remembering it forever is the right behaviour for
+     a cookie banner and the wrong behaviour for a thing you might want to show
+     somebody — the trailer is 68 seconds of the game's own art and the most
+     likely reason to want it is a new person in the room.
+
+     So: no storage at all, a plain field, and `toTitle()` clears it. The two
+     halves are checked separately because either one alone silently restores
+     the old behaviour — a `localStorage` read would pin it across refreshes,
+     and a missing reset would pin it for the session. */
+  ok('...and it is NOT remembered across games',
+    !/kk\.trailerOffer/.test(main) && /_trailerOfferDue\(\)\s*\{[^}]*!this\._offerAnswered/.test(main));
+  /* The METHOD, not the first mention of it — `onYes: () => this.toTitle()` in
+     the pause menu's confirm comes 575 lines earlier in the file. */
+  const tAt = main.indexOf('\n  toTitle() {');
+  const toTitle = main.slice(tAt, tAt + 2200);
+  ok('...because going back to the title clears the answer',
+    /_offerAnswered = false/.test(toTitle));
+  /* MenuNav has to stand down entirely, or the title screen underneath — the
+     one surface where ANY button confirms — starts the game out from under a
+     video she is still watching. */
+  const nav = readFileSync(new URL('../src/systems/menunav.js', import.meta.url), 'utf8');
+  ok('MenuNav takes no input while the trailer runs',
+    /trailer\?\.active\) return null/.test(nav));
+  ok('...and the trailer panels count as overlays',
+    /'panel-trailer', 'panel-trailer-offer'/.test(main));
+}
+
+/* ---------------------------------------------------------------------------
+   BUYING, SELLING AND TRADING ALL ASK FIRST - AND ONLY THE GIRL BEING ASKED
+   CAN ANSWER.
+
+   The dealer is eight nearly identical rows scrolled with a stick, SELL is a
+   loss (an orb goes back for less than it cost), and none of it can be undone.
+   A girl aiming for the row below hers sold her Ward, and nothing on screen had
+   told her she was about to.
+
+   THE QUESTION IS PER SIDE AND NOT A MODAL, which is the part worth checking:
+   the shared `Confirm` dialog has one cursor, and one cursor over a four-player
+   trade screen would be answered by whoever was nearest. Consent cannot be
+   expressed through somebody else's controller - that sentence is the entire
+   reason this screen has its own input path, and it is the thing a later tidy-
+   up ("why does this not just use Confirm?") would delete.
+
+   Driven through a stubbed DOM rather than by reading the source, because what
+   matters here is behaviour: which orb actually moves, whose press counts, and
+   what a half-answered question does when somebody backs out.
+--------------------------------------------------------------------------- */
+console.log('\n--- a trade is agreed twice, by two people ---');
+{
+  /* The smallest document ProfileScreen will start against. It never measures
+     anything, so nothing here has to be real - `kd-actions` is deliberately
+     absent so `_paintActions` bails out at its own guard. */
+  const el = () => ({
+    _bound: false,
+    innerHTML: '', textContent: '',
+    classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+    addEventListener() {},
+  });
+  const nodes = {
+    'panel-profile': el(), 'kd-body': el(), 'kd-title': el(), 'kd-help': el(),
+  };
+  globalThis.document = { getElementById: (id) => nodes[id] ?? null };
+  const { ProfileScreen } = await import('../src/systems/profile.js');
+  /* The stub has to outlive the import - the constructor is what reads it, and
+     that runs once per `mk` below, not at module load. Taken away at the end of
+     the block so nothing after this can accidentally depend on it. */
+
+  /* A REAL `Player`, not a bag of fields. `setPowerOrbs` is the only way the
+     orb list is allowed to move — it recomputes `maxHp` from the buffs, and
+     the whole reason it exists is that anything editing the array in place
+     leaves a kitten whose health and whose inventory disagree. A stubbed
+     player would let this section pass while the real trade broke that. */
+  const kit = (i, name, orbs, score) => {
+    const p = new Player({
+      texture: new THREE.Texture(), index: i,
+      spawn: new THREE.Vector3(0, world.heightAt(0, 40).y, 40),
+      cols: 8, rows: 4, mirror: false,
+    });
+    p.name = name;
+    p.score = score;
+    p.setPowerOrbs([...orbs]);
+    return p;
+  };
+  /* A pad reporting exactly one button this frame, like `_drive` reads it. */
+  const press = (btn) => ({ mx: 0, my: 0, pressed: (a) => a === btn, down: () => false });
+
+  /* RICH ENOUGH TO BUY, derived rather than typed: the price comes out of the
+     world's point total (`orbPrice`) and a hardcoded purse would start failing
+     the day somebody adds an island. */
+  const mk = (aOrbs, bOrbs, aScore = null, bScore = null) => {
+    const rich = orbPrice(world.pointsTotal, 2) * 4;
+    const players = [kit(0, 'Ember', aOrbs, aScore ?? rich),
+      kit(1, 'Frost', bOrbs, bScore ?? rich)];
+    const g = {
+      players,
+      world,
+      scene: new THREE.Scene(),
+      pickups: [],
+      audio: { play() {} },
+      sfx() {},
+      syncOrbMeshes() {},
+      toast() {},
+      onScoreChanged() {},
+    };
+    g.kotodama = new Kotodama(g);
+    g.kotodama.spawnPickups = () => {};
+    g.kotodama.raiseStall = () => {};
+    const ps = new ProfileScreen(g);
+    return { g, ps, players };
+  };
+
+  /* --- the dealer --- */
+  {
+    const { g, ps } = mk([], []);
+    g.kotodama.stock[ORB_IDS[0]] = 3;
+    ps.open('shop', { shopper: g.players[0] });
+    ps.sides[0].i = 0;
+    ps._buyHere(0);
+    ok('buying puts a question up instead of buying',
+      ps.sides[0].pending?.kind === 'buy' && g.players[0].powerOrbs.length === 0);
+    /* THE ORB IS TAKEN FROM THE QUESTION, NOT FROM HER CURSOR. Between asking
+       and answering the stick is not frozen - and on a phone the YES button is
+       somewhere else on screen entirely - so a confirmation that acted on the
+       cursor would put her yes behind the wrong orb, which is the exact
+       accident it was added to prevent. */
+    const asked = ps.sides[0].pending.id;
+    ps.sides[0].i = 3;
+    ps._answerHere(0, true);
+    ok('...and YES buys what it ASKED about, not what the cursor moved to',
+      g.players[0].powerOrbs.length === 1 && g.players[0].powerOrbs[0] === asked);
+
+    ps.sides[0].i = 1;
+    ps._buyHere(0);
+    ps._answerHere(0, false);
+    ok('...and NO buys nothing at all', g.players[0].powerOrbs.length === 1);
+    ok('...and takes the question back down', ps.sides[0].pending === null);
+  }
+
+  /* A REFUSAL STILL COMES FIRST. Asking "buy this?" and only then saying "you
+     cannot afford it" is two presses to be told no. Sixth non-negotiable. */
+  {
+    const { g, ps } = mk([], [], 0);
+    g.kotodama.stock[ORB_IDS[0]] = 3;
+    ps.open('shop', { shopper: g.players[0] });
+    ps.sides[0].i = 0;
+    ps._buyHere(0);
+    ok('a refusal is immediate and is never dressed up as a question',
+      ps.sides[0].pending === null);
+  }
+
+  /* --- the trade --- */
+  {
+    const { g, ps, players } = mk([ORB_IDS[0]], [ORB_IDS[1]]);
+    ps.open('profile');
+    ps.sides[0].offer = 0;
+    ps.sides[1].offer = 0;
+    ps._confirmHere(0);
+    ps._confirmHere(1);
+    /* The tick only says "I am ready" — `_maybeTrade`, which `update` runs
+       every frame, is what notices that two of them are and asks. */
+    ps._maybeTrade();
+    ok('two ticks raise two questions, one each',
+      ps.sides[0].pending?.kind === 'trade' && ps.sides[1].pending?.kind === 'trade');
+    /* AND EACH NAMES WHAT SHE PERSONALLY GIVES AND GETS. "Are you sure?" is
+       not a question a nine-year-old can answer while excited; the words have
+       to carry the trade. The two texts are different because the two sides
+       of a swap are. */
+    ok('...and each question names her own side of it',
+      ps.sides[0].pending.text.includes('Frost')
+      && ps.sides[1].pending.text.includes('Ember')
+      && ps.sides[0].pending.text !== ps.sides[1].pending.text);
+
+    /* ONE YES IS NOT A TRADE. This is the assertion the whole section exists
+       for: player 1 answering must not be able to complete it. */
+    ps._answerHere(0, true);
+    ps._maybeTrade();
+    ok('...and one girl saying yes moves nothing',
+      players[0].powerOrbs[0] === ORB_IDS[0] && players[1].powerOrbs[0] === ORB_IDS[1]);
+    ok('...and the other question is still waiting for HER',
+      ps.sides[1].pending?.kind === 'trade' && ps.sides[1].sure === false);
+
+    ps._answerHere(1, true);
+    ps._maybeTrade();
+    ok('...and the second yes is what swaps them',
+      players[0].powerOrbs[0] === ORB_IDS[1] && players[1].powerOrbs[0] === ORB_IDS[0]);
+  }
+
+  /* SAYING NO LEAVES EVERYTHING WHERE IT WAS, and does not strand the sister
+     in a dialog about a trade that is not going to happen. */
+  {
+    const { g, ps, players } = mk([ORB_IDS[0]], [ORB_IDS[1]]);
+    ps.open('profile');
+    ps.sides[0].offer = 0;
+    ps.sides[1].offer = 0;
+    ps._confirmHere(0);
+    ps._confirmHere(1);
+    ps._maybeTrade();
+    ps._answerHere(0, true);
+    ps._answerHere(1, false);
+    ps._maybeTrade();
+    ok('one NO cancels the whole trade',
+      players[0].powerOrbs[0] === ORB_IDS[0] && players[1].powerOrbs[0] === ORB_IDS[1]);
+    /* A NO CALLS THE WHOLE TRADE OFF, and this check is why. `_maybeTrade`
+       runs every frame; when it found two girls still ticked and one of them
+       without a question up, it put the same question straight back — she
+       pressed no, the box blinked, and it was still there. Both ticks and both
+       answers go, so nobody is left holding a yes she gave to terms that are
+       about to change. */
+    ok('...and nobody is left holding a yes, or a question, for it',
+      ps.sides.every((sd) => sd.sure === false && sd.pending === null
+        && sd.ready === false));
+    ps._maybeTrade();
+    ok('...and the question does not come straight back up',
+      ps.sides.every((sd) => sd.pending === null));
+  }
+
+  /* CHANGING THE OFFER AFTER SAYING YES THROWS THE YES AWAY. A girl who agreed
+     to hand over 200 points and then dialled it to 800 has not agreed to that,
+     and the same is true of swapping which orb is on the table. This rule
+     already existed for the tick; it has to reach one step further now that
+     there is an answer sitting behind the tick. */
+  {
+    const { g, ps } = mk([ORB_IDS[0], ORB_IDS[2]], [ORB_IDS[1]]);
+    ps.open('profile');
+    ps.sides[0].offer = 0;
+    ps.sides[1].offer = 0;
+    ps._confirmHere(0);
+    ps._confirmHere(1);
+    ps._maybeTrade();
+    ps._answerHere(0, true);
+    ps.sides[0].i = 1;
+    ps._offerHere(0);
+    ok('moving the offer drops the yes behind it', ps.sides[0].sure === false
+      && ps.sides[0].ready === false && ps.sides[0].pending === null);
+
+    ps._confirmHere(0);
+    ps._maybeTrade();
+    ps._answerHere(0, true);
+    ps._bumpPoints(0, 1);
+    ok('...and so does changing the points', ps.sides[0].sure === false
+      && ps.sides[0].ready === false && ps.sides[0].pending === null);
+  }
+
+  /* A QUESTION OWNS ITS OWN SIDE'S BUTTONS AND NOBODY ELSE'S. Driven through
+     `_drive` rather than by calling `_answerHere` directly, because the routing
+     IS the rule: while Ember is being asked, Frost must still be able to shop. */
+  {
+    const { g, ps } = mk([], []);
+    g.kotodama.stock[ORB_IDS[0]] = 3;
+    ps.open('shop', { shopper: g.players[0] });
+    ps.sides[0].i = 0;
+    ps._buyHere(0);
+    ps._drive(1, press('jump'), 0.016);
+    ok("one girl's question does not eat another girl's press",
+      ps.sides[0].pending !== null);
+    ps._drive(0, press('jump'), 0.016);
+    ok('...and JUMP on HER pad answers it', ps.sides[0].pending === null
+      && g.players[0].powerOrbs.length === 1);
+  }
+
+  delete globalThis.document;
+}
+
+/* ---------------------------------------------------------------------------
+   NOTHING BIG HAPPENS ON ONE PRESS, AND ONE PERSON DRIVES THE MENU.
+
+   Four girls, four sticks, and every one of them being mashed. Three separate
+   reports came out of that afternoon and they are all the same bug wearing
+   different consequences:
+
+     - a scene got skipped by somebody who was not watching it
+     - RESTART threw away an afternoon, from a menu row directly under RESUME
+     - four cursors fought over one list and it read as a frozen game
+
+   The fixes are structural rather than defensive, which is why they can be
+   checked from the outside at all. Each rule below is one that a later,
+   entirely reasonable-looking edit would silently undo.
+--------------------------------------------------------------------------- */
+console.log('\n--- one press is not enough, and one player drives ---');
+{
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  /* Anchoring on a METHOD needs the newline and the indent: half of these
+     names appear as a call somewhere earlier in the file, and a slice that
+     starts at the call reads the wrong body. */
+  const NL = String.fromCharCode(10);
+
+  /* --- skipping --- */
+  /* SPACE AND ENTER ARE GONE FROM THE SKIP SET. They were in it because the
+     seventh non-negotiable says "Start / Space / Enter only, never any button"
+     - written when there were two players and one keyboard. With four girls
+     around a laptop, Space is the key an elbow finds, and skipping the intro
+     is not undoable: `played` latches on START, so the introduction is spent.
+     Escape is deliberate in a way Space is not; nobody rests a thumb on it. */
+  ok('a scene is skipped by Escape and nothing else on the keyboard',
+    /const SKIP_KEYS = new Set\(\['Escape'\]\);/.test(main));
+  /* AND THE PAD HALF EXCLUDES THE KEYBOARD SLOTS, which is not fussiness: a
+     keyboard player's `start` action IS Enter, so asking every player for
+     `start` puts Enter straight back into the skip set through the side door
+     and the line above becomes decoration. */
+  const sp = main.slice(main.indexOf('_skipPressed()'), main.indexOf('_skipPressed()') + 260);
+  ok("...and by a real pad's START, never by a keyboard slot's",
+    /source !== 'keyboard'/.test(sp) && /pressed\('start'\)/.test(sp));
+
+  /* --- the confirm dialog --- */
+  const conf = readFileSync(new URL('../src/systems/confirm.js', import.meta.url), 'utf8');
+  const panel = html.slice(html.indexOf('id="panel-confirm"'),
+    html.indexOf('id="panel-confirm"') + 700);
+  /* THE ENTIRE SAFETY PROPERTY IS THAT THE PANEL HAS NO `.primary`. MenuNav
+     opens a cursor on `.primary` if it finds one and on `.back` otherwise, so
+     a mashed pad lands on "no, keep playing" - and a confirm dialog that
+     opened on YES would be nothing but a second button to mash through on the
+     way to deleting the world, which is strictly worse than no dialog at all.
+     Somebody making the YES button look nicer takes the whole guard with it. */
+  ok('the confirm dialog has NO primary button',
+    !/class="[^"]*primary/.test(panel));
+  ok('...so the cursor opens on the cancel, which carries .back',
+    /id="confirm-no"[^>]*class="menu-btn back"|class="menu-btn back"[^>]*id="confirm-no"/.test(panel));
+  /* One panel, reused for every question - so the remembered cursor index has
+     to be dropped on the way in, or saying no to RESTART leaves the highlight
+     on row two and the next question opens with YES under her thumb. */
+  ok('...and the remembered cursor is dropped when a question opens',
+    /index\.delete\('panel-confirm'\)/.test(conf));
+  ok('...and it counts as an overlay, so the world does not take the buttons',
+    /'panel-confirm'/.test(main));
+
+  /* EVERY IRREVERSIBLE ROW GOES THROUGH IT. Checked one row at a time because
+     the failure that matters is a NEW row added later without one - and each
+     of these throws away something a nine-year-old spent an afternoon on. */
+  for (const act of ['restart', 'quit-match', 'quit', 'title']) {
+    const at = main.indexOf("if (a === '" + act + "') {");
+    ok(act + ' asks before it acts',
+      at > 0 && main.slice(at, at + 200).includes('this.confirm.ask({'));
+  }
+  /* DROP OUT is built in JS rather than sitting in the markup, and it matters
+     more than the rest: it is directly above RESTART in the list, its words
+     change depending on who joined, and what it throws away belongs to one
+     named child. */
+  const dAt = main.indexOf(NL + '  _buildLeaveButtons() {');
+  const drop = main.slice(dAt, dAt + 3000);
+  ok('drop out asks too', dAt > 0 && drop.indexOf('this.confirm.ask({') > 0
+    && drop.indexOf('this.confirm.ask({') < drop.indexOf('this._leavePlayer('));
+  ok('...and QUIT GAME exists at all', /data-action="quit"/.test(html));
+
+  /* --- who drives --- */
+  const nav = readFileSync(new URL('../src/systems/menunav.js', import.meta.url), 'utf8');
+  /* ONE CURSOR, AND IT BELONGS TO WHOEVER OPENED THE MENU. Before this every
+     seated pad drove the same highlight: four sticks, one list, and the
+     cursor jumping two rows per nudge. Richard's rule, verbatim - "only 1
+     player ever controls the Menu screen". */
+  ok('the menu reads only its owner, when it has one',
+    /menuOwner/.test(nav) && /\[all\[owner\]\] : all/.test(nav));
+  /* WHICH pad asked, not whether any did. `some` returns a boolean and there
+     is no way back from a boolean to the slot that pressed. */
+  ok('...and the pause button claims the menu for the pad that pressed it',
+    /findIndex/.test(main.slice(main.indexOf('_claimMenu(asked)') - 900,
+      main.indexOf('_claimMenu(asked)'))));
+  /* A DEAD PAD MUST NOT LOCK FOUR PEOPLE OUT OF RESUME. Checked every frame
+     rather than on the disconnect event, because a pad that simply stops
+     reporting never fires one. */
+  ok('...and a vanished owner hands the menu on rather than freezing it',
+    /_checkMenuOwner\(\)/.test(main.slice(main.indexOf('this.trailer.update();'),
+      main.indexOf('this.trailer.update();') + 400)));
+  ok('...and closing the menu gives it back to nobody',
+    /if \(!on\) this\._claimMenu\(null\);/.test(main));
+  /* AND IT SAYS SO. Three players pushing sticks at a cursor that will not
+     move have no way to tell a lock from a crash; sixth non-negotiable. */
+  ok('...and the screen names who is driving it', /id="menu-owner"/.test(html));
+
+  /* --- the stuck vJoy button --- */
+  /* NOT A PHANTOM CONTROLLER. Reported as "2 controllers connected and one of
+     them autostarts the game", and it was real: vJoy reported button 9 held at
+     1.00 forever, button 9 is `attack` on the left Joy-Con half, and the title
+     screen's any-button rule started the game on it. Masked at the source, in
+     the one pure helper every read goes through, so a profile lookup or a
+     liveness check cannot route around it. */
+  const inp = readFileSync(new URL('../src/core/input.js', import.meta.url), 'utf8');
+  const bfn = inp.slice(inp.indexOf('function b(gp, i)'), inp.indexOf('function b(gp, i)') + 200);
+  ok('a button held from the moment a pad appears is masked at the source',
+    /LATCHED\.get\(gp\.index\)\?\.has\(i\)\) return false/.test(bfn));
+  /* VJOY ONLY. A real pad is not surfaced by the browser until a human presses
+     something on it, so latching on arrival would eat that very press and the
+     pad would look dead. That asymmetry is the whole reason this is gated. */
+  ok('...but only for vJoy, or a real pad would lose its wake-up press',
+    /profileNameFor\(gp\) === 'vjoyDual'/.test(inp));
+  ok('...and it clears the instant she lets go',
+    /for \(const i of stuck\) if \(!rawDown\(gp, i\)\) stuck\.delete\(i\)/.test(inp));
+  ok('...and the readout says a pad arrived stuck', /latched:/.test(inp));
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

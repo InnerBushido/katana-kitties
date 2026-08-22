@@ -402,7 +402,8 @@ export class Tournament {
       if (v === 'home') { this.goHome(); return; }
       let moved = false;
       if (v === 'del') moved = this.entry.del();
-      else if (v === 'ok') moved = this.entry.accept();
+      else if (v === 'ok' || v === 'yes') moved = this.entry.accept();
+      else if (v === 'no') moved = this.entry.cancel();
       else if (v.startsWith('s')) moved = this.entry.pick(Number(v.slice(1)));
       else moved = this.entry.type(v);
       if (!moved) return;
@@ -1414,7 +1415,11 @@ export class Tournament {
        will not accept — the trailing blank is dropped because DEL is what
        shortens a name, and `ALPHABET`'s 36 real glyphs land exactly as three
        rows of ten plus a short row that DEL and OK finish. */
-    const keypad = touch ? `
+    /* HIDDEN WHILE SHE IS BEING ASKED, not merely inert. `NameEntry.type` and
+       `del` both refuse during `confirming`, so leaving the keypad up would be
+       36 buttons that silently do nothing — the exact reading of "broken" the
+       sixth non-negotiable exists to prevent. YES and NO take its place. */
+    const keypad = touch && !this.entry.confirming ? `
       <div class="ne-pad">
         ${ALPHABET.slice(0, 36).map((c) => `<button class="ne-key" data-ne="${c}">${c}</button>`).join('')}
         <button class="ne-key wide" data-ne="del">DEL</button>
@@ -1450,6 +1455,24 @@ export class Tournament {
       <span class="ne-slot${i === this.entry.cursor ? ' on' : ''}" data-ne="s${i}">${
       ALPHABET[ix] === ' ' ? '&nbsp;' : ALPHABET[ix]}</span>`).join('');
 
+    /* ARE YOU SURE THIS IS THE NAME? See `NameEntry.confirming`. The board
+       outlives the browser closing and `_commit` is one-way, so the press that
+       makes it permanent gets a question in front of it — and the question
+       QUOTES THE NAME rather than asking in the abstract, because the thing
+       she is checking is the spelling and the slots above are a row of boxes
+       she has been staring at for a minute. */
+    const ask = this.entry.confirming ? `
+      <div class="ne-ask">
+        <p class="ne-ask-q">SIGN THE BOARD AS
+          &ldquo;<b>${escapeHtml(this.entry.name)}</b>&rdquo;?</p>
+        <p class="ne-ask-sub">You cannot change it afterwards.</p>
+        ${touch
+    ? '<div class="ne-ask-keys"><button class="ne-key wide go" data-ne="yes">YES</button>'
+      + '<button class="ne-key wide" data-ne="no">NO, FIX IT</button></div>'
+    : '<p class="ne-ask-keys">JUMP or ENTER <b>yes</b>'
+      + ' · ATTACK, INTERACT or ESC <b>no, fix it</b></p>'}
+      </div>` : '';
+
     this.resultEl.innerHTML = `
       <div class="ar-box">
         <h2 class="ar-win p${w.index}">${w.name} WINS THE TOURNAMENT</h2>
@@ -1475,12 +1498,14 @@ export class Tournament {
                  four players without saying so reads as three broken pads. -->
             <p class="ne-label">${escapeHtml(this.winners?.length > 1
     ? `${teamName(this.sideOf(w))} SIGNS THE BOARD` : `${w.name.toUpperCase()} SIGNS THE BOARD`)}
-              — ${touch ? 'tap a letter, or tap a box to go back to it'
-    : 'stick up/down picks a letter, left/right moves'}</p>
+              ${this.entry.confirming ? ''
+    : `— ${touch ? 'tap a letter, or tap a box to go back to it'
+      : 'stick up/down picks a letter, left/right moves'}`}</p>
             <div class="ne-slots">${slots}</div>
+            ${ask}
             ${keypad}
-            <p class="ne-hint">${NAME_MAX} letters max · ${touch
-    ? 'tap a letter, then OK' : "JUMP or ENTER when you're done"}</p>
+            ${this.entry.confirming ? '' : `<p class="ne-hint">${NAME_MAX} letters max · ${touch
+    ? 'tap a letter, then OK' : "JUMP or ENTER when you're done"}</p>`}
           </div>`}
         <table class="lb">${rows}</table>
         ${this.entry.done ? flyHome : ''}

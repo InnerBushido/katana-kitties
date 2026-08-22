@@ -15,6 +15,7 @@ look. Everything else is one level down and read on demand.
 | why some code is the way it is | [docs/notes/](docs/notes/README.md) — one file per area |
 | how a player experiences it | [README.md](README.md) |
 | how it runs under Steam, and its artwork | [docs/notes/steam.md](docs/notes/steam.md) |
+| which voice belongs to which character | [docs/notes/voices.md](docs/notes/voices.md) |
 | why it lags or stutters, and what is measured NOT to be why | [docs/notes/performance.md](docs/notes/performance.md) |
 | what changed and why | `git log` — the commit messages are the session log |
 
@@ -22,8 +23,8 @@ look. Everything else is one level down and read on demand.
 
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
-node tools/world-check.mjs    # 984 checks: world, dragons, clans, sprites, tournament
-node tools/pad-check.mjs      # 194 checks: controllers and the keyboard sets
+node tools/world-check.mjs    # 1088 checks: world, dragons, clans, sprites, tournament, consent
+node tools/pad-check.mjs      # 201 checks: controllers, keyboard sets, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 ```
 
@@ -61,19 +62,31 @@ Break any of these and the thing stops being the game it is. Each is enforced by
    additive; where a rule generalises, the two-player answer has to come out
    bit-identical. The HUD, the camera and the split screen all have checks
    pinning this.
-6. **A refusal must say so.** A button that silently does nothing reads as
-   broken. Every refusal toasts, and every lock says what it wants *as an
-   instruction*, not as a noun.
-7. **A scene is skipped by Start / Space / Enter only**, never "any button" —
-   the kids hold sticks and mash. Nothing may hang off a scene *finishing*:
+6. **A refusal must say so, and so must a confirmation.** A button that
+   silently does nothing reads as broken. Every refusal toasts, every lock says
+   what it wants *as an instruction*, and every dialog's buttons say what they
+   DO — "no, keep playing" against "yes, start over", never bare yes/no.
+7. **Nothing irreversible happens on one press, and the default answer is no.**
+   A scene is skipped by **Escape or a pad's Start, and nothing else** — never
+   Space, Enter or "any button": four kids hold sticks and mash, and Space is
+   the key an elbow finds. Every irreversible button asks first
+   ([systems/confirm.js](src/systems/confirm.js), and the trade screen's own
+   per-side questions), and those dialogs deliberately have **no `.primary`**,
+   so the cursor opens on cancel. Nothing may hang off a scene *finishing*:
    state changes happen when the scene is *accepted*.
+   **One player drives a menu** — whoever opened it — and the screen says who.
 8. **Sprite sheets are measured, not assumed.** Column counts, cell sizes,
    baselines and facing are all read off the image. A generated sheet's rows do
    not have to agree with each other. Never settle a facing by reasoning —
    measure it.
-9. **Everything is procedural or generated.** No engine, no physics library, no
-   asset store, no character meshes. `public/voice/*.mp3` are the only audio
+9. **Everything is procedural or generated.** No engine, no physics library,
+   no asset store, no character meshes. `public/voice/*.mp3` are the only audio
    files, and they fall back to synthesised blips if absent.
+   **`public/trailer/` is the only video, and it is opt-in.** It is generated
+   art like everything else, but it is 20MB, so the `<video>` carries no `src`
+   until a player asks for it and drops it again on close — `world-check`
+   pins both. Delete the folder and the game must behave identically, minus a
+   panel that says the file isn't there.
 
 ## Where the code is
 
@@ -86,11 +99,15 @@ src/
   world/     build (all the geometry)  world (assembly, height queries)
   systems/   tournament  menagerie  arenaquest  announce  leaderboard
              kotodama  profile  cutscene  shrinescene  summonscene
-             mathdojo  minimap  menunav
+             mathdojo  minimap  menunav  trailer (the opt-in video player)
+             confirm (are you sure? - every irreversible button)
   entities/  player  dragon  ryuuseki  panda  critter  angel  leader  satan
              griffin  orb  powerorb  dragonball  prop  shrine  stall
 tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
              steam-art.mjs (the Steam shelf and the icons, from title_art.png)
+             trailer-score.mjs  trailer-vo.mjs  trailer-cut.sh
+             brush-kanji.mjs  voice-measure.mjs
+             steam-capsules.sh (the trailer and the store art — docs/notes/trailer.md)
 docs/notes/  the design notes — why things are the way they are
 ```
 
@@ -124,7 +141,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 984 assertions and why almost none of them are about
+  why `world-check` is 1088 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have

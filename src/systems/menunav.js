@@ -12,10 +12,20 @@
    exactly as before. Up and down are additive — they are how you reach the
    other two buttons, not a new thing you are required to learn first.
 
-   EITHER PLAYER DRIVES IT. Menus are a shared surface: there is one screen and
-   one cursor, and making player 1 the only one who can press RESUME means the
-   girl holding the other Joy-Con is locked out of her own pause menu. Inputs
-   are merged, last mover wins, and nothing here cares which pad it came from.
+   ONE PLAYER DRIVES IT — THE ONE WHO OPENED IT. Menus used to merge every pad
+   into one cursor, on the argument that there is one screen and one cursor and
+   making player 1 the only one who can press RESUME locks the girl holding the
+   other Joy-Con out of her own pause menu. That argument is correct for two
+   sisters and collapses at four: a merged cursor takes the LARGEST input on
+   each axis, so one person who is not looking at the screen, resting a thumb
+   on a stick, outvotes the person who actually pressed Start. Nobody can reach
+   RESUME and it does not look like a fight, it looks like a hang.
+
+   So `Game.menuOwner` names a slot and this class reads that slot only. The
+   original concern is answered by WHO owns it rather than by sharing: it is
+   the player who opened the menu, whichever one that is, and it moves to
+   somebody else if her controller disappears (`Game._checkMenuOwner`). A null
+   owner still means shared — the title screen, where nobody is playing yet.
 
    A `<select>` IS CHANGED IN PLACE, NEVER OPENED. A native dropdown is an OS
    window: the Gamepad API cannot reach it, so opening one with a pad is how you
@@ -38,7 +48,22 @@
    owns the input. `panel-league` sits above the pause menu because it can be
    up while the game is not paused — it is the choice standing between four
    kittens and the round card. */
-const PANELS = ['panel-profile', 'panel-league', 'panel-settings', 'panel-help', 'panel-pause'];
+/* ORDER IS PRECEDENCE: the first id in this list that is not hidden is the
+   panel the cursor drives.
+
+   `panel-confirm` is first because it is the only panel that can open on top
+   of another one — it is asked FROM the pause menu, with the pause menu still
+   up behind it. Anything above it in this list would keep taking the presses
+   meant for the question, which is a dialog you answer by accident.
+
+   `panel-trailer-offer` is next: it is fully modal, it can only be up on the
+   title screen, and the title screen is the one surface where ANY button
+   confirms — so anything less would let a mashed button start the game out
+   from under the question.
+
+   `panel-trailer` is deliberately NOT in this list; see `panel()`. */
+const PANELS = ['panel-confirm', 'panel-trailer-offer', 'panel-profile',
+  'panel-league', 'panel-settings', 'panel-help', 'panel-pause'];
 
 /* Stick/d-pad repeat. The first step is instant, then it waits, then it runs —
    the shape every menu in every console game uses, because a list that scrolls
@@ -62,6 +87,15 @@ export class MenuNav {
 
   /** The element currently owning menu input, or null if the game does. */
   panel() {
+    /* THE TRAILER OWNS NOTHING AND NOBODY ELSE MAY OWN ANYTHING WHILE IT RUNS.
+       It is not in PANELS because a pad must not be able to walk a cursor onto
+       its CLOSE button and press it with `jump` — it is skipped with `start`
+       and nothing else, like every other thing that plays at you. But falling
+       through to the title screen underneath is worse than either: there every
+       button confirms, so a kid mashing through the trailer would activate
+       PLAY behind the video. Returning null means this class stands down
+       entirely and `_overlayOpen()` handles the rest. */
+    if (this.game.trailer?.active) return null;
     for (const id of PANELS) {
       const el = document.getElementById(id);
       if (el && !el.classList.contains('hidden')) return el;
@@ -95,7 +129,13 @@ export class MenuNav {
    * row she happens to be sitting on.
    */
   _read(panel) {
-    const ps = this.game.input.players;
+    /* THE OWNER, OR EVERYBODY IF THERE IS NO OWNER. See the header. The merge
+       below is kept for the shared case rather than special-cased away: on the
+       title screen every pad really does drive the cursor, and one loop that
+       sometimes runs over one player is simpler than two code paths. */
+    const all = this.game.input.players;
+    const owner = this.game.menuOwner;
+    const ps = owner != null && all[owner] ? [all[owner]] : all;
     let x = 0;
     let y = 0;
     for (const p of ps) {
@@ -247,9 +287,16 @@ export class MenuNav {
     el.click();
   }
 
-  /** B / Circle: out of a sub-panel, or straight out of the pause menu. */
+  /**
+   * B / Circle: out of a sub-panel, or straight out of the pause menu.
+   *
+   * `.menu-btn.back` is accepted alongside `[data-close]` so a panel can
+   * declare its own way out without also joining the global `[data-close]`
+   * click handler, which hides three specific panels by id. The confirm dialog
+   * needs exactly that: B has to answer it NO, and must not also close Help.
+   */
   _back(panel) {
-    const el = panel.querySelector('[data-close]');
+    const el = panel.querySelector('[data-close], .menu-btn.back');
     if (el) { el.click(); return; }
     if (panel.id === 'panel-pause') this.game.setPaused(false);
   }

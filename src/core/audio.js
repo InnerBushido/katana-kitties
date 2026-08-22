@@ -18,7 +18,11 @@
 /* Hirajoshi — the scale that makes five notes sound unmistakably Japanese.
    Semitone offsets from the root. */
 const HIRAJOSHI = [0, 2, 3, 7, 8];
-const ROOT = 146.83; // D3
+/* D3. Exported because `tools/trailer-score.mjs` renders the trailer's music
+   from THIS table rather than a transcription of it — a second copy of the
+   tuning is the kind of thing that drifts silently and then the trailer is
+   in a different key from the game. */
+export const ROOT = 146.83; // D3
 
 /* Insen — the same five-note idea a fourth darker. It shares only the root
    and the fifth with hirajoshi, which is why the intro reads as a different

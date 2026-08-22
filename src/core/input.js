@@ -252,9 +252,44 @@ const PROFILES = {
 
 const PROFILE_ORDER = ['vjoyDual', 'joyconSideways', 'standard', 'generic'];
 
-function b(gp, i) {
+/* ---------------------------------------------------------------------------
+   BUTTONS A vJOY DEVICE WAS ALREADY HOLDING WHEN WE FIRST SAW IT.
+
+   Pad index -> Set of button indices. Everything in here reads as UP until the
+   device lets go of it once; then it is a normal button forever after.
+
+   THE BUG THIS EXISTS FOR: vJoy reported button 9 pressed, value 1.00, all
+   eight axes flat, on every frame from page load — a virtual device latched on
+   by a feeder that had exited without clearing it. Button 9 is `attack` on the
+   left half of DEFAULT_VJOY_MAP, so on the very first poll the game saw a
+   controller that was alive, seated two players on it, and read a press. On
+   the title screen EVERY button confirms (see menunav.js), and the cursor
+   starts on PLAY. The game started itself, before anybody had touched
+   anything, every single load. `hasSentInput` — the existing phantom gate —
+   waved it straight through, because a stuck bit is indistinguishable from a
+   press if all you ask is "has a button ever been down".
+
+   ONLY vJOY DEVICES ARE LATCHED, AND THAT RESTRICTION IS THE WHOLE DESIGN.
+   Browsers hide a real gamepad until a human presses something on it, so a
+   real pad's FIRST poll routinely has a button down — that press is the wake
+   press, and it is also the press that starts the game or seats a joining
+   player. Latching every pad would eat it and make the first press of a fresh
+   controller do nothing, which is a worse bug for a nine-year-old than the one
+   being fixed. vJoy is the one device the driver reports whether or not
+   anything is feeding it, so vJoy is the one device that has to prove a button
+   by releasing it.
+--------------------------------------------------------------------------- */
+const LATCHED = new Map();
+
+/** The pad's actual electrical state, latch and all. Only the latch uses it. */
+function rawDown(gp, i) {
   const btn = gp.buttons[i];
   return !!btn && (btn.pressed || btn.value > 0.5);
+}
+
+function b(gp, i) {
+  if (LATCHED.get(gp.index)?.has(i)) return false;
+  return rawDown(gp, i);
 }
 
 function axisOf(gp, i, inv) {
@@ -529,6 +564,11 @@ export class InputManager {
     });
     window.addEventListener('gamepaddisconnected', (e) => {
       this._order = this._order.filter((i) => i !== e.gamepad.index);
+      /* Forget the latch with the device. Re-plugging vJoy after clearing the
+         stuck bit must give a clean pad, not one still ignoring button 9. */
+      LATCHED.delete(e.gamepad.index);
+      this._buttonsSeen.delete(e.gamepad.index);
+      this._axisWatch.delete(e.gamepad.index);
     });
   }
 
@@ -779,10 +819,43 @@ export class InputManager {
         if (v > w.max[i]) w.max[i] = v;
       }
 
+      /* THE LATCH IS MAINTAINED BEFORE ANYTHING READS A BUTTON, because `b()`
+         consults it and every profile, the join test and `hasSentInput` all go
+         through `b()`. Seeded once, on the first frame this pad is ever seen;
+         entries leave the moment the device reports that button up. See
+         LATCHED for why only vJoy is asked. */
+      if (this.profileNameFor(gp) === 'vjoyDual') {
+        let stuck = LATCHED.get(gp.index);
+        if (!stuck) {
+          stuck = new Set();
+          for (let i = 0; i < gp.buttons.length; i++) if (rawDown(gp, i)) stuck.add(i);
+          LATCHED.set(gp.index, stuck);
+          if (stuck.size) {
+            console.warn(`[input] vJoy pad ${gp.index} arrived holding button(s)`
+              + ` ${[...stuck].join(', ')} — ignoring them until released.`
+              + ' Something is feeding vJoy a stuck bit, or Joy2Win exited without clearing it.');
+          }
+        }
+        for (const i of stuck) if (!rawDown(gp, i)) stuck.delete(i);
+      } else {
+        LATCHED.delete(gp.index);
+      }
+
       let seen = this._buttonsSeen.get(gp.index);
       if (!seen) { seen = new Set(); this._buttonsSeen.set(gp.index, seen); }
       for (let i = 0; i < gp.buttons.length; i++) if (b(gp, i)) seen.add(i);
     }
+  }
+
+  /**
+   * Which buttons this pad arrived holding down and has not released.
+   *
+   * Exported for the controller readout and for pad-check. A player staring at
+   * a dead controller needs to be told the device is latched rather than left
+   * to conclude the game cannot see it — sixth non-negotiable.
+   */
+  latchedButtons(index) {
+    return [...(LATCHED.get(index) ?? [])];
   }
 
   /** Forget the recorded ranges — the readout's "wiggle again" button. */
@@ -1141,6 +1214,10 @@ export class InputManager {
            inside the game, which is the whole job of this screen. It just does
            not get a player. */
         asleep: this.profileNameFor(gp) === 'vjoyDual' && !this.hasSentInput(gp),
+        /* Buttons this device arrived holding and has never let go of — see
+           LATCHED. Reported so the readout can say "stuck", which is a
+           different sentence from "asleep" and asks for a different fix. */
+        latched: this.latchedButtons(gp.index),
         buttonCount: gp.buttons.length,
         axes: gp.axes.map((v) => (Math.abs(v) < 0.08 ? 0 : +v.toFixed(2))),
         axesRange: gp.axes.map((_, i) => {
