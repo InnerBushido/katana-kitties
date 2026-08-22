@@ -62,6 +62,30 @@ const DEBUG_KEY_LABEL = {
   Backquote: '`',
 };
 
+/**
+ * The debug panel's one row that leads OUT of the game, and the reason it can
+ * only ever be seen on a laptop.
+ *
+ * `/tuning.html` writes `src/tuning.json` through a dev-server hook, so it is
+ * already unreachable on Vercel twice over — `vite build` takes its inputs
+ * from `index.html` alone, and the POST endpoint is a `configureServer` hook a
+ * production build never runs. This is the third and cheapest guard, and the
+ * only one a PLAYER would ever notice: `import.meta.env.DEV` is replaced by
+ * the literal `false` at build time, so the row is not hidden by CSS or
+ * skipped by a branch — the string is constant-folded away and the markup for
+ * it is not in the bundle at all. Nobody can find a link that was never built.
+ *
+ * It exists because the page had no way in. It was documented in CLAUDE.md and
+ * in endgame.md and reported, reasonably, as "I don't see any information
+ * about that" — a tool you have to remember the URL of is a tool nobody opens.
+ */
+const TUNING_ROW = import.meta.env?.DEV
+  ? '<div class="dbg-sep">DEV ONLY — not built, not on the web</div>'
+    + '<div class="dbg-row" data-open="/tuning.html">'
+    + '<span class="k">&#8599;</span> BALANCE PAGE &mdash; every ability\'s '
+    + 'numbers, on sliders</div>'
+  : '';
+
 /* HOW MANY FRAMES THE COST READOUT AVERAGES OVER. Two seconds at 60fps, which
    is long enough that the median is not chasing a single hitch and short enough
    that walking into a heavy room changes the number while you are still
@@ -3304,6 +3328,7 @@ class Game {
       ${row('KeyM', 'maths overlay')}
       ${row('KeyZ', 'map zoom')}
       ${row('KeyP', 'frame cost — fps, draws, pixels, GPU', this._perfOn)}
+      ${TUNING_ROW}
       <div class="dbg-sep">SCENE VIEWER — choose, then play</div>
       ${row('Minus', '&#9664; previous scene')}
       ${row('Equal', 'next scene &#9654;')}
@@ -3325,6 +3350,14 @@ class Game {
           this._refreshDebugPanel();
           return;
         }
+        /* THE ONE ROW THAT IS NOT A KEY. Everything else in this panel does
+           something to the running game; the balance page is a separate
+           document you read with both hands, so the row opens a tab and that
+           is all it does. Checked before `[data-debug]` because it carries
+           neither attribute. */
+        const open = e.target.closest('[data-open]');
+        if (open) { window.open(open.dataset.open, '_blank', 'noopener'); return; }
+
         const hit = e.target.closest('[data-debug]');
         if (!hit) return;
         const code = hit.dataset.debug;
