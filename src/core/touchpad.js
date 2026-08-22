@@ -528,6 +528,22 @@ export class TouchPad {
   }
 
   /**
+   * What one button SAYS right now — the same string `setLabels` last wrote.
+   *
+   * Read back off the DOM rather than remembered in a field, so it cannot
+   * disagree with what the girl is looking at. `InputManager.promptFor` asks
+   * this so that a prompt over her kitten's head names the on-screen button by
+   * whatever it currently says, which for the clan oath is CLAN and for
+   * everything else is ACTION — the label moves every frame (see
+   * `Game._updateTouchContext`) and a prompt naming the wrong one is the whole
+   * failure this is here to avoid.
+   */
+  labelFor(action) {
+    const el = this.buttons.get(action);
+    return el?.querySelector('.tp-label')?.textContent || null;
+  }
+
+  /**
    * What the corner button means: pause the game, or skip the scene that is
    * playing over it.
    *

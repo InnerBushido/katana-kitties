@@ -40,12 +40,49 @@ the `voice_id` below. About **0.15 credits a line**.
 | **Mr. Satan** | the tournament, and the trailer. The only insincere voice in the game. | **Harrison** | `573e5163-59b3-4926-aab1-951ef2985f81` | all eighteen `sat_*`, **and six of the trailer's fourteen lines** (1-3, 9, 10, 13) |
 | **the trailer voice** | not in the game at all. The straight narrator Mr. Satan interrupts — and the one who has to say "right meow" with a straight face. | **Desmond** | `563f728c-e249-5a85-97ab-8461e8c09da6` | **six trailer lines** — 4-8 and the sign-off |
 | **Ryuuseki** | the dragon the seven stars call. | **unresolved — see below** | — | `summon1` `summon2` |
-| *(the thing in the dark)* | three seconds of the trailer, and nothing else | **not a voice at all** | [tools/kitten-cackle.mjs](../../tools/kitten-cackle.mjs) | trailer line 12 |
+| *(the thing in the dark)* | three seconds of the trailer — and, since the Cross Slash rebalance, four sounds in the game | **not a voice at all** | [tools/kitten-cackle.mjs](../../tools/kitten-cackle.mjs) | trailer line 12, `cross0`-`cross3` |
 
 [tools/trailer-vo.mjs](../../tools/trailer-vo.mjs) carries the same four ids it
 uses, in its own `CAST` table. **If a `voice_id` here and there ever disagree,
 this file is right** — but fix both, because the trailer script is what actually
 generates.
+
+## The kitten is now in the game, and that is a licensing decision
+
+`public/voice/cross0.mp3` through `cross3.mp3` are the Cross Slash's verdict:
+how many of the three cuts landed, said out loud by a cat. They are **four
+rungs of the same ladder** the trailer's demon came off — one meow played at
+progressively slower speeds, nine bursts of it, and `--game` takes bursts 1, 4,
+6 and 9. `cross3` and trailer line 12 are the same three seconds.
+
+```
+node tools/kitten-cackle.mjs --game
+```
+
+| file | rung | length | what it means |
+| --- | --- | --- | --- |
+| `cross0` | burst 1 of 9 | 0.29s | none of the three cuts landed. An innocent kitten, and it sounds weak — which is the joke. |
+| `cross1` | burst 4 | 0.53s | one landed |
+| `cross2` | burst 6 | 1.06s | two landed |
+| `cross3` | burst 9 | 3.00s | all three. The demon from the advert. |
+
+**This deepens an exposure rather than creating one, and it is worth being
+plain about.** `out/trailer/ref/cackle.wav` is somebody else's recording off a
+social post. It has always been gitignored and it must stay that way — but
+until now the only thing derived from it in the repo was three seconds baked
+into the trailer MP4. These are four separate files, in `public/`, shipped with
+the game and served to every player. **A Steam release has to either license
+the source or delete these four files**, and the second option is real and
+cheap: `--game` with no reference synthesises its own ladder instead
+(0.83/1.27/1.85/2.92s — the same order, a quarter of the spread), and if even
+those are absent `Audio.sample` falls through to four synthesised stand-ins in
+`Audio.play`. Three levels of degradation, because the ninth non-negotiable
+says the game must work with `public/voice` deleted and this is a gameplay cue
+rather than a line of dialogue — silence here would mean the move stopped
+telling you how it went.
+
+`world-check` pins the middle level: every key in `SAMPLES` must also be a
+`case` in `Audio.play`, or deleting the folder turns the grading into nothing.
 
 ## Ryuuseki's voice was never written down, and five auditions did not find it
 

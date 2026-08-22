@@ -14,18 +14,20 @@ import * as THREE from 'three';
 import { World, CLANS } from '../src/world/world.js';
 import { Dragon, BREEDS, DRAGON_SPOTS } from '../src/entities/dragon.js';
 import { Billboard } from '../src/core/gfx.js';
-import { Player } from '../src/entities/player.js';
+import { Player, CALLOUT_WIDEST, BLESS_STRETCH } from '../src/entities/player.js';
 import {
   Panda, PANDA_TIERS, PANDA_SPEED, CLAW, tierFor, toNextTier, FULL_PANDA_COST,
 } from '../src/entities/panda.js';
-import { LEADERS, ELDER, leaderSpot, LEADER_OFFSET } from '../src/entities/leader.js';
+import {
+  LEADERS, ELDER, leaderSpot, LEADER_OFFSET, ClanLeader,
+} from '../src/entities/leader.js';
 import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
 import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../src/entities/dragonball.js';
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
 import { SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest } from '../src/world/build.js';
-import { ISLAND_MUSIC, MUSIC, trackForIsland } from '../src/core/audio.js';
+import { ISLAND_MUSIC, MUSIC, SAMPLES, trackForIsland } from '../src/core/audio.js';
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
@@ -38,6 +40,7 @@ import {
   autoQualityVerdict, AUTO_BAD_MS, AUTO_HOLD_MS,
 } from '../src/core/device.js';
 import { readPNG, blobs, writePNG, writeICO } from './png.mjs';
+import { DEFAULTS, OVERRIDES, __mergeForTest as fold } from '../src/core/tuning.js';
 import {
   POWER_ORBS, ORB_IDS, MAX_EQUIPPED, aggregate, orbPrice, orbSellPrice,
   WARD, DIVE, CROSS, CHARGE, stockFor, STOCK_STACKABLE,
@@ -46,7 +49,7 @@ import {
 import { Kotodama } from '../src/systems/kotodama.js';
 import { ATTACKS, MAX_HP, DAZE_TIME } from '../src/entities/player.js';
 import {
-  Tournament, WINS_NEEDED, MAX_ROUNDS, FEAST_TIME, REGEN_FRAC,
+  Tournament, WINS_NEEDED, MAX_ROUNDS, FEAST_TIME, REGEN_FRAC, OUT_FLOOR,
 } from '../src/systems/tournament.js';
 import {
   Critter, CRITTERS, CRITTER_BY_ID, EAT_TIME, MOUTH_TIME, CATCH_RADIUS, STUN_TIME,
@@ -59,7 +62,7 @@ import {
   MILESTONES, OPEN_AT, ArenaQuest, SATAN_TOWN,
 } from '../src/systems/arenaquest.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss } from '../src/core/palette.js';
-import { splitLayout, mapWidth, fitDistance } from '../src/core/split.js';
+import { splitLayout, mapWidth, fitDistance, stablePanes, paneSeats } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
 import { postsFor } from '../src/world/build.js';
@@ -1234,6 +1237,286 @@ line('clan buffs', CLANS.map((c) => `${c.name}=${c.buff.label}`).join(', '));
 ok('every clan grants a buff', buffs.every(Boolean));
 ok('no two clans grant the same buff', new Set(buffs).size === buffs.length);
 
+console.log('\n--- nobody joined a clan, because nothing said they could ---');
+{
+  /* THE BUG WAS SILENCE. Four adults played a whole session and not one of them
+     swore an oath — not because it is hard, but because standing in a shrine
+     ring with a power one button away looks exactly like standing anywhere
+     else. `Game._updateClanPrompt` is the line over her head that says
+     otherwise, and every clan needs its own words. */
+  ok('every clan has a call to action',
+    CLANS.every((c) => typeof c.oath === 'string' && c.oath.length > 8),
+    CLANS.filter((c) => !c.oath).map((c) => c.name).join(' ') || 'all six');
+  ok('...and each one names its own clan', CLANS.every((c) => c.oath.includes(c.name)));
+  /* SIX LINES AND NOT ONE TEMPLATE. "Press E to join the X clan" six times is a
+     form to fill in; the prompt also has to answer "why would I", which is the
+     question the silence was really failing. Six distinct opening verbs is the
+     cheapest test that nobody has quietly collapsed them back into one. */
+  const verbs = CLANS.map((c) => c.oath.split(' ')[0].toLowerCase());
+  ok('...in six different words, not one template', new Set(verbs).size === CLANS.length,
+    verbs.join(' '));
+
+  /* IT HAS TO FIT. The callout is a `live` Label, so its canvas is sized once
+     from CALLOUT_WIDEST and a longer string is clipped rather than wrapped.
+     Build every prompt the game can actually produce — every clan crossed with
+     the longest button glyph — and every reward line, and pin them all. The
+     first version of the sizing string forgot the badge and lost eight
+     characters off Riverclaw. */
+  const badge = '[RIGHT]';   // the longest `interact` glyph in input.js's PROMPTS
+  const real = [
+    ...CLANS.map((c) => `${badge}  ${c.oath.toUpperCase()}`),
+    ...CLANS.map((c) => `${c.name.toUpperCase()} — ${c.buff.label.toUpperCase()}`),
+  ];
+  const longest = real.reduce((a, t) => (t.length > a.length ? t : a), '');
+  line('longest thing over a kitten', `${longest.length} chars — "${longest}"`);
+  ok('...and the label was sized for it', longest.length <= CALLOUT_WIDEST.length);
+  ok('...without being sized for far more than it needs',
+    CALLOUT_WIDEST.length <= longest.length + 4);
+
+  /* --- swearing lights a SECOND ring, and leaves her own colour alone ---
+     It used to repaint `marker`, the ring that exists so a girl can find
+     herself on a busy screen — so four kittens in Thunderpaw wore four
+     identical gold rings and player one stopped being the orange one. */
+  const hall = world.clanHalls[0];
+  const hy = world.heightAt(hall.x, hall.z)?.y ?? 0;
+  const kit = (index) => {
+    const p = new Player({
+      texture: new THREE.Texture(), index,
+      spawn: new THREE.Vector3(hall.x, hy, hall.z), cols: 8, rows: 4, mirror: false,
+    });
+    p.position.set(hall.x, hy, hall.z);
+    return p;
+  };
+  const press = { mx: 0, my: 0, down: () => false, pressed: (a) => a === 'interact' };
+  const sworn = kit(0);
+  const mine = sworn.marker.material.color.getHex();
+  ok('a kitten standing in a hall is not in its clan yet', !sworn.clan);
+  ok('...and wears no clan ring', !sworn.clanRing.visible);
+  sworn.update(1 / 60, press, world, [],
+    { leaderFor: () => ({ met: true }), sfx() {}, toast() {}, onJoinClan() {} });
+  ok('...pressing interact swears the oath', sworn.clan?.id === hall.clan.id);
+  ok('...which lights a clan ring in the clan colour',
+    sworn.clanRing.visible && sworn.clanRing.material.color.getHex() === hall.clan.color);
+  ok('...and leaves her own colour alone', sworn.marker.material.color.getHex() === mine);
+  /* AND THE LEADER STILL GATES IT — the same `met` test the prompt asks, so the
+     prompt can never offer something the button then refuses. */
+  let told = 0;
+  const early = kit(1);
+  early.update(1 / 60, press, world, [],
+    { leaderFor: () => ({ met: false }), sfx() {}, toast: () => { told++; }, onJoinClan() {} });
+  ok('...but not before her leader has introduced herself', !early.clan);
+  ok('...and that refusal says so out loud', told === 1);
+
+  /* --- the callout's two contracts ---
+     The standing prompt is re-asserted every frame and must vanish the instant
+     it stops being true; the reward line is set once with a timer and must
+     survive her walking straight back out of the ring, which she will, because
+     the first thing anyone does with a new power is try it. */
+  const c = kit(2);
+  c.setCallout(`${badge}  ${CLANS[0].oath.toUpperCase()}`);
+  ok('a standing prompt shows', c.callout.visible);
+  c.setCallout(null);
+  ok('...and clears the instant it stops being true', !c.callout.visible);
+  c.setCallout('THUNDERPAW — RUN FASTER', 6);
+  ok('a timed message shows', c.callout.visible && c.calloutT > 0);
+  c.setCallout(null);
+  ok('...and is NOT cleared by the prompt going false under it', c.callout.visible);
+  c.setCallout(`${badge}  ${CLANS[0].oath.toUpperCase()}`);
+  ok('...nor overwritten by one', c.calloutT > 0);
+  for (let i = 0; i < 60 * 7; i++) c._updateCombat(1 / 60);
+  ok('...but it does expire on its own', !c.callout.visible && c.calloutT === 0);
+}
+
+console.log('\n--- swearing an oath is worth two and a half seconds ---');
+{
+  /* THE SECOND HALF OF THE SAME BUG. The block above is about nobody KNOWING
+     they could join a clan; this one is about nothing HAPPENING when they did.
+     A kitten walked into a hall, pressed a button, and the only sign anything
+     had changed was a ring under her feet and a number she could not see.
+     So: she takes the blessing with both paws, her leader dances, her own
+     camera pulls in, and none of it touches anybody else's pane. */
+
+  // --- one cheer per clan, and six different ones ---
+  const specs = CLANS.map((c) => LEADERS[c.id]?.cheer);
+  ok('every clan leader knows how to celebrate', specs.every(Boolean),
+    CLANS.filter((c) => !LEADERS[c.id]?.cheer).map((c) => c.name).join(' ') || 'all six');
+  ok('...with a hop, a rate and a lean, all real numbers',
+    specs.every((c) => ['hop', 'rate', 'lean'].every(
+      (k) => Number.isFinite(c[k]) && c[k] >= 0
+    )));
+  ok('...and a rate nobody set to zero', specs.every((c) => c.rate > 0));
+  /* SIX CATS, SIX DANCES. The whole reason six leaders were drawn is that they
+     are six different people; one bob played six times is the tell that this
+     became a global animation again. */
+  const shapes = specs.map((c) => `${c.hop}/${c.rate}/${c.lean}`);
+  line('how each one celebrates', CLANS.map(
+    (c, i) => `${c.name} ${shapes[i]}`).join(', '));
+  ok('...no two the same', new Set(shapes).size === CLANS.length);
+  /* ONE OF THEM DOES NOT JUMP, on purpose. Snowmantle is the still one, and a
+     later pass that "fixes" her zero by rounding everybody up to a hop loses
+     the only leader whose celebration is a shiver. */
+  const still = CLANS.filter((c) => LEADERS[c.id].cheer.hop === 0).map((c) => c.id);
+  ok('...and exactly one of them stays on the ground', still.length === 1, still.join(' '));
+  ok('...and it is Icewhisker', still[0] === 'ice');
+
+  /* THE CLOCK IS SET BY THE METHOD, not by whoever calls it. Called on a bare
+     object because a ClanLeader needs a canvas to build her speech bubble and
+     there is not one in node — the method touches nothing else. */
+  const bare = { cheerT: 0, cheerDur: 0 };
+  ClanLeader.prototype.cheer.call(bare, 2.4);
+  ok('cheering starts a clock', bare.cheerT === 2.4);
+  ok('...and remembers how long it was, so the ease-out has a scale',
+    bare.cheerDur === 2.4);
+
+  // --- what she holds up, and which of the two shapes it is ---
+  const spawn = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
+  const kit = () => new Player({
+    texture: new THREE.Texture(), index: 0, spawn: spawn.clone(),
+    cols: 8, rows: 4, mirror: false,
+  });
+
+  const fresh = kit();
+  ok('a new kitten has sworn to nobody', fresh.clansSworn instanceof Set
+    && fresh.clansSworn.size === 0);
+
+  /* A BALL FOR A PRIZE AND A CARD FOR A PICTURE. A dragon ball's stars belong
+     painted round a sphere; a clan emblem wrapped round one is squeezed into
+     the silhouette at both edges and unreadable. The two must never both be
+     up: they sit at the same point and would z-fight inside each other. */
+  const p1 = kit();
+  p1.holdAloft(null, 2.0);
+  ok('a prize with no picture is a ball', p1.aloft.visible);
+  ok('...and there is no card', !p1.aloftFlat?.visible);
+  ok('...warm, not white, so it still reads as a prize',
+    p1.aloft.material.color.getHex() !== 0xffffff);
+
+  const map = new THREE.Texture();
+  p1.holdAloft(map, 2.4, { flat: true, tint: 0xf5c341 });
+  ok('an emblem is a card', p1.aloftFlat.visible);
+  ok('...and the ball gets out of its way', !p1.aloft.visible);
+  ok('...the emblem itself is left alone, not multiplied by the clan colour',
+    p1.aloftFlat.material.map === map);
+  ok('...while the halo takes the clan colour', p1.aloftGlow.material.color.getHex() === 0xf5c341);
+
+  /* AND BACK AGAIN. She can swear to a clan and then find a dragon ball; the
+     card has to give the ball its place back, or the second pickup shows the
+     first clan's emblem for two seconds. */
+  p1.holdAloft(map, 2.0);
+  ok('...and a ball after a card puts the card away', !p1.aloftFlat.visible && p1.aloft.visible);
+  ok('...with the halo back to its own colour', p1.aloftGlow.material.color.getHex() !== 0xf5c341);
+
+  /* BOTH SHAPES RIDE ONE CLOCK. `_updateAloft` used to move `this.aloft` by
+     name; a card that the update never touched would sit at the origin, inside
+     her feet, for the whole two seconds. */
+  const p2 = kit();
+  p2.holdAloft(map, 2.0, { flat: true });
+  p2._updateAloft(0.5);
+  ok('the card is lifted over her head, like the ball is',
+    p2.aloftFlat.position.y > p2.height);
+  ok('...and the halo followed it up',
+    Math.abs(p2.aloftGlow.position.y - p2.aloftFlat.position.y) < 0.001);
+  for (let i = 0; i < 200; i++) p2._updateAloft(1 / 60);
+  ok('...and when the clock runs out everything goes away',
+    !p2.aloftFlat.visible && !p2.aloft.visible && !p2.aloftGlow.visible);
+
+  // --- the receiving pose ---
+  /* MEASURED, NOT GUESSED. It was guessed at 1.18 on the reasoning that paws
+     over the head must draw taller; the ear tips are the top of both drawings,
+     so it is not. The pin is that somebody who changes it has to have looked
+     at the sheets, not that the number is any particular value. */
+  line('the receiving pose renders at', `${BLESS_STRETCH} of her standing height`);
+  ok('the receiving pose is sized like a cat and not a tower',
+    Number.isFinite(BLESS_STRETCH) && BLESS_STRETCH > 0.5 && BLESS_STRETCH < 1.5);
+
+  /* A MISSING SHEET COSTS THE POSE AND NOTHING ELSE — ninth non-negotiable.
+     Delete `ember_bless.png` and the emblem, the halo, the camera move and the
+     leader's dance all still happen; she plays it standing up. */
+  const p3 = kit();
+  p3.setBlessArt(null);
+  ok('a kitten with no blessing sheet still has her ordinary sprite',
+    !p3.blessPose && !!p3.sprite);
+  p3.holdAloft(map, 2.4, { flat: true });
+  p3._updateAloft(0.5);
+  ok('...and can still hold the emblem up', p3.aloftFlat.visible);
+  ok('...at a real height, not NaN', Number.isFinite(p3.aloftFlat.position.y));
+
+  /* AND WITH A SHEET, THE SWAP IS DRIVEN BY THE CLOCK AND NOTHING ELSE, so a
+     dragon ball and a clan oath both get the pose and a third such moment gets
+     it free. */
+  const p4 = kit();
+  const art = { texture: new THREE.Texture(), contentScale: 0.9, pad: 0.06 };
+  p4.setBlessArt(art);
+  ok('a kitten with a blessing sheet has the pose ready', !!p4.blessPose);
+  ok('...hidden until something is held up', !p4.blessPose.visible);
+  ok('...and sized off the sheet, not off a guess',
+    Math.abs(p4.blessPose.width - p4.height * BLESS_STRETCH / art.contentScale) < 1e-6);
+
+  /* THE POSE IS NEVER MIRRORED. She is receiving something from the sky with
+     both paws; there is no left or right version of that, and the sheet is one
+     cell. A mirror flag here would flip her the moment the camera crossed her
+     axis, which on a kimono with the sash over one shoulder is instantly
+     obvious — the same reason the leaders are `mirror: false`. */
+  ok('...and never mirrored', p4.blessPose.mirror === false);
+}
+
+console.log('\n--- the celebration cannot leak into anybody else\'s game ---');
+{
+  /* THESE ARE READ OUT OF main.js BECAUSE `Game` IS NOT EXPORTABLE — the module
+     boots itself on import. The same trick the trailer and the confirm dialog
+     checks use. What is being pinned is not the wording but the decisions:
+     each one is a thing that was wrong at some point today. */
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+
+  ok('joining a clan starts a celebration', /_celebrateClan\(player, clan\)/.test(main));
+
+  /* ONCE PER CLAN PER KITTEN. Swearing where you have sworn before is a
+     correction, and congratulating somebody for undoing a mistake teaches a
+     child the game is not paying attention. */
+  ok('...only the first time she swears to that clan',
+    /clansSworn\.has\(clan\.id\)\) return;/.test(main));
+  /* AND THE GUARD COMES BEFORE THE SPEND. Adding to the set and THEN refusing
+     to play the pose burns her one ceremony in a frame she could not watch. */
+  const has = main.indexOf('clansSworn.has(clan.id)');
+  const guard = main.indexOf('player.mount || player.rideAlong || player.ko || player.angel');
+  const add = main.indexOf('clansSworn.add(clan.id)');
+  ok('...and a ceremony she could not watch is not spent',
+    has > 0 && guard > has && add > guard);
+
+  /* THE TINT IS FOR THE FALLBACK ONLY. `color` multiplies a texture, so
+     tinting the gold bolt gold burns it brown and tinting the panda's cream
+     face green ruins the one emblem deliberately not in its clan's colour. */
+  ok('...the emblem is hung flat and the clan colour goes on the halo',
+    /holdAloft\(emblem, CLAN_POSE, \{ flat: true, tint: clan\.color \}\)/.test(main));
+  ok('...and only a missing emblem lets the colour touch the orb',
+    /if \(!emblem && player\.aloft\)/.test(main));
+
+  /* HER LEADER, NOT EVERY LEADER. Six cats bouncing because one kitten swore
+     somewhere else is the tell that this became a global flag. */
+  ok('...and only her own leader dances',
+    /this\.leaderFor\(clan\)\?\.cheer\(CLAN_POSE\)/.test(main));
+
+  /* ONE CLOCK, DEFINED ONCE. The kitten's pose, the emblem, her camera and the
+     leader's dance all run off `CLAN_POSE` — the first three because
+     `holdAloft` stores it as `aloftDur` and everything downstream divides by
+     that, the fourth because `cheer` is handed the same value. What would
+     break it is a second literal creeping in beside the name, so the pin is
+     that there is exactly one definition and every other mention is the
+     constant being used. */
+  const decl = main.match(/const CLAN_POSE = /g) ?? [];
+  const uses = main.match(/CLAN_POSE/g) ?? [];
+  ok('...on one clock, defined in one place', decl.length === 1 && uses.length > decl.length,
+    `${decl.length} definition, ${uses.length - decl.length} use(s)`);
+
+  /* A RESTART IS THE WORLD PUT BACK. Leaving `clansSworn` behind makes a second
+     playthrough quietly flatter than the first; leaving the pose up leaves a
+     kitten standing with her paws raised holding an orb nobody gave her. */
+  ok('a restart forgets every oath she ever swore', /p\.clansSworn\.clear\(\)/.test(main));
+  ok('...and puts her paws down', /if \(p\.blessPose\) p\.blessPose\.visible = false;/.test(main));
+  ok('...and takes back both shapes of the thing she was holding',
+    /if \(p\.aloft\) p\.aloft\.visible = false;/.test(main)
+    && /if \(p\.aloftFlat\) p\.aloftFlat\.visible = false;/.test(main));
+}
+
 console.log('\n--- clan buffs actually do something ---');
 {
   const spawn = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
@@ -2080,6 +2363,144 @@ console.log('\n--- the arena ---');
   ok('the record board is off the camera axis too', world.arenaBoard.x < R.x);
   ok('the landing spot is outside the ring and clear of the stands',
     world.arenaOutBy(world.arenaLanding.x, world.arenaLanding.z) > 20);
+
+  /* ---- NOBODY FALLS OUT OF THE ARENA ------------------------------------
+     Reported from four-player play: "players get knocked so far they fall off
+     the island entirely and then the camera zooms out infinitely far away."
+
+     BEHAVIOURAL, THROUGH THE REAL `update`. Asserting that OUT_FLOOR is 14
+     would pass whether or not anything reads it — and what was broken was not
+     a number, it was that the check was skipped for exactly the kittens it
+     needed to catch. So these drop fake players through the floor in each
+     state that used to leak and ask where they ended up. */
+  {
+    const fake = (over) => ({
+      name: 'Test', index: 0, ko: false, angel: null, heldBy: null, outT: 0,
+      invulnT: 0, nearEdge: false,
+      position: { x: R.x, y: R.y - 40, z: R.z, set(x, y, z) { this.x = x; this.y = y; this.z = z; } },
+      velocity: { x: 0, y: -60, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } },
+      camTarget: { copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; } },
+      group: { position: { copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; } } },
+      hurt() { return 0; },
+      ...over,
+    });
+    const drive = (players, state) => {
+      const t = new Tournament({
+        players, world, toast() {}, audio: { play() {} },
+        onTournamentEnd() {},
+      });
+      t.state = state;
+      t.t = 0;
+      t.game = { players, toast() {} };
+      t.world = world;
+      t.audio = { play() {} };
+      t._paintHud = () => {};
+      t._updateBanner = () => {};
+      t.update(1 / 60, []);
+      return players[0];
+    };
+
+    /* THE KO'D KITTEN, WHICH IS THE ONE THAT WAS FALLING. `_updateOut` opens
+       with `if (p.ko) continue;` — right for the ring-out rule, and the exact
+       hole she fell through. */
+    const dead = drive([fake({ ko: true })], 'ko');
+    ok('a knocked-out kitten under the floor is put back on the deck',
+      Math.abs(dead.position.y - (R.y + 3)) < 0.001
+      && Math.abs(dead.position.x - R.x) < 0.001, `y=${dead.position.y}`);
+    ok('...and she is not still falling', dead.velocity.y === 0);
+
+    /* AND IN EVERY STATE, because `_updateOut` is only called from two of
+       them and the round ENDING is what stops it being called. */
+    let leaked = 0;
+    for (const st of ['card', 'count', 'live', 'ko', 'feast', 'result']) {
+      const p = drive([fake({ ko: true })], st);
+      if (p.position.y < R.y) leaked += 1;
+    }
+    ok('...in every state the tournament can be in', leaked === 0, `${leaked} leaked`);
+
+    /* AN ANGEL IS LEFT ALONE. She has her own leash in Player._updateAngel and
+       two systems reeling in the same kitten is how she lands somewhere
+       neither of them meant. */
+    const wings = drive([fake({ angel: {} })], 'live');
+    ok('an angel under the rim is left to her own leash',
+      wings.position.y < R.y - 30, `y=${wings.position.y}`);
+
+    /* AND THE FLOOR IS BELOW THE ISLAND, NOT JUST BELOW THE DECK, which is the
+       number that actually had to be measured rather than reasoned about
+       (house rule eight). The island under the arena sits at y 46.6 and the
+       deck at 49.0 — TWO AND A HALF UNITS apart, far closer than it looks
+       standing on it. A floor of 3 or 4 would fire on a kitten standing
+       perfectly safely on that island, which is exactly where a normal
+       ring-out lands her, and yank her back mid-stride.
+
+       The arena has to be OPENED to ask: `heightAt` returns nothing out there
+       until Mr Satan says so, which is the whole point of the section below.
+       Put back afterwards so the shut-arena checks still test a shut arena. */
+    const wasOpen = world.arenaOpen;
+    world.openArena(true);
+    const ground = world.heightAt(R.x + R.half + 8, R.z);
+    world.openArena(wasOpen);
+    ok('the floor is below the island she would otherwise land on',
+      ground && ground.y > R.y - OUT_FLOOR,
+      ground ? `island ${ground.y.toFixed(1)}, deck ${R.y.toFixed(1)}, floor ${(R.y - OUT_FLOOR).toFixed(1)}` : 'no ground');
+    ok('...and deeper than the ordinary ring-out ever reaches',
+      OUT_FLOOR > 3 * 2, `${OUT_FLOOR}`);
+  }
+}
+
+/* ---- AND THE CAMERA HAS A CEILING --------------------------------------
+   The other half of the same report: "the camera zooms out infinitely far
+   away". `fitDistance` is the only UNBOUNDED term in the pull-back — every
+   other one has a ceiling written into it, `clamp(..., 26, 52)` and the Dojo
+   and Ryuuseki constants and the ring's own deck-sized distance — and it takes
+   the spread between the furthest two kittens, which a falling one makes as
+   large as it likes.
+
+   THE CEILING IS ONE WHOLE ISLAND, which is Richard's own framing: "from both
+   opposite ends of the entire island to be covered, if camera zooms out that
+   far, it cant zoom out any further". The largest island is 192 units across.
+
+   BE HONEST ABOUT WHAT THIS DOES AND DOES NOT BOUND, because the numbers are
+   closer together than they look and a future session should not have to
+   re-derive them. At 16:9, measured:
+
+     the widest legitimate group (four single-linked at MERGE_OUT)   152
+     THE CEILING (largest island, 192 across)                        212
+     a kitten falling the 160 units to Player._respawn               176   <- under
+     respawned in the town while the others are at the arena         375   <- capped
+
+   So the ceiling catches the cross-map case and NOT the long fall. It is a
+   failsafe, not the fix; the fix is Tournament._catchFallers, which stops the
+   fall happening at all. Both are wanted: one bounds the damage of every
+   future way of getting a silly number in here, the other removes the way we
+   know about. */
+{
+  const diam = Math.max(...world.islands.map((i) => i.radius)) * 2;
+  const cap = (asp) => fitDistance({ spread: diam, fovDeg: 38, aspect: asp });
+  ok('the largest island has a finite extent to cap against',
+    diam > 100 && diam < 1000, `${diam.toFixed(0)} units across`);
+
+  /* IT MUST NOT CLIP A SHOT THE GAME LEGITIMATELY WANTS. The widest group that
+     can share a pane is four kittens single-linked in a chain at MERGE_OUT,
+     and the ring's own framing of a 56-unit deck. Both have to fit under it at
+     every pane shape, or the cap is a crop. */
+  const chain = MERGE_OUT * 3;
+  for (const asp of [16 / 9, 370 / 236, 0.8]) {
+    ok(`the widest legitimate group still fits under the cap (aspect ${asp.toFixed(2)})`,
+      fitDistance({ spread: chain, fovDeg: 38, aspect: asp }) < cap(asp),
+      `${fitDistance({ spread: chain, fovDeg: 38, aspect: asp }).toFixed(0)} vs ${cap(asp).toFixed(0)}`);
+  }
+  /* ...AND IT MUST ACTUALLY BITE on the case that was reported. */
+  const townToArena = 340;
+  ok('...but a kitten respawned across the map is clamped',
+    fitDistance({ spread: townToArena, fovDeg: 38, aspect: 16 / 9 }) > cap(16 / 9),
+    `${fitDistance({ spread: townToArena, fovDeg: 38, aspect: 16 / 9 }).toFixed(0)} vs cap ${cap(16 / 9).toFixed(0)}`);
+
+  /* A NARROW PANE GETS A BIGGER CEILING, asked at its own aspect for the same
+     reason the floor under it is: one number for every pane shape would crop a
+     quadrant or waste a widescreen. */
+  ok('...and a narrow pane is allowed further back than a wide one',
+    cap(0.8) > cap(1.78));
 }
 
 console.log('\n--- the arena is SHUT until it is opened ---');
@@ -2451,6 +2872,89 @@ console.log('\n--- Mr. Satan has a voice ---');
   ok('the champion and the griffin both have art',
     existsSync(new URL('../public/sprites/leader_satan.png', import.meta.url))
     && existsSync(new URL('../public/sprites/griffin.png', import.meta.url)));
+
+  /* --- the recorded SOUND EFFECTS, which are not dialogue ----------------
+     A different contract from every line above, and the difference is the
+     ninth non-negotiable. A missing cutscene line is allowed to be silence —
+     the scene still plays and the blips still type. A missing SOUND EFFECT is
+     not: `Audio.sample` falls back to `Audio.play`, so every key in SAMPLES
+     must also be a case in that switch, or deleting `public/voice` turns the
+     Cross Slash's whole outcome-grading into nothing at all.
+
+     Read out of the source because that is where the contract lives — an
+     `Audio` cannot be built here (it wants an AudioContext) and a list of
+     names copied into this file would be the second place the truth is kept,
+     which is the thing that drifts. */
+  const audioSrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+  const names = Object.keys(SAMPLES);
+  ok('the cross slash has a rung for every outcome, whiff included',
+    names.length === CROSS.cuts + 1, names.join(' '));
+  const unsynth = names.filter((n) => !audioSrc.includes(`case '${n}':`));
+  ok('...and every recorded one has a synthesised stand-in',
+    unsynth.length === 0, unsynth.join(' ') || 'all covered');
+  const noFile = names.filter(
+    (n) => !existsSync(new URL(`../public${SAMPLES[n]}`, import.meta.url))
+  );
+  /* The files themselves are generated — `node tools/kitten-cackle.mjs --game`
+     — so this is not "somebody forgot to commit an asset", it is "the build
+     step has not been run since the ladder changed". */
+  ok('...and the four rungs are actually on disk', noFile.length === 0,
+    noFile.join(' ') || 'all four');
+  ok('...and the chime that says the recovery is over is synthesised too',
+    audioSrc.includes("case 'crossReady':"));
+}
+
+console.log('\n--- the balance file, and what a typo in it may do ---');
+{
+  /* `src/tuning.json` IS HAND-EDITED, so it will eventually contain a string,
+     a null, a misspelled key or a table that no longer exists — the balance
+     page writes it, but a person with an editor is the point of it existing.
+     Fourth house rule: prefer a rule that degrades over one that vanishes. A
+     merged `undefined` here is a kitten at NaN, silently undrawn, and the
+     cause three files away. */
+  const base = { a: 1, b: 2, deep: { x: 10, y: 20 } };
+  ok('a good override is taken', fold(base, { a: 5 }).a === 5);
+  ok('...including through a nested table', fold(base, { deep: { y: 7 } }).deep.y === 7);
+  ok('...leaving its siblings alone',
+    fold(base, { deep: { y: 7 } }).deep.x === 10 && fold(base, { a: 5 }).b === 2);
+  for (const [what, bad] of [
+    ['a string', { a: '5' }], ['a null', { a: null }], ['a boolean', { a: true }],
+    ['NaN', { a: NaN }], ['Infinity', { a: Infinity }], ['an object', { a: { b: 1 } }],
+  ]) {
+    ok(`...but ${what} is ignored rather than merged`, fold(base, bad).a === 1);
+  }
+  ok('a key the defaults do not have cannot appear',
+    fold(base, { nope: 9 }).nope === undefined);
+  ok('a table that is not a table at all is survivable',
+    fold(base, 'banana').a === 1 && fold(base, null).b === 2);
+  /* The shape belongs to the DEFAULTS and the file only ever supplies numbers,
+     so a nested default cannot be flattened away by a scalar in the file. */
+  ok('...and a scalar cannot replace a whole nested table',
+    fold(base, { deep: 3 }).deep.x === 10);
+
+  /* THE TABLES THE BALANCE PAGE EXPECTS TO FIND. `tuning.html` lists every
+     entry in DEFAULTS, so a table that stops calling `tune()` does not error —
+     it silently disappears off the page, which is how a tuning tool rots into
+     something nobody trusts. */
+  for (const table of ['CROSS', 'CHARGE', 'WARD', 'DIVE', 'COMBAT', 'ATTACKS']) {
+    ok(`${table} is reachable from the balance page`,
+      !!DEFAULTS[table] && Object.keys(DEFAULTS[table]).length > 0);
+  }
+  ok('...and the defaults recorded are the shipped ones, not the tuned ones',
+    DEFAULTS.CROSS.cool === 0.75 && DEFAULTS.CROSS.wind === 0.25
+    && DEFAULTS.COMBAT.maxHp === 100, `cool ${DEFAULTS.CROSS.cool}`);
+
+  /* AN OVERRIDE IS ALLOWED TO BE COMMITTED — that is the whole point of the
+     file — but every check in this run has been reading the TUNED values, so
+     say out loud when they are not the shipped ones. A run that passes on a
+     retuned game is still a passing run; a run that passes and nobody noticed
+     the balance was not the documented one is a bad afternoon later. */
+  const tuned = Object.keys(OVERRIDES).length;
+  if (tuned) {
+    line('src/tuning.json is overriding', `${tuned} table(s) — checks ran against those values`);
+  } else {
+    line('src/tuning.json', 'empty — this is the shipped balance');
+  }
 }
 
 console.log('\n--- background removal keeps the drawn whites ---');
@@ -2476,6 +2980,43 @@ console.log('\n--- background removal keeps the drawn whites ---');
     { file: 'ryuuseki.png', pockets: 2, bigWhites: 0, what: 'sealed under his chin' },
     { file: 'griffin.png', pockets: 1, bigWhites: 0, what: 'sealed under a wing' },
   ];
+
+  /* --- and the clan emblems, which are the shape most likely to break it ---
+     THE LOADER DOES NOT ASK FOR `clearPockets` ON THESE, so whatever the
+     border flood cannot reach ships as a white blob. Two of the six are drawn
+     inside a ring, which is exactly the sealed pocket the flag exists for, and
+     Riverclaw's wave nearly was one: the fill only gets in through a break in
+     the outline. So every emblem is checked for what survives the flood ALONE,
+     and the expected number is written down per file rather than assumed to be
+     zero — Icewhisker's emblem has a cat's eye in it, and its white must
+     survive for the same reason Satan's does. */
+  const EMBLEMS = [
+    { file: 'clan_thunder.png', whites: 0, what: 'a paw behind a bolt, open on all sides' },
+    { file: 'clan_river.png', whites: 0, what: 'a wave in a ring the flood gets into' },
+    { file: 'clan_shadow.png', whites: 0, what: 'an open crescent, nothing enclosed' },
+    { file: 'clan_wind.png', whites: 0, what: 'a filled disc with no white left in it' },
+    { file: 'clan_ice.png', whites: 2, what: 'the eye, either side of the pupil — DRAWN' },
+    { file: 'clan_panda.png', whites: 0, what: 'bamboo crossed behind a cream face' },
+  ];
+
+  for (const e of EMBLEMS) {
+    const url = new URL(`../public/sprites/${e.file}`, import.meta.url);
+    ok(`${e.file} is on disk`, existsSync(url));
+    if (!existsSync(url)) continue;
+    const { w, h, d } = readPNG(url);
+    floodBackground(d, w, h);
+    const floor = pocketFloor(w, h);
+    const left = blobs(d, w, h, (p) => purelyWhite(d, p)).filter((b) => b.n >= floor);
+    ok(`...and keys to ${e.whites} big white(s) left`, left.length === e.whites,
+      `${left.length} (${e.what})`);
+    /* AND THERE IS STILL AN EMBLEM AFTERWARDS. A threshold that ate the whole
+       drawing would pass the test above by leaving nothing behind. */
+    let ink = 0;
+    for (let q = 0; q < w * h; q++) if (d[q * 4 + 3] > 200) ink++;
+    ok('...with the drawing still in it',
+      ink > w * h * 0.04 && ink < w * h * 0.75,
+      `${(100 * ink / (w * h)).toFixed(1)}% opaque`);
+  }
 
   for (const s of SHEETS) {
     const { w, h, d } = readPNG(new URL(`../public/sprites/${s.file}`, import.meta.url));
@@ -2935,9 +3476,19 @@ console.log('\n--- the three power moves ---');
      one and a timing bug does not show up in a unit call. */
   const SWINGS = () => {
     const kinds = [];
+    /* Both doors, separately. `sfx` is a name that is always synthesised and
+       `sample` is a name that is a recorded file — the Cross Slash's verdict
+       comes out of the second one and a spy that lumped them together could
+       not tell a cackle from a blip. */
+    const sounds = [];
+    const samples = [];
     return {
       kinds,
-      sfx: () => {}, toast: () => {}, onMischief: () => {},
+      sounds,
+      samples,
+      sfx: (n) => { sounds.push(n); },
+      sample: (n) => { samples.push(n); },
+      toast: () => {}, onMischief: () => {},
       strikePlayers: (_a, kind) => { kinds.push(kind); },
       strikeCritters: () => {},
     };
@@ -2956,11 +3507,56 @@ console.log('\n--- the three power moves ---');
       held.update(1 / 60, stay, world, [], spy);
       if (held.triLeft > 0) armedAt = (i + 1) / 60;
     }
-    line('hold to triple slash', `${armedAt.toFixed(2)}s (threshold ${CROSS.hold})`);
+    line('hold to the first cut',
+      `${armedAt.toFixed(2)}s (hold ${CROSS.hold} + wind ${CROSS.wind})`);
     ok('holding attack really does fire it', held.triLeft > 0);
-    ok('...promptly after the threshold', armedAt > 0 && armedAt < CROSS.hold + 0.12);
+    /* THE FIRST CUT COMES AFTER `hold` PLUS `wind`, WHICH IS THE WHOLE POINT
+       OF THE REWORK. It used to be `hold` alone and that was the complaint
+       from a four-player afternoon: the technique landed as one unavoidable
+       lump and the only warning was a quarter second she could spend walking.
+       Both halves are asserted rather than the total, because they are two
+       different rules and a future turn of one knob must not be able to hide
+       under the other — see CROSS.wind. */
+    ok('...after the hold AND the wind-up, not just the hold',
+      armedAt > CROSS.hold + CROSS.wind - 0.02
+      && armedAt < CROSS.hold + CROSS.wind + 0.12);
     ok('...having thrown no ordinary swing on the way there',
       spy.kinds.every((k) => k === 'tri'), spy.kinds.join(' ') || '(none)');
+
+    /* SHE IS PLANTED FOR THE WIND-UP AND MOBILE FOR THE HOLD, and these are
+       the two halves that must not merge. A kitten frozen for the tap window
+       has lost the ordinary slash; a wind-up she can walk through is not a
+       tell. Replayed from scratch so the frame counting is honest. */
+    const timed = mk(['tri']);
+    let mobileAt = -1;
+    let plantedAt = -1;
+    timed.update(1 / 60, down, world, [], SWINGS());
+    for (let i = 1; i < 60 && timed.triLeft === 0; i++) {
+      const at = i / 60;
+      if (!timed.busy) mobileAt = at;
+      else if (plantedAt < 0) plantedAt = at;
+      timed.update(1 / 60, stay, world, [], SWINGS());
+    }
+    line('mobile until / planted from', `${mobileAt.toFixed(2)}s / ${plantedAt.toFixed(2)}s`);
+    ok('...she can still walk through the tap window',
+      mobileAt >= CROSS.hold - 0.03, `${mobileAt.toFixed(2)}s`);
+    ok('...and is planted for the whole wind-up',
+      plantedAt > 0 && plantedAt <= CROSS.hold + 0.03, `${plantedAt.toFixed(2)}s`);
+
+    /* LETTING GO DURING THE WIND-UP THROWS IT AWAY — and throws away nothing
+       else. Nothing has been swung, so the abort must not leak an ordinary
+       slash out of the release the way a tap does; that would make the
+       wind-up a free feint. */
+    const bail = mk(['tri']);
+    const bspy = SWINGS();
+    bail.update(1 / 60, down, world, [], bspy);
+    for (let i = 0; i < 19; i++) bail.update(1 / 60, stay, world, [], bspy);   // 0.33s
+    ok('a released wind-up is a wind-up in progress', bail.triWindT > 0);
+    bail.update(1 / 60, PAD(), world, [], bspy);                               // let go
+    ok('...and letting go of it aborts', bail.triWindT === 0 && !bail.triAt);
+    for (let i = 0; i < 60; i++) bail.update(1 / 60, PAD(), world, [], bspy);
+    ok('...throwing nothing at all', bspy.kinds.length === 0, bspy.kinds.join(' ') || '(none)');
+    ok('...and saying so out loud', bspy.sounds.includes('deny'));
 
     /* AND A TAP STILL SWINGS — on the release, but it swings. A kitten who
        picked up the orb and found her katana had stopped working on barrels
@@ -3035,8 +3631,106 @@ console.log('\n--- the three power moves ---');
   for (let i = 0; i < 120 && t.triAt; i++) { t._stepSpecials(1 / 60, PAD(), world, spy); hang++; }
   line('pause for effect', `${(hang / 60).toFixed(2)}s (nominal ${CROSS.hang})`);
   ok('...then she gets her feet back', !t.busy && !t.triAt);
-  ok('...and cannot swing again for half a second',
+  ok('...and cannot swing again for three quarters of a second',
     Math.abs(t.attackCooldown - CROSS.cool) < 0.02, t.attackCooldown.toFixed(2));
+
+  /* --- the verdict, out loud ---------------------------------------------
+     THE MOVE SAYS HOW WELL IT WENT, AND THAT IS THE FEATURE. Four rungs of one
+     kitten's cackle: a squeak for a whiff, the trailer's demon for all three.
+     What is actually pinned here is the GRADING — that the sound is a function
+     of how many cuts connected — because the failure mode is not silence, it
+     is the same noise every time, which reads as the move having no outcome.
+
+     `landing` fakes the strike: the sequencer clears `_triLanded` before each
+     `_doSlash` and reads it after, and `Game.strikePlayers` is what would
+     normally set it. Counting the cuts here rather than trusting the count
+     inside is what makes this a behaviour check and not a restatement. */
+  {
+    const runTech = (landing) => {
+      const p = mk(['tri']);
+      const heard = SWINGS();
+      let cut = 0;
+      heard.strikePlayers = (a, kind) => {
+        heard.kinds.push(kind);
+        if (kind === 'tri' && cut++ < landing) a._triLanded = true;
+      };
+      p._startTriple(heard);
+      for (let i = 0; i < 600 && p.triAt; i++) p._stepSpecials(1 / 60, PAD(), world, heard);
+      return { p, heard };
+    };
+    for (let n = 0; n <= CROSS.cuts; n++) {
+      const { heard } = runTech(n);
+      ok(`${n} cut(s) landing is graded as cross${n}`,
+        heard.samples.length === 1 && heard.samples[0] === `cross${n}`,
+        heard.samples.join(' ') || '(silent)');
+    }
+    /* ONE CUT CATCHING TWO SISTERS IS STILL ONE CUT. `_triLanded` is a boolean
+       and not a counter for exactly this: "if 2 hits land" was said about the
+       three swings, not about the bodies. A counter here would hand a kitten
+       the demon cackle for one lucky swing through a crowd. */
+    const crowd = mk(['tri']);
+    const cspy = SWINGS();
+    let swing = 0;
+    cspy.strikePlayers = (a, kind) => {
+      swing++;
+      if (swing === 1) { a._triLanded = true; a._triLanded = true; a._triLanded = true; }
+    };
+    crowd._startTriple(cspy);
+    for (let i = 0; i < 600 && crowd.triAt; i++) crowd._stepSpecials(1 / 60, PAD(), world, cspy);
+    ok('...and one cut through a crowd is still one cut',
+      cspy.samples[0] === 'cross1', cspy.samples.join(' '));
+
+    /* THE RECOVERY ANNOUNCES ITSELF. Three quarters of a second is long enough
+       to lose track of in a four-way brawl, which is the whole reason it is
+       there — see CROSS.cool. Exactly once, and after the cooldown rather than
+       with it: a chime on the launch would be telling her the opposite. */
+    const { p: done, heard } = runTech(1);
+    const before = heard.sounds.filter((n) => n === 'crossReady').length;
+    ok('the recovery does not chime while it is still running', before === 0);
+    for (let i = 0; i < 600 && done.triCoolT > 0; i++) {
+      done.update(1 / 60, PAD(), world, [], heard);
+    }
+    ok('...and chimes exactly once when it ends',
+      heard.sounds.filter((n) => n === 'crossReady').length === 1);
+    ok('...at which point she really can swing again', done.attackCooldown <= 0);
+
+    /* --- and being hit takes all of it away -----------------------------
+       THE ONE WAY OUT OF A COMMITTED TECHNIQUE. Everything else about the move
+       is deliberately unstoppable — she cannot cancel, block or walk out of it
+       — so a sister who reads the wind-up and lands a blade first has to be
+       able to stop it, or the counter-play is "stand somewhere else". */
+    const struck = mk(['tri']);
+    const sspy = SWINGS();
+    sspy.strikePlayers = (a, kind) => { if (kind === 'tri') a._triLanded = true; };
+    struck._startTriple(sspy);
+    for (let i = 0; i < 40 && struck.triLeft > 1; i++) {
+      struck._stepSpecials(1 / 60, PAD(), world, sspy);
+    }
+    ok('a technique interrupted mid-way was really under way',
+      struck.triAt && struck.triHits > 0 && struck.triHits < CROSS.cuts);
+    struck.hurt(10, { x: struck.position.x + 5, z: struck.position.z }, { knock: 10, lift: 4 }, sspy);
+    ok('...is stopped dead by the hit',
+      !struck.triAt && struck.triLeft === 0 && struck.triHangT === 0);
+    for (let i = 0; i < 600; i++) struck._stepSpecials(1 / 60, PAD(), world, sspy);
+    /* NO FUNNY NOISE FOR A TECHNIQUE THAT WAS STOPPED. Said in as many words by
+       the person who asked for the cackles, and it falls out of WHERE the
+       sound is played rather than out of a flag: only the launch branch plays
+       it, and a cancel never reaches the launch branch. */
+    ok('...and makes no cackle, then or ever', sspy.samples.length === 0,
+      sspy.samples.join(' ') || '(silent)');
+    ok('...nor a ready chime for a recovery she never got',
+      !sspy.sounds.includes('crossReady'));
+    /* The wind-up is stopped by a hit too — she is planted and open through it
+       and a kitten who could be hit out of the cuts but not out of the wind-up
+       would be safest during the half of the move that is meant to be the
+       warning. */
+    const early = mk(['tri']);
+    const espy = SWINGS();
+    early._startWind(espy);
+    early.hurt(10, { x: early.position.x + 5, z: early.position.z }, { knock: 10, lift: 4 }, espy);
+    ok('...and a wind-up is interruptible for the same reason',
+      early.triWindT === 0 && !early.triAt);
+  }
 
   /* --- the block may not be used to cancel the price of the move ---
      The whole cost of a cross slash is that she is planted and open for about
@@ -3858,6 +4552,87 @@ console.log('\n--- the three power moves ---');
     ok('a pinned animal is dragged in front of her mouth',
       c.position.length() < 2 && dot > 0.9);
   }
+
+  /* --- THE CROSS SLASH ATE THE SNACK BUTTON ---
+     Reported from four-player play: wearing the orb, standing over an animal
+     and holding ATTACK wound up a three-cut technique instead of picking the
+     animal up, so the feast was simply unplayable for whoever had bought the
+     Cross Slash.
+
+     THE CAUSE IS A BRANCH THAT NEVER RUNS. `Menagerie.strike` is only ever
+     called by `Player._doSlash`, and with the orb on, ATTACK is a DEFERRED
+     press: it waits `CROSS.hold` to find out whether it was a tap or the start
+     of the technique, and on a hold `_doSlash` is never reached at all. So the
+     repair is not in the swing, it is in the button — `critterNear` is asked
+     at the moment of the press, and an animal in range means this press is an
+     ordinary swing thrown now.
+
+     These check the predicate against the real Menagerie, and then the real
+     `Player.update` against a stubbed one, because the bug lived in the seam
+     between them and either half alone would have passed. */
+  {
+    const eater = mkFighter(0);
+    eater.position.set(0, 0, 0);
+    eater.velocity.set(0, 0, 0);
+    eater.onGround = true;
+    men.on = true;
+    men.held[0] = null;
+    men.list.length = 0;
+    ok('no animal on the deck, nothing to catch', !men.wouldCatch(eater, 3.4));
+
+    const rat2 = one('rat');
+    rat2.onGround = true;
+    rat2.position.set(1, 0, 0);
+    men.list.push(rat2);
+    ok('a rat at her feet is something to catch', men.wouldCatch(eater, 3.4));
+    /* THE PREDICATE ASKS THE SAME QUESTION THE SWING DOES, which is the whole
+       reason `_findTarget` is shared: a button that declines to arm the
+       technique for an animal the swing then refuses to catch is the same bug
+       with the sign flipped. */
+    ok('...and asking does not catch it', men.held[0] === null && !rat2.held);
+    ok('...but swinging does', men.strike(eater, 3.4) && !!men.held[0]);
+    ok('...and a kitten with a mouthful is offered nothing more',
+      !men.wouldCatch(eater, 3.4));
+    men.held[0] = null;
+    rat2.release?.();
+
+    /* AND IT IS OFF THE DECK ENTIRELY OUTSIDE THE TOURNAMENT, on the same gate
+       as `strikeCritters` — the two answers must agree. */
+    men.on = false;
+    ok('with the menagerie off there is nothing to prioritise',
+      !men.wouldCatch(eater, 3.4));
+    men.on = true;
+
+    /* --- and now the seam: the real attack button ---
+       A kitten wearing the Cross Slash orb, holding ATTACK for well past
+       `CROSS.hold`, with and without a rat in front of her. */
+    const held = { mx: 0, my: 0, down: (a) => a === 'attack', pressed: (a) => a === 'attack' };
+    const stillHeld = { mx: 0, my: 0, down: (a) => a === 'attack', pressed: () => false };
+    const run = (near) => {
+      const k = mkFighter(0);
+      k.position.set(0, world.heightAt(0, 40)?.y ?? 0, 40);
+      k.onGround = true;
+      let caught = 0;
+      const hud = {
+        sfx() {}, toast() {}, sample() {},
+        critterNear: () => near,
+        strikeCritters: () => { caught += 1; },
+        strikePlayers() {}, hitSpark() {},
+      };
+      k.power = { ...k.power, tri: 1 };
+      k.update(1 / 60, held, world, [], hud);
+      for (let i = 0; i < 40; i++) k.update(1 / 60, stillHeld, world, [], hud);
+      return { k, caught };
+    };
+    const away = run(false);
+    ok('holding ATTACK with nothing nearby still winds up the Cross Slash',
+      away.k.triAt, `caught ${away.caught}`);
+    const over = run(true);
+    ok('...but holding it over an animal swings instead of winding up',
+      !over.k.triAt);
+    ok('...and that swing is the one that reaches the animal', over.caught >= 1,
+      `${over.caught}`);
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -4271,6 +5046,109 @@ console.log('\n--- the three power moves ---');
       }
     }
     ok('every weighted layout stays inside the frame and never overlaps', bad === 0);
+
+    /* ---- A PANE YOU HAVE IS A PANE YOU KEEP ------------------------------
+       Reported from four-player play: "a player's split screen can be in one
+       corner and then because some other screens change, their split screen
+       moves to a different area." It is not cosmetic — the entire value of
+       split screen is knowing where to look, and the pane moved for reasons
+       that had nothing to do with the player it moved.
+
+       `splitLayout` hands panes back in GROUP order, and a group's index moves
+       when anybody else on the screen pairs up. `stablePanes` reassigns them
+       to whoever was nearest. These check the behaviour, not the arithmetic:
+       every one of them is "did the player actually stay put". */
+    {
+      const seats = (panes, groups) => paneSeats(panes, groups, VW, VH);
+      const where = (panes, groups, who) => {
+        const g = groups.findIndex((m) => m.includes(who));
+        return `${panes[g].x},${panes[g].y}`;
+      };
+
+      /* THE REPORTED BUG, EXACTLY. Four kittens alone in four quadrants; then
+         players 1 and 2 walk together. The pair has to take the new full-width
+         strip, but player 0 and player 3 both had a bottom cell available in
+         the corner they were already in. Before this, player 0 was thrown from
+         top-left to bottom-left by somebody else's walk. */
+      const g4 = [[0], [1], [2], [3]];
+      const p4 = splitLayout(4, VW, VH, 3, 'vertical', [1, 1, 1, 1]);
+      const s4 = seats(p4, g4);
+
+      const g3 = [[0], [1, 2], [3]];
+      const raw3 = splitLayout(3, VW, VH, 3, 'vertical', [1, 2, 1]);
+      const fix3 = stablePanes(raw3, g3, s4, VW, VH);
+      ok('the pane order alone moved player 1 across the screen',
+        where(raw3, g3, 0) !== where(p4, g4, 0));
+      ok('...and she keeps the side of the screen she was on',
+        fix3[0].x === p4[0].x, `${fix3[0].x} vs ${p4[0].x}`);
+      ok('...and player 4 is not moved either',
+        fix3[2].x === p4[3].x && fix3[2].y === p4[3].y);
+      /* THE PAIR STILL GETS THE BIG PANE. Only same-shaped rectangles may
+         swap, which is what stops a nearer quarter being handed to a group
+         that earned half the screen — the rule splitLayout exists to enforce. */
+      ok('...and the pair still gets the full-width strip',
+        fix3[1].w === VW, `${fix3[1].w}`);
+
+      /* NOBODY MOVES WHEN NOTHING CHANGES. Fed its own seats back, the answer
+         has to be a fixed point, or a pane would drift a little every frame. */
+      let drifts = 0;
+      let cur = p4;
+      for (let f = 0; f < 8; f++) {
+        const next = stablePanes(splitLayout(4, VW, VH, 3, 'vertical', [1, 1, 1, 1]),
+          g4, seats(cur, g4), VW, VH);
+        if (JSON.stringify(next) !== JSON.stringify(cur)) drifts += 1;
+        cur = next;
+      }
+      ok('a settled four-way split does not drift frame to frame', drifts === 0);
+
+      /* AND IT IS A PERMUTATION, NEVER AN INVENTION. Anything else would draw
+         a camera into a rectangle splitLayout never sanctioned — off the edge
+         of the frame, or on top of somebody else. */
+      const sorted = (a) => JSON.stringify([...a].map((v) => `${v.x},${v.y},${v.w},${v.h}`).sort());
+      let notPerm = 0;
+      for (const sizes of [[1, 1, 1, 1], [2, 1, 1], [1, 2, 1], [1, 1, 2], [1, 1], [3, 1]]) {
+        const gs = [];
+        let next = 0;
+        for (const k of sizes) { gs.push(Array.from({ length: k }, () => next++)); }
+        const raw = splitLayout(sizes.length, VW, VH, 3, 'vertical', sizes);
+        const fixed = stablePanes(raw, gs, { 0: { cx: 0.9, cy: 0.1 }, 1: { cx: 0.1, cy: 0.9 } },
+          VW, VH);
+        if (sorted(raw) !== sorted(fixed)) notPerm += 1;
+        if (fixed.length !== raw.length) notPerm += 1;
+        /* Same shape in the same slot: the size rules survive the shuffle. */
+        for (let i = 0; i < raw.length; i++) {
+          if (raw[i].w !== fixed[i].w || raw[i].h !== fixed[i].h) notPerm += 1;
+        }
+      }
+      ok('reseating only ever permutes panes of identical shape', notPerm === 0);
+
+      /* TWO PLAYERS COME OUT BIT-IDENTICAL. Fifth non-negotiable: everything
+         four-player is additive, and where a rule generalises the two-player
+         answer has to be unchanged. Two even panes are the same shape, so the
+         only thing that could reorder them is the girls actually swapping
+         sides — and with no history at all it must be the identity. */
+      const g2 = [[0], [1]];
+      for (const dir of ['vertical', 'horizontal']) {
+        const raw2 = splitLayout(2, VW, VH, 3, dir);
+        ok(`two players are untouched with no history (${dir})`,
+          JSON.stringify(stablePanes(raw2, g2, {}, VW, VH)) === JSON.stringify(raw2));
+        ok(`...and untouched again once seated (${dir})`,
+          JSON.stringify(stablePanes(raw2, g2, seats(raw2, g2), VW, VH))
+            === JSON.stringify(raw2));
+      }
+
+      /* A MERGED VIEW HAS NOTHING TO DECIDE, and asking must not throw. */
+      const one = splitLayout(1, VW, VH, 3, 'vertical');
+      ok('one pane is returned unchanged',
+        JSON.stringify(stablePanes(one, [[0, 1, 2, 3]], s4, VW, VH)) === JSON.stringify(one));
+
+      /* SEATS COVER EVERY PLAYER IN EVERY GROUP, or a kitten with no seat is a
+         kitten whose next pane is chosen at random. */
+      const sd = seats(raw3, g3);
+      ok('every player in a group gets a seat', [0, 1, 2, 3].every((i) => sd[i]));
+      ok('...and the two sharing a pane share a seat',
+        sd[1].cx === sd[2].cx && sd[1].cy === sd[2].cy);
+    }
 
     /* ---- TWO PANES HOLDING DIFFERENT NUMBERS OF KITTENS -------------------
        THIS USED TO ASSERT THE OPPOSITE, and the reason it gave was sound but
@@ -5795,7 +6673,17 @@ console.log('\n--- a trade is agreed twice, by two people ---');
   const nodes = {
     'panel-profile': el(), 'kd-body': el(), 'kd-title': el(), 'kd-help': el(),
   };
-  globalThis.document = { getElementById: (id) => nodes[id] ?? null };
+  /* KEEPS `createElement`. A `Player` builds a `Label` for its clan callout,
+     and a Label measures and paints on a canvas — so a stub that answers only
+     `getElementById` makes constructing a real kitten throw, three hundred
+     lines away from anything to do with the trade screen. Swapping in a
+     narrower document than the one already installed is the trap; this
+     borrows the real stub's canvas factory rather than reimplementing it. */
+  const baseCreate = globalThis.document.createElement;
+  globalThis.document = {
+    getElementById: (id) => nodes[id] ?? null,
+    createElement: (...a) => baseCreate(...a),
+  };
   const { ProfileScreen } = await import('../src/systems/profile.js');
   /* The stub has to outlive the import - the constructor is what reads it, and
      that runs once per `mk` below, not at module load. Taken away at the end of
@@ -5833,6 +6721,9 @@ console.log('\n--- a trade is agreed twice, by two people ---');
       scene: new THREE.Scene(),
       pickups: [],
       audio: { play() {} },
+      /* `close` drops the frame the screen ate, or the first tick after it is
+         however long she spent shopping. Real in the game, stubbed here. */
+      clock: { getDelta: () => 0 },
       sfx() {},
       syncOrbMeshes() {},
       toast() {},
@@ -5992,6 +6883,164 @@ console.log('\n--- a trade is agreed twice, by two people ---');
     ps._drive(0, press('jump'), 0.016);
     ok('...and JUMP on HER pad answers it', ps.sides[0].pending === null
       && g.players[0].powerOrbs.length === 1);
+  }
+
+  /* --- one counter, four purses ---------------------------------------
+     Reported from four-player play: one kitten opening the shop threw all
+     four onto it and three of them sat there with dead sticks. The other half
+     of the fix is the personal card below; this is the half that makes the
+     shared screen worth being on. */
+  {
+    const { g, ps } = mk([], []);
+    g.kotodama.stock[ORB_IDS[0]] = 3;
+    g.kotodama.stock[ORB_IDS[2]] = 3;
+    ps.open('shop', { shopper: g.players[0] });
+    ok('the kitten who walked to the counter is shopping already',
+      ps.joined.has(0), [...ps.joined].join(','));
+    ok('...and her sister is NOT, until she says so', !ps.joined.has(1));
+    /* AN UNJOINED SISTER CANNOT SPEND. This is the whole reason it is opt-in
+       rather than opt-out: everybody is on the screen either way, because it
+       freezes the world, and a four-way shared surface where leaning on a
+       stick buys an orb is an afternoon-ender. */
+    g.input = { players: [
+      { mx: 0, my: 0, pressed: () => false, down: () => false },
+      { mx: 0, my: 0, pressed: (a) => a === 'jump', down: () => false },
+    ] };
+    ps.sides[1].i = 0;
+    ps.update(0.016);
+    ok('...so a stick she has not joined with buys nothing',
+      ps.sides[1].pending === null && g.players[1].powerOrbs.length === 0);
+
+    /* MOUNT IS THE JOIN BUTTON, and the same press must not also buy: she is
+       read in the not-joined branch and `continue`s past `_drive`. */
+    g.input.players[1] = { mx: 0, my: 0, pressed: (a) => a === 'mount', down: () => false };
+    ps.update(0.016);
+    ok('MOUNT joins her to the counter', ps.joined.has(1));
+    ok('...without the same press also buying something',
+      ps.sides[1].pending === null && g.players[1].powerOrbs.length === 0);
+    ok('...and her cursor starts at the top rather than where a trade left it',
+      ps.sides[1].i === 0);
+
+    /* AND NOW SHE BUYS HER OWN, out of her own purse, with her own cursor —
+       the two sides were always independent, and this is the check that they
+       stayed that way once two of them could be live at once. */
+    ps.sides[0].i = 0;
+    ps.sides[1].i = 2;
+    ps._buyHere(0);
+    ps._buyHere(1);
+    ok('two girls can be asked two different questions at once',
+      ps.sides[0].pending?.id === ORB_IDS[0] && ps.sides[1].pending?.id === ORB_IDS[2]);
+    ps._answerHere(0, true);
+    ps._answerHere(1, true);
+    ok('...and each ends up with the orb SHE picked',
+      g.players[0].powerOrbs[0] === ORB_IDS[0]
+      && g.players[1].powerOrbs[0] === ORB_IDS[2]);
+
+    /* A JOINER STEPS BACK; THE SHOPPER SHUTS THE SHOP. A sister who joined out
+       of curiosity closing the screen on the girl who walked to the counter is
+       the four-player version of somebody else pressing your buttons. */
+    ps._shopButtons(1, { pressed: (a) => a === 'interact', down: () => false });
+    ok('a joiner backing out steps back rather than closing it on everybody',
+      ps.mode === 'shop' && !ps.joined.has(1));
+    ps._shopButtons(0, { pressed: (a) => a === 'interact', down: () => false });
+    ok('...and the girl who opened it is the one who closes it', ps.mode === null);
+    ok('...which empties the counter behind her', ps.joined.size === 0);
+  }
+
+  /* --- the personal card ------------------------------------------------
+     "Let them look at their setup without everyone playing being thrown on
+     that screen." One kitten's own screen, in her own pane, with the world
+     still running for the other three. */
+  {
+    const stubEl = () => ({
+      className: '', dataset: {}, innerHTML: '', textContent: '',
+      style: { setProperty() {} },
+      classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+      remove() {}, appendChild() {}, addEventListener() {},
+      querySelector: () => null,
+    });
+    const host = stubEl();
+    const baseGet = globalThis.document.getElementById;
+    const realCreate = globalThis.document.createElement;
+    globalThis.document.getElementById = (id) => (id === 'pane-cards' ? host : baseGet(id));
+    globalThis.document.createElement = (tag) => (tag === 'div' ? stubEl() : realCreate(tag));
+    const { Inspector } = await import('../src/systems/inspector.js');
+
+    const { g, ps } = mk([ORB_IDS[0]], []);
+    g.profile = ps;
+    g.input = { players: [] };
+    const insp = new Inspector(g);
+
+    ok('nobody has a card up to start with', !insp.any);
+    insp.open(0);
+    ok('opening one takes only HER pad', insp.busy(0) && !insp.busy(1));
+    ok('...and does NOT open the shared counter', ps.mode === null);
+
+    /* THE PANE IS THE POINT. `Game` feeds `Inspector.busy` into
+       `clusterPlayers`' `solo` list, so a girl reading a card is not sharing a
+       view with her sister — without it the card covers half of somebody
+       else's game. Checked against the real clusterer with two kittens on the
+       same spot, which is exactly where the dealer's stall puts them. */
+    const at = new THREE.Vector3(0, 0, 0);
+    const together = clusterPlayers({
+      pts: [at, at.clone()], solo: [false, false], prev: null,
+      mergeIn: MERGE_IN, mergeOut: MERGE_OUT,
+    });
+    ok('two kittens at the stall normally share one pane', together.groups.length === 1);
+    const apart = clusterPlayers({
+      pts: [at, at.clone()],
+      solo: [0, 1].map((i) => insp.busy(i)),
+      prev: null, mergeIn: MERGE_IN, mergeOut: MERGE_OUT,
+    });
+    ok('...and a card splits her out into her own', apart.groups.length === 2);
+
+    /* THE TWO SCREENS, AND BACKING OUT OF EACH. INTERACT goes back one level
+       and only then closes; it never skips the chooser, because a girl who has
+       just read her orbs is the girl most likely to want to trade next. */
+    const pad = (btn) => ({ mx: 0, my: 0, pressed: (a) => a === btn, down: () => false });
+    insp.cards[0].i = 1;
+    insp._drive(0, pad('jump'), 0.016);
+    ok('JUMP on LOOK AT MY ORBS opens the shelf', insp.cards[0].state === 'look');
+    ok('...and still has not opened the shared counter', ps.mode === null);
+    insp._drive(0, pad('interact'), 0.016);
+    ok('INTERACT goes back to the chooser rather than out',
+      insp.cards[0].state === 'choose');
+    insp._drive(0, pad('interact'), 0.016);
+    ok('...and again closes it', !insp.busy(0));
+
+    /* AND CHOOSING TRADE HANDS OVER. Every card goes down, not just hers: two
+       girls can each have a chooser open, and one of them calling everybody to
+       the counter would leave the other's card floating over a frozen world
+       with a pad that no longer reaches it. */
+    insp.open(0);
+    insp.open(1);
+    ok('two girls can read two cards at once', insp.busy(0) && insp.busy(1));
+    insp.cards[0].i = 0;
+    insp._drive(0, pad('jump'), 0.016);
+    ok('TRADE WITH THE DEALER opens the shared counter', ps.mode === 'shop');
+    ok('...seating the girl who chose it', ps.joined.has(0) && !ps.joined.has(1));
+    ok('...and taking every card down, not only hers', !insp.any);
+    ps.close();
+
+    /* START CLOSES IT FROM ANYWHERE. `Game` exempts the owner's Start from the
+       pause menu for exactly this press — see the `inspector.busy(asked)`
+       branch — so putting a card away must not also pause four kittens' game. */
+    insp.open(0);
+    insp.cards[0].state = 'look';
+    insp._drive(0, pad('start'), 0.016);
+    ok('START closes a card from either screen', !insp.busy(0));
+
+    /* ATTACK IS DELIBERATELY INERT. On the shared counter it means SELL, and a
+       girl who learned it here would press it there expecting nothing. */
+    insp.open(0);
+    insp._drive(0, pad('attack'), 0.016);
+    ok('ATTACK does nothing on a card, on purpose',
+      insp.busy(0) && insp.cards[0].state === 'choose');
+    insp.closeAll();
+    ok('closeAll puts everything away', !insp.any && !insp.busy(0) && !insp.busy(1));
+
+    globalThis.document.getElementById = baseGet;
+    globalThis.document.createElement = realCreate;
   }
 
   delete globalThis.document;

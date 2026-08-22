@@ -23,10 +23,19 @@ look. Everything else is one level down and read on demand.
 
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
-node tools/world-check.mjs    # 1088 checks: world, dragons, clans, sprites, tournament, consent
-node tools/pad-check.mjs      # 201 checks: controllers, keyboard sets, the stuck-vJoy latch
+node tools/world-check.mjs    # 1266 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/pad-check.mjs      # 219 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 ```
+
+**Balance numbers are edited on a page, not in the code.** `npm run dev`, then
+open **`/tuning.html`**: every ability's timings and damage with a sentence each
+on what they do, a live timeline of the Cross Slash, and a save that writes
+`src/tuning.json` and hot-reloads the running game.
+[endgame.md](docs/notes/endgame.md) has the whole design; the short version is
+that the file holds **overrides only**, the literals in the code stay the
+defaults, and `tune()` ignores anything that is not a finite number on a key the
+defaults already have. Neither the page nor the endpoint exists in a build.
 
 **PLAY IT IN FIREFOX.** Chrome cannot read the Joy-Con sticks through vJoy — the
 buttons work and the axes report `0.00000` forever. It is a Chrome bug, not
@@ -96,6 +105,9 @@ src/
   core/      gfx  input  palette  split  cluster  spritesheet  label  audio
              device (what this machine may spend — tiers, atlas budget)
              touchpad (the on-screen stick and buttons; a device like any other)
+             tuning (folds tuning.json over the shipped balance; degrades hard)
+  tuning.json      the overrides, and nothing else. `{}` is the shipped balance.
+  tuning-page.js   /tuning.html's brain — dev only, never built
   world/     build (all the geometry)  world (assembly, height queries)
   systems/   tournament  menagerie  arenaquest  announce  leaderboard
              kotodama  profile  cutscene  shrinescene  summonscene
@@ -104,6 +116,9 @@ src/
   entities/  player  dragon  ryuuseki  panda  critter  angel  leader  satan
              griffin  orb  powerorb  dragonball  prop  shrine  stall
 tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
+             kitten-cackle.mjs (the trailer's demon, and `--game` for the
+               Cross Slash's four graded purrs — see docs/notes/voices.md,
+               which carries the licensing decision attached to them)
              steam-art.mjs (the Steam shelf and the icons, from title_art.png)
              trailer-score.mjs  trailer-vo.mjs  trailer-cut.sh
              brush-kanji.mjs  voice-measure.mjs
@@ -141,7 +156,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 1088 assertions and why almost none of them are about
+  why `world-check` is 1266 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have

@@ -179,6 +179,26 @@ const semi = (n, scaleRoot = ROOT) => scaleRoot * Math.pow(2, n / 12);
 /** See sfxBus — turns the relative per-sound gains into real loudness. */
 const SFX_MAKEUP = 3.2;
 
+/**
+ * Recorded SOUND EFFECTS, as opposed to recorded dialogue — see `loadSamples`.
+ *
+ * The Cross Slash grades itself out loud: cross0 for a technique that landed
+ * nothing, up to cross3 for all three cuts, which is the demon kitten from the
+ * trailer. They are four rungs of one ladder cut out of one recording by
+ * `tools/kitten-cackle.mjs --game`, so they are audibly the same animal at
+ * four speeds rather than four unrelated noises, and the grading reads without
+ * anybody explaining it.
+ *
+ * Every key must also be a case in `play`. That is the contract `sample`
+ * depends on and there is a world-check pinning it.
+ */
+export const SAMPLES = {
+  cross0: '/voice/cross0.mp3',
+  cross1: '/voice/cross1.mp3',
+  cross2: '/voice/cross2.mp3',
+  cross3: '/voice/cross3.mp3',
+};
+
 export class Audio {
   constructor() {
     this.ctx = null;
@@ -187,6 +207,10 @@ export class Audio {
     this.musicVolume = 0.4;
     this._noiseBuf = null;
     this._voices = 0;
+    /* Decoded one-shots, by name. Empty until `resume` — and possibly for
+       ever, on a clone with no public/voice. See `sample`. */
+    this._samples = {};
+    this._samplesAsked = false;
     this._musicTimer = null;
     this._nextNote = 0;
     this._step = 0;
@@ -250,6 +274,65 @@ export class Audio {
     this._speaking = null;
   }
 
+  /* ------------------------------ samples -------------------------------- */
+
+  /**
+   * Load the handful of recorded sounds that are SOUND EFFECTS rather than
+   * dialogue. Called once, from `resume`, because decoding needs the context.
+   *
+   * NOT `speak`, WHICH IS WHAT THIS LOOKS LIKE IT DUPLICATES. `speak` opens
+   * with `stopSpeaking()` — one speaker at a time, which is exactly right for
+   * a cutscene and exactly wrong here. A kitten landing a Cross Slash is
+   * usually the same half-second Mr. Satan is shouting about the round, and
+   * through `speak` whichever started second would cut the other dead. These
+   * are buffers on the SFX bus instead: they overlap each other, they overlap
+   * him, and they duck with the sound-effects slider like every other cue,
+   * which is what a slider labelled "sound effects" should do to a cat noise.
+   *
+   * Failure is silent and per-file, and the caller must not care — see
+   * `sample`. A fresh clone with no `public/voice` gets the synthesis.
+   */
+  loadSamples() {
+    if (this._samplesAsked) return;
+    this._samplesAsked = true;
+    for (const name of Object.keys(SAMPLES)) {
+      fetch(SAMPLES[name])
+        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+        .then((b) => this.ctx.decodeAudioData(b))
+        .then((buf) => { this._samples[name] = buf; })
+        .catch(() => { /* stays undefined; `sample` synthesises instead */ });
+    }
+  }
+
+  /**
+   * Play a recorded sound effect, or the synthesised stand-in for it.
+   *
+   * THE FALLBACK IS THE POINT, not an afterthought: ninth non-negotiable says
+   * deleting `public/voice` must leave a working game, and this is a gameplay
+   * cue rather than a line of dialogue, so "silence" is not an acceptable
+   * degradation the way a missing cutscene voice is. Every name here has a
+   * case in `play` that makes a noise out of oscillators. The file is funnier;
+   * the synthesis still tells you how many cuts landed.
+   *
+   * Also covers the window before the fetch lands — a player who reaches the
+   * arena inside a second of the first click gets the synthesis for a swing
+   * or two rather than nothing.
+   */
+  sample(name, vol = 1) {
+    if (!this.ready || vol <= 0.02) return;
+    const buf = this._samples[name];
+    if (!buf) { this.play(name, vol); return; }
+    const src = this.ctx.createBufferSource();
+    const g = this.ctx.createGain();
+    src.buffer = buf;
+    /* Flat, not enveloped. These are already shaped — `kitten-cackle.mjs`
+       peak-normalises and fades 15ms off both ends — and an exponential decay
+       over the top of a three-second cackle would eat the punchline. */
+    g.gain.value = vol;
+    src.connect(g).connect(this.sfxBus);
+    src.start();
+  }
+
   /** Called from a real user gesture. Safe to call repeatedly. */
   resume() {
     if (!this.ctx) {
@@ -286,6 +369,11 @@ export class Audio {
 
       this._buildNoise();
       this.ready = true;
+      /* Here rather than at construction: `decodeAudioData` needs a context,
+         and the context cannot exist until a user gesture. This IS that
+         gesture, so the four small files are on their way before anybody can
+         reach the arena. */
+      this.loadSamples();
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
     return true;
@@ -603,6 +691,21 @@ export class Audio {
         }));
         this._noise({ from: 300, to: 90, dur: 1.0, gain: 0.07 * v, q: 0.6 });
         break;
+      case 'clanJoin':
+        /* LAYERED OVER THE GONG, NOT INSTEAD OF IT. `clan` already fires from
+           the oath itself and is the weight of the moment; this is the sparkle
+           on top, for the ceremony that only happens the FIRST time she swears
+           to a given clan. Separating them means the correction case — swearing
+           somewhere she has sworn before — still gets the gong and correctly
+           gets no fanfare.
+           An ascending arpeggio, because every other rising figure in this
+           game means yes and every falling one means no. */
+        [0, 7, 12, 16, 19].forEach((n, i) => this._tone({
+          type: 'triangle', from: semi(n + 24), dur: 0.5,
+          gain: 0.055 * v, delay: i * 0.075,
+        }));
+        this._tone({ type: 'sine', from: semi(36), dur: 1.3, gain: 0.06 * v, delay: 0.36 });
+        break;
       case 'score':
         this._tone({ type: 'square', from: semi(19), dur: 0.07, gain: 0.1 * v });
         this._tone({ type: 'square', from: semi(24), dur: 0.12, gain: 0.1 * v, delay: 0.07 });
@@ -653,6 +756,63 @@ export class Audio {
       case 'deny':
         this._tone({ type: 'square', from: semi(3), to: semi(-4), dur: 0.16, gain: 0.13 * v });
         break;
+
+      /* ---- the Cross Slash's four verdicts, synthesised ------------------
+         THE STAND-INS FOR cross0..cross3, and a case must exist for each key
+         in SAMPLES — `sample` falls through to here whenever the mp3 is
+         missing or has not finished decoding yet.
+
+         These are NOT trying to be the kitten. That was tried at length for
+         the trailer and lost to an actual animal (see kitten-cackle.mjs); a
+         second attempt here would lose the same way. What they have to carry
+         is the one thing the recording carries that the game needs — HOW MANY
+         CUTS LANDED — so they are the same figure four times, getting lower,
+         longer and more distorted as the count goes up. Rung 0 is a small
+         apologetic chirp; rung 3 is the same chirp an octave and a half down
+         with the chirps stacked into a growl. You can hear which one you got
+         without being able to hear a cat. */
+      case 'cross0':
+      case 'cross1':
+      case 'cross2':
+      case 'cross3': {
+        const hits = Number(name[5]);
+        /* Down a fifth per rung and roughly double the length, which is the
+           reference ladder's own shape — it slows by a constant factor per
+           rung rather than a constant number of seconds. */
+        const base = 520 * Math.pow(0.68, hits);
+        const dur = 0.16 * Math.pow(1.75, hits);
+        for (let i = 0; i <= hits; i++) {
+          /* One chirp per cut landed, so the count is countable as well as
+             audible — a player who cannot hear pitch can still hear three. */
+          this._tone({
+            type: hits >= 2 ? 'sawtooth' : 'triangle',
+            from: base * 1.5, to: base * 0.7,
+            dur, gain: (0.1 + 0.045 * hits) * v, delay: i * dur * 0.55,
+          });
+        }
+        /* The growl only from two up: it is what makes the good outcomes read
+           as bigger rather than merely longer, and putting it on rung 0 would
+           make a whiff sound powerful. */
+        if (hits >= 2) {
+          this._noise({
+            from: base * 2.4, to: base * 0.8, dur: dur * 1.6,
+            gain: 0.06 * hits * v, q: 3.2,
+          });
+        }
+        break;
+      }
+
+      case 'crossReady':
+        /* THE COOLDOWN IS OVER. Deliberately tiny and high — it fires while
+           the player is mid-fight and looking somewhere else, so it has to be
+           findable without pulling attention off the screen, and anything with
+           body to it reads as a hit landing on you. A rising pair, because
+           every "you may now" in this game rises and every refusal falls (see
+           `deny`, three lines up, which is the same interval downward). */
+        this._tone({ type: 'sine', from: semi(28), dur: 0.07, gain: 0.07 * v });
+        this._tone({ type: 'sine', from: semi(35), dur: 0.11, gain: 0.06 * v, delay: 0.055 });
+        break;
+
       default:
         break;
     }

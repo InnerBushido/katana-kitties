@@ -1185,6 +1185,91 @@ console.log('\n--- the touch pad as a device ---');
     JSON.stringify(plain.bindings.slice(0, 3)));
 }
 
+/* ------------- 12. the button the prompt tells her to press --------------
+   The clan prompt over a kitten's head says `[E]  SWEAR TO RUN WITH
+   THUNDERPAW`, and the badge has to be the button SHE is holding — four kids
+   on four different devices are all being told to press `interact` at once,
+   and a prompt naming somebody else's button is worse than no prompt, because
+   she will believe it and conclude the game is broken.
+
+   `promptFor` is the only place that answers this, and it answers from the
+   live binding: the same `pad`/`half`/`keyset` the action itself is read
+   through, so the label cannot name a device the player is not on. The one
+   thing it cannot do is check the silk-screening — see the PROMPTS comment in
+   input.js on why a PlayStation pad is told to press B. */
+{
+  console.log('\n--- the prompt names the right button ---');
+
+  const kb = drive([]);
+  kb.slots = 2; kb.update();
+  ok('P1 on WASD is told to press E', kb.promptFor(0, 'interact') === 'E',
+    `${kb.promptFor(0, 'interact')}`);
+  ok('...and P2 on the arrows is told something else',
+    kb.promptFor(1, 'interact') !== kb.promptFor(0, 'interact'),
+    `${kb.promptFor(1, 'interact')}`);
+  /* A LETTER IS PREFERRED OVER AN ARROW when a keyset binds both, because a
+     letter is a thing you can print inside a badge and read at a glance. */
+  ok('...and a keyset that binds a letter shows the letter, not the arrow',
+    /^[A-Z0-9]/.test(kb.promptFor(0, 'jump') ?? ''), `${kb.promptFor(0, 'jump')}`);
+
+  const std = drive([DEVICES.ds4Chrome()]);
+  std.slots = 1; std.update();
+  ok('a standard pad is told to press B', std.promptFor(0, 'interact') === 'B',
+    `${std.promptFor(0, 'interact')}`);
+  ok('...and its attack is X', std.promptFor(0, 'attack') === 'X');
+
+  /* THE PAD THE GAME IS ACTUALLY PLAYED ON, and the half is the whole point:
+     the two girls holding the two halves of one vJoy device press physically
+     different buttons for the same action, and a table lookup that forgot
+     `half` would tell both of them 'A'. */
+  const vj = DEVICES.vjoy();
+  /* IT HAS TO PRESS SOMETHING FIRST. vJoy is reported to the browser whether or
+     not a Joy-Con is paired, so `InputManager` ignores it until it shows
+     activity — a fixture that never presses is a phantom and is correctly not
+     dealt a seat. */
+  vj.buttons = buttons(38, [2]);
+  const other = DEVICES.ds4Chrome();
+  other.index = 1;
+  const split = drive([vj, other], { padMode: 'split' });
+  ok('the left Joy-Con half is told RIGHT', split.promptFor(0, 'interact') === 'RIGHT',
+    `${split.promptFor(0, 'interact')}`);
+  ok('...and the right half is told A', split.promptFor(1, 'interact') === 'A',
+    `${split.promptFor(1, 'interact')}`);
+  ok('...which are different buttons for the same action',
+    split.promptFor(0, 'interact') !== split.promptFor(1, 'interact'));
+
+  /* AN UNKNOWN PAD SAYS 'ANY', WHICH IS TRUE — the generic profile really does
+     read every face button for interact. A prompt that guessed a letter here
+     would be the one lie this whole function exists to avoid. */
+  const gen = drive([DEVICES.genericUsb()]);
+  gen.slots = 1; gen.update();
+  ok('an unknown pad is honestly told ANY', gen.promptFor(0, 'interact') === 'ANY',
+    `${gen.promptFor(0, 'interact')}`);
+
+  /* AND NO BINDING MEANS NO PROMPT, not a guess and not a crash. `Game`
+     hides the callout entirely on null, which is the right answer for a slot
+     nobody is sitting in. */
+  ok('an unseated slot has nothing to say', kb.promptFor(9, 'interact') === null,
+    `${kb.promptFor(9, 'interact')}`);
+  ok('...and so does an action a keyset does not bind',
+    kb.promptFor(0, 'nonsense') === null, `${kb.promptFor(0, 'nonsense')}`);
+
+  /* EVERY ACTION, EVERY PROFILE, NO HOLES. A missing entry renders as an empty
+     badge — `[]  SWEAR TO RUN` — which reads as a rendering bug rather than as
+     a missing table row, so it would be found late and blamed on the Label. */
+  for (const dev of ['ds4Chrome', 'xbox', 'dualsense', 'genericUsb', 'ds4NoRemap']) {
+    const im = drive([DEVICES[dev]()]);
+    im.slots = 1; im.update();
+    const holes = ACTIONS.filter((a) => !im.promptFor(0, a));
+    ok(`${dev}: every action has a glyph`, holes.length === 0, holes.join(' '));
+  }
+  for (const slot of [0, 1]) {
+    const holes = ACTIONS.filter((a) => !split.promptFor(slot, a));
+    ok(`vJoy ${slot ? 'right' : 'left'} half: every action has a glyph`,
+      holes.length === 0, holes.join(' '));
+  }
+}
+
 console.log('');
 line('checks', String(checks));
 line('failures', String(fails));

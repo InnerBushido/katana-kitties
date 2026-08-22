@@ -273,6 +273,39 @@ const OUT_DROP = 0.6;
  * waiting to land means falling forever.
  */
 const OUT_FALL = 3;
+/**
+ * How far below the deck is "gone", for ANYBODY, in ANY state.
+ *
+ * THIS IS THE FLOOR UNDER THE WHOLE TOURNAMENT AND NOT PART OF THE RING-OUT
+ * RULE. `_updateOut` above is the rule: it asks whether a fighter has left the
+ * ring, and it deliberately skips a kitten who is already knocked out, is
+ * flying as an angel, or is frozen inside somebody's cross slash. It also only
+ * runs while a round is live or during the feast.
+ *
+ * Every one of those exemptions is right, and together they leave a hole a
+ * kitten can fall through forever. Reported from four-player play: "players
+ * get knocked so far they fall off the island entirely and then the camera
+ * zooms out infinitely far away." A knockout landing on the last frame of a
+ * big launch is the common way in — she is KO'd, so `_updateOut` steps over
+ * her; the round ends, so the state goes to `ko` and `_updateOut` stops being
+ * called at all; and she keeps going until `Player._respawn` catches her at
+ * y = -160 and puts her in the TOWN PLAZA, three hundred units from a
+ * tournament that is about to post her back on her mark.
+ *
+ * So this is a separate, dumber question asked of everybody every frame the
+ * tournament is on: is she under the floor? Nothing may be stranded — fourth
+ * non-negotiable — and the arena is the one place in the game with a hundred
+ * units of open sky on all four sides.
+ *
+ * 14 UNITS, WHICH IS BELOW THE ISLAND AND ABOVE THE VOID. The deck stands
+ * clear of the island it is built on and a kitten rung out normally lands on
+ * that island, several units down — so a shallower floor would fire on
+ * somebody standing perfectly safely below the rim and yank her back mid-
+ * stride. Deeper buys nothing: past the island's own edge there is nothing to
+ * land on at any depth, and every extra unit is another frame of the camera
+ * stretching to follow her down.
+ */
+export const OUT_FLOOR = 14;
 const OUT_DAMAGE = 30;
 
 /* ---------------------------------------------------------------------------
@@ -812,6 +845,12 @@ export class Tournament {
     this.t += dt;
     this._paintHud();
 
+    /* BEFORE THE STATE MACHINE, AND IN EVERY STATE. See OUT_FLOOR: the
+       ring-out rule has four exemptions that are each correct and that
+       together let a kitten fall out of the world. This is the floor, and a
+       floor that only exists on some frames is not a floor. */
+    this._catchFallers();
+
     switch (this.state) {
       case 'card':
         if (this.t >= CARD_TIME) {
@@ -905,6 +944,43 @@ export class Tournament {
     }
 
     this._updateBanner(dt);
+  }
+
+  /**
+   * Anybody under the floor goes back on the deck. See OUT_FLOOR.
+   *
+   * NO DAMAGE AND NO BANNER, EVER. A live fighter who leaves the ring has
+   * already been charged by `_updateOut` — she is rung out the moment she is
+   * past the line and has come down, which happens metres above this. Anyone
+   * who reaches this floor got here through one of that rule's exemptions, and
+   * charging her would mean a knocked-out kitten losing health she does not
+   * have, or an angel being fined for flying. This is not a penalty; it is the
+   * arena declining to let somebody fall out of it.
+   *
+   * PUT DOWN IN THE MIDDLE, exactly where a ring-out puts her, and for the
+   * same reason `_updateOut` gives: her post is on one side of a 56-unit deck
+   * and she went off some other edge.
+   *
+   * `camTarget` MOVES WITH HER. Without it the camera lerps across the gap she
+   * just teleported over, which is the whole 160-unit swoop this exists to
+   * stop — arriving a beat later and backwards.
+   */
+  _catchFallers() {
+    const R = this.world.arenaRing;
+    if (!R) return;
+    for (const p of this.game.players) {
+      if (p.position.y > R.y - OUT_FLOOR) continue;
+      /* An angel has her own leash and flies UNDER the rim as happily as over
+         it — see `_updateOut`. Hers is `Player._updateAngel`, and two systems
+         reeling in the same kitten is how she ends up somewhere neither of
+         them meant. */
+      if (p.angel) continue;
+      p.position.set(R.x, R.y + 3, R.z);
+      p.group.position.copy(p.position);
+      p.velocity.set(0, 0, 0);
+      p.camTarget.copy(p.position);
+      p.outT = 0;
+    }
   }
 
   /**

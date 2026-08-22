@@ -767,6 +767,222 @@ body.touch-ui .options-label {
   font-weight: 900;
 }
 
+/* ============================ the pane frames ============================
+   Which quarter of the screen is mine. See Game._paintPaneEdges for the why;
+   this is only the look.
+
+   BORDER-IMAGE RATHER THAN BORDER-COLOR, because a pane holding two kittens
+   has two colours and must show both — and running everything through the
+   gradient means there is exactly one code path, so the shared case cannot
+   drift away from the solo one.
+
+   INSIDE THE PANE, NOT IN THE GAP BETWEEN PANES. The gap is 3px; a frame that
+   lived in it would be three pixels of colour split between two neighbours and
+   invisible on a laptop. Six pixels inside the pane costs a sliver of the
+   view and is legible from across a room, which is the whole point.
+
+   `border-style: solid` MUST BE SET FOR border-image TO PAINT AT ALL, and a
+   border-image with no fallback border-color leaves a black frame on any
+   browser that skips it — hence both. */
+#pane-edges {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+.pane-edge {
+  position: absolute;
+  border: 6px solid rgba(0, 0, 0, 0);
+  border-image-slice: 1;
+  border-radius: 2px;
+  box-sizing: border-box;
+  /* A faint dark line just inside the colour, so a pale kitten's frame still
+     reads against a bright sky. The same trick as the ink outline on every
+     other piece of this HUD. */
+  box-shadow: inset 0 0 0 1px rgba(29, 18, 22, 0.55);
+}
+@media (max-width: 1000px) {
+  .pane-edge { border-width: 4px; }
+}
+body.touch-ui .pane-edge { border-width: 4px; }
+
+/* ========================= the per-player cards ==========================
+   One kitten's own screen inside her own pane, while the other three keep
+   playing. See systems/inspector.js for the why; this is only the look.
+
+   SIZED IN CONTAINER UNITS, NOT VIEWPORT UNITS. This is the whole reason the
+   card can be "fairly zoomed in": a quarter-screen pane at 1080p is 960x540,
+   and type sized off the WINDOW would come out identical in a full-screen pane
+   and in a quarter one — legible in the first and a grey smear in the second.
+   `cqw` is a percentage of THIS pane, so one kitten alone on the screen and
+   four in quadrants get the same apparent size, which is the thing being
+   asked for. Clamped at both ends so an ultrawide does not print headlines
+   and a phone does not print nothing.
+
+   IT DOES NOT FILL THE PANE. Eight per cent inset, so her kitten and the
+   dealer are still visible round the edges: she is standing at a stall having
+   a look, not in a menu, and covering the world would make it a modal again —
+   which is the exact thing this exists to avoid. */
+#pane-cards {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;                  /* above the pane frames (4), below the pad (7) */
+}
+.pane-card {
+  position: absolute;
+  container-type: inline-size;
+  padding: 5%;
+  pointer-events: none;
+  font-family: 'Nunito', system-ui, sans-serif;
+  /* TOP-ANCHORED AND SHRINK-TO-FIT. The chooser is two rows and the shelf is
+     nine; a card stretched to the pane would put two rows in a rectangle the
+     size of the world behind it, which reads as a screen that has failed to
+     load rather than as a short menu. */
+  display: flex;
+  align-items: flex-start;
+}
+.pc-inner {
+  pointer-events: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5cqw;
+  background: rgba(29, 18, 22, 0.9);
+  border: 0.7cqw solid var(--me, var(--gold));
+  border-radius: 1.4cqw;
+  box-shadow: 0 0 0 0.35cqw rgba(29, 18, 22, 0.85), 0 1.2cqw 0 rgba(0, 0, 0, 0.45);
+  color: var(--paper);
+  padding: 1.6cqw 1.8cqw;
+  font-size: clamp(9px, 2.5cqw, 22px);
+  line-height: 1.32;
+  overflow: hidden;
+}
+/* HER NAME IS IN HER OWN COLOUR AND SO IS THE BORDER, which is the same
+   pairing the pane frames and the score badges make: "which one am I" is the
+   question a four-way split asks constantly, and every answer to it in this
+   HUD is the same colour. */
+.pc-head {
+  font-family: 'Bangers', cursive;
+  letter-spacing: 0.03em;
+  font-size: 1.25em;
+  color: var(--paper-2);
+  border-bottom: 0.25cqw solid rgba(251, 238, 210, 0.22);
+  padding-bottom: 0.5cqw;
+}
+.pc-who { color: var(--me, var(--gold)); }
+.pc-dim { color: var(--paper-2); opacity: 0.72; font-size: 0.86em; }
+.pc-foot {
+  margin-top: auto;
+  font-size: 0.82em;
+  color: var(--paper-2);
+  opacity: 0.8;
+  border-top: 0.25cqw solid rgba(251, 238, 210, 0.22);
+  padding-top: 0.5cqw;
+}
+.pc-foot b, .pc-head b { color: var(--gold); }
+
+/* --- the chooser --- */
+.pc-row {
+  padding: 0.9cqw 1.1cqw;
+  border-radius: 0.9cqw;
+  border: 0.3cqw solid transparent;
+  cursor: pointer;
+}
+.pc-row b { color: var(--paper); }
+/* THE CURSOR IS A FILL, NOT AN ARROW. Four cards can be open at once in four
+   different colours, and an arrow glyph in her colour is three pixels of
+   answer at quarter size. */
+.pc-row.cursor {
+  background: color-mix(in srgb, var(--me, var(--gold)) 26%, transparent);
+  border-color: var(--me, var(--gold));
+}
+
+/* --- her eight slots --- */
+.pc-slots { display: flex; gap: 0.6cqw; flex-wrap: nowrap; }
+.pc-slot {
+  flex: 1 1 0;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  font-style: normal;
+  font-size: 0.95em;
+  border-radius: 0.6cqw;
+  border: 0.3cqw dashed rgba(251, 238, 210, 0.3);
+  color: var(--ink);
+}
+.pc-slot.full {
+  border-style: solid;
+  border-color: var(--ink);
+  background: var(--orb);
+  box-shadow: inset 0 0 0 0.25cqw rgba(255, 255, 255, 0.45);
+}
+
+/* --- the shelf ---
+   IT SCROLLS RATHER THAN SHRINKING TO FIT. Eight rows at a readable size do
+   not fit in a quarter pane, and the alternative — scaling the type until they
+   do — produces a card that technically shows everything and can be read at
+   none of it. The cursor row is scrolled into view by the browser's own
+   anchoring because it is the only thing that changes. */
+.pc-list {
+  /* SCROLLS, and `Inspector._paintCard` walks the cursor row into view after
+     every repaint. `overflow: hidden` alone clipped the bottom four orbs on a
+     wide pane with no way to reach them, and shrinking the type until nine
+     rows fit produces a card that shows everything and can be read at none of
+     it. The bar itself is hidden: it is driven by a stick, and a scrollbar in
+     a quarter pane is a control nobody can grab. */
+  overflow-y: auto;
+  scrollbar-width: none;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.pc-list::-webkit-scrollbar { display: none; }
+.pc-orb {
+  display: flex;
+  align-items: center;
+  gap: 0.8cqw;
+  padding: 0.5cqw 0.7cqw;
+  border-radius: 0.7cqw;
+  border: 0.3cqw solid transparent;
+  cursor: pointer;
+}
+.pc-orb.cursor {
+  background: color-mix(in srgb, var(--me, var(--gold)) 24%, transparent);
+  border-color: var(--me, var(--gold));
+}
+/* SOLD OUT IS DIMMED, NOT HIDDEN. What an orb DOES is the thing she came here
+   to read, and an empty shelf slot still answers it. */
+.pc-orb.out { opacity: 0.55; }
+.pc-orb.owned b { color: var(--gold); }
+.pc-dot {
+  flex: none;
+  width: 3.4cqw;
+  height: 3.4cqw;
+  min-width: 16px;
+  min-height: 16px;
+  display: grid;
+  place-items: center;
+  font-style: normal;
+  border-radius: 50%;
+  background: var(--orb);
+  border: 0.25cqw solid var(--ink);
+  color: var(--ink);
+  font-size: 0.8em;
+}
+.pc-orb-main { flex: 1 1 auto; min-width: 0; }
+.pc-orb-main b { font-size: 0.95em; }
+.pc-tag {
+  font-size: 0.72em;
+  letter-spacing: 0.05em;
+  color: var(--orb);
+  border: 0.2cqw solid var(--orb);
+  border-radius: 0.5cqw;
+  padding: 0 0.4cqw;
+}
+.pc-orb-num { flex: none; text-align: right; font-size: 0.82em; }
+
 .scoreboard {
   position: absolute;
   top: 14px;
@@ -796,12 +1012,24 @@ body.touch-ui .options-label {
   font-size: 15px;
   letter-spacing: 1px;
 }
+/* BIGGER, AND THE BADGE IS RINGED IN THE SAME COLOUR AS HER PANE. 13px was
+   fine for two players with half the screen each and useless for four in
+   quadrants — "there is a little color icon, but with 4 players and smaller
+   UI, was hard to see or make the connection".
+
+   THE RING IS INSIDE THE INK BORDER rather than replacing it. The thick black
+   outline is what makes every badge in this HUD look drawn rather than
+   rendered (second non-negotiable — the art is the kids'), so the colour goes
+   in as a second, inner ring via box-shadow and the outline stays exactly as
+   it was. It is the same colour, at a similar weight, as the frame round her
+   pane; that pairing is the entire feature. */
 .score .pip {
-  width: 13px;
-  height: 13px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   border: 3px solid var(--ink);
 }
+.score { box-shadow: 0 4px 0 var(--ink), inset 0 0 0 4px var(--seat, transparent); }
 /* The pip colour is written on from `styleCss` when the badge is built, so
    the palette in core/palette.js stays the one place a player colour lives.
    These are the fallback for a badge that somehow arrives unpainted. */
@@ -835,7 +1063,11 @@ body.touch-ui .options-label {
   .hud-four .mischief { padding: 4px 9px; font-size: 12px; letter-spacing: 0.5px; }
   .hud-four .score .nm { font-size: 14px; letter-spacing: 1px; }
   .hud-four .score b { font-size: 16px; }
-  .hud-four .score .pip { width: 10px; height: 10px; border-width: 2px; }
+  /* Still bigger than the old full-size pip: the tightening is about fitting
+     four badges in a narrow window, and shrinking the one part of the badge
+     that answers "which one am I" would undo the reason it grew. */
+  .hud-four .score .pip { width: 16px; height: 16px; border-width: 2px; }
+  .hud-four .score { box-shadow: 0 4px 0 var(--ink), inset 0 0 0 3px var(--seat, transparent); }
 }
 .score .nm { font-family: 'Bangers', cursive; letter-spacing: 1.5px; font-size: 17px; }
 .score b { font-size: 20px; font-family: 'Bangers', cursive; color: var(--vermillion); }
@@ -1998,14 +2230,53 @@ body.touch-ui .kd-row { padding: 9px 6px; }
   padding-bottom: 8px;
   border-bottom: 2px solid rgba(29, 18, 22, 0.18);
 }
+.kd-purse-one {
+  display: inline-block;
+  margin-right: 10px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  /* HER OWN COLOUR BEHIND HER OWN PURSE. Four purses on one line is four
+     numbers a kid has to match to four names; the colour is the match, and it
+     is the same one on her pane frame, her score badge and her cursor pip. */
+  background: color-mix(in srgb, var(--me) 34%, var(--paper-2));
+}
+/* WHO IS STILL OUTSIDE, AND WHAT THEY PRESS. Deliberately loud — it is the one
+   line on this screen that is addressed to somebody who is not using it yet. */
+.kd-invite {
+  font-size: 14px;
+  font-weight: 900;
+  margin-bottom: 8px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 2px dashed rgba(29, 18, 22, 0.4);
+  background: rgba(245, 195, 65, 0.28);
+}
 .kd-row {
   display: grid;
-  grid-template-columns: 44px 1fr auto;
+  grid-template-columns: 44px 1fr auto auto;
   gap: 12px;
   align-items: center;
   padding: 7px 10px;
   border-radius: 10px;
   font-size: 14px;
+}
+/* --- up to four cursors on one row ---
+   The row still lights up, and WHOSE cursor is on it is a pip per kitten. See
+   `_shopMarkup`: a single highlight would have had to pick a winner between
+   two girls on the same line and the loser's stick would have read as dead. */
+.kd-seats { display: flex; gap: 4px; min-width: 0; }
+.kd-seat {
+  /* THE SAME SIZE AS THE SCORE BADGE'S PIP, and for the same reason it grew:
+     "there is a little color icon, but with 4 players and smaller UI, was hard
+     to see or make the connection." Every answer to "which one am I" in this
+     HUD is now the same colour at the same weight. */
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: var(--me);
+  box-shadow: 0 2px 0 rgba(29, 18, 22, 0.35);
 }
 .kd-row.cursor { background: rgba(245, 195, 65, 0.45); box-shadow: inset 0 0 0 3px var(--ink); }
 .kd-row.out { opacity: 0.45; }

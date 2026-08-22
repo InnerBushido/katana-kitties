@@ -105,9 +105,34 @@ Live files are `ember_grid_v2.png` and `frost_grid.png`; the game logs
 `[art] <file> → N directions x M poses` at boot so you can check what it found.
 
 Ask for a grid of 4 rows (idle, walk, jump, attack) and 8+ columns rotating a
-full turn, starting facing the viewer and turning toward the viewer's right, on
-a white background. Whatever column count comes back is fine. Side-on art that
-faces left (like the dragon) needs `artFacesRight: false`.
+full turn, starting facing the viewer and turning toward the viewer's right.
+Whatever column count comes back is fine. Side-on art that faces left (like the
+dragon) needs `artFacesRight: false`.
+
+### Two rules for generating new sprites
+
+**Ask for a transparent background, not a white one.** Everything already in
+`public/sprites/` is a white-background PNG that the loader keys at load time,
+and that keeps working. New art should not be. The flood fill in point 1 above
+is structurally unable to reach background the lineart has sealed shut — the
+inside of a ring, the gap between an arm and a body — and `clearSealedPockets`
+is an opt-in patch over that rather than a fix, tuned against one sheet and
+nearly wrong about Mr. Satan's teeth. Higgsfield's image models return opaque
+PNGs, so the route is: generate on white, then run the result through the
+Higgsfield `remove_background` tool before it lands in `public/sprites/`.
+
+The loader needs no change for this and must not get one. `isBackgroundish`
+requires r, g, b >= 218; a transparent pixel reads (0, 0, 0, 0) off the canvas,
+so on an alpha sheet the border flood never seeds and `loadSpriteAtlas` passes
+the drawing through untouched. The two conventions coexist with no flag.
+
+**A new player pose is FOUR kittens, always.** There are two drawn sheets and
+four playable cats: Storm is `recolourAtlas` of Ember's, Blossom of Frost's.
+Every per-pose sheet therefore comes in a pair — `ember_eat`/`frost_eat`,
+`ember_bless`/`frost_bless` — and the pair is expanded in `Game._loadArt` by a
+loop over **`PLAYER_STYLE`, not over the roster slots**. Deriving by slot is one
+copy-paste away and gives you Storm eating as a grey Frost. Never generate a
+pose for Ember alone.
 
 **Check that every row turns the same way before you use a sheet.** Image
 models don't guarantee it — `frost_grid_v2.png` came back with its jump and

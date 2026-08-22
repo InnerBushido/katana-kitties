@@ -4,6 +4,8 @@ import { PANDA_SPEED, PANDA_JUMP } from './panda.js';
 import { aggregate, WARD, DIVE, CROSS, CHARGE } from './powerorb.js';
 import { ANGEL_ALPHA } from './angel.js';
 import { styleFor } from '../core/palette.js';
+import { tune } from '../core/tuning.js';
+import { Label } from '../core/label.js';
 
 /* ---------------------------------------------------------------------------
    A Katana Kitty and the camera that follows it.
@@ -61,9 +63,39 @@ const FLY_LIFT = 20;
    two-second one on a mistimed knockback.
 --------------------------------------------------------------------------- */
 
-export const MAX_HP = 100;
+/**
+ * The numbers that are about being hit rather than about one attack.
+ *
+ * GATHERED INTO ONE TABLE SO THE TUNING PAGE CAN REACH THEM, and that is the
+ * only reason they moved — each was a lone `const` a hundred lines from the
+ * next, which is fine to read and impossible to balance. The individual names
+ * below are kept and exported exactly as they were: `MAX_HP` is read by the
+ * critters, the menagerie and the tournament, and turning four call sites into
+ * `COMBAT.maxHp` would be churn in service of nothing.
+ */
+/**
+ * The widest string the overhead callout will ever be asked to draw.
+ *
+ * Exported only so `world-check` can build every real prompt out of the real
+ * clans and the real button glyphs and assert none of them is longer. See the
+ * `live:` comment where it is used for why "longer" means "clipped".
+ */
+export const CALLOUT_WIDEST = '[RIGHT]  BOW BENEATH THE LONG BLADE OF RIVERCLAW';
 
-export const ATTACKS = {
+export const COMBAT = tune('COMBAT', {
+  maxHp: 100,
+  /** Seconds a hit takes control away, and how long she cannot be hit again. */
+  hitStun: 0.26,
+  invuln: 0.55,
+  /** What hitting your own partner costs her. See DAZE_TIME. */
+  daze: 1.5,
+  /** How much harder a hurt kitten flies, at zero health. See RAGE_MAX. */
+  rage: 1.6,
+});
+
+export const MAX_HP = COMBAT.maxHp;
+
+export const ATTACKS = tune('ATTACKS', {
   stand: { dmg: 10, knock: 9, lift: 3.5, reach: 3.4, arc: -0.25 },
   dash: { dmg: 15, knock: 19, lift: 5.0, reach: 3.9, arc: -0.1 },
   air: { dmg: 14, knock: 13, lift: 7.5, reach: 3.7, arc: -0.35 },
@@ -82,11 +114,18 @@ export const ATTACKS = {
   tri: { dmg: 9, knock: 7, lift: 2.6, reach: 3.4, arc: -0.25 },
   dive: { dmg: DIVE.dmg, knock: DIVE.knock, lift: DIVE.lift, reach: DIVE.radius, arc: -1 },
   charge: { dmg: CHARGE.dmg, knock: CHARGE.knock, lift: CHARGE.lift, reach: CHARGE.radius, arc: -0.6 },
-};
+});
+
+/* THE DIVE AND THE CHARGE ARE STILL DERIVED, and tuning either table works:
+   `DIVE`/`CHARGE` are folded before this file is evaluated, so editing
+   `DIVE.dmg` on the page moves the entry here with it. Editing
+   `ATTACKS.dive.dmg` instead overrides the derivation for the strike while
+   leaving the move's own number alone — which is a real distinction (the dive
+   also uses `DIVE.speed`) and is spelled out on the page. */
 
 /** Seconds a hit takes control away, and how long she cannot be hit again. */
-const HIT_STUN = 0.26;
-const INVULN = 0.55;
+const HIT_STUN = COMBAT.hitStun;
+const INVULN = COMBAT.invuln;
 /**
  * What hitting your own partner costs HER, and then you.
  *
@@ -117,7 +156,7 @@ const INVULN = 0.55;
  * one beat and immune for two means a partner mashing attack can take at most a
  * third of anybody's time — painful, survivable, and clearly her fault.
  */
-export const DAZE_TIME = 1.5;
+export const DAZE_TIME = COMBAT.daze;
 /** How long she lies there after a knockout, before the round can move on. */
 export const KO_TIME = 1.8;
 
@@ -130,7 +169,7 @@ export const KO_TIME = 1.8;
  * the start — this is the difference between a fight that builds and a fight
  * that is the same exchange twelve times.
  */
-const RAGE_MAX = 1.6;
+const RAGE_MAX = COMBAT.rage;
 
 /* ---------------------------------------------------------------------------
    The angel between rounds.
@@ -151,6 +190,29 @@ const ANGEL_FLOOR = 1.6;
 const ANGEL_CEIL = 34;
 /** How far past the edge of the deck she may drift before she is reeled in. */
 const ANGEL_ROAM = 26;
+
+/**
+ * How tall the RECEIVING drawing is, against her standing height.
+ *
+ * THE SAME AS THE EATING POSE, AND THAT IS A MEASUREMENT, NOT A COPY-PASTE.
+ * It was guessed at 1.18 first, on the reasoning that a cat with both paws
+ * stretched over her head must draw taller than a cat standing. She does not:
+ * the top of the drawing is her EAR TIPS in both poses, because these are
+ * chibi kittens whose ears are most of their height and whose paws come up
+ * beside the head rather than above it. Measured on Frost, whose sheets are
+ * the clean pair (Ember's raised paws sit level with her ears, so a band
+ * across the top of that drawing catches both and cannot tell them apart):
+ *
+ *   frost_eat     707px tall,  423px ear span  ->  1.6714 ear-spans
+ *   frost_bless   944px tall,  564px ear span  ->  1.6738 ear-spans
+ *
+ * A seventh of a percent apart, so the two drawings render at one number.
+ * Kept as its own literal rather than aliased to `EAT_CROUCH`: they agree
+ * today because one generator drew both at one scale, and a redraw of either
+ * sheet is entitled to break that without silently resizing the other.
+ * See the house rule about measuring anything drawn.
+ */
+export const BLESS_STRETCH = 0.86;
 
 /** How tall the crouched eating drawing is, against her standing height. */
 const EAT_CROUCH = 0.86;
@@ -292,6 +354,22 @@ export class Player {
     /** Triple-slash sequencer: cuts still to throw and the clock to the next. */
     this.triLeft = 0;
     this.triT = 0;
+    /** Seconds of wind-up left BEFORE the first cut — planted, committed,
+     *  nothing thrown. See CROSS.wind. */
+    this.triWindT = 0;
+    /** Seconds until the cross slash's recovery is over and `crossReady`
+     *  chimes. A third clock alongside `attackCooldown` and `triLockT`, for
+     *  the reasons written where it counts down. */
+    this.triCoolT = 0;
+    /** How many of the three cuts connected with anybody, this technique.
+     *  Counted per CUT and not per victim: a swing that catches two sisters is
+     *  one cut landing, which is what "if 2 hits land" means to the kid who
+     *  said it. Read once at the launch to pick the purr. */
+    this.triHits = 0;
+    /** Set by `Game.strikePlayers` when a cut captures somebody, read and
+     *  cleared by the sequencer around each `_doSlash`. A boolean rather than
+     *  a counter for exactly the reason above. */
+    this._triLanded = false;
     /** Seconds of pause-for-effect left AFTER the last cut, before the launch.
      *  She is still planted through it — see `busy`. */
     this.triHangT = 0;
@@ -332,6 +410,18 @@ export class Player {
        she is dead between rounds and flying it off. Both are inert everywhere
        else in the game because nothing outside the arena ever sets them. */
     this.eatT = 0;
+    /**
+     * Which clans have already taken her in.
+     *
+     * THE CELEBRATION IS A FIRST-TIME THING. Swearing to a clan you have sworn
+     * to before is a correction — you wandered into the wrong hall, or you are
+     * swapping back — and stopping the game to congratulate somebody for
+     * undoing a mistake is the sort of reward that teaches a child the game is
+     * not paying attention. The oath itself still works every time; only the
+     * two seconds of pose and camera are spent once per clan per kitten.
+     * Cleared by a restart with everything else.
+     */
+    this.clansSworn = new Set();
     this.angel = false;
     /** Wings and a halo, built once at boot. See AngelForm. */
     this.angelForm = null;
@@ -398,6 +488,57 @@ export class Player {
     );
     this.marker.position.y = 0.04;
     this.group.add(this.marker);
+
+    /* THE CLAN RING IS A SECOND RING AND NOT A RECOLOUR OF THE FIRST.
+       Swearing an oath used to repaint `marker` in the clan's colour, which
+       quietly spent the thing the comment above says it is for: four kittens
+       who all joined Thunderpaw had four gold rings and none of them could
+       find herself, and player one stopped being the orange one. Her colour is
+       hers. Membership gets its own ring, inside, a little brighter — so the
+       two facts are two rings and neither has to be inferred from the other. */
+    const cg = new THREE.RingGeometry(0.50, 0.68, 24);
+    cg.rotateX(-Math.PI / 2);
+    this.clanRing = new THREE.Mesh(
+      cg,
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.85,
+        depthWrite: false, toneMapped: false,
+      })
+    );
+    this.clanRing.position.y = 0.05;
+    this.clanRing.visible = false;
+    this.group.add(this.clanRing);
+
+    /* THE CALL TO ACTION, over her head.
+       Four adults played a whole session and nobody joined a clan, because
+       standing in a shrine ring with the power one button away looks exactly
+       like standing anywhere else. This is the line that says otherwise, and it
+       also carries the answer when she HAS sworn — what she just gained.
+       `live:` BECAUSE THE TEXT MOVES. A `setText` whose string changes mints a
+       new cached texture per distinct string and the cache is never evicted;
+       the widest string this will ever hold is passed once so the canvas is
+       sized for it and reused. See core/label.js, and the Dojo, which is the
+       bug that lesson came from.
+       DELIBERATELY NOT `fixedScreenSize`. It is a thing in the world above one
+       cat, and a prompt that stays the same size as the camera pulls back to
+       cover four islands would end up bigger than the kitten it belongs to. */
+    this.callout = new Label('', {
+      /* THE WIDEST STRING THIS WILL EVER SHOW, badge and all. A live label's
+         canvas is sized ONCE from this and never grows, so a longer string is
+         not wrapped, it is CLIPPED — and the first version of this line was
+         the bare oath, which loses eight characters to the button badge in
+         front of it. world-check builds every real prompt and pins it against
+         this string, so adding a clan or a longer verb fails the check rather
+         than quietly cutting a word off the end. */
+      live: CALLOUT_WIDEST,
+      height: 0.9, size: 64, color: '#fff6de', stroke: '#1d1216', strokeWidth: 9,
+    });
+    this.callout.visible = false;
+    this.group.add(this.callout);
+    /** Seconds left of a message that expires on its own — the one naming the
+     *  ability she has just gained. Zero means the callout is whatever the
+     *  game's per-frame prompt says it is, or nothing. */
+    this.calloutT = 0;
 
     /* --- the health bar ---
        Over her head rather than only in the corner, and that is the important
@@ -649,6 +790,46 @@ export class Player {
     this.group.add(this.eatPose);
   }
 
+  /**
+   * Give her the RECEIVING drawing: both paws to the sky, taking the thing
+   * over her head.
+   *
+   * ONE POSE, TWO MOMENTS, AND THAT IS THE WHOLE DESIGN. It is worn while
+   * `aloftT` is running, and `holdAloft` is called by exactly two things — a
+   * dragon ball being picked up, and a clan taking her in. Both are "a thing
+   * appeared above me and it is mine now", both already zoom her own camera in
+   * (see `_updateCamera`), and both were being played by a cat standing in her
+   * idle. Keying the pose off `aloftT` rather than off either caller means a
+   * third such moment gets it for free and cannot forget to.
+   *
+   * SAME SHAPE AS `setEatArt` — a separate single-cell file rather than a row
+   * on the turnaround, front-facing, never mirrored. The reasoning there
+   * applies here word for word: the turnarounds are four-row sheets whose rows
+   * have to agree about facing, one of the two is already unusable because its
+   * rows do not, and every sprite-direction check in `world-check` measures
+   * real cells out of them.
+   *
+   * @param {?object} art loaded atlas, or null — a missing sheet costs the
+   *        pose and nothing else. The star, the emblem, the glow and the
+   *        camera move are all code, so the moment still happens; she plays it
+   *        standing up. Ninth non-negotiable, same as the voices.
+   */
+  setBlessArt(art) {
+    if (!art?.texture) return;
+    if (this.blessPose) this.group.remove(this.blessPose);
+    const quad = this.height * BLESS_STRETCH / (art.contentScale || 1);
+    this.blessPose = new Billboard(art.texture, {
+      cols: 1,
+      rows: 1,
+      mirror: false,
+      width: quad,
+      height: quad,
+      footOffset: (art.pad ?? 0) * quad,
+    });
+    this.blessPose.visible = false;
+    this.group.add(this.blessPose);
+  }
+
   /* ------------------------ Powerup Kotodama ---------------------------- */
 
   /**
@@ -715,6 +896,14 @@ export class Player {
    * True while a cross slash is running, INCLUDING the third cut's own time on
    * screen and the pause-for-effect after it.
    *
+   * THE WIND-UP IS IN HERE TOO, and it has to be: she is planted through it
+   * (`busy` reads this), the ward is locked out from the moment she commits
+   * rather than from the first cut, and in the air she gets the same quarter
+   * gravity — a kitten who hangs still for the cuts but plummets through the
+   * wind-up reads as two different moves. What it does NOT do is release
+   * anybody: `Game._updateTripleHolds` frees on `!triAt` and nobody is caught
+   * yet, so the extra clause is invisible there.
+   *
    * `triT > 0` IS IN HERE FOR THE THIRD CUT. Every cut owns `CROSS.gap`, the
    * last one included, so that three cuts take `cuts * gap` rather than
    * `(cuts - 1) * gap` — otherwise the third one is over the instant it lands
@@ -724,7 +913,7 @@ export class Player {
    * the middle of her own move.
    */
   get triAt() {
-    return this.triLeft > 0 || this.triT > 0 || this.triHangT > 0;
+    return this.triWindT > 0 || this.triLeft > 0 || this.triT > 0 || this.triHangT > 0;
   }
 
   /** True while a special move owns her feet — no stick, no jump. */
@@ -750,6 +939,7 @@ export class Player {
        `faceCamera` only ever squares the quad up — it can never pick a
        different cell and it can never flip. */
     if (this.eatPose?.visible) this.eatPose.faceCamera(camera);
+    if (this.blessPose?.visible) this.blessPose.faceCamera(camera);
 
     /* THE HEALTH BAR IS A FLAT QUAD AND HAS TO BE TURNED, like the leaders'
        speech bubbles are. It is parented to `group`, which never rotates, so
@@ -764,6 +954,10 @@ export class Player {
     // Same full-quaternion turn as the bar, and for the same reason: it is a
     // flat piece of UI, not a character standing on the ground.
     if (this.teamMark.visible) this.teamMark.quaternion.copy(camera.quaternion);
+    /* Through `Label.faceCamera` rather than a quaternion copy, because a
+       Label's turn also handles its own scaling rules — copying the quaternion
+       straight would square it up and silently skip that. */
+    if (this.callout.visible) this.callout.faceCamera(camera);
     /* The wings are turned and pushed BEHIND her here for the same reason the
        mount nudge below is done here: "behind" is a direction from a camera,
        and this function is the one thing in the entity that runs once per
@@ -915,6 +1109,37 @@ export class Player {
     this.velocity.x = dx * force.knock * rage;
     this.velocity.z = dz * force.knock * rage;
     this.velocity.y = Math.max(this.velocity.y, force.lift * rage);
+
+    /* --- AND IT STOPS A CROSS SLASH DEAD ---
+       THE ONE WAY OUT OF THE TECHNIQUE ONCE IT HAS STARTED. Everything else
+       about the move is committed on purpose: she cannot cancel it, cannot
+       block out of it and cannot walk out of it, which is what the three cuts
+       are paid for. A sister who reads the wind-up and gets a blade in first
+       has to be able to stop it, or the counter-play is "stand somewhere else"
+       and nothing more.
+       THE KITTENS SHE HAD ALREADY CAUGHT ARE NOT FORGOTTEN, and nothing here
+       has to remember them: `triAt` goes false on the next line, and
+       `Game._updateTripleHolds` — which frees on exactly that — pays out the
+       damage banked so far and launches them for the cuts that did land. Two
+       cuts in when she is interrupted means two cuts' worth of damage and a
+       throw, immediately. That is the whole reason the release is driven by
+       state rather than by a callback; see there.
+       NO CACKLE ON A CANCEL: the purr fires from the launch branch of
+       `_stepSpecials`, which this skips. */
+    if (this.triAt) {
+      this.triWindT = 0;
+      /* No "ready!" for a recovery she never got to: the chime answers the
+         technique ENDING, and this one was stopped. */
+      this.triCoolT = 0;
+      this.triLeft = 0;
+      this.triT = 0;
+      this.triHangT = 0;
+      this.triHits = 0;
+      this._triLanded = false;
+      /* `triLockT` is left running. She does not get her bubble back early as
+         a reward for being hit out of her own technique — same reasoning as
+         `_clearSpecials`, which also leaves it alone. */
+    }
 
     this.hitT = HIT_STUN;
     this.invulnT = INVULN;
@@ -1102,9 +1327,17 @@ export class Player {
     this.wardCool = 0;
     this.chargeT = 0;
     this.chargeLeft = 0;
+    this.triWindT = 0;
+    this.triCoolT = 0;
     this.triLeft = 0;
     this.triT = 0;
     this.triHangT = 0;
+    /* No purr on a technique that was stopped rather than finished — see the
+       launch branch in `_stepSpecials`. Zeroed rather than left because the
+       count is read by nothing else and a stale one would be added to the
+       next technique's. */
+    this.triHits = 0;
+    this._triLanded = false;
     /* `triLockT` is deliberately NOT cleared here. This fires when a round
        resets or she climbs onto a dragon, and both of those already end the
        move; what it must not also do is hand the bubble straight back to a
@@ -1158,6 +1391,30 @@ export class Player {
       this.teamMark.rotation.z = Math.sin((this.idlePhase ?? 0) * 2.2) * 0.09;
     }
 
+    /* THE CALLOUT SITS ABOVE EVERYTHING ELSE SHE MIGHT BE WEARING — the bar,
+       the pennant, the halo — because it is the only one of them that is a
+       sentence, and a sentence overlapping a health bar is unreadable rather
+       than merely untidy. */
+    if (this.calloutT > 0) {
+      this.calloutT -= dt;
+      /* IT FADES OUT RATHER THAN VANISHING, and the fade is most of the answer
+         to "don't let it be annoying". A line that disappears between frames
+         pulls the eye to where it was; one that thins away over the last
+         second is gone before she notices it going. The ceiling is 0.88 and
+         not 1: this is text floating over the picture, and the picture is the
+         game. */
+      if (this.calloutT <= 0) { this.calloutT = 0; this.callout.visible = false; }
+      else this.callout.mat.opacity = Math.min(0.88, this.calloutT);
+    } else if (this.callout.visible) {
+      /* The standing prompt breathes instead. It has no timer, so it could sit
+         there for a minute while she works out what a clan is — and a caption
+         that is perfectly still for a minute stops being read. */
+      this.callout.mat.opacity = 0.74 + Math.sin((this.idlePhase ?? 0) * 1.8) * 0.14;
+    }
+    if (this.callout.visible) {
+      this.callout.position.set(0, this.height * (this.barOn ? 1.92 : 1.66), 0);
+    }
+
     const bar = this.hpGroup;
     bar.visible = this.barOn && !this.angel;
     if (!bar.visible) return;
@@ -1193,8 +1450,13 @@ export class Player {
    *
    * @param {THREE.Texture} map the star's own face, so the thing over her head
    *        is visibly the 4★ she just picked up and not a generic orb.
+   * @param {number} dur seconds. Drives the pose, the camera and the caller's
+   *        own flourishes off one clock.
+   * @param {object} [opts] `{ flat: true }` hangs the picture on a card facing
+   *        the camera instead of painting it round the ball, and `{ tint }`
+   *        colours the halo.
    */
-  holdAloft(map, dur = 2.0) {
+  holdAloft(map, dur = 2.0, opts = {}) {
     this.aloftT = dur;
     this.aloftDur = dur;
     if (!this.aloft) {
@@ -1221,10 +1483,47 @@ export class Player {
       this.aloftGlow.renderOrder = 7;
       this.group.add(this.aloftGlow);
     }
-    this.aloft.material.map = map ?? null;
-    this.aloft.material.color.set(map ? 0xffffff : 0xffcf6a);
-    this.aloft.material.needsUpdate = true;
-    this.aloft.visible = true;
+
+    /* --- a ball for a ball, a card for a picture ---
+       A DRAGON BALL IS A SPHERE AND ITS STARS BELONG ON A SPHERE. A clan
+       emblem is a flat drawing, and wrapping a flat drawing round a ball
+       squeezes it into the silhouette at both edges and smears whatever is at
+       the poles: the Thunderpaw bolt came out bent round the horizon and
+       unreadable. So a caller with a picture rather than a prize asks for
+       `flat`, and gets it upright.
+
+       A `Sprite` AND NOT A BILLBOARD, because this is the one thing in the
+       game that must face FOUR cameras at once. Every other billboard here is
+       turned by hand in `faceCamera`, once per pane per frame, which works
+       because each pane re-renders the whole scene; a Sprite is turned by
+       three.js during each of those renders instead, so the card is square-on
+       in all four quadrants without this class knowing how many there are. */
+    const flat = !!opts.flat && !!map;
+    if (flat && !this.aloftFlat) {
+      this.aloftFlat = new THREE.Sprite(new THREE.SpriteMaterial({
+        transparent: true, depthTest: false, depthWrite: false,
+        toneMapped: false,
+      }));
+      this.aloftFlat.renderOrder = 8;
+      this.group.add(this.aloftFlat);
+    }
+    /** Whichever of the two is carrying this one. `_updateAloft` moves it and
+     *  does not care which it got. */
+    this.aloftShown = flat ? this.aloftFlat : this.aloft;
+
+    if (flat) {
+      this.aloftFlat.material.map = map;
+      this.aloftFlat.material.needsUpdate = true;
+    } else {
+      this.aloft.material.map = map ?? null;
+      this.aloft.material.color.set(map ? 0xffffff : 0xffcf6a);
+      this.aloft.material.needsUpdate = true;
+    }
+    if (this.aloft) this.aloft.visible = !flat;
+    if (this.aloftFlat) this.aloftFlat.visible = flat;
+    /* The halo takes the caller's colour when it is offered, so a clan's own
+       gold or green reads even though the emblem itself is left alone. */
+    this.aloftGlow.material.color.set(opts.tint ?? 0xffe9a8);
     this.aloftGlow.visible = true;
   }
 
@@ -1240,18 +1539,27 @@ export class Player {
     const rise = t < 0.22 ? Math.sin((t / 0.22) * Math.PI * 0.62) * 1.08 : 1;
     const y = this.height * 0.55 + rise * (this.height * 0.85);
     const bob = Math.sin(t * 9) * 0.06 * (t > 0.22 ? 1 : 0);
-    this.aloft.position.set(0, y + bob, 0);
-    this.aloft.rotation.y += dt * 3.4;
-    this.aloftGlow.position.copy(this.aloft.position);
+    /* `aloftShown` rather than `aloft`: same rise, same bob, same halo,
+       whether it is a ball or a card. The spin is the ONE thing that is not
+       shared — a card spun round Y is edge-on and invisible for half of every
+       turn, so it stays still and lets the bob carry the life. */
+    const held = this.aloftShown || this.aloft;
+    held.position.set(0, y + bob, 0);
+    if (held === this.aloft) this.aloft.rotation.y += dt * 3.4;
+    this.aloftGlow.position.copy(held.position);
 
     const fade = this.aloftT < 0.4 ? this.aloftT / 0.4 : 1;
     const pop = 1 + Math.sin(Math.min(1, t / 0.22) * Math.PI) * 0.35;
-    this.aloft.scale.setScalar(fade * pop);
+    /* A Sprite's scale IS its size in world units, where the ball's is a
+       multiplier on a 0.62 radius. Matching the two by eye would drift the
+       moment either changed, so the card is sized off the ball's diameter. */
+    held.scale.setScalar(fade * pop * (held === this.aloft ? 1 : 2.1));
     this.aloftGlow.scale.setScalar(fade * (0.7 + Math.sin(t * 7) * 0.12));
     this.aloftGlow.material.opacity = 0.3 * fade;
 
     if (this.aloftT <= 0) {
       this.aloft.visible = false;
+      if (this.aloftFlat) this.aloftFlat.visible = false;
       this.aloftGlow.visible = false;
     }
   }
@@ -1378,7 +1686,26 @@ export class Player {
        Riding one swaps the attack the way riding a dragon swaps it for the
        breath. The kitten still plays her attack pose, which reads as the two
        of them going for it together. */
+    /* THE COOLDOWN, AND THE CHIME WHEN THE TECHNIQUE'S ONE ENDS.
+       `triCoolT` IS ITS OWN CLOCK AND NOT A READ OF THE OTHER TWO, which is
+       the second attempt. `attackCooldown` is charged by every ordinary swing
+       as well, so it cannot say what ended; and pairing it with `triLockT`
+       fails on the arithmetic — that one is decremented up in `_stepSpecials`,
+       a whole block earlier in the same frame, and clamped at zero rather than
+       allowed to go negative, so it reliably reaches zero one frame BEFORE
+       this crosses and the chime would never once have played. A third clock
+       is duller and it fires.
+       It counts down here beside the cooldown it mirrors, so the two cannot
+       drift, and only the CROSSING is the event — `attackCooldown` runs
+       negative for ever after, so `<= 0` is not news. */
     this.attackCooldown -= dt;
+    if (this.triCoolT > 0) {
+      this.triCoolT -= dt;
+      if (this.triCoolT <= 0) {
+        this.triCoolT = 0;
+        hud?.sfx('crossReady');
+      }
+    }
     /* --- WITH THE SANZAN ORB ON, THE SWING IS THROWN ON THE RELEASE ---
        The button has to mean two different things and it cannot know which
        until it is let go, so the press only starts a stopwatch: let go inside
@@ -1390,11 +1717,35 @@ export class Player {
        meant it could only ever start on a target the first slash had already
        knocked away. A tap and a hold have to be ALTERNATIVES for the technique
        to have anybody left to cut.
-       The cost is 50ms — three frames — on every ordinary slash, and only for
-       a kitten wearing the orb. That is the trade, it is paid knowingly, and
-       it is why CROSS.hold came down from 0.22 to 0.05: at 0.22 you can feel
-       it, at 0.05 you cannot. */
-    const deferred = !!this.power.tri && !this.pandaMount;
+       The cost is CROSS.hold — currently 0.25s — on every ordinary slash, and
+       only for a kitten wearing the orb. THAT IS NOT A DELAY SHE PAYS, which
+       is the thing to keep straight: the swing goes out WHEN SHE LETS GO, so a
+       90ms tap is a 90ms slash and only a hold longer than the line costs her
+       anything. The number went 0.22 -> 0.05 -> 0.25 and the middle value was
+       the mistake; see CROSS.hold for why 0.05 lost. (This comment claimed
+       0.05 long after the constant had moved, which is the exact failure mode
+       the house rule about comments is about.)
+       SHE IS STILL MOBILE FOR ALL OF IT. The planting starts at CROSS.wind,
+       after the line is crossed and the technique is committed. */
+    /* AN ANIMAL WITHIN REACH TAKES THE PRESS BACK OFF THE TECHNIQUE.
+       The Cross Slash made ATTACK a deferred press, and the snack is thrown by
+       `_doSlash`, which a HOLD never reaches — so a kitten wearing the orb
+       could not eat at all: standing over a rat and holding the button wound
+       up a three-cut technique instead. Reported from four-player play.
+
+       ASKED HERE, AT THE PRESS, AND NOT INSIDE THE SWING. That is the whole
+       repair: by the time a swing exists the decision has already been made,
+       and the branch that made it is the one that never ran. `critterNear`
+       runs the SAME search `Menagerie.strike` will run a line later, so the
+       button and the swing cannot disagree about what is in range.
+
+       IT COSTS HER THE TECHNIQUE WHILE SHE IS STANDING ON A SNACK, and that is
+       the right trade: the feast is fifteen seconds of chasing rabbits, and a
+       2.4-second planted commitment is not a thing anybody wants to start by
+       accident with a rat at their feet. Step away from it and the hold is
+       back. */
+    const deferred = !!this.power.tri && !this.pandaMount
+      && !hud?.critterNear?.(this, this._reach());
     if (pad.pressed('attack') && this.attackCooldown <= 0 && !this.busy) {
       if (this.pandaMount) {
         this.attackTimer = 0.26;
@@ -1437,9 +1788,28 @@ export class Player {
         hud?.sfx('slash');
         this._doSlash(world, hud, this._triKind);
       } else if (this.attackHeld >= CROSS.hold) {
+        /* A HOLD. She has said which move she wants; now she has to stand
+           still and mean it. `_startTriple` is no longer called from here —
+           the wind-up runs first and calls it. */
         this._triPend = false;
-        this._startTriple(hud);
+        this._startWind(hud);
       }
+    }
+
+    /* --- and letting go of the wind-up throws it all away ---
+       ONLY THE WIND-UP, AND ONLY ON THE RELEASE. Nothing has been thrown and
+       nobody has been caught, so there is nothing to unwind — she has simply
+       spent the planted time for nothing, which is the risk that pays for how
+       hard the technique hits. Once `_startTriple` has run this branch cannot
+       fire: `triWindT` is zero for the rest of the move and letting go does
+       nothing at all, which is the "no cancelling it" rule.
+       IT IS NOT SILENT. A button that visibly stops her, then does nothing,
+       reads as the game dropping the input — sixth non-negotiable. The refusal
+       blip is the same one every other "no" in the game uses. */
+    if (this.triWindT > 0 && !pad.down('attack')) {
+      this.triWindT = 0;
+      this.attackHeld = 0;
+      hud?.sfx('deny');
     }
     if (this.attackTimer > 0) this.attackTimer -= dt;
 
@@ -1607,7 +1977,10 @@ export class Player {
           hud?.toast?.('Wait — she has something to say first…', this.index);
         } else {
           this.clan = hall.clan;
-          this.marker.material.color.set(hall.clan.color);
+          /* HER OWN RING KEEPS HER OWN COLOUR — see `clanRing` in the
+             constructor for what this used to do and why it was wrong. */
+          this.clanRing.material.color.set(hall.clan.color);
+          this.clanRing.visible = true;
           hud?.sfx('clan');
           hud?.onJoinClan?.(this, hall.clan);
         }
@@ -1625,6 +1998,35 @@ export class Player {
        steering, and the camera follows the player. Same reasoning as the
        dragon's seat in _updateFlight. */
     if (this.pandaMount) this.pandaMount.carry(this);
+  }
+
+  /**
+   * Put a line over her head, or take it away.
+   *
+   * TWO CALLERS AND TWO CONTRACTS, which is what `secs` distinguishes. The
+   * standing prompt ("you may swear here") is re-asserted every frame with no
+   * `secs` and vanishes the moment it stops being true, because a call to
+   * action that outlives the thing it is calling for is a lie. The reward line
+   * ("you gained longer reach") is set ONCE with a timer and must survive her
+   * walking out of the ring — she almost certainly will, immediately, and the
+   * one thing she must not miss is what she just got.
+   *
+   * A TIMED MESSAGE OUTRANKS THE PROMPT. She has just sworn, so the prompt is
+   * about to go false anyway; and in the frames before it does, "press RIGHT to
+   * swear" over the head of somebody who has already sworn is nonsense.
+   *
+   * @param {string|null} text  null or '' hides it
+   * @param {number} secs  0 = hold until told otherwise
+   */
+  setCallout(text, secs = 0) {
+    if (secs <= 0 && this.calloutT > 0) return;
+    if (!text) {
+      if (secs <= 0) { this.callout.visible = false; this.calloutT = 0; }
+      return;
+    }
+    this.callout.setText(text);
+    this.callout.visible = true;
+    this.calloutT = secs;
   }
 
   /** Each kitten's panda has its own name, so the girls aren't both
@@ -1678,13 +2080,29 @@ export class Player {
        between two cuts, `_clearSpecials` firing because she got on a dragon —
        would be a separate path that has to remember to do the same thing, and
        one of them would not. The game watches the state instead. */
-    if (this.triLeft > 0) {
+    if (this.triWindT > 0) {
+      /* THE WIND-UP. Planted and silent — `busy` is already true through this,
+         so the stick and the jump are gone, and the attack pose below holds
+         her blade back. The only ways out are letting go (handled in the
+         controller, above) and being hit (`hurt`). */
+      this.triWindT -= dt;
+      if (this.triWindT <= 0) {
+        this.triWindT = 0;
+        this._startTriple(hud);
+      }
+    } else if (this.triLeft > 0) {
       this.triT -= dt;
       if (this.triT <= 0) {
         this.triLeft--;
         this.attackTimer = 0.2;
         hud?.sfx('slash');
+        /* CLEARED BEFORE AND READ AFTER, and `_doSlash` reaching the other
+           kittens synchronously is what makes that work — it calls
+           `Game.strikePlayers` inline, which sets the flag on a capture. One
+           increment per cut however many sisters it caught. */
+        this._triLanded = false;
         this._doSlash(world, hud, 'tri');
+        if (this._triLanded) this.triHits++;
         this.triT = CROSS.gap;
       }
     } else if (this.triT > 0) {
@@ -1702,7 +2120,27 @@ export class Player {
          overlapping the pause that precedes it. Otherwise the gap she feels is
          a quarter of a second short of the number, and the move ends with her
          already swinging again. */
-      if (this.triHangT <= 0) this.attackCooldown = CROSS.cool;
+      if (this.triHangT <= 0) {
+        this.attackCooldown = CROSS.cool;
+        this.triCoolT = CROSS.cool;
+        /* THE VERDICT, OUT LOUD. Four rungs of one kitten's cackle, graded by
+           how many of the three cuts connected: nothing lands and you get a
+           squeak, all three and you get the demon from the trailer. See
+           SAMPLES in core/audio.js, and kitten-cackle.mjs for where they come
+           from.
+           HERE AND NOWHERE ELSE, because this is the only branch that means
+           the technique FINISHED. The zero-hit case has no victim, so it could
+           not live in `Game._updateTripleHolds` — that loop iterates the
+           kittens who were caught, and on a whiff there are none. And every
+           way the move can be stopped early — a hit, a knockout, a ring-out,
+           `_clearSpecials` — skips this line without having to know it exists,
+           which is the rule that a cancelled technique makes no funny noise.
+           `triHits` is capped by the sequencer at three cuts, but clamped
+           anyway: a fourth cut appearing is exactly the kind of bug that would
+           otherwise surface as `sample('cross4')` playing silence. */
+        hud?.sample?.(`cross${Math.min(CROSS.cuts, this.triHits)}`);
+        this.triHits = 0;
+      }
     }
     /* THE BLOCK IS LOCKED OUT FOR THE WHOLE MOVE AND THE RECOVERY AFTER IT.
        Topped up every frame the technique is live rather than set once, so
@@ -1829,8 +2267,27 @@ export class Player {
     this.triT = 0;
     this.triHangT = 0;
     this.triLockT = CROSS.cool;
+    this.triHits = 0;
     this.attackHeld = 0;
     this._triPend = false;
+  }
+
+  /**
+   * She has held past the line: plant her, and let everybody see it coming.
+   *
+   * THE TOAST MOVED HERE FROM `_startTriple`, WHICH IS THE POINT OF THE
+   * WIND-UP. Announcing the cross slash on the frame the first cut lands tells
+   * three sisters what already happened to one of them. Announcing it a
+   * quarter of a second earlier, while she is stood still winding up, is a
+   * tell they can act on — and a tell nobody can act on is decoration.
+   *
+   * The ward is NOT dropped here. `_startTriple` still owns that, because a
+   * kitten who commits and then lets go should not have paid her bubble for a
+   * move she never threw.
+   */
+  _startWind(hud) {
+    this.triWindT = CROSS.wind;
+    this.triHits = 0;
     hud?.toast?.(`${this.name} — CROSS SLASH!`, this.index);
   }
 
@@ -2423,9 +2880,22 @@ export class Player {
        use, one octave up: the vocabulary is already established. */
     const chew = this.eatT > 0 ? Math.sin(this.idlePhase * 9) * 0.09 : 0;
 
+    /* THE CROSS SLASH'S WIND-UP, AS A CROUCH. She plants for CROSS.wind before
+       the first cut and there is no drawn pose for it — and "stood perfectly
+       still" is not a tell, it is what a disconnected pad looks like. She
+       compresses instead, deeper as the wind-up runs down, and is released by
+       the first cut. Deliberately the same squash-and-stretch as the jump, the
+       landing and the chew: that vocabulary already means "something is about
+       to happen to this cat", and a new pose would need art nobody drew.
+       The whole point of the wind-up is that three sisters can SEE it coming
+       (see CROSS.wind), so this is the feature, not a flourish on it. */
+    const wind = this.triWindT > 0
+      ? (1 - this.triWindT / CROSS.wind) * 0.18
+      : 0;
+
     this.sprite.mesh.scale.set(
-      1 + sq * 0.22 + bob * 0.4 - breathe + chew,
-      1 - sq * 0.24 + bob + breathe - chew,
+      1 + sq * 0.22 + bob * 0.4 - breathe + chew + wind,
+      1 - sq * 0.24 + bob + breathe - chew - wind,
       1
     );
     /* Riding: the seat is solved in _updateFlight, so the sprite sits at the
@@ -2623,6 +3093,35 @@ export class Player {
       }
     }
 
+    /* --- and the same again for the blessing ---
+       AFTER THE MEAL, so that if the two ever overlap the meal wins. They
+       cannot today — nothing hands out a star during a feast — but "which
+       drawing is on screen" has to have one answer and this is where it is
+       decided, so the ordering is written down rather than left to whichever
+       branch happened to be last.
+
+       SHE RISES ONTO HER TOES AS IT ARRIVES AND SETTLES. The lift is taken
+       from the same `t` the star's own rise uses, so the cat and the thing she
+       is reaching for move together; a pose that snapped to full height on
+       frame one would read as a sprite swap, which is exactly what it is and
+       exactly what it must not look like. */
+    if (this.blessPose) {
+      const blessed = this.aloftT > 0 && this.eatT <= 0
+        && this.onGround && !this.mount && !this.rideAlong && !this.ko;
+      this.blessPose.visible = blessed;
+      if (blessed) {
+        this.sprite.mesh.visible = false;
+        const dur = this.aloftDur || 2;
+        const t = 1 - this.aloftT / dur;
+        const rise = Math.sin(Math.min(1, t / 0.22) * Math.PI * 0.5);
+        const sway = Math.sin(t * 7.5) * 0.02 * rise;
+        this.blessPose.mesh.scale.set(1 - rise * 0.04, 1 + rise * 0.07, 1);
+        this.blessPose.mesh.rotation.z = sway;
+        this.blessPose.mat.color.copy(mat.color);
+        this.blessPose.mat.opacity = mat.opacity;
+      }
+    }
+
     // Blob shadow tracks the ground below and shrinks with altitude.
     const g = world.heightAt(this.position.x, this.position.z, this.position.y);
     if (g) {
@@ -2720,6 +3219,20 @@ export class Player {
         * Math.min(1, this.aloftT / 0.45);
       wantDist = THREE.MathUtils.lerp(wantDist, flying ? wantDist * 0.62 : 12, k);
       pitch = THREE.MathUtils.lerp(pitch, 0.42, k);
+      /* AND IT LOOKS HIGHER, or the shot frames the cat and crops the prize.
+         The ordinary camera aims 1.4 units over her feet, which is her chest;
+         the thing she is holding up is at `height * 1.4` above them, so at the
+         12 units this shot pulls in to it lands hard against the top of the
+         pane and goes behind the score pill. Found by watching a clan emblem
+         disappear under EMBER's own HUD chip.
+         Half her height splits the difference: her face and the emblem both
+         sit inside the frame with room over the top. It rides the same `k` as
+         the pull-in, so it eases in and out with the rest of the shot, and it
+         is a lerp toward the RAISED target rather than an offset added to
+         `camTarget` — adding would accumulate every frame the hold is up. */
+      this.camTarget.y = THREE.MathUtils.lerp(
+        this.camTarget.y, want.y + this.height * 0.5, Math.min(1, dt * follow) * k
+      );
     }
 
     this.camYaw = yaw;

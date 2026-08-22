@@ -12,14 +12,14 @@ one file it needs — usually five to ten thousand.
 
 | file | what is in it | read it before you touch |
 | --- | --- | --- |
-| [four-players.md](four-players.md) | seating, the split screen, per-group panes, the leagues, and the ten things the first four-player session turned up | anything that counts players, or assumes there are two |
+| [four-players.md](four-players.md) | seating, the split screen, per-group panes, pane stability and pane colour, the leagues, the clan call-to-action and the celebration that answers it, and what two four-player sessions turned up | anything that counts players, or assumes there are two |
 | [input.md](input.md) | controllers, the vJoy/Joy-Con route, the Chrome stick bug, the keyboard sets, menus on a pad | `core/input.js`, `systems/menunav.js` |
 | [tournament.md](tournament.md) | the ring, rounds, attacks, ring-outs, the record board, the arena's four locks, and the animals and the feast | `systems/tournament.js`, `systems/menagerie.js`, `entities/critter.js` |
 | [dragon-hunt.md](dragon-hunt.md) | the seven stars and their locks, the grottos, the spire, Ryuuseki and his two seats | `entities/dragonball.js`, `entities/ryuuseki.js` |
-| [endgame.md](endgame.md) | the 100% ending, the Awakening, the eight Powerup Kotodama, the economy, the trade screen | `systems/kotodama.js`, `systems/profile.js`, `entities/powerorb.js` |
+| [endgame.md](endgame.md) | the 100% ending, the Awakening, the eight Powerup Kotodama, the economy, the trade screen, the Cross Slash rebalance, **and the balance page** | `systems/kotodama.js`, `systems/profile.js`, `entities/powerorb.js`, `tuning.html`, `src/core/tuning.js` |
 | [story.md](story.md) | the opening cutscene, the six leaders, the shrine scenes, the scene viewer | `systems/cutscene.js`, `systems/shrinescene.js`, `entities/leader.js` |
 | [world.md](world.md) | the six clans and what each buff changes; raising and riding the panda | `world/build.js`, `entities/panda.js`, `entities/shrine.js` |
-| [art.md](art.md) | why the dragons looked low-res, and how atlas cells are sized | `core/spritesheet.js` |
+| [art.md](art.md) | why the dragons looked low-res, how atlas cells are sized, and the two rules for generating new sprites | `core/spritesheet.js` |
 | [mobile.md](mobile.md) | what a phone may spend, why the art budget moves `maxAtlas` and never `cell`, the on-screen pad, the desktop test mode, and why the minimap could not be fixed in CSS | `core/device.js`, `core/touchpad.js`, any `maxAtlas` argument, `_drawMaps`, the `body.touch-ui` rules |
 | [performance.md](performance.md) | why the frame time is a straight line in pixels, what is measured NOT to be a cause, the `P` readout, and why `low` renders below the panel | the quality tiers, anything accused of costing frames, `_applyQuality` |
 | [audio.md](audio.md) | the synthesised sound set, and a piece of music per island | `core/audio.js` |

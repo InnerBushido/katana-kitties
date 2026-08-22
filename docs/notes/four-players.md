@@ -845,3 +845,239 @@ girl who caused it had looked up, and the cost is meant to be legible to the
 person who caused it, not merely suffered by the person who took it. Still well
 under a knockout (1.8), and the lockout is still twice the daze, so a partner
 mashing attack can take at most a third of anybody's time.
+
+---
+
+## The second four-player session — coworkers, on PCs, in a browser
+
+The first session was the tournament's rules being wrong. This one was mostly
+the opposite problem: things that were *right* and that nobody could see. Four
+adults played a full afternoon and **not one of them joined a clan**, several
+of them could not find their own quarter of the screen, and the one ability
+that had just been tuned turned out to be tuned for two players and not four.
+
+The Cross Slash half of it is in
+[endgame.md](endgame.md#and-then-four-adults-played-it-and-it-was-too-strong),
+with the balance page that came out of it.
+
+### Nobody joined a clan, because nothing said they could
+
+A clan hall is a ring of stone with a beam of light over it, its leader is
+standing in it, and pressing one button in it gives you a permanent power. All
+four of them walked through one and out the other side. There was no bug: the
+button worked the whole time, and it was invisible.
+
+**The prompt is over her head, not in the corner.** In four-way split the corner
+of a pane is 13px of HUD in a quarter of a laptop screen, and the thing the
+prompt is about is a place she is *standing in* — putting the instruction on the
+kitten means the instruction and the reason for it are the same object. It is a
+`live` Label (see [label.js](../../src/core/label.js)), so the string changes
+every frame without minting a texture per distinct sentence.
+
+**It names the button she is actually holding.** `InputManager.promptFor(slot,
+action)` reads the live binding — the same `pad`/`half`/`keyset` the action
+itself is read through — so it cannot name somebody else's button. That matters
+most on the vJoy pair, where the two girls holding the two halves of one device
+press physically different buttons for the same action: the left half is told
+`RIGHT`, the right half is told `A`. An unknown pad is told `ANY`, which is
+true — the `generic` profile really does read every face button for interact —
+and a slot with no binding gets `null` and no prompt at all, rather than a
+guess. `pad-check` pins every glyph for every profile, including that no action
+is missing one, because a missing entry renders as `[]  SWEAR TO RUN` and would
+be blamed on the Label.
+
+**Six oaths, not one template.** "Press E to join the Shadowtail clan" answers
+*how* and leaves *why* unanswered, and *why* is the question the silence was
+really failing. Each clan says its own thing and each one hints at its power —
+*Swear to run with Thunderpaw*, *Bow beneath the long blade of Riverclaw*,
+*Vanish into the Shadowtail clan*. `world-check` asserts six distinct opening
+verbs, so nobody can quietly collapse them back into a format string.
+
+**The reward is stated, and then it goes away.** On swearing, the same label
+shows `THUNDERPAW — RUN FASTER` for six seconds and fades out. Six, not
+Richard's "ten or more", because it is two words and it is over her head while
+she plays; a timed message outranks the standing prompt and survives her walking
+straight back out of the ring, which she will, because the first thing anyone
+does with a new power is try it.
+
+**And she wears the clan afterwards.** This turned up a live bug: swearing an
+oath repainted `marker`, the ring under her feet that exists so a girl can find
+herself on a busy screen. Four kittens in Thunderpaw wore four identical gold
+rings and player one stopped being the orange one. There are now two rings —
+hers, in her colour, always; and a second inner one in the clan's colour, lit by
+the oath.
+
+### Which quarter of the screen is mine
+
+Two complaints, one question. Neither has anything to do with the game rules and
+both made a four-player session harder than a two-player one.
+
+**The panes moved on their own.** `splitLayout` returns rectangles in group
+order, so a group's pane is decided by its index — and an index moves when
+*other people* join or leave a pane. Two kittens walking towards each other
+merge into one wide pane, the groups renumber, and a player who has been in the
+bottom right all afternoon is thrown to the bottom left by somebody else's walk.
+`stablePanes` scores every permutation of the returned rectangles by how far it
+drags each group from where its members were last frame and takes the cheapest —
+at most 24 permutations of four items, once a frame, which is not worth a
+cleverer algorithm. **Only identical shapes may swap**, which is what keeps
+`splitLayout`'s size rules intact: the pair that earned half the screen must not
+be handed a quarter because a quarter happened to be nearer. Ties go to the
+identity, so one pane, two even panes, and any frame where nobody moved all
+behave exactly as before.
+
+**The pane is framed in her colour, and so is her score.** Six pixels of her
+colour *inside* the pane, not in the 3px gap between panes — a frame living in
+the gap is three pixels split between two neighbours and invisible on a laptop.
+A pane holding two kittens shows both, as a gradient, and the gradient is the
+only code path so the shared case cannot drift from the solo one. The score
+badge along the top grew to 20px and carries an inner ring in the same colour at
+a similar weight; that pairing *is* the feature — "there is a little color icon,
+but with 4 players and smaller UI, was hard to see or make the connection". The
+thick ink outline stays exactly as it was, because that is what makes every
+badge in this HUD look drawn rather than rendered.
+
+### Falling out of the world, and the camera that followed
+
+A kitten knocked hard enough off the arena deck fell forever, and every other
+pane's camera zoomed out to keep her in frame.
+
+**`_updateOut` is the ring-out rule and it is right to have holes.** It skips a
+fighter who is already knocked out, who is flying as an angel, or who is frozen
+inside somebody's cross slash, and it only runs while a round is live or during
+the feast. Every one of those exemptions is correct on its own and together they
+leave a gap: a knockout landing on the last frame of a big launch is stepped
+over, the round ends so the state leaves `live` and the rule stops running at
+all, and she keeps going until `Player._respawn` catches her at y = -160 and
+puts her in the **town plaza**, three hundred units from a tournament about to
+post her back on her mark. `Tournament._catchFallers` is a separate, dumber
+question asked of everybody every frame the tournament is on — *is she under the
+floor* — and it is the fix.
+
+**The camera clamp is a failsafe, not the fix, and both are wanted.** Every term
+in the camera distance is bounded except one: `fitDistance` is a function of the
+spread between the furthest two kittens, which a falling kitten makes unbounded.
+The ceiling is the one Richard named — the distance that fits one whole island
+across the pane, measured off `world.islands` rather than written down, asked of
+the same `fitDistance` at the same aspect so a narrow pane still gets a bigger
+ceiling than a wide one. Measured at 16:9: the widest legitimate group is 152,
+this ceiling is 212, a kitten falling to `_respawn` is 176, and a kitten
+respawned in the town while the others are at the arena is 375. So it clamps the
+cross-map case and genuinely does *not* clamp the long fall. That is the point:
+`_catchFallers` removes the way we know about, and this bounds the damage of
+every way nobody has thought of yet.
+
+
+### Joining a clan, and the two and a half seconds it is now worth
+
+The section above is about nobody *knowing* they could swear an oath. This is
+the other half of the same complaint: nothing happened when they did. A kitten
+walked into a hall, pressed a button, and the only evidence was a ring under her
+feet and a stat she could not see.
+
+**The celebration is `holdAloft`, which already existed and already did the hard
+part.** Finding a dragon ball plants a kitten, puts the prize over her head and
+pulls *her own* camera in — and the paragraph in `Player.holdAloft` explaining
+why that is per-player rather than a cutscene is, word for word, the argument
+for doing it this way here too. Four kittens are playing; one of them joined a
+clan; stopping the other three to show them somebody else's moment is the exact
+interruption the split screen exists to avoid. So the clan oath calls the same
+method, and in split screen the other panes never notice.
+
+**The pose is keyed off `aloftT`, not off either caller.** `Player.blessPose` is
+a second single-cell sheet — the kitten standing with both paws raised, taking
+the thing above her head — and it swaps in whenever anything is being held
+aloft. That means the dragon ball pickup got it for free, which it wanted
+anyway, and a third such moment cannot forget to.
+
+**A ball for a prize, a card for a picture.** `holdAloft` paints its texture on
+a sphere, which is right for a dragon ball and wrong for a clan emblem: wrapping
+a flat logo round a ball squeezes it into the silhouette at both edges and
+smears the poles, and Thunderpaw's bolt came out bent round the horizon and
+unreadable. So a caller with a picture rather than a prize passes `flat: true`
+and gets a `THREE.Sprite` instead. A Sprite specifically, and not one of this
+codebase's own billboards: every other billboard here is turned by hand in
+`faceCamera`, once per pane per frame, and this is the one object that has to be
+square-on to **four cameras at once**. three.js turns a Sprite during each pane's
+render, so the card is correct in all four quadrants without `Player` knowing how
+many there are.
+
+**The clan colour goes on the halo, never on the emblem.** `material.color`
+multiplies a texture. Tinting the gold bolt gold burns it to brown, and tinting
+Pandapaw's cream panda face green ruins the one emblem that is deliberately not
+in its clan's colour. Only the *fallback* sphere — the one you get when a
+`clan_*.png` is missing — takes the colour, because it has no texture to spoil
+and needs some other way to say which clan this was.
+
+**`BLESS_STRETCH` was guessed wrong, and measuring took five minutes.** The
+guess was 1.18, on the reasoning that a cat with both paws stretched over her
+head must draw taller than a cat standing. She does not. These are chibi
+kittens: their **ears** are the top of the drawing in both poses, and the raised
+paws come up beside the head rather than above it. Measured on Frost, whose two
+sheets are the clean pair — Ember's raised paws sit level with her ears, so a
+band across the top of that drawing catches both and cannot tell them apart:
+
+| sheet | ink height | ear span | height in ear-spans |
+| --- | --- | --- | --- |
+| `frost_eat.png` | 707 px | 423 px | 1.6714 |
+| `frost_bless.png` | 944 px | 564 px | 1.6738 |
+
+A seventh of a percent apart, so both render at one number and `BLESS_STRETCH`
+is `0.86` — the same as `EAT_CROUCH`, which is a measurement and not a
+copy-paste. It is kept as its own literal rather than aliased, because the two
+agree today only because one generator drew both at one scale.
+
+**The camera looks higher during a hold.** The ordinary camera aims 1.4 units
+over her feet, which is her chest; the thing she is holding is at `height * 1.4`
+above them. At the 12 units this shot pulls in to, that put the emblem hard
+against the top of the pane and behind her own HUD chip — found by watching a
+Thunderpaw bolt disappear under the word EMBER. The look-at now lerps up by half
+her height on the same `k` as the pull-in, so it eases in and out with the rest
+of the shot.
+
+**Her leader dances, and only her leader.** `LEADERS[id].cheer` is three numbers
+— `hop`, `rate`, `lean` — added on top of the idle bob rather than replacing it,
+so there is no second pose to get into or out of. Six leaders, six profiles:
+Shadowtail springs highest and barely leans, Windwhisker floats slow and rocks
+hardest, and **Icewhisker does not leave the ground at all** — a shiver of
+delight is her whole performance, and `world-check` pins that exactly one of the
+six has `hop: 0` and that it is her. The hop uses `|sin|`, because a plain sine
+spends half its time below the dais.
+
+**Once per clan per kitten, and the guard comes before the spend.** Swearing
+somewhere you have sworn before is a correction — you wandered into the wrong
+hall, or you are swapping back — and congratulating a child for undoing a
+mistake teaches her the game is not paying attention. `Player.clansSworn` is a
+`Set` on the player, so a restart clears it with everything else. The first
+version added to the set and *then* checked whether she was in a state that
+could play the pose, which would burn her one ceremony in a frame she was a
+ghost for; the order is now guard, then spend, and `world-check` pins the
+positions of the three lines against each other.
+
+### The emblems, and the white background that is about to stop
+
+The six `clan_*.png` are generated flat badges on a white field, keyed out at
+load time by `loadSpriteAtlas` like every other sheet here. Two of the six are
+drawn *inside a ring*, which is exactly the sealed pocket that
+`clearSealedPockets` exists for and which the clan loader does not ask for —
+Riverclaw's wave only survives because the flood fill gets in through a break in
+the outline. So `world-check` now runs the real `floodBackground` over all six
+and pins how many big whites are left: zero for five of them, and **two** for
+Icewhisker, whose emblem has a cat's eye in it and whose whites must survive for
+the same reason Mr. Satan's teeth do.
+
+That check is a backstop, not a plan. Richard's rule going forward is that new
+sprites are generated **with transparent backgrounds** — via Higgsfield's
+`remove_background`, since the image models return opaque PNGs — because a model
+that understands the subject does not have the sealed-pocket failure mode at
+all. The loader needs no change for that and must not get one: its flood only
+seeds from pixels with r, g, b >= 218, and a transparent pixel reads (0, 0, 0, 0)
+off the canvas, so on an alpha sheet the fill never starts and the art passes
+through untouched. The white sheets already in the repo keep working; new ones
+skip the risky step.
+
+**And a new pose is four kittens, not two.** `ember_bless.png` and
+`frost_bless.png` are two drawings; Storm and Blossom are `recolourAtlas` of
+them, derived by PLAYER_STYLE rather than by slot, in a loop that sits directly
+under the identical loop for the eating pose. Deriving by slot is one
+copy-paste away and gives you Storm receiving a blessing as a grey Frost.

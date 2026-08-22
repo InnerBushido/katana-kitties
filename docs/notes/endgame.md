@@ -345,6 +345,78 @@ the same silhouette from all four cameras — plus a screen shake and `smash`, t
 one sound in the library bigger than `ko`. Catch her on the last cut only and
 you get the throw and nothing else.
 
+### And then four adults played it, and it was too strong
+
+Not a bug — the rework worked. The cuts hold, so the whole technique arrives as
+one unavoidable lump, and the only thing between a kitten and that lump was
+`CROSS.hold`: a quarter of a second she could spend still walking around. The
+counter-play was "stand somewhere else", which is not counter-play.
+
+**`CROSS.wind` IS THE FIX, AND IT IS A SEPARATE NUMBER FROM `hold` ON PURPOSE.**
+They look like they want to be one 0.5, and they must not be — they are two
+questions asked of the same press. `hold` is *did she mean the other move?*: it
+has to stay short and she has to stay MOBILE through it, because every ordinary
+slash pays it and a kitten who freezes for half a second whenever she taps
+attack has lost the ordinary slash. `wind` is *she meant it, and now she is
+committed*: planted, visibly, before anything is thrown. Collapsing them means
+either freezing the tap window or shortening the tell, and the tell is the fix.
+
+The whole timeline, at the current numbers:
+
+| from | to | phase | she can | can she be stopped? |
+| --- | --- | --- | --- | --- |
+| 0 | 0.25 | tap window (`hold`) | walk, jump, and let go for an ordinary slash | letting go = ordinary slash |
+| 0.25 | 0.50 | wind-up (`wind`) | nothing — planted | letting go throws it away, and a hit stops it |
+| 0.50 | 1.40 | three cuts (`cuts × gap`) | nothing | **only a hit** |
+| 1.40 | 1.65 | hang | nothing; everybody caught is still frozen | **only a hit** |
+| 1.65 | 2.40 | recovery (`cool`) | walk and jump, not attack or block | — |
+
+**Press to swinging again: 2.40s. Planted and helpless: 1.15s.**
+
+**LETTING GO DURING THE WIND-UP ABORTS, AND IS NOT A CANCEL OF THE TECHNIQUE.**
+Nothing has been thrown and nobody caught; she has spent the wind-up planted and
+gets nothing back, which is the risk that makes committing mean something. It is
+not silent — a button that visibly stops her and then does nothing reads as the
+game dropping the input, so it blips `deny` like every other refusal.
+
+**ONCE THE FIRST CUT IS OUT, THE ONLY WAY OUT IS BEING HIT.** No cancelling, no
+blocking out of it, no walking out of it. A sister who reads the wind-up and
+lands a blade first stops the whole thing — and the kittens already caught are
+not forgotten, because nothing in `Player.hurt` has to remember them: `triAt`
+goes false and `Game._updateTripleHolds`, which frees on exactly that, pays out
+the damage banked so far and launches them for the cuts that did land. Two cuts
+in when she is interrupted means two cuts' worth and a throw, immediately. That
+is the dividend of driving the release off state rather than a callback.
+
+**`cool` WENT 0.5 → 0.75 IN THE SAME PASS.** Half a second of recovery is under
+two of the technique's own cuts, so a kitten who landed one could throw another
+before anybody had got up. It now chimes (`crossReady`) when it expires, because
+a recovery long enough to matter is long enough to lose track of mid-fight —
+watched on its own clock, `triCoolT`, and not read off the other two: the first
+attempt paired `attackCooldown` with `triLockT` and could never fire, because
+`triLockT` is decremented a block earlier in the same frame and clamped at zero,
+so it reliably reached zero one frame first.
+
+**AND THE MOVE SAYS HOW IT WENT.** Four rungs of one kitten's cackle, graded by
+how many of the three cuts connected: `cross0` for a whiff — an innocent kitten,
+and it sounds weak — up to `cross3`, which is the demon from the trailer. Played
+from the launch branch of `_stepSpecials` and nowhere else, which is what makes
+"a cancelled technique makes no funny noise" fall out of the structure instead
+of out of a flag: every early ending skips that branch without knowing it
+exists. The zero-hit case could not live in `_updateTripleHolds` for the same
+reason it matters — that loop iterates the kittens who were caught, and on a
+whiff there are none. See [voices.md](voices.md) for where the four files come
+from and the licensing decision attached to them.
+
+**THE WIND-UP IS DRAWN AS A CROUCH**, deepening as it runs out, using the same
+squash-and-stretch as the jump, the landing and the chew. Standing perfectly
+still is not a tell; it is what a disconnected pad looks like. The vocabulary
+already means "something is about to happen to this cat", and a new pose would
+need art nobody drew.
+
+**ALL OF THESE NUMBERS ARE EDITABLE WITHOUT TOUCHING CODE** — see
+[the balance page](#the-balance-page) at the end of this file.
+
 **EVERY CUT OWNS `CROSS.gap`, THE THIRD ONE INCLUDED**, so the cutting takes
 `cuts * gap` — 0.9s at the current 0.3, near enough the second it is meant to
 be. Starting the hang the instant the last cut lands gives that cut none of the
@@ -511,3 +583,68 @@ would update the world matrices — `Object3D` keeps `.quaternion` in step with
 it.** Each orb's shell radius, orbit speed and starting phase come from its slot
 and from how many she is wearing, so adding a fifth changes where the other four
 belong. Eight icosahedrons is nothing; a wrong-looking constellation is not.
+
+## The balance page
+
+**`npm run dev`, then open `/tuning.html`.** Every ability's numbers, one
+sentence each on what they do, sliders and typed boxes, a live timeline of the
+Cross Slash that redraws as you drag — and a save button that writes
+`src/tuning.json`, which Vite reloads into the running game without a restart.
+
+It exists because answering *"the Cross Slash is too strong"* meant finding six
+numbers spread across two entity files, each buried in a paragraph explaining
+why it is what it is. Those paragraphs should stay exactly as they are; they are
+just the wrong shape for "make the wind-up a bit longer and play it again".
+
+**OVERRIDES ONLY.** `tuning.json` starts as `{}` and holds only what somebody
+actually moved. The literal in `powerorb.js` stays the default and stays the
+documented one, so emptying the file restores the shipped balance exactly, a
+value tuned in the code is never silently overridden by a stale copy of itself,
+and a diff of `tuning.json` is a list of what changed. A file holding every
+value would fail all three, and the third is the one that bites — *"why did my
+edit to `CROSS.gap` do nothing"* is a bad afternoon.
+
+**IT IS JSON AND NOT AN INI**, which is what was asked for. The substance of
+that ask — external, hand-editable, read by the code — is exactly this; the
+format is JSON because the runtime already parses it (an ini would mean shipping
+a parser to read four numbers) and because Vite hot-reloads a JSON import. The
+comments an ini would have bought live on the page, where there is room for a
+paragraph per field instead of a `;`-line.
+
+**NOTHING IN IT MAY NaN A POSITION.** It is hand-edited, so it will eventually
+hold a string, a null, a misspelled key or a table that no longer exists.
+`tune()` takes only keys the defaults already have and only finite numbers;
+everything else is ignored in silence. A misspelled `"knock"` does nothing,
+which is annoying and visible on the page. A merged `undefined` would put a
+kitten at NaN and undraw her, three files from the cause. There are fourteen
+checks on exactly this.
+
+**THE PAGE CANNOT DRIFT OUT OF AGREEMENT WITH THE GAME**, because no number on
+it is a second copy of a number. `tune()` records every table it is handed into
+`DEFAULTS` as the entity modules are imported, and the page imports those
+modules for that side effect: shipped values come from `DEFAULTS`, live values
+from `DEFAULTS` folded with the file. A table that stops calling `tune()` would
+silently vanish off the page rather than error, which is how a tuning tool rots
+into something nobody trusts — so `world-check` asserts all six are reachable.
+
+**IT ONLY EXISTS UNDER `npm run dev`, TWICE OVER.** `vite build` takes its
+inputs from `index.html` and nothing else, so `tuning.html` is not in the bundle
+Vercel serves; and the save is a POST to `/__tuning`, a `configureServer` hook
+the production build never runs. Either alone would do. Both, because a page
+that writes files into the source tree is fine on a laptop and appalling on the
+open internet.
+
+**Committing is `git`, deliberately.** There is no push button on the page:
+
+```bash
+git add src/tuning.json && git commit -m "Retune the Cross Slash" && git push
+```
+
+A web page that runs `git push` is a footgun with a nice font, and the diff is
+worth looking at before it goes anywhere.
+
+**A world-check run against a retuned game still passes, and says so.** The
+last line of the tuning section reports whether `tuning.json` is empty or how
+many tables it is overriding — every check in the run reads the *tuned* values,
+and a run that passes while nobody noticed the balance was not the documented
+one is a bad afternoon later.

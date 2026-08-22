@@ -83,6 +83,27 @@ export class ProfileScreen {
     this.mode = null;
     /** Which kitten opened the shop. Both drive the profile screen. */
     this.shopper = null;
+    /**
+     * The seats currently shopping, by player index.
+     *
+     * THE COUNTER IS SHARED BUT NOT AUTOMATIC. Reported from four-player play:
+     * one kitten opening the shop threw all four onto it, and three of them
+     * sat there with dead sticks while she read prices. The other half of the
+     * fix is the personal card (systems/inspector.js); this is the half that
+     * says the shared screen is worth being on — press MOUNT and you get your
+     * own cursor in your own colour and can buy your own orbs.
+     *
+     * IT IS OPT-IN AND NOT OPT-OUT. Everybody is on the screen either way —
+     * it freezes the world, so there is nowhere else to be — but a kitten who
+     * has not joined cannot spend her points by leaning on a stick, which is
+     * the accident a four-way shared cursor surface invites.
+     *
+     * MOUNT IS THE JOIN BUTTON. `start` closes the screen, `jump` buys,
+     * `attack` sells and `interact` leaves; mount is the one control this
+     * screen does not already use, and Richard asked for "a not so often
+     * pressed button".
+     */
+    this.joined = new Set();
     /** True when it was opened from the pause menu, so closing goes back
      *  there rather than dropping the girls straight into the world. */
     this.fromPause = false;
@@ -195,6 +216,9 @@ export class ProfileScreen {
     this.mode = mode;
     this.shopper = shopper;
     this.fromPause = fromPause;
+    /* The kitten who walked up to the counter is in from the first frame; she
+       asked for this screen and should not have to ask twice. */
+    this.joined = new Set(shopper ? [shopper.index] : []);
     for (const s of this.sides) s.reset();
     this.sides.forEach((s, i) => {
       s.i = Math.min(s.i, Math.max(0, this._rowCount(i) - 1));
@@ -208,6 +232,7 @@ export class ProfileScreen {
   close() {
     this.mode = null;
     this.shopper = null;
+    this.joined.clear();
     this.el.classList.add('hidden');
     this.game.audio?.play('menu');
     /* Opened from the world, closing has to hand the frame back or the first
@@ -224,7 +249,14 @@ export class ProfileScreen {
 
     const pads = this.game.input.players;
     for (let i = 0; i < this.game.players.length; i++) {
-      if (this.mode === 'shop' && this.game.players[i] !== this.shopper) continue;
+      if (this.mode === 'shop' && !this.joined.has(i)) {
+        /* NOT SHOPPING YET — one button, and it is the only one she has.
+           Read before `_drive` and instead of it, so the press that joins her
+           cannot also be the press that buys something: she arrives with a
+           cursor on row zero and no purchase behind her. */
+        if (pads[i]?.pressed('mount')) this._join(i);
+        continue;
+      }
       this._drive(i, pads[i], dt);
       if (!this.mode) return;      // she closed it
     }
@@ -236,6 +268,21 @@ export class ProfileScreen {
        failed trade on the hundredth. */
     if (this.mode === 'profile') this._maybeTrade();
     this._paint();
+  }
+
+  /** She pressed MOUNT at the shared counter and now has her own cursor. */
+  _join(index) {
+    const p = this.game.players[index];
+    if (!p || this.joined.has(index)) return;
+    this.joined.add(index);
+    /* HER CURSOR STARTS AT THE TOP, not wherever it was left by a trade screen
+       three islands ago. `Side.reset` deliberately does not touch `i`, because
+       on the trade screen keeping your place across a re-open is the friendly
+       thing; joining a shop you were not on is a different event. */
+    this.sides[index].reset();
+    this.sides[index].i = 0;
+    this.game.audio?.play('menu');
+    this._say(`${p.name} joined the counter`);
   }
 
   _drive(index, pad, dt) {
@@ -599,7 +646,21 @@ export class ProfileScreen {
   _shopButtons(index, pad) {
     if (pad.pressed('jump')) this._buyHere(index);
     if (pad.pressed('attack')) this._sellHere(index);
-    if (pad.pressed('interact')) this.close();
+    if (pad.pressed('interact')) {
+      /* A JOINER STEPS BACK; THE SHOPPER SHUTS THE SHOP. The screen exists
+         because she walked to the counter, and a sister who joined out of
+         curiosity closing it on her is the four-player version of somebody
+         else pressing your buttons. Everybody still has `start`, and the
+         shopper still has this — nobody is trapped. */
+      if (this.joined.size > 1 && this.game.players[index] !== this.shopper) {
+        this.joined.delete(index);
+        this.sides[index].reset();
+        this.game.audio?.play('menu');
+        this._say(`${this.game.players[index]?.name} stepped back`);
+        return;
+      }
+      this.close();
+    }
   }
 
   _say(text) {
@@ -668,7 +729,8 @@ export class ProfileScreen {
       this.body.innerHTML = this._shopMarkup();
       this.help.innerHTML = this._flashT > 0
         ? `<em>${this._flash}</em>`
-        : keys ?? 'JUMP <b>buy</b> · ATTACK <b>sell</b> · INTERACT <b>leave</b>';
+        : keys ?? 'JUMP <b>buy</b> · ATTACK <b>sell</b> · INTERACT <b>leave</b>'
+          + (this.game.players.length > 1 ? ' · MOUNT <b>join in</b>' : '');
     } else {
       this.title.textContent = 'CHARACTER PROFILE';
       this.body.innerHTML = this.game.players.map((p, i) => this._cardMarkup(p, i)).join('');
@@ -736,6 +798,11 @@ export class ProfileScreen {
       this.game.players.map((p) => `${p.powerOrbs.join(',')}|${p.score}|${p.clan?.id ?? ''}`).join(';'),
       this.sides.map((s) => `${s.i}/${s.offer}/${s.points}/${s.ready}/${s.sure}/${s.pending?.text ?? ''}`).join(';'),
       this.mode === 'shop' ? ORB_IDS.map((id) => K.stock[id]).join(',') : '',
+      /* WITHOUT THIS A JOIN IS INVISIBLE. Nothing else on the signature moves
+         when a kitten presses MOUNT — her cursor was already 0 and her purse
+         has not changed — so the screen kept the markup it had and her pip
+         never appeared. */
+      this.mode === 'shop' ? [...this.joined].sort().join(',') : '',
       this._flashT > 0 ? this._flash : '',
     ].join('#');
   }
@@ -852,18 +919,36 @@ export class ProfileScreen {
     </div>`;
   }
 
+  /** Everybody shopping right now, in seat order. The opener is always in it. */
+  _shoppers() {
+    return this.game.players.filter((p) => p && this.joined.has(p.index));
+  }
+
   _shopMarkup() {
     const K = this.game.kotodama;
-    const p = this.shopper;
-    const side = this.sides[p.index];
+    const shoppers = this._shoppers();
 
     const rows = POWER_ORBS.map((spec, k) => {
       const stock = K.stock[spec.id] ?? 0;
-      const mine = p.powerOrbs.filter((x) => x === spec.id).length;
-      const cls = ['kd-row', k === side.i ? 'cursor' : '', stock ? '' : 'out']
+      /* ONE ROW, UP TO FOUR CURSORS. Four girls can be looking at the same
+         shelf and two of them can be on the same line, so "the cursor" is not
+         a single thing any more — it is a pip per kitten whose cursor is here,
+         in her own colour, in the one place she is already looking. A single
+         highlight would have had to pick a winner, and the loser's stick would
+         have read as broken. */
+      const here = shoppers.filter((p) => this.sides[p.index].i === k);
+      const pips = here
+        .map((p) => `<i class="kd-seat kd-p${p.index}" title="${p.name}"></i>`).join('');
+      const cls = ['kd-row', here.length ? 'cursor' : '', stock ? '' : 'out']
         .filter(Boolean).join(' ');
+      /* THE COUNT IS WHOSE CURSOR IS ON THE ROW, not the opener's. "you have"
+         with four people reading it was already a lie the moment a second
+         kitten could shop; it now names her, and falls back to the opener when
+         nobody is on this line. */
+      const who = here[0] ?? shoppers[0];
+      const mine = who ? who.powerOrbs.filter((x) => x === spec.id).length : 0;
       return `<div class="${cls}" style="--orb:#${spec.color.toString(16).padStart(6, '0')}"
-        data-side="${p.index}" data-slot="${k}">
+        data-side="${(here[0] ?? shoppers[0])?.index ?? 0}" data-slot="${k}">
         <div class="kd-dot"><span>${spec.kanji}</span></div>
         <div class="kd-row-main">
           <b>${spec.name}</b> — ${spec.label}
@@ -871,16 +956,28 @@ export class ProfileScreen {
         </div>
         <div class="kd-row-num">
           <div>${stock ? `in stock ${stock}` : 'SOLD OUT'}</div>
-          <div class="kd-dim">you have ${mine}</div>
+          <div class="kd-dim">${who ? `${who.name} has ${mine}` : ''}</div>
         </div>
+        <div class="kd-seats">${pips}</div>
       </div>`;
     }).join('');
 
+    const purses = shoppers.map((p) => `<span class="kd-purse-one kd-p${p.index}">
+      ${p.name} · <b>${p.score}</b> · ${p.powerOrbs.length}/${MAX_EQUIPPED}</span>`).join('');
+    /* THE INVITATION NAMES WHO IT IS FOR. "Press MOUNT to join" on a screen
+       three of the four are already on reads as an instruction to all of them
+       and is only true for one — the same reasoning as the clan prompt over a
+       kitten's head, and the same failure if it is got wrong. */
+    const waiting = this.game.players.filter((p) => p && !this.joined.has(p.index));
+    const invite = waiting.length
+      ? `<div class="kd-invite">${waiting.map((p) => p.name).join(', ')} —
+         press <b>MOUNT</b> to shop too</div>`
+      : '';
+
     return `<div class="kd-shop">
-      <div class="kd-purse">${p.name} · <b>${p.score}</b> points
-        · buy <b>${K.price}</b> · sell <b>${K.sellPrice}</b>
-        · carrying ${p.powerOrbs.length}/${MAX_EQUIPPED}</div>
-      ${this._askMarkup(p.index)}
+      <div class="kd-purse">${purses} · buy <b>${K.price}</b> · sell <b>${K.sellPrice}</b></div>
+      ${invite}
+      ${shoppers.map((p) => this._askMarkup(p.index)).join('')}
       ${rows}
     </div>`;
   }

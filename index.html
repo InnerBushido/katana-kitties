@@ -451,6 +451,37 @@
       </div>
     </div>
 
+    <!-- EVERY PANE IS FRAMED IN ITS PLAYER'S COLOUR, and the frames live in
+         the DOM rather than being cleared into the gap between viewports.
+         Reported from four-player play: with four small panes and a small
+         coloured pip on each score badge, nobody could tell which quarter of
+         the screen was theirs or which score along the top was theirs. The
+         answer to both is the same colour in both places, big enough to see
+         from across a room.
+
+         DOM AND NOT A SCISSOR CLEAR. Painting the gap in the renderer means a
+         second clear per pane on a game that is already fill-bound (see
+         docs/notes/performance.md — frame time is a straight line in the size
+         of the drawing buffer), for a band three pixels wide. Four absolutely
+         positioned divs cost nothing and can carry a gradient when a pane
+         holds more than one kitten. Built and placed by Game._paintPaneEdges.
+         -->
+    <div id="pane-edges" class="hidden" aria-hidden="true"></div>
+
+    <!-- ================= the per-player cards =================
+         ONE CARD PER PLAYER, DRAWN OVER HER OWN PANE, while everybody else
+         keeps playing. The dealer's counter used to be the only way to look at
+         your own orbs and it is a full-screen modal that freezes the world:
+         one kitten reading her inventory stopped the other three dead. That is
+         what this is for — "let them look at their setup without everyone
+         being thrown on that screen".
+
+         SEPARATE FROM `#pane-edges` even though both are positioned per pane,
+         because these take taps and those must never: the frames are
+         `pointer-events: none` decoration and these are a menu. Built, filled
+         and placed by systems/inspector.js. -->
+    <div id="pane-cards" class="hidden"></div>
+
     <!-- ================= in-game HUD ================= -->
     <div id="hud" class="hidden">
       <!-- The badges are BUILT FROM THE PARTY, not written out here, because
