@@ -59,7 +59,7 @@ Frames alternating 12/21/12/21 ms give a 60 fps median, a 21 ms worst, and
 **zero** frames over any sane hitch threshold — a perfectly healthy readout for
 a game that is grinding every second you watch it. A threshold count is
 structurally incapable of seeing stutter, which is why `hitches` was replaced by
-`stutter` in the `P` panel.
+`stutter` in the `1` panel.
 
 ### What was actually stuttering: the live labels' canvases
 
@@ -151,13 +151,13 @@ world.update   0.140   kotodama     0.027   everything else < 0.015
 
 against 2.0 ms of `renderer.render` at 0.36 Mpx and 15.7 ms at 2.27 Mpx. **If a
 number in this file is ever wrong, re-measure before reasoning** — that is what
-`P` is for.
+`1` is for.
 
 ---
 
-## `P` — the frame cost on screen
+## `1` — the frame cost on screen
 
-`P` in play (or its row in the debug panel) toggles a readout in the top-left.
+`1` in play (or its row in the debug panel) toggles a readout in the top-left.
 It exists because "it lags" is not a measurement, and a report from a machine
 nobody here can see used to leave two moves: guess at a recent change, or ask a
 player to open a devtools profiler. The first is how a session gets spent
@@ -223,7 +223,7 @@ has to be far too cheap to appear in its own numbers.
 
 A desktop with an **RTX 4060** in it was rendering the game on the CPU's
 **Intel UHD Graphics 770** (device `0x0000A78B` — the iGPU on a 13th/14th-gen
-desktop Intel). Every number on the `P` readout looked ordinary. The only sign
+desktop Intel). Every number on the `1` readout looked ordinary. The only sign
 was in the driver string, and nobody reads a driver string unless something
 points at it — so now the readout points at it, in warm text with a `⚠`.
 
@@ -245,7 +245,7 @@ machine, not in this repo.
 3. **Quit every Firefox process and start it again** — including the one Steam
    launched. The preference is read at process start.
 
-**Verify it took**: press `P` — the warning line should be gone and the driver
+**Verify it took**: press `1` — the warning line should be gone and the driver
 string should name the 4060. Firefox's own `about:support` → *Graphics* →
 **`WebGL 2 Driver Renderer`** is the same string from the other side.
 
@@ -264,17 +264,17 @@ Then quit that browser completely — **including its background processes**,
 which both Chromium browsers leave running by default (`Settings → System →
 "Continue running background apps when the browser is closed"`, or the tray
 icon) — and start it again. Verify with `chrome://gpu` / `edge://gpu`, whose
-**GL_RENDERER** line is the same string `P` prints.
+**GL_RENDERER** line is the same string `1` prints.
 
 Chromium *does* act on `powerPreference: 'high-performance'`, which the renderer
 already asks for, so Chrome and Edge are more often right by default. They are
 not reliably right: the flag is a hint, and on laptops the OS policy, the power
-plan and "battery saver" all outrank it. If `P` says `⚠ INTEGRATED GPU` in
+plan and "battery saver" all outrank it. If `1` says `⚠ INTEGRATED GPU` in
 Chrome, the fix above is the same fix.
 
 **And no, the page cannot do this itself.** Adapter selection is deliberately
 outside the reach of a web page — `powerPreference` is the entire API surface a
-browser gives it, it is advisory, and `WEBGL_debug_renderer_info` (how `P` even
+browser gives it, it is advisory, and `WEBGL_debug_renderer_info` (how `1` even
 learns the GPU's name) is a fingerprinting surface some browsers refuse
 outright. A page that could force a discrete GPU could also drain a laptop
 battery from a background tab. This is why the readout names the adapter and the
@@ -405,7 +405,7 @@ a hertz, so the frame ring fills with 2000 ms samples — measured at a median o
 not cope and stepped the quality down: alt-tab away, come back, find the game
 had quietly made itself uglier. `visible` is now the first gate, and
 `_discardPerf` is its other half — the ring is **thrown away** when the tab
-returns rather than interpreted, which also keeps the `P` readout honest after
+returns rather than interpreted, which also keeps the `1` readout honest after
 an alt-tab.
 
 Everything it does, it says: the downgrade toasts, names the new setting, and

@@ -55,8 +55,34 @@ export function splitLayout(n, W, H, gap = 3, dir = 'vertical', sizes = null) {
      THE BIG PANE GOES ON TOP WHEREVER ITS GROUP SITS IN THE ORDER, so the
      returned array still lines up index-for-index with the caller's groups.
      Sorting the panes instead would silently hand one group another's camera. */
+  /* AND THE SETTING DECIDES WHICH WAY IT IS CUT, which it did not before.
+
+     `dir` reached exactly one branch — two panes of equal size — so a player
+     who set the screen to split side by side got side by side with two
+     kittens and stacked with three, from the same setting, with nothing on
+     screen to say why. Reported as "the split direction is only applied when
+     2 players are on 1 screen and 2 on the other". It was not a decision; the
+     other branches were written before there was anything to ask.
+
+     'horizontal' (stacked) is the arrangement described below and it is the
+     kinder one for the reason given there — a wide short pane shows the ground
+     either side of you, a tall narrow one shows sky and floor. 'vertical' is
+     the mirror image of it: the pair takes a full-height COLUMN and the two
+     singles share the other one. It is a worse shape for a pair and it is what
+     the setting says, and `fitDistance` below means the worse shape costs a
+     wider framing rather than kittens cropped off the edge of their own pane —
+     which is what made honouring the setting safe to do at all. */
   if (n === 3 && sizes && sizes.filter((s) => s > 1).length === 1) {
     const big = sizes.findIndex((s) => s > 1);
+    if (dir === 'vertical') {
+      const hw = Math.floor((W - gap) / 2);
+      const hh = Math.floor((H - gap) / 2);
+      const right = [{ x: W - hw, y: H - hh, w: hw, h: hh }, { x: W - hw, y: 0, w: hw, h: hh }];
+      let r = 0;
+      return [0, 1, 2].map((i) => (
+        i === big ? { x: 0, y: 0, w: hw, h: H } : right[r++]
+      ));
+    }
     const hw = Math.floor((W - gap) / 2);
     const hh = Math.floor((H - gap) / 2);
     const bottom = [{ x: 0, y: 0, w: hw, h: hh }, { x: W - hw, y: 0, w: hw, h: hh }];
@@ -96,6 +122,25 @@ export function splitLayout(n, W, H, gap = 3, dir = 'vertical', sizes = null) {
      branch and keeps the `dir` setting it has always had. */
   if (n === 2 && sizes && sizes[0] !== sizes[1]) {
     const big = sizes[0] > sizes[1] ? 0 : 1;
+    /* THE SETTING PICKS THE AXIS AND THE 0.62 SPLIT IS THE SAME EITHER WAY.
+       This branch used to stack unconditionally, for the shape reason set out
+       below, and that made the split-direction setting a lie in exactly the
+       case where a player is most likely to go looking for it. See the note in
+       the three-pane branch above: the stacked answer is the kinder one and it
+       is now what 'horizontal' means rather than what everybody gets. */
+    if (dir === 'vertical') {
+      const bw = Math.round((W - gap) * 0.62);
+      const sw = W - gap - bw;
+      /* Whichever pane is FIRST goes on the left, matching the even split
+         below, so the returned array still lines up index-for-index with the
+         caller's groups. */
+      const firstW = big === 0 ? bw : sw;
+      const secondW = big === 0 ? sw : bw;
+      return [
+        { x: 0, y: 0, w: firstW, h: H },
+        { x: W - secondW, y: 0, w: secondW, h: H },
+      ];
+    }
     const bh = Math.round((H - gap) * 0.62);
     const sh = H - gap - bh;
     const tall = { x: 0, y: 0, w: W, h: bh };
@@ -121,8 +166,16 @@ export function splitLayout(n, W, H, gap = 3, dir = 'vertical', sizes = null) {
     return [{ x: 0, y: 0, w, h: H }, { x: W - w, y: 0, w, h: H }];
   }
 
-  // Three or four: quadrants, reading order, with the fourth cell left empty
-  // when there are only three.
+  /* Three or four EQUAL panes: quadrants, reading order, with the fourth cell
+     left empty when there are only three.
+
+     `dir` HAS NO MEANING HERE AND IS DELIBERATELY IGNORED. Quadrants are
+     already cut both ways at once; the only alternatives are three or four
+     equal columns or rows, and the header rejects those for the reason it
+     gives — equal area is the fair rule, and a fixed three-quarter camera in a
+     pane a quarter of a screen wide or a quarter of a screen tall shows almost
+     nothing of the world. The setting is honoured everywhere it can be, which
+     is every layout with exactly two ways to cut it. */
   const w = Math.floor((W - gap) / 2);
   const h = Math.floor((H - gap) / 2);
   const cells = [
@@ -274,6 +327,70 @@ export function paneSeats(panes, groups, W, H) {
   return seats;
 }
 
+/**
+ * How far past the rim a knocked-out kitten has to be to count as landed.
+ *
+ * The same two halves, and the same 3 units, as `OUT_FALL` in
+ * systems/tournament.js: outside the deck it is a hundred units of open sky, so
+ * there is no case in between "standing on the island below" and "still going".
+ */
+export const OUT_DROP = 3;
+
+/**
+ * Should the camera STOP FRAMING this kitten?
+ *
+ * WHY IT EXISTS. A knockout deliberately throws her further than the blow that
+ * caused it (see `Player.hurt`), which is how the last hit of a round looks
+ * different from the eleven before it — and a big enough one puts her over the
+ * rim and down onto the island underneath. `Tournament` exempts a knocked-out
+ * kitten from the ring-out rule on purpose: she has no health left to charge
+ * and nothing to walk back with. So she lies there, thirty or forty units
+ * outside a 56-unit ring, and the shared rig — a round is always one screen —
+ * went on framing her: the spread was read from her to the fight and the camera
+ * pulled back far enough to fit both, so the knockout that ENDED the round was
+ * watched from a hundred units up with the ring the size of a coin. Reported as
+ * exactly that.
+ *
+ * FLYING STILL COUNTS AND LANDED DOES NOT, which is the line the report itself
+ * drew: being launched out of the ring is the shot, and it is worth watching.
+ * It stops being a shot the moment she has stopped moving.
+ *
+ * IT IS NOT A RING-OUT AND MUST NOT BECOME ONE. Nothing here moves her, hurts
+ * her or ends anything — she is still lying where she landed, still drawn,
+ * still on every minimap, and `Tournament` still owns putting her back on the
+ * deck. The only thing that changes is what the camera thinks it has to fit.
+ *
+ * ONLY DURING A ROUND, because "outside the ring" answers for the whole world:
+ * off the arena every kitten on every island is outside it. `ko` should be
+ * unreachable out there, but a predicate that is only correct because of
+ * something two files away is one bad merge from framing nobody at all.
+ *
+ * Plain numbers rather than a `Player` and a `World`, so it can be checked
+ * without either — the same reason `mapWidth` and `fitDistance` live here.
+ *
+ * @param p         {{ko:boolean, onGround:boolean, y:number}}
+ * @param outBy     how far outside the deck she is; > 0 is outside
+ * @param deckY     the height of the deck she was fighting on
+ * @param fighting  is a round live this frame
+ */
+export function outOfShot(p, outBy, deckY, fighting) {
+  if (!p?.ko || !fighting) return false;
+  if (!(outBy > 0)) return false;
+  return !!p.onGround || p.y < deckY - OUT_DROP;
+}
+
+/**
+ * The members of a group the camera is actually framing.
+ *
+ * DEGRADES TO THE WHOLE GROUP rather than to nothing: a pane whose only kitten
+ * has been knocked out of the ring still has to point somewhere, and pointing
+ * it at her is a great deal better than pointing it at the origin.
+ */
+export function framedMembers(members, ignores) {
+  const live = members.filter((i) => !ignores(i));
+  return live.length ? live : members;
+}
+
 /** Headroom past the last kitten. She is drawn about two units tall and stands
  *  at the centre of her sprite, so framing her exactly at the edge puts half of
  *  her outside it — and a player pinned to the very edge of a pane reads as
@@ -380,6 +497,161 @@ const MAP_SPLIT = 0.67;
    `paneH` halved, so the cap halved with it, and cutting a 195px pane's map
    by another third leaves 54px of unreadable islands. One rule, applied
    where the thing it corrects for is actually happening. */
+
+/* ===========================================================================
+   AND WHICH PANES GET THE TWO MINIMAPS.
+
+   IT LIVES HERE FOR THE SAME REASON `mapWidth` DOES: it is a function of the
+   panes and of nothing else, so it can be checked without a Game, a GPU or a
+   world. `Game._mapPanes` is one line over the top of it.
+=========================================================================== */
+
+/**
+ * Deal `nMaps` maps out to panes, by how many kittens are in each.
+ *
+ * THE MAP GOES WHERE IT IS WORTH MOST. There are two maps at most — four
+ * copies of the archipelago on four quadrants is four corners of the game
+ * covered up at the moment there is most to look at — and they used to be
+ * nailed to panes 0 and 1, i.e. "the maps belong to Ember and Frost". That is
+ * stable, and it strands exactly the wrong people: two sisters exploring
+ * together share one pane, and that pane could end up with no map while a map
+ * sat in a pane holding one girl standing next to the stall. Two kids with no
+ * map is the failure the minimap exists to prevent.
+ *
+ * INCUMBENCY WINS TIES, WHICH IS WHAT KEEPS IT FROM FLICKERING. A map is taken
+ * off a pane only by a pane holding STRICTLY more players, so the ordinary
+ * case — everybody alone — never moves a map once it has landed. It is the
+ * same argument `stablePanes` makes above: a thing that moves for a reason
+ * that has nothing to do with you costs you a second of hunting for it.
+ *
+ * TWO PLAYERS COME OUT UNCHANGED BY CONSTRUCTION. Two panes, two maps, nothing
+ * to choose — step 1 keeps them and steps 2 and 3 have nothing left to do.
+ *
+ * @param sizes  players per pane, in pane order
+ * @param prev   what each map held last frame, map index -> pane index
+ * @param nMaps  how many maps exist
+ * @returns map index -> pane index, or -1 for a map with nowhere to be
+ */
+export function assignMaps(sizes, prev = [], nMaps = 2) {
+  const n = Math.min(nMaps, sizes.length);
+  const out = new Array(Math.max(0, nMaps)).fill(-1);
+  const taken = new Set();
+
+  // 1. Every map keeps the pane it had, if that pane still exists.
+  for (let m = 0; m < n; m++) {
+    const g = prev?.[m];
+    if (g >= 0 && g < sizes.length && !taken.has(g)) { out[m] = g; taken.add(g); }
+  }
+  // 2. Any map without one takes the fullest pane going.
+  for (let m = 0; m < n; m++) {
+    if (out[m] >= 0) continue;
+    let best = -1;
+    for (let g = 0; g < sizes.length; g++) {
+      if (taken.has(g)) continue;
+      if (best < 0 || sizes[g] > sizes[best]) best = g;
+    }
+    out[m] = best;
+    if (best >= 0) taken.add(best);
+  }
+  // 3. And a pane holding MORE kittens than an incumbent takes its map.
+  //    Strictly more, so a tie leaves everything exactly where it was.
+  for (let g = 0; g < sizes.length; g++) {
+    if (taken.has(g)) continue;
+    let worst = -1;
+    for (let m = 0; m < n; m++) {
+      if (out[m] < 0) continue;
+      if (worst < 0 || sizes[out[m]] < sizes[out[worst]]) worst = m;
+    }
+    if (worst < 0 || sizes[g] <= sizes[out[worst]]) continue;
+    taken.delete(out[worst]);
+    out[worst] = g;
+    taken.add(g);
+  }
+  return out;
+}
+
+/**
+ * WHICH CORNER OF ITS PANE A HUD BOX HUGS.
+ *
+ * THE MAPS MOVED TO THE INSIDE OF THE SPLIT, AND THIS IS THE RULE THAT DOES
+ * IT. Every map used to sit in the bottom-LEFT of its own pane, which is an
+ * outside corner for half of them: on a side-by-side split, one map was hard
+ * against the left edge of the screen and the other just right of the seam,
+ * as far apart as two boxes on one screen can be. Two kittens standing next to
+ * each other in the world were reading two archipelagos a screen's width
+ * apart, and the girl on the left could not see her sister's at all.
+ *
+ * A map on the seam is READABLE FROM BOTH PANES, which is the whole of the
+ * change. The panes meet at the middle of the screen, so "the corner of this
+ * pane nearest the middle" puts every map within a glance of its neighbour's —
+ * on quadrants all four converge on the centre point, each one still strictly
+ * inside its own pane, and the four outer corners of the screen are handed
+ * back to the game.
+ *
+ * IT IS EDGES, NOT DISTANCES. "Nearest corner" is ambiguous for a pane that
+ * spans the whole width or the whole height — both of its corners on that axis
+ * are the same distance from the middle — so each axis is decided on its own:
+ * a pane that spans the axis keeps the outside (left, and bottom), and a pane
+ * that does not hugs whichever of its two edges is the seam.
+ *
+ * THE HINT LINE IS WHY `hint` EXISTS. `.hint` is centred at the bottom of the
+ * SCREEN, so two full-height panes hugging the seam put their maps either side
+ * of the one sentence telling a kid what the button under her thumb does. Only
+ * a pane whose bottom IS the screen's bottom has that problem; a pane sitting
+ * on a seam has a seam under it, so it does not lift.
+ *
+ * `inner: false` IS THE MATHS BOARD, AND IT IS THE SAME RULE READ BACKWARDS.
+ * Two boxes in one pane cannot both have the seam corner, and the Dojo's
+ * sin/cos board is the other one — so it takes the corner FURTHEST from the
+ * middle of the screen and the two end up at opposite ends of the same edge,
+ * with the kitten between them rather than under either. It stays on the
+ * BOTTOM of its pane in both modes: the outer TOP corner is where the
+ * scoreboard runs, and a board tucked under a score badge is the collision
+ * this whole function exists to stop.
+ *
+ * @param v      the pane, in WebGL bottom-left origin
+ * @param W,H    the whole frame
+ * @param size   shorthand for a square box — the minimap
+ * @param w,h    the box, when it is not square
+ * @param pad    gap from the pane's edges
+ * @param hint   height to leave clear at the very bottom of the screen
+ * @param inner  hug the seam (a map) or the outside (the maths board)
+ * @returns {{ left: number, top: number }} CSS page coordinates, top-left origin
+ */
+export function mapSpot({ v, W, H, size, w = size, h = size, pad = 14, hint = 0, inner = true }) {
+  const fullW = v.w >= W - 2;
+  const fullH = v.h >= H - 2;
+  const left = v.x;
+  const right = v.x + v.w;
+  /* Viewport coords count up from the bottom and CSS counts down from the top.
+     Getting this inversion wrong does not look broken — it looks like the map
+     belongs to the pane above or below, which is the one failure split-screen
+     HUD geometry exists to prevent. */
+  const cssTop = H - v.y - v.h;
+  const cssBottom = H - v.y;
+
+  /* A FULL-WIDTH PANE HAS NO INSIDE ON THIS AXIS, so the two boxes take an end
+     each — map right, board left. That is the arrangement the unsplit screen
+     has always had (the board owns bottom-left and the map goes the other
+     side), so a stacked split and a shared screen put them in the same places
+     rather than in two different ones. Without it both hug the left edge and
+     the board is drawn straight through the map, which is a corner-case only a
+     horizontal split reaches and which nothing on screen would explain. */
+  const onLeft = left + v.w / 2 < W / 2;
+  const hugRight = fullW ? inner : (inner ? onLeft : !onLeft);
+
+  const onTop = cssTop + v.h / 2 < H / 2;
+  /* The board never leaves the bottom of its pane; only the map crosses to the
+     top edge of a pane sitting under the seam. */
+  const hugTop = inner && !fullH && !onTop;
+  const bottomIsScreen = fullH || !onTop;
+
+  return {
+    left: hugRight ? right - pad - w : left + pad,
+    top: hugTop ? cssTop + pad
+      : cssBottom - pad - (bottomIsScreen ? hint : 0) - h,
+  };
+}
 
 /** How wide the minimap box is, in CSS pixels. Pure, so `world-check` can
  *  assert it — this is layout arithmetic and `_drawMaps` only writes the

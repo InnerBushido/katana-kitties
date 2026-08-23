@@ -41,7 +41,22 @@ const REPEAT_RATE = 0.12;
 class Side {
   constructor() {
     this.i = 0;
-    this.offer = null;   // index into her own orb list, or null for "nothing"
+    /**
+     * WHICH OF HER OWN SLOTS ARE ON THE TABLE — a SET of row indices, not one.
+     *
+     * It was a single index, and one orb at a time is the wrong shape for what
+     * this screen is for: the thing the girls actually do here is the older
+     * one handing the younger one a fistful of spares, and doing that one orb
+     * at a time means agreeing to the same trade four times over. Four
+     * questions is four chances to press the wrong button.
+     *
+     * A SET OF ROWS AND NOT A SET OF IDS, because she can be wearing two of
+     * the same orb and offering one of them is a different sentence from
+     * offering both. The rows are her own `powerOrbs` indices, so they are
+     * only meaningful while her list has not changed under them — which is why
+     * `reset` is called on every completed trade.
+     */
+    this.offers = new Set();
     /** Points she is putting on the table. Zero means she is offering none. */
     this.points = 0;
     this.ready = false;
@@ -62,7 +77,7 @@ class Side {
   }
 
   reset() {
-    this.offer = null;
+    this.offers.clear();
     this.points = 0;
     this.ready = false;
     this.pending = null;
@@ -173,6 +188,12 @@ export class ProfileScreen {
       const index = Number(cell.dataset.side);
       const side = this.sides[index];
       if (!side) return;
+      /* THE SAME FREEZE THE STICK GETS — see the note in `_drive`. A thumb can
+         reach a row while a question is up just as easily as a stick can, and
+         the whole point of the lock is that the highlight cannot wander off
+         the thing being asked about. YES and NO are `[data-act]` and were
+         handled above, so this only blocks the wandering. */
+      if (side.pending) return;
       side.i = Number(cell.dataset.slot);
       /* A tap on the points row only moves the cursor there — the steppers are
          what change the number. Anywhere else it selects, which for a trade
@@ -290,6 +311,30 @@ export class ProfileScreen {
     const side = this.sides[index];
     const rows = this._rowCount(index);
 
+    /* A QUESTION FREEZES THIS SIDE'S CURSOR, AND THAT IS READ BEFORE THE STICK.
+       It used to be read after, so the stick still walked the list while
+       "Sell Ward for 90 points?" was on screen — the highlight slid off the
+       row the question was about and onto whatever she drifted onto, and the
+       answer then acted on an orb that was no longer under her cursor. The
+       purchase itself was always safe (`_answerHere` takes the id from the
+       QUESTION, not from the cursor, and says so) — but what she could SEE
+       disagreed with what she was agreeing to, which is the same failure one
+       layer up: a confirmation you cannot trust the look of is not one.
+
+       `start` is read first and still works. It is the way out of the whole
+       screen and trapping a kid behind a dialog is worse than any of this.
+
+       ONLY HER OWN CURSOR IS FROZEN. The other three girls carry on shopping,
+       which is the rule this screen exists for. */
+    if (pad.pressed('start')) { this.close(); return; }
+    if (side.pending) {
+      if (pad.pressed('jump')) this._answerHere(index, true);
+      else if (pad.pressed('attack') || pad.pressed('interact')) this._answerHere(index, false);
+      side.hold = 0;
+      side.pointHold = 0;
+      return;
+    }
+
     /* ON THE POINTS ROW, LEFT AND RIGHT CHANGE THE AMOUNT and up and down
        still move the cursor. Splitting the axes is what lets one row carry a
        value without a second control to explain — the same trick `MenuNav`
@@ -322,33 +367,30 @@ export class ProfileScreen {
       side.pointHold = 0;
     }
 
-    if (pad.pressed('start')) { this.close(); return; }
-
     /* A QUESTION OWNS THIS SIDE'S BUTTONS UNTIL SHE ANSWERS IT, and only this
        side's — the other girls carry on shopping. JUMP is yes because JUMP is
        what she pressed to get here; everything else that is not the stick is
        no, because "I did not mean that" is the answer a wrong press wants and
-       every other button on this screen is a wrong press now. */
-    if (side.pending) {
-      if (pad.pressed('jump')) this._answerHere(index, true);
-      else if (pad.pressed('attack') || pad.pressed('interact')) this._answerHere(index, false);
-      return;
-    }
+       every other button on this screen is a wrong press now. Handled at the
+       top of this function, above, together with the frozen cursor. */
 
     if (this.mode === 'shop') this._shopButtons(index, pad);
     else this._tradeButtons(index, pad, side);
   }
 
   _tradeButtons(index, pad, side) {
-    const player = this.game.players[index];
-    const owned = player.powerOrbs;
-
     if (pad.pressed('jump')) this._offerHere(index);
     if (pad.pressed('attack')) this._confirmHere(index);
 
     if (pad.pressed('interact')) {
+      /* BACK OUT ONE LAYER AT A TIME, and with several orbs on the table the
+         middle layer drops ALL of them rather than the last one picked. She
+         has no way to know which one that was — the slots are a grid, not a
+         stack — so "un-offer the most recent" would look like the button
+         picking one at random. One press clears the offer; JUMP on a slot is
+         still how you take exactly one back off. */
       if (side.ready) side.ready = false;
-      else if (side.offer !== null) side.offer = null;
+      else if (side.offers.size) side.offers.clear();
       else if (side.points > 0) side.points = 0;
       else this.close();
     }
@@ -374,11 +416,13 @@ export class ProfileScreen {
       this.game.audio?.play('deny');
       return;
     }
-    /* Picking a new orb CLEARS HER CONFIRM. A girl who has said yes to swapping
-       her Ward and then moves the offer to her Gale has not agreed to that
-       trade, and letting the tick survive the change is precisely the "traded
-       against her will" the brief rules out. */
-    side.offer = side.offer === side.i ? null : side.i;
+    /* Changing the offer CLEARS HER CONFIRM. A girl who has said yes to
+       swapping her Ward and then adds her Gale to the pile has not agreed to
+       that trade, and letting the tick survive the change is precisely the
+       "traded against her will" the brief rules out. It is more true with a
+       set than it was with one orb: the offer can now grow after she ticked. */
+    if (side.offers.has(side.i)) side.offers.delete(side.i);
+    else side.offers.add(side.i);
     side.ready = false;
     side.sure = false;
     side.pending = null;
@@ -393,7 +437,7 @@ export class ProfileScreen {
        of the other one, because with four kittens on this screen the two who
        are trading are whichever two confirm. */
     const anything = this.sides.slice(0, this.game.players.length)
-      .some((sd) => sd.offer !== null || sd.points > 0);
+      .some((sd) => sd.offers.size > 0 || sd.points > 0);
     if (!anything) {
       this._say('Somebody has to offer something first');
       this.game.audio?.play('deny');
@@ -492,14 +536,24 @@ export class ProfileScreen {
          `sure` is exactly the thing that must not survive a change she did not
          see, so a no drops both of them and both sides start again. */
       if (q.kind === 'trade') {
-        for (const sd of this.sides.slice(0, this.game.players.length)) {
-          sd.ready = false;
-          sd.sure = false;
-          sd.pending = null;
-        }
-        /* And it says who and why. A screen that silently un-ticks two boxes
-           is indistinguishable from one that crashed; sixth non-negotiable. */
-        this._say(`${this.game.players[index]?.name ?? 'She'} said no — trade is off`);
+        /* AND IT PUTS EVERY ORB BACK, which is the second half and is asked
+           for. With one orb on the table, leaving the offer up after a no was
+           merely tidy — one press of JUMP took it back off. With a pile of
+           them it is a chore: she has to remember which four slots she picked
+           and un-pick each one, on a grid where an offered slot and a full one
+           differ by a ring. Saying no is the deselect-all, and it is the only
+           one there is.
+
+           `reset` rather than clearing the fields by hand, so this cannot
+           drift from what a completed trade does. It keeps her cursor where
+           it was — `reset` deliberately does not touch `i` — so the screen
+           does not jump under her at the same moment as everything else. */
+        for (const sd of this.sides.slice(0, this.game.players.length)) sd.reset();
+        /* And it says who and why, AND that everything went back. A screen
+           that silently empties two piles is indistinguishable from one that
+           crashed; sixth non-negotiable. */
+        this._say(`${this.game.players[index]?.name ?? 'She'} said no`
+          + ' — trade is off and everything is back');
       }
       return true;
     }
@@ -567,9 +621,14 @@ export class ProfileScreen {
     const B = this.sides[ib];
     const pa = this.game.players[ia];
     const pb = this.game.players[ib];
-    const aId = A.offer === null ? null : pa.powerOrbs[A.offer];
-    const bId = B.offer === null ? null : pb.powerOrbs[B.offer];
-    if (!aId && !bId && !A.points && !B.points) return;
+    /* SORTED, so the sentence she is asked names them in the order they sit in
+       her own row. A Set iterates in insertion order, which is the order she
+       happened to press them in — true, and not what she is looking at. */
+    const ids = (side, p) => [...side.offers].sort((x, y) => x - y)
+      .map((k) => p.powerOrbs[k]).filter(Boolean);
+    const aIds = ids(A, pa);
+    const bIds = ids(B, pb);
+    if (!aIds.length && !bIds.length && !A.points && !B.points) return;
 
     /* ---- and now each of them is asked, separately -----------------------
        CONFIRM used to be the last press: two ticks and the orbs moved. That
@@ -584,18 +643,23 @@ export class ProfileScreen {
        is the rule this screen exists for, restated at the last possible
        moment: consent cannot be expressed through somebody else's controller.
        `_drive` routes a pending side's buttons to `_answerHere`. */
-    const what = (id, pts) => {
-      const bits = [];
-      if (id) bits.push(ORB_BY_ID[id].name);
+    /* THE QUESTION NAMES EVERY ORB, however many there are. A pile summarised
+       as "3 orbs" is a yes-press behind a list she cannot see, which is the
+       same complaint the cursor lock above fixes and the reason this screen
+       asks in words at all. Four names and a points figure is a long sentence
+       and it is still one she can read; the cap of eight is what keeps it
+       from becoming a paragraph. */
+    const what = (list, pts) => {
+      const bits = list.map((id) => ORB_BY_ID[id].name);
       if (pts) bits.push(`${pts} points`);
       return bits.length ? bits.join(' + ') : 'nothing';
     };
-    const askSide = (i, mineId, minePts, hersId, herPts, her) => {
+    const askSide = (i, mine, minePts, hers, herPts, her) => {
       const sd = this.sides[i];
       if (sd.pending || sd.sure) return 0;
       sd.pending = {
         kind: 'trade',
-        text: `Give ${what(mineId, minePts)} to ${her.name} for ${what(hersId, herPts)}?`,
+        text: `Give ${what(mine, minePts)} to ${her.name} for ${what(hers, herPts)}?`,
       };
       return 1;
     };
@@ -605,8 +669,8 @@ export class ProfileScreen {
       /* Asked once, not once a frame: `_maybeTrade` runs every tick for as
          long as the question is on screen, and a menu blip at 138Hz is a tone.
          `askSide` returns whether it actually put something up. */
-      const opened = askSide(ia, aId, aPtsAsk, bId, bPtsAsk, pb)
-        | askSide(ib, bId, bPtsAsk, aId, aPtsAsk, pa);
+      const opened = askSide(ia, aIds, aPtsAsk, bIds, bPtsAsk, pb)
+        | askSide(ib, bIds, bPtsAsk, aIds, aPtsAsk, pa);
       if (opened) this.game.audio?.play('menu');
       return;
     }
@@ -619,20 +683,19 @@ export class ProfileScreen {
     const aPts = Math.min(A.points, pa.score);
     const bPts = Math.min(B.points, pb.score);
 
-    if (this.game.kotodama.trade(pa, aId, pb, bId)) {
+    if (this.game.kotodama.trade(pa, aIds, pb, bIds)) {
       if (aPts) { pa.score -= aPts; pb.score += aPts; }
       if (bPts) { pb.score -= bPts; pa.score += bPts; }
       if (aPts || bPts) {
         this.game.onScoreChanged?.(pa);
         this.game.onScoreChanged?.(pb);
       }
-      const gave = (p, id, pts) => {
-        const bits = [];
-        if (id) bits.push(ORB_BY_ID[id].name);
+      const gave = (p, list, pts) => {
+        const bits = list.map((id) => ORB_BY_ID[id].name);
         if (pts) bits.push(`${pts} points`);
         return bits.length ? `${p.name} gave ${bits.join(' + ')}` : null;
       };
-      const parts = [gave(pa, aId, aPts), gave(pb, bId, bPts)].filter(Boolean);
+      const parts = [gave(pa, aIds, aPts), gave(pb, bIds, bPts)].filter(Boolean);
       this._say(parts.join('  ·  '));
       this.game.toast(parts.join(' — '), pa.index);
       this.game.toast(parts.join(' — '), pb.index);
@@ -736,7 +799,8 @@ export class ProfileScreen {
       this.body.innerHTML = this.game.players.map((p, i) => this._cardMarkup(p, i)).join('');
       this.help.innerHTML = this._flashT > 0
         ? `<em>${this._flash}</em>`
-        : keys ?? 'JUMP <b>offer this orb</b> · ATTACK <b>confirm</b> · INTERACT <b>back</b>'
+        : keys ?? 'JUMP <b>offer this orb</b> (as many as you like)'
+          + ' · ATTACK <b>confirm</b> · INTERACT <b>take them all back</b>'
           + ' — <b>both</b> must confirm';
     }
     this._paintActions();
@@ -796,7 +860,11 @@ export class ProfileScreen {
     return [
       this.mode,
       this.game.players.map((p) => `${p.powerOrbs.join(',')}|${p.score}|${p.clan?.id ?? ''}`).join(';'),
-      this.sides.map((s) => `${s.i}/${s.offer}/${s.points}/${s.ready}/${s.sure}/${s.pending?.text ?? ''}`).join(';'),
+      /* The offers are a SET, so they are spelled out rather than stringified
+         — `${set}` is "[object Set]" for every possible pile, and the screen
+         would have stopped repainting the moment the second orb was picked. */
+      this.sides.map((s) => `${s.i}/${[...s.offers].sort().join('+')}`
+        + `/${s.points}/${s.ready}/${s.sure}/${s.pending?.text ?? ''}`).join(';'),
       this.mode === 'shop' ? ORB_IDS.map((id) => K.stock[id]).join(',') : '',
       /* WITHOUT THIS A JOIN IS INVISIBLE. Nothing else on the signature moves
          when a kitten presses MOUNT — her cursor was already 0 and her purse
@@ -825,7 +893,7 @@ export class ProfileScreen {
         'kd-slot',
         spec ? 'full' : 'empty',
         k === side.i && k < owned.length ? 'cursor' : '',
-        side.offer === k ? 'offered' : '',
+        side.offers.has(k) ? 'offered' : '',
       ].filter(Boolean).join(' ');
       const style = spec ? `style="--orb:#${spec.color.toString(16).padStart(6, '0')}"` : '';
       /* `data-side` / `data-slot` are what make this reachable with a thumb. A
@@ -857,8 +925,8 @@ export class ProfileScreen {
       + `<button class="kd-step" type="button" data-side="${index}" data-pts="1">+</button>`
       + `<span class="kd-dim">${onPts ? '◀ ▶ to change' : ''}</span></div>`;
 
-    const offered = [];
-    if (side.offer !== null) offered.push(ORB_BY_ID[owned[side.offer]]?.name ?? '—');
+    const offered = [...side.offers].sort((a, b) => a - b)
+      .map((k) => ORB_BY_ID[owned[k]]?.name ?? '—');
     if (side.points > 0) offered.push(`${side.points} points`);
     const state = side.ready
       ? '<span class="kd-ready">CONFIRMED</span>'
@@ -943,10 +1011,25 @@ export class ProfileScreen {
         .filter(Boolean).join(' ');
       /* THE COUNT IS WHOSE CURSOR IS ON THE ROW, not the opener's. "you have"
          with four people reading it was already a lie the moment a second
-         kitten could shop; it now names her, and falls back to the opener when
-         nobody is on this line. */
-      const who = here[0] ?? shoppers[0];
-      const mine = who ? who.powerOrbs.filter((x) => x === spec.id).length : 0;
+         kitten could shop; it names her instead, and falls back to the opener
+         when nobody is on this line.
+
+         AND WITH TWO CURSORS ON ONE ROW IT NAMES BOTH. One of them was being
+         picked — `here[0]`, whoever happened to be lowest-numbered — so two
+         sisters looking at the same shelf read one count and the girl it did
+         not belong to was told how many her sister had. Every cursor on the
+         row now gets its own clause.
+
+         THE OPENER GOES LAST, which is the one bit of order in it. She is the
+         one who walked to the counter and the one most likely to be about to
+         press BUY, and the end of a sentence is where the eye stops. */
+      const named = [...here].sort((x, y) => (
+        (x === this.shopper ? 1 : 0) - (y === this.shopper ? 1 : 0)
+      ));
+      const count = (q) => q.powerOrbs.filter((x) => x === spec.id).length;
+      const mineLine = named.length
+        ? named.map((q) => `${q.name} has ${count(q)}`).join(' / ')
+        : (shoppers[0] ? `${shoppers[0].name} has ${count(shoppers[0])}` : '');
       return `<div class="${cls}" style="--orb:#${spec.color.toString(16).padStart(6, '0')}"
         data-side="${(here[0] ?? shoppers[0])?.index ?? 0}" data-slot="${k}">
         <div class="kd-dot"><span>${spec.kanji}</span></div>
@@ -956,7 +1039,7 @@ export class ProfileScreen {
         </div>
         <div class="kd-row-num">
           <div>${stock ? `in stock ${stock}` : 'SOLD OUT'}</div>
-          <div class="kd-dim">${who ? `${who.name} has ${mine}` : ''}</div>
+          <div class="kd-dim">${mineLine}</div>
         </div>
         <div class="kd-seats">${pips}</div>
       </div>`;

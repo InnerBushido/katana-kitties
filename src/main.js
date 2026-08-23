@@ -15,7 +15,10 @@ import { TouchPad } from './core/touchpad.js';
 import { World, CLANS } from './world/world.js';
 import { Player, ATTACKS, MAX_HP, KO_TIME } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from './core/palette.js';
-import { splitLayout, mapWidth, fitDistance, stablePanes, paneSeats } from './core/split.js';
+import {
+  splitLayout, mapWidth, mapSpot, assignMaps, fitDistance, stablePanes, paneSeats,
+  outOfShot, framedMembers,
+} from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, tierFor, toNextTier } from './entities/panda.js';
@@ -56,10 +59,30 @@ import { Inspector } from './systems/inspector.js';
    rendering goes through _renderView rather than a plain renderer.render.
 --------------------------------------------------------------------------- */
 
+/**
+ * How much of the bottom of the screen belongs to the hint line, in CSS px.
+ *
+ * `.hint` is one centred sentence at `bottom: 16px`, about 14px tall. It is the
+ * only thing living at the bottom of the SCREEN rather than of a pane, and the
+ * maps hug the seam now — so on a side-by-side split two of them close in on it
+ * from both sides and the sentence telling a kid what her button does ends up
+ * between two boxes. Everything anchored to a full-height pane's bottom edge
+ * clears this; a box sitting on a seam has a seam under it and does not.
+ */
+const HINT_CLEAR = 30;
+
 /** The key each debug action is bound to, for the panel's own labels. */
 const DEBUG_KEY_LABEL = {
+  /* `1` IS THE FRAME COST AND IT USED TO BE `P`. `P` was also player 2's mount
+     (`KEYSETS[1]` in core/input.js), so one press did both: she climbed onto a
+     dragon and the readout flickered. Every other debug key is a digit or
+     punctuation precisely because nothing in `BOUND_KEYS` is, and `P` was the
+     one that broke the pattern. Moved rather than removed — the readout is the
+     first thing to reach for when somebody says it lags, and a tool you have
+     to open a panel to reach is a tool nobody reaches for. */
+  Digit1: '1',
   Digit3: '3', Digit4: '4', Digit5: '5', Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9',
-  Digit0: '0', KeyM: 'M', KeyZ: 'Z', KeyP: 'P', Minus: '-', Equal: '=',
+  Digit0: '0', KeyM: 'M', KeyZ: 'Z', Minus: '-', Equal: '=',
   Backquote: '`',
 };
 
@@ -469,13 +492,32 @@ class Game {
    * Delegated from the HUD, because `_buildHud` rebuilds the maps whenever the
    * party changes and per-element listeners would be lost with them.
    */
+  /**
+   * Which seat the on-screen pad is sitting in.
+   *
+   * Asked of the input layer rather than assumed to be 0: the touch pad is
+   * seated in a slot like any other device, and on a tablet with a keyboard
+   * player 1 can be the keyboard. Falls back to 0, because a toast in the
+   * wrong lane is better than no toast. Same question, same answer and the
+   * same reasoning as `ProfileScreen._touchSide`.
+   */
+  _touchSeat() {
+    const b = this.input?.bindings ?? [];
+    const i = b.findIndex((x) => x?.touch);
+    return i >= 0 ? i : 0;
+  }
+
   _bindTouchHud() {
     document.getElementById('maps').addEventListener('click', (e) => {
       if (!this.device.touchPrimary) return;
       const box = e.target.closest('.map-box');
       if (!box) return;
+      /* `_cycleMapAt`, NOT `_zoomMap`. The id carries the MAP's index and
+         `_zoomMap` wants a PLAYER's; they were the same number until a map
+         could move between panes, and after that a tap on the second box was
+         being read as player 2 asking for hers. */
       const i = Number(box.id.slice('map-box-'.length));
-      if (Number.isInteger(i)) this._zoomMap(i);
+      if (Number.isInteger(i)) this._cycleMapAt(i, this._touchSeat?.() ?? 0);
     });
     document.getElementById('math-board').addEventListener('click', () => {
       if (!this.device.touchPrimary) return;
@@ -1667,33 +1709,53 @@ class Game {
   }
 
   /**
-   * Cycle one player's minimap zoom. Keyboard (Z / X) and the pad's `map`
-   * action both land here.
+   * Cycle THE MAP IN THIS PLAYER'S OWN PANE. Keyboard (Z / X) and the pad's
+   * `map` action both land here, and both pass a PLAYER index.
    *
-   * Only player 1 owns a map while the view is MERGED — there is one map on
-   * screen and every player's control drives it, which is why the merged path
-   * copies the zoom onto all the others: they are the maps that take over the
-   * moment the party runs apart, and inheriting the zoom means the split does
-   * not silently reset it under somebody.
+   * IT USED TO INDEX `this.maps` WITH THAT PLAYER NUMBER, and the two stopped
+   * being the same thing the moment a map could belong to a pane rather than
+   * to a seat: player 2's bumper cycled map 1, which is whatever pane map 1
+   * happens to be in, which is not necessarily hers. `_mapForPlayer` asks the
+   * one question that is actually being asked — which map is in my pane — off
+   * the same assignment `_drawMaps` positioned them with.
    *
-   * PLAYERS 3 AND 4 HAVE NO MAP OF THEIR OWN, and pressing the button has to
-   * SAY so. There are two maps at most now (see `_buildHud`), so the third
-   * kitten's bumper indexes past the end of the array — and a button that
-   * silently does nothing is indistinguishable from a broken one, which is the
-   * same rule the shrine join prompt and the star locks already follow. She is
-   * told once, on her own toast, and told what to look at instead: everybody is
-   * drawn on both maps, so the information is on screen, it is just not in her
-   * corner.
+   * Only one map is on screen while the view is MERGED, and every player's
+   * control drives it — which is why the merged path copies the zoom onto all
+   * the others: they are the maps that take over the moment the party runs
+   * apart, and inheriting the zoom means the split does not silently reset it
+   * under somebody.
+   *
+   * A KITTEN IN A PANE WITH NO MAP IS TOLD SO. There are two maps at most (see
+   * `_buildHud`), so with three or four panes somebody's pane has none — and a
+   * button that silently does nothing is indistinguishable from a broken one,
+   * which is the same rule the shrine join prompt and the star locks already
+   * follow. She is told on her own toast, and told what to look at instead:
+   * everybody is drawn on every map, so the information is on screen, it is
+   * just not in her corner.
    */
   _zoomMap(index) {
     if (this.state !== 'play') return;
-    const target = this.merged ? this.maps[0] : this.maps[index];
-    if (!target) {
-      this.toast('The map follows Ember and Frost — you\'re on it too', index);
+    const m = this._mapForPlayer(index);
+    if (m < 0 || !this.maps[m]) {
+      this.toast('No map in your window — you\'re drawn on the others', index);
       return;
     }
+    this._cycleMapAt(m, index);
+  }
+
+  /**
+   * Turn one map's dial, by MAP index.
+   *
+   * Split out because a tap on a map is genuinely "cycle THIS box" — the thing
+   * under the thumb — while a bumper press is "cycle MY map", and routing the
+   * tap through `_zoomMap` meant a map index being read as a player index. Two
+   * questions, one answer each, one implementation of the actual turn.
+   */
+  _cycleMapAt(m, index = 0) {
+    const target = this.maps[m];
+    if (!target) return;
     const z = target.cycleZoom();
-    if (this.merged) for (const m of this.maps) m.zoom = z;
+    if (this.merged) for (const map of this.maps) map.zoom = z;
     this.audio.play('menu');
     this.toast(`Map zoom ${z === 1 ? 'whole world' : `${z}x`}`, index);
   }
@@ -2751,10 +2813,12 @@ class Game {
     if (code === 'Equal') this._pickScene(1);
     /* IN HERE RATHER THAN NEXT TO `M` AND `Z` IN THE KEY LISTENER, and the
        difference is that those two are also real player controls bound to the
-       pad. `P` is not: it is a debug tool like the rest of this method, so it
-       goes through the one entry point the panel's rows call and cannot drift
-       from the row that is labelled with it. */
-    if (code === 'KeyP') this._togglePerf();
+       pad. This one is not: it is a debug tool like the rest of this method, so
+       it goes through the one entry point the panel's rows call and cannot
+       drift from the row that is labelled with it.
+
+       IT IS `1` AND IT USED TO BE `P` — see DEBUG_KEY_LABEL for why. */
+    if (code === 'Digit1') this._togglePerf();
     if (code === 'Backquote') this._toggleDebugPanel();
   }
 
@@ -3358,7 +3422,7 @@ class Game {
       ${row('Digit4', 'end the live round (feast)')}
       ${row('KeyM', 'maths overlay')}
       ${row('KeyZ', 'map zoom')}
-      ${row('KeyP', 'frame cost — fps, draws, pixels, GPU', this._perfOn)}
+      ${row('Digit1', 'frame cost — fps, draws, pixels, GPU', this._perfOn)}
       ${TUNING_ROW}
       <div class="dbg-sep">SCENE VIEWER — choose, then play</div>
       ${row('Minus', '&#9664; previous scene')}
@@ -3399,7 +3463,7 @@ class Game {
            `_debugKey` would make the physical key toggle twice and appear dead.
            They are called here the same way the key calls them. */
         if (code === 'KeyM') this._toggleMath();
-        else if (code === 'KeyZ') this._zoomMap(0);
+        else if (code === 'KeyZ') this._zoomMap(0);   // player 1's map
         /* Everything else IS a `_debugKey` action, and goes through the one
            entry point so a tap cannot do a subtly different thing from the key
            it is labelled with. */
@@ -3622,10 +3686,15 @@ class Game {
    *
    * It is called from `Player._doSlash` on every swing in the game, exactly
    * like its neighbour, and `Menagerie` answers no everywhere but the ring.
+   *
+   * `seen` IS ONE ATTACK'S MEMORY, and only the moving hitboxes pass one. The
+   * charge tests itself every frame it is live, so without it a rat charged
+   * through was struck twenty times by one press — see `Menagerie.strike`. An
+   * ordinary swing is one call and passes nothing.
    */
-  strikeCritters(attacker, reach) {
+  strikeCritters(attacker, reach, seen = null) {
     if (!this.tournament?.active) return;
-    this.menagerie?.strike(attacker, reach);
+    this.menagerie?.strike(attacker, reach, seen);
   }
 
   /**
@@ -5100,6 +5169,15 @@ class Game {
         p.setFocus({ centre: p.position, dist: CAVE_DIST, pitch: CAVE_PITCH });
       } else p.setFocus(null);
     }
+    /* AND THE BOARD IS PLACED ON THE FRAME IT APPEARS, not up to 50ms later.
+       `_drawMaps` is throttled to 20Hz on purpose — it is the only 2D canvas
+       work in the loop — but it is also the only thing that positions the
+       board, so a kitten walking onto the unit circle got one tick of it in
+       whatever corner the last split left it in before it jumped to hers.
+       Costs one extra `_drawMaps` per Dojo entry and exit. */
+    const boardWas = this._boardUp === true;
+    this._boardUp = anyInDojo;
+    if (boardWas !== anyInDojo) this._mapT = 1;
     this.mathBoard.classList.toggle('hidden', !anyInDojo);
 
     const mid = this._centroid();
@@ -5481,25 +5559,27 @@ class Game {
       ((panes[i]?.x ?? 0) > 0 ? right : left).appendChild(badge);
     }
 
-    /* AT MOST TWO MAPS, AND THEY BELONG TO PLAYERS 1 AND 2.
+    /* AT MOST TWO MAPS, AND WHICH PANES GET THEM IS DECIDED EVERY FRAME.
        One map per kitten is the obvious rule and it is the wrong one at four.
        A quadrant is a quarter of the screen; a map sized to stay legible eats a
        real fraction of it, and four of them means four corners of the game
        covered up at exactly the moment there is most to look at. It also stops
        being a map and starts being furniture: nobody reads four.
 
-       PLAYERS 1 AND 2 RATHER THAN "WHOEVER IS FURTHEST APART" or any other
-       clever rule, because the map has to be somewhere a kid can rely on
-       finding it. Ember and Frost are the two who are always in the game — the
-       party is 2 unless somebody joins, and slots 3 and 4 come and go
-       mid-session — so keying the maps to the two permanent seats is the only
-       version where the map does not move house when a sister joins or drops
-       out. Everybody is drawn ON both maps regardless; what is capped is how
-       many copies of the archipelago are on screen, not who appears on them.
+       THEY USED TO BE PANE 0 AND PANE 1 AND NOW THEY GO WHERE THEY ARE WORTH
+       MOST — see `_mapPanes`. The old rule was "the maps belong to Ember and
+       Frost", chosen so that a map never moves house when a sister joins, and
+       it had one bad case that four-player play walks into constantly: two
+       kittens exploring together on the far side of the archipelago, in a pane
+       of their own, with no map between them, while a map sat in a pane
+       holding one girl standing in the market. A pane with two kittens in it
+       needs the map MORE, not less.
 
-       The badges above are still one per player: a score badge is a line of
-       text, four of them fit, and a kid with no badge has no way to know what
-       she has scored. */
+       Everybody is drawn ON both maps regardless; what is capped is how many
+       copies of the archipelago are on screen, not who appears on them. The
+       badges above are still one per player: a score badge is a line of text,
+       four of them fit, and a kid with no badge has no way to know what she
+       has scored. */
     const nMaps = Math.min(n, 2);
     for (let i = 0; i < nMaps; i++) {
       const box = document.createElement('div');
@@ -5536,7 +5616,30 @@ class Game {
   }
 
   /**
-   * Up to two maps, each positioned INSIDE THE PANE ITS OWNER IS LOOKING AT.
+   * WHICH PANES THE TWO MAPS ARE IN, this frame.
+   *
+   * `assignMaps` in core/split.js owns the rule and the argument for it —
+   * pure, next door to the pane geometry it is a function of, and therefore
+   * assertable. This remembers the answer, because the rule needs last
+   * frame's to be stable.
+   */
+  _mapPanes(groups) {
+    this._mapPane = assignMaps(
+      groups.map((m) => m.length), this._mapPane, this.maps.length
+    );
+    return this._mapPane;
+  }
+
+  /** Which map, if any, player `index` can zoom — the one in her own pane. */
+  _mapForPlayer(index) {
+    if (this.merged) return this.maps.length ? 0 : -1;
+    const pane = this._paneOf(index);
+    if (pane < 0) return -1;
+    return (this._mapPane ?? []).indexOf(pane);
+  }
+
+  /**
+   * Up to two maps, each positioned ON THE SEAM OF THE PANE THAT OWNS IT.
    *
    * The corner is computed from the same `splitLayout` the renderer uses. It
    * used to be four CSS rules keyed off `hud-split` / `hud-horizontal`, which
@@ -5545,48 +5648,45 @@ class Game {
    * idea of where pane 3 is, and two copies of that rule is how a map ends up
    * drawn over somebody else's half of the screen.
    *
-   * MAP `i` IS PANE `i`'S MAP, and that is the whole rule. The pane index used
-   * to be the player index — true while there was exactly one pane per kitten,
-   * and false the moment two of them can share one.
+   * THE MAPS MOVED TO THE INSIDE OF THE SPLIT. Every one used to sit in the
+   * bottom-LEFT of its own pane, which is an OUTSIDE corner for half of them —
+   * so on a side-by-side split the two maps were as far apart as two boxes on
+   * one screen can be, and neither girl could read her sister's. They hug the
+   * seam now, so the panes' maps meet in the middle and either kitten either
+   * side of it can glance at whichever is nearer. `mapSpot` in core/split.js
+   * owns the arithmetic and is pure, so `world-check` can assert it.
    *
-   * IT IS STILL "PLAYERS 1 AND 2" IN EVERY CASE WHERE THAT MEANS ANYTHING, and
-   * that falls out of `_clusters` rather than being asserted here: groups are
-   * ordered by their lowest member, so pane 0 always holds Ember and pane 1
-   * always holds the lowest-numbered kitten who is NOT with her — which is
-   * Frost whenever the two of them are apart. What the rule adds is the case
-   * where they are together, and it is the case that matters: keying the second
-   * map to Frost personally would hide it the instant she walked over to her
-   * sister, and leave the OTHER pane — two kittens on the far side of the
-   * archipelago — with no map at all. Two kids with no map is the failure the
-   * minimap exists to prevent, and it would happen precisely when they are
-   * furthest from everybody else.
+   * WHICH PANE OWNS WHICH MAP IS `_mapPanes`, not the map's index. That used
+   * to be the same thing, and it is what put a map in Storm's pane with
+   * Blossom's name on it once the panes could be shuffled underneath them.
    *
-   * SO A MAP CAN END UP BELONGING TO A PANE RATHER THAN TO A GIRL, and it says
-   * so — see the tag below. Panes 3 and 4 still get nothing, which is the cap
-   * doing its job: four maps on four quadrants is four corners of the game
-   * covered up at the moment there is most to look at.
+   * AND THE MATHS BOARD IS PLACED FROM THE SAME PANES — see `_drawMathBoard`,
+   * called from the bottom of this. Two boxes that have to stay out of each
+   * other's way must be positioned by one function or they will not.
    */
   _drawMaps() {
     const hud = document.getElementById('hud');
     hud.classList.toggle('hud-split', !this.merged);
     hud.classList.toggle('hud-horizontal', this.settings.dir === 'horizontal');
-    /* Is the Dojo's sin/cos board up? Every branch below that moves a map out
-       from under it reads this directly. It used to also set a `hud-math` class
-       on `#hud` "so the CSS can move the map" — no rule ever consumed it, and a
-       class nobody reads is a comment that lies about where the layout lives. */
+    /* Is the Dojo's sin/cos board up? `mapWidth` shrinks a phone's map while it
+       is, and `_drawMathBoard` needs the same answer. It used to also set a
+       `hud-math` class on `#hud` "so the CSS can move the map" — no rule ever
+       consumed it, and a class nobody reads is a comment that lies about where
+       the layout lives. */
     const mathUp = !document.getElementById('math-board').classList.contains('hidden');
 
     const W = window.innerWidth;
     const H = window.innerHeight;
     const groups = this.groups?.length ? this.groups : [this.players.map((_, i) => i)];
     const panes = this._panes(W, H, groups);
+    const owner = this._mapPanes(groups);
 
     for (let i = 0; i < this.maps.length; i++) {
       const box = document.getElementById(`map-box-${i}`);
       const tag = document.getElementById(`map-tag-${i}`);
       if (!box) continue;
-      const pane = i;
-      const shown = !!panes[pane] && !!groups[pane]?.length;
+      const pane = owner[i] ?? -1;
+      const shown = pane >= 0 && !!panes[pane] && !!groups[pane]?.length;
       box.classList.toggle('hidden', !shown);
       if (!shown) continue;
 
@@ -5598,14 +5698,15 @@ class Game {
 
          THE WIDTH IS SET INLINE, so no stylesheet rule can override it — a
          `body.touch-ui .map-box` width in style.css is silently dead. */
-      box.style.width = `${mapWidth({
+      const size = mapWidth({
         paneW: v.w,
         paneH: v.h,
         screenH: H,
         touch: this.device.touchPrimary,
         merged: this.merged,
         mathUp,
-      })}px`;
+      });
+      box.style.width = `${size}px`;
 
       if (this.merged) {
         /* THE SHARED MAP KEEPS THE BOTTOM RIGHT. The Dojo's sin/cos board owns
@@ -5645,54 +5746,50 @@ class Game {
           box.style.bottom = thumbs ? 'auto' : '14px';
         }
       } else {
-        /* Viewport coords are bottom-left origin and CSS is top-left, so the
-           pane's top edge is `H - v.y - v.h` from the top of the page. The map
-           sits in its pane's bottom-left corner — except while the Dojo's
-           board is up, which owns that corner and is the lesson somebody came
-           to the Dojo for, so the map lifts to the top of its own pane. */
+        /* ONE CALL, AND NO BRANCHES LEFT IN HERE. `mapSpot` decides the corner
+           from the pane and the frame; every arrangement — side by side,
+           stacked, quadrants, the uneven pair — falls out of the same two
+           questions, and the Dojo no longer needs a case of its own because
+           the board is at the far end of the same pane rather than under the
+           map. `top`/`left` only, so a stale `bottom` or `right` from the
+           merged branch above cannot pin the box to two edges at once. */
+        const spot = mapSpot({ v, W, H, size, pad: 14, hint: HINT_CLEAR });
         box.style.right = 'auto';
-        if (mathUp) {
-          /* AND ON A TOUCH DEVICE IT CROSSES TO THE RIGHT OF ITS PANE, because
-             there the board is top-LEFT rather than bottom-left (see the
-             stylesheet) — so lifting the map to the top of a left-hand pane
-             moves it out from under the board and straight back on top of it.
-             The board spans the screen, not a pane, so the only reliably clear
-             side is the far one.
-
-             Hard to reach and worth keeping right anyway: a phone seats one
-             player and never splits, so this needs a tablet with a keyboard
-             and the split setting changed by hand. */
-          const thumbs = this.device.touchPrimary;
-          const w = box.getBoundingClientRect().width || 0;
-          box.style.left = `${thumbs ? v.x + v.w - w - 14 : v.x + 14}px`;
-          box.style.top = `${H - v.y - v.h + 78}px`;
-          box.style.bottom = 'auto';
-        } else {
-          box.style.left = `${v.x + 14}px`;
-          box.style.top = 'auto';
-          box.style.bottom = `${v.y + 14}px`;
-        }
+        box.style.bottom = 'auto';
+        box.style.left = `${spot.left}px`;
+        box.style.top = `${spot.top}px`;
       }
 
       /* THE TAG NAMES WHOEVER IS IN THE PANE, read off the group rather than
          off the map's index. A map shared by a whole pane cannot fly one
          kitten's name — labelling it EMBER while Frost is standing in the same
          shot invites the obvious question — and a map that has moved to a pane
-         its index does not own must not claim to be somebody else's. */
+         its index does not own must not claim to be somebody else's, which is
+         precisely what "it says STORM and Blossom is standing in it" was.
+         `_mapPanes` can put either map in any pane now, so there is no index
+         left to guess from and the group is the only true answer. */
       const members = groups[pane];
       const shared = members.length > 1;
       if (tag) {
-        const key = i === 0 ? ' · Z' : ' · X';
-        /* THE KITTEN STANDING THERE, not the cat who normally has that seat.
-           `styleFor(members[0])` is a seat number read as a style index and
-           labelled the pane STORM while Blossom was standing in it. */
-        const solo = this.players[members[0]];
-        tag.textContent = this.merged ? 'Z: ZOOM'
-          : `${shared ? 'SHARED' : (solo?.name ?? '').toUpperCase()}${key}`;
+        /* THE KEY IS THE ONE THAT ACTUALLY DRIVES THIS MAP. Z is player 1's
+           and X is player 2's (see the keydown listener), and they are hers
+           wherever her pane's map has ended up — so the hint is looked up from
+           who is standing here, not from which of the two boxes this is. A
+           pane holding neither of them is driven by a pad and says nothing;
+           naming a key nobody in that pane can press is the label lying. */
+        const key = members.includes(0) ? ' · Z' : members.includes(1) ? ' · X' : '';
+        /* THE KITTENS STANDING THERE, not the cats who normally have those
+           seats. `styleFor(members[0])` is a seat number read as a style index
+           and labelled the pane STORM while Blossom was standing in it. Two
+           names fit in a badge and four do not, so past two it counts them. */
+        const names = members.map((m) => (this.players[m]?.name ?? '').toUpperCase());
+        const who = names.length > 2 ? `${names.length} KITTENS` : names.join(' + ');
+        tag.textContent = this.merged ? 'Z: ZOOM' : `${who}${key}`;
         /* ...and the same rule for its colour, which used to be written once
            at build time from the MAP's index. A shared pane has no one owner,
            so it goes back to the stylesheet's cream. */
-        tag.style.color = shared || this.merged ? '' : cssFor(solo?.style);
+        tag.style.color = shared || this.merged
+          ? '' : cssFor(this.players[members[0]]?.style);
       }
 
       /* Centre on the group, not on one kitten, whenever the pane holds more
@@ -5702,6 +5799,86 @@ class Game {
       this.maps[i].focusOn = members;
       this.maps[i].draw(this.players, this.dragons, this.kotodama);
     }
+
+    this._drawMathBoard(panes, groups, W, H, mathUp);
+  }
+
+  /**
+   * The Dojo's sin/cos board, IN THE PANE OF WHOEVER IS ACTUALLY IN THE DOJO.
+   *
+   * IT USED TO BE ONE FIXED CORNER OF THE WHOLE SCREEN — `left: 16px; bottom:
+   * 46px; width: min(540px, 42vw)` in the stylesheet — and every part of that
+   * is wrong once the screen is split four ways. 42vw is 806px of a 960px
+   * quadrant, so the board was wider than most of the pane it landed in; it
+   * landed in the bottom-left pane whoever was standing on the unit circle;
+   * and it was drawn under the minimap, which carries a `z-index` while the
+   * board carried none. Reported as all three at once: covering the player,
+   * behind the map, and in somebody else's window.
+   *
+   * SO IT IS PLACED LIKE A MAP, FROM THE SAME PANES, at the corner of its pane
+   * FURTHEST from the middle of the screen — `mapSpot`'s `inner: false`. The
+   * map has the seam corner, the board has the outside corner, and the kitten
+   * drawing the diagram is between them instead of under either.
+   *
+   * THE PANE IS THE ONE WITH THE MOST KITTENS IN THE DOJO, not the first one
+   * found. Two sisters on the circle and one girl who wandered in on her own
+   * are two panes with a claim, and the board belongs with the pair — that is
+   * the same "worth most" rule `_mapPanes` uses, and it has to be, or the two
+   * would answer the same question differently and cross over.
+   *
+   * IT MEASURES ITS OWN HEIGHT rather than deriving one. The board is a title
+   * and a canvas whose height comes from the canvas's aspect and the width it
+   * is given, and this file has no business knowing either — `world-check`
+   * cannot run a layout engine, and a reasoned number here would be wrong the
+   * first time the canvas changed shape. One frame of a stale height on a
+   * resize is invisible; a wrong constant is not.
+   */
+  _drawMathBoard(panes, groups, W, H, mathUp) {
+    const el = this.mathBoard;
+    if (!el) return;
+    const st = el.style;
+    /* BACK TO THE STYLESHEET WHEN THERE IS NOTHING TO PLACE IT AGAINST. An
+       empty string removes the inline rule rather than overriding it with a
+       guess, so the unsplit desktop keeps its bottom-left corner and a phone
+       keeps the top-left one `body.touch-ui #math-board` gives it. */
+    const toSheet = () => {
+      st.left = ''; st.right = ''; st.top = ''; st.bottom = ''; st.width = '';
+    };
+    /* A HIDDEN BOARD IS PUT BACK ON THE STYLESHEET RATHER THAN LEFT WHERE IT
+       WAS. This used to return early on `!mathUp` and keep its inline corner,
+       so the next time it appeared it appeared in the pane of whoever was in
+       the Dojo LAST TIME — for one tick, in somebody else's window. Nothing is
+       on screen while this runs, so it costs nothing. */
+    if (!mathUp || this.merged || panes.length < 2) { toSheet(); return; }
+
+    const dc = this.world?.dojoCentre;
+    if (!dc) { toSheet(); return; }
+    let best = -1;
+    let bestN = 0;
+    groups.forEach((members, g) => {
+      const n = members.filter((i) => {
+        const p = this.players[i];
+        return p && !p.mount
+          && Math.hypot(p.position.x - dc.x, p.position.z - dc.z) < DOJO_VIEW_R;
+      }).length;
+      if (n > bestN) { bestN = n; best = g; }
+    });
+    const v = best >= 0 ? panes[best] : null;
+    if (!v) { toSheet(); return; }
+
+    /* SIZED AGAINST THE PANE, not against the window. 42% is the fraction the
+       stylesheet has always used and the only thing that changes is what it is
+       42% OF — which is the whole of "the board covers the player" in a
+       quadrant. The 540px ceiling is the stylesheet's and is kept so a shared
+       screen and a big pane come out the same. */
+    const w = Math.min(540, Math.round(v.w * 0.42));
+    st.width = `${w}px`;
+    const h = el.getBoundingClientRect().height || Math.round(w * 0.78);
+    const spot = mapSpot({ v, W, H, w, h, pad: 14, hint: HINT_CLEAR, inner: false });
+    st.right = 'auto';
+    st.bottom = 'auto';
+    st.left = `${spot.left}px`;
+    st.top = `${spot.top}px`;
   }
 
   /** Swearing to a clan: a toast, a coloured badge, and a recoloured ring. */
@@ -5889,11 +6066,15 @@ class Game {
    * a rig framed on the closest pair crops the rest of its own group out.
    */
   _spread(members = this.players.map((_, i) => i)) {
+    /* THE SAME SET `_centroid` USES, and they have to be the same set or the
+       camera aims at one group and sizes itself for another. See `_camIgnores`
+       for the knocked-out kitten lying outside the ring that this drops. */
+    const live = this._framed(members);
     let d = 0;
-    for (let a = 0; a < members.length; a++) {
-      for (let b = a + 1; b < members.length; b++) {
-        const p = this.players[members[a]];
-        const q = this.players[members[b]];
+    for (let a = 0; a < live.length; a++) {
+      for (let b = a + 1; b < live.length; b++) {
+        const p = this.players[live[a]];
+        const q = this.players[live[b]];
         if (p && q) d = Math.max(d, p.position.distanceTo(q.position));
       }
     }
@@ -5926,10 +6107,36 @@ class Game {
 
   /** Where a set of kittens is, on average. The two-player midpoint
    *  generalised — same answer for two, and the right one for three or four. */
+  /**
+   * A kitten the camera should STOP FOLLOWING: knocked out, off the deck, and
+   * come to rest.
+   *
+   * The rule, the reason for it, and the 3 units live on `outOfShot` in
+   * core/split.js — pure, next door to the pane geometry it exists to protect,
+   * and therefore assertable without a Game or a GPU. This is the adapter that
+   * hands it the four facts it wants.
+   */
+  _camIgnores(p) {
+    if (!p) return false;
+    const R = this.world?.arenaRing;
+    if (!R) return false;
+    return outOfShot(
+      { ko: p.ko, onGround: p.onGround, y: p.position.y },
+      this.world.arenaOutBy(p.position.x, p.position.z),
+      R.y,
+      !!this.tournament?.active
+    );
+  }
+
+  /** The members of a group the camera is actually framing. See `outOfShot`. */
+  _framed(members) {
+    return framedMembers(members, (i) => this._camIgnores(this.players[i]));
+  }
+
   _centroid(members = this.players.map((_, i) => i)) {
     const c = new THREE.Vector3();
     let n = 0;
-    for (const i of members) {
+    for (const i of this._framed(members)) {
       const p = this.players[i];
       if (!p) continue;
       c.add(p.position);

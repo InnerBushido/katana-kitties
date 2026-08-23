@@ -130,11 +130,11 @@ docs/notes/  the design notes — why things are the way they are
 
 **Debug keys, in play:** `` ` `` opens the panel and lists them. `6` unlocks the
 whole endgame, `7`/`8`/`9` are Ryuuseki, `4` ends a live round, `5` opens the
-trade screen, `-`/`=`/`0` are the scene viewer, **`P` prints the frame cost** —
+trade screen, `-`/`=`/`0` are the scene viewer, **`1` prints the frame cost** —
 fps, stutter, draw calls, buffer size, quality, dev-or-built, and the GPU
 string.
 
-**If somebody says it lags, press `P` before changing anything.** The game is
+**If somebody says it lags, press `1` before changing anything.** The game is
 fill-bound: frame time is a straight line in the size of the drawing buffer and
 everything else is rounding. **Read the last line first** — a Windows Firefox
 will happily render this on the CPU's integrated GPU with a discrete card idle

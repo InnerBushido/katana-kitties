@@ -64,7 +64,10 @@ import {
   MILESTONES, OPEN_AT, ArenaQuest, SATAN_TOWN,
 } from '../src/systems/arenaquest.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
-import { splitLayout, mapWidth, fitDistance, stablePanes, paneSeats } from '../src/core/split.js';
+import {
+  splitLayout, mapWidth, mapSpot, assignMaps, fitDistance, stablePanes, paneSeats,
+  outOfShot, framedMembers, OUT_DROP,
+} from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
 import { postsFor } from '../src/world/build.js';
@@ -2371,6 +2374,98 @@ for (const [name, cells, cols] of [['ember', em, 10], ['frost', fr, 8]]) {
       ordering is a term that is not really being scored.
    =========================================================================== */
 
+console.log('\n--- the griffin puts them down with the arena in shot ---');
+{
+  /* THE LAST SECOND OF THE RIDE WAS A SHOT OF THE GROUND SPINNING, with the
+     griffin and both riders off screen behind the camera. Reported as "at the
+     end of the pegasus cutscene the camera looks at the ground and spins
+     weirdly instead of at the pegasus", and it was one sign: `back` was
+     `-swing`, and `bx`/`bz` already subtract the heading, so the swing that
+     was meant to bring the camera BEHIND the animal took it in front of it —
+     past the point `_look` was aiming at. `lookAt` down a near-vertical
+     direction has no stable yaw, which is the spin.
+
+     WHAT IS PINNED IS THE SHOT, NOT THE NUMBERS. Every one of `out`, the
+     0.62, the 1.5 and the seat heights is a taste decision somebody should be
+     free to retune; what must survive any of that is that the animal stays in
+     front of the camera, that the camera does not end up staring at its feet,
+     and that the picture does not whip round. Those are three things a
+     `lookAt` sign error breaks and nothing else does. */
+  const { Griffin } = await import('../src/entities/griffin.js');
+  const g = new Griffin({ texture: new THREE.Texture(), contentScale: 1, pad: 0 });
+  /* No riders. `_place` and `_finish` both loop over the list, so an empty one
+     exercises the camera and nothing else — and this section is about the
+     camera. The riders have their own seat checks in the sprite section. */
+  g.fly(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 300), []);
+
+  const fwd = () => new THREE.Vector3(0, 0, -1).applyQuaternion(g.camera.quaternion);
+  const heading = new THREE.Vector3(Math.sin(g.facing), 0, Math.cos(g.facing));
+
+  let behindCamera = 0;
+  let staringDown = 0;
+  let worstWhip = 0;
+  let last = null;
+  const dt = 1 / 60;
+  for (let i = 0; i < 2000 && g.flying; i++) {
+    g.update(dt);
+    const f = fwd();
+    /* IN FRONT OF THE CAMERA. The failure was literally this: the subject
+       ended up behind the lens. A dot against the direction the camera is
+       looking is the whole of it. */
+    const toAnimal = g.position.clone().sub(g.camera.position).normalize();
+    if (toAnimal.dot(f) <= 0.2) behindCamera += 1;
+    /* NOT POINTED AT THE FLOOR. 0.75 is well past anything the shot asks for
+       — it climbs to about a fifth of a quad of downward tilt — and well short
+       of the degenerate vertical that makes the yaw undefined. */
+    if (Math.abs(f.y) > 0.75) staringDown += 1;
+    /* AND IT DOES NOT WHIP. The spin was frames of nearly-free yaw; a real
+       swing is a couple of degrees a frame. Measured as the angle between one
+       frame's forward and the next's. */
+    if (last) worstWhip = Math.max(worstWhip, last.angleTo(f));
+    last = f;
+  }
+  ok('the griffin is in front of its own camera for every frame of the flight',
+    behindCamera === 0, `${behindCamera} frames with it behind the lens`);
+  ok('...and the camera never tips down to stare at the ground',
+    staringDown === 0, `${staringDown} frames`);
+  line('worst frame-to-frame swing', `${(worstWhip * 180 / Math.PI).toFixed(2)}°`);
+  ok('...and the picture swings rather than spinning',
+    worstWhip < 0.12, `${(worstWhip * 180 / Math.PI).toFixed(1)}° in one frame`);
+
+  /* AND AT THE END IT IS BEHIND THEM, LOOKING THE WAY THEY ARE GOING — which
+     is the point of swinging round at all: the last thing on screen is the
+     arena coming up, not a wing. This is the assertion the sign error failed
+     outright, and the one that would fail again if somebody negated it back. */
+  const tail = g.camera.position.clone().sub(g.position);
+  ok('the shot ends BEHIND the animal, not in front of it',
+    tail.dot(heading) < 0, tail.dot(heading).toFixed(2));
+  ok('...and pointed along the heading, at the arena they are landing on',
+    fwd().dot(heading) > 0.6, fwd().dot(heading).toFixed(2));
+  /* IT STARTS ALONGSIDE, and that is the other half of the same shot: the
+     animal is a side-on drawing and a chase camera behind a yaw-only billboard
+     is looking at a vertical line. A "fix" that simply put the camera behind
+     it for the whole trip would pass everything above. */
+  {
+    const h = new Griffin({ texture: new THREE.Texture(), contentScale: 1, pad: 0 });
+    h.fly(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 300), []);
+    h.update(1 / 60);
+    const off = h.camera.position.clone().sub(h.position);
+    ok('...while the START of the ride is broadside, where the drawing is',
+      Math.abs(off.dot(heading)) < Math.abs(off.x) * 0.35,
+      `along ${off.dot(heading).toFixed(1)} vs across ${off.x.toFixed(1)}`);
+  }
+
+  /* SKIPPING IT LEAVES NOTHING BEHIND. The scene is skippable by Escape or a
+     pad's Start (seventh non-negotiable), and the camera is the one thing here
+     that outlives the flight. */
+  const sk = new Griffin({ texture: new THREE.Texture(), contentScale: 1, pad: 0 });
+  sk.fly(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 300), []);
+  sk.update(1 / 60);
+  sk.skip();
+  ok('a skipped flight is over and put away',
+    sk.flying === false && sk.done === true && sk.group.visible === false);
+}
+
 console.log('\n--- the arena ---');
 {
   const R = world.arenaRing;
@@ -3408,6 +3503,63 @@ console.log('\n--- the Powerup Kotodama ---');
   ok('...and neither side lost anything', A.powerOrbs.length === 1
     && B.powerOrbs.join() === bBefore.join());
   ok('a SWAP with a full kitten still works', K.trade(A, 'charge', B, 'vigor'));
+
+  /* --- A PILE FOR A PILE ---------------------------------------------------
+     One orb per trade meant the thing the girls actually do here — the older
+     one handing the younger one a fistful of spares — was four separate
+     agreements, and four chances to press the wrong button. The screen offers
+     a SET now (see `Side.offers`) and this is the half that moves it.
+
+     A BARE ID IS STILL A LIST OF ONE. Every check above passes a single id and
+     none of them changed, which is the point: a rule that degrades beats one
+     that vanishes. */
+  A.setPowerOrbs(['swift', 'ward', 'leap']);
+  B.setPowerOrbs(['vigor']);
+  const both = () => A.powerOrbs.length + B.powerOrbs.length;
+  const pileBefore = both();
+  ok('three orbs go across in one trade',
+    K.trade(A, ['swift', 'ward', 'leap'], B, ['vigor']));
+  ok('...and the count is still conserved', both() === pileBefore);
+  ok('...with every named orb on the other side',
+    ['swift', 'ward', 'leap'].every((id) => B.powerOrbs.includes(id))
+    && A.powerOrbs.join() === 'vigor');
+
+  /* A PILE ONE WAY IS A GIFT, exactly as one orb one way is. */
+  ok('a pile as a gift is allowed', K.trade(B, ['swift', 'ward'], A, []));
+  ok('...and conserves the count too', both() === pileBefore);
+
+  /* DUPLICATES ARE COUNTED, NOT DEDUPED. A kitten can be wearing two of the
+     same orb, and offering one of them is a different sentence from offering
+     both — so the check is "has she got this MANY", not `includes`. Getting
+     this wrong creates an orb out of nothing, and there are only twenty-six in
+     the world. */
+  A.setPowerOrbs(['vigor', 'vigor']);
+  B.setPowerOrbs(['leap']);
+  ok('offering two of something you have two of works',
+    K.trade(A, ['vigor', 'vigor'], B, ['leap']));
+  ok('...and it really moved both', B.powerOrbs.filter((x) => x === 'vigor').length === 2
+    && A.powerOrbs.join() === 'leap');
+  A.setPowerOrbs(['vigor']);
+  B.setPowerOrbs(['leap']);
+  const dupBefore = [...A.powerOrbs];
+  ok('offering two of something you have ONE of is refused',
+    K.trade(A, ['vigor', 'vigor'], B, ['leap']) === false);
+  ok('...and nothing moved', A.powerOrbs.join() === dupBefore.join()
+    && B.powerOrbs.join() === 'leap');
+
+  /* AND A PILE THAT WOULD OVERFLOW FAILS WHOLE, which is the same rule as the
+     single-orb case one step further along and the one most likely to be got
+     wrong: emptying both sides before filling either is what makes it true. */
+  A.setPowerOrbs(['swift', 'ward', 'leap']);
+  B.setPowerOrbs(Array(MAX_EQUIPPED - 1).fill('vigor'));
+  const overA = [...A.powerOrbs];
+  const overB = [...B.powerOrbs];
+  ok('a pile that would leave somebody carrying nine is refused',
+    K.trade(A, ['swift', 'ward', 'leap'], B, []) === false);
+  ok('...and neither side lost anything to the attempt',
+    A.powerOrbs.join() === overA.join() && B.powerOrbs.join() === overB.join());
+  ok('two empty piles are refused, like two empty offers',
+    K.trade(A, [], B, []) === false);
 
   /* --- health is the one stat with a current value as well as a maximum --- */
   const H = mkKit(0);
@@ -4567,6 +4719,49 @@ console.log('\n--- the three power moves ---');
       men.strike(A, 3.4) && midMove.state === 'stunned'
       && Math.abs(midMove.t - STUN_TIME) < 0.02);
     A._clearSpecials();
+
+    /* ONE ANIMAL, ONE ATTACK, HOWEVER MANY FRAMES THE ATTACK LASTS.
+       `Player._chargeStrike` tests its hitbox EVERY FRAME the charge is live —
+       twenty-odd calls for one press — and kittens are protected from that by
+       their invulnerability window and props by the charge's own `_chargeHit`
+       set. Animals had neither, so charging through a rat re-stunned it and
+       squeaked once a frame, which sounded exactly like being hit twenty
+       times by one move. Reported as that.
+
+       THE SET IS THE ONE THE PROPS ALREADY USE, passed straight through, so a
+       charge cannot end up with two different ideas of what it has hit. */
+    const runThrough = only('rat');
+    putBeside(runThrough, A);
+    A.velocity.set(9, 0, 0);
+    A.onGround = true;
+    const seen = new Set();
+    ok('the first frame of a charge catches the rat',
+      men.strike(A, 3.4, seen) === true && runThrough.state === 'stunned');
+    ok('...and it is remembered on the attack, not on the animal',
+      seen.has(runThrough) && seen.size === 1);
+    step(20);
+    const before = runThrough.t;
+    ok('...so the NEXT frame of the same charge catches nothing',
+      men.strike(A, 3.4, seen) === false);
+    ok('...and the stun clock is left alone rather than topped up',
+      runThrough.t === before, `${before.toFixed(2)}s -> ${runThrough.t.toFixed(2)}s`);
+    /* A NEW ATTACK IS A NEW SET, so nothing here makes an animal permanently
+       immune — which would be the obvious way to get this wrong. */
+    ok('...while a fresh attack lands on it again',
+      men.strike(A, 3.4, new Set()) === true);
+    /* AND AN ORDINARY SWING PASSES NOTHING AND IS UNAFFECTED. Every existing
+       check above calls `strike` with two arguments; this states why they
+       still mean what they meant. */
+    ok('...and a swing with no memory behaves exactly as it always did',
+      men.strike(A, 3.4) === true);
+    /* PUT HER BACK. The checks below this run against the same kitten, and a
+       charge leaves her at 9 units a second — which is over STILL_SPEED, so
+       `_canHold` would refuse every pin from here to the end of the section
+       and half a dozen unrelated checks would fail for a reason none of them
+       is about. */
+    A.velocity.set(0, 0, 0);
+    for (let i = 0; i < men.held.length; i++) if (men.held[i]) men._drop(i);
+
     restoreFlee();
   }
 
@@ -5242,18 +5437,39 @@ console.log('\n--- the three power moves ---');
     /* EQUAL AREA PER PLAYER is the rule it is really enforcing, so state it. */
     ok('...which is the same screen each, per kitten',
       Math.abs((three[0].w * three[0].h) / 2 - three[1].w * three[1].h) / full < 0.02);
-    ok('the shared pane is FULL WIDTH, not a tall half',
-      three[0].w === VW && three[0].h < VH);
+    /* STACKED, THE PAIR GETS A FULL-WIDTH STRIP — and that is what
+       'horizontal' means now rather than what everybody got. The setting used
+       to reach exactly one branch (two even panes), so a player who asked for
+       a side-by-side screen got one with two kittens and a stacked one with
+       three, from the same setting and with nothing on screen to say why. */
+    const threeH = splitLayout(3, VW, VH, 3, 'horizontal', [2, 1, 1]);
+    ok('the shared pane is FULL WIDTH when the split is stacked',
+      threeH[0].w === VW && threeH[0].h < VH);
+    /* ...AND THE MIRROR IMAGE WHEN IT IS NOT. A full-height column for the
+       pair, the two singles sharing the other one. Worse shape for a pair, for
+       the reason splitLayout gives, and it is what the setting says — and
+       `fitDistance` means the worse shape costs a wider framing rather than
+       kittens cropped off the edge of their own pane. */
+    ok('...and a full-height COLUMN when it is side by side',
+      three[0].h === VH && three[0].w < VW);
+    ok('...with the two singles sharing the other column',
+      three[1].x === three[2].x && three[1].x > three[0].x
+      && three[1].y !== three[2].y);
 
-    /* THE BIG PANE GOES ON TOP WHEREVER ITS GROUP SITS IN THE ORDER, so the
-       returned array still lines up index-for-index with the caller's groups.
-       Sorting the panes would silently hand one group another's camera. */
+    /* THE BIG PANE KEEPS ITS GROUP'S INDEX WHEREVER THAT GROUP SITS IN THE
+       ORDER, so the returned array still lines up index-for-index with the
+       caller's groups. Sorting the panes would silently hand one group
+       another's camera. Asserted BOTH WAYS ROUND, because the two branches are
+       two separate pieces of arithmetic and only one of them existed before. */
     for (const at of [0, 1, 2]) {
       const sizes = [1, 1, 1];
       sizes[at] = 2;
-      const p = splitLayout(3, VW, VH, 3, 'vertical', sizes);
+      const ph = splitLayout(3, VW, VH, 3, 'horizontal', sizes);
       ok(`a pair at index ${at} keeps index ${at} and takes the top strip`,
-        p[at].w === VW && p[at].y > 0 && p.length === 3);
+        ph[at].w === VW && ph[at].y > 0 && ph.length === 3);
+      const pv = splitLayout(3, VW, VH, 3, 'vertical', sizes);
+      ok(`...and the left column when the split is side by side (${at})`,
+        pv[at].h === VH && pv[at].x === 0 && pv.length === 3);
     }
 
     /* THREE PLAYERS ALL APART ARE STILL QUADRANTS — no pane has two kittens in
@@ -5306,8 +5522,11 @@ console.log('\n--- the three power moves ---');
       const p4 = splitLayout(4, VW, VH, 3, 'vertical', [1, 1, 1, 1]);
       const s4 = seats(p4, g4);
 
+      /* 'horizontal', because these checks are about the full-width strip the
+         stacked layout makes — the direction is not what is being tested and
+         pinning it keeps them reading the same as when they were written. */
       const g3 = [[0], [1, 2], [3]];
-      const raw3 = splitLayout(3, VW, VH, 3, 'vertical', [1, 2, 1]);
+      const raw3 = splitLayout(3, VW, VH, 3, 'horizontal', [1, 2, 1]);
       const fix3 = stablePanes(raw3, g3, s4, VW, VH);
       ok('the pane order alone moved player 1 across the screen',
         where(raw3, g3, 0) !== where(p4, g4, 0));
@@ -5398,7 +5617,7 @@ console.log('\n--- the three power moves ---');
        cropped off the sides of their own pane. Reported from a four-player game
        as "only Frost is visible — it thinks all three are, but that assumes the
        whole screen width". */
-    const uneven = splitLayout(2, VW, VH, 3, 'vertical', [3, 1]);
+    const uneven = splitLayout(2, VW, VH, 3, 'horizontal', [3, 1]);
     ok('an uneven pair of panes is STACKED, so both stay wide',
       uneven.every((v) => v.w === VW && v.x === 0));
     ok('...and the bigger group gets the bigger strip',
@@ -5414,9 +5633,38 @@ console.log('\n--- the three power moves ---');
     /* WHICHEVER PANE IS FIRST GOES ON TOP, so the array still lines up
        index-for-index with the caller's groups. Sorting by size would hand one
        group another's camera. */
-    const unevenB = splitLayout(2, VW, VH, 3, 'vertical', [1, 3]);
+    const unevenB = splitLayout(2, VW, VH, 3, 'horizontal', [1, 3]);
     ok('...and a group listed second keeps the second pane',
       unevenB[1].h > unevenB[0].h && unevenB[0].y === VH - unevenB[0].h);
+
+    /* AND THE SETTING IS OBEYED HERE TOO. Stacked is the kinder shape and it
+       is now what 'horizontal' means; 'vertical' gets the same 0.62 split
+       turned on its side. The complaint was that the split-direction setting
+       "is only getting applied when 2 of the players are on 1 screen and 2 on
+       the other" — this branch and the 2/1/1 one above are the two it did not
+       reach, and quadrants are the one arrangement where it has no meaning. */
+    const unevenV = splitLayout(2, VW, VH, 3, 'vertical', [3, 1]);
+    ok('...and side by side when the setting says so',
+      unevenV.every((v) => v.h === VH && v.y === 0));
+    ok('...with the bigger group getting the wider column',
+      unevenV[0].w > unevenV[1].w && unevenV[0].x === 0);
+    ok('...and the lone kitten still getting a pane, not a sliver',
+      unevenV[1].w > VW * 0.3, `${(unevenV[1].w / VW).toFixed(2)} of the width`);
+    ok('...and the two of them tiling the frame exactly',
+      unevenV[1].x === VW - unevenV[1].w && unevenV[0].w + unevenV[1].w <= VW);
+    const unevenVB = splitLayout(2, VW, VH, 3, 'vertical', [1, 3]);
+    ok('...and a group listed second still keeping the second pane',
+      unevenVB[1].w > unevenVB[0].w && unevenVB[0].x === 0);
+
+    /* QUADRANTS IGNORE IT, AND THAT IS THE ANSWER RATHER THAN AN OVERSIGHT.
+       They are already cut both ways at once; the alternatives are three or
+       four equal columns or rows, which splitLayout's header rejects on equal
+       area and on the shape a fixed three-quarter camera can work in. */
+    for (const n of [3, 4]) {
+      ok(`${n} equal panes are the same either way — direction has no meaning`,
+        JSON.stringify(splitLayout(n, VW, VH, 3, 'vertical'))
+          === JSON.stringify(splitLayout(n, VW, VH, 3, 'horizontal')));
+    }
 
     /* TWO EVEN PANES ARE UNTOUCHED, WHICH IS THE TWO-PLAYER GAME. The sizes are
        always 1 and 1 there, so it never reaches the branch above and keeps the
@@ -6468,6 +6716,225 @@ console.log('\n--- the minimap fits its pane ---');
       === mapWidth({ paneW: 960, paneH: 1080, screenH: 1080 }));
 }
 
+console.log('\n--- and it sits on the seam, where both panes can read it ---');
+{
+  /* THE REPORT: on a side-by-side split one map was hard against the left edge
+     of the screen and the other just right of the middle, which is as far
+     apart as two boxes on one screen can be — so neither girl could read her
+     sister's, and the maths board was drawn on top of one of them. `mapSpot`
+     puts the map at the corner of its pane NEAREST the middle and the board at
+     the corner FURTHEST from it, so they end up at opposite ends of the same
+     edge with the kitten between them.
+
+     Pure arithmetic, which is the only reason this can be checked at all: the
+     alternative is a rule written inline in `_drawMaps` that could only ever
+     be verified by looking at the screen. */
+  const W = 1920;
+  const H = 1080;
+  const M = 260;                 // a map
+  const B = { w: 380, h: 290 };  // and the Dojo's board
+  const HINT = 30;
+  const map = (v) => mapSpot({ v, W, H, size: M, hint: HINT });
+  const board = (v) => mapSpot({ v, W, H, w: B.w, h: B.h, hint: HINT, inner: false });
+
+  const inside = (v, spot, w, h) => {
+    const top = H - v.y - v.h;
+    return spot.left >= v.x && spot.left + w <= v.x + v.w
+      && spot.top >= top && spot.top + h <= top + v.h;
+  };
+  const overlaps = (a, aw, ah, b, bw, bh) => (
+    a.left < b.left + bw && b.left < a.left + aw
+    && a.top < b.top + bh && b.top < a.top + ah
+  );
+
+  /* EVERY ARRANGEMENT AT ONCE, because the failure this prevents is a map
+     drawn over somebody else's half of the screen and it only ever showed up
+     in one layout at a time. */
+  const LAYOUTS = [
+    ['side by side', splitLayout(2, W, H, 3, 'vertical')],
+    ['stacked', splitLayout(2, W, H, 3, 'horizontal')],
+    ['quadrants', splitLayout(4, W, H, 3, 'vertical', [1, 1, 1, 1])],
+    ['a pair and two singles', splitLayout(3, W, H, 3, 'horizontal', [2, 1, 1])],
+    ['a pair and two singles, side by side', splitLayout(3, W, H, 3, 'vertical', [2, 1, 1])],
+    ['an uneven pair', splitLayout(2, W, H, 3, 'horizontal', [3, 1])],
+  ];
+  for (const [name, panes] of LAYOUTS) {
+    ok(`${name}: every map is inside its own pane`,
+      panes.every((v) => inside(v, map(v), M, M)));
+    ok(`...and the board is too`,
+      panes.every((v) => inside(v, board(v), B.w, B.h)));
+    /* THE ONE THAT WAS ACTUALLY BROKEN. A map and a board in the same pane
+       must not be drawn through each other — which is what a fixed
+       `left: 16px; bottom: 46px` board did to a map in the bottom-left of its
+       pane, and why the board appeared to be "behind the minimap". */
+    ok(`...and neither is drawn through the other`,
+      panes.every((v) => !overlaps(map(v), M, M, board(v), B.w, B.h)));
+  }
+
+  /* THE SEAM RULE ITSELF. A left-hand pane's map hugs its RIGHT edge and a
+     right-hand pane's its LEFT, so the two meet in the middle of the screen. */
+  {
+    const [L, R] = splitLayout(2, W, H, 3, 'vertical');
+    const mL = map(L);
+    const mR = map(R);
+    ok('the two maps meet at the seam rather than at the outside edges',
+      mL.left + M > W * 0.4 && mR.left < W * 0.6,
+      `${mL.left} .. ${mR.left + M}`);
+    ok('...and the boards go the other way, to the outside',
+      board(L).left < W * 0.1 && board(R).left + B.w > W * 0.9);
+    /* THE HINT LINE. `.hint` is one centred sentence at the bottom of the
+       SCREEN, so two full-height panes closing in on the seam put their maps
+       either side of it. Only a pane whose bottom IS the screen's bottom
+       lifts; a pane sitting on a seam has a seam under it. */
+    ok('...and both lift clear of the hint line',
+      mL.top + M <= H - HINT && mR.top + M <= H - HINT);
+  }
+  {
+    /* A BOTTOM-ROW QUADRANT CROSSES TO THE TOP OF ITS PANE, because that is
+       where its seam is. Getting this inversion wrong does not look broken —
+       it looks like the map belongs to the pane above. */
+    const q = splitLayout(4, W, H, 3, 'vertical', [1, 1, 1, 1]);
+    const topLeft = q[0];
+    const botLeft = q[2];
+    ok('a top-row pane puts its map along the bottom of itself',
+      map(topLeft).top + M > (H - topLeft.y - topLeft.h) + topLeft.h * 0.5);
+    ok('...and a bottom-row pane puts its along the TOP of itself',
+      map(botLeft).top < (H - botLeft.y - botLeft.h) + botLeft.h * 0.5);
+    ok('...so all four converge on the middle of the screen',
+      q.every((v) => {
+        const c = map(v);
+        return Math.abs(c.left + M / 2 - W / 2) < W * 0.3
+          && Math.abs(c.top + M / 2 - H / 2) < H * 0.3;
+      }));
+  }
+  /* A FULL-WIDTH PANE HAS NO INSIDE ON THAT AXIS, so the two boxes take an end
+     each — map right, board left, the same places the unsplit screen puts
+     them. Without it both hug the left edge and one is drawn through the
+     other, which is a case only a stacked split reaches. */
+  {
+    const [top] = splitLayout(2, W, H, 3, 'horizontal');
+    ok('a full-width pane sends the map right and the board left',
+      map(top).left > W * 0.5 && board(top).left < W * 0.1);
+  }
+}
+
+console.log('\n--- and it lets go of a kitten who has left the ring for good ---');
+{
+  /* THE REPORT: "when a player dies and is out of bounds, the camera drags away
+     from the arena and zooms far out". A round is always ONE screen — the fight
+     is the whole point of the mode — so the shared rig frames everybody in it,
+     and the pull-back is sized from the widest gap between any two of them.
+
+     A knockout deliberately throws her further than the blow that caused it, so
+     the last hit of a round can put her over the rim and down onto the island
+     underneath, forty units out from a 56-unit ring. `Tournament` exempts a
+     knocked-out kitten from the ring-out rule on purpose — she has no health
+     left to charge back with — so she lies there, and the camera went on
+     fitting her in: the knockout that ENDED the round was watched from a
+     hundred units up with the ring the size of a coin.
+
+     PURE, so the fix is checkable at all. `Game._camIgnores` is four lines that
+     read her position and hand the facts over. */
+  const deck = 40;
+  const lying = { ko: true, onGround: true, y: deck - 30 };
+
+  ok('a kitten knocked out of the ring and landed is let go of',
+    outOfShot(lying, 12, deck, true) === true);
+  /* THE LINE THE REPORT ITSELF DREW: being launched out of the ring IS the
+     shot. It stops being one when she stops moving. */
+  ok('...but not while she is still flying out of it',
+    outOfShot({ ko: true, onGround: false, y: deck + 6 }, 12, deck, true) === false);
+  ok('...and a long fall past the rim counts as gone even in mid-air',
+    outOfShot({ ko: true, onGround: false, y: deck - OUT_DROP - 1 }, 12, deck, true) === true);
+  ok('...and one unit under the deck is still the same shot',
+    outOfShot({ ko: true, onGround: false, y: deck - 1 }, 12, deck, true) === false);
+
+  /* IT IS NOT A RING-OUT AND MUST NOT BECOME ONE. A kitten who is merely
+     outside the ring, or merely knocked out, is framed exactly as she always
+     was — this only fires where the two meet. Getting either half wrong loses
+     the girl who is still fighting. */
+  ok('a kitten standing outside the ring on her feet is still framed',
+    outOfShot({ ko: false, onGround: true, y: deck }, 12, deck, true) === false);
+  ok('...and one knocked out INSIDE the ring certainly is',
+    outOfShot({ ko: true, onGround: true, y: deck }, -20, deck, true) === false);
+  ok('...and one right on the rim is inside until she is outside it',
+    outOfShot(lying, 0, deck, true) === false);
+
+  /* ONLY DURING A ROUND, because "outside the ring" answers for the whole
+     world: off the arena, every kitten on every island is outside it. `ko`
+     should be unreachable out there, but a predicate that is only correct
+     because of something two files away is one bad merge from framing nobody
+     at all — and "nobody" here means a camera pointed at the origin. */
+  ok('...and none of it applies when no round is live',
+    outOfShot(lying, 12, deck, false) === false);
+  ok('a null is not a kitten to drop', outOfShot(null, 12, deck, true) === false);
+
+  /* AND THE WHOLE GROUP COMES BACK RATHER THAN NOTHING. A pane whose only
+     kitten has been knocked out still has to point somewhere, and pointing it
+     at her is a great deal better than pointing it at the origin — which is
+     what a `filter` with no fallback gives, and it is a worse bug than the one
+     being fixed. Prefer a rule that degrades. */
+  const gone = new Set([1, 3]);
+  ok('the framed set drops the ones who are gone',
+    framedMembers([0, 1, 2, 3], (i) => gone.has(i)).join() === '0,2');
+  ok('...and a group with nobody left keeps everybody',
+    framedMembers([1, 3], (i) => gone.has(i)).join() === '1,3');
+  ok('...and a group with nobody gone is returned untouched',
+    framedMembers([0, 2], (i) => gone.has(i)).join() === '0,2');
+  /* THE TWO-PLAYER GAME COMES OUT BIT-IDENTICAL while nobody is knocked out,
+     which is the fifth non-negotiable and the reason this is a filter rather
+     than a rewrite of the framing. */
+  ok('...so an ordinary pair is framed exactly as it always was',
+    framedMembers([0, 1], () => false).join() === '0,1');
+}
+
+console.log('\n--- and the two maps go where they are worth most ---');
+{
+  /* THE OLD RULE WAS "THE MAPS BELONG TO PANES 0 AND 1", i.e. to Ember and
+     Frost. Stable, and it stranded exactly the wrong people: two sisters
+     exploring together share ONE pane, so that pane could end up with no map
+     while a map sat in a pane holding one girl standing next to the stall.
+     Two kids with no map is the failure the minimap exists to prevent. */
+  ok('two players get one map each, exactly as they always did',
+    JSON.stringify(assignMaps([1, 1], [], 2)) === JSON.stringify([0, 1]));
+  ok('...and a merged view uses one and parks the other',
+    JSON.stringify(assignMaps([4], [0, 1], 2)) === JSON.stringify([0, -1]));
+
+  /* THE FIX, STATED AS THE CASE IT WAS REPORTED FROM: four kittens, two of
+     them together in pane 2, maps sitting on panes 0 and 1. */
+  const moved = assignMaps([1, 1, 2], [0, 1], 2);
+  ok('a pane holding two kittens takes a map off a pane holding one',
+    moved.includes(2), JSON.stringify(moved));
+  ok('...and only one of them moves — the other pane keeps what it had',
+    moved.filter((g) => g === 1).length === 1, JSON.stringify(moved));
+
+  /* INCUMBENCY WINS TIES, WHICH IS WHAT STOPS IT FLICKERING. A map is taken
+     off a pane only by a pane holding STRICTLY more players, so the ordinary
+     four-player case — everybody alone — never moves a map once it has landed.
+     A map that moves for a reason that has nothing to do with you costs you a
+     second of hunting for it; same argument `stablePanes` makes. */
+  ok('nothing moves when every pane holds the same number',
+    JSON.stringify(assignMaps([1, 1, 1, 1], [0, 1], 2)) === JSON.stringify([0, 1]));
+  ok('...and a settled assignment is a fixed point',
+    JSON.stringify(assignMaps([1, 2, 1], assignMaps([1, 2, 1], [0, 1], 2), 2))
+      === JSON.stringify(assignMaps([1, 2, 1], [0, 1], 2)));
+
+  /* NO PANE EVER GETS BOTH MAPS, in any arrangement — that would be two
+     archipelagos in one corner and a pane with none next door. */
+  let doubled = 0;
+  for (const sizes of [[1, 1], [1, 1, 1], [2, 1, 1], [1, 2, 1], [1, 1, 2],
+    [1, 1, 1, 1], [2, 2], [3, 1], [1, 3]]) {
+    for (const prev of [[], [0, 1], [1, 0], [2, 0], [-1, -1]]) {
+      const got = assignMaps(sizes, prev, 2);
+      const live = got.filter((g) => g >= 0);
+      if (new Set(live).size !== live.length) doubled += 1;
+      if (live.some((g) => g >= sizes.length)) doubled += 1;
+    }
+  }
+  ok('no pane is ever handed both maps, and none points off the end',
+    doubled === 0);
+}
+
 /* ===========================================================================
    LIVE TEXT DOES NOT ALLOCATE.
 
@@ -7027,6 +7494,110 @@ console.log('\n--- the cross slash announces itself ---');
   ok('...and puts nothing in the scene it cannot paint',
     stage.children.length === before, `${stage.children.length} added`);
 
+  /* THE HEADLESS CHECK GOES FIRST, AND HAS TO. The seal's three canvases are
+     built lazily and cached for the whole process, so anything that draws one
+     with a `document` present leaves the "no canvas at all" path unreachable
+     for everything after it — the block below used to sit above this one and
+     turned the two assertions above into 7-children-added. */
+  /* --- and it hangs where the last stroke was thrown ----------------------
+     Reported as "the symbol should appear where the last slash was made — if
+     she stands still it should stay put, and if she spins while slashing it
+     should teleport around her". It was placed once, on cut 1, and then left:
+     a kitten who turned between cuts went on adding strokes to a box hanging
+     in the air behind her, so the seal recorded the first cut and lied about
+     the other two.
+
+     DRIVEN THROUGH THE REAL EFFECT, because the placement is three lines
+     inside `_live` and the thing that can go wrong is WHICH FRAMES they run
+     on. A fake would only ever assert my own idea of that. */
+  {
+    const seal = new THREE.Scene();
+    const fx2 = new CrossFx(seal);
+    /* Every cut's placement, in order, for a kitten given a `turn` to apply
+       between cuts. `_stepSpecials` is what advances her clocks; `fx2.update`
+       is what reads them. Same loop the sequencing check above runs. */
+    const placements = (turn) => {
+      const p = mk();
+      p.position.set(0, 0, 0);
+      p.facing = 0;
+      p.velocity.set(0, 0, 0);
+      const at = [];
+      let last = -1;
+      p._startWind(DEAF);
+      for (let i = 0; i < 400 && p.triAt; i++) {
+        const st = sealStage(p);
+        if (st !== last) {
+          if (st >= 1) p.facing += turn;
+          last = st;
+        }
+        fx2.update(1 / 60, [p]);
+        if (st >= 1 && sealStage(p) === st) {
+          const r = fx2.rigs.get(p.index);
+          if (at.length !== st) at.push(r.group.position.clone());
+        }
+        /* PLANTED. The technique holds her still by itself; zeroing this as
+           well is what makes "she did not move" mean only "she did not turn",
+           so a failure here can only be about the facing. */
+        p.position.set(0, 0, 0);
+        p.velocity.set(0, 0, 0);
+        p._stepSpecials(1 / 60, HOLD, world, DEAF);
+      }
+      return at;
+    };
+
+    const still = placements(0);
+    ok('a kitten who stands still cuts all three strokes in one place',
+      still.length === CROSS.cuts
+      && still.every((v) => v.distanceTo(still[0]) < 1e-6),
+      still.map((v) => `${v.x.toFixed(2)},${v.z.toFixed(2)}`).join(' | '));
+    /* AND IT IS IN FRONT OF HER, not on her. `AHEAD` is not exported and does
+       not need to be — what matters is the sign, which is the thing a facing
+       bug flips. */
+    ok('...out in front of her rather than on top of her',
+      still[0].z > 0.5 && Math.abs(still[0].x) < 1e-6,
+      `${still[0].x.toFixed(2)},${still[0].z.toFixed(2)}`);
+
+    /* A HALF TURN BETWEEN CUTS. Half a turn rather than a quarter because the
+       failure mode is "it did not move at all", and the biggest possible move
+       is the clearest way to say so. */
+    const spun = placements(Math.PI / 2);
+    ok('...and a kitten who turns between cuts leaves each one where she cut it',
+      spun.length === CROSS.cuts
+      && spun[1].distanceTo(spun[0]) > 1
+      && spun[2].distanceTo(spun[1]) > 1,
+      spun.map((v) => `${v.x.toFixed(2)},${v.z.toFixed(2)}`).join(' | '));
+    /* IT TELEPORTS, IT DOES NOT SLIDE. The seal is a thing cut into the air,
+       so it holds still between cuts and jumps on one — a seal that eased
+       across would be a badge pinned to her chest, which is the reading the
+       comment on `_live` rejects. Checked by turning her AFTER the last cut
+       and watching the seal ignore her. */
+    {
+      const p = mk();
+      p.position.set(0, 0, 0);
+      p.facing = 0;
+      p._startWind(DEAF);
+      let done = null;
+      for (let i = 0; i < 400 && p.triAt; i++) {
+        if (sealStage(p) === CROSS.cuts) {
+          fx2.update(1 / 60, [p]);
+          const r = fx2.rigs.get(p.index);
+          if (!done) done = r.group.position.clone();
+          else {
+            ok('...and once cut, the seal ignores her entirely',
+              r.group.position.distanceTo(done) < 1e-6,
+              `${r.group.position.x.toFixed(2)} vs ${done.x.toFixed(2)}`);
+            break;
+          }
+          p.facing += Math.PI;
+          p.position.set(6, 0, 6);
+        } else fx2.update(1 / 60, [p]);
+        p._stepSpecials(1 / 60, HOLD, world, DEAF);
+      }
+    }
+    fx2.reset();
+  }
+
+
   /* --- where it is wired, and where it is NOT ---------------------------- */
   const pl = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
   /* THE POLLER DOCTRINE, PINNED. player.js is the most-checked file in the
@@ -7210,8 +7781,8 @@ console.log('\n--- a trade is agreed twice, by two people ---');
   {
     const { g, ps, players } = mk([ORB_IDS[0]], [ORB_IDS[1]]);
     ps.open('profile');
-    ps.sides[0].offer = 0;
-    ps.sides[1].offer = 0;
+    ps.sides[0].offers.add(0);
+    ps.sides[1].offers.add(0);
     ps._confirmHere(0);
     ps._confirmHere(1);
     /* The tick only says "I am ready" — `_maybeTrade`, which `update` runs
@@ -7248,8 +7819,8 @@ console.log('\n--- a trade is agreed twice, by two people ---');
   {
     const { g, ps, players } = mk([ORB_IDS[0]], [ORB_IDS[1]]);
     ps.open('profile');
-    ps.sides[0].offer = 0;
-    ps.sides[1].offer = 0;
+    ps.sides[0].offers.add(0);
+    ps.sides[1].offers.add(0);
     ps._confirmHere(0);
     ps._confirmHere(1);
     ps._maybeTrade();
@@ -7272,6 +7843,127 @@ console.log('\n--- a trade is agreed twice, by two people ---');
       ps.sides.every((sd) => sd.pending === null));
   }
 
+  /* --- SEVERAL ORBS AT ONCE, AND ONE PRESS TO PUT THEM ALL BACK -----------
+     The offer used to be a single slot index, so handing a sister three spares
+     was three trades. It is a SET of her own rows now. */
+  {
+    const { g, ps, players } = mk([ORB_IDS[0], ORB_IDS[2], ORB_IDS[3]], [ORB_IDS[1]]);
+    ps.open('profile');
+    ps.sides[0].i = 0; ps._offerHere(0);
+    ps.sides[0].i = 1; ps._offerHere(0);
+    ps.sides[0].i = 2; ps._offerHere(0);
+    ok('three orbs can be on the table at once', ps.sides[0].offers.size === 3);
+    /* JUMP ON ONE THAT IS ALREADY OFFERED TAKES JUST THAT ONE BACK — the
+       toggle, which is what makes a set usable without a second button. */
+    ps._offerHere(0);
+    ok('...and pressing again takes exactly that one back off',
+      ps.sides[0].offers.size === 2 && !ps.sides[0].offers.has(2));
+    ps.sides[0].i = 2; ps._offerHere(0);
+
+    ps.sides[1].offers.add(0);
+    ps._confirmHere(0);
+    ps._confirmHere(1);
+    ps._maybeTrade();
+    /* THE QUESTION NAMES EVERY ORB. A pile summarised as "3 orbs" is a
+       yes-press behind a list she cannot see, which is the whole reason this
+       screen asks in words at all. */
+    const q = ps.sides[0].pending.text;
+    ok('the question names every orb in the pile',
+      [ORB_IDS[0], ORB_IDS[2], ORB_IDS[3]].every((id) => q.includes(ORB_BY_ID[id].name)),
+      q);
+    ps._answerHere(0, true);
+    ps._answerHere(1, true);
+    ps._maybeTrade();
+    ok('...and both yeses move the whole pile',
+      players[1].powerOrbs.length === 3 && players[0].powerOrbs.length === 1);
+    ok('...and no orb was created or destroyed',
+      players[0].powerOrbs.length + players[1].powerOrbs.length === 4);
+    ok('...and both sides are cleared down afterwards',
+      ps.sides.every((sd) => sd.offers.size === 0 && !sd.ready && !sd.sure));
+  }
+
+  /* SAYING NO IS THE DESELECT-ALL, and that is asked for rather than tidy.
+     With one orb on the table, leaving the offer up after a no cost one press
+     to undo. With a pile of them she has to remember which four slots she
+     picked and un-pick each one, on a grid where an offered slot and a full
+     one differ by a ring. */
+  {
+    const { g, ps } = mk([ORB_IDS[0], ORB_IDS[2]], [ORB_IDS[1]]);
+    ps.open('profile');
+    ps.sides[0].i = 0; ps._offerHere(0);
+    ps.sides[0].i = 1; ps._offerHere(0);
+    ps.sides[0].points = 100;
+    ps.sides[1].offers.add(0);
+    ps._confirmHere(0);
+    ps._confirmHere(1);
+    ps._maybeTrade();
+    ps._answerHere(0, false);
+    ok('a NO puts every offered orb back',
+      ps.sides.every((sd) => sd.offers.size === 0));
+    ok('...and the points with them', ps.sides[0].points === 0);
+    ok('...and nobody is left holding a yes, a tick or a question',
+      ps.sides.every((sd) => !sd.ready && !sd.sure && sd.pending === null));
+    ok('...and it SAYS the whole trade came off, rather than silently emptying',
+      /back/i.test(ps._flash) && ps._flashT > 0, ps._flash);
+  }
+
+  /* INTERACT IS THE PER-SIDE DESELECT-ALL. One press clears the whole offer
+     rather than the last orb picked — she has no way to know which one that
+     was, so "un-offer the most recent" would look like the button choosing at
+     random. */
+  {
+    const { g, ps } = mk([ORB_IDS[0], ORB_IDS[2]], [ORB_IDS[1]]);
+    ps.open('profile');
+    ps.sides[0].i = 0; ps._offerHere(0);
+    ps.sides[0].i = 1; ps._offerHere(0);
+    const pad = {
+      mx: 0, my: 0, down: () => false,
+      pressed(a) { return a === 'interact'; },
+    };
+    ps._tradeButtons(0, pad, ps.sides[0]);
+    ok('INTERACT takes the whole pile back in one press',
+      ps.sides[0].offers.size === 0);
+    ok('...and the screen is still open — it backs out one layer at a time',
+      ps.mode === 'profile');
+  }
+
+  /* --- A QUESTION FREEZES THE CURSOR IT IS ABOUT --------------------------
+     The stick used to be read BEFORE the pending question, so the highlight
+     walked off the row "Sell Ward for 90 points?" was asking about and landed
+     on whatever she drifted onto. The purchase was always safe — `_answerHere`
+     takes the id from the QUESTION and says so — but what she could SEE
+     disagreed with what she was agreeing to, and a confirmation you cannot
+     trust the look of is not one. */
+  {
+    const { g, ps } = mk([], []);
+    for (const id of ORB_IDS) g.kotodama.stock[id] = 3;
+    ps.open('shop', { shopper: g.players[0] });
+    ps.sides[0].i = 2;
+    ps._buyHere(0);
+    ok('a question is up', ps.sides[0].pending?.kind === 'buy');
+    const asked = ps.sides[0].pending.id;
+    /* A stick shoved hard down, for as long as it takes — the repeat would
+       have walked her several rows in this many frames. */
+    const stick = {
+      mx: 0, my: 1, down: () => false, pressed: () => false,
+    };
+    for (let f = 0; f < 40; f++) ps._drive(0, stick, 1 / 60);
+    ok('...and the stick does not move her cursor while it is', ps.sides[0].i === 2);
+    ok('...so the row she is looking at is still the row being asked about',
+      ORB_IDS[ps.sides[0].i] === asked);
+    /* AND THE FREEZE IS HERS ALONE. The whole reason this screen reads two
+       pads separately is that one girl's dialog must not stop her sisters. */
+    ps._join(1);
+    ps.sides[1].i = 0;
+    for (let f = 0; f < 40; f++) ps._drive(1, stick, 1 / 60);
+    ok('...while her sister is still shopping normally', ps.sides[1].i !== 0);
+    /* START IS READ FIRST AND STILL WORKS. Trapping a kid behind a dialog is
+       worse than anything the freeze prevents. */
+    const start = { mx: 0, my: 0, down: () => false, pressed: (a) => a === 'start' };
+    ps._drive(0, start, 1 / 60);
+    ok('...and START still leaves the screen', ps.mode === null);
+  }
+
   /* CHANGING THE OFFER AFTER SAYING YES THROWS THE YES AWAY. A girl who agreed
      to hand over 200 points and then dialled it to 800 has not agreed to that,
      and the same is true of swapping which orb is on the table. This rule
@@ -7280,8 +7972,8 @@ console.log('\n--- a trade is agreed twice, by two people ---');
   {
     const { g, ps } = mk([ORB_IDS[0], ORB_IDS[2]], [ORB_IDS[1]]);
     ps.open('profile');
-    ps.sides[0].offer = 0;
-    ps.sides[1].offer = 0;
+    ps.sides[0].offers.add(0);
+    ps.sides[1].offers.add(0);
     ps._confirmHere(0);
     ps._confirmHere(1);
     ps._maybeTrade();
@@ -7314,6 +8006,46 @@ console.log('\n--- a trade is agreed twice, by two people ---');
     ps._drive(0, press('jump'), 0.016);
     ok('...and JUMP on HER pad answers it', ps.sides[0].pending === null
       && g.players[0].powerOrbs.length === 1);
+  }
+
+  /* --- and the shelf says whose count it is printing ----------------------
+     Reported from four-player play: "when 2 or more players' cursors are on
+     the same item, show both of their inventories for that item". The line
+     said "you have 1" — written when there was one shopper — and then named
+     `here[0]`, whoever happened to be lowest-numbered, so two sisters looking
+     at the same shelf read ONE count and the girl it did not belong to was
+     told how many her sister had.
+
+     ASSERTED AGAINST THE MARKUP, because that is where the bug was: every
+     field behind it was already right. */
+  {
+    const { g, ps, players } = mk([ORB_IDS[0]], []);
+    /* FROST opens it, so "the opener" and "player 0" are different people —
+       with Ember opening, an implementation that simply sorted by seat would
+       pass and be wrong the moment the younger one walked to the counter. */
+    g.kotodama.stock[ORB_IDS[0]] = 3;
+    ps.open('shop', { shopper: players[1] });
+    ps._join(0);
+    ps.sides[0].i = 0;
+    ps.sides[1].i = 0;
+    const row = ps._shopMarkup();
+    ok('two cursors on one row print two counts, not one',
+      row.includes('Ember has 1') && row.includes('Frost has 0'),
+      (row.match(/\w+ has \d/g) ?? []).slice(0, 2).join(' / '));
+    /* THE OPENER GOES LAST, and that is the one bit of order in it: she is the
+       one who walked to the counter, the one about to press BUY, and the end
+       of a sentence is where the eye stops. */
+    ok('...with the kitten who OPENED the shop named last',
+      row.indexOf('Ember has 1') < row.indexOf('Frost has 0'));
+    /* AND ONE CURSOR ON A ROW IS STILL ONE COUNT. The two-player screen the
+       girls know must come out unchanged where the rule generalises. */
+    ps.sides[0].i = 2;
+    const apart = ps._shopMarkup();
+    ok('...and a row with one cursor on it names only her',
+      (apart.match(/has \d/g) ?? []).length === ORB_IDS.length,
+      String((apart.match(/has \d/g) ?? []).length));
+    ok('...and a row nobody is on falls back to the opener rather than to nobody',
+      apart.includes('Frost has'));
   }
 
   /* --- one counter, four purses ---------------------------------------

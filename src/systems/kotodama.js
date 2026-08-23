@@ -347,32 +347,59 @@ export class Kotodama {
   /* -------------------------------- trade -------------------------------- */
 
   /**
-   * Swap one orb for one orb, both ways at once.
+   * Swap a pile for a pile, both ways at once.
    *
    * IT IS ATOMIC AND IT IS CHECKED BEFORE ANYTHING MOVES. Both kittens are at
    * eight slots more often than not by the time they are trading, so a naive
    * "give hers to him, give his to her" overflows on the first half and leaves
-   * one girl a copy down with nothing to show for it. Removing both first is
-   * what makes the count conserved, and `world-check` asserts exactly that:
-   * a trade cannot create or destroy an orb.
+   * one girl a copy down with nothing to show for it. Removing both sides
+   * first is what makes the count conserved, and `world-check` asserts exactly
+   * that: a trade cannot create or destroy an orb.
    *
-   * Either side may offer nothing (`null`) — a gift. That is not a
-   * simplification for its own sake: the older sister giving the younger one a
-   * spare is the single most likely thing to happen at this screen.
+   * Either side may offer nothing — a gift. That is not a simplification for
+   * its own sake: the older sister giving the younger one a spare is the
+   * single most likely thing to happen at this screen.
+   *
+   * IT TAKES A LIST NOW, AND A BARE ID IS STILL A LIST OF ONE. One orb per
+   * trade meant handing over four spares was four separate agreements; the
+   * trade screen offers a set (see `Side.offers`) and this is the half that
+   * moves it. The single-id form is kept working rather than chased through
+   * every caller, because a rule that degrades is better than one that
+   * vanishes — and `world-check` still asserts the one-for-one case, which is
+   * the two-player game the girls already know.
+   *
+   * DUPLICATES ARE COUNTED, NOT DEDUPED. A kitten can be wearing two Wards and
+   * offering one of them is a different sentence from offering both, so the
+   * check below is "has she got at least this MANY of each", not `includes`.
    */
-  trade(a, aId, b, bId) {
-    if (aId && !a.powerOrbs.includes(aId)) return false;
-    if (bId && !b.powerOrbs.includes(bId)) return false;
-    if (!aId && !bId) return false;
+  trade(a, aIds, b, bIds) {
+    const A = aIds == null ? [] : [].concat(aIds).filter(Boolean);
+    const B = bIds == null ? [] : [].concat(bIds).filter(Boolean);
+    if (!A.length && !B.length) return false;
 
-    const aAfter = a.powerOrbs.length - (aId ? 1 : 0) + (bId ? 1 : 0);
-    const bAfter = b.powerOrbs.length - (bId ? 1 : 0) + (aId ? 1 : 0);
+    /** Has `p` really got every id in `list`, counting copies? */
+    const owns = (p, list) => {
+      const left = [...p.powerOrbs];
+      for (const id of list) {
+        const at = left.indexOf(id);
+        if (at < 0) return false;
+        left.splice(at, 1);
+      }
+      return true;
+    };
+    if (!owns(a, A) || !owns(b, B)) return false;
+
+    const aAfter = a.powerOrbs.length - A.length + B.length;
+    const bAfter = b.powerOrbs.length - B.length + A.length;
     if (aAfter > MAX_EQUIPPED || bAfter > MAX_EQUIPPED) return false;
 
-    if (aId) this.take(a, aId);
-    if (bId) this.take(b, bId);
-    if (bId) this.give(a, bId, { quiet: true });
-    if (aId) this.give(b, aId, { quiet: true });
+    /* BOTH SIDES EMPTY OUT BEFORE EITHER FILLS UP. Interleaving the loops
+       would reintroduce the overflow this function exists to prevent, one
+       pile deep instead of one orb deep. */
+    for (const id of A) this.take(a, id);
+    for (const id of B) this.take(b, id);
+    for (const id of B) this.give(a, id, { quiet: true });
+    for (const id of A) this.give(b, id, { quiet: true });
 
     this.game.sfx('trade');
     return true;

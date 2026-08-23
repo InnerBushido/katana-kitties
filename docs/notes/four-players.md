@@ -1208,3 +1208,228 @@ left alone forever, so it rode up onto a dragon with her too. Both are derived
 now, from `this.clan` and from the marker, which is the general shape of the
 fix: two concentric rings drawn on the same terrain are one piece of furniture
 with two colours in it, and anything that moves one has to move both.
+
+## The third four-player session — eleven things, and two of them reverse a decision
+
+Reported as one list after an afternoon on PCs. Nine are bugs; two — the minimap
+placement and the split-direction setting — are the game answering a question it
+had never actually been asked, and both change how the screen looks for **two**
+players as well as four. Those two are called out at the end.
+
+### The maths board was in three wrong places at once
+
+`#math-board` was `left: 16px; bottom: 46px; width: min(540px, 42vw)` in the
+stylesheet, which is exactly right for one screen and wrong in every way for
+four. 42vw is 806px of a 960px quadrant, so the board was wider than most of the
+pane it landed in and covered the kitten standing on the unit circle. It landed
+in the bottom-left pane no matter who was in the Dojo, so the girl doing the
+maths often could not see her own working while a sister who had never been to
+the island got a copy of it. And it carried no `z-index` while `.map-box` does,
+so where the two met the board was drawn *under* the minimap. Reported as all
+three in one sentence.
+
+It is placed like a map now, from the same panes, by the same function —
+`mapSpot` in [core/split.js](../../src/core/split.js). The pane is the one with
+the **most** kittens inside the Dojo's view radius, which is the same
+"worth most" rule the maps use and has to be, or the two would answer the same
+question differently and cross over. The width is 42% of the **pane**, capped at
+the stylesheet's 540, so a shared screen and a big pane still come out the same.
+The height is **measured** off the element rather than derived: it is a title and
+a canvas whose height falls out of the canvas's aspect ratio and the width it is
+given, and this file has no business knowing either.
+
+A hidden board is put **back on the stylesheet** rather than left where it was.
+It used to return early when the board was down and keep its inline corner, so
+the next time it appeared it appeared for one tick in the pane of whoever was in
+the Dojo last time. And the throttle is skipped on the frame the board's
+visibility changes: `_drawMaps` runs at 20Hz on purpose — it is the only 2D
+canvas work in the loop — but it is also the only thing that places the board, so
+without that a kitten walking onto the circle got up to 50ms of it in the wrong
+window.
+
+### The two maps belonged to Ember and Frost, and that was the bug
+
+There are two minimaps at most, and there are four panes. The old rule was "map
+`i` lives in pane `i`", which is stable and strands exactly the wrong people: two
+sisters exploring together share **one** pane, so that pane could end up with no
+map at all while a map sat in a pane holding one girl standing next to the stall.
+Two kids with no map is the failure the minimap exists to prevent.
+
+`assignMaps` deals them out by how many kittens are in each pane, in three steps:
+every map keeps the pane it had, any map without one takes the fullest pane
+going, and then a pane holding **strictly** more kittens than an incumbent takes
+its map. Strictly, because incumbency winning ties is what stops it flickering —
+the ordinary four-player case, everybody alone, never moves a map once it has
+landed. Two players come out unchanged by construction: two panes, two maps,
+nothing to choose.
+
+A kitten in a pane with no map is told so, as an instruction, when she presses
+the button — sixth non-negotiable. And `Z`/`X` had to stop indexing `this.maps`
+with a player number: the two stopped being the same thing the moment a map could
+belong to a pane rather than to a seat, so player 2's bumper was cycling whatever
+pane map 1 happened to be in.
+
+### The tag named the wrong kitten
+
+The pane label was built from the map's index, so map 1's tag said "Frost"
+wherever map 1 was — including in Blossom's pane. It is built from the pane's own
+members now, it says both names when two of them share a pane
+(`STORM + BLOSSOM`), and it says `3 KITTENS` rather than three names when the
+line would not fit.
+
+### Where a HUD box goes: the seam, not the outside corner
+
+The rule underneath all of the above, and the thing that changed for two players
+as well:
+
+**A map hugs the corner of its pane NEAREST the middle of the screen, and the
+maths board hugs the corner FURTHEST from it.** On a side-by-side split that puts
+the two maps either side of the seam where both girls can read both, rather than
+one against the far-left edge and one just right of centre, which is as far apart
+as two boxes on one screen can be. The kitten ends up between the map and the
+board instead of under either. A pane whose bottom **is** the screen's bottom
+lifts clear of `.hint`; a pane sitting on a seam has a seam under it and does
+not. A full-width pane has no inside on that axis, so the two boxes take an end
+each — map right, board left, the same corners an unsplit screen uses.
+
+It is one pure function, `mapSpot`, which is the only reason any of it can be
+checked: a rule written inline in `_drawMaps` could only ever be verified by
+looking at the screen.
+
+### The dealer's cursor walked off the question
+
+The stick was read **before** the pending question in `ProfileScreen._drive`, so
+the highlight slid off the row "Sell Ward for 90 points?" was asking about and
+onto whatever she drifted onto. The purchase itself was always safe —
+`_answerHere` takes the id from the *question* — but what she could see disagreed
+with what she was agreeing to, which is the same failure one layer up: a
+confirmation you cannot trust the look of is not one. `start` is still read
+first, because trapping a kid behind a dialog is worse than anything the freeze
+prevents, and only **her** cursor freezes.
+
+### "You have 1" was a lie the moment a second kitten could shop
+
+The shelf named `here[0]` — whichever cursor on the row happened to be
+lowest-numbered — so two sisters looking at the same orb read one count and the
+girl it did not belong to was told how many her sister had. Every cursor on the
+row gets its own clause now (`Ember has 0 / Frost has 1`), and the kitten who
+**opened** the shop is named last: she is the one who walked to the counter, the
+one most likely to be about to press BUY, and the end of a sentence is where the
+eye stops.
+
+### The profile screen's bottom row was below the fold
+
+`.kd-panel` was narrow enough that four cards wrapped to two rows, and `.kd-body`
+then scrolled — so the offering line, the one thing a trade is about, was off the
+bottom on a laptop. The panel is `min(1420px, 96vw)` now and the cards are
+`repeat(auto-fit, minmax(260px, 1fr))`, so four fit in a row on anything
+desktop-shaped and still wrap gracefully below that. A CONFIRM press that appears
+to do nothing because its result is below the fold is the silent refusal the
+sixth non-negotiable forbids, reintroduced by layout rather than by code.
+
+### A trade is a pile now, not one orb
+
+`Side.offer` was a single slot index. The thing the girls actually do here — the
+older one handing the younger one a fistful of spares — was four separate
+agreements and four chances to press the wrong button. It is a **set** of her own
+rows: JUMP toggles one, INTERACT takes the whole pile back in one press, and the
+question names every orb in it rather than summarising it as "3 orbs".
+
+`kotodama.trade` takes arrays, counts duplicates rather than deduping them (a
+kitten can be wearing two of the same orb, and offering one of them is a
+different sentence from offering both), checks **both** sides' room before moving
+anything, and still accepts a bare id — every existing single-orb check passes
+unchanged, which is the point.
+
+**Saying no is the deselect-all**, and that is asked for rather than tidy. With
+one orb on the table, leaving the offer up after a no cost one press to undo.
+With a pile she has to remember which four slots she picked and un-pick each one,
+on a grid where an offered slot and a full one differ by a ring. A no resets
+**every** side and says so — "trade is off and everything is back" — because a
+screen that silently empties two piles is indistinguishable from one that
+crashed.
+
+### The seal was cut once and then lied about the next two cuts
+
+`crossfx` placed the Cross Slash's seal on cut 1 and left it there. A kitten who
+turns between cuts is cutting somewhere else, and the strokes were still being
+added to a box hanging in the air behind her. It is re-placed on **every** cut
+now, so it teleports to wherever the last stroke was thrown — which is exactly
+what a player who spins on the spot sees herself doing, and a player who stands
+still sees nothing move at all, because the position it computes is the same one.
+Only the first cut still *rebuilds* it.
+
+### One ability, one hit
+
+`Player._chargeStrike` tests its hitbox every frame the charge is live — twenty
+or so calls for one press. Kittens are protected from that by their
+invulnerability window and props by the charge's own `_chargeHit` set; the
+arena's animals had neither, so charging through a rat re-stunned it and squeaked
+once a frame. Reported as "it hits them many times, you can hear it".
+`Menagerie.strike` takes the same set the props use, so a charge cannot end up
+with two different ideas of what it has hit, and a new attack is a new set —
+nothing here makes an animal permanently immune.
+
+### The camera followed a body out of the ring
+
+A knockout throws her further than the blow that caused it, which is how the last
+hit of a round looks different from the eleven before it — and a big enough one
+puts her over the rim and down onto the island underneath. The tournament exempts
+a knocked-out kitten from the ring-out rule on purpose: she has no health left to
+charge back with. So she lay there, forty units outside a 56-unit ring, and the
+shared rig went on framing her — the pull-back is sized from the widest gap
+between any two players, so the knockout that *ended* the round was watched from
+a hundred units up with the ring the size of a coin.
+
+`outOfShot` in [core/split.js](../../src/core/split.js) drops her from the
+framing once she is knocked out, outside the deck **and** come to rest. Flying
+still counts and landed does not, which is the line the report itself drew: being
+launched out of the ring is the shot. It is **not** a ring-out — nothing moves
+her, hurts her, or ends anything, and she is still drawn and still on every
+minimap. And a pane with nobody left degrades to framing everybody in it rather
+than to framing nothing, because pointing the camera at her is a great deal
+better than pointing it at the origin.
+
+### The griffin's camera ended the ride looking at the floor
+
+One sign. `back` was `-swing`, and `bx`/`bz` already subtract the heading, so the
+swing meant to bring the camera behind the animal took it in **front** of it —
+2.4 quads ahead, aiming at a point a fifth of a quad behind the camera and a
+whole quad below. `lookAt` down a near-vertical direction has no stable yaw,
+which is the spin. Reported as "the camera looks at the ground and spins weirdly
+instead of at the pegasus".
+
+### Shield moved to the left trigger, and P stopped being two things
+
+Both are input, and both are written up in [input.md](input.md).
+
+### The two that reverse a decision
+
+**The minimap moved from the outside corner to the seam.** Two players have
+always had their maps in the far corners of their own halves. They meet in the
+middle now. It is the right rule for four — it is what lets two adjacent panes
+share a map at all — but it is a visible change to the game the girls already
+know, and it is one line (`inner`) if it should go back for two.
+
+**`splitLayout` now obeys the split-direction setting in three arrangements
+instead of one.** The setting used to reach exactly one branch — two even panes
+— so a player who asked for a side-by-side screen got one with two kittens and a
+stacked one with three, from the same setting, with nothing on screen to say
+why. Reported as "is that intentional or overlooked?"
+
+It was deliberate, and the reasoning is still true: for a pair sharing a pane,
+and for the bigger half of an uneven 3-and-1 split, a full-width strip is a
+kinder shape than a tall column — a three-quarter camera fits two kittens across
+a wide pane and has to pull much further back to fit them down a narrow one.
+Honouring the setting means a player can now ask for the worse shape and get it.
+`fitDistance` is what makes that survivable: the worse shape costs a wider
+framing rather than kittens cropped off the edge of their own pane. If the
+default should stay stacked regardless, the two branches to pin are the uneven
+pair and the 2/1/1 in `splitLayout`.
+
+**Quadrants ignore the setting, and that is the answer rather than an
+oversight.** Three and four equal panes are already cut both ways at once; the
+alternatives are three or four equal columns or rows, which the header rejects
+on equal area and on the shape a fixed three-quarter camera can work in.
+`world-check` asserts the two come out byte-identical either way, so the
+question does not get asked twice.

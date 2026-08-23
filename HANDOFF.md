@@ -158,6 +158,39 @@ hard-coded before the file existed. See [docs/notes/mobile.md](docs/notes/mobile
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**The third four-player session's eleven, none of them played yet.** All eleven
+are in the tree with checks and none has been in front of a player. Written up
+in [four-players.md](docs/notes/four-players.md#the-third-four-player-session--eleven-things-and-two-of-them-reverse-a-decision)
+and, for the two input ones, [input.md](docs/notes/input.md). The batch: the
+maths board is placed in the pane of whoever is actually in the Dojo and sized
+against that pane; the two minimaps are dealt to the panes with the most kittens
+in them rather than nailed to Ember and Frost; a pane's tag names its own
+members; the dealer's cursor freezes on the row it is being asked about; the
+shelf names every cursor on a row with the opener last; the profile screen fits
+four cards without scrolling; a trade offer is a **set** of orbs and a "no" puts
+all of them back; the Cross Slash's seal is re-cut on every stroke; one ability
+hits an arena animal once; the camera lets go of a kitten knocked out of the
+ring and landed; the griffin's arrival camera looks forward instead of at the
+floor; shield moved to the left trigger (Joy-Cons included) and the frame-cost
+debug key moved from `P` to `` 1 ``.
+
+**Two of those eleven reverse an earlier decision, and Richard should see them
+before they are kept.**
+
+1. **The minimap moved from the outside corner of its pane to the SEAM.** That
+   is what lets two adjacent panes share one map, and it changes the look of the
+   **two**-player screen, which has always had its maps in the far corners. One
+   argument (`inner`) puts it back.
+2. **The split-direction setting now reaches three arrangements instead of
+   one.** It used to apply only to two even panes, so asking for a side-by-side
+   screen gave a side-by-side one with two kittens and a stacked one with three.
+   The old behaviour was deliberate — a full-width strip is a kinder shape for a
+   pair than a tall column, because a three-quarter camera has to pull much
+   further back to fit two kittens down a narrow pane — so honouring the setting
+   means a player can now ask for the worse shape and get it. `fitDistance`
+   makes that survivable rather than broken. Quadrants still ignore the setting
+   and `world-check` pins that they come out identical either way.
+
 **Played, pushed and live.** Richard playtested the whole batch and it went out
 to `origin/main`, which is what Vercel deploys — so it is on
 https://katana-kitties.vercel.app and the nieces have it. The five feature

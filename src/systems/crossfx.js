@@ -604,13 +604,24 @@ export class CrossFx {
     const grew = stage !== r.stage;
     if (grew) {
       r.drawT = 0;
-      /* THE SEAL IS PLACED ONCE, ON THE FIRST CUT, AND THEN HANGS. It is a
-         thing she cut into the air, not a badge pinned to her chest — a seal
-         that followed her would slide sideways under her own knockback and
-         read as a UI element. Placed on cut 1 rather than during the wind-up
-         because the wind-up can be released, and a box drawn around nothing is
-         a promise the game did not keep. */
-      if (stage === 1) {
+      /* THE SEAL IS PLACED ONCE PER CUT, AND THEN HANGS UNTIL THE NEXT ONE. It
+         is a thing she cut into the air, not a badge pinned to her chest — a
+         seal that FOLLOWED her would slide sideways under her own knockback
+         and read as a UI element, which is why this is not done every frame.
+
+         IT USED TO BE PLACED ONLY ON CUT 1, and that was wrong for the move it
+         is drawing. A kitten who turns between cuts is cutting somewhere else,
+         and the strokes were still being added to a box hanging in the air
+         behind her — so the second and third cuts landed nowhere near the seal
+         that was supposed to be recording them. Re-placed on each cut it
+         TELEPORTS to wherever the last stroke was thrown, which is exactly
+         what a player who spins on the spot sees herself doing, and a player
+         who stands still sees nothing move at all because the position she
+         computes is the same one.
+
+         Not during the wind-up, because the wind-up can be released, and a box
+         drawn around nothing is a promise the game did not keep. */
+      if (stage >= 1) {
         const f = new THREE.Vector3(Math.sin(p.facing), 0, Math.cos(p.facing));
         r.group.position.set(
           p.position.x + f.x * AHEAD,
@@ -620,7 +631,13 @@ export class CrossFx {
         r.group.rotation.set(0, p.facing, 0);
         r.group.scale.setScalar(1);
         r.group.visible = true;
-        this._reassemble(r);
+        /* ONLY THE FIRST CUT REBUILDS IT. `_reassemble` puts every piece back
+           on its home offset, which is right for a rig reused from the last
+           technique and wrong in the middle of this one — run on cut 2 it
+           would undo nothing visible today, but it is the line that would
+           quietly erase a burst or a stroke offset the moment either learns to
+           persist. Placed on every cut, rebuilt on the first. */
+        if (stage === 1) this._reassemble(r);
       }
       if (stage === CROSS.cuts) r.pulseT = 0;
       r.stage = stage;

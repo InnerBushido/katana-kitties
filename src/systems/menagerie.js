@@ -269,8 +269,19 @@ export class Menagerie {
    * ONE ANIMAL AT A TIME. Without this a kitten with a bird in her mouth pins a
    * rat with the same button, and the pair then have to share one `t`, one
    * freeze and one release — three bugs for a case nobody wanted.
+   *
+   * AND ONE ANIMAL ONCE PER *ATTACK*, WHICH IS NOT THE SAME THING. `seen` is
+   * the caller's set of what this one attack has already landed on, and it
+   * exists because the charge's hitbox is tested EVERY FRAME it is live (see
+   * `Player._chargeStrike`) — twenty-odd calls for one press. Kittens are
+   * protected from that by their invulnerability window and props by the
+   * charge's own `_chargeHit` set; animals had neither, so charging through a
+   * rat re-stunned and re-squeaked it once a frame and it sounded like being
+   * hit twenty times by one move. Reported as exactly that.
+   *
+   * An ordinary swing passes nothing and behaves as it always has.
    */
-  strike(player, reach) {
+  strike(player, reach, seen = null) {
     if (!this.on || player.angel || player.ko) return false;
     if (this.held[player.index]) return false;
 
@@ -295,8 +306,12 @@ export class Menagerie {
        which stops it dead and lets her walk up and start the hold properly.
        Running past something and swinging is now the ordinary way to catch it,
        which is also how it reads. */
-    const found = this._findTarget(player, reach);
+    const found = this._findTarget(player, reach, seen);
     if (!found) return false;
+    /* MARKED BEFORE ANYTHING HAPPENS TO IT, so every `return true` below is
+       covered by one line rather than four. A miss adds nothing — an animal
+       this swing did not reach is not spent. */
+    seen?.add(found.c);
     if (found.kind === 'pin') {
       this._grab(player, found.c);
       return true;
@@ -361,12 +376,12 @@ export class Menagerie {
    *
    * @returns {{kind: 'pin'|'air', c: object}|null}
    */
-  _findTarget(player, reach) {
+  _findTarget(player, reach, seen = null) {
     let pick = null;
     let pickD = CATCH_RADIUS;
     if (this._canHold(player)) {
       for (const c of this.list) {
-        if (!c.pinnable) continue;
+        if (!c.pinnable || seen?.has(c)) continue;
         const d = player.position.distanceTo(c.position);
         if (d < pickD) { pick = c; pickD = d; }
       }
@@ -381,7 +396,7 @@ export class Menagerie {
     let air = null;
     let airD = reach * 1.35;
     for (const c of this.list) {
-      if (!c.swattable) continue;
+      if (!c.swattable || seen?.has(c)) continue;
       const d = Math.hypot(c.position.x - player.position.x, c.position.z - player.position.z);
       const dy = c.position.y - player.position.y;
       if (d < airD && dy > -1.5 && dy < 6.5) { air = c; airD = d; }
