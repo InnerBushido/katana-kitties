@@ -166,7 +166,8 @@ Slash rebalance, `/tuning.html` and the debug panel's door to it,
 ([systems/inspector.js](src/systems/inspector.js)) and a shared trade screen
 that other players opt into with MOUNT, the clan-join celebration, the eight
 new sprite sheets it needs (`ember_bless`, `frost_bless` and six
-`clan_*.png`), and the five fixes from the fourth playtest below.
+`clan_*.png`), the five fixes from the fourth playtest below, and the Cross
+Slash's telegraph.
 
 **The fourth playtest's five, all verified in the browser.** A seat is not a
 cat — nine HUD call sites were reading a PLAYER index as a STYLE index, which
@@ -180,6 +181,18 @@ press of Start no longer both ends the trailer and restarts it, via
 kitten instead of on her paws. Written up in
 [four-players.md](docs/notes/four-players.md) and
 [input.md](docs/notes/input.md).
+
+**The Cross Slash now announces itself, and signs its work.**
+[systems/crossfx.js](src/systems/crossfx.js): an aura of her own colour and
+pink crackle while she winds up, then a seal cut into the air in front of her —
+two of the box's four sides per cut, and the orb's 十 stamped in the middle on
+the third — which pulses until she lets go of everybody she caught and then
+blows apart along the same vector the bodies go. It is a **poller**: it reads
+her clocks every frame through one exported function and `player.js` does not
+know it exists, which is the same argument `_updateTripleHolds` makes about the
+technique ending five ways. Written up under *The tell you can see from across
+the garden* in [endgame.md](docs/notes/endgame.md). **Not yet played by
+anybody** — verified frame by frame in the browser, but not in a real fight.
 
 **Two standing rules came out of this batch and are worth knowing before you
 generate any sprite.** New player poses are drawn for **all four kittens** —

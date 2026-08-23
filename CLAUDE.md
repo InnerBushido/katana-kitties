@@ -23,7 +23,7 @@ look. Everything else is one level down and read on demand.
 
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
-node tools/world-check.mjs    # 1296 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 1320 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 239 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 ```
@@ -113,6 +113,8 @@ src/
              kotodama  profile  cutscene  shrinescene  summonscene
              mathdojo  minimap  menunav  trailer (the opt-in video player)
              confirm (are you sure? - every irreversible button)
+             crossfx (the Cross Slash's tell and its seal - a poller,
+               so player.js does not know it exists)
   entities/  player  dragon  ryuuseki  panda  critter  angel  leader  satan
              griffin  orb  powerorb  dragonball  prop  shrine  stall
 tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
@@ -156,7 +158,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 1296 assertions and why almost none of them are about
+  why `world-check` is 1320 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have
