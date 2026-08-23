@@ -7428,7 +7428,22 @@ console.log('\n--- a trade is agreed twice, by two people ---');
     /* THE TWO SCREENS, AND BACKING OUT OF EACH. INTERACT goes back one level
        and only then closes; it never skips the chooser, because a girl who has
        just read her orbs is the girl most likely to want to trade next. */
-    const pad = (btn) => ({ mx: 0, my: 0, pressed: (a) => a === btn, down: () => false });
+    /* A PAD THAT CAN BE SPENT, and the old one is why the stall bug got out.
+       It was `{ pressed: (a) => a === btn }` — a press that is true for ever
+       and that `consume` cannot touch. Every check below therefore handed
+       `_drive` its own fresh press, so no check here could ever see the thing
+       that was actually broken: TWO owners reading ONE press in one frame.
+       This models `PadState`'s two fields and its `consume`, which is the only
+       shape in which "the press has already been answered" can be expressed. */
+    const pad = (btn) => ({
+      mx: 0,
+      my: 0,
+      held: { [btn]: true },
+      prev: {},
+      pressed(a) { return !!this.held[a] && !this.prev[a]; },
+      down(a) { return !!this.held[a]; },
+      consume(a) { this.prev[a] = this.held[a]; },
+    });
     insp.cards[0].i = 1;
     insp._drive(0, pad('jump'), 0.016);
     ok('JUMP on LOOK AT MY ORBS opens the shelf', insp.cards[0].state === 'look');
@@ -7469,6 +7484,65 @@ console.log('\n--- a trade is agreed twice, by two people ---');
       insp.busy(0) && insp.cards[0].state === 'choose');
     insp.closeAll();
     ok('closeAll puts everything away', !insp.any && !insp.busy(0) && !insp.busy(1));
+
+    /* --- ONE PRESS IS ONE ANSWER TO ONE QUESTION -------------------------
+       Reported as "I am pressing Interact on the store but it is not bringing
+       up a menu — making a clicking sound but I am not seeing anything", and
+       that is precisely what it did. `pressed()` is a pure test that nobody
+       spends. The stall opened the chooser on the press and played the menu
+       blip; `Inspector.update` runs later in the SAME frame and INTERACT there
+       means back out; so the card opened and closed before one frame was
+       drawn. The click was the only evidence it had ever existed.
+
+       Two rules come out of it and both are checked. The one that ANSWERS a
+       press spends it — and a press already answered must read as spent to
+       everybody downstream, without lying about the button still being held. */
+    {
+      const live = pad('interact');
+      ok('a fresh press reads as pressed', live.pressed('interact'));
+      insp.open(0);
+      /* What the stall does, having answered it. */
+      live.consume('interact');
+      insp._drive(0, live, 0.016);
+      ok('the press that opened a card does not also close it', insp.busy(0));
+      /* `consume` marks the edge spent by setting prev to held, NOT by
+         clearing held: she really is still holding the button and `down()` has
+         to go on telling the truth. */
+      ok('...and the button is still down, because it is', live.down('interact'));
+      insp.closeAll();
+    }
+
+    /* AND THE CARD SPENDS WHAT IT ANSWERS, for the owner further down the
+       frame. The kitten loop runs after `Inspector.update`, and on the frame a
+       card CLOSES `busy` has just gone false — so her REAL pad, not
+       `DEAD_PAD`, reaches `Player.update` with the press still on it. Putting
+       a card away would swing her katana or walk her onto a mount. */
+    for (const btn of ['interact', 'start', 'jump']) {
+      insp.open(0);
+      const spent = pad(btn);
+      insp._drive(0, spent, 0.016);
+      ok(`...and ${btn.toUpperCase()} is spent by the card that answered it`,
+        !spent.pressed(btn));
+      insp.closeAll();
+      ps.close();
+    }
+
+    /* THE STALL'S HALF OF IT, WHICH IS THE HALF THAT WAS WRONG. Pinned against
+       the source because it is a fact about the ORDER of one frame in
+       `Game._step`, and nothing that can be constructed here has a frame. */
+    const gameSrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('the stall spends the interact press it answered',
+      /this\.inspector\.open\(shopper\.index\);[\s\S]{0,1400}?this\.input\.players\[shopper\.index\]\?\.consume\('interact'\);/
+        .test(gameSrc));
+    /* ...AND ONLY THAT ONE. Her interact while a card is already up means
+       CLOSE IT, and that press belongs to `_drive`. Spending it at the stall
+       would leave her with a card she cannot put away — the same bug wearing
+       the opposite consequence. */
+    ok('...but not the press meant to close a card she already has up',
+      /&& !this\.inspector\.busy\(p\.index\)/.test(gameSrc));
+    ok('...and the card is driven later in the same frame, which is why it matters',
+      gameSrc.indexOf('this.inspector.open(shopper.index)')
+        < gameSrc.indexOf('this.inspector.update(dt);'));
 
     globalThis.document.getElementById = baseGet;
     globalThis.document.createElement = realCreate;

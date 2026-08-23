@@ -4776,6 +4776,12 @@ class Game {
          counter is the sort of thing that ends an afternoon. */
       const shopper = this.players.find(
         (p) => this.input.players[p.index]?.pressed('interact')
+          /* NOT SOMEBODY WHO ALREADY HAS A CARD UP. Her interact means CLOSE
+             IT, and that press belongs to `Inspector._drive` further down the
+             frame. Without this the stall would answer it first, find her
+             already open, do nothing — and then spend it below, so the card
+             she was trying to put away would never close. */
+          && !this.inspector.busy(p.index)
           && this.kotodama.canShop(p)
       );
       if (shopper) {
@@ -4790,6 +4796,21 @@ class Game {
            this does not freeze anything, so the rest of the frame must run.
            `Inspector.busy` is what takes her stick, further down. */
         this.inspector.open(shopper.index);
+        /* AND THE PRESS IS SPENT, WHICH IS THE WHOLE REASON THE CARD IS
+           VISIBLE AT ALL. Reported as "pressing Interact at the store makes a
+           clicking sound and nothing appears", and that is exactly what it
+           did: `pressed()` is a pure test that nobody spends, the card's own
+           driver runs later in the SAME frame (`Inspector.update`, below), and
+           there INTERACT means back out — so the press opened the chooser,
+           played the menu blip, and closed it again before a single frame was
+           drawn. Same bug the trailer's Start had; same fix, at the place that
+           ANSWERED the press.
+
+           It also stops the press reaching `Player.update` at the bottom of
+           the frame, where interact means mount or swear an oath. Nothing at
+           the stall happens to be mountable, which is the only reason that
+           half was never seen. */
+        this.input.players[shopper.index]?.consume('interact');
       }
     }
 

@@ -194,6 +194,15 @@ technique ending five ways. Written up under *The tell you can see from across
 the garden* in [endgame.md](docs/notes/endgame.md). **Not yet played by
 anybody** — verified frame by frame in the browser, but not in a real fight.
 
+**The dealer's personal card never appeared, and the fix is the trailer's fix
+again.** Reported as a clicking sound and nothing on screen. The stall opened
+the chooser on `pressed('interact')` and `Inspector._drive`, later in the same
+frame, read the same press as *back out* and closed it. The stall spends what
+it answers now, and skips a player who already has a card up; `_drive` spends
+what it answers too, so closing a card no longer leaks the press into
+`Player.update`. Written up under *One press is one answer to one question* in
+[four-players.md](docs/notes/four-players.md).
+
 **Two standing rules came out of this batch and are worth knowing before you
 generate any sprite.** New player poses are drawn for **all four kittens** —
 two sheets plus two `recolourAtlas` derivations, expanded by PLAYER_STYLE and

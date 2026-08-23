@@ -185,13 +185,23 @@ export class Inspector {
        ATTACK IS DELIBERATELY NOT BOUND. On the shared counter it means SELL,
        and a girl who has learned that here would press it there expecting
        nothing to happen. */
-    if (pad.pressed('start')) { this.closeOne(index); return; }
+    /* EACH OF THEM SPENDS THE PRESS IT ANSWERED. One press is one answer to
+       one question, and this card is not the last thing in the frame to ask:
+       the kitten loop runs after `Inspector.update`, and the frame a card
+       CLOSES is a frame where `busy` has just gone false, so her real pad —
+       not `DEAD_PAD` — is handed to `Player.update` with the press still on
+       it. Closing a card would swing her katana, or walk her onto a mount.
+       `consume` marks the edge spent by setting prev to held, so `down()` goes
+       on telling the truth about a button she really is still holding.
+       Optional-called because `world-check` drives this with hand-made pads. */
+    if (pad.pressed('start')) { pad.consume?.('start'); this.closeOne(index); return; }
     if (pad.pressed('interact')) {
+      pad.consume?.('interact');
       if (c.state === 'look') { c.state = 'choose'; c.i = 1; c._sig = ''; this.game.audio?.play('menu'); }
       else this.closeOne(index);
       return;
     }
-    if (pad.pressed('jump')) this._choose(index);
+    if (pad.pressed('jump')) { pad.consume?.('jump'); this._choose(index); }
   }
 
   /** JUMP, or a tap on a row. */

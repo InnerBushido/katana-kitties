@@ -1157,6 +1157,44 @@ deliberate: the three scene blocks each ask that question and then RETURN, so
 nothing else in their frame ever sees the press. The trailer is the one
 skippable thing that hands the frame back and carries on.
 
+**And then the same bug came back at the dealer's stall, wearing a worse
+disguise.** Reported as *"pressing Interact on the store is not bringing up a
+menu — making a clicking sound but I am not seeing anything"*, which sounds
+like a rendering fault and is not one. The stall opens the personal card on
+`pressed('interact')` and plays the menu blip — that is the click. Then
+`Inspector.update` runs **later in the same frame**, and on a card INTERACT
+means *back out*. The card opened and closed before a single frame was drawn,
+so the click really was the only evidence it had ever existed.
+
+The Start case had already been thought about here — `Game._step` has an
+explicit branch exempting a card owner's Start from the pause menu, with a
+comment about the press being taken twice. Interact went unnoticed because it
+is the press that OPENS the thing, so nobody was looking for a second reader of
+it. **A press with two owners is not an unusual case; it is what happens by
+default whenever a press both opens a screen and means something on it.**
+
+The stall spends the press it answered. It also stops looking for a shopper who
+already has a card up — her interact means *close it*, and that press belongs
+to `_drive`; spending it at the stall would have left her with a card she
+cannot put away, which is the same bug with the opposite consequence. And
+`_drive` now spends every press it acts on, for the owner further down the
+frame: the kitten loop runs after `Inspector.update`, and on the frame a card
+CLOSES `busy` has just gone false, so her real pad — not `DEAD_PAD` — reaches
+`Player.update` with the press still on it. Putting a card away would have
+swung her katana. Nothing at the stall happens to be mountable, which is the
+only reason that half was never seen.
+
+**The check that would have caught it was impossible to write with the fixture
+that was there.** Every `_drive` assertion handed it `{ pressed: (a) => a ===
+btn }` — a press that is true for ever and that `consume` cannot touch — so no
+check could express "this press has already been answered". The fixture now
+models `PadState`'s two fields and its `consume`, and the assertions are that
+the press which opened a card does not also close it, that `_drive` leaves
+every press it answers spent, and — pinned against the source, because it is a
+fact about the ORDER of one frame and nothing constructible in a test has a
+frame — that the stall consumes, that it skips a player already holding a card,
+and that the open really does happen before `Inspector.update`.
+
 ### The clan ring belonged on the ground
 
 Both rings under a kitten are parented to `group`, which follows her into the
