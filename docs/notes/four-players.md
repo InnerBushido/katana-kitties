@@ -1081,3 +1081,92 @@ skip the risky step.
 them, derived by PLAYER_STYLE rather than by slot, in a loop that sits directly
 under the identical loop for the eating pose. Deriving by slot is one
 copy-paste away and gives you Storm receiving a blessing as a grey Frost.
+
+
+### A seat is not a cat
+
+Five separate reports of "the border colours are wrong" turned out to be one
+bug with nine call sites. `Game.roster` maps a SEAT to a STYLE, and it exists
+precisely because the two come apart: the character picker lets player 3 choose
+Blossom, which makes the roster `[0, 1, 3, 2]`. Nine places in the HUD were
+passing a PLAYER index to `styleCss` / `styleFor` as though it were a style
+index — the pane frames, the score badges' rings and pips, the names printed on
+those badges, the minimap wedges, the panda pips, the inspector cards' `--me`,
+the map tag's text and its colour, and the menu-owner line.
+
+Every one of them was right for the girls' usual two-player game, where the
+roster is the identity, and wrong for two players at once the first time
+somebody picked a cat that was not her seat's default. From the sofa that reads
+as **Storm framed in Blossom's purple and Blossom in Storm's teal, with the two
+names swapped over the two scores** — which is exactly how it was reported.
+
+The fix is a function that cannot be handed the wrong number. `cssFor(style)`
+takes the style OBJECT the kitten was built from, so anything holding a
+`Player` asks her directly (`cssFor(p.style)`) and never consults the roster at
+all. The five remaining `styleCss` calls in `main.js` are seats with no player
+to ask — a join card, a touch-pad kitten, a menu owner — and each resolves
+through `this.roster` or through the new `_styleAt`. `world-check` pins that
+count, so a tenth caller cannot appear beside them holding a bare seat number.
+
+The map tag was the odd one out and worth its own line: its colour was written
+ONCE at build time from the MAP's index, and a map belongs to a *pane*, not to
+a player. It moves with the pane, so it is coloured in `_drawMaps` next to the
+name it has to agree with, and a shared pane gives its colour up entirely
+rather than picking one of the two kittens in it.
+
+### A full-screen scene has no split to furnish
+
+The four coloured pane frames stayed on screen throughout a clan leader's
+cutscene. The interesting part is why, because `_paintPaneEdges` was not
+painting them wrong: it already refuses to draw outside `state === 'play'`. It
+only runs from `_render`, and every scene block in `_tickBody` returns before
+reaching it — so the frames were not being redrawn incorrectly, they were not
+being redrawn at all, and what was on screen was the last playing frame's
+answer, still sitting there.
+
+**A rule that has to be re-run to take effect cannot be the rule for a case
+where nothing runs.** So the frames and the per-player cards hide the way the
+HUD already does: one class, toggled from `_hudDuringScenes`, which was already
+the single place that knows a scene, a tournament, a griffin ride — and now the
+trailer — owns the screen. Opacity rather than `display`, for the reason the
+HUD's own rule gives, plus `pointer-events: none`, because unlike the frames
+the cards take taps and an invisible card that still swallows one is worse than
+a visible one.
+
+### One press is one answer to one question
+
+Start ended the trailer and immediately restarted it from the beginning.
+Reported on a PS5 pad and nothing whatever to do with the pad.
+
+`trailer.update()` runs before `MenuNav` on purpose — the trailer can be up
+while the state is still `title`, and a skip polled only in the play state
+would be a video you cannot leave. But closing it puts the menu it was opened
+from back underneath *in the same frame*, with the cursor still sitting on
+WATCH TRAILER, and on the title screen **every** button confirms. The press was
+still there to be found because `pressed()` is a pure test: `held && !prev`,
+which nobody spends.
+
+`PadState.consume(action)` marks the edge spent by setting `prev` to `held`.
+Not by clearing `held` — she really is still holding the button, and anything
+reading `down()` (a sprint, a charge, a held direction) has to keep being told
+the truth. All that is spent is the edge, and letting go and pressing again is
+a real new press because `prev` is rewritten every frame anyway.
+
+It is called from the trailer and not from `_skipPressed`, and that boundary is
+deliberate: the three scene blocks each ask that question and then RETURN, so
+nothing else in their frame ever sees the press. The trailer is the one
+skippable thing that hands the frame back and carries on.
+
+### The clan ring belonged on the ground
+
+Both rings under a kitten are parented to `group`, which follows her into the
+air. The marker has always been pushed back down onto the terrain every frame,
+in the same block that places the blob shadow; the clan ring was set to
+`y = 0.05` in the constructor and then never touched again, so it stayed glued
+to her paws and sailed off with every jump.
+
+Its visibility went the same way — switched on once at the moment she swore and
+left alone forever, so it rode up onto a dragon with her too. Both are derived
+now, from `this.clan` and from the marker, which is the general shape of the
+fix: two concentric rings drawn on the same terrain are one piece of furniture
+with two colours in it, and anything that moves one has to move both.

@@ -686,7 +686,6 @@ body.touch-ui .options-label {
   color: #ffd9a8;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
-.map-tag.p2 { color: #ff9ecb; }
 
 .clan {
   display: inline-block;
@@ -789,6 +788,21 @@ body.touch-ui .options-label {
   inset: 0;
   pointer-events: none;
   z-index: 4;
+}
+/* GONE WHILE A SCENE OWNS THE SCREEN, and it is the same class `#hud` wears
+   for the same reason — see Game._hudDuringScenes. A cutscene is FULL SCREEN
+   and shared by everybody, so four coloured quarter-frames drawn over it are
+   dividing a picture that is no longer divided. They stayed up because
+   `_paintPaneEdges` only runs from `_render`, and every scene returns before
+   it — the frames were not being redrawn wrong, they were not being redrawn
+   at all. Reported from four-player play: "the four border colours stay on
+   the screen during the cutscene". */
+/* Opacity and not `display`, for the same reason `#hud.scene-hidden` gives
+   below: nothing relayouts on the way in or out. `pointer-events: none`
+   covers the CARDS, which unlike the frames do take taps. */
+#pane-edges.scene-hidden, #pane-cards.scene-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 .pane-edge {
   position: absolute;

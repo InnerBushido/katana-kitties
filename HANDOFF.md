@@ -158,14 +158,28 @@ hard-coded before the file existed. See [docs/notes/mobile.md](docs/notes/mobile
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
-**Uncommitted as of the second four-player pass — the whole batch, nothing is
-committed.** The clan call-to-action, pane stability and pane colour, the arena
-floor and the camera ceiling, the Cross Slash rebalance, `/tuning.html`,
+**Committed locally, not pushed.** `main` is ahead of `origin/main` and stays
+that way until Richard has played it. The batch: the clan call-to-action, pane
+stability and pane colour, the arena floor and the camera ceiling, the Cross
+Slash rebalance, `/tuning.html` and the debug panel's door to it,
 `public/voice/cross0-3.mp3`, the vendor split into a personal inspector
 ([systems/inspector.js](src/systems/inspector.js)) and a shared trade screen
-that other players opt into with MOUNT, the clan-join celebration, and the
-eight new sprite sheets it needs (`ember_bless`, `frost_bless` and six
-`clan_*.png`).
+that other players opt into with MOUNT, the clan-join celebration, the eight
+new sprite sheets it needs (`ember_bless`, `frost_bless` and six
+`clan_*.png`), and the five fixes from the fourth playtest below.
+
+**The fourth playtest's five, all verified in the browser.** A seat is not a
+cat — nine HUD call sites were reading a PLAYER index as a STYLE index, which
+is the same number until somebody uses the character picker and then swaps two
+players' frames, pips, wedges and *names*; a full-screen scene now takes the
+pane frames and cards down with the HUD, because `_paintPaneEdges` only runs
+from `_render` and every scene returns before it; a PlayStation pad is told
+`○` and a remapped Joy-Con prompt follows what Settings actually bound; one
+press of Start no longer both ends the trailer and restarts it, via
+`PadState.consume`; and the clan ring sits on the ground under a jumping
+kitten instead of on her paws. Written up in
+[four-players.md](docs/notes/four-players.md) and
+[input.md](docs/notes/input.md).
 
 **Two standing rules came out of this batch and are worth knowing before you
 generate any sprite.** New player poses are drawn for **all four kittens** —

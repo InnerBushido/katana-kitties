@@ -578,3 +578,62 @@ seating one player and `half: null`, the lookup found nothing and the grid never
 rendered: the entire Joy-Con remap screen went unreachable for the one device
 that cannot be played without it. Both ask for the device **by name** now
 (`profileNameFor(gp) === 'vjoyDual'`), which is the question they always meant.
+
+
+## The name printed on the button
+
+`promptFor(slot, action)` answers "what is this player's `interact` button
+called", and it answers from the LIVE binding — the same `pad` / `half` /
+`keyset` the action itself is read through, so the label cannot name a device
+the player is not on. Two things about it changed after the fourth playtest.
+
+**A PlayStation pad is told the shape, not a letter.** The table used to carry
+a comment explaining why it wasn't: a Sony pad shows ○ where the Xbox lettering
+says B, which is a wrong LETTER on a button in the right PLACE, "the least bad
+of the available errors, and one no amount of sniffing the id string fixes
+reliably". Half of that was right. It was played on a DualSense and reported
+straight back — a nine-year-old hunting for a button called B on a controller
+that has no letters on it anywhere is precisely the failure the whole
+per-device prompt system exists to prevent.
+
+So there is a `playstation` prompt table, and `promptStyleFor(gp)` picks it off
+the pad's id. **It is a second, separate lookup from `profileNameFor`, and that
+matters:** one decides how to READ a pad and the other decides what to CALL its
+buttons, and the same device has different answers. A DualSense is read as
+`standard` — its button indices really are the standard ones — and merely
+labelled differently. Folding the two together would mean inventing a read
+profile identical to `standard` just to carry four strings.
+
+**The sniff only applies to `standard`, which is the load-bearing half of the
+original objection.** A shape glyph is a claim about *where* the button is, and
+the only pads whose positions this game knows are the ones the browser has
+already remapped. `ds4NoRemap` in pad-check exists for exactly this: a
+DualShock 4 the browser has no table for, same Sony id, completely different
+indices. Telling that player to press ○ would name a button the game is not
+reading — the same lie as `[B]` on a DualSense, wearing better clothes. It
+keeps the generic profile's honest `ANY`.
+
+The glyphs are the geometric shapes ○ ✕ □ △, not the Private Use codepoints in
+Sony's own font, which are tofu anywhere that font is not installed. These are
+drawn to a canvas by `core/label.js`, which has no webfont guarantee at all —
+measured in the browser against a Private Use control to confirm all four
+render as real glyphs rather than as the missing-glyph box.
+
+**And the merged Joy-Con prompt follows a remap.** Half of `DEFAULT_VJOY_MAP`
+is an admitted guess, and Settings → Controllers exists so a player can fix it
+by pressing the button. The prompt read a FIXED table sitting beside that map,
+so it went on saying RIGHT after somebody had moved `interact` onto Up: the
+label lying again, arriving through the one door nothing was watching, and
+lying to the one player who cared enough to calibrate her controller. It reads
+`vjoyMap` now and names the index through `VJOY_BUTTON_NAMES` — the same facts
+as the trailing comments in the default map, in a form the badge over a
+kitten's head can read. An index with no name shows as `#5`, which is what the
+Settings grid shows too: not friendly, but true and findable.
+
+`world-check` no longer hardcodes `'[RIGHT]'` as the widest glyph when it sizes
+the overhead callout. It asks `promptGlyphs('interact')` for every string the
+game can actually print, because a fact about `input.js` copied into
+`world-check.mjs` is a check that goes on passing while it measures last year's
+table. Adding a prompt set is exactly the change that catches it out: had ○
+been OPTIONS, the callout would have started clipping and the check would have
+gone on saying it fitted.

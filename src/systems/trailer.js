@@ -143,6 +143,20 @@ export class Trailer {
    */
   update() {
     if (!this.active) return;
-    if (this.game._skipPressed()) this.skip();
+    if (!this.game._skipPressed()) return;
+    /* SPEND THE PRESS. This runs before MenuNav, and closing the trailer puts
+       the menu it was opened from back underneath the very same frame — where,
+       on the title screen, every button confirms and the cursor is still
+       sitting on WATCH TRAILER. So one press of Start ended the video and
+       immediately restarted it from the beginning. Reported on a PS5 pad; it
+       was never about the pad.
+
+       IT BELONGS HERE AND NOT IN `_skipPressed`. That is a question three
+       scene blocks ask, and each of them RETURNS on the answer — nothing else
+       in their frame ever gets to see the press, so consuming it there would
+       be paying a cost for a problem only this one has. The trailer is the one
+       skippable thing that hands the frame back and keeps going. */
+    this.game.input.consume('start');
+    this.skip();
   }
 }

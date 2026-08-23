@@ -21,6 +21,7 @@ import {
 import {
   LEADERS, ELDER, leaderSpot, LEADER_OFFSET, ClanLeader,
 } from '../src/entities/leader.js';
+import { promptGlyphs } from '../src/core/input.js';
 import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
 import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../src/entities/dragonball.js';
@@ -61,7 +62,7 @@ import {
 import {
   MILESTONES, OPEN_AT, ArenaQuest, SATAN_TOWN,
 } from '../src/systems/arenaquest.js';
-import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss } from '../src/core/palette.js';
+import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
 import { splitLayout, mapWidth, fitDistance, stablePanes, paneSeats } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
@@ -1262,7 +1263,16 @@ console.log('\n--- nobody joined a clan, because nothing said they could ---');
      the longest button glyph — and every reward line, and pin them all. The
      first version of the sizing string forgot the badge and lost eight
      characters off Riverclaw. */
-  const badge = '[RIGHT]';   // the longest `interact` glyph in input.js's PROMPTS
+  /* DERIVED FROM THE REAL TABLE, not from a note about it. This used to be
+     `const badge = '[RIGHT]'` with a comment saying it was the longest
+     `interact` glyph in input.js — a fact about another file, copied. Adding a
+     PlayStation prompt set was exactly the change that would have gone wrong:
+     had ○ been OPTIONS, the callout would have started clipping and this
+     check would have gone on passing, because it was measuring a string
+     nobody had updated. */
+  const glyphs = promptGlyphs('interact');
+  const badge = `[${glyphs.reduce((a, g) => (g.length > a.length ? g : a), '')}]`;
+  line('widest interact glyph', `${badge} — out of ${glyphs.length}`);
   const real = [
     ...CLANS.map((c) => `${badge}  ${c.oath.toUpperCase()}`),
     ...CLANS.map((c) => `${c.name.toUpperCase()} — ${c.buff.label.toUpperCase()}`),
@@ -1288,6 +1298,11 @@ console.log('\n--- nobody joined a clan, because nothing said they could ---');
     return p;
   };
   const press = { mx: 0, my: 0, down: () => false, pressed: (a) => a === 'interact' };
+  /* A pad holding nothing, and a HUD that answers everything and says nothing —
+     for the frames after the oath, where the interesting thing is the geometry
+     and a second `interact` would only swear her in all over again. */
+  const IDLE_PAD = { mx: 0, my: 0, down: () => false, pressed: () => false };
+  const HUSH = { leaderFor: () => ({ met: true }), sfx() {}, toast() {}, onJoinClan() {} };
   const sworn = kit(0);
   const mine = sworn.marker.material.color.getHex();
   ok('a kitten standing in a hall is not in its clan yet', !sworn.clan);
@@ -1298,6 +1313,41 @@ console.log('\n--- nobody joined a clan, because nothing said they could ---');
   ok('...which lights a clan ring in the clan colour',
     sworn.clanRing.visible && sworn.clanRing.material.color.getHex() === hall.clan.color);
   ok('...and leaves her own colour alone', sworn.marker.material.color.getHex() === mine);
+
+  /* --- ...ON THE GROUND, NOT ON HER FEET ---
+     Both rings are parented to `group`, which follows her into the air. The
+     marker has always been pushed back down onto the terrain every frame; the
+     clan ring was set to y=0.05 in the constructor and then never touched
+     again, so it stayed glued to her paws and sailed up with every jump.
+     Reported as "it attaches to the players feet instead of the ground".
+
+     ASSERTED AGAINST THE MARKER RATHER THAN AGAINST A NUMBER, because the
+     marker is the thing it has to agree with: they are two concentric rings
+     drawn on the same terrain, and anything that moves one has to move both. */
+  const groundY = sworn.marker.position.y;
+  sworn.position.y = hy + 6;
+  sworn.velocity.y = 4;
+  sworn.onGround = false;
+  sworn.update(1 / 60, IDLE_PAD, world, [], HUSH);
+  ok('...and the clan ring sits on the ground, not on her feet',
+    Math.abs(sworn.clanRing.position.y - sworn.marker.position.y) < 0.05,
+    `clan ${sworn.clanRing.position.y.toFixed(2)} vs marker ${sworn.marker.position.y.toFixed(2)}`);
+  ok('...which means six units under a jumping kitten',
+    sworn.clanRing.position.y < -5, `${sworn.clanRing.position.y.toFixed(2)}`);
+  ok('...and back under her paws when she lands',
+    (sworn.position.y = hy, sworn.onGround = true, sworn.velocity.y = 0,
+      sworn.update(1 / 60, IDLE_PAD, world, [], HUSH),
+      Math.abs(sworn.clanRing.position.y - groundY) < 0.05),
+    `${sworn.clanRing.position.y.toFixed(2)}`);
+  /* AND ITS VISIBILITY IS DERIVED, NOT LATCHED. It used to be switched on once
+     at the moment she swore and left alone forever, so it rode up onto a
+     dragon with her. One owner, recomputed every frame. */
+  sworn.clan = null;
+  sworn.update(1 / 60, IDLE_PAD, world, [], HUSH);
+  ok('...and leaving the clan takes the ring off without anybody hiding it',
+    !sworn.clanRing.visible);
+  sworn.clan = hall.clan;
+
   /* AND THE LEADER STILL GATES IT — the same `met` test the prompt asks, so the
      prompt can never offer something the button then refuses. */
   let told = 0;
@@ -3000,6 +3050,60 @@ console.log('\n--- the balance file, and what a typo in it may do ---');
   ok('...and nothing has made tuning.html a build input', !/input\s*:/.test(vite));
   ok('...and the save endpoint is still dev-server only',
     /configureServer\(server\)/.test(vite) && !/apply:\s*'build'/.test(vite));
+}
+
+console.log('\n--- a full-screen scene has no split to furnish ---');
+{
+  /* THE FOUR COLOURED FRAMES STAYED UP OVER THE CUTSCENE. Reported from
+     four-player play: a clan leader's scene takes the whole screen and is
+     shared by everybody, and four quarter-frames drawn on top of it are
+     dividing a picture that is no longer divided.
+
+     WHAT MAKES THIS A CHECK AND NOT A RESTATEMENT is the reason it happened.
+     `_paintPaneEdges` already refuses to draw outside `state === 'play'` — it
+     was not painting them wrong. It only runs from `_render`, and every scene
+     block in `_tickBody` returns before reaching it, so the frames were simply
+     left exactly as the last playing frame drew them. A rule that has to be
+     re-run to take effect cannot be the rule for a case where nothing runs, so
+     the fix is a class toggled from `_hudDuringScenes`, and what is pinned
+     here is that all three layers go through that one call. */
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+    .replace(/\r/g, '');
+  const from = main.indexOf('  _hudDuringScenes() {');
+  const body = from < 0 ? '' : main.slice(from, main.indexOf('\n  }', from));
+  ok('the pane frames and cards hide with the HUD', /\['hud', 'pane-edges', 'pane-cards'\]/.test(body));
+  ok('...from the one call that already knew a scene was up',
+    body.includes('this._sceneActive()') && body.includes("classList.toggle('scene-hidden', away)"));
+  /* THE TRAILER COUNTS. It is deliberately not a `_sceneActive()` scene — no
+     3D camera, nothing ticking underneath — but it is just as full-screen, and
+     it can be opened from a paused four-player game. */
+  ok('...and the trailer takes the screen the same way', /this\.trailer\?\.active/.test(body));
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  ok('...and the stylesheet actually hides them',
+    /#pane-edges\.scene-hidden,\s*#pane-cards\.scene-hidden\s*\{[^}]*opacity:\s*0/.test(css));
+  /* `pointer-events` because the CARDS take taps, unlike the frames — an
+     invisible card that still swallows a tap is worse than a visible one. */
+  ok('...without leaving an invisible card taking taps',
+    /#pane-edges\.scene-hidden,\s*#pane-cards\.scene-hidden\s*\{[^}]*pointer-events:\s*none/.test(css));
+
+  /* --- and one press is still one press ---
+     Start ended the trailer and restarted it from the beginning, on a PS5 pad
+     and on every other pad too. `trailer.update()` runs BEFORE MenuNav, so
+     closing the video put the title screen back underneath in the same frame,
+     with the cursor still on WATCH TRAILER — and on the title screen every
+     button confirms. The press was still sitting there because `pressed()` is
+     a pure test that nobody spends.
+
+     PINNED AS ORDER, not just as presence: consuming AFTER `skip()` would work
+     by accident today and break the moment `skip` grows a synchronous caller. */
+  const tr = readFileSync(new URL('../src/systems/trailer.js', import.meta.url), 'utf8')
+    .replace(/\r/g, '');
+  const spend = tr.indexOf("this.game.input.consume('start')");
+  const skip = tr.indexOf('this.skip();', spend < 0 ? 0 : spend);
+  ok('the press that closes the trailer is spent', spend > 0);
+  ok('...before the trailer acts on it', spend > 0 && skip > spend);
+  ok('...and it is the START edge, the only thing that skips anything',
+    /consume\('start'\)/.test(tr));
 }
 
 console.log('\n--- background removal keeps the drawn whites ---');
@@ -4953,6 +5057,88 @@ console.log('\n--- the three power moves ---');
     PLAYER_STYLE.every((b, j) => i === j || Math.abs(a.spawnX - b.spawnX) >= 3)));
   ok('styleFor degrades rather than returning undefined', styleFor(99) === PLAYER_STYLE[0]);
   ok('styleCss derives the same colour', styleCss(2) === '#35d7f0');
+
+  /* --- A SEAT IS NOT A CAT ---
+     `Game.roster` exists because the character picker lets a player choose a
+     cat that is not her seat's default: player 3 picking Blossom makes the
+     roster [0, 1, 3, 2]. Nine places in the HUD were passing a PLAYER index to
+     `styleCss` / `styleFor` as though it were a STYLE index, which is the same
+     number right up until that happens and then wrong for two players at once
+     — reported from four-player play as "Storm and Blossom have the wrong
+     border colours", with the two names swapped on the scoreboard as well.
+
+     `cssFor` is the fix that cannot be handed the wrong number: it takes the
+     style OBJECT the kitten was actually built from. These pin that it agrees
+     with `styleCss` where the two questions coincide, that it degrades where
+     the object is missing, and — the point of the whole exercise — that the
+     two answers really do come apart, so the distinction is worth keeping. */
+  ok('cssFor and styleCss agree seat by seat',
+    PLAYER_STYLE.every((st, i) => cssFor(st) === styleCss(i)));
+  ok('...and cssFor degrades to player one rather than to undefined',
+    cssFor(null) === styleCss(0) && cssFor(undefined) === styleCss(0)
+    && cssFor({}) === styleCss(0));
+  /* The permuted roster, spelled out, because the bug is invisible until it
+     is: seat 2 holding Blossom has to be purple and not Storm's teal. */
+  const swapped = [0, 1, 3, 2];
+  ok("...and a picked cat is not her seat's cat",
+    cssFor(PLAYER_STYLE[swapped[2]]) !== styleCss(2)
+    && cssFor(PLAYER_STYLE[swapped[2]]) === styleCss(3),
+    `seat 2 -> ${cssFor(PLAYER_STYLE[swapped[2]])}, seat colour ${styleCss(2)}`);
+  /* AND THE KITTEN CARRIES IT HERSELF, so a caller holding a Player never has
+     to consult the roster at all. This is what every fixed call site now does. */
+  const picked = new Player({
+    texture: new THREE.Texture(), index: 2, style: PLAYER_STYLE[3],
+    spawn: new THREE.Vector3(0, 0, 0), cols: 8, rows: 4, mirror: false,
+  });
+  ok('...and a Player knows which cat she is', cssFor(picked.style) === styleCss(3));
+  ok('...including her own marker ring',
+    picked.marker.material.color.getHex() === PLAYER_STYLE[3].colour);
+
+  /* NOBODY MAY GO BACK TO ASKING A SEAT FOR A COLOUR. Source pins, because
+     `Game` self-boots and cannot be constructed here — and because these are
+     the exact lines that were wrong. Each is a PLAYER index being resolved
+     before it reaches the palette, or the kitten being asked directly. */
+  /* COMMENTS STRIPPED FIRST, and that is not tidiness. Half of these ask that
+     something is ABSENT, and this codebase's comments name the thing that was
+     tried and failed — so every one of these lines is quoted, verbatim, in the
+     comment sitting directly above the line that fixed it. Three of these four
+     checks failed on their own explanation the first time they ran.
+
+     Crude on purpose: block comments and whole-line `//`, nothing that has to
+     understand a regex literal or a string. There is no `/*` inside a string
+     anywhere in these files, and if one ever appears this fails loudly rather
+     than quietly reading less than it thinks. */
+  const codeOnly = (src) => src
+    .replace(/\r/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  const seatSrc = codeOnly(
+    readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+  );
+  ok('the pane frames ask the kitten, not the seat',
+    seatSrc.includes('cssFor(this.players[m]?.style)') && !/styleCss\(m\)/.test(seatSrc));
+  ok('...and the score badges resolve the seat through the roster',
+    seatSrc.includes('styleFor(this._styleAt(i))')
+    && seatSrc.includes('styleCss(this._styleAt(i))'));
+  ok('...and the map tag names whoever is standing in the pane',
+    !/styleFor\(members\[0\]\)/.test(seatSrc));
+  ok('...and _styleAt goes through the roster it exists for',
+    /_styleAt\(index\)\s*\{\s*return this\.roster\?\.\[index\] \?\? index;/.test(seatSrc));
+  /* THE FIVE CALLS LEFT ARE THE ONES THAT WERE ALREADY RIGHT: the join card
+     (twice) and the touch-pad kitten went through `this.roster` all along, and
+     the score badge and the menu owner now go through `_styleAt`. Pinned by
+     COUNT as well as by shape, so a tenth caller cannot quietly appear beside
+     them holding a bare seat number. */
+  const bySeat = seatSrc.match(/styleCss\(/g) ?? [];
+  ok('...and every remaining styleCss call resolves its seat first',
+    bySeat.length === 5
+    && (seatSrc.match(/styleCss\(this\.(roster\[|_styleAt\()/g) ?? []).length === 5,
+    `${bySeat.length} calls`);
+  for (const f of ['systems/minimap.js', 'systems/inspector.js']) {
+    const src = codeOnly(readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8'));
+    ok(`${f} no longer colours anything by index`,
+      !/styleCss\(/.test(src) && /cssFor\(/.test(src));
+  }
 
   console.log('\n--- four players: the recolours ---');
 
