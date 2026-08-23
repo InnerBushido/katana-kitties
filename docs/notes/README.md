@@ -16,7 +16,7 @@ one file it needs — usually five to ten thousand.
 | [input.md](input.md) | controllers, the vJoy/Joy-Con route, the Chrome stick bug, the keyboard sets, menus on a pad | `core/input.js`, `systems/menunav.js` |
 | [tournament.md](tournament.md) | the ring, rounds, attacks, ring-outs, the record board, the arena's four locks, and the animals and the feast | `systems/tournament.js`, `systems/menagerie.js`, `entities/critter.js` |
 | [dragon-hunt.md](dragon-hunt.md) | the seven stars and their locks, the grottos, the spire, Ryuuseki and his two seats | `entities/dragonball.js`, `entities/ryuuseki.js` |
-| [endgame.md](endgame.md) | the 100% ending, the Awakening, the eight Powerup Kotodama, the economy, the trade screen, the Cross Slash rebalance, **and the balance page** | `systems/kotodama.js`, `systems/profile.js`, `entities/powerorb.js`, `tuning.html`, `src/core/tuning.js` |
+| [endgame.md](endgame.md) | the 100% ending, the Awakening, the eight Powerup Kotodama, the economy, the trade screen, the Cross Slash rebalance and the tell that warns you it is coming, **and the balance page** | `systems/kotodama.js`, `systems/profile.js`, `entities/powerorb.js`, `tuning.html`, `src/core/tuning.js` |
 | [story.md](story.md) | the opening cutscene, the six leaders, the shrine scenes, the scene viewer | `systems/cutscene.js`, `systems/shrinescene.js`, `entities/leader.js` |
 | [world.md](world.md) | the six clans and what each buff changes; raising and riding the panda | `world/build.js`, `entities/panda.js`, `entities/shrine.js` |
 | [art.md](art.md) | why the dragons looked low-res, how atlas cells are sized, and the two rules for generating new sprites | `core/spritesheet.js` |

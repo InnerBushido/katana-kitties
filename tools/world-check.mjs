@@ -48,6 +48,7 @@ import {
   PowerOrb, PowerOrbPickup, ORB_BY_ID,
 } from '../src/entities/powerorb.js';
 import { Kotodama } from '../src/systems/kotodama.js';
+import { CrossFx, sealStage, SIDES_BY_CUT } from '../src/systems/crossfx.js';
 import { ATTACKS, MAX_HP, DAZE_TIME } from '../src/entities/player.js';
 import {
   Tournament, WINS_NEEDED, MAX_ROUNDS, FEAST_TIME, REGEN_FRAC, OUT_FLOOR,
@@ -6868,6 +6869,205 @@ console.log('\n--- the trailer is opt-in ---');
     /trailer\?\.active\) return null/.test(nav));
   ok('...and the trailer panels count as overlays',
     /'panel-trailer', 'panel-trailer-offer'/.test(main));
+}
+
+/* ===========================================================================
+   THE CROSS SLASH'S TELL, AND THE SEAL IT CUTS.
+
+   Reported as a design hole rather than a bug: the technique is the hardest
+   thing in the game and it arrived with no warning, so the sister on the
+   receiving end learned about it by being launched. `systems/crossfx.js` is
+   the answer — an aura while she winds up, a stroke of a box in the air with
+   each cut, the orb's kanji on the third, and the whole thing blown apart
+   along the same vector the bodies go.
+
+   WHAT IS PINNED HERE IS THE SEQUENCING, not the pixels. The effect is a
+   POLLER: it reads the kitten's own clocks every frame and `player.js` does
+   not know it exists, which is the same argument `Game._updateTripleHolds`
+   makes about the technique ending five different ways. The whole risk of
+   that design is one thing — that the mapping from her clocks to what is on
+   screen drifts from what the clocks actually do — so it is asserted against
+   a REAL kitten running a REAL technique, not against a hand-made fake.
+=========================================================================== */
+console.log('\n--- the cross slash announces itself ---');
+{
+  const spawn = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
+  const mk = () => {
+    const p = new Player({
+      texture: new THREE.Texture(), index: 0, spawn: spawn.clone(),
+      cols: 8, rows: 4, mirror: false,
+    });
+    p.setPowerOrbs(['tri']);
+    return p;
+  };
+  const HOLD = { mx: 0, my: 0, down: (a) => a === 'attack', pressed: () => false };
+  const DEAF = { sfx() {}, toast() {}, strikePlayers() {}, onMischief() {} };
+
+  /* --- the reading, on its own ---
+     -1 nothing, 0 winding up, 1..3 that many cuts thrown. */
+  const idle = mk();
+  ok('a kitten doing nothing has no seal', sealStage(idle) === -1);
+  ok('...and neither has a null', sealStage(null) === -1);
+
+  /* THE WIND-UP IS TESTED BEFORE THE SUBTRACTION, AND THIS IS THE CHECK THAT
+     SAYS WHY. `triLeft` is zero BEFORE `_startTriple` runs as well as after
+     the last cut, so `cuts - triLeft` reads 3 during the wind-up: the whole
+     seal on screen, kanji and all, before a single cut has been thrown. The
+     one moment the effect exists for would be the moment it lies. */
+  const winding = mk();
+  winding._startWind(DEAF);
+  ok('winding up shows the aura and not one stroke', sealStage(winding) === 0);
+  ok('...and NOT the finished seal, which is what the naive subtraction gives',
+    sealStage(winding) !== CROSS.cuts);
+
+  const cut = (n) => {
+    const p = mk();
+    p._startTriple(null);
+    p.triLeft = CROSS.cuts - n;
+    /* THE CUT JUST THROWN IS STILL ON SCREEN, which is not decoration in this
+       fixture — it is the difference between the third cut and no technique at
+       all. `triAt` is the OR of four clocks, and after the last cut `triLeft`
+       is zero, so a fake that only sets `triLeft` says "she is not doing
+       anything" for exactly the case the seal is finished in. Same shape as
+       the real thing asserts further up: `triT > 0 && triHangT === 0`. */
+    p.triT = CROSS.gap;
+    return p;
+  };
+  ok('the first cut draws the first stroke', sealStage(cut(1)) === 1);
+  ok('...the second the second', sealStage(cut(2)) === 2);
+  ok('...and the third finishes it', sealStage(cut(3)) === 3);
+  /* The beat after the last cut, before she lets everybody go: the seal has to
+     HANG there, because that beat is the whole reason the launch reads as one
+     event. A seal that vanished on the last cut would burst into an empty
+     quarter second. */
+  const hanging = mk();
+  hanging._startTriple(null);
+  hanging.triLeft = 0;
+  hanging.triHangT = CROSS.hang;
+  ok('...and stays up through the pause for effect', sealStage(hanging) === CROSS.cuts);
+
+  /* CLAMPED BOTH WAYS, because `CROSS.cuts` is a slider on /tuning.html and a
+     nine-year-old can ask for five. Prefer a rule that degrades. */
+  const many = cut(1);
+  many.triLeft = CROSS.cuts + 4;
+  ok('...and a silly cut count cannot drive it negative', sealStage(many) === 0);
+  const few = cut(1);
+  few.triLeft = -3;
+  ok('...nor past the last stroke', sealStage(few) === CROSS.cuts);
+
+  /* --- the box: four sides, four strokes, none drawn twice --- */
+  const flat = SIDES_BY_CUT.flat().sort((a, b) => a - b);
+  ok('every side of the box is cut exactly once',
+    flat.length === 4 && flat.every((v, i) => v === i), flat.join(','));
+  ok('...over as many cuts as the technique has', SIDES_BY_CUT.length === CROSS.cuts);
+  /* The last cut draws no SIDE — it draws the kanji. That is the whole shape
+     of the idea the effect is built on: two cuts build the frame and the third
+     is what the frame was for. */
+  ok('...and the last cut draws the kanji instead of a fifth side',
+    SIDES_BY_CUT[CROSS.cuts - 1].length === 0);
+  /* A raised cut count must not index off the end mid-technique. */
+  ok('...and a cut past the end asks for no side at all',
+    (SIDES_BY_CUT[CROSS.cuts] ?? []).length === 0);
+
+  /* --- and now the same reading, driven by a real technique ---------------
+     Every frame of one Cross Slash, from the wind-up to the launch, asked what
+     the seal should look like. This is the check that would catch somebody
+     renaming a clock in player.js: the pure logic above would go on passing
+     against its own fakes for ever. */
+  const live = mk();
+  const seen = [];
+  let windFrames = 0;
+  live._startWind(DEAF);
+  for (let i = 0; i < 400 && live.triAt; i++) {
+    const st = sealStage(live);
+    if (st === 0 && live.triLeft === 0 && live.triWindT > 0) windFrames++;
+    if (seen[seen.length - 1] !== st) seen.push(st);
+    live._stepSpecials(1 / 60, HOLD, world, DEAF);
+  }
+  ok('one real technique walks the seal up 0-1-2-3 and never back',
+    seen.length === CROSS.cuts + 1 && seen.every((v, i) => v === i), seen.join(' '));
+  ok('...and ends with nothing on screen', sealStage(live) === -1);
+  /* THE POINT OF THE WHOLE FEATURE IS THIS NUMBER. The aura has to be up long
+     enough for a nine-year-old to see it and run; a tell nobody can act on is
+     decoration. `CROSS.wind` is what buys that, and it is on the tuning page,
+     so what is pinned is that the aura really is on screen for all of it. */
+  line('reaction window', `${(windFrames / 60).toFixed(2)}s (nominal ${CROSS.wind})`);
+  ok('...and the warning is up for the whole wind-up before the first stroke',
+    windFrames / 60 > CROSS.wind - 0.03, `${(windFrames / 60).toFixed(2)}s`);
+
+  /* --- it degrades headlessly rather than vanishing ---
+     Three canvas textures are built lazily on the first Cross Slash. In Node
+     there is no `document`, and the rule is that a missing thing must not NaN
+     a position or throw halfway through a frame — it must draw nothing. This
+     check is only meaningful BECAUSE it runs here, with no DOM. */
+  const stage = new THREE.Scene();
+  const fx = new CrossFx(stage);
+  const before = stage.children.length;
+  const headless = mk();
+  headless._startWind(DEAF);
+  /* TAKEN AWAY AND PUT BACK. The kitten above had to be built against the DOM
+     stub this file installs — a Player makes a Label and a Label measures on a
+     canvas — but what is being asserted is what happens with NO canvas at all,
+     which is the state a build tool, or a check like this one, runs in. */
+  const doc = globalThis.document;
+  delete globalThis.document;
+  let threw = null;
+  try {
+    for (let i = 0; i < 40; i++) {
+      fx.update(1 / 60, [headless]);
+      headless._stepSpecials(1 / 60, HOLD, world, DEAF);
+    }
+    fx.update(1 / 60, [null, undefined]);
+    fx.update(1 / 60, undefined);
+    fx.reset();
+  } catch (e) { threw = e; }
+  globalThis.document = doc;
+  ok('with no canvas to draw on it draws nothing and does not throw',
+    !threw, threw ? String(threw.message) : '');
+  ok('...and puts nothing in the scene it cannot paint',
+    stage.children.length === before, `${stage.children.length} added`);
+
+  /* --- where it is wired, and where it is NOT ---------------------------- */
+  const pl = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+  /* THE POLLER DOCTRINE, PINNED. player.js is the most-checked file in the
+     repo and the technique can end five ways — released wind-up, interrupted,
+     round reset, restart, or run to the end. Callbacks would mean five places
+     to remember the seal; reading her clocks means none. If somebody ever
+     "tidies" this into a hook, this check is where they find out why not. */
+  ok('the effect is a poller: player.js has never heard of it',
+    !/crossfx|CrossFx/i.test(pl));
+
+  const mn = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  /* THE ORDER IS THE WHOLE REASON THE SEAL BURSTS ON THE RIGHT FRAME.
+     `_updateTripleHolds` frees everybody the technique caught on the frame
+     `triAt` goes false; crossfx reads the same flag. Ticked second, the seal
+     comes apart and the bodies go flying in the same frame. Ticked first, the
+     seal bursts one frame early and the eye reads two events. */
+  const holds = mn.indexOf('this._updateTripleHolds(dt);');
+  const cfx = mn.indexOf('this.crossFx?.update(dt, this.players);');
+  const booms = mn.indexOf('this._updateBooms(dt);');
+  ok('the seal is ticked after the technique lets its victims go',
+    holds > 0 && cfx > holds && booms > cfx, `${holds} ${cfx} ${booms}`);
+  ok('...and a restart leaves no seal hanging over the new game',
+    /this\.crossFx\?\.reset\(\);/.test(mn));
+
+  const fxSrc = readFileSync(new URL('../src/systems/crossfx.js', import.meta.url), 'utf8');
+  /* A WIND-UP SHE LET GO OF MUST NOT EXPLODE. Releasing attack during the
+     wind-up ends the technique at stage 0 with nothing on screen; an explosion
+     of nothing announces a Cross Slash that never happened, and the sister who
+     backed off correctly learns that the warning lies. */
+  ok('a wind-up let go of ends quietly, with nothing to blow up',
+    /const drew = r\.stage >= 1;/.test(fxSrc)
+    && /if \(!drew\) \{ r\.group\.visible = false; return; \}/.test(fxSrc));
+  /* THE GLYPH IS FITTED TO ITS OWN INK, NOT TO ITS COORDINATES. House rule:
+     measure, don't reason, about anything drawn. The 520-box numbers say where
+     the CENTRELINES go; the brush hangs outside them by whatever the width
+     profile says, and re-weighting a stroke moves the ink without moving a
+     single coordinate. Reasoned, the 十 looked centred; drawn, it pushed off
+     the left edge of its own texture. */
+  ok('the kanji is fitted to the ink it actually lays down',
+    /const box = inkBounds\(g, S, S\);/.test(fxSrc)
+    && /S \/ 2 - \(box\.x \+ box\.w \/ 2\) \* fit/.test(fxSrc));
 }
 
 /* ---------------------------------------------------------------------------

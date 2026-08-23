@@ -412,7 +412,115 @@ from and the licensing decision attached to them.
 squash-and-stretch as the jump, the landing and the chew. Standing perfectly
 still is not a tell; it is what a disconnected pad looks like. The vocabulary
 already means "something is about to happen to this cat", and a new pose would
-need art nobody drew.
+need art nobody drew. **It is not enough on its own** — see the next
+section.
+
+### The tell you can see from across the garden
+
+`CROSS.wind` bought a quarter of a second of warning and then spent it on a
+crouch. A crouch is the right *pose* and it is not a *signal*: at the distance
+the world camera actually sits, a kitten who has gone slightly lower is a kitten
+who has gone slightly lower. [systems/crossfx.js](../../src/systems/crossfx.js)
+is what that quarter second is for — an aura while she winds up, a seal cut into
+the air one stroke per cut, and the whole thing blown apart when she lets go of
+what she caught.
+
+**IT IS A POLLER, AND `player.js` HAS NEVER HEARD OF IT.** Same argument
+`Game._updateTripleHolds` makes and for the same reason: the technique ends five
+ways — released wind-up, interrupted by a blade, round reset, restart, or run to
+the end — and a callback is one path per ending with one of them missed. The
+effect reads her clocks every frame through one exported function, `sealStage`,
+and a `world-check` assertion pins that player.js contains no mention of it, so
+a later tidy-up into a hook finds out why not.
+
+**THE WIND-UP HAS TO BE TESTED BEFORE THE SUBTRACTION.** `sealStage` is
+`CROSS.cuts - triLeft`, and `triLeft` is zero *before* `_startTriple` runs as
+well as after the last cut — so the naive version draws the finished seal, kanji
+and all, during the wind-up. The one moment the feature exists for would be the
+moment it lies about what is coming. Checked with a counter-example, not just
+with the happy path.
+
+**HER COLOUR ON THE GROUND, THE ORB'S IN THE AIR.** Two elements answering two
+questions. The aura round her feet is *who is charging, and where* — in a
+four-player scrap that is the question the warning exists for, and her colour has
+answered it since the first pane border. The seal in the air is *the technique*,
+which has had the orb's pink since the orb did. Mixing them would make the
+warning ambiguous in exactly the case it matters.
+
+**THE ARCS ARE BROKEN RINGS AND THEY STAY NEAR HER FEET.** A closed ring is
+rotationally symmetric, so spinning one is a free frame that looks exactly like
+a still one; two 1.45π arcs turning opposite ways are the whole reason it reads
+as spinning up rather than as a target reticle. They lift only a little as they
+tighten, and the first version's chest-height lift was wrong for the one camera
+that matters: the arena's camera is low and side-on, a ground-parallel ring seen
+edge-on is a line, and a line at chest height reads as an orange bar through the
+middle of her. Near her feet it degrades into the same flattened ellipse the
+player marker already draws.
+
+**THE SEAL IS PLACED ONCE, ON THE FIRST CUT, AND THEN HANGS.** It is something
+she cut into the air, not a badge pinned to her chest — one that followed her
+would slide sideways under her own knockback and read as a UI element. Placed on
+the first cut rather than during the wind-up because the wind-up can be released,
+and a box drawn around nothing is a promise the game did not keep. For the same
+reason a wind-up she let go of ends quietly: an explosion of nothing announces a
+Cross Slash that never happened, and the sister who correctly backed off learns
+that the warning lies.
+
+Two of the four sides per cut, so one katana stroke closes a readable half of the
+box; the third cut draws no side at all and lands the 十 instead, which is the
+shape of the whole idea — two cuts build the frame and the third is what the
+frame was for. Each side's geometry is shifted so its left end sits at the
+origin and the draw-on is `scale.x`, so a stroke grows out of the corner it
+starts at instead of swelling out of its own middle.
+
+**THE BURST DIRECTION IS FREE, AND THAT IS THE POINT OF THE GROUP.** The seal
+hangs in a `THREE.Group` whose `rotation.y` is her facing, so the group's local
++z *is* the attack direction — the same vector `_freeTripleHold` throws the
+bodies along. "Away from the kitten who threw it" is then a positive local z on
+every piece: no world maths, and nothing that can disagree with where the bodies
+went. It is ticked *after* `_updateTripleHolds` for the same reason, so the seal
+comes apart and the victims go flying in one frame rather than two.
+
+**THE 十 IS THE TRAILER'S, RE-DRAWN AT RUNTIME.** `tools/brush-kanji.mjs` says
+why it is drawn rather than typed — see [trailer.md](trailer.md) — and this is
+the second place the glyph has to carry a frame on its own, which is the exact
+condition that file was written for. It is re-rasterised here rather than loaded
+as a PNG: ninth non-negotiable, and a 20KB image in `public/` is a file the game
+could be deployed without. Canvas2D strokes short round-capped segments along
+the same beziers with the same width profiles, which is the union of the same
+disks the tool rasterises by hand.
+
+**TWO THINGS ABOUT IT WERE REASONED AND BOTH WERE WRONG.** The house rule earned
+its keep twice in one afternoon:
+
+- *The core was a fill, not a spine.* Subtracting 4 from a stroke whose
+  half-width peaks at 12 leaves a white core two thirds as wide as the stroke.
+  Sampled off the canvas it came out about 30% solid white rows, and on screen
+  over a bright green field the whole seal read as a plain white picture frame
+  with a pink rim — the technique's colour was not the colour of the thing.
+- *The glyph did not fit its own box.* The 520-box coordinates say where the
+  centrelines go and say nothing about where the ink ends up; the brush hangs
+  outside the end points by whatever the width profile says, and the profile had
+  just been multiplied to hold its own against the bars around it. Reasoned from
+  the coordinates it looked centred; drawn, it pushed off the left edge of its
+  own texture and sat high in the box. It is now painted twice — once to
+  measure the alpha bounds, once through a transform that puts *those* in the
+  middle — which costs one canvas draw at boot and stays right if anybody
+  re-weights a stroke.
+
+**IT DRAWS NOTHING RATHER THAN THROWING WHEN THERE IS NO CANVAS.** The three
+textures are built lazily on the first Cross Slash and every one of them can
+return null; `_rig` returns null with them and the whole effect becomes a no-op.
+`world-check` runs that path with `document` deliberately taken away and asserts
+that nothing lands in the scene and nothing throws — prefer a rule that degrades
+over one that vanishes.
+
+**THE COST, FOR THE RECORD.** Eleven transparent objects per kitten actually
+running the technique, for about a second and a half, and none of them exist
+until her first Cross Slash. The game is fill-bound and transparent overdraw is
+the expensive kind ([performance.md](performance.md)), so: worst case four
+kittens at once is 44, which is a fraction of the petals already drifting, and
+zero for a game where nobody has bought the orb.
 
 **ALL OF THESE NUMBERS ARE EDITABLE WITHOUT TOUCHING CODE** — see
 [the balance page](#the-balance-page) at the end of this file.

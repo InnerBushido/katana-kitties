@@ -26,6 +26,7 @@ import { Minimap, TOUCH_ZOOM } from './systems/minimap.js';
 import { MenuNav } from './systems/menunav.js';
 import { Cutscene } from './systems/cutscene.js';
 import { Trailer } from './systems/trailer.js';
+import { CrossFx } from './systems/crossfx.js';
 import { Confirm } from './systems/confirm.js';
 import { ShrineScene } from './systems/shrinescene.js';
 import { SummonScene } from './systems/summonscene.js';
@@ -371,6 +372,12 @@ class Game {
     /* Same reasoning as Trailer: no world, and it has to exist before the
        buttons below are bound. */
     this.confirm = new Confirm(this);
+
+    /* THE CROSS SLASH'S WIND-UP AND ITS SEAL. It wants the scene and nothing
+       else — it reads the kittens' own clocks every frame and never asks the
+       game anything, which is why it takes no `this`. See systems/crossfx.js
+       for why it is a poller and not a set of callbacks. */
+    this.crossFx = new CrossFx(this.scene);
 
     /* THE ON-SCREEN PAD EXISTS ON EVERY MACHINE AND IS SHOWN ON SOME. Building
        it always — rather than only when `touchPrimary` — is what makes the test
@@ -1933,6 +1940,12 @@ class Game {
       p.calloutT = 0;
       p.callout.visible = false;
     }
+    /* AND NO SEAL LEFT HANGING OVER THE NEW GAME. `_clearSpecials` above has
+       already stopped every technique, so crossfx would drop its own rigs on
+       the next frame anyway — but "on the next frame" is one frame of a pink
+       box floating over a world that has just been rebuilt, and a restart is
+       supposed to look like nothing happened here. */
+    this.crossFx?.reset();
     /* Un-meet every leader. A restart is the world put back to its opening
        state, and six introductions already spent is exactly the sort of
        leftover that makes a "restart" feel like it only half worked. */
@@ -4985,6 +4998,13 @@ class Game {
        round ending is one of the ways a triple slash stops being run. Asking
        first would hold everybody it caught for one extra frame past the gong. */
     this._updateTripleHolds(dt);
+    /* AFTER the holds, and the ordering is the whole reason the seal explodes
+       on the right frame. `_updateTripleHolds` frees everybody the technique
+       caught on the frame `triAt` goes false; this reads the same flag, so
+       running it second puts the seal coming apart and the bodies going
+       flying in the SAME frame rather than one apart. Reversed, the seal
+       bursts a frame early and the eye reads two events. */
+    this.crossFx?.update(dt, this.players);
     this._updateBooms(dt);
     this._updateShake(dt);
     /* One flag, set where the fact becomes true. `ArenaQuest` needs to know
