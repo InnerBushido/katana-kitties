@@ -158,8 +158,11 @@ hard-coded before the file existed. See [docs/notes/mobile.md](docs/notes/mobile
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
-**Committed locally, not pushed.** `main` is ahead of `origin/main` and stays
-that way until Richard has played it. The batch: the clan call-to-action, pane
+**Played, pushed and live.** Richard playtested the whole batch and it went out
+to `origin/main`, which is what Vercel deploys — so it is on
+https://katana-kitties.vercel.app and the nieces have it. The five feature
+branches behind it were deleted once merged; see *Branches* at the end of this
+file. The batch: the clan call-to-action, pane
 stability and pane colour, the arena floor and the camera ceiling, the Cross
 Slash rebalance, `/tuning.html` and the debug panel's door to it,
 `public/voice/cross0-3.mp3`, the vendor split into a personal inspector
@@ -776,3 +779,35 @@ The handoff is four things, in the order a session should use them:
 **And when you fix something, add the check that would have caught it.** A fact
 enforced by `world-check` needs no paragraph anywhere; a paragraph without a
 check is a fact waiting to rot.
+
+---
+
+## Branches
+
+**One branch per feature or fix, merged into local `main` with `--no-ff`,
+deleted the moment it is merged.** The branch is scaffolding for the work, not
+a record of it — the record is the merge commit and the essay in it, and
+`git log --graph` shows the shape of every branch that ever existed whether or
+not the label survives. A kept branch is a second name for a commit that
+already has one.
+
+**`git branch -d`, never `-D`.** The lower-case one refuses to delete anything
+that is not fully merged, so it cannot lose work; the upper-case one is for
+throwing an experiment away on purpose and should be typed deliberately, never
+in a loop.
+
+**Nothing but `main` is ever pushed.** These branches are local, so deleting
+them touches nothing on GitHub and there is no `origin/feature-x` to tidy up
+afterwards. The repo has exactly one remote branch and that is the intent.
+
+**Push to `origin/main` only once Richard has played it.** `origin/main` is
+what Vercel deploys, so a push is a release to the nieces rather than a backup
+— "all checks pass" is not the same thing as "it plays well", and the whole
+reason for the local-first workflow is that a batch can sit finished and
+unreleased for as long as it needs to. Check `gh auth status` first: `gh` is
+signed in as two accounts and the active one must be **InnerBushido**, not the
+work account.
+
+**The exception worth knowing:** keep a branch alive only while something
+outside this repo still points at it — an open pull request, or a second
+machine that has it checked out. Neither has ever been true here.
