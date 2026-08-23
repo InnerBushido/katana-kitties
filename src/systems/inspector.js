@@ -1,5 +1,5 @@
 import { POWER_ORBS, ORB_BY_ID, MAX_EQUIPPED } from '../entities/powerorb.js';
-import { MAX_PLAYERS, styleCss } from '../core/palette.js';
+import { MAX_PLAYERS, cssFor } from '../core/palette.js';
 
 /* ---------------------------------------------------------------------------
    THE PERSONAL CARD — one kitten's own screen, inside her own pane.
@@ -272,7 +272,10 @@ export class Inspector {
       c.el.style.top = `${H - v.y - v.h}px`;
       c.el.style.width = `${v.w}px`;
       c.el.style.height = `${v.h}px`;
-      c.el.style.setProperty('--me', styleCss(i));
+      /* HER colour, read off the kitten. `styleCss(i)` was a seat number
+         standing in for a style index and came out wrong the moment anybody
+         used the character picker — see `cssFor` in core/palette.js. */
+      c.el.style.setProperty('--me', cssFor(this.game.players[i]?.style));
       this._paintCard(i);
     }
   }

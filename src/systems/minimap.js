@@ -11,7 +11,7 @@
    fight the renderer for state.
 --------------------------------------------------------------------------- */
 
-import { styleCss } from '../core/palette.js';
+import { cssFor } from '../core/palette.js';
 
 /* MARGIN ROUND THE ARCHIPELAGO AT WORLD ZOOM, AS A FRACTION OF THE BOX.
 
@@ -305,10 +305,12 @@ export class Minimap {
         c.fillStyle = '#1c1016';
         c.fill();
       }
-      // A pip in its owner's colour, so you can tell whose it is.
+      /* A pip in its owner's colour, so you can tell whose it is. HER style,
+         not `styleCss(p.index)`: a seat is not a cat once the picker has been
+         used. See `cssFor` in core/palette.js. */
       c.beginPath();
       c.arc(x, y + s * 0.15, s * 0.34, 0, Math.PI * 2);
-      c.fillStyle = styleCss(p.index);
+      c.fillStyle = cssFor(p.style);
       c.fill();
     }
 
@@ -358,7 +360,7 @@ export class Minimap {
     }
 
     // --- the kitties, drawn last so they're never hidden ---
-    players.forEach((p, i) => {
+    players.forEach((p) => {
       const x = this._px(p.position.x);
       const y = this._py(p.position.z);
       const s = 5 * this.dpr;
@@ -375,7 +377,7 @@ export class Minimap {
       c.lineTo(0, s * 0.4);
       c.lineTo(-s, s);
       c.closePath();
-      c.fillStyle = styleCss(i);
+      c.fillStyle = cssFor(p.style);
       c.fill();
       c.lineWidth = 1.6 * this.dpr;
       c.strokeStyle = '#1c1016';

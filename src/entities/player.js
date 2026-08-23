@@ -505,6 +505,10 @@ export class Player {
         depthWrite: false, toneMapped: false,
       })
     );
+    /* A PARKING HEIGHT ONLY. Both rings are dropped to the GROUND every
+       frame by `_updateVisuals` — see the blob-shadow block at the bottom of
+       it — because they are shadows of a kind and belong under her, not on
+       her. Whatever is set here lasts until the first update. */
     this.clanRing.position.y = 0.05;
     this.clanRing.visible = false;
     this.group.add(this.clanRing);
@@ -1979,8 +1983,11 @@ export class Player {
           this.clan = hall.clan;
           /* HER OWN RING KEEPS HER OWN COLOUR — see `clanRing` in the
              constructor for what this used to do and why it was wrong. */
+          /* Colour only. Whether it is SHOWN is derived from `this.clan` in
+             `_updateVisuals`, so there is one owner of that answer and a
+             kitten who leaves a clan, gets on a dragon or is restarted cannot
+             be left wearing a ring nobody switched off. */
           this.clanRing.material.color.set(hall.clan.color);
-          this.clanRing.visible = true;
           hud?.sfx('clan');
           hud?.onJoinClan?.(this, hall.clan);
         }
@@ -3038,6 +3045,13 @@ export class Player {
 
     // The panda carries its own ring in the same colour, so two would stack.
     this.marker.visible = !this.mount && !this.pandaMount;
+    /* THE CLAN RING GOES WHEREVER HER OWN RING GOES. It used to be switched on
+       once, at the moment she swore, and then left alone forever — so it rode
+       up onto a dragon with her and hung in the air under a mount that has its
+       own markings. Derived from `this.clan` every frame instead: the two
+       rings are one piece of furniture with two colours in it, and a rule
+       computed fresh cannot go stale the way a rule set once does. */
+    this.clanRing.visible = !!this.clan && this.marker.visible;
 
     /* THE EDGE WARNING GOES ON HER FEET, because that is what is about to
        leave the stage. `Tournament._updateOut` sets `nearEdge` inside the
@@ -3132,9 +3146,20 @@ export class Player {
       this.shadow.scale.setScalar(0.6 + k * 0.6);
       this.shadow.material.opacity = 0.4 * k;
       this.marker.position.y = -drop + 0.07;
+      /* THE CLAN RING IS ON THE GROUND, NOT ON HER FEET. It is parented to
+         `group` like the marker is, and the marker has always been pushed back
+         down to the terrain here — the clan ring was left at its constructor
+         height, so it stayed glued to her paws and sailed off into the sky
+         with every jump. Reported as "it attaches to the players feet instead
+         of the ground/shadow beneath the player".
+         A HAIR ABOVE THE MARKER because it is the inner of the two concentric
+         rings and they are drawn on the same terrain; the same 0.01 the
+         constructor already used. */
+      this.clanRing.position.y = -drop + 0.08;
     } else {
       this.shadow.visible = false;
       this.marker.visible = false;
+      this.clanRing.visible = false;
     }
   }
 

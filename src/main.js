@@ -14,7 +14,7 @@ import {
 import { TouchPad } from './core/touchpad.js';
 import { World, CLANS } from './world/world.js';
 import { Player, ATTACKS, MAX_HP, KO_TIME } from './entities/player.js';
-import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss } from './core/palette.js';
+import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from './core/palette.js';
 import { splitLayout, mapWidth, fitDistance, stablePanes, paneSeats } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
@@ -1782,7 +1782,7 @@ class Game {
     if (!show) return;
     const style = styleFor(this.menuOwner);
     el.textContent = `${style.name} is driving this menu`;
-    el.style.color = styleCss(this.menuOwner);
+    el.style.color = styleCss(this._styleAt(this.menuOwner));
   }
 
   /**
@@ -2602,8 +2602,26 @@ class Game {
        the list of things that take the screen lives in one place. Mischief
        points and a minimap mean nothing in a ring, and two scoreboards on one
        screen is the kind of clutter that gets neither of them read. */
-    const away = this._sceneActive() || !!this.travel || !!this.tournament?.active;
-    document.getElementById('hud')?.classList.toggle('scene-hidden', away);
+    /* AND THE PANE FRAMES AND THE PANE CARDS GO WITH IT. They are not inside
+       `#hud` — they are fixed layers of their own, because one is decoration
+       that must never take a tap and the other is a menu that must — but they
+       are split-screen furniture just the same, and a full-screen scene has no
+       split to furnish. Four coloured quarter-frames over a shared cutscene
+       are dividing a picture that is not divided.
+
+       THEY NEEDED A SEPARATE HIDE RATHER THAN A CONDITION. `_paintPaneEdges`
+       already refuses to show them outside `state === 'play'`, but it only
+       runs from `_render`, and every scene block in `_tickBody` returns before
+       reaching it — so the frames were not painted wrong, they were simply
+       left exactly as the last playing frame drew them. A rule that has to be
+       re-run to take effect cannot be the rule for a case where nothing runs.
+       Hence a class, toggled from here, that costs nothing and cannot go
+       stale. */
+    const away = this._sceneActive() || !!this.travel || !!this.tournament?.active
+      || !!this.trailer?.active;
+    for (const id of ['hud', 'pane-edges', 'pane-cards']) {
+      document.getElementById(id)?.classList.toggle('scene-hidden', away);
+    }
   }
 
   /** The leader standing at a clan's shrine. Used to gate joining on `met`. */
@@ -5287,6 +5305,29 @@ class Game {
     this.kotodama?.dropInWorld(id, at);
   }
 
+  /**
+   * WHICH CAT IS IN SEAT `index`.
+   *
+   * A SEAT IS NOT A CAT. `this.roster` exists precisely because the two come
+   * apart — the character picker lets player 3 choose Blossom, which makes the
+   * roster `[0, 1, 3, 2]` — and nine places in this file and its systems were
+   * passing a seat number to `styleCss`/`styleFor` as though it were a style
+   * index. Every one of them was right for the girls' usual game and wrong the
+   * first time a third player picked a cat that was not her seat's default.
+   *
+   * Reported from four-player play as "Storm and Blossom have the wrong border
+   * colours", which is what two seats' worth of that looks like: her frame,
+   * her score's ring, her wedge on the map, her panda's pip and the name on
+   * the map tag all belonging to the sister who took her default.
+   *
+   * Anything holding the PLAYER should read `player.style` through `cssFor`
+   * instead; this is for the callers that only have a seat — a score badge for
+   * a slot, a menu owner, a pane's group members.
+   */
+  _styleAt(index) {
+    return this.roster?.[index] ?? index;
+  }
+
   /** Style indices nobody is playing, in roster order. */
   _freeStyles() {
     const used = new Set(this.roster.slice(0, this.partySize));
@@ -5379,8 +5420,11 @@ class Game {
     const panes = splitLayout(n, 1000, 1000, 0, this.settings.dir);
 
     for (let i = 0; i < n; i++) {
-      const style = styleFor(i);
-      const css = styleCss(i);
+      /* HER cat, not her seat — `styleFor(i)` printed the name of whoever
+         normally sits in slot `i`, so two players who swapped cats in the
+         picker swapped names on the scoreboard as well. See `_styleAt`. */
+      const style = styleFor(this._styleAt(i));
+      const css = styleCss(this._styleAt(i));
 
       const badge = document.createElement('div');
       badge.className = `score p${i + 1}`;
@@ -5425,7 +5469,10 @@ class Game {
       const tag = document.createElement('span');
       tag.className = 'map-tag';
       tag.id = `map-tag-${i}`;
-      tag.style.color = styleCss(i);
+      /* NO COLOUR HERE. A map belongs to a PANE, not to a player — see
+         `_drawMaps` — so the one thing this tag's colour cannot be derived
+         from is `i`, which is why it is written there, next to the name it
+         has to agree with. */
       box.append(canvas, tag);
       maps.appendChild(box);
       /* A phone opens zoomed IN — see TOUCH_ZOOM. Tapping the map still cycles
@@ -5595,8 +5642,16 @@ class Game {
       const shared = members.length > 1;
       if (tag) {
         const key = i === 0 ? ' · Z' : ' · X';
+        /* THE KITTEN STANDING THERE, not the cat who normally has that seat.
+           `styleFor(members[0])` is a seat number read as a style index and
+           labelled the pane STORM while Blossom was standing in it. */
+        const solo = this.players[members[0]];
         tag.textContent = this.merged ? 'Z: ZOOM'
-          : `${shared ? 'SHARED' : styleFor(members[0]).name.toUpperCase()}${key}`;
+          : `${shared ? 'SHARED' : (solo?.name ?? '').toUpperCase()}${key}`;
+        /* ...and the same rule for its colour, which used to be written once
+           at build time from the MAP's index. A shared pane has no one owner,
+           so it goes back to the stylesheet's cream. */
+        tag.style.color = shared || this.merged ? '' : cssFor(solo?.style);
       }
 
       /* Centre on the group, not on one kitten, whenever the pane holds more
@@ -6370,7 +6425,10 @@ class Game {
       el.style.width = `${v.w}px`;
       el.style.height = `${v.h}px`;
       const members = groups[i] ?? [];
-      const cols = members.map((m) => styleCss(m));
+      /* HER colour, off the kitten. This line said `styleCss(m)` — a seat
+         number where a style index belongs — which is the whole of the
+         "Storm and Blossom have each other's border" report. See `_styleAt`. */
+      const cols = members.map((m) => cssFor(this.players[m]?.style));
       /* One member still goes through the gradient, with the same colour at
          both ends. A separate solid-colour path would be a second way of
          saying the same thing and a second place for it to go wrong. */

@@ -87,7 +87,37 @@ export function styleFor(index) {
 /** The same colour as a CSS string, for the canvas-2D minimap and the HUD.
  *  DERIVED rather than listed a second time: a table of hex numbers and a
  *  table of hex strings is two tables, and the one nobody remembers is the one
- *  that ends up a different orange. */
+ *  that ends up a different orange.
+ *
+ *  TAKES A STYLE INDEX, NOT A PLAYER INDEX. See `cssFor` for why that
+ *  distinction is not pedantry. */
 export function styleCss(index) {
-  return `#${styleFor(index).colour.toString(16).padStart(6, '0')}`;
+  return cssFor(styleFor(index));
+}
+
+/**
+ * The same colour again, for a caller holding the KITTEN rather than the seat.
+ *
+ * A SEAT IS NOT A CAT, and the whole HUD used to assume it was. `styleCss(i)`
+ * answers for STYLE i; nine callers passed it a PLAYER index, which is the
+ * same number right up until somebody uses the character picker. Player 3
+ * choosing Blossom makes the roster `[0, 1, 3, 2]`, and from that moment the
+ * pane frames, the score badges, the minimap wedges, the panda pips and the
+ * map tag were all one seat out — Storm framed in Blossom's purple, Blossom in
+ * Storm's teal, and the two names swapped over the two scores. Reported from
+ * four-player play as "the border colours are wrong", which is exactly what it
+ * looks like from the sofa.
+ *
+ * It is a WRONG-BY-CONSTRUCTION bug rather than a typo, so the fix is a
+ * function that cannot be handed a seat number by mistake: pass `player.style`
+ * — the object the kitten was actually built from — and there is nothing left
+ * to get out of step. Seats that have no player yet still go through
+ * `styleCss` with an index resolved by `Game._styleAt`.
+ *
+ * Degrades to player one's colour rather than to `undefined` — a missing pip
+ * must be the wrong colour, never a crash in the middle of drawing the HUD.
+ */
+export function cssFor(style) {
+  const c = style?.colour ?? PLAYER_STYLE[0].colour;
+  return `#${c.toString(16).padStart(6, '0')}`;
 }

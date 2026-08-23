@@ -1185,6 +1185,60 @@ console.log('\n--- the touch pad as a device ---');
     JSON.stringify(plain.bindings.slice(0, 3)));
 }
 
+/* ---------------- 11b. spending a press, so it is only read once -----------
+   ONE PRESS IS ONE ANSWER TO ONE QUESTION. A frame is read top to bottom by
+   several owners in turn — the trailer, then MenuNav, then the game — and
+   `pressed()` is a pure test, so a press one of them ACTS on is still sitting
+   there for the next. That is how Start ended the trailer and started it again
+   in the same frame: the video closed, the title screen came back underneath
+   with the cursor still on WATCH TRAILER, and on the title screen every button
+   confirms. Reported on a PS5 pad and nothing whatever to do with the pad.
+
+   `consume` marks the edge SPENT without pretending the button came up, which
+   is the part worth pinning: she really is still holding it, so anything
+   reading `down()` — a sprint, a charge, a held direction — must not be told
+   otherwise. */
+{
+  console.log('\n--- a press can be spent, and only the edge is spent ---');
+
+  const pad0 = DEVICES.xbox();
+  const im = drive([pad0]);
+  im.slots = 1;
+  pad0.buttons = buttons(17, [9]);      // Start / Options, held
+  im.update();
+
+  const p = im.players[0];
+  ok('a fresh press reads as pressed', p.pressed('start'));
+  ok('...and reads as pressed again, because nothing has spent it',
+    p.pressed('start'));
+  im.consume('start');
+  ok('...and not once it has been spent', !p.pressed('start'));
+  /* THE BUTTON IS STILL DOWN. Clearing `held` instead would have been the
+     obvious implementation and would lie to everything that asks. */
+  ok('...but the button is still down, because it is', p.down('start'));
+  /* AND ONLY THAT ACTION. Spending the skip must not eat the jump somebody
+     else is holding in the same frame. */
+  pad0.buttons = buttons(17, [9, 0]);
+  im.update();
+  im.consume('start');
+  ok('...and spending one action leaves the others alone', p.pressed('jump'));
+
+  /* A NEW PRESS AFTER A SPENT ONE STILL COUNTS. Marking `prev` rather than
+     latching a flag is what makes this fall out for free: let go, press again,
+     and the edge is a real edge. */
+  pad0.buttons = buttons(17, []);
+  im.update();
+  pad0.buttons = buttons(17, [9]);
+  im.update();
+  ok('...and the next press is a new press', p.pressed('start'));
+
+  /* EVERY SLOT, because `_skipPressed` asks every slot and any of the four
+     could be the one holding Start. Spending only the pad that answered would
+     leave three edges behind. */
+  ok('consuming spends it on every slot',
+    im.players.every((q) => (im.consume('start'), !q.pressed('start'))));
+}
+
 /* ------------- 12. the button the prompt tells her to press --------------
    The clan prompt over a kitten's head says `[E]  SWEAR TO RUN WITH
    THUNDERPAW`, and the badge has to be the button SHE is holding — four kids
@@ -1194,9 +1248,13 @@ console.log('\n--- the touch pad as a device ---');
 
    `promptFor` is the only place that answers this, and it answers from the
    live binding: the same `pad`/`half`/`keyset` the action itself is read
-   through, so the label cannot name a device the player is not on. The one
-   thing it cannot do is check the silk-screening — see the PROMPTS comment in
-   input.js on why a PlayStation pad is told to press B. */
+   through, so the label cannot name a device the player is not on.
+
+   IT CHECKS THE SILK-SCREENING NOW TOO. It used not to, and this comment used
+   to explain why a PlayStation pad was told to press B: no amount of sniffing
+   the id string, it said, fixes that reliably. It was played on a DualSense
+   and reported straight back. See PROMPT_STYLES in input.js — and the
+   `ds4NoRemap` case below for the half of that argument which was correct. */
 {
   console.log('\n--- the prompt names the right button ---');
 
@@ -1212,11 +1270,40 @@ console.log('\n--- the touch pad as a device ---');
   ok('...and a keyset that binds a letter shows the letter, not the arrow',
     /^[A-Z0-9]/.test(kb.promptFor(0, 'jump') ?? ''), `${kb.promptFor(0, 'jump')}`);
 
-  const std = drive([DEVICES.ds4Chrome()]);
-  std.slots = 1; std.update();
-  ok('a standard pad is told to press B', std.promptFor(0, 'interact') === 'B',
-    `${std.promptFor(0, 'interact')}`);
-  ok('...and its attack is X', std.promptFor(0, 'attack') === 'X');
+  const xb = drive([DEVICES.xbox()]);
+  xb.slots = 1; xb.update();
+  ok('an Xbox pad is told to press B', xb.promptFor(0, 'interact') === 'B',
+    `${xb.promptFor(0, 'interact')}`);
+  ok('...and its attack is X', xb.promptFor(0, 'attack') === 'X');
+
+  /* --- and a PlayStation pad is told the SHAPE that is printed on it ---
+     Four kids on four devices are all being told to press `interact`, and the
+     one on a DualSense was being told 'B' by a controller with no letters
+     anywhere on it. */
+  for (const dev of ['dualsense', 'ds4Chrome', 'ds4Firefox']) {
+    const ps = drive([DEVICES[dev]()]);
+    ps.slots = 1; ps.update();
+    ok(`${dev} is told to press ○, not B`, ps.promptFor(0, 'interact') === '○',
+      `${ps.promptFor(0, 'interact')}`);
+    ok(`...and ${dev}'s attack is □`, ps.promptFor(0, 'attack') === '□',
+      `${ps.promptFor(0, 'attack')}`);
+    /* THE READING SIDE MUST NOT HAVE MOVED. This is a LABEL change and
+       nothing else: a Sony pad is still read through the `standard` profile,
+       because its indices really are the standard ones. If somebody ever
+       promotes `playstation` to a read profile, this fails. */
+    ok(`...while ${dev} is still READ as a standard pad`,
+      ps.profileNameFor(DEVICES[dev]()) === 'standard');
+  }
+
+  /* THE CASE THAT KEEPS THE SNIFF HONEST. Same Sony id, but a browser with no
+     remap table for it — so the button INDICES are not the standard ones and
+     the game does not know where ○ is. A shape glyph here would name a button
+     the game is not reading, which is the same lie as [B] on a DualSense.
+     It keeps the generic profile's honest answer. */
+  const raw = drive([DEVICES.ds4NoRemap()]);
+  raw.slots = 1; raw.update();
+  ok('an unremapped Sony pad is NOT given shapes it cannot place',
+    raw.promptFor(0, 'interact') !== '○', `${raw.promptFor(0, 'interact')}`);
 
   /* THE PAD THE GAME IS ACTUALLY PLAYED ON, and the half is the whole point:
      the two girls holding the two halves of one vJoy device press physically
@@ -1237,6 +1324,25 @@ console.log('\n--- the touch pad as a device ---');
     `${split.promptFor(1, 'interact')}`);
   ok('...which are different buttons for the same action',
     split.promptFor(0, 'interact') !== split.promptFor(1, 'interact'));
+
+  /* --- AND IT FOLLOWS A REMAP, which is the whole reason Settings exists ---
+     Half of DEFAULT_VJOY_MAP is an admitted guess, so the grid in Settings ->
+     Controllers is how these buttons actually get set, and it writes into
+     `vjoyMap`. The prompt used to read a FIXED table beside that map and went
+     on saying RIGHT after somebody had moved `interact` onto Up — the label
+     lying again, arriving through the one door nothing was watching, and
+     lying to the one player who cared enough to fix her controller. */
+  split.vjoyMap.left.interact = [10];        // Up, per VJOY_BUTTON_NAMES
+  ok('...and a remap in Settings moves the prompt with it',
+    split.promptFor(0, 'interact') === 'UP', `${split.promptFor(0, 'interact')}`);
+  ok('...without disturbing the other half',
+    split.promptFor(1, 'interact') === 'A', `${split.promptFor(1, 'interact')}`);
+  /* A BUTTON WITH NO NAME SHOWS ITS NUMBER, which is what the Settings grid
+     shows too, rather than a guess or an empty badge. */
+  split.vjoyMap.left.interact = [31];
+  ok('...and an unnamed button honestly shows its number',
+    split.promptFor(0, 'interact') === '#31', `${split.promptFor(0, 'interact')}`);
+  split.vjoyMap.left.interact = [8];         // back to Right
 
   /* AN UNKNOWN PAD SAYS 'ANY', WHICH IS TRUE — the generic profile really does
      read every face button for interact. A prompt that guessed a letter here

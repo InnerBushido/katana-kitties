@@ -114,6 +114,33 @@ const DEFAULT_VJOY_MAP = {
 
 export const HALVES = ['left', 'right'];
 
+/* WHAT EACH vJOY BUTTON INDEX IS CALLED ON THE JOY-CON ITSELF.
+ *
+ * The same facts as the trailing comments in `DEFAULT_VJOY_MAP`, in a form the
+ * prompt drawn over a kitten's head can read. It has to be a table rather than
+ * a fixed list of prompts BECAUSE SETTINGS CAN MOVE THEM: the whole point of
+ * Settings -> Controllers is that these indices are guesses and a player
+ * recalibrates by pressing the button. A static prompt table went on saying
+ * RIGHT after somebody had moved `interact` onto Up, which is the label lying
+ * again — the exact failure `promptFor` exists to prevent, arriving through
+ * the one door nothing was watching.
+ *
+ * An index that is not in here is one this file has never had a name for, and
+ * it is shown as its NUMBER, which is what the Settings grid shows too. "#5"
+ * is not friendly, but it is true and it is findable; guessing a name is how
+ * you get a prompt naming a button that is not there.
+ */
+const VJOY_BUTTON_NAMES = {
+  left: {
+    0: 'L', 2: 'ZL', 8: 'RIGHT', 9: 'LEFT', 10: 'UP', 11: 'DOWN',
+    13: '-', 16: 'SL', 17: 'SR',
+  },
+  right: {
+    1: 'R', 3: 'ZR', 4: 'B', 5: 'X', 6: 'Y', 7: 'A',
+    12: '+', 14: 'SR', 15: 'SL',
+  },
+};
+
 /* WHICH KEYBOARD SET THE TOUCH PLAYER OWNS. WASD, because it is the better half
    — a space bar and a one-handed cluster — and the touch player is player 1.
    See `_freeKeysets`. */
@@ -430,6 +457,26 @@ class PadState {
     return this.held[action] && !this.prev[action];
   }
 
+  /**
+   * Spend this frame's edge on `action`, so nothing later in the frame sees
+   * the same press.
+   *
+   * ONE PRESS IS ONE ANSWER TO ONE QUESTION. The frame is read top to bottom
+   * by several owners in turn — the trailer, then MenuNav, then the game — and
+   * `pressed` is a pure test, so a press that one of them ACTS on is still
+   * sitting there for the next. That is how Start ended a trailer and started
+   * it again in the same frame: the trailer closed, the title menu underneath
+   * was left with the cursor on WATCH TRAILER, and on the title screen every
+   * button confirms. Reported on a PS5 pad, and nothing to do with the pad.
+   *
+   * Marking `prev` rather than clearing `held` on purpose: the button really
+   * IS still down, so `down()` and anything holding it keep telling the truth.
+   * All that is spent is the EDGE.
+   */
+  consume(action) {
+    this.prev[action] = this.held[action];
+  }
+
   down(action) {
     return this.held[action];
   }
@@ -500,14 +547,84 @@ const PROMPTS = {
     right: { jump: 'B', attack: 'Y', interact: 'A', mount: 'X', sprint: 'SR', start: '+', map: 'R', math: 'ZR' },
   },
   /* Xbox lettering, because that is what a browser reporting `mapping:
-     "standard"` is describing and what most PC pads are silk-screened with. A
-     PlayStation pad shows ○ where this says B, which is a wrong LETTER on a
-     button in the right PLACE — the least bad of the available errors, and one
-     no amount of sniffing the id string fixes reliably. */
+     "standard"` is describing and what most PC pads are silk-screened with.
+     A PlayStation pad lands on `playstation` below instead. */
   standard: { jump: 'A', attack: 'X', interact: 'B', mount: 'Y', sprint: 'ZR', start: 'START', map: 'RB', math: 'LB' },
+  /* THE SHAPES, BECAUSE THAT IS WHAT IS PRINTED ON THE BUTTON.
+     This table used to say "a PlayStation pad shows ○ where this says B, which
+     is a wrong LETTER on a button in the right PLACE — the least bad of the
+     available errors, and one no amount of sniffing the id string fixes
+     reliably." The first half was true and the second half was wrong: it was
+     played on a DualSense and reported straight back as "it says [B], I am on
+     a PS5 pad". A nine-year-old looking for a button called B on a controller
+     that has no letters on it anywhere is exactly the failure the whole
+     per-device prompt system exists to prevent.
+
+     IT IS A LABEL AND NOT A PROFILE. Sony pads report `mapping: "standard"`
+     and their button INDICES are the standard ones, so the reading side is
+     already correct and must not be touched — `PROFILE_ORDER` still sends
+     these to `standard.read`. All that changes is the name printed on screen,
+     which is why `promptStyleFor` is a second, separate lookup.
+
+     THE GLYPHS ARE GEOMETRIC SHAPES, not the Private Use codepoints in Sony's
+     own font, which render as tofu everywhere they are not installed. ○ ✕ △
+     □ are in every system font this game will meet and are drawn to a canvas
+     by core/label.js, which has no webfont guarantee at all. */
+  playstation: { jump: '✕', attack: '□', interact: '○', mount: '△', sprint: 'R2', start: 'OPTIONS', map: 'R1', math: 'L1' },
   /* An unknown pad reads any face button for `interact`, so say that. */
   generic: { jump: 'A', attack: 'ANY', interact: 'ANY', mount: 'ANY', sprint: 'L/R', start: 'START', map: 'RB', math: 'LB' },
 };
+
+/* WHICH PAD IS SILK-SCREENED WITH WHAT.
+ *
+ * Separate from `PROFILES` on purpose — that table decides how to READ a pad
+ * and this one decides what to CALL its buttons, and the two questions have
+ * different answers for the same device. A DualSense is read as `standard`
+ * (its indices are the standard ones) and labelled `playstation`. Folding them
+ * together would mean inventing a read profile identical to `standard` just to
+ * carry four strings, and the next person to touch the reading side would have
+ * two copies of it to keep in step.
+ *
+ * Firefox reports `054c-0ce6-DualSense Wireless Controller`; Chrome reports
+ * `DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product:
+ * 0ce6)`. 054c is Sony's USB vendor id and is the reliable half — the product
+ * names have changed every generation and third-party pads copy them.
+ */
+const PROMPT_STYLES = {
+  playstation: /054c|dualsense|dualshock|playstation|ps[345]|wireless controller/i,
+};
+
+/**
+ * EVERY string `promptFor` can ever put on screen for one action.
+ *
+ * Exported so `world-check` can size the overhead callout against the real
+ * glyphs instead of a copy of them. That check used to open with
+ * `const badge = '[RIGHT]';   // the longest interact glyph in input.js`,
+ * which is a fact about this file written down in another one — add a pad
+ * whose `interact` is called OPTIONS and the label silently starts clipping,
+ * with the check still passing because it is measuring last year's table.
+ *
+ * The `#31` is the shape of the fallback for a vJoy button that has been
+ * remapped onto an index `VJOY_BUTTON_NAMES` has no name for, and 31 is the
+ * highest index a vJoy device reports. It is in here because it is a string
+ * this really can print, not because any pad is expected to use it.
+ */
+export function promptGlyphs(action) {
+  const out = new Set();
+  for (const table of Object.values(PROMPTS)) {
+    const v = table[action];
+    if (typeof v === 'string') out.add(v);
+    for (const half of HALVES) if (table[half]?.[action]) out.add(table[half][action]);
+  }
+  for (const half of HALVES) {
+    for (const name of Object.values(VJOY_BUTTON_NAMES[half])) out.add(name);
+  }
+  out.add('#31');
+  for (const set of KEYSETS) {
+    for (const code of set[action] ?? []) out.add(keyGlyph(code));
+  }
+  return [...out];
+}
 
 /** `KeyE` -> `E`, `Numpad2` -> `NUM 2`, `Comma` -> `,`. */
 function keyGlyph(code) {
@@ -637,13 +754,32 @@ export class InputManager {
    * a laptop definitely has, and 'NUM 2' on a machine with no numpad is the
    * prompt naming a button that is not there.
    */
+  /** Spend `action`'s press on every slot. See `PadState.consume`. Whoever
+   *  acted on a press owes this call — a skip that leaves the edge behind is
+   *  a skip that fires whatever is underneath it. */
+  consume(action) {
+    for (const p of this.players) p.consume(action);
+  }
+
   promptFor(slot, action) {
     const bnd = this.bindings[slot];
     if (!bnd) return null;
     if (bnd.touch) return this.touch?.labelFor?.(action) ?? action.toUpperCase();
     if (bnd.pad != null) {
       const gp = (navigator.getGamepads?.() ?? [])[bnd.pad];
-      const table = PROMPTS[gp ? this.profileNameFor(gp) : 'standard'] ?? PROMPTS.standard;
+      const style = gp ? this.promptStyleFor(gp) : 'standard';
+      /* THE MERGED JOY-CON PAD IS ANSWERED FROM THE LIVE MAP, not from a fixed
+         table, because Settings -> Controllers can move any of those buttons
+         and half of `DEFAULT_VJOY_MAP` is an admitted guess. A prompt that
+         cannot follow a remap is a prompt that goes wrong precisely for the
+         player who cared enough to fix her controller. */
+      if (style === 'vjoyDual') {
+        const half = bnd.half ?? 'left';
+        const idx = this.vjoyMap?.[half]?.[action]?.[0];
+        if (idx == null) return null;
+        return VJOY_BUTTON_NAMES[half]?.[idx] ?? `#${idx}`;
+      }
+      const table = PROMPTS[style] ?? PROMPTS.standard;
       const half = bnd.half ? table[bnd.half] : table;
       return half?.[action] ?? PROMPTS.standard[action] ?? null;
     }
@@ -658,6 +794,38 @@ export class InputManager {
   profileNameFor(gp) {
     for (const key of PROFILE_ORDER) if (PROFILES[key].test(gp)) return key;
     return 'generic';
+  }
+
+  /**
+   * Which set of button NAMES this pad is silk-screened with.
+   *
+   * Asked instead of `profileNameFor` by `promptFor`, and by nothing else. The
+   * reading side must keep using the profile: a DualSense is read as
+   * `standard` because its indices really are the standard ones, and only its
+   * lettering is different. See `PROMPT_STYLES`.
+   *
+   * THE ID SNIFF ONLY APPLIES TO `standard`, AND THAT IS THE LOAD-BEARING
+   * PART. A shape glyph is a claim about WHERE the button is, and the only
+   * pads whose button positions this game knows are the ones the browser has
+   * already remapped to the standard layout. `ds4NoRemap` in pad-check is the
+   * counter-example that exists for exactly this: a DualShock 4 the browser
+   * has no table for, same Sony id, completely different indices. Telling that
+   * player to press ○ would name a button the game is not reading — the same
+   * lie as [B] on a PlayStation pad, wearing better clothes. It keeps the
+   * honest 'ANY' the generic profile has always given.
+   *
+   * A Joy-Con, sideways or merged through vJoy, is likewise left alone: it has
+   * been positively identified by something far more reliable than a
+   * substring, and must not be relabelled because a feeder called itself a
+   * "wireless controller".
+   */
+  promptStyleFor(gp) {
+    const profile = this.profileNameFor(gp);
+    if (profile !== 'standard') return profile;
+    for (const [name, re] of Object.entries(PROMPT_STYLES)) {
+      if (re.test(gp.id ?? '')) return name;
+    }
+    return profile;
   }
 
   /* ------------------------------ remapping ----------------------------- */
