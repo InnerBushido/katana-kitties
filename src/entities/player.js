@@ -2390,11 +2390,17 @@ export class Player {
   /**
    * The charge's moving hitbox, tested every frame it is live.
    *
-   * REPEAT HITS ARE STOPPED BY INVULNERABILITY, not by a per-charge set —
-   * `hurt` already refuses for INVULN seconds after a blow lands, and a
-   * charge is over in under half a second. Props get their own set, because
-   * `knock` has no equivalent guard and a barrel hit forty times in one pass
-   * scores once and rattles forty times.
+   * REPEAT HITS ON A KITTEN ARE STOPPED BY INVULNERABILITY, not by a
+   * per-charge set — `hurt` already refuses for INVULN seconds after a blow
+   * lands, and a charge is over in under half a second. Props get their own
+   * set, because `knock` has no equivalent guard and a barrel hit forty times
+   * in one pass scores once and rattles forty times.
+   *
+   * AND SO DO ANIMALS, WHICH IS THE THIRD CASE AND WAS MISSING. A critter has
+   * no invulnerability window: charging through a rat re-stunned it and played
+   * `squeak` on every frame of the pass, which is what "they get hit many
+   * times by one ability" was. They go in the SAME set as the props — one
+   * attack, one memory, whatever kind of thing it caught.
    */
   _chargeStrike(world, hud) {
     hud?.strikePlayers?.(this, 'charge', this._reach(), this.chargeDir);
@@ -2405,7 +2411,7 @@ export class Player {
        did anything at all. That reads as the move being broken rather than as
        the animal being fast, and it hit the rat hardest because the rat is the
        one you chase. */
-    hud?.strikeCritters?.(this, CHARGE.radius);
+    hud?.strikeCritters?.(this, CHARGE.radius, this._chargeHit);
     for (const p of world.props) {
       if (this._chargeHit.has(p)) continue;
       const dx = p.group.position.x - this.position.x;

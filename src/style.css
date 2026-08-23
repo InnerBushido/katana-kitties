@@ -2033,8 +2033,23 @@ body.touch-ui .ne-ask-q { font-size: 16px; }
    pinned. `min-height: 0` on the body is the part that is easy to leave out and
    silently breaks it — a flex child will not shrink below its content without
    it, so the body would push the footer off exactly as before. */
+/* AND IT IS SIZED FOR FOUR CARDS, NOT TWO.
+
+   920px and a two-column grid was the whole screen when the screen held two
+   kittens. At four it holds four cards in two rows, the second row starts
+   below the fold of an 86vh panel, and the only way to see the bottom two
+   girls' orbs was to scroll `#kd-body` with a mouse — on the one screen where
+   what matters is comparing everybody's inventory side by side. Reported from
+   PC play as "the bottom players' information is cut off".
+
+   Three numbers, and each fixes a different half of it: the panel is wider so
+   four columns fit across a laptop, it is TALLER (94vh against 86) so a single
+   row of cards clears the footer, and `.kd-body` below auto-fits its columns
+   rather than being pinned at two. `#kd-body` keeps its `overflow-y: auto` —
+   it is the escape hatch on a small window, not the normal way to read this. */
 .kd-panel {
-  width: min(920px, 94vw);
+  width: min(1420px, 96vw);
+  max-height: 94vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2094,7 +2109,7 @@ body.touch-ui .ne-ask-q { font-size: 16px; }
 /* A thumb needs a bigger target than a mouse, and a landscape phone has 400px
    of height to give — so the cards get tighter while the things you press get
    larger. Both directions at once, which is the point. */
-body.touch-ui .kd-panel { padding: 12px 14px 14px; max-height: 92vh; }
+body.touch-ui .kd-panel { padding: 12px 14px 14px; max-height: 96vh; }
 body.touch-ui .kd-panel > h2 { font-size: 20px; margin: 0 0 8px; }
 body.touch-ui .kd-body { gap: 10px; }
 body.touch-ui .kd-card { padding: 8px 10px 10px; }
@@ -2105,8 +2120,20 @@ body.touch-ui .kd-step { width: 34px; height: 34px; font-size: 19px; }
 /* The orb slots are what she actually aims at. */
 body.touch-ui .kd-slot { min-width: 42px; min-height: 42px; }
 body.touch-ui .kd-row { padding: 9px 6px; }
-.kd-body { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
-@media (max-width: 720px) { .kd-body { grid-template-columns: 1fr; } }
+/* AS MANY COLUMNS AS FIT, DOWN TO ONE. It was `1fr 1fr`, which is right for
+   two kittens and wrong for one and for four: four cards became two rows and
+   the bottom one fell off the panel (see `.kd-panel`). `auto-fit` with a
+   260px floor gives four columns on a laptop, two on a small window and one on
+   a phone, and it does it from the width that is actually there rather than
+   from a breakpoint guessed at here — which is what the old `max-width: 720px`
+   rule was doing and why it is gone. The two-player game is unchanged on any
+   screen wider than 542px, which every screen this runs on is. */
+.kd-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 22px;
+  align-items: start;
+}
 
 .kd-card {
   border: 4px solid var(--ink);

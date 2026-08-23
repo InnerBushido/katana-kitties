@@ -637,3 +637,47 @@ game can actually print, because a fact about `input.js` copied into
 table. Adding a prompt set is exactly the change that catches it out: had ○
 been OPTIONS, the callout would have started clipping and the check would have
 gone on saying it fitted.
+
+## The triggers swap, and `P` goes back to being one thing
+
+Two from the third four-player session.
+
+### Shield is the LEFT trigger now, and sprint keeps the right
+
+Asked for directly: "shield should be the left trigger, sprint should stay the
+right trigger". The shape is what makes it obvious — a shield is held in the off
+hand and you run with the other one — and it is the layout every game the kids
+have played uses.
+
+**Mount rides along with shield**, because it already did: mounting is the
+shield button plus `△`, so moving shield moves mount. On a standard pad that is
+now `L2` **or** `△` **or** `L3`; sprint is `R2` or `R3`. Nothing about the face
+buttons moved.
+
+**It applies to Joy-Cons too, which is the half that was actually wrong.**
+Through Joy2Win/vJoy the left trigger was *sprint*, so a Joy-Con player and a
+pad player were holding different buttons for the same thing and neither of them
+could be told a single true instruction. `SL`/`SR` are the shoulder pair a
+sideways Joy-Con has, and the left stick's `SL` is now mount while `SR` stays
+sprint — the same handedness as a full pad, read off the same table.
+
+The prompt tables moved with the bindings, which is the rule that keeps this
+honest: a button whose printed name and bound action disagree is worse than
+either being wrong on its own. `pad-check` asserts the pairing on the DS4
+profile, the generic profile and both Joy-Con orientations, so a future remap
+cannot quietly split them again.
+
+### `P` was the debug readout AND player 2's mount
+
+Both, in the same keyboard set, so a second player at the keyboard could not
+mount anything without printing the frame cost over her sister's screen — and
+the frame-cost readout is the first thing anybody is told to press when
+somebody says it lags.
+
+The **debug key moved**, not the mount: it is `` 1 `` now. The readout is listed
+in the `` ` `` panel like every other debug key, so a player finds it there
+rather than by remembering a letter, whereas mount is a key she uses every
+minute. `CLAUDE.md` and [performance.md](performance.md) say `` 1 `` now, and
+`pad-check` asserts that **no** keyset binds `KeyP` at all — the check that
+would have caught the collision in the first place. Player 2's mount is
+`Numpad3` or `.`, and the one-handed cluster's diagram is `. I J`.

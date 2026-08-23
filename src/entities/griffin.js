@@ -228,7 +228,16 @@ export class Griffin {
     const sideZ = Math.cos(this.facing + Math.PI / 2);
     // 0 alongside, 1 behind. Held flat until the last third, then swings.
     const swing = Math.max(0, (k - 0.62) / 0.38) ** 1.5;
-    const back = -swing;
+    /* POSITIVE, AND THE SIGN WAS THE WHOLE OF "THE CAMERA GOES MAD AT THE END".
+       `bx`/`bz` below are already negated — they subtract the heading — so a
+       NEGATIVE `back` swung the camera round to the FRONT of the griffin
+       instead of behind it. At `swing` 1 that put the camera 2.4 quads ahead of
+       the animal while `_look` aimed 2.2 quads ahead of it, i.e. at a point a
+       fifth of a quad BEHIND the camera and a whole quad below it. `lookAt`
+       with a near-vertical direction has no stable yaw, so the last second of
+       the ride was a shot of the ground spinning, with the griffin and both
+       riders off screen behind it. Reported as exactly that. */
+    const back = swing;
     // Far enough back that the whole animal AND both riders are in frame —
     // at 2.3 the wings ran off the top of the screen and the shot was a
     // close-up of a saddle.

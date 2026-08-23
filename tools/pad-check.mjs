@@ -188,14 +188,22 @@ function actionFor(deviceName, buttonIndex) {
   const im = drive([p]);
   return ACTIONS.filter((a) => im.players[0].down(a));
 }
+/* THE LEFT SIDE SHIELDS AND THE RIGHT SIDE SPRINTS, which is the rule the pad
+   table follows now and the thing these four rows exist to pin. `mount` IS the
+   shield — a kitten with nothing to climb on raises the ward instead — and it
+   was on the face button alone, so holding it meant taking a thumb off the
+   stick. Both triggers used to sprint, which is what left L2 free to take it.
+   Getting the sides backwards is not a crash: it is a kid pressing what she has
+   been told is the shield and sprinting off the edge of the ring. */
 const EXPECT_STANDARD = {
   cross: ['jump'],
   square: ['attack'],
   circle: ['interact'],
   triangle: ['mount'],
-  l2: ['sprint'],
+  l2: ['mount'],
   r2: ['sprint'],
-  l3: ['sprint'],
+  l3: ['mount'],
+  r3: ['sprint'],
   options: ['start'],
   // The two bumpers were the only buttons a standard pad never used, so map
   // zoom and the maths overlay went there rather than onto a modifier combo.
@@ -867,11 +875,22 @@ console.log('\n--- the keyboard sets ---');
   ok('P2 walks on O K L ;',
     has('up', 'KeyO') && has('left', 'KeyK') && has('down', 'KeyL')
     && has('right', 'Semicolon'));
-  /* P I J mirror Q E F: same three jobs, same shape, other hand. */
-  ok('...with P I J mirroring P1\'s Q E F',
-    has('mount', 'KeyP') && has('interact', 'KeyI') && has('attack', 'KeyJ')
+  /* . I J mirror Q E F: same three jobs, same shape, other hand.
+
+     IT WAS `P` I J, AND `P` HAD TO GO. `P` was also the frame-cost debug key,
+     so one press mounted player 2 AND toggled the readout — the two-jobs trap
+     this whole block exists for, arriving from outside the keysets where no
+     check could see it. The debug key moved to `1`; mount keeps `.`, which it
+     already had, so the run beside the arrows is unchanged. */
+  ok('...with . I J mirroring P1\'s Q E F',
+    has('mount', 'Period') && has('interact', 'KeyI') && has('attack', 'KeyJ')
     && KEYSETS[0].mount.includes('KeyQ') && KEYSETS[0].interact.includes('KeyE')
     && KEYSETS[0].attack.includes('KeyF'));
+  /* AND `P` IS NOT BOUND TO ANYTHING AT ALL. Asserted of the whole keyboard,
+     not of player 2, because the failure was a key doing one job here and
+     another somewhere else entirely. */
+  ok('...and P is free for the debug readout',
+    KEYSETS.every((k) => !FIELDS.some((f) => (k[f] ?? []).includes('KeyP'))));
   /* RIGHT ALT JUMPS AND `'` SPRINTS, which is the swap the second real
      two-player session asked for and the opposite of how it shipped. The hand
      is the argument: played on O K L ; the right hand sits over the letter row,
@@ -951,7 +970,7 @@ console.log('\n--- ...read through the real InputManager ---');
      circle, and a kid resting a hand on both is a real thing. */
   ok('holding O and Up is still one unit of walk', press('KeyO', 'ArrowUp').my === -1);
 
-  ok('P mounts', press('KeyP').on.join() === 'mount');
+  ok('P does nothing now', press('KeyP').on.join() === '');
   ok('I interacts', press('KeyI').on.join() === 'interact');
   ok('J attacks', press('KeyJ').on.join() === 'attack');
   ok("' sprints", press('Quote').on.join() === 'sprint');
@@ -970,7 +989,7 @@ console.log('\n--- ...read through the real InputManager ---');
      keyboard; a stray binding that moved both kittens would be the worst
      possible version of this feature. */
   im.keys.clear();
-  for (const c of ['KeyO', 'KeyK', 'KeyP', 'KeyI', 'KeyJ', 'Quote', 'AltRight', 'ControlRight']) {
+  for (const c of ['KeyO', 'KeyK', 'Period', 'KeyI', 'KeyJ', 'Quote', 'AltRight', 'ControlRight']) {
     im.keys.add(c);
   }
   im.update();

@@ -77,8 +77,15 @@ export const VJOY_AXIS_NAMES = ['X', 'Y', 'Z', 'Rx', 'Ry', 'Rz', 'Slider', 'Dial
  * That's also why autoDetectSticks() only re-numbers the axes and inherits the
  * signs from here: a pad at rest cannot tell you which way is up.
  *
- * Actions hold ARRAYS of button indices — sprint wants both SL and SR, since
- * either shoulder under your index finger should do it.
+ * Actions hold ARRAYS of button indices.
+ *
+ * THE RAIL IS SPLIT: SL IS THE SHIELD, SR IS SPRINT. Both used to be sprint —
+ * "either shoulder under your index finger should do it" — which left the
+ * shield sharing a face button with mount and no way to hold it while walking.
+ * It now matches every other controller in the game: the LEFT-hand shoulder
+ * raises the ward, the RIGHT-hand one runs. Mount keeps its face button as
+ * well, because the two are the same action (see the mount handler in
+ * entities/player.js: nothing to climb on is what makes it a shield).
  *
  * CONFIRMED on hardware: left SR = 17, right SR = 14. */
 const DEFAULT_VJOY_MAP = {
@@ -88,8 +95,8 @@ const DEFAULT_VJOY_MAP = {
     jump: [11],       // Down
     attack: [9],     // Left
     interact: [8],   // Right
-    mount: [10],      // Up
-    sprint: [16, 17], // SL / SR  (17 confirmed)
+    mount: [10, 16],  // Up / SL — SL is the shield, see the header
+    sprint: [17],     // SR  (confirmed)
     start: [13],       // Minus
     /* GUESSES, like most of this table — the top-edge shoulder buttons (L/ZL)
        and Capture are the only things left on a sideways left Joy-Con once the
@@ -104,8 +111,8 @@ const DEFAULT_VJOY_MAP = {
     jump: [4],        // B
     attack: [6],      // Y
     interact: [7],    // A
-    mount: [5],       // X
-    sprint: [14, 15], // SR / SL  (14 confirmed)
+    mount: [5, 15],   // X / SL — SL is the shield, see the header
+    sprint: [14],     // SR  (confirmed)
     start: [12],       // Plus
     map: [1],          // R
     math: [3],         // ZR
@@ -186,8 +193,15 @@ const PROFILES = {
       jump: b(gp, 0),
       attack: b(gp, 2),
       interact: b(gp, 1),
-      mount: b(gp, 3),
-      sprint: b(gp, 6) || b(gp, 7) || b(gp, 10) || b(gp, 11),
+      /* THE LEFT TRIGGER IS THE SHIELD AND THE RIGHT ONE IS SPRINT, which is
+         the rule this whole table follows now. `mount` IS the shield — a
+         kitten with nothing to climb on gets the ward instead (see the mount
+         handler in entities/player.js) — and it was on a face button alone, so
+         raising it meant taking a thumb off the stick. Both triggers used to
+         sprint, which is what left the left one free to take it.
+         The stick clicks follow their own side: L3 shields, R3 sprints. */
+      mount: b(gp, 3) || b(gp, 6) || b(gp, 10),
+      sprint: b(gp, 7) || b(gp, 11),
       start: b(gp, 9),
       /* The shoulder BUMPERS were the only two buttons on a standard pad this
          game never used — the triggers already carry sprint. Guide (16) is
@@ -242,8 +256,10 @@ const PROFILES = {
         jump: b(gp, 11) || b(gp, 4),
         attack: b(gp, 8) || b(gp, 7),
         interact: b(gp, 0) || b(gp, 1) || b(gp, 2) || b(gp, 3),
-        mount: b(gp, 10) || b(gp, 5),
-        sprint: b(gp, 16) || b(gp, 17) || b(gp, 14) || b(gp, 15), // SL / SR
+        // SL shields, SR sprints — the same left/right rule the triggers
+        // follow above. Left half: SL 16, SR 17. Right half: SR 14, SL 15.
+        mount: b(gp, 10) || b(gp, 5) || b(gp, 16) || b(gp, 15),  // Up / X / SL
+        sprint: b(gp, 17) || b(gp, 14),                          // SR
         start: b(gp, 6) || b(gp, 9),
         // Capture / Home — the two a sideways Joy-Con has left over.
         map: b(gp, 12),
@@ -265,8 +281,9 @@ const PROFILES = {
       jump: b(gp, 0),
       attack: b(gp, 2),
       interact: b(gp, 1),
-      mount: b(gp, 3),
-      sprint: b(gp, 6) || b(gp, 7),
+      // Left trigger shields, right trigger sprints — see `standard`.
+      mount: b(gp, 3) || b(gp, 6),
+      sprint: b(gp, 7),
       start: b(gp, 9) || b(gp, 8),
       // Bumpers only. `start` already claims 8 here, so View is not available
       // as a second binding the way it is under `standard`.
@@ -363,7 +380,9 @@ const KEY_FIELDS = ['up', 'down', 'left', 'right', ...ACTIONS];
    , . / ; (which your right hand can only reach by leaving the arrows).
 
        O K L ;    is the arrows, moved onto the home row for the right hand
-       P I J      mirrors Q E F: mount, interact, attack, same jobs, same shape
+       . I J      mirrors Q E F: mount, interact, attack, same jobs, same shape
+                  (`P` held mount here until it collided with the frame-cost
+                  debug key — see the note on `mount` below)
        ' or RCtrl jump — where the space bar is for player 1
        Right Alt  sprint — where left Shift is for player 1
 
@@ -417,7 +436,15 @@ export const KEYSETS = [
     jump: ['Numpad0', 'AltRight', 'ControlRight'],
     attack: ['Numpad1', 'Slash', 'KeyJ'],
     interact: ['Numpad2', 'Comma', 'KeyI'],
-    mount: ['Numpad3', 'Period', 'KeyP'],
+    /* `P` IS NOT IN HERE ANY MORE, and it is the only key that left this set.
+       It was the mount of the `P I J` cluster and it was ALSO the frame-cost
+       debug key (`Game._debugKey`), and both fired on one press — so player 2
+       climbing onto a dragon flipped the performance readout on, and pressing
+       it again to check the readout mounted her again. The DEBUG key is the
+       one that moved: it is `1` now, with the rest of the debug set, where no
+       keyboard player can reach it. `I` and `J` keep their places, so the
+       one-handed cluster is `.` `I` `J` and only mount changed key. */
+    mount: ['Numpad3', 'Period'],
     /* `'` AND RIGHT ALT SWAPPED, and the reason is the O K L ; hand.
        Playing the second kitten on the letter row rather than the arrows puts
        her right hand over O K L ; — and from there Right Alt is under the thumb
@@ -539,17 +566,17 @@ export const MAX_SLOTS = 4;
  */
 const PROMPTS = {
   vjoyDual: {
-    left: { jump: 'DOWN', attack: 'LEFT', interact: 'RIGHT', mount: 'UP', sprint: 'SL', start: '-', map: 'L', math: 'ZL' },
+    left: { jump: 'DOWN', attack: 'LEFT', interact: 'RIGHT', mount: 'UP', sprint: 'SR', start: '-', map: 'L', math: 'ZL' },
     right: { jump: 'B', attack: 'Y', interact: 'A', mount: 'X', sprint: 'SR', start: '+', map: 'R', math: 'ZR' },
   },
   joyconSideways: {
-    left: { jump: 'DOWN', attack: 'LEFT', interact: 'RIGHT', mount: 'UP', sprint: 'SL', start: '-', map: 'L', math: 'ZL' },
+    left: { jump: 'DOWN', attack: 'LEFT', interact: 'RIGHT', mount: 'UP', sprint: 'SR', start: '-', map: 'L', math: 'ZL' },
     right: { jump: 'B', attack: 'Y', interact: 'A', mount: 'X', sprint: 'SR', start: '+', map: 'R', math: 'ZR' },
   },
   /* Xbox lettering, because that is what a browser reporting `mapping:
      "standard"` is describing and what most PC pads are silk-screened with.
      A PlayStation pad lands on `playstation` below instead. */
-  standard: { jump: 'A', attack: 'X', interact: 'B', mount: 'Y', sprint: 'ZR', start: 'START', map: 'RB', math: 'LB' },
+  standard: { jump: 'A', attack: 'X', interact: 'B', mount: 'Y', sprint: 'RT', start: 'START', map: 'RB', math: 'LB' },
   /* THE SHAPES, BECAUSE THAT IS WHAT IS PRINTED ON THE BUTTON.
      This table used to say "a PlayStation pad shows ○ where this says B, which
      is a wrong LETTER on a button in the right PLACE — the least bad of the
@@ -572,8 +599,16 @@ const PROMPTS = {
      by core/label.js, which has no webfont guarantee at all. */
   playstation: { jump: '✕', attack: '□', interact: '○', mount: '△', sprint: 'R2', start: 'OPTIONS', map: 'R1', math: 'L1' },
   /* An unknown pad reads any face button for `interact`, so say that. */
-  generic: { jump: 'A', attack: 'ANY', interact: 'ANY', mount: 'ANY', sprint: 'L/R', start: 'START', map: 'RB', math: 'LB' },
+  generic: { jump: 'A', attack: 'ANY', interact: 'ANY', mount: 'ANY', sprint: 'R', start: 'START', map: 'RB', math: 'LB' },
 };
+
+/* `mount` NAMES THE FACE BUTTON AND NOT THE TRIGGER, on every pad in the table
+   above, and that is a choice rather than an omission. The trigger is the
+   SECOND binding and a badge drawn over a kitten in a quarter-screen pane has
+   room for one name; the face button is the one she can see from where she is
+   holding the pad, and the one the help page draws. The trigger is discovered
+   by pressing it, which is the whole reason it was added — a shield you can
+   hold without letting go of the stick. */
 
 /* WHICH PAD IS SILK-SCREENED WITH WHAT.
  *
