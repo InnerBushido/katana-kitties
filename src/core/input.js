@@ -42,7 +42,13 @@ export const ACTIONS = [
   'jump', 'attack', 'interact', 'mount', 'sprint', 'start', 'map', 'math',
 ];
 
-const MAP_STORAGE_KEY = 'kk.vjoy.map.v2';
+/* BUMPED TO v3 WHEN THE SHOULDERS MOVED OFF 0-3. A saved map wins over these
+   defaults wholesale (`_loadMap` assigns it over the base), so a machine that
+   had ever opened Settings -> Controllers would have gone on reading the old
+   guesses and none of this would have taken. Retiring the key costs whatever
+   else was calibrated on that machine, which is the smaller loss: the numbers
+   it is replacing were wrong. */
+const MAP_STORAGE_KEY = 'kk.vjoy.map.v3';
 
 /* vJoy's axes in HID usage order, which is the order Chrome hands them to us
  * as gp.axes[0..n]. Only the ones the feeder actually enables are present, so
@@ -98,13 +104,14 @@ const DEFAULT_VJOY_MAP = {
     mount: [10, 16],  // Up / SL — SL is the shield, see the header
     sprint: [17],     // SR  (confirmed)
     start: [13],       // Minus
-    /* GUESSES, like most of this table — the top-edge shoulder buttons (L/ZL)
-       and Capture are the only things left on a sideways left Joy-Con once the
-       d-pad, the rail and Minus are spoken for. Calibrate in Settings ->
-       Controllers if they land somewhere else; that grid is why these don't
-       need to be right. */
-    map: [0],          // L
-    math: [2],         // ZL
+    /* MEASURED, NO LONGER GUESSED. These were 0 and 2 on the theory that the
+       top-edge shoulders were the only indices left once the d-pad, the rail
+       and Minus were spoken for. They are not: Richard's feeder puts the
+       shoulders in the twenties, and 0-3 report nothing at all. Leaving the
+       old guesses in place meant four buttons that did something when nothing
+       was pressed and two controls that could not be found. */
+    map: [20],         // L
+    math: [22],        // ZL — the SAME index the right half reads, see below
   },
   right: {
     axX: 4, invX: true, axY: 3, invY: false,     // Ry / Rx
@@ -114,8 +121,14 @@ const DEFAULT_VJOY_MAP = {
     mount: [5, 15],   // X / SL — SL is the shield, see the header
     sprint: [14],     // SR  (confirmed)
     start: [12],       // Plus
-    map: [1],          // R
-    math: [3],         // ZR
+    map: [21],         // R
+    /* ONE BUTTON FOR BOTH HALVES, AND THAT IS NOT A TYPO. The feeder reports
+       ZL and ZR as the same index, and the overlay is one global thing on
+       screen rather than one per kitten — so a shared toggle is the right
+       shape anyway. It does mean both PadStates see the press on the same
+       frame, which would toggle it on and straight back off; `Game._step`
+       collects the ask and fires `_toggleMath` once. Do not undo that. */
+    math: [22],        // ZR
   },
 };
 
@@ -139,12 +152,12 @@ export const HALVES = ['left', 'right'];
  */
 const VJOY_BUTTON_NAMES = {
   left: {
-    0: 'L', 2: 'ZL', 8: 'RIGHT', 9: 'LEFT', 10: 'UP', 11: 'DOWN',
-    13: '-', 16: 'SL', 17: 'SR',
+    8: 'RIGHT', 9: 'LEFT', 10: 'UP', 11: 'DOWN',
+    13: '-', 16: 'SL', 17: 'SR', 20: 'L', 22: 'ZL',
   },
   right: {
-    1: 'R', 3: 'ZR', 4: 'B', 5: 'X', 6: 'Y', 7: 'A',
-    12: '+', 14: 'SR', 15: 'SL',
+    4: 'B', 5: 'X', 6: 'Y', 7: 'A',
+    12: '+', 14: 'SR', 15: 'SL', 21: 'R', 22: 'ZR',
   },
 };
 

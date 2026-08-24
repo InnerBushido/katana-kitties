@@ -29,6 +29,8 @@ globalThis.localStorage = {
   removeItem(k) { this._s.delete(k); },
 };
 
+import { readFileSync } from 'node:fs';
+
 const { InputManager, ACTIONS, KEYSETS, BOUND_KEYS } = await import('../src/core/input.js');
 
 const line = (l, v) => console.log(String(l).padEnd(46) + v);
@@ -1393,6 +1395,86 @@ console.log('\n--- the touch pad as a device ---');
     ok(`vJoy ${slot ? 'right' : 'left'} half: every action has a glyph`,
       holes.length === 0, holes.join(' '));
   }
+}
+
+console.log('\n--- the Joy-Con shoulders are in the twenties, and 0-3 do nothing ---');
+{
+  /* MEASURED ON RICHARD'S FEEDER, replacing a guess. The old table put `map`
+     on 0/1 and `math` on 2/3 on the theory that the top-edge shoulders were
+     the only indices left over — and they are not there at all. Two controls
+     that could not be found, and four indices that did something if the feeder
+     ever reported them.
+
+     WHY THIS IS PINNED RATHER THAN LEFT TO SETTINGS. The remap grid can move
+     any of these and that is still the right answer for a different feeder.
+     But the DEFAULT is what four kids get, and nobody calibrates a controller
+     before playing. */
+  /* IT HAS TO PRESS SOMETHING TO EXIST. vJoy is reported to the browser whether
+     or not a Joy-Con is paired, so a fixture that never presses is a phantom
+     and is correctly dealt no seat — and an unseated slot has no prompt to
+     read. Down is a live button on the left half and nothing here reads it. */
+  const woken = DEVICES.vjoy();
+  woken.buttons = buttons(38, [11]);
+  const split = drive([woken]);
+  split.slots = 2;
+  split.update();
+
+  const press = (n) => {
+    const v = DEVICES.vjoy();
+    v.buttons = buttons(38, [n]);
+    const im = drive([v]);
+    im.slots = 2;
+    im.update();
+    return im;
+  };
+
+  ok('L (20) zooms the LEFT kitten\'s map', press(20).players[0].down('map'));
+  ok('R (21) zooms the RIGHT kitten\'s map', press(21).players[1].down('map'));
+  ok('...and neither zooms the other one\'s',
+    !press(20).players[1].down('map') && !press(21).players[0].down('map'));
+
+  /* ONE INDEX FOR THE OVERLAY, ON BOTH HALVES. The feeder reports ZL and ZR as
+     the same button, and the overlay is one global thing on screen — so this
+     is deliberate. It is ALSO the reason `Game._step` collects the ask and
+     fires `_toggleMath` once: both PadStates see this press on the same frame,
+     and toggling per player turns it on and straight back off. */
+  const both = press(22);
+  ok('ZL/ZR (22) is the maths overlay for BOTH halves',
+    both.players[0].down('math') && both.players[1].down('math'));
+  ok('...and the two halves really are reading one index',
+    split.vjoyMap.left.math[0] === 22 && split.vjoyMap.right.math[0] === 22);
+
+  /* AND 0-3 ARE DEAD. Asserted over every action rather than over `map` and
+     `math`, because the failure this prevents is somebody moving a DIFFERENT
+     action onto a low index later and finding the same four ghosts. */
+  const low = [0, 1, 2, 3];
+  for (const half of ['left', 'right']) {
+    const bound = ACTIONS.flatMap((a) => split.vjoyMap[half][a])
+      .filter((b) => low.includes(b));
+    ok(`nothing on the ${half} half is bound to buttons 0-3`,
+      bound.length === 0, bound.join(' '));
+  }
+  for (const n of low) {
+    const im = press(n);
+    const anything = [0, 1].some((s) => ACTIONS.some((a) => im.players[s].down(a)));
+    ok(`...so button ${n} does nothing at all`, !anything);
+  }
+
+  /* THE PROMPTS MOVED WITH THEM. A label naming a button that is not there is
+     the exact failure `promptFor` exists to prevent, and it arrives through
+     this door: the names table is keyed by index, so leaving 0='L' behind
+     would have gone on printing L for a button nobody can press. */
+  ok('the LEFT half still prompts L for map zoom', split.promptFor(0, 'map') === 'L');
+  ok('the RIGHT half still prompts R', split.promptFor(1, 'map') === 'R');
+  ok('...and the overlay prompts ZL and ZR, one name per half',
+    split.promptFor(0, 'math') === 'ZL' && split.promptFor(1, 'math') === 'ZR');
+
+  /* A SAVED MAP WINS OVER THESE DEFAULTS WHOLESALE, so moving them without
+     retiring the storage key would have changed nothing on the one machine
+     this was reported from. */
+  ok('the storage key was bumped when the defaults moved',
+    readFileSync(new URL('../src/core/input.js', import.meta.url), 'utf8')
+      .includes("MAP_STORAGE_KEY = 'kk.vjoy.map.v3'"));
 }
 
 console.log('');

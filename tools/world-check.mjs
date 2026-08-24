@@ -6984,6 +6984,31 @@ console.log('\n--- and it sits on the seam, where both panes can read it ---');
   }
 }
 
+console.log('\n--- one press of ZL/ZR is one toggle of the maths overlay ---');
+{
+  /* THE TWO JOY-CON HALVES READ ONE PHYSICAL PAD, and the feeder reports ZL and
+     ZR as the same button index (see DEFAULT_VJOY_MAP, and the checks in
+     pad-check.mjs that pin it). So both PadStates see the press on the same
+     frame, and a `_toggleMath()` inside the per-player loop turned the overlay
+     on and straight back off — a button that reads as dead.
+
+     CHECKED AS SOURCE because the loop is inside `Game._step`, which this
+     harness cannot run. What it can pin is the SHAPE: the ask is collected in
+     the loop and fired once outside it. `map` deliberately stays inside,
+     because each kitten zooms her own. */
+  const mj = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const loop = mj.slice(mj.indexOf('let mathAsked = false;'));
+  ok('the maths ask is collected, not fired, inside the player loop',
+    /if \(p\.pressed\('math'\)\) mathAsked = true;/.test(loop.slice(0, 400)),
+    'a _toggleMath inside the loop double-fires on a shared button');
+  ok('...and fired once, after it', /if \(mathAsked\) this\._toggleMath\(\);/
+    .test(loop.slice(0, 500)));
+  ok('...while map zoom stays per player, because each kitten zooms her own',
+    /if \(p\.pressed\('map'\)\) this\._zoomMap\(i\);/.test(loop.slice(0, 400)));
+  ok('_toggleMath is called exactly once in that block',
+    (loop.slice(0, 500).match(/_toggleMath\(\)/g) ?? []).length === 1);
+}
+
 console.log('\n--- a kitten on a dragon is still in the Dojo ---');
 {
   /* THE REPORT: flying over the Dojo of the Turning Circle turned the maths
@@ -8416,6 +8441,54 @@ console.log('\n--- a trade is agreed twice, by two people ---');
     ok('...seating the girl who chose it', ps.joined.has(0) && !ps.joined.has(1));
     ok('...and taking every card down, not only hers', !insp.any);
     ps.close();
+
+    /* --- AND THE THIRD ROW IS THE TRADE WINDOW ----------------------------
+       Trading orbs with each other was reachable only by pausing the game and
+       finding a menu item, which put a wall between the counter and the screen
+       next to it. It is the SAME screen the pause menu opens — a second door,
+       not a second copy — so what is pinned is that it lands in `profile` mode
+       and not in `shop`. */
+    insp.open(0);
+    insp.open(1);
+    insp.cards[0].i = 2;
+    insp._drive(0, pad('jump'), 0.016);
+    ok('CHARACTER PROFILE opens the trade window, not the shop',
+      ps.mode === 'profile', `${ps.mode}`);
+    ok('...and takes every card down too, because it freezes the world',
+      !insp.any);
+    /* `fromPause` FALSE IS THE ONE THING THAT DIFFERS from the pause-menu
+       route, and it is not cosmetic: `ProfileScreen.close` hands the frame
+       back only when it is false, and without that the first tick after they
+       stop trading is however long they spent in there — every kitten
+       teleports and every dragon jumps. */
+    ok('...opened from the world, so closing hands the frame back',
+      ps.fromPause === false);
+    ps.close();
+
+    /* THE ORDER IS LOAD-BEARING AND SO IS THE COUNT. The cursor opens on row
+       0, and the two rows that stop everybody are the outer ones — so the row
+       a girl lands on by nudging once is never the one that freezes her
+       sisters. A row appended in the middle would silently move what an
+       already-learned press does. */
+    insp.open(0);
+    ok('the dealer asks three questions now', insp._rowCount(0) === 3);
+    ok('...and the cursor still opens on the first of them', insp.cards[0].i === 0);
+    insp.closeAll();
+    {
+      const src = readFileSync(
+        new URL('../src/systems/inspector.js', import.meta.url), 'utf8');
+      const order = ['trade', 'look', 'profile']
+        .map((k) => src.indexOf(`key: '${k}'`));
+      ok('...in the order trade, look, profile',
+        order.every((i) => i >= 0) && order[0] < order[1] && order[1] < order[2],
+        order.join(' '));
+      /* THE MIDDLE ROW IS THE ONE THAT LEAVES THEM PLAYING. Stated against
+         `_choose`, which is where it is true: `look` is the only key that
+         returns without calling `closeAll` and handing the screen over. */
+      const look = src.indexOf("if (pick.key === 'look')");
+      ok('...and the middle one is the only one that leaves them playing',
+        look >= 0 && !/closeAll/.test(src.slice(look, src.indexOf('}', look))));
+    }
 
     /* START CLOSES IT FROM ANYWHERE. `Game` exempts the owner's Start from the
        pause menu for exactly this press — see the `inspector.busy(asked)`
