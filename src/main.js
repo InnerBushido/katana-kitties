@@ -4924,10 +4924,19 @@ class Game {
        either pad toggles it. Read before the pause check so they are inert
        behind the menu, like every other in-world control. */
     if (!this.paused) {
+      /* THE MATHS ASK IS COLLECTED AND FIRED ONCE, and that is load-bearing.
+         The two Joy-Con halves read ONE physical pad, and the feeder reports
+         ZL and ZR as the same button index — so both PadStates see the same
+         press on the same frame. Toggling inside the loop turned the overlay
+         on and straight back off, which reads as a dead button. Any future map
+         that puts `math` on a shared index has the same problem, so the fix
+         belongs here rather than in the map. */
+      let mathAsked = false;
       this.input.players.forEach((p, i) => {
         if (p.pressed('map')) this._zoomMap(i);
-        if (p.pressed('math')) this._toggleMath();
+        if (p.pressed('math')) mathAsked = true;
       });
+      if (mathAsked) this._toggleMath();
     }
 
     if (this.paused) {

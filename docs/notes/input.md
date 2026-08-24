@@ -681,3 +681,36 @@ minute. `CLAUDE.md` and [performance.md](performance.md) say `` 1 `` now, and
 `pad-check` asserts that **no** keyset binds `KeyP` at all — the check that
 would have caught the collision in the first place. Player 2's mount is
 `Numpad3` or `.`, and the one-handed cluster's diagram is `. I J`.
+
+### The Joy-Con shoulders were guessed, and the guess was wrong
+
+`DEFAULT_VJOY_MAP` put map zoom on buttons 0/1 and the maths overlay on 2/3,
+with a comment that admitted they were guesses: the top-edge shoulders "are the
+only things left on a sideways left Joy-Con once the d-pad, the rail and Minus
+are spoken for". They were not. Richard's feeder reports L and R up in the
+twenties and puts **nothing** on 0–3, so two controls could not be reached and
+four button indices did something the moment the feeder ever reported them.
+
+Now `L → 20`, `R → 21`, and both `ZL` and `ZR → 22`. Buttons 0–3 are bound
+to nothing. `pad-check` presses each of 20/21/22 on the merged pad and asserts the
+right kitten's action fires, presses each of 0–3 and asserts nothing does, and
+reads back the prompt table so a label can never name a button that moved.
+
+**ZL and ZR are the same index, and that is deliberate twice over.** The feeder
+reports both Z triggers as one button, and the maths overlay is one global
+thing on screen rather than one per kitten — so a shared toggle is the shape
+that fits. But a shared index means both Joy-Con `PadState`s see the press on
+the *same frame*, and the old `if (p.pressed('math')) this._toggleMath()` inside
+the per-player loop turned the overlay on and straight back off. `Game._step`
+now collects the ask across the loop and fires `_toggleMath` **once** after it;
+`map` stays inside the loop, because each kitten zooms her own. `world-check`
+pins that shape as source, since the loop itself is not reachable from a
+harness.
+
+**The storage key had to move too.** A calibrated map wins over the defaults
+wholesale — `_loadMap` assigns the saved half over the base — so on any
+machine that had ever opened Settings → Controllers, the old 0/1/2/3 guesses
+would have survived in `localStorage` and none of this would have taken. Bumping
+`MAP_STORAGE_KEY` to `kk.vjoy.map.v3` retires those saved maps. That costs
+whatever else was calibrated on that machine, which is the smaller loss: the
+numbers it is throwing away were the wrong ones.

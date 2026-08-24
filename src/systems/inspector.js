@@ -15,6 +15,14 @@ import { MAX_PLAYERS, cssFor } from '../core/palette.js';
 
      1. TRADE WITH THE DEALER  -> the shared counter, everybody, world frozen
      2. LOOK AT MY ORBS        -> this, hers alone, world running
+     3. CHARACTER PROFILE      -> the trade window, everybody, world frozen
+
+   THE THIRD ONE WAS ONLY REACHABLE FROM THE PAUSE MENU. Trading orbs with
+   each other is the thing four kittens standing at one stall are most likely
+   to want, and asking them to pause the game and find a menu item to do it
+   put a wall between the counter and the screen next to it. Same screen, same
+   `ProfileScreen.open('profile')` the pause menu calls — this is a second door
+   onto it, not a second copy of it.
 
    THE WORLD KEEPS RUNNING FOR EVERYBODY, INCLUDING HER. Her kitten is not
    paused — she is standing at a stall reading a card, and her sisters are
@@ -47,8 +55,14 @@ const NAV_DEAD = 0.55;
 const REPEAT_DELAY = 0.34;
 const REPEAT_RATE = 0.12;
 
-/** The two things the dealer can be asked for. Index into this is the cursor
- *  on the chooser, so the order is the order on screen. */
+/** The three things the dealer can be asked for. Index into this is the cursor
+ *  on the chooser, so the order is the order on screen.
+ *
+ *  ORDER MATTERS AND IT IS NOT ALPHABETICAL: the two that stop everybody are
+ *  the outer rows and the one that stops nobody is in the middle, so the row
+ *  a girl lands on by nudging once is never the one that freezes her sisters.
+ *  The cursor opens on row 0 because that is where it was before this row
+ *  existed, and moving it would change what an already-learned press does. */
 const CHOICES = [
   {
     key: 'trade',
@@ -60,6 +74,12 @@ const CHOICES = [
     key: 'look',
     title: 'LOOK AT MY ORBS',
     blurb: 'Just yours, just here. Everybody else keeps playing.',
+  },
+  {
+    key: 'profile',
+    title: 'CHARACTER PROFILE — TRADE WINDOW',
+    blurb: 'Swap orbs with each other. Everybody stops and every player '
+      + 'gets their own cursor.',
   },
 ];
 
@@ -215,6 +235,20 @@ export class Inspector {
       c.i = 0;
       c._sig = '';
       this.game.audio?.play('menu');
+      return;
+    }
+    /* THE TRADE WINDOW IS THE SAME SCREEN THE PAUSE MENU OPENS, and it takes
+       every card down for the same reason the counter does — it freezes the
+       world for all four of them.
+
+       `fromPause` STAYS FALSE, which is the one thing that differs from the
+       pause-menu route and it is not cosmetic: opened from the world, closing
+       has to hand the frame back or the first tick afterwards is however long
+       they spent trading, and every kitten teleports. `ProfileScreen.close`
+       does that only when `fromPause` is false. */
+    if (pick.key === 'profile') {
+      this.closeAll();
+      this.game.profile.open('profile');
       return;
     }
     /* HANDING OVER TO THE SHARED COUNTER TAKES EVERY CARD DOWN, not just hers.
