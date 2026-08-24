@@ -100,59 +100,71 @@ export function splitLayout(n, W, H, gap = 3, dir = 'vertical', sizes = null) {
      kittens half a screen between them while one had the other half to herself.
      Per player that is a sixth against a half.
 
-     THE SHAPE WAS THE WORSE HALF OF IT. A vertical split makes each pane half
-     as wide and just as tall, so the camera's aspect goes from about 1.78 to
-     0.58 and the horizontal field of view collapses to a third of what every
-     framing constant in `main.js` was tuned against. Three kittens standing
-     comfortably apart went from all visible to one visible, with the other two
-     cropped off the sides of their own pane — reported as "it thinks all three
-     are visible, but that assumes the whole screen width".
-
-     So an uneven pair of panes is STACKED, for exactly the reason the n === 3
-     case above gives: a wide short pane shows the ground either side of you,
-     which is where the rest of your group is standing, and a tall narrow one
-     shows sky and floor. The bigger group also gets the bigger strip.
+     THE SHAPE WAS THE WORSE HALF OF IT, and it was the plain 50/50 that did it:
+     each pane half as wide and just as tall takes the camera's aspect from
+     about 1.78 to 0.58, and the horizontal field of view collapses to a third
+     of what every framing constant in `main.js` was tuned against. Three
+     kittens standing comfortably apart went from all visible to one visible,
+     with the other two cropped off the sides of their own pane — reported as
+     "it thinks all three are visible, but that assumes the whole screen width".
+     The answer is the 62/38 below plus `fitDistance`; see the long note there
+     for why it is a side-by-side 62/38 rather than a stacked one.
 
      0.62 RATHER THAN STRICT PROPORTION. Three-versus-one in proportion is
-     0.75/0.25, which leaves the solo player a slit a quarter of the screen tall
-     — fair by area and unplayable. 0.62 is most of the way to fair for 2v1,
-     kinder than fair to the solo at 3v1, and leaves both panes a shape the
-     camera can actually work in. Two even panes are untouched, so the
-     two-player game — where the sizes are always 1 and 1 — never reaches this
-     branch and keeps the `dir` setting it has always had. */
+     0.75/0.25, which leaves the solo player a slit a quarter of the screen
+     across — fair by area and unplayable. 0.62 is most of the way to fair for
+     2v1, kinder than fair to the solo at 3v1, and leaves both panes a shape
+     something can be drawn in. Two even panes are untouched, so the two-player
+     game — where the sizes are always 1 and 1 — never reaches this branch and
+     keeps the `dir` setting it has always had.
+
+     AND IT IS SIDE BY SIDE, WHICHEVER WAY THE SETTING POINTS. This is the one
+     place the setting is overridden, it has been decided twice, and the second
+     answer is the one that survived contact with a player:
+
+       - It stacked unconditionally at first, on the camera argument above.
+       - Then it followed `dir`, because a setting that reached one arrangement
+         out of three was a lie in the case a player is most likely to go
+         looking for it.
+       - And then somebody set it to 'Top and bottom', stood four kittens at the
+         dealer's stall and opened one card. Three sisters in one pane and one
+         girl on her own is 3v1, so on a 1080p screen her pane came out 1920x410
+         — a strip nearly five times wider than it is tall, with a MENU in it.
+         `.pane-card` sizes itself in `cqw`, a percentage of the pane's WIDTH,
+         so the card's type and padding were sized for a pane 1920 across and
+         then given 410 of height to fit in. Reported as the screen being
+         squashed and the menu not working in it.
+
+     The solo pane is not really a camera any more — it is the pane a card, a
+     dragon's altitude or a kitten on her own gets, and all three of those want
+     height. 730x1080 is a shape a menu works in and 1920x410 is not, and no
+     amount of care in the stylesheet makes a five-to-one strip a good place to
+     put nine rows of text. The card ALSO measures against its own height now
+     (see `.pane-card` in style.css), because a rule that degrades beats one
+     that vanishes and a squat pane can still happen — but the layout should
+     not be handing one out on purpose.
+
+     THE CAMERA OBJECTION IS ANSWERED BY `fitDistance`, WHICH DID NOT EXIST WHEN
+     THIS BRANCH WAS FIRST WRITTEN. The original worry was that a narrow pane
+     collapses the horizontal field of view and crops a group off the sides of
+     their own window. That is now measured rather than hoped for: the bigger
+     group's pane keeps 62% of the width, and a camera that cannot fit its group
+     across a pane pulls back until it can. The cost of a narrow pane is a wider
+     framing, not a cropped kitten.
+
+     Even pairs, three panes and quadrants all still follow the setting. */
   if (n === 2 && sizes && sizes[0] !== sizes[1]) {
     const big = sizes[0] > sizes[1] ? 0 : 1;
-    /* THE SETTING PICKS THE AXIS AND THE 0.62 SPLIT IS THE SAME EITHER WAY.
-       This branch used to stack unconditionally, for the shape reason set out
-       below, and that made the split-direction setting a lie in exactly the
-       case where a player is most likely to go looking for it. See the note in
-       the three-pane branch above: the stacked answer is the kinder one and it
-       is now what 'horizontal' means rather than what everybody gets. */
-    if (dir === 'vertical') {
-      const bw = Math.round((W - gap) * 0.62);
-      const sw = W - gap - bw;
-      /* Whichever pane is FIRST goes on the left, matching the even split
-         below, so the returned array still lines up index-for-index with the
-         caller's groups. */
-      const firstW = big === 0 ? bw : sw;
-      const secondW = big === 0 ? sw : bw;
-      return [
-        { x: 0, y: 0, w: firstW, h: H },
-        { x: W - secondW, y: 0, w: secondW, h: H },
-      ];
-    }
-    const bh = Math.round((H - gap) * 0.62);
-    const sh = H - gap - bh;
-    const tall = { x: 0, y: 0, w: W, h: bh };
-    const short = { x: 0, y: 0, w: W, h: sh };
-    /* Whichever pane is FIRST goes on top — bottom-left origin, so the high y —
+    const bw = Math.round((W - gap) * 0.62);
+    const sw = W - gap - bw;
+    /* Whichever pane is FIRST goes on the left, matching the even split below,
        so the returned array still lines up index-for-index with the caller's
        groups. Sorting by size instead would hand one group another's camera. */
-    const first = big === 0 ? tall : short;
-    const second = big === 0 ? short : tall;
+    const firstW = big === 0 ? bw : sw;
+    const secondW = big === 0 ? sw : bw;
     return [
-      { ...first, y: H - first.h },
-      { ...second, y: 0 },
+      { x: 0, y: 0, w: firstW, h: H },
+      { x: W - secondW, y: 0, w: secondW, h: H },
     ];
   }
 

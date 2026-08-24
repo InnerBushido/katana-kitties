@@ -24,7 +24,7 @@ import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, tierFor, toNextTier } from './entities/panda.js';
 import { ClanLeader, LEADERS } from './entities/leader.js';
 import { Orb, OrbPickup } from './entities/orb.js';
-import { MathDojo } from './systems/mathdojo.js';
+import { MathDojo, DOJO_VIEW_R, inDojoView } from './systems/mathdojo.js';
 import { Minimap, TOUCH_ZOOM } from './systems/minimap.js';
 import { MenuNav } from './systems/menunav.js';
 import { Cutscene } from './systems/cutscene.js';
@@ -126,7 +126,6 @@ const TOAST_MAX = 7000;
 const TOAST_FADE = 500;
 
 
-const DOJO_VIEW_R = 52;  // inside this, the camera frames the unit circle
 
 /* HOW FAR BACK THE DOJO CAMERA SITS, and it is a different answer on a phone.
 
@@ -624,7 +623,7 @@ class Game {
     const dc = this.world.dojoCentre;
     const p = this.players[0];
     if (!p) return;
-    const inside = Math.hypot(p.position.x - dc.x, p.position.z - dc.z) < DOJO_VIEW_R;
+    const inside = inDojoView(p, dc);
     if (inside === this._mathWasInDojo) return;
     this._mathWasInDojo = inside;
     /* Silent: `_toggleMath` toasts, and a toast every time she crosses the Dojo
@@ -3071,7 +3070,7 @@ class Game {
   /* ------------------------ what the frame costs ------------------------ */
 
   /**
-   * The frame cost, in the corner, on `P`.
+   * The frame cost, in the corner, on `1`.
    *
    * BECAUSE "IT LAGS" IS NOT A MEASUREMENT AND THIS GAME IS FILL-BOUND.
    * A report of lag on a machine nobody here can see used to leave exactly two
@@ -5142,7 +5141,7 @@ class Game {
     const dc = this.world.dojoCentre;
     let anyInDojo = false;
     for (const p of this.players) {
-      const near = Math.hypot(p.position.x - dc.x, p.position.z - dc.z) < DOJO_VIEW_R;
+      const near = inDojoView(p, dc);
       anyInDojo = anyInDojo || near;
       /* The dojo wins if somehow both apply — there is no grotto on the maths
          island, so this can only ever be one of the two. yaw 0 squares the
@@ -5856,11 +5855,21 @@ class Game {
     let best = -1;
     let bestN = 0;
     groups.forEach((members, g) => {
-      const n = members.filter((i) => {
-        const p = this.players[i];
-        return p && !p.mount
-          && Math.hypot(p.position.x - dc.x, p.position.z - dc.z) < DOJO_VIEW_R;
-      }).length;
+      /* A KITTEN ON A DRAGON IS STILL OVER THE DOJO, and this used to say
+         `!p.mount`, which is where the second half of the bug was. `anyInDojo`
+         one screen up has never cared how she got there, so flying in turned
+         the board ON — and then this found nobody standing on the circle, fell
+         through to `toSheet()`, and dropped the board into the bottom-left
+         corner of the WHOLE SCREEN, in whoever's pane happened to be there.
+         Reported as exactly that: the overlay appearing in a pane belonging to
+         somebody who is not at the Dojo.
+
+         The two have to agree about who counts, and the answer that makes
+         sense of the room is that she does: she is looking straight down at
+         the unit circle from thirty units up, which is the best view of it in
+         the game. The one thing that must not happen is the board appearing
+         over a sister who is somewhere else entirely. */
+      const n = members.filter((i) => inDojoView(this.players[i], dc)).length;
       if (n > bestN) { bestN = n; best = g; }
     });
     const v = best >= 0 ? panes[best] : null;
@@ -6192,7 +6201,14 @@ class Game {
     // read the same diagram together. Both of them or neither, at any party size.
     const dc = this.world.dojoCentre;
     const allInDojo = this.players.every(
-      (p) => !p.mount && Math.hypot(p.position.x - dc.x, p.position.z - dc.z) < DOJO_VIEW_R
+      /* `!p.mount` STAYS HERE AND NOWHERE ELSE, and the difference is what
+         this rule is for. The board asks "whose pane does the diagram belong
+         in", and a girl looking down at the circle from a dragon has as good a
+         claim as anybody. This asks "should everybody share ONE view", and a
+         kitten in the air is already forced into a pane of her own by `solo`
+         below — so counting her here would claim a merge that the very next
+         rule takes apart again. */
+      (p) => !p.mount && inDojoView(p, dc)
     );
 
     if (onRyu || inRing || this.settings.split === 'never' || allInDojo) {
@@ -6334,10 +6350,14 @@ class Game {
          nowhere near it does not have her camera swung to an island she is not
          standing on, which is exactly what asking `this.players` here would
          do once there is more than one view. */
+      /* AND `!p.mount` STAYS HERE TOO, for a third reason: this is the
+         CAMERA, and a kitten on a dragon already has one — the dragon's. Swing
+         her pane to the overhead framing and she would be flying by a view of
+         the ground she is not on. The board still comes up in her pane (see
+         `inDojoView`); it is only the camera that stays with the animal. */
       const inDojo = members.some((i) => {
         const p = this.players[i];
-        return p && !p.mount
-          && Math.hypot(p.position.x - dc.x, p.position.z - dc.z) < DOJO_VIEW_R;
+        return !p?.mount && inDojoView(p, dc);
       });
       rig.focusT += ((inDojo ? 1 : 0) - rig.focusT) * Math.min(1, dt * 2.2);
       const ft = rig.focusT;

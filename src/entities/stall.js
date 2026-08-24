@@ -103,19 +103,45 @@ export class KotodamaStall {
       return { spec, group: g, core, halo, phase: i * 0.7 };
     });
 
+    /* TWICE THE HEIGHT IT WAS, AND THE REASON IS THE SPLIT SCREEN.
+
+       A label is a quad of a fixed WORLD size, so how many screen pixels it
+       covers is a function of the pane it is drawn in. At two players that was
+       fine and at four it is not: a quadrant is half the width and half the
+       height of the screen these were sized against, so every piece of world
+       text in the game comes out at half its linear size — and this one is
+       eleven characters of a word nobody has seen before. Reported as "you can
+       hardly see the text".
+
+       THE HEIGHT DOUBLES AND `size` DOES NOT, which is worth stating because
+       the obvious move is to raise both. `size` is the AUTHORED height of the
+       canvas the text is drawn on, so raising it costs texture memory
+       quadratically; `height` is the world size of the quad it lands on, which
+       is free. The texture is supersampled 3x (see SS in core/label.js) and was
+       being drawn at roughly a third of its own resolution even before this, so
+       there is headroom to spend and it is spent here: at 1.2 units the label
+       only magnifies past 1:1 if you stand closer than about four units to it
+       on a full screen, and the counter's solid stops you at three.
+
+       It sits higher to make room. The roof beam tops out at 3.35 and the quad
+       is 1.2 tall, so 4.1 puts its bottom edge at 3.5 — the same clearance the
+       old one had at 3.85. */
     this.sign = new Label('KOTODAMA — 言霊', {
-      height: 0.6, size: 68, color: '#ffe6a8', stroke: '#2a1408', strokeWidth: 8,
+      height: 1.2, size: 68, color: '#ffe6a8', stroke: '#2a1408', strokeWidth: 8,
     });
-    this.sign.position.set(0, 3.85, -0.4);
+    this.sign.position.set(0, 4.1, -0.4);
     this.group.add(this.sign);
 
     /* The prompt only appears when somebody is standing at it — the same
        three-distance argument the shrines make, collapsed to two, because a
        market stall does not need to be visible from the air. */
     this.prompt = new Label('PRESS INTERACT TO TRADE', {
-      height: 0.5, size: 60, color: '#ffffff', stroke: '#1a2030', strokeWidth: 8,
+      height: 1.0, size: 60, color: '#ffffff', stroke: '#1a2030', strokeWidth: 8,
     });
-    this.prompt.position.set(0, 4.6, -0.4);
+    /* Above the sign with a gap: both quads doubled, so the old 0.75 between
+       their centres is now less than their two half-heights and they would be
+       drawn through each other. */
+    this.prompt.position.set(0, 5.6, -0.4);
     this.prompt.visible = false;
     this.group.add(this.prompt);
   }

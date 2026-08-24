@@ -1,0 +1,49 @@
+#!/bin/sh
+#
+# STAMP EVERY COMMIT WITH THE BRANCH IT WAS MADE ON.
+#
+# WHY THIS IS A HOOK AND NOT A NOTE IN HANDOFF.md: the whole value of the stamp
+# is that it is on EVERY commit. One forgotten prefix and the answer to "which
+# commits were the four-player pass" is wrong in the one direction that matters
+# -- a commit that looks like it belongs to something else. A convention that is
+# followed by hand is followed 90% of the time, and 90% here is useless.
+#
+# WHAT IT IS FOR: branches are kept until they reach origin/main, but once they
+# are gone the only record of which commits belonged together is the message.
+# With the stamp, "revert to before the four-player pass" is:
+#
+#   git log --oneline --grep '\[mixed/third-four-player-pass\]' | tail -1
+#
+# ...and the commit BEFORE that one is the parent, which is the thing actually
+# wanted. The merge commit repeats it in prose for the same reason.
+#
+# ON `main` IT DOES NOTHING. Merges land there and a merge commit already names
+# the branch it merged; stamping it `[main]` would be noise on the one line
+# `git log --oneline` shows by default.
+msg="$1"
+branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
+
+[ "$branch" = "main" ] && exit 0
+[ -z "$branch" ] && exit 0
+
+# The subject is the first line that is neither blank nor a comment -- `-F` puts
+# it on line 1, an editor session may not.
+subject=$(grep -v '^#' "$msg" | grep -v '^[[:space:]]*$' | head -1)
+
+# Already stamped (by hand, or by a rebase replaying a stamped commit).
+case "$subject" in
+  '['*) exit 0 ;;
+esac
+
+# A WARNING, NOT A REFUSAL. The type prefix is for reading a branch list at a
+# glance; refusing the commit would mean losing a written message to a naming
+# quibble, which is a worse trade than a line of output.
+case "$branch" in
+  feature/*|bugfix/*|mixed/*) ;;
+  *) echo "commit-msg: branch '$branch' has no feature/ bugfix/ mixed/ prefix" >&2 ;;
+esac
+
+awk -v tag="[$branch] " '
+  !done && !/^#/ && !/^[[:space:]]*$/ { print tag $0; done = 1; next }
+  { print }
+' "$msg" > "$msg.tmp" && mv "$msg.tmp" "$msg"

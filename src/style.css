@@ -845,8 +845,10 @@ body.touch-ui .pane-edge { border-width: 4px; }
 }
 .pane-card {
   position: absolute;
-  container-type: inline-size;
-  padding: 5%;
+  /* `size`, NOT `inline-size`, so `cqh` is available inside — see `--u` below.
+     The element has an explicit width and height set on it by
+     `Inspector.update`, so size containment has something to contain. */
+  container-type: size;
   pointer-events: none;
   font-family: 'Nunito', system-ui, sans-serif;
   /* TOP-ANCHORED AND SHRINK-TO-FIT. The chooser is two rows and the shelf is
@@ -857,20 +859,46 @@ body.touch-ui .pane-edge { border-width: 4px; }
   align-items: flex-start;
 }
 .pc-inner {
+  /* ONE UNIT FOR THE WHOLE CARD, AND IT IS THE SMALLER OF THE TWO WAYS TO
+     MEASURE THE PANE.
+
+     Everything in here used to be sized in `cqw` — a percentage of the pane's
+     WIDTH — for the reason in the block comment above: type sized off the
+     window comes out legible on a full screen and a grey smear in a quarter
+     pane. That is still true and `--u` keeps it: in a 16:9 pane `1.78cqh` IS
+     `1cqw` (a 16:9 pane is 1.778 times wider than it is tall), so a full
+     screen, a half and a quadrant all come out byte-identical to what they
+     were.
+
+     WHAT IT ADDS IS A CEILING FOR A PANE THAT IS NOT 16:9. Reported from a
+     stacked four-player game: three sisters at the dealer in one pane and one
+     girl opening her card gave her a 1920x410 strip, and the card's type,
+     padding and dots were all sized for a pane 1920 across and then given 410
+     of height to put them in. `splitLayout` no longer hands out that shape (see
+     the uneven-pair branch in core/split.js) — this is the half that means a
+     squat pane merely looks small instead of breaking, because a rule that
+     degrades beats one that vanishes. */
+  --u: min(1cqw, 1.78cqh);
   pointer-events: auto;
   flex: 1 1 auto;
   min-width: 0;
-  max-height: 100%;
+  /* THE INSET IS A MARGIN HERE, NOT PADDING ON THE PANE. Percentage padding
+     resolves against WIDTH on both axes, so `padding: 5%` on a 1920x410 pane
+     took 192 of its 410 pixels of height for the gap round the edges. In `--u`
+     it is 5% of the short side instead — and it is still eight per cent of a
+     normal pane, so her kitten and the dealer are visible round the edges. */
+  margin: calc(5 * var(--u));
+  max-height: calc(100% - 10 * var(--u));
   display: flex;
   flex-direction: column;
-  gap: 0.5cqw;
+  gap: calc(0.5 * var(--u));
   background: rgba(29, 18, 22, 0.9);
-  border: 0.7cqw solid var(--me, var(--gold));
-  border-radius: 1.4cqw;
-  box-shadow: 0 0 0 0.35cqw rgba(29, 18, 22, 0.85), 0 1.2cqw 0 rgba(0, 0, 0, 0.45);
+  border: calc(0.7 * var(--u)) solid var(--me, var(--gold));
+  border-radius: calc(1.4 * var(--u));
+  box-shadow: 0 0 0 calc(0.35 * var(--u)) rgba(29, 18, 22, 0.85), 0 calc(1.2 * var(--u)) 0 rgba(0, 0, 0, 0.45);
   color: var(--paper);
-  padding: 1.6cqw 1.8cqw;
-  font-size: clamp(9px, 2.5cqw, 22px);
+  padding: calc(1.6 * var(--u)) calc(1.8 * var(--u));
+  font-size: clamp(9px, calc(2.5 * var(--u)), 22px);
   line-height: 1.32;
   overflow: hidden;
 }
@@ -883,8 +911,8 @@ body.touch-ui .pane-edge { border-width: 4px; }
   letter-spacing: 0.03em;
   font-size: 1.25em;
   color: var(--paper-2);
-  border-bottom: 0.25cqw solid rgba(251, 238, 210, 0.22);
-  padding-bottom: 0.5cqw;
+  border-bottom: calc(0.25 * var(--u)) solid rgba(251, 238, 210, 0.22);
+  padding-bottom: calc(0.5 * var(--u));
 }
 .pc-who { color: var(--me, var(--gold)); }
 .pc-dim { color: var(--paper-2); opacity: 0.72; font-size: 0.86em; }
@@ -893,16 +921,16 @@ body.touch-ui .pane-edge { border-width: 4px; }
   font-size: 0.82em;
   color: var(--paper-2);
   opacity: 0.8;
-  border-top: 0.25cqw solid rgba(251, 238, 210, 0.22);
-  padding-top: 0.5cqw;
+  border-top: calc(0.25 * var(--u)) solid rgba(251, 238, 210, 0.22);
+  padding-top: calc(0.5 * var(--u));
 }
 .pc-foot b, .pc-head b { color: var(--gold); }
 
 /* --- the chooser --- */
 .pc-row {
-  padding: 0.9cqw 1.1cqw;
-  border-radius: 0.9cqw;
-  border: 0.3cqw solid transparent;
+  padding: calc(0.9 * var(--u)) calc(1.1 * var(--u));
+  border-radius: calc(0.9 * var(--u));
+  border: calc(0.3 * var(--u)) solid transparent;
   cursor: pointer;
 }
 .pc-row b { color: var(--paper); }
@@ -915,23 +943,30 @@ body.touch-ui .pane-edge { border-width: 4px; }
 }
 
 /* --- her eight slots --- */
-.pc-slots { display: flex; gap: 0.6cqw; flex-wrap: nowrap; }
+.pc-slots { display: flex; gap: calc(0.6 * var(--u)); flex-wrap: nowrap; }
 .pc-slot {
   flex: 1 1 0;
   aspect-ratio: 1;
+  /* CAPPED, BECAUSE THESE ARE SQUARE AND THE ROW IS AS WIDE AS THE PANE.
+     Eight slots sharing the width of a very wide pane are eight big squares,
+     and a square's height is its width — so the one row that cannot be made
+     smaller by `--u` is this one. 10.5 is what they come out at in a 16:9 pane
+     anyway (eight of them plus the gaps fill the card), so nothing normal
+     moves. */
+  max-width: calc(10.5 * var(--u));
   display: grid;
   place-items: center;
   font-style: normal;
   font-size: 0.95em;
-  border-radius: 0.6cqw;
-  border: 0.3cqw dashed rgba(251, 238, 210, 0.3);
+  border-radius: calc(0.6 * var(--u));
+  border: calc(0.3 * var(--u)) dashed rgba(251, 238, 210, 0.3);
   color: var(--ink);
 }
 .pc-slot.full {
   border-style: solid;
   border-color: var(--ink);
   background: var(--orb);
-  box-shadow: inset 0 0 0 0.25cqw rgba(255, 255, 255, 0.45);
+  box-shadow: inset 0 0 0 calc(0.25 * var(--u)) rgba(255, 255, 255, 0.45);
 }
 
 /* --- the shelf ---
@@ -956,10 +991,10 @@ body.touch-ui .pane-edge { border-width: 4px; }
 .pc-orb {
   display: flex;
   align-items: center;
-  gap: 0.8cqw;
-  padding: 0.5cqw 0.7cqw;
-  border-radius: 0.7cqw;
-  border: 0.3cqw solid transparent;
+  gap: calc(0.8 * var(--u));
+  padding: calc(0.5 * var(--u)) calc(0.7 * var(--u));
+  border-radius: calc(0.7 * var(--u));
+  border: calc(0.3 * var(--u)) solid transparent;
   cursor: pointer;
 }
 .pc-orb.cursor {
@@ -972,8 +1007,8 @@ body.touch-ui .pane-edge { border-width: 4px; }
 .pc-orb.owned b { color: var(--gold); }
 .pc-dot {
   flex: none;
-  width: 3.4cqw;
-  height: 3.4cqw;
+  width: calc(3.4 * var(--u));
+  height: calc(3.4 * var(--u));
   min-width: 16px;
   min-height: 16px;
   display: grid;
@@ -981,7 +1016,7 @@ body.touch-ui .pane-edge { border-width: 4px; }
   font-style: normal;
   border-radius: 50%;
   background: var(--orb);
-  border: 0.25cqw solid var(--ink);
+  border: calc(0.25 * var(--u)) solid var(--ink);
   color: var(--ink);
   font-size: 0.8em;
 }
@@ -991,9 +1026,9 @@ body.touch-ui .pane-edge { border-width: 4px; }
   font-size: 0.72em;
   letter-spacing: 0.05em;
   color: var(--orb);
-  border: 0.2cqw solid var(--orb);
-  border-radius: 0.5cqw;
-  padding: 0 0.4cqw;
+  border: calc(0.2 * var(--u)) solid var(--orb);
+  border-radius: calc(0.5 * var(--u));
+  padding: 0 calc(0.4 * var(--u));
 }
 .pc-orb-num { flex: none; text-align: right; font-size: 0.82em; }
 

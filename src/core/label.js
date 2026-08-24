@@ -340,7 +340,24 @@ export class Label extends THREE.Object3D {
   }
 
   faceCamera(camera) {
-    this.mesh.quaternion.copy(camera.quaternion);
+    /* THE PARENT'S ROTATION HAS TO BE UNDONE, and it was not.
+       `mesh.quaternion` is a LOCAL rotation, so copying the camera's into it
+       only points the quad at the camera when every ancestor is unrotated.
+       Most callers are — a kitten's group is a position and nothing else — so
+       this looked right everywhere it was checked.
+       The dealer's stall is not. Its group is turned -PI/4 so the noren faces
+       the fixed camera yaw (see entities/stall.js), and that turned its two
+       signs 45 degrees away from square: legible up close, and a smear at the
+       size a quadrant draws them. It was half of "you can hardly read the text
+       above the store" — the other half being that the quads were too small,
+       which is fixed in stall.js. Anything under a rotated parent had the same
+       problem and nothing else had noticed.
+       world(mesh) = world(this) * local(mesh), and we want world(mesh) to BE
+       the camera's — so the local one is the inverse of ours times the
+       camera's. Identity for every unrotated caller, so nothing that was right
+       moves. */
+    this.getWorldQuaternion(_face).invert();
+    this.mesh.quaternion.copy(_face).multiply(camera.quaternion);
     if (this.fixedScreenSize) {
       // Grow with distance so on-screen size stays roughly constant, but
       // clamped: unclamped, a pulled-back camera makes labels swallow the
@@ -353,3 +370,4 @@ export class Label extends THREE.Object3D {
 }
 
 const _tmp = new THREE.Vector3();
+const _face = new THREE.Quaternion();
