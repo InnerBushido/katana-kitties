@@ -158,7 +158,16 @@ hard-coded before the file existed. See [docs/notes/mobile.md](docs/notes/mobile
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
-**The fifth session's two, neither played yet.** A third row at the dealer,
+**Played, pushed and live — the third, fourth and fifth four-player sessions,
+all in one push.** Richard playtested the input fixes and confirmed everything
+was working, so all three sessions' work went out to `origin/main` together,
+which is what Vercel deploys — so it is on
+https://katana-kitties.vercel.app and the nieces have it. The two branches
+behind it (`bugfix/dealer-pane-and-three-more`,
+`mixed/joycon-buttons-and-dealer-profile`) were deleted once merged and
+pushed; see *Branches* at the end of this file.
+
+**The fifth session's two.** A third row at the dealer,
 **CHARACTER PROFILE — TRADE WINDOW**, opening the same trade screen the pause
 menu does (a second door, not a second copy — `fromPause` stays false so
 closing hands the frame back). And the Joy-Con map/overlay buttons moved off
@@ -167,12 +176,13 @@ the wrong indices onto where the feeder reports them — `L → 20`, `R → 21`,
 rather than per-half), 0–3 now dead, storage key bumped to `v3` so a saved map
 does not keep the old guesses. Written up in
 [four-players.md](docs/notes/four-players.md#the-fifth-session--two-small-ones)
-and [input.md](docs/notes/input.md). Dealer row verified in the browser; the
-Joy-Con remap is verified by `pad-check` (256), which is the only place vJoy
-can be exercised.
+and [input.md](docs/notes/input.md). **The Joy-Con remap itself is still worth
+a hands-on check with real hardware** — the browser cannot drive the vJoy
+feeder, so it was only ever verified by `pad-check` (256) and by Richard's own
+playtest, not by anything this tree can watch happen.
 
-**The fourth four-player session's four, none of them played yet.** Written up
-in [four-players.md](docs/notes/four-players.md#the-fourth-four-player-session--four-things-the-split-screen-was-hiding).
+**The fourth four-player session's four.** Written up in
+[four-players.md](docs/notes/four-players.md#the-fourth-four-player-session--four-things-the-split-screen-was-hiding).
 Three of the four are one bug in different clothes — something sized or tested
 against a full screen, meeting a pane that is a quarter of one — which is worth
 knowing because the next one will look new and will not be.
@@ -205,8 +215,7 @@ plus a naming convention (`feature/`, `bugfix/`, `mixed/`) and
 must run `git config core.hooksPath .githooks`** — it is repo-local config and
 cannot be checked in. Full reasoning under *Branches* at the end of this file.
 
-**The third four-player session's eleven, none of them played yet.** All eleven
-are in the tree with checks and none has been in front of a player. Written up
+**The third four-player session's eleven.** Written up
 in [four-players.md](docs/notes/four-players.md#the-third-four-player-session--eleven-things-and-two-of-them-reverse-a-decision)
 and, for the two input ones, [input.md](docs/notes/input.md). The batch: the
 maths board is placed in the pane of whoever is actually in the Dojo and sized
@@ -221,13 +230,13 @@ ring and landed; the griffin's arrival camera looks forward instead of at the
 floor; shield moved to the left trigger (Joy-Cons included) and the frame-cost
 debug key moved from `P` to `` 1 ``.
 
-**Two of those eleven reverse an earlier decision, and Richard should see them
-before they are kept.**
+**Two of those eleven reversed an earlier decision, and both stayed as
+written — Richard playtested without flagging either.**
 
 1. **The minimap moved from the outside corner of its pane to the SEAM.** That
    is what lets two adjacent panes share one map, and it changes the look of the
    **two**-player screen, which has always had its maps in the far corners. One
-   argument (`inner`) puts it back.
+   argument (`inner`) puts it back, if it is ever wanted back.
 2. **The split-direction setting now reaches three arrangements instead of
    one.** It used to apply only to two even panes, so asking for a side-by-side
    screen gave a side-by-side one with two kittens and a stacked one with three.
@@ -240,7 +249,7 @@ before they are kept.**
    **Half-reversed again a session later**: the uneven 3-and-1 pair no longer
    consults the setting at all, because the pane it gave the lone kitten broke
    her dealer card (item 1 of the fourth session, above). The even pair and the
-   2/1/1 still follow it, so the report this answered still stands for them.
+   2/1/1 still follow it.
 
 **Played, pushed and live.** Richard playtested the whole batch and it went out
 to `origin/main`, which is what Vercel deploys — so it is on
