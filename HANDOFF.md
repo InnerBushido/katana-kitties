@@ -158,6 +158,40 @@ hard-coded before the file existed. See [docs/notes/mobile.md](docs/notes/mobile
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**The fourth four-player session's four, none of them played yet.** Written up
+in [four-players.md](docs/notes/four-players.md#the-fourth-four-player-session--four-things-the-split-screen-was-hiding).
+Three of the four are one bug in different clothes — something sized or tested
+against a full screen, meeting a pane that is a quarter of one — which is worth
+knowing because the next one will look new and will not be.
+
+1. **A 3-and-1 split is now always side by side**, ignoring the direction
+   setting, and the dealer's card measures its pane both ways. All four at the
+   stall, one opens her card, and *Top and bottom* gave her a 1920x410 strip
+   with a card sized entirely off its width. This **reverses the reversal
+   below** — see item 2 there — for the uneven pair only; the even pair and the
+   2/1/1 still follow the setting.
+2. **Both signs over the stall are twice as tall, and `Label.faceCamera` was
+   fixed.** It copied the camera's rotation into the mesh's **local**
+   quaternion, so a label under a rotated parent never actually faced the
+   camera — the stall's group is turned `-PI/4`, so its signs sat 45 degrees
+   off. World text is half its linear size in a quadrant, which was the other
+   half. The quads grew; the canvases behind them deliberately did not.
+3. **A kitten on a dragon is in the Dojo.** Flying over the unit circle switched
+   the maths board on and then drew it in the bottom-left of the screen, in a
+   pane belonging to somebody two islands away. Four places asked *is she at the
+   Dojo* and two answered differently; `inDojoView` is now the only one that
+   answers, and one `!p.mount` survives on purpose in `_clusters`.
+4. **The griffin lands in front of the torii instead of past it.** The landing
+   spot sat four units beyond the gate on the inbound axis, so the ride ended by
+   flying through it.
+
+**Branches are kept until they reach `origin/main` now, and every commit is
+stamped with its branch.** Richard's correction to the old delete-on-merge rule,
+plus a naming convention (`feature/`, `bugfix/`, `mixed/`) and
+[.githooks/commit-msg](.githooks/commit-msg) to apply the stamp. **A fresh clone
+must run `git config core.hooksPath .githooks`** — it is repo-local config and
+cannot be checked in. Full reasoning under *Branches* at the end of this file.
+
 **The third four-player session's eleven, none of them played yet.** All eleven
 are in the tree with checks and none has been in front of a player. Written up
 in [four-players.md](docs/notes/four-players.md#the-third-four-player-session--eleven-things-and-two-of-them-reverse-a-decision)
@@ -190,12 +224,16 @@ before they are kept.**
    means a player can now ask for the worse shape and get it. `fitDistance`
    makes that survivable rather than broken. Quadrants still ignore the setting
    and `world-check` pins that they come out identical either way.
+   **Half-reversed again a session later**: the uneven 3-and-1 pair no longer
+   consults the setting at all, because the pane it gave the lone kitten broke
+   her dealer card (item 1 of the fourth session, above). The even pair and the
+   2/1/1 still follow it, so the report this answered still stands for them.
 
 **Played, pushed and live.** Richard playtested the whole batch and it went out
 to `origin/main`, which is what Vercel deploys — so it is on
 https://katana-kitties.vercel.app and the nieces have it. The five feature
-branches behind it were deleted once merged; see *Branches* at the end of this
-file. The batch: the clan call-to-action, pane
+branches behind it were deleted once merged and pushed; see *Branches* at the
+end of this file. The batch: the clan call-to-action, pane
 stability and pane colour, the arena floor and the camera ceiling, the Cross
 Slash rebalance, `/tuning.html` and the debug panel's door to it,
 `public/voice/cross0-3.mp3`, the vendor split into a personal inspector
@@ -817,12 +855,53 @@ check is a fact waiting to rot.
 
 ## Branches
 
-**One branch per feature or fix, merged into local `main` with `--no-ff`,
-deleted the moment it is merged.** The branch is scaffolding for the work, not
-a record of it — the record is the merge commit and the essay in it, and
-`git log --graph` shows the shape of every branch that ever existed whether or
-not the label survives. A kept branch is a second name for a commit that
-already has one.
+**One branch per batch of work, and it lives until the work reaches
+`origin/main`.** This reverses what this section used to say. The old rule
+deleted a branch the moment it merged into local `main`, on the argument that
+the merge commit is the record and the label is scaffolding. Richard's
+correction: local `main` is not where the work lands — `origin/main` is, and
+that can be a week later. Between those two moments the branch is the only
+handle on "the thing I am about to play", and deleting it early throws that
+handle away while it is still needed.
+
+So: branch, work, merge into local `main` with `--no-ff`, **keep the branch**,
+and delete it once the merge has been pushed and played.
+
+**Names carry their kind: `feature/`, `bugfix/`, or `mixed/`.** A branch list
+read at a glance should say what each one is; `mixed/` is the honest answer when
+a batch is roughly half new work and half repairs, which most playtest batches
+are. `mixed/third-four-player-pass`, `bugfix/dealer-pane-and-three-more`.
+
+**Every commit is stamped with its branch, by a hook, not by hand.** See
+[.githooks/commit-msg](.githooks/commit-msg): on any branch but `main` it
+prefixes the subject with `[branch/name]` if it is not already there.
+
+```bash
+git config core.hooksPath .githooks
+```
+
+That line is **repo-local config and therefore not checked in** — same as the
+pinned `InnerBushido` identity. A fresh clone has to run it, and until it does
+the stamps silently stop. It is the first thing to check if a commit comes out
+bare.
+
+*Why a hook.* The value of the stamp is that it is on every commit, so that
+long after a branch is deleted this still answers correctly:
+
+```bash
+git log --oneline --grep "\[mixed/third-four-player-pass\]" | tail -1
+```
+
+That is the FIRST commit of the batch; its parent is the commit to go back to,
+which is the question actually being asked — *"revert to before the four-player
+pass"*. A convention followed by hand is followed most of the time, and most of
+the time is worthless here: one unstamped commit does not read as missing, it
+reads as belonging to something else.
+
+**The merge commit says where the branch started.** The hook stamps the
+commits; the merge essay names the branch, the commit it branched from, and its
+first commit in prose — so the answer is legible without a `--grep` at all.
+`git log --graph` still shows the shape whether or not the label survives.
 
 **`git branch -d`, never `-D`.** The lower-case one refuses to delete anything
 that is not fully merged, so it cannot lose work; the upper-case one is for
@@ -830,7 +909,7 @@ throwing an experiment away on purpose and should be typed deliberately, never
 in a loop.
 
 **Nothing but `main` is ever pushed.** These branches are local, so deleting
-them touches nothing on GitHub and there is no `origin/feature-x` to tidy up
+one touches nothing on GitHub and there is no `origin/feature-x` to tidy up
 afterwards. The repo has exactly one remote branch and that is the intent.
 
 **Push to `origin/main` only once Richard has played it.** `origin/main` is
@@ -840,7 +919,3 @@ reason for the local-first workflow is that a batch can sit finished and
 unreleased for as long as it needs to. Check `gh auth status` first: `gh` is
 signed in as two accounts and the active one must be **InnerBushido**, not the
 work account.
-
-**The exception worth knowing:** keep a branch alive only while something
-outside this repo still points at it — an open pull request, or a second
-machine that has it checked out. Neither has ever been true here.

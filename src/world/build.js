@@ -1217,6 +1217,13 @@ export function buildBridge(len = 14, wide = 3.4) {
 
 /** Half-width of the square fighting ring. The deck is ARENA_RING*2 across. */
 export const ARENA_RING = 28;
+
+/* HOW FAR OUT THE TORII STANDS, measured from the ring like everything else on
+   this island. Exported because the griffin's landing spot is defined against
+   it — see `arenaLanding` in world/world.js, which has to be on the near side
+   of it or the ride ends by flying through the gate. Two literals four hundred
+   lines apart is how that happened in the first place. */
+export const ARENA_GATE = 34;
 /** How far the ring's deck stands above the island under it. */
 export const ARENA_RISE = 2.4;
 /**
@@ -1471,7 +1478,7 @@ export function buildArena() {
 
   /* The way in: a torii on the fighters' axis, so the approach from the
      griffin's landing side is framed exactly like the great torii at home. */
-  parts.push(...transformParts(buildTorii(1.5), 0, 0, R + 34, 0));
+  parts.push(...transformParts(buildTorii(1.5), 0, 0, R + ARENA_GATE, 0));
 
   return { parts, solids, platforms };
 }

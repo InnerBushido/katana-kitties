@@ -71,7 +71,7 @@ import {
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
 import { postsFor } from '../src/world/build.js';
-import { MathDojo, DOJO_RADIUS } from '../src/systems/mathdojo.js';
+import { MathDojo, DOJO_RADIUS, DOJO_VIEW_R, inDojoView } from '../src/systems/mathdojo.js';
 import { Orb } from '../src/entities/orb.js';
 import { Label, labelCacheStats } from '../src/core/label.js';
 import {
@@ -2510,6 +2510,43 @@ console.log('\n--- the arena ---');
   ok('the landing spot is outside the ring and clear of the stands',
     world.arenaOutBy(world.arenaLanding.x, world.arenaLanding.z) > 20);
 
+  /* --- AND SHORT OF THE TORII, NOT PAST IT ------------------------------
+     The gate is the one piece of architecture out here that means anything,
+     and the ride used to end by flying through it: the town is north, so the
+     flight comes in down the +z axis, and the landing sat at ring + 30 while
+     the torii stands at ring + 34. Four units past. Reported as looking bad.
+
+     ASSERTED AGAINST THE FLIGHT, not against a number. The direction they
+     arrive from is what makes "in front of" mean anything, so it is computed
+     from the two places the griffin actually flies between. */
+  {
+    const gate = world.arenaGate;
+    const land = world.arenaLanding;
+    ok('the torii and the landing are on the same side of the ring',
+      Math.sign(gate.z - world.arenaCentre.z) === Math.sign(land.z - world.arenaCentre.z));
+    /* Approaching from the town: whichever way that is, the landing has to
+       come FIRST along it. */
+    const townZ = 20;
+    const inbound = Math.sign(world.arenaCentre.z - townZ);
+    ok('they land BEFORE the gate, so the walk in goes through it',
+      (land.z - gate.z) * inbound < 0,
+      `landing z ${land.z.toFixed(0)}, gate z ${gate.z.toFixed(0)}`);
+    ok('...with room to land — not standing in the gateway',
+      Math.abs(land.z - gate.z) > 6, Math.abs(land.z - gate.z).toFixed(1));
+    /* AND STILL OUTSIDE THE STANDS AND STILL ON THE ISLAND. Moving it out is
+       the fix; moving it off the edge would be a worse bug than the one being
+       fixed, and there is a hundred units of open sky under it. */
+    ok('...outside the outermost seating', world.arenaOutBy(land.x, land.z) > 20);
+    /* AND STILL ON THE ISLAND. `heightAt` only answers out here once the arena
+       is open, so this asks the island itself — which is the thing that would
+       actually stop being true if somebody pushed the landing further out. */
+    const isl = world.arenaIsland;
+    const outFromCentre = Math.hypot(land.x - isl.x, land.z - isl.z);
+    ok('...and well inside the island, not hanging off the edge of it',
+      outFromCentre < isl.radius - 12,
+      `${outFromCentre.toFixed(0)} of ${isl.radius}`);
+  }
+
   /* ---- NOBODY FALLS OUT OF THE ARENA ------------------------------------
      Reported from four-player play: "players get knocked so far they fall off
      the island entirely and then the camera zooms out infinitely far away."
@@ -3182,6 +3219,56 @@ console.log('\n--- a full-screen scene has no split to furnish ---');
   ok('...without leaving an invisible card taking taps',
     /#pane-edges\.scene-hidden,\s*#pane-cards\.scene-hidden\s*\{[^}]*pointer-events:\s*none/.test(css));
 
+  /* --- AND A CARD MEASURES ITS PANE BOTH WAYS ---------------------------
+     Reported from a stacked four-player game: three sisters at the dealer's
+     stall share a pane and one of them opens her card, which is 3v1 — so at
+     1080p her pane came out 1920x410 and the card was unusable in it. The card
+     is sized in container units, which is the whole reason it can be read in a
+     quadrant at all, but they were `cqw` — a percentage of the pane's WIDTH —
+     so its type, padding and dots were all sized for a pane 1920 across and
+     then given 410 of height to fit into.
+
+     `splitLayout` no longer hands out that shape (see the uneven-pair checks),
+     and this is the half that means a squat pane merely looks small instead of
+     breaking. Two halves, because the layout is not the only way to get a wide
+     short pane — an ultrawide monitor stacked two ways is another.
+
+     CHECKED AS TEXT, WHICH IS UNUSUAL HERE AND IS THE POINT. There is no
+     layout engine in this file, so what can be pinned is the RULE: not one
+     bare `cqw` survives anywhere in the card, because the next person to add a
+     row will copy the line above it. */
+  const cardFrom = css.indexOf('.pane-card {');
+  const cardTo = css.indexOf('.pc-orb-num {');
+  const card = cardFrom >= 0 && cardTo > cardFrom ? css.slice(cardFrom, cardTo) : '';
+  ok('the card is a size container, so it can see its own height', card.length > 0
+    && /\.pane-card\s*\{[^}]*container-type:\s*size/.test(card));
+  ok('...and its unit is the SMALLER of the two ways to measure the pane',
+    /--u:\s*min\(\s*1cqw\s*,\s*1\.78cqh\s*\)/.test(card));
+  /* 1.78 IS NOT A TASTE NUMBER. It is 16:9, and it is what makes the change a
+     no-op on every pane that already worked: in a 16/9 pane `1.78cqh` IS
+     `1cqw`, so a full screen, a half and a quadrant come out exactly as they
+     did. A different constant here would silently resize every card. */
+  ok('...which is 16:9, so nothing about a normal pane moves',
+    Math.abs(1.78 - 16 / 9) < 0.005);
+  /* Stripped of comments and of the definition of `--u` itself, both of which
+     say `cqw` on purpose and neither of which sizes anything. */
+  const cardRules = card.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--u:[^;]*;/g, '');
+  ok('...and not one bare cqw is left in the card to undo it',
+    !/[\d.]cqw/.test(cardRules),
+    (cardRules.match(/[\d.]+cqw/g) ?? []).slice(0, 3).join(' '));
+  /* THE INSET IS THE OTHER HALF. Percentage padding resolves against WIDTH on
+     BOTH axes, so `padding: 5%` on a 1920x410 pane spent 192 of its 410 pixels
+     of height on the gap round the edges — a rule that cannot be fixed by
+     shrinking the type. */
+  ok('...and the gap round the edges is in that unit too, not a percentage',
+    !/\.pane-card\s*\{[^}]*padding:\s*\d/.test(card)
+    && /margin:\s*calc\(5 \* var\(--u\)\)/.test(card));
+  /* AND THE SQUARE SLOTS ARE CAPPED. Eight slots sharing the width of a very
+     wide pane are eight big squares, and a square's height is its width — so
+     this is the one row `--u` cannot shrink on its own. */
+  ok('...and her eight orb slots cannot grow taller than the card',
+    /\.pc-slot\s*\{[^}]*max-width:\s*calc\([\d.]+ \* var\(--u\)\)/.test(card));
+
   /* --- and one press is still one press ---
      Start ended the trailer and restarted it from the beginning, on a PS5 pad
      and on every other pad too. `trailer.update()` runs BEFORE MenuNav, so
@@ -3439,6 +3526,77 @@ console.log('\n--- the Powerup Kotodama ---');
     K.pickups.every((p) => clearOf(p.position.x, p.position.z, 0.01) >= 4));
   ok('the dealer is not either',
     K.stall && clearOf(K.stall.position.x, K.stall.position.z, 0.01) >= 4);
+
+  /* --- AND YOU CAN READ IT FROM A QUARTER OF A SCREEN -------------------
+     Reported from four-player play: "too hard to read the text above the
+     store, can hardly see it".
+
+     A `Label` is a quad of a fixed WORLD size, so how many screen pixels it
+     covers is a function of the pane it is drawn in — and a quadrant is half
+     the width and half the height of the screen these were sized against, so
+     every piece of world text in the game comes out at half its linear size.
+     Both signs doubled.
+
+     THE WORLD HEIGHT DOUBLED AND `size` DID NOT, which is the half worth
+     pinning: `size` is the authored height of the CANVAS, so raising it costs
+     texture memory quadratically, while `height` is the world size of the quad
+     and is free. The labels are supersampled 3x and were already drawn well
+     under 1:1, so there was headroom to spend. Somebody "fixing" the crispness
+     by raising `size` instead would put megabytes back on a phone's budget. */
+  {
+    const st = K.stall;
+    /* MEASURED IN WORLD SPACE, so the group's own -PI/4 and the labels' local
+       offsets are all in it — which is the only frame in which "does the sign
+       clear the roof beam" is a question with an answer. */
+    st.group.updateMatrixWorld(true);
+    const box = (l) => new THREE.Box3().setFromObject(l.mesh ?? l);
+    ok('the stall has both a sign and a prompt', !!st?.sign && !!st?.prompt);
+    const sign = box(st.sign);
+    const prompt = box(st.prompt);
+    const signH = sign.max.y - sign.min.y;
+    const promptH = prompt.max.y - prompt.min.y;
+    line('stall text (world units tall)',
+      `sign ${signH.toFixed(2)}  prompt ${promptH.toFixed(2)}`);
+    ok('the sign is at least a metre of world tall', signH >= 1.1, signH.toFixed(2));
+    ok('...and so is the prompt under it', promptH >= 0.95, promptH.toFixed(2));
+    /* THE CANVASES DID NOT GROW WITH THEM. */
+    ok('...without either of them growing its texture to do it',
+      st.sign._opts?.size <= 70 && st.prompt._opts?.size <= 70,
+      `${st.sign._opts?.size} / ${st.prompt._opts?.size}`);
+
+    /* AND THEY ARE NOT DRAWN THROUGH EACH OTHER. Both quads doubled about
+       their own centres, and the old gap between those centres was smaller
+       than the two new half-heights — which is the failure this exact kind of
+       change produces and the one that is invisible until somebody walks up. */
+    ok('...and the two of them do not overlap', prompt.min.y > sign.max.y,
+      `sign top ${sign.max.y.toFixed(2)}, prompt bottom ${prompt.min.y.toFixed(2)}`);
+    /* NOR THROUGH THE ROOF BEAM, which tops out at 3.35 in the stall's own
+       space and is what the sign used to clear by 0.3. */
+    ok('...nor through the stall\'s own roof beam', sign.min.y > 3.4,
+      sign.min.y.toFixed(2));
+
+    /* IT ALREADY FACED THE CAMERA AND STILL DOES. Half the report was "make the
+       text always face the camera" — it always has, per pane, through
+       `Kotodama.faceCamera`. Pinned so the answer to that half is a check
+       rather than a claim in a reply. */
+    const cam = new THREE.PerspectiveCamera(48, 16 / 9, 0.5, 600);
+    cam.position.set(st.position.x + 30, st.position.y + 22, st.position.z + 30);
+    cam.lookAt(st.position.x, st.position.y, st.position.z);
+    cam.updateMatrixWorld(true);
+    st.prompt.visible = true;
+    K.faceCamera(cam);
+    st.group.updateMatrixWorld(true);
+    const facing = (l) => {
+      const q = new THREE.Quaternion();
+      l.mesh.getWorldQuaternion(q);
+      return new THREE.Vector3(0, 0, 1).applyQuaternion(q)
+        .dot(new THREE.Vector3(0, 0, 1).applyQuaternion(cam.quaternion));
+    };
+    ok('the sign turns to whichever camera is looking at it', facing(st.sign) > 0.999,
+      facing(st.sign).toFixed(4));
+    ok('...and so does the prompt, while it is up', facing(st.prompt) > 0.999);
+    st.prompt.visible = false;
+  }
   /* THE DEALER IS THE ONLY SOURCE OF A SECOND COPY, so his shelf is where the
      stacking rule lives. Four of each stat orb — the four whose whole point is
      a number going up — and one of each move, where a second copy only widens
@@ -5617,44 +5775,52 @@ console.log('\n--- the three power moves ---');
        cropped off the sides of their own pane. Reported from a four-player game
        as "only Frost is visible — it thinks all three are, but that assumes the
        whole screen width". */
-    const uneven = splitLayout(2, VW, VH, 3, 'horizontal', [3, 1]);
-    ok('an uneven pair of panes is STACKED, so both stay wide',
-      uneven.every((v) => v.w === VW && v.x === 0));
-    ok('...and the bigger group gets the bigger strip',
-      uneven[0].h > uneven[1].h);
-    /* THE OLD OBJECTION, KEPT AS A CHECK. A solo pane must stay a shape a
-       camera can work in — this is the number that stops somebody "fixing" the
-       fairness by making it proportional. */
+    const uneven = splitLayout(2, VW, VH, 3, 'vertical', [3, 1]);
+    ok('an uneven pair of panes is SIDE BY SIDE, so both stay tall',
+      uneven.every((v) => v.h === VH && v.y === 0));
+    ok('...and the bigger group gets the wider column',
+      uneven[0].w > uneven[1].w && uneven[0].x === 0);
+    /* THE OLD OBJECTION, KEPT AS A CHECK. A solo pane must stay a shape
+       something can be drawn in — this is the number that stops somebody
+       "fixing" the fairness by making it proportional. */
     ok('...while the lone kitten still gets a pane, not a sliver',
-      uneven[1].h > VH * 0.3, `${(uneven[1].h / VH).toFixed(2)} of the height`);
+      uneven[1].w > VW * 0.3, `${(uneven[1].w / VW).toFixed(2)} of the width`);
     ok('...and the two of them tile the frame exactly',
-      uneven[0].y === VH - uneven[0].h && uneven[1].y === 0
-      && uneven[0].h + uneven[1].h <= VH);
-    /* WHICHEVER PANE IS FIRST GOES ON TOP, so the array still lines up
+      uneven[1].x === VW - uneven[1].w && uneven[0].w + uneven[1].w <= VW);
+    /* WHICHEVER PANE IS FIRST GOES ON THE LEFT, so the array still lines up
        index-for-index with the caller's groups. Sorting by size would hand one
        group another's camera. */
-    const unevenB = splitLayout(2, VW, VH, 3, 'horizontal', [1, 3]);
+    const unevenB = splitLayout(2, VW, VH, 3, 'vertical', [1, 3]);
     ok('...and a group listed second keeps the second pane',
-      unevenB[1].h > unevenB[0].h && unevenB[0].y === VH - unevenB[0].h);
+      unevenB[1].w > unevenB[0].w && unevenB[0].x === 0);
 
-    /* AND THE SETTING IS OBEYED HERE TOO. Stacked is the kinder shape and it
-       is now what 'horizontal' means; 'vertical' gets the same 0.62 split
-       turned on its side. The complaint was that the split-direction setting
-       "is only getting applied when 2 of the players are on 1 screen and 2 on
-       the other" — this branch and the 2/1/1 one above are the two it did not
-       reach, and quadrants are the one arrangement where it has no meaning. */
-    const unevenV = splitLayout(2, VW, VH, 3, 'vertical', [3, 1]);
-    ok('...and side by side when the setting says so',
-      unevenV.every((v) => v.h === VH && v.y === 0));
-    ok('...with the bigger group getting the wider column',
-      unevenV[0].w > unevenV[1].w && unevenV[0].x === 0);
-    ok('...and the lone kitten still getting a pane, not a sliver',
-      unevenV[1].w > VW * 0.3, `${(unevenV[1].w / VW).toFixed(2)} of the width`);
-    ok('...and the two of them tiling the frame exactly',
-      unevenV[1].x === VW - unevenV[1].w && unevenV[0].w + unevenV[1].w <= VW);
-    const unevenVB = splitLayout(2, VW, VH, 3, 'vertical', [1, 3]);
-    ok('...and a group listed second still keeping the second pane',
-      unevenVB[1].w > unevenVB[0].w && unevenVB[0].x === 0);
+    /* AND THIS IS THE ONE PLACE THE SETTING IS OVERRIDDEN, ON PURPOSE.
+       Reported from a stacked four-player game: three sisters at the dealer's
+       stall in one pane and one girl opening her card is 3v1, so her pane came
+       out 1920x410 at 1080p — a strip nearly five times wider than it is tall,
+       with a MENU in it. `.pane-card` sizes itself in `cqw`, a percentage of
+       the pane's WIDTH, so its type and padding were sized for a pane 1920
+       across and then given 410 of height to fit in.
+
+       The solo pane is not really a camera: it is the pane a card, a dragon's
+       altitude, or a kitten on her own gets, and all three want height. This
+       check is the whole of that decision, so it cannot be undone by accident
+       the next time somebody makes the setting more thorough. */
+    for (const d of ['vertical', 'horizontal']) {
+      const u = splitLayout(2, VW, VH, 3, d, [3, 1]);
+      ok(`an uneven pair is side by side even when the setting says ${d}`,
+        u.every((v) => v.h === VH && v.y === 0),
+        `${u[1].w}x${u[1].h}`);
+      ok(`...and the solo pane is taller than it is wide (${d})`,
+        u[1].h > u[1].w, `${u[1].w}x${u[1].h}`);
+    }
+    ok('...and the two directions come out identical for an uneven pair',
+      JSON.stringify(splitLayout(2, VW, VH, 3, 'vertical', [2, 1]))
+        === JSON.stringify(splitLayout(2, VW, VH, 3, 'horizontal', [2, 1])));
+    /* AND AN EVEN PAIR STILL OBEYS IT, which is the two-player game and the
+       thing that must not move. */
+    ok('...while two EVEN panes still stack when the setting says so',
+      splitLayout(2, VW, VH, 3, 'horizontal').every((v) => v.w === VW));
 
     /* QUADRANTS IGNORE IT, AND THAT IS THE ANSWER RATHER THAN AN OVERSIGHT.
        They are already cut both ways at once; the alternatives are three or
@@ -6816,6 +6982,57 @@ console.log('\n--- and it sits on the seam, where both panes can read it ---');
     ok('a full-width pane sends the map right and the board left',
       map(top).left > W * 0.5 && board(top).left < W * 0.1);
   }
+}
+
+console.log('\n--- a kitten on a dragon is still in the Dojo ---');
+{
+  /* THE REPORT: flying over the Dojo of the Turning Circle turned the maths
+     board on and then drew it in the bottom-left corner of the SCREEN — in a
+     pane belonging to somebody who was not at the Dojo at all.
+
+     Two tests of the same thing that disagreed. `anyInDojo`, which switches the
+     board on, never cared how she got there; `_drawMathBoard`, which decides
+     whose pane it belongs in, said `!p.mount`, found nobody, and fell through
+     to the stylesheet's fixed corner. `inDojoView` is now the only place the
+     question is asked, and it answers it once. */
+  const c = world.dojoCentre;
+  const at = (x, z, extra = {}) => ({ position: { x, y: c.y, z }, ...extra });
+
+  ok('a kitten standing on the circle is in the Dojo', inDojoView(at(c.x, c.z), c));
+  /* THE ONE THAT WAS BROKEN, and it is stated as the mount rather than as a
+     flag so it cannot be satisfied by deleting the flag from a struct. */
+  ok('...and so is one thirty units above it on a dragon',
+    inDojoView(at(c.x, c.z, { mount: { name: 'a dragon' } }), c));
+  ok('...and one riding along behind her sister',
+    inDojoView(at(c.x, c.z, { rideAlong: true }), c));
+  ok('...and a kitten just off the painted disc, because the ROOM is bigger',
+    inDojoView(at(c.x + DOJO_RADIUS + 2, c.z), c) && DOJO_VIEW_R > DOJO_RADIUS);
+  ok('a kitten on another island is not, however she got there',
+    !inDojoView(at(c.x + DOJO_VIEW_R + 1, c.z, { mount: {} }), c));
+  ok('...and neither is a null, or a kitten with no world to be in',
+    !inDojoView(null, c) && !inDojoView(at(c.x, c.z), null));
+
+  /* THE RADIUS IS A CIRCLE, NOT A SQUARE. Trivial, and it is the shape of
+     mistake that survives every check written against one axis. */
+  const d = DOJO_VIEW_R * 0.75;
+  ok('...and the boundary is round: 0.75r on BOTH axes at once is outside it',
+    !inDojoView(at(c.x + d, c.z + d), c));
+
+  /* AND `main.js` HAS STOPPED WRITING IT OUT BY HAND. Four call sites, one
+     answer — the whole point of moving it. The one survivor is the `!p.mount`
+     in `_clusters`, which is a different question (should everybody share ONE
+     view) and is commented as such where it stands. */
+  const mj = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('main.js asks the question through inDojoView and never by hand',
+    !/position\.x - dc\.x/.test(mj), 'a hand-written dojo distance is back');
+  /* TWO SITES STILL EXCLUDE A RIDER, and both are commented where they stand:
+     "should everybody share ONE view" (she is forced into her own pane anyway)
+     and "should this pane's CAMERA lift to the overhead framing" (she is on a
+     dragon and already has a camera). Neither is about the board. Pinned as a
+     COUNT so a third one cannot appear quietly. */
+  ok('...and exactly two rules still exclude a rider, both about cameras',
+    (mj.match(/!p\??\.mount && inDojoView/g) ?? []).length === 2,
+    String((mj.match(/!p\??\.mount && inDojoView/g) ?? []).length));
 }
 
 console.log('\n--- and it lets go of a kitten who has left the ring for good ---');

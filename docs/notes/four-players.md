@@ -1427,9 +1427,162 @@ framing rather than kittens cropped off the edge of their own pane. If the
 default should stay stacked regardless, the two branches to pin are the uneven
 pair and the 2/1/1 in `splitLayout`.
 
+**And reversed a third time, one session later — the uneven pair is now ALWAYS
+side by side.** Left as written above because the reasoning is not wrong; it
+just weighed the wrong pane. A 3-and-1 split at 1080p made the lone kitten's
+pane 1920x410, and everything about her dealer card was sized off its width, so
+she got type and padding measured for a screen 1920 across with 410 of height to
+fit it in. The three sisters' pane is the one the old argument was about and it
+is the one that can afford either shape; hers cannot. Columns of 1190 and 730
+are a shape both halves can live in, `fitDistance` pays for the trio's narrower
+framing, and the setting still decides the even pair and the 2/1/1. See *A
+squashed pane for the girl at the dealer*, below.
+
 **Quadrants ignore the setting, and that is the answer rather than an
 oversight.** Three and four equal panes are already cut both ways at once; the
 alternatives are three or four equal columns or rows, which the header rejects
 on equal area and on the shape a fixed three-quarter camera can work in.
 `world-check` asserts the two come out byte-identical either way, so the
 question does not get asked twice.
+
+---
+
+## The fourth four-player session — four things the split screen was hiding
+
+All four came out of the same play session, and three of them are the same bug
+wearing different clothes: **something that was sized, positioned or tested
+against a full screen, meeting a pane that is a quarter of one.** Worth stating
+as a class, because the next one will look new and will not be.
+
+### A squashed pane for the girl at the dealer
+
+**Reported:** all four kittens at the dealer's stall, one of them presses
+INTERACT, and her card opens in a pane so short and wide that the card does not
+work in it. Only with the split direction set to *Top and bottom*.
+
+**What was actually happening.** Opening a card sets `solo` for that player in
+`Game._clusters`, so the four stop being one group and become 3-and-1. That
+reaches the uneven branch of `splitLayout`, which — as of the session before,
+see above — honoured the direction setting, so *Top and bottom* gave two
+full-width strips: 1920x410 for her and 1920x670 for her sisters. The card was
+then laid out in `cqw` units, a percentage of its container's **width**, and
+`padding: 5%` on top, which also resolves against width on both axes. So a pane
+410 pixels tall was handed type, gaps and orb slots all measured against 1920.
+
+**Two rectangles cannot tile a screen except as strips.** The first instinct was
+to give her a quadrant and leave the trio the rest, which is not a thing two
+rectangles can do — a quadrant plus an L is not two rectangles. Richard picked
+the other option: **flip that one split to side-by-side**, ignoring the setting,
+so she gets a 730x1080 column and the trio a 1190x1080 one. Two panes, both
+tall, both a shape a card and a three-quarter camera can work in.
+
+**Fixed in two halves on purpose.**
+
+1. `splitLayout` no longer consults `dir` for an uneven pair — it returns
+   columns, always, at a 62/38 split. `fitDistance` is what makes the trio's
+   narrower pane survivable, which is the same argument that made the previous
+   reversal safe.
+2. The card measures its pane **both ways**. `.pane-card` became
+   `container-type: size` (from `inline-size`, which withholds `cqh`), and every
+   `cqw` inside it became `var(--u)`, defined once as `min(1cqw, 1.78cqh)`.
+   1.78 is 16:9, so in any normal pane `1.78cqh` **is** `1cqw` and a full
+   screen, a half and a quadrant come out byte-identical to before. What it adds
+   is a ceiling for panes that are not 16:9. The `5%` padding became
+   `margin: calc(5 * var(--u))`, and `.pc-slot` — square, so its height is its
+   width — got a `max-width` cap that `--u` alone could not give it.
+
+The second half is not redundant with the first. `splitLayout` no longer *hands
+out* that shape, but an ultrawide monitor cut two ways can still produce one, and
+a rule that degrades beats one that vanishes. `world-check` pins both halves,
+and pins the card's rules as **text** — no layout engine in that harness, so what
+it can assert is that not one bare `cqw` survives in the card for the next person
+to copy.
+
+### You could hardly read the sign over the stall
+
+**Reported:** the text above the store is too hard to read in four-player.
+
+Two causes, and only one of them was the obvious one.
+
+**It was half the size it should be.** A `Label` is a quad of a fixed **world**
+size, so the screen pixels it covers depend on the pane it is drawn in — and a
+quadrant is half the width *and* half the height of the screen these were sized
+against. Every piece of world text in the game comes out at half its linear size
+at four players, and `KOTODAMA — 言霊` is eleven characters of a word nobody has
+seen before. Both labels doubled: 0.6 to 1.2 world units, 0.5 to 1.0, and the
+prompt moved up so the two do not intersect now that both are twice as tall.
+
+**`height` doubled and `size` did not**, which is the part worth remembering.
+`size` is the authored height of the *canvas*, so raising it costs texture memory
+quadratically; `height` is the world size of the quad, and is free. The labels
+are supersampled 3x (`SS` in [label.js](../../src/core/label.js)) and were being
+drawn well under 1:1, so the headroom was already paid for. Somebody "fixing"
+crispness by raising `size` instead would put megabytes back on a phone's budget,
+so `world-check` asserts the canvases did **not** grow.
+
+**And the sign was turned 45 degrees away from the camera.** This is the one
+nobody had noticed. `Label.faceCamera` did a plain
+`this.mesh.quaternion.copy(camera.quaternion)` — and `mesh.quaternion` is a
+**local** rotation, so that only points the quad at the camera when every
+ancestor is unrotated. Most callers are; a kitten's group
+is a position and nothing else. The stall's group is turned `-PI/4` so its noren
+faces the fixed camera yaw, and both of its signs inherited that. Legible up
+close, a smear at the size a quadrant draws them.
+
+The fix is the composition: `world(mesh) = world(label) * local(mesh)`, so the
+local rotation wanted is the inverse of the label's own world rotation times the
+camera's. Identity for every unrotated caller, so nothing that was already right
+moves. `world-check` builds a camera, points it at the stall, and asserts both
+labels come out square to it.
+
+### The maths board appeared in a stranger's pane
+
+**Reported:** fly a dragon over the Dojo of the Turning Circle and the sin/cos
+overlay shows up in the bottom-left of the screen, in a pane belonging to
+somebody who is not at the Dojo.
+
+**One question asked in four places, and two of them answered differently.**
+`Game` asks *is she at the Dojo* to lift the camera, to switch the board on, to
+pick which pane the board is drawn in, and to decide whether everybody shares one
+view. Three of the four wrote the `Math.hypot` out by hand, and two of those also
+wrote `!p.mount`. So flying in switched the board **on** (that test never cared
+how she got there) and then the pane-picker found nobody *standing* on the
+circle, fell through to its fallback, and dropped the board at the stylesheet's
+fixed bottom-left corner — which at four players is somebody else's pane.
+
+**A kitten on a dragon is in the Dojo.** Of the two ways to make the tests agree,
+this is the one that makes sense of the room: thirty units up looking straight
+down at a unit circle is the best view of it in the game, and the alternative is
+a feature that switches itself off for the player with the best seat.
+
+`inDojoView(p, centre)` and `DOJO_VIEW_R` now live in
+[mathdojo.js](../../src/systems/mathdojo.js) — next to the room they describe —
+and `main.js` imports them. **One `!p.mount` survives**, in `_clusters`, and it
+is a different question: *should everybody share one view*. A kitten in the air
+is already forced into her own pane by `solo`, so counting her there would claim
+a merge the next rule takes apart again. `world-check` asserts there are exactly
+two `!p?.mount && inDojoView` sites and that no hand-written Dojo distance has
+come back.
+
+The board also has to move panes the frame it appears, which it did not: the map
+transition `_mapT` was only kicked when the pane assignment changed, not when the
+board switched on, so the first frame drew it in the last pane it had used.
+
+### The griffin flew them through the torii
+
+**Reported:** it looks bad.
+
+It does. The town is north of the arena, so the flight comes in down the +z
+axis; the torii stands at `ARENA_RING + 34` and the landing spot was at
+`ARENA_RING + 30` — four units **past** the gate. The last thing the ride did was
+carry two kittens through the one piece of architecture out there that means
+anything, sideways, at speed, which is the opposite of the ceremony it is for.
+
+Landing moved to `+ 44`, the near side, so the walk in goes *through* the gate —
+which is what the comment above it already claimed it was for. `ARENA_GATE` is
+now exported from [build.js](../../src/world/build.js) and `arenaGate` from the
+world, because two literals four hundred lines apart is how they drifted apart in
+the first place. The check asserts the **relationship** — landing before gate
+along the inbound axis, room to stand, still outside the seating, still on the
+island — rather than the number, so moving either one cannot quietly re-cross
+them.

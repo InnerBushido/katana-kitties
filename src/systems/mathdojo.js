@@ -723,3 +723,45 @@ export class MathDojo {
 }
 
 export { R as DOJO_RADIUS };
+
+/* HOW FAR OUT THE DOJO STILL COUNTS AS THE DOJO.
+
+   Bigger than `DOJO_RADIUS`, which is the painted circle: this is the distance
+   at which the ROOM takes over — the camera lifts to frame the whole diagram,
+   the sin/cos board comes up, and everybody inside shares one view. A kitten
+   standing just off the edge of the disc is still in the lesson.
+
+   IT LIVES HERE, WITH `inDojoView`, BECAUSE FOUR PLACES ASK THIS QUESTION and
+   two of them used to answer it differently. See `inDojoView`. */
+export const DOJO_VIEW_R = 52;
+
+/**
+ * Is this kitten in the Dojo, as far as the camera and the board are concerned?
+ *
+ * ONE FUNCTION, BECAUSE FOUR PLACES ASK AND TWO OF THEM DISAGREED. `Game` asks
+ * it to lift the camera, to switch the board on, to decide which pane the board
+ * goes in, and to decide whether everybody shares one view. Three of those
+ * wrote the `Math.hypot` out by hand and two of those three also wrote
+ * `!p.mount`.
+ *
+ * A KITTEN ON A DRAGON IS IN THE DOJO. That is the disagreement, and it is
+ * settled this way round on purpose: the board came ON when she flew in — the
+ * visibility test never cared how she got there — and then the code that
+ * decides WHICH PANE it belongs to found nobody standing on the circle and
+ * dropped it into the bottom-left corner of the whole screen, in a pane
+ * belonging to a sister two islands away. Reported as exactly that.
+ *
+ * Of the two ways to make them agree, this is the one that makes sense of the
+ * room: thirty units up looking straight down at a unit circle is the best view
+ * of it in the game, and the alternative — flying in and having the board
+ * refuse to appear — is a feature that switches itself off for the player who
+ * has the best seat.
+ *
+ * @param p       anything with a `.position`; null is not in the Dojo
+ * @param centre  `world.dojoCentre`
+ * @param r       how far out still counts
+ */
+export function inDojoView(p, centre, r = DOJO_VIEW_R) {
+  if (!p?.position || !centre) return false;
+  return Math.hypot(p.position.x - centre.x, p.position.z - centre.z) < r;
+}

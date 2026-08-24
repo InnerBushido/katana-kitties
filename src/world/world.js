@@ -6,7 +6,7 @@ import {
   valueNoise, fbm,
   buildGrotto, buildSpire, buildShards, SPIRE_H,
   buildArena, ARENA_RING, ARENA_RISE, ARENA_OUT, ARENA_POSTS, postsFor,
-  ARENA_BOOTH, ARENA_BOARD,
+  ARENA_BOOTH, ARENA_BOARD, ARENA_GATE,
 } from './build.js';
 import { Prop } from '../entities/prop.js';
 import { ClanShrine } from '../entities/shrine.js';
@@ -540,11 +540,23 @@ export class World {
     }));
     this.arenaBooth = { x: isl.x + ARENA_BOOTH.x, y: g + 6.7, z: isl.z + ARENA_BOOTH.z };
     this.arenaBoard = { x: isl.x + ARENA_BOARD.x, y: g + 4.2, z: isl.z + ARENA_BOARD.z };
-    /* Where the griffin sets both kittens down: through the torii, outside the
-       stands, facing the ring — so the walk in is the shot. Clear of the
-       outermost seating (which reaches ARENA_RING + 24.4) and short of the
-       torii at + 34. */
-    this.arenaLanding = { x: isl.x, y: g, z: isl.z + ARENA_RING + 30 };
+    /* Where the griffin sets both kittens down: IN FRONT OF THE TORII, on the
+       side it is approached from, so the walk in goes THROUGH the gate.
+
+       IT USED TO BE + 30, WHICH IS FOUR UNITS PAST THE GATE AT + 34. The town
+       is north of the arena, so the flight comes in down the +z axis and the
+       last thing it did before touching down was fly through the torii —
+       reported as looking bad, and it is: the gate is the one piece of
+       architecture out here that means something, and passing through it at
+       speed, sideways, on an animal, is the opposite of the ceremony it is for.
+
+       + 44 is on the near side of it with room to land. The comment this
+       replaces already said the walk in was the shot; it just had the kittens
+       on the wrong side of the gate to take it. Still clear of the outermost
+       seating, which reaches ARENA_RING + 24.4, and still on the island —
+       radius 90 against 28 + 44 = 72 from its centre. */
+    this.arenaGate = { x: isl.x, y: g, z: isl.z + ARENA_RING + ARENA_GATE };
+    this.arenaLanding = { x: isl.x, y: g, z: isl.z + ARENA_RING + 44 };
   }
 
   /**

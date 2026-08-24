@@ -1,0 +1,5 @@
+# THE HOOKS MUST STAY LF. Git for Windows runs them through `sh`, and `sh`
+# reads a CRLF line ending as part of the last word on the line -- so a hook
+# checked out with CRLF fails with a bare carriage return in the error, on a
+# machine that has never edited it. Nothing else in this repo cares.
+.githooks/* text eol=lf
