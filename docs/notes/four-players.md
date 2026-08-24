@@ -1586,3 +1586,35 @@ the first place. The check asserts the **relationship** — landing before gate
 along the inbound axis, room to stand, still outside the seating, still on the
 island — rather than the number, so moving either one cannot quietly re-cross
 them.
+
+## The fifth session — two small ones
+
+### A third door onto the trade window
+
+The dealer's stall asked two questions — TRADE WITH THE DEALER and LOOK AT MY
+ORBS — and there was a third thing four kittens at one counter obviously want,
+swapping orbs *with each other*, that you could only reach by pausing the game
+and finding a menu item. CHARACTER PROFILE — TRADE WINDOW is now the third row.
+
+It is the **same** screen the pause menu opens, not a second copy:
+`ProfileScreen.open('profile')`, the one call. The only thing that differs from
+the pause route is that `fromPause` stays false, and that is load-bearing —
+`ProfileScreen.close` hands the frame back to the clock only when `fromPause`
+is false, and without that the first tick after they stop trading is however
+long they spent in there, so every kitten teleports and every dragon jumps.
+Chosen from the world means the world was running; closing has to prove it.
+
+The row order — trade, look, profile — is not alphabetical and not arbitrary.
+The cursor opens on row 0, and the two rows that freeze all four players are the
+outer ones, so the row a girl lands on by nudging the stick once is never the
+one that stops her sisters. `world-check` pins the order, the count, and that
+`look` is the only one of the three that returns without handing the screen
+away.
+
+### The Joy-Con shoulders, and a shared button that toggled twice
+
+Map zoom and the maths overlay were on Joy-Con button indices that turned out
+to be guesses, and wrong ones. Moved to where Richard's feeder actually reports
+them; the whole account, including why one shared index made the overlay toggle
+on and straight back off, is in [input.md](input.md) under *The Joy-Con
+shoulders were guessed*.

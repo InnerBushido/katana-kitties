@@ -158,6 +158,19 @@ hard-coded before the file existed. See [docs/notes/mobile.md](docs/notes/mobile
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**The fifth session's two, neither played yet.** A third row at the dealer,
+**CHARACTER PROFILE — TRADE WINDOW**, opening the same trade screen the pause
+menu does (a second door, not a second copy — `fromPause` stays false so
+closing hands the frame back). And the Joy-Con map/overlay buttons moved off
+the wrong indices onto where the feeder reports them — `L → 20`, `R → 21`,
+`ZL`/`ZR → 22` (one shared index, so `Game._step` fires the maths toggle once
+rather than per-half), 0–3 now dead, storage key bumped to `v3` so a saved map
+does not keep the old guesses. Written up in
+[four-players.md](docs/notes/four-players.md#the-fifth-session--two-small-ones)
+and [input.md](docs/notes/input.md). Dealer row verified in the browser; the
+Joy-Con remap is verified by `pad-check` (256), which is the only place vJoy
+can be exercised.
+
 **The fourth four-player session's four, none of them played yet.** Written up
 in [four-players.md](docs/notes/four-players.md#the-fourth-four-player-session--four-things-the-split-screen-was-hiding).
 Three of the four are one bug in different clothes — something sized or tested
