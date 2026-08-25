@@ -5623,6 +5623,27 @@ class Game {
       ((panes[i]?.x ?? 0) > 0 ? right : left).appendChild(badge);
     }
 
+    /* NOW PUT BACK WHAT THE REBUILD JUST ERASED.
+       The badges above are built from a template that hard-codes `0` and an
+       empty clan, which is right exactly once — at boot, when that is also the
+       truth. Every other caller rebuilds a HUD for a game already in progress,
+       and this method is called on JOIN and on LEAVE.
+       Reported as "everybody's clan and points get wiped when a player joins",
+       and the thing that makes it nasty is that it is only ever the HUD that
+       is wrong: `p.score` and `p.clan` are untouched, and the badge silently
+       repaired itself the next time she happened to knock something over. So
+       three sisters watched their scores go to zero and their clans vanish,
+       and then come back one at a time, which reads as the game losing their
+       progress and grudgingly refunding it.
+       Painted from the players rather than remembered across the rebuild,
+       because the DOM is the copy here and the player is the original. */
+    for (const p of this.players ?? []) {
+      if (p.index >= n) continue;              // mid-leave, before the splice settles
+      const el = document.getElementById(`score-${p.index}`);
+      if (el) el.textContent = p.score ?? 0;
+      this._updateClanBadge(p);
+    }
+
     /* AT MOST TWO MAPS, AND WHICH PANES GET THEM IS DECIDED EVERY FRAME.
        One map per kitten is the obvious rule and it is the wrong one at four.
        A quadrant is a quarter of the screen; a map sized to stay legible eats a

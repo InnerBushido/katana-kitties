@@ -449,15 +449,23 @@ export const KEYSETS = [
     jump: ['Numpad0', 'AltRight', 'ControlRight'],
     attack: ['Numpad1', 'Slash', 'KeyJ'],
     interact: ['Numpad2', 'Comma', 'KeyI'],
-    /* `P` IS NOT IN HERE ANY MORE, and it is the only key that left this set.
-       It was the mount of the `P I J` cluster and it was ALSO the frame-cost
-       debug key (`Game._debugKey`), and both fired on one press — so player 2
-       climbing onto a dragon flipped the performance readout on, and pressing
-       it again to check the readout mounted her again. The DEBUG key is the
-       one that moved: it is `1` now, with the rest of the debug set, where no
-       keyboard player can reach it. `I` and `J` keep their places, so the
-       one-handed cluster is `.` `I` `J` and only mount changed key. */
-    mount: ['Numpad3', 'Period'],
+    /* `P` IS BACK, and the story of this one key is why it is worth writing
+       down. It was the mount of the `P I J` cluster and it was ALSO the
+       frame-cost debug key (`Game._debugKey`), and both fired on one press —
+       so player 2 climbing onto a dragon flipped the performance readout on,
+       and pressing it again to check the readout mounted her again. The fix
+       moved BOTH: the debug key went to `1`, with the rest of the debug set
+       where no keyboard player can reach it, and `P` was dropped from here as
+       well — belt and braces on a collision that no longer existed.
+       Dropping it was the half that was wrong. `P` is where the hand that is
+       playing on `O K L ;` expects mount to be, it is the key player 2 had
+       used since the game had a mount at all, and the girls kept pressing it
+       and getting nothing. `.` works and is not the one she reaches for.
+       So mount has three keys, like every other action in this set, and the
+       one thing that must stay true is that NOTHING ELSE ON THE KEYBOARD
+       ANSWERS TO `P` — `pad-check` asserts that of the whole debug set rather
+       than of this line, because the failure was never about this table. */
+    mount: ['Numpad3', 'Period', 'KeyP'],
     /* `'` AND RIGHT ALT SWAPPED, and the reason is the O K L ; hand.
        Playing the second kitten on the letter row rather than the arrows puts
        her right hand over O K L ; — and from there Right Alt is under the thumb
