@@ -1388,6 +1388,62 @@ class Game {
 
   /* -------------------------------- UI ---------------------------------- */
 
+  /**
+   * Warm the Help clips once Help is open — never before.
+   *
+   * The GIFs are 1–2MB each and there are several of them; a kid mid-game has
+   * no use for them, so they carry NO `src` at all (only `data-help-gif`) and
+   * not one byte is fetched while she plays. This is the bargain the trailer
+   * strikes — media that stays off the wire until asked for — made bulletproof:
+   * a bare `loading="lazy"` still leaves the fetch to the browser's guess, and
+   * some browsers preload the lot the moment the display:none panel is parsed.
+   *
+   * On the FIRST Help open we stream them in, one at a time and in reading
+   * order, so the topics she is most likely to open first are ready first and
+   * the network is never hit with every large file at once. Opening a topic
+   * jumps its own clip to the front of the queue, so a section she goes
+   * straight to never sits blank waiting for the ones above it.
+   */
+  _warmHelpClips() {
+    if (this._helpClipsWired) return;   // once is enough; a second open is a cache hit anyway
+    this._helpClipsWired = true;
+    // A help <img> is one of two kinds and "loading" it differs by kind:
+    //   - a deferred CLIP carries `data-help-gif` and no `src` yet -> give it the src;
+    //   - a static SCREENSHOT carries `src` + `loading="lazy"` -> flip it to eager so
+    //     it fetches NOW instead of waiting to be scrolled into view.
+    // Both live inside collapsed <details> (display:none), and an eager/src'd image
+    // fetches even while hidden, which is exactly what lets us pre-warm them there.
+    // The screenshots used to lag a section-open behind the clips because only the
+    // clips were on this queue; now they share it, so a topic is fully painted the
+    // instant it opens.
+    const load = (img) => {
+      if (img.dataset.helpGif) { if (!img.getAttribute('src')) img.src = img.dataset.helpGif; }
+      else if (img.loading === 'lazy') img.loading = 'eager';
+    };
+    const done = (img) => img.complete && img.naturalWidth > 0;
+    // A topic opening grabs its own images immediately, ahead of the queue.
+    document.querySelectorAll('#panel-help details.help-card').forEach((card) => {
+      card.addEventListener('toggle', () => {
+        if (card.open) card.querySelectorAll('img[data-help-gif], img[loading]').forEach(load);
+      });
+    });
+    // Background: warm every image in document order, each only once the last has
+    // landed, so one slow file cannot stall the rest and nothing floods the
+    // connection. The comma selector yields clips and screenshots interleaved in
+    // document order — the order a reader meets them.
+    const imgs = [...document.querySelectorAll('#panel-help img[data-help-gif], #panel-help img[loading]')];
+    const next = (i) => {
+      if (i >= imgs.length) return;
+      const img = imgs[i];
+      if (done(img)) return next(i + 1);   // a toggle already claimed it, or it is cached
+      const go = () => next(i + 1);
+      img.addEventListener('load', go, { once: true });
+      img.addEventListener('error', go, { once: true });   // a missing file must not stall the queue
+      load(img);
+    };
+    next(0);
+  }
+
   _bindUI() {
     const show = (id) => document.getElementById(id).classList.remove('hidden');
     const hide = (id) => document.getElementById(id).classList.add('hidden');
@@ -1404,7 +1460,7 @@ class Game {
       btn.addEventListener('click', () => {
         const a = btn.dataset.action;
         if (a === 'play') this.startPlay();
-        if (a === 'help') show('panel-help');
+        if (a === 'help') { show('panel-help'); this._warmHelpClips(); }
         if (a === 'settings') { this._refreshPads(); show('panel-settings'); }
         if (a === 'board') { this._paintBoard(); show('panel-board'); }
         if (a === 'profile') this.profile.open('profile', { fromPause: true });

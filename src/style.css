@@ -1580,6 +1580,268 @@ body.touch-ui #perf { font-size: 13px; }
   border-radius: 6px;
 }
 
+/* ---------------------------------------------------------------------------
+   THE HOW-TO-PLAY ACCORDION.
+
+   Each topic is a <details>; its <summary> is a full-width tile a kid taps
+   open. WHY tiles and not one scroll: a new player bounced off a wall of text,
+   so nothing shows until she asks for it. The native disclosure triangle is
+   removed and replaced with a chevron on the RIGHT that turns down when open —
+   the triangle sat left of the emoji and read as clutter.
+
+   A pad drives this too (`summary.help-topic` is in MenuNav.items()), so the
+   focus ring lands on the summary; it is the same vermillion `.nav-focus`
+   outline the menu buttons wear, so nothing extra is needed for it to read. */
+.help-lead { margin: 0 0 16px; font-size: 15px; line-height: 1.55; }
+details.help-card {
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper-2);
+  margin: 0 0 10px;
+  /* NO `overflow: hidden` HERE. It clips the pad's focus ring — `.nav-focus`
+     draws OUTSIDE the summary with `outline-offset`, and a hidden overflow ate
+     it whole, so a controller looked like it had no cursor on this panel at
+     all. The summary rounds its own corners instead (below), which is what the
+     overflow was for. */
+}
+summary.help-topic {
+  list-style: none;            /* Firefox: drop the default marker triangle */
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  font-family: 'Bangers', cursive;
+  letter-spacing: 1px;
+  font-size: 20px;
+  user-select: none;
+  border-radius: 9px;          /* matches the card's inner corner */
+}
+summary.help-topic::-webkit-details-marker { display: none; } /* Safari/Chrome */
+summary.help-topic:hover { background: #ffe9a8; }
+details.help-card[open] > summary.help-topic {
+  border-bottom: 3px solid var(--ink);
+  background: var(--gold);
+  border-radius: 9px 9px 0 0;  /* square where it meets the opened body */
+}
+.ht-ico { font-size: 22px; line-height: 1; }
+.ht-title { flex: 1; }
+.ht-chev {
+  font-family: 'Nunito', sans-serif;
+  font-size: 16px;
+  transition: transform 0.15s ease;
+}
+details.help-card[open] > summary .ht-chev { transform: rotate(90deg); }
+.ht-body { padding: 4px 16px 14px; }
+.ht-note { margin: 12px 0 0; font-size: 14px; line-height: 1.6; }
+.ht-note.warn {
+  padding: 10px 12px;
+  border: 3px solid var(--vermillion);
+  border-radius: 10px;
+  background: #fbe0d6;
+}
+.panel .ability-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.panel .ability-list li { margin-bottom: 4px; }
+.ht-sign {
+  display: inline-block;
+  margin-top: 4px;
+  font-style: italic;
+  opacity: 0.7;
+  font-size: 13px;
+}
+/* ---------------------------------------------------------------------------
+   THE SIX CLANS, AS SIX CARDS.
+
+   Two across in the 780px panel and one across when it narrows — the same 640px
+   break the ability grid and the Dojo pair already use, so all three of Help's
+   multi-column blocks fold at the same width instead of at three widths a
+   reader would notice.
+
+   THE ACCENT IS THE CLAN'S `tile` COLOUR, NOT ITS `color`. Every clan carries
+   both in `CLANS` (src/world/world.js): `color` is the beam and the ring, tuned
+   to glow against a night sky, and all six are pastels that vanish on cream —
+   Icewhisker's is #dff4ff, which is paper. `tile` is the shrine's floor, tuned
+   to sit UNDER a bright thing, and all six are dark enough to carry the clan
+   name in paper on top. Each card passes its own down as `--clan`.
+
+   The portraits are cut to their own ink by tools/help-portraits.mjs, so no two
+   are the same width — the Maine Coon's ruff and the Himalayan's coat are half
+   again as wide as the Siamese. Capping the HEIGHT and letting width fall out
+   keeps all six cats the same height as each other, which is what makes the row
+   read as a set; the fixed-width slot keeps the text columns aligned anyway. */
+.clan-grid {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+/* ONE COLUMN, AND THE CARD TURNS. Measured on a 375px phone: the help body is
+   250px there and the card 200px, which leaves the text column ninety pixels
+   once the cat has had her 112 — every line broke into three or four, and
+   "Huge dragon breath" came out as a paragraph. Standing the cat on top of her
+   own words gives the text the whole card back. */
+@media (max-width: 640px) {
+  .clan-grid { grid-template-columns: minmax(0, 1fr); }
+  .clan-body { flex-direction: column; gap: 6px; text-align: center; }
+  .clan-text { align-items: center; }
+}
+.clan-card {
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  overflow: hidden;         /* the header's square top corners meet the card's round ones */
+}
+/* `.panel h4` sets a vermillion on every h4 in a panel, and at (0,1,1) it beats
+   a bare `.clan-name` — the first cut of these headers came out vermillion-on-
+   maroon, which is two dark reds and unreadable. Qualified rather than
+   !important so the next person can still see where it is coming from. */
+.panel .clan-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 10px;
+  background: var(--clan, var(--ink));
+  color: var(--paper);
+  border-bottom: 3px solid var(--ink);
+  font-family: 'Bangers', cursive;
+  font-weight: normal;      /* Bangers has one weight; <h4>'s bold would synthesise a smear */
+  font-size: 19px;
+  letter-spacing: 1px;
+}
+/* The badge sits in a paper disc so a dark symbol on a dark header still reads
+   — Shadowtail's crescent is nearly the colour of its own tile. */
+.clan-sym {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  padding: 2px;
+  box-sizing: border-box;
+}
+.clan-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px 10px;
+}
+/* HALF THE FILE'S NATURAL 269x240 — see tools/help-portraits.mjs. All six
+   portraits are written onto ONE canvas by the tool, each standing on the
+   bottom edge, so they are already the same size as each other and this is a
+   plain box rather than a fit. It was an `object-fit: contain` slot first, and
+   it silently shrank three of the six: cropped to their own ink the Himalayan
+   and the Ragdoll are nearly square, so a slot sized for the Siamese ran out of
+   WIDTH on them and they came out 74px tall in a 104px row. Six identical files
+   cannot do that, and the tool prints the canvas it chose. */
+.clan-leader {
+  flex: none;
+  width: 112px;
+  height: 100px;
+}
+.clan-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.clan-power {
+  font-size: 15px;
+  line-height: 1.25;
+  color: var(--clan, var(--ink));
+}
+.clan-who { font-size: 12px; opacity: 0.8; }
+.clan-motto { font-size: 12.5px; font-style: italic; opacity: 0.75; line-height: 1.4; }
+
+/* The screenshots. Natural 16:9 (the width/height attributes hold the box
+   before the lazy image loads, so the panel does not jump), bordered like the
+   rest of the paper furniture. */
+.help-shot { margin: 12px 0 0; }
+.help-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+}
+.help-shot figcaption {
+  margin-top: 6px;
+  font-size: 13px;
+  font-style: italic;
+  opacity: 0.75;
+  text-align: center;
+}
+/* The Dojo, as two synced clips SIDE BY SIDE: the 3D turning-circle (square, so
+   the golden ring fills the frame with no grass) and the sin/cos board (16:9, a
+   wide live readout that was covering the 3D when the two shared one frame).
+   Height-matched at 225px so the square and the board line up on one row and
+   still fit the 780px panel; they stack when it narrows (the same 640px break
+   the ability grid uses), and because the figure keeps its `help-shot` class the
+   short-landscape height-cap below already bounds them. The `img` rule follows
+   `.help-shot img` on purpose — equal specificity, so source order lets it win
+   over that `width:100%`. */
+.help-shot-pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.help-shot-pair img {
+  width: auto;
+  height: 225px;
+  max-width: 100%;
+}
+.help-shot-pair figcaption { flex-basis: 100%; }   /* the caption drops to its own row under both */
+@media (max-width: 640px) {
+  .help-shot-pair img { width: 100%; height: auto; flex-basis: 100%; }
+}
+/* The four ability clips shown together, so all four moves read at a glance.
+   Two-up on a wide panel, one-up when it narrows (same 640px break the control
+   columns use). Each figure reuses the help-shot frame; captions stay left and
+   upright because they carry the instruction, not a picture caption. */
+.move-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 12px 0 0;
+}
+.move { margin: 0; }
+.move img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+}
+.move figcaption { margin-top: 6px; font-size: 13px; line-height: 1.5; }
+@media (max-width: 640px) { .move-grid { grid-template-columns: 1fr; } }
+/* --- Mobile fit: a help image must be viewable WHOLE without a scroll ---
+   The case that breaks is a phone in LANDSCAPE: the viewport is only ~390px
+   tall, and a 16:9 image at full panel width is ~200px+ — stacked under the
+   topic header and the panel chrome, its bottom falls off the screen. Bounding
+   the HEIGHT to a slice of the viewport (width then follows, so the aspect is
+   kept and it centres in the frame) keeps the whole thing on screen. Driven off
+   viewport HEIGHT, because width is not the axis that runs out here. Covers the
+   animated clips and the static screenshots alike. */
+@media (max-height: 600px) {
+  .help-shot img, .move img { max-height: 52vh; width: auto; max-width: 100%; margin-inline: auto; }
+}
+@media (max-height: 430px) {
+  .help-shot img, .move img { max-height: 46vh; }
+}
+/* h4 arrived with the two-column control list inside the accordion. */
+.panel h4 {
+  font-family: 'Bangers', cursive;
+  letter-spacing: 1px;
+  font-size: 16px;
+  margin: 0 0 6px;
+  color: var(--vermillion);
+}
+
 /* ===========================================================================
    THE WORLD MARTIAL ARTS TOURNAMENT
 
@@ -3048,16 +3310,36 @@ body:not(.touch-ui) #debug-corner { display: none; }
 #panel-trailer {
   z-index: 30;               /* over the pause menu it can be opened from */
   background: #000;
-  place-items: center;
+  /* FLEX-CENTRE, not the shared grid. A flex container hands its child a
+     definite cross-size (this fixed panel's own viewport height), which is what
+     lets the 16:9 box below actually resolve. A grid item's `max-height:100%`
+     would instead resolve against its auto-sized row and collapse to "auto" —
+     the same trap an earlier absolute-positioned rule here was written to dodge. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 #trailer-video {
-  width: 100%;
-  height: 100%;
-  /* CONTAIN, NOT COVER. The trailer is 16:9 and so is most of what this runs
-     on, but a phone in landscape is often taller or wider than that, and
-     cropping a shot with a caption burnt into the bottom of it cuts the
-     caption in half. Black bars are the correct answer here. */
+  /* THE ELEMENT'S BOX IS 16:9, sized to the largest that fits the panel and
+     centred on its black background — so the letterbox IS the panel.
+       Two earlier rules failed. (1) A grid item at width/height:100% took full
+     width and derived a height TALLER than a landscape phone (a viewport WIDER
+     than 16:9), overflowing top and bottom. (2) Absolute inset:0 + object-fit
+     fixed that for the VIDEO frames, but Blink does NOT apply object-fit to a
+     <video>'s `poster` image, so the poster still stretched ~22% wide before
+     playback. Giving the element itself a 16:9 box fixes poster AND video
+     together, on every browser, without depending on object-fit at all.
+       `object-fit: contain` and `min-*: 0` stay as belt-and-braces: the item
+     must be allowed to shrink below the video's 1280px intrinsic width for the
+     max-* caps to win. The status text and hint are absolute, so they overlay. */
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
   object-fit: contain;
   display: block;
 }

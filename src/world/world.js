@@ -105,7 +105,7 @@ export const CLANS = [
     name: 'Thunderpaw',
     color: 0xf5c341,
     tile: 0x8f3038,
-    motto: 'loudest paws in the sky',
+    motto: 'fastest kittens on any island',
     buff: { id: 'speed', label: 'Run faster', speed: 1.35 },
   },
   {
@@ -132,7 +132,7 @@ export const CLANS = [
     name: 'Windwhisker',
     color: 0x8fe0a0,
     tile: 0x3d6b57,
-    motto: 'fastest kittens on any island',
+    motto: 'loudest paws in the sky',
     buff: { id: 'breath', label: 'Huge dragon breath', breath: 1.9 },
   },
   {

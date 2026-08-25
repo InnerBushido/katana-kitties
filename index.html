@@ -120,162 +120,573 @@
     </div>
 
     <!-- ================= panels ================= -->
-    <div id="panel-help" class="screen overlay hidden" data-nav="scroll">
-      <div class="panel">
+    <!-- ================= panels ================= -->
+    <!-- HOW TO PLAY. Rebuilt for onboarding as an ACCORDION, not a wall of text:
+         a new player used to face one long scroll and bounce off it. Now every
+         topic is a `<details>` she taps open one at a time, short and
+         picture-led, in the order she meets them in the game.
+
+         WHY <details> AND NOT A STACK OF SUB-PANELS. The whole open / close /
+         back / pause plumbing already treats `panel-help` as one overlay
+         (main.js `[data-close]`, `_overlayOpen`, `setPaused`, the Esc `sub`
+         list); a fan of real sub-panels would have to be threaded through every
+         one of those. A `<details>` accordion keeps all of that untouched and
+         is toggled natively by mouse, touch and keyboard. `name="help"` makes
+         the set mutually exclusive where the browser supports it and simply
+         allows several open where it does not — a rule that degrades, not one
+         that vanishes.
+
+         CONTROLLER SUPPORT is one line in MenuNav: `summary.help-topic` joins
+         its `items()`, so the stick lands on a header and JUMP toggles it
+         (`_activate` clicks it, which is exactly how a <details> opens).
+         `data-nav="vertical"` + `data-nav-start="first"` make the cursor walk
+         header-to-header and open on the first topic rather than on BACK.
+
+         WHY SCREENSHOTS, NOT GENERATED ART: the pictures have to match what she
+         will actually see on screen, and they are the game's own procedural
+         world (invariant 9). `loading="lazy"` inside this display:none panel
+         means not one of them is fetched until she opens Help and scrolls to
+         it — the 35MB boot is untouched, the same bargain the trailer strikes. -->
+    <div id="panel-help" class="screen overlay hidden" data-nav="vertical" data-nav-start="first">
+      <div class="panel help-panel">
         <h2>HOW TO PLAY</h2>
-        <div class="cols">
-          <div>
-            <h3>ON FOOT</h3>
-            <ul>
-              <li><b>Move</b> — stick / <kbd>WASD</kbd></li>
-              <li><b>Jump</b> — <kbd>A</kbd> / <kbd>Space</kbd> <i>(twice to double jump)</i></li>
-              <li><b>Slash</b> — <kbd>X</kbd> / <kbd>F</kbd> — knock everything over!
-                <i>(a claw swipe when you're on a panda)</i></li>
-              <li><b>Sprint</b> — <kbd>ZL/ZR</kbd> / <kbd>Shift</kbd></li>
-              <li><b>Ride dragon or panda</b> — <kbd>Y</kbd> / <kbd>Q</kbd> when the ring glows</li>
-              <li><b>Join a clan</b> — <kbd>B</kbd> / <kbd>E</kbd> standing in a shrine ring</li>
-              <li><b>Map zoom</b> — <kbd>Z</kbd> (and <kbd>X</kbd> for Frost when split)</li>
-            </ul>
+        <p class="help-lead">You're a samurai kitten. Knock over everything, ride
+          dragons between the islands, then fight in the ring.
+          <b>Tap a topic to open it.</b></p>
+
+        <details class="help-card" name="help">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">⚔️</span>
+            <span class="ht-title">Moving &amp; fighting</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <!-- TWO CLIPS, NOT ONE, AND NOT A SCREENSHOT. This section opened on
+                 a still of the town, which showed the place and none of the
+                 verbs — and the whole question a reader has here is "what do I
+                 press and what happens". So it leads on the two demos instead,
+                 one per kind of controller, side by side in the same grid the
+                 four ability clips use.
+                 SPLIT BY INPUT because a single clip that covered both ran
+                 nearly five megabytes: the on-foot beats are filmed on a pinned
+                 camera where only the kitten moves, so the encoder's frame
+                 differencing throws most of each frame away, and mixing in
+                 anything that scrolls the world destroys that. Halving the
+                 palette moved it seven per cent, which is the number that says
+                 the palette was never the problem.
+                 Both carry `data-help-gif` and no `src`: `_warmHelpClips`
+                 fills them in on a background queue so a topic is painted the
+                 instant it opens, and a two-megabyte file never blocks the
+                 boot of a game that has not been asked for it yet. -->
+            <div class="move-grid">
+              <figure class="move">
+                <img data-help-gif="/help/move-keys.gif" width="512" height="332"
+                  alt="A kitten on the ash island driven from the keyboard: walking each way in turn, jumping, double-jumping, slashing a crate over, sprinting across the frame, then a second kitten joining on the same keyboard">
+                <figcaption><b>On a keyboard.</b> Move, jump, double-jump,
+                  slash, sprint — then a second kitten joining on the
+                  same one.</figcaption>
+              </figure>
+              <figure class="move">
+                <img data-help-gif="/help/move-pad.gif" width="512" height="332"
+                  alt="The same kitten driven from a controller, with a drawn pad in the corner whose buttons light up as each one is pressed">
+                <figcaption><b>On a controller.</b> The same moves, with the
+                  button lighting up on the pad as it goes down.</figcaption>
+              </figure>
+            </div>
+            <div class="cols">
+              <div>
+                <h4>On foot</h4>
+                <ul>
+                  <li><b>Move</b> — stick / <kbd>WASD</kbd></li>
+                  <li><b>Jump</b> — <kbd>A</kbd> / <kbd>Space</kbd>
+                    <i>(twice to double-jump)</i></li>
+                  <li><b>Slash</b> — <kbd>X</kbd> / <kbd>F</kbd></li>
+                  <li><b>Sprint</b> — <kbd>ZL/ZR</kbd> / <kbd>Shift</kbd></li>
+                  <li><b>Ride</b> — <kbd>Y</kbd> / <kbd>Q</kbd> when the ring glows</li>
+                </ul>
+              </div>
+              <div>
+                <h4>On a dragon</h4>
+                <ul>
+                  <li><b>Fly</b> — stick</li>
+                  <li><b>Up / down</b> — <kbd>A</kbd> / <kbd>B</kbd></li>
+                  <li><b>Boost</b> — <kbd>ZL/ZR</kbd> / <kbd>Shift</kbd></li>
+                  <li><b>Breathe</b> — <kbd>X</kbd> / <kbd>F</kbd></li>
+                  <li>Hop off anywhere — it flies home itself</li>
+                </ul>
+              </div>
+            </div>
+            <!-- THE LIST ABOVE IS ONE PAD'S LETTERING AND THE GAME SUPPORTS
+                 THREE. `PROMPTS` in core/input.js carries a naming per device
+                 and the HUD already prints the right one; this list cannot,
+                 because it is written before anybody has plugged anything in.
+                 So it names the Joy-Con buttons — the pads actually in the room
+                 — and this line covers the other two rather than leaving a kid
+                 hunting a PlayStation pad for a button called B. That exact
+                 hunt is why the PlayStation prompts became shapes; see the note
+                 on `PROMPTS.playstation`. -->
+            <p class="ht-note">
+              <b>Whatever pad you plug in, the game names its own buttons.</b>
+              A PlayStation pad shows the shapes — <b>✕</b> to jump,
+              <b>□</b> to slash, <b>△</b> to ride — and an Xbox pad shows
+              <kbd>A</kbd> <kbd>X</kbd> <kbd>Y</kbd>. The buttons on screen
+              always match the one in your hands.
+            </p>
+            <p class="ht-note">
+              <b>Two can share one keyboard:</b> player 1 on <kbd>WASD</kbd>,
+              player 2 on <kbd>O</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd>. Press
+              <kbd>Enter</kbd> to join — or just pick up a controller.
+            </p>
           </div>
-          <div>
-            <h3>ON A DRAGON</h3>
-            <ul>
-              <li><b>Fly</b> — stick</li>
-              <li><b>Up</b> — <kbd>A</kbd> / <kbd>Space</kbd></li>
-              <li><b>Down</b> — <kbd>B</kbd> / <kbd>E</kbd></li>
-              <li><b>Boost</b> — <kbd>ZL/ZR</kbd> / <kbd>Shift</kbd></li>
-              <li><b>Breathe</b> — <kbd>X</kbd> / <kbd>F</kbd> — every dragon breathes
-                something different</li>
-              <li><b>Dive low and fast</b> to scatter a whole market</li>
-              <li><b>Hop off anywhere</b> — your dragon flies home by itself</li>
-            </ul>
+        </details>
+
+        <details class="help-card" name="help">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">📱</span>
+            <span class="ht-title">On a phone</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <p class="ht-note">
+              <b>One phone, one player.</b> Turn it sideways to play. A friend
+              with a Bluetooth controller can press <b>START</b> to join, but you
+              share the one screen. Playing across <b>two phones is coming later</b>.
+            </p>
+            <!-- ON A PHONE, AND ONLY ON A PHONE. `body.touch-ui` hides this on a
+                 desktop: naming a thumbstick to somebody with no touchscreen is
+                 an instruction she cannot follow. -->
+            <p class="ht-note touch-only">
+              <b>Move</b> — left thumb anywhere on the left half, and drag.
+              <b>Jump</b> <kbd>A</kbd>, <b>slash</b> <kbd>X</kbd>,
+              <b>clan</b> <kbd>B</kbd>, <b>ride</b> <kbd>Y</kbd>, <b>run</b>
+              hold <kbd>ZR</kbd>. <b>Tap the map</b> to zoom it, and <b>tap the
+              sin &amp; cos board</b> in the Dojo to hide it.
+            </p>
           </div>
-        </div>
-        <p class="note">
-          <b>Bamboo can only be cut with a katana</b> — no dragon can burn it. Land,
-          get off, and slash your way through the grove east of town. Every cane is
-          worth double.
-        </p>
-        <p class="note">
-          <b>Six clans, six islands, six powers.</b> Look for a coloured beam of
-          light — that's a shrine. Stand in its ring and press interact to join.
-          <b>Thunderpaw</b> run faster, <b>Riverclaw</b> have a longer katana,
-          <b>Shadowtail</b> can triple jump, <b>Windwhisker</b> dragons breathe
-          twice as far, and <b>Icewhisker</b> can sense mischief — an arrow points
-          at the nearest thing you haven't knocked over yet, which is how you find
-          the last few. You can swap any time by finding another shrine, and you
-          two don't have to pick the same one.
-        </p>
-        <p class="note">
-          <b>Pandapaw is different — you have to earn it.</b> Its shrine is on the
-          bamboo island. Swear the oath, then go and cut <b>20 bamboo</b> and a
-          <b>panda cub</b> will come and follow you around. Cut <b>20 more</b> and
-          it grows big enough to <b>ride</b> — twice as fast as you can run,
-          jumps higher, and <b>slash</b> becomes a huge <b>claw swipe</b> that
-          cuts about four bamboo at once. Your badge counts down the canes for
-          you.
-        </p>
-        <p class="note">
-          You each raise your own — Ember's is <b>Bao</b>, Frost's is
-          <b>Mochi</b> — and it stays yours even if you join a different clan
-          later. But a <b>grown</b> panda only follows a Pandapaw kitten: join
-          somewhere else and it waits where you left it, like a dragon on its
-          perch, and shows up on the map so you can go back for it.
-        </p>
-        <!-- Written for after 100% mischief, and deliberately in the same
-             voice as the panda note above it: what it is, what it costs, and
-             what the button does. The three attack orbs each get their exact
-             input, because "hold attack" and "tap attack" are the same button
-             and nothing on screen can tell you which one you just did. -->
-        <p class="note">
-          <b>Knock over EVERYTHING and the Kotodama wake up.</b> Whoever collected
-          more of the little orbs gets a <b>Powerup Kotodama</b> — and if you both
-          collected the same number, you <i>both</i> get one. The old orbs
-          disappear; from then on there is <b>one of each of eight new kinds</b>
-          hidden around the islands, and you can wear up to <b>eight at
-          once</b>. They stack — two Gale orbs make you twice as much faster —
-          but there are no spares lying about, so a second of anything has to be
-          bought or swapped for.
-        </p>
-        <p class="note">
-          <b>疾 Gale</b> run faster · <b>斬 Long Cut</b> longer katana ·
-          <b>剛 Adamant</b> more health · <b>跳 Leap</b> an extra jump ·
-          <b>壁 Ward</b> <i>hold</i> <kbd>Y</kbd>/<kbd>Q</kbd> with nothing to climb
-          on for a shield nothing can hurt you through — up to 2 seconds, and you
-          float while it is up ·
-          <b>落 Power Dive</b> press <kbd>B</kbd>/<kbd>E</kbd> in the air to drop
-          like a hammer · <b>十 Cross Slash</b> <i>hold</i> slash for three cuts
-          that freeze whoever they catch, then send her flying ·
-          <b>突 Charge</b> slash while sprinting to charge straight through.
-        </p>
-        <p class="note">
-          <b>Trade with each other.</b> Open <b>CHARACTER PROFILE</b> from the
-          pause menu: you each pick an orb with <kbd>A</kbd>/<kbd>Space</kbd> and
-          you <i>both</i> have to press slash to confirm, so nobody can take one
-          off you. There's also a <b>dealer's stall</b> in the market who buys and
-          sells for points — but he's expensive. He keeps four each of Gale, Long
-          Cut, Adamant and Leap and one of each attack, and your points only
-          stretch to about three orbs — the rest you find, or swap for.
-        </p>
-        <!-- PLAYER 2 GETS HER OWN BLOCK, not a sentence at the bottom. Player 1
-             plays one-handed on WASD and reads her keys off every line above;
-             player 2's were "the arrow keys and the numpad", which is two hands,
-             one of them on a numpad half the machines in the house don't have.
-             She has a one-handed cluster of her own now and it has to be as easy
-             to find as player 1's. -->
-        <h3>PLAYER 2 — ONE HAND, YOUR SIDE OF THE KEYBOARD</h3>
-        <p class="note">
-          <b>Move</b> — <kbd>O</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd> (up, left,
-          down, right), and the <b>arrow keys</b> still work too.<br>
-          <b>Jump</b> — <kbd>Right Alt</kbd> or <kbd>Right Ctrl</kbd> &nbsp;·&nbsp;
-          <b>Slash</b> — <kbd>J</kbd> &nbsp;·&nbsp;
-          <b>Join a clan</b> — <kbd>I</kbd> &nbsp;·&nbsp;
-          <b>Ride</b> — <kbd>P</kbd> &nbsp;·&nbsp;
-          <b>Sprint</b> — <kbd>'</kbd> or <kbd>Right Shift</kbd><br>
-          <kbd>P</kbd><kbd>I</kbd><kbd>J</kbd> sit around <kbd>O</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd>
-          exactly like <kbd>Q</kbd><kbd>E</kbd><kbd>F</kbd> sit around
-          <kbd>WASD</kbd>, so both of you play the same shape with one hand.
-          The <b>numpad</b> (<kbd>0</kbd> jump, <kbd>1</kbd> slash, <kbd>2</kbd>
-          clan, <kbd>3</kbd> ride) and <kbd>,</kbd><kbd>.</kbd><kbd>/</kbd> next to
-          the arrows both still work.
-        </p>
-        <p class="note">
-          Or plug in a second controller. The screen splits automatically when you
-          run apart and joins back up when you're together. The <b>map</b> in the
-          corner shows both of you, every dragon, and everywhere worth going.
-        </p>
-        <!-- ON A PHONE, AND ONLY ON A PHONE. `body.touch-ui` hides this on a
-             desktop: a paragraph about dragging a thumbstick, on a machine with
-             no touchscreen, is a kid being told to do something impossible. It
-             is written in the same shape as the sections above — what the
-             control is, then what it does — and it names the two controls that
-             have no button of their own, because those are the two she would
-             otherwise never find. -->
-        <div class="touch-only">
-          <h3>ON A PHONE OR TABLET</h3>
-          <p class="note">
-            <b>Move</b> — put your <b>left thumb</b> anywhere on the left half of
-            the screen and drag. The circle appears wherever you touch, so you
-            don't have to aim for it.<br>
-            <b>Jump</b> — the big yellow <kbd>A</kbd> &nbsp;·&nbsp;
-            <b>Slash</b> — red <kbd>X</kbd> &nbsp;·&nbsp;
-            <b>Join a clan</b> — <kbd>B</kbd> &nbsp;·&nbsp;
-            <b>Ride</b> — <kbd>Y</kbd> &nbsp;·&nbsp;
-            <b>Run</b> — <kbd>ZR</kbd>, hold it down<br>
-            <b>Pause</b> — the <kbd>II</kbd> button in the top corner.
-          </p>
-          <p class="note">
-            <b>Tap the map</b> in the corner to zoom it in and out, and
-            <b>tap the sin &amp; cos board</b> in the Dojo to hide or show it.
-            Those two don't have buttons of their own — you press the thing
-            itself.
-          </p>
-          <p class="note">
-            <b>Turn your phone sideways</b> to play. If a friend has a
-            controller, pair it over Bluetooth and press <b>START</b> on it — she
-            joins as the second kitten and you keep the touch controls.
-          </p>
-        </div>
+        </details>
+
+        <details class="help-card" name="help">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">⛩️</span>
+            <span class="ht-title">Clans</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <figure class="help-shot">
+              <img src="/help/shrine.jpg" loading="lazy" width="1096" height="616"
+                alt="A clan shrine: a golden beam of light standing over a ring">
+              <figcaption>Find the beam, stand in the ring, press join.</figcaption>
+            </figure>
+            <p class="ht-note">
+              <b>Six clans, six powers.</b> Swear at a shrine and the clan's
+              power is yours straight away. Swap any time at another shrine —
+              and <b>clan powers stack on top of your orbs</b>.
+            </p>
+
+            <!-- THE SIX, ONE CARD EACH. This used to be a single sentence that
+                 listed five powers in a row and sent the sixth "see below", and
+                 a list of six things in prose is the shape a nine-year-old
+                 skips. Each clan now gets its leader, its symbol, its power and
+                 its own words, so the question the panel is really answering —
+                 WHICH ONE DO I WANT — can be answered by looking rather than by
+                 reading to the end.
+
+                 The leader pictures and symbols are cut from the same sprite
+                 art the shrines use, by tools/help-portraits.mjs; they are
+                 `loading="lazy"` with width/height set, which puts them on
+                 `Game._warmHelpClips`'s queue in reading order and holds the
+                 panel's height still before they land. -->
+            <ul class="clan-grid">
+              <li class="clan-card" style="--clan: #8f3038">
+                <h4 class="clan-name">
+                  <img class="clan-sym" src="/help/clan/sym-thunder.png" loading="lazy"
+                    width="48" height="48" alt="Thunderpaw's symbol: a lightning bolt over a paw print">
+                  Thunderpaw
+                </h4>
+                <div class="clan-body">
+                  <img class="clan-leader" src="/help/clan/leader-thunder.png" loading="lazy"
+                    width="269" height="240" alt="Sunstreak, a Siamese cat in a gold sash">
+                  <div class="clan-text">
+                    <b class="clan-power">Run faster</b>
+                    <span class="clan-who">Sunstreak · Siamese</span>
+                    <span class="clan-motto">“fastest kittens on any island”</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card" style="--clan: #37477d">
+                <h4 class="clan-name">
+                  <img class="clan-sym" src="/help/clan/sym-river.png" loading="lazy"
+                    width="48" height="48" alt="Riverclaw's symbol: a claw in a curling wave">
+                  Riverclaw
+                </h4>
+                <div class="clan-body">
+                  <img class="clan-leader" src="/help/clan/leader-river.png" loading="lazy"
+                    width="269" height="240" alt="Rippleclaw, a Turkish Van cat in a blue sash">
+                  <div class="clan-text">
+                    <b class="clan-power">Longer katana</b>
+                    <span class="clan-who">Rippleclaw · Turkish Van</span>
+                    <span class="clan-motto">“never walks around a puddle”</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card" style="--clan: #3d3050">
+                <h4 class="clan-name">
+                  <img class="clan-sym" src="/help/clan/sym-shadow.png" loading="lazy"
+                    width="48" height="48" alt="Shadowtail's symbol: a curled tail in a crescent moon">
+                  Shadowtail
+                </h4>
+                <div class="clan-body">
+                  <img class="clan-leader" src="/help/clan/leader-shadow.png" loading="lazy"
+                    width="269" height="240" alt="Duskcoat, a tuxedo cat in a purple sash">
+                  <div class="clan-text">
+                    <b class="clan-power">Triple jump</b>
+                    <span class="clan-who">Duskcoat · Tuxedo</span>
+                    <span class="clan-motto">“you never hear them coming”</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card" style="--clan: #3d6b57">
+                <h4 class="clan-name">
+                  <img class="clan-sym" src="/help/clan/sym-wind.png" loading="lazy"
+                    width="48" height="48" alt="Windwhisker's symbol: three curling gusts of wind">
+                  Windwhisker
+                </h4>
+                <div class="clan-body">
+                  <img class="clan-leader" src="/help/clan/leader-wind.png" loading="lazy"
+                    width="269" height="240" alt="Galemane, a Maine Coon cat in a green sash">
+                  <div class="clan-text">
+                    <b class="clan-power">Huge dragon breath</b>
+                    <span class="clan-who">Galemane · Maine Coon</span>
+                    <span class="clan-motto">“loudest paws in the sky”</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card" style="--clan: #4e6f86">
+                <h4 class="clan-name">
+                  <img class="clan-sym" src="/help/clan/sym-ice.png" loading="lazy"
+                    width="48" height="48" alt="Icewhisker's symbol: a snowflake">
+                  Icewhisker
+                </h4>
+                <div class="clan-body">
+                  <img class="clan-leader" src="/help/clan/leader-ice.png" loading="lazy"
+                    width="269" height="240" alt="Snowmantle, a Himalayan cat in a pale blue sash">
+                  <div class="clan-text">
+                    <b class="clan-power">Sense mischief</b>
+                    <span class="clan-who">Snowmantle · Himalayan</span>
+                    <span class="clan-motto">“finds what everyone else walked past”</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card" style="--clan: #2f3a24">
+                <h4 class="clan-name">
+                  <img class="clan-sym" src="/help/clan/sym-panda.png" loading="lazy"
+                    width="48" height="48" alt="Pandapaw's symbol: a panda face between bamboo canes">
+                  Pandapaw
+                </h4>
+                <div class="clan-body">
+                  <img class="clan-leader" src="/help/clan/leader-panda.png" loading="lazy"
+                    width="269" height="240" alt="Bambooheart, a Ragdoll cat in a green sash">
+                  <div class="clan-text">
+                    <b class="clan-power">Raise a panda</b>
+                    <span class="clan-who">Bambooheart · Ragdoll</span>
+                    <span class="clan-motto">“never hurries, always arrives”</span>
+                  </div>
+                </div>
+              </li>
+            </ul>
+
+            <p class="ht-note">
+              <b>Pandapaw are the odd ones out.</b> They hand out a job, not a
+              power — cut bamboo, and something very small follows you home. See
+              <b>Raise a panda</b>, below.
+            </p>
+          </div>
+        </details>
+
+        <details class="help-card" name="help">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">🐼</span>
+            <span class="ht-title">Raise a panda</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <figure class="help-shot">
+              <img data-help-gif="/help/panda.gif" width="640" height="360"
+                alt="Raise a panda: a kitten cuts bamboo, a cub appears and follows her, grows to an adult, then she rides it and its claw swipes down more bamboo">
+              <figcaption>Cut bamboo for a cub, cut more to grow it, then ride — its claw cuts four canes at once.</figcaption>
+            </figure>
+            <p class="ht-note">
+              Join Pandapaw on the bamboo island, then cut <b>20 bamboo</b> and a
+              <b>cub</b> follows you. Cut <b>20 more</b> and it grows big enough to
+              <b>ride</b> — fast, and its claw cuts four canes at once.
+            </p>
+            <p class="ht-note warn">
+              <b>⚠ Don't chop down ALL the bamboo too early!</b> Nothing you cut
+              grows back. You need canes left to grow a <b>big</b> panda — and only
+              a big panda's claw can crack the boulder hiding a dragon ball.
+            </p>
+          </div>
+        </details>
+
+        <details class="help-card" name="help">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">🐉</span>
+            <span class="ht-title">Dragon balls &amp; Ryuuseki</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <figure class="help-shot">
+              <img src="/help/ryuuseki.jpg" loading="lazy" width="1096" height="729"
+                alt="Ryuuseki, a long green-and-gold dragon, rising over the great red torii gate in a dark sky">
+              <figcaption>Find all seven stars and Ryuuseki rises over the great gate.</figcaption>
+            </figure>
+            <p class="ht-note">
+              <b>One glowing star on each of the seven islands.</b> Only the first
+              is in the open — the rest are locked: breathe fire on the frozen one,
+              crack a boulder with a panda's claw, fly to a spire top, triple-jump
+              up floating shards. Each tells you what it wants.
+            </p>
+            <p class="ht-note">
+              Collect all seven and <b>Ryuuseki</b>, a huge green dragon, appears.
+              <b>Two ride him</b> — one flies, the <b>second aims his seven beams</b>.
+              That second seat is the big job, not tagging along.
+            </p>
+          </div>
+        </details>
+
+        <details class="help-card" name="help">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">🏆</span>
+            <span class="ht-title">The arena</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <figure class="help-shot">
+              <img src="/help/arena.jpg" loading="lazy" width="1096" height="612"
+                alt="Two cat samurai facing off in the round sky arena while a crowd of cats cheers">
+              <figcaption>Mr. Satan's sky arena — the one place fighting counts.</figcaption>
+            </figure>
+            <p class="ht-note">
+              Knock over <b>80%</b> of everything and <b>Mr. Satan</b> builds a
+              fighting arena in the sky. Find him in town, walk up <b>together</b>,
+              say yes, and his griffin flies you there. Then you fight each other —
+              pick a <b>league</b> first with three or four players.
+            </p>
+            <p class="ht-note">
+              This is the <b>only</b> place fighting hurts anyone. Everywhere else
+              in the world, you can't damage each other at all.
+            </p>
+            <p class="ht-note">
+              <b>Winning pays.</b> Everyone on the winning side takes home a
+              purse — enough for <b>one orb from the dealer</b>. Knocking things
+              over only pays once, so the arena is how you earn <b>more</b>
+              points, as many times as you like.
+            </p>
+          </div>
+        </details>
+
+        <details class="help-card" name="help">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">🍖</span>
+            <span class="ht-title">Battle Feast — eating</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <figure class="help-shot">
+              <img data-help-gif="/help/feast-eat.gif" width="640" height="362"
+                alt="A kitten dazing a little animal, then sitting to eat it and recover health">
+              <figcaption>Slash to daze, then hold Slash to sit and eat.</figcaption>
+            </figure>
+            <p class="ht-note">
+              Little animals scurry across the ring — during the fights, and
+              especially in the calm <b>break between rounds</b> (the
+              <b>feast</b>). Catching one to eat is how you <b>get health
+              back</b>, and whoever won a round <b>keeps the health she has
+              left</b> — so the break is her chance to top up. You can snack
+              mid-fight too, but you have to hold still, so it's risky.
+            </p>
+            <p class="ht-note">
+              <b>How to eat:</b> first <b>slash</b> an animal to daze it (stars
+              spin over its head). Then stand <b>right next to it</b>, keep
+              <b>still</b>, and <b>hold the Slash button</b> — your kitten sits
+              down and eats. Let go, or get hit, and it wriggles free.
+            </p>
+          </div>
+        </details>
+
+        <details class="help-card" name="help">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">🔮</span>
+            <span class="ht-title">Power-up orbs</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <figure class="help-shot">
+              <img src="/help/orbs.jpg" loading="lazy" width="1096" height="612"
+                alt="All eight coloured power-up orbs glowing in a row inside the shrine">
+              <figcaption>The eight Kotodama, awake at last — one colour each.</figcaption>
+            </figure>
+            <p class="ht-note">
+              Knock over <b>everything (100%)</b> and the <b>Kotodama</b> wake up:
+              eight kinds of power-up orb hidden across the islands, and you can
+              wear up to <b>eight at once</b>.
+            </p>
+            <p class="ht-note">
+              They're <b>scattered across the whole world</b>, so <b>explore it
+              all again</b> — and watch the <b>mini-map</b>, where each one shows
+              as a little ring in its own colour and <b>vanishes once it's
+              picked up</b>. That makes the map a checklist for the last few. How
+              many are out there depends on the party:
+            </p>
+            <ul class="ability-list">
+              <li><b>1–2 players</b> — 8 orbs (one of each kind)</li>
+              <li><b>3 players</b> — 12 orbs</li>
+              <li><b>4 players</b> — 16 orbs</li>
+            </ul>
+            <p class="ht-note"><b>Four kinds stack</b> to make you stronger:</p>
+            <ul class="ability-list">
+              <li><b>疾 Gale</b> — run faster</li>
+              <li><b>斬 Long Cut</b> — longer katana</li>
+              <li><b>剛 Adamant</b> — more health in the ring</li>
+              <li><b>跳 Leap</b> — an extra jump</li>
+            </ul>
+            <p class="ht-note">
+              Wear two of a kind for double, four for <i>quadruple</i> — and your
+              <b>clan power adds on top</b>. The other <b>four orbs are special
+              moves</b> — see <b>Special abilities</b>. There are no spares, so a
+              second of anything is bought or traded for.
+            </p>
+          </div>
+        </details>
+
+        <details class="help-card" name="help">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">✨</span>
+            <span class="ht-title">Special abilities</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <p class="ht-note">Four orbs are brand-new moves, on buttons you
+              already use:</p>
+            <div class="move-grid">
+              <figure class="move">
+                <img data-help-gif="/help/ability-ward.gif" width="640" height="362"
+                  alt="A kitten raising a glowing blue shield bubble and floating">
+                <figcaption><b>壁 Ward</b> — <i>hold</i> Ride with nothing to
+                  climb: a shield nothing gets through, and you float.</figcaption>
+              </figure>
+              <figure class="move">
+                <img data-help-gif="/help/ability-dive.gif" width="640" height="362"
+                  alt="A kitten leaping up and slamming down like a hammer">
+                <figcaption><b>落 Power Dive</b> — Interact in the air to drop
+                  like a hammer.</figcaption>
+              </figure>
+              <figure class="move">
+                <img data-help-gif="/help/ability-cross.gif" width="640" height="362"
+                  alt="A kitten cutting a glowing cross-shaped seal in the air">
+                <figcaption><b>十 Cross Slash</b> — <i>hold</i> Slash: three
+                  freezing cuts, then a launch.</figcaption>
+              </figure>
+              <figure class="move">
+                <img data-help-gif="/help/ability-charge.gif" width="640" height="362"
+                  alt="A kitten dashing forward in a straight-line charge with a trail">
+                <figcaption><b>突 Charge</b> — Slash while sprinting to charge
+                  straight through.</figcaption>
+              </figure>
+            </div>
+          </div>
+        </details>
+
+        <details class="help-card" name="help">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">🤝</span>
+            <span class="ht-title">Dealer's Stall &amp; Trading</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <figure class="help-shot">
+              <img data-help-gif="/help/dealer.gif" width="640" height="406"
+                alt="The dealer's stall: a kitten walks up, presses interact to ask the dealer, chooses TRADE, scrolls the shelf and confirms — the orb is bought and worn, her points drop and her slots tick up — then she sells it back and the points come home">
+              <figcaption>Walk up, ask the dealer, choose TRADE, then scroll the shelf and confirm. Buying wears the orb straight away and costs points; selling it back frees the slot and pays some of it home.</figcaption>
+            </figure>
+            <p class="ht-note">
+              A <b>dealer</b> opens a stall in the market and <b>buys and sells
+              orbs</b> for the points you earn knocking things over. He's dear on
+              purpose — a fair share of the world's points buys about <b>three
+              orbs</b> — and he stocks the four stackable kinds plus one of each
+              special move. Selling gives some points back, and it's the only way
+              to free up a slot when all eight are full.
+            </p>
+            <p class="ht-note">
+              Out of points? <b>Win in the arena.</b> Each win pays a purse worth
+              one orb, so the ring is how you keep buying — see <b>The arena</b>.
+            </p>
+            <p class="ht-note">
+              <b>Trade with each other too.</b> Open <b>CHARACTER PROFILE</b> —
+              from the pause menu or the stall — and everyone gets her own cursor.
+              Offer an orb, and <b>both</b> of you confirm before it moves, so
+              nobody can take one off you. You can put <b>points</b> on the table
+              as well.
+            </p>
+          </div>
+        </details>
+
+        <details class="help-card" name="help">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">📐</span>
+            <span class="ht-title">The Dojo — learn the maths</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <figure class="help-shot help-shot-pair">
+              <img data-help-gif="/help/dojo-world.gif" width="480" height="480"
+                alt="The Dojo: a kitten becomes the point on a giant unit circle, sweeping once around it then walking out to (0.5, 0) and up to (0.5, 0.5)">
+              <img data-help-gif="/help/dojo-sincos.gif" width="640" height="360"
+                alt="The live board beside the circle: sin and cos of the same angle plotted as two waves, a playhead locked to the kitten's angle">
+              <figcaption>Walk onto the circle and you become the point — the board beside it plots both waves as you go.</figcaption>
+            </figure>
+            <p class="ht-note">
+              West of town, a whole island is a giant <b>unit circle</b> on graph
+              paper. Walk on and <b>you become the point</b> — the game draws your
+              angle θ and the two sides labelled <b>sin θ</b> and <b>cos θ</b>,
+              live, from the numbers that move you. A board plots both waves as you
+              walk, all on its own — nothing to switch on.
+            </p>
+            <p class="ht-note">
+              <b>Why it's here:</b> I built the Dojo to teach my nieces that maths
+              — even geometry and trig — isn't scary. It's fun, and it's real: the
+              orbs draw their own sin/cos as they circle you.
+              <span class="ht-sign">— Uncle Rich</span>
+            </p>
+          </div>
+        </details>
+
+        <details class="help-card" name="help">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">💾</span>
+            <span class="ht-title">Saving your progress</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <p class="ht-note warn">
+              <b>⚠ Progress is NOT saved between sessions.</b> You can't save your
+              build or setup — every new game starts from scratch.
+            </p>
+            <p class="ht-note">
+              Restart or close the tab and clans, stars, orbs, points and mischief
+              all reset. Only three things are remembered on this computer: the
+              <b>record board</b> (high scores), your <b>controller
+              calibration</b>, and your <b>on-screen-stick</b> setting. So finish
+              an adventure in one sitting!
+            </p>
+          </div>
+        </details>
+
         <button class="menu-btn back" data-close>BACK</button>
       </div>
     </div>

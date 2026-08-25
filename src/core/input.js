@@ -577,7 +577,13 @@ export const MAX_SLOTS = 4;
  * quarter of the screen; "the button on the right of the d-pad" is true and
  * useless. Where a name will not fit, the direction does.
  */
-const PROMPTS = {
+/* EXPORTED so the Help page's drawn controller reads the same table the game
+   prints over a kitten's head. That clip draws a PlayStation pad from scratch
+   (rule 9 — nothing here is a photograph), and a hand-typed set of glyphs on it
+   would go out of date the first time this table moved: the ✕/○ lettering here
+   is itself the fix for a pad that had been telling a nine-year-old to press a
+   button its face does not have. `world-check` compares the two. */
+export const PROMPTS = {
   vjoyDual: {
     left: { jump: 'DOWN', attack: 'LEFT', interact: 'RIGHT', mount: 'UP', sprint: 'SR', start: '-', map: 'L', math: 'ZL' },
     right: { jump: 'B', attack: 'Y', interact: 'A', mount: 'X', sprint: 'SR', start: '+', map: 'R', math: 'ZR' },
