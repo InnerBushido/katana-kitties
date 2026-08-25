@@ -215,6 +215,13 @@ Mount climbs onto whichever dragon is in reach, or onto your own panda if
 there isn't one. **`Esc`**, or **`+`/Start on a controller**, opens the pause
 menu — resume, settings, how-to-play, restart, or back to the title screen.
 
+**HOW TO PLAY shows you, it doesn't tell you.** Twelve topics on the title
+screen and in the pause menu — moving and fighting, phones, clans, the panda,
+the dragon balls, the arena, the feast, the orbs, the abilities, the dealer, the
+Dojo and saving — and most of them open on a short looping clip **filmed inside
+the game itself**, so what the page shows is what the game does. Nothing in
+there is downloaded until you open it.
+
 **You can play the whole game without touching the mouse.** The title screen,
 the pause menu, settings and the help page all take a controller: the stick or
 d-pad moves the highlight, `A` picks, `B` goes back, and left/right change a
@@ -222,9 +229,11 @@ setting in place without opening a dropdown you couldn't get out of. The
 highlight starts on the button you probably wanted, so on the title screen
 pressing anything still just starts the game.
 
-**Cutscenes only skip on Start** (or `Space` / `Enter` on a keyboard). Any
+**Cutscenes only skip on `Esc`, or Start on a pad — and nothing else.** Any
 button used to do it, which meant a thumb resting on jump threw away a
-79-second story with seven recorded voices in it.
+79-second story with seven recorded voices in it. `Space` and `Enter` do not
+skip either, and that is the point rather than an oversight: four kids hold
+sticks and mash, and `Space` is the key an elbow finds.
 
 Jump twice for a double jump. Sprint and slash to send market stalls flying.
 Fly low and fast on a dragon to scatter a whole street at once.

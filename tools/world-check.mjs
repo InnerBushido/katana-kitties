@@ -29,7 +29,7 @@ import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_
 import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
 import { SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest } from '../src/world/build.js';
 import { ISLAND_MUSIC, MUSIC, SAMPLES, trackForIsland } from '../src/core/audio.js';
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
   floodBackground, clearSealedPockets, purelyWhite, pocketFloor,
@@ -1383,6 +1383,32 @@ console.log('\n--- the two "Moving & fighting" clips ---');
      that fix, and it has to keep naming them. */
   ok('...and the section says what a PlayStation pad shows instead',
     ['✕', '□', '△'].every((glyph) => sec.includes(glyph)));
+}
+
+console.log('\n--- nothing in public/help/ is dead weight ---');
+{
+  /* EVERY FILE IN public/help/ SHIPS. `public/` is copied into `dist` wholesale
+     — Vite does not tree-shake a folder — so a picture the panel stopped
+     pointing at is not merely untidy, it is bytes on every deploy and in every
+     clone forever.
+     This is here because it happened: `town.jpg` led "Moving & fighting" until
+     the two captured clips replaced it, and it sat in the folder afterwards,
+     invisible, because nothing anywhere reads the directory. 95KB is not the
+     point — the point is that an orphan is undetectable by looking at the page,
+     which is the only place anyone ever looks. */
+  const help = new URL('../public/help/', import.meta.url);
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const walk = (dir, base = '') => readdirSync(new URL(dir, help), { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory()
+      ? walk(dir + e.name + '/', base + e.name + '/')
+      : [base + e.name]));
+  const files = walk('');
+  ok('public/help/ is not empty', files.length > 0, `${files.length} files`);
+  const orphans = files.filter((f) => !html.includes('/help/' + f));
+  /* Matched on the path rather than the bare name so a file called `arena.jpg`
+     cannot be kept alive by an unrelated `arena.jpg` elsewhere in the markup. */
+  ok('every picture in public/help/ is pointed at by the panel', orphans.length === 0,
+    orphans.join(', '));
 }
 
 console.log('\n--- nobody joined a clan, because nothing said they could ---');

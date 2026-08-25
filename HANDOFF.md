@@ -151,12 +151,48 @@ gets antialias off, a capped pixel ratio, and half-size single-figure atlases
 (147MB of retained texture down to 115MB); a desktop gets byte-for-byte what was
 hard-coded before the file existed. See [docs/notes/mobile.md](docs/notes/mobile.md).
 
+**A Help page that shows the game instead of describing it.** Twelve topics,
+each a `<details>` a kid opens; eleven of them lead on a GIF **captured out of
+the running game**, four on stills, and the Clans topic on the six leaders. A
+new dependency-free GIF encoder (`tools/gif.mjs`, alongside `png.mjs`, for the
+same rule-9 reason) does the filming, and `tools/gif-selftest.mjs` reads its
+output back — a codec bug presents as "the picture looks a bit off", never as a
+crash. The imagery is ~17MB and **not one byte is on the boot path**: a clip
+carries `data-help-gif` and no `src` at all, and `Game._warmHelpClips` streams
+them one at a time on the first Help open, with an opened topic jumping its own
+images to the front of the queue. The panel takes a pad, too —
+`summary.help-topic` joined `MenuNav`'s selector and the cursor opens on the
+first topic rather than on BACK. All of it in
+[docs/notes/help.md](docs/notes/help.md), which is worth reading before filming
+anything: a hidden tab freezes a capture, `drawImage` on a WebGL canvas returns
+stale pixels, and a clip whose camera moves costs four times one whose does not.
+
 ---
 
 ## Open items
 
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
+
+**Played, pushed and live — the Help overhaul.** Richard tested it and confirmed
+it works, so `feature/help-onboarding` merged into `main` and went to
+`origin/main`, which Vercel deploys. The branch is **kept** until it has been
+tried on a real phone, which is what the push was for.
+
+**What the Help page still owes.** Four clips are missing and the reasoning for
+each is in [help.md](docs/notes/help.md#what-is-not-done):
+
+1. **"On a phone" has no clip** — the one that matters most, since the push
+   exists to test on a phone. It needs the touch overlay filmed: move, jump,
+   sprint, slash; **holding** sprint and **holding** Ride for Ward; and the
+   double-tap **lock-on** for both, with Charge showing what a locked sprint is
+   for. The Ward and Sprint parts belong **in the arena**.
+2. **An arena clip** — sprint, a slash landing on another player, both players
+   jumping, on two input types.
+3. **An "on a dragon" controller clip.** The beats exist behind `part: 'air'` in
+   the shot script; read the 4.5MB paragraph in help.md before choosing where it
+   goes, because a flying camera defeats the encoder.
+4. **Dragon Balls & Ryuuseki** still leads on a still.
 
 **Played, pushed and live — the third, fourth and fifth four-player sessions,
 all in one push.** Richard playtested the input fixes and confirmed everything
@@ -813,6 +849,7 @@ are about to touch, not all of them.
 | [steam.md](docs/notes/steam.md) | the non-Steam shortcut and its launch flags, the shelf artwork, what Remote Play is and is not |
 | [trailer.md](docs/notes/trailer.md) | the 1:08 trailer: how Mr. Satan was cast by measurement, why the orchestra is synthesised, why the 十 is drawn rather than typed, why the player downloads nothing until asked, and why generated art may go on the store page but not the shelf |
 | [performance.md](docs/notes/performance.md) | why the frame time is a straight line in pixels, slow vs stutter and why they need different numbers, what is measured NOT to be a cause, the `P` readout |
+| [help.md](docs/notes/help.md) | the Help panel and **the rig that films it** — why a hidden tab freezes a capture, why `drawImage` on a WebGL canvas returns stale pixels, why 17MB of imagery is never on the boot path, why "Moving & fighting" is two clips and not one, and the three dragon positions of which only one is stable |
 
 **Older source comments saying "see HANDOFF.md" mean these notes** — the text
 they point at was moved, not deleted. Grep `docs/notes/` for the phrase.

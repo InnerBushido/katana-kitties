@@ -14,6 +14,7 @@ look. Everything else is one level down and read on demand.
 | what works, what's open, what's next | [HANDOFF.md](HANDOFF.md) |
 | why some code is the way it is | [docs/notes/](docs/notes/README.md) — one file per area |
 | how a player experiences it | [README.md](README.md) |
+| how the Help clips are filmed out of the running game | [docs/notes/help.md](docs/notes/help.md) |
 | how it runs under Steam, and its artwork | [docs/notes/steam.md](docs/notes/steam.md) |
 | which voice belongs to which character | [docs/notes/voices.md](docs/notes/voices.md) |
 | why it lags or stutters, and what is measured NOT to be why | [docs/notes/performance.md](docs/notes/performance.md) |
@@ -23,7 +24,7 @@ look. Everything else is one level down and read on demand.
 
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
-node tools/world-check.mjs    # 1548 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 1550 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 256 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 ```
@@ -118,6 +119,10 @@ src/
   entities/  player  dragon  ryuuseki  panda  critter  angel  leader  satan
              griffin  orb  powerorb  dragonball  prop  shrine  stall
 tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
+             gif.mjs (the same, for GIF — interframe differencing, which is why
+               a Help clip must be filmed on a pinned camera; gif-selftest.mjs
+               reads its output back. See docs/notes/help.md)
+             help-portraits.mjs (the clan leaders on the Help page)
              kitten-cackle.mjs (the trailer's demon, and `--game` for the
                Cross Slash's four graded purrs — see docs/notes/voices.md,
                which carries the licensing decision attached to them)
@@ -158,7 +163,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 1548 assertions and why almost none of them are about
+  why `world-check` is 1550 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have

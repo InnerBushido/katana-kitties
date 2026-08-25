@@ -14,6 +14,7 @@ one file it needs — usually five to ten thousand.
 | --- | --- | --- |
 | [four-players.md](four-players.md) | seating, the split screen, per-group panes, pane stability and pane colour, the leagues, the clan call-to-action and the celebration that answers it, and what two four-player sessions turned up | anything that counts players, or assumes there are two |
 | [input.md](input.md) | controllers, the vJoy/Joy-Con route, the Chrome stick bug, the keyboard sets, menus on a pad | `core/input.js`, `systems/menunav.js` |
+| [help.md](help.md) | the Help panel and **the rig that films it**: why a hidden tab freezes a capture, why `drawImage` on a WebGL canvas lies, why the imagery is never on the boot path, and why "Moving & fighting" is two clips and not one | `#panel-help`, `Game._warmHelpClips`, `tools/gif.mjs`, anything in `public/help/` |
 | [tournament.md](tournament.md) | the ring, rounds, attacks, ring-outs, the record board, the arena's four locks, and the animals and the feast | `systems/tournament.js`, `systems/menagerie.js`, `entities/critter.js` |
 | [dragon-hunt.md](dragon-hunt.md) | the seven stars and their locks, the grottos, the spire, Ryuuseki and his two seats | `entities/dragonball.js`, `entities/ryuuseki.js` |
 | [endgame.md](endgame.md) | the 100% ending, the Awakening, the eight Powerup Kotodama, the economy, the trade screen, the Cross Slash rebalance and the tell that warns you it is coming, **and the balance page** | `systems/kotodama.js`, `systems/profile.js`, `entities/powerorb.js`, `tuning.html`, `src/core/tuning.js` |
