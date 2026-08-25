@@ -1242,6 +1242,149 @@ line('clan buffs', CLANS.map((c) => `${c.name}=${c.buff.label}`).join(', '));
 ok('every clan grants a buff', buffs.every(Boolean));
 ok('no two clans grant the same buff', new Set(buffs).size === buffs.length);
 
+console.log('\n--- the six clan cards in Help ---');
+{
+  /* THE HELP PANEL RESTATES THE CLAN TABLE IN HAND-WRITTEN HTML, which is the
+     whole risk: change a buff label in world.js and the card still promises
+     what the game used to do. Every string on those cards is checked against
+     `CLANS` and `LEADERS` here, so the panel cannot drift away from the game
+     silently — and there is no way to build the cards FROM the data, because
+     the panel is static markup Vite never runs. */
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const grid = html.slice(html.indexOf('<ul class="clan-grid">'), html.indexOf('</ul>', html.indexOf('<ul class="clan-grid">')));
+  ok('Help has a card for every clan', (grid.match(/class="clan-card"/g) || []).length === CLANS.length);
+  /* The heading text with the tags and whitespace taken out, one per card, in
+     document order — so this also pins the ORDER against `CLANS`, which is the
+     order the rest of the game lists them in. */
+  const heads = [...grid.matchAll(/<h4 class="clan-name">([\s\S]*?)<\/h4>/g)]
+    .map((m) => m[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim());
+  ok('...each headed by its clan, in the game\'s own order',
+    heads.length === CLANS.length && CLANS.every((c, i) => heads[i] === c.name),
+    heads.join(' | '));
+  ok('...and promising the buff the game actually grants',
+    CLANS.every((c) => grid.includes(`>${c.buff.label}<`)),
+    CLANS.filter((c) => !grid.includes(`>${c.buff.label}<`)).map((c) => c.buff.label).join(' | ') || 'all six');
+  /* THE MOTTOES WERE SWAPPED IN THE SOURCE DATA and nothing noticed for
+     months, because until the Help cards existed `motto` was read by no code
+     at all — Windwhisker claimed to be the fastest kittens on any island while
+     Thunderpaw, the clan whose whole power is running faster, claimed to be
+     the loudest. Checked per clan against the card so the pair cannot come
+     apart again, and checked BY CLAN rather than as a set, which is the part
+     that would have caught a swap. */
+  ok('...quoting the motto that belongs to that clan',
+    CLANS.every((c, i) => (grid.split('class="clan-card"')[i + 1] || '').includes(c.motto)),
+    CLANS.filter((c, i) => !(grid.split('class="clan-card"')[i + 1] || '').includes(c.motto))
+      .map((c) => c.name).join(' ') || 'all six');
+  ok('...with the leader who hands it over',
+    CLANS.every((c) => grid.includes(LEADERS[c.id].name) && grid.includes(LEADERS[c.id].breed)),
+    CLANS.filter((c) => !grid.includes(LEADERS[c.id].name)).map((c) => c.id).join(' ') || 'all six');
+  /* The accent is the shrine's FLOOR colour, not its beam. Every clan's `color`
+     is a pastel tuned to glow against a night sky and all six are unreadable as
+     paper-on-cream; the first cut of the header used one and came out
+     vermillion on maroon. Pinned as the rule rather than as six hex strings. */
+  ok('...tinted with the clan tile, never the beam colour',
+    CLANS.every((c) => grid.includes(`--clan: #${c.tile.toString(16).padStart(6, '0')}`))
+    && !CLANS.some((c) => grid.includes(`--clan: #${c.color.toString(16).padStart(6, '0')}`)));
+
+  /* THE PICTURES ARE ONE SIZE, AND THAT IS LOAD-BEARING. tools/help-portraits
+     writes all six leaders onto a single measured canvas so the cards line up
+     by construction. The version before it cropped each cat to her own ink and
+     let CSS `object-fit` sort it out, and three of the six came out a fifth
+     shorter than the others because the slot ran out of WIDTH on them — the
+     Himalayan and the Ragdoll are nearly square. If the art is re-exported and
+     the tool is not re-run, this is what says so. */
+  const png = (f) => {
+    const b = readFileSync(new URL(`../public/help/clan/${f}`, import.meta.url));
+    return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+  };
+  const cards = CLANS.map((c) => png(`leader-${c.id}.png`));
+  const syms = CLANS.map((c) => png(`sym-${c.id}.png`));
+  line('clan card art', `${cards[0].w}x${cards[0].h} leaders, ${syms[0].w}x${syms[0].h} symbols`);
+  ok('every leader card is the same size as the others',
+    new Set(cards.map((s) => `${s.w}x${s.h}`)).size === 1,
+    [...new Set(cards.map((s) => `${s.w}x${s.h}`))].join(' '));
+  ok('...and every symbol is square and the same', new Set(syms.map((s) => `${s.w}x${s.h}`)).size === 1
+    && syms[0].w === syms[0].h);
+  /* And the box they are drawn into keeps their aspect. A slot of the wrong
+     shape either squashes a cat or, with `contain`, reintroduces the shrinking
+     this was all fixed to stop — so the CSS is checked against the FILE. */
+  const css0 = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const slot = css0.slice(css0.indexOf('.clan-leader {'), css0.indexOf('}', css0.indexOf('.clan-leader {')));
+  const sw = Number((slot.match(/width:\s*(\d+)px/) || [])[1]);
+  const sh = Number((slot.match(/height:\s*(\d+)px/) || [])[1]);
+  ok('...and the card draws them at their own aspect',
+    Number.isFinite(sw) && Number.isFinite(sh)
+    && Math.abs((sw / sh) - (cards[0].w / cards[0].h)) < 0.02,
+    `slot ${sw}x${sh}, art ${cards[0].w}x${cards[0].h}`);
+  /* Off the wire until Help is opened, like every other picture in the panel —
+     `Game._warmHelpClips` only queues an <img> that carries `loading`. */
+  ok('...and the twelve pictures wait for Help to open',
+    (grid.match(/loading="lazy"/g) || []).length === CLANS.length * 2);
+}
+
+console.log('\n--- the two "Moving & fighting" clips ---');
+{
+  /* THE ONE SECTION IN HELP THAT HAS TO SHOW A VERB. Everything else in the
+     panel can be read; "what do I press and what happens" cannot, which is why
+     this topic leads on two engine-captured clips instead of the still of the
+     town it used to open on.
+     TWO CLIPS AND NOT ONE, and the reason is the encoder, not the design: the
+     on-foot beats are filmed on a pinned camera, so the encoder's interframe
+     differencing throws most of every frame away — and a single clip that also
+     carried the flying beats came out at 4.5MB, more than twice anything else
+     in the panel, because a dragon scrolls the whole world past the lens.
+     Halving the palette moved it seven per cent, which is the number that says
+     the palette was never the problem. So: one clip per kind of controller,
+     and the size cap below is what stops the next session quietly merging
+     them again. */
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const start = html.indexOf('<span class="ht-title">Moving &amp; fighting</span>');
+  ok('Help still has a "Moving & fighting" topic', start > 0);
+  const sec = html.slice(start, html.indexOf('</details>', start));
+  const CLIPS = ['/help/move-keys.gif', '/help/move-pad.gif'];
+  for (const clip of CLIPS) {
+    /* The <img> is found by cutting around the path rather than by a regex, so
+       nothing here depends on the order the attributes happen to be written
+       in. */
+    const at = sec.indexOf(clip);
+    const tag = at < 0 ? '' : sec.slice(sec.lastIndexOf('<img', at), sec.indexOf('>', at) + 1);
+    ok(`${clip} is wired into the section`, !!tag);
+    /* DEFERRED, LIKE EVERY OTHER PICTURE IN THE PANEL. `Game._warmHelpClips`
+       only fills in an <img> that carries `data-help-gif` AND no `src` yet; a
+       plain `src` here would pull two megabytes on boot, for a panel nobody
+       has asked for. */
+    ok('...and it is deferred, not src\'d',
+      tag.includes('data-help-gif=') && !tag.includes(' src='));
+    /* MEASURED OFF THE FILE, NOT COPIED FROM THE SHOT SCRIPT. A width/height
+       pair that disagrees with the GIF reflows the whole topic the moment the
+       image lands, which on a slow connection is a panel that jumps under a
+       nine-year-old's finger. */
+    const buf = readFileSync(new URL('../public' + clip, import.meta.url));
+    const gw = buf.readUInt16LE(6), gh = buf.readUInt16LE(8);
+    const dim = (name) => {
+      const k = tag.indexOf(name + '="');
+      return k < 0 ? NaN : Number(tag.slice(k + name.length + 2, tag.indexOf('"', k + name.length + 2)));
+    };
+    ok('...and the markup states its real size', dim('width') === gw && dim('height') === gh,
+      `markup ${dim('width')}x${dim('height')}, file ${gw}x${gh}`);
+    /* Under the cap the split exists to hold. Not a style rule: the panel
+       warms these one after another and a fat one stalls every picture behind
+       it. */
+    ok('...and it stayed under 2.5MB', buf.length < 2.5 * 1024 * 1024,
+      `${(buf.length / 1048576).toFixed(2)}MB`);
+  }
+  const gAt = sec.indexOf('<div class="move-grid">');
+  const grid = gAt < 0 ? '' : sec.slice(gAt, sec.indexOf('</div>', sec.indexOf('</figure>', gAt)));
+  ok('the two clips sit side by side in one grid',
+    grid.includes(CLIPS[0]) && grid.includes(CLIPS[1]));
+  /* THE LIST BELOW THEM NAMES ONE PAD AND THE GAME SUPPORTS THREE. A kid on a
+     DualSense hunting for a button called B is the exact failure that turned
+     `PROMPTS.playstation` into shapes; this note is the static panel's half of
+     that fix, and it has to keep naming them. */
+  ok('...and the section says what a PlayStation pad shows instead',
+    ['✕', '□', '△'].every((glyph) => sec.includes(glyph)));
+}
+
 console.log('\n--- nobody joined a clan, because nothing said they could ---');
 {
   /* THE BUG WAS SILENCE. Four adults played a whole session and not one of them
@@ -7578,6 +7721,189 @@ console.log('\n--- the trailer is opt-in ---');
     /trailer\?\.active\) return null/.test(nav));
   ok('...and the trailer panels count as overlays',
     /'panel-trailer', 'panel-trailer-offer'/.test(main));
+}
+
+/* ---------------------------------------------------------------------------
+   HOW TO PLAY is a picture-led accordion, and it stays cheap and reachable.
+
+   It was rebuilt from one long scroll into a set of <details> topics a new
+   player opens one at a time. Two properties are load-bearing and both are the
+   kind a tidy-up quietly undoes:
+
+     - The pictures are `loading="lazy"` inside a display:none panel, so not one
+       is fetched until she opens Help. Drop the attribute and the screenshots
+       land back on the 35MB boot, on a phone, on data — invisible while
+       playing, exactly like the trailer's missing src.
+     - The accordion is drivable on a pad. That rests on `summary.help-topic`
+       being in MenuNav.items() AND `data-nav="vertical"`/`data-nav-start` on
+       the panel; either half alone leaves it unreachable on a controller,
+       which is the seventh non-negotiable (a menu four kids can only mouse).
+
+   The bamboo warning is pinned as content, not decoration: clearing the grove
+   before raising a big panda strands the fourth dragon ball (invariant 4),
+   so the caution that says so has to actually be there and marked as a warning.
+--------------------------------------------------------------------------- */
+console.log('\n--- how-to-play is a picture-led accordion ---');
+{
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const help = html.slice(html.indexOf('id="panel-help"'),
+    html.indexOf('id="panel-settings"'));
+
+  ok('the help panel is a vertical accordion, not a scroll',
+    /data-nav="vertical"/.test(help) && /data-nav-start="first"/.test(help));
+
+  const topics = [...help.matchAll(/<details class="help-card"/g)].length;
+  ok('...with all its topic cards', topics >= 11, `(${topics})`);
+  ok('...opened one at a time (every card shares name="help")',
+    (help.match(/name="help"/g) || []).length === topics);
+
+  /* The sections Richard listed, by their summary text. Named individually so
+     a check tells you WHICH one went missing, not just that the count slipped. */
+  for (const t of ['Moving', 'On a phone', 'Clans', 'Raise a panda',
+    'Dragon balls', 'The arena', 'Battle Feast', 'Power-up orbs',
+    'Special abilities', 'Trading', 'Dojo', 'Saving your progress']) {
+    ok(`...including "${t}"`, help.includes(t));
+  }
+
+  ok('the bamboo-deforestation warning is present and flagged as a warning',
+    /class="ht-note warn"[\s\S]*?bamboo[\s\S]*?<\/p>/i.test(help)
+    && /grows back|too early/i.test(help));
+
+  /* THE ECONOMY IS RENEWABLE THROUGH THE RING, AND THE HELP NOW SAYS SO on both
+     sides of it: where a player EARNS the purse (the arena) and where she SPENDS
+     it (the dealer). Pinned because a kid out of points who does not know the
+     arena refills them is simply stuck, and the fix was two paragraphs a later
+     trim could quietly drop. The mechanic itself is checked with the shop above
+     (a whole purse buys 3 orbs); see tournament._payPurse — every winner is paid
+     one orb's price. */
+  ok('the arena section says winning pays a purse worth an orb',
+    /Winning pays[\s\S]*?one orb from the dealer/i.test(help));
+  ok('...and the dealer points back to the ring to earn more',
+    /Win in the arena[\s\S]*?purse[\s\S]*?The arena/i.test(help));
+  /* The two hero stills are trailer shots (out/trailer/shots/s08,s12) resampled
+     to help size; pinned to their own sections so a later art swap can't quietly
+     move the arena picture onto the orbs card. On-disk-ness is covered by the
+     generic screenshot check below; this pins the WIRING. */
+  const arenaSec = help.slice(help.indexOf('The arena'), help.indexOf('Battle Feast'));
+  ok('...and the arena section shows the arena still', /arena\.jpg/.test(arenaSec));
+
+  /* THE ORBS SCATTER ON COMPLETION, AND THE HELP SAYS WHERE TO LOOK — the whole
+     world again, and the mini-map, which drops a ring per orb and clears it as
+     each is taken. The counts it prints are the CODE'S: worldSpawnCount already
+     knows them (checked against the scatter above), so the help is asserted to
+     agree with it rather than carrying a second set of numbers to keep in step.
+     Pinned so a trim cannot leave "find them all" without the how or how-many. */
+  /* THE ANIMALS RUN THROUGHOUT THE ARENA, and the feast is the CALM window, not
+     the only one. Menagerie.start() fires in Tournament.begin() and stop() only
+     in finish(), so critters are on the deck during LIVE rounds as well as the
+     15-second feast between them — the round winner keeps her health, which is
+     what makes the between-rounds feast the moment to top up. The help got this
+     wrong twice: first "during a round" (dropping the feast), then only
+     "between rounds" (dropping the fights). Both are true, so BOTH are pinned. */
+  const feast = help.slice(help.indexOf('Battle Feast'), help.indexOf('Power-up orbs'));
+  ok('the feast names the calm break between rounds',
+    /between rounds/i.test(feast) && /feast/i.test(feast));
+  ok('...and does not pretend the animals are only there in the break',
+    /during the fights|mid-fight|in the fights/i.test(feast));
+  ok('...and it shows the eating clip', /feast-eat\.gif/.test(feast));
+
+  const orbsSec = help.slice(help.indexOf('Power-up orbs'), help.indexOf('Special abilities'));
+  ok('the orbs section shows the eight-orb still', /orbs\.jpg/.test(orbsSec));
+  ok('the orbs section sends her exploring with the mini-map',
+    /explore[\s\S]*?mini-map/i.test(help));
+  ok('...and its counts match worldSpawnCount for 2 / 3 / 4 players',
+    new RegExp(`1.?2 players[^\\d]*${worldSpawnCount(2)}\\b`).test(help)
+    && new RegExp(`\\b3 players[^\\d]*${worldSpawnCount(3)}\\b`).test(help)
+    && new RegExp(`\\b4 players[^\\d]*${worldSpawnCount(4)}\\b`).test(help));
+
+  /* The raise-a-panda topic shows the whole arc as one clip — cut bamboo, a cub
+     appears and grows, then she rides it and its claw mows more bamboo — so the
+     capture must be the panda one and wired the deferred (src-less) way. */
+  const pandaSec = help.slice(help.indexOf('Raise a panda'), help.indexOf('Dragon balls'));
+  ok('the raise-a-panda topic shows the panda-raising clip',
+    /data-help-gif="\/help\/panda\.gif"/.test(pandaSec));
+
+  /* THE DOJO IS TWO CLIPS NOW, SIDE BY SIDE. The sin/cos board used to be burnt
+     ON TOP of the 3D circle in one frame and covered it; it is a separate clip
+     now (dojo-sincos) shown beside the 3D one (dojo-world), both from the same
+     synced capture. Both must be present and in order inside the pair figure —
+     dropping the board, or un-pairing them, is the regression this pins. */
+  ok('the Dojo topic pairs the 3D circle clip with the sin/cos board clip',
+    /class="help-shot help-shot-pair"[\s\S]*?data-help-gif="\/help\/dojo-world\.gif"[\s\S]*?data-help-gif="\/help\/dojo-sincos\.gif"[\s\S]*?<\/figure>/.test(help));
+
+  /* THE DEALER'S STALL IS A DOM PANEL (profile.js innerHTML), not a canvas —
+     the engine canvas-mirror rig cannot film it, which is why it was a static
+     photo. The clip is an html2canvas raster of the REAL shop being used, so pin
+     that the topic now shows the clip and not the old stall screenshot. */
+  ok('the Dealer topic shows the buying-an-orb clip',
+    /Dealer's Stall[\s\S]*?data-help-gif="\/help\/dealer\.gif"/.test(help));
+
+  const imgs = [...help.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
+  ok('the panel carries its screenshots and clips', imgs.length >= 4, `(${imgs.length})`);
+  /* NOTHING THE PANEL SHOWS IS FETCHED AT BOOT, OR EVEN WHILE SHE PLAYS. The
+     static screenshots defer with loading="lazy" inside the display:none panel;
+     the heavy GIF clips go further and carry NO `src` at all — only
+     `data-help-gif`, streamed in one at a time by `Game._warmHelpClips` once
+     Help is open (the trailer's opt-in bargain, made bulletproof against a
+     browser that preloads lazy images the moment it parses them). So every
+     <img> must be one or the other, and a clip must NEVER carry a bare `src`
+     that would put it on the wire during play. */
+  ok('...and every one is deferred (a lazy screenshot, or a src-less data-help-gif clip)',
+    imgs.length > 0 && imgs.every((t) =>
+      /loading="lazy"/.test(t) || (/data-help-gif="/.test(t) && !/\bsrc="/.test(t))));
+  ok('...no clip carries a src that would fetch it before Help is opened',
+    imgs.every((t) => !(/data-help-gif="/.test(t) && /\bsrc="/.test(t))));
+
+  const files = [
+    ...help.matchAll(/src="\/help\/([^"]+)"/g),
+    ...help.matchAll(/data-help-gif="\/help\/([^"]+)"/g),
+  ].map((m) => m[1]);
+  ok('...and each screenshot and clip is on disk under public/help/',
+    files.length >= 4
+    && files.every((f) => existsSync(new URL(`../public/help/${f}`, import.meta.url))));
+
+  /* THE FIVE MOTION CLIPS, EACH WIRED TO THE MOVE IT SHOWS. These are engine
+     captures (tools/gif.mjs), not screenshots, and each ability's clip was
+     filmed for THAT ability — so a later file swap (the cross's clip dropped
+     under the charge's caption) would silently teach the wrong button. Each is
+     pinned inside its own <figure>, so the kanji and its filename must travel
+     together. The generic checks above already prove "every src is lazy and on
+     disk"; this names the exact clips so a dropped capture fails by name, not
+     as a count that still reads >= 4. If you re-capture, keep the pairing. */
+  const moves = help.slice(help.indexOf('Special abilities'), help.indexOf('Trading'));
+  const moveFigs = [...moves.matchAll(/<figure class="move">[\s\S]*?<\/figure>/g)]
+    .map((m) => m[0]);
+  ok('the abilities section shows all four move clips', moveFigs.length === 4,
+    `(${moveFigs.length})`);
+  for (const [kanji, gif] of [['壁', 'ability-ward'], ['落', 'ability-dive'],
+    ['十', 'ability-cross'], ['突', 'ability-charge']]) {
+    ok(`...the ${kanji} move is illustrated by ${gif}.gif`,
+      moveFigs.some((f) => f.includes(`${gif}.gif`) && f.includes(kanji)));
+  }
+  for (const g of ['feast-eat', 'ability-ward', 'ability-dive',
+    'ability-cross', 'ability-charge', 'panda', 'dojo-world', 'dojo-sincos', 'dealer']) {
+    ok(`the ${g}.gif clip is on disk`,
+      existsSync(new URL(`../public/help/${g}.gif`, import.meta.url)));
+  }
+
+  const nav = readFileSync(new URL('../src/systems/menunav.js', import.meta.url), 'utf8');
+  ok('a pad can land on a topic header (summary.help-topic in items())',
+    /summary\.help-topic/.test(nav));
+  ok('...and the help cursor opens on the first topic, not on BACK',
+    /navStart === 'first'/.test(nav));
+  ok('...and panel-help is still an input-owning overlay',
+    /'panel-help'/.test(nav));
+
+  /* OPENING HELP IS WHAT PUTS THE CLIPS ON THE WIRE — never the boot, never
+     play. Game._warmHelpClips streams them in off the 'help' action, and each
+     clip's src comes from its own data-help-gif. Drop the call or the streaming
+     and the clips either never load or (worse) get a bare src back and fetch
+     during play, which is the whole thing this scheme avoids. */
+  const gmain = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('opening Help warms the clips (Game._warmHelpClips off the help action)',
+    /a === 'help'[\s\S]{0,80}_warmHelpClips\(\)/.test(gmain));
+  ok('...and _warmHelpClips streams each src in from its data-help-gif',
+    /_warmHelpClips\(\)\s*\{[\s\S]*?dataset\.helpGif/.test(gmain));
 }
 
 /* ===========================================================================

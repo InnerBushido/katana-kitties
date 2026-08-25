@@ -112,8 +112,12 @@ export class MenuNav {
    * highlight but not see is a cursor that vanishes.
    */
   items(panel) {
-    const sel = 'button.menu-btn, .panel select, .panel input[type="range"],'
-      + ' .map-cell, button.map-reset';
+    /* `summary.help-topic` is here so the help accordion is drivable on a pad:
+       the stick lands on a topic header and `_activate` clicks it, which is
+       exactly how a <details> toggles open. Nothing else in the game uses a
+       <summary>, so this widens the net for one panel only. */
+    const sel = 'button.menu-btn, summary.help-topic, .panel select,'
+      + ' .panel input[type="range"], .map-cell, button.map-reset';
     return [...panel.querySelectorAll(sel)].filter((el) => el.offsetParent !== null);
   }
 
@@ -198,7 +202,13 @@ export class MenuNav {
       if (!this.index.has(panel.id)) {
         const primary = items.findIndex((el) => el.classList.contains('primary'));
         const back = items.findIndex((el) => el.classList.contains('back'));
-        this.index.set(panel.id, primary >= 0 ? primary : Math.max(0, back));
+        /* `data-nav-start="first"` opens the cursor on the top item instead.
+           Help is a MENU of topics now, not a wall of text with one BACK button
+           in it, so it should behave like the pause menu — land on the first
+           thing to read — rather than starting on BACK the way Settings does. */
+        const first = panel.dataset.navStart === 'first';
+        this.index.set(panel.id,
+          first ? 0 : (primary >= 0 ? primary : Math.max(0, back)));
       }
       this.holdY = 0;
       this.holdX = 0;
