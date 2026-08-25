@@ -1411,6 +1411,40 @@ console.log('\n--- nothing in public/help/ is dead weight ---');
     orphans.join(', '));
 }
 
+console.log('\n--- a join does not wipe the scoreboard ---');
+{
+  /* `_buildHud` THROWS THE BADGES AWAY AND BUILDS THEM FROM A TEMPLATE, and
+     that template hard-codes `0` and an empty clan. That is the truth exactly
+     once — at boot. The method is also called when a player JOINS and when one
+     LEAVES, and there it was blanking three sisters' scores and clans mid-game.
+     What made it survive so long is that only the HUD was ever wrong: `p.score`
+     and `p.clan` were untouched, and each badge silently repaired itself the
+     next time that kitten knocked something over. So it looked like the game
+     losing everybody's progress on a join and then handing it back one player
+     at a time, which is a far worse thing to watch than a clean reset.
+     Asserted against the SOURCE because the fix is a DOM repaint and there is
+     no DOM here — what is being pinned is that the rebuild is followed by a
+     repaint from the players, not the exact shape of it. */
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const at = main.indexOf('  _buildHud() {');
+  ok('_buildHud is still there to check', at > 0);
+  const body = main.slice(at, main.indexOf('\n  _', at + 20));
+  ok('the badge template still starts every score at zero',
+    body.includes('<b id="score-${i}">0</b>'));
+  /* The two halves of the repaint. Named separately because the clan one was
+     the half nobody thought of: a score comes back on the next prop, a clan
+     comes back only if she swears to somebody again, which she cannot. */
+  ok('...and the score is painted back from the player after the rebuild',
+    /score-\$\{p\.index\}/.test(body) && /p\.score/.test(body));
+  ok('...and so is the clan badge',
+    body.includes('this._updateClanBadge(p)'));
+  /* ORDER MATTERS AND IS THE WHOLE BUG. A repaint before the badges exist is a
+     `getElementById` returning null and doing nothing at all — which is the
+     silent-failure shape this check exists to refuse. */
+  ok('...and it happens AFTER the badges are created',
+    body.indexOf('this._updateClanBadge(p)') > body.indexOf('<b id="score-${i}">0</b>'));
+}
+
 console.log('\n--- nobody joined a clan, because nothing said they could ---');
 {
   /* THE BUG WAS SILENCE. Four adults played a whole session and not one of them

@@ -877,22 +877,38 @@ console.log('\n--- the keyboard sets ---');
   ok('P2 walks on O K L ;',
     has('up', 'KeyO') && has('left', 'KeyK') && has('down', 'KeyL')
     && has('right', 'Semicolon'));
-  /* . I J mirror Q E F: same three jobs, same shape, other hand.
+  /* P I J mirror Q E F: same three jobs, same shape, other hand.
 
-     IT WAS `P` I J, AND `P` HAD TO GO. `P` was also the frame-cost debug key,
-     so one press mounted player 2 AND toggled the readout — the two-jobs trap
-     this whole block exists for, arriving from outside the keysets where no
-     check could see it. The debug key moved to `1`; mount keeps `.`, which it
-     already had, so the run beside the arrows is unchanged. */
-  ok('...with . I J mirroring P1\'s Q E F',
-    has('mount', 'Period') && has('interact', 'KeyI') && has('attack', 'KeyJ')
+     `P` LEFT AND CAME BACK, and both halves are worth a check. It was also the
+     frame-cost debug key, so one press mounted player 2 AND toggled the
+     readout — the two-jobs trap this whole block exists for, arriving from
+     outside the keysets where no check could see it. That was fixed by moving
+     the DEBUG key to `1`; dropping `P` from here as well was a second fix for
+     a collision that had already gone, and it cost player 2 the mount key she
+     actually reaches for. `.` kept working the whole time, which is why it
+     read as "P is broken" rather than as "mount is broken". */
+  ok('...with P I J mirroring P1\'s Q E F',
+    has('mount', 'KeyP') && has('interact', 'KeyI') && has('attack', 'KeyJ')
     && KEYSETS[0].mount.includes('KeyQ') && KEYSETS[0].interact.includes('KeyE')
     && KEYSETS[0].attack.includes('KeyF'));
-  /* AND `P` IS NOT BOUND TO ANYTHING AT ALL. Asserted of the whole keyboard,
-     not of player 2, because the failure was a key doing one job here and
-     another somewhere else entirely. */
-  ok('...and P is free for the debug readout',
-    KEYSETS.every((k) => !FIELDS.some((f) => (k[f] ?? []).includes('KeyP'))));
+  ok('...and . still mounts too, for the hand on the arrows',
+    has('mount', 'Period') && has('mount', 'Numpad3'));
+  /* AND NOTHING ELSE ANSWERS TO `P`. This is the assertion that matters and it
+     cannot be made against the keysets, because the collision was never in
+     them: it was a `_debugKey` branch in `main.js` comparing a raw code. So it
+     is asserted against that source directly — the debug set is read off the
+     file and `KeyP` must not be in it. Checked for EVERY key any set binds,
+     not just `P`, because the next one of these will be a different letter. */
+  {
+    const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    const debugCodes = new Set(
+      [...main.matchAll(/code === '([A-Za-z0-9]+)'/g)].map((m) => m[1]));
+    const bound = new Set(KEYSETS.flatMap((k) => FIELDS.flatMap((f) => k[f] ?? [])));
+    const clash = [...bound].filter((c) => debugCodes.has(c));
+    ok('no debug key is also a player\'s key', clash.length === 0, clash.join(', '));
+    ok('...and P in particular is a mount and nothing else',
+      !debugCodes.has('KeyP'));
+  }
   /* RIGHT ALT JUMPS AND `'` SPRINTS, which is the swap the second real
      two-player session asked for and the opposite of how it shipped. The hand
      is the argument: played on O K L ; the right hand sits over the letter row,
@@ -972,7 +988,7 @@ console.log('\n--- ...read through the real InputManager ---');
      circle, and a kid resting a hand on both is a real thing. */
   ok('holding O and Up is still one unit of walk', press('KeyO', 'ArrowUp').my === -1);
 
-  ok('P does nothing now', press('KeyP').on.join() === '');
+  ok('P mounts again', press('KeyP').on.join() === 'mount');
   ok('I interacts', press('KeyI').on.join() === 'interact');
   ok('J attacks', press('KeyJ').on.join() === 'attack');
   ok("' sprints", press('Quote').on.join() === 'sprint');
