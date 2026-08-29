@@ -182,6 +182,59 @@ edge stop being decoration.
 nine-year-old.** `hurt` returns the damage actually dealt so a hit eaten by
 i-frames does not score.
 
+### How far a blade reaches, in front and above
+
+Two separate questions, asked one after the other in `Game.strikePlayers`, and
+only the first one was ever thought about.
+
+**In front.** `Math.hypot(dx, dz)` against `A.reach * clanK`, where `clanK` is
+`_reach() / BASE_REACH` — the kitten's real reach folding in Riverclaw's buff
+*and* the Long Cut orb stack, divided back out so it scales the per-attack
+reaches in `ATTACKS`. `BASE_REACH` exists because the literal 3.4 was written
+in three places that had to agree and one of them was in another file.
+
+**Above and below.** `Math.abs(dy)` against `COMBAT.strikeHeight`, and this was
+the literal **4.5** — a column nine metres tall. A kitten standing on the arena
+floor could cut one who had double-jumped clean over her head, and the girl in
+the air has no way to read that as anything but being hit from nowhere.
+Reported from play as *"the katana hits players from pretty high up"*. It is
+**2.25** now, which is the ask ("at least half as big") and the only answer
+defensible without a play session behind it — so it is a knob on
+`/tuning.html`, because the right value is a thing you find by playing.
+
+**The vertical window is deliberately NOT scaled by `clanK`.** Riverclaw's blade
+is *longer*, not *taller*: a reach buff is a statement about how far in front of
+her the arc goes. Letting it grow the height as well would hand the one clan
+that already out-reaches you the ability to reach up too — an asymmetry the
+round card cannot show, which is the whole reason the round card shows the
+badges at all.
+
+**And `strikeHeight` is not `lift`.** `lift` is how far a hit throws her *up*;
+this is how far apart they may be for it to land at all. They were never
+related, the resemblance is a trap, and the balance page's own row says so.
+
+### The drawn arc IS the hitbox, and for a while it was not
+
+`Player.slash` is scaled by `_reach() / BASE_REACH` — one accessor, so the
+picture and the hit test cannot disagree by construction.
+
+It used to read `clan?.buff?.reach` **directly**. So Riverclaw grew the arc and
+the **Long Cut orbs, which multiply the same hitbox and stack, did not**: a
+kitten wearing three of them swung a normal-looking arc and hit you from a metre
+and a half outside it. The girl being hit reads that as the game cheating rather
+than as her sister having earned something, which is the same failure the round
+card exists to prevent, arrived at from the drawing side.
+
+Worth recording how it survived: `_doSlash`'s own comment already claimed *"the
+drawn arc grows with both"*, and `world-check` already said *"...and the drawn
+arc is derived from the same number"* — a check that asserted `_reach()` folds
+the orbs in (true) and then made a claim about a line of code it never looked
+at. **A check that describes a second thing it does not measure is worse than no
+check**, because it spends the credit. It now drives the real feedback pass and
+reads the mesh scale off `slash`, over five configurations, as a *ratio* against
+`_reach()` — so it cannot be satisfied by a second formula that happens to agree
+at one point, which is exactly what the old direct read was.
+
 ### Telling her what happened, with no new art
 
 **THE OBVIOUS ANSWER IS TO GENERATE HURT AND KO ROWS, AND IT IS THE WRONG ONE.**

@@ -55,14 +55,29 @@ tournament arena) and a fully built town: clan hall, pagoda houses, great torii,
 market street, red bridge, cherry trees, 216 knockable props, 150 cuttable
 bamboo canes. All procedural geometry, merged to a handful of draw calls.
 
-**One to four players.** Run, double-jump, sprint, slash, mount dragons, ride a
-panda. A third and fourth join mid-game without interrupting anybody. The screen
-gives a pane per *group* of kittens standing together, not per kitten; two
-minimaps at most.
+**One to four players, opening on ONE.** Run, double-jump, sprint, slash, mount
+dragons, ride a panda. **PLAY starts a solo game on every machine** — the phone
+already did, and the desktop's `defaultParty: 2` was never a decision, it was
+the game from before one kitten was a state this code could hold. The second
+seat is asked for rather than dealt to nobody: pick up a controller
+(`Game._autoSeat`) or press **ENTER**, which lands her on the ARROWS / `O K L ;`
+set because player 1 already has WASD. A third and fourth join the same way,
+mid-game, without interrupting anybody. Anyone who joined can drop out again
+from the pause menu — that used to be offered only above three players. The
+screen gives a pane per *group* of kittens standing together, not per kitten;
+two minimaps at most, and one at a party of one.
 
 **Any mix of input devices**, with controllers outranking the keyboard and dealt
 in connection order; two full keyboard sets, each playable one-handed. Menus,
 settings and the remap grid all take a pad. See [docs/notes/input.md](docs/notes/input.md).
+
+**On a phone, Settings says who player 1 is.** The on-screen stick is dealt
+ahead of every controller, so that one setting has always decided a seat —
+stick on and a paired gamepad is player 2, stick off and it is player 1. The row
+now says so in those words on a machine that really is a phone
+(`Game._shapeTouchSetting`); the desktop keeps the developer wording, because the
+desktop test mode needs an escape hatch that does not read as being about a
+phone. See [docs/notes/mobile.md](docs/notes/mobile.md).
 
 **The story.** A ~79-second opening cutscene flown through the real 3D world,
 six clan leaders standing at their own shrines with recorded voices, and a

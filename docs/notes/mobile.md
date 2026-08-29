@@ -135,6 +135,38 @@ vanishes.
 
 ---
 
+## One kitten is now every machine's answer, not the phone's
+
+**This section was written about a phone and the desktop has since joined it.**
+`defaultParty` is 1 on both tiers. The desktop's 2 was never a decision — it
+was the game, from before one kitten was a state this code could represent — so
+PLAY dealt a second seat whether or not a second person was in the room, and
+"I want to play on my own" had no answer at all.
+
+Everything below still applies unchanged; what changed is who it applies to.
+The second seat is now **asked for**, two ways:
+
+* **a controller** — she picks it up and `Game._autoSeat` seats her, with the
+  character picker, and no key to know. The Joy-Con pair through Joy2Win is ONE
+  vJoy device with two halves, so player 1 moving her own stick is enough to
+  make `hasSentInput` true for the half her sister will use: that setup is two
+  kittens within a second of PLAY, as it always was.
+* **the keyboard** — **ENTER**, and she lands on the ARROWS / `O K L ;` set,
+  because `_assign` has already given the first padless slot WASD. With a pad
+  connected player 1 IS the pad, so ENTER hands her sister WASD instead;
+  `pad-check` pins both spellings, and the second one is the only reason
+  "and there is no controller attached" is part of the rule.
+
+**`_buildLeaveButtons` moved with it.** The rule was `partySize > 2`, written
+when leaving somebody alone in a co-op game was the only thing DROP OUT could
+do at two. Solo is what PLAY opens on now, so what that rule protected was a
+sister who joined by leaning on ENTER and could never get out again. Player 1
+is still not offered one: slot 0 is what every scene and camera falls back to,
+and the button for ending the game is RESTART.
+
+**The HUD needed nothing at all**, which is the four-player pass paying for this
+one — see below.
+
 ## One kitten: mostly already true
 
 The party size is a variable, not an assumption, and the four-player pass did
@@ -254,6 +286,61 @@ invisible controller and take the arrows from her sister.
    *through* the pad while slot 1 read it *directly*, so pressing `W` walked both
    cats. Found by pressing `W` and watching it happen. The pad now owns keyset 0
    whenever the test flag is on, and only then.
+
+## The mode toggle, and what it is really choosing
+
+**On a phone it decides WHO PLAYER ONE IS, and it never said so.** Touch is
+dealt ahead of every controller (`_devices`), so the two states of this one
+setting have always been:
+
+| stick | player 1 | player 2 |
+| --- | --- | --- |
+| on | the thumb | a paired gamepad |
+| off | gamepad 1 | gamepad 2, and on down |
+
+Both were already true. What was missing was any way to find out: the row read
+*"On-screen stick — Always OFF, controller or keyboard"*, which describes the
+visible half of a change whose important half is a seat moving. A kid with a
+controller and a phone had to discover it by flipping it and losing her seat.
+
+`Game._shapeTouchSetting` re-words the row **in place** on a detected phone:
+*"Player 1 plays as — Mobile input / Gamepad"*. The phone labels live in the
+markup as `data-phone` attributes, so both spellings of the row sit next to each
+other and a change to one is made looking at the other.
+
+**One select, one stored value, two spellings — not two settings.** Two widgets
+over one boolean is two things to keep in step, and the first time they disagree
+nobody can tell which one the game believes. `world-check` asserts the property
+that makes the single row honest: on a detected phone `auto` and `mobile` are
+*the same state*, which is why the test-mode option can be hidden there without
+taking anything away.
+
+**Keyed off `detected`, not `touchPrimary`, and that is the trap.** The desktop
+test mode has `touchPrimary` true, so keying off it would re-word the test
+mode's own escape hatch as "Mobile input" — the row you use to get back to a
+keyboard, dressed as though you were holding a phone. `detected` is the
+hardware's answer and does not move when the override does, so the shaping runs
+once and never has to be undone.
+
+### Two holes the re-wording turned up, both of which read as the setting breaking the game
+
+1. **A claim beats the dealer.** A pad CLAIMED by player 2 stayed hers when the
+   stick went off, leaving player 1 padless and dealt WASD on a device with no
+   keyboard — a kitten nobody can move. Flipping now clears `input.claims`,
+   because this setting *is* the question a claim answers. Only when `padOn`
+   actually moves: the constructor calls `_applyTouchMode` too.
+2. **The pool loses a device and the party did not shrink.** Same phone, thumb
+   plus one pad, two players: turn the stick off and there are two kittens and
+   one controller. `_trimPartyToDevices` sends the back of the queue home
+   *through `_leavePlayer`* — the one path that returns her orbs to the world,
+   sends her panda and dragon home, re-indexes the seats and says out loud that
+   she has gone.
+
+And the note under the row names both states in **both** states, and warns as an
+instruction — *"pair one over Bluetooth, or switch this back to Mobile input"* —
+when the stick goes off with no controller in the room. Refusing the setting
+until a pad was paired was the alternative and it is worse: pairing is a thing
+you do *with* the phone, so that is a switch you cannot reach when you need it.
 
 ## The mode toggle
 

@@ -96,6 +96,32 @@ the first frame flies in from the origin the same way.
 
 ---
 
+## The keyboard's second seat is asked for now, and ENTER is the ask
+
+**PLAY opens on one kitten on every machine** — see
+[mobile.md](mobile.md#one-kitten-is-now-every-machines-answer-not-the-phones)
+for why the desktop's `defaultParty: 2` was never a decision. Nothing about the
+keyboard *dealing* moved; what moved is when the second slot exists at all.
+
+`_assign` still hands the first padless slot the lowest free set, so:
+
+| connected | player 1 | ENTER seats player 2 on |
+| --- | --- | --- |
+| nothing | WASD | the **ARROWS** / `O K L ;` set, below |
+| one pad | the pad | **WASD** |
+
+The second row is the reason "and there is no controller attached" is part of
+the rule rather than a detail. It is not a special case bolted on for solo — it
+is `_assign`'s standing rule that the first person off the controllers gets the
+good half of the keyboard, and a solo game must not grow its own version of it.
+`pad-check`'s *a party of one* block pins both rows, plus that player 1 is not
+moved off her keys by somebody else joining, and that leaning on ENTER seats one
+player rather than one per frame.
+
+A controller is the other way in and needs no key: `Game._autoSeat` seats
+whoever picks one up, gated on `hasSentInput` so a pad charging on the sofa
+seats nobody.
+
 ## Player 2 gets a one-handed cluster, and the browser stops eating her keys
 
 **Player 1 has always played one-handed and player 2 never could.** `WASD` with
