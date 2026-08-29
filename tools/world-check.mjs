@@ -21,7 +21,8 @@ import {
 import {
   LEADERS, ELDER, leaderSpot, LEADER_OFFSET, ClanLeader,
 } from '../src/entities/leader.js';
-import { promptGlyphs } from '../src/core/input.js';
+import { promptGlyphs, PROMPTS, KEYSETS } from '../src/core/input.js';
+import { durationMs, delaysCs } from './gif-sync.mjs';
 import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
 import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../src/entities/dragonball.js';
@@ -1327,26 +1328,39 @@ console.log('\n--- the six clan cards in Help ---');
     (grid.match(/loading="lazy"/g) || []).length === CLANS.length * 2);
 }
 
-console.log('\n--- the two "Moving & fighting" clips ---');
+console.log('\n--- the four "Moving & fighting" clips ---');
 {
   /* THE ONE SECTION IN HELP THAT HAS TO SHOW A VERB. Everything else in the
      panel can be read; "what do I press and what happens" cannot, which is why
      this topic leads on two engine-captured clips instead of the still of the
      town it used to open on.
-     TWO CLIPS AND NOT ONE, and the reason is the encoder, not the design: the
-     on-foot beats are filmed on a pinned camera, so the encoder's interframe
-     differencing throws most of every frame away — and a single clip that also
-     carried the flying beats came out at 4.5MB, more than twice anything else
-     in the panel, because a dragon scrolls the whole world past the lens.
-     Halving the palette moved it seven per cent, which is the number that says
-     the palette was never the problem. So: one clip per kind of controller,
-     and the size cap below is what stops the next session quietly merging
-     them again. */
+     FOUR CLIPS AND NOT ONE, and the first reason is the encoder rather than
+     the design: every one of them is filmed on a PINNED camera, so the
+     encoder's interframe differencing throws most of every frame away — and a
+     single clip that also carried the flying beats came out at 4.5MB, more
+     than twice anything else in the panel, because a dragon scrolls the whole
+     world past the lens. Halving the palette moved it seven per cent, which is
+     the number that says the palette was never the problem. The cap below is
+     what stops the next session quietly merging them again.
+     THE SPLIT IS TWO DIFFERENT SPLITS, ONE PER ROW. The first pair is the same
+     run twice, once per kind of controller, which is the shape for "here is
+     your device". The second pair has BOTH diagrams on every frame — one
+     kitten on the keyboard, one on the pad — and splits by PLACE instead: the
+     ring, where a slash is allowed to land, and the sky, where the same four
+     buttons mean four other things. Neither shape works for the other job. */
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const start = html.indexOf('<span class="ht-title">Moving &amp; fighting</span>');
   ok('Help still has a "Moving & fighting" topic', start > 0);
   const sec = html.slice(start, html.indexOf('</details>', start));
-  const CLIPS = ['/help/move-keys.gif', '/help/move-pad.gif'];
+  const CLIPS = ['/help/move-keys.gif', '/help/move-pad.gif',
+    '/help/move-arena.gif', '/help/move-air.gif'];
+  /* FOUR AND NOT FIVE. Every clip in this topic is warmed one after another by
+     `_warmHelpClips`, and the topic is the first thing a child opens; a fifth
+     is another second and a half of queue in front of the one she is looking
+     at. Four is also two tidy rows, which is what the ask was. */
+  ok('the topic carries exactly four clips',
+    (sec.match(/data-help-gif=/g) || []).length === CLIPS.length,
+    `${(sec.match(/data-help-gif=/g) || []).length}`);
   for (const clip of CLIPS) {
     /* The <img> is found by cutting around the path rather than by a regex, so
        nothing here depends on the order the attributes happen to be written
@@ -1378,6 +1392,28 @@ console.log('\n--- the two "Moving & fighting" clips ---');
     ok('...and it stayed under 2.5MB', buf.length < 2.5 * 1024 * 1024,
       `${(buf.length / 1048576).toFixed(2)}MB`);
   }
+  /* AND THEY LOOP TOGETHER. Two clips side by side start in step and drift
+     apart on the first wrap, because the browser restarts each the moment it
+     ends and nothing coordinates them; a minute in, one is slashing while the
+     other is still walking and the pair stops reading as one demonstration
+     shown twice. `tools/gif-sync.mjs` equalises them by rewriting delays — no
+     pixels, no re-encode — and this is what stops the next capture drifting
+     quietly on the page.
+     EXACTLY equal, not nearly: GIF delays are centiseconds, and "nearly" is
+     worth nothing when the error repeats on every wrap forever. */
+  const runs = CLIPS.map((clip) => durationMs(readFileSync(new URL('../public' + clip, import.meta.url))));
+  ok('all four clips are exactly the same length, so they wrap together',
+    runs.every((ms) => ms === runs[0]), runs.map((ms) => `${(ms / 1000).toFixed(2)}s`).join(' vs '));
+  /* AND NEITHER ENDS ON A LONG FREEZE. Both shipped with a THREE SECOND hold
+     on the final frame. A held GIF frame costs nothing to store, which is why
+     it is tempting, and with nothing on screen to read it does not look like a
+     pause — it looks like the clip has broken. Reported exactly that way about
+     the Ryuuseki capture; these two had it worse and for longer. */
+  for (const clip of CLIPS) {
+    const tail = delaysCs(readFileSync(new URL('../public' + clip, import.meta.url))).at(-1);
+    ok(`...and ${clip} does not end on a freeze`, tail <= 120, `${(tail / 100).toFixed(2)}s`);
+  }
+
   const gAt = sec.indexOf('<div class="move-grid">');
   const grid = gAt < 0 ? '' : sec.slice(gAt, sec.indexOf('</div>', sec.indexOf('</figure>', gAt)));
   ok('the two clips sit side by side in one grid',
@@ -1388,6 +1424,121 @@ console.log('\n--- the two "Moving & fighting" clips ---');
      that fix, and it has to keep naming them. */
   ok('...and the section says what a PlayStation pad shows instead',
     ['✕', '□', '△'].every((glyph) => sec.includes(glyph)));
+}
+
+console.log('\n--- which button belongs to which device ---');
+{
+  /* THE COMPLAINT THIS ANSWERS, IN ONE LINE: "for Slash, it says X and F are
+     the keys... but which is for gamepad and which is for keyboard?" It was a
+     bulleted list of the form "Slash — X / F", and there was genuinely no way
+     to tell. It is a table now, one column per device, and this check is what
+     stops it drifting back into prose or going stale.
+
+     BOTH COLUMNS ARE READ AGAINST THE REAL TABLES, not against a copy written
+     down here. The pad column must be `PROMPTS.standard` — Xbox lettering,
+     which is what a browser reporting `mapping: "standard"` describes — and
+     the keyboard column must be `KEYSETS[0]`, player one's own keys. Renaming
+     a button in input.js therefore fails HERE, rather than leaving a
+     nine-year-old hunting a controller for a button that no longer exists.
+     That exact failure is why `PROMPTS.playstation` became shapes. */
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const at = html.indexOf('<span class="ht-title">Moving &amp; fighting</span>');
+  const sec = at < 0 ? '' : html.slice(at, html.indexOf('</details>', at));
+  ok('the Moving & fighting topic still exists', at > 0);
+
+  const km = sec.slice(sec.indexOf('<div class="keymap">'), sec.indexOf('</div>', sec.indexOf('</table>', sec.lastIndexOf('<table>'))));
+  ok('...and its controls are a table with a device per column, not a list',
+    km.includes('<table>') && !km.includes('<ul>'));
+  /* A HEADED COLUMN AND A TINTED ONE. The heading is what a reader parses; the
+     tint is what she sees without parsing, and `km-pad` is the class that
+     carries it on every cell in that column. */
+  ok('...the gamepad column is named', /<th[^>]*class="km-pad"[^>]*>[^<]*(<[^>]+>[^<]*<\/[^>]+>)?\s*Gamepad/.test(km));
+  ok('...and the keyboard column is named', km.includes('Keyboard'));
+  const padCells = [...km.matchAll(/<td class="km-pad">([\s\S]*?)<\/td>/g)].map((m) => m[1]);
+  const keyCells = [...km.matchAll(/<td>([\s\S]*?)<\/td>/g)].map((m) => m[1]);
+  ok('...every row has a cell in both', padCells.length === keyCells.length && padCells.length >= 11,
+    `${padCells.length} pad, ${keyCells.length} key`);
+
+  /* Every glyph the pad column prints, against the table the GAME prints. */
+  const glyphs = (cells) => cells.flatMap((c) => [...c.matchAll(/<kbd>([^<]*)<\/kbd>/g)].map((m) => m[1]));
+  const padSaid = new Set(glyphs(padCells));
+  for (const [what, action] of [['Jump', 'jump'], ['Slash and breathe', 'attack'],
+    ['Dive', 'interact'], ['Ride and hop off', 'mount'], ['Sprint and boost', 'sprint']]) {
+    ok(`...${what} names PROMPTS.standard.${action}`, padSaid.has(PROMPTS.standard[action]),
+      PROMPTS.standard[action]);
+  }
+  /* AND NOT THE JOY-CON NAMES, which is what it said. They are the pads in
+     Richard's room, so it was an understandable choice and the wrong one: this
+     page is read before anything is plugged in, so it has to name the likeliest
+     pad. The Joy-Con is covered in prose underneath, where saying "SR" is
+     answering a question rather than assuming one. */
+  ok('...and the table does not print Joy-Con lettering',
+    !padSaid.has('ZL/ZR') && !padSaid.has('ZL') && !padSaid.has('ZR') && !padSaid.has('SR'));
+
+  const keySaid = new Set(glyphs(keyCells));
+  const K0 = KEYSETS[0];
+  const keyName = { Space: 'Space', ShiftLeft: 'Shift', KeyF: 'F', KeyE: 'E', KeyQ: 'Q' };
+  for (const [what, action] of [['Jump', 'jump'], ['Slash and breathe', 'attack'],
+    ['Dive', 'interact'], ['Ride and hop off', 'mount'], ['Sprint and boost', 'sprint']]) {
+    const want = keyName[K0[action][0]];
+    ok(`...${what} names player one's own key`, keySaid.has(want), `${want}`);
+  }
+  ok('...and Move names all four of her movement keys',
+    ['W', 'A', 'S', 'D'].every((k) => keySaid.has(k)));
+
+  /* THE OTHER TWO PADS ARE STILL COVERED, in the note under the table. The
+     shapes are there because a kid on a DualSense reported hunting for a button
+     called B; the sprint trigger is there because the table above now says RT,
+     which a PlayStation pad does not have either. */
+  ok('...the note still names the PlayStation shapes',
+    ['✕', '□', '△'].every((glyph) => sec.includes(glyph)));
+  ok('...and the PlayStation sprint trigger, which the table cannot show',
+    sec.includes(PROMPTS.playstation.sprint));
+}
+
+console.log('\n--- the "On a phone" clip, and the gesture it exists for ---');
+{
+  /* THE ONE TOPIC IN HELP WHOSE READER CANNOT SEE THE CONTROLS SHE IS BEING
+     TOLD ABOUT. Everywhere else the panel can name a key and she can look down
+     at it; here the buttons are drawn by the game, on the same glass the panel
+     is covering, so the topic had three paragraphs and no picture and taught
+     the double-tap lock to nobody.
+     The clip is filmed at a REAL phone viewport (812x375, which is what puts
+     `--tp-unit` at 68px through the `max-height: 460px` rule) and the overlay
+     in it is redrawn frame by frame from `getBoundingClientRect` on the live
+     `#touch-pad` elements — so if the pad is ever re-laid-out the clip is stale
+     rather than wrong-by-invention, which is the failure we can actually see.
+     See docs/notes/help.md for the traps that cost this shot seven takes. */
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const start = html.indexOf('<span class="ht-title">On a phone</span>');
+  ok('Help still has an "On a phone" topic', start > 0);
+  const sec = html.slice(start, html.indexOf('</details>', start));
+  const at = sec.indexOf('/help/phone.gif');
+  ok('...and it leads on the phone clip', at > 0);
+  const tag = at < 0 ? '' : sec.slice(sec.lastIndexOf('<img', at), sec.indexOf('>', at) + 1);
+  ok('...deferred like every other picture in the panel',
+    tag.includes('data-help-gif=') && !/\ssrc=/.test(tag));
+
+  /* AND THE PROSE STILL NAMES THE GESTURE. The clip and the sentence teach the
+     same thing on purpose — a child who has the panel open with the sound off
+     and one who scrolls past the picture must both come away with it. This is
+     the check that would have caught the topic as it stood: three notes, none
+     of which said the word "double". */
+  ok('...and the button list tells her about the lock',
+    /double-tap/i.test(sec) && /tap it once more|tap it again/i.test(sec));
+
+  /* THE HELP MAY ONLY PROMISE THE BUTTONS THE PAD WILL ACTUALLY LATCH.
+     `TouchPad.lockable` is not a constant — `_updateTouchContext` narrows it to
+     `['sprint']` the moment the ward orb comes off, because a double tap that
+     latches a button which does nothing is worse than no latch at all. So the
+     pair named here has to be the pair named there, and a session that makes
+     JUMP lockable (or drops RIDE) has to fail HERE rather than in her lap. */
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('...and RUN and RIDE are exactly what the pad will latch',
+    main.includes("setLockable(p.power?.ward ? ['sprint', 'mount'] : ['sprint'])"));
+  const pad = readFileSync(new URL('../src/core/touchpad.js', import.meta.url), 'utf8');
+  ok('...with sprint the one that is always lockable',
+    /this\.lockable = new Set\(\['sprint'\]\)/.test(pad));
 }
 
 console.log('\n--- every Help clip is the size its markup claims ---');
@@ -1404,7 +1555,7 @@ console.log('\n--- every Help clip is the size its markup claims ---');
      re-filmed at a different size has to fail here rather than in her lap. */
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const imgs = [...html.matchAll(/<img[^>]*data-help-gif="\/help\/([^"]+)"[^>]*>/g)];
-  ok('the panel leads on twelve engine-captured clips', imgs.length === 12, `${imgs.length}`);
+  ok('the panel leads on fifteen engine-captured clips', imgs.length === 15, `${imgs.length}`);
   for (const [tag, file] of imgs) {
     const buf = readFileSync(new URL(`../public/help/${file}`, import.meta.url));
     const gw = buf.readUInt16LE(6), gh = buf.readUInt16LE(8);

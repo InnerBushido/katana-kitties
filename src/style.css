@@ -1833,6 +1833,64 @@ details.help-card[open] > summary .ht-chev { transform: rotate(90deg); }
 @media (max-height: 430px) {
   .help-shot img, .move img { max-height: 46vh; }
 }
+/* WHAT DOES WHAT, ON WHICH DEVICE — read by POSITION, not by parsing.
+   The control list used to be bullets of the form "Slash — X / F": two button
+   names and a slash, with nothing saying which one belonged to the pad. A
+   nine-year-old reading it has one device in her hands and wants one name, and
+   a list makes her guess which half is hers. So it is a table, the gamepad
+   column is TINTED as well as headed, and the rows line up — a glance down one
+   column is the whole interaction.
+   Two tables side by side on a wide panel (on foot, on a dragon) and stacked
+   when it narrows, on the same 640px break the clips and the old columns use,
+   so the panel has one breakpoint rather than three. */
+.keymap {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 26px;
+  margin: 16px 0 0;
+}
+@media (max-width: 640px) { .keymap { grid-template-columns: 1fr; } }
+.keymap table { width: 100%; border-collapse: collapse; }
+.keymap caption {
+  font-family: 'Bangers', cursive;
+  letter-spacing: 1px;
+  font-size: 16px;
+  text-align: left;
+  margin-bottom: 4px;
+}
+.keymap th, .keymap td { padding: 5px 8px; text-align: left; vertical-align: middle; }
+.keymap thead th {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  border-bottom: 2px solid var(--ink);
+  white-space: nowrap;
+}
+.keymap tbody th { font-size: 14px; font-weight: 900; }
+/* The hint that used to sit in brackets after the button ("twice to
+   double-jump"). On its own line under the action, because it belongs to the
+   ACTION and not to either device's button. */
+.keymap tbody th i {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-style: italic;
+  opacity: 0.7;
+}
+.keymap tbody tr + tr th, .keymap tbody tr + tr td {
+  border-top: 1px solid rgba(29, 18, 22, 0.14);
+}
+/* The tint is the whole point: it makes "which column is the pad" a colour
+   rather than a word to read. Kept faint so the kbd chips still read as the
+   foreground. Rounded at top and bottom by first/last row so it looks like one
+   painted strip rather than five stacked cells. */
+.keymap .km-pad { background: rgba(224, 81, 44, 0.09); }
+.keymap thead .km-pad { border-radius: 6px 6px 0 0; }
+.keymap tbody tr:last-child .km-pad { border-radius: 0 0 6px 6px; }
+.keymap kbd { white-space: nowrap; }
+.keymap td kbd + kbd { margin-left: 2px; }
+
 /* h4 arrived with the two-column control list inside the accordion. */
 .panel h4 {
   font-family: 'Bangers', cursive;

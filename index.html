@@ -193,28 +193,106 @@
                   button lighting up on the pad as it goes down.</figcaption>
               </figure>
             </div>
-            <div class="cols">
-              <div>
-                <h4>On foot</h4>
-                <ul>
-                  <li><b>Move</b> — stick / <kbd>WASD</kbd></li>
-                  <li><b>Jump</b> — <kbd>A</kbd> / <kbd>Space</kbd>
-                    <i>(twice to double-jump)</i></li>
-                  <li><b>Slash</b> — <kbd>X</kbd> / <kbd>F</kbd></li>
-                  <li><b>Sprint</b> — <kbd>ZL/ZR</kbd> / <kbd>Shift</kbd></li>
-                  <li><b>Ride</b> — <kbd>Y</kbd> / <kbd>Q</kbd> when the ring glows</li>
-                </ul>
-              </div>
-              <div>
-                <h4>On a dragon</h4>
-                <ul>
-                  <li><b>Fly</b> — stick</li>
-                  <li><b>Up / down</b> — <kbd>A</kbd> / <kbd>B</kbd></li>
-                  <li><b>Boost</b> — <kbd>ZL/ZR</kbd> / <kbd>Shift</kbd></li>
-                  <li><b>Breathe</b> — <kbd>X</kbd> / <kbd>F</kbd></li>
-                  <li>Hop off anywhere — it flies home itself</li>
-                </ul>
-              </div>
+            <!-- ONE COLUMN PER DEVICE, NOT ONE LINE PER ACTION.
+                 This was a bulleted list reading "Slash — X / F", which is two
+                 button names, a slash, and no way at all to tell which of them
+                 is the pad and which is the keyboard. Reported exactly that way
+                 and it is the right complaint: the reader arrives knowing which
+                 THING is in her hands and wanting the name of the button on it,
+                 and a list makes her guess. A table answers by position — the
+                 pad column is tinted and headed, and every row lines up under
+                 it, so it can be read at a glance instead of parsed.
+
+                 THE PAD COLUMN IS `PROMPTS.standard`, WHICH IS XBOX LETTERING,
+                 and it is not a free choice: that is what a browser reporting
+                 `mapping: "standard"` is describing and what most PC pads are
+                 silk-screened with. It used to be the Joy-Con names (ZL/ZR for
+                 sprint) because Joy-Cons are the pads in the room — but this
+                 page is read before anything is plugged in, so it has to name
+                 the most likely pad and let the note below cover the rest.
+                 `world-check` reads these cells against `PROMPTS.standard`
+                 itself, so a rename in input.js fails here rather than leaving
+                 a nine-year-old hunting for a button that is not there. -->
+            <div class="keymap">
+              <table>
+                <caption>On foot</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">What it does</th>
+                    <th scope="col" class="km-pad"><span aria-hidden="true">🎮</span> Gamepad</th>
+                    <th scope="col"><span aria-hidden="true">⌨</span> Keyboard</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <th scope="row">Move</th>
+                    <td class="km-pad"><kbd>left stick</kbd></td>
+                    <td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Jump <i>press twice to double-jump</i></th>
+                    <td class="km-pad"><kbd>A</kbd></td>
+                    <td><kbd>Space</kbd></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Slash</th>
+                    <td class="km-pad"><kbd>X</kbd></td>
+                    <td><kbd>F</kbd></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Sprint</th>
+                    <td class="km-pad"><kbd>RT</kbd></td>
+                    <td><kbd>Shift</kbd></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Ride <i>when the ring glows</i></th>
+                    <td class="km-pad"><kbd>Y</kbd></td>
+                    <td><kbd>Q</kbd></td>
+                  </tr>
+                </tbody>
+              </table>
+              <table>
+                <caption>On a dragon</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">What it does</th>
+                    <th scope="col" class="km-pad"><span aria-hidden="true">🎮</span> Gamepad</th>
+                    <th scope="col"><span aria-hidden="true">⌨</span> Keyboard</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <th scope="row">Fly</th>
+                    <td class="km-pad"><kbd>left stick</kbd></td>
+                    <td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Climb</th>
+                    <td class="km-pad"><kbd>A</kbd></td>
+                    <td><kbd>Space</kbd></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Dive</th>
+                    <td class="km-pad"><kbd>B</kbd></td>
+                    <td><kbd>E</kbd></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Boost</th>
+                    <td class="km-pad"><kbd>RT</kbd></td>
+                    <td><kbd>Shift</kbd></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Breathe fire</th>
+                    <td class="km-pad"><kbd>X</kbd></td>
+                    <td><kbd>F</kbd></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Hop off <i>it flies home itself</i></th>
+                    <td class="km-pad"><kbd>Y</kbd></td>
+                    <td><kbd>Q</kbd></td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
             <!-- THE LIST ABOVE IS ONE PAD'S LETTERING AND THE GAME SUPPORTS
                  THREE. `PROMPTS` in core/input.js carries a naming per device
@@ -225,12 +303,45 @@
                  hunting a PlayStation pad for a button called B. That exact
                  hunt is why the PlayStation prompts became shapes; see the note
                  on `PROMPTS.playstation`. -->
+            <!-- AND THE SAME BUTTONS WITH BOTH OF YOU PLAYING, in the two
+                 places the table above cannot show: the ring, where a slash is
+                 allowed to land, and the sky, where the buttons mean four other
+                 things. Two clips again, but split by PLACE rather than by
+                 device — each of these has BOTH diagrams on the frame at once,
+                 one kitten on the keyboard and one on the pad, which is the
+                 ordinary case in a game two children play side by side and is
+                 also the only way to show one press on each at the same moment.
+                 Both are filmed on a pinned camera, which is what keeps them
+                 under half a megabyte and a megabyte and a half respectively;
+                 read the 4.5MB paragraph in docs/notes/help.md before moving
+                 either shot onto a camera that flies.
+                 ALL FOUR CLIPS RUN EXACTLY 13.92s, so the pair on each row
+                 wraps together and stays in step forever — `tools/gif-sync.mjs`
+                 equalises them by rewriting frame delays, and `world-check`
+                 fails if a re-filmed clip drifts. -->
+            <div class="move-grid">
+              <figure class="move">
+                <img data-help-gif="/help/move-arena.gif" width="512" height="332"
+                  alt="Two kittens in the tournament ring during a live round, a keyboard diagram under one and a drawn controller under the other: Ember sprints across the deck, both jump on the same beat, she double-jumps, then cuts Frost on the run and Frost cuts her back">
+                <figcaption><b>In the ring.</b> Both of you at once — one on
+                  the keyboard, one on a pad. Sprint, jump together, and a
+                  slash that actually lands.</figcaption>
+              </figure>
+              <figure class="move">
+                <img data-help-gif="/help/move-air.gif" width="512" height="332"
+                  alt="Two kittens on two dragons over the home island, with the same two input diagrams: they fly across, climb, dive, boost back the other way and both breathe fire — one gold, one ice">
+                <figcaption><b>On a dragon.</b> The same four buttons, a long
+                  way up: fly, climb, dive, boost, breathe fire.</figcaption>
+              </figure>
+            </div>
             <p class="ht-note">
               <b>Whatever pad you plug in, the game names its own buttons.</b>
-              A PlayStation pad shows the shapes — <b>✕</b> to jump,
-              <b>□</b> to slash, <b>△</b> to ride — and an Xbox pad shows
-              <kbd>A</kbd> <kbd>X</kbd> <kbd>Y</kbd>. The buttons on screen
-              always match the one in your hands.
+              The table above is Xbox lettering, which is what most pads are
+              printed with. A <b>PlayStation</b> pad shows the shapes instead —
+              <b>✕</b> to jump, <b>□</b> to slash, <b>△</b> to ride, and
+              <kbd>R2</kbd> to sprint. A <b>Joy-Con</b> held sideways sprints on
+              <kbd>SR</kbd>. Whatever it is, the button the game draws over your
+              kitten is the one in your hands.
             </p>
             <!-- THE GAME OPENS ON ONE KITTEN NOW, on every machine, and this
                  is the only place a player is told so before it happens. The
@@ -260,6 +371,38 @@
               with a Bluetooth controller can press <b>START</b> to join, but you
               share the one screen. Playing across <b>two phones is coming later</b>.
             </p>
+            <!-- THE CLIP IS THE ONLY THING HERE THAT CAN TEACH THE LOCK.
+                 A double tap that leaves a button held down is a gesture with no
+                 name a nine-year-old knows, and every sentence we wrote for it
+                 read like a riddle ("tap it twice and let go, and it stays on").
+                 Shown, it is obvious in one beat: the thumb lifts and the button
+                 stays gold. Filmed AT A PHONE'S VIEWPORT, so the pad in the
+                 picture is the pad she is holding — the overlay is redrawn from
+                 the live DOM's own measured rectangles rather than mocked up,
+                 because a diagram that disagreed with the real thing would be
+                 worse than no diagram. See docs/notes/help.md.
+                 The button list moved ABOVE the controller note: it is the
+                 caption to the clip, and the controller paragraph is the "or
+                 don't play this way at all" escape hatch, which belongs last. -->
+            <figure class="help-shot">
+              <img data-help-gif="/help/phone.gif" width="512" height="280"
+                alt="A kitten in the tournament ring with the on-screen phone controls drawn under her: a thumb drags the stick to move her about, taps JUMP and SLASH, holds RUN to sprint, then double-taps RUN so it stays gold with no thumb on it — she keeps running and one thumb slashes at the same time — then double-taps RIDE to lock a blue shield bubble on">
+              <figcaption>Hold <b>RUN</b> or <b>RIDE</b> — or <b>tap it twice</b>
+                and let go, and it stays on until you tap it again.</figcaption>
+            </figure>
+            <!-- ON A PHONE, AND ONLY ON A PHONE. `body.touch-ui` hides this on a
+                 desktop: naming a thumbstick to somebody with no touchscreen is
+                 an instruction she cannot follow. -->
+            <p class="ht-note touch-only">
+              <b>Move</b> — left thumb anywhere on the left half, and drag.
+              <b>Jump</b> <kbd>A</kbd>, <b>slash</b> <kbd>X</kbd>,
+              <b>clan</b> <kbd>B</kbd>, <b>ride</b> <kbd>Y</kbd>, <b>run</b>
+              hold <kbd>ZR</kbd>. <b>Double-tap RUN or RIDE</b> to lock it
+              on — your thumb comes off and it stays down, so you can run and
+              slash with one hand. Tap it once more to let it go.
+              <b>Tap the map</b> to zoom it, and <b>tap the
+              sin &amp; cos board</b> in the Dojo to hide it.
+            </p>
             <!-- WHO PLAYER ONE IS, which is what that setting actually decides —
                  see `Game._shapeTouchSetting`. It reads as a stick being drawn
                  or not, and the half that matters is a SEAT moving: the screen
@@ -273,16 +416,6 @@
               controller</b> — a second controller joins as player 2. Pick
               <b>Mobile input</b> to go back to your thumbs, and then a
               controller joins as <b>player 2</b> instead.
-            </p>
-            <!-- ON A PHONE, AND ONLY ON A PHONE. `body.touch-ui` hides this on a
-                 desktop: naming a thumbstick to somebody with no touchscreen is
-                 an instruction she cannot follow. -->
-            <p class="ht-note touch-only">
-              <b>Move</b> — left thumb anywhere on the left half, and drag.
-              <b>Jump</b> <kbd>A</kbd>, <b>slash</b> <kbd>X</kbd>,
-              <b>clan</b> <kbd>B</kbd>, <b>ride</b> <kbd>Y</kbd>, <b>run</b>
-              hold <kbd>ZR</kbd>. <b>Tap the map</b> to zoom it, and <b>tap the
-              sin &amp; cos board</b> in the Dojo to hide it.
             </p>
           </div>
         </details>
