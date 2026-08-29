@@ -197,8 +197,8 @@ from before four players existed, so kittens three and four were never cut for
 anywhere, grottos included.
 
 **A Help page that shows the game instead of describing it.** Twelve topics,
-each a `<details>` a kid opens; eleven of them lead on a GIF **captured out of
-the running game**, four on stills, and the Clans topic on the six leaders. A
+each a `<details>` a kid opens; twelve GIFs **captured out of the running game**,
+three stills, and the Clans topic on the six leaders. A
 new dependency-free GIF encoder (`tools/gif.mjs`, alongside `png.mjs`, for the
 same rule-9 reason) does the filming, and `tools/gif-selftest.mjs` reads its
 output back — a codec bug presents as "the picture looks a bit off", never as a
@@ -212,6 +212,32 @@ first topic rather than on BACK. All of it in
 anything: a hidden tab freezes a capture, `drawImage` on a WebGL canvas returns
 stale pixels, and a clip whose camera moves costs four times one whose does not.
 
+**"Dragon balls & Ryuuseki" is a clip now.** The last topic in Help that
+described a whole run of verbs — walk into a star, hold it up, the sky goes out,
+a dragon rises over the great torii, two of you climb onto his neck and one of
+you fires seven beams — over a single still that showed none of them. It is
+filmed through the game: the star is collected by walking into it, the dark is
+`SummonScene.duskWant` falling at the game's own rate, and the seats, the beams
+and the flight are `7`/`8`/`9` and the pilot's key. `ryuuseki.jpg` was deleted
+with it, on the same argument that took `town.jpg`.
+
+**Two things about it are worth carrying forward.** The pause beats are
+**played, not frozen** — a held GIF frame reads as the clip glitching when there
+is no text on screen to read, so a beat lingers by running the game at 12fps and
+keeps only a couple of hundred milliseconds of actual hold. And the beat where
+she picks the star up is **not** on a pinned camera: it hands the shot to
+`Game.starShot`, the swing-and-zoom the game plays for a real player, with the
+game's own toast painted onto the frame (the words are read off the live toast
+element, so the clip cannot say something the game does not). Everything, and
+the byte budget behind the frame rates, is in
+[help.md](docs/notes/help.md#the-dragon-clip-four-fixed-cameras-one-the-game-directs).
+
+**The check that pairs a clip with its size is now general.** It was written for
+the two movement clips and stayed pinned to them while nine more arrived;
+generalising it immediately found `panda.gif` claiming 640x360 for a 384x216
+file. Every `data-help-gif` in the panel is now measured against its own GIF
+header and its own 2.5MB cap.
+
 ---
 
 ## Open items
@@ -224,8 +250,8 @@ it works, so `feature/help-onboarding` merged into `main` and went to
 `origin/main`, which Vercel deploys. The branch is **kept** until it has been
 tried on a real phone, which is what the push was for.
 
-**What the Help page still owes.** Four clips are missing and the reasoning for
-each is in [help.md](docs/notes/help.md#what-is-not-done):
+**What the Help page still owes.** Three clips are missing and the reasoning
+for each is in [help.md](docs/notes/help.md#what-is-not-done):
 
 1. **"On a phone" has no clip** — the one that matters most, since the push
    exists to test on a phone. It needs the touch overlay filmed: move, jump,
@@ -237,7 +263,13 @@ each is in [help.md](docs/notes/help.md#what-is-not-done):
 3. **An "on a dragon" controller clip.** The beats exist behind `part: 'air'` in
    the shot script; read the 4.5MB paragraph in help.md before choosing where it
    goes, because a flying camera defeats the encoder.
-4. **Dragon Balls & Ryuuseki** still leads on a still.
+
+**The capture rig is not in the repo.** `harness.js`, `movekit.js` and the shot
+script live in the session scratchpad, which is temporary — every session that
+films something has recovered them from the previous session's scratchpad. What
+is durable is [help.md](docs/notes/help.md), which now carries the traps rather
+than the code. If that stops being enough, the decision to make is whether a
+browser-driving harness belongs in `tools/`.
 
 **Played, pushed and live — the third, fourth and fifth four-player sessions,
 all in one push.** Richard playtested the input fixes and confirmed everything

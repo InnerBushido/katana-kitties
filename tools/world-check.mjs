@@ -1390,6 +1390,49 @@ console.log('\n--- the two "Moving & fighting" clips ---');
     ['✕', '□', '△'].every((glyph) => sec.includes(glyph)));
 }
 
+console.log('\n--- every Help clip is the size its markup claims ---');
+{
+  /* THE SAME PROMISE THE TWO MOVEMENT CLIPS ALREADY MAKE, MADE BY ALL OF THEM.
+     That pair was written when there were two clips, and it stayed pinned to
+     those two while nine more arrived. Generalising it immediately found
+     `panda.gif` claiming 640x360 for a 384x216 file — harmless only because the
+     ratio happened to match, which is luck and not a rule. The attribute is the
+     browser's intrinsic size before a byte of the image has landed, so a wrong
+     one reflows the topic under a nine-year-old's finger the moment it does.
+
+     Read off the GIF header, never copied from the shot script: a clip
+     re-filmed at a different size has to fail here rather than in her lap. */
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const imgs = [...html.matchAll(/<img[^>]*data-help-gif="\/help\/([^"]+)"[^>]*>/g)];
+  ok('the panel leads on twelve engine-captured clips', imgs.length === 12, `${imgs.length}`);
+  for (const [tag, file] of imgs) {
+    const buf = readFileSync(new URL(`../public/help/${file}`, import.meta.url));
+    const gw = buf.readUInt16LE(6), gh = buf.readUInt16LE(8);
+    const dim = (name) => {
+      const k = tag.indexOf(name + '="');
+      return k < 0 ? NaN : Number(tag.slice(k + name.length + 2, tag.indexOf('"', k + name.length + 2)));
+    };
+    ok(`${file} states its real size`, dim('width') === gw && dim('height') === gh,
+      `markup ${dim('width')}x${dim('height')}, file ${gw}x${gh}`);
+    /* The cap the panel warms against: these load one after another, so a fat
+       one stalls every picture behind it. */
+    ok(`...and ${file} stayed under 2.5MB`, buf.length < 2.5 * 1024 * 1024,
+      `${(buf.length / 1048576).toFixed(2)}MB`);
+  }
+
+  /* THE DRAGON TOPIC LEADS ON THE CLIP NOW, NOT ON A STILL. It was the last
+     topic in the panel that described a run of VERBS — walk into a star, the
+     sky goes out, two of you climb on and he fires — over a single frame of a
+     dragon hanging in the air, which showed none of them. `ryuuseki.jpg` was
+     deleted on the same argument that took `town.jpg`: an orphan under
+     `public/` ships forever and is invisible on the page. */
+  const at = html.indexOf('<span class="ht-title">Dragon balls &amp; Ryuuseki</span>');
+  ok('Help still has a "Dragon balls & Ryuuseki" topic', at > 0);
+  const sec = at < 0 ? '' : html.slice(at, html.indexOf('</details>', at));
+  ok('...and it leads on the engine capture, not on a still',
+    sec.includes('data-help-gif="/help/ryuuseki.gif"') && !sec.includes('ryuuseki.jpg'));
+}
+
 console.log('\n--- nothing in public/help/ is dead weight ---');
 {
   /* EVERY FILE IN public/help/ SHIPS. `public/` is copied into `dist` wholesale
@@ -8283,7 +8326,8 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
       moveFigs.some((f) => f.includes(`${gif}.gif`) && f.includes(kanji)));
   }
   for (const g of ['feast-eat', 'ability-ward', 'ability-dive',
-    'ability-cross', 'ability-charge', 'panda', 'dojo-world', 'dojo-sincos', 'dealer']) {
+    'ability-cross', 'ability-charge', 'panda', 'dojo-world', 'dojo-sincos', 'dealer',
+    'ryuuseki']) {
     ok(`the ${g}.gif clip is on disk`,
       existsSync(new URL(`../public/help/${g}.gif`, import.meta.url)));
   }
