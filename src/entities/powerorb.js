@@ -198,6 +198,19 @@ export const stockFor = (id, players = 2) => {
  * available again before it runs out. Started at the end of the tail, the two
  * numbers on the profile screen do not add up to the gap she actually feels.
  *
+ * `regrab` — HOW LONG THE SECOND TAP HAS TO UNDO THE FIRST TAP'S RELEASE, and
+ * it is not the double-tap window. A double tap IS press-release-press, so by
+ * the time the second press arrives the release has already ended the block and
+ * charged the wait; this is the grace in which `Player._latchWard` can take
+ * that back. Half a second against a 340ms tap window, so a gesture is never
+ * lost to one long frame, and short enough that it can only ever forgive a
+ * release the player is visibly still in the middle of.
+ *
+ * IT IS NOT A SECOND ABILITY. Latching buys her the BUTTON — two thumbs cannot
+ * hold three things, which is the same problem the touch pad's RUN latch
+ * solves. It buys no extra seconds: `wardUsed` keeps running, so a latched
+ * bubble pops on the same frame a held one would have.
+ *
  * QUARTER GRAVITY WHILE IT IS UP, and that is what makes it an air move rather
  * than a panic button. Holding it at the top of a jump turns a fall into a
  * float, which is how you cross to a shard or hang over a sister winding up a
@@ -210,6 +223,7 @@ export const WARD = tune('WARD', {
   coolMin: 0.4,
   gravity: 0.25,
   radius: 2.6,
+  regrab: 0.5,
 });
 
 /**

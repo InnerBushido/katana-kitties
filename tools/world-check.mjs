@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import { World, CLANS } from '../src/world/world.js';
 import { Dragon, BREEDS, DRAGON_SPOTS } from '../src/entities/dragon.js';
-import { Billboard } from '../src/core/gfx.js';
+import { Billboard, xrayVertexMat } from '../src/core/gfx.js';
 import { Player, CALLOUT_WIDEST, BLESS_STRETCH } from '../src/entities/player.js';
 import {
   Panda, PANDA_TIERS, PANDA_SPEED, CLAW, tierFor, toNextTier, FULL_PANDA_COST,
@@ -27,7 +27,12 @@ import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../src/entities/dragonball.js';
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
-import { SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest } from '../src/world/build.js';
+import {
+  SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest,
+  buildArena,
+} from '../src/world/build.js';
+import { SatanBlast, BLAST } from '../src/systems/satanblast.js';
+import { MrSatan } from '../src/entities/satan.js';
 import { ISLAND_MUSIC, MUSIC, SAMPLES, trackForIsland } from '../src/core/audio.js';
 import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -4003,8 +4008,13 @@ console.log('\n--- the three power moves ---');
     p.setPowerOrbs(orbs);
     return p;
   };
+  /* `doubled` IS PART OF THE SHAPE NOW, so the default stub answers it. A pad
+     that simply lacked it would let `Player` be written against a method half
+     the callers do not have — which is exactly what happened, and the crash was
+     in this file rather than in the game. */
   const PAD = (over = {}) => ({
-    mx: 0, my: 0, down: () => false, pressed: () => false, ...over,
+    mx: 0, my: 0, down: () => false, pressed: () => false, doubled: () => false,
+    ...over,
   });
 
   ok('all three are entries in ATTACKS',
@@ -4159,6 +4169,140 @@ console.log('\n--- the three power moves ---');
   real.update(1 / 60, PAD({ down: (a) => a === 'mount', pressed: (a) => a === 'mount' }),
     world, [], null);
   ok('the mount button really starts it', real.wardOn);
+
+
+  /* --- and the double tap, which latches it ---
+     TWO THUMBS CANNOT HOLD THREE THINGS. Blocking while steering and jumping
+     wants the stick, MOUNT and A at once, which is one thumb short — the same
+     shortage the touch pad's RUN latch already answers. The gesture is press,
+     release, press, and the middle step is what makes it hard: the release has
+     already ended the block and charged the wait before the second press
+     arrives. See Player._latchWard. */
+  {
+    const TAP = PAD({ down: (a) => a === 'mount', pressed: (a) => a === 'mount',
+      doubled: (a) => a === 'mount' });
+    const ONE = PAD({ down: (a) => a === 'mount', pressed: (a) => a === 'mount' });
+    const NONE = PAD({ doubled: () => false });
+
+    /* The window is stated ONCE and imported. Two copies of a number that must
+       agree is one copy a session tunes and one it does not — and this one is
+       a gesture a child learns on glass and repeats on a controller. */
+    const inp = readFileSync(new URL('../src/core/input.js', import.meta.url), 'utf8');
+    const tp = readFileSync(new URL('../src/core/touchpad.js', import.meta.url), 'utf8');
+    ok('the double-tap window is exported once',
+      /export const DOUBLE_TAP_MS = \d+/.test(inp));
+    ok('...and the touch pad imports it rather than keeping its own',
+      /import \{ ACTIONS, DOUBLE_TAP_MS \} from '\.\/input\.js'/.test(tp)
+      && !/const DOUBLE_TAP_MS = \d/.test(tp));
+
+    /* THE WHOLE GESTURE, FRAME BY FRAME, because the middle step is the hard
+       one and a test that skipped it would pass against a version that does
+       not work. Press, LET GO, press: the release runs `_dropWard` and charges
+       the wait a fifth of a second before the second press arrives, so the
+       second press has to take that back rather than start something new. */
+    const L = mk(['ward']);
+    L.update(1 / 60, ONE, world, [], null);            // tap one
+    ok('the first tap of a double tap is an ordinary held block',
+      L.wardOn && !L.wardHold);
+    step(L, NONE, 6);                                  // ...and she lets go
+    ok('...and letting go ends it, as it always did', !L.wardOn);
+    L.update(1 / 60, TAP, world, [], null);            // tap two, inside the window
+    ok('...but the second tap inside the window latches it', L.wardOn && L.wardHold);
+    /* THE PAYOFF: the button comes back and the bubble stays. */
+    step(L, NONE, 30);
+    ok('...so letting go no longer ends it', L.wardOn && L.warded);
+
+    /* AND IT BUYS NO EXTRA TIME. A latch that also lengthened the block would
+       be a second, better ability hiding inside the first, and the profile
+       screen has one number on it. `wardUsed` has been running since tap ONE,
+       so the cap is measured from there. */
+    let latchedFor = L.wardUsed;
+    for (let i = 0; i < 600 && L.wardOn; i++) {
+      L._stepSpecials(1 / 60, NONE, world, null);
+      latchedFor += 1 / 60;
+    }
+    /* A COLD DOUBLE TAP IS NOT A LATCH, and it must not be: with no block up
+       and no release to forgive there is nothing to take back, so it falls
+       through to an ordinary press. Two taps on a fresh kitten therefore give
+       her exactly what two taps always gave her. */
+    const cold = mk(['ward']);
+    cold.update(1 / 60, TAP, world, [], null);
+    ok('a double tap out of nowhere is just a press', cold.wardOn && !cold.wardHold);
+    line('block length when latched', `${latchedFor.toFixed(2)}s (cap ${WARD.max})`);
+    ok('a latched block ends at the same cap a held one does',
+      Math.abs(latchedFor - WARD.max) < 0.05);
+    ok('...and the latch comes off with it', !L.wardHold);
+
+    /* SHE HAS TO DO IT AGAIN. This is the half that was broken on the phone:
+       the latch outlived the block it was holding, so the shield worked once
+       and the button was dead after. */
+    ok('...so a single press cannot bring it back', L._popWard(null) === false);
+    step(L, NONE, 200);
+    L.update(1 / 60, ONE, world, [], null);
+    ok('...and one press after the wait gives an ORDINARY held block',
+      L.wardOn && !L.wardHold);
+
+    /* THE RE-GRAB IS ARMED BY A RELEASE AND BY NOTHING ELSE. Armed by running
+       out, a double tap on a spent bubble would hand her a fresh one free. */
+    const spent = mk(['ward']);
+    spent._popWard(null);
+    step(spent, PAD({ down: (a) => a === 'mount' }), 600);
+    ok('running out does not arm a re-grab', !spent.wardOn && spent.wardRegrab === 0);
+    ok('...so a double tap on a spent bubble is refused',
+      spent._latchWard(null) === false);
+
+    const let_go = mk(['ward']);
+    let_go._popWard(null);
+    step(let_go, NONE, 1);
+    ok('letting go DOES arm one', !let_go.wardOn && let_go.wardRegrab > 0);
+    const usedBefore = let_go.wardUsed;
+    ok('...and the second tap takes the bubble back', let_go._latchWard(null) === true);
+    ok('...with the wait it charged', let_go.wardCool === 0 && let_go.wardTail === 0);
+    /* NOT THE CLOCK, THOUGH. She resumes the same block, not a new one. */
+    ok('...but NOT the seconds already spent',
+      Math.abs(let_go.wardUsed - usedBefore) < 1e-9);
+    ok('...and the grace is spent once', let_go.wardRegrab === 0);
+
+    /* THE GRACE OUTLASTS THE TAP WINDOW, deliberately: a gesture must not be
+       lost to one long frame, and it must not last long enough to forgive a
+       release the player has finished making. */
+    ok('the grace is longer than the tap window and still short',
+      WARD.regrab > 0.34 && WARD.regrab < 1.0, `${WARD.regrab}s`);
+
+    /* NOT OUT OF A CROSS SLASH, BY EITHER DOOR. The technique's whole price is
+       that she is planted and open; a bubble she can get back on the second cut
+       refunds it. `_popWard` always refused. `_latchWard` is the second door,
+       and `_startTriple` dropping the ward as a "release" would have propped
+       it open. */
+    const cross = mk(['ward', 'tri']);
+    cross._popWard(null);
+    cross._startTriple(null);
+    ok('starting a Cross Slash drops the bubble', !cross.wardOn);
+    ok('...and arms no re-grab', cross.wardRegrab === 0);
+    ok('...so a double tap cannot buy it back mid-technique',
+      cross._latchWard(null) === false && !cross.wardOn);
+    const crossLate = mk(['ward', 'tri']);
+    crossLate._popWard(null);
+    step(crossLate, NONE, 1);              // released: grace armed
+    crossLate.triLockT = 0.5;              // ...and now she is in the technique
+    ok('...nor inside the recovery, even with the grace still running',
+      crossLate.wardRegrab > 0 && crossLate._latchWard(null) === false);
+
+    /* A LATCH IS A PROMISE ABOUT ONE BLOCK. Outliving it means a kitten who
+       gets on a dragon, gets off and taps mount ONCE is invincible. */
+    const cleared = mk(['ward']);
+    cleared.update(1 / 60, TAP, world, [], null);
+    cleared._clearSpecials();
+    ok('getting on a dragon takes the latch with the bubble',
+      !cleared.wardOn && !cleared.wardHold && cleared.wardRegrab === 0);
+
+    /* THE ANIMAL STILL WINS THE BUTTON. The double tap is read inside the
+       branch nothing was in range for, so it cannot beat a dragon to it. */
+    const src = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+    ok('the double tap is asked only after every mount has declined',
+      /if \(!\(pad\.doubled\?\.\('mount'\) && this\._latchWard\(hud\)\)\) this\._popWard\(hud\);/
+        .test(src));
+  }
 
   /* --- the charge --- */
   const c = mk(['charge']);
@@ -9201,6 +9345,428 @@ console.log('\n--- a trade is agreed twice, by two people ---');
     globalThis.document.getElementById = baseGet;
     globalThis.document.createElement = realCreate;
   }
+
+
+console.log('\n--- Mr. Satan loses his temper ---');
+{
+  const R = world.arenaRing;
+  const B = world.arenaBooth;
+  /* He stands where the tournament puts him: on the announcer's box. Every
+     distance below is measured against THAT, because the whole safety argument
+     is about where the box is relative to the deck. */
+  const satan = {
+    position: new THREE.Vector3(B.x, B.y, B.z),
+    group: { visible: true },
+    lines: [],
+    poses: [],
+    setLine(t) { this.lines.push(t); },
+    setPose(p) { this.poses.push(p); },
+  };
+  const said = [];
+  const toasts = [];
+  const mkP = (x, y, z) => {
+    const p = new Player({
+      texture: new THREE.Texture(), index: 0,
+      spawn: new THREE.Vector3(x, y, z), cols: 8, rows: 4, mirror: false,
+    });
+    p.position.set(x, y, z);
+    return p;
+  };
+  const game = {
+    players: [],
+    sfx: () => {},
+    toast: (t) => toasts.push(t),
+  };
+  const blast = new SatanBlast({
+    game, world, satan, announcer: { say: (id) => said.push(id) },
+  });
+  const run = (secs, armed = true) => {
+    for (let i = 0; i < Math.round(secs * 60); i++) blast.update(1 / 60, armed);
+  };
+
+  /* --- WHERE IT CAN REACH, WHICH IS THE SAFETY PROPERTY --- */
+  ok('the booth really is outside the fighting square',
+    world.arenaOutBy(B.x, B.z) > 0, `${world.arenaOutBy(B.x, B.z).toFixed(1)} out`);
+  const onBox = mkP(B.x + 1, B.y, B.z);
+  ok('somebody standing on the box with him is in reach',
+    blast._reaches(onBox, BLAST.notice));
+  /* THE HEIGHT TEST IS WHAT KEEPS A LIVE ROUND SAFE. The deck is four units
+     below the box; without this a radius of 9 reaches down onto the ring's
+     north edge and starts throwing fighters out of rounds. */
+  const onDeck = mkP(B.x, R.y, B.z + 8);
+  ok('...but a fighter on the deck below is NOT, even though she is close',
+    !blast._reaches(onDeck, BLAST.notice),
+    `${Math.abs(onDeck.position.y - satan.position.y).toFixed(1)}m below`);
+  ok('...and that is a height rule, not a distance one',
+    Math.hypot(onDeck.position.x - B.x, onDeck.position.z - B.z) < BLAST.notice);
+  /* AND NOBODY IN THE RING IS EVER TOUCHED, which is the whole argument for
+     letting it fire during a live round rather than special-casing one.
+
+     THE GEOMETRY DOES NOT GIVE THIS FOR FREE, and believing it did was the
+     bug. A 14-unit blast from a booth eight units north of the edge reaches
+     six units INTO the ring, so the circle alone is not an answer; the height
+     test covers a fighter standing on the deck and stops covering her the
+     moment she jumps. `_reaches` asks `arenaOutBy` for exactly this. */
+  let reachIntoRing = 0;
+  for (let a = 0; a < 32; a++) {
+    const x = B.x + Math.cos((a / 32) * Math.PI * 2) * BLAST.reach;
+    const z = B.z + Math.sin((a / 32) * Math.PI * 2) * BLAST.reach;
+    if (world.arenaOutBy(x, z) <= 0) reachIntoRing++;
+  }
+  ok('the blast circle really does overlap the ring', reachIntoRing > 0,
+    `${reachIntoRing}/32 of its rim`);
+  /* So: a fighter jumping just inside the north edge, level with him and well
+     inside the blast — the exact case the first draft would have thrown out of
+     a live round. */
+  const jumping = mkP(B.x, satan.position.y, R.z - R.half + 2);
+  ok('...and a fighter jumping inside it is level with him and close enough',
+    Math.abs(jumping.position.y - satan.position.y) <= BLAST.noticeUp
+    && Math.hypot(jumping.position.x - B.x, jumping.position.z - B.z) < BLAST.reach);
+  ok('...but is refused anyway, because she is in the ring',
+    !blast._reaches(jumping, BLAST.reach)
+    && world.arenaOutBy(jumping.position.x, jumping.position.z) <= 0);
+  ok('...and it reaches the whole booth deck',
+    BLAST.reach > Math.hypot(5, 2.8), `${BLAST.reach} vs ${Math.hypot(5, 2.8).toFixed(1)}`);
+  ok('...which is wider than what wakes him', BLAST.reach > BLAST.notice);
+
+  /* --- THE TEN SECONDS, AND WHAT HAPPENS AT THE END OF THEM --- */
+  const victim = mkP(B.x + 1, B.y, B.z);
+  game.players = [victim];
+  run(0.1);
+  ok('walking up to him sets him off', blast.stage === 'taunt');
+  ok('...and he taunts you first', said[0] === 'sat_taunt');
+  ok('...with a bubble that says it too', satan.lines.some((l) => /TOUGH/.test(l)));
+  ok('...and he is still standing normally', satan.poses.length === 0);
+
+  run(BLAST.taunt - 1);
+  ok('nine seconds later he is still only talking', blast.stage === 'taunt');
+  run(1.1);
+  ok('at ten he has had enough', blast.stage === 'charge');
+  ok('...and says so', said[1] === 'sat_blast');
+  ok('...and puts his arms up', satan.poses.at(-1) === 'charge');
+
+  /* THE CHARGE IS A BEAT, NOT A DELAY. One second is long enough to read the
+     pose and short enough that a child does not wander off during it. */
+  ok('the wind-up is about a second', BLAST.charge >= 0.6 && BLAST.charge <= 1.5,
+    `${BLAST.charge}s`);
+  const hpBefore = victim.hp;
+  run(BLAST.charge + 0.05);
+  ok('...then it goes off', blast.stage === 'boom');
+
+  /* --- NOBODY IS HURT AND NOTHING IS LOST --- */
+  ok('and she is thrown a long way',
+    Math.hypot(victim.velocity.x, victim.velocity.z) > 20,
+    `${Math.hypot(victim.velocity.x, victim.velocity.z).toFixed(0)} of ${BLAST.knock}`);
+  ok('...upwards as well as outwards', victim.velocity.y >= BLAST.lift);
+  ok('...AWAY from him', (victim.position.x - B.x) * victim.velocity.x > 0);
+  ok('...taking no damage at all', victim.hp === hpBefore && hpBefore > 0);
+  ok('...and not being knocked out', !victim.ko);
+  ok('...and it says what happened', toasts.some((t) => /BLASTS/.test(t)));
+
+  /* A HARDER THROW THAN ANY BLOW IN THE GAME, which is the joke. */
+  ok('it throws further than the hardest real attack',
+    BLAST.knock > ATTACKS.dash.knock && BLAST.lift > ATTACKS.air.lift);
+
+  /* --- THE WARD DOES NOT STOP IT --- */
+  const shielded = mkP(B.x + 1, B.y, B.z);
+  shielded.setPowerOrbs(['ward']);
+  shielded._popWard(null);
+  ok('a kitten under the bubble really is protected from blades',
+    shielded.hurt(40, { x: B.x, z: B.z }, ATTACKS.stand, null) === 0);
+  shielded.blast({ x: B.x, z: B.z }, { knock: BLAST.knock, lift: BLAST.lift });
+  ok('...but the bubble does not stop Mr. Satan',
+    Math.hypot(shielded.velocity.x, shielded.velocity.z) > 20);
+  ok('...and it comes down with her', !shielded.wardOn && !shielded.wardHold);
+
+  /* A KNOCKED-OUT KITTEN IS LEFT ALONE. She is lying there being counted, and
+     that count is the one thing here that could actually decide something. */
+  const down = mkP(B.x + 1, B.y, B.z);
+  down.ko = true;
+  down.velocity.set(0, 0, 0);
+  down.blast({ x: B.x, z: B.z }, { knock: BLAST.knock, lift: BLAST.lift });
+  ok('somebody already knocked out is left where she is',
+    down.velocity.length() === 0);
+
+  /* TWO KITTENS IN THE SAME SPOT AS HIM — a nine-year-old's first idea, and a
+     zero-length vector normalises to NaN. */
+  const onTop = mkP(B.x, B.y, B.z);
+  onTop.blast({ x: B.x, z: B.z }, { knock: BLAST.knock, lift: BLAST.lift });
+  ok('standing exactly on him does not NaN her across the world',
+    Number.isFinite(onTop.velocity.x) && Number.isFinite(onTop.velocity.z)
+    && Math.hypot(onTop.velocity.x, onTop.velocity.z) > 20);
+
+  /* --- AND HE CALMS DOWN --- */
+  run(BLAST.boom + 0.05);
+  ok('afterwards he puts his arms down', satan.poses.at(-1) === 'idle');
+  ok('...and the drawing is put away', blast.fx.visible === false);
+  ok('...and he will not do it again immediately', blast.stage === 'cool');
+  run(BLAST.cool - 1);
+  ok('...even with somebody standing right there', blast.stage === 'cool');
+  run(1.2);
+  ok('...but he will eventually', blast.stage === 'taunt');
+  ok('the wait is long enough to be a treat rather than a nuisance',
+    BLAST.cool >= 20, `${BLAST.cool}s`);
+
+  /* --- THE ARENA CLOSING ENDS IT MID-SENTENCE --- */
+  run(2);
+  blast.update(1 / 60, false);
+  ok('closing the arena stops him where he stands', blast.stage === 'off');
+  ok('...and tidies the explosion away',
+    !blast.fx.visible && !blast.charge.visible && satan.poses.at(-1) === 'idle');
+  run(30, false);
+  ok('...and he cannot start again while it is shut', blast.stage === 'off');
+
+  /* --- IT IS NOT COMBAT --- */
+  /* COMMENTS STRIPPED FIRST. The header of that file NAMES `strikePlayers` in
+     order to say it never calls it, so a raw text search finds the promise and
+     reports it as the breach. */
+  const codeOnly = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const bsrc = codeOnly(readFileSync(
+    new URL('../src/systems/satanblast.js', import.meta.url), 'utf8'));
+  ok('the blast never calls hurt', !/\.hurt\(/.test(bsrc));
+  ok('...and never asks the combat gate',
+    !/strikePlayers/.test(bsrc) && !/\.fighting/.test(bsrc));
+  const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+  const at = psrc.indexOf('  blast(from, force) {');
+  const bfn = psrc.slice(at, at + 1400);
+  ok('...and `blast` has no damage argument to pass', at > 0 && !/dmg/.test(bfn));
+  ok('...and never touches her health', !/this\.hp/.test(bfn));
+  const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('it is armed only at the arena, with him in his box',
+    /!!this\.tournament\?\.active && !!this\.satan\?\.group\.visible && !this\.travel/
+      .test(msrc));
+  ok('...and is reset when they fly home', /this\.satanBlast\?\.reset\(\);/.test(msrc));
+
+  /* --- THE POSE IS OPTIONAL, LIKE EVERY OTHER DRAWING --- */
+  const bare = new MrSatan(
+    { texture: new THREE.Texture(), contentScale: 1, pad: 0 },
+    { x: 0, y: 0, z: 0 },
+  );
+  bare.setChargeArt(null);
+  bare.setPose('charge');
+  ok('with no charge sheet he simply stays in his ordinary pose',
+    bare.pose === 'idle' && bare.sprite.visible && !bare.chargeSprite);
+  /* --- IT CAN BE LOOKED AT WITHOUT PLAYING FOR TEN SECONDS ---
+     `provoke` is the debug key's entire implementation, and the point of it
+     being one line is that the sequence it starts is the REAL one. A key that
+     drew the explosion itself would keep working after the real path broke,
+     which is the only interesting failure mode a debug key has. */
+  blast.reset();
+  said.length = 0;
+  blast.provoke();
+  ok('the debug key skips the fuse and goes straight to the shout',
+    blast.stage === 'charge');
+  ok('...through the real path, so he says the line and raises his arms',
+    said.at(-1) === 'sat_blast' && satan.poses.at(-1) === 'charge');
+  run(BLAST.charge + BLAST.boom + 0.1);
+  ok('...and it really does end in the explosion', blast.stage === 'cool');
+
+  /* --- AND THE KEY IS DISCOVERABLE ---
+     The debug panel is opened with ` and LISTS ITS OWN KEYS, which is the only
+     documentation any of them have. A key handled but not listed is a key
+     nobody presses, so ask it generally rather than about the new one: every
+     code `_debugKey` answers to has a row in the panel, and a label in the map
+     the panel prints its rows from. */
+  const dbgAt = msrc.indexOf('  _debugKey(code) {');
+  const dbgEnd = msrc.indexOf('\n  _debugAllOrbs(', dbgAt);
+  ok('the debug dispatcher was found', dbgAt > 0 && dbgEnd > dbgAt);
+  const dbgBody = msrc.slice(dbgAt, dbgEnd);
+  const handled = [...new Set(
+    [...dbgBody.matchAll(/code === '([A-Za-z0-9]+)'/g)].map((m) => m[1]),
+  )].filter((c) => c !== 'Backquote');   // its row is the CLOSE button
+  const listed = new Set(
+    [...msrc.matchAll(/\$\{row\('([A-Za-z0-9]+)'/g)].map((m) => m[1]),
+  );
+  const labelBlock = msrc.slice(
+    msrc.indexOf('const DEBUG_KEY_LABEL = {'),
+    msrc.indexOf('};', msrc.indexOf('const DEBUG_KEY_LABEL = {')),
+  );
+  ok('every debug key the game answers to is listed in the panel',
+    handled.length > 8 && handled.every((c) => listed.has(c)),
+    handled.filter((c) => !listed.has(c)).join(', ') || `${handled.length} keys`);
+  ok('...and every one of them has a label to print',
+    handled.every((c) => labelBlock.includes(`${c}:`)),
+    handled.filter((c) => !labelBlock.includes(`${c}:`)).join(', ') || 'all');
+  ok("...including Mr. Satan's", handled.includes('Digit2') && listed.has('Digit2'));
+  /* NOTHING IN PLAY CALLS IT. One mention in the whole game, in the handler
+     for the key — the gag has to be reached by walking up to him. */
+  ok('nothing but the debug key provokes him',
+    (msrc.match(/provoke\(/g) ?? []).length === 1
+      && /Digit2'\)[\s\S]{0,600}?provoke\(\)/.test(msrc));
+
+  /* --- AND IT REALLY DOES COST NOTHING, WHICH IS ITS WHOLE LICENCE ---
+     THIS IS THE CHECK THAT WOULD HAVE CAUGHT IT, and it is written on the two
+     numbers a browser produced rather than on the argument that was wrong.
+
+     That argument was: the explosion can only catch somebody already outside
+     the fighting square, so it cannot change a round. True, and not enough —
+     outside the square is not the same as already being penalised. A kitten
+     standing on the announcer's box is outside it and safely ABOVE the deck,
+     so `_updateOut` is charging her nothing; being thrown off drops her below
+     the floor, where the same rule takes thirty health and a point. She left
+     with 100 and landed in the middle of the ring with 70. */
+  {
+    const T = new Tournament({
+      game: { players: [], toast() {}, sfx() {} },
+      world, audio: null, announcer: null,
+    });
+    const flung = mkP(B.x + 1.5, B.y, B.z);
+    T.game.players = [flung];
+    const hp0 = flung.hp;
+    /* Off the side of the deck and below it — where the arc actually ends. */
+    const dumped = () => {
+      flung.position.set(R.x + R.half + 6, R.y - 10, R.z);
+      flung.onGround = true;
+      /* A ring-out hands out 1.5s of invulnerability so she is not dropped
+         into a free combo, and no time passes in here — so without this the
+         SECOND dump is silently swallowed by the FIRST one's mercy, and the
+         check reads as the exemption never ending. */
+      flung.invulnT = 0;
+    };
+
+    /* FIRST, THAT THE RULE BITES THERE AT ALL. Without this the rest of the
+       block proves only that a kitten standing somewhere harmless is unharmed,
+       which is the shape of test that passes after the feature is deleted. */
+    dumped();
+    T._updateOut(1, 30);
+    ok('the ring-out rule really does reach where the blast throws her',
+      flung.hp === hp0 - 30, `${hp0} -> ${flung.hp}`);
+
+    /* NOW THE SAME FALL, ON MR. SATAN'S ACCOUNT. */
+    flung.hp = hp0;
+    flung.position.set(B.x + 1.5, B.y, B.z);
+    flung.blast(satan.position, { knock: BLAST.knock, lift: BLAST.lift });
+    ok('...and the flight he starts carries an exemption from it',
+      flung.blastT > 0);
+    dumped();
+    T._updateOut(1, 30);
+    ok('...so she comes down with the health she went up with', flung.hp === hp0);
+    ok('...and with nothing counting against her', (flung.outT ?? 0) === 0);
+    /* AND SHE IS PICKED UP, NOT LEFT THERE. Skipping the rule was the first
+       version: it kept her health and then rang her out four seconds later
+       when the flag ran out, which is the same penalty arriving too late to be
+       understood. The free return — back in the middle, nothing said — is what
+       the feast already does, and it is what ENDS the flight. */
+    ok('...and the arena puts her back in the middle for nothing',
+      Math.abs(flung.position.x - R.x) < 0.01 && Math.abs(flung.position.z - R.z) < 0.01);
+
+    /* THE FLAG IS SPENT BY THAT, and it has to be: an exemption from the
+       ring-out rule is the one thing in this feature that could be used to win
+       a round, so it must not survive the thing it paid for. */
+    ok('...which spends the exemption', flung.blastT === 0);
+    dumped();
+    T._updateOut(1, 30);
+    ok('...leaving the ring-out rule exactly as it was', flung.hp === hp0 - 30);
+
+    /* AND A CEILING, for the flight that is never caught at all — the arena
+       closing under her, a landing back on the deck. */
+    flung.hp = hp0;
+    flung.position.set(B.x + 1.5, B.y, B.z);
+    flung.blast(satan.position, { knock: BLAST.knock, lift: BLAST.lift });
+    for (let i = 0; i < 8 * 60; i++) flung._updateCombat(1 / 60);
+    ok('an uncaught flight expires on its own', flung.blastT === 0);
+    dumped();
+    T._updateOut(1, 30);
+    ok('...and she is an ordinary kitten outside the ring again',
+      flung.hp === hp0 - 30);
+
+    /* THE OTHER CATCHER SPENDS IT TOO. `_catchFallers` is the floor under the
+       whole island and it relocates her without going near the price above, so
+       a flag only cleared by `_updateOut` would ride back up with her. */
+    flung.position.set(B.x + 1.5, B.y, B.z);
+    flung.blast(satan.position, { knock: BLAST.knock, lift: BLAST.lift });
+    flung.position.set(R.x + R.half + 6, R.y - OUT_FLOOR - 5, R.z);
+    T._catchFallers();
+    ok('the floor of the arena spends it as well', flung.blastT === 0);
+  }
+}
+
+console.log('\n--- seeing through the arena ---');
+{
+  /* FOUR CUTS, BECAUSE FOUR PLAY. This was two, written when two was the whole
+     game, so kittens three and four were never cut for at all. */
+  const gfx = readFileSync(new URL('../src/core/gfx.js', import.meta.url), 'utf8');
+  ok('the x-ray material cuts for four kittens', /const MAX = 4;/.test(gfx));
+
+  const mat = xrayVertexMat();
+  /* Compile it by hand — there is no GL here, so drive `onBeforeCompile` with
+     a stub shader and read the uniforms it was handed. */
+  const shader = {
+    uniforms: {},
+    vertexShader: '#include <common>\n#include <worldpos_vertex>',
+    fragmentShader: '#include <common>\n#include <clipping_planes_fragment>',
+  };
+  mat.onBeforeCompile(shader);
+  ok('...and declares that many slots in the shader',
+    shader.uniforms.uCutOn.value.length === 4
+    && shader.uniforms.uCutPos.value.length === 4);
+  ok('...and the fragment shader loops over all of them',
+    /for \(int i = 0; i < 4; i\+\+\)/.test(shader.fragmentShader));
+
+  /* THE TWO-PLAYER ANSWER IS BIT-IDENTICAL, which is the fifth non-negotiable.
+     Two cuts set and two left off means slots 2 and 3 arrive with uCutOn at
+     zero and `continue` out on the loop's first line. */
+  mat.setCuts(new THREE.Vector3(0, 0, 0),
+    [new THREE.Vector3(1, 2, 3), new THREE.Vector3(4, 5, 6)]);
+  ok('two kittens leave the extra slots switched off',
+    shader.uniforms.uCutOn.value[0] === 1 && shader.uniforms.uCutOn.value[1] === 1
+    && shader.uniforms.uCutOn.value[2] === 0 && shader.uniforms.uCutOn.value[3] === 0);
+  ok('...and the shader skips a slot that is off on its first line',
+    /if \(uCutOn\[i\] < 0\.5\) continue;/.test(shader.fragmentShader));
+  mat.setCuts(new THREE.Vector3(0, 0, 0), [
+    new THREE.Vector3(1, 1, 1), new THREE.Vector3(2, 2, 2),
+    new THREE.Vector3(3, 3, 3), new THREE.Vector3(4, 4, 4),
+  ]);
+  ok('...and four kittens all get one',
+    [...shader.uniforms.uCutOn.value].every((v) => v === 1));
+
+  /* --- the arena's own see-through furniture --- */
+  const built = buildArena();
+  ok('the arena comes back in two piles', Array.isArray(built.seeThrough));
+  ok('...and the see-through one is not empty', built.seeThrough.length > 0,
+    `${built.seeThrough.length} pieces`);
+  /* THE FOUR CORNER POSTS AND THE BOOTH, and nothing that is not tall. Counted
+     rather than named because the pieces have no ids: five per corner is the
+     column, its two caps and its two banner strips. */
+  ok('...and holds at least the four posts and the box',
+    built.seeThrough.length >= 4 * 5 + 6);
+  ok('...while the deck itself stays in the ordinary pile',
+    built.parts.length > built.seeThrough.length * 2);
+
+  ok('the world builds a second mesh for it', !!world.arenaSeeThrough);
+  ok('...in the x-ray material',
+    typeof world.arenaSeeThrough.material.setCuts === 'function');
+  ok('...and the ordinary furniture is still the plain one',
+    typeof world.arenaProps.material.setCuts !== 'function');
+  /* NO SHADOW. The cut is a discard in the colour pass and the shadow pass
+     knows nothing about it, so a post that has opened for you would go on
+     casting a column of shade with no column above it. */
+  ok('...and it casts no shadow, because a discard does not',
+    world.arenaSeeThrough.castShadow === false);
+
+  /* THE TWO MESHES ARE ONE PIECE OF FURNITURE. Missing this shows as four
+     vermillion columns hanging over open sky where the arena will be. */
+  const wasOpen = world.arenaOpen;
+  world.openArena(true);
+  ok('opening the arena shows both meshes',
+    world.arenaProps.visible === true && world.arenaSeeThrough.visible === true);
+  world.openArena(false);
+  ok('...and shutting it hides both',
+    world.arenaProps.visible === false && world.arenaSeeThrough.visible === false);
+  world.openArena(wasOpen);
+
+  const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+    .replace(/\r/g, '');
+  ok('the arena cut is aimed per view, like the grottos',
+    /_aimXray\(camera\) \{\n    this\._aimArenaXray\(camera\);/.test(msrc));
+  /* HE GOES IN FIRST. Four kittens plus Mr Satan is five names for four slots,
+     and he is the one everybody is looking at. */
+  const aimAt = msrc.indexOf('_aimArenaXray(camera) {');
+  const aim = msrc.slice(aimAt, aimAt + 1400);
+  ok('...and Mr. Satan is added before the kittens',
+    aimAt > 0 && aim.indexOf('this.satan') < aim.indexOf('for (const p of this.players)'));
+  ok('...and it stops at four', /seen\.length >= 4/.test(aim));
+}
 
   delete globalThis.document;
 }

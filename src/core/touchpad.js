@@ -62,7 +62,7 @@
    is the readout, and it is the same code path either way.
 --------------------------------------------------------------------------- */
 
-import { ACTIONS } from './input.js';
+import { ACTIONS, DOUBLE_TAP_MS } from './input.js';
 
 /** Which actions get an on-screen button, and where they sit.
  *
@@ -128,9 +128,13 @@ const DEFAULT_LABELS = {
  *  `InputManager` already eats the first fifth of it. */
 const STICK_RADIUS = 46;
 
-/** How close two taps have to be to latch a button on. Generous, because the
- *  hands this is for are small and not fast. */
-const DOUBLE_TAP_MS = 340;
+/* THE DOUBLE-TAP WINDOW IS IMPORTED, NOT DECLARED HERE. It used to be a local
+   340, which was fine while a latch was a thing only glass could do. The Ward
+   now latches off a double tap on a CONTROLLER as well (`PadState.doubled`),
+   and the two are one gesture with two implementations — a kid who learns the
+   rhythm on a phone picks up a pad and it has to be the same rhythm. Two copies
+   of a number that must agree is two copies one session tunes and the other
+   does not. See `input.js`. */
 
 /** Below this fraction of the radius the stick reads as centred. Smaller than
  *  the pad deadzone on purpose — `InputManager.dead` is what actually shapes

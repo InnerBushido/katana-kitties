@@ -73,7 +73,14 @@ export function toonVertexMat(opts = {}) {
  * @returns {THREE.MeshToonMaterial} with `setCuts(camPos, points)` attached.
  */
 export function xrayVertexMat(opts = {}) {
-  const MAX = 2;                       // two kittens, and never more
+  /* FOUR, BECAUSE FOUR PLAY. This was 2 with a comment reading "two kittens,
+     and never more", written when two was the whole game — the four-player
+     pass moved past it and this did not, so kittens three and four were simply
+     never cut for and a grotto swallowed them whole while their sisters walked
+     around visible. The two-player answer is bit-identical either way: the
+     extra slots arrive with `uCutOn` at zero and `continue` out of the loop on
+     the first line of it, which is the fifth non-negotiable holding. */
+  const MAX = 4;
   const mat = new THREE.MeshToonMaterial({
     gradientMap: RAMP,
     vertexColors: true,

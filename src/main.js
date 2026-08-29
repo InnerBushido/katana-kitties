@@ -44,6 +44,7 @@ import {
 import { Menagerie } from './systems/menagerie.js';
 import { AngelForm } from './entities/angel.js';
 import { ArenaQuest, SATAN_TOWN, MILESTONES } from './systems/arenaquest.js';
+import { SatanBlast } from './systems/satanblast.js';
 import { loadBoard, BOARD_MODES } from './systems/leaderboard.js';
 import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
 import { ORB_IDS, CROSS } from './entities/powerorb.js';
@@ -80,7 +81,7 @@ const DEBUG_KEY_LABEL = {
      one that broke the pattern. Moved rather than removed — the readout is the
      first thing to reach for when somebody says it lags, and a tool you have
      to open a panel to reach is a tool nobody reaches for. */
-  Digit1: '1',
+  Digit1: '1', Digit2: '2',
   Digit3: '3', Digit4: '4', Digit5: '5', Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9',
   Digit0: '0', KeyM: 'M', KeyZ: 'Z', Minus: '-', Equal: '=',
   Backquote: '`',
@@ -694,12 +695,27 @@ class Game {
        because sprinting is always a thing you can do. */
     this.touchPad.setLockable(p.power?.ward ? ['sprint', 'mount'] : ['sprint']);
 
-    /* AND IT UNLATCHES ITSELF WHEN IT RUNS OUT. The shield lasts about two
-       seconds and then stops; a button still glowing over an expired ability is
-       the control lying about the game. `warded` is the same field the damage
-       gate reads, so this cannot disagree with whether she is actually
-       protected. */
-    if (!p.warded && !p.power?.ward) this.touchPad.release('mount');
+    /* AND IT UNLATCHES ITSELF WHEN IT RUNS OUT — which is what this line SAYS
+       and, until this pass, is not what it did. The test was
+       `!p.warded && !p.power?.ward`, which needs BOTH: the bubble down AND the
+       orb gone. Losing the orb is the rare case; running out is what happens
+       every single time. So the latch survived the block it was holding, and
+       because a latched button is held forever it never produced another press
+       edge — one shield, then a glowing button that could not be used again
+       without un-latching it by hand. Reported as the shield working once.
+
+       `wardCool > 0` IS THE TEST, NOT `!warded`. The obvious `!p.warded` fires
+       on the frame she double-taps as well, because this runs before the
+       controller does and the bubble is not up yet — it would drop the latch
+       in the same frame the second tap set it. A cooldown is only ever running
+       because a block has just ENDED, which is exactly the moment meant here.
+
+       The orb-gone case still has to be covered separately: traded away
+       mid-block there is no cooldown to read, because `_dropWard` charges one
+       but `setLockable` above has already stopped offering the latch and
+       released it. Kept as its own clause anyway — it costs a comparison and
+       it means this line does not depend on the one above it staying true. */
+    if (p.wardCool > 0 || !p.power?.ward) this.touchPad.release('mount');
   }
 
   /**
@@ -1020,11 +1036,19 @@ class Game {
        or a missing champion costs the tournament, not the boot. */
     setLoad('Building the arena…');
     await frame();
-    const [satanArt, griffinArt] = await Promise.all([
+    const [satanArt, griffinArt, satanChargeArt] = await Promise.all([
       loadSpriteAtlas('/sprites/leader_satan.png',
         { views: 1, rows: 1, clearPockets: true, maxAtlas: this.device.atlasMax })
         .catch(() => null),
       loadSpriteAtlas('/sprites/griffin.png',
+        { views: 1, rows: 1, clearPockets: true, maxAtlas: this.device.atlasMax })
+        .catch(() => null),
+      /* His arms-up pose, for the one second before he detonates. Loaded with
+         the same options as his idle sheet — the two are measured against each
+         other (see `MrSatan.setChargeArt`), and a different `clearPockets` or
+         `maxAtlas` between them would mean comparing two numbers taken with
+         two different rulers. Missing costs the pose and nothing else. */
+      loadSpriteAtlas('/sprites/satan_charge.png',
         { views: 1, rows: 1, clearPockets: true, maxAtlas: this.device.atlasMax })
         .catch(() => null),
     ]);
@@ -1045,6 +1069,13 @@ class Game {
       sat_ko: '/voice/sat_ko.mp3',
       sat_win1: '/voice/sat_win1.mp3',
       sat_win2: '/voice/sat_win2.mp3',
+      /* His tantrum, both halves. Buffered here with the rest and not lazily,
+         for the reason `load` gives at length: these fire mid-play with
+         nothing waiting on them, and the second one is the cue for an
+         explosion one second later — a clip that arrives late arrives after
+         the bang it was supposed to announce. */
+      sat_taunt: '/voice/sat_taunt.mp3',
+      sat_blast: '/voice/sat_blast.mp3',
     });
 
     if (satanArt) {
@@ -1054,6 +1085,11 @@ class Game {
       const g2 = this.world.heightAt(spot.x, spot.z) ?? sg;
       this.satan = new MrSatan(satanArt, { x: spot.x, y: g2 ? g2.y : 4, z: spot.z });
       this.satan.art = satanArt;
+      /* Unconditional — `setChargeArt` takes null and does nothing with it, so
+         there is no second place that has to remember whether the drawing
+         exists. See it for why the two sheets are measured against each other
+         rather than each sized on its own. */
+      this.satan.setChargeArt(satanChargeArt);
       /* Remembered, because he MOVES: he stands in the town to invite them
          and in his box at the arena to call the rounds, and `reset` has to be
          able to put him back without recomputing a spot that depends on a
@@ -1231,6 +1267,13 @@ class Game {
     this.quest = new ArenaQuest({
       game: this, world: this.world, satan: this.satan, announcer: this.announcer,
     });
+    /* Mr Satan's tantrum. Built beside the quest because it is the same shape
+       of thing — a little state machine that owns him for a few seconds — and
+       because the quest is what puts him in his box for it to trigger from. */
+    this.satanBlast = new SatanBlast({
+      game: this, world: this.world, satan: this.satan, announcer: this.announcer,
+    });
+    this.scene.add(this.satanBlast.fx);
     /* The Powerup Kotodama, and the screen the girls swap them on. Both are
        built at boot and inert until 100% mischief — `Kotodama.awakened` is the
        one flag that says whether any of it exists, and the update loop, the
@@ -2284,6 +2327,13 @@ class Game {
        ever won to put some barrels back up. */
     this.tournament?.finish();
     this.quest?.reset();
+    /* HIS TEMPER RESETS WITH EVERYTHING ELSE, and it must be explicit rather
+       than left to the `armed` test in `update`. That test does end the state
+       machine on the next frame — but RESTART also teleports him back to the
+       town on this one, and a half-drawn explosion is a group of meshes parked
+       at whatever position it was last given. `reset` puts the drawing away
+       and his arms down in the same call. */
+    this.satanBlast?.reset();
     this.travel = null;
     this.griffin?.skip();
     if (this.summonScene) {
@@ -2985,6 +3035,26 @@ class Game {
       this.toast('[debug] round ended — feast in a moment', 0);
     }
 
+    /* --- Mr. Satan's tantrum, without the ten seconds ---
+       Same argument as `4`. The gag is a FUSE: walk up to him, get taunted,
+       and then wait ten seconds before anything moves — which is what makes it
+       land in play and what made it unlookable-at while it was being written.
+       `2` jumps to the shout, the frame the charge and the explosion both hang
+       off, through `provoke` and therefore through the real `_shout`.
+
+       IT REFUSES OUT LOUD AND SAYS WHAT TO PRESS. Sixth non-negotiable: the
+       key does nothing at all unless the arena is open and he is standing in
+       his box, and a debug key that silently ignored you is one you would spend
+       ten minutes deciding was broken. */
+    if (code === 'Digit2') {
+      if (!this.tournament?.active || !this.satan?.group.visible || this.travel) {
+        this.toast('[debug] no Mr. Satan to annoy — press 6, then fly to the arena', 0);
+        return;
+      }
+      this.satanBlast?.provoke();
+      this.toast('[debug] Mr. Satan has had enough of your kitty shenanigans', 0);
+    }
+
     /* --- the scene viewer ---
        Every cutscene in the game is gated behind hours of play and fires ONCE
        per session, which makes the last thing anybody writes also the hardest
@@ -3624,6 +3694,7 @@ class Game {
       ${row('Digit3', 'give EVERY kitten all 8 kotodama')}
       ${row('Digit5', 'open the trade / profile screen')}
       ${row('Digit4', 'end the live round (feast)')}
+      ${row('Digit2', 'Mr. Satan loses his temper (skip the fuse)')}
       ${row('KeyM', 'maths overlay')}
       ${row('KeyZ', 'map zoom')}
       ${row('Digit1', 'frame cost — fps, draws, pixels, GPU', this._perfOn)}
@@ -4149,6 +4220,10 @@ class Game {
       else this.tournament.begin(leagues[0]?.id);
     } else {
       this.tournament.finish();
+      /* BEFORE HE MOVES. `reset` reads his position to put the effect away
+         over him; run after the teleport it would tidy up in the town square,
+         three hundred units from the explosion it is tidying. */
+      this.satanBlast?.reset();
       this.satan?.moveTo(this.satan.homeAt.x, this.satan.homeAt.y, this.satan.homeAt.z);
       this.quest.onReturn();
       this.toast('Back in town — Mr. Satan will run it again whenever you like', 0);
@@ -5305,6 +5380,17 @@ class Game {
        watched vanish for nothing. */
     this.menagerie?.update(dt, this.players);
     this.tournament?.update(dt, this.input.players);
+    /* AFTER the tournament, so the blast reads the positions the round has
+       already finished moving — a kitten thrown onto the box on this frame is
+       up there for this frame's notice test, not next frame's.
+       ARMED ONLY WHILE HE IS IN HIS BOX AND THE ARENA IS OPEN. Both, because
+       they can disagree: he is visible in the TOWN before the arena opens,
+       where the blast must never fire, and the arena stays open while the
+       girls fly home, where he is not. */
+    this.satanBlast?.update(
+      dt,
+      !!this.tournament?.active && !!this.satan?.group.visible && !this.travel,
+    );
     this.announcer?.update(dt);
     this._updateSparks(dt);
     /* AFTER the tournament, because the tournament is what ends a round, and a
@@ -6821,6 +6907,7 @@ class Game {
    * anybody watching can see.
    */
   _aimXray(camera) {
+    this._aimArenaXray(camera);
     const list = this.world.grottos;
     if (!list?.length) return;
     for (const G of list) {
@@ -6843,6 +6930,56 @@ class Game {
       G.walls.material.setCuts(camera.position, seen);
       G.roof.material.setCuts?.(camera.position, seen);
     }
+  }
+
+  /**
+   * The arena's corner posts and the announcer's box, for THIS camera.
+   *
+   * SEPARATE FROM THE GROTTOS BECAUSE THE REACH RULE IS DIFFERENT, not because
+   * the material is. A grotto is a dome on an island somebody may be walking
+   * past, so it cuts only for kittens near it — otherwise a sister on the far
+   * side of the island bores a tunnel through a building nobody can see her
+   * from. The arena is one room that every fighter is inside for the whole
+   * time it is open, and the posts are AT ITS CORNERS: a kitten thrown at a
+   * corner is as far from the opposite post as anyone ever gets and still very
+   * much wants it to open. So the test is "is she in the arena", not "is she
+   * near this pillar".
+   *
+   * MR SATAN IS CUT FOR TOO, and he is the reason the booth is in this mesh at
+   * all. He stands ON the box; without him in the list the roof opens for
+   * whoever climbed up beside him and closes again over him, which is worse
+   * than not opening at all — it says the game knows he is there and has
+   * chosen to hide him.
+   *
+   * THE CAP IS FOUR AND SO IS THE PARTY, which is not a coincidence but is
+   * also not quite enough: four kittens plus Mr Satan is five. He is added
+   * FIRST and the loop stops at four, so with a full party the furthest kitten
+   * loses her cut rather than the man everybody is looking at. A better answer
+   * would sort by distance, and the honest reason not to is that it would cost
+   * a sort per view per frame to change which of two adjacent kittens keeps a
+   * hole in a pillar neither of them is behind.
+   */
+  _aimArenaXray(camera) {
+    const mesh = this.world.arenaSeeThrough;
+    if (!mesh?.visible) return;
+    const seen = [];
+    if (this.satan?.group.visible) {
+      seen.push(new THREE.Vector3(
+        this.satan.position.x, this.satan.position.y + 2.2, this.satan.position.z,
+      ));
+    }
+    const R = this.world.arenaRing;
+    for (const p of this.players) {
+      if (seen.length >= 4) break;
+      /* GENEROUS, AND MEASURED ON THE SAME SQUARE THE RING IS. `arenaOutBy`
+         is negative inside the deck and grows as she leaves it; +40 reaches
+         the stands and the announcer's box behind them, which is where the
+         two things this exists for actually are. A kitten who has fallen off
+         the island entirely is past it and stops carving. */
+      if (R && this.world.arenaOutBy(p.position.x, p.position.z) > 40) continue;
+      seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
+    }
+    mesh.material.setCuts?.(camera.position, seen);
   }
 
   /** Everything billboarded must be turned toward *this* camera first. */

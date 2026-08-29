@@ -980,6 +980,9 @@ export class Tournament {
       p.velocity.set(0, 0, 0);
       p.camTarget.copy(p.position);
       p.outT = 0;
+      /* Her flight ended here rather than at the rule below, and the flag it
+         set has to be spent by whichever of the two catches her. */
+      p.blastT = 0;
     }
   }
 
@@ -1008,11 +1011,28 @@ export class Tournament {
          own account a moment later if that is where she lands — which is the
          same order of events a kid watching would expect. */
       if (p.heldBy) { p.nearEdge = false; p.outT = 0; continue; }
+      /* MR. SATAN'S DOING, NOT HERS — AND THE PRICE IS PER PLAYER BECAUSE OF
+         IT. A kitten still in the air on his account, or newly down from it,
+         gets the FEAST'S deal instead of the round's: put back on the stone,
+         nothing said, no banner, no health. The gag's whole licence is that it
+         takes nothing from anybody (see `systems/satanblast.js`), and it does
+         not reach that by avoiding `hurt` — it never calls `hurt` — but by not
+         being charged HERE, because being blown off the announcer's box means
+         coming down outside the ring and below the deck.
+
+         SKIPPING HER OUTRIGHT WAS THE FIRST TRY AND IT DID NOT WORK. `continue`
+         leaves her standing outside the ring with the rule waiting for her
+         flag to expire, so she is rung out four seconds late instead of on
+         time; and a flag cleared when she LANDS is cleared on the very frame
+         `down` becomes true, which is the frame this charges her. What she
+         wants is not to be skipped, it is to be picked up for free — which is
+         a thing this function already knows how to do. */
+      const price = p.blastT > 0 ? 0 : damage;
       const out = this.world.arenaOutBy(p.position.x, p.position.z);
       /* The warning ring is a FIGHTING warning. During the feast there is no
          penalty to warn about, and a red flashing ring round her feet while
          she is chasing a rabbit reads as damage she cannot find. */
-      p.nearEdge = damage > 0 && out > -3.5 && out <= 0;
+      p.nearEdge = price > 0 && out > -3.5 && out <= 0;
 
       /* SHE IS OUT WHEN SHE IS STANDING ON THE LOWER FLOOR, AND NOT BEFORE.
          Three separate things have to be true, and each one is a bug that was
@@ -1044,7 +1064,7 @@ export class Tournament {
       const down = offStone && (p.onGround || fallen);
       if (out <= 0 || !down) { p.outT = 0; continue; }
       p.outT = (p.outT ?? 0) + dt;
-      if (p.outT < (damage > 0 ? 0 : OUT_GRACE)) continue;
+      if (p.outT < (price > 0 ? 0 : OUT_GRACE)) continue;
 
       p.outT = 0;
       const R = this.world.arenaRing;
@@ -1056,8 +1076,8 @@ export class Tournament {
          kitten wearing the orb parks herself off the side of the ring and
          takes nothing for the whole round, because the bubble runs longer
          than its own cooldown. See Player.hurt. */
-      const dealt = damage > 0 ? p.hurt(
-        damage, { x: R.x, z: R.z }, { knock: 0, lift: 0, pierce: true }, this.game
+      const dealt = price > 0 ? p.hurt(
+        price, { x: R.x, z: R.z }, { knock: 0, lift: 0, pierce: true }, this.game
       ) : 0;
       p.position.set(R.x, R.y + 3, R.z);
       p.group.position.copy(p.position);
@@ -1066,7 +1086,12 @@ export class Tournament {
       /* A free return during the feast: back on the stone, nothing said, no
          banner and no toast. It is not an event, it is the arena declining to
          let her fall off it. */
-      if (damage <= 0) continue;
+      /* THE FLIGHT IS OVER, whether it ended in the air or on the floor of
+         the arena — she is back on the stone, so there is nothing left for the
+         exemption to protect and leaving it set would hand her the rest of it
+         as free time outside a ring she is now standing in the middle of. */
+      p.blastT = 0;
+      if (price <= 0) continue;
       /* Longer than an ordinary hit's invulnerability. She is being dropped
          back into the middle of the ring next to somebody who is already
          swinging, and landing straight into a free combo is exactly the sort

@@ -140,3 +140,23 @@ attack rows mirrored against its idle and walk rows, which no single setting
 can correct, and it's kept out of the game for that reason. The quickest test:
 column N should be the same direction in all four rows, and one column should
 be a plain back view in all four.
+
+**A second pose for a character is matched on INK AREA, not on height.** Mr
+Satan has two drawings now — standing, and arms-up charging his blast — and the
+one that swaps between them is `poseQuad(size, calm, pose)` in `critter.js`,
+which normalises on how much of the sheet is actually drawn on. `contentScale`
+is height-normalised and is the wrong yardstick the moment one creature has two
+drawings: a pose that reaches higher is *drawn* smaller by the model, and
+matching on height alone makes him jump size at the swap.
+
+**Which is why his charging sprite has no aura.** It was generated with a golden
+flame corona first, and the corona was several times the cat's own ink — so
+`poseQuad` would have shrunk him to fit it, and he would have visibly *lost*
+size on the frame he powered up. The glow is procedural instead
+([systems/satanblast.js](../../src/systems/satanblast.js)), which is where it
+belonged anyway: the ball has to grow, pulse and leave, and a painted one cannot.
+
+The general rule: **generate the pose with the same silhouette budget as the
+one it swaps against.** Anything a pose adds that the base drawing does not have
+— an aura, a weapon trail, wings — is a thing the matcher will pay for out of
+the character's own size.

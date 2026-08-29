@@ -487,8 +487,9 @@ export class World {
   _buildArena() {
     const isl = this.arenaIsland;
     const g = isl.heightAt(isl.x, isl.z) ?? isl.baseY;
-    const { parts, solids, platforms } = buildArena();
+    const { parts, seeThrough, solids, platforms } = buildArena();
     transformParts(parts, isl.x, g, isl.z, 0, 1);
+    transformParts(seeThrough, isl.x, g, isl.z, 0, 1);
 
     const mesh = new THREE.Mesh(mergeParts(parts), toonVertexMat());
     mesh.castShadow = true;
@@ -496,6 +497,32 @@ export class World {
     mesh.visible = false;
     this.scene.add(mesh);
     this.arenaProps = mesh;
+
+    /* --- and the same arena again, in the material that gets out of the way ---
+       The corner posts, their banners and the announcer's box. See `buildArena`
+       for which pieces and why; the split exists because a merged geometry has
+       one material and these need `xrayVertexMat`.
+
+       SHADOWS ARE OFF ON THIS ONE, AND THAT IS THE ONE VISIBLE COST. The cut is
+       a `discard` in the colour pass; the shadow pass runs a different program
+       and knows nothing about it, so a post that has opened a hole for you goes
+       on casting its full shadow through the hole — a column of shade with no
+       column above it, which reads as a bug rather than as a shadow. Dropping
+       the shadow entirely is the lesser of the two: these are thin vertical
+       things on a deck that is already in the arena island's own shade, and
+       nobody has ever looked at a tournament and thought about where the corner
+       posts' shadows fell.
+
+       VISIBILITY FOLLOWS `arenaProps`. Two meshes now have to be shown and
+       hidden together — see `openArena`, which is where that is done and where
+       forgetting it would leave four vermillion columns hanging over an empty
+       island three hundred units from anybody. */
+    const seeMesh = new THREE.Mesh(mergeParts(seeThrough), xrayVertexMat());
+    seeMesh.castShadow = false;
+    seeMesh.receiveShadow = true;
+    seeMesh.visible = false;
+    this.scene.add(seeMesh);
+    this.arenaSeeThrough = seeMesh;
 
     /* The builder works in ARENA-LOCAL coordinates, because every number in
        it is measured against the ring's own centre and half-width. The world
@@ -562,15 +589,22 @@ export class World {
   /**
    * Open the tournament grounds, or shut them again.
    *
-   * One call, because "the arena exists" is three separate facts — the island
-   * mesh, the furniture, and whether `heightAt` answers out there — and three
-   * facts set from three places is how you get an island you can stand on and
-   * cannot see.
+   * One call, because "the arena exists" is FOUR separate facts — the island
+   * mesh, the furniture, the see-through furniture, and whether `heightAt`
+   * answers out there — and four facts set from four places is how you get an
+   * island you can stand on and cannot see.
    */
   openArena(on = true) {
     this.arenaOpen = on;
     if (this.arenaMesh) this.arenaMesh.visible = on;
     if (this.arenaProps) this.arenaProps.visible = on;
+    /* THE SAME `on`, ALWAYS. The furniture is two meshes because it is two
+       materials, and that is an implementation detail of how it is DRAWN — it
+       must never become a detail of whether it EXISTS. A miss here shows as
+       four vermillion columns and a pagoda roof floating over open sky where
+       the arena will be, which is the exact failure the comment above is
+       about. `world-check` pins the two visibilities equal. */
+    if (this.arenaSeeThrough) this.arenaSeeThrough.visible = on;
   }
 
   /**

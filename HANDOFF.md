@@ -166,6 +166,36 @@ gets antialias off, a capped pixel ratio, and half-size single-figure atlases
 (147MB of retained texture down to 115MB); a desktop gets byte-for-byte what was
 hard-coded before the file existed. See [docs/notes/mobile.md](docs/notes/mobile.md).
 
+**Two quick presses hold the shield up.** `Kabe` used to need a thumb held down
+for its whole two seconds, which is the first thing a nine-year-old stops doing.
+A double tap on Shield/Mount latches it until it expires; two more bring it
+back. **It buys the button and never extra seconds** — `wardUsed` runs the same
+either way, so a latched bubble pops on the frame a held one would. The same
+gesture on glass had shipped **broken**: the on-screen pad's latch outlived the
+block it held, so the shield worked exactly once per session. Both halves now
+read one exported window (`DOUBLE_TAP_MS`), and the edge clock lives in
+`PadState` rather than in the Ward, so consuming a press consumes the gesture
+with it. [docs/notes/input.md](docs/notes/input.md).
+
+**Mr. Satan has had enough of your kitty shenanigans.** Climb onto the
+announcer's box during a tournament and he taunts you, waits ten seconds, raises
+his arms, charges for a second and detonates — everybody up there leaves over
+the horizon. **Nobody is hurt and nothing is lost**: no damage, no knockout, no
+score, no ring-out, and it never goes near `strikePlayers`. Making that *true*
+rather than *argued* took two corrections, the second of which only the browser
+found: a kitten blown off the box lands outside the ring and below the deck,
+where the ring-out rule was quietly taking thirty health and a point off her.
+She now gets the feast's free return instead. He has a second drawing for it
+(arms up), which is optional like every other drawing. `2` in the debug panel
+skips the ten seconds. [docs/notes/tournament.md](docs/notes/tournament.md).
+
+**The arena's posts and the announcer's box are see-through.** The same
+world-space x-ray the grottos use, on the four corner posts and the whole booth,
+so a fighter behind a post and Mr. Satan under his roof are both visible. It
+turned up a four-player bug on the way in: the material's cut list was `MAX = 2`
+from before four players existed, so kittens three and four were never cut for
+anywhere, grottos included.
+
 **A Help page that shows the game instead of describing it.** Twelve topics,
 each a `<details>` a kid opens; eleven of them lead on a GIF **captured out of
 the running game**, four on stills, and the Clans topic on the six leaders. A
