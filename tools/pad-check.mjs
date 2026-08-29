@@ -32,6 +32,7 @@ globalThis.localStorage = {
 import { readFileSync } from 'node:fs';
 
 const { InputManager, ACTIONS, KEYSETS, BOUND_KEYS, DOUBLE_TAP_MS } = await import('../src/core/input.js');
+const { wardLatchExpired } = await import('../src/core/touchpad.js');
 
 const line = (l, v) => console.log(String(l).padEnd(46) + v);
 let fails = 0;
@@ -1597,6 +1598,59 @@ console.log('\n--- the Joy-Con shoulders are in the twenties, and 0-3 do nothing
    that pressed twice as fast as Node could run would pass against a window of
    any size at all — including a broken one that always says yes.
 --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   AND THE OTHER HALF OF THE SAME GESTURE: WHEN THE LATCH IS LET GO.
+
+   The double tap above is what SETS the shield latch. This is what CLEARS it,
+   and it has been got wrong twice — both times by testing a fact that is
+   momentarily true on the frame the gesture is still being made, which is the
+   one frame no amount of playing reproduces on demand. It is a pure function
+   for exactly that reason: the frame can be written down.
+
+   The states below are the real ones, in the order a block passes through them.
+--------------------------------------------------------------------------- */
+console.log('\n--- letting go of a latched shield ---');
+{
+  const held = { wardCool: 0, wardRegrab: 0, hasOrb: true };
+  ok('a block that is up keeps its latch', !wardLatchExpired(held));
+
+  /* THE FRAME THIS EXISTS FOR. A double tap is press, RELEASE, press — and the
+     release charges the cooldown, so on the second press the cooldown is
+     running and the regrab window is still open. Testing the cooldown alone
+     said "let go" here, deleted the latch the pointer handler had just set, and
+     `Player._latchWard` then zeroed the cooldown afterwards in the same frame,
+     so nothing ever put the gold back. The shield stayed up with nothing
+     touching the glass and the button looked untouched. */
+  ok('...and so does the very frame of the second tap',
+    !wardLatchExpired({ wardCool: 1.5, wardRegrab: 0.47, hasOrb: true }));
+
+  /* RUNNING OUT IS THE ORDINARY END, and it must be immediate: `_dropWard`
+     arms no regrab for a block that is spent, so the latch goes on the next
+     frame. This is the behaviour the previous fix was for, and it is the one a
+     regrab clause could most easily have broken. */
+  ok('a block that ran out lets the latch go at once',
+    wardLatchExpired({ wardCool: 1.5, wardRegrab: 0, hasOrb: true }));
+
+  /* AND A RELEASE THAT NOBODY FOLLOWED UP. The grace runs out on its own — a
+     half second, WARD.regrab — and then this is an ordinary ended block. */
+  ok('...and so does a release nobody took back',
+    wardLatchExpired({ wardCool: 1.0, wardRegrab: 0, hasOrb: true }));
+
+  /* THE ORB TAKEN OFF HER MID-BLOCK, which her sister can do on the trade
+     screen. There is no cooldown to read in that case, so it is its own clause
+     and not a consequence of the first. */
+  ok('an orb traded away mid-block drops the latch',
+    wardLatchExpired({ wardCool: 0, wardRegrab: 0, hasOrb: false }));
+  ok('...even inside the double-tap grace',
+    wardLatchExpired({ wardCool: 1.5, wardRegrab: 0.47, hasOrb: false }));
+
+  /* AND `main.js` STILL ASKS THIS FUNCTION. A rule extracted so it could be
+     tested is worth nothing if the caller quietly grows its own copy. */
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('...and the touch context asks this rule rather than a copy of it',
+    main.includes('wardLatchExpired({') && !/if \(p\.wardCool > 0/.test(main));
+}
+
 console.log('\n--- a second press, close behind the first ---');
 {
   const realNow = performance.now.bind(performance);

@@ -197,8 +197,8 @@ from before four players existed, so kittens three and four were never cut for
 anywhere, grottos included.
 
 **A Help page that shows the game instead of describing it.** Twelve topics,
-each a `<details>` a kid opens; twelve GIFs **captured out of the running game**,
-three stills, and the Clans topic on the six leaders. A
+each a `<details>` a kid opens; **fifteen** GIFs **captured out of the running
+game**, three stills, and the Clans topic on the six leaders. A
 new dependency-free GIF encoder (`tools/gif.mjs`, alongside `png.mjs`, for the
 same rule-9 reason) does the filming, and `tools/gif-selftest.mjs` reads its
 output back — a codec bug presents as "the picture looks a bit off", never as a
@@ -232,6 +232,15 @@ element, so the clip cannot say something the game does not). Everything, and
 the byte budget behind the frame rates, is in
 [help.md](docs/notes/help.md#the-dragon-clip-four-fixed-cameras-one-the-game-directs).
 
+**"Moving & fighting" has a real key map now, not a list.** The topic used to
+carry two prose columns; it carries two `<table>`s — *On foot* and *On a
+dragon* — with a 🎮 Gamepad column and a ⌨ Keyboard column, so a kid reading
+one device's row can see the other's. Every cell is generated from
+`PROMPTS.standard` and `KEYSETS[0]` rather than typed, and `world-check` asserts
+the pairing, because a button prompt that drifts from the table is a lie the
+page cannot detect on its own. The PlayStation and Joy-Con names that no table
+can show (`R2`, `SR`) are a note underneath.
+
 **The check that pairs a clip with its size is now general.** It was written for
 the two movement clips and stayed pinned to them while nine more arrived;
 generalising it immediately found `panda.gif` claiming 640x360 for a 384x216
@@ -250,26 +259,66 @@ it works, so `feature/help-onboarding` merged into `main` and went to
 `origin/main`, which Vercel deploys. The branch is **kept** until it has been
 tried on a real phone, which is what the push was for.
 
-**What the Help page still owes.** Three clips are missing and the reasoning
-for each is in [help.md](docs/notes/help.md#what-is-not-done):
+**The Help page owes no more clips.** All three that this file listed have been
+filmed. `move-arena.gif` and `move-air.gif` gave "Moving & fighting" a second
+row — the ring, where a slash is allowed to land, and the sky, where the same
+four buttons mean four other things — with both input diagrams on every frame;
+all four clips in that topic are cut to **exactly 13.92s** by
+[tools/gif-sync.mjs](tools/gif-sync.mjs), which rewrites frame delays without
+re-encoding, so a row stays in step forever. `phone.gif` finished the list.
 
-1. **"On a phone" has no clip** — the one that matters most, since the push
-   exists to test on a phone. It needs the touch overlay filmed: move, jump,
-   sprint, slash; **holding** sprint and **holding** Ride for Ward; and the
-   double-tap **lock-on** for both, with Charge showing what a locked sprint is
-   for. The Ward and Sprint parts belong **in the arena**.
-2. **An arena clip** — sprint, a slash landing on another player, both players
-   jumping, on two input types.
-3. **An "on a dragon" controller clip.** The beats exist behind `part: 'air'` in
-   the shot script; read the 4.5MB paragraph in help.md before choosing where it
-   goes, because a flying camera defeats the encoder.
+**"On a phone" leads on a clip now, and the reason is one gesture.** The
+double-tap **lock** — tap a button twice, take your thumb off, it stays down —
+has no name a nine-year-old knows, and every sentence written for it read like a
+riddle. Shown, it is one beat: the thumb lifts and the button stays gold. The
+clip runs 23.3s at 512×280 and is **608KB**, the second-smallest in the panel,
+because the camera never moves. The overlay in it is **redrawn every frame from
+the live DOM's own measured rectangles** — `getBoundingClientRect` and
+`getComputedStyle` on the real `#touch-pad` elements — because `readPixels` off
+the backbuffer cannot see a DOM overlay at all, and a hand-drawn pad would have
+been a lie the first time anyone moved a button. Filmed at a real phone
+viewport (812×375), which is what puts `--tp-unit` at 68px. The traps it cost —
+CSS transitions that never advance inside a synchronous capture loop, a
+double-tap window measured in wall-clock time while the capture runs 5× faster
+than the clip, and a camera pin that landed on a camera nothing drew — are all
+written up in
+[help.md](docs/notes/help.md#the-phone-clip-filming-an-overlay-the-camera-cannot-see).
 
-**The capture rig is not in the repo.** `harness.js`, `movekit.js` and the shot
-script live in the session scratchpad, which is temporary — every session that
-films something has recovered them from the previous session's scratchpad. What
-is durable is [help.md](docs/notes/help.md), which now carries the traps rather
-than the code. If that stops being enough, the decision to make is whether a
-browser-driving harness belongs in `tools/`.
+**Filming the lock found a real bug, which is the second time a Help clip has.**
+A latched SHIELD did not *look* latched: `_updateTouchContext` runs before the
+player controller, and its old test fired on the exact frame of the second tap —
+the release between the taps had charged `wardCool` — deleting the `.locked` the
+pointer handler had just set, after which `_latchWard` zeroed the cooldown and
+nothing put it back. The shield stayed up with nothing touching the glass and
+the button looked untouched. The rule is now the pure function
+`wardLatchExpired` in [core/touchpad.js](src/core/touchpad.js), pinned by seven
+`pad-check` assertions — pure because it has been got wrong **twice**, both
+times by testing something momentarily true on the frame the gesture is still
+being made, which is the one frame no amount of playing reproduces on demand.
+
+**Two things are open, neither of them a clip**, and both are in
+[help.md](docs/notes/help.md#what-is-not-done): whether the capture rig belongs
+in `tools/` (see the paragraph below), and the fact that the touch overlay's
+glyphs read `Y / ZR / X / A / B` on a screen where no such buttons exist — the
+same complaint already made about `ZL`/`ZR` in the keymap table. That one is a
+**game** change, not a Help one, so it was deliberately left alone.
+
+**The capture rig is not in the repo, and it has now started costing.**
+`harness.js`, `movekit.js` and the shot scripts live in the session scratchpad,
+which is temporary; every session that films something has recovered them from
+the previous session's scratchpad, and **the script that filmed `move-keys.gif`
+and `move-pad.gif` did not survive** — those two would have to be
+re-choreographed, not re-rendered. Note which way this cuts before deciding:
+re-*encoding* one master at several sizes is cheap and comparable
+(`move-air.gif` was encoded four times off one take, `phone.gif` seven), while
+re-*shooting* is not — the kitten lands on different frames and the interframe
+diff finds different work. Filming at 936 wide and publishing at 512 is right
+and should stay; roughly 3.3 real pixels average into each output pixel and
+*that* is the anti-aliasing. What is durable today is
+[help.md](docs/notes/help.md), which carries the traps rather than the code. The
+decision to put to Richard is whether a browser-driving harness belongs in
+`tools/` — ~1500 lines of dev-only tooling that never ships and can only be run
+through a browser MCP, against the fact that no clip is otherwise reproducible.
 
 **Played, pushed and live — the third, fourth and fifth four-player sessions,
 all in one push.** Richard playtested the input fixes and confirmed everything

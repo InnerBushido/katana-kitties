@@ -292,6 +292,142 @@ up — and a second of coasting takes him off the frame.
 
 ---
 
+## The phone clip: filming an overlay the camera cannot see
+
+`phone.gif` is the odd one out. Every other clip films the **world**; this one
+has to film the **controls**, and the controls are DOM — `#touch-pad` sits on
+top of the canvas and `readPixels` off the backbuffer cannot see a single pixel
+of it. (That is the same wall the dealer shop hit, in *What cannot be filmed
+this way*.) The dealer shop was dropped over it. This topic could not be: the
+buttons are drawn on the same glass the Help panel is covering, so a child has
+no way to look down at them, and three paragraphs of prose had taught the
+double-tap lock to precisely nobody.
+
+**So the overlay is redrawn, from its own measurements.** Every captured frame
+walks the live `.tp-btn`, `.tp-stick` and `.tp-knob` elements, reads
+`getBoundingClientRect()` and `getComputedStyle()` off each one — background,
+border, colour, opacity, font, letter-spacing, and a `box-shadow` parser that
+splits on commas *outside* `rgb()` — and paints that onto the captured frame.
+Nothing about the pad's geometry or palette is written down in the shot script.
+This is the house rule about measuring rather than reasoning, applied to a
+diagram: a hand-drawn pad would have looked fine and been a lie the first time
+anyone moved a button.
+
+**Filmed at a real phone viewport, 812×375.** That is not cosmetic either —
+`@media (max-height: 460px)` is what puts `--tp-unit` at 68px, and
+`TouchPad._placeCluster` measures the geometry it is given. Film it at desktop
+size and you get a correct picture of a pad no phone has ever shown.
+
+Getting into phone mode is a **mutation, not a reload**: `g.device.touchPrimary
+= true; g.device.padOn = true; g._applyTouchMode()`. `writeOverride('mobile')`
+plus a reload would take the capture harness with it, and the fields a reload
+would additionally set (antialias, atlas budget) are not in the picture.
+`hideChrome()` then has to be followed by un-hiding `#touch-pad` by hand —
+a `display: none` overlay measures zero on every rect, so the replica draws
+nothing and the frame looks like the pad was never there.
+
+### The thumbs, and why they are rings
+
+Nothing in the DOM says where the hand is, and without a thumb drawn on it a
+button that lights looks like the game pressing itself. The first pass drew a
+filled disc the size of the button and it covered the glyph and most of the word
+— the frame said a thumb was *somewhere* without saying on *what*. It is a ring
+now: fingertip-sized (r = 25 CSS px), a faint 0.13 fill, a bright ring and a
+dark hairline, so SHIELD reads straight through it.
+
+The whole clip turns on this: **a thumb that lifts off a button which stays
+gold** is the entire lesson of the lock, and it cannot be told in a sentence a
+nine-year-old will finish.
+
+### Three traps, in the order they cost takes
+
+**A CSS transition never advances inside a synchronous capture loop.** `.tp-btn`
+carries `transition: transform .09s, box-shadow .09s, background .09s` — right
+on a phone, fatal here. `getComputedStyle` during a transition returns the
+*interpolated* value, and a transition only moves when the browser gets a frame;
+a capture beat is one synchronous loop with no rAF anywhere in it. So the ease's
+clock never ticked, every frame of the beat read the colours the button had
+*before* the press, and the gold on a latched RUN was never drawn once — while a
+MutationObserver on the same element showed `.locked` going on and coming off
+exactly when it should. The state was right and the picture was of the frame
+before it. Fixed by injecting a capture-only
+`#touch-pad .tp-btn, .tp-stick, .tp-knob { transition: none !important }`,
+removed at teardown: a capture artefact, not an opinion about how the game
+should feel.
+
+**The double-tap window is wall-clock, and a capture does not run at wall-clock
+speed.** `TouchPad._down` and `PadState._stamp` both measure with
+`performance.now()`. A captured frame costs 11–34 ms of real time and stands for
+62.5 ms of clip, so two taps a second and a half apart *on screen* are a quarter
+of a second apart *in reality* — and the pad reads them as one double tap. The
+take came back with RUN un-latching itself, because the hold in one beat and the
+first tap of the next had paired up. The fix is a **real** `sleep(420)` between
+beats: it costs nothing in the clip, since every frame is captured anyway, and
+what it restores is the gap a thumb would actually have left.
+
+**The camera pin landed on a camera nothing drew.** This one cost four takes.
+
+```js
+_cameraFor(members) {
+  if (members.length === 1) return this.players[members[0]].camera;
+  return this.rigs[members[0]].camera;
+}
+```
+
+A group of **one** renders through the *player's* camera; only two or more go
+through the rig. Both other shot scripts film two kittens, so pinning
+`rigs[0].camera` had always been enough and the rule had never been noticed.
+This clip is one kitten, so the follow camera drew every frame while every probe
+reported the pin in place — the pinned camera really was pinned, it just was not
+the one drawing. It read as the arena sliding about under her, which sent the
+hunt to `openArena` and the island meshes. **Pin every camera `_cameraFor` could
+return.** It costs a handful of `lookAt`s and cannot be wrong whichever branch
+the grouping takes.
+
+### Composition, when the bottom half is not yours
+
+The overlay owns everything below about 52% of the frame: the button cluster
+runs 196–329 of 375, the stick 218–310. So the aim point goes on the **deck**
+(`ring.y + 0.5`) and the kitten lives in the empty top half. The first attempt
+did the opposite — lifted the look-at to `ring.y + 6.2` to "get her up the
+frame", which of course *lowered* her, and parked her behind the JUMP button. A
+camera looks at what you aim it at.
+
+Horizontal motion is free: at the game's yaw the screen-right vector is
+`R = (cos −π/4, −sin −π/4)` = (0.707, 0.707), so moving along `R` changes NDC x
+only — no depth, no size, no height. At `dist: 20` the frame holds about ten
+world units either side of centre, which is the number every beat is timed
+against. Measured, not derived: **a locked sprint covers 1.03 units per capture
+frame**, and `power.charge.dist` is a flat 16 with a unit or two of coast, so
+the charge alone needs eighteen units of frame and has to start from the far
+left.
+
+The charge is fired **off state, not off a frame number** — is she pointed
+across the frame, and is there room in front of her — with a frame-number
+fallback, because a beat that never fires is a beat with nothing in it. The take
+that pressed on a fixed frame caught her still skidding out of the turn and
+threw the charge into the corner she came from.
+
+### What the clip found
+
+Filming the lock found a real bug in the game, which is the second time a Help
+clip has done that. A latched SHIELD **did not look latched**:
+`_updateTouchContext` runs before the player controller, and the old
+`if (p.wardCool > 0 || !p.power?.ward) release('mount')` fired on the exact frame
+of the second tap — the release between the two taps had charged the cooldown —
+deleting the `.locked` the pointer handler had just set, after which
+`_latchWard` zeroed the cooldown and nothing ever put it back. The shield stayed
+up with nothing touching the glass and the button looked untouched.
+
+The rule is now `wardLatchExpired` in
+[core/touchpad.js](../../src/core/touchpad.js) — a pure function, and that is
+not tidying. It has been got wrong **twice**, both times by testing something
+that is momentarily true on the frame the gesture is still being made, which is
+the one frame no amount of playing reproduces on demand. As a pure function
+`pad-check` can write that frame down and put it through.
+
+---
+
 ## The panel on a controller
 
 Help is a **menu of topics** now, not a wall of text with one BACK button at the
@@ -332,15 +468,25 @@ which is a small argument for documentation as a test.
 
 ## What is not done
 
-- **"On a phone"** is written but has no clip. It needs the touch overlay shown:
-  moving, jumping, sprinting, slashing; **holding** sprint and **holding** Ride
-  for Ward; and the double-tap **lock-on** for both — with Charge used to show
-  what a locked sprint is for. The Ward and Sprint demonstrations belong **in
-  the arena**. See `TOUCH_BUTTONS` and the `_locked` set in
-  [core/touchpad.js](../../src/core/touchpad.js), and `setLockable` in
-  `main.js`.
-- **An arena clip** — sprint, a slash landing on another player, both players
-  jumping, on two input types.
-- **An "on a dragon" controller clip.** The beats already exist behind
-  `part: 'air'` in the shot script; see the 4.5MB paragraph above before
-  deciding where it goes.
+Every clip this file once listed as missing now exists. What is left is a
+decision and a complaint, neither of which is a clip.
+
+- **The shot scripts are not in the repo, and that means no clip is
+  reproducible.** The master frames are hundreds of megabytes of raw RGBA in a
+  browser tab and die with it; the only thing that could ever re-cut a clip is
+  the script that drove it, and those live in a session scratchpad that gets
+  swept. **The script that filmed `move-keys.gif` and `move-pad.gif` is already
+  gone** — those two would have to be re-choreographed, not re-rendered. Note
+  which way it cuts before deciding: re-*encoding* one master at several sizes
+  is cheap and the results are comparable (`move-air.gif` was encoded four times
+  off one take), while re-*shooting* is not — the kitten lands on different
+  frames and the interframe diff finds different work. Filming at 936 and
+  publishing at 512 is right and should stay; the argument is only about where
+  `phone-shot.js` and its two hundred lines of hard-won comments should live.
+  Against: ~1500 lines of dev-only tooling that never ships and can only be run
+  through a browser MCP, not from a terminal.
+- **The touch overlay's glyphs name buttons no phone has.** `Y / ZR / X / A / B`
+  are drawn on a touchscreen where nothing is labelled anything. This is the
+  same complaint that was already made about `ZL`/`ZR` in the keymap table, and
+  it is a **game** change rather than a Help one — it needs its own pass and
+  `pad-check` updates, so it has deliberately not been done here.
