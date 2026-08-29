@@ -2470,6 +2470,45 @@ body.touch-ui .kd-row { padding: 9px 6px; }
 .kd-meta { font-size: 13px; opacity: 0.75; margin-bottom: 10px; }
 .kd-dim { opacity: 0.62; }
 
+/* THE CLAN, ON ITS OWN ROW AND IN THE CLAN'S OWN COLOUR.
+   `--clan` is written inline from the CLANS entry — see `_clanMarkup` in
+   systems/profile.js — for the same reason `--seat` is written inline on a
+   score badge: the colour belongs to the data, and a copy of it in here is a
+   copy that goes wrong the first time an emblem is recoloured.
+
+   A TINTED BAR RATHER THAN COLOURED TEXT. Two of the six clans are pale
+   (Icewhisker is near-white, Windwhisker a light green) and one is dark
+   purple; as text on this panel's parchment, half of them are unreadable and
+   the other half shout. As a low-alpha wash behind ink-coloured text with a
+   solid rule down the leading edge, all six read the same and the colour still
+   does its job — which is to be the SAME colour as her badge, her shrine and
+   the ring under her paws. */
+.kd-clan {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 4px 9px;
+  border-left: 4px solid var(--clan, var(--ink));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--clan, transparent) 26%, transparent);
+}
+.kd-clan b {
+  font-family: 'Bangers', cursive;
+  font-size: 18px;
+  letter-spacing: 1px;
+}
+.kd-clan span { font-size: 12px; opacity: 0.8; }
+/* An instruction, not a label — so it is styled as a hint rather than as a
+   badge for a clan that does not exist. No colour to borrow, no bar to fill. */
+.kd-clan-none {
+  display: block;
+  font-size: 12px;
+  opacity: 0.7;
+  border-left-color: rgba(0, 0, 0, 0.25);
+  background: none;
+}
+
 /* Eight slots, always drawn. Four across on two rows reads as a rack; eight
    across is a strip nobody can count at a glance. */
 .kd-slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }

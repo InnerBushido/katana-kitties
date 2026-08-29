@@ -936,14 +936,57 @@ export class ProfileScreen {
 
     return `<div class="${cls}">
       <div class="kd-name">${player.name}</div>
-      <div class="kd-meta">${player.clan?.name ?? 'no clan'} · ${player.score} pts
-        · ${owned.length}/${MAX_EQUIPPED}</div>
+      ${this._clanMarkup(player)}
+      <div class="kd-meta">${player.score} pts · ${owned.length}/${MAX_EQUIPPED} orbs</div>
       ${this._askMarkup(index)}
       <div class="kd-slots">${slots.join('')}</div>
       ${this.mode === 'profile' ? pointsRow : ''}
       <div class="kd-detail">${detail}</div>
       <div class="kd-state">${state}</div>
     </div>`;
+  }
+
+  /**
+   * WHICH CLAN THIS KITTEN SWORE TO, in the clan's own colour.
+   *
+   * IT WAS ALREADY ON THIS CARD AND NOBODY COULD SEE IT. The clan name was the
+   * first third of the grey `kd-meta` line — `Riverclaw · 40 pts · 3/8` — at
+   * 13px and 75% opacity, punctuation-separated from two numbers it has nothing
+   * to do with. Reported as "the profile doesn't say what clan you're in",
+   * which is the correct report about a fact that is technically present: an
+   * oath is the biggest decision in the game outside the ring, and it was
+   * sharing a line with an inventory count.
+   *
+   * SO IT IS ITS OWN ROW, IN THE CLAN'S COLOUR, AND IT NAMES THE BUFF. The
+   * colour is the same `clan.color` the HUD badge, the shrine and the second
+   * marker ring under her paws all use — read from the CLANS entry rather than
+   * restated here, for the reason the score badge reads `styleCss`: a colour
+   * written down twice is a colour that goes wrong in one place. And the buff
+   * is on the row because the clan NAME is not the thing she is choosing
+   * between; "Longer katana" is.
+   *
+   * PANDAPAW IS THE ONE THAT NEEDS A LIVE ANSWER, and it deliberately does NOT
+   * get one here. Its badge in the HUD counts bamboo toward the next tier
+   * (`Game._updateClanBadge`), which is a number that moves while she plays —
+   * this screen is opened, read and closed, and a second copy of that counter
+   * would be a second place for it to be wrong. The row says what she swore to
+   * and what it grants; the counter has one home.
+   *
+   * UNSWORN IS AN INSTRUCTION, NOT A NOUN. "no clan" is a label for a state,
+   * and the sixth non-negotiable is that a thing which is not yet true has to
+   * say what to DO about it — so it names the verb (find a shrine) and the
+   * gesture (stand in the ring and press the button), which is the same
+   * sentence the shrine itself uses when you are standing in front of it.
+   */
+  _clanMarkup(player) {
+    const clan = player.clan;
+    if (!clan) {
+      return '<div class="kd-clan kd-clan-none">No clan yet — '
+        + 'find a shrine on any island and swear an oath.</div>';
+    }
+    const hex = `#${clan.color.toString(16).padStart(6, '0')}`;
+    return `<div class="kd-clan" style="--clan:${hex}">`
+      + `<b>${clan.name}</b><span>${clan.buff.label}</span></div>`;
   }
 
   /**

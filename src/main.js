@@ -13,7 +13,7 @@ import {
 } from './core/device.js';
 import { TouchPad } from './core/touchpad.js';
 import { World, CLANS } from './world/world.js';
-import { Player, ATTACKS, MAX_HP, KO_TIME } from './entities/player.js';
+import { Player, ATTACKS, COMBAT, BASE_REACH, MAX_HP, KO_TIME } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from './core/palette.js';
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, fitDistance, stablePanes, paneSeats,
@@ -3784,7 +3784,7 @@ class Game {
        out-reach an unsworn kitten in here — that is the payoff for having
        flown out and sworn, and the answer to it is to go and get one. What
        must not happen is a girl losing to a reach she cannot see. */
-    const clanK = reach / 3.4;
+    const clanK = reach / BASE_REACH;
     const range = A.reach * clanK;
     /* Juuji stacks make each of the three cuts hit harder rather than adding
        a fourth. Four cuts is a different move; the same three landing for more
@@ -3804,7 +3804,17 @@ class Game {
       const dz = target.position.z - attacker.position.z;
       const dy = target.position.y - attacker.position.y;
       const dist = Math.hypot(dx, dz);
-      if (dist > range || Math.abs(dy) > 4.5) continue;
+      /* TWO SEPARATE QUESTIONS: how far away on the ground, and how far apart
+         in height. `COMBAT.strikeHeight` was the literal 4.5 here, which is a
+         column NINE METRES tall — a kitten on the arena floor cutting one who
+         had double-jumped over her head, with no way for the girl in the air to
+         read it as anything but being hit from nowhere. It is halved and it is
+         on the balance page now; the note on it in player.js has the rest.
+         NOT scaled by `clanK`. Riverclaw's blade is LONGER, not taller: a reach
+         buff is a statement about how far in front of her the arc goes, and
+         letting it grow the vertical window as well would hand the one clan
+         that out-reaches you the ability to reach up as well as out. */
+      if (dist > range || Math.abs(dy) > COMBAT.strikeHeight) continue;
       // Same forward-arc test the props get, widened for the dash so a charge
       // that visibly connects is not refused on a half-degree of facing.
       const dot = (dx * dir.x + dz * dir.y) / (dist || 1);
