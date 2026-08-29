@@ -5,6 +5,13 @@ the thing it describes was being built or fixed: what was tried, what broke, and
 which of the obvious answers is wrong. Nothing here is a plan and nothing here is
 a spec — the code is the spec, and `tools/world-check.mjs` is what enforces it.
 
+**One exception, and it says so on its own first line.**
+[networking.md](networking.md) is the WHY behind code that does *not* exist: the
+options for playing across devices, weighed and ordered, written down so the
+decision does not get re-made from scratch in six months. It is the one file
+here that is allowed to describe something unbuilt, and if the thing gets built
+the file becomes a record like the rest of them.
+
 **Read one when you are about to change that area, and not before.** These were
 one 4,400-line `HANDOFF.md` that every session was told to read first, which
 spent about 65,000 tokens before any work started. Split up, a session reads the
@@ -28,6 +35,7 @@ one file it needs — usually five to ten thousand.
 | [consent.md](consent.md) | why nothing irreversible happens on one press: the confirm dialog and why it has no primary, the trade screen's per-side questions, the two-stage name entry, who drives a menu, and the vJoy button that started the game by itself | `systems/confirm.js`, `systems/profile.js`, `systems/menunav.js`, the pause menu, `SKIP_KEYS` |
 | [rules.md](rules.md) | the gameplay invariants in full, with the measurements behind them — bamboo, ground snapping, dragon perches, sprite facing | anything that touches movement, props, dragons or a sprite sheet |
 | [gotchas.md](gotchas.md) | the traps that cost real time and are not obvious from the code | anything, when something inexplicable is happening |
+| [networking.md](networking.md) | **the one plan in this folder, not a record.** The phone as a networked controller and why this codebase is most of the way there; why streaming the view to a phone is the wrong trade; what Steam Remote Play already does for free and what blocks the rest of it; and what real netcode would actually cost | nothing yet — read it before starting any of the four |
 | [hosting.md](hosting.md) | Vercel, the Git deploy, and what does and does not travel with it | deploys, `.vercelignore` |
 | [steam.md](steam.md) | the non-Steam shortcut and every launch flag on it, the shelf artwork and the icon, what Remote Play is and is not | `tools/steam-art.mjs`, the launch options, anything about Steam |
 | [trailer.md](trailer.md) | the 1:08 trailer: how the narrator was cast by measurement, why its orchestra is synthesised over the game's own music, why the 十 is drawn rather than typed, why the in-game player downloads nothing until asked, and why the generated art may go on the store page but not on the shelf | `src/systems/trailer.js`, `tools/trailer-vo.mjs`, `tools/trailer-score.mjs`, `tools/trailer-cut.sh`, `tools/brush-kanji.mjs`, `tools/steam-capsules.sh` |
