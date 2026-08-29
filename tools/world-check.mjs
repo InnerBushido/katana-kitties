@@ -6781,23 +6781,34 @@ console.log('\n--- the three power moves ---');
    what was hard-coded in `main.js` before the file existed. */
 {
   const desk = deviceProfileFor({ coarse: false, touchPoints: 0, cores: 16 });
-  /* THE QUALITY DEFAULT MOVED TO `high` AND THE OTHER FOUR DID NOT, which is
-     the distinction worth pinning. Two kittens, auto split, AA and the full
-     atlas are the game the girls know and none of them are a performance guess;
-     the quality default IS a guess, and it was re-made once the browser started
-     using the GPU the machine actually has. `_autoQualityCheck` in main.js is
-     what walks it back on a machine where the guess is wrong. */
-  ok('a desktop is unchanged: two kittens, auto split, AA on, full atlas',
-    desk.defaultParty === 2 && desk.defaultSplit === 'auto'
+  /* THE TWO DEFAULTS THAT HAVE MOVED, AND THE THREE THAT HAVE NOT.
+     `defaultQuality` went to `high` once the browser started using the GPU the
+     machine actually has, and `defaultParty` went to ONE once solo became a
+     game this code could represent — see the long note on it in device.js.
+     Auto split, AA and the full atlas are the game the girls know and none of
+     them is a performance guess, so they are pinned as a group. */
+  ok('a desktop keeps auto split, AA on and the full atlas',
+    desk.defaultSplit === 'auto'
     && desk.antialias === true && desk.atlasMax === 2048);
+  /* ONE KITTEN ON EVERY TIER. The second seat is asked for — a controller
+     picked up (`Game._autoSeat`) or ENTER on the keyboard — rather than dealt
+     to nobody. Asserted on BOTH tiers in one line, because the thing that would
+     break it is somebody re-splitting the answer by device. */
+  ok('...and opens on one kitten, like a phone',
+    desk.defaultParty === 1
+    && deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8 }).defaultParty === 1);
   ok('...and opens on the sharpest setting, which is the optimistic default',
     desk.defaultQuality === 'high');
   /* Above any real panel, so it never wins the `Math.min` — but FINITE, because
      `Infinity` JSON-serialises to null and `Math.min(dpr, q, null)` is 0. */
   ok('...and its pixel-ratio cap is finite and out of the way',
     Number.isFinite(desk.maxPixelRatio) && desk.maxPixelRatio >= 4);
-  /* A TOUCHSCREEN LAPTOP IS NOT A PHONE. `maxTouchPoints > 0` alone would take
-     antialiasing off a desktop and start it at one player. */
+  /* A TOUCHSCREEN LAPTOP IS NOT A PHONE. `maxTouchPoints > 0` alone would put
+     Richard's own machine — a touchscreen desktop reporting two touch points —
+     onto the mobile tier: phone-sized panels, a thumbstick over the game and
+     the split turned off. "Starts it at one player" used to be on that list and
+     no longer is, because every tier starts at one now; the layout half is what
+     the pairing is still protecting. */
   ok('a touchscreen laptop is still a desktop',
     deviceProfileFor({ coarse: false, touchPoints: 10, cores: 8 }).tier === 'desktop');
 
@@ -7015,6 +7026,61 @@ console.log('\n--- the three power moves ---');
     JSON.stringify(deviceProfileFor({
       coarse: false, touchPoints: 0, cores: 16, override: 'desktop',
     })) === JSON.stringify({ ...deskAuto, override: 'desktop' }));
+
+  /* --- THE SAME SWITCH, SPELLED FOR THE MACHINE IT IS ON ---
+     What that setting DOES on a phone is move a seat: touch is dealt ahead of
+     every controller, so hiding the stick makes the gamepad player 1 rather
+     than player 2. It read as "On-screen stick / Always OFF", which describes
+     the visible half and not the half that costs you your seat, so
+     `Game._shapeTouchSetting` re-words the row in place on a detected phone.
+
+     ONE SELECT, ONE STORED VALUE. The alternative — a second "Player 1 plays
+     as" control over the same boolean — is two widgets to keep in step, and the
+     first time they disagreed nobody could tell which one the game believed.
+     Asserted as the STATES being identical, because that is the property that
+     makes one row with two wordings honest rather than a shortcut. */
+  const phoneTouch = deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8, override: 'auto' });
+  const phoneForced = deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8, override: 'mobile' });
+  ok('on a detected phone, `auto` and `mobile` are the same state',
+    phoneTouch.padOn === phoneForced.padOn
+    && phoneTouch.touchPrimary === phoneForced.touchPrimary
+    && phoneTouch.tier === phoneForced.tier);
+  /* ...WHICH IS WHAT LETS THE `mobile` ROW BE HIDDEN THERE. It is not a state
+     being taken away; it is a duplicate wearing a label ("test touch on this
+     computer") that names a machine the player is not holding. */
+  ok('...so hiding the test-mode option on a phone removes no reachable state',
+    /data-phone-hide/.test(readFileSync(new URL('../index.html', import.meta.url), 'utf8')));
+  /* AND THE TWO WORDINGS LIVE NEXT TO EACH OTHER, in the markup, so a change to
+     one is made while looking at the other. Strings for this row in main.js
+     would be the version that drifts. */
+  {
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    const row = html.slice(html.indexOf('id="set-touch-label"'),
+      html.indexOf('id="touch-note"'));
+    ok('...and both spellings of the row sit together in the markup',
+      /data-phone="Player 1 plays as"/.test(row)
+      && /data-phone="Mobile input/.test(row)
+      && /data-phone="Gamepad/.test(row));
+  }
+  /* KEYED OFF `detected`, NOT `touchPrimary`, AND THIS IS THE ONE THAT WOULD
+     SILENTLY GO WRONG. In the desktop test mode `touchPrimary` is true, so
+     keying off it would re-word the test mode's own escape hatch as "Mobile
+     input" — the row you use to get BACK to a keyboard, dressed as though you
+     were holding a phone. `detected` is the hardware's answer and does not move
+     when the override does. */
+  ok('the desktop test mode is a desktop as far as that re-wording is concerned',
+    forced.detected === false && forced.touchPrimary === true);
+  {
+    const body = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    /* THE BODY ONLY, not the doc comment above it — which says the word
+       `touchPrimary` four times explaining why it is the wrong question, and
+       a check that could not tell those apart would be asserting that the
+       reasoning had been deleted. */
+    const at = body.indexOf('_shapeTouchSetting(sel) {');
+    const fn = body.slice(at, body.indexOf('_bindTouchHud() {', at));
+    ok('...and the re-wording really asks `detected`, not `touchPrimary`',
+      at > 0 && /device\?\.detected/.test(fn) && !/touchPrimary/.test(fn));
+  }
 
   /* THE WEAK TIER IS ABOUT SILICON, NOT ABOUT A CONTROL. It used to key off
      `override === 'auto'`, which meant a real four-core phone stopped being
@@ -7824,6 +7890,26 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
     'Special abilities', 'Trading', 'Dojo', 'Saving your progress']) {
     ok(`...including "${t}"`, help.includes(t));
   }
+
+  /* --- WHO PLAYER ONE IS, ON A PHONE ---
+     The setting was already there and did the right thing; what was missing was
+     any way to find out that it MOVES A SEAT. Touch is dealt ahead of every
+     controller, so "on-screen stick off" also means "the gamepad is player 1
+     now", and a kid with a phone and a controller had to discover that by
+     flipping it. The help topic has to name the row, both of its states, and the
+     seat each one gives the gamepad — or it is describing the visible half of
+     the change and not the half that matters. */
+  /* WHITESPACE COLLAPSED FIRST. The sentences below wrap across lines in the
+     markup, and a check that has to know WHERE they wrap is a check that
+     fails on a re-indent — which teaches the next person to delete it rather
+     than to read it. */
+  const phoneSec = help.slice(help.indexOf('On a phone'), help.indexOf('Clans'))
+    .replace(/\s+/g, ' ');
+  ok('...and "On a phone" names the setting that moves player 1 to a gamepad',
+    phoneSec.includes('Player 1 plays as') && phoneSec.includes('Gamepad'));
+  ok('...and says which seat the controller takes in EACH state',
+    /you become player 1 on the controller/i.test(phoneSec)
+    && /Mobile input[^.]*?player 2/i.test(phoneSec));
 
   ok('the bamboo-deforestation warning is present and flagged as a warning',
     /class="ht-note warn"[\s\S]*?bamboo[\s\S]*?<\/p>/i.test(help)

@@ -252,6 +252,20 @@
               with a Bluetooth controller can press <b>START</b> to join, but you
               share the one screen. Playing across <b>two phones is coming later</b>.
             </p>
+            <!-- WHO PLAYER ONE IS, which is what that setting actually decides —
+                 see `Game._shapeTouchSetting`. It reads as a stick being drawn
+                 or not, and the half that matters is a SEAT moving: the screen
+                 is dealt ahead of every controller, so turning it off hands
+                 player 1 to the gamepad. Written out here because a kid with a
+                 controller and a phone had no way to discover it. -->
+            <p class="ht-note">
+              <b>Playing with a controller instead.</b> Open
+              <b>SETTINGS ▸ Player 1 plays as</b> and pick <b>Gamepad</b>. The
+              on-screen stick goes away and <b>you become player 1 on the
+              controller</b> — a second controller joins as player 2. Pick
+              <b>Mobile input</b> to go back to your thumbs, and then a
+              controller joins as <b>player 2</b> instead.
+            </p>
             <!-- ON A PHONE, AND ONLY ON A PHONE. `body.touch-ui` hides this on a
                  desktop: naming a thumbstick to somebody with no touchscreen is
                  an instruction she cannot follow. -->
@@ -710,13 +724,36 @@
              The note says what needs a reload, because the render tier and the
              party size are read once at boot and cannot change under a running
              game — a setting that silently did half of what it says is worse
-             than one that tells you. -->
+             than one that tells you.
+
+             ON A REAL PHONE THIS ROW IS RE-WORDED IN PLACE, by
+             `Game._shapeTouchSetting` — same select, same stored value, same
+             one state, different sentence. It is not a second setting, and that
+             is deliberate: what a kid on a phone is choosing is WHO PLAYER ONE
+             IS, and the wording above ("automatic", "test touch on this
+             computer") is developer wording for a developer machine. Adding a
+             separate "Player 1 plays as" control would have been two widgets
+             over one boolean, and the first time they disagreed nobody would
+             know which one the game believed.
+
+             The labels are written HERE, in the markup, as `data-phone`
+             attributes rather than as strings in main.js — so the two spellings
+             of this row sit next to each other and a change to one is made
+             looking at the other. -->
         <label class="row">
-          <span>On-screen stick</span>
+          <span id="set-touch-label" data-phone="Player 1 plays as">On-screen stick</span>
           <select id="set-touch">
-            <option value="auto">Automatic (on for phones and tablets)</option>
-            <option value="mobile">Always ON — test touch on this computer</option>
-            <option value="desktop">Always OFF — controller or keyboard</option>
+            <option value="auto"
+              data-phone="Mobile input — the on-screen stick">Automatic (on for phones and tablets)</option>
+            <!-- HIDDEN ON A PHONE, because there it is the same state as
+                 `auto` wearing a label that names a machine the player is not
+                 holding. `_shapeTouchSetting` also moves a stored `mobile` onto
+                 `auto` for display, which is honest precisely because the two
+                 are identical once `detected` is true. -->
+            <option value="mobile"
+              data-phone-hide>Always ON — test touch on this computer</option>
+            <option value="desktop"
+              data-phone="Gamepad — Player 1 on a controller">Always OFF — controller or keyboard</option>
           </select>
         </label>
         <p class="tiny" id="touch-note"></p>

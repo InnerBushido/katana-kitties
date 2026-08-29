@@ -476,7 +476,57 @@ class Game {
        a tablet with one attached it is player 1's other hand, and on this desktop
        it is how the pad gets tested at all. Player 2 joins on the arrows. */
     this.input.attachTouch(pad ? this.touchPad : null);
+    /* --- FLIPPING THIS SETTING RE-DEALS EVERY DEVICE, AND IT HAS TO ---
+       A claim is a slot saying "this device is mine", and it beats the dealer.
+       That is exactly right for a player who pressed START on the controller she
+       is holding, and exactly wrong here, because this setting is a statement
+       about WHICH DEVICE PLAYER 1 IS — so honouring the old claims is honouring
+       an answer to the question that has just been asked again.
+
+       The case it breaks is the one somebody on a phone actually walks into:
+       thumb on the screen as player 1, a Bluetooth pad joined as player 2 (and
+       therefore CLAIMED by slot 1). Turn the stick off, and slot 1 keeps the
+       only controller in the room while slot 0 — now padless — is dealt WASD on
+       a device with no keyboard. Player 1 becomes a kitten nobody can move,
+       which is the setting appearing to break the game rather than to do what
+       it says.
+
+       Cleared only when `padOn` actually MOVES, not on every call: the
+       constructor calls this too, and re-dealing a party mid-session for a
+       setting that did not change is churn nobody asked for. */
+    if (this._padOnLast !== undefined && this._padOnLast !== pad) {
+      this.input.claims = {};
+      this._autoSeated?.clear();
+      this._trimPartyToDevices();
+    }
+    this._padOnLast = pad;
     this._updateRotateGate();
+  }
+
+  /**
+   * Send home any kitten this machine can no longer drive.
+   *
+   * TURNING THE STICK OFF TAKES A DEVICE OUT OF THE POOL, and the party does not
+   * shrink on its own. On a phone with one Bluetooth pad and two players — thumb
+   * as player 1, pad as player 2 — that leaves two kittens and one controller,
+   * and the second one is a cat standing in the world that nothing on the
+   * machine can move. A kid reads that as the game breaking, not as the setting
+   * doing what she asked.
+   *
+   * SHE LEAVES PROPERLY RATHER THAN BEING ABANDONED. `_leavePlayer` is the one
+   * path that puts her orbs back in the world, sends her panda and her dragon
+   * home, re-indexes the seats and says so in a toast — every one of which is a
+   * rule that exists because dropping a player wrong loses something. Doing it
+   * by hand here would be a second, worse copy of it.
+   *
+   * FROM THE BACK, so the girl who has been playing longest keeps her seat.
+   * `_leavePlayer` guards at one, so this cannot empty the world.
+   */
+  _trimPartyToDevices() {
+    if (!this.players?.length) return;      // still booting; nothing to trim
+    while (this.partySize > 1 && this.partySize > this.input.seatable) {
+      this._leavePlayer(this.partySize - 1);
+    }
   }
 
   /**
@@ -505,6 +555,55 @@ class Game {
     const i = b.findIndex((x) => x?.touch);
     return i >= 0 ? i : 0;
   }
+  /**
+   * Re-word Settings' touch row for a machine that really is a phone.
+   *
+   * WHAT THE PLAYER IS CHOOSING ON A PHONE IS WHO PLAYER ONE IS, not whether a
+   * stick is drawn. Touch is dealt ahead of every controller — see `_devices` in
+   * core/input.js, where the ordering is argued for at length — so the two
+   * states of this one setting are:
+   *
+   *   Mobile input   the thumb is player 1; a paired gamepad seats player 2
+   *   Gamepad        gamepad 1 is player 1, gamepad 2 is player 2, and on down
+   *
+   * Both were already true. What was missing was any way to find that out: the
+   * row said "On-screen stick / Always OFF — controller or keyboard", which
+   * describes the visible half of a change whose important half is a seat
+   * moving. A kid with a controller and a phone had to guess.
+   *
+   * ONE SELECT, ONE STORED VALUE, TWO SPELLINGS — deliberately not a second
+   * setting. Two widgets over one boolean is two things to keep in step, and
+   * the first time they disagreed there would be no way to tell which one the
+   * game believed. The phone labels live in the markup as `data-phone`
+   * attributes so both wordings of a row sit next to each other.
+   *
+   * KEYED OFF `detected`, NOT `touchPrimary`, and that distinction is the whole
+   * reason this is a method rather than three lines inline. `touchPrimary` is
+   * true in the desktop test mode as well, so keying off it would relabel the
+   * test mode's own escape hatch as "Mobile input" — the row you use to get
+   * back to a keyboard, re-worded as though you were holding a phone. `detected`
+   * is what the hardware said and does not move when the override does, so this
+   * runs ONCE and never has to be undone.
+   */
+  _shapeTouchSetting(sel) {
+    if (!sel || !this.device?.detected) return;
+    const label = document.getElementById('set-touch-label');
+    if (label?.dataset.phone) label.textContent = label.dataset.phone;
+    for (const opt of sel.options) {
+      if (opt.dataset.phoneHide !== undefined) {
+        /* IDENTICAL STATE, DIFFERENT LABEL. On a detected phone `auto` and
+           `mobile` both give `padOn: true`, so moving a stored `mobile` onto
+           `auto` for display changes nothing about how the game reads — and it
+           has to happen before the option is hidden, or the select would be
+           left showing a blank row. */
+        if (sel.value === opt.value) sel.value = 'auto';
+        opt.hidden = true;
+        continue;
+      }
+      if (opt.dataset.phone) opt.textContent = opt.dataset.phone;
+    }
+  }
+
 
   _bindTouchHud() {
     document.getElementById('maps').addEventListener('click', (e) => {
@@ -1565,9 +1664,18 @@ class Game {
        is the fix, and a kid who has just hidden the stick to use a controller
        needs to be told the rest of the screen is meant to stay. */
     const describeTouch = () => {
-      const want = tc.value;
       const phone = this.device.touchPrimary;
       const pad = this.device.padOn;
+      /* HOW MANY CONTROLLERS ARE ACTUALLY IN THE ROOM. Only the phone wording
+         below reads it, and it reads it for one sentence that has to be true:
+         turning the stick off with nothing else connected leaves a kitten
+         nobody can move. That is the silent refusal the sixth non-negotiable
+         forbids, and the fix is to SAY SO — as an instruction, naming the thing
+         to go and do — rather than to refuse the setting. Refusing it would be
+         worse: pairing a Bluetooth pad is a thing you do WITH the phone, and a
+         switch that will not flip until the pad is already paired is a switch
+         you cannot find when you need it. */
+      const padsHere = (navigator.getGamepads?.() ?? []).filter(Boolean).length;
       /* ONLY A DESKTOP CAN CHANGE TIER FROM HERE. A real phone is a phone
          whichever way this is set, so the reload warning is now reachable in
          exactly one case: claiming to be a phone on a machine that is not one,
@@ -1580,18 +1688,59 @@ class Game {
         return;
       }
       note.classList.remove('warn');
+      /* THE PHONE'S OWN SENTENCES, and they are about SEATING rather than about
+         a stick being drawn — because that is what the choice does. Touch is
+         dealt ahead of every controller (`_devices` in core/input.js), so
+         whether the stick is up decides who player 1 IS:
+
+           on   the thumb is player 1, and a paired gamepad seats player 2
+           off  gamepad 1 is player 1, gamepad 2 is player 2, and so on down
+
+         Both halves are spelled out in both states. A setting that only
+         describes the state you are already in makes you flip it to find out
+         what the other one does, which on this one costs you your seat. */
+      if (this.device.detected) {
+        if (pad) {
+          note.textContent = 'Player 1 is the on-screen stick — left thumb to '
+            + 'move, buttons on the right. A gamepad paired to this phone joins '
+            + 'as Player 2.';
+          return;
+        }
+        note.textContent = padsHere
+          ? 'Player 1 is gamepad 1, and a second gamepad joins as Player 2. The '
+            + 'on-screen stick is hidden; the map, the sin/cos board and every '
+            + 'menu still answer to a tap.'
+          : 'Player 1 is a gamepad — but no controller is connected, so nothing '
+            + 'can move her. Pair one over Bluetooth, or switch this back to '
+            + 'Mobile input.';
+        if (!padsHere) note.classList.add('warn');
+        return;
+      }
       if (pad) {
         note.textContent = 'Touch pad is ON — tap and drag to play, or drag the '
           + 'stick with the mouse and work the buttons from WASD / Q E F / '
           + 'Space. A second player joins on the ARROW keys.';
         return;
       }
-      note.textContent = phone
-        ? 'Touch pad is OFF — play on a controller. The screen stays phone-sized, '
-          + 'and you can still tap the map, the sin/cos board and every menu.'
-        : 'Touch pad is OFF — keyboard and controllers.';
+      /* NO `phone ?` HERE ANY MORE, and it is not a case that went missing.
+         "A phone with the stick off" is the branch above, guarded by
+         `detected`; the only way to reach THIS line is a machine detection
+         called a desktop, and `touchPrimary` cannot be true there with `padOn`
+         false — work it through `profileFor` and the combination has no
+         override that produces it. A branch for it was a branch that never ran
+         and a sentence nobody could ever be shown. */
+      note.textContent = 'Touch pad is OFF — keyboard and controllers.';
     };
     tc.value = readOverride();
+    /* ONE STATE, TWO SPELLINGS — see the markup, and `_shapeTouchSetting`, for
+       why this is not a second setting.
+
+       AFTER `tc.value` IS WRITTEN, NOT BEFORE, and the ordering is load-bearing:
+       shaping can move a stored `mobile` onto `auto` (identical state on a
+       detected phone, and the `mobile` label names a machine the player is not
+       holding), and doing that first would simply be overwritten by the line
+       above — leaving the select showing a hidden option, which renders blank. */
+    this._shapeTouchSetting(tc);
     tc.addEventListener('change', () => {
       writeOverride(tc.value);
       /* Re-detect rather than patching the profile by hand, so the override goes
@@ -5425,19 +5574,30 @@ class Game {
    * The pause menu's DROP OUT rows, and the line telling a spare controller
    * how to get in.
    *
-   * BUILT RATHER THAN WRITTEN OUT, and absent below three players. `MenuNav`
+   * BUILT RATHER THAN WRITTEN OUT, and absent for a solo kitten. `MenuNav`
    * finds its items by querying `.menu-btn` inside the open panel, so buttons
-   * appearing and disappearing here are picked up for free — but a two-player
-   * game must not show any, because the only thing DROP OUT could do there is
-   * leave one kitten alone in a co-op game.
+   * appearing and disappearing here are picked up for free.
+   *
+   * PLAYER 2 CAN LEAVE NOW, AND SHE COULD NOT BEFORE. The old rule was
+   * `partySize > 2`, written when one kitten was a state this game could not
+   * represent: the only thing DROP OUT could do at two was leave somebody alone
+   * in a co-op game, so it was not offered. Solo is a real game on both tiers
+   * now — it is what PLAY opens on — so the row that was protecting her is
+   * instead a sister who joined by leaning on ENTER and can never get out
+   * again, which is the silent refusal the sixth non-negotiable forbids.
+   *
+   * PLAYER 1 IS STILL NOT OFFERED ONE, and that is not the same rule wearing a
+   * smaller number. Slot 0 is the seat every scene, every camera and every menu
+   * owner falls back to; "drop out" for her means ending the game, and the
+   * button for ending the game is RESTART, two rows down and already guarded.
    */
   _buildLeaveButtons() {
     const wrap = document.getElementById('leave-buttons');
     const note = document.getElementById('join-note');
     if (!wrap) return;
     wrap.textContent = '';
-    if (this.partySize > 2) {
-      for (let i = 2; i < this.partySize; i++) {
+    if (this.partySize > 1) {
+      for (let i = 1; i < this.partySize; i++) {
         const b = document.createElement('button');
         b.className = 'menu-btn';
         b.textContent = `${this.players[i].name.toUpperCase()} — DROP OUT`;
@@ -5451,9 +5611,15 @@ class Game {
              throws away belongs to one specific child. */
           this.confirm.ask({
             title: `${this.players[i].name.toUpperCase()} LEAVES THE GAME?`,
-            body: `${this.players[i].name}'s kitten goes away and the screen `
-              + 'splits between the ones who are left. Her points and her orbs '
-              + 'go with her.',
+            /* THE SENTENCE HAS TO SURVIVE GOING DOWN TO ONE. "The screen
+               splits between the ones who are left" is a lie when the one left
+               is player 1 on a full-screen view, and a dialog that describes
+               the wrong outcome is worse than one that describes none. */
+            body: `${this.players[i].name}'s kitten goes away and `
+              + (this.partySize > 2
+                ? 'the screen splits between the ones who are left. '
+                : 'you carry on by yourself. ')
+              + 'Her points and her orbs go with her.',
             no: 'NO, SHE STAYS',
             yes: `YES, ${this.players[i].name.toUpperCase()} DROPS OUT`,
             onYes: () => {
