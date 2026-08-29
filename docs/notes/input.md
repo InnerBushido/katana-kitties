@@ -740,3 +740,44 @@ would have survived in `localStorage` and none of this would have taken. Bumping
 `MAP_STORAGE_KEY` to `kk.vjoy.map.v3` retires those saved maps. That costs
 whatever else was calibrated on that machine, which is the smaller loss: the
 numbers it is throwing away were the wrong ones.
+
+## Two quick presses hold the shield up
+
+`Kabe` runs while the button is **held**, which is a thumb the player has to
+keep down for the whole two seconds — and holding a button is exactly the thing
+a nine-year-old stops doing the instant something else happens on screen. A
+**double tap latches it**: the bubble stays up until it expires on its own, and
+takes two more taps to bring back.
+
+**It buys the button, never extra seconds.** `wardUsed` keeps running whether
+she is holding it or the latch is, so a latched bubble pops on the same frame a
+held one would, and `_dropWard` charges the same wait afterwards. There is
+nothing to gain from the gesture except a thumb.
+
+**A double tap is press-release-press, and the release is the problem.** By the
+time the second press arrives the first release has already ended the block and
+charged the cooldown — so the latch cannot be *"start a block"*, it has to be
+*"take back the release that just happened"*. That is `WARD.regrab`: a half
+second, armed **only by a release** (`_dropWard`'s reason argument), spent by
+the second tap. A block she ran to the end of, or one the Cross Slash took off
+her, arms nothing — so the gesture can never be used to dodge the cooldown, and
+`_startTriple` drops with its own reason precisely so it cannot.
+
+**The edge clock is in `PadState`, not in the Ward.** `doubled(action)` asks
+*"was this frame's press the second of two, close together"* and answers for any
+action; `lastPress` is stamped once per slot per frame in `update`. Two things
+follow that a per-feature timer would have got wrong: **consuming the press
+consumes the double tap with it**, so two owners of a frame cannot both fire on
+one gesture; and **asking is not spending**, so `Player` can ask out of a branch
+it only reaches when there is no dragon and no panda in range without the answer
+depending on how many times it was asked.
+
+**`DOUBLE_TAP_MS` is exported and the touch pad imports it.** The on-screen pad
+has latched its buttons on a double tap since the first phone pass
+([mobile.md](mobile.md)) and had its own copy of the number. They are one
+gesture with two implementations — glass latches the *button*, a pad latches the
+*shield* — and the one thing they must not do is drift 40ms apart and become two
+gestures that look like one. `pad-check` drives the window with a hand-held
+clock rather than real time, because a test that pressed twice as fast as Node
+can run would pass against a window of any size at all, including a broken one
+that always says yes.

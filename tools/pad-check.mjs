@@ -31,7 +31,7 @@ globalThis.localStorage = {
 
 import { readFileSync } from 'node:fs';
 
-const { InputManager, ACTIONS, KEYSETS, BOUND_KEYS } = await import('../src/core/input.js');
+const { InputManager, ACTIONS, KEYSETS, BOUND_KEYS, DOUBLE_TAP_MS } = await import('../src/core/input.js');
 
 const line = (l, v) => console.log(String(l).padEnd(46) + v);
 let fails = 0;
@@ -1582,6 +1582,104 @@ console.log('\n--- the Joy-Con shoulders are in the twenties, and 0-3 do nothing
   ok('the storage key was bumped when the defaults moved',
     readFileSync(new URL('../src/core/input.js', import.meta.url), 'utf8')
       .includes("MAP_STORAGE_KEY = 'kk.vjoy.map.v3'"));
+}
+
+
+/* ---------------------------------------------------------------------------
+   THE DOUBLE TAP, WHICH IS ONE GESTURE WITH TWO IMPLEMENTATIONS.
+
+   On glass it latches the BUTTON (`touchpad.js`); on a controller it latches
+   the SHIELD (`Player._latchWard`). Both read the same window, and this is the
+   half that lives in the input layer: "was this frame's press the second of
+   two, close together".
+
+   TIME IS DRIVEN BY HAND. `performance.now()` moves on its own, and a test
+   that pressed twice as fast as Node could run would pass against a window of
+   any size at all — including a broken one that always says yes.
+--------------------------------------------------------------------------- */
+console.log('\n--- a second press, close behind the first ---');
+{
+  const realNow = performance.now.bind(performance);
+  let clock = 10000;
+  performance.now = () => clock;
+  try {
+    const im = drive([]);
+    const p0 = im.players[0];
+    const tap = () => { im.keys.add('KeyE'); im.update(); };
+    const lift = () => { im.keys.delete('KeyE'); im.update(); };
+
+    /* `interact` is E on WASD — any action will do; this one is a plain letter
+       with no other machinery hanging off it. */
+    ok('a first press is not a double tap',
+      (() => { tap(); return p0.pressed('interact') && !p0.doubled('interact'); })());
+
+    lift();
+    clock += 120;                                  // well inside the window
+    tap();
+    ok('...but a second one close behind it is', p0.doubled('interact'));
+
+    /* ASKING IS NOT THE SAME AS SPENDING. `doubled` is a pure test, and a test
+       that moved the clock would answer differently depending on how many
+       times it was called — which is exactly the shape of bug that reads as
+       "it only works sometimes". `Player` asks it out of a branch that is only
+       reached when there is no dragon and no panda in range. */
+    ok('...and asking twice gives the same answer', p0.doubled('interact'));
+
+    /* AND ONLY ON THE PRESS FRAME. It is an edge, not a state: a held button
+       must not report a double tap for as long as it is held. */
+    im.update();
+    ok('...but not on the next frame, with the button still down',
+      p0.down('interact') && !p0.doubled('interact'));
+
+    /* SPENDING THE EDGE SPENDS THE DOUBLE TAP WITH IT. `consume` is how one
+       owner of the frame stops a later one seeing the same press; a gesture
+       that survived it would fire twice. */
+    lift();
+    clock += 120;
+    tap();
+    p0.consume('interact');
+    ok('consuming the press spends the double tap too', !p0.doubled('interact'));
+
+    /* THE WINDOW IS REAL. Slower than it and this is two taps, which is what
+       it was before the gesture existed. */
+    lift();
+    clock += 900;
+    tap();
+    ok('a second press long afterwards is just a press',
+      p0.pressed('interact') && !p0.doubled('interact'));
+
+    /* HOLDING THROUGH IT IS NOT A DOUBLE TAP EITHER. Two presses means two
+       press EDGES; a thumb that never came up produced one. */
+    for (let i = 0; i < 40; i++) { clock += 16; im.update(); }
+    ok('holding the button down is never a double tap', !p0.doubled('interact'));
+
+    /* PER ACTION, PER PLAYER. One girl's rhythm must not arm her sister's
+       shield, and pressing SLASH alongside a doubled ACTION must not inherit
+       the gesture.
+
+       THE PAIR IS BUILT FRESH. The clock has run on since the last press of E
+       during the checks above, so pressing it now would be a lone press —
+       which is a true statement about a stale fixture and not the thing being
+       tested here. */
+    lift();
+    clock += 500;
+    tap();                                         // press one, of E alone
+    lift();
+    clock += 120;
+    im.keys.add('KeyE');                           // press two, of E...
+    im.keys.add('KeyF');                           // ...and press ONE, of F
+    im.update();
+    ok('the double tap belongs to the action that got it',
+      p0.doubled('interact') && !p0.doubled('attack'));
+    ok('...and to the player who made it', !im.players[1].doubled('interact'));
+
+    /* THE WINDOW ITSELF, so the number the touch pad imports is the number
+       this measures against. */
+    ok('the window is the one both devices share',
+      DOUBLE_TAP_MS === 340, `${DOUBLE_TAP_MS}ms`);
+  } finally {
+    performance.now = realNow;
+  }
 }
 
 console.log('');

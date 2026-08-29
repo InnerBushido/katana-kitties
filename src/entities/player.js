@@ -348,6 +348,13 @@ export class Player {
     this.stunLockT = 0;
     /** Seconds of invulnerability left. Stops a fast blade chain-locking her. */
     this.invulnT = 0;
+    /** Seconds of "she is off the ground because Mr. Satan put her there".
+     *  NOT invulnerability — it buys nothing in a fight and no blade reads it.
+     *  It is the flag the RING-OUT rule reads, so that a gag which promises to
+     *  cost nothing really costs nothing: while it is set, coming down outside
+     *  the ring is a free return rather than a penalty. See `blast` and
+     *  `Tournament._updateOut`. */
+    this.blastT = 0;
     /** Seconds left lying knocked out. Zero means she is up. */
     this.koT = 0;
     /** True from the moment she is knocked out until the round resets her. */
@@ -385,6 +392,21 @@ export class Player {
     this.wardUsed = 0;
     this.wardTail = 0;
     this.wardCool = 0;
+    /* --- and the latch, which is the double tap ---
+       `wardHold` is "she tapped twice, so the block does not need her thumb
+       any more". It changes ONE thing — whether letting go of the button ends
+       the block — and deliberately nothing else: the same `WARD.max`, the same
+       tail, the same wait. A latch that also bought more time would be a
+       second, better ability hiding inside the first, and the profile screen
+       has one number on it.
+
+       `wardRegrab` is the window in which a SECOND tap can take back the wait
+       that the FIRST tap's release just charged. Without it the gesture cannot
+       work at all: two taps are two presses with a release between them, and
+       that release runs `_dropWard` and starts a 1.5s cooldown a fifth of a
+       second before the second tap arrives. See `_latchWard`. */
+    this.wardHold = false;
+    this.wardRegrab = 0;
     /** Seconds left of a charge, and the direction it is committed to. */
     this.chargeT = 0;
     this.chargeDir = new THREE.Vector2(0, 1);
@@ -1364,6 +1386,12 @@ export class Player {
   /** Drop every power move on the floor. Safe to call at any time. */
   _clearSpecials() {
     this.wardOn = false;
+    /* THE LATCH GOES WITH THE BUBBLE IT WAS HOLDING. It is a promise about one
+       particular block — "this one does not need your thumb" — and a promise
+       that outlives its block is a kitten who gets on a dragon, gets off, taps
+       mount once and is invincible with no second tap. */
+    this.wardHold = false;
+    this.wardRegrab = 0;
     this.wardUsed = 0;
     this.wardTail = 0;
     this.wardCool = 0;
@@ -1408,6 +1436,18 @@ export class Player {
     this.stunLockT = Math.max(0, (this.stunLockT ?? 0) - dt);
     this._updateDaze(dt);
     this.invulnT = Math.max(0, this.invulnT - dt);
+    /* THE CEILING ON IT. It is normally spent by the arena picking her up
+       (`Tournament._updateOut` and `_catchFallers` both clear it), and this is
+       the other end: a kitten who is never picked up — because the tournament
+       ended under her, because she landed back on the deck — must not carry an
+       exemption from the ring-out rule around for the rest of the round.
+
+       NOT CLEARED WHEN SHE LANDS, which was the first version and was exactly
+       wrong. `_updateOut` charges her on the frame she comes DOWN outside the
+       ring, so a flag cleared by landing is a flag cleared one line before the
+       rule that reads it — she flew, she landed, and she was rung out anyway,
+       which is what the browser said the first time this was tried. */
+    this.blastT = Math.max(0, (this.blastT ?? 0) - dt);
     this.flashT = Math.max(0, this.flashT - dt);
     if (this.koT > 0) this.koT = Math.max(0, this.koT - dt);
 
@@ -1999,8 +2039,29 @@ export class Player {
              dragon who presses mount and gets a bubble reads as the game
              refusing to let her fly, and she has no way to tell that the orb
              she is wearing is the reason. It falls through to here, which is
-             nearly always, because a dragon is a place you walk to. */
-          this._popWard(hud);
+             nearly always, because a dragon is a place you walk to.
+
+             AND A SECOND TAP LATCHES IT. The double tap is read HERE, inside
+             the same branch, rather than earlier beside the mount tests — for
+             the reason the paragraph above gives. A kitten double-tapping her
+             way onto a dragon must get the dragon twice (on, then off), not a
+             bubble; asking the question after every animal has already
+             declined is what makes that automatic instead of a special case
+             somebody has to remember.
+
+             THE LATCH IS TRIED FIRST AND FALLS BACK. `_latchWard` refuses when
+             there is nothing to latch — no orb, or a bubble that ended for a
+             reason other than her letting go of it — and then this is simply
+             an ordinary press and pops an ordinary held block. So a double tap
+             on a spent Ward behaves exactly as two single taps would. */
+          /* `?.` BECAUSE A PAD WITHOUT THE METHOD IS A PAD, NOT A CRASH.
+             Every real device arrives through `PadState`, which always has it
+             — but this function is also driven by hand-built stubs in
+             `world-check` and the smoke test, and the house rule is that a
+             missing field degrades rather than vanishes. Without the latch,
+             a double tap is two ordinary taps, which is what the game did
+             before this existed. */
+          if (!(pad.doubled?.('mount') && this._latchWard(hud))) this._popWard(hud);
         }
       }
     }
@@ -2099,10 +2160,16 @@ export class Player {
        "2 seconds max" is a suggestion. Losing the orb mid-block is the third,
        and it happens: her sister can trade the Ward orb away from her while
        the bubble is up. */
+    this.wardRegrab = Math.max(0, this.wardRegrab - dt);
     if (this.wardOn) {
       this.wardUsed += dt;
       const spent = this.wardUsed >= (this.power.ward?.max ?? WARD.max);
-      if (!pad.down('mount') || spent || !this.power.ward) this._dropWard(hud);
+      /* THE ORDER OF THESE TWO IS THE WHOLE LATCH. Running out and losing the
+         orb end a latched block exactly as they end a held one — `wardHold`
+         buys her the BUTTON back, not the clock — so they are tested first and
+         unconditionally. Only the release is skipped while she is latched. */
+      if (spent || !this.power.ward) this._dropWard(hud, 'spent');
+      else if (!this.wardHold && !pad.down('mount')) this._dropWard(hud, 'release');
     } else {
       /* THE TAIL AND THE WAIT RUN TOGETHER, and that is what makes the wait
          mean what the profile screen says. The tail is 0.2s of grace inside a
@@ -2242,6 +2309,86 @@ export class Player {
   }
 
   /**
+   * Get thrown, without being hit.
+   *
+   * NOT `hurt`, AND DELIBERATELY NOT REACHABLE FROM IT. Mr Satan's tantrum
+   * (`systems/satanblast.js`) is the only caller and it is a gag, not a blow:
+   * no damage, no knockout, no score, no invulnerability spent, no Cross Slash
+   * interrupted, nothing banked and nothing owed. There is no `dmg` parameter
+   * to pass, so this cannot quietly become an attack later without somebody
+   * changing the signature in front of a reviewer — which is the third
+   * non-negotiable defended by construction rather than by a comment.
+   *
+   * THE WARD DOES NOT STOP IT AND MUST NOT. A bubble is a thing that stops
+   * BLADES; the same rule that lets a ring-out pierce it applies here, and for
+   * the funnier version of the same reason — a kitten who could stand on the
+   * announcer's box holding SHIELD and watch the explosion part around her
+   * would have found the one place in the game where the joke does not work.
+   *
+   * NOR DOES `invulnT`. She is not being hurt, so there is nothing for the
+   * invulnerability to refuse; skipping her because she was hit a moment ago
+   * would mean the blast caught three sisters and left the fourth standing.
+   *
+   * @param {{x:number,z:number}} from  what to push away from
+   * @param {{knock:number, lift:number}} force
+   */
+  blast(from, force) {
+    /* A KNOCKED-OUT KITTEN IS LEFT WHERE SHE IS. She is lying on the floor
+       waiting for `koT` and the round is watching her; picking her up and
+       throwing her across the island mid-count is the one outcome here that
+       could actually change something. */
+    if (this.ko) return;
+
+    /* THE SAME ZERO-LENGTH GUARD `hurt` USES, and it is not hypothetical here
+       either: he detonates at his own feet and a kitten who has climbed onto
+       exactly the square he is standing on is a nine-year-old's first idea. */
+    let dx = this.position.x - from.x;
+    let dz = this.position.z - from.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.001) { dx = Math.sin(this.facing); dz = Math.cos(this.facing); }
+    else { dx /= len; dz /= len; }
+
+    /* NO `rage` MULTIPLIER. Everywhere else knockback grows with the damage
+       she has taken — Smash's percent rule — because knockback is how a fight
+       is won. This is not a fight, and a kitten who is losing one should not
+       be thrown further by a joke than her sister standing beside her. */
+    this.velocity.x = dx * force.knock;
+    this.velocity.z = dz * force.knock;
+    this.velocity.y = Math.max(this.velocity.y, force.lift);
+    this.onGround = false;
+
+    /* OFF WHATEVER SHE WAS ON AND OUT OF WHATEVER SHE WAS DOING. `_clearSpecials`
+       is how every other "she is somewhere else now" path ends a technique —
+       a kitten mid-charge or mid-block who is suddenly airborne over the
+       island keeps the move's state otherwise, and a latched Ward would ride
+       all the way down with her. */
+    this._clearSpecials();
+    this.hitLean = Math.sign(dx * Math.cos(this.camYaw) - dz * Math.sin(this.camYaw)) || 1;
+    this.squash = 1;
+
+    /* AND IT REALLY IS FREE, WHICH TOOK A SECOND GO TO BE TRUE.
+       The first version reasoned that the explosion could only catch somebody
+       already outside the fighting square, so it could not change a round.
+       That is right about `hurt` and wrong about the ARENA: a kitten stood on
+       the announcer's box is outside the square but safely ABOVE the floor, so
+       nothing is being charged to her — and being thrown off it drops her
+       below the deck, where `Tournament._updateOut` rings her out for thirty
+       health and a point. Measured in the browser, not deduced: she left with
+       100 and landed in the middle of the ring with 70.
+
+       So the flight sets this flag, and `Tournament._updateOut` reads it as a
+       PRICE OF ZERO rather than as an exemption — she is picked up and put back
+       in the middle of the ring on exactly the terms the feast uses, which is
+       a thing that function already knew how to do. Skipping her instead only
+       moved the penalty later; see the comment there.
+
+       Six seconds is roughly twice the arc `knock`/`lift` actually produce,
+       and it is a ceiling rather than a duration: the arena spends it the
+       moment it picks her up. */
+    this.blastT = 6;
+  }
+
+  /**
    * End a block, whichever of the three ways it ended.
    *
    * ONE EXIT, so the tail and the wait cannot be started by one path and
@@ -2251,12 +2398,70 @@ export class Player {
    * the end of the tail the number on the profile screen is 0.2s short of the
    * gap she actually feels.
    */
-  _dropWard(hud) {
+  _dropWard(hud, why = 'release') {
     if (!this.wardOn) return;
     this.wardOn = false;
+    this.wardHold = false;
+    /* ONLY A RELEASE ARMS THE RE-GRAB, and that distinction is what stops the
+       latch being a way to dodge the cooldown. A block she ran to the end of,
+       or one that ended because her sister traded the orb away, must not be
+       re-grabbable by tapping — the second tap would hand her a fresh bubble
+       for nothing. A block she LET GO of a fifth of a second ago is a different
+       thing: she is mid-gesture, and the wait charged for that release has not
+       been earned yet. See `_latchWard` for what spends this. */
+    this.wardRegrab = why === 'release' ? WARD.regrab : 0;
     this.wardTail = WARD.tail;
     this.wardCool = this.power.ward?.cool ?? WARD.cool;
     hud?.sfx?.('warddown');
+  }
+
+  /**
+   * Take the thumb off the block: the second tap of a double tap.
+   *
+   * IT BUYS THE BUTTON, NOT TIME. `wardUsed` is not touched, so a latched
+   * bubble runs out on exactly the frame a held one would have. The whole
+   * feature is that two thumbs cannot hold three things — the same reason the
+   * touch pad latches RUN — and answering that with extra seconds would be
+   * answering a different question.
+   *
+   * TWO WAYS IN, AND THE SECOND ONE IS WHY `wardRegrab` EXISTS. If the second
+   * tap lands while the bubble is still up (her thumb never left, or the frame
+   * fell kindly) there is nothing to do but set the flag. Usually it does not:
+   * a double tap is press, release, press, and the release already ran
+   * `_dropWard` and charged her the wait. So the second tap TAKES THAT BACK —
+   * the cooldown and the tail, both of which were charged for a let-go she was
+   * in the middle of un-doing. It cannot be used to refund an ordinary block,
+   * because `wardRegrab` is only armed by a release and only lasts `WARD.regrab`
+   * — a fifth of a second longer than the double-tap window itself, so the
+   * gesture is not lost to one slow frame.
+   */
+  _latchWard(hud) {
+    if (!this.power.ward) return false;
+    /* NOT OUT OF A CROSS SLASH — the same rule `_popWard` states, closed here
+       too because this is a second door into the same room. Two ways in is how
+       the first one's rule gets quietly bypassed: she blocks, lets go, starts
+       the technique inside the half-second the release armed, taps twice and
+       has her bubble back for the whole second she is supposed to be planted
+       and open. `_startTriple` arms nothing on its own drop, which closes the
+       other half of it.
+
+       SILENT HERE, ON PURPOSE, AND THAT IS NOT A REFUSAL THAT DOES NOTHING —
+       returning false drops the caller through to `_popWard`, which makes the
+       same test and says the sentence. Toasting from both would deny her twice
+       in one frame for one press. The message is `_popWard`'s to own because
+       it is the one that fires for a single tap as well. */
+    if (this.triLockT > 0) return false;
+    if (!this.wardOn) {
+      if (this.wardRegrab <= 0) return false;
+      this.wardOn = true;
+      this.wardTail = 0;
+      this.wardCool = 0;
+      this.wardMesh.visible = true;
+    }
+    this.wardRegrab = 0;
+    this.wardHold = true;
+    hud?.sfx?.('wardup');
+    return true;
   }
 
   /**
@@ -2307,7 +2512,7 @@ export class Player {
        to be committed and open — that is the cost the three cuts are paid for.
        Dropped through `_dropWard` rather than by clearing the flag, so she is
        charged the ordinary wait for it too and this is not a free cancel. */
-    if (this.wardOn) this._dropWard(hud);
+    if (this.wardOn) this._dropWard(hud, 'cross');
     this.triLeft = CROSS.cuts;
     this.triT = 0;
     this.triHangT = 0;

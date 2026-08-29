@@ -1320,6 +1320,24 @@ export function postsFor(sides) {
 
 export function buildArena() {
   const parts = [];
+  /* THE PIECES THAT GET DRAWN WITH A HOLE IN THEM.
+     A separate list rather than a flag on each part, because the split is a
+     DRAW-CALL split: `World._buildArena` merges this pile under
+     `xrayVertexMat` and the other pile under `toonVertexMat`, and a merged
+     geometry has exactly one material. Two lists in, two meshes out.
+
+     WHAT IS IN IT IS EVERYTHING TALL AND NEAR THE FIGHT. The four corner posts
+     are 11 units of solid vermillion at the corners of a 56-unit deck, which
+     is precisely where a kitten thrown toward a rim ends up — reported as
+     losing her behind a pillar. The announcer's box is worse: Mr Satan stands
+     ON it, and anybody who lands up there with him is behind its roof from
+     every camera on the ring side.
+
+     WHAT IS NOT IN IT: the deck, the steps, the stands and the record board.
+     None of them is tall enough to hide a 2.9-unit kitten from a camera that
+     is already above her, and every part moved into the x-ray mesh is a part
+     that pays the cut test per fragment for nothing. */
+  const seeThrough = [];
   const solids = [];
   const platforms = [];
   const R = ARENA_RING;
@@ -1387,12 +1405,17 @@ export function buildArena() {
     for (const sz of [-1, 1]) {
       const x = sx * (R + 1.1);
       const z = sz * (R + 1.1);
-      parts.push(box(1.5, 11, 1.5, PALETTE.vermillion, x, H + 5.5, z));
-      parts.push(box(2.2, 0.7, 2.2, PALETTE.gold, x, H + 11.3, z));
-      parts.push(box(2.6, 0.5, 2.6, PALETTE.vermillion, x, H + 11.85, z));
+      /* ALL FIVE PIECES, INCLUDING THE BANNER. The banner is the part that
+         actually does the hiding — it hangs INWARD, over the deck, so it is
+         between the camera and a fighter far more often than the column it
+         hangs off. A post that opened and a banner that did not would be a
+         hole with a curtain across it. */
+      seeThrough.push(box(1.5, 11, 1.5, PALETTE.vermillion, x, H + 5.5, z));
+      seeThrough.push(box(2.2, 0.7, 2.2, PALETTE.gold, x, H + 11.3, z));
+      seeThrough.push(box(2.6, 0.5, 2.6, PALETTE.vermillion, x, H + 11.85, z));
       // The banner, hanging inward toward the ring.
-      parts.push(box(0.16, 5.2, 2.4, PALETTE.paper, x - sx * 0.9, H + 7.4, z));
-      parts.push(box(0.18, 0.5, 2.4, PALETTE.tileIndigo, x - sx * 0.94, H + 9.8, z));
+      seeThrough.push(box(0.16, 5.2, 2.4, PALETTE.paper, x - sx * 0.9, H + 7.4, z));
+      seeThrough.push(box(0.18, 0.5, 2.4, PALETTE.tileIndigo, x - sx * 0.94, H + 9.8, z));
       solids.push({ x, z, r: 1.5, top: H + 11.6 });
     }
   }
@@ -1433,12 +1456,18 @@ export function buildArena() {
      is placed off `ARENA_BOOTH.y`, and a booth whose top nobody can query
      puts him standing in mid-air over it. */
   const B = ARENA_BOOTH;
-  parts.push(box(10, 6.2, 5.6, PALETTE.plaster, B.x, 3.1, B.z));
-  parts.push(box(11, 0.6, 6.6, PALETTE.tileRed, B.x, 6.4, B.z));
+  /* THE WHOLE BOOTH IS SEE-THROUGH, ROOF INCLUDED. Mr Satan stands on top of
+     it and a kitten knocked north lands up there beside him; from every camera
+     on the ring side of the arena — which is all of them, because that is where
+     the fight is — the roof and its two posts are directly in front of both of
+     them. This is the case that was reported: not that the booth looked bad,
+     but that you could not see who was on it. */
+  seeThrough.push(box(10, 6.2, 5.6, PALETTE.plaster, B.x, 3.1, B.z));
+  seeThrough.push(box(11, 0.6, 6.6, PALETTE.tileRed, B.x, 6.4, B.z));
   // The rail, on the RING side of the booth — he leans on it to shout at them.
-  parts.push(box(10.6, 0.5, 0.5, PALETTE.gold, B.x, 6.95, B.z + 2.9));
+  seeThrough.push(box(10.6, 0.5, 0.5, PALETTE.gold, B.x, 6.95, B.z + 2.9));
   for (const sx of [-1, 1]) {
-    parts.push(box(0.5, 3.4, 0.5, PALETTE.woodDark, B.x + sx * 4.8, 8.4, B.z));
+    seeThrough.push(box(0.5, 3.4, 0.5, PALETTE.woodDark, B.x + sx * 4.8, 8.4, B.z));
   }
   /* `pagodaRoof` hands back ONE unpainted geometry, not a list of parts — it
      is the odd one out in this file, and every other caller paints it before
@@ -1451,7 +1480,7 @@ export function buildArena() {
   const boothRoof = pagodaRoof(4.4, 3.2, 2.2, { overhang: 0.5, cornerLift: 0.5 });
   paint(boothRoof, PALETTE.tileIndigo);
   boothRoof.translate(B.x, 10.1, B.z);
-  parts.push(boothRoof);
+  seeThrough.push(boothRoof);
   solids.push({ x: B.x, z: B.z, r: 5.2, top: 6.7 });
   platforms.push({ x0: B.x - 5, x1: B.x + 5, z0: B.z - 2.8, z1: B.z + 2.8, y: 6.7 });
 
@@ -1480,7 +1509,7 @@ export function buildArena() {
      griffin's landing side is framed exactly like the great torii at home. */
   parts.push(...transformParts(buildTorii(1.5), 0, 0, R + ARENA_GATE, 0));
 
-  return { parts, solids, platforms };
+  return { parts, seeThrough, solids, platforms };
 }
 
 /** Merge a pile of painted geometries into one BufferGeometry. */

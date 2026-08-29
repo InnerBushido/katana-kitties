@@ -461,6 +461,24 @@ another tap releases. **Only actions the game says are lockable**: the Ward is
 offered only while the orb granting it is worn, and released the moment it
 expires, because a button glowing over a dead ability is the control lying.
 
+**And the shield worked exactly once, for a year, because of that last rule.**
+The release test asked whether she was *not currently blocking* **and** *had no
+Ward orb* — so it never fired while the orb was worn, and the latch outlived the
+block it was holding. Second double tap: nothing, because the button was already
+latched. The test is now `wardCool > 0 || !power.ward` — *the block has ended
+and there is a wait to sit through* — which is the thing the button is actually
+reporting. It is **not** the obvious `!warded`: `_updateTouchContext` runs before
+the controller does, so `!warded` is true on the very frame she double taps and
+would drop the latch in the frame that set it. A test that reads correctly and
+fires one frame early is the same bug wearing a better name.
+
+**The gesture now exists on controllers too**, and deliberately as *one gesture
+with two implementations* rather than one shared mechanism — on glass it latches
+the **button**, on a pad it latches the **shield**. What they share is the
+window: `DOUBLE_TAP_MS` lives in `core/input.js` and `touchpad.js` imports it, so
+the two cannot drift 40ms apart and become two different gestures that look like
+one. See [input.md](input.md).
+
 ### Backgrounding the game is not a crash, and HTTPS will not fix it
 
 Android reclaims the WebGL context of a backgrounded tab when it wants the

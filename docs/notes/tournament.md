@@ -522,6 +522,122 @@ they were measured on — a discriminator tuned on a single example is a
 description of that example. Ask what the two things *are* before asking how big
 they are.
 
+### He has had enough of your kitty shenanigans
+
+`systems/satanblast.js`. Climb onto the announcer's box during a tournament and
+the World Champion notices you. He taunts — *"you think you are TOUGH, huh?"* —
+gives you **ten seconds**, announces that he has had enough, raises his arms,
+gathers a ball of light at his chest for one second, and detonates. Everybody up
+there with him leaves over the horizon.
+
+**Nobody is hurt and nothing is lost, and that is the whole licence to have it.**
+Not one point of damage, no knockout, no score, no ring-out. It is a gag with a
+ten-second fuse and it can exist precisely because it takes nothing away from
+anybody, which is the fourth non-negotiable read as a design rule rather than as
+a bug report.
+
+**It never goes near `strikePlayers`.** The third non-negotiable says that gate
+asks one question and stays the only way a kitten can be harmed. This system
+never asks it, never calls `hurt`, and calls `Player.blast` — *a push with no
+damage argument to pass*, so it cannot grow one later without somebody editing
+the signature. `world-check` greps the file for both.
+
+**The ten seconds are not cancellable and running away does not stop it.** He is
+funnier when he goes off behind you; a promise the game made is one it then
+keeps whatever you do; and a fuse a child can put out by walking backwards is a
+fuse she will never watch burn.
+
+#### Why it cannot decide a round — which took two goes to actually be true
+
+The safety argument is the whole feature, and the first version of it was
+*nearly* right, twice.
+
+**First try: a sphere.** The booth stands eight units north of the ring's north
+edge and its deck is four units higher, so a fighter *on the deck* is out of
+range on height alone — true, and it stops being true the moment she jumps. One
+hop near the north edge puts her level with him and inside a 14-unit blast, and
+being thrown north out of a live round is exactly the outcome this must never
+produce. So `_reaches` asks a third question — **`World.arenaOutBy`**, the same
+square the ring-out rule measures on, so the two cannot drift apart.
+
+**Second try: "she is already outside the square, so nothing changes."** Also
+nearly right, and this one the *browser* caught rather than a check. Outside the
+fighting square is not the same as already being penalised: a kitten standing on
+the announcer's box is outside it and safely **above** the deck, so `_updateOut`
+is charging her nothing — until the explosion throws her off and she comes down
+below the floor, at which point that rule takes **thirty health and a point**.
+Measured, not deduced: she left with 100 and landed in the middle of the ring
+with 70. A gag that promises to cost nothing does not do that.
+
+The fix is `Player.blastT`, and its shape is the interesting part. The obvious
+move — *exempt her from the ring-out rule* — does not work twice over:
+
+- **Skipping her outright** (`continue`, the way `p.angel` and `p.heldBy` do)
+  leaves her standing outside the ring with the rule waiting for the flag to
+  expire, so she is rung out four seconds late instead of on time. Same penalty,
+  arriving too late to be understood.
+- **Clearing the flag when she lands** clears it on the very frame `down`
+  becomes true — which is the frame the rule charges her. The exemption is gone
+  one line before the thing that reads it.
+
+What she wants is not to be skipped, it is to be **picked up for free** — and
+`_updateOut` already knows how to do that, because that is what it does during
+the feast. So the flag makes the price **zero for that player**, she gets the
+feast's deal (back in the middle, nothing said, no banner, no health), and being
+picked up is what spends the flag. `_catchFallers` spends it too, and six
+seconds is a ceiling for the flight nothing catches at all.
+
+`world-check` pins all of it, and pins the *premise* first: that the ring-out
+rule really does bite where the blast throws her. Without that line the rest
+would keep passing after the feature was deleted.
+
+#### The drawing, and the second pose
+
+Two shells and a ground ring, expanding on a hard ease-out — most of the radius
+is spent in the first third, because an explosion that grows linearly reads as a
+balloon. The wind-up is a separate mesh from the blast for the same reason it is
+a separate idea: they already differ (one gathers, one expands), and sharing
+three meshes between them is a pile of flags waiting to happen.
+
+**Mr Satan gets a second drawing** — arms up, charging — generated the same way
+the first one was. It is a **request, not a requirement**: with
+`satan_charge.png` absent he stands in his ordinary pose, the ball still
+gathers, the explosion still goes off and the joke still lands. Ninth
+non-negotiable.
+
+**It was generated twice.** The first one had a golden flame aura, which is
+lovely and which `poseQuad` would have punished: that function matches poses on
+**ink area**, so an aura several times the cat's own ink would have made him
+visibly shrink at the instant he raised his arms. The glow is the procedural
+charge ball instead — which is where it belonged anyway, because the ball is the
+thing that has to animate.
+
+#### Seeing through the arena
+
+Two complaints, one shader. Mr Satan and anybody on his box are behind a pagoda
+roof, and fighters get lost behind the corner posts. Both are now cut by the
+same world-space x-ray the grottos use — `buildArena` sorts the corner posts and
+the whole announcer's box into a second merged mesh, and `openArena` shows and
+hides it with everything else.
+
+**It found a four-player bug on the way in.** The material's cut list was
+`MAX = 2`, written when two was the whole game — so kittens three and four were
+never cut for, in the grottos either. It is four now, and the two-player result
+is bit-identical because unused slots arrive with `uCutOn` at zero and `continue`
+on the loop's first line.
+
+#### Looking at it without playing for ten seconds
+
+**`2`** in the debug panel skips the fuse: it calls `SatanBlast.provoke`, which
+is one line calling the real `_shout`, so what is on screen is the actual
+sequence rather than a debug imitation that can drift from it. It refuses out
+loud when the arena is shut, and says which key opens it.
+
+`world-check` also asks, generally, that **every** key `_debugKey` answers to has
+a row in the panel and a label to print it with. The panel is the only
+documentation those keys have; one that is handled but not listed is one nobody
+will ever press.
+
 ---
 
 ## Ring snacks and the feast between rounds

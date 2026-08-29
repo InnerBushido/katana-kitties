@@ -67,6 +67,7 @@ const GROUPS = {
       coolMin: ['Minimum wait', 'The wait after a short tap, so tapping it is not free.', 's', 0, 2, 0.05],
       gravity: ['Air gravity', 'Fraction of gravity while blocking in the air.', '×', 0, 1, 0.05],
       radius: ['Bubble size', 'Drawn and tested at this radius.', '', 1, 6, 0.1],
+      regrab: ['Double-tap grace', 'How long the second tap of a double tap has to take back the wait the first tap’s release charged. NOT the double-tap window itself (that is 340ms, in input.js) — this is the slack behind it. Latching buys her the button, never extra seconds.', 's', 0, 1.5, 0.05],
     },
   },
   DIVE: {

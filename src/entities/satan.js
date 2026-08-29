@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
 import { bubbleTexture } from './leader.js';
+import { poseQuad } from './critter.js';
 
 /* ---------------------------------------------------------------------------
    MR. SATAN — the champion, the announcer, and the joke.
@@ -77,6 +78,78 @@ export class MrSatan {
     this.show = 0;
     this.line = '';
     this._lineSet = null;
+
+    /** 'idle' | 'charge'. Only ever anything but 'idle' while
+     *  `systems/satanblast.js` has him winding up. */
+    this.pose = 'idle';
+    this.chargeSprite = null;
+  }
+
+  /**
+   * Give him a second drawing: arms up, charging.
+   *
+   * A SECOND BILLBOARD RATHER THAN A SECOND ROW OF THE FIRST SHEET. The two
+   * images are separate files generated months apart, and packing them into
+   * one atlas would mean re-measuring the sheet the eighth non-negotiable says
+   * must be measured — the existing one is a single front-facing cell with
+   * `mirror: false`, which is the one combination that is known never to flip,
+   * and putting a second cell beside it changes that. Two quads at the same
+   * position with one visible costs nothing and cannot move his face.
+   *
+   * SIZED OFF ITS OWN ATLAS, NOT OFF HIS. `contentScale` and `pad` are
+   * measured per sheet by `loadSpriteAtlas`; reusing his numbers here would
+   * draw the new pose at whatever height the old drawing's proportions imply,
+   * which is exactly the reasoned-rather-than-measured mistake the eighth
+   * non-negotiable is about.
+   *
+   * @param {object|null} art atlas from loadSpriteAtlas, or null to do nothing
+   */
+  setChargeArt(art) {
+    if (!art || this.chargeSprite) return;
+    /* MEASURED AGAINST HIS IDLE SHEET BY INK AREA, NOT BY HEIGHT — the exact
+       trap `spritesheet.js` documents under `contentArea` and `critter.js`
+       solved for the rabbit. `contentScale` says how far up its cell a drawing
+       reaches, so sizing on it makes every pose the same HEIGHT: this one has
+       his arms straight up, so equalising heights would shrink the cat until
+       his raised fists were level with the top of his idle head, and he would
+       visibly shrink the instant he started charging. `poseQuad` scales the
+       second drawing to cover the same amount of ink as the first, which is
+       what "the same character" means when the character has two poses.
+
+       This is why the aura the first generation came back with had to go. It
+       was lovely and it was several times the ink of the cat inside it, so it
+       would have shrunk him by that ratio. The gathering ball in
+       `systems/satanblast.js` is the glow now, and it is drawn rather than
+       painted — so it can be tuned without regenerating a sprite. */
+    const quad = poseQuad(SATAN_HEIGHT, this.art, art);
+    this.chargeSprite = new Billboard(art.texture, {
+      cols: 1,
+      rows: 1,
+      width: quad,
+      height: quad,
+      footOffset: (art.pad ?? 0) * quad,
+      mirror: false,
+    });
+    this.chargeSprite.visible = false;
+    this.group.add(this.chargeSprite);
+  }
+
+  /**
+   * Swap between his ordinary pose and the charging one.
+   *
+   * A NO-OP WITH NO CHARGE ART, AND THAT IS THE POINT. `public/sprites/` can be
+   * deleted down to nothing and the game still runs (ninth non-negotiable);
+   * this file already survives `satanArt` being null, and the charge pose is a
+   * strictly smaller promise than that. Called unconditionally by the blast so
+   * there is no second place that has to remember whether the drawing exists.
+   *
+   * @param {'idle'|'charge'} pose
+   */
+  setPose(pose) {
+    this.pose = pose === 'charge' && this.chargeSprite ? 'charge' : 'idle';
+    const charging = this.pose === 'charge';
+    this.sprite.visible = !charging;
+    if (this.chargeSprite) this.chargeSprite.visible = charging;
   }
 
   /** Move him — used when the tournament opens and he goes to his box. */
@@ -109,6 +182,12 @@ export class MrSatan {
 
   faceCamera(camera) {
     this.sprite.faceCamera(camera);
+    /* BOTH, ALWAYS, EVEN THE HIDDEN ONE. Turning only the visible quad means
+       the frame the pose swaps on draws a billboard still square to whatever
+       camera last saw it — which in split screen is the OTHER player's camera,
+       so he flashes edge-on for one frame in one pane. Turning a hidden quad
+       costs a quaternion copy. */
+    this.chargeSprite?.faceCamera(camera);
     // The bubble faces the viewer squarely rather than turning on Y only —
     // text seen edge-on at a steep camera pitch is unreadable.
     this.bubble.quaternion.copy(camera.quaternion);
@@ -139,5 +218,14 @@ export class MrSatan {
     const breathe = Math.sin(this.t * 1.5) * 0.022;
     this.sprite.mesh.scale.set(1 - breathe, 1 + breathe, 1);
     this.shadow.scale.setScalar(1 + breathe * 0.4);
+
+    /* CHARGING IS A SHUDDER, NOT A BREATH. He is holding something in; the
+       swagger sine is the wrong shape for it and half the read of the pose is
+       that it is straining. Four times the rate and three times the depth off
+       the same clock, so it costs one more sine and no new state. */
+    if (this.chargeSprite?.visible) {
+      const shake = Math.sin(this.t * 26) * 0.05;
+      this.chargeSprite.mesh.scale.set(1 - shake, 1 + shake, 1);
+    }
   }
 }

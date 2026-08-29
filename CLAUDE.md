@@ -24,8 +24,8 @@ look. Everything else is one level down and read on demand.
 
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
-node tools/world-check.mjs    # 1550 checks: world, dragons, clans, sprites, tournament, consent, balance
-node tools/pad-check.mjs      # 256 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
+node tools/world-check.mjs    # 1701 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/pad-check.mjs      # 277 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 ```
 
@@ -116,6 +116,8 @@ src/
   systems/   tournament  menagerie  arenaquest  announce  leaderboard
              kotodama  profile  cutscene  shrinescene  summonscene
              mathdojo  minimap  menunav  trailer (the opt-in video player)
+             satanblast (his ten-second fuse and the explosion — a gag that
+               never calls `hurt` and never asks the combat gate)
              confirm (are you sure? - every irreversible button)
              crossfx (the Cross Slash's tell and its seal - a poller,
                so player.js does not know it exists)
@@ -137,8 +139,9 @@ docs/notes/  the design notes — why things are the way they are
 ```
 
 **Debug keys, in play:** `` ` `` opens the panel and lists them. `6` unlocks the
-whole endgame, `7`/`8`/`9` are Ryuuseki, `4` ends a live round, `5` opens the
-trade screen, `-`/`=`/`0` are the scene viewer, **`1` prints the frame cost** —
+whole endgame, `7`/`8`/`9` are Ryuuseki, `4` ends a live round, `2` makes Mr.
+Satan lose his temper, `5` opens the trade screen, `-`/`=`/`0` are the scene
+viewer, **`1` prints the frame cost** —
 fps, stutter, draw calls, buffer size, quality, dev-or-built, and the GPU
 string.
 
@@ -166,7 +169,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 1550 assertions and why almost none of them are about
+  why `world-check` is 1701 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have

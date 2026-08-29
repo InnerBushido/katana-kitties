@@ -491,6 +491,22 @@ export const BOUND_KEYS = new Set(
   KEYSETS.flatMap((k) => KEY_FIELDS.flatMap((f) => k[f] ?? []))
 );
 
+/**
+ * How long a second press has to arrive within to count as a double tap.
+ *
+ * THE SAME NUMBER THE TOUCH PAD USES, and it has to be: the double tap that
+ * latches the Ward is one gesture with two implementations — a thumb on glass
+ * (`touchpad.js`, which latches the BUTTON) and a thumb on a face button
+ * (here, which latches the SHIELD). A kid who learns the rhythm on a phone and
+ * then picks up a controller must not have to learn it again, so the window is
+ * stated once and imported there rather than written down twice.
+ *
+ * 340ms was arrived at on glass and is deliberately generous. A nine-year-old's
+ * double tap is slower than an adult's, and the cost of the window being too
+ * long is nil — nothing else in the game reads a second press of `mount`.
+ */
+export const DOUBLE_TAP_MS = 340;
+
 /** Per-player snapshot with edge detection. */
 class PadState {
   constructor() {
@@ -498,11 +514,36 @@ class PadState {
     this.my = 0;
     this.held = Object.fromEntries(ACTIONS.map((a) => [a, false]));
     this.prev = { ...this.held };
+    /* When each action last had a PRESS EDGE, in `performance.now()` ms.
+       -Infinity rather than 0, because 0 is a real timestamp about a
+       millisecond after the page loads and a kitten who presses mount on the
+       first frame of the game would read as her own second tap. */
+    this.lastPress = Object.fromEntries(ACTIONS.map((a) => [a, -Infinity]));
+    /* Milliseconds between this frame's press edge and the one before it, per
+       action. Infinity on any frame that is not a press. Computed once, in
+       `_stamp`; see `doubled`. */
+    this._gap = Object.fromEntries(ACTIONS.map((a) => [a, Infinity]));
     this.source = 'keyboard';
   }
 
   pressed(action) {
     return this.held[action] && !this.prev[action];
+  }
+
+  /**
+   * True on the SECOND press of a double tap, and only on that frame.
+   *
+   * IT IS AN EDGE TEST, NOT A STATE. It answers "was this frame's press the
+   * second of two", so it is only ever true on a frame `pressed` is also true
+   * — which is the property that lets a caller read both and pick a branch.
+   *
+   * THE STAMP IS UPDATED BY `_stamp`, ONCE PER FRAME, NOT HERE. A test that
+   * moved the clock would mean the answer changed depending on how many times
+   * it was asked, and this is asked from a branch that is not always reached
+   * (the mount button falls through several animals first). See `_stamp`.
+   */
+  doubled(action, windowMs = DOUBLE_TAP_MS) {
+    return this.pressed(action) && this._gap[action] <= windowMs;
   }
 
   /**
@@ -527,6 +568,28 @@ class PadState {
 
   down(action) {
     return this.held[action];
+  }
+
+  /**
+   * Fold this frame's press edges into the double-tap clock. Once per frame,
+   * from `Input.update`, immediately after `held` is replaced.
+   *
+   * SEPARATE FROM `doubled` BECAUSE A TEST MUST NOT MOVE A CLOCK. `doubled` is
+   * asked from `Player._updateGround`, out of a branch that is only reached
+   * when there is no dragon, no panda and nothing else to climb on — so it is
+   * asked on some frames and not others. Stamping inside it would mean the
+   * gesture worked or did not depending on what the kitten happened to be
+   * standing next to on the first tap, which is the sort of bug that gets
+   * reported as "it only works sometimes" and is nearly impossible to see.
+   *
+   * @param {number} now `performance.now()`
+   */
+  _stamp(now) {
+    for (const a of ACTIONS) {
+      if (!this.pressed(a)) { this._gap[a] = Infinity; continue; }
+      this._gap[a] = now - this.lastPress[a];
+      this.lastPress[a] = now;
+    }
   }
 }
 
@@ -1669,6 +1732,12 @@ export class InputManager {
     this._updateCapture(pads);
 
     this._anyPressLatch = false;
+    /* ONE READING FOR THE WHOLE FRAME. Four slots calling `performance.now()`
+       independently would give four slightly different "now"s, and the double
+       tap is measured against a 340ms window — a sub-millisecond disagreement
+       cannot change an answer, but a clock that is not the frame's clock is
+       still the wrong thing to compare a frame's edges against. */
+    const now = performance.now();
 
     for (let i = 0; i < MAX_SLOTS; i++) {
       const st = this.players[i];
@@ -1744,6 +1813,10 @@ export class InputManager {
       st.mx = mx;
       st.my = my;
       st.held = next;
+      /* AFTER `held`, BEFORE ANYTHING READS THE FRAME. `pressed` is the edge
+         between `prev` and `held`, so the clock cannot be stamped until both
+         are this frame's. */
+      st._stamp(now);
 
       for (const a of ACTIONS) if (st.pressed(a)) this._anyPressLatch = true;
     }
