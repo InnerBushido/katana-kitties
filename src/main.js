@@ -11,7 +11,7 @@ import {
   detect as detectDevice, readOverride, writeOverride, QUALITY, effectivePixelRatio,
   autoQualityVerdict, AUTO_GRACE_MS,
 } from './core/device.js';
-import { TouchPad } from './core/touchpad.js';
+import { TouchPad, wardLatchExpired } from './core/touchpad.js';
 import { World, CLANS } from './world/world.js';
 import { Player, ATTACKS, COMBAT, BASE_REACH, MAX_HP, KO_TIME } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from './core/palette.js';
@@ -695,27 +695,15 @@ class Game {
        because sprinting is always a thing you can do. */
     this.touchPad.setLockable(p.power?.ward ? ['sprint', 'mount'] : ['sprint']);
 
-    /* AND IT UNLATCHES ITSELF WHEN IT RUNS OUT — which is what this line SAYS
-       and, until this pass, is not what it did. The test was
-       `!p.warded && !p.power?.ward`, which needs BOTH: the bubble down AND the
-       orb gone. Losing the orb is the rare case; running out is what happens
-       every single time. So the latch survived the block it was holding, and
-       because a latched button is held forever it never produced another press
-       edge — one shield, then a glowing button that could not be used again
-       without un-latching it by hand. Reported as the shield working once.
-
-       `wardCool > 0` IS THE TEST, NOT `!warded`. The obvious `!p.warded` fires
-       on the frame she double-taps as well, because this runs before the
-       controller does and the bubble is not up yet — it would drop the latch
-       in the same frame the second tap set it. A cooldown is only ever running
-       because a block has just ENDED, which is exactly the moment meant here.
-
-       The orb-gone case still has to be covered separately: traded away
-       mid-block there is no cooldown to read, because `_dropWard` charges one
-       but `setLockable` above has already stopped offering the latch and
-       released it. Kept as its own clause anyway — it costs a comparison and
-       it means this line does not depend on the one above it staying true. */
-    if (p.wardCool > 0 || !p.power?.ward) this.touchPad.release('mount');
+    /* AND IT UNLATCHES ITSELF WHEN IT RUNS OUT. The rule lives in
+       `wardLatchExpired` rather than here, and that is not tidying: it has been
+       got wrong twice, both times by testing something that is momentarily true
+       on the frame the gesture is still being made, and as a pure function
+       `pad-check` can put that exact frame through it. Read its comment before
+       touching this. */
+    if (wardLatchExpired({
+      wardCool: p.wardCool, wardRegrab: p.wardRegrab, hasOrb: !!p.power?.ward,
+    })) this.touchPad.release('mount');
   }
 
   /**

@@ -677,3 +677,45 @@ export class TouchPad {
     }
   }
 }
+
+/**
+ * Should a LATCHED shield button be let go this frame?
+ *
+ * A RULE RATHER THAN A LINE, because it has now been got wrong twice and both
+ * times in the same shape: something that is momentarily true on the frame the
+ * gesture is still being made. It is a pure function so `pad-check` can put the
+ * exact frame of a double tap through it, which is the frame no amount of
+ * playing reliably reproduces.
+ *
+ * IT WAS `!warded && !hasOrb`. That needs BOTH — the bubble down and the orb
+ * gone — so the latch survived the block it was holding. A latched button is
+ * held forever and never produces another press edge, so it was one shield and
+ * then a glowing button that could not be used again without un-latching it by
+ * hand. Reported as the shield working once.
+ *
+ * IT WAS THEN `wardCool > 0`, and that is right for the ordinary ways a block
+ * ends and wrong for a double tap. The gesture is three events — press,
+ * RELEASE, press — and the release charges the cooldown, so on the frame of the
+ * SECOND press this said yes, deleted the latch the pointer handler had just
+ * set and stripped the gold; `Player._latchWard` then ran afterwards in the
+ * same frame and zeroed the cooldown, so nothing ever put the class back. The
+ * shield stayed up with nothing touching the glass and the button looked
+ * untouched — a latched control that does not look latched, which is the one
+ * thing the `.tp-btn.locked` rule exists to prevent. Found filming the Help
+ * clip for it, with the pad driven by real pointer events: `_locked` came out
+ * of a double tap empty while `wardHold` was true.
+ *
+ * `wardRegrab` IS THE FIX AND IT IS NOT A FUDGE FACTOR. It means exactly "a
+ * second tap can still take that release back", it is armed ONLY by a release
+ * and only for WARD.regrab, and `_dropWard` zeroes it for every other way out.
+ * So both documented behaviours are untouched: a block that RUNS OUT drops the
+ * latch on the very next frame, because `spent` arms no regrab; an orb traded
+ * away still drops it through the second clause, which is kept separate so this
+ * does not depend on `setLockable` having already released it. All the first
+ * clause buys is the half-second in which the gesture is not finished yet.
+ *
+ * @param {{wardCool: number, wardRegrab: number, hasOrb: boolean}} s
+ */
+export function wardLatchExpired({ wardCool = 0, wardRegrab = 0, hasOrb = true } = {}) {
+  return (wardCool > 0 && wardRegrab <= 0) || !hasOrb;
+}
