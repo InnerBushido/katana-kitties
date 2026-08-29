@@ -634,6 +634,42 @@ a ninth cat with neither would read as the one placeholder in a finished world.
 The eight orbs hovering over the counter **are** the stock — sold out goes dark,
 so "he hasn't got a Ward left" is visible from across the plaza.
 
+### The clan is on the card now, and it always technically was
+
+The character profile carried `Riverclaw · 40 pts · 3/8` as one grey 13px line
+at 75% opacity — the clan name punctuation-separated from two numbers it has
+nothing to do with. It came back as *"the profile doesn't say what clan you're
+in"*, which is the correct report about a fact that is technically present. An
+oath is the biggest decision in the game outside the ring; it does not belong in
+an inventory count.
+
+It has its own row now (`_clanMarkup`), and three decisions in it are worth
+keeping:
+
+* **The clan's own `color`, read from the CLANS entry**, so it is the same
+  colour as her HUD badge, her shrine and the second marker ring under her paws.
+  Written inline as `--clan` for the reason `--seat` is written inline on a
+  score badge: a colour copied into the stylesheet is a colour that goes wrong
+  in one place.
+* **A tinted bar, not coloured text.** Two of the six clans are pale
+  (Icewhisker is near-white) and one is dark purple; as text on this panel's
+  parchment half of them are unreadable and the other half shout. A low-alpha
+  wash behind ink-coloured text, with a solid rule down the leading edge, reads
+  the same for all six.
+* **It names the buff.** "Longer katana" is what she was choosing between, not
+  the word Riverclaw.
+
+**Pandapaw's bamboo counter is deliberately not duplicated here.** It moves
+while she plays and it has one home — the HUD badge (`Game._updateClanBadge`).
+This screen is opened, read and closed; a second live counter would be a second
+place for it to go stale. And **unsworn is an instruction**, not the noun "no
+clan": it names the verb and the place, which is the sixth non-negotiable.
+
+`world-check` asserts all six clans by name and colour through the real
+`_cardMarkup`, that the panda counter has not leaked onto the card, and — the
+one that would have caught the regression this was carved out of — that her
+points and orb count are still there after the split.
+
 ### The trade screen is the one menu with TWO cursors
 
 `systems/profile.js`, and it deliberately does **not** go through `MenuNav`.

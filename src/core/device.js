@@ -319,9 +319,35 @@ export function profileFor({
          notice when the optimism was wrong and walk it back. Prefer a rule that
          degrades over one that vanishes. */
       defaultQuality: 'high',
-      /* TWO KITTENS, UNCHANGED. This is the number the girls press PLAY and
-         get, and every check that pins the two-player game reads it. */
-      defaultParty: 2,
+      /* ONE KITTEN, AND THIS NUMBER USED TO BE TWO.
+
+         A desktop opened on two kittens because two was the game — there was no
+         way to represent one, so the second seat was dealt whether or not a
+         second person was in the room. That is a kitten nobody is driving
+         standing next to you for the whole session, which reads as the game
+         being broken rather than as the party being small, and it is exactly
+         the complaint `defaultParty: 1` already answers on a phone.
+
+         SO THE SECOND SEAT IS NOW ASKED FOR, and the two ways of asking are the
+         two devices a second player can arrive on:
+
+           a controller  she picks it up and `Game._autoSeat` seats her. Nobody
+                         has to know a key. The Joy-Con pair through vJoy is one
+                         device with two halves, so player 1 moving her own
+                         stick is enough to wake the half her sister will use —
+                         that setup is two kittens within a second of PLAY, as
+                         it always was.
+           the keyboard  she presses ENTER and lands on the ARROWS / O K L ;
+                         set, because `_assign` has already given the first
+                         padless slot WASD. `joinHint` says so on screen.
+
+         WHAT THIS COSTS is that PLAY no longer produces Frost on its own. That
+         is the fifth non-negotiable's edge and it was weighed: the invariant is
+         that a party of two plays bit-identically to the game the girls know,
+         and it still does — every rule that generalises still collapses to the
+         same answer at n = 2. What moved is how the second seat is FILLED, and
+         it moved because "I want to play on my own" had no answer at all. */
+      defaultParty: 1,
       defaultSplit: 'auto',
     };
   }
@@ -386,8 +412,11 @@ export function profileFor({
        picture than a frame rate. */
     defaultQuality: weak ? 'low' : 'high',
     /* ONE KITTEN ON A PHONE. A second player needs a second device — see
-       `defaultSplit`. Additive by construction: nothing reads this on a
-       desktop, where `defaultParty` is still 2. */
+       `defaultSplit`. THE DESKTOP AGREES NOW, and the sentence that used to sit
+       here ("nothing reads this on a desktop, where `defaultParty` is still 2")
+       is why this line is worth re-reading rather than skipping: solo was a
+       phone answer to a phone problem, and the desktop had the same problem the
+       whole time. Both tiers open on one and grow — see the note above. */
     defaultParty: 1,
     /* NEVER SPLIT BY DEFAULT, EVEN IF A SECOND PLAYER JOINS ON A PAD. Half a
        6-inch screen each is not a playable pane; a tablet is, so this is a

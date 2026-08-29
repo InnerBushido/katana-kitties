@@ -49,7 +49,7 @@ import {
 } from '../src/entities/powerorb.js';
 import { Kotodama } from '../src/systems/kotodama.js';
 import { CrossFx, sealStage, SIDES_BY_CUT } from '../src/systems/crossfx.js';
-import { ATTACKS, MAX_HP, DAZE_TIME } from '../src/entities/player.js';
+import { ATTACKS, COMBAT, BASE_REACH, MAX_HP, DAZE_TIME } from '../src/entities/player.js';
 import {
   Tournament, WINS_NEEDED, MAX_ROUNDS, FEAST_TIME, REGEN_FRAC, OUT_FLOOR,
 } from '../src/systems/tournament.js';
@@ -4040,6 +4040,57 @@ console.log('\n--- the three power moves ---');
   ok('...so with the tournament off they do nothing at all',
     victim.hp === victim.maxHp && !victim.ko);
 
+  /* --- HOW FAR UP A BLADE REACHES ---
+     Reported as "the katana hits players from pretty high up in the air".
+     `strikePlayers` tests the ground distance against the attack's reach and
+     then asks one SEPARATE question about height, and that second number was
+     the literal 4.5 — a column nine metres tall, so a kitten standing on the
+     arena floor could cut one who had double-jumped clean over her head. The
+     girl in the air has no way to read that as anything but being hit from
+     nowhere.
+
+     CHECKED AGAINST THE NUMBER IT REPLACED, not against a number typed twice.
+     "At least half as big" was the ask, and stating it that way is what makes
+     this an assertion about the change rather than a copy of the answer — a
+     later tuning session may well move it again, and this stays true until
+     somebody moves it back UP, which is the thing worth catching. */
+  const OLD_STRIKE_HEIGHT = 4.5;
+  ok('a blade no longer reaches half a storey up',
+    Number.isFinite(COMBAT.strikeHeight) && COMBAT.strikeHeight > 0
+    && COMBAT.strikeHeight <= OLD_STRIKE_HEIGHT / 2,
+    `${COMBAT.strikeHeight}m (was ${OLD_STRIKE_HEIGHT}m)`);
+  line('vertical strike window', `+/-${COMBAT.strikeHeight}m (was +/-${OLD_STRIKE_HEIGHT}m)`);
+  {
+    const src = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    /* ONE NUMBER, IN THE TABLE. A literal left behind in main.js would be a
+       balance knob the balance page cannot reach — which is how a tuning tool
+       rots into something nobody trusts. */
+    ok('...and the gate reads it from COMBAT rather than carrying its own copy',
+      /Math\.abs\(dy\) > COMBAT\.strikeHeight/.test(src)
+      && !/Math\.abs\(dy\) > 4\.5/.test(src));
+    /* IT IS NOT SCALED BY THE CLAN BUFF, and that is a decision rather than an
+       omission. Riverclaw's blade is LONGER, not TALLER: a reach buff says how
+       far in FRONT of her the arc goes, and letting it grow the vertical window
+       would hand the one clan that already out-reaches you the ability to reach
+       UP as well as out — which is the invisible asymmetry the round card
+       exists to prevent. */
+    ok('...and a reach buff does not also make her taller',
+      !/Math\.abs\(dy\) > COMBAT\.strikeHeight \* clanK/.test(src));
+  }
+  {
+    /* AND IT IS ON THE BALANCE PAGE, because the right value here is a thing
+       you find by playing. Halving it is the defensible answer without a play
+       session behind it; the page is what lets the next session move it without
+       a code edit. */
+    const page = readFileSync(new URL('../src/tuning-page.js', import.meta.url), 'utf8');
+    ok('...and the balance page can tune it', /strikeHeight:\s*\[/.test(page));
+    /* NAMING THE TRAP. `lift` is how far a hit throws her UP and this is how
+       far apart they may be for it to land at all; they were never related and
+       the resemblance is exactly the sort of thing somebody equalises. */
+    ok('...and says out loud that it is not the same thing as Lift',
+      /strikeHeight:.*Lift/.test(page));
+  }
+
   /* --- the ward: HELD, capped, tailed --- */
   const HOLD = PAD({ down: (a) => a === 'mount' });
   const step = (p, pad, n) => { for (let i = 0; i < n; i++) p._stepSpecials(1 / 60, pad, world, null); };
@@ -4581,7 +4632,68 @@ console.log('\n--- the three power moves ---');
   const long = mk(['reach']);
   ok('a Long Cut orb really lengthens the swing', long._reach() > mk([])._reach());
   ok('...and the drawn arc is derived from the same number',
-    long._reach() === 3.4 * long.power.reach);
+    long._reach() === BASE_REACH * long.power.reach);
+
+  /* --- THE PICTURE HAS TO BE THE HITBOX ---
+     THIS BLOCK IS A BUG REPORT, and the check above it is the one that let the
+     bug through: it asserted that `_reach()` folds the orbs in, which was true,
+     and then said "and the drawn arc is derived from the same number" — which
+     was a sentence about a line of code it never looked at. The arc read
+     `clan?.buff?.reach` DIRECTLY, so Riverclaw grew the picture and the Long
+     Cut orbs, which multiply the same hitbox and STACK, did not. A kitten
+     wearing three of them swung a normal-looking arc and hit you from a metre
+     and a half outside it — which the girl being hit reads as the game
+     cheating, not as her sister having earned something.
+
+     SO THIS ASSERTS THE MESH, by driving the real feedback pass and reading the
+     scale off `slash`. Ratios rather than absolutes: the animation term
+     (`0.7 + t*0.9`) is a separate decision that is allowed to move, and a check
+     pinned to its current value would fail on a change to how the arc snaps out
+     — which is a check that teaches you to delete it. */
+  const arcOf = (orbs, clanId = null) => {
+    const p = mk(orbs);
+    if (clanId) p.clan = CLANS.find((c) => c.buff.id === clanId);
+    /* Mid-swing, at a fixed point in the animation, so the term is the same for
+       every player compared below and divides out of the ratio. */
+    p.attackTimer = 0.26;
+    p._updateFeedback(1 / 60, world);
+    return { scale: p.slash.scale.x, reach: p._reach(), visible: p.slash.visible };
+  };
+  const arcPlain = arcOf([]);
+  const arcRiver = arcOf([], 'reach');
+  const arcOne = arcOf(['reach']);
+  const arcThree = arcOf(['reach', 'reach', 'reach']);
+  const arcBoth = arcOf(['reach', 'reach', 'reach'], 'reach');
+  line('drawn arc: plain / Riverclaw / 1 orb / 3 orbs / both',
+    [arcPlain, arcRiver, arcOne, arcThree, arcBoth]
+      .map((a) => a.scale.toFixed(2)).join(' / '));
+
+  ok('the arc is actually drawn mid-swing', arcPlain.visible === true);
+  /* THE CLAN ALREADY WORKED. Kept so the fix cannot be "make the orbs work by
+     making the clan stop". */
+  ok('Riverclaw draws a longer arc, as it always did',
+    arcRiver.scale > arcPlain.scale * 1.5);
+  /* THE BUG ITSELF, in one line: one orb has to move the picture at all. */
+  ok('a Long Cut orb now lengthens the DRAWN arc too',
+    arcOne.scale > arcPlain.scale * 1.2, `${arcPlain.scale} -> ${arcOne.scale}`);
+  /* AND THE STACK HAS TO KEEP MOVING IT. Orbs stack; a picture that grew once
+     and then stopped would be the same lie one orb later. */
+  ok('...and three of them lengthen it further still',
+    arcThree.scale > arcOne.scale * 1.2, `${arcOne.scale} -> ${arcThree.scale}`);
+  /* THE PROPERTY THAT MAKES ALL OF THE ABOVE FOLLOW: the picture and the hitbox
+     are ONE number. Asserted as a ratio over five different kittens, so it
+     cannot be satisfied by a second formula that happens to agree at one point
+     — which is exactly what the old direct read of the clan buff was. */
+  for (const [what, a] of [['Riverclaw', arcRiver], ['one orb', arcOne],
+    ['three orbs', arcThree], ['both together', arcBoth]]) {
+    ok(`...and with ${what} the arc and the hitbox grow by the same factor`,
+      Math.abs((a.scale / arcPlain.scale) - (a.reach / arcPlain.reach)) < 1e-9,
+      `${(a.scale / arcPlain.scale).toFixed(4)} vs ${(a.reach / arcPlain.reach).toFixed(4)}`);
+  }
+  /* AND THE TWO MULTIPLY, on the picture as well as on the hitbox — the same
+     property `...the clan buff MULTIPLIES with them` pins for speed. */
+  ok('...and a Riverclaw kitten wearing three of them gets both',
+    arcBoth.scale > arcThree.scale * 1.5 && arcBoth.scale > arcRiver.scale * 1.5);
 }
 
 /* --------------------------------------------------------------------------
@@ -6781,23 +6893,34 @@ console.log('\n--- the three power moves ---');
    what was hard-coded in `main.js` before the file existed. */
 {
   const desk = deviceProfileFor({ coarse: false, touchPoints: 0, cores: 16 });
-  /* THE QUALITY DEFAULT MOVED TO `high` AND THE OTHER FOUR DID NOT, which is
-     the distinction worth pinning. Two kittens, auto split, AA and the full
-     atlas are the game the girls know and none of them are a performance guess;
-     the quality default IS a guess, and it was re-made once the browser started
-     using the GPU the machine actually has. `_autoQualityCheck` in main.js is
-     what walks it back on a machine where the guess is wrong. */
-  ok('a desktop is unchanged: two kittens, auto split, AA on, full atlas',
-    desk.defaultParty === 2 && desk.defaultSplit === 'auto'
+  /* THE TWO DEFAULTS THAT HAVE MOVED, AND THE THREE THAT HAVE NOT.
+     `defaultQuality` went to `high` once the browser started using the GPU the
+     machine actually has, and `defaultParty` went to ONE once solo became a
+     game this code could represent — see the long note on it in device.js.
+     Auto split, AA and the full atlas are the game the girls know and none of
+     them is a performance guess, so they are pinned as a group. */
+  ok('a desktop keeps auto split, AA on and the full atlas',
+    desk.defaultSplit === 'auto'
     && desk.antialias === true && desk.atlasMax === 2048);
+  /* ONE KITTEN ON EVERY TIER. The second seat is asked for — a controller
+     picked up (`Game._autoSeat`) or ENTER on the keyboard — rather than dealt
+     to nobody. Asserted on BOTH tiers in one line, because the thing that would
+     break it is somebody re-splitting the answer by device. */
+  ok('...and opens on one kitten, like a phone',
+    desk.defaultParty === 1
+    && deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8 }).defaultParty === 1);
   ok('...and opens on the sharpest setting, which is the optimistic default',
     desk.defaultQuality === 'high');
   /* Above any real panel, so it never wins the `Math.min` — but FINITE, because
      `Infinity` JSON-serialises to null and `Math.min(dpr, q, null)` is 0. */
   ok('...and its pixel-ratio cap is finite and out of the way',
     Number.isFinite(desk.maxPixelRatio) && desk.maxPixelRatio >= 4);
-  /* A TOUCHSCREEN LAPTOP IS NOT A PHONE. `maxTouchPoints > 0` alone would take
-     antialiasing off a desktop and start it at one player. */
+  /* A TOUCHSCREEN LAPTOP IS NOT A PHONE. `maxTouchPoints > 0` alone would put
+     Richard's own machine — a touchscreen desktop reporting two touch points —
+     onto the mobile tier: phone-sized panels, a thumbstick over the game and
+     the split turned off. "Starts it at one player" used to be on that list and
+     no longer is, because every tier starts at one now; the layout half is what
+     the pairing is still protecting. */
   ok('a touchscreen laptop is still a desktop',
     deviceProfileFor({ coarse: false, touchPoints: 10, cores: 8 }).tier === 'desktop');
 
@@ -7015,6 +7138,61 @@ console.log('\n--- the three power moves ---');
     JSON.stringify(deviceProfileFor({
       coarse: false, touchPoints: 0, cores: 16, override: 'desktop',
     })) === JSON.stringify({ ...deskAuto, override: 'desktop' }));
+
+  /* --- THE SAME SWITCH, SPELLED FOR THE MACHINE IT IS ON ---
+     What that setting DOES on a phone is move a seat: touch is dealt ahead of
+     every controller, so hiding the stick makes the gamepad player 1 rather
+     than player 2. It read as "On-screen stick / Always OFF", which describes
+     the visible half and not the half that costs you your seat, so
+     `Game._shapeTouchSetting` re-words the row in place on a detected phone.
+
+     ONE SELECT, ONE STORED VALUE. The alternative — a second "Player 1 plays
+     as" control over the same boolean — is two widgets to keep in step, and the
+     first time they disagreed nobody could tell which one the game believed.
+     Asserted as the STATES being identical, because that is the property that
+     makes one row with two wordings honest rather than a shortcut. */
+  const phoneTouch = deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8, override: 'auto' });
+  const phoneForced = deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8, override: 'mobile' });
+  ok('on a detected phone, `auto` and `mobile` are the same state',
+    phoneTouch.padOn === phoneForced.padOn
+    && phoneTouch.touchPrimary === phoneForced.touchPrimary
+    && phoneTouch.tier === phoneForced.tier);
+  /* ...WHICH IS WHAT LETS THE `mobile` ROW BE HIDDEN THERE. It is not a state
+     being taken away; it is a duplicate wearing a label ("test touch on this
+     computer") that names a machine the player is not holding. */
+  ok('...so hiding the test-mode option on a phone removes no reachable state',
+    /data-phone-hide/.test(readFileSync(new URL('../index.html', import.meta.url), 'utf8')));
+  /* AND THE TWO WORDINGS LIVE NEXT TO EACH OTHER, in the markup, so a change to
+     one is made while looking at the other. Strings for this row in main.js
+     would be the version that drifts. */
+  {
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    const row = html.slice(html.indexOf('id="set-touch-label"'),
+      html.indexOf('id="touch-note"'));
+    ok('...and both spellings of the row sit together in the markup',
+      /data-phone="Player 1 plays as"/.test(row)
+      && /data-phone="Mobile input/.test(row)
+      && /data-phone="Gamepad/.test(row));
+  }
+  /* KEYED OFF `detected`, NOT `touchPrimary`, AND THIS IS THE ONE THAT WOULD
+     SILENTLY GO WRONG. In the desktop test mode `touchPrimary` is true, so
+     keying off it would re-word the test mode's own escape hatch as "Mobile
+     input" — the row you use to get BACK to a keyboard, dressed as though you
+     were holding a phone. `detected` is the hardware's answer and does not move
+     when the override does. */
+  ok('the desktop test mode is a desktop as far as that re-wording is concerned',
+    forced.detected === false && forced.touchPrimary === true);
+  {
+    const body = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    /* THE BODY ONLY, not the doc comment above it — which says the word
+       `touchPrimary` four times explaining why it is the wrong question, and
+       a check that could not tell those apart would be asserting that the
+       reasoning had been deleted. */
+    const at = body.indexOf('_shapeTouchSetting(sel) {');
+    const fn = body.slice(at, body.indexOf('_bindTouchHud() {', at));
+    ok('...and the re-wording really asks `detected`, not `touchPrimary`',
+      at > 0 && /device\?\.detected/.test(fn) && !/touchPrimary/.test(fn));
+  }
 
   /* THE WEAK TIER IS ABOUT SILICON, NOT ABOUT A CONTROL. It used to key off
      `override === 'auto'`, which meant a real four-core phone stopped being
@@ -7825,6 +8003,26 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
     ok(`...including "${t}"`, help.includes(t));
   }
 
+  /* --- WHO PLAYER ONE IS, ON A PHONE ---
+     The setting was already there and did the right thing; what was missing was
+     any way to find out that it MOVES A SEAT. Touch is dealt ahead of every
+     controller, so "on-screen stick off" also means "the gamepad is player 1
+     now", and a kid with a phone and a controller had to discover that by
+     flipping it. The help topic has to name the row, both of its states, and the
+     seat each one gives the gamepad — or it is describing the visible half of
+     the change and not the half that matters. */
+  /* WHITESPACE COLLAPSED FIRST. The sentences below wrap across lines in the
+     markup, and a check that has to know WHERE they wrap is a check that
+     fails on a re-indent — which teaches the next person to delete it rather
+     than to read it. */
+  const phoneSec = help.slice(help.indexOf('On a phone'), help.indexOf('Clans'))
+    .replace(/\s+/g, ' ');
+  ok('...and "On a phone" names the setting that moves player 1 to a gamepad',
+    phoneSec.includes('Player 1 plays as') && phoneSec.includes('Gamepad'));
+  ok('...and says which seat the controller takes in EACH state',
+    /you become player 1 on the controller/i.test(phoneSec)
+    && /Mobile input[^.]*?player 2/i.test(phoneSec));
+
   ok('the bamboo-deforestation warning is present and flagged as a warning',
     /class="ht-note warn"[\s\S]*?bamboo[\s\S]*?<\/p>/i.test(help)
     && /grows back|too early/i.test(help));
@@ -8365,6 +8563,54 @@ console.log('\n--- a trade is agreed twice, by two people ---');
     const ps = new ProfileScreen(g);
     return { g, ps, players };
   };
+
+  /* --- WHAT CLAN SHE IS IN, ON HER OWN CARD ---
+     It was already on this screen and nobody could see it: the clan name was
+     the first third of a grey 13px line — `Riverclaw · 40 pts · 3/8` — sharing
+     punctuation with two numbers it has nothing to do with. An oath is the
+     biggest decision in the game outside the ring; it does not belong in an
+     inventory count. It has its own row now, in the clan's own colour, and it
+     names the BUFF as well as the clan, because "Longer katana" is the thing
+     she was actually choosing between.
+
+     ASSERTED OVER EVERY CLAN, not over one. Six entries, one of which
+     (Pandapaw) grants a job rather than a power and has bitten this codebase
+     before by being the one that is shaped differently. */
+  {
+    const { ps, players } = mk([], []);
+    for (const clan of CLANS) {
+      players[0].clan = clan;
+      const card = ps._cardMarkup(players[0], 0);
+      ok(`the profile names ${clan.name} and what it grants`,
+        card.includes(clan.name) && card.includes(clan.buff.label), card.slice(0, 120));
+      /* THE CLAN'S OWN COLOUR, read from the CLANS entry rather than from a
+         copy — the same colour her HUD badge, her shrine and the second marker
+         ring under her paws all use. A colour written down twice goes wrong in
+         one place. */
+      ok(`...in ${clan.name}'s own colour`,
+        card.includes(`#${clan.color.toString(16).padStart(6, '0')}`));
+    }
+    /* PANDAPAW'S BAMBOO COUNTER HAS ONE HOME, and it is the HUD badge
+       (`Game._updateClanBadge`), which moves while she plays. This screen is
+       opened, read and closed — a second live counter here would be a second
+       place for it to go stale. */
+    players[0].clan = CLANS.find((c) => c.buff.panda);
+    ok("...and Pandapaw’s bamboo counter is NOT duplicated onto the card",
+      !/bamboo/i.test(ps._cardMarkup(players[0], 0)));
+
+    /* UNSWORN IS AN INSTRUCTION, NOT A NOUN — the sixth non-negotiable. "no
+       clan" is a label for a state; this has to say what to go and DO. */
+    players[0].clan = null;
+    const none = ps._cardMarkup(players[0], 0);
+    ok('an unsworn kitten is told where to go, not labelled "no clan"',
+      /shrine/i.test(none) && /swear/i.test(none), none.slice(0, 160));
+    /* AND THE REST OF THE CARD SURVIVES IT. The clan row was carved out of the
+       meta line, so the two numbers that used to live beside it have to still
+       be there — this is the check that would have caught the points count
+       leaving with it. */
+    ok('...and her points and orb count are still on the card',
+      /pts/.test(none) && /orbs/.test(none));
+  }
 
   /* --- the dealer --- */
   {

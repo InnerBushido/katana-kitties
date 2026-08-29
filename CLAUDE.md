@@ -71,7 +71,10 @@ Break any of these and the thing stops being the game it is. Each is enforced by
 5. **Two players must keep the game they know.** Everything four-player is
    additive; where a rule generalises, the two-player answer has to come out
    bit-identical. The HUD, the camera and the split screen all have checks
-   pinning this.
+   pinning this. **This is about the game AT two, not about how many PLAY
+   opens on** — every tier opens on one kitten now and the second seat is asked
+   for (a controller picked up, or ENTER). The invariant is that once two are
+   playing, nothing about it has moved.
 6. **A refusal must say so, and so must a confirmation.** A button that
    silently does nothing reads as broken. Every refusal toasts, every lock says
    what it wants *as an instruction*, and every dialog's buttons say what they

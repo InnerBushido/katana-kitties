@@ -1018,8 +1018,10 @@ console.log('\n--- ...read through the real InputManager ---');
 }
 
 /* --- A PARTY OF ONE READS ONE SLOT ---
-   A phone boots with one kitten (`device.defaultParty`), and `Game` has to hand
-   that number to the input layer at BOOT and not only on join/leave.
+   EVERY tier boots with one kitten (`device.defaultParty`) — the desktop as
+   well as the phone, since solo became a game this code can represent — and
+   `Game` has to hand that number to the input layer at BOOT and not only on
+   join/leave.
 
    The two numbers used to agree BY ACCIDENT — `partySize` and
    `InputManager.slots` were both the literal 2, so nothing ever had to assign
@@ -1067,6 +1069,95 @@ console.log('\n--- a party of one ---');
   duo.update();
   ok('a party of two still deals WASD and the arrows',
     duo.bindings[0].keyset === 0 && duo.bindings[1].keyset === 1);
+
+  /* --- THE DESKTOP'S OWN WAY IN: ENTER LANDS HER ON O K L ; ---
+     This is the whole of the solo-on-desktop feature from the input layer's
+     side, and it is asserted with NO TOUCH PAD ATTACHED — which is what makes
+     it a different check from the one in the touch block below rather than a
+     copy of it. There, ENTER has to skip WASD because the pad is reading it;
+     here, ENTER has to skip WASD because PLAYER 1 is sitting on it. Same
+     answer, two entirely different reasons, and only one of them was ever
+     exercised on the machine this is developed on.
+
+     The set she lands on is the ARROWS set, whose second hand position is
+     O K L ; with `. I J` and `P` around it — see KEYSETS. Player 1 keeps WASD
+     because `_assign` deals the first padless slot the lowest free set, and
+     that is the rule a solo game has to leave alone: the girl who is already
+     playing must not be moved off her keys because somebody else pressed a
+     button. */
+  const kb = drive([]);
+  kb.slots = 1;
+  kb.update();
+  kb.keys.clear(); kb.update();
+  kb.keys.add('Enter'); kb.update();
+  const kbJoin = kb.pendingJoin();
+  ok('on a keyboard-only desktop, ENTER seats P2 on the ARROWS',
+    kbJoin && kbJoin.keyset === 1 && kbJoin.pad === null, JSON.stringify(kbJoin));
+  ok('...and player 1 is not moved off WASD by her joining',
+    kb.bindings[0].keyset === 0, JSON.stringify(kb.bindings[0]));
+  kb.keys.clear(); kb.update();
+  /* ONE PRESS IS ONE PLAYER. The edge is latched against the key rather than
+     against the set, or leaning on ENTER would seat both keyboard players at
+     once — and on a desktop that opens solo, leaning on ENTER is exactly what a
+     kid does with the menu key that no longer opens the menu. */
+  kb.keys.add('Enter'); kb.update(); kb.update();
+  ok('...and holding ENTER down does not keep seating players',
+    kb.pendingJoin() === null, JSON.stringify(kb.pendingJoin()));
+  kb.keys.clear(); kb.update();
+
+  /* HER KEYS REALLY REACH HER, once the party has grown. `pendingJoin` is only
+     an offer; the check that matters to a kid is that O and K then move the
+     kitten the offer was about, and nothing of player 1's does. */
+  kb.slots = 2;
+  kb.update();
+  kb.keys.add('KeyO'); kb.keys.add('KeyJ');
+  kb.update();
+  ok('...and O K L ; drives player 2 once she is seated',
+    kb.players[1].my < 0 && kb.players[1].down('attack') === true,
+    JSON.stringify({ my: kb.players[1].my, atk: kb.players[1].down('attack') }));
+  ok('...without any of it reaching player 1',
+    kb.players[0].mx === 0 && kb.players[0].my === 0
+    && ACTIONS.every((a) => !kb.players[0].down(a)));
+  kb.keys.clear();
+
+  /* "AND THERE IS NO CONTROLLER ATTACHED" IS PART OF THE RULE, so the other
+     half of it is pinned too. A pad is dealt ahead of every keyboard set, so a
+     solo player WITH one connected is on the pad and both keyboard sets are
+     still in the pool — which means her sister's ENTER lands on WASD, not on
+     the arrows. That is not a special case bolted on for solo; it is `_assign`'s
+     standing rule that the first person off the controllers gets the good half
+     of the keyboard, and a solo game must not have quietly grown its own
+     version of it. */
+  const solo1 = DEVICES.ds4Chrome();
+  const withPad = drive([solo1]);
+  withPad.slots = 1;
+  withPad.update();
+  ok('a solo player with a pad connected is on the pad, not the keyboard',
+    withPad.bindings[0].pad === 0 && withPad.bindings[0].keyset === null,
+    JSON.stringify(withPad.bindings[0]));
+  withPad.keys.clear(); withPad.update();
+  withPad.keys.add('Enter'); withPad.update();
+  ok('...so ENTER seats her sister on WASD instead of the arrows',
+    withPad.pendingJoin()?.keyset === 0, JSON.stringify(withPad.pendingJoin()));
+  withPad.keys.clear();
+
+  /* A CONTROLLER IS THE OTHER WAY IN, and it does not need a key at all —
+     `Game._autoSeat` seats whoever picks one up rather than making her find
+     START. From the input layer that is one question: is a second pad offered
+     as spare? `hasSentInput` is what "picked up" means, so the stick has to
+     have moved — a pad charging on the side seats nobody. */
+  const padA = DEVICES.ds4Chrome();
+  const padB = DEVICES.ds4Chrome();
+  padB.index = 1;
+  const twoPads = drive([padA, padB]);
+  twoPads.slots = 1;
+  twoPads.update();
+  ok('a second pad nobody has touched is not offered as a spare',
+    twoPads.sparePad() === null, JSON.stringify(twoPads.sparePad()));
+  padB.axes[0] = 0.9;
+  twoPads.update();
+  ok('...and picking it up offers it, so `_autoSeat` can seat player 2',
+    twoPads.sparePad()?.pad === 1, JSON.stringify(twoPads.sparePad()));
 }
 
 /* --- TOUCH IS A DEVICE, AND IT IS DEALT FIRST ---

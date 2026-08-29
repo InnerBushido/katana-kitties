@@ -91,6 +91,7 @@ const GROUPS = {
       invuln: ['Invulnerability', 'How long after a hit she cannot be hit again. Shorter means combos; longer means nobody gets stuck.', 's', 0, 2, 0.05],
       daze: ['Friendly-fire daze', 'What hitting your own partner costs HER, in seconds of no control. The lockout is twice this.', 's', 0, 4, 0.1],
       rage: ['Rage cap', 'Smash’s percent rule: knockback multiplier at zero health. 1 turns it off entirely.', '×', 1, 3, 0.05],
+      strikeHeight: ['Strike height', 'How far above or below you a blade still reaches. This is NOT how far a hit throws her up — that is each attack’s Lift. It was 4.5, which is a nine-metre column: you could cut somebody who had double-jumped over your head.', 'm', 0.5, 6, 0.25],
     },
   },
   ATTACKS: {

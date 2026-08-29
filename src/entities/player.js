@@ -91,7 +91,45 @@ export const COMBAT = tune('COMBAT', {
   daze: 1.5,
   /** How much harder a hurt kitten flies, at zero health. See RAGE_MAX. */
   rage: 1.6,
+  /**
+   * HOW FAR ABOVE OR BELOW YOU A BLADE STILL REACHES, in metres.
+   *
+   * THIS WAS 4.5 AND IT WAS A CEILING NOBODY CHOSE. `strikePlayers` tests
+   * `Math.hypot(dx, dz)` against the attack's reach and then asks one separate
+   * question about height, and 4.5 was set generously so that a swing at
+   * somebody mid-jump would not be refused on a technicality. What it actually
+   * bought was a nine-metre-tall column: a kitten standing on the arena floor
+   * could cut one who had double-jumped clean over her head, and the girl in
+   * the air had no way to read that as anything but the game hitting her from
+   * nowhere. Reported as "the katana reaches way too high up".
+   *
+   * HALVED, DELIBERATELY, AND NOT TUNED TO A GUESS. The ask was "at least half
+   * as big", and half is the number that is defensible without a play session
+   * behind it — every other answer would be a new invention. It is a knob on
+   * the balance page for exactly that reason: the right value is a thing you
+   * find by playing, and this is the shape that lets somebody find it.
+   *
+   * IT IS NOT THE SAME NUMBER AS `lift`. `lift` is how far a hit throws her UP;
+   * this is how far apart you may be VERTICALLY for the hit to happen at all.
+   * They were never related and the resemblance is a trap.
+   */
+  strikeHeight: 2.25,
 });
+
+/**
+ * THE REACH EVERY OTHER REACH IS A MULTIPLE OF.
+ *
+ * `_reach()` returns this scaled by the clan buff and the orb stack, and
+ * `Game.strikePlayers` divides by it to recover that scale before applying it
+ * to the per-attack reaches in ATTACKS. So the literal `3.4` was written down
+ * in three places that had to agree, and one of them was in another file.
+ *
+ * NOT FOLDED INTO `ATTACKS.stand.reach`, TEMPTING THOUGH IT IS. That entry is
+ * a TUNABLE — somebody may set the standing swing to 3.0 on the balance page —
+ * and this is the unit that tunable is expressed in. Tying them together would
+ * mean tuning one attack silently rescaled every clan buff and every orb.
+ */
+export const BASE_REACH = 3.4;
 
 export const MAX_HP = COMBAT.maxHp;
 
@@ -2454,7 +2492,7 @@ export class Player {
 
   /** Her katana's real reach, clan and orbs folded in. One place. */
   _reach() {
-    return 3.4 * (this.clan?.buff?.reach ?? 1) * this.power.reach;
+    return BASE_REACH * (this.clan?.buff?.reach ?? 1) * this.power.reach;
   }
 
   /**
@@ -3044,7 +3082,21 @@ export class Player {
          slash coming out sideways or backwards depending on which way you
          were walking. */
       this.slash.rotation.y = this.facing - Math.PI / 2 + (1 - t) * 0.7;
-      this.slash.scale.setScalar((0.7 + t * 0.9) * (this.clan?.buff?.reach ?? 1));
+      /* THE ARC IS DRAWN AT HER REAL REACH, WHICH IS NOT WHAT IT WAS DOING.
+         This read `clan?.buff?.reach` directly — so Riverclaw's long blade grew
+         the picture and the Long Cut orbs, which multiply the same hitbox and
+         STACK, did not. A kitten wearing three of them swung a normal-looking
+         arc and hit you from a metre and a half outside it, which reads as the
+         game cheating rather than as her having earned something.
+
+         `_doSlash`'s own comment two hundred lines up has claimed for a while
+         that "the drawn arc grows with both", and it was only half true. It is
+         one accessor now, so the picture and the hitbox cannot disagree by
+         construction — which is the whole reason `_reach()` exists.
+
+         DIVIDED BY `BASE_REACH` because this is a SCALE on a ring authored at
+         the unsworn size, not a length. */
+      this.slash.scale.setScalar((0.7 + t * 0.9) * (this._reach() / BASE_REACH));
     } else {
       this.slash.visible = false;
     }

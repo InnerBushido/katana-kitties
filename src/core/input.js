@@ -96,7 +96,7 @@ export const VJOY_AXIS_NAMES = ['X', 'Y', 'Z', 'Rx', 'Ry', 'Rz', 'Slider', 'Dial
  * CONFIRMED on hardware: left SR = 17, right SR = 14. */
 const DEFAULT_VJOY_MAP = {
   left: {
-    axX: 1, invX: true, axY: 0, invY: true,      // X / Y
+    axX: 1, invX: false, axY: 0, invY: true,      // X / Y
     // Held sideways the d-pad becomes the face cluster.
     jump: [11],       // Down
     attack: [9],     // Left
