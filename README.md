@@ -994,6 +994,12 @@ the whole town is a handful of draw calls even at split-screen.
 
 ## How it was built
 
+> **Working on it rather than playing it?** [PROJECT.md](PROJECT.md) is the
+> one-page sheet: how to run and test it (including on a phone over Wi-Fi), the
+> debug keys, the balance page, how every asset in here was generated and how to
+> generate another, what it costs, every document in the project, and where it
+> is going next.
+
 **three.js, and nothing else at runtime.** No engine, no physics library, no
 asset store. `npm install` pulls exactly two things: three.js and Vite.
 

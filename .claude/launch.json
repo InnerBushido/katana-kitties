@@ -7,6 +7,13 @@
       "runtimeArgs": ["run", "dev"],
       "port": 5173,
       "autoPort": true
+    },
+    {
+      "//": "The same server, bound to every interface so a phone on the same Wi-Fi can reach it. Vite binds 127.0.0.1 ONLY by default, which is why http://<your-ip>:5173 times out with no error anywhere -- nothing is listening on that address. NOT autoPort: the URL is being read off a screen and typed into a phone, so the port has to be the one the doc says. See docs/notes/mobile.md.",
+      "name": "katana-kitties-lan",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--host"],
+      "port": 5173
     }
   ]
 }

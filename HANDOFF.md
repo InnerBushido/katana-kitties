@@ -387,6 +387,48 @@ different frames and the interframe diff finds different work. **Film at 936 wid
 and publish at 512**; roughly 3.3 real pixels average into each output pixel and
 that averaging is the anti-aliasing.
 
+**[PROJECT.md](PROJECT.md) exists, and it is the page a HUMAN gets pointed at.**
+Everything a person needs to understand this project was true and written down
+and spread across twenty-four files, which is the same as not being written
+down: `CLAUDE.md` is short on purpose and aimed at an agent, `HANDOFF.md` is a
+running log, `README.md` is for somebody who wants to play, and the design notes
+are each gated behind *"read this before you touch that"*. Nothing said, on one
+page, **what this is, how to run it, how to test it, how every asset in it was
+made, what it costs, and where it is going.** That is now one file.
+
+It is a register rather than an essay: the debug keys, the balance page, the
+player numbers at a glance, both keyboard sets against both pad letterings, a
+row per generated-asset pipeline with the command that makes another one, the
+accounts with a **last-updated date on them**, all nine non-negotiables, every
+document in the project, and the four networking answers. Almost every line
+points somewhere deeper rather than restating it.
+
+**`world-check` enforces the register, which is the only part of it a reader
+cannot check for themselves.** Seven new assertions: the last-updated line
+exists and parses, every design note is linked, every top-level document is
+named, every tool a person could run is named, the capture rig's guide is
+pointed at, and CLAUDE.md and PROJECT.md quote the *same* two check totals — a
+number that has drifted in this repo twice already. Prose is not checked and
+could not be; **coverage** is, because a cheat sheet's whole value is being
+complete and a stale one does not fail loudly, it quietly teaches somebody a
+thing that stopped being true. `tools/capture/*` is deliberately out of scope:
+that rig has its own README and one page should point at it, not inline it.
+
+**The phone-over-Wi-Fi steps are written down for the first time**, in
+[mobile.md](docs/notes/mobile.md) with the short form in PROJECT.md and
+`CLAUDE.md`. `npm run dev -- --host`, then type the `Network:` URL Vite prints
+into the phone. Three things break it and **all three fail the same way — a
+timeout, with no error anywhere**: no `--host` (Vite binds `127.0.0.1` only, and
+still reports success), Windows Firewall refusing inbound Node, and router
+client isolation. Verified rather than assumed on this machine: node.exe has
+four enabled inbound Allow rules and they are scoped to the **Public** profile,
+which is what this Wi-Fi is classified as, so it works as it stands.
+`.claude/launch.json` carries it as `katana-kitties-lan`, deliberately not
+`autoPort` — the URL is being read off a screen and typed with a thumb, so the
+port has to be the one the doc says. One caveat worth keeping: `--host` also
+exposes `/tuning.html`, whose save endpoint writes into the source tree
+unauthenticated. Fine at home. Not fine in a café.
+
 **Played, pushed and live — the third, fourth and fifth four-player sessions,
 all in one push.** Richard playtested the input fixes and confirmed everything
 was working, so all three sessions' work went out to `origin/main` together,

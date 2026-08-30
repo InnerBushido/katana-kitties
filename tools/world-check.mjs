@@ -10240,6 +10240,70 @@ console.log('\n--- one press is not enough, and one player drives ---');
   ok('...and the readout says a pad arrived stuck', /latched:/.test(inp));
 }
 
+/* ---------------------------------------------------------------------------
+   PROJECT.md, the one page a human gets pointed at.
+
+   A CHEAT SHEET THAT HAS GONE STALE IS WORSE THAN NO CHEAT SHEET, because it
+   does not fail — it quietly teaches somebody a thing that stopped being true.
+   Nothing else in this file guards a document, and normally that is right: the
+   code is the spec. This one is different, because its whole value is being
+   COMPLETE, and completeness is the one property a reader cannot check for
+   themselves. So the register is enforced rather than trusted.
+
+   WHAT IS CHECKED IS COVERAGE, NOT PROSE. Every design note, every top-level
+   document, every tool a person could run: named. What any of them SAYS is not
+   this file's business and could not be asserted anyway.
+
+   `tools/capture/*` is deliberately out of scope — that rig has its own README
+   and PROJECT.md points at it, which is the right depth for a one-page sheet.
+--------------------------------------------------------------------------- */
+{
+  const root = new URL('../', import.meta.url);
+  const proj = readFileSync(new URL('PROJECT.md', root), 'utf8');
+
+  /* The date is the thing that makes the money numbers readable at all: a cost
+     with no date on it is a claim about today, and it is never about today. */
+  ok('PROJECT.md says when it was last updated',
+    /\*\*Last updated: \d{1,2} [A-Z][a-z]+ 20\d\d\.?\*\*/.test(proj));
+
+  const notes = readdirSync(new URL('docs/notes/', root)).filter((f) => f.endsWith('.md'));
+  const missingNotes = notes.filter((f) => !proj.includes(`docs/notes/${f}`));
+  ok('...and links every design note', missingNotes.length === 0,
+    missingNotes.length ? missingNotes.join(' ') : `${notes.length} notes`);
+
+  const tops = readdirSync(root).filter((f) => f.endsWith('.md'));
+  const missingTops = tops.filter((f) => !proj.includes(f));
+  ok('...and names every top-level document', missingTops.length === 0,
+    missingTops.length ? missingTops.join(' ') : tops.join(' '));
+
+  /* A tool nobody knows about is a tool that gets rewritten. Every one of these
+     is a thing a person types; the capture rig's internals are not. */
+  const tools = readdirSync(new URL('tools/', root))
+    .filter((f) => f.endsWith('.mjs') || f.endsWith('.sh'));
+  const missingTools = tools.filter((f) => !proj.includes(f));
+  ok('...and names every tool a person could run', missingTools.length === 0,
+    missingTools.length ? missingTools.join(' ') : `${tools.length} tools`);
+
+  ok('...and points at the capture rig\'s own guide',
+    proj.includes('tools/capture/README.md'));
+
+  /* THE TWO NUMBERS THAT HAVE BEEN WRONG BEFORE. CLAUDE.md quoted a check count
+     that had drifted twice; PROJECT.md quotes the same pair, so pin both to
+     what this run actually counts rather than to a literal typed anywhere. */
+  const claude = readFileSync(new URL('CLAUDE.md', root), 'utf8');
+  const padTotal = Number(/# (\d+) checks: controllers/.exec(claude)?.[1]);
+  ok('CLAUDE.md and PROJECT.md quote the same pad-check total',
+    Number.isFinite(padTotal) && proj.includes(`${padTotal} checks: controllers`),
+    String(padTotal));
+  /* This file's own total cannot be asserted against itself — it is not known
+     until the last check has run, and this IS one of them. Both documents
+     quoting the same literal is the half that can be checked here; the value
+     is checked by eye against the line this script prints. */
+  const worldQuoted = /# (\d+) checks: world/.exec(claude)?.[1];
+  ok('...and the same world-check total as each other',
+    !!worldQuoted && proj.includes(`${worldQuoted} checks: world`), worldQuoted);
+}
+
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150
    and 71) because it was only ever counted by hand — and counting the output by
    hand gets it wrong too: labels longer than the 42-char pad push the status
