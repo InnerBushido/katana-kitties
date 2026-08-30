@@ -135,9 +135,18 @@ So she has the same shape on her own side of the board:
 ```
    O K L ;    walk          (mirrors W A S D)
    P I J      mount, interact, attack   (mirrors Q E F, in that order)
-   ' / RCtrl  jump          (mirrors Space)
-   Right Alt  sprint        (mirrors Left Shift)
+   Right Alt  jump          (mirrors Space — the key right next to it)
+   ' / RShift sprint        (mirrors Left Shift — under her little finger)
 ```
+
+Numpad `0` `1` `2` `3` and Right Ctrl are all still live as well; the four above
+are the ones the Help page names, because they are the ones on every keyboard.
+
+**This block was wrong for a while and a player found it, not a check.** It was
+written when jump really was `'`, the two swapped afterwards (see below), and
+only the code moved. `world-check` now reads the Help page's own sentence about
+these four keys against `KEYSETS`, so the next swap fails a check rather than
+leaving a nine-year-old holding down the wrong key.
 
 **Everything she already knew still works** — arrows, numpad and the punctuation
 run are all still live. Three keys had to move, and each only because something
@@ -149,6 +158,7 @@ else claimed it:
 | `/` | jump | **attack** | jump moved to `'`, so `/` took `.`'s old job |
 | `.` | attack | **mount** | `;`'s old job had to go somewhere |
 | `RCtrl` | sprint | **jump** | Richard asked for a jump key that isn't `'` |
+| `'` | jump | **sprint** | swapped with Right Alt: jump is pressed most, so it takes the thumb key |
 
 which leaves `, . / '` reading interact, mount, attack, jump — one contiguous
 run, in the same order relative to each other as before.

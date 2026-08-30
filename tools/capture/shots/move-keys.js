@@ -27,7 +27,8 @@
    ground stays put, so the eye can see that SHE is the thing that moved.
 
    Call: eval, `await window.__moveKeysSetup()`, `await window.__moveKeysShot()`,
-   `await window.__encodeMove('move-keys')`. */
+   `await window.__encodeMove('move-keys')`. The defaults are the shipped
+   clip's — read the note on them below before passing anything. */
 (() => {
   const g = window.game;
   const K = window.__mk;
@@ -55,8 +56,13 @@
 
   /* The label a key wears on a cap. `Semicolon` has to read as `;` or the
      picture is naming a key nobody can find on their keyboard. */
+  /* LEFT AND RIGHT SHIFT ARE NOT THE SAME CAP. They both read `SHIFT` here
+     once, which is fine on player 1's panel and a lie on player 2's: the two
+     diagrams sit side by side in the last beat, and two keys drawn with the
+     same name three inches apart is a picture that says "press the same key",
+     which is exactly the confusion the split panels exist to remove. */
   const GLYPH = {
-    Space: 'SPACE', ShiftLeft: 'SHIFT', ShiftRight: 'SHIFT',
+    Space: 'SPACE', ShiftLeft: 'SHIFT', ShiftRight: 'RSHIFT',
     Semicolon: ';', Comma: ',', Period: '.', Slash: '/', Quote: "'",
     ControlRight: 'RCTRL', AltRight: 'RALT', Enter: 'ENTER',
   };
@@ -69,11 +75,19 @@
 
   window.__moveKeysShot = async function (opts = {}) {
     const c = window.__cap;
-    const VW = opts.w ?? 640;
+    /* THE DEFAULTS ARE WHAT SHIPS, AND 7fps IS NOT A TASTE. `move-pad` films
+       at 7, and `world-check` compares the pair DELAY BY DELAY — equal totals
+       are not enough, because gif-sync could once buy those by stretching one
+       clip. At 8 this comes back at 13cs against the pad's 14cs and fails
+       there. At 7 it is 106 frames, which is what the shipped clip has always
+       been. The window aspect has to give VH = 286 for the 512x332 file the
+       markup and `move-pad` both state: resize the browser to get there rather
+       than passing `h`, which would stretch the picture instead. */
+    const VW = opts.w ?? 512;
     const VH = opts.h ?? Math.round(VW * innerHeight / innerWidth);
     const BAR = opts.bar ?? 46;
     const H = VH + BAR;
-    const FPS = opts.fps ?? 8;
+    const FPS = opts.fps ?? 7;
     const V = g.players[0].position.constructor;      // THREE.Vector3
 
     await K.padInit();          // the pad diagram's lettering, from the game's table
@@ -134,10 +148,22 @@
           down: glyph(pick(s, 'down', ['KeyS', 'KeyL'])),
           right: glyph(pick(s, 'right', ['KeyD', 'Semicolon'])),
         },
+        /* THE PREFERENCE LIST IS THE PICTURE'S OPINION, AND IT WAS WRONG.
+           `pick` walks these in order and takes the first key the set actually
+           binds — so `['Space', 'ControlRight']` drew RCTRL on player 2's panel
+           while the game's own answer for her jump is Right Alt, the big key
+           next to player 1's space bar and the one under her thumb. Reported by
+           Richard against the Help page and the clip together: the page said
+           nothing and the picture said the wrong thing.
+           RIGHT ALT FIRST, RIGHT CTRL STILL THERE. Both jump — see the note on
+           `jump` in core/input.js — so the fallback is honest; this is only
+           about which of them the picture teaches. `world-check` reads this
+           line, because a GIF cannot be asserted and the script that can re-cut
+           it can. */
         actions: [
-          { act: 'jump', label: glyph(pick(s, 'jump', ['Space', 'ControlRight'])), w: 60 },
+          { act: 'jump', label: glyph(pick(s, 'jump', ['Space', 'AltRight', 'ControlRight'])), w: 60 },
           { act: 'attack', label: glyph(pick(s, 'attack', ['KeyF', 'KeyJ'])), w: 30 },
-          { act: 'sprint', label: glyph(pick(s, 'sprint', ['ShiftLeft', 'ShiftRight'])), w: 52 },
+          { act: 'sprint', label: glyph(pick(s, 'sprint', ['ShiftLeft', 'ShiftRight'])), w: 62 },
         ],
       };
     };
@@ -255,7 +281,9 @@
 
     // 3. double jump — the second press has to land IN THE AIR, which is the
     //    whole point of the beat. Her arc peaks 1.73 units up in about a third
-    //    of a second (measured), so the second tap goes at frame 4 of 8fps.
+    //    of a second (measured), so the second tap goes at frame 4 — 0.57s in
+    //    at the clip's 7fps, past the peak and still well clear of the ground.
+    //    Read off the frame after the re-cut, not reasoned about.
     K.place(0, -113, 132, -Math.PI * 0.75); settle(6);
     await run(2100, 'DOUBLE JUMP  —  SPACE twice', true, (i) => {
       if (i === 0) c.down('Space');
@@ -378,8 +406,12 @@
       for (let L = 0; L < LEGS.length; L++) {
         for (const code of LEGS[L]) (L === leg ? c.down(code) : c.up(code));
       }
-      if (leg >= 4) { c.down('Space'); c.down('ControlRight'); }
-      if (leg >= 4 && i >= n - 1) { c.up('Space'); c.up('ControlRight'); }
+      /* AltRight, not ControlRight — the key the panel above now draws for her.
+         The two diagrams light from `input.keys`, so pressing one key and
+         drawing another would have shown player 2's jump button lighting up
+         with nobody's finger on it. */
+      if (leg >= 4) { c.down('Space'); c.down('AltRight'); }
+      if (leg >= 4 && i >= n - 1) { c.up('Space'); c.up('AltRight'); }
     }, { two: true });
 
     /* 7. THREE SECONDS TO READ THE LAST LINE. A clip that cuts the moment the

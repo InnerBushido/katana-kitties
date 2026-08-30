@@ -375,6 +375,36 @@
                 </tbody>
               </table>
             </div>
+            <!-- PLAYER 2'S HALF OF THE KEYBOARD, WHICH WAS NOWHERE ON THIS
+                 PAGE. The tables above are one keyboard column and it is
+                 player 1's, so the second kitten's keys existed only in a
+                 comment in core/input.js and in one passing mention of
+                 `O K L ;` under "Good to know". Reported by Richard, who had
+                 to go and read the source to remind himself which key jumps.
+                 A THIRD TABLE COLUMN WAS THE OBVIOUS FIX AND IT IS THE WRONG
+                 ONE. The tables are read by somebody holding a thing, looking
+                 for the name of a button on it; a second keyboard column makes
+                 every row a choice between two keyboards that do not exist —
+                 there is one keyboard and two hands on it. So it is a sentence
+                 about a HAND, which is what the layout actually is.
+                 THE FOUR NAMED KEYS ARE ASSERTED AGAINST `KEYSETS`. This page
+                 said the opposite of the bindings for a while (jump and sprint
+                 swapped in the code and the prose did not follow), so
+                 `world-check` reads these four names out of the markup and
+                 back through the real key set. -->
+            <p class="ht-note">
+              <b>Player 2 plays the same shape, on the other side of the
+              keyboard.</b> <kbd>O</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd> is
+              <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> moved across —
+              same finger, same job — and the buttons sit around it in the same
+              shape: <kbd>P</kbd> ride, <kbd>I</kbd> action, <kbd>J</kbd> slash.
+              <b><kbd>Right Alt</kbd> jumps</b>, the big key right next to
+              player 1's <kbd>Space</kbd>, and
+              <b><kbd>'</kbd> or <kbd>Right Shift</kbd> sprints</b>, under her
+              little finger exactly where <kbd>Shift</kbd> is under player 1's.
+              The arrow keys and the numpad still work too, for anyone who
+              already learned them.
+            </p>
             <!-- THE TABLE ABOVE IS ONE PAD'S LETTERING AND THE GAME
                  SUPPORTS THREE. `PROMPTS` in core/input.js carries a naming per
                  device and the HUD already prints the right one; a table

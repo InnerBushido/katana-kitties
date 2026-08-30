@@ -583,6 +583,53 @@ export function assignMaps(sizes, prev = [], nMaps = 2) {
 }
 
 /**
+ * WHICH MAP A PANE DRIVES — its own, or failing that the nearest one.
+ *
+ * THERE ARE AT MOST TWO MAPS AND THERE CAN BE FOUR PANES, so at three and four
+ * players somebody's corner has no map in it. Her bumper used to say "No map in
+ * your window — you're drawn on the others", which is honest and useless: the
+ * information she wants is on screen, she simply has no way to change how much
+ * of it she can see. Richard asked for the maps to be SHARED instead — four
+ * kittens, two maps, two drivers each — and this is the rule that decides which
+ * pair share which.
+ *
+ * NEAREST BY PANE CENTRE, not by player position. The question is "which of
+ * these boxes is the one my eye is already on", and that is a fact about the
+ * screen, not about the world — two kittens standing on the same rock can be in
+ * panes at opposite corners. Distance between pane centres is the whole of it,
+ * and it comes out right for every layout the game has: with quadrants the pane
+ * across the seam beats the pane diagonally opposite, and with two full-height
+ * columns there is only ever one answer.
+ *
+ * TIES GO TO THE LOWER MAP INDEX, which is what the epsilon is for. A pane can
+ * be genuinely equidistant from both maps — quadrants with the maps on a
+ * diagonal — and a rule that flips between them frame to frame would move a
+ * kid's zoom button onto a different box while she is pressing it.
+ *
+ * @param panes every pane's rect, in pane order
+ * @param owner `assignMaps`' answer: the pane index each map sits in, -1 if none
+ * @param pane  the pane asking
+ * @returns a map index, or -1 when there are no maps on screen at all
+ */
+export function nearestMap(panes, owner, pane) {
+  const own = (owner ?? []).indexOf(pane);
+  if (own >= 0) return own;
+  const me = panes?.[pane];
+  if (!me) return -1;
+  const cx = me.x + me.w / 2;
+  const cy = me.y + me.h / 2;
+  let best = -1;
+  let bestD = Infinity;
+  for (let m = 0; m < (owner ?? []).length; m++) {
+    const v = panes[owner[m]];
+    if (!v) continue;
+    const d = Math.hypot(v.x + v.w / 2 - cx, v.y + v.h / 2 - cy);
+    if (d < bestD - 0.5) { best = m; bestD = d; }
+  }
+  return best;
+}
+
+/**
  * WHICH CORNER OF ITS PANE A HUD BOX HUGS.
  *
  * THE MAPS MOVED TO THE INSIDE OF THE SPLIT, AND THIS IS THE RULE THAT DOES

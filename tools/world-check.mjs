@@ -27,7 +27,9 @@ import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js'
 import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../src/entities/dragonball.js';
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
-import { SCRIPTS, DUSK_DEEP } from '../src/systems/summonscene.js';
+import {
+  SCRIPTS, DUSK_DEEP, DUSK_FALL, DAWN_RISE, DAWN_DEEP, SummonScene,
+} from '../src/systems/summonscene.js';
 import {
   SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest,
   buildArena,
@@ -67,18 +69,19 @@ import {
   Menagerie, MAX_ON_STAGE, MAX_PER_SPECIES, RESPAWN_MIN, RESPAWN_MAX,
 } from '../src/systems/menagerie.js';
 import {
-  MILESTONES, OPEN_AT, ArenaQuest, SATAN_TOWN,
+  MILESTONES, OPEN_AT, ArenaQuest, SATAN_TOWN, ANNOUNCE_DELAY,
 } from '../src/systems/arenaquest.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
 import {
-  splitLayout, mapWidth, mapSpot, assignMaps, fitDistance, stablePanes, paneSeats,
-  outOfShot, framedMembers, OUT_DROP,
+  splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, fitDistance, stablePanes,
+  paneSeats, outOfShot, framedMembers, OUT_DROP,
 } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
 import { postsFor } from '../src/world/build.js';
 import { MathDojo, DOJO_RADIUS, DOJO_VIEW_R, inDojoView } from '../src/systems/mathdojo.js';
 import { Orb } from '../src/entities/orb.js';
+import { Minimap, ZOOMS } from '../src/systems/minimap.js';
 import { Label, labelCacheStats } from '../src/core/label.js';
 import {
   MODES, MODE_BY_ID, modesFor, handicapFor, HANDICAP_MAX, NO_SIDE, ROUND_LIMIT,
@@ -1626,6 +1629,46 @@ console.log('\n--- which button belongs to which device ---');
   }
   ok('...and Move names all four of her movement keys',
     ['W', 'A', 'S', 'D'].every((k) => keySaid.has(k)));
+
+  /* --- PLAYER TWO'S HAND, WHICH WAS NOWHERE ON THIS PAGE ---
+     The tables are one keyboard column and it is player one's, so the second
+     kitten's keys lived only in a comment in core/input.js — and that comment
+     had been WRONG since jump and sprint swapped: it still called `'` the jump
+     key and Right Alt the sprint. Nothing caught it because nothing was
+     reading either one. So the page names them now and this reads the names
+     back through the real key set, exactly the way the pad column is read
+     through `PROMPTS`. A rebinding in input.js fails here rather than leaving a
+     nine-year-old holding a key that does nothing. */
+  const p2At = sec.indexOf('Player 2 plays the same shape');
+  const p2 = p2At < 0 ? '' : sec.slice(p2At, sec.indexOf('</p>', p2At));
+  const K1 = KEYSETS[1];
+  ok('...and player two\'s half of the keyboard is on the page', p2At > 0);
+  ok('...naming O K L ; as her W A S D',
+    ['O', 'K', 'L', ';'].every((k) => p2.includes(`<kbd>${k}</kbd>`)));
+  ok('...and Right Alt as her jump, which is what KEYSETS binds',
+    K1.jump.includes('AltRight') && p2.includes('<kbd>Right Alt</kbd>'));
+  ok('...and \' and Right Shift as her sprint, for the same reason',
+    K1.sprint.includes('Quote') && K1.sprint.includes('ShiftRight')
+    && p2.includes('<kbd>\'</kbd>') && p2.includes('<kbd>Right Shift</kbd>'));
+  /* THE HALF THAT WENT WRONG LAST TIME, pinned from the other side: whatever
+     else moves, Right Alt must never be a sprint key and `'` must never be a
+     jump key again, because that is the pair of sentences the page now makes. */
+  ok('...and the two are never bound the other way round again',
+    !K1.sprint.includes('AltRight') && !K1.jump.includes('Quote'));
+
+  /* AND THE CLIP AGREES WITH THE PARAGRAPH. `move-keys.gif` draws a keyboard
+     for each kitten and reads the labels out of `KEYSETS` — but through a
+     PREFERENCE list, and that list asked for `ControlRight` first, so the
+     picture taught Right Ctrl while the game's own best answer is Right Alt.
+     A GIF cannot be asserted; the script that is the only thing able to re-cut
+     it can. */
+  const shot = readFileSync(
+    new URL('capture/shots/move-keys.js', import.meta.url), 'utf8');
+  ok('...and the Help clip draws the same jump key the page names',
+    /pick\(s, 'jump', \[[^\]]*'AltRight'[^\]]*\]\)/.test(shot)
+    && !/pick\(s, 'jump', \['Space', 'ControlRight'\]\)/.test(shot));
+  ok('...and the same sprint key',
+    /pick\(s, 'sprint', \[[^\]]*'ShiftRight'[^\]]*\]\)/.test(shot));
 
   /* THE OTHER TWO PADS ARE STILL COVERED, and the cover moved when the topic
      split. The shapes are there because a kid on a DualSense reported hunting
@@ -10238,6 +10281,389 @@ console.log('\n--- one press is not enough, and one player drives ---');
   ok('...and it clears the instant she lets go',
     /for \(const i of stuck\) if \(!rawDown\(gp, i\)\) stuck\.delete\(i\)/.test(inp));
   ok('...and the readout says a pad arrived stuck', /latched:/.test(inp));
+}
+
+/* ---------------------------------------------------------------------------
+   SIX THINGS REPORTED FROM PLAY, and the checks that would have caught them.
+
+   All six came back from one session at the machine: the announcement that
+   would not arrive, the champion who was on no map, the ending played under a
+   thunderstorm, a joining kitten landing on a clan leader, and half a party
+   with no zoom button. Each is pinned here by the BEHAVIOUR that was wrong,
+   not by the line that was changed.
+--------------------------------------------------------------------------- */
+{
+  /* --- 1. HIS ANNOUNCEMENT MUST NOT WAIT FOR EVERYBODY TO DISMOUNT ---
+     The stage that fires it opens thirty seconds after Ryuuseki has been
+     RIDDEN, and it used to refuse while anybody was still on a mount — so the
+     pair most likely to have earned it (the two who climbed on and stayed on)
+     were the pair who could not have it. Reported as "he does not do his
+     speech until all players jump off Ryuuseki". */
+  const said = [];
+  const satan = {
+    position: { x: SATAN_TOWN.x, y: 0, z: SATAN_TOWN.z },
+    group: { visible: false },
+    setLine: (t) => said.push(t),
+    update: () => {},
+    art: null,
+  };
+  const quietWorld = { openArena: () => {}, mischiefTotal: 1, props: [] };
+  const hudFor = (sceneActive, accept) => ({
+    _sceneActive: () => sceneActive,
+    ballsHeld: 7,
+    townCentre: () => ({ x: 0, y: 0, z: 0 }),
+    summonScene: { start: () => accept },
+    toast: () => {},
+    enterArena: () => {},
+  });
+  const rider = { position: { x: 0, y: 40, z: 0 }, mount: {}, rideAlong: null };
+
+  const q = new ArenaQuest({
+    game: null, world: quietWorld, satan, announcer: null,
+  });
+  q.stage = 'pending';
+  q.timer = ANNOUNCE_DELAY;
+  q.update(0.016, [rider], [{ pressed: () => false }], hudFor(false, true));
+  ok('Mr. Satan announces the tournament from a kitten\'s back',
+    q.stage === 'calling', q.stage);
+  ok('...and he really does say his line', said.length > 0);
+
+  /* THE ONE GATE THAT STAYS. A scene already owning the screen still holds it,
+     and holds it in `pending` rather than losing it — nothing would ever ask
+     again if the stage advanced on a refusal. */
+  const q2 = new ArenaQuest({
+    game: null, world: quietWorld, satan, announcer: null,
+  });
+  q2.stage = 'pending';
+  q2.timer = ANNOUNCE_DELAY;
+  q2.update(0.016, [rider], [{ pressed: () => false }], hudFor(true, true));
+  ok('...but a scene already on screen still holds it back', q2.stage === 'pending');
+
+  const q3 = new ArenaQuest({
+    game: null, world: quietWorld, satan, announcer: null,
+  });
+  q3.stage = 'pending';
+  q3.timer = ANNOUNCE_DELAY;
+  q3.update(0.016, [rider], [{ pressed: () => false }], hudFor(false, false));
+  ok('...and a refused scene is retried, not spent', q3.stage === 'pending');
+}
+
+{
+  /* --- 2. THE CHAMPION IS ON THE MAP ONCE HE IS IN THE WORLD ---
+     The game tells the girls to go and find him twice ("find Mr. Satan in the
+     town", and then his own line asking for everybody) and drew him nowhere.
+     Asserted by RECORDING the canvas calls: a no-op stub would pass whatever
+     the map did, so the context here remembers everything and the check reads
+     back the star's own vertices. */
+  const rec = () => {
+    const ops = [];
+    const ctx = new Proxy({}, {
+      get: () => (...a) => { ops.push(a); },
+      set: () => true,
+    });
+    const cv = {
+      width: 300, height: 300,
+      getContext: () => ctx,
+      getBoundingClientRect: () => ({ width: 300, height: 300 }),
+    };
+    return { cv, ops };
+  };
+  /* THE STAR IS FOUND BY ITS SHAPE, which is the one thing on this canvas that
+     cannot be anything else. Every other mark is at most five points — a
+     dragon is three, a kitten's wedge four, the dealer's diamond five — and
+     `beginPath` (no arguments) breaks the run, so the longest unbroken run of
+     two-argument calls IS the star's ten vertices. Counting `fill`s or
+     comparing op totals would pass on any change that happened to draw
+     something, which is exactly the kind of check this file does not have. */
+  const longestRun = (ops) => {
+    let best = 0;
+    let run = 0;
+    for (const a of ops) {
+      if (a.length === 2) { run += 1; best = Math.max(best, run); } else run = 0;
+    }
+    return best;
+  };
+  const said = (ops, text) => ops.find((a) => a[0] === text);
+
+  const away = { position: { x: SATAN_TOWN.x, y: 4, z: SATAN_TOWN.z }, group: { visible: false } };
+  const here = { position: { x: SATAN_TOWN.x, y: 4, z: SATAN_TOWN.z }, group: { visible: true } };
+  const kitten = {
+    position: { x: 0, y: 4, z: 20 }, facing: 0, style: 0, clan: null, panda: null,
+  };
+
+  const a = rec();
+  const mapA = new Minimap(a.cv, world, 0);
+  mapA.draw([kitten], [], null, here);
+  ok('Mr. Satan is drawn on the minimap once he is in the world',
+    longestRun(a.ops) >= 10, `${longestRun(a.ops)}-point path`);
+
+  const b = rec();
+  const mapB = new Minimap(b.cv, world, 0);
+  mapB.draw([kitten], [], null, away);
+  ok('...and not before he has announced himself',
+    longestRun(b.ops) < 10, `${longestRun(b.ops)}-point path`);
+
+  const c = rec();
+  const mapC = new Minimap(c.cv, world, 0);
+  mapC.draw([kitten], [], null, null);
+  ok('...and a map handed no champion at all still draws',
+    c.ops.length > 20 && longestRun(c.ops) < 10, String(c.ops.length));
+
+  /* NAMED ONLY WHEN THERE IS ROOM, exactly like the clan shrines — four words
+     on a phone-sized world-zoom map is worse than none. The name is the one
+     mark drawn in the map's own coordinates, so it is also what pins his star
+     to HIS position rather than to somewhere on the canvas. */
+  const d = rec();
+  const mapD = new Minimap(d.cv, world, 0, { zoom: ZOOMS[1] });
+  mapD.draw([kitten], [], null, here);
+  const label = said(d.ops, 'Mr. Satan');
+  ok('...and he is named when the map is zoomed in', !!label);
+  ok('...at his own position on it',
+    !!label && Math.abs(label[1] - mapD._px(SATAN_TOWN.x)) < 1.5
+    && Math.abs(label[2] - (mapD._py(SATAN_TOWN.z) - 10)) < 1.5,
+    label ? `${label[1].toFixed(1)},${label[2].toFixed(1)}` : 'not drawn');
+  ok('...and not at world zoom', !said(a.ops, 'Mr. Satan'));
+}
+
+{
+  /* --- 3. THE ENDING CLEARS THE SKY, AND THE SKY STAYS CLEARED ---
+     The finale fires at 100% mischief, which in a real run is long after
+     Ryuuseki has been summoned — so Patchfur's four lines about what the girls
+     made of this place were spoken over his thunderstorm. */
+  const sky = () => ({
+    top: world.skyMat.uniforms.top.value.getHex(),
+    horizon: world.skyMat.uniforms.horizon.value.getHex(),
+    cloud: world.skyMat.uniforms.cloud.value,
+    fogNear: world.scene.fog.near,
+    light: (world.lights ?? []).map((L) => L.intensity),
+  });
+
+  world.setSky(0, 0);
+  const day = sky();
+  world.setSky(1, 0);
+  const storm = sky();
+  world.setSky(0, 1);
+  const morning = sky();
+
+  ok('the storm sky is darker than the sunset it came from',
+    storm.top < day.top && storm.fogNear < day.fogNear);
+  ok('...and the morning is not the sunset either',
+    morning.top !== day.top && morning.horizon !== day.horizon);
+  /* THE ONE A PLAYER ACTUALLY READS. The colours are a mood; the fog is the
+     whole archipelago coming into view at once, which is the thing the game
+     has never shown them. */
+  ok('...and the ending pushes the haze off the far islands',
+    morning.fogNear > day.fogNear * 1.5,
+    `${day.fogNear} -> ${morning.fogNear}`);
+  ok('...and brings the lights back up rather than only the sky',
+    morning.light.every((v, i) => v > day.light[i]));
+
+  /* THE CLOUDS COST NOTHING UNTIL THE ENDING. `cloud` is multiplied through
+     the haze bands in SKY_FRAG and it is also the gate on the cloud MESH, so a
+     0 here is the whole game unchanged — sky and geometry both. */
+  ok('...and the ukiyo-e clouds exist only at the ending',
+    day.cloud === 0 && storm.cloud === 0 && morning.cloud === 1);
+
+  /* GOING BACK TO THE SUNSET IS BIT-IDENTICAL, which is the fifth
+     non-negotiable read as a rule about the sky: the sky the game has had all
+     along must come out of the new two-channel path unchanged. */
+  world.setSky(1, 0);
+  world.setSky(0, 0);
+  const back = sky();
+  ok('...and the sunset comes back exactly as it was',
+    back.top === day.top && back.horizon === day.horizon
+    && back.fogNear === day.fogNear && back.cloud === day.cloud);
+
+  /* --- THE CLOUD SHELVES ARE GEOMETRY, NOT SKY ---
+     Three attempts at painting them into SKY_FRAG failed, and the reason is
+     in the comment that replaced them: this camera looks DOWN, so a band cut
+     out of the sky sphere by azimuth projects as a vertical stripe. These
+     checks pin the things that made the geometry version work, because every
+     one of them is invisible in a screenshot of a working build. */
+  const C = world.clouds;
+  ok('the ending has real cloud geometry, not a third shader band',
+    !!C?.mesh && C.mesh.isMesh === true);
+  ok('...in one draw call, like the distant islands next door',
+    C.mesh.geometry.index.count / 3 > 400 && C.mesh.geometry.groups.length === 0,
+    `${C.mesh.geometry.index.count / 3} tris`);
+
+  /* THE VISIBILITY GATE, not just the opacity. A transparent mesh at zero
+     alpha still costs a sort and a state change on every frame of a game it
+     never appears in. */
+  world.setSky(0, 0);
+  const hiddenByDay = !C.mesh.visible;
+  world.setSky(1, 0);
+  const hiddenByStorm = !C.mesh.visible;
+  world.setSky(0, 1);
+  ok('...switched off outright for the whole game before the ending',
+    hiddenByDay && hiddenByStorm && C.mesh.visible === true);
+  ok('...and faded in by the dawn rather than popping on',
+    C.mat.opacity > 0.8 && C.mat.transparent === true);
+
+  /* THE ONE THAT WOULD HAVE CAUGHT THE BUG I BUILT AND MEASURED MY WAY OUT OF.
+     An island is a keel, not a disc — the home island's underside reaches
+     y = -98.3 at its centre — so a plate at y = -34..-106 that lands inside a
+     footprint is a cream circle embedded in rock. The first version cleared
+     the cloud's CENTRE and buried the far end of the shelf. */
+  const cpos = C.mesh.geometry.attributes.position.array;
+  let nearestRim = Infinity;
+  let highest = -Infinity;
+  for (let i = 0; i < cpos.length; i += 3) {
+    if (cpos[i + 1] > highest) highest = cpos[i + 1];
+    for (const L of world.islands) {
+      const d = Math.hypot(cpos[i] - L.x, cpos[i + 2] - L.z) - L.radius;
+      if (d < nearestRim) nearestRim = d;
+    }
+  }
+  ok('...and no lobe of any shelf sits under an island',
+    nearestRim > 5, `closest lobe clears the nearest rim by ${nearestRim.toFixed(1)}`);
+  /* BELOW EVERYTHING, so the ending reveals the archipelago rather than
+     covering it. The lowest island sits at baseY 0. */
+  ok('...and every shelf lies below the lowest island',
+    highest < -20, `highest cloud vertex y = ${highest.toFixed(1)}`);
+
+  /* NOTHING IN THE WORLD KNOWS THEY ARE THERE. A cloud you can stand on is a
+     promise the rest of the game does not keep, and the dragon would have to
+     be taught about it — so they are not solid, not walkable, and not props. */
+  const cx0 = cpos[0];
+  const cz0 = cpos[2];
+  const under = world.heightAt(cx0, cz0);
+  const push = world.resolveSolids(cx0, cz0, 0.9, -70);
+  ok('...and a kitten can neither land on one nor bump into one',
+    (under === null || under.y > -20)
+    && Math.hypot(push.x - cx0, push.z - cz0) < 0.01);
+
+  /* THE DRIFT RUNS ONLY WHILE THEY ARE ON SCREEN. It is one line in
+     `World.update`, and the whole point of putting it behind `visible` is that
+     the game before the ending pays nothing for it. */
+  const spun0 = C.mesh.rotation.y;
+  world.setSky(0, 0);
+  world.update(1, { x: 0, y: 4, z: 0 });
+  const spunHidden = C.mesh.rotation.y;
+  world.setSky(0, 1);
+  world.update(1, { x: 0, y: 4, z: 0 });
+  ok('...and they only drift once the ending has put them on screen',
+    spunHidden === spun0 && C.mesh.rotation.y > spun0);
+
+  /* AND THE SCENE THAT DRIVES IT. `dawnWant` is raised by the finale and by
+     nothing else; the dragon leaving does not take the morning with him.
+     ITS OWN DOM STUB, because the shared one is deleted a few hundred lines
+     above on purpose — and it has to be an element rather than `null`: a scene
+     opening really does call `classList.remove` on its box, so a null stub
+     would fail here for a reason that has nothing to do with the sky. Put back
+     the way it was found, so nothing downstream inherits a DOM. */
+  const hadDoc = 'document' in globalThis;
+  globalThis.document = {
+    getElementById: () => ({
+      classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+      style: { setProperty() {} },
+      textContent: '',
+    }),
+  };
+  const S = new SummonScene({ world: null, audio: null });
+  S.start('summon', { x: 0, y: 0, z: 0 });
+  S.finish();
+  ok('summoning the dragon darkens the sky and leaves the dawn alone',
+    S.duskWant === DUSK_DEEP && S.dawnWant === 0);
+  S.start('finale', { x: 0, y: 0, z: 0 });
+  ok('...the ending lifts the storm and raises the dawn',
+    S.duskWant === 0 && S.dawnWant === DAWN_DEEP);
+  S.clearDusk();
+  ok('...and Ryuuseki leaving does not undo it', S.dawnWant === DAWN_DEEP);
+  S.resetSky();
+  ok('...but a restart does', S.dawnWant === 0 && S.dawn === 0);
+
+  /* IT TAKES LONGER THAN ANY OTHER SKY CHANGE, on purpose: it has to land
+     inside Patchfur's first two lines, slowly enough to be noticed happening.
+     Measured against the script rather than against a number typed twice. */
+  const firstTwo = SCRIPTS.finale.slice(0, 2)
+    .reduce((a, b) => a + (b.dur ?? 7), 0);
+  ok('...and the sky clears within the finale\'s first two lines',
+    DAWN_RISE > DUSK_FALL && DAWN_RISE < firstTwo,
+    `${DAWN_RISE}s of ${firstTwo}s`);
+
+  if (!hadDoc) delete globalThis.document;
+  world.setSky(0, 0);        // leave the world as the rest of the file found it
+}
+
+{
+  /* --- 5. A JOINING KITTEN LANDS SOMEWHERE, NOT ON SOMEBODY ---
+     She used to appear at the party's centroid plus three units, and a
+     centroid is not a place: it can be open sky, the inside of a house, or —
+     reported from play — on top of a clan leader, where two seconds of
+     standing still opens that leader's introduction on a player who has been
+     in the game for two seconds. The town square is the answer, so the town
+     square is what gets checked. */
+  const T = { x: 0, z: 20 };
+  const g = world.heightAt(T.x, T.z);
+  ok('the town square is real ground', !!g, g ? g.y.toFixed(2) : 'none');
+  /* `resolveSolids` declining to move a body is the same question the walking
+     code asks every frame — so this is "nothing is standing there", asked of
+     the world rather than of a list kept somewhere else. */
+  const push = world.resolveSolids(T.x, T.z, 0.9, g ? g.y : 0);
+  ok('...and nothing is standing in it',
+    Math.hypot(push.x - T.x, push.z - T.z) < 0.01);
+  /* AND OUT OF EVERY LEADER'S CIRCLE. `SCENE_RADIUS` is the distance
+     `ShrineScene.watch` measures on, so this cannot drift from the rule it is
+     avoiding. The nearest hall is Thunderpaw's, on the same island. */
+  let nearest = Infinity;
+  for (const hall of world.clanHalls) {
+    const L = leaderSpot(hall, world);
+    nearest = Math.min(nearest, Math.hypot(L.x - T.x, L.z - T.z));
+  }
+  ok('...and far enough from every clan leader not to open a cutscene',
+    nearest > SCENE_RADIUS + 2, `${nearest.toFixed(1)} units to the nearest`);
+}
+
+{
+  /* --- 6. TWO MAPS, FOUR KITTENS, TWO DRIVERS EACH ---
+     There are at most two maps and there can be four panes, so at three and
+     four players somebody's corner has none — and her bumper used to answer
+     with a toast saying so, which is honest and useless. `nearestMap` hands
+     her the box nearest her own tile instead. */
+  const W = 1920;
+  const H = 1080;
+  const quad = splitLayout(4, W, H, 3, 'vertical', [1, 1, 1, 1]);
+  const owner = assignMaps([1, 1, 1, 1], [], 2);
+
+  const driven = [0, 1, 2, 3].map((p) => nearestMap(quad, owner, p));
+  ok('every pane drives a map, even the two with none of their own',
+    driven.every((m) => m >= 0 && m < 2), JSON.stringify(driven));
+  ok('...and a pane that HAS one drives its own',
+    owner.every((pane, m) => pane < 0 || nearestMap(quad, owner, pane) === m));
+  ok('...so the four of them split two ways, two drivers each',
+    driven.filter((m) => m === 0).length === 2
+    && driven.filter((m) => m === 1).length === 2, JSON.stringify(driven));
+
+  /* NEAREST MEANS NEAREST. With maps in panes 0 and 1 — the top row — pane 2
+     (bottom-left) must take the one above it and not the one across the
+     diagonal, which is the whole reason the rule is geometric. */
+  const topRow = nearestMap(quad, [0, 1], 2);
+  ok('...and it really is the nearer box, not the lower index',
+    topRow === 0 && nearestMap(quad, [0, 1], 3) === 1,
+    `${topRow} / ${nearestMap(quad, [0, 1], 3)}`);
+
+  /* A TIE IS DECIDED THE SAME WAY EVERY FRAME. A pane equidistant from both
+     maps — quadrants with the maps on a diagonal — must not flip between them
+     while a kid is pressing the button. */
+  ok('...and a tie always answers the same',
+    nearestMap(quad, [0, 3], 1) === nearestMap(quad, [0, 3], 1)
+    && nearestMap(quad, [0, 3], 1) >= 0);
+
+  /* AND TWO PLAYERS ARE UNTOUCHED — the fifth non-negotiable. Each of the two
+     panes owns a map, so the new rule never runs and each girl drives her own,
+     exactly as she did before any of this. */
+  const pair = splitLayout(2, W, H, 3, 'vertical', [1, 1]);
+  const pairOwner = assignMaps([1, 1], [], 2);
+  ok('two players each still drive their own map',
+    nearestMap(pair, pairOwner, 0) === pairOwner.indexOf(0)
+    && nearestMap(pair, pairOwner, 1) === pairOwner.indexOf(1),
+    JSON.stringify(pairOwner));
+
+  /* NO MAPS AT ALL IS ANSWERED, NOT CRASHED. `_zoomMap` still has a toast for
+     it and this is what keeps that branch honest. */
+  ok('...and a screen with no maps answers -1 rather than throwing',
+    nearestMap(quad, [-1, -1], 0) === -1 && nearestMap(quad, [], 0) === -1);
 }
 
 /* ---------------------------------------------------------------------------

@@ -16,8 +16,8 @@ import { World, CLANS } from './world/world.js';
 import { Player, ATTACKS, COMBAT, BASE_REACH, MAX_HP, KO_TIME } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from './core/palette.js';
 import {
-  splitLayout, mapWidth, mapSpot, assignMaps, fitDistance, stablePanes, paneSeats,
-  outOfShot, framedMembers,
+  splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, fitDistance, stablePanes,
+  paneSeats, outOfShot, framedMembers,
 } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
@@ -31,7 +31,7 @@ import { Cutscene } from './systems/cutscene.js';
 import { Trailer } from './systems/trailer.js';
 import { CrossFx } from './systems/crossfx.js';
 import { Confirm } from './systems/confirm.js';
-import { ShrineScene } from './systems/shrinescene.js';
+import { ShrineScene, SCENE_RADIUS } from './systems/shrinescene.js';
 import { SummonScene } from './systems/summonscene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from './entities/dragonball.js';
 import { Ryuuseki, HOVER, RYU_VIEW, RYU_SIZE } from './entities/ryuuseki.js';
@@ -1970,15 +1970,15 @@ class Game {
   }
 
   /**
-   * Cycle THE MAP IN THIS PLAYER'S OWN PANE. Keyboard (Z / X) and the pad's
-   * `map` action both land here, and both pass a PLAYER index.
+   * Cycle THE MAP THIS PLAYER DRIVES. Keyboard (Z / X) and the pad's `map`
+   * action both land here, and both pass a PLAYER index.
    *
    * IT USED TO INDEX `this.maps` WITH THAT PLAYER NUMBER, and the two stopped
    * being the same thing the moment a map could belong to a pane rather than
    * to a seat: player 2's bumper cycled map 1, which is whatever pane map 1
    * happens to be in, which is not necessarily hers. `_mapForPlayer` asks the
-   * one question that is actually being asked — which map is in my pane — off
-   * the same assignment `_drawMaps` positioned them with.
+   * one question that is actually being asked, off the same assignment
+   * `_drawMaps` positioned the boxes with.
    *
    * Only one map is on screen while the view is MERGED, and every player's
    * control drives it — which is why the merged path copies the zoom onto all
@@ -1986,22 +1986,30 @@ class Game {
    * apart, and inheriting the zoom means the split does not silently reset it
    * under somebody.
    *
-   * A KITTEN IN A PANE WITH NO MAP IS TOLD SO. There are two maps at most (see
-   * `_buildHud`), so with three or four panes somebody's pane has none — and a
-   * button that silently does nothing is indistinguishable from a broken one,
-   * which is the same rule the shrine join prompt and the star locks already
-   * follow. She is told on her own toast, and told what to look at instead:
-   * everybody is drawn on every map, so the information is on screen, it is
-   * just not in her corner.
+   * A KITTEN WITH NO MAP IN HER OWN PANE NOW DRIVES THE NEAREST ONE, and used
+   * to be told she had none. There are two maps at most (see `_buildHud`), so
+   * with three or four panes somebody's corner is empty — and the old answer,
+   * a toast reading "No map in your window", was honest and no use: the
+   * information she wants IS on screen, she simply had no way to change how
+   * much of it she could see. Two maps, four kittens, two drivers each is what
+   * Richard asked for, and `nearestMap` decides which pair share which.
+   *
+   * SHE IS STILL TOLD WHICH BOX MOVED, because a button whose effect is in
+   * somebody else's corner reads as a button that did nothing — the same rule
+   * the old toast was following, answered properly. See `_cycleMapAt`.
    */
   _zoomMap(index) {
     if (this.state !== 'play') return;
     const m = this._mapForPlayer(index);
+    /* Unreachable while any map exists — `nearestMap` always finds one — and
+       kept because "there are no maps at all" is a state `_buildHud` could
+       produce again (a tier with none, a pane count of zero), and a silent
+       button is the one thing this must never become. */
     if (m < 0 || !this.maps[m]) {
-      this.toast('No map in your window — you\'re drawn on the others', index);
+      this.toast('No map on screen right now', index);
       return;
     }
-    this._cycleMapAt(m, index);
+    this._cycleMapAt(m, index, this._paneOf(index) !== (this._mapPane ?? [])[m]);
   }
 
   /**
@@ -2011,14 +2019,25 @@ class Game {
    * under the thumb — while a bumper press is "cycle MY map", and routing the
    * tap through `_zoomMap` meant a map index being read as a player index. Two
    * questions, one answer each, one implementation of the actual turn.
+   *
+   * `elsewhere` MAKES THE TOAST NAME THE BOX THAT MOVED. With four kittens and
+   * two maps, half of them are turning a dial in somebody else's corner — and
+   * "Map zoom 2.2x" printed over a pane whose map did not change is the game
+   * telling her something happened where she cannot see it happen. Only ever
+   * true for the bumper: a TAP is on the box itself, so there is nothing to
+   * point at.
    */
-  _cycleMapAt(m, index = 0) {
+  _cycleMapAt(m, index = 0, elsewhere = false) {
     const target = this.maps[m];
     if (!target) return;
     const z = target.cycleZoom();
     if (this.merged) for (const map of this.maps) map.zoom = z;
     this.audio.play('menu');
-    this.toast(`Map zoom ${z === 1 ? 'whole world' : `${z}x`}`, index);
+    const level = z === 1 ? 'whole world' : `${z}x`;
+    this.toast(
+      elsewhere ? `Map zoom ${level} — the map nearest you` : `Map zoom ${level}`,
+      index,
+    );
   }
 
   /** True while any full-screen story scene owns the screen. */
@@ -2290,8 +2309,24 @@ class Game {
     }
     for (const p of this.players) p.rideAlong = null;
     this.summonScene?.finish();
-    this.summonScene.played = { found: false, summon: false };
-    this.summonScene.clearDusk();
+    /* EVERY KEY, not the two the dragon hunt started with. The three that
+       arrived later — the ending and Mr Satan's two — were never listed here,
+       and only worked by accident: a missing key reads `undefined`, which is
+       falsy, so `start` allowed them again. Written out, so the next scene
+       added to `SCRIPTS` is one line away from being restartable rather than
+       one silent lookup away. */
+    this.summonScene.played = {
+      found: false, summon: false, finale: false,
+      satanAnnounce: false, satanOpen: false,
+    };
+    /* `resetSky`, NOT `clearDusk`. A restart puts the world back to its
+       opening state, and by the time somebody presses it the ending may have
+       happened — the dawn is deliberately permanent within a run (see
+       `SummonScene.start`), so the one thing that unmakes it has to be here,
+       next to the leaders being un-met and the stars going back on their
+       islands. `clearDusk` alone would restart the game under the morning it
+       was finished in. */
+    this.summonScene.resetSky();
     this._updateBallHud();
     for (const p of this.players) {
       const el = document.getElementById(`clan-${p.index}`);
@@ -5076,7 +5111,7 @@ class Game {
         this.summonScene.skip();
       }
       this.summonScene.update(dt);
-      this.world.setDusk(this.summonScene.updateDusk(dt));
+      this.summonScene.updateSky(dt);
       this.world.update(dt, this.players[0].position);
       for (const d of this.dragons) d.update(dt, this.world, []);
       this.ryu?.update(dt, this.world);
@@ -5375,7 +5410,7 @@ class Game {
       this.ryu.update(dt, this.world);
       this._checkSummonScene();
     }
-    this.world.setDusk(this.summonScene.updateDusk(dt));
+    this.summonScene.updateSky(dt);
     this._updateSeek(dt);
     this._updateClanPrompt();
 
@@ -5576,6 +5611,80 @@ class Game {
     this._joinPlayer(device);
   }
 
+  /**
+   * Where a kitten who has just joined comes into the world.
+   *
+   * IT USED TO BE THE PARTY'S CENTROID PLUS THREE UNITS, and the reasoning
+   * behind that was sound — "she is joining a game in progress, and a kitten
+   * who appears two islands from her sisters has to walk before she can play".
+   * What it missed is that the centroid of a party is not a PLACE. It is a
+   * point in space that may be over open sky between two islands, inside a
+   * house, or — reported from play, and the reason this exists — standing on
+   * top of a clan leader, where two seconds of not moving opens her
+   * introduction on a nine-year-old who has not yet worked out which cat she
+   * is. A cutscene as the first thing that happens to you is indistinguishable
+   * from the game having broken.
+   *
+   * SO THE TOWN SQUARE IS THE ANSWER, which is what Richard asked for: it is
+   * the one place in the game every kid already knows, it is flat, it is
+   * empty, and it is where the game itself sends people when it wants them
+   * somewhere (`leaveArena` lands the griffin there). Arriving somewhere named
+   * beats arriving somewhere merely near.
+   *
+   * ...UNLESS THE PARTY IS NOT ON THE HOME ISLAND AT ALL, and that half is not
+   * a hedge. The town is unwalkable-to from the frost island and three hundred
+   * units from the arena; putting her there while her sisters are at the
+   * tournament is the fourth non-negotiable's stranding case arrived at from
+   * the other direction — nobody is lost, but she cannot get to anybody and
+   * has no way of knowing why. So the rule is: the town when the town is where
+   * everyone is, and beside the party when it is not. Both then go through the
+   * same search, so the leader case is closed either way.
+   *
+   * IT DEGRADES RATHER THAN VANISHING. Every failure returns the town centre
+   * rather than a NaN or a point in the sky — a joining kitten who falls out
+   * of the world is worse than one who has a walk ahead of her.
+   */
+  _joinSpot() {
+    const home = this.world.islands[0];
+    const mid = this._centroid();
+    const T = this.townCentre();
+    const onHome = Math.hypot(mid.x - home.x, mid.z - home.z) <= home.radius;
+    const want = onHome ? { x: T.x, z: T.z } : { x: mid.x, z: mid.z };
+
+    const ok = (x, z) => {
+      const g = this.world.heightAt(x, z);
+      if (!g) return null;                    // open sky
+      /* NOT INSIDE ANYTHING, asked of the world's own solids rather than of a
+         list kept here. `resolveSolids` pushes a body out of whatever it is
+         standing in, so a point it declines to move is a point that is clear —
+         which is the same question the walking code asks every frame, rather
+         than a second opinion about it. */
+      const s = this.world.resolveSolids(x, z, 0.9, g.y);
+      if (Math.hypot(s.x - x, s.z - z) > 0.01) return null;
+      /* AND OUT OF EVERY UNMET LEADER'S CIRCLE, with a couple of units over.
+         `SCENE_RADIUS` is the distance `ShrineScene.watch` measures, so this
+         cannot drift away from the rule it is avoiding. */
+      for (const L of this.leaders ?? []) {
+        if (L.met) continue;
+        if (Math.hypot(x - L.position.x, z - L.position.z) < SCENE_RADIUS + 2) return null;
+      }
+      return { x, y: g.y, z };
+    };
+
+    let hit = ok(want.x, want.z);
+    for (let ring = 1; ring <= 8 && !hit; ring++) {
+      const r = ring * 3;
+      const steps = 6 + ring * 3;
+      for (let i = 0; i < steps && !hit; i++) {
+        // The `+ ring` turns each ring off the last one's spokes, so eight
+        // rings sample eight different bearings rather than one line outward.
+        const a = (i / steps) * Math.PI * 2 + ring;
+        hit = ok(want.x + Math.cos(a) * r, want.z + Math.sin(a) * r);
+      }
+    }
+    return hit ?? { x: T.x, y: T.y, z: T.z };
+  }
+
   _joinPlayer(device) {
     if (this.partySize >= MAX_PLAYERS) return null;
     if (this.partySize >= this.input.seatable) {
@@ -5590,12 +5699,8 @@ class Game {
     this.input.claim(index, device);
 
     const p = this._seatPlayer(index, this._freeStyles()[0] ?? index);
-    // Land her next to the party rather than back at the town: she is joining
-    // a game in progress, and a kitten who appears two islands from her sisters
-    // has to walk before she can play.
-    const at = this._centroid();
-    const g = this.world.heightAt(at.x + 3, at.z + 3);
-    p.position.set(at.x + 3, (g ? g.y : 10) + 1, at.z + 3);
+    const at = this._joinSpot();
+    p.position.set(at.x, at.y + 1, at.z);
     p.group.position.copy(p.position);
 
     this._buildHud();
@@ -5991,12 +6096,34 @@ class Game {
     return this._mapPane;
   }
 
-  /** Which map, if any, player `index` can zoom — the one in her own pane. */
+  /**
+   * Which map player `index` drives — hers if her pane has one, otherwise the
+   * one nearest her corner of the screen.
+   *
+   * IT USED TO BE HER OWN PANE'S MAP OR NOTHING, and at three and four players
+   * that means somebody has no zoom button. `nearestMap` in core/split.js owns
+   * the rule and the argument for it; this is the plumbing.
+   *
+   * THE PANES ARE RECOMPUTED HERE RATHER THAN REMEMBERED. `_panes` is pure and
+   * already runs three times a frame for exactly this reason — renderer, HUD
+   * and minimaps all have to agree — so a fourth call on a bumper press is
+   * both free and the only way to be certain this answer is the same one
+   * `_drawMaps` used to place the boxes. Caching it here would be a second
+   * opinion about where the panes are, which is how a map ends up being driven
+   * from the wrong side of the screen.
+   */
   _mapForPlayer(index) {
     if (this.merged) return this.maps.length ? 0 : -1;
     const pane = this._paneOf(index);
     if (pane < 0) return -1;
-    return (this._mapPane ?? []).indexOf(pane);
+    const groups = this.groups?.length ? this.groups : [this.players.map((_, i) => i)];
+    const panes = this._panes(window.innerWidth, window.innerHeight, groups);
+    /* THE ASSIGNMENT IS READ, NOT RE-DECIDED. `_mapPanes` remembers last
+       frame's answer BECAUSE the rule needs it — so calling it here would be
+       this press taking part in a decision that belongs to the drawing. The
+       fallback covers the one frame before `_drawMaps` has ever run. */
+    const owner = this._mapPane ?? this._mapPanes(groups);
+    return nearestMap(panes, owner, pane);
   }
 
   /**
@@ -6137,8 +6264,15 @@ class Game {
            wherever her pane's map has ended up — so the hint is looked up from
            who is standing here, not from which of the two boxes this is. A
            pane holding neither of them is driven by a pad and says nothing;
-           naming a key nobody in that pane can press is the label lying. */
-        const key = members.includes(0) ? ' · Z' : members.includes(1) ? ' · X' : '';
+           naming a key nobody in that pane can press is the label lying.
+           ASKED OF `_mapForPlayer`, NOT OF THIS PANE'S MEMBERS, now that a
+           kitten drives the nearest map rather than only her own. Reading the
+           group was the same answer while those two questions agreed and is
+           wrong the moment they do not: at four players, player 1 in a pane
+           with no map of its own drives one of these boxes, and the box would
+           have said nothing while Z turned it. */
+        const key = this._mapForPlayer(0) === i ? ' · Z'
+          : this._mapForPlayer(1) === i ? ' · X' : '';
         /* THE KITTENS STANDING THERE, not the cats who normally have those
            seats. `styleFor(members[0])` is a seat number read as a style index
            and labelled the pane STORM while Blossom was standing in it. Two
@@ -6158,7 +6292,7 @@ class Game {
          per pane instead of once for the whole screen. */
       this.maps[i].focusIndex = shared ? null : members[0];
       this.maps[i].focusOn = members;
-      this.maps[i].draw(this.players, this.dragons, this.kotodama);
+      this.maps[i].draw(this.players, this.dragons, this.kotodama, this.satan);
     }
 
     this._drawMathBoard(panes, groups, W, H, mathUp);

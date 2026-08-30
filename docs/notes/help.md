@@ -127,6 +127,43 @@ by the check, not copied from the shot script. A wrong pair reflows the whole
 topic the instant the image lands, which on a slow connection is a panel that
 jumps under a nine-year-old's finger mid-tap.
 
+### The clip taught the wrong key for a while
+
+Reported from play: *"write in Moving & fighting that player 2's keys are
+mirrors of WASD, and that Right Alt is jump, next to the space bar, and `'` and
+Right Shift are sprint, next to the little finger — the gif should show those,
+not Right Ctrl."* Both halves were true. The page said nothing at all about
+player 2's cluster, and the clip's second panel drew **RCTRL** for her jump.
+
+Neither was a typo, and that is the interesting part. The panel's labels come
+out of `KEYSETS` through a `pick(set, field, prefer)` — the clip is not allowed
+to invent a key name — and `prefer` is *the picture's opinion about which of
+several bindings to teach*. It listed `['Space', 'ControlRight']`, so it drew
+the first key her set happens to bind that the list names, which was Right
+Ctrl. Right Alt jumps too; the picture was honest and was teaching the worse of
+two right answers. The list is `['Space', 'AltRight', 'ControlRight']` now.
+
+**Left and right Shift are not the same cap, either.** Both used to render as
+`SHIFT`, which is fine alone and a lie in the last beat, where the two panels
+sit three inches apart: two keys drawn with the same name side by side says
+"press the same key", which is exactly the confusion the split panels exist to
+remove. Player 2's now reads `RSHIFT`.
+
+**`world-check` reads the preference list and the Help paragraph back through
+`KEYSETS`.** A GIF cannot be asserted — but the shot script that is the only
+thing able to re-cut it can be, and so can the page's own wording. That is the
+same defence the pad prompts already had.
+
+**Re-filming: match the pair's frame rate, not just its size.** `move-pad`
+films at 7fps and `move-keys` defaults to 8, and `world-check` requires the two
+clips to agree **frame for frame** — a delay-by-delay comparison, not equal
+totals, because gif-sync could once buy an equal total by stretching one clip.
+The first re-cut was shot at the default and failed there (13cs against 14cs).
+Shoot it as `__moveKeysShot({ w: 512, fps: 7 })`, which comes back at 106
+frames — the same count the shipped clip has always had — then re-run
+`gif-sync`. Getting it right is visible in a nice way: `move-pad.gif` came out
+byte-identical, because the re-cut landed on exactly the original's timing.
+
 ### The drawn controller
 
 The pad in the corner of the controller clip is **drawn from scratch every

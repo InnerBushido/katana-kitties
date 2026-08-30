@@ -66,6 +66,78 @@ arena opens at 80%, so by the time she hears this she has been able to go for a
 while. That is the right way round — being told about a place you can already
 get to is an invitation, not a tease.
 
+### The world gets its morning back
+
+Reported from play: *"when end game happens, maybe turn sky from being dark to
+being normal again, or sunny — should show world changing and being happier."*
+It is the right note. By the time the finale runs, Ryuuseki has been summoned,
+so the sky the ending plays under is his thunderstorm — Patchfur's four lines
+about what these two made of the place were being spoken over a black sky.
+
+**The sky has TWO channels now, not one.** `World.setSky(dusk, dawn)` replaces
+`setDusk(k)`: `dusk` is the storm, unchanged, and `dawn` is a separate lerp
+towards a third palette (`_dawnSky`) that is neither the game's sunset nor the
+storm. The finale sets `duskWant = 0` and `dawnWant = DAWN_DEEP` together, so
+one scene both lifts the storm and brings the morning. `DAWN_RISE` is 12
+seconds against the storm's `DUSK_FALL`, deliberately the slowest sky change in
+the game: it has to land inside Patchfur's first two lines and be noticed
+*happening* rather than discovered done. `world-check` measures that against
+`SCRIPTS.finale`'s own durations rather than a number typed twice.
+
+**The thing a player actually reads is the fog, not the colours.** `fogNear`
+goes 420 → 900, which brings the whole archipelago into view at once — the shot
+is already pulling back to 329 units, and until now the far islands arrived as
+haze. Clearing the fog is what makes the pull-back mean something.
+
+**Going back to the sunset has to be bit-identical.** The fifth non-negotiable
+read as a rule about the sky: the two-channel path must reproduce the sky the
+game has always had when both channels are zero. `world-check` sets dusk, clears
+it, and compares the uniforms by value. `resetSky()` (restart) zeroes both;
+`clearDusk()` (Ryuuseki leaving) deliberately does not touch the dawn.
+
+### The clouds are geometry, and three shader attempts are why
+
+The same note asked for *"some nice Japanese inspired clouds, or the waterfalls
+from the trailer screenshot"*. The obvious answer was a third cel-shaded band in
+`SKY_FRAG`, next to the two that were already there. It failed three times, and
+the reason is worth keeping because it applies to anything ever painted on that
+dome:
+
+**This camera looks DOWN.** Measured with `unproject` on the live camera rather
+than reasoned about: the top of the frame sits at h = -0.23 standing in the town
+and h = -0.28 up on a dragon, the bottom at h = -0.84. A player essentially
+never sees above the horizon outside a cutscene — which also explains why the
+two bands that were already in the shader (h = 0.16 and 0.34) have only ever
+appeared in scenes. Moving a bank below the horizon put it on screen and exposed
+the second problem: **a shape cut out of a sphere by azimuth, seen from a camera
+pointed down, projects as a vertical stripe**, not a horizontal shelf. The last
+attempt was clearly visible and read as a rendering fault.
+
+So `World._buildClouds` builds **flat plates lying in the XZ plane**, below the
+islands, where the camera is already pointing. 24 shelves of overlapping circles
+on two rings, one merged geometry, one draw call, 3594 triangles, a
+`MeshBasicMaterial` faded in by `dawn` and `visible = false` for the entire game
+before the ending. They read the way the reference art does for the simple
+reason that they genuinely are horizontal planes seen from above.
+
+Three things in there are measurements, not choices, and each has a check:
+
+- **`valueNoise` on whole numbers does not use its range.** Printed for
+  i = 0..15 across all six streams, the largest value any returns is 0.482.
+  Written the obvious way the ring came out packed into a third of the depth it
+  was asked for, so the builder doubles and clamps.
+- **An island is a keel, not a disc.** The home island's underside reaches
+  y = -98.3 at its centre while its rim is at 0. A plate at y = -34..-106 inside
+  that footprint is a cream circle embedded in rock. The first version cleared
+  the cloud's *centre* and buried the far end of the shelf; the clearance is
+  `radius + span + 18` now, and `world-check` walks every vertex.
+- **Coplanar lobes z-fight**, and the flicker is worse than the overlap it was
+  hiding, so every lobe in a shelf sits on its own level.
+
+**Nothing in the world knows they are there.** Not solid, not walkable, not
+props — a cloud you can stand on is a promise the rest of the game does not
+keep, and the dragon would have to be taught about it.
+
 ---
 
 ## The Powerup Kotodama — the endgame

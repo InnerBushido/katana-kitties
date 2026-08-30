@@ -215,7 +215,7 @@ un-hiding whatever you are about to measure.
 
 | file | clip | notes |
 | --- | --- | --- |
-| `move-keys.js` | `move-keys.gif` | On foot, keyboard. Draws the key panel. |
+| `move-keys.js` | `move-keys.gif` | On foot, keyboard. Draws the key panel. **Shoot it `{ w: 512, fps: 7 }`** — the default is 8, and `move-pad` films at 7; `world-check` compares the pair delay by delay, not just by total. 106 frames. |
 | `move-pad.js` | `move-pad.gif` | The same run on a pad. Draws the cat controller — `movekit.padGeom`/`padPanel`, and the source the Help page's SVG diagram is transcribed from. |
 | `fight.js` | `move-arena.gif`, `move-air.gif` | Two kittens, both input panels on every frame. `__arenaShot` and `__airShot`. |
 | `phone.js` | `phone.gif` | The touch overlay, redrawn from the DOM. Filmed at a real phone viewport (812×375) so `--tp-unit` is what a phone gets. |

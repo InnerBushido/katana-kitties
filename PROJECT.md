@@ -58,7 +58,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 1805 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 1851 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 284 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 ```
 
@@ -346,7 +346,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 1805
+the check that would have caught it.** That is why `world-check` is 1851
 assertions.
 
 **Git:** typed branches (`feature/`, `bugfix/`, `mixed/`), a `commit-msg` hook

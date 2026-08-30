@@ -27,7 +27,7 @@ const SKY_VERT = /* glsl */`
   }
 `;
 
-const SKY_FRAG = /* glsl */`
+const SKY_FRAG = /* glsl */ `
   varying vec3 vDir;
   uniform vec3 top;
   uniform vec3 mid;
@@ -35,6 +35,11 @@ const SKY_FRAG = /* glsl */`
   uniform vec3 ground;
   uniform vec3 sunDir;
   uniform vec3 sunColor;
+  /* 0 all game, 1 once the world has been finished — see World.setSky.
+     It does not change the sky's COLOUR (the palettes do that); it changes how
+     hard the cloud banks read against it, which is the difference between a
+     hazy sunset and a bright morning with weather in it. */
+  uniform float cloud;
 
   void main() {
     float h = vDir.y;
@@ -58,11 +63,27 @@ const SKY_FRAG = /* glsl */`
 
     float band = sin(vDir.y * 22.0 + vDir.x * 3.0) * 0.5 + 0.5;
     float mask = smoothstep(0.42, 0.02, abs(h - 0.16)) * step(0.62, band);
-    c = mix(c, c * 1.14 + vec3(0.06, 0.03, 0.0), mask * 0.55);
+    c = mix(c, c * 1.14 + vec3(0.06, 0.03, 0.0), mask * (0.55 + cloud * 0.35));
 
     float band2 = sin(vDir.y * 13.0 - vDir.z * 2.2 + 1.7) * 0.5 + 0.5;
     float mask2 = smoothstep(0.30, 0.02, abs(h - 0.34)) * step(0.70, band2);
-    c = mix(c, c * 0.90, mask2 * 0.4);
+    c = mix(c, c * 0.90, mask2 * (0.40 + cloud * 0.20));
+
+    /* THERE IS NO THIRD BAND HERE, AND THREE ATTEMPTS AT ONE IS THE REASON.
+       The ending wanted the stacked cloud shelves off a woodblock print, and a
+       sky shader is the wrong instrument for them in THIS game. Measured with
+       unproject on the live camera: the fixed three-quarter view is a DOWNWARD
+       view, so the top of the frame sits at h = -0.23 standing in the town and
+       h = -0.28 up on a dragon — a player essentially never sees h > 0 outside
+       a cutscene, which is also why the two bands above have only ever shown up
+       in scenes. Moving a bank below the horizon put it on screen and made the
+       second problem obvious: a shape cut out of the sky SPHERE by azimuth,
+       seen from a camera pointed down, projects as a vertical stripe rather
+       than as a horizontal shelf. It read as a rendering fault.
+       So the clouds are geometry instead, lying flat between the islands where
+       the camera is already looking — see World._buildClouds. What cloud
+       still does here is push the two haze bands above a little harder, which
+       is weather rather than drawing and is right for a clearing sky. */
 
     gl_FragColor = vec4(c, 1.0);
   }
@@ -210,6 +231,7 @@ export class World {
     this._buildGroundDetail();
     this._buildDistantScenery();
     this._buildPetals();
+    this._buildClouds();
   }
 
   /**
@@ -721,6 +743,7 @@ export class World {
         ground: { value: new THREE.Color(0x9c6c5e) },
         sunDir: { value: this.sunDir },
         sunColor: { value: new THREE.Color(0xffd98a) },
+        cloud: { value: 0 },
       },
     });
     const sky = new THREE.Mesh(geo, this.skyMat);
@@ -739,6 +762,12 @@ export class World {
       mid: this.skyMat.uniforms.mid.value.clone(),
       horizon: this.skyMat.uniforms.horizon.value.clone(),
       sun: this.skyMat.uniforms.sunColor.value.clone(),
+      /* `ground` IS THE SKY BELOW THE HORIZON, and it is in here only because
+         the dawn moves it — the dusk deliberately does not, so the storm is
+         exactly the storm it always was. It matters more than it sounds: the
+         girls spend half the game looking DOWN past the edge of an island, so
+         this colour is a third of the screen whenever they are flying. */
+      ground: this.skyMat.uniforms.ground.value.clone(),
       fog: this.scene.fog.color.clone(),
       fogNear: this.scene.fog.near,
     };
@@ -750,31 +779,91 @@ export class World {
       fog: new THREE.Color(0x140f28),
       fogNear: 260,
     };
+    /* --- and the morning after the ending ---
+       THE THIRD PALETTE IS NOT A THIRD TIME OF DAY. The game is a sunset and
+       the dragon is a storm; this is what the world looks like once the girls
+       have finished it, and it exists because Richard asked for the 100%
+       cutscene to show the world CHANGING rather than just being talked about
+       over the same sky it has had all afternoon — and because the finale
+       plays with Ryuuseki out, so the sky it opens on is the black one.
+       CLEAR RATHER THAN BRIGHT. The temptation is to crank everything up; a
+       cel-shaded palette washes out the moment you do, which is the same
+       reason `_buildLights` keeps its total intensity modest. So the top goes
+       to a real daylight blue, the horizon keeps its gold (it is still their
+       sunset, not somebody else's noon), and the change a player actually
+       reads is `fogNear`: 420 to 900 pushes the haze off the far islands and
+       the whole archipelago comes into view at once — the one thing the game
+       has never shown them. */
+    this._dawnSky = {
+      top: new THREE.Color(0x2f8fd6),
+      mid: new THREE.Color(0x74c8e6),
+      /* PALE AND COOL, NOT ANOTHER AMBER. The first attempt kept a warm gold
+         here on the grounds that it is still their sunset, and from the game's
+         own camera that made the ending indistinguishable from every other
+         afternoon: the fixed three-quarter view fills most of the frame with
+         the band between h = 0 and h = 0.28, so the horizon colour IS the sky
+         as far as a player is concerned, and two warm ambers a shade apart is
+         not a world that changed. The warmth is still there where warmth
+         belongs — the sun bloom is unchanged and paints gold around the sun
+         itself, so the morning reads as clear rather than as cold. */
+      horizon: new THREE.Color(0xe4f2f0),
+      sun: new THREE.Color(0xfff3d2),
+      ground: new THREE.Color(0xb9d3d6),
+      fog: new THREE.Color(0xdcf0f4),
+      fogNear: 900,
+    };
     this.dusk = 0;
+    this.dawn = 0;
   }
 
   /**
-   * Darken the sky for Ryuuseki, 0 = sunset, 1 = storm.
+   * The two things that can be done to the sky, in the order they happen.
    *
-   * The lights come down with it. Leaving them alone made the islands sit in
-   * bright afternoon sunshine under a black sky, which reads as a broken
+   * `dusk` 0..1 darkens it for Ryuuseki — 0 = sunset, 1 = storm.
+   * `dawn` 0..1 clears it for the ending — see `_dawnSky`.
+   *
+   * ONE FUNCTION AND ONE EARLY-OUT, because they overlap. The finale drops the
+   * dusk and raises the dawn at the same moment, and two setters fighting over
+   * the same six uniforms would mean whichever ran second won: the sky would
+   * flick between storm and morning every frame for the two seconds they cross.
+   * Applied in sequence — day toward storm, then that toward morning — so the
+   * crossing is one continuous lift.
+   *
+   * The lights come down with the dusk. Leaving them alone made the islands sit
+   * in bright afternoon sunshine under a black sky, which reads as a broken
    * shader rather than as nightfall — the give-away is that everything keeps
-   * its warm rim light while the sky behind it says midnight.
+   * its warm rim light while the sky behind it says midnight. They go slightly
+   * UP with the dawn for the same reason in reverse: a cleared sky over islands
+   * still lit for a sunset reads as the sky alone having changed.
    */
-  setDusk(k) {
-    if (k === this.dusk) return;
-    this.dusk = k;
+  setSky(dusk, dawn = 0) {
+    if (dusk === this.dusk && dawn === this.dawn) return;
+    this.dusk = dusk;
+    this.dawn = dawn;
     const U = this.skyMat.uniforms;
     const D = this._daySky;
     const N = this._duskSky;
-    U.top.value.copy(D.top).lerp(N.top, k);
-    U.mid.value.copy(D.mid).lerp(N.mid, k);
-    U.horizon.value.copy(D.horizon).lerp(N.horizon, k);
-    U.sunColor.value.copy(D.sun).lerp(N.sun, k);
-    this.scene.fog.color.copy(D.fog).lerp(N.fog, k);
-    this.scene.fog.near = THREE.MathUtils.lerp(D.fogNear, N.fogNear, k);
+    const M = this._dawnSky;
+    U.top.value.copy(D.top).lerp(N.top, dusk).lerp(M.top, dawn);
+    U.mid.value.copy(D.mid).lerp(N.mid, dusk).lerp(M.mid, dawn);
+    U.horizon.value.copy(D.horizon).lerp(N.horizon, dusk).lerp(M.horizon, dawn);
+    U.sunColor.value.copy(D.sun).lerp(N.sun, dusk).lerp(M.sun, dawn);
+    // The dusk has no `ground` of its own on purpose — see `_daySky`.
+    U.ground.value.copy(D.ground).lerp(M.ground, dawn);
+    U.cloud.value = dawn;
+    if (this.clouds) {
+      /* Off entirely rather than at zero opacity. A transparent mesh with
+         nothing in it still costs a sort and a state change every frame,
+         and this one is invisible for the whole game up to the ending. */
+      this.clouds.mesh.visible = dawn > 0.002;
+      this.clouds.mat.opacity = dawn * 0.94;
+    }
+    this.scene.fog.color.copy(D.fog).lerp(N.fog, dusk).lerp(M.fog, dawn);
+    this.scene.fog.near = THREE.MathUtils.lerp(
+      THREE.MathUtils.lerp(D.fogNear, N.fogNear, dusk), M.fogNear, dawn,
+    );
     for (const L of this.lights ?? []) {
-      L.intensity = L.userData.dayIntensity * (1 - k * 0.62);
+      L.intensity = L.userData.dayIntensity * (1 - dusk * 0.62) * (1 + dawn * 0.16);
     }
   }
 
@@ -1679,6 +1768,132 @@ export class World {
     this.scene.add(mesh);
   }
 
+  /* ----------------------------- clouds ---------------------------------- */
+
+  /**
+   * The ukiyo-e cloud shelves that come out at the ending — real geometry,
+   * lying flat under the archipelago, faded in by `dawn`.
+   *
+   * THEY ARE NOT IN THE SKY SHADER, AND THREE ATTEMPTS AT THAT IS WHY.
+   * See the note in SKY_FRAG: this camera looks DOWN (measured with unproject,
+   * the top of the frame is h = -0.23 on foot and h = -0.28 on a dragon), so a
+   * band painted on the sky sphere is either off the top of the screen or,
+   * once dragged below the horizon, projects as a vertical stripe instead of a
+   * horizontal shelf. Flat plates put where the camera is already pointing
+   * read the way the reference art does, because they genuinely are horizontal
+   * planes seen from above rather than a shape cut out of a dome.
+   *
+   * Built like the distant islands next door: one merged geometry, one draw
+   * call, never collided with, `heightAt` knows nothing about them. A kitten
+   * cannot land on one — a cloud you can stand on is a promise the rest of the
+   * game does not keep, and the dragon would have to be taught about it.
+   */
+  _buildClouds() {
+    const parts = [];
+    /* Deterministic, like every other scatter in here — valueNoise and not
+       Math.random, so the ending looks the same on every machine and
+       world-check can assert against actual coordinates.
+
+       THE DOUBLING IS NOT A FUDGE FACTOR, IT IS A MEASUREMENT. valueNoise on
+       whole numbers is its hash straight through, and that hash does not use
+       its range at small integer x: printed for i = 0..15 on all six of the
+       streams below, the largest value any of them returns is 0.482 and the
+       mean sits near 0.25. Written the obvious way the ring came out packed
+       into a third of the depth it was asked for. Doubling and clamping puts
+       the spread back; the clamp is what keeps a future stream that DOES
+       reach 0.9 from throwing a cloud out past the fog. */
+    const rnd = (i, y, seed) => Math.min(1, valueNoise(i, y, seed) * 2);
+    /* TWO RINGS, ALTERNATING, and the inner one is the one that does the work.
+       A single ring from 130 out to 460 put almost every plate behind the fog
+       and outside the finale's framing — that shot orbits the home island, so
+       what it sees is the first 250 units and nothing else. The odd ones stay
+       close enough to be IN the ending; the even ones sit far out and give it
+       depth. */
+    const COUNT = 24;
+    for (let i = 0; i < COUNT; i++) {
+      const a = (i / COUNT) * Math.PI * 2 + rnd(i, 61, 7) * 0.6;
+      let dist = i % 2 ? 125 + rnd(i, 62, 13) * 135 : 275 + rnd(i, 62, 13) * 205;
+      /* Under the islands, which sit at baseY 0..74. Above them the plates
+         would cover the world the ending is trying to reveal; level with them
+         they cut through the terrain. Below, they fill the empty sea of sky
+         that is otherwise the bottom third of every frame. */
+      const cy = -34 - rnd(i, 63, 23) * 74;
+      // A shelf, not a puff: long across its own axis and shallow through it.
+      const lean = rnd(i, 64, 31) * Math.PI * 2;
+      const span = 26 + rnd(i, 65, 37) * 30;
+      const lobes = 6 + Math.round(rnd(i, 66, 41) * 3);
+      // Half the shelf's own length, plus the fattest lobe that can sit on
+      // the end of it. This is the number the island clearance below needs.
+      const reach = span + 18;
+
+      let cx = Math.cos(a) * dist;
+      let cz = Math.sin(a) * dist;
+      /* AND THEN PUSHED OFF ANY ISLAND IT LANDED UNDER. An island is not a
+         disc, it is a keel: measured off the built terrain, the home island's
+         underside reaches y = -98.3 at its centre while its rim is at 0, and
+         every other island is the same cone scaled to its radius. A cloud at
+         y = -34..-106 anywhere inside that footprint is a cream plate embedded
+         in the rock, and it is the shelf's far END that gets buried, not its
+         centre — hence `reach` rather than a flat margin. Past the rim there
+         is nothing below to hit, so walking the distance outward is enough. */
+      for (let guard = 0; guard < 12; guard++) {
+        const hit = this.islands.find(
+          (L) => Math.hypot(cx - L.x, cz - L.z) < L.radius + reach,
+        );
+        if (!hit) break;
+        dist += 30;
+        cx = Math.cos(a) * dist;
+        cz = Math.sin(a) * dist;
+      }
+
+      for (let j = 0; j < lobes; j++) {
+        const t = lobes === 1 ? 0 : j / (lobes - 1) - 0.5;
+        const r = 9 + rnd(i * 17 + j, 67, 43) * 9;
+        // The gentle bow along the shelf is what stops a row of circles from
+        // reading as a row of circles.
+        const off = Math.sin((t + 0.5) * Math.PI) * 5.5;
+        const lx = cx + Math.cos(lean) * t * span * 2 - Math.sin(lean) * off;
+        const lz = cz + Math.sin(lean) * t * span * 2 + Math.cos(lean) * off;
+        /* Every lobe on its own level. Coplanar circles z-fight, and the
+           artefact is worse than the overlap it was hiding — it flickers. */
+        const ly = cy + j * 0.16;
+
+        const g = new THREE.CircleGeometry(r, 14);
+        g.rotateX(-Math.PI / 2);
+        paint(g, 0xfff6e6);
+        g.translate(lx, ly, lz);
+        parts.push(g);
+
+        /* The under-shelf: the same lobe, warmer and dropped a little, poking
+           out on one side. That sliver of shadow is the whole woodblock look —
+           without it the plates are white blobs. */
+        if (j % 2 === 0) {
+          const u = new THREE.CircleGeometry(r * 0.86, 12);
+          u.rotateX(-Math.PI / 2);
+          paint(u, 0xf3d6bd);
+          u.translate(lx + Math.cos(lean + 1.4) * r * 0.42, ly - 2.6,
+            lz + Math.sin(lean + 1.4) * r * 0.42);
+          parts.push(u);
+        }
+      }
+    }
+
+    /* Basic, not toon: these are lit by nothing and want to stay the flat
+       paper colour they were painted. Fogged, so the far ones sit back.
+       `depthWrite` stays ON — with it off the overlapping lobes double-blend
+       and each cloud grows a bright seam down its own middle. */
+    const mat = new THREE.MeshBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 0, fog: true,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(mergeParts(parts), mat);
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    mesh.renderOrder = -1;
+    this.scene.add(mesh);
+    this.clouds = { mesh, mat };
+  }
+
   /* ----------------------------- petals ---------------------------------- */
 
   _buildPetals() {
@@ -1736,6 +1951,13 @@ export class World {
       P.mesh.setMatrixAt(i, this._m4);
     }
     P.mesh.instanceMatrix.needsUpdate = true;
+
+    /* The clouds turn, slowly, and only while they are on screen. The ring
+       is built centred on the origin, so spinning the mesh IS the drift —
+       no per-plate bookkeeping, no instance matrices to rewrite. Held to
+       0.006 rad/s: fast enough that the ending is visibly alive, slow
+       enough that nobody watches the whole sky rotate. */
+    if (this.clouds?.mesh.visible) this.clouds.mesh.rotation.y += dt * 0.006;
   }
 
   /** Push a position out of any solid it's inside. Returns the corrected xz. */
