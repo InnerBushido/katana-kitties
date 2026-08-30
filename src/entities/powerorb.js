@@ -443,6 +443,34 @@ export const orbSellPrice = (totalPoints, players = 2) =>
 
 /** Scratch, so turning sixteen orbs toward two cameras allocates nothing. */
 const _q = new THREE.Quaternion();
+/** Scratch for the camera-ward lift below. */
+const _v = new THREE.Vector3();
+
+/* HOW FAR THE TEXT IS PUSHED TOWARDS THE CAMERA, in world units.
+ *
+ * WHY THERE IS A LIFT AT ALL. Every quad on this orb used to carry
+ * `depthTest: false`, so the kanji and the cos/sin readout drew over the whole
+ * world — through a house, through a dragon, through the kitten wearing them.
+ * Reported from play as the glyphs "not being covered up by 3D objects", and
+ * it looks like a bug in the sky rather than a label: text on a ring that
+ * orbits a cat passes BEHIND her several times a second, and every one of
+ * those passes was drawn in front.
+ *
+ * WHY IT IS NOT JUST `depthTest: true`. That is what the old comment was
+ * defending against: `mark` is a 0.4-unit quad pinned to the centre of a
+ * sphere whose halo reaches 0.44 and breathes to 0.49, so at equal depth the
+ * sort flickers the glyph in and out of the ball it is labelling. Turning the
+ * test on without moving anything trades a label that ignores the world for a
+ * label that strobes.
+ *
+ * So the quad is moved instead: depth testing on, and the plane shifted along
+ * the line to the camera until it clears its own orb. 0.62 beats the breathing
+ * halo's 0.49 with room to spare, and is small enough that the glyph still
+ * reads as sitting ON the ball rather than floating off it. The rain column
+ * hangs 1.25x further out than the orb already, so it only needs enough to
+ * clear the kitten's own body when the ring swings in front of her. */
+const MARK_LIFT = 0.62;
+const RAIN_LIFT = 0.3;
 
 /** Katakana the drifting glyphs are drawn from. Deliberately not kanji: these
  *  are meant to read as a rain of characters rather than as words, which is
@@ -497,17 +525,19 @@ export class PowerOrb {
     this.halo = halo;
 
     /* The orb wears its own kanji, which is how you tell eight glowing dots
-       apart at a glance. `depthTest: false` because it is a 0.4-unit quad
-       pinned to a 0.38-unit sphere: at equal depth the sort flickers it in and
-       out of the ball it is labelling. */
+       apart at a glance. Depth-tested, and lifted towards the camera in
+       `faceCamera` so it clears its own halo without also clearing the world
+       — see MARK_LIFT for what that replaced and why. */
     this.mark = new Label(spec.kanji, {
       height: 0.52, size: 76, color: '#ffffff',
-      stroke: '#101018', strokeWidth: 9, depthTest: false,
+      stroke: '#101018', strokeWidth: 9,
     });
     this.orbNode.add(this.mark);
 
     this._buildRain(spec.color);
     this.showMath = false;
+    /** Where the rain column hangs before the per-view lift. See `_updateRain`. */
+    this._rainAt = new THREE.Vector3();
   }
 
   /**
@@ -537,9 +567,12 @@ export class PowerOrb {
       const h = 0.34;
       const m = new THREE.Mesh(
         new THREE.PlaneGeometry(h * aspect, h),
+        /* `depthWrite: false` and depth TESTING on: these are transparent
+           quads, so they must not stamp the depth buffer and hide each other,
+           but they do have to lose to anything solid in front of them. */
         new THREE.MeshBasicMaterial({
           map: texture, transparent: true, opacity: 0.8,
-          depthTest: false, depthWrite: false, toneMapped: false,
+          depthWrite: false, toneMapped: false,
         })
       );
       m.renderOrder = 15;
@@ -553,7 +586,7 @@ export class PowerOrb {
        path would mint a never-freed texture per value. See `Label`'s `_live`. */
     this.readout = new Label('cos θ', {
       height: 0.34, size: 60, color: hex,
-      stroke: '#06131a', strokeWidth: 7, depthTest: false,
+      stroke: '#06131a', strokeWidth: 7,
       live: 'cos -0.00  sin -0.00',
     });
     this.rain.add(this.readout);
@@ -596,7 +629,12 @@ export class PowerOrb {
        travels with the thing whose numbers it is printing — which is the same
        reason the plain orb anchored its labels to the diagram rather than to
        the cat. */
-    this.rain.position.set(x * 1.25, 0, z * 1.25);
+    /* KEPT, because `faceCamera` runs once PER VIEW and adds a lift that
+       points at that view's camera. Adding it to `rain.position` in place
+       would accumulate across the four panes of a split screen and walk the
+       column off the orb. */
+    this._rainAt.set(x * 1.25, 0, z * 1.25);
+    this.rain.position.copy(this._rainAt);
     for (const d of this.drops) {
       d.t += dt * 0.7;
       if (d.t > 1) {
@@ -649,12 +687,23 @@ export class PowerOrb {
     // mark: parented to orbNode, which is parented to group.
     _q.copy(this.group.quaternion).multiply(this.orbNode.quaternion).invert();
     this.mark.mesh.quaternion.copy(_q).multiply(camera.quaternion);
+    /* THE LIFT FALLS OUT OF THE BILLBOARDING AND COSTS NOTHING TO FIND. The
+       quaternion just written maps the quad's local axes into its PARENT's
+       space, and the quad's local +Z is the axis pointing at the viewer — so
+       +Z through that same rotation IS the direction to the camera expressed
+       in the parent's frame, which is exactly the frame `position` is in. No
+       world matrix is consulted, which matters: this runs per view, before
+       the render that would bring the world matrices up to date. */
+    _v.set(0, 0, 1).applyQuaternion(this.mark.mesh.quaternion);
+    this.mark.position.copy(_v).multiplyScalar(MARK_LIFT);
     if (!this.showMath) return;
     // rain and readout: parented to `rain`, which only ever moves, so the
     // group's tilt is the whole of what has to come off.
     _q.copy(this.group.quaternion).invert();
     for (const d of this.drops) d.mesh.quaternion.copy(_q).multiply(camera.quaternion);
     this.readout.mesh.quaternion.copy(_q).multiply(camera.quaternion);
+    _v.set(0, 0, 1).applyQuaternion(this.readout.mesh.quaternion);
+    this.rain.position.copy(this._rainAt).addScaledVector(_v, RAIN_LIFT);
   }
 
   dispose(parent) {

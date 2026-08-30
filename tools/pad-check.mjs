@@ -31,7 +31,7 @@ globalThis.localStorage = {
 
 import { readFileSync } from 'node:fs';
 
-const { InputManager, ACTIONS, KEYSETS, BOUND_KEYS, DOUBLE_TAP_MS } = await import('../src/core/input.js');
+const { InputManager, ACTIONS, KEYSETS, BOUND_KEYS, DOUBLE_TAP_MS, PROMPTS } = await import('../src/core/input.js');
 const { wardLatchExpired } = await import('../src/core/touchpad.js');
 
 const line = (l, v) => console.log(String(l).padEnd(46) + v);
@@ -1447,12 +1447,35 @@ console.log('\n--- the touch pad as a device ---');
   const other = DEVICES.ds4Chrome();
   other.index = 1;
   const split = drive([vj, other], { padMode: 'split' });
-  ok('the left Joy-Con half is told RIGHT', split.promptFor(0, 'interact') === 'RIGHT',
+  /* THESE TWO STRINGS ARE A MEASUREMENT AND NOT A PREFERENCE, which is the
+     only reason a check can pin them at all. The table used to say RIGHT and
+     A here; Richard played it with a Joy-Con in each hand and reported that
+     the button which actually swears the clan oath is the one at the TOP of
+     the left half and the one marked Y on the right. Both clusters were out
+     by a rotation — see VJOY_BUTTON_NAMES in input.js for which rotation and
+     why the two halves differ. Nothing headless can see a silk-screen, so
+     this check exists to stop a future session "tidying" the names back to
+     the upright ones that read so plausibly and were wrong. */
+  ok('the left Joy-Con half is told UP', split.promptFor(0, 'interact') === 'UP',
     `${split.promptFor(0, 'interact')}`);
-  ok('...and the right half is told A', split.promptFor(1, 'interact') === 'A',
+  ok('...and the right half is told Y', split.promptFor(1, 'interact') === 'Y',
     `${split.promptFor(1, 'interact')}`);
   ok('...which are different buttons for the same action',
     split.promptFor(0, 'interact') !== split.promptFor(1, 'interact'));
+
+  /* THE STATIC TABLE AND THE LIVE LOOKUP MUST NAME THE SAME BUTTON. A merged
+     Joy-Con is prompted from `vjoyMap` through `VJOY_BUTTON_NAMES`, but
+     `PROMPTS.vjoyDual` still exists — the Help page's drawn controller reads
+     it, and `promptGlyphs` sizes the overhead callout from it. Two tables
+     saying different things is how the badge over a kitten's head and the
+     picture in HOW TO PLAY come to disagree, and it is invisible from either
+     side. Compared on the DEFAULTS, because that is the only state both can
+     be expected to share. */
+  for (const [slot, half] of [[0, 'left'], [1, 'right']]) {
+    const bad = ACTIONS.filter((a) => PROMPTS.vjoyDual[half][a] !== split.promptFor(slot, a));
+    ok(`...and the ${half} half's fallback table names the same buttons`,
+      bad.length === 0, bad.join(' '));
+  }
 
   /* --- AND IT FOLLOWS A REMAP, which is the whole reason Settings exists ---
      Half of DEFAULT_VJOY_MAP is an admitted guess, so the grid in Settings ->
@@ -1461,17 +1484,17 @@ console.log('\n--- the touch pad as a device ---');
      on saying RIGHT after somebody had moved `interact` onto Up — the label
      lying again, arriving through the one door nothing was watching, and
      lying to the one player who cared enough to fix her controller. */
-  split.vjoyMap.left.interact = [10];        // Up, per VJOY_BUTTON_NAMES
+  split.vjoyMap.left.interact = [10];        // LEFT, per VJOY_BUTTON_NAMES
   ok('...and a remap in Settings moves the prompt with it',
-    split.promptFor(0, 'interact') === 'UP', `${split.promptFor(0, 'interact')}`);
+    split.promptFor(0, 'interact') === 'LEFT', `${split.promptFor(0, 'interact')}`);
   ok('...without disturbing the other half',
-    split.promptFor(1, 'interact') === 'A', `${split.promptFor(1, 'interact')}`);
+    split.promptFor(1, 'interact') === 'Y', `${split.promptFor(1, 'interact')}`);
   /* A BUTTON WITH NO NAME SHOWS ITS NUMBER, which is what the Settings grid
      shows too, rather than a guess or an empty badge. */
   split.vjoyMap.left.interact = [31];
   ok('...and an unnamed button honestly shows its number',
     split.promptFor(0, 'interact') === '#31', `${split.promptFor(0, 'interact')}`);
-  split.vjoyMap.left.interact = [8];         // back to Right
+  split.vjoyMap.left.interact = [8];         // back to UP
 
   /* AN UNKNOWN PAD SAYS 'ANY', WHICH IS TRUE — the generic profile really does
      read every face button for interact. A prompt that guessed a letter here

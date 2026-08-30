@@ -74,6 +74,28 @@ class Side {
     this.sure = false;
     this.hold = 0;
     this.repeatT = 0;
+    /**
+     * Has this side's pad let go of everything since the screen opened?
+     *
+     * THE PRESS THAT OPENS A SCREEN MUST NOT ALSO PRESS SOMETHING ON IT.
+     * Reported from play: choosing CHARACTER PROFILE with JUMP arrived here
+     * with an orb already on the table, because the same jump edge was still
+     * unspent when `update` ran later in the same frame and `_offerHere` took
+     * it. `MenuNav` pays its presses now, which fixes that route at the
+     * source — this is the belt to that pair of braces, and it covers the
+     * routes a consume cannot: a button still HELD across the open (an edge
+     * is one frame, a held thumb is not), and any future caller that opens
+     * this screen without knowing it owes anything.
+     *
+     * `armT` is why a stuck button cannot lock a girl out of the trade
+     * window. A vJoy half that latches a button down would otherwise never
+     * release, so this side would never arm and she would sit in front of a
+     * screen that ignores her — a rule that vanishes rather than degrades.
+     * After ARM_GRACE the latch gives up: the opening edge is one frame old
+     * and long gone by then, so there is nothing left for it to protect.
+     */
+    this.armed = false;
+    this.armT = 0;
   }
 
   reset() {
@@ -84,12 +106,25 @@ class Side {
     this.sure = false;
     this.hold = 0;
   }
+
+  /** Called by `open`, not by `reset` — a completed trade resets every side
+   *  mid-screen and must not take her buttons away in the middle of it. */
+  disarm() {
+    this.armed = false;
+    this.armT = 0;
+  }
 }
 
 /** How much one nudge of the stick moves a points offer. Coarse on purpose:
  *  the numbers here run to thousands and a nine-year-old is not going to hold
  *  a stick sideways two hundred times to hand over a fair price. */
 const POINT_STEP = 50;
+
+/** Everything that DOES something on this screen. A side is armed once its pad
+ *  is holding none of them — see `Side.armed`. */
+const ARM_ACTIONS = ['jump', 'attack', 'interact', 'mount', 'start'];
+/** ...or after this long, whatever the pad is claiming. See `Side.armT`. */
+const ARM_GRACE = 0.6;
 
 export class ProfileScreen {
   constructor(game) {
@@ -233,14 +268,18 @@ export class ProfileScreen {
 
   /* -------------------------------- open --------------------------------- */
 
-  open(mode, { shopper = null, fromPause = false } = {}) {
+  open(mode, { shopper = null, fromPause = false, backTo = null } = {}) {
     this.mode = mode;
     this.shopper = shopper;
     this.fromPause = fromPause;
+    /* WHERE BACK GOES, or null for straight out to the world. Set only by
+       `Inspector._choose`, which is the one route into this screen that has
+       something underneath it — see `close`. */
+    this.backTo = backTo;
     /* The kitten who walked up to the counter is in from the first frame; she
        asked for this screen and should not have to ask twice. */
     this.joined = new Set(shopper ? [shopper.index] : []);
-    for (const s of this.sides) s.reset();
+    for (const s of this.sides) { s.reset(); s.disarm(); }
     this.sides.forEach((s, i) => {
       s.i = Math.min(s.i, Math.max(0, this._rowCount(i) - 1));
     });
@@ -250,7 +289,18 @@ export class ProfileScreen {
     this._paint();
   }
 
-  close() {
+  /**
+   * @param {object} [o]
+   * @param {boolean} [o.back]  false drops every layer instead of stepping
+   *        back one. START passes it: that button is the way OUT of the whole
+   *        screen and landing on the card she opened it from is not out.
+   *        INTERACT steps back one layer, which is the rule `_tradeButtons`
+   *        already follows inside this screen — ready, then offers, then
+   *        points, then here.
+   */
+  close({ back = true } = {}) {
+    const backTo = this.backTo;
+    this.backTo = null;
     this.mode = null;
     this.shopper = null;
     this.joined.clear();
@@ -260,6 +310,9 @@ export class ProfileScreen {
        tick after the shop is however long the girl spent in it — every kitten
        teleports and every dragon jumps. Same trap `setPaused` avoids. */
     if (!this.fromPause) this.game.clock.getDelta();
+    /* AFTER the panel is down and the clock is square, so the card is put back
+       over a game that is already running again. */
+    if (back && backTo) this.game.inspector?.reopen(backTo.index, backTo.row);
   }
 
   /* ------------------------------- input --------------------------------- */
@@ -326,7 +379,16 @@ export class ProfileScreen {
 
        ONLY HER OWN CURSOR IS FROZEN. The other three girls carry on shopping,
        which is the rule this screen exists for. */
-    if (pad.pressed('start')) { this.close(); return; }
+    /* ARMED FIRST, BEFORE ANY BUTTON ON THIS SCREEN IS READ — including
+       START, so the press that opened the window cannot bounce straight back
+       out of it either. See `Side.armed`. */
+    if (!side.armed) {
+      side.armT += dt;
+      if (side.armT < ARM_GRACE && ARM_ACTIONS.some((a) => pad.down(a))) return;
+      side.armed = true;
+    }
+
+    if (pad.pressed('start')) { this.close({ back: false }); return; }
     if (side.pending) {
       if (pad.pressed('jump')) this._answerHere(index, true);
       else if (pad.pressed('attack') || pad.pressed('interact')) this._answerHere(index, false);

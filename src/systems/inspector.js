@@ -132,6 +132,24 @@ export class Inspector {
     this.game.audio?.play('menu');
   }
 
+  /**
+   * Put a card back up exactly where it was, without a sound.
+   *
+   * Only the trade window uses this, on its way out — see `_choose`. Silent
+   * because `ProfileScreen.close` has already played the menu blip for this
+   * press, and two in one frame reads as a double click rather than as a step
+   * back. Refuses if she has left the game while the window was up: a card
+   * over a pane that no longer belongs to anybody is a rectangle nobody can
+   * dismiss, which is the same rule `update` already enforces.
+   */
+  reopen(index, row = 0) {
+    const c = this.cards[index];
+    if (!c || c.state || !this.game.players[index]) return;
+    c.state = 'choose';
+    c.i = Math.max(0, Math.min(row, CHOICES.length - 1));
+    c._sig = '';
+  }
+
   closeOne(index) {
     const c = this.cards[index];
     if (!c?.state) return;
@@ -247,8 +265,16 @@ export class Inspector {
        they spent trading, and every kitten teleports. `ProfileScreen.close`
        does that only when `fromPause` is false. */
     if (pick.key === 'profile') {
+      /* AND IT REMEMBERS THE CARD IT CAME FROM. Closing the trade window used
+         to leave nothing behind, because `closeAll` had already taken her
+         chooser down — so BACK out of the profile read as BACK out of the
+         dealer, two layers in one press, and reported as exactly that. The
+         row goes with the seat so the cursor comes back where she left it
+         rather than on TRADE WITH THE DEALER, which is the row that stops
+         everybody. START still drops the lot; see `ProfileScreen.close`. */
+      const row = c.i;
       this.closeAll();
-      this.game.profile.open('profile');
+      this.game.profile.open('profile', { backTo: { index, row } });
       return;
     }
     /* HANDING OVER TO THE SHARED COUNTER TAKES EVERY CARD DOWN, not just hers.

@@ -455,6 +455,43 @@ screen.
 **The door asks for BOTH of them**, and says so when only one turns up. A prompt
 that simply does not appear is indistinguishable from a broken one.
 
+### He answers the arena gate
+
+The arena island is flyable the moment it appears, and until now that led
+nowhere: two kittens could land at the torii, walk the whole approach and find
+an empty ring with nobody to ask. The tournament only ever opened from the town
+square, so the one place in the world that LOOKS like the way in was the one
+place that was not.
+
+**The door is answered rather than moved.** The town is still where he lives —
+`reset` puts him there, `onReturn` puts him back when the griffin brings them
+home, and a pair who never fly north see exactly the game they saw before,
+which is the two-player rule. He steps out to the torii only while two or more
+of them are standing at it and walks home the moment they are not.
+`ArenaQuest.post` is the whole of the state: `'town'` or `'gate'`.
+
+**Two is the number that fetches him, and it is the same two the tournament
+needs** — so a pair who gather at the gate have already done the only thing the
+door asks, and he arrives to find the condition met. `_holdCourt` runs BEFORE
+anything is asked of him, because every test below it measures from his
+position and a frame that moved him afterwards would be asking the questions
+about where he used to be.
+
+**A kitten still on her dragon has not arrived.** They fly here, so without the
+mount test he would be called out to the gate by two girls circling over it who
+never intended to land — the same rule `near` already follows.
+
+**He stands five units up the approach**, between the torii at `+34` and where
+the griffin sets them down at `+44`, so he is met on the way in rather than
+found standing inside the gate he keeps talking about.
+
+**A kitten alone there is told both of her ways out**, because she has two and
+the game knows which one she is closer to: fetch a sister to where she already
+is, or fly home and ask him in the square. The toast is latched per seat and
+armed again by walking away — she stands there for as long as it takes to work
+out what to do, and a message that repeats every few seconds looks like the
+game noticing her again rather than like an instruction.
+
 ### He shipped with holes in his face, and SIZE is why
 
 He arrived with the world showing through the whites of his eyes and through

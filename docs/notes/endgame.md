@@ -800,6 +800,61 @@ it.** Each orb's shell radius, orbit speed and starting phase come from its slot
 and from how many she is wearing, so adding a fifth changes where the other four
 belong. Eight icosahedrons is nothing; a wrong-looking constellation is not.
 
+## Two things the worn orbs were getting wrong
+
+Both reported from the same play session, both about what the ring around a
+kitten LOOKS like rather than what it does.
+
+### The kanji drew through the world
+
+Every quad on a `PowerOrb` carried `depthTest: false`, so the character on each
+orb, the katakana rain and the live `cos ... sin ...` readout drew over
+everything: through a house, through a dragon, through the kitten wearing them.
+The ring passes behind her several times a second and every one of those passes
+was drawn in front, which reads as a bug in the sky rather than in a label.
+
+**Turning the test on is only half the fix, and the other half is the half a
+tidy-up deletes.** The old comment was defending against something real: the
+mark is a 0.4-unit quad pinned to the centre of a sphere whose halo breathes out
+to 0.49, so at equal depth the sort flickers the glyph in and out of the ball it
+is labelling. Depth testing alone trades a label that ignores the world for a
+label that strobes.
+
+So the quad is **moved** instead. `faceCamera` already builds the billboard
+rotation, and the quad's own local **+Z is the axis pointing at the viewer** —
+so +Z through that same rotation is the direction to the camera expressed in the
+parent's frame, which is exactly the frame `position` is in. `MARK_LIFT` 0.62
+clears the breathing halo with room to spare and is small enough that the glyph
+still reads as sitting ON the ball. No world matrix is consulted, which matters:
+this runs per view, before the render that would bring them up to date.
+
+**The rain column's lift may not accumulate.** `faceCamera` runs once per
+split-screen pane, so adding to `rain.position` in place would walk the column
+off the orb by one lift per pane — invisible at one player and wrong at four.
+`_rainAt` holds where it hangs and the lift is added to that copy.
+`world-check` measures the lift from two different cameras and then calls
+`faceCamera` four times in a row to pin exactly that.
+
+**The plain Kotodama Orb's diagram was deliberately left alone.** That is the
+six-unit teaching overlay, not a label on a ball — the unit circle, its arc, its
+cosine and sine legs and their three readouts — and it is the thing
+non-negotiable 1 is about. It is meant to be read through whatever is in front
+of it.
+
+### An offered orb kept wearing her cursor
+
+`.kd-slot.offered` painted the player's own colour underneath the gold ring
+unconditionally, so an orb she had put on the trade table went on wearing
+Storm's blue after her cursor had walked away from it. Two slots then claim to
+be under one cursor, and the one she is actually standing on is the harder of
+the two to pick out — the offered orb is bigger and lifted.
+
+`--me` is a **statement about where she is** and may only be drawn where she is;
+gold is a statement about the table and stays put. Both together is still the
+right picture when both are true, which is what `.kd-slot.offered.cursor` is
+for — specificity 0,3,0 so it beats BOTH rules above it, since the plain cursor
+rule would otherwise win on a slot that is also offered and drop the gold.
+
 ## The balance page
 
 **`npm run dev`, then open `/tuning.html`.** Every ability's numbers, one

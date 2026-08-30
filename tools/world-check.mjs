@@ -70,7 +70,9 @@ import {
 } from '../src/systems/menagerie.js';
 import {
   MILESTONES, OPEN_AT, ArenaQuest, SATAN_TOWN, ANNOUNCE_DELAY,
+  GATE_RADIUS, GATE_STAND,
 } from '../src/systems/arenaquest.js';
+import { MenuNav } from '../src/systems/menunav.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, fitDistance, stablePanes,
@@ -105,7 +107,11 @@ const ok = (label, cond, extra = '') => {
    no DOM. Stand up just enough of one — nothing here is ever rasterised. This
    has to be assigned before the World is BUILT, not before the imports: ESM
    hoists those, and the DOM is only touched at construction time. */
-globalThis.document = {
+/* A FACTORY AND NOT A LITERAL, because this file DELETES the document part
+   way down on purpose (see the four-player menu block) and two later blocks
+   still need one. A second hand-typed copy of the canvas stub is a second
+   thing to keep in step with `label.js`; calling this again is not. */
+const domStub = () => ({
   createElement: () => {
     const cv = {
     width: 1,
@@ -139,7 +145,10 @@ globalThis.document = {
      is a better one than a fake element, because a fake would let a check
      pass that only works because the DOM silently swallowed it. */
   getElementById: () => null,
-};
+  querySelectorAll: () => [],
+});
+
+globalThis.document = domStub();
 
 /* The record board is the one thing in the game that persists, so testing it
    needs somewhere to persist TO. A Map behind the real API rather than a
@@ -10346,6 +10355,348 @@ console.log('\n--- one press is not enough, and one player drives ---');
   q3.timer = ANNOUNCE_DELAY;
   q3.update(0.016, [rider], [{ pressed: () => false }], hudFor(false, false));
   ok('...and a refused scene is retried, not spent', q3.stage === 'pending');
+}
+
+{
+  /* --- MR SATAN ANSWERS THE ARENA GATE ---
+     The arena island is flyable the moment it appears, so two kittens could
+     land at the torii and find nobody there: the tournament only ever opened
+     from the town square, and the one place that LOOKS like the way in was the
+     one place that was not. He steps out to the gate for two or more and walks
+     home again for fewer, and a kitten alone there is told both of her ways
+     out. See `ArenaQuest._holdCourt`. */
+  const gate = { x: 40, y: 12, z: -268 };
+  const home = { x: SATAN_TOWN.x, y: 0, z: SATAN_TOWN.z };
+  const rig = () => {
+    const toasts = [];
+    const satan = {
+      position: { x: home.x, y: home.y, z: home.z },
+      homeAt: home,
+      group: { visible: true },
+      setLine: () => {},
+      update: () => {},
+      art: null,
+      moveTo(x, y, z) { this.position = { x, y, z }; },
+    };
+    const hud = {
+      _sceneActive: () => false,
+      ballsHeld: 7,
+      townCentre: () => ({ x: 0, y: 0, z: 0 }),
+      summonScene: { start: () => true },
+      toast: (t, i) => toasts.push([t, i]),
+      enterArena: () => { hud.boarded = true; },
+      boarded: false,
+    };
+    const q = new ArenaQuest({
+      game: null,
+      world: { openArena: () => {}, mischiefTotal: 1, props: [], arenaGate: gate },
+      satan,
+      announcer: null,
+    });
+    q.stage = 'open';
+    return { q, satan, hud, toasts };
+  };
+  const at = (x, z, o = {}) => ({ position: { x, y: 0, z }, mount: null, rideAlong: null, ...o });
+  const atGate = (dz = 0, o = {}) => at(gate.x, gate.z + dz, o);
+  const inTown = () => at(home.x, home.z);
+  const nopad = { pressed: () => false };
+  const yes = { pressed: (a) => a === 'interact' };
+  const step = (r, players, pads) => r.q.update(0.016, players, pads ?? players.map(() => nopad), r.hud);
+
+  /* HIS DEFAULT IS THE TOWN AND STAYS THE TOWN. This is the two-player
+     invariant for this feature: a pair who never fly north must see exactly
+     the game they saw before, so a frame with nobody at the gate may not move
+     him at all. */
+  {
+    const r = rig();
+    step(r, [inTown(), inTown()]);
+    ok('Mr. Satan holds his town square while the gate is empty',
+      r.q.post === 'town' && r.satan.position.z === home.z, `${r.q.post} z=${r.satan.position.z}`);
+    ok('...and nobody standing in town is toasted about a gate', r.toasts.length === 0);
+  }
+
+  /* TWO AT THE GATE FETCH HIM, and he plants himself up the approach rather
+     than inside the torii — between the gate and where the griffin lands. */
+  {
+    const r = rig();
+    step(r, [atGate(2), atGate(-2)]);
+    ok('...but two kittens at the torii bring him to it',
+      r.q.post === 'gate' && r.satan.position.z === gate.z + GATE_STAND,
+      `${r.q.post} z=${r.satan.position.z}`);
+    /* AND THE DOOR REALLY OPENS THERE. The whole feature is worthless if he
+       arrives and the accept prompt does not follow him: `near` measures from
+       HIS position, which is the reason `_holdCourt` runs before it. */
+    step(r, [atGate(2), atGate(-2)], [yes, nopad]);
+    ok('...and interact at the gate boards the griffin', r.hud.boarded);
+  }
+
+  /* ...AND THEY SEND HIM HOME AGAIN by leaving. */
+  {
+    const r = rig();
+    step(r, [atGate(2), atGate(-2)]);
+    step(r, [inTown(), inTown()]);
+    ok('...and he walks home the moment they leave it',
+      r.q.post === 'town' && r.satan.position.z === home.z, `${r.q.post}`);
+  }
+
+  /* A PAIR CIRCLING OVERHEAD HAVE NOT ARRIVED. They fly here on a dragon, so
+     without the mount test he would be called out to the gate by two girls
+     who never intended to land — the same rule `near` follows. */
+  {
+    const r = rig();
+    step(r, [atGate(2, { mount: {} }), atGate(-2, { rideAlong: {} })]);
+    ok('...but two kittens still on their dragons do not', r.q.post === 'town', r.q.post);
+  }
+
+  /* THE EDGE OF THE CIRCLE IS THE EDGE. A check that passed at the centre and
+     nowhere else would be a radius that could quietly go to zero. */
+  {
+    const r = rig();
+    step(r, [atGate(GATE_RADIUS - 1), atGate(-(GATE_RADIUS - 1))]);
+    ok('...two just inside GATE_RADIUS count', r.q.post === 'gate', r.q.post);
+    const r2 = rig();
+    step(r2, [atGate(GATE_RADIUS + 1), atGate(-(GATE_RADIUS + 1))]);
+    ok('...and two just outside it do not', r2.q.post === 'town', r2.q.post);
+  }
+
+  /* ONE KITTEN IS TOLD, ONCE, AND TOLD BOTH WAYS OUT. A gate that stayed quiet
+     would read as the arena being shut; a message that repeated every frame
+     would stop being read. */
+  {
+    const r = rig();
+    step(r, [atGate(1), inTown()]);
+    ok('a kitten alone at the gate is told what to do',
+      r.toasts.length === 1, r.toasts[0]?.[0] ?? '');
+    ok('...in her own colour', r.toasts[0]?.[1] === 0, `${r.toasts[0]?.[1]}`);
+    ok('...naming BOTH ways out of it',
+      /sister/i.test(r.toasts[0]?.[0] ?? '') && /town/i.test(r.toasts[0]?.[0] ?? ''));
+    step(r, [atGate(1), inTown()]);
+    step(r, [atGate(1), inTown()]);
+    ok('...and not told again while she stands there', r.toasts.length === 1, `${r.toasts.length}`);
+    step(r, [inTown(), inTown()]);
+    step(r, [atGate(1), inTown()]);
+    ok('...but told again if she walks off and comes back', r.toasts.length === 2, `${r.toasts.length}`);
+  }
+
+  /* SECOND SEAT, SECOND COLOUR. The toast is addressed to whoever is standing
+     there, not to player one — the same rule the arena-open pair of toasts
+     follows, and the reason `_holdCourt` finds her index rather than counting. */
+  {
+    const r = rig();
+    step(r, [inTown(), atGate(1)]);
+    ok('...and it is the kitten who is there who gets it', r.toasts[0]?.[1] === 1,
+      `${r.toasts[0]?.[1]}`);
+  }
+
+  /* COMING HOME PUTS HIM BACK. `Game._arrive` has already moved him by the
+     time `onReturn` is called; without this the quest would go on believing he
+     was at a gate nobody is standing at. */
+  {
+    const r = rig();
+    step(r, [atGate(2), atGate(-2)]);
+    r.q.onReturn();
+    ok('...and the end of a tournament puts him back in town', r.q.post === 'town', r.q.post);
+    r.q.reset();
+    ok('...as does starting the whole game over', r.q.post === 'town', r.q.post);
+  }
+}
+
+{
+  /* --- THE ORBITING ORBS' TEXT IS BEHIND THE WORLD, NOT IN FRONT OF IT ---
+     Every quad on a PowerOrb carried `depthTest: false`, so the kanji and the
+     live cos/sin readout drew through houses, dragons and the kitten wearing
+     them. Reported from play as the glyphs "not being covered up by 3D
+     objects", and the ring passes behind her several times a second.
+
+     THE FIX IS NOT JUST TURNING THE TEST ON, which is why this is checked in
+     two halves. The mark is a 0.4-unit quad pinned to the middle of a sphere
+     whose halo breathes out to 0.49, so depth testing alone strobes it in and
+     out of its own ball. `faceCamera` lifts it along the line to the camera
+     instead — and that lift is the half a tidy-up would delete, because it
+     looks like a line that does nothing.
+
+     ITS OWN DOM, because the shared stub is deleted a few hundred lines above
+     on purpose and a Label measures its text on a canvas. Put back the way it
+     was found. */
+  const hadDoc = 'document' in globalThis;
+  globalThis.document = domStub();
+  const orb = new PowerOrb(POWER_ORBS[0], 0, 1);
+  ok('a power orb\' kanji is depth-tested against the world',
+    orb.mark.mat.depthTest === true);
+  ok('...and so is its cos/sin readout', orb.readout.mat.depthTest === true);
+  ok('...and every falling glyph with it',
+    orb.drops.every((d) => d.mesh.material.depthTest === true), `${orb.drops.length} drops`);
+  /* TRANSPARENT QUADS STILL MUST NOT WRITE DEPTH, or they hide each other and
+     the orb behind them. Testing and writing are different questions and the
+     fix only changes one of them. */
+  ok('...without any of them stamping the depth buffer',
+    orb.mark.mat.depthWrite === false && orb.readout.mat.depthWrite === false
+    && orb.drops.every((d) => d.mesh.material.depthWrite === false));
+
+  /* THE LIFT IS MEASURED, FROM TWO DIFFERENT CAMERAS, and it has to point at
+     whichever one is asking: `faceCamera` runs once per split-screen pane, so
+     a lift that pointed anywhere fixed would be right in one pane and inside
+     the ball in the next. */
+  orb.setMathVisible(true);
+  orb.update(0.016, new THREE.Vector3(0, 0, 0));
+  const shot = (camPos) => {
+    const cam = new THREE.PerspectiveCamera();
+    cam.position.copy(camPos);
+    cam.lookAt(orb.group.position);
+    cam.updateMatrixWorld(true);
+    orb.faceCamera(cam);
+    /* The mark's position is in orbNode space; the direction that matters is
+       the one it ends up pointing, which is the quad's own +Z. */
+    const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(orb.mark.mesh.quaternion);
+    return { lift: orb.mark.position.length(), along: orb.mark.position.dot(dir) };
+  };
+  const a = shot(new THREE.Vector3(0, 6, 30));
+  const b = shot(new THREE.Vector3(-30, 2, -12));
+  ok('...and the kanji is lifted clear of its own breathing halo',
+    a.lift > 0.5 && Math.abs(a.lift - b.lift) < 1e-6, `${a.lift.toFixed(3)}`);
+  ok('...towards whichever pane\' camera is asking, not a fixed way',
+    a.along > 0.5 && b.along > 0.5 && Math.abs(a.along - a.lift) < 1e-6);
+
+  /* THE RAIN COLUMN'S LIFT MAY NOT ACCUMULATE. `faceCamera` runs per view, so
+     adding to `rain.position` in place would walk the column off the orb by
+     one lift per pane — invisible at one player and wrong at four. */
+  const camA = new THREE.PerspectiveCamera();
+  camA.position.set(0, 6, 30);
+  camA.lookAt(orb.group.position);
+  camA.updateMatrixWorld(true);
+  orb.faceCamera(camA);
+  const p1 = orb.rain.position.clone();
+  orb.faceCamera(camA);
+  orb.faceCamera(camA);
+  orb.faceCamera(camA);
+  ok('...and four panes in a row do not walk the rain off the orb',
+    orb.rain.position.distanceTo(p1) < 1e-6,
+    `${orb.rain.position.distanceTo(p1).toFixed(4)}`);
+  if (!hadDoc) delete globalThis.document;
+}
+
+{
+  /* --- AN OFFERED ORB WEARS GOLD; ONLY THE CURSOR WEARS HER COLOUR ---
+     Reported from play: an orb put on the trade table kept its owner's ring
+     after her cursor had walked away, so two slots claimed to be under one
+     cursor and the one she was actually on was the harder to find. `--me` is a
+     statement about WHERE SHE IS and may only be drawn where she is. */
+  const kd = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const rule = (sel) => {
+    const at = kd.indexOf(`${sel} {`);
+    return at < 0 ? null : kd.slice(at, kd.indexOf('}', at));
+  };
+  const offered = rule('.kd-slot.offered');
+  const both = rule('.kd-slot.offered.cursor');
+  ok('an offered orb is ringed in gold', /#f5c341/.test(offered ?? ''));
+  ok('...and not in the player\' own colour', !/--me/.test(offered ?? ''), offered ?? 'missing');
+  ok('...unless her cursor is on it too',
+    /--me/.test(both ?? '') && /#f5c341/.test(both ?? ''), both ?? 'missing');
+  /* SOURCE ORDER AND SPECIFICITY BOTH, because either alone lets the plain
+     cursor rule win on a slot that is offered and drop the gold. */
+  ok('...by a rule that outranks both of the ones above it',
+    kd.indexOf('.kd-slot.offered.cursor {') > kd.indexOf('.kd-slot.cursor {')
+    && kd.indexOf('.kd-slot.offered.cursor {') > kd.indexOf('.kd-slot.offered {'));
+}
+
+{
+  /* --- MENUNAV PAYS FOR THE PRESS IT ACTS ON ---
+     It was the one owner in the frame that never did. `Inspector` consumes,
+     the stall branch consumes, `PadState.consume` carries a comment saying
+     whoever acts on a press owes the call — and MenuNav acted and left every
+     edge sitting there for the rest of `_updatePlay` to find. Two bugs came in
+     from the same play session and both were this: backing out of the pause
+     menu next to the dealer opened the dealer, and confirming CHARACTER
+     PROFILE offered whichever orb the cursor was on.
+
+     DRIVEN, NOT READ. A source check for the word `spend` would go on passing
+     the day somebody moves the call above the read it is meant to follow. */
+  const hadDoc = 'document' in globalThis;
+  const el = (tag, cls = []) => {
+    const set = new Set(cls);
+    return {
+      tagName: tag,
+      offsetParent: {},
+      clicks: 0,
+      classList: {
+        contains: (c) => set.has(c),
+        add: (c) => set.add(c),
+        remove: (c) => set.delete(c),
+      },
+      click() { this.clicks += 1; },
+      scrollIntoView: () => {},
+    };
+  };
+  const play = el('BUTTON', ['menu-btn', 'primary']);
+  const back = el('BUTTON', ['menu-btn', 'back']);
+  const panel = {
+    id: 'panel-pause',
+    dataset: {},
+    classList: { contains: () => false },
+    querySelectorAll: () => [play, back],
+    querySelector: () => back,
+  };
+  globalThis.document = {
+    getElementById: (id) => (id === 'panel-pause' ? panel : null),
+    querySelectorAll: () => [],
+  };
+
+  /* A pad that answers `pressed` from a set, and records what is spent —
+     which is the whole property under test. */
+  const fakePad = (...down) => {
+    const held = new Set(down);
+    return {
+      mx: 0,
+      my: 0,
+      spent: [],
+      pressed: (a) => held.has(a),
+      consume(a) { this.spent.push(a); held.delete(a); },
+    };
+  };
+  const navGame = (pads) => ({
+    input: { players: pads },
+    menuOwner: 0,
+    state: 'play',
+    trailer: { active: false },
+    audio: { play: () => {} },
+    setPaused: () => {},
+  });
+
+  const jump = fakePad('jump');
+  const nav1 = new MenuNav(navGame([jump, fakePad()]));
+  nav1.update(0.016);
+  ok('a confirm in a menu spends the press it confirmed with',
+    jump.spent.includes('jump'), jump.spent.join(' ') || 'nothing');
+  ok('...and the button it landed on really was clicked', play.clicks === 1, `${play.clicks}`);
+  ok('...so nothing later in the frame can read it again', jump.pressed('jump') === false);
+
+  const bpad = fakePad('interact');
+  const nav2 = new MenuNav(navGame([bpad, fakePad()]));
+  nav2.update(0.016);
+  ok('backing out of a menu spends the interact that backed out',
+    bpad.spent.includes('interact') && bpad.pressed('interact') === false,
+    bpad.spent.join(' ') || 'nothing');
+
+  /* ONLY HER PAD. `Input.consume` would spend the edge across all four slots,
+     eating the sister's press — she can be standing at the stall with her own
+     interact while player one is in the pause menu. */
+  const sister = fakePad('interact');
+  const owner = fakePad('jump');
+  const nav3 = new MenuNav(navGame([owner, sister]));
+  nav3.update(0.016);
+  ok('...and only the pad that pressed it, not everybody\'',
+    sister.spent.length === 0 && sister.pressed('interact') === true,
+    sister.spent.join(' ') || 'untouched');
+
+  /* A FRAME THAT DECIDES NOTHING PAYS NOTHING, or the menu would eat every
+     press made anywhere near it. */
+  const idle = fakePad('attack');
+  const nav4 = new MenuNav(navGame([idle, fakePad()]));
+  nav4.update(0.016);
+  ok('...and a frame that neither confirms nor backs spends nothing',
+    idle.spent.length === 0 && idle.pressed('attack') === true);
+
+  if (!hadDoc) delete globalThis.document;
 }
 
 {

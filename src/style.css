@@ -2764,10 +2764,28 @@ body.touch-ui .kd-row { padding: 9px 6px; }
 .kd-slot.cursor { transform: scale(1.12); box-shadow: 0 0 0 4px var(--me); }
 /* An OFFERED orb is lifted and outlined in gold — deliberately a different
    channel from the cursor ring, because at the moment that matters both are
-   on the same slot and one must not hide the other. */
+   on the same slot and one must not hide the other.
+
+   GOLD ALONE UNLESS THE CURSOR IS ALSO ON IT, and that split is the fix for a
+   bug reported from play: this rule used to paint her own colour underneath
+   the gold unconditionally, so an orb she had put on the table kept wearing
+   Storm's blue ring after her cursor had walked away from it. Two slots then
+   claim to be under one cursor, and the one she is actually standing on is
+   the harder of the two to pick out — the offered orb is bigger and lifted.
+   `--me` is a STATEMENT OF WHERE SHE IS, so it may only be drawn where she
+   is; gold is a statement about the table and stays put. Both together is
+   still the right picture when both are true, which is what the compound
+   selector below is for, and it is why this is two rules and not a
+   `box-shadow` that tries to be conditional. */
 .kd-slot.offered {
-  box-shadow: 0 0 0 4px var(--me), 0 0 0 8px #f5c341;
+  box-shadow: 0 0 0 4px #f5c341;
   transform: scale(1.12) translateY(-4px);
+}
+/* Specificity 0,3,0 — it has to beat BOTH rules above, not just the one it
+   sits after, or the cursor ring would win on a slot that is also offered and
+   the gold would vanish the moment she landed on it. */
+.kd-slot.offered.cursor {
+  box-shadow: 0 0 0 4px var(--me), 0 0 0 8px #f5c341;
 }
 
 .kd-detail { margin-top: 12px; font-size: 14px; min-height: 40px; }

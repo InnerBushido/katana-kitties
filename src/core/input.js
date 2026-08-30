@@ -97,11 +97,12 @@ export const VJOY_AXIS_NAMES = ['X', 'Y', 'Z', 'Rx', 'Ry', 'Rz', 'Slider', 'Dial
 const DEFAULT_VJOY_MAP = {
   left: {
     axX: 1, invX: false, axY: 0, invY: true,      // X / Y
-    // Held sideways the d-pad becomes the face cluster.
-    jump: [11],       // Down
-    attack: [9],     // Left
-    interact: [8],   // Right
-    mount: [10, 16],  // Up / SL — SL is the shield, see the header
+    /* Held sideways the d-pad becomes the face cluster, and THE TRAILING
+       NAMES BELOW ARE AS-HELD, NOT AS SILK-SCREENED. See VJOY_BUTTON_NAMES. */
+    jump: [11],       // RIGHT
+    attack: [9],     // DOWN
+    interact: [8],   // UP
+    mount: [10, 16],  // LEFT / SL — SL is the shield, see the header
     sprint: [17],     // SR  (confirmed)
     start: [13],       // Minus
     /* MEASURED, NO LONGER GUESSED. These were 0 and 2 on the theory that the
@@ -115,10 +116,10 @@ const DEFAULT_VJOY_MAP = {
   },
   right: {
     axX: 4, invX: true, axY: 3, invY: false,     // Ry / Rx
-    jump: [4],        // B
-    attack: [6],      // Y
-    interact: [7],    // A
-    mount: [5, 15],   // X / SL — SL is the shield, see the header
+    jump: [4],        // X
+    attack: [6],      // A
+    interact: [7],    // Y
+    mount: [5, 15],   // B / SL — SL is the shield, see the header
     sprint: [14],     // SR  (confirmed)
     start: [12],       // Plus
     map: [21],         // R
@@ -150,13 +151,44 @@ export const HALVES = ['left', 'right'];
  * is not friendly, but it is true and it is findable; guessing a name is how
  * you get a prompt naming a button that is not there.
  */
+/* BOTH CLUSTERS WERE ROTATED, AND EACH BY A DIFFERENT AMOUNT. Reported from
+ * play: the clan oath said "Press A" on the right half and the button that
+ * actually swears is Y, and it said "Press RIGHT" on the left half when the
+ * button that works is the one at the TOP of the pad as she is holding it.
+ * Both prompts come from here, through `promptFor`, so both were this table
+ * lying about an index the game was reading perfectly well.
+ *
+ * ONE MEASURED BUTTON FIXES A WHOLE CLUSTER, and that is why this is a
+ * correction rather than a fresh set of guesses. A d-pad is four buttons in a
+ * rigid cross and a face cluster is four in a rigid diamond: if one index's
+ * name is out by a rotation then all four are, by the same rotation, and the
+ * one press Richard made pins which rotation it is. Left: 8 is UP, not RIGHT,
+ * which is one step anticlockwise, so LEFT->DOWN, UP->LEFT, DOWN->RIGHT.
+ * Right: 7 is Y, not A, and A and Y are opposite corners of the diamond, so
+ * that cluster is out by a half turn and X and B swap with it.
+ *
+ * THE TWO HALVES DISAGREEING IS THE EXPECTED SHAPE, not a sign the working is
+ * wrong. `docs/notes/input.md` already records the same thing about the
+ * sticks: "the two halves are turned opposite ways, so their signs mirror" is
+ * the tempting model and it produced three wrong signs out of four, because
+ * how each half lands in vJoy depends on how the feeder wired that half. One
+ * quarter turn on the left and a half turn on the right is exactly that.
+ *
+ * NOT ROTATED: the rail (SL/SR), the shoulders (L/R, ZL/ZR) and Minus/Plus.
+ * They sit on the edges rather than in a cluster, and their names are printed
+ * on the plastic, so there is nothing for a grip to turn.
+ *
+ * The left half's names are AS SHE HOLDS IT. There is no letter on a d-pad to
+ * appeal to, so the only name that means anything to a kid is the direction
+ * her thumb travels — and every one of these is drawn over her own kitten's
+ * head, in her own quarter of the screen, while she is holding the thing. */
 const VJOY_BUTTON_NAMES = {
   left: {
-    8: 'RIGHT', 9: 'LEFT', 10: 'UP', 11: 'DOWN',
+    8: 'UP', 9: 'DOWN', 10: 'LEFT', 11: 'RIGHT',
     13: '-', 16: 'SL', 17: 'SR', 20: 'L', 22: 'ZL',
   },
   right: {
-    4: 'B', 5: 'X', 6: 'Y', 7: 'A',
+    4: 'X', 5: 'B', 6: 'A', 7: 'Y',
     12: '+', 14: 'SR', 15: 'SL', 21: 'R', 22: 'ZR',
   },
 };
@@ -664,13 +696,37 @@ export const MAX_SLOTS = 4;
    is itself the fix for a pad that had been telling a nine-year-old to press a
    button its face does not have. `world-check` compares the two. */
 export const PROMPTS = {
+  /* THE FALLBACK ONLY, because a merged Joy-Con is answered from the live map
+     — see `promptFor`. It still has to agree with `DEFAULT_VJOY_MAP` read
+     through `VJOY_BUTTON_NAMES`, or the Help page's drawn controller and the
+     badge over a kitten's head would name two different buttons; `pad-check`
+     compares them index by index for exactly that reason. */
   vjoyDual: {
-    left: { jump: 'DOWN', attack: 'LEFT', interact: 'RIGHT', mount: 'UP', sprint: 'SR', start: '-', map: 'L', math: 'ZL' },
-    right: { jump: 'B', attack: 'Y', interact: 'A', mount: 'X', sprint: 'SR', start: '+', map: 'R', math: 'ZR' },
+    left: { jump: 'RIGHT', attack: 'DOWN', interact: 'UP', mount: 'LEFT', sprint: 'SR', start: '-', map: 'L', math: 'ZL' },
+    right: { jump: 'X', attack: 'A', interact: 'Y', mount: 'B', sprint: 'SR', start: '+', map: 'R', math: 'ZR' },
   },
+  /* A LONE JOY-CON IS A DIFFERENT DEVICE, and how much of this table is KNOWN
+     differs line by line. It reads through `PROFILES.joyconSideways`, whose
+     indices are the browser's own for a natively paired half and have nothing
+     to do with vJoy's.
+
+     `interact` IS SETTLED. That profile deliberately accepts ALL FOUR face
+     buttons, so every one of the four names is true and the only question is
+     which is worth printing — and the answer is the one Richard actually
+     reaches for, which is the top of the pad as it is held. Same button the
+     merged table above names, arrived at independently.
+
+     THE OTHER SEVEN ARE THE MERGED TABLE'S, INHERITED. Nobody has pressed them
+     on a natively paired half, and nobody had before this change either.
+     Keeping them in step is the lesser evil: two tables that disagree are two
+     things to keep pointed at the Help page's drawn controller, and a
+     difference here would read as a measurement when it is not one. If a lone
+     Joy-Con is ever played on, measure these and split the tables — do not
+     reason them out from the vJoy indices, which is the mistake that put a
+     rotation into the merged table in the first place. */
   joyconSideways: {
-    left: { jump: 'DOWN', attack: 'LEFT', interact: 'RIGHT', mount: 'UP', sprint: 'SR', start: '-', map: 'L', math: 'ZL' },
-    right: { jump: 'B', attack: 'Y', interact: 'A', mount: 'X', sprint: 'SR', start: '+', map: 'R', math: 'ZR' },
+    left: { jump: 'RIGHT', attack: 'DOWN', interact: 'UP', mount: 'LEFT', sprint: 'SR', start: '-', map: 'L', math: 'ZL' },
+    right: { jump: 'X', attack: 'A', interact: 'Y', mount: 'B', sprint: 'SR', start: '+', map: 'R', math: 'ZR' },
   },
   /* Xbox lettering, because that is what a browser reporting `mapping:
      "standard"` is describing and what most PC pads are silk-screened with.
