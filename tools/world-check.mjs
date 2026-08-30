@@ -1349,25 +1349,60 @@ console.log('\n--- the four "Moving & fighting" clips ---');
      ring, where a slash is allowed to land, and the sky, where the same four
      buttons mean four other things. Neither shape works for the other job. */
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-  const start = html.indexOf('<span class="ht-title">Moving &amp; fighting</span>');
-  ok('Help still has a "Moving & fighting" topic', start > 0);
-  const sec = html.slice(start, html.indexOf('</details>', start));
+  /* ONE TOPIC BECAME FOUR, AND THE CHECKS FOLLOWED IT. These clips used to
+     live in a single card; the dragon and the arena each have their own now,
+     because at half a panel wide with a 13px caption underneath, the picture
+     was smaller than the subject. So the cut below is per TOPIC, and each clip
+     is asserted to be in the topic that is about it — which is a stronger
+     statement than "somewhere in Help" and is the one that goes wrong when
+     somebody moves a figure. */
+  /* READ WITH THE COMMENTS STRIPPED. The first cut of this check failed on the
+     comment RIGHT ABOVE THE CAPTION, which quotes the old wording in order to
+     explain why it changed — so the source contained the phrase the page no
+     longer shows. A check about what a nine-year-old READS must not be able to
+     see the reasons written down for the next developer. */
+  const readable = (one) => one.replace(/<!--[\s\S]*?-->/g, '');
+  const topic = (title) => {
+    const at = html.indexOf(`<span class="ht-title">${title}</span>`);
+    return at < 0 ? '' : html.slice(at, html.indexOf('</details>', at));
+  };
+  const sec = topic('Moving &amp; fighting');
+  ok('Help still has a "Moving & fighting" topic', !!sec);
+  const dragonSec = topic('Flying a dragon');
+  ok('...and a "Flying a dragon" topic of its own', !!dragonSec);
+  const arenaSec = topic('Fighting in the arena');
+  ok('...and a "Fighting in the arena" topic of its own', !!arenaSec);
+  const extraSec = topic('Good to know');
+  ok('...and a "Good to know" topic for what belongs to neither', !!extraSec);
+
   const CLIPS = ['/help/move-keys.gif', '/help/move-pad.gif',
     '/help/move-arena.gif', '/help/move-air.gif'];
-  /* FOUR AND NOT FIVE. Every clip in this topic is warmed one after another by
-     `_warmHelpClips`, and the topic is the first thing a child opens; a fifth
-     is another second and a half of queue in front of the one she is looking
-     at. Four is also two tidy rows, which is what the ask was. */
-  ok('the topic carries exactly four clips',
-    (sec.match(/data-help-gif=/g) || []).length === CLIPS.length,
+  const HOME = {
+    '/help/move-keys.gif': ['Moving & fighting', sec],
+    '/help/move-pad.gif': ['Moving & fighting', sec],
+    '/help/move-air.gif': ['Flying a dragon', dragonSec],
+    '/help/move-arena.gif': ['Fighting in the arena', arenaSec],
+  };
+  /* TWO IN THE FIRST TOPIC, AND THE PAIR IS THE POINT. `move-keys` and
+     `move-pad` are one run filmed twice, so they have to stay together and
+     side by side or the comparison they exist for is gone. The other two each
+     stand alone in their own topic, at full width. */
+  ok('the first topic carries exactly the two device clips',
+    (sec.match(/data-help-gif=/g) || []).length === 2,
     `${(sec.match(/data-help-gif=/g) || []).length}`);
+  for (const [t, one] of [['Flying a dragon', dragonSec], ['Fighting in the arena', arenaSec]]) {
+    ok(`"${t}" leads on exactly one clip, at full width`,
+      (one.match(/data-help-gif=/g) || []).length === 1
+      && one.includes('class="move-wide"'));
+  }
   for (const clip of CLIPS) {
     /* The <img> is found by cutting around the path rather than by a regex, so
        nothing here depends on the order the attributes happen to be written
        in. */
-    const at = sec.indexOf(clip);
-    const tag = at < 0 ? '' : sec.slice(sec.lastIndexOf('<img', at), sec.indexOf('>', at) + 1);
-    ok(`${clip} is wired into the section`, !!tag);
+    const [where, host] = HOME[clip];
+    const at = host.indexOf(clip);
+    const tag = at < 0 ? '' : host.slice(host.lastIndexOf('<img', at), host.indexOf('>', at) + 1);
+    ok(`${clip} is wired into "${where}"`, !!tag);
     /* DEFERRED, LIKE EVERY OTHER PICTURE IN THE PANEL. `Game._warmHelpClips`
        only fills in an <img> that carries `data-help-gif` AND no `src` yet; a
        plain `src` here would pull two megabytes on boot, for a panel nobody
@@ -1392,38 +1427,144 @@ console.log('\n--- the four "Moving & fighting" clips ---');
     ok('...and it stayed under 2.5MB', buf.length < 2.5 * 1024 * 1024,
       `${(buf.length / 1048576).toFixed(2)}MB`);
   }
-  /* AND THEY LOOP TOGETHER. Two clips side by side start in step and drift
-     apart on the first wrap, because the browser restarts each the moment it
-     ends and nothing coordinates them; a minute in, one is slashing while the
-     other is still walking and the pair stops reading as one demonstration
-     shown twice. `tools/gif-sync.mjs` equalises them by rewriting delays — no
-     pixels, no re-encode — and this is what stops the next capture drifting
-     quietly on the page.
-     EXACTLY equal, not nearly: GIF delays are centiseconds, and "nearly" is
-     worth nothing when the error repeats on every wrap forever. */
-  const runs = CLIPS.map((clip) => durationMs(readFileSync(new URL('../public' + clip, import.meta.url))));
-  ok('all four clips are exactly the same length, so they wrap together',
-    runs.every((ms) => ms === runs[0]), runs.map((ms) => `${(ms / 1000).toFixed(2)}s`).join(' vs '));
-  /* AND NEITHER ENDS ON A LONG FREEZE. Both shipped with a THREE SECOND hold
-     on the final frame. A held GIF frame costs nothing to store, which is why
+  /* AND EACH ROW LOOPS TOGETHER — AT THE SAME SPEED. Two clips side by side
+     start in step and drift apart on the first wrap, because the browser
+     restarts each the moment it ends and nothing coordinates them; a minute in,
+     one is slashing while the other is still walking and the pair stops reading
+     as one demonstration shown twice. `tools/gif-sync.mjs` equalises them by
+     rewriting delays — no pixels, no re-encode.
+
+     THE FIRST VERSION OF THIS CHECK ONLY ASKED FOR EQUAL TOTALS, AND THAT LET A
+     REAL BUG THROUGH. gif-sync used to buy the equal total by SPREADING the
+     shortfall over every frame of the shorter clip, so `move-pad` ran at 10cs
+     and 17cs where `move-keys` ran at 8cs and 14cs — the same beats, a fifth
+     slower, landing at a different moment every time. Richard watched the pair
+     and said the controller clip had been stretched. It had, and the totals
+     were exactly equal the whole time.
+
+     So the real invariant is frame-by-frame: for as far as the shorter clip
+     goes, THE TWO CLIPS' DELAYS MUST BE THE SAME NUMBER. That is what makes a
+     beat in one land with its twin in the other, and it is the thing an equal
+     total cannot see. */
+  const dl = (clip) => delaysCs(readFileSync(new URL('../public' + clip, import.meta.url)));
+  const mode = (d) => {
+    const h = {};
+    for (const x of d.slice(0, -1)) h[x] = (h[x] || 0) + 1;
+    return Number(Object.entries(h).sort((p, q) => q[1] - p[1])[0][0]);
+  };
+  for (const [a, b] of [[CLIPS[0], CLIPS[1]], [CLIPS[2], CLIPS[3]]]) {
+    const da = dl(a), db = dl(b);
+    const sa = da.reduce((x, y) => x + y, 0), sb = db.reduce((x, y) => x + y, 0);
+    ok(`${a} and ${b} are exactly the same length, so they wrap together`,
+      sa === sb, `${(sa / 100).toFixed(2)}s vs ${(sb / 100).toFixed(2)}s`);
+    /* AND NEITHER WAS STRETCHED TO GET THERE. The rate most of a clip's frames
+       run at is the rate the shot script was filmed at, and a spread moves it —
+       8cs became 10cs and 6cs became 7cs, which is what "the pad clip looks
+       stretched" was. Comparing the two MODES catches that in one number and
+       says something true of both rows, which a frame-by-frame comparison
+       cannot (see below). */
+    ok('...and neither was stretched to get there — both play at one rate',
+      mode(da) === mode(db), `${mode(da)}cs vs ${mode(db)}cs`);
+  }
+  /* THE FIRST ROW CAN PROMISE MORE, BECAUSE IT IS ONE RUN FILMED TWICE. Same
+     kitten, same beats, one on a keyboard and one on a pad — so every frame the
+     two share has to hold for the same length, or JUMP in one lands while the
+     other is still walking. That is the strongest form of "in step" and it is
+     available here and nowhere else.
+     THE SECOND ROW CANNOT, and must not be made to. The ring and the sky are
+     different demonstrations in different places with different beats; arena
+     holds two frames for its landed slash that air has no counterpart for.
+     Forcing them frame-for-frame would mean padding one of them with beats it
+     does not have, which is worse than the drift it would fix. */
+  {
+    const da = dl(CLIPS[0]), db = dl(CLIPS[1]);
+    const n = Math.min(da.length, db.length) - 1;   // the last is the tail
+    const off = [];
+    for (let i = 0; i < n; i++) if (da[i] !== db[i]) off.push(`${i}:${da[i]}vs${db[i]}`);
+    ok('the keyboard and pad clips agree frame for frame, being one run twice',
+      off.length === 0, off.slice(0, 4).join(' '));
+  }
+  /* NO FREEZE IN THE MIDDLE OF A CLIP, and no long one at the end of the clip
+     that sets the pace. A held GIF frame costs nothing to store, which is why
      it is tempting, and with nothing on screen to read it does not look like a
      pause — it looks like the clip has broken. Reported exactly that way about
-     the Ryuuseki capture; these two had it worse and for longer. */
+     the Ryuuseki capture.
+     THE SHORTER CLIP OF A PAIR IS THE EXCEPTION, and deliberately: it owes its
+     twin a wait, and a wait is the honest way to pay it. That frame still
+     carries its caption, so the hold is reading time — which is the note
+     Richard has now made twice about giving a reader a second or two more. It
+     is bounded so "wait" cannot quietly become "stopped". */
   for (const clip of CLIPS) {
-    const tail = delaysCs(readFileSync(new URL('../public' + clip, import.meta.url))).at(-1);
-    ok(`...and ${clip} does not end on a freeze`, tail <= 120, `${(tail / 100).toFixed(2)}s`);
+    const d = dl(clip), body = d.slice(0, -1);
+    ok(`${clip} never freezes mid-clip`, Math.max(...body) <= 30,
+      `${(Math.max(...body) / 100).toFixed(2)}s`);
+    ok(`...and its tail is a pause, not a stall`, d.at(-1) <= 300,
+      `${(d.at(-1) / 100).toFixed(2)}s`);
+  }
+  for (const [a, b] of [[CLIPS[0], CLIPS[1]], [CLIPS[2], CLIPS[3]]]) {
+    const longer = dl(a).length >= dl(b).length ? a : b;
+    ok(`${longer} sets the pace, so it ends on a short tail`,
+      dl(longer).at(-1) <= 120, `${(dl(longer).at(-1) / 100).toFixed(2)}s`);
   }
 
   const gAt = sec.indexOf('<div class="move-grid">');
   const grid = gAt < 0 ? '' : sec.slice(gAt, sec.indexOf('</div>', sec.indexOf('</figure>', gAt)));
-  ok('the two clips sit side by side in one grid',
+  ok('the two device clips sit side by side in one grid',
     grid.includes(CLIPS[0]) && grid.includes(CLIPS[1]));
-  /* THE LIST BELOW THEM NAMES ONE PAD AND THE GAME SUPPORTS THREE. A kid on a
+  /* SOMEWHERE IN HELP NAMES ONE PAD AND THE GAME SUPPORTS THREE. A kid on a
      DualSense hunting for a button called B is the exact failure that turned
-     `PROMPTS.playstation` into shapes; this note is the static panel's half of
-     that fix, and it has to keep naming them. */
-  ok('...and the section says what a PlayStation pad shows instead',
-    ['✕', '□', '△'].every((glyph) => sec.includes(glyph)));
+     `PROMPTS.playstation` into shapes; the panel's half of that fix has to keep
+     naming them. It moved to "Good to know" when the topic split — it belongs
+     to no single section — so this reads THAT topic now. */
+  ok('"Good to know" still says what a PlayStation pad shows instead',
+    ['✕', '□', '△'].every((glyph) => extraSec.includes(glyph)));
+
+  /* ------------------ the drawn pad, and what it may claim ------------------
+     THE DIAGRAM IS THE CLIP'S PAD, AND IT MUST STAY THAT WAY. The geometry in
+     `#cp-shell` is transcribed from `padPanel` in the capture kit into the same
+     280x214 box, so a child who has just watched `move-pad.gif` is looking at
+     the same object with the same buttons in the same holes. Two pictures of a
+     controller that disagreed about where the triangle sits would be worse than
+     one, so the viewBox is pinned here: change it and this fails rather than
+     quietly stretching a face the clip cannot match.
+
+     AND IT IS DEFINED ONCE. Two copies of a hundred lines of path data is two
+     things to keep in step, which in practice means one of them rots. */
+  ok('the cat pad is defined once, in the panel-wide defs',
+    (html.match(/id="cp-shell"/g) || []).length === 1);
+  for (const [t, one] of [['Flying a dragon', dragonSec], ['Fighting in the arena', arenaSec]]) {
+    ok(`"${t}" draws the pad rather than describing it`,
+      one.includes('class="catpad"') && one.includes('href="#cp-shell"'));
+    ok('...in the capture kit\'s own 280x214 box, so it matches the clip',
+      one.includes('viewBox="0 0 280 214"'));
+  }
+  /* WHAT EACH DIAGRAM LIGHTS IS ITS ARGUMENT, so it is asserted rather than
+     left to a reading of the markup. In the air every face button does
+     something and that is the point of the picture; in the ring only two of
+     them do, and a diagram that lit the other two would be telling a
+     nine-year-old to keep a thumb spare for a button that does nothing there.
+     Counted on the `lit` groups: four faces + the trigger + the stick in the
+     air, two faces + the trigger + the stick in the ring. */
+  const litCount = (one) => (one.match(/<g class="lit">/g) || []).length;
+  ok('the dragon pad lights every face button, the trigger and the stick',
+    litCount(dragonSec) === 6, `${litCount(dragonSec)}`);
+  ok('the arena pad lights only jump, slash, the trigger and the stick',
+    litCount(arenaSec) === 4, `${litCount(arenaSec)}`);
+  /* AND THE ARENA'S DARK BUTTONS ARE EXPLAINED. An unlit control in a diagram
+     reads as an omission unless something says otherwise, and "these two do
+     nothing in here" is a rule of the game (no combat outside the ring's
+     inverse: no climbing inside it), not a gap in the picture. */
+  ok('...and it says out loud why the other two are dark',
+    /ride<\/b> and <b>action/i.test(readable(arenaSec)));
+
+  /* THE POINTER OUT OF THE DRAGON TOPIC. "The same four buttons, a long way up"
+     was meant as "high in the sky" and was read as a direction — look up the
+     page for the keys. If a reader has to ask, it is a direction whether it was
+     meant as one or not, and now that the key table lives in a DIFFERENT topic
+     there has to be a real one. */
+  ok('the dragon caption says where the keys actually are',
+    !readable(dragonSec).includes('a long way up')
+    && /Moving &amp; fighting<\/i>/.test(dragonSec));
 }
 
 console.log('\n--- which button belongs to which device ---');
@@ -1486,14 +1627,20 @@ console.log('\n--- which button belongs to which device ---');
   ok('...and Move names all four of her movement keys',
     ['W', 'A', 'S', 'D'].every((k) => keySaid.has(k)));
 
-  /* THE OTHER TWO PADS ARE STILL COVERED, in the note under the table. The
-     shapes are there because a kid on a DualSense reported hunting for a button
-     called B; the sprint trigger is there because the table above now says RT,
-     which a PlayStation pad does not have either. */
+  /* THE OTHER TWO PADS ARE STILL COVERED, and the cover moved when the topic
+     split. The shapes are there because a kid on a DualSense reported hunting
+     for a button called B; the sprint trigger is there because the table says
+     RT, which a PlayStation pad does not have either. That note belongs to no
+     one section, so it lives in "Good to know" now, and the DRAWN PAD in the
+     dragon and arena topics shows the same shapes as a picture. Either would
+     do; both is the point, so this asks the whole panel rather than one cut of
+     it. */
+  const gtk = html.indexOf('<span class="ht-title">Good to know</span>');
+  const note = gtk < 0 ? '' : html.slice(gtk, html.indexOf('</details>', gtk));
   ok('...the note still names the PlayStation shapes',
-    ['✕', '□', '△'].every((glyph) => sec.includes(glyph)));
+    ['✕', '□', '△'].every((glyph) => note.includes(glyph)));
   ok('...and the PlayStation sprint trigger, which the table cannot show',
-    sec.includes(PROMPTS.playstation.sprint));
+    note.includes(PROMPTS.playstation.sprint));
 }
 
 console.log('\n--- the "On a phone" clip, and the gesture it exists for ---');

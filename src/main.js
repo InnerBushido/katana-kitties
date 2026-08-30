@@ -1551,10 +1551,36 @@ class Game {
       else if (img.loading === 'lazy') img.loading = 'eager';
     };
     const done = (img) => img.complete && img.naturalWidth > 0;
-    // A topic opening grabs its own images immediately, ahead of the queue.
+    /* A CLIP STARTS OVER EVERY TIME ITS TOPIC IS OPENED, WITHOUT FETCHING IT
+       AGAIN. A GIF keeps animating inside a collapsed <details> — nothing stops
+       it — so by the time a child opens the dragon topic for the second time
+       she is joining a twenty-second clip halfway through, in the middle of a
+       beat, with a caption bar talking about a button that was pressed before
+       she got there. Every clip in this panel is a lesson with a beginning, and
+       arriving late loses the beginning.
+       THE FRAGMENT IS THE TRICK, AND IT IS NOT A HACK FOR ITS OWN SAKE. An
+       `<img>` only restarts a GIF when its `src` STRING changes, and the two
+       obvious ways to change it are both worse: clearing it and setting it back
+       flashes a broken image, and a cache-busting QUERY is a different resource
+       — that one really would pull two megabytes down a phone every time a
+       child opened a topic. A fragment changes the string and is stripped
+       before the request is made, so it is the same resource and the body
+       comes out of cache. Measured on the dev server it is still a request, at
+       most a revalidation with no body; on the deployed build it is a memory
+       cache hit. Either way nothing is re-downloaded.
+       Both edges on purpose: closing restarts it too, so the clip is at frame
+       one and paused-in-effect behind a shut card rather than running unwatched
+       for as long as Help is open. */
+    let restarts = 0;
     document.querySelectorAll('#panel-help details.help-card').forEach((card) => {
       card.addEventListener('toggle', () => {
         if (card.open) card.querySelectorAll('img[data-help-gif], img[loading]').forEach(load);
+        restarts++;
+        card.querySelectorAll('img[data-help-gif]').forEach((img) => {
+          /* Only one that has actually arrived. Rewinding an image that is
+             still downloading would cancel it and put it back on the queue. */
+          if (done(img)) img.src = `${img.dataset.helpGif}#r${restarts}`;
+        });
       });
     });
     // Background: warm every image in document order, each only once the last has
