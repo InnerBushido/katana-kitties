@@ -11079,6 +11079,30 @@ console.log('\n--- one press is not enough, and one player drives ---');
   const worldQuoted = /# (\d+) checks: world/.exec(claude)?.[1];
   ok('...and the same world-check total as each other',
     !!worldQuoted && proj.includes(`${worldQuoted} checks: world`), worldQuoted);
+
+  /* THE GENERATED TABLES ARE THE BACKSTOP TO A HOOK, and a backstop is the
+     whole reason to have this here rather than only in `.githooks/pre-commit`:
+     a fresh clone has not run `git config core.hooksPath .githooks`, and the
+     first thing anybody does in a fresh clone is change a number. This is the
+     one check in the register block that would notice.
+
+     IMPORTED, NOT SPAWNED. `execFileSync('node', ...)` would make the slowest
+     assertion in this file a documentation one, and the slowest assertion is
+     the one that gets deleted. `doc-sync` guards its own CLI on argv, so
+     importing it renders and returns without touching the file. */
+  const { staleBlocks } = await import('./doc-sync.mjs');
+  const stale = staleBlocks(proj);
+  ok('...and its generated tables are in step with the code',
+    stale.length === 0,
+    stale.length ? `stale: ${stale.join(' ')} — run \`npm run docs\`` : 'numbers keyboard pads');
+
+  /* The markers are what makes the block above a NO-OP rather than a lie: with
+     the pair deleted, `splice` throws and this fails loudly. Naming them here
+     as well means the failure says WHICH doc lost them. */
+  for (const id of ['numbers', 'keyboard', 'pads']) {
+    ok(`...and still carries its <!-- doc-sync:${id} --> markers`,
+      proj.includes(`<!-- doc-sync:${id} -->`) && proj.includes(`<!-- /doc-sync:${id} -->`));
+  }
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150
