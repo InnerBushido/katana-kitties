@@ -11090,19 +11090,37 @@ console.log('\n--- one press is not enough, and one player drives ---');
      assertion in this file a documentation one, and the slowest assertion is
      the one that gets deleted. `doc-sync` guards its own CLI on argv, so
      importing it renders and returns without touching the file. */
-  const { staleBlocks } = await import('./doc-sync.mjs');
-  const stale = staleBlocks(proj);
+  const { staleBlocks, TARGETS } = await import('./doc-sync.mjs');
+  const stale = staleBlocks();
   ok('...and its generated tables are in step with the code',
     stale.length === 0,
-    stale.length ? `stale: ${stale.join(' ')} — run \`npm run docs\`` : 'numbers keyboard pads');
+    stale.length ? `stale: ${stale.join(' ')} — run \`npm run docs\`` : `${TARGETS.length} files`);
 
   /* The markers are what makes the block above a NO-OP rather than a lie: with
-     the pair deleted, `splice` throws and this fails loudly. Naming them here
-     as well means the failure says WHICH doc lost them. */
-  for (const id of ['numbers', 'keyboard', 'pads']) {
-    ok(`...and still carries its <!-- doc-sync:${id} --> markers`,
-      proj.includes(`<!-- doc-sync:${id} -->`) && proj.includes(`<!-- /doc-sync:${id} -->`));
+     a pair deleted, `splice` throws and this fails loudly. Naming them here as
+     well means the failure says WHICH file lost them — and the page's source is
+     checked as hard as the doc, because it is the copy people are SENT. */
+  for (const [file, blocks] of TARGETS) {
+    const text = readFileSync(new URL(file, root), 'utf8');
+    const lost = Object.keys(blocks).filter((id) =>
+      !text.includes(`<!-- doc-sync:${id} -->`) || !text.includes(`<!-- /doc-sync:${id} -->`));
+    ok(`...and ${file} still carries its doc-sync markers`, lost.length === 0,
+      lost.length ? lost.join(' ') : Object.keys(blocks).join(' '));
   }
+
+  /* THE PUBLISHED PAGE IS A SECOND COPY AND HAS ITS OWN WAY OF GOING STALE.
+     doc-sync keeps its TABLES true, but nothing mechanical can mirror a
+     paragraph, and nothing in this repo can push a file to claude.ai — that
+     needs the Artifact tool. So the check is the one thing a script CAN do:
+     compare hashes against what was recorded at the last publish, and say a
+     publish is owed. It caught the page sitting three revisions behind on the
+     day it was written (1805 checks against 1888). */
+  const { artifactStatus } = await import('./artifact-sync.mjs');
+  const art = artifactStatus();
+  ok('the published page has been re-published since its source last changed',
+    !art.pageStale, art.pageStale ? 'run `npm run artifact` for what to do' : art.publishedAt);
+  ok('...and has been revised since PROJECT.md last changed',
+    !art.sourceStale, art.sourceStale ? 'PROJECT.md has moved ahead of the page' : 'in step');
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

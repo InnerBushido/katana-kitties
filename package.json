@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "docs": "node tools/doc-sync.mjs",
-    "check": "node tools/world-check.mjs && node tools/pad-check.mjs"
+    "check": "node tools/world-check.mjs && node tools/pad-check.mjs",
+    "artifact": "node tools/artifact-sync.mjs"
   },
   "devDependencies": {
     "vite": "^8.2.0"

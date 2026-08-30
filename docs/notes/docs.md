@@ -24,6 +24,10 @@ That covers:
 - **a rule that must not break**, which goes in the non-negotiables in
   [CLAUDE.md](../../CLAUDE.md) *and* in the God Doc's §9.
 
+**And the change goes in the published copy too** — see *The God Doc has a twin*
+below. That is not a separate rule; it is the same one, applied to the copy that
+actually leaves the building.
+
 **The test is "would somebody rediscover this by reading the code?"** A new
 system, a refactor, a bug fix: no line. `git log` is the session log and the
 design notes carry the reasoning. But a Vercel branch alias, a Steam page, an
@@ -47,12 +51,20 @@ when the button is Y — and when that was finally fixed, the God Doc's controls
 table did not even have a Joy-Con column to be wrong. Nothing anywhere would
 have noticed either way.
 
-So [tools/doc-sync.mjs](../../tools/doc-sync.mjs) writes them:
+So [tools/doc-sync.mjs](../../tools/doc-sync.mjs) writes them — **into both
+copies**, the Markdown one and the published one:
 
 ```bash
 npm run docs                      # rewrite the generated blocks
 node tools/doc-sync.mjs --check   # say whether they are stale, change nothing
 ```
+
+The words therefore exist **once**, as data, and two renderers turn them into
+Markdown and into the page's own HTML. A second copy of the content, however
+carefully written, is a second thing to forget — which is exactly what the
+published page turned out to be. The same `<!-- doc-sync:id -->` comment syntax
+works in Markdown and in HTML, which is the only reason one splice function
+serves both.
 
 **It owns the tables and nothing else.** Everything between a
 `<!-- doc-sync:<id> -->` / `<!-- /doc-sync:<id> -->` pair is regenerated; every
@@ -102,9 +114,10 @@ it is declared and the tool stops, rather than printing last year's number.
 
 | where | when | what it does |
 | --- | --- | --- |
-| `.githooks/pre-commit` | every commit that touches `input.js` or `player.js` | regenerates and re-stages `PROJECT.md` |
-| `node tools/world-check.mjs` | whenever anybody runs it | fails if a block is stale, or if the markers are gone |
-| `npm run docs` | by hand | the same thing, deliberately |
+| `.githooks/pre-commit` | every commit touching `input.js`, `player.js` or `PROJECT.md` | regenerates and re-stages both files; **warns** if the page owes a publish |
+| `node tools/world-check.mjs` | whenever anybody runs it | **fails** if a block is stale, if markers are gone, or if the page owes a publish |
+| `npm run docs` | by hand | regenerate both files |
+| `npm run artifact` | by hand | say whether the published page is current, and what to do if not |
 
 **The hook regenerates rather than refusing.** A hook that says "run
 `npm run docs` and try again" costs a round trip to do a thing it could have
@@ -131,6 +144,103 @@ assertion in that file a documentation one, and the slowest assertion is the one
 that gets deleted. `doc-sync` guards its CLI on `argv`, so importing it renders
 and returns without touching the file.
 
+## The God Doc has a twin, and the twin is the copy people are sent
+
+PROJECT.md's own header links a **published page** at claude.ai. That link is
+the thing a person is actually handed — a colleague, a friend, anyone who is not
+going to clone a repository to read a cheat sheet. It is the copy that leaves
+the building, and it is therefore the copy that matters most when it is wrong.
+
+**It was wrong.** When this was written the page claimed **1805** world-check
+assertions against an actual 1888, **284** pad-check against 286, and described
+the repository as **private** when it is public. Three revisions and one plain
+error, live, on the link. Nothing noticed, because nothing was looking and
+because the page had no source in the repository at all — it had been published
+straight out of a session and then existed only on the server.
+
+So, three changes, in the order they matter:
+
+**The source lives in the repo now**, at
+[docs/artifact/project-page.html](../../docs/artifact/project-page.html). This
+is the fix that makes the other two possible. A published page with no source is
+a file nobody can diff, nobody can review, and nobody can regenerate; the only
+way to change it was to rewrite it from memory, which is how it drifted.
+
+**Its tables are generated into it**, by the same `npm run docs` that writes
+PROJECT.md's — including a `checks` block holding the two suite totals, because
+those totals are the exact thing that drifted. `world-check` already refused to
+let CLAUDE.md and PROJECT.md disagree with each other; this extends the same
+pinning to the third copy, which was the one nobody was looking at.
+
+**And [tools/artifact-sync.mjs](../../tools/artifact-sync.mjs) remembers what
+was published**, so a script can say when that has stopped being true:
+
+```bash
+npm run artifact                  # where things stand
+npm run artifact -- --stamp       # record that it has just been published
+```
+
+### Two hashes, because there are two ways to go stale
+
+`docs/artifact/published.json` is committed, so the answer to *"is the page
+current"* lives in the repository rather than in somebody's memory of a session.
+
+| stamp | what a mismatch means |
+| --- | --- |
+| `pageSha` | the page source has been edited — by hand or by `doc-sync` — and the **live page is behind it**. Mechanical and exact. |
+| `sourceSha` | **PROJECT.md has moved on** since the page was last revised, and somebody has to decide whether the page needs the same change. |
+
+The second one deliberately fires on changes that need no mirroring — a typo fix
+in PROJECT.md will trip it. **That is the right way round.** The cost of a false
+alarm is re-stamping; the cost of the other error is the page quietly lying to
+whoever was sent the link. `--stamp` after deciding no change was needed is a
+complete and honest answer.
+
+Hashes are taken with line endings normalised, because git converts them on
+checkout here and a stamp that fired on a stray `\r` would train everybody to
+re-stamp without reading — which is the only way this check can actually fail.
+
+### Nothing here can publish, and that is why it warns and world-check refuses
+
+Pushing a file to claude.ai needs the **Artifact tool**, which means an agent
+session. There is no CLI for it and this repository will never grow one. So the
+work is split at the line where a script stops being able to help:
+
+- **`pre-commit` warns.** Blocking the commit would leave somebody holding a
+  finished change they cannot land, because the thing they cannot do from a
+  terminal is exactly the thing being demanded. A hook that refuses what it
+  cannot help with is a hook people learn to bypass.
+- **`world-check` fails.** That is the right place for a refusal: it is the
+  register block, whose stated policy is enforcement over trust, and a stale
+  published page is precisely the failure that block exists to catch.
+- **The message is an instruction, not a complaint** — read the diff, mirror
+  what a reader needs, ask an agent session to republish *to the same URL*, then
+  `npm run artifact -- --stamp`. Non-negotiable 6, applied to a terminal.
+
+### Republishing is not the same as re-sharing
+
+**A publish does not change what people who already have the link can see.** The
+artifact is shared with anyone who has it, and a shared link stays pinned to the
+version it was pinned to — new publishes do not reach those viewers until the
+**share pin is moved**, from the page's own share menu. So a republish makes the
+page correct, and moving the pin makes it correct *for the people it was sent
+to*. Both, or the second one was the only one that mattered and it did not
+happen.
+
+### Pass the URL
+
+Republishing **must** pass the existing artifact URL. Publishing the same file
+without it creates a *second* artifact at a new address, which is worse than
+doing nothing: the link in PROJECT.md then points at an abandoned page while a
+correct one sits somewhere nobody is looking. The URL is in
+`docs/artifact/published.json`, which is where `npm run artifact` prints it from.
+
+**There is a second artifact**, *Four Ways to Play Apart*, linked from §11 — the
+networking plan. It has no source in the repo and no stamp, because it is a
+finished plan rather than a living document: it records a decision made once and
+is not expected to track anything. If it ever starts tracking `networking.md`,
+give it the same treatment.
+
 ## What the register already enforces
 
 The block at the end of `world-check.mjs` reads `PROJECT.md` and fails if:
@@ -141,7 +251,8 @@ The block at the end of `world-check.mjs` reads `PROJECT.md` and fails if:
 - the capture rig's own README is not pointed at;
 - the check totals in `CLAUDE.md` and `PROJECT.md` disagree;
 - the **Last updated** line is missing or unparseable;
-- a generated block is stale, or has lost its markers.
+- a generated block is stale, or has lost its markers — **in either file**;
+- the published page is behind its own source, or behind PROJECT.md.
 
 **What is checked is coverage, not prose.** What any of those documents *says*
 is not that file's business and could not be asserted anyway. `tools/capture/*`

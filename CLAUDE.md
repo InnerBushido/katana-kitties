@@ -27,10 +27,12 @@ look. Everything else is one level down and read on demand.
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
 npm run dev -- --host         # ...and on a phone on the same wifi, at the Network: URL it prints
-node tools/world-check.mjs    # 1888 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 1889 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 286 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
-npm run docs                  # regenerate PROJECT.md's controls + balance tables from the code
+npm run docs                  # regenerate the controls + balance tables, in PROJECT.md AND
+                              #   in docs/artifact/project-page.html (the published twin)
+npm run artifact              # is the published page behind? says what to do if so
 ```
 
 **`alpha` is the testing channel** — an ordinary branch that only ever
@@ -133,10 +135,16 @@ src/
   entities/  player  dragon  ryuuseki  panda  critter  angel  leader  satan
              griffin  orb  powerorb  dragonball  prop  shrine  stall
 tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
-             doc-sync.mjs (writes PROJECT.md's controls and balance tables out
-               of input.js and player.js, between `<!-- doc-sync -->` markers.
-               A pre-commit hook runs it; world-check fails if it is stale.
-               See docs/notes/docs.md)
+             doc-sync.mjs (writes the controls and balance tables out of
+               input.js and player.js, between `<!-- doc-sync -->` markers, into
+               BOTH PROJECT.md and docs/artifact/project-page.html — the source
+               of the published page. A pre-commit hook runs it; world-check
+               fails if either is stale. See docs/notes/docs.md)
+             artifact-sync.mjs (holds the hash of what was last PUBLISHED to
+               claude.ai, and fails world-check when the page falls behind its
+               source or behind PROJECT.md. It cannot publish — that needs the
+               Artifact tool, so an agent session does it and then runs
+               `npm run artifact -- --stamp`)
              gif.mjs (the same, for GIF — interframe differencing, which is why
                a Help clip must be filmed on a pinned camera; gif-selftest.mjs
                reads its output back. See docs/notes/help.md)
@@ -193,7 +201,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 1888 assertions and why almost none of them are about
+  why `world-check` is 1889 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have
@@ -210,7 +218,12 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   out of date is worse than none — it teaches somebody a thing that is no longer
   true. **The inputs and the balance numbers are machine-kept**: `npm run docs`
   writes those two tables, a pre-commit hook re-runs it, and `world-check` fails
-  if they have drifted. → [docs/notes/docs.md](docs/notes/docs.md)
+  if they have drifted. **PROJECT.md also has a PUBLISHED twin** at claude.ai —
+  the link a person is actually sent — whose source is
+  `docs/artifact/project-page.html`. A change that earns a line in PROJECT.md
+  earns the same line there, and then a republish **to the same URL**; the page
+  had drifted three revisions and one wrong fact before anybody looked.
+  → [docs/notes/docs.md](docs/notes/docs.md)
 - **Git identity is pinned repo-locally to `InnerBushido`**, and pushes go
   through the `gh` CLI credential helper. `gh` may be signed in as a work
   account — check `gh auth status` before pushing.
