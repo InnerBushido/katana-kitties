@@ -468,25 +468,37 @@ which is a small argument for documentation as a test.
 
 ## What is not done
 
-Every clip this file once listed as missing now exists. What is left is a
-decision and a complaint, neither of which is a clip.
+Every clip this file once listed as missing now exists.
 
-- **The shot scripts are not in the repo, and that means no clip is
-  reproducible.** The master frames are hundreds of megabytes of raw RGBA in a
-  browser tab and die with it; the only thing that could ever re-cut a clip is
-  the script that drove it, and those live in a session scratchpad that gets
-  swept. **The script that filmed `move-keys.gif` and `move-pad.gif` is already
-  gone** — those two would have to be re-choreographed, not re-rendered. Note
-  which way it cuts before deciding: re-*encoding* one master at several sizes
-  is cheap and the results are comparable (`move-air.gif` was encoded four times
-  off one take), while re-*shooting* is not — the kitten lands on different
-  frames and the interframe diff finds different work. Filming at 936 and
-  publishing at 512 is right and should stay; the argument is only about where
-  `phone-shot.js` and its two hundred lines of hard-won comments should live.
-  Against: ~1500 lines of dev-only tooling that never ships and can only be run
-  through a browser MCP, not from a terminal.
+> **A correction, and it matters.** This section used to say that the shot
+> scripts lived only in a session scratchpad and that *"the script that filmed
+> `move-keys.gif` and `move-pad.gif` is already gone"*. **That was wrong.**
+> Richard pushed back on it, and he was right to: `move-keys-shot.js`,
+> `move-pad-shot.js`, `panda-shot.js`, `dojo-shot.js` and `dealer-shot.js` were
+> all still on disk in an older session's scratchpad, and the whole rig is now
+> checked in at [tools/capture/](../../tools/capture/README.md).
+>
+> The lesson is not "the scripts survived". It is that **a claim about
+> something being lost is a claim to go and check**, and this one was made from
+> the shape of the situation rather than from looking. Ten of the fifteen clips
+> can be re-cut today because that check finally happened.
+
+Two things are open. Neither is a clip.
+
+- **Five clips still have no script.** `ability-ward`, `ability-charge`,
+  `ability-dive`, `ability-cross` and `feast-eat` were filmed before the rig
+  existed, and nothing on disk or in any transcript can reproduce them — they
+  would have to be re-choreographed, not re-rendered. If any of them ever needs
+  re-cutting, that is the real cost. Worth knowing which way this cuts:
+  re-*encoding* one master at several sizes is cheap and the results are
+  directly comparable (`move-air.gif` was encoded four times off one take,
+  `phone.gif` seven), while re-*shooting* is not — the kitten lands on different
+  frames and the interframe diff finds different work. **Film at 936 wide and
+  publish at 512**: roughly 3.3 real pixels average into each output pixel, and
+  that averaging is the anti-aliasing.
 - **The touch overlay's glyphs name buttons no phone has.** `Y / ZR / X / A / B`
-  are drawn on a touchscreen where nothing is labelled anything. This is the
-  same complaint that was already made about `ZL`/`ZR` in the keymap table, and
-  it is a **game** change rather than a Help one — it needs its own pass and
-  `pad-check` updates, so it has deliberately not been done here.
+  are drawn on a touchscreen where nothing is labelled anything. Richard has
+  looked at this and **decided to leave it**: `ZR` reads acceptably as a mobile
+  RUN button, and the Joy-Con `SR`/`ZR` question underneath it is moot while the
+  Switch 2 pads are not being documented. Recorded so the next session does not
+  re-open it as a bug.
