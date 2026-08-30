@@ -26,6 +26,75 @@ alias is the one we wanted, but `vercel` commands about this project need
 `--scope dream-dojo` if the CLI's default ever changes. `.vercel/project.json`
 holds the link and is gitignored.
 
+## Testing a branch from anywhere: push it, and Vercel builds a preview
+
+**Every branch pushed to GitHub gets its own deployment, automatically.** Asked
+for when Richard was away from home and wanted the unmerged work on his phone;
+`alpha` was pushed and a **Preview** deployment was Ready inside a minute, at a
+stable alias that does not move when the branch is pushed again:
+
+```
+https://katana-kitties-git-<branch>-dream-dojo.vercel.app
+```
+
+That is `<project>-git-<branch>-<scope>`, and it always points at the tip of
+that branch. It is strictly better than any tunnel for this: no laptop has to be
+awake, it is real HTTPS, and it is the same build path production uses.
+
+**THE GIT CONNECTION IS EASY TO TALK YOURSELF OUT OF BELIEVING, AND IT COST
+TIME.** `vercel ls` showed every deployment as `Production`, made by a *user*
+rather than by `github`, which reads exactly like a project that is only ever
+deployed by hand — and this session concluded, out loud and wrongly, that the
+integration was not connected. It is. The list looked that way for the boring
+reason that **`main` was the only branch that had ever existed on the remote**,
+and CLI production deploys are how it gets released. The lesson is the same one
+[help.md](help.md) records about a lost script: *the shape of the evidence is
+not the evidence.* One push settled in sixty seconds what an hour of inference
+had got backwards.
+
+### Previews are behind Vercel SSO, and production is not
+
+A preview URL answers **`302` to `vercel.com/sso-api`**, so a phone opening it
+gets a login wall. Production answers `200` to anybody. That asymmetry is
+Vercel's default Deployment Protection and it is a sensible one — an unreleased
+build should not be a public link — but it is a surprise on a phone in a café.
+Three ways through, in increasing order of how much they give away:
+
+1. **Sign in to Vercel once on the device.** Nothing to change; the cookie
+   sticks. Right answer when the tester is Richard.
+2. **Turn Vercel Authentication off for Preview** in the project settings, which
+   makes every branch URL public and shareable. Right answer only if a preview
+   link is something you would be happy posting.
+3. **A second project** (`katana-kitties-alpha`) deployed to *its own*
+   production, which is public by default and leaves this project alone.
+
+**Nothing here changes production.** A preview never takes the
+`katana-kitties.vercel.app` alias, so the game the girls play is untouched by
+any amount of branch pushing — which is the property that makes this the safe
+way to test.
+
+## Why NOT to tunnel the dev server, and what to tunnel instead
+
+`cloudflared tunnel --url http://localhost:5173` gives a public HTTPS address
+with no account, and it is the obvious-looking answer to *"can I reach my laptop
+from the internet"*. Two things make it the wrong one here.
+
+**`npm run dev` exposes a write endpoint.** The balance page's save is a
+`configureServer` hook that POSTs a file into the source tree **with no
+authentication** — deliberately, because it was only ever meant to be reachable
+from `localhost`. Behind a public tunnel that is an unauthenticated write into
+the repo from anywhere on the internet. If you tunnel anything, tunnel
+**`npm run preview`**: it serves the built `dist`, the hook does not exist in a
+build, and there is nothing to POST to.
+
+**Vite refuses a hostname it does not know**, answering *"Blocked request. This
+host is not allowed"* — so a tunnel also needs `server.allowedHosts` in
+`vite.config.js` before it will serve anything at all.
+
+Both are surmountable, and neither is worth it when a branch push does the job
+without the laptop being awake. **Tunnel only when you need HMR against a real
+phone**; use a preview deployment for everything else.
+
 **19MB OF DEAD SPRITE SHEETS ARE OUT OF `public/`, AND WHERE THEY WENT IS THE
 POINT.** `ember_grid.png`, `frost_grid_v2.png` and the two `kitten_*_sheet.png`
 are referenced only from comments, but `public/` is copied wholesale into

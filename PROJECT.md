@@ -116,6 +116,27 @@ because a phone has no `` ` `` key. → [mobile.md](docs/notes/mobile.md)
 
 Just open the URL. Vercel deploys `main` on push.
 
+### On a phone that is NOT on your Wi-Fi — push a branch
+
+**Every branch pushed to GitHub gets its own Vercel deployment**, at a stable
+alias that always points at that branch's tip:
+
+```
+https://katana-kitties-git-<branch>-dream-dojo.vercel.app
+```
+
+No laptop has to be awake, it is real HTTPS, and **it never takes the production
+alias** — so the game the girls play is untouched by any amount of branch
+pushing. **Preview URLs are behind Vercel SSO**, so a phone gets a login wall
+once; sign in, or turn Vercel Authentication off for Preview if the link needs
+to be shareable. → [hosting.md](docs/notes/hosting.md)
+
+**Do not tunnel `npm run dev`** to solve this. Its balance-page save endpoint
+POSTs a file into the source tree with no authentication, which behind a public
+tunnel is an unauthenticated write into the repo from anywhere. Tunnel
+`npm run preview` if you must — and note Vite refuses an unknown hostname until
+`server.allowedHosts` names it.
+
 ### On a TV, or another PC
 
 The Steam non-Steam shortcut plus **Steam Link** works today, one remote player.
