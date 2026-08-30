@@ -1,0 +1,1178 @@
+<title>Katana Kitties Field Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;900&family=JetBrains+Mono:wght@400;700&display=swap">
+
+<style>
+/* ---------------------------------------------------------------------------
+   The palette is the GAME'S palette, not a palette chosen for this page.
+   These six values are lifted out of tools/capture/movekit.js and
+   src/style.css, and they in turn came off the title art -- which is a
+   nine-year-old's drawing, redrawn faithfully. Non-negotiable #2.
+--------------------------------------------------------------------------- */
+:root {
+  --ink: #1d1216;
+  --paper: #fbeed2;
+  --paper2: #f2ddb4;
+  --gold: #f5c341;
+  --ember: #ff8a3d;
+  --vermillion: #e0512c;
+  --pink: #e87c8a;
+
+  --ground: var(--paper);
+  --surface: #fff8e8;
+  --surface-2: var(--paper2);
+  --text: var(--ink);
+  --text-dim: #6a5450;
+  --rule: var(--ink);
+  --rule-soft: rgba(29, 18, 22, 0.16);
+  --shadow: var(--ink);
+  --accent: var(--vermillion);
+  --chip-bg: var(--gold);
+  --code-bg: #2a1d22;
+  --code-text: #fbeed2;
+
+  --maxw: 1120px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #140e11;
+    --surface: #221619;
+    --surface-2: #2c1d21;
+    --text: #f6e8cd;
+    --text-dim: #b09a90;
+    --rule: #6d5348;
+    --rule-soft: rgba(246, 232, 205, 0.16);
+    --shadow: #000;
+    --accent: #ff9a6b;
+    --chip-bg: var(--gold);
+    --code-bg: #0d0709;
+    --code-text: #f6e8cd;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground: #140e11;
+  --surface: #221619;
+  --surface-2: #2c1d21;
+  --text: #f6e8cd;
+  --text-dim: #b09a90;
+  --rule: #6d5348;
+  --rule-soft: rgba(246, 232, 205, 0.16);
+  --shadow: #000;
+  --accent: #ff9a6b;
+  --chip-bg: var(--gold);
+  --code-bg: #0d0709;
+  --code-text: #f6e8cd;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text);
+  font: 400 16px/1.62 'Nunito', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 32px 20px 96px;
+}
+
+/* --------------------------------- masthead ------------------------------ */
+
+.mast {
+  display: grid;
+  gap: 18px;
+  padding: 26px 26px 24px;
+  border: 3px solid var(--rule);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 5px 0 var(--shadow);
+  margin-bottom: 14px;
+}
+
+.mast h1 {
+  margin: 0;
+  font-weight: 900;
+  font-size: clamp(30px, 6vw, 52px);
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.mast h1 em {
+  font-style: normal;
+  color: var(--accent);
+  display: block;
+  font-size: 0.44em;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-top: 10px;
+  font-weight: 800;
+}
+
+.mast .lede {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 17px;
+  color: var(--text-dim);
+}
+.mast .lede b { color: var(--text); font-weight: 800; }
+
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  align-self: start;
+  font: 700 12.5px/1 'JetBrains Mono', ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 8px 12px;
+  border: 2.5px solid var(--rule);
+  border-radius: 8px;
+  background: var(--chip-bg);
+  color: var(--ink);
+  box-shadow: 0 3px 0 var(--shadow);
+}
+.stamp span { opacity: 0.72; font-weight: 400; }
+
+.links { display: flex; flex-wrap: wrap; gap: 10px; }
+.links a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--text);
+  font-weight: 800;
+  font-size: 14.5px;
+  padding: 9px 14px;
+  border: 2.5px solid var(--rule);
+  border-radius: 9px;
+  background: var(--surface-2);
+  box-shadow: 0 3px 0 var(--shadow);
+  transition: transform .1s ease, box-shadow .1s ease;
+}
+.links a i {
+  font-style: normal;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+}
+.links a:hover, .links a:focus-visible {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--shadow);
+}
+.links a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+/* ------------------------------- audience rail --------------------------- */
+
+.who {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  margin: 0 0 30px;
+}
+.who div {
+  padding: 12px 14px;
+  border: 2.5px dashed var(--rule-soft);
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.who b { display: block; font-weight: 900; font-size: 13px; letter-spacing: .02em; }
+.who a { color: var(--accent); font-weight: 800; text-decoration: none; border-bottom: 2px solid currentColor; }
+
+/* ---------------------------------- cards -------------------------------- */
+
+section {
+  border: 3px solid var(--rule);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 5px 0 var(--shadow);
+  padding: 22px 24px 26px;
+  margin: 0 0 22px;
+  scroll-margin-top: 18px;
+}
+
+h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 6px;
+  font-size: clamp(20px, 3vw, 26px);
+  font-weight: 900;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+h2 .n {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px; height: 32px;
+  font: 900 15px/1 'JetBrains Mono', monospace;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 8px;
+}
+:root[data-theme="dark"] h2 .n { background: var(--gold); color: #140e11; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) h2 .n { background: var(--gold); color: #140e11; }
+}
+
+h2 + .sub {
+  margin: 0 0 18px 44px;
+  color: var(--text-dim);
+  font-size: 14.5px;
+  max-width: 68ch;
+}
+
+h3 {
+  margin: 26px 0 10px;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+h3:first-of-type { margin-top: 8px; }
+
+p { margin: 0 0 13px; max-width: 74ch; }
+p:last-child { margin-bottom: 0; }
+b, strong { font-weight: 800; }
+a { color: var(--accent); }
+
+ul { margin: 0 0 13px; padding-left: 20px; max-width: 74ch; }
+li { margin-bottom: 7px; }
+li::marker { color: var(--accent); }
+
+/* --------------------------------- code ---------------------------------- */
+
+pre {
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  background: var(--code-bg);
+  color: var(--code-text);
+  border: 2.5px solid var(--rule);
+  border-radius: 10px;
+  overflow-x: auto;
+  font: 400 13.5px/1.7 'JetBrains Mono', ui-monospace, monospace;
+  box-shadow: 0 3px 0 var(--shadow);
+}
+pre .c { color: #9b8a72; }
+pre .f { color: var(--gold); }
+code {
+  font: 400 0.88em/1.4 'JetBrains Mono', ui-monospace, monospace;
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--rule-soft);
+}
+pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+
+/* --------------------------------- tables -------------------------------- */
+
+.tw { overflow-x: auto; margin: 0 0 16px; }
+table {
+  width: 100%;
+  min-width: 480px;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  font-variant-numeric: tabular-nums;
+}
+th, td {
+  text-align: left;
+  padding: 9px 12px 9px 0;
+  border-bottom: 1.5px solid var(--rule-soft);
+  vertical-align: top;
+}
+th {
+  font-weight: 900;
+  font-size: 11.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border-bottom-width: 2.5px;
+  border-bottom-color: var(--rule);
+}
+tbody tr:last-child td { border-bottom: 0; }
+td:first-child, th:first-child { padding-left: 0; }
+.num { font-family: 'JetBrains Mono', monospace; font-weight: 700; white-space: nowrap; }
+
+/* ------------------------------- key chips ------------------------------- */
+/* Exactly the Help panel's own <kbd>: 2px ink border, a hard 2px drop. */
+
+kbd {
+  display: inline-block;
+  font: 800 12px/1.55 'Nunito', sans-serif;
+  min-width: 20px;
+  text-align: center;
+  padding: 0 6px;
+  margin: 1px 2px 1px 0;
+  border: 2px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: 0 2px 0 var(--rule);
+}
+kbd.hot { background: var(--ember); color: var(--ink); border-color: var(--ink); box-shadow: 0 2px 0 var(--ink); }
+kbd.gold { background: var(--gold); color: var(--ink); border-color: var(--ink); box-shadow: 0 2px 0 var(--ink); }
+
+/* ------------------------------- callouts -------------------------------- */
+
+.note {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-left: 6px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  background: var(--surface-2);
+  font-size: 14.5px;
+  max-width: none;
+}
+.note.gold { border-left-color: var(--gold); }
+.note.pink { border-left-color: var(--pink); }
+.note p { max-width: 78ch; }
+.note > :last-child { margin-bottom: 0; }
+.note .hd {
+  display: block;
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  color: var(--accent);
+}
+.note.gold .hd { color: #a37a12; }
+:root[data-theme="dark"] .note.gold .hd { color: var(--gold); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .note.gold .hd { color: var(--gold); }
+}
+.note.pink .hd { color: #b3505f; }
+:root[data-theme="dark"] .note.pink .hd { color: var(--pink); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .note.pink .hd { color: var(--pink); }
+}
+
+/* --------------------------------- catpad -------------------------------- */
+
+.pad-block {
+  display: grid;
+  grid-template-columns: minmax(200px, 290px) 1fr;
+  gap: 24px;
+  align-items: center;
+  margin: 10px 0 18px;
+  padding: 18px;
+  border: 2.5px dashed var(--rule-soft);
+  border-radius: 12px;
+}
+@media (max-width: 620px) { .pad-block { grid-template-columns: 1fr; } }
+.pad-block svg { display: block; width: 100%; height: auto; }
+/* The pad keeps its own colours in both themes: it is a drawing of a physical
+   object, and a controller that changed colour with the page would read as a
+   different controller. */
+.cp-shell { fill: #1c141a; stroke: #f2ddb4; stroke-width: 4.8; }
+.cp-pink { fill: rgba(232, 124, 138, 0.78); }
+.cp-hole { fill: rgba(251, 238, 210, 0.18); stroke: rgba(251, 238, 210, 0.62); stroke-width: 1.6; }
+.cp-glyph { fill: #fbeed2; font: 900 13px 'Nunito', sans-serif; text-anchor: middle; }
+.cp-small { font-size: 8.5px; letter-spacing: 0.5px; }
+.cp-sq { font-size: 17px; }
+.cp-well { fill: rgba(12, 8, 12, 0.95); stroke: rgba(251, 238, 210, 0.5); stroke-width: 1.5; }
+.cp-knob { fill: rgba(251, 238, 210, 0.82); stroke: #1d1216; stroke-width: 1.7; }
+.cp-eye { fill: rgba(251, 238, 210, 0.9); stroke: #1d1216; stroke-width: 1.5; }
+.pad-legend { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.pad-legend li { display: flex; gap: 10px; align-items: baseline; font-size: 14px; margin: 0; }
+.pad-legend .g {
+  flex: none; min-width: 34px; text-align: center;
+  font: 900 13px/1.5 'Nunito', sans-serif;
+  background: var(--ember); color: var(--ink);
+  border: 2px solid var(--ink); border-radius: 5px;
+  box-shadow: 0 2px 0 var(--ink);
+}
+.pad-legend i { font-style: italic; opacity: .68; font-size: 12.5px; }
+
+/* --------------------------------- rules --------------------------------- */
+
+ol.rules { counter-reset: r; list-style: none; margin: 0; padding: 0; max-width: 82ch; }
+ol.rules li {
+  counter-increment: r;
+  position: relative;
+  padding-left: 40px;
+  margin-bottom: 12px;
+  font-size: 14.8px;
+}
+ol.rules li::before {
+  content: counter(r);
+  position: absolute; left: 0; top: 1px;
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  font: 900 13px/1 'JetBrains Mono', monospace;
+  border: 2.5px solid var(--rule);
+  border-radius: 7px;
+  background: var(--surface-2);
+}
+
+/* --------------------------------- docs ---------------------------------- */
+
+.docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 9px; }
+.docs div {
+  padding: 10px 12px;
+  border: 2px solid var(--rule-soft);
+  border-radius: 9px;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.docs code { background: none; border: 0; padding: 0; font-weight: 700; font-size: 12.5px; color: var(--accent); display: block; margin-bottom: 2px; }
+.docs span { color: var(--text-dim); }
+
+/* -------------------------------- verdicts ------------------------------- */
+
+.verdict {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+.verdict > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 14px;
+  align-items: start;
+  padding: 14px 16px;
+  border: 2.5px solid var(--rule);
+  border-radius: 11px;
+  background: var(--surface-2);
+}
+.verdict .tag {
+  grid-row: span 2;
+  align-self: center;
+  font: 900 11px/1 'JetBrains Mono', monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 7px 9px;
+  border-radius: 6px;
+  border: 2px solid var(--ink);
+  white-space: nowrap;
+}
+.verdict .yes { background: var(--ember); color: var(--ink); }
+.verdict .no  { background: var(--surface); color: var(--text-dim); border-color: var(--rule-soft); }
+.verdict .later { background: var(--gold); color: var(--ink); }
+/* On a phone the tag's column steals about a third of a 375px screen and the
+   verdict text ends up four words wide. Stack it instead. */
+@media (max-width: 560px) {
+  .verdict > div { grid-template-columns: 1fr; gap: 10px; }
+  .verdict .tag { grid-row: auto; justify-self: start; }
+}
+.verdict h4 { margin: 0 0 4px; font-size: 15.5px; font-weight: 900; }
+.verdict p { margin: 0; font-size: 14px; max-width: 70ch; }
+
+footer {
+  margin-top: 34px;
+  padding-top: 20px;
+  border-top: 3px solid var(--rule);
+  font-size: 13.5px;
+  color: var(--text-dim);
+}
+footer b { color: var(--text); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <div class="stamp">Last updated <span>·</span> 30 Aug 2026</div>
+  <h1>Katana Kitties<em>The whole project on one page</em></h1>
+  <p class="lede">A <b>split-screen co-op browser game for up to four players</b>: samurai kittens
+    knocking over a chain of floating Japanese islands, riding storm dragons between them, and
+    eventually fighting each other in a tournament ring in the sky. <b>three.js and nothing else at
+    runtime</b> — no engine, no physics library, no asset store, no character meshes. Everything you
+    can see is procedural or generated.</p>
+  <div class="links">
+    <a href="https://katana-kitties.vercel.app">Play it <i>vercel.app</i></a>
+    <a href="https://github.com/InnerBushido/katana-kitties">Source <i>github · public</i></a>
+    <a href="https://katana-kitties-git-alpha-dream-dojo.vercel.app">Alpha <i>the testing channel</i></a>
+    <a href="https://claude.ai/code/artifact/18bc9e73-7529-4b88-a28f-12dece97bc3b">Four Ways to Play Apart <i>the networking plan</i></a>
+  </div>
+</header>
+
+<div class="who">
+  <div><b>A person, understanding the project</b>You are in the right place. Top to bottom.</div>
+  <div><b>A person, wanting to play</b><a href="https://github.com/InnerBushido/katana-kitties#readme">README.md</a></div>
+  <div><b>An AI agent, starting a session</b><code>CLAUDE.md</code>, then the one note it points at</div>
+  <div><b>Anyone, wanting current state</b><code>HANDOFF.md</code> — and <code>git log</code>, which is the session log</div>
+</div>
+
+<section id="what">
+  <h2><span class="n">1</span> What it is, and who it is for</h2>
+  <p class="sub">Two of its features exist to teach mathematics. They are not decoration.</p>
+
+  <p>Made for — and partly <em>by</em> — Richard's nieces, nine and younger. The cat-head title menu
+    is a faithful redraw of one of their drawings, buttons and all. <b>The six clan leaders came off
+    a page of her character designs.</b> The name was hers too.</p>
+
+  <p>There is a second reason it exists. One of them was being taught sine, cosine and the unit
+    circle on graph paper, and this is that lesson made walkable: <b>the Kotodama Orb draws its own
+    working from the same two numbers that position it</b>, and the Dojo of the Turning Circle is a
+    unit circle you walk around until you <em>are</em> the point.</p>
+
+  <div class="tw"><table>
+    <tbody>
+      <tr><th>Stack</th><td>Vite 8 + three.js 0.185. Static build — no backend, no database, no environment variables.</td></tr>
+      <tr><th>First load</th><td class="num">~35 MB across 39 files, then cached</td></tr>
+      <tr><th>In the repo</th><td class="num">42 MB sprites · 21 MB help clips · 5.8 MB voices · 20 MB trailer (opt-in)</td></tr>
+      <tr><th>The world</th><td class="num">216 props · 6 clans · 7 dragon balls · 8 Powerup Kotodama · 15 help clips · 49 voice lines</td></tr>
+      <tr><th>Thresholds</th><td><b>80%</b> mischief opens the tournament. <b>100%</b> wakes the Kotodama and gets the ending.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="run">
+  <h2><span class="n">2</span> Run it, check it</h2>
+  <p class="sub">Two check suites, and a browser rule that is not negotiable.</p>
+
+<pre><code>npm install
+npm run dev        <span class="c"># http://localhost:5173 — then open it in FIREFOX</span>
+npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
+
+<!-- doc-sync:checks -->
+<pre><code>node tools/world-check.mjs    <span class="c"># 1889 checks: world, dragons, clans, sprites,</span>
+                              <span class="c"># tournament, consent, balance</span>
+node tools/pad-check.mjs      <span class="c"># 286 checks: controllers, keyboard sets,</span>
+                              <span class="c"># button prompts, the stuck-vJoy latch</span>
+npm run check                 <span class="c"># both of the above, in one line</span>
+npm run docs                  <span class="c"># this page's tables and PROJECT.md's, from the code</span>
+npm run artifact              <span class="c"># is this published page still current?</span></code></pre>
+<!-- /doc-sync:checks -->
+
+  <div class="note">
+    <span class="hd">Play it in Firefox</span>
+    <p>Chrome cannot read Joy-Con sticks through vJoy — the buttons work and the axes report
+      <code>0.00000</code> forever. It is a Chrome bug, unfixable from here, and it affects the
+      Joy2Win/vJoy route only. Every other pad is fine in any browser.</p>
+  </div>
+
+  <p><b>Run <code>world-check</code> after touching the world, dragons, clans, the tournament or
+    sprite directions.</b> It catches what still looks fine on screen: a grove that generates zero
+    canes, a clan buff that changes nothing, a sheet read in mirror image, a trade that quietly
+    destroys an orb. <b>Almost none of its assertions are about whether a number is <em>set</em></b>
+    — they are about whether behaviour actually <em>changed</em>.</p>
+</section>
+
+<section id="test">
+  <h2><span class="n">3</span> Test it — including on a phone</h2>
+  <p class="sub">The local build reaches a phone over Wi-Fi in one command, and fails silently in three ways.</p>
+
+  <h3>On a phone, over Wi-Fi</h3>
+<pre><code>npm run dev -- --host</code></pre>
+
+  <p><b>The <code>--</code> is not decorative</b> — it is what makes npm hand the flag to Vite
+    instead of eating it. Vite then prints a second address:</p>
+
+<pre><code>  ➜  Local:   http://localhost:5173/
+  ➜  <span class="f">Network: http://192.168.1.14:5173/</span>  Wi-Fi</code></pre>
+
+  <p><b>Type the Network one into the phone.</b> That is the whole procedure. Same Wi-Fi as the
+    laptop — the same SSID, not the guest network and not mobile data — and the address changes when
+    the router hands out a new lease, so read it off the terminal each time.
+    <code>.claude/launch.json</code> carries it as <code>katana-kitties-lan</code>.</p>
+
+  <div class="note gold">
+    <span class="hd">Three things break it, and all three fail the same way</span>
+    <p>A timeout, with no error message anywhere. In the order they happen:</p>
+    <ul>
+      <li><b>No <code>--host</code>.</b> Vite binds <code>127.0.0.1</code> only, and still reports
+        success. No <code>Network:</code> line in the terminal means this is it.</li>
+      <li><b>Windows Firewall blocking inbound Node.</b> Verified rather than assumed on the
+        development machine: four enabled inbound <em>Allow</em> rules for Node, scoped to the
+        <b>Public</b> profile, which is what the house Wi-Fi is classified as. Elsewhere, the fix is
+        one Allow rule — not turning the firewall off.</li>
+      <li><b>Router client isolation.</b> Usually off by default, usually on for a guest network.</li>
+    </ul>
+  </div>
+
+  <div class="note pink">
+    <span class="hd">One caveat</span>
+    <p><code>--host</code> also exposes <code>/tuning.html</code>, whose save endpoint POSTs a file
+      into the source tree with no authentication. Fine on a home network with two children on it.
+      Not fine in a café. Stop the server when the test is done.</p>
+  </div>
+
+  <h3>What to check once it is on the phone</h3>
+  <ul>
+    <li><b>Landscape.</b> Portrait is gated with a message rather than laid out badly.</li>
+    <li><b>The on-screen pad</b>, which only exists on a touch device. Double-tap <b>RUN</b> or
+      <b>RIDE</b> to lock it on.</li>
+    <li><b>The debug panel</b> — <b>five taps in the top-left corner</b> within 600 ms, because a
+      phone has no <kbd>`</kbd> key. Every row in it is tappable. Deliberately the same gesture
+      Android uses for developer options, and deliberately hard to stumble into mid-round.</li>
+  </ul>
+
+  <h3>Anywhere at all — the alpha channel</h3>
+  <p><b><code>alpha</code> is the testing channel.</b> An ordinary long-lived branch with one job:
+    it is the version other people are asked to play. Push to it and Vercel builds it within a
+    minute at a <b>stable</b> address that never changes.</p>
+
+<pre><code>git checkout alpha &amp;&amp; git merge main --ff-only   <span class="c"># alpha only ever FOLLOWS main</span>
+git push origin alpha</code></pre>
+
+  <p>That link is the whole channel — there is no Discord, no TestFlight, no Steam beta. A tester
+    opens the URL, or installs it to a phone's home screen and plays it fullscreen.
+    <b><code>main</code> is what the girls play and is not for testing.</b></p>
+
+  <div class="note gold">
+    <span class="hd">Alpha follows <code>main</code>; it does not lead it</span>
+    <p>Work lands on a typed branch, is merged into local <code>main</code>, and <code>alpha</code>
+      fast-forwards to it. <code>--ff-only</code> is the whole rule, and it buys the property worth
+      having: <code>alpha</code> can never carry a fix the real game does not have, so there is never
+      a merge to bring back and never a question about which of the two is ahead in content. It is
+      ahead only in <em>release</em>. <b>Pushing <code>alpha</code> is not a way around the rule that
+      <code>origin/main</code> waits until Richard has played it</b> — it is the step before it.</p>
+  </div>
+
+  <p><b>Every other branch gets the same treatment</b>, at
+    <code>katana-kitties-git-&lt;branch&gt;-dream-dojo.vercel.app</code>, so a single risky change
+    can be handed to somebody without going near <code>alpha</code>. No laptop has to be awake, it is
+    real HTTPS, and it never takes the production alias. <b>Preview URLs are public</b>: SSO was
+    deliberately turned off on 29 Aug 2026, because installing to a home screen needs the manifest
+    and the icons fetchable and not merely the page.</p>
+
+  <p><b>Fullscreen on a phone <em>is</em> "add to home screen"</b> — there is no fullscreen button
+    anywhere in the source. The manifest does it. Each origin installs as its own app with its own
+    <code>localStorage</code>, so an alpha install sits beside the real game and does <b>not</b>
+    share the record board with it. <b>Tell a tester that</b>, or the first thing they report is
+    having lost everything.</p>
+
+  <h3>On a TV, or another PC</h3>
+  <p>The non-Steam shortcut plus <b>Steam Link</b> works today — one remote player, nothing to
+    write. <b>Remote Play Together, the four-friends-over-the-internet one, is not available for
+    non-Steam shortcuts.</b> That is Valve's limit, not the game's.</p>
+</section>
+
+<section id="debug">
+  <h2><span class="n">4</span> Debug it, in play</h2>
+  <p class="sub">Press <kbd>`</kbd> to open the panel. It lists everything, and every row is tappable.</p>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:120px">Key</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><kbd class="hot">1</kbd></td><td><b>Frame cost</b> — fps, stutter, draw calls, buffer size, quality, dev-or-built, and the GPU string</td></tr>
+      <tr><td><kbd>2</kbd></td><td>Mr. Satan loses his temper — skips the ten-second fuse</td></tr>
+      <tr><td><kbd>3</kbd></td><td>Give every kitten all eight kotodama</td></tr>
+      <tr><td><kbd>4</kbd></td><td>End the live round (feast)</td></tr>
+      <tr><td><kbd>5</kbd></td><td>Open the trade / profile screen</td></tr>
+      <tr><td><kbd class="gold">6</kbd></td><td><b>The endgame</b> — ending, arena, orbs, purses</td></tr>
+      <tr><td><kbd>7</kbd><kbd>8</kbd><kbd>9</kbd></td><td>Ryuuseki: take all seven stars &amp; summon · seat both kittens · fire his beams</td></tr>
+      <tr><td><kbd>M</kbd><kbd>Z</kbd></td><td>Maths overlay · map zoom</td></tr>
+      <tr><td><kbd>-</kbd><kbd>=</kbd><kbd>0</kbd></td><td>Scene viewer: previous · next · play this scene</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note">
+    <span class="hd">If somebody says it lags, press 1 before changing anything</span>
+    <p>The game is <b>fill-bound</b>: frame time is a straight line in the size of the drawing
+      buffer, and everything else is rounding.</p>
+    <ul>
+      <li><b>Read the last line first.</b> Windows Firefox will happily render this on the
+        integrated GPU with a discrete card idle in the machine — which is what "it lags" turned out
+        to mean. The readout says <b>⚠ INTEGRATED GPU</b> when it does.</li>
+      <li>Then read <code>js</code> against <code>gap</code>. A small <code>js</code> and a large
+        <code>gap</code> is the GPU, not this codebase.</li>
+      <li><b>"Lag" is two different bugs.</b> <em>Slow</em> is a long median. <em>Stutter</em> is a
+        normal median with frames arriving unevenly — and the fps counter reads healthy the whole
+        time it is happening. Believe a player who says the frame rate is fine and the game still
+        chugs; the <code>stutter</code> figure is what sees it.</li>
+      <li>The maths overlay, the drifting petals and the tournament's critters have all been accused
+        and all <b>measured innocent</b>. The numbers are in <code>performance.md</code>, so the next
+        session does not spend itself re-accusing them.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="balance">
+  <h2><span class="n">5</span> Change the balance, without touching code</h2>
+  <p class="sub"><code>npm run dev</code>, then open <code>/tuning.html</code>.</p>
+
+  <p>Every ability's timings and damage with a sentence each on what they do, a live timeline of the
+    Cross Slash, and a save that writes <code>src/tuning.json</code> and hot-reloads the running
+    game.</p>
+
+  <p><b><code>src/tuning.json</code> holds overrides only.</b> <code>{}</code> is the shipped
+    balance; the literals in the code stay the defaults; <code>tune()</code> ignores anything that is
+    not a finite number on a key the defaults already have. <b>Neither the page nor the save endpoint
+    exists in a build</b> — the endpoint is a <code>configureServer</code> hook, which the production
+    build never calls. A page that writes into the source tree is a fine thing on a laptop and an
+    appalling one on the open internet.</p>
+
+  <h3>The numbers, at a glance</h3>
+  <p style="font-size:14px;color:var(--text-dim)"><b>This table is generated out of
+    <code>src/entities/player.js</code></b> and is never edited by hand — on either copy of this
+    page. Everything marked <b>✎</b> is on the balance page, and that mark is derived too: it means
+    the number was read out of a <code>tune()</code> table, so a <b>✎</b> can never appear beside a
+    number the page cannot reach.</p>
+
+<!-- doc-sync:numbers -->
+<div class="tw"><table>
+    <thead><tr><th style="width:34%">What</th><th style="width:30%">Value</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td>walk / sprint</td><td class="num"><b>10.5</b> / <b>17</b></td><td>units per second</td></tr>
+      <tr><td>jump / gravity</td><td class="num"><b>11.2</b> / <b>26</b></td><td>double-jump; 0.12s coyote time</td></tr>
+      <tr><td>fly / boost / lift</td><td class="num"><b>34</b> / <b>62</b> / <b>20</b></td><td>on a dragon</td></tr>
+      <tr><td>max HP <b>✎</b></td><td class="num"><b>100</b></td><td></td></tr>
+      <tr><td>hit stun / invulnerable <b>✎</b></td><td class="num"><b>0.26s</b> / <b>0.55s</b></td><td></td></tr>
+      <tr><td>KO / partner daze <b>✎</b></td><td class="num"><b>1.8s</b> / <b>1.5s</b></td><td>friendly fire dazes <em>your partner</em>, costs <em>you</em> the swing</td></tr>
+      <tr><td>rage <b>✎</b></td><td class="num"><b>×1.6</b> at zero health</td><td>Smash's percent rule — knockback grows as she loses HP</td></tr>
+      <tr><td>strike height <b>✎</b></td><td class="num"><b>2.25</b></td><td>how far above/below a blade reaches. Was 4.5 and read as "hits from nowhere"</td></tr>
+      <tr><td>base reach</td><td class="num"><b>3.4</b></td><td>every other reach is a multiple of this</td></tr>
+      <tr><td><b>stand</b> <b>✎</b></td><td class="num">dmg 10 · knock 9 · lift 3.5 · reach 3.4</td><td>a standing slash</td></tr>
+      <tr><td><b>dash</b> <b>✎</b></td><td class="num">dmg 15 · knock 19 · lift 5.0 · reach 3.9</td><td>slash while sprinting</td></tr>
+      <tr><td><b>air</b> <b>✎</b></td><td class="num">dmg 14 · knock 13 · lift 7.5 · reach 3.7</td><td>slash in the air</td></tr>
+      <tr><td><b>tri / dive / charge</b> <b>✎</b></td><td class="num">the three power-orb moves</td><td>entries in the same table, so they cannot leak out of the ring</td></tr>
+    </tbody>
+</table></div>
+<!-- /doc-sync:numbers -->
+</section>
+
+<section id="controls">
+  <h2><span class="n">6</span> The controls</h2>
+  <p class="sub">Pick up a controller and you are in. Pads are dealt in connection order and always outrank the keyboard.</p>
+
+  <p style="font-size:14px;color:var(--text-dim)"><b>Both tables are generated out of
+    <code>src/core/input.js</code></b> by the same tool that writes the balance numbers, for the same
+    reason: the Joy-Con button names were wrong in the game for months and nothing anywhere would
+    have noticed this page still naming the old ones.</p>
+
+  <h3>On the keyboard</h3>
+
+<!-- doc-sync:keyboard -->
+<div class="tw"><table>
+    <thead><tr><th>Action</th><th>WASD</th><th>Arrows</th></tr></thead>
+    <tbody>
+      <tr><td>move</td><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> <i>or</i> <kbd>O</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd></td></tr>
+      <tr><td>jump</td><td><kbd>Space</kbd></td><td><kbd>Numpad0</kbd><kbd>RAlt</kbd><kbd>RCtrl</kbd></td></tr>
+      <tr><td>attack</td><td><kbd>F</kbd></td><td><kbd>Numpad1</kbd><kbd>/</kbd><kbd>J</kbd></td></tr>
+      <tr><td>interact</td><td><kbd>E</kbd></td><td><kbd>Numpad2</kbd><kbd>,</kbd><kbd>I</kbd></td></tr>
+      <tr><td>mount</td><td><kbd>Q</kbd></td><td><kbd>Numpad3</kbd><kbd>.</kbd><kbd>P</kbd></td></tr>
+      <tr><td>sprint</td><td><kbd>LShift</kbd></td><td><kbd>RShift</kbd><kbd>'</kbd></td></tr>
+      <tr><td>start / pause</td><td><kbd>Enter</kbd><kbd>NumpadEnter</kbd></td><td><kbd>Enter</kbd><kbd>NumpadEnter</kbd></td></tr>
+      <tr><td>map zoom</td><td>—</td><td>—</td></tr>
+      <tr><td>maths overlay</td><td>—</td><td>—</td></tr>
+    </tbody>
+</table></div>
+<!-- /doc-sync:keyboard -->
+
+  <h3>On a controller</h3>
+
+<!-- doc-sync:pads -->
+<div class="tw"><table>
+    <thead><tr><th>Action</th><th>Xbox</th><th>PlayStation</th><th>Joy-Con L</th><th>Joy-Con R</th></tr></thead>
+    <tbody>
+      <tr><td>move</td><td>left stick</td><td>left stick</td><td>left stick</td><td>left stick</td></tr>
+      <tr><td>jump</td><td><kbd class="hot">A</kbd></td><td><kbd class="hot">✕</kbd></td><td><kbd class="hot">RIGHT</kbd></td><td><kbd class="hot">X</kbd></td></tr>
+      <tr><td>attack</td><td><kbd class="hot">X</kbd></td><td><kbd class="hot">□</kbd></td><td><kbd class="hot">DOWN</kbd></td><td><kbd class="hot">A</kbd></td></tr>
+      <tr><td>interact</td><td><kbd class="hot">B</kbd></td><td><kbd class="hot">○</kbd></td><td><kbd class="hot">UP</kbd></td><td><kbd class="hot">Y</kbd></td></tr>
+      <tr><td>mount</td><td><kbd class="hot">Y</kbd></td><td><kbd class="hot">△</kbd></td><td><kbd class="hot">LEFT</kbd></td><td><kbd class="hot">B</kbd></td></tr>
+      <tr><td>sprint</td><td><kbd>RT</kbd></td><td><kbd>R2</kbd></td><td><kbd>SR</kbd></td><td><kbd>SR</kbd></td></tr>
+      <tr><td>start / pause</td><td><kbd>START</kbd></td><td><kbd>OPTIONS</kbd></td><td><kbd>-</kbd></td><td><kbd>+</kbd></td></tr>
+      <tr><td>map zoom</td><td><kbd>RB</kbd></td><td><kbd>R1</kbd></td><td><kbd>L</kbd></td><td><kbd>R</kbd></td></tr>
+      <tr><td>maths overlay</td><td><kbd>LB</kbd></td><td><kbd>L1</kbd></td><td><kbd>ZL</kbd></td><td><kbd>ZR</kbd></td></tr>
+    </tbody>
+</table></div>
+<!-- /doc-sync:pads -->
+
+  <p>The two Joy-Con halves get their own columns because they are <em>separate controllers</em> —
+    held sideways, each with its own four-button cluster, and the two clusters are rotated
+    differently in the driver. The left half's names are <b>directions as she holds it</b>, because a
+    d-pad has no letters to appeal to.</p>
+
+  <div class="pad-block">
+    <svg viewBox="0 0 280 214" role="img" aria-label="The cat-shaped controller drawn in the game's Help panel, with each button labelled">
+      <!-- shoulders, behind the body -->
+      <rect class="cp-shell" x="2" y="8" width="34" height="15" rx="6"/>
+      <rect class="cp-shell" x="244" y="8" width="34" height="15" rx="6"/>
+      <rect class="cp-shell" x="2" y="26" width="34" height="15" rx="6"/>
+      <rect class="cp-shell" x="244" y="26" width="34" height="15" rx="6"/>
+      <text class="cp-glyph cp-small" x="19" y="20">L1</text>
+      <text class="cp-glyph cp-small" x="261" y="20">R1</text>
+      <text class="cp-glyph cp-small" x="19" y="38">L2</text>
+      <text class="cp-glyph cp-small" x="261" y="38">R2</text>
+      <!-- ears -->
+      <path class="cp-shell" d="M30,82 Q39.8,22 44,4 Q57.2,18 104,52 Z"/>
+      <path class="cp-shell" d="M250,82 Q240.2,22 236,4 Q222.8,18 176,52 Z"/>
+      <path class="cp-pink" d="M34.8,63.3 Q44,30 44,18 Q44,30 82.4,39.5 Z"/>
+      <path class="cp-pink" d="M245.2,63.3 Q236,30 236,18 Q236,30 197.6,39.5 Z"/>
+      <!-- body -->
+      <rect class="cp-shell" x="20" y="48" width="240" height="150" rx="34"/>
+      <!-- eyes, nose -->
+      <ellipse class="cp-eye" cx="110" cy="78" rx="11" ry="12"/>
+      <ellipse class="cp-eye" cx="170" cy="78" rx="11" ry="12"/>
+      <path class="cp-pink" d="M134,92 L146,92 L140,99 Z"/>
+      <!-- slivers -->
+      <rect class="cp-hole" x="105" y="52" width="10" height="14" rx="5"/>
+      <rect class="cp-hole" x="165" y="52" width="10" height="14" rx="5"/>
+      <!-- d-pad -->
+      <rect class="cp-hole" x="45" y="85.5" width="22" height="9" rx="2.5"/>
+      <rect class="cp-hole" x="51.5" y="79" width="9" height="22" rx="2.5"/>
+      <!-- face diamond: FX 222, FY 90, FD 19 -->
+      <circle class="cp-hole" cx="222" cy="71" r="8.6"/>
+      <text class="cp-glyph" x="222" y="75.5">△</text>
+      <circle class="cp-hole" cx="241" cy="90" r="8.6"/>
+      <text class="cp-glyph" x="241" y="94.5">○</text>
+      <circle class="cp-hole" cx="222" cy="109" r="8.6"/>
+      <text class="cp-glyph" x="222" y="113.5">✕</text>
+      <circle class="cp-hole" cx="203" cy="90" r="8.6"/>
+      <text class="cp-glyph cp-sq" x="203" y="96">□</text>
+      <!-- sticks -->
+      <circle class="cp-well" cx="98" cy="140" r="16"/>
+      <circle class="cp-knob" cx="98" cy="140" r="10"/>
+      <circle class="cp-well" cx="182" cy="140" r="16"/>
+      <circle class="cp-knob" cx="182" cy="140" r="10"/>
+      <!-- whiskers -->
+      <g stroke="rgba(251,238,210,0.42)" stroke-width="1.6" fill="none" stroke-linecap="round">
+        <path d="M40,120 L74,116"/><path d="M40,132 L74,130"/>
+        <path d="M240,120 L206,116"/><path d="M240,132 L206,130"/>
+      </g>
+    </svg>
+    <ul class="pad-legend">
+      <li><span class="g">✕</span> <b>Jump</b> <i>double-tap it</i></li>
+      <li><span class="g">□</span> <b>Slash</b> <i>standing, dashing or airborne — three attacks, one button</i></li>
+      <li><span class="g">○</span> <b>Action</b> <i>join a clan, buy from the dealer</i></li>
+      <li><span class="g">△</span> <b>Ride</b> <i>on and off a dragon or a panda</i></li>
+      <li><span class="g">R2</span> <b>Sprint</b> <i>and, on a dragon, boost</i></li>
+      <li><span class="g">L1</span> <b>Maths overlay</b> · <span class="g">R1</span> <b>Map</b></li>
+    </ul>
+  </div>
+
+  <p><b>Every action in the second keyboard set has three keys</b>, and that is not generosity —
+    laptops have no numpad, and player 2's entire action set was once on it, so on a laptop the
+    second kitten could walk and nothing else. <b><kbd>P</kbd> is mount, and nothing else on the
+    keyboard may answer to <kbd>P</kbd></b>: it was once mount <em>and</em> the frame-cost debug key,
+    so climbing onto a dragon flipped the performance readout on. <code>pad-check</code> asserts it
+    of the whole debug set, because the failure was never about one line in one table.</p>
+
+  <p><b>On a phone</b>, the on-screen pad produces <em>exactly</em> what a gamepad profile's
+    <code>read()</code> produces, so the input manager seats it next to a Pro Controller and nothing
+    downstream learns a new word. That property is also most of a future feature — see §10.</p>
+</section>
+
+<section id="assets">
+  <h2><span class="n">7</span> How every asset was made — and how to make another</h2>
+  <p class="sub">Everything is generated. There is no asset store in this project.</p>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:24%">What</th><th>How</th><th style="width:22%">Where</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>The 15 help clips</b></td>
+        <td>The game, playing itself, recorded. A script drives the real game through a scripted
+          performance, grabs one frame per tick straight off the WebGL back buffer, and hands the
+          frames to the encoder. <b>Nothing in the pipeline is capable of inventing a frame</b>, which
+          is why a clip can never lie about the game.</td>
+        <td><code>tools/capture/</code><br><span style="font-size:12.5px;opacity:.7">its README is the director's guide</span></td>
+      </tr>
+      <tr>
+        <td><b>GIF encoding</b></td>
+        <td>Dependency-free GIF89a: median-cut palette, interframe differencing.
+          <code>dither: false</code> is required, or the diff finds noise everywhere and bites on
+          nothing. A self-test reads the encoder's own output back, because a codec bug presents as
+          "the picture looks a bit off", never a crash.</td>
+        <td><code>gif.mjs</code>, <code>gif-selftest.mjs</code></td>
+      </tr>
+      <tr>
+        <td><b>Looping two clips together</b></td>
+        <td>Rewrites delay bytes only — no re-encode. It pads the <b>last frame</b>; it used to
+          spread the shortfall across every frame, which stretched the whole clip a fifth slower and
+          was caught by eye, not by the check.</td>
+        <td><code>gif-sync.mjs</code></td>
+      </tr>
+      <tr>
+        <td><b>Sprite sheets</b></td>
+        <td>Higgsfield image models. Two rules: <b>a new player pose is four poses</b> (all four
+          kittens, never two), and everything goes through background removal — do not trust the
+          runtime white-keyer.</td>
+        <td><code>art.md</code></td>
+      </tr>
+      <tr>
+        <td><b>Voices</b></td>
+        <td>ElevenLabs <em>preset</em> voices, reached through Higgsfield. <b>Every character is
+          pinned to one preset with an id</b> — read the registry before generating any line, or the
+          same cat comes back sounding like somebody else.</td>
+        <td><code>voices.md</code></td>
+      </tr>
+      <tr>
+        <td><b>Sound &amp; music</b></td>
+        <td>Fully synthesised in code — a sound set, and a piece of music per island. The MP3s are
+          the only audio <em>files</em>, and the game falls back to synthesised blips without them.</td>
+        <td><code>core/audio.js</code></td>
+      </tr>
+      <tr>
+        <td><b>The 1:08 trailer</b></td>
+        <td>Twelve five-second generated shots and an eight-second title card, a synthesised
+          orchestra over the game's own music, a brush-drawn 十, and ffmpeg. 20 MB, and <b>opt-in</b>
+          — the <code>&lt;video&gt;</code> carries no <code>src</code> until a player asks for it,
+          and drops it again on close.</td>
+        <td><code>trailer-vo.mjs</code>, <code>trailer-score.mjs</code>, <code>trailer-cut.sh</code></td>
+      </tr>
+      <tr>
+        <td><b>Steam shelf art &amp; icons</b></td>
+        <td>Crops and composites the title art into all six sizes. <b>Nothing here is a new
+          drawing</b> — a prompt to an image model would put art on the box that is nowhere inside
+          the game.</td>
+        <td><code>steam-art.mjs</code>, <code>steam-capsules.sh</code></td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <div class="note">
+    <span class="hd">The rule under all of it</span>
+    <p><b>Measure, never reason, about anything drawn.</b> Sizes, seat heights, mouth positions and
+      facings are all read off the loaded atlas. Sprite sheets are <b>measured, not assumed</b>:
+      column counts, cell sizes, baselines and facing come off the image, and a generated sheet's
+      rows do not have to agree with each other. Reasoned numbers have been wrong roughly every
+      time.</p>
+  </div>
+</section>
+
+<section id="accounts">
+  <h2><span class="n">8</span> Accounts, services and costs</h2>
+  <p class="sub">Checked 29 August 2026. Verify anything financial in the dashboard before quoting it.</p>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:15%">Service</th><th>For, and what to know</th><th style="width:22%">Cost</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Vercel</b></td>
+        <td>Hosting. Git-connected — push to <code>main</code> deploys. Static build, no backend, no
+          environment variables. <b>On the <code>dream-dojo</code> team scope, not the personal
+          account.</b></td>
+        <td>No paid feature in use</td>
+      </tr>
+      <tr>
+        <td><b>GitHub</b></td>
+        <td>The private repo. Git identity is <b>pinned repo-locally</b> so a change to the global
+          config cannot attribute commits here to a work account. Pushes go through the
+          <code>gh</code> CLI's credential helper — a headless <code>git push</code> fails without
+          it. <b><code>gh</code> may be signed in as a work account; check before pushing.</b></td>
+        <td>Free for private repos</td>
+      </tr>
+      <tr>
+        <td><b>Higgsfield</b></td>
+        <td>All generated art, video and voice. <b>No unlimited allowance</b> — every generation
+          spends credits. Failed jobs are refunded, so a balance dropping mid-run is not money gone.
+          One video model is reliable; several others fail or rate-limit.</td>
+        <td>Per credit</td>
+      </tr>
+      <tr>
+        <td><b>ElevenLabs</b></td>
+        <td>The voice cast. <b>No separate account</b> — reached through Higgsfield.</td>
+        <td>≈0.15 credits a line</td>
+      </tr>
+      <tr>
+        <td><b>Steam</b></td>
+        <td>A non-Steam shortcut on one machine, for controller support and Steam Link. No
+          Steamworks account.</td>
+        <td><b>$0.</b> A store page would need the Steam Direct fee (~$100/title) and a review</td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <div class="note pink">
+    <span class="hd">Know this before shipping anything publicly</span>
+    <p><b>Four of the sound files derive from somebody else's recording.</b> The reference audio came
+      off a social post, has always been kept out of the repo, and must stay that way — but the four
+      files derived from it now ship with the game. <b>A Steam release has to either license the
+      source or delete those four files</b>, and deleting them is real and cheap: the tool
+      synthesises its own version without a reference, and the audio layer falls through to
+      synthesised stand-ins after that. Three levels of degradation, on purpose, because the ninth
+      non-negotiable says the game must work with the whole voice folder deleted.</p>
+  </div>
+</section>
+
+<section id="rules">
+  <h2><span class="n">9</span> The rules that must not break</h2>
+  <p class="sub">Break any of these and the thing stops being the game it is. Each is enforced by <code>world-check</code> wherever a check can express it.</p>
+
+  <ol class="rules">
+    <li><b>The maths is the point, not a bolt-on.</b> A prettier orb that lied about its own position
+      would be worse than no orb.</li>
+    <li><b>The art is the kids'.</b> Don't redesign the cat-head menu or the six clan leaders.</li>
+    <li><b>No combat outside the ring.</b> One gate, asking one question. Enemies in the world have
+      been rejected repeatedly and on purpose.</li>
+    <li><b>Nothing regrows and nothing is lost.</b> A prop knocked over stays knocked over, so the
+      mischief counter is honest. A dragon can never be stranded; a pet can never be lost.</li>
+    <li><b>Two players must keep the game they know.</b> Everything four-player is additive, and the
+      two-player answer has to come out bit-identical.</li>
+    <li><b>A refusal must say so, and so must a confirmation.</b> A button that silently does nothing
+      reads as broken. Every dialog's buttons say what they <em>do</em> — "no, keep playing" against
+      "yes, start over", never bare yes/no.</li>
+    <li><b>Nothing irreversible happens on one press, and the default answer is no.</b> A scene is
+      skipped by Escape or a pad's Start and <em>nothing else</em> — never Space: four kids hold
+      sticks and mash, and Space is the key an elbow finds. Confirm dialogs deliberately have no
+      primary button, so the cursor opens on cancel.</li>
+    <li><b>Sprite sheets are measured, not assumed.</b> Never settle a facing by reasoning.</li>
+    <li><b>Everything is procedural or generated.</b> No engine, no physics library, no asset store,
+      no character meshes, no new dependencies.</li>
+  </ol>
+
+  <div class="note gold">
+    <span class="hd">House style</span>
+    <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
+      codebase's comments are its main defence against a fix being undone by somebody who could not
+      see the reason. <b>When you fix something, add the check that would have caught it</b> — which
+      is why <code>world-check</code> is 1888 assertions and why almost none of them are about
+      whether a number is set.</p>
+    <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
+      in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,
+      tested or shipped. Not a refactor and not a bug fix: the test is whether anybody could find it
+      out by reading the code. <code>git log</code> is the session log.</p>
+  </div>
+
+  <div class="note">
+    <span class="hd">Git</span>
+    <p>Typed branches (<code>feature/</code>, <code>bugfix/</code>, <code>mixed/</code>), a
+      <code>commit-msg</code> hook that stamps <code>[branch]</code> on non-main commits, a
+      <code>pre-commit</code> hook that regenerates this page's tables, merged locally, and
+      <b>never pushed to <code>origin/main</code> until Richard has played it</b>. Branches are kept
+      until pushed, then <code>git branch -d</code> — never <code>-D</code>.
+      <b><code>alpha</code> is the testing channel</b> and only ever fast-forwards to
+      <code>main</code>.</p>
+  </div>
+</section>
+
+<section id="docs">
+  <h2><span class="n">10</span> Every document in the project</h2>
+  <p class="sub">The design notes are <em>the why behind code that already exists</em>. Read one when you are about to change that area, and not before.</p>
+
+  <h3>The four top-level documents</h3>
+  <div class="docs" style="margin-bottom:8px">
+    <div><code>README.md</code><span>The player's guide — how it plays, the story, the leaders, the tournament</span></div>
+    <div><code>CLAUDE.md</code><span>Loaded into every AI session. Deliberately short</span></div>
+    <div><code>HANDOFF.md</code><span>Current state and open work</span></div>
+    <div><code>PROJECT.md</code><span>The source of this page — <b>edit there, not here</b></span></div>
+  </div>
+
+  <h3>The design notes</h3>
+  <div class="docs">
+    <div><code>four-players.md</code><span>Seating, the split screen, panes, leagues</span></div>
+    <div><code>input.md</code><span>Controllers, the vJoy route, the Chrome stick bug, keyboard sets</span></div>
+    <div><code>help.md</code><span>The Help panel, and the rig that films it</span></div>
+    <div><code>tournament.md</code><span>The ring, rounds, attacks, ring-outs, the feast</span></div>
+    <div><code>dragon-hunt.md</code><span>The seven stars, the grottos, the spire, Ryuuseki</span></div>
+    <div><code>endgame.md</code><span>The 100% ending, the eight Kotodama, the economy, the balance page</span></div>
+    <div><code>story.md</code><span>The opening cutscene, the six leaders, the shrine scenes</span></div>
+    <div><code>world.md</code><span>The six clans and what each buff changes; the panda</span></div>
+    <div><code>art.md</code><span>Atlas cells, and the two rules for generating new sprites</span></div>
+    <div><code>mobile.md</code><span>The Wi-Fi test steps, what a phone may spend, the on-screen pad</span></div>
+    <div><code>performance.md</code><span>Why frame time is a straight line in pixels — and what is measured <em>not</em> to be a cause</span></div>
+    <div><code>audio.md</code><span>The synthesised sound set, and a piece of music per island</span></div>
+    <div><code>voices.md</code><span>The voice registry — which preset is which character, with ids</span></div>
+    <div><code>consent.md</code><span>Why nothing irreversible happens on one press</span></div>
+    <div><code>rules.md</code><span>The gameplay invariants in full, with the measurements behind them</span></div>
+    <div><code>gotchas.md</code><span>The traps that cost real time and are not obvious from the code</span></div>
+    <div><code>hosting.md</code><span>Vercel, the Git deploy, and what does and does not travel with it</span></div>
+    <div><code>steam.md</code><span>The non-Steam shortcut, every launch flag, the shelf artwork</span></div>
+    <div><code>trailer.md</code><span>The 1:08 trailer, end to end</span></div>
+    <div><code>networking.md</code><span>The one plan in the folder, not a record — see below</span></div>
+    <div><code>docs.md</code><span>This page's own rules — when a change earns a line, and how the tables above generate themselves</span></div>
+    <div><code>tools/capture/README.md</code><span>The director's guide to filming the game to teach the game</span></div>
+  </div>
+
+  <p style="margin-top:16px">Plus <code>git log</code> — <b>the commit messages are the session
+    log</b>, and they are written to be read.</p>
+</section>
+
+<section id="next">
+  <h2><span class="n">11</span> Where it is going</h2>
+  <p class="sub">One question about playing across devices turned out to be four, with four different answers.</p>
+
+  <div class="verdict">
+    <div>
+      <span class="tag yes">Build</span>
+      <h4>A phone as a controller, screen stays on the host</h4>
+      <p>The touch pad already produces exactly what a gamepad's <code>read()</code> produces, so this
+        is one more device class rather than a new input path. WebRTC data channel, unreliable and
+        unordered — <b>5–15 ms on the same Wi-Fi, under one frame</b>. A QR code in the pause menu,
+        a four-letter room code as backup. Roughly <b>1–2 sessions to a LAN prototype</b>. It solves
+        "four kids are in this room and there are two controllers", which is the only one of these
+        four the game cannot already do at all.</p>
+    </div>
+    <div>
+      <span class="tag no">Don't</span>
+      <h4>Stream the picture to the phone as well</h4>
+      <p>The game is fill-bound, so an extra full view plus a video encode lands squarely on the one
+        axis it is known to be limited by. And it fights the design: the split screen is not a
+        workaround for having one monitor — it is what makes four kids sit on one sofa.</p>
+    </div>
+    <div>
+      <span class="tag later">Cheapest</span>
+      <h4>Four friends over the internet</h4>
+      <p>Steam Remote Play Together does exactly this with <b>zero netcode</b> — and is blocked by
+        the <em>shortcut</em>, not by the game. So the cheapest route is publishing on Steam
+        properly, which is a distribution decision, not an engineering one, and should be made on
+        those terms rather than dodged by writing netcode.</p>
+    </div>
+    <div>
+      <span class="tag no">A project</span>
+      <h4>Real networked multiplayer</h4>
+      <p>The obstacle is not the wire — it is that there is no seam between simulation and
+        presentation. Host-authoritative with prediction for your own kitten is the realistic model;
+        deterministic lockstep is the tempting wrong one, because one divergence and the two worlds
+        silently disagree.</p>
+    </div>
+  </div>
+
+  <div class="note gold">
+    <span class="hd">The backend that should come first anyway</span>
+    <p><b>The game currently saves nothing between sessions</b> — only the record board, the
+      controller calibration and the stick setting survive a reload, and the Help panel apologises
+      for it in a warning box. Accounts and saved progress are a much easier project than netcode,
+      independently useful, and the half players would actually notice. The leaderboard already has
+      the shape; pointing it at a real table is a small change behind the same interface. <b>Then</b>
+      national boards, and only then netcode — by which point there is an identity to hang a session
+      on, which netcode needs anyway.</p>
+    <p style="margin-top:10px">Nothing on the shortlist has an account yet: Cloudflare Durable
+      Objects, PartyKit or a small always-on box for signalling; any hosted Postgres for progress; a
+      Steamworks account for a store page. <b>All deliberately deferred</b>, so the expensive,
+      hard-to-reverse decision is the last one rather than the first.</p>
+  </div>
+
+  <h3>Smaller things on the list</h3>
+  <ul>
+    <li><b>The touch overlay's glyphs name buttons no phone has.</b> Looked at and <b>left alone on
+      purpose</b> — it reads acceptably as a mobile RUN button. Recorded so it is not re-opened as a
+      bug.</li>
+    <li><b>Five help clips have no shot script</b>, having been filmed before the capture rig
+      existed. The other ten can be re-cut today.</li>
+    <li><b>A director skill.</b> Searched on 29 Aug 2026 and <b>there is none</b> — nothing anywhere
+      about in-engine cinematography, capture pacing or tutorial-clip authoring. So it would be a
+      thing to write, and the material already exists in the capture rig's README: a caption needs
+      longer on screen than the action under it; a pause is <em>played</em> at a lower frame rate
+      rather than frozen, because a held frame reads as the picture having broken and was reported
+      exactly that way; one idea per beat; pin the camera and pin the <em>right</em> one; hand the
+      shot back to the game where the game already directs; trigger off state rather than off frame
+      numbers. Plus the part nobody guesses — <b>frame <em>change</em> is the cost, not frame
+      count</b>. Most of it is game-agnostic.</li>
+  </ul>
+</section>
+
+<footer>
+  <p><b>Keep this current.</b> Anything a new developer would need and could <em>not</em> rediscover
+    by reading the code gets a line: a tool, a document, an account, a cost, a future idea, or a new
+    way the project is built, tested or shipped. A cheat sheet that has gone stale is worse than no
+    cheat sheet, because it does not fail loudly; it quietly teaches somebody a thing that stopped
+    being true. <code>world-check</code> enforces the register — every design note linked, every
+    runnable tool named, every check total agreeing with the one the script actually prints.</p>
+  <p style="margin-top:10px"><b>This page is a published copy, and it is checked like one.</b> Its
+    source is <code>docs/artifact/project-page.html</code> in the repository and the tables in
+    §2, §5 and §6 are generated into it by <code>npm run docs</code>, out of the same code the game
+    runs. <code>tools/artifact-sync.mjs</code> holds the hash of what was last published and fails
+    <code>world-check</code> when this page falls behind either its source or <code>PROJECT.md</code>
+    — written after it was found sitting three revisions and one wrong fact behind.
+    <b>Edit <code>PROJECT.md</code> and that source, then re-publish; never this page.</b></p>
+</footer>
+
+</div>
