@@ -1850,7 +1850,28 @@ details.help-card[open] > summary .ht-chev { transform: rotate(90deg); }
   margin: 16px 0 0;
 }
 @media (max-width: 640px) { .keymap { grid-template-columns: 1fr; } }
-.keymap table { width: 100%; border-collapse: collapse; }
+/* FIXED LAYOUT, AND `min-width: 0`, OR THE TABLE PUSHES THE GRID OPEN.
+   These two tables are the grid's items, and a grid item's `min-width` is
+   `auto` — meaning "never smaller than my content". An auto-laid-out table's
+   content width is the sum of what its cells want, so `1fr 1fr` was not
+   dividing the panel at all: each table demanded 323px inside a 305px track,
+   and the right-hand one hung 35px off the edge of the panel. That is the
+   overflow Richard reported, and shrinking the chips could not have fixed it —
+   the table would simply have demanded a little less and still won.
+   `min-width: 0` lets the track do its job, and `table-layout: fixed` makes the
+   columns obey the header instead of the widest cell, so a long hint wraps
+   inside its cell rather than widening everything behind it. The percentages
+   are the three columns: the action needs the most, because it carries the
+   italic hint under it. */
+.keymap table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.keymap thead th:nth-child(1) { width: 44%; }
+.keymap thead th:nth-child(2) { width: 29%; }
+.keymap thead th:nth-child(3) { width: 27%; }
 .keymap caption {
   font-family: 'Bangers', cursive;
   letter-spacing: 1px;
@@ -1865,7 +1886,6 @@ details.help-card[open] > summary .ht-chev { transform: rotate(90deg); }
   letter-spacing: 1.2px;
   text-transform: uppercase;
   border-bottom: 2px solid var(--ink);
-  white-space: nowrap;
 }
 .keymap tbody th { font-size: 14px; font-weight: 900; }
 /* The hint that used to sit in brackets after the button ("twice to
@@ -1890,6 +1910,151 @@ details.help-card[open] > summary .ht-chev { transform: rotate(90deg); }
 .keymap tbody tr:last-child .km-pad { border-radius: 0 0 6px 6px; }
 .keymap kbd { white-space: nowrap; }
 .keymap td kbd + kbd { margin-left: 2px; }
+
+/* WASD AS A CROSS, NOT A LINE, AND SMALLER THAN THE REST.
+   Four chips in a row is the widest cell in either table by a long way, and on
+   the web build it pushed the keyboard column off the right-hand edge of the
+   panel — reported exactly that way. The obvious fix is to shrink every chip,
+   but the other rows are single keys that are already comfortable and would
+   only get harder to read.
+   So this shrinks WASD ALONE, and stacks it the way the keys actually sit
+   under a hand: W over A S D. That is narrower AND truer than the row was —
+   the line said "these four keys" and the cross says "this is the shape your
+   fingers make", which is the thing a nine-year-old is looking for. The same
+   treatment is what the arrow cluster would want if it were ever shown. */
+.keymap .km-wasd {
+  display: inline-grid;
+  grid-template-columns: repeat(3, auto);
+  justify-items: center;
+  gap: 2px;
+  vertical-align: middle;
+}
+.keymap .km-wasd kbd {
+  font-size: 10px;
+  padding: 0 4px;
+  border-width: 1.5px;
+  box-shadow: 0 1.5px 0 var(--ink);
+  min-width: 15px;
+  text-align: center;
+}
+/* BOTH THE ROW AND THE COLUMN, or auto-placement puts A beside W. Naming only
+   the column leaves W in row 1 and lets the next chip fill the cell to its
+   right, which came out as "W A" over "S D" — a square, not a cross. */
+.keymap .km-wasd kbd:first-child { grid-area: 1 / 2; }
+.keymap .km-wasd kbd:nth-child(n + 2) { grid-row: 2; }
+.keymap .km-wasd kbd + kbd { margin-left: 0; }
+
+/* ---------------------------------------------------------------------------
+   ONE CLIP, FULL WIDTH — the shape a topic takes when it is ABOUT that clip.
+
+   `.move-grid` puts two clips side by side, which is right when the pair is the
+   point (a keyboard beside a pad). It is wrong when a topic has ONE thing to
+   show: at half the panel a kitten on a dragon is about ninety pixels tall and
+   the caption under her is the same 13px as a footnote. Dragon flying and the
+   arena each got their own topic precisely so their clip could be the size of
+   the thing it is teaching.
+   The caption grows with it. A caption under a half-width thumbnail is a label;
+   under a picture this size it is the paragraph a child reads first, and it was
+   being set smaller than the body text around it. */
+.move-wide { margin: 12px 0 0; }
+.move-wide img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+}
+.move-wide figcaption {
+  margin-top: 10px;
+  font-size: 15.5px;
+  line-height: 1.55;
+}
+.move-wide figcaption b { color: var(--vermillion); }
+
+/* ---------------------------------------------------------------------------
+   THE CAT PAD — the same drawn controller that lights up inside `move-pad.gif`,
+   standing still on the page so it can be read rather than watched.
+
+   IT IS THE CLIP'S PAD, NOT A NEW DRAWING. The geometry is transcribed from
+   `padPanel` in the capture kit (tools/capture/movekit.js), same 280x214 box,
+   same shell, ears, whiskers and holes — so a child who has just watched the
+   controller clip is looking at the same object, and the button that lit up
+   there is in the same place here. Two pictures of a controller that disagreed
+   about where ○ is would be worse than one.
+   A PlayStation face on purpose: this is the one diagram in Help that can show
+   the SHAPES, and the shapes are what the table above cannot print in a way a
+   kid can match to the plastic in her hands. The tables carry Xbox lettering
+   because that is what most PC pads are printed with; between them the two
+   cover the pads that actually turn up.
+
+   `.lit` is a class and not a colour: which buttons a section lights is that
+   section's whole argument, and it has to be readable in the markup. */
+/* The definitions sheet holds the shared pad geometry and must never occupy a
+   row of its own — an inline <svg> is `display: inline` by default and would
+   leave a line box's worth of white space in the middle of the panel. */
+.cp-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.catpad {
+  display: grid;
+  grid-template-columns: minmax(190px, 250px) 1fr;
+  gap: 18px;
+  align-items: center;
+  margin: 16px 0 0;
+  padding: 14px;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  background: rgba(29, 18, 22, 0.05);
+}
+@media (max-width: 560px) { .catpad { grid-template-columns: 1fr; } }
+.catpad svg { display: block; width: 100%; height: auto; }
+/* NO `.catpad` IN FRONT OF THESE, AND THAT IS NOT AN OVERSIGHT.
+   The shell, ears, face and sticks live inside `<defs>` and reach a topic
+   through `<use>`, which clones them into a SHADOW TREE. A selector rooted
+   outside that tree cannot see into it, so `.catpad .cp-pink` matched nothing
+   and the cat came out as a black silhouette: no pink in the ears, no eyes, no
+   whiskers. What DOES carry across is the style computed on the ORIGINAL
+   element, so these have to be written against the
+   ORIGINALS, where they are defined, rather than against the copies.
+   The `.lit` rules below keep their `.catpad` prefix on purpose — the lit
+   parts are written out inside each topic's own `<svg>`, never in the defs, so
+   they are real elements in the document and a scoped selector reaches them. */
+.cp-shell { fill: #1c141a; stroke: var(--paper-2); stroke-width: 4.8; }
+.cp-pink { fill: rgba(232, 124, 138, 0.78); }
+.cp-etch { stroke: rgba(251, 238, 210, 0.6); fill: none; }
+.cp-hole { fill: rgba(251, 238, 210, 0.16); stroke: rgba(251, 238, 210, 0.6); stroke-width: 1.6; }
+.cp-glyph { fill: var(--paper); font: 900 13px 'Nunito', system-ui, sans-serif; text-anchor: middle; }
+.cp-small { font-size: 9px; letter-spacing: 0.5px; }
+/* U+25A1 draws about two thirds the height of U+25CB at the same point size,
+   so at one shared font-size the square reads as a smaller button than the
+   three around it. The capture kit fixes this by MEASURING the glyph's ink and
+   normalising; a stylesheet cannot measure, so this is the same correction
+   applied as a constant. Same reason, same number, different medium. */
+.cp-sq { font-size: 17px; }
+/* Lit: the same ember the clip uses, with the glyph flipping to ink so it stays
+   legible on it — exactly what `glow`/`label` do frame by frame in the kit. */
+.catpad .lit .cp-hole { fill: var(--ember); stroke: var(--paper); }
+.catpad .lit .cp-glyph { fill: var(--ink); }
+.cp-well { fill: rgba(12, 8, 12, 0.95); stroke: rgba(251, 238, 210, 0.5); stroke-width: 1.5; }
+.cp-knob { fill: rgba(251, 238, 210, 0.82); stroke: var(--ink); stroke-width: 1.7; }
+.catpad .lit .cp-knob { fill: var(--ember); }
+.cp-eye { fill: rgba(251, 238, 210, 0.9); stroke: var(--ink); stroke-width: 1.5; }
+/* The legend. Not a caption — it is the diagram's other half, and it is the bit
+   that says WHICH lit button does WHICH job. Read as a list of moves, so the
+   move is the loud half and the button is the chip beside it. */
+.catpad ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.catpad li { display: flex; align-items: baseline; gap: 8px; font-size: 14.5px; }
+.catpad li b { font-weight: 900; min-width: 92px; }
+.catpad li span { opacity: 0.72; font-size: 12.5px; font-style: italic; }
+.catpad .cp-chip {
+  font-family: 'Nunito', monospace;
+  font-weight: 900;
+  font-size: 12px;
+  background: var(--ember);
+  border: 2px solid var(--ink);
+  border-radius: 5px;
+  padding: 1px 7px;
+  box-shadow: 0 2px 0 var(--ink);
+  white-space: nowrap;
+}
 
 /* h4 arrived with the two-column control list inside the accordion. */
 .panel h4 {
