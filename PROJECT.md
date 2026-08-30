@@ -127,9 +127,18 @@ https://katana-kitties-git-<branch>-dream-dojo.vercel.app
 
 No laptop has to be awake, it is real HTTPS, and **it never takes the production
 alias** — so the game the girls play is untouched by any amount of branch
-pushing. **Preview URLs are behind Vercel SSO**, so a phone gets a login wall
-once; sign in, or turn Vercel Authentication off for Preview if the link needs
-to be shareable. → [hosting.md](docs/notes/hosting.md)
+pushing. **Preview URLs are public**: SSO protection was deliberately turned off
+on 29 Aug 2026 so a branch build can be **installed to a phone's home screen and
+played fullscreen**, which needs the manifest and the icons fetchable and not
+merely the page. `vercel project protection` shows it and puts it back.
+→ [hosting.md](docs/notes/hosting.md)
+
+**Fullscreen on a phone IS "add to home screen"** — there is no fullscreen
+button and no `requestFullscreen` anywhere in `src/`. It is
+[public/manifest.webmanifest](public/manifest.webmanifest) doing it:
+`"display": "fullscreen"`, `"orientation": "landscape"`. Each origin installs as
+its own app with its own icon and its own `localStorage`, so a preview install
+sits next to the real game and does **not** share the record board with it.
 
 **Do not tunnel `npm run dev`** to solve this. Its balance-page save endpoint
 POSTs a file into the source tree with no authentication, which behind a public

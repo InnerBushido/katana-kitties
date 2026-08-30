@@ -96,13 +96,45 @@ A browser that cannot fetch the manifest cannot apply `display: fullscreen`, so
 an install done before signing in produces **a plain bookmark with the URL bar
 still there** — which looks like the manifest is broken and is not.
 
-**The order of operations is the fix, on Android.** Sign in to Vercel in Chrome
-*first*, hard-reload so the failed manifest fetch is not the cached one, and
-install after that: Chrome shares its cookie jar with installed PWAs, so the
-manifest request authenticates and the install is a real fullscreen one. iOS is
-less reliable here — home-screen web apps have historically had their own cookie
-store, so a standalone launch can land on a login page with no browser UI to log
-in through. **If it is going on an iPhone, make the preview public instead.**
+**SIGNING IN DOES NOT FIX IT, AND THAT WAS A WRONG ANSWER GIVEN ONCE ALREADY.**
+The obvious remedy — log in on the phone, then install — cannot work, because
+**`<link rel="manifest">` is fetched without credentials by default**. The
+session cookie is never attached to that request, so the manifest still answers
+`302` while the page itself loads perfectly for the signed-in user. The install
+option quietly degrades to a plain bookmark and nothing anywhere says why. The
+same is true of the icon fetches. `crossorigin="use-credentials"` on the link is
+the documented way to send cookies with a manifest request, but it does not
+obviously cover the icons too, so it was not treated as the answer.
+
+**The answer is to make previews public**, which is now the project's setting —
+see below.
+
+### SSO protection is OFF for this project, deliberately
+
+Turned off on 29 Aug 2026 so the `alpha` branch could be installed to a phone's
+home screen and played fullscreen. **The previous value, if it ever needs
+putting back:**
+
+```
+ssoProtection: { "deploymentType": "all_except_custom_domains" }
+gitForkProtection: true
+```
+
+There is a CLI for this and it is not in the obvious place — `vercel project
+protection`, which most of the documentation never mentions:
+
+```bash
+vercel project protection                      # show current settings
+vercel project protection disable --sso        # what was run
+vercel project protection enable --sso         # put it back
+```
+
+**What it gives away is small and worth being explicit about.** Every branch
+preview URL is now openable by anyone who has the link. The game is already
+public at `katana-kitties.vercel.app` and the repo stays private, so what leaks
+is *unreleased builds of an already-public game* — a real thing, but a mild one.
+If this project ever carries something that must not be seen early, turn it back
+on and use a second public project for test builds instead.
 
 **An installed preview is a SEPARATE ORIGIN, and that is mostly a feature.** It
 gets its own home-screen icon next to the live game, and its own
