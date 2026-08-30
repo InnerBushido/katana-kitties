@@ -296,29 +296,96 @@ the button looked untouched. The rule is now the pure function
 times by testing something momentarily true on the frame the gesture is still
 being made, which is the one frame no amount of playing reproduces on demand.
 
-**Two things are open, neither of them a clip**, and both are in
-[help.md](docs/notes/help.md#what-is-not-done): whether the capture rig belongs
-in `tools/` (see the paragraph below), and the fact that the touch overlay's
-glyphs read `Y / ZR / X / A / B` on a screen where no such buttons exist — the
-same complaint already made about `ZL`/`ZR` in the keymap table. That one is a
-**game** change, not a Help one, so it was deliberately left alone.
+**Moving & fighting is four topics now.** It was one card carrying two rows of
+clips, two tables and two paragraphs — everything a player does, stacked, in one
+scroll — and the clips were the casualty: the dragon and the arena were each
+half a panel wide with a footnote under them. Split by what you are DOING, which
+is how a reader arrives. **Moving & fighting** keeps the keyboard/pad pair and
+both key tables; **Flying a dragon** and **Fighting in the arena** each lead on
+their clip at full width with a caption set big enough to read first; **Good to
+know** takes the two paragraphs that belong to neither.
 
-**The capture rig is not in the repo, and it has now started costing.**
-`harness.js`, `movekit.js` and the shot scripts live in the session scratchpad,
-which is temporary; every session that films something has recovered them from
-the previous session's scratchpad, and **the script that filmed `move-keys.gif`
-and `move-pad.gif` did not survive** — those two would have to be
-re-choreographed, not re-rendered. Note which way this cuts before deciding:
-re-*encoding* one master at several sizes is cheap and comparable
-(`move-air.gif` was encoded four times off one take, `phone.gif` seven), while
-re-*shooting* is not — the kitten lands on different frames and the interframe
-diff finds different work. Filming at 936 wide and publishing at 512 is right
-and should stay; roughly 3.3 real pixels average into each output pixel and
-*that* is the anti-aliasing. What is durable today is
-[help.md](docs/notes/help.md), which carries the traps rather than the code. The
-decision to put to Richard is whether a browser-driving harness belongs in
-`tools/` — ~1500 lines of dev-only tooling that never ships and can only be run
-through a browser MCP, against the fact that no clip is otherwise reproducible.
+**The cat pad is on the page.** The drawn controller that lights up inside
+`move-pad.gif`, transcribed out of the capture kit into SVG in the same 280×214
+box, sitting under each of the two new topics with that section's buttons lit —
+every face button in the air, only two in the ring, and the topic says out loud
+why the other two are dark. PlayStation shapes on purpose: the tables carry Xbox
+lettering because that is what most PC pads are printed with, and this is the
+one place Help can show a shape a child matches to the plastic in her hand.
+Defined once in `<defs>` and reached by `<use>`, which cost one bug worth
+knowing: **a `<use>` clones into a shadow tree**, so `.catpad .cp-pink` matched
+nothing and the cat came out a black silhouette. Only styles computed on the
+ORIGINAL carry across.
+
+**Two fixes underneath it.** `interact` was missing from the key map entirely —
+it is the button that joins a clan, absent from the clips on purpose, but a key
+map is not a list of what the pictures happen to show. And the keyboard column
+ran off the right of the panel: not the chips' fault, but `min-width: auto` on a
+grid item, so each table demanded 323px inside a 305px track. `min-width: 0` plus
+`table-layout: fixed` fixed it, and WASD is a cross now — W over A S D, smaller
+than the other chips, narrower and truer than the row was.
+
+**A clip restarts when its topic opens or closes.** A GIF keeps running inside a
+collapsed `<details>`, so a second visit joined a twenty-second lesson halfway
+through. Done by changing the src FRAGMENT — it restarts the animation and is
+stripped before the request, so the body comes out of cache.
+
+**`gif-sync` was stretching the clip it was supposed to be syncing, and only a
+player saw it.** Two clips loop together when their totals match, and the way it
+bought the shortfall was to spread it across every frame — which turned
+`move-pad`'s 8cs frames into 10cs and its 14cs into 17cs, a fifth slower than
+the run it was filmed alongside. Richard watched the pair and said the pad one
+looked stretched. It was. `spread()` is `padTail()` now: **the shortfall goes on
+the last frame and nowhere else**, so a clip plays at the speed it was shot and
+waits at the end.
+
+The check that missed it asserted equal *totals*, which were exactly equal the
+whole time it was wrong — a check on the number the fix produces rather than on
+the behaviour it was for. `world-check` now compares **modal frame delay** per
+row, and for `move-keys`/`move-pad` — one run filmed twice, so they can promise
+it — **frame-for-frame delay equality**. Row 2 is two different demonstrations
+and is deliberately not held to that; both rows cap a body frame at 30cs and a
+tail at 300cs, which is what catches a stretch by shape rather than by total.
+
+**One thing is open, and Richard has closed it as won't-fix**: the touch
+overlay's glyphs read `Y / ZR / X / A / B` on a screen where no such buttons
+exist. He looked and decided to leave it — `ZR` reads acceptably as a mobile RUN
+button, and the Joy-Con `SR` question underneath is moot while the Switch 2 pads
+are not being documented. Written down so the next session does not re-open it.
+
+**The capture rig is in the repo now — [tools/capture/](tools/capture/README.md).**
+It never was: it lived in a temporary session directory, and every session that
+wanted to film something began by recovering it from the last one's leftovers.
+The master frames are hundreds of megabytes of raw RGBA that die with the
+browser tab, so the shot script is the only thing that can ever re-cut a clip.
+Checked in: the bridge, the browser harness, the shot kit, a GIF decoder and
+frame-dumper, and **eight shot scripts covering ten of the fifteen clips**. Made
+portable on the way in — two node files and three shot scripts had this
+machine's absolute paths, or a dead session directory, typed into them.
+
+**`README.md` is the point of it.** The code was always recoverable in
+principle; the DIRECTING was not written down anywhere. It carries the craft, all
+of it learned by being told it was wrong: a caption needs longer on screen than
+the action under it, a pause is played rather than frozen, one idea per beat, pin
+the camera and pin the right one, hand the shot back to the game where the game
+already directs, trigger off state rather than frame numbers, and measure the
+game instead of reasoning about it. Plus the byte budget — frame CHANGE is the
+cost, not frame count — and the traps a synchronous capture loop creates.
+
+**A correction worth keeping.** This file and `help.md` both said the script
+behind `move-keys.gif` and `move-pad.gif` "did not survive". **It had.** So had
+panda's, dojo's and the dealer's — all sitting in an older session's scratchpad.
+Richard pushed back on the claim and it did not survive checking. Five clips
+genuinely have no script (`ability-ward`, `ability-charge`, `ability-dive`,
+`ability-cross`, `feast-eat`, all filmed before the rig existed); everything else
+can be re-cut today.
+
+Worth knowing which way re-cutting cuts: re-*encoding* one master at several
+sizes is cheap and directly comparable (`move-air.gif` was encoded four times off
+one take, `phone.gif` seven), while re-*shooting* is not — the kitten lands on
+different frames and the interframe diff finds different work. **Film at 936 wide
+and publish at 512**; roughly 3.3 real pixels average into each output pixel and
+that averaging is the anti-aliasing.
 
 **Played, pushed and live — the third, fourth and fifth four-player sessions,
 all in one push.** Richard playtested the input fixes and confirmed everything
