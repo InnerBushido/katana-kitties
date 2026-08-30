@@ -5,7 +5,86 @@ knob it moves.** Read this before touching `core/device.js`, the `maxAtlas`
 argument at any `loadSpriteAtlas` call site, or the render quality tiers.
 
 The roadmap — what is built and what is next — is in
-[HANDOFF.md](../../HANDOFF.md). This file is only the reasoning.
+[HANDOFF.md](../../HANDOFF.md). This file is only the reasoning — except for the
+first section, which is the one thing here you need before any of the reasoning
+matters: how to get the code on your laptop onto the phone in your hand.
+
+---
+
+## Putting the LOCAL build on a phone
+
+The hosted build is one tap away — [katana-kitties.vercel.app](https://katana-kitties.vercel.app)
+— and if you are testing what is already deployed, use that. This section is for
+testing **uncommitted work**, which is most testing.
+
+```bash
+npm run dev -- --host
+```
+
+**The `--` is not decorative.** `npm run dev` passes what follows it to npm, not
+to Vite; `--` is what makes npm hand the rest to the script. Without it the flag
+is swallowed and the server starts bound to localhost anyway, reporting success,
+which is the confusing half of this.
+
+Vite then prints two addresses instead of one:
+
+```
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.1.14:5173/  Wi-Fi
+```
+
+**Type the Network one into the phone.** That is the whole procedure. The phone
+must be on the same Wi-Fi as the laptop — the same SSID, not the guest network
+and not mobile data — and the address changes when the router hands out a new
+lease, so read it off the terminal each time rather than remembering it.
+
+`.claude/launch.json` carries this as a second configuration, **`katana-kitties-lan`**,
+so an agent driving the preview pane can start it the same way. It is
+deliberately not `autoPort`: the URL is being read off a screen and typed into a
+phone with a thumb, so the port has to be the one this file says it is.
+
+### The four things that make it fail, in the order they happen
+
+**Vite binds `127.0.0.1` only, by default.** This is the failure with no error
+message anywhere: the server is up, the laptop can reach it, and the phone times
+out — because nothing is listening on the address the phone is dialling. If the
+phone hangs on a white screen, check the terminal for the `Network:` line before
+checking anything else. No line, no `--host`.
+
+**Windows Firewall has to allow inbound Node.** Verified rather than assumed on
+this machine: there are four enabled inbound **Allow** rules for `node.exe` and
+`Node.js JavaScript Runtime`, and — the part that matters — they are scoped to
+the **Public** profile, which is the profile the house Wi-Fi is classified under
+here. So it works as it stands. On a machine where it does not, the symptom is
+identical to the one above (a timeout, no error) and the fix is one Allow rule,
+not turning the firewall off.
+
+**Some routers isolate wireless clients from each other.** "AP isolation" or
+"client isolation", usually off by default and usually on for a guest network.
+If the laptop is on Ethernet and the phone on Wi-Fi and nothing works, that is
+where to look.
+
+**Anything on that Wi-Fi can reach it, including `/tuning.html`.** The balance
+page's save endpoint is a `configureServer` hook, so it POSTs a file into the
+source tree on an unauthenticated request — fine on `localhost`, and now exposed
+to the network for as long as `--host` is running. It has never mattered on a
+home network with two children on it. It would matter in a café. Stop the server
+when the test is done.
+
+### What to actually check once it is on the phone
+
+- **Landscape.** Portrait is gated — the game says to turn the phone sideways
+  rather than trying to lay itself out in a shape it cannot be played in.
+- **The on-screen pad**, which only exists on a touch device — the desktop test
+  mode is in *The mode toggle*, below.
+- **`1`, from the debug panel.** Every row in that panel is tappable for exactly
+  this reason: a phone has no `` ` `` key. Open it with **five taps in the
+  top-left corner**, inside 600ms of each other — a 64px target, deliberately
+  the same gesture Android uses for developer options, and deliberately hard to
+  stumble into mid-round. Then tap the frame-cost row and read the same numbers
+  a keyboard gets.
+- **A first load is ~35MB** and it caches. A slow first load on a phone is the
+  sprite sheets, not the game.
 
 ---
 
