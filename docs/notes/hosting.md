@@ -73,6 +73,44 @@ Three ways through, in increasing order of how much they give away:
 any amount of branch pushing — which is the property that makes this the safe
 way to test.
 
+### SSO also breaks "add to home screen", which is the only fullscreen there is
+
+**There is no fullscreen button in this game and there never was.** `grep` finds
+no `requestFullscreen` anywhere in `src/`. The whole screen on a phone comes
+from installing to the home screen and letting
+[public/manifest.webmanifest](../../public/manifest.webmanifest) do it —
+`"display": "fullscreen"` with a `standalone` fallback, and
+`"orientation": "landscape"`. On an iPhone that is the *only* route, because
+Safari there supports neither the Fullscreen API nor orientation lock; Android
+honours both (see [mobile.md](mobile.md)).
+
+**Which means protection costs more than a login prompt.** Measured on the
+`alpha` preview against production:
+
+| | production | preview |
+| --- | --- | --- |
+| `/` | `200` | `302` → `vercel.com/sso-api` |
+| `/manifest.webmanifest` | `200 application/manifest+json` | `302 text/plain` |
+
+A browser that cannot fetch the manifest cannot apply `display: fullscreen`, so
+an install done before signing in produces **a plain bookmark with the URL bar
+still there** — which looks like the manifest is broken and is not.
+
+**The order of operations is the fix, on Android.** Sign in to Vercel in Chrome
+*first*, hard-reload so the failed manifest fetch is not the cached one, and
+install after that: Chrome shares its cookie jar with installed PWAs, so the
+manifest request authenticates and the install is a real fullscreen one. iOS is
+less reliable here — home-screen web apps have historically had their own cookie
+store, so a standalone launch can land on a login page with no browser UI to log
+in through. **If it is going on an iPhone, make the preview public instead.**
+
+**An installed preview is a SEPARATE ORIGIN, and that is mostly a feature.** It
+gets its own home-screen icon next to the live game, and its own
+`localStorage` — so the record board, the controller calibration and the stick
+setting do **not** carry across from the real game, exactly as they already do
+not carry from `localhost`. Worth knowing before wondering where the scores
+went.
+
 ## Why NOT to tunnel the dev server, and what to tunnel instead
 
 `cloudflared tunnel --url http://localhost:5173` gives a public HTTPS address
