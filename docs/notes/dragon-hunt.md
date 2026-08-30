@@ -405,10 +405,11 @@ argument. This is the one thing in the game they do together.
 Collect all seven and Patchfur speaks (`systems/summonscene.js`, `found`), and
 **Ryuuseki appears over the great torii**. Walk up to him and he introduces
 himself (`summon`) while the sky falls to `DUSK_DEEP` and stays there until he
-leaves. `World.setDusk` lerps the sky uniforms, the fog AND the light
+leaves. `World.setSky(dusk, dawn)` lerps the sky uniforms, the fog AND the light
 intensities from a remembered day palette — leaving the lights alone put bright
 afternoon islands under a black sky, which reads as a broken shader rather than
-as nightfall.
+as nightfall. (It was `setDusk(k)` until the ending grew a morning of its own;
+the second channel is [endgame.md](endgame.md).)
 
 **TWO SEATS, DOING DIFFERENT JOBS.** The pilot takes `player.mount`, so every
 line of the existing flight controller applies unchanged. The gunner takes

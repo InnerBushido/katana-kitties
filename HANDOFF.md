@@ -254,6 +254,42 @@ header and its own 2.5MB cap.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Six reported from play, all fixed, none tried by a player yet.** They came in
+as one list and are unrelated to each other, so they went on one `mixed/` branch:
+
+1. **Mr Satan's announcement waited for everyone to get off the dragon.** The
+   `pending` stage of `systems/arenaquest.js` held while any kitten was mounted
+   or riding along — and *riding Ryuuseki is what opens the stage*, so the
+   speech that should follow the flight only played once they had all landed.
+   The only gate now is "no other scene owns the screen". A mounted kitten is
+   safe through a scene: `Player.update` is not called while one is running, and
+   a ridden dragon has no will of its own. Verified in the game, not reasoned —
+   filmed a kitten at y = 27 through the whole scene and read her position, hp
+   and mount back afterwards, unchanged.
+2. **He had no minimap icon.** He does now — a gold star, drawn before the
+   kittens so nothing hides him, named at zoom. `world-check` finds it by the
+   longest run of consecutive two-argument canvas ops, which is unique to a star
+   (the dealer's diamond is 5, a kitten's wedge is 4, a dragon's is 3).
+3. **The ending now clears the sky.** See
+   [endgame.md](docs/notes/endgame.md#the-world-gets-its-morning-back): a second
+   sky channel, a 12-second dawn inside Patchfur's first two lines, the fog
+   pushed off the far islands, and cloud shelves that are **geometry, not
+   shader** — three attempts at painting them into the sky dome failed because
+   this camera looks down.
+4. **The Help page said nothing about player 2's keys, and the clip taught the
+   wrong one.** Both fixed, and `move-keys.gif` re-filmed — details in
+   [help.md](docs/notes/help.md#the-clip-taught-the-wrong-key-for-a-while).
+5. **A joining kitten landed between the party**, which on the home island could
+   drop her on a clan leader and open his cutscene. She lands in the town square
+   now when the party is home, at the party's centroid otherwise, and either way
+   through a spiral search that skips solids and keeps clear of any leader she
+   has not met.
+6. **Minimap zoom is shared.** With four players and two maps, a kitten whose
+   pane has no map of its own drives the *nearest* one instead of nothing at
+   all, and the toast says which. `nearestMap` is a pure function in
+   `core/split.js` so the assignment can be asserted; the two-player answer is
+   pinned bit-identical.
+
 **Played, pushed and live — the Help overhaul.** Richard tested it and confirmed
 it works, so `feature/help-onboarding` merged into `main` and went to
 `origin/main`, which Vercel deploys. The branch is **kept** until it has been

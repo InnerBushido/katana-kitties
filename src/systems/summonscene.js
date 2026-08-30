@@ -20,6 +20,10 @@ import { beatOver, TAIL, drawPortrait } from './cutscene.js';
    handed to the world every frame, so the darkening is tied to the moment
    rather than to a flag somebody might forget to clear. Ryuuseki leaving the
    world puts it back.
+
+   AND THE FINALE HAS ITS OWN CHANNEL, `dawn`, which does the opposite and does
+   not go back. The ending is the one moment the world is allowed to change and
+   stay changed — see `start` and `World.setSky`.
 --------------------------------------------------------------------------- */
 
 const FADE = 0.5;
@@ -30,6 +34,25 @@ export const DUSK_DEEP = 0.86;
 /** Seconds the sky takes to fall, and to come back. Falling is slower. */
 export const DUSK_FALL = 3.2;
 export const DUSK_LIFT = 1.6;
+
+/**
+ * Seconds the sky takes to clear at the ending, and how far it goes.
+ *
+ * TWELVE, WHICH IS LONGER THAN ANY OTHER SKY CHANGE IN THE GAME AND IS MEANT
+ * TO BE. The dusk falls in 3.2 because a dragon arriving is an event; this is
+ * a morning coming up, and the finale's first two beats run about sixteen
+ * seconds between them — so the change lands entirely inside Patchfur's first
+ * two lines, slowly enough that a nine-year-old notices it happening rather
+ * than noticing that it has happened. Cutting it to four was tried and reads
+ * as a light switch.
+ *
+ * DEEP IS 1 AND NOT LESS. Unlike `DUSK_DEEP` there is nothing to hold back
+ * for: the storm stops short of black so Ryuuseki still has a sky to be
+ * enormous against, and there is no equivalent thing for a clear morning to
+ * leave room for.
+ */
+export const DAWN_RISE = 12;
+export const DAWN_DEEP = 1;
 
 export const SCRIPTS = {
   found: [
@@ -176,6 +199,11 @@ export class SummonScene {
     /** 0..1, how dark the sky is right now. Owned here, applied by the game. */
     this.dusk = 0;
     this.duskWant = 0;
+    /** 0..1, how far the sky has cleared for the ending. Owned here for the
+     *  same reason the dusk is: the sky belongs to the moment, not to a flag
+     *  on an object somebody might forget to clear. */
+    this.dawn = 0;
+    this.dawnWant = 0;
 
     this.camera = new THREE.PerspectiveCamera(54, 16 / 9, 0.1, 4000);
     this._look = new THREE.Vector3();
@@ -272,6 +300,22 @@ export class SummonScene {
       drawPortrait(this.portraitEl, art, which.startsWith('satan') ? '#ffd24a' : '#e8c98a');
     }
     if (which === 'summon') this.duskWant = DUSK_DEEP;
+    /* THE ENDING TAKES THE STORM DOWN AND PUTS A MORNING UP, and both halves
+       matter. The finale fires at 100% mischief, which in a real run happens
+       long after the dragon has been summoned — so the sky it opens on is
+       Ryuuseki's black one, and Patchfur's four lines about what the girls
+       have made of this place were being spoken over a thunderstorm.
+       IT IS NOT PUT BACK WHEN THE SCENE ENDS. Every other scene's sky is
+       borrowed and returned; this one is the world having changed, and
+       changing back the moment the box closes would say the opposite of what
+       the scene just said. Only a restart clears it — see `resetSky`.
+       `clearDusk` is still what Ryuuseki leaving calls, and it deliberately
+       does not touch the dawn: the dragon can come and go afterwards without
+       taking the morning with him. */
+    if (which === 'finale') {
+      this.duskWant = 0;
+      this.dawnWant = DAWN_DEEP;
+    }
     this._next();
     return true;
   }
@@ -312,14 +356,42 @@ export class SummonScene {
     this.voiceEl = null;
   }
 
-  /** Sky back to sunset — called when Ryuuseki leaves the world. */
+  /** Sky back to sunset — called when Ryuuseki leaves the world.
+   *  IT DOES NOT TOUCH THE DAWN. The dragon leaving is not the ending being
+   *  undone; see the note in `start`. */
   clearDusk() { this.duskWant = 0; }
 
-  /** Ease the sky toward its target. Runs every frame, scene or no scene. */
-  updateDusk(dt) {
+  /** Everything about the sky back to the opening state. RESTART ONLY — the
+   *  dawn is permanent within a run and this is the one thing that unmakes it,
+   *  for the same reason `_restart` un-meets every clan leader. */
+  resetSky() {
+    this.duskWant = 0;
+    this.dusk = 0;
+    this.dawnWant = 0;
+    this.dawn = 0;
+  }
+
+  /**
+   * Ease both sky channels toward their targets and hand them to the world.
+   * Runs every frame, scene or no scene.
+   *
+   * IT APPLIES THEM ITSELF rather than returning a number for the game to
+   * apply. It used to be `world.setDusk(scene.updateDusk(dt))` at two call
+   * sites, which was fine while the sky had one channel and is a trap with
+   * two: the finale drops the dusk and raises the dawn on the same frame, and
+   * anything that forwards only one of them draws a storm-lit morning. One
+   * call, both numbers, in the order `World.setSky` blends them.
+   */
+  updateSky(dt) {
     const rate = this.duskWant > this.dusk ? dt / DUSK_FALL : dt / DUSK_LIFT;
     if (this.dusk < this.duskWant) this.dusk = Math.min(this.duskWant, this.dusk + rate);
     else this.dusk = Math.max(this.duskWant, this.dusk - rate);
+    /* One rate, both directions. Nothing in the game lowers the dawn — only
+       `resetSky` does, and a restart wants it gone that frame, not eased. */
+    const dRate = dt / DAWN_RISE;
+    if (this.dawn < this.dawnWant) this.dawn = Math.min(this.dawnWant, this.dawn + dRate);
+    else this.dawn = Math.max(this.dawnWant, this.dawn - dRate);
+    this.world?.setSky(this.dusk, this.dawn);
     return this.dusk;
   }
 

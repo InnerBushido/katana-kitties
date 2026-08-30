@@ -168,8 +168,10 @@ export class Minimap {
    * @param players two Player instances
    * @param dragons all Dragons
    * @param kotodama the Kotodama system, or null before 100% mischief
+   * @param satan MrSatan, or null. Drawn only once he is really in the world —
+   *        see the star below for why he needs a mark at all.
    */
-  draw(players, dragons, kotodama = null) {
+  draw(players, dragons, kotodama = null, satan = null) {
     const focus = this.focusIndex != null && players[this.focusIndex]
       ? players[this.focusIndex].position
       : midpointOf(this.focusOn?.map((i) => players[i]).filter(Boolean) ?? players);
@@ -357,6 +359,67 @@ export class Minimap {
       c.lineWidth = 1.6 * this.dpr;
       c.strokeStyle = '#1c1016';
       c.stroke();
+    }
+
+    /* --- MR. SATAN, once he is really standing somewhere ---
+       HE IS AN INSTRUCTION, WHICH IS WHY HE IS ON HERE AT ALL. Every other
+       mark on this map is a place; he is the only PERSON, and he is on it
+       because the game repeatedly tells the girls to go and find him — "THE
+       ARENA IS OPEN — find Mr. Satan in the town", and then his own line
+       asking for everybody at once. A destination named in a toast and drawn
+       nowhere is a destination a nine-year-old walks past, and reported as
+       exactly that: he opened the tournament and nothing on the map said
+       where.
+
+       DRAWN OFF `group.visible`, NOT OFF A STAGE. That flag is the one thing
+       that is true if and only if he is in the world — `ArenaQuest` raises it
+       when he announces himself and `reset` lowers it — so the mark cannot
+       appear over a town he has not arrived in, and cannot linger after a
+       restart has put him away. Asking the quest's stage instead would be a
+       second opinion about the same fact, and the two would drift.
+
+       A STAR, BECAUSE NOTHING ELSE ON HERE IS ONE. Dragons are triangles, the
+       dealer is a diamond, shrines are diamonds with haloes and kittens are
+       wedges; the champion gets the one shape a kid reads as "the person
+       everybody is talking about" without being told. Same gold as the
+       dealer's stall, because both are things you walk up to and press a
+       button at.
+
+       Drawn before the kittens, like everything else — a sister must never be
+       hidden under a landmark. */
+    if (satan?.group?.visible) {
+      const x = this._px(satan.position.x);
+      const y = this._py(satan.position.z);
+      const s = 6 * this.dpr;
+      c.save();
+      c.translate(x, y);
+      c.beginPath();
+      for (let i = 0; i < 10; i++) {
+        /* Points up: the first vertex is at -PI/2. A five-point star drawn
+           from angle 0 lies on its side, which reads as a broken shape rather
+           than as a star. */
+        const a = -Math.PI / 2 + (i * Math.PI) / 5;
+        const r = i % 2 ? s * 0.44 : s;
+        c[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r);
+      }
+      c.closePath();
+      c.fillStyle = '#f5c341';
+      c.fill();
+      c.lineWidth = 1.6 * this.dpr;
+      c.strokeStyle = '#1c1016';
+      c.stroke();
+      c.restore();
+      // Named only when there is room, exactly like the shrines.
+      if (this.zoom > 1) {
+        c.font = `800 ${9.5 * this.dpr}px Nunito, sans-serif`;
+        c.textAlign = 'center';
+        c.lineWidth = 3 * this.dpr;
+        c.lineJoin = 'round';
+        c.strokeStyle = 'rgba(20,12,18,0.9)';
+        c.strokeText('Mr. Satan', x, y - 10 * this.dpr);
+        c.fillStyle = '#f5c341';
+        c.fillText('Mr. Satan', x, y - 10 * this.dpr);
+      }
     }
 
     // --- the kitties, drawn last so they're never hidden ---

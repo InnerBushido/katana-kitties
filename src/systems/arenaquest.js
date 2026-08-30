@@ -114,13 +114,28 @@ export class ArenaQuest {
       case 'pending':
         this.timer += dt;
         if (this.timer < ANNOUNCE_DELAY) break;
-        /* NOT WHILE ANYTHING ELSE OWNS THE SCREEN, and not while somebody is
-           thirty units up on a dragon. `SummonScene.start` refuses when a
-           scene is running, and a refusal here would lose the announcement
-           outright — nothing would ever ask again — so the stage only
-           advances once the scene has actually been accepted. */
+        /* NOT WHILE ANYTHING ELSE OWNS THE SCREEN. `SummonScene.start`
+           refuses when a scene is running, and a refusal here would lose the
+           announcement outright — nothing would ever ask again — so the stage
+           only advances once the scene has actually been accepted. */
         if (hud._sceneActive()) break;
-        if (players.some((p) => p.mount || p.rideAlong)) break;
+        /* IT USED TO ALSO WAIT FOR EVERY KITTEN TO GET OFF THE DRAGON, and
+           that is the bug this comment replaces. The gate read
+           `players.some((p) => p.mount || p.rideAlong)` and the reasoning was
+           "do not take the screen off somebody thirty units up" — which sounds
+           right and is wrong for one reason nobody spotted: THE THING THAT
+           OPENS THIS STAGE IS RIDING RYUUSEKI. A pair who climb on and stay on
+           — which is exactly what a pair who have just summoned a dragon do —
+           hold the gate shut for as long as they are enjoying him, and Richard
+           reported it as the announcement only arriving once everybody had
+           jumped off. A countdown that only finishes when you stop playing
+           with the thing that started it is not a delay, it is a hang.
+           A MOUNTED KITTEN IS SAFE THROUGH A SCENE, and that is what makes
+           taking the gate out cost nothing. `Player.update` is not called while
+           a scene owns the screen, and a ridden dragon has no will of its own —
+           `Dragon.update` sets `state = 'ridden'` and returns, so the flight is
+           frozen where she left it and resumes underneath her when the scene
+           ends. Nothing falls, nothing drifts, nobody is dismounted. */
         if (hud.summonScene.start('satanAnnounce', hud.townCentre(), 74, S?.art)) {
           this.stage = 'calling';
           // Everything already passed is spent, silently. See the header.

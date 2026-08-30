@@ -396,8 +396,17 @@ const KEY_FIELDS = ['up', 'down', 'left', 'right', ...ACTIONS];
        . I J      mirrors Q E F: mount, interact, attack, same jobs, same shape
                   (`P` held mount here until it collided with the frame-cost
                   debug key — see the note on `mount` below)
-       ' or RCtrl jump — where the space bar is for player 1
-       Right Alt  sprint — where left Shift is for player 1
+       Right Alt  jump — the big key next to player 1's space bar, and under
+                  her own thumb (Numpad0 and Right Ctrl jump too)
+       ' or RShift sprint — under her little finger, where left Shift is under
+                  player 1's
+
+   THIS BLOCK SAID THE OPPOSITE OF THE TABLE FOR A WHILE, and it was reported
+   from play rather than caught here. It was written when jump really was `'`;
+   the two swapped later (see the note on `sprint` below) and only the note
+   moved. A summary that disagrees with the bindings under it is worse than no
+   summary, so `world-check` now reads the Help page's own wording against
+   `KEYSETS` — the same defence the pad prompts already have.
 
    So each girl can play the whole game with one hand on her own half of the
    keyboard, sitting side by side, without either of them reaching across.
@@ -407,8 +416,8 @@ const KEY_FIELDS = ['up', 'down', 'left', 'right', ...ACTIONS];
    to MOVE, and each only because something else claimed the key:
 
      `;` was mount    -> it is "walk right" now, so mount went to `.`
-     `/` was jump     -> jump is `'`, so `/` took attack (`.`'s old job)
-     RCtrl was sprint -> it is a jump key now, so sprint is RShift and RAlt
+     `/` was jump     -> jump moved off it, so `/` took attack (`.`'s old job)
+     RCtrl was sprint -> it is a jump key now, so sprint is RShift and `'`
 
    which leaves the four punctuation keys reading , . / ' = interact, mount,
    attack, jump: still one contiguous run under the right hand, still in the
