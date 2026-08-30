@@ -127,6 +127,17 @@ tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
              gif.mjs (the same, for GIF — interframe differencing, which is why
                a Help clip must be filmed on a pinned camera; gif-selftest.mjs
                reads its output back. See docs/notes/help.md)
+             gif-sync.mjs (makes two side-by-side clips loop together, by
+               rewriting delay bytes only — never by re-encoding, and never by
+               stretching: it holds the shorter one's last frame)
+  capture/   the rig that FILMS the game to make those clips — a shot script
+             drives the real game and the frames come off the back buffer, so a
+             clip cannot say anything the game does not do.
+             **tools/capture/README.md is the director's guide** and is the
+             thing to read before filming: how to run a shot end to end, why a
+             caption needs longer than its action, why the camera is pinned,
+             and the traps that have cost takes. `shots/*.js` is one file per
+             clip — the only thing that can ever re-cut one.
              help-portraits.mjs (the clan leaders on the Help page)
              kitten-cackle.mjs (the trailer's demon, and `--game` for the
                Cross Slash's four graded purrs — see docs/notes/voices.md,
