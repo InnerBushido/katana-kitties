@@ -61,9 +61,24 @@
    confirms — so anything less would let a mashed button start the game out
    from under the question.
 
-   `panel-trailer` is deliberately NOT in this list; see `panel()`. */
+   `panel-trailer` is deliberately NOT in this list; see `panel()`.
+
+   `panel-board` WAS MISSING FROM IT, and had been since it was written. It
+   carries `data-nav="scroll"` — a mode that exists FOR it — and could never
+   reach it: with the board on screen the first unhidden id was `panel-pause`
+   behind it, so a pad scrolled the pause menu under the record board and the
+   board's own BACK could not be reached with a stick at all. Found while
+   cutting the pause menu into groups, which put a second panel behind it and
+   turned a quiet wrong answer into a visible one.
+
+   THE THREE PAUSE GROUPS SIT BELOW SETTINGS AND HELP AND ABOVE PAUSE, which
+   is the same rule as everything else here: a panel opened FROM another panel
+   goes above the one it opened from. Every one of them can have the pause menu
+   up behind it, and `panel-kittens` can additionally have the board or the
+   profile up in front. */
 const PANELS = ['panel-confirm', 'panel-trailer-offer', 'panel-profile',
-  'panel-league', 'panel-settings', 'panel-help', 'panel-pause'];
+  'panel-league', 'panel-board', 'panel-settings', 'panel-help',
+  'panel-kittens', 'panel-watch', 'panel-ending', 'panel-pause'];
 
 /* Stick/d-pad repeat. The first step is instant, then it waits, then it runs —
    the shape every menu in every console game uses, because a list that scrolls

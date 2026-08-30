@@ -260,8 +260,8 @@ things that are not gameplay and are live already:
 - **`origin/alpha`** is the version other people are asked to play, at
   `https://katana-kitties-git-alpha-dream-dojo.vercel.app`. It only ever
   fast-forwards to local `main`, so it can never be ahead of the real game in
-  content, only in *release* — the six fixes below are on it and `origin/main`
-  does not have them yet. See **Branches**, at the bottom of this file.
+  content, only in *release* — every list below is on it and `origin/main` does
+  not have any of them yet. See **Branches**, at the bottom of this file.
 - **[tools/doc-sync.mjs](tools/doc-sync.mjs)** writes PROJECT.md's controls and
   balance tables out of `input.js` and `player.js`. A `pre-commit` hook re-runs
   it whenever a commit touches either, and `world-check` fails if they have
@@ -269,8 +269,78 @@ things that are not gameplay and are live already:
   months and the doc did not even have a Joy-Con column to be wrong.
   → [docs/notes/docs.md](docs/notes/docs.md)
 
-**Six more reported from play, all fixed, none tried by a player yet.** A second
-list, from a later session, on `mixed/satan-gate-input-fallthrough-orb-depth`:
+**Six more reported from play, all fixed, none tried by a player yet.** The
+newest list, on `mixed/pause-menu-orbs-cameras`:
+
+1. **The pause menu was fifteen rows and is six.** "Can we clean it up or
+   organize it by breaking the commands into sub menus — Gameplay, Players,
+   Storyline, Stats/Features." Grouping in place would have made it *longer*
+   (fifteen rows plus four headings), so the three groups that are never urgent
+   moved one press down: **KITTENS & SCORES** (profile, record board, DROP
+   OUT), **WATCH AGAIN** (story, trailer) and **END THE GAME** (restart, title,
+   quit). What stayed on top is what is asked for mid-game. QUIT THE MATCH is
+   the one exception — the only ending that is ever urgent, and hidden unless a
+   match is live. The seventh non-negotiable comes out *stronger*: nothing that
+   ends the afternoon can be reached by overshooting RESUME any more.
+   Settings gained a **Maths overlay** row — automatic / always on / always off
+   — because "we may remove those from the controllers in the future", and
+   because a kid on a phone has no `M` to press. Automatic is not the same as
+   on: it is off on a phone and the Dojo turns it on when she walks in, and it
+   stops doing that the moment she answers the question herself.
+   Four scattered copies of "which panels sit over the pause menu" became one
+   `SUB_PANELS`, which is how the fourth copy was found to have never heard of
+   `panel-board` — a pad in the record board was really driving the pause menu
+   behind it, and the board's own `data-nav="scroll"` had never once fired.
+2. **Her worn orbs are orbs now, and one of them answers the row she is on.**
+   "It just shows the kanji character and colour, and it's hard to know which
+   one relates to which ability", and "the orbs at the top are in a square
+   shape, may look better circular, 3D-ish like a dragon ball". Both are one
+   card. The slots matching the cursor row light up, lift, and the rest step
+   back — only when she actually wears one, because dimming all eight to point
+   at none of them is a card that looks broken. The shape is
+   `out/trailer/shots/s12.png`, the game's own promotional art of these eight
+   objects, in CSS: glass sphere, specular highlight high and left, a coloured
+   bloom, and a neon ring orbiting on a tilt with its top open so it passes
+   behind the ball. The shelf's dots are the same glass, because they are the
+   same eight objects seen twice.
+3. **A pane the layout narrowed pulls its camera back.** With the split set to
+   Top and bottom and one kitten against the other three, the 3v1 branch
+   overrides the setting to a 62/38 side-by-side, so she got a 730x1080 column
+   — and `fitDistance` had nothing to say about it, because it frames a *group*
+   and her group is one kitten. Every distance in `_updateRig` is a constant
+   tuned on a full-width screen. `paneWiden` is the missing term: *no pane
+   shows less of the world across it than a quadrant of the same screen would*,
+   which is her own remedy, and works out at **2.63x** for her column and 1.62x
+   for the trio's. An even split is exempt — two even panes are just as narrow
+   and are the two-player game, which may not move.
+4. **The Dojo's board takes its full size and the top corner in a shared pane.**
+   Side by side with two kittens in one pane it was 42% of 960 — a 403px board
+   where an unsplit screen gives 540, and the one thing the room exists to
+   teach was too small to read. 42% is a rule about not covering *the* player
+   and stops being that rule when the pane belongs to two or three of them. It
+   goes hard into the pane's top-outer corner, dropping below the scoreboard
+   only when the two would actually meet, and it stops before the pane's own
+   minimap — asked of the same two functions that place the map, because the
+   hand-rolled reservation was sixteen pixels short.
+5. **Blossom's arrows pointed diagonally and her box was twice as high.** One
+   cause, both symptoms: `.tp-keys` was the only item in a nowrap flex row with
+   a shrink factor, so a name too long for the column had its width taken out
+   of the arrows and `◀ ▶` wrapped onto two lines. Only her name is long
+   enough. The prompt is the instruction that screen exists to give, so it is
+   the last thing that may shrink; the name is an element now so the squeeze
+   has somewhere else to go, and the column is wide enough that in practice
+   nothing gives at all.
+6. **Debug `4` ends the round instead of killing Frost.** It hit
+   `this.players[1]` for her whole health bar — written when two players was
+   the only number there was. At four it killed one kitten and left two
+   standing; in a 2v2 it did not end the round at all, because a side is not
+   out until everybody on it is. The `ROUND_LIMIT` damage decision is
+   `Tournament.callOnDamage` now and both the clock and the key go through it,
+   so they cannot disagree about who won. Nobody is hurt to end a round: a
+   round called on time is not a knockout.
+
+**Six before those, all fixed, none tried by a player yet**, on
+`mixed/satan-gate-input-fallthrough-orb-depth`:
 
 1. **Mr Satan answers the arena gate now.** The arena island is flyable the
    moment it appears, so two kittens could land at the torii and find an empty

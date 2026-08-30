@@ -391,11 +391,22 @@ export function render(file, doc) {
   return out;
 }
 
+/* LINE ENDINGS ARE NORMALISED ON THE WAY IN, and this is not a nicety.
+   Git is set to convert on checkout here, so a fresh clone on Windows has
+   CRLF in these two files while everything below writes LF — and every block
+   then compared unequal to itself. `world-check` failed all seven blocks on a
+   tree with no content difference at all, and `npm run docs` "fixed" it by
+   rewriting the files with identical bytes and different endings. A check that
+   fires on a clean checkout is a check people learn to run twice and then stop
+   reading, which is the same trap `tools/artifact-sync.mjs` guards its hashes
+   against, for the same reason. */
+const read = (file) => readFileSync(new URL(file, root), 'utf8').replace(/\r\n/g, '\n');
+
 /** Which blocks of which files are stale, as `file:id`. Empty means in step. */
 export function staleBlocks() {
   const stale = [];
   for (const [file, blocks] of TARGETS) {
-    const doc = readFileSync(new URL(file, root), 'utf8');
+    const doc = read(file);
     for (const [id, build] of Object.entries(blocks)) {
       if (splice(doc, id, build(), file) !== doc) stale.push(`${file}:${id}`);
     }
@@ -421,7 +432,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     stale = staleBlocks();
     for (const [file] of TARGETS) {
       const at = new URL(file, root);
-      const before = readFileSync(at, 'utf8');
+      const before = read(file);
       const after = render(file, before);
       if (after !== before) pending.push([at, after]);
     }

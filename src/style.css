@@ -942,31 +942,118 @@ body.touch-ui .pane-edge { border-width: 4px; }
   border-color: var(--me, var(--gold));
 }
 
-/* --- her eight slots --- */
+/* --- her eight slots ---
+   THEY ARE ORBS, AND THEY USED TO BE SQUARES. Reported from play: "the orbs at
+   the top are in a square shape, may look better to have them circular or orb
+   like, could be cool to make it look 3D-ish like a dragon ball or a Pokémon
+   ball, make it look more like a cool collectable and special object."
+
+   DRAWN FROM `out/trailer/shots/s12.png`, which is the reference she named and
+   is the game's own promotional art: a glass sphere with the specular
+   highlight high and left, the colour deepening to the lower-right rim, a soft
+   coloured bloom on the floor under it, a bright kanji floating in the middle,
+   and a neon ring orbiting it on a tilt. Everything below is that picture in
+   CSS — gradients, a rotated pseudo-element and two shadows, no image, because
+   the ninth non-negotiable means an atlas entry for eight HUD icons is not on
+   the table and would go stale the day a colour changed.
+
+   MEASURED IN `--u` LIKE THE REST OF THE CARD, so it holds together at a
+   quarter pane. See `.pane-card`. */
 .pc-slots { display: flex; gap: calc(0.6 * var(--u)); flex-wrap: nowrap; }
 .pc-slot {
   flex: 1 1 0;
   aspect-ratio: 1;
-  /* CAPPED, BECAUSE THESE ARE SQUARE AND THE ROW IS AS WIDE AS THE PANE.
-     Eight slots sharing the width of a very wide pane are eight big squares,
-     and a square's height is its width — so the one row that cannot be made
+  /* CAPPED, BECAUSE THESE ARE ROUND AND THE ROW IS AS WIDE AS THE PANE.
+     Eight slots sharing the width of a very wide pane are eight big circles,
+     and a circle's height is its width — so the one row that cannot be made
      smaller by `--u` is this one. 10.5 is what they come out at in a 16:9 pane
      anyway (eight of them plus the gaps fill the card), so nothing normal
      moves. */
   max-width: calc(10.5 * var(--u));
   display: grid;
   place-items: center;
+  position: relative;
   font-style: normal;
   font-size: 0.95em;
-  border-radius: calc(0.6 * var(--u));
+  border-radius: 50%;
   border: calc(0.3 * var(--u)) dashed rgba(251, 238, 210, 0.3);
   color: var(--ink);
 }
+/* A GLASS SPHERE, IN THREE LAYERS, INNERMOST FIRST.
+     1. the specular highlight, high and left, small and nearly white
+     2. the body, the orb's own colour, going transparent by 62% so the
+        gradient underneath shows through
+     3. the ground: a darker version of the same hue, which is what turns a
+        flat disc into a ball.
+   `color-mix` rather than a second custom property, so one `--orb` from the
+   markup is still the only colour this needs to be told. */
 .pc-slot.full {
-  border-style: solid;
-  border-color: var(--ink);
-  background: var(--orb);
-  box-shadow: inset 0 0 0 calc(0.25 * var(--u)) rgba(255, 255, 255, 0.45);
+  border: none;
+  background:
+    radial-gradient(circle at 32% 26%,
+      rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.35) 14%,
+      rgba(255, 255, 255, 0) 34%),
+    radial-gradient(circle at 38% 32%,
+      var(--orb) 0%, color-mix(in srgb, var(--orb) 78%, #100a18) 62%,
+      color-mix(in srgb, var(--orb) 42%, #100a18) 100%);
+  /* The bloom on the floor in s12, and a dark rim so a pale orb still has an
+     edge against the card's cream type. */
+  box-shadow:
+    0 0 calc(1.6 * var(--u)) color-mix(in srgb, var(--orb) 70%, transparent),
+    inset 0 calc(-0.4 * var(--u)) calc(0.9 * var(--u)) rgba(16, 10, 24, 0.55);
+  /* The kanji floats IN the glass rather than sitting on it. */
+  color: #fff;
+  text-shadow:
+    0 0 calc(0.5 * var(--u)) rgba(255, 255, 255, 0.9),
+    0 calc(0.15 * var(--u)) 0 rgba(16, 10, 24, 0.55);
+}
+/* THE ORBITING RING. One ellipse, wider than the orb and a fifth as tall,
+   tilted — which is exactly what s12 draws and is why the orbs there read as
+   objects rather than as buttons. `border-top` is transparent so the ring
+   passes BEHIND the sphere at the top of its orbit, which is the whole trick:
+   a closed ellipse in front of a ball is a hoop resting on it. */
+.pc-slot.full::after {
+  content: '';
+  position: absolute;
+  left: -18%;
+  top: 38%;
+  width: 136%;
+  height: 30%;
+  border: calc(0.28 * var(--u)) solid color-mix(in srgb, var(--orb) 85%, #fff);
+  border-top-color: transparent;
+  border-radius: 50%;
+  transform: rotate(-18deg);
+  box-shadow: 0 0 calc(0.8 * var(--u)) color-mix(in srgb, var(--orb) 60%, transparent);
+  pointer-events: none;
+}
+/* WHICH ONE THE CURSOR IS ON. The row below says what an orb does in words;
+   this says which of the ones she is WEARING that sentence is about. It is a
+   brighter bloom, a ring that has swung round, and a slight lift — three cues
+   because this card is read at a quarter of a screen and one of them is a few
+   pixels. */
+.pc-slot.full.lit {
+  box-shadow:
+    0 0 calc(2.6 * var(--u)) color-mix(in srgb, var(--orb) 95%, transparent),
+    0 0 0 calc(0.3 * var(--u)) #fff,
+    inset 0 calc(-0.4 * var(--u)) calc(0.9 * var(--u)) rgba(16, 10, 24, 0.5);
+  transform: scale(1.09);
+  /* IN FRONT OF ITS NEIGHBOURS. Eight slots fill the row edge to edge, so a
+     lifted one grows INTO the two beside it — and without this the dimmed
+     neighbour painted after it in document order covered the bright one's rim,
+     which reads as the lit orb being clipped rather than raised. */
+  z-index: 1;
+}
+.pc-slot.full.lit::after { transform: rotate(16deg); border-color: #fff; border-top-color: transparent; }
+/* AND THE REST STEP BACK while one is lit, so the answer is unmistakable at
+   card size. Only when there IS a match — an orb she wears none of dims
+   nothing, because dimming all eight to point at none of them is a card that
+   looks broken. */
+.pc-slots.picking .pc-slot.full:not(.lit) { opacity: 0.45; }
+/* The lift and the swing are the only moving parts, and they stop when the
+   machine asks them to. */
+.pc-slot.full, .pc-slot.full::after { transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .pc-slot.full, .pc-slot.full::after { transition: none; }
 }
 
 /* --- the shelf ---
@@ -1005,6 +1092,12 @@ body.touch-ui .pane-edge { border-width: 4px; }
    to read, and an empty shelf slot still answers it. */
 .pc-orb.out { opacity: 0.55; }
 .pc-orb.owned b { color: var(--gold); }
+/* THE SAME GLASS AS THE SLOT ABOVE IT, and that is the point rather than a
+   flourish: the two rows are the same eight objects seen twice — what she is
+   wearing, and what the shelf sells — and drawing them as two different kinds
+   of thing is half of why "which one relates to which ability" was hard to
+   answer. Too small for the orbiting ring, which at this size is two pixels of
+   noise, so it keeps the highlight and the ground and loses the hoop. */
 .pc-dot {
   flex: none;
   width: calc(3.4 * var(--u));
@@ -1015,9 +1108,17 @@ body.touch-ui .pane-edge { border-width: 4px; }
   place-items: center;
   font-style: normal;
   border-radius: 50%;
-  background: var(--orb);
-  border: calc(0.25 * var(--u)) solid var(--ink);
-  color: var(--ink);
+  background:
+    radial-gradient(circle at 32% 26%,
+      rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 36%),
+    radial-gradient(circle at 38% 32%,
+      var(--orb) 0%, color-mix(in srgb, var(--orb) 76%, #100a18) 66%,
+      color-mix(in srgb, var(--orb) 44%, #100a18) 100%);
+  box-shadow:
+    0 0 calc(0.7 * var(--u)) color-mix(in srgb, var(--orb) 60%, transparent),
+    inset 0 calc(-0.3 * var(--u)) calc(0.6 * var(--u)) rgba(16, 10, 24, 0.5);
+  color: #fff;
+  text-shadow: 0 0 calc(0.4 * var(--u)) rgba(255, 255, 255, 0.85);
   font-size: 0.8em;
 }
 .pc-orb-main { flex: 1 1 auto; min-width: 0; }
@@ -2925,7 +3026,14 @@ body.touch-ui .kd-row { padding: 9px 6px; }
 }
 .tp-side {
   flex: 1 1 150px;
-  min-width: 140px;
+  /* WIDE ENOUGH FOR THE LONGEST NAME PLUS ITS ARROWS, measured off the real
+     row rather than guessed: pip + gap + BLOSSOM at 17px Bangers + gap +
+     `◀ ▶` + padding + border. It was 140px, which fitted every name but the
+     longest one, and the row then took the missing width out of the arrows
+     (see `.tp-keys`). Four of these still wrap onto two lines on a narrow
+     screen, which is what `.tp-body`'s `flex-wrap` is for — a column that
+     wraps is fine, a row that eats its own prompt is not. */
+  min-width: 186px;
   padding: 8px 10px 10px;
   background: var(--paper-2);
   border: 4px solid var(--team, var(--ink));
@@ -2971,8 +3079,24 @@ body.touch-ui .kd-row { padding: 9px 6px; }
   flex: 0 0 auto;
 }
 /* The stick prompt rides on her own row rather than in the footer: whose
-   stick moves whom is the one thing this screen has to make obvious. */
-.tp-keys { margin-left: auto; opacity: 0.5; font-size: 14px; }
+   stick moves whom is the one thing this screen has to make obvious.
+
+   `flex: 0 0 auto` AND `white-space: nowrap`, AND THEY ARE BOTH LOAD-BEARING.
+   `.tp-cat` is a flex row and this was the only item in it with a shrink
+   factor, so when a name was too long for the column the flexbox took the
+   width out of THESE TWO ARROWS and `◀ ▶` wrapped onto two lines: the arrows
+   read as a diagonal pair and the row came out twice as tall as her
+   team-mates'. It only ever happened to Blossom, because hers is the only
+   name long enough to overflow — reported from play as exactly that, "her
+   arrows point diagonally and her box is twice as high". The prompt is the
+   instruction this screen exists to give; it is the last thing that may
+   shrink, not the first. `.tp-name` below is what gives instead. */
+.tp-keys { margin-left: auto; opacity: 0.5; font-size: 14px; flex: 0 0 auto; white-space: nowrap; }
+/* A name has to be an ELEMENT for the rule above to have somewhere to push
+   the squeeze to — a bare text node is an anonymous flex item and no selector
+   can reach it. It ellipsises rather than wrapping, so a name that somehow
+   still does not fit costs its own tail and not the row's height. */
+.tp-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tp-empty {
   margin-top: 5px;
   padding: 5px 7px;

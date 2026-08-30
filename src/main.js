@@ -17,7 +17,7 @@ import { Player, ATTACKS, COMBAT, BASE_REACH, MAX_HP, KO_TIME } from './entities
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from './core/palette.js';
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, fitDistance, stablePanes,
-  paneSeats, outOfShot, framedMembers,
+  paneSeats, outOfShot, framedMembers, paneWiden,
 } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
@@ -71,6 +71,32 @@ import { Inspector } from './systems/inspector.js';
  * clears this; a box sitting on a seam has a seam under it and does not.
  */
 const HINT_CLEAR = 30;
+
+/**
+ * EVERY PANEL THAT OPENS OVER THE PAUSE MENU AND BACKS OUT TO IT.
+ *
+ * ONE LIST, BECAUSE THERE WERE FOUR. "Which panels sit over the pause menu"
+ * was written out separately in the `data-close` handler, in the Escape
+ * handler, in `_overlayOpen` and — in a different order, for a different
+ * reason — in MenuNav's own `PANELS`. Three of them agreed; the fourth had
+ * never heard of `panel-board`, so a pad driving the record board was actually
+ * driving the pause menu behind it. Cutting the pause menu into groups added
+ * three more panels, which is three more chances to update three lists out of
+ * four, so the lists became one.
+ *
+ * MENUNAV'S `PANELS` IS STILL ITS OWN, and deliberately: this list is a SET
+ * (does Escape close it) and that one is an ORDER (who gets the presses when
+ * several are up). Merging them would make the answer to one question depend
+ * on the other, which is how `panel-board` got lost in the first place.
+ *
+ * INNERMOST FIRST, because Escape closes ONE. The record board opens from
+ * KITTENS & SCORES with that group still up behind it, so Escape there has to
+ * put her back on the group she was reading rather than three steps out to the
+ * pause menu — a back button that skips a level reads as the game losing her
+ * place. Everything else in here can only ever be the innermost thing open.
+ */
+const SUB_PANELS = ['panel-board', 'panel-help', 'panel-settings',
+  'panel-kittens', 'panel-watch', 'panel-ending'];
 
 /** The key each debug action is bound to, for the panel's own labels. */
 const DEBUG_KEY_LABEL = {
@@ -307,14 +333,20 @@ class Game {
       split: this.device.defaultSplit,
       dir: 'vertical',
       quality: this.device.defaultQuality,
+      /* 'auto' | 'on' | 'off' — see `_mathDefault`. It is a setting rather
+         than only a button because "we may remove those from the controllers
+         in the future", and because a kid on a phone has no `M` to press. */
+      math: 'auto',
     };
     /* THE MATHS OVERLAY IS OFF BY DEFAULT ON A PHONE, and it turns itself on
        when she walks into the Dojo — see `_updateMathForDojo`. It is not a
        demotion of the feature: on a 6-inch screen the orb's working sits on top
        of the kitten drawing it, and the thing it is teaching is a diagram you
        have to be ABLE TO SEE. The Dojo is where that lesson happens, so that is
-       where it appears; the tap on the board still overrides either way. */
-    this.mathVisible = !this.device.touchPrimary;
+       where it appears; the tap on the board still overrides either way.
+       ...UNLESS SHE HAS SAID OTHERWISE IN SETTINGS, which is what 'auto' means
+       and the whole of what the new row adds. See `_mathDefault`. */
+    this.mathVisible = this._mathDefault();
 
     /* HOW MANY KITTENS ARE IN THE WORLD. Two on a desktop unless somebody
        claims a third slot, which is the whole of the compatibility story: the
@@ -723,6 +755,11 @@ class Game {
    */
   _updateMathForDojo() {
     if (!this.device.touchPrimary || !this.world) return;
+    /* AND NOT WHEN SHE HAS ANSWERED THE QUESTION HERSELF. This room turning
+       the board on is the automatic answer being helpful; doing it over an
+       explicit ON or OFF in Settings is the room overruling her, which is a
+       setting that silently does nothing — the sixth non-negotiable. */
+    if (this.settings.math !== 'auto') return;
     const dc = this.world.dojoCentre;
     const p = this.players[0];
     if (!p) return;
@@ -731,11 +768,7 @@ class Game {
     this._mathWasInDojo = inside;
     /* Silent: `_toggleMath` toasts, and a toast every time she crosses the Dojo
        boundary is noise about something she can already see happen. */
-    this.mathVisible = inside;
-    for (const q of this.players) {
-      for (const o of q.orbs ?? []) o.setMathVisible(this.mathVisible);
-      (q.wornOrbs ?? []).forEach((o, i) => o.setMathVisible(this.mathVisible && i === 0));
-    }
+    this._applyMath(inside);
   }
 
   /**
@@ -1619,6 +1652,12 @@ class Game {
         if (a === 'help') { show('panel-help'); this._warmHelpClips(); }
         if (a === 'settings') { this._refreshPads(); show('panel-settings'); }
         if (a === 'board') { this._paintBoard(); show('panel-board'); }
+        /* The three groups the pause menu was cut into. They carry no state of
+           their own — every row inside is the same `data-action` it was when
+           it sat in the pause menu — so opening one is only a `show`. */
+        if (a === 'kittens') show('panel-kittens');
+        if (a === 'watch') show('panel-watch');
+        if (a === 'ending') show('panel-ending');
         if (a === 'profile') this.profile.open('profile', { fromPause: true });
         if (a === 'resume') this.setPaused(false);
         /* EVERY IRREVERSIBLE BUTTON IN THIS MENU ASKS FIRST, and each of them
@@ -1679,9 +1718,12 @@ class Game {
     document.querySelectorAll('[data-close]').forEach((btn) => {
       btn.addEventListener('click', () => {
         this.input.cancelCapture();
-        hide('panel-help');
-        hide('panel-settings');
-        hide('panel-board');
+        /* THE PANEL THIS BUTTON IS IN, and only it. It used to hide all three
+           by name, which was the same answer while only one could be open —
+           the record board opens from KITTENS & SCORES now, with that group
+           still up behind it, and BACK has to land on the group rather than
+           skip past it to the pause menu. */
+        btn.closest('.screen.overlay')?.classList.add('hidden');
       });
     });
 
@@ -1695,6 +1737,16 @@ class Game {
     };
     bind('set-split', 'split');
     bind('set-dir', 'dir');
+    /* APPLIED ON THE SPOT, not at the next boot. The pause menu is over a
+       frozen world with the orbs still on screen behind it, so a row that took
+       effect "next time" would look like a row that did nothing. */
+    bind('set-math', 'math', () => {
+      this._applyMath(this._mathDefault());
+      /* And forget which side of the Dojo boundary she was on, so switching
+         back to Automatic re-decides from where she is standing rather than
+         from a stale answer. */
+      this._mathWasInDojo = null;
+    });
     /* CHOOSING A QUALITY TURNS THE AUTOMATION OFF, for the session and for good.
        Somebody who has just set this to `high` on a machine the watcher thinks
        is struggling means it — they may be about to plug the monitor into the
@@ -1941,14 +1993,12 @@ class Game {
            reachable from the world at the dealer's stall — so closing it has
            to hand the game back rather than fall through to a pause toggle. */
         if (this.profile.active) { this.profile.close(); e.preventDefault(); return; }
-        // Back out of a sub-panel first, otherwise toggle the pause menu.
-        const sub = ['panel-help', 'panel-settings', 'panel-board'];
-        const subOpen = sub.some((id) => !document.getElementById(id).classList.contains('hidden'));
-        if (subOpen) {
+        /* Back out of ONE sub-panel first, otherwise toggle the pause menu.
+           One and not all of them: `SUB_PANELS` is ordered innermost-first for
+           exactly this, so Escape in the record board lands on the group that
+           opened it rather than out at the pause menu. */
+        if (this._closeSubPanel()) {
           this.input.cancelCapture();
-          hide('panel-help');
-          hide('panel-settings');
-          hide('panel-board');
           if (this.state === 'title') this.paused = false;
         } else if (this.state === 'play') {
           const opening = !this.paused;
@@ -2076,12 +2126,24 @@ class Game {
     );
   }
 
+  /** Close the innermost open sub-panel. False if none was open. */
+  _closeSubPanel() {
+    for (const id of SUB_PANELS) {
+      const el = document.getElementById(id);
+      if (el && !el.classList.contains('hidden')) {
+        el.classList.add('hidden');
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** True while any overlay panel is on screen and should own the input. */
   _overlayOpen() {
     /* `panel-trailer` is in here for the title screen's any-button shortcut:
        without it, a kid mashing a pad through the trailer starts the game
        behind the video she is watching. */
-    return ['panel-settings', 'panel-help', 'panel-pause', 'panel-board', 'panel-profile',
+    return [...SUB_PANELS, 'panel-pause', 'panel-profile',
       'panel-trailer', 'panel-trailer-offer', 'panel-confirm'].some(
       (id) => !document.getElementById(id).classList.contains('hidden'),
     );
@@ -2182,9 +2244,10 @@ class Game {
        pad it needs claimed by `_claimMenu`. */
     if (on) this.inspector.closeAll();
     if (!on) {
-      document.getElementById('panel-help').classList.add('hidden');
-      document.getElementById('panel-settings').classList.add('hidden');
-      document.getElementById('panel-board').classList.add('hidden');
+      /* ALL OF THEM HERE, unlike Escape's one-at-a-time: the pause menu going
+         away takes everything that was standing on top of it, or a group would
+         be left over a running game with nothing behind it. */
+      for (const id of SUB_PANELS) document.getElementById(id)?.classList.add('hidden');
       if (this.profile.active) this.profile.close();
       // Drop the frame the pause ate, or everything lurches on resume.
       this.clock.getDelta();
@@ -2640,15 +2703,42 @@ class Game {
     this._resize();
   }
 
-  _toggleMath() {
-    this.mathVisible = !this.mathVisible;
+  /**
+   * Where the maths overlay STARTS — the Settings row, folded over the device.
+   *
+   * 'auto' IS NOT THE SAME AS 'on', and that is the reason the row has three
+   * values rather than being a checkbox. On a phone the board lands on top of
+   * the thumb driving the kitten, so automatic means off out there and on
+   * everywhere else, with `_updateMathForDojo` turning it on when she walks
+   * into the room the lesson is in. Picking ON or OFF means it on every device
+   * and stops the Dojo overriding her — a setting the room silently undoes is
+   * the silent refusal the sixth non-negotiable forbids.
+   *
+   * IT IS A STARTING POINT, NOT A LOCK. `M` and the pad's own button still
+   * toggle it from wherever this put it, which is why the row's wording is
+   * about where it starts rather than about what it allows.
+   */
+  _mathDefault() {
+    const m = this.settings.math;
+    if (m === 'on') return true;
+    if (m === 'off') return false;
+    return !this.device.touchPrimary;
+  }
+
+  /** Push one answer out to every orb that draws its own working. */
+  _applyMath(on) {
+    this.mathVisible = on;
     for (const p of this.players) {
-      for (const o of p.orbs ?? []) o.setMathVisible(this.mathVisible);
+      for (const o of p.orbs ?? []) o.setMathVisible(on);
       /* Only the LEAD worn orb prints its working. Eight copies of the same
          two figures orbiting one cat is noise, and the reason the plain orb's
          overlay was legible in the first place was that there was one of it. */
-      (p.wornOrbs ?? []).forEach((o, i) => o.setMathVisible(this.mathVisible && i === 0));
+      (p.wornOrbs ?? []).forEach((o, i) => o.setMathVisible(on && i === 0));
     }
+  }
+
+  _toggleMath() {
+    this._applyMath(!this.mathVisible);
     this.toast(this.mathVisible ? 'Math overlay ON' : 'Math overlay OFF', 0);
   }
 
@@ -2665,8 +2755,7 @@ class Game {
     }
 
     document.getElementById('title').classList.add('hidden');
-    document.getElementById('panel-help').classList.add('hidden');
-    document.getElementById('panel-settings').classList.add('hidden');
+    for (const id of SUB_PANELS) document.getElementById(id)?.classList.add('hidden');
     document.getElementById('hud').classList.remove('hidden');
     this.state = 'play';
     this.clock.getDelta();
@@ -3070,18 +3159,27 @@ class Game {
        Same argument as `7` `8` `9` and `6`. The fifteen seconds between rounds
        are behind the whole unlock AND a round somebody has to actually win, and
        they are where the snacks and the angel both live — so the two newest
-       things in the game were also the two hardest to look at. `4` ends the
-       live round on the spot by knocking player 2 down, which drops straight
-       into `_startFeast` through the real path rather than around it. */
+       things in the game were also the two hardest to look at. `4` calls the
+       round on the spot, which drops straight into `_startFeast` through the
+       real path rather than around it.
+
+       IT CALLS THE ROUND, IT DOES NOT KILL ANYBODY. It used to hit
+       `this.players[1]` for her whole health bar — which read as ending the
+       round only in a duel. At four players it killed Frost and left the other
+       two standing; in a 2v2 it did not end the round at all, because a side
+       is not out until everybody on it is. Reported from play as "it doesn't
+       end the round, it just kills Frost". `callOnDamage` is the same decision
+       the clock makes at `ROUND_LIMIT`, so the key cannot disagree with the
+       game about who won, at any league size, and nobody is hurt to get it:
+       whoever was ahead on damage takes the round with the score she had
+       actually earned, and an untouched round is a draw. */
     if (code === 'Digit4') {
       if (!this.tournament?.fighting) {
         this.toast('[debug] not in a live round — pick "arena" with -/= and press 0', 0);
         return;
       }
-      const [a, b] = this.players;
-      b.hurt(b.hp, a.position, ATTACKS.dash, this);
-      this.tournament.onHit(a, b, 1, 'dash');
-      this.toast('[debug] round ended — feast in a moment', 0);
+      const how = this.tournament.callOnDamage('[debug] round called!');
+      this.toast(`[debug] round ended — ${how === 'draw' ? 'a draw' : 'feast in a moment'}`, 0);
     }
 
     /* --- Mr. Satan's tantrum, without the ten seconds ---
@@ -4665,7 +4763,7 @@ class Game {
 
     const cat = (p) => `
       <div class="tp-cat" style="--me:${styleCss(this.roster[p.index])}">
-        <span class="tp-pip"></span>${escapeHtml(p.name)}
+        <span class="tp-pip"></span><span class="tp-name">${escapeHtml(p.name)}</span>
         <span class="tp-keys">◀ ▶</span>
       </div>`;
     /* THE UNDECIDED COLUMN IS FIRST, and it is a column rather than an absence.
@@ -6375,15 +6473,99 @@ class Game {
        stylesheet has always used and the only thing that changes is what it is
        42% OF — which is the whole of "the board covers the player" in a
        quadrant. The 540px ceiling is the stylesheet's and is kept so a shared
-       screen and a big pane come out the same. */
-    const w = Math.min(540, Math.round(v.w * 0.42));
+       screen and a big pane come out the same.
+
+       EXCEPT IN A PANE HOLDING MORE THAN ONE KITTEN, WHERE IT TAKES ITS FULL
+       SIZE AND THE TOP CORNER. The 42% is a rule about not covering the player
+       whose window this is, and it stops being that rule when the window
+       belongs to two or three of them: side by side, a pair sharing a pane got
+       42% of 960 — a 403px board, against the 540 the same board gets on an
+       unsplit screen — and the Dojo's whole reason to exist came out too small
+       to read. Reported from play as exactly that, with the remedy named:
+       "make it the full size it would normally be, and move it to the top-left
+       of the screen, as close to the corner as we can without overlaying the
+       players UI elements on the top."
+
+       WHY THE TOP RATHER THAN A BIGGER BOARD IN THE SAME PLACE. `mapSpot` puts
+       the board in the outer BOTTOM corner and the pane's map in the inner one,
+       which is an arrangement that only works while the board is small enough
+       to leave a corner over. At 540 in a 960-wide pane it is most of the
+       bottom edge, and the two kittens the board is FOR are standing on the
+       circle underneath it. The top-outer corner is the only one nothing else
+       claims — the scoreboard is centred — and it is what was asked for. */
+    const shared = (groups[best]?.length ?? 0) > 1;
+    let w = shared
+      ? Math.max(1, Math.min(540, v.w - 28))
+      : Math.min(540, Math.round(v.w * 0.42));
     st.width = `${w}px`;
-    const h = el.getBoundingClientRect().height || Math.round(w * 0.78);
-    const spot = mapSpot({ v, W, H, w, h, pad: 14, hint: HINT_CLEAR, inner: false });
+    let h = el.getBoundingClientRect().height || Math.round(w * 0.78);
+    const spot = mapSpot({ v, W, H, w, h, pad: 14, hint: HINT_CLEAR, inner: false, top: shared });
+    /* HOW FAR DOWN THE SCOREBOARD REACHES IS MEASURED, NOT ASSUMED, and only
+       asked when the two would actually meet across the screen. It is a
+       centred row of badges whose count and whose NAMES change with the party,
+       so its width is not something this file can know — and the ask was "as
+       close to the corner as we can", which means the drop has to be nothing
+       at all when the corner is free. Degrades to the bare corner if the
+       scoreboard is missing, which is the pause menu's own case. */
+    let top = spot.top;
+    if (shared) {
+      const sb = document.querySelector('.scoreboard')?.getBoundingClientRect();
+      if (sb?.height && spot.left < sb.right && spot.left + w > sb.left) {
+        top = Math.max(top, sb.bottom + 8);
+      }
+      /* AND IT STOPS BEFORE THE MAP. The board owns the top of the pane now
+         and the map still owns the bottom, which is only an arrangement while
+         there is a gap between them — on a short window a 540-wide board is
+         tall enough to reach down into the map, and this whole function exists
+         so that two boxes in one pane cannot collide.
+         `mapWidth` is the same pure call `_drawMaps` makes a few lines up, so
+         the reservation cannot disagree with the map that actually gets drawn.
+         SHRINK RATHER THAN CLIP: the board is a diagram whose height follows
+         its width, so narrowing it is the one adjustment that keeps all of it
+         on screen. It is measured again afterwards because the canvas's aspect
+         is the canvas's business, not this file's.
+
+         WHERE THE MAP IS IS ASKED, NOT ARITHMETIC. The first version added up
+         the map's size, its padding and the hint line by hand and came out
+         sixteen pixels short — because `mapSpot` lifts a box off the bottom of
+         the SCREEN by `HINT_CLEAR` and that term was missing. Asking the two
+         functions that actually place the map is exact by construction and
+         cannot drift from them.
+         IT RESERVES THE SPACE WHETHER OR NOT THIS PANE HAS A MAP. At four
+         players there are two maps and up to four panes, so some panes have
+         none — and the cost of reserving anyway is a slightly narrower board
+         on a window short enough to be shrinking it already, against a
+         collision if `_mapPanes` moves a map in here on a later frame. */
+      const mapAt = mapSpot({
+        v,
+        W,
+        H,
+        size: mapWidth({
+          paneW: v.w, paneH: v.h, screenH: H, touch: this.device.touchPrimary,
+          merged: false, mathUp: true,
+        }),
+        pad: 14,
+        hint: HINT_CLEAR,
+      });
+      const room = mapAt.top - 14 - top;
+      /* A FEW PASSES, BECAUSE THE HEIGHT IS NOT PROPORTIONAL TO THE WIDTH.
+         The board is a title and a padded box around a canvas: `h = a·w + c`,
+         and scaling by `room / h` therefore always lands a little tall by the
+         fixed part — measured, eight pixels of overlap left on the first try,
+         which is a board still touching the map. Each pass removes the same
+         fraction of what is left, so two is normally enough and three is the
+         cap. It only runs on a window short enough to need it; every real
+         screen leaves the board its full size and never enters this branch. */
+      for (let pass = 0; pass < 3 && h > room && room > 60; pass++) {
+        w = Math.max(180, Math.round(w * (room / h)));
+        st.width = `${w}px`;
+        h = el.getBoundingClientRect().height || h;
+      }
+    }
     st.right = 'auto';
     st.bottom = 'auto';
     st.left = `${spot.left}px`;
-    st.top = `${spot.top}px`;
+    st.top = `${top}px`;
   }
 
   /** Swearing to a clan: a toast, a coloured badge, and a recoloured ring. */
@@ -6796,7 +6978,13 @@ class Game {
          kitten, so the spread is zero and the aspect cannot change its answer;
          the full frame is the honest neutral value. */
       const aspect = pane && pane.h > 0 ? pane.w / pane.h : size.x / Math.max(1, size.y);
-      this._updateRig(this.rigs[i], this.groups[g] ?? [i], dt, aspect);
+      /* AND HOW NARROW THAT PANE IS COMPARED TO A QUADRANT. Same argument as
+         the aspect and one step further: the aspect only reaches `fitDistance`,
+         which has nothing to say about a pane holding ONE kitten. See
+         `paneWiden`. A rig with no pane is framing one kitten off screen, so
+         there is no shape to answer for. */
+      const widen = pane ? paneWiden(panes, g, size.x, size.y) : 1;
+      this._updateRig(this.rigs[i], this.groups[g] ?? [i], dt, aspect, widen);
     }
   }
 
@@ -6813,8 +7001,10 @@ class Game {
    * @param aspect   the width/height of the PANE this rig draws into. See
    *                 `_fitDistance` — a camera that does not know this frames
    *                 for a screen it does not have.
+   * @param widen    how much further back the pane's SHAPE says to sit, from
+   *                 `paneWiden` — 1 everywhere except an uneven split.
    */
-  _updateRig(rig, members, dt, aspect = 16 / 9) {
+  _updateRig(rig, members, dt, aspect = 16 / 9, widen = 1) {
     const mid = this._centroid(members);
     /* THE SPREAD IS THE WIDEST PAIR IN THE GROUP, NOT THE FIRST TWO. It sizes
        the pull-back, and a camera framed on the closest pair crops the rest of
@@ -6889,6 +7079,15 @@ class Game {
           ft
         );
 
+      /* THE TUNED DISTANCES ARE ALL TUNED ON A FULL-WIDTH SCREEN, so a pane
+         the layout has narrowed pays for it here. `widen` is 1 for every even
+         split — including the two-player one, which is why that game is
+         untouched — and only the 62/38 branch and the three-pane column ever
+         hand out anything else. See `paneWiden` for the measured numbers and
+         for why `fitDistance` below does not already cover this: it cannot,
+         because a pane with one kitten in it has no spread to fit. */
+      wantDist *= widen;
+
       /* AND THEN FAR ENOUGH BACK THAT THE GROUP ACTUALLY FITS THE PANE.
          Everything above sizes the shot from world distances and knows nothing
          about the rectangle it is drawn into; the clamp at 52 in particular is
@@ -6953,7 +7152,7 @@ class Game {
         /* THE RING KNOWS HOW BIG THE DECK IS AND STILL NOT HOW WIDE THE PANE
            IS. Its 56-unit deck is exactly the subject that gets cropped first
            in a narrow pane, so it takes the same floor as everything else. */
-        wantDist = Math.max(ring.dist, fitDistance({
+        wantDist = Math.max(ring.dist * widen, fitDistance({
           spread: dist, fovDeg: rig.camera.fov, aspect,
         }));
       }

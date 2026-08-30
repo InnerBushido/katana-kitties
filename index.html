@@ -1150,6 +1150,28 @@
             <option value="horizontal">Top and bottom</option>
           </select>
         </label>
+        <!-- THE SIN/COS BOARD, ON OR OFF, WITHOUT A CONTROLLER.
+             It has always been togglable — `M`, and a pad's own button — and
+             that is exactly the problem: "let's add the Turn Math Overlay
+             during gameplay option on/off as we may remove those from the
+             controllers in the future." A setting only a button can reach is a
+             setting a kid on a phone cannot reach at all, and one whose only
+             record of its state is a key somebody pressed.
+
+             AUTOMATIC IS THE SHIPPED ANSWER AND IS NOT THE SAME AS ON. On a
+             phone the board starts hidden, because it lands on top of a thumb
+             — see `this.mathVisible` in main.js, which reads
+             `device.touchPrimary`. Picking ON or OFF here means it, on every
+             device, and the toggle still works: this is where it STARTS, not a
+             lock. -->
+        <label class="row">
+          <span>Maths overlay</span>
+          <select id="set-math">
+            <option value="auto">Automatic (off on phones)</option>
+            <option value="on">Always on</option>
+            <option value="off">Always off</option>
+          </select>
+        </label>
         <label class="row">
           <span>Render quality</span>
           <select id="set-quality">
@@ -1241,39 +1263,134 @@
              half-height window that measured 200px below the fold - see
              style.css, which also records why sticky was tried and dropped. -->
         <p class="menu-owner hidden" id="menu-owner"></p>
+        <!-- SEVEN ROWS AT MOST, AND IT USED TO BE FIFTEEN.
+             Reported from play: "the list on the pause menu is getting too
+             long, can we clean it up or organize it by breaking the commands
+             into sub menus — Gameplay, Players, Storyline, Stats/Features."
+
+             It grew that way honestly, one row at a time, and four players is
+             what tipped it over: RECORD BOARD, CHARACTER PROFILE, the story,
+             the trailer, QUIT THE MATCH, three DROP OUTs and three ways to
+             stop, on a `max-height: 86vh` panel a nine-year-old drives with a
+             stick one row per nudge. Grouping in place would have made it
+             LONGER — fifteen rows plus four headings — so the three groups
+             that are never urgent moved one press down.
+
+             WHAT STAYED AT THE TOP IS WHAT IS ASKED FOR MID-GAME: carry on,
+             find out how something works, change a setting, and — while a
+             match is actually running — get out of the match. Everything else
+             is a thing you do once an afternoon.
+
+             AND THE ORDER IS STILL LEAST TO MOST FINAL, which is the seventh
+             non-negotiable and the reason RESUME's neighbour is HOW TO PLAY.
+             Moving RESTART, TITLE SCREEN and QUIT GAME inside END THE GAME
+             makes that stronger rather than weaker: there is now no way to
+             reach any of them by overshooting RESUME, and each still asks
+             first once you get there. -->
         <div class="pause-menu">
           <button class="menu-btn primary" data-action="resume">RESUME</button>
-          <button class="menu-btn" data-action="settings">SETTINGS</button>
           <button class="menu-btn" data-action="help">HOW TO PLAY</button>
-          <button class="menu-btn" data-action="board">RECORD BOARD</button>
-          <button class="menu-btn" data-action="profile">CHARACTER PROFILE</button>
-          <button class="menu-btn" data-action="story">WATCH THE STORY AGAIN</button>
-          <button class="menu-btn" data-action="trailer">WATCH THE TRAILER</button>
+          <button class="menu-btn" data-action="settings">SETTINGS</button>
+          <button class="menu-btn" data-action="kittens">KITTENS &amp; SCORES</button>
+          <button class="menu-btn" data-action="watch">WATCH AGAIN</button>
           <!-- ONLY WHILE A MATCH IS ON. Shown by Game.setPaused, which asks
                `tournament.active`, and hidden the rest of the time: an offer to
                quit a match nobody is fighting is a button that cannot mean
                anything. MenuNav skips it while it is hidden, because it filters
-               on `offsetParent`. -->
+               on `offsetParent`.
+
+               IT STAYED AT THE TOP LEVEL when the rest of the endings moved
+               down, and that is the one exception to the grouping above: it is
+               the only ending that is ever URGENT — a pair who got into a 2v2
+               they did not mean to pick want out of it now, and burying the
+               exit one press deeper is the trap this button was added to
+               remove. It is hidden the rest of the time, so it costs the list
+               nothing. -->
           <button class="menu-btn hidden" id="btn-quit-match" data-action="quit-match">
             QUIT THE MATCH</button>
-          <!-- One DROP OUT per extra player, built by Game._buildLeaveButtons
-               and absent entirely in a two-player game: a button offering to
-               remove a kitten from a game that only has two of them is an
-               invitation to break it. -->
-          <div id="leave-buttons"></div>
-          <button class="menu-btn" data-action="restart">RESTART</button>
-          <button class="menu-btn" data-action="title">TITLE SCREEN</button>
-          <!-- QUIT GAME IS LAST, UNDER TITLE SCREEN, and that ordering is the
-               point: the list runs from least to most final, so a thumb that
-               overshoots RESUME by one row lands on SETTINGS rather than on
-               the end of the afternoon. What it can actually DO depends on the
-               browser — see Game.quitGame. -->
-          <button class="menu-btn" data-action="quit">QUIT GAME</button>
+          <button class="menu-btn" data-action="ending">END THE GAME</button>
         </div>
         <p class="note">
           <b>Esc</b> or <b>+ / Start</b> on a controller opens and closes this.
           <span id="join-note"></span>
         </p>
+      </div>
+    </div>
+
+    <!-- ================= the three pause sub-menus =================
+         Each is an ordinary overlay panel with a BACK, so Escape and `data-close`
+         back out to the pause menu exactly the way SETTINGS and HOW TO PLAY
+         already did — see `SUB_PANELS` in main.js, which is the ONE list all
+         four places read. There used to be four copies of "which panels sit
+         over the pause menu" (the close handler, the Escape handler,
+         `_overlayOpen`, and MenuNav's own order) and adding a fifth panel to
+         three of them is a bug nothing on screen would explain.
+
+         THE ROWS ARE MOVED, NOT REWRITTEN. Every button below is the same
+         `data-action` it was in the pause menu, so every confirm dialog, every
+         world-check assertion about them and `_buildLeaveButtons` all still
+         point at the thing they always did. -->
+
+    <!-- WHO IS PLAYING AND HOW THEY ARE DOING. The user's "Players" and
+         "Stats/Features" in one panel, because at two players they are two
+         rows between them and two panels of two rows is worse than one. -->
+    <div id="panel-kittens" class="screen overlay hidden">
+      <div class="panel pause-panel">
+        <h2>KITTENS &amp; SCORES</h2>
+        <div class="pause-menu">
+          <button class="menu-btn" data-action="profile">CHARACTER PROFILE</button>
+          <button class="menu-btn" data-action="board">RECORD BOARD</button>
+          <!-- One DROP OUT per extra player, built by Game._buildLeaveButtons
+               and absent entirely in a solo game: a button offering to remove
+               the only kitten there is is an invitation to break it. It sits
+               under the two harmless rows for the same least-to-most-final
+               reason the top level is ordered that way. -->
+          <div id="leave-buttons"></div>
+        </div>
+        <button class="menu-btn back" data-close>BACK</button>
+      </div>
+    </div>
+
+    <!-- The user's "Storyline". Both rows play something AT you and neither
+         changes anything, which is why they are the group it was safe to move
+         furthest from the top. -->
+    <div id="panel-watch" class="screen overlay hidden">
+      <div class="panel pause-panel">
+        <h2>WATCH AGAIN</h2>
+        <div class="pause-menu">
+          <button class="menu-btn" data-action="story">WATCH THE STORY AGAIN</button>
+          <button class="menu-btn" data-action="trailer">WATCH THE TRAILER</button>
+        </div>
+        <p class="note">
+          Nothing here changes your game — the story and the trailer just play,
+          and <b>Esc</b> or <b>+ / Start</b> stops either one.
+        </p>
+        <button class="menu-btn back" data-close>BACK</button>
+      </div>
+    </div>
+
+    <!-- THE THREE ENDINGS, BEHIND ONE PRESS. All three throw away an
+         afternoon and all three already ask first (see `confirm.ask` in
+         main.js). Putting them here means no thumb overshooting RESUME can
+         reach any of them, which is the seventh non-negotiable made stronger
+         by the grouping rather than weakened by it.
+
+         AND THEY STILL RUN LEAST TO MOST FINAL inside the panel. -->
+    <div id="panel-ending" class="screen overlay hidden">
+      <div class="panel pause-panel">
+        <h2>END THE GAME</h2>
+        <div class="pause-menu">
+          <button class="menu-btn" data-action="restart">RESTART</button>
+          <button class="menu-btn" data-action="title">TITLE SCREEN</button>
+          <!-- QUIT GAME IS LAST, UNDER TITLE SCREEN. What it can actually DO
+               depends on the browser — see Game.quitGame. -->
+          <button class="menu-btn" data-action="quit">QUIT GAME</button>
+        </div>
+        <p class="note">
+          Each of these asks you first, and the record board is kept whichever
+          one you pick.
+        </p>
+        <button class="menu-btn back" data-close>BACK</button>
       </div>
     </div>
 
