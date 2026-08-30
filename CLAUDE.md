@@ -19,6 +19,7 @@ look. Everything else is one level down and read on demand.
 | how it runs under Steam, and its artwork | [docs/notes/steam.md](docs/notes/steam.md) |
 | which voice belongs to which character | [docs/notes/voices.md](docs/notes/voices.md) |
 | why it lags or stutters, and what is measured NOT to be why | [docs/notes/performance.md](docs/notes/performance.md) |
+| when a change earns a line in PROJECT.md, and how its tables generate themselves | [docs/notes/docs.md](docs/notes/docs.md) |
 | what changed and why | `git log` — the commit messages are the session log |
 
 ## Run it, check it
@@ -26,10 +27,16 @@ look. Everything else is one level down and read on demand.
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
 npm run dev -- --host         # ...and on a phone on the same wifi, at the Network: URL it prints
-node tools/world-check.mjs    # 1884 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 1888 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 286 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
+npm run docs                  # regenerate PROJECT.md's controls + balance tables from the code
 ```
+
+**`alpha` is the testing channel** — an ordinary branch that only ever
+fast-forwards to `main`, live at
+`https://katana-kitties-git-alpha-dream-dojo.vercel.app`. Pushing it is not
+pushing `origin/main`. See PROJECT.md §3.
 
 **Balance numbers are edited on a page, not in the code.** `npm run dev`, then
 open **`/tuning.html`**: every ability's timings and damage with a sentence each
@@ -126,6 +133,10 @@ src/
   entities/  player  dragon  ryuuseki  panda  critter  angel  leader  satan
              griffin  orb  powerorb  dragonball  prop  shrine  stall
 tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
+             doc-sync.mjs (writes PROJECT.md's controls and balance tables out
+               of input.js and player.js, between `<!-- doc-sync -->` markers.
+               A pre-commit hook runs it; world-check fails if it is stale.
+               See docs/notes/docs.md)
              gif.mjs (the same, for GIF — interframe differencing, which is why
                a Help clip must be filmed on a pinned camera; gif-selftest.mjs
                reads its output back. See docs/notes/help.md)
@@ -182,16 +193,24 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 1884 assertions and why almost none of them are about
+  why `world-check` is 1888 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have
   been wrong roughly every time.
 - **Prefer a rule that degrades over one that vanishes.** A missing field on a
   mount must not NaN a position and make a character silently undrawn.
-- **A new tool, doc, account or future idea gets a line in [PROJECT.md](PROJECT.md).**
-  It is the one page a human is pointed at, and a cheat sheet that is out of
-  date is worse than none — it teaches somebody a thing that is no longer true.
+- **Anything a new developer would need to know and could not find by reading
+  the code gets a line in [PROJECT.md](PROJECT.md).** A new tool, doc, account,
+  service, cost or future idea — and equally **a new way the project is built,
+  tested or shipped**, which is the case that is easy to miss: the `alpha`
+  channel exists nowhere in `src/`, so nothing in `src/` could ever have said it
+  exists. A refactor or a bug fix earns no line; `git log` is the session log.
+  PROJECT.md is the one page a human is pointed at, and a cheat sheet that is
+  out of date is worse than none — it teaches somebody a thing that is no longer
+  true. **The inputs and the balance numbers are machine-kept**: `npm run docs`
+  writes those two tables, a pre-commit hook re-runs it, and `world-check` fails
+  if they have drifted. → [docs/notes/docs.md](docs/notes/docs.md)
 - **Git identity is pinned repo-locally to `InnerBushido`**, and pushes go
   through the `gh` CLI credential helper. `gh` may be signed in as a work
   account — check `gh auth status` before pushing.

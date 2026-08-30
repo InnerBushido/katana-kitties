@@ -254,6 +254,21 @@ header and its own 2.5MB cap.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**There is an alpha channel now, and the God Doc keeps its own tables.** Two
+things that are not gameplay and are live already:
+
+- **`origin/alpha`** is the version other people are asked to play, at
+  `https://katana-kitties-git-alpha-dream-dojo.vercel.app`. It only ever
+  fast-forwards to local `main`, so it can never be ahead of the real game in
+  content, only in *release* — the six fixes below are on it and `origin/main`
+  does not have them yet. See **Branches**, at the bottom of this file.
+- **[tools/doc-sync.mjs](tools/doc-sync.mjs)** writes PROJECT.md's controls and
+  balance tables out of `input.js` and `player.js`. A `pre-commit` hook re-runs
+  it whenever a commit touches either, and `world-check` fails if they have
+  drifted. Written because the Joy-Con prompts had been wrong in the game for
+  months and the doc did not even have a Joy-Con column to be wrong.
+  → [docs/notes/docs.md](docs/notes/docs.md)
+
 **Six more reported from play, all fixed, none tried by a player yet.** A second
 list, from a later session, on `mixed/satan-gate-input-fallthrough-orb-depth`:
 
@@ -1279,14 +1294,38 @@ that is not fully merged, so it cannot lose work; the upper-case one is for
 throwing an experiment away on purpose and should be typed deliberately, never
 in a loop.
 
-**Nothing but `main` is ever pushed.** These branches are local, so deleting
-one touches nothing on GitHub and there is no `origin/feature-x` to tidy up
-afterwards. The repo has exactly one remote branch and that is the intent.
+**Work branches stay local.** `feature/`, `bugfix/` and `mixed/` branches are
+never pushed, so deleting one touches nothing on GitHub and there is no
+`origin/feature-x` to tidy up afterwards. **`origin` has exactly two branches**
+and both are long-lived: `main` and `alpha`.
+
+**`alpha` is the testing channel**, and it is the reason this section no longer
+says "nothing but `main` is ever pushed". It is a plain branch that only ever
+**fast-forwards to local `main`**:
+
+```bash
+git checkout alpha && git merge main --ff-only
+git push origin alpha
+```
+
+`--ff-only` is the whole rule. `alpha` may never carry a commit that is not
+already on `main`, so there is no such thing as a fix that testers have and the
+real game does not, and no merge ever has to come back the other way. Vercel
+builds it at a stable alias — `https://katana-kitties-git-alpha-dream-dojo.vercel.app`
+— and that link is the entire distribution channel. PROJECT.md §3 has the rest.
 
 **Push to `origin/main` only once Richard has played it.** `origin/main` is
 what Vercel deploys, so a push is a release to the nieces rather than a backup
 — "all checks pass" is not the same thing as "it plays well", and the whole
 reason for the local-first workflow is that a batch can sit finished and
-unreleased for as long as it needs to. Check `gh auth status` first: `gh` is
-signed in as two accounts and the active one must be **InnerBushido**, not the
-work account.
+unreleased for as long as it needs to. **Pushing `alpha` is not a way around
+this**: it is the step before it, and it goes to testers rather than to the
+girls. Check `gh auth status` first: `gh` is signed in as two accounts and the
+active one must be **InnerBushido**, not the work account.
+
+**A second hook runs on commit.** [.githooks/pre-commit](.githooks/pre-commit)
+regenerates PROJECT.md's controls and balance tables whenever a commit touches
+`src/core/input.js` or `src/entities/player.js`, and re-stages the file. It
+needs the same `core.hooksPath` line as the stamp hook, and `world-check` is the
+backstop for a clone that has not run it.
+→ [docs/notes/docs.md](docs/notes/docs.md)

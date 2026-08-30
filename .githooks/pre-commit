@@ -1,0 +1,54 @@
+#!/bin/sh
+#
+# REGENERATE THE GOD DOC'S TABLES AND COMMIT THEM WITH THE CHANGE.
+#
+# WHY THIS IS A HOOK AND NOT A LINE IN CLAUDE.md: two sections of PROJECT.md are
+# restatements of things that live in the code -- the controls, and the balance
+# numbers -- and a restatement kept in step by hand is kept in step until the
+# first busy session. The Joy-Con button prompts were wrong in the GAME for
+# months; the doc naming them was never going to be the thing that noticed.
+#
+# IT REGENERATES AND RE-STAGES rather than refusing the commit. A hook that says
+# "run npm run docs and try again" costs a round trip to do a thing it could
+# have done itself, and the second attempt is where somebody reaches for
+# --no-verify. The generated block is only ever a function of files already in
+# the commit, so writing it here cannot surprise anybody: it is the same text
+# `npm run docs` would have written.
+#
+# IT ONLY RUNS WHEN THE SOURCES ARE IN THE COMMIT. `git diff --cached` is the
+# question "does this commit touch the two files the tables are read from", and
+# a commit that does not is left alone -- so committing a doc, a note, or a
+# sprite does not pay for a node start-up.
+#
+# IF IT FAILS, THE COMMIT FAILS. `doc-sync` throws by design when a constant it
+# reads by name has been renamed or moved, and that is exactly the moment
+# somebody needs to know: the table is about to go stale in the one way nothing
+# downstream can detect. The message names the file and the constant.
+#
+# BYPASSING IT IS NOT FATAL. `world-check` asks the same question, so a clone
+# that never ran `git config core.hooksPath .githooks` still finds out -- just
+# later. See docs/notes/docs.md.
+
+# Nothing to do unless this commit touches a file a table is read from. Keep
+# this list in step with the imports at the top of tools/doc-sync.mjs.
+if ! git diff --cached --name-only | grep -qE '^src/(core/input|entities/player)\.js$'; then
+  exit 0
+fi
+
+# THE HASH, NOT `git diff`. `git diff -- PROJECT.md` answers "does the working
+# tree differ from the index", which is TRUE whenever somebody has the file
+# open with prose half-written -- and `git add` would then sweep those unrelated
+# edits into this commit. Comparing the file to itself across the run answers
+# the only question that licenses a `git add`: did DOC-SYNC write anything.
+before=$(git hash-object PROJECT.md)
+
+# `|| exit 1` and not `set -e`: the point is the message doc-sync prints, and it
+# prints it to stderr on its way out.
+node tools/doc-sync.mjs || exit 1
+
+if [ "$(git hash-object PROJECT.md)" != "$before" ]; then
+  # This stages the whole file, including any prose edit in flight beside the
+  # tables, so it says so rather than doing it quietly.
+  git add PROJECT.md
+  echo "pre-commit: PROJECT.md tables regenerated -- the file is now staged" >&2
+fi
