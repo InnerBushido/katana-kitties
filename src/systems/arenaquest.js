@@ -48,6 +48,37 @@ export const MILESTONES = [
 /** Where he stands in the town, on the main street north of the plaza. */
 export const SATAN_TOWN = { x: 11, z: 22 };
 
+/* ---------------------------------------------------------------------------
+   HE GOES TO THE DOOR WHEN SOMEBODY KNOCKS ON IT.
+
+   The arena island is reachable on a dragon the moment it appears, and until
+   now that led nowhere: two kittens could fly north, land at the torii, walk
+   the whole approach and find an empty ring with nobody to ask. The tournament
+   only ever opened from the town square, so the one place in the world that
+   LOOKS like the way in was the one place that was not.
+
+   So the door is answered rather than moved. THE TOWN IS STILL WHERE HE LIVES
+   — `reset` puts him there, `onReturn` puts him back, and a pair who never fly
+   north see exactly the game they saw before, which is the two-player rule. He
+   steps out to the gate only while two or more of them are standing at it, and
+   walks back the moment they are not.
+
+   A KITTEN ALONE AT THE GATE IS TOLD BOTH WAYS OUT, because she has two and
+   the game knows which one she is closer to. She can fetch a sister to where
+   she already is, or fly home and start it from the square. A gate that
+   simply stayed quiet would read as the arena being shut — the same failure
+   the clan oath had, and the reason `Game._updateClanPrompt` exists.
+--------------------------------------------------------------------------- */
+
+/** How close to the torii counts as standing at it. Wider than SATAN_RADIUS
+ *  on purpose: this decides whether he COMES, and being summoned by a kitten
+ *  who then has to walk to him is a better shape than the reverse. */
+export const GATE_RADIUS = 14;
+/** How far up the approach from the torii he plants himself — between the
+ *  gate at +34 and the griffin's landing spot at +44, so he is met on the way
+ *  in rather than found standing inside the gate he keeps talking about. */
+export const GATE_STAND = 5;
+
 export class ArenaQuest {
   constructor({ game, world, satan, announcer }) {
     this.game = game;
@@ -63,6 +94,11 @@ export class ArenaQuest {
     this.rodeRyu = false;
     /** Both kittens standing with him, for the accept prompt. */
     this.bothHere = false;
+    /** Where he is standing: 'town' (his home) | 'gate' (the arena's torii). */
+    this.post = 'town';
+    /** Seats already told they are at the gate alone, so the toast fires once
+     *  per arrival rather than once per frame. Cleared when she walks off. */
+    this.toldAlone = new Set();
   }
 
   /** Everything back in its box — used by restart. */
@@ -72,6 +108,8 @@ export class ArenaQuest {
     this.spent.clear();
     this.rodeRyu = false;
     this.bothHere = false;
+    this.post = 'town';
+    this.toldAlone.clear();
     this.world.openArena(false);
     this.satan?.moveTo(this.satan.homeAt.x, this.satan.homeAt.y, this.satan.homeAt.z);
     this.satan?.setLine('');
@@ -184,6 +222,12 @@ export class ArenaQuest {
       case 'open': {
         if (!S) break;
 
+        /* WHERE HE IS STANDING IS DECIDED BEFORE ANYTHING IS ASKED OF HIM,
+           because every test below measures from his position and a frame
+           that moved him afterwards would ask the questions about where he
+           used to be. */
+        this._holdCourt(players, hud);
+
         /* A PARTY OF ONE CANNOT FIGHT A TOURNAMENT, AND HE SAYS SO AS AN
            INSTRUCTION. Every league in `MODES` wants two fighters or more, so
            `modesFor(1)` is empty — and `begin()` falls through to
@@ -248,9 +292,71 @@ export class ArenaQuest {
     if (S && S.group.visible) S.update(dt, players);
   }
 
+  /**
+   * Answer the gate, or go home.
+   *
+   * TWO IS THE NUMBER THAT SUMMONS HIM and it is the same two the tournament
+   * needs — so a pair who gather at the torii have already done the only thing
+   * the door asks, and he arrives to find the condition met. One kitten gets
+   * the toast instead; three or four summon him exactly as two do.
+   *
+   * A MOUNTED KITTEN DOES NOT COUNT, the same rule `near` follows below. They
+   * fly here on a dragon, so without this he would be called out to the gate
+   * by two girls circling over it who never intended to land.
+   *
+   * THE TOAST IS LATCHED PER SEAT, not timed. She stands at that gate for as
+   * long as it takes to work out what to do, and a message that repeats every
+   * frame is a message she stops reading; one that repeats every few seconds
+   * is worse, because it looks like the game noticing her again. It is armed
+   * again by walking away, which is also the gesture that means she has
+   * stopped waiting for it.
+   */
+  _holdCourt(players, hud) {
+    const S = this.satan;
+    const gate = this.world.arenaGate;
+    if (!S || !gate) return;
+
+    let count = 0;
+    for (let i = 0; i < players.length; i++) {
+      const p = players[i];
+      const here = !p.mount && !p.rideAlong
+        && Math.hypot(p.position.x - gate.x, p.position.z - gate.z) < GATE_RADIUS;
+      if (here) count++;
+      else this.toldAlone.delete(i);
+    }
+
+    const want = count >= 2 ? 'gate' : 'town';
+    if (want !== this.post) {
+      this.post = want;
+      this.toldAlone.clear();
+      if (want === 'gate') S.moveTo(gate.x, gate.y, gate.z + GATE_STAND);
+      else S.moveTo(S.homeAt.x, S.homeAt.y, S.homeAt.z);
+    }
+
+    if (count !== 1) return;
+    /* SHE IS THE ONE STANDING THERE, so the toast is styled in her colour and
+       lands in her pane. `players.findIndex` rather than the loop above,
+       because the loop's job is the count and reading a seat number out of it
+       would tie the two together for no reason. */
+    const who = players.findIndex(
+      (p) => !p.mount && !p.rideAlong
+        && Math.hypot(p.position.x - gate.x, p.position.z - gate.z) < GATE_RADIUS
+    );
+    if (who < 0 || this.toldAlone.has(who)) return;
+    this.toldAlone.add(who);
+    hud.toast('A TOURNAMENT NEEDS TWO — bring a sister to this gate, '
+      + 'or fly home and ask Mr. Satan in the town.', who);
+  }
+
   /** Called when the girls come home, so the door is open again. */
   onReturn() {
     this.stage = 'open';
     this.bothHere = false;
+    /* HOME IS WHERE HE ENDS UP, ALWAYS. `Game._arrive` has already put him
+       back on his own square by the time this is called; saying so here is
+       what stops `_holdCourt` believing he is still at a gate nobody is
+       standing at and leaving him there until somebody walks past it. */
+    this.post = 'town';
+    this.toldAlone.clear();
   }
 }

@@ -791,3 +791,116 @@ gestures that look like one. `pad-check` drives the window with a hand-held
 clock rather than real time, because a test that pressed twice as fast as Node
 can run would pass against a window of any size at all, including a broken one
 that always says yes.
+
+## Both Joy-Con button clusters were named a rotation out
+
+Reported from play, in one sentence per half: the clan oath said **"Press A"**
+on the right Joy-Con and the button that actually swears is **Y**; it said
+**"Press RIGHT"** on the left one and the button that works is the one at the
+**top** of the pad as she is holding it. Same feature, same table, two
+different wrong answers.
+
+**Nothing was wrong with the reading side.** She joined the clan — the index
+bound to `interact` was the index her thumb was on. `VJOY_BUTTON_NAMES` was
+lying about what that index is CALLED, and `promptFor` faithfully printed the
+lie over her kitten's head. This is the third time a prompt in this game has
+named a button the player does not have, and every one of them has been a
+label rather than a binding.
+
+**One measured button fixes a whole cluster, and that is why this is a
+correction and not a fresh set of guesses.** A d-pad is four buttons in a rigid
+cross and a face cluster is four in a rigid diamond. If one index's name is out
+by a rotation then all four are, by the same rotation — so a single press pins
+which rotation it is and the other three follow with nothing invented:
+
+```
+left    8 is UP, not RIGHT        one step anticlockwise
+        8 UP    9 DOWN   10 LEFT   11 RIGHT
+
+right   7 is Y, not A             A and Y are opposite corners: a half turn
+        4 X     5 B      6 A      7 Y
+```
+
+**The two halves being out by different amounts is the expected shape.** The
+sticks are already recorded above as behaving this way — *"the two halves are
+turned opposite ways, so their signs mirror"* is the tempting model and it
+produced three wrong signs out of four, because how each half lands in vJoy
+depends on how the feeder wired that half. A quarter turn on one and a half
+turn on the other is exactly that, one layer up.
+
+**The rail and the shoulders did not move.** `SL`/`SR`, `L`/`R`, `ZL`/`ZR` and
+Minus/Plus sit on the edges rather than in a cluster and their names are
+printed on the plastic, so there is nothing for a sideways grip to turn.
+
+**The left half's names are AS SHE HOLDS IT.** There is no letter on a d-pad to
+appeal to, so the only name that means anything is the direction her thumb
+travels — and the prompt is drawn over her own kitten's head, in her own
+quarter of the screen, while she is holding the thing.
+
+`pad-check` pins both strings with a comment saying they are a MEASUREMENT and
+not a preference, because nothing headless can see a silk-screen and the names
+that were wrong are the ones that read most plausibly. It also compares
+`PROMPTS.vjoyDual` against the live-map lookup action by action: a merged
+Joy-Con is prompted through `vjoyMap`, but the Help page's drawn controller
+still reads the static table, and two tables saying different things is
+invisible from either side.
+
+## MenuNav never paid for the presses it acted on
+
+Two reports from one session, and one bug under both.
+
+> pressing "Interact/Back" to go back to the Dealer ... instead cancels the
+> Dealer screen entirely
+
+> the player auto-selects the first kotodoma orb ... because I press the button
+> in the menu screen and it is using that same button press
+
+`PadState.consume` has carried a comment for a long time saying that whoever
+acts on a press owes the call. `Inspector._drive` pays. The stall branch pays.
+`MenuNav` read presses, acted on them, and left every edge sitting in the frame
+for the rest of `Game._updatePlay` to find — and it runs FIRST, so everything
+else in the frame is downstream of it:
+
+- `B` backs out of the pause menu → `_back` unpauses → execution falls straight
+  through to the stall branch **in the same frame**, which reads the same
+  `interact` edge and opens the dealer's chooser. Reported as pressing back by
+  the dealer opening the dealer.
+- `JUMP` confirms CHARACTER PROFILE → the click opens the trade window →
+  `profile.update` runs later in the **same frame**, reads the same `jump`
+  edge, and offers whichever orb the cursor was sitting on.
+
+`_read` now collects which pad pressed which action and hands back a `spend()`,
+called **before** `_activate`/`_back` rather than after — the click handler runs
+synchronously and can unpause the game or open a screen, so paying first means
+there is no ordering left to get wrong. **Only the pads that actually pressed,
+and only the actions they pressed**: `Input.consume` would spend the edge across
+all four slots and eat the sister's press, and she can be standing at the stall
+with her own `interact` while player one is in the pause menu.
+
+`world-check` DRIVES this rather than reading the source for the word `spend` —
+a source check would go on passing the day somebody moves the call above the
+read it is meant to follow.
+
+### And the trade window arms itself
+
+Belt to those braces, and it covers what a consume cannot: a button still HELD
+across the open (an edge is one frame, a thumb is not), and any future caller
+that opens the screen without knowing it owes anything. Each side is unarmed
+when `open` runs and arms on the first frame its own pad is holding none of
+`jump attack interact mount start` — which is the rule as it was asked for,
+*"wait for the user to release the select button and press it again"*.
+
+**`ARM_GRACE` is why a stuck button cannot lock a girl out of the screen.** A
+vJoy half that latches a button down would never release, so that side would
+never arm and she would sit in front of a screen that ignores her — a rule that
+vanishes rather than degrades. After 0.6s the latch gives up; the opening edge
+is long gone by then and there is nothing left for it to protect.
+
+### Back is one layer; START is all of them
+
+`Inspector._choose` used to `closeAll()` and open the trade window, so there was
+nothing underneath to go back TO and `interact` read as backing out of two
+things at once. It passes `backTo: { index, row }` now and `ProfileScreen.close`
+puts that card back where it was, on the row she left it on. `START` passes
+`{ back: false }`: that button is the way out of the whole screen, and landing
+on the card she opened it from is not out.

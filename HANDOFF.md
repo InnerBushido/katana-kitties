@@ -254,8 +254,49 @@ header and its own 2.5MB cap.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
-**Six reported from play, all fixed, none tried by a player yet.** They came in
-as one list and are unrelated to each other, so they went on one `mixed/` branch:
+**Six more reported from play, all fixed, none tried by a player yet.** A second
+list, from a later session, on `mixed/satan-gate-input-fallthrough-orb-depth`:
+
+1. **Mr Satan answers the arena gate now.** The arena island is flyable the
+   moment it appears, so two kittens could land at the torii and find an empty
+   ring: the tournament only ever opened from the town square. He steps out to
+   the gate while two or more of them stand at it and walks home when they do
+   not; a kitten alone there is toasted both of her ways out. The town is still
+   where he lives, so a pair who never fly north see exactly the game they saw
+   before. See
+   [tournament.md](docs/notes/tournament.md#he-answers-the-arena-gate).
+2. **MenuNav never paid for the presses it acted on**, and that one omission was
+   two of the reports: backing out of the pause menu next to the dealer opened
+   the dealer, and confirming CHARACTER PROFILE offered whichever orb the cursor
+   was on. It runs first in the frame, so everything else was downstream of the
+   edges it left behind. It spends them now, before it acts on them, and only on
+   the pads that pressed. `Inspector` also remembers the card the trade window
+   was opened from, so BACK is one layer and START is all of them. See
+   [input.md](docs/notes/input.md#menunav-never-paid-for-the-presses-it-acted-on).
+3. **Both Joy-Con button clusters were named a rotation out.** The clan oath
+   said "Press A" on the right half when the button that swears is Y, and
+   "Press RIGHT" on the left when it is the one at the top of the pad. The
+   reading side was right the whole time — `VJOY_BUTTON_NAMES` was lying about
+   what those indices are CALLED. One measured button per cluster pins the
+   rotation and the other three names follow, because a d-pad and a face
+   diamond are rigid. `pad-check` pins both strings as a MEASUREMENT.
+4. **The orbiting orbs' text drew through the world.** Kanji, katakana rain and
+   the live `cos ... sin ...` readout all had `depthTest: false`. Turning it on
+   is only half the fix — the mark is a quad pinned to the middle of a sphere,
+   so depth testing alone strobes it in and out of its own ball. `faceCamera`
+   lifts each quad 0.62 along the line to the camera, per pane, without
+   accumulating. The plain Kotodama Orb's unit-circle diagram was deliberately
+   left alone: that is the teaching overlay, not a label.
+5. **The trade window opened with an orb already offered**, and an offered orb
+   went on wearing her cursor ring after the cursor had left it. The first is
+   (2) plus a per-side arming latch that waits for a release — with a 0.6s
+   grace, so a stuck vJoy button cannot lock her out of the screen. The second
+   is two CSS rules where there was one: gold for the table, her colour only for
+   where she is, both when both are true.
+
+**Six reported from play before those, all fixed, none tried by a player yet.**
+They came in as one list and are unrelated to each other, so they went on one
+`mixed/` branch:
 
 1. **Mr Satan's announcement waited for everyone to get off the dragon.** The
    `pending` stage of `systems/arenaquest.js` held while any kitten was mounted
@@ -452,7 +493,7 @@ that rig has its own README and one page should point at it, not inline it.
 
 **The phone-over-Wi-Fi steps are written down for the first time**, in
 [mobile.md](docs/notes/mobile.md) with the short form in PROJECT.md and
-`CLAUDE.md`. `npm run dev -- --host`, then type the `Network:` URL Vite prints
+`CLAUDE.md`. `npm run dev — --host`, then type the `Network:` URL Vite prints
 into the phone. Three things break it and **all three fail the same way — a
 timeout, with no error anywhere**: no `--host` (Vite binds `127.0.0.1` only, and
 still reports success), Windows Firewall refusing inbound Node, and router

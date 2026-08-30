@@ -150,11 +150,47 @@ export class MenuNav {
     const confirms = anyButton
       ? ['jump', 'attack', 'interact', 'mount', 'start']
       : ['jump'];
+    /* WHICH pad and WHICH action, not just whether — so `spend` below can
+       give the edge back. Collected here rather than re-tested at the call
+       site because `pressed` is a pure read: asking a second time after
+       something has opened a screen gets a different answer for a reason that
+       has nothing to do with the button. */
+    const took = [];
+    for (const p of ps) {
+      for (const a of confirms) if (p.pressed(a)) took.push([p, a]);
+      if (!anyButton && p.pressed('interact')) took.push([p, 'interact']);
+    }
     return {
       x: Math.abs(x) > NAV_DEAD ? Math.sign(x) : 0,
       y: Math.abs(y) > NAV_DEAD ? Math.sign(y) : 0,
       confirm: ps.some((p) => confirms.some((a) => p.pressed(a))),
       back: !anyButton && ps.some((p) => p.pressed('interact')),
+      /**
+       * Spend every press this frame's decision was read from.
+       *
+       * THIS CLASS WAS THE ONE OWNER IN THE FRAME THAT NEVER PAID. `Inspector`
+       * consumes, the stall branch consumes, `PadState.consume` has a comment
+       * saying whoever acts on a press owes the call — and MenuNav acted on
+       * presses and left every one of them sitting there for the rest of
+       * `_updatePlay` to find. Two bugs came in from play on the same day and
+       * both were this:
+       *
+       *   B backs out of the pause menu -> `_back` unpauses -> execution falls
+       *   straight through to the stall branch further down the SAME frame,
+       *   which reads the same interact edge and opens the dealer's chooser.
+       *   Reported as "pressing back by the dealer opens the dealer".
+       *
+       *   JUMP confirms CHARACTER PROFILE -> the click opens the trade window
+       *   -> `profile.update` runs later in the same frame, reads the same
+       *   jump edge, and offers whichever orb the cursor happened to be on.
+       *   Reported as the screen auto-selecting an orb on the way in.
+       *
+       * ONLY THE PADS THAT ACTUALLY PRESSED, and only the actions they pressed.
+       * `Input.consume` would spend the edge across all four slots, which would
+       * eat the sister's press: she can be standing at the stall with her own
+       * interact while player one is in the pause menu.
+       */
+      spend() { for (const [p, a] of took) p.consume(a); },
     };
   }
 
@@ -236,6 +272,12 @@ export class MenuNav {
     // is the cursor, and there is nothing there with a value anyway.
     if (mode !== 'horizontal' && dx) this._adjust(items[i], dx);
 
+    /* SPENT BEFORE IT IS ACTED ON, not after. `_activate` clicks a real
+       button and the handler runs synchronously — it can unpause the game,
+       open the trade window, or start a scene, any of which can read a pad
+       before this function gets control back. Paying first means there is no
+       ordering to get wrong. */
+    if (nav.confirm || nav.back) nav.spend();
     if (nav.confirm) this._activate(items[i]);
     if (nav.back) this._back(panel);
 
