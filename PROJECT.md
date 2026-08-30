@@ -10,13 +10,17 @@ almost every line points somewhere deeper.
 
 | audience | start here |
 | --- | --- |
-| **a person, wanting to understand the project** | this file, top to bottom |
+| **a person, wanting to understand the project** | this file, top to bottom — or the [published version](https://claude.ai/code/artifact/1b2c8ccd-c05d-488c-b080-e76dfb71f0ad), which is a link you can send somebody |
 | a person, wanting to *play* | [README.md](README.md) |
 | an AI agent starting a session | [CLAUDE.md](CLAUDE.md), then the one note it points at |
 | anyone, wanting current state and open work | [HANDOFF.md](HANDOFF.md) |
 
 **Keep this file current.** A new tool, a new document, a new account, a new
-future idea — it gets a line here. That is the whole point of it.
+future idea — it gets a line here. That is the whole point of it, and
+`world-check` enforces the register: every design note linked, every runnable
+tool named, every check total agreeing with the one the script prints. **This
+file is the version to edit** — the published page is generated from it, so
+re-publish after a change rather than editing the page.
 
 ---
 
@@ -413,8 +417,16 @@ see the ordering above.
 - Five Help clips (`ability-ward`, `ability-charge`, `ability-dive`,
   `ability-cross`, `feast-eat`) were filmed before the capture rig existed and
   have no shot script. The other ten can be re-cut today.
-- A **director skill** — the craft in [tools/capture/README.md](tools/capture/README.md)
-  generalised into something reusable across games: how long a caption needs on
-  screen, pausing by lowering the frame rate rather than freezing, one idea per
-  beat, pinning the camera for the byte budget, triggering off state rather than
-  frame numbers.
+- A **director skill.** Asked whether one already exists that teaches an agent
+  to direct in-game shots; **searched on 29 Aug 2026 and there is none** — not
+  in the enabled set, not in the org or shared catalogues, nothing about
+  in-engine cinematography, capture pacing or tutorial-clip authoring. So it
+  would be a thing to write, and the material is already sitting in
+  [tools/capture/README.md](tools/capture/README.md): a caption needs longer on
+  screen than the action under it, a pause is *played* at a lower frame rate
+  rather than frozen (a held frame reads as the picture having broken, and was
+  reported exactly that way), one idea per beat, pin the camera and pin the
+  *right* one, hand the shot back to the game where the game already directs,
+  trigger off state rather than frame numbers, and film big to publish small.
+  Plus the byte budget, which is the part nobody guesses: **frame CHANGE is the
+  cost, not frame count.** Most of that is game-agnostic.
