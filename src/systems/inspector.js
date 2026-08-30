@@ -408,11 +408,22 @@ export class Inspector {
     /* HER EIGHT SLOTS, FILLED OR NOT — the same argument the trade screen's
        card makes: three orbs in a row of eight says "five more" in a way three
        orbs on their own cannot. */
+    /* AND THE ONES THAT MATCH THE CURSOR ARE LIT. Reported from play: "it just
+       shows the kanji character and colour, and it's hard to know which one
+       relates to which ability." The row under the cursor says what an orb
+       DOES in words; these say what she is WEARING in kanji; and nothing
+       joined the two, so reading her own loadout meant learning eight
+       characters first. Lighting the match turns the top row into an answer to
+       the row she is looking at. */
+    const lit = POWER_ORBS[c.i]?.id ?? null;
     const slots = [];
+    let anyLit = false;
     for (let k = 0; k < MAX_EQUIPPED; k++) {
       const spec = owned[k] ? ORB_BY_ID[owned[k]] : null;
+      const on = !!spec && spec.id === lit;
+      if (on) anyLit = true;
       slots.push(spec
-        ? `<i class="pc-slot full" style="--orb:#${spec.color.toString(16).padStart(6, '0')}">${spec.kanji}</i>`
+        ? `<i class="pc-slot full${on ? ' lit' : ''}" style="--orb:#${spec.color.toString(16).padStart(6, '0')}">${spec.kanji}</i>`
         : '<i class="pc-slot"></i>');
     }
 
@@ -437,7 +448,7 @@ export class Inspector {
     return `<div class="pc-inner">
       <div class="pc-head"><span class="pc-who">${p.name}</span>
         · <b>${p.score}</b> points · ${owned.length}/${MAX_EQUIPPED} worn</div>
-      <div class="pc-slots">${slots.join('')}</div>
+      <div class="pc-slots${anyLit ? ' picking' : ''}">${slots.join('')}</div>
       <div class="pc-list" data-list="${index}">${rows}</div>
       <div class="pc-foot">buy <b>${K?.price ?? '—'}</b> · sell <b>${K?.sellPrice ?? '—'}</b>
         — INTERACT <b>back</b></div>

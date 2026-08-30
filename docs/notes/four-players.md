@@ -1618,3 +1618,236 @@ to be guesses, and wrong ones. Moved to where Richard's feeder actually reports
 them; the whole account, including why one shared index made the overlay toggle
 on and straight back off, is in [input.md](input.md) under *The Joy-Con
 shoulders were guessed*.
+
+## The sixth session — six things, and two of them were the split screen lying
+
+Six reports in one message, none of them related to each other, so they went on
+one `mixed/` branch. Two of them turn out to be the same mistake in two places:
+a piece of layout tuned against a full-width screen, and a split screen quietly
+handing it something else.
+
+### The pause menu had grown to fifteen rows
+
+> the list on the Pause Menu settings is getting too long, can we clean it up or
+> organize it by potentially breaking up the commands into sub menu's? Could be
+> "Gameplay", "Players", "Storyline", "Stats/Features"
+
+It got there honestly, one row at a time, and four players is what tipped it
+over: RESUME, SETTINGS, HOW TO PLAY, RECORD BOARD, CHARACTER PROFILE, the story,
+the trailer, QUIT THE MATCH, up to three DROP OUTs, RESTART, TITLE SCREEN, QUIT
+GAME. On a panel capped at `86vh` that a nine-year-old drives with a stick, one
+row per nudge.
+
+**Headings in place were tried on paper first and rejected**, because they make
+the list *longer*: fifteen rows plus four headings is worse than fifteen rows.
+The only arrangement that actually shortens it moves things a press away, so the
+question became *which* things — and the answer is frequency, not category. What
+gets asked for mid-game stays on top:
+
+```
+RESUME
+HOW TO PLAY
+SETTINGS
+KITTENS & SCORES   →  character profile · record board · DROP OUT ×N
+WATCH AGAIN        →  the story · the trailer
+QUIT THE MATCH        (hidden unless a match is live)
+END THE GAME       →  restart · title screen · quit
+```
+
+Six rows at any party size, seven mid-match, down from fifteen.
+
+**QUIT THE MATCH is the one ending left at the top level**, on purpose: it is the
+only one that is ever *urgent* — a pair who got into a 2v2 they did not mean to
+pick want out of it now, and burying that exit one press deeper is the trap the
+button was added to remove. It is hidden the rest of the time, so it costs the
+list nothing.
+
+**The seventh non-negotiable comes out stronger, not weaker.** The list still
+runs least to most final, so a thumb that overshoots RESUME by one row now lands
+on HOW TO PLAY rather than on the end of the afternoon, and RESTART, TITLE
+SCREEN and QUIT GAME cannot be reached by overshooting anything at all. Each
+still asks first once you get there, and each dialog still opens on cancel.
+
+### …and finding that a pad had never actually been driving the record board
+
+Adding three panels meant touching the list of "panels that sit over the pause
+menu" — which turned out to exist **four times**: in the `data-close` handler,
+in the Escape handler, in `_overlayOpen`, and, in a different order and for a
+different reason, in `MenuNav`'s own `PANELS`. Three of them agreed.
+
+The fourth had never heard of `panel-board`. `PANELS` is a precedence list —
+first unhidden id wins — so with the record board on screen the cursor was
+driving the **pause menu behind it**, and the board's `data-nav="scroll"`, a
+mode that exists for that one panel and nothing else, had never once fired.
+Nobody reported it because nobody had tried to scroll the board with a stick.
+
+The set is one `SUB_PANELS` now. `PANELS` deliberately stays separate: this one
+answers *does Escape close it* and that one answers *who gets the presses*, and
+merging them is how the answer to one question starts depending on the other.
+`SUB_PANELS` is ordered innermost-first, because Escape closes **one** — the
+record board opens from KITTENS & SCORES with that group still up behind it, so
+backing out has to land on the group and not three steps out.
+
+### The maths overlay is a setting now
+
+> let's also add the "Turn Math Overlay during gameplay" option on/off as we may
+> remove those from the controllers in the future
+
+A toggle only a key can reach is one a kid on a phone cannot reach at all, and
+one whose only record of its state is a button somebody pressed.
+
+**Three values, not a checkbox**, because *automatic* is genuinely a third
+answer and not a fudge: on a phone the board lands under the thumb driving the
+kitten, so automatic means off out there and on everywhere else, with the Dojo
+turning it on when she walks into the room the lesson is in. Choosing ON or OFF
+means it on every device **and stops the Dojo overriding her** — a room silently
+undoing a setting she just picked is the silent refusal the sixth
+non-negotiable forbids. It is a starting point, not a lock: `M` and the pad
+still toggle from wherever it put things.
+
+### A pane the layout had narrowed, with nothing to pull its camera back
+
+> When Split Direction is set to Top and bottom, and 1 player is in one split
+> screen and the other 3 are together, the camera is zoomed in too much … At
+> least zoomed out as much as they were taking up 1/4th the screen, which is at
+> least zoomed out twice as much as currently.
+
+The 3v1 branch **overrides the split direction** — decided twice, and the second
+answer is the one that survived contact with a player, because a 1920×410 strip
+broke `.pane-card`'s `cqw` sizing. So somebody who set the screen to Top and
+bottom got a 728×1080 column, aspect 0.67 against a quadrant's 1.78.
+
+`fitDistance` was meant to be the answer to exactly this and could not be: it
+frames a **group**, and her group is one kitten, so the spread is 0 and it
+returns 0. Every remaining term in `_updateRig` is a constant tuned on a
+full-width screen. Nothing in the pull-back knew the shape of the pane when the
+pane held one player.
+
+`paneWiden` is that missing term, and the rule is the one Richard named: **no
+pane shows less of the world across it than a quadrant of the same screen
+would.** A quadrant has the same aspect as the whole screen, so the target is
+just `W/H` and there is no second number to keep in step. Measured at 1920×1080,
+gap 4:
+
+| pane | size | aspect | widen |
+| --- | --- | --- | --- |
+| her column | 728×1080 | 0.674 | **2.637×** |
+| their column | 1188×1080 | 1.100 | 1.616× |
+| a quadrant | 958×538 | 1.781 | 1.000× |
+
+Vertical is left alone. The vertical field of view is fixed by design and a tall
+pane already shows more sky and more ground whatever this returns; it is the
+horizontal crop that loses the world.
+
+**An even split is exempt, and that guard is the whole compatibility story.**
+Two even panes side by side are every bit as narrow — and they are the
+two-player game, which may not move. The distinction is not width, it is
+consent: an even split is the arrangement the player's own setting promised, and
+an uneven one is a rectangle nobody asked for, handed out by the one branch that
+also overrides that setting. `world-check` pins five even splits at exactly 1.
+
+### The Dojo's board, at 42% of half a screen
+
+> when there are two players in a split screen at the Dojo of the Turning
+> Circle, the math overlay is too small, I think we can make it the full size it
+> would normally be, and move it to the top-left of the screen
+
+The same mistake as the camera, one screen along. 42% is a rule about **not
+covering the player whose window this is**, and it stops being that rule the
+moment the window belongs to two or three of them: a pair sharing a pane got 42%
+of 960, a 403px board where an unsplit screen gives 540, and the one thing the
+room exists to teach came out too small to read.
+
+It takes its full width and the **top outer corner** in a shared pane. The top,
+rather than a bigger board where it already was, because `mapSpot` gives the
+board the outer bottom corner and the pane's minimap the inner one — an
+arrangement that only works while the board is small enough to leave a corner
+over. At 540 in a 960 pane it is most of the bottom edge, with the two kittens
+it is *for* standing on the circle underneath it.
+
+Two things it has to clear, and both are **measured, not assumed**:
+
+- **The scoreboard**, whose width is a row of badges whose count and names
+  change with the party, so any constant would be wrong at some player count.
+  Its rect is read, and the drop is applied only where the two would actually
+  overlap across the screen — "as close to the corner as we can" means the drop
+  has to be *nothing* when the corner is free.
+- **The pane's own minimap.** The first version added up the map's size, its
+  padding and the hint line by hand and came out sixteen pixels short, because
+  `mapSpot` lifts a box off the bottom of the screen by `HINT_CLEAR` and that
+  term was missing from the sum. It asks `mapWidth` and `mapSpot` now — the same
+  two calls `_drawMaps` makes — so the reservation cannot drift from the map
+  that actually gets drawn. Shrinking to fit is a bounded loop rather than one
+  pass, because the board's height is `a·w + c` and scaling by `room / h` always
+  lands tall by the fixed part.
+
+### Her worn orbs were squares, and did not say which was which
+
+> it just shows the kanji character and color, but it's hard to know which one
+> relates to which ability … the orbs at the top are in a square shape, may look
+> better to have them in a circular or orb like shape … Can even use the
+> "s12.png" in "out\trailer\shots" as reference
+
+Two reports, one card. The shelf rows say what an orb *does*, in words; the top
+row says what she is *wearing*, in kanji; and nothing joined them, so reading
+your own loadout meant learning eight characters first.
+
+**The slots matching the cursor's row light up now** — brighter bloom, a ring
+swung round, and a lift. Three cues rather than one, because this card is read
+at a quarter of a screen and any single one of them is a few pixels. The others
+step back, but only when there *is* a match: dimming all eight to point at none
+of them is a card that looks broken, and "she is not wearing that one" is
+already what the row's own `—` says.
+
+The shape came off `out/trailer/shots/s12.png`, which is the game's own
+promotional art of these exact eight objects — glass sphere, specular highlight
+high and left, the colour deepening towards the lower-right rim, a coloured
+bloom under it, a bright kanji floating in the middle, and a neon ring orbiting
+on a tilt. All of it is CSS: two radial gradients, one rotated pseudo-element
+and two shadows. No image, because the ninth non-negotiable means an atlas entry
+for eight HUD icons is not on the table, and it would go stale the day a clan
+colour changed. The ring's `border-top-color: transparent` is the whole trick —
+a closed ellipse in front of a ball is a hoop resting on it; an open one passes
+behind.
+
+The shelf's dots got the same glass. They are the same eight objects seen twice
+on the same card, and drawing them as two different kinds of thing was half of
+why the question was hard to answer in the first place.
+
+### Blossom's arrows pointed diagonally
+
+> Instead of pointing left/right, they are pointing diagonally. Must be a bug
+> because her name is longer than the others. Also her box is almost twice as
+> high as the others.
+
+Both symptoms, one cause, and the report contained the diagnosis. `.tp-cat` is a
+flex row and `.tp-keys` was the only item in it with a shrink factor, so when a
+name overflowed the column the flexbox took the width out of `◀ ▶` — the two
+arrows wrapped onto two lines, which reads as a diagonal pair and doubles the
+row's height. Only Blossom's name is long enough to do it.
+
+The prompt is the instruction that screen exists to give, so it is the **last**
+thing that may shrink, not the first. The name is a `.tp-name` element now, so
+the squeeze has somewhere else to go — a bare text node is an anonymous flex
+item and no selector can reach it — and the column's minimum width was measured
+off the real row, so in practice nothing gives at all.
+
+### Debug `4` killed Frost
+
+> Pressing '4' End Live Round in debug menu, doesn't end the round, it just
+> kills Frost currently.
+
+It did `this.players[1].hurt(...)` and reported the hit — written when two
+players was the only number there was, and it looked like ending a round for
+exactly as long as that stayed true. At four players it killed one kitten and
+left two standing. In a 2v2 it did not end the round **at all**, because a side
+is not out until everybody on it is.
+
+The `ROUND_LIMIT` branch already knew how to end a round honestly at any league
+size, so that decision is `Tournament.callOnDamage` now and both callers go
+through it: the clock and the debug key cannot disagree about who won.
+
+**And nobody is hurt to do it.** A round called on time is not a knockout, so
+whoever was ahead on damage takes it with the score she had actually earned, and
+an untouched round is a draw that still *ends* — a draw has to move the state
+on, or the round the clock just refused to keep open stays open.

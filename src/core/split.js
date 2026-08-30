@@ -199,6 +199,55 @@ export function splitLayout(n, W, H, gap = 3, dir = 'vertical', sizes = null) {
   return cells.slice(0, Math.min(n, 4));
 }
 
+/**
+ * How much further back a pane's camera has to sit than its TUNED distance,
+ * because the layout handed it a narrower rectangle than a quadrant.
+ *
+ * WHY THIS IS NOT ALREADY DONE BY `fitDistance`. That one asks "does the GROUP
+ * fit across this pane", so it scales with aspect and already widens a narrow
+ * pane — for a group. It returns 0 for a spread of 0, which is exactly the
+ * pane that reported this: one kitten on her own, in the 62/38 split's narrow
+ * column, with nothing for `fitDistance` to fit and every distance constant in
+ * `main.js` tuned on a full-width screen. Reported from play as "the camera is
+ * zoomed in too much, it should be pulled out more so the player can see the
+ * environment", with the remedy named: "at least zoomed out as much as they
+ * were taking up 1/4th the screen".
+ *
+ * SO A QUARTER OF THE SCREEN IS THE REFERENCE, and it is a convenient one: a
+ * quadrant has the same aspect as the whole screen, so the target is `W/H` and
+ * there is no second number to keep in step. The rule is *no pane shows less
+ * of the world ACROSS it than a quadrant of the same screen would*. Measured
+ * at 1920x1080, four players, three together and one alone:
+ *
+ *     her column        730x1080   aspect 0.68   widen 2.63x
+ *     their column     1190x1080   aspect 1.10   widen 1.62x
+ *     a quadrant        958x538    aspect 1.78   widen 1.00x
+ *
+ * Vertical is left alone. The vertical field of view is fixed by design and a
+ * tall pane will show more sky and more ground whatever this returns; it is
+ * the horizontal crop that loses the world, and the horizontal crop that the
+ * long note above is about.
+ *
+ * AN EVEN SPLIT IS EXEMPT, AND THAT IS THE WHOLE POINT OF THE GUARD. Two even
+ * panes side by side are just as narrow as anything here — and they are the
+ * two-player game, which may not move (non-negotiable 5). The distinction is
+ * not about width, it is about consent: an even split is the arrangement the
+ * player's own Split Direction setting promised, and an uneven one is a
+ * rectangle nobody asked for, handed out by a layout branch that also
+ * overrides the setting. This only ever widens the panes in that second case.
+ *
+ * @param panes  the whole layout, as returned by `splitLayout`
+ * @param i      which pane
+ * @param W,H    the drawing buffer size
+ * @returns a multiplier >= 1, and exactly 1 whenever every pane is the same size
+ */
+export function paneWiden(panes, i, W, H) {
+  const p = panes?.[i];
+  if (!p || p.w <= 0 || p.h <= 0 || W <= 0 || H <= 0) return 1;
+  if (panes.every((q) => q.w === p.w && q.h === p.h)) return 1;
+  return Math.max(1, (W / H) / (p.w / p.h));
+}
+
 /* ===========================================================================
    AND WHICH GROUP GETS WHICH PANE.
 
@@ -675,9 +724,21 @@ export function nearestMap(panes, owner, pane) {
  * @param pad    gap from the pane's edges
  * @param hint   height to leave clear at the very bottom of the screen
  * @param inner  hug the seam (a map) or the outside (the maths board)
+ * @param top    anchor to the TOP of the pane instead of the bottom — the
+ *               maths board in a pane holding more than one kitten, which is
+ *               the one box big enough that the bottom corner is not a corner
+ *               any more. See `Game._drawMathBoard`.
+ * @param clear  the mirror of `hint`: a page y above which the top of the
+ *               screen is spoken for (the scoreboard). MEASURED by the caller
+ *               and passed in, because it is the width of a row of badges
+ *               whose number and names change with the party — a constant here
+ *               would be wrong at three players.
  * @returns {{ left: number, top: number }} CSS page coordinates, top-left origin
  */
-export function mapSpot({ v, W, H, size, w = size, h = size, pad = 14, hint = 0, inner = true }) {
+export function mapSpot({
+  v, W, H, size, w = size, h = size, pad = 14, hint = 0, inner = true,
+  top = false, clear = 0,
+}) {
   const fullW = v.w >= W - 2;
   const fullH = v.h >= H - 2;
   const left = v.x;
@@ -707,8 +768,14 @@ export function mapSpot({ v, W, H, size, w = size, h = size, pad = 14, hint = 0,
 
   return {
     left: hugRight ? right - pad - w : left + pad,
-    top: hugTop ? cssTop + pad
-      : cssBottom - pad - (bottomIsScreen ? hint : 0) - h,
+    /* `top` OVERRIDES BOTH, and only the maths board passes it. `clear` is the
+       mirror of `hint`: a page y below which the top of the screen is free.
+       `Math.max` rather than an `onTop` branch because a lower pane's own top
+       is already past anything at the top of the screen, so the same
+       expression is right for every pane and there is no case to get wrong. */
+    top: top ? Math.max(cssTop + pad, clear)
+      : hugTop ? cssTop + pad
+        : cssBottom - pad - (bottomIsScreen ? hint : 0) - h,
   };
 }
 

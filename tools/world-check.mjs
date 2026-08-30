@@ -76,7 +76,7 @@ import { MenuNav } from '../src/systems/menunav.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, fitDistance, stablePanes,
-  paneSeats, outOfShot, framedMembers, OUT_DROP,
+  paneSeats, outOfShot, framedMembers, OUT_DROP, paneWiden,
 } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
@@ -3864,11 +3864,51 @@ console.log('\n--- a full-screen scene has no split to furnish ---');
   ok('...and the gap round the edges is in that unit too, not a percentage',
     !/\.pane-card\s*\{[^}]*padding:\s*\d/.test(card)
     && /margin:\s*calc\(5 \* var\(--u\)\)/.test(card));
-  /* AND THE SQUARE SLOTS ARE CAPPED. Eight slots sharing the width of a very
-     wide pane are eight big squares, and a square's height is its width — so
+  /* AND THE ROUND SLOTS ARE CAPPED. Eight slots sharing the width of a very
+     wide pane are eight big circles, and a circle's height is its width — so
      this is the one row `--u` cannot shrink on its own. */
   ok('...and her eight orb slots cannot grow taller than the card',
     /\.pc-slot\s*\{[^}]*max-width:\s*calc\([\d.]+ \* var\(--u\)\)/.test(card));
+
+  /* --- THEY ARE ORBS NOW, AND ONE OF THEM ANSWERS THE ROW UNDER THE CURSOR --
+     Reported from play: "the orbs at the top are in a square shape, may look
+     better to have them circular or orb like, 3D-ish like a dragon ball", and
+     separately "it just shows the kanji character and colour, and it's hard to
+     know which one relates to which ability". Both of those are one card, so
+     both are checked here. Drawn from `out/trailer/shots/s12.png`, which is
+     the game's own promotional art of these eight objects. */
+  ok('the worn orbs are round, not square',
+    /\.pc-slot\s*\{[^}]*border-radius:\s*50%/.test(card));
+  ok('...with a specular highlight and a ground, which is what makes it a ball',
+    /\.pc-slot\.full\s*\{[^}]*radial-gradient\(circle at [\d.]+% [\d.]+%[\s\S]*?rgba\(255, 255, 255/
+      .test(card));
+  ok('...and a ring orbiting it, open at the top so it passes behind',
+    /\.pc-slot\.full::after\s*\{[^}]*border-top-color:\s*transparent/.test(card)
+    && /\.pc-slot\.full::after\s*\{[^}]*transform:\s*rotate\(/.test(card));
+  /* THE LINK BETWEEN THE TWO ROWS, which is the half of this that is not
+     decoration: the shelf row says what an orb DOES, and this says which of
+     the ones she is wearing that sentence is about. */
+  ok('...and the slots matching the cursor light up', /\.pc-slot\.full\.lit\s*\{/.test(card));
+  ok('...in front of their neighbours, since a lifted orb grows into them',
+    /\.pc-slot\.full\.lit\s*\{[^}]*z-index:/.test(card));
+  ok('...and the others step back only when there IS a match',
+    /\.pc-slots\.picking \.pc-slot\.full:not\(\.lit\)/.test(card));
+  {
+    const insp = readFileSync(new URL('../src/systems/inspector.js', import.meta.url), 'utf8');
+    ok('...decided from the cursor row rather than from the slot index',
+      /const lit = POWER_ORBS\[c\.i\]\?\.id/.test(insp));
+    /* `picking` MUST NOT BE SET WHEN NOTHING MATCHES. Dimming all eight to
+       point at none of them is a card that looks broken — she simply wears
+       none of that orb, which the row's own "—" already says. */
+    ok('...and nothing dims when she wears none of the orb under the cursor',
+      /let anyLit = false;/.test(insp)
+      && /pc-slots\$\{anyLit \? ' picking' : ''\}/.test(insp));
+    /* THE SHELF DOT IS THE SAME OBJECT SEEN TWICE and is drawn as the same
+       object. Two different-looking pictures of one orb is half of why the
+       question was hard to answer. */
+    ok('...and the shelf dot is the same glass as the slot above it',
+      /\.pc-dot\s*\{[^}]*radial-gradient\(circle at [\d.]+% [\d.]+%/.test(card));
+  }
 
   /* --- and one press is still one press ---
      Start ended the trailer and restarted it from the beginning, on a PS5 pad
@@ -6698,6 +6738,86 @@ console.log('\n--- the three power moves ---');
       JSON.stringify(splitLayout(2, VW, VH, 3, 'vertical', [2, 2]))
       === JSON.stringify(vert));
 
+    /* ---- AND A NARROW PANE PULLS ITS CAMERA BACK -------------------------
+       Reported from play, with the setting on Top and bottom and one kitten
+       alone against the other three: "the camera is zoomed in too much, it
+       should be pulled out more so the player can see the environment. At
+       least zoomed out as much as they were taking up 1/4th the screen, which
+       is at least zoomed out twice as much as currently."
+
+       `fitDistance` below could not answer it. It frames a GROUP, and her
+       group is one kitten, so the spread is 0 and it returns 0 — every
+       distance in `_updateRig` was then a constant tuned on a full-width
+       screen, applied to a pane 0.68 wide for its height. `paneWiden` is the
+       missing term and these are its two claims: that the reported case is
+       fixed, and that the two-player game is untouched. */
+    {
+      const un = splitLayout(2, VW, VH, 3, 'horizontal', [3, 1]);
+      const her = paneWiden(un, 1, VW, VH);
+      const them = paneWiden(un, 0, VW, VH);
+      /* The number the player asked for, in the words she asked for it. */
+      ok('the solo pane of a 3v1 is pulled back at least twice as far',
+        her >= 2, `${her.toFixed(2)}x`);
+      ok('...which is exactly a quadrant of the same screen, across',
+        Math.abs(her - (VW / VH) / (un[1].w / un[1].h)) < 1e-9, `${her.toFixed(3)}x`);
+      ok('...and the trio share a wider pane, so they are pulled back less',
+        them > 1 && them < her, `${them.toFixed(2)}x vs ${her.toFixed(2)}x`);
+
+      /* THE COMPATIBILITY CLAIM, AND THE ONLY REASON THE EVEN-SPLIT GUARD
+         EXISTS. Two even panes side by side are just as narrow as the trio's
+         and are deliberately left alone: that is the two-player game, which
+         may not move (non-negotiable 5). The rule is about a rectangle nobody
+         asked for, not about width. */
+      for (const [what, panes] of [
+        ['two even panes side by side', splitLayout(2, VW, VH, 3, 'vertical')],
+        ['two even panes stacked', splitLayout(2, VW, VH, 3, 'horizontal')],
+        ['quadrants', splitLayout(4, VW, VH, 3, 'vertical')],
+        ['one shared screen', splitLayout(1, VW, VH, 3, 'vertical')],
+        ['two pairs', splitLayout(2, VW, VH, 3, 'vertical', [2, 2])],
+      ]) {
+        ok(`...and ${what} are widened by exactly 1 — nothing moves`,
+          panes.every((_, i) => paneWiden(panes, i, VW, VH) === 1));
+      }
+      /* NEVER A ZOOM IN. It is a floor on how much world is visible, so it can
+         only ever push the camera out — a pane WIDER than a quadrant (the
+         stacked trio's strip) has nothing to fix. */
+      const st = splitLayout(3, VW, VH, 3, 'horizontal', [2, 1, 1]);
+      ok('...and a pane wider than a quadrant is left alone, never pulled in',
+        st.every((_, i) => paneWiden(st, i, VW, VH) === 1));
+      ok('...and it degrades rather than NaNs on a pane with no area',
+        paneWiden([{ x: 0, y: 0, w: 0, h: 0 }, { x: 0, y: 0, w: 1, h: 1 }], 0, VW, VH) === 1
+        && paneWiden(null, 0, VW, VH) === 1);
+    }
+
+    /* ---- THE MATHS BOARD TAKES THE TOP OF A SHARED PANE -------------------
+       Also reported from play, side by side with two kittens in one pane: the
+       board came out 42% of 960 where an unsplit screen gives it 540, and the
+       one thing the Dojo exists to teach was too small to read. It takes the
+       full width and the TOP corner there, because at 540 in a 960 pane the
+       bottom edge is not a corner any more and the girls it is for are
+       standing on the circle underneath it. */
+    {
+      const half = splitLayout(2, VW, VH, 3, 'vertical');
+      const box = { w: 540, h: 420 };
+      const low = mapSpot({ v: half[0], VW, W: VW, H: VH, ...box, inner: false });
+      const high = mapSpot({ v: half[0], W: VW, H: VH, ...box, inner: false, top: true });
+      ok('the maths board can be anchored to the TOP of its pane', high.top < low.top,
+        `${high.top} vs ${low.top}`);
+      ok('...hard into the corner when nothing is in the way', high.top === 14);
+      ok('...and pushed below the scoreboard when something is',
+        mapSpot({ v: half[0], W: VW, H: VH, ...box, inner: false, top: true, clear: 62 }).top === 62);
+      /* A LOWER PANE'S OWN TOP ALREADY CLEARS THE SCOREBOARD, so `clear` must
+         not lift it — `Math.max` rather than a branch, and this is the case
+         that would catch a branch getting it backwards. */
+      const stack = splitLayout(2, VW, VH, 3, 'horizontal');
+      ok('...and a pane below the seam is not dragged up to meet it',
+        mapSpot({ v: stack[1], W: VW, H: VH, ...box, inner: false, top: true, clear: 62 }).top
+        === mapSpot({ v: stack[1], W: VW, H: VH, ...box, inner: false, top: true }).top);
+      /* AND THE OUTER EDGE IS STILL THE BOARD'S, top or bottom — the map has
+         the seam, and swapping them draws one through the other. */
+      ok('...and it keeps the outer edge either way', high.left === low.left && high.left === 14);
+    }
+
     /* ---- AND THE CAMERA HAS TO KNOW HOW WIDE ITS PANE IS ------------------
        The layout above is half the fix. The other half is that `_updateRig`
        sized its pull-back from world spread alone — `clamp(26 + spread*0.85,
@@ -7037,6 +7157,78 @@ console.log('\n--- the three power moves ---');
      the one nobody could see. */
   ok('the round limit is a real bound, not a formality',
     ROUND_LIMIT >= 60 && ROUND_LIMIT <= 300);
+
+  /* --- AND THE DEBUG KEY ENDS THE ROUND THROUGH THAT SAME DECISION ---
+     Reported from play: "pressing 4, End Live Round, doesn't end the round, it
+     just kills Frost." It did `this.players[1].hurt(b.hp, ...)` — written when
+     two players was the only number there was. At four it killed one kitten
+     and left two standing; in a 2v2 it did not end the round AT ALL, because a
+     side is not out until everybody on it is.
+
+     `callOnDamage` is the `ROUND_LIMIT` branch, extracted so the clock and the
+     key cannot disagree about who won. These check the behaviour rather than
+     the extraction: that it ends the round at a league size the old code could
+     not, that it awards the round to the side ahead on damage, and — the part
+     that says it is not the old fix wearing a new name — that it hurts nobody
+     to do it. */
+  {
+    const mk = (dmg) => {
+      const players = dmg.map((d, i) => ({
+        index: i, name: `P${i}`, hp: 100, ko: false, dmgDealt: d,
+        position: { x: 0, y: 0, z: 0 },
+      }));
+      const T = new Tournament({
+        game: { players, toast() {}, sfx() {}, audio: null },
+        world,
+        audio: null,
+        announcer: null,
+      });
+      T.sides = [0, 0, 1, 1];
+      T.wins = [0, 0];
+      T.state = 'live';
+      T.t = 0;
+      return { T, players };
+    };
+    /* A 2v2 IS THE CASE THE OLD KEY COULD NOT END, so it is the case checked
+       first: side 1 is ahead, so side 1 takes it. */
+    const a = mk([5, 0, 40, 0]);
+    const verdict = a.T.callOnDamage('[debug] round called!');
+    ok('the debug round-ender ends a 2v2, which the old one could not',
+      a.T.state === 'ko' && verdict === 'won', `${a.T.state} / ${verdict}`);
+    ok('...and gives it to the side that was ahead on damage',
+      a.T.wins[1] === 1 && a.T.wins[0] === 0, a.T.wins.join(','));
+    /* IT KILLS NOBODY. A round called on time is not a knockout, and the whole
+       complaint was that this key was a knockout wearing the wrong label. */
+    ok('...and nobody is knocked down or loses a single point of health',
+      a.players.every((p) => p.hp === 100 && !p.ko));
+    /* COUNTED PER SIDE, not per fighter. Two kittens landing 20 each beat one
+       landing 30, or a tag team is scored as two separate duels. */
+    const b = mk([30, 0, 20, 20]);
+    b.T.callOnDamage();
+    ok('...and the damage is added up per SIDE, not per fighter',
+      b.T.wins[1] === 1, b.T.wins.join(','));
+    /* A DRAW STILL ENDS IT. Refusing the round and leaving it live is the one
+       outcome that would hang the tournament open. */
+    const c = mk([0, 0, 0, 0]);
+    const drew = c.T.callOnDamage();
+    ok('...and an untouched round is a draw that still ends',
+      drew === 'draw' && c.T.state === 'ko' && c.T.wins.every((w) => w === 0));
+    /* AND IT REFUSES OUTSIDE A LIVE ROUND rather than half-ending something. */
+    const d = mk([9, 0, 0, 0]);
+    d.T.state = 'card';
+    ok('...and it does nothing at all when no round is live',
+      d.T.callOnDamage() === null && d.T.state === 'card');
+    /* THE CLOCK GOES THROUGH IT TOO, which is what stops the two answers
+       drifting apart again — the old duplicate is the reason this exists. */
+    const tsrc = readFileSync(new URL('../src/systems/tournament.js', import.meta.url), 'utf8');
+    ok('...and the clock running out calls exactly the same method',
+      /if \(this\.t > ROUND_LIMIT\) this\.callOnDamage\(/.test(tsrc));
+    const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    const at = msrc.indexOf("if (code === 'Digit4') {");
+    ok('...and so does the debug key, which no longer hurts anybody',
+      at > 0 && /callOnDamage\(/.test(msrc.slice(at, at + 500))
+      && !/\.hurt\(/.test(msrc.slice(at, at + 500)));
+  }
 
   /* --- THE FIGHT CAMERA HAS TO FRAME EVERY FIGHTER ---
      It read `const [a, b] = this.game.players` and sized itself off the spread
@@ -10245,6 +10437,157 @@ console.log('\n--- one press is not enough, and one player drives ---');
   ok('drop out asks too', dAt > 0 && drop.indexOf('this.confirm.ask({') > 0
     && drop.indexOf('this.confirm.ask({') < drop.indexOf('this._leavePlayer('));
   ok('...and QUIT GAME exists at all', /data-action="quit"/.test(html));
+
+  /* --- THE PAUSE MENU IS SIX ROWS AND WAS FIFTEEN ----------------------
+     Reported from play: "the list on the pause menu is getting too long, can
+     we clean it up or organize it by breaking the commands into sub menus."
+     Grouping in place would have made it longer — fifteen rows plus four
+     headings — so the three groups that are never urgent moved one press down.
+
+     THE COUNT IS THE CHECK, because the failure is drift: the list grew to
+     fifteen one honest row at a time and nothing was watching. */
+  {
+    const at = html.indexOf('id="panel-pause"');
+    /* Bounded by the NEXT panel, not by a closing tag — counting `</div>`s in
+       a slice is how a check ends up measuring half the document. */
+    const pause = html.slice(at, html.indexOf('id="panel-', at + 20));
+    const menu = pause.slice(pause.indexOf('<div class="pause-menu">'));
+    const rows = (menu.match(/class="menu-btn[^"]*"/g) ?? []).length;
+    ok('the pause menu is a short list, not a wall of buttons', rows <= 8, `${rows} rows`);
+    /* RESUME'S NEIGHBOUR IS HARMLESS. Seventh non-negotiable, read as a list
+       order: a thumb that overshoots the top row by one must not land on
+       anything that ends the afternoon. */
+    const order = [...menu.matchAll(/data-action="([a-z-]+)"/g)].map((m) => m[1]);
+    ok('...and it still runs least to most final', order[0] === 'resume'
+      && !['restart', 'title', 'quit'].includes(order[1]), order.slice(0, 3).join(' '));
+    /* AND THE THREE ENDINGS ARE BEHIND ONE PRESS, which makes that rule
+       stronger rather than weaker: there is now no way to reach any of them by
+       overshooting RESUME. */
+    for (const act of ['restart', 'title', 'quit']) {
+      ok(`...so ${act.toUpperCase()} is not on the top level any more`,
+        !order.includes(act));
+    }
+    /* QUIT THE MATCH IS THE ONE EXCEPTION and it is deliberate: it is the only
+       ending that is ever urgent, and it is hidden unless a match is live, so
+       it costs the list nothing. */
+    ok('...except QUIT THE MATCH, which is the exit you need in a hurry',
+      order.includes('quit-match') && /id="btn-quit-match"[^>]*class="[^"]*hidden|class="[^"]*hidden[^"]*"[^>]*id="btn-quit-match"/
+        .test(pause.replace(/\n\s*/g, ' ')));
+  }
+
+  /* --- ONE LIST OF SUB-PANELS, BECAUSE THERE WERE FOUR ------------------
+     "Which panels sit over the pause menu" was written out separately in the
+     `data-close` handler, in the Escape handler, in `_overlayOpen` and in
+     MenuNav's `PANELS`. Three agreed; the fourth had never heard of
+     `panel-board`, so a pad driving the record board was really driving the
+     pause menu behind it — and `panel-board` carries `data-nav="scroll"`, a
+     mode that existed for it and could never fire. */
+  {
+    const menuNav = readFileSync(
+      new URL('../src/systems/menunav.js', import.meta.url), 'utf8');
+    const list = /const SUB_PANELS = \[([^\]]*)\]/.exec(main)?.[1] ?? '';
+    const ids = [...list.matchAll(/'([a-z-]+)'/g)].map((m) => m[1]);
+    ok('every pause sub-panel is named in one place', ids.length >= 6, ids.join(' '));
+    for (const id of ids) {
+      ok(`...and ${id} exists in the markup`, html.includes(`id="${id}"`));
+      ok(`...and MenuNav knows to drive ${id}`, menuNav.includes(`'${id}'`));
+    }
+    /* THE RECORD BOARD IS THE ONE THAT WAS MISSING, so it is named. */
+    ok('...including the record board, which MenuNav could not reach at all',
+      ids.includes('panel-board') && /'panel-board'/.test(menuNav));
+    /* AND THE THREE PLACES READ THE LIST RATHER THAN REPEATING IT. */
+    ok('...and the close handler, Escape and _overlayOpen all read that list',
+      /_closeSubPanel\(\)/.test(main)
+      && /\[\.\.\.SUB_PANELS, 'panel-pause'/.test(main)
+      && /for \(const id of SUB_PANELS\)/.test(main));
+    /* ESCAPE CLOSES ONE, INNERMOST FIRST. The board opens from KITTENS &
+       SCORES with that group still up behind it, so backing out has to land on
+       the group rather than three steps out at the pause menu. */
+    ok('...and Escape backs out one level, board first',
+      ids[0] === 'panel-board', ids[0]);
+    /* AND EVERY ONE OF THEM CAN BE LEFT. A group you can open and not close is
+       the frozen game the sixth non-negotiable is about. */
+    for (const id of ['panel-kittens', 'panel-watch', 'panel-ending']) {
+      const seg = html.slice(html.indexOf(`id="${id}"`), html.indexOf(`id="${id}"`) + 2200);
+      ok(`...and ${id} carries a way out`, /class="menu-btn back" data-close/.test(seg));
+    }
+  }
+
+  /* --- AND PICK YOUR SIDE DOES NOT FOLD UNDER A LONG NAME ---------------
+     Reported from play: "when moving Blossom on the Choose Your Team screen,
+     her arrows next to her name are pointing diagonally instead of left/right,
+     and her box is almost twice as high as the others."
+
+     ONE CAUSE, BOTH SYMPTOMS. `.tp-cat` is a flex row and `.tp-keys` was the
+     only item in it with a shrink factor, so when a name overflowed the column
+     the flexbox took the width out of `◀ ▶` and the two arrows wrapped onto
+     two lines — which reads as a diagonal pair and doubles the row's height.
+     Only Blossom's name is long enough to do it. The prompt is the instruction
+     this screen exists to give and is the LAST thing that may shrink. */
+  {
+    const st = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+    const keys = /\.tp-keys \{([^}]*)\}/.exec(st)?.[1] ?? '';
+    ok('the stick prompt on a kitten\'s row never shrinks', /flex:\s*0 0 auto/.test(keys), keys.trim());
+    ok('...and never wraps, so two arrows cannot become a diagonal pair',
+      /white-space:\s*nowrap/.test(keys));
+    /* A NAME HAS TO BE AN ELEMENT for the rule above to have somewhere to push
+       the squeeze to — a bare text node is an anonymous flex item and no
+       selector can reach it. */
+    ok('...because the NAME is what gives instead, and it is a real element',
+      /\.tp-name \{/.test(st) && /<span class="tp-name">/.test(main));
+    /* AND THE COLUMN IS WIDE ENOUGH FOR THE LONGEST ROW, so in practice
+       nothing has to give at all. */
+    const side = /\.tp-side \{([^}]*)\}/.exec(st)?.[1] ?? '';
+    const min = Number(/min-width:\s*(\d+)px/.exec(side)?.[1] ?? 0);
+    ok('...and a team column fits the longest name plus its arrows', min >= 170, `${min}px`);
+  }
+
+  /* --- AND IT TAKES ITS FULL SIZE IN A PANE HOLDING MORE THAN ONE -------
+     Reported from play, side by side with two kittens in one pane: "the math
+     overlay is too small, make it the full size it would normally be, and move
+     it to the top-left of the screen, as close to the corner as we can without
+     overlaying the players UI elements on the top." 42% of a 960 pane is a
+     403px board where an unsplit screen gives 540, and the Dojo's whole reason
+     to exist came out too small to read. */
+  {
+    const at = main.indexOf('_drawMathBoard(panes, groups, W, H, mathUp) {');
+    const fn = main.slice(at, main.indexOf('\n  onJoinClan(', at));
+    ok('the maths board is sized by whether the pane is SHARED, not by a fraction',
+      /const shared = \(groups\[best\]\?\.length \?\? 0\) > 1;/.test(fn));
+    ok('...taking its full width there and the 42% only when she is alone',
+      /shared[\s\S]{0,120}?Math\.min\(540, v\.w - \d+\)[\s\S]{0,120}?Math\.round\(v\.w \* 0\.42\)/.test(fn));
+    ok('...and the top corner, since at full size the bottom is not a corner',
+      /inner: false, top: shared/.test(fn));
+    /* HOW FAR DOWN THE SCOREBOARD REACHES IS MEASURED, and only asked when the
+       two would actually meet — "as close to the corner as we can" means the
+       drop has to be nothing at all when the corner is free. */
+    ok('...dropping below the scoreboard only when they would actually meet',
+      /querySelector\('\.scoreboard'\)/.test(fn)
+      && /spot\.left < sb\.right && spot\.left \+ w > sb\.left/.test(fn));
+    /* AND IT STOPS BEFORE THE MAP, asked of the same two functions that place
+       the map rather than added up by hand — the hand-rolled version was
+       sixteen pixels short because it forgot `HINT_CLEAR`. */
+    ok('...and it never grows down into the pane\'s own minimap',
+      /const mapAt = mapSpot\(\{/.test(fn) && /const room = mapAt\.top/.test(fn));
+  }
+
+  /* --- THE MATHS OVERLAY IS A SETTING, NOT ONLY A BUTTON ----------------
+     "Let's add the Turn Math Overlay during gameplay option on/off, as we may
+     remove those from the controllers in the future." A setting only a button
+     can reach is one a kid on a phone cannot reach at all. */
+  ok('the maths overlay can be set from the menu', /id="set-math"/.test(html));
+  ok('...with three answers, because automatic is not the same as on',
+    /id="set-math"[\s\S]{0,400}?value="auto"[\s\S]{0,400}?value="on"[\s\S]{0,400}?value="off"/.test(html));
+  ok('...and the game starts it from that setting rather than from the device alone',
+    /this\.mathVisible = this\._mathDefault\(\);/.test(main)
+    && /_mathDefault\(\) \{[\s\S]{0,300}?this\.settings\.math/.test(main));
+  /* THE DOJO MUST NOT OVERRULE HER. It turns the board on when she walks in,
+     which is helpful as an automatic answer and is a setting silently doing
+     nothing when she has picked ON or OFF herself — the sixth non-negotiable. */
+  ok('...and the Dojo stops overriding it once she has answered herself',
+    /if \(this\.settings\.math !== 'auto'\) return;/.test(main));
+  ok('...and changing the row takes effect on the spot, over a frozen world',
+    /bind\('set-math', 'math'/.test(main));
 
   /* --- who drives --- */
   const nav = readFileSync(new URL('../src/systems/menunav.js', import.meta.url), 'utf8');

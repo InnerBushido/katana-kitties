@@ -824,6 +824,45 @@ export class Tournament {
     this._roundOver(up[0] ?? -1, message);
   }
 
+  /**
+   * End the live round NOW and give it to whoever is ahead on damage — the
+   * clock running out, and the debug key that stands in for it.
+   *
+   * IT IS A METHOD BECAUSE IT HAS TWO CALLERS AND HAD ONE. Debug `4` used to
+   * end a round by making player 1 hit player 2 for her whole health bar,
+   * which in a duel looked like the round ending and in anything else was
+   * simply Frost being killed: it named the two players by index, so at four
+   * players it left the other two standing, and in a 2v2 it did not even end
+   * the round. Reported from play as exactly that — "it doesn't end the
+   * round, it just kills Frost". Going through the same decision the clock
+   * makes means the debug key cannot disagree with the game about who won.
+   *
+   * NOBODY IS HURT. A round called on time is not a knockout, so this does not
+   * touch anybody's health — the score it awards is the score they had earned.
+   *
+   * @returns {'won'|'draw'|null} what it decided, or null if no round is live.
+   */
+  callOnDamage(why = 'Time!') {
+    if (this.state !== 'live') return null;
+    /* Counted PER SIDE — in a 2v2 the honest reading of who was winning is
+       what the team did between them, not which individual landed most. */
+    const scores = this.wins.map((_, s) => this._sideDamage(s));
+    const best = Math.max(...scores);
+    const leaders = scores.map((v, s) => (v === best ? s : -1)).filter((s) => s >= 0);
+    /* A DRAW IS NOT A WIN FOR NOBODY — it still has to move the state on, or
+       the round the clock just refused to keep open stays open. */
+    if (leaders.length !== 1 || best <= 0) {
+      this.state = 'ko';
+      this.t = 0;
+      this._banner('DRAW', 'ko');
+      this.game.toast(`${why} Nobody landed enough — the round is a draw`, 0);
+      return 'draw';
+    }
+    const names = this.sideMembers(leaders[0]).map((p) => p.name).join(' and ');
+    this._roundOver(leaders[0], `${why} ${names} was ahead on damage`);
+    return 'won';
+  }
+
   _roundOver(winnerSide, message) {
     if (this.state !== 'live') return;
     this.state = 'ko';
@@ -890,23 +929,7 @@ export class Tournament {
            otherwise hold the tournament open forever with no way out but the
            pause menu. Whoever has done the most damage takes it — the honest
            reading of who was winning. */
-        if (this.t > ROUND_LIMIT) {
-          /* Ahead on damage takes it, counted PER SIDE — in a 2v2 the honest
-             reading of who was winning is what the team did between them, not
-             which individual happened to land most. */
-          const scores = this.wins.map((_, s) => this._sideDamage(s));
-          const best = Math.max(...scores);
-          const leaders = scores.map((v, s) => (v === best ? s : -1)).filter((s) => s >= 0);
-          if (leaders.length !== 1 || best <= 0) {
-            this.state = 'ko';
-            this.t = 0;
-            this._banner('DRAW', 'ko');
-            this.game.toast('Time! Nobody landed enough — the round is a draw', 0);
-          } else {
-            const names = this.sideMembers(leaders[0]).map((p) => p.name).join(' and ');
-            this._roundOver(leaders[0], `Time! ${names} was ahead on damage`);
-          }
-        }
+        if (this.t > ROUND_LIMIT) this.callOnDamage('Time!');
         break;
 
       case 'ko':
