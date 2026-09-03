@@ -3294,13 +3294,20 @@ class Game {
   }
 
   /**
-   * Hand a shared keyboard set to the next kitten on it: `R` for WASD, `U` for
-   * the arrows / O K L ; set.
+   * Step a shared keyboard set round its ring: `R` for WASD, `U` for the
+   * arrows / O K L ; set. Two kittens on a set means three stops — her, the
+   * other one, then BOTH AT ONCE.
    *
    * THE KEY SITS BY THE HAND IT SWITCHES. `R` is the next key up from WASD and
    * `U` is the next key left of the O K L ; cluster, so each hand passes its
    * own keyboard along without reaching across the desk — which is the same
    * argument the two keysets are laid out on in the first place.
+   *
+   * THE "BOTH" STOP HAS TO NAME BOTH KITTENS. It is the one stop you can be on
+   * without noticing — two cats in different panes walking identically looks
+   * exactly like the split screen having desynced, which is a bug this project
+   * has actually had — so the toast says `P1 + P3 together` rather than
+   * anything that could be read as one of them.
    *
    * A REFUSAL SAYS SO, but only while the feature is on. With force-spawn off
    * nothing is ever shared and these two keys do not exist: toasting at every
@@ -3311,12 +3318,35 @@ class Game {
     if (!this.input.forceSeats) return;
     const to = this.input.swapKeyset(keyset);
     const name = KEYSETS[keyset]?.name ?? `set ${keyset}`;
-    if (to < 0) {
+    if (!to) {
       this.toast(`[debug] nobody is sharing ${name} — press ENTER to seat her`, 0);
       return;
     }
     this._markKeyboardOwners();
-    this.toast(`[debug] ${name} → P${to + 1}`, to);
+    const who = to.map((i) => `P${i + 1}`).join(' + ');
+    const both = to.length > 1 ? ' together' : '';
+    this.toast(`[debug] ${name} → ${who}${both}`, to[0]);
+  }
+
+  /**
+   * What the panel's two hand-over rows say to the right of the arrow: who
+   * holds this keyboard set, or why the key would refuse.
+   *
+   * THE ROW IS THE ONLY DOCUMENTATION EITHER KEY HAS — the panel exists because
+   * a debug key nobody can find is a debug key nobody presses — so it has to
+   * read as an answer in all three states, not just the interesting one. On
+   * the "both" stop every name on it is bold, which is the row saying the ring
+   * has a stop where the answer is more than one kitten without spending a
+   * sentence on it.
+   */
+  _keyboardHeldBy(keyset) {
+    const share = this.input.keysetShare(keyset);
+    if (share.length < 2) {
+      return share.length ? `P${share[0] + 1} only` : 'nobody';
+    }
+    return share.map((i) => (
+      this.input.keysetDrives(keyset, i) ? `<b>P${i + 1}</b>` : `P${i + 1}`
+    )).join(' / ');
   }
 
   /**
@@ -3330,38 +3360,22 @@ class Game {
    * IT IS THE ONE THING THE TOAST CANNOT DO. The toast says who took the
    * keyboard and then goes away; halfway through a four-player test what you
    * need to know is which of the four cats your hands are on RIGHT NOW, and the
-   * badge is already the thing you look at to find your own colour.
+   * badge is already the thing you look at to find your own colour. On the
+   * "both" stop nothing is dimmed and both titles read "playing" — the badges
+   * agreeing is how you tell that stop from the two single ones at a glance.
    *
    * Inline rather than a stylesheet rule, because the whole of it is one debug
    * affordance that cannot be reached without the toggle: `keysetShare` is of
    * length one in every ordinary game, so the loop below reverts every badge
    * and leaves the HUD the girls know untouched.
    */
-  /**
-   * What the panel's two hand-over rows say to the right of the arrow: who
-   * holds this keyboard set, or why the key would refuse.
-   *
-   * THE ROW IS THE ONLY DOCUMENTATION EITHER KEY HAS — the panel exists because
-   * a debug key nobody can find is a debug key nobody presses — so it has to
-   * read as an answer in all three states, not just the interesting one.
-   */
-  _keyboardHeldBy(keyset) {
-    const share = this.input.keysetShare(keyset);
-    if (share.length < 2) {
-      return share.length ? `P${share[0] + 1} only` : 'nobody';
-    }
-    return share.map((i) => (
-      i === this.input.keysetOwner(keyset) ? `<b>P${i + 1}</b>` : `P${i + 1}`
-    )).join(' / ');
-  }
-
   _markKeyboardOwners() {
     for (let i = 0; i < this.partySize; i++) {
       const badge = document.querySelector(`#hud .score.p${i + 1}`);
       if (!badge) continue;
       const k = this.input.bindings[i]?.keyset;
       const shared = k != null && this.input.keysetShare(k).length > 1;
-      const waiting = shared && this.input.keysetOwner(k) !== i;
+      const waiting = shared && !this.input.keysetDrives(k, i);
       badge.style.opacity = waiting ? '0.4' : '';
       badge.title = shared
         ? `${KEYSETS[k].name} — ${waiting ? 'waiting' : 'playing'}` : '';

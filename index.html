@@ -259,342 +259,369 @@
                   button lighting up on the pad as it goes down.</figcaption>
               </figure>
             </div>
-            <!-- ONE COLUMN PER DEVICE, NOT ONE LINE PER ACTION.
-                 This was a bulleted list reading "Slash — X / F", which is two
-                 button names, a slash, and no way at all to tell which of them
-                 is the pad and which is the keyboard. Reported exactly that way
-                 and it is the right complaint: the reader arrives knowing which
-                 THING is in her hands and wanting the name of the button on it,
-                 and a list makes her guess. A table answers by position — the
-                 pad column is tinted and headed, and every row lines up under
-                 it, so it can be read at a glance instead of parsed.
 
-                 THE PAD COLUMN IS `PROMPTS.standard`, WHICH IS XBOX LETTERING,
-                 and it is not a free choice: that is what a browser reporting
-                 `mapping: "standard"` is describing and what most PC pads are
-                 silk-screened with. It used to be the Joy-Con names (ZL/ZR for
-                 sprint) because Joy-Cons are the pads in the room — but this
-                 page is read before anything is plugged in, so it has to name
-                 the most likely pad and let the note below cover the rest.
-                 `world-check` reads these cells against `PROMPTS.standard`
-                 itself, so a rename in input.js fails here rather than leaving
-                 a nine-year-old hunting for a button that is not there. -->
-            <div class="keymap">
-              <table>
-                <caption>On foot</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">What it does</th>
-                    <th scope="col" class="km-pad"><span aria-hidden="true">🎮</span> Gamepad</th>
-                    <th scope="col"><span aria-hidden="true">⌨</span> Keyboard</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <th scope="row">Move</th>
-                    <td class="km-pad"><kbd>left stick</kbd></td>
-                    <td><span class="km-wasd"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Jump <i>press twice to double-jump</i></th>
-                    <td class="km-pad"><kbd>A</kbd></td>
-                    <td><kbd>Space</kbd></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Slash</th>
-                    <td class="km-pad"><kbd>X</kbd></td>
-                    <td><kbd>F</kbd></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Sprint</th>
-                    <td class="km-pad"><kbd>RT</kbd></td>
-                    <td><kbd>Shift</kbd></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Ride <i>when the ring glows</i></th>
-                    <td class="km-pad"><kbd>Y</kbd></td>
-                    <td><kbd>Q</kbd></td>
-                  </tr>
-                  <!-- INTERACT WAS MISSING FROM THIS TABLE ENTIRELY, and it is
-                       the button that joins a clan. It is absent from the clips
-                       on purpose — a shrine is not on the camera's pinned
-                       island — but a key map is not a list of what the pictures
-                       happen to show, it is the list of what the controller
-                       does, and a button nobody names is a button nobody finds.
-                       Reported by Richard, and it had been wrong since the
-                       table replaced the prose columns. `world-check` now reads
-                       every action in `PROMPTS.standard` against these rows, so
-                       the next omission fails a check instead of shipping. -->
-                  <tr>
-                    <th scope="row">Action <i>join a clan, or buy from the dealer</i></th>
-                    <td class="km-pad"><kbd>B</kbd></td>
-                    <td><kbd>E</kbd></td>
-                  </tr>
-                </tbody>
-              </table>
-              <table>
-                <caption>On a dragon</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">What it does</th>
-                    <th scope="col" class="km-pad"><span aria-hidden="true">🎮</span> Gamepad</th>
-                    <th scope="col"><span aria-hidden="true">⌨</span> Keyboard</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <th scope="row">Fly</th>
-                    <td class="km-pad"><kbd>left stick</kbd></td>
-                    <td><span class="km-wasd"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Climb</th>
-                    <td class="km-pad"><kbd>A</kbd></td>
-                    <td><kbd>Space</kbd></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Dive</th>
-                    <td class="km-pad"><kbd>B</kbd></td>
-                    <td><kbd>E</kbd></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Boost</th>
-                    <td class="km-pad"><kbd>RT</kbd></td>
-                    <td><kbd>Shift</kbd></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Breathe fire</th>
-                    <td class="km-pad"><kbd>X</kbd></td>
-                    <td><kbd>F</kbd></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Hop off <i>it flies home itself</i></th>
-                    <td class="km-pad"><kbd>Y</kbd></td>
-                    <td><kbd>Q</kbd></td>
-                  </tr>
-                </tbody>
-              </table>
+            <!-- THE OTHER FOUR TOPICS LIVE IN HERE NOW, AND THE LIST IS WHY.
+                 This panel had grown to fifteen cards: a child looking for the
+                 arena had to read past everything, and on a phone that is four
+                 screens of scrolling before a single picture. Folding the four
+                 that are all "what you do with the controller" under the topic
+                 that teaches the controller cuts the list a reader faces
+                 without hiding anything — every one of them is still a card,
+                 one tap further in.
+
+                 THE CLIPS STAY OUTSIDE THE FOLD, on purpose. They are the
+                 answer to "what do I press and what happens", which is the
+                 question that brought her here; a reader who opens this topic
+                 and sees only four more closed headings has been given a menu
+                 where she asked for an answer. So the demos play immediately
+                 and the reference material — the key tables, and the three
+                 places you use them — is what she opens.
+
+                 ONE TOPIC BECAME FOUR FOR THE SIZE OF A PICTURE, and that is
+                 still true inside here. `.move-grid` is two-up, so the dragon
+                 and the arena were each half a panel wide with a footnote
+                 under them when each of them is a whole subject; split by WHAT
+                 YOU ARE DOING — on the ground, on a dragon, in the ring — each
+                 gets its clip at full width. The clips themselves have never
+                 moved or been re-filmed through any of this; it is markup and
+                 CSS. `move-keys`/`move-pad` stay paired, because that pair IS
+                 the comparison.
+
+                 A GROUP OF THEIR OWN (`name="help-move"`), NOT `name="help"`.
+                 The exclusive-accordion group is document-wide, so a sub-card
+                 sharing the parent's name would close the parent it lives in
+                 the moment it opened. -->
+            <div class="ht-subs">
+              <details class="help-card help-sub" name="help-move">
+                <summary class="help-topic">
+                  <span class="ht-ico" aria-hidden="true">⌨️</span>
+                  <span class="ht-title">Every button</span>
+                  <span class="ht-chev" aria-hidden="true">▸</span>
+                </summary>
+                <div class="ht-body">
+                  <!-- ONE COLUMN PER DEVICE, NOT ONE LINE PER ACTION.
+                       This was a bulleted list reading "Slash — X / F", which is two
+                       button names, a slash, and no way at all to tell which of them
+                       is the pad and which is the keyboard. Reported exactly that way
+                       and it is the right complaint: the reader arrives knowing which
+                       THING is in her hands and wanting the name of the button on it,
+                       and a list makes her guess. A table answers by position — the
+                       pad column is tinted and headed, and every row lines up under
+                       it, so it can be read at a glance instead of parsed.
+
+                       THE PAD COLUMN IS `PROMPTS.standard`, WHICH IS XBOX LETTERING,
+                       and it is not a free choice: that is what a browser reporting
+                       `mapping: "standard"` is describing and what most PC pads are
+                       silk-screened with. It used to be the Joy-Con names (ZL/ZR for
+                       sprint) because Joy-Cons are the pads in the room — but this
+                       page is read before anything is plugged in, so it has to name
+                       the most likely pad and let the note below cover the rest.
+                       `world-check` reads these cells against `PROMPTS.standard`
+                       itself, so a rename in input.js fails here rather than leaving
+                       a nine-year-old hunting for a button that is not there. -->
+                  <div class="keymap">
+                    <table>
+                      <caption>On foot</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">What it does</th>
+                          <th scope="col" class="km-pad"><span aria-hidden="true">🎮</span> Gamepad</th>
+                          <th scope="col"><span aria-hidden="true">⌨</span> Keyboard</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <th scope="row">Move</th>
+                          <td class="km-pad"><kbd>left stick</kbd></td>
+                          <td><span class="km-wasd"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></td>
+                        </tr>
+                        <tr>
+                          <th scope="row">Jump <i>press twice to double-jump</i></th>
+                          <td class="km-pad"><kbd>A</kbd></td>
+                          <td><kbd>Space</kbd></td>
+                        </tr>
+                        <tr>
+                          <th scope="row">Slash</th>
+                          <td class="km-pad"><kbd>X</kbd></td>
+                          <td><kbd>F</kbd></td>
+                        </tr>
+                        <tr>
+                          <th scope="row">Sprint</th>
+                          <td class="km-pad"><kbd>RT</kbd></td>
+                          <td><kbd>Shift</kbd></td>
+                        </tr>
+                        <tr>
+                          <th scope="row">Ride <i>when the ring glows</i></th>
+                          <td class="km-pad"><kbd>Y</kbd></td>
+                          <td><kbd>Q</kbd></td>
+                        </tr>
+                        <!-- INTERACT WAS MISSING FROM THIS TABLE ENTIRELY, and it is
+                             the button that joins a clan. It is absent from the clips
+                             on purpose — a shrine is not on the camera's pinned
+                             island — but a key map is not a list of what the pictures
+                             happen to show, it is the list of what the controller
+                             does, and a button nobody names is a button nobody finds.
+                             Reported by Richard, and it had been wrong since the
+                             table replaced the prose columns. `world-check` now reads
+                             every action in `PROMPTS.standard` against these rows, so
+                             the next omission fails a check instead of shipping. -->
+                        <tr>
+                          <th scope="row">Action <i>join a clan, or buy from the dealer</i></th>
+                          <td class="km-pad"><kbd>B</kbd></td>
+                          <td><kbd>E</kbd></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <table>
+                      <caption>On a dragon</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">What it does</th>
+                          <th scope="col" class="km-pad"><span aria-hidden="true">🎮</span> Gamepad</th>
+                          <th scope="col"><span aria-hidden="true">⌨</span> Keyboard</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <th scope="row">Fly</th>
+                          <td class="km-pad"><kbd>left stick</kbd></td>
+                          <td><span class="km-wasd"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></td>
+                        </tr>
+                        <tr>
+                          <th scope="row">Climb</th>
+                          <td class="km-pad"><kbd>A</kbd></td>
+                          <td><kbd>Space</kbd></td>
+                        </tr>
+                        <tr>
+                          <th scope="row">Dive</th>
+                          <td class="km-pad"><kbd>B</kbd></td>
+                          <td><kbd>E</kbd></td>
+                        </tr>
+                        <tr>
+                          <th scope="row">Boost</th>
+                          <td class="km-pad"><kbd>RT</kbd></td>
+                          <td><kbd>Shift</kbd></td>
+                        </tr>
+                        <tr>
+                          <th scope="row">Breathe fire</th>
+                          <td class="km-pad"><kbd>X</kbd></td>
+                          <td><kbd>F</kbd></td>
+                        </tr>
+                        <tr>
+                          <th scope="row">Hop off <i>it flies home itself</i></th>
+                          <td class="km-pad"><kbd>Y</kbd></td>
+                          <td><kbd>Q</kbd></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <!-- PLAYER 2'S HALF OF THE KEYBOARD, WHICH WAS NOWHERE ON THIS
+                       PAGE. The tables above are one keyboard column and it is
+                       player 1's, so the second kitten's keys existed only in a
+                       comment in core/input.js and in one passing mention of
+                       `O K L ;` under "Good to know". Reported by Richard, who had
+                       to go and read the source to remind himself which key jumps.
+                       A THIRD TABLE COLUMN WAS THE OBVIOUS FIX AND IT IS THE WRONG
+                       ONE. The tables are read by somebody holding a thing, looking
+                       for the name of a button on it; a second keyboard column makes
+                       every row a choice between two keyboards that do not exist —
+                       there is one keyboard and two hands on it. So it is a sentence
+                       about a HAND, which is what the layout actually is.
+                       THE FOUR NAMED KEYS ARE ASSERTED AGAINST `KEYSETS`. This page
+                       said the opposite of the bindings for a while (jump and sprint
+                       swapped in the code and the prose did not follow), so
+                       `world-check` reads these four names out of the markup and
+                       back through the real key set. -->
+                  <p class="ht-note">
+                    <b>Player 2 plays the same shape, on the other side of the
+                    keyboard.</b> <kbd>O</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd> is
+                    <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> moved across —
+                    same finger, same job — and the buttons sit around it in the same
+                    shape: <kbd>P</kbd> ride, <kbd>I</kbd> action, <kbd>J</kbd> slash.
+                    <b><kbd>Right Alt</kbd> jumps</b>, the big key right next to
+                    player 1's <kbd>Space</kbd>, and
+                    <b><kbd>'</kbd> or <kbd>Right Shift</kbd> sprints</b>, under her
+                    little finger exactly where <kbd>Shift</kbd> is under player 1's.
+                    The arrow keys and the numpad still work too, for anyone who
+                    already learned them.
+                  </p>
+                  <!-- THE TABLE ABOVE IS ONE PAD'S LETTERING AND THE GAME
+                       SUPPORTS THREE. `PROMPTS` in core/input.js carries a naming per
+                       device and the HUD already prints the right one; a table
+                       written before anything is plugged in cannot. So it names the
+                       most likely pad and the "Good to know" topic covers the rest,
+                       rather than leaving a kid hunting a PlayStation pad for a
+                       button called B. That exact hunt is why the PlayStation prompts
+                       became shapes; see the note on `PROMPTS.playstation`. -->
+                </div>
+              </details>
+
+              <details class="help-card help-sub" name="help-move">
+                <summary class="help-topic">
+                  <span class="ht-ico" aria-hidden="true">🐉</span>
+                  <span class="ht-title">Flying a dragon</span>
+                  <span class="ht-chev" aria-hidden="true">▸</span>
+                </summary>
+                <div class="ht-body">
+                  <p class="ht-note">
+                    <b>Whistle a storm dragon down and climb on.</b> Up there the same
+                    four buttons mean four new things — and you can let go
+                    anywhere you like, because the dragon flies itself home.
+                  </p>
+                  <figure class="move-wide">
+                    <img data-help-gif="/help/move-air.gif" width="512" height="332"
+                      alt="Two kittens on two dragons over the home island, with a keyboard diagram under one and a drawn controller under the other: they fly across, climb, dive, boost back the other way and both breathe fire — one gold, one ice">
+                    <!-- THIS CAPTION USED TO END "the same four buttons, A LONG WAY
+                         UP", which was meant as "high in the sky" and was read as a
+                         pointer — look a long way up the page for the keys. Richard
+                         asked what it referred to, which is the answer: if a reader
+                         has to ask, it is a direction whether you meant one or not.
+                         So it is a real direction now, and it names both places,
+                         because the key table and the drawn pad are in different
+                         topics and neither is "above" the other any more. -->
+                    <figcaption><b>Two of you, two dragons.</b> Fly, climb, dive,
+                      boost — then breathe fire. One kitten is on the keyboard and
+                      one is on a controller, so you can see the same moment on both.
+                      <b>Keyboard keys are in <i>Moving &amp; fighting</i>; the
+                      controller is drawn just below.</b></figcaption>
+                  </figure>
+                  <!-- THE PAD, WITH THE FLYING BUTTONS LIT. The tables carry Xbox
+                       lettering because that is what most PC pads are printed with;
+                       this is the same information as a SHAPE, which is what a kid
+                       holding a DualShock can actually match to her thumb. Every face
+                       button is lit here and that is the point of the picture — in
+                       the air there is no button spare. -->
+                  <div class="catpad">
+                    <svg viewBox="0 0 280 214" role="img"
+                      aria-label="A controller drawn as a cat's head, with all four face buttons and the right trigger lit up">
+                      <g class="lit"><rect class="cp-hole" x="248" y="10" width="32" height="12" rx="6"/></g>
+                      <rect class="cp-hole" x="0" y="10" width="32" height="12" rx="6"/>
+                      <rect class="cp-hole" x="0" y="26" width="32" height="12" rx="6"/>
+                      <rect class="cp-hole" x="248" y="26" width="32" height="12" rx="6"/>
+                      <use href="#cp-shell"/>
+                      <g class="lit"><circle class="cp-hole" cx="222" cy="71" r="8.6"/><text class="cp-glyph" x="222" y="71" dominant-baseline="central">△</text></g>
+                      <g class="lit"><circle class="cp-hole" cx="241" cy="90" r="8.6"/><text class="cp-glyph" x="241" y="90" dominant-baseline="central">○</text></g>
+                      <g class="lit"><circle class="cp-hole" cx="222" cy="109" r="8.6"/><text class="cp-glyph" x="222" y="109" dominant-baseline="central">✕</text></g>
+                      <g class="lit"><circle class="cp-hole" cx="203" cy="90" r="8.6"/><text class="cp-glyph cp-sq" x="203" y="90" dominant-baseline="central">□</text></g>
+                      <text class="cp-glyph cp-small lit" x="264" y="16" dominant-baseline="central" fill="#1d1216">R2</text>
+                      <text class="cp-glyph cp-small" x="16" y="16" dominant-baseline="central">L2</text>
+                      <text class="cp-glyph cp-small" x="16" y="32" dominant-baseline="central">L1</text>
+                      <text class="cp-glyph cp-small" x="264" y="32" dominant-baseline="central">R1</text>
+                      <g class="lit"><circle class="cp-knob" cx="98" cy="124" r="10"/></g>
+                    </svg>
+                    <ul>
+                      <li><b>Fly</b> <span class="cp-chip">left stick</span></li>
+                      <li><b>Climb</b> <span class="cp-chip">✕</span></li>
+                      <li><b>Dive</b> <span class="cp-chip">○</span></li>
+                      <li><b>Boost</b> <span class="cp-chip">R2</span> <span>hold it</span></li>
+                      <li><b>Breathe fire</b> <span class="cp-chip">□</span></li>
+                      <li><b>Hop off</b> <span class="cp-chip">△</span> <span>anywhere — it flies home itself</span></li>
+                    </ul>
+                  </div>
+                  <p class="ht-note">
+                    This is a <b>PlayStation</b> pad, because its buttons are shapes
+                    you can match to the one in your hands. On an <b>Xbox</b> or most
+                    PC pads those four are <kbd>A</kbd> <kbd>B</kbd> <kbd>X</kbd>
+                    <kbd>Y</kbd> and boost is <kbd>RT</kbd> — the
+                    <b>Moving &amp; fighting</b> topic has the whole table, keyboard
+                    keys included.
+                  </p>
+                </div>
+              </details>
+
+              <details class="help-card help-sub" name="help-move">
+                <summary class="help-topic">
+                  <span class="ht-ico" aria-hidden="true">🏆</span>
+                  <span class="ht-title">Fighting in the arena</span>
+                  <span class="ht-chev" aria-hidden="true">▸</span>
+                </summary>
+                <div class="ht-body">
+                  <p class="ht-note">
+                    <b>The ring is the only place a slash lands on your sister.</b>
+                    Everywhere else the katana is for knocking things over. Start a
+                    round at the arena and the same buttons you walk around with
+                    become a fight.
+                  </p>
+                  <figure class="move-wide">
+                    <img data-help-gif="/help/move-arena.gif" width="512" height="332"
+                      alt="Two kittens in the tournament ring during a live round, a keyboard diagram under one and a drawn controller under the other: Ember sprints across the deck, both jump on the same beat, she double-jumps, then cuts Frost on the run and Frost cuts her back">
+                    <figcaption><b>A real round, both of you.</b> Sprint across the
+                      deck, jump together, double-jump — and a slash that actually
+                      lands, which only happens in here.</figcaption>
+                  </figure>
+                  <!-- FOUR BUTTONS LIT AND TWO DARK, WHICH IS THE ARGUMENT. A fight
+                       uses fewer controls than walking around does: ride and action
+                       do nothing in the ring, and a diagram that lit them would be
+                       telling a nine-year-old to keep a thumb spare for them. -->
+                  <div class="catpad">
+                    <svg viewBox="0 0 280 214" role="img"
+                      aria-label="The same cat controller with only jump, slash and the right trigger lit up">
+                      <g class="lit"><rect class="cp-hole" x="248" y="10" width="32" height="12" rx="6"/></g>
+                      <rect class="cp-hole" x="0" y="10" width="32" height="12" rx="6"/>
+                      <rect class="cp-hole" x="0" y="26" width="32" height="12" rx="6"/>
+                      <rect class="cp-hole" x="248" y="26" width="32" height="12" rx="6"/>
+                      <use href="#cp-shell"/>
+                      <circle class="cp-hole" cx="222" cy="71" r="8.6"/><text class="cp-glyph" x="222" y="71" dominant-baseline="central">△</text>
+                      <circle class="cp-hole" cx="241" cy="90" r="8.6"/><text class="cp-glyph" x="241" y="90" dominant-baseline="central">○</text>
+                      <g class="lit"><circle class="cp-hole" cx="222" cy="109" r="8.6"/><text class="cp-glyph" x="222" y="109" dominant-baseline="central">✕</text></g>
+                      <g class="lit"><circle class="cp-hole" cx="203" cy="90" r="8.6"/><text class="cp-glyph cp-sq" x="203" y="90" dominant-baseline="central">□</text></g>
+                      <text class="cp-glyph cp-small lit" x="264" y="16" dominant-baseline="central" fill="#1d1216">R2</text>
+                      <text class="cp-glyph cp-small" x="16" y="16" dominant-baseline="central">L2</text>
+                      <text class="cp-glyph cp-small" x="16" y="32" dominant-baseline="central">L1</text>
+                      <text class="cp-glyph cp-small" x="264" y="32" dominant-baseline="central">R1</text>
+                      <g class="lit"><circle class="cp-knob" cx="98" cy="124" r="10"/></g>
+                    </svg>
+                    <ul>
+                      <li><b>Move</b> <span class="cp-chip">left stick</span></li>
+                      <li><b>Jump</b> <span class="cp-chip">✕</span> <span>twice to double-jump</span></li>
+                      <li><b>Slash</b> <span class="cp-chip">□</span> <span>this is the one that lands</span></li>
+                      <li><b>Sprint</b> <span class="cp-chip">R2</span> <span>hold it</span></li>
+                    </ul>
+                  </div>
+                  <p class="ht-note">
+                    The two dark buttons are <b>ride</b> and <b>action</b>. They are
+                    not missing — there is nothing to climb on and nobody to talk to
+                    in the middle of a round, so a fight only ever needs these four.
+                  </p>
+                </div>
+              </details>
+
+              <details class="help-card help-sub" name="help-move">
+                <summary class="help-topic">
+                  <span class="ht-ico" aria-hidden="true">💡</span>
+                  <span class="ht-title">Good to know</span>
+                  <span class="ht-chev" aria-hidden="true">▸</span>
+                </summary>
+                <div class="ht-body">
+                  <p class="ht-note">
+                    <b>Whatever pad you plug in, the game names its own buttons.</b>
+                    The tables in <b>Moving &amp; fighting</b> use Xbox lettering,
+                    which is what most pads are printed with. A <b>PlayStation</b> pad
+                    shows the shapes instead — <b>✕</b> to jump, <b>□</b> to
+                    slash, <b>△</b> to ride, and <kbd>R2</kbd> to sprint. A
+                    <b>Joy-Con</b> held sideways sprints on <kbd>SR</kbd>. Whatever it
+                    is, the button the game draws over your kitten is the one in your
+                    hands.
+                  </p>
+                  <!-- THE GAME OPENS ON ONE KITTEN NOW, on every machine, and this
+                       is the only place a player is told so before it happens. The
+                       strip along the bottom of the screen says it too, but that is
+                       read after you have already noticed your sister is missing. -->
+                  <p class="ht-note">
+                    <b>PLAY starts you on your own.</b> A second player joins whenever
+                    she likes and nobody has to stop: she <b>picks up a controller</b>,
+                    or presses <kbd>Enter</kbd> to share the keyboard — player 1 on
+                    <kbd>WASD</kbd>, player 2 on
+                    <kbd>O</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd>. Up to four can
+                    play, and anyone who joined can drop out again from
+                    <b>SETTINGS</b>.
+                  </p>
+                </div>
+              </details>
             </div>
-            <!-- PLAYER 2'S HALF OF THE KEYBOARD, WHICH WAS NOWHERE ON THIS
-                 PAGE. The tables above are one keyboard column and it is
-                 player 1's, so the second kitten's keys existed only in a
-                 comment in core/input.js and in one passing mention of
-                 `O K L ;` under "Good to know". Reported by Richard, who had
-                 to go and read the source to remind himself which key jumps.
-                 A THIRD TABLE COLUMN WAS THE OBVIOUS FIX AND IT IS THE WRONG
-                 ONE. The tables are read by somebody holding a thing, looking
-                 for the name of a button on it; a second keyboard column makes
-                 every row a choice between two keyboards that do not exist —
-                 there is one keyboard and two hands on it. So it is a sentence
-                 about a HAND, which is what the layout actually is.
-                 THE FOUR NAMED KEYS ARE ASSERTED AGAINST `KEYSETS`. This page
-                 said the opposite of the bindings for a while (jump and sprint
-                 swapped in the code and the prose did not follow), so
-                 `world-check` reads these four names out of the markup and
-                 back through the real key set. -->
-            <p class="ht-note">
-              <b>Player 2 plays the same shape, on the other side of the
-              keyboard.</b> <kbd>O</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd> is
-              <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> moved across —
-              same finger, same job — and the buttons sit around it in the same
-              shape: <kbd>P</kbd> ride, <kbd>I</kbd> action, <kbd>J</kbd> slash.
-              <b><kbd>Right Alt</kbd> jumps</b>, the big key right next to
-              player 1's <kbd>Space</kbd>, and
-              <b><kbd>'</kbd> or <kbd>Right Shift</kbd> sprints</b>, under her
-              little finger exactly where <kbd>Shift</kbd> is under player 1's.
-              The arrow keys and the numpad still work too, for anyone who
-              already learned them.
-            </p>
-            <!-- THE TABLE ABOVE IS ONE PAD'S LETTERING AND THE GAME
-                 SUPPORTS THREE. `PROMPTS` in core/input.js carries a naming per
-                 device and the HUD already prints the right one; a table
-                 written before anything is plugged in cannot. So it names the
-                 most likely pad and the "Good to know" topic covers the rest,
-                 rather than leaving a kid hunting a PlayStation pad for a
-                 button called B. That exact hunt is why the PlayStation prompts
-                 became shapes; see the note on `PROMPTS.playstation`. -->
           </div>
         </details>
 
-        <!-- ONE TOPIC BECAME FOUR, AND THE REASON IS THE SIZE OF A PICTURE.
-             This was a single card carrying two rows of clips, two tables and
-             two paragraphs: everything a player does, stacked, in one scroll.
-             The clips were the casualty. `.move-grid` is a two-up grid, so the
-             dragon and the arena were each half a panel wide with a footnote
-             under them, when each of them is a whole subject.
-
-             Split by WHAT YOU ARE DOING, which is how a reader arrives: she is
-             on the ground, or she is on a dragon, or she is in the ring. Each
-             of the three gets its clip at full width with a caption set big
-             enough to be read first, and the two that have a shape of their own
-             on the controller get that drawn underneath. The paragraphs that
-             belong to no one section became "Good to know".
-
-             The clips themselves did not move and were not re-filmed — this is
-             markup and CSS. `move-keys`/`move-pad` stay paired, because that
-             pair IS the comparison. -->
-        <details class="help-card" name="help">
-          <summary class="help-topic">
-            <span class="ht-ico" aria-hidden="true">🐉</span>
-            <span class="ht-title">Flying a dragon</span>
-            <span class="ht-chev" aria-hidden="true">▸</span>
-          </summary>
-          <div class="ht-body">
-            <p class="ht-note">
-              <b>Whistle a storm dragon down and climb on.</b> Up there the same
-              four buttons mean four new things — and you can let go
-              anywhere you like, because the dragon flies itself home.
-            </p>
-            <figure class="move-wide">
-              <img data-help-gif="/help/move-air.gif" width="512" height="332"
-                alt="Two kittens on two dragons over the home island, with a keyboard diagram under one and a drawn controller under the other: they fly across, climb, dive, boost back the other way and both breathe fire — one gold, one ice">
-              <!-- THIS CAPTION USED TO END "the same four buttons, A LONG WAY
-                   UP", which was meant as "high in the sky" and was read as a
-                   pointer — look a long way up the page for the keys. Richard
-                   asked what it referred to, which is the answer: if a reader
-                   has to ask, it is a direction whether you meant one or not.
-                   So it is a real direction now, and it names both places,
-                   because the key table and the drawn pad are in different
-                   topics and neither is "above" the other any more. -->
-              <figcaption><b>Two of you, two dragons.</b> Fly, climb, dive,
-                boost — then breathe fire. One kitten is on the keyboard and
-                one is on a controller, so you can see the same moment on both.
-                <b>Keyboard keys are in <i>Moving &amp; fighting</i>; the
-                controller is drawn just below.</b></figcaption>
-            </figure>
-            <!-- THE PAD, WITH THE FLYING BUTTONS LIT. The tables carry Xbox
-                 lettering because that is what most PC pads are printed with;
-                 this is the same information as a SHAPE, which is what a kid
-                 holding a DualShock can actually match to her thumb. Every face
-                 button is lit here and that is the point of the picture — in
-                 the air there is no button spare. -->
-            <div class="catpad">
-              <svg viewBox="0 0 280 214" role="img"
-                aria-label="A controller drawn as a cat's head, with all four face buttons and the right trigger lit up">
-                <g class="lit"><rect class="cp-hole" x="248" y="10" width="32" height="12" rx="6"/></g>
-                <rect class="cp-hole" x="0" y="10" width="32" height="12" rx="6"/>
-                <rect class="cp-hole" x="0" y="26" width="32" height="12" rx="6"/>
-                <rect class="cp-hole" x="248" y="26" width="32" height="12" rx="6"/>
-                <use href="#cp-shell"/>
-                <g class="lit"><circle class="cp-hole" cx="222" cy="71" r="8.6"/><text class="cp-glyph" x="222" y="71" dominant-baseline="central">△</text></g>
-                <g class="lit"><circle class="cp-hole" cx="241" cy="90" r="8.6"/><text class="cp-glyph" x="241" y="90" dominant-baseline="central">○</text></g>
-                <g class="lit"><circle class="cp-hole" cx="222" cy="109" r="8.6"/><text class="cp-glyph" x="222" y="109" dominant-baseline="central">✕</text></g>
-                <g class="lit"><circle class="cp-hole" cx="203" cy="90" r="8.6"/><text class="cp-glyph cp-sq" x="203" y="90" dominant-baseline="central">□</text></g>
-                <text class="cp-glyph cp-small lit" x="264" y="16" dominant-baseline="central" fill="#1d1216">R2</text>
-                <text class="cp-glyph cp-small" x="16" y="16" dominant-baseline="central">L2</text>
-                <text class="cp-glyph cp-small" x="16" y="32" dominant-baseline="central">L1</text>
-                <text class="cp-glyph cp-small" x="264" y="32" dominant-baseline="central">R1</text>
-                <g class="lit"><circle class="cp-knob" cx="98" cy="124" r="10"/></g>
-              </svg>
-              <ul>
-                <li><b>Fly</b> <span class="cp-chip">left stick</span></li>
-                <li><b>Climb</b> <span class="cp-chip">✕</span></li>
-                <li><b>Dive</b> <span class="cp-chip">○</span></li>
-                <li><b>Boost</b> <span class="cp-chip">R2</span> <span>hold it</span></li>
-                <li><b>Breathe fire</b> <span class="cp-chip">□</span></li>
-                <li><b>Hop off</b> <span class="cp-chip">△</span> <span>anywhere — it flies home itself</span></li>
-              </ul>
-            </div>
-            <p class="ht-note">
-              This is a <b>PlayStation</b> pad, because its buttons are shapes
-              you can match to the one in your hands. On an <b>Xbox</b> or most
-              PC pads those four are <kbd>A</kbd> <kbd>B</kbd> <kbd>X</kbd>
-              <kbd>Y</kbd> and boost is <kbd>RT</kbd> — the
-              <b>Moving &amp; fighting</b> topic has the whole table, keyboard
-              keys included.
-            </p>
-          </div>
-        </details>
-
-        <details class="help-card" name="help">
-          <summary class="help-topic">
-            <span class="ht-ico" aria-hidden="true">🏆</span>
-            <span class="ht-title">Fighting in the arena</span>
-            <span class="ht-chev" aria-hidden="true">▸</span>
-          </summary>
-          <div class="ht-body">
-            <p class="ht-note">
-              <b>The ring is the only place a slash lands on your sister.</b>
-              Everywhere else the katana is for knocking things over. Start a
-              round at the arena and the same buttons you walk around with
-              become a fight.
-            </p>
-            <figure class="move-wide">
-              <img data-help-gif="/help/move-arena.gif" width="512" height="332"
-                alt="Two kittens in the tournament ring during a live round, a keyboard diagram under one and a drawn controller under the other: Ember sprints across the deck, both jump on the same beat, she double-jumps, then cuts Frost on the run and Frost cuts her back">
-              <figcaption><b>A real round, both of you.</b> Sprint across the
-                deck, jump together, double-jump — and a slash that actually
-                lands, which only happens in here.</figcaption>
-            </figure>
-            <!-- FOUR BUTTONS LIT AND TWO DARK, WHICH IS THE ARGUMENT. A fight
-                 uses fewer controls than walking around does: ride and action
-                 do nothing in the ring, and a diagram that lit them would be
-                 telling a nine-year-old to keep a thumb spare for them. -->
-            <div class="catpad">
-              <svg viewBox="0 0 280 214" role="img"
-                aria-label="The same cat controller with only jump, slash and the right trigger lit up">
-                <g class="lit"><rect class="cp-hole" x="248" y="10" width="32" height="12" rx="6"/></g>
-                <rect class="cp-hole" x="0" y="10" width="32" height="12" rx="6"/>
-                <rect class="cp-hole" x="0" y="26" width="32" height="12" rx="6"/>
-                <rect class="cp-hole" x="248" y="26" width="32" height="12" rx="6"/>
-                <use href="#cp-shell"/>
-                <circle class="cp-hole" cx="222" cy="71" r="8.6"/><text class="cp-glyph" x="222" y="71" dominant-baseline="central">△</text>
-                <circle class="cp-hole" cx="241" cy="90" r="8.6"/><text class="cp-glyph" x="241" y="90" dominant-baseline="central">○</text>
-                <g class="lit"><circle class="cp-hole" cx="222" cy="109" r="8.6"/><text class="cp-glyph" x="222" y="109" dominant-baseline="central">✕</text></g>
-                <g class="lit"><circle class="cp-hole" cx="203" cy="90" r="8.6"/><text class="cp-glyph cp-sq" x="203" y="90" dominant-baseline="central">□</text></g>
-                <text class="cp-glyph cp-small lit" x="264" y="16" dominant-baseline="central" fill="#1d1216">R2</text>
-                <text class="cp-glyph cp-small" x="16" y="16" dominant-baseline="central">L2</text>
-                <text class="cp-glyph cp-small" x="16" y="32" dominant-baseline="central">L1</text>
-                <text class="cp-glyph cp-small" x="264" y="32" dominant-baseline="central">R1</text>
-                <g class="lit"><circle class="cp-knob" cx="98" cy="124" r="10"/></g>
-              </svg>
-              <ul>
-                <li><b>Move</b> <span class="cp-chip">left stick</span></li>
-                <li><b>Jump</b> <span class="cp-chip">✕</span> <span>twice to double-jump</span></li>
-                <li><b>Slash</b> <span class="cp-chip">□</span> <span>this is the one that lands</span></li>
-                <li><b>Sprint</b> <span class="cp-chip">R2</span> <span>hold it</span></li>
-              </ul>
-            </div>
-            <p class="ht-note">
-              The two dark buttons are <b>ride</b> and <b>action</b>. They are
-              not missing — there is nothing to climb on and nobody to talk to
-              in the middle of a round, so a fight only ever needs these four.
-            </p>
-          </div>
-        </details>
-
-        <details class="help-card" name="help">
-          <summary class="help-topic">
-            <span class="ht-ico" aria-hidden="true">💡</span>
-            <span class="ht-title">Good to know</span>
-            <span class="ht-chev" aria-hidden="true">▸</span>
-          </summary>
-          <div class="ht-body">
-            <p class="ht-note">
-              <b>Whatever pad you plug in, the game names its own buttons.</b>
-              The tables in <b>Moving &amp; fighting</b> use Xbox lettering,
-              which is what most pads are printed with. A <b>PlayStation</b> pad
-              shows the shapes instead — <b>✕</b> to jump, <b>□</b> to
-              slash, <b>△</b> to ride, and <kbd>R2</kbd> to sprint. A
-              <b>Joy-Con</b> held sideways sprints on <kbd>SR</kbd>. Whatever it
-              is, the button the game draws over your kitten is the one in your
-              hands.
-            </p>
-            <!-- THE GAME OPENS ON ONE KITTEN NOW, on every machine, and this
-                 is the only place a player is told so before it happens. The
-                 strip along the bottom of the screen says it too, but that is
-                 read after you have already noticed your sister is missing. -->
-            <p class="ht-note">
-              <b>PLAY starts you on your own.</b> A second player joins whenever
-              she likes and nobody has to stop: she <b>picks up a controller</b>,
-              or presses <kbd>Enter</kbd> to share the keyboard — player 1 on
-              <kbd>WASD</kbd>, player 2 on
-              <kbd>O</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd>. Up to four can
-              play, and anyone who joined can drop out again from
-              <b>SETTINGS</b>.
-            </p>
-          </div>
-        </details>
 
         <details class="help-card" name="help">
           <summary class="help-topic">
@@ -858,173 +885,205 @@
             <span class="ht-chev" aria-hidden="true">▸</span>
           </summary>
           <div class="ht-body">
-            <figure class="help-shot">
+            <figure class="help-shot arena-shot">
               <img src="/help/arena.jpg" loading="lazy" width="1096" height="612"
                 alt="Two cat samurai facing off in the round sky arena while a crowd of cats cheers">
               <figcaption>Mr. Satan's sky arena — the one place fighting counts.</figcaption>
             </figure>
-            <p class="ht-note">
-              Knock over <b>80%</b> of everything and <b>Mr. Satan</b> builds a
-              fighting arena in the sky. Find him in town, walk up <b>together</b>,
-              say yes, and his griffin flies you there. Then you fight each other —
-              pick a <b>league</b> first with three or four players.
-            </p>
-            <p class="ht-note">
-              This is the <b>only</b> place fighting hurts anyone. Everywhere else
-              in the world, you can't damage each other at all.
-            </p>
-            <p class="ht-note">
-              <b>Winning pays.</b> Everyone on the winning side takes home a
-              purse — enough for <b>one orb from the dealer</b>. Knocking things
-              over only pays once, so the arena is how you earn <b>more</b>
-              points, as many times as you like.
-            </p>
-          </div>
-        </details>
 
-        <details class="help-card" name="help">
-          <summary class="help-topic">
-            <span class="ht-ico" aria-hidden="true">🍖</span>
-            <span class="ht-title">Battle Feast — eating</span>
-            <span class="ht-chev" aria-hidden="true">▸</span>
-          </summary>
-          <div class="ht-body">
-            <figure class="help-shot">
-              <img data-help-gif="/help/feast-eat.gif" width="640" height="362"
-                alt="A kitten dazing a little animal, then sitting to eat it and recover health">
-              <figcaption>Slash to daze, then hold Slash to sit and eat.</figcaption>
-            </figure>
-            <p class="ht-note">
-              Little animals scurry across the ring — during the fights, and
-              especially in the calm <b>break between rounds</b> (the
-              <b>feast</b>). Catching one to eat is how you <b>get health
-              back</b>, and whoever won a round <b>keeps the health she has
-              left</b> — so the break is her chance to top up. You can snack
-              mid-fight too, but you have to hold still, so it's risky.
-            </p>
-            <p class="ht-note">
-              <b>How to eat:</b> first <b>slash</b> an animal to daze it (stars
-              spin over its head). Then stand <b>right next to it</b>, keep
-              <b>still</b>, and <b>hold the Slash button</b> — your kitten sits
-              down and eats. Let go, or get hit, and it wriggles free.
-            </p>
-          </div>
-        </details>
+            <!-- EVERYTHING THAT HAPPENS IN THE RING, FOLDED UNDER THE RING.
+                 The feast, the orbs, the abilities and the dealer were four
+                 loose cards between "the arena" and "the Dojo", and every one
+                 of them is a rule about a fight — so a reader met them before
+                 she had been told there was a fight, and the list she had to
+                 walk was four longer for it.
 
-        <details class="help-card" name="help">
-          <summary class="help-topic">
-            <span class="ht-ico" aria-hidden="true">🔮</span>
-            <span class="ht-title">Power-up orbs</span>
-            <span class="ht-chev" aria-hidden="true">▸</span>
-          </summary>
-          <div class="ht-body">
-            <figure class="help-shot">
-              <img src="/help/orbs.jpg" loading="lazy" width="1096" height="612"
-                alt="All eight coloured power-up orbs glowing in a row inside the shrine">
-              <figcaption>The eight Kotodama, awake at last — one colour each.</figcaption>
-            </figure>
-            <p class="ht-note">
-              Knock over <b>everything (100%)</b> and the <b>Kotodama</b> wake up:
-              eight kinds of power-up orb hidden across the islands, and you can
-              wear up to <b>eight at once</b>.
-            </p>
-            <p class="ht-note">
-              They're <b>scattered across the whole world</b>, so <b>explore it
-              all again</b> — and watch the <b>mini-map</b>, where each one shows
-              as a little ring in its own colour and <b>vanishes once it's
-              picked up</b>. That makes the map a checklist for the last few. How
-              many are out there depends on the party:
-            </p>
-            <ul class="ability-list">
-              <li><b>1–2 players</b> — 8 orbs (one of each kind)</li>
-              <li><b>3 players</b> — 12 orbs</li>
-              <li><b>4 players</b> — 16 orbs</li>
-            </ul>
-            <p class="ht-note"><b>Four kinds stack</b> to make you stronger:</p>
-            <ul class="ability-list">
-              <li><b>疾 Gale</b> — run faster</li>
-              <li><b>斬 Long Cut</b> — longer katana</li>
-              <li><b>剛 Adamant</b> — more health in the ring</li>
-              <li><b>跳 Leap</b> — an extra jump</li>
-            </ul>
-            <p class="ht-note">
-              Wear two of a kind for double, four for <i>quadruple</i> — and your
-              <b>clan power adds on top</b>. The other <b>four orbs are special
-              moves</b> — see <b>Special abilities</b>. There are no spares, so a
-              second of anything is bought or traded for.
-            </p>
-          </div>
-        </details>
+                 THE PICTURE STAYS OUTSIDE THE FOLD BUT IS CAPPED (`arena-shot`,
+                 style.css). At full panel width this screenshot is ~400px tall,
+                 which filled the panel on its own: opening the topic showed the
+                 arena and nothing else, and the four sub-cards under it were
+                 below the fold on a phone. It is now about the height of the
+                 two clips-plus-captions in "Moving & fighting", which is the
+                 shape a reader has already learned one topic earlier.
 
-        <details class="help-card" name="help">
-          <summary class="help-topic">
-            <span class="ht-ico" aria-hidden="true">✨</span>
-            <span class="ht-title">Special abilities</span>
-            <span class="ht-chev" aria-hidden="true">▸</span>
-          </summary>
-          <div class="ht-body">
-            <p class="ht-note">Four orbs are brand-new moves, on buttons you
-              already use:</p>
-            <div class="move-grid">
-              <figure class="move">
-                <img data-help-gif="/help/ability-ward.gif" width="640" height="362"
-                  alt="A kitten raising a glowing blue shield bubble and floating">
-                <figcaption><b>壁 Ward</b> — <i>hold</i> Ride with nothing to
-                  climb: a shield nothing gets through, and you float.</figcaption>
-              </figure>
-              <figure class="move">
-                <img data-help-gif="/help/ability-dive.gif" width="640" height="362"
-                  alt="A kitten leaping up and slamming down like a hammer">
-                <figcaption><b>落 Power Dive</b> — Interact in the air to drop
-                  like a hammer.</figcaption>
-              </figure>
-              <figure class="move">
-                <img data-help-gif="/help/ability-cross.gif" width="640" height="362"
-                  alt="A kitten cutting a glowing cross-shaped seal in the air">
-                <figcaption><b>十 Cross Slash</b> — <i>hold</i> Slash: three
-                  freezing cuts, then a launch.</figcaption>
-              </figure>
-              <figure class="move">
-                <img data-help-gif="/help/ability-charge.gif" width="640" height="362"
-                  alt="A kitten dashing forward in a straight-line charge with a trail">
-                <figcaption><b>突 Charge</b> — Slash while sprinting to charge
-                  straight through.</figcaption>
-              </figure>
+                 The prose that WAS this card is the first sub-card rather than
+                 being left loose above the others, so the four rules and the
+                 rule they belong to are one list and not a paragraph followed
+                 by a list. Same `name` reasoning as the Moving group: a group
+                 of their own, or the first one opened shuts its parent. -->
+            <div class="ht-subs">
+              <details class="help-card help-sub" name="help-arena">
+                <summary class="help-topic">
+                  <span class="ht-ico" aria-hidden="true">📜</span>
+                  <span class="ht-title">How the arena works</span>
+                  <span class="ht-chev" aria-hidden="true">▸</span>
+                </summary>
+                <div class="ht-body">
+                  <p class="ht-note">
+                    Knock over <b>80%</b> of everything and <b>Mr. Satan</b> builds a
+                    fighting arena in the sky. Find him in town, walk up <b>together</b>,
+                    say yes, and his griffin flies you there. Then you fight each other —
+                    pick a <b>league</b> first with three or four players.
+                  </p>
+                  <p class="ht-note">
+                    This is the <b>only</b> place fighting hurts anyone. Everywhere else
+                    in the world, you can't damage each other at all.
+                  </p>
+                  <p class="ht-note">
+                    <b>Winning pays.</b> Everyone on the winning side takes home a
+                    purse — enough for <b>one orb from the dealer</b>. Knocking things
+                    over only pays once, so the arena is how you earn <b>more</b>
+                    points, as many times as you like.
+                  </p>
+                </div>
+              </details>
+
+              <details class="help-card help-sub" name="help-arena">
+                <summary class="help-topic">
+                  <span class="ht-ico" aria-hidden="true">🍖</span>
+                  <span class="ht-title">Battle Feast — eating</span>
+                  <span class="ht-chev" aria-hidden="true">▸</span>
+                </summary>
+                <div class="ht-body">
+                  <figure class="help-shot">
+                    <img data-help-gif="/help/feast-eat.gif" width="640" height="362"
+                      alt="A kitten dazing a little animal, then sitting to eat it and recover health">
+                    <figcaption>Slash to daze, then hold Slash to sit and eat.</figcaption>
+                  </figure>
+                  <p class="ht-note">
+                    Little animals scurry across the ring — during the fights, and
+                    especially in the calm <b>break between rounds</b> (the
+                    <b>feast</b>). Catching one to eat is how you <b>get health
+                    back</b>, and whoever won a round <b>keeps the health she has
+                    left</b> — so the break is her chance to top up. You can snack
+                    mid-fight too, but you have to hold still, so it's risky.
+                  </p>
+                  <p class="ht-note">
+                    <b>How to eat:</b> first <b>slash</b> an animal to daze it (stars
+                    spin over its head). Then stand <b>right next to it</b>, keep
+                    <b>still</b>, and <b>hold the Slash button</b> — your kitten sits
+                    down and eats. Let go, or get hit, and it wriggles free.
+                  </p>
+                </div>
+              </details>
+
+              <details class="help-card help-sub" name="help-arena">
+                <summary class="help-topic">
+                  <span class="ht-ico" aria-hidden="true">🔮</span>
+                  <span class="ht-title">Power-up orbs</span>
+                  <span class="ht-chev" aria-hidden="true">▸</span>
+                </summary>
+                <div class="ht-body">
+                  <figure class="help-shot">
+                    <img src="/help/orbs.jpg" loading="lazy" width="1096" height="612"
+                      alt="All eight coloured power-up orbs glowing in a row inside the shrine">
+                    <figcaption>The eight Kotodama, awake at last — one colour each.</figcaption>
+                  </figure>
+                  <p class="ht-note">
+                    Knock over <b>everything (100%)</b> and the <b>Kotodama</b> wake up:
+                    eight kinds of power-up orb hidden across the islands, and you can
+                    wear up to <b>eight at once</b>.
+                  </p>
+                  <p class="ht-note">
+                    They're <b>scattered across the whole world</b>, so <b>explore it
+                    all again</b> — and watch the <b>mini-map</b>, where each one shows
+                    as a little ring in its own colour and <b>vanishes once it's
+                    picked up</b>. That makes the map a checklist for the last few. How
+                    many are out there depends on the party:
+                  </p>
+                  <ul class="ability-list">
+                    <li><b>1–2 players</b> — 8 orbs (one of each kind)</li>
+                    <li><b>3 players</b> — 12 orbs</li>
+                    <li><b>4 players</b> — 16 orbs</li>
+                  </ul>
+                  <p class="ht-note"><b>Four kinds stack</b> to make you stronger:</p>
+                  <ul class="ability-list">
+                    <li><b>疾 Gale</b> — run faster</li>
+                    <li><b>斬 Long Cut</b> — longer katana</li>
+                    <li><b>剛 Adamant</b> — more health in the ring</li>
+                    <li><b>跳 Leap</b> — an extra jump</li>
+                  </ul>
+                  <p class="ht-note">
+                    Wear two of a kind for double, four for <i>quadruple</i> — and your
+                    <b>clan power adds on top</b>. The other <b>four orbs are special
+                    moves</b> — see <b>Special abilities</b>. There are no spares, so a
+                    second of anything is bought or traded for.
+                  </p>
+                </div>
+              </details>
+
+              <details class="help-card help-sub" name="help-arena">
+                <summary class="help-topic">
+                  <span class="ht-ico" aria-hidden="true">✨</span>
+                  <span class="ht-title">Special abilities</span>
+                  <span class="ht-chev" aria-hidden="true">▸</span>
+                </summary>
+                <div class="ht-body">
+                  <p class="ht-note">Four orbs are brand-new moves, on buttons you
+                    already use:</p>
+                  <div class="move-grid">
+                    <figure class="move">
+                      <img data-help-gif="/help/ability-ward.gif" width="640" height="362"
+                        alt="A kitten raising a glowing blue shield bubble and floating">
+                      <figcaption><b>壁 Ward</b> — <i>hold</i> Ride with nothing to
+                        climb: a shield nothing gets through, and you float.</figcaption>
+                    </figure>
+                    <figure class="move">
+                      <img data-help-gif="/help/ability-dive.gif" width="640" height="362"
+                        alt="A kitten leaping up and slamming down like a hammer">
+                      <figcaption><b>落 Power Dive</b> — Interact in the air to drop
+                        like a hammer.</figcaption>
+                    </figure>
+                    <figure class="move">
+                      <img data-help-gif="/help/ability-cross.gif" width="640" height="362"
+                        alt="A kitten cutting a glowing cross-shaped seal in the air">
+                      <figcaption><b>十 Cross Slash</b> — <i>hold</i> Slash: three
+                        freezing cuts, then a launch.</figcaption>
+                    </figure>
+                    <figure class="move">
+                      <img data-help-gif="/help/ability-charge.gif" width="640" height="362"
+                        alt="A kitten dashing forward in a straight-line charge with a trail">
+                      <figcaption><b>突 Charge</b> — Slash while sprinting to charge
+                        straight through.</figcaption>
+                    </figure>
+                  </div>
+                </div>
+              </details>
+
+              <details class="help-card help-sub" name="help-arena">
+                <summary class="help-topic">
+                  <span class="ht-ico" aria-hidden="true">🤝</span>
+                  <span class="ht-title">Dealer's Stall &amp; Trading</span>
+                  <span class="ht-chev" aria-hidden="true">▸</span>
+                </summary>
+                <div class="ht-body">
+                  <figure class="help-shot">
+                    <img data-help-gif="/help/dealer.gif" width="640" height="406"
+                      alt="The dealer's stall: a kitten walks up, presses interact to ask the dealer, chooses TRADE, scrolls the shelf and confirms — the orb is bought and worn, her points drop and her slots tick up — then she sells it back and the points come home">
+                    <figcaption>Walk up, ask the dealer, choose TRADE, then scroll the shelf and confirm. Buying wears the orb straight away and costs points; selling it back frees the slot and pays some of it home.</figcaption>
+                  </figure>
+                  <p class="ht-note">
+                    A <b>dealer</b> opens a stall in the market and <b>buys and sells
+                    orbs</b> for the points you earn knocking things over. He's dear on
+                    purpose — a fair share of the world's points buys about <b>three
+                    orbs</b> — and he stocks the four stackable kinds plus one of each
+                    special move. Selling gives some points back, and it's the only way
+                    to free up a slot when all eight are full.
+                  </p>
+                  <p class="ht-note">
+                    Out of points? <b>Win in the arena.</b> Each win pays a purse worth
+                    one orb, so the ring is how you keep buying — see <b>The arena</b>.
+                  </p>
+                  <p class="ht-note">
+                    <b>Trade with each other too.</b> Open <b>CHARACTER PROFILE</b> —
+                    from the pause menu or the stall — and everyone gets her own cursor.
+                    Offer an orb, and <b>both</b> of you confirm before it moves, so
+                    nobody can take one off you. You can put <b>points</b> on the table
+                    as well.
+                  </p>
+                </div>
+              </details>
             </div>
-          </div>
-        </details>
-
-        <details class="help-card" name="help">
-          <summary class="help-topic">
-            <span class="ht-ico" aria-hidden="true">🤝</span>
-            <span class="ht-title">Dealer's Stall &amp; Trading</span>
-            <span class="ht-chev" aria-hidden="true">▸</span>
-          </summary>
-          <div class="ht-body">
-            <figure class="help-shot">
-              <img data-help-gif="/help/dealer.gif" width="640" height="406"
-                alt="The dealer's stall: a kitten walks up, presses interact to ask the dealer, chooses TRADE, scrolls the shelf and confirms — the orb is bought and worn, her points drop and her slots tick up — then she sells it back and the points come home">
-              <figcaption>Walk up, ask the dealer, choose TRADE, then scroll the shelf and confirm. Buying wears the orb straight away and costs points; selling it back frees the slot and pays some of it home.</figcaption>
-            </figure>
-            <p class="ht-note">
-              A <b>dealer</b> opens a stall in the market and <b>buys and sells
-              orbs</b> for the points you earn knocking things over. He's dear on
-              purpose — a fair share of the world's points buys about <b>three
-              orbs</b> — and he stocks the four stackable kinds plus one of each
-              special move. Selling gives some points back, and it's the only way
-              to free up a slot when all eight are full.
-            </p>
-            <p class="ht-note">
-              Out of points? <b>Win in the arena.</b> Each win pays a purse worth
-              one orb, so the ring is how you keep buying — see <b>The arena</b>.
-            </p>
-            <p class="ht-note">
-              <b>Trade with each other too.</b> Open <b>CHARACTER PROFILE</b> —
-              from the pause menu or the stall — and everyone gets her own cursor.
-              Offer an orb, and <b>both</b> of you confirm before it moves, so
-              nobody can take one off you. You can put <b>points</b> on the table
-              as well.
-            </p>
           </div>
         </details>
 

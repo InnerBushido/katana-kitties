@@ -125,6 +125,16 @@ export class MenuNav {
    * `offsetParent` rejects anything inside a hidden container — the remap grid
    * is emptied and refilled as controllers come and go, and a stale row you can
    * highlight but not see is a cursor that vanishes.
+   *
+   * AND `offsetParent` IS NOT ENOUGH FOR A SHUT `<details>`. Browsers stopped
+   * hiding a closed disclosure's contents with `display: none` — it is
+   * `content-visibility: hidden` now, so the skipped subtree still HAS a layout
+   * box and `offsetParent` comes back non-null for everything inside it. That
+   * cost nothing while every topic card was a flat list with no controls in it;
+   * the moment Help grew sub-topics (`help-sub`, index.html) the cursor started
+   * landing on eight headings a player could not see, four of them between one
+   * visible row and the next. Found by asking `items()` what it returned with
+   * "Moving & fighting" shut.
    */
   items(panel) {
     /* `summary.help-topic` is here so the help accordion is drivable on a pad:
@@ -133,7 +143,17 @@ export class MenuNav {
        <summary>, so this widens the net for one panel only. */
     const sel = 'button.menu-btn, summary.help-topic, .panel select,'
       + ' .panel input[type="range"], .map-cell, button.map-reset';
-    return [...panel.querySelectorAll(sel)].filter((el) => el.offsetParent !== null);
+    /* A `<summary>` IS THE ONE THING A SHUT `<details>` STILL SHOWS, so the walk
+       starts ABOVE its own card — otherwise every topic header would filter
+       itself out and the accordion would have no cursor at all. Everything else
+       is judged from its own parent, where a closed ancestor really does hide
+       it. */
+    const folded = (el) => {
+      const from = el.tagName === 'SUMMARY' ? el.parentElement?.parentElement : el.parentElement;
+      return !!from?.closest?.('details:not([open])');
+    };
+    return [...panel.querySelectorAll(sel)]
+      .filter((el) => el.offsetParent !== null && !folded(el));
   }
 
   /**

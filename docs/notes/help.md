@@ -465,6 +465,58 @@ the one frame no amount of playing reproduces on demand. As a pure function
 
 ---
 
+## Two subjects, eight cards folded into them
+
+The panel reached **fifteen top-level cards**, which is a list rather than a
+page: a child looking for the arena had to read past everything else, and on a
+phone that is four screens of scrolling before a single picture. Eight of them
+are really two subjects, so they fold:
+
+| now a top-level card | and inside it |
+| --- | --- |
+| **Moving & fighting** | Every button · Flying a dragon · Fighting in the arena · Good to know |
+| **The arena** | How the arena works · Battle Feast · Power-up orbs · Special abilities · Dealer's Stall & Trading |
+
+Eight cards became two, so the list a reader faces is **eight** long. Nothing is
+hidden — every topic is still its own card, one tap further in — and the four
+Moving sub-topics are still the four the clips were split into (see *"Moving &
+fighting" is two clips*, above); they were loose and are now nested.
+
+**The pictures stay outside the fold.** Each parent leads on its own clips or
+screenshot before the first sub-card, because a reader who opens a topic and is
+shown four more closed headings has been given a menu where she asked for an
+answer. The *reference* half — the key tables, the rules — is what she opens.
+`world-check` pins the ordering.
+
+**The arena screenshot is capped to 220px** (`.arena-shot`, style.css). At full
+panel width it is ~400px tall and filled the card on its own: opening "The
+arena" showed the arena and nothing else, with the four sub-cards below the fold
+on a phone. It is now about the height of the two Moving clips plus their
+captions, which is the shape a reader learned one topic earlier. The cap only
+works because **`width` is released as well** — `.help-shot img` pins it at
+`100%`, and a `max-height` against a pinned width squashes the picture instead
+of shrinking it. Same trick, same reason, as `.help-shot-pair img`.
+
+### Two things that will bite the next person
+
+**A sub-card must NOT be `name="help"`.** The exclusive-accordion group is
+matched by `name` across the whole **document**, not within a parent — so a
+sub-card sharing its parent's name shuts the card it lives inside the instant it
+opens, and the topic appears to vanish under the finger that tapped it. Each
+parent gets its own group: `name="help-move"`, `name="help-arena"`.
+
+**`offsetParent` does not see a shut `<details>`.** Browsers hide a closed
+disclosure's contents with `content-visibility: hidden`, not `display: none`, so
+the skipped subtree still has a layout box and everything inside it reports a
+live `offsetParent`. `MenuNav.items` filtered on exactly that and nothing else,
+which cost nothing while the cards were flat and had no controls in them — the
+moment Help grew sub-topics the pad cursor started stopping on eight headings a
+player could not see. `items()` now also rejects anything under a
+`details:not([open])`, starting the walk **above** a `<summary>`'s own card,
+because a summary is the one thing a shut `<details>` still shows.
+
+---
+
 ## The panel on a controller
 
 Help is a **menu of topics** now, not a wall of text with one BACK button at the
@@ -477,6 +529,8 @@ bottom, so it navigates like one:
   rather than on BACK. Settings opens on BACK deliberately; Help opening there
   meant landing past everything the page exists to say — the same bug that
   `input.md` records for the old scrolling version.
+- `items()` **skips anything inside a shut topic**, which `offsetParent` alone
+  does not do. See *Two things that will bite the next person*, above.
 
 ---
 

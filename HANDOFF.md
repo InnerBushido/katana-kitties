@@ -247,11 +247,29 @@ generalising it immediately found `panda.gif` claiming 640x360 for a 384x216
 file. Every `data-help-gif` in the panel is now measured against its own GIF
 header and its own 2.5MB cap.
 
+**The Help panel is two subjects deep now.** It had grown to fifteen top-level
+cards — four screens of scrolling on a phone before a single picture — so eight
+of them fold: *Every button*, *Flying a dragon*, *Fighting in the arena* and
+*Good to know* under **Moving & fighting**, and *How the arena works*, *Battle
+Feast*, *Power-up orbs*, *Special abilities* and *Dealer's Stall & Trading* under
+**The arena**. Eight top-level cards left; nothing is hidden, each is one tap
+further in, and each parent still leads on its own clips before the fold. The
+arena screenshot is capped to 220px because at full width it filled the card and
+pushed its own sub-cards off a phone screen. Two traps came out of it: a
+sub-card must not share its parent's `name` (the exclusive-accordion group is
+document-wide, so it would shut the card it lives in), and `offsetParent` does
+not see a shut `<details>` — browsers use `content-visibility` now, so `MenuNav`
+was putting the pad cursor on eight headings nobody could see.
+→ [help.md](docs/notes/help.md)
+
 **Four players can be tested by one person now.** `` ` `` then `\` turns
 **force-spawn** on; ENTER then seats a third and fourth kitten with no
-controllers at all, by sharing each keyboard set between two of them — `R` hands
-WASD to the other kitten on it, `U` does the same for the arrows, and the one
-waiting has her score badge dimmed. Only ever fills a slot that ran out of real
+controllers at all, by sharing each keyboard set between two of them — `R` walks
+WASD round a ring of three (P1, P3, **both at once**), `U` does the same for the
+arrows, and the one waiting has her score badge dimmed. The "both" stop makes
+marching the party to the arena one walk instead of four; it is the only place
+two cats move as one, it takes a keypress to reach, and with the toggle off the
+ring is one stop long so it cannot happen. Only ever fills a slot that ran out of real
 devices, so a second controller turns the sharing off by making it unnecessary,
 and turning the toggle off sends the extra kittens home through `_leavePlayer`
 like any other way of losing a seat. Two bugs came out of actually playing it: a
