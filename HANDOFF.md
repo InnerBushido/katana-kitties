@@ -247,6 +247,19 @@ generalising it immediately found `panda.gif` claiming 640x360 for a 384x216
 file. Every `data-help-gif` in the panel is now measured against its own GIF
 header and its own 2.5MB cap.
 
+**Four players can be tested by one person now.** `` ` `` then `\` turns
+**force-spawn** on; ENTER then seats a third and fourth kitten with no
+controllers at all, by sharing each keyboard set between two of them — `R` hands
+WASD to the other kitten on it, `U` does the same for the arrows, and the one
+waiting has her score badge dimmed. Only ever fills a slot that ran out of real
+devices, so a second controller turns the sharing off by making it unnecessary,
+and turning the toggle off sends the extra kittens home through `_leavePlayer`
+like any other way of losing a seat. Two bugs came out of actually playing it: a
+joining kitten could not confirm her own character card while her sister held the
+keyboard, and **pressing ENTER twice quickly overwrote the first card** — the
+second was reachable before this feature (two pads, two fast presses) and is the
+first thing that happens with it. → [input.md](docs/notes/input.md)
+
 ---
 
 ## Open items

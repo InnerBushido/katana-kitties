@@ -88,8 +88,8 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 1960 checks: world, dragons, clans, sprites, tournament, consent, balance
-node tools/pad-check.mjs      # 286 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
+node tools/world-check.mjs    # 1967 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/pad-check.mjs      # 343 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
                               #   in this file AND in the published page's source
@@ -229,6 +229,33 @@ tappable**, so the whole debug set works on a phone.
 | `7` `8` `9` | Ryuuseki: take all seven stars & summon · seat both kittens · fire his beams |
 | `M` `Z` | maths overlay · map zoom |
 | `-` `=` `0` | scene viewer: previous · next · play this scene |
+| **`\`** | **force-spawn** — ENTER then seats a third and fourth kitten on the keyboard alone |
+| `R` `U` | pass WASD · pass the arrows, to the other kitten sharing that set |
+
+### Testing four players by yourself
+
+Four kittens normally takes four devices, so everything that only happens at
+three and four — the quadrant split, the two-map rule, the leagues, the way the
+shelf and the orb count scale — got tested at two and hoped for at four.
+
+Press **`` ` ``** then **`\`**, then **ENTER** twice. Each keyboard set is now
+shared by two kittens, and **only one of them is live at a time** — `R` hands
+WASD to the other one, `U` does the same for the arrows, and the waiting
+kitten's score badge dims so you can see whose hands you are on.
+
+It **turns itself off by being unnecessary**: the share only ever fills a slot
+that ran out of real devices, so plugging a second controller in gives the
+ordinary four-player dealing with nothing shared, and no second code path.
+Turning the toggle off sends the extra kittens home properly — orbs back into
+the world, animals home — rather than leaving cats nobody can move.
+
+| devices | P1 | P2 | P3 | P4 |
+| --- | --- | --- | --- | --- |
+| keyboard only | WASD | Arrows | WASD\* | Arrows\* |
+| 1 controller | pad | WASD | Arrows | WASD\* |
+| 2 controllers | pad | pad | WASD | Arrows |
+
+\* shares the set above it; `R` / `U` says which of the two is playing.
 
 **If somebody says it lags, press `1` before changing anything.** The game is
 **fill-bound** — frame time is a straight line in the size of the drawing buffer
@@ -439,7 +466,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 1960
+the check that would have caught it.** That is why `world-check` is 1967
 assertions.
 
 **And a change a new developer would need to know about gets a line in this

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import './style.css';
 
 import {
-  InputManager, HALVES, MAP_FIELDS, VJOY_AXIS_NAMES, deviceId,
+  InputManager, HALVES, MAP_FIELDS, VJOY_AXIS_NAMES, deviceId, KEYSETS,
 } from './core/input.js';
 import { Audio, trackForIsland } from './core/audio.js';
 import { loadSpriteAtlas, recolourAtlas } from './core/spritesheet.js';
@@ -111,6 +111,16 @@ const DEBUG_KEY_LABEL = {
   Digit3: '3', Digit4: '4', Digit5: '5', Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9',
   Digit0: '0', KeyM: 'M', KeyZ: 'Z', Minus: '-', Equal: '=',
   Backquote: '`',
+  /* FORCE-SPAWN AND ITS TWO HAND-OVER KEYS. `\` was freed when both keyboard
+     sets moved onto ENTER to join (see `_findJoin` in core/input.js — it used
+     to be the arrow set's own way in), and nothing binds it now.
+     `R` AND `U` BREAK THE DIGITS-AND-PUNCTUATION RULE ON PURPOSE, because for
+     these two the position IS the feature: `R` sits above WASD and `U` beside
+     O K L ;, so each hand passes its own keyboard along without moving. They
+     are safe for the same reason `1` is — `pad-check` asserts that nothing in
+     any keyset answers to a key this file dispatches on — and they do nothing
+     at all unless force-spawn is on. */
+  Backslash: '\\', KeyR: 'R', KeyU: 'U',
 };
 
 /**
@@ -3240,7 +3250,122 @@ class Game {
 
        IT IS `1` AND IT USED TO BE `P` — see DEBUG_KEY_LABEL for why. */
     if (code === 'Digit1') this._togglePerf();
+    if (code === 'Backslash') this._toggleForceSeats();
+    if (code === 'KeyR') this._passKeyboard(0);
+    if (code === 'KeyU') this._passKeyboard(1);
     if (code === 'Backquote') this._toggleDebugPanel();
+  }
+
+  /**
+   * FORCE-SPAWN: let ENTER seat a third and fourth kitten on the keyboard
+   * alone, by sharing the two keyboard sets between two players each.
+   *
+   * WHY THE FEATURE EXISTS AT ALL. Four kittens takes four devices, so
+   * everything that only happens at three and four — the quadrant split, the
+   * two-map rule, the leagues, the way the shelf and the orb count scale with
+   * the party — was tested by borrowing controllers, which in practice meant
+   * tested at two. `input.forceSeats` is the whole of the mechanism; see
+   * `_shadowPass` in core/input.js for how a set is shared and why sharing
+   * turns itself off the moment a real second controller arrives.
+   *
+   * IT SAYS WHAT TO PRESS NEXT rather than just reporting a flag. The toggle
+   * on its own does nothing visible — the party is still two — so a message
+   * reading "force-spawn: on" is a switch that appears not to work. Rule 6:
+   * a lock says what it wants, as an instruction.
+   *
+   * TURNING IT OFF SENDS THE EXTRA KITTENS HOME, through `_leavePlayer` like
+   * every other way of losing a seat, so their orbs go back into the world and
+   * their animals go home. Without it the party stays at four with two cats
+   * nobody can move, which is the exact "the game is broken" reading that
+   * `_trimPartyToDevices` was written for.
+   */
+  _toggleForceSeats() {
+    const on = !this.input.forceSeats;
+    this.input.forceSeats = on;
+    if (!on) {
+      const before = this.partySize;
+      this._trimPartyToDevices();
+      this.toast(`[debug] force-spawn off${
+        this.partySize < before ? ` — back to ${this.partySize}` : ''}`, 0);
+      this._markKeyboardOwners();
+      return;
+    }
+    this.toast('[debug] force-spawn ON — press ENTER to seat another kitten', 0);
+  }
+
+  /**
+   * Hand a shared keyboard set to the next kitten on it: `R` for WASD, `U` for
+   * the arrows / O K L ; set.
+   *
+   * THE KEY SITS BY THE HAND IT SWITCHES. `R` is the next key up from WASD and
+   * `U` is the next key left of the O K L ; cluster, so each hand passes its
+   * own keyboard along without reaching across the desk — which is the same
+   * argument the two keysets are laid out on in the first place.
+   *
+   * A REFUSAL SAYS SO, but only while the feature is on. With force-spawn off
+   * nothing is ever shared and these two keys do not exist: toasting at every
+   * stray `R` in an ordinary game would be noise about a feature nobody has
+   * turned on, and four kids resting hands on a keyboard press a lot of keys.
+   */
+  _passKeyboard(keyset) {
+    if (!this.input.forceSeats) return;
+    const to = this.input.swapKeyset(keyset);
+    const name = KEYSETS[keyset]?.name ?? `set ${keyset}`;
+    if (to < 0) {
+      this.toast(`[debug] nobody is sharing ${name} — press ENTER to seat her`, 0);
+      return;
+    }
+    this._markKeyboardOwners();
+    this.toast(`[debug] ${name} → P${to + 1}`, to);
+  }
+
+  /**
+   * Dim the badge of any kitten who is waiting her turn at a shared keyboard.
+   *
+   * ON A REBUILD AND ON A SWAP, NOT EVERY FRAME. The HUD badges are DOM and
+   * `_buildHud` already only runs when the party changes, so the two moments
+   * this can go stale are exactly the two that call it. A per-frame write here
+   * would be the live-label mistake again — see label.js and performance.md.
+   *
+   * IT IS THE ONE THING THE TOAST CANNOT DO. The toast says who took the
+   * keyboard and then goes away; halfway through a four-player test what you
+   * need to know is which of the four cats your hands are on RIGHT NOW, and the
+   * badge is already the thing you look at to find your own colour.
+   *
+   * Inline rather than a stylesheet rule, because the whole of it is one debug
+   * affordance that cannot be reached without the toggle: `keysetShare` is of
+   * length one in every ordinary game, so the loop below reverts every badge
+   * and leaves the HUD the girls know untouched.
+   */
+  /**
+   * What the panel's two hand-over rows say to the right of the arrow: who
+   * holds this keyboard set, or why the key would refuse.
+   *
+   * THE ROW IS THE ONLY DOCUMENTATION EITHER KEY HAS — the panel exists because
+   * a debug key nobody can find is a debug key nobody presses — so it has to
+   * read as an answer in all three states, not just the interesting one.
+   */
+  _keyboardHeldBy(keyset) {
+    const share = this.input.keysetShare(keyset);
+    if (share.length < 2) {
+      return share.length ? `P${share[0] + 1} only` : 'nobody';
+    }
+    return share.map((i) => (
+      i === this.input.keysetOwner(keyset) ? `<b>P${i + 1}</b>` : `P${i + 1}`
+    )).join(' / ');
+  }
+
+  _markKeyboardOwners() {
+    for (let i = 0; i < this.partySize; i++) {
+      const badge = document.querySelector(`#hud .score.p${i + 1}`);
+      if (!badge) continue;
+      const k = this.input.bindings[i]?.keyset;
+      const shared = k != null && this.input.keysetShare(k).length > 1;
+      const waiting = shared && this.input.keysetOwner(k) !== i;
+      badge.style.opacity = waiting ? '0.4' : '';
+      badge.title = shared
+        ? `${KEYSETS[k].name} — ${waiting ? 'waiting' : 'playing'}` : '';
+    }
   }
 
   /**
@@ -3845,6 +3970,11 @@ class Game {
       ${row('KeyM', 'maths overlay')}
       ${row('KeyZ', 'map zoom')}
       ${row('Digit1', 'frame cost — fps, draws, pixels, GPU', this._perfOn)}
+      <div class="dbg-sep">FOUR PLAYERS, ONE KEYBOARD</div>
+      ${row('Backslash', 'force-spawn — ENTER seats 3 &amp; 4 on the keyboard',
+    this.input.forceSeats)}
+      ${row('KeyR', `WASD &#8594; ${this._keyboardHeldBy(0)}`)}
+      ${row('KeyU', `${KEYSETS[1].name} &#8594; ${this._keyboardHeldBy(1)}`)}
       ${TUNING_ROW}
       <div class="dbg-sep">SCENE VIEWER — choose, then play</div>
       ${row('Minus', '&#9664; previous scene')}
@@ -5423,9 +5553,22 @@ class Game {
        is a real one rather than half a frame behind everyone else's. Refused
        while a scene owns the screen or a round is live — a kitten appearing in
        the middle of a knockout is a fighter nobody agreed to. */
+    /* ONE AT A TIME, WHICH `_autoSeat` HAS ALWAYS SAID AND THIS PATH DID NOT.
+       `this.picking` is a SINGLE card, so seating somebody while the kitten
+       before her is still choosing her cat overwrites it — she never picks, and
+       the card vanishes from under her hands. `_autoSeat` refuses for exactly
+       this reason and says so in its own comment; the ENTER path was missing
+       the same guard, and it was reachable before force-spawn (two pads, two
+       quick presses) but only just. It is the NORMAL way in now — "press ENTER
+       twice" is the whole instruction — so a hole that used to need bad luck
+       became the first thing that happens.
+       IT REFUSES OUT LOUD. A press that does nothing reads as the key being
+       broken, and she is about to press it again. */
     const join = this.input.pendingJoin();
-    if (join && !this._sceneActive() && !this.tournament?.fighting) this._joinPlayer(join);
-    else this._autoSeat();
+    if (join && !this._sceneActive() && !this.tournament?.fighting) {
+      if (this.picking) this.toast('Wait — someone is still choosing her cat', this.picking.index);
+      else this._joinPlayer(join);
+    } else this._autoSeat();
     this._updatePicker();
     /* The team picker reads the raw pads too, for the same reason the character
        picker does: everybody's stick is dead while it is up (see the dead-pad
@@ -5794,7 +5937,18 @@ class Game {
     this.input.slots = this.partySize;
     // Bind the joining device to the new slot before anything reads it, or she
     // spends her first frames on whatever `_assign` would have given her.
-    this.input.claim(index, device);
+    /* EXCEPT A FORCE-SPAWN SHADOW, WHICH IS DELIBERATELY NOT CLAIMED. She has
+       no device of her own — she is sharing a keyboard set — and a claim is
+       keyed to a slot, so claiming one would freeze the arrangement she joined
+       under: plug a controller in afterwards and her set's primary moves while
+       her claim does not, leaving her sharing with nobody. Unclaimed, the whole
+       keyboard is re-dealt every frame by `_shadowPass`, which is what makes
+       "one pad: WASD drives P2 and P4, the arrows drive P3" come out right
+       without a rule saying so. */
+    /* AND SHE TAKES THE KEYBOARD SHE LANDED ON, or the card this join is about
+       to put up is one she cannot answer — see `handKeyboardTo`. */
+    if (device?.shadow) this.input.handKeyboardTo(index);
+    else this.input.claim(index, device);
 
     const p = this._seatPlayer(index, this._freeStyles()[0] ?? index);
     const at = this._joinSpot();
@@ -6165,6 +6319,11 @@ class Game {
       this.maps.push(new Minimap(canvas, this.world, i,
         { zoom: this.device.touchPrimary ? TOUCH_ZOOM : 1 }));
     }
+    /* THE BADGES WERE JUST REPLACED, so the force-spawn dimming has to be put
+       back with everything else the rebuild erased — see the note above about
+       scores and clans, which is the same failure arrived at from a different
+       direction. No-op unless a keyboard set is actually shared. */
+    this._markKeyboardOwners();
     this._resize?.();
   }
 
