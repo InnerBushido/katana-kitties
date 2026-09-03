@@ -10174,6 +10174,43 @@ console.log('\n--- Mr. Satan loses his temper ---');
     handled.every((c) => labelBlock.includes(`${c}:`)),
     handled.filter((c) => !labelBlock.includes(`${c}:`)).join(', ') || 'all');
   ok("...including Mr. Satan's", handled.includes('Digit2') && listed.has('Digit2'));
+  /* --- AND FORCE-SPAWN'S THREE, WHICH ARE THE ONLY LETTERS IN THE SET ---
+     `\` seats a third and fourth kitten on the keyboard alone; `R` and `U` pass
+     WASD and the arrows between the two sharing each. They are checked by name
+     as well as by the general rule above, because the general rule would be
+     just as happy with a panel that listed three keys the handler had dropped —
+     and a debug key whose row lies is worse than one that is missing. */
+  for (const c of ['Backslash', 'KeyR', 'KeyU']) {
+    ok(`...and force-spawn's ${c}`, handled.includes(c) && listed.has(c),
+      `${handled.includes(c) ? '' : 'unhandled '}${listed.has(c) ? '' : 'unlisted'}`);
+  }
+
+  /* --- ONE CHARACTER CARD AT A TIME, ON THE JOIN PATH AS WELL ---
+     `this.picking` is a SINGLE card, so seating somebody while the kitten
+     before her is still choosing her cat overwrites it: she never picks, and
+     the card vanishes from under her hands. `_autoSeat` has always refused for
+     this reason and said so in a comment; the ENTER path did not, and it was
+     reachable before force-spawn (two pads, two quick presses) but only just.
+     "Press ENTER twice" is now the whole instruction for testing four players,
+     so the hole became the first thing that happens — found by playing it.
+
+     ASSERTED AGAINST THE DISPATCH ITSELF, because the failure was never about
+     the picker: it was one `if` in the frame loop that asked two questions
+     where three were needed. And it must REFUSE OUT LOUD — a press that does
+     nothing reads as the key being broken, and she is about to press it
+     again. */
+  const joinAt = msrc.indexOf('const join = this.input.pendingJoin();');
+  const joinBody = msrc.slice(joinAt, joinAt + 400);
+  ok('the ENTER join path was found', joinAt > 0);
+  ok('...and it refuses to seat over a character card still being chosen',
+    /if \(this\.picking\)/.test(joinBody) && /_joinPlayer\(join\)/.test(joinBody),
+    joinBody.slice(0, 90));
+  ok('...and says so rather than swallowing the press',
+    /if \(this\.picking\) this\.toast\(/.test(joinBody));
+  /* THE RULE `_autoSeat` ALREADY HAD, restated so the two cannot drift apart
+     again — they are the same decision reached from a pad and from a key. */
+  ok('...the same rule the spare-controller path already had',
+    /_autoSeat\(\) \{[\s\S]{0,600}?if \(this\.picking\) return;/.test(msrc));
   /* NOTHING IN PLAY CALLS IT. One mention in the whole game, in the handler
      for the key — the gag has to be reached by walking up to him. */
   ok('nothing but the debug key provokes him',

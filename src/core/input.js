@@ -868,6 +868,14 @@ export class InputManager {
      *  order", which is what a two-player game always does. */
     this.claims = {};
 
+    /** SHARE THE KEYBOARD SO ONE PERSON CAN TEST FOUR — see `_shadowPass`.
+     *  A DEBUG TOGGLE AND NOTHING ELSE: off, every line below is dead and the
+     *  dealing is bit-identical to the game the girls play. */
+    this.forceSeats = false;
+    /** keyset -> how many times it has been PASSED ON, i.e. how far round the
+     *  ring of slots sharing it the live one has moved. See `keysetOwner`. */
+    this._kbTurn = {};
+
     /** How a vJoy device is read. It is the ONLY device this setting touches;
      *  every ordinary pad is one player either way — see `_padDevices`.
      *    'split'  (default) two Joy-Cons through Joy2Win = two players
@@ -1577,7 +1585,127 @@ export class InputManager {
         break;
       }
     }
+    this._shadowPass(next, n);
     return next;
+  }
+
+  /**
+   * FORCE-SPAWN: hand a slot that ran out of devices a keyboard set SOMEBODY
+   * ELSE IS ALREADY ON, so one person can test four players by herself.
+   *
+   * WHY IT EXISTS. Four kittens takes four devices, and the whole point of the
+   * four-player pass is behaviour that only shows up at three and four — the
+   * quadrant split, the two-map rule, the leagues, the way the dealer's shelf
+   * and the orb count scale. Testing any of it meant borrowing three
+   * controllers, so in practice it was tested at two and hoped for at four.
+   *
+   * IT ONLY EVER FILLS SLOTS THAT WOULD OTHERWISE HOLD NOTHING, which is what
+   * makes it self-disabling rather than a mode with rules of its own:
+   *
+   * ```
+   *   0 pads   P1 WASD   P2 Arrows  P3 WASD*   P4 Arrows*
+   *   1 pad    P1 pad    P2 WASD    P3 Arrows  P4 WASD*
+   *   2 pads   P1 pad    P2 pad     P3 WASD    P4 Arrows   <- nothing shared
+   * ```
+   *
+   * — so plugging the second controller in turns the sharing off by making it
+   * unnecessary, and there is no second code path for "the real thing".
+   *
+   * TWO SLOTS ON ONE KEYBOARD SET MUST NOT BE TWO KITTENS MOVING AS ONE. That
+   * is the failure `_padDevices` and `_freeKeysets` both exist to prevent, and
+   * it would be a worse bug here than anywhere else because you would be
+   * looking at it in split screen. So a shared set drives exactly ONE of its
+   * slots at a time — `keysetOwner` says which, `read` gives the others
+   * nothing at all, and `swapKeyset` passes the keyboard along.
+   *
+   * The queue restarts from the lowest free set, so the first shadow lands on
+   * WASD: with one pad that is P2's set, which puts P4 on P2's hands and P3 on
+   * her own arrows, exactly as the table above says.
+   */
+  _shadowPass(next, n) {
+    if (!this.forceSeats) return;
+    const ring = this._freeKeysets();
+    if (!ring.length) return;
+    let k = 0;
+    for (let i = 0; i < n; i++) {
+      if (next[i].pad != null || next[i].keyset != null || next[i].touch) continue;
+      next[i].keyset = ring[k % ring.length];
+      k += 1;
+    }
+  }
+
+  /**
+   * Every seated slot bound to keyboard set `k`, in slot order.
+   *
+   * ONE ENTRY IN THE ORDINARY GAME, and that is the whole reason this can be
+   * asked unconditionally: `_assign` deals each set to at most one slot unless
+   * `forceSeats` is on, so `keysetOwner` below is that slot, every frame, and
+   * the two-player game cannot tell this function exists.
+   */
+  keysetShare(k) {
+    const out = [];
+    for (let i = 0; i < Math.min(this.slots, MAX_SLOTS); i++) {
+      const b = this.bindings[i];
+      if (b && !b.touch && b.pad == null && b.keyset === k) out.push(i);
+    }
+    return out;
+  }
+
+  /** Which slot keyboard set `k` is actually DRIVING this frame, or -1. */
+  keysetOwner(k) {
+    const share = this.keysetShare(k);
+    if (!share.length) return -1;
+    return share[(this._kbTurn[k] ?? 0) % share.length];
+  }
+
+  /**
+   * Pass keyboard set `k` to the next kitten sharing it. Returns her slot, or
+   * -1 when nobody is sharing — which is a REFUSAL and the caller must say so.
+   *
+   * A COUNTER RATHER THAN A BOOLEAN, because the ring is not always two. On a
+   * tablet the touch pad owns WASD (`_freeKeysets`), so the arrows can be the
+   * only set left and three slots can want it; `% share.length` is then the
+   * difference between a control that cycles and one that appears dead.
+   *
+   * THE COUNT IS NOT RESET WHEN THE SHARE CHANGES, and it must not be: a
+   * player leaving shortens the ring, the modulo re-reads it, and whoever is
+   * left gets the keyboard back rather than nobody having it.
+   */
+  swapKeyset(k) {
+    if (this.keysetShare(k).length < 2) return -1;
+    this._kbTurn[k] = (this._kbTurn[k] ?? 0) + 1;
+    return this.keysetOwner(k);
+  }
+
+  /**
+   * THE KITTEN WHO HAS JUST JOINED TAKES THE KEYBOARD SHE LANDED ON.
+   * Returns the set she now holds, or -1 if she is not sharing one.
+   *
+   * WITHOUT THIS SHE CANNOT CONFIRM HER OWN CHARACTER CARD, which is the bug
+   * that found it: the card the join puts up is driven by HER slot's pad state
+   * (`Game._updatePicker`), and a slot waiting its turn at a shared keyboard
+   * reads nothing at all — so pressing ENTER produced a card that could not be
+   * answered until you happened to press `R`. Handing it over is also just
+   * true: the person who pressed ENTER is the person sitting at the keyboard.
+   *
+   * IT RE-DEALS FIRST, and that is not tidiness. `Game._joinPlayer` grows the
+   * party and calls this in the same breath, one frame before `update` next
+   * runs — so `bindings` still describes the smaller party and the slot that
+   * has just joined is holding nothing yet. Asking `keysetShare` about it then
+   * gives a share of one, silently does nothing, and leaves the badge dimming
+   * (`_markKeyboardOwners`, called moments later out of `_buildHud`) stating the
+   * opposite of the truth until the next press. `_syncBindings` only touches
+   * the pad order and the bindings — no edges, no join latch — so calling it a
+   * second time inside one frame costs a re-deal and changes nothing else.
+   */
+  handKeyboardTo(slot) {
+    this._syncBindings(navigator.getGamepads ? navigator.getGamepads() : []);
+    const k = this.bindings[slot]?.keyset;
+    if (k == null) return -1;
+    const share = this.keysetShare(k);
+    if (share.length < 2) return -1;
+    this._kbTurn[k] = share.indexOf(slot);
+    return k;
   }
 
   /** Bind a specific device to a slot, overriding the default dealing. Used by
@@ -1599,6 +1727,14 @@ export class InputManager {
    * rather than as the party being full.
    */
   get seatable() {
+    /* FORCE-SPAWN LIFTS THE CAP, AND THE CAP IS THE WHOLE FEATURE. Everything
+       that refuses a fourth kitten — the join key, `_autoSeat`, `_joinPlayer`'s
+       toast — refuses her by asking this one number, so raising it here is what
+       makes ENTER seat a third and fourth player on a keyboard alone. It is
+       still MAX_SLOTS: the mode shares devices, it does not invent seats.
+       `Game._trimPartyToDevices` reads this too, which is what sends the extra
+       kittens home again when the toggle goes off. */
+    if (this.forceSeats) return MAX_SLOTS;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     const live = this._order.map((i) => pads[i]).filter(Boolean);
     // The SAME list the binder deals from — see `_devices`. Counting the
@@ -1685,7 +1821,14 @@ export class InputManager {
       } else if (bnd.pad != null) {
         out.push(`P${i + 1}: ${bnd.half ? `${bnd.half} Joy-Con` : 'gamepad'}`);
       } else if (bnd.keyset != null) {
-        out.push(`P${i + 1}: ${KEYSETS[bnd.keyset].name}`);
+        /* WHO IS ACTUALLY HOLDING IT, when force-spawn has two kittens sharing
+           one set. "P1: WASD  P3: WASD" is true and reads as the bug this
+           feature is most likely to be mistaken for — two cats on one key. The
+           share is unmarked at the ordinary size, where it is always of one. */
+        const share = this.keysetShare(bnd.keyset);
+        const mark = share.length < 2 ? ''
+          : (this.keysetOwner(bnd.keyset) === i ? ' (playing)' : ' (waiting)');
+        out.push(`P${i + 1}: ${KEYSETS[bnd.keyset].name}${mark}`);
       } else {
         out.push(`P${i + 1}: no controller`);
       }
@@ -1727,7 +1870,12 @@ export class InputManager {
     if (freePad) return 'START on a spare controller';
 
     const freeKeyset = this._freeKeysets().some((k) => !bound.some((b) => b.keyset === k));
-    return freeKeyset ? 'ENTER' : null;
+    /* FORCE-SPAWN STILL SAYS ENTER once both sets are taken, because it is
+       still true — `_findJoin` shares one out. The hint going silent while the
+       toggle was on was the first thing that read as the feature not working:
+       `seatable` had already let the party grow, and the only sentence on
+       screen said nobody could join. */
+    return (freeKeyset || this.forceSeats) ? 'ENTER' : null;
   }
 
   /**
@@ -1841,7 +1989,7 @@ export class InputManager {
         mx = dead(r.ax) + (r.dpad ? r.dpad[0] : 0);
         my = dead(r.ay) + (r.dpad ? r.dpad[1] : 0);
         for (const a of ACTIONS) next[a] = !!r[a];
-      } else if (bnd.keyset != null) {
+      } else if (bnd.keyset != null && this.keysetOwner(bnd.keyset) === i) {
         st.source = 'keyboard';
         const k = KEYSETS[bnd.keyset];
         /* ANY of the codes bound to a field. Every field is a list — see
@@ -1857,7 +2005,18 @@ export class InputManager {
         /* NO DEVICE AT ALL — a slot past the party size. It must report
            nothing: the old code fell back to `KEYSETS[i]` unconditionally, so
            leaving that in place would have WASD quietly driving the controller
-           state of a third kitten nobody has seated. */
+           state of a third kitten nobody has seated.
+
+           OR A SLOT WHOSE KEYBOARD SET IS CURRENTLY SOMEBODY ELSE'S — the
+           force-spawn share, which lands here on purpose rather than in a
+           branch of its own. `source` answers "what is driving this slot THIS
+           FRAME", and the honest answer for a kitten waiting her turn at the
+           keyboard is nothing: `Game`'s Escape handler picks the lowest slot
+           whose `source` is 'keyboard' to drive the pause menu, and a slot
+           that claimed to be on a keyboard it cannot currently press would
+           take the cursor and then be unable to move it. Her BINDING still
+           names her set, so `promptFor` and `describe` go on telling her which
+           keys are hers. */
         st.source = 'none';
       }
 
@@ -1960,6 +2119,17 @@ export class InputManager {
     const free = this._freeKeysets().find((k) => !bound.some((b) => b.keyset === k)) ?? -1;
     if (free >= 0 && this._joinKeyDown() && !this._joinPrev.has('kb')) {
       return { pad: null, half: null, keyset: free };
+    }
+    /* AND WITH FORCE-SPAWN ON, ENTER GOES ON WORKING AFTER THE SETS RUN OUT.
+       `shadow` marks it so `Game._joinPlayer` does NOT claim the device: a
+       claim is keyed to a slot and would freeze the arrangement, so plugging a
+       controller in afterwards would leave a shadow pointing at a set whose
+       primary had moved. Un-claimed, `_shadowPass` re-deals the whole keyboard
+       every frame and the pad case comes out right on its own. The keyset here
+       is therefore a hint for the toast, not a binding. */
+    if (this.forceSeats && this._joinKeyDown() && !this._joinPrev.has('kb')) {
+      const ring = this._freeKeysets();
+      if (ring.length) return { pad: null, half: null, keyset: ring[0], shadow: true };
     }
     return null;
   }

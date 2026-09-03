@@ -764,6 +764,308 @@ console.log('\n--- ENTER joins, every time ---');
     phantom.joinHint() === null, `${phantom.joinHint()}`);
 }
 
+/* FORCE-SPAWN: ONE PERSON, FOUR KITTENS, TWO KEYBOARD SETS.
+
+   Everything that only happens at three and four players — the quadrant split,
+   the two-map rule, the leagues, the way the shelf and the orb count scale —
+   needed four devices to look at, so in practice it was tested at two and hoped
+   for at four. The debug toggle shares each keyboard set between two slots and
+   passes it between them on a key.
+
+   THE ONE THING THAT MUST NOT HAPPEN IS TWO KITTENS MOVING AS ONE. That is the
+   failure `_padDevices` and `_freeKeysets` already exist to prevent, arrived at
+   from a third direction, and it would be at its worst here because you would
+   be watching it in split screen. So the checks below are mostly not about who
+   is BOUND to what — they are about which slot the W key actually moves.
+
+   AND IT MUST VANISH WHEN IT IS OFF, which is rule 5 asked of a debug feature:
+   the two-player game is byte-for-byte the game the girls know, and this is the
+   first thing in the input layer that could quietly change what a keypress does
+   to it. */
+console.log('\n--- force-spawn: four kittens on one keyboard ---');
+{
+  const mkPad = (i) => { const p = DEVICES.ds4Chrome(); p.index = i; return p; };
+  const layout = (im, n) => im.bindings.slice(0, n)
+    .map((b) => (b.pad != null ? 'pad' : b.keyset === 0 ? 'WASD' : b.keyset === 1 ? 'Arrows' : '-'))
+    .join(' ');
+  /* WHO ACTUALLY MOVES when a key goes down — the question that matters. Reads
+     the seated slots' sticks after one frame with the key held. */
+  const moved = (im, code) => {
+    im.keys.clear(); im.update();
+    im.keys.add(code); im.update();
+    const out = im.players.slice(0, im.slots)
+      .map((p, i) => (Math.abs(p.mx) + Math.abs(p.my) > 0 ? i : -1))
+      .filter((i) => i >= 0);
+    im.keys.clear();
+    return out;
+  };
+
+  /* --- OFF BY DEFAULT, AND OFF MEANS GONE --- */
+  const norm = drive([]);
+  ok('force-spawn is off on a fresh input layer', norm.forceSeats === false);
+  norm.slots = 2; norm.update();
+  ok('...and the two-player dealing is untouched',
+    layout(norm, 2) === 'WASD Arrows', layout(norm, 2));
+  ok('...and W moves player 1 and nobody else',
+    JSON.stringify(moved(norm, 'KeyW')) === '[0]', JSON.stringify(moved(norm, 'KeyW')));
+  /* THE SLOT PAST THE PARTY STILL READS NOTHING. The shadow pass runs inside
+     `_assign`, so a bug in it would show up here first: a third slot silently
+     bound to WASD is the old `KEYSETS[i]` fallback all over again. */
+  norm.slots = 4; norm.update();
+  ok('...and slots past the devices are still empty with it off',
+    layout(norm, 4) === 'WASD Arrows - -', layout(norm, 4));
+  ok('...so seatable still counts real devices', norm.seatable === 2, `${norm.seatable}`);
+
+  /* --- ON, WITH NOTHING PLUGGED IN: THE ARRANGEMENT RICHARD ASKED FOR --- */
+  const solo = drive([]);
+  solo.forceSeats = true;
+  solo.slots = 4; solo.update();
+  ok('force-spawn seats four on the keyboard alone',
+    layout(solo, 4) === 'WASD Arrows WASD Arrows', layout(solo, 4));
+  ok('...and seatable says so, which is what lets ENTER do it',
+    solo.seatable === 4, `${solo.seatable}`);
+  ok('...P3 shares WASD with P1', JSON.stringify(solo.keysetShare(0)) === '[0,2]',
+    JSON.stringify(solo.keysetShare(0)));
+  ok('...and P4 shares the arrows with P2',
+    JSON.stringify(solo.keysetShare(1)) === '[1,3]', JSON.stringify(solo.keysetShare(1)));
+
+  /* THE WHOLE POINT: SHARED IS NOT SIMULTANEOUS. */
+  ok('W moves ONE kitten, not two', JSON.stringify(moved(solo, 'KeyW')) === '[0]',
+    JSON.stringify(moved(solo, 'KeyW')));
+  ok('...and the arrows move ONE, not two',
+    JSON.stringify(moved(solo, 'ArrowUp')) === '[1]',
+    JSON.stringify(moved(solo, 'ArrowUp')));
+
+  /* --- R HANDS WASD OVER, U HANDS THE ARROWS OVER --- */
+  /* CAPTURED, NOT CALLED TWICE. `swapKeyset` ADVANCES the ring — putting it in
+     the failure message as well would pass the keyboard on again behind the
+     assertion's back, and every check after it would be reading a state no
+     press had produced. */
+  const toP3 = solo.swapKeyset(0);
+  ok('passing WASD names P3', toP3 === 2, `${toP3}`);
+  solo.update();
+  ok('...and now W moves P3 instead of P1',
+    JSON.stringify(moved(solo, 'KeyW')) === '[2]', JSON.stringify(moved(solo, 'KeyW')));
+  /* HER SISTER ON THE ARROWS IS UNAFFECTED. Two independent rings, which is
+     why each hand gets its own key rather than one key swapping both. */
+  ok('...while the arrows still move P2',
+    JSON.stringify(moved(solo, 'ArrowUp')) === '[1]',
+    JSON.stringify(moved(solo, 'ArrowUp')));
+  ok('pressing it again gives WASD back to P1', solo.swapKeyset(0) === 0);
+  solo.update();
+  ok('...and W moves P1 again', JSON.stringify(moved(solo, 'KeyW')) === '[0]',
+    JSON.stringify(moved(solo, 'KeyW')));
+  ok('the arrows pass to P4 on their own key', solo.swapKeyset(1) === 3);
+  solo.update();
+  ok('...and P2 goes quiet while P4 has them',
+    JSON.stringify(moved(solo, 'ArrowUp')) === '[3]',
+    JSON.stringify(moved(solo, 'ArrowUp')));
+  solo.swapKeyset(1);
+  solo.update();
+
+  /* A KITTEN WAITING HER TURN REPORTS NO DEVICE, AND THAT IS LOAD-BEARING.
+     `Game`'s Escape handler hands the pause menu to the lowest slot whose
+     source is 'keyboard'; a waiting slot that claimed to be on one would take
+     the cursor and then be unable to move it. */
+  solo.swapKeyset(0);
+  solo.update();
+  ok('a kitten waiting for the keyboard drives nothing',
+    solo.players[0].source === 'none', solo.players[0].source);
+  ok('...and the one holding it is the keyboard player',
+    solo.players[2].source === 'keyboard', solo.players[2].source);
+  /* ...BUT HER PROMPTS STILL NAME HER KEYS. She is waiting, not deviceless:
+     a badge over her head reading nothing at all would say the game had lost
+     her controls rather than that her sister has them. */
+  ok('...and her button prompts still name her own keys',
+    solo.promptFor(0, 'attack') === 'F' && solo.promptFor(2, 'attack') === 'F',
+    `${solo.promptFor(0, 'attack')} / ${solo.promptFor(2, 'attack')}`);
+  ok('...and describe says which of them is playing',
+    solo.describe()[0] === 'P1: WASD (waiting)'
+    && solo.describe()[2] === 'P3: WASD (playing)', JSON.stringify(solo.describe()));
+  solo.swapKeyset(0);
+  solo.update();
+
+  /* --- THE KITTEN WHO JUST JOINED TAKES THE KEYBOARD SHE LANDED ON ---
+     FOUND BY PLAYING IT, and it is the difference between the feature working
+     and appearing to hang. The character card a join puts up is driven by HER
+     slot's pad state, and a slot waiting its turn at a shared keyboard reads
+     nothing — so pressing ENTER produced a card that could not be answered
+     until you happened to press `R`.
+
+     IT RE-DEALS BEFORE IT LOOKS, which is the half that has to be checked here:
+     `Game._joinPlayer` grows the party and calls this in the same breath, one
+     frame before `update` next runs, so the bindings still describe the smaller
+     party and the joining slot is holding nothing yet. The sequence below is
+     exactly that — `slots` moved, no `update()` — and a version that trusted
+     the stale bindings silently does nothing. */
+  const late = drive([]);
+  late.forceSeats = true;
+  late.slots = 2; late.update();
+  ok('before she joins, WASD is P1\'s alone',
+    JSON.stringify(late.keysetShare(0)) === '[0]', JSON.stringify(late.keysetShare(0)));
+  late.slots = 3;                          // the party grew; no update() yet
+  ok('the joining kitten is handed WASD from a stale binding table',
+    late.handKeyboardTo(2) === 0, `${late.handKeyboardTo(2)}`);
+  ok('...and she really is the one driving it', late.keysetOwner(0) === 2,
+    `${late.keysetOwner(0)}`);
+  late.update();
+  ok('...still, after the next frame re-deals', late.keysetOwner(0) === 2,
+    `${late.keysetOwner(0)}`);
+  ok('...and W moves her and not her sister',
+    JSON.stringify(moved(late, 'KeyW')) === '[2]', JSON.stringify(moved(late, 'KeyW')));
+  /* AND IT REFUSES QUIETLY FOR A SLOT THAT IS NOT SHARING. The join path calls
+     this for every shadow join; a real free set is claimed instead and must not
+     be disturbed by a stray hand-over. */
+  const solo2 = drive([]);
+  solo2.slots = 2; solo2.update();
+  ok('handing over is a no-op when nobody is sharing',
+    solo2.handKeyboardTo(1) === -1 && solo2.keysetOwner(1) === 1);
+
+  /* --- ONE CONTROLLER: THE PAD TAKES P1 AND WASD DOUBLES UP --- */
+  const one = drive([mkPad(0)]);
+  one.forceSeats = true;
+  one.slots = 4; one.update();
+  ok('1 controller: P1 pad, P2 WASD, P3 Arrows, P4 WASD',
+    layout(one, 4) === 'pad WASD Arrows WASD', layout(one, 4));
+  ok('...so the shared set is WASD, between P2 and P4',
+    JSON.stringify(one.keysetShare(0)) === '[1,3]', JSON.stringify(one.keysetShare(0)));
+  ok('...and P3 has the arrows to herself',
+    JSON.stringify(one.keysetShare(1)) === '[2]', JSON.stringify(one.keysetShare(1)));
+  ok('...W moves P2 until it is passed on',
+    JSON.stringify(moved(one, 'KeyW')) === '[1]', JSON.stringify(moved(one, 'KeyW')));
+  ok('...and R passes it to P4', one.swapKeyset(0) === 3);
+  one.update();
+  ok('...who then moves on W', JSON.stringify(moved(one, 'KeyW')) === '[3]',
+    JSON.stringify(moved(one, 'KeyW')));
+  /* AND THE ARROWS CANNOT BE PASSED, because nobody is sharing them. The
+     caller has to say so — a key that silently does nothing reads as broken. */
+  ok('...while U refuses, because the arrows are P3\'s alone',
+    one.swapKeyset(1) === -1, `${one.swapKeyset(1)}`);
+
+  /* --- TWO CONTROLLERS: THE FEATURE TURNS ITSELF OFF --- */
+  /* NOT BY A RULE SAYING SO. `_shadowPass` only fills slots that came out of
+     the ordinary dealing with nothing, and with two pads there are none — so
+     plugging the second controller in makes the sharing unnecessary rather than
+     forbidden, and there is no second code path for "the real thing". */
+  const two = drive([mkPad(0), mkPad(1)]);
+  two.forceSeats = true;
+  two.slots = 4; two.update();
+  ok('2 controllers: the normal four-player dealing, toggle or no toggle',
+    layout(two, 4) === 'pad pad WASD Arrows', layout(two, 4));
+  ok('...with nothing shared', two.keysetShare(0).length === 1
+    && two.keysetShare(1).length === 1);
+  ok('...so both hand-over keys refuse',
+    two.swapKeyset(0) === -1 && two.swapKeyset(1) === -1);
+  ok('...and it is byte-identical to the same party with it off', (() => {
+    const off = drive([mkPad(0), mkPad(1)]);
+    off.slots = 4; off.update();
+    return JSON.stringify(off.bindings) === JSON.stringify(two.bindings);
+  })());
+
+  /* --- ENTER IS STILL THE WAY IN, AND IT SAYS SO --- */
+  const press = (im, code) => {
+    im.keys.clear(); im.update();
+    im.keys.add(code); im.update();
+    const c = im.pendingJoin();
+    im.keys.clear();
+    return c;
+  };
+  const grow = drive([]);
+  grow.forceSeats = true;
+  grow.slots = 2; grow.update();
+  ok('with both sets taken, ENTER is still offered',
+    grow.joinHint() === 'ENTER', `${grow.joinHint()}`);
+  const third = press(grow, 'Enter');
+  ok('...and it seats a third kitten on a shared set',
+    third?.shadow === true && third.pad === null, JSON.stringify(third));
+  grow.slots = 3; grow.update();
+  const fourth = press(grow, 'Enter');
+  ok('...and a fourth on the next press', fourth?.shadow === true,
+    JSON.stringify(fourth));
+  grow.slots = 4; grow.update();
+  ok('...and then goes quiet, because four is four',
+    grow.joinHint() === null && press(grow, 'Enter') === null,
+    `${grow.joinHint()}`);
+
+  /* A REAL FREE SET IS STILL DEALT AS A REAL SET, not as a shadow — the
+     distinction is what `Game._joinPlayer` reads to decide whether to CLAIM the
+     device, and a claimed shadow would freeze the arrangement she joined under
+     so that plugging a pad in later left her sharing with nobody. */
+  const spare = drive([mkPad(0), mkPad(1)]);
+  spare.forceSeats = true;
+  spare.slots = 2; spare.update();
+  ok('a genuinely free keyboard set is not a shadow',
+    press(spare, 'Enter')?.shadow === undefined,
+    JSON.stringify(press(spare, 'Enter')));
+
+  /* HOLDING ENTER STILL SEATS ONE, not one per frame. The shadow branch shares
+     the keyboard's join latch with the ordinary one rather than adding a second
+     — which is the bug the single `'kb'` latch was introduced to fix. */
+  const held = drive([]);
+  held.forceSeats = true;
+  held.slots = 2;
+  held.keys.clear(); held.update();
+  held.keys.add('Enter'); held.update();
+  const got = held.pendingJoin();
+  held.slots = 3; held.update();
+  ok('holding ENTER seats one extra kitten, not two',
+    got?.shadow === true && held.pendingJoin() === null,
+    `${JSON.stringify(got)} then ${JSON.stringify(held.pendingJoin())}`);
+
+  /* --- TURNING IT OFF HAS TO BE ABLE TO SHRINK THE PARTY --- */
+  /* `Game._trimPartyToDevices` sends home any kitten the machine can no longer
+     drive, and it asks `seatable`. If the count did not come back down, four
+     cats would stay in the world with two of them unmovable. */
+  const back = drive([]);
+  back.forceSeats = true;
+  back.slots = 4; back.update();
+  ok('seatable is four while it is on', back.seatable === 4, `${back.seatable}`);
+  back.forceSeats = false;
+  back.update();
+  ok('...and drops back to two the moment it is off', back.seatable === 2,
+    `${back.seatable}`);
+  ok('...leaving the extra slots holding nothing again',
+    layout(back, 4) === 'WASD Arrows - -', layout(back, 4));
+
+  /* --- THREE ON ONE SET: THE RING IS NOT ALWAYS TWO --- */
+  /* On a tablet the touch pad owns WASD (`_freeKeysets`), so the arrows can be
+     the only set left and three slots can want it. A boolean "swapped" flag
+     would make the third kitten unreachable; the turn counter cycles. */
+  const tab = drive([]);
+  tab.attachTouch({ read: () => ({ ax: 0, ay: 0, cx: 0, cy: 0, dpad: [0, 0] }) });
+  tab.forceSeats = true;
+  tab.slots = 4; tab.update();
+  ok('touch plus force-spawn puts three kittens on the arrows',
+    JSON.stringify(tab.keysetShare(1)) === '[1,2,3]',
+    JSON.stringify(tab.keysetShare(1)));
+  ok('...and the touch player is not dealt a shared set either',
+    tab.bindings[0].touch === true && tab.bindings[0].keyset === null,
+    JSON.stringify(tab.bindings[0]));
+  ok('...and passing it cycles all three rather than flipping two',
+    tab.swapKeyset(1) === 2 && tab.swapKeyset(1) === 3 && tab.swapKeyset(1) === 1);
+
+  /* --- AND THE KEYS ARE REACHABLE AND DO NOT COLLIDE --- */
+  /* `R` and `U` break the digits-and-punctuation convention on purpose, because
+     for these two the POSITION is the feature: R sits above WASD and U beside
+     O K L ;, so each hand passes its own keyboard without reaching across. The
+     general "no debug key is also a player's key" check above covers the
+     collision; these pin that main.js really dispatches on them, so the keys
+     cannot be renamed in the panel and left dead in the handler. */
+  {
+    const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    for (const [code, what] of [
+      ['Backslash', 'the force-spawn toggle'],
+      ['KeyR', 'passing WASD along'],
+      ['KeyU', 'passing the arrows along'],
+    ]) {
+      ok(`${code} is dispatched for ${what}`,
+        new RegExp(`code === '${code}'`).test(main));
+      ok(`...and ${code} is in no keyset`,
+        !BOUND_KEYS.has(code));
+    }
+  }
+}
+
 /* A CONNECTED CONTROLLER SHOULD BE A PLAYER. Three pads plugged in used to give
    two kittens and one controller that did nothing: it was dealt a device slot
    correctly and then sat unbound because the party was two, so it read as

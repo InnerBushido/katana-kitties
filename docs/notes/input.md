@@ -904,3 +904,109 @@ things at once. It passes `backTo: { index, row }` now and `ProfileScreen.close`
 puts that card back where it was, on the row she left it on. `START` passes
 `{ back: false }`: that button is the way out of the whole screen, and landing
 on the card she opened it from is not out.
+
+---
+
+## Force-spawn: testing four players with two hands
+
+> I'd like to be able to play the game with 3 or 4 players for
+> testing/debugging purposes without needing controllers.
+
+Four kittens takes four devices, and almost everything the four-player pass
+added only *exists* at three and four: the quadrant split, the two-map rule,
+the leagues, the way the dealer's shelf and the orb count and the arena's
+seeding all scale off `partySize`. Reaching any of it meant borrowing three
+controllers, so in practice it was tested at two and hoped for at four — which
+is how debug `4` came to kill Frost and go unnoticed (see
+[four-players.md](four-players.md)).
+
+`` ` `` then `\` turns it on; **ENTER** then seats a third and fourth kitten
+with nothing plugged in at all.
+
+### The share is a QUEUE, not a third keyboard set
+
+There is no `KEYSETS[2]` and there must not be — the keyboard runs out of
+one-handed shapes long before it runs out of keys, and a third set would be
+four keys nobody's hand is over. So the two existing sets are shared, and the
+only rule is:
+
+> **A slot that came out of the ordinary dealing with NOTHING gets a keyboard
+> set somebody else already has.**
+
+That one sentence is the whole feature (`_shadowPass` in
+[core/input.js](../../src/core/input.js)), and everything else falls out of it:
+
+| devices | P1 | P2 | P3 | P4 |
+| --- | --- | --- | --- | --- |
+| keyboard only | WASD | Arrows | WASD\* | Arrows\* |
+| 1 controller | pad | WASD | Arrows | WASD\* |
+| 2 controllers | pad | pad | WASD | Arrows |
+
+**It turns itself off by being unnecessary.** With two controllers there are no
+empty slots, so nothing is shared — not because a rule forbids it but because
+the pass has nothing to fill. That is why there is no "real four-player mode"
+branch anywhere: the ordinary dealing is the only dealing, and this runs after
+it on what is left.
+
+**The shadows are never CLAIMED**, and that is the non-obvious half. A claim is
+keyed to a slot and wins over the dealer, so a claimed shadow would freeze the
+arrangement she joined under — plug a controller in afterwards and her set's
+primary moves while her claim does not, leaving her sharing with nobody. Left
+unclaimed, the entire keyboard is re-dealt every frame, which is what makes the
+one-controller row above come out right without a rule saying so.
+`_findJoin` marks the join `shadow: true` and `Game._joinPlayer` reads that as
+"do not claim".
+
+### Shared must not mean simultaneous
+
+Two slots reading one keyset is **two kittens moving as one** — the same failure
+`_padDevices` refuses for a split vJoy pad and `_freeKeysets` refuses for the
+touch player, arrived at from a third direction, and it would be at its worst
+here because you would be watching it happen in split screen.
+
+So a shared set drives exactly one of its slots. `keysetOwner(k)` says which,
+`read` gives the others nothing at all, and `swapKeyset(k)` passes the keyboard
+along. **`R` hands over WASD, `U` hands over the arrows** — each key sits by the
+hand it switches (R is the next key up from WASD, U the next key left of
+`O K L ;`), so neither hand reaches across the desk, which is the argument the
+two keysets are laid out on in the first place.
+
+It is a **counter, not a boolean**, because the ring is not always two: on a
+tablet the touch pad owns WASD, so the arrows can be the only set left and three
+slots can want it. `% share.length` is the difference between a control that
+cycles and one that appears dead. The count is deliberately not reset when the
+share changes — a player leaving shortens the ring, the modulo re-reads it, and
+whoever is left gets the keyboard back rather than nobody having it.
+
+### A kitten waiting her turn reports NO device
+
+`PadState.source` answers "what is driving this slot **this frame**", so a
+waiting slot reports `'none'` rather than `'keyboard'`. That is load-bearing
+rather than pedantic: `Game`'s Escape handler hands the pause menu to the lowest
+slot whose source is `'keyboard'`, and a slot that claimed to be on a keyboard it
+cannot currently press would take the cursor and then be unable to move it.
+
+Her **binding** still names her set, so `promptFor` goes on drawing her own keys
+over her head and `describe` lists her — marked `(waiting)` against the other
+one's `(playing)`, because "P1: WASD  P3: WASD" is true and reads as exactly the
+bug this feature is most likely to be mistaken for.
+
+Her score badge dims too (`Game._markKeyboardOwners`), on the rebuild and on the
+swap and never per frame — halfway through a four-player test the thing you need
+to know is which of the four cats your hands are on right now, and the badge is
+already what you look at to find your colour.
+
+### Turning it off sends them home
+
+`seatable` returns `MAX_SLOTS` while the toggle is on, which is what lifts every
+refusal — the join key, `_autoSeat`, `_joinPlayer`'s toast all ask that one
+number. Turning it off has to put the number back **and** shrink the party, or
+four cats stay in the world with two of them unmovable. It goes through
+`_trimPartyToDevices` → `_leavePlayer`, the same path that already puts a
+departing kitten's orbs back into the world and sends her animals home; doing it
+by hand would be a second, worse copy of a rule that exists because dropping a
+player wrong loses something.
+
+`pad-check` pins all of it — including that the two-player dealing with the
+toggle off is byte-identical to what it was, which is rule 5 asked of a debug
+feature.
