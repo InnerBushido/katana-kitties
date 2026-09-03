@@ -88,8 +88,8 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 1967 checks: world, dragons, clans, sprites, tournament, consent, balance
-node tools/pad-check.mjs      # 343 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
+node tools/world-check.mjs    # 1990 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/pad-check.mjs      # 354 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
                               #   in this file AND in the published page's source
@@ -230,7 +230,7 @@ tappable**, so the whole debug set works on a phone.
 | `M` `Z` | maths overlay · map zoom |
 | `-` `=` `0` | scene viewer: previous · next · play this scene |
 | **`\`** | **force-spawn** — ENTER then seats a third and fourth kitten on the keyboard alone |
-| `R` `U` | pass WASD · pass the arrows, to the other kitten sharing that set |
+| `R` `U` | step WASD · step the arrows round the kittens sharing that set — her, her sister, then **both at once** |
 
 ### Testing four players by yourself
 
@@ -239,9 +239,16 @@ three and four — the quadrant split, the two-map rule, the leagues, the way th
 shelf and the orb count scale — got tested at two and hoped for at four.
 
 Press **`` ` ``** then **`\`**, then **ENTER** twice. Each keyboard set is now
-shared by two kittens, and **only one of them is live at a time** — `R` hands
-WASD to the other one, `U` does the same for the arrows, and the waiting
-kitten's score badge dims so you can see whose hands you are on.
+shared by two kittens, and `R` (WASD) and `U` (the arrows) walk a **ring of
+three**: her, her sister, then **both of them at once**. The waiting kitten's
+score badge dims so you can see whose hands you are on — and on the "both" stop
+nothing dims, which is how you tell it apart from a desynced split screen.
+
+The "both" stop is there because walking the party across the island to set up a
+four-way round is otherwise four separate walks. It is the one place in the game
+where two cats move as one, it is only ever reached by pressing the key for it,
+and with the toggle off it does not exist at all — nothing is shared then, so
+the ring is one stop long.
 
 It **turns itself off by being unnecessary**: the share only ever fills a slot
 that ran out of real devices, so plugging a second controller in gives the
@@ -255,7 +262,7 @@ the world, animals home — rather than leaving cats nobody can move.
 | 1 controller | pad | WASD | Arrows | WASD\* |
 | 2 controllers | pad | pad | WASD | Arrows |
 
-\* shares the set above it; `R` / `U` says which of the two is playing.
+\* shares the set above it; `R` / `U` says which of the two is playing, or both.
 
 **If somebody says it lags, press `1` before changing anything.** The game is
 **fill-bound** — frame time is a straight line in the size of the drawing buffer
@@ -466,7 +473,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 1967
+the check that would have caught it.** That is why `world-check` is 1990
 assertions.
 
 **And a change a new developer would need to know about gets a line in this

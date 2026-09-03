@@ -103,6 +103,31 @@ const ok = (label, cond, extra = '') => {
   line(label, (cond ? 'ok   ' : 'FAIL ') + extra);
 };
 
+/**
+ * One Help topic's markup, by the text of its heading — CLOSING TAGS COUNTED,
+ * not the first one found.
+ *
+ * Four blocks below used to do this as `slice(at, indexOf('</details>', at))`,
+ * which was right for as long as the accordion was flat. It is not: "Moving &
+ * fighting" and "The arena" carry four sub-topics each now, so the naive cut
+ * stops at the end of the FIRST sub-card and every check that reads further
+ * silently passes on nothing. That is the worst shape a check can fail in —
+ * green, and no longer looking at the thing it names — so the depth count lives
+ * here once rather than being got right four times.
+ */
+const helpTopic = (html, title) => {
+  const at = html.indexOf(`<span class="ht-title">${title}</span>`);
+  if (at < 0) return '';
+  let depth = 1;                        // we are already inside this topic's <details>
+  const re = /<details\b|<\/details>/g;
+  re.lastIndex = at;
+  for (let m = re.exec(html); m; m = re.exec(html)) {
+    depth += m[0] === '</details>' ? -1 : 1;
+    if (depth === 0) return html.slice(at, m.index);
+  }
+  return html.slice(at);
+};
+
 /* Clan shrines carry world-space text labels drawn onto a canvas, and Node has
    no DOM. Stand up just enough of one — nothing here is ever rasterised. This
    has to be assigned before the World is BUILT, not before the imports: ESM
@@ -1374,10 +1399,7 @@ console.log('\n--- the four "Moving & fighting" clips ---');
      longer shows. A check about what a nine-year-old READS must not be able to
      see the reasons written down for the next developer. */
   const readable = (one) => one.replace(/<!--[\s\S]*?-->/g, '');
-  const topic = (title) => {
-    const at = html.indexOf(`<span class="ht-title">${title}</span>`);
-    return at < 0 ? '' : html.slice(at, html.indexOf('</details>', at));
-  };
+  const topic = (title) => helpTopic(html, title);
   const sec = topic('Moving &amp; fighting');
   ok('Help still has a "Moving & fighting" topic', !!sec);
   const dragonSec = topic('Flying a dragon');
@@ -1399,9 +1421,14 @@ console.log('\n--- the four "Moving & fighting" clips ---');
      `move-pad` are one run filmed twice, so they have to stay together and
      side by side or the comparison they exist for is gone. The other two each
      stand alone in their own topic, at full width. */
+  /* COUNTED ON THE LEAD, NOT ON THE WHOLE TOPIC. "Moving & fighting" carries
+     the other three as sub-cards now, so its markup contains all four clips;
+     what this check has always been about is what she sees the moment she opens
+     it, which is everything before the fold. */
+  const lead = (one) => (one.includes('class="ht-subs"') ? one.slice(0, one.indexOf('class="ht-subs"')) : one);
   ok('the first topic carries exactly the two device clips',
-    (sec.match(/data-help-gif=/g) || []).length === 2,
-    `${(sec.match(/data-help-gif=/g) || []).length}`);
+    (lead(sec).match(/data-help-gif=/g) || []).length === 2,
+    `${(lead(sec).match(/data-help-gif=/g) || []).length}`);
   for (const [t, one] of [['Flying a dragon', dragonSec], ['Fighting in the arena', arenaSec]]) {
     ok(`"${t}" leads on exactly one clip, at full width`,
       (one.match(/data-help-gif=/g) || []).length === 1
@@ -1596,7 +1623,7 @@ console.log('\n--- which button belongs to which device ---');
      That exact failure is why `PROMPTS.playstation` became shapes. */
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const at = html.indexOf('<span class="ht-title">Moving &amp; fighting</span>');
-  const sec = at < 0 ? '' : html.slice(at, html.indexOf('</details>', at));
+  const sec = helpTopic(html, 'Moving &amp; fighting');
   ok('the Moving & fighting topic still exists', at > 0);
 
   const km = sec.slice(sec.indexOf('<div class="keymap">'), sec.indexOf('</div>', sec.indexOf('</table>', sec.lastIndexOf('<table>'))));
@@ -1687,8 +1714,7 @@ console.log('\n--- which button belongs to which device ---');
      dragon and arena topics shows the same shapes as a picture. Either would
      do; both is the point, so this asks the whole panel rather than one cut of
      it. */
-  const gtk = html.indexOf('<span class="ht-title">Good to know</span>');
-  const note = gtk < 0 ? '' : html.slice(gtk, html.indexOf('</details>', gtk));
+  const note = helpTopic(html, 'Good to know');
   ok('...the note still names the PlayStation shapes',
     ['✕', '□', '△'].every((glyph) => note.includes(glyph)));
   ok('...and the PlayStation sprint trigger, which the table cannot show',
@@ -1711,7 +1737,7 @@ console.log('\n--- the "On a phone" clip, and the gesture it exists for ---');
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const start = html.indexOf('<span class="ht-title">On a phone</span>');
   ok('Help still has an "On a phone" topic', start > 0);
-  const sec = html.slice(start, html.indexOf('</details>', start));
+  const sec = helpTopic(html, 'On a phone');
   const at = sec.indexOf('/help/phone.gif');
   ok('...and it leads on the phone clip', at > 0);
   const tag = at < 0 ? '' : sec.slice(sec.lastIndexOf('<img', at), sec.indexOf('>', at) + 1);
@@ -1778,7 +1804,7 @@ console.log('\n--- every Help clip is the size its markup claims ---');
      `public/` ships forever and is invisible on the page. */
   const at = html.indexOf('<span class="ht-title">Dragon balls &amp; Ryuuseki</span>');
   ok('Help still has a "Dragon balls & Ryuuseki" topic', at > 0);
-  const sec = at < 0 ? '' : html.slice(at, html.indexOf('</details>', at));
+  const sec = helpTopic(html, 'Dragon balls &amp; Ryuuseki');
   ok('...and it leads on the engine capture, not on a still',
     sec.includes('data-help-gif="/help/ryuuseki.gif"') && !sec.includes('ryuuseki.jpg'));
 }
@@ -8719,10 +8745,18 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
   ok('the help panel is a vertical accordion, not a scroll',
     /data-nav="vertical"/.test(help) && /data-nav-start="first"/.test(help));
 
-  const topics = [...help.matchAll(/<details class="help-card"/g)].length;
-  ok('...with all its topic cards', topics >= 11, `(${topics})`);
-  ok('...opened one at a time (every card shares name="help")',
-    (help.match(/name="help"/g) || []).length === topics);
+  /* READ OFF THE TAGS, NOT OFF THE FILE. This counted every `name="help"` in
+     the panel's source and compared it to the card count, which passed for as
+     long as the only place that string appeared was a tag — and then failed the
+     moment a COMMENT explained why the sub-cards do not use it. A check a
+     comment can break teaches the next person to delete the comment. */
+  const cards = [...help.matchAll(/<details class="([^"]*)" name="([^"]*)">/g)]
+    .map((m) => ({ cls: m[1], name: m[2] }));
+  const topics = cards.filter((c) => c.cls === 'help-card').length;
+  ok('...with all its topic cards', topics >= 8, `(${topics})`);
+  ok('...opened one at a time (every top-level card shares name="help")',
+    cards.filter((c) => c.name === 'help').length === topics,
+    `${cards.filter((c) => c.name === 'help').length} of ${topics}`);
 
   /* The sections Richard listed, by their summary text. Named individually so
      a check tells you WHICH one went missing, not just that the count slipped. */
@@ -8731,6 +8765,74 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
     'Special abilities', 'Trading', 'Dojo', 'Saving your progress']) {
     ok(`...including "${t}"`, help.includes(t));
   }
+
+  /* --- TWO SUBJECTS, EIGHT CARDS FOLDED INTO THEM ---
+     The list had grown to fifteen cards and a reader looking for the arena had
+     to walk past every one of them — four screens of scrolling on a phone
+     before a single picture. Eight of them are really two subjects, so four
+     fold under "Moving & fighting" and four under "The arena". NOTHING IS
+     HIDDEN by it: each is still a card, one tap further in, which is why the
+     names above are checked against the whole panel and not against the top
+     level. What is pinned here is the SHAPE — that the fold happened, that the
+     eight really are inside their parents, and that they cannot close them. */
+  const parentOf = (title) => {
+    for (const p of ['Moving &amp; fighting', 'The arena']) {
+      if (helpTopic(help, p).includes(`<span class="ht-title">${title}</span>`)) return p;
+    }
+    return null;
+  };
+  const MOVING = 'Moving &amp; fighting';
+  for (const [title, parent] of [
+    ['Every button', MOVING],
+    ['Flying a dragon', MOVING],
+    ['Fighting in the arena', MOVING],
+    ['Good to know', MOVING],
+    ['How the arena works', 'The arena'],
+    ['Battle Feast &mdash; eating'.replace('&mdash;', '—'), 'The arena'],
+    ['Power-up orbs', 'The arena'],
+    ['Special abilities', 'The arena'],
+    ["Dealer's Stall &amp; Trading", 'The arena'],
+  ]) {
+    const plain = (s) => s.replace(/&amp;/g, '&');
+    ok(`..."${plain(title)}" is inside "${plain(parent)}"`,
+      parentOf(title) === parent, `${parentOf(title)}`);
+  }
+  /* A SUB-CARD IN THE PARENT'S OWN GROUP WOULD CLOSE THE PARENT. The exclusive
+     accordion group is matched by `name` across the whole DOCUMENT, not within
+     a parent — so a sub-card carrying `name="help"` shuts the card it lives
+     inside the instant it opens, and the topic appears to vanish under the
+     finger that tapped it. Two groups, one per parent. */
+  const subs = [...help.matchAll(/<details class="help-card help-sub" name="([^"]+)">/g)]
+    .map((m) => m[1]);
+  ok('...and every sub-card is in its parent\'s own accordion group',
+    subs.length === 9 && subs.every((n) => n === 'help-move' || n === 'help-arena'),
+    `${subs.length}: ${[...new Set(subs)].join(', ')}`);
+  ok('...never in the top-level group, which would close its parent',
+    !subs.includes('help'));
+  /* THE CLIPS AND THE PICTURE STAY OUTSIDE THE FOLD. A reader who opens a topic
+     and is shown four more closed headings has been given a menu where she
+     asked for an answer — so each parent still leads on its own pictures,
+     before the first sub-card. */
+  for (const [parent, mark] of [['Moving &amp; fighting', 'move-grid'],
+    ['The arena', 'arena-shot']]) {
+    const body = helpTopic(help, parent);
+    ok(`..."${parent.replace('&amp;', '&')}" still shows its own pictures first`,
+      body.indexOf(mark) > 0 && body.indexOf(mark) < body.indexOf('ht-subs'),
+      `${body.indexOf(mark)} vs ${body.indexOf('ht-subs')}`);
+  }
+  /* AND THE ARENA SHOT IS CAPPED, which is the half of that bargain that broke.
+     At full panel width `arena.jpg` is ~400px tall and filled the card on its
+     own: opening "The arena" showed the arena and nothing else, with the four
+     sub-cards below the fold on a phone. The cap only works because `width` is
+     released as well — `.help-shot img` pins it at 100%, and a `max-height`
+     against a pinned width squashes the picture instead of shrinking it. */
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const shot = css.slice(css.indexOf('.arena-shot img'), css.indexOf('}', css.indexOf('.arena-shot img')));
+  ok('...and the arena shot is capped to about the height of the clips',
+    /height:\s*2[0-4]\d px|height:\s*2[0-4]\dpx/.test(shot), shot.trim());
+  ok('...with its width released, or the cap would squash it',
+    /width:\s*auto/.test(shot), shot.trim());
+  ok('...after the rule it has to beat', css.indexOf('.help-shot img') < css.indexOf('.arena-shot img'));
 
   /* --- WHO PLAYER ONE IS, ON A PHONE ---
      The setting was already there and did the right thing; what was missing was
@@ -10184,6 +10286,26 @@ console.log('\n--- Mr. Satan loses his temper ---');
     ok(`...and force-spawn's ${c}`, handled.includes(c) && listed.has(c),
       `${handled.includes(c) ? '' : 'unhandled '}${listed.has(c) ? '' : 'unlisted'}`);
   }
+  /* --- AND THE HAND-OVER TOAST NAMES EVERY KITTEN IT JUST HANDED TO ---
+     `R` and `U` walk a ring of three now — her, her sister, then BOTH AT ONCE —
+     and the last stop is the one you can be standing on without knowing it:
+     two cats in different panes walking identically looks exactly like the
+     split screen having desynced, which this project has actually had. So the
+     toast is built from the whole list `swapKeyset` returns rather than from
+     one slot out of it, and a refusal is `null` rather than a slot number that
+     `P${to + 1}` would happily have rendered as "P0". Rule 6. */
+  const passAt = msrc.indexOf('_passKeyboard(keyset) {');
+  const passBody = msrc.slice(passAt, passAt + 600);
+  ok('the hand-over key was found', passAt > 0);
+  ok('...and its toast names every kitten the set now drives',
+    /to\.map\(\(i\) => `P\$\{i \+ 1\}`\)\.join\(/.test(passBody), passBody.slice(0, 120));
+  ok('...and says so when more than one of them answers',
+    /to\.length > 1 \? ' together'/.test(passBody));
+  ok('...and a refusal is a refusal, not slot zero',
+    /if \(!to\) \{/.test(passBody)
+    && /swapKeyset\(k\) \{[\s\S]{0,120}?return null;/
+      .test(readFileSync(new URL('../src/core/input.js', import.meta.url), 'utf8')),
+    passBody.slice(passBody.indexOf('const to'), passBody.indexOf('const to') + 90));
 
   /* --- ONE CHARACTER CARD AT A TIME, ON THE JOIN PATH AS WELL ---
      `this.picking` is a SINGLE card, so seating somebody while the kitten
@@ -11075,6 +11197,59 @@ console.log('\n--- one press is not enough, and one player drives ---');
   nav4.update(0.016);
   ok('...and a frame that neither confirms nor backs spends nothing',
     idle.spent.length === 0 && idle.pressed('attack') === true);
+
+  /* --- AND THE CURSOR DOES NOT LAND INSIDE A SHUT TOPIC ---
+     `offsetParent !== null` was the whole visibility test, and it is not enough
+     for a `<details>`: browsers hide a closed disclosure's contents with
+     `content-visibility: hidden`, not `display: none`, so the skipped subtree
+     still has a layout box and every control inside it reports a live
+     `offsetParent`. Flat cards had nothing inside them to land on; the moment
+     Help grew sub-topics the cursor started stopping on eight headings a
+     player could not see. Found by asking `items()` what it returned with
+     "Moving & fighting" shut, and asserted the same way — DRIVEN, not read,
+     because a source check for the word `closest` would pass a version that
+     called it on the wrong element.
+
+     A `<summary>` IS STILL REACHABLE INSIDE ITS OWN SHUT CARD — that is the
+     whole accordion — so the two cases have to be told apart, and both are
+     here: a shut top-level topic keeps its own header and loses its children. */
+  {
+    const kid = (tag, cls, parent) => {
+      const e = el(tag, cls);
+      e.parentElement = parent ?? null;
+      e.hasAttribute = (a) => !!e._attrs?.[a];
+      e.closest = (q) => {
+        /* Enough of `closest` for the one query `items` asks: walk up looking
+           for a <details> WITHOUT [open]. */
+        for (let n = e; n; n = n.parentElement) {
+          if (n.tagName === 'DETAILS' && !n.open && q.includes('not([open])')) return n;
+        }
+        return null;
+      };
+      return e;
+    };
+    const card = (open) => { const d = kid('DETAILS', ['help-card']); d.open = open; return d; };
+    const shut = card(false);
+    const openCard = card(true);
+    const subsOf = (parent) => { const box = kid('DIV', ['ht-subs'], parent); return box; };
+    const headOf = (parent) => kid('SUMMARY', ['help-topic'], parent);
+    const shutHead = headOf(shut);
+    const openHead = headOf(openCard);
+    const buried = headOf(kid('DETAILS', ['help-card', 'help-sub'], subsOf(shut)));
+    const shown = headOf(kid('DETAILS', ['help-card', 'help-sub'], subsOf(openCard)));
+    const helpPanel = {
+      id: 'panel-help',
+      dataset: { nav: 'vertical' },
+      classList: { contains: () => false },
+      querySelectorAll: () => [shutHead, buried, openHead, shown],
+      querySelector: () => null,
+    };
+    const got = new MenuNav(navGame([fakePad(), fakePad()])).items(helpPanel);
+    ok('a shut topic still offers its own header to the pad', got.includes(shutHead));
+    ok('...and an open one offers its sub-topics', got.includes(shown));
+    ok('...but a sub-topic inside a shut one is not on the cursor',
+      !got.includes(buried), `${got.length} items`);
+  }
 
   if (!hadDoc) delete globalThis.document;
 }

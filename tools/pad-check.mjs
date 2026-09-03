@@ -836,13 +836,13 @@ console.log('\n--- force-spawn: four kittens on one keyboard ---');
     JSON.stringify(moved(solo, 'ArrowUp')) === '[1]',
     JSON.stringify(moved(solo, 'ArrowUp')));
 
-  /* --- R HANDS WASD OVER, U HANDS THE ARROWS OVER --- */
+  /* --- R AND U WALK A RING OF THREE: HER, HER SISTER, THEN BOTH --- */
   /* CAPTURED, NOT CALLED TWICE. `swapKeyset` ADVANCES the ring — putting it in
      the failure message as well would pass the keyboard on again behind the
      assertion's back, and every check after it would be reading a state no
      press had produced. */
   const toP3 = solo.swapKeyset(0);
-  ok('passing WASD names P3', toP3 === 2, `${toP3}`);
+  ok('passing WASD names P3', JSON.stringify(toP3) === '[2]', JSON.stringify(toP3));
   solo.update();
   ok('...and now W moves P3 instead of P1',
     JSON.stringify(moved(solo, 'KeyW')) === '[2]', JSON.stringify(moved(solo, 'KeyW')));
@@ -851,16 +851,48 @@ console.log('\n--- force-spawn: four kittens on one keyboard ---');
   ok('...while the arrows still move P2',
     JSON.stringify(moved(solo, 'ArrowUp')) === '[1]',
     JSON.stringify(moved(solo, 'ArrowUp')));
-  ok('pressing it again gives WASD back to P1', solo.swapKeyset(0) === 0);
+
+  /* THE THIRD STOP IS BOTH OF THEM AT ONCE, and this is the one check the
+     whole extra stop exists for. Everywhere else in this file two kittens
+     answering one key is the FAILURE — see `_padDevices`, `_freeKeysets` — so
+     the assertion has to be explicit that here it is the asked-for behaviour
+     and that it takes a second press to reach it. */
+  const toBoth = solo.swapKeyset(0);
+  ok('a second press puts BOTH kittens on WASD',
+    JSON.stringify(toBoth) === '[0,2]', JSON.stringify(toBoth));
   solo.update();
-  ok('...and W moves P1 again', JSON.stringify(moved(solo, 'KeyW')) === '[0]',
+  ok('...and W really moves the two of them together',
+    JSON.stringify(moved(solo, 'KeyW')) === '[0,2]', JSON.stringify(moved(solo, 'KeyW')));
+  ok('...with both reading as keyboard players',
+    solo.players[0].source === 'keyboard' && solo.players[2].source === 'keyboard',
+    `${solo.players[0].source} / ${solo.players[2].source}`);
+  ok('...and describe calling both of them playing',
+    solo.describe()[0] === 'P1: WASD (playing)'
+    && solo.describe()[2] === 'P3: WASD (playing)', JSON.stringify(solo.describe()));
+  /* AND THE ARROWS ARE STILL ONE KITTEN. The rings are independent, so landing
+     on "both" with one hand must not drag the other hand's pair along. */
+  ok('...while the arrows are still just P2',
+    JSON.stringify(moved(solo, 'ArrowUp')) === '[1]',
+    JSON.stringify(moved(solo, 'ArrowUp')));
+
+  ok('a third press comes back round to P1', JSON.stringify(solo.swapKeyset(0)) === '[0]');
+  solo.update();
+  ok('...and W moves P1 alone again', JSON.stringify(moved(solo, 'KeyW')) === '[0]',
     JSON.stringify(moved(solo, 'KeyW')));
-  ok('the arrows pass to P4 on their own key', solo.swapKeyset(1) === 3);
+
+  ok('the arrows pass to P4 on their own key',
+    JSON.stringify(solo.swapKeyset(1)) === '[3]');
   solo.update();
   ok('...and P2 goes quiet while P4 has them',
     JSON.stringify(moved(solo, 'ArrowUp')) === '[3]',
     JSON.stringify(moved(solo, 'ArrowUp')));
-  solo.swapKeyset(1);
+  ok('...then both of them together on the next press',
+    JSON.stringify(solo.swapKeyset(1)) === '[1,3]');
+  solo.update();
+  ok('...which really moves P2 and P4 on one arrow',
+    JSON.stringify(moved(solo, 'ArrowUp')) === '[1,3]',
+    JSON.stringify(moved(solo, 'ArrowUp')));
+  solo.swapKeyset(1);                      // round to P2 again
   solo.update();
 
   /* A KITTEN WAITING HER TURN REPORTS NO DEVICE, AND THAT IS LOAD-BEARING.
@@ -882,8 +914,25 @@ console.log('\n--- force-spawn: four kittens on one keyboard ---');
   ok('...and describe says which of them is playing',
     solo.describe()[0] === 'P1: WASD (waiting)'
     && solo.describe()[2] === 'P3: WASD (playing)', JSON.stringify(solo.describe()));
-  solo.swapKeyset(0);
+  solo.swapKeyset(0); solo.swapKeyset(0);  // past "both", back round to P1
   solo.update();
+  ok('...and the ring really did come back to P1',
+    JSON.stringify(solo.keysetOwners(0)) === '[0]',
+    JSON.stringify(solo.keysetOwners(0)));
+
+  /* THE "BOTH" STOP IS UNREACHABLE WITH THE TOGGLE OFF, and that is rule 5
+     rather than an implementation detail. Nothing is ever shared then, so the
+     share is of one, the ring is one stop long, and no number of presses can
+     produce two kittens walking as one in the game the girls play. */
+  {
+    const plain = drive([]);
+    plain.slots = 2; plain.update();
+    ok('with force-spawn off the ring has no "both" to land on',
+      JSON.stringify(plain.keysetOwners(0)) === '[0]'
+      && plain.swapKeyset(0) === null
+      && JSON.stringify(plain.keysetOwners(0)) === '[0]',
+      JSON.stringify(plain.keysetOwners(0)));
+  }
 
   /* --- THE KITTEN WHO JUST JOINED TAKES THE KEYBOARD SHE LANDED ON ---
      FOUND BY PLAYING IT, and it is the difference between the feature working
@@ -906,11 +955,16 @@ console.log('\n--- force-spawn: four kittens on one keyboard ---');
   late.slots = 3;                          // the party grew; no update() yet
   ok('the joining kitten is handed WASD from a stale binding table',
     late.handKeyboardTo(2) === 0, `${late.handKeyboardTo(2)}`);
-  ok('...and she really is the one driving it', late.keysetOwner(0) === 2,
-    `${late.keysetOwner(0)}`);
+  /* AND SHE IS DRIVING IT ALONE, not landed on the "both" stop. A hand-over
+     that put the ring on "both" would look right — her card would answer — and
+     quietly move her sister with every step she took afterwards. */
+  ok('...and she really is the one driving it, on her own',
+    JSON.stringify(late.keysetOwners(0)) === '[2]',
+    JSON.stringify(late.keysetOwners(0)));
   late.update();
-  ok('...still, after the next frame re-deals', late.keysetOwner(0) === 2,
-    `${late.keysetOwner(0)}`);
+  ok('...still, after the next frame re-deals',
+    JSON.stringify(late.keysetOwners(0)) === '[2]',
+    JSON.stringify(late.keysetOwners(0)));
   ok('...and W moves her and not her sister',
     JSON.stringify(moved(late, 'KeyW')) === '[2]', JSON.stringify(moved(late, 'KeyW')));
   /* AND IT REFUSES QUIETLY FOR A SLOT THAT IS NOT SHARING. The join path calls
@@ -919,7 +973,7 @@ console.log('\n--- force-spawn: four kittens on one keyboard ---');
   const solo2 = drive([]);
   solo2.slots = 2; solo2.update();
   ok('handing over is a no-op when nobody is sharing',
-    solo2.handKeyboardTo(1) === -1 && solo2.keysetOwner(1) === 1);
+    solo2.handKeyboardTo(1) === -1 && solo2.keysetDrives(1, 1));
 
   /* --- ONE CONTROLLER: THE PAD TAKES P1 AND WASD DOUBLES UP --- */
   const one = drive([mkPad(0)]);
@@ -933,14 +987,14 @@ console.log('\n--- force-spawn: four kittens on one keyboard ---');
     JSON.stringify(one.keysetShare(1)) === '[2]', JSON.stringify(one.keysetShare(1)));
   ok('...W moves P2 until it is passed on',
     JSON.stringify(moved(one, 'KeyW')) === '[1]', JSON.stringify(moved(one, 'KeyW')));
-  ok('...and R passes it to P4', one.swapKeyset(0) === 3);
+  ok('...and R passes it to P4', JSON.stringify(one.swapKeyset(0)) === '[3]');
   one.update();
   ok('...who then moves on W', JSON.stringify(moved(one, 'KeyW')) === '[3]',
     JSON.stringify(moved(one, 'KeyW')));
   /* AND THE ARROWS CANNOT BE PASSED, because nobody is sharing them. The
      caller has to say so — a key that silently does nothing reads as broken. */
   ok('...while U refuses, because the arrows are P3\'s alone',
-    one.swapKeyset(1) === -1, `${one.swapKeyset(1)}`);
+    one.swapKeyset(1) === null, `${JSON.stringify(one.swapKeyset(1))}`);
 
   /* --- TWO CONTROLLERS: THE FEATURE TURNS ITSELF OFF --- */
   /* NOT BY A RULE SAYING SO. `_shadowPass` only fills slots that came out of
@@ -955,7 +1009,7 @@ console.log('\n--- force-spawn: four kittens on one keyboard ---');
   ok('...with nothing shared', two.keysetShare(0).length === 1
     && two.keysetShare(1).length === 1);
   ok('...so both hand-over keys refuse',
-    two.swapKeyset(0) === -1 && two.swapKeyset(1) === -1);
+    two.swapKeyset(0) === null && two.swapKeyset(1) === null);
   ok('...and it is byte-identical to the same party with it off', (() => {
     const off = drive([mkPad(0), mkPad(1)]);
     off.slots = 4; off.update();
@@ -1041,8 +1095,17 @@ console.log('\n--- force-spawn: four kittens on one keyboard ---');
   ok('...and the touch player is not dealt a shared set either',
     tab.bindings[0].touch === true && tab.bindings[0].keyset === null,
     JSON.stringify(tab.bindings[0]));
+  /* FOUR STOPS, NOT THREE — the ring is always one longer than the share, so a
+     three-way share ends on all three of them at once. A boolean "swapped"
+     flag would make the third kitten unreachable; a ring hard-coded at three
+     would skip her too. */
   ok('...and passing it cycles all three rather than flipping two',
-    tab.swapKeyset(1) === 2 && tab.swapKeyset(1) === 3 && tab.swapKeyset(1) === 1);
+    JSON.stringify(tab.swapKeyset(1)) === '[2]'
+    && JSON.stringify(tab.swapKeyset(1)) === '[3]');
+  ok('...then puts all three on the arrows together',
+    JSON.stringify(tab.swapKeyset(1)) === '[1,2,3]');
+  ok('...and comes back round to the first of them',
+    JSON.stringify(tab.swapKeyset(1)) === '[1]');
 
   /* --- AND THE KEYS ARE REACHABLE AND DO NOT COLLIDE --- */
   /* `R` and `U` break the digits-and-punctuation convention on purpose, because

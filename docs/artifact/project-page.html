@@ -540,9 +540,9 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 1967 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 1990 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
-node tools/pad-check.mjs      <span class="c"># 343 checks: controllers, keyboard sets,</span>
+node tools/pad-check.mjs      <span class="c"># 354 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
 npm run check                 <span class="c"># both of the above, in one line</span>
 npm run docs                  <span class="c"># this page's tables and PROJECT.md's, from the code</span>
@@ -670,7 +670,7 @@ git push origin alpha</code></pre>
       <tr><td><kbd>M</kbd><kbd>Z</kbd></td><td>Maths overlay · map zoom</td></tr>
       <tr><td><kbd>-</kbd><kbd>=</kbd><kbd>0</kbd></td><td>Scene viewer: previous · next · play this scene</td></tr>
       <tr><td><kbd class="hot">\</kbd></td><td><b>Force-spawn</b> — <kbd>ENTER</kbd> then seats a third and fourth kitten on the keyboard alone</td></tr>
-      <tr><td><kbd>R</kbd><kbd>U</kbd></td><td>Pass WASD · pass the arrows, to the other kitten sharing that set</td></tr>
+      <tr><td><kbd>R</kbd><kbd>U</kbd></td><td>Step WASD · step the arrows round the kittens sharing that set — her, her sister, then <b>both at once</b></td></tr>
     </tbody>
   </table></div>
 
@@ -680,9 +680,14 @@ git push origin alpha</code></pre>
       four — the quadrant split, the two-map rule, the leagues, the way the dealer's shelf and the
       orb count scale with the party — got tested at two and hoped for at four.</p>
     <p>Press <kbd>`</kbd> then <kbd>\</kbd>, then <kbd>ENTER</kbd> twice. Each keyboard set is now
-      shared by two kittens and <b>only one of them is live at a time</b>: <kbd>R</kbd> hands WASD to
-      the other one, <kbd>U</kbd> does the same for the arrows, and the waiting kitten's score badge
-      dims so you can see whose hands you are on.</p>
+      shared by two kittens, and <kbd>R</kbd> (WASD) and <kbd>U</kbd> (the arrows) walk a
+      <b>ring of three</b>: her, her sister, then <b>both of them at once</b>. The waiting kitten's
+      score badge dims so you can see whose hands you are on — and on the "both" stop nothing dims,
+      which is how you tell it apart from a desynced split screen.</p>
+    <p>The "both" stop is there because walking the party across the island to set up a four-way
+      round is otherwise four separate walks. It is the one place in the game where two cats move as
+      one, it is only ever reached by pressing the key for it, and with the toggle off it does not
+      exist at all — nothing is shared then, so the ring is one stop long.</p>
     <div class="tw"><table>
       <thead><tr><th>Devices</th><th>P1</th><th>P2</th><th>P3</th><th>P4</th></tr></thead>
       <tbody>
@@ -691,7 +696,8 @@ git push origin alpha</code></pre>
         <tr><td>2 controllers</td><td>pad</td><td>pad</td><td>WASD</td><td>Arrows</td></tr>
       </tbody>
     </table></div>
-    <p>* shares the set above it. It <b>turns itself off by being unnecessary</b>: the share only
+    <p>* shares the set above it; <kbd>R</kbd> / <kbd>U</kbd> says which of the two is playing, or
+      both. It <b>turns itself off by being unnecessary</b>: the share only
       ever fills a slot that ran out of real devices, so the second controller gives the ordinary
       four-player dealing with nothing shared and no second code path. Turning the toggle off sends
       the extra kittens home properly — orbs back into the world, animals home — rather than leaving
@@ -1049,7 +1055,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 1967 assertions and why almost none of them are about
+      is why <code>world-check</code> is 1990 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,

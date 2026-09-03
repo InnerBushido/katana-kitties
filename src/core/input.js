@@ -873,7 +873,7 @@ export class InputManager {
      *  dealing is bit-identical to the game the girls play. */
     this.forceSeats = false;
     /** keyset -> how many times it has been PASSED ON, i.e. how far round the
-     *  ring of slots sharing it the live one has moved. See `keysetOwner`. */
+     *  ring of slots sharing it the live one has moved. See `keysetOwners`. */
     this._kbTurn = {};
 
     /** How a vJoy device is read. It is the ONLY device this setting touches;
@@ -1611,12 +1611,14 @@ export class InputManager {
    * — so plugging the second controller in turns the sharing off by making it
    * unnecessary, and there is no second code path for "the real thing".
    *
-   * TWO SLOTS ON ONE KEYBOARD SET MUST NOT BE TWO KITTENS MOVING AS ONE. That
-   * is the failure `_padDevices` and `_freeKeysets` both exist to prevent, and
-   * it would be a worse bug here than anywhere else because you would be
-   * looking at it in split screen. So a shared set drives exactly ONE of its
-   * slots at a time — `keysetOwner` says which, `read` gives the others
-   * nothing at all, and `swapKeyset` passes the keyboard along.
+   * TWO SLOTS ON ONE KEYBOARD SET MUST NOT BE TWO KITTENS MOVING AS ONE BY
+   * ACCIDENT. That is the failure `_padDevices` and `_freeKeysets` both exist
+   * to prevent, and it would be a worse bug here than anywhere else because
+   * you would be looking at it in split screen. So a shared set drives one of
+   * its slots — `keysetOwners` says which, `read` gives the others nothing at
+   * all, and `swapKeyset` passes the keyboard along. Driving them TOGETHER is
+   * the last stop on that ring, reached only by pressing the key for it; see
+   * `keysetOwners` for why the accident and the choice are not the same thing.
    *
    * The queue restarts from the lowest free set, so the first shadow lands on
    * WASD: with one pad that is P2's set, which puts P4 on P2's hands and P3 on
@@ -1639,8 +1641,8 @@ export class InputManager {
    *
    * ONE ENTRY IN THE ORDINARY GAME, and that is the whole reason this can be
    * asked unconditionally: `_assign` deals each set to at most one slot unless
-   * `forceSeats` is on, so `keysetOwner` below is that slot, every frame, and
-   * the two-player game cannot tell this function exists.
+   * `forceSeats` is on, so `keysetOwners` below is that one slot, every frame,
+   * and the two-player game cannot tell this function exists.
    */
   keysetShare(k) {
     const out = [];
@@ -1651,30 +1653,59 @@ export class InputManager {
     return out;
   }
 
-  /** Which slot keyboard set `k` is actually DRIVING this frame, or -1. */
-  keysetOwner(k) {
+  /**
+   * Which slots keyboard set `k` is actually DRIVING this frame — an array,
+   * because the last stop on the ring is EVERYBODY ON IT AT ONCE.
+   *
+   * ONE ENTRY IN EVERY ORDINARY GAME, so this is a list of one and the
+   * two-player game cannot tell it changed shape.
+   *
+   * THE RING IS ONE LONGER THAN THE SHARE. Two kittens on WASD gives three
+   * stops — P1, P3, both — and three kittens on the arrows would give four.
+   * The extra stop is deliberately last: the states you use to drive one
+   * character come first, and "both" is the one you step into on purpose.
+   *
+   * MOVING TWO KITTENS AS ONE IS THE BUG THIS FILE REFUSES EVERYWHERE ELSE —
+   * `_padDevices` will not deal one pad to two slots and `_freeKeysets` will
+   * not deal one keyset twice, both because two cats walking in lockstep reads
+   * as the game being broken. It is asked for HERE, on purpose: marching the
+   * party to the arena to test a four-way round is four separate walks
+   * otherwise, and the difference is that this is a stop on a ring a person
+   * pressed a key to reach rather than a state the dealer can produce. It is
+   * unreachable with `forceSeats` off — nothing is ever shared then, so the
+   * share is of one and the ring has no "both" to land on.
+   */
+  keysetOwners(k) {
     const share = this.keysetShare(k);
-    if (!share.length) return -1;
-    return share[(this._kbTurn[k] ?? 0) % share.length];
+    if (share.length < 2) return share;
+    const stop = (this._kbTurn[k] ?? 0) % (share.length + 1);
+    return stop === share.length ? share : [share[stop]];
+  }
+
+  /** True when set `k` is driving `slot` this frame. What `read` asks. */
+  keysetDrives(k, slot) {
+    return this.keysetOwners(k).includes(slot);
   }
 
   /**
-   * Pass keyboard set `k` to the next kitten sharing it. Returns her slot, or
-   * -1 when nobody is sharing — which is a REFUSAL and the caller must say so.
+   * Advance keyboard set `k` to the next stop on its ring. Returns the slots
+   * it now drives, or NULL when nobody is sharing — which is a REFUSAL and the
+   * caller must say so.
    *
-   * A COUNTER RATHER THAN A BOOLEAN, because the ring is not always two. On a
-   * tablet the touch pad owns WASD (`_freeKeysets`), so the arrows can be the
-   * only set left and three slots can want it; `% share.length` is then the
-   * difference between a control that cycles and one that appears dead.
+   * A COUNTER RATHER THAN A BOOLEAN, and that was true before the ring grew a
+   * "both" stop. The ring is not always two: on a tablet the touch pad owns
+   * WASD (`_freeKeysets`), so the arrows can be the only set left and three
+   * slots can want it. The modulus is the difference between a control that
+   * cycles and one that appears dead.
    *
    * THE COUNT IS NOT RESET WHEN THE SHARE CHANGES, and it must not be: a
    * player leaving shortens the ring, the modulo re-reads it, and whoever is
    * left gets the keyboard back rather than nobody having it.
    */
   swapKeyset(k) {
-    if (this.keysetShare(k).length < 2) return -1;
+    if (this.keysetShare(k).length < 2) return null;
     this._kbTurn[k] = (this._kbTurn[k] ?? 0) + 1;
-    return this.keysetOwner(k);
+    return this.keysetOwners(k);
   }
 
   /**
@@ -1827,7 +1858,7 @@ export class InputManager {
            share is unmarked at the ordinary size, where it is always of one. */
         const share = this.keysetShare(bnd.keyset);
         const mark = share.length < 2 ? ''
-          : (this.keysetOwner(bnd.keyset) === i ? ' (playing)' : ' (waiting)');
+          : (this.keysetDrives(bnd.keyset, i) ? ' (playing)' : ' (waiting)');
         out.push(`P${i + 1}: ${KEYSETS[bnd.keyset].name}${mark}`);
       } else {
         out.push(`P${i + 1}: no controller`);
@@ -1989,7 +2020,7 @@ export class InputManager {
         mx = dead(r.ax) + (r.dpad ? r.dpad[0] : 0);
         my = dead(r.ay) + (r.dpad ? r.dpad[1] : 0);
         for (const a of ACTIONS) next[a] = !!r[a];
-      } else if (bnd.keyset != null && this.keysetOwner(bnd.keyset) === i) {
+      } else if (bnd.keyset != null && this.keysetDrives(bnd.keyset, i)) {
         st.source = 'keyboard';
         const k = KEYSETS[bnd.keyset];
         /* ANY of the codes bound to a field. Every field is a list — see

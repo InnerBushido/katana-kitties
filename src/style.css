@@ -1734,6 +1734,42 @@ details.help-card[open] > summary.help-topic {
 }
 details.help-card[open] > summary .ht-chev { transform: rotate(90deg); }
 .ht-body { padding: 4px 16px 14px; }
+/* ---------------------------------------------------------------------------
+   TOPICS INSIDE A TOPIC.
+
+   The panel had grown to fifteen cards and a reader looking for the arena had
+   to walk past all of them — four screens of scrolling on a phone before a
+   single picture. Eight of them are really two subjects, so four fold under
+   "Moving & fighting" and four under "The arena". Nothing is hidden: each is
+   still a card, one tap further in.
+
+   A SUB-CARD MUST NOT LOOK LIKE A TOP-LEVEL ONE, or the fold reads as the list
+   simply having moved. It is inset from the parent's body, its border is
+   thinner and its heading two points smaller, so the indent and the weight both
+   say "inside". The chevron, the gold open state and the pad focus ring are all
+   inherited from `.help-card` unchanged — the thing a child has already learned
+   to press has to keep behaving the same way one level down.
+
+   THE SUB-CARDS ARE THEIR OWN ACCORDION GROUP (`name="help-move"`,
+   `name="help-arena"` in index.html) and that is not cosmetic: the exclusive
+   group is matched by name across the whole DOCUMENT, so a sub-card sharing the
+   parent's `name="help"` would close the parent it lives inside the instant it
+   opened — the card would appear to vanish under the finger that tapped it. */
+.ht-subs { margin: 14px 0 0; }
+details.help-card.help-sub {
+  border-width: 2px;
+  margin: 0 0 8px;
+  background: var(--paper);
+}
+details.help-card.help-sub:last-child { margin-bottom: 0; }
+.help-sub > summary.help-topic {
+  font-size: 18px;
+  padding: 10px 13px;
+  gap: 10px;
+}
+.help-sub > summary.help-topic .ht-ico { font-size: 19px; }
+details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px; }
+.help-sub > .ht-body { padding: 4px 13px 12px; }
 .ht-note { margin: 12px 0 0; font-size: 14px; line-height: 1.6; }
 .ht-note.warn {
   padding: 10px 12px;
@@ -1875,6 +1911,22 @@ details.help-card[open] > summary .ht-chev { transform: rotate(90deg); }
   opacity: 0.75;
   text-align: center;
 }
+/* THE ARENA SHOT, CAPPED — the only picture in the panel that has sub-topics
+   under it. At full panel width `arena.jpg` is ~400px tall, which filled the
+   card on its own: opening "The arena" showed the arena and nothing else, and
+   the four sub-cards underneath were below the fold on a phone. 220px puts it
+   at about the height of the two clips-plus-captions in "Moving & fighting", so
+   the shape a reader learned one topic earlier still holds and the sub-cards
+   are visible without a scroll.
+
+   `width: auto` IS LOAD-BEARING and it follows `.help-shot img` on purpose —
+   equal specificity, so source order lets it win over that `width: 100%`. With
+   the width still pinned at 100%, `max-height` cannot re-solve the ratio and
+   the picture squashes instead of shrinking. Same trick, same reason, as
+   `.help-shot-pair img` below. Under 640px the panel is narrower than a 220px
+   -tall 16:9 frame, so it goes back to full width and the height follows. */
+.arena-shot img { width: auto; height: 220px; max-width: 100%; margin-inline: auto; }
+@media (max-width: 640px) { .arena-shot img { width: 100%; height: auto; } }
 /* The Dojo, as two synced clips SIDE BY SIDE: the 3D turning-circle (square, so
    the golden ring fills the frame with no grass) and the sin/cos board (16:9, a
    wide live readout that was covering the 3D when the two shared one frame).

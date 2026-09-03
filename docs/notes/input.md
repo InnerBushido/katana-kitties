@@ -957,26 +957,46 @@ one-controller row above come out right without a rule saying so.
 `_findJoin` marks the join `shadow: true` and `Game._joinPlayer` reads that as
 "do not claim".
 
-### Shared must not mean simultaneous
+### Shared must not mean simultaneous BY ACCIDENT
 
 Two slots reading one keyset is **two kittens moving as one** — the same failure
 `_padDevices` refuses for a split vJoy pad and `_freeKeysets` refuses for the
 touch player, arrived at from a third direction, and it would be at its worst
 here because you would be watching it happen in split screen.
 
-So a shared set drives exactly one of its slots. `keysetOwner(k)` says which,
-`read` gives the others nothing at all, and `swapKeyset(k)` passes the keyboard
-along. **`R` hands over WASD, `U` hands over the arrows** — each key sits by the
-hand it switches (R is the next key up from WASD, U the next key left of
-`O K L ;`), so neither hand reaches across the desk, which is the argument the
-two keysets are laid out on in the first place.
+So a shared set drives one of its slots. `keysetOwners(k)` says which,
+`keysetDrives(k, slot)` is what `read` asks, the others get nothing at all, and
+`swapKeyset(k)` steps the set along. **`R` walks WASD's ring, `U` walks the
+arrows'** — each key sits by the hand it switches (R is the next key up from
+WASD, U the next key left of `O K L ;`), so neither hand reaches across the
+desk, which is the argument the two keysets are laid out on in the first place.
 
-It is a **counter, not a boolean**, because the ring is not always two: on a
-tablet the touch pad owns WASD, so the arrows can be the only set left and three
-slots can want it. `% share.length` is the difference between a control that
-cycles and one that appears dead. The count is deliberately not reset when the
-share changes — a player leaving shortens the ring, the modulo re-reads it, and
-whoever is left gets the keyboard back rather than nobody having it.
+**The last stop on the ring is all of them at once**, and that is the one place
+in this codebase where two cats walking in lockstep is the asked-for behaviour
+rather than the bug. Two kittens on WASD is a ring of **three** — P1, P3, both —
+because marching the party across the island to test a four-way round is four
+separate walks otherwise. The difference from the failure above is that this is
+a stop a person pressed a key to reach, never a state the dealer can produce:
+with the toggle off nothing is ever shared, so the share is of one, the ring is
+one stop long, and no number of presses can reach it. `pad-check` pins that.
+
+`keysetOwners` returns a **list** for the same reason, and it is a list of one
+in every ordinary game — which is what lets `read` and `describe` ask it
+unconditionally without the two-player game being able to tell it changed shape.
+The ring is always `share.length + 1` stops, so three kittens on the arrows (a
+tablet: the touch pad owns WASD) gives four stops, ending on all three together.
+
+It is a **counter, not a boolean**, for the same reason the ring is not always
+two, and the modulus is the difference between a control that cycles and one
+that appears dead. The count is deliberately not reset when the share changes —
+a player leaving shortens the ring, the modulo re-reads it, and whoever is left
+gets the keyboard back rather than nobody having it.
+
+Both stops that involve more than one kitten have to **say so**: the toast reads
+`WASD → P1 + P3 together`, the panel row bolds every name it is driving, and
+`_markKeyboardOwners` dims nothing — the badges agreeing is how you tell that
+stop from the two single ones at a glance, and mistaking it for a desynced split
+screen is the obvious way to lose an hour.
 
 ### A kitten waiting her turn reports NO device
 

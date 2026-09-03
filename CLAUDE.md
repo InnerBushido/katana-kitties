@@ -27,8 +27,8 @@ look. Everything else is one level down and read on demand.
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
 npm run dev -- --host         # ...and on a phone on the same wifi, at the Network: URL it prints
-node tools/world-check.mjs    # 1967 checks: world, dragons, clans, sprites, tournament, consent, balance
-node tools/pad-check.mjs      # 343 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
+node tools/world-check.mjs    # 1990 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/pad-check.mjs      # 354 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 npm run docs                  # regenerate the controls + balance tables, in PROJECT.md AND
                               #   in docs/artifact/project-page.html (the published twin)
@@ -174,8 +174,8 @@ docs/notes/  the design notes — why things are the way they are
 whole endgame, `7`/`8`/`9` are Ryuuseki, `4` ends a live round, `2` makes Mr.
 Satan lose his temper, `5` opens the trade screen, `-`/`=`/`0` are the scene
 viewer, **`\` force-spawns** (then ENTER seats a third and fourth kitten on the
-keyboard alone; `R`/`U` pass WASD / the arrows between the two sharing them —
-PROJECT.md §4), **`1` prints the frame cost** —
+keyboard alone; `R`/`U` step WASD / the arrows round the two sharing them — her,
+her sister, then both at once — PROJECT.md §4), **`1` prints the frame cost** —
 fps, stutter, draw calls, buffer size, quality, dev-or-built, and the GPU
 string.
 
@@ -203,7 +203,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 1967 assertions and why almost none of them are about
+  why `world-check` is 1990 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have
