@@ -285,14 +285,40 @@ first thing that happens with it. → [input.md](docs/notes/input.md)
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Six reported from play are fixed and not yet played back.** All are in
+`git log` and in the notes; listed here only because nobody has confirmed them
+at four players yet:
+
+- **Riverclaw stopped charging its oath on the orbs' bonus.** `_reach()`
+  multiplied the clan buff by the orb total, so three Long Cut orbs under
+  Riverclaw came out at 3.42 — an 11.6m blade. Bonuses add now: 2.70.
+  → [tournament.md](docs/notes/tournament.md)
+- **The lone kitten in a 3v1 split gets her pull-back at last.** `paneWiden`
+  was correct and only the shared rig ever called it, and a shared rig is never
+  a group of one. 24.0 → 63.3. Her sisters' wider pane comes in 25% the other
+  way. → [four-players.md](docs/notes/four-players.md)
+- **A swing at an animal is a swing.** The swat had no facing test and 35% more
+  reach than the blade; it uses `ATTACKS.stand`'s own arc and reach now.
+- **An animal can no longer take the Cross Slash away from across the deck.**
+  The veto searched with her real reach, so a better katana meant a bigger
+  dead zone. It is the eat gesture only — holding one, or standing still on one
+  inside a fixed 3.4.
+- **Joins and starting marks scatter.** Three kittens joining used to land on
+  one point, which force-spawn made the ordinary case.
+- **A kitten who drops out leaves eight orbs, not one and six ghosts.** The
+  drop fans out, and her worn shells are taken out of the scene — they were
+  not, and stayed there frozen for the rest of the game.
+
 **There is an alpha channel now, and the God Doc keeps its own tables.** Two
 things that are not gameplay and are live already:
 
 - **`origin/alpha`** is the version other people are asked to play, at
   `https://katana-kitties-git-alpha-dream-dojo.vercel.app`. It only ever
   fast-forwards to local `main`, so it can never be ahead of the real game in
-  content, only in *release* — every list below is on it and `origin/main` does
-  not have any of them yet. See **Branches**, at the bottom of this file.
+  content, only in *release*. Richard has played through the force-spawn ring
+  and the folded Help list and said so, so `origin/main` and `origin/alpha` are
+  both level with local `main` as of that push. See **Branches**, at the bottom
+  of this file.
 - **[tools/doc-sync.mjs](tools/doc-sync.mjs)** writes PROJECT.md's controls and
   balance tables out of `input.js` and `player.js`. A `pre-commit` hook re-runs
   it whenever a commit touches either, and `world-check` fails if they have

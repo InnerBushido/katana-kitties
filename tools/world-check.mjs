@@ -76,7 +76,7 @@ import { MenuNav } from '../src/systems/menunav.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, fitDistance, stablePanes,
-  paneSeats, outOfShot, framedMembers, OUT_DROP, paneWiden,
+  paneSeats, outOfShot, framedMembers, OUT_DROP, paneWiden, BIG_PANE_IN,
 } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
@@ -115,6 +115,22 @@ const ok = (label, cond, extra = '') => {
  * green, and no longer looking at the thing it names — so the depth count lives
  * here once rather than being got right four times.
  */
+/**
+ * Source with its comments blanked out, for checks that are about WIRING.
+ *
+ * A regex over a whole file cannot tell an import from a sentence about one,
+ * so every "this file must never mention X" check is one honest comment away
+ * from failing. Blanking rather than deleting keeps line numbers and string
+ * lengths roughly intact, so a failure still points somewhere useful.
+ *
+ * Deliberately naive — no string-literal awareness — because the callers ask
+ * about identifiers, and an identifier inside a string is exactly the wiring
+ * they mean to catch.
+ */
+const stripComments = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
 const helpTopic = (html, title) => {
   const at = html.indexOf(`<span class="ht-title">${title}</span>`);
   if (at < 0) return '';
@@ -4158,6 +4174,138 @@ console.log('\n--- the Powerup Kotodama ---');
   ok('a tie gives one to BOTH', tied.res.tie && tied.res.prizes.length === 2
     && tied.g.players.every((p) => p.powerOrbs.length === 1));
 
+  /* --- A KITTEN WALKS OUT, AND HER WHOLE NECK GOES ON THE FLOOR ----------
+     Two bugs in the same six lines, both reported from play.
+
+     ONE: every orb went to `p.position`, and `findOpenSpot` is deterministic —
+     so eight orbs became one orb's worth of geometry z-fighting with itself,
+     and a pile whose size you could not read. Only twenty-six of these exist
+     in the world; a stack of eight has to LOOK like eight.
+
+     TWO: `_leavePlayer` took down her PLAIN orbs (`p.orbs`) and not the power
+     orbs she was wearing (`p.wornOrbs`) — so her worn shells stayed in the
+     scene after she left, frozen, because the thing that moves them walks
+     `this.players` and she had just been spliced out of it. Reported as "the
+     rotating visual orbs stay on screen and are buggy". Both fields are
+     optional on purpose, so `?? []` made a wrong NAME look like an empty list.
+     That is the whole reason the second half of this is asserted against the
+     source: the failure was a field that did not exist, and no amount of
+     driving an object catches a name nobody ever writes. */
+  {
+    const g = { ...fakeGame, pickups: [], players: [mkKit(0), mkKit(1)] };
+    const K = new Kotodama(g);
+    K.raiseStall = () => {};
+    g.kotodama = K;
+    K.awakened = true;
+    K.pickups = [];
+    const at = { x: 0, z: 40 };
+    /* SPREAD 0 IS THE OLD CALL, BIT FOR BIT. Everything about a drop of ONE
+       has to come out exactly where it always did, or a change written for a
+       kitten leaving with a full neck has quietly moved every other drop. */
+    K.pickups = [];
+    const solo = K.dropInWorld('reach', at);
+    const soloExplicit = (() => { K.pickups = []; return K.dropInWorld('reach', at, 0); })();
+    ok('one orb dropped alone lands exactly where it always did',
+      solo.group.position.distanceTo(soloExplicit.group.position) < 1e-9);
+
+    /* SWEPT, NOT SAMPLED. The fan is random, so one draw proves nothing about
+       the case that matters — the tail, where two neighbours happen to wobble
+       toward each other. Forty full necks is 1120 pairs and takes no time at
+       all, and it is the run that caught the first version of the numbers:
+       a bearing wobble of 0.7rad against a 0.785rad step let two orbs land
+       1.15 apart, which is the pile again with a better excuse. */
+    let closest = Infinity;
+    let furthest = 0;
+    for (let round = 0; round < 40; round++) {
+      K.pickups = [];
+      const drops = ORB_IDS.slice(0, MAX_EQUIPPED)
+        .map((id, i) => K.dropInWorld(id, at, i));
+      if (round === 0) {
+        ok('a leaving kitten really puts every orb back in the world',
+          drops.every((d) => d) && K.pickups.length === MAX_EQUIPPED,
+          `${K.pickups.length}`);
+      }
+      for (let i = 0; i < K.pickups.length; i++) {
+        const a = K.pickups[i].group.position;
+        furthest = Math.max(furthest, Math.hypot(a.x - at.x, a.z - at.z));
+        for (let j = i + 1; j < K.pickups.length; j++) {
+          const b = K.pickups[j].group.position;
+          closest = Math.min(closest, Math.hypot(a.x - b.x, a.z - b.z));
+        }
+      }
+    }
+    line('40 full necks dropped: closest pair ever / furthest from her',
+      `${closest.toFixed(2)} / ${furthest.toFixed(2)}`);
+    /* NO TWO IN THE SAME PLACE, which is the bug, stated as the property
+       rather than as the formula — a spiral, a jittered ring or a Poisson
+       draw would all satisfy it and all be fine. */
+    ok('...and no two of them are ever on top of each other', closest > 1.2,
+      `${closest.toFixed(2)} apart`);
+    /* AND STILL A PILE. Scattering them across the town would be the same
+       failure with the sign flipped: she has just left, and the sister picking
+       them up should not have to go hunting for the last one. */
+    ok('...but the whole drop is still a pile you can walk into', furthest < 12,
+      `${furthest.toFixed(2)} out`);
+  }
+
+  {
+    const mn = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    const leave = stripComments(mn).slice(stripComments(mn).indexOf('_leavePlayer(index)'));
+    const body = leave.slice(0, leave.indexOf('_buildLeaveButtons'));
+    ok('a leaving kitten takes her PLAIN orbs out of the scene',
+      /for \(const o of p\.orbs \?\? \[\]\) this\.scene\.remove/.test(body));
+    ok('...and the power orbs she was WEARING, which she did not',
+      /for \(const o of p\.wornOrbs \?\? \[\]\) this\.scene\.remove/.test(body));
+    ok('...and empties both, so nothing walks a list of removed meshes',
+      /p\.orbs = \[\]/.test(body) && /p\.wornOrbs = \[\]/.test(body));
+    ok('...and fans the drop out rather than stacking it on one point',
+      /_dropOrbInWorld\(id, p\.position, i\)/.test(body));
+
+    /* --- AND TWO KITTENS JOINING CANNOT LAND ON ONE SPOT ------------------
+       `_joinSpot` has no memory, so two joins a second apart asked the same
+       question about the same town centre and both got yes. Force-spawn made
+       that the normal case — ENTER, ENTER seats a third and fourth in the time
+       it takes to press a key twice — and two cats drawn on the same point
+       read as one cat and a join that did nothing. Reported as "have some
+       randomness when players spawn in the town, so they don't spawn right on
+       top of each other."
+       Source-asserted for the same reason as above: `_joinSpot` needs a built
+       world, a party and a renderer, and the failure is a rule that was never
+       written rather than a number that came out wrong. */
+    const spot = stripComments(mn).slice(stripComments(mn).indexOf('_joinSpot() {'));
+    const sb = spot.slice(0, spot.indexOf('_joinPlayer'));
+    ok('a join spot refuses a point somebody is already standing on',
+      /JOIN_APART/.test(sb) && /for \(const q of this\.players\)/.test(sb));
+    ok('...and asks the LIVE positions, not a list of spots handed out',
+      /q\.position\.x/.test(sb) && /q\.position\.z/.test(sb));
+    /* AND A DIFFERENT BEARING EVERY TIME. The rule above stops them
+       overlapping; without this the rings are walked in the same order for
+       everybody and four joins come out in a neat line pointing one way. */
+    ok('...and spins the search, so joins scatter instead of queueing',
+      /const spin = Math\.random\(\)/.test(sb) && /\+ ring \+ spin/.test(sb));
+    /* THE LAST RESORT IS STILL THE TOWN CENTRE. Every rule above is a
+       preference. A kitten standing on her sister is one flick of the stick
+       from fixed; a kitten in the sky is not. Ninth non-negotiable. */
+    ok('...but still lands her somewhere real when nothing is free',
+      /return hit \?\? \{ x: T\.x, y: T\.y, z: T\.z \}/.test(sb));
+
+    /* --- AND THE STARTING MARKS WOBBLE, WITHOUT SHUFFLING ------------------
+       The four marks are 3.5 apart and fixed, so every game opened on the same
+       photograph. A unit of jitter each way is "some randomness" and still
+       leaves the four of them in the same left-to-right ORDER every game,
+       which is what keeps "go left, that's yours" true. */
+    ok('a kitten’s starting mark is jittered', /START_JITTER/.test(stripComments(mn)));
+    ok('...by less than half the gap between two marks, so nobody swaps sides',
+      /const START_JITTER = 1;/.test(mn));
+    /* DRAWN ONCE, AT CONSTRUCTION. `spawn` is also where she comes back after
+       a fall; a respawn point that moved under her would be the game losing
+       her mark rather than scattering it. */
+    const seat = stripComments(mn).slice(stripComments(mn).indexOf('_seatPlayer(index'));
+    const sp = seat.slice(0, seat.indexOf('_dressPlayer(p)'));
+    ok('...and drawn once, so her respawn point does not wander',
+      (sp.match(/Math\.random\(\)/g) ?? []).length === 2);
+  }
+
   /* 0-0 IS A TIE AND IT HAS TO PAY OUT. Two girls who never picked up a plain
      orb — entirely possible, they are optional and there are six of them in a
      world this size — would otherwise be told at the top of the endgame that
@@ -5293,10 +5441,60 @@ console.log('\n--- the three power moves ---');
       Math.abs((a.scale / arcPlain.scale) - (a.reach / arcPlain.reach)) < 1e-9,
       `${(a.scale / arcPlain.scale).toFixed(4)} vs ${(a.reach / arcPlain.reach).toFixed(4)}`);
   }
-  /* AND THE TWO MULTIPLY, on the picture as well as on the hitbox — the same
-     property `...the clan buff MULTIPLIES with them` pins for speed. */
+  /* AND THE TWO ADD, on the picture as well as on the hitbox. */
   ok('...and a Riverclaw kitten wearing three of them gets both',
-    arcBoth.scale > arcThree.scale * 1.5 && arcBoth.scale > arcRiver.scale * 1.5);
+    arcBoth.scale > arcThree.scale * 1.2 && arcBoth.scale > arcRiver.scale * 1.2);
+
+  /* --- THE TWO BONUSES ADD, THEY DO NOT MULTIPLY ---
+     THIS BLOCK IS A BUG REPORT, and the check above it USED TO BE THE BUG: it
+     asserted `arcBoth > arcThree * 1.5`, which is only satisfiable by a
+     product. `_reach()` read `clanReach * power.reach`, so Riverclaw's 80% was
+     charged on the ORBS' bonus as well as on the base blade — three Long Cut
+     orbs under Riverclaw came out at 3.42, an 11.6m blade, longer than the
+     arena is wide, cutting a girl standing nowhere near it.
+
+     The law is that every bonus is measured against the UNSWORN, UNADORNED
+     blade and then summed. Stated below as exactly that — the surplus over
+     plain, added — rather than as the formula, so it cannot be satisfied by
+     rewriting the same product a second way. And swept over the whole stack,
+     because the double-count GREW with it: the old code doubled one orb's 0.30
+     into 0.54 and three orbs' 0.90 into 1.62, which is why no smaller
+     `buff.reach` could have fixed it. */
+  const reachOf = (orbs, clanId = null) => {
+    const p = mk(orbs);
+    if (clanId) p.clan = CLANS.find((c) => c.buff.id === clanId);
+    return p._reach();
+  };
+  const base = reachOf([]);
+  const riverOnly = reachOf([], 'reach') - base;
+  for (let n = 0; n <= 4; n++) {
+    const orbs = Array(n).fill('reach');
+    const orbsOnly = reachOf(orbs) - base;
+    const together = reachOf(orbs, 'reach') - base;
+    ok(`${n} Long Cut orb${n === 1 ? '' : 's'} + Riverclaw is the two bonuses ADDED`,
+      Math.abs(together - (riverOnly + orbsOnly)) < 1e-9,
+      `${together.toFixed(3)} vs ${(riverOnly + orbsOnly).toFixed(3)}`);
+  }
+  /* THE NUMBER FROM THE REPORT, written out. A property check that is right
+     about the shape can still be right about the wrong shape, so one arithmetic
+     assertion is pinned to the values a player actually swings: Riverclaw 1.8
+     and three orbs 1.9 make 2.7, and the old code made 3.42. */
+  line('reach x: plain / Riverclaw / 3 orbs / both',
+    [reachOf([]), reachOf([], 'reach'), reachOf(['reach', 'reach', 'reach']),
+      reachOf(['reach', 'reach', 'reach'], 'reach')]
+      .map((r) => (r / BASE_REACH).toFixed(2)).join(' / '));
+  ok('Riverclaw with three Long Cut orbs reaches 2.70x, not 3.42x',
+    Math.abs(reachOf(['reach', 'reach', 'reach'], 'reach') - BASE_REACH * 2.7) < 1e-9,
+    (reachOf(['reach', 'reach', 'reach'], 'reach') / BASE_REACH).toFixed(4));
+  /* THE TWO IDENTITIES THE `- 1` HAS TO PRESERVE. Either one broken is a
+     silent nerf to a kitten who has only done half the work — and an unsworn
+     kitten with an empty neck reaching anything but 1x moves the whole game,
+     not just the arena. */
+  ok('...a kitten with no clan still reaches exactly her orbs',
+    reachOf(['reach', 'reach']) === BASE_REACH * mk(['reach', 'reach']).power.reach);
+  ok('...a Riverclaw kitten with no orbs still reaches exactly 1.8x',
+    Math.abs(reachOf([], 'reach') - BASE_REACH * 1.8) < 1e-9);
+  ok('...and plain is plain', base === BASE_REACH);
 }
 
 /* --------------------------------------------------------------------------
@@ -5974,23 +6172,33 @@ console.log('\n--- the three power moves ---');
       c.position.length() < 2 && dot > 0.9);
   }
 
-  /* --- THE CROSS SLASH ATE THE SNACK BUTTON ---
-     Reported from four-player play: wearing the orb, standing over an animal
-     and holding ATTACK wound up a three-cut technique instead of picking the
-     animal up, so the feast was simply unplayable for whoever had bought the
-     Cross Slash.
+  /* --- THE CROSS SLASH ATE THE SNACK BUTTON, AND THEN THE FIX ATE THE ---
+     --- CROSS SLASH ---
 
-     THE CAUSE IS A BRANCH THAT NEVER RUNS. `Menagerie.strike` is only ever
-     called by `Player._doSlash`, and with the orb on, ATTACK is a DEFERRED
-     press: it waits `CROSS.hold` to find out whether it was a tap or the start
-     of the technique, and on a hold `_doSlash` is never reached at all. So the
-     repair is not in the swing, it is in the button — `critterNear` is asked
-     at the moment of the press, and an animal in range means this press is an
-     ordinary swing thrown now.
+     TWO REPORTS, BOTH FROM PLAY, AND THE SECOND IS THE FIRST ONE'S CURE
+     OVERSHOOTING.
 
-     These check the predicate against the real Menagerie, and then the real
-     `Player.update` against a stubbed one, because the bug lived in the seam
-     between them and either half alone would have passed. */
+     One: wearing the orb, standing over an animal and holding ATTACK wound up
+     a three-cut technique instead of picking the animal up. `Menagerie.strike`
+     is only ever called by `Player._doSlash`, and with the orb on ATTACK is a
+     DEFERRED press — on a hold `_doSlash` is never reached, and neither is the
+     two-second hold that KEEPS an animal, because a wind-up sets `busy` and
+     `_canHold` refuses that. So the feast was unplayable for whoever had
+     bought the Cross Slash. The repair is not in the swing, it is in the
+     button.
+
+     Two: that button asked `_findTarget` — the whole search, swat included —
+     with her real `_reach()`. That radius grows with her blade, so a Riverclaw
+     kitten wearing three Long Cut orbs had the technique taken off her out to
+     twelve units by a rabbit she was not looking at. Reported as "it cancels
+     the Cross Slash which it shouldnt; an animal shouldnt be affected by
+     player distance or override their special abilities".
+
+     `wouldHold` is the narrow question now — she is holding one, or she is
+     standing still on top of one inside a FIXED `CATCH_RADIUS`. These check
+     the predicate against the real Menagerie, and then the real `Player.update`
+     against a stubbed one, because the bug lived in the seam between them and
+     either half alone would have passed. */
   {
     const eater = mkFighter(0);
     eater.position.set(0, 0, 0);
@@ -5999,60 +6207,150 @@ console.log('\n--- the three power moves ---');
     men.on = true;
     men.held[0] = null;
     men.list.length = 0;
-    ok('no animal on the deck, nothing to catch', !men.wouldCatch(eater, 3.4));
+    ok('no animal on the deck, nothing to hold', !men.wouldHold(eater));
 
     const rat2 = one('rat');
     rat2.onGround = true;
     rat2.position.set(1, 0, 0);
     men.list.push(rat2);
-    ok('a rat at her feet is something to catch', men.wouldCatch(eater, 3.4));
+    ok('a rat at her feet is the eat gesture', men.wouldHold(eater));
     /* THE PREDICATE ASKS THE SAME QUESTION THE SWING DOES, which is the whole
-       reason `_findTarget` is shared: a button that declines to arm the
-       technique for an animal the swing then refuses to catch is the same bug
-       with the sign flipped. */
+       reason `_findPin` is shared: a button that declines to arm the technique
+       for an animal the swing then refuses to catch is the same bug with the
+       sign flipped. */
     ok('...and asking does not catch it', men.held[0] === null && !rat2.held);
     ok('...but swinging does', men.strike(eater, 3.4) && !!men.held[0]);
-    ok('...and a kitten with a mouthful is offered nothing more',
-      !men.wouldCatch(eater, 3.4));
+    /* AND THE OPPOSITE OF WHAT IT USED TO SAY. A kitten with a mouthful is the
+       clearest case of ATTACK-MEANS-KEEP-EATING there is, and the old predicate
+       returned FALSE for her — so a kitten with the orb could catch a bird and
+       then never swallow it, because every attempt to hold the button wound up
+       a technique whose `busy` reset her chew. That bug was there before this
+       line was ever narrowed; the early return hid it. */
+    ok('...and a kitten with a mouthful is STILL the eat gesture',
+      men.wouldHold(eater));
     men.held[0] = null;
     rat2.release?.();
+
+    /* SHE HAS TO BE ABLE TO HOLD IT. Running past a rat is a swing, not a
+       snack — `_canHold` says so, and the button has to agree, or a kitten
+       loses her technique every time she sprints over an animal. */
+    eater.velocity.set(9, 0, 0);
+    ok('...but not while she is running through it', !men.wouldHold(eater));
+    eater.velocity.set(0, 0, 0);
+    eater.onGround = false;
+    ok('...nor in the air', !men.wouldHold(eater));
+    eater.onGround = true;
+
+    /* THE WHOLE POINT OF THE SECOND FIX, IN ONE CHECK. The rat goes out to
+       eight units — well past `CATCH_RADIUS`, and well INSIDE the reach of a
+       Riverclaw kitten wearing three Long Cut orbs (9.18). Under the old
+       predicate this was false-for-her and true-for-her-sister purely because
+       one of them had bought an orb: a special move taxed by an upgrade. */
+    rat2.position.set(8, 0, 0);
+    ok('an animal eight units off is not the eat gesture', !men.wouldHold(eater));
+    const rich = mkFighter(0);
+    rich.position.set(0, 0, 0);
+    rich.velocity.set(0, 0, 0);
+    rich.onGround = true;
+    rich.clan = CLANS.find((c) => c.buff.id === 'reach');
+    rich.setPowerOrbs(['reach', 'reach', 'reach']);
+    ok('...not even for the longest katana in the game',
+      !men.wouldHold(rich), `reach ${rich._reach().toFixed(2)}`);
+    ok('...and that reach really would have covered it', rich._reach() > 8);
+    rat2.position.set(1, 0, 0);
 
     /* AND IT IS OFF THE DECK ENTIRELY OUTSIDE THE TOURNAMENT, on the same gate
        as `strikeCritters` — the two answers must agree. */
     men.on = false;
     ok('with the menagerie off there is nothing to prioritise',
-      !men.wouldCatch(eater, 3.4));
+      !men.wouldHold(eater));
     men.on = true;
+
+    /* --- THE SWAT IS THE SWING ---
+       Reported from play: "we can hit animals even if not facing its direction
+       with a swing; it should have the same hit collision as a normal swing."
+       The air branch of `_findTarget` was radius-only at `reach * 1.35`, so a
+       rabbit squarely BEHIND her, past the end of the drawn arc, was cut down
+       by a swing pointed the other way.
+
+       Driven at a BIRD, because the floor branch is radius-only on purpose and
+       would answer first for anything standing. */
+    men.held[0] = null;
+    men.list.length = 0;
+    const bird = one('bird');
+    men.list.push(bird);
+    const swat = (x, z, facing) => {
+      eater.position.set(0, 0, 0);
+      eater.velocity.set(0, 0, 0);
+      eater.onGround = true;
+      eater.facing = facing;
+      bird.position.set(x, 2, z);
+      return !!men._findTarget(eater, 3.4);
+    };
+    // +z is facing 0, so a bird at +z is in front of her and one at -z behind.
+    ok('a bird in front of her is swattable', swat(0, 2.5, 0));
+    ok('...and the same bird BEHIND her is not', !swat(0, -2.5, 0));
+    ok('...it is her facing that decides, not its position',
+      swat(0, -2.5, Math.PI));
+    /* AND THE RANGE IS THE BLADE'S, NOT A THIRD MORE. 4.2 was inside the old
+       `3.4 * 1.35 = 4.59` and is outside the swing. */
+    ok('a bird 4.2 away is out of a 3.4 swing', !swat(0, 4.2, 0));
+    ok('...and 3.0 away is inside it', swat(0, 3.0, 0));
+    /* THE VERTICAL WINDOW IS DELIBERATELY NOT THE SWING'S. A flier is a flat
+       drawing with one point for a position; the props' +/-3 would put a bird
+       out of reach for a reason nobody watching can see. Height is not facing,
+       and facing is what was reported. */
+    eater.position.set(0, 0, 0);
+    eater.facing = 0;
+    bird.position.set(0, 5, 2.5);
+    ok('...but a bird five units UP is still reachable',
+      !!men._findTarget(eater, 3.4));
+    men.list.length = 0;
 
     /* --- and now the seam: the real attack button ---
        A kitten wearing the Cross Slash orb, holding ATTACK for well past
-       `CROSS.hold`, with and without a rat in front of her. */
+       `CROSS.hold`, with and without the eat gesture under her. */
     const held = { mx: 0, my: 0, down: (a) => a === 'attack', pressed: (a) => a === 'attack' };
     const stillHeld = { mx: 0, my: 0, down: (a) => a === 'attack', pressed: () => false };
-    const run = (near) => {
+    const run = (eating) => {
       const k = mkFighter(0);
       k.position.set(0, world.heightAt(0, 40)?.y ?? 0, 40);
       k.onGround = true;
       let caught = 0;
+      let said = 0;
       const hud = {
-        sfx() {}, toast() {}, sample() {},
-        critterNear: () => near,
+        sfx() {}, sample() {},
+        toast() { said += 1; },
+        critterHold: () => eating,
         strikeCritters: () => { caught += 1; },
         strikePlayers() {}, hitSpark() {},
       };
       k.power = { ...k.power, tri: 1 };
       k.update(1 / 60, held, world, [], hud);
       for (let i = 0; i < 40; i++) k.update(1 / 60, stillHeld, world, [], hud);
-      return { k, caught };
+      return { k, caught, said };
     };
     const away = run(false);
-    ok('holding ATTACK with nothing nearby still winds up the Cross Slash',
+    ok('holding ATTACK with nothing to eat still winds up the Cross Slash',
       away.k.triAt, `caught ${away.caught}`);
     const over = run(true);
-    ok('...but holding it over an animal swings instead of winding up',
+    ok('...but holding it over an animal she can hold swings instead',
       !over.k.triAt);
     ok('...and that swing is the one that reaches the animal', over.caught >= 1,
       `${over.caught}`);
+    /* --- AND IT SAYS NOTHING WHILE IT DOES IT ---
+       Reported from play: "the message shouldnt appear saying Cross Slash if
+       the player cancels the ability; probably remove the text altogether."
+       The toast fired from `_startWind`, at the PLANT — which is the one part
+       of the technique she can still lose, to a release or to a blade. So the
+       game announced a move that then, whenever anybody actually countered it,
+       did not happen. `crossfx` still draws the tell, and that one is drawn
+       from the STATE rather than fired once, so it stops when the move does.
+
+       ASSERTED ON THE WIND-UP THAT SUCCEEDED, not on a cancel: a check that
+       only watched cancels would pass on a toast that fires every time. */
+    ok('...and a Cross Slash announces itself with no toast at all',
+      away.said === 0, `${away.said} toast(s)`);
   }
 }
 
@@ -6789,6 +7087,36 @@ console.log('\n--- the three power moves ---');
       ok('...and the trio share a wider pane, so they are pulled back less',
         them > 1 && them < her, `${them.toFixed(2)}x vs ${her.toFixed(2)}x`);
 
+      /* --- AND THE WIDE PANE COMES BACK IN, WHICH IS THE OTHER HALF ---
+         Reported in the same breath as the line above: "for the other 3, can
+         zoom in at least 25% more, as it has more screen space." The rule is
+         written from the NARROW pane's side — nobody sees less across their
+         pane than a quadrant would — and read from the wide side it says
+         something nobody asked for: that a group holding 62% of the width must
+         also be pushed out to a quadrant's framing. A quadrant is the floor,
+         not the ceiling.
+
+         ASSERTED AS THE RATIO TO THE RAW GEOMETRY, so it cannot be satisfied
+         by moving the 0.62 split instead. */
+      const rawThem = (VW / VH) / (un[0].w / un[0].h);
+      ok('...and that wider pane keeps only 75% of its pull-back',
+        Math.abs(them - rawThem * BIG_PANE_IN) < 1e-9,
+        `${them.toFixed(3)}x of a raw ${rawThem.toFixed(3)}x`);
+      ok('...which is the "zoom in at least 25% more" that was asked for',
+        them <= rawThem * 0.75 + 1e-9, `${them.toFixed(2)}x vs ${rawThem.toFixed(2)}x`);
+      /* IT IS THE PANE THAT IS OVER ITS SHARE, NOT SIMPLY THE BIGGEST. The
+         narrow one is the one PAYING for the split, and it must keep every bit
+         of its widening or the first report comes straight back. */
+      ok('...and the narrow pane keeps all of hers',
+        Math.abs(her - (VW / VH) / (un[1].w / un[1].h)) < 1e-9);
+      /* AND IT IS STILL NEVER A ZOOM IN PAST 1. `BIG_PANE_IN` multiplies a
+         number that may already be under 1 (the stacked trio's strip is 3.57
+         wide for its height), and three quarters of nothing has to clamp. */
+      ok('...and three quarters of a below-1 widening is still exactly 1',
+        splitLayout(3, VW, VH, 3, 'horizontal', [2, 1, 1])
+          .every((_, i) => paneWiden(splitLayout(3, VW, VH, 3, 'horizontal', [2, 1, 1]),
+            i, VW, VH) === 1));
+
       /* THE COMPATIBILITY CLAIM, AND THE ONLY REASON THE EVEN-SPLIT GUARD
          EXISTS. Two even panes side by side are just as narrow as the trio's
          and are deliberately left alone: that is the two-player game, which
@@ -6813,6 +7141,87 @@ console.log('\n--- the three power moves ---');
       ok('...and it degrades rather than NaNs on a pane with no area',
         paneWiden([{ x: 0, y: 0, w: 0, h: 0 }, { x: 0, y: 0, w: 1, h: 1 }], 0, VW, VH) === 1
         && paneWiden(null, 0, VW, VH) === 1);
+    }
+
+    /* ---- AND THE SEAM: THE KITTEN WHO WAS NEVER TOLD ----------------------
+       `paneWiden` was written for the lone player in the 62/38 column, its
+       docblock quotes her report word for word, the function is correct — and
+       for the whole of its life the only thing that called it was the SHARED
+       rig, which by definition is framing two or more. A group of ONE draws
+       with `Player._updateCamera` (see `Game._cameraFor`, and the good reasons
+       it gives), so the one kitten the fix was for was the one player in the
+       game who never received it. Reported a second time, in the same words.
+
+       Driven rather than read: a Player, her own camera, the same distance
+       asked for with and without the field. */
+    {
+      const spawn = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
+      const mkCam = (widen) => {
+        const p = new Player({
+          texture: new THREE.Texture(), index: 0, spawn: spawn.clone(),
+          cols: 8, rows: 4, mirror: false, name: 'Ember', height: 2.9,
+        });
+        p.paneWiden = widen;
+        // Long enough for `camDist` to finish its lerp onto the new target.
+        for (let i = 0; i < 240; i++) p._updateCamera(1 / 60);
+        return p.camDist;
+      };
+      const flat = mkCam(1);
+      const narrow = mkCam(2.634);
+      line('lone kitten camera: full pane / 62-38 column',
+        `${flat.toFixed(1)} / ${narrow.toFixed(1)}`);
+      /* THE CLAIM, AS A RATIO. Pinning the absolute distance would pin the
+         walking clamp with it, and that is a tunable somebody may move. */
+      ok('a kitten alone in the narrow column really is pulled back',
+        Math.abs(narrow / flat - 2.634) < 0.02, `${(narrow / flat).toFixed(3)}x`);
+      ok('...and at least twice as far, which is what was asked for',
+        narrow >= flat * 2, `${narrow.toFixed(1)} vs ${flat.toFixed(1)}`);
+      /* THE FIFTH NON-NEGOTIABLE, TWICE OVER. `paneWiden` returns exactly 1
+         for every even split, so the two-player game never sees this — and a
+         Player built anywhere else (this file, the character picker) never has
+         the field written at all, which is the degrade rule. Both have to come
+         out bit-identical to the old code, so both are asserted against the
+         SAME number rather than against a constant. */
+      ok('...and an even split moves the camera not one millimetre',
+        mkCam(1) === flat);
+      const bare = new Player({
+        texture: new THREE.Texture(), index: 0, spawn: spawn.clone(),
+        cols: 8, rows: 4, mirror: false, name: 'Ember', height: 2.9,
+      });
+      ok('...nor does a Player nobody ever told about panes',
+        bare.paneWiden === 1);
+      for (let i = 0; i < 240; i++) bare._updateCamera(1 / 60);
+      ok('...and she frames herself exactly as she always did',
+        bare.camDist === flat, `${bare.camDist} vs ${flat}`);
+      /* DEGRADE, DO NOT VANISH. This field is written from outside the class
+         every frame; a bad one must cost the widening, never the position. */
+      for (const bad of [NaN, undefined, null, -3, 'wide']) {
+        const p = new Player({
+          texture: new THREE.Texture(), index: 0, spawn: spawn.clone(),
+          cols: 8, rows: 4, mirror: false, name: 'Ember', height: 2.9,
+        });
+        p.paneWiden = bad;
+        for (let i = 0; i < 240; i++) p._updateCamera(1 / 60);
+        ok(`...and a paneWiden of ${String(bad)} costs the widening, not the camera`,
+          p.camDist === flat, `${p.camDist}`);
+      }
+    }
+
+    /* ---- AND SOMEBODY HAS TO WRITE IT EVERY FRAME ------------------------- */
+    {
+      const mn = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+      const src = stripComments(mn);
+      ok('the split pass hands the solo pane its widening',
+        /solo\.paneWiden = widen/.test(src));
+      /* CLEARED FIRST, FOR EVERYBODY. A kitten who was alone in the narrow
+         column and has walked back to her sisters is no longer the leader of
+         any group, so the loop cannot reach her to reset it — she would carry
+         a 2.6x pull-back into a pane she is not in, for the rest of the game.
+         The reset has to come BEFORE the assignment or it undoes it. */
+      const reset = src.indexOf('p.paneWiden = 1');
+      const set = src.indexOf('solo.paneWiden = widen');
+      ok('...and clears it for everybody first, so nobody keeps a stale one',
+        reset > 0 && set > 0 && reset < set, `${reset} then ${set}`);
     }
 
     /* ---- THE MATHS BOARD TAKES THE TOP OF A SHARED PANE -------------------
@@ -9263,8 +9672,13 @@ console.log('\n--- the cross slash announces itself ---');
      round reset, restart, or run to the end. Callbacks would mean five places
      to remember the seal; reading her clocks means none. If somebody ever
      "tidies" this into a hook, this check is where they find out why not. */
+  /* ASKED OF THE CODE, NOT OF THE PROSE. This tested the raw file, so the
+     first comment in player.js to EXPLAIN the doctrine — "crossfx still draws
+     the tell" — failed the check that exists to protect it. A check a comment
+     can break teaches the next person to delete the comment, which is the one
+     outcome this is trying to prevent. */
   ok('the effect is a poller: player.js has never heard of it',
-    !/crossfx|CrossFx/i.test(pl));
+    !/crossfx|CrossFx/i.test(stripComments(pl)));
 
   const mn = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
   /* THE ORDER IS THE WHOLE REASON THE SEAL BURSTS ON THE RIGHT FRAME.

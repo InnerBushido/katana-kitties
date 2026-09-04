@@ -3,6 +3,12 @@ import {
   Critter, CRITTERS, EAT_TIME, MOUTH_TIME, CATCH_RADIUS,
 } from '../entities/critter.js';
 import { MAX_SLOTS } from '../core/input.js';
+/* THE SWING'S OWN ARC AND REACH, so a swat at an animal and a swing at a
+   barrel are one collision and not two. See `_findTarget`. It is `ATTACKS`
+   rather than a copy because that table is TUNABLE — somebody may widen the
+   standing swing on the balance page, and a second literal here would quietly
+   keep the old shape for the one thing on the deck that moves. */
+import { ATTACKS } from '../entities/player.js';
 
 /** One entry per seat the game can deal, whoever is actually in them. */
 const seats = (v) => Array.from({ length: MAX_SLOTS }, () => v);
@@ -363,11 +369,10 @@ export class Menagerie {
    * What this swing WOULD land on, without landing it.
    *
    * ONE SEARCH, ASKED IN TWO PLACES — the same shape as `_canHold` below and
-   * added for the same reason. `strike` acts on the answer; `wouldCatch` only
-   * reports it, and the caller of that is the attack button deciding whether
-   * this press is a snack or the start of a Cross Slash. Two copies of the
-   * radii would drift, and the failure would be a kitten standing over a rat
-   * being told she is too far from it.
+   * added for the same reason. `strike` acts on the answer; the attack button
+   * asks `wouldHold`, which shares this function's PIN half through
+   * `_findPin`. Two copies of the radii would drift, and the failure would be
+   * a kitten standing over a rat being told she is too far from it.
    *
    * THE FLOOR IS SEARCHED FIRST AND WINS OUT TO `CATCH_RADIUS`, which is the
    * katana's own reach — see the long note in `strike` for why the pin is
@@ -377,15 +382,7 @@ export class Menagerie {
    * @returns {{kind: 'pin'|'air', c: object}|null}
    */
   _findTarget(player, reach, seen = null) {
-    let pick = null;
-    let pickD = CATCH_RADIUS;
-    if (this._canHold(player)) {
-      for (const c of this.list) {
-        if (!c.pinnable || seen?.has(c)) continue;
-        const d = player.position.distanceTo(c.position);
-        if (d < pickD) { pick = c; pickD = d; }
-      }
-    }
+    const pick = this._findPin(player, seen);
     if (pick) return { kind: 'pin', c: pick };
 
     /* Nothing on the floor — is there something in the air? A rabbit gets
@@ -393,37 +390,109 @@ export class Menagerie {
        between the 15 and the 20: one costs a swing and then a hold, the other
        costs a swing and then a place to stand. The vertical window is generous
        because a billboard is a flat drawing with a point for a position. */
+    /* THE SWAT IS THE SWING, AND FOR A LONG TIME IT WAS NOT.
+       This was radius-only at `reach * 1.35` — no facing test and 35% further
+       than the blade — so a kitten cut down a rabbit standing squarely BEHIND
+       her, out past the end of an arc that was drawn in front. Reported from
+       play as exactly that: "we can hit animals even if not facing its
+       direction with a swing, it should have the same hit collision as a
+       normal swing."
+
+       It is `ATTACKS.stand`'s own arc and `reach` now — the same two numbers
+       `_doSlash` tests every barrel against — so the animal and the scenery
+       answer one question. The old 1.35 was never defended anywhere; the
+       comment that sat here defends the VERTICAL window, which is a different
+       argument and is kept below.
+
+       THE VERTICAL WINDOW STAYS GENEROUS, and that is not an oversight. A
+       flier is a flat drawing with a single point for a position, hanging
+       somewhere in a 6.5-unit column of air; the props' own +/-3 would put a
+       bird half a metre out of reach for reasons a nine-year-old cannot see.
+       Height is not facing, and facing is what was reported. */
+    const fx = Math.sin(player.facing);
+    const fz = Math.cos(player.facing);
     let air = null;
-    let airD = reach * 1.35;
+    let airD = reach;
     for (const c of this.list) {
       if (!c.swattable || seen?.has(c)) continue;
-      const d = Math.hypot(c.position.x - player.position.x, c.position.z - player.position.z);
+      const dx = c.position.x - player.position.x;
+      const dz = c.position.z - player.position.z;
+      const d = Math.hypot(dx, dz);
+      if (d >= airD) continue;
+      if ((dx * fx + dz * fz) / (d || 1) < ATTACKS.stand.arc) continue;
       const dy = c.position.y - player.position.y;
-      if (d < airD && dy > -1.5 && dy < 6.5) { air = c; airD = d; }
+      if (dy > -1.5 && dy < 6.5) { air = c; airD = d; }
     }
     return air ? { kind: 'air', c: air } : null;
   }
 
   /**
-   * Is there an animal this press should be spent on?
+   * The animal she could put a paw on RIGHT NOW, or null.
+   *
+   * SPLIT OUT SO THE BUTTON AND THE SWING SHARE IT. `_findTarget` searches the
+   * floor first and the air second; the attack button (`wouldHold`) wants the
+   * floor half and nothing else, because that is the only half that is the eat
+   * gesture. Asking the whole search for it is what let a bird four units
+   * overhead take a kitten's Cross Slash away.
+   *
+   * RADIUS-ONLY AND FIXED. `CATCH_RADIUS` does not scale with her blade, her
+   * clan or her orbs — see `strike` for why the pin has no forward arc, and
+   * `wouldHold` for why it must not grow.
+   */
+  _findPin(player, seen = null) {
+    if (!this._canHold(player)) return null;
+    let pick = null;
+    let pickD = CATCH_RADIUS;
+    for (const c of this.list) {
+      if (!c.pinnable || seen?.has(c)) continue;
+      const d = player.position.distanceTo(c.position);
+      if (d < pickD) { pick = c; pickD = d; }
+    }
+    return pick;
+  }
+
+  /**
+   * Is this press the EAT gesture rather than an attack?
    *
    * THE CROSS SLASH ATE THE SNACK BUTTON, and this is the fix. Wearing the orb
    * makes ATTACK a deferred press — it waits `CROSS.hold` to find out whether
    * it was a tap or the start of the technique (see the `deferred` branch in
-   * `Player.update`) — and `_doSlash`, which is the only thing that ever calls
-   * `strike`, does not run at all on a hold. So a kitten wearing the orb who
-   * stood over a rat and held the button got a wind-up instead of a snack, and
-   * the feast was simply unplayable for her. Reported from four-player play.
+   * `Player.update`) — and neither `_doSlash` nor the two-second hold that
+   * keeps an animal down survives a wind-up. So a kitten wearing the orb who
+   * stood over a rat and held the button got a technique instead of a snack.
+   * Reported from four-player play.
    *
-   * Asked at the MOMENT OF THE PRESS, before anything is armed: an animal in
-   * range means this press is an ordinary swing, thrown now, and the technique
-   * is not offered. Standing next to an animal is exactly where you want the
-   * cheap swing and exactly where you do not want a 2.4-second commitment.
+   * AND THEN THE FIX WAS TOO BIG, WHICH IS THE SECOND REPORT. It asked
+   * `_findTarget` — the whole search, swat included — with her real `_reach()`.
+   * That radius GROWS WITH HER BLADE: Riverclaw and three Long Cut orbs put it
+   * past twelve units, so a kitten who had earned the longest katana in the
+   * game had the Cross Slash quietly taken off her over most of the deck, by
+   * a rabbit she was not even looking at. Reported as "it cancels the Cross
+   * Slash which it shouldn't, an animal shouldn't be affected by player
+   * distance or override their special abilities".
+   *
+   * SO IT IS THE HOLD, AND ONLY THE HOLD. Two states, and both of them are
+   * ATTACK-means-keep-eating rather than ATTACK-means-attack:
+   *
+   *   - she is already holding one, pinned or in her mouth. `_updateHold`
+   *     drops it the frame she stops holding the button, and a wind-up sets
+   *     `busy`, which `_canHold` refuses — so without this line a kitten with
+   *     the orb could catch a bird and never swallow it. That was broken
+   *     before this was ever narrowed; the old early return here said the
+   *     opposite and hid it.
+   *   - she could pin one right now: `_canHold` (still, on the ground, not
+   *     mid-move) and inside `CATCH_RADIUS`. That is a FIXED 3.4 and does not
+   *     scale with anything she is wearing, which is the whole repair — it is
+   *     "standing on top of an animal", not "somewhere near one".
+   *
+   * Everywhere else on the deck the technique is hers, at any reach, and an
+   * animal a cut sweeps over just gets stunned like anything else.
    */
-  wouldCatch(player, reach) {
+  wouldHold(player) {
     if (!this.on || player.angel || player.ko) return false;
-    if (this.held[player.index]) return false;
-    return !!this._findTarget(player, reach);
+    if (this.held[player.index]) return true;
+    if (!this._canHold(player)) return false;
+    return !!this._findPin(player);
   }
 
   /**

@@ -235,6 +235,48 @@ reads the mesh scale off `slash`, over five configurations, as a *ratio* against
 `_reach()` — so it cannot be satisfied by a second formula that happens to agree
 at one point, which is exactly what the old direct read was.
 
+### ...and then the two of them were multiplied together
+
+Reported from play: *"joining the Riverclaw clan, the katana doubles from the
+current Kotodama powerup values."* `_reach()` read
+
+```js
+BASE_REACH * clanReach * power.reach
+```
+
+so Riverclaw's **1.8** was charged on the *orbs'* bonus as well as on the base
+blade. Three Long Cut orbs are `1 + 0.30x3 = 1.90`; under Riverclaw that came
+out at **3.42** — a blade **11.6 metres** long, swung by a kitten who is 2.9
+tall, reaching a girl standing nowhere near her.
+
+**Every bonus is measured against the unsworn, unadorned blade, and then they
+are summed.** `clan + (orbs - 1)`. The `-1` takes the base back out of the orb
+multiplier so only its bonus is left: 1.90 is *the blade, plus 0.90 of a
+blade*, and it is that 0.90 which Riverclaw's 1.80 gets added to. **1.8 + 0.9 =
+2.70**, and the blade is 9.2m.
+
+**Lowering `buff.reach` would not have fixed it**, which is worth writing down
+because it is the tempting cheap answer. The double-count *grows with the
+stack* — one orb's 0.30 was doubled into 0.54, three orbs' 0.90 into 1.62 — so
+no single smaller number is right at more than one stack size; it only picks
+which one is wrong by how much. The shape of the sum was the bug.
+
+Two identities the `-1` has to preserve, and `world-check` pins both: no clan
+is `1 + (orbs - 1) = orbs`, and no orbs is `clan + 0 = clan`. An unsworn kitten
+with an empty neck is `1 + 0 = 1`, which is why nothing outside the arena
+moved — and why the *previous* section's fix, which put the drawn arc on this
+same accessor, meant the picture shrank with the hitbox for free.
+
+**The check that let it through asserted the bug.** The block above ends with
+*"and a Riverclaw kitten wearing three of them gets both"*, and its test was
+`arcBoth > arcThree * 1.5` — a threshold only a *product* can clear. It was
+written to catch the arc not moving, and it caught that; nobody noticed it had
+also pinned the stacking law, wrongly, in passing. It is now a sweep over 0-4
+orbs asserting the surplus over plain **adds**, stated as the two bonuses
+rather than as the formula, so it cannot be satisfied by writing the same
+product a second way. The reported number is nailed down separately:
+*Riverclaw with three Long Cut orbs reaches 2.70x, not 3.42x*.
+
 ### Telling her what happened, with no new art
 
 **THE OBVIOUS ANSWER IS TO GENERATE HURT AND KO ROWS, AND IT IS THE WRONG ONE.**
@@ -1133,3 +1175,100 @@ through the real path. Same argument as `7` `8` `9` and `6`: the fifteen seconds
 between rounds are behind the whole unlock *and* a round somebody has to
 actually win, so the two newest things in the game were also the two hardest to
 look at.
+
+## The animal that could take your special move away
+
+### A swat had no facing, and a third more reach than the blade
+
+> Currently we can hit animals even if not facing its direction with a swing;
+> instead it should have the same hit collision as a normal swing.
+
+`Menagerie._findTarget`'s air branch was radius-only at `reach * 1.35`. No arc
+test at all — so a rabbit standing squarely **behind** her, out past the end of
+an arc drawn in front, was cut down by a swing pointed the other way.
+
+It is `ATTACKS.stand`'s own `arc` and `reach` now, the two numbers `_doSlash`
+tests every barrel against, so the animal and the scenery answer one question.
+`ATTACKS` rather than a copy, because that table is **tunable** — somebody may
+widen the standing swing on the balance page, and a second literal here would
+quietly keep the old shape for the one thing on the deck that moves.
+
+The old 1.35 was never defended anywhere. The comment that sat next to it
+defends the **vertical** window, which is a different argument and is kept: a
+flier is a flat drawing with one point for a position, hanging somewhere in a
+6.5-unit column of air, and the props' ±3 would put a bird half a metre out of
+reach for a reason a nine-year-old cannot see. Height is not facing, and facing
+is what was reported.
+
+### The Cross Slash was taken away by any animal her blade could reach
+
+> It cancels the Cross Slash ability which it shouldn't do. An animal should
+> just get stunned when it gets hit, so shouldn't be affected by player distance
+> or override their special abilities.
+
+This is the previous fix overshooting, and it is worth having both halves
+written down in one place.
+
+**The first report** was that wearing the orb, standing over an animal and
+holding ATTACK wound up a three-cut technique instead of picking the animal up.
+Both halves of eating die on a wind-up: `Menagerie.strike` is only ever called
+by `Player._doSlash`, which a hold never reaches, and the two-second hold that
+*keeps* an animal is refused by `_canHold` the moment `busy` goes true. So the
+feast was unplayable for whoever had bought the Cross Slash. The repair is in
+the button, not the swing — a predicate asked at the moment of the press.
+
+**The second report** is that the predicate asked `_findTarget` — the whole
+search, swat included — with her real `_reach()`. **That radius grows with her
+blade.** A Riverclaw kitten wearing three Long Cut orbs reaches 9.18, and the
+air branch was 1.35 of that: over twelve units of deck on which a rabbit she was
+not even looking at silently downgraded her technique to a plain swing. She had
+earned the longest katana in the game and paid for it with her special move.
+
+`wouldHold` is the narrow question now, and both of its states are ones where
+ATTACK visibly means *keep eating* rather than *attack*:
+
+- **she is already holding one**, pinned or in her mouth. The old predicate
+  returned `false` here — the exact opposite — so a kitten with the orb could
+  catch a bird and then never swallow it, because every attempt to hold the
+  button wound up a technique whose `busy` reset her chew. That bug was there
+  before this line was ever narrowed, and the early return hid it.
+- **she could pin one right now**: `_canHold` (still, on the ground, not
+  mid-move) and inside `CATCH_RADIUS`. That is a fixed 3.4 and does not scale
+  with anything she is wearing, which is the whole repair. "Standing on top of
+  an animal", not "somewhere near one".
+
+Everywhere else on the deck the technique is hers at any reach, and an animal a
+cut sweeps over just gets stunned like anything else — the cuts call `_doSlash`,
+which calls `strikeCritters`, so that was already true.
+
+`_findPin` exists so the button and the swing share the floor half of the
+search. Asking the *whole* search for it is what let a bird four units overhead
+take a kitten's Cross Slash away.
+
+### And it stopped shouting about a move it might not throw
+
+> The message should not appear saying "Cross Slash" if the player cancels the
+> ability. Should probably remove the text from appearing altogether.
+
+The toast fired from `_startWind`, at the **plant** — which was the point of the
+wind-up, and is also the one part of the technique she can still lose. Letting
+go cancels it and so does a blade. So the game announced CROSS SLASH and then,
+whenever anybody actually fought back, nothing happened; that reads as the move
+being broken rather than as the counter having worked.
+
+**The tell is not lost with it.** `systems/crossfx.js` draws the wind-up and its
+seal, and that one is drawn **from the state** rather than fired once at the
+start of it — so it comes and goes with the technique instead of outliving it. A
+picture that stops is a cancel; a toast that has already been read is not.
+
+The check for this asserts the toast count on the wind-up that **succeeded**,
+not on a cancel: a check that only watched cancels would pass on a toast that
+fires every single time.
+
+**One check had to change to allow the comment explaining this.** `player.js`
+must never mention `crossfx` — that is the poller doctrine, and it is pinned
+because the technique can end five ways and callbacks would mean five places to
+remember the seal. The check tested the raw file, so the first comment to
+*explain* the doctrine failed the check that exists to protect it. It reads
+`stripComments(pl)` now. A check a comment can break teaches the next person to
+delete the comment, which is the one outcome it is trying to prevent.

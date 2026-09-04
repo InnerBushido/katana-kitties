@@ -70,6 +70,50 @@ export const worldSpawnCount = (players = 2) =>
 /** How close you have to be to walk one up. */
 const PICKUP_RADIUS = 2.8;
 
+/**
+ * How far apart a leaving kitten's orbs are laid out, and the turn between
+ * them.
+ *
+ * A RING, JITTERED, RATHER THAN A RANDOM CLOUD. Eight uniform draws inside a
+ * circle put two of them on top of each other often enough to look like the
+ * bug this replaced; walking the bearing by a whole turn divided by eight and
+ * then wobbling it keeps them apart AND keeps them looking dropped rather than
+ * arranged. The radius grows with the index so a big stack becomes a loose
+ * spiral instead of a tight necklace nobody can walk into the middle of.
+ *
+ * THE WOBBLES ARE BOTH SMALLER THAN THEIR OWN STEP, AND THAT IS THE WHOLE
+ * POINT OF THE NUMBERS. The first pass used a bearing wobble of 0.7rad against
+ * a step of 45 degrees (0.785rad) — nearly the entire step, so two neighbours
+ * could land on the same bearing at nearly the same radius and the fan
+ * reproduced the pile it was written to replace, just less often. `DROP_ASPIN`
+ * is 0.3 (17 degrees, leaving 28 between any two) and `DROP_RJIT` is under
+ * `DROP_RSTEP`, so the spiral cannot fold back on itself. Worst case is a
+ * chord of about 1.3 units.
+ *
+ * SMALL ON PURPOSE. These are hers and she has just gone; a sister standing
+ * next to her should be able to pick the lot up without a hunt. `DROP_R0` is
+ * a bit more than a kitten's own width.
+ */
+const DROP_R0 = 2.6;
+const DROP_RSTEP = 0.55;
+const DROP_RJIT = 0.4;
+const DROP_ASPIN = 0.3;
+/**
+ * How much room a dropped orb asks for.
+ *
+ * 1.5, AND IT WAS 5 — the number `findOpenSpot` uses to perch a DRAGON. An
+ * orb is a hand-sized shell you walk over. Five units of clearance plus level
+ * ground for nine around it is a test almost nothing near a town passes, so
+ * every fanned point failed and fell through to the SAME deterministic ring
+ * the search walks — which put the pile straight back, measured at 0.37 units
+ * between two orbs where the fan itself never gets closer than 1.3.
+ *
+ * A SEARCH THAT REFUSES EVERYWHERE IS NOT A SAFETY NET, IT IS A FUNNEL. The
+ * clearance still keeps an orb out of the inside of a house and off a cliff
+ * edge, which is all it was ever wanted for here.
+ */
+const DROP_CLEAR = 1.5;
+
 export class Kotodama {
   /**
    * @param {object} game the Game — used for scene, players, toasts and sfx
@@ -463,6 +507,7 @@ export class Kotodama {
     this.awakened = false;
   }
 
+
   /**
    * Put one orb back into the world at a spot — a player leaving the game.
    *
@@ -470,11 +515,27 @@ export class Kotodama {
    * cannot destroy the supply between them. Only a fixed number of these exist,
    * and a kitten walking out of the game with eight of them would delete a
    * chunk of the endgame for everybody still playing.
+   *
+   * @param spread which orb of the drop this is, 0-based. Non-zero fans it off
+   *        `at` — see `DROP_R0`. `findOpenSpot` runs on the FANNED point, not
+   *        on her feet, so an orb that lands in a wall still walks itself out
+   *        and the fan is not silently undone by the search.
    */
-  dropInWorld(id, at) {
+  dropInWorld(id, at, spread = 0) {
     const spec = ORB_BY_ID[id];
     if (!spec || !this.awakened) return null;
-    const spot = this.world.findOpenSpot(at.x, at.z, 5) ?? { x: at.x, z: at.z };
+    let wx = at.x;
+    let wz = at.z;
+    if (spread > 0) {
+      /* GOLDEN-ANGLE-ISH: a whole turn over eight, plus a wobble. Eight is
+         MAX_EQUIPPED, so a full neck comes out as a ring and anything less as
+         an arc of one. */
+      const a = (spread / MAX_EQUIPPED) * Math.PI * 2 + Math.random() * DROP_ASPIN;
+      const r = DROP_R0 + spread * DROP_RSTEP + Math.random() * DROP_RJIT;
+      wx += Math.cos(a) * r;
+      wz += Math.sin(a) * r;
+    }
+    const spot = this.world.findOpenSpot(wx, wz, DROP_CLEAR) ?? { x: wx, z: wz };
     const g = this.world.heightAt(spot.x, spot.z);
     if (!g) return null;
     const pk = new PowerOrbPickup(spec, spot.x, g.y, spot.z);
