@@ -739,6 +739,13 @@ export class Player {
     this.camDist = 26;
     this.camTarget = this.position.clone();
     this._offset = new THREE.Vector3();
+    /* How much further back the SHAPE of her pane says to sit — 1 unless the
+       split screen has handed her a rectangle narrower than a quadrant, and
+       written every frame by `Game._updateSplit` (see `core/split.js`
+       `paneWiden`). A Player built outside the game — every one in
+       `world-check`, and the character picker's — never has it written, so it
+       is 1 here and the camera behaves exactly as it did before it existed. */
+    this.paneWiden = 1;
 
     /* When the kitten walks into a "focus" area â€” right now the Unit Circle
        Dojo â€” the camera pulls back and tilts toward top-down so the whole
@@ -1809,25 +1816,30 @@ export class Player {
        the house rule about comments is about.)
        SHE IS STILL MOBILE FOR ALL OF IT. The planting starts at CROSS.wind,
        after the line is crossed and the technique is committed. */
-    /* AN ANIMAL WITHIN REACH TAKES THE PRESS BACK OFF THE TECHNIQUE.
-       The Cross Slash made ATTACK a deferred press, and the snack is thrown by
-       `_doSlash`, which a HOLD never reaches — so a kitten wearing the orb
-       could not eat at all: standing over a rat and holding the button wound
-       up a three-cut technique instead. Reported from four-player play.
+    /* THE EAT GESTURE TAKES THE PRESS BACK OFF THE TECHNIQUE — and NOTHING
+       ELSE DOES, which is the second half of this rule and was missing.
 
-       ASKED HERE, AT THE PRESS, AND NOT INSIDE THE SWING. That is the whole
-       repair: by the time a swing exists the decision has already been made,
-       and the branch that made it is the one that never ran. `critterNear`
-       runs the SAME search `Menagerie.strike` will run a line later, so the
-       button and the swing cannot disagree about what is in range.
+       The Cross Slash made ATTACK a deferred press, and both halves of eating
+       — the swing that catches, and the two-second hold that keeps — die on a
+       wind-up. So a kitten wearing the orb could not eat at all. That is the
+       first report and this line is its fix.
 
-       IT COSTS HER THE TECHNIQUE WHILE SHE IS STANDING ON A SNACK, and that is
-       the right trade: the feast is fifteen seconds of chasing rabbits, and a
-       2.4-second planted commitment is not a thing anybody wants to start by
-       accident with a rat at their feet. Step away from it and the hold is
-       back. */
+       IT WAS ASKED FAR TOO WIDELY. `critterNear` used to hand her real
+       `_reach()` to the whole target search, swat included, so the radius over
+       which a rabbit could take the technique away GREW WITH HER BLADE: past
+       twelve units for a Riverclaw kitten wearing three Long Cut orbs. She had
+       earned the longest katana in the game and paid for it with her special
+       move over most of the deck. Reported as "it cancels the Cross Slash
+       which it shouldn't — an animal shouldn't be affected by player distance
+       or override their special abilities", and that is the right rule: an
+       animal a cut sweeps over now just gets stunned, like anything else.
+
+       `critterHold` is the narrow question — she is already holding one, or
+       she is standing still on top of one inside a FIXED 3.4. Both are states
+       where ATTACK visibly means "keep eating", and neither moves when she
+       buys an orb. Step off the animal and the technique is hers again. */
     const deferred = !!this.power.tri && !this.pandaMount
-      && !hud?.critterNear?.(this, this._reach());
+      && !hud?.critterHold?.(this);
     if (pad.pressed('attack') && this.attackCooldown <= 0 && !this.busy) {
       if (this.pandaMount) {
         this.attackTimer = 0.26;
@@ -1874,7 +1886,7 @@ export class Player {
            still and mean it. `_startTriple` is no longer called from here —
            the wind-up runs first and calls it. */
         this._triPend = false;
-        this._startWind(hud);
+        this._startWind();
       }
     }
 
@@ -2525,20 +2537,31 @@ export class Player {
   /**
    * She has held past the line: plant her, and let everybody see it coming.
    *
-   * THE TOAST MOVED HERE FROM `_startTriple`, WHICH IS THE POINT OF THE
-   * WIND-UP. Announcing the cross slash on the frame the first cut lands tells
-   * three sisters what already happened to one of them. Announcing it a
-   * quarter of a second earlier, while she is stood still winding up, is a
-   * tell they can act on — and a tell nobody can act on is decoration.
+   * THERE IS NO TOAST HERE ANY MORE, AND IT WAS THE WIND-UP THAT KILLED IT.
+   * The line used to read `CROSS SLASH!` the moment she planted, on the
+   * argument that a tell nobody can act on is decoration — announce it a
+   * quarter of a second early and her sisters can move. What that argument
+   * missed is that the wind-up is the one part of the technique she can still
+   * lose: letting go cancels it, and so does a blade (`hurt`). So the game
+   * shouted CROSS SLASH and then, most of the time somebody was actually
+   * fighting back, nothing happened — which reads as the move being broken
+   * rather than as the counter having worked. Reported from play: "the message
+   * shouldn't appear if the player cancels the ability; probably remove the
+   * text altogether."
+   *
+   * THE TELL IS NOT LOST WITH IT. `systems/crossfx.js` draws the wind-up and
+   * its seal, and that one is drawn WHILE the state is true rather than fired
+   * once at the start of it — so it comes and goes with the technique instead
+   * of outliving it. A picture that stops is a cancel; a toast that has
+   * already been read is not.
    *
    * The ward is NOT dropped here. `_startTriple` still owns that, because a
    * kitten who commits and then lets go should not have paid her bubble for a
    * move she never threw.
    */
-  _startWind(hud) {
+  _startWind() {
     this.triWindT = CROSS.wind;
     this.triHits = 0;
-    hud?.toast?.(`${this.name} — CROSS SLASH!`, this.index);
   }
 
   /* ---------------------- caught in one of them -------------------------- */
@@ -3549,6 +3572,28 @@ export class Player {
     }
 
     this.camYaw = yaw;
+
+    /* AND THEN THE SHAPE OF HER PANE, WHICH EVERY DISTANCE ABOVE IGNORES.
+       All of them — the walking clamp, the panda's, the mount's, the Dojo's
+       and the star shot's — were tuned on a full-width screen, and in the
+       62/38 split a kitten on her own is drawing into 730x1080. She sees 38%
+       of the world across that a quadrant of the same screen would, which is
+       what "the camera is zoomed in too much, it should be pulled out more"
+       means from inside that column.
+
+       APPLIED LAST AND TO EVERYTHING, deliberately. It is not a property of
+       walking or of flying, it is a property of the RECTANGLE, so every
+       framing above pays it equally — otherwise the pull-back would appear
+       and disappear as she got on a dragon or walked into the Dojo, which is
+       the camera lurching for a reason nothing on screen explains.
+
+       `Math.max(1, ...)` and the finite test are the degrade rule: this field
+       is written from outside, and a bad one must cost the widening and not
+       the position. It is exactly 1 for one pane, for even panes and for the
+       whole two-player game — see `paneWiden`, which refuses to answer for an
+       even split precisely so that game cannot move. */
+    const pw = Number.isFinite(this.paneWiden) ? Math.max(1, this.paneWiden) : 1;
+    wantDist *= pw;
 
     /* Easing back down after a dismount. The flight camera sits up to 130
        units out and the ground camera at 24, so snapping between them at the

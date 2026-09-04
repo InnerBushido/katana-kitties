@@ -1175,3 +1175,100 @@ through the real path. Same argument as `7` `8` `9` and `6`: the fifteen seconds
 between rounds are behind the whole unlock *and* a round somebody has to
 actually win, so the two newest things in the game were also the two hardest to
 look at.
+
+## The animal that could take your special move away
+
+### A swat had no facing, and a third more reach than the blade
+
+> Currently we can hit animals even if not facing its direction with a swing;
+> instead it should have the same hit collision as a normal swing.
+
+`Menagerie._findTarget`'s air branch was radius-only at `reach * 1.35`. No arc
+test at all — so a rabbit standing squarely **behind** her, out past the end of
+an arc drawn in front, was cut down by a swing pointed the other way.
+
+It is `ATTACKS.stand`'s own `arc` and `reach` now, the two numbers `_doSlash`
+tests every barrel against, so the animal and the scenery answer one question.
+`ATTACKS` rather than a copy, because that table is **tunable** — somebody may
+widen the standing swing on the balance page, and a second literal here would
+quietly keep the old shape for the one thing on the deck that moves.
+
+The old 1.35 was never defended anywhere. The comment that sat next to it
+defends the **vertical** window, which is a different argument and is kept: a
+flier is a flat drawing with one point for a position, hanging somewhere in a
+6.5-unit column of air, and the props' ±3 would put a bird half a metre out of
+reach for a reason a nine-year-old cannot see. Height is not facing, and facing
+is what was reported.
+
+### The Cross Slash was taken away by any animal her blade could reach
+
+> It cancels the Cross Slash ability which it shouldn't do. An animal should
+> just get stunned when it gets hit, so shouldn't be affected by player distance
+> or override their special abilities.
+
+This is the previous fix overshooting, and it is worth having both halves
+written down in one place.
+
+**The first report** was that wearing the orb, standing over an animal and
+holding ATTACK wound up a three-cut technique instead of picking the animal up.
+Both halves of eating die on a wind-up: `Menagerie.strike` is only ever called
+by `Player._doSlash`, which a hold never reaches, and the two-second hold that
+*keeps* an animal is refused by `_canHold` the moment `busy` goes true. So the
+feast was unplayable for whoever had bought the Cross Slash. The repair is in
+the button, not the swing — a predicate asked at the moment of the press.
+
+**The second report** is that the predicate asked `_findTarget` — the whole
+search, swat included — with her real `_reach()`. **That radius grows with her
+blade.** A Riverclaw kitten wearing three Long Cut orbs reaches 9.18, and the
+air branch was 1.35 of that: over twelve units of deck on which a rabbit she was
+not even looking at silently downgraded her technique to a plain swing. She had
+earned the longest katana in the game and paid for it with her special move.
+
+`wouldHold` is the narrow question now, and both of its states are ones where
+ATTACK visibly means *keep eating* rather than *attack*:
+
+- **she is already holding one**, pinned or in her mouth. The old predicate
+  returned `false` here — the exact opposite — so a kitten with the orb could
+  catch a bird and then never swallow it, because every attempt to hold the
+  button wound up a technique whose `busy` reset her chew. That bug was there
+  before this line was ever narrowed, and the early return hid it.
+- **she could pin one right now**: `_canHold` (still, on the ground, not
+  mid-move) and inside `CATCH_RADIUS`. That is a fixed 3.4 and does not scale
+  with anything she is wearing, which is the whole repair. "Standing on top of
+  an animal", not "somewhere near one".
+
+Everywhere else on the deck the technique is hers at any reach, and an animal a
+cut sweeps over just gets stunned like anything else — the cuts call `_doSlash`,
+which calls `strikeCritters`, so that was already true.
+
+`_findPin` exists so the button and the swing share the floor half of the
+search. Asking the *whole* search for it is what let a bird four units overhead
+take a kitten's Cross Slash away.
+
+### And it stopped shouting about a move it might not throw
+
+> The message should not appear saying "Cross Slash" if the player cancels the
+> ability. Should probably remove the text from appearing altogether.
+
+The toast fired from `_startWind`, at the **plant** — which was the point of the
+wind-up, and is also the one part of the technique she can still lose. Letting
+go cancels it and so does a blade. So the game announced CROSS SLASH and then,
+whenever anybody actually fought back, nothing happened; that reads as the move
+being broken rather than as the counter having worked.
+
+**The tell is not lost with it.** `systems/crossfx.js` draws the wind-up and its
+seal, and that one is drawn **from the state** rather than fired once at the
+start of it — so it comes and goes with the technique instead of outliving it. A
+picture that stops is a cancel; a toast that has already been read is not.
+
+The check for this asserts the toast count on the wind-up that **succeeded**,
+not on a cancel: a check that only watched cancels would pass on a toast that
+fires every single time.
+
+**One check had to change to allow the comment explaining this.** `player.js`
+must never mention `crossfx` — that is the poller doctrine, and it is pinned
+because the technique can end five ways and callbacks would mean five places to
+remember the seal. The check tested the raw file, so the first comment to
+*explain* the doctrine failed the check that exists to protect it. It reads
+`stripComments(pl)` now. A check a comment can break teaches the next person to
+delete the comment, which is the one outcome it is trying to prevent.

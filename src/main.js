@@ -267,6 +267,31 @@ const CAVE_PITCH = 0.82;
  *  an effect shorter than the change it is hiding does not hide it. */
 const BOOM_TIME = 0.5;
 
+/**
+ * How far apart two kittens have to be for a join spot to count as free.
+ *
+ * A kitten is about two units across and 2.9 tall, so three units is "you can
+ * see there are two of us" and not much more. Bigger and a join in a busy
+ * town square walks a long way out of it to find room; smaller and two cats
+ * still read as one drawing. See `_joinSpot`.
+ */
+const JOIN_APART = 3;
+
+/**
+ * How far a kitten's starting mark may wander from her lane.
+ *
+ * ONE UNIT, WHICH IS DELIBERATELY SMALL. The four marks are 3.5 apart
+ * (`palette.js` `startX`), so a full unit of wobble each way still leaves a
+ * clear gap and — the part that matters — leaves the four of them in the same
+ * left-to-right ORDER every single game. Ember is always the leftmost cat.
+ * Randomising far enough to shuffle that would make "go left, that's yours"
+ * stop being true, which is a worse thing to lose than sameness.
+ *
+ * The z wobble is the same number. The mark is at z 34 on open ground, so
+ * there is nothing within a unit of it to be pushed into.
+ */
+const START_JITTER = 1;
+
 class Game {
   constructor() {
     this.canvas = document.getElementById('game');
@@ -1423,7 +1448,16 @@ class Game {
     const style = styleFor(styleIndex);
     const sheet = this.sheets[style.sheet];
     const a = this.kittenArt[styleIndex];
-    const g = this.world.heightAt(style.startX, 34);
+    /* HER MARK, WOBBLED. Four fixed marks meant every game started with the
+       same photograph, and — the reported half — a kitten who joined, left and
+       rejoined landed back on a mark somebody else might now be standing on.
+       Drawn ONCE, here, rather than every respawn: `spawn` is also where she
+       comes back after a fall, and a respawn point that moved under her would
+       be the game losing her mark rather than scattering it.
+       See `START_JITTER` for why it is only a unit. */
+    const jx = (Math.random() * 2 - 1) * START_JITTER;
+    const jz = (Math.random() * 2 - 1) * START_JITTER;
+    const g = this.world.heightAt(style.startX + jx, 34 + jz);
 
     // Replacing a kitten already in the scene — the character picker swapping
     // her for a different cat. Take the old one out or both are drawn.
@@ -1443,7 +1477,7 @@ class Game {
       mirror: a.cols <= 4 && a.rows === 1,
       index,
       style,
-      spawn: new THREE.Vector3(style.startX, (g ? g.y : 8) + 0.1, 34),
+      spawn: new THREE.Vector3(style.startX + jx, (g ? g.y : 8) + 0.1, 34 + jz),
       name: style.name,
       height: sheet.height,
       dirSense: sheet.dirSense,
@@ -4274,16 +4308,22 @@ class Game {
   }
 
   /**
-   * Would this swing land on an animal? Asked by the attack button, not by a
-   * swing — see `Menagerie.wouldCatch` for the bug that needed it.
+   * Is this press the EAT gesture? Asked by the attack button, not by a swing
+   * — see `Menagerie.wouldHold` for the two bugs that shaped it.
    *
    * GATED ON THE SAME `tournament.active` AS `strikeCritters`, deliberately:
    * the two answers have to agree, or the button would decline to arm the
    * technique for an animal the swing then refuses to catch.
+   *
+   * NO `reach` ANY MORE, AND THAT IS THE FIX RATHER THAN A TIDY-UP. It used to
+   * take her real reach and hand it to the whole target search, so the radius
+   * over which an animal could take her Cross Slash away grew every time she
+   * bought a Long Cut orb. The eat gesture is a fixed 3.4 and a standstill;
+   * there is nothing left for a reach to mean here.
    */
-  critterNear(attacker, reach) {
+  critterHold(attacker) {
     if (!this.tournament?.active) return false;
-    return !!this.menagerie?.wouldCatch(attacker, reach);
+    return !!this.menagerie?.wouldHold(attacker);
   }
 
   _updateBallHud() {
@@ -5909,6 +5949,20 @@ class Game {
     const ok = (x, z) => {
       const g = this.world.heightAt(x, z);
       if (!g) return null;                    // open sky
+      /* AND NOT IN SOMEBODY ELSE'S LAP. This function has no memory, so two
+         kittens joining a second apart both asked the same question about the
+         same town centre, both got yes, and both landed on the same point —
+         two cats drawn exactly on top of each other, which reads as one cat
+         and a join that did nothing. Force-spawn made it the normal case:
+         ENTER, ENTER seats a third and fourth in the time it takes to press a
+         key twice. Reported as "have some randomness when players spawn in the
+         town, so they don't spawn right on top of each other."
+         Asked of the LIVE positions rather than of a list of spots handed out,
+         so it is also true of a kitten who was simply standing there. */
+      for (const q of this.players) {
+        if (!q) continue;
+        if (Math.hypot(x - q.position.x, z - q.position.z) < JOIN_APART) return null;
+      }
       /* NOT INSIDE ANYTHING, asked of the world's own solids rather than of a
          list kept here. `resolveSolids` pushes a body out of whatever it is
          standing in, so a point it declines to move is a point that is clear —
@@ -5926,6 +5980,14 @@ class Game {
       return { x, y: g.y, z };
     };
 
+    /* A DIFFERENT BEARING EVERY TIME THIS IS ASKED. Without it the rings are
+       walked in the same order for everybody, so the second kitten to join
+       takes the first free spoke, the third takes the same one the second
+       vacated, and four joins come out in a neat line pointing north-east.
+       The rule above stops them overlapping; this is what stops them queueing.
+       One draw for the whole search, not one per candidate, so the rings stay
+       rings and the search stays exhaustive. */
+    const spin = Math.random() * Math.PI * 2;
     let hit = ok(want.x, want.z);
     for (let ring = 1; ring <= 8 && !hit; ring++) {
       const r = ring * 3;
@@ -5933,10 +5995,15 @@ class Game {
       for (let i = 0; i < steps && !hit; i++) {
         // The `+ ring` turns each ring off the last one's spokes, so eight
         // rings sample eight different bearings rather than one line outward.
-        const a = (i / steps) * Math.PI * 2 + ring;
+        const a = (i / steps) * Math.PI * 2 + ring + spin;
         hit = ok(want.x + Math.cos(a) * r, want.z + Math.sin(a) * r);
       }
     }
+    /* THE LAST RESORT IS STILL THE TOWN CENTRE, AND IT STILL MAY OVERLAP.
+       Every rule above is a preference; this is the ninth non-negotiable's
+       "degrade rather than vanish" applied to a join. A kitten standing on her
+       sister is recoverable in one step of the stick. A kitten in the sky is
+       not. */
     return hit ?? { x: T.x, y: T.y, z: T.z };
   }
 
@@ -6007,13 +6074,41 @@ class Game {
     if (this.partySize <= 1 || !this.players[index]) return;
     const p = this.players[index];
 
-    for (const id of p.powerOrbs ?? []) this._dropOrbInWorld(id, p.position);
+    /* SCATTERED, NOT STACKED. Every orb went to `p.position` and
+       `findOpenSpot` is deterministic, so a kitten leaving with eight of them
+       dropped eight pickups into one point — one orb's worth of geometry on
+       screen, z-fighting with itself, and a pile you cannot tell the size of.
+       They are her whole neck's worth going back into a world where only
+       twenty-six exist; they have to look like eight things. */
+    (p.powerOrbs ?? []).forEach((id, i) => this._dropOrbInWorld(id, p.position, i));
     if (p.mount) { p.mount.returnHome?.(); p.mount = null; }
     if (p.rideAlong) p.rideAlong = null;
     if (p.panda) p.panda.follows = false;
     if (this.ryu?.pilot === p) this.ryu.pilot = null;
     if (this.ryu?.gunner === p) this.ryu.gunner = null;
+    /* TWO CONSTELLATIONS ORBIT A KITTEN AND ONLY ONE WAS BEING TAKEN DOWN.
+       `orbs` is the PLAIN Kotodama she has collected; `wornOrbs` is the power
+       orbs she is wearing — the ones the line above has just thrown on the
+       floor. This removed the first and not the second, so the moment anybody
+       with a power orb dropped out, her worn shells stayed in the scene for
+       the rest of the game, frozen at wherever they last were: the thing that
+       moves them walks `this.players`, and she is about to be spliced out of
+       that. Up to eight icosahedrons parked in the town square, on top of the
+       pickups they had just become. Reported as "the rotating visual orbs stay
+       on screen and are buggy".
+
+       THE `?? []` IS WHY NOBODY SAW IT. Both fields are optional on purpose —
+       a kitten who has never picked anything up has neither — so a name that
+       is simply absent reads exactly like a kitten with nothing to remove.
+
+       EMPTIED AS WELL AS REMOVED. `p` outlives this function; it is captured
+       by the toast below and by anything else still holding her. A list of
+       orbs that are no longer in any scene is a trap for whoever adds the next
+       thing that walks one. */
     for (const o of p.orbs ?? []) this.scene.remove(o.group);
+    for (const o of p.wornOrbs ?? []) this.scene.remove(o.group);
+    p.orbs = [];
+    p.wornOrbs = [];
     this.scene.remove(p.group);
 
     this.players.splice(index, 1);
@@ -6131,8 +6226,8 @@ class Game {
   }
 
   /** An orb belonging to a player who has left, put back where she was. */
-  _dropOrbInWorld(id, at) {
-    this.kotodama?.dropInWorld(id, at);
+  _dropOrbInWorld(id, at, spread = 0) {
+    this.kotodama?.dropInWorld(id, at, spread);
   }
 
   /**
@@ -7143,6 +7238,12 @@ class Game {
        rectangle. See `_updateRig` for what the aspect is FOR. */
     const size = this.renderer.getSize(new THREE.Vector2());
     const panes = this._panes(size.x, size.y, this.groups);
+    /* CLEARED FIRST, FOR EVERYBODY, so the value below is only ever this
+       frame's. A player who was alone in the narrow column and has just walked
+       back to her sisters is no longer the leader of any group — the loop
+       cannot reach her to reset it — and she would carry a 2.6x pull-back into
+       a pane she is not in, for the rest of the game. */
+    for (const p of this.players) if (p) p.paneWiden = 1;
     for (let i = 0; i < this.rigs.length; i++) {
       if (!this.players[i]) continue;
       const g = this.groups.findIndex((m) => m[0] === i);
@@ -7158,6 +7259,24 @@ class Game {
          there is no shape to answer for. */
       const widen = pane ? paneWiden(panes, g, size.x, size.y) : 1;
       this._updateRig(this.rigs[i], this.groups[g] ?? [i], dt, aspect, widen);
+      /* AND THE SAME NUMBER GOES TO HER OWN FOLLOW CAMERA, which is the one
+         that DRAWS when she is alone in a pane — see `_cameraFor`.
+
+         This is the case `paneWiden` was written for and the case it never
+         reached. Its docblock quotes the report word for word ("one kitten on
+         her own, in the 62/38 split's narrow column"), the function is right,
+         and the only caller was the shared rig — which by definition is
+         framing two or more. So the kitten the fix was for was the one player
+         in the game who never got it, and she is the one in the narrowest
+         pane on the screen: 730x1080, showing 38% of the world across that a
+         quadrant would. Reported a second time, in the same words.
+
+         SET RATHER THAN PASSED, because `_updateCamera` is called from
+         `Player.update` — which runs from the game loop, not from here, and
+         has no idea the screen is split. A field is also what lets it survive
+         the frames where a rig has no pane at all. */
+      const solo = this.groups[g]?.length === 1 ? this.players[this.groups[g][0]] : null;
+      if (solo) solo.paneWiden = widen;
     }
   }
 

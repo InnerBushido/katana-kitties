@@ -1851,3 +1851,146 @@ through it: the clock and the debug key cannot disagree about who won.
 whoever was ahead on damage takes it with the score she had actually earned, and
 an untouched round is a draw that still *ends* — a draw has to move the state
 on, or the round the clock just refused to keep open stays open.
+
+## The seventh session — the camera fix that never reached her, and two piles
+
+### `paneWiden` was right, and the one kitten it was for never got it
+
+> When 1 player is in one split screen and the other 3 are together, the camera
+> is zoomed in too much for the 1 player.
+
+The *same* report, a second time, against a fix that had already shipped. The
+section above is that fix; it is correct; the numbers in its table are the
+numbers `paneWiden` still returns. What it never says is **who calls it**, and
+the answer was `_updateRig` and nothing else.
+
+`Game._cameraFor` routes a **group of one** to `Player._updateCamera`, and gives
+good reasons: the grotto tilt, the Dojo framing, the star pose and the mount
+pull-back all live on the player's own camera, and a shared rig re-deriving them
+for a group of one would be a second copy of every one of those rules. All true.
+But a shared rig is by definition framing **two or more** — so the only caller
+of the pull-back was the only camera that could never be the lone kitten's. The
+fix was written for her, tested on her pane's dimensions, and wired to everybody
+else.
+
+`Player.paneWiden` is a field now, written every frame by `Game._updateSplit`
+and applied **last, to every distance** in `_updateCamera` — the walking clamp,
+the panda's, the mount's, the Dojo's, the star shot's. It is not a property of
+walking or of flying, it is a property of the rectangle, and a pull-back that
+appeared and disappeared as she climbed onto a dragon would be the camera
+lurching for a reason nothing on screen explains.
+
+Measured in the running game, four players, three together and one away:
+
+| | before | after |
+| --- | --- | --- |
+| the lone kitten's `camDist` | 24.00 | **63.30** |
+| the trio's `rig.dist` | 61.56 | **46.17** |
+
+**Two things keep the two-player game bit-identical**, and they are asserted
+separately because either alone would be a coincidence: `paneWiden` still
+refuses to answer for an even split, and a Player built anywhere else — every
+one in `world-check`, the character picker's — never has the field written at
+all, so it is 1 and the arithmetic is a multiply by one. `world-check` drives
+the real `_updateCamera` for a bare Player and pins her distance against the
+same number the widened one is divided by, plus `NaN`, `undefined`, `null`, a
+negative and a string, all of which have to cost the widening and never the
+position.
+
+### …and the pane that had MORE screen was being pushed out too
+
+> For the other 3, can zoom in at least 25% more, as it has more screen space.
+
+The rule is written from the narrow pane's side — *nobody sees less across their
+pane than a quadrant would* — and read from the wide side it says something
+nobody asked for: that the group holding 62% of the width must **also** be
+pushed back to a quadrant's framing. A quadrant is the floor for what a pane may
+show, not the ceiling.
+
+`BIG_PANE_IN` is 0.75, applied to any pane **over an even share** (`W*H/n`).
+Their column goes 1.616× → 1.211×. An even share is the test rather than "the
+biggest", because the pane under its share is the one *paying* for the split and
+must keep every bit of its widening. Measured, this reaches exactly one pane in
+the game: the 62/38 split's wide column. The three-pane column's full-width
+strip is over its share too, but its aspect is 3.57 and its widening was already
+clamped to 1 — three quarters of nothing is nothing, and there is a check for
+that clamp because the multiply now happens *before* it.
+
+### Three kittens joining, all on the same square metre
+
+> Have some randomness when players spawn in the town, so they don't spawn right
+> on top of each other.
+
+`_joinSpot` has no memory. Two joins a second apart asked the same question
+about the same town centre and both got yes. Force-spawn made that the ordinary
+case — ENTER, ENTER seats a third and fourth in the time it takes to press a key
+twice — and two cats drawn on one point read as one cat and a join that did
+nothing.
+
+Two rules, and they fix different halves:
+
+- **`JOIN_APART`** (3 units) — a candidate a player is already standing on is
+  refused, asked of the **live positions** rather than of a list of spots handed
+  out, so it is equally true of a kitten who was simply standing there.
+- **A random `spin` on the ring search.** Without it the eight rings are walked
+  in the same order for everybody, so the second joiner takes the first free
+  spoke, the third takes the one the second vacated, and four joins come out in
+  a neat line pointing one way. The first rule stops them overlapping; this is
+  what stops them *queueing*. One draw for the whole search, so the rings stay
+  rings and the search stays exhaustive.
+
+Driven in the game: three joins landed at `(0, 20)`, `(2.1, 22.2)` and
+`(-2.6, 18.6)`. All three used to be `(0, 20)`.
+
+**The last resort is still the town centre, overlap and all.** Every rule above
+is a preference; a kitten standing on her sister is one flick of the stick from
+fixed, and a kitten in the sky is not.
+
+`START_JITTER` is the same report at boot: the four marks are 3.5 apart and
+fixed, so every game opened on the same photograph. One unit each way is *some*
+randomness and still leaves the four of them in the same left-to-right **order**
+every game, which is what keeps "go left, that's yours" true. It is drawn once,
+at construction, because `spawn` is also where she comes back after a fall — a
+respawn point that moved under her would be the game losing her mark rather than
+scattering it.
+
+### A kitten leaves, and her orbs are one orb and six ghosts
+
+> They drop all their kotodama orbs where they were, exact same spot, all of
+> them, but the orbs rotating around them stay on screen and are buggy.
+
+Two bugs in six lines, and both were hiding behind a `?? []`.
+
+**The pile.** Every orb went to `p.position`, and `world.findOpenSpot` is
+deterministic — same input, same answer — so eight orbs became one orb's worth
+of geometry z-fighting with itself. They are her whole neck going back into a
+world where only twenty-six exist; a stack of eight has to *look* like eight.
+`dropInWorld` takes a `spread` index now and fans them onto a jittered spiral.
+
+Two numbers earned their comments the hard way. The first pass used a bearing
+wobble of 0.7rad against a step of 0.785rad — nearly the entire step, so two
+neighbours could land on the same bearing at nearly the same radius, and the fan
+reproduced the pile it was written to replace, just less often. And the *real*
+collapse was `findOpenSpot(x, z, 5)`: five units of clearance plus level ground
+for nine around it is the rule for perching a **dragon**, almost nothing near a
+town passes it, so every fanned point failed and fell through to the same
+deterministic ring the search walks. **A search that refuses everywhere is not a
+safety net, it is a funnel.** Measured at 0.37 units between two orbs where the
+fan itself never gets closer than 1.3. `DROP_CLEAR` is 1.5 — enough to keep an
+orb out of the inside of a house and off a cliff, which is all it was wanted
+for.
+
+`world-check` sweeps forty full necks (1120 pairs) rather than sampling one,
+because the failure is in the tail; the minimum sits at 1.4.
+
+**The ghosts.** Two constellations orbit a kitten. `orbs` is the plain Kotodama
+she has collected; `wornOrbs` is the power orbs she is wearing — the ones the
+line above has just thrown on the floor. `_leavePlayer` removed the first and
+not the second, so her worn shells stayed in the scene for the rest of the game,
+frozen wherever they last were: the thing that moves them walks `this.players`,
+and she had just been spliced out of it.
+
+**Both fields are optional on purpose**, so `?? []` made a wrong *name* read
+exactly like a kitten with nothing to remove — which is why this is asserted
+against the source as well as driven. No amount of exercising an object catches
+a field nobody ever writes.

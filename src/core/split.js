@@ -200,6 +200,15 @@ export function splitLayout(n, W, H, gap = 3, dir = 'vertical', sizes = null) {
 }
 
 /**
+ * How much of its widening a pane bigger than an even share keeps.
+ *
+ * 0.75 — "zoom in at least 25% more". It is a fraction of the DISTANCE and not
+ * of the surplus over 1, because the report is about how big the kittens look,
+ * and that is what distance does.
+ */
+export const BIG_PANE_IN = 0.75;
+
+/**
  * How much further back a pane's camera has to sit than its TUNED distance,
  * because the layout handed it a narrower rectangle than a quadrant.
  *
@@ -236,6 +245,24 @@ export function splitLayout(n, W, H, gap = 3, dir = 'vertical', sizes = null) {
  * rectangle nobody asked for, handed out by a layout branch that also
  * overrides the setting. This only ever widens the panes in that second case.
  *
+ * A PANE BIGGER THAN AN EVEN SHARE KEEPS ONLY PART OF ITS WIDENING, and that
+ * is the second half of the same report: "for the other 3, can zoom in at
+ * least 25% more, as it has more screen space". The rule above is written from
+ * the narrow pane's side — nobody sees less across their pane than a quadrant
+ * — and read from the wide side it says something nobody asked for, that the
+ * group who got MORE screen must also be pushed back to a quadrant's framing.
+ * They have 62% of the width; a quadrant is the floor for what a pane may
+ * show, not the ceiling. `BIG_PANE_IN` brings that pane a quarter of the way
+ * back in: their column goes 1.62x -> 1.21x, and the kittens are legible
+ * again in the pane that has the pixels to draw them.
+ *
+ * AN EVEN SHARE IS THE TEST, NOT "THE BIGGEST" — `W*H/n`. A pane at or under
+ * its share is the one paying for somebody else's, and it keeps the full
+ * widening. Measured, this reaches exactly one pane in the game: the 62/38
+ * split's wide column. The three-pane column's full-width strip is over its
+ * share too, but its aspect is 3.57 so its widening is already clamped to 1
+ * and a fraction of nothing is nothing.
+ *
  * @param panes  the whole layout, as returned by `splitLayout`
  * @param i      which pane
  * @param W,H    the drawing buffer size
@@ -245,8 +272,11 @@ export function paneWiden(panes, i, W, H) {
   const p = panes?.[i];
   if (!p || p.w <= 0 || p.h <= 0 || W <= 0 || H <= 0) return 1;
   if (panes.every((q) => q.w === p.w && q.h === p.h)) return 1;
-  return Math.max(1, (W / H) / (p.w / p.h));
+  const k = (W / H) / (p.w / p.h);
+  const share = (W * H) / panes.length;
+  return Math.max(1, p.w * p.h > share ? k * BIG_PANE_IN : k);
 }
+
 
 /* ===========================================================================
    AND WHICH GROUP GETS WHICH PANE.
