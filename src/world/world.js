@@ -1984,6 +1984,12 @@ export class World {
          would let a kitten flying past the empty coordinates be shoved
          sideways by a building that has not been built. */
       if (s.arena && !this.arenaOpen) continue;
+      /* A SOLID THAT BELONGS TO SOMEBODY WHO IS NOT HERE. Mr. Satan is the
+         only one so far: he is invisible until the tournament is announced,
+         and a cylinder standing in the town square with nothing drawn in it
+         is a kitten bouncing off thin air. Whoever owns the flag writes it —
+         see `Game._syncSatanSolid`. */
+      if (s.off) continue;
       if (s.top != null && fromY >= s.top - 0.35) continue;
       const dx = x - s.x;
       const dz = z - s.z;

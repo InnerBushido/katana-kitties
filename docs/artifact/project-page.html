@@ -485,7 +485,7 @@ footer b { color: var(--text); }
 <div class="wrap">
 
 <header class="mast">
-  <div class="stamp">Last updated <span>·</span> 30 Aug 2026</div>
+  <div class="stamp">Last updated <span>·</span> 4 Sep 2026</div>
   <h1>Katana Kitties<em>The whole project on one page</em></h1>
   <p class="lede">A <b>split-screen co-op browser game for up to four players</b>: samurai kittens
     knocking over a chain of floating Japanese islands, riding storm dragons between them, and
@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 1990 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 2086 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 354 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -936,6 +936,15 @@ git push origin alpha</code></pre>
         <td><code>voices.md</code></td>
       </tr>
       <tr>
+        <td><b>Mr. Satan's countdown</b></td>
+        <td>The last fifteen seconds of a round are <em>one spliced clip</em>, cut out of a dozen
+          separate takes so each number lands on the second it names — the announcer queues and
+          never interrupts, so eleven separate calls would have him counting a clock that had
+          already run out. A phrase between every number does not fit at two and a half words a
+          second; the script <em>measures</em> and fits what does.</td>
+        <td><code>capture/satan-countdown.mjs</code></td>
+      </tr>
+      <tr>
         <td><b>Sound &amp; music</b></td>
         <td>Fully synthesised in code — a sound set, and a piece of music per island. The MP3s are
           the only audio <em>files</em>, and the game falls back to synthesised blips without them.</td>
@@ -1055,7 +1064,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 1990 assertions and why almost none of them are about
+      is why <code>world-check</code> is 2086 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,
