@@ -5293,10 +5293,60 @@ console.log('\n--- the three power moves ---');
       Math.abs((a.scale / arcPlain.scale) - (a.reach / arcPlain.reach)) < 1e-9,
       `${(a.scale / arcPlain.scale).toFixed(4)} vs ${(a.reach / arcPlain.reach).toFixed(4)}`);
   }
-  /* AND THE TWO MULTIPLY, on the picture as well as on the hitbox — the same
-     property `...the clan buff MULTIPLIES with them` pins for speed. */
+  /* AND THE TWO ADD, on the picture as well as on the hitbox. */
   ok('...and a Riverclaw kitten wearing three of them gets both',
-    arcBoth.scale > arcThree.scale * 1.5 && arcBoth.scale > arcRiver.scale * 1.5);
+    arcBoth.scale > arcThree.scale * 1.2 && arcBoth.scale > arcRiver.scale * 1.2);
+
+  /* --- THE TWO BONUSES ADD, THEY DO NOT MULTIPLY ---
+     THIS BLOCK IS A BUG REPORT, and the check above it USED TO BE THE BUG: it
+     asserted `arcBoth > arcThree * 1.5`, which is only satisfiable by a
+     product. `_reach()` read `clanReach * power.reach`, so Riverclaw's 80% was
+     charged on the ORBS' bonus as well as on the base blade — three Long Cut
+     orbs under Riverclaw came out at 3.42, an 11.6m blade, longer than the
+     arena is wide, cutting a girl standing nowhere near it.
+
+     The law is that every bonus is measured against the UNSWORN, UNADORNED
+     blade and then summed. Stated below as exactly that — the surplus over
+     plain, added — rather than as the formula, so it cannot be satisfied by
+     rewriting the same product a second way. And swept over the whole stack,
+     because the double-count GREW with it: the old code doubled one orb's 0.30
+     into 0.54 and three orbs' 0.90 into 1.62, which is why no smaller
+     `buff.reach` could have fixed it. */
+  const reachOf = (orbs, clanId = null) => {
+    const p = mk(orbs);
+    if (clanId) p.clan = CLANS.find((c) => c.buff.id === clanId);
+    return p._reach();
+  };
+  const base = reachOf([]);
+  const riverOnly = reachOf([], 'reach') - base;
+  for (let n = 0; n <= 4; n++) {
+    const orbs = Array(n).fill('reach');
+    const orbsOnly = reachOf(orbs) - base;
+    const together = reachOf(orbs, 'reach') - base;
+    ok(`${n} Long Cut orb${n === 1 ? '' : 's'} + Riverclaw is the two bonuses ADDED`,
+      Math.abs(together - (riverOnly + orbsOnly)) < 1e-9,
+      `${together.toFixed(3)} vs ${(riverOnly + orbsOnly).toFixed(3)}`);
+  }
+  /* THE NUMBER FROM THE REPORT, written out. A property check that is right
+     about the shape can still be right about the wrong shape, so one arithmetic
+     assertion is pinned to the values a player actually swings: Riverclaw 1.8
+     and three orbs 1.9 make 2.7, and the old code made 3.42. */
+  line('reach x: plain / Riverclaw / 3 orbs / both',
+    [reachOf([]), reachOf([], 'reach'), reachOf(['reach', 'reach', 'reach']),
+      reachOf(['reach', 'reach', 'reach'], 'reach')]
+      .map((r) => (r / BASE_REACH).toFixed(2)).join(' / '));
+  ok('Riverclaw with three Long Cut orbs reaches 2.70x, not 3.42x',
+    Math.abs(reachOf(['reach', 'reach', 'reach'], 'reach') - BASE_REACH * 2.7) < 1e-9,
+    (reachOf(['reach', 'reach', 'reach'], 'reach') / BASE_REACH).toFixed(4));
+  /* THE TWO IDENTITIES THE `- 1` HAS TO PRESERVE. Either one broken is a
+     silent nerf to a kitten who has only done half the work — and an unsworn
+     kitten with an empty neck reaching anything but 1x moves the whole game,
+     not just the arena. */
+  ok('...a kitten with no clan still reaches exactly her orbs',
+    reachOf(['reach', 'reach']) === BASE_REACH * mk(['reach', 'reach']).power.reach);
+  ok('...a Riverclaw kitten with no orbs still reaches exactly 1.8x',
+    Math.abs(reachOf([], 'reach') - BASE_REACH * 1.8) < 1e-9);
+  ok('...and plain is plain', base === BASE_REACH);
 }
 
 /* --------------------------------------------------------------------------

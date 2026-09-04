@@ -235,6 +235,48 @@ reads the mesh scale off `slash`, over five configurations, as a *ratio* against
 `_reach()` — so it cannot be satisfied by a second formula that happens to agree
 at one point, which is exactly what the old direct read was.
 
+### ...and then the two of them were multiplied together
+
+Reported from play: *"joining the Riverclaw clan, the katana doubles from the
+current Kotodama powerup values."* `_reach()` read
+
+```js
+BASE_REACH * clanReach * power.reach
+```
+
+so Riverclaw's **1.8** was charged on the *orbs'* bonus as well as on the base
+blade. Three Long Cut orbs are `1 + 0.30x3 = 1.90`; under Riverclaw that came
+out at **3.42** — a blade **11.6 metres** long, swung by a kitten who is 2.9
+tall, reaching a girl standing nowhere near her.
+
+**Every bonus is measured against the unsworn, unadorned blade, and then they
+are summed.** `clan + (orbs - 1)`. The `-1` takes the base back out of the orb
+multiplier so only its bonus is left: 1.90 is *the blade, plus 0.90 of a
+blade*, and it is that 0.90 which Riverclaw's 1.80 gets added to. **1.8 + 0.9 =
+2.70**, and the blade is 9.2m.
+
+**Lowering `buff.reach` would not have fixed it**, which is worth writing down
+because it is the tempting cheap answer. The double-count *grows with the
+stack* — one orb's 0.30 was doubled into 0.54, three orbs' 0.90 into 1.62 — so
+no single smaller number is right at more than one stack size; it only picks
+which one is wrong by how much. The shape of the sum was the bug.
+
+Two identities the `-1` has to preserve, and `world-check` pins both: no clan
+is `1 + (orbs - 1) = orbs`, and no orbs is `clan + 0 = clan`. An unsworn kitten
+with an empty neck is `1 + 0 = 1`, which is why nothing outside the arena
+moved — and why the *previous* section's fix, which put the drawn arc on this
+same accessor, meant the picture shrank with the hitbox for free.
+
+**The check that let it through asserted the bug.** The block above ends with
+*"and a Riverclaw kitten wearing three of them gets both"*, and its test was
+`arcBoth > arcThree * 1.5` — a threshold only a *product* can clear. It was
+written to catch the arc not moving, and it caught that; nobody noticed it had
+also pinned the stacking law, wrongly, in passing. It is now a sweep over 0-4
+orbs asserting the surplus over plain **adds**, stated as the two bonuses
+rather than as the formula, so it cannot be satisfied by writing the same
+product a second way. The reported number is nailed down separately:
+*Riverclaw with three Long Cut orbs reaches 2.70x, not 3.42x*.
+
 ### Telling her what happened, with no new art
 
 **THE OBVIOUS ANSWER IS TO GENERATE HURT AND KO ROWS, AND IT IS THE WRONG ONE.**

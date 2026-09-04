@@ -2695,9 +2695,34 @@ export class Player {
     }
   }
 
-  /** Her katana's real reach, clan and orbs folded in. One place. */
+  /**
+   * Her katana's real reach, clan and orbs folded in. One place.
+   *
+   * THE TWO BONUSES ADD; THEY DO NOT MULTIPLY. This read
+   * `clanReach * power.reach`, so Riverclaw's oath was charged on the ORBS'
+   * bonus as well as on the base blade: three Long Cut orbs (x1.90) under
+   * Riverclaw (x1.80) came out at 3.42 — a blade eleven and a half metres
+   * long, more than the whole arena's half-width, hitting a girl who was
+   * nowhere near it. The orbs were paying Riverclaw's 80% a second time.
+   *
+   * Each bonus is measured against the UNSWORN, UNADORNED blade and then the
+   * two are summed: `clan + (orbs - 1)`. The `- 1` is the base being taken
+   * back out of the orb multiplier so only its bonus is left — 1.90 is "the
+   * blade, plus 0.90 of a blade", and it is that 0.90 that Riverclaw's 1.80
+   * gets added to. Same kitten now reaches 2.70.
+   *
+   * WHY NOT JUST LOWER `buff.reach`? Because the double-count grows with the
+   * stack — one orb doubled 0.30 into 0.54, three doubled 0.90 into 1.62 —
+   * so no single smaller number fixes it, it only picks which stack size is
+   * wrong by how much. The shape of the sum is the bug.
+   *
+   * Both identities still hold: no clan is `1 + (orbs - 1) = orbs`, and no
+   * orbs is `clan + 0 = clan`. An unsworn kitten with an empty neck is
+   * `1 + 0 = 1`, which is why nothing outside the arena moved.
+   */
   _reach() {
-    return BASE_REACH * (this.clan?.buff?.reach ?? 1) * this.power.reach;
+    const clan = this.clan?.buff?.reach ?? 1;
+    return BASE_REACH * (clan + (this.power.reach - 1));
   }
 
   /**
