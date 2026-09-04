@@ -285,6 +285,33 @@ first thing that happens with it. → [input.md](docs/notes/input.md)
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**The last fifteen seconds of a round are new, and not yet played back.**
+Built this session, driven in the running game, not yet in front of anybody:
+
+- **A round no longer runs out without warning.** Mr. Satan calls thirty
+  seconds, and at fifteen a big blinking clock appears under the round box and
+  he does not shut up again — the numbers land on the seconds they name, and
+  under five they turn red and he counts them out loud.
+  → [tournament.md](docs/notes/tournament.md)
+- **His countdown is one spliced clip, not eleven calls.** `sat_last.mp3` is a
+  fifteen-second timeline cut out of a dozen takes by
+  [tools/capture/satan-countdown.mjs](tools/capture/satan-countdown.mjs),
+  because `Announcer.say` queues and a queue would have him counting a clock
+  that had already run out. The six bare numbers `sat_n0`–`sat_n5` ship
+  alongside it, unspliced, for whatever wants them next.
+  → [voices.md](docs/notes/voices.md)
+- **The HUD clock now counts REMAINING whole seconds, like the big one.** It
+  floored before, which was invisible until something was put underneath it —
+  and then the two disagreed, 14 over 0:13. The big one could not be the one to
+  move: his "ZERO!" is a recording.
+- **A round ends on a bell, and a draw asks a question.** `endgong` settles;
+  `drawgong` is the same bell bending upward, with a line from him that is
+  worth losing a round for.
+- **Mr. Satan's collider is him, not his address.** It was pushed once at boot
+  and never touched again, so the town square had an invisible man in it from
+  the first frame and a second one after he walked to the arena. It follows him
+  now and turns off with his sprite.
+
 **Six reported from play are fixed and not yet played back.** All are in
 `git log` and in the notes; listed here only because nobody has confirmed them
 at four players yet:

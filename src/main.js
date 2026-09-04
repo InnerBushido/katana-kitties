@@ -1123,6 +1123,14 @@ class Game {
       sat_fight: '/voice/sat_fight.mp3',
       sat_feast: '/voice/sat_feast.mp3',
       sat_ko: '/voice/sat_ko.mp3',
+      /* The clock, and the one moment nobody expected. `sat_last` is not a
+         line — it is a fifteen-second TIMELINE spliced out of a dozen takes so
+         each number lands on the second it names, and it is the one clip in
+         the game where arriving late means arriving wrong. See
+         tools/capture/satan-countdown.mjs. */
+      sat_t30: '/voice/sat_t30.mp3',
+      sat_last: '/voice/sat_last.mp3',
+      sat_draw: '/voice/sat_draw.mp3',
       sat_win1: '/voice/sat_win1.mp3',
       sat_win2: '/voice/sat_win2.mp3',
       /* His tantrum, both halves. Buffered here with the rest and not lazily,
@@ -1153,8 +1161,20 @@ class Game {
       this.satan.homeAt = { x: spot.x, y: g2 ? g2.y : 4, z: spot.z };
       this.satan.group.visible = false;
       this.scene.add(this.satan.group);
-      // He is solid, like a clan leader — you cannot stand inside him.
-      this.world.solids.push({ x: spot.x, z: spot.z, r: 0.95 });
+      /* HE IS SOLID, LIKE A CLAN LEADER — you cannot stand inside him. But he
+         is not a clan leader in the two ways that matter to a collider, and
+         this line got both of them wrong for as long as it existed: a leader
+         is ALWAYS on his dais, and Mr. Satan is invisible until the arena is
+         announced and then WALKS — town square, announcer's box, back again.
+         Pushed as a bare literal, the cylinder stayed at the coordinates he
+         happened to be standing on at boot, so the town square had an
+         invisible man in it from the first frame of the game (reported from
+         play: "his collider is still there and players can run into it") and
+         a second one after he left for the arena.
+         Kept as a REFERENCE and re-pointed every frame by `_syncSatanSolid`,
+         which is the only place either fact is read. */
+      this.satanSolid = { x: spot.x, z: spot.z, r: 0.95, off: true };
+      this.world.solids.push(this.satanSolid);
     }
 
     if (griffinArt) {
@@ -5635,6 +5655,13 @@ class Game {
        katana. Same ordering, and the same reason, as `_updatePicker`. */
     this.inspector.update(dt);
 
+    /* BEFORE THE PLAYERS, because a collider is only true on the frame the
+       thing that owns it is asked about. `Player.update` is what calls
+       `resolveSolids`, so syncing after the loop would shove a kitten out of
+       where he was LAST frame — which for a man who teleports between the
+       town and the arena is three hundred units away. */
+    this._syncSatanSolid();
+
     const frozen = this.tournament?.frozen;
     for (let i = 0; i < this.players.length; i++) {
       /* The picker hands HER a dead pad and nobody else one — the stick that
@@ -7619,6 +7646,35 @@ class Game {
       seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
     }
     mesh.material.setCuts?.(camera.position, seen);
+  }
+
+  /**
+   * Mr. Satan's collider follows Mr. Satan, and stops existing when he does.
+   *
+   * TWO FACTS, ONE PLACE. He is invisible until the tournament is announced,
+   * and he MOVES — `moveTo` is a teleport and there are four callers. Writing
+   * this at each of them would be eight lines that all have to be remembered
+   * together, and the one that was forgotten is the bug: the solid was pushed
+   * once at boot and never touched again.
+   *
+   * `off` RATHER THAN SPLICING HIM OUT OF `world.solids`. The array is walked
+   * by every kitten every frame and by `findOpenSpot`, and a solid that comes
+   * and goes changes its length underneath both. The flag is the same shape as
+   * `s.arena`, which turns the arena's stonework off while the arena is shut —
+   * one idea, one skip, one line in `resolveSolids`.
+   */
+  _syncSatanSolid() {
+    const s = this.satanSolid;
+    if (!s) return;
+    /* HIS DRAWING IS THE AUTHORITY. Everything else that asks whether he is
+       really here asks the same question — the blast's arming test, the x-ray,
+       debug `2` — and a second opinion kept somewhere else is a second thing
+       that can disagree with what is on the screen. */
+    const on = !!this.satan?.group.visible;
+    s.off = !on;
+    if (!on) return;
+    s.x = this.satan.position.x;
+    s.z = this.satan.position.z;
   }
 
   /** Everything billboarded must be turned toward *this* camera first. */

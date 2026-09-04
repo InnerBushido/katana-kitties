@@ -1272,3 +1272,153 @@ remember the seal. The check tested the raw file, so the first comment to
 *explain* the doctrine failed the check that exists to protect it. It reads
 `stripComments(pl)` now. A check a comment can break teaches the next person to
 delete the comment, which is the one outcome it is trying to prevent.
+
+## The clock stops being invisible
+
+> When a round is about to be over in the arena, there needs to be a countdown.
+
+`ROUND_LIMIT` has always been able to take a round off you on damage. Until the
+clock went into the HUD it did that silently; with the clock there, it did it
+in an eighteen-pixel box in the corner, going red — which is not something two
+kittens circling each other at 1:50 are reading. The rule was fair and
+unannounced, which is the worst combination a rule can have in a game whose
+sixth non-negotiable is that a refusal has to *say so*.
+
+### Three numbers, and each does a different job
+
+| | | |
+| --- | --- | --- |
+| `WARN_AT` | 30 | a nudge. One line, and the fight carries on. |
+| `COUNT_AT` | 15 | the round stops being a fight and becomes a deadline: the big clock appears, blinks, and he does not shut up again. |
+| `COUNT_LAST` | 5 | he is counting out loud, and the number changes character with him. |
+
+`world-check` pins them in that order, because a warning that fires after the
+countdown starts, or a countdown longer than a round, is a call that never
+happens or one that happens on the round card.
+
+### Two latches, because a frame is not a second
+
+`_callTheClock` is called every frame of a live round. At 300fps that is five
+calls inside the same tick of the clock, so `if (left <= WARN_AT)` on its own
+says "thirty seconds left" five times and then two hundred more. `_warned` and
+`_ranting` are the whole difference, and the check that catches it drives nine
+hundred frames of a whole round and counts the calls — one each — rather than
+asking whether either ever fired.
+
+### The big number is painted, never shown and hidden
+
+A live round can end six ways: a knockout, a side wiped out, the clock, debug
+`4`, the pause menu, flying home. A `classList.remove('hidden')` hanging off
+any one of those is five ways to leave a **3** floating over the town for the
+rest of the session. `_paintCountdown` runs every frame off `this.state` and
+`this.t` and answers the question fresh, and `finish()` says it a second time
+in its own words — because `update` returns on its first line when the state is
+`off`, so the painter never runs again after a tournament is torn down.
+
+It sits **under the HUD**, not in the middle. The middle is where the fight is,
+and it is also where `#arena-banner` puts K.O. and FIGHT!; a number that big
+over the deck would cover the two kittens it is counting for.
+
+### The two clocks have to agree, and it was the SMALL one that moved
+
+The countdown ceilings — it shows how many whole seconds you still have. The
+round clock in the HUD **floored**, which alone is invisible and is what every
+stopwatch does. Put the big number eighty pixels under it and they disagreed on
+screen: **14 sitting over 0:13**.
+
+Of the two, the big one cannot move. Mr. Satan's "ZERO!" is a *recording*,
+nailed to the second it names, and flooring the countdown would have him
+shouting it with a whole second still left to play. So `clock()` ceilings now
+too, and a full round still opens on 2:00 and still rolls to 1:00 — both pinned,
+because a change to the shared clock is a change to the two-player HUD.
+
+### And it counts with `public/voice` deleted
+
+Ninth non-negotiable. Without `sat_last.mp3` the announcer shows the text for
+three seconds and goes quiet, so the last five seconds would count down in
+silence; `_ranting` is false in that case and the `count` blip ticks under the
+big number instead. Both directions are checked, because a tick that *also*
+plays underneath his voice is two clocks disagreeing out loud.
+
+The clip itself — why it is one file, and what would not fit inside it — is in
+[voices.md](voices.md).
+
+## A round ends on a bell, and a draw asks a question
+
+> When a round is over, we can have a gong sound play... but if there is a
+> draw, should be a different sound, like a gong making a question mark sound?
+
+The gong at the top of a round is the one sound in this game that *starts*
+something, and a round ending had no answer to it — it simply stopped, with a
+banner. There are three bells now and no two of them are the same sound, which
+is a check: these are the only bells in the game, so a girl hearing the FIGHT
+gong at the *end* of a round would get up off her mark.
+
+- **`gong`** — FIGHT. A bright struck bell with a long tail under the first
+  exchange.
+- **`endgong`** — the round is over. The same instrument struck softer and left
+  to settle: a duller transient, the partials spread wider, and a second
+  quieter strike a third of a second later. One strike reads as an
+  interruption; two read as a full stop.
+- **`drawgong`** — nobody won. `endgong`, and then it **bends upward**. The
+  rise is on the *partials* and not the fundamental: sliding the whole bell up
+  sounds like a tape being sped up, whereas leaving the low strike where it is
+  and letting the two above it climb sounds like the bell itself asking. The
+  little rising figure on the end is the last inch of the eyebrow.
+
+A draw is two sides finishing dead level on damage — perhaps once in a hundred
+rounds — and until now it got a banner and a toast, which is the same shrug any
+other ending gets. It reads as the game having *failed to decide*, which is
+exactly what a nine-year-old concludes from a knockout bell over a DRAW banner.
+So it has its own bell and its own line, and the line is the one thing here
+worth being silly about.
+
+**Both endings clear the announcer first.** `sat_last` runs for the whole of the
+last fifteen seconds, so a knockout at 0:06 would otherwise have him counting
+down over a kitten already flat on her back — and his "DOWN!" would queue behind
+nine seconds of it. Nothing else is ever pending during a live round, which is
+what makes clearing safe here and nowhere else.
+
+## The invisible man in the town square
+
+> When Mr. Satan, in town, is not spawned yet and is invisible, his collider is
+> still there and players can run into it.
+
+One line, wrong twice over:
+
+```js
+// He is solid, like a clan leader — you cannot stand inside him.
+this.world.solids.push({ x: spot.x, z: spot.z, r: 0.95 });
+```
+
+He is **not** a clan leader in the two ways that matter to a collider. A leader
+is always on his dais; Mr. Satan is invisible until the tournament is announced,
+**and he walks** — town square, announcer's box, back again, four callers of
+`moveTo`, every one of them a teleport. Pushed as a bare literal the cylinder
+stayed at the coordinates he happened to be standing on at boot: an invisible
+man in the town square from the first frame of the game, and a second one left
+behind there after he had gone to the arena.
+
+`Game.satanSolid` is a **reference** now, re-pointed every frame by
+`_syncSatanSolid`, which is one place rather than eight lines spread over four
+teleports that would all have to be remembered together. Two rules:
+
+- **His drawing is the authority.** `satan.group.visible` is what every other
+  "is he really here" test in the game already asks — the blast's arming test,
+  the arena x-ray, debug `2` — and a second opinion kept somewhere else is a
+  second thing that can disagree with the screen.
+- **It is skipped, not spliced out.** `world.solids` is walked by every kitten
+  on every frame and by `findOpenSpot`; an array that changes length underneath
+  both is a different bug. `off` is the same shape as `s.arena`, which turns the
+  arena's stonework off while the arena is shut — one idea, one skip, one line
+  in `resolveSolids`.
+
+**Before the players move**, and that is the whole reason it is one call in the
+frame. `Player.update` is what calls `resolveSolids`, so syncing after the loop
+would shove a kitten out of where he was *last* frame — three hundred units
+away, for a man who teleports.
+
+Driven in the running game: standing on his town spot while he is invisible
+leaves you exactly where you are; the moment he appears the same point pushes
+you out to 1.55 (his 0.95 plus a kitten's 0.6); walking him to the announcer's
+box frees the square and blocks the box; hiding him frees that too.

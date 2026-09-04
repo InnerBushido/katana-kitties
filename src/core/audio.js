@@ -652,6 +652,42 @@ export class Audio {
         this._tone({ type: 'sine', from: semi(-5), dur: 2.1, gain: 0.14 * v, detune: 5 });
         this._tone({ type: 'sine', from: semi(0), dur: 1.8, gain: 0.11 * v, detune: -7 });
         break;
+      case 'endgong':
+        /* A ROUND IS OVER. The FIGHT gong starts something and this one stops
+           it, so it is the same bell struck softer and left to settle: the
+           strike is duller (the noise sweep starts an octave lower and lasts
+           twice as long), the partials are a fifth and an octave rather than
+           the fight's tighter stack, and a second, quieter strike a third of a
+           second later is what a temple bell actually does — one strike reads
+           as an interruption, two read as a full stop.
+           NOT `gong` AT A LOWER VOLUME. It has to be recognisable as the same
+           instrument and unmistakable as a different event, because these two
+           are the only bells in the game and a girl hearing the fight gong at
+           the end of a round would get up off her mark. */
+        this._noise({ from: 1600, to: 300, dur: 0.3, gain: 0.24 * v, q: 0.5 });
+        this._tone({ type: 'sine', from: semi(-24), dur: 3.0, gain: 0.24 * v });
+        this._tone({ type: 'sine', from: semi(-17), dur: 2.6, gain: 0.13 * v, detune: 6 });
+        this._tone({ type: 'sine', from: semi(-12), dur: 2.2, gain: 0.09 * v, detune: -6 });
+        this._noise({ from: 900, to: 240, dur: 0.2, gain: 0.10 * v, q: 0.5, delay: 0.34 });
+        this._tone({ type: 'sine', from: semi(-24), dur: 2.2, gain: 0.13 * v, delay: 0.34 });
+        break;
+      case 'drawgong':
+        /* NOBODY WON. The same bell as `endgong`, and then it BENDS UP —
+           which is what a question mark is, in a voice or in a bell. Reported
+           in exactly those words: "like a gong making a question mark sound".
+           THE RISE IS ON THE PARTIALS, NOT THE FUNDAMENTAL. Sliding the whole
+           bell up sounds like a tape being sped up; leaving the low strike
+           where it is and letting the two above it climb a whole tone sounds
+           like the bell itself asking, which is the joke. The little rising
+           tail on the end is the last inch of the eyebrow. */
+        this._noise({ from: 1600, to: 300, dur: 0.3, gain: 0.24 * v, q: 0.5 });
+        this._tone({ type: 'sine', from: semi(-24), dur: 2.6, gain: 0.22 * v });
+        this._tone({ type: 'sine', from: semi(-17), to: semi(-13), dur: 2.2, gain: 0.13 * v, curve: 'lin' });
+        this._tone({ type: 'sine', from: semi(-12), to: semi(-7), dur: 2.0, gain: 0.10 * v, curve: 'lin' });
+        [0, 4, 9].forEach((n, i) => this._tone({
+          type: 'sine', from: semi(n), dur: 0.5, gain: 0.09 * v, delay: 1.1 + i * 0.17,
+        }));
+        break;
       case 'victory':
         /* Winning the whole tournament. Deliberately a FANFARE rather than
            the star's bell — a star is a thing you found, this is a thing you

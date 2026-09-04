@@ -226,6 +226,26 @@ const KO_HOLD = KO_TIME + 1.4;
 export const ROUND_LIMIT = 120;
 
 /**
+ * The last thirty seconds, and the last fifteen.
+ *
+ * TWO NUMBERS BECAUSE THEY DO TWO DIFFERENT JOBS. `WARN_AT` is a nudge — he
+ * says one line and the fight carries on. `COUNT_AT` is where the round stops
+ * being a fight and starts being a deadline: the big clock appears, it blinks,
+ * and he does not shut up again until it is over. Reported as "when 15 seconds
+ * is left, a timer needs to show in the middle of the screen or below the menu
+ * bar, a bigger text, showing that time is running out".
+ *
+ * `COUNT_AT` IS ALSO THE LENGTH OF `sat_last`. His whole rant — the fifteen
+ * second call, the complaining, and the five numbers — is ONE spliced clip
+ * that runs exactly this long, so the numbers cannot drift against the clock
+ * however long a frame takes. See `tools/capture/satan-countdown.mjs`.
+ */
+export const WARN_AT = 30;
+export const COUNT_AT = 15;
+/** Under this, the number on screen turns and swells: he is counting now. */
+export const COUNT_LAST = 5;
+
+/**
  * A ring-out: what it costs, and how long you have to be off before it counts.
  *
  * IT HURTS RATHER THAN ENDING THE ROUND, which is the single biggest balance
@@ -405,6 +425,7 @@ export class Tournament {
 
     this.bannerEl = document.getElementById('arena-banner');
     this.hudEl = document.getElementById('arena-hud');
+    this.countEl = document.getElementById('arena-countdown');
     this.resultEl = document.getElementById('arena-result');
     this._bindResultTaps();
   }
@@ -644,6 +665,11 @@ export class Tournament {
     this.state = 'off';
     this.announcer?.clear();
     this.bannerEl?.classList.add('hidden');
+    /* EXPLICITLY, RATHER THAN LEAVING IT TO `_paintCountdown`. That runs from
+       `update`, and `update` returns on the first line when the state is
+       'off' — so a tournament torn down at 0:07 would leave a 7 hanging over
+       the town for the rest of the session. */
+    this._hideCountdown();
     this.hudEl?.classList.add('hidden');
     this.resultEl?.classList.add('hidden');
     this.game.menagerie?.stop();
@@ -854,7 +880,20 @@ export class Tournament {
     if (leaders.length !== 1 || best <= 0) {
       this.state = 'ko';
       this.t = 0;
+      this.announcer?.clear();
+      /* THE SAME BELL, ASKING A QUESTION. A draw needs to sound different from
+         a result or it reads as the game having failed to decide — which is
+         exactly what a nine-year-old will conclude from a K.O. bell over a
+         banner that says DRAW. `drawgong` is `endgong` with its tail bending
+         UP, which is what a question mark sounds like. */
+      this.audio?.play('drawgong');
       this._banner('DRAW', 'ko');
+      /* IT IS RARE, SO IT IS FUNNY. Two sides finishing dead level on damage
+         happens perhaps once in a hundred rounds, and a moment that rare
+         earning the same shrug as any other is the moment wasted. */
+      this.announcer?.say('sat_draw',
+        'A DRAW?! Have you kittens decided that FRIENDSHIP IS MAGIC?! I LOVE it! '
+        + 'Strength through LOVE, not war! BEAUTIFUL! ...Now get OUT of my ring.');
       this.game.toast(`${why} Nobody landed enough — the round is a draw`, 0);
       return 'draw';
     }
@@ -868,6 +907,17 @@ export class Tournament {
     this.state = 'ko';
     this.t = 0;
     if (winnerSide >= 0) this.wins[winnerSide] = (this.wins[winnerSide] ?? 0) + 1;
+    /* HE STOPS COUNTING THE MOMENT THERE IS NOTHING TO COUNT. `sat_last` runs
+       for the whole of the last fifteen seconds, so a knockout at 0:06 would
+       otherwise leave him counting down over a deck where somebody is already
+       flat on her back — and his "DOWN!" would queue behind nine seconds of
+       it. Nothing else is ever pending during a live round. */
+    this.announcer?.clear();
+    /* THE ROUND ENDS ON A BELL. The gong at the top of a round is the one
+       sound in the game that STARTS something and it had no answer: a round
+       simply stopped, with a banner. Reported as wanting one. Lower and longer
+       than the fight gong, and it settles rather than rings out. */
+    this.audio?.play('endgong');
     this.announcer?.say('sat_ko', 'DOWN! Oh, that had to hurt!');
     this._banner('K.O.', 'ko');
     // Addressed to a side now, so everybody on it hears it.
@@ -914,6 +964,12 @@ export class Tournament {
         if (this.t >= COUNT_FROM) {
           this.state = 'live';
           this.t = 0;
+          /* THE CLOCK'S CALLS ARE PER ROUND, and this is the one line in the
+             machine that means "a round has started" — `state = 'card'` is two
+             places and `_nextRound` is not the only way into either. */
+          this._warned = false;
+          this._ranting = false;
+          this._countShown = null;
           this.audio?.play('gong');
           this.announcer?.say('sat_fight', 'FIGHT!');
           this._banner('FIGHT!', 'fight');
@@ -924,6 +980,7 @@ export class Tournament {
       case 'live':
         this.fightTime += dt;
         this._updateOut(dt, OUT_DAMAGE);
+        this._callTheClock(ROUND_LIMIT - this.t);
         /* A round that never ends. Two kittens who are both bored, or one
            who has climbed the announcer's box and is sitting on it, would
            otherwise hold the tournament open forever with no way out but the
@@ -967,6 +1024,11 @@ export class Tournament {
     }
 
     this._updateBanner(dt);
+    /* AFTER THE STATE MACHINE, so the frame a round ends is the frame the
+       number goes away. Painted rather than driven by events, because there
+       are six ways out of a live round and a hide that hangs off any one of
+       them is five bugs waiting. */
+    this._paintCountdown();
   }
 
   /**
@@ -1396,6 +1458,97 @@ export class Tournament {
 
   /* -------------------------------- HUD ---------------------------------- */
 
+  /**
+   * The last thirty seconds, out loud.
+   *
+   * A ROUND USED TO END WITHOUT WARNING. `ROUND_LIMIT` has always been able to
+   * take a round off you on damage, and the only sign it was coming was a
+   * small clock in the corner going red — which nobody circling a sister at
+   * 1:50 is reading. Reported as wanting a countdown: a bigger number, and Mr.
+   * Satan getting more and more upset about it.
+   *
+   * TWO EVENTS AND A PAINTER, not a per-second event stream. `_warned` and
+   * `_ranting` are latches because a frame is not a second: at 300fps this is
+   * called five times inside the same tick of the clock, and a call that fired
+   * on `left <= 30` without one would say "thirty seconds" five times.
+   *
+   * @param {number} left seconds of round remaining, and it may be negative on
+   *        the frame the limit is crossed.
+   */
+  _callTheClock(left) {
+    if (!this._warned && left <= WARN_AT) {
+      this._warned = true;
+      this.announcer?.say('sat_t30',
+        'THIRTY SECONDS LEFT! That is half a minute! Do SOMETHING!');
+    }
+    if (this._ranting || left > COUNT_AT) return;
+
+    /* HE GETS THE FLOOR FOR THE LAST FIFTEEN SECONDS. `say` queues and never
+       interrupts, which is right everywhere else and wrong here: the clip is a
+       TIMELINE (tools/capture/satan-countdown.mjs) whose numbers are nailed to
+       the seconds they name, so a queue that holds it back even half a second
+       has him counting five while the screen shows four. Clearing first is
+       safe because the only other thing that can be talking during a live
+       round is his own thirty-second call, fifteen seconds ago. */
+    this.announcer?.clear();
+    this.announcer?.say('sat_last',
+      "FIFTEEN SECONDS! Are you KIDDING me?! JUST PUNCH 'EM! "
+      + "FINE! FINE! I'll count you down! I HATE counting! "
+      + 'FIVE! HURRY! FOUR! THREE! MOVE! TWO! ONE! ZEEEROOOO!');
+    /* ONLY IF HE CAN ACTUALLY SAY IT. Without the recording the announcer
+       shows the text for three seconds and then goes quiet, so the last five
+       seconds would count down in silence — the tick in `_paintCountdown` is
+       what stands in, and this is the flag that tells it to. Ninth
+       non-negotiable: delete `public/voice` and this still counts. */
+    this._ranting = !!this.announcer?.clips?.has('sat_last');
+  }
+
+  /**
+   * The big number, under the round box.
+   *
+   * PAINTED FROM THE STATE EVERY FRAME rather than shown and hidden by events.
+   * A live round can end six ways — a knockout, a side wiped, the clock, the
+   * debug key, the pause menu, flying home — and a `hidden` that hangs off any
+   * one of them is five ways to leave a 3 floating over the town.
+   *
+   * IT SITS UNDER THE HUD, NOT IN THE MIDDLE. The middle is where the fight
+   * is, and it is also where `#arena-banner` puts K.O. and FIGHT!; a number
+   * that big over the deck would cover the two kittens it is counting for.
+   * Below the one box both girls already read is the same argument the round
+   * clock itself was built on.
+   */
+  _paintCountdown() {
+    const el = this.countEl;
+    if (!el) return;
+    if (this.state !== 'live') { this._hideCountdown(); return; }
+    const left = Math.max(0, ROUND_LIMIT - this.t);
+    if (left > COUNT_AT) { this._hideCountdown(); return; }
+
+    /* CEILING, so the number on screen is the number of whole seconds you
+       still have. Flooring shows 14 for the whole of the fifteenth second and
+       reaches 0 with a second left to play, which would make his "ZERO!" a
+       second early — and he is the one thing here that cannot be adjusted. */
+    const n = Math.ceil(left);
+    if (n === this._countShown) return;
+    this._countShown = n;
+    el.textContent = String(n);
+    /* Two looks, not five. Under `COUNT_LAST` it is what he is shouting; above
+       it, it is a warning. A class per second would be five rules that all
+       have to keep agreeing with each other. */
+    el.className = n <= COUNT_LAST ? 'last' : '';
+    if (n <= COUNT_LAST && !this._ranting) this.audio?.play('count');
+  }
+
+  /** Idempotent, because `_paintCountdown` calls it on every frame of the
+   *  hundred and five seconds before the countdown starts and a DOM write a
+   *  frame for a class that is already there is a hundred and five seconds of
+   *  nothing. `_countShown` is the guard AND the reset. */
+  _hideCountdown() {
+    if (this._countShown === null) return;
+    this._countShown = null;
+    this.countEl?.classList.add('hidden');
+  }
+
   _banner(text, kind) {
     this._bannerText = text;
     this._bannerT = kind === 'count' ? 0.9 : kind === 'fight' ? 1.1 : 2.4;
@@ -1502,7 +1655,17 @@ export class Tournament {
        round — a timer ticking down while both fighters are frozen on their
        marks is time she is being charged for and cannot use. Before the gong it
        simply shows the full allowance. */
-    const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    /* CEILING, AND IT USED TO FLOOR. On its own that was invisible: a clock
+       that reads 0:13 for the whole of the fourteenth second is what every
+       stopwatch does. Put the big countdown under it and the two disagreed on
+       screen — 14 over 0:13 — and of the two it is the BIG one that cannot
+       move, because Mr. Satan's recorded "ZERO!" is nailed to the second it
+       names and flooring would have him shouting it with a second still to
+       play. So both of them now say how many whole seconds you still have. */
+    const clock = (s) => {
+      const n = Math.ceil(s);
+      return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`;
+    };
     let mid;
     if (this.state === 'feast') {
       mid = `<span class="ah-feast">FEAST ${Math.max(0, Math.ceil(FEAST_TIME - this.t))}</span>`;

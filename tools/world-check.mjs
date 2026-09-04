@@ -87,6 +87,7 @@ import { Minimap, ZOOMS } from '../src/systems/minimap.js';
 import { Label, labelCacheStats } from '../src/core/label.js';
 import {
   MODES, MODE_BY_ID, modesFor, handicapFor, HANDICAP_MAX, NO_SIDE, ROUND_LIMIT,
+  WARN_AT, COUNT_AT, COUNT_LAST,
 } from '../src/systems/tournament.js';
 import { worldSpawnCount, WORLD_PER_PLAYER } from '../src/systems/kotodama.js';
 import {
@@ -7500,6 +7501,343 @@ console.log('\n--- the three power moves ---');
 
      IT CHECKS THE SHAPE, NOT THE SEATING — a 2v2 needs two sides of two and
      does not care which two, which is exactly the part the picker owns. */
+  /* =========================================================================
+     THE LAST THIRTY SECONDS.
+
+     `ROUND_LIMIT` could always take a round off you on damage and the only
+     warning was a small clock going red in the corner, which nobody circling
+     her sister at 1:50 is reading. What is checked here is not that the
+     numbers are set — it is that the two calls happen ONCE each, that the big
+     number on screen tells the truth about the clock, and that all of it still
+     counts with `public/voice` deleted.
+     ========================================================================= */
+  /* =========================================================================
+     THE INVISIBLE MAN IN THE TOWN SQUARE.
+
+     Mr. Satan's collider was pushed as a bare literal at boot, at whatever
+     coordinates he happened to be standing on, and then never touched again.
+     He is invisible until the tournament is announced and he MOVES — town
+     square, announcer's box, back again — so that one line was wrong twice
+     over: a cylinder in the square from the first frame of the game with
+     nothing drawn in it, and a second one left behind after he walked to the
+     arena. Reported as "his collider is still there and players can run into
+     it".
+     ========================================================================= */
+  console.log('\n--- a collider nobody can see ---');
+  {
+    /* THE HALF THAT ACTUALLY STOPS A KITTEN, driven rather than read. The flag
+       is worthless unless `resolveSolids` honours it, and `resolveSolids` is
+       walked by every kitten on every frame. */
+    const ghost = { x: 300, z: 300, r: 4, off: true };
+    world.solids.push(ghost);
+    const inside = () => world.resolveSolids(300.5, 300, 0.6, 8);
+    let hit = inside();
+    ok('a solid marked off does not shove anybody',
+      Math.abs(hit.x - 300.5) < 1e-9 && Math.abs(hit.z - 300) < 1e-9,
+      `${hit.x.toFixed(2)}, ${hit.z.toFixed(2)}`);
+    /* AND THE SAME CYLINDER, TURNED ON, REALLY DOES. Without this the check
+       above passes just as well against a coordinate nothing was ever near —
+       which is the shape of test that survives the feature being deleted. */
+    ghost.off = false;
+    hit = inside();
+    ok('...and the same cylinder, turned on, certainly does',
+      Math.hypot(hit.x - 300, hit.z - 300) > 4, `${Math.hypot(hit.x - 300, hit.z - 300).toFixed(2)}`);
+    world.solids.pop();
+    /* NOT SPLICED OUT OF THE ARRAY. `world.solids` is walked by every kitten
+       every frame and by `findOpenSpot`; a solid that comes and goes changes
+       its length underneath both. The flag is the same shape as `s.arena`,
+       which turns the arena's stonework off while the arena is shut. */
+    const w = stripComments(readFileSync(new URL('../src/world/world.js', import.meta.url), 'utf8'));
+    ok('...and it is skipped, not removed from the list',
+      /if \(s\.off\) continue;/.test(w) && !/solids\.splice/.test(w));
+
+    /* THE HALF THAT WRITES THE FLAG. `Game` is not exported — it owns a
+       renderer and a whole world — so this is asserted against the source,
+       which is also the honest shape for it: the bug was a rule that was never
+       written down, not a number that came out wrong. */
+    const mn = stripComments(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'));
+    ok('his collider is kept as a reference, not pushed and forgotten',
+      /this\.satanSolid = \{ x: spot\.x, z: spot\.z, r: [\d.]+, off: true \};/.test(mn)
+      && /this\.world\.solids\.push\(this\.satanSolid\);/.test(mn));
+    /* IT STARTS OFF. He is invisible at boot, so a collider that started live
+       and was only turned off later would still be a wall for one frame — and
+       for the whole of any session in which `_syncSatanSolid` never ran. */
+    ok('...and it starts off, because he starts invisible',
+      /off: true \};/.test(mn));
+    const sync = mn.slice(mn.indexOf('_syncSatanSolid() {'));
+    const body = sync.slice(0, sync.indexOf('\n  }'));
+    ok('...and his DRAWING is what decides whether it exists',
+      /const on = !!this\.satan\?\.group\.visible;/.test(body) && /s\.off = !on;/.test(body));
+    ok('...and it follows him when he walks to the arena',
+      /s\.x = this\.satan\.position\.x;/.test(body) && /s\.z = this\.satan\.position\.z;/.test(body));
+    /* IT DEGRADES. `satanArt` can fail to load, and then there is no Satan and
+       no solid — a sync that assumed either would take the whole frame down.
+       Fourth house rule: prefer a rule that degrades over one that vanishes. */
+    ok('...and a game with no Mr. Satan in it does not crash on his collider',
+      /const s = this\.satanSolid;\s*if \(!s\) return;/.test(body));
+
+    /* BEFORE THE PLAYERS MOVE, and it is the whole reason this is one call in
+       the frame rather than eight lines spread over the four places he is
+       teleported. `Player.update` is what calls `resolveSolids`, so syncing
+       after the loop shoves a kitten out of where he was LAST frame — three
+       hundred units away, for a man who teleports. */
+    ok('...and it is synced before anybody is asked to collide with it',
+      mn.indexOf('this._syncSatanSolid();')
+        < mn.indexOf('this.players[i].update(dt, pad, this.world'),
+      `${mn.indexOf('this._syncSatanSolid();')} < ${mn.indexOf('this.players[i].update(dt, pad, this.world')}`);
+  }
+
+  console.log('\n--- the clock runs out, out loud ---');
+  {
+    /* A REAL ELEMENT'S WORTH OF SURFACE. `domStub` hands back null for every
+       id, which makes `_paintCountdown` return on its first line — so a stub
+       that did nothing would pass every check below while proving that the
+       painter is unreachable. Only the four members it actually touches. */
+    const mkEl = () => ({
+      textContent: '',
+      className: 'hidden',
+      classList: {
+        add(c) { if (!this._has(c)) this.owner.className = `${this.owner.className} ${c}`.trim(); },
+        _has(c) { return this.owner.className.split(/\s+/).includes(c); },
+        contains(c) { return this._has(c); },
+      },
+    });
+    const el = mkEl();
+    el.classList.owner = el;
+
+    const said = [];
+    const played = [];
+    const mkT = (clips = ['sat_t30', 'sat_last', 'sat_draw']) => {
+      said.length = 0;
+      played.length = 0;
+      const T = new Tournament({
+        game: { players: [], toast() {}, sfx() {} },
+        world,
+        audio: { play: (n) => played.push(n) },
+        announcer: {
+          clips: new Map(clips.map((c) => [c, {}])),
+          say: (id) => said.push(id),
+          clear: () => said.push('#clear'),
+        },
+      });
+      T.countEl = el;
+      /* `_paintHud` writes `innerHTML`, and the small clock is read back out of
+         it below — one of the two numbers this section exists to keep in step
+         with the other. */
+      T.hudEl = { innerHTML: '', classList: { add() {}, remove() {} } };
+      el.className = 'hidden';
+      T._warned = false;
+      T._ranting = false;
+      T._countShown = null;
+      return T;
+    };
+
+    /* THE THREE NUMBERS HAVE TO STAY IN THIS ORDER or the feature eats itself:
+       a warning after the countdown starts, or a countdown longer than the
+       round, is a call that never fires or one that fires on the card. */
+    ok('the clock warns before it counts, and counts before it panics',
+      ROUND_LIMIT > WARN_AT && WARN_AT > COUNT_AT && COUNT_AT > COUNT_LAST
+      && COUNT_LAST > 0, `${ROUND_LIMIT} > ${WARN_AT} > ${COUNT_AT} > ${COUNT_LAST}`);
+
+    /* --- ONCE EACH, WHATEVER THE FRAME RATE ---------------------------------
+       This is the check that matters most and the one a "does it fire" test
+       would miss entirely. A frame is not a second: at 300fps `_callTheClock`
+       is called five times inside the same tick of the clock, and a call
+       written as `if (left <= WARN_AT)` says "thirty seconds left" five times
+       in a row and then two hundred more. */
+    {
+      const T = mkT();
+      /* PAST ZERO, not down to the warning. The first version of this loop
+         stopped at exactly `WARN_AT` and reported nought calls out of one —
+         a sweep that never reaches the thing it is sweeping for. */
+      for (let i = 0; i <= 1300; i++) T._callTheClock(ROUND_LIMIT - i * 0.1);
+      const t30 = said.filter((x) => x === 'sat_t30').length;
+      const last = said.filter((x) => x === 'sat_last').length;
+      ok('a whole round at 10fps gets ONE thirty-second call', t30 === 1, `${t30}`);
+      ok('...and ONE countdown, not one a frame', last === 1, `${last}`);
+      ok('...and the warning comes first', said.indexOf('sat_t30') < said.indexOf('sat_last'));
+      /* HE GETS THE FLOOR FOR THE COUNT. `say` queues and never interrupts,
+         which is right everywhere else and wrong for a clip whose numbers are
+         nailed to the seconds they name. */
+      ok('...and he clears the queue before counting',
+        said[said.indexOf('sat_last') - 1] === '#clear');
+    }
+
+    /* AND NOT AT ALL BEFORE THEIR TIME. A call that fires a second early is
+       the same bug as one that fires five times, and reads worse. */
+    {
+      const T = mkT();
+      for (let i = 0; i < 200; i++) T._callTheClock(WARN_AT + 0.05 + i * 0.1);
+      ok('nothing is said while there is still time on the clock',
+        said.length === 0, said.join(','));
+      T._callTheClock(COUNT_AT + 0.05);
+      ok('...and the countdown holds until the fifteenth second exactly',
+        !said.includes('sat_last'));
+    }
+
+    /* --- THE NUMBER ON SCREEN IS THE NUMBER OF SECONDS YOU HAVE -------------
+       CEILING, not floor. Flooring shows 14 for the whole of the fifteenth
+       second and reaches 0 with a second still to play — which would make his
+       recorded "ZERO!" a second early, and he is the one thing in this feature
+       that cannot be adjusted afterwards. */
+    {
+      const T = mkT();
+      T.state = 'live';
+      const at = (left) => { T.t = ROUND_LIMIT - left; T._paintCountdown(); return el.textContent; };
+      T.t = 0; T._paintCountdown();
+      ok('the big clock is not on screen for most of a round',
+        el.classList.contains('hidden'));
+      ok('...nor at sixteen seconds', (at(16), el.classList.contains('hidden')));
+      ok('...and appears at fifteen', at(15) === '15' && !el.classList.contains('hidden'));
+      ok('...reading whole seconds REMAINING, not seconds gone',
+        at(14.9) === '15' && at(14.0) === '14' && at(13.99) === '14');
+      ok('...and it never shows a zero somebody could still play in',
+        at(0.01) === '1');
+      /* THE TWO CLOCKS AGREE. They are eighty pixels apart and a kid reads
+         both at once; 14 sitting under 0:13 is the game contradicting itself
+         about the only number that matters. The small one used to FLOOR — fine
+         alone, wrong the moment anything was put under it — and it is the one
+         that had to move, because the big one is what Mr. Satan is counting
+         and his "ZERO!" is a recording. */
+      T.t = ROUND_LIMIT - 13.4;
+      T._paintHud();
+      T._paintCountdown();
+      const hud = /ah-clock[^>]*>([^<]+)</.exec(T.hudEl?.innerHTML ?? '');
+      ok('the small clock and the big one never disagree',
+        hud && hud[1] === `0:${el.textContent.padStart(2, '0')}`,
+        `${hud ? hud[1] : 'no clock'} vs ${el.textContent}`);
+      /* AND IT STILL READS LIKE A CLOCK ABOVE A MINUTE, which is the whole of
+         a round and the only thing the girls have ever seen it do. */
+      T.t = 0;
+      T._paintHud();
+      ok('...and a full round still opens on two minutes',
+        /ah-clock[^>]*>2:00</.test(T.hudEl?.innerHTML ?? ''),
+        (/ah-clock[^>]*>([^<]+)</.exec(T.hudEl?.innerHTML ?? '') ?? [])[1] ?? 'none');
+      T.t = ROUND_LIMIT - 60;
+      T._paintHud();
+      ok('...and rolls the minute where it always did',
+        /ah-clock[^>]*>1:00</.test(T.hudEl?.innerHTML ?? ''),
+        (/ah-clock[^>]*>([^<]+)</.exec(T.hudEl?.innerHTML ?? '') ?? [])[1] ?? 'none');
+
+      /* TWO LOOKS, NOT FIFTEEN. Under COUNT_LAST he is shouting the number and
+         it changes character with him; a class per second would be fifteen
+         rules that all have to keep agreeing. */
+      at(6);
+      ok('over five it is the warning look', !el.classList.contains('last'));
+      at(5);
+      ok('...and at five it is the one he is shouting', el.classList.contains('last'));
+      /* IT GOES AWAY WITH THE ROUND, and it is painted from the state rather
+         than hidden by whatever ended it — a live round ends six ways. */
+      T.state = 'ko';
+      T._paintCountdown();
+      ok('a knockout at 0:07 does not leave a 7 hanging over the deck',
+        el.classList.contains('hidden'));
+      /* AND `finish` HAS TO SAY SO ITSELF: `update` returns on its first line
+         when the state is 'off', so the painter never runs again. */
+      T.state = 'live';
+      T.t = ROUND_LIMIT - 7;
+      T._paintCountdown();
+      ok('...and neither does flying home mid-round',
+        (T.finish(), el.classList.contains('hidden')));
+    }
+
+    /* --- IT STILL COUNTS WITH `public/voice` DELETED ------------------------
+       Ninth non-negotiable. Without the recording the announcer shows the text
+       for three seconds and goes quiet, so the last five seconds would count
+       down in silence — the tick is what stands in, and `_ranting` is the flag
+       that decides. Both directions, because a tick that ALSO plays under his
+       voice is two clocks disagreeing out loud. */
+    {
+      const T = mkT([]);
+      T.state = 'live';
+      T._callTheClock(COUNT_AT);
+      ok('with no recording he cannot rant', T._ranting === false);
+      played.length = 0;
+      for (let n = COUNT_LAST; n >= 1; n--) { T.t = ROUND_LIMIT - n; T._paintCountdown(); }
+      ok('...so the countdown ticks instead, once a second',
+        played.filter((x) => x === 'count').length === COUNT_LAST,
+        played.join(','));
+
+      const V = mkT();
+      V.state = 'live';
+      V._callTheClock(COUNT_AT);
+      ok('with the recording he does the counting', V._ranting === true);
+      played.length = 0;
+      for (let n = COUNT_LAST; n >= 1; n--) { V.t = ROUND_LIMIT - n; V._paintCountdown(); }
+      ok('...and nothing ticks over the top of him',
+        played.filter((x) => x === 'count').length === 0, played.join(','));
+    }
+
+    /* --- THE CLIP IS A TIMELINE, AND IT HAS TO BE THE RIGHT LENGTH ----------
+       `sat_last.mp3` is spliced so each number lands on the second it names,
+       which only works if the splice and the game agree about when it starts.
+       The splicer's LEAD is the seconds of complaining before "FIVE!"; five
+       numbers follow it, so LEAD + 5 IS the window. Two files, one number. */
+    {
+      const src = readFileSync(new URL('../tools/capture/satan-countdown.mjs', import.meta.url), 'utf8');
+      const lead = Number((/const LEAD = ([\d.]+);/.exec(src) ?? [])[1]);
+      ok('the splicer and the game agree on how long his rant is',
+        Number.isFinite(lead) && lead + 5 === COUNT_AT, `${lead} + 5 vs ${COUNT_AT}`);
+      /* AND THE NUMBERS ARE NAILED TO WHOLE SECONDS. `LEAD + i` is the line
+         that makes the clip truthful; a splice that packed them end to end
+         would sound fine and count a different clock. */
+      ok('...and that every number sits on its own second',
+        /say\(p, LEAD \+ i\)/.test(src) && /say\(prep\('roar', 1\), LEAD \+ 5\)/.test(src));
+    }
+
+    /* --- A ROUND ENDS ON A BELL, AND A DRAW ASKS A QUESTION -----------------
+       The gong at the top of a round is the one sound in the game that STARTS
+       something, and a round ending had no answer to it. A draw needs its own,
+       or it reads as the game having failed to decide — which is exactly what
+       a nine-year-old concludes from a knockout bell over a DRAW banner. */
+    {
+      const T = mkT();
+      T.state = 'live';
+      T.wins = [0, 0];
+      T._roundOver(0, 'x');
+      ok('a round that ends rings a bell', played.includes('endgong'), played.join(','));
+      ok('...and it is not the one that starts a fight', !played.includes('gong'));
+      /* HE STOPS COUNTING THE MOMENT THERE IS NOTHING TO COUNT: `sat_last` is
+         fifteen seconds long, so a knockout at 0:06 would otherwise have him
+         counting over a kitten already flat on her back — and his "DOWN!"
+         would queue behind nine seconds of it. */
+      ok('...and the countdown is cut, not queued behind',
+        said.indexOf('#clear') < said.indexOf('sat_ko'));
+    }
+    {
+      const T = mkT();
+      T.state = 'live';
+      T.wins = [0, 0];
+      T.game.players = [];
+      const got = T.callOnDamage('Time!');
+      ok('nobody ahead on damage is a draw', got === 'draw');
+      ok('...and it does NOT ring the knockout bell', !played.includes('endgong'));
+      ok('...it asks a question instead', played.includes('drawgong'), played.join(','));
+      ok('...and he has something to say about it', said.includes('sat_draw'));
+    }
+
+    /* THE TWO BELLS ARE DIFFERENT SOUNDS, not one at two volumes. They are the
+       only bells in the game, so a girl hearing the fight gong at the END of a
+       round would get up off her mark. */
+    {
+      const au = stripComments(readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8'));
+      const body = (name) => {
+        const i = au.indexOf(`case '${name}':`);
+        return i < 0 ? '' : au.slice(i, au.indexOf('break;', i));
+      };
+      ok('every bell the tournament rings actually exists',
+        !!body('gong') && !!body('endgong') && !!body('drawgong'));
+      ok('...and no two of them are the same sound',
+        body('gong') !== body('endgong') && body('endgong') !== body('drawgong'));
+      /* THE QUESTION MARK IS A RISE, and it is the whole idea — asserted on
+         the shape rather than on a frequency, because any rising partial would
+         do and pinning the number would just be pinning my own take. */
+      ok('...and the draw bell is the one that bends upward',
+        /to: semi\(-13\)|to: semi\(-7\)/.test(body('drawgong'))
+        && !/to: semi/.test(body('endgong')));
+    }
+  }
+
   console.log('\n--- the team picker cannot make an illegal match ---');
   {
     const T = new Tournament({

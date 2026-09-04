@@ -2434,6 +2434,50 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
 }
 @keyframes feastTick { 50% { opacity: 0.55; } }
 
+/* --- THE LAST FIFTEEN SECONDS --------------------------------------------
+   Directly under the round box, which is at top:14px and about 66 tall. It is
+   the one place on this screen both girls are already looking, and it keeps
+   the deck — and `#arena-banner`, which lands at 34% — completely clear.
+   BIGGER THAN ANYTHING ELSE ON THE HUD, because it is the only number on the
+   screen that can end the round on its own. `tabular-nums` for the same
+   reason the small clock has it: 10 and 9 must not shift the digit sideways.
+   NO `animation-fill-mode` — see the preview-pane note in HANDOFF. */
+#arena-countdown {
+  position: absolute;
+  top: 86px;
+  left: 0;
+  width: 100%;
+  z-index: 36;
+  text-align: center;
+  font-family: 'Bangers', cursive;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 3px;
+  font-size: 76px;
+  line-height: 1;
+  color: var(--paper);
+  -webkit-text-stroke: 3px var(--ink);
+  text-shadow: 0 6px 0 rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  /* The blink IS the message from fifteen down. Same pulse as a critical
+     health bar and as the small clock going red — one visual language for
+     "this is about to be decided", so a kid who has learnt it once has
+     learnt it everywhere. */
+  animation: critPulse 0.55s ease-in-out infinite;
+}
+/* Under five, he is counting out loud and the number changes character with
+   him: red, bigger, and a hard pop on every second rather than a smooth
+   pulse — the two are different animations on purpose, because a countdown
+   that merely got faster reads as the same thing hurrying. */
+#arena-countdown.last {
+  color: #ff3b30;
+  font-size: 122px;
+  animation: countPop 0.5s ease-out;
+}
+@keyframes countPop {
+  from { transform: scale(1.9); opacity: 0.2; }
+  60% { transform: scale(1); }
+}
+
 /* --- ROUND 1 / 3 / 2 / 1 / FIGHT! / K.O. ---------------------------------- */
 #arena-banner {
   position: absolute;
