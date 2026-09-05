@@ -1375,11 +1375,44 @@ one place that knows it:
 
 1. the count is stopped and the queue cleared;
 2. `sat_zero` starts, and his `satan_charge.png` pose goes up with it;
-3. everything the round has to say — the bell, the banner, his line, the toast
-   — is handed to `_announce` as **one closure**, to run once the shout is over
-   plus `ZERO_BEAT` (1.5s, the *"1 - 2 second pause for him to calm down"* that
-   was asked for);
-4. his arms come down on the same frame that closure runs.
+3. **the bell rings immediately** — see below;
+4. everything that reads as a *consequence* — the banner, his next line, the
+   toast — is handed to `_announce` as **one closure**, to run once the shout is
+   over plus `ZERO_BEAT` (1.5s, the *"1 - 2 second pause for him to calm down"*
+   that was asked for);
+5. his arms come down on the same frame that closure runs.
+
+#### The bell is not part of the wait
+
+It was, at first, and that was wrong for the one reason a bell exists: **it
+marks a moment.** Held back with the rest it arrived six seconds after the fact
+— a sound about something that had already happened — and a round ending read
+as having no gong at all, which is how it came back:
+
+> when a round is over, we can have a gong sound play... should be loud and
+> noticeable
+
+It already was loud. Rendered through the game's own graph offline, `endgong`
+peaks at −2.0 dBFS against the FIGHT gong's −2.4, and is 1.8 dB hotter in RMS —
+**the loudest single sound in the game.** Nothing needed rebuilding; the bell
+was simply ringing too late to be the thing it is for.
+
+**On a draw it is also the joke**, and a punchline has to land on the beat.
+`drawgong` is the bell-ringer looking up to find two fighters still standing;
+that confusion belongs at the instant the clock dies, not after Mr. Satan has
+finished explaining how he feels about it. So `_announce` takes the bell as its
+own argument, rings it before it decides whether to wait, and `world-check`
+pins the split in both directions — that the bell has rung by the time the
+round is over, and that the banner and the line have *not*.
+
+Measured in the running game, a timed-out draw:
+
+```
+ 0.00s  live   banner=FIGHT!
+ 5.05s  drawgong                 <- the clock dies, the bell rings
+ 5.09s  ko     banner=FIGHT!  PENDING
+11.11s  ko     banner=DRAW      <- 6.02s later, once he has run out of breath
+```
 
 The wait is **measured off the clip**, not guessed, so a re-cut that runs longer
 cannot start clipping itself again. `KO_HOLD` **grows** by it rather than

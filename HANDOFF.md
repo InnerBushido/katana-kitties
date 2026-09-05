@@ -298,9 +298,16 @@ Built this session, driven in the running game, not yet in front of anybody:
   goes straight down the speech channel instead. Thirty, fifteen and ten are
   ordinary cards.
 - **He gets to finish shouting ZERO.** A round called by the clock waits for the
-  shout plus a beat before the bell, the banner and whatever he says next — his
-  charging sprite goes up while he does it. Every other ending is unchanged: a
-  knockout still rings on the frame it always did.
+  shout plus a beat before the banner and whatever he says next — his charging
+  sprite goes up while he does it. Every other ending is unchanged: a knockout
+  still rings on the frame it always did.
+  → [tournament.md](docs/notes/tournament.md)
+- **The bell is not part of that wait.** It marks the moment the round ends, so
+  it rings on that frame and the banner follows six seconds later. Held back
+  with the rest it read as a round ending with no gong at all — and on a draw it
+  put the question-mark bell after the joke instead of on it. `endgong` was
+  never too quiet: measured offline through the game's own graph it peaks at
+  −2.0 dBFS against the FIGHT gong's −2.4, the loudest sound in the game.
   → [tournament.md](docs/notes/tournament.md)
 - **The count is ONE take re-timed, not nine takes assembled.** The first cut
   built it from eleven single-word renders and sounded like it. `count.mp3` is

@@ -912,13 +912,13 @@ export class Tournament {
     if (leaders.length !== 1 || best <= 0) {
       this.state = 'ko';
       this.t = 0;
-      this._announce(wait, () => {
-        /* THE SAME BELL, ASKING A QUESTION. A draw needs to sound different
-           from a result or it reads as the game having failed to decide —
-           which is exactly what a nine-year-old will conclude from a K.O. bell
-           over a banner that says DRAW. `drawgong` is `endgong` with its tail
-           bending UP, which is what a question mark sounds like. */
-        this.audio?.play('drawgong');
+      /* THE SAME BELL, ASKING A QUESTION. A draw needs to sound different from
+         a result or it reads as the game having failed to decide — which is
+         exactly what a nine-year-old will conclude from a K.O. bell over a
+         banner that says DRAW. `drawgong` is `endgong` with its tail bending
+         UP, which is what a question mark sounds like. It rings NOW, not after
+         the wait: see `_announce`. */
+      this._announce(wait, 'drawgong', () => {
         this._banner('DRAW', 'ko');
         /* IT IS RARE, SO IT IS FUNNY. Two sides finishing dead level on damage
            happens perhaps once in a hundred rounds, and a moment that rare
@@ -950,12 +950,12 @@ export class Tournament {
     this.state = 'ko';
     this.t = 0;
     if (winnerSide >= 0) this.wins[winnerSide] = (this.wins[winnerSide] ?? 0) + 1;
-    this._announce(wait ?? this._letHimFinish(false), () => {
-      /* THE ROUND ENDS ON A BELL. The gong at the top of a round is the one
-         sound in the game that STARTS something and it had no answer: a round
-         simply stopped, with a banner. Reported as wanting one. Lower and
-         longer than the fight gong, and it settles rather than rings out. */
-      this.audio?.play('endgong');
+    /* THE ROUND ENDS ON A BELL. The gong at the top of a round is the one sound
+       in the game that STARTS something and it had no answer: a round simply
+       stopped, with a banner. Reported as wanting one. Lower and longer than
+       the fight gong, and it settles rather than rings out — and it rings on
+       the frame the round ends, never after the wait: see `_announce`. */
+    this._announce(wait ?? this._letHimFinish(false), 'endgong', () => {
       this.announcer?.say('sat_ko', 'DOWN! Oh, that had to hurt!');
       this._banner('K.O.', 'ko');
       // Addressed to a side now, so everybody on it hears it.
@@ -1655,7 +1655,21 @@ export class Tournament {
    * @param {number} wait seconds, from `_letHimFinish`
    * @param {() => void} run the bell, the banner, the line and the toast
    */
-  _announce(wait, run) {
+  _announce(wait, bell, run) {
+    /* THE BELL IS NOT PART OF THE WAIT, AND THAT IS THE WHOLE REASON IT TAKES
+       ITS OWN ARGUMENT. It is the sound that says the round is OVER, so it has
+       to ring when the round is over. Held back with the rest it arrives six
+       seconds after the fact, once his shout has run out — a sound about
+       something that already happened, which is exactly how it was reported:
+       a round ending with no gong to mark it.
+       ON A DRAW IT IS ALSO THE JOKE, and a punchline has to land on the beat.
+       `drawgong` is the bell-ringer looking up and finding two fighters still
+       standing; that confusion belongs at the instant the clock dies, not
+       after Mr. Satan has finished explaining how he feels about it.
+       Everything that reads as a CONSEQUENCE — the banner, his next line, the
+       toast — still waits for him to finish. Nothing about a knockout moves:
+       `wait` is 0 there and this runs exactly as it always did. */
+    if (bell) this.audio?.play(bell);
     this._koHold = KO_HOLD + Math.max(0, wait);
     if (wait > 0) { this._pending = { at: wait, run }; return; }
     this._pending = null;

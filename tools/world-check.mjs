@@ -7818,11 +7818,23 @@ console.log('\n--- the three power moves ---');
       /* AND THE COUNT IS STOPPED DEAD, not left playing under him. `clear`
          cannot do it: it empties the card queue and touches no audio. */
       ok('...and the count is stopped, not just uncarded', spoke.includes('#stop'), spoke.join(','));
-      /* NOTHING ELSE HAPPENS YET. This is the whole point: no bell, no banner,
-         no draw line until he has run out of breath. */
-      ok('...and the bell does NOT ring over the top of him',
-        !played.includes('drawgong') && !played.includes('endgong'), played.join(','));
-      ok('...nor the line that follows it', !said.includes('sat_draw'));
+      /* THE BELL RINGS NOW. It was held back with everything else at first and
+         that was wrong for the one reason a bell exists: it marks the moment.
+         Six seconds after the moment it is a sound about something that
+         already happened, and on a draw the question-mark gong is a punchline
+         landing after the joke. It is also the ONLY thing that moves — see the
+         two checks below, which are the ones that keep the rest waiting. */
+      ok('...and the bell rings on the frame the round ended',
+        played.includes('drawgong'), played.join(','));
+      ok('...and it is the confused one, not the knockout bell',
+        !played.includes('endgong'), played.join(','));
+      /* NOTHING THAT READS AS A CONSEQUENCE HAPPENS YET. This is still the
+         whole point of the beat: no banner and no draw line until he has run
+         out of breath. */
+      ok('...but not the line that follows it', !said.includes('sat_draw'));
+      /* `_banner` sets `_bannerText` and only then touches an element, so with
+         no element this reads the real method rather than a stub of it. */
+      ok('...and not the banner either', T._bannerText !== 'DRAW', `${T._bannerText}`);
       ok('...his arms go up instead', posed.includes('charge'), posed.join(','));
       /* MEASURED OFF THE CLIP AND NOT GUESSED, so a re-cut that runs longer
          cannot start clipping itself again — plus the beat that was asked for
@@ -7836,15 +7848,20 @@ console.log('\n--- the three power moves ---');
       T.t = wait - 0.01;
       T.update(0, []);
       ok('...still nothing a hundredth of a second before he is done',
-        !played.includes('drawgong'), played.join(','));
+        !said.includes('sat_draw') && T._bannerText !== 'DRAW',
+        `${said.join(',')} / ${T._bannerText}`);
       T.t = wait;
       T.update(0, []);
-      ok('...and THEN the bell, the banner and his line',
-        played.includes('drawgong') && said.includes('sat_draw'));
+      ok('...and THEN the banner and his line',
+        said.includes('sat_draw') && T._bannerText === 'DRAW');
       ok('...and his arms come down with them',
         posed[posed.length - 1] === 'idle', posed.join(','));
-      ok('...once, not once a frame', (T.update(0, []), T.update(0, []),
-        played.filter((x) => x === 'drawgong').length === 1), played.join(','));
+      /* AND THE BELL IS NOT RUNG AGAIN BY THE CLOSURE IT LEFT. One strike, at
+         the start — this counts the whole beat, so it fails in both directions:
+         a bell moved back inside the wait, or a bell rung twice. */
+      ok('...with the bell struck once for the round, not once a frame',
+        (T.update(0, []), T.update(0, []),
+          played.filter((x) => x === 'drawgong').length === 1), played.join(','));
       /* AND THE BANNER STILL GETS ITS FULL TIME. Absorbing the wait into
          KO_HOLD would flash DRAW for half a second and cut to the feast. */
       ok('...and the round is not hurried off screen for having waited',
