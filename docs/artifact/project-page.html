@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 2301 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 2421 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 354 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -961,6 +961,15 @@ git push origin alpha</code></pre>
         <td><code>trailer-vo.mjs</code>, <code>trailer-score.mjs</code>, <code>trailer-cut.sh</code></td>
       </tr>
       <tr>
+        <td><b>A help picture that isn't filmed yet</b></td>
+        <td>Draws the still that holds <b>瞬 Flash Step</b>'s cell in the abilities grid until its
+          clip is shot. It reads the jade out of the orb roster and the kitten out of the player
+          palette, so it cannot drift from the game, and it stamps <b>PLACEHOLDER</b> in its own
+          corner: everything else on that page is an engine capture, and a drawing must never pass
+          for one. Swapping in the clip is a single attribute in the markup.</td>
+        <td><code>help-blink-placeholder.mjs</code></td>
+      </tr>
+      <tr>
         <td><b>Steam shelf art &amp; icons</b></td>
         <td>Crops and composites the title art into all six sizes. <b>Nothing here is a new
           drawing</b> — a prompt to an image model would put art on the box that is nowhere inside
@@ -1066,7 +1075,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 2301 assertions and why almost none of them are about
+      is why <code>world-check</code> is 2421 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,

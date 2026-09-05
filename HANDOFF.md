@@ -359,7 +359,7 @@ first orb that is bought and never found.
   frame the clock crosses its ceiling and therefore lands just past it.
   world-check caught it on the first run. → [endgame.md](docs/notes/endgame.md)
 - **The screens learned that "eight" was two different numbers.** `MAX_EQUIPPED`
-  is what she wears; the roster is nine. The dealer's shelf is now a bounded,
+  is what she wears; the roster is ten. The dealer's shelf is now a bounded,
   scrolling box with the cursor walked into view and a fade that says there is
   more, so the footer — the only way out on a phone — cannot be pushed off the
   bottom by a tenth orb later.
@@ -391,6 +391,48 @@ move that changes anything.
   bubble on the frame it starts them.
 - `hitCut`, `hits` and `breakT` are on `/tuning.html` with the rest of WARD.
   37 new checks. → [endgame.md](docs/notes/endgame.md)
+
+**The tenth Kotodama is in, and is not yet played back.** 瞬 Flash Step — the
+first move that takes her feet away, and the second orb the dealer alone has.
+
+- **Sprint + Interact and she is gone for half a second.** Nothing touches her
+  while she is away — `hurt` returns 0 before it even looks at `invulnT`, and
+  it refuses a Cross Slash's piercing third cut too. Then she is rooted for the
+  same half second again: no walking, no jump, no shield, no mount. She can
+  still swing, and she can still start a Cross Slash, because that one is
+  already a stand-still move.
+- **The stick is an AIM, not a heading.** Push it and she comes out on that
+  side of whoever she was facing; never push it and she comes back exactly
+  where she stood, which is a real choice and not a failed input. Hold the
+  shield button as she goes and she pivots around *herself* instead — the flee.
+- **Whoever she is looking at gets an 8-bit target ring in her colour**, drawn
+  narrowing in and springing open again when it ends. Targets have to be inside
+  a 120° cone at 10 units, or already inside her swing, and on the same
+  strike-height the katana asks about: if you could not hit her, you cannot
+  pivot around her.
+- **The radius is the SHORTER of the gap at the press and the gap at the
+  commit**, so a sister sprinting away does not tow the landing spot behind her.
+  A landing over nothing is refused outright with a `deny` — the fourth
+  non-negotiable applied to the one move that can put a kitten somewhere she did
+  not walk to.
+- **She leaves something behind in the smoke.** A log, a bow-tie, a scarf, a
+  boiled sweet, or her clan's emblem, dealt round in order rather than shuffled
+  so four dodges are four different jokes. **One time in twenty it is a live
+  mantis** — capped at one per kitten per round, the fastest and least
+  nourishing animal on the deck, and Mr. Satan has five things to say about
+  somebody smuggling snacks into his arena.
+- **A new concentrating pose**, two fingers to the forehead and eyes shut, worn
+  for the four fifths of the move that happen before she goes. Two sheets, four
+  kittens, through the same recolour loop as the eating and blessing poses.
+  Delete them and the whole move still runs — she just concentrates in her
+  ordinary standing pose.
+- **The effects are a poller** (`systems/dodgefx.js`), like the Cross Slash's:
+  `player.js` never imports it, so no way of a dodge ending can weld a target
+  ring to somebody's head.
+- 2.5x price, two on the shelf, `DODGE` on `/tuning.html`, and a fifth cell in
+  the Help page's abilities grid — **holding a drawn placeholder until its clip
+  is filmed** (`tools/help-blink-placeholder.mjs`; the swap is one attribute).
+  120 new checks. → [endgame.md](docs/notes/endgame.md)
 
 **Five more reported from play are fixed and not yet played back.** This batch
 came in as one list and two of its items turned out to be the same bug:

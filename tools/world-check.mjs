@@ -53,12 +53,13 @@ import { DEFAULTS, OVERRIDES, __mergeForTest as fold } from '../src/core/tuning.
 import {
   POWER_ORBS, ORB_IDS, WORLD_ORB_IDS, SHOP_ONLY_IDS, MAX_EQUIPPED,
   aggregate, countsOf, orbPrice, orbSellPrice, orbPriceFor, orbSellPriceFor,
-  WARD, AEGIS, DIVE, CROSS, CHARGE, wardFor,
+  WARD, AEGIS, DIVE, CROSS, CHARGE, DODGE, wardFor,
   stockFor, STOCK_STACKABLE, STOCK_UNIQUE,
   PowerOrb, PowerOrbPickup, ORB_BY_ID,
 } from '../src/entities/powerorb.js';
 import { Kotodama } from '../src/systems/kotodama.js';
 import { CrossFx, sealStage, SIDES_BY_CUT } from '../src/systems/crossfx.js';
+import { DodgeFx } from '../src/systems/dodgefx.js';
 import { ATTACKS, COMBAT, BASE_REACH, MAX_HP, DAZE_TIME } from '../src/entities/player.js';
 import {
   Tournament, WINS_NEEDED, MAX_ROUNDS, FEAST_TIME, REGEN_FRAC, OUT_FLOOR,
@@ -69,6 +70,7 @@ import {
 } from '../src/entities/critter.js';
 import {
   Menagerie, MAX_ON_STAGE, MAX_PER_SPECIES, RESPAWN_MIN, RESPAWN_MAX,
+  CONJURE_CHANCE, BUG_LINES,
 } from '../src/systems/menagerie.js';
 import {
   MILESTONES, OPEN_AT, ArenaQuest, SATAN_TOWN, ANNOUNCE_DELAY,
@@ -4117,19 +4119,19 @@ console.log('\n--- the Powerup Kotodama ---');
 {
   const ids = ORB_IDS;
   line('the roster', POWER_ORBS.map((o) => `${o.kanji} ${o.name}`).join(', '));
-  ok('there are nine of them', ids.length === 9);
+  ok('there are ten of them', ids.length === 10);
   ok('every id is unique', new Set(ids).size === ids.length);
   ok('every one has a kanji, a colour and a blurb',
     POWER_ORBS.every((o) => o.kanji && o.color && o.blurb && o.label));
   ok('no two share a colour',
     new Set(POWER_ORBS.map((o) => o.color)).size === ids.length);
-  /* EIGHT ARE IN THE WORLD AND ONE IS THE DEALER'S ALONE. The split is what
+  /* EIGHT ARE IN THE WORLD AND TWO ARE THE DEALER'S ALONE. The split is what
      every other count in this file now has to pick between — a rare orb you
      can trip over on a beach is not rare, and a "one of each kind" that
-     included it would put one on an island in every full set. */
-  ok('...eight of the nine lie in the world', WORLD_ORB_IDS.length === 8);
-  ok('...and exactly one is bought and never found',
-    SHOP_ONLY_IDS.length === 1 && SHOP_ONLY_IDS[0] === 'aegis');
+     included one would put it on an island in every full set. */
+  ok('...eight of the ten lie in the world', WORLD_ORB_IDS.length === 8);
+  ok('...and exactly two are bought and never found',
+    SHOP_ONLY_IDS.length === 2 && SHOP_ONLY_IDS.join() === 'aegis,blink');
   ok('...and the two lists partition the roster',
     [...WORLD_ORB_IDS, ...SHOP_ONLY_IDS].sort().join() === [...ids].sort().join());
 
@@ -4686,17 +4688,621 @@ console.log('\n--- the Powerup Kotodama ---');
     const card = helpHtml.slice(helpHtml.indexOf('<span class="ht-title">The rare orb'));
     const body = card.slice(0, card.indexOf('</details>'));
     ok('the Help card says the dealer is the only place it is',
-      /only the dealer has it|only ever at the dealer/i.test(body));
+      /only the dealer has (it|them)|only ever at the dealer/i.test(body));
     ok('...and that it does nothing on its own',
       /does nothing on its own/i.test(body));
     ok('...and warns about the longer wait',
       /a fifth longer/i.test(body));
+    /* AND IT COUNTS THE ONES SHE CANNOT FIND. It said "a ninth kind" while
+       there was one; there are two now, and a card that undercounts them sends
+       a nine-year-old back out to search the islands for something that is not
+       on them. The number is what matters here, so the check reads it. */
     ok('...and the eight-orb card no longer implies the roster is all findable',
-      /ninth kind that is[\s\S]{0,80}only ever at the dealer/i.test(helpHtml));
+      /two more kinds[\s\S]{0,80}only ever at the dealer/i.test(helpHtml));
+    ok('...and the rare card teaches both of them, and sends 瞬 to the moves',
+      /two more Kotodama/i.test(body)
+      && /瞬 Flash Step[\s\S]{0,200}Special[\s\S]{0,40}abilities/i.test(body));
 
     const aud = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
     ok('the recharge chime exists in the sound set', /case 'wardready':/.test(aud));
   }
+
+console.log('\n--- half a second of not being there ---');
+{
+  /* A PAD YOU CAN ACTUALLY DRIVE. `hold` is what is DOWN this frame and `tap`
+     is what was PRESSED, and the two are separate because the whole move turns
+     on that difference: sprint is held, interact is a press, and the shield
+     button is read as HELD at the commit and as a PRESS everywhere else. */
+  const pad = (o = {}) => ({
+    mx: o.mx ?? 0,
+    my: o.my ?? 0,
+    down: (a) => (o.hold ?? []).includes(a),
+    pressed: (a) => (o.tap ?? []).includes(a),
+    doubled: () => false,
+    consume: () => {},
+  });
+  const NONE = pad();
+  const GO = (extra = {}) => pad({ hold: ['sprint'], tap: ['interact'], ...extra });
+
+  /* Away from every clan hall and every solid, on flat ground, so the only
+     thing deciding where she ends up is the move. */
+  const SPOT = new THREE.Vector3(0, 0, 40);
+  SPOT.y = world.heightAt(SPOT.x, SPOT.z).y;
+
+  const kitten = (orbs, at = SPOT, ix = 0) => {
+    const q = new Player({
+      texture: new THREE.Texture(), index: ix,
+      spawn: at.clone(),
+      cols: 8, rows: 4, mirror: false,
+    });
+    q.setPowerOrbs(orbs);
+    /* THE STICK IS READ AGAINST THE CAMERA, NOT AGAINST THE WORLD — see
+       `Player._basis`, and `_stickHeading`, which uses the same arithmetic
+       precisely so the direction she teleports is the direction she would have
+       walked. Pinning the yaw to PI makes `fwd` exactly +Z, so "push up" in
+       these checks is "north" in the world and the landings below can be
+       written as coordinates instead of as trigonometry. */
+    q.camYaw = Math.PI;
+    return q;
+  };
+  const hudFor = (...players) => {
+    const said = [];
+    const toasts = [];
+    return {
+      players,
+      sfx: (nm) => said.push(nm),
+      toast: (t) => toasts.push(t),
+      said,
+      toasts,
+    };
+  };
+  /* Step the WHOLE ground controller, not just the sequencer. The button
+     ordering between the Flash Step and the Power Dive lives in there, and a
+     test that called `_startDodge` by hand would prove nothing about it. */
+  const step = (q, p, hud, frames = 1) => {
+    for (let i = 0; i < frames; i++) q._updateGround(1 / 60, p, world, [], hud);
+  };
+
+  /* --- 1. THE ORB ITSELF --------------------------------------------------- */
+  const spec = ORB_BY_ID.blink;
+  ok('瞬 Flash Step is on the roster', !!spec && spec.id === 'blink');
+  ok('...bought and never found', spec.shopOnly === true
+    && !WORLD_ORB_IDS.includes('blink') && SHOP_ONLY_IDS.includes('blink'));
+  ok('...and it does NOT stack, unlike the other rare one',
+    !spec.stack && ORB_BY_ID.aegis.stack === true);
+  /* THE TWO RARE ORBS STOCK DIFFERENTLY AND THAT WAS THE ASK. The booster is
+     half a purchase, so the dealer keeps two; this is a whole move, so it
+     stocks exactly like the four moves that are lying about in the world. */
+  ok('...so the shelf holds one of it, like every other move',
+    stockFor('blink') === STOCK_UNIQUE && stockFor('aegis') === 2 * STOCK_UNIQUE);
+  ok('...and the party bonus still reaches it',
+    stockFor('blink', 4) === stockFor('blink', 2) + 2);
+  ok('...and it costs two and a half times an ordinary orb', spec.priceK === 2.5);
+  /* A SECOND COPY BUYS NOTHING, WHICH IS WHY IT MUST NOT BE `stack`. If the
+     shelf ever holds two, the second one has to be a wasted slot and not a
+     silent doubling — so the aggregate has to be identical. */
+  /* THE TALLY IS ALLOWED TO DIFFER — `counts` is what the profile screen prints
+     and two orbs really are two orbs. What must be identical is everything that
+     CHANGES HOW SHE PLAYS, which is every other field. */
+  const effect = (ids) => {
+    const { counts, total, ...rest } = aggregate(ids);
+    return JSON.stringify(rest);
+  };
+  ok('a second 瞬 changes nothing at all',
+    effect(['blink']) === effect(['blink', 'blink']));
+  /* AND THE TWO-PLAYER GAME IS UNTOUCHED. Fifth non-negotiable: a kitten
+     wearing nothing, and a kitten wearing the four world moves, must fold to
+     exactly what they folded to before this orb existed. */
+  const bare = aggregate([]);
+  ok('an unarmed kitten has no Flash Step and never had one', bare.blink === null);
+  ok('...and the dive, the ward and the charge are where they were',
+    bare.ward === null && bare.dive === null && bare.charge === null);
+
+  /* --- 2. THE BUTTON ------------------------------------------------------- */
+  {
+    const q = kitten(['blink']);
+    const hud = hudFor(q);
+    step(q, pad({ tap: ['interact'] }), hud);
+    ok('interact on its own does nothing', q.dodgeT === 0);
+    step(q, pad({ hold: ['sprint'] }), hud);
+    ok('...and so does sprint on its own', q.dodgeT === 0);
+    step(q, GO(), hud);
+    ok('sprint AND interact starts one', q.dodgeT > 0);
+    ok('...and it makes a noise going', hud.said.includes('dodgeout'));
+  }
+  {
+    /* NO ORB, NO MOVE — and this is the fifth non-negotiable stated as a test
+       rather than as a comment. */
+    const q = kitten([]);
+    step(q, GO(), hudFor(q));
+    ok('a kitten with no 瞬 cannot flash step', q.dodgeT === 0 && !q.dodgePlanted);
+  }
+  {
+    /* THE DIVE IS UNCHANGED FOR SOMEBODY WHO ONLY HAS THE DIVE, sprint held or
+       not. This is the exact regression the guard was written as a guard on the
+       DIVE's condition to avoid. */
+    const q = kitten(['dive']);
+    q.position.y += 12;
+    q.onGround = false;
+    step(q, GO(), hudFor(q));
+    ok('sprinting off a ledge still dives, with no 瞬 in the way', q.diving === true);
+  }
+  {
+    /* ...AND WITH BOTH ORBS THE FLASH STEP TAKES THE PRESS. One press, one
+       move. */
+    const q = kitten(['dive', 'blink']);
+    q.position.y += 12;
+    q.onGround = false;
+    step(q, GO(), hudFor(q));
+    ok('with both, one press is one move and it is the Flash Step',
+      q.dodgeT > 0 && q.diving === false);
+  }
+  {
+    /* AND A BARE INTERACT IN THE AIR IS STILL THE DIVE, even wearing both. The
+       two moves have to stay reachable from one button. */
+    const q = kitten(['dive', 'blink']);
+    q.position.y += 12;
+    q.onGround = false;
+    step(q, pad({ tap: ['interact'] }), hudFor(q));
+    ok('...and letting go of sprint still gets her the dive',
+      q.diving === true && q.dodgeT === 0);
+  }
+
+  /* --- 3. THE SHAPE OF IT -------------------------------------------------- */
+  {
+    const q = kitten(['blink']);
+    const hud = hudFor(q);
+    step(q, GO(), hud);
+    ok('the vanish is DODGE.invuln long', Math.abs(q.dodgeT - DODGE.invuln) < 1 / 59);
+    ok('...and she has not gone yet', q.dodgePlaced === false);
+
+    /* THE COMMIT LANDS AT `DODGE.commit` OF THE WAY THROUGH, which is the only
+       frame the direction is ever read on. */
+    let placedAt = -1;
+    for (let i = 0; i < 200 && q.dodgeT > 0; i++) {
+      step(q, NONE, hud);
+      if (q.dodgePlaced && placedAt < 0) placedAt = (i + 2) / 60;
+    }
+    ok('...the teleport fires four fifths of the way through',
+      Math.abs(placedAt - DODGE.invuln * DODGE.commit) < 3 / 60, `${placedAt.toFixed(3)}s`);
+    ok('...she is back when the vanish runs out', q.dodgeT === 0);
+    ok('...and cannot move for the same time again',
+      Math.abs(q.dodgeLockT - DODGE.invuln) < 1 / 59);
+    ok('...and it makes a noise arriving', hud.said.includes('dodgein'));
+    ok('...and the wait is charged', Math.abs(q.dodgeCool - DODGE.cool) < 1 / 59);
+
+    /* THE LOCK IS NOT `busy`, WHICH IS THE WHOLE POINT: her feet are taken and
+       her blade is not. */
+    ok('she is planted through the tail', q.dodgePlanted === true);
+    ok('...but she is not "busy", so the attack button still works',
+      q.busy === false);
+    for (let i = 0; i < 40 && q.dodgePlanted; i++) step(q, NONE, hud);
+    ok('...and then she has her feet back', q.dodgePlanted === false);
+  }
+
+  /* --- 4. WHAT IT TAKES AWAY ----------------------------------------------- */
+  {
+    const q = kitten(['blink', 'ward', 'dive']);
+    const hud = hudFor(q);
+    q._popWard(hud);
+    ok('she is blocking', q.wardOn === true);
+    step(q, GO(), hud);
+    ok('...and a Flash Step takes the bubble down with it', q.wardOn === false);
+
+    /* SHE CANNOT WALK, JUMP, BLOCK OR DIVE — and the stick is checked by
+       DISPLACEMENT rather than by reading a flag, because "cannot move" is a
+       claim about where she ends up. */
+    const was = q.position.clone();
+    step(q, pad({ mx: 1, my: -1, tap: ['jump', 'mount', 'interact'] }), hud, 12);
+    ok('...she cannot walk out of it',
+      Math.abs(q.position.x - was.x) < 1e-6 && Math.abs(q.position.z - was.z) < 1e-6);
+    ok('...cannot jump out of it', q.velocity.y === 0);
+    ok('...cannot block out of it', q.wardOn === false);
+    ok('...and cannot dive out of it', q.diving === false);
+    ok('...and gravity is off while she is gone', q._gravityK() === 0);
+  }
+  {
+    /* THE TAIL PLANTS HER TOO, and it is a different question from the vanish:
+       she is visible, hittable and standing there. */
+    const q = kitten(['blink', 'ward']);
+    const hud = hudFor(q);
+    step(q, GO(), hud);
+    for (let i = 0; i < 200 && q.dodgeT > 0; i++) step(q, NONE, hud);
+    const was = q.position.clone();
+    step(q, pad({ mx: 1, tap: ['jump', 'mount'] }), hud, 6);
+    ok('the landing tail still plants her',
+      q.dodgeLockT > 0 && Math.abs(q.position.x - was.x) < 1e-6);
+    ok('...and still refuses the block', q.wardOn === false);
+  }
+
+  /* --- 5. NOTHING TOUCHES HER --------------------------------------------- */
+  {
+    const q = kitten(['blink']);
+    const hud = hudFor(q);
+    step(q, GO(), hud);
+    const hp = q.hp;
+    ok('a blade does nothing to her',
+      q.hurt(30, { x: 0, z: 0 }, ATTACKS.stand, hud) === 0 && q.hp === hp);
+    /* AND NEITHER DOES THE RING-OUT, which pierces a ward on purpose. A bubble
+       stops blades and not the edge of the world; this is not a bubble. */
+    ok('...and neither does the ring-out, which goes through a ward',
+      q.hurt(999, { x: 0, z: 0 }, { ...ATTACKS.stand, pierce: true }, hud) === 0
+      && q.hp === hp);
+    for (let i = 0; i < 200 && q.dodgeT > 0; i++) step(q, NONE, hud);
+    ok('...and she is hittable again the moment she is back',
+      q.hurt(10, { x: 0, z: 20 }, ATTACKS.stand, hud) === 10);
+  }
+
+  /* --- 6. WHO GETS THE RETICLE -------------------------------------------- */
+  {
+    const me = kitten(['blink']);
+    me.facing = 0;                                    // looking down +Z
+    const near = kitten([], new THREE.Vector3(0, SPOT.y, 44), 1);
+    const far = kitten([], new THREE.Vector3(0, SPOT.y, 47), 2);
+    const side = kitten([], new THREE.Vector3(6, SPOT.y, 41), 3);
+    ok('the one dead ahead wins over the one further away',
+      me._dodgeTargetFor(hudFor(me, far, near)) === near);
+    /* CLOSEST TO THE FORWARD CENTRE IS AN ANGLE, NOT A DISTANCE. `side` is
+       nearer than `far` and much further off her nose, and the rule has to pick
+       the one she is looking at. */
+    ok('...and an angle beats a distance', me._dodgeTargetFor(hudFor(me, side, far)) === far);
+    const behind = kitten([], new THREE.Vector3(0, SPOT.y, 30), 1);
+    ok('somebody behind her is not a target', me._dodgeTargetFor(hudFor(me, behind)) === null);
+    const beyond = kitten([], new THREE.Vector3(0, SPOT.y, 40 + DODGE.range + 2), 1);
+    ok('...nor is somebody past the range', me._dodgeTargetFor(hudFor(me, beyond)) === null);
+    /* THE HEIGHT GATE IS THE SWORD'S, and it is the constant on the balance
+       page rather than a number of its own — the ask was "if we would hit them
+       with a sword swing at that height level". */
+    const above = kitten([], new THREE.Vector3(0, SPOT.y + COMBAT.strikeHeight + 1, 44), 1);
+    ok('...nor is somebody your blade could not reach anyway',
+      me._dodgeTargetFor(hudFor(me, above)) === null);
+    /* AND THE SWING IS THE OTHER DOOR IN. Standing on her shoulder is well
+       outside a 60-degree cone and well inside a katana. */
+    const shoulder = kitten([], new THREE.Vector3(2.6, SPOT.y, 40.6), 1);
+    ok('...but somebody your swing would already reach is, however far round',
+      me._dodgeTargetFor(hudFor(me, shoulder)) === shoulder);
+    /* KNOCKED OUT IS NOT A TARGET. She is lying on the floor waiting for the
+       count and pivoting round her would be pivoting round furniture. */
+    near.ko = true;
+    ok('...and a kitten who is down is nobody’s pivot',
+      me._dodgeTargetFor(hudFor(me, near)) === null);
+    near.ko = false;
+  }
+
+  /* --- 7. WHERE SHE COMES OUT --------------------------------------------- */
+  const landing = (orbs, opts = {}) => {
+    const q = kitten(orbs);
+    q.facing = 0;
+    const others = (opts.others ?? []);
+    const hud = hudFor(q, ...others);
+    step(q, GO({ mx: opts.mx ?? 0, my: opts.my ?? 0 }), hud);
+    const from = q.dodgeFrom.clone();
+    const held = opts.holdShield ? ['sprint', 'mount'] : ['sprint'];
+    /* AND SHE LETS GO ONCE THE TELEPORT HAS FIRED, which is what a thumb
+       actually does: the stick is an AIM, and the aim is spent at the commit.
+       It matters because "planted but not pointed" is an older rule than this
+       move — `_updateGround` sets her facing from the stick every frame,
+       Flash Step or not, deliberately, so that she can turn on the spot while
+       her feet are taken. A stick still shoved north on the frame she lands
+       therefore outranks `_commitDodge`'s "look at whoever you pivoted
+       around", and it should: she is asking to look somewhere. */
+    for (let i = 0; i < 200 && q.dodgeT > 0; i++) {
+      const p = q.dodgePlaced
+        ? NONE
+        : pad({ mx: opts.mx ?? 0, my: opts.my ?? 0, hold: held });
+      step(q, p, hud);
+    }
+    return { q, from, hud };
+  };
+  {
+    const { q, from } = landing(['blink']);
+    ok('a centred stick means she stays exactly where she was',
+      Math.abs(q.position.x - from.x) < 1e-6 && Math.abs(q.position.z - from.z) < 1e-6);
+  }
+  {
+    /* NOBODY TO PIVOT AROUND: half the detection range, on her own feet. The
+       flee is deliberately the SHORT version of the move. */
+    const { q, from } = landing(['blink'], { my: -1 });
+    const d = Math.hypot(q.position.x - from.x, q.position.z - from.z);
+    ok('with nobody near she pivots on herself at half the range',
+      Math.abs(d - DODGE.range * DODGE.selfK) < 0.01, `${d.toFixed(2)}`);
+  }
+  {
+    /* A TARGET: she comes out on a circle around THEM, and the stick chooses
+       which side. Pushed straight ahead — toward the target — she lands past
+       them, still at their own radius. */
+    const foe = kitten([], new THREE.Vector3(0, SPOT.y, 46), 1);
+    const { q } = landing(['blink'], { my: -1, others: [foe] });
+    const r = Math.hypot(q.position.x - foe.position.x, q.position.z - foe.position.z);
+    ok('with somebody locked she comes out on a circle around THEM',
+      Math.abs(r - 6) < 0.01, `${r.toFixed(2)} of 6`);
+    /* AND FACING THEM. Landing behind a sister still looking the way you
+       travelled means the first thing you do is turn round. */
+    const want = Math.atan2(foe.position.x - q.position.x, foe.position.z - q.position.z);
+    ok('...looking straight at them', Math.abs(q.facing - want) < 1e-6,
+      `${q.facing.toFixed(3)} vs ${want.toFixed(3)}`);
+  }
+  {
+    /* THE SHORTER OF THE TWO DISTANCES, so a sister who ran away during the
+       vanish cannot drag the landing further than the move reaches. */
+    const foe = kitten([], new THREE.Vector3(0, SPOT.y, 46), 1);
+    const q = kitten(['blink']);
+    q.facing = 0;
+    const hud = hudFor(q, foe);
+    step(q, GO({ my: -1 }), hud);
+    ok('the distance at the press is remembered', Math.abs(q.dodgeD0 - 6) < 1e-6);
+    foe.position.z = 52;                                 // she bolted
+    for (let i = 0; i < 200 && q.dodgeT > 0; i++) step(q, pad({ my: -1, hold: ['sprint'] }), hud);
+    const r = Math.hypot(q.position.x - foe.position.x, q.position.z - foe.position.z);
+    ok('...and running away does not lengthen the hop', Math.abs(r - 6) < 0.01, `${r.toFixed(2)}`);
+  }
+  {
+    /* THE SHIELD BUTTON OVERRIDES THE LOCK OUTRIGHT. She still locked them —
+       the reticle stays — she simply left instead. */
+    const foe = kitten([], new THREE.Vector3(0, SPOT.y, 46), 1);
+    const { q, from } = landing(['blink'], { my: -1, others: [foe], holdShield: true });
+    const d = Math.hypot(q.position.x - from.x, q.position.z - from.z);
+    ok('holding the shield at the commit flees instead, whoever was locked',
+      Math.abs(d - DODGE.range * DODGE.selfK) < 0.01, `${d.toFixed(2)}`);
+    ok('...and she is still shown to have locked them', q.dodgeTarget === foe);
+  }
+  {
+    /* NOTHING MAY BE STRANDED. A destination over the void is refused and she
+       stays where she is — fourth non-negotiable, applied to the one move that
+       can put a kitten somewhere she did not walk to. */
+    let found = null;
+    for (let r = 60; r < 900 && !found; r += 4) {
+      if (!world.heightAt(r, 0)) found = r;
+    }
+    const q = kitten(['blink'], new THREE.Vector3((found ?? 0) - 2, 4, 0));
+    const g = found == null ? null : world.heightAt(q.position.x, q.position.z);
+    ok('there is an edge of the world to stand on', !!g);
+    if (g) {
+      q.position.y = g.y;
+      const hud = hudFor(q);
+      /* `mx: -1` IS EAST under the pinned yaw above (`right` comes out as -X),
+         and east is where the ground runs out. */
+      const was = q.position.clone();
+      step(q, GO({ mx: -1 }), hud);
+      for (let i = 0; i < 200 && q.dodgeT > 0; i++) step(q, pad({ mx: -1, hold: ['sprint'] }), hud);
+      ok('a Flash Step into the void is refused, not taken',
+        Math.abs(q.position.x - was.x) < 1e-6 && Math.abs(q.position.z - was.z) < 1e-6);
+      ok('...and it says so', hud.said.includes('deny'));
+    }
+  }
+
+  /* --- 8. THE FIVE DEGREES ------------------------------------------------ */
+  {
+    /* THE ONE CASE THE THRESHOLD DECIDES: a stick that is CENTRED when the
+       window closes. Never aimed means stay here. */
+    const q = kitten(['blink']);
+    const hud = hudFor(q);
+    step(q, GO(), hud);
+    const from = q.dodgeFrom.clone();
+    for (let i = 0; i < 200 && q.dodgeT > 0; i++) step(q, NONE, hud);
+    ok('a thumb that never moved means she wanted to stay',
+      q.dodgeAimed === false
+      && Math.abs(q.position.z - from.z) < 1e-6);
+  }
+  {
+    /* ...AND AIMED-THEN-RELEASED MEANS THE LAST DIRECTION SHE ASKED FOR. */
+    const q = kitten(['blink']);
+    const hud = hudFor(q);
+    step(q, GO(), hud);
+    const from = q.dodgeFrom.clone();
+    step(q, pad({ my: -1, hold: ['sprint'] }), hud, 4);      // push north
+    for (let i = 0; i < 200 && q.dodgeT > 0; i++) step(q, NONE, hud);
+    ok('a deliberate push she then let go of is still a direction',
+      q.dodgeAimed === true
+      && Math.hypot(q.position.x - from.x, q.position.z - from.z) > 1);
+  }
+  {
+    /* AND A STICK ALREADY HELD AT THE PRESS IS NOT "AIMING" until it moves —
+       which is why the threshold exists at all. */
+    const q = kitten(['blink']);
+    const hud = hudFor(q);
+    step(q, GO({ my: -1 }), hud);
+    step(q, pad({ my: -1, hold: ['sprint'] }), hud, 4);
+    ok('holding the same push you started with is not a new decision',
+      q.dodgeAimed === false);
+    step(q, pad({ mx: 1, hold: ['sprint'] }), hud, 2);
+    ok('...turning it a quarter of the way round is', q.dodgeAimed === true);
+  }
+
+  /* --- 9. NOTHING IS STRANDED --------------------------------------------- */
+  {
+    const q = kitten(['blink']);
+    const hud = hudFor(q);
+    step(q, GO(), hud);
+    q.dodgeTarget = q;
+    q._clearSpecials();
+    ok('a round reset drops the whole move, wait and all',
+      q.dodgeT === 0 && q.dodgeLockT === 0 && q.dodgeCool === 0
+      && q.dodgeTarget === null && q.dodgePlaced === false);
+    ok('...but not the counter the effects tell two dodges apart by',
+      q.dodgeSeq > 0);
+  }
+
+  /* --- 10. WHAT IT LOOKS LIKE --------------------------------------------- */
+  {
+    const src = readFileSync(new URL('../src/systems/dodgefx.js', import.meta.url), 'utf8');
+    const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+    /* A POLLER, LIKE crossfx. If `player.js` ever imported this, the move would
+       have one code path per way of ending and the one that got missed would
+       leave a target ring welded to somebody's head. */
+    /* IT MAY BE NAMED IN A COMMENT AND IT MAY NOT BE IMPORTED. Pointing at the
+       file that draws a thing is how this codebase's comments work; depending
+       on it is what would give the move one code path per way of ending, and
+       the one that got missed would leave a target ring welded to somebody's
+       head for the rest of the afternoon. */
+    ok('the effects are a poller — player.js never imports them',
+      !/from '[^']*dodgefx/.test(psrc) && /dodgeSeq/.test(src));
+    ok('...and it reads the clocks rather than being called',
+      /p\.dodgeT/.test(src) && /dodgePlanted/.test(src));
+    ok('the reticle is pixel art, not a smoothed ring',
+      /NearestFilter/.test(src) && /generateMipmaps = false/.test(src));
+    ok('...and a Sprite, so it faces all four panes at once',
+      /new THREE\.Sprite\(/.test(src));
+
+    const fx = new DodgeFx(new THREE.Scene());
+    const q = kitten(['blink']);
+    const foe = kitten([], new THREE.Vector3(0, SPOT.y, 44), 1);
+    q.facing = 0;
+    const hud = hudFor(q, foe);
+    step(q, GO(), hud);
+    ok('she locked somebody', q.dodgeTarget === foe);
+    fx.update(1 / 60, [q, foe]);
+    const rig = fx.rigs.get(0);
+    ok('...and the ring is on them, in HER colour', !!rig && rig.sprite.visible
+      && rig.sprite.material.color.getHex() === q.style.colour);
+    ok('...and it is over their head, not under their feet',
+      rig.sprite.position.y > foe.position.y);
+    /* NARROWS IN. Bigger on the frame it appears than a beat later, which is
+       the difference between a lock and a decoration. */
+    const s0 = rig.sprite.scale.x;
+    for (let i = 0; i < 12; i++) fx.update(1 / 60, [q, foe]);
+    ok('...narrowing in', rig.sprite.scale.x < s0, `${s0.toFixed(2)} -> ${rig.sprite.scale.x.toFixed(2)}`);
+
+    /* ONE DECOY PER DODGE, DROPPED ON THE FRAME SHE ACTUALLY LEAVES. */
+    const live = () => fx.decoys.filter((d) => d.t > 0).length;
+    ok('nothing has been dropped yet', live() === 0);
+    for (let i = 0; i < 200 && q.dodgeT > 0; i++) { step(q, NONE, hud); fx.update(1 / 60, [q, foe]); }
+    ok('...and exactly one thing was left behind', live() === 1);
+    ok('...where she was, not where she went', !!fx.decoys.find(
+      (d) => d.t > 0 && Math.abs(d.group.position.z - q.dodgeFrom.z) < 1e-6
+    ));
+    ok('...and it is a real object with geometry in it',
+      fx.decoys.find((d) => d.t > 0).prop.children.length > 0);
+
+    /* AND IT SPRINGS OPEN WHEN THE MOVE ENDS. */
+    for (let i = 0; i < 60 && q.dodgePlanted; i++) { step(q, NONE, hud); fx.update(1 / 60, [q, foe]); }
+    const wide = rig.sprite.scale.x;
+    fx.update(1 / 60, [q, foe]);
+    ok('the ring expands out once she has her feet back',
+      rig.on === false && rig.sprite.scale.x > wide * 0.99 && rig.sprite.scale.x > 1);
+    for (let i = 0; i < 40; i++) fx.update(1 / 60, [q, foe]);
+    ok('...and then puts itself away', rig.sprite.visible === false);
+    fx.reset();
+    ok('a restart clears every decoy on the ground', live() === 0);
+  }
+
+  /* --- 11. THE INSECT ----------------------------------------------------- */
+  /* The same stub the feast's own checks build further down: a `Critter` builds
+     real `Billboard`s out of it, so `{}` is not an atlas, it is a crash. */
+  const stubArt = () => ({
+    calm: { texture: new THREE.Texture(), contentScale: 0.7, pad: 0.06 },
+    shock: { texture: new THREE.Texture(), contentScale: 0.7, pad: 0.06, facesRight: true },
+  });
+  {
+    const m = CRITTER_BY_ID.mantis;
+    ok('there is a rare animal and it is the only one', !!m && m.rare === true
+      && CRITTERS.filter((c) => c.rare).length === 1);
+    /* IT PAYS THE LEAST, WHICH IS OFF THE LADDER ON PURPOSE. rat < rabbit <
+       bird prices the three you go and FIND; this one arrives by itself, so it
+       is worth exactly what standing still between rounds is worth. */
+    ok('...worth the least of anything on the deck',
+      CRITTERS.every((c) => c === m || c.heal > m.heal));
+    ok('...and exactly the free regen, which is the floor',
+      m.heal === Math.round(MAX_HP * REGEN_FRAC));
+    ok('...it cannot be walked down, and cannot outrun a sprint',
+      m.speed > 10.5 && m.speed < 17);
+    ok('...and it is the fastest thing on the deck',
+      CRITTERS.every((c) => c === m || c.speed < m.speed));
+    const hop = m.hopV ** 2 / (2 * 24);
+    line('mantis hop height', `${hop.toFixed(2)} units`);
+    ok('...it hops higher than a rabbit', hop > CRITTER_BY_ID.rabbit.hopV ** 2 / (2 * 24));
+    ok('...and still inside the swing\'s upward reach', hop + m.size < 6.5);
+  }
+  {
+    /* IT IS NOT IN THE LOTTERY. `species` is what `start` seeds and `_spawn`
+       draws from; `rareSpecies` is the only door, and `_conjure` is the only
+       thing that opens it. */
+    const art = Object.fromEntries(CRITTERS.map((c) => [c.id, stubArt()]));
+    const men = new Menagerie({
+      game: { players: [], scene: new THREE.Scene(), toast: () => {} },
+      world,
+      art,
+    });
+    ok('the ordinary deck cannot produce a mantis',
+      !men.species.some((c) => c.id === 'mantis'));
+    ok('...and the rare pool is exactly it',
+      men.rareSpecies.length === 1 && men.rareSpecies[0].id === 'mantis');
+    ok('...and the other three are untouched', men.species.length === 3);
+    const msrc = readFileSync(new URL('../src/systems/menagerie.js', import.meta.url), 'utf8');
+    ok('a build with no mantis.png simply never makes one',
+      /this\.art\[c\.id\]\?\.calm/.test(msrc));
+    ok('...and the odds are five in a hundred, as asked', CONJURE_CHANCE === 0.05);
+    ok('...and Mr Satan has something to say about it', BUG_LINES.length >= 3
+      && BUG_LINES.every((l) => typeof l === 'string' && l.length > 10));
+  }
+  {
+    /* ONE PER KITTEN PER ROUND, AND THE ROUND IS THE POINT. Rolled with the
+       dice forced, so what is being measured is the CAP and not the chance. */
+    const art = Object.fromEntries(CRITTERS.map((c) => [c.id, stubArt()]));
+    const said = [];
+    const q = kitten(['blink']);
+    const men = new Menagerie({
+      game: {
+        players: [q], scene: new THREE.Scene(), toast: () => {},
+        sfx: () => {}, announcer: { say: (id) => said.push(id) },
+      },
+      world,
+      art,
+    });
+    men.on = true;
+    men.list.length = 0;
+    const roll = Math.random;
+    Math.random = () => 0;                        // always
+    q.dodgeSeq = 1; q.dodgeT = 0.1; q.dodgePlaced = true;
+    q.dodgeFrom.copy(men.deck ? new THREE.Vector3(men.deck.x, men.deck.y, men.deck.z) : SPOT);
+    men._maybeConjure(q, 0);
+    ok('a vanish can leave an insect behind', men.list.length === 1
+      && men.list[0].id === 'mantis');
+    ok('...and he says something about it', said.includes('sat_bug'));
+    q.dodgeSeq = 2;
+    men._maybeConjure(q, 0);
+    ok('...but only once in a round, however lucky she gets',
+      men.list.length === 1);
+    men.releaseAll();
+    q.dodgeSeq = 3;
+    men._maybeConjure(q, 0);
+    ok('...and the next round gives her another chance', men.list.length === 2);
+    /* AND THE SAME DODGE IS ROLLED FOR ONCE, not once per frame after the
+       commit — which without `_dodgeSeen` would be thirty rolls a dodge. */
+    men.releaseAll();
+    Math.random = () => 0.99;                     // never
+    q.dodgeSeq = 4;
+    men._maybeConjure(q, 0);
+    men._maybeConjure(q, 0);
+    ok('an unlucky dodge stays unlucky for all of its frames', men.list.length === 2);
+    Math.random = roll;
+  }
+
+  /* --- 12. THE HELP PAGE AND THE BALANCE PAGE ----------------------------- */
+  {
+    const helpHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    const at = helpHtml.indexOf('<span class="ht-title">Special abilities');
+    const card = helpHtml.slice(at, helpHtml.indexOf('</details>', at));
+    ok('the Flash Step is in the Special abilities card', /Flash Step/.test(card));
+    ok('...on the same grid as the other four, ready for its clip',
+      (card.match(/<figure class="move"/g) ?? []).length === 5);
+    /* THE SLOT IS THE POINT. It has a still now and a GIF later, and the swap
+       has to be one attribute — so the placeholder sits in the same figure, at
+       the same size, as the four clips beside it. */
+    ok('...with a placeholder image standing in for the clip',
+      /help\/ability-blink/.test(card));
+    ok('...and it says the shield trick, which nothing else would teach her',
+      /shield|Ward/i.test(card) && /Sprint/i.test(card));
+
+    const page = readFileSync(new URL('../src/tuning-page.js', import.meta.url), 'utf8');
+    ok('DODGE has a panel on the balance page', /\n  DODGE: \{/.test(page));
+
+    const aud = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+    ok('going and coming back are two different sounds',
+      /case 'dodgeout':/.test(aud) && /case 'dodgein':/.test(aud));
+    ok('...and the lock has its own, quieter one', /case 'dodgelock':/.test(aud));
+  }
+}
 
   /* --- the economy --- */
   const price = orbPrice(world.pointsTotal);
@@ -5033,8 +5639,16 @@ console.log('\n--- the Powerup Kotodama ---');
      adding a prop to an island moves both together. */
   ok('the booster costs two and a half times an ordinary orb',
     K.priceOf('aegis') === Math.round(K.price * 2.5), `${K.priceOf('aegis')} vs ${K.price}`);
-  ok('...and every other kind still costs the shelf price',
-    ids.filter((id) => id !== 'aegis').every((id) => K.priceOf(id) === K.price));
+  ok('the Flash Step costs the same two and a half times',
+    K.priceOf('blink') === Math.round(K.price * 2.5));
+  /* AND THE RARE PRICE IS THE `shopOnly` LIST, NOT A PAIR OF NAMES. Written
+     `id !== 'aegis'` this check passed the day a second rare orb was added and
+     said nothing about it — the shape that only tests what it was written for
+     is exactly what `needs` replaced over in the booster rule. */
+  ok("...and every kind that is not the dealer’s costs the shelf price",
+    WORLD_ORB_IDS.every((id) => K.priceOf(id) === K.price));
+  ok('...while every one that IS costs more than it',
+    SHOP_ONLY_IDS.every((id) => K.priceOf(id) > K.price));
   ok('...it sells back at the same fraction, not the common price',
     K.sellPriceOf('aegis') === Math.round(K.priceOf('aegis') * 0.75)
     && K.sellPriceOf('aegis') > K.sellPrice);
@@ -6308,8 +6922,69 @@ console.log('\n--- the three power moves ---');
       rabbit: ['rabbit_run.png', 'rabbit.png', 'rabbit_shock.png'],
       rat: ['rat.png', 'rat_shock.png'],
       bird: ['bird.png', 'bird_shock.png'],
+      /* ONE DRAWING, AND THE SPREAD CHECKS BELOW GO TRIVIAL ON IT — which is
+         fine, because the one that matters here is the FIRST: a conjured mantis
+         has to come out exactly `size` tall like every other animal, and that
+         is a real assertion about a sheet nobody has looked at since it was
+         generated. It gets a second sheet the day somebody draws it startled,
+         and the spread checks start doing work on their own. */
+      mantis: ['mantis.png'],
     };
     const spread = (v) => Math.max(...v) / Math.min(...v);
+
+  /* --- AND THE THREE NEW SHEETS ARE ONE FIGURE EACH ---
+     The failure this catches is specific to how they are made: ask an image
+     model for one character and it will now and then hand back two, or the
+     same one twice at different sizes. `loadSpriteAtlas` would key that into a
+     single wide cell, `contentScale` would come out of a box twice the width
+     it should be, and the kitten would be drawn HALF SIZE the instant she
+     concentrated — on screen for four tenths of a second, in a pose nobody has
+     a reason to stare at. Measured, never eyeballed: eighth non-negotiable. */
+  {
+    const OVERLAY = ['ember_warp.png', 'frost_warp.png', 'mantis.png'];
+    for (const f of OVERLAY) {
+      const url = new URL(`../public/sprites/${f}`, import.meta.url);
+      if (!existsSync(url)) { line(f, 'skipped (art not present)'); continue; }
+      const { w, h, d } = readPNG(url);
+      /* THE TWO CONVENTIONS NEED TWO DIFFERENT TESTS, and picking the wrong one
+         is not a near miss. `public/sprites/` holds both kinds — the older
+         sheets are opaque PNGs the loader keys at load time, the newer ones
+         come back from `remove_background` with a real alpha channel — and
+         "which pixels are drawn on" means something different in each. Asking
+         "is it whitish?" of an ALPHA sheet cut Frost into three pieces on the
+         first run of this check, because Frost is a grey-and-WHITE cat: her
+         chest, muzzle and paws are white fur, not background, and excluding
+         them severed her head from her body. So the sheet says which test it
+         wants, by whether its own border is transparent. */
+      let clear = 0;
+      for (let x = 0; x < w; x++) {
+        if (d[x * 4 + 3] < 8) clear++;
+        if (d[((h - 1) * w + x) * 4 + 3] < 8) clear++;
+      }
+      const alphaSheet = clear > w * 2 * 0.9;
+      const ink = alphaSheet
+        ? (p) => d[p * 4 + 3] > 8
+        : (p) => !(d[p * 4] >= 218 && d[p * 4 + 1] >= 218 && d[p * 4 + 2] >= 218);
+      /* A tenth of a percent of the sheet. Below that is an eyelash or a
+         compression speck, not a second character. */
+      const floor = Math.round(w * h * 0.001);
+      const big = blobs(d, w, h, ink).filter((b) => b.n >= floor);
+      ok(`${f} is ONE figure, not two`, big.length === 1, `${big.length} blobs`);
+      if (big.length !== 1) continue;
+      const [b] = big;
+      const bw = (b.maxX - b.minX + 1) / w, bh = (b.maxY - b.minY + 1) / h;
+      line(`  ${f}`, `${w}x${h} ${alphaSheet ? 'alpha' : 'keyed'}, `
+        + `fills ${(bw * 100).toFixed(0)}% x ${(bh * 100).toFixed(0)}%`);
+      /* It has to be worth the atlas it costs, and a figure adrift in a sea of
+         nothing keys to a `contentScale` that draws her tiny. */
+      ok(`...and it fills its sheet`, bw > 0.3 && bh > 0.3);
+      /* AND IT IS NOT RUNNING OFF THE EDGE. A drawing that touches the border
+         has been cropped by the model, and on a keyed sheet it also seals the
+         border flood out of whatever region it cut through. */
+      ok(`...without touching the border`,
+        b.minX > 0 && b.minY > 0 && b.maxX < w - 1 && b.maxY < h - 1);
+    }
+  }
 
     for (const [id, files] of Object.entries(SHEETS)) {
       if (!files.every((f) => existsSync(new URL(`../public/sprites/${f}`, import.meta.url)))) {
@@ -10558,7 +11233,7 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
     ['How the arena works', 'The arena'],
     ['Battle Feast &mdash; eating'.replace('&mdash;', '—'), 'The arena'],
     ['Power-up orbs', 'The arena'],
-    ['The rare orb — 守 Long Guard', 'The arena'],
+    ['The rare orbs — dealer only', 'The arena'],
     ['Special abilities', 'The arena'],
     ["Dealer's Stall &amp; Trading", 'The arena'],
   ]) {
@@ -10712,9 +11387,16 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
   ok('...no clip carries a src that would fetch it before Help is opened',
     imgs.every((t) => !(/data-help-gif="/.test(t) && /\bsrc="/.test(t))));
 
+  /* COMMENTS ARE NOT MARKUP, and this check reads them if you let it. The
+     placeholder figure's comment spells out the exact one-line edit that
+     replaces it with a clip — `data-help-gif="/help/ability-blink.gif"` — and
+     the first run of it duly failed on a file that is not supposed to exist
+     yet. A note about a future filename is the most useful thing that comment
+     could say; stripping comments here is what lets it say it. */
+  const markup = help.replace(/<!--[\s\S]*?-->/g, '');
   const files = [
-    ...help.matchAll(/src="\/help\/([^"]+)"/g),
-    ...help.matchAll(/data-help-gif="\/help\/([^"]+)"/g),
+    ...markup.matchAll(/src="\/help\/([^"]+)"/g),
+    ...markup.matchAll(/data-help-gif="\/help\/([^"]+)"/g),
   ].map((m) => m[1]);
   ok('...and each screenshot and clip is on disk under public/help/',
     files.length >= 4
@@ -10731,8 +11413,16 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
   const moves = help.slice(help.indexOf('Special abilities'), help.indexOf('Trading'));
   const moveFigs = [...moves.matchAll(/<figure class="move">[\s\S]*?<\/figure>/g)]
     .map((m) => m[0]);
-  ok('the abilities section shows all four move clips', moveFigs.length === 4,
+  /* FIVE CELLS, FOUR OF THEM FILMED. The fifth is 瞬 Flash Step and it holds a
+     drawing until its clip is shot — the count is here, the pairing below is
+     only about the four that exist as GIFs, and the still's own checks live
+     with the rest of the move up in "half a second of not being there". When
+     the clip lands, this stays 5 and that list becomes 5. */
+  ok('the abilities section shows all five moves', moveFigs.length === 5,
     `(${moveFigs.length})`);
+  ok('...four of them filmed, and exactly one still awaiting its clip',
+    moveFigs.filter((f) => /data-help-gif=/.test(f)).length === 4
+    && moveFigs.filter((f) => /src="\/help\/ability-blink\.png"/.test(f)).length === 1);
   for (const [kanji, gif] of [['壁', 'ability-ward'], ['落', 'ability-dive'],
     ['十', 'ability-cross'], ['突', 'ability-charge']]) {
     ok(`...the ${kanji} move is illustrated by ${gif}.gif`,

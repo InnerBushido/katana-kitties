@@ -30,6 +30,7 @@ import { MenuNav } from './systems/menunav.js';
 import { Cutscene } from './systems/cutscene.js';
 import { Trailer } from './systems/trailer.js';
 import { CrossFx } from './systems/crossfx.js';
+import { DodgeFx } from './systems/dodgefx.js';
 import { Confirm } from './systems/confirm.js';
 import { ShrineScene, SCENE_RADIUS } from './systems/shrinescene.js';
 import { SummonScene } from './systems/summonscene.js';
@@ -468,6 +469,11 @@ class Game {
        game anything, which is why it takes no `this`. See systems/crossfx.js
        for why it is a poller and not a set of callbacks. */
     this.crossFx = new CrossFx(this.scene);
+
+    /* THE FLASH STEP'S RETICLE, SMOKE AND DECOY. Same shape and the same
+       argument: a poller over the kittens' own clocks, so no way of the move
+       ending has to remember to tell it. See systems/dodgefx.js. */
+    this.dodgeFx = new DodgeFx(this.scene);
 
     /* THE ON-SCREEN PAD EXISTS ON EVERY MACHINE AND IS SHOWN ON SOME. Building
        it always — rather than only when `touchPrimary` — is what makes the test
@@ -1238,6 +1244,18 @@ class Game {
          because nothing has to remember them. */
       ['ember_bless', 'ember_bless.png', false],
       ['frost_bless', 'frost_bless.png', false],
+      /* THE CONCENTRATING POSE — two fingers to her forehead, eyes shut, the
+         beat before a 瞬 Flash Step takes her. Two files and four kittens
+         again; the recolour loop below is what makes that true, and it is why
+         "generate a new player sprite" is two drawings rather than four. */
+      ['ember_warp', 'ember_warp.png', false],
+      ['frost_warp', 'frost_warp.png', false],
+      /* THE CONJURED INSECT. Loaded with the other animals because it is one,
+         and kept out of the ordinary lottery by a flag on its spec rather than
+         by anything here — see `Menagerie.species`. No `_shock` sheet: a
+         stunned mantis falls back to its calm drawing, exactly as the rat and
+         the bird do when theirs is missing. */
+      ['mantis', 'mantis.png', false],
     ];
     const critterArt = {};
     await Promise.all(CRITTER_ART.map(async ([key, file, facesRight]) => {
@@ -1280,6 +1298,11 @@ class Game {
         shock: critterArt.rabbit_shock ?? critterArt.rabbit_run,
       },
       bird: critterArt.bird && { calm: critterArt.bird, shock: critterArt.bird_shock ?? critterArt.bird },
+      /* NO ART, NO MANTIS, AND NOTHING ELSE CHANGES. `Menagerie.rareSpecies`
+         filters on exactly this, so a build with no `mantis.png` runs the whole
+         Flash Step feature — the vanish, the smoke, the decoy, the reticle —
+         and simply never produces the animal. Ninth non-negotiable. */
+      mantis: critterArt.mantis && { calm: critterArt.mantis, shock: critterArt.mantis },
     };
     this.critterArt.wings = critterArt.angel_wings;
 
@@ -1315,6 +1338,20 @@ class Game {
       if (!s.recolour) return base;
       const a = recolourAtlas(base, s.recolour);
       console.log(`[art] ${s.name} blessing pose ← ${s.sheet}_bless recoloured`);
+      return a;
+    });
+    /* THE SAME DERIVATION A THIRD TIME. Written out rather than folded into a
+       helper because the failure it guards against is copy-paste, and a helper
+       with a `sheet` argument is exactly the shape somebody copies wrong: the
+       three loops are identical on purpose, so a fourth pose is an obvious
+       addition and a fourth pose keyed by SLOT instead of by STYLE stands out
+       as different from its three neighbours. */
+    this.warpArt = PLAYER_STYLE.map((s) => {
+      const base = s.sheet === 'ember' ? critterArt.ember_warp : critterArt.frost_warp;
+      if (!base) return null;
+      if (!s.recolour) return base;
+      const a = recolourAtlas(base, s.recolour);
+      console.log(`[art] ${s.name} flash-step pose ← ${s.sheet}_warp recoloured`);
       return a;
     });
 
@@ -1547,6 +1584,7 @@ class Game {
     // By STYLE, not by slot — see the note where `eatArt` is built.
     p.setEatArt(this.eatArt?.[this.roster[p.index]] ?? null);
     p.setBlessArt(this.blessArt?.[this.roster[p.index]] ?? null);
+    p.setWarpArt(this.warpArt?.[this.roster[p.index]] ?? null);
   }
 
   /**
@@ -2447,6 +2485,7 @@ class Game {
       if (p.aloftFlat) p.aloftFlat.visible = false;
       if (p.aloftGlow) p.aloftGlow.visible = false;
       if (p.blessPose) p.blessPose.visible = false;
+      if (p.warpPose) p.warpPose.visible = false;
       /* `marker` is her own colour and is no longer repainted by swearing, so
          this restore is now only undoing the ring-edge flash. Kept for exactly
          that: a restart during a ring-out would otherwise leave somebody red.
@@ -2463,6 +2502,9 @@ class Game {
        box floating over a world that has just been rebuilt, and a restart is
        supposed to look like nothing happened here. */
     this.crossFx?.reset();
+    /* And no target ring welded to somebody who is about to be a different
+       kitten, for exactly the reason above. */
+    this.dodgeFx?.reset();
     /* Un-meet every leader. A restart is the world put back to its opening
        state, and six introductions already spent is exactly the sort of
        leftover that makes a "restart" feel like it only half worked. */
@@ -5838,6 +5880,10 @@ class Game {
        flying in the SAME frame rather than one apart. Reversed, the seal
        bursts a frame early and the eye reads two events. */
     this.crossFx?.update(dt, this.players);
+    /* AFTER crossfx and for the same class of reason: this reads positions
+       that `Player.update` has already settled this frame, so the ring lands
+       on where her sister IS rather than on where she was. */
+    this.dodgeFx?.update(dt, this.players);
     this._updateBooms(dt);
     this._updateShake(dt);
     /* One flag, set where the fact becomes true. `ArenaQuest` needs to know

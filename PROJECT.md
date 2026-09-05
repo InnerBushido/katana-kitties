@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 2301 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 2421 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 354 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -406,6 +406,7 @@ to lock it on.** → [mobile.md](docs/notes/mobile.md)
 | **Steam shelf art & icons** | `tools/steam-art.mjs` crops and composites `public/sprites/title_art.png`. **Nothing here is a new drawing** — a prompt to an image model would put art on the box that is nowhere inside the game. | `node tools/steam-art.mjs` → `out/steam/` |
 | **Steam store capsules** | `tools/steam-capsules.sh` | → [trailer.md](docs/notes/trailer.md) |
 | **Clan leader portraits (Help)** | `tools/help-portraits.mjs` | |
+| **A Help picture that isn't filmed yet** | `tools/help-blink-placeholder.mjs` draws the still that holds 瞬 Flash Step's cell in the abilities grid until its clip is shot. It reads the jade out of the orb roster and the kitten out of `PLAYER_STYLE`, so it cannot drift from the game, and it stamps **PLACEHOLDER** in its own corner — everything else on that page is an engine capture and a drawing must not pass for one. Swapping in the clip is one attribute in `index.html`. | `node tools/help-blink-placeholder.mjs` |
 | **README screenshots** | Rendered to a canvas and POSTed to a throwaway local HTTP server — browser downloads don't reach disk from a preview pane. | → [hosting.md](docs/notes/hosting.md) |
 
 **Rules that apply to all of it:** measure, never reason, about anything drawn —
@@ -473,7 +474,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 2301
+the check that would have caught it.** That is why `world-check` is 2421
 assertions.
 
 **And a change a new developer would need to know about gets a line in this
