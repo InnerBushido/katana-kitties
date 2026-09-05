@@ -74,6 +74,39 @@ const GROUPS = {
       regrab: ['Double-tap grace', 'How long the second tap of a double tap has to take back the wait the first tap’s release charged. NOT the double-tap window itself (that is 340ms, in input.js) — this is the slack behind it. Latching buys her the button, never extra seconds.', 's', 0, 1.5, 0.05],
     },
   },
+  AEGIS: {
+    title: 'Long Guard (the rare one)',
+    blurb: 'The ninth orb, and the only one the dealer alone has. It does '
+      + 'nothing on its own — it lengthens the Ward bubble beside it, and '
+      + 'charges a longer wait for any block that runs past the shipped Budget.',
+    fields: {
+      add: ['Seconds added', 'How much each Long Guard orb adds to the Ward budget. Additive, like every stack in this game: two orbs is twice this. Zero makes the orb do nothing at all.', 's', 0, 3, 0.1],
+      penalty: ['Overtime wait', 'How much longer the recharge is when a block ran past the SHIPPED budget — 0.2 is a fifth longer. Measured against the shipped number, never the ceiling a blow cut down, so her sister cannot decide when she pays it.', '×+1', 0, 2, 0.05],
+      ready: ['Spark length', 'How long the “you can block again” spark and its chime last. Picture and sound only; it fires solely after an overtime wait.', 's', 0.1, 2, 0.05],
+    },
+  },
+  /* NOT AN ABILITY — a gag, and the one table on this page that belongs to
+     nobody the player controls. It is here because `world-check` now asserts
+     that every `tune()` table has a panel, and it had none: the numbers were
+     tunable in principle and unreachable in practice, which is the state a
+     balance page rots into. */
+  BLAST: {
+    title: 'Mr. Satan’s tantrum',
+    blurb: 'Stand on the announcer’s box long enough and the champion loses '
+      + 'his temper. It never calls hurt and never asks the combat gate — no '
+      + 'damage, no knockout, no score. It just throws you a very long way.',
+    fields: {
+      notice: ['Notice radius', 'How close to him, on the flat, before the fuse starts.', '', 2, 20, 0.5],
+      noticeUp: ['Notice height', 'And how far above or below. A CYLINDER, not a sphere — this is the number that keeps a kitten fighting on the deck below out of range.', '', 1, 10, 0.5],
+      taunt: ['Fuse', 'Seconds of shouting before it goes off. Running away does not stop it, on purpose.', 's', 2, 30, 0.5],
+      charge: ['Wind-up', 'The bright beat between the last word and the bang.', 's', 0.2, 3, 0.1],
+      boom: ['Bang', 'How long the explosion itself lasts.', 's', 0.2, 3, 0.1],
+      reach: ['Blast radius', 'What the explosion catches. Wider than Notice on purpose: edging to the far corner of the box is not escaping.', '', 4, 30, 0.5],
+      knock: ['Knockback', 'Enormous, and that is the joke — a dash, the hardest ordinary blow in the game, is 19.', '', 5, 60, 1],
+      lift: ['Lift', 'How far up. Three times a dash, so she leaves at an angle nothing else produces.', '', 2, 40, 1],
+      cool: ['Cooldown', 'How long before he will do it again.', 's', 5, 120, 1],
+    },
+  },
   DIVE: {
     title: 'Power dive',
     blurb: 'Interact, in the air, and she drops. It lands on everything under '

@@ -763,6 +763,24 @@ export class Audio {
       case 'warddown':
         this._tone({ type: 'sine', from: semi(19), to: semi(5), dur: 0.3, gain: 0.13 * v });
         break;
+      /* THE SHIELD IS BACK — and this only ever plays for a block that went
+         past the default two seconds and was charged the longer wait for it
+         (see AEGIS). A cue on EVERY recharge would fire several times a round
+         for every kitten wearing a Ward and become the sound of nothing in
+         particular; fired only after a wait she can feel is longer than usual,
+         it is an answer to a question she is actually asking.
+
+         IT IS `warddown` PLAYED BACKWARDS, near enough, and that is the whole
+         design: the sweep-out falls a fifth and a bit, so the sweep-in climbs
+         the same distance and lands on the note `wardup` starts from. The
+         sparkle on top is what stops it being mistaken for a ward going up —
+         two thin, quiet, detuned partials well above it, which no other cue in
+         this set has. */
+      case 'wardready':
+        this._tone({ type: 'sine', from: semi(5), to: semi(19), dur: 0.26, gain: 0.12 * v });
+        this._tone({ type: 'triangle', from: semi(31), dur: 0.14, gain: 0.045 * v, detune: 9, delay: 0.14 });
+        this._tone({ type: 'triangle', from: semi(38), dur: 0.10, gain: 0.03 * v, detune: -6, delay: 0.2 });
+        break;
       /* THE TWO OUTCOMES OF BEING HIT, AND THEY HAVE TO BE TOLD APART BY EAR.
          Asked for as "a lower pitched dink or absorption sound" against "a
          unique high pitched dink to indicate their shield was disabled", and

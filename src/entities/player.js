@@ -1,7 +1,7 @@
 ﻿import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
 import { PANDA_SPEED, PANDA_JUMP } from './panda.js';
-import { aggregate, WARD, DIVE, CROSS, CHARGE } from './powerorb.js';
+import { aggregate, WARD, AEGIS, DIVE, CROSS, CHARGE } from './powerorb.js';
 import { ANGEL_ALPHA } from './angel.js';
 import { styleFor } from '../core/palette.js';
 import { tune } from '../core/tuning.js';
@@ -410,6 +410,22 @@ export class Player {
     this.wardHits = 0;
     /** Seconds left of the smash effect. Outlives the bubble on purpose. */
     this.wardBreakT = 0;
+    /* --- and the overtime, which only a 守 Long Guard orb can ever reach ---
+
+       `wardOver` is set at the DROP, and says this block was up for longer
+       than the default ceiling — so the wait after it is a fifth longer and,
+       when that longer wait finally ends, she gets told. It is deliberately
+       not a property of the bubble: the bubble is gone by the time any of it
+       matters, and the whole point of the penalty is that it is paid after.
+
+       WITHOUT THE ORB IT IS NEVER TRUE. `over` is the default max and the
+       ceiling IS the default max with no 守 on her neck, so `used > over`
+       cannot happen — the cue, the spark and the longer wait are all dead
+       code for a kitten who has not bought into it, which is the whole of
+       how this stays out of the two-player game. */
+    this.wardOver = false;
+    /** Seconds left of the recharge spark. Fires once, when the wait ends. */
+    this.wardReadyT = 0;
     /* --- and the latch, which is the double tap ---
        `wardHold` is "she tapped twice, so the block does not need her thumb
        any more". It changes ONE thing — whether letting go of the button ends
@@ -808,6 +824,48 @@ export class Player {
     }
     this.wardBurst.visible = false;
     this.group.add(this.wardBurst);
+
+    /* --- and the spark that says the shield is back ---
+       THE SHARDS FLY OUT; THESE FLY IN, and that is the entire vocabulary of
+       it. One picture for "you lost it", the reverse picture for "you have it
+       again", so a kid does not have to learn a second symbol — she has to
+       notice a direction, which is the thing a four-way split screen is worst
+       at hiding and eyes are best at catching.
+
+       TEN, NOT FOURTEEN, AND ON A RING RATHER THAN A SPHERE. This is the
+       quieter of the two events and it is competing with a live round rather
+       than announcing one; a full sphere of them read as a second smash. A
+       ring around her chest converging inwards reads as gathering.
+
+       IT IS 守'S OWN BLUE, not the bubble's. The player asked for this cue to
+       exist only when the penalty is paid, so it belongs to the orb that
+       created the penalty — the same colour as its dot on the shelf, its slot
+       on her card and its ball over the dealer's counter, which is the one
+       thread tying a thing on screen to a thing she bought. */
+    this.wardSpark = new THREE.Group();
+    this.wardSparks = [];
+    const SPARKS = 10;
+    for (let i = 0; i < SPARKS; i++) {
+      const a = (i / SPARKS) * Math.PI * 2;
+      const m = new THREE.Mesh(
+        new THREE.TetrahedronGeometry(WARD.radius * 0.13),
+        new THREE.MeshBasicMaterial({
+          color: 0x8fa4ff, transparent: true, opacity: 0,
+          depthWrite: false, toneMapped: false,
+        })
+      );
+      /* Tilted off the horizontal by index so ten of them are not a flat
+         hoop seen edge-on from this game's one fixed camera yaw. */
+      const tilt = ((i % 3) - 1) * 0.42;
+      m.userData.dir = new THREE.Vector3(
+        Math.cos(a), Math.sin(tilt), Math.sin(a)
+      ).normalize();
+      m.userData.spin = 5 + (i % 4) * 1.1;
+      this.wardSparks.push(m);
+      this.wardSpark.add(m);
+    }
+    this.wardSpark.visible = false;
+    this.group.add(this.wardSpark);
 
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 4000);
     this.camDist = 26;
@@ -1488,6 +1546,13 @@ export class Player {
        something that happened, not a state she is in. */
     this.wardMax = WARD.max;
     this.wardHits = 0;
+    /* THE OVERTIME GOES WITH THE WAIT IT WAS OWED ON. This clears `wardCool`
+       two lines up, so the debt has just been forgiven — leaving the flag set
+       would fire "you can block again" at some unrelated moment later, after a
+       wait she never actually served. `wardReadyT` is NOT cleared, for the
+       same reason as `wardBreakT`: a spark already in the air is a picture of
+       something that happened, not a state she is in. */
+    this.wardOver = false;
     this.chargeT = 0;
     this.chargeLeft = 0;
     this.triWindT = 0;
@@ -2290,7 +2355,27 @@ export class Player {
          1.5s cooldown that started when she let go — not 0.2 and then 1.5, or
          the gap she feels is longer than the number she was shown. */
       this.wardTail = Math.max(0, this.wardTail - dt);
+      const waiting = this.wardCool > 0;
       this.wardCool = Math.max(0, this.wardCool - dt);
+      /* THE ONE FRAME THE WAIT ENDS, AND ONLY AFTER A LONG ONE.
+
+         Asked for exactly this way: the sound and the spark fire only when the
+         block ran past the default maximum and therefore cost her a longer
+         wait. Fired on every recharge instead, this would go off several times
+         a round for every kitten wearing a Ward and become the sound of
+         nothing in particular — a cue that answers a question nobody asked is
+         noise, and this one answers "why is it still not back yet?".
+
+         ON THE EDGE, NOT ON THE STATE. `wardCool === 0` is true for every
+         frame she is not blocking, so the test needs the frame it BECAME
+         zero — hence `waiting`. Without it this fires once per frame for the
+         rest of her life. */
+      if (waiting && this.wardCool === 0 && this.wardOver) {
+        this.wardOver = false;
+        this.wardReadyT = AEGIS.ready;
+        this.wardSpark.visible = true;
+        hud?.sfx?.('wardready');
+      }
     }
     this.wardFlash = Math.max(0, (this.wardFlash ?? 0) - dt);
 
@@ -2606,7 +2691,45 @@ export class Player {
        been earned yet. See `_latchWard` for what spends this. */
     this.wardRegrab = why === 'release' ? WARD.regrab : 0;
     this.wardTail = WARD.tail;
-    this.wardCool = this.power.ward?.cool ?? WARD.cool;
+    /* --- and what a long block costs ---
+       MEASURED AGAINST `over`, WHICH IS THE DEFAULT CEILING, NEVER THE CURRENT
+       ONE. `hitCut` moves the current ceiling down when a blow lands, so a
+       bubble smashed at 1.5s has "run to the end" of a 1.5s ceiling — charging
+       overtime for that would put her sister in charge of when she pays it.
+       The only question asked here is how long the thing was actually up.
+
+       The player's own example: 2.2s elapsed, then a hit drops the ceiling to
+       1.5s and ends it. That pays, because 2.2 > 2.0. The same hit at 1.0s
+       elapsed does not.
+
+       IT IS A MULTIPLIER ON HER OWN WAIT, not a flat addition, so a stack of
+       Ward orbs that bought her a shorter cooldown keeps the saving in
+       proportion — the penalty is "a fifth longer than whatever yours is",
+       which is a sentence that survives every other number moving. */
+    /* AND IT ASKS TWO QUESTIONS, NOT ONE, WHICH IS WHAT KEEPS IT EPSILON-FREE.
+
+       `wardUsed > over` ALONE IS WRONG and world-check caught it on the first
+       run: a block held to a 2.0s cap ends on the frame `wardUsed` crosses
+       2.0, so it lands a fraction of a frame PAST it and every ordinary
+       full-length block charged the penalty. A tolerance would have hidden
+       that, badly — the right size of it depends on the frame rate.
+
+       So the first question is whether there was any headroom to use:
+       `g.max` is the granted ceiling, which is the default plus whatever 守
+       Long Guard added, and it is NOT touched by `hitCut`. With no booster it
+       equals `over` exactly, the test is false by construction, and the whole
+       mechanic is unreachable — no tolerance, no frame rate, no drift.
+
+       The second is the one the player asked for: how long was it actually up.
+       Using `g.max` for that instead would have got the other case wrong — a
+       bubble smashed down to a 1.3s ceiling after 2.2s of life still owes,
+       because it was still up for 2.2 seconds. Her sister does not decide when
+       she pays; the clock does. */
+    const g = this.power.ward;
+    const over = g?.over ?? WARD.max;
+    this.wardOver = (g?.max ?? WARD.max) > over && this.wardUsed > over;
+    this.wardCool = (g?.cool ?? WARD.cool)
+      * (this.wardOver ? (g?.penalty ?? 1 + AEGIS.penalty) : 1);
     /* A SMASH HAS ALREADY MADE ITS NOISE. `_wardTakeHit` plays `wardbreak`
        on the frame the blow lands, and layering the ordinary sweep-out under
        it reads as the audio being broken rather than as emphasis — the same
@@ -2655,6 +2778,12 @@ export class Player {
       this.wardOn = true;
       this.wardTail = 0;
       this.wardCool = 0;
+      /* AND THE OVERTIME WITH IT. This is undoing a release, and the release
+         is what charged her — refunding the wait while leaving the debt behind
+         would fire "you can block again" at the end of a wait that was handed
+         back. The block goes on running, so if it really does end past the
+         line, `_dropWard` charges it again then. */
+      this.wardOver = false;
       this.wardMesh.visible = true;
     }
     this.wardRegrab = 0;
@@ -3330,6 +3459,30 @@ export class Player {
         m.scale.setScalar(1 - 0.35 * t);
       }
       if (this.wardBreakT === 0) this.wardBurst.visible = false;
+    }
+
+    /* THE SPARK, AND IT RUNS THE SHARDS' MATHS BACKWARDS. Same `t` from 0 to
+       1, same tumble, but the radius falls instead of rising and the opacity
+       peaks in the middle rather than at the start — energy arriving has to
+       get brighter as it lands, or it reads as the last of something leaving.
+
+       DRAWN OUT HERE WITH THE SMASH, ABOVE THE `!warded` RETURN, for the same
+       reason: she is not blocking when this plays — being able to block again
+       is the entire message — so an effect inside the bubble's own guard would
+       never be drawn at all. */
+    if (this.wardReadyT > 0) {
+      this.wardReadyT = Math.max(0, this.wardReadyT - dt);
+      const t = 1 - this.wardReadyT / (AEGIS.ready || 0.5);      // 0 -> 1
+      this.wardSpark.position.set(0, this.height * 0.55, 0);
+      for (const m of this.wardSparks) {
+        m.position.copy(m.userData.dir)
+          .multiplyScalar(WARD.radius * 1.5 * (1 - t) * (1 - t));
+        m.rotation.y += dt * m.userData.spin;
+        m.rotation.x += dt * m.userData.spin * 0.6;
+        m.material.opacity = 0.95 * Math.sin(Math.PI * t);
+        m.scale.setScalar(0.6 + 0.8 * t);
+      }
+      if (this.wardReadyT === 0) this.wardSpark.visible = false;
     }
 
     this.wardMesh.visible = this.warded;

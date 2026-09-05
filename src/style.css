@@ -1132,6 +1132,20 @@ body.touch-ui .pane-edge { border-width: 4px; }
   padding: 0 calc(0.4 * var(--u));
 }
 .pc-orb-num { flex: none; text-align: right; font-size: 0.82em; }
+/* THE RARE PRICE, ON THE PERSONAL CARD. Same rule as the shelf's `.kd-rare`:
+   it is drawn only on a row whose price is not the one in the footer, so it
+   is never a number repeated nine times. Sized off `--u` like the rest of
+   this card, because a quarter pane is the size it has to be read at. */
+.pc-rare {
+  display: inline-block;
+  font-size: 0.74em;
+  letter-spacing: 0.04em;
+  color: #120c14;
+  background: var(--orb);
+  border: calc(0.18 * var(--u)) solid #120c14;
+  border-radius: 999px;
+  padding: 0 calc(0.5 * var(--u));
+}
 
 .scoreboard {
   position: absolute;
@@ -3108,6 +3122,101 @@ body.touch-ui .kd-row { padding: 9px 6px; }
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.85), 0 -1px 0 rgba(255, 255, 255, 0.6);
 }
 .kd-row-num { text-align: right; font-size: 13px; }
+
+/* --- the shelf is a box of a fixed number of rows, and it scrolls ---------
+   THERE WERE EIGHT KINDS OF ORB AND THE PANEL WAS EXACTLY EIGHT ROWS TALL.
+   Nothing said so; it was just true, and every layout number on this screen
+   had been settled against it. The roster is nine now (守 Long Guard, the
+   dealer's rare one) and there is no reason to think that is the last one — so
+   the shelf keeps the height it had and takes the growth as scroll, instead of
+   pushing the footer off the bottom of a laptop.
+
+   THE FOOTER IS THE THING BEING PROTECTED. It carries the key names on a
+   desktop and the actual BUTTONS on a phone, so a list that grows downwards
+   past it does not merely look untidy — it takes away the only way out of the
+   screen on the device least able to spare it.
+
+   `--shelf-rows` IS THE NUMBER OF ROWS, NOT A PIXEL HEIGHT, and the row height
+   is measured off the row's own padding and line box rather than typed in: the
+   rows carry two lines of text at a size that moves with the panel. Eight of
+   them is what the screen was designed around and what it still shows.
+
+   THE BAR IS HIDDEN BECAUSE THE STICK DRIVES IT. `ProfileScreen._followCursors`
+   walks a moved cursor back into view after every repaint, and a scrollbar in
+   a panel four kittens are sharing is a control only the one with the mouse
+   can use. A finger can still drag it. */
+.kd-shelf {
+  --shelf-rows: 8;
+  /* 2 lines + padding, in the row's own units, so this tracks the type size */
+  --shelf-row: calc(2 * 1.45em + 14px);
+  max-height: calc(var(--shelf-rows) * var(--shelf-row));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  /* THE FADE IS THE ONLY THING THAT SAYS THERE IS MORE. A hidden bar and a
+     hard bottom edge look identical to a list that has ended, and the sixth
+     non-negotiable is that a thing which is not yet true has to say so. The
+     mask only bites when there is something under it: at eight rows the box is
+     not scrollable, nothing is clipped, and the gradient falls on the padding
+     below the last row where it is invisible. */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent);
+}
+.kd-shelf::-webkit-scrollbar { display: none; }
+/* Nothing to scroll, nothing to fade. THE 9 IS `--shelf-rows` PLUS ONE and the
+   two have to move together — it is the row count at which the box first has
+   something below its own bottom edge. `world-check` pins the pair, because a
+   fade that lies in either direction is worse than no fade: on when nothing is
+   hidden it dims a row for no reason, off when something is says the list has
+   ended. Where `:has` is unsupported the fade stays on, which is the safe way
+   round of the two. */
+@supports (selector(:has(*))) {
+  .kd-shelf:not(:has(.kd-row:nth-child(9))) {
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+}
+
+/* THE RARE PRICE, ON THE ROW, IN THE ROW'S OWN COLOUR. It appears on exactly
+   the rows whose price is not the one printed in the header — see
+   `_shopMarkup`. A price repeated on all nine rows says nothing nine times;
+   this one is only ever news. */
+.kd-rare {
+  font-family: 'Bangers', cursive;
+  font-size: 13px;
+  letter-spacing: 0.6px;
+  color: var(--ink);
+  background: var(--orb);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 0 7px;
+  display: inline-block;
+  box-shadow: 0 2px 0 rgba(29, 18, 22, 0.35);
+}
+
+/* --- her own slots scroll too, for the same reason ------------------------
+   MAX_EQUIPPED is still eight and this changes nothing today: two rows of four
+   is exactly the height below, so there is no overflow and no scroll. It is
+   here because the grid was the other place a number grew into, and a rack
+   that silently clipped her ninth orb would be an inventory screen lying about
+   an inventory. `--slot-rows` is what to change if she is ever allowed a
+   ninth.
+
+   THE HEIGHT IS AN ASPECT RATIO, NOT A PIXEL COUNT, because the cells are
+   round and therefore square and therefore as tall as a quarter of the card —
+   a number no stylesheet can know. Four columns over two rows is 4/2, which
+   comes out about four pixels TALLER than the two rows of squares plus their
+   gap. That slack is the whole trick: at eight orbs there is nothing to
+   scroll and the box behaves exactly as it did before this rule existed. */
+.kd-slots {
+  --slot-rows: 2;
+  aspect-ratio: 4 / var(--slot-rows);
+  overflow-y: auto;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+.kd-slots::-webkit-scrollbar { display: none; }
 
 /* --- PICK YOUR SIDE ------------------------------------------------------
    One column per side, each in its team colour, with the kittens standing in
