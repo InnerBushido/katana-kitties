@@ -47,10 +47,30 @@ import { tune } from '../core/tuning.js';
    for exactly as long as she is in the air; `_catchFallers` then puts her back
    in the middle with — in that function's own words — no damage and no banner.
 
-   THE TEN SECONDS ARE NOT CANCELLABLE, and running away does not stop it. He
-   is funnier when he goes off behind you, the promise the game made ("ten
-   seconds") is one it then keeps whatever you do, and a fuse a child can put
-   out by walking backwards is a fuse she will never see burn.
+   THE TEN SECONDS ARE NOT CANCELLABLE, and running away does not stop the
+   COUNT. He is funnier when he goes off behind you, the promise the game made
+   ("ten seconds") is one it then keeps whatever you do, and a fuse a child can
+   put out by walking backwards is a fuse she will never see burn.
+
+   BUT HE WILL NOT DETONATE OVER AN EMPTY BOX, which is a different rule and
+   was reported from play as "he loses his temper even if no one is near him".
+   The fuse still burns down whatever you do; what changed is what it finds at
+   the bottom. Nobody up there at zero and he simply stops — no charge, no
+   shout, no bang, and back to `off` rather than to `cool`, so the next kitten
+   who climbs up gets the WHOLE performance from the top rather than walking in
+   on a thirty-second silence. That is the fourth non-negotiable's spirit read
+   the other way round: an event nobody was in should leave no trace.
+
+   AND HE WAITS FOR HER TO LAND. `_onBox` is `_reaches` plus `onGround`, and
+   only the START of the taunt asks it. Reported as "he starts the speech even
+   before people land on the platform": the notice test is a cylinder 3.5 units
+   tall, so a kitten still rising towards the deck is already inside it and he
+   was talking over a jump that had not finished. What CATCHES people is still
+   the bare cylinder — being blown out of the air is the best version of this
+   and a grounded test there would silently spare whoever happened to be
+   jumping on the one frame it went off — and so is the presence test at zero,
+   because a fuse that fizzles because she was mid-hop on the final frame reads
+   as the gag being broken.
 --------------------------------------------------------------------------- */
 
 /**
@@ -85,11 +105,30 @@ export const BLAST = tune('BLAST', {
   cool: 30,
 });
 
-/** What he says on the way in, and what he says when he has had enough. */
+/**
+ * What he says on the way in, and what he says when he has had enough.
+ *
+ * THE NEWLINES ARE FOR THE BUBBLE OVER HIS HEAD AND NOTHING ELSE. `setLine`
+ * wraps where they are; the pop-in card is a single flowing paragraph, so
+ * `card()` flattens them. Two spellings of one sentence is how the two drifted
+ * apart in the first place.
+ */
 export const BLAST_LINES = {
   taunt: 'Oh ho ho! You think you are TOUGH, huh?\nWant to take on the CHAMPION next? Maybe next time!',
   shout: 'THAT IS IT! I HAVE HAD ENOUGH\nOF YOUR KITTY SHENANIGANS!',
 };
+
+/**
+ * The same line, flattened for the pop-in card.
+ *
+ * REPORTED FROM PLAY: "not all the text is displaying for what he is saying,
+ * it is like an abbreviated version". It was. The card had its own shorter
+ * paraphrase of each line — "You think you are TOUGH, huh? Ha!" against a
+ * recording that runs 8.6 seconds — so the words on screen ran out long before
+ * he stopped talking. The subtitle now IS the line, by construction: there is
+ * one string per thing he says and both surfaces read it.
+ */
+export const card = (line) => line.replace(/\s*\n\s*/g, ' ');
 
 export class SatanBlast {
   /**
@@ -173,6 +212,10 @@ export class SatanBlast {
     this.fx.visible = false;
     this.charge.visible = false;
     this.satan?.setPose?.('idle');
+    /* THE BUBBLE IS PART OF THE POSE. The arena closing mid-taunt used to
+       leave "you think you are TOUGH, huh?" floating over a man walking back
+       to the town square, because only the boom cleared it. */
+    this.satan?.setLine?.('');
   }
 
   /**
@@ -221,6 +264,35 @@ export class SatanBlast {
   }
 
   /**
+   * Is `p` STANDING on the box with him — landed, not still on the way up?
+   *
+   * ONLY THE START OF THE TAUNT ASKS THIS, and the header says why: the notice
+   * cylinder is 3.5 units tall, so a kitten jumping at the deck from below is
+   * inside it while her feet are still in the air, and he was answering a jump
+   * rather than an arrival. Neither the blast nor the check at zero uses it.
+   */
+  _onBox(p) {
+    return p?.onGround === true && this._reaches(p, BLAST.notice);
+  }
+
+  /**
+   * Nobody was there when the fuse ran out. Put him back to the top.
+   *
+   * BACK TO `off`, NOT TO `cool`. Nothing happened, so nothing is spent: the
+   * next kitten onto the box gets the taunt, the ten seconds and the bang,
+   * rather than climbing up into thirty seconds of a man who is not going to
+   * react. The cooldown is the price of the EXPLOSION and there was not one.
+   */
+  _fizzle() {
+    this.stage = 'off';
+    this.t = 0;
+    /* AND THE BUBBLE GOES WITH HIM. A taunt left hanging over an empty booth
+       is the same class of thing as the charging pose left on screen that
+       `reset` exists to clear — a state nobody asked for, kept forever. */
+    this.satan?.setLine?.('');
+  }
+
+  /**
    * @param {number} dt
    * @param {boolean} armed is the tournament open and Mr Satan in his box?
    */
@@ -239,11 +311,17 @@ export class SatanBlast {
 
     switch (this.stage) {
       case 'off':
-        if (players.some((p) => this._reaches(p, BLAST.notice))) this._taunt();
+        if (players.some((p) => this._onBox(p))) this._taunt();
         break;
 
       case 'taunt':
-        if (this.t >= BLAST.taunt) this._shout();
+        /* THE COUNT IS NOT CANCELLABLE; THE BANG IS CONDITIONAL. See the
+           header — `_reaches` and not `_onBox`, so a sister in mid-hop at the
+           instant it expires still counts as being up there. */
+        if (this.t >= BLAST.taunt) {
+          if (players.some((p) => this._reaches(p, BLAST.notice))) this._shout();
+          else this._fizzle();
+        }
         break;
 
       case 'charge':
@@ -278,14 +356,14 @@ export class SatanBlast {
   _taunt() {
     this.stage = 'taunt';
     this.t = 0;
-    this.announcer?.say('sat_taunt', 'You think you are TOUGH, huh? Ha!');
+    this.announcer?.say('sat_taunt', card(BLAST_LINES.taunt));
     this.satan?.setLine?.(BLAST_LINES.taunt);
   }
 
   _shout() {
     this.stage = 'charge';
     this.t = 0;
-    this.announcer?.say('sat_blast', 'I HAVE HAD ENOUGH OF YOUR KITTY SHENANIGANS!');
+    this.announcer?.say('sat_blast', card(BLAST_LINES.shout));
     this.satan?.setLine?.(BLAST_LINES.shout);
     /* THE POSE IS A REQUEST, NOT A REQUIREMENT. `setPose` does nothing at all
        when `satan_charge.png` is absent, and the ninth non-negotiable says
