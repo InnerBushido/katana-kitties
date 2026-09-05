@@ -226,3 +226,199 @@ mid-flight reads as a bug.
 **A dragon wins the mount button.** Dragons are scanned first and win outright,
 because a panda is always at your heel — letting it match first means a kitten
 who has raised one can never climb onto a dragon again.
+
+
+## The panda in the ring, and the cub that heals you
+
+Everything above is about a panda on the home island. This is what happens to
+it inside the ropes, and it is one animal with two completely different jobs
+depending on which tier it is standing at.
+
+**The grown one is a second body in the fight. The cub is a nurse.** They are
+not two halves of one thing that got balanced against each other; they are the
+two ends of a single risk. Riding a panda puts a five-and-a-half-unit animal
+under a 2.9-unit kitten — you hit harder and reach further, and you are standing
+on a target anybody can see from across the arena. Lose it and what is left is
+the thing that gets you off the floor.
+
+### `Game.strikePlayers` is still the only gate, and it now looks for two bodies
+
+The claw reaches kittens through the same single function every other swing in
+this game goes through. It is not a second damage path and it does not get one;
+third non-negotiable, and `world-check` drives a full swipe with the tournament
+off and asserts nobody loses a point. What changed inside the gate is that there
+are now **two bodies per player** to test a blade against — her, and her panda —
+and `reaches()` was pulled out of the loop precisely because *the answer for one
+decides what happens to the other*.
+
+**The hitbox is a radius ADDED TO THE ATTACKER'S REACH, not a scale on
+anything.** A kitten is a *point* in `strikePlayers` — the range test is against
+her centre and nothing else — so "much bigger hit box" cannot be expressed as a
+size on the panda. It is `PANDA.body` (2.8) added to whatever the swing's range
+already was, and `PANDA.bodyUp` (1.6) added to `COMBAT.strikeHeight`.
+
+**The forward-arc test is deliberately NOT padded.** An animal whose centre is
+behind you is behind you. Widening the arc as well would let a swing land on
+something visibly at her back, which is the exact bug the eighth non-negotiable
+exists to prevent — the drawn arc *is* the hitbox.
+
+**Riverclaw's oath does not lengthen a panda's arm.** Asked for in those words,
+and forced at the gate (`const clanK = kind === 'claw' ? 1 : reach / BASE_REACH`)
+rather than by having `_doClaw` pass a different number, so the rule has one
+owner and cannot be undone by a future caller handing it her real reach. It is
+also right on its own terms: Riverclaw's blessing is about the blade she is
+holding, and while she is on a panda she is not holding it.
+
+### The three outcomes, and why they are decided before anything is spent
+
+| the blade found | what happens |
+| --- | --- |
+| the panda only | the animal takes it; she is untouched |
+| **both** | both take damage, she **stays on**, and the pair is pushed a third as far as she alone would have flown |
+| her only | she takes it in full **and comes off the animal** |
+
+`onIt` and `both` are computed at the top of that block, before a single number
+is spent, because knocking the panda's bar out puts her on the ground — and
+would otherwise change the answer half way through evaluating it.
+
+**The reduced knockback goes on the RIDER, not on the animal.** It has to:
+`Player.carry` rewrites the panda's velocity from the rider's every frame, so a
+push applied to the panda while somebody is on it is overwritten before it can
+move anything. The rider gets `A.knock * PANDA.knockK`, and the animal shows the
+blow as `Panda.recoil` — a decaying offset on its group — because otherwise "the
+panda is knocked back" is a sentence with nothing on screen behind it. Unridden,
+the push does go on the animal, where it works normally.
+
+**The claw has no `dmg` of its own.** It was asked for as "1.2x's more than a
+regular player slash attack", which is a statement *about* `ATTACKS.stand.dmg`
+rather than a number to sit beside it. `ATTACKS.claw` therefore carries `knock`,
+`lift`, `reach` and `arc` and no damage at all, and the gate multiplies — so
+tuning the standing slash on the balance page moves the claw with it and the
+relationship can never go stale. The missing key is also what makes it
+un-overridable by hand: `tune()` only accepts keys the defaults already have, so
+there is exactly one knob and it is `PANDA.dmgK`.
+
+**A cub is never a target.** `Panda.fighter` requires `rideable`, so a cub has
+no bar, no hit box and no way to be hit. It is the size of a house cat and it is
+the thing a losing kitten runs to; letting a sister cut it down would make the
+consolation prize the next thing to take away.
+
+**The Cross Slash never catches the animal.** `tri` freezes what it catches and
+pays out at the end (`triCapture`), and there is no version of that a
+five-and-a-half-metre panda can be part of — it would be either an animal
+hanging in the air or a rider frozen while her mount walked off. A swipe that
+found only the panda is simply a miss for that one attack.
+
+**A partner's panda does not cost you the friendly-fire daze.** The daze is the
+price of hitting your sister; charging it for passing within reach of an animal
+three times her width would make a 2v2 with a Pandapaw kitten on your side
+unplayable.
+
+### Losing it, and getting it back
+
+An empty bar is **not a death and not a removal** — fourth non-negotiable, a pet
+can never be lost, so the worst thing that can happen to a panda in this game is
+that it gets small. `Panda.collapse()` puts the rider down, sets `knockedDown`
+and drops it to tier 0. It keeps its name, it keeps following her, and it picks
+up the one thing a cub can do that a grown panda cannot.
+
+**`knockedDown` is a separate flag and NOT `tier === 0`,** and that distinction
+is the whole of "stays baby panda for the rest of the game". Those are two
+different animals with the same drawing: a cub that has never grown up is
+waiting for bamboo and `Game._updatePanda` will hand it the adult rung the
+moment the tally allows — while a collapsed one is standing there with twenty-odd
+canes of *credit* against it, and without its own guard the very next cane she
+cut would grow it straight back. `_updatePanda` returns early on
+`player.panda?.knockedDown`, and `world-check` throws eight hundred canes at one
+to prove it.
+
+**The shrine costs nothing.** "Since we already harvested the 20 bamboo to make
+it a big panda and no need to do it again" — the canes were cut, and charging
+for them twice takes away the *work* rather than the animal. `pandaFedFrom` is
+deliberately not touched either, so a kitten who has been cutting since is not
+handed anything.
+
+**Two ways in, one event.** `Player`'s interact branch calls `onPandaShrine` for
+a kitten already sworn to Pandapaw standing in her own hall — a press that did
+nothing at all before this, so no meaning is being taken off the button. And
+`onJoinClan` calls `_restorePanda` for one who swore somewhere else and has come
+back, on the *same* press that swears her in, because those are one thing:
+coming home to the clan. Splitting them would mean pressing interact twice in
+the same square metre.
+
+**And the badge is an instruction, not a status.** Sixth non-negotiable: the
+toast that announces the collapse has faded by the time she has walked back
+across the island, so the clan badge says `Bao is a cub · INTERACT at the
+shrine` and keeps saying it until she does. It is checked *before* the bamboo
+counter, which would otherwise be cheerfully reporting the animal fully grown
+while a cub stood at her feet.
+
+### The lick
+
+The cub heals its owner while she is badly hurt, and it is the cub's job alone —
+a grown panda is a mount and a fighter, and giving it this as well would make
+being knocked down a strict downgrade with nothing on the other side of it.
+
+**Three separate questions, on purpose.** `lickWanted` is about *her* (hurt,
+alive, on her own feet); the radius is about *where the cub is*; and `lickT` is
+about *how long it has kept station*. Only the first pulls the animal in — the
+follow gap closes to half `lickNear` — and only all three heal. Folding them
+into one boolean is what would make a cub start healing on the frame it arrives,
+which is what the warm-up exists to prevent.
+
+**Leaving the radius resets the clock rather than pausing it.** "Within radius
+of the player for at least 1 second" is a promise about *one continuous* second;
+a clock that merely paused would let a cub trotting in and out of reach collect
+it a tenth at a time.
+
+**It heals a fraction of her MAXIMUM**, so a kitten wearing Vigor is healed in
+proportion rather than handed a smaller share of a bigger bar. Fractional health
+is fine — nothing in this game prints the number, and every reader of it is a
+ratio or a comparison.
+
+**The threshold is where it stops as well as where it starts.** "Lick the player
+if they are below 30% health" is a condition, not a starting gun, so the cub
+tops her up to `PANDA.lickBelow` and then goes quiet. That is also the better
+game: a cub that healed to *full* would mean a losing kitten could walk away
+from the fight, sit down with her panda for three minutes and come back whole,
+which ends rounds by attrition rather than rescuing them.
+
+**She has to be on her own feet.** Knocked out, flying or carried by the
+griffin, there is no cub beside her — and healing a kitten the round has already
+finished with would put health on a body nobody can reach.
+
+**What it looks like is three procedural things, and no new art.** Ninth
+non-negotiable: the cub is one drawn cell and it stays one drawn cell. A small
+pink tongue flicking out of its face on `sin(lickPhase)`, the whole animal
+leaning in on the same beat (applied to the *group*, so the shadow comes with
+it), and green motes rising **off her, not off the cub** — they mean "health
+arriving" and drawn over the animal they would say the animal was being healed.
+
+**The motes are the same green as the overflow bar,** deliberately. That is the
+only other place in this game where green means health arriving, and two
+different greens for one idea is how a nine-year-old ends up thinking they are
+two different things.
+
+**The chirp counts turns of `lickPhase`, not seconds.** The tongue is
+`sin(lickPhase)`, so counting whole turns of the same phase is the only figure
+that cannot drift away from the picture — a timer of its own would look right
+for about ten seconds. The panda raises a one-frame `lickSfx` flag and
+`main.js` spends it, because **nothing in `entities/panda.js` may reach the
+audio system**: `player.js` already imports from `panda.js`, and the reverse
+edge closes a cycle.
+
+**All nine numbers are on the balance page** (`PANDA` in `tuning-page.js`), with
+a sentence each. `world-check` asserts every one of them is described there
+rather than falling through to the generic slider.
+
+### How the checks run the real gate
+
+`Game` cannot be imported into `world-check` — it boots a renderer against a DOM
+that does not exist — and the alternative on offer was a page of regexes
+asserting that certain words appear in `main.js`, which is not a check about
+behaviour and would happily pass a rule that had been correctly *written* and
+wrongly *wired*. So `strikePlayers` and `_updatePanda` have their **own source
+cut out of the file and evaluated** with the four tables they close over. What
+runs is the shipped code, character for character: change the rule and the
+checks move with it; delete the rule and they fail. The `\n  }\n` terminator is
+the class's own indentation, which nothing inside a method body can reach.

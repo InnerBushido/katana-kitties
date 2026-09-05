@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 2537 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 2628 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 354 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -106,6 +106,16 @@ sprite directions.** It catches what still looks fine on screen: a grove that
 generates zero canes, a clan buff that changes nothing, a sheet read in mirror
 image, a trade that quietly destroys an orb. Almost none of its assertions are
 about whether a number is *set* — they are about whether behaviour *changed*.
+
+**It can also check `main.js`, which it cannot import.** `Game` boots a renderer
+against a DOM that does not exist, so the rules that live on it — the combat
+gate, in particular — were historically checked with regexes asserting that
+certain words appear in the file, which would happily pass a rule correctly
+*written* and wrongly *wired*. The panda checks do it properly instead: they cut
+a method's **own source out of `src/main.js` and evaluate it** with the tables it
+closes over, so what runs is the shipped code, character for character. The
+terminator is the class's own indentation, which nothing inside a method body can
+reach. Reach for it when a rule that matters lives on `Game`.
 
 ---
 
@@ -474,7 +484,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 2537
+the check that would have caught it.** That is why `world-check` is 2628
 assertions.
 
 **And a change a new developer would need to know about gets a line in this
