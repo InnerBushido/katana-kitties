@@ -842,6 +842,109 @@ it.** Each orb's shell radius, orbit speed and starting phase come from its slot
 and from how many she is wearing, so adding a fifth changes where the other four
 belong. Eight icosahedrons is nothing; a wrong-looking constellation is not.
 
+## 守 Long Guard — the ninth orb, and the first one you cannot find
+
+**IT IS THE DEALER'S ALONE, AND THAT IS THE WHOLE OF WHAT "RARE" MEANS HERE.**
+Not a lower spawn rate — no spawn at all. `WORLD_ORB_IDS` is the roster minus
+this one, and it is what `spawnPickups` cycles and what the Awakening prize
+draws from; `ORB_IDS` stays the whole roster and is what the shelf, the profile
+and the trade screen count. A rare orb you can trip over on a beach is not rare,
+and the cycle that guarantees every power is findable on foot would otherwise
+have put one on an island in every full set.
+
+**IT DOES NOTHING ON ITS OWN.** `aggregate` returns `ward: null` with no 壁 Ward,
+so there is no object for this to add to — eight Long Guards and no Ward is
+eight wasted slots. That is a real cost and it is the reason the orb is allowed
+to be as strong as it is: the SET costs her two slots before it costs her a
+point. The spec says so in a field, `needs: 'ward'`, rather than only in its
+blurb, because `world-check`'s "every orb changes something on its own" rule had
+to learn about the exception and naming `aegis` in a test stops being true the
+day there is a second booster.
+
+**IT IS THE ONE THING THAT LIFTS `WARD.max`, WHICH WAS A HARD CAP.** The cap is
+still the rule: eight Ward orbs do not lengthen the block by a frame and the
+check that says so is untouched. What changed is that there is now exactly one
+way to buy seconds — visible on the shelf, 2.5x the price, eating a second slot,
+and charging a longer wait for every block that runs past the old two seconds.
+A cap you can lift by paying is a decision; a cap that quietly rises with the
+fourth copy of an orb she was collecting anyway is the state the ward was
+designed not to be.
+
+**THE OVERTIME PREDICATE ASKS TWO QUESTIONS AND THAT IS WHY IT NEEDS NO
+TOLERANCE.** `wardUsed > over` alone was the first version and `world-check`
+failed it on the first run: a block ends on the frame the clock crosses its
+ceiling, so it lands a fraction of a frame PAST it, and every ordinary
+full-length block was charged the penalty. An epsilon would have hidden that
+badly — the right size of one depends on the frame rate. So:
+
+```js
+this.wardOver = (g?.max ?? WARD.max) > over && this.wardUsed > over;
+```
+
+`g.max` is the GRANTED ceiling — the default plus whatever 守 added, and *not*
+touched by `hitCut`. With no booster it equals `over` exactly, the test is false
+by construction, and the whole mechanic is unreachable. `wardUsed` is the second
+question because that is the one that was asked for: a bubble smashed down to a
+1.3s ceiling after 2.2s of life still owes, because it was still up for 2.2
+seconds. Her sister does not decide when she pays.
+
+**THE PENALTY IS A MULTIPLIER ON HER OWN WAIT, NOT A FLAT ADDITION**, so a stack
+of Ward orbs that bought her a shorter cooldown keeps the saving in proportion.
+"A fifth longer than whatever yours is" survives every other number moving.
+
+**THE CUE FIRES ONLY AFTER AN OVERTIME WAIT, AND ONLY ON THE FRAME IT ENDS.**
+Asked for that way, and it is right: a chime on every recharge would go off
+several times a round for every kitten wearing a Ward and become the sound of
+nothing in particular. After a wait she can feel is longer than usual it answers
+a question she is actually asking. `wardready` is `warddown` played backwards —
+the sweep-out falls a fifth and a bit, so the sweep-in climbs the same distance
+and lands on the note `wardup` starts from — with two thin detuned partials on
+top that no other cue in the set has, so it cannot be mistaken for a ward going
+up. The spark runs the smash's maths with the sign flipped: same golden tumble,
+radius falling instead of rising, opacity peaking in the middle rather than at
+the start, because energy arriving has to get brighter as it lands. It is 守's
+own blue, not the bubble's, because it belongs to the orb that created the
+penalty.
+
+**AND THE DEBT DIES WITH THE WAIT IT WAS OWED ON.** `_clearSpecials` clears
+`wardCool`, so it clears `wardOver` too — a flag left behind would chime at some
+unrelated moment later, after a wait she never served. The double-tap latch does
+the same for the same reason: it hands back the wait the release charged, and
+handing back the wait while keeping the debt would chime at the end of a wait
+that never happened.
+
+## The screens had to learn that eight was two different numbers
+
+There were eight kinds of orb and eight slots, so every screen drew eight of
+something and it was never clear which eight it meant. **`MAX_EQUIPPED` is how
+many she WEARS and is still 8; the roster is 9.** Screens that show a list of
+kinds scroll now; screens that show her slots still draw exactly `MAX_EQUIPPED`.
+Anything that hard-codes 8 is wrong about one of the two.
+
+**THE DEALER'S SHELF IS A BOX OF `--shelf-rows` ROWS AND SCROLLS INSIDE IT.**
+The thing being protected is the FOOTER: it carries the key names on a desktop
+and the actual buttons on a phone, so a list that grows past it does not merely
+look untidy — it takes away the only way out of the screen on the device least
+able to spare it. `ProfileScreen._followCursors` walks a moved cursor back into
+view with `block: 'nearest'`, which is the only honest answer to one scroll
+position and four cursors: the box moves *only* when a row is genuinely off
+screen, so a sister scrolling inside what everybody can already see moves
+nothing. Only a STICK sets `_moved` — a tap put the row under her finger, so it
+is on screen by definition.
+
+**THE FADE AT THE BOTTOM IS THE ONLY THING THAT SAYS THERE IS MORE**, a hidden
+scrollbar and a hard bottom edge being indistinguishable from a list that has
+ended. Its `:has(.kd-row:nth-child(9))` guard is `--shelf-rows` plus one and
+`world-check` pins the pair, because a fade that lies in either direction is
+worse than none.
+
+**THE PRICE IS ON THE ROW ONLY WHERE IT IS NEWS.** The header still prints one
+buy/sell pair, true of eight of the nine kinds; the ninth carries its own figure
+on its own row, and both confirmations quote `priceOf(id)` rather than
+`K.price`. A confirmation quoting the wrong number is worse than none, because
+she read it and agreed to it.
+
+
 ## Two things the worn orbs were getting wrong
 
 Both reported from the same play session, both about what the ring around a

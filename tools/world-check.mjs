@@ -51,8 +51,10 @@ import {
 import { readPNG, blobs, writePNG, writeICO } from './png.mjs';
 import { DEFAULTS, OVERRIDES, __mergeForTest as fold } from '../src/core/tuning.js';
 import {
-  POWER_ORBS, ORB_IDS, MAX_EQUIPPED, aggregate, orbPrice, orbSellPrice,
-  WARD, DIVE, CROSS, CHARGE, stockFor, STOCK_STACKABLE,
+  POWER_ORBS, ORB_IDS, WORLD_ORB_IDS, SHOP_ONLY_IDS, MAX_EQUIPPED,
+  aggregate, countsOf, orbPrice, orbSellPrice, orbPriceFor, orbSellPriceFor,
+  WARD, AEGIS, DIVE, CROSS, CHARGE, wardFor,
+  stockFor, STOCK_STACKABLE, STOCK_UNIQUE,
   PowerOrb, PowerOrbPickup, ORB_BY_ID,
 } from '../src/entities/powerorb.js';
 import { Kotodama } from '../src/systems/kotodama.js';
@@ -3810,9 +3812,20 @@ console.log('\n--- the balance file, and what a typo in it may do ---');
      entry in DEFAULTS, so a table that stops calling `tune()` does not error —
      it silently disappears off the page, which is how a tuning tool rots into
      something nobody trusts. */
-  for (const table of ['CROSS', 'CHARGE', 'WARD', 'DIVE', 'COMBAT', 'ATTACKS']) {
+  for (const table of ['CROSS', 'CHARGE', 'WARD', 'AEGIS', 'DIVE', 'COMBAT', 'ATTACKS']) {
     ok(`${table} is reachable from the balance page`,
       !!DEFAULTS[table] && Object.keys(DEFAULTS[table]).length > 0);
+  }
+  /* AND THE PAGE HAS A BLOCK FOR EACH. Reachable-from-`DEFAULTS` only says the
+     table calls `tune()`; a table nobody wrote a panel for still renders as
+     nothing. `tuning-page.js` is dev-only and never built, so this reads it
+     off disk rather than importing it. */
+  {
+    const page = readFileSync(new URL('../src/tuning-page.js', import.meta.url), 'utf8');
+    for (const table of Object.keys(DEFAULTS)) {
+      ok(`${table} has a panel on the balance page`,
+        new RegExp(`\n  ${table}: \{`).test(page));
+    }
   }
   ok('...and the defaults recorded are the shipped ones, not the tuned ones',
     DEFAULTS.CROSS.cool === 0.75 && DEFAULTS.CROSS.wind === 0.25
@@ -4103,12 +4116,22 @@ console.log('\n--- background removal keeps the drawn whites ---');
 console.log('\n--- the Powerup Kotodama ---');
 {
   const ids = ORB_IDS;
-  line('the eight', POWER_ORBS.map((o) => `${o.kanji} ${o.name}`).join(', '));
-  ok('there are eight of them', ids.length === 8);
+  line('the roster', POWER_ORBS.map((o) => `${o.kanji} ${o.name}`).join(', '));
+  ok('there are nine of them', ids.length === 9);
   ok('every id is unique', new Set(ids).size === ids.length);
   ok('every one has a kanji, a colour and a blurb',
     POWER_ORBS.every((o) => o.kanji && o.color && o.blurb && o.label));
-  ok('no two share a colour', new Set(POWER_ORBS.map((o) => o.color)).size === 8);
+  ok('no two share a colour',
+    new Set(POWER_ORBS.map((o) => o.color)).size === ids.length);
+  /* EIGHT ARE IN THE WORLD AND ONE IS THE DEALER'S ALONE. The split is what
+     every other count in this file now has to pick between — a rare orb you
+     can trip over on a beach is not rare, and a "one of each kind" that
+     included it would put one on an island in every full set. */
+  ok('...eight of the nine lie in the world', WORLD_ORB_IDS.length === 8);
+  ok('...and exactly one is bought and never found',
+    SHOP_ONLY_IDS.length === 1 && SHOP_ONLY_IDS[0] === 'aegis');
+  ok('...and the two lists partition the roster',
+    [...WORLD_ORB_IDS, ...SHOP_ONLY_IDS].sort().join() === [...ids].sort().join());
 
   /* EVERY ORB CHANGES A DIFFERENT VERB — the rule the clans follow, checked
      the same way. A roster where two of the eight both make her faster is a
@@ -4121,13 +4144,29 @@ console.log('\n--- the Powerup Kotodama ---');
       (k) => k !== 'counts' && k !== 'total' && JSON.stringify(a[k]) !== JSON.stringify(base[k])
     );
   };
-  const fields = ids.map(changed);
-  ok('every orb changes something', fields.every((f) => f.length > 0),
-    ids.filter((id, i) => !fields[i].length).join(' '));
+  /* ...WITH ONE DELIBERATE EXCEPTION, AND IT DECLARES ITSELF. An orb carrying
+     `needs` is a booster: it is supposed to do nothing alone, which is the
+     price it pays for being allowed to lift a cap. Read off the spec rather
+     than named here, so a second booster is covered the day somebody adds
+     one. */
+  const solo = ids.filter((id) => !ORB_BY_ID[id].needs);
+  const fields = solo.map(changed);
+  ok('every orb that stands alone changes something', fields.every((f) => f.length > 0),
+    solo.filter((id, i) => !fields[i].length).join(' '));
   ok('...exactly one thing each', fields.every((f) => f.length === 1));
   const flat = fields.flat();
   ok('...and no two change the same thing', new Set(flat).size === flat.length,
     flat.join(' '));
+
+  for (const o of POWER_ORBS.filter((x) => x.needs)) {
+    ok(`${o.id} on its own changes nothing at all`, changed(o.id).length === 0,
+      changed(o.id).join(' '));
+    const alone = JSON.stringify(aggregate([o.needs]));
+    const pair = JSON.stringify(aggregate([o.needs, o.id]));
+    ok(`...and does change something beside ${o.needs}`, alone !== pair);
+    ok('...and says so in words a nine-year-old can act on',
+      /useless|only|with/i.test(o.blurb), o.blurb);
+  }
 
   /* STACKING IS ADDITIVE. Eight Gale orbs compounded at x1.22 each is x4.9 and
      a kitten who physically cannot turn a corner on an island 56 units across;
@@ -4157,6 +4196,27 @@ console.log('\n--- the Powerup Kotodama ---');
   ok('...they shorten the wait instead', w8.cool < w1.cool);
   ok('...and there is still a real wait at eight',
     w8.cool >= WARD.coolMin && w8.cool > 0);
+
+  /* --- and the one orb that IS allowed to move it ------------------------
+     The cap is still the rule; 守 Long Guard is the exception, and it is an
+     exception you buy rather than one that arrives with the fourth copy of an
+     orb you were collecting anyway. */
+  const g1 = aggregate(['ward', 'aegis']).ward;
+  const g3 = aggregate(['ward', 'aegis', 'aegis', 'aegis']).ward;
+  line('ward with 守', `${w1.max.toFixed(1)}s -> ${g1.max.toFixed(1)}s`
+    + ` -> ${g3.max.toFixed(1)}s at three`);
+  ok('one Long Guard lengthens the block', g1.max === WARD.max + AEGIS.add);
+  ok('...additively, like every other stack in this file',
+    Math.abs((g3.max - WARD.max) - 3 * (g1.max - WARD.max)) < 1e-9);
+  ok('...and does not also shorten the wait', g1.cool === w1.cool);
+  ok('...and cannot be reached without a Ward to hold', aggregate(
+    Array(8).fill('aegis')).ward === null);
+  ok('the line the overtime is measured from is the SHIPPED max',
+    g1.over === WARD.max && g3.over === WARD.max);
+  ok('...and going past it costs a fifth more wait',
+    Math.abs(g1.penalty - (1 + AEGIS.penalty)) < 1e-9);
+  ok('`wardFor` is the one place both numbers come from',
+    JSON.stringify(wardFor(1, 1)) === JSON.stringify(g1));
   ok('the tail is much shorter than the block it follows',
     WARD.tail > 0 && WARD.tail < WARD.max / 4);
 
@@ -4377,6 +4437,267 @@ console.log('\n--- the Powerup Kotodama ---');
       !/wardhit/.test(wmain.replace(/\/\*[\s\S]*?\*\//g, '')));
   }
 
+  /* =========================================================================
+     THE SECONDS YOU CAN BUY, AND WHAT THEY COST AFTERWARDS.
+
+     守 Long Guard, the ninth orb: dealer-only, 2.5x, stackable, and useless
+     without a 壁 Ward beside it. It lifts the block's ceiling and charges a
+     fifth more wait for any block that runs past the SHIPPED ceiling.
+
+     THE OVERTIME PREDICATE IS THE PART WORTH CHECKING and it was wrong first
+     time — `wardUsed > over` alone made every ordinary full-length block pay,
+     because a block ends on the frame the clock crosses its ceiling and
+     therefore lands a fraction past it. The fix asks two questions and needs
+     no tolerance; both halves are driven below, and so are the two worked
+     examples from the request.
+     ========================================================================= */
+  console.log('\n--- the seconds you can buy ---');
+  {
+    /* HOLDING THE BLOCK BUTTON, because that is what a block IS. The first
+       version of this pad answered false to everything and every bubble in the
+       section was released on its first frame — a test that says nothing very
+       convincingly. */
+    const PADZ = {
+      mx: 0, my: 0,
+      down: (a) => a === 'mount', pressed: () => false, doubled: () => false,
+    };
+    const rig = (orbs) => {
+      const said = [];
+      const q = new Player({
+        texture: new THREE.Texture(), index: 0,
+        spawn: new THREE.Vector3(0, world.heightAt(0, 40).y, 40),
+        cols: 8, rows: 4, mirror: false,
+      });
+      q.setPowerOrbs(orbs);
+      q.wardCool = 0;
+      const hud = { sfx: (n) => said.push(n) };
+      q._popWard(null);
+      return { q, said, hud };
+    };
+    /* Hold the block down until it ends on its own, then run the wait out.
+       Stepped at a real frame length rather than jumped, because the whole
+       point of the predicate is what happens on the frame the clock crosses
+       a line. */
+    const run = (q, hud, secs) => {
+      for (let i = 0; i < Math.round(secs * 60); i++) {
+        q._stepSpecials(1 / 60, PADZ, world, hud);
+      }
+    };
+    /* STOPS ON THE FRAME THE BUBBLE ENDS, which is the only frame the wait can
+       be read on. Running a fixed number of frames past it means the cooldown
+       has already ticked down by however far past it went, and the assertion
+       is then measuring the overshoot rather than the penalty. */
+    const holdOut = (q, hud) => {
+      for (let i = 0; i < 900 && q.wardOn; i++) {
+        q._stepSpecials(1 / 60, PADZ, world, hud);
+      }
+    };
+
+    /* 1. NO 守, NO OVERTIME — INCLUDING AT THE CAP. This is the regression the
+       first version shipped and world-check caught: `wardUsed` lands past 2.0
+       on the frame the cap ends the block, so a clock-only test charged every
+       ordinary full-length block. */
+    {
+      const { q, hud, said } = rig(['ward']);
+      run(q, hud, WARD.max + 0.2);
+      ok('a plain block runs to the cap and ends', q.wardOn === false);
+      ok('...having gone a frame PAST the line, as it must', q.wardUsed > WARD.max);
+      ok('...and is still charged the ordinary wait, not the overtime',
+        q.wardOver === false
+        && Math.abs(q.wardCool - (WARD.cool - 0.2)) < 0.05, `${q.wardCool}`);
+      run(q, hud, WARD.cool + 0.3);
+      ok('...and comes back with no chime, because nothing was owed',
+        q.wardCool === 0 && !said.includes('wardready'), said.join(','));
+    }
+
+    /* 2. WITH 守 IT LASTS LONGER, AND GOING PAST THE OLD LINE COSTS. */
+    {
+      const { q, hud, said } = rig(['ward', 'aegis']);
+      ok('the ceiling is the shipped one plus the orb',
+        Math.abs(q._wardCeiling() - (WARD.max + AEGIS.add)) < 1e-9,
+        `${q._wardCeiling()}`);
+      holdOut(q, hud);
+      ok('...and the block really does run that long', q.wardUsed > WARD.max);
+      ok('...so it is overtime', q.wardOver === true);
+      ok('...and the wait is a fifth longer than her own wait',
+        Math.abs(q.wardCool - q.power.ward.cool * (1 + AEGIS.penalty)) < 0.02,
+        `${q.wardCool.toFixed(2)} vs ${q.power.ward.cool.toFixed(2)}`);
+      said.length = 0;
+      run(q, hud, q.wardCool + 0.3);
+      ok('...and when THAT is over she is told, once',
+        said.filter((n) => n === 'wardready').length === 1, said.join(','));
+      ok('...with the spark in the air', q.wardReadyT > 0 && q.wardSpark.visible);
+      ok('...and the debt cleared, so it cannot fire twice', q.wardOver === false);
+      said.length = 0;
+      run(q, hud, 2);
+      ok('...and it does not fire again for standing there',
+        !said.includes('wardready'), said.join(','));
+    }
+
+    /* 3. LET GO EARLY AND THERE IS NO PENALTY. This is the half that makes the
+       orb a decision rather than a stat: the new ceiling is available, and
+       not spending it costs nothing at all. */
+    {
+      const { q, hud, said } = rig(['ward', 'aegis']);
+      run(q, hud, 1.0);
+      q._dropWard(hud, 'release');
+      ok('a short block under a raised ceiling is not overtime',
+        q.wardOver === false && q.wardUsed < WARD.max);
+      ok('...and pays exactly her ordinary wait',
+        Math.abs(q.wardCool - q.power.ward.cool) < 1e-9);
+      said.length = 0;
+      run(q, hud, q.wardCool + 0.3);
+      ok('...and comes back in silence', !said.includes('wardready'), said.join(','));
+    }
+
+    /* 4. THE PLAYER'S OWN TWO EXAMPLES, WHERE A BLOW ENDS IT EARLY.
+
+       "if same situation, but 2.2s has passed and then player gets hit, with
+       current max timer set to 1.5s, then the shield is disabled from the hit
+       and the player must incur the recharge penalty for going over the 2s
+       default maximum time" — and the companion case at 1.5s elapsed, which
+       does not. The rule is that only the CLOCK decides, never the ceiling a
+       blow cut down: otherwise her sister chooses when she pays. */
+    {
+      const { q, hud } = rig(['ward', 'aegis']);
+      run(q, hud, 2.2);
+      ok('2.2s in, the bubble is still up under a raised ceiling',
+        q.wardOn === true && q.wardUsed > WARD.max);
+      q._wardTakeHit(hud);
+      q._wardTakeHit(hud);
+      ok('...two blows smash it, exactly as before', q.wardOn === false);
+      ok('...and the overtime is still owed, because 2.2 > 2.0',
+        q.wardOver === true);
+      ok('...even though the ceiling it ended on was BELOW the old line',
+        q.wardMax < WARD.max, `${q.wardMax}`);
+    }
+    {
+      const { q, hud } = rig(['ward', 'aegis']);
+      run(q, hud, 1.5);
+      q._wardTakeHit(hud);
+      q._wardTakeHit(hud);
+      ok('the same smash at 1.5s owes nothing', q.wardOver === false);
+      ok('...and pays her ordinary wait',
+        Math.abs(q.wardCool - q.power.ward.cool) < 1e-9);
+    }
+
+    /* 5. THE DEBT DIES WITH THE WAIT IT WAS OWED ON. Getting on a dragon
+       clears the cooldown, so a flag left behind would chime at some unrelated
+       moment later, after a wait she never served. */
+    {
+      const { q, hud } = rig(['ward', 'aegis']);
+      holdOut(q, hud);
+      ok('there is a debt to forget', q.wardOver === true && q.wardCool > 0);
+      q._clearSpecials();
+      ok('...and mounting forgets it with the wait',
+        q.wardOver === false && q.wardCool === 0);
+    }
+
+    /* 6. AND SO DOES THE DOUBLE-TAP REFUND. The latch hands back the wait the
+       release charged; handing back the wait and keeping the debt would chime
+       at the end of a wait that never happened. */
+    {
+      const { q, hud } = rig(['ward', 'aegis']);
+      holdOut(q, hud);
+      ok('a full block owes', q.wardOver === true);
+      q.wardRegrab = WARD.regrab;
+      q.wardUsed = 0;
+      ok('...the second tap takes the wait back', q._latchWard(hud) === true
+        && q.wardCool === 0);
+      ok('...and the debt with it', q.wardOver === false);
+    }
+
+    /* 7. THE SPARK FLIES IN, WHICH IS THE ONLY THING SEPARATING IT FROM THE
+       SMASH. Same maths, opposite sign — and if it ever came out flying
+       outwards it would read as losing the shield at the moment she got it
+       back, which is the worst possible thing for this cue to say. */
+    {
+      const { q, hud } = rig(['ward', 'aegis']);
+      holdOut(q, hud);
+      run(q, hud, q.wardCool + 0.02);
+      ok('the spark is up', q.wardReadyT > 0 && q.wardSpark.visible);
+      /* ONE FRAME OF DRAWING BEFORE THE FIRST READING. `_stepSpecials` starts
+         the spark; `_updateWardMesh` is what PLACES it, and sampling a radius
+         off shards that have never been positioned reads zero and makes
+         "flying inwards" true of anything. */
+      q._updateWardMesh(1 / 60);
+      const r0 = q.wardSparks[0].position.length();
+      ok('...starting out away from her', r0 > WARD.radius);
+      for (let i = 0; i < 8; i++) q._updateWardMesh(1 / 60);
+      ok('...and it is coming IN, not going out',
+        q.wardSparks[0].position.length() < r0);
+      ok('...brightest in the middle rather than at the start',
+        q.wardSparks[0].material.opacity > 0);
+      for (let i = 0; i < 60; i++) q._updateWardMesh(1 / 60);
+      ok('...then puts itself away',
+        q.wardReadyT === 0 && !q.wardSpark.visible);
+      ok('...on unit directions, none of them the same',
+        q.wardSparks.every((m) => Math.abs(m.userData.dir.length() - 1) < 1e-6)
+        && new Set(q.wardSparks.map((m) => `${m.userData.dir.x.toFixed(3)},${m.userData.dir.z.toFixed(3)}`))
+          .size === q.wardSparks.length);
+    }
+
+    /* 8. THE SCREENS. Nine kinds do not fit a panel that was eight rows tall,
+       and the failure is silent: the footer — which carries the key names on a
+       desktop and the actual buttons on a phone — goes off the bottom, and the
+       stick has no way to say there is a row below. */
+    const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+    const prof = readFileSync(new URL('../src/systems/profile.js', import.meta.url), 'utf8');
+    ok('the dealer\'s shelf is its own scrolling box',
+      /\.kd-shelf\s*\{[^}]*overflow-y:\s*auto/.test(css) && /kd-shelf/.test(prof));
+    const rows = css.match(/--shelf-rows:\s*(\d+)/);
+    ok('...showing the eight the screen was built around', rows?.[1] === '8');
+    /* THE FADE'S ROW NUMBER IS `--shelf-rows` PLUS ONE and the two must move
+       together — it is the count at which something first sits below the box's
+       own bottom edge. On when nothing is hidden dims a row for no reason; off
+       when something is says the list has ended. */
+    const nth = css.match(/\.kd-shelf:not\(:has\(\.kd-row:nth-child\((\d+)\)\)\)/);
+    ok('...and the "there is more" fade turns on one row later',
+      Number(nth?.[1]) === Number(rows?.[1]) + 1, `${nth?.[1]} vs ${rows?.[1]}`);
+    ok('...and the roster has already outgrown the box, so it is doing work',
+      ORB_IDS.length > Number(rows?.[1]));
+    ok('her own slot rack is bounded too, for when MAX_EQUIPPED grows',
+      /\.kd-slots\s*\{[^}]*overflow-y:\s*auto/.test(css));
+    ok('the cursor is walked back into view after every repaint',
+      /_followCursors\(\)/.test(prof) && /scrollIntoView/.test(prof));
+    ok('...only for a STICK, never for a tap that is already on screen',
+      /this\._moved = index;/.test(prof));
+
+    /* 9. THE PRICE IS ON THE ROW WHERE IT IS NEWS, AND NOWHERE ELSE. A figure
+        repeated on all nine rows says one thing nine times; none at all lets a
+        2.5x orb ambush her at the confirmation. */
+    const insp = readFileSync(new URL('../src/systems/inspector.js', import.meta.url), 'utf8');
+    ok('the shelf row prices the rare orb and only the rare orb',
+      /cost !== K\.price/.test(prof) && /kd-rare/.test(prof));
+    ok('...and the personal card does the same', /pc-rare/.test(insp));
+    ok('...and both questions quote the orb its own price, not the shelf\'s',
+      /priceOf\(id\)/.test(prof) && /sellPriceOf\(id\)/.test(prof)
+      && !/\$\{K\.price\} points/.test(prof));
+    ok('...and the ward row is handed the whole set, so it can add the boost in',
+      /detail\(n, counts\)/.test(prof) && /detail\(n, counts\)/.test(insp));
+
+    /* 10. AND THE HELP CARD SAYS THE TWO THINGS A KID HAS TO KNOW. Where it
+        is, and that it is useless alone — the second one is the whole reason
+        it is not filed under the eight findable orbs. */
+    const helpHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    /* FROM THE SUMMARY, NOT THE FIRST MENTION. "The rare orb" also appears in
+       the eight-orb card that points AT this one, and slicing from there read
+       the wrong card's body and failed every assertion below. */
+    const card = helpHtml.slice(helpHtml.indexOf('<span class="ht-title">The rare orb'));
+    const body = card.slice(0, card.indexOf('</details>'));
+    ok('the Help card says the dealer is the only place it is',
+      /only the dealer has it|only ever at the dealer/i.test(body));
+    ok('...and that it does nothing on its own',
+      /does nothing on its own/i.test(body));
+    ok('...and warns about the longer wait',
+      /a fifth longer/i.test(body));
+    ok('...and the eight-orb card no longer implies the roster is all findable',
+      /ninth kind that is[\s\S]{0,80}only ever at the dealer/i.test(helpHtml));
+
+    const aud = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+    ok('the recharge chime exists in the sound set', /case 'wardready':/.test(aud));
+  }
+
   /* --- the economy --- */
   const price = orbPrice(world.pointsTotal);
   const sell = orbSellPrice(world.pointsTotal);
@@ -4591,7 +4912,12 @@ console.log('\n--- the Powerup Kotodama ---');
   ok('...every kind, exactly once',
     new Set(K.pickups.map((p) => p.id)).size === 8);
   ok('...so NOTHING can be stacked by walking',
-    ORB_IDS.every((id) => K.pickups.filter((p) => p.id === id).length === 1));
+    WORLD_ORB_IDS.every((id) => K.pickups.filter((p) => p.id === id).length === 1));
+  /* AND THE RARE ONE IS NOT OUT THERE. This is the check that says what the
+     word "rare" is actually worth: not a lower spawn rate, but no spawn at
+     all. The prize draw is asserted against the same list below. */
+  ok('...and the dealer-only orb is nowhere in the world',
+    K.pickups.every((p) => !SHOP_ONLY_IDS.includes(p.id)));
   ok('...spread over every island but the arena',
     new Set(K.pickups.map((p) => world.heightAt(p.position.x, p.position.z)?.island)).size
       >= world.questIslands.length - 1);
@@ -4681,16 +5007,49 @@ console.log('\n--- the Powerup Kotodama ---');
      stacking rule lives. Four of each stat orb — the four whose whole point is
      a number going up — and one of each move, where a second copy only widens
      something she can already do. */
-  const stackable = POWER_ORBS.filter((o) => o.stack).map((o) => o.id);
-  line('stackable in stock', stackable.map((id) => `${id} x${K.stock[id]}`).join(', '));
-  ok('the four stat orbs are the stackable ones',
-    stackable.join() === 'swift,reach,vigor,leap');
+  /* THE DEEP SHELF IS THE FOUR STAT ORBS, and `stack` alone no longer names
+     them: 守 Long Guard stacks in play but is stocked off the MOVE orbs'
+     shallow shelf, because what it needs is to be buyable in a PAIR rather
+     than four deep. `stockN` is how a spec says so. */
+  const deep = POWER_ORBS.filter((o) => o.stack && !Number.isFinite(o.stockN))
+    .map((o) => o.id);
+  line('deep shelf', deep.map((id) => `${id} x${K.stock[id]}`).join(', '));
+  ok('the four stat orbs are the deep-shelf ones',
+    deep.join() === 'swift,reach,vigor,leap');
   ok(`...and the dealer holds ${STOCK_STACKABLE} of each`,
-    stackable.every((id) => K.stock[id] === STOCK_STACKABLE));
-  ok('...one of every move', ids.filter((id) => !stackable.includes(id))
-    .every((id) => K.stock[id] === 1));
+    deep.every((id) => K.stock[id] === STOCK_STACKABLE));
+  ok('...one of every move', ids.filter((id) => !ORB_BY_ID[id].stack)
+    .every((id) => K.stock[id] === STOCK_UNIQUE));
+  ok('...and TWICE that of the booster, which is what was asked for',
+    K.stock.aegis === 2 * STOCK_UNIQUE && K.stock.aegis === 2);
   ok('stock comes from stockFor, not from a second list',
     ids.every((id) => K.stock[id] === stockFor(id)));
+  ok('...and the party bonus still reaches it',
+    stockFor('aegis', 4) === stockFor('aegis', 2) + 2);
+
+  /* --- what the rare one costs ------------------------------------------
+     2.5x was the number asked for, and it is a MULTIPLIER on a price derived
+     from the world's own point total rather than a figure typed in — so
+     adding a prop to an island moves both together. */
+  ok('the booster costs two and a half times an ordinary orb',
+    K.priceOf('aegis') === Math.round(K.price * 2.5), `${K.priceOf('aegis')} vs ${K.price}`);
+  ok('...and every other kind still costs the shelf price',
+    ids.filter((id) => id !== 'aegis').every((id) => K.priceOf(id) === K.price));
+  ok('...it sells back at the same fraction, not the common price',
+    K.sellPriceOf('aegis') === Math.round(K.priceOf('aegis') * 0.75)
+    && K.sellPriceOf('aegis') > K.sellPrice);
+  ok('...so buying it and selling it back is still a loss, not a profit',
+    K.sellPriceOf('aegis') < K.priceOf('aegis'));
+  ok('...and one purse cannot reach the pair it needs',
+    K.priceOf('ward') + 2 * K.priceOf('aegis') > purse);
+  ok('the refusal quotes the orb its own price', (() => {
+    const q = aw.players[0];
+    const had = q.score;
+    q.score = K.price;
+    const why = K.buyRefusal(q, 'aegis');
+    q.score = had;
+    return typeof why === 'string' && why.includes(`${K.priceOf('aegis') - K.price}`);
+  })());
   /* A DEEP SHELF MUST NOT MAKE THEM CHEAP. The scarcity is the purse, not the
      shelf: four Gale orbs on the counter and a wallet that reaches three orbs
      TOTAL is what turns "I want another one" into a conversation with her
@@ -8827,8 +9186,11 @@ console.log('\n--- the three power moves ---');
   ok('three players scatter twelve', worldSpawnCount(3) === 12);
   ok('four players scatter sixteen', worldSpawnCount(4) === 16);
   ok('it is four per player', WORLD_PER_PLAYER === 4);
-  ok('...and never fewer than one of each kind',
-    worldSpawnCount(1) >= ORB_IDS.length);
+  /* ...OF EACH KIND THAT IS OUT THERE. `ORB_IDS` would count the dealer-only
+     orb and quietly inflate the floor by one, which is the shape of mistake
+     this whole split exists to make visible. */
+  ok('...and never fewer than one of each findable kind',
+    worldSpawnCount(1) >= WORLD_ORB_IDS.length);
 
   /* THE PRICE IS A SHARE OF A FIXED POT, so it has to fall as the party grows
      or a kitten's share silently stops buying the three orbs it is meant to. */
@@ -10196,6 +10558,7 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
     ['How the arena works', 'The arena'],
     ['Battle Feast &mdash; eating'.replace('&mdash;', '—'), 'The arena'],
     ['Power-up orbs', 'The arena'],
+    ['The rare orb — 守 Long Guard', 'The arena'],
     ['Special abilities', 'The arena'],
     ["Dealer's Stall &amp; Trading", 'The arena'],
   ]) {
@@ -10211,7 +10574,7 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
   const subs = [...help.matchAll(/<details class="help-card help-sub" name="([^"]+)">/g)]
     .map((m) => m[1]);
   ok('...and every sub-card is in its parent\'s own accordion group',
-    subs.length === 9 && subs.every((n) => n === 'help-move' || n === 'help-arena'),
+    subs.length === 10 && subs.every((n) => n === 'help-move' || n === 'help-arena'),
     `${subs.length}: ${[...new Set(subs)].join(', ')}`);
   ok('...never in the top-level group, which would close its parent',
     !subs.includes('help'));

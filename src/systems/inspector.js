@@ -1,4 +1,4 @@
-import { POWER_ORBS, ORB_BY_ID, MAX_EQUIPPED } from '../entities/powerorb.js';
+import { POWER_ORBS, ORB_BY_ID, MAX_EQUIPPED, countsOf } from '../entities/powerorb.js';
 import { MAX_PLAYERS, cssFor } from '../core/palette.js';
 
 /* ---------------------------------------------------------------------------
@@ -427,19 +427,32 @@ export class Inspector {
         : '<i class="pc-slot"></i>');
     }
 
+    /* THE WHOLE SET, so 壁 Ward's row can print the block length she actually
+       has rather than the shipped one — it grows with the 守 Long Guard orbs
+       beside it. Every other spec ignores the second argument. */
+    const counts = countsOf(owned);
     const rows = POWER_ORBS.map((spec, k) => {
       const n = owned.filter((x) => x === spec.id).length;
       const stock = K?.stock?.[spec.id] ?? 0;
+      /* HER OWN PRICE ON HER OWN ROW WHEN IT IS NOT THE SHELF PRICE. The
+         footer prints the ordinary buy/sell pair and that is true of eight of
+         the nine kinds; the ninth says so here, because a card that showed
+         only the common figure would be quietly wrong about the one orb whose
+         price is the thing worth knowing about it. */
+      const cost = K?.priceOf?.(spec.id) ?? K?.price ?? 0;
+      const rare = K?.price != null && cost !== K.price
+        ? `<div class="pc-rare">RARE ${cost}</div>` : '';
       return `<div class="pc-orb${k === c.i ? ' cursor' : ''}${n ? ' owned' : ''}${stock ? '' : ' out'}"
         style="--orb:#${spec.color.toString(16).padStart(6, '0')}"
         data-side="${index}" data-row="${k}">
         <i class="pc-dot">${spec.kanji}</i>
         <div class="pc-orb-main">
           <b>${spec.name}</b> <span class="pc-tag">${spec.label}</span>
-          <div class="pc-dim">${n ? spec.detail(n) : spec.blurb}</div>
+          <div class="pc-dim">${n ? spec.detail(n, counts) : spec.blurb}</div>
         </div>
         <div class="pc-orb-num">
           <div>${n ? `wearing ${n}` : '—'}</div>
+          ${rare}
           <div class="pc-dim">${stock ? `shelf ${stock}` : 'sold out'}</div>
         </div>
       </div>`;

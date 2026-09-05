@@ -338,6 +338,35 @@ Built this session, driven in the running game, not yet in front of anybody:
   the first frame and a second one after he walked to the arena. It follows him
   now and turns off with his sprite.
 
+**The ninth Kotodama is in, and is not yet played back.** 守 Long Guard — the
+first orb that is bought and never found.
+
+- **It is the dealer's alone.** Not a lower spawn rate, no spawn at all: the
+  scatter and the Awakening prize both draw from a new `WORLD_ORB_IDS`, which is
+  the roster minus this one. Two kittens still find exactly the eight they
+  always did.
+- **It does nothing on its own, and that is what pays for it being strong.**
+  It lengthens the 壁 Ward bubble beside it and there is no bubble without a
+  Ward — the SET costs two slots before it costs a point. The spec declares
+  `needs: 'ward'` so `world-check`'s "every orb changes something" rule knows
+  about the exception structurally rather than by name.
+- **Hold the block past the shipped two seconds and the wait is a fifth
+  longer**, then a chime and a blue spark gather into her when it is finally
+  back. Let go before two seconds and there is no penalty at all, so the orb
+  widens a choice rather than handing over a stat.
+- **The predicate asks two questions and needs no tolerance.** The first
+  version charged every ordinary full-length block, because a block ends the
+  frame the clock crosses its ceiling and therefore lands just past it.
+  world-check caught it on the first run. → [endgame.md](docs/notes/endgame.md)
+- **The screens learned that "eight" was two different numbers.** `MAX_EQUIPPED`
+  is what she wears; the roster is nine. The dealer's shelf is now a bounded,
+  scrolling box with the cursor walked into view and a fade that says there is
+  more, so the footer — the only way out on a phone — cannot be pushed off the
+  bottom by a tenth orb later.
+- 2.5x price, two on the shelf, `AEGIS` on `/tuning.html`, its own Help card.
+  **`BLAST` got a tuning panel too** — a new check found it had a `tune()` table
+  and no page, which is how a balance tool rots. 80 new checks.
+
 **The shield costs something to run into now, and is not yet played back.**
 Asked for after a round where one kitten held the block button from the bell to
 the bell: a bubble that pays nothing to be hit gives the girl attacking her no

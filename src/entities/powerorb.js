@@ -35,7 +35,16 @@ import { tune } from '../core/tuning.js';
    eight-stack case for each one rather than the single.
 --------------------------------------------------------------------------- */
 
-/** Nobody carries more than this. The profile screen draws exactly 8 slots. */
+/**
+ * Nobody carries more than this.
+ *
+ * IT IS NOT THE SIZE OF THE ROSTER AND THE TWO USED TO BE THE SAME NUMBER.
+ * There were eight kinds and eight slots, so every screen drew eight of
+ * something and it was never clear which eight it meant. The roster is nine
+ * now — see `aegis` — and the screens that show a LIST of kinds scroll, while
+ * the screens that show her SLOTS still draw exactly this many. Any screen
+ * that hard-codes 8 is wrong about one of the two.
+ */
 export const MAX_EQUIPPED = 8;
 
 /**
@@ -93,8 +102,17 @@ export const POWER_ORBS = [
     label: 'WARD',
     color: 0x9fd8ff,
     blurb: 'HOLD the dragon button for a shield you cannot be hurt through.',
-    detail: (n) => `${WARD.max.toFixed(1)}s of block, `
-      + `${Math.max(WARD.coolMin, WARD.cool - 0.25 * (n - 1)).toFixed(2)}s wait`,
+    /* THE ONE ROW THAT READS THE REST OF THE SET. Everything else on this
+       screen is a function of its own count; the ward's block length is not
+       any more, and printing a flat 2.0s to a girl wearing two 守 would be the
+       shelf lying about the thing she paid for. `counts` is optional, so a
+       caller that has not got it still gets the shipped numbers. */
+    detail: (n, counts) => {
+      const nA = counts?.aegis ?? 0;
+      const g = wardFor(n, nA);
+      return `${g.max.toFixed(1)}s of block, ${g.cool.toFixed(2)}s wait`
+        + (nA ? ` — 守 +${(AEGIS.add * nA).toFixed(1)}s` : '');
+    },
   },
   {
     id: 'dive',
@@ -128,10 +146,79 @@ export const POWER_ORBS = [
     blurb: 'Attack while sprinting to charge straight through.',
     detail: (n) => `${(CHARGE.dist + 4 * (n - 1)).toFixed(0)}-unit charge`,
   },
+  {
+    /* THE NINTH, AND THE FIRST ONE THAT IS NOT IN THE WORLD.
+
+       Every other orb lies on an island waiting to be walked up. This one is
+       only ever on the dealer's shelf, and that is the whole shape of it: it
+       is the rare thing, the one you have to have been to the ring for, and a
+       rare thing you can trip over on a beach is not rare.
+
+       IT DOES NOTHING ON ITS OWN, ON PURPOSE. Wearing it without 壁 Ward is a
+       wasted slot — `aggregate` returns `ward: null` with no Ward orb, so
+       there is nothing for this to add to. That is a real cost and it is the
+       reason it may be as strong as it is: the set costs her two slots before
+       it costs her a point, and the shelf's price is on top of that.
+
+       AND IT IS THE ONE ORB THAT MOVES `WARD.max`, WHICH WAS A HARD CAP.
+       That cap is still the rule — eight WARD orbs do not lengthen the block
+       by a frame, and `world-check` still asserts it. What changed is that
+       there is now exactly one way to buy seconds, it is visible on the shelf,
+       it is expensive, it eats slots, and going past the old two seconds
+       charges her a longer wait afterwards (`AEGIS.penalty`). A cap you can
+       lift by paying is a decision; a cap that quietly rises with a stack of
+       the same orb is the state the ward was designed not to be. */
+    id: 'aegis',
+    stack: true,
+    shopOnly: true,
+    /* WHAT IT IS USELESS WITHOUT, as a field rather than as a sentence in the
+       blurb. `world-check` reads it: every other orb has to change something
+       on its own, and this one has to change NOTHING on its own and something
+       when worn beside what it names. Written as prose that rule could only
+       have been checked by naming `aegis` in the test, which stops being true
+       the day there is a second booster. */
+    needs: 'ward',
+    /* Twice what a move orb stocks, because a booster is only half a purchase:
+       the pair is what does anything, and a shelf holding one of these behind
+       a Ward she also has to find is a set nobody completes. */
+    stockN: 2,
+    priceK: 2.5,
+    name: 'Nagamori',
+    kanji: '守',
+    label: 'LONG GUARD',
+    color: 0x5b6bff,
+    blurb: 'Rare — the dealer only. Your 壁 Ward holds for longer. Useless without one.',
+    detail: (n) => `+${(AEGIS.add * n).toFixed(1)}s of block, with 壁 Ward`,
+  },
 ];
+
+/**
+ * The ids that are scattered over the islands, and the ones that are not.
+ *
+ * A SHOP-ONLY ORB IS A NEW KIND OF THING and everything that reads the roster
+ * has to be asked which list it wants. `spawnPickups` cycles WORLD_ORB_IDS so
+ * the guarantee that every power is findable on foot still holds for every
+ * power that is supposed to be; the Awakening prize draws from the same list,
+ * because a rare orb falling out of the sky at the moment the endgame opens is
+ * the one way to make it not rare. `ORB_IDS` stays the whole roster and is
+ * what the shelf, the profile and the trade screen count.
+ */
+export const WORLD_ORB_IDS = POWER_ORBS.filter((o) => !o.shopOnly).map((o) => o.id);
+export const SHOP_ONLY_IDS = POWER_ORBS.filter((o) => o.shopOnly).map((o) => o.id);
 
 export const ORB_BY_ID = Object.fromEntries(POWER_ORBS.map((o) => [o.id, o]));
 export const ORB_IDS = POWER_ORBS.map((o) => o.id);
+
+/**
+ * How many of each kind are in a list of ids.
+ *
+ * THE SECOND ARGUMENT `detail` TAKES. One row on every inventory screen — 壁
+ * Ward's — is a function of an orb that is not itself, so a screen drawing a
+ * row has to be able to hand it the rest of the set. Same shape `aggregate`
+ * puts in `counts`, so the two are interchangeable at a call site.
+ */
+export const countsOf = (ids = []) =>
+  Object.fromEntries(ORB_IDS.map((id) => [id, ids.filter((x) => x === id).length]));
 
 /**
  * How many of each the dealer has at open.
@@ -156,12 +243,23 @@ export const ORB_IDS = POWER_ORBS.map((o) => o.id);
  * price you cannot meet, and an empty shelf is just being late. The four move
  * orbs go from one to three rather than to four, so they stay the thing you
  * mostly get by trading.
+ *
+ * A SPEC MAY NAME ITS OWN NUMBER with `stockN`, and exactly one does. 守 Long
+ * Guard is stackable in effect but is stocked off the MOVE orbs' shallow shelf
+ * rather than the deep one, at twice their count — it is a booster, so what it
+ * needs is to be buyable in a PAIR, not to be buyable four deep. The party
+ * bonus is added to it the same as everything else, so a fourth kitten still
+ * widens the shelf rather than finding it empty.
  */
 export const STOCK_STACKABLE = 4;
 export const STOCK_UNIQUE = 1;
 export const stockFor = (id, players = 2) => {
   const extra = Math.max(0, players - 2);
-  return (ORB_BY_ID[id]?.stack ? STOCK_STACKABLE : STOCK_UNIQUE) + extra;
+  const spec = ORB_BY_ID[id];
+  const base = Number.isFinite(spec?.stockN)
+    ? spec.stockN
+    : (spec?.stack ? STOCK_STACKABLE : STOCK_UNIQUE);
+  return base + extra;
 };
 
 /* --------------------------- the three abilities -------------------------- */
@@ -187,6 +285,14 @@ export const stockFor = (id, players = 2) => {
  * Ward orbs she is wearing. Stacks buy a shorter WAIT instead, which is the
  * only one of the two numbers that can grow without the shield eventually
  * being up more than it is down.
+ *
+ * ONE ORB LIFTS IT AND IT IS NOT THIS ONE. 守 Long Guard, the ninth orb, is
+ * bought and never found, costs two and a half times the shelf price, occupies
+ * a second slot beside the Ward it is useless without, and charges her a
+ * longer wait for every block she runs past the old two seconds (`AEGIS`).
+ * That is the difference the cap was defending: seconds you PAY for are a
+ * decision, seconds that arrive with the fourth copy of an orb you were
+ * collecting anyway are the state the ward was designed not to be.
  *
  * `tail` — it keeps working for a fifth of a second after she lets go. Without
  * it, a blow that lands on the exact frame her thumb comes off reads as the
@@ -253,6 +359,64 @@ export const WARD = tune('WARD', {
   radius: 2.6,
   regrab: 0.5,
 });
+
+/**
+ * 守 LONG GUARD — the seconds you can buy, and what they cost afterwards.
+ *
+ * `add` IS PER ORB AND ADDITIVE, like every other stack in this file. One is
+ * 2.6s of block, two is 3.2s. The multiplicative version reaches numbers that
+ * are not a shield any more, and the additive one is also the version a child
+ * can predict: another orb is another six tenths, every time.
+ *
+ * `penalty` IS WHAT MAKES THE EXTRA SECONDS A DECISION RATHER THAN A GIFT, and
+ * the shape of it was asked for precisely: hold the bubble past the DEFAULT two
+ * seconds and the wait afterwards is a fifth longer. So the orb does not make
+ * her stronger, it widens the choice she is making with the button — she can
+ * spend her new ceiling and pay for it, or let go at two seconds and be back as
+ * fast as she ever was. A booster nobody can misuse is a stat, not a move.
+ *
+ * IT IS MEASURED AGAINST THE DEFAULT MAX, NOT THE CURRENT CEILING, AND THAT IS
+ * DELIBERATE. `hitCut` halves the ceiling when a blow lands, so a bubble that
+ * was smashed at 1.5s has a ceiling of 1.5s and has "run to the end" — charging
+ * her the overtime for that would mean her SISTER decides when she pays it. The
+ * question is only ever "how long was it actually up", which is `wardUsed`, and
+ * only ever against `over`. The player's own example: 2.2s elapsed and then a
+ * hit that ends it at a 1.5s ceiling still pays, because 2.2 > 2.0.
+ *
+ * WITHOUT THE ORB THIS CANNOT FIRE. No 守 means the ceiling IS `over`, so
+ * `wardUsed > over` is never true on the frame the block ends — the whole
+ * mechanic is dead code for anybody who has not bought into it, which is what
+ * lets it exist at all without touching the two-player game.
+ */
+export const AEGIS = tune('AEGIS', {
+  add: 0.6,
+  penalty: 0.2,
+  /* How long the "you can block again" spark lasts. Long enough to be seen in
+     a quarter pane at arm's length, short enough that it is over before she
+     has finished pressing the button it is telling her about. */
+  ready: 0.5,
+});
+
+/**
+ * The two ward numbers, for a given count of each orb.
+ *
+ * ONE PLACE, BECAUSE THREE SCREENS AND THE PLAYER ALL ASK. `aggregate` builds
+ * the live one; the profile row and the personal card print it; and the ward's
+ * own `detail` calls it so the sentence a girl reads on the shelf is computed
+ * from the same line that runs the bubble. A number shown in words and a number
+ * used in play that are worked out separately are two numbers.
+ */
+export function wardFor(ward = 1, aegis = 0) {
+  return {
+    max: WARD.max + AEGIS.add * Math.max(0, aegis),
+    cool: Math.max(WARD.coolMin, WARD.cool - 0.25 * (ward - 1)),
+    /* CARRIED WITH THE NUMBERS RATHER THAN LOOKED UP, so `_dropWard` does not
+       have to know which orb causes an overtime penalty — only that this block
+       had a line it could go past and what it costs to have gone past it. */
+    over: WARD.max,
+    penalty: 1 + AEGIS.penalty,
+  };
+}
 
 /**
  * The power dive. Interact, in the air, and she drops.
@@ -408,6 +572,7 @@ export function aggregate(ids = []) {
   const dive = n('dive');
   const tri = n('tri');
   const charge = n('charge');
+  const aegis = n('aegis');
 
   return {
     counts: Object.fromEntries(ORB_IDS.map((id) => [id, n(id)])),
@@ -416,16 +581,17 @@ export function aggregate(ids = []) {
     reach: 1 + 0.30 * reach,
     hp: 100 + 30 * vigor,
     jumps: leap,
-    /* Only the WAIT moves with the stack. The two seconds of block are a hard
-       cap: it is the number that decides whether the shield is a decision or a
-       state, and there is no count of orbs that should turn it back into a
-       state. See WARD. */
-    ward: ward
-      ? {
-          max: WARD.max,
-          cool: Math.max(WARD.coolMin, WARD.cool - 0.25 * (ward - 1)),
-        }
-      : null,
+    /* Only the WAIT moves with a stack of WARDS. The two seconds of block are
+       still a hard cap against its own orb — no count of them turns the shield
+       back into a state she is in. `aegis` is the one thing that lifts it, and
+       it is a different orb, bought rather than found, that does nothing at all
+       on its own. See WARD and AEGIS.
+
+       AND IT IS NULL WITHOUT A WARD, WHICH IS HOW 守 STAYS HONEST. Eight Long
+       Guards and no Ward is eight wasted slots — there is no object here for
+       them to add to — and that is the sentence the shelf and the Help card
+       both make: it is useless on its own. */
+    ward: ward ? wardFor(ward, aegis) : null,
     dive: dive ? { dmg: DIVE.dmg + 6 * (dive - 1) } : null,
     tri: tri ? { dmgK: 1 + 0.15 * (tri - 1) } : null,
     charge: charge ? { dist: CHARGE.dist + 4 * (charge - 1) } : null,
@@ -466,6 +632,25 @@ export const orbPrice = (totalPoints, players = 2) =>
   Math.round(totalPoints / Math.max(1, players) / BUYS_PER_PURSE);
 export const orbSellPrice = (totalPoints, players = 2) =>
   Math.round(orbPrice(totalPoints, players) * SELL_FRACTION);
+
+/**
+ * What THIS orb costs, which is not what every orb costs any more.
+ *
+ * `priceK` IS A MULTIPLIER ON THE SHELF PRICE, NOT A PRICE. The base is
+ * derived from the world's own point total (see above) and has to stay derived
+ * — a rare orb with a typed-in price would drift the moment a prop was added
+ * to an island. 守 is 2.5x, so it is most of a purse on its own and the pair it
+ * needs is more than one; that is the whole of its rarity, and it is a number
+ * on the shelf rather than a lock on a door.
+ *
+ * SELLING IS THE SAME FRACTION OF THE SAME PRICE, so a rare orb sells for more
+ * than a common one and the 25% fee is proportional. Selling a 守 back at the
+ * common price would have been a way to convert points into fewer points.
+ */
+export const orbPriceFor = (id, totalPoints, players = 2) =>
+  Math.round(orbPrice(totalPoints, players) * (ORB_BY_ID[id]?.priceK ?? 1));
+export const orbSellPriceFor = (id, totalPoints, players = 2) =>
+  Math.round(orbPriceFor(id, totalPoints, players) * SELL_FRACTION);
 
 /* ------------------------- the worn companion orb ------------------------- */
 

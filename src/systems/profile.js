@@ -1,4 +1,4 @@
-import { POWER_ORBS, ORB_BY_ID, ORB_IDS, MAX_EQUIPPED } from '../entities/powerorb.js';
+import { POWER_ORBS, ORB_BY_ID, ORB_IDS, MAX_EQUIPPED, countsOf } from '../entities/powerorb.js';
 import { MAX_PLAYERS } from '../core/palette.js';
 
 /* ---------------------------------------------------------------------------
@@ -163,6 +163,8 @@ export class ProfileScreen {
        of them, not less. */
     this.sides = Array.from({ length: MAX_PLAYERS }, () => new Side());
     this._sig = '';
+    /** Whose cursor a stick moved this frame, for `_followCursors`. */
+    this._moved = null;
     this._flash = '';
     this._flashT = 0;
 
@@ -414,6 +416,10 @@ export class ProfileScreen {
     }
     if (step && rows > 0) {
       side.i = (side.i + step + rows) % rows;
+      /* WHOSE CURSOR MOVED, for `_followCursors`. Only a STICK sets it: a tap
+         put the row under her finger, so it is on screen by definition, and
+         scrolling to it could only move it out from under somebody else. */
+      this._moved = index;
       this.game.audio?.play('menu');
     }
 
@@ -543,9 +549,13 @@ export class ProfileScreen {
     const id = ORB_IDS[this.sides[index].i];
     const why = K.buyRefusal(player, id);
     if (why) { this._say(why); this.game.audio?.play('deny'); return; }
+    /* `priceOf`, NEVER `K.price`. Eight of the nine kinds cost the shelf
+       price and one does not, and the number a girl is asked to confirm has to
+       be the number she is charged — a confirmation quoting the wrong figure
+       is worse than no confirmation, because she read it and agreed to it. */
     this._ask(index, {
       kind: 'buy', id,
-      text: `Buy ${ORB_BY_ID[id].name} for ${K.price} points?`,
+      text: `Buy ${ORB_BY_ID[id].name} for ${K.priceOf(id)} points?`,
     });
   }
 
@@ -561,7 +571,8 @@ export class ProfileScreen {
     }
     this._ask(index, {
       kind: 'sell', id,
-      text: `Sell ${ORB_BY_ID[id].name} for ${K.sellPrice} points? You paid ${K.price}.`,
+      text: `Sell ${ORB_BY_ID[id].name} for ${K.sellPriceOf(id)} points?`
+        + ` You paid ${K.priceOf(id)}.`,
     });
   }
 
@@ -866,6 +877,39 @@ export class ProfileScreen {
           + ' — <b>both</b> must confirm';
     }
     this._paintActions();
+    this._followCursors();
+  }
+
+  /**
+   * Keep the row a stick just moved to on screen.
+   *
+   * ONE SHELF, UP TO FOUR CURSORS, AND ONLY ONE SCROLL POSITION. That is not a
+   * problem this screen can solve properly — four girls looking at one list
+   * can want four different parts of it — so it solves the half that matters:
+   * `block: 'nearest'` moves the box ONLY when the row is actually off screen,
+   * so a sister scrolling within what everybody can already see moves nothing,
+   * and the shelf shifts only when it is the difference between a kitten
+   * seeing her own cursor and not seeing it.
+   *
+   * THE MOVED ONE, NOT THE FIRST ONE. Scrolling to a fixed cursor would mean
+   * the other three could never reach the bottom of a long shelf: whoever's
+   * cursor won would drag the view back on the next repaint, which reads as
+   * the stick fighting you. `_moved` is set by whichever side last stepped and
+   * cleared here.
+   *
+   * IT IS A NO-OP UNTIL THE LIST IS LONGER THAN ITS BOX, which is why this can
+   * exist without changing anything at eight rows — the fifth non-negotiable
+   * asks for the two-player game to come out bit-identical, and a scroll
+   * container with nothing to scroll does nothing at all.
+   */
+  _followCursors() {
+    const i = this._moved;
+    this._moved = null;
+    if (i == null || !this.body) return;
+    const sel = this.mode === 'shop'
+      ? `.kd-shelf .kd-row[data-slot="${this.sides[i].i}"]`
+      : `.kd-card.kd-p${i} [data-slot="${this.sides[i].i}"]`;
+    this.body.querySelector(sel)?.scrollIntoView({ block: 'nearest' });
   }
 
   /**
@@ -968,8 +1012,14 @@ export class ProfileScreen {
 
     const here = owned[side.i] ? ORB_BY_ID[owned[side.i]] : null;
     const n = here ? owned.filter((x) => x === here.id).length : 0;
+    /* THE WHOLE SET IS HANDED TO `detail`, not just this row's count. 壁 Ward's
+       block length is a function of how many 守 Long Guard she is also
+       wearing, so a row that only knew its own count would print the shipped
+       2.0s to a girl who has paid two and a half times the shelf price for
+       more than that. Every other spec ignores the argument. */
+    const counts = countsOf(owned);
     const detail = here
-      ? `<b>${here.name}</b> · ${here.label}<br><span class="kd-dim">${here.detail(n)}${n > 1 ? `  (x${n})` : ''}</span>`
+      ? `<b>${here.name}</b> · ${here.label}<br><span class="kd-dim">${here.detail(n, counts)}${n > 1 ? `  (x${n})` : ''}</span>`
       : '<span class="kd-dim">No Kotodama yet — go and find one.</span>';
 
     /* The points row, drawn as a row rather than as a slot: it is not one of
@@ -1001,7 +1051,7 @@ export class ProfileScreen {
       ${this._clanMarkup(player)}
       <div class="kd-meta">${player.score} pts · ${owned.length}/${MAX_EQUIPPED} orbs</div>
       ${this._askMarkup(index)}
-      <div class="kd-slots">${slots.join('')}</div>
+      <div class="kd-slots" data-slots>${slots.join('')}</div>
       ${this.mode === 'profile' ? pointsRow : ''}
       <div class="kd-detail">${detail}</div>
       <div class="kd-state">${state}</div>
@@ -1132,6 +1182,15 @@ export class ProfileScreen {
         (x === this.shopper ? 1 : 0) - (y === this.shopper ? 1 : 0)
       ));
       const count = (q) => q.powerOrbs.filter((x) => x === spec.id).length;
+      /* THE PRICE IS ON THE ROW WHEN IT IS NOT THE SHELF PRICE. The header
+         line says "buy 650 / sell 488" and that is true of eight of the nine;
+         printing every row's price would repeat one number nine times to say
+         one thing once, and printing none of them lets a rare orb ambush her
+         at the confirmation. So the row carries a figure exactly when the
+         figure is news. */
+      const cost = K.priceOf(spec.id);
+      const rare = cost !== K.price
+        ? `<div class="kd-rare">RARE · ${cost}</div>` : '';
       const mineLine = named.length
         ? named.map((q) => `${q.name} has ${count(q)}`).join(' / ')
         : (shoppers[0] ? `${shoppers[0].name} has ${count(shoppers[0])}` : '');
@@ -1144,6 +1203,7 @@ export class ProfileScreen {
         </div>
         <div class="kd-row-num">
           <div>${stock ? `in stock ${stock}` : 'SOLD OUT'}</div>
+          ${rare}
           <div class="kd-dim">${mineLine}</div>
         </div>
         <div class="kd-seats">${pips}</div>
@@ -1162,11 +1222,26 @@ export class ProfileScreen {
          press <b>MOUNT</b> to shop too</div>`
       : '';
 
+    /* THE SHELF IS ITS OWN SCROLLING BOX, and the header, the invitation and
+       the questions are outside it.
+
+       WHY IT HAD TO STOP BEING A LIST THAT JUST GETS LONGER. There were eight
+       kinds and the panel held eight rows; there are nine now and there is no
+       reason to expect that to be the last one. A tenth row pushes the footer
+       — which is where the buttons are on a phone and where the key names are
+       everywhere else — off the bottom of the screen, and the girl driving the
+       stick has no way of knowing there is a row below the one she can see.
+       So the shelf keeps a fixed height of `--shelf-rows` rows and scrolls
+       inside it, `_paint` walks the moved cursor back into view, and the panel
+       around it stops changing size when the roster does.
+
+       IT SHOWS EIGHT. That is what the screen was built around and what the
+       CSS variable says; past that it scrolls. */
     return `<div class="kd-shop">
       <div class="kd-purse">${purses} · buy <b>${K.price}</b> · sell <b>${K.sellPrice}</b></div>
       ${invite}
       ${shoppers.map((p) => this._askMarkup(p.index)).join('')}
-      ${rows}
+      <div class="kd-shelf" data-shelf>${rows}</div>
     </div>`;
   }
 }

@@ -1,6 +1,7 @@
 import {
-  POWER_ORBS, ORB_BY_ID, ORB_IDS, MAX_EQUIPPED, PowerOrb, PowerOrbPickup,
-  orbPrice, orbSellPrice, stockFor,
+  POWER_ORBS, ORB_BY_ID, ORB_IDS, WORLD_ORB_IDS, MAX_EQUIPPED,
+  PowerOrb, PowerOrbPickup,
+  orbPrice, orbSellPrice, orbPriceFor, orbSellPriceFor, stockFor,
 } from '../entities/powerorb.js';
 import { KotodamaStall } from '../entities/stall.js';
 
@@ -61,11 +62,18 @@ import { KotodamaStall } from '../entities/stall.js';
  * scarce, it is absent. Buying and trading remain the only route to a real
  * stack, because the shelf is still shallow on the four move orbs.
  *
+ * NOT EVERY KIND IS OUT THERE ANY MORE. The floor is a full set of the orbs
+ * that CAN be found — `WORLD_ORB_IDS`, which is the roster minus 守 Long Guard
+ * — because the guarantee this number exists to keep is "every power is
+ * findable on foot", and the one orb that is deliberately not findable would
+ * otherwise inflate the count of the ones that are. Two kittens still get
+ * exactly eight, which is the number this was designed around.
+ *
  * @param {number} players how many kittens are in the world
  */
 export const WORLD_PER_PLAYER = 4;
 export const worldSpawnCount = (players = 2) =>
-  Math.max(ORB_IDS.length, WORLD_PER_PLAYER * players);
+  Math.max(WORLD_ORB_IDS.length, WORLD_PER_PLAYER * players);
 
 /** How close you have to be to walk one up. */
 const PICKUP_RADIUS = 2.8;
@@ -165,6 +173,12 @@ export class Kotodama {
       }
     }
     this._party = n;
+    /* THE SHELF PRICE, WHICH IS NOT EVERY ORB'S PRICE ANY MORE. These two stay
+       the base — the number the purse line and the footer print, and the one
+       eight of the nine kinds actually cost — and `priceOf` applies the one
+       spec that has a multiplier. Keeping the base named means the shop screen
+       can still say "buy 650 / sell 488" and then show 守 at its own figure on
+       its own row, rather than printing a range nobody can act on. */
     this.price = orbPrice(this.world.pointsTotal, n);
     this.sellPrice = orbSellPrice(this.world.pointsTotal, n);
     this.stall?.setStock(this.stock);
@@ -198,8 +212,12 @@ export class Kotodama {
 
     // 2 — the prize. Random per winner, so a tie is not two of the same thing
     //     unless the dice say so.
+    //     Drawn from the FINDABLE orbs only — a rare shop orb arriving free at
+    //     the moment the endgame opens is the one way to make it not rare, and
+    //     it would also hand somebody a booster for a Ward she has not got.
     const prizes = winners.map((p) => {
-      const spec = POWER_ORBS[(Math.random() * POWER_ORBS.length) | 0];
+      const pool = WORLD_ORB_IDS;
+      const spec = ORB_BY_ID[pool[(Math.random() * pool.length) | 0]];
       this.give(p, spec.id, { quiet: true });
       return { player: p, spec };
     });
@@ -258,7 +276,12 @@ export class Kotodama {
        lands on is decided below by index, so they are spread rather than
        piled. */
     const n = worldSpawnCount(this.game.partySize ?? this.game.players.length);
-    const order = Array.from({ length: n }, (_, i) => ORB_IDS[i % ORB_IDS.length]);
+    /* WORLD_ORB_IDS, NOT ORB_IDS. 守 Long Guard is the dealer's alone: a rare
+       orb you can trip over on a beach is not rare, and the cycle above would
+       otherwise put one on an island in every full set. */
+    const order = Array.from(
+      { length: n }, (_, i) => WORLD_ORB_IDS[i % WORLD_ORB_IDS.length]
+    );
 
     for (let i = 0; i < order.length; i++) {
       const isl = islands[i % islands.length];
@@ -349,22 +372,42 @@ export class Kotodama {
 
   /* ------------------------------- economy ------------------------------- */
 
+  /**
+   * What this one costs, and what it pays back.
+   *
+   * EVERY PRICE IN THIS FILE GOES THROUGH THESE TWO. There is one orb with a
+   * multiplier today and the number of places that would have to learn about
+   * a second one is exactly zero — the refusal, the deduction, the toast and
+   * all four screens ask here. A rare orb whose price was right in the shop
+   * and wrong in the sell confirmation is the bug this shape exists to make
+   * impossible.
+   */
+  priceOf(id) {
+    return orbPriceFor(id, this.world.pointsTotal, this._party ?? 2);
+  }
+
+  sellPriceOf(id) {
+    return orbSellPriceFor(id, this.world.pointsTotal, this._party ?? 2);
+  }
+
   /** Why a purchase would fail, or null if it would go through. */
   buyRefusal(player, id) {
     if (!(this.stock[id] > 0)) return 'The dealer has none left.';
     if (player.powerOrbs.length >= MAX_EQUIPPED) return `${player.name} can only wear ${MAX_EQUIPPED}.`;
-    if (player.score < this.price) return `${this.price - player.score} more points needed.`;
+    const cost = this.priceOf(id);
+    if (player.score < cost) return `${cost - player.score} more points needed.`;
     return null;
   }
 
   buy(player, id) {
     if (this.buyRefusal(player, id)) return false;
-    player.score -= this.price;
+    const cost = this.priceOf(id);
+    player.score -= cost;
     this.stock[id]--;
     this.give(player, id, { quiet: true });
     this.game.sfx('coin');
     this.game.onScoreChanged(player);
-    this.game.toast(`${player.name} bought ${ORB_BY_ID[id].name} for ${this.price}`, player.index);
+    this.game.toast(`${player.name} bought ${ORB_BY_ID[id].name} for ${cost}`, player.index);
     return true;
   }
 
@@ -379,12 +422,13 @@ export class Kotodama {
    * experiment with and one she is afraid of.
    */
   sell(player, id) {
+    const paid = this.sellPriceOf(id);
     if (!this.take(player, id)) return false;
-    player.score += this.sellPrice;
+    player.score += paid;
     this.stock[id] = (this.stock[id] ?? 0) + 1;
     this.game.sfx('coin');
     this.game.onScoreChanged(player);
-    this.game.toast(`${player.name} sold ${ORB_BY_ID[id].name} for ${this.sellPrice}`, player.index);
+    this.game.toast(`${player.name} sold ${ORB_BY_ID[id].name} for ${paid}`, player.index);
     return true;
   }
 
@@ -550,4 +594,4 @@ export function buildWornOrbs(ids) {
   return ids.map((id, i) => new PowerOrb(ORB_BY_ID[id], i, ids.length));
 }
 
-export { MAX_EQUIPPED, POWER_ORBS, ORB_BY_ID, ORB_IDS };
+export { MAX_EQUIPPED, POWER_ORBS, ORB_BY_ID, ORB_IDS, WORLD_ORB_IDS };
