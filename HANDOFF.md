@@ -311,6 +311,14 @@ Built this session, driven in the running game, not yet in front of anybody:
   more. **The takes live in the repo now**, under `tools/capture/satan-takes/`,
   so the tool can be run twice.
   → [voices.md](docs/notes/voices.md)
+- **A card is shortened by closing its pauses, not by playing him faster.**
+  `sat_last2` went out at 1.475x and was heard for exactly what it was. A card
+  now has its dead air floored to 0.20s — measured off `last1`, which ships
+  untouched — *before* speed is considered at all, and `CARD_TEMPO_MAX` dropped
+  1.5 → **1.10** so a line that still does not fit throws with its own text in
+  the message instead of shipping fast. The ten-second line was shortened and
+  re-rendered to suit; it ships at **1.027x**, and `last1` is byte-identical.
+  → [voices.md](docs/notes/voices.md)
 - **The HUD clock now counts REMAINING whole seconds, like the big one.** It
   floored before, which was invisible until something was put underneath it —
   and then the two disagreed, 14 over 0:13. The big one could not be the one to

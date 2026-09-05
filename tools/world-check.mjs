@@ -7959,11 +7959,35 @@ console.log('\n--- the three power moves ---');
         Number.isFinite(cardMax) && Number.isFinite(tail)
         && cardMax + tail <= COUNT_AT - COUNT_MID,
         `${cardMax} + ${tail} <= ${COUNT_AT - COUNT_MID}`);
+      /* A CARD IS SHORTENED BY CLOSING PAUSES, NOT BY PLAYING HIM FASTER.
+         THIS IS THE CHECK THAT WOULD HAVE CAUGHT IT. `sat_last2` shipped at
+         1.475x for a line where he is only talking, and nothing failed: the
+         old ceiling was 1.5, borrowed from the shouts sneaked between the
+         numbers, where 30-50% was asked for and belongs. It was reported by
+         ear — "seems like it is sped up... he is just talking at this point" —
+         which is the failure mode this file exists to remove.
+         Two facts, and the second is the one with teeth. */
+      const gapMax = num('CARD_GAP_MAX');
+      ok('...and a card closes its dead air before it touches his speed',
+        Number.isFinite(gapMax) && gapMax > 0
+        && src.indexOf('tighten(raw.file') > 0
+        && src.indexOf('tighten(raw.file') < src.indexOf('tight.dur / CARD_MAX'),
+        `gap floor ${gapMax}s`);
+      const cardTempo = num('CARD_TEMPO_MAX');
+      /* A NUDGE, NOT A SQUEEZE. Anything a listener can hear as "sped up" has
+         to fail here rather than ship. The shouts' own ceiling is the thing it
+         must NOT be allowed to drift back up to. */
+      ok('...and a card he is TALKING through is never squeezed like a shout',
+        Number.isFinite(cardTempo) && cardTempo <= 1.1,
+        `${cardTempo}x`);
       /* THE SHOUTS BETWEEN THE NUMBERS ARE FITTED, NOT PLACED. Which of them
          land is measured off the take; a table would go stale the first time
          anything was re-rendered. And the ceiling has to be a real test rather
          than a rubber stamp, or "NO TIME LEFT!" gets squeezed to a rattle. */
       const sayMax = num('SAY_MAX');
+      ok('...and a card is held to a far tighter ceiling than a shout',
+        Number.isFinite(cardTempo) && Number.isFinite(sayMax) && cardTempo < sayMax,
+        `card ${cardTempo}x < shout ${sayMax}x`);
       ok('...and no shout between two numbers is doubled in speed',
         Number.isFinite(sayMax) && sayMax < 2, `${sayMax}`);
       ok('...with a cutter that measures the gap instead of assuming it',

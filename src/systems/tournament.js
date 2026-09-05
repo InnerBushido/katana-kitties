@@ -1542,7 +1542,7 @@ export class Tournament {
     if (!this._called10 && left <= COUNT_MID) {
       this._called10 = true;
       this.announcer?.say('sat_last2',
-        "TEN SECONDS! Oh FINE! FINE! I'll count you down! I HATE counting!");
+        "TEN SECONDS! FINE! I'll count! I HATE counting!");
     }
     if (this._counting || left > COUNT_LAST) return;
     this._counting = true;

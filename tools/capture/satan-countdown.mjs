@@ -6,7 +6,7 @@
    the six takes in `satan-takes/`. Four cues, not one clip:
 
      15s left   sat_last1   a card. "FIFTEEN SECONDS! Are you KIDDING me?!"
-     10s left   sat_last2   a card. "TEN SECONDS! Oh FINE! I'll count you down!"
+     10s left   sat_last2   a card. "TEN SECONDS! FINE! I HATE counting!"
       5s left   sat_count   NO CARD. Five seconds, five numbers, four shouts.
       0s        sat_zero    a card, and he goes off like the gag does.
 
@@ -78,7 +78,7 @@ const COUNT_WORDS = [
 /** The two spoken cards, and how long each has before the next cue starts. */
 const CARDS = [
   { take: 'last1', out: 'sat_last1', says: 'FIFTEEN SECONDS! Are you KIDDING me?! DO something!' },
-  { take: 'last2', out: 'sat_last2', says: "TEN SECONDS! Oh FINE! FINE! I'll count you down! I HATE counting!" },
+  { take: 'last2', out: 'sat_last2', says: "TEN SECONDS! FINE! I'll count! I HATE counting!" },
 ];
 
 /** Trim-only clips. No timing to keep, so nothing is done to them but silence. */
@@ -150,9 +150,39 @@ const GAP_BEFORE_NUM = 0.03;
  * leaves that 0.9 and a tenth of slack.
  */
 const CARD_MAX = 4.0;
-/** How far a card may be nudged to make it fit. Straight from the ask: "we can
- *  manually speed up the voice by like 30-50%... but not unnatural". */
-const CARD_TEMPO_MAX = 1.5;
+
+/**
+ * The longest PAUSE a card may hold between two phrases.
+ *
+ * A CARD IS SHORTENED BY TAKING OUT DEAD AIR, NOT BY SPEEDING HIM UP. This is
+ * the whole fix for the thing that was reported: `last2` ran 5.90s against a
+ * 4.0s window, the only lever here was `atempo`, and it went out at 1.475x.
+ * That is a shout's ratio applied to a line where he is just talking, and it
+ * sounded like one — "seems like it is sped up... he is just talking at this
+ * point".
+ *
+ * Flooring the gaps costs nothing in naturalness because it does not touch the
+ * speech at all; the words play at exactly the rate Harrison rendered them.
+ * 0.20 is MEASURED, not chosen: `last1` ships completely untouched and its own
+ * interior gaps run 0.085 / 0.108 / 0.116 / 0.192, so 0.20 is "no longer than
+ * the longest pause in the take we already accept" — and it leaves that take
+ * genuinely untouched rather than re-encoding it for twelve milliseconds.
+ */
+const CARD_GAP_MAX = 0.20;
+
+/**
+ * How far a card may be nudged AFTER its gaps have been floored.
+ *
+ * A NUDGE, NOT A SQUEEZE. It used to be 1.5 — the "30-50%" from the ask, which
+ * belongs to the shouts sneaked between the numbers and never belonged here.
+ * With CARD_GAP_MAX doing the real work, a card that still does not fit is a
+ * card with too many WORDS on it, and the honest answer is to shorten the line
+ * and re-render rather than to play him faster. So this is set just above what
+ * the two shipping cards actually need (1.00x and 1.04x) and the cutter throws
+ * with the line in the message. A silent quality regression becomes a loud
+ * failure, which is the trade this codebase makes everywhere else.
+ */
+const CARD_TEMPO_MAX = 1.10;
 
 /* ---------------------------- silence, cutting --------------------------- */
 
@@ -251,17 +281,54 @@ const cut = (file, run_, name, tempo = 1) => {
   return { file: out, dur: dur(out) };
 };
 
-/** Lay a list of {file,t} down on one timeline and encode it. */
+/** Lay a list of {file,t} down on one timeline and encode it.
+ *  The encoder follows the EXTENSION, so an intermediate can stay lossless —
+ *  a card is re-encoded once more after this, and mp3 of mp3 of mp3 is audible
+ *  on a shout even when each step is "fine". */
 const render = (at, dest, length = null) => {
   at.sort((a, b) => a.t - b.t);
   const args = [];
   for (const p of at) args.push('-i', p.file);
   const chains = at.map((p, i) => `[${i}:a]adelay=${Math.round(p.t * 1000)}:all=1[a${i}]`);
   const mix = `${at.map((_, i) => `[a${i}]`).join('')}amix=inputs=${at.length}:normalize=0[out]`;
+  const codec = dest.endsWith('.wav')
+    ? ['-c:a', 'pcm_s16le'] : ['-c:a', 'libmp3lame', '-q:a', '4'];
   run('ffmpeg', ['-v', 'error', '-y', ...args,
     '-filter_complex', `${chains.join(';')};${mix}`,
     '-map', '[out]', ...(length ? ['-t', String(length)] : []),
-    '-c:a', 'libmp3lame', '-q:a', '4', dest]);
+    ...codec, dest]);
+};
+
+/**
+ * Close every pause longer than `maxGap`, without touching a single word.
+ *
+ * The runs come off `silencedetect` the same way the count's do, so a pause
+ * that is really a breath inside a phrase (under SPLIT_MIN) is never seen and
+ * never cut — which is the difference between tightening a line and chopping
+ * it up. Returns the take unchanged, and says so, when nothing is over.
+ */
+const tighten = (file, name, maxGap) => {
+  const runs = speechRuns(file);
+  if (runs.length < 2) return { file, dur: dur(file), gaps: [], cut: 0 };
+  const gaps = runs.slice(1).map((r, i) => r.start - runs[i].end);
+  const over = gaps.filter((g) => g > maxGap + 1e-6);
+  if (!over.length) return { file, dur: dur(file), gaps, cut: 0 };
+
+  const at = [];
+  let t = 0;
+  runs.forEach((r, i) => {
+    const piece = cut(file, r, `${name}_p${i}`);
+    at.push({ file: piece.file, t });
+    t += piece.dur + Math.min(gaps[i] ?? 0, maxGap);
+  });
+  const out = join(TMP, `${name}_tight.wav`);
+  render(at, out);
+  return {
+    file: out,
+    dur: dur(out),
+    gaps,
+    cut: gaps.reduce((a, g) => a + Math.max(0, g - maxGap), 0),
+  };
 };
 
 /* ============================== do it =================================== */
@@ -275,15 +342,26 @@ const said = [];
 // --- the two cards --------------------------------------------------------
 for (const c of CARDS) {
   const raw = prep(c.take);
-  const tempo = Math.max(1, raw.dur / CARD_MAX);
+  /* DEAD AIR FIRST, SPEED ONLY IF THERE IS STILL NO ROOM. The order is the
+     point: reversing it hides an over-long line behind an atempo nobody
+     reads, which is exactly how last2 shipped at 1.475x. */
+  const tight = tighten(raw.file, c.take, CARD_GAP_MAX);
+  const tempo = Math.max(1, tight.dur / CARD_MAX);
   if (tempo > CARD_TEMPO_MAX) {
-    throw new Error(`${c.take} runs ${raw.dur.toFixed(2)}s and only ${CARD_MAX}s fits before the `
-      + `next cue — it would need ${tempo.toFixed(2)}x. Shorten the line and re-render:\n  "${c.says}"`);
+    throw new Error(`${c.take} runs ${raw.dur.toFixed(2)}s`
+      + (tight.cut > 0 ? `, ${tight.dur.toFixed(2)}s with its pauses closed,` : '')
+      + ` and only ${CARD_MAX}s fits before the next cue — it would need `
+      + `${tempo.toFixed(2)}x and the ceiling is ${CARD_TEMPO_MAX}. He is TALKING here, so `
+      + `do not raise it: shorten the line and re-render.\n  "${c.says}"`);
   }
-  const fit = tempo === 1 ? raw : prep(c.take, tempo);
-  run('ffmpeg', ['-v', 'error', '-y', '-i', fit.file,
+  run('ffmpeg', ['-v', 'error', '-y', '-i', tight.file,
+    ...(tempo === 1 ? [] : ['-af', `atempo=${tempo.toFixed(4)}`]),
     '-c:a', 'libmp3lame', '-q:a', '4', join(OUT, `${c.out}.mp3`)]);
-  said.push(`${c.out}  ${fit.dur.toFixed(2)}s  ${tempo > 1 ? `${tempo.toFixed(2)}x` : 'as rendered'}`);
+  const how = [
+    tight.cut > 0 ? `${tight.cut.toFixed(2)}s of pause closed` : 'pauses as rendered',
+    tempo > 1 ? `${tempo.toFixed(3)}x` : 'speed as rendered',
+  ].join(', ');
+  said.push(`${c.out}  ${(tight.dur / tempo).toFixed(2)}s  ${how}`);
 }
 
 // --- trim-only ------------------------------------------------------------

@@ -311,6 +311,49 @@ fits, says which, and the clip still works.
 `atempo` preserves pitch throughout, so this is him shouting fast rather than
 chipmunked.
 
+### A card is shortened by closing its pauses, not by playing him faster
+
+`sat_last2` shipped at **1.475x** and was heard immediately: *"seems like it is
+sped up... he is just talking at this point"*. Correct, and the cause was one
+missing lever. The cutter's only way to make a card fit was `atempo`, and its
+ceiling was `CARD_TEMPO_MAX = 1.5` — the *"30-50%"* from the ask, which belongs
+to the shouts sneaked between the numbers and never belonged on a line he is
+merely talking through.
+
+**There is no spare second to give it.** From the ten-second card to the start
+of the count there are exactly five; the card wants `HOLD_TAIL` (0.9s) of them
+to retire in; and the count is the one cue here that cannot start late. The
+take ran 5.90s against a 4.0s window. Closing its pauses alone only recovers
+0.72s, so the line was over budget on its words, not on its timing.
+
+The cutter now takes out **dead air** before it considers speed at all, and the
+order is the point — reversed, it hides an over-long line behind an `atempo`
+nobody reads, which is exactly how 1.475x shipped. `CARD_GAP_MAX` is **0.20s**,
+measured rather than chosen: `last1` ships completely untouched and its own
+interior pauses run 0.085 / 0.108 / 0.116 / 0.192, so the floor is *no longer
+than the longest pause in the take we already accept* — and rounding it up to
+0.20 leaves that take genuinely byte-identical rather than re-encoding it for
+twelve milliseconds. Flooring a pause costs nothing in naturalness because it
+does not touch the speech: the words play at the rate Harrison rendered them.
+
+| | rendered | its pauses | after flooring | ships at |
+| --- | --- | --- | --- | --- |
+| `sat_last1` | 3.84s | .085 / .108 / .116 / .192 | untouched | **1.00x** |
+| `sat_last2` | 4.93s | **.72** / .25 / **.46** / .07 | 4.11s, 0.82s closed | **1.027x** |
+
+`CARD_TEMPO_MAX` is now **1.10** — a nudge, not a squeeze. With the gaps doing
+the real work, a card that still does not fit is a card with too many *words* on
+it, and the cutter throws with the line quoted in the message. **Do not raise
+it.** The answer is a shorter line, and that is the other half of this fix:
+*"TEN SECONDS! Oh FINE! FINE! I'll count you down! I HATE counting!"* is eleven
+words and needs 5.90s at his own pace. It is now *"TEN SECONDS! FINE! I'll
+count! I HATE counting!"* — the punchline kept, the padding gone. The old take
+is `alt/last2-6s.mp3`, with the two variants that lost beside it.
+
+**`world-check` pins all three facts**, because none of them failed anything the
+first time: that the gaps are closed before the speed is touched, that a card's
+ceiling is at most 1.10, and that it stays far below the shouts' own `SAY_MAX`.
+
 ### The takes are in the repo now
 
 `tools/capture/satan-takes/` holds the six renders the cutter consumes, and
