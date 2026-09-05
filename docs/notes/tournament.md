@@ -1518,3 +1518,107 @@ Driven in the running game: standing on his town spot while he is invisible
 leaves you exactly where you are; the moment he appears the same point pushes
 you out to 1.55 (his 0.95 plus a kitten's 0.6); walking him to the announcer's
 box frees the square and blocks the box; hiding him frees that too.
+
+## The camera goes to him at zero, and finding out it could not
+
+Asked for: *"when timer gets to Zero on a match, can have the camera zoom in on
+Mr. Satan since he is having a speech/dialogue at the end. Same can happen with
+him giving the Draw speech."*
+
+He already had the whole last fifteen seconds to himself vocally, and the shot
+during it was of two kittens standing still on a deck while a man in a box
+shouted somewhere off the edge of it.
+
+### It hangs off `_onTheClock`, not off the state
+
+`ko` is the state for every ending, and only one of them is his. A knockout
+deliberately keeps the ring camera: the thing worth looking at there is the
+kitten who just went down, and cutting away from her throws out the one frame
+the whole round was for. So `callOnDamage` records whether the CLOCK was what
+called it, and `cameraWant` reads that latch — cleared per round on the same
+`count` to `live` line every other per-round latch is cleared on, and again in
+`finish()`.
+
+### `fitPlayers: false`, or main.js would have silently undone it
+
+`main.js` floors every ring distance with `fitDistance` on the players' spread,
+so a shot with neither kitten in it would be pulled back by however far apart
+they happened to end the round — a close-up further away than the fight it cut
+from. The shot opts out by name, and the opt-out is asserted on both sides: the
+value the tournament returns, and the line in main.js that honours it.
+
+### `SATAN_SHOT.lift` is measured off a screenshot
+
+`dist: 19` is a fifth of any `RING_DIST` number because those are sized for a
+56-unit deck with two kittens on it and this is one man on a booth. `pitch: 0.16`
+is almost level: the yaw is fixed in main.js, so the shot comes from the ring
+side looking back, and the fight cameras own 0.52 would look down on a billboard
+and squash the drawing.
+
+`lift` was reasoned at 3.2 and it was wrong, which is the house rule earning its
+keep. On screen he sat sixty pixels low in a 546-pixel frame — which is exactly
+where the announcers dialogue panel comes up, so his own speech, the reason the
+shot exists, would have crowded him. **1.9** centres him with the whole canopy
+in and the panel clear beneath.
+
+### ...and then the shot was of nobody, because he was never in the booth
+
+The first take was an empty box. `satan.position` measured during a live round
+was his town home, three hundred units south, and had been for every round ever
+played.
+
+`ArenaQuest._holdCourt` and the block around it are the DOORMAN: they walk him
+between the town square and the torii by counting who is standing at the gate,
+and write the line over his head asking them to gather. They run every frame the
+quest is `open`, which is every frame whatever the tournament is doing. The
+torii is on the arena island, ten units from where the griffin sets them down:
+
+    land           `Game._arrive` puts him in the box and clears his line
+    next frame     everybody is inside `GATE_RADIUS`, so the doorman drags him
+                   back out to the gate and writes "I need BOTH of you here"
+    round starts   the fighters are posted 62 units away in the middle of the
+                   deck, the count drops to zero, and he is TELEPORTED THREE
+                   HUNDRED UNITS INTO THE TOWN SQUARE
+
+Nothing on screen had ever said so because nothing had ever looked at him during
+a round. His `satan_charge.png` arms going up for the ZERO shout were going up
+out there.
+
+**The guard is `Game.inMatch`, and it guards the whole doorman rather than just
+where he stands** — the line over his head was as wrong as the position. `inMatch`
+is the right predicate because it already spans the league and team pickers as
+well as the live round, and those run BEFORE `Tournament.begin` and so before
+`active` — they are the frames the griffin lands into. `travel` is a second term
+for the ride itself, which is neither.
+
+`post` is cleared rather than kept, so the first frame back in town re-decides
+from scratch instead of comparing against an answer from before the flight; and
+the frame after a match ends he answers the gate again, because a guard that
+latched would leave the arena unopenable on a second visit.
+
+## Debug 4 ENDS the bit, debug 5 NUDGES it on
+
+Two keys because they are two different questions, asked for as such: *"make the
+4 command to end the round work for the current battle round, and feast, it is
+like a fast forward button"*, and then a second one that *"will skip forward in
+the current scene/match rather than skip it."*
+
+`endBeat` finishes whatever bit is running — card and count go straight to the
+gong through the same line the wait uses, a live round is CALLED (so the result
+is a real result, not a state assignment), a `ko` runs its pending closure
+early rather than dropping it, and a feast ends. **The pending closure is run,
+not discarded**: dropping it would move the game past a round whose outcome was
+never shown, which is the sort of debug key that teaches you a bug that is not
+there.
+
+`nudge` steps a live round down a LADDER — thirty, fifteen, five, then out —
+because everything interesting about the last thirty seconds is what he does at
+each of those marks, and they are the three hardest things in the game to see
+twice at two minutes a round. Landing ON a mark rather than past it is what
+makes each line fire exactly as it does in play: the latches in `_callTheClock`
+are all `left <=` tests. Outside a live round it falls through to `endBeat`, and
+in a cutscene or the summon scene it steps one line instead.
+
+**Neither key writes `state` from main.js**, which is asserted: a debug key that
+assigns a state directly is a key that can produce a game state the machine
+cannot reach on its own.

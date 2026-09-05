@@ -338,6 +338,45 @@ Built this session, driven in the running game, not yet in front of anybody:
   the first frame and a second one after he walked to the arena. It follows him
   now and turns off with his sprite.
 
+**Five more reported from play are fixed and not yet played back.** This batch
+came in as one list and two of its items turned out to be the same bug:
+
+- **The clock running out puts the camera on Mr. Satan.** He has a speech at
+  zero and at a draw, and the shot used to be of two kittens standing still
+  while a man in a box shouted somewhere off screen. A `ko` that was called by
+  the CLOCK pushes in on the booth; a knockout deliberately does not, because
+  the thing worth looking at there is the kitten who just went down.
+  → [tournament.md](docs/notes/tournament.md)
+- **...and he is now IN the booth while it happens, which he never was.**
+  Found by pointing that camera at him and seeing nobody. `ArenaQuest`'s
+  doorman ran every frame of the tournament: the torii is on the arena island
+  ten units from where the griffin lands, so the frame after the ride it
+  dragged him back out of the announcer's box, and once the fighters took their
+  marks 62 units away it teleported him three hundred units into the town
+  square — wearing "I need BOTH of you here" over his head for the whole round.
+  Every round ever played had an empty box. It is guarded on `Game.inMatch`
+  now, which is the getter that already spans the two picker screens as well as
+  the live round.
+- **Both minimap bugs were one bug.** Zooming with a bumper picked the wrong
+  pane's map, and Z stopped working when Ember's map became a shared one —
+  because `assignMaps` incumbency only ever moved a map TOWARDS a fuller pane,
+  so a pair forming and then splitting stranded the lower pane forever. A
+  fourth, convergent step ties back towards the lower pane index and strictly
+  lowers the sum of occupied indices, so it settles and cannot flicker.
+- **Z and X are real keys now, not debug ones**, and between them they always
+  reach both boxes: Z is anchored to player one's map however it is shared, and
+  on a collision X takes the other one. The map tag says which key turns it.
+- **The debug panel is a shorter, ordered list.** The seven dragonball scenes
+  went; the scene viewer is in the order the story actually happens in; **7**
+  goes to the arena; **4** ENDS the current bit — round, ceremony or feast; and
+  **5** NUDGES it on — a live round steps 30s, 15s, 5s, then out, and a scene
+  steps one line. `M` and `Z`/`X` were promoted OUT of debug into documented
+  keyboard controls rather than deleted — the maths overlay is the first
+  non-negotiable and the map zoom was asked for in the same breath.
+- **The clan-join callout is readable.** It was a quarter smaller and it
+  breathed down through half opacity; it is 0.9 → 1.15 high at 76px, and the
+  breath now lives entirely above 0.9 so the text never thins out.
+
 **Six reported from play are fixed and not yet played back.** All are in
 `git log` and in the notes; listed here only because nobody has confirmed them
 at four players yet:

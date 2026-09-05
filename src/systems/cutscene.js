@@ -428,6 +428,27 @@ export class Cutscene {
     this.finish();
   }
 
+  /**
+   * ONE BEAT ON — the debug nudge, and nothing in the game calls it.
+   *
+   * `skip` throws the whole scene away, which is right for a player who has
+   * seen it and wrong for somebody checking the fourth line of eleven: the
+   * only way to reach it was to sit through three. This is the same
+   * `_nextBeat` the scene's own clock runs, so a nudged beat opens exactly as
+   * a waited-for one does.
+   *
+   * THE VOICE IS CUT FIRST. `_nextBeat` starts the next line's audio and never
+   * stops the last one, because in normal play the beat does not turn over
+   * until the line has finished — jumping means it has not, and two of Patchfur
+   * talking at once is the one way this can sound broken.
+   */
+  nextBeat() {
+    if (!this.active) return false;
+    this.audio?.stopSpeaking();
+    this._nextBeat();
+    return true;
+  }
+
   finish() {
     this.active = false;
     this.done = true;

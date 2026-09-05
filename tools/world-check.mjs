@@ -75,7 +75,7 @@ import {
 import { MenuNav } from '../src/systems/menunav.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
 import {
-  splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, fitDistance, stablePanes,
+  splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   paneSeats, outOfShot, framedMembers, OUT_DROP, paneWiden, BIG_PANE_IN,
 } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
@@ -2023,6 +2023,53 @@ console.log('\n--- nobody joined a clan, because nothing said they could ---');
   ok('...nor overwritten by one', c.calloutT > 0);
   for (let i = 0; i < 60 * 7; i++) c._updateCombat(1 / 60);
   ok('...but it does expire on its own', !c.callout.visible && c.calloutT === 0);
+
+  /* --- AND IT HAS TO BE READABLE, WHICH IS A SEPARATE THING FROM CORRECT ---
+     REPORTED: "it is a little hard to read the text above the players head
+     stating what input button to press to join the clan, maybe make the text
+     not transparent so it's easier to read or make the text bigger or both?"
+
+     THE OLD BREATH WENT DOWN TO 0.74. That is a third of every cycle spent at
+     an opacity a nine-year-old is reading a hillside through, on the one line
+     in the game that is an INSTRUCTION rather than a caption. The breathing
+     stays — a caption that is perfectly still for a minute stops being read —
+     and the whole band moves above 0.9. Sampled across a full cycle rather
+     than at one phase, because the floor is the number that was wrong. */
+  c.setCallout(`${badge}  ${CLANS[0].oath.toUpperCase()}`);
+  let lowest = 1;
+  let highest = 0;
+  let moved = 0;
+  let prev = null;
+  for (let i = 0; i < 400; i++) {
+    c.idlePhase = i * 0.05;
+    c._updateCombat(1 / 60);
+    const o = c.callout.mat.opacity;
+    lowest = Math.min(lowest, o);
+    highest = Math.max(highest, o);
+    if (prev !== null && Math.abs(o - prev) > 1e-6) moved += 1;
+    prev = o;
+  }
+  ok('the standing prompt never thins past nine tenths', lowest >= 0.9,
+    `dips to ${lowest.toFixed(2)}`);
+  ok('...and still breathes rather than sitting perfectly still',
+    moved > 100 && highest - lowest > 0.02,
+    `${lowest.toFixed(2)} - ${highest.toFixed(2)}`);
+  ok('...and never asks for more opacity than there is', highest <= 1,
+    highest.toFixed(3));
+
+  /* AND IT IS BIGGER IN THE WORLD, which is the other half of "or both". The
+     world height and the authored pixel size have to move TOGETHER or the
+     glyphs are magnified rather than drawn larger — same number of texture
+     pixels stretched over a bigger quad is a softer line, not a clearer one.
+     Read off the label the kitten really built. */
+  ok('...and the line itself is bigger than the 0.9 it was',
+    c.callout.baseHeight > 1.0, `${c.callout.baseHeight}`);
+  const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+  const built = psrc.slice(psrc.indexOf('this.callout = new Label('),
+    psrc.indexOf('this.callout.visible = false;'));
+  const px = /size:\s*(\d+)/.exec(built);
+  ok('...with the texture drawn larger to match, not just stretched',
+    px && Number(px[1]) >= 76, px ? px[1] : 'no size');
 }
 
 console.log('\n--- swearing an oath is worth two and a half seconds ---');
@@ -8217,10 +8264,91 @@ console.log('\n--- the three power moves ---');
     ok('...and the clock running out calls exactly the same method',
       /if \(this\.t > ROUND_LIMIT\) this\.callOnDamage\(/.test(tsrc));
     const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
-    const at = msrc.indexOf("if (code === 'Digit4') {");
+    const at = msrc.indexOf("if (code === 'Digit4' || code === 'Digit5') {");
+    const key = at > 0 ? msrc.slice(at, at + 1400) : '';
     ok('...and so does the debug key, which no longer hurts anybody',
-      at > 0 && /callOnDamage\(/.test(msrc.slice(at, at + 500))
-      && !/\.hurt\(/.test(msrc.slice(at, at + 500)));
+      at > 0 && /this\.tournament\.(endBeat|nudge)\(/.test(key)
+      && !/\.hurt\(/.test(key), at > 0 ? '' : 'the Digit4/5 branch moved');
+    /* IT ASKS `Tournament` AND DECIDES NOTHING ITSELF. The whole point of the
+       key going through `callOnDamage` was that it could not disagree with the
+       game about who won; `endBeat` and `nudge` inherit that only for as long
+       as they are the ones setting the state. A `this.tournament.state =` in
+       main.js would be the old bug wearing a new label. */
+    ok('...and it never sets a tournament state from outside the tournament',
+      !/this\.tournament\.state\s*=/.test(msrc));
+
+    /* --- `4` ENDS THE BEAT, IN EVERY BEAT ---
+       Asked for: "make the 4 command to end the round work for the current
+       battle round, and feast, it is like a fast forward button to move along
+       the script to the next part." Each state is asked separately, because
+       "it did something" and "it did the right thing" are different questions
+       and the feast is the one that used to do nothing at all. */
+    const beat = (state, t = 0) => {
+      const e = mk([9, 0, 0, 0]);
+      e.T.state = state;
+      e.T.t = t;
+      const said = e.T.endBeat();
+      return { T: e.T, said };
+    };
+    ok('4 in a live round ends it', beat('live').T.state === 'ko');
+    const feast = beat('feast');
+    ok('...and in the feast it runs the clock out rather than doing nothing',
+      feast.said !== null && feast.T.t >= FEAST_TIME, `${feast.said} / ${feast.T.t}`);
+    const card = beat('card');
+    ok('...and in the round card it skips to the count',
+      card.said !== null && card.T.t > 0, `${card.said}`);
+    /* THE RESULTS SCREEN IS THE ONE IT MUST NOT TOUCH. It is waiting for a
+       kitten to type a name, and a debug key that answers for her is a debug
+       key that skips the one screen a player has to answer. */
+    const res = beat('result');
+    ok('...and it refuses on the results screen, which is waiting on a player',
+      res.said === null && res.T.state === 'result');
+    ok('...and says so rather than doing nothing quietly',
+      msrc.indexOf('nothing to skip in this bit') > 0);
+
+    /* --- `5` STEPS ONTO EACH MARK RATHER THAN PAST IT ---
+       Mr. Satan says a different line at 30, 15 and 10 seconds, and each of
+       them cost two minutes of a live round to hear. The ladder is what makes
+       each one fire exactly as it does in play: the latches in `_callTheClock`
+       are `left <=` tests, so landing ON 30 and then ON 15 fires one line
+       each, while a jump from 120 straight to 15 fires two on one frame and
+       queues them behind each other. */
+    const rung = (left) => {
+      const e = mk([9, 0, 0, 0]);
+      e.T.state = 'live';
+      e.T.t = ROUND_LIMIT - left;
+      e.T.nudge();
+      return ROUND_LIMIT - e.T.t;
+    };
+    ok('5 steps a fresh round down to the thirty-second mark', rung(120) === WARN_AT,
+      `${rung(120)}`);
+    ok('...then to fifteen', rung(WARN_AT) === COUNT_AT, `${rung(WARN_AT)}`);
+    ok('...then to five', rung(COUNT_AT) === COUNT_LAST, `${rung(COUNT_AT)}`);
+    /* AND PAST THE LAST MARK IT HANDS OVER TO THE CLOCK RATHER THAN CALLING
+       THE ROUND ITSELF. `callOnDamage(_, false)` here would look identical and
+       silently skip his ZERO shout, the bell's timing and the camera on him. */
+    /* STRICTLY past the limit, because `update` tests `>` and a `t` landing
+       exactly on it would leave the round live and the key looking dead. */
+    ok('...and then lets the clock itself run out', rung(COUNT_LAST) < -1e-9,
+      `${rung(COUNT_LAST) * 1000}ms past`);
+    const ran = mk([9, 0, 0, 0]);
+    ran.T.state = 'live';
+    ran.T.t = ROUND_LIMIT - 1;
+    ran.T.nudge();
+    ok('...still LIVE, so the round ends through `update` and not through the key',
+      ran.T.state === 'live');
+
+    /* --- AND THE CAMERA KNOWS WHICH ENDING THIS WAS ---
+       `_onTheClock` is the only thing separating "the clock did this, put the
+       camera on the man shouting about it" from "somebody pressed 4". */
+    const byKey = mk([9, 0, 0, 0]);
+    byKey.T.state = 'live';
+    byKey.T.callOnDamage('[debug] round called!');
+    ok('a round ended by the debug key is NOT the clock', !byKey.T._onTheClock);
+    const byClock = mk([9, 0, 0, 0]);
+    byClock.T.state = 'live';
+    byClock.T.callOnDamage('Time!', true);
+    ok('...and a round ended by the clock is', byClock.T._onTheClock === true);
   }
 
   /* --- THE FIGHT CAMERA HAS TO FRAME EVERY FIGHTER ---
@@ -8320,6 +8448,59 @@ console.log('\n--- the three power moves ---');
        five, asserted where it could break. */
     ok('a rig that is not told what device it is on is a desktop',
       rig(close).dist === Math.min(104, Math.max(52, 46 + 6 * 0.8)));
+
+    /* --- AND WHEN THE CLOCK KILLS A ROUND, THE CAMERA GOES TO HIM ---
+       ASKED FOR: "when timer gets to Zero on a match, can have the camera zoom
+       in on Mr. Satan since he is having a speech/dialogue at the end. Same can
+       happen with him giving the Draw speech." Two kittens standing still while
+       a man in a box shouts ZEEEEROOOO is a shot of the wrong half of the
+       arena. */
+    const booth = world.arenaBooth;
+    const satanRig = (state, onTheClock, satan = {
+      position: booth, group: { visible: true },
+    }) => {
+      const T = new Tournament({
+        game: { players: close, toast() {}, sfx() {}, satan }, world, audio: null,
+        announcer: null,
+      });
+      T.state = state;
+      T._onTheClock = onTheClock;
+      return T.cameraWant();
+    };
+    const shot = satanRig('ko', true);
+    ok('the clock running out puts the camera on Mr. Satan, not on the ring',
+      Math.abs(shot.x - booth.x) < 1e-9 && Math.abs(shot.z - booth.z) < 1e-9,
+      `${shot.x.toFixed(1)},${shot.z.toFixed(1)} vs booth ${booth.x},${booth.z}`);
+    ok('...aimed at his face rather than his feet', shot.y > booth.y + 1);
+    ok('...and it is a close-up, not the fight camera again',
+      shot.dist < rig(close).dist / 2, `${shot.dist} vs ${rig(close).dist}`);
+    /* AND IT OPTS OUT OF THE PLAYER-SPREAD FLOOR IN main.js. That floor is a
+       function of how far apart the FIGHTERS are, so a shot with neither of
+       them in it would be pulled back by however far they happened to end the
+       round from each other — a close-up that is further away than the fight it
+       cut from. */
+    ok('...and says it is not to be widened to fit the kittens',
+      shot.fitPlayers === false);
+    const msrc2 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('...and main.js honours that rather than flooring it anyway',
+      /ring\.fitPlayers === false \? ring\.dist \* widen/.test(msrc2));
+
+    /* A KNOCKOUT IS DELIBERATELY NOT IN THIS. The thing worth looking at there
+       is the kitten who just went down, and cutting to the announcer throws
+       away the one frame the whole round was for. */
+    ok('a knockout keeps the camera in the ring',
+      satanRig('ko', false).fitPlayers !== false);
+    ok('...and so does a live round, whatever the flag says',
+      satanRig('live', true).fitPlayers !== false);
+
+    /* NINTH NON-NEGOTIABLE: no drawing, no shot. It falls back to the ring
+       camera the round has been looking at all along rather than aiming at
+       nothing — prefer a rule that degrades over one that vanishes. */
+    ok('...and with no Mr. Satan in the world it frames the ring instead',
+      satanRig('ko', true, null).fitPlayers !== false);
+    ok('...and the same when he is in the world but not on screen',
+      satanRig('ko', true, { position: booth, group: { visible: false } })
+        .fitPlayers !== false);
   }
 
   /* --- THE MENAGERIE'S PER-PLAYER ARRAYS ---
@@ -9250,19 +9431,60 @@ console.log('\n--- and the two maps go where they are worth most ---');
   const moved = assignMaps([1, 1, 2], [0, 1], 2);
   ok('a pane holding two kittens takes a map off a pane holding one',
     moved.includes(2), JSON.stringify(moved));
-  ok('...and only one of them moves — the other pane keeps what it had',
-    moved.filter((g) => g === 1).length === 1, JSON.stringify(moved));
+  ok('...and exactly one pane is left without one, since there are only two',
+    new Set(moved.filter((g) => g >= 0)).size === 2, JSON.stringify(moved));
 
-  /* INCUMBENCY WINS TIES, WHICH IS WHAT STOPS IT FLICKERING. A map is taken
-     off a pane only by a pane holding STRICTLY more players, so the ordinary
-     four-player case — everybody alone — never moves a map once it has landed.
-     A map that moves for a reason that has nothing to do with you costs you a
-     second of hunting for it; same argument `stablePanes` makes. */
+  /* INCUMBENCY WINS TIES ON SIZE, WHICH IS WHAT STOPS IT FLICKERING. A map is
+     taken off a pane only by a pane holding STRICTLY more players, so the
+     ordinary four-player case — everybody alone — never moves a map once it
+     has landed. A map that moves for a reason that has nothing to do with you
+     costs you a second of hunting for it; same argument `stablePanes` makes. */
   ok('nothing moves when every pane holds the same number',
     JSON.stringify(assignMaps([1, 1, 1, 1], [0, 1], 2)) === JSON.stringify([0, 1]));
   ok('...and a settled assignment is a fixed point',
     JSON.stringify(assignMaps([1, 2, 1], assignMaps([1, 2, 1], [0, 1], 2), 2))
       === JSON.stringify(assignMaps([1, 2, 1], [0, 1], 2)));
+
+  /* --- AND A MAP THAT IS NO LONGER NEEDED WHERE IT IS COMES BACK ---
+     REPORTED TWICE IN ONE BREATH: "it is zooming the wrong map, it is not
+     detecting which minimap is on which screen/tile", and "when Ember loses her
+     minimap ... Z no longer zooms in on it". One bug, and it is incumbency
+     with no way back: steps 1-3 only ever move a map towards a FULLER pane, so
+     once a pair has taken Ember's map, the pair splitting up leaves every pane
+     at size 1, nothing is "strictly more", and her map never returns.
+
+     THIS IS THE EXACT SEQUENCE, played forward the way the panes really move:
+     four kittens in two pairs, then one pair splits, then everybody apart. */
+  let seq = assignMaps([2, 2], [], 2);
+  seq = assignMaps([1, 1, 2], seq, 2);
+  seq = assignMaps([1, 1, 1, 1], seq, 2);
+  ok('four kittens who pair up and split again all get their maps back',
+    seq.every((g) => g === 0 || g === 1), JSON.stringify(seq));
+  ok('...so player one is not left mapless for the rest of the session',
+    seq.includes(0), JSON.stringify(seq));
+
+  /* IT CANNOT FLICKER, AND THAT IS THE ONE THING THE NEW RULE HAD TO PROVE.
+     Every swap it makes strictly lowers the sum of the panes the maps sit in,
+     and that sum is a non-negative integer — so it settles, and the thing it
+     settles on does not depend on how it got there. Asked both ways: is it a
+     fixed point, and does a different history reach the same answer. */
+  ok('...and that arrangement is where it stops moving',
+    JSON.stringify(assignMaps([1, 1, 1, 1], seq, 2)) === JSON.stringify(seq));
+  const other = assignMaps([1, 1, 1, 1], assignMaps([1, 3], [1, 0], 2), 2);
+  ok('...whichever way the panes got there',
+    JSON.stringify(other) === JSON.stringify(seq),
+    `${JSON.stringify(other)} vs ${JSON.stringify(seq)}`);
+
+  /* AND THE SIZE RULE STILL OUTRANKS IT. The tie-break is only a tie-break: a
+     pane holding two kittens keeps its map against a lower-indexed pane
+     holding one, or this has quietly reinstated "the maps belong to Ember and
+     Frost" — the rule step 3 exists to have replaced. */
+  const busy = assignMaps([1, 2], [0, 1], 2);
+  ok('...and a fuller pane still outranks a lower-numbered one',
+    busy.includes(1), JSON.stringify(busy));
+  const busier = assignMaps([1, 2, 2], [1, 2], 2);
+  ok('...so a lone kitten does not take a map off two sisters',
+    !busier.includes(0), JSON.stringify(busier));
 
   /* NO PANE EVER GETS BOTH MAPS, in any arrangement — that would be two
      archipelagos in one corner and a pane with none next door. */
@@ -11248,6 +11470,59 @@ console.log('\n--- Mr. Satan loses his temper ---');
     handled.every((c) => labelBlock.includes(`${c}:`)),
     handled.filter((c) => !labelBlock.includes(`${c}:`)).join(', ') || 'all');
   ok("...including Mr. Satan's", handled.includes('Digit2') && listed.has('Digit2'));
+
+  /* --- AND THE PANEL LISTS NOTHING IT NO LONGER DOES ---
+     The rule above catches a key with no row. This is the other direction, and
+     it is the one a cleanup breaks: a row left behind is a line of
+     documentation for a key that does nothing, which is worse than no line —
+     it teaches a thing that is no longer true. Asked for as "clean up the
+     debug to remove the 7 dragonballs scenes and unnecessary commands. Let's
+     remove Debug items 7, 8, 9, 5, M, Z."
+
+     `7` HAS BEEN REUSED, so it is named here rather than dropped from the
+     check: it is GO TO THE ARENA now, and what has to be gone is the dragon
+     hunt behind it. */
+  ok('every row in the panel is a key the game still answers to',
+    [...listed].every((c) => handled.includes(c)),
+    [...listed].filter((c) => !handled.includes(c)).join(', ') || `${listed.size} rows`);
+  ok('...and the seven-stars shortcuts are gone from both',
+    !/_onAllBalls\(\)/.test(dbgBody) && !/freeSeat\(\)/.test(dbgBody)
+    && !handled.includes('Digit8') && !handled.includes('Digit9'));
+  ok("...and 7 is the arena now, through the scene viewer's own path",
+    handled.includes('Digit7') && /Digit7'\) this\._goToArena\(\)/.test(dbgBody));
+
+  /* `M` AND `Z` WERE PROMOTED, NOT DELETED. They had rows because they were
+     the only way to reach the maths overlay and the map zoom from a keyboard —
+     which made two real player controls look like debug tools, and forced the
+     panel's click handler to call them directly instead of through
+     `_debugKey`. The maths overlay is the FIRST non-negotiable; a cleanup that
+     removed the only key for it would be removing the feature. */
+  ok('the maths overlay and the map zoom are no longer debug rows',
+    !listed.has('KeyM') && !listed.has('KeyZ'));
+  ok('...but both keys still exist, because one of them is the whole point',
+    /e\.code === 'KeyM'[\s\S]{0,60}this\._toggleMath\(\)/.test(msrc)
+    && /e\.code === 'KeyZ'[\s\S]{0,80}this\._zoomMapKey\(0\)/.test(msrc));
+  ok('...and the panel has no special case left for them',
+    !/if \(code === 'KeyM'\) this\._toggleMath\(\)/.test(msrc));
+
+  /* --- AND THE SCENE VIEWER LISTS THEM IN THE ORDER THEY HAPPEN ---
+     The ending sat fifth, between Ryuuseki and the two Mr. Satan scenes, and
+     it is the LAST thing in the game: he announces the tournament from 50%
+     mischief and opens the arena at `OPEN_AT`, and the finale is 100%. A
+     viewer whose order disagrees with the game teaches its order to whoever
+     reads it. Checked against `OPEN_AT` rather than against a number typed
+     twice, so moving the gate moves the check. */
+  const sceneBlock = msrc.slice(msrc.indexOf('  get _scenes() {'),
+    msrc.indexOf('  _pickScene(dir) {'));
+  const order = [...sceneBlock.matchAll(/\{ id: '(\w+)'/g)].map((m) => m[1]);
+  ok('the scene viewer runs in the order the story does',
+    order.indexOf('satanOpen') < order.indexOf('finale')
+    && order.indexOf('satanAnnounce') < order.indexOf('satanOpen')
+    && order.indexOf('found') < order.indexOf('summon'),
+    order.join(' '));
+  ok('...which is the order the mischief gates fire in', OPEN_AT < 1);
+  ok('...and "go to the arena" is no longer pretending to be a scene',
+    !order.includes('arena') && /_goToArena\(\) \{/.test(msrc));
   /* --- AND FORCE-SPAWN'S THREE, WHICH ARE THE ONLY LETTERS IN THE SET ---
      `\` seats a third and fourth kitten on the keyboard alone; `R` and `U` pass
      WASD and the arrows between the two sharing each. They are checked by name
@@ -11913,6 +12188,108 @@ console.log('\n--- one press is not enough, and one player drives ---');
       r.q.post === 'town' && r.satan.position.z === home.z, `${r.q.post}`);
   }
 
+  /* =========================================================================
+     ...AND THE DOORMAN SHUTS UP ONCE THE DOOR IS BEHIND THEM.
+
+     Everything above is the doorman, and it ran during the tournament too.
+     The torii is on the ARENA island, ten units from where the griffin sets
+     them down, so the frame after `Game._arrive` put Mr. Satan in his
+     announcer's box the checks above dragged him back out to the gate and
+     wrote "I need BOTH of you here" over his head; then the round started, the
+     fighters were posted 62 units away in the middle of the deck, the count
+     went to zero and he was TELEPORTED THREE HUNDRED UNITS INTO THE TOWN.
+
+     So for the whole of every round his box was empty and he was standing in
+     the square asking two kittens who were already in the ring to come to a
+     gate they had walked through. Nothing said so, because nothing had ever
+     looked at him during a round — found the frame the shot above was added
+     and pointed at the booth.
+
+     These are the checks that would have caught it, and they are about
+     BEHAVIOUR: not that a flag is read, but that a frame in each of the three
+     match states moves him nowhere and says nothing. */
+  console.log('\n--- and he stays in his box once the round starts ---');
+  {
+    const booth = { x: gate.x, y: 0, z: gate.z - 100 };
+    const inRing = () => at(gate.x, gate.z - 62);
+    /* HE IS PUT IN THE BOX THE WAY `Game._arrive` PUTS HIM THERE, then a frame
+       is run. Anything that moves him after that is this file's bug. */
+    const landed = (hud) => {
+      const r = rig();
+      r.satan.moveTo(booth.x, booth.y, booth.z);
+      r.satan.setLine('');
+      r.said = [];
+      r.satan.setLine = (t) => r.said.push(t);
+      Object.assign(r.hud, hud);
+      return r;
+    };
+    const stayed = (r) => r.satan.position.z === booth.z && r.satan.position.x === booth.x;
+
+    /* 1. A LIVE ROUND. The fighters are on their marks, nowhere near the
+       torii, so the old code read "nobody at the gate" and sent him home. */
+    {
+      const r = landed({ inMatch: true });
+      step(r, [inRing(), inRing()]);
+      ok('a live round leaves Mr. Satan in his announcer\'s box', stayed(r),
+        `z=${r.satan.position.z} want ${booth.z}`);
+      ok('...and does not write the doorman\'s line over his head',
+        r.said.length === 0, JSON.stringify(r.said[0] ?? ''));
+      ok('...and clears `post`, so coming home re-decides from scratch',
+        r.q.post === null, `${r.q.post}`);
+    }
+
+    /* 2. THE LANDING ITSELF, which is the frame that actually bit. They are
+       standing ON the gate here — the griffin drops them ten units from it —
+       and the old code therefore fetched him OUT of the box he had been put in
+       one frame earlier. `inMatch` is true across the league and team pickers,
+       which is what these frames are. */
+    {
+      const r = landed({ inMatch: true });
+      step(r, [atGate(2), atGate(-2)]);
+      ok('...and so does the landing, with both of them stood on the torii',
+        stayed(r), `z=${r.satan.position.z} want ${booth.z}`);
+      ok('...saying nothing to two kittens who have already come through it',
+        r.said.length === 0, JSON.stringify(r.said[0] ?? ''));
+    }
+
+    /* 3. THE RIDE. `inMatch` is false on the way out — `begin` has not been
+       called — so `travel` is a second term and not a belt-and-braces one. */
+    {
+      const r = landed({ travel: 'out' });
+      step(r, [atGate(2), atGate(-2)]);
+      ok('...and the griffin ride itself moves him nowhere', stayed(r),
+        `z=${r.satan.position.z}`);
+    }
+
+    /* 4. AND THE MOMENT IT IS OVER HE IS THE DOORMAN AGAIN. A guard that
+       latched would leave the arena permanently unopenable on a second visit,
+       which is a worse bug than the one being fixed. */
+    {
+      const r = landed({ inMatch: true });
+      step(r, [atGate(2), atGate(-2)]);
+      r.hud.inMatch = false;
+      step(r, [atGate(2), atGate(-2)]);
+      ok('...but the frame after the match he answers the gate again',
+        r.q.post === 'gate' && r.satan.position.z === gate.z + GATE_STAND,
+        `${r.q.post} z=${r.satan.position.z}`);
+    }
+
+    /* IT ASKS `Game.inMatch` RATHER THAN RESTATING IT. The predicate has to
+       span the two picker screens as well as the live round, and that is
+       exactly what `inMatch` is for; a copy of it here would be a second place
+       to forget `teamPicking`. Both halves are pinned, because the guard is
+       only as good as the getter it leans on. */
+    const asrc = readFileSync(new URL('../src/systems/arenaquest.js', import.meta.url), 'utf8');
+    ok('the guard asks Game.inMatch rather than listing the states again',
+      /if \(hud\.inMatch \|\| hud\.travel\) \{ this\.post = null; break; \}/.test(asrc));
+    ok('...and it guards the whole doorman, not just where he stands',
+      asrc.indexOf('hud.inMatch') < asrc.indexOf('_holdCourt(players, hud)'));
+    const msrc3 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('...and Game.inMatch really does span the two picker screens',
+      /get inMatch\(\) \{[^}]*this\.tournament\?\.active \|\| this\.leaguePicking \|\| this\.teamPicking/
+        .test(msrc3));
+  }
+
   /* A PAIR CIRCLING OVERHEAD HAVE NOT ARRIVED. They fly here on a dragon, so
      without the mount test he would be called out to the gate by two girls
      who never intended to land — the same rule `near` follows. */
@@ -12542,6 +12919,56 @@ console.log('\n--- one press is not enough, and one player drives ---');
      it and this is what keeps that branch honest. */
   ok('...and a screen with no maps answers -1 rather than throwing',
     nearestMap(quad, [-1, -1], 0) === -1 && nearestMap(quad, [], 0) === -1);
+
+  /* --- AND BETWEEN THEM, Z AND X REACH EVERY BOX ON SCREEN ---
+     REPORTED: "the Z and X keys should zoom it in, regardless of who owns the
+     minimap or if it is shared ... when ember and frost are together, Z and X
+     zooms in their shared minimap, instead, Z should zoom in the one for Ember
+     that is shared, and X should zoom in the one for storm and blossom that is
+     shared."
+
+     THE CAUSE WAS ASKING A PAD'S QUESTION ON A KEYBOARD. Both keys went
+     through "which map does this player drive", which is exactly right for a
+     bumper held by one kitten and gives the same answer twice the moment those
+     two kittens share a pane — so X did what Z did and the other box on screen
+     had no key at all. */
+  const pairPanes = splitLayout(2, W, H, 3, 'vertical', [2, 2]);
+  const pairOwn = assignMaps([2, 2], [0, 1], 2);
+  const shared = [nearestMap(pairPanes, pairOwn, 0), nearestMap(pairPanes, pairOwn, 0)];
+  ok('two sisters sharing a pane drive the same map — that is the bug',
+    shared[0] === shared[1], JSON.stringify(shared));
+  const zx = keyMaps(shared[0], shared[1], [0, 1]);
+  ok('...and Z and X still come out as the two different boxes',
+    zx[0] !== zx[1] && zx.every((m) => m >= 0), JSON.stringify(zx));
+  ok('...with Z the one Ember is standing in, not merely the lower index',
+    zx[0] === pairOwn.indexOf(0), `${zx[0]} vs pane 0's map ${pairOwn.indexOf(0)}`);
+
+  /* TWO PLAYERS COME OUT BIT-IDENTICAL, which is the fifth non-negotiable and
+     the reason X is the key that gives way rather than a re-deal of both. In
+     their own panes the two answers already differ, so the rule never fires. */
+  ok('two players in their own panes are untouched by the rule',
+    JSON.stringify(keyMaps(0, 1, [0, 1])) === JSON.stringify([0, 1])
+    && JSON.stringify(keyMaps(1, 0, [0, 1])) === JSON.stringify([1, 0]));
+
+  /* AND IT NEVER POINTS A KEY AT A BOX THAT IS NOT DRAWN. `_drawMaps` hides a
+     map `assignMaps` had nowhere to put, and a key that turns a hidden dial is
+     the silent button the sixth non-negotiable is about — so with one map up,
+     X keeps the collision rather than being handed a ghost. */
+  ok('...and with only one map on screen X is not sent to a hidden one',
+    JSON.stringify(keyMaps(0, 0, [0])) === JSON.stringify([0, 0]));
+  ok('...and with no map at all it says so rather than inventing one',
+    JSON.stringify(keyMaps(-1, -1, [])) === JSON.stringify([-1, -1]));
+
+  /* THE HUD TAG READS THE SAME FUNCTION. A box labelled "· X" that X does not
+     turn is the label lying, which is what it was doing: `_drawMaps` asked
+     `_mapForPlayer` itself, agreed with the bug, and printed the key on one box
+     and nothing on the other. */
+  const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('...and the map tag names its key from that one answer, not its own',
+    /const \[zMap, xMap\] = this\._keyMaps\(\);/.test(msrc)
+    && !/this\._mapForPlayer\(0\) === i/.test(msrc));
+  ok('...and the Z and X keys ask it too',
+    /KeyZ.*this\._zoomMapKey\(0\)/.test(msrc) && /KeyX.*this\._zoomMapKey\(1\)/.test(msrc));
 }
 
 /* ---------------------------------------------------------------------------

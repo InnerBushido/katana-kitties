@@ -222,6 +222,51 @@ export class ArenaQuest {
       case 'open': {
         if (!S) break;
 
+        /* HE CANNOT BE STANDING AT THE DOOR WHILE HE IS RUNNING THE ROUND
+           INSIDE IT, AND HE WAS.
+
+           Everything below is the DOORMAN: it walks him between the town
+           square and the torii by counting who is standing at the gate, and it
+           writes the line over his head telling them to gather. It runs every
+           frame the quest is `open` — which, per the comment on the call in
+           `Game._update`, is every frame whatever the tournament is doing. The
+           torii is on the ARENA island, ten units from where the griffin sets
+           them down, so:
+
+             land          `Game._arrive` puts him in the announcer's box and
+                           clears his line
+             next frame    everybody is within `GATE_RADIUS` of the torii, so
+                           this drags him back out to the gate and writes
+                           "The ring is ready! I need BOTH of you here."
+             round starts  the fighters are posted in the middle of the deck,
+                           62 units away, so the count drops to zero and this
+                           teleports him THREE HUNDRED UNITS INTO THE TOWN
+
+           So for the whole of every round he stood in the town square with a
+           speech bubble asking two kittens who were in the ring to come to a
+           gate they had already walked through, and his box was empty.
+
+           Nothing on screen ever said so, because nothing had ever LOOKED at
+           him during a round: `satan_charge.png` raising his arms for the ZERO
+           shout was raising them out there. Found by pointing a camera at him
+           — `Tournament.cameraWant` pushes in on the booth when the clock
+           kills a round, asked for, and the first shot was of nobody.
+
+           THE DOOR IS ONLY A DOOR BEFORE IT IS OPENED. `Game.inMatch` is
+           exactly the window in which where he stands and what he says are
+           `_arrive`'s business and the tournament's, not this function's — it
+           deliberately spans the league and team pickers as well as the live
+           round, because those run BEFORE `Tournament.begin` and so before
+           `active`, and they are the frames the griffin lands into. Once they
+           are out there, there is nothing left for him to check anybody in
+           FOR. `S.update` is below the switch, so he still animates.
+
+           `post` IS CLEARED RATHER THAN KEPT. Flying home is a genuine change
+           of where he belongs and `Game._arrive` has already put him in the
+           town by then, so the first frame back re-decides from scratch
+           instead of comparing against an answer from before the flight. */
+        if (hud.inMatch || hud.travel) { this.post = null; break; }
+
         /* WHERE HE IS STANDING IS DECIDED BEFORE ANYTHING IS ASKED OF HIM,
            because every test below measures from his position and a frame
            that moved him afterwards would ask the questions about where he

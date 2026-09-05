@@ -1,6 +1,6 @@
 # Katana Kitties — the whole project on one page
 
-**Last updated: 4 September 2026.** Anything below with a cost or an account
+**Last updated: 5 September 2026.** Anything below with a cost or an account
 attached was true on that date; check the dashboard before quoting a number.
 
 This is the **one-stop sheet**: what the project is, how to run it, how to test
@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 2124 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 2184 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 354 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -223,11 +223,10 @@ tappable**, so the whole debug set works on a phone.
 | **`1`** | **frame cost** — fps, stutter, draw calls, buffer size, quality, dev-or-built, GPU string |
 | `2` | Mr. Satan loses his temper (skips the ten-second fuse) |
 | `3` | give every kitten all 8 kotodama |
-| `4` | end the live round (feast) |
-| `5` | open the trade / profile screen |
+| `4` | **END this bit** — the live round, the ending ceremony, or the feast |
+| `5` | **NUDGE it on** — the round clock to 30s, then 15s, then 5s; a scene to its next line |
 | `6` | **the endgame** — ending, arena, orbs, purses |
-| `7` `8` `9` | Ryuuseki: take all seven stars & summon · seat both kittens · fire his beams |
-| `M` `Z` | maths overlay · map zoom |
+| `7` | **go to the arena NOW** — skips the whole unlock, flies you out there |
 | `-` `=` `0` | scene viewer: previous · next · play this scene |
 | **`\`** | **force-spawn** — ENTER then seats a third and fourth kitten on the keyboard alone |
 | `R` `U` | step WASD · step the arrows round the kittens sharing that set — her, her sister, then **both at once** |
@@ -350,8 +349,8 @@ would have noticed this page still naming the old ones.
 | mount | `Q` | `Numpad3` `.` `P` |
 | sprint | `LShift` | `RShift` `'` |
 | start / pause | `Enter` `NumpadEnter` | `Enter` `NumpadEnter` |
-| map zoom | — | — |
-| maths overlay | — | — |
+| map zoom | `Z` | `X` |
+| maths overlay | `M` | `M` |
 <!-- /doc-sync:keyboard -->
 
 <!-- doc-sync:pads -->
@@ -474,7 +473,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 2124
+the check that would have caught it.** That is why `world-check` is 2184
 assertions.
 
 **And a change a new developer would need to know about gets a line in this

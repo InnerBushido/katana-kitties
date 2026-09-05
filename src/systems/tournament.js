@@ -388,6 +388,30 @@ const RING_DIST = {
   touch: { min: 26, max: 66, base: 20, k: 0.6, feast: 68 },
 };
 
+/* THE SHOT ON MR. SATAN when the clock is what ended the round. Asked for:
+   "when timer gets to Zero on a match, can have the camera zoom in on Mr.
+   Satan since he is having a speech/dialogue at the end. Same can happen with
+   him giving the Draw speech."
+
+   NOT A RING DISTANCE AND THAT IS THE POINT. Every other number in
+   `RING_DIST` is sized off a 56-unit deck with two kittens somewhere on it;
+   this one is sized off one man on a booth, so it is a fifth of them.
+
+   `lift` PUTS THE AIM ON HIS CHEST, not on his feet, and 1.9 IS MEASURED OFF
+   A SCREENSHOT rather than reasoned. He stands on the booth at `arenaBooth.y`
+   and his sprite runs up from there; aiming at the position itself framed his
+   knees with the sky above his head. The first guess of 3.2 overcorrected and
+   sat him 60px low in an 546px frame, which is exactly where the announcer's
+   dialogue panel comes up — so his own speech, the reason for the shot, would
+   have crowded him. At 1.9 he is centred with the whole canopy in and the
+   panel clear beneath him.
+
+   `pitch` IS ALMOST LEVEL. The camera has a fixed yaw, so this shot comes from
+   the ring side of him looking back at the booth — an eye-level angle on a
+   billboard, where the fight's 0.52 would look down on him and squash the
+   drawing. Same argument the fight camera makes for its own flatness. */
+const SATAN_SHOT = { dist: 19, lift: 1.9, pitch: 0.16 };
+
 /* ---------------------------------------------------------------------------
    The feast — the gap between rounds, and the only reason it is a gap.
 
@@ -690,6 +714,10 @@ export class Tournament {
     this._hushCount();
     this._dropPose();
     this._pending = null;
+    /* ...and the same class of latch: it only steers the camera while the
+       state is `ko`, but a tournament torn down mid-ceremony and started again
+       would carry it into the next one's first frame. */
+    this._onTheClock = false;
     this._koHold = KO_HOLD;
     this.announcer?.clear();
     this.bannerEl?.classList.add('hidden');
@@ -907,6 +935,14 @@ export class Tournament {
        back how long it runs; on anything else it silences him and hands back
        nought, and both endings below read the same either way. */
     const wait = this._letHimFinish(onTheClock);
+    /* REMEMBERED FOR THE CAMERA, and only for it. `wait` is already 0 when
+       something other than the clock ended the round, but "he has no shout to
+       finish" and "the clock did this" are two different facts and the shot
+       needs the second one: with the recordings deleted `_letHimFinish`
+       returns 0 on the clock too (ninth non-negotiable), and the camera should
+       still be on him for the beat. Cleared where the round starts, with the
+       rest of the per-round latches. */
+    this._onTheClock = onTheClock;
     /* A DRAW IS NOT A WIN FOR NOBODY — it still has to move the state on, or
        the round the clock just refused to keep open stays open. */
     if (leaders.length !== 1 || best <= 0) {
@@ -965,6 +1001,111 @@ export class Tournament {
     });
   }
 
+  /* -------------------- the two debug fast-forwards ----------------------- */
+
+  /**
+   * END THIS BEAT AND GO TO THE NEXT ONE — debug `4`.
+   *
+   * IT USED TO ONLY KNOW ABOUT A LIVE ROUND, and a key called "end the round"
+   * that does nothing for the fifteen seconds after it is a key you press,
+   * watch do nothing, and press again. Asked for as: "make the 4 command to
+   * end the round work for the current battle round, and feast, it is like a
+   * fast forward button to move along the script to the next part."
+   *
+   * SO EVERY STATE ANSWERS IT, and each answer is the real transition rather
+   * than a shortcut around one. The clock's own decision ends a round, the
+   * `ko` beat's own hold ends the ceremony, and the feast's own timer starts
+   * the next round — so this key cannot disagree with the game about what
+   * comes next, which is the whole reason `4` stopped hitting player two for
+   * her health bar in the first place.
+   *
+   * `result` IS NOT IN HERE ON PURPOSE. The results screen is waiting for a
+   * kitten to enter a name, and a debug key that types it for her is a debug
+   * key that skips the one screen a player has to answer.
+   *
+   * @returns {string|null} what it did, for the toast, or null if nothing
+   */
+  endBeat(why = '[debug] round called!') {
+    switch (this.state) {
+      case 'card':
+      case 'count':
+        /* Straight to the gong. `t` is what both of those states are waiting
+           on, so this lands in `live` through the same line the wait does. */
+        this.t = this.state === 'card' ? CARD_TIME : COUNT_FROM;
+        return 'skipped to FIGHT!';
+      case 'live': {
+        const how = this.callOnDamage(why);
+        return how === 'draw' ? 'round ended — a draw' : 'round ended';
+      }
+      case 'ko':
+        /* HIS SENTENCE STILL GETS SAID, IT JUST GETS SAID NOW. Running the
+           pending closure rather than dropping it is what keeps the banner and
+           the result honest — skipping it would move the game on past a round
+           whose outcome was never shown. */
+        this._flushKo();
+        this.t = this._koHold ?? KO_HOLD;
+        return 'ceremony skipped';
+      case 'feast':
+        this.t = FEAST_TIME;
+        return 'feast skipped';
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * NUDGE THE CURRENT BEAT FORWARD — debug `5`.
+   *
+   * The difference from `endBeat` is the whole reason it is a second key.
+   * Asked for as "a command that will skip forward in the current scene/match
+   * rather than skip it like the 4 command does", with the ladder spelled out:
+   * a live round steps down to thirty seconds, then fifteen, then five, and
+   * only then runs out.
+   *
+   * WHY A LADDER AND NOT A JUMP. Everything interesting about the last thirty
+   * seconds is what Mr. Satan does at each of those marks, and they are the
+   * three hardest things in the game to look at twice — two minutes of a live
+   * round each time. Landing ON a mark rather than past it is what makes each
+   * line fire exactly as it does in play: the latches in `_callTheClock` are
+   * all `left <=` tests, so a step to 15 with 30 already said fires one line,
+   * and a jump straight from 120 to 15 would fire two on the same frame and
+   * queue them behind each other. The ladder is the thing that keeps a debug
+   * key from showing you a timing bug it caused itself.
+   *
+   * PAST THE LAST MARK IT HANDS OVER TO THE CLOCK rather than calling the
+   * round itself — `t` past `ROUND_LIMIT` is what `update` is already testing,
+   * so the round ends ON THE CLOCK, with `_onTheClock` set, his ZERO shout and
+   * the camera on him. A `callOnDamage(_, false)` here would look like the
+   * same thing and silently skip all three.
+   *
+   * @returns {string|null} what it did, for the toast, or null if nothing
+   */
+  nudge() {
+    if (this.state !== 'live') return this.endBeat('[debug] round called!');
+    const left = ROUND_LIMIT - this.t;
+    for (const mark of [WARN_AT, COUNT_AT, COUNT_LAST]) {
+      if (left <= mark) continue;
+      this.t = ROUND_LIMIT - mark;
+      return `${mark}s left`;
+    }
+    /* Past five seconds already: let the clock run out on its own terms. A
+       hair past the limit rather than exactly on it, because `update` tests
+       `>` and a frame that lands exactly on the boundary would do nothing. */
+    this.t = ROUND_LIMIT + 0.001;
+    return 'clock run out';
+  }
+
+  /** The `ko` beat's pending banner-and-line, run NOW. Shared by the update
+   *  loop's own timer and by both debug keys, so a skipped ceremony is the
+   *  same ceremony, arriving early. */
+  _flushKo() {
+    if (!this._pending) return;
+    const p = this._pending;
+    this._pending = null;
+    this._dropPose();
+    p.run();
+  }
+
   /* ------------------------------ update --------------------------------- */
 
   update(dt, pads) {
@@ -1013,6 +1154,7 @@ export class Tournament {
           this._voiced = false;
           this._countShown = null;
           this._pending = null;
+          this._onTheClock = false;
           this._koHold = KO_HOLD;
           this.audio?.play('gong');
           this.announcer?.say('sat_fight', 'FIGHT!');
@@ -1037,12 +1179,7 @@ export class Tournament {
         /* HIS SENTENCE FIRST, THEN THE ROUND'S. See `_letHimFinish`: when the
            clock is what ended the round he is mid-shout, and the bell over the
            top of ZERO is the bug this beat exists to fix. */
-        if (this._pending && this.t >= this._pending.at) {
-          const p = this._pending;
-          this._pending = null;
-          this._dropPose();
-          p.run();
-        }
+        if (this._pending && this.t >= this._pending.at) this._flushKo();
         if (this.t >= (this._koHold ?? KO_HOLD)) {
           const decided = this.wins.some((w) => w >= WINS_NEEDED);
           /* THE FEAST ONLY HAPPENS IF THERE IS ANOTHER ROUND TO EAT FOR. It is
@@ -1464,6 +1601,44 @@ export class Tournament {
           all[i].position.z - all[j].position.z
         ));
       }
+    }
+
+    /* THE CLOCK'S ENDING IS HIS, AND THE CAMERA GOES TO HIM FOR IT.
+       Asked for: the timer hitting zero, and the draw speech, are the two
+       moments in a round where the thing worth looking at is not in the ring —
+       two kittens standing still while a man in a box shouts ZEEEEROOOO is a
+       shot of the wrong half of the arena. `_onTheClock` is set only by
+       `callOnDamage(_, true)`, so it is the CLOCK and never the debug key.
+
+       A KNOCKOUT IS DELIBERATELY NOT IN THIS. The thing worth looking at there
+       is the kitten who just went down, and cutting away from her to the
+       announcer would throw away the one frame the whole round was for.
+
+       IT LASTS THE `ko` BEAT AND NOT A SECOND LONGER. Hanging it off "is he
+       still talking" would put the camera back in the ring for the half second
+       between ZERO and the line that follows it and then drag it out again;
+       `_koHold` already grew by exactly the length of his shout (see
+       `_announce`), so the state IS the shot. His draw speech outruns the beat
+       by a few seconds and the feast takes the screen — which is right: the
+       feast is its own thing and he can finish over the top of it.
+
+       NINTH NON-NEGOTIABLE. With no `satan` in the world — the drawing absent
+       — there is nothing to point at and this falls through to the ring
+       camera, which is what the whole round has been looking at anyway. */
+    if (this.state === 'ko' && this._onTheClock && this.game.satan?.group?.visible) {
+      const s = this.game.satan.position;
+      return {
+        x: s.x, y: s.y + SATAN_SHOT.lift, z: s.z,
+        dist: SATAN_SHOT.dist, pitch: SATAN_SHOT.pitch,
+        /* AND IT DOES NOT GET WIDENED TO FIT THE KITTENS. `main.js` floors
+           every ring distance with `fitDistance` off the players' spread,
+           which is right for every other shot here and would silently undo
+           this one: two fighters at opposite corners of the deck ask for 80-odd
+           units, so the "zoom in on Mr. Satan" would come out further back
+           than the fight it cut away from. He is the subject; they are not in
+           the frame at all. */
+        fitPlayers: false,
+      };
     }
 
     /* THE FEAST FRAMES THE RING, NOT THE PAIR. Every other tournament state

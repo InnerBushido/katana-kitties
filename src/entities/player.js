@@ -593,9 +593,20 @@ export class Player {
          the bare oath, which loses eight characters to the button badge in
          front of it. world-check builds every real prompt and pins it against
          this string, so adding a clan or a longer verb fails the check rather
-         than quietly cutting a word off the end. */
+         than quietly cutting a word off the end.
+
+         BIGGER THAN IT WAS, AND THE REPORT IS WHY. Reported from play as "a
+         little hard to read the text above the players head stating what input
+         button to press to join the clan" — asked as "make the text not
+         transparent so it's easier to read or make the text bigger or both?",
+         and the answer is both. `height` is the world size of the quad and
+         `size` is how many texture pixels are drawn into it, so raising one
+         without the other only magnifies the same glyphs and makes them
+         softer: 0.9 -> 1.15 and 64 -> 76 keep the same pixels-per-world-unit
+         while the whole line grows a quarter. The opacity is the other half
+         and it is in `update`. */
       live: CALLOUT_WIDEST,
-      height: 0.9, size: 64, color: '#fff6de', stroke: '#1d1216', strokeWidth: 9,
+      height: 1.15, size: 76, color: '#fff6de', stroke: '#1d1216', strokeWidth: 10,
     });
     this.callout.visible = false;
     this.group.add(this.callout);
@@ -1489,19 +1500,35 @@ export class Player {
       /* IT FADES OUT RATHER THAN VANISHING, and the fade is most of the answer
          to "don't let it be annoying". A line that disappears between frames
          pulls the eye to where it was; one that thins away over the last
-         second is gone before she notices it going. The ceiling is 0.88 and
-         not 1: this is text floating over the picture, and the picture is the
-         game. */
+         second is gone before she notices it going.
+         THE CEILING USED TO BE 0.88, on the argument that this is text
+         floating over the picture and the picture is the game. That argument
+         is right about a caption and wrong about an INSTRUCTION: this line is
+         the only thing telling her which button swears the oath, and a wash of
+         island behind a thin glyph is what made it hard to read. Full
+         strength, and the fade still does the whole of the work it was for. */
       if (this.calloutT <= 0) { this.calloutT = 0; this.callout.visible = false; }
-      else this.callout.mat.opacity = Math.min(0.88, this.calloutT);
+      else this.callout.mat.opacity = Math.min(1, this.calloutT);
     } else if (this.callout.visible) {
       /* The standing prompt breathes instead. It has no timer, so it could sit
          there for a minute while she works out what a clan is — and a caption
-         that is perfectly still for a minute stops being read. */
-      this.callout.mat.opacity = 0.74 + Math.sin((this.idlePhase ?? 0) * 1.8) * 0.14;
+         that is perfectly still for a minute stops being read.
+         THE BREATH IS NOW ENTIRELY ABOVE 0.9 — 0.74 to 0.88 spent a third of
+         every cycle at an opacity a nine-year-old was reading a hillside
+         through. Keeping the movement and lifting the band is what "not
+         transparent OR bigger" turned into: it still moves, and there is no
+         longer a moment in the cycle where the stroke stops holding it off the
+         background. */
+      this.callout.mat.opacity = 0.95 + Math.sin((this.idlePhase ?? 0) * 1.8) * 0.05;
     }
     if (this.callout.visible) {
-      this.callout.position.set(0, this.height * (this.barOn ? 1.92 : 1.66), 0);
+      /* LIFTED WITH THE LABEL. The quad is centred on its own origin, so
+         growing it from 0.9 to 1.15 pushed its BOTTOM edge down by half the
+         growth — straight at the health bar this line is deliberately clear
+         of. 1.66 -> 1.72 and 1.92 -> 1.98 hand that half back at the kitten
+         heights the game actually uses, which is why the two numbers move by
+         the same amount rather than being re-derived. */
+      this.callout.position.set(0, this.height * (this.barOn ? 1.98 : 1.72), 0);
     }
 
     const bar = this.hpGroup;

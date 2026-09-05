@@ -485,7 +485,7 @@ footer b { color: var(--text); }
 <div class="wrap">
 
 <header class="mast">
-  <div class="stamp">Last updated <span>·</span> 4 Sep 2026</div>
+  <div class="stamp">Last updated <span>·</span> 5 Sep 2026</div>
   <h1>Katana Kitties<em>The whole project on one page</em></h1>
   <p class="lede">A <b>split-screen co-op browser game for up to four players</b>: samurai kittens
     knocking over a chain of floating Japanese islands, riding storm dragons between them, and
@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 2124 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 2184 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 354 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -663,11 +663,10 @@ git push origin alpha</code></pre>
       <tr><td><kbd class="hot">1</kbd></td><td><b>Frame cost</b> — fps, stutter, draw calls, buffer size, quality, dev-or-built, and the GPU string</td></tr>
       <tr><td><kbd>2</kbd></td><td>Mr. Satan loses his temper — skips the ten-second fuse</td></tr>
       <tr><td><kbd>3</kbd></td><td>Give every kitten all eight kotodama</td></tr>
-      <tr><td><kbd>4</kbd></td><td>End the live round (feast)</td></tr>
-      <tr><td><kbd>5</kbd></td><td>Open the trade / profile screen</td></tr>
+      <tr><td><kbd>4</kbd></td><td><b>End this bit</b> — the live round, the ending ceremony, or the feast</td></tr>
+      <tr><td><kbd>5</kbd></td><td><b>Nudge it on</b> — the round clock to 30s, then 15s, then 5s; a scene to its next line</td></tr>
       <tr><td><kbd class="gold">6</kbd></td><td><b>The endgame</b> — ending, arena, orbs, purses</td></tr>
-      <tr><td><kbd>7</kbd><kbd>8</kbd><kbd>9</kbd></td><td>Ryuuseki: take all seven stars &amp; summon · seat both kittens · fire his beams</td></tr>
-      <tr><td><kbd>M</kbd><kbd>Z</kbd></td><td>Maths overlay · map zoom</td></tr>
+      <tr><td><kbd>7</kbd></td><td><b>Go to the arena NOW</b> — skips the whole unlock and flies you out there</td></tr>
       <tr><td><kbd>-</kbd><kbd>=</kbd><kbd>0</kbd></td><td>Scene viewer: previous · next · play this scene</td></tr>
       <tr><td><kbd class="hot">\</kbd></td><td><b>Force-spawn</b> — <kbd>ENTER</kbd> then seats a third and fourth kitten on the keyboard alone</td></tr>
       <tr><td><kbd>R</kbd><kbd>U</kbd></td><td>Step WASD · step the arrows round the kittens sharing that set — her, her sister, then <b>both at once</b></td></tr>
@@ -791,8 +790,8 @@ git push origin alpha</code></pre>
       <tr><td>mount</td><td><kbd>Q</kbd></td><td><kbd>Numpad3</kbd><kbd>.</kbd><kbd>P</kbd></td></tr>
       <tr><td>sprint</td><td><kbd>LShift</kbd></td><td><kbd>RShift</kbd><kbd>'</kbd></td></tr>
       <tr><td>start / pause</td><td><kbd>Enter</kbd><kbd>NumpadEnter</kbd></td><td><kbd>Enter</kbd><kbd>NumpadEnter</kbd></td></tr>
-      <tr><td>map zoom</td><td>—</td><td>—</td></tr>
-      <tr><td>maths overlay</td><td>—</td><td>—</td></tr>
+      <tr><td>map zoom</td><td><kbd>Z</kbd></td><td><kbd>X</kbd></td></tr>
+      <tr><td>maths overlay</td><td><kbd>M</kbd></td><td><kbd>M</kbd></td></tr>
     </tbody>
 </table></div>
 <!-- /doc-sync:keyboard -->
@@ -1067,7 +1066,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 2124 assertions and why almost none of them are about
+      is why <code>world-check</code> is 2184 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,

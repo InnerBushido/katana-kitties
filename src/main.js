@@ -16,7 +16,7 @@ import { World, CLANS } from './world/world.js';
 import { Player, ATTACKS, COMBAT, BASE_REACH, MAX_HP, KO_TIME } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from './core/palette.js';
 import {
-  splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, fitDistance, stablePanes,
+  splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   paneSeats, outOfShot, framedMembers, paneWiden,
 } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
@@ -109,7 +109,7 @@ const DEBUG_KEY_LABEL = {
      to open a panel to reach is a tool nobody reaches for. */
   Digit1: '1', Digit2: '2',
   Digit3: '3', Digit4: '4', Digit5: '5', Digit6: '6', Digit7: '7', Digit8: '8', Digit9: '9',
-  Digit0: '0', KeyM: 'M', KeyZ: 'Z', Minus: '-', Equal: '=',
+  Digit0: '0', Minus: '-', Equal: '=',
   Backquote: '`',
   /* FORCE-SPAWN AND ITS TWO HAND-OVER KEYS. `\` was freed when both keyboard
      sets moved onto ENTER to join (see `_findJoin` in core/input.js — it used
@@ -2043,11 +2043,13 @@ class Game {
         return;
       }
       if (e.code === 'KeyM' && this.state === 'play') this._toggleMath();
-      /* Z zooms both maps, X only player 2's — so in split screen each kid can
-         set their own scale without fighting over one control. Both go through
-         _zoomMap, which is also what the pad's `map` action calls. */
-      if (e.code === 'KeyZ' && this.state === 'play') this._zoomMap(0);
-      if (e.code === 'KeyX' && this.state === 'play' && !this.merged) this._zoomMap(1);
+      /* Z AND X ARE THE TWO BOXES, NOT THE TWO PLAYERS. See `_keyMaps`: they
+         used to be `_zoomMap(0)` and `_zoomMap(1)`, which asks "which map does
+         player one drive" — and the moment those two kittens share a pane the
+         answer is the same map twice, so X did what Z did and the OTHER box on
+         screen had no key at all. */
+      if (e.code === 'KeyZ' && this.state === 'play') this._zoomMapKey(0);
+      if (e.code === 'KeyX' && this.state === 'play' && !this.merged) this._zoomMapKey(1);
       if (this.state === 'play') this._debugKey(e.code);
       if (e.code === 'Escape') {
         /* THE QUESTION IS ANSWERED BEFORE ANYTHING ELSE READS ESCAPE, and it
@@ -2129,6 +2131,47 @@ class Game {
       return;
     }
     this._cycleMapAt(m, index, this._paneOf(index) !== (this._mapPane ?? [])[m]);
+  }
+
+  /**
+   * WHICH BOX Z TURNS AND WHICH BOX X TURNS, this frame.
+   *
+   * `keyMaps` in core/split.js owns the rule and the argument for it — pure,
+   * next door to `nearestMap`, which is the question it is deliberately NOT
+   * asking twice — and this is the plumbing: player one's answer, player two's
+   * answer, and which boxes are actually on screen.
+   *
+   * MERGED IS NOT PASSED THROUGH IT. There is one map, X is guarded by
+   * `!merged` in the keydown listener and has never done anything there, so the
+   * pair goes back untouched and the two-player merged view is bit-identical.
+   *
+   * @returns {number[]} [the map Z turns, the map X turns], either may be -1
+   */
+  _keyMaps() {
+    const z = this._mapForPlayer(0);
+    const x = this._mapForPlayer(1);
+    if (this.merged) return [z, x];
+    /* ON SCREEN MEANS `assignMaps` FOUND IT A PANE. `_drawMaps` hides the rest,
+       and it reads the same `_mapPane` to decide. */
+    const live = this.maps
+      .map((_, i) => i)
+      .filter((i) => (this._mapPane ?? [])[i] >= 0);
+    return keyMaps(z, x, live);
+  }
+
+  /** Z or X: turn the box that key owns. `which` is 0 for Z, 1 for X — a KEY,
+   *  not a player, which is the whole distinction `_keyMaps` exists to draw. */
+  _zoomMapKey(which) {
+    if (this.state !== 'play') return;
+    const m = this._keyMaps()[which];
+    if (m < 0 || !this.maps[m]) {
+      this.toast('No map on screen right now', which);
+      return;
+    }
+    /* NEVER "the map nearest you". The kitten on this keyboard can see both
+       boxes — she is looking at one screen — and the toast that names a corner
+       is for a bumper held by somebody whose own corner did not move. */
+    this._cycleMapAt(m, which);
   }
 
   /**
@@ -3183,72 +3226,56 @@ class Game {
    * keyboard at all.
    */
   _debugKey(code) {
-    if (code === 'Digit7') {
-      let n = 0;
-      for (const b of this.balls) {
-        if (b.taken) continue;
-        b.take();
-        this.ballsHeld++;
-        n++;
-      }
-      this._updateBallHud();
-      if (n && this.ballsHeld >= BALL_COUNT && !this.ryu) this._onAllBalls();
-      this.toast(`[debug] took ${n} star${n === 1 ? '' : 's'} — Ryuuseki summoned`, 0);
-    }
+    /* --- the two fast-forwards, `4` and `5` ---
+       `4` ENDS THE BEAT AND `5` NUDGES IT. One call each into `Tournament`,
+       which owns the transitions, so a key cannot disagree with the game about
+       what comes next — the same rule that made `4` stop hitting a kitten.
 
-    if (code === 'Digit8') {
-      if (!this.ryu) { this.toast('[debug] no dragon yet — press 7', 0); return; }
-      const R = this.ryu;
-      // Put him somewhere with room, then drop both kittens into their seats.
-      for (const p of this.players) {
-        if (p.mount === R || p.rideAlong === R) continue;
-        p.mount = null;
-        p.rideAlong = null;
-        p.pandaMount = null;
-        const seat = R.freeSeat();
-        if (!seat) break;
-        p.velocity.set(0, 0, 0);
-        if (seat === 'pilot') { R.pilot = p; p.mount = R; p.flySide = 1; }
-        else { R.gunner = p; p.rideAlong = R; }
-        const o = R.seatOffset(seat);
-        p.position.set(R.position.x + o.x, R.position.y + o.y, R.position.z + o.z);
-        p.group.position.copy(p.position);
-      }
-      this.toast('[debug] both kittens aboard — press 9 to fire', 0);
-    }
+       `4` USED TO ONLY KNOW ABOUT A LIVE ROUND, and a key called "end the
+       round" that does nothing for the fifteen seconds afterwards is a key you
+       press, watch do nothing, and press again. Asked for as: "make the 4
+       command to end the round work for the current battle round, and feast,
+       it is like a fast forward button to move along the script to the next
+       part." See `Tournament.endBeat`, where every state answers it.
 
-    if (code === 'Digit9') {
-      if (!this.ryu?.ridden) { this.toast('[debug] nobody is riding — press 8', 0); return; }
-      const shooter = this.ryu.gunner ?? this.ryu.pilot;
-      const n = this.ryu.fire(this.world, this, shooter);
-      this.toast(`[debug] fired ${n} beam${n === 1 ? '' : 's'}`, shooter.index);
-    }
+       `5` IS THE FINER ONE and it exists because of the last thirty seconds:
+       Mr. Satan says a different line at 30, at 15 and at 10, and each of them
+       used to cost two minutes of a live round to hear. See `Tournament.nudge`
+       for why it steps onto each mark rather than jumping past them.
 
-    /* --- the feast, in one key ---
-       Same argument as `7` `8` `9` and `6`. The fifteen seconds between rounds
-       are behind the whole unlock AND a round somebody has to actually win, and
-       they are where the snacks and the angel both live — so the two newest
-       things in the game were also the two hardest to look at. `4` calls the
-       round on the spot, which drops straight into `_startFeast` through the
-       real path rather than around it.
-
-       IT CALLS THE ROUND, IT DOES NOT KILL ANYBODY. It used to hit
+       IT CALLS THE ROUND, IT DOES NOT KILL ANYBODY. `4` used to hit
        `this.players[1]` for her whole health bar — which read as ending the
        round only in a duel. At four players it killed Frost and left the other
        two standing; in a 2v2 it did not end the round at all, because a side
        is not out until everybody on it is. Reported from play as "it doesn't
-       end the round, it just kills Frost". `callOnDamage` is the same decision
-       the clock makes at `ROUND_LIMIT`, so the key cannot disagree with the
-       game about who won, at any league size, and nobody is hurt to get it:
-       whoever was ahead on damage takes the round with the score she had
-       actually earned, and an untouched round is a draw. */
-    if (code === 'Digit4') {
-      if (!this.tournament?.fighting) {
-        this.toast('[debug] not in a live round — pick "arena" with -/= and press 0', 0);
+       end the round, it just kills Frost". `callOnDamage` underneath both of
+       these is the same decision the clock makes at `ROUND_LIMIT`, so the key
+       cannot disagree with the game about who won, at any league size, and
+       nobody is hurt to get it: whoever was ahead on damage takes the round
+       with the score she had actually earned, and an untouched round is a
+       draw.
+
+       BOTH REFUSE OUT LOUD AND NAME THE KEY THAT FIXES IT. Sixth
+       non-negotiable, and it earns its keep here: "no tournament is running"
+       and "this key is broken" look identical from a chair. */
+    if (code === 'Digit4' || code === 'Digit5') {
+      const nudge = code === 'Digit5';
+      /* A STORY BEAT IS ONE OF THE THINGS `5` STEPS THROUGH, and `4`'s answer
+         for a scene is Escape, which already exists and throws the whole thing
+         away. Asked for as "skip forward in the current scene/match rather
+         than skip it like the 4 command does" — so the scene is checked first,
+         and only for the nudge. */
+      if (nudge && this._sceneActive()) {
+        const moved = this.cutscene?.nextBeat() || this.summonScene?.nextBeat();
+        this.toast(moved ? '[debug] next line' : '[debug] this scene has no beats to step', 0);
         return;
       }
-      const how = this.tournament.callOnDamage('[debug] round called!');
-      this.toast(`[debug] round ended — ${how === 'draw' ? 'a draw' : 'feast in a moment'}`, 0);
+      if (!this.tournament?.active) {
+        this.toast('[debug] no tournament running — press 7 to go to the arena', 0);
+        return;
+      }
+      const did = nudge ? this.tournament.nudge() : this.tournament.endBeat();
+      this.toast(did ? `[debug] ${did}` : '[debug] nothing to skip in this bit', 0);
     }
 
     /* --- Mr. Satan's tantrum, without the ten seconds ---
@@ -3271,18 +3298,22 @@ class Game {
       this.toast('[debug] Mr. Satan has had enough of your kitty shenanigans', 0);
     }
 
-    /* --- the scene viewer ---
-       Every cutscene in the game is gated behind hours of play and fires ONCE
-       per session, which makes the last thing anybody writes also the hardest
-       thing to look at: the finale needs all 213 props knocked over, and
-       checking one word of it meant a fresh run. `0` replays whichever scene
-       is selected and `-`/`=` walk the list. */
     /* --- THE WHOLE ENDGAME, IN ONE KEY ---
-       Same argument as `7` `8` `9`. Everything this unlocks sits behind 216
-       props knocked over — most of an afternoon — so checking one colour on
-       one orb, or one word of the ending, or whether a round card is centred,
-       meant playing the whole game first. See `_debugEndgame`. */
+       Everything this unlocks sits behind 216 props knocked over — most of an
+       afternoon — so checking one colour on one orb, or one word of the ending,
+       or whether a round card is centred, meant playing the whole game first.
+       See `_debugEndgame`. */
     if (code === 'Digit6') this._debugEndgame();
+    /* --- AND THEN THE ARENA, WHICH IS WHERE YOU WERE GOING ---
+       `7` follows `6` because that is the order they are pressed in: unlock the
+       endgame, then fly out to the ring. It used to be the last row of the
+       SCENE VIEWER, labelled "not a scene, but it belongs in the same list" —
+       which was true of why it was hard to reach and false about what it is,
+       and it meant two keys and a cursor to do the thing `6` sets up. Asked
+       for as: "let's add the 'Go to the arena' to be a number key press."
+       Through `_goToArena`, the same path the scene viewer's row called, so
+       nothing about what it does has moved. */
+    if (code === 'Digit7') this._goToArena();
     /* --- EVERY ABILITY ON EVERY KITTEN, IN ONE KEY ---
        The eight orbs are the endgame collectible, so trying one of them meant
        either playing to 100% mischief or pressing `6` and then trading orbs
@@ -3292,12 +3323,12 @@ class Game {
        `1 + k*n` rule in powerorb.js is written for and the hardest one to reach
        by hand. */
     if (code === 'Digit3') this._debugAllOrbs();
-    if (code === 'Digit5') {
-      /* And the screen they are traded on, which is otherwise behind the
-         pause menu and only interesting when both girls have orbs. */
-      if (!this.kotodama.awakened) { this.toast('[debug] press 6 first', 0); return; }
-      this.profile.open('profile');
-    }
+    /* --- the scene viewer ---
+       Every cutscene in the game is gated behind hours of play and fires ONCE
+       per session, which makes the last thing anybody writes also the hardest
+       thing to look at: the finale needs all 213 props knocked over, and
+       checking one word of it meant a fresh run. `0` replays whichever scene
+       is selected and `-`/`=` walk the list. */
     if (code === 'Digit0') this._playScene();
     if (code === 'Minus') this._pickScene(-1);
     if (code === 'Equal') this._pickScene(1);
@@ -3583,19 +3614,32 @@ class Game {
   }
 
   /** The scenes the viewer can replay, in the order they happen in a playthrough. */
+  /**
+   * IN THE ORDER A GIRL ACTUALLY MEETS THEM, which is not the order they were
+   * written in and is not what this list used to be.
+   *
+   * The ending sat fifth, between Ryuuseki and the two Mr. Satan scenes — and
+   * it is the LAST thing in the game. Mr. Satan announces the tournament from
+   * 50% mischief and opens the arena at 80% (`OPEN_AT` in arenaquest.js); the
+   * finale is 100%. So the two of them come BEFORE the ending, and a viewer
+   * whose list disagrees with the game teaches its order to whoever reads it.
+   * Asked for as "re-organize the remaining scenes to more sensible order";
+   * the order the story happens in is the only one that is a fact rather than
+   * a preference.
+   *
+   * AND "GO TO THE ARENA" IS NOT IN HERE ANY MORE. It carried a comment saying
+   * it was not a scene, which was the honest half of the argument for keeping
+   * it; it is `7` now. See `_goToArena`.
+   */
   get _scenes() {
     return [
       { id: 'intro', label: 'opening story' },
       { id: 'shrine', label: 'a clan leader introduces herself' },
       { id: 'found', label: 'all seven stars found' },
       { id: 'summon', label: 'Ryuuseki arrives' },
+      { id: 'satanAnnounce', label: 'Mr. Satan announces the tournament (50%)' },
+      { id: 'satanOpen', label: 'Mr. Satan opens the arena (80%)' },
       { id: 'finale', label: '100% mischief — the ending' },
-      { id: 'satanAnnounce', label: 'Mr. Satan announces the tournament' },
-      { id: 'satanOpen', label: 'Mr. Satan opens the arena' },
-      /* Not a scene, but it belongs in the same list for the same reason the
-         others do: it is gated behind the entire game and fires once, which
-         makes it the hardest thing in the feature to look at twice. */
-      { id: 'arena', label: 'go to the arena NOW (skips the whole unlock)' },
     ];
   }
 
@@ -3667,24 +3711,39 @@ class Game {
         this.world.openArena(true);
         this.summonScene.start('satanOpen', this.world.arenaCentre, 96, this.satan?.art);
         break;
-      case 'arena':
-        /* THE WHOLE UNLOCK, SKIPPED. Reaching the tournament honestly needs
-           seven stars, a ride on Ryuuseki and 80% of a world knocked over —
-           which is right for a player and impossible for anybody checking
-           whether a round card is centred. It fast-forwards the quest rather
-           than calling `enterArena` directly, so what gets tested is the real
-           path: the griffin, the landing, `Tournament.begin`, all of it. */
-        this.world.openArena(true);
-        if (this.satan) this.satan.group.visible = true;
-        this.quest.stage = 'open';
-        this.quest.rodeRyu = true;
-        this.enterArena();
-        break;
       default:
         return;
     }
     this.toast(`[debug] playing: ${pick.label}`, 0);
     this._refreshDebugPanel();
+  }
+
+  /**
+   * GO TO THE ARENA NOW — debug `7`, and the whole unlock skipped.
+   *
+   * Reaching the tournament honestly needs seven stars, a ride on Ryuuseki and
+   * 80% of a world knocked over — which is right for a player and impossible
+   * for anybody checking whether a round card is centred.
+   *
+   * IT FAST-FORWARDS THE QUEST RATHER THAN CALLING `enterArena` DIRECTLY, so
+   * what gets tested is the real path: the griffin, the landing,
+   * `Tournament.begin`, all of it.
+   *
+   * IT WAS THE LAST ROW OF THE SCENE VIEWER and carried a comment admitting it
+   * was not a scene. It is a key of its own now — asked for — and the body has
+   * not changed a line, so the two ways of reaching it cannot have drifted.
+   */
+  _goToArena() {
+    if (this.tournament?.active) {
+      this.toast('[debug] already at the arena', 0);
+      return;
+    }
+    this.world.openArena(true);
+    if (this.satan) this.satan.group.visible = true;
+    this.quest.stage = 'open';
+    this.quest.rodeRyu = true;
+    this.enterArena();
+    this.toast('[debug] off to the arena', 0);
   }
 
   /* ------------------------ what the frame costs ------------------------ */
@@ -4032,16 +4091,12 @@ class Game {
 
     el.innerHTML = `
       <b>DEBUG</b> <span class="k">\`</span> closes
-      ${row('Digit7', 'take all seven stars &amp; summon Ryuuseki')}
-      ${row('Digit8', 'seat both kittens on him')}
-      ${row('Digit9', 'fire his beams')}
       ${row('Digit6', 'THE ENDGAME — ending, arena, orbs, purses')}
+      ${row('Digit7', 'go to the arena NOW (skips the whole unlock)')}
       ${row('Digit3', 'give EVERY kitten all 8 kotodama')}
-      ${row('Digit5', 'open the trade / profile screen')}
-      ${row('Digit4', 'end the live round (feast)')}
+      ${row('Digit4', 'END this bit — round, ceremony or feast')}
+      ${row('Digit5', 'NUDGE it on — 30s, 15s, 5s, next line')}
       ${row('Digit2', 'Mr. Satan loses his temper (skip the fuse)')}
-      ${row('KeyM', 'maths overlay')}
-      ${row('KeyZ', 'map zoom')}
       ${row('Digit1', 'frame cost — fps, draws, pixels, GPU', this._perfOn)}
       <div class="dbg-sep">FOUR PLAYERS, ONE KEYBOARD</div>
       ${row('Backslash', 'force-spawn — ENTER seats 3 &amp; 4 on the keyboard',
@@ -4082,17 +4137,16 @@ class Game {
         if (!hit) return;
         const code = hit.dataset.debug;
         if (code === 'Backquote') { this._toggleDebugPanel(); return; }
-        /* TWO OF THESE ARE NOT `_debugKey` ACTIONS AND MUST NOT BE MADE INTO
-           ONE. `M` and `Z` are handled in the keydown listener rather than in
-           `_debugKey`, and the listener calls BOTH — so moving them into
-           `_debugKey` would make the physical key toggle twice and appear dead.
-           They are called here the same way the key calls them. */
-        if (code === 'KeyM') this._toggleMath();
-        else if (code === 'KeyZ') this._zoomMap(0);   // player 1's map
-        /* Everything else IS a `_debugKey` action, and goes through the one
-           entry point so a tap cannot do a subtly different thing from the key
-           it is labelled with. */
-        else this._debugKey(code);
+        /* EVERY ROW IS A `_debugKey` ACTION NOW, and that is what the two
+           exceptions here used to be. `M` and `Z` had rows because they were
+           the only way to reach the maths overlay and the map zoom from a
+           keyboard — which made two real player controls look like debug
+           tools, and forced this handler to call them directly rather than
+           through `_debugKey`, since the keydown listener calls both and a row
+           routed through it would have toggled twice. They are documented
+           keyboard controls now (`npm run docs` writes them into the table),
+           so the rows are gone and so is the exception. */
+        this._debugKey(code);
         this._refreshDebugPanel();
       });
     }
@@ -6512,9 +6566,15 @@ class Game {
    */
   _mapForPlayer(index) {
     if (this.merged) return this.maps.length ? 0 : -1;
-    const pane = this._paneOf(index);
-    if (pane < 0) return -1;
+    /* THE FALLBACK IS DECIDED FIRST AND THEN USED FOR BOTH QUESTIONS. It used
+       to ask `_paneOf` — which reads `this.groups` and nothing else — before
+       working out the fallback two lines down, so on the one frame before the
+       first `_clusters()` the pane came back -1 and the button toasted "no map
+       on screen" while two of them were being drawn. Half a fallback is worse
+       than none: it looks like it covers the case and does not. */
     const groups = this.groups?.length ? this.groups : [this.players.map((_, i) => i)];
+    const pane = groups.findIndex((m) => m.includes(index));
+    if (pane < 0) return -1;
     const panes = this._panes(window.innerWidth, window.innerHeight, groups);
     /* THE ASSIGNMENT IS READ, NOT RE-DECIDED. `_mapPanes` remembers last
        frame's answer BECAUSE the rule needs it — so calling it here would be
@@ -6657,20 +6717,20 @@ class Game {
       const members = groups[pane];
       const shared = members.length > 1;
       if (tag) {
-        /* THE KEY IS THE ONE THAT ACTUALLY DRIVES THIS MAP. Z is player 1's
-           and X is player 2's (see the keydown listener), and they are hers
-           wherever her pane's map has ended up — so the hint is looked up from
-           who is standing here, not from which of the two boxes this is. A
-           pane holding neither of them is driven by a pad and says nothing;
-           naming a key nobody in that pane can press is the label lying.
-           ASKED OF `_mapForPlayer`, NOT OF THIS PANE'S MEMBERS, now that a
-           kitten drives the nearest map rather than only her own. Reading the
-           group was the same answer while those two questions agreed and is
-           wrong the moment they do not: at four players, player 1 in a pane
-           with no map of its own drives one of these boxes, and the box would
-           have said nothing while Z turned it. */
-        const key = this._mapForPlayer(0) === i ? ' · Z'
-          : this._mapForPlayer(1) === i ? ' · X' : '';
+        /* THE KEY IS THE ONE THAT ACTUALLY DRIVES THIS MAP, ASKED OF THE ONE
+           FUNCTION THAT DECIDES IT. This used to ask `_mapForPlayer(0)` and
+           `_mapForPlayer(1)` itself — the same two questions the keydown
+           listener asked — so when those two came back with the same map the
+           label agreed with the bug rather than exposing it: one box read
+           "· Z" and the other read nothing, while X quietly turned the first
+           one. `_keyMaps` is now the only place that answer exists, and this
+           reads it, so a label that names a key is a label that key really
+           turns.
+           A pane holding neither key's box is driven by a pad and says
+           nothing; naming a key nobody in that pane can press is the label
+           lying, which is what the whole tag is here to stop. */
+        const [zMap, xMap] = this._keyMaps();
+        const key = zMap === i ? ' · Z' : xMap === i ? ' · X' : '';
         /* THE KITTENS STANDING THERE, not the cats who normally have those
            seats. `styleFor(members[0])` is a seat number read as a style index
            and labelled the pane STORM while Blossom was standing in it. Two
@@ -7475,10 +7535,19 @@ class Game {
         want.set(ring.x, ring.y, ring.z);
         /* THE RING KNOWS HOW BIG THE DECK IS AND STILL NOT HOW WIDE THE PANE
            IS. Its 56-unit deck is exactly the subject that gets cropped first
-           in a narrow pane, so it takes the same floor as everything else. */
-        wantDist = Math.max(ring.dist * widen, fitDistance({
-          spread: dist, fovDeg: rig.camera.fov, aspect,
-        }));
+           in a narrow pane, so it takes the same floor as everything else.
+           UNLESS THE SHOT IS NOT OF THE KITTENS. `fitPlayers: false` is the
+           close-up on Mr. Satan while he shouts the clock out — see
+           `SATAN_SHOT` — and the floor below is a function of how far apart the
+           PLAYERS are, so applying it there would pull the camera back off him
+           by however far two fighters happened to end the round from each
+           other. A shot with nobody in it that widens to fit them is not a
+           close-up. The pane floor still applies: `widen` is about the shape of
+           the window, which is true of any subject. */
+        wantDist = ring.fitPlayers === false ? ring.dist * widen
+          : Math.max(ring.dist * widen, fitDistance({
+            spread: dist, fovDeg: rig.camera.fov, aspect,
+          }));
       }
 
       /* AND NEVER FURTHER BACK THAN THE WHOLE WORLD.
