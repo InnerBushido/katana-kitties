@@ -799,9 +799,12 @@ no `.menu-btn` inside: it finds the panel, finds no items, and reports that it
 does not own the input — so the pause menu underneath does not quietly keep
 taking presses. One place, rather than a second copy of "which panel is up".
 
-**Three buttons, one meaning each**: `jump` offer / un-offer, `attack` confirm,
-`interact` back out (confirm, then offer, then the screen). A fourth is a fourth
-thing to explain to a nine-year-old.
+**Four buttons, one meaning each**: `jump` offer / un-offer, `attack` confirm,
+`interact` back out (confirm, then offer, then the screen), and `sprint` **drop
+the pile on the ground** — see *Putting an orb down*, below. It was three for a
+long time, on the grounds that a fourth is a fourth thing to explain to a
+nine-year-old, and the fourth had to earn it by being a thing that could not be
+done at all any other way.
 
 **Moving your offer CLEARS YOUR CONFIRM.** A girl who agreed to swap her Ward
 and then moved the highlight to her Gale has not agreed to *that* trade, and
@@ -841,6 +844,65 @@ would update the world matrices — `Object3D` keeps `.quaternion` in step with
 it.** Each orb's shell radius, orbit speed and starting phase come from its slot
 and from how many she is wearing, so adding a fifth changes where the other four
 belong. Eight icosahedrons is nothing; a wrong-looking constellation is not.
+
+### Points alone are a trade, and `trade` cannot say so
+
+> When trying to just trade Points on the Character Profile screen, it always
+> says "That would leave somebody carrying nine" even though that is not true.
+
+Exactly right, and the sentence was a lie about a real refusal. `Kotodama.trade`
+is an **orb** function: handed two empty piles it returns `false`, correctly,
+because a swap of no orbs for no orbs is a no-op to it. The screen fed that
+`false` straight into its one refusal message — which is about the eight-slot
+cap — so every points-only gift on this screen, the single most likely thing two
+sisters do at it, was turned down with a sentence about carrying nine orbs when
+neither girl had offered one.
+
+**The fix is at the caller, not in `trade`.** `trade` is right; asking it a
+question it is not about is what was wrong. It is asked **only when there are
+orbs to move**, and a pile of points is moved by the same three lines either
+way. A trade with *nothing* on either table — no orbs, no points — now gets a
+refusal that says what is actually true, and the till only rings itself for the
+orb path, so the points path rings it on the way out instead of ringing twice.
+
+### Putting an orb down
+
+> Add a button they can select to drop the currently selected orbs; it will
+> randomly drop them around the player, like it does when a player drops out of
+> the game.
+
+`Kotodama.drop`, and it reuses `dropInWorld` — the same scatter the game already
+does when a player leaves, so an orb put down deliberately and an orb shed by a
+departing kitten land in the same pattern and obey the same "find an open spot"
+rule. The pile it acts on is **the offer**, because that is the only multi-orb
+selection this screen has and the only one she can see.
+
+**It asks first.** Seventh non-negotiable: an orb on the floor is not undone by
+pressing the same button again, so `SPRINT` raises the ordinary per-side
+question, naming every orb in the pile, with no `.primary` on it.
+
+**A dropped orb is shy of the girl who dropped it, and only of her.**
+`PICKUP_RADIUS` is 2.8 and `DROP_R0` is 2.6, so without this the orb would be
+hoovered straight back onto her on the next frame and the button would look
+broken. `pk.shyOf` holds the one player it will not jump to; **walking out of
+range clears it**, which makes it a rule with an obvious undo rather than a
+timer nobody can see. Her sister can pick it up immediately, which is the point
+of the feature.
+
+**The offer is cleared with the orbs.** `Side.offers` is a set of *row numbers*
+and the rows below the dropped ones shuffle up underneath it — left alone, she
+would be silently offering whatever moved into those slots.
+
+**It reports how many actually went down**, not how many she asked for.
+`dropInWorld` can fail to find a spot; a drop of three that placed two says two,
+and nothing is ever removed from her without a pickup existing for it. Fourth
+non-negotiable: an orb cannot be destroyed by this, and `world-check` drives the
+partial case.
+
+**A phone has no `SPRINT`.** `_paintActions` grows a `DROP` button in the footer
+when the pile is non-empty — and the interesting bug is the other half of that:
+the function early-returns on an unchanged signature, so the offer count had to
+go **into** the signature or the button would be drawn once and never change.
 
 ## 守 Long Guard — the ninth orb, and the first one you cannot find
 
