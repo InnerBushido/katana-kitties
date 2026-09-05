@@ -712,6 +712,50 @@ export class Audio {
           gain: 0.13 * v, delay: i * 0.05,
         }));
         break;
+
+      /* --- the panda cub, and the panda changing size ---
+         THE THREE ARE ONE FAMILY DELIBERATELY. Down falls, up rises, and the
+         lick is a small rise — same rule as the ward cues above and as every
+         other yes and no in this game, so a kid who has heard the poof once
+         can already tell which way the next one went without looking. */
+      case 'lick':
+        /* THE QUIETEST THING IN HERE, and that is the whole design. It fires
+           roughly once a second for as long as a hurt kitten stands near her
+           cub, which can be most of a round — anything with a transient or a
+           bell in it would be unbearable by the fourth one. So: a soft wet lap
+           with no top end at all, and a tiny two-note chirp over it for the
+           happy animal. Rising, because it means something good is happening.
+
+           NO `q` HIGH ENOUGH TO RING. A resonant lap reads as a drip, which is
+           a sound about water rather than about an animal. */
+        this._noise({ from: 1500, to: 520, dur: 0.07, gain: 0.085 * v, q: 0.7 });
+        this._tone({ type: 'sine', from: semi(19), to: semi(26), dur: 0.10, gain: 0.06 * v, delay: 0.04 });
+        break;
+      case 'pandadown':
+        /* THE ANIMAL GETS SMALL. NOT A DEATH — fourth non-negotiable, a pet
+           can never be lost, and a smash or a K.O. gong here would tell a
+           nine-year-old the exact opposite of what happened. It is air going
+           out of something: a falling three-note and a soft puff, no impact
+           transient anywhere in it. */
+        [12, 7, 0].forEach((n, i) => this._tone({
+          type: 'triangle', from: semi(n), to: semi(n - 5), dur: 0.28,
+          gain: 0.13 * v, delay: i * 0.075,
+        }));
+        this._noise({ from: 900, to: 180, dur: 0.34, gain: 0.13 * v, q: 0.5, delay: 0.05 });
+        break;
+      case 'pandapoof':
+        /* ...AND BACK UP AGAIN. The same figure read the other way, plus one
+           bell at the top that `pandadown` deliberately has not got: getting
+           the panda back is a reward and the bell is the sound this game uses
+           for those (see `chomp`, `orb`). */
+        [0, 7, 12].forEach((n, i) => this._tone({
+          type: 'triangle', from: semi(n), to: semi(n + 5), dur: 0.26,
+          gain: 0.13 * v, delay: i * 0.075,
+        }));
+        this._noise({ from: 300, to: 2200, dur: 0.3, gain: 0.12 * v, q: 0.6 });
+        this._tone({ type: 'sine', from: semi(31), dur: 0.9, gain: 0.11 * v, delay: 0.26 });
+        this._tone({ type: 'sine', from: semi(38), dur: 0.7, gain: 0.05 * v, delay: 0.3, detune: 7 });
+        break;
       case 'orb':
         // A bell: fundamental plus a slightly detuned partial, long decay.
         this._tone({ type: 'sine', from: semi(24), dur: 1.1, gain: 0.2 * v });

@@ -736,6 +736,12 @@ export class Tournament {
       p.setRoundBonus?.(0);
       p.fedHp = 0;
       p.hp = p.maxHp;
+      /* AND HER PANDA COMES IN ON A FULL BAR TOO. Nothing carries a wound
+         between matches, for the animal for exactly the reason it does not for
+         her. Being KNOCKED DOWN is not a wound and does not heal here — that
+         one is for the rest of the game and comes back at the shrine; see
+         `Panda.collapse`. */
+      p.panda?.resetHp();
       p.barOn = true;
       p.landAngel();
     });
@@ -911,6 +917,11 @@ export class Tournament {
          adds, so this lasts exactly one round. */
       p.setRoundBonus?.(Math.round((p.fedHp ?? 0) * OVERFLOW_FRAC));
       p.fedHp = 0;
+
+      /* THE PANDA IS PATCHED UP BETWEEN ROUNDS, like she is — and AFTER the
+         overflow is banked, because its bar is a fraction of hers and banking
+         first is what lets a good feast make the animal tougher too. */
+      p.panda?.resetHp();
 
       /* WHAT SHE STARTS WITH IS DECIDED HERE, and it is asked of her state
          rather than remembered from the last frame of the feast. There is no
