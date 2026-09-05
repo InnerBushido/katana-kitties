@@ -763,11 +763,45 @@ export class Audio {
       case 'warddown':
         this._tone({ type: 'sine', from: semi(19), to: semi(5), dur: 0.3, gain: 0.13 * v });
         break;
-      case 'wardhit':
-        // Struck glass: bright, short, and gone before the next blow lands.
-        this._tone({ type: 'sine', from: semi(31), dur: 0.22, gain: 0.16 * v });
-        this._tone({ type: 'sine', from: semi(38), dur: 0.14, gain: 0.07 * v, detune: 9 });
-        this._noise({ from: 5200, to: 2600, dur: 0.08, gain: 0.1 * v, q: 2.0 });
+      /* THE TWO OUTCOMES OF BEING HIT, AND THEY HAVE TO BE TOLD APART BY EAR.
+         Asked for as "a lower pitched dink or absorption sound" against "a
+         unique high pitched dink to indicate their shield was disabled", and
+         the reason is that the two say opposite things about what to do next:
+         one means keep blocking, the other means run. A kid in a four-way
+         round is not looking at the bubble when the blow lands.
+
+         BOTH ARE STILL THE WARD'S OWN FAMILY, which is the rule the three
+         cues above already follow — `wardup` sweeps in and `warddown` sweeps
+         out. An absorption that sounded like
+         a different object would read as a different thing having happened. */
+      case 'wardabsorb':
+        /* A DULL STRUCK GLASS. THIS REPLACED `wardhit`, WHICH IS GONE: that
+           cue was the sound of a block costing her nothing, and after
+           `Player._wardTakeHit` there is no such blow — every one takes half
+           the clock or ends it. A cue nothing can play is a lie in this
+           table, so it was deleted rather than left for somebody to find.
+           Same struck glass an octave down, no top partial, the noise burst
+           darker and shorter: it is still the ward's voice, it just costs
+           her something now, and the pitch dropping is the whole message. */
+        this._tone({ type: 'sine', from: semi(19), to: semi(16), dur: 0.26, gain: 0.17 * v });
+        this._tone({ type: 'triangle', from: semi(26), dur: 0.12, gain: 0.05 * v, detune: 7 });
+        this._noise({ from: 1900, to: 700, dur: 0.09, gain: 0.09 * v, q: 1.2 });
+        break;
+      case 'wardbreak':
+        /* SMASHED, not merely ended. Two bright partials a fourth apart so it
+           beats rather than rings, and the noise sweeps DOWN across a wide
+           band with a long tail — glass giving way rather than glass tapped.
+           It is deliberately the highest thing in the ward family and the only
+           one with a scatter after it, because it is the only one that means
+           the ability is gone.
+
+           IT DOES NOT ALSO PLAY `warddown`. `Player._dropWard` holds its own
+           sound back for this reason: two endings layered on one frame reads
+           as a bug in the audio, not as emphasis. */
+        this._tone({ type: 'sine', from: semi(43), to: semi(41), dur: 0.30, gain: 0.17 * v });
+        this._tone({ type: 'sine', from: semi(48), dur: 0.18, gain: 0.09 * v, detune: -11 });
+        this._noise({ from: 7200, to: 900, dur: 0.34, gain: 0.14 * v, q: 0.8 });
+        this._noise({ from: 4200, to: 1600, dur: 0.16, gain: 0.08 * v, q: 3.0, delay: 0.06 });
         break;
       case 'powerorb':
         /* Bigger than `orb`, and it has to be: the plain one was a pickup, this

@@ -59,9 +59,13 @@ const GROUPS = {
   WARD: {
     title: 'Ward (the bubble)',
     blurb: 'A block with a budget rather than a toggle. It stops blades, not the '
-      + 'edge of the world — a ring-out pierces it on purpose.',
+      + 'edge of the world — a ring-out pierces it on purpose. Every blow it '
+      + 'stops takes half the budget off it, and two blows smash it.',
     fields: {
-      max: ['Budget', 'Total seconds of bubble she gets before it must recharge.', 's', 0.3, 6, 0.1],
+      max: ['Budget', 'Total seconds of bubble she gets before it must recharge. A blow cuts this ceiling, it does not add to the clock — so the flicker that warns her corrects itself.', 's', 0.3, 6, 0.1],
+      hitCut: ['Cost of a blow', 'What the budget is multiplied by each time the bubble stops something. 0.5 halves it; 1 makes blocking free again, which is the game before this existed.', '×', 0.1, 1, 0.05],
+      hits: ['Blows to smash it', 'The floor under the halving — halving alone never reaches zero. This many blows end the bubble whatever the clock says.', '', 1, 6, 1],
+      breakT: ['Smash length', 'How long the shards fly for. Picture only: nothing waits on it and it outlives the bubble on purpose.', 's', 0.1, 1.5, 0.05],
       tail: ['Tail', 'How long it keeps protecting after she lets go. Stops a frame-perfect release being punished.', 's', 0, 1, 0.02],
       cool: ['Recharge', 'The wait after a full drain.', 's', 0.2, 5, 0.1],
       coolMin: ['Minimum wait', 'The wait after a short tap, so tapping it is not free.', 's', 0, 2, 0.05],
