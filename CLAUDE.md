@@ -27,7 +27,7 @@ look. Everything else is one level down and read on demand.
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
 npm run dev -- --host         # ...and on a phone on the same wifi, at the Network: URL it prints
-node tools/world-check.mjs    # 2301 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 2421 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 354 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 npm run docs                  # regenerate the controls + balance tables, in PROJECT.md AND
@@ -132,6 +132,9 @@ src/
              confirm (are you sure? - every irreversible button)
              crossfx (the Cross Slash's tell and its seal - a poller,
                so player.js does not know it exists)
+             dodgefx (the Flash Step's target ring, its smoke, and the silly
+               thing left standing in it - the same poller trick, over
+               Player.dodgeSeq)
   entities/  player  dragon  ryuuseki  panda  critter  angel  leader  satan
              griffin  orb  powerorb  dragonball  prop  shrine  stall
 tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
@@ -160,6 +163,10 @@ tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
              and the traps that have cost takes. `shots/*.js` is one file per
              clip — the only thing that can ever re-cut one.
              help-portraits.mjs (the clan leaders on the Help page)
+             help-blink-placeholder.mjs (the drawn still holding the Flash
+               Step's cell in the abilities grid until its clip is filmed -
+               it stamps PLACEHOLDER on itself because everything else on
+               that page is an engine capture)
              kitten-cackle.mjs (the trailer's demon, and `--game` for the
                Cross Slash's four graded purrs — see docs/notes/voices.md,
                which carries the licensing decision attached to them)
@@ -210,7 +217,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 2301 assertions and why almost none of them are about
+  why `world-check` is 2421 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have

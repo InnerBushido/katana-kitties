@@ -22,10 +22,13 @@ import { tune } from '../core/tuning.js';
    never instead of one. A prettier orb that lies about its own position would
    be worse than no orb.
 
-   EIGHT TYPES, EIGHT DIFFERENT VERBS. Same rule the clans follow: swapping one
-   changes how the game plays rather than recolouring a badge. Three of them
-   are movement, two are reach and body, three are attacks she does not
-   otherwise have.
+   ONE TYPE, ONE VERB, AND IT WAS EIGHT OF EACH. Same rule the clans follow:
+   swapping one changes how the game plays rather than recolouring a badge.
+   Three are movement, two are reach and body, three are attacks she does not
+   otherwise have — and the two on the end of the list are the dealer's, bought
+   rather than found: one lengthens a block, one takes her off the floor
+   entirely. See WORLD_ORB_IDS for what that split costs everything that reads
+   the roster.
 
    THEY STACK, AND STACKING IS ADDITIVE, NOT MULTIPLICATIVE. Eight speed orbs
    at x1.22 each compounds to x4.9 and a kitten who cannot turn a corner;
@@ -41,14 +44,15 @@ import { tune } from '../core/tuning.js';
  * IT IS NOT THE SIZE OF THE ROSTER AND THE TWO USED TO BE THE SAME NUMBER.
  * There were eight kinds and eight slots, so every screen drew eight of
  * something and it was never clear which eight it meant. The roster is nine
- * now — see `aegis` — and the screens that show a LIST of kinds scroll, while
+ * ten now — see `aegis` and `blink` — and the screens that show a LIST of
+ * kinds scroll, while
  * the screens that show her SLOTS still draw exactly this many. Any screen
  * that hard-codes 8 is wrong about one of the two.
  */
 export const MAX_EQUIPPED = 8;
 
 /**
- * The eight.
+ * The ten.
  *
  * `kanji` is what the orb prints on itself and what the profile screen shows;
  * `name` is the romaji the toasts use, because a nine-year-old cannot read the
@@ -189,6 +193,33 @@ export const POWER_ORBS = [
     color: 0x5b6bff,
     blurb: 'Rare — the dealer only. Your 壁 Ward holds for longer. Useless without one.',
     detail: (n) => `+${(AEGIS.add * n).toFixed(1)}s of block, with 壁 Ward`,
+  },
+  {
+    /* THE TENTH, AND THE SECOND ONE THAT IS ONLY ON THE SHELF.
+
+       守 Long Guard made "rare" mean "bought, never found", and this is the
+       same kind of thing said about a MOVE instead of about a stat. It does
+       not stack — one Flash Step is the whole ability, and a second copy would
+       be a slot spent on nothing — so it stocks like every other move orb (one,
+       plus one per extra kitten) rather than doubling the way 守 does. What it
+       shares with 守 is the price: 2.5x, on the shelf, and you have to have
+       been to the ring to see it at all.
+
+       IT IS THE ONLY ORB THAT MOVES HER WITHOUT MOVING HER. Everything else in
+       this list changes a number a verb already reads — how fast, how far, how
+       hard. This one takes the floor away for half a second and puts her down
+       somewhere else, and while it runs she is untouchable and cannot walk,
+       jump, block or dive. See DODGE for the whole shape of it, and
+       `Player._startDodge` for the sequencing. */
+    id: 'blink',
+    shopOnly: true,
+    priceK: 2.5,
+    name: 'Shunpo',
+    kanji: '瞬',
+    label: 'FLASH STEP',
+    color: 0x21d6a8,
+    blurb: 'Rare — the dealer only. Sprint + Interact: vanish, and land somewhere else. Nothing can touch you on the way.',
+    detail: () => `${DODGE.invuln.toFixed(2)}s gone, ${DODGE.cool.toFixed(2)}s wait`,
   },
 ];
 
@@ -549,6 +580,68 @@ export const CHARGE = tune('CHARGE', {
   radius: 2.4,
 });
 
+/**
+ * 瞬 FLASH STEP — half a second of not being there.
+ *
+ * THE WHOLE MOVE IS ONE NUMBER TWICE. `invuln` is how long she is gone and
+ * untouchable, and it is ALSO how long she cannot move once she lands — asked
+ * for that way, and it is the thing that makes the move a trade rather than a
+ * free escape. Half a second of nothing can touch you, then half a second of
+ * standing there while everybody works out where you went. Two knobs would let
+ * somebody set the second to zero and delete the cost.
+ *
+ * `commit` IS THE FRACTION OF `invuln` AT WHICH THE STICK IS READ, and the
+ * fifth that is left after it is the reappearing. It exists because the
+ * direction cannot be taken on the press: she is holding sprint, which means
+ * she was almost certainly already running somewhere, and a teleport that fires
+ * along the direction her thumb happened to be pointing at the instant she hit
+ * the button is a teleport nobody aims. Four fifths of the vanish is the window
+ * she has to say where — and the reticle is already on whoever she is about to
+ * pivot around, so it is a window she can see.
+ *
+ * `lockDeg` IS THE DIFFERENCE BETWEEN AIMING AND HAPPENING TO BE HOLDING. Five
+ * degrees off where the stick was when she pressed is a deliberate movement;
+ * anything less is the same push she was already making. It matters in exactly
+ * one place — a stick that is CENTRED at the commit mark. If she never aimed,
+ * that means "stay where I am"; if she aimed and then let go, it means the last
+ * direction she asked for. Without the threshold those two are the same input.
+ *
+ * `range` IS IN THE GAME'S OWN UNIT, WHICH IS THE METRE, AND THE ASK SAID TEN
+ * FEET. Ten feet is 3.05, and `BASE_REACH` — the length of a katana swing — is
+ * 3.4: a detection range shorter than her own sword would make the second half
+ * of the targeting rule ("or anybody your swing would already reach") strictly
+ * larger than the first, and the ten-foot clause would never once have decided
+ * anything. Ten of the unit everything else in this file is written in is the
+ * reading that leaves both halves of the rule alive, and it is on the balance
+ * page precisely because the right number is a thing you find by playing.
+ *
+ * `arc` IS A HALF-ANGLE IN DEGREES, off dead ahead — "a 60 degree splay from
+ * their forward direction", read literally. Everything else in the combat code
+ * states its arc as a cosine floor (`ATTACKS.stand.arc`) because that is what
+ * the dot product wants; this one is degrees because it is a knob a person sets
+ * on a page, and `Math.cos` is one call.
+ *
+ * `selfK` IS HOW FAR SHE GOES WITH NOBODY TO PIVOT AROUND: half the detection
+ * range, so the "flee" version of the move is deliberately shorter than the
+ * "get behind her" version. That is the right way round — the escape is the
+ * safe option and should not also be the long one.
+ *
+ * `cool` STARTS LIFE AS THE WARD'S WAIT AND IS WRITTEN OUT RATHER THAN READ
+ * FROM IT. Asked for as "the same time as the shield cooldown, but a separate
+ * variable" — so the number is 1.5 here in full. Deriving it would have meant a
+ * tuning override on WARD silently moving a move that has nothing to do with
+ * the ward, which is exactly the coupling the ask was asking not to have.
+ */
+export const DODGE = tune('DODGE', {
+  invuln: 0.5,
+  cool: 1.5,
+  commit: 0.8,
+  lockDeg: 5,
+  range: 10,
+  arc: 60,
+  selfK: 0.5,
+});
+
 /* ------------------------------- aggregation ------------------------------ */
 
 /**
@@ -573,6 +666,7 @@ export function aggregate(ids = []) {
   const tri = n('tri');
   const charge = n('charge');
   const aegis = n('aegis');
+  const blink = n('blink');
 
   return {
     counts: Object.fromEntries(ORB_IDS.map((id) => [id, n(id)])),
@@ -595,6 +689,14 @@ export function aggregate(ids = []) {
     dive: dive ? { dmg: DIVE.dmg + 6 * (dive - 1) } : null,
     tri: tri ? { dmgK: 1 + 0.15 * (tri - 1) } : null,
     charge: charge ? { dist: CHARGE.dist + 4 * (charge - 1) } : null,
+    /* NOTHING TO STACK, SO NOTHING IN THE OBJECT. It is the only entry here
+       that is a bare flag, and that is the honest shape: a second 瞬 Flash
+       Step buys nothing, the shelf stocks it like a move rather than like a
+       booster, and every timing the move has lives in DODGE where the
+       balance page can reach it. An empty object rather than `true` so a
+       later field (a longer vanish for a second copy, say) is an addition
+       and not a change of type. */
+    blink: blink ? {} : null,
   };
 }
 

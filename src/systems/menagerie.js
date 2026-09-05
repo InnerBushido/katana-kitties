@@ -65,6 +65,41 @@ export const RESPAWN_MIN = 45;
 export const RESPAWN_MAX = 75;
 
 /**
+ * How often a 瞬 Flash Step leaves a mantis in the smoke instead of a log.
+ *
+ * ONE IN TWENTY, AND ONE PER KITTEN PER ROUND ON TOP OF IT. The ask was "since
+ * it is rare, maybe 5% chance or lower", and the per-round cap is what makes
+ * the number mean what it says: without it a kitten with the orb and a full
+ * cooldown throws roughly twelve dodges a round, and a 5% roll twelve times is
+ * a 46% chance of at least one — which is not rare, it is "most rounds". Capped
+ * at one, the first success is the only one, and the FEELING of five percent
+ * survives being rolled a dozen times.
+ */
+export const CONJURE_CHANCE = 0.05;
+
+/**
+ * What Mr Satan makes of a kitten pulling an insect out of thin air.
+ *
+ * ONE OF THESE, AT RANDOM, ON A CARD WITH NO RECORDING BEHIND IT. `Announcer`
+ * falls back to `SILENT_DUR` when it has no clip for an id, so the line shows,
+ * holds long enough to be read, and slides out — the ninth non-negotiable
+ * applied to a voice that has not been cut yet. Nothing has to change here when
+ * one is: drop `sat_bug.mp3` into `public/voice/` and add the id to the
+ * manifest in main.js.
+ *
+ * HE IS COMMENTING, NOT RULING. He never says it is against the rules, because
+ * it is not, and a nine-year-old who hears the announcer call her trick illegal
+ * will believe him.
+ */
+export const BUG_LINES = [
+  'HOLD ON — did she just pull a BUG out of THIN AIR?!',
+  'A MANTIS! In MY arena! Somebody is smuggling SNACKS in here!',
+  'Vanishing tricks AND a packed lunch! This is the greatest match of my life!',
+  'She disappeared and left a GRASSHOPPER. I have no notes. None.',
+  'Ladies and gentlemen: the cat has produced an INSECT. I am as lost as you are!',
+];
+
+/**
  * How still she has to be to keep eating.
  *
  * She is fed a dead pad while the hold runs so this is nearly always zero —
@@ -123,14 +158,37 @@ export class Menagerie {
     this.eaten = seats(0);
     /** Has this kitten been told what a stunned animal is for? See `strike`. */
     this._taught = seats(false);
+    /* --- one conjured insect per kitten per ROUND, and the round is the point.
+       A tournament tally would make the trick a once-a-match novelty; a
+       per-dodge roll would make it a farm. Reset in `releaseAll`, which is the
+       one thing the tournament calls at every round boundary. --- */
+    this.conjured = seats(false);
+    /** Which `Player.dodgeSeq` each seat was last seen vanishing on, so one
+     *  Flash Step is rolled for exactly once. Same trick `systems/dodgefx.js`
+     *  uses, and for the same reason: a clock cannot tell two dodges apart. */
+    this._dodgeSeen = seats(-1);
 
     this._poofs = [];
     this._poofIx = 0;
   }
 
-  /** Which species this build can actually put on the deck. */
+  /**
+   * Which species this build can actually put on the deck.
+   *
+   * `rare` ONES ARE NOT IN HERE, and that is the whole of how a conjured animal
+   * stays conjured. This list is what `start` seeds one of each from and what
+   * `_spawn` draws its lottery from, so an id that is missing from it can only
+   * ever arrive through the one door that names it — `_conjure`. Filtering here
+   * rather than at each of those two call sites is what stops a third one being
+   * added later that quietly puts a mantis in the ordinary rotation.
+   */
   get species() {
-    return CRITTERS.filter((c) => this.art[c.id]?.calm);
+    return CRITTERS.filter((c) => !c.rare && this.art[c.id]?.calm);
+  }
+
+  /** ...and the ones that only a trick can produce. */
+  get rareSpecies() {
+    return CRITTERS.filter((c) => c.rare && this.art[c.id]?.calm);
   }
 
   /* -------------------------------- flow --------------------------------- */
@@ -147,6 +205,8 @@ export class Menagerie {
     this.on = true;
     this.eaten = seats(0);
     this._taught = seats(false);
+    this.conjured = seats(false);
+    this._dodgeSeen = seats(-1);
     this.clear();
     /* THE VERY FIRST DECK IS SEEDED WITH ONE OF EACH, and only the first.
        Everything after this is a straight lottery, which is the point — but a
@@ -289,6 +349,15 @@ export class Menagerie {
    */
   strike(player, reach, seen = null) {
     if (!this.on || player.angel || player.ko) return false;
+    /* NOT WHILE SHE IS NOT THERE. A 瞬 Flash Step deliberately keeps her
+       ATTACK button (see `Player.dodgePlanted`), so a swing really can go out
+       on a frame she is invisible and standing somewhere else — and a rat
+       pinned by a paw that has vanished is the animal-shaped version of the bug
+       `releaseAll` exists to prevent. Only the vanish itself is refused; the
+       immobile half afterwards is an ordinary kitten who cannot walk, and
+       reaching down for something at her feet is exactly what she should be
+       able to do with it. */
+    if (player.dodgeT > 0) return false;
     if (this.held[player.index]) return false;
 
     /* THE PIN IS RADIUS-ONLY, NO FORWARD ARC. The animal's own ring is what
@@ -556,6 +625,7 @@ export class Menagerie {
     const camYaw = players[0]?.camYaw ?? -Math.PI * 0.25;
 
     for (let i = 0; i < players.length; i++) this._updateHold(dt, players[i], i);
+    for (let i = 0; i < players.length; i++) this._maybeConjure(players[i], i);
 
     for (const c of this.list) c.update(dt, this.world, players, deck, camYaw);
 
@@ -624,6 +694,89 @@ export class Menagerie {
    */
   releaseAll() {
     for (let i = 0; i < this.held.length; i++) if (this.held[i]) this._drop(i);
+    /* AND THE ROUND'S OTHER TALLY GOES WITH THEM. This is the one thing the
+       tournament calls at every round boundary and nowhere else, which makes it
+       the only honest home for "once per kitten per round" — a second hook
+       would be a second thing to remember, and the one that got forgotten would
+       turn a rare treat into one per tournament or into one per dodge. The
+       method is named for the animals it lets go and it does one more thing
+       than that; the alternative was a `newRound()` beside it in tournament.js
+       that somebody eventually calls in only three of the four places. */
+    this.conjured = seats(false);
+  }
+
+  /* ------------------------- conjured out of a dodge ---------------------- */
+
+  /**
+   * She vanished. Did an insect come out with the smoke?
+   *
+   * A POLLER OVER `Player.dodgeSeq`, exactly like `systems/dodgefx.js`, and for
+   * exactly the same reason: nothing in `player.js` knows this system exists,
+   * and no way of a Flash Step ending has to remember to tell it. `dodgePlaced`
+   * is the frame she actually leaves — four fifths of the way through the
+   * vanish — so the animal arrives in the same puff of smoke the decoy does.
+   *
+   * THREE GATES, AND EACH OF THEM IS DOING DIFFERENT WORK. The seat's own
+   * per-round flag is the cap that makes 5% mean 5%; `_dodgeSeen` is what makes
+   * one dodge one roll rather than one roll per frame after the commit; and the
+   * roll itself is the rarity. Collapsing any two of them silently changes the
+   * odds.
+   */
+  _maybeConjure(player, i) {
+    if (!player || !(player.dodgeT > 0) || !player.dodgePlaced) return;
+    if (this._dodgeSeen[i] === player.dodgeSeq) return;
+    this._dodgeSeen[i] = player.dodgeSeq;
+    if (this.conjured[i]) return;
+    if (Math.random() >= CONJURE_CHANCE) return;
+    this._conjure(player, i);
+  }
+
+  /**
+   * Put the rare animal in the smoke she left behind.
+   *
+   * IT LANDS WHERE SHE WAS, NOT WHERE SHE WENT — `dodgeFrom` — which is the
+   * whole joke: something was standing there a moment ago and it is still
+   * standing there, it is just not her. Clamped onto the deck because that is
+   * where the animal's own movement code is allowed to live (`Critter.update`
+   * keeps everything inside `deck.half`), and a mantis started outside it would
+   * spend its first second walking home.
+   *
+   * IT REFUSES QUIETLY WHEN THERE IS NO ROOM OR NO ART, and the seat's flag is
+   * only spent on a success. A conjure that could not happen must not be the
+   * one chance she had this round — she would have no way to tell the
+   * difference between "you were unlucky" and "the deck was full".
+   */
+  _conjure(player, i) {
+    const pool = this.rareSpecies;
+    if (!pool.length || this.list.length >= MAX_ON_STAGE) return;
+    const spec = pool[Math.floor(Math.random() * pool.length)];
+
+    const deck = this.deck;
+    const inner = Math.max(0, deck.half - 3);
+    const at = player.dodgeFrom ?? player.position;
+    const x = Math.max(deck.x - inner, Math.min(deck.x + inner, at.x));
+    const z = Math.max(deck.z - inner, Math.min(deck.z + inner, at.z));
+
+    const c = new Critter(spec, this.art[spec.id]);
+    c.position.set(x, deck.y, z);
+    this.scene.add(c.group);
+    this.list.push(c);
+    this.conjured[i] = true;
+
+    this._poof(c.position, spec.size * 2.2);
+    this.game.sfx?.('powerorb');
+    this.game.toast(
+      `${player.name} vanished — and left a ${spec.name}!`,
+      i
+    );
+    /* HE IS TOLD, AND HE IS TOLD ONCE. `Announcer.say` queues rather than
+       interrupting, so this cannot cut off a round call or a knockout shout; and
+       because a conjure is capped at one per kitten per round, four of them in
+       one round is the ceiling and not a stream. */
+    this.game.announcer?.say(
+      'sat_bug',
+      BUG_LINES[Math.floor(Math.random() * BUG_LINES.length)]
+    );
   }
 
   /** She let go, moved, or got hit. It bolts and she gets nothing. */

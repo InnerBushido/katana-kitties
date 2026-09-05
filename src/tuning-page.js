@@ -85,6 +85,22 @@ const GROUPS = {
       ready: ['Spark length', 'How long the “you can block again” spark and its chime last. Picture and sound only; it fires solely after an overtime wait.', 's', 0.1, 2, 0.05],
     },
   },
+  DODGE: {
+    title: 'Flash Step (the rare one)',
+    blurb: 'The tenth orb, the dealer’s other one. Sprint + Interact and she '
+      + 'is gone — untouchable, weightless, and unable to walk — then down '
+      + 'again somewhere else. She keeps her blade the whole time and loses '
+      + 'everything else, the Ward included.',
+    fields: {
+      invuln: ['Vanish (and lock)', 'How long she is gone and cannot be hit — and, deliberately, the same again after she lands in which she cannot move. One number, used twice: two knobs would let this second half be set to zero, and standing still afterwards is what the move costs.', 's', 0.1, 2, 0.05],
+      cool: ['Wait', 'How long before she can do it again. Starts life as the Ward’s own wait (1.5) and is free to diverge from it.', 's', 0.1, 6, 0.1],
+      commit: ['Aim window', 'The fraction of the vanish she has to point the stick in. The rest of it is her arriving — so at 0.8 she has four fifths of the vanish to choose a direction and the last fifth is the landing.', '×', 0.2, 0.95, 0.05],
+      lockDeg: ['Aim threshold', 'How far she has to push the stick off where it already was for it to count as aiming. It decides exactly one case: a stick that is CENTRED when the window closes. Never aimed means “stay here”; aimed and let go means the last direction she asked for.', '°', 0, 45, 1],
+      range: ['Lock range', 'How far away somebody can be and still be locked on to. Also sets the flee distance — with nobody locked, or with Shield held, she pivots on herself at HALF of this.', 'm', 2, 30, 0.5],
+      arc: ['Lock arc', 'How far off dead ahead she can be looking and still lock somebody. Anybody her sword would already reach qualifies whatever this says.', '°', 5, 180, 5],
+      selfK: ['Flee distance', 'The fraction of Lock range she travels when there is nobody to pivot around — or when Shield is held at the end of the aim window, which overrides the lock outright.', '×', 0.1, 1.5, 0.05],
+    },
+  },
   /* NOT AN ABILITY — a gag, and the one table on this page that belongs to
      nobody the player controls. It is here because `world-check` now asserts
      that every `tune()` table has a panel, and it had none: the numbers were

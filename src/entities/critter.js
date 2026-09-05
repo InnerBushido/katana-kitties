@@ -221,6 +221,70 @@ export const CRITTERS = [
     cruise: 7.8,
     colour: 0x5f86a8,
   },
+  {
+    /* THE ONE ANIMAL THAT IS NOT ON THE DECK.
+
+       Every other creature here is stocked by the lottery and can be walked up
+       to. This one is only ever CONJURED — a 瞬 Flash Step, five times in a
+       hundred, leaves one of these in the smoke where the kitten was standing
+       (see `Menagerie._conjure`). `rare: true` is what keeps it out of
+       `Menagerie.species`, which is the pool `start` seeds from and `_spawn`
+       draws from, so no amount of ordinary play ever produces one.
+
+       IT IS DELIBERATELY OFF THE LADDER. rat < rabbit < bird is "the harder
+       the catch, the bigger the reward", and it is the ladder the three deck
+       animals are priced along. This is harder than any of them and pays the
+       LEAST, which was the ask — "fast but gives minimum health boost, like
+       equivalent to the mouse but harder to catch". That is not a broken rung,
+       it is a different kind of thing: you did not go and find it, it fell out
+       of a trick you were already doing, and the reward for a free animal has
+       to be the smallest number on the board or the trick becomes a healing
+       move with a teleport attached.
+
+       A HOPPER, NOT A FLIER, and that is what makes it hard rather than
+       impossible. The rabbit's machinery does all of this already: it hops, it
+       is caught on the way up or the way down, and the whole difficulty is
+       timing a swing at something that is only briefly in the arc. It just does
+       all of it faster and higher. A flier would have needed the bird's cruise
+       rules, which put it out of reach from the floor entirely — an animal
+       nobody can catch is not a rare treat, it is a taunt. */
+    id: 'mantis',
+    name: 'mantis',
+    kind: 'hopper',
+    rare: true,
+    /* THE SMALLEST NUMBER ON THE BOARD, and it is exactly the free regen
+       between rounds — so catching one is worth precisely what standing still
+       for fifteen seconds is worth, which is the honest price for an animal
+       that arrived by itself. `world-check` pins it against `REGEN_FRAC`. */
+    heal: Math.round(MAX_HP * 0.10),
+    size: 0.7,
+    /* OVER A WALK, WELL UNDER A SPRINT, and further over the walk than the
+       rabbit is. The ladder that matters here is not the reward one, it is
+       "what does it cost you to close" — and this costs a committed sprint plus
+       a swing timed against a hop, which is both of the other two animals'
+       difficulties at once. */
+    speed: 12.6,
+    /** It notices you from further off than anything else on the deck. */
+    flee: 16,
+    eatLift: 1,
+    /* HIGHER THAN A RABBIT AND STILL INSIDE THE SWING'S WINDOW. v²/2g with the
+       hopper's own gravity (24) puts this at 5.20 units, against the rabbit's
+       4.44 — a whole kitten and a half over her head — and 5.20 plus the 0.7
+       the drawing is tall is 5.9, comfortably inside the 6.5 above her feet
+       that `Menagerie.strike` allows. Past that it would stop being catchable
+       instead of becoming harder to catch, which is the trap the rabbit's own
+       note spells out. `world-check` recomputes both ends from the constants. */
+    hopV: 15.8,
+    /* AND IT BARELY TOUCHES DOWN. Chased, it is on the ground for a third of a
+       second between hops that each buy it 1.3 seconds of air — so it is
+       airborne most of the time, which for the rabbit was a bug (a bouncing
+       ball rather than an animal) and here is the entire character of the
+       thing. Calm, it settles like anything else, so a mantis nobody has
+       noticed yet is a mantis you can still walk up to. */
+    hopGap: 0.34,
+    hopIdle: 1.8,
+    colour: 0x7fd44a,
+  },
 ];
 
 export const CRITTER_BY_ID = Object.fromEntries(CRITTERS.map((c) => [c.id, c]));

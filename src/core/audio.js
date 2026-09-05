@@ -821,6 +821,38 @@ export class Audio {
         this._noise({ from: 7200, to: 900, dur: 0.34, gain: 0.14 * v, q: 0.8 });
         this._noise({ from: 4200, to: 1600, dur: 0.16, gain: 0.08 * v, q: 3.0, delay: 0.06 });
         break;
+      /* --- 瞬 FLASH STEP: GOING, AND COMING BACK ---
+
+         THEY ARE ONE GESTURE PLAYED IN TWO HALVES AND HAVE TO SOUND LIKE IT.
+         `dodgeout` sweeps UP and thins into noise — a body leaving; `dodgein`
+         is the same sweep run backwards and landing on a soft hit, which is
+         the body arriving. Played back to back over half a second they read as
+         one movement rather than as two effects, and a girl who hears only the
+         second one still knows what just happened near her.
+
+         DELIBERATELY NOT IN THE WARD'S FAMILY. Every ward cue is a sine bell
+         on the scale root; these are square and filtered noise, because the
+         two abilities live on adjacent buttons and the one thing a player must
+         never have to work out is which of them she just fired. */
+      case 'dodgeout':
+        this._tone({ type: 'square', from: semi(7), to: semi(31), dur: 0.15, gain: 0.10 * v });
+        this._noise({ from: 900, to: 6400, dur: 0.20, gain: 0.16 * v, q: 1.6 });
+        this._tone({ type: 'sine', from: semi(38), dur: 0.09, gain: 0.05 * v, delay: 0.12 });
+        break;
+      case 'dodgein':
+        this._noise({ from: 6400, to: 800, dur: 0.16, gain: 0.14 * v, q: 1.6 });
+        this._tone({ type: 'square', from: semi(31), to: semi(9), dur: 0.13, gain: 0.10 * v });
+        /* The landing itself: one low, short thump under the sweep, so she can
+           feel where she came down as well as hear that she did. */
+        this._tone({ type: 'sine', from: semi(-5), dur: 0.14, gain: 0.13 * v, delay: 0.09 });
+        break;
+      /* THE RETICLE CLOSING. One thin, dry blip — it fires the instant somebody
+         is locked, which is a fact about a THIRD party, so it has to be quiet
+         enough that four of them in a scrap is not four alarms. */
+      case 'dodgelock':
+        this._tone({ type: 'square', from: semi(26), dur: 0.05, gain: 0.055 * v });
+        this._tone({ type: 'square', from: semi(33), dur: 0.07, gain: 0.04 * v, delay: 0.05 });
+        break;
       case 'powerorb':
         /* Bigger than `orb`, and it has to be: the plain one was a pickup, this
            one changes how she moves for the rest of the game. Same bell an

@@ -913,11 +913,114 @@ the same for the same reason: it hands back the wait the release charged, and
 handing back the wait while keeping the debt would chime at the end of a wait
 that never happened.
 
+## 瞬 Flash Step — the tenth orb, and the first move you cannot walk out of
+
+**IT IS THE SECOND ORB THAT IS ONLY EVER AT THE DEALER'S**, priced and stocked
+exactly like 守 Long Guard, and the argument in that section applies word for
+word. What is new is that this one is a *move*, so almost none of it lives in
+the roster: `powerorb.js` carries the spec and the `DODGE` table and stops
+there. Everything else is `player.js`, `systems/dodgefx.js` and one poll in
+`systems/menagerie.js`.
+
+**HALF A SECOND OF NOT BEING THERE, AND HALF A SECOND OF NOT BEING ABLE TO
+LEAVE.** `hurt` returns 0 while `dodgeAt`, before it looks at `invulnT` and
+*including* against `force.pierce` — a Cross Slash's third cut goes through
+ordinary invulnerability on purpose and it does not go through this. Then
+`dodgeLockT` runs for the same `DODGE.invuln` again, and while it runs `wish` is
+zeroed, `jump` is refused and the whole mount/ward block is skipped. She can
+still swing, and she can still start a Cross Slash, because that technique is
+already a stand-still move: refusing it would have been taking away a thing she
+could do standing in exactly that spot a frame earlier.
+
+**THE INVULNERABILITY AND THE LOCK ARE THE SAME NUMBER BECAUSE THAT IS THE
+BARGAIN**, and they are the same number in one direction only — the tuning page
+can move `invuln` and the lock follows it, which is what "immobile for the same
+amount of time" has to mean when the number is a slider.
+
+**GRAVITY IS OFF, NOT ZEROED.** `_gravityK` returns 0 for the vanish, which is
+the same lever the Cross Slash's hang uses. Setting `velocity.y = 0` every frame
+instead would have fought whatever else wrote to it that frame and lost half the
+time; refusing to accelerate is a statement about the world, and it composes.
+
+**THE STICK IS AN AIM, NOT A HEADING.** `_stickHeading` runs the same
+camera-relative arithmetic `_updateGround` walks with, so the direction she goes
+is the direction she would have walked — but for the duration of a Flash Step,
+and *only* for a Flash Step, the stick is not allowed to turn her: `if
+(!this.dodgePlanted)` guards the facing assignment. Planted-but-still-pointed is
+an older and deliberate rule (it is what lets her turn on the spot mid-technique)
+and it had to be given this one exception, because the thumb that aimed the
+teleport would otherwise overwrite, on the very frame she landed, the facing
+`_commitDodge` had just set to look at whoever she pivoted around. She would
+arrive behind her sister staring at the far wall.
+
+**THE FIVE-DEGREE RULE COLLAPSES TO ONE QUESTION: IS THE STICK CENTRED AT THE
+COMMIT?** The ask was written as a tolerance, and the tolerance is real —
+`dodgeAimed` only latches once the heading has moved more than `DODGE.lockDeg`
+from where it started, wrapped, so a thumb resting a degree off does not read as
+a decision. But every path through it lands on the same three outcomes: a stick
+held anywhere at the commit is that direction; a stick that was *never* pushed
+is "stay here"; a stick pushed and then released keeps the last direction it
+meant. There is no fourth case, and writing it as three would have been writing
+a different move.
+
+**"10 FEET" IS 10 GAME UNITS AND THE NOTE IS THE POINT.** The game's unit is
+about a metre, so a literal 3.05 would sit *inside* `BASE_REACH` 3.4 — the
+second half of the targeting rule ("or anyone your swing would already reach")
+would then subsume the first and the cone would never do any work. 10 units is
+what makes the two clauses different questions. It is on the balance page, so
+the number is arguable without being a code change.
+
+**THE TARGET IS THE ONE NEAREST THE CENTRE OF HER LOOK, NOT THE NEAREST ONE.**
+`_dodgeTargetFor` maximises the dot product and only breaks ties on distance,
+because the move is aimed with a face and not with a tape measure. It also
+refuses anyone outside `COMBAT.strikeHeight`, which is the same question the
+katana asks: if you could not hit her, you cannot pivot around her either.
+
+**THE RADIUS IS THE SHORTER OF TWO DISTANCES SO IT CANNOT BE FARMED.** `dodgeD0`
+is the gap at the press and the second figure is the gap at the commit; taking
+the minimum means a sister sprinting *away* during the vanish does not tow the
+landing spot along behind her. Holding the shield button at the commit throws
+the target away and pivots around herself at `DODGE.range * DODGE.selfK`
+instead — the flee, which is the same button that would have raised a bubble if
+her feet were free.
+
+**NOTHING MAY BE STRANDED, SO A LANDING OVER NOTHING IS REFUSED.** `heightAt`
+returning null gets a `deny` and she stays where she is. That is the fourth
+non-negotiable applied to the one move in the game that can put a kitten
+somewhere she did not walk to, and it is why the destination is queried rather
+than assumed: a teleport that can drop her through the world is a teleport that
+loses her.
+
+**THE EFFECTS ARE A POLLER AND `player.js` DOES NOT IMPORT THEM.** Same argument
+as `systems/crossfx.js`, one move later: a Flash Step ends when its clock runs
+out, when she is knocked out, when a round ends, when `_clearSpecials` fires,
+and the way to guarantee the ring comes off her sister's head in all five is to
+have nothing to remember. `dodgeSeq` is the edge — a counter, because a clock
+cannot tell two dodges apart, and both `DodgeFx` and `Menagerie` watch it.
+
+**THE DECOY IS FIVE THINGS AND THEY CYCLE, NOT SHUFFLE.** A log, a bow-tie, a
+scarf, a boiled sweet and her clan's emblem, dealt round in order per drop so a
+kitten who dodges four times in a round sees four different ones — a random
+draw would have given her the log three times and read as a bug.
+
+**AND ONE IN TWENTY LEAVES A MANTIS, ONCE PER KITTEN PER ROUND.** The cap is
+what makes 5% mean 5%: twelve dodges a round at a flat 5% is a 46% chance of at
+least one, which is not rare, it is most rounds. Capped at one, the first
+success is the only one and the *feeling* of five percent survives being rolled
+a dozen times. The animal is kept out of the ordinary lottery by `rare: true`
+filtered inside `Menagerie.species`, not by special-casing the two call sites,
+so a third call site added later cannot quietly put a mantis in the rotation. It
+heals exactly `REGEN_FRAC` — the least of any animal — and it is the fastest
+thing on the deck, which is the trade: a snack you conjured is a snack you still
+have to catch. Mr Satan gets a line about it, and he comments rather than rules:
+he never says it is against the rules, because it is not, and a nine-year-old
+who hears the announcer call her trick illegal will believe him.
+
 ## The screens had to learn that eight was two different numbers
 
 There were eight kinds of orb and eight slots, so every screen drew eight of
 something and it was never clear which eight it meant. **`MAX_EQUIPPED` is how
-many she WEARS and is still 8; the roster is 9.** Screens that show a list of
+many she WEARS and is still 8; the roster is 10.** Screens that show a list of
 kinds scroll now; screens that show her slots still draw exactly `MAX_EQUIPPED`.
 Anything that hard-codes 8 is wrong about one of the two.
 
@@ -939,10 +1042,10 @@ ended. Its `:has(.kd-row:nth-child(9))` guard is `--shelf-rows` plus one and
 worse than none.
 
 **THE PRICE IS ON THE ROW ONLY WHERE IT IS NEWS.** The header still prints one
-buy/sell pair, true of eight of the nine kinds; the ninth carries its own figure
-on its own row, and both confirmations quote `priceOf(id)` rather than
-`K.price`. A confirmation quoting the wrong number is worse than none, because
-she read it and agreed to it.
+buy/sell pair, true of eight of the ten kinds; the two dealer-only orbs carry
+their own figure on their own row, and both confirmations quote `priceOf(id)`
+rather than `K.price`. A confirmation quoting the wrong number is worse than
+none, because she read it and agreed to it.
 
 
 ## Two things the worn orbs were getting wrong
