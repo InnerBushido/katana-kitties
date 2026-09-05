@@ -338,6 +338,48 @@ one caller sets it, `Tournament._updateOut`, and it has to: without it a kitten
 wearing the orb parks off the side of the ring and takes nothing for the whole
 round, which deletes the ring.
 
+**A BLOW COSTS HER HALF THE BUBBLE, AND TWO BLOWS SMASH IT.** Asked for after
+a round where one kitten held the button from the bell to the bell: a shield
+that pays nothing to be hit is a shield with no fight in it, because the girl
+attacking her has no move that changes anything. So `_wardTakeHit` halves the
+block's **ceiling** by `WARD.hitCut` (0.5) and leaves the clock alone — two
+seconds up for half a second becomes a one-second block with half a second
+left, exactly the sum in the request. `WARD.hits` (2) is the floor under it:
+halving a positive number never reaches zero, so without a tally a kitten who
+blocks early enough rides a sliver of bubble all round.
+
+**IT MOVES THE CEILING, NOT THE CLOCK, AND THAT IS WHY THE TELL NEEDED NO NEW
+CODE.** The bubble already flickers over its last 0.6s, off `left = max −
+used`. Taking the price out of `wardUsed` would have jumped the clock forward
+and *skipped* the warning; moving `wardMax` down leaves `left` to correct
+itself, and a struck bubble with half a second left flickers identically to an
+untouched one with half a second left. `world-check` drives both and compares
+the opacity traces, which is the only way to be sure of that rather than to
+believe it.
+
+**THREE OUTCOMES, THREE ANSWERS.** Absorbed → `wardabsorb`, a low dink.
+Expired (the halving landed behind the clock she had already spent) and smashed
+(the second blow) → `wardbreak`, high and glassy, plus fourteen tetrahedra
+thrown out of her chest on a golden-angle sphere. Nobody in a four-way round is
+looking at the bubble, so the sound *is* the interface; a break that sounded
+like an expiry would be a refusal that does not say so, which is the sixth
+non-negotiable. The old flat `wardhit` is deleted rather than left hanging —
+every block now costs her something, so there is no free-block sound left to
+play, and `world-check` greps both `audio.js` and `main.js` to keep it gone.
+
+**THE SHARDS ARE DRAWN OUTSIDE `if (!warded) return`, DELIBERATELY.** The smash
+drops the bubble on the same frame it starts them, so an effect drawn inside
+the bubble's own early-return would be drawn for exactly zero frames. It was
+written that way round first. `wardBreakT` is also the one ward field
+`_clearSpecials` does **not** reset: the shards are a picture of something that
+happened, not a state she is in, and mounting a dragon mid-smash should not
+make the glass vanish in mid-air.
+
+**AND A RING-OUT STILL DOES NOT CHARGE IT.** `force.pierce` skips the whole
+branch, so the price is not paid — a kitten thrown off the edge losing half her
+shield on the way down would be the bubble paying for the one thing it was
+never allowed to stop.
+
 **NO POWER MOVE SURVIVES GETTING ON AN ANIMAL.** `_stepSpecials` only runs in
 the ground controller, so a ward popped a frame before mounting a dragon keeps
 its three seconds *for ever* — a permanently invincible kitten, produced by a

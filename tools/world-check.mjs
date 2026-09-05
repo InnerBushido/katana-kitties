@@ -4160,6 +4160,223 @@ console.log('\n--- the Powerup Kotodama ---');
   ok('the tail is much shorter than the block it follows',
     WARD.tail > 0 && WARD.tail < WARD.max / 4);
 
+  /* =========================================================================
+     THE BUBBLE COSTS SOMETHING TO RUN INTO NOW.
+
+     Asked for: "if shield is hit while active, it reduces its current max
+     timer by 50% and resets after it expires. So, if Max timer is 2s, and has
+     been on for 0.5s, then its Max timer is now 1s and will expire in 0.5s."
+     Then: the tell has to follow the new ceiling; a blow that lands past the
+     new ceiling just ends it; two blows smash it whatever the clock says; and
+     the three outcomes have to be told apart by ear.
+
+     WHAT IS CHECKED HERE IS THE ARITHMETIC AND THE SOUNDS, driven on a real
+     Player rather than read off the source. The numbers in the request are
+     specific enough to assert directly, and every one of them is below.
+     ========================================================================= */
+  console.log('\n--- the bubble costs something to run into ---');
+  {
+    const mkWard = () => {
+      const q = new Player({
+        texture: new THREE.Texture(), index: 0,
+        spawn: new THREE.Vector3(0, world.heightAt(0, 40).y, 40),
+        cols: 8, rows: 4, mirror: false,
+      });
+      q.setPowerOrbs(['ward']);
+      return q;
+    };
+    /* A FAKE HUD THAT ONLY LISTENS. The sounds are this feature's whole
+       interface at the moment a blow lands — a kid in a four-way round is not
+       looking at the bubble — so they are asserted, not assumed. */
+    const rig = () => {
+      const said = [];
+      const q = mkWard();
+      q.wardCool = 0;
+      q._popWard(null);
+      return { q, said, hud: { sfx: (n) => said.push(n) } };
+    };
+
+    /* 1. THE PLAYER'S OWN WORKED EXAMPLE, to the number. */
+    {
+      const { q, hud, said } = rig();
+      ok('a fresh bubble takes its ceiling from the orb', q.wardMax === WARD.max,
+        `${q.wardMax}`);
+      q.wardUsed = 0.5;
+      const how = q._wardTakeHit(hud);
+      ok('a blow halves the ceiling of a live bubble', q.wardMax === 1.0,
+        `${q.wardMax} from ${WARD.max}`);
+      ok('...and does NOT touch the clock, so half a second is left',
+        q.wardUsed === 0.5 && q._wardCeiling() - q.wardUsed === 0.5);
+      ok('...leaving it up', q.wardOn === true && how === 'absorbed');
+      ok('...and it says so with the lower sound',
+        said.length === 1 && said[0] === 'wardabsorb', said.join(','));
+    }
+
+    /* 2. THE TELL FOLLOWS THE CEILING AND NOTHING ELSE. This is the one the
+       request calls out by name — "the about-to-expire animation should play
+       accordingly based on the new max time" — and it is the reason the
+       halving moves the CEILING rather than the clock: a struck bubble with
+       half a second left has to flicker exactly like an untouched one with
+       half a second left, and the only way to be sure is to drive both. */
+    const flickers = (q) => {
+      const seen = new Set();
+      for (let i = 0; i < 10; i++) {
+        q._updateWardMesh(0.016);
+        seen.add(+q.wardShell.material.opacity.toFixed(4));
+        q.wardUsed += 0.02;
+      }
+      return seen.size > 1;
+    };
+    {
+      const a = rig().q; a.wardUsed = 0.5; a.wardFlash = 0;
+      ok('an untouched bubble 1.5s from the end is steady', !flickers(a));
+      const b = rig(); b.q.wardUsed = 0.5; b.q._wardTakeHit(b.hud); b.q.wardFlash = 0;
+      ok('...and a STRUCK one at the same clock is already flickering',
+        flickers(b.q), `ceiling ${b.q.wardMax}`);
+      const c = rig().q; c.wardUsed = WARD.max - 0.5; c.wardFlash = 0;
+      ok('...which is the same warning an untouched bubble gets at 0.5s left',
+        flickers(c));
+    }
+
+    /* 3. A BLOW THAT LANDS PAST THE NEW CEILING JUST ENDS IT — the request's
+       "if the timer has expired, then just turn it off". It is not a separate
+       rule; it is the halving arriving behind the clock. */
+    {
+      const { q, hud, said } = rig();
+      q.wardUsed = WARD.max * 0.7;                       // 1.4 of 2.0
+      const how = q._wardTakeHit(hud);
+      ok('a blow late enough to land behind the new ceiling ends the bubble',
+        how === 'expired' && q.wardOn === false);
+      ok('...and takes the tail with it, so a break has no grace after it',
+        q.wardTail === 0);
+      ok('...with the disabled sound and NOT the ordinary sweep-out',
+        said.includes('wardbreak') && !said.includes('warddown'), said.join(','));
+    }
+
+    /* 4. TWO BLOWS SMASH IT WHATEVER THE CLOCK SAYS. Halving a positive number
+       never reaches zero, so this is the floor under rule 1 — and without it a
+       kitten who blocks early enough rides a sliver of bubble all round. */
+    {
+      const { q, hud, said } = rig();
+      q.wardUsed = 0;                                    // as much clock as exists
+      ok('the first blow is survived', q._wardTakeHit(hud) === 'absorbed');
+      said.length = 0;
+      const how = q._wardTakeHit(hud);
+      ok('...and the second smashes it on a full clock',
+        how === 'smashed' && q.wardOn === false, `${how} used=${q.wardUsed}`);
+      ok('...with the same disabled sound the expiry gets',
+        said.length === 1 && said[0] === 'wardbreak', said.join(','));
+      ok('...and it is WARD.hits that decided, not a literal',
+        q.wardHits === WARD.hits, `${q.wardHits} vs ${WARD.hits}`);
+    }
+
+    /* 5. IT RESETS WITH THE BLOCK. "Resets after it expires" — and the only
+       door back into a block is `_popWard`, which is why nothing else has to
+       remember to undo a halving. */
+    {
+      const { q, hud } = rig();
+      q.wardUsed = 0.5; q._wardTakeHit(hud); q._wardTakeHit(hud);
+      ok('a smashed bubble leaves a halved ceiling behind it', q.wardMax < WARD.max);
+      q.wardCool = 0.1;
+      ok('...and the next one is refused until the wait is paid',
+        q._popWard(null) === false);
+      q.wardCool = 0;
+      ok('...but a fresh block starts from the orb again',
+        q._popWard(null) === true && q.wardMax === WARD.max && q.wardHits === 0,
+        `max ${q.wardMax} hits ${q.wardHits}`);
+    }
+
+    /* 6. THE BLOW STILL DEALS NOTHING, which was already true and is the whole
+       reason anybody holds the button. Driven through `hurt` rather than the
+       helper, because that is the path a blade actually takes. */
+    {
+      const { q, hud, said } = rig();
+      q.hp = 100; q.wardUsed = 0.2;
+      const dealt = q.hurt(20, { x: q.position.x + 3, z: q.position.z },
+        { knock: 5, lift: 2 }, hud);
+      ok('a blocked blade deals no damage', dealt === 0 && q.hp === 100);
+      ok('...and still charges the bubble for it', q.wardMax === WARD.max / 2);
+      ok('...and it is the block that made the noise',
+        said.includes('wardabsorb'), said.join(','));
+    }
+
+    /* 7. A RING-OUT PIERCES IT AND THEREFORE MUST NOT CHARGE IT. `force.pierce`
+       skips the whole branch, and a kitten thrown off the edge losing half her
+       shield on the way down would be the bubble paying for the one thing it
+       was never allowed to stop. */
+    {
+      const { q, hud } = rig();
+      q.hp = 100;
+      q.hurt(20, { x: q.position.x + 3, z: q.position.z },
+        { knock: 5, lift: 2, pierce: true }, hud);
+      ok('a ring-out pierces the bubble and does not charge it',
+        q.hp < 100 && q.wardMax === WARD.max && q.wardHits === 0);
+    }
+
+    /* 8. THE PICTURE OUTLIVES THE BUBBLE. The shards only ever fly while the
+       block is gone — the smash drops it on the same frame — so an effect
+       drawn inside `if (!warded) return` would be drawn for exactly zero
+       frames. It was written that way round first. */
+    {
+      const { q, hud } = rig();
+      q.wardUsed = 0.2; q._wardTakeHit(hud); q._wardTakeHit(hud);
+      ok('a smash starts the shards', q.wardBreakT > 0 && q.wardBurst.visible);
+      ok('...while the bubble is already gone', q.warded === false);
+      const r0 = q.wardShards[0].position.length();
+      for (let i = 0; i < 6; i++) q._updateWardMesh(0.016);
+      ok('...and they are still drawn, and moving, with the bubble down',
+        q.wardBurst.visible && q.wardShards[0].position.length() > r0);
+      for (let i = 0; i < 40; i++) q._updateWardMesh(0.016);
+      ok('...then put themselves away', q.wardBreakT === 0 && !q.wardBurst.visible);
+      ok('...and every shard flies its own way, on a unit vector',
+        q.wardShards.every((m) => Math.abs(m.userData.dir.length() - 1) < 1e-6)
+        && new Set(q.wardShards.map((m) => m.userData.dir.y.toFixed(3))).size
+           === q.wardShards.length);
+    }
+
+    /* 9. AND IT DEGRADES. A Player who has never popped a bubble — every one
+       built in this file, and the character picker's — still has to have a
+       ceiling, or `used >= NaN` is false forever and the hard cap that makes
+       this an ability rather than a state quietly stops existing. */
+    {
+      const q = mkWard();
+      ok('a Player who never blocked still has a ceiling',
+        q._wardCeiling() === WARD.max);
+      q.wardMax = NaN;
+      ok('...and a broken one falls back to the orb rather than never expiring',
+        q._wardCeiling() === WARD.max);
+      q.wardMax = 0;
+      ok('...as does a zero', q._wardCeiling() === WARD.max);
+    }
+
+    /* 10. THE CROSS SLASH PAYS IT TOO, and the sound moved into the entity
+       with it: main.js used to play a flat `wardhit` beside `triCapture`, and
+       that stopped being one sound the moment a blocked cut started costing
+       her half the bubble. */
+    {
+      const { q, hud, said } = rig();
+      const by = mkWard();
+      q.wardUsed = 0.2;
+      ok('a blocked Cross Slash cut is still blocked',
+        q.triCapture(by, 20, 1, 0, hud) === false && q.hp === q.maxHp);
+      ok('...and charges the bubble like any blade', q.wardMax === WARD.max / 2);
+      q.triCapture(by, 20, 1, 0, hud);
+      ok('...and the second cut smashes it', q.wardOn === false);
+      ok('...with the ward sounds, never the old flat one',
+        said.includes('wardabsorb') && said.includes('wardbreak')
+        && !said.includes('wardhit'), said.join(','));
+    }
+
+    const wsrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+    ok('both new cues exist in the sound set',
+      /case 'wardabsorb':/.test(wsrc) && /case 'wardbreak':/.test(wsrc));
+    ok('...and the cue nothing can play any more is gone',
+      !/case 'wardhit':/.test(wsrc));
+    const wmain = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('...including from main.js, which used to own it',
+      !/wardhit/.test(wmain.replace(/\/\*[\s\S]*?\*\//g, '')));
+  }
+
   /* --- the economy --- */
   const price = orbPrice(world.pointsTotal);
   const sell = orbSellPrice(world.pointsTotal);

@@ -392,6 +392,24 @@ export class Player {
     this.wardUsed = 0;
     this.wardTail = 0;
     this.wardCool = 0;
+    /* --- and what being hit costs it ---
+       `wardMax` is THIS BLOCK'S ceiling rather than the ability's, which is
+       the whole shape of the feature: a blow halves it and leaves `wardUsed`
+       alone, so the bubble keeps the time it has already spent and loses half
+       of what it had left to spend. It is re-read from the orb on every
+       `_popWard`, so the punishment never outlives the bubble that earned it.
+
+       IT IS A FIELD RATHER THAN A SUBTRACTION FROM `wardUsed` because the
+       flicker that warns her is a function of the ceiling. Moving the clock
+       instead would have meant teaching `_updateWardMesh` a second number to
+       stay in step with; moving the ceiling means the tell corrects itself.
+
+       `wardHits` is how many blows THIS bubble has stopped, and `WARD.hits`
+       is the floor under the halving — halving alone never reaches zero. */
+    this.wardMax = WARD.max;
+    this.wardHits = 0;
+    /** Seconds left of the smash effect. Outlives the bubble on purpose. */
+    this.wardBreakT = 0;
     /* --- and the latch, which is the double tap ---
        `wardHold` is "she tapped twice, so the block does not need her thumb
        any more". It changes ONE thing — whether letting go of the button ends
@@ -745,6 +763,51 @@ export class Player {
     this.wardMesh.add(this.wardShell, this.wardCore);
     this.wardMesh.visible = false;
     this.group.add(this.wardMesh);
+
+    /* --- and the pieces it comes apart into ---
+       BUILT ONCE AND HIDDEN, for the same reason the bubble is: this fires
+       every time somebody lands a second blow on a block, which in a four-way
+       round is often, and allocating geometry on the frame a kitten loses her
+       shield is the worst possible frame to hitch on.
+
+       THE DIRECTIONS ARE FIXED, NOT RANDOM. A golden-angle spiral gives
+       fourteen shards spread evenly over the sphere with no RNG anywhere, so
+       the smash looks the same every time — which is what makes it read as
+       one thing happening rather than as noise. It also means `world-check`
+       can assert the shape.
+
+       THEY ARE THE CORE'S WHITE, NOT THE SHELL'S BLUE, AND THAT IS MEASURED.
+       The first cut used the shell colour on the argument that these are
+       pieces of that bubble — correct, and invisible: 0x9fd8ff at a third
+       opacity over bright grass and pale sand is not there. Screenshotted,
+       then changed to `wardCore`'s near-white and half again the size. Still
+       the same object's palette; just the end of it that survives a
+       background nobody gets to choose. */
+    this.wardBurst = new THREE.Group();
+    this.wardShards = [];
+    const SHARDS = 14;
+    const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < SHARDS; i++) {
+      const y = 1 - (i / (SHARDS - 1)) * 2;
+      const r = Math.sqrt(Math.max(0, 1 - y * y));
+      const a = GOLDEN * i;
+      const m = new THREE.Mesh(
+        new THREE.TetrahedronGeometry(WARD.radius * 0.26),
+        new THREE.MeshBasicMaterial({
+          color: 0xe8f6ff, transparent: true, opacity: 0,
+          depthWrite: false, toneMapped: false,
+        })
+      );
+      m.userData.dir = new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r);
+      /* Each piece tumbles on its own axis, and the axis is its own direction
+         so a shard flying up spins about up. Reused rather than re-derived
+         every frame — this runs on four kittens at once. */
+      m.userData.spin = 3 + (i % 5) * 0.8;
+      this.wardShards.push(m);
+      this.wardBurst.add(m);
+    }
+    this.wardBurst.visible = false;
+    this.group.add(this.wardBurst);
 
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 4000);
     this.camDist = 26;
@@ -1165,8 +1228,13 @@ export class Player {
        which deletes the ring. Blocking a blade is what she bought; blocking
        the floor is not. */
     if (this.warded && !force?.pierce) {
-      this.wardFlash = 0.25;
-      hud?.sfx?.('wardhit');
+      /* AND IT COSTS HER THE BUBBLE. `_wardTakeHit` owns the flash, the
+         halved ceiling, the tally and all three sounds — including whether
+         `wardhit` is the right noise at all, which after this change it is
+         not: a blow that takes half the clock off her shield may not sound
+         identical to one that costs nothing. The blow still deals nothing,
+         which is the part that was never in question. */
+      this._wardTakeHit(hud);
       return 0;
     }
 
@@ -1413,6 +1481,13 @@ export class Player {
     this.wardUsed = 0;
     this.wardTail = 0;
     this.wardCool = 0;
+    /* THE CEILING AND THE TALLY GO WITH THE BUBBLE. Left behind, a kitten
+       who was smashed out of a block would pop her next one already half
+       spent and one blow from breaking — a punishment outliving the thing
+       it was for. `wardBreakT` is NOT cleared: the shards are a picture of
+       something that happened, not a state she is in. */
+    this.wardMax = WARD.max;
+    this.wardHits = 0;
     this.chargeT = 0;
     this.chargeLeft = 0;
     this.triWindT = 0;
@@ -2202,7 +2277,7 @@ export class Player {
     this.wardRegrab = Math.max(0, this.wardRegrab - dt);
     if (this.wardOn) {
       this.wardUsed += dt;
-      const spent = this.wardUsed >= (this.power.ward?.max ?? WARD.max);
+      const spent = this.wardUsed >= this._wardCeiling();
       /* THE ORDER OF THESE TWO IS THE WHOLE LATCH. Running out and losing the
          orb end a latched block exactly as they end a held one — `wardHold`
          buys her the BUTTON back, not the clock — so they are tested first and
@@ -2333,6 +2408,81 @@ export class Player {
    * and there is no way to find out why. A refusal that says nothing reads as
    * a broken button.
    */
+  /**
+   * How long THIS block may run, in seconds.
+   *
+   * DEGRADES RATHER THAN VANISHES, which is why it is a function and not a
+   * bare read. `wardMax` is halved by blows and re-read from the orb on every
+   * pop, and a Player built outside the game — every one in `world-check`, and
+   * the character picker's — may never have been popped at all. A NaN here
+   * would not throw: `used >= NaN` is false, so the bubble would simply never
+   * expire, which is the exact bug this ability's hard cap exists to prevent
+   * and is invisible until somebody times it.
+   */
+  _wardCeiling() {
+    const m = this.wardMax;
+    return Number.isFinite(m) && m > 0 ? m : (this.power.ward?.max ?? WARD.max);
+  }
+
+  /**
+   * A blow landed on the bubble. Charge it.
+   *
+   * ASKED FOR, AND THE ARITHMETIC IS THE PLAYER'S OWN: "if Max timer is 2s,
+   * and has been on for 0.5s, then it's Max timer is now 1s and will expire in
+   * 0.5s". So the CEILING halves and the clock is untouched — see `wardMax`.
+   *
+   * THREE OUTCOMES AND THEY ARE THREE DIFFERENT SOUNDS, because they are three
+   * different instructions. Absorbed means keep blocking. Expired means the
+   * bubble is gone and she should run. Smashed is the same instruction arrived
+   * at from the second blow, and it is deliberately the SAME sound as expired:
+   * "the high pitched, or unique shield disabled sound" — one noise for one
+   * fact, which is that the shield is not there any more. What separates them
+   * is the picture, not the pitch.
+   *
+   * `WARD.hits` IS THE FLOOR UNDER THE HALVING and it is checked FIRST. Halving
+   * a positive number never reaches zero, so without it a kitten who blocks
+   * early enough rides a sliver of bubble through a whole exchange — and a
+   * shield that survives two clean hits does not read as something anybody
+   * broke. Two blows end it whatever the clock says.
+   *
+   * THE TAIL COUNTS AS THE BUBBLE. `warded` is true through the fifth of a
+   * second after she lets go, and a blow that lands in it is blocked — so it
+   * has to be chargeable too, or letting go early becomes a free block. There
+   * is nothing to halve once `wardOn` is false, so it goes straight to the
+   * smash: the tail is already the end of the bubble.
+   *
+   * @returns {'absorbed'|'expired'|'smashed'} what the blow did
+   */
+  _wardTakeHit(hud) {
+    this.wardFlash = 0.25;
+    this.wardHits += 1;
+
+    const smash = (why) => {
+      /* THE PICTURE OUTLIVES THE BUBBLE, which is why `wardBreakT` is set here
+         and cleared by nothing that clears the block. A kitten who is knocked
+         out on the same frame her shield breaks still gets to see it break. */
+      this.wardBreakT = WARD.breakT;
+      this.wardBurst.visible = true;
+      hud?.sfx?.('wardbreak');
+      /* AFTER the sound, and 'smashed' is why `_dropWard` holds its own. */
+      this._dropWard(hud, 'smashed');
+      this.wardTail = 0;
+      return why;
+    };
+
+    if (this.wardHits >= (WARD.hits ?? 2) || !this.wardOn) return smash('smashed');
+
+    this.wardMax = this._wardCeiling() * (WARD.hitCut ?? 0.5);
+    /* THE HALVING CAN LAND BEHIND THE CLOCK, and that is the player's fourth
+       case — "if the timer has expired, then just turn it off". It is not a
+       separate rule, it is this one arriving at a ceiling she has already
+       spent, so it says the same thing the second blow says. */
+    if (this.wardUsed >= this.wardMax) return smash('expired');
+
+    hud?.sfx?.('wardabsorb');
+    return 'absorbed';
+  }
+
   _popWard(hud) {
     if (this.triLockT > 0 && this.power.ward) {
       hud?.sfx?.('deny');
@@ -2342,6 +2492,12 @@ export class Player {
     if (!this.power.ward || this.warded || this.wardCool > 0) return false;
     this.wardOn = true;
     this.wardUsed = 0;
+    /* A FRESH CEILING AND A FRESH TALLY, every time. This is the whole of
+       "reset after it expires": nothing anywhere else has to remember to
+       undo a halving, because the only way back into a block is through
+       here and here always starts from the orb's own number. */
+    this.wardMax = this.power.ward?.max ?? WARD.max;
+    this.wardHits = 0;
     this.wardMesh.visible = true;
     hud?.sfx?.('wardup');
     return true;
@@ -2451,7 +2607,11 @@ export class Player {
     this.wardRegrab = why === 'release' ? WARD.regrab : 0;
     this.wardTail = WARD.tail;
     this.wardCool = this.power.ward?.cool ?? WARD.cool;
-    hud?.sfx?.('warddown');
+    /* A SMASH HAS ALREADY MADE ITS NOISE. `_wardTakeHit` plays `wardbreak`
+       on the frame the blow lands, and layering the ordinary sweep-out under
+       it reads as the audio being broken rather than as emphasis — the same
+       argument that keeps the round-end bell off the ZERO shout. */
+    if (why !== 'smashed') hud?.sfx?.('warddown');
   }
 
   /**
@@ -2611,12 +2771,23 @@ export class Player {
    * that held against every attack in the game except this one would be the
    * kind of exception a nine-year-old reads as the bubble being broken.
    *
+   * @param {object} hud  the Game, for the block's sound. It is a parameter
+   *   rather than something the Player holds because the sound was the
+   *   CALLER'S until this change, and one owner is the point: see the
+   *   ward branch below.
    * @returns {boolean} true if this cut counted.
    */
-  triCapture(by, dmg, dx, dz) {
+  triCapture(by, dmg, dx, dz, hud) {
     if (this.ko || this.angel) return false;
     if (this.heldBy && this.heldBy !== by) return false;
-    if (this.warded) { this.wardFlash = 0.25; return false; }
+    /* THE CROSS SLASH PAYS THE SAME PRICE AS A BLADE, and it pays it three
+       times: each cut is a separate call, so a bubble that stops the first
+       is smashed by the second. That is the rule this branch already
+       stated — "the same way it stops an ordinary blade" — followed through
+       to the part that is now expensive. A technique that could be walked
+       into for free would make the bubble the answer to the strongest
+       move in the game. */
+    if (this.warded) { this._wardTakeHit(hud); return false; }
     if (this.heldBy === by && this.heldHits >= CROSS.cuts) return false;
 
     if (!this.heldBy) {
@@ -3134,6 +3305,33 @@ export class Player {
    * indistinguishable from a sister who keeps missing.
    */
   _updateWardMesh(dt) {
+    /* THE SHARDS ARE UPDATED BEFORE THE EARLY RETURN, and that is the whole
+       reason they are a separate group. They only ever fly while the bubble is
+       GONE — a smash drops the block on the same frame it starts them — so
+       anything below `if (!this.warded) return` would be drawn for exactly
+       zero frames. Found by writing it the other way round first. */
+    if (this.wardBreakT > 0) {
+      this.wardBreakT = Math.max(0, this.wardBreakT - dt);
+      const t = 1 - this.wardBreakT / (WARD.breakT || 0.45);   // 0 -> 1
+      this.wardBurst.position.set(0, this.height * 0.55, 0);
+      for (const m of this.wardShards) {
+        /* OUT FAST AND THEN COASTING, rather than at a constant speed: a
+           `sqrt` ease is what a thing that was shoved looks like, and a linear
+           one reads as a diagram of an explosion. They keep going after they
+           have faded out, which nobody sees and costs nothing to be honest
+           about. */
+        const d = WARD.radius * (0.9 + 1.0 * Math.sqrt(t));
+        m.position.copy(m.userData.dir).multiplyScalar(d);
+        m.rotation.x += dt * m.userData.spin;
+        m.rotation.z += dt * m.userData.spin * 0.7;
+        /* Fading on a square keeps them solid through the first third, which
+           is the part that has to be legible, and then gets out of the way. */
+        m.material.opacity = 0.95 * (1 - t) * (1 - t);
+        m.scale.setScalar(1 - 0.35 * t);
+      }
+      if (this.wardBreakT === 0) this.wardBurst.visible = false;
+    }
+
     this.wardMesh.visible = this.warded;
     if (!this.warded) return;
     this.wardMesh.position.set(0, this.height * 0.55, 0);
@@ -3144,7 +3342,7 @@ export class Player {
        clock she has is the bubble itself. The last 0.6s of the two seconds
        flicker at 9Hz, which is early enough to let go and unmistakable next to
        the steady breath it holds for the rest of its life. */
-    const left = Math.max(0, (this.power.ward?.max ?? WARD.max) - this.wardUsed);
+    const left = Math.max(0, this._wardCeiling() - this.wardUsed);
     const dying = this.wardOn && left < 0.6;
     const flick = dying ? 0.45 + 0.55 * (Math.sin(left * 56) > 0 ? 1 : 0) : 1;
     const hit = (this.wardFlash ?? 0) > 0 ? 1 + this.wardFlash * 2.4 : 1;

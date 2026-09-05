@@ -338,6 +338,31 @@ Built this session, driven in the running game, not yet in front of anybody:
   the first frame and a second one after he walked to the arena. It follows him
   now and turns off with his sprite.
 
+**The shield costs something to run into now, and is not yet played back.**
+Asked for after a round where one kitten held the block button from the bell to
+the bell: a bubble that pays nothing to be hit gives the girl attacking her no
+move that changes anything.
+
+- **A blow halves the block's CEILING and leaves the clock alone.** Two seconds
+  up for half a second becomes a one-second block with half a second left —
+  the sum as it was asked for. It halves `wardMax`, never `wardUsed`, and that
+  choice is what made the "about to expire" flicker come out right for free:
+  `left = max − used` corrects itself, so a struck bubble warns exactly like an
+  untouched one at the same time remaining. Spending the price out of the clock
+  would have jumped past the warning instead.
+- **Two blows smash it whatever the clock says.** Halving a positive number
+  never reaches zero, so `WARD.hits` is the floor — without it a kitten who
+  blocks early enough rides a sliver of bubble all round.
+- **Three outcomes, three answers.** Absorbed is a low dink (`wardabsorb`);
+  expired and smashed are the same high glassy break (`wardbreak`) plus fourteen
+  shards thrown off her chest. The old flat `wardhit` is deleted — every block
+  now costs her something, so there is no free-block sound left to play.
+- **A ring-out still pierces it and still does not charge it**, and the shards
+  are drawn outside the bubble's own early return, because the smash drops the
+  bubble on the frame it starts them.
+- `hitCut`, `hits` and `breakT` are on `/tuning.html` with the rest of WARD.
+  37 new checks. → [endgame.md](docs/notes/endgame.md)
+
 **Five more reported from play are fixed and not yet played back.** This batch
 came in as one list and two of its items turned out to be the same bug:
 

@@ -4341,7 +4341,7 @@ class Game {
       if (kind === 'tri') {
         const nx = dist > 0.001 ? dx / dist : Math.sin(attacker.facing);
         const nz = dist > 0.001 ? dz / dist : Math.cos(attacker.facing);
-        if (target.triCapture(attacker, dmg, nx, nz)) {
+        if (target.triCapture(attacker, dmg, nx, nz, this)) {
           this.hitSpark(target, 'tri');
           this.sfx('hit');
           /* THIS CUT CONNECTED. Read and cleared by the sequencer around each
@@ -4349,9 +4349,13 @@ class Game {
              two sisters still counts as one of the three — see
              `Player.triHits`, which decides which cackle she gets. */
           attacker._triLanded = true;
-        } else if (target.warded) {
-          this.sfx('wardhit');
         }
+        /* THE BLOCKED CASE MAKES ITS OWN NOISE NOW, inside `triCapture`.
+           It used to be an `else if (target.warded)` here playing `wardhit`,
+           and that stopped being one sound the moment a blocked cut started
+           costing her half the bubble: absorbed, expired and smashed are
+           three different things to tell her. `Player._wardTakeHit` picks,
+           because it is the thing that knows which happened. */
         continue;
       }
 

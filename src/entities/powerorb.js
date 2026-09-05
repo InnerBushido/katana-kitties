@@ -216,8 +216,36 @@ export const stockFor = (id, players = 2) => {
  * float, which is how you cross to a shard or hang over a sister winding up a
  * dash — and now it costs her the two seconds she is holding it for.
  */
+/* THE SHIELD IS A BUDGET, NOT A WALL, AND THAT IS WHAT `hitCut` BUYS.
+
+   Reported as a feature and it fixes a real problem: a bubble that costs
+   nothing to run into is a bubble her sister has no reason to swing at, so the
+   two of them stand there and the round is a staring contest. Every blow it
+   stops now takes HALF THE CLOCK OFF IT — the ceiling is halved, `wardUsed`
+   is untouched, so a 2.0s block struck at 0.5s has 1.0s of ceiling and half a
+   second left to live. The player asked for exactly that arithmetic.
+
+   HALVING THE CEILING RATHER THAN ADDING TO THE CLOCK is what makes the tell
+   free. `_updateWardMesh` already flickers over the last `dying` seconds of
+   whatever the ceiling is, so a struck bubble starts warning on its own with
+   nothing to keep in step — and a bubble struck so late that the new ceiling
+   is already behind the clock simply has no life left, which is the "if the
+   timer has expired, just turn it off" case falling out of the same line.
+
+   `hits` IS THE FLOOR UNDER THE HALVING. Halving alone never reaches zero, so
+   without this a kitten who blocks early enough could ride a sliver of bubble
+   through an entire exchange; and a shield that survives being hit twice does
+   not read as a shield anybody broke. The second blow smashes it whatever the
+   clock says.
+
+   IT RESETS WITH THE BLOCK, NOT WITH THE ROUND. `_popWard` takes a fresh
+   ceiling and a fresh count, so the punishment is for the bubble that was hit
+   and nothing else — the cooldown is what carries the cost forward. */
 export const WARD = tune('WARD', {
   max: 2.0,
+  hitCut: 0.5,
+  hits: 2,
+  breakT: 0.45,
   tail: 0.2,
   cool: 1.5,
   coolMin: 0.4,
