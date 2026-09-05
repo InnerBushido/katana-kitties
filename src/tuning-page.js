@@ -160,6 +160,11 @@ const GROUPS = {
       tri: 'ONE CUT of the Cross Slash. Deliberately feeble — nine damage and a nudge — because the cuts HOLD rather than throw. All the force lives in CROSS.knock.',
       dive: 'The power dive’s strike. Mirrors DIVE.',
       charge: 'The charge’s strike. Mirrors CHARGE.',
+      claw: 'THE PANDA’S SWIPE, and it has no Damage row on purpose — the '
+        + 'animal hits for `stand` × PANDA.dmgK, so tune the standing slash '
+        + 'and the claw follows it. Reach and Arc come from the same claw '
+        + 'that knocks scenery over, so changing them here changes the drawn '
+        + 'swipe too.',
     },
     fields: {
       dmg: ['Damage', 'Off a bar of COMBAT.maxHp.', '', 0, 60, 1],
@@ -167,6 +172,24 @@ const GROUPS = {
       lift: ['Lift', 'How far up.', '', 0, 25, 0.5],
       reach: ['Reach', 'How far in front the hit test goes. The drawn arc grows with it.', '', 0.5, 10, 0.1],
       arc: ['Arc', 'Cosine floor on the forward test: 1 is straight ahead only, 0 is a half-circle, -1 is all round her. The dive is -1 — it lands on everything under her.', '', -1, 1, 0.05],
+    },
+  },
+  PANDA: {
+    title: 'The panda, in the ring and out of it',
+    blurb: 'Two animals with one set of numbers. The grown one is a mount you '
+      + 'can fight from and that anybody can hit back; the cub is what is left '
+      + 'when its bar runs out, and it heals whoever it belongs to. Nothing '
+      + 'here is a stat on a kitten — every one of them is about the animal.',
+    fields: {
+      hpFrac: ['Panda health', 'Its bar, as a fraction of its owner’s. It is meant to be soft: the trade is that riding it puts a very large, very obvious target under her.', '×hers', 0.05, 1, 0.05],
+      dmgK: ['Claw damage', 'What one swipe does, as a multiple of the STANDING slash. The claw has no damage of its own — this is the only knob for it, and moving ATTACKS.stand.dmg moves the claw with it.', '×stand', 0.5, 3, 0.05],
+      knockK: ['Ridden knockback', 'How much of a normal knockback lands on a rider whose panda took the same blow she did. Below 1 because staying on a staggering animal should cost less than being knocked off one.', '×', 0, 1, 0.05],
+      body: ['Hitbox radius', 'How far OUTSIDE a blade’s reach the animal can still be cut. Added to the attacker’s reach, not to the panda — it is a big body, not a long sword. The forward arc is deliberately NOT widened by it: a swipe that visibly missed still misses.', 'm', 0.5, 6, 0.1],
+      bodyUp: ['Hitbox height', 'The same, vertically, on top of COMBAT.strikeHeight. A panda is taller than a kitten and a blade should find its shoulders.', 'm', 0, 4, 0.1],
+      lickBelow: ['Lick threshold', 'How hurt she has to be before the cub comes over. Above this it ignores her — the cub is a rescue, not a passive regeneration.', '×her bar', 0.05, 1, 0.05],
+      lickRate: ['Lick heal rate', 'Health per second, as a fraction of her maximum bar. 0.005 is half a percent a second, which is about three minutes for a full bar — slow on purpose, so it never beats getting hit.', '×bar/s', 0, 0.05, 0.001],
+      lickWarm: ['Lick warm-up', 'How long the cub has to keep station beside her before any healing starts. Leaving the radius resets this to zero rather than pausing it.', 's', 0, 5, 0.1],
+      lickNear: ['Lick radius', 'How close counts. The cub also walks in to half this on its own when it wants to lick, so making it tiny makes the cub crowd her.', 'm', 0.5, 10, 0.25],
     },
   },
 };
