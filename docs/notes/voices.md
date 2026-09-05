@@ -37,7 +37,7 @@ the `voice_id` below. About **0.15 credits a line**.
 | **Galemane** | Windwhisker. Maine Coon. | **Onyx** | `8911390e-4b59-459b-ba84-19010917e1df` | `wind` `shrine_wind` |
 | **Snowmantle** | Icewhisker. Himalayan. | **Imogen** | `3811e986-0891-47cf-a1f5-78a1d62a547a` | `ice` `shrine_ice` |
 | **Bambooheart** | Pandapaw. Ragdoll. | **Hana** | `c25f78a0-714e-42af-8da3-a399cef94968` | `panda` `shrine_panda` |
-| **Mr. Satan** | the tournament, and the trailer. The only insincere voice in the game. | **Harrison** | `573e5163-59b3-4926-aab1-951ef2985f81` | all thirty-two `sat_*` — the six bare numbers `sat_n0`–`sat_n5` and the four cues of the last fifteen seconds among them; **and six of the trailer's fourteen lines** (1-3, 9, 10, 13) |
+| **Mr. Satan** | the tournament, and the trailer. The only insincere voice in the game. | **Harrison** | `573e5163-59b3-4926-aab1-951ef2985f81` | all thirty-three `sat_*` — the six bare numbers `sat_n0`–`sat_n5` and the four cues of the last fifteen seconds among them; **and six of the trailer's fourteen lines** (1-3, 9, 10, 13) |
 | **the trailer voice** | not in the game at all. The straight narrator Mr. Satan interrupts — and the one who has to say "right meow" with a straight face. | **Desmond** | `563f728c-e249-5a85-97ab-8461e8c09da6` | **six trailer lines** — 4-8 and the sign-off |
 | **Ryuuseki** | the dragon the seven stars call. | **unresolved — see below** | — | `summon1` `summon2` |
 | *(the thing in the dark)* | three seconds of the trailer — and, since the Cross Slash rebalance, four sounds in the game | **not a voice at all** | [tools/kitten-cackle.mjs](../../tools/kitten-cackle.mjs) | trailer line 12, `cross0`-`cross3` |
@@ -197,6 +197,47 @@ careful about, because it is the part that has to carry across sessions:
   the three lines that stayed with Mr. Satan had to be rewritten to his clock,
   not merely reassigned.
 
+## The card and the recording have to be ONE string
+
+Reported from play as *"not all the text is displaying for what he is saying, it
+is like an abbreviated version of what he says"*, about the announcer's-box
+taunt. It was true, and the shape of the bug is worth remembering because
+nothing on screen looks wrong when it happens.
+
+The bubble was being fed a hand-written short version of the line while
+`BLAST_LINES` held the full one the recording was made from. Two strings, one
+id: `Announcer` prints the text it is handed and plays the clip that matches the
+id, so it will happily put four words on screen over eight seconds of speech and
+report no error at all.
+
+**Measurement is what settles it.** Harrison runs 2.4-2.6 words a second (above),
+so `ffprobe` on a clip divided by the word count of its card says immediately
+whether the two agree. `sat_taunt.mp3` is 8.56 seconds against a seven-word
+card, which is about three times too long and is not a delivery choice.
+
+**The fix is structural, not editorial.** There is one string now, and `card()`
+is the only thing between it and the bubble — it collapses the newlines the
+source is wrapped on and changes nothing else. Two strings cannot drift apart
+if there is only one.
+
+**Three other clips look long for their cards on the same test** and have not
+been touched, because the text they were actually recorded from is written down
+nowhere in this repo:
+
+| clip | length | its card | words | implied by the length |
+| --- | --- | --- | --- | --- |
+| `sat_ko` | 5.52s | *"DOWN! Oh, that had to hurt!"* | 6 | ~14 |
+| `sat_win1` | 6.32s | *"AND THAT IS THE MATCH! What a display!"* | 7 | ~16 |
+| `sat_r1` | 6.24s | *"ROUND 1! <A> versus <B> — fighters, take your marks!"* | 9 | ~15 |
+
+`sat_r1` is the least suspicious of the three and is here for completeness: its
+card interpolates two kitten names the recording cannot possibly contain, so the
+two were never going to be the same sentence. The other two have no such excuse.
+
+Neither is a bug any player has reported, and each would cost either a re-record
+(0.15 credits) or a longer card. Written down so the next session does not have
+to re-measure them.
+
 ## Adding a voice
 
 1. **Read this table first.** If the character is in it, use that preset. There
@@ -227,6 +268,7 @@ careful about, because it is the part that has to carry across sessions:
 | building the arena — the 50/60/70/75% calls | Mr. Satan | [src/systems/arenaquest.js](../../src/systems/arenaquest.js) |
 | his two full-screen moments | Mr. Satan | [src/systems/summonscene.js](../../src/systems/summonscene.js), `SCRIPTS.sat_*` |
 | climbing onto his box — the taunt, and the shout ten seconds later | Mr. Satan | [src/systems/satanblast.js](../../src/systems/satanblast.js), `sat_taunt` and `sat_blast` via [announce.js](../../src/systems/announce.js) |
+| a round decided on the clock, with both fighters still up | Mr. Satan | [src/systems/tournament.js](../../src/systems/tournament.js), `sat_over` — `ROUND_OVER_LINE` |
 | the trailer | the trailer voice and Mr. Satan, trading the microphone; Duskcoat once; a kitten once | [tools/trailer-vo.mjs](../../tools/trailer-vo.mjs) |
 
 ## The last fifteen seconds: four cues, and one of them is a timeline

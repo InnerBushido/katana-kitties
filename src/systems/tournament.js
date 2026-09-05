@@ -214,6 +214,35 @@ const CARD_TIME = 3.4;
 const COUNT_FROM = 3;
 /** Held on the knockout before the next round is set up. */
 const KO_HOLD = KO_TIME + 1.4;
+
+/**
+ * What he says when the round ended with everybody still on their feet.
+ *
+ * EXPORTED SO THE CARD AND THE RECORDING CANNOT DRIFT. `public/voice/sat_over.mp3`
+ * is this sentence and nothing else; the pop-in card is the subtitle of a clip,
+ * and the moment the two are written out separately one of them starts saying
+ * less than the other — which is what had happened to the announcer's box (see
+ * `BLAST_LINES` in satanblast.js) and was reported as the text being an
+ * abbreviated version of what he says.
+ */
+export const ROUND_OVER_LINE = 'Not down... I guess... but we have a WINNER!';
+
+/**
+ * What fraction of the health she EATS back at the feast carries into the next
+ * round as overflow.
+ *
+ * ASKED FOR AS A HALF, in those words: "take the health they gained, divide it
+ * by two, and then add that to the maximum health that the player has in the
+ * next round". Named rather than inlined because it is the one number in the
+ * feature a player could argue about, and because a half written as `/ 2` in
+ * two files is two numbers.
+ *
+ * IT IS HALF OF WHAT SHE GAINED, NOT HALF OF WHAT SHE ATE. A kitten at the top
+ * of her bar swallowing a rat has gained nothing and banks nothing — see
+ * `Player.fedHp`. That is what stops the feast being "stand still and chew" for
+ * whoever is already winning.
+ */
+export const OVERFLOW_FRAC = 0.5;
 /**
  * A round cannot run forever — see `_updateLive`.
  *
@@ -459,6 +488,11 @@ export class Tournament {
      *  the same round, and counting it per kitten would need two rounds to
      *  reach a "best of three". */
     this.wins = [0, 0];
+    /** Which side won the LAST round, or -1 for "nobody lost" — a draw, or no
+     *  round finished yet. Decides who is healed to full at the top of the
+     *  next one; see `_nextRound`. Not derivable from `wins`, which is a
+     *  running total. */
+    this._lastWinner = -1;
     /** Total seconds actually spent fighting — the speed term of the score. */
     this.fightTime = 0;
     this.winner = null;
@@ -652,6 +686,10 @@ export class Tournament {
     this.state = 'card';
     this.round = 0;
     this.wins = Array.from({ length: Math.max(...this.sides) + 1 }, () => 0);
+    /* A NEW MATCH HAS NO LAST ROUND. Left over, the first round of the second
+       tournament of an afternoon would heal whoever lost the last round of the
+       first one. */
+    this._lastWinner = -1;
     this.fightTime = 0;
     this.winner = null;
     this.rank = -1;
@@ -690,6 +728,13 @@ export class Tournament {
          function two hundred lines away. "The first round is clean and every
          round after it carries" is the rule; this is the half of it that was
          being left to luck. */
+      /* ...AND WITH NO OVERFLOW ON IT. `setRoundBonus` is what makes the
+         green a one-round thing; a tournament opening on a bar left green by
+         the last one would be carrying a reward across a match boundary, and
+         `p.hp = p.maxHp` on the line below would silently include it. Cleared
+         before the fill, so the fill is to the ordinary top. */
+      p.setRoundBonus?.(0);
+      p.fedHp = 0;
       p.hp = p.maxHp;
       p.barOn = true;
       p.landAngel();
@@ -718,6 +763,12 @@ export class Tournament {
        state is `ko`, but a tournament torn down mid-ceremony and started again
        would carry it into the next one's first frame. */
     this._onTheClock = false;
+    /* AND WHO WON THE LAST ROUND GOES WITH THEM. It decides who is healed at
+       the top of the next one (`_nextRound`), so a tournament torn down and
+       started again would open its first round handing somebody a full bar for
+       a round she fought in a different match. -1 is "nobody lost", which is
+       also what a draw leaves. */
+    this._lastWinner = -1;
     this._koHold = KO_HOLD;
     this.announcer?.clear();
     this.bannerEl?.classList.add('hidden');
@@ -773,6 +824,12 @@ export class Tournament {
 
     const regen = Math.round(MAX_HP * REGEN_FRAC);
     for (const p of this.game.players) {
+      /* THE TALLY STARTS AT ZERO, HERE, FOR EVERYBODY. It is what she eats
+         THIS feast that carries, and a counter that survived a round would
+         hand her the same meal twice. Zeroed for the angel too: she cannot eat
+         while she is flying, and a stale number on somebody who ate nothing is
+         exactly the kind of thing that ships. */
+      p.fedHp = 0;
       if (p.ko) {
         /* SHE IS THE ONE WHO LOST THE ROUND, so she is the one with nothing to
            do — and giving her the sky is what stops her having nothing to do.
@@ -801,9 +858,15 @@ export class Tournament {
     this.announcer?.say('sat_feast',
       'Fifteen seconds, fighters! Get your breath back — and if something runs past you, EAT IT!');
     for (const p of this.game.players) {
+      /* AND IT SAYS WHAT EATING IS NOW FOR. The feast used to buy exactly one
+         thing — health you keep — which is worth very little to somebody about
+         to be healed to full anyway. Half of it now comes back as a bar that
+         goes PAST full next round, so the instruction has to say so or the
+         green on her HUD is a mystery. */
       this.game.toast(p.angel
         ? 'Knocked out — fly it off! You come back with a full bar'
-        : 'Catch and eat! Hold ATTACK next to a critter — you keep this health',
+        : 'Catch and eat! Hold ATTACK next to a critter — half of what you'
+          + ' heal comes back as GREEN overflow next round',
       p.index);
     }
   }
@@ -841,14 +904,33 @@ export class Tournament {
           z: foes.reduce((n, q) => n + q.z, 0) / foes.length,
         }
         : (posts[1 - i] ?? posts[0]);
+      /* THE OVERFLOW IS BANKED BEFORE ANYTHING IS FILLED, because raising the
+         ceiling and filling to it are two different events and `resetForRound`
+         does the second one. Half of what she HEALED by eating — see
+         `OVERFLOW_FRAC` and `Player.setRoundBonus`, which replaces rather than
+         adds, so this lasts exactly one round. */
+      p.setRoundBonus?.(Math.round((p.fedHp ?? 0) * OVERFLOW_FRAC));
+      p.fedHp = 0;
+
       /* WHAT SHE STARTS WITH IS DECIDED HERE, and it is asked of her state
-         rather than remembered from the last frame of the feast. An angel was
-         knocked out, so she is reborn at the top of her bar; anyone else lived
-         through the round and keeps exactly what she finished the feast with,
-         which is the health she regenerated plus everything she ate. There is
-         no stored copy of either number, so there is nothing for the feast to
-         get out of step with. */
-      const carried = p.angel ? null : p.hp;
+         rather than remembered from the last frame of the feast. There is no
+         stored copy of any of it, so there is nothing for the feast to get out
+         of step with.
+
+         AN ANGEL IS REBORN FULL, and so is anybody who LOST the round on her
+         feet. Reported from play: "if a player loses a round but is still
+         alive, then they should be fully healed before the next match begins".
+         It was a real unfairness rather than a preference — a kitten knocked
+         out came back at the top of her bar, and the one who merely lost on
+         the clock came back on whatever was left of hers, so being beaten
+         BADLY was the better outcome of the two.
+
+         THE WINNER KEEPS WHAT SHE HAS. That is the half that makes winning a
+         round worth something at all now, and it is why this asks who won
+         rather than healing everybody. A DRAW heals nobody, because nobody
+         lost — `_lastWinner` is -1 and no side matches it. */
+      const lost = this._lastWinner >= 0 && this.sides[i] !== this._lastWinner;
+      const carried = (p.angel || lost) ? null : p.hp;
       // Facing is atan2(x, z) in this game — 0 is +Z. Point her at the other.
       const facing = Math.atan2(other.x - post.x, other.z - post.z);
       p.resetForRound(post.x, post.y, post.z, facing, carried);
@@ -948,6 +1030,8 @@ export class Tournament {
     if (leaders.length !== 1 || best <= 0) {
       this.state = 'ko';
       this.t = 0;
+      /* A DRAW HEALS NOBODY, because nobody lost. See `_nextRound`. */
+      this._lastWinner = -1;
       /* THE SAME BELL, ASKING A QUESTION. A draw needs to sound different from
          a result or it reads as the game having failed to decide — which is
          exactly what a nine-year-old will conclude from a K.O. bell over a
@@ -983,8 +1067,24 @@ export class Tournament {
    */
   _roundOver(winnerSide, message, wait = null) {
     if (this.state !== 'live') return;
+    /* "K.O." IS A CLAIM ABOUT SOMEBODY'S BODY, AND HALF THE TIME IT WAS FALSE.
+       A round ends two ways: a side is wiped out, or the clock runs out and it
+       is given to whoever was ahead on damage. Only the first is a knockout —
+       the second leaves both fighters on their feet — and the banner said
+       K.O. either way while Mr. Satan shouted "DOWN!" at a kitten who was
+       visibly standing up. Reported from play as exactly that.
+
+       ASKED BEFORE THE WAIT, not inside the closure. `_announce` can hold this
+       for as long as he takes to finish his sentence, and the answer is about
+       the frame the round ENDED on. */
+    const standing = this._sidesUp().length > 1;
     this.state = 'ko';
     this.t = 0;
+    /* REMEMBERED FOR THE NEXT ROUND'S HEALING, and set here rather than read
+       off `wins` because `wins` is a running total: "who won a round" and "who
+       won THE LAST round" are different questions and only the second one
+       decides who starts the next one full. */
+    this._lastWinner = winnerSide;
     if (winnerSide >= 0) this.wins[winnerSide] = (this.wins[winnerSide] ?? 0) + 1;
     /* THE ROUND ENDS ON A BELL. The gong at the top of a round is the one sound
        in the game that STARTS something and it had no answer: a round simply
@@ -992,8 +1092,17 @@ export class Tournament {
        the fight gong, and it settles rather than rings out — and it rings on
        the frame the round ends, never after the wait: see `_announce`. */
     this._announce(wait ?? this._letHimFinish(false), 'endgong', () => {
-      this.announcer?.say('sat_ko', 'DOWN! Oh, that had to hurt!');
-      this._banner('K.O.', 'ko');
+      /* HE COMMENTS ON WHAT HE CAN SEE. Nobody went down, so he does not say
+         anybody did — he is a showman who has to fill the silence, and being
+         faintly disappointed that it went to the clock is more him than a
+         shout that contradicts the screen. */
+      if (standing) {
+        this.announcer?.say('sat_over', ROUND_OVER_LINE);
+        this._banner('ROUND OVER', 'ko');
+      } else {
+        this.announcer?.say('sat_ko', 'DOWN! Oh, that had to hurt!');
+        this._banner('K.O.', 'ko');
+      }
       // Addressed to a side now, so everybody on it hears it.
       for (const p of winnerSide >= 0 ? this.sideMembers(winnerSide) : this.game.players) {
         this.game.toast(message, p.index);
@@ -1944,8 +2053,33 @@ export class Tournament {
     const pips = (side) => Array.from({ length: WINS_NEEDED }, (_, k) => (
       `<i class="${k < (this.wins[side] ?? 0) ? 'won' : ''}"></i>`
     )).join('');
+    /**
+     * How much of her bar is GREEN, in health.
+     *
+     * TWO DIFFERENT SUMS, AND ONE MEANING: "this is overflow". During a round
+     * it is what she is actually carrying above her ordinary top. During the
+     * FEAST it is that plus what she is in the middle of gathering — half of
+     * what she has healed by eating — because the ask was for "a visual
+     * indicator on the screen that they are gathering the overflow effect that
+     * will carry to the next battle", and the honest indicator is the quantity
+     * that will actually carry rather than the whole mouthful. Half of a meal
+     * shown as green and then halved again at the gong would read as losing
+     * something.
+     *
+     * CAPPED BY WHAT SHE HAS. The green is drawn INSIDE the fill, so a figure
+     * bigger than her health would paint a bar that is entirely overflow.
+     */
+    const overOf = (p) => {
+      const gathering = this.state === 'feast'
+        ? Math.round((p.fedHp ?? 0) * OVERFLOW_FRAC) : 0;
+      return Math.max(0, Math.min(p.hp, (p.overflowHp ?? 0) + gathering));
+    };
     const bar = (p) => {
-      const k = Math.max(0, p.hp / p.maxHp);
+      /* CLAMPED AT THE TOP NOW THAT THERE IS AN ABOVE-THE-TOP. `hp` never
+         exceeds `maxHp` — `setRoundBonus` puts the overflow INSIDE the maximum
+         — but this is the one line the whole HUD hangs off and a fraction over
+         1 would be a fill wider than its own bar. */
+      const k = Math.max(0, Math.min(1, p.hp / p.maxHp));
       const cls = k > 0.34 ? '' : k > 0.18 ? ' warn' : ' crit';
       /* THE FILL IS HER OWN COLOUR, INLINE. It used to be two CSS rules —
          `.ah-fill` ember, `.p1 .ah-fill` frost — which is two of the four
@@ -1953,8 +2087,22 @@ export class Tournament {
          the marker ring, the minimap pip and the score badge already read, so a
          bar cannot end up a different orange from the cat it belongs to. */
       const style = cls ? '' : `background:${styleCss(this.game.roster?.[p.index] ?? p.index)};`;
+      /* THE OVERFLOW RIDES INSIDE THE FILL, AT ITS FAR END, and it is a
+         fraction OF THE FILL rather than of the bar — so it stays put as she
+         is hit and the two shrink together. `margin-inline-start: auto` is
+         what pins it to the end in both directions: the right-hand side's bars
+         are `direction: rtl` so they drain toward their own edge of the
+         screen, and a hard `right: 0` would put the green on the wrong end of
+         half the HUD.
+
+         DRAWN ONLY WHEN THERE IS SOME. An empty span is a repaint and a rule
+         nobody can see, and this markup is rebuilt every frame. */
+      const over = overOf(p);
+      const green = over > 0 && p.hp > 0
+        ? `<i class="ah-over" style="width:${Math.min(100, (over / p.hp) * 100)}%"></i>`
+        : '';
       return `<div class="ah-bar"><span class="ah-fill${cls}" `
-        + `style="width:${k * 100}%;${style}"></span></div>`;
+        + `style="width:${k * 100}%;${style}">${green}</span></div>`;
     };
     /* A fighter's own line: her name, and a KO cross once she is down. Knowing
        your partner has gone is the whole shape of a tag-team round. */

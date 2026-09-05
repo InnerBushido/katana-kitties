@@ -1129,6 +1129,11 @@ class Game {
       sat_fight: '/voice/sat_fight.mp3',
       sat_feast: '/voice/sat_feast.mp3',
       sat_ko: '/voice/sat_ko.mp3',
+      /* THE OTHER WAY A ROUND ENDS. `sat_ko` is "DOWN!", which is a claim
+         about somebody's body and is only true when a side was actually wiped
+         out; the clock running out leaves both fighters standing. See
+         `Tournament._roundOver`. */
+      sat_over: '/voice/sat_over.mp3',
       /* THE CLOCK, IN FOUR CUES AND NOT ONE CLIP. Thirty, fifteen, ten, and
          then the count — which is the odd one out twice over: it is the only
          thing in this list PLAYED rather than said (no card; the number it is
