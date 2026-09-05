@@ -9,6 +9,12 @@ import { MAX_SLOTS } from '../core/input.js';
    standing swing on the balance page, and a second literal here would quietly
    keep the old shape for the one thing on the deck that moves. */
 import { ATTACKS } from '../entities/player.js';
+/* HOW MUCH OF A MEAL CARRIES. Imported rather than copied for the reason every
+   shared number in this codebase is: the tournament owns the rule, the toast
+   here has to quote the same figure the bar will show, and a half written down
+   twice is two halves. `tournament.js` imports from `player.js` and nothing
+   else, so this is not a cycle. */
+import { OVERFLOW_FRAC } from './tournament.js';
 
 /** One entry per seat the game can deal, whoever is actually in them. */
 const seats = (v) => Array.from({ length: MAX_SLOTS }, () => v);
@@ -820,6 +826,12 @@ export class Menagerie {
     const before = player.hp;
     player.hp = Math.min(player.maxHp, player.hp + c.spec.heal);
     const gained = Math.round(player.hp - before);
+    /* AND HALF OF IT COMES BACK NEXT ROUND. The tally is HEALTH RESTORED, not
+       animals swallowed: a kitten already at the top of her bar gains nothing
+       here and banks nothing, which is what stops the feast being "stand still
+       and chew" for whoever is already ahead. Read by
+       `Tournament._nextRound`, zeroed by `_startFeast`. */
+    player.fedHp = (player.fedHp ?? 0) + Math.max(0, gained);
 
     this.held[i] = null;
     this.chew[i] = 0;
@@ -832,9 +844,17 @@ export class Menagerie {
     this._poof(c.position, c.spec.size);
     this._remove(c);
     this.game.sfx?.('chomp');
+    /* THE SECOND HALF OF THE SENTENCE IS THE FEATURE. "+8 health" was the
+       whole reward once; half of it is now a bar that goes past full next
+       round, and a green segment appearing on her HUD with nothing having said
+       why is a mystery rather than a prize. The carry is quoted as the RUNNING
+       total, not this mouthful's share, because that is the number she will
+       see on the bar. */
+    const carry = Math.round((player.fedHp ?? 0) * OVERFLOW_FRAC);
     this.game.toast(
       gained > 0
-        ? `${player.name} ate the ${c.spec.name} — +${gained} health!`
+        ? `${player.name} ate the ${c.spec.name} — +${gained} health`
+          + (carry > 0 ? ` · +${carry} overflow next round` : '')
         : `${player.name} ate the ${c.spec.name} — already full!`,
       i
     );

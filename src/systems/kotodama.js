@@ -493,6 +493,62 @@ export class Kotodama {
     return true;
   }
 
+  /* --------------------------------- drop -------------------------------- */
+
+  /**
+   * Take a pile off her and put it back on the ground around her feet.
+   *
+   * ASKED FOR AS "a button they can select to drop the currently selected
+   * orbs — it will randomly drop them around the player, like it does when a
+   * player drops out of the game". It IS that path: the same fan, the same
+   * `findOpenSpot`, the same pickups. What is different is that she is still
+   * standing there, and the two consequences of that are the whole function.
+   *
+   * IT PUTS EACH ONE DOWN BEFORE IT TAKES IT OFF HER, one at a time. There are
+   * twenty-six of these in the world and `dropInWorld` can decline — the
+   * Kotodama are not awakened, or `heightAt` has nothing under the fanned
+   * point — so removing first and dropping second would delete an orb on the
+   * one code path where the drop fails. Fourth non-negotiable: nothing is
+   * lost. It also means a partial drop is a real answer, and the count comes
+   * back so the caller can say so instead of claiming all eight landed.
+   *
+   * THE FAN STARTS AT ONE, NOT AT ZERO. `_leavePlayer` starts at zero because
+   * the kitten it is dropping for has just been removed from the game; here
+   * she is standing on the spot, and `spread: 0` means "exactly at `at`" —
+   * eight orbs under her own feet. Starting at 1 puts the whole pile in the
+   * ring at `DROP_R0` and outwards, which is what "around the player" means
+   * when the player is still there.
+   *
+   * AND THE ORBS ARE SHY OF HER UNTIL SHE STEPS OFF THEM. `DROP_R0` is 2.6 and
+   * `PICKUP_RADIUS` is 2.8, so every orb she drops lands INSIDE her own pickup
+   * circle: without this the button would hand them all straight back on the
+   * first frame the world ran again, and read as doing nothing at all. Widening
+   * the ring instead would have thrown her orbs further than a leaver's, for a
+   * reason that is about a collision radius rather than about the game. `shyOf`
+   * clears itself the moment she is out of range — see `update` — so the drop
+   * is take-backable by walking away and coming back, which is the right
+   * amount of permanent for a button a nine-year-old presses.
+   *
+   * @param {object} player
+   * @param {string|string[]} ids  what to drop; copies are counted, not deduped
+   * @returns {number} how many actually reached the ground
+   */
+  drop(player, ids) {
+    const list = ids == null ? [] : [].concat(ids).filter(Boolean);
+    if (!player || !list.length) return 0;
+    let n = 0;
+    for (const id of list) {
+      if (!player.powerOrbs.includes(id)) continue;
+      const pk = this.dropInWorld(id, player.position, n + 1);
+      if (!pk) continue;
+      pk.shyOf = player;
+      this.take(player, id);
+      n += 1;
+    }
+    if (n) this.game.sfx('orb');
+    return n;
+  }
+
   /* -------------------------------- frame -------------------------------- */
 
   update(dt) {
@@ -502,7 +558,20 @@ export class Kotodama {
       if (pk.taken) continue;
       pk.update(dt);
       for (const p of this.game.players) {
-        if (p.position.distanceTo(pk.position) > PICKUP_RADIUS) continue;
+        const near = p.position.distanceTo(pk.position) <= PICKUP_RADIUS;
+        /* SHE HAS TO STEP OFF IT FIRST — and only she does. `drop` sets this
+           on the orbs a kitten puts down deliberately, because they land at
+           2.6 and she picks up at 2.8; without it the drop button hands the
+           pile back on the frame the world resumes. It is cleared by walking
+           away rather than by a timer, so what she has to do to undo it is the
+           obvious thing and there is no window to miss. A SISTER standing next
+           to her is not shy of anything and can take them right now, which is
+           most of the point of dropping them. */
+        if (pk.shyOf === p) {
+          if (!near) pk.shyOf = null;
+          continue;
+        }
+        if (!near) continue;
         /* A FULL KITTEN LEAVES IT WHERE IT IS AND IS TOLD WHY. Deleting the
            pickup would destroy one of twenty-six orbs in the world because she
            happened to walk over it; doing nothing at all reads as a broken

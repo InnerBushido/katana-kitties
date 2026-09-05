@@ -122,7 +122,11 @@ const POINT_STEP = 50;
 
 /** Everything that DOES something on this screen. A side is armed once its pad
  *  is holding none of them — see `Side.armed`. */
-const ARM_ACTIONS = ['jump', 'attack', 'interact', 'mount', 'start'];
+/* SPRINT IS IN HERE BECAUSE IT DROPS ORBS NOW. It is a HELD button in play —
+   a girl who runs to the stall arrives with her thumb still on it — so of
+   everything on this screen it is the one most likely to be down at the moment
+   the panel opens. See `Side.armed`. */
+const ARM_ACTIONS = ['jump', 'attack', 'interact', 'mount', 'sprint', 'start'];
 /** ...or after this long, whatever the pad is claiming. See `Side.armT`. */
 const ARM_GRACE = 0.6;
 
@@ -205,6 +209,7 @@ export class ProfileScreen {
         else if (act.dataset.act === 'confirm') this._confirmHere(i);
         else if (act.dataset.act === 'buy') this._buyHere(i);
         else if (act.dataset.act === 'sell') this._sellHere(i);
+        else if (act.dataset.act === 'drop') this._dropHere(i);
         else if (act.dataset.act === 'yes') this._answerHere(i, true);
         else if (act.dataset.act === 'no') this._answerHere(i, false);
         this._sig = '';           // the flash line and the cards both moved
@@ -449,6 +454,7 @@ export class ProfileScreen {
   _tradeButtons(index, pad, side) {
     if (pad.pressed('jump')) this._offerHere(index);
     if (pad.pressed('attack')) this._confirmHere(index);
+    if (pad.pressed('sprint')) this._dropHere(index);
 
     if (pad.pressed('interact')) {
       /* BACK OUT ONE LAYER AT A TIME, and with several orbs on the table the
@@ -577,6 +583,41 @@ export class ProfileScreen {
   }
 
   /**
+   * SPRINT, or a tap on DROP: put the offered pile on the ground.
+   *
+   * ASKED FOR AS "add a button they can select to drop the currently selected
+   * orbs". CURRENTLY SELECTED IS THE OFFER, not the cursor — the pile she has
+   * already picked out with JUMP, which is the only multi-orb selection this
+   * screen has and the one she can see. A drop that acted on the single row
+   * under her cursor would need a second kind of selection to explain, next to
+   * a control that already means "these ones".
+   *
+   * IT ASKS FIRST, like everything else here that cannot be undone by pressing
+   * the same button again. Seventh non-negotiable — and the question NAMES
+   * every orb, for the same reason the trade question does: a yes-press behind
+   * a list she cannot see is not consent.
+   */
+  _dropHere(index) {
+    const player = this.game.players[index];
+    const side = this.sides[index];
+    if (!player || !side) return;
+    const ids = [...side.offers].sort((x, y) => x - y)
+      .map((k) => player.powerOrbs[k]).filter(Boolean);
+    /* THE REFUSAL IS AN INSTRUCTION. Sixth non-negotiable: "nothing selected"
+       is a label for a state; this has to say what to go and press. */
+    if (!ids.length) {
+      this._say('Pick the orbs to drop first — JUMP on each one');
+      this.game.audio?.play('deny');
+      return;
+    }
+    const names = ids.map((id) => ORB_BY_ID[id].name).join(' + ');
+    this._ask(index, {
+      kind: 'drop', ids,
+      text: `Drop ${names} on the ground? Anyone can pick them up.`,
+    });
+  }
+
+  /**
    * She said yes. Do the thing she was asked about.
    *
    * THE ORB ID IS TAKEN FROM THE QUESTION, NOT FROM HER CURSOR. Between the
@@ -649,6 +690,29 @@ export class ProfileScreen {
       }
       K.sell(player, q.id);
       this._say(`Sold ${ORB_BY_ID[q.id].name} for ${K.sellPrice}`);
+    } else if (q.kind === 'drop') {
+      /* THE IDS COME OFF THE QUESTION, like every other answer here — see the
+         note above. She can have moved her cursor, or changed the pile, in the
+         gap between asking and answering. */
+      const n = K.drop(player, q.ids);
+      /* A PARTIAL DROP IS REPORTED HONESTLY. `Kotodama.drop` declines an orb
+         it cannot find ground for rather than deleting it, so "dropped 3" when
+         she asked for 4 is a real outcome and saying "dropped them" would be
+         the screen lying about where her orbs are. */
+      if (!n) {
+        this._say('Nowhere to put them down here — try somewhere flatter');
+        this.game.audio?.play('deny');
+        return true;
+      }
+      this._say(n === q.ids.length
+        ? `${player.name} dropped ${n === 1 ? 'it' : `all ${n}`} — walk away and they are anyone's`
+        : `${player.name} dropped ${n} of ${q.ids.length} — no room for the rest`);
+      this.game.toast(`${player.name} dropped ${n} orb${n === 1 ? '' : 's'}`, player.index);
+      /* AND THE PILE GOES OFF THE TABLE. Those slots do not exist any more —
+         `Side.offers` is a set of ROW numbers, and the rows below the ones she
+         just dropped have shuffled up underneath it. Leaving it would leave
+         her offering whatever moved into those positions. */
+      side.reset();
     } else if (q.kind === 'trade') {
       /* Nothing to do here — `_maybeTrade` looks at who is still `ready` and
          has answered, and fires on the frame the last one does. Answering is
@@ -755,8 +819,31 @@ export class ProfileScreen {
        somebody's purse. Checked first, moved after. */
     const aPts = Math.min(A.points, pa.score);
     const bPts = Math.min(B.points, pb.score);
+    const orbs = aIds.length + bIds.length;
 
-    if (this.game.kotodama.trade(pa, aIds, pb, bIds)) {
+    /* POINTS ALONE ARE A TRADE, AND `kotodama.trade` CANNOT SAY SO. It is an
+       orb function and it refuses two empty piles, correctly — a swap of no
+       orbs for no orbs is a no-op to it. This used to hand that `false`
+       straight to the refusal below, so EVERY points-only gift on this screen
+       was turned down with a sentence about carrying nine orbs, when neither
+       girl had offered one. Ask it only when there are orbs to move; a pile of
+       points is moved by the same three lines either way. */
+    const moved = orbs ? this.game.kotodama.trade(pa, aIds, pb, bIds) : true;
+
+    /* AND A TRADE THAT HAS EVAPORATED IS REFUSED IN WORDS. The offer above is
+       clamped to what she has, so this should not happen — but if it ever does
+       the alternative is two toasts reading "gave nothing", which is the
+       silently-does-nothing that the sixth rule exists to forbid. */
+    if (moved && !orbs && !aPts && !bPts) {
+      this._say('There is nothing left on the table to trade');
+      this.game.audio?.play('deny');
+      for (const s of this.sides) s.reset();
+      return;
+    }
+
+    if (moved) {
+      /* The orb path rings the till itself, on its way out of `trade`. */
+      if (!orbs) this.game.sfx('trade');
       if (aPts) { pa.score -= aPts; pb.score += aPts; }
       if (bPts) { pb.score -= bPts; pa.score += bPts; }
       if (aPts || bPts) {
@@ -873,7 +960,8 @@ export class ProfileScreen {
       this.help.innerHTML = this._flashT > 0
         ? `<em>${this._flash}</em>`
         : keys ?? 'JUMP <b>offer this orb</b> (as many as you like)'
-          + ' · ATTACK <b>confirm</b> · INTERACT <b>take them all back</b>'
+          + ' · ATTACK <b>confirm</b> · SPRINT <b>drop them</b>'
+          + ' · INTERACT <b>take them all back</b>'
           + ' — <b>both</b> must confirm';
     }
     this._paintActions();
@@ -931,7 +1019,13 @@ export class ProfileScreen {
     if (!this.actions) return;
     if (!this.game.device?.touchPrimary) { this.actions.innerHTML = ''; return; }
     const i = this._touchSide();
-    const sig = `${this.mode}|${i}|${this.sides[i]?.ready}|${!!this.sides[i]?.pending}`;
+    /* THE PILE IS IN THE SIGNATURE because DROP appears and disappears with
+       it. Without this the button is drawn once, from whatever the offers were
+       the first time this ran, and offering an orb leaves the footer showing
+       the row it had before — the same class of miss as a join being invisible
+       (see `_signature`). */
+    const sig = `${this.mode}|${i}|${this.sides[i]?.ready}|${!!this.sides[i]?.pending}`
+      + `|${this.sides[i]?.offers.size ?? 0}`;
     if (sig === this._actionSig) return;
     this._actionSig = sig;
     /* EMPTIED WHILE SHE IS BEING ASKED. The YES/NO pair lives in her card, next
@@ -944,7 +1038,13 @@ export class ProfileScreen {
       `<button type="button" class="kd-act ${cls}" data-act="${act}" data-side="${i}">${label}</button>`;
     this.actions.innerHTML = this.mode === 'shop'
       ? btn('buy', 'BUY') + btn('sell', 'SELL')
-      : btn('offer', 'OFFER') + btn('confirm', this.sides[i]?.ready ? 'UNCONFIRM' : 'CONFIRM', 'go');
+      : btn('offer', 'OFFER') + btn('confirm', this.sides[i]?.ready ? 'UNCONFIRM' : 'CONFIRM', 'go')
+        /* DROP IS ONLY DRAWN WHEN IT WOULD DO SOMETHING. There is no SPRINT
+           button on the on-screen pad, so this is a phone's ONLY way to reach
+           it — but a third button in that row on every visit, greyed out for
+           most of them, is clutter in the place a nine-year-old is trying to
+           find CONFIRM. It appears with the pile it acts on. */
+        + (this.sides[i]?.offers.size ? btn('drop', 'DROP') : '');
   }
 
   /**

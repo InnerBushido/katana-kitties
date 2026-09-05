@@ -34,7 +34,7 @@ import {
   SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest,
   buildArena,
 } from '../src/world/build.js';
-import { SatanBlast, BLAST } from '../src/systems/satanblast.js';
+import { SatanBlast, BLAST, BLAST_LINES, card } from '../src/systems/satanblast.js';
 import { MrSatan } from '../src/entities/satan.js';
 import { ISLAND_MUSIC, MUSIC, SAMPLES, trackForIsland } from '../src/core/audio.js';
 import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync } from 'node:fs';
@@ -91,7 +91,7 @@ import { Minimap, ZOOMS } from '../src/systems/minimap.js';
 import { Label, labelCacheStats } from '../src/core/label.js';
 import {
   MODES, MODE_BY_ID, modesFor, handicapFor, HANDICAP_MAX, NO_SIDE, ROUND_LIMIT,
-  WARN_AT, COUNT_AT, COUNT_MID, COUNT_LAST, ZERO_BEAT,
+  WARN_AT, COUNT_AT, COUNT_MID, COUNT_LAST, ZERO_BEAT, ROUND_OVER_LINE,
 } from '../src/systems/tournament.js';
 import { worldSpawnCount, WORLD_PER_PLAYER } from '../src/systems/kotodama.js';
 import {
@@ -3735,7 +3735,8 @@ console.log('\n--- Mr. Satan has a voice ---');
     missing.map((b) => b.id).join(' '));
 
   const popIn = [...MILESTONES.map((m) => m.id),
-    'sat_board', 'sat_r1', 'sat_r2', 'sat_r3', 'sat_fight', 'sat_ko', 'sat_win1', 'sat_win2'];
+    'sat_board', 'sat_r1', 'sat_r2', 'sat_r3', 'sat_fight', 'sat_ko', 'sat_over',
+    'sat_win1', 'sat_win2'];
   const missingPop = popIn.filter(
     (id) => !existsSync(new URL(`../public/voice/${id}.mp3`, import.meta.url))
   );
@@ -5772,6 +5773,123 @@ console.log('\n--- half a second of not being there ---');
   ok('two empty piles are refused, like two empty offers',
     K.trade(A, [], B, []) === false);
 
+  /* --- SHE CAN PUT THEM DOWN AGAIN --------------------------------------
+     Asked for as "a button they can select to drop the currently selected
+     orbs — it will randomly drop them around the player, like it does when a
+     player drops out of the game". The half that is not the button. */
+  {
+    A.setPowerOrbs(['swift', 'ward', 'leap']);
+    B.setPowerOrbs([]);
+    const home = A.position.clone();
+    /* HER SISTER IS PARKED WELL OUT OF IT. Two hundred units away is off the
+       island, which is the point: every pickup below has to be decided by the
+       rule under test and not by whoever happened to be standing nearby. */
+    B.position.set(home.x + 200, home.y, home.z + 200);
+    ok('the kitten doing the dropping is standing on real ground',
+      !!world.heightAt(home.x, home.z));
+    const before = K.pickups.length;
+    const n = K.drop(A, ['swift', 'ward']);
+    ok('a pile she picked out goes on the ground', n === 2, `${n}`);
+    ok('...and comes off her neck', A.powerOrbs.join() === 'leap');
+    ok('...as two real pickups, not one', K.pickups.length === before + 2);
+    /* NOTHING IS CREATED OR DESTROYED. There are twenty-six of these in the
+       world; a drop is a MOVE, and this is the same conservation the trade
+       above is held to. */
+    ok('...conserving the count exactly',
+      A.powerOrbs.length + K.pickups.length === 1 + before + 2);
+
+    const dropped = K.pickups.slice(-2);
+    ok('...and they are the two she named',
+      dropped.map((pk) => pk.id).sort().join() === 'swift,ward');
+    /* THE FAN STARTS AT ONE, NOT AT ZERO. `_leavePlayer` starts at zero
+       because the kitten it drops for has just left; this one is standing on
+       the spot, and `spread: 0` means "exactly at `at`" — a pile under her own
+       feet rather than a ring around her. */
+    for (const pk of dropped) {
+      ok('...landing AROUND her rather than under her feet',
+        pk.position.distanceTo(home) > 1,
+        `${pk.position.distanceTo(home).toFixed(1)} away`);
+    }
+    ok('...and apart from each other',
+      dropped[0].position.distanceTo(dropped[1].position) > 0.9,
+      `${dropped[0].position.distanceTo(dropped[1].position).toFixed(1)}`);
+
+    /* AND THEY DO NOT LEAP STRAIGHT BACK ONTO HER. The ring starts at 2.6 and
+       she picks up at 2.8, so an orb she drops can land inside her own pickup
+       circle: without the shyness the button hands the pile back on the first
+       frame the world runs again and reads as doing nothing at all. THIS is
+       the check that would have caught it.
+
+       SHE IS STOOD ON ONE ON PURPOSE. `findOpenSpot` walks a dropped orb
+       several units to find room, so leaving her where she happened to be
+       makes this pass without ever testing anything — measured at five to
+       seven units away on the first three runs of it. */
+    ok('...shy of the kitten who dropped them', dropped.every((pk) => pk.shyOf === A));
+    A.position.copy(dropped[0].position);
+    for (let i = 0; i < 30; i++) K.update(1 / 60);
+    ok('...so standing right on top of her own does not pick it up',
+      dropped.every((pk) => !pk.taken) && A.powerOrbs.join() === 'leap');
+
+    /* AND WALKING AWAY IS WHAT UNDOES IT, rather than a timer. What she has to
+       do to take them back is the obvious thing, and there is no window to
+       miss it in. */
+    A.position.set(home.x + 200, home.y, home.z + 200);
+    K.update(1 / 60);
+    ok('...and stepping off it drops the shyness',
+      dropped.every((pk) => pk.shyOf === null));
+    A.position.copy(dropped[0].position);
+    K.update(1 / 60);
+    ok('...so she can walk back and pick her own orb up again',
+      dropped[0].taken && A.powerOrbs.includes(dropped[0].id));
+    A.position.copy(home);
+  }
+
+  /* BUT SHY ONLY OF HER. A sister walking over them is most of the point of
+     dropping them, and a rule that made them shy of everybody would be a
+     different feature. Its own drop, so exactly one orb is in play. */
+  {
+    A.setPowerOrbs(['vigor']);
+    B.setPowerOrbs([]);
+    const home = A.position.clone();
+    ok('a single orb goes down too', K.drop(A, ['vigor']) === 1);
+    const pk = K.pickups.at(-1);
+    /* A IS SENT AWAY AFTER THE DROP, so the only kitten in reach is the one
+       the rule is about. */
+    A.position.set(home.x + 200, home.y, home.z + 200);
+    B.position.copy(pk.position);
+    K.update(1 / 60);
+    ok('...and a sister standing on it picks it straight up',
+      pk.taken && B.powerOrbs.includes('vigor'), B.powerOrbs.join());
+    A.position.copy(home);
+    B.position.copy(home);
+  }
+
+  /* NOTHING IS LOST WHEN THERE IS NOWHERE TO PUT IT. `dropInWorld` can decline
+     — the Kotodama are not awakened, or there is no ground under the fanned
+     point — and a drop that took the orb off her first would delete one of
+     twenty-six on exactly that path. Fourth non-negotiable. */
+  {
+    A.setPowerOrbs(['swift', 'ward']);
+    const had = [...A.powerOrbs];
+    const before = K.pickups.length;
+    K.awakened = false;
+    const n = K.drop(A, ['swift', 'ward']);
+    K.awakened = true;
+    ok('a drop with nowhere to land moves nothing', n === 0);
+    ok('...and she still has every one of them', A.powerOrbs.join() === had.join());
+    ok('...and none appeared in the world either', K.pickups.length === before);
+  }
+
+  /* DROPPING WHAT SHE HAS NOT GOT IS IGNORED, not invented. The ids come off a
+     screen that can be a frame stale. */
+  {
+    A.setPowerOrbs(['swift']);
+    const before = K.pickups.length;
+    ok('an orb she is not wearing cannot be dropped', K.drop(A, ['vigor']) === 0);
+    ok('...and nothing was conjured to drop', K.pickups.length === before);
+    ok('...while the one she IS wearing still drops', K.drop(A, ['swift']) === 1);
+  }
+
   /* --- health is the one stat with a current value as well as a maximum --- */
   const H = mkKit(0);
   H.setPowerOrbs(['vigor', 'vigor']);
@@ -7692,6 +7810,85 @@ console.log('\n--- the three power moves ---');
   p.resetForRound(1, 2, 3, 0, 9999);
   ok('...nor above her own bar', p.hp === p.maxHp);
 
+  /* --- THE OVERFLOW ------------------------------------------------------
+     Asked for as "take the health they gained, divide it by two, and add that
+     to the maximum health that the player has in the next round". It is a
+     MAXIMUM and not a heal, and it lives INSIDE `maxHp` so that everything
+     already reading `hp / maxHp` — this HUD, the bar over her head, the rage
+     multiplier — carries on working and none of them can be handed a fraction
+     over one. */
+  {
+    const o = mkF(0);
+    const base = o.maxHp;
+    o.hp = 40;
+    o.setRoundBonus(10);
+    ok('banking overflow raises her ceiling', o.maxHp === base + 10);
+    ok('...and says what the ordinary top still is', o.baseMaxHp === base);
+    /* RAISING THE CEILING IS NOT FILLING TO IT. Two different events; the
+       second one belongs to `resetForRound`. */
+    ok('...without healing her a single point', o.hp === 40);
+    ok('...and she is not carrying any of it yet', o.overflowHp === 0);
+
+    o.resetForRound(1, 2, 3, 0);
+    ok('a full start is full INCLUDING the overflow', o.hp === base + 10);
+    ok('...and that is what she is shown as carrying', o.overflowHp === 10);
+    /* AND THE FRACTION EVERYTHING ELSE READS STAYS SANE. A bar wider than its
+       own box, and a rage multiplier under 1, are both one line away. */
+    ok('...with her bar still exactly full and never more', o.hp / o.maxHp === 1);
+
+    /* IT DRAINS FIRST, AND THEN THE ORDINARY BAR STARTS MOVING — the rule as
+       it was asked for: "when they lose health, it should reduce the green bar
+       until they get below the maximum and then go back to normal". */
+    o.hp = base + 4;
+    ok('a blow eats the overflow before the bar', o.overflowHp === 4);
+    o.hp = base;
+    ok('...and at the ordinary top there is none of it left', o.overflowHp === 0);
+    o.hp = base - 30;
+    ok('...and it cannot go negative underneath her', o.overflowHp === 0);
+
+    /* THE OVERFLOW SITS ON TOP OF WHATEVER SHE BRINGS. A survivor carrying 60
+       into a round with 10 banked has to start at 70 of 110 — starting at 60
+       would make a REWARD for eating read as a smaller bar than she had. */
+    o.resetForRound(1, 2, 3, 0, 60);
+    ok('a carried number gets the overflow on top of it', o.hp === 70);
+    o.resetForRound(1, 2, 3, 0, base);
+    ok('...and a full carry comes out full, not over', o.hp === base + 10);
+
+    /* IT REPLACES, IT DOES NOT ADD. One round, and a kitten who eats well
+       three feasts running does not walk into the final on a bar of 160. */
+    o.setRoundBonus(10);
+    ok('banking the same figure twice is still one bonus', o.maxHp === base + 10);
+    o.setRoundBonus(0);
+    ok('...and a feast that banked nothing takes the ceiling back down',
+      o.maxHp === base && o.baseMaxHp === base);
+    ok('...without leaving her standing above it', o.hp <= o.maxHp);
+
+    /* AND IT SURVIVES THE TWO THINGS THAT RECOMPUTE `maxHp` FROM SCRATCH.
+       Trading a Vigor away mid-round, and the handicap — both rewrite the
+       whole bar, and anything written straight into `maxHp` evaporates the
+       moment either runs. Same argument `setHpScale` already carries. */
+    o.setRoundBonus(12);
+    o.setPowerOrbs(['vigor']);
+    ok('an orb change does not spend her overflow',
+      o.maxHp === o.baseMaxHp + 12 && o.bonusHp === 12,
+      `${o.maxHp} / ${o.baseMaxHp}`);
+    o.setHpScale(1.2);
+    ok('...and neither does the handicap',
+      o.maxHp === o.baseMaxHp + 12 && o.bonusHp === 12);
+    o.setPowerOrbs([]);
+    o.setHpScale(1);
+    o.setRoundBonus(0);
+
+    /* A GARBAGE FIGURE DEGRADES RATHER THAN NaN-ING HER BAR. `fedHp` comes off
+       a running game; a maximum of NaN is a kitten with no bar at all and no
+       way to work out why. Fourth house rule. */
+    o.setRoundBonus(Number.NaN);
+    ok('a bonus that is not a number is no bonus, not a broken bar',
+      o.bonusHp === 0 && Number.isFinite(o.maxHp));
+    o.setRoundBonus(-50);
+    ok('...and it can never be negative', o.bonusHp === 0);
+  }
+
   /* --- the angel --- */
   const q = mkF(1);
   q.hp = 0;
@@ -9322,6 +9519,280 @@ console.log('\n--- the three power moves ---');
       ok('...and it is not the one that starts a fight', !played.includes('gong'));
       ok('...and the countdown is cut, not queued behind',
         said.indexOf('#clear') < said.indexOf('sat_ko'));
+    }
+
+    /* --- "K.O." IS A CLAIM ABOUT SOMEBODY'S BODY ---------------------------
+       Reported from play: a round given on the clock put K.O. on the screen
+       and had Mr. Satan shout "DOWN!" at a kitten who was visibly standing up.
+       Half of all endings are that one — the clock runs out and it goes to
+       whoever was ahead on damage — so half the time the banner was wrong.
+
+       ASSERTED BOTH WAYS ROUND, because a fix that simply renamed the banner
+       would pass a one-sided check and lose the real knockout. */
+    {
+      const T = mkT();
+      const two = [{ index: 0, ko: false }, { index: 1, ko: false }];
+      T.game.players = two;
+      T.sides = [0, 1];
+      T.state = 'live';
+      T._roundOver(0, 'time');
+      ok('a round ended with the loser still standing does not say K.O.',
+        T._bannerText === 'ROUND OVER', `${T._bannerText}`);
+      ok('...and he does not shout DOWN at somebody who is up',
+        said.includes('sat_over') && !said.includes('sat_ko'), said.join(','));
+      /* THE WINNER STILL WINS. The banner is the only thing that changed —
+         a rename that quietly stopped counting the round would be worse than
+         the wrong word. */
+      ok('...and it is still a win on the board', T.wins[0] === 1);
+    }
+    {
+      const T = mkT();
+      const two = [{ index: 0, ko: false }, { index: 1, ko: true }];
+      T.game.players = two;
+      T.sides = [0, 1];
+      T.state = 'live';
+      T._roundOver(0, 'down');
+      ok('...but a side actually wiped out is still a K.O.',
+        T._bannerText === 'K.O.', `${T._bannerText}`);
+      ok('...and he still shouts DOWN for it',
+        said.includes('sat_ko') && !said.includes('sat_over'), said.join(','));
+    }
+    /* AND THE WORDS ON THE CARD ARE THE WORDS IN THE CLIP. `sat_over.mp3` is
+       `ROUND_OVER_LINE` and nothing else — one string, exported, read by the
+       announcer. Two spellings of one sentence is how the announcer's box came
+       to be showing an abbreviated version of what he says. */
+    {
+      const cards = [];
+      const T = mkT();
+      T.announcer.say = (id, text) => { said.push(id); cards.push(text); };
+      T.game.players = [{ index: 0, ko: false }, { index: 1, ko: false }];
+      T.sides = [0, 1];
+      T.state = 'live';
+      T._roundOver(0, 'time');
+      ok('the card he shows is the line the recording says',
+        cards.includes(ROUND_OVER_LINE), cards.join(' | '));
+      /* IT SAYS THERE IS A WINNER, which is the whole content of the ask:
+         "not down, I guess, but we have a winner". A line that only said
+         "not down" would leave a child looking for the result. */
+      ok('...and it tells her somebody won', /winner/i.test(ROUND_OVER_LINE),
+        ROUND_OVER_LINE);
+      const mp3 = new URL('../public/voice/sat_over.mp3', import.meta.url);
+      ok('...and there is a recording of exactly that sentence',
+        existsSync(mp3));
+    }
+
+    /* --- LOSING ON YOUR FEET USED TO BE WORSE THAN BEING KNOCKED OUT -------
+       Reported from play: "if a player loses a round but is still alive, then
+       they should be fully healed before the next match begins". It was a real
+       unfairness and not a preference — a kitten knocked out became an angel
+       and came back at the top of her bar, while the one who merely lost on
+       the clock came back on whatever was left of hers. Being beaten BADLY was
+       the better of the two outcomes.
+
+       DRIVEN THROUGH THE REAL SEQUENCE — round over, feast, next round — with
+       real `Player`s, because every number here is decided by one of those
+       three and a stub would let the wiring between them rot. */
+    const mkF2 = (i, name) => new Player({
+      texture: new THREE.Texture(), index: i, rows: 4, cols: 8, height: 2.9,
+      spawn: new THREE.Vector3(0, 0, 0), name,
+    });
+    {
+      const T = mkT();
+      const a = mkF2(0, 'Ember');
+      const b = mkF2(1, 'Frost');
+      const full = a.maxHp;
+      T.game.players = [a, b];
+      T.sides = [0, 1];
+      T.wins = [0, 0];
+      a.hp = 55;
+      b.hp = 20;
+      T.state = 'live';
+      T._roundOver(0, 'time');              // Ember ahead on damage, both up
+      T._startFeast();
+      const regen = Math.round(MAX_HP * REGEN_FRAC);
+      ok('the feast still tops everybody up by a tenth',
+        a.hp === 55 + regen && b.hp === 20 + regen, `${a.hp} / ${b.hp}`);
+      ok('...and starts both their meal tallies at nothing',
+        a.fedHp === 0 && b.fedHp === 0);
+
+      /* Frost eats 20 back — the number `Menagerie._devour` adds. */
+      b.fedHp = 20;
+      b.hp += 20;
+      T._nextRound();
+
+      ok('the kitten who LOST on her feet starts the next round full',
+        b.hp === b.maxHp, `${b.hp} of ${b.maxHp}`);
+      /* AND HALF OF WHAT SHE ATE IS ON TOP OF THAT FULL BAR, which is the
+         other half of the ask and the thing that makes eating worth doing when
+         you were going to be healed anyway. */
+      ok('...and half of what she ate is overflow on top of it',
+        b.bonusHp === 10 && b.maxHp === full + 10 && b.overflowHp === 10,
+        `${b.hp} of ${b.maxHp}, over ${b.overflowHp}`);
+
+      /* THE WINNER KEEPS WHAT SHE HAS. Healing everybody would make winning a
+         round worth nothing at all, which is why this asks who won rather than
+         who is standing. */
+      ok('...while the kitten who WON keeps her bar as she left it',
+        a.hp === 55 + regen && a.maxHp === full, `${a.hp} of ${a.maxHp}`);
+      ok('...and banks nothing, having eaten nothing', a.bonusHp === 0);
+      /* AND THE TALLY IS SPENT. Left standing it would bank the same meal
+         again at the end of the next feast. */
+      ok('...and the meal tally is spent, not left to be banked twice',
+        a.fedHp === 0 && b.fedHp === 0);
+    }
+
+    /* A DRAW HEALS NOBODY, because nobody lost. */
+    {
+      const T = mkT();
+      const a = mkF2(0, 'Ember');
+      const b = mkF2(1, 'Frost');
+      T.game.players = [a, b];
+      T.sides = [0, 1];
+      T.wins = [0, 0];
+      a.hp = 30;
+      b.hp = 30;
+      T.state = 'live';
+      T.callOnDamage('Time!');              // nobody dealt anything: a draw
+      ok('a draw is a draw', T._lastWinner === -1);
+      T._startFeast();
+      const regen = Math.round(MAX_HP * REGEN_FRAC);
+      T._nextRound();
+      ok('...and neither of them is handed a full bar for it',
+        a.hp === 30 + regen && b.hp === 30 + regen, `${a.hp} / ${b.hp}`);
+    }
+
+    /* THE OVERFLOW IS FOR ONE ROUND. A kitten who eats well three feasts
+       running must not walk into the final on a bar half again as long. */
+    {
+      const T = mkT();
+      const a = mkF2(0, 'Ember');
+      const b = mkF2(1, 'Frost');
+      const full = a.maxHp;
+      T.game.players = [a, b];
+      T.sides = [0, 1];
+      T.wins = [0, 0];
+      T.state = 'live';
+      T._roundOver(0, 'time');
+      T._startFeast();
+      a.fedHp = 30;
+      T._nextRound();
+      ok('a big meal banks half of it', a.bonusHp === 15 && a.maxHp === full + 15);
+      T.state = 'live';
+      T._roundOver(0, 'time');
+      T._startFeast();
+      T._nextRound();                        // ate nothing this time
+      ok('...and a feast she ate nothing at takes it all back off',
+        a.bonusHp === 0 && a.maxHp === full, `${a.maxHp}`);
+      ok('...leaving her bar exactly full rather than over it', a.hp <= a.maxHp);
+    }
+
+    /* AND AN ANGEL IS UNCHANGED. She was already reborn full; the new rule
+       must not have quietly become "everybody who did not win", which would
+       read the same in a duel and be wrong the first time somebody was knocked
+       out on the winning side of a 2v2. */
+    {
+      const T = mkT();
+      const a = mkF2(0, 'Ember');
+      const b = mkF2(1, 'Frost');
+      const c = mkF2(2, 'Blossom');
+      const d = mkF2(3, 'Willow');
+      T.game.players = [a, b, c, d];
+      T.sides = [0, 0, 1, 1];               // a 2v2
+      T.wins = [0, 0];
+      a.hp = 70;
+      b.hp = 0; b.ko = true;                // knocked out on the WINNING side
+      c.hp = 25;
+      d.hp = 40;
+      T.state = 'live';
+      T._roundOver(0, 'time');
+      T._startFeast();
+      ok('a knockout on the winning side is still an angel', b.angel === true);
+      T._nextRound();
+      ok('...and still comes back on a full bar', b.hp === b.maxHp);
+      ok('...her partner who won on her feet keeps hers',
+        a.hp === 70 + Math.round(MAX_HP * REGEN_FRAC), `${a.hp}`);
+      ok('...and both of the losing side are healed',
+        c.hp === c.maxHp && d.hp === d.maxHp, `${c.hp} / ${d.hp}`);
+    }
+
+    /* --- AND IT IS ON THE BAR, IN GREEN ------------------------------------
+       Asked for as "repaint part of the health bar to indicate the overflow of
+       extra hp... overlaid on top of their default health bar color". Read off
+       the markup `_paintHud` actually writes, because that is where it goes
+       wrong: every number behind it can be right while the bar says nothing.
+
+       THE GREEN IS INSIDE THE FILL, NOT BESIDE IT. It is a fraction OF THE
+       FILL, so the two shrink together as she is hit and the overflow drains
+       from the far end first — which is the behaviour the ask describes. */
+    {
+      const T = mkT();
+      const a = mkF2(0, 'Ember');
+      const b = mkF2(1, 'Frost');
+      T.game.players = [a, b];
+      T.sides = [0, 1];
+      T.wins = [0, 0];
+      T.state = 'live';
+      T._paintHud();
+      ok('an ordinary bar has no green on it at all',
+        !/ah-over/.test(T.hudEl.innerHTML));
+
+      a.setRoundBonus(20);
+      a.hp = a.maxHp;
+      T._paintHud();
+      const html = T.hudEl.innerHTML;
+      ok('...and a bar with overflow does', /ah-over/.test(html));
+      /* IT IS NESTED IN THE FILL. Written as a sibling it would sit in the
+         empty part of the bar and grow as she was hurt. */
+      ok('...inside the fill rather than beside it',
+        /class="ah-fill[^"]*"[^>]*>\s*<i class="ah-over"/.test(html), html.slice(0, 220));
+      /* AND IT IS THE RIGHT SIZE: 20 of 120 is a sixth of the fill. */
+      const pct = Number((html.match(/ah-over" style="width:([\d.]+)%/) ?? [])[1]);
+      ok('...sized as its share of the fill, not of the bar',
+        Math.abs(pct - (20 / 120) * 100) < 0.01, `${pct}%`);
+
+      /* IT DRAINS FIRST AND THEN GOES. */
+      a.hp = a.baseMaxHp + 5;
+      T._paintHud();
+      ok('...shrinking as she is hit', /ah-over/.test(T.hudEl.innerHTML)
+        && Number((T.hudEl.innerHTML.match(/ah-over" style="width:([\d.]+)%/) ?? [])[1]) < pct);
+      a.hp = a.baseMaxHp;
+      T._paintHud();
+      ok('...and gone the moment she is back at her ordinary top',
+        !/ah-over/.test(T.hudEl.innerHTML));
+
+      /* AND DURING THE FEAST IT SHOWS WHAT SHE IS GATHERING, which is the
+         other half of the ask: "a visual indicator on the screen that they are
+         gathering the overflow effect that will carry to the next battle". The
+         figure is what will CARRY — half of what she healed — because green
+         means one thing everywhere, and a green that halved itself at the gong
+         would read as losing something. */
+      a.setRoundBonus(0);
+      a.hp = 60;
+      a.fedHp = 20;
+      T.state = 'feast';
+      T._paintHud();
+      const feastPct = Number((T.hudEl.innerHTML.match(/ah-over" style="width:([\d.]+)%/) ?? [])[1]);
+      ok('eating at the feast paints the carry green as she gathers it',
+        Math.abs(feastPct - (10 / 60) * 100) < 0.01, `${feastPct}%`);
+      /* AND ONLY AT THE FEAST. Mid-round `fedHp` is stale by definition — it
+         is spent at the gong — and reading it there would put a green segment
+         on a bar that has no overflow behind it. */
+      T.state = 'live';
+      T._paintHud();
+      ok('...and a live round shows nothing for a tally already spent',
+        !/ah-over/.test(T.hudEl.innerHTML));
+
+      /* THE CSS IS THE OTHER HALF, and a class with no rule is a segment that
+         inherits the fill colour and is invisible. Asserted on the sheet. */
+      const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+      ok('the green has a rule to be green by', /\.ah-over\s*\{/.test(css));
+      ok('...and bubbles inside it', /@keyframes hpBubble/.test(css));
+      /* PINNED TO THE FAR END WITH A LOGICAL MARGIN, not a physical edge: the
+         right-hand side's bars are `direction: rtl` so they drain toward their
+         own edge of the screen, and `right: 0` would put the green on the
+         wrong end of half the HUD. */
+      ok('...pinned to the end of the fill in BOTH directions',
+        /margin-inline-start:\s*auto/.test(css));
     }
     {
       const T = mkT();
@@ -11796,6 +12267,10 @@ console.log('\n--- a trade is agreed twice, by two people ---');
   });
   const nodes = {
     'panel-profile': el(), 'kd-body': el(), 'kd-title': el(), 'kd-help': el(),
+    /* THE FOOTER'S BUTTON ROW. Absent, `_paintActions` bails at its own guard
+       — which was fine while nothing here read it, and silently skips the
+       phone's only route to DROP now that something does. */
+    'kd-actions': el(),
   };
   /* KEEPS `createElement`. A `Player` builds a `Label` for its clan callout,
      and a Label measures and paints on a canvas — so a stub that answers only
@@ -12013,6 +12488,85 @@ console.log('\n--- a trade is agreed twice, by two people ---');
       ps.sides.every((sd) => sd.pending === null));
   }
 
+  /* --- POINTS ON THEIR OWN ARE A WHOLE TRADE ------------------------------
+     Reported from play: handing a sister points and nothing else was refused
+     every single time, with "that would leave somebody carrying nine" — a
+     sentence about orbs, in a trade where neither girl had put an orb on the
+     table. `kotodama.trade` refuses two empty piles, correctly, because it is
+     an orb function and that is a no-op to it; the screen was reading that
+     `false` as a capacity problem and printing the only refusal it knew.
+
+     THIS IS ASSERTED ON THE PURSES, NOT ON THE MESSAGE. A fix that made the
+     wording honest — "there is nothing to trade" — would have been a smaller
+     lie and still a refusal, and the girls want the points to move. The older
+     sister giving the younger one a leg-up is most of what this screen is for
+     and it is the one trade that needs no orbs at all. */
+  {
+    const { g, ps, players } = mk([ORB_IDS[0]], [ORB_IDS[1]], 500, 20);
+    ps.open('profile');
+    ps.sides[0].points = 200;
+    ps._confirmHere(0);
+    ps._confirmHere(1);
+    ps._maybeTrade();
+    ok('a gift of points alone still raises both questions',
+      ps.sides[0].pending?.kind === 'trade' && ps.sides[1].pending?.kind === 'trade');
+    ok('...and hers names the points and no orbs',
+      /200 points/.test(ps.sides[0].pending.text)
+      && !ORB_IDS.some((id) => ps.sides[0].pending.text.includes(ORB_BY_ID[id].name)),
+      ps.sides[0].pending.text);
+    ps._answerHere(0, true);
+    ps._answerHere(1, true);
+    ps._maybeTrade();
+    ok('...and two yeses actually move the points',
+      players[0].score === 300 && players[1].score === 220,
+      `${players[0].score} / ${players[1].score}`);
+    ok('...leaving both sets of orbs exactly where they were',
+      players[0].powerOrbs.join() === ORB_IDS[0]
+      && players[1].powerOrbs.join() === ORB_IDS[1]);
+    ok('...and it is NOT refused with a sentence about carrying nine',
+      !/carrying nine/i.test(ps._flash ?? ''), ps._flash);
+    ok('...it SAYS who gave what, like every other trade does',
+      /Ember gave 200 points/.test(ps._flash ?? ''), ps._flash);
+    ok('...and clears both sides down afterwards',
+      ps.sides.every((sd) => sd.points === 0 && !sd.ready && !sd.sure));
+  }
+
+  /* AND POINTS BOTH WAYS CROSS OVER RATHER THAN CANCELLING. Two purses moving
+     at once is the case where an implementation that subtracts before it adds
+     on a shared variable goes wrong, and a swap of equal piles hides it. */
+  {
+    const { g, ps, players } = mk([], [], 500, 300);
+    ps.open('profile');
+    ps.sides[0].points = 100;
+    ps.sides[1].points = 250;
+    ps._confirmHere(0);
+    ps._confirmHere(1);
+    ps._maybeTrade();
+    ps._answerHere(0, true);
+    ps._answerHere(1, true);
+    ps._maybeTrade();
+    ok('points crossing both ways land on the right sides',
+      players[0].score === 650 && players[1].score === 150,
+      `${players[0].score} / ${players[1].score}`);
+    ok('...and no points were created or destroyed',
+      players[0].score + players[1].score === 800);
+  }
+
+  /* A TRADE OF LITERALLY NOTHING NEVER GETS AS FAR AS A QUESTION. The screen
+     bails at the top of `_maybeTrade`, and the check is here because the
+     points fix above put a second no-op path next to that one: `orbs` is zero
+     down both of them and only one of them is a real trade. */
+  {
+    const { g, ps, players } = mk([ORB_IDS[0]], [ORB_IDS[1]], 500, 300);
+    ps.open('profile');
+    ps._confirmHere(0);
+    ps._confirmHere(1);
+    ps._maybeTrade();
+    ok('two ticks over an empty table ask nothing at all',
+      ps.sides.every((sd) => sd.pending === null));
+    ok('...and move nothing', players[0].score === 500 && players[1].score === 300);
+  }
+
   /* --- SEVERAL ORBS AT ONCE, AND ONE PRESS TO PUT THEM ALL BACK -----------
      The offer used to be a single slot index, so handing a sister three spares
      was three trades. It is a SET of her own rows now. */
@@ -12050,6 +12604,86 @@ console.log('\n--- a trade is agreed twice, by two people ---');
       players[0].powerOrbs.length + players[1].powerOrbs.length === 4);
     ok('...and both sides are cleared down afterwards',
       ps.sides.every((sd) => sd.offers.size === 0 && !sd.ready && !sd.sure));
+  }
+
+  /* --- AND SHE CAN PUT THE PILE DOWN INSTEAD OF TRADING IT ---------------
+     Asked for as "add a button they can select to drop the currently selected
+     orbs — it will randomly drop them around the player". SPRINT, because it
+     is the one button this screen was not already using; the pile it acts on
+     is the OFFER, which is the only multi-orb selection the screen has and the
+     one she can see. */
+  {
+    const { g, ps, players } = mk([ORB_IDS[0], ORB_IDS[2], ORB_IDS[3]], []);
+    g.kotodama.awakened = true;
+    ps.open('profile');
+    const sprint = { mx: 0, my: 0, down: () => false, pressed: (a) => a === 'sprint' };
+
+    /* A REFUSAL SAYS WHAT TO GO AND DO. Sixth non-negotiable: "nothing
+       selected" names a state; this has to name the press. */
+    ps._tradeButtons(0, sprint, ps.sides[0]);
+    ok('dropping with an empty table is refused in words, not silently',
+      ps.sides[0].pending === null && /JUMP/.test(ps._flash ?? ''), ps._flash);
+    ok('...and nothing left her', players[0].powerOrbs.length === 3);
+
+    ps.sides[0].i = 0; ps._offerHere(0);
+    ps.sides[0].i = 2; ps._offerHere(0);
+    ps._tradeButtons(0, sprint, ps.sides[0]);
+    /* IT ASKS FIRST. Seventh non-negotiable — an orb on the floor is not
+       undone by pressing the same button again. */
+    ok('SPRINT on a pile asks before it drops anything',
+      ps.sides[0].pending?.kind === 'drop' && players[0].powerOrbs.length === 3);
+    /* AND THE QUESTION NAMES EVERY ORB, like the trade question, for the same
+       reason: a yes-press behind a list she cannot see is not consent. */
+    const q = ps.sides[0].pending.text;
+    ok('...naming every orb in it',
+      [ORB_IDS[0], ORB_IDS[3]].every((id) => q.includes(ORB_BY_ID[id].name))
+      && !q.includes(ORB_BY_ID[ORB_IDS[2]].name), q);
+
+    /* NO LEAVES EVERYTHING WHERE IT IS. */
+    ps._answerHere(0, false);
+    ok('...and NO drops nothing at all',
+      players[0].powerOrbs.length === 3 && g.kotodama.pickups.length === 0);
+
+    ps._tradeButtons(0, sprint, ps.sides[0]);
+    const ids = ps.sides[0].pending.ids;
+    ps._answerHere(0, true);
+    ok('...while YES puts exactly those two on the ground',
+      players[0].powerOrbs.join() === ORB_IDS[2]
+      && g.kotodama.pickups.length === 2, players[0].powerOrbs.join());
+    ok('...as the orbs the question named',
+      g.kotodama.pickups.map((pk) => pk.id).sort().join() === [...ids].sort().join());
+    ok('...shy of her, so they do not jump straight back on',
+      g.kotodama.pickups.every((pk) => pk.shyOf === players[0]));
+    /* AND THE TABLE IS CLEARED. `Side.offers` is a set of ROW numbers and the
+       rows below the dropped ones have shuffled up under it — left alone, she
+       would be offering whatever moved into those slots. */
+    ok('...and the pile comes off the table with them',
+      ps.sides[0].offers.size === 0 && !ps.sides[0].ready && !ps.sides[0].sure);
+    ok('...and it says how many went down', /dropped/i.test(ps._flash ?? ''), ps._flash);
+  }
+
+  /* A PHONE HAS NO SPRINT BUTTON, so the footer is its only way in — the same
+     hole `_paintActions` was written to fill for OFFER and CONFIRM. */
+  {
+    const { g, ps } = mk([ORB_IDS[0], ORB_IDS[2]], []);
+    g.device = { touchPrimary: true };
+    g.input = { bindings: [{ touch: true }] };
+    ps.open('profile');
+    ps._paintActions();
+    ok('with nothing selected the footer does not offer DROP',
+      !/data-act="drop"/.test(ps.actions.innerHTML), ps.actions.innerHTML);
+    ps.sides[0].i = 0; ps._offerHere(0);
+    ps._paintActions();
+    ok('...and picking one up puts the button there',
+      /data-act="drop"/.test(ps.actions.innerHTML), ps.actions.innerHTML);
+    /* THE REPAINT IS THE HALF THAT GOES WRONG. `_paintActions` early-returns on
+       an unchanged signature, and the pile was not in it — so the button was
+       drawn once, from whatever the offers were the first time, and offering
+       an orb changed nothing on screen. */
+    ps._offerHere(0);
+    ps._paintActions();
+    ok('...and taking it back off takes the button away again',
+      !/data-act="drop"/.test(ps.actions.innerHTML), ps.actions.innerHTML);
   }
 
   /* SAYING NO IS THE DESELECT-ALL, and that is asked for rather than tidy.
@@ -12522,6 +13156,10 @@ console.log('\n--- Mr. Satan loses his temper ---');
       spawn: new THREE.Vector3(x, y, z), cols: 8, rows: 4, mirror: false,
     });
     p.position.set(x, y, z);
+    /* SHE HAS LANDED. A fresh `Player` is `onGround: false` — it is set by the
+       ground step, which nothing here runs — and `_onBox` asks, so without
+       this every kitten in this section is permanently in mid-air. */
+    p.onGround = true;
     return p;
   };
   const game = {
@@ -12580,6 +13218,25 @@ console.log('\n--- Mr. Satan loses his temper ---');
   ok('...and it reaches the whole booth deck',
     BLAST.reach > Math.hypot(5, 2.8), `${BLAST.reach} vs ${Math.hypot(5, 2.8).toFixed(1)}`);
   ok('...which is wider than what wakes him', BLAST.reach > BLAST.notice);
+
+  /* --- HE WAITS FOR HER TO LAND ------------------------------------------
+     Reported from play: "he starts the speech even before people land on the
+     platform". The notice test is a CYLINDER 3.5 units tall, so a kitten still
+     rising towards the deck is inside it with her feet in the air and he was
+     answering a jump rather than an arrival. `_onBox` is the grounded one and
+     only the start of the taunt asks it. */
+  const rising = mkP(B.x + 1, B.y, B.z);
+  rising.onGround = false;
+  ok('a kitten still in the air over the box has not arrived yet',
+    !blast._onBox(rising));
+  ok('...though she is well inside the cylinder that will catch her',
+    blast._reaches(rising, BLAST.notice));
+  rising.onGround = true;
+  ok('...and the moment she lands, she has', blast._onBox(rising));
+  /* AND LANDING IS NOT ENOUGH ON ITS OWN — the whole safety argument is in
+     `_reaches` and `_onBox` must not have quietly widened it. */
+  ok('...while a fighter standing on the deck below is still not on the box',
+    !blast._onBox(onDeck) && onDeck.onGround === true);
 
   /* --- THE TEN SECONDS, AND WHAT HAPPENS AT THE END OF THEM --- */
   const victim = mkP(B.x + 1, B.y, B.z);
@@ -12654,10 +13311,95 @@ console.log('\n--- Mr. Satan loses his temper ---');
   ok('...and he will not do it again immediately', blast.stage === 'cool');
   run(BLAST.cool - 1);
   ok('...even with somebody standing right there', blast.stage === 'cool');
+  /* AND SHE CAME DOWN. `Player.blast` clears `onGround` — she is a dot in the
+     sky for most of that half minute — and `_onBox` asks. Without standing her
+     back up this reads as "he ignored her" when what it means is "she has not
+     landed yet", which is the distinction the grounded test exists to draw. */
+  victim.onGround = true;
   run(1.2);
   ok('...but he will eventually', blast.stage === 'taunt');
   ok('the wait is long enough to be a treat rather than a nuisance',
     BLAST.cool >= 20, `${BLAST.cool}s`);
+
+  /* --- HE DOES NOT DETONATE OVER AN EMPTY BOX ----------------------------
+     Reported from play: "he loses his temper even if no one is near him". The
+     fuse is still not cancellable — the ten seconds run down whatever she does
+     — but what it finds at the bottom now matters. */
+  {
+    const wasCharge = satan.poses.filter((x) => x === 'charge').length;
+    /* He is mid-taunt with her standing there (the line above left him so). */
+    ok('he is mid-taunt with somebody on the box', blast.stage === 'taunt');
+    victim.position.set(B.x + 40, B.y, B.z + 40);       // she legs it
+    run(BLAST.taunt);
+    ok('...and with nobody up there at zero, nothing goes off',
+      blast.stage === 'off', blast.stage);
+    ok('...he never raised his arms',
+      satan.poses.filter((x) => x === 'charge').length === wasCharge);
+    ok('...and the bubble came down with him', satan.lines.at(-1) === '');
+    /* BACK TO `off` AND NOT TO `cool`, which is the half a player can feel:
+       nothing happened, so nothing is spent, and the next kitten up gets the
+       WHOLE performance rather than half a minute of a man ignoring her. */
+    victim.position.set(B.x + 1, B.y, B.z);
+    run(0.1);
+    ok('...so the next kitten up the ladder gets the whole thing again',
+      blast.stage === 'taunt' && said.at(-1) === 'sat_taunt');
+
+    /* A SISTER IN MID-HOP AT ZERO STILL COUNTS. The presence test at the
+       bottom of the fuse is the bare cylinder on purpose: a bang that fizzles
+       because she happened to be jumping on the final frame reads as the gag
+       being broken, not as a rule. */
+    victim.onGround = false;
+    run(BLAST.taunt + 0.1);
+    ok('...and being mid-jump when it expires does not save her',
+      blast.stage === 'charge', blast.stage);
+    run(BLAST.charge + BLAST.boom + 0.05);
+    victim.onGround = true;                    // she came down, again
+    run(BLAST.cool + 0.2);
+    ok('...and he comes all the way back round afterwards',
+      blast.stage === 'taunt');
+  }
+
+  /* --- WHAT THE CARD SAYS IS WHAT HE SAYS --------------------------------
+     Reported from play: "not all the text is displaying for what he is saying,
+     it is like an abbreviated version". It was — the pop-in card carried its
+     own shorter paraphrase of each line while the recording ran on. There is
+     one string per thing he says now and both surfaces read it. */
+  {
+    const spoken = satan.lines.filter(Boolean);
+    for (const [key, line] of Object.entries(BLAST_LINES)) {
+      ok(`the ${key} bubble is the whole line`, spoken.includes(line),
+        line.split('\n')[0]);
+      /* THE CARD IS THAT LINE FLATTENED, not a summary of it. Asserted on
+         every word, because the failure was a card that carried SOME of them:
+         "you think you are TOUGH, huh?" out of a sentence twice as long. */
+      const flat = card(line);
+      ok(`...and the pop-in card says all of it`,
+        !/\n/.test(flat) && line.split(/\s+/).every((w) => flat.includes(w)),
+        flat);
+    }
+    /* AND IT REALLY IS THE ONE ON SCREEN. Reading `card(BLAST_LINES.x)` back
+       out of the module would pass with the announcer still saying something
+       else entirely, which is exactly the bug. */
+    const cards = [];
+    const b2 = new SatanBlast({
+      game, world, satan, announcer: { say: (id, text) => cards.push(text) },
+    });
+    b2._taunt();
+    b2._shout();
+    ok('the announcer reads the same two strings the bubble does',
+      cards[0] === card(BLAST_LINES.taunt) && cards[1] === card(BLAST_LINES.shout),
+      cards.join(' | ').slice(0, 90));
+    /* A DURATION SANITY CHECK, because that is how it was FOUND: `sat_taunt`
+       runs 8.6 seconds and the old card was seven words. Harrison reads about
+       2.5 words a second, so a card with fewer than two words per second of
+       recording is a card that has run out before he has. */
+    const mp3 = new URL('../public/voice/sat_taunt.mp3', import.meta.url);
+    if (existsSync(mp3)) {
+      const words = card(BLAST_LINES.taunt).split(/\s+/).length;
+      ok('...and there are enough words on it to fill the recording',
+        words >= 8.5 * 2, `${words} words for 8.6s`);
+    }
+  }
 
   /* --- THE ARENA CLOSING ENDS IT MID-SENTENCE --- */
   run(2);

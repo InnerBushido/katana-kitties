@@ -147,6 +147,15 @@ strip wins because it is where she is looking. The footer names *whose*
 controller instead — with four kittens on this screen one is being asked and
 three are still shopping, and there is no single true instruction to print.
 
+**Putting an orb on the ground asks the same way.** SPRINT on a non-empty offer
+raises an ordinary `Side.pending` — same strip, same colour, same two answers,
+naming every orb in the pile. It qualifies on the plain reading of the seventh
+non-negotiable: pressing SPRINT again does not pick the orbs back up, so it is
+irreversible in the only sense that matters to a nine-year-old. **And an empty
+pile is refused in words that name the press** — *"Pick the orbs to drop first
+— JUMP on each one"* — rather than by the button doing nothing, which is the
+sixth.
+
 **The question sits under her name, not at the bottom of her card.** `kd-body`
 scrolls, a card with eight orb slots and a points row is taller than a laptop
 half-window, and a question below the fold is a CONFIRM press that appears to do

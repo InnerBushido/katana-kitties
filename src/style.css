@@ -2401,6 +2401,50 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
   animation: critPulse 0.55s ease-in-out infinite;
 }
 @keyframes critPulse { 50% { opacity: 0.45; } }
+/* --- THE FEAST'S OVERFLOW ---------------------------------------------------
+   Health past her ordinary top, banked off what she ate at the feast. It sits
+   INSIDE the fill, at the far end of it, so it drains first and then the
+   ordinary bar starts moving — which is the rule as it was asked for: "when
+   they lose health, it should reduce the green bar until they get below the
+   maximum and then go back to normal".
+
+   `margin-inline-start: auto` AND NOT `right: 0`. The right-hand side's bars
+   are `direction: rtl` so that two sides drain toward their own edges of the
+   screen; a physical edge would put the green on the wrong end of half of them.
+
+   THE BUBBLES ARE THREE BACKGROUND LAYERS SCROLLING UP AT THREE SPEEDS, over a
+   flat green — no extra elements, no script, and nothing per frame. A particle
+   system for a decoration on a HUD that is already rebuilt every frame would
+   cost the whole session to buy something a `background-position` says. The
+   sizes are coprime-ish (18/22/14) so the three never line up into a pattern.
+   `will-change` is deliberately absent: this is a handful of pixels and
+   promoting it to its own layer costs more than it saves. */
+#arena-hud .ah-over {
+  display: block;
+  height: 100%;
+  margin-inline-start: auto;
+  border-radius: 0 4px 4px 0;
+  background:
+    radial-gradient(circle at 20% 110%, rgba(255, 255, 255, 0.9) 1.6px, transparent 2.6px),
+    radial-gradient(circle at 62% 118%, rgba(255, 255, 255, 0.6) 2.4px, transparent 3.4px),
+    radial-gradient(circle at 86% 104%, rgba(255, 255, 255, 0.75) 1.4px, transparent 2.4px),
+    linear-gradient(180deg, #86ffbe 0%, #17c964 62%, #0e9f4d 100%);
+  background-size: 18px 18px, 22px 22px, 14px 14px, 100% 100%;
+  box-shadow: inset 0 0 6px rgba(255, 255, 255, 0.55);
+  animation: hpBubble 1.7s linear infinite;
+}
+#arena-hud .ah-side.r .ah-over { border-radius: 4px 0 0 4px; }
+@keyframes hpBubble {
+  from { background-position: 0 0, 0 0, 0 0, 0 0; }
+  to { background-position: 0 -18px, 0 -22px, 0 -14px, 0 0; }
+}
+/* THE ANIMATION IS THE FIRST THING TO GO. Same contract the rest of the HUD
+   follows: the colour is the information and the movement is the flourish, so
+   a machine that has asked for less motion keeps the green and loses the
+   bubbles rather than losing the fact that she has overflow. */
+@media (prefers-reduced-motion: reduce) {
+  #arena-hud .ah-over { animation: none; }
+}
 #arena-hud .ah-mid {
   flex: 0 0 auto;
   align-self: center;

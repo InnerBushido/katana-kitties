@@ -285,6 +285,60 @@ first thing that happens with it. → [input.md](docs/notes/input.md)
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Five reported from play are fixed and not yet played back.** One list, one
+branch — `mixed/drop-orbs-satan-waits-overflow-heals`. Two of them are Mr.
+Satan, two are the tournament, one is the trade screen.
+
+- **She can put orbs DOWN.** `SPRINT` on the Character Profile screen drops
+  whatever is on her side of the table, scattered around her feet by the same
+  code that sheds a leaving player's orbs. It asks first — naming every orb —
+  and a **dropped orb is shy of the girl who dropped it until she walks out of
+  range**, because `DROP_R0` is 2.6 and `PICKUP_RADIUS` is 2.8, so without that
+  it would be back on her the next frame and the button would look broken. Her
+  sister can take it immediately, which is the point. A phone gets a `DROP`
+  button in the footer.
+  → [endgame.md](docs/notes/endgame.md)
+- **Mr. Satan will not lose his temper at an empty box.** The fuse still burns
+  down whatever you do — it is funnier when it goes off behind you — but
+  nobody up there at zero and he simply stops: no charge, no shout, no bang, and
+  back to `off` rather than `cool`, so the next kitten gets the whole
+  performance from the top. **He also waits for her to LAND** before he starts:
+  the notice cylinder is 3.5 units tall, so he was talking over a jump that had
+  not finished. **And what the card says is now what he says**, by construction
+  — the bubble was being fed a hand-written short version of a line the
+  recording was made from in full. One string, and `card()` is the only thing
+  between it and the screen.
+  → [tournament.md](docs/notes/tournament.md)
+- **A round decided on the clock says ROUND OVER, not K.O.** Both fighters
+  still up and the banner reads `ROUND OVER` and he says *"Not down... I
+  guess... but we have a WINNER!"* — a new recording, `sat_over.mp3`, Harrison
+  like the rest of him. The question the code asks is `_sidesUp().length > 1`,
+  the same function that decides a round is over at all.
+  → [tournament.md](docs/notes/tournament.md)
+- **Losing on your feet no longer costs more than being knocked out.** It used
+  to: an angel came back full and the kitten who merely lost on the clock came
+  back on whatever was left of her bar, so being beaten badly was the better
+  outcome. Whoever did not win the round now starts the next one full, angel or
+  not; a draw heals nobody, because nobody lost.
+  → [tournament.md](docs/notes/tournament.md)
+- **...and the feast now buys something else: a GREEN overflow bar.** Half of
+  what she healed by eating raises her **ceiling** for one round — 100/100
+  becomes 110/110 — and the extra is drawn as a bubbling green cap on the end
+  of her HUD bar that drains first when she is hit. It is half of what she
+  *gained*, not of what she ate, so a kitten already full banks nothing. The
+  bonus lives **inside** `maxHp`, so every existing reader of `hp / maxHp` keeps
+  working and none of them can be handed a fraction over 1. It is visible while
+  it is being gathered, not sprung on her next round.
+  → [tournament.md](docs/notes/tournament.md)
+- **Trading points alone works.** It always refused with *"that would leave
+  somebody carrying nine"* — a sentence about the eight-slot cap, printed
+  because `Kotodama.trade` is an orb function and correctly returns `false` for
+  a swap of no orbs for no orbs. It is only asked when there are orbs to move
+  now; the fix is at the caller, because `trade` was right.
+  → [endgame.md](docs/notes/endgame.md)
+
+116 new checks (2421 → 2537).
+
 **The last fifteen seconds of a round are new, and not yet played back.**
 Built this session, driven in the running game, not yet in front of anybody:
 

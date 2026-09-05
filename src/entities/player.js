@@ -337,6 +337,15 @@ export class Player {
        in the middle of the town. */
     this.maxHp = MAX_HP;
     this.hp = MAX_HP;
+    /** Overflow banked off the feast, on her bar for ONE round. See
+     *  `setRoundBonus` — it is INSIDE `maxHp`, not a second number beside it. */
+    this.bonusHp = 0;
+    /** Health she has gained by EATING since this feast began — the figure the
+     *  overflow is half of. Zeroed by `Tournament._startFeast`, added to by
+     *  `Menagerie._devour`, and read nowhere else. It is health RESTORED and
+     *  not food swallowed: a kitten who eats a rat while full has gained
+     *  nothing, and gets nothing to carry. */
+    this.fedHp = 0;
     /** Tournament handicap on the whole bar — see setHpScale. 1 outside the
      *  ring and in every mode that is not a handicap league. */
     this.hpScale = 1;
@@ -1128,7 +1137,11 @@ export class Player {
     const frac = this.maxHp > 0 ? this.hp / this.maxHp : 1;
     this.powerOrbs = [...ids];
     this.power = aggregate(this.powerOrbs);
-    this.maxHp = Math.round(this.power.hp * this.hpScale);
+    /* THE OVERFLOW RIDES THROUGH AN ORB CHANGE. It is banked for a round and
+       trading a Vigor away in the middle of one must not quietly spend it —
+       same argument as the handicap two functions down: anything written
+       straight into `maxHp` evaporates the next time this line runs. */
+    this.maxHp = Math.round(this.power.hp * this.hpScale) + this.bonusHp;
     this.hp = Math.round(this.maxHp * frac);
     return this.powerOrbs;
   }
@@ -1149,8 +1162,54 @@ export class Player {
     if (k === this.hpScale) return;
     const frac = this.maxHp > 0 ? this.hp / this.maxHp : 1;
     this.hpScale = k;
-    this.maxHp = Math.round(this.power.hp * k);
+    this.maxHp = Math.round(this.power.hp * k) + this.bonusHp;
     this.hp = Math.round(this.maxHp * frac);
+  }
+
+  /**
+   * Her bar WITHOUT the feast's overflow — the top she would have had.
+   *
+   * Derived rather than stored, so it cannot fall out of step with `maxHp`
+   * through either of the two lines above.
+   */
+  get baseMaxHp() { return Math.max(1, this.maxHp - this.bonusHp); }
+
+  /**
+   * How much of what she is carrying right now is overflow. Zero most of the
+   * time, which is why the HUD can ask this every frame and paint nothing.
+   */
+  get overflowHp() {
+    return Math.max(0, Math.min(this.bonusHp, this.hp - this.baseMaxHp));
+  }
+
+  /**
+   * Bank the feast's overflow onto her bar, for the round about to start.
+   *
+   * ASKED FOR AS "take the health they gained, divide it by two, and add that
+   * to the maximum health that the player has in the next round" — so it is a
+   * maximum, not a heal, and it goes INSIDE `maxHp` rather than beside it.
+   * Everything that already reads `hp / maxHp` — the HUD bar, the bar over her
+   * head, the rage multiplier — then keeps working without knowing this
+   * exists, and none of them can be handed a fraction over 1.
+   *
+   * IT REPLACES, IT DOES NOT ADD. The overflow is for ONE round: a feast that
+   * banked nothing sets it to zero, and a kitten who eats well three feasts
+   * running does not walk into the final with a bar of 160. That is the whole
+   * reason this is a setter and not `+=`.
+   *
+   * IT DOES NOT HEAL HER EITHER. Raising the ceiling and filling to it are two
+   * different events, and the second one belongs to `resetForRound`, which is
+   * the one place that decides what a kitten starts a round with.
+   */
+  setRoundBonus(n = 0) {
+    const want = Math.max(0, Math.round(Number.isFinite(n) ? n : 0));
+    if (want === this.bonusHp) return;
+    this.bonusHp = want;
+    this.maxHp = Math.round(this.power.hp * this.hpScale) + this.bonusHp;
+    /* LOWERING THE CEILING CANNOT LEAVE HER ABOVE IT. A health number past the
+       end of the drawn bar is a number nobody can read — the same rule
+       `Menagerie._devour` clamps to. */
+    this.hp = Math.min(this.hp, this.maxHp);
   }
 
   /** True while the block is doing anything at all — held, or in its tail. */
@@ -1588,7 +1647,14 @@ export class Player {
    */
   resetForRound(x, y, z, facing, hp = null) {
     this.landAngel();
-    this.hp = hp == null ? this.maxHp : THREE.MathUtils.clamp(hp, 1, this.maxHp);
+    /* THE OVERFLOW IS ON TOP OF WHATEVER SHE BRINGS, and that is the whole
+       point of it. `null` means "reborn full", which is now full INCLUDING the
+       bonus; a survivor carrying 60 into a round with 10 banked starts at 70
+       of 110 rather than at 60 of 110, which would have made a reward for
+       eating read as a smaller bar. See `setRoundBonus`. */
+    this.hp = hp == null
+      ? this.maxHp
+      : THREE.MathUtils.clamp(hp + this.bonusHp, 1, this.maxHp);
     this.hitT = 0;
     this.invulnT = 0;
     this.koT = 0;

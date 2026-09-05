@@ -621,10 +621,49 @@ never asks it, never calls `hurt`, and calls `Player.blast` — *a push with no
 damage argument to pass*, so it cannot grow one later without somebody editing
 the signature. `world-check` greps the file for both.
 
-**The ten seconds are not cancellable and running away does not stop it.** He is
-funnier when he goes off behind you; a promise the game made is one it then
-keeps whatever you do; and a fuse a child can put out by walking backwards is a
-fuse she will never watch burn.
+**The ten seconds are not cancellable and running away does not stop the
+COUNT.** He is funnier when he goes off behind you; a promise the game made is
+one it then keeps whatever you do; and a fuse a child can put out by walking
+backwards is a fuse she will never watch burn.
+
+**But he will not detonate over an empty box.** Reported from play as *"he loses
+his temper even if no one is near him"*, which is a different complaint from the
+one above and does not contradict it. The fuse still burns down whatever you do;
+what changed is what it finds at the bottom. Nobody up there at zero and he
+simply stops — `_fizzle`: no charge, no shout, no bang, the speech bubble
+cleared, and back to `off` rather than to `cool`. Back to `off` is the load-
+bearing half: the next kitten to climb up gets the whole performance from the
+top instead of walking into a thirty-second silence that looks like the gag
+being broken. It is the fourth non-negotiable read the other way round — an
+event nobody was in should leave no trace.
+
+**And he waits for her to land.** Reported in the same breath: *"he starts the
+speech even before people land on the platform"*. `notice` / `noticeUp` describe
+a cylinder three and a half units tall, so a kitten still *rising* towards the
+deck is already inside it and he was talking over a jump that had not finished.
+`_onBox` is that same test plus `onGround`, and **only the start of the taunt
+asks it**. The two other places that ask who is up there deliberately do not:
+
+- **what the blast CATCHES** stays the bare cylinder, because being blown out of
+  the air is the best version of this and a grounded test there would silently
+  spare whoever happened to be mid-hop on the one frame it went off;
+- **the presence test at zero** likewise, because a fuse that fizzles because
+  she jumped on the final frame reads as broken rather than as merciful.
+
+It cost a check to learn that this distinction is real: `Player.blast` clears
+`onGround`, so a kitten who has just been sent over the horizon is permanently
+"in the air" as far as `_onBox` is concerned until she lands. The world-check
+harness has to stand her back up before it can ask him to do it again, and the
+comment there says why.
+
+**What he says on the card is what he says out loud, by construction.** Also
+reported: *"not all the text is displaying for what he is saying, it is like an
+abbreviated version"* — and it was true. The bubble was fed a hand-written
+short version while `BLAST_LINES` held the full one, so the recording ran 8.5
+seconds over seven words of text. There is one string now, and `card()` is the
+only thing between it and the bubble: it collapses the newlines the source is
+wrapped on and changes nothing else, so the two cannot drift apart again
+without somebody deleting a function.
 
 #### Why it cannot decide a round — which took two goes to actually be true
 
@@ -1032,16 +1071,23 @@ opposite of the risk this is meant to be.
 ```
 round ends ─► KO hold ─► FEAST (15s) ─► next round
                           │
-                          ├── survivor: +10 free, then hunt. She keeps
+                          ├── WINNER: +10 free, then hunt. She keeps
                           │   whatever she finishes on.
-                          └── loser: wings. Comes back with a full bar.
+                          ├── loser, still up: the same feast, and then
+                          │   a full bar anyway.
+                          └── loser, knocked out: wings, and a full bar.
+
+                          ...and everybody carries HALF of what she
+                          healed by eating into the next round, as
+                          extra ceiling. It is drawn green.
 ```
 
 **THE WINNER OF A ROUND CARRIES HER DAMAGE AND THE LOSER COMES BACK FULL.** It
 reads backwards for about a second and then it is obviously right: winning a
 round now costs something, a 2-0 stops being the default shape of a match, and
 the girl who is behind has a reason to keep playing. It is also what gives the
-gap a job.
+gap a job. **"The loser" means whoever lost, standing or flat** — that took a
+second pass to actually be true; see *Losing on your feet*, below.
 
 **`REGEN_FRAC` is the floor under the whole thing, not the mechanic.** A round
 that ends with the winner on four health and nothing within reach would send her
@@ -1075,6 +1121,72 @@ units up. A midpoint camera between those frames the empty air between them.
 **One line for the announcer, not one per outcome.** `Announcer` prints the text
 it is given while playing the clip that matches the id, so two strings behind
 one id would put words on screen that are not the words being spoken.
+
+### Losing on your feet, and the green bar
+
+> If a player loses a round but is still alive, then they should be fully healed
+> before the next match begins.
+
+For a while the rule above was only half implemented, and the missing half was a
+real unfairness rather than a preference: a kitten who was **knocked out** became
+an angel and came back at the top of her bar, while the one who merely lost on
+the clock came back on whatever was left of hers. Being beaten *badly* was the
+better of the two outcomes. `_nextRound` now asks who **won** —
+`_lastWinner`, recorded by `_roundOver` — and hands a full bar to everybody who
+did not, angel or not. **A draw heals nobody**, because nobody lost:
+`_lastWinner` is -1 and no side matches it, which falls out of the same
+comparison rather than needing a case of its own.
+
+**That leaves the feast with nothing to buy, so it now buys something else.**
+
+> If they eat some animals during the feast, then we can take the health they
+> gained, divide it by two, and add that to the maximum health that the player
+> has in the next round.
+
+`OVERFLOW_FRAC` 0.5, off `Player.fedHp`, banked by `Player.setRoundBonus`. Half
+of what she healed by eating raises her **ceiling** for exactly one round, so
+100/100 becomes 110/110 and the feast is worth attending even when you are about
+to be healed to full anyway.
+
+**It is half of what she GAINED, not half of what she ate.** A kitten already at
+the top of her bar swallowing a rat has recovered nothing and banks nothing —
+which is what stops the feast being "stand still and chew" for whoever is
+already ahead.
+
+**The bonus lives INSIDE `maxHp`, not beside it.** This is the whole design
+decision and it is worth a sentence. The obvious model is to let `hp` exceed
+`maxHp`; every single thing in this codebase that reads `hp / maxHp` — the HUD
+bar, the bar over her head, the rage multiplier in `player.js` — would then have
+to learn about it, and any one of them missed is a bar wider than its own box or
+a multiplier under 1. Put the bonus in the maximum and none of them ever sees a
+fraction over 1, none of them changes, and `baseMaxHp` (derived, never stored) is
+what remembers where the ordinary top was.
+
+**It replaces, it does not add.** `setRoundBonus` is a setter for that reason: a
+kitten who eats well at three feasts running does not walk into the final on a
+bar of 160, and a feast she ate nothing at takes the ceiling straight back down —
+clamping her health with it, because a number past the end of a drawn bar is one
+nobody can read.
+
+**It survives the two lines that rebuild `maxHp` from scratch.** `setPowerOrbs`
+and `setHpScale` both recompute the whole bar, so a Vigor traded away mid-round
+or a handicap applied at the top of one would otherwise silently spend the
+overflow. Both add `bonusHp` back; `world-check` drives both.
+
+**The green is painted inside the fill, not beside it.** `.ah-over` is an `<i>`
+nested in `.ah-fill`, margin-start `auto`, width `overflowHp / hp` — so it sits
+at the *end* of the bar, cannot extend past it, and drains first when she is hit,
+which is the rule as it was asked for. Three radial gradients scroll upward at
+different rates under a green vertical ramp for the bubbling; it is one
+`@keyframes` on `background-position` and it is off under
+`prefers-reduced-motion`.
+
+**And she can see it being gathered.** During the feast the HUD adds
+`fedHp * OVERFLOW_FRAC` to what it draws, so the green creeps along the bar with
+every animal eaten rather than appearing from nowhere at the start of the next
+round; the feast toast says so in words, and `Menagerie._devour` names the
+running total on every meal. Sixth non-negotiable: a thing the game is quietly
+banking on your behalf has to be visible while it is happening.
 
 ### The angel
 
@@ -1474,6 +1586,36 @@ otherwise have him counting down over a kitten already flat on her back. On the
 clock it does more than that, and the bell waits: see *He gets to finish
 shouting ZERO*, above. Nothing else is ever pending during a live round, which
 is what makes clearing safe here and nowhere else.
+
+### K.O. is a claim about somebody's body
+
+> When a round is over, and an opponent is still standing, instead of saying
+> "KO" should say "Round Over", and instead of Mr. Satan saying "Down" should
+> say something else.
+
+Both bells were right and both banners were wrong. **K.O.** and *"DOWN! Oh, that
+had to hurt!"* were painted over every ending that had a winner, including the
+overwhelmingly common one: the clock ran out and one kitten was ahead on damage.
+Nobody had been knocked out, nobody was down, and the game said both — which a
+nine-year-old reads as the game not having watched the round she just played.
+
+The question the code now asks is **`_sidesUp().length > 1`** — the same function
+that decides whether a round is over at all, rather than a second opinion about
+it. More than one side still standing and it is `ROUND OVER` and *"Not down...
+I guess... but we have a WINNER!"*; otherwise it is the knockout banner and the
+knockout line, unchanged.
+
+**The line is recorded, not synthesised.** `sat_over.mp3`, Harrison, the same
+preset every other Mr Satan line uses — see [voices.md](voices.md). `Announcer`
+prints the text it is handed while playing the clip that matches the id, so the
+banner, the bubble and the recording are one sentence in one place; the constant
+is exported and `world-check` asserts the mp3 for it exists.
+
+**And the shrug is on purpose.** A round decided on the clock is genuinely less
+of a result than a knockout, and the champion of the world saying so — grudgingly
+— is funnier and more honest than a second triumphant bellow. It also does the
+job the banner cannot: it tells a girl who is still on her feet that she lost,
+without telling her she was flattened.
 
 ## The invisible man in the town square
 
