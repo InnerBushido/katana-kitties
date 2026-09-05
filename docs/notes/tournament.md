@@ -1764,3 +1764,22 @@ in a cutscene or the summon scene it steps one line instead.
 **Neither key writes `state` from main.js**, which is asserted: a debug key that
 assigns a state directly is a key that can produce a game state the machine
 cannot reach on its own.
+
+### The panda is a body in the ring now
+
+A Pandapaw kitten brings a second target with her. The whole rule set lives in
+[world.md](world.md) — the two-body version of `strikePlayers`, the three hit
+outcomes, the reduced knockback on a rider, and the cub that licks her better —
+but two things belong here because they are about the *round* rather than about
+the animal:
+
+**Nothing carries a wound between rounds, for the panda either.**
+`Tournament.begin` and `_nextRound` both call `p.panda?.resetHp()`, right beside
+the line that refills the kittens. In `_nextRound` it happens *after* the
+overflow is banked, because the animal's bar is a fraction of hers and banking
+first is what lets a good feast make the panda tougher too.
+
+**Being KNOCKED DOWN is not a wound and does not heal there.** That one is for
+the rest of the game and comes back only at the Pandapaw shrine. The distinction
+is the whole reason `Panda.knockedDown` is a flag of its own rather than
+`tier === 0`.

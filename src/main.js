@@ -21,7 +21,7 @@ import {
 } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
-import { Panda, tierFor, toNextTier } from './entities/panda.js';
+import { Panda, PANDA, tierFor, toNextTier } from './entities/panda.js';
 import { ClanLeader, LEADERS } from './entities/leader.js';
 import { Orb, OrbPickup } from './entities/orb.js';
 import { MathDojo, DOJO_VIEW_R, inDojoView } from './systems/mathdojo.js';
@@ -3134,6 +3134,13 @@ class Game {
    */
   _updatePanda(player) {
     if (!player.raisedPanda) return;
+    /* A KNOCKED-DOWN PANDA IS NOT A HUNGRY ONE, and this line is the whole of
+       "stays baby panda for the rest of the game". `pandaFedFrom` is a tally
+       taken when the animal last grew, so a collapsed panda is standing there
+       with twenty-odd canes of credit against it — without this guard the very
+       next cane she cuts would call `tierFor`, find the debt long paid, and
+       silently grow it back. The shrine is the only way up. */
+    if (player.panda?.knockedDown) return;
     const has = player.panda ? player.panda.tier : -1;
     const want = tierFor(player.bambooCut, player.pandaFedFrom, has);
     if (want < 0) return;
@@ -3195,7 +3202,15 @@ class Game {
          panda is the worst thing this badge could say. _updatePanda hands her
          the cub in the same breath, so it is a single frame — but it is the
          frame she is looking at when she swears. */
-      if (player.panda && !left) text = `${player.pandaName} is fully grown`;
+      /* AND WHILE IT IS DOWN, THE BADGE IS AN INSTRUCTION. Sixth
+         non-negotiable: a lock has to say what it wants, as a thing to DO. The
+         toast that announced the collapse has faded by the time she has walked
+         back across the island, and this is the only line still on screen when
+         she gets there. It is checked FIRST because the bamboo counter would
+         otherwise be telling her the animal is fully grown while it is a cub
+         at her feet. */
+      if (player.panda?.knockedDown) text = `${player.pandaName} is a cub · INTERACT at the shrine`;
+      else if (player.panda && !left) text = `${player.pandaName} is fully grown`;
       else if (player.panda) text = `${player.pandaName} the ${player.panda.spec.name} · ${left} more bamboo`;
       else text = `${clan.name} · ${left} bamboo for a cub`;
     }
@@ -4305,13 +4320,63 @@ class Game {
        the asymmetry is visible rather than mysterious. Riverclaw really does
        out-reach an unsworn kitten in here — that is the payoff for having
        flown out and sworn, and the answer to it is to go and get one. What
-       must not happen is a girl losing to a reach she cannot see. */
-    const clanK = reach / BASE_REACH;
+       must not happen is a girl losing to a reach she cannot see.
+
+       IT DOES NOT REACH THE PANDA'S CLAW. Asked for as "if player has longer
+       katana buff, it does not apply to big panda", and it is forced HERE
+       rather than by having `_doClaw` hand this a different number, so the
+       rule has one owner and cannot be undone by a future caller passing her
+       real reach. It is right on its own terms as well: Riverclaw's oath is
+       about the blade she is holding, and while she is on a panda she is not
+       holding it. */
+    const clanK = kind === 'claw' ? 1 : reach / BASE_REACH;
     const range = A.reach * clanK;
     /* Juuji stacks make each of the three cuts hit harder rather than adding
        a fourth. Four cuts is a different move; the same three landing for more
-       is the same move, better — which is what a stack should always be. */
-    const dmg = A.dmg * (kind === 'tri' ? (attacker.power?.tri?.dmgK ?? 1) : 1);
+       is the same move, better — which is what a stack should always be.
+
+       AND THE CLAW IS A MULTIPLE OF THE STANDING SLASH rather than a number of
+       its own — see `ATTACKS.claw`, which has no `dmg`, and `PANDA.dmgK`. This
+       is the one place that can do that multiplication, because it is the one
+       place holding both tables. */
+    const base = kind === 'claw' ? ATTACKS.stand.dmg * PANDA.dmgK : A.dmg;
+    const dmg = base * (kind === 'tri' ? (attacker.power?.tri?.dmgK ?? 1) : 1);
+
+    /* --- DOES THIS SWING REACH THAT BODY? ---------------------------------
+       Pulled out of the loop because there are now TWO bodies to ask it about
+       and the answer for one decides what happens to the other: a kitten on a
+       panda is thrown off only when the blade found HER and missed the animal.
+       Both answers therefore have to exist before either is acted on.
+
+       `pad` IS THE ONLY THING A BIGGER BODY GETS. A kitten is a POINT here —
+       the range test is against her centre and nothing else — so "much bigger
+       hit box" cannot be a scale on anything; it is a radius added to whatever
+       the attacker's reach already was. The forward-arc test is NOT padded:
+       an animal whose centre is behind you is behind you, and widening that
+       would let a swing land on something visibly at her back.
+
+       TWO SEPARATE QUESTIONS: how far away on the ground, and how far apart
+       in height. `COMBAT.strikeHeight` was the literal 4.5 here, which is a
+       column NINE METRES tall — a kitten on the arena floor cutting one who
+       had double-jumped over her head, with no way for the girl in the air to
+       read it as anything but being hit from nowhere. It is halved and it is
+       on the balance page now; the note on it in player.js has the rest.
+       NOT scaled by `clanK`. Riverclaw's blade is LONGER, not taller: a reach
+       buff is a statement about how far in front of her the arc goes, and
+       letting it grow the vertical window as well would hand the one clan
+       that out-reaches you the ability to reach up as well as out. */
+    const reaches = (at, pad = 0, padUp = 0) => {
+      const dx = at.x - attacker.position.x;
+      const dz = at.z - attacker.position.z;
+      const dy = at.y - attacker.position.y;
+      const dist = Math.hypot(dx, dz);
+      if (dist > range + pad || Math.abs(dy) > COMBAT.strikeHeight + padUp) return null;
+      // Same forward-arc test the props get, widened for the dash so a charge
+      // that visibly connects is not refused on a half-degree of facing.
+      const dot = (dx * dir.x + dz * dir.y) / (dist || 1);
+      if (dot < A.arc) return null;
+      return { dx, dz, dist };
+    };
 
     for (const target of this.players) {
       if (target === attacker || target.ko) continue;
@@ -4322,25 +4387,21 @@ class Game {
          with two sisters on a side the first accident becomes an argument about
          whether it was an accident. Free-for-all and duel are unaffected:
          nobody shares a side in either. */
-      const dx = target.position.x - attacker.position.x;
-      const dz = target.position.z - attacker.position.z;
-      const dy = target.position.y - attacker.position.y;
-      const dist = Math.hypot(dx, dz);
-      /* TWO SEPARATE QUESTIONS: how far away on the ground, and how far apart
-         in height. `COMBAT.strikeHeight` was the literal 4.5 here, which is a
-         column NINE METRES tall — a kitten on the arena floor cutting one who
-         had double-jumped over her head, with no way for the girl in the air to
-         read it as anything but being hit from nowhere. It is halved and it is
-         on the balance page now; the note on it in player.js has the rest.
-         NOT scaled by `clanK`. Riverclaw's blade is LONGER, not taller: a reach
-         buff is a statement about how far in front of her the arc goes, and
-         letting it grow the vertical window as well would hand the one clan
-         that out-reaches you the ability to reach up as well as out. */
-      if (dist > range || Math.abs(dy) > COMBAT.strikeHeight) continue;
-      // Same forward-arc test the props get, widened for the dash so a charge
-      // that visibly connects is not refused on a half-degree of facing.
-      const dot = (dx * dir.x + dz * dir.y) / (dist || 1);
-      if (dot < A.arc) continue;
+      const found = reaches(target.position);
+      /* HER PANDA IS A SECOND BODY IN THE RING, and `fighter` is the whole of
+         the question of whether it may be hit: grown, standing, and not
+         already knocked down. A cub is never a target — it is the size of a
+         house cat and it is the thing a losing kitten runs to, so letting a
+         sister cut it down would make the consolation prize the next thing to
+         take away.
+         A KNOCKED-OUT OWNER'S PANDA IS SKIPPED with her, by the `target.ko`
+         line above. Her round is finished; there is nothing to win by hitting
+         an animal belonging to somebody already flat on her back. */
+      const beast = target.panda?.fighter
+        ? reaches(target.panda.position, target.panda.hitRadius, target.panda.hitUp)
+        : null;
+      if (!found && !beast) continue;
+      const { dx, dz, dist } = found ?? beast;
 
       /* --- HELD IN SOMEBODY'S CROSS SLASH: NOTHING ELSE TOUCHES HER ---
          She is frozen in the air with three cuts landing on her and a payment
@@ -4370,7 +4431,11 @@ class Game {
          her half a second of control and it costs you the swing, which is the
          teamwork the league was supposed to be about. */
       if (this.tournament.allies(attacker, target)) {
-        if (target.daze()) {
+        /* AND A SWING THAT ONLY BRUSHED HER PANDA IS NOT A SWING AT HER. The
+           daze is a cost for hitting your partner; charging it for passing
+           within reach of an animal three times her width would make a 2v2
+           with a Pandapaw kitten on your side unplayable. */
+        if (found && target.daze()) {
           this.sfx('hit');
           this.toast(`${attacker.name} dazed ${target.name} — watch your team!`, attacker.index);
         }
@@ -4386,6 +4451,13 @@ class Game {
          instead and banks the number; `_freeTripleHold` pays all of it at once
          when the last cut has landed and the pause after it has run out. */
       if (kind === 'tri') {
+        /* THE CROSS SLASH CATCHES KITTENS AND NOTHING ELSE. It freezes what it
+           catches and pays out at the end (`triCapture`), and there is no
+           version of that a five-and-a-half-metre animal can be part of: a
+           held panda would either be an animal hanging in the air or a rider
+           frozen while her mount walked away. So a swipe that found only the
+           panda is simply a miss for this one attack. */
+        if (!found) continue;
         const nx = dist > 0.001 ? dx / dist : Math.sin(attacker.facing);
         const nz = dist > 0.001 ? dz / dist : Math.cos(attacker.facing);
         if (target.triCapture(attacker, dmg, nx, nz, this)) {
@@ -4406,10 +4478,135 @@ class Game {
         continue;
       }
 
-      const dealt = target.hurt(dmg, attacker.position, A, this);
-      if (!dealt) continue;
-      attacker.dmgDealt += dealt;
-      this.tournament.onHit(attacker, target, dealt, kind);
+      /* --- THE ANIMAL FIRST, AND THEN HER -------------------------------
+         The three outcomes, exactly as they were asked for:
+
+           panda only   the animal takes it and she is untouched.
+           BOTH         both take damage, she stays on, and the pair is pushed
+                        a third as far as she alone would have flown.
+           her only     she takes it in full AND comes off the animal.
+
+         Which one it is has to be decided from `found` and `beast` BEFORE
+         anything is spent, because knocking the panda's bar out puts her on
+         the ground and would otherwise change the answer half way through. */
+      const onIt = !!target.panda && target.pandaMount === target.panda;
+      const both = onIt && !!found && !!beast;
+
+      if (beast) {
+        const bit = target.panda.hurt(dmg, attacker.position);
+        if (bit) {
+          this.hitSpark({ position: target.panda.position, height: target.panda.spec.size }, kind);
+          /* ONE NOISE PER BLOW. `Player.hurt` makes its own, so a swing that
+             caught both of them would otherwise arrive as two impacts and read
+             as a double hit rather than as one landing on something big. */
+          if (!found) this.sfx('hit');
+          /* UNRIDDEN, THE PUSH GOES ON THE ANIMAL. Ridden it cannot: `carry`
+             rewrites the panda's velocity from the rider every frame, so it
+             goes on HER instead, below, and the animal shows the blow as a
+             flinch (`Panda.recoil`). */
+          if (!onIt) {
+            const k = A.knock * PANDA.knockK;
+            const len = Math.hypot(beast.dx, beast.dz) || 1;
+            target.panda.velocity.x += (beast.dx / len) * k;
+            target.panda.velocity.z += (beast.dz / len) * k;
+          }
+        }
+      }
+
+      if (found) {
+        /* A THIRD OF THE PUSH WHILE SHE IS ON IT, and it is a copy of the
+           attack rather than a flag on `hurt`: the knockback rule belongs to
+           this gate, which is the thing that knows she is mounted, and `hurt`
+           stays a function that spends a number and throws a body. */
+        const force = both
+          ? { ...A, knock: A.knock * PANDA.knockK, lift: A.lift * PANDA.knockK }
+          : A;
+        const dealt = target.hurt(dmg, attacker.position, force, this);
+        if (dealt) {
+          /* AND THE BLOW THAT FOUND HER AND MISSED THE ANIMAL TAKES HER OFF
+             IT. Only that one: a blade that hit both is a blade the panda
+             took most of, which is what riding one is for. */
+          if (onIt && !beast && target.pandaMount) {
+            const mount = target.pandaMount;
+            target.pandaMount = null;
+            mount.rider = null;
+            this.sfx('dismount');
+            this.toast(`${target.name} was knocked off ${target.pandaName}!`, target.index);
+          }
+          attacker.dmgDealt += dealt;
+          this.tournament.onHit(attacker, target, dealt, kind);
+        }
+      }
+
+      /* LAST, so the collapse cannot change any of the answers above. */
+      if (beast && target.panda.hp <= 0) this._pandaDown(target);
+    }
+  }
+
+  /**
+   * A grown panda's bar is empty: it is a cub again, and it stays one.
+   *
+   * NOT A DEATH AND NOT A LOSS — fourth non-negotiable. `Panda.collapse` puts
+   * the rider down and shrinks the animal; this owns the noise, the words and
+   * the instruction, which is the sixth: a state a player cannot get out of is
+   * a bug, and one she can get out of but is not told how to is the same bug
+   * wearing a hat. Three places say it — a toast, a line over her own head,
+   * and the clan badge, which then keeps saying it until she does something
+   * about it.
+   */
+  _pandaDown(player) {
+    const panda = player.panda;
+    if (!panda?.collapse()) return;
+    this._pandaPoof(panda);
+    this.sfx('pandadown');
+    this.toast(
+      `${player.pandaName} is a cub again! INTERACT at the Pandapaw shrine to bring it back`,
+      player.index
+    );
+    player.setCallout(`${player.pandaName.toUpperCase()} IS A CUB — PANDAPAW SHRINE`, 6);
+    this._updateClanBadge(player);
+  }
+
+  /**
+   * INTERACT at the Pandapaw hall with a knocked-down panda: it gets up.
+   *
+   * IT COSTS NOTHING, and that is the ask in its own words — "since we already
+   * harvested the 20 bamboo to make it a big panda and no need to do it
+   * again". The canes were cut; charging for them twice would be taking away
+   * the WORK rather than the animal.
+   *
+   * IT SAYS NO OUT LOUD ONLY WHEN SHE ASKED FOR SOMETHING. Standing in your own
+   * hall pressing interact has always done nothing at all, and turning that
+   * into a refusal toast would put a message on screen every time a kitten
+   * walks through her own shrine mashing buttons. There is nothing to refuse
+   * here: she has not asked for anything the game can identify.
+   */
+  onPandaShrine(player) {
+    if (!player?.panda?.knockedDown) return false;
+    this._restorePanda(player);
+    return true;
+  }
+
+  /** The poof, the noise and the words. Shared by the shrine and by swearing
+   *  back to Pandapaw, which are one event with two ways in. */
+  _restorePanda(player) {
+    const panda = player.panda;
+    if (!panda?.restore()) return false;
+    this._pandaPoof(panda);
+    this.sfx('pandapoof');
+    this.toast(`${player.pandaName} is a grown panda again!`, player.index);
+    player.setCallout(`${player.pandaName.toUpperCase()} IS BACK`, 4);
+    this._updateClanBadge(player);
+    return true;
+  }
+
+  /** Three rings at once, at three heights. The panda changing size is the
+   *  only thing in this game that happens in one frame, so it needs something
+   *  in front of it or it reads as the animal being swapped out. */
+  _pandaPoof(panda) {
+    const h = panda.spec?.size ?? 3;
+    for (const k of [0.2, 0.55, 0.95]) {
+      this.hitSpark({ position: panda.position, height: h * k * 1.8 }, 'dash');
     }
   }
 
@@ -5822,7 +6019,16 @@ class Game {
     /* Pandas run AFTER the players, because a ridden one is slaved to its
        rider's final position for the frame (Player.carry) and a following one
        is chasing where she actually ended up, not where she started. */
-    for (const p of this.players) p.panda?.update(dt, this.world, p);
+    for (const p of this.players) {
+      p.panda?.update(dt, this.world, p);
+      /* THE CUB'S CHIRP IS PLAYED HERE, not by the panda, because nothing in
+         `entities/panda.js` may reach the audio system — `player.js` already
+         imports from it and the reverse edge would close a cycle (the note on
+         that is in palette.js). The animal raises a one-frame flag and this
+         spends it, which also means a panda drawn on a screen with the sound
+         off costs nothing at all. */
+      if (p.panda?.lickSfx) { p.panda.lickSfx = false; this.sfx('lick'); }
+    }
     this.dojo.update(dt, this.players);
     for (const s of this.world.shrines) s.update(dt, this.players);
     for (const L of this.leaders) L.update(dt, this.players);
@@ -7013,6 +7219,13 @@ class Game {
        risk of putting text on a character. */
     player.setCallout(`${clan.name.toUpperCase()} — ${clan.buff.label.toUpperCase()}`, 6);
     if (clan.buff.panda) {
+      /* COMING HOME GETS IT UP, on the same press that swears her in. A kitten
+         who wandered off to Riverclaw and has come back should not have to
+         press interact twice in the same square metre for two halves of one
+         thing — see the other half in `Player`'s interact branch, which is the
+         case where she was already sworn here. BEFORE `_updatePanda`, because
+         that one now refuses to touch a knocked-down panda at all. */
+      this._restorePanda(player);
       this._updatePanda(player);
       const left = toNextTier(player.bambooCut, player.pandaFedFrom, player.panda?.tier ?? -1);
       if (left && !player.panda) {

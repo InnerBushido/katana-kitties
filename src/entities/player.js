@@ -1,6 +1,6 @@
 ﻿import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
-import { PANDA_SPEED, PANDA_JUMP } from './panda.js';
+import { PANDA_SPEED, PANDA_JUMP, CLAW } from './panda.js';
 import { aggregate, WARD, AEGIS, DIVE, CROSS, CHARGE, DODGE } from './powerorb.js';
 import { ANGEL_ALPHA } from './angel.js';
 import { styleFor } from '../core/palette.js';
@@ -150,6 +150,23 @@ export const ATTACKS = tune('ATTACKS', {
      `arc` is the cosine floor on the forward test. The dive is -1 — it lands
      on everything under her, and a falling body has no facing. */
   tri: { dmg: 9, knock: 7, lift: 2.6, reach: 3.4, arc: -0.25 },
+
+  /* THE PANDA'S CLAW, AND IT DELIBERATELY HAS NO `dmg` OF ITS OWN.
+     It was asked for as "1.2x more than a regular player slash attack", which
+     is a statement ABOUT `stand.dmg` rather than a number beside it —
+     `Game.strikePlayers` multiplies the two, so tuning the standing slash on
+     the balance page moves the claw with it and the relationship can never go
+     stale. The missing key is also what makes it un-overridable by hand:
+     `tune()` only takes keys the defaults already have, so there is exactly
+     one knob for this and it is `PANDA.dmgK`.
+
+     `reach` AND `arc` ARE THE CLAW'S OWN, taken from the same CLAW spec that
+     draws it and that knocks scenery over. Eighth non-negotiable read across
+     to combat: the drawn arc IS the hitbox, and a swipe that reaches a kitten
+     it visibly missed is the bug that rule exists to prevent. It out-reaches
+     the katana by a long way, which is the payoff for riding a very large,
+     very visible animal that anybody can hit back. */
+  claw: { knock: 11, lift: 4.0, reach: CLAW.range, arc: 1 - CLAW.spread },
   dive: { dmg: DIVE.dmg, knock: DIVE.knock, lift: DIVE.lift, reach: DIVE.radius, arc: -1 },
   charge: { dmg: CHARGE.dmg, knock: CHARGE.knock, lift: CHARGE.lift, reach: CHARGE.radius, arc: -0.6 },
 });
@@ -2478,6 +2495,19 @@ export class Player {
           hud?.sfx('clan');
           hud?.onJoinClan?.(this, hall.clan);
         }
+      } else if (hall?.clan?.buff?.panda) {
+        /* ALREADY SWORN HERE, AND THIS IS WHERE A KNOCKED-DOWN PANDA GETS UP.
+           Standing in your own hall and pressing interact did nothing at all
+           before this, so the button is free and no meaning is being taken off
+           it — which is the test that matters, because one button doing two
+           things is how a nine-year-old learns not to trust it.
+
+           THE OTHER HALF OF THE RULE IS IN `onJoinClan`, not here. A kitten
+           who swore somewhere else and has come back gets the animal up on the
+           SAME press that swears her in, because those are one event: coming
+           home to the clan. Splitting it would mean pressing interact twice in
+           the same spot for two halves of one thing. */
+        hud?.onPandaShrine?.(this);
       }
     }
 
@@ -3695,6 +3725,20 @@ export class Player {
     }
     // The boulder over a star answers to this and to nothing else.
     if (hud?.strikeWards) hud.strikeWards(this, 'claw', c.range);
+
+    /* AND IT REACHES KITTENS — THROUGH THE ONE GATE, like every other swing in
+       this game. Third non-negotiable: `Game.strikePlayers` asks
+       `Tournament.fighting` and answers no everywhere but a live round, so a
+       claw swung in the market square knocks a barrel over and does nothing at
+       all to anybody standing next to it. Giving the panda its own damage path
+       is precisely the second copy of that question the rule exists to
+       prevent, and `world-check` drives a full swipe with the tournament off.
+
+       HER REAL REACH IS PASSED, AND THE GATE IGNORES IT. Riverclaw's oath does
+       not lengthen a panda's arm — see the `clanK` line there, which is where
+       that rule lives so that it has one owner. */
+    hud?.strikePlayers?.(this, 'claw', this._reach(), dir);
+
     if (hits) this.squash = 0.6;
   }
 

@@ -285,6 +285,41 @@ first thing that happens with it. → [input.md](docs/notes/input.md)
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**The panda fights now, and the cub heals you.** Branch
+`feature/panda-in-the-arena`, and the biggest single addition since the Cross
+Slash. On `alpha`, not played back yet.
+
+- **A grown panda is a second body in the ring.** You can swing its claw at a
+  kitten — 1.2x a standing slash, through `Game.strikePlayers` like every other
+  blow in the game — and anybody can hit it back. It has 30% of a kitten's bar
+  and a hit box 2.8 units wider than her, which is what riding one costs: you
+  are a much bigger target. **Riverclaw's reach does not lengthen the claw**,
+  forced at the gate so the rule has one owner.
+- **Three outcomes when a blade arrives.** The panda only: she is untouched.
+  Both: both take damage, she *stays on*, and the pair is pushed a third as far.
+  Her only: full damage and she comes off. Which one it is is decided before a
+  single number is spent, because collapsing the animal would change the answer
+  half way through.
+- **An empty bar makes it a cub, and it stays one** — for the rest of the game,
+  until she walks back to the Pandapaw shrine and presses interact, which costs
+  no bamboo because the canes were already cut. `knockedDown` is a flag of its
+  own precisely so `_updatePanda` cannot quietly re-grow it off the tally.
+- **The cub licks her better.** Below 30% of her bar it walks in, keeps station
+  for a second, and heals half a percent a second up to the threshold — a
+  rescue, not a way to sit out a round. A pink tongue on `sin(lickPhase)`, the
+  animal leaning in on the same beat, green motes rising off *her* in the
+  overflow bar's green, and one chirp per lick counted off the same phase the
+  tongue is drawn from.
+- **All nine numbers are on the balance page**, with a sentence each.
+  → [world.md](docs/notes/world.md), [tournament.md](docs/notes/tournament.md)
+
+91 new checks (2537 → 2628), including a harness that **lifts
+`Game.strikePlayers` and `Game._updatePanda` out of `main.js` and runs them** —
+`Game` cannot be imported into `world-check`, and the alternative was regexes
+asserting that words appear in a file.
+
+---
+
 **Five reported from play are fixed and not yet played back.** One list, one
 branch — `mixed/drop-orbs-satan-waits-overflow-heals`. Two of them are Mr.
 Satan, two are the tournament, one is the trade screen.

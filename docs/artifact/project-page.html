@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 2537 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 2628 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 354 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -561,6 +561,15 @@ npm run artifact              <span class="c"># is this published page still cur
     canes, a clan buff that changes nothing, a sheet read in mirror image, a trade that quietly
     destroys an orb. <b>Almost none of its assertions are about whether a number is <em>set</em></b>
     — they are about whether behaviour actually <em>changed</em>.</p>
+
+  <p><b>It can also check <code>main.js</code>, which it cannot import.</b> <code>Game</code> boots a
+    renderer against a DOM that does not exist, so the rules living on it — the combat gate, in
+    particular — were historically checked with regexes asserting that certain words appear in the
+    file, which would happily pass a rule correctly <em>written</em> and wrongly <em>wired</em>. The
+    panda checks do it properly instead: they cut a method's <b>own source out of
+    <code>src/main.js</code> and evaluate it</b> with the tables it closes over, so what runs is the
+    shipped code, character for character. Reach for it when a rule that matters lives on
+    <code>Game</code>.</p>
 </section>
 
 <section id="test">
@@ -1075,7 +1084,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 2537 assertions and why almost none of them are about
+      is why <code>world-check</code> is 2628 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,
