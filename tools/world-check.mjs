@@ -87,7 +87,7 @@ import { Minimap, ZOOMS } from '../src/systems/minimap.js';
 import { Label, labelCacheStats } from '../src/core/label.js';
 import {
   MODES, MODE_BY_ID, modesFor, handicapFor, HANDICAP_MAX, NO_SIDE, ROUND_LIMIT,
-  WARN_AT, COUNT_AT, COUNT_LAST,
+  WARN_AT, COUNT_AT, COUNT_MID, COUNT_LAST, ZERO_BEAT,
 } from '../src/systems/tournament.js';
 import { worldSpawnCount, WORLD_PER_PLAYER } from '../src/systems/kotodama.js';
 import {
@@ -7605,17 +7605,36 @@ console.log('\n--- the three power moves ---');
     const el = mkEl();
     el.classList.owner = el;
 
+    /* FOUR LOGS, BECAUSE THERE ARE NOW FOUR WAYS FOR HIM TO MAKE A NOISE and
+       the whole feature turns on telling them apart. `said` is the card queue,
+       `spoke` is the speech channel the count goes down instead, `played` is
+       the bells and the tick, and `posed` is his arms. */
     const said = [];
+    const spoke = [];
     const played = [];
-    const mkT = (clips = ['sat_t30', 'sat_last', 'sat_draw']) => {
-      said.length = 0;
-      played.length = 0;
+    const posed = [];
+    const ZERO_DUR = 4.5;
+    const ALL = ['sat_t30', 'sat_last1', 'sat_last2', 'sat_count', 'sat_zero', 'sat_draw', 'sat_ko'];
+    const mkT = (clips = ALL) => {
+      said.length = 0; spoke.length = 0; played.length = 0; posed.length = 0;
+      const have = new Map(clips.map((c) => [c, { el: { id: c }, dur: c === 'sat_zero' ? ZERO_DUR : 4 }]));
       const T = new Tournament({
-        game: { players: [], toast() {}, sfx() {} },
+        game: {
+          players: [],
+          toast() {},
+          sfx() {},
+          satan: { setPose: (name) => posed.push(name) },
+          satanBlast: { stage: 'off' },
+        },
         world,
-        audio: { play: (n) => played.push(n) },
+        audio: {
+          play: (n) => played.push(n),
+          speak: (e) => { spoke.push(e.id); return e; },
+          stopSpeaking: () => spoke.push('#stop'),
+        },
         announcer: {
-          clips: new Map(clips.map((c) => [c, {}])),
+          clips: have,
+          clip: (id) => have.get(id) ?? null,
           say: (id) => said.push(id),
           clear: () => said.push('#clear'),
         },
@@ -7626,18 +7645,23 @@ console.log('\n--- the three power moves ---');
          with the other. */
       T.hudEl = { innerHTML: '', classList: { add() {}, remove() {} } };
       el.className = 'hidden';
-      T._warned = false;
-      T._ranting = false;
-      T._countShown = null;
+      T.wins = [0, 0];
       return T;
     };
 
-    /* THE THREE NUMBERS HAVE TO STAY IN THIS ORDER or the feature eats itself:
+    /* THE FOUR NUMBERS HAVE TO STAY IN THIS ORDER or the feature eats itself:
        a warning after the countdown starts, or a countdown longer than the
-       round, is a call that never fires or one that fires on the card. */
+       round, is a call that never fires or one that fires on the round card. */
     ok('the clock warns before it counts, and counts before it panics',
-      ROUND_LIMIT > WARN_AT && WARN_AT > COUNT_AT && COUNT_AT > COUNT_LAST
-      && COUNT_LAST > 0, `${ROUND_LIMIT} > ${WARN_AT} > ${COUNT_AT} > ${COUNT_LAST}`);
+      ROUND_LIMIT > WARN_AT && WARN_AT > COUNT_AT && COUNT_AT > COUNT_MID
+      && COUNT_MID > COUNT_LAST && COUNT_LAST > 0,
+      `${ROUND_LIMIT} > ${WARN_AT} > ${COUNT_AT} > ${COUNT_MID} > ${COUNT_LAST}`);
+    /* AND THEY HAVE TO BE EVENLY SPACED, because the cues are recordings cut
+       to a budget: a card gets exactly the gap to the next cue and no more.
+       See CARD_MAX below, which is the same fact from the cutter's end. */
+    ok('...and his three cards get the same five seconds each',
+      COUNT_AT - COUNT_MID === COUNT_LAST && COUNT_MID - COUNT_LAST === COUNT_LAST,
+      `${COUNT_AT}-${COUNT_MID}-${COUNT_LAST}`);
 
     /* --- ONCE EACH, WHATEVER THE FRAME RATE ---------------------------------
        This is the check that matters most and the one a "does it fire" test
@@ -7651,16 +7675,25 @@ console.log('\n--- the three power moves ---');
          stopped at exactly `WARN_AT` and reported nought calls out of one —
          a sweep that never reaches the thing it is sweeping for. */
       for (let i = 0; i <= 1300; i++) T._callTheClock(ROUND_LIMIT - i * 0.1);
-      const t30 = said.filter((x) => x === 'sat_t30').length;
-      const last = said.filter((x) => x === 'sat_last').length;
-      ok('a whole round at 10fps gets ONE thirty-second call', t30 === 1, `${t30}`);
-      ok('...and ONE countdown, not one a frame', last === 1, `${last}`);
-      ok('...and the warning comes first', said.indexOf('sat_t30') < said.indexOf('sat_last'));
-      /* HE GETS THE FLOOR FOR THE COUNT. `say` queues and never interrupts,
-         which is right everywhere else and wrong for a clip whose numbers are
-         nailed to the seconds they name. */
-      ok('...and he clears the queue before counting',
-        said[said.indexOf('sat_last') - 1] === '#clear');
+      const n = (id) => said.filter((x) => x === id).length;
+      ok('a whole round at 10fps gets ONE thirty-second call', n('sat_t30') === 1, `${n('sat_t30')}`);
+      ok('...ONE fifteen-second call', n('sat_last1') === 1, `${n('sat_last1')}`);
+      ok('...ONE ten-second call', n('sat_last2') === 1, `${n('sat_last2')}`);
+      ok('...and the count starts exactly once, not once a frame',
+        spoke.filter((x) => x === 'sat_count').length === 1, spoke.join(','));
+      ok('...in that order', said.indexOf('sat_t30') < said.indexOf('sat_last1')
+        && said.indexOf('sat_last1') < said.indexOf('sat_last2'));
+      /* THE COUNT IS PLAYED, NEVER SAID. Its words are the numbers, and the
+         number is already on screen eighty pixels high — "does not need to be
+         in a speech bubble since that is only for text/sentences that he is
+         saying". A card here is the same information twice. */
+      ok('...and the count never goes on a card', !said.includes('sat_count'), said.join(','));
+      /* AND THE CARD IN FRONT OF IT COMES DOWN. Each number inside the clip is
+         nailed to the second it names, so it starts the frame the clock says
+         five whatever else is on screen — leaving the ten-second bubble up
+         would put his own last sentence over the top of the count. */
+      ok('...having taken the last card down first',
+        said[said.length - 1] === '#clear', said.slice(-3).join(','));
     }
 
     /* AND NOT AT ALL BEFORE THEIR TIME. A call that fires a second early is
@@ -7671,8 +7704,10 @@ console.log('\n--- the three power moves ---');
       ok('nothing is said while there is still time on the clock',
         said.length === 0, said.join(','));
       T._callTheClock(COUNT_AT + 0.05);
-      ok('...and the countdown holds until the fifteenth second exactly',
-        !said.includes('sat_last'));
+      ok('...and the fifteen-second call holds until the fifteenth second',
+        !said.includes('sat_last1'));
+      T._callTheClock(COUNT_LAST + 0.05);
+      ok('...and the count until the fifth', !spoke.includes('sat_count'), spoke.join(','));
     }
 
     /* --- THE NUMBER ON SCREEN IS THE NUMBER OF SECONDS YOU HAVE -------------
@@ -7742,16 +7777,15 @@ console.log('\n--- the three power moves ---');
     }
 
     /* --- IT STILL COUNTS WITH `public/voice` DELETED ------------------------
-       Ninth non-negotiable. Without the recording the announcer shows the text
-       for three seconds and goes quiet, so the last five seconds would count
-       down in silence — the tick is what stands in, and `_ranting` is the flag
-       that decides. Both directions, because a tick that ALSO plays under his
-       voice is two clocks disagreeing out loud. */
+       Ninth non-negotiable. With no recording nothing plays at all, so the last
+       five seconds would count down in silence — the tick is what stands in,
+       and `_voiced` is the flag that decides. Both directions, because a tick
+       that ALSO plays under his voice is two clocks disagreeing out loud. */
     {
       const T = mkT([]);
       T.state = 'live';
-      T._callTheClock(COUNT_AT);
-      ok('with no recording he cannot rant', T._ranting === false);
+      T._callTheClock(COUNT_LAST);
+      ok('with no recording there is nothing for him to count with', T._voiced === false);
       played.length = 0;
       for (let n = COUNT_LAST; n >= 1; n--) { T.t = ROUND_LIMIT - n; T._paintCountdown(); }
       ok('...so the countdown ticks instead, once a second',
@@ -7760,29 +7794,180 @@ console.log('\n--- the three power moves ---');
 
       const V = mkT();
       V.state = 'live';
-      V._callTheClock(COUNT_AT);
-      ok('with the recording he does the counting', V._ranting === true);
+      V._callTheClock(COUNT_LAST);
+      ok('with the recording he does the counting', V._voiced === true);
       played.length = 0;
       for (let n = COUNT_LAST; n >= 1; n--) { V.t = ROUND_LIMIT - n; V._paintCountdown(); }
       ok('...and nothing ticks over the top of him',
         played.filter((x) => x === 'count').length === 0, played.join(','));
     }
 
-    /* --- THE CLIP IS A TIMELINE, AND IT HAS TO BE THE RIGHT LENGTH ----------
-       `sat_last.mp3` is spliced so each number lands on the second it names,
-       which only works if the splice and the game agree about when it starts.
-       The splicer's LEAD is the seconds of complaining before "FIVE!"; five
-       numbers follow it, so LEAD + 5 IS the window. Two files, one number. */
+    /* --- HE GETS TO FINISH SHOUTING ZERO ------------------------------------
+       The bug this whole beat exists for. `sat_count` ends on ONE and the round
+       ends on the same frame the clock does, so the bell and "DOWN!" landed on
+       top of the one word the feature builds to — and not merely late:
+       `Announcer.say` starts through `Audio.speak`, which opens with
+       `stopSpeaking`, so the follow-up line did not queue behind the shout, it
+       KILLED it. Reported as "the ZEROOO part is not happening at all". */
+    {
+      const T = mkT();
+      T.state = 'live';
+      T._callTheClock(COUNT_LAST);
+      const got = T.callOnDamage('Time!', true);
+      ok('a round called by the CLOCK ends on his ZERO', got === 'draw' && said.includes('sat_zero'));
+      /* AND THE COUNT IS STOPPED DEAD, not left playing under him. `clear`
+         cannot do it: it empties the card queue and touches no audio. */
+      ok('...and the count is stopped, not just uncarded', spoke.includes('#stop'), spoke.join(','));
+      /* NOTHING ELSE HAPPENS YET. This is the whole point: no bell, no banner,
+         no draw line until he has run out of breath. */
+      ok('...and the bell does NOT ring over the top of him',
+        !played.includes('drawgong') && !played.includes('endgong'), played.join(','));
+      ok('...nor the line that follows it', !said.includes('sat_draw'));
+      ok('...his arms go up instead', posed.includes('charge'), posed.join(','));
+      /* MEASURED OFF THE CLIP AND NOT GUESSED, so a re-cut that runs longer
+         cannot start clipping itself again — plus the beat that was asked for
+         ("maybe even adding a 1 - 2 second pause for him to calm down"). */
+      const wait = T._pending?.at ?? 0;
+      ok('...and the round waits exactly as long as the shout is, plus a beat',
+        Math.abs(wait - (ZERO_DUR + ZERO_BEAT)) < 1e-9, `${wait}`);
+      ok('...with the hold GROWN by it, not spent on it',
+        T._koHold > wait, `${T._koHold} > ${wait}`);
+
+      T.t = wait - 0.01;
+      T.update(0, []);
+      ok('...still nothing a hundredth of a second before he is done',
+        !played.includes('drawgong'), played.join(','));
+      T.t = wait;
+      T.update(0, []);
+      ok('...and THEN the bell, the banner and his line',
+        played.includes('drawgong') && said.includes('sat_draw'));
+      ok('...and his arms come down with them',
+        posed[posed.length - 1] === 'idle', posed.join(','));
+      ok('...once, not once a frame', (T.update(0, []), T.update(0, []),
+        played.filter((x) => x === 'drawgong').length === 1), played.join(','));
+      /* AND THE BANNER STILL GETS ITS FULL TIME. Absorbing the wait into
+         KO_HOLD would flash DRAW for half a second and cut to the feast. */
+      ok('...and the round is not hurried off screen for having waited',
+        T.state === 'ko', T.state);
+    }
+
+    /* EVERY OTHER ENDING IS UNCHANGED, which is the half of this that is easy
+       to break: a knockout is not the clock running out and must not sit there
+       for six seconds while nothing happens. */
+    {
+      const K = mkT();
+      K.state = 'live';
+      K.game.players = [];
+      K._roundOver(0, 'x');
+      ok('a knockout rings straight away', played.includes('endgong'), played.join(','));
+      ok('...with nothing pending behind it', K._pending === null);
+      ok('...and nobody strikes a pose for it', !posed.includes('charge'), posed.join(','));
+      ok('...and he does not shout ZERO at a round that had time left',
+        !said.includes('sat_zero'));
+    }
+    {
+      /* THE DEBUG KEY IS NOT THE CLOCK EITHER. `4` means "end this round now",
+         and a six-second ceremony on it would make the key useless for the
+         thing it exists for. */
+      const D = mkT();
+      D.state = 'live';
+      D.game.players = [];
+      D.callOnDamage('[debug] round called!');
+      ok('the debug key ends a round on the spot', D._pending === null && played.includes('drawgong'));
+    }
+    {
+      /* NINTH NON-NEGOTIABLE, AND THE DEGRADE IS "DO NOT WAIT". With no
+         recording there is nothing to wait FOR, and waiting anyway is six
+         seconds of a frozen deck under a silent card. */
+      const N = mkT([]);
+      N.state = 'live';
+      N.game.players = [];
+      N.callOnDamage('Time!', true);
+      ok('with no recording the round does not wait for a shout that cannot happen',
+        N._pending === null && played.includes('drawgong'), played.join(','));
+      ok('...and his arms stay down', !posed.includes('charge'), posed.join(','));
+    }
+    {
+      /* THE BLAST GAG OWNS THE POSE FOR ITS OWN TEN SECONDS and puts it back
+         to idle at the end of them — which would drop his arms in the middle
+         of this and leave `_posed` lying about it. */
+      const B = mkT();
+      B.game.satanBlast.stage = 'charge';
+      B.state = 'live';
+      B.game.players = [];
+      B.callOnDamage('Time!', true);
+      ok('a tantrum already in progress keeps his arms', !posed.includes('charge'), posed.join(','));
+      ok('...and the round does not put down a pose it did not raise',
+        (B.finish(), !posed.includes('idle')), posed.join(','));
+    }
+    {
+      /* AND FLYING HOME PUTS EVERYTHING BACK, from either half of it. `clear`
+         reaches neither the speech channel nor the sprite — same class of latch
+         as the wings and the pennant.
+         TWO TOURNAMENTS, BECAUSE THE FIRST VERSION OF THIS PROVED NOTHING: it
+         ran the count, ended the round and THEN tore down, by which point
+         `_letHimFinish` had already hushed the count and `finish` was correctly
+         doing nothing. A teardown check has to catch the state it is for. */
+      const F = mkT();
+      F.state = 'live';
+      F._callTheClock(COUNT_LAST);
+      F.finish();
+      ok('flying home mid-count stops him counting', spoke.includes('#stop'), spoke.join(','));
+
+      const G = mkT();
+      G.state = 'live';
+      G.game.players = [];
+      G._callTheClock(COUNT_LAST);
+      G.callOnDamage('Time!', true);
+      posed.length = 0;
+      G.finish();
+      ok('...and flying home mid-shout puts his arms down',
+        posed.includes('idle'), posed.join(','));
+      ok('...and drops what was waiting to be announced', G._pending === null);
+    }
+
+    /* --- THE CUTTER AND THE GAME AGREE ABOUT THE CLOCK ----------------------
+       `sat_count.mp3` is one continuous take re-timed so each number lands on
+       the second it names, which only works if the cutter and the game agree
+       about how long it is and when it starts. Two files, one number. */
     {
       const src = readFileSync(new URL('../tools/capture/satan-countdown.mjs', import.meta.url), 'utf8');
-      const lead = Number((/const LEAD = ([\d.]+);/.exec(src) ?? [])[1]);
-      ok('the splicer and the game agree on how long his rant is',
-        Number.isFinite(lead) && lead + 5 === COUNT_AT, `${lead} + 5 vs ${COUNT_AT}`);
-      /* AND THE NUMBERS ARE NAILED TO WHOLE SECONDS. `LEAD + i` is the line
-         that makes the clip truthful; a splice that packed them end to end
-         would sound fine and count a different clock. */
-      ok('...and that every number sits on its own second',
-        /say\(p, LEAD \+ i\)/.test(src) && /say\(prep\('roar', 1\), LEAD \+ 5\)/.test(src));
+      const num = (name) => Number((new RegExp(`const ${name} = ([\\d.]+);`).exec(src) ?? [])[1]);
+      const beat = num('BEAT');
+      const nums = num('NUMS');
+      ok('the cutter and the game agree how long the count is',
+        Number.isFinite(beat) && Number.isFinite(nums) && beat * nums === COUNT_LAST,
+        `${beat} x ${nums} vs ${COUNT_LAST}`);
+      /* AND EVERY NUMBER SITS ON ITS OWN SECOND. This is the line that makes
+         the clip truthful; a cut that packed them end to end would sound fine
+         and count a different clock. */
+      ok('...and that every number is pinned to a whole one of them',
+        /t: k \* BEAT/.test(src));
+      ok('...and it cuts every cue the game asks him for',
+        ["'sat_last1'", "'sat_last2'", "'sat_zero'", "'sat_count.mp3'"].every((id) => src.includes(id)));
+      /* A SPOKEN CUE HAS TO FINISH INSIDE ITS OWN FIVE SECONDS. The announcer
+         holds a card for HOLD_TAIL after the voice stops and the next queued
+         line waits for that — so a cue that fills its window pushes the NEXT
+         one past the start of the count, and the count is the one thing here
+         that cannot start late. The cutter enforces it on the audio; this is
+         the same sum from the game's end, across the two files that hold the
+         numbers. */
+      const ann = readFileSync(new URL('../src/systems/announce.js', import.meta.url), 'utf8');
+      const cardMax = num('CARD_MAX');
+      const tail = Number((/const HOLD_TAIL = ([\d.]+);/.exec(ann) ?? [])[1]);
+      ok('...and a spoken cue always finishes before the next one is due',
+        Number.isFinite(cardMax) && Number.isFinite(tail)
+        && cardMax + tail <= COUNT_AT - COUNT_MID,
+        `${cardMax} + ${tail} <= ${COUNT_AT - COUNT_MID}`);
+      /* THE SHOUTS BETWEEN THE NUMBERS ARE FITTED, NOT PLACED. Which of them
+         land is measured off the take; a table would go stale the first time
+         anything was re-rendered. And the ceiling has to be a real test rather
+         than a rubber stamp, or "NO TIME LEFT!" gets squeezed to a rattle. */
+      const sayMax = num('SAY_MAX');
+      ok('...and no shout between two numbers is doubled in speed',
+        Number.isFinite(sayMax) && sayMax < 2, `${sayMax}`);
+      ok('...with a cutter that measures the gap instead of assuming it',
+        /shout\.dur \/ window/.test(src) && /Math\.max\(1, shout\.dur/.test(src));
     }
 
     /* --- A ROUND ENDS ON A BELL, AND A DRAW ASKS A QUESTION -----------------
@@ -7793,21 +7978,15 @@ console.log('\n--- the three power moves ---');
     {
       const T = mkT();
       T.state = 'live';
-      T.wins = [0, 0];
       T._roundOver(0, 'x');
       ok('a round that ends rings a bell', played.includes('endgong'), played.join(','));
       ok('...and it is not the one that starts a fight', !played.includes('gong'));
-      /* HE STOPS COUNTING THE MOMENT THERE IS NOTHING TO COUNT: `sat_last` is
-         fifteen seconds long, so a knockout at 0:06 would otherwise have him
-         counting over a kitten already flat on her back — and his "DOWN!"
-         would queue behind nine seconds of it. */
       ok('...and the countdown is cut, not queued behind',
         said.indexOf('#clear') < said.indexOf('sat_ko'));
     }
     {
       const T = mkT();
       T.state = 'live';
-      T.wins = [0, 0];
       T.game.players = [];
       const got = T.callOnDamage('Time!');
       ok('nobody ahead on damage is a draw', got === 'draw');

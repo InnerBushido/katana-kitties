@@ -524,8 +524,8 @@ footer b { color: var(--text); }
     <tbody>
       <tr><th>Stack</th><td>Vite 8 + three.js 0.185. Static build — no backend, no database, no environment variables.</td></tr>
       <tr><th>First load</th><td class="num">~35 MB across 39 files, then cached</td></tr>
-      <tr><th>In the repo</th><td class="num">42 MB sprites · 21 MB help clips · 5.8 MB voices · 20 MB trailer (opt-in)</td></tr>
-      <tr><th>The world</th><td class="num">216 props · 6 clans · 7 dragon balls · 8 Powerup Kotodama · 15 help clips · 49 voice lines</td></tr>
+      <tr><th>In the repo</th><td class="num">42 MB sprites · 21 MB help clips · 6.3 MB voices · 20 MB trailer (opt-in)</td></tr>
+      <tr><th>The world</th><td class="num">216 props · 6 clans · 7 dragon balls · 8 Powerup Kotodama · 15 help clips · 61 voice lines</td></tr>
       <tr><th>Thresholds</th><td><b>80%</b> mischief opens the tournament. <b>100%</b> wakes the Kotodama and gets the ending.</td></tr>
     </tbody>
   </table></div>
@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 2086 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 2119 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 354 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -937,11 +937,11 @@ git push origin alpha</code></pre>
       </tr>
       <tr>
         <td><b>Mr. Satan's countdown</b></td>
-        <td>The last fifteen seconds of a round are <em>one spliced clip</em>, cut out of a dozen
-          separate takes so each number lands on the second it names — the announcer queues and
-          never interrupts, so eleven separate calls would have him counting a clock that had
-          already run out. A phrase between every number does not fit at two and a half words a
-          second; the script <em>measures</em> and fits what does.</td>
+        <td>Cuts the five clips the last fifteen seconds of a round are made of, from the takes
+          kept in <code>tools/capture/satan-takes/</code>. The count is <em>one continuous
+          performance re-timed</em>, not nine takes assembled: the words are found by silence, the
+          numbers are pinned to the seconds they name, and each shout between them is squeezed by
+          exactly as much as its own gap demands and no more. Every ratio is printed.</td>
         <td><code>capture/satan-countdown.mjs</code></td>
       </tr>
       <tr>
@@ -1064,7 +1064,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 2086 assertions and why almost none of them are about
+      is why <code>world-check</code> is 2119 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,

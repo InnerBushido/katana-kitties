@@ -289,16 +289,27 @@ is listed here is untested-by-players, not untested-by-machine.
 Built this session, driven in the running game, not yet in front of anybody:
 
 - **A round no longer runs out without warning.** Mr. Satan calls thirty
-  seconds, and at fifteen a big blinking clock appears under the round box and
-  he does not shut up again — the numbers land on the seconds they name, and
-  under five they turn red and he counts them out loud.
+  seconds, fifteen and ten, and at fifteen a big blinking clock appears under
+  the round box — the numbers land on the seconds they name, and under five they
+  turn red and he counts them out loud.
   → [tournament.md](docs/notes/tournament.md)
-- **His countdown is one spliced clip, not eleven calls.** `sat_last.mp3` is a
-  fifteen-second timeline cut out of a dozen takes by
-  [tools/capture/satan-countdown.mjs](tools/capture/satan-countdown.mjs),
-  because `Announcer.say` queues and a queue would have him counting a clock
-  that had already run out. The six bare numbers `sat_n0`–`sat_n5` ship
-  alongside it, unspliced, for whatever wants them next.
+- **The last five seconds have no speech bubble.** The number is on the screen
+  eighty pixels high, so a card repeating it is the same thing twice: the count
+  goes straight down the speech channel instead. Thirty, fifteen and ten are
+  ordinary cards.
+- **He gets to finish shouting ZERO.** A round called by the clock waits for the
+  shout plus a beat before the bell, the banner and whatever he says next — his
+  charging sprite goes up while he does it. Every other ending is unchanged: a
+  knockout still rings on the frame it always did.
+  → [tournament.md](docs/notes/tournament.md)
+- **The count is ONE take re-timed, not nine takes assembled.** The first cut
+  built it from eleven single-word renders and sounded like it. `count.mp3` is
+  one continuous performance and
+  [tools/capture/satan-countdown.mjs](tools/capture/satan-countdown.mjs) only
+  moves its pieces: numbers pinned to their seconds at 1.85x, each shout
+  squeezed by as much as its own gap demands (1.00 / 1.66 / 1.46 / 1.52x) and no
+  more. **The takes live in the repo now**, under `tools/capture/satan-takes/`,
+  so the tool can be run twice.
   → [voices.md](docs/notes/voices.md)
 - **The HUD clock now counts REMAINING whole seconds, like the big one.** It
   floored before, which was invisible until something was put underneath it —

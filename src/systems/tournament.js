@@ -235,15 +235,34 @@ export const ROUND_LIMIT = 120;
  * is left, a timer needs to show in the middle of the screen or below the menu
  * bar, a bigger text, showing that time is running out".
  *
- * `COUNT_AT` IS ALSO THE LENGTH OF `sat_last`. His whole rant — the fifteen
- * second call, the complaining, and the five numbers — is ONE spliced clip
- * that runs exactly this long, so the numbers cannot drift against the clock
- * however long a frame takes. See `tools/capture/satan-countdown.mjs`.
+ * FOUR CUES, ONE EVERY FIVE SECONDS, AND ONLY THE LAST OF THEM IS A CLIP THAT
+ * CARES. The first cut of this made the whole fifteen seconds a single spliced
+ * file and put its words on a card, which was wrong twice over: he was reading
+ * out the count in a speech bubble that duplicated the number already on
+ * screen, and a round that ended at 0:06 left nine seconds of him counting
+ * queued behind it. Reported as both. So thirty, fifteen and ten are ordinary
+ * cards he can be interrupted out of, and `COUNT_LAST` starts the one clip
+ * whose insides are nailed to the clock — `sat_count`, five seconds long, one
+ * number a second, no card at all. See `tools/capture/satan-countdown.mjs`.
  */
 export const WARN_AT = 30;
 export const COUNT_AT = 15;
-/** Under this, the number on screen turns and swells: he is counting now. */
+/** Halfway down, and the point he gives up on them and starts counting. */
+export const COUNT_MID = 10;
+/** Under this, the number on screen turns and swells: he is counting now, and
+ *  `COUNT_LAST` is also exactly how long `sat_count.mp3` runs. */
 export const COUNT_LAST = 5;
+
+/**
+ * The beat between the end of his ZERO and the round being announced.
+ *
+ * ASKED FOR — "have him finish what he is saying, then continue with the
+ * follow-up dialog tree... maybe even adding a 1 - 2 second pause for him to
+ * calm down". It is a real pause and not a gap: the deck is already frozen,
+ * everybody can see who is still standing, and a bell arriving on the tail of
+ * his roar reads as the game talking over him.
+ */
+export const ZERO_BEAT = 1.5;
 
 /**
  * A ring-out: what it costs, and how long you have to be off before it counts.
@@ -663,6 +682,15 @@ export class Tournament {
   /** Tear it all down — used on restart, and when the girls go home. */
   finish() {
     this.state = 'off';
+    /* THE COUNT AND THE POSE OUTLIVE THE TOURNAMENT OTHERWISE. `clear` reaches
+       neither: the count plays on the speech channel (see `_hushCount`) and the
+       charging sprite is Mr Satan's, not the announcer's — so a tournament torn
+       down at 0:03 left him counting over the town square with his arms in the
+       air. Same class of latch as the wings and the pennant below. */
+    this._hushCount();
+    this._dropPose();
+    this._pending = null;
+    this._koHold = KO_HOLD;
     this.announcer?.clear();
     this.bannerEl?.classList.add('hidden');
     /* EXPLICITLY, RATHER THAN LEAVING IT TO `_paintCountdown`. That runs from
@@ -868,62 +896,73 @@ export class Tournament {
    *
    * @returns {'won'|'draw'|null} what it decided, or null if no round is live.
    */
-  callOnDamage(why = 'Time!') {
+  callOnDamage(why = 'Time!', onTheClock = false) {
     if (this.state !== 'live') return null;
     /* Counted PER SIDE — in a 2v2 the honest reading of who was winning is
        what the team did between them, not which individual landed most. */
     const scores = this.wins.map((_, s) => this._sideDamage(s));
     const best = Math.max(...scores);
     const leaders = scores.map((v, s) => (v === best ? s : -1)).filter((s) => s >= 0);
+    /* HIS SENTENCE BEFORE THE ROUND'S. On the clock this starts ZERO and hands
+       back how long it runs; on anything else it silences him and hands back
+       nought, and both endings below read the same either way. */
+    const wait = this._letHimFinish(onTheClock);
     /* A DRAW IS NOT A WIN FOR NOBODY — it still has to move the state on, or
        the round the clock just refused to keep open stays open. */
     if (leaders.length !== 1 || best <= 0) {
       this.state = 'ko';
       this.t = 0;
-      this.announcer?.clear();
-      /* THE SAME BELL, ASKING A QUESTION. A draw needs to sound different from
-         a result or it reads as the game having failed to decide — which is
-         exactly what a nine-year-old will conclude from a K.O. bell over a
-         banner that says DRAW. `drawgong` is `endgong` with its tail bending
-         UP, which is what a question mark sounds like. */
-      this.audio?.play('drawgong');
-      this._banner('DRAW', 'ko');
-      /* IT IS RARE, SO IT IS FUNNY. Two sides finishing dead level on damage
-         happens perhaps once in a hundred rounds, and a moment that rare
-         earning the same shrug as any other is the moment wasted. */
-      this.announcer?.say('sat_draw',
-        'A DRAW?! Have you kittens decided that FRIENDSHIP IS MAGIC?! I LOVE it! '
-        + 'Strength through LOVE, not war! BEAUTIFUL! ...Now get OUT of my ring.');
-      this.game.toast(`${why} Nobody landed enough — the round is a draw`, 0);
+      this._announce(wait, () => {
+        /* THE SAME BELL, ASKING A QUESTION. A draw needs to sound different
+           from a result or it reads as the game having failed to decide —
+           which is exactly what a nine-year-old will conclude from a K.O. bell
+           over a banner that says DRAW. `drawgong` is `endgong` with its tail
+           bending UP, which is what a question mark sounds like. */
+        this.audio?.play('drawgong');
+        this._banner('DRAW', 'ko');
+        /* IT IS RARE, SO IT IS FUNNY. Two sides finishing dead level on damage
+           happens perhaps once in a hundred rounds, and a moment that rare
+           earning the same shrug as any other is the moment wasted. */
+        this.announcer?.say('sat_draw',
+          'A DRAW?! Have you kittens decided that FRIENDSHIP IS MAGIC?! I LOVE it! '
+          + 'Strength through LOVE, not war! BEAUTIFUL! ...Now get OUT of my ring.');
+        this.game.toast(`${why} Nobody landed enough — the round is a draw`, 0);
+      });
       return 'draw';
     }
     const names = this.sideMembers(leaders[0]).map((p) => p.name).join(' and ');
-    this._roundOver(leaders[0], `${why} ${names} was ahead on damage`);
+    this._roundOver(leaders[0], `${why} ${names} was ahead on damage`, wait);
     return 'won';
   }
 
-  _roundOver(winnerSide, message) {
+  /**
+   * @param {number} winnerSide
+   * @param {string} message
+   * @param {number|null} wait seconds already bought by `_letHimFinish`, or
+   *        null to work it out here. `??` and not `||`, because ZERO IS AN
+   *        ANSWER: a caller that has already decided there is nothing to wait
+   *        for must not have `_letHimFinish` run a second time underneath it,
+   *        which would clear the announcer and throw away the shout it just
+   *        started.
+   */
+  _roundOver(winnerSide, message, wait = null) {
     if (this.state !== 'live') return;
     this.state = 'ko';
     this.t = 0;
     if (winnerSide >= 0) this.wins[winnerSide] = (this.wins[winnerSide] ?? 0) + 1;
-    /* HE STOPS COUNTING THE MOMENT THERE IS NOTHING TO COUNT. `sat_last` runs
-       for the whole of the last fifteen seconds, so a knockout at 0:06 would
-       otherwise leave him counting down over a deck where somebody is already
-       flat on her back — and his "DOWN!" would queue behind nine seconds of
-       it. Nothing else is ever pending during a live round. */
-    this.announcer?.clear();
-    /* THE ROUND ENDS ON A BELL. The gong at the top of a round is the one
-       sound in the game that STARTS something and it had no answer: a round
-       simply stopped, with a banner. Reported as wanting one. Lower and longer
-       than the fight gong, and it settles rather than rings out. */
-    this.audio?.play('endgong');
-    this.announcer?.say('sat_ko', 'DOWN! Oh, that had to hurt!');
-    this._banner('K.O.', 'ko');
-    // Addressed to a side now, so everybody on it hears it.
-    for (const p of winnerSide >= 0 ? this.sideMembers(winnerSide) : this.game.players) {
-      this.game.toast(message, p.index);
-    }
+    this._announce(wait ?? this._letHimFinish(false), () => {
+      /* THE ROUND ENDS ON A BELL. The gong at the top of a round is the one
+         sound in the game that STARTS something and it had no answer: a round
+         simply stopped, with a banner. Reported as wanting one. Lower and
+         longer than the fight gong, and it settles rather than rings out. */
+      this.audio?.play('endgong');
+      this.announcer?.say('sat_ko', 'DOWN! Oh, that had to hurt!');
+      this._banner('K.O.', 'ko');
+      // Addressed to a side now, so everybody on it hears it.
+      for (const p of winnerSide >= 0 ? this.sideMembers(winnerSide) : this.game.players) {
+        this.game.toast(message, p.index);
+      }
+    });
   }
 
   /* ------------------------------ update --------------------------------- */
@@ -968,8 +1007,13 @@ export class Tournament {
              machine that means "a round has started" — `state = 'card'` is two
              places and `_nextRound` is not the only way into either. */
           this._warned = false;
-          this._ranting = false;
+          this._called15 = false;
+          this._called10 = false;
+          this._counting = false;
+          this._voiced = false;
           this._countShown = null;
+          this._pending = null;
+          this._koHold = KO_HOLD;
           this.audio?.play('gong');
           this.announcer?.say('sat_fight', 'FIGHT!');
           this._banner('FIGHT!', 'fight');
@@ -986,11 +1030,20 @@ export class Tournament {
            otherwise hold the tournament open forever with no way out but the
            pause menu. Whoever has done the most damage takes it — the honest
            reading of who was winning. */
-        if (this.t > ROUND_LIMIT) this.callOnDamage('Time!');
+        if (this.t > ROUND_LIMIT) this.callOnDamage('Time!', true);
         break;
 
       case 'ko':
-        if (this.t >= KO_HOLD) {
+        /* HIS SENTENCE FIRST, THEN THE ROUND'S. See `_letHimFinish`: when the
+           clock is what ended the round he is mid-shout, and the bell over the
+           top of ZERO is the bug this beat exists to fix. */
+        if (this._pending && this.t >= this._pending.at) {
+          const p = this._pending;
+          this._pending = null;
+          this._dropPose();
+          p.run();
+        }
+        if (this.t >= (this._koHold ?? KO_HOLD)) {
           const decided = this.wins.some((w) => w >= WINS_NEEDED);
           /* THE FEAST ONLY HAPPENS IF THERE IS ANOTHER ROUND TO EAT FOR. It is
              not a victory lap and it is not a rest — it is fifteen seconds of
@@ -1481,26 +1534,132 @@ export class Tournament {
       this.announcer?.say('sat_t30',
         'THIRTY SECONDS LEFT! That is half a minute! Do SOMETHING!');
     }
-    if (this._ranting || left > COUNT_AT) return;
+    if (!this._called15 && left <= COUNT_AT) {
+      this._called15 = true;
+      this.announcer?.say('sat_last1',
+        'FIFTEEN SECONDS! Are you KIDDING me?! DO something!');
+    }
+    if (!this._called10 && left <= COUNT_MID) {
+      this._called10 = true;
+      this.announcer?.say('sat_last2',
+        "TEN SECONDS! Oh FINE! FINE! I'll count you down! I HATE counting!");
+    }
+    if (this._counting || left > COUNT_LAST) return;
+    this._counting = true;
 
-    /* HE GETS THE FLOOR FOR THE LAST FIFTEEN SECONDS. `say` queues and never
-       interrupts, which is right everywhere else and wrong here: the clip is a
-       TIMELINE (tools/capture/satan-countdown.mjs) whose numbers are nailed to
-       the seconds they name, so a queue that holds it back even half a second
-       has him counting five while the screen shows four. Clearing first is
-       safe because the only other thing that can be talking during a live
-       round is his own thirty-second call, fifteen seconds ago. */
+    /* THE COUNT IS PLAYED, NOT SAID, AND THAT IS THE WHOLE SHAPE OF IT.
+       Two reasons, both reported from play.
+       Its WORDS have no business on a card: the number he is shouting is
+       already on the screen eighty pixels high, and putting "FIVE! FOUR!
+       THREE!" in a speech bubble underneath it is the same information twice —
+       "does not need to be in a speech bubble since that is only for
+       text/sentences that he is saying".
+       Its TIMING cannot survive the queue. `say` queues and never interrupts,
+       which is right for everything else he does and fatal here: each number
+       inside this clip is nailed to the second it names, so a card ahead of it
+       that runs half a second long has him shouting FIVE at a screen showing
+       four. Going straight to the speech channel means it starts on the frame
+       the clock says five, whatever else is on screen.
+       Clearing first is what takes the ten-second card down, so the last five
+       seconds are the number, his voice, and nothing else. */
     this.announcer?.clear();
-    this.announcer?.say('sat_last',
-      "FIFTEEN SECONDS! Are you KIDDING me?! JUST PUNCH 'EM! "
-      + "FINE! FINE! I'll count you down! I HATE counting! "
-      + 'FIVE! HURRY! FOUR! THREE! MOVE! TWO! ONE! ZEEEROOOO!');
-    /* ONLY IF HE CAN ACTUALLY SAY IT. Without the recording the announcer
-       shows the text for three seconds and then goes quiet, so the last five
-       seconds would count down in silence — the tick in `_paintCountdown` is
-       what stands in, and this is the flag that tells it to. Ninth
-       non-negotiable: delete `public/voice` and this still counts. */
-    this._ranting = !!this.announcer?.clips?.has('sat_last');
+    const count = this.announcer?.clip('sat_count');
+    this._countVoice = count ? (this.audio?.speak(count.el) ?? null) : null;
+    /* ONLY IF HE CAN ACTUALLY SAY IT. Without the recording nothing plays at
+       all, so the tick in `_paintCountdown` stands in and counts the last five
+       seconds out loud on its own. Ninth non-negotiable: delete `public/voice`
+       and this still counts. */
+    this._voiced = !!this._countVoice;
+  }
+
+  /**
+   * Stop the count dead.
+   *
+   * IT NEEDS ITS OWN METHOD BECAUSE `Announcer.clear()` CANNOT DO IT. The count
+   * plays on the speech channel rather than on a card, and `clear` empties the
+   * queue and hides the card without touching audio that is already running —
+   * see announce.js, where that is deliberate. A knockout at 0:03 that only
+   * cleared the announcer would leave him counting over a kitten who is
+   * already flat on her back.
+   */
+  _hushCount() {
+    if (!this._countVoice) return;
+    this._countVoice = null;
+    this.audio?.stopSpeaking();
+  }
+
+  /**
+   * Let him finish, or shut him up — and say how long the round has to wait.
+   *
+   * THE ZERO WAS BEING EATEN, EVERY TIME. `sat_count` ends on ONE and the round
+   * ends on the same frame the clock does, so the bell and "DOWN! Oh, that had
+   * to hurt!" landed on top of the one word the whole feature builds to. Worse
+   * than late: `Announcer.say` starts through `Audio.speak`, which opens with
+   * `stopSpeaking` — so the follow-up line did not queue behind the shout, it
+   * KILLED it. Reported as "the ZEROOO part is not happening at all, because as
+   * soon as the match is over, he either says the Draw dialog or other dialog".
+   *
+   * So the shout goes first and the round's own announcement is handed back a
+   * number of seconds to wait — MEASURED off the clip rather than guessed, so
+   * a re-cut that runs longer cannot start clipping itself again.
+   *
+   * @param {boolean} onTheClock did the ROUND TIMER end this, or something else
+   * @returns {number} seconds the bell and the banner must wait
+   */
+  _letHimFinish(onTheClock) {
+    this._hushCount();
+    this.announcer?.clear();
+    if (!onTheClock) return 0;
+
+    this.announcer?.say('sat_zero', 'ZEEEEROOOO! AAAARGHHH! NO! NO! NOOOO!');
+    const zero = this.announcer?.clip('sat_zero');
+    /* NINTH NON-NEGOTIABLE, AND THE DEGRADE IS "DO NOT WAIT". With no recording
+       there is nothing to wait FOR, and waiting anyway is six seconds of a
+       frozen deck under a silent card — worse than the bug this delay fixes.
+       The card still shows, the bell still rings, and it rings now. */
+    if (!zero) return 0;
+    /* HIS ARMS GO UP WHILE HE SHOUTS IT — asked for: "can also have him play
+       his satan_charge.png animation while he is shouting ZEROOO... before
+       reverting to his normal sprite". The same `setPose` the blast gag uses,
+       and the same rule: a REQUEST, not a requirement. With `satan_charge.png`
+       absent it does nothing at all and he shouts in his ordinary pose.
+       NOT WHILE THE BLAST IS RUNNING. That gag owns the pose for its own ten
+       seconds and puts it back to idle at the end of them, which would drop
+       his arms in the middle of this and leave `_posed` lying about it. */
+    if (!this.game.satanBlast || this.game.satanBlast.stage === 'off') {
+      this.game.satan?.setPose?.('charge');
+      this._posed = true;
+    }
+    return zero.dur + ZERO_BEAT;
+  }
+
+  /** Arms down. Idempotent, and it never touches a pose it did not set. */
+  _dropPose() {
+    if (!this._posed) return;
+    this._posed = false;
+    this.game.satan?.setPose?.('idle');
+  }
+
+  /**
+   * Ring the bell and put the banner up — now, or once he has finished.
+   *
+   * ONE PLACE AND ONE CLOCK. Everything a round ending has to do goes in `run`
+   * — the bell, the banner, his line and the toast — rather than a bell here, a
+   * banner there and a line somewhere else, each with its own idea of "after".
+   *
+   * THE HOLD GROWS BY THE WAIT rather than absorbing it. `KO_HOLD` is how long
+   * a decided round sits on screen before the next is set up and it is measured
+   * from the BANNER; spending it on a shout nobody has been told the result of
+   * yet would flash K.O. for half a second and cut straight to the feast.
+   *
+   * @param {number} wait seconds, from `_letHimFinish`
+   * @param {() => void} run the bell, the banner, the line and the toast
+   */
+  _announce(wait, run) {
+    this._koHold = KO_HOLD + Math.max(0, wait);
+    if (wait > 0) { this._pending = { at: wait, run }; return; }
+    this._pending = null;
+    run();
   }
 
   /**
@@ -1536,7 +1695,7 @@ export class Tournament {
        it, it is a warning. A class per second would be five rules that all
        have to keep agreeing with each other. */
     el.className = n <= COUNT_LAST ? 'last' : '';
-    if (n <= COUNT_LAST && !this._ranting) this.audio?.play('count');
+    if (n <= COUNT_LAST && !this._voiced) this.audio?.play('count');
   }
 
   /** Idempotent, because `_paintCountdown` calls it on every frame of the

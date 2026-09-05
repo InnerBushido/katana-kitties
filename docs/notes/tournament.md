@@ -1284,26 +1284,53 @@ kittens circling each other at 1:50 are reading. The rule was fair and
 unannounced, which is the worst combination a rule can have in a game whose
 sixth non-negotiable is that a refusal has to *say so*.
 
-### Three numbers, and each does a different job
+### Four numbers, five seconds apart, and each does a different job
 
 | | | |
 | --- | --- | --- |
 | `WARN_AT` | 30 | a nudge. One line, and the fight carries on. |
-| `COUNT_AT` | 15 | the round stops being a fight and becomes a deadline: the big clock appears, blinks, and he does not shut up again. |
+| `COUNT_AT` | 15 | the round stops being a fight and becomes a deadline: the big clock appears and blinks, and he does not shut up again. |
+| `COUNT_MID` | 10 | he gives up on them and announces that he is going to count. |
 | `COUNT_LAST` | 5 | he is counting out loud, and the number changes character with him. |
 
 `world-check` pins them in that order, because a warning that fires after the
 countdown starts, or a countdown longer than a round, is a call that never
-happens or one that happens on the round card.
+happens or one that happens on the round card. It also pins them **evenly
+spaced**, which is the less obvious half: the three cards are recordings cut to
+a budget, and the budget is the gap to the next cue.
 
-### Two latches, because a frame is not a second
+**A card has to finish inside its own five seconds.** `Announcer` holds a card
+for `HOLD_TAIL` (0.9s) after the voice stops and the next queued line waits for
+that, so a cue that fills its window pushes the *next* one past the start of the
+count — and the count is the one thing here that cannot start late. The cutter
+enforces it on the audio (`CARD_MAX`, 4.0s, and it will speed a line up by half
+to make it fit or refuse to cut at all), and `world-check` does the same sum
+across the two files that hold the numbers.
+
+### The count is the odd one out, twice over
+
+The first cut of this made the whole fifteen seconds a single spliced file and
+put its words on a card. Both halves were wrong, and both were reported.
+
+**Its words have no business on a card.** The number he is shouting is already
+on the screen eighty pixels high. So the last five seconds go straight down the
+speech channel through `Audio.speak`, with no bubble at all — the big number
+*is* the visual — and `Announcer.clip()` exists to hand out the preloaded
+element for it.
+
+**Which means `clear()` cannot stop it.** `Announcer.clear` empties the queue
+and hides the card; it deliberately does not touch audio that is already
+playing. `_hushCount` is the method that does, and a knockout at 0:03 needs it
+or he counts on over a kitten who is already flat on her back.
+
+### Three latches, because a frame is not a second
 
 `_callTheClock` is called every frame of a live round. At 300fps that is five
 calls inside the same tick of the clock, so `if (left <= WARN_AT)` on its own
-says "thirty seconds left" five times and then two hundred more. `_warned` and
-`_ranting` are the whole difference, and the check that catches it drives nine
-hundred frames of a whole round and counts the calls — one each — rather than
-asking whether either ever fired.
+says "thirty seconds left" five times and then two hundred more. `_warned`,
+`_called15`, `_called10` and `_counting` are the whole difference, and the check
+that catches it drives thirteen hundred frames of a whole round and counts the
+calls — one each — rather than asking whether any of them ever fired.
 
 ### The big number is painted, never shown and hidden
 
@@ -1332,16 +1359,51 @@ shouting it with a whole second still left to play. So `clock()` ceilings now
 too, and a full round still opens on 2:00 and still rolls to 1:00 — both pinned,
 because a change to the shared clock is a change to the two-player HUD.
 
+### He gets to finish shouting ZERO
+
+> The "ZEROOO" part is not happening at all, because as soon as the match is
+> over, he either says the "Draw" dialog or other dialog.
+
+`sat_count` ends on ONE and the round ends on the same frame the clock does, so
+the bell and "DOWN! Oh, that had to hurt!" landed on top of the one word the
+whole feature builds to. And not merely late: `Announcer.say` starts through
+`Audio.speak`, which opens with `stopSpeaking` — so the follow-up line did not
+queue *behind* the shout, it **killed** it.
+
+A round called by the clock is a small ceremony now, and `_letHimFinish` is the
+one place that knows it:
+
+1. the count is stopped and the queue cleared;
+2. `sat_zero` starts, and his `satan_charge.png` pose goes up with it;
+3. everything the round has to say — the bell, the banner, his line, the toast
+   — is handed to `_announce` as **one closure**, to run once the shout is over
+   plus `ZERO_BEAT` (1.5s, the *"1 - 2 second pause for him to calm down"* that
+   was asked for);
+4. his arms come down on the same frame that closure runs.
+
+The wait is **measured off the clip**, not guessed, so a re-cut that runs longer
+cannot start clipping itself again. `KO_HOLD` **grows** by it rather than
+absorbing it — spending the round's own hold on a shout nobody has been told the
+result of yet would flash K.O. for half a second and cut straight to the feast.
+
+**Every other ending is untouched**, which is the half of this that is easy to
+break. A knockout is not the clock running out: `_letHimFinish(false)` silences
+him, returns nought, and the bell rings on the frame it always did. Debug `4` is
+not the clock either — it means "end this round now", and a six-second ceremony
+on it would make the key useless for the thing it exists for.
+
 ### And it counts with `public/voice` deleted
 
-Ninth non-negotiable. Without `sat_last.mp3` the announcer shows the text for
-three seconds and goes quiet, so the last five seconds would count down in
-silence; `_ranting` is false in that case and the `count` blip ticks under the
-big number instead. Both directions are checked, because a tick that *also*
-plays underneath his voice is two clocks disagreeing out loud.
+Ninth non-negotiable, in both directions. Without `sat_count.mp3` nothing plays
+at all, so `_voiced` is false and the `count` blip ticks under the big number
+instead — checked both ways, because a tick that *also* plays underneath his
+voice is two clocks disagreeing out loud. Without `sat_zero.mp3` there is
+nothing to wait *for*, so the round does not wait: waiting anyway would be six
+seconds of a frozen deck under a silent card, which is worse than the bug the
+delay exists to fix.
 
-The clip itself — why it is one file, and what would not fit inside it — is in
-[voices.md](voices.md).
+The clips themselves — why the count is one take re-timed, and what the beat
+between two numbers actually costs — are in [voices.md](voices.md).
 
 ## A round ends on a bell, and a draw asks a question
 
@@ -1373,11 +1435,12 @@ exactly what a nine-year-old concludes from a knockout bell over a DRAW banner.
 So it has its own bell and its own line, and the line is the one thing here
 worth being silly about.
 
-**Both endings clear the announcer first.** `sat_last` runs for the whole of the
-last fifteen seconds, so a knockout at 0:06 would otherwise have him counting
-down over a kitten already flat on her back — and his "DOWN!" would queue behind
-nine seconds of it. Nothing else is ever pending during a live round, which is
-what makes clearing safe here and nowhere else.
+**Both endings go through `_letHimFinish` first**, which silences the count and
+empties the queue before either bell is rung — a knockout at 0:03 would
+otherwise have him counting down over a kitten already flat on her back. On the
+clock it does more than that, and the bell waits: see *He gets to finish
+shouting ZERO*, above. Nothing else is ever pending during a live round, which
+is what makes clearing safe here and nowhere else.
 
 ## The invisible man in the town square
 

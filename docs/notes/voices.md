@@ -37,7 +37,7 @@ the `voice_id` below. About **0.15 credits a line**.
 | **Galemane** | Windwhisker. Maine Coon. | **Onyx** | `8911390e-4b59-459b-ba84-19010917e1df` | `wind` `shrine_wind` |
 | **Snowmantle** | Icewhisker. Himalayan. | **Imogen** | `3811e986-0891-47cf-a1f5-78a1d62a547a` | `ice` `shrine_ice` |
 | **Bambooheart** | Pandapaw. Ragdoll. | **Hana** | `c25f78a0-714e-42af-8da3-a399cef94968` | `panda` `shrine_panda` |
-| **Mr. Satan** | the tournament, and the trailer. The only insincere voice in the game. | **Harrison** | `573e5163-59b3-4926-aab1-951ef2985f81` | all twenty-nine `sat_*` — the six bare numbers `sat_n0`–`sat_n5` and the spliced `sat_last` among them; **and six of the trailer's fourteen lines** (1-3, 9, 10, 13) |
+| **Mr. Satan** | the tournament, and the trailer. The only insincere voice in the game. | **Harrison** | `573e5163-59b3-4926-aab1-951ef2985f81` | all thirty-two `sat_*` — the six bare numbers `sat_n0`–`sat_n5` and the four cues of the last fifteen seconds among them; **and six of the trailer's fourteen lines** (1-3, 9, 10, 13) |
 | **the trailer voice** | not in the game at all. The straight narrator Mr. Satan interrupts — and the one who has to say "right meow" with a straight face. | **Desmond** | `563f728c-e249-5a85-97ab-8461e8c09da6` | **six trailer lines** — 4-8 and the sign-off |
 | **Ryuuseki** | the dragon the seven stars call. | **unresolved — see below** | — | `summon1` `summon2` |
 | *(the thing in the dark)* | three seconds of the trailer — and, since the Cross Slash rebalance, four sounds in the game | **not a voice at all** | [tools/kitten-cackle.mjs](../../tools/kitten-cackle.mjs) | trailer line 12, `cross0`-`cross3` |
@@ -229,59 +229,108 @@ careful about, because it is the part that has to carry across sessions:
 | climbing onto his box — the taunt, and the shout ten seconds later | Mr. Satan | [src/systems/satanblast.js](../../src/systems/satanblast.js), `sat_taunt` and `sat_blast` via [announce.js](../../src/systems/announce.js) |
 | the trailer | the trailer voice and Mr. Satan, trading the microphone; Duskcoat once; a kitten once | [tools/trailer-vo.mjs](../../tools/trailer-vo.mjs) |
 
-## The one clip that is a timeline, not a line
+## The last fifteen seconds: four cues, and one of them is a timeline
 
-`sat_last.mp3` is the last fifteen seconds of a round: the fifteen-second call,
-the complaining, and then "FIVE! FOUR! THREE! TWO! ONE!" with the numbers
-landing on the seconds they name. It is **spliced**, out of a dozen separate
-takes, by [tools/capture/satan-countdown.mjs](../../tools/capture/satan-countdown.mjs)
-— and it is the only file in `public/voice/` that is not simply what came back
-from a render.
+A round runs out in four steps, and only the last of them is unusual.
 
-**Why it cannot be eleven `say()` calls.** `Announcer.say` queues and never
-interrupts, and that is right everywhere else in the game — his milestone calls
+| left | file | how it is played |
+| --- | --- | --- |
+| 30s | `sat_t30` | an ordinary card |
+| 15s | `sat_last1` | an ordinary card |
+| 10s | `sat_last2` | an ordinary card |
+| 5s | `sat_count` | **no card.** Straight down the speech channel |
+| 0s | `sat_zero` | a card, and his charging sprite |
+
+All five are cut by
+[tools/capture/satan-countdown.mjs](../../tools/capture/satan-countdown.mjs)
+from the takes in `tools/capture/satan-takes/`, and `sat_count` is the only
+file in `public/voice/` that is not simply what came back from a render.
+
+**The count has no speech bubble, on purpose.** The word he is shouting is the
+number, and the number is already on the screen eighty pixels high — a card
+underneath saying "FIVE! FOUR! THREE!" is the same information twice. It was
+built that way first and reported back as exactly that: *"the countdown text
+can just be displayed in the center of the screen, does not need to be in a
+speech bubble since that is only for text/sentences that he is saying."* So it
+goes through `Audio.speak` directly, and `Announcer.clip()` exists to hand out
+the preloaded element for it.
+
+**And it cannot go through the queue.** `Announcer.say` queues and never
+interrupts, which is right everywhere else in the game — his milestone calls
 arrive in bursts and cutting him off mid-word three times is worse than hearing
-him three times. Here it is fatal: eleven clips fired a second apart stack the
-moment any one of them runs a frame long, and by "TWO" he is counting a clock
-that has already run out. **One file cannot drift against itself.** It is
-started once, at exactly fifteen seconds left, and each number is nailed to its
-own second at splice time.
+him three times. Here it is fatal: every number inside `sat_count` is nailed to
+the second it names, so a card ahead of it that runs half a second long has him
+shouting FIVE at a screen showing four.
 
-**What would not fit, and the measurement that settled it.** The ask was an
-interjection between every number — *"5, HURRY UP, 4, NO TIME LEFT, 3, NOW OR
-NEVER, 2, JUST PUNCH EM, 1"*. The word-rate table above is what decides this
-and it decides it flatly: Harrison runs 2.4-2.6 words a second, so
+### It is ONE take, re-timed — not nine takes assembled
 
-| take | rendered |
-| --- | --- |
-| `NO TIME LEFT!` | 1.33s |
-| `JUST PUNCH 'EM!` | 1.36s |
-| `ONE!` | 1.04s |
-| `THREE!` | 0.52s |
+The first cut built the count out of eleven separate one-word renders and it
+was reported back as what it was: *"the counting and the interjecting words
+between the numbers does not sound good... does not sound natural"*, against an
+ask that was explicitly *"getting more and more frustrated the closer he gets
+to zero"*. Eleven isolated renders of a single shouted word are eleven
+performances of the same flat anger. **An actor escalates across a line, not
+inside a word.**
 
-A one-second beat cannot hold a number **and** a phrase. Two seconds a beat
-holds both — and then the number he shouts disagrees with the number on the
-screen, which is the one thing the whole feature exists to stop, and the
-screen cannot be the one to move because *he is a recording*.
+So `count.mp3` is one continuous render of the whole countdown and the cutter
+only moves its pieces around: `silencedetect` finds the nine words, the five
+numbers are pinned to 0/1/2/3/4 seconds, and each shout between them is
+squeezed by exactly as much as its own gap demands. The escalation is his; the
+timing is ours.
 
-So the complaining is **front-loaded** into the ten seconds before the count,
-where there is all the room in the world, and only single shouts go between the
-numbers. Which ones land is **measured, not chosen**: the splicer fits the
-narrowest gap first with the shortest word that fits it, which is what
-maximises how many gaps get filled at all. Two do — `HURRY!` after FIVE and
-`MOVE!` after THREE — and the rest of his temper goes into the roar on ZERO,
-where there is no clock left to disagree with. He starts in sentences and ends
-barely able to manage the numbers, which is the right shape for somebody losing
-his temper anyway.
+### What the beat actually costs
 
-**Two atempo nudges, both under the threshold where a shout sounds processed.**
-The numbers are pushed 1.15x inside the splice — "ONE!" at 1.04s would step on
-the roar — and the between-number shouts 1.45x. `atempo` preserves pitch, so
-this is speed and not chipmunk. **The shipped `sat_n0`–`sat_n5` are untouched
-takes**: the nudge is the splice's business only, and those six exist so a
-countdown of any other length can be built later without paying for them again.
+A number and a phrase have to share one second, and they trade almost one for
+one — every tenth taken off the number is a tenth the phrase does not have to
+lose. Measured across the take:
 
-**It degrades like everything else.** With no `sat_last.mp3` the announcer shows
-the text for three seconds and goes quiet, and the countdown falls back to the
-`count` blip once a second under the big number — `Tournament._ranting` is the
-flag that decides, and `world-check` drives both directions.
+| numbers at | a number is | worst phrase needs |
+| --- | --- | --- |
+| 1.55x | 0.38s | 1.85x |
+| 1.70x | 0.35s | 1.74x |
+| **1.85x** | **0.32s** | **1.66x** |
+| 2.00x | 0.30s | 1.60x |
+
+`NUM_TEMPO` is 1.85 — numbers barked rather than said, which is what was asked
+for (*"when saying the numbers, they should be said faster than normal, maybe
+in half the speed"*) and also what buys the phrases their room. What lands:
+
+| after | phrase | rendered | fitted | |
+| --- | --- | --- | --- | --- |
+| FIVE | `HURRY UP!` | 0.59s | 0.59s | 1.00x — not touched |
+| FOUR | `NO TIME LEFT!` | 1.00s | 0.61s | 1.66x |
+| THREE | `NOW OR NEVER!` | 0.91s | 0.63s | 1.46x |
+| TWO | `JUST PUNCH 'EM!` | 0.98s | 0.64s | 1.52x |
+
+Three of the four are inside the *"30-50% speedup should be acceptable"* that
+was asked for and one is over it, nowhere near the doubling that was ruled out.
+`SAY_MAX` is 1.7, deliberately just above the outlier so the cap is a real test
+rather than a rubber stamp: lower it and the cutter **drops** whatever no longer
+fits, says which, and the clip still works.
+
+`atempo` preserves pitch throughout, so this is him shouting fast rather than
+chipmunked.
+
+### The takes are in the repo now
+
+`tools/capture/satan-takes/` holds the six renders the cutter consumes, and
+`satan-takes/alt/` everything superseded — the eleven single-word takes of the
+first cut, the two other countdown performances, and the spliced `sat_last.mp3`
+it produced. **This is a change of policy and it is worth the disc.** The first
+cut consumed a dozen renders that existed only in a scratch folder, so the one
+tool that could rebuild those files could not be run twice. A take that has been
+paid for and listened to is worth keeping.
+
+`sat_n0`–`sat_n5` still ship as their own clips — asked for so a countdown of
+any other length can be built later — and they are now cut out of **this**
+performance rather than rendered on their own, so they escalate too. They keep
+their natural length; the tempo nudge is the count's business only.
+
+### It degrades like everything else
+
+Ninth non-negotiable. With no `sat_count.mp3` nothing plays and the `count` blip
+ticks once a second under the big number instead — `Tournament._voiced` is the
+flag that decides, and `world-check` drives both directions, because a tick that
+*also* plays underneath his voice is two clocks disagreeing out loud. With no
+`sat_zero.mp3` the round does not wait for a shout that cannot happen: the bell
+rings straight away, as it always did.

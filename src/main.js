@@ -1123,13 +1123,18 @@ class Game {
       sat_fight: '/voice/sat_fight.mp3',
       sat_feast: '/voice/sat_feast.mp3',
       sat_ko: '/voice/sat_ko.mp3',
-      /* The clock, and the one moment nobody expected. `sat_last` is not a
-         line — it is a fifteen-second TIMELINE spliced out of a dozen takes so
-         each number lands on the second it names, and it is the one clip in
-         the game where arriving late means arriving wrong. See
-         tools/capture/satan-countdown.mjs. */
+      /* THE CLOCK, IN FOUR CUES AND NOT ONE CLIP. Thirty, fifteen, ten, and
+         then the count — which is the odd one out twice over: it is the only
+         thing in this list PLAYED rather than said (no card; the number it is
+         counting is already on the screen) and the only one where arriving
+         late means arriving WRONG, because each number inside it is nailed to
+         the second it names. `sat_zero` is the shout the round ends on.
+         All four are cut by tools/capture/satan-countdown.mjs. */
       sat_t30: '/voice/sat_t30.mp3',
-      sat_last: '/voice/sat_last.mp3',
+      sat_last1: '/voice/sat_last1.mp3',
+      sat_last2: '/voice/sat_last2.mp3',
+      sat_count: '/voice/sat_count.mp3',
+      sat_zero: '/voice/sat_zero.mp3',
       sat_draw: '/voice/sat_draw.mp3',
       sat_win1: '/voice/sat_win1.mp3',
       sat_win2: '/voice/sat_win2.mp3',
