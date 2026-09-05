@@ -107,7 +107,33 @@ export class Announcer {
     this.queue.push({ id, text });
   }
 
-  /** Throw away anything pending — used when the tournament is torn down. */
+  /**
+   * The preloaded clip for `id`, or null.
+   *
+   * FOR A CLIP THAT IS PLAYED RATHER THAN SAID. Everything else here goes on a
+   * card, which is right for a sentence and wrong for the last five seconds of
+   * a round: those are five numbers, and the number is already on the screen
+   * eighty pixels high. Reported as exactly that — "the countdown text can just
+   * be displayed in the center of the screen, does not need to be in a speech
+   * bubble since that is only for text/sentences that he is saying".
+   *
+   * The caller plays it through `Audio.speak` and is responsible for stopping
+   * it. This is only the BUFFER, which is the part worth sharing — see `load`
+   * for why nothing in this game fetches a line at the moment it needs it.
+   *
+   * @param {string} id
+   * @returns {{el: HTMLAudioElement, dur: number}|null}
+   */
+  clip(id) { return this.clips.get(id) ?? null; }
+
+  /**
+   * Throw away anything pending — used when the tournament is torn down.
+   *
+   * IT DOES NOT STOP AUDIO THAT IS ALREADY PLAYING, deliberately: a line that
+   * is mid-word when the queue is emptied still finishes, because cutting him
+   * off mid-syllable is the thing `say` exists not to do. Anything that needs
+   * him actually silenced has to say so — `Audio.stopSpeaking`.
+   */
   clear() {
     this.queue.length = 0;
     this._end();

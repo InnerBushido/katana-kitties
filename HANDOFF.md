@@ -289,16 +289,42 @@ is listed here is untested-by-players, not untested-by-machine.
 Built this session, driven in the running game, not yet in front of anybody:
 
 - **A round no longer runs out without warning.** Mr. Satan calls thirty
-  seconds, and at fifteen a big blinking clock appears under the round box and
-  he does not shut up again — the numbers land on the seconds they name, and
-  under five they turn red and he counts them out loud.
+  seconds, fifteen and ten, and at fifteen a big blinking clock appears under
+  the round box — the numbers land on the seconds they name, and under five they
+  turn red and he counts them out loud.
   → [tournament.md](docs/notes/tournament.md)
-- **His countdown is one spliced clip, not eleven calls.** `sat_last.mp3` is a
-  fifteen-second timeline cut out of a dozen takes by
-  [tools/capture/satan-countdown.mjs](tools/capture/satan-countdown.mjs),
-  because `Announcer.say` queues and a queue would have him counting a clock
-  that had already run out. The six bare numbers `sat_n0`–`sat_n5` ship
-  alongside it, unspliced, for whatever wants them next.
+- **The last five seconds have no speech bubble.** The number is on the screen
+  eighty pixels high, so a card repeating it is the same thing twice: the count
+  goes straight down the speech channel instead. Thirty, fifteen and ten are
+  ordinary cards.
+- **He gets to finish shouting ZERO.** A round called by the clock waits for the
+  shout plus a beat before the banner and whatever he says next — his charging
+  sprite goes up while he does it. Every other ending is unchanged: a knockout
+  still rings on the frame it always did.
+  → [tournament.md](docs/notes/tournament.md)
+- **The bell is not part of that wait.** It marks the moment the round ends, so
+  it rings on that frame and the banner follows six seconds later. Held back
+  with the rest it read as a round ending with no gong at all — and on a draw it
+  put the question-mark bell after the joke instead of on it. `endgong` was
+  never too quiet: measured offline through the game's own graph it peaks at
+  −2.0 dBFS against the FIGHT gong's −2.4, the loudest sound in the game.
+  → [tournament.md](docs/notes/tournament.md)
+- **The count is ONE take re-timed, not nine takes assembled.** The first cut
+  built it from eleven single-word renders and sounded like it. `count.mp3` is
+  one continuous performance and
+  [tools/capture/satan-countdown.mjs](tools/capture/satan-countdown.mjs) only
+  moves its pieces: numbers pinned to their seconds at 1.85x, each shout
+  squeezed by as much as its own gap demands (1.00 / 1.66 / 1.46 / 1.52x) and no
+  more. **The takes live in the repo now**, under `tools/capture/satan-takes/`,
+  so the tool can be run twice.
+  → [voices.md](docs/notes/voices.md)
+- **A card is shortened by closing its pauses, not by playing him faster.**
+  `sat_last2` went out at 1.475x and was heard for exactly what it was. A card
+  now has its dead air floored to 0.20s — measured off `last1`, which ships
+  untouched — *before* speed is considered at all, and `CARD_TEMPO_MAX` dropped
+  1.5 → **1.10** so a line that still does not fit throws with its own text in
+  the message instead of shipping fast. The ten-second line was shortened and
+  re-rendered to suit; it ships at **1.027x**, and `last1` is byte-identical.
   → [voices.md](docs/notes/voices.md)
 - **The HUD clock now counts REMAINING whole seconds, like the big one.** It
   floored before, which was invisible until something was put underneath it —
@@ -311,6 +337,45 @@ Built this session, driven in the running game, not yet in front of anybody:
   and never touched again, so the town square had an invisible man in it from
   the first frame and a second one after he walked to the arena. It follows him
   now and turns off with his sprite.
+
+**Five more reported from play are fixed and not yet played back.** This batch
+came in as one list and two of its items turned out to be the same bug:
+
+- **The clock running out puts the camera on Mr. Satan.** He has a speech at
+  zero and at a draw, and the shot used to be of two kittens standing still
+  while a man in a box shouted somewhere off screen. A `ko` that was called by
+  the CLOCK pushes in on the booth; a knockout deliberately does not, because
+  the thing worth looking at there is the kitten who just went down.
+  → [tournament.md](docs/notes/tournament.md)
+- **...and he is now IN the booth while it happens, which he never was.**
+  Found by pointing that camera at him and seeing nobody. `ArenaQuest`'s
+  doorman ran every frame of the tournament: the torii is on the arena island
+  ten units from where the griffin lands, so the frame after the ride it
+  dragged him back out of the announcer's box, and once the fighters took their
+  marks 62 units away it teleported him three hundred units into the town
+  square — wearing "I need BOTH of you here" over his head for the whole round.
+  Every round ever played had an empty box. It is guarded on `Game.inMatch`
+  now, which is the getter that already spans the two picker screens as well as
+  the live round.
+- **Both minimap bugs were one bug.** Zooming with a bumper picked the wrong
+  pane's map, and Z stopped working when Ember's map became a shared one —
+  because `assignMaps` incumbency only ever moved a map TOWARDS a fuller pane,
+  so a pair forming and then splitting stranded the lower pane forever. A
+  fourth, convergent step ties back towards the lower pane index and strictly
+  lowers the sum of occupied indices, so it settles and cannot flicker.
+- **Z and X are real keys now, not debug ones**, and between them they always
+  reach both boxes: Z is anchored to player one's map however it is shared, and
+  on a collision X takes the other one. The map tag says which key turns it.
+- **The debug panel is a shorter, ordered list.** The seven dragonball scenes
+  went; the scene viewer is in the order the story actually happens in; **7**
+  goes to the arena; **4** ENDS the current bit — round, ceremony or feast; and
+  **5** NUDGES it on — a live round steps 30s, 15s, 5s, then out, and a scene
+  steps one line. `M` and `Z`/`X` were promoted OUT of debug into documented
+  keyboard controls rather than deleted — the maths overlay is the first
+  non-negotiable and the map zoom was asked for in the same breath.
+- **The clan-join callout is readable.** It was a quarter smaller and it
+  breathed down through half opacity; it is 0.9 → 1.15 high at 76px, and the
+  breath now lives entirely above 0.9 so the text never thins out.
 
 **Six reported from play are fixed and not yet played back.** All are in
 `git log` and in the notes; listed here only because nobody has confirmed them

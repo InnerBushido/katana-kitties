@@ -1994,3 +1994,81 @@ and she had just been spliced out of it.
 exactly like a kitten with nothing to remove — which is why this is asserted
 against the source as well as driven. No amount of exercising an object catches
 a field nobody ever writes.
+
+## The eighth session — the two minimap bugs were one bug
+
+Reported as two, in the same list, in these words: *"when zooming in on the map
+with the joycons, it is zooming the wrong map, it is not detecting which minimap
+is on which screen/tile and is selecting the wrong one"*, and *"when Ember loses
+her minimap and it is instead being SHARED, Z no longer zooms in on it, even
+though it should."*
+
+### `assignMaps` incumbency could only ever move a map one way
+
+`assignMaps` decides which pane each of the two maps is drawn in, and it keeps a
+map where it already is when it can — a map that hops corners between frames is
+worse than a map in a slightly odd corner. The incumbency test was written for
+panes MERGING: when two kittens walk together their two panes become one, and
+the map follows them into it.
+
+It had no answer for panes SPLITTING. Every rule in it moved a map towards a
+fuller pane and nothing moved one back, so this sequence stranded it:
+
+    Ember and Frost apart      map 0 in pane 0, map 1 in pane 1
+    they walk together        both panes collapse to one; map 0 follows
+    they split up again       map 0 stays where the merge left it, forever
+
+...and the pane it left behind is pane 0, which is Ember's. So the symptom she
+reported — *Z stops zooming her map once it has been shared* — is not about
+sharing at all. Her map had been moved out of her pane by an earlier merge and
+nothing was ever going to move it back. The joycon bug is the same fact seen
+from the other side: `nearestMap` answers correctly for a pane whose map is
+somewhere else, and the bumper zooms the map it is actually told about.
+
+**The fix is a fourth step that converges.** A pane with no map claims one from a
+higher-indexed pane of the same size, ties broken towards the LOWER pane index:
+
+```js
+for (let g = 0; g < sizes.length; g++) {
+  if (taken.has(g)) continue;
+  for (let m = 0; m < n; m++) {
+    if (out[m] <= g) continue;                 // already at or below this pane
+    if (sizes[out[m]] !== sizes[g]) continue;  // a size difference is step 3s
+    taken.delete(out[m]); out[m] = g; taken.add(g); break;
+  }
+}
+```
+
+**It is the strict decrease that makes it safe, not the tie-break.** Every move
+strictly lowers the sum of occupied pane indices, which is a non-negative
+integer, so the rule cannot cycle and cannot flicker between two answers on
+alternate frames — the failure mode that makes a jumping map worse than a
+misplaced one. That is what the checks assert: not that the step fires, but that
+running it twice changes nothing the second time, and that the exact reported
+sequence ends with maps in panes 0 and 1.
+
+### Z and X ask a different question from the bumpers, on purpose
+
+A pad bumper asks *my* map, or the nearest one to my pane. Two keyboard keys
+cannot ask that, because the whole point of having two of them is that between
+them they reach BOTH boxes — and Ember and Frost standing together makes
+`_mapForPlayer` give the same answer for both.
+
+```js
+export function keyMaps(drive0, drive1, live = []) {
+  if (drive1 !== drive0 || drive0 < 0) return [drive0, drive1];
+  const other = live.find((m) => m !== drive0);
+  return [drive0, other === undefined ? drive1 : other];
+}
+```
+
+Z stays anchored to player one whatever has happened to her map; only X moves,
+and only on a collision, and only to a map that is actually on screen. Asked for
+in exactly those terms: *"Z should zoom in the one for Ember that is shared, and
+X should zoom in the one for Storm and Blossom that is shared."*
+
+**The tag says which key turns it.** `MAP 1 . Z` / `MAP 2 . X` are read off the
+same one answer the keys use, so the label cannot drift from the behaviour, and
+a map with no key on it is a map neither key can reach — which is a thing worth
+being able to see. With no map on screen at all the key toasts rather than doing
+nothing, the sixth non-negotiable.

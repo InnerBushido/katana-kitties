@@ -184,15 +184,60 @@ function moveKeys(set) {
   return [first, rest];
 }
 
-const keyboardData = () => ({
-  head: KEYSETS.map((s) => s.name),
-  move: KEYSETS.map((s) => moveKeys(s)),
-  /* An action with no key gets `—` rather than being dropped. "The keyboard
-     cannot zoom the map" is a fact worth printing; a missing row reads as an
-     oversight. */
-  rows: ACTIONS.map((a) => [ROW_LABELS[a] ?? a, HOT.has(a),
-    KEYSETS.map((s) => (s[a]?.length ? s[a].map(keyName) : null))]),
-});
+/**
+ * THE TWO CONTROLS THAT ARE NOT IN A KEYSET, READ OFF THE KEY LISTENER.
+ *
+ * A keyset is a per-player binding: two of them, one per pair of hands. The
+ * maths overlay is ONE toggle for the whole screen and the map zoom is one key
+ * per BOX, not per kitten — so neither of them can be a keyset entry, and for
+ * a long time both printed `—` here with a comment saying "the keyboard cannot
+ * zoom the map" was a fact worth stating. It has not been true since they were
+ * bound, and it stopped being even nearly true when Z and X became the two
+ * boxes rather than the two players.
+ *
+ * PARSED OUT OF `main.js` RATHER THAN TYPED HERE, which is the whole rule this
+ * generator exists for: a table that repeats a fact from another file is a
+ * table that will one day be wrong about it. `--check` fails the build the
+ * moment one of these listener lines is edited, exactly as it does for the
+ * keysets.
+ *
+ * TWO COLUMNS FOR THE MAP AND ONE ANSWER FOR THE MATHS. At two players — the
+ * game the girls actually play — Z is the WASD kitten's box and X is the
+ * arrows kitten's, so a column each is the truth. At four they are simply the
+ * two boxes on screen; the row label carries that, and `Game._keyMaps` carries
+ * the argument.
+ */
+const listenerKeys = () => {
+  const src = readFileSync(new URL('src/main.js', root), 'utf8');
+  const one = (re) => {
+    const m = re.exec(src);
+    if (!m) throw new Error(`doc-sync: main.js no longer binds ${re} — the`
+      + ' keyboard table cannot be written from the code, so it is not written'
+      + ' from memory either. Update the pattern, or the row.');
+    return keyName(m[1]);
+  };
+  const math = one(/e\.code === '(\w+)' && this\.state === 'play'\) this\._toggleMath\(\)/);
+  return {
+    math: KEYSETS.map(() => [math]),
+    map: [
+      [one(/e\.code === '(\w+)'[^\n]*?this\._zoomMapKey\(0\)/)],
+      [one(/e\.code === '(\w+)'[^\n]*?this\._zoomMapKey\(1\)/)],
+    ],
+  };
+};
+
+const keyboardData = () => {
+  const shared = listenerKeys();
+  return {
+    head: KEYSETS.map((s) => s.name),
+    move: KEYSETS.map((s) => moveKeys(s)),
+    /* An action with a key in neither place gets `—` rather than being
+       dropped: a missing row reads as an oversight, and "nothing on the
+       keyboard does this" is worth printing. */
+    rows: ACTIONS.map((a) => [ROW_LABELS[a] ?? a, HOT.has(a),
+      KEYSETS.map((s, i) => (s[a]?.length ? s[a].map(keyName) : shared[a]?.[i] ?? null))]),
+  };
+};
 
 /** Which prompt sets get a column. Joy-Cons are two columns because the two
  *  halves are genuinely different controllers — the same fact `PROMPTS` splits

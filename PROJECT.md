@@ -1,6 +1,6 @@
 # Katana Kitties — the whole project on one page
 
-**Last updated: 4 September 2026.** Anything below with a cost or an account
+**Last updated: 5 September 2026.** Anything below with a cost or an account
 attached was true on that date; check the dashboard before quoting a number.
 
 This is the **one-stop sheet**: what the project is, how to run it, how to test
@@ -74,8 +74,8 @@ are not decoration; see the non-negotiables in [CLAUDE.md](CLAUDE.md).
 | **Play it** | **https://katana-kitties.vercel.app** — public, no login, nothing to install |
 | **Code** | **https://github.com/InnerBushido/katana-kitties** — **public** (`gh repo view` says so; this line said "private" until 30 Aug 2026 and was wrong) |
 | **Stack** | Vite 8 + three.js 0.185. Static build, no backend, no database, no env vars |
-| **First load** | ~35MB across 39 files, then cached. Sprites 42MB in repo, help clips 21MB, voices 5.8MB |
-| **Size** | ~216 props, 6 clans, 7 dragon balls, 8 Powerup Kotodama, 15 Help clips, 49 voice files |
+| **First load** | ~35MB across 39 files, then cached. Sprites 42MB in repo, help clips 21MB, voices 6.3MB |
+| **Size** | ~216 props, 6 clans, 7 dragon balls, 8 Powerup Kotodama, 15 Help clips, 61 voice files |
 
 ---
 
@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 2086 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 2184 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 354 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -223,11 +223,10 @@ tappable**, so the whole debug set works on a phone.
 | **`1`** | **frame cost** — fps, stutter, draw calls, buffer size, quality, dev-or-built, GPU string |
 | `2` | Mr. Satan loses his temper (skips the ten-second fuse) |
 | `3` | give every kitten all 8 kotodama |
-| `4` | end the live round (feast) |
-| `5` | open the trade / profile screen |
+| `4` | **END this bit** — the live round, the ending ceremony, or the feast |
+| `5` | **NUDGE it on** — the round clock to 30s, then 15s, then 5s; a scene to its next line |
 | `6` | **the endgame** — ending, arena, orbs, purses |
-| `7` `8` `9` | Ryuuseki: take all seven stars & summon · seat both kittens · fire his beams |
-| `M` `Z` | maths overlay · map zoom |
+| `7` | **go to the arena NOW** — skips the whole unlock, flies you out there |
 | `-` `=` `0` | scene viewer: previous · next · play this scene |
 | **`\`** | **force-spawn** — ENTER then seats a third and fourth kitten on the keyboard alone |
 | `R` `U` | step WASD · step the arrows round the kittens sharing that set — her, her sister, then **both at once** |
@@ -350,8 +349,8 @@ would have noticed this page still naming the old ones.
 | mount | `Q` | `Numpad3` `.` `P` |
 | sprint | `LShift` | `RShift` `'` |
 | start / pause | `Enter` `NumpadEnter` | `Enter` `NumpadEnter` |
-| map zoom | — | — |
-| maths overlay | — | — |
+| map zoom | `Z` | `X` |
+| maths overlay | `M` | `M` |
 <!-- /doc-sync:keyboard -->
 
 <!-- doc-sync:pads -->
@@ -401,7 +400,7 @@ to lock it on.** → [mobile.md](docs/notes/mobile.md)
 | **The demon cackle** | `tools/kitten-cackle.mjs` — one meow at nine speeds. `--game` cuts bursts 1/4/6/9 into the Cross Slash's four graded purrs. **Carries a licensing decision**; see below. | `node tools/kitten-cackle.mjs --game` |
 | **The 1:08 trailer** | Twelve five-second Higgsfield shots (`grok_video`) + an 8s title card, a synthesised orchestra over the game's own music, a drawn 十, and ffmpeg. 20MB, and **opt-in** — the `<video>` carries no `src` until a player asks. | `trailer-vo.mjs` (the narration), `trailer-score.mjs` (the orchestra), `trailer-cut.sh` (the edit) → [trailer.md](docs/notes/trailer.md) |
 | **Casting a voice by measurement** | `tools/voice-measure.mjs` — pitch and range off a clip, which is how Ryuuseki is defined at all: his preset was never written down and five auditions did not find it. | `node tools/voice-measure.mjs` |
-| **Mr. Satan's countdown** | `tools/capture/satan-countdown.mjs` splices `sat_last.mp3` — the last fifteen seconds of a round — out of a dozen separate takes, so each number lands on the second it names. **A phrase between every number does not fit** at 2.5 words a second; the script measures and fits what does. Also cuts the six bare numbers `sat_n0`–`sat_n5`. | `node tools/capture/satan-countdown.mjs --src <takes>` → [voices.md](docs/notes/voices.md) |
+| **Mr. Satan's countdown** | `tools/capture/satan-countdown.mjs` cuts the five clips the last fifteen seconds of a round are made of, out of the takes in `tools/capture/satan-takes/`. The count is **one continuous performance re-timed** — `silencedetect` finds the words, the numbers are pinned to the seconds they name, and each shout between them is squeezed by exactly as much as its own gap demands. **A spoken card is shortened by closing its dead air, never by playing him faster** — pauses floored to 0.20s first, and a speed ceiling of 1.10x that throws with the line quoted rather than shipping a card that sounds sped up. Also cuts the six bare numbers `sat_n0`–`sat_n5`. | `node tools/capture/satan-countdown.mjs` → [voices.md](docs/notes/voices.md) |
 | **Brush kanji** | `tools/brush-kanji.mjs` — drawn, not typed, because ffmpeg's `drawtext` gives hairlines. | |
 | **PNG, with no dependencies** | `tools/png.mjs` — the codec everything else encodes through, same rule as `gif.mjs`. | |
 | **Steam shelf art & icons** | `tools/steam-art.mjs` crops and composites `public/sprites/title_art.png`. **Nothing here is a new drawing** — a prompt to an image model would put art on the box that is nowhere inside the game. | `node tools/steam-art.mjs` → `out/steam/` |
@@ -474,7 +473,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 2086
+the check that would have caught it.** That is why `world-check` is 2184
 assertions.
 
 **And a change a new developer would need to know about gets a line in this

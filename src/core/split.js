@@ -658,6 +658,45 @@ export function assignMaps(sizes, prev = [], nMaps = 2) {
     out[worst] = g;
     taken.add(g);
   }
+
+  /* 4. AND A MAP THAT IS NOT NEEDED WHERE IT IS DRIFTS BACK TOWARDS PANE 0.
+        Reported from play twice in the same breath — "it is zooming the wrong
+        map, it is not detecting which minimap is on which screen/tile", and
+        "when Ember loses her minimap ... Z no longer zooms in on it".
+
+        BOTH ARE ONE BUG AND IT IS INCUMBENCY WITH NO WAY BACK. Steps 1-3 move
+        a map only towards a FULLER pane, so the moment a pair forms, a map
+        crosses the screen to it — correct — and when that pair splits up again
+        every pane is size 1, nothing is "strictly more", and the map stays
+        where the pair used to be FOREVER. Measured: four kittens together,
+        then apart, then apart again lands the maps on panes 2 and 1, leaving
+        Ember — pane 0, player one, the girl holding Z — with no map in her own
+        window for the rest of the session and her key turning a box in
+        somebody else's corner.
+
+        SO A TIE IS BROKEN TOWARDS THE LOWER PANE INDEX. Not a new rule: it is
+        the game's ORIGINAL "the maps belong to Ember and Frost", demoted from
+        a law to a tie-break, so the size rule above still outranks it and a
+        pane with two kittens in it still takes a map off a pane with one.
+
+        IT CANNOT FLICKER, AND THAT IS THE ONE THING THIS HAD TO PROVE. Every
+        swap here strictly lowers the sum of the panes the maps sit in, and
+        that sum is a non-negative integer, so the loop below is monotone and
+        the arrangement it converges on is the same one whichever order the
+        panes arrive in. Once the maps are in the lowest panes their sizes
+        allow, nothing moves again — which is the anti-flicker argument steps
+        1-3 are written on, reached rather than assumed. */
+  for (let g = 0; g < sizes.length; g++) {
+    if (taken.has(g)) continue;
+    for (let m = 0; m < n; m++) {
+      if (out[m] <= g) continue;              // already at or below this pane
+      if (sizes[out[m]] !== sizes[g]) continue; // a size difference is step 3's
+      taken.delete(out[m]);
+      out[m] = g;
+      taken.add(g);
+      break;
+    }
+  }
   return out;
 }
 
@@ -706,6 +745,46 @@ export function nearestMap(panes, owner, pane) {
     if (d < bestD - 0.5) { best = m; bestD = d; }
   }
   return best;
+}
+
+/**
+ * WHICH BOX Z TURNS AND WHICH BOX X TURNS.
+ *
+ * A PAD ASKS A PLAYER'S QUESTION AND A KEYBOARD ASKS THE SCREEN'S, and running
+ * both through `nearestMap` is the bug this was reported as: "the Z and X keys
+ * should zoom it in, regardless of who owns the minimap or if it is shared ...
+ * when ember and frost are together, Z and X zooms in their shared minimap,
+ * instead, Z should zoom in the one for Ember that is shared, and X should zoom
+ * in the one for storm and blossom that is shared."
+ *
+ * A bumper is held by ONE kitten, so "my map, or the nearest one" is exactly
+ * right for it and does not move. Z and X are two keys on one keyboard in front
+ * of one person, and the useful promise there is that BETWEEN THEM THEY REACH
+ * EVERY BOX ON SCREEN — otherwise half the maps in a four-player game cannot be
+ * zoomed by the only device that has a key for it.
+ *
+ * SO Z STAYS ANCHORED AND X IS THE ONE THAT GIVES WAY. Z is player one's
+ * answer, unchanged; X is player two's, and takes the OTHER box when that comes
+ * back as the same one. Player two's is the one that moves because Z is the key
+ * that exists at every party size — X has never done anything with a single map
+ * on screen.
+ *
+ * TWO PLAYERS COME OUT BIT-IDENTICAL. Split, each is in her own pane, so the
+ * two answers already differ and nothing here fires.
+ *
+ * @param drive0  the map player one drives (`nearestMap`), or -1
+ * @param drive1  the map player two drives, or -1
+ * @param live    the map indices actually on screen, in index order
+ * @returns {number[]} [the map Z turns, the map X turns], either may be -1
+ */
+export function keyMaps(drive0, drive1, live = []) {
+  if (drive1 !== drive0 || drive0 < 0) return [drive0, drive1];
+  /* THE OTHER BOX, AND ONLY IF IT IS ACTUALLY ON SCREEN. A map whose pane came
+     back -1 from `assignMaps` is hidden, and a key that turns a hidden dial is
+     the silent button the sixth non-negotiable is about — so with nothing else
+     up, X keeps the collision rather than pointing at nothing. */
+  const other = live.find((m) => m !== drive0);
+  return [drive0, other === undefined ? drive1 : other];
 }
 
 /**

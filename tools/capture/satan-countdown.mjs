@@ -1,101 +1,207 @@
 #!/usr/bin/env node
 /* ---------------------------------------------------------------------------
-   MR. SATAN COUNTS THE LAST FIFTEEN SECONDS — the splicer.
+   MR. SATAN COUNTS THE LAST FIFTEEN SECONDS — the cutter.
 
-   `public/voice/sat_last.mp3` is not a recording of a line. It is a fifteen
-   second TIMELINE cut out of a dozen separate shouts, and the only reason it
-   exists as one file is that a number has to land on the second it names.
+   It makes every file the last fifteen seconds of a round is made of, out of
+   the six takes in `satan-takes/`. Four cues, not one clip:
 
-   WHY ONE FILE AND NOT ELEVEN `say()` CALLS. `Announcer.say` QUEUES and never
-   interrupts — deliberately, see announce.js — so eleven clips fired a second
-   apart would stack the moment any one of them ran a frame long, and by "TWO"
-   he would be counting a clock that had already run out. One file cannot drift
-   against itself. It is started once, at exactly fifteen seconds left, and
-   every number inside it is nailed to its own second at splice time.
+     15s left   sat_last1   a card. "FIFTEEN SECONDS! Are you KIDDING me?!"
+     10s left   sat_last2   a card. "TEN SECONDS! FINE! I HATE counting!"
+      5s left   sat_count   NO CARD. Five seconds, five numbers, four shouts.
+      0s        sat_zero    a card, and he goes off like the gag does.
 
-   WHAT WOULD NOT FIT, AND THE MEASUREMENT THAT SETTLED IT. The ask was an
-   interjection between every number — "5, HURRY UP, 4, NO TIME LEFT, 3, NOW OR
-   NEVER, 2, JUST PUNCH EM, 1". Harrison runs 2.4-2.6 words a second
-   (docs/notes/voices.md), so "NO TIME LEFT!" renders at 1.33 seconds and the
-   word "ONE!" alone at 1.04: a one-second beat cannot hold a number AND a
-   phrase. Two seconds a beat would hold both, and then the number he shouts
-   disagrees with the number on the screen, which is the one thing this whole
-   feature exists to stop.
-   So the complaining is FRONT-LOADED into the ten seconds before the count,
-   where there is all the room in the world, and only single shouts go between
-   the numbers — into the slots that measure wide enough to take one, which is
-   why the fitting below is a search and not a table. He starts in sentences
-   and ends barely able to manage the numbers, which is the right shape for
-   somebody losing his temper anyway.
+   ONE TAKE, RE-TIMED — NOT ELEVEN TAKES ASSEMBLED. The first cut of this
+   built the count out of eleven separate one-word renders, and it was reported
+   back as exactly what it was: "the counting and the interjecting words
+   between the numbers does not sound good... does not sound natural". It
+   cannot. Eleven isolated renders of a single shouted word are eleven
+   performances of the same flat anger, and the ask was the opposite of flat —
+   "getting more and more frustrated the closer he gets to zero". An actor does
+   that ACROSS a line, not inside a word.
+   So `count.mp3` is ONE continuous render of the whole countdown, and this
+   script only moves the pieces of it around. The escalation is his; the
+   timing is ours. Nothing here re-records anything.
+
+   WHY IT HAS TO BE RE-TIMED AT ALL. Each number has to land on the second the
+   screen is showing, and Harrison does not perform to a click track: the take
+   runs 9.17 seconds for five beats that have to fit in five. So the segments
+   are found by measurement (`silencedetect`), the numbers are pinned to
+   0/1/2/3/4 seconds, and each shout is squeezed by exactly as much as its own
+   gap demands and no more. Every ratio is printed. Nothing is a table.
+
+   THE NUMBERS ARE PUSHED HARDEST, ON PURPOSE, and that is a request rather
+   than a compromise: "when saying the numbers, they should be said faster than
+   normal, maybe in half the speed". A number at NUM_TEMPO is a bark, which is
+   what leaves room for a phrase behind it — at 1.0 the phrase does not fit at
+   all and this whole feature goes back to being five lonely numbers.
 
    RUN IT:
-     node tools/capture/satan-countdown.mjs --src <dir of raw takes>
+     node tools/capture/satan-countdown.mjs            # takes are in the repo
+     node tools/capture/satan-countdown.mjs --src <dir>
 
-   The raw takes are ElevenLabs renders of `LINES` below, in Harrison,
-   `573e5163-59b3-4926-aab1-951ef2985f81` — the preset Mr. Satan is pinned to,
-   and the only one he is ever allowed (docs/notes/voices.md). They are NOT in
-   the repo: the six numbers ship on their own and everything else is consumed
-   here. To re-cut, regenerate from this table and point `--src` at the folder.
+   The takes ARE in the repo now, under `satan-takes/`, and that is a change of
+   policy worth one line: the first cut consumed a dozen renders that lived
+   only in a scratch folder, so the one tool that can rebuild these files could
+   not be run twice. They are ElevenLabs renders in Harrison,
+   `573e5163-59b3-4926-aab1-951ef2985f81` — the preset Mr. Satan is pinned to
+   and the only one he is ever allowed (docs/notes/voices.md). `satan-takes/alt/`
+   is everything superseded, kept because a take that has been paid for and
+   heard is worth more than the disc it sits on.
 --------------------------------------------------------------------------- */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-/** Every take, and the words in it. The table IS the script. */
-const LINES = {
-  head15: 'FIFTEEN SECONDS LEFT! Are you KIDDING me?!',
-  punch: "JUST PUNCH 'EM!",
-  fine: "FINE! FINE! I'll count you down! I HATE counting!",
-  n5: 'FIVE!',
-  n4: 'FOUR!',
-  n3: 'THREE!',
-  n2: 'TWO!',
-  n1: 'ONE!',
-  n0: 'ZERO!',
-  hurry: 'HURRY!',
-  move: 'MOVE!',
-  go: 'GO!',
-  now: 'NOW!',
-  hit: 'HIT!',
-  roar: 'ZEEEROOOOO! AAAAARGHHH!',
-};
+/* ------------------------------ the script ------------------------------- */
 
-/** The six bare numbers, shipped as their own clips. Asked for so a countdown
- *  of any other length can be built later without paying for them again. */
-const NUMBERS = ['n0', 'n1', 'n2', 'n3', 'n4', 'n5'];
+/**
+ * The count take, and every word in it, in order.
+ *
+ * THE TABLE IS AN ASSERTION, NOT A SCRIPT. The words are not used to cut
+ * anything — the silences are. It is here so that a re-render that comes back
+ * with eight segments or ten fails LOUDLY, naming what it found, instead of
+ * quietly pinning "NO TIME LEFT!" to the second that belongs to FOUR. Even
+ * indices are numbers and odd ones are what he shouts after them, which is the
+ * only structural fact the fitter needs.
+ */
+const COUNT_WORDS = [
+  'FIVE!', 'HURRY UP!',
+  'FOUR!', 'NO TIME LEFT!',
+  'THREE!', 'NOW OR NEVER!',
+  'TWO!', "JUST PUNCH 'EM!",
+  'ONE!',
+];
 
-/** Seconds of clip before "FIVE!". Everything before it is him complaining.
- *  `LEAD + 5` is the whole clip, and it must equal `COUNT_AT` in
- *  tournament.js — world-check pins the two together. */
-const LEAD = 10;
-/** Him, in order, before the count. Packed with one even gap that lands the
- *  last of them just before FIVE, so a longer take eats the pauses and never
- *  the count. */
-const RANT = ['head15', 'punch', 'fine'];
-/** Smallest pause the packer will leave between two of them. Under this he is
- *  one continuous word rather than a man running out of patience. */
-const RANT_GAP_MIN = 0.18;
+/** The two spoken cards, and how long each has before the next cue starts. */
+const CARDS = [
+  { take: 'last1', out: 'sat_last1', says: 'FIFTEEN SECONDS! Are you KIDDING me?! DO something!' },
+  { take: 'last2', out: 'sat_last2', says: "TEN SECONDS! FINE! I'll count! I HATE counting!" },
+];
 
-/* THE NUMBERS ARE NUDGED, THE SHIPPED CLIPS ARE NOT. "ONE!" is 1.04 seconds
-   and would step on the roar; 1.15x is under the threshold where a shouted
-   word starts to sound processed (atempo preserves pitch) and buys back a
-   tenth of a second in every slot. `public/voice/sat_n1.mp3` keeps the take
-   exactly as rendered — the nudge is the splice's business only. */
-const NUM_TEMPO = 1.15;
-/** How hard a between-numbers shout may be pushed. Past this a single word
- *  reads as clipped rather than urgent — and it is worth the last tenth: at
- *  1.35 "MOVE!" came out four MILLISECONDS too long for the gap after THREE
- *  and the slot went empty, which is one shout out of five instead of two. */
-const BARK_TEMPO = 1.45;
-/** Silence left between a shout and the number after it. Zero would be a
- *  collision on any frame the encoder rounds the wrong way. */
-const BARK_CLEAR = 0.045;
-/** Everything he might bark between two numbers. Which ones actually land is
- *  decided by measurement — see the fitter. */
-const BARKS = ['move', 'go', 'hit', 'now', 'hurry'];
+/** Trim-only clips. No timing to keep, so nothing is done to them but silence. */
+const PLAIN = [
+  { take: 'zero', out: 'sat_zero' },
+  { take: 't30', out: 'sat_t30' },
+  { take: 'draw', out: 'sat_draw' },
+];
+
+/* ----------------------------- the numbers ------------------------------- */
+
+/** One number a second. This is `COUNT_LAST` in tournament.js, spread out. */
+const BEAT = 1.0;
+/** Numbers in the count: FIVE FOUR THREE TWO ONE. `BEAT * NUMS` is the clip. */
+const NUMS = 5;
+
+/**
+ * How much faster than rendered a NUMBER is said.
+ *
+ * ASKED FOR IN SO MANY WORDS — "when saying the numbers, they should be said
+ * faster than normal, maybe in half the speed" — and load-bearing besides,
+ * because THE NUMBER IS WHAT PAYS FOR THE PHRASE. Every tenth taken off a
+ * number is a tenth the shout behind it does not have to be squeezed by, and
+ * the two trade almost one for one. Measured across the take:
+ *
+ *   numbers   a number is   worst shout needs
+ *   1.55x       0.38s          1.85x
+ *   1.70x       0.35s          1.74x
+ *   1.85x       0.32s          1.66x   <- here
+ *   2.00x       0.30s          1.60x
+ *
+ * 1.85 is where three of the four shouts come in under the 1.5 that was asked
+ * for and the fourth is close, at the cost of numbers that are barks. They are
+ * MEANT to be barks. `atempo` preserves pitch, so this is him shouting fast,
+ * not him chipmunked, and past 1.85 the numbers start losing their vowel for
+ * a gain of four hundredths on one phrase.
+ */
+const NUM_TEMPO = 1.85;
+
+/**
+ * The hardest a between-numbers shout may be pushed.
+ *
+ * THE CEILING IS WHERE IT IS BECAUSE OF ONE PHRASE. Three of the four come in
+ * at 1.00x, 1.47x and 1.50x — inside the "30-50% speedup should be acceptable"
+ * that was asked for, and the first one is not touched at all. "NO TIME LEFT!"
+ * is the outlier at 1.66x: three stressed words into the gap behind the number
+ * that is itself the longest. 1.7 is set just above it deliberately, so the
+ * cap is a real test rather than a rubber stamp — lower it and the fitter
+ * DROPS that phrase, says so, and the clip still works with three.
+ * It is nowhere near the doubling that was ruled out ("if we double the speed
+ * of the voice, it will then sound unnatural").
+ */
+const SAY_MAX = 1.7;
+
+/** Silence after a number before the shout, and before the next number. Zero
+ *  is a collision on any frame the encoder rounds the wrong way. */
+const GAP_AFTER_NUM = 0.05;
+const GAP_BEFORE_NUM = 0.03;
+
+/* ------------------------------ the cards -------------------------------- */
+
+/**
+ * A card has five seconds and it may not use all of them.
+ *
+ * `Announcer` holds a card for HOLD_TAIL (0.9s) after the voice stops, and the
+ * next queued line does not start until the card is gone. So a cue that fills
+ * its own five seconds pushes the NEXT cue past the start of the count, and
+ * the count is the one thing in this feature that cannot start late. 4.0
+ * leaves that 0.9 and a tenth of slack.
+ */
+const CARD_MAX = 4.0;
+
+/**
+ * The longest PAUSE a card may hold between two phrases.
+ *
+ * A CARD IS SHORTENED BY TAKING OUT DEAD AIR, NOT BY SPEEDING HIM UP. This is
+ * the whole fix for the thing that was reported: `last2` ran 5.90s against a
+ * 4.0s window, the only lever here was `atempo`, and it went out at 1.475x.
+ * That is a shout's ratio applied to a line where he is just talking, and it
+ * sounded like one — "seems like it is sped up... he is just talking at this
+ * point".
+ *
+ * Flooring the gaps costs nothing in naturalness because it does not touch the
+ * speech at all; the words play at exactly the rate Harrison rendered them.
+ * 0.20 is MEASURED, not chosen: `last1` ships completely untouched and its own
+ * interior gaps run 0.085 / 0.108 / 0.116 / 0.192, so 0.20 is "no longer than
+ * the longest pause in the take we already accept" — and it leaves that take
+ * genuinely untouched rather than re-encoding it for twelve milliseconds.
+ */
+const CARD_GAP_MAX = 0.20;
+
+/**
+ * How far a card may be nudged AFTER its gaps have been floored.
+ *
+ * A NUDGE, NOT A SQUEEZE. It used to be 1.5 — the "30-50%" from the ask, which
+ * belongs to the shouts sneaked between the numbers and never belonged here.
+ * With CARD_GAP_MAX doing the real work, a card that still does not fit is a
+ * card with too many WORDS on it, and the honest answer is to shorten the line
+ * and re-render rather than to play him faster. So this is set just above what
+ * the two shipping cards actually need (1.00x and 1.04x) and the cutter throws
+ * with the line in the message. A silent quality regression becomes a loud
+ * failure, which is the trade this codebase makes everywhere else.
+ */
+const CARD_TEMPO_MAX = 1.10;
+
+/* ---------------------------- silence, cutting --------------------------- */
+
+/** BOTH ENDS, PEAK-DETECTED. A take arrives with up to a third of a second of
+ *  room tone on the front, and a number that starts a third of a second late
+ *  is a number on the wrong second. */
+const TRIM = 'silenceremove=start_periods=1:start_threshold=-38dB'
+  + ':start_silence=0.03:detection=peak,areverse'
+  + ',silenceremove=start_periods=1:start_threshold=-38dB'
+  + ':start_silence=0.03:detection=peak,areverse';
+
+/** What counts as a gap between two shouted words. Quieter than TRIM's floor
+ *  and long enough that the stop inside "JUST PUNCH 'EM" is not one. */
+const SPLIT_DB = -40;
+const SPLIT_MIN = 0.10;
+/** A "segment" shorter than this is a breath or a plosive tail, and belongs to
+ *  the word in front of it. Without this a hard T at the end of a shout counts
+ *  as a tenth word and the table below fails on a take that is perfectly fine. */
+const SEG_MIN = 0.12;
 
 const arg = (name, def) => {
   const i = process.argv.indexOf(name);
@@ -103,96 +209,227 @@ const arg = (name, def) => {
 };
 const SRC = arg('--src', join(ROOT, 'tools', 'capture', 'satan-takes'));
 const OUT = join(ROOT, 'public', 'voice');
+const TMP = join(ROOT, 'tools', 'capture', '.satan-tmp');
 
 const run = (bin, args) => execFileSync(bin, args, { encoding: 'utf8' });
 const dur = (f) => Number(run('ffprobe', [
   '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f,
 ]).trim());
 
-/* BOTH ENDS, PEAK-DETECTED. A take arrives with up to a third of a second of
-   room tone on the front, and a number that starts a third of a second late is
-   a number on the wrong second. */
-const TRIM = 'silenceremove=start_periods=1:start_threshold=-38dB'
-  + ':start_silence=0.03:detection=peak,areverse'
-  + ',silenceremove=start_periods=1:start_threshold=-38dB'
-  + ':start_silence=0.03:detection=peak,areverse';
+/** Trim a take, optionally nudging its tempo, into a mono wav we can cut. */
+const prep = (take, tempo = 1) => {
+  const src = join(SRC, `${take}.mp3`);
+  if (!existsSync(src)) throw new Error(`missing take: ${src}`);
+  const out = join(TMP, `${take}${tempo === 1 ? '' : '_t'}.wav`);
+  const af = tempo === 1 ? TRIM : `${TRIM},atempo=${tempo.toFixed(4)}`;
+  run('ffmpeg', ['-v', 'error', '-y', '-i', src, '-af', af, '-ar', '44100', '-ac', '1', out]);
+  return { file: out, dur: dur(out) };
+};
 
-const TMP = join(ROOT, 'tools', 'capture', '.satan-tmp');
+/**
+ * Where the words are in a take.
+ *
+ * MEASURED OFF THE AUDIO, never assumed from the text. Same rule as the sprite
+ * sheets: a render's pauses are the render's business, and the one take we
+ * have runs 0.25 to 0.50 seconds between shouts with no pattern to it.
+ *
+ * @returns {{start:number,end:number,dur:number}[]}
+ */
+const speechRuns = (file) => {
+  /* `spawnSync` rather than `execFileSync`, and that is not a style choice:
+     silencedetect reports on STDERR, and execFileSync hands back stdout. */
+  const log = spawnSync('ffmpeg', [
+    '-nostats', '-hide_banner', '-i', file,
+    '-af', `silencedetect=noise=${SPLIT_DB}dB:d=${SPLIT_MIN}`, '-f', 'null', '-',
+  ], { encoding: 'utf8' }).stderr ?? '';
+
+  const total = dur(file);
+  const holes = [];
+  let open = null;
+  for (const line of log.split('\n')) {
+    const s = /silence_start:\s*([\d.]+)/.exec(line);
+    const e = /silence_end:\s*([\d.]+)/.exec(line);
+    if (s) open = Number(s[1]);
+    if (e && open !== null) { holes.push([open, Number(e[1])]); open = null; }
+  }
+  if (open !== null) holes.push([open, total]);
+
+  const runs = [];
+  let at = 0;
+  for (const [s, e] of holes) {
+    if (s > at) runs.push({ start: at, end: s });
+    at = e;
+  }
+  if (at < total) runs.push({ start: at, end: total });
+
+  /* Fold the crumbs forward. See SEG_MIN. */
+  const merged = [];
+  for (const r of runs) {
+    const prev = merged[merged.length - 1];
+    if (prev && r.end - r.start < SEG_MIN) prev.end = r.end;
+    else merged.push({ ...r });
+  }
+  return merged.map((r) => ({ ...r, dur: r.end - r.start }));
+};
+
+/** Cut one run out to its own wav, at `tempo`. */
+const cut = (file, run_, name, tempo = 1) => {
+  const out = join(TMP, `${name}.wav`);
+  const af = tempo === 1 ? 'anull' : `atempo=${tempo.toFixed(4)}`;
+  run('ffmpeg', ['-v', 'error', '-y', '-ss', String(run_.start), '-to', String(run_.end),
+    '-i', file, '-af', af, '-ar', '44100', '-ac', '1', out]);
+  return { file: out, dur: dur(out) };
+};
+
+/** Lay a list of {file,t} down on one timeline and encode it.
+ *  The encoder follows the EXTENSION, so an intermediate can stay lossless —
+ *  a card is re-encoded once more after this, and mp3 of mp3 of mp3 is audible
+ *  on a shout even when each step is "fine". */
+const render = (at, dest, length = null) => {
+  at.sort((a, b) => a.t - b.t);
+  const args = [];
+  for (const p of at) args.push('-i', p.file);
+  const chains = at.map((p, i) => `[${i}:a]adelay=${Math.round(p.t * 1000)}:all=1[a${i}]`);
+  const mix = `${at.map((_, i) => `[a${i}]`).join('')}amix=inputs=${at.length}:normalize=0[out]`;
+  const codec = dest.endsWith('.wav')
+    ? ['-c:a', 'pcm_s16le'] : ['-c:a', 'libmp3lame', '-q:a', '4'];
+  run('ffmpeg', ['-v', 'error', '-y', ...args,
+    '-filter_complex', `${chains.join(';')};${mix}`,
+    '-map', '[out]', ...(length ? ['-t', String(length)] : []),
+    ...codec, dest]);
+};
+
+/**
+ * Close every pause longer than `maxGap`, without touching a single word.
+ *
+ * The runs come off `silencedetect` the same way the count's do, so a pause
+ * that is really a breath inside a phrase (under SPLIT_MIN) is never seen and
+ * never cut — which is the difference between tightening a line and chopping
+ * it up. Returns the take unchanged, and says so, when nothing is over.
+ */
+const tighten = (file, name, maxGap) => {
+  const runs = speechRuns(file);
+  if (runs.length < 2) return { file, dur: dur(file), gaps: [], cut: 0 };
+  const gaps = runs.slice(1).map((r, i) => r.start - runs[i].end);
+  const over = gaps.filter((g) => g > maxGap + 1e-6);
+  if (!over.length) return { file, dur: dur(file), gaps, cut: 0 };
+
+  const at = [];
+  let t = 0;
+  runs.forEach((r, i) => {
+    const piece = cut(file, r, `${name}_p${i}`);
+    at.push({ file: piece.file, t });
+    t += piece.dur + Math.min(gaps[i] ?? 0, maxGap);
+  });
+  const out = join(TMP, `${name}_tight.wav`);
+  render(at, out);
+  return {
+    file: out,
+    dur: dur(out),
+    gaps,
+    cut: gaps.reduce((a, g) => a + Math.max(0, g - maxGap), 0),
+  };
+};
+
+/* ============================== do it =================================== */
+
+rmSync(TMP, { recursive: true, force: true });
 mkdirSync(TMP, { recursive: true });
 mkdirSync(OUT, { recursive: true });
 
-const prep = (id, tempo) => {
-  const src = join(SRC, `${id}.mp3`);
-  if (!existsSync(src)) throw new Error(`missing take: ${src} — "${LINES[id]}"`);
-  const out = join(TMP, `${id}${tempo === 1 ? '' : '_t'}.wav`);
-  const af = tempo === 1 ? TRIM : `${TRIM},atempo=${tempo}`;
-  run('ffmpeg', ['-v', 'error', '-y', '-i', src, '-af', af, '-ar', '44100', '-ac', '1', out]);
-  return { id, file: out, dur: dur(out) };
-};
+const said = [];
 
-// --- lay the timeline out -------------------------------------------------
+// --- the two cards --------------------------------------------------------
+for (const c of CARDS) {
+  const raw = prep(c.take);
+  /* DEAD AIR FIRST, SPEED ONLY IF THERE IS STILL NO ROOM. The order is the
+     point: reversing it hides an over-long line behind an atempo nobody
+     reads, which is exactly how last2 shipped at 1.475x. */
+  const tight = tighten(raw.file, c.take, CARD_GAP_MAX);
+  const tempo = Math.max(1, tight.dur / CARD_MAX);
+  if (tempo > CARD_TEMPO_MAX) {
+    throw new Error(`${c.take} runs ${raw.dur.toFixed(2)}s`
+      + (tight.cut > 0 ? `, ${tight.dur.toFixed(2)}s with its pauses closed,` : '')
+      + ` and only ${CARD_MAX}s fits before the next cue — it would need `
+      + `${tempo.toFixed(2)}x and the ceiling is ${CARD_TEMPO_MAX}. He is TALKING here, so `
+      + `do not raise it: shorten the line and re-render.\n  "${c.says}"`);
+  }
+  run('ffmpeg', ['-v', 'error', '-y', '-i', tight.file,
+    ...(tempo === 1 ? [] : ['-af', `atempo=${tempo.toFixed(4)}`]),
+    '-c:a', 'libmp3lame', '-q:a', '4', join(OUT, `${c.out}.mp3`)]);
+  const how = [
+    tight.cut > 0 ? `${tight.cut.toFixed(2)}s of pause closed` : 'pauses as rendered',
+    tempo > 1 ? `${tempo.toFixed(3)}x` : 'speed as rendered',
+  ].join(', ');
+  said.push(`${c.out}  ${(tight.dur / tempo).toFixed(2)}s  ${how}`);
+}
+
+// --- trim-only ------------------------------------------------------------
+for (const p of PLAIN) {
+  const raw = prep(p.take);
+  run('ffmpeg', ['-v', 'error', '-y', '-i', raw.file,
+    '-c:a', 'libmp3lame', '-q:a', '4', join(OUT, `${p.out}.mp3`)]);
+  said.push(`${p.out}  ${raw.dur.toFixed(2)}s  as rendered`);
+}
+
+// --- the count ------------------------------------------------------------
+const take = prep('count');
+const runs = speechRuns(take.file);
+if (runs.length !== COUNT_WORDS.length) {
+  const found = runs.map((r) => `${r.start.toFixed(2)}-${r.end.toFixed(2)} (${r.dur.toFixed(2)}s)`);
+  throw new Error(`count.mp3 split into ${runs.length} pieces, expected ${COUNT_WORDS.length}:\n`
+    + `  wanted: ${COUNT_WORDS.join(' / ')}\n  found:  ${found.join(', ')}\n`
+    + 'Re-render the take, or loosen SPLIT_DB / SPLIT_MIN / SEG_MIN.');
+}
+
 const at = [];
-const say = (p, t) => at.push({ file: p.file, t, id: p.id, dur: p.dur });
+const fitted = [];
+for (let k = 0; k < NUMS; k++) {
+  const num = cut(take.file, runs[k * 2], `num${k}`, NUM_TEMPO);
+  at.push({ file: num.file, t: k * BEAT });
 
-const rant = RANT.map((id) => prep(id, 1));
-const rantSum = rant.reduce((n, p) => n + p.dur, 0);
-const gap = (LEAD - 0.25 - rantSum) / Math.max(1, rant.length - 1);
-if (gap < RANT_GAP_MIN) {
-  throw new Error(`the rant runs ${rantSum.toFixed(2)}s and only ${(LEAD - 0.25).toFixed(2)}s fits `
-    + `before the count — the gap would be ${gap.toFixed(3)}s. Shorten a line in RANT.`);
+  const shout = runs[k * 2 + 1];
+  if (!shout) break;                       // ONE! is the last word; nothing after it.
+  /* THE WINDOW IS WHAT IS LEFT OF THE BEAT, and the tempo is whatever fills it
+     exactly — never less than 1, because a shout STRETCHED to fill a gap is a
+     man calming down in the middle of losing his temper. */
+  const window = BEAT - num.dur - GAP_AFTER_NUM - GAP_BEFORE_NUM;
+  const tempo = Math.max(1, shout.dur / window);
+  const word = COUNT_WORDS[k * 2 + 1];
+  if (tempo > SAY_MAX) {
+    fitted.push(`  ${word.padEnd(16)} DROPPED — needs ${tempo.toFixed(2)}x, cap is ${SAY_MAX}`);
+    continue;
+  }
+  const said_ = cut(take.file, shout, `say${k}`, tempo);
+  at.push({ file: said_.file, t: k * BEAT + num.dur + GAP_AFTER_NUM });
+  fitted.push(`  ${word.padEnd(16)} ${shout.dur.toFixed(2)}s -> ${said_.dur.toFixed(2)}s  ${tempo.toFixed(2)}x`);
 }
-let cur = 0;
-for (const p of rant) { say(p, cur); cur += p.dur + gap; }
+render(at, join(OUT, 'sat_count.mp3'), BEAT * NUMS);
+said.push(`sat_count  ${dur(join(OUT, 'sat_count.mp3')).toFixed(2)}s  numbers ${NUM_TEMPO}x`);
 
-/* Each number on its own second, and the slot it leaves behind it. */
-const nums = ['n5', 'n4', 'n3', 'n2', 'n1'].map((id) => prep(id, NUM_TEMPO));
-const slots = nums.map((p, i) => {
-  say(p, LEAD + i);
-  return { i, at: LEAD + i + p.dur, room: 1 - p.dur - BARK_CLEAR };
-});
-say(prep('roar', 1), LEAD + 5);
-
-/* TIGHTEST SLOT FIRST, SMALLEST WORD THAT FITS IT. The obvious order — widest
-   slot first, longest word that fits — is what this did first and it placed
-   ONE bark out of five: the widest gap took the only short word in the box and
-   the next gap down then had nothing small enough left. Filling the narrow
-   gaps first, each with the least it can be filled with, is what maximises how
-   many of them get filled at all, and how many get filled is the whole point.
-   Everything here is measured; nothing is a table, so a re-cut with different
-   words re-fits itself. */
-const barks = BARKS.map((id) => prep(id, BARK_TEMPO)).sort((a, b) => a.dur - b.dur);
-const placed = [];
-for (const slot of [...slots].sort((a, b) => a.room - b.room)) {
-  const k = barks.findIndex((b) => b.dur <= slot.room);
-  if (k < 0) continue;
-  const [b] = barks.splice(k, 1);
-  say(b, slot.at);
-  placed.push(`${b.id} after ${nums[slot.i].id}`);
+/* --- the six bare numbers -------------------------------------------------
+   ASKED FOR SO THEY EXIST — "would be good to generate the 6 voice clips of
+   the numbers (0 - 5) separately to have for later if needed" — and cut out of
+   the SAME performance rather than rendered on their own, which is the whole
+   lesson of this rewrite. They keep their natural length: the nudge above is
+   the count's business, and a five that has to be a fifth of a second is no
+   use to whatever wants one next. */
+for (let k = 0; k < NUMS; k++) {
+  const n = NUMS - k;                       // runs[0] is FIVE
+  const piece = cut(take.file, runs[k * 2], `bare${n}`);
+  run('ffmpeg', ['-v', 'error', '-y', '-i', piece.file,
+    '-c:a', 'libmp3lame', '-q:a', '4', join(OUT, `sat_n${n}.mp3`)]);
 }
+/* ZERO comes off the front of the roar — the same word, from the take that is
+   actually played when the clock runs out, rather than a seventh render of it. */
+const zeroRuns = speechRuns(prep('zero').file);
+const zeroPiece = cut(prep('zero').file, zeroRuns[0], 'bare0');
+run('ffmpeg', ['-v', 'error', '-y', '-i', zeroPiece.file,
+  '-c:a', 'libmp3lame', '-q:a', '4', join(OUT, 'sat_n0.mp3')]);
 
-// --- render ---------------------------------------------------------------
-at.sort((a, b) => a.t - b.t);
-const args = [];
-for (const p of at) args.push('-i', p.file);
-const chains = at.map((p, i) => `[${i}:a]adelay=${Math.round(p.t * 1000)}:all=1[a${i}]`);
-const mix = `${at.map((_, i) => `[a${i}]`).join('')}amix=inputs=${at.length}:normalize=0[out]`;
-const dest = join(OUT, 'sat_last.mp3');
-run('ffmpeg', [
-  '-v', 'error', '-y', ...args,
-  '-filter_complex', `${chains.join(';')};${mix}`,
-  '-map', '[out]', '-c:a', 'libmp3lame', '-q:a', '4', dest,
-]);
-
-/* The six bare numbers: trimmed, never nudged. */
-for (const id of NUMBERS) {
-  const p = prep(id, 1);
-  run('ffmpeg', ['-v', 'error', '-y', '-i', p.file,
-    '-c:a', 'libmp3lame', '-q:a', '4', join(OUT, `sat_${id}.mp3`)]);
-}
 rmSync(TMP, { recursive: true, force: true });
 
-const last = at[at.length - 1];
-console.log(`[satan] sat_last.mp3  ${dur(dest).toFixed(2)}s from ${at.length} takes`);
-console.log(`[satan] rant gap ${gap.toFixed(2)}s · between the numbers: ${placed.join(', ') || 'nothing fitted'}`);
-for (const p of at) console.log(`  ${p.t.toFixed(2).padStart(6)}  ${p.id.padEnd(7)} ${p.dur.toFixed(2)}s`);
-if (dur(dest) < last.t + last.dur - 0.3) console.log('[satan] WARNING: shorter than its own timeline');
+console.log('[satan] cut from', SRC);
+for (const s of said) console.log(`  ${s}`);
+console.log('[satan] between the numbers:');
+for (const f of fitted) console.log(f);

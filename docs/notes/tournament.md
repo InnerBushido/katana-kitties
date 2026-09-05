@@ -1284,26 +1284,53 @@ kittens circling each other at 1:50 are reading. The rule was fair and
 unannounced, which is the worst combination a rule can have in a game whose
 sixth non-negotiable is that a refusal has to *say so*.
 
-### Three numbers, and each does a different job
+### Four numbers, five seconds apart, and each does a different job
 
 | | | |
 | --- | --- | --- |
 | `WARN_AT` | 30 | a nudge. One line, and the fight carries on. |
-| `COUNT_AT` | 15 | the round stops being a fight and becomes a deadline: the big clock appears, blinks, and he does not shut up again. |
+| `COUNT_AT` | 15 | the round stops being a fight and becomes a deadline: the big clock appears and blinks, and he does not shut up again. |
+| `COUNT_MID` | 10 | he gives up on them and announces that he is going to count. |
 | `COUNT_LAST` | 5 | he is counting out loud, and the number changes character with him. |
 
 `world-check` pins them in that order, because a warning that fires after the
 countdown starts, or a countdown longer than a round, is a call that never
-happens or one that happens on the round card.
+happens or one that happens on the round card. It also pins them **evenly
+spaced**, which is the less obvious half: the three cards are recordings cut to
+a budget, and the budget is the gap to the next cue.
 
-### Two latches, because a frame is not a second
+**A card has to finish inside its own five seconds.** `Announcer` holds a card
+for `HOLD_TAIL` (0.9s) after the voice stops and the next queued line waits for
+that, so a cue that fills its window pushes the *next* one past the start of the
+count — and the count is the one thing here that cannot start late. The cutter
+enforces it on the audio (`CARD_MAX`, 4.0s, and it will speed a line up by half
+to make it fit or refuse to cut at all), and `world-check` does the same sum
+across the two files that hold the numbers.
+
+### The count is the odd one out, twice over
+
+The first cut of this made the whole fifteen seconds a single spliced file and
+put its words on a card. Both halves were wrong, and both were reported.
+
+**Its words have no business on a card.** The number he is shouting is already
+on the screen eighty pixels high. So the last five seconds go straight down the
+speech channel through `Audio.speak`, with no bubble at all — the big number
+*is* the visual — and `Announcer.clip()` exists to hand out the preloaded
+element for it.
+
+**Which means `clear()` cannot stop it.** `Announcer.clear` empties the queue
+and hides the card; it deliberately does not touch audio that is already
+playing. `_hushCount` is the method that does, and a knockout at 0:03 needs it
+or he counts on over a kitten who is already flat on her back.
+
+### Three latches, because a frame is not a second
 
 `_callTheClock` is called every frame of a live round. At 300fps that is five
 calls inside the same tick of the clock, so `if (left <= WARN_AT)` on its own
-says "thirty seconds left" five times and then two hundred more. `_warned` and
-`_ranting` are the whole difference, and the check that catches it drives nine
-hundred frames of a whole round and counts the calls — one each — rather than
-asking whether either ever fired.
+says "thirty seconds left" five times and then two hundred more. `_warned`,
+`_called15`, `_called10` and `_counting` are the whole difference, and the check
+that catches it drives thirteen hundred frames of a whole round and counts the
+calls — one each — rather than asking whether any of them ever fired.
 
 ### The big number is painted, never shown and hidden
 
@@ -1332,16 +1359,84 @@ shouting it with a whole second still left to play. So `clock()` ceilings now
 too, and a full round still opens on 2:00 and still rolls to 1:00 — both pinned,
 because a change to the shared clock is a change to the two-player HUD.
 
+### He gets to finish shouting ZERO
+
+> The "ZEROOO" part is not happening at all, because as soon as the match is
+> over, he either says the "Draw" dialog or other dialog.
+
+`sat_count` ends on ONE and the round ends on the same frame the clock does, so
+the bell and "DOWN! Oh, that had to hurt!" landed on top of the one word the
+whole feature builds to. And not merely late: `Announcer.say` starts through
+`Audio.speak`, which opens with `stopSpeaking` — so the follow-up line did not
+queue *behind* the shout, it **killed** it.
+
+A round called by the clock is a small ceremony now, and `_letHimFinish` is the
+one place that knows it:
+
+1. the count is stopped and the queue cleared;
+2. `sat_zero` starts, and his `satan_charge.png` pose goes up with it;
+3. **the bell rings immediately** — see below;
+4. everything that reads as a *consequence* — the banner, his next line, the
+   toast — is handed to `_announce` as **one closure**, to run once the shout is
+   over plus `ZERO_BEAT` (1.5s, the *"1 - 2 second pause for him to calm down"*
+   that was asked for);
+5. his arms come down on the same frame that closure runs.
+
+#### The bell is not part of the wait
+
+It was, at first, and that was wrong for the one reason a bell exists: **it
+marks a moment.** Held back with the rest it arrived six seconds after the fact
+— a sound about something that had already happened — and a round ending read
+as having no gong at all, which is how it came back:
+
+> when a round is over, we can have a gong sound play... should be loud and
+> noticeable
+
+It already was loud. Rendered through the game's own graph offline, `endgong`
+peaks at −2.0 dBFS against the FIGHT gong's −2.4, and is 1.8 dB hotter in RMS —
+**the loudest single sound in the game.** Nothing needed rebuilding; the bell
+was simply ringing too late to be the thing it is for.
+
+**On a draw it is also the joke**, and a punchline has to land on the beat.
+`drawgong` is the bell-ringer looking up to find two fighters still standing;
+that confusion belongs at the instant the clock dies, not after Mr. Satan has
+finished explaining how he feels about it. So `_announce` takes the bell as its
+own argument, rings it before it decides whether to wait, and `world-check`
+pins the split in both directions — that the bell has rung by the time the
+round is over, and that the banner and the line have *not*.
+
+Measured in the running game, a timed-out draw:
+
+```
+ 0.00s  live   banner=FIGHT!
+ 5.05s  drawgong                 <- the clock dies, the bell rings
+ 5.09s  ko     banner=FIGHT!  PENDING
+11.11s  ko     banner=DRAW      <- 6.02s later, once he has run out of breath
+```
+
+The wait is **measured off the clip**, not guessed, so a re-cut that runs longer
+cannot start clipping itself again. `KO_HOLD` **grows** by it rather than
+absorbing it — spending the round's own hold on a shout nobody has been told the
+result of yet would flash K.O. for half a second and cut straight to the feast.
+
+**Every other ending is untouched**, which is the half of this that is easy to
+break. A knockout is not the clock running out: `_letHimFinish(false)` silences
+him, returns nought, and the bell rings on the frame it always did. Debug `4` is
+not the clock either — it means "end this round now", and a six-second ceremony
+on it would make the key useless for the thing it exists for.
+
 ### And it counts with `public/voice` deleted
 
-Ninth non-negotiable. Without `sat_last.mp3` the announcer shows the text for
-three seconds and goes quiet, so the last five seconds would count down in
-silence; `_ranting` is false in that case and the `count` blip ticks under the
-big number instead. Both directions are checked, because a tick that *also*
-plays underneath his voice is two clocks disagreeing out loud.
+Ninth non-negotiable, in both directions. Without `sat_count.mp3` nothing plays
+at all, so `_voiced` is false and the `count` blip ticks under the big number
+instead — checked both ways, because a tick that *also* plays underneath his
+voice is two clocks disagreeing out loud. Without `sat_zero.mp3` there is
+nothing to wait *for*, so the round does not wait: waiting anyway would be six
+seconds of a frozen deck under a silent card, which is worse than the bug the
+delay exists to fix.
 
-The clip itself — why it is one file, and what would not fit inside it — is in
-[voices.md](voices.md).
+The clips themselves — why the count is one take re-timed, and what the beat
+between two numbers actually costs — are in [voices.md](voices.md).
 
 ## A round ends on a bell, and a draw asks a question
 
@@ -1373,11 +1468,12 @@ exactly what a nine-year-old concludes from a knockout bell over a DRAW banner.
 So it has its own bell and its own line, and the line is the one thing here
 worth being silly about.
 
-**Both endings clear the announcer first.** `sat_last` runs for the whole of the
-last fifteen seconds, so a knockout at 0:06 would otherwise have him counting
-down over a kitten already flat on her back — and his "DOWN!" would queue behind
-nine seconds of it. Nothing else is ever pending during a live round, which is
-what makes clearing safe here and nowhere else.
+**Both endings go through `_letHimFinish` first**, which silences the count and
+empties the queue before either bell is rung — a knockout at 0:03 would
+otherwise have him counting down over a kitten already flat on her back. On the
+clock it does more than that, and the bell waits: see *He gets to finish
+shouting ZERO*, above. Nothing else is ever pending during a live round, which
+is what makes clearing safe here and nowhere else.
 
 ## The invisible man in the town square
 
@@ -1422,3 +1518,107 @@ Driven in the running game: standing on his town spot while he is invisible
 leaves you exactly where you are; the moment he appears the same point pushes
 you out to 1.55 (his 0.95 plus a kitten's 0.6); walking him to the announcer's
 box frees the square and blocks the box; hiding him frees that too.
+
+## The camera goes to him at zero, and finding out it could not
+
+Asked for: *"when timer gets to Zero on a match, can have the camera zoom in on
+Mr. Satan since he is having a speech/dialogue at the end. Same can happen with
+him giving the Draw speech."*
+
+He already had the whole last fifteen seconds to himself vocally, and the shot
+during it was of two kittens standing still on a deck while a man in a box
+shouted somewhere off the edge of it.
+
+### It hangs off `_onTheClock`, not off the state
+
+`ko` is the state for every ending, and only one of them is his. A knockout
+deliberately keeps the ring camera: the thing worth looking at there is the
+kitten who just went down, and cutting away from her throws out the one frame
+the whole round was for. So `callOnDamage` records whether the CLOCK was what
+called it, and `cameraWant` reads that latch — cleared per round on the same
+`count` to `live` line every other per-round latch is cleared on, and again in
+`finish()`.
+
+### `fitPlayers: false`, or main.js would have silently undone it
+
+`main.js` floors every ring distance with `fitDistance` on the players' spread,
+so a shot with neither kitten in it would be pulled back by however far apart
+they happened to end the round — a close-up further away than the fight it cut
+from. The shot opts out by name, and the opt-out is asserted on both sides: the
+value the tournament returns, and the line in main.js that honours it.
+
+### `SATAN_SHOT.lift` is measured off a screenshot
+
+`dist: 19` is a fifth of any `RING_DIST` number because those are sized for a
+56-unit deck with two kittens on it and this is one man on a booth. `pitch: 0.16`
+is almost level: the yaw is fixed in main.js, so the shot comes from the ring
+side looking back, and the fight cameras own 0.52 would look down on a billboard
+and squash the drawing.
+
+`lift` was reasoned at 3.2 and it was wrong, which is the house rule earning its
+keep. On screen he sat sixty pixels low in a 546-pixel frame — which is exactly
+where the announcers dialogue panel comes up, so his own speech, the reason the
+shot exists, would have crowded him. **1.9** centres him with the whole canopy
+in and the panel clear beneath.
+
+### ...and then the shot was of nobody, because he was never in the booth
+
+The first take was an empty box. `satan.position` measured during a live round
+was his town home, three hundred units south, and had been for every round ever
+played.
+
+`ArenaQuest._holdCourt` and the block around it are the DOORMAN: they walk him
+between the town square and the torii by counting who is standing at the gate,
+and write the line over his head asking them to gather. They run every frame the
+quest is `open`, which is every frame whatever the tournament is doing. The
+torii is on the arena island, ten units from where the griffin sets them down:
+
+    land           `Game._arrive` puts him in the box and clears his line
+    next frame     everybody is inside `GATE_RADIUS`, so the doorman drags him
+                   back out to the gate and writes "I need BOTH of you here"
+    round starts   the fighters are posted 62 units away in the middle of the
+                   deck, the count drops to zero, and he is TELEPORTED THREE
+                   HUNDRED UNITS INTO THE TOWN SQUARE
+
+Nothing on screen had ever said so because nothing had ever looked at him during
+a round. His `satan_charge.png` arms going up for the ZERO shout were going up
+out there.
+
+**The guard is `Game.inMatch`, and it guards the whole doorman rather than just
+where he stands** — the line over his head was as wrong as the position. `inMatch`
+is the right predicate because it already spans the league and team pickers as
+well as the live round, and those run BEFORE `Tournament.begin` and so before
+`active` — they are the frames the griffin lands into. `travel` is a second term
+for the ride itself, which is neither.
+
+`post` is cleared rather than kept, so the first frame back in town re-decides
+from scratch instead of comparing against an answer from before the flight; and
+the frame after a match ends he answers the gate again, because a guard that
+latched would leave the arena unopenable on a second visit.
+
+## Debug 4 ENDS the bit, debug 5 NUDGES it on
+
+Two keys because they are two different questions, asked for as such: *"make the
+4 command to end the round work for the current battle round, and feast, it is
+like a fast forward button"*, and then a second one that *"will skip forward in
+the current scene/match rather than skip it."*
+
+`endBeat` finishes whatever bit is running — card and count go straight to the
+gong through the same line the wait uses, a live round is CALLED (so the result
+is a real result, not a state assignment), a `ko` runs its pending closure
+early rather than dropping it, and a feast ends. **The pending closure is run,
+not discarded**: dropping it would move the game past a round whose outcome was
+never shown, which is the sort of debug key that teaches you a bug that is not
+there.
+
+`nudge` steps a live round down a LADDER — thirty, fifteen, five, then out —
+because everything interesting about the last thirty seconds is what he does at
+each of those marks, and they are the three hardest things in the game to see
+twice at two minutes a round. Landing ON a mark rather than past it is what
+makes each line fire exactly as it does in play: the latches in `_callTheClock`
+are all `left <=` tests. Outside a live round it falls through to `endBeat`, and
+in a cutscene or the summon scene it steps one line instead.
+
+**Neither key writes `state` from main.js**, which is asserted: a debug key that
+assigns a state directly is a key that can produce a game state the machine
+cannot reach on its own.

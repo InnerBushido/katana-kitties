@@ -75,7 +75,7 @@ import {
 import { MenuNav } from '../src/systems/menunav.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
 import {
-  splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, fitDistance, stablePanes,
+  splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   paneSeats, outOfShot, framedMembers, OUT_DROP, paneWiden, BIG_PANE_IN,
 } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
@@ -87,7 +87,7 @@ import { Minimap, ZOOMS } from '../src/systems/minimap.js';
 import { Label, labelCacheStats } from '../src/core/label.js';
 import {
   MODES, MODE_BY_ID, modesFor, handicapFor, HANDICAP_MAX, NO_SIDE, ROUND_LIMIT,
-  WARN_AT, COUNT_AT, COUNT_LAST,
+  WARN_AT, COUNT_AT, COUNT_MID, COUNT_LAST, ZERO_BEAT,
 } from '../src/systems/tournament.js';
 import { worldSpawnCount, WORLD_PER_PLAYER } from '../src/systems/kotodama.js';
 import {
@@ -2023,6 +2023,53 @@ console.log('\n--- nobody joined a clan, because nothing said they could ---');
   ok('...nor overwritten by one', c.calloutT > 0);
   for (let i = 0; i < 60 * 7; i++) c._updateCombat(1 / 60);
   ok('...but it does expire on its own', !c.callout.visible && c.calloutT === 0);
+
+  /* --- AND IT HAS TO BE READABLE, WHICH IS A SEPARATE THING FROM CORRECT ---
+     REPORTED: "it is a little hard to read the text above the players head
+     stating what input button to press to join the clan, maybe make the text
+     not transparent so it's easier to read or make the text bigger or both?"
+
+     THE OLD BREATH WENT DOWN TO 0.74. That is a third of every cycle spent at
+     an opacity a nine-year-old is reading a hillside through, on the one line
+     in the game that is an INSTRUCTION rather than a caption. The breathing
+     stays — a caption that is perfectly still for a minute stops being read —
+     and the whole band moves above 0.9. Sampled across a full cycle rather
+     than at one phase, because the floor is the number that was wrong. */
+  c.setCallout(`${badge}  ${CLANS[0].oath.toUpperCase()}`);
+  let lowest = 1;
+  let highest = 0;
+  let moved = 0;
+  let prev = null;
+  for (let i = 0; i < 400; i++) {
+    c.idlePhase = i * 0.05;
+    c._updateCombat(1 / 60);
+    const o = c.callout.mat.opacity;
+    lowest = Math.min(lowest, o);
+    highest = Math.max(highest, o);
+    if (prev !== null && Math.abs(o - prev) > 1e-6) moved += 1;
+    prev = o;
+  }
+  ok('the standing prompt never thins past nine tenths', lowest >= 0.9,
+    `dips to ${lowest.toFixed(2)}`);
+  ok('...and still breathes rather than sitting perfectly still',
+    moved > 100 && highest - lowest > 0.02,
+    `${lowest.toFixed(2)} - ${highest.toFixed(2)}`);
+  ok('...and never asks for more opacity than there is', highest <= 1,
+    highest.toFixed(3));
+
+  /* AND IT IS BIGGER IN THE WORLD, which is the other half of "or both". The
+     world height and the authored pixel size have to move TOGETHER or the
+     glyphs are magnified rather than drawn larger — same number of texture
+     pixels stretched over a bigger quad is a softer line, not a clearer one.
+     Read off the label the kitten really built. */
+  ok('...and the line itself is bigger than the 0.9 it was',
+    c.callout.baseHeight > 1.0, `${c.callout.baseHeight}`);
+  const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+  const built = psrc.slice(psrc.indexOf('this.callout = new Label('),
+    psrc.indexOf('this.callout.visible = false;'));
+  const px = /size:\s*(\d+)/.exec(built);
+  ok('...with the texture drawn larger to match, not just stretched',
+    px && Number(px[1]) >= 76, px ? px[1] : 'no size');
 }
 
 console.log('\n--- swearing an oath is worth two and a half seconds ---');
@@ -7605,17 +7652,36 @@ console.log('\n--- the three power moves ---');
     const el = mkEl();
     el.classList.owner = el;
 
+    /* FOUR LOGS, BECAUSE THERE ARE NOW FOUR WAYS FOR HIM TO MAKE A NOISE and
+       the whole feature turns on telling them apart. `said` is the card queue,
+       `spoke` is the speech channel the count goes down instead, `played` is
+       the bells and the tick, and `posed` is his arms. */
     const said = [];
+    const spoke = [];
     const played = [];
-    const mkT = (clips = ['sat_t30', 'sat_last', 'sat_draw']) => {
-      said.length = 0;
-      played.length = 0;
+    const posed = [];
+    const ZERO_DUR = 4.5;
+    const ALL = ['sat_t30', 'sat_last1', 'sat_last2', 'sat_count', 'sat_zero', 'sat_draw', 'sat_ko'];
+    const mkT = (clips = ALL) => {
+      said.length = 0; spoke.length = 0; played.length = 0; posed.length = 0;
+      const have = new Map(clips.map((c) => [c, { el: { id: c }, dur: c === 'sat_zero' ? ZERO_DUR : 4 }]));
       const T = new Tournament({
-        game: { players: [], toast() {}, sfx() {} },
+        game: {
+          players: [],
+          toast() {},
+          sfx() {},
+          satan: { setPose: (name) => posed.push(name) },
+          satanBlast: { stage: 'off' },
+        },
         world,
-        audio: { play: (n) => played.push(n) },
+        audio: {
+          play: (n) => played.push(n),
+          speak: (e) => { spoke.push(e.id); return e; },
+          stopSpeaking: () => spoke.push('#stop'),
+        },
         announcer: {
-          clips: new Map(clips.map((c) => [c, {}])),
+          clips: have,
+          clip: (id) => have.get(id) ?? null,
           say: (id) => said.push(id),
           clear: () => said.push('#clear'),
         },
@@ -7626,18 +7692,23 @@ console.log('\n--- the three power moves ---');
          with the other. */
       T.hudEl = { innerHTML: '', classList: { add() {}, remove() {} } };
       el.className = 'hidden';
-      T._warned = false;
-      T._ranting = false;
-      T._countShown = null;
+      T.wins = [0, 0];
       return T;
     };
 
-    /* THE THREE NUMBERS HAVE TO STAY IN THIS ORDER or the feature eats itself:
+    /* THE FOUR NUMBERS HAVE TO STAY IN THIS ORDER or the feature eats itself:
        a warning after the countdown starts, or a countdown longer than the
-       round, is a call that never fires or one that fires on the card. */
+       round, is a call that never fires or one that fires on the round card. */
     ok('the clock warns before it counts, and counts before it panics',
-      ROUND_LIMIT > WARN_AT && WARN_AT > COUNT_AT && COUNT_AT > COUNT_LAST
-      && COUNT_LAST > 0, `${ROUND_LIMIT} > ${WARN_AT} > ${COUNT_AT} > ${COUNT_LAST}`);
+      ROUND_LIMIT > WARN_AT && WARN_AT > COUNT_AT && COUNT_AT > COUNT_MID
+      && COUNT_MID > COUNT_LAST && COUNT_LAST > 0,
+      `${ROUND_LIMIT} > ${WARN_AT} > ${COUNT_AT} > ${COUNT_MID} > ${COUNT_LAST}`);
+    /* AND THEY HAVE TO BE EVENLY SPACED, because the cues are recordings cut
+       to a budget: a card gets exactly the gap to the next cue and no more.
+       See CARD_MAX below, which is the same fact from the cutter's end. */
+    ok('...and his three cards get the same five seconds each',
+      COUNT_AT - COUNT_MID === COUNT_LAST && COUNT_MID - COUNT_LAST === COUNT_LAST,
+      `${COUNT_AT}-${COUNT_MID}-${COUNT_LAST}`);
 
     /* --- ONCE EACH, WHATEVER THE FRAME RATE ---------------------------------
        This is the check that matters most and the one a "does it fire" test
@@ -7651,16 +7722,25 @@ console.log('\n--- the three power moves ---');
          stopped at exactly `WARN_AT` and reported nought calls out of one —
          a sweep that never reaches the thing it is sweeping for. */
       for (let i = 0; i <= 1300; i++) T._callTheClock(ROUND_LIMIT - i * 0.1);
-      const t30 = said.filter((x) => x === 'sat_t30').length;
-      const last = said.filter((x) => x === 'sat_last').length;
-      ok('a whole round at 10fps gets ONE thirty-second call', t30 === 1, `${t30}`);
-      ok('...and ONE countdown, not one a frame', last === 1, `${last}`);
-      ok('...and the warning comes first', said.indexOf('sat_t30') < said.indexOf('sat_last'));
-      /* HE GETS THE FLOOR FOR THE COUNT. `say` queues and never interrupts,
-         which is right everywhere else and wrong for a clip whose numbers are
-         nailed to the seconds they name. */
-      ok('...and he clears the queue before counting',
-        said[said.indexOf('sat_last') - 1] === '#clear');
+      const n = (id) => said.filter((x) => x === id).length;
+      ok('a whole round at 10fps gets ONE thirty-second call', n('sat_t30') === 1, `${n('sat_t30')}`);
+      ok('...ONE fifteen-second call', n('sat_last1') === 1, `${n('sat_last1')}`);
+      ok('...ONE ten-second call', n('sat_last2') === 1, `${n('sat_last2')}`);
+      ok('...and the count starts exactly once, not once a frame',
+        spoke.filter((x) => x === 'sat_count').length === 1, spoke.join(','));
+      ok('...in that order', said.indexOf('sat_t30') < said.indexOf('sat_last1')
+        && said.indexOf('sat_last1') < said.indexOf('sat_last2'));
+      /* THE COUNT IS PLAYED, NEVER SAID. Its words are the numbers, and the
+         number is already on screen eighty pixels high — "does not need to be
+         in a speech bubble since that is only for text/sentences that he is
+         saying". A card here is the same information twice. */
+      ok('...and the count never goes on a card', !said.includes('sat_count'), said.join(','));
+      /* AND THE CARD IN FRONT OF IT COMES DOWN. Each number inside the clip is
+         nailed to the second it names, so it starts the frame the clock says
+         five whatever else is on screen — leaving the ten-second bubble up
+         would put his own last sentence over the top of the count. */
+      ok('...having taken the last card down first',
+        said[said.length - 1] === '#clear', said.slice(-3).join(','));
     }
 
     /* AND NOT AT ALL BEFORE THEIR TIME. A call that fires a second early is
@@ -7671,8 +7751,10 @@ console.log('\n--- the three power moves ---');
       ok('nothing is said while there is still time on the clock',
         said.length === 0, said.join(','));
       T._callTheClock(COUNT_AT + 0.05);
-      ok('...and the countdown holds until the fifteenth second exactly',
-        !said.includes('sat_last'));
+      ok('...and the fifteen-second call holds until the fifteenth second',
+        !said.includes('sat_last1'));
+      T._callTheClock(COUNT_LAST + 0.05);
+      ok('...and the count until the fifth', !spoke.includes('sat_count'), spoke.join(','));
     }
 
     /* --- THE NUMBER ON SCREEN IS THE NUMBER OF SECONDS YOU HAVE -------------
@@ -7742,16 +7824,15 @@ console.log('\n--- the three power moves ---');
     }
 
     /* --- IT STILL COUNTS WITH `public/voice` DELETED ------------------------
-       Ninth non-negotiable. Without the recording the announcer shows the text
-       for three seconds and goes quiet, so the last five seconds would count
-       down in silence — the tick is what stands in, and `_ranting` is the flag
-       that decides. Both directions, because a tick that ALSO plays under his
-       voice is two clocks disagreeing out loud. */
+       Ninth non-negotiable. With no recording nothing plays at all, so the last
+       five seconds would count down in silence — the tick is what stands in,
+       and `_voiced` is the flag that decides. Both directions, because a tick
+       that ALSO plays under his voice is two clocks disagreeing out loud. */
     {
       const T = mkT([]);
       T.state = 'live';
-      T._callTheClock(COUNT_AT);
-      ok('with no recording he cannot rant', T._ranting === false);
+      T._callTheClock(COUNT_LAST);
+      ok('with no recording there is nothing for him to count with', T._voiced === false);
       played.length = 0;
       for (let n = COUNT_LAST; n >= 1; n--) { T.t = ROUND_LIMIT - n; T._paintCountdown(); }
       ok('...so the countdown ticks instead, once a second',
@@ -7760,29 +7841,221 @@ console.log('\n--- the three power moves ---');
 
       const V = mkT();
       V.state = 'live';
-      V._callTheClock(COUNT_AT);
-      ok('with the recording he does the counting', V._ranting === true);
+      V._callTheClock(COUNT_LAST);
+      ok('with the recording he does the counting', V._voiced === true);
       played.length = 0;
       for (let n = COUNT_LAST; n >= 1; n--) { V.t = ROUND_LIMIT - n; V._paintCountdown(); }
       ok('...and nothing ticks over the top of him',
         played.filter((x) => x === 'count').length === 0, played.join(','));
     }
 
-    /* --- THE CLIP IS A TIMELINE, AND IT HAS TO BE THE RIGHT LENGTH ----------
-       `sat_last.mp3` is spliced so each number lands on the second it names,
-       which only works if the splice and the game agree about when it starts.
-       The splicer's LEAD is the seconds of complaining before "FIVE!"; five
-       numbers follow it, so LEAD + 5 IS the window. Two files, one number. */
+    /* --- HE GETS TO FINISH SHOUTING ZERO ------------------------------------
+       The bug this whole beat exists for. `sat_count` ends on ONE and the round
+       ends on the same frame the clock does, so the bell and "DOWN!" landed on
+       top of the one word the feature builds to — and not merely late:
+       `Announcer.say` starts through `Audio.speak`, which opens with
+       `stopSpeaking`, so the follow-up line did not queue behind the shout, it
+       KILLED it. Reported as "the ZEROOO part is not happening at all". */
+    {
+      const T = mkT();
+      T.state = 'live';
+      T._callTheClock(COUNT_LAST);
+      const got = T.callOnDamage('Time!', true);
+      ok('a round called by the CLOCK ends on his ZERO', got === 'draw' && said.includes('sat_zero'));
+      /* AND THE COUNT IS STOPPED DEAD, not left playing under him. `clear`
+         cannot do it: it empties the card queue and touches no audio. */
+      ok('...and the count is stopped, not just uncarded', spoke.includes('#stop'), spoke.join(','));
+      /* THE BELL RINGS NOW. It was held back with everything else at first and
+         that was wrong for the one reason a bell exists: it marks the moment.
+         Six seconds after the moment it is a sound about something that
+         already happened, and on a draw the question-mark gong is a punchline
+         landing after the joke. It is also the ONLY thing that moves — see the
+         two checks below, which are the ones that keep the rest waiting. */
+      ok('...and the bell rings on the frame the round ended',
+        played.includes('drawgong'), played.join(','));
+      ok('...and it is the confused one, not the knockout bell',
+        !played.includes('endgong'), played.join(','));
+      /* NOTHING THAT READS AS A CONSEQUENCE HAPPENS YET. This is still the
+         whole point of the beat: no banner and no draw line until he has run
+         out of breath. */
+      ok('...but not the line that follows it', !said.includes('sat_draw'));
+      /* `_banner` sets `_bannerText` and only then touches an element, so with
+         no element this reads the real method rather than a stub of it. */
+      ok('...and not the banner either', T._bannerText !== 'DRAW', `${T._bannerText}`);
+      ok('...his arms go up instead', posed.includes('charge'), posed.join(','));
+      /* MEASURED OFF THE CLIP AND NOT GUESSED, so a re-cut that runs longer
+         cannot start clipping itself again — plus the beat that was asked for
+         ("maybe even adding a 1 - 2 second pause for him to calm down"). */
+      const wait = T._pending?.at ?? 0;
+      ok('...and the round waits exactly as long as the shout is, plus a beat',
+        Math.abs(wait - (ZERO_DUR + ZERO_BEAT)) < 1e-9, `${wait}`);
+      ok('...with the hold GROWN by it, not spent on it',
+        T._koHold > wait, `${T._koHold} > ${wait}`);
+
+      T.t = wait - 0.01;
+      T.update(0, []);
+      ok('...still nothing a hundredth of a second before he is done',
+        !said.includes('sat_draw') && T._bannerText !== 'DRAW',
+        `${said.join(',')} / ${T._bannerText}`);
+      T.t = wait;
+      T.update(0, []);
+      ok('...and THEN the banner and his line',
+        said.includes('sat_draw') && T._bannerText === 'DRAW');
+      ok('...and his arms come down with them',
+        posed[posed.length - 1] === 'idle', posed.join(','));
+      /* AND THE BELL IS NOT RUNG AGAIN BY THE CLOSURE IT LEFT. One strike, at
+         the start — this counts the whole beat, so it fails in both directions:
+         a bell moved back inside the wait, or a bell rung twice. */
+      ok('...with the bell struck once for the round, not once a frame',
+        (T.update(0, []), T.update(0, []),
+          played.filter((x) => x === 'drawgong').length === 1), played.join(','));
+      /* AND THE BANNER STILL GETS ITS FULL TIME. Absorbing the wait into
+         KO_HOLD would flash DRAW for half a second and cut to the feast. */
+      ok('...and the round is not hurried off screen for having waited',
+        T.state === 'ko', T.state);
+    }
+
+    /* EVERY OTHER ENDING IS UNCHANGED, which is the half of this that is easy
+       to break: a knockout is not the clock running out and must not sit there
+       for six seconds while nothing happens. */
+    {
+      const K = mkT();
+      K.state = 'live';
+      K.game.players = [];
+      K._roundOver(0, 'x');
+      ok('a knockout rings straight away', played.includes('endgong'), played.join(','));
+      ok('...with nothing pending behind it', K._pending === null);
+      ok('...and nobody strikes a pose for it', !posed.includes('charge'), posed.join(','));
+      ok('...and he does not shout ZERO at a round that had time left',
+        !said.includes('sat_zero'));
+    }
+    {
+      /* THE DEBUG KEY IS NOT THE CLOCK EITHER. `4` means "end this round now",
+         and a six-second ceremony on it would make the key useless for the
+         thing it exists for. */
+      const D = mkT();
+      D.state = 'live';
+      D.game.players = [];
+      D.callOnDamage('[debug] round called!');
+      ok('the debug key ends a round on the spot', D._pending === null && played.includes('drawgong'));
+    }
+    {
+      /* NINTH NON-NEGOTIABLE, AND THE DEGRADE IS "DO NOT WAIT". With no
+         recording there is nothing to wait FOR, and waiting anyway is six
+         seconds of a frozen deck under a silent card. */
+      const N = mkT([]);
+      N.state = 'live';
+      N.game.players = [];
+      N.callOnDamage('Time!', true);
+      ok('with no recording the round does not wait for a shout that cannot happen',
+        N._pending === null && played.includes('drawgong'), played.join(','));
+      ok('...and his arms stay down', !posed.includes('charge'), posed.join(','));
+    }
+    {
+      /* THE BLAST GAG OWNS THE POSE FOR ITS OWN TEN SECONDS and puts it back
+         to idle at the end of them — which would drop his arms in the middle
+         of this and leave `_posed` lying about it. */
+      const B = mkT();
+      B.game.satanBlast.stage = 'charge';
+      B.state = 'live';
+      B.game.players = [];
+      B.callOnDamage('Time!', true);
+      ok('a tantrum already in progress keeps his arms', !posed.includes('charge'), posed.join(','));
+      ok('...and the round does not put down a pose it did not raise',
+        (B.finish(), !posed.includes('idle')), posed.join(','));
+    }
+    {
+      /* AND FLYING HOME PUTS EVERYTHING BACK, from either half of it. `clear`
+         reaches neither the speech channel nor the sprite — same class of latch
+         as the wings and the pennant.
+         TWO TOURNAMENTS, BECAUSE THE FIRST VERSION OF THIS PROVED NOTHING: it
+         ran the count, ended the round and THEN tore down, by which point
+         `_letHimFinish` had already hushed the count and `finish` was correctly
+         doing nothing. A teardown check has to catch the state it is for. */
+      const F = mkT();
+      F.state = 'live';
+      F._callTheClock(COUNT_LAST);
+      F.finish();
+      ok('flying home mid-count stops him counting', spoke.includes('#stop'), spoke.join(','));
+
+      const G = mkT();
+      G.state = 'live';
+      G.game.players = [];
+      G._callTheClock(COUNT_LAST);
+      G.callOnDamage('Time!', true);
+      posed.length = 0;
+      G.finish();
+      ok('...and flying home mid-shout puts his arms down',
+        posed.includes('idle'), posed.join(','));
+      ok('...and drops what was waiting to be announced', G._pending === null);
+    }
+
+    /* --- THE CUTTER AND THE GAME AGREE ABOUT THE CLOCK ----------------------
+       `sat_count.mp3` is one continuous take re-timed so each number lands on
+       the second it names, which only works if the cutter and the game agree
+       about how long it is and when it starts. Two files, one number. */
     {
       const src = readFileSync(new URL('../tools/capture/satan-countdown.mjs', import.meta.url), 'utf8');
-      const lead = Number((/const LEAD = ([\d.]+);/.exec(src) ?? [])[1]);
-      ok('the splicer and the game agree on how long his rant is',
-        Number.isFinite(lead) && lead + 5 === COUNT_AT, `${lead} + 5 vs ${COUNT_AT}`);
-      /* AND THE NUMBERS ARE NAILED TO WHOLE SECONDS. `LEAD + i` is the line
-         that makes the clip truthful; a splice that packed them end to end
-         would sound fine and count a different clock. */
-      ok('...and that every number sits on its own second',
-        /say\(p, LEAD \+ i\)/.test(src) && /say\(prep\('roar', 1\), LEAD \+ 5\)/.test(src));
+      const num = (name) => Number((new RegExp(`const ${name} = ([\\d.]+);`).exec(src) ?? [])[1]);
+      const beat = num('BEAT');
+      const nums = num('NUMS');
+      ok('the cutter and the game agree how long the count is',
+        Number.isFinite(beat) && Number.isFinite(nums) && beat * nums === COUNT_LAST,
+        `${beat} x ${nums} vs ${COUNT_LAST}`);
+      /* AND EVERY NUMBER SITS ON ITS OWN SECOND. This is the line that makes
+         the clip truthful; a cut that packed them end to end would sound fine
+         and count a different clock. */
+      ok('...and that every number is pinned to a whole one of them',
+        /t: k \* BEAT/.test(src));
+      ok('...and it cuts every cue the game asks him for',
+        ["'sat_last1'", "'sat_last2'", "'sat_zero'", "'sat_count.mp3'"].every((id) => src.includes(id)));
+      /* A SPOKEN CUE HAS TO FINISH INSIDE ITS OWN FIVE SECONDS. The announcer
+         holds a card for HOLD_TAIL after the voice stops and the next queued
+         line waits for that — so a cue that fills its window pushes the NEXT
+         one past the start of the count, and the count is the one thing here
+         that cannot start late. The cutter enforces it on the audio; this is
+         the same sum from the game's end, across the two files that hold the
+         numbers. */
+      const ann = readFileSync(new URL('../src/systems/announce.js', import.meta.url), 'utf8');
+      const cardMax = num('CARD_MAX');
+      const tail = Number((/const HOLD_TAIL = ([\d.]+);/.exec(ann) ?? [])[1]);
+      ok('...and a spoken cue always finishes before the next one is due',
+        Number.isFinite(cardMax) && Number.isFinite(tail)
+        && cardMax + tail <= COUNT_AT - COUNT_MID,
+        `${cardMax} + ${tail} <= ${COUNT_AT - COUNT_MID}`);
+      /* A CARD IS SHORTENED BY CLOSING PAUSES, NOT BY PLAYING HIM FASTER.
+         THIS IS THE CHECK THAT WOULD HAVE CAUGHT IT. `sat_last2` shipped at
+         1.475x for a line where he is only talking, and nothing failed: the
+         old ceiling was 1.5, borrowed from the shouts sneaked between the
+         numbers, where 30-50% was asked for and belongs. It was reported by
+         ear — "seems like it is sped up... he is just talking at this point" —
+         which is the failure mode this file exists to remove.
+         Two facts, and the second is the one with teeth. */
+      const gapMax = num('CARD_GAP_MAX');
+      ok('...and a card closes its dead air before it touches his speed',
+        Number.isFinite(gapMax) && gapMax > 0
+        && src.indexOf('tighten(raw.file') > 0
+        && src.indexOf('tighten(raw.file') < src.indexOf('tight.dur / CARD_MAX'),
+        `gap floor ${gapMax}s`);
+      const cardTempo = num('CARD_TEMPO_MAX');
+      /* A NUDGE, NOT A SQUEEZE. Anything a listener can hear as "sped up" has
+         to fail here rather than ship. The shouts' own ceiling is the thing it
+         must NOT be allowed to drift back up to. */
+      ok('...and a card he is TALKING through is never squeezed like a shout',
+        Number.isFinite(cardTempo) && cardTempo <= 1.1,
+        `${cardTempo}x`);
+      /* THE SHOUTS BETWEEN THE NUMBERS ARE FITTED, NOT PLACED. Which of them
+         land is measured off the take; a table would go stale the first time
+         anything was re-rendered. And the ceiling has to be a real test rather
+         than a rubber stamp, or "NO TIME LEFT!" gets squeezed to a rattle. */
+      const sayMax = num('SAY_MAX');
+      ok('...and a card is held to a far tighter ceiling than a shout',
+        Number.isFinite(cardTempo) && Number.isFinite(sayMax) && cardTempo < sayMax,
+        `card ${cardTempo}x < shout ${sayMax}x`);
+      ok('...and no shout between two numbers is doubled in speed',
+        Number.isFinite(sayMax) && sayMax < 2, `${sayMax}`);
+      ok('...with a cutter that measures the gap instead of assuming it',
+        /shout\.dur \/ window/.test(src) && /Math\.max\(1, shout\.dur/.test(src));
     }
 
     /* --- A ROUND ENDS ON A BELL, AND A DRAW ASKS A QUESTION -----------------
@@ -7793,21 +8066,15 @@ console.log('\n--- the three power moves ---');
     {
       const T = mkT();
       T.state = 'live';
-      T.wins = [0, 0];
       T._roundOver(0, 'x');
       ok('a round that ends rings a bell', played.includes('endgong'), played.join(','));
       ok('...and it is not the one that starts a fight', !played.includes('gong'));
-      /* HE STOPS COUNTING THE MOMENT THERE IS NOTHING TO COUNT: `sat_last` is
-         fifteen seconds long, so a knockout at 0:06 would otherwise have him
-         counting over a kitten already flat on her back — and his "DOWN!"
-         would queue behind nine seconds of it. */
       ok('...and the countdown is cut, not queued behind',
         said.indexOf('#clear') < said.indexOf('sat_ko'));
     }
     {
       const T = mkT();
       T.state = 'live';
-      T.wins = [0, 0];
       T.game.players = [];
       const got = T.callOnDamage('Time!');
       ok('nobody ahead on damage is a draw', got === 'draw');
@@ -7997,10 +8264,91 @@ console.log('\n--- the three power moves ---');
     ok('...and the clock running out calls exactly the same method',
       /if \(this\.t > ROUND_LIMIT\) this\.callOnDamage\(/.test(tsrc));
     const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
-    const at = msrc.indexOf("if (code === 'Digit4') {");
+    const at = msrc.indexOf("if (code === 'Digit4' || code === 'Digit5') {");
+    const key = at > 0 ? msrc.slice(at, at + 1400) : '';
     ok('...and so does the debug key, which no longer hurts anybody',
-      at > 0 && /callOnDamage\(/.test(msrc.slice(at, at + 500))
-      && !/\.hurt\(/.test(msrc.slice(at, at + 500)));
+      at > 0 && /this\.tournament\.(endBeat|nudge)\(/.test(key)
+      && !/\.hurt\(/.test(key), at > 0 ? '' : 'the Digit4/5 branch moved');
+    /* IT ASKS `Tournament` AND DECIDES NOTHING ITSELF. The whole point of the
+       key going through `callOnDamage` was that it could not disagree with the
+       game about who won; `endBeat` and `nudge` inherit that only for as long
+       as they are the ones setting the state. A `this.tournament.state =` in
+       main.js would be the old bug wearing a new label. */
+    ok('...and it never sets a tournament state from outside the tournament',
+      !/this\.tournament\.state\s*=/.test(msrc));
+
+    /* --- `4` ENDS THE BEAT, IN EVERY BEAT ---
+       Asked for: "make the 4 command to end the round work for the current
+       battle round, and feast, it is like a fast forward button to move along
+       the script to the next part." Each state is asked separately, because
+       "it did something" and "it did the right thing" are different questions
+       and the feast is the one that used to do nothing at all. */
+    const beat = (state, t = 0) => {
+      const e = mk([9, 0, 0, 0]);
+      e.T.state = state;
+      e.T.t = t;
+      const said = e.T.endBeat();
+      return { T: e.T, said };
+    };
+    ok('4 in a live round ends it', beat('live').T.state === 'ko');
+    const feast = beat('feast');
+    ok('...and in the feast it runs the clock out rather than doing nothing',
+      feast.said !== null && feast.T.t >= FEAST_TIME, `${feast.said} / ${feast.T.t}`);
+    const card = beat('card');
+    ok('...and in the round card it skips to the count',
+      card.said !== null && card.T.t > 0, `${card.said}`);
+    /* THE RESULTS SCREEN IS THE ONE IT MUST NOT TOUCH. It is waiting for a
+       kitten to type a name, and a debug key that answers for her is a debug
+       key that skips the one screen a player has to answer. */
+    const res = beat('result');
+    ok('...and it refuses on the results screen, which is waiting on a player',
+      res.said === null && res.T.state === 'result');
+    ok('...and says so rather than doing nothing quietly',
+      msrc.indexOf('nothing to skip in this bit') > 0);
+
+    /* --- `5` STEPS ONTO EACH MARK RATHER THAN PAST IT ---
+       Mr. Satan says a different line at 30, 15 and 10 seconds, and each of
+       them cost two minutes of a live round to hear. The ladder is what makes
+       each one fire exactly as it does in play: the latches in `_callTheClock`
+       are `left <=` tests, so landing ON 30 and then ON 15 fires one line
+       each, while a jump from 120 straight to 15 fires two on one frame and
+       queues them behind each other. */
+    const rung = (left) => {
+      const e = mk([9, 0, 0, 0]);
+      e.T.state = 'live';
+      e.T.t = ROUND_LIMIT - left;
+      e.T.nudge();
+      return ROUND_LIMIT - e.T.t;
+    };
+    ok('5 steps a fresh round down to the thirty-second mark', rung(120) === WARN_AT,
+      `${rung(120)}`);
+    ok('...then to fifteen', rung(WARN_AT) === COUNT_AT, `${rung(WARN_AT)}`);
+    ok('...then to five', rung(COUNT_AT) === COUNT_LAST, `${rung(COUNT_AT)}`);
+    /* AND PAST THE LAST MARK IT HANDS OVER TO THE CLOCK RATHER THAN CALLING
+       THE ROUND ITSELF. `callOnDamage(_, false)` here would look identical and
+       silently skip his ZERO shout, the bell's timing and the camera on him. */
+    /* STRICTLY past the limit, because `update` tests `>` and a `t` landing
+       exactly on it would leave the round live and the key looking dead. */
+    ok('...and then lets the clock itself run out', rung(COUNT_LAST) < -1e-9,
+      `${rung(COUNT_LAST) * 1000}ms past`);
+    const ran = mk([9, 0, 0, 0]);
+    ran.T.state = 'live';
+    ran.T.t = ROUND_LIMIT - 1;
+    ran.T.nudge();
+    ok('...still LIVE, so the round ends through `update` and not through the key',
+      ran.T.state === 'live');
+
+    /* --- AND THE CAMERA KNOWS WHICH ENDING THIS WAS ---
+       `_onTheClock` is the only thing separating "the clock did this, put the
+       camera on the man shouting about it" from "somebody pressed 4". */
+    const byKey = mk([9, 0, 0, 0]);
+    byKey.T.state = 'live';
+    byKey.T.callOnDamage('[debug] round called!');
+    ok('a round ended by the debug key is NOT the clock', !byKey.T._onTheClock);
+    const byClock = mk([9, 0, 0, 0]);
+    byClock.T.state = 'live';
+    byClock.T.callOnDamage('Time!', true);
+    ok('...and a round ended by the clock is', byClock.T._onTheClock === true);
   }
 
   /* --- THE FIGHT CAMERA HAS TO FRAME EVERY FIGHTER ---
@@ -8100,6 +8448,59 @@ console.log('\n--- the three power moves ---');
        five, asserted where it could break. */
     ok('a rig that is not told what device it is on is a desktop',
       rig(close).dist === Math.min(104, Math.max(52, 46 + 6 * 0.8)));
+
+    /* --- AND WHEN THE CLOCK KILLS A ROUND, THE CAMERA GOES TO HIM ---
+       ASKED FOR: "when timer gets to Zero on a match, can have the camera zoom
+       in on Mr. Satan since he is having a speech/dialogue at the end. Same can
+       happen with him giving the Draw speech." Two kittens standing still while
+       a man in a box shouts ZEEEEROOOO is a shot of the wrong half of the
+       arena. */
+    const booth = world.arenaBooth;
+    const satanRig = (state, onTheClock, satan = {
+      position: booth, group: { visible: true },
+    }) => {
+      const T = new Tournament({
+        game: { players: close, toast() {}, sfx() {}, satan }, world, audio: null,
+        announcer: null,
+      });
+      T.state = state;
+      T._onTheClock = onTheClock;
+      return T.cameraWant();
+    };
+    const shot = satanRig('ko', true);
+    ok('the clock running out puts the camera on Mr. Satan, not on the ring',
+      Math.abs(shot.x - booth.x) < 1e-9 && Math.abs(shot.z - booth.z) < 1e-9,
+      `${shot.x.toFixed(1)},${shot.z.toFixed(1)} vs booth ${booth.x},${booth.z}`);
+    ok('...aimed at his face rather than his feet', shot.y > booth.y + 1);
+    ok('...and it is a close-up, not the fight camera again',
+      shot.dist < rig(close).dist / 2, `${shot.dist} vs ${rig(close).dist}`);
+    /* AND IT OPTS OUT OF THE PLAYER-SPREAD FLOOR IN main.js. That floor is a
+       function of how far apart the FIGHTERS are, so a shot with neither of
+       them in it would be pulled back by however far they happened to end the
+       round from each other — a close-up that is further away than the fight it
+       cut from. */
+    ok('...and says it is not to be widened to fit the kittens',
+      shot.fitPlayers === false);
+    const msrc2 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('...and main.js honours that rather than flooring it anyway',
+      /ring\.fitPlayers === false \? ring\.dist \* widen/.test(msrc2));
+
+    /* A KNOCKOUT IS DELIBERATELY NOT IN THIS. The thing worth looking at there
+       is the kitten who just went down, and cutting to the announcer throws
+       away the one frame the whole round was for. */
+    ok('a knockout keeps the camera in the ring',
+      satanRig('ko', false).fitPlayers !== false);
+    ok('...and so does a live round, whatever the flag says',
+      satanRig('live', true).fitPlayers !== false);
+
+    /* NINTH NON-NEGOTIABLE: no drawing, no shot. It falls back to the ring
+       camera the round has been looking at all along rather than aiming at
+       nothing — prefer a rule that degrades over one that vanishes. */
+    ok('...and with no Mr. Satan in the world it frames the ring instead',
+      satanRig('ko', true, null).fitPlayers !== false);
+    ok('...and the same when he is in the world but not on screen',
+      satanRig('ko', true, { position: booth, group: { visible: false } })
+        .fitPlayers !== false);
   }
 
   /* --- THE MENAGERIE'S PER-PLAYER ARRAYS ---
@@ -9030,19 +9431,60 @@ console.log('\n--- and the two maps go where they are worth most ---');
   const moved = assignMaps([1, 1, 2], [0, 1], 2);
   ok('a pane holding two kittens takes a map off a pane holding one',
     moved.includes(2), JSON.stringify(moved));
-  ok('...and only one of them moves — the other pane keeps what it had',
-    moved.filter((g) => g === 1).length === 1, JSON.stringify(moved));
+  ok('...and exactly one pane is left without one, since there are only two',
+    new Set(moved.filter((g) => g >= 0)).size === 2, JSON.stringify(moved));
 
-  /* INCUMBENCY WINS TIES, WHICH IS WHAT STOPS IT FLICKERING. A map is taken
-     off a pane only by a pane holding STRICTLY more players, so the ordinary
-     four-player case — everybody alone — never moves a map once it has landed.
-     A map that moves for a reason that has nothing to do with you costs you a
-     second of hunting for it; same argument `stablePanes` makes. */
+  /* INCUMBENCY WINS TIES ON SIZE, WHICH IS WHAT STOPS IT FLICKERING. A map is
+     taken off a pane only by a pane holding STRICTLY more players, so the
+     ordinary four-player case — everybody alone — never moves a map once it
+     has landed. A map that moves for a reason that has nothing to do with you
+     costs you a second of hunting for it; same argument `stablePanes` makes. */
   ok('nothing moves when every pane holds the same number',
     JSON.stringify(assignMaps([1, 1, 1, 1], [0, 1], 2)) === JSON.stringify([0, 1]));
   ok('...and a settled assignment is a fixed point',
     JSON.stringify(assignMaps([1, 2, 1], assignMaps([1, 2, 1], [0, 1], 2), 2))
       === JSON.stringify(assignMaps([1, 2, 1], [0, 1], 2)));
+
+  /* --- AND A MAP THAT IS NO LONGER NEEDED WHERE IT IS COMES BACK ---
+     REPORTED TWICE IN ONE BREATH: "it is zooming the wrong map, it is not
+     detecting which minimap is on which screen/tile", and "when Ember loses her
+     minimap ... Z no longer zooms in on it". One bug, and it is incumbency
+     with no way back: steps 1-3 only ever move a map towards a FULLER pane, so
+     once a pair has taken Ember's map, the pair splitting up leaves every pane
+     at size 1, nothing is "strictly more", and her map never returns.
+
+     THIS IS THE EXACT SEQUENCE, played forward the way the panes really move:
+     four kittens in two pairs, then one pair splits, then everybody apart. */
+  let seq = assignMaps([2, 2], [], 2);
+  seq = assignMaps([1, 1, 2], seq, 2);
+  seq = assignMaps([1, 1, 1, 1], seq, 2);
+  ok('four kittens who pair up and split again all get their maps back',
+    seq.every((g) => g === 0 || g === 1), JSON.stringify(seq));
+  ok('...so player one is not left mapless for the rest of the session',
+    seq.includes(0), JSON.stringify(seq));
+
+  /* IT CANNOT FLICKER, AND THAT IS THE ONE THING THE NEW RULE HAD TO PROVE.
+     Every swap it makes strictly lowers the sum of the panes the maps sit in,
+     and that sum is a non-negative integer — so it settles, and the thing it
+     settles on does not depend on how it got there. Asked both ways: is it a
+     fixed point, and does a different history reach the same answer. */
+  ok('...and that arrangement is where it stops moving',
+    JSON.stringify(assignMaps([1, 1, 1, 1], seq, 2)) === JSON.stringify(seq));
+  const other = assignMaps([1, 1, 1, 1], assignMaps([1, 3], [1, 0], 2), 2);
+  ok('...whichever way the panes got there',
+    JSON.stringify(other) === JSON.stringify(seq),
+    `${JSON.stringify(other)} vs ${JSON.stringify(seq)}`);
+
+  /* AND THE SIZE RULE STILL OUTRANKS IT. The tie-break is only a tie-break: a
+     pane holding two kittens keeps its map against a lower-indexed pane
+     holding one, or this has quietly reinstated "the maps belong to Ember and
+     Frost" — the rule step 3 exists to have replaced. */
+  const busy = assignMaps([1, 2], [0, 1], 2);
+  ok('...and a fuller pane still outranks a lower-numbered one',
+    busy.includes(1), JSON.stringify(busy));
+  const busier = assignMaps([1, 2, 2], [1, 2], 2);
+  ok('...so a lone kitten does not take a map off two sisters',
+    !busier.includes(0), JSON.stringify(busier));
 
   /* NO PANE EVER GETS BOTH MAPS, in any arrangement — that would be two
      archipelagos in one corner and a pane with none next door. */
@@ -11028,6 +11470,59 @@ console.log('\n--- Mr. Satan loses his temper ---');
     handled.every((c) => labelBlock.includes(`${c}:`)),
     handled.filter((c) => !labelBlock.includes(`${c}:`)).join(', ') || 'all');
   ok("...including Mr. Satan's", handled.includes('Digit2') && listed.has('Digit2'));
+
+  /* --- AND THE PANEL LISTS NOTHING IT NO LONGER DOES ---
+     The rule above catches a key with no row. This is the other direction, and
+     it is the one a cleanup breaks: a row left behind is a line of
+     documentation for a key that does nothing, which is worse than no line —
+     it teaches a thing that is no longer true. Asked for as "clean up the
+     debug to remove the 7 dragonballs scenes and unnecessary commands. Let's
+     remove Debug items 7, 8, 9, 5, M, Z."
+
+     `7` HAS BEEN REUSED, so it is named here rather than dropped from the
+     check: it is GO TO THE ARENA now, and what has to be gone is the dragon
+     hunt behind it. */
+  ok('every row in the panel is a key the game still answers to',
+    [...listed].every((c) => handled.includes(c)),
+    [...listed].filter((c) => !handled.includes(c)).join(', ') || `${listed.size} rows`);
+  ok('...and the seven-stars shortcuts are gone from both',
+    !/_onAllBalls\(\)/.test(dbgBody) && !/freeSeat\(\)/.test(dbgBody)
+    && !handled.includes('Digit8') && !handled.includes('Digit9'));
+  ok("...and 7 is the arena now, through the scene viewer's own path",
+    handled.includes('Digit7') && /Digit7'\) this\._goToArena\(\)/.test(dbgBody));
+
+  /* `M` AND `Z` WERE PROMOTED, NOT DELETED. They had rows because they were
+     the only way to reach the maths overlay and the map zoom from a keyboard —
+     which made two real player controls look like debug tools, and forced the
+     panel's click handler to call them directly instead of through
+     `_debugKey`. The maths overlay is the FIRST non-negotiable; a cleanup that
+     removed the only key for it would be removing the feature. */
+  ok('the maths overlay and the map zoom are no longer debug rows',
+    !listed.has('KeyM') && !listed.has('KeyZ'));
+  ok('...but both keys still exist, because one of them is the whole point',
+    /e\.code === 'KeyM'[\s\S]{0,60}this\._toggleMath\(\)/.test(msrc)
+    && /e\.code === 'KeyZ'[\s\S]{0,80}this\._zoomMapKey\(0\)/.test(msrc));
+  ok('...and the panel has no special case left for them',
+    !/if \(code === 'KeyM'\) this\._toggleMath\(\)/.test(msrc));
+
+  /* --- AND THE SCENE VIEWER LISTS THEM IN THE ORDER THEY HAPPEN ---
+     The ending sat fifth, between Ryuuseki and the two Mr. Satan scenes, and
+     it is the LAST thing in the game: he announces the tournament from 50%
+     mischief and opens the arena at `OPEN_AT`, and the finale is 100%. A
+     viewer whose order disagrees with the game teaches its order to whoever
+     reads it. Checked against `OPEN_AT` rather than against a number typed
+     twice, so moving the gate moves the check. */
+  const sceneBlock = msrc.slice(msrc.indexOf('  get _scenes() {'),
+    msrc.indexOf('  _pickScene(dir) {'));
+  const order = [...sceneBlock.matchAll(/\{ id: '(\w+)'/g)].map((m) => m[1]);
+  ok('the scene viewer runs in the order the story does',
+    order.indexOf('satanOpen') < order.indexOf('finale')
+    && order.indexOf('satanAnnounce') < order.indexOf('satanOpen')
+    && order.indexOf('found') < order.indexOf('summon'),
+    order.join(' '));
+  ok('...which is the order the mischief gates fire in', OPEN_AT < 1);
+  ok('...and "go to the arena" is no longer pretending to be a scene',
+    !order.includes('arena') && /_goToArena\(\) \{/.test(msrc));
   /* --- AND FORCE-SPAWN'S THREE, WHICH ARE THE ONLY LETTERS IN THE SET ---
      `\` seats a third and fourth kitten on the keyboard alone; `R` and `U` pass
      WASD and the arrows between the two sharing each. They are checked by name
@@ -11693,6 +12188,108 @@ console.log('\n--- one press is not enough, and one player drives ---');
       r.q.post === 'town' && r.satan.position.z === home.z, `${r.q.post}`);
   }
 
+  /* =========================================================================
+     ...AND THE DOORMAN SHUTS UP ONCE THE DOOR IS BEHIND THEM.
+
+     Everything above is the doorman, and it ran during the tournament too.
+     The torii is on the ARENA island, ten units from where the griffin sets
+     them down, so the frame after `Game._arrive` put Mr. Satan in his
+     announcer's box the checks above dragged him back out to the gate and
+     wrote "I need BOTH of you here" over his head; then the round started, the
+     fighters were posted 62 units away in the middle of the deck, the count
+     went to zero and he was TELEPORTED THREE HUNDRED UNITS INTO THE TOWN.
+
+     So for the whole of every round his box was empty and he was standing in
+     the square asking two kittens who were already in the ring to come to a
+     gate they had walked through. Nothing said so, because nothing had ever
+     looked at him during a round — found the frame the shot above was added
+     and pointed at the booth.
+
+     These are the checks that would have caught it, and they are about
+     BEHAVIOUR: not that a flag is read, but that a frame in each of the three
+     match states moves him nowhere and says nothing. */
+  console.log('\n--- and he stays in his box once the round starts ---');
+  {
+    const booth = { x: gate.x, y: 0, z: gate.z - 100 };
+    const inRing = () => at(gate.x, gate.z - 62);
+    /* HE IS PUT IN THE BOX THE WAY `Game._arrive` PUTS HIM THERE, then a frame
+       is run. Anything that moves him after that is this file's bug. */
+    const landed = (hud) => {
+      const r = rig();
+      r.satan.moveTo(booth.x, booth.y, booth.z);
+      r.satan.setLine('');
+      r.said = [];
+      r.satan.setLine = (t) => r.said.push(t);
+      Object.assign(r.hud, hud);
+      return r;
+    };
+    const stayed = (r) => r.satan.position.z === booth.z && r.satan.position.x === booth.x;
+
+    /* 1. A LIVE ROUND. The fighters are on their marks, nowhere near the
+       torii, so the old code read "nobody at the gate" and sent him home. */
+    {
+      const r = landed({ inMatch: true });
+      step(r, [inRing(), inRing()]);
+      ok('a live round leaves Mr. Satan in his announcer\'s box', stayed(r),
+        `z=${r.satan.position.z} want ${booth.z}`);
+      ok('...and does not write the doorman\'s line over his head',
+        r.said.length === 0, JSON.stringify(r.said[0] ?? ''));
+      ok('...and clears `post`, so coming home re-decides from scratch',
+        r.q.post === null, `${r.q.post}`);
+    }
+
+    /* 2. THE LANDING ITSELF, which is the frame that actually bit. They are
+       standing ON the gate here — the griffin drops them ten units from it —
+       and the old code therefore fetched him OUT of the box he had been put in
+       one frame earlier. `inMatch` is true across the league and team pickers,
+       which is what these frames are. */
+    {
+      const r = landed({ inMatch: true });
+      step(r, [atGate(2), atGate(-2)]);
+      ok('...and so does the landing, with both of them stood on the torii',
+        stayed(r), `z=${r.satan.position.z} want ${booth.z}`);
+      ok('...saying nothing to two kittens who have already come through it',
+        r.said.length === 0, JSON.stringify(r.said[0] ?? ''));
+    }
+
+    /* 3. THE RIDE. `inMatch` is false on the way out — `begin` has not been
+       called — so `travel` is a second term and not a belt-and-braces one. */
+    {
+      const r = landed({ travel: 'out' });
+      step(r, [atGate(2), atGate(-2)]);
+      ok('...and the griffin ride itself moves him nowhere', stayed(r),
+        `z=${r.satan.position.z}`);
+    }
+
+    /* 4. AND THE MOMENT IT IS OVER HE IS THE DOORMAN AGAIN. A guard that
+       latched would leave the arena permanently unopenable on a second visit,
+       which is a worse bug than the one being fixed. */
+    {
+      const r = landed({ inMatch: true });
+      step(r, [atGate(2), atGate(-2)]);
+      r.hud.inMatch = false;
+      step(r, [atGate(2), atGate(-2)]);
+      ok('...but the frame after the match he answers the gate again',
+        r.q.post === 'gate' && r.satan.position.z === gate.z + GATE_STAND,
+        `${r.q.post} z=${r.satan.position.z}`);
+    }
+
+    /* IT ASKS `Game.inMatch` RATHER THAN RESTATING IT. The predicate has to
+       span the two picker screens as well as the live round, and that is
+       exactly what `inMatch` is for; a copy of it here would be a second place
+       to forget `teamPicking`. Both halves are pinned, because the guard is
+       only as good as the getter it leans on. */
+    const asrc = readFileSync(new URL('../src/systems/arenaquest.js', import.meta.url), 'utf8');
+    ok('the guard asks Game.inMatch rather than listing the states again',
+      /if \(hud\.inMatch \|\| hud\.travel\) \{ this\.post = null; break; \}/.test(asrc));
+    ok('...and it guards the whole doorman, not just where he stands',
+      asrc.indexOf('hud.inMatch') < asrc.indexOf('_holdCourt(players, hud)'));
+    const msrc3 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('...and Game.inMatch really does span the two picker screens',
+      /get inMatch\(\) \{[^}]*this\.tournament\?\.active \|\| this\.leaguePicking \|\| this\.teamPicking/
+        .test(msrc3));
+  }
+
   /* A PAIR CIRCLING OVERHEAD HAVE NOT ARRIVED. They fly here on a dragon, so
      without the mount test he would be called out to the gate by two girls
      who never intended to land — the same rule `near` follows. */
@@ -12322,6 +12919,56 @@ console.log('\n--- one press is not enough, and one player drives ---');
      it and this is what keeps that branch honest. */
   ok('...and a screen with no maps answers -1 rather than throwing',
     nearestMap(quad, [-1, -1], 0) === -1 && nearestMap(quad, [], 0) === -1);
+
+  /* --- AND BETWEEN THEM, Z AND X REACH EVERY BOX ON SCREEN ---
+     REPORTED: "the Z and X keys should zoom it in, regardless of who owns the
+     minimap or if it is shared ... when ember and frost are together, Z and X
+     zooms in their shared minimap, instead, Z should zoom in the one for Ember
+     that is shared, and X should zoom in the one for storm and blossom that is
+     shared."
+
+     THE CAUSE WAS ASKING A PAD'S QUESTION ON A KEYBOARD. Both keys went
+     through "which map does this player drive", which is exactly right for a
+     bumper held by one kitten and gives the same answer twice the moment those
+     two kittens share a pane — so X did what Z did and the other box on screen
+     had no key at all. */
+  const pairPanes = splitLayout(2, W, H, 3, 'vertical', [2, 2]);
+  const pairOwn = assignMaps([2, 2], [0, 1], 2);
+  const shared = [nearestMap(pairPanes, pairOwn, 0), nearestMap(pairPanes, pairOwn, 0)];
+  ok('two sisters sharing a pane drive the same map — that is the bug',
+    shared[0] === shared[1], JSON.stringify(shared));
+  const zx = keyMaps(shared[0], shared[1], [0, 1]);
+  ok('...and Z and X still come out as the two different boxes',
+    zx[0] !== zx[1] && zx.every((m) => m >= 0), JSON.stringify(zx));
+  ok('...with Z the one Ember is standing in, not merely the lower index',
+    zx[0] === pairOwn.indexOf(0), `${zx[0]} vs pane 0's map ${pairOwn.indexOf(0)}`);
+
+  /* TWO PLAYERS COME OUT BIT-IDENTICAL, which is the fifth non-negotiable and
+     the reason X is the key that gives way rather than a re-deal of both. In
+     their own panes the two answers already differ, so the rule never fires. */
+  ok('two players in their own panes are untouched by the rule',
+    JSON.stringify(keyMaps(0, 1, [0, 1])) === JSON.stringify([0, 1])
+    && JSON.stringify(keyMaps(1, 0, [0, 1])) === JSON.stringify([1, 0]));
+
+  /* AND IT NEVER POINTS A KEY AT A BOX THAT IS NOT DRAWN. `_drawMaps` hides a
+     map `assignMaps` had nowhere to put, and a key that turns a hidden dial is
+     the silent button the sixth non-negotiable is about — so with one map up,
+     X keeps the collision rather than being handed a ghost. */
+  ok('...and with only one map on screen X is not sent to a hidden one',
+    JSON.stringify(keyMaps(0, 0, [0])) === JSON.stringify([0, 0]));
+  ok('...and with no map at all it says so rather than inventing one',
+    JSON.stringify(keyMaps(-1, -1, [])) === JSON.stringify([-1, -1]));
+
+  /* THE HUD TAG READS THE SAME FUNCTION. A box labelled "· X" that X does not
+     turn is the label lying, which is what it was doing: `_drawMaps` asked
+     `_mapForPlayer` itself, agreed with the bug, and printed the key on one box
+     and nothing on the other. */
+  const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('...and the map tag names its key from that one answer, not its own',
+    /const \[zMap, xMap\] = this\._keyMaps\(\);/.test(msrc)
+    && !/this\._mapForPlayer\(0\) === i/.test(msrc));
+  ok('...and the Z and X keys ask it too',
+    /KeyZ.*this\._zoomMapKey\(0\)/.test(msrc) && /KeyX.*this\._zoomMapKey\(1\)/.test(msrc));
 }
 
 /* ---------------------------------------------------------------------------

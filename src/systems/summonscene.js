@@ -341,6 +341,18 @@ export class SummonScene {
 
   skip() { if (this.active) this.finish(); }
 
+  /** ONE BEAT ON — the debug nudge. See `Cutscene.nextBeat`, which this is the
+   *  twin of: same argument, same cut of the voice before the next line opens
+   *  over the top of it. The finale is three beats and about a minute, so this
+   *  is the difference between checking its last line in twenty seconds and
+   *  checking it in one. */
+  nextBeat() {
+    if (!this.active) return false;
+    this.audio?.stopSpeaking();
+    this._next();
+    return true;
+  }
+
   finish() {
     this.active = false;
     this.script = null;

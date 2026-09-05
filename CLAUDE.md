@@ -27,7 +27,7 @@ look. Everything else is one level down and read on demand.
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
 npm run dev -- --host         # ...and on a phone on the same wifi, at the Network: URL it prints
-node tools/world-check.mjs    # 2086 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 2184 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 354 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 npm run docs                  # regenerate the controls + balance tables, in PROJECT.md AND
@@ -163,10 +163,13 @@ tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
              kitten-cackle.mjs (the trailer's demon, and `--game` for the
                Cross Slash's four graded purrs — see docs/notes/voices.md,
                which carries the licensing decision attached to them)
-             satan-countdown.mjs (splices `sat_last.mp3`, the last fifteen
-               seconds of a round, out of a dozen takes so each number lands on
-               the second it names — the one voice file that is a TIMELINE
-               rather than a line. Also cuts the six bare numbers.)
+             satan-countdown.mjs (cuts the five clips the last fifteen
+               seconds of a round are made of, from the takes kept in
+               `satan-takes/`. The count is ONE continuous performance
+               re-timed, not nine takes assembled: the words are found by
+               silence, the numbers are pinned to the seconds they name and
+               each shout between them is squeezed only as far as its own gap
+               demands. Also cuts the six bare numbers.)
              steam-art.mjs (the Steam shelf and the icons, from title_art.png)
              trailer-score.mjs  trailer-vo.mjs  trailer-cut.sh
              brush-kanji.mjs  voice-measure.mjs
@@ -207,7 +210,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 2086 assertions and why almost none of them are about
+  why `world-check` is 2184 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have
