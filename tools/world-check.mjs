@@ -16,7 +16,7 @@ import { Dragon, BREEDS, DRAGON_SPOTS } from '../src/entities/dragon.js';
 import { Billboard, xrayVertexMat } from '../src/core/gfx.js';
 import { Player, CALLOUT_WIDEST, BLESS_STRETCH } from '../src/entities/player.js';
 import {
-  Panda, PANDA_TIERS, PANDA_SPEED, CLAW, tierFor, toNextTier, FULL_PANDA_COST,
+  Panda, PANDA, PANDA_TIERS, PANDA_SPEED, CLAW, tierFor, toNextTier, FULL_PANDA_COST,
 } from '../src/entities/panda.js';
 import {
   LEADERS, ELDER, leaderSpot, LEADER_OFFSET, ClanLeader,
@@ -2652,6 +2652,514 @@ console.log('\n--- Pandapaw: the clan you have to earn ---');
   }
 }
 
+console.log('\n--- the panda in the ring ---');
+{
+  /* THE REAL GATE, LIFTED OUT OF `main.js` AND RUN. `Game` cannot be imported
+     here — it boots a renderer against a DOM that does not exist — and the
+     alternative on offer was a page of regexes asserting that certain words
+     appear in a file, which is not a check about behaviour and would pass a
+     rule that had been correctly WRITTEN and wrongly WIRED.
+
+     So the method's own source is cut out and evaluated with the four tables
+     it closes over. What runs below is the shipped code, character for
+     character: change the rule and this moves with it; delete the rule and
+     this fails. The `\n  }\n` terminator is the class's own indentation, which
+     nothing inside a method body can reach. */
+  const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+    .replace(/\r\n/g, '\n');
+  const lift = (sig, args) => {
+    const at = msrc.indexOf(`\n  ${sig} {`);
+    ok(`${sig.split('(')[0]} is where this check thinks it is`, at > 0);
+    const from = msrc.indexOf('{', at + 1) + 1;
+    const body = msrc.slice(from, msrc.indexOf('\n  }\n', from));
+    // eslint-disable-next-line no-new-func
+    return new Function('ATTACKS', 'COMBAT', 'PANDA', 'BASE_REACH', 'Panda', 'tierFor',
+      `return function (${args}) {${body}\n};`)(ATTACKS, COMBAT, PANDA, BASE_REACH, Panda, tierFor);
+  };
+  const strikePlayers = lift('strikePlayers(attacker, kind, reach, dir)',
+    'attacker, kind, reach, dir');
+  const updatePanda = lift('_updatePanda(player)', 'player');
+
+  const art = { cub: { texture: new THREE.Texture() }, adult: { texture: new THREE.Texture() } };
+  const gy = world.heightAt(0, 40).y;
+  const mkP = (i, x) => new Player({
+    texture: new THREE.Texture(), index: i, cols: 8, rows: 4, mirror: false,
+    spawn: new THREE.Vector3(x, gy, 40), name: i ? 'Sky' : 'Ember',
+  });
+
+  /** A `Game` with nothing in it but the six things the gate touches. */
+  const mkGame = (players, over = {}) => ({
+    players,
+    tournament: { fighting: true, allies: () => false, onHit: () => {} },
+    sfx: () => {}, toast: () => {}, hitSpark: () => {},
+    _pandaDown(pl) { this.downed = pl; pl.panda.collapse(); },
+    ...over,
+  });
+
+  /** Attacker at 0, target at `gap`, both facing along +x. */
+  const face = (a, b) => {
+    a.facing = Math.PI / 2;          // +x
+    b.position.y = a.position.y;
+    return { x: Math.sin(a.facing), y: Math.cos(a.facing) };
+  };
+
+  /* --- WHO IS A BODY IN THE FIGHT AT ALL ------------------------------- */
+  {
+    const owner = mkP(0, 0);
+    const cub = new Panda(art, { owner, tier: 0 });
+    const grown = new Panda(art, { owner, tier: 1 });
+    ok('a grown panda is a body a blade can find', grown.fighter);
+    ok('a cub is not — it is what a losing kitten runs to', !cub.fighter);
+    ok('...and carries no hit box at all, so the gate needs no second question',
+      cub.hitRadius === 0 && cub.hitUp === 0);
+    ok('a grown one is much bigger than a kitten, who is a point',
+      grown.hitRadius === PANDA.body && grown.hitRadius > 1);
+    ok('...and taller as well as wider', grown.hitUp === PANDA.bodyUp && grown.hitUp > 0);
+    ok('its bar is a fraction of its owner\'s, not a number of its own',
+      grown.maxHp === Math.round(owner.maxHp * PANDA.hpFrac) && grown.hp === grown.maxHp);
+    line('panda health vs kitten health', `${grown.maxHp} vs ${owner.maxHp}`);
+    ok('...and that fraction is well under half', PANDA.hpFrac < 0.5);
+    ok('a cub has no bar to leave lying around', cub.maxHp === 0 && cub.hp === 0);
+    ok('and nothing can hurt one', cub.hurt(999, new THREE.Vector3()) === 0);
+  }
+
+  /* --- THE CLAW IS A MULTIPLE OF THE STANDING SLASH --------------------- */
+  {
+    const a = mkP(0, 0);
+    const b = mkP(1, 2);
+    const dir = face(a, b);
+    const g = mkGame([a, b]);
+    strikePlayers.call(g, a, 'claw', BASE_REACH, dir);
+    const dealt = b.maxHp - b.hp;
+    line('claw damage vs standing slash', `${dealt} vs ${ATTACKS.stand.dmg}`);
+    ok('one swipe hits for 1.2x a standing slash',
+      Math.abs(dealt - ATTACKS.stand.dmg * PANDA.dmgK) < 1e-9);
+    ok('...which is genuinely harder than the katana', dealt > ATTACKS.stand.dmg);
+
+    /* AND MOVING THE SLASH MOVES THE CLAW. This is the whole reason the row
+       has no `dmg`: the relationship was asked for as "1.2x's more than a
+       regular player slash attack", which is a statement about `stand` rather
+       than a number beside it, and a copied literal would go stale the first
+       time somebody tuned the katana. */
+    const was = ATTACKS.stand.dmg;
+    ATTACKS.stand.dmg = was * 2;
+    const c = mkP(0, 0);
+    const d = mkP(1, 2);
+    const dir2 = face(c, d);
+    strikePlayers.call(mkGame([c, d]), c, 'claw', BASE_REACH, dir2);
+    ok('...and tuning the standing slash moves the claw with it',
+      Math.abs((d.maxHp - d.hp) - was * 2 * PANDA.dmgK) < 1e-9);
+    ATTACKS.stand.dmg = was;
+  }
+
+  /* --- RIVERCLAW'S OATH DOES NOT LENGTHEN A PANDA'S ARM ----------------- */
+  {
+    /* Asked for as "if player has longer katana buff, it does not apply to big
+       panda". Checked at a distance that a buffed KATANA would reach and a
+       buffed claw must not, which is the only way to tell the rule from a
+       comment about the rule. */
+    const far = ATTACKS.claw.reach + 0.6;
+    const a = mkP(0, 0);
+    const b = mkP(1, far);
+    const dir = face(a, b);
+    strikePlayers.call(mkGame([a, b]), a, 'claw', BASE_REACH * 1.5, dir);
+    line('claw reach / test distance', `${ATTACKS.claw.reach} / ${far.toFixed(2)}`);
+    ok('a Riverclaw kitten\'s claw does not reach further than anybody else\'s',
+      b.hp === b.maxHp);
+    // Non-vacuous: the same buff on the same swing DOES lengthen her katana.
+    const c = mkP(0, 0);
+    const d = mkP(1, ATTACKS.stand.reach + 0.6);
+    const dir2 = face(c, d);
+    strikePlayers.call(mkGame([c, d]), c, 'stand', BASE_REACH * 1.5, dir2);
+    ok('...though it certainly lengthens her katana', d.hp < d.maxHp);
+  }
+
+  /* --- THE CLAW GOES THROUGH THE ONE GATE ------------------------------- */
+  {
+    /* Third non-negotiable. A panda in the market square knocks barrels over
+       and cannot touch the kitten standing beside them. */
+    const a = mkP(0, 0);
+    const b = mkP(1, 2);
+    const dir = face(a, b);
+    strikePlayers.call(mkGame([a, b], { tournament: { fighting: false } }), a, 'claw', BASE_REACH, dir);
+    ok('a claw swung outside a live round does nothing at all',
+      b.hp === b.maxHp && !b.ko);
+
+    /* ...and `_doClaw` asks it rather than hurting her itself. */
+    const rider = mkP(0, 0);
+    const pet = new Panda(art, { owner: rider, tier: 1 });
+    rider.pandaMount = pet; pet.rider = rider;
+    const asked = [];
+    rider._doClaw(world, {
+      sfx: () => {}, onMischief: () => {}, strikeWards: () => {},
+      strikePlayers: (_a, kind) => asked.push(kind),
+    });
+    ok('the panda\'s swipe asks the gate rather than hitting anybody itself',
+      asked.includes('claw'), asked.join(' '));
+  }
+
+  /* --- THE THREE OUTCOMES, EXACTLY AS THEY WERE ASKED FOR --------------- */
+  {
+    const ride = (x) => {
+      const pl = mkP(1, x);
+      const pet = new Panda(art, { owner: pl, tier: 1 });
+      pet.position.set(x, pl.position.y, 40);
+      pl.panda = pet; pl.pandaMount = pet; pet.rider = pl;
+      return pl;
+    };
+
+    /* HER ONLY. The blade found the kitten and missed the animal, so she takes
+       it in full and comes off. */
+    {
+      const a = mkP(0, 0);
+      const b = ride(2);
+      b.panda.position.set(40, b.position.y, 40);   // parked far away
+      const dir = face(a, b);
+      strikePlayers.call(mkGame([a, b]), a, 'stand', BASE_REACH, dir);
+      ok('a blow that finds her and misses the panda knocks her off it',
+        b.pandaMount === null && b.panda.rider === null);
+      ok('...and she takes it in full', b.maxHp - b.hp === ATTACKS.stand.dmg);
+      ok('...and the animal is untouched', b.panda.hp === b.panda.maxHp);
+    }
+
+    /* THE PANDA ONLY. Out of reach of the kitten, inside the animal's body. */
+    {
+      const a = mkP(0, 0);
+      const b = ride(ATTACKS.stand.reach + PANDA.body - 0.4);
+      b.position.x = ATTACKS.stand.reach + PANDA.body + 4;   // her, well clear
+      const dir = face(a, b);
+      const g = mkGame([a, b]);
+      strikePlayers.call(g, a, 'stand', BASE_REACH, dir);
+      ok('a body three times her width can be cut from outside her own reach',
+        b.panda.hp < b.panda.maxHp);
+      ok('...and she is untouched by it', b.hp === b.maxHp);
+      ok('...and stays on', b.pandaMount === b.panda);
+    }
+
+    /* BOTH. Overlapping, which is what riding actually looks like. */
+    {
+      const a = mkP(0, 0);
+      const b = ride(2);
+      const dir = face(a, b);
+      strikePlayers.call(mkGame([a, b]), a, 'stand', BASE_REACH, dir);
+      ok('a blow that catches both takes health off both',
+        b.hp < b.maxHp && b.panda.hp < b.panda.maxHp);
+      ok('...but she stays on the panda', b.pandaMount === b.panda);
+
+      /* AND THE PUSH IS A THIRD OF WHAT IT WOULD HAVE BEEN. Measured against
+         the same blow landing on a kitten on her own feet, because the rule is
+         a RATIO and a literal typed twice would be no check at all. */
+      const c = mkP(0, 0);
+      const d = mkP(1, 2);
+      const dir2 = face(c, d);
+      strikePlayers.call(mkGame([c, d]), c, 'stand', BASE_REACH, dir2);
+      const alone = Math.hypot(d.velocity.x, d.velocity.z);
+      const mounted = Math.hypot(b.velocity.x, b.velocity.z);
+      line('knockback: on foot vs on a panda', `${alone.toFixed(2)} vs ${mounted.toFixed(2)}`);
+      ok('a rider is pushed a third as far as a kitten on her own feet',
+        Math.abs(mounted - alone * PANDA.knockK) < 0.01);
+      ok('...and it is genuinely less, not merely different', mounted < alone * 0.5);
+      ok('...and she is lifted less too', b.velocity.y < d.velocity.y);
+    }
+  }
+
+  /* --- AN EMPTY BAR MAKES IT A CUB, AND IT STAYS ONE -------------------- */
+  {
+    const owner = mkP(0, 0);
+    owner.raisedPanda = true;
+    owner.clan = CLANS.find((c) => c.buff.panda);
+    const pet = new Panda(art, { owner, tier: 1 });
+    owner.panda = pet; owner.pandaMount = pet; pet.rider = owner;
+    owner.bambooCut = 400;
+    owner.pandaFedFrom = 0;
+
+    ok('collapsing a grown panda works', pet.collapse());
+    ok('...and it is a cub', !pet.rideable && pet.tier === 0);
+    ok('...and it puts the rider down rather than leaving her on a house cat',
+      owner.pandaMount === null && pet.rider === null);
+    ok('...and it is not a target any more', !pet.fighter && pet.hitRadius === 0);
+    ok('...but it is still hers — nothing is lost', owner.panda === pet);
+    ok('...and it can lick now, which a grown one cannot', !pet.rideable);
+
+    /* THE ONE THAT MATTERS. `_updatePanda` runs on every cane she cuts and a
+       collapsed panda is standing there with four hundred canes of credit
+       against it; without its own guard the very next cane would grow it
+       straight back and "stays a baby panda for the rest of the game" would be
+       a sentence in a commit message and nowhere else. */
+    const g = {
+      pandaArt: art, world, scene: { add: () => {} },
+      sfx: () => {}, toast: () => {}, _updateClanBadge: () => {},
+    };
+    for (let i = 0; i < 20; i++) { owner.bambooCut += 40; updatePanda.call(g, owner); }
+    ok('...and no amount of bamboo grows it back', pet.tier === 0 && pet.knockedDown);
+
+    // Non-vacuous: an ordinary cub on the same tally grows up at once.
+    const other = mkP(1, 4);
+    other.raisedPanda = true;
+    other.clan = owner.clan;
+    other.bambooCut = 400;
+    other.pandaFedFrom = 0;
+    other.panda = new Panda(art, { owner: other, tier: 0 });
+    updatePanda.call(g, other);
+    ok('...where a cub that has merely never grown up does grow up',
+      other.panda.tier === 1);
+
+    ok('the shrine puts it back on its feet', pet.restore());
+    ok('...as a grown, rideable panda again', pet.rideable && pet.fighter);
+    ok('...with a full bar', pet.hp === pet.maxHp && pet.maxHp > 0);
+    ok('...and it charges no bamboo for canes already cut',
+      owner.bambooCut === 1200 && owner.pandaFedFrom === 0);
+    ok('...and restoring one that is already up does nothing', !pet.restore());
+  }
+
+  /* --- THE GATE IS WHAT KNOCKS IT DOWN ---------------------------------- */
+  {
+    const a = mkP(0, 0);
+    const b = mkP(1, 2);
+    const pet = new Panda(art, { owner: b, tier: 1 });
+    pet.position.set(2, b.position.y, 40);
+    b.panda = pet; b.pandaMount = pet; pet.rider = b;
+    b.position.x = 40;                       // her clear, the animal in reach
+    const dir = face(a, b);
+    const g = mkGame([a, b]);
+    let swings = 0;
+    while (pet.hp > 0 && swings < 50) {
+      strikePlayers.call(g, a, 'stand', BASE_REACH, dir);
+      swings++;
+    }
+    line('slashes to empty a panda\'s bar', swings);
+    ok('a panda can be cut down', pet.hp <= 0);
+    ok('...and the gate is what says so, once its bar is empty', g.downed === b);
+    ok('...and it takes several blows rather than one', swings > 2);
+  }
+
+  /* --- THE CUB LICKS HER BETTER ---------------------------------------- */
+  {
+    const owner = mkP(0, 0);
+    const cub = new Panda(art, { owner, tier: 0 });
+    cub.position.copy(owner.position);
+    const step = (n = 1) => { for (let i = 0; i < n; i++) cub._stepLick(1 / 60, owner); };
+
+    owner.hp = owner.maxHp;
+    step(120);
+    ok('a cub ignores a kitten on a full bar', !cub.lickWanted && !cub.licking);
+
+    owner.hp = owner.maxHp * (PANDA.lickBelow + 0.05);
+    step(120);
+    ok('...and one that is merely a bit hurt', !cub.lickWanted);
+
+    owner.hp = owner.maxHp * (PANDA.lickBelow - 0.05);
+    cub._stepLick(1 / 60, owner);
+    ok('but it comes over when she is badly hurt', cub.lickWanted);
+    ok('...and does NOT start healing the instant it arrives', !cub.licking);
+    const at = owner.hp;
+    step(Math.round(PANDA.lickWarm * 60) - 2);
+    ok('...nor at any point inside the warm-up', !cub.licking && owner.hp === at);
+    step(4);
+    ok('...but it does once it has kept station for the warm-up', cub.licking);
+
+    /* THE RATE, MEASURED. Half a percent of her bar a second was the ask, and
+       it is deliberately slower than one standing slash a minute — a cub that
+       out-healed the fight would end rounds rather than rescue them. */
+    const before = owner.hp;
+    step(60);
+    const gained = owner.hp - before;
+    line('healed in one second', `${gained.toFixed(3)} of ${owner.maxHp}`);
+    ok('it heals half a percent of her bar a second',
+      Math.abs(gained - owner.maxHp * PANDA.lickRate) < owner.maxHp * 0.0002);
+    ok('...which is far slower than one slash does damage',
+      gained * 10 < ATTACKS.stand.dmg);
+
+    /* AND IT CHIRPS ON THE BEAT, ONCE. The tongue is `sin(lickPhase)` and the
+       noise counts whole turns of the same phase, so the sound cannot drift
+       away from the picture. Sixty flags a second would be a machine gun. */
+    let chirps = 0;
+    for (let i = 0; i < 60; i++) { cub._stepLick(1 / 60, owner); if (cub.lickSfx) chirps++; }
+    line('chirps in one second of licking', chirps);
+    ok('the lick makes a noise, and not sixty of them', chirps >= 1 && chirps <= 3);
+
+    /* WALKING OUT OF RANGE RESETS THE CLOCK RATHER THAN PAUSING IT. "Within
+       radius for at least 1 second" is a promise about ONE continuous second,
+       and a clock that merely paused would let a cub trotting in and out of
+       reach collect it a tenth at a time. */
+    cub.position.x = owner.position.x + PANDA.lickNear + 2;
+    cub._stepLick(1 / 60, owner);
+    ok('stepping out of reach stops it', !cub.licking && cub.lickT === 0);
+    cub.position.copy(owner.position);
+    step(Math.round(PANDA.lickWarm * 60) - 4);
+    ok('...and it has to earn the whole warm-up again', !cub.licking);
+
+    /* SHE HAS TO BE ON HER OWN FEET, and knocked out is not "very hurt". */
+    step(20);
+    ok('(licking again)', cub.licking);
+    owner.ko = true;
+    cub._stepLick(1 / 60, owner);
+    ok('a knocked-out kitten is not healed back into a finished round', !cub.licking);
+    owner.ko = false;
+    step(Math.round(PANDA.lickWarm * 60) + 4);
+    owner.carried = {};
+    cub._stepLick(1 / 60, owner);
+    ok('nor one the griffin is carrying', !cub.licking);
+    owner.carried = null;
+
+    // ...and a GROWN panda never does this. It is the cub's one job.
+    const grown = new Panda(art, { owner, tier: 1 });
+    grown.position.copy(owner.position);
+    owner.hp = owner.maxHp * 0.05;
+    for (let i = 0; i < 240; i++) grown._stepLick(1 / 60, owner);
+    ok('a grown panda does not lick — that is what the cub is for',
+      !grown.licking && !grown.lickWanted);
+  }
+
+  /* --- IT GETS HER OFF THE FLOOR AND THEN STOPS ------------------------- */
+  {
+    /* THE THRESHOLD IS WHERE IT STOPS AS WELL AS WHERE IT STARTS, and that is
+       the ask read literally — "lick the player if they are below 30% health"
+       is a condition, not a starting gun. It is also the right game: a cub that
+       healed to FULL would mean a losing kitten could walk away from the fight,
+       sit down with her panda for three minutes and come back whole, which ends
+       rounds by attrition rather than rescuing them. This one gets her back on
+       her feet and then goes quiet, and she still has to win the round with a
+       bar under a third. */
+    const owner = mkP(0, 0);
+    const cub = new Panda(art, { owner, tier: 0 });
+    cub.position.copy(owner.position);
+    owner.hp = owner.maxHp * 0.05;
+    for (let i = 0; i < 60 * 400; i++) cub._stepLick(1 / 60, owner);
+    const frac = owner.hp / owner.maxHp;
+    line('bar after six minutes of licking', `${(frac * 100).toFixed(1)}%`);
+    ok('a cub left licking for six minutes gets her up to the threshold',
+      frac >= PANDA.lickBelow - 0.01);
+    ok('...and no further — it is a rescue, not a way to sit out a round',
+      frac <= PANDA.lickBelow + 0.01);
+    ok('...so it can never overfill her bar', owner.hp <= owner.maxHp);
+  }
+
+  /* --- WHAT THE LICK ACTUALLY LOOKS LIKE -------------------------------- */
+  {
+    /* MEASURED, NOT REASONED ABOUT. The house rule for anything drawn, and it
+       earns its place here for a boring reason: the preview pane suspends
+       requestAnimationFrame, so the browser could not be made to run a single
+       frame of this and a screenshot was never going to be the check. What is
+       on screen is a tongue that moves, motes that rise off HER rather than off
+       the animal, and a lean — so those are the three things measured. */
+    const owner = mkP(0, 0);
+    const cub = new Panda(art, { owner, tier: 0 });
+    cub.position.set(owner.position.x + 1, owner.position.y, owner.position.z);
+    const draw = (n) => {
+      for (let i = 0; i < n; i++) { cub._stepLick(1 / 60, owner); cub._drawLick(owner); }
+    };
+
+    owner.hp = owner.maxHp;
+    draw(30);
+    ok('nothing is drawn while it is not licking', !cub.lickRig.visible);
+
+    owner.hp = owner.maxHp * 0.1;
+    draw(Math.round(PANDA.lickWarm * 60) + 10);
+    ok('the tongue and the motes appear once it starts', cub.lickRig.visible);
+
+    const out = new Set();
+    const rise = new Set();
+    let worstOp = 0;
+    for (let i = 0; i < 150; i++) {
+      cub._stepLick(1 / 60, owner);
+      cub._drawLick(owner);
+      out.add(cub.tongue.position.length().toFixed(4));
+      rise.add(cub.motes[0].position.y.toFixed(4));
+      worstOp = Math.max(worstOp, ...cub.motes.map((m) => m.material.opacity),
+        cub.tongue.material.opacity);
+    }
+    line('distinct tongue extensions / mote heights over 2.5s',
+      `${out.size} / ${rise.size}`);
+    /* A STILL TONGUE IS THE FAILURE MODE. It is `sin(lickPhase)` and the phase
+       is the same one the chirp counts, so a tongue that stopped moving would
+       be a chirp that had stopped agreeing with the picture. */
+    ok('the tongue flicks rather than sitting out', out.size > 20);
+    ok('...and never turns inside out', [...out].every((d) => Number(d) >= 0));
+    ok('the motes rise rather than hanging', rise.size > 20);
+    ok('nothing is drawn brighter than opaque', worstOp <= 1);
+
+    /* THE MOTES COME OFF HER, NOT OFF THE ANIMAL. They are the same green as
+       the overflow bar and they mean "health arriving"; drawn over the cub they
+       would say the cub was being healed, which is the opposite of what
+       happens. `lickRig` hangs off the panda's group, so this is a real
+       question about a real offset and not a formality. */
+    const near = cub.motes.filter((m) => Math.hypot(
+      (cub.position.x + m.position.x) - owner.position.x,
+      (cub.position.z + m.position.z) - owner.position.z,
+    ) < 1.2).length;
+    ok('the green motes rise off the KITTEN, not off the cub', near >= 4,
+      `${near} of ${cub.motes.length} within a metre of her`);
+
+    /* AND IT LEANS IN, on the same beat. Applied to the GROUP rather than to
+       the drawing, so the shadow comes with it — a cub whose picture leans away
+       from its own shadow reads as sliding rather than as reaching.
+
+       MEASURED AS A DISTANCE FROM WHERE THE ANIMAL ACTUALLY IS, not along an
+       axis. The first version of this check watched `group.position.x` and
+       passed nothing: `facing` defaults to zero, the lean is `sin(facing)` on x
+       and `cos(facing)` on z, and the whole movement was on the axis the check
+       was not looking at. A distance has no axis to be wrong about. */
+    const lean = new Set();
+    for (let i = 0; i < 60; i++) {
+      cub.group.position.copy(cub.position);   // what `update` does each frame
+      cub._stepLick(1 / 60, owner);
+      cub._drawLick(owner);
+      lean.add(Math.hypot(
+        cub.group.position.x - cub.position.x,
+        cub.group.position.z - cub.position.z,
+      ).toFixed(4));
+    }
+    ok('the whole animal leans in on the same beat', lean.size > 8);
+    ok('...and never leans so far it leaves its own shadow',
+      Math.max(...[...lean].map(Number)) < 0.4);
+  }
+
+  /* --- THE HIT FLASH AND THE FLINCH ------------------------------------- */
+  {
+    const owner = mkP(0, 0);
+    const pet = new Panda(art, { owner, tier: 1 });
+    ok('a panda starts white', pet.sprite.mat.color.r === 1);
+    pet.hurt(5, new THREE.Vector3(owner.position.x - 3, owner.position.y, owner.position.z));
+    pet._updateHurt(1 / 60);
+    ok('a struck panda flashes, and past white like a kitten does',
+      pet.sprite.mat.color.r > 1 && pet.sprite.mat.color.g < 1);
+    ok('...and reels away from whoever hit it',
+      Math.abs(pet.recoilDir) < 0.001 || Math.sin(pet.recoilDir) > 0);
+    for (let i = 0; i < 120; i++) pet._updateHurt(1 / 60);
+    ok('...and settles back to white rather than staying lit',
+      pet.sprite.mat.color.r === 1);
+    ok('...with the flinch spent', pet.recoil === 0);
+
+    /* GROWING OR SHRINKING CLEARS IT. The two tiers are two Billboards with two
+       materials, so a flash left burning on the drawing being hidden would
+       still be burning when it came back — which is a panda that arrives at the
+       shrine already red. */
+    pet.hurt(5, new THREE.Vector3(0, 0, 0));
+    pet.collapse();
+    ok('shrinking mid-flash does not leave a lit drawing behind',
+      pet.poses.every((b) => b.mat.color.r === 1) && pet.hurtT === 0);
+  }
+
+  /* --- AND THE BALANCE PAGE CAN REACH ALL OF IT ------------------------- */
+  {
+    ok('PANDA is reachable from the balance page',
+      !!DEFAULTS.PANDA && Object.keys(DEFAULTS.PANDA).length === 9);
+    const page = readFileSync(new URL('../src/tuning-page.js', import.meta.url), 'utf8');
+    /* EVERY KNOB HAS A SENTENCE, not just a slider. The generic fallback would
+       render an undescribed field with its raw name and a guessed range, which
+       is honest but useless to somebody deciding what "bodyUp" ought to be —
+       and these were asked for by name: "make all these variables editable in
+       the Balance page". */
+    for (const k of Object.keys(DEFAULTS.PANDA)) {
+      ok(`...and ${k} is described there rather than guessed at`,
+        new RegExp(`\\n\\s+${k}: \\['`).test(page));
+    }
+    ok('...and the claw row on the attacks table says where its damage lives',
+      /claw: 'THE PANDA/.test(page));
+  }
+}
+
 console.log('\n--- clan leaders (the cast from her drawing) ---');
 {
   const ids = CLANS.map((c) => c.id);
@@ -3429,8 +3937,20 @@ console.log('\n--- combat ---');
     && ATTACKS.air.knock > ATTACKS.stand.knock);
   ok('the standing slash is the weakest', ATTACKS.stand.dmg < ATTACKS.air.dmg
     && ATTACKS.stand.dmg < ATTACKS.dash.dmg);
+  /* EVERY ROW, INCLUDING THE ONE WITH NO NUMBER IN IT. `claw` deliberately has
+     no `dmg` — the animal hits for `stand.dmg * PANDA.dmgK` and the gate does
+     that multiplication — and the plain sweep over `ATTACKS` therefore came out
+     NaN and failed, which is exactly the catch this line is for: a row whose
+     damage lives somewhere else must still be held to the cap. Resolving it
+     here rather than skipping it is the difference between a check that covers
+     six attacks and one that covers seven. */
+  const dmgOf = (k, a) => (k === 'claw' ? ATTACKS.stand.dmg * PANDA.dmgK : a.dmg);
+  line('effective damage per attack', Object.entries(ATTACKS)
+    .map(([k, a]) => `${k} ${dmgOf(k, a)}`).join('  '));
   ok('no attack can end a full-health round in one hit',
-    Math.max(...Object.values(ATTACKS).map((a) => a.dmg)) < MAX_HP / 3);
+    Math.max(...Object.entries(ATTACKS).map(([k, a]) => dmgOf(k, a))) < MAX_HP / 3);
+  ok('...and the claw carries no damage of its own to go stale',
+    ATTACKS.claw.dmg === undefined);
 
   B.position.set(2, 0, 0);
   const dealt = B.hurt(ATTACKS.stand.dmg, A.position, ATTACKS.stand, null);
