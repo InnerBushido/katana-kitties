@@ -19,19 +19,20 @@ import {
   Panda, PANDA, PANDA_TIERS, PANDA_SPEED, CLAW, tierFor, toNextTier, FULL_PANDA_COST,
 } from '../src/entities/panda.js';
 import {
-  LEADERS, ELDER, leaderSpot, LEADER_OFFSET, ClanLeader,
+  LEADERS, ELDER, leaderSpot, LEADER_OFFSET, FACE_BIAS_MAX, ClanLeader,
 } from '../src/entities/leader.js';
 import { promptGlyphs, PROMPTS, KEYSETS } from '../src/core/input.js';
 import { durationMs, delaysCs } from './gif-sync.mjs';
 import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
-import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
+import { SCENE_RADIUS, DWELL, ShrineScene } from '../src/systems/shrinescene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../src/entities/dragonball.js';
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import {
   SCRIPTS, DUSK_DEEP, DUSK_FALL, DAWN_RISE, DAWN_DEEP, SummonScene,
 } from '../src/systems/summonscene.js';
 import {
-  SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest,
+  SHRINE_DAIS, SHRINE_STEPS, SHRINE_GATE,
+  SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest,
   buildArena,
 } from '../src/world/build.js';
 import { SatanBlast, BLAST, BLAST_LINES, card } from '../src/systems/satanblast.js';
@@ -3207,20 +3208,33 @@ console.log('\n--- clan leaders (the cast from her drawing) ---');
       `${LEADER_OFFSET} out, ring is ${hall.r}`);
     ok(`...on the far side of it`, dOut > dHall);
     ok('...on real ground', world.heightAt(s.x, s.z) != null);
-    /* ...and ON TOP of the stonework, not in it. The dais is decorative
-       geometry merged into the world mesh, so heightAt returns the hillside
-       underneath and using it planted every leader knee-deep in the top step.
-       This is the check that catches it, because a cat standing half inside a
-       stone platform still looks like a cat standing at a shrine. */
-    ok('...on top of the dais, not sunk into it',
-      Math.abs(s.y - (world.heightAt(hall.x, hall.z).y + SHRINE_DAIS.y)) < 0.001,
+    /* ...and ON TOP of the stonework, not in it and not over it. This check
+       has caught the same thing twice from opposite directions. The dais used
+       to be decoration, so `heightAt` returned the hillside and every leader
+       stood knee-deep in the top step until `leaderSpot` added the height by
+       hand. The dais is a real platform now, so what it catches is that hand
+       ADDED TWICE — the lift left in place on ground that already includes it,
+       which floats her 0.9 units above her own shrine. A cat standing half
+       inside a stone platform still looks like a cat standing at a shrine,
+       and so does one hovering just over it, which is why this is measured. */
+    const deck = world.heightAt(s.x, s.z);
+    ok('...on top of the dais, not sunk into it and not floating over it',
+      !!deck?.platform && Math.abs(s.y - deck.y) < 1e-6,
+      `${s.y.toFixed(3)} vs the deck at ${deck?.y.toFixed(3)}`);
+    ok('...and that deck is the shrine\'s own top step',
+      Math.abs(deck.y - (world.heightAt(hall.x, hall.z, -Infinity).y + SHRINE_DAIS.y)) < 1e-6,
       `+${SHRINE_DAIS.y} above the shrine floor`);
     ok('...well inside the stone she is standing on', LEADER_OFFSET < SHRINE_DAIS.r);
   }
 }
 
 console.log('\n--- one-way platforms (bridge deck) ---');
-const plat = world.platforms[0];
+/* THE FIRST RECTANGULAR ONE. It used to be `platforms[0]` full stop, which was
+   the bridge for exactly as long as the bridges were the first thing to push a
+   platform — the shrine daises are pushed earlier now, and a check named "the
+   bridge deck" would have gone on passing while measuring a shrine. Same
+   lesson as `dojoIsland`: a special case has to be asked for by name. */
+const plat = world.platforms.find((q) => q.r == null);
 const mx = (plat.x0 + plat.x1) / 2;
 const mz = (plat.z0 + plat.z1) / 2;
 const above = world.heightAt(mx, mz, plat.y + 0.2);
@@ -3230,6 +3244,303 @@ line('deck y / terrain y', `${plat.y.toFixed(2)} / ${terrain.y.toFixed(2)}`);
 ok('deck sits above the ground it spans', plat.y > terrain.y);
 ok('standing above snaps to the deck', above.platform === plat);
 ok('passing underneath ignores the deck', below.platform === undefined && below.y < plat.y);
+
+console.log('\n--- the shrine scene is a two-shot ---');
+{
+  /* WHAT THIS SECTION IS ABOUT. The scene used to have one person in it: the
+     camera sat ON the axis between the leader and the kitten, behind the
+     kitten looking past her, so the kitten was directly under the lens — a
+     blob at the bottom of frame with the dialogue box drawn over her — and the
+     leader was talking earnestly at a camera with nobody in front of it.
+     Asked for as "have the Clan Leader facing the player, but also facing
+     towards the camera so they do not look like a 2D thin paper, and the
+     player should be facing the Clan Leader when they are talking".
+
+     Everything below is measured off a real ShrineScene against the real
+     world, because "both of them are on screen" is not a thing you can assert
+     about a constant. */
+  /* AN ELEMENT FOR EVERY id, AND THE REAL CANVAS FACTORY KEPT. The ambient
+     stub answers `getElementById` with `null`, which is right for the
+     tournament (every use of those is `?.`-guarded) and wrong here: a shrine
+     scene really does write into its own name and text nodes. And a stub that
+     answers only `getElementById` makes constructing a `Player` throw a
+     hundred lines away, because a kitten builds a `Label` and a Label measures
+     on a canvas — so this borrows the installed `createElement` rather than
+     reimplementing it. Same trap, same fix, as the trade-screen block. */
+  const hadDoc = 'document' in globalThis;
+  const baseDoc = globalThis.document;
+  globalThis.document = {
+    createElement: (...a) => baseDoc.createElement(...a),
+    querySelectorAll: () => [],
+    getElementById: () => ({
+      classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+      style: { setProperty() {} },
+      textContent: '',
+      width: 96,
+      height: 96,
+      getContext: (...a) => baseDoc.createElement('canvas').getContext(...a),
+    }),
+  };
+
+  const spawn = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
+  const kit = (index = 0) => new Player({
+    texture: new THREE.Texture(), index, spawn: spawn.clone(),
+    cols: 8, rows: 4, mirror: false,
+  });
+
+  /* A STAND-IN LEADER, because a real `ClanLeader` needs a canvas for her
+     speech bubble and there is not one in node — the same dodge the cheer
+     checks use. Her `lookAt` and `faceCamera` are the REAL methods off the
+     prototype, which is the half this section actually tests. */
+  const standIn = (hall) => {
+    const spot = leaderSpot(hall, world);
+    const spec = LEADERS[hall.clan.id];
+    return {
+      clan: hall.clan, spec, art: null, met: false, sceneDur: 6.5,
+      textLine: spec.line.replace(/\n/g, ' '),
+      voiceEl: null, voiceDur: 0,
+      position: new THREE.Vector3(spot.x, spot.y, spot.z),
+      faceBias: 0, faceWant: 0, baseScaleX: 1,
+      sprite: { mesh: { rotation: { y: 0 }, scale: { x: 1 } }, faceCamera() {} },
+      bubble: { quaternion: { copy() {} } },
+      lookAt: ClanLeader.prototype.lookAt,
+      faceCamera: ClanLeader.prototype.faceCamera,
+    };
+  };
+
+  const S = new ShrineScene({ world, audio: null });
+  const shoot = (hall, p = kit()) => {
+    const L = standIn(hall);
+    S.finish();
+    S.start(L, p);
+    S.camera.aspect = 16 / 9;
+    for (let i = 0; i < 30; i++) S.update(1 / 60);
+    S.camera.updateMatrixWorld(true);
+    S.camera.updateProjectionMatrix();
+    return { L, p, spot: leaderSpot(hall, world) };
+  };
+  const ndc = (v) => v.clone().project(S.camera);
+
+  // --- both of them are stood on their marks -----------------------------
+  for (const hall of world.clanHalls) {
+    const { L, p, spot } = shoot(hall);
+    const name = L.spec.name;
+    const gap = Math.hypot(p.position.x - spot.x, p.position.z - spot.z);
+    ok(`${name} gets a kitten stood in front of her`, gap > 3 && gap < 6,
+      `${gap.toFixed(2)} units apart`);
+    /* ON THE STONE, at the leader's own height. Both halves matter: a mark
+       computed off the terrain would drop her through the dais, and a mark off
+       the dais would put her a step below the person she is talking to. */
+    ok('...on the dais, at the leader\'s own height',
+      Math.abs(p.position.y - spot.y) < 1e-6
+      && Math.hypot(p.position.x - hall.x, p.position.z - hall.z) < SHRINE_DAIS.r,
+      `y ${p.position.y.toFixed(2)} vs ${spot.y.toFixed(2)}`);
+    /* AND FACING HER. `facing` is a bearing measured atan2(x, z), the same
+       convention `Billboard.faceCamera` picks the drawn direction cell with —
+       get it backwards and she is stood on her mark with her back turned,
+       which is worse than where she was standing before. */
+    const want = Math.atan2(spot.x - p.position.x, spot.z - p.position.z);
+    const off = Math.abs(Math.atan2(
+      Math.sin(p.facing - want), Math.cos(p.facing - want)));
+    ok('...and turned to face her', off < 1e-6, `${(off * 57.3).toFixed(1)} degrees off`);
+    /* THE DRAWING GOES WITH HER. `position` is where she IS and
+       `group.position` is where she is DRAWN, and `Player.update` — the thing
+       that copies one to the other — is exactly what a scene does not run.
+       Setting only `position` framed an empty patch of dais. */
+    ok('...and the drawing goes with her, not just the position',
+      p.group.position.distanceTo(p.position) < 1e-6);
+
+    // --- ...and both of them are in the picture ---------------------------
+    const a = ndc(L.position.clone().setY(L.position.y + 2.1));
+    const b = ndc(p.position.clone().setY(p.position.y + 1.5));
+    ok(`${name}'s shot has both of them on screen`,
+      Math.abs(a.x) < 0.85 && Math.abs(b.x) < 0.85 && a.y > -0.4 && b.y > -0.4,
+      `leader ${a.x.toFixed(2)},${a.y.toFixed(2)}  kitten ${b.x.toFixed(2)},${b.y.toFixed(2)}`);
+    /* ACROSS THE FRAME FROM EACH OTHER, which is the fix stated as a number.
+       On the old shot the kitten was under the lens and this difference was
+       essentially zero. */
+    ok('...across the frame from each other, not one behind the other',
+      Math.abs(a.x - b.x) > 0.25, `${Math.abs(a.x - b.x).toFixed(2)} of frame apart`);
+    /* AND ABOVE THE DIALOGUE BOX, which covers the bottom of the screen. Their
+       heads are what has to clear it; their feet are allowed behind it, and
+       are, in every one of the six. */
+    const heads = [ndc(L.position.clone().setY(L.position.y + 4.2)),
+      ndc(p.position.clone().setY(p.position.y + 2.9))];
+    ok('...with both heads clear of the dialogue box',
+      heads.every((h) => h.y > 0.1 && h.y < 0.86),
+      heads.map((h) => h.y.toFixed(2)).join(' / '));
+  }
+
+  // --- she turns toward the kitten, and not one degree further ------------
+  {
+    const { L } = shoot(world.clanHalls[0]);
+    L.faceCamera(S.camera);
+    /* THE CAP IS A FACT ABOUT THE ART, not about this shot: she is a single
+       front-facing cell, and past about a quarter turn there is no drawing for
+       where she is looking and a billboard yawed that far shows its own edge.
+       "So they do not look like a 2D thin paper" is this number. */
+    ok('the leader turns toward the kitten',
+      Math.abs(L.faceWant) > 0.08, `${(L.faceWant ?? 0).toFixed(3)} rad`);
+    ok('...and never past the limit of the drawing',
+      Math.abs(L.faceWant) <= FACE_BIAS_MAX + 1e-9);
+    for (let i = 0; i < 200; i++) L.faceCamera(S.camera);
+    ok('...and the foreshortening never squashes her flat',
+      L.sprite.mesh.scale.x > 0.9, `x scale ${L.sprite.mesh.scale.x.toFixed(3)}`);
+  }
+
+  // --- the camera swings away from the stonework --------------------------
+  {
+    const hall = world.clanHalls[0];
+    const first = shoot(hall);
+    const was = S.swing;
+    ok('the shot is swung off the axis between them', Math.abs(was) > 0.5,
+      `${was.toFixed(2)} rad`);
+    /* PLANT SOMETHING TALL BETWEEN THE LENS AND THE KITTEN AND THE SHOT MOVES.
+       This is the whole of `_pickSwing` as a behaviour: a shrine is a gate,
+       its posts stand at a fixed offset in WORLD x whatever direction the
+       leader faces, and Pandapaw's is in a bamboo forest — so which shrine
+       puts eight metres of something through somebody's face is an accident of
+       geography that no framing rule can fix. The answer is to stand
+       somewhere else. */
+    const mid = new THREE.Vector3()
+      .addVectors(S.camera.position, first.p.position).multiplyScalar(0.5);
+    const fake = { home: mid, height: 8.5, radius: 0.7, knocked: false, gone: false };
+    world.props.push(fake);
+    shoot(hall);
+    const moved = S.swing;
+    world.props.pop();
+    ok('...and it swings somewhere else when a post is in the way',
+      Math.abs(moved - was) > 0.01, `${was.toFixed(2)} -> ${moved.toFixed(2)}`);
+    /* A prop already knocked over is lying on the stone and the lens looks
+       straight over it. Without this the shot would flinch at every barrel a
+       kitten has ever hit. */
+    world.props.push({ ...fake, knocked: true });
+    shoot(hall);
+    world.props.pop();
+    ok('...but not for something already knocked over', Math.abs(S.swing - was) < 1e-9);
+    /* AND THE GATE IT IS DODGING IS THE ONE THE SHRINE ACTUALLY BUILDS. Two
+       posts, at the offset the geometry uses, or `_pickSwing` is avoiding
+       stone that is not there. */
+    ok('...at the offset the gate is really built on', SHRINE_GATE.x < SHRINE_DAIS.r
+      && SHRINE_GATE.r > 0.2, `${SHRINE_GATE.x} out, ${SHRINE_GATE.r} thick`);
+  }
+
+  // --- and nothing happens to anybody else --------------------------------
+  {
+    const hall = world.clanHalls[0];
+    /* SECOND KITTEN UNTOUCHED. Everything four-player is additive and the
+       two-player game must come out bit-identical — a scene that quietly
+       teleported whoever was NOT its subject would be the loudest possible
+       violation of that. */
+    const other = kit(1);
+    const kept = other.position.clone();
+    shoot(hall);
+    ok('the scene moves the kitten it is about and nobody else',
+      other.position.distanceTo(kept) < 1e-9);
+    /* A KITTEN ON A MOUNT IS LEFT WHERE SHE IS. Nothing is ticked during a
+       scene, so moving a rider leaves the animal behind and sits her on air.
+       `watch` never fires for one; the debug key does, and the shot degrades
+       to framing her where she really is rather than breaking. */
+    const rider = kit();
+    const perch = rider.position.clone();
+    rider.mount = {};
+    shoot(hall, rider);
+    ok('...and never one who is riding something', rider.position.distanceTo(perch) < 1e-9);
+    rider.mount = null;
+  }
+
+  /* AND THE CAPTION COMES OFF THE SCREEN WHILE SHE TALKS. `_updateClanPrompt`
+     already refuses to draw "[E] SWEAR TO..." during a scene and runs at the
+     END of `_tickBody`, which every scene block returns before reaching — so
+     the last playing frame's caption hung over the whole cutscene. Invisible
+     until the scene started standing the kitten ON the dais, which is exactly
+     where that caption is drawn. */
+  const mainSrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('a scene takes the clan caption off the screen with the HUD',
+    /if \(away\) for \(const p of this\.players \?\? \[\]\) p\.setCallout\(null\);/.test(mainSrc));
+
+  S.finish();
+  globalThis.document = baseDoc;
+  if (!hadDoc) delete globalThis.document;
+}
+
+console.log('\n--- the shrine dais is stone you stand on ---');
+{
+  /* REPORTED AS "the player is in the ground on the shrine, like there is no
+     collider". The dais was drawn and nothing else: `world.heightAt` returned
+     the hillside underneath it, the LEADER was lifted onto the stone by a
+     special case, and the player was not — so a kitten walked around inside
+     the top step with the stone at her chin, on the one piece of ground in the
+     game the game tells her to go and stand on. */
+  for (const hall of world.clanHalls) {
+    const floor = world.heightAt(hall.x, hall.z, -Infinity).y;
+    const mine = world.platforms.filter(
+      (q) => q.r != null && Math.hypot(q.cx - hall.x, q.cz - hall.z) < 0.001);
+    ok(`${hall.clan.name}'s dais is a deck for every step it draws`,
+      mine.length === SHRINE_STEPS.length, `${mine.length} of ${SHRINE_STEPS.length}`);
+    for (const st of SHRINE_STEPS) {
+      ok(`...including the one at +${st.y}`,
+        mine.some((q) => Math.abs(q.y - (floor + st.y)) < 1e-6 && Math.abs(q.r - st.r) < 1e-6));
+    }
+  }
+
+  const hall = world.clanHalls[0];
+  const floor = world.heightAt(hall.x, hall.z, -Infinity).y;
+  const top = world.heightAt(hall.x, hall.z);
+  ok('standing in the middle of one puts you on the top step',
+    !!top.platform && Math.abs(top.y - (floor + SHRINE_DAIS.y)) < 1e-6,
+    `${top.y.toFixed(2)} vs hillside ${floor.toFixed(2)}`);
+
+  /* ROUND, NOT AN INSCRIBED SQUARE. The sky shards settle for a square deck
+     inside a round pad and that is fine on a rock in the sky; here the join
+     ring is the WHOLE dais, so unwalkable stone would be a kid standing
+     exactly where the game told her to stand and dropping through it. The
+     corner of the bounding box is the test: it is inside every rectangle a
+     square deck would use and outside the disc. */
+  const rim = SHRINE_DAIS.r * 0.98;
+  const corner = SHRINE_STEPS[0].r * 0.99;
+  ok('...and the deck is round',
+    world.heightAt(hall.x + rim, hall.z).platform != null
+    && world.heightAt(hall.x + corner * 0.9, hall.z + corner * 0.9).platform == null,
+    `${rim.toFixed(1)} out is stone, the box corner is not`);
+
+  /* AND YOU CAN GET ONTO IT. `heightAt` is one-way — a deck only counts once
+     you are at or above it — and the outer step rises 0.5 against a default
+     tolerance of 0.4, so without its own `step` the dais was a platform you
+     could stand on and could not climb. That is indistinguishable from no
+     platform at all, which is exactly what it looked like. */
+  const outer = SHRINE_STEPS[0];
+  const at = world.heightAt(hall.x + outer.r * 0.8, hall.z, floor);
+  ok('...and a kitten walking up from the hillside steps onto it',
+    at?.platform != null && at.y > floor, `${at?.y.toFixed(2)} from ${floor.toFixed(2)}`);
+  ok('...one step at a time, not one leap',
+    outer.climb >= outer.y && outer.climb < outer.y + 0.4,
+    `climb ${outer.climb} for a rise of ${outer.y}`);
+
+  /* ...WITHOUT MAKING EVERY OTHER DECK CLIMBABLE. `step` is per platform and
+     the bridge decks must keep the tolerance they had, or you start being
+     snapped up through them from underneath. */
+  ok('...and nothing else got a longer reach',
+    world.platforms.every((q) => q.step == null || q.r != null));
+
+  /* THE TWO OF THEM END UP AT THE SAME HEIGHT, which is the whole point: she
+     asked for the player to be "at the same height as the clan leader and
+     standing on top of the shrine, instead of in it". */
+  const spot = leaderSpot(hall, world);
+  const mid = world.heightAt(hall.x + 1, hall.z + 1);
+  ok('a kitten on the dais stands at the leader\'s own height',
+    Math.abs(mid.y - spot.y) < 1e-6, `${mid.y.toFixed(3)} vs ${spot.y.toFixed(3)}`);
+
+  /* AND THE POINT STILL KNOWS WHICH ISLAND IT IS ON. A platform used to
+     REPLACE the island on the answer rather than sit on top of it, so anyone
+     standing on a deck was on no island at all. That was invisible out on the
+     bridges and became a bug the moment the dais joined them: `heightAt(...)
+     .island` is how a dragon decides whether its rider is still nearby, so a
+     kitten who walked up to a shrine had her dragon fly home while she
+     watched. */
+  ok('...and still reports the island under the stone',
+    top.island === world.heightAt(hall.x, hall.z, -Infinity).island && top.island != null);
+}
 
 console.log('\n--- dragons ---');
 // Perched on the ground, exactly the way _spawnDragons places them.

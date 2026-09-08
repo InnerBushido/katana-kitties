@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
-import { SHRINE_DAIS } from '../world/build.js';
 
 /* ---------------------------------------------------------------------------
    Clan leaders.
@@ -126,12 +125,18 @@ export const FACE_BIAS_MAX = 0.38;
  * Shared by the entity and by the cutscene's shot framing, so the two can
  * never disagree about where she is.
  *
- * SHE STANDS ON THE DAIS, not on the terrain. The stone platform is
- * decorative geometry merged into the world mesh — `world.heightAt` knows
- * nothing about it and returns the hillside underneath, which planted every
- * leader knee-deep in the top step. Her height is therefore the ground under
- * the MIDDLE of the shrine (where the dais was built, and which is flat by
- * construction) plus the dais, not the ground under her own feet.
+ * SHE STANDS ON THE DAIS — and that is now simply what the ground under her
+ * IS. This used to add `SHRINE_DAIS.y` by hand, because the stone was
+ * decorative geometry merged into the world mesh and `world.heightAt` returned
+ * the hillside underneath it, knee-deep. Every step of the dais is a disc
+ * platform now (`World._buildShrines`), so asking for the height under her
+ * feet gives the deck she is standing on — and the hand-lift would DOUBLE it.
+ * If you are looking at a leader floating 0.9 above her own shrine, that is
+ * where it came back.
+ *
+ * The shrine's middle is the fallback and not the answer: it is the one point
+ * on the dais that is flat by construction, so a shrine whose platforms have
+ * somehow gone missing stands her on its floor rather than on nothing.
  */
 export function leaderSpot(hall, world) {
   const isl = world.heightAt(hall.x, hall.z)?.island;
@@ -142,12 +147,8 @@ export function leaderSpot(hall, world) {
   az /= len;
   const x = hall.x + ax * LEADER_OFFSET;
   const z = hall.z + az * LEADER_OFFSET;
-  const base = world.heightAt(hall.x, hall.z);
-  // Off the edge of the stone she'd be back on the hillside — but she isn't,
-  // and LEADER_OFFSET is asserted to keep her on it.
-  const onDais = LEADER_OFFSET < SHRINE_DAIS.r;
-  const g = onDais ? base : (world.heightAt(x, z) ?? base);
-  return { x, z, y: (g ? g.y : 0) + (onDais ? SHRINE_DAIS.y : 0), ax, az };
+  const g = world.heightAt(x, z) ?? world.heightAt(hall.x, hall.z);
+  return { x, z, y: g ? g.y : 0, ax, az };
 }
 
 /** Wrapped speech, drawn to a canvas and hung in the air. */

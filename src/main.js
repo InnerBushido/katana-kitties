@@ -3265,6 +3265,17 @@ class Game {
     for (const id of ['hud', 'pane-edges', 'pane-cards']) {
       document.getElementById(id)?.classList.toggle('scene-hidden', away);
     }
+    /* AND THE CLAN CALLOUT, WHICH IS THE SAME BUG ONE MORE TIME — this one in
+       the world rather than in the DOM. `_updateClanPrompt` already refuses to
+       show "[E] SWEAR TO RUN WITH THUNDERPAW" while a scene owns the screen,
+       and exactly like `_paintPaneEdges` above it runs at the END of
+       `_tickBody`, which every scene block returns before reaching. So the
+       caption the last playing frame drew hangs over the whole cutscene.
+
+       It never showed until the shrine scene started standing the kitten ON
+       the dais for her close-up: she is inside the clan's own ring now, which
+       is precisely where that caption is drawn. */
+    if (away) for (const p of this.players ?? []) p.setCallout(null);
   }
 
   /** The leader standing at a clan's shrine. Used to gate joining on `met`. */
