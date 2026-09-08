@@ -28,8 +28,9 @@ import { SCENE_RADIUS, DWELL, ShrineScene } from '../src/systems/shrinescene.js'
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../src/entities/dragonball.js';
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import {
-  SCRIPTS, DUSK_DEEP, DUSK_FALL, DAWN_RISE, DAWN_DEEP, SummonScene,
+  SCRIPTS, DUSK_DEEP, DUSK_FALL, DAWN_RISE, DAWN_DEEP, SummonScene, BEAT_ACTS,
 } from '../src/systems/summonscene.js';
+import { FinaleLesson, FIGURES } from '../src/systems/finalelesson.js';
 import {
   SHRINE_DAIS, SHRINE_STEPS, SHRINE_GATE,
   SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest,
@@ -6924,9 +6925,9 @@ console.log('\n--- the orbs face the camera ---');
   /* THE TEXT ON A WORN ORB IS BOLTED TO SOMETHING THAT TURNS, and a quaternion
      copy is LOCAL. `group` carries the orbit tilt and `orbNode` tumbles on two
      axes every frame, so `mesh.quaternion.copy(camera.quaternion)` leaves the
-     parent's rotation on top: the kanji and the cos/sin readout arrive sheared,
-     leaning and rolling once a second. That is the exact bug that got the
-     drifting glyphs deleted from the plain Kotodama Orb.
+     parent's rotation on top: the kanji and the falling katakana arrive
+     sheared, leaning and rolling once a second. That is the exact bug that got
+     the drifting glyphs deleted from the plain Kotodama Orb.
 
      A SCREENSHOT CANNOT CHECK THIS. A still frame is the one place the fault
      hides — the text is at some angle, and so is everything else in a 2.5D
@@ -6953,7 +6954,7 @@ console.log('\n--- the orbs face the camera ---');
     return (_wq.angleTo(cam.quaternion) * 180) / Math.PI;
   };
   const worst = Math.max(
-    offBy(orb.mark.mesh), offBy(orb.readout.mesh),
+    offBy(orb.mark.mesh),
     ...orb.drops.map((d) => offBy(d.mesh))
   );
   line('worst text quad, off camera', worst.toFixed(4) + ' degrees');
@@ -12403,9 +12404,10 @@ console.log('\n--- and the two maps go where they are worth most ---');
   ok('...but the value it settles on is the one that gets painted',
     spam._text === 'final');
 
-  /* THE SAME BUG, TWICE MORE. The Kotodama orb and the power orb print the same
-     kind of live trig, and the power orb's is `cos X  sin Y` — the identical
-     combinatorial shape, on up to sixteen orbs at once. */
+  /* THE SAME BUG, ONCE MORE. The Kotodama orb prints live trig — theta, cos
+     and sin, all three of them values that move every frame. (The power orb
+     used to print the same shape and no longer prints numbers at all; what it
+     costs now is checked below, on the rain.) */
   const orb = new Orb({});
   ok('the Kotodama orb\u2019s readouts are live too',
     !!orb.thetaLabel._live && !!orb.cosLabel._live && !!orb.sinLabel._live);
@@ -12417,8 +12419,93 @@ console.log('\n--- and the two maps go where they are worth most ---');
     `${created - beforeOrb}`);
   ok('...reusing its arc buffer as well', orb.arc.geometry === orbArc);
 
-  const po = new PowerOrb(POWER_ORBS[0], 0, 1);
-  ok('the power orb\u2019s cos/sin readout is live', !!po.readout._live);
+  /* --- the worn orbs rain, and the rain is BOUNDED --------------------------
+     WHY THIS SECTION EXISTS AT ALL. A worn orb swaps the glyph at the top of
+     its column for a random one, and `makeLabelTexture` keys its cache on
+     content AND colour and never frees an entry. While only the LEAD orb
+     rained, that was one colour drawing from 46 katakana. Every orb raining is
+     ten colours — and if each drew from the whole pool it would be 460
+     never-freed canvases, arriving slowly enough over a session that nothing
+     would ever be blamed for it. `kanaFor` gives each orb five glyphs of its
+     own, which is the visible difference between two orbs AND the bound. */
+  {
+    const po = new PowerOrb(POWER_ORBS[0], 0, 1);
+    po.setMathVisible(true);
+    for (let i = 0; i < 90; i++) po.update(1 / 60, new THREE.Vector3());
+    /* MEASURED OFF THE BUILT COLUMN, not off the source. `readout` being gone
+       is the easy half; the half that matters is that nothing else in the rain
+       is a text quad carrying a number, which is what a half-finished revert
+       would leave behind. The column is exactly its four falling glyphs. */
+    ok('a worn orb prints no numbers at all', po.readout === undefined
+      && po.rain.children.length === po.drops.length,
+      `${po.rain.children.length} quads in the column`);
+    ok('...but it does rain, and every worn orb does', po.drops.length === 4);
+    /* AND THE PLAIN ORB STILL DOES. Non-negotiable #1 is that the lesson is
+       not decoration, and this whole change is about where it is legible —
+       the moment the plain orb loses its working, the change has gone wrong. */
+    const plain = new Orb({});
+    ok('...while the plain Kotodama orb keeps its whole diagram',
+      !!plain.thetaLabel && !!plain.cosLabel && !!plain.sinLabel && !!plain.arc);
+
+    /* EVERY ORB'S SLICE IS ITS OWN, and small. Not asserted as "they differ" —
+       two orbs sharing one glyph is fine and inevitable at five out of 46 —
+       but as: no orb draws from more than a handful, and no two orbs have the
+       SAME slice, which is what would make them look like one effect. */
+    const slices = POWER_ORBS.map((sp) => new PowerOrb(sp, 0, 1).pool);
+    ok('...from a slice of the pool, not the whole of it',
+      slices.every((q) => q.length > 1 && q.length <= 8),
+      `${slices[0].length} glyphs each`);
+    ok('...and no two orbs rain the same set',
+      new Set(slices.map((q) => q.join(''))).size === slices.length,
+      `${slices.length} distinct`);
+    /* DETERMINISTIC FROM THE ID. `syncOrbMeshes` rebuilds the whole set from
+       scratch every time she picks one up, so a slice keyed on the SLOT would
+       change an orb's characters when a different orb arrived. */
+    ok('...and an orb rains the same set whatever slot it lands in',
+      new PowerOrb(POWER_ORBS[0], 5, 8).pool.join('') === slices[0].join(''));
+
+    /* AND THE FALL RIDES ITS OWN ORBIT. The one part of this that is derived
+       rather than decorative: `speed` is what carries the orb around the
+       shell, so the fast inner orbs rain hard and the slow outer ones drift.
+       Magnitude only — a negative orbit is a direction, not rain falling up. */
+    const fast = new PowerOrb(POWER_ORBS[0], 0, 8);
+    const slow = new PowerOrb(POWER_ORBS[0], 1, 8);
+    const fallOf = (o) => {
+      o.setMathVisible(true);
+      const t0 = o.drops[0].t;
+      o.update(1 / 60, new THREE.Vector3());
+      return (o.drops[0].t - t0 + 1) % 1;
+    };
+    const a = fallOf(fast);
+    const b = fallOf(slow);
+    ok('...and the column falls at the orb\u2019s own pace',
+      a > 0 && b > 0 && Math.abs(a - b) > 1e-6, `${a.toFixed(5)} vs ${b.toFixed(5)}`);
+
+    // Non-vacuity for the sign: slot 1 orbits backwards and must still fall.
+    ok('...downwards, whichever way it is orbiting', slow.speed < 0 && b > 0);
+
+    const capBefore = labelCacheStats().entries;
+    po.setMathVisible(true);
+    for (let i = 0; i < 3000; i++) po.update(1 / 60, new THREE.Vector3());
+    ok('...so 50 seconds of rain cannot grow the cache past its own pool',
+      labelCacheStats().entries - capBefore <= po.pool.length,
+      `+${labelCacheStats().entries - capBefore} of at most ${po.pool.length}`);
+
+    /* --- AND THE THREE PLACES THAT TURN IT ON ALL SAY THE SAME THING --------
+       `Game` cannot be imported here, so this is read off the file — but the
+       thing being checked is not a spelling, it is that THREE call sites
+       agreed. `_applyMath` (the M key), `syncOrbMeshes` (she picked one up)
+       and `_giveOrb` (she walked into a plain orb) each decide what an orb
+       shows, and for a long time `_giveOrb` was the odd one out: it gated on
+       `n === 0` while `_applyMath` lit every plain orb, so the second orb she
+       found came up blank and then lit itself the moment anybody pressed M.
+       An index test surviving in any of the three is the whole bug class. */
+    const src = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    const calls = [...src.matchAll(/setMathVisible\(([^)]*)\)/g)].map((m) => m[1].trim());
+    ok('every setMathVisible in main.js asks one question and not two',
+      calls.length >= 3 && calls.every((a) => a === 'on' || a === 'this.mathVisible'),
+      calls.join(' | '));
+  }
 
   /* THE DASHED LEGS MUST NOT REBUILD THEIR OWN BUFFERS.
 
@@ -15385,7 +15472,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
 {
   /* --- THE ORBITING ORBS' TEXT IS BEHIND THE WORLD, NOT IN FRONT OF IT ---
      Every quad on a PowerOrb carried `depthTest: false`, so the kanji and the
-     live cos/sin readout drew through houses, dragons and the kitten wearing
+     falling katakana drew through houses, dragons and the kitten wearing
      them. Reported from play as the glyphs "not being covered up by 3D
      objects", and the ring passes behind her several times a second.
 
@@ -15404,14 +15491,13 @@ console.log('\n--- one press is not enough, and one player drives ---');
   const orb = new PowerOrb(POWER_ORBS[0], 0, 1);
   ok('a power orb\' kanji is depth-tested against the world',
     orb.mark.mat.depthTest === true);
-  ok('...and so is its cos/sin readout', orb.readout.mat.depthTest === true);
   ok('...and every falling glyph with it',
     orb.drops.every((d) => d.mesh.material.depthTest === true), `${orb.drops.length} drops`);
   /* TRANSPARENT QUADS STILL MUST NOT WRITE DEPTH, or they hide each other and
      the orb behind them. Testing and writing are different questions and the
      fix only changes one of them. */
   ok('...without any of them stamping the depth buffer',
-    orb.mark.mat.depthWrite === false && orb.readout.mat.depthWrite === false
+    orb.mark.mat.depthWrite === false
     && orb.drops.every((d) => d.mesh.material.depthWrite === false));
 
   /* THE LIFT IS MEASURED, FROM TWO DIFFERENT CAMERAS, and it has to point at
@@ -15440,7 +15526,11 @@ console.log('\n--- one press is not enough, and one player drives ---');
 
   /* THE RAIN COLUMN'S LIFT MAY NOT ACCUMULATE. `faceCamera` runs per view, so
      adding to `rain.position` in place would walk the column off the orb by
-     one lift per pane — invisible at one player and wrong at four. */
+     one lift per pane — invisible at one player and wrong at four.
+
+     THE LIFT IS TAKEN OFF A DROP NOW, because it used to be taken off the
+     readout and there is no readout. Every glyph in the column is given the
+     same quaternion, so any of them answers the same question. */
   const camA = new THREE.PerspectiveCamera();
   camA.position.set(0, 6, 30);
   camA.lookAt(orb.group.position);
@@ -15915,7 +16005,14 @@ console.log('\n--- one press is not enough, and one player drives ---');
      property: what is being checked here is the sky and the stage, and a
      hand-written list of the eleven canvas methods `drawPortrait` happens to
      use today would be a check on THAT function's implementation. */
+  /* ...AND IT KEEPS `createElement`, the same borrow the shrine-scene block
+     makes: the finale's lesson builds four `Label`s and a Label measures its
+     text on a canvas. Taking the ambient stub's own factory rather than typing
+     a third copy of it — `domStub` is a factory precisely so this is one
+     line. */
+  const baseCreate = domStub().createElement;
   globalThis.document = {
+    createElement: (...a) => baseCreate(...a),
     getElementById: () => ({
       classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
       style: { setProperty() {} },
@@ -16055,8 +16152,288 @@ console.log('\n--- one press is not enough, and one player drives ---');
     /new SummonScene\(\{\s*scene: this\.scene,/
       .test(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')));
 
+  /* --- ...AND SHE SQUARES TO THE LENS WHILE SHE DOES IT ---
+     Found while staging the ending, and it had been wrong since the scene was
+     written: `faceCamera()` on this class is a no-op, so the stage quad kept
+     whatever orientation it was built with while the finale's camera climbs
+     and turns most of a quadrant across four beats. She was foreshortening for
+     the entire ending — never edge-on enough to look broken, just quietly
+     narrower every beat, which is why nobody caught it by looking.
+
+     Asked as "the quad's normal points back down the barrel", at two points in
+     the shot far enough apart that one fixed orientation cannot satisfy both.
+     A billboard that only works from the opening angle passes exactly one. */
+  {
+    const F = staged('finale').T;
+    const facing = () => new THREE.Vector3(0, 0, 1)
+      .applyQuaternion(F.stage.quaternion)
+      .dot(F.camera.getWorldDirection(new THREE.Vector3()));
+    F.update(1 / 60);
+    const openedAt = F.camera.position.clone();
+    const early = facing();
+    for (let i = 0; i < 1200; i++) F.update(1 / 60);   // twenty seconds in
+    const late = facing();
+    ok('the ending turns her to face the lens, at both ends of the shot',
+      early < -0.999 && late < -0.999, `${early.toFixed(4)} then ${late.toFixed(4)}`);
+    /* ...AND THE SHOT REALLY DID MOVE BETWEEN THOSE TWO. Without this the pair
+       above is two readings of the same camera, which a nailed-down quad also
+       passes. The finale is the one shot that climbs and pulls back. */
+    ok('...from a camera that climbed and pulled back in between',
+      F.camera.position.y - openedAt.y > 3
+      && F.camera.position.length() - openedAt.length() > 3,
+      `${openedAt.length().toFixed(1)} -> ${F.camera.position.length().toFixed(1)} units out`);
+  }
+
+  /* --- ...AND HER ACTING IS ANCHORED TO THE LINES, AND SMALL ---
+     There is exactly one drawing of Patchfur and no second pose without
+     generating art, so the performance is a lean and a step, one pair per
+     beat. Both halves of this matter. A table shorter than the script leaves
+     the last beats acted by `undefined`; a lean big enough to notice AS A MOVE
+     reads as the drawing being wrong rather than as a person moving, which is
+     the same argument `FACE_BIAS_MAX` makes about the clan leaders. */
+  ok('every finale beat has a pose, and no beat has two',
+    BEAT_ACTS.length === SCRIPTS.finale.length,
+    `${BEAT_ACTS.length} poses for ${SCRIPTS.finale.length} lines`);
+  ok('...none of them big enough to read as a broken sprite',
+    BEAT_ACTS.every((a) => Math.abs(a.lean) <= 0.08 && Math.abs(a.push) <= 0.2),
+    BEAT_ACTS.map((a) => `${a.lean}/${a.push}`).join(' '));
+  ok('...and at least one of them moves at all',
+    BEAT_ACTS.some((a) => a.lean !== 0 || a.push !== 0));
+
   if (!hadDoc) delete globalThis.document;
   world.setSky(0, 0);        // leave the world as the rest of the file found it
+}
+
+{
+  /* --- 4f. THE LESSON BEHIND HER IS THE MATHS, NOT A PICTURE OF MATHS ---
+     Non-negotiable #1: the maths is the point and not a bolt-on, and the only
+     way to hold a diagram to that is to measure what it DREW against the two
+     functions it claims to have drawn it with. Every check in this section
+     reads the geometry buffers; not one of them asks whether a label exists.
+     A version of this scene that drew a handsome circle and printed an angle
+     it had nothing to do with would pass a "has labels" check and would be
+     precisely the version that is not allowed.
+
+     @see src/systems/finalelesson.js, docs/notes/story.md */
+  const hadDoc = !!globalThis.document;
+  /* The ambient stub is deleted long before this line, and a `Label` measures
+     its text on a canvas — so borrow the factory back rather than typing a
+     third copy of it. `getElementById` too: the last block here builds a whole
+     SummonScene, which goes looking for its dialogue box. */
+  globalThis.document = Object.assign(domStub(), {
+    getElementById: () => ({
+      classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+      style: { setProperty() {} },
+      textContent: '', width: 150, height: 150,
+      getContext: () => new Proxy({}, {
+        get: () => () => ({ addColorStop() {} }), set: () => true,
+      }),
+    }),
+  });
+
+  /* A null scene is legal AND STILL BUILDS THE FIGURE. That is the property
+     this whole section rests on: without it the only checkable thing about a
+     drawing system with no renderer is its source text. */
+  const L = new FinaleLesson(null, 216);
+  ok('the lesson builds without a scene, so its geometry can be measured',
+    !!L.marks && L.pos.length === L.n * 6, `${L.n} marks`);
+
+  /* --- the four arrangements ---------------------------------------------- */
+  ok('there is one figure per line she says',
+    FIGURES.length === SCRIPTS.finale.length,
+    `${FIGURES.join(', ')} for ${SCRIPTS.finale.length} lines`);
+
+  const at = (figure) => {
+    const out = new Float32Array(L.n * 3);
+    L._fill(out, figure);
+    return out;
+  };
+  /* THE CIRCLE IS `(cos φ, sin φ)` AND IS CHECKED AS SUCH — not "is roughly
+     round", which a hand-placed ring of points also is. Every mark is compared
+     to the value the two functions give for its own index. */
+  {
+    const c = at('circle');
+    let worst = 0;
+    for (let i = 0; i < L.n; i++) {
+      const phi = (i / L.n) * Math.PI * 2;
+      worst = Math.max(worst,
+        Math.hypot(c[i * 3] - Math.cos(phi), c[i * 3 + 1] - Math.sin(phi)));
+    }
+    ok('...and beat 3\'s circle is cos and sin of its own index, to the bit',
+      worst < 1e-6, `worst mark off by ${worst.toExponential(1)}`);
+  }
+  /* THE RING IS THE SAME CIRCLE, TIGHTENED — which is what the last beat is
+     saying, so it had better be true of the drawing and not just of the words.
+     Every mark on one radius, and that radius smaller than the circle's. */
+  {
+    const r = at('ring');
+    const radii = [];
+    for (let i = 0; i < L.n; i++) radii.push(Math.hypot(r[i * 3], r[i * 3 + 1]));
+    const lo = Math.min(...radii), hi = Math.max(...radii);
+    ok('...and beat 4 tightens that same circle into the arena ring',
+      hi - lo < 1e-6 && hi < 0.999, `radius ${hi.toFixed(3)}, spread ${(hi - lo).toExponential(1)}`);
+  }
+  /* THE SCATTER IS DETERMINISTIC. The Help clips are filmed out of the running
+     game with interframe differencing, so a figure that landed somewhere new
+     on every play could never be filmed — and, less exotically, a scene the
+     kids watch twice should be the same scene twice. */
+  {
+    const a = at('scatter'), b = at('scatter');
+    ok('...and beat 1\'s scatter falls in the same places every time it plays',
+      a.every((v, i) => v === b[i]));
+  }
+  /* THE STROKES MUST BE SHORTER THAN THE LATTICE IS FINE. The first take had
+     216 marks on a 15x15 grid — rows 0.123 apart — drawn as strokes 0.15 long,
+     so every column fused and the tidy town came out as a barcode. It is a
+     statement about the COUNT, so it is checked at both ends of the range a
+     world can have rather than at the 216 that happen to exist today. */
+  for (const n of [64, 216, 400]) {
+    const M = new FinaleLesson(null, n);
+    const cols = Math.ceil(Math.sqrt(M.n));
+    const gap = 1.72 / (cols - 1);
+    ok(`...and at ${n} things knocked over the grid still reads as marks`,
+      M._stroke('lattice') * 2 < gap * 0.9,
+      `stroke ${(M._stroke('lattice') * 2).toFixed(3)} in a ${gap.toFixed(3)} gap`);
+  }
+
+  /* --- the bridge is the chord, and the printed number is the drawn one ----
+     "An angle, a circle, and the nerve to jump — that is all a bridge has ever
+     been." The span is drawn from (1,0) to (cos θ, sin θ) and its length is
+     printed as 2·sin(θ/2). Those are the same number by identity, which is the
+     entire reason the beat is worth having — so it is checked as one number
+     measured two ways rather than as two numbers that happen to agree. */
+  {
+    const B = new FinaleLesson(null, 216);
+    B.start(216);
+    B.setBeat(FIGURES.indexOf('circle'));
+    const cam = new THREE.PerspectiveCamera(54, 1.8, 0.1, 3000);
+    cam.position.set(0, 20, 60);
+    cam.lookAt(0, 0, 0);
+    cam.updateMatrixWorld(true);
+    for (let i = 0; i < 240; i++) B.update(1 / 60, cam, 9);
+    ok('the bridge beat is on screen once the strokes have arrived',
+      B.diagram.visible && B.theta > 0.5, `θ ${B.theta.toFixed(2)} rad`);
+
+    const th = B.theta;
+    const c = Math.cos(th), sn = Math.sin(th);
+    ok('...the arm ends at (cos θ, sin θ), where the point is',
+      Math.abs(B.lineR.geometry.attributes.position.array[3] - c) < 1e-6
+      && Math.abs(B.lineR.geometry.attributes.position.array[4] - sn) < 1e-6);
+    /* THE RIGHT TRIANGLE IS DRAWN, NOT ASSERTED: the cosine leg runs the axis
+       out to cos θ and the sine leg rises from THAT SAME x to the point. If
+       the two legs ever stop meeting, the figure is claiming a triangle it is
+       not showing. */
+    const cosArr = B.lineCos.geometry.attributes.position.array;
+    const sinArr = B.lineSin.geometry.attributes.position.array;
+    ok('...the cosine leg lies on the axis and stops under the point',
+      Math.abs(cosArr[3] - c) < 1e-6 && cosArr[4] === 0);
+    ok('...and the sine leg stands on the end of it and reaches the point',
+      Math.abs(sinArr[0] - c) < 1e-6 && sinArr[1] === 0
+      && Math.abs(sinArr[4] - sn) < 1e-6);
+    /* THE SPAN IS A QUAD BECAUSE `linewidth` IS IGNORED by every desktop WebGL
+       implementation — a one-pixel bridge is not the thing the line is about.
+       So its LENGTH is a scale, and the scale is what gets measured. */
+    const drawn = B.span.scale.x;
+    const printed = 2 * Math.sin(th / 2);
+    ok('...and the bridge is drawn at exactly the width it prints',
+      Math.abs(drawn - printed) < 1e-6 && Math.abs(drawn - Math.hypot(c - 1, sn)) < 1e-6,
+      `${drawn.toFixed(4)} drawn, ${printed.toFixed(4)} printed`);
+    ok('...saying so in words a nine-year-old can check against the picture',
+      B.lblSpan._want === `the bridge is ${printed.toFixed(2)} wide`, B.lblSpan._want);
+    ok('...and the two islands sit on the chord\'s own two ends',
+      B.isleA.position.x === 1 && B.isleA.position.y === 0
+      && Math.abs(B.isleB.position.x - c) < 1e-6
+      && Math.abs(B.isleB.position.y - sn) < 1e-6);
+    /* IT STOPS AT THREE QUARTERS OF A TURN. A closed circle puts the far
+       island back on top of the near one and the bridge vanishes on the line
+       about crossing it. */
+    for (let i = 0; i < 2400; i++) B.update(1 / 60, cam, 9);
+    ok('...and the sweep stops before the far island lands on the near one',
+      B.theta <= Math.PI * 1.5 + 1e-9 && 2 * Math.sin(B.theta / 2) > 1,
+      `θ ${((B.theta * 180) / Math.PI).toFixed(0)}deg, bridge ${(2 * Math.sin(B.theta / 2)).toFixed(2)} wide`);
+
+    /* THE LABELS ARE `live`, so the never-freed texture cache cannot grow with
+       the clock. Same leak that crashed the Dojo of the Turning Circle: four
+       labels rewritten sixty times a second is four canvases a frame. */
+    const before = labelCacheStats().entries;
+    for (let i = 0; i < 1800; i++) B.update(1 / 60, cam, 9);
+    ok('...and thirty seconds of it cannot grow the label cache',
+      labelCacheStats().entries === before,
+      `+${labelCacheStats().entries - before}`);
+  }
+
+  /* --- SHE IS IN FRONT OF IT, AND THE WORLD IS NOT ---
+     One flag settles both, and it is the opposite of what everything else
+     parked in front of a lens in this game does. `depthTest: true` means
+     Patchfur — parked nearer and writing depth — occludes the figure, while
+     the archipelago two hundred units further back does not. `depthWrite`
+     stays off or the transparent lines hide each other. */
+  {
+    const mats = [];
+    L.group.traverse((o) => { if (o.material) mats.push(o.material); });
+    ok('every part of the lesson is depth-tested, so she stands in front of it',
+      mats.length > 5 && mats.every((m) => m.depthTest === true), `${mats.length} materials`);
+    ok('...and none of it stamps the depth buffer',
+      mats.every((m) => m.depthWrite === false));
+    /* AND EVERY BUFFER THIS THING REWRITES IS EXEMPT FROM CULLING. Not the
+       whole figure — three.js culls off `matrixWorld`, so a static quad on a
+       moving parent is culled correctly and the labels are fine as they are.
+       The ones that are not fine are the geometries whose VERTICES move: a
+       bounding sphere is computed once, on the first render, and never again,
+       so 216 strokes that start as a scatter and become a circle are being
+       tested against the shape they had four beats ago. Same reason the orb's
+       arc does it, and the same reason it is these objects and not all of
+       them. */
+    const live = [L.marks, L.lineR, L.lineCos, L.lineSin, L.arc, L.isleA, L.isleB];
+    ok('...and every buffer it rewrites is exempt from a stale bounding sphere',
+      live.every((o) => o.frustumCulled === false), `${live.length} moving geometries`);
+  }
+
+  /* --- IT BELONGS TO THE ENDING AND TO NOTHING ELSE ---
+     `found` and `summon` are two beats of somebody telling you where to go.
+     There is nothing to illustrate and a diagram over them is a screensaver. */
+  {
+    const S2 = new SummonScene({ scene: null, world: null, audio: null });
+    S2.start('summon', { x: 0, y: 0, z: 0 }, 30, null);
+    ok('the lesson stays shut for the summoning', !S2.lesson.group.visible);
+    S2.finish();                     // a scene already running refuses a second
+    S2.start('finale', { x: 0, y: 0, z: 0 }, 30, null);
+    ok('...opens for the ending', S2.lesson.group.visible);
+    S2.finish();
+    ok('...and closes again when the ending does', !S2.lesson.group.visible);
+  }
+
+  /* --- AND A MORPH TAKES THE SHORT WAY ROUND ---
+     Lerping raw angles sends a stroke at 350deg back through 180 to reach 10,
+     so a third of the marks spin the wrong way across every change of figure.
+     Visible, and exactly the kind of thing that reads as a physics bug rather
+     than as arithmetic. Measured as: no mark's own heading ever moves further
+     in one frame than the morph could justify. */
+  {
+    const W = new FinaleLesson(null, 216);
+    W.start(216);
+    const cam = new THREE.PerspectiveCamera(54, 1.8, 0.1, 3000);
+    cam.updateMatrixWorld(true);
+    W.update(1 / 60, cam, 9);
+    W.setBeat(2);
+    let worst = 0, prev = null;
+    for (let i = 0; i < 200; i++) {
+      W.update(1 / 60, cam, 9);
+      const now = Float32Array.from(W._live);
+      if (prev) {
+        for (let j = 0; j < W.n; j++) {
+          let d = now[j * 3 + 2] - prev[j * 3 + 2];
+          worst = Math.max(worst, Math.abs(Math.atan2(Math.sin(d), Math.cos(d))));
+        }
+      }
+      prev = now;
+    }
+    ok('a stroke never spins the long way round to reach its next heading',
+      worst < 0.09, `worst ${worst.toFixed(4)} rad in one frame`);
+  }
+
+  L.dispose();
+  if (!hadDoc) delete globalThis.document;
 }
 
 {

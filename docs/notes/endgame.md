@@ -1194,6 +1194,90 @@ right picture when both are true, which is what `.kd-slot.offered.cursor` is
 for — specificity 0,3,0 so it beats BOTH rules above it, since the plain cursor
 rule would otherwise win on a slot that is also offered and drop the gold.
 
+## The worn orbs stopped printing numbers, and the rain became the point
+
+Reported as *"the math overlay text on the powerup orbs floating around the
+player seems to only be appearing on one orb rather than all of them"* — a real
+bug, and the fix for it is not the interesting half.
+
+**The bug was one condition in three places that had drifted apart.** Three call
+sites decide what an orb shows: `_applyMath` (the M key), `syncOrbMeshes` (she
+picked one up) and `_giveOrb` (she walked into a plain orb). `_giveOrb` gated on
+`n === 0` — only the FIRST orb gets the overlay — while `_applyMath` lit every
+one of them. So the second orb she found came up blank, and then lit itself the
+moment anybody pressed M, which is why it read as random rather than as a rule.
+
+**Then the answer to "so should all eight print their working?" turned out to be
+no.** Eight orbs orbiting a kitten at 1.4 units, each printing `cos 0.71 sin
+0.71` at a size that fits beside a ball that small, is eight unreadable strings
+sliding over each other and over her. It is a second copy of the lesson, printed
+too small to teach anything, in front of the first copy — which is the plain
+Kotodama Orb's six-unit diagram, the one non-negotiable 1 is actually about.
+
+> Let's remove the cos/sin from showing at all for the Powerup Kotodama orbs, we
+> can keep them for the regular Kotodama orbs. The Powerup orbs should just look
+> cool, which the raining kana does.
+
+So: **the readout is gone from the worn orb and every worn orb rains.** The rain
+was always the better half of that effect — it is the thing that reads from
+across the garden — and it now runs on all of them rather than being the
+sidekick of a readout that only one orb had.
+
+### The rain is still made of the orbit, which is the only reason it is allowed
+
+Non-negotiable 1 is not "there are numbers on screen", it is that the maths
+places the thing. Deleting the readout would break that if the column were then
+just a falling animation, so it is not one:
+
+```js
+const fall = dt * (0.42 + Math.abs(this.speed) * 0.22);
+```
+
+The glyphs fall at a rate taken from **the orb's own angular speed**, and they
+fall DOWNWARDS whichever way it is orbiting — `Math.abs`, because a Long Guard
+orb that counter-rotates would otherwise rain upwards. A fast orb's rain hurries.
+`world-check` measures that: it runs the column at two speeds and compares, and
+it runs a counter-rotating orb and checks the sign.
+
+### Each orb has its own five kana, and they are its name
+
+The other half of the ask was *"can even make them look unique for each
+individual powerup orb"*. The obvious version is a random slice per orb, and the
+obvious version is wrong twice: a random slice is different on every play, so
+the Help clips — filmed out of the running game with interframe differencing —
+could never be filmed; and a slice picked by SLOT means an orb changes its
+character when she takes off the one before it.
+
+So the slice is hashed **from the orb's id**:
+
+```js
+function kanaFor(id) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  const n = 5;
+  return Array.from({ length: n }, (_, i) => KANA[(h + i * 9) % KANA.length]);
+}
+```
+
+Five glyphs, the same five forever, and all ten orbs come out distinct — which
+is checked rather than hoped, because a hash over ten short strings colliding is
+exactly the kind of thing that is fine until somebody adds an eleventh orb.
+
+**Five and not fifty, for a reason that is about memory rather than taste.**
+`makeLabelTexture` caches by string and never frees an entry, so a column
+drawing from a large pool mints a canvas per glyph and holds it forever — the
+leak that killed the Dojo. A bounded pool is a bounded cache, and `world-check`
+rains for fifty seconds and asserts the cache grew by at most the pool's size.
+
+### And the plain Kotodama Orb kept every bit of its diagram
+
+That is the whole point of moving the numbers rather than deleting them. The
+six-unit overlay — the unit circle, the swept arc, the cosine and sine legs and
+their three readouts — is the lesson, it is legible because it is big, and it is
+still there on both plain orbs. `world-check` asserts it explicitly in the same
+section that asserts the worn orb has no readout, so a future tidy-up that
+"finishes the job" fails on the line above.
+
 ## The balance page
 
 **`npm run dev`, then open `/tuning.html`.** Every ability's numbers, one

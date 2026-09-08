@@ -378,3 +378,157 @@ every beat is a different character walking on. Four beats of the same calico
 sliding in from the right reads as a stutter, so the slide runs off a separate
 scene clock.
 
+### ...and she was quietly foreshortening for the whole ending
+
+Found while staging the rest of this scene, and wrong since the day it was
+written. `SummonScene.faceCamera()` is a **no-op** — the method exists, the game
+calls it, and it does nothing — so the stage quad kept whatever orientation it
+was built with while the finale's camera climbs and turns most of a quadrant
+across four beats. She was never edge-on enough to look broken. She just got
+narrower every beat, which is exactly why four people watched the ending and
+nobody said anything.
+
+`_parkStage` now copies the camera's quaternion onto the stage, after
+`camera.updateMatrixWorld(true)` and in the same solve that positions it.
+`world-check` asks it as *"the quad's normal points back down the barrel"* at
+two points in the shot twenty seconds apart, plus a third check that the camera
+really moved in between — because without that last one the pair is two readings
+of the same camera, which a nailed-down quad also passes.
+
+## The lesson behind her — `src/systems/finalelesson.js`
+
+> The cutscene is a little boring currently. Is there a way we can add more
+> character to Patchfur for the ending? Maybe use Bugenhagen from FF7 and his
+> lesson on cosmology as inspiration.
+
+Bugenhagen's planetarium is not a slideshow. He turns the lights off and the
+**thing he is describing appears around you**, and the lesson lands because you
+are looking at the argument while he makes it. So: four figures drawn behind
+her, one per beat, each one illustrating the line she is actually saying.
+
+**It draws the script she already has.** Deliberately — the recording and the
+words are untouched, so this cost nothing to try and would cost nothing to
+undo, and every figure is anchored to words she is already speaking:
+
+| beat | the line | the figure |
+| --- | --- | --- |
+| 1 | "Every barrel. Every lantern. Every last cane of bamboo." | one stroke per knockable thing in the world, scattered |
+| 2 | "A tidy town is only one way for a town to be." | the same strokes snap into a lattice |
+| 3 | "An angle, a circle, and the nerve to jump — that is all a bridge has ever been." | the unit circle, and the chord it subtends |
+| 4 | "The arena is open." | the circle tightens into the ring |
+
+**The mark count is the world's own count.** `mischiefTotal` — the number the
+MISCHIEF counter has been counting all afternoon — is how many strokes are on
+screen, so the first beat is literally her naming the things they knocked over
+and the things they knocked over being on screen.
+
+### The bridge IS the chord
+
+This is the beat that has to earn non-negotiable 1, and the test it has to pass
+is the one the Kotodama Orb passes: **every position on screen is computed from
+the two numbers printed beside it.** A figure that drew a handsome circle and
+printed an unrelated angle would be the decorative version, and the decorative
+version is worse than no figure at all.
+
+So the radius arm ends at `(cos θ, sin θ)`. The cosine leg runs the axis out to
+`cos θ` and the sine leg **stands on the end of that same leg** and reaches the
+point, which is the right triangle drawn rather than asserted. The two islands
+are not placed anywhere — they are put on the two ends of the chord, which is
+where the circle already put them. And the span between them is drawn at
+`Math.hypot(cos θ - 1, sin θ)` while the caption under it reads
+
+    the bridge is 1.41 wide
+
+which is `2·sin(θ/2)`. Those are the same number by identity, and that identity
+is the whole reason the beat is worth having — so `world-check` measures the
+drawn quad's scale, computes the printed number independently, and asserts they
+agree to a millionth rather than asserting that both exist.
+
+**The sweep stops at three quarters of a turn.** A closed circle puts the far
+island back on top of the near one, so the bridge would vanish on the exact line
+about crossing it.
+
+**The span is a quad and not a line, and that is WebGL rather than taste.**
+`LineBasicMaterial.linewidth` is ignored by every desktop WebGL implementation,
+so every line in this figure is one pixel wide whatever it asks for. The chord
+is the thing the beat is about and one pale pixel is not it — so it is a
+unit-long plane along +X, then positioned, turned and scaled to the chord it is
+drawing. The geometry is still the maths; it is just thick enough to see.
+
+### Four figures, one buffer
+
+216 strokes is 432 vertices in a single `LineSegments`, rewritten in place every
+frame — one draw call, one buffer, no allocation. The alternative is 216
+objects, and the reason that matters is [performance.md](performance.md): this
+scene runs on a phone with the whole archipelago in shot.
+
+**A stroke takes the short way round to its next heading.** Lerping raw angles
+sends a mark at 350° all the way back through 180 to reach 10, so about a third
+of them spin the wrong way across every change of figure — visible, and exactly
+the kind of thing that reads as a physics bug rather than as arithmetic.
+`atan2(sin(da), cos(da))` picks the short arc, and `world-check` watches every
+mark's heading frame by frame through a morph and fails if any of them ever
+moves further in one frame than the morph could justify.
+
+**The scatter is hashed, not random.** The Help clips are filmed out of the
+running game with interframe differencing, so a figure that landed somewhere new
+on every play could never be filmed — and, less exotically, a scene the kids
+watch twice should be the same scene twice.
+
+### The lattice came out as a barcode, and the reason is arithmetic
+
+216 marks is a 15×15 grid, so its rows are 0.123 apart in figure units — and a
+stroke drawn 0.075 each way is 0.150 tall, taller than the gap. Every column
+fused into one continuous vertical line and the tidy town read as a barcode.
+
+The fix is not a smaller number typed into the table. The constraint is a
+statement about the **count**, and the count is the world's, so it is derived:
+the lattice's stroke is capped at two fifths of its own row spacing, which
+leaves three fifths of the gap showing whether the world has 64 knockable things
+or 400. `world-check` checks it at both ends of that range rather than at the
+216 that happen to exist today.
+
+### It is depth-tested, which is the opposite of everything else parked here
+
+Every other thing this game parks in front of a lens turns depth testing **off**,
+because it is drawn over a world it is not part of. Doing that here draws the
+diagram over Patchfur, who is the person the scene is about.
+
+One flag settles both ends of it. She is parked at 12.8 units and writes depth;
+the figure sits at 20.7 and the archipelago is two hundred further back — so
+`depthTest: true` means **she occludes the figure and the figure occludes
+nothing**. `depthWrite` stays off, or the transparent lines hide each other.
+
+**Culling is off only on the buffers that get rewritten.** Not on the whole
+group — three.js culls against `matrixWorld`, so a static quad on a moving
+parent is culled correctly and the labels are fine as they are. The ones that
+are not fine are the geometries whose vertices move: a bounding sphere is
+computed once, on the first render, and never again, so 216 strokes that started
+as a scatter and became a circle are being tested against the shape they had
+four beats ago.
+
+### Her acting, with one drawing
+
+There is exactly one Patchfur — `leader_elder.png`, a single front-facing cell —
+and there is no second pose without generating art. So the performance is done
+with the quad she has: a lean, a step toward the lens, a settle. One
+`{ lean, push }` per beat, eased in over the beat's own clock at `ACT_IN` 1.8s,
+so the gesture arrives *under* the line rather than punctuating its first
+syllable.
+
+**It is anchored to the lines, not distributed for variety.** She leans in on the
+beat where she is telling them what they actually did, draws back and opens out
+on the beat where the world appears behind her, and comes forward on the last
+one, where she is sending them somewhere. A performance that moved on a timer
+would be a fidget.
+
+**The numbers are small on purpose.** `lean` is radians of roll and `push` is a
+fraction of her own height; a flat drawing rolled far enough to notice as a MOVE
+reads as the drawing being wrong rather than as a person moving — the same
+argument `FACE_BIAS_MAX` makes about the clan leaders. `world-check` pins one
+pose per line, none of them past 0.08 rad or 0.2 of her height, and at least one
+of them non-zero, so a table of zeroes is not a passing table.
+
+**The push is applied to the parked distance, not to `scale`.** Moving her
+toward the lens is a step forward; scaling her up is a drawing getting bigger.
+The two look different and only one of them reads as a person.

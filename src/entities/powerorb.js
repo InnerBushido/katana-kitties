@@ -15,12 +15,19 @@ import { tune } from '../core/tuning.js';
    `systems/kotodama.js`), which sounds like taking away the thing the project
    is about. It isn't, and the reason is that the lesson has two homes: the
    Dojo of the Turning Circle is a walkable unit circle and is untouched by any
-   of this. What the plain orb was carrying — that the numbers on screen are
-   the numbers moving the thing — is carried here too, just smaller: the lead
-   orb still prints its own live `cos θ` / `sin θ`, computed from the same two
-   numbers that place it. The katakana are decoration AROUND a real readout,
-   never instead of one. A prettier orb that lies about its own position would
-   be worse than no orb.
+   of this, and the plain orbs are still in the world and still draw their own
+   working from the two numbers that place them.
+
+   THE WORN ORBS DO NOT, AND FOR ONE COMMIT THEY DID. Each printed a live
+   `cos θ` / `sin θ` under its rain — honest, derived, and unreadable: eight of
+   them inside a 2.6-unit shell at 0.34 units tall, half the plain orb's size,
+   in a quarter of the screen. Asked for as *"remove the cos/sin from showing
+   at all for the Powerup Kotodama orbs, we can keep them for the regular
+   Kotodama orbs — the Powerup orbs should just look cool"*, and that is the
+   right call rather than a concession: a second copy of the lesson, printed
+   too small to read, teaches nothing and makes the first copy harder to find.
+   The katakana stay, one slice of the pool per orb in that orb's own colour,
+   and the numbers stay where there is room for them.
 
    ONE TYPE, ONE VERB, AND IT WAS EIGHT OF EACH. Same rule the clans follow:
    swapping one changes how the game plays rather than recolouring a badge.
@@ -764,7 +771,7 @@ const _v = new THREE.Vector3();
 /* HOW FAR THE TEXT IS PUSHED TOWARDS THE CAMERA, in world units.
  *
  * WHY THERE IS A LIFT AT ALL. Every quad on this orb used to carry
- * `depthTest: false`, so the kanji and the cos/sin readout drew over the whole
+ * `depthTest: false`, so the kanji and the falling katakana drew over the whole
  * world — through a house, through a dragon, through the kitten wearing them.
  * Reported from play as the glyphs "not being covered up by 3D objects", and
  * it looks like a bug in the sky rather than a label: text on a ring that
@@ -791,6 +798,29 @@ const RAIN_LIFT = 0.3;
  *  are meant to read as a rain of characters rather than as words, which is
  *  what the Matrix look actually is. */
 const KANA = [...'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン'];
+
+/**
+ * The glyphs one orb's rain is allowed to draw from.
+ *
+ * EVERY ORB GETS ITS OWN SLICE, which is two things at once. It is the visible
+ * one — 疾 and 剛 rain different characters in different colours, so eight
+ * columns around one kitten read as eight different orbs rather than one
+ * effect drawn eight times — and it is a hard bound on the shared label cache,
+ * which is the half that had to be got right. `makeLabelTexture` keys on
+ * content AND colour and never frees an entry, so ten coloured orbs each
+ * picking freely out of 46 katakana is 460 never-freed canvases the moment
+ * every orb rains instead of only the lead one. A slice caps it at the pool.
+ *
+ * Deterministic from the id, not from the slot: an orb has to look like itself
+ * wherever she is wearing it, and `syncOrbMeshes` re-slots the whole set every
+ * time she picks one up.
+ */
+function kanaFor(id) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  const n = 5;
+  return Array.from({ length: n }, (_, i) => KANA[(h + i * 9) % KANA.length]);
+}
 
 /**
  * One worn orb.
@@ -849,34 +879,43 @@ export class PowerOrb {
     });
     this.orbNode.add(this.mark);
 
-    this._buildRain(spec.color);
+    this._buildRain(spec.color, kanaFor(spec.id));
     this.showMath = false;
     /** Where the rain column hangs before the per-view lift. See `_updateRain`. */
     this._rainAt = new THREE.Vector3();
   }
 
   /**
-   * The character rain, and the live readout underneath it.
+   * The character rain.
    *
-   * THE GLYPHS ARE DECORATION; THE NUMBER IS NOT. Four katakana fall down a
-   * short column beside the orb on their own loop, and below them sits the
-   * same `cos θ = …` the plain Kotodama Orb printed, driven by the very cosine
-   * that put the orb where it is this frame. Kill the readout and this is a
-   * screensaver; kill the glyphs and it is the old orb at half size. The lead
-   * orb is the only one that prints the numbers — eight copies of the same
-   * two figures orbiting one cat is noise, and the whole reason the old
-   * overlay was legible was that there was one of it.
+   * IT USED TO CARRY A `cos θ  sin θ` READOUT AND NO LONGER DOES, and that is
+   * a decision about where the maths lives rather than a simplification. The
+   * lesson belongs to the PLAIN Kotodama Orb — one orb, one diagram, its
+   * working drawn from the two numbers that place it, which is
+   * non-negotiable #1 and is untouched. A powerup orb is armour: there are up
+   * to eight of them inside a 2.6-unit shell, they are half the plain orb's
+   * size, and eight copies of the same two figures orbiting one cat at 0.34
+   * units tall is not a second lesson — it is the first one made unreadable.
+   * Asked for exactly that way: *"remove the cos/sin from showing at all for
+   * the Powerup Kotodama orbs, we can keep them for the regular Kotodama
+   * orbs. The Powerup orbs should just look cool."*
+   *
+   * SO EVERY WORN ORB RAINS, not only the lead one. The old rule hid the
+   * glyphs along with the numbers, which is what actually got reported —
+   * *"math overlay text seems to only be appearing on 1 orb"* — and it was
+   * the right rule for a readout and the wrong one for decoration.
    */
-  _buildRain(color) {
+  _buildRain(color, pool) {
     this.rain = new THREE.Group();
     this.group.add(this.rain);
 
     const hex = `#${new THREE.Color(color).getHexString()}`;
     this.hex = hex;
+    this.pool = pool;
     this.drops = [];
     for (let i = 0; i < 4; i++) {
       const { texture, aspect } = makeLabelTexture(
-        KANA[(Math.random() * KANA.length) | 0],
+        pool[(Math.random() * pool.length) | 0],
         { size: 64, color: hex, stroke: '#06131a', strokeWidth: 7 }
       );
       const h = 0.34;
@@ -895,20 +934,10 @@ export class PowerOrb {
       this.drops.push({ mesh: m, t: Math.random(), swap: 0 });
     }
 
-    /* `live`. This one is `cos X  sin Y` — 201 x 201 reachable strings, the same
-       combinatorial shape as the Dojo's point readout that took the tab down at
-       roughly a gigabyte per lap, and there are up to sixteen orbs. The cached
-       path would mint a never-freed texture per value. See `Label`'s `_live`. */
-    this.readout = new Label('cos θ', {
-      height: 0.34, size: 60, color: hex,
-      stroke: '#06131a', strokeWidth: 7,
-      live: 'cos -0.00  sin -0.00',
-    });
-    this.rain.add(this.readout);
     this.rain.visible = false;
   }
 
-  /** Only the lead orb shows its working. See _buildRain. */
+  /** The overlay's answer for this orb. EVERY worn orb rains. See _buildRain. */
   setMathVisible(v) {
     this.showMath = v;
     this.rain.visible = v;
@@ -935,11 +964,11 @@ export class PowerOrb {
     const pulse = 1 + Math.sin(this.theta * 3) * 0.12;
     this.halo.scale.setScalar(pulse);
 
-    if (this.showMath) this._updateRain(dt, x, z, c, s);
+    if (this.showMath) this._updateRain(dt, x, z);
     return { theta: this.theta, cos: c, sin: s, x, z, r: this.r };
   }
 
-  _updateRain(dt, x, z, c, s) {
+  _updateRain(dt, x, z) {
     /* The column hangs beside the orb, not at the kitten's centre, so it
        travels with the thing whose numbers it is printing — which is the same
        reason the plain orb anchored its labels to the diagram rather than to
@@ -950,17 +979,24 @@ export class PowerOrb {
        column off the orb. */
     this._rainAt.set(x * 1.25, 0, z * 1.25);
     this.rain.position.copy(this._rainAt);
+    /* THE COLUMN FALLS AT THE ORB'S OWN PACE. `speed` is what carries this orb
+       around the shell and it is signed and different per slot, so the fast
+       inner orbs rain hard and the slow outer ones drift — which is the one
+       piece of this that is not arbitrary decoration. Magnitude only: a
+       negative orbit is a direction, not a rain that falls upwards. */
+    const fall = dt * (0.42 + Math.abs(this.speed) * 0.22);
     for (const d of this.drops) {
-      d.t += dt * 0.7;
+      d.t += fall;
       if (d.t > 1) {
         d.t -= 1;
         /* A new glyph at the top of the fall, not a new mesh: swapping the map
            on a cached texture costs nothing, and building four canvases a
            second per orb across sixteen orbs would be the most expensive thing
-           in the frame. `makeLabelTexture` caches by content, so this settles
-           onto the same 47 textures for the whole session. */
+           in the frame. `makeLabelTexture` caches by content AND colour and
+           never frees an entry, which is why the pool is a per-orb slice —
+           see `kanaFor`. Ten orbs times five glyphs, not ten times forty-six. */
         const { texture } = makeLabelTexture(
-          KANA[(Math.random() * KANA.length) | 0],
+          this.pool[(Math.random() * this.pool.length) | 0],
           { size: 64, color: this.hex, stroke: '#06131a', strokeWidth: 7 }
         );
         d.mesh.material.map = texture;
@@ -971,8 +1007,6 @@ export class PowerOrb {
       // detail that makes falling characters read as falling.
       d.mesh.material.opacity = 0.9 * Math.sin(d.t * Math.PI);
     }
-    this.readout.position.set(0, -1.0, 0);
-    this.readout.setText(`cos ${c.toFixed(2)}  sin ${s.toFixed(2)}`);
   }
 
   /**
@@ -1012,12 +1046,15 @@ export class PowerOrb {
     _v.set(0, 0, 1).applyQuaternion(this.mark.mesh.quaternion);
     this.mark.position.copy(_v).multiplyScalar(MARK_LIFT);
     if (!this.showMath) return;
-    // rain and readout: parented to `rain`, which only ever moves, so the
+    // rain: parented to `rain`, which only ever moves, so the
     // group's tilt is the whole of what has to come off.
     _q.copy(this.group.quaternion).invert();
     for (const d of this.drops) d.mesh.quaternion.copy(_q).multiply(camera.quaternion);
-    this.readout.mesh.quaternion.copy(_q).multiply(camera.quaternion);
-    _v.set(0, 0, 1).applyQuaternion(this.readout.mesh.quaternion);
+    /* THE LIFT IS TAKEN OFF A DROP, and it used to be taken off the readout —
+       which is now gone. Every glyph in the column gets the same quaternion,
+       so any of them answers the same question: where is the camera, in the
+       frame `rain.position` lives in. */
+    _v.set(0, 0, 1).applyQuaternion(this.drops[0].mesh.quaternion);
     this.rain.position.copy(this._rainAt).addScaledVector(_v, RAIN_LIFT);
   }
 
