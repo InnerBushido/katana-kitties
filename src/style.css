@@ -2839,6 +2839,37 @@ body.touch-ui .ne-ask-q { font-size: 16px; }
   flex-direction: column;
   overflow: hidden;
 }
+
+/* AND IT TAKES THE SHARE OF THE SCREEN ITS CARDS HAVE EARNED.
+
+   1420px is the width four cards want, and it was being handed to one. On a
+   1920x1080 desktop a solo game got a panel the width of the screen with a
+   single card stretched across all of it — reported as "too big, takes up the
+   entire screen, and I still have to scroll to read it", which is the part
+   that gives the game away: a panel cannot be simultaneously too big for its
+   contents and too small for them. It was both, because the width was going
+   into the ORB SLOTS (see `.kd-slots`), which are square, so every pixel of
+   extra width came back as height.
+
+   HALF THE SCREEN PER CARD. One card gets half a screen, two get all of it —
+   Richard's rule, and it comes out the same on every display because it is a
+   fraction of the screen rather than a breakpoint. The 420px floor is for a
+   landscape phone at one player, where half of 800px is narrower than a card
+   wants to be.
+
+   IT IS A `max-width`, SO IT CAN ONLY EVER NARROW. Written as a `width` it
+   would make the TWO-player panel wider than it is today — 1420px is the cap
+   four cards want and two of them already sit inside it — and the fifth
+   non-negotiable is that the two-player game does not move because a rule was
+   generalised. At two, three and four this changes nothing at all; at one it
+   is the whole fix.
+
+   `--kd-cards` IS SET BY `ProfileScreen._paint`, from the number of cards it
+   just laid out. Only in profile mode: the dealer is one shelf of full-width
+   rows and its width is not a function of anybody's party. */
+.kd-panel.kd-cards {
+  max-width: max(420px, calc(var(--kd-cards, 2) * 50vw));
+}
 .kd-panel > #kd-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .kd-panel > h2 { flex: 0 0 auto; }
 .kd-foot {
@@ -2999,7 +3030,20 @@ body.touch-ui .kd-row { padding: 9px 6px; }
 
 /* Eight slots, always drawn. Four across on two rows reads as a rack; eight
    across is a strip nobody can count at a glance. */
-.kd-slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+/* A SLOT IS A TARGET, AND A TARGET HAS A SIZE. Four `1fr` columns of
+   `aspect-ratio: 1` grow without limit: at one player on a 1920 desktop the
+   card was 800px wide and each orb came out a 189px circle, so eight of them
+   were 385px of card and the panel had to scroll to show a screen with room
+   for four of it. `--slot` caps the BOX rather than the tracks, so the columns
+   still shrink below it on a phone — an `fr` cannot be capped directly. */
+.kd-slots {
+  --slot: 84px;
+  --slot-gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--slot-gap);
+  max-width: calc(4 * var(--slot) + 3 * var(--slot-gap));
+}
 .kd-slot {
   aspect-ratio: 1;
   border-radius: 50%;

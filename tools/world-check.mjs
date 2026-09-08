@@ -12755,6 +12755,143 @@ console.log('\n--- the trailer is opt-in ---');
    before raising a big panda strands the fourth dragon ball (invariant 4),
    so the caution that says so has to actually be there and marked as a warning.
 --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   THE CURSOR FOLLOWS THE BUTTON, AND A PROFILE IS AS BIG AS IT NEEDS TO BE.
+
+   Two things reported from the same session, and the first is a bug class
+   rather than a bug: a UI FALL-THROUGH, where something that was true a
+   moment ago is acted on now.
+--------------------------------------------------------------------------- */
+console.log('\n--- a rebuilt list may not slide a new answer under the cursor ---');
+{
+  /* `_reseat` touches nothing but `items.indexOf`, `classList.contains` and
+     the panel's id, so it is asked with plain objects. That is the point: the
+     rule is about identity and order, not about the DOM, and a check that
+     needed a browser to ask it would not be asked. */
+  const nav = new MenuNav({});
+  const btn = (name, ...cls) => ({ name, classList: { contains: (c) => cls.includes(c) } });
+  const panel = { id: 'panel-kittens' };
+
+  const profile = btn('CHARACTER PROFILE');
+  const board = btn('RECORD BOARD');
+  const frost = btn('FROST — DROP OUT');
+  const storm = btn('STORM — DROP OUT');
+  const blossom = btn('BLOSSOM — DROP OUT');
+  const back = btn('BACK', 'back');
+  const before = [profile, board, frost, storm, blossom, back];
+
+  /* THE REPORTED ONE. She is on FROST — DROP OUT, says yes, and
+     `_buildLeaveButtons` rebuilds the list without it. Index 2 now means
+     STORM, so the next press — deliberate or manufactured — answers a
+     question about a different child. */
+  nav.focusEl.set(panel.id, frost);
+  const after = [profile, board, storm, blossom, back];
+  const landed = nav._reseat(panel, after, 2);
+  ok('a row that removes itself does not hand the cursor to its neighbour',
+    after[landed] !== storm, `landed on ${after[landed].name}`);
+  ok('...it lands on the way out instead', after[landed] === back);
+
+  /* AND IT FOLLOWS THE BUTTON WHEN THE BUTTON IS STILL THERE. The other half
+     of the same rule, and the half that stops this being "reset the cursor
+     whenever anything changes": a row ABOVE her going away must not move the
+     highlight off the row she is on. */
+  nav.focusEl.set(panel.id, blossom);
+  ok('...while a row vanishing above her keeps her on the one she was on',
+    after[nav._reseat(panel, after, 3)] === blossom);
+
+  /* NOTHING CHANGED, NOTHING MOVES. A rule that fires on a repaint would drag
+     the cursor to BACK every frame a list is rebuilt for any other reason. */
+  nav.focusEl.set(panel.id, frost);
+  ok('...and an unchanged list leaves the cursor exactly where it was',
+    before[nav._reseat(panel, before, 2)] === frost);
+
+  /* A PANEL WITH NO WAY OUT falls back to the clamp rather than throwing. Every
+     panel that can lose a row has a `.back` today; a rule that degrades beats
+     one that vanishes. */
+  const noBack = [profile, board];
+  nav.focusEl.set(panel.id, frost);
+  ok('...and a panel with no BACK degrades rather than throwing',
+    nav._reseat(panel, noBack, 1) === 1);
+
+  /* THE WIRING. `_reseat` is only worth anything if `update` remembers the
+     element in the first place and `reset` forgets it — a stale element from
+     a previous game would pin the cursor for the rest of the session. */
+  const nsrc = readFileSync(new URL('../src/systems/menunav.js', import.meta.url), 'utf8');
+  ok('...and update remembers which element the index meant',
+    /focusEl\.set\(panel\.id, items\[i\]/.test(nsrc));
+  ok('...and a restart forgets it', /reset\(\)\s*\{[^}]*focusEl\.clear\(\)/.test(nsrc));
+}
+
+console.log('\n--- the profile is as big as its cards have earned ---');
+{
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const prof = readFileSync(new URL('../src/systems/profile.js', import.meta.url), 'utf8');
+
+  /* IT IS A `max-width`, AND THAT IS THE FIFTH NON-NEGOTIABLE IN ONE WORD.
+     1420px is the width four cards want and two already sit inside it, so
+     written as `width` this rule would make the TWO-player panel WIDER than
+     it is today — a two-player screen moved by a rule generalised for one. */
+  const rule = css.slice(css.indexOf('.kd-panel.kd-cards'),
+    css.indexOf('.kd-panel.kd-cards') + 160);
+  ok('the card-share rule can only ever narrow the panel',
+    /max-width:/.test(rule) && !/\bwidth:/.test(rule.replace('max-width:', '')));
+
+  /* THE ARITHMETIC, NOT THE STRING. Both numbers are read out of the rule and
+     the answer is computed, so the check goes on being true if either moves —
+     and fails if somebody changes 50vw to something that stops binding. */
+  const share = Number(rule.match(/\*\s*(\d+)vw/)?.[1]);
+  const floor = Number(rule.match(/max\((\d+)px/)?.[1]);
+  const capped = (w, cards) => Math.min(1420, w * 0.96, Math.max(floor, cards * (share / 100) * w));
+  ok('...and its two numbers are readable at all', share > 0 && floor > 0,
+    `${share}vw per card, floor ${floor}px`);
+  /* THE REPORTED CASE. One kitten on a 1920 desktop: half the screen, which is
+     also the number Richard asked for. */
+  ok('one player on a 1920 desktop gets half the screen',
+    Math.abs(capped(1920, 1) / 1920 - 0.5) < 0.001, `${capped(1920, 1)}px`);
+  /* AND THE ONES THAT MAY NOT MOVE. */
+  for (const n of [2, 3, 4]) {
+    ok(`...and at ${n} players nothing about the panel changes`,
+      capped(1920, n) === Math.min(1420, 1920 * 0.96), `${capped(1920, n)}px`);
+  }
+  /* A LANDSCAPE PHONE AT ONE PLAYER is where the floor earns its place: half
+     of 800px is narrower than a card wants to be. */
+  ok('...and the floor catches a landscape phone at one player',
+    capped(800, 1) === floor, `${capped(800, 1)}px of 800`);
+
+  /* THE SLOT CAP IS THE OTHER HALF, and it is the half that fixes the
+     SCROLLING. A panel cannot be both too big for its contents and too small
+     for them — it was both, because four `1fr` columns of `aspect-ratio: 1`
+     turn every pixel of extra width into height. At one player on a 1920 the
+     card was 800px wide and each orb was a 189px circle: eight of them were
+     385px of card inside a body with 250px to give. */
+  const slots = css.slice(css.indexOf('.kd-slots {'), css.indexOf('.kd-slots {') + 400);
+  const slot = Number(slots.match(/--slot:\s*(\d+)px/)?.[1]);
+  const gap = Number(slots.match(/--slot-gap:\s*(\d+)px/)?.[1]);
+  ok('an orb slot has a size it cannot grow past',
+    slot > 0 && gap >= 0 && /max-width:\s*calc\(4 \* var\(--slot\)/.test(slots),
+    `${slot}px`);
+  /* BIG ENOUGH TO AIM AT — the touch rules already promise 42px of target and
+     a cap under that would quietly break the phone. */
+  ok('...and it is still bigger than the target a thumb is promised',
+    slot >= 42, `${slot}px against 42`);
+  /* AND THE RACK IT MAKES FITS. Eight orbs is two rows; the body of a 94vh
+     panel on a 1080 screen has room several times over, which is the whole
+     complaint. */
+  const rack = 2 * slot + gap;
+  ok('...so the whole rack is two rows and nowhere near a scrollbar',
+    rack < 0.94 * 1080 * 0.5, `${rack}px of rack`);
+
+  /* THE PANEL IS TOLD, AND ONLY THE PROFILE TELLS IT. The dealer is one shelf
+     of full-width rows whose HEIGHT is what matters — narrowing it makes the
+     list longer, which is the exact direction the scrolling bug came from. */
+  ok('the profile sizes the panel to the cards it just laid out',
+    /_sizeToCards\(this\.game\.players\.length\)/.test(prof));
+  ok('...and the dealer gives the panel its own width back',
+    /_sizeToCards\(null\)/.test(prof));
+  ok('...through one method, so the two cannot each grow a copy of the rule',
+    (prof.match(/_sizeToCards\(/g) ?? []).length === 3);
+}
+
 console.log('\n--- how-to-play is a picture-led accordion ---');
 {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');

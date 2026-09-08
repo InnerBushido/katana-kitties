@@ -359,7 +359,26 @@ that were plainly not working.
   enough to look broken — just narrower every beat, which is why nobody said
   anything.
 
-162 new checks (2628 → 2790). One thing from that list is **still open**: the
+- **The Character Profile is as wide as its cards have earned.** At one player
+  on a full screen it was 1420px — the width FOUR cards want — with a single
+  card stretched across it, and it still had to scroll. Both halves are the
+  same fact: `.kd-slots` is four `1fr` columns of `aspect-ratio: 1`, so every
+  pixel of extra width came back as height and each orb was a 189px circle.
+  Slots cap at 84px; the panel takes half a screen per card, as a `max-width`
+  so two, three and four players are untouched.
+  → [endgame.md](docs/notes/endgame.md)
+- **A held key can no longer answer a question nobody asked.** Two independent
+  bugs behind *"say yes to FROST LEAVES THE GAME? and it asks about STORM
+  too"*: a slot handed a keyboard set mid-hold reported every key already down
+  as a fresh press (`Input.update` seeds `prev` on a binding change now), and
+  `MenuNav` remembered a cursor INDEX while the DROP OUT list rebuilt under it.
+  It remembers the element now — follow it if it moved, land on `.back` if it
+  is gone. **The general note Richard asked for is
+  [gotchas.md § UI FALL-THROUGH](docs/notes/gotchas.md)**, linked from
+  CLAUDE.md's house style, with the four questions to ask of any new screen.
+
+182 new checks (2628 → 2810), and pad-check 354 → 362. One thing is
+**still open**: the
 Patchfur ending's *script*. Richard asked for staging first and the script
 after, so the visual half is done and the recording is untouched — the next step
 is a text-only draft of a Bugenhagen-style rewrite for him to read, with the
