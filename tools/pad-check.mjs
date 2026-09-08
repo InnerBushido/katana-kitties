@@ -2124,6 +2124,86 @@ console.log('\n--- a second press, close behind the first ---');
   }
 }
 
+
+/* --- A DEVICE THAT CHANGES HANDS MAY NOT MANUFACTURE A PRESS --------------
+   REPORTED FROM PLAY: say YES to `FROST LEAVES THE GAME?` with the space bar
+   and the pause menu immediately asks whether STORM should leave too. Nobody
+   pressed anything the second time. `pressed` is `held && !prev`, `prev` is
+   last frame's `held`, and a slot with no device reports every action FALSE —
+   so the frame a slot is handed a keyboard set, every key already down reads
+   as a brand-new press. It is not a press; it is the edge between "I could
+   not see this key" and "I can".
+
+   Both directions of the same bug are checked. A slot GAINING a device is the
+   reported one; a slot losing it cannot manufacture anything, but a slot
+   handed a set that another slot was DRIVING (the force-spawn share, and the
+   R / U keys that pass the keyboard along) is the same bug with the binding
+   unchanged — which is why the fix keys off `source` and not just the
+   binding. */
+{
+  const im = new InputManager();
+  im.forceSeats = true;
+  im.slots = 1;
+  im.update();
+
+  const jump = KEYSETS[0].jump[0];
+  im.keys.add(jump);                       // held down, and never released
+  im.update();
+  const p0 = im.players[0];
+  ok('a real press on a settled slot still edges', p0.pressed('jump'), jump);
+  im.update();
+  ok('...and stops edging while it is merely held',
+    !p0.pressed('jump') && p0.down('jump'));
+
+  /* THE JOIN, MID-HOLD. Slot 1 does not exist yet, so nothing is reading the
+     arrow set — and its jump key goes down before she has a seat, which is
+     exactly what a sister leaning on the keyboard while somebody joins IS. */
+  const jump2 = KEYSETS[1].jump[0];
+  im.keys.add(jump2);
+  im.update();
+  im.slots = 2;
+  im.update();
+  const p1 = im.players[1];
+  ok('a slot handed a keyboard mid-hold reports no press at all',
+    !p1.pressed('jump'), `${jump2}, source ${p1.source}`);
+  /* AND IT STILL TELLS THE TRUTH ABOUT THE BUTTON. Only the EDGE is
+     suppressed — a fix that cleared `held` would make a kitten who joins
+     while her sister is running stand still until the key is released. */
+  ok('...but does not lie about the key being down', p1.down('jump'));
+
+  /* ...AND THE NEXT GENUINE PRESS EDGES NORMALLY, which is the half a blunt
+     "swallow everything for a frame" fix gets wrong. */
+  im.keys.delete(jump2);
+  im.update();
+  im.keys.add(jump2);
+  im.update();
+  ok('...and her next real press edges like anybody else' + "'" + 's',
+    p1.pressed('jump'));
+
+  /* THE SHARE RING: two slots on one set, the right to drive passed along
+     while the key is down. The BINDING does not change here — only `source` —
+     which is exactly why the signature has to include it. */
+  const share = new InputManager();
+  share.forceSeats = true;
+  share.slots = 4;
+  share.update();
+  const sharers = [0, 1, 2, 3].filter((i) => share.bindings[i].keyset === 0);
+  ok('force-spawn really does put two slots on one keyboard set',
+    sharers.length >= 2, sharers.join(','));
+  share.keys.add(jump);
+  share.update();
+  const driver = sharers.find((i) => share.players[i].source === 'keyboard');
+  ok('...and exactly one of them is driving it',
+    sharers.filter((i) => share.players[i].source === 'keyboard').length === 1,
+    `slot ${driver}`);
+  share.swapKeyset(0);                     // hand it to the sister, mid-hold
+  share.update();
+  const now = sharers.find((i) => share.players[i].source === 'keyboard');
+  ok('...and passing it along mid-hold manufactures nothing either',
+    now !== driver && !share.players[now].pressed('jump'),
+    `${driver} -> ${now}`);
+}
+
 console.log('');
 line('checks', String(checks));
 line('failures', String(fails));

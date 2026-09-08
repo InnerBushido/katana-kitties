@@ -94,6 +94,10 @@ export class MenuNav {
     /** Focused index per panel id, so backing out of Settings puts the
      *  highlight back on the row you were on rather than at the top. */
     this.index = new Map();
+    /** ...and WHICH ELEMENT that index was pointing at, per panel id. An index
+     *  alone is a row number, and a row number means nothing once a list has
+     *  rebuilt underneath it. See `_reseat`. */
+    this.focusEl = new Map();
     this.holdY = 0;
     this.holdX = 0;
     this.repeatT = 0;
@@ -285,7 +289,8 @@ export class MenuNav {
       this.holdX = 0;
     }
 
-    let i = Math.min(this.index.get(panel.id) ?? 0, items.length - 1);
+    let i = this._reseat(panel, items,
+      Math.min(this.index.get(panel.id) ?? 0, items.length - 1));
     const nav = this._read(panel);
     const dy = this._step(nav.y, 'y', dt);
     const dx = this._step(nav.x, 'x', dt);
@@ -317,6 +322,7 @@ export class MenuNav {
     if (nav.back) this._back(panel);
 
     this.index.set(panel.id, i);
+    this.focusEl.set(panel.id, items[i] ?? null);
     this._paint(items, i);
 
     /* A PAGE YOU OPEN TO READ OPENS AT THE TOP. `_paint` scrolls the focused
@@ -419,7 +425,48 @@ export class MenuNav {
   /** Panel closed or the game restarted — forget where the cursor was. */
   reset() {
     this.index.clear();
+    this.focusEl.clear();
     this.lastPanel = null;
     this._clear();
+  }
+
+  /**
+   * THE CURSOR FOLLOWS THE BUTTON, NOT THE ROW NUMBER.
+   *
+   * A UI FALL-THROUGH WE KEEP RE-INVENTING, and this is the general form of it.
+   * A remembered index is a row number, and a row number is only meaningful
+   * while the list is the same list. Two in this game rebuild themselves under
+   * a live cursor — the DROP OUT rows (`Game._buildLeaveButtons`, one per extra
+   * player, rebuilt the moment one of them leaves) and the remap grid (a row
+   * per connected controller) — and when one of them shrinks, index 2 stops
+   * meaning "FROST — DROP OUT" and starts meaning "STORM — DROP OUT".
+   *
+   * Reported from play: say yes to Frost leaving and the game immediately asks
+   * whether Storm should leave too, on a row nobody chose. The manufactured
+   * press edge that fired it is fixed in `input.js`, but the trap is here and
+   * would still be here without it — one deliberate press on a row that slid
+   * under the highlight half a second ago is a press on the wrong question.
+   *
+   * So: remember the ELEMENT. If it has moved, follow it. If it is gone, land
+   * on the panel's way OUT — the seventh non-negotiable's default answer is no,
+   * and the honest answer to "the thing you were pointing at no longer exists"
+   * is not "here is its neighbour, press again".
+   *
+   * @param {number} i the remembered index, already clamped
+   * @returns {number} the index to actually use this frame
+   */
+  _reseat(panel, items, i) {
+    const was = this.focusEl.get(panel.id);
+    if (!was || items[i] === was) return i;
+    /* IT MOVED. A row above it went away, or the list re-ordered — either way
+       she is still pointing at the button she was pointing at. */
+    const moved = items.indexOf(was);
+    if (moved >= 0) return moved;
+    /* IT IS GONE. `.back` if the panel has one; otherwise the clamp above is
+       the best that can be done, and every panel that can lose a row has one.
+       NOT `.primary`: the point of landing somewhere is that it is somewhere
+       harmless, and a primary is the row most worth pressing by accident. */
+    const back = items.findIndex((el) => el.classList.contains('back'));
+    return back >= 0 ? back : i;
   }
 }

@@ -955,6 +955,10 @@ export class ProfileScreen {
     if (this.mode === 'shop') {
       this.title.textContent = 'KOTODAMA DEALER';
       this.body.innerHTML = this._shopMarkup();
+      /* THE DEALER IS NOT SIZED BY THE PARTY. It is one shelf of full-width
+         rows whose height is what matters, and narrowing it makes the list
+         longer — the exact direction the scrolling bug came from. */
+      this._sizeToCards(null);
       this.help.innerHTML = this._flashT > 0
         ? `<em>${this._flash}</em>`
         : keys ?? 'JUMP <b>buy</b> · ATTACK <b>sell</b> · INTERACT <b>leave</b>'
@@ -962,6 +966,11 @@ export class ProfileScreen {
     } else {
       this.title.textContent = 'CHARACTER PROFILE';
       this.body.innerHTML = this.game.players.map((p, i) => this._cardMarkup(p, i)).join('');
+      /* THE PANEL IS AS WIDE AS ITS CARDS HAVE EARNED — see `.kd-cards` in
+         style.css. Set from the cards just laid out rather than from
+         `partySize`, because the thing the width has to fit is the markup on
+         screen and those are two facts that could drift. */
+      this._sizeToCards(this.game.players.length);
       this.help.innerHTML = this._flashT > 0
         ? `<em>${this._flash}</em>`
         : keys ?? 'JUMP <b>offer this orb</b> (as many as you like)'
@@ -972,6 +981,30 @@ export class ProfileScreen {
     this._paintActions();
     this._followCursors();
     this._markOverflow();
+  }
+
+  /**
+   * How much of the screen this panel may take, in cards.
+   *
+   * ONE CARD IS HALF A SCREEN, TWO FILL IT — Richard's rule, and the stylesheet
+   * does the arithmetic (`.kd-cards`). Passing `null` takes the class off and
+   * gives the panel back its own width, which is what the dealer wants.
+   *
+   * IT IS A COUNT AND NOT A PIXEL WIDTH on purpose: a number of cards is a fact
+   * this class knows and a width is a fact the stylesheet knows, and the panel
+   * has been resized three times by people who only had one of the two.
+   */
+  _sizeToCards(n) {
+    /* OPTIONALLY, ALL THE WAY DOWN. This runs from `_paint`, which is on the
+       path every other thing on this screen is drawn by — and a sizing HINT is
+       the last thing that should be able to take the panel down with it if a
+       host hands back something thinner than an element. Prefer a rule that
+       degrades over one that vanishes. */
+    const el = this.el?.querySelector?.('.kd-panel');
+    if (!el?.classList || !el.style) return;
+    el.classList.toggle('kd-cards', n != null);
+    if (n != null) el.style.setProperty('--kd-cards', String(Math.max(1, n)));
+    else el.style.removeProperty('--kd-cards');
   }
 
   /**

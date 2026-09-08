@@ -555,6 +555,12 @@ class PadState {
     this.my = 0;
     this.held = Object.fromEntries(ACTIONS.map((a) => [a, false]));
     this.prev = { ...this.held };
+    /** What was driving this slot last frame — device AND the right to drive
+     *  it. `Input.update` re-seeds `prev` whenever this changes, so a key that
+     *  was already down when the device arrived cannot read as a press. Null
+     *  until the first frame, which is deliberate: a button held while the page
+     *  loads is not a press either. */
+    this.bindSig = null;
     /* When each action last had a PRESS EDGE, in `performance.now()` ms.
        -Infinity rather than 0, because 0 is a real timestamp about a
        millisecond after the page loads and a kitten who presses mount on the
@@ -2067,6 +2073,42 @@ export class InputManager {
       }
       st.mx = mx;
       st.my = my;
+      /* --- A DEVICE THAT JUST CHANGED HANDS MAY NOT MANUFACTURE A PRESS -----
+
+         `pressed` is `held && !prev`, and `prev` is last frame's `held` — which
+         is the right answer for a slot whose device did not move, and the wrong
+         one for a slot that has just been HANDED a device. A slot with no
+         device reports every action false, so the frame it gains one, every
+         button already held reads as a fresh press: not a press at all, but the
+         edge between "I could not see this key" and "I can".
+
+         REPORTED FROM PLAY, and it is the shape the bug always takes: a girl
+         answers YES to `FROST LEAVES THE GAME?` with the space bar, the party
+         re-deals its keyboard sets over the smaller party, some slot gains the
+         set her thumb is on — and the pause menu takes that manufactured edge
+         as a second confirm, on whichever row the rebuilt list has slid under
+         the cursor. She is asked whether the NEXT sister should leave too, by a
+         press she never made. `_joinPlayer` is the same bug facing the other
+         way: join while somebody is holding jump and the joining kitten jumps
+         on her first frame.
+
+         SEEDING `prev` FROM THIS FRAME'S READING is the whole fix, and it says
+         the true thing: a key that was already down when the device arrived has
+         not been pressed since it arrived. It goes on being held — `down()` and
+         everything reading it keep telling the truth — and the NEXT genuine
+         press edges normally.
+
+         THE SIGNATURE INCLUDES `source`, not just the binding, because the
+         force-spawn share moves the right to DRIVE a set between two slots that
+         both keep naming it (`keysetDrives`, and the R / U keys that pass the
+         keyboard along). Handing the keyboard to the sister while a key is down
+         is the same manufactured edge with the binding unchanged. */
+      const sig = `${bnd.pad ?? '-'}/${bnd.half ?? '-'}/${bnd.keyset ?? '-'}`
+        + `/${bnd.touch ? 't' : '-'}/${st.source}`;
+      if (st.bindSig !== sig) {
+        st.bindSig = sig;
+        st.prev = { ...next };
+      }
       st.held = next;
       /* AFTER `held`, BEFORE ANYTHING READS THE FRAME. `pressed` is the edge
          between `prev` and `held`, so the clock cannot be stamped until both

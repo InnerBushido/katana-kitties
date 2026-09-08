@@ -1278,6 +1278,52 @@ still there on both plain orbs. `world-check` asserts it explicitly in the same
 section that asserts the worn orb has no readout, so a future tidy-up that
 "finishes the job" fails on the line above.
 
+## The profile panel is as wide as its cards have earned
+
+Reported as *"at one player and full screen the Character Profile takes up the
+entire screen, and I still have to scroll up and down to see all the text"* —
+and that sentence contains its own diagnosis. **A panel cannot be both too big
+for its contents and too small for them.** It was both, and the two halves are
+the same fact.
+
+`.kd-panel` was `min(1420px, 96vw)`. 1420 is the width FOUR cards want, and it
+was being handed to one — so `.kd-body`'s `auto-fit` grid gave the single card
+all 800-odd pixels of it. `.kd-slots` is four `1fr` columns of `aspect-ratio: 1`,
+which is to say **every pixel of extra width came back as height**: at one player
+on a 1920 desktop each orb was a 189px circle, eight of them were 385px of card,
+and the body had 250px to give it. Hence the scrolling, on the one screen size
+with room to spare.
+
+### Two caps, and they fix different halves
+
+**The slot stops growing.** `--slot: 84px`, applied as a `max-width` on the
+whole rack rather than as a track size — an `fr` cannot be capped directly, and
+the columns still have to shrink below the cap on a phone. 84 is comfortably
+above the 42px target `body.touch-ui` already promises a thumb. The rack is now
+176px instead of 385.
+
+**The panel takes the share of the screen its cards have earned.** One card gets
+half the screen, two get all of it, four get all of it — a fraction of the
+screen rather than a breakpoint, so it comes out the same on every display.
+
+```css
+.kd-panel.kd-cards { max-width: max(420px, calc(var(--kd-cards, 2) * 50vw)); }
+```
+
+**`max-width` and not `width`, and that word is the fifth non-negotiable.**
+1420px is the cap four cards want and two already sit inside it, so written as
+`width` this rule would make the TWO-player panel *wider* than it is today — a
+two-player screen moved by a rule generalised for one. As a `max-width` it can
+only ever narrow, so at two, three and four it changes precisely nothing.
+`world-check` computes the arithmetic at 1920 for all four counts rather than
+matching the string, and the 420px floor is checked at 800px wide, where half a
+landscape phone is narrower than a card wants to be.
+
+**`--kd-cards` is set by `ProfileScreen._paint`, and only in profile mode.** The
+dealer is one shelf of full-width rows whose HEIGHT is what matters; narrowing
+it makes the list longer, which is the exact direction the two-scrollers bug
+came from.
+
 ## The balance page
 
 **`npm run dev`, then open `/tuning.html`.** Every ability's numbers, one

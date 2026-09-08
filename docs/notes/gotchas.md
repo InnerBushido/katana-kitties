@@ -10,6 +10,86 @@ this folder — see [the index](README.md).*
 
 ---
 
+## UI FALL-THROUGH — the bug this project keeps re-inventing
+
+**Read this before designing any menu, dialog or list.** It has now been found
+five separate times, in five places that look nothing like each other, and
+every one of them was reported as something else — "the dealer opens when I
+press back", "the profile picks an orb on the way in", "the trailer restarts
+itself", "it asks about the next player too". It is one bug.
+
+> **A press is an EVENT. A key being down is a STATE. Every screen that acts on
+> a press must ask for the event, and something has to have made sure the event
+> is only answered once.**
+
+There are three distinct ways that goes wrong, and knowing which one you are
+looking at is most of the fix.
+
+### 1. The press is read twice in one frame
+
+The frame is read top to bottom by several owners in turn — the trailer, then
+`MenuNav`, then the game — and `pressed` is a *pure test*, so a press one of
+them acts on is still sitting there for the next. B backs out of the pause menu,
+`_back` unpauses, and execution falls straight through to the stall branch in
+the same frame, which reads the same interact edge and opens the dealer.
+
+**The fix is `PadState.consume`, and the rule is: whoever ACTS on a press owes
+the call.** `MenuNav._read` returns a `spend()` that pays for exactly the pads
+and actions the decision was read from — not `Input.consume`, which would spend
+the edge across all four slots and eat the sister's press while she is standing
+at the stall with her own interact.
+
+Spend it BEFORE acting, not after. `_activate` clicks a real button and the
+handler runs synchronously; it can unpause the game, open a trade window or
+start a scene, any of which can read a pad before you get control back.
+
+### 2. The edge is manufactured by a device changing hands
+
+`pressed` is `held && !prev`, and `prev` is last frame's `held`. A slot with no
+device reports every action **false** — so the frame a slot is handed a keyboard
+set, every key already down reads as a brand-new press. It is not a press. It is
+the edge between "I could not see this key" and "I can".
+
+This is the one that produced *"say YES to FROST LEAVES THE GAME? and it
+immediately asks whether STORM should leave too"*: answering with the space bar
+re-deals the keyboard over the smaller party, a slot gains the set her thumb is
+already on, and the pause menu takes the manufactured edge as a second confirm.
+
+**Fixed once, in `Input.update`**, by seeding `prev` from this frame's reading
+whenever a slot's device *or its right to drive one* changes. `down()` goes on
+telling the truth — the button really is held — and the next genuine press edges
+normally. `pad-check` holds both halves, and the share ring (`swapKeyset`, the
+R and U keys) is checked separately because there the BINDING does not change,
+only `source` does.
+
+### 3. The thing under the cursor is not the thing that was under the cursor
+
+The subtlest of the three and the only one that needs no input bug at all. A
+remembered cursor index is a **row number**, and a row number means nothing once
+the list has rebuilt. Two lists in this game rebuild under a live cursor — the
+DROP OUT rows (one per extra player, rebuilt the instant one leaves) and the
+remap grid (one per connected controller) — so index 2 stops meaning "FROST —
+DROP OUT" and starts meaning "STORM — DROP OUT" while the highlight sits on it.
+
+**`MenuNav` remembers the ELEMENT, not the index** (`focusEl`, `_reseat`). If it
+moved, follow it — a row vanishing above her must not move the highlight off the
+row she is on. If it is *gone*, land on the panel's `.back`, never on its
+neighbour: the seventh non-negotiable's default answer is no, and the honest
+answer to "the thing you were pointing at no longer exists" is not "here is what
+took its place, press again".
+
+### Designing a new screen? Ask these four
+
+1. **Does anything here act on a press?** Then it consumes that press, and it
+   consumes it before it acts.
+2. **Can this list change while somebody is pointing at it?** Then the cursor
+   follows the element, and lands on the way out when the element goes.
+3. **Can a device arrive, leave, or change hands while this is up?** Joining,
+   leaving, unplugging, and the force-spawn share all do.
+4. **Is the row that slides into place under the cursor irreversible?** If the
+   answer is yes for ANY reachable arrangement, the screen is a trap even with
+   every edge handled correctly.
+
 ## Gotchas that cost real time — don't rediscover these
 
 **`requestAnimationFrame` never fires in a hidden or background tab**, so an
