@@ -2886,15 +2886,27 @@ class Game {
     return !this.device.touchPrimary;
   }
 
-  /** Push one answer out to every orb that draws its own working. */
+  /**
+   * Push one answer out to every orb the overlay owns.
+   *
+   * TWO KINDS OF ORB AND ONE SWITCH, doing two different things. A PLAIN
+   * Kotodama Orb draws its whole diagram — radius, arc, the two legs of the
+   * triangle, theta in degrees and radians — and that is the lesson, so all of
+   * hers light up. A WORN orb rains katakana in its own colour and prints no
+   * numbers at all: there can be eight of them at half the size inside a
+   * 2.6-unit shell, and a second copy of the working, too small to read, would
+   * make the first copy harder to find rather than teaching it twice. See
+   * `PowerOrb._buildRain`.
+   *
+   * IT USED TO BE THE LEAD WORN ORB ONLY, and that hid the glyphs along with
+   * the numbers — reported as the overlay "only appearing on 1 orb", which is
+   * exactly what it was doing and exactly what it should not have been.
+   */
   _applyMath(on) {
     this.mathVisible = on;
     for (const p of this.players) {
       for (const o of p.orbs ?? []) o.setMathVisible(on);
-      /* Only the LEAD worn orb prints its working. Eight copies of the same
-         two figures orbiting one cat is noise, and the reason the plain orb's
-         overlay was legible in the first place was that there was one of it. */
-      (p.wornOrbs ?? []).forEach((o, i) => o.setMathVisible(on && i === 0));
+      for (const o of p.wornOrbs ?? []) o.setMathVisible(on);
     }
   }
 
@@ -7326,11 +7338,11 @@ class Game {
   syncOrbMeshes(player) {
     for (const o of player.wornOrbs ?? []) this.scene.remove(o.group);
     player.wornOrbs = buildWornOrbs(player.powerOrbs);
-    player.wornOrbs.forEach((o, i) => {
-      // Only the lead orb prints the numbers — see PowerOrb._buildRain.
-      o.setMathVisible(this.mathVisible && i === 0);
+    for (const o of player.wornOrbs) {
+      // Every worn orb rains, and none of them print numbers — _applyMath.
+      o.setMathVisible(this.mathVisible);
       this.scene.add(o.group);
-    });
+    }
   }
 
   /** The scoreboard, after anything that moves a purse rather than earns it. */
@@ -7377,7 +7389,11 @@ class Game {
       color: player.index === 0 ? 0x7fe3ff : 0xffa8dc,
       height: 1.7 + n * 0.5,
     });
-    orb.setMathVisible(this.mathVisible && n === 0);
+    /* EVERY plain orb draws its working, which is what `_applyMath` has always
+       done to the ones already out — this line said `&& n === 0` and was the
+       only place the two disagreed, so the second orb she picked up came up
+       blank and then lit itself the next time anybody pressed M. */
+    orb.setMathVisible(this.mathVisible);
     this.scene.add(orb.group);
     player.orbs.push(orb);
     this.sfx('orb');

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
 import { beatOver, TAIL, drawPortrait } from './cutscene.js';
+import { FinaleLesson } from './finalelesson.js';
 
 /* ---------------------------------------------------------------------------
    The two story beats of the dragon hunt.
@@ -82,6 +83,34 @@ const STAGE_Y = -5.2;              // ...and how far down, so her feet are out
 /** Seconds she takes to slide in. ONCE PER SCENE, NOT ONCE PER BEAT — see
  *  `sceneT` in `update`. */
 const STAGE_IN = 0.9;
+
+/* --- HOW SHE PERFORMS, WITH ONE DRAWING -----------------------------------
+   There is exactly one Patchfur: `leader_elder.png`, a single front-facing
+   cell, and there is no second pose without generating art. So the acting is
+   done with the quad she has — a lean, a push toward the lens, a settle — one
+   pair of numbers per beat, eased in over the beat's own clock.
+
+   IT IS ANCHORED TO THE LINE, not distributed for variety. She leans in on the
+   beat where she is telling them what they actually did, draws back and up on
+   the beat where the world opens out behind her, and comes forward on the last
+   one, where she is sending them somewhere. A performance that moved on a
+   timer would be a fidget.
+
+   THE NUMBERS ARE SMALL ON PURPOSE. `lean` is radians of roll and `push` is a
+   fraction of her own height toward the camera; a flat drawing yawed or rolled
+   far enough to notice as a MOVE reads as the drawing being wrong rather than
+   as the character moving. Same argument as `FACE_BIAS_MAX` on the leaders.
+
+   @see docs/notes/story.md */
+export const BEAT_ACTS = [
+  { lean: 0.000, push: 0.00 },   // "every barrel, every lantern" — she states it
+  { lean: 0.045, push: 0.09 },   // "I think it is simpler than that" — leans in
+  { lean: -0.05, push: -0.06 },  // "an angle, a circle" — draws back, opens out
+  { lean: 0.030, push: 0.12 },   // "so stay, fly" — comes forward, sends them
+];
+/** Seconds a gesture takes to arrive. Slower than a beat's opening words, so
+ *  the move is under the line rather than punctuating it. */
+const ACT_IN = 1.8;
 
 export const SCRIPTS = {
   found: [
@@ -226,6 +255,11 @@ export class SummonScene {
       satanAnnounce: false, satanOpen: false,
     };
 
+    /* THE LESSON BEHIND HER, and it is built here rather than in `start`
+       because a 216-stroke buffer allocated on the frame the ending fires is a
+       hitch on the one frame nobody may have. It is invisible until then. */
+    this.lesson = new FinaleLesson(scene, world?.mischiefTotal ?? 216);
+
     /** 0..1, how dark the sky is right now. Owned here, applied by the game. */
     this.dusk = 0;
     this.duskWant = 0;
@@ -360,6 +394,11 @@ export class SummonScene {
        and a dragon, and the speaker is genuinely elsewhere. */
     this.sceneT = 0;
     this._setStage(which === 'finale' ? art : null);
+    /* ...AND THE LESSON, for the finale alone. `found` and `summon` are two
+       beats of somebody telling you where to go; there is nothing to
+       illustrate and a diagram over them would be a screensaver. */
+    if (which === 'finale') this.lesson.start(this.world?.mischiefTotal);
+    else this.lesson.finish();
     if (which === 'summon') this.duskWant = DUSK_DEEP;
     /* THE ENDING TAKES THE STORM DOWN AND PUTS A MORNING UP, and both halves
        matter. The finale fires at 100% mischief, which in a real run happens
@@ -385,6 +424,7 @@ export class SummonScene {
     this.beat++;
     if (this.beat >= this.script.length) { this.finish(); return; }
     const b = this.script[this.beat];
+    if (this.which === 'finale') this.lesson.setBeat(this.beat);
     this.t = 0;
     this.typed = 0;
     this.lineEndedAt = null;
@@ -447,6 +487,7 @@ export class SummonScene {
        the archipelago for the rest of the session — and `skip` comes through
        here too, which is the path a kid who has seen it once actually takes. */
     this.stage.visible = false;
+    this.lesson.finish();
     this.el.classList.add('hidden');
     this.portraitEl.style.display = '';
     /* Clear the black. `#cs-fade` is SHARED with the opening cutscene and the
@@ -537,10 +578,31 @@ export class SummonScene {
        thing she is watching instead of the sky. */
     const bob = Math.sin(this.sceneT * 1.15) * 0.14;
 
+    /* HER ACTING FOR THIS BEAT. Eased on the beat's own clock so it arrives
+       under the line rather than on its first syllable, and applied to the
+       PARKED distance rather than to `scale` — pushing her toward the lens is
+       a step forward, and scaling her up is a drawing getting bigger. The two
+       look different and only one of them reads as a person. */
+    const act = (this.which === 'finale' && BEAT_ACTS[this.beat]) || null;
+    const actK = act ? 1 - (1 - Math.min(1, this.t / ACT_IN)) ** 3 : 0;
+    const near = act ? -act.push * (this.stageQuad ?? 9) * 0.5 * actK : 0;
+
     this.stage.position.copy(this.camera.position)
-      .addScaledVector(fwd, d)
+      .addScaledVector(fwd, d + near)
       .addScaledVector(right, side)
       .add(new THREE.Vector3(0, STAGE_Y + bob, 0));
+    /* SQUARE TO THE LENS, AND THEN LEANED. It used to be neither: this
+       scene's `faceCamera` is a no-op — "nothing on stage" was true when it
+       was written — so the quad kept world orientation while the finale's
+       camera climbed and turned through about sixty degrees across four
+       beats. She was quietly foreshortening for the whole ending, worst on
+       the last line, and it reads as her getting thinner rather than as a
+       camera move. The intro yaws its speaker toward the camera; that is
+       right for a level camera and not for one that ends up looking down.
+       The lean is applied AFTER, so it is a roll in the picture rather than
+       around a world axis that is no longer the one the viewer sees. */
+    this.stage.quaternion.copy(this.camera.quaternion);
+    if (act && actK > 0) this.stage.rotateZ(act.lean * actK);
     this.stageSprite.mat.transparent = true;
     this.stageSprite.mat.opacity = ease;
   }
@@ -625,7 +687,14 @@ export class SummonScene {
       this._look.set(F.x, F.y + 4, F.z);
     }
     this.camera.lookAt(this._look);
+    this.camera.updateMatrixWorld(true);
     this._parkStage();
+    /* AFTER the camera is aimed and its matrix is current: the lesson is parked
+       off `getWorldDirection`, which reads the matrix rather than the euler,
+       so parking it first would hang the figure off LAST frame's aim — a lag
+       that is invisible on a still camera and a wobble on this one, which
+       climbs and turns for the whole scene. */
+    if (this.which === 'finale') this.lesson.update(dt, this.camera, this.sceneT);
 
     // --- typewriter on the audio's playhead. See Cutscene.update.
     const clock = (this.voiceEl && b.voiceDur && this.voiceEl.currentTime > 0)

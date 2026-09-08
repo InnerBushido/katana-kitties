@@ -335,13 +335,35 @@ that were plainly not working.
   the opening, with the intro's composition carried over and only the distance
   re-solved, because that lens is 42° and this one is 54°.
 
-125 new checks (2628 → 2753). Two things from that list are **still open** and
-want Richard's answer: the maths readout showing on only the lead worn orb (it
-is deliberate — eight at once is an illegible swarm — but it also hides the kana
-rain, which is probably what looked broken), and the *rest* of the Patchfur
-ending: the Bugenhagen-style magical maths lesson, extra emotes, and any script
-or voice rewrite, which spends credits and needs the current audio backed up
-first.
+- **The worn orbs all rain now, and none of them print numbers.** The bug was
+  real — `_giveOrb` gated the overlay on `n === 0` while the M key lit every
+  orb, so the second orb she found came up blank and then lit itself when
+  anybody pressed M. The answer to "so should all eight print their working?"
+  was no: eight `cos 0.71 sin 0.71` strings orbiting at 1.4 units is a second
+  copy of the lesson, printed too small to teach anything, in front of the
+  first one. **The rain is still made of the orbit** — the fall rate comes off
+  the orb's angular speed — and each orb now has its own five kana, hashed from
+  its id so a scene is filmable and an orb keeps its character when the one
+  before it comes off. → [endgame.md](docs/notes/endgame.md)
+- **There is a maths lesson behind Patchfur at the ending**, one figure per
+  beat, drawn from the world's own MISCHIEF count: her strokes scatter, snap
+  into a lattice, become the unit circle with the chord that is the bridge, and
+  tighten into the arena ring. The chord is drawn at `hypot(cos θ - 1, sin θ)`
+  and captioned `2·sin(θ/2)`, and `world-check` asserts those are one number
+  rather than two that agree. She acts it with the one drawing she has — a lean
+  and a step per beat, anchored to the lines.
+  → [story.md](docs/notes/story.md), `src/systems/finalelesson.js`
+- **...and she had been foreshortening for the whole ending.** `faceCamera()`
+  on `SummonScene` is a no-op, so the stage quad kept its build orientation
+  while the finale camera climbs and turns most of a quadrant. Never edge-on
+  enough to look broken — just narrower every beat, which is why nobody said
+  anything.
+
+162 new checks (2628 → 2790). One thing from that list is **still open**: the
+Patchfur ending's *script*. Richard asked for staging first and the script
+after, so the visual half is done and the recording is untouched — the next step
+is a text-only draft of a Bugenhagen-style rewrite for him to read, with the
+current text and audio backed up before anything is generated.
 
 ---
 
