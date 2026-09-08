@@ -126,6 +126,53 @@ requires r, g, b >= 218; a transparent pixel reads (0, 0, 0, 0) off the canvas,
 so on an alpha sheet the border flood never seeds and `loadSpriteAtlas` passes
 the drawing through untouched. The two conventions coexist with no flag.
 
+**One correction the alpha route did need**, and it had been wrong the whole
+time: `keyOutBackground`'s soften pass was `Math.max` on the alpha it wrote. On
+an OPAQUE sheet every pixel reaching it already has alpha 255, so the pass has
+never been able to do anything but lower it and every existing sheet keys byte
+for byte the same. On a sheet that already carries alpha it was RAISING soft
+edges — a pale fringe painted on by the pass whose entire job is removing one.
+It is `Math.min` now.
+
+## Baking the key offline — `tools/sprite-bake.mjs`
+
+Reported as *"dragon images in public/sprites have some white between the wings
+where they should be transparent — why is it white instead of transparent?"*,
+which is two questions. The **why** is the paragraph above: text-to-image
+returns RGB, matting is a second call, so every sheet in this game arrived
+opaque and has been keyed at load time ever since.
+
+The **white between the wings** is the structural blind spot, and no runtime
+rule can close it. `clearSealedPockets` clears white regions the border flood
+cannot reach, and it is bounded by **depth** — about 2.5% of the sheet's short
+side — because size and purity alone ate Mr Satan's teeth and eyes. Both
+dragons had a pocket far past that bound:
+
+    dragon_sheet   133,549 px between the neck ruff and the far wing, depth 145
+    dragon_fly       2,731 px between the hind legs,                  depth  54
+
+From the inside, those are the same shape as an eye: big, pure, deeply
+enclosed. **The difference is not in the pixels — it is that a human can look
+at these two and could not look at every sheet a future session generates.** So
+the depth bound stays on at runtime, and the bake, which runs offline on named
+files and writes a proof image over a magenta checker that somebody is meant to
+open, turns it off per file. Do not add a file to `WORK` with `deep` without
+opening its proof. (What survives on the dragons is the lightning bolt's own
+white core, which is drawn.)
+
+The tool also **resizes**, which is the bigger win and costs nothing — see
+[hosting.md](hosting.md) and [mobile.md](mobile.md) for the numbers. Note the
+trap it documents: baking alpha at full size makes the file *bigger* (4.6MB →
+4.7MB), because `png.mjs` writes filter 0 on every row and a fourth channel is
+a fourth channel. Almost all of the saving is the resize.
+
+**The masters live in `docs/art-masters/`, not in `public/`.** Vite copies
+`public/` wholesale into `dist`, so a file in there is downloaded by every
+player whether any code asks for it or not — the same mechanism as
+`docs/unused-art/`, and the reason `.vercelignore` is not the answer. Anything
+that measures coordinates on a master reads from there: `steam-art.mjs` does,
+because every crop it makes was measured on `title_art.png` at full size.
+
 **A new player pose is FOUR kittens, always.** There are two drawn sheets and
 four playable cats: Storm is `recolourAtlas` of Ember's, Blossom of Frost's.
 Every per-pose sheet therefore comes in a pair — `ember_eat`/`frost_eat`,

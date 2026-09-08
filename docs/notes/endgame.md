@@ -1086,22 +1086,51 @@ many she WEARS and is still 8; the roster is 10.** Screens that show a list of
 kinds scroll now; screens that show her slots still draw exactly `MAX_EQUIPPED`.
 Anything that hard-codes 8 is wrong about one of the two.
 
-**THE DEALER'S SHELF IS A BOX OF `--shelf-rows` ROWS AND SCROLLS INSIDE IT.**
-The thing being protected is the FOOTER: it carries the key names on a desktop
-and the actual buttons on a phone, so a list that grows past it does not merely
-look untidy — it takes away the only way out of the screen on the device least
-able to spare it. `ProfileScreen._followCursors` walks a moved cursor back into
-view with `block: 'nearest'`, which is the only honest answer to one scroll
-position and four cursors: the box moves *only* when a row is genuinely off
-screen, so a sister scrolling inside what everybody can already see moves
-nothing. Only a STICK sets `_moved` — a tap put the row under her finger, so it
-is on screen by definition.
+**THE DEALER'S SHELF SCROLLS INSIDE THE PANEL — AND FOR ONE COMMIT IT DID NOT
+SCROLL AT ALL.** Reported as *"scrolling up and down on the PC/Web in the
+Kotodama dealer does not move the scroll list"*, and the first guess (the mouse
+is stealing the gesture) was wrong. It was **two scrollers fighting**. The
+shelf capped itself at eight rows and scrolled the rest, which is fine on its
+own — but `#kd-body` around it is also a scroller, and the cap was a pixel
+height with no idea how much room the panel had actually given it. Measured on
+a 919×479 window with the ten-orb roster:
+
+| box | tall | content | scroll |
+| --- | --- | --- | --- |
+| `#kd-body` | 279px | 529px | 250px |
+| `.kd-shelf` | 483px | 616px | 133px — with its own bottom edge 250px *below the panel* |
+
+So the wheel drove the inner box, the inner box ran out after 133px, and the
+last rows lived inside a scroller whose bottom was off the screen. There was no
+gesture that reached them, which looks exactly like nothing happening.
+
+**The cap is gone and one box scrolls.** What the cap was protecting is still
+protected, by the thing that can actually see the window: the FOOTER carries
+the key names on a desktop and the actual buttons on a phone, so a list growing
+past it takes away the only way out of the screen on the device least able to
+spare it — and `.kd-panel` is a flex column at `max-height: 94vh` with the body
+at `flex: 1 1 auto; min-height: 0`, which the four-player rework had already
+made right. The body gets the room left after the title and the footer and
+never a pixel more. On a window with the room, all ten rows are simply shown.
+
+`ProfileScreen._followCursors` still walks a moved cursor back into view with
+`block: 'nearest'`, which is the only honest answer to one scroll position and
+four cursors: the box moves *only* when a row is genuinely off screen, so a
+sister scrolling inside what everybody can already see moves nothing. Only a
+STICK sets `_moved` — a tap put the row under her finger, so it is on screen by
+definition.
 
 **THE FADE AT THE BOTTOM IS THE ONLY THING THAT SAYS THERE IS MORE**, a hidden
 scrollbar and a hard bottom edge being indistinguishable from a list that has
-ended. Its `:has(.kd-row:nth-child(9))` guard is `--shelf-rows` plus one and
-`world-check` pins the pair, because a fade that lies in either direction is
-worse than none.
+ended. **It is measured now, not counted.** It used to be
+`:not(:has(.kd-row:nth-child(9)))` — a row count standing in for "is there
+anything below the fold", true only while the box was a fixed eight rows tall.
+A box sized by the window cannot be asked that in CSS at all, and the proxy
+would have lied in *both* directions: off with rows hidden on a laptop, on with
+everything visible on a desktop. `ProfileScreen._markOverflow` asks the box
+itself, on paint and on scroll, and takes the fade out at the bottom — which a
+row count could never do. `world-check` pins that the count is gone and the
+measurement is there.
 
 **THE PRICE IS ON THE ROW ONLY WHERE IT IS NEWS.** The header still prints one
 buy/sell pair, true of eight of the ten kinds; the two dealer-only orbs carry

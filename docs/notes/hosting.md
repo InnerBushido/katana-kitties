@@ -180,15 +180,42 @@ both deploy paths, because Vite only ever copies `public/` into `dist`. If you
 ever need to keep a big file in the repo and out of the game, that is the
 mechanism — location, not an ignore list.
 
-**A first load is 35MB across 39 files**, which is the price of AI-generated
-sprite sheets at full resolution: `frost_grid` 6.1MB, `title_art` 5.5MB,
-`ember_grid_v2` 5.2MB, `dragon_sheet` 4.5MB, `dragon_fly` 3.8MB. It caches, so
-it's slow once. The obvious win if that ever matters is recompressing the PNGs
-— they are flat-colour lineart on transparency, which quantises extremely well
-— but it touches the art, and `loadSpriteAtlas` measures cells by
+**A first load is 30MB across 39 files**, which is the price of AI-generated
+sprite sheets at full resolution: `frost_grid` 6.1MB, `ember_grid_v2` 5.2MB,
+`ryuuseki` 1.0MB, `dragon_sheet` 1.0MB. It caches, so it's slow once. (The whole
+of `public/` is 78MB, but `help/`, `trailer/` and `voice/` are all fetched on
+demand or not at all — see [help.md](help.md) and the trailer note in
+[CLAUDE.md](../../CLAUDE.md).)
+
+**It was 44MB, and three files were 14MB of that.** `dragon_sheet` 4.5MB,
+`dragon_fly` 3.8MB and `title_art` 5.5MB, reported as *"anything that is not a
+large sprite sheet and is over ~1.5mb should be compressed or resized"* — with
+`ryuuseki`, at 1.06MB, named as the size that works. Two different answers,
+because they are two different problems:
+
+- **The dragons were resized, and it cost nothing at all.** `packMetrics` had
+  both of them packing at **scale 0.698** — 2582 source pixels squeezed into a
+  1802-pixel cell, thirty per cent of the art thrown away on every device on
+  every load. `contentScale` and `contentArea`, the only two numbers the game
+  sizes a dragon quad from, are RATIOS: they do not move under a uniform
+  resize. So a master shrunk to where it packs at 1.000 draws at exactly the
+  same size on screen. 2752×1536 → 1376×768, 4.5MB → 1.0MB and 3.8MB → 0.6MB,
+  and 16.0MB → 8.6MB of texture each once it is on the GPU.
+- **`title_art.png` is not a sprite and could not be resized.** It is the kids'
+  own painting, a CSS background on the title screen, never a GPU texture, and
+  full bleed — nothing to key and nothing to repack. Halving it would have
+  halved the resolution of the one image in this game that is theirs, on the
+  first screen anybody sees. **q92 WebP is 0.46MB at the full 2752×1536**:
+  lighter than any PNG resize and sharper than what shipped. It is the only
+  lossy image in the game and that is the whole reason.
+
+`tools/sprite-bake.mjs` does both, offline, reading `docs/art-masters/` and
+writing `public/sprites/` — the masters being outside `public/` by the same
+mechanism as `docs/unused-art/` above. **Do not re-run the runtime keyer over
+these numbers by hand**: `loadSpriteAtlas` measures cells by
 connected-component labelling on the alpha channel, so anything that softens
-edges risks changing how a sheet slices. Verify with `node tools/world-check.mjs`
-(the sprite-direction section reads the real files) before trusting it.
+edges changes how a sheet slices. Verify with `node tools/world-check.mjs` (the
+sprite-direction section reads the real files) before trusting any of it.
 
 **The controller map does NOT follow you from localhost.** It lives in
 `localStorage`, which is keyed by origin, so the hosted game starts from

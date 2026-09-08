@@ -696,22 +696,62 @@ export function buildRoad(pts, height, opts = {}) {
  * this returns static geometry to be merged away.
  */
 /**
- * The stepped stone dais a shrine stands on, as built below.
+ * The stepped stone dais a shrine stands on — and the thing you walk on.
  *
- * Exported because the clan leader stands ON it. Planting her at the terrain
- * height under her feet — which is what you get from `world.heightAt`, since
- * the dais is decorative geometry and not a platform — buried her to the knee
- * in the top step. `y` is the height of the upper surface above the ground the
- * shrine was placed on, and `r` is how far out that surface reaches.
+ * Exported because THREE systems have to agree about it: the geometry below
+ * draws it, `World._buildShrines` turns every step into a walkable disc
+ * platform, and `leaderSpot` stands the clan leader on the top one.
+ *
+ * IT USED TO BE DECORATION, and both halves of that were visible in the game.
+ * `world.heightAt` returned the hillside underneath, so the leader had to be
+ * lifted onto the stone by hand (a `+ SHRINE_DAIS.y` special case inside
+ * `leaderSpot`) — and the player had no such special case, so she walked
+ * around inside the top step with the stone up at her chin. Reported as "the
+ * player is in the ground on the shrine, like there is no collider".
+ *
+ * `y` is a step's upper surface above the ground the shrine was placed on, `r`
+ * is how far that surface reaches, and `climb` is how far you may step UP onto
+ * it from below. The outer step needs its own `climb` because it rises 0.5 and
+ * `World.heightAt`'s one-way tolerance is 0.4: with the default it would be a
+ * deck you could stand on and could not get onto, which looks exactly like no
+ * deck at all.
+ *
+ * BOTTOM STEP FIRST. The last entry is the deck everything else means when it
+ * says "the dais".
  */
-export const SHRINE_DAIS = { r: 5.2, y: 0.885 };
+export const SHRINE_STEPS = [
+  { r: 6.2, y: 0.5, climb: 0.62 },
+  { r: 5.2, y: 0.885 },
+];
+
+/** The top step: what a leader stands on, and what a kitten is framed on. */
+export const SHRINE_DAIS = SHRINE_STEPS[SHRINE_STEPS.length - 1];
+
+/**
+ * The two pillars of the shrine gate: how far out, and how thick.
+ *
+ * `x` is a WORLD offset and deliberately not rotated with anything — the gate
+ * is built on the world's x axis at every shrine. Exported because it was
+ * already written out by hand in two other files (World pushes a solid at each
+ * post so you cannot stand inside the stonework) and is now wanted in a third:
+ * `ShrineScene` swings its camera to whichever side does NOT put seven units
+ * of stone in front of somebody's face, and it can only do that if it knows
+ * where the stone is.
+ */
+export const SHRINE_GATE = { x: 2.6, r: 0.46 };
 
 export function buildShrine(color, seed = 0) {
   const parts = [];
 
-  // Stepped stone dais — reads as "something was built here on purpose".
-  parts.push(cyl(6.2, 6.8, 0.5, PALETTE.stone, 0, 0.25, 0, 12));
-  parts.push(cyl(SHRINE_DAIS.r, 5.8, 0.45, 0xb0a89e, 0, 0.66, 0, 12));
+  /* Stepped stone dais — reads as "something was built here on purpose".
+     Every radius and every deck height is read out of SHRINE_STEPS, because
+     those are the same numbers World turns into platforms: a dais DRAWN at one
+     height and WALKED at another is the entire bug this came from, and two
+     hand-typed copies of 0.885 is how it comes back. A cylinder is centred, so
+     the deck height is its top minus half its own thickness. */
+  const [low, top] = SHRINE_STEPS;
+  parts.push(cyl(low.r, 6.8, 0.5, PALETTE.stone, 0, low.y - 0.25, 0, 12));
+  parts.push(cyl(top.r, 5.8, 0.45, 0xb0a89e, 0, top.y - 0.225, 0, 12));
 
   // A ring of standing stones around the rim.
   for (let i = 0; i < 8; i++) {
@@ -729,7 +769,8 @@ export function buildShrine(color, seed = 0) {
   // under. Deliberately echoes the torii so it reads as sacred, not municipal.
   const H = 7.2;
   for (const sx of [-1, 1]) {
-    parts.push(cyl(0.36, 0.46, H, PALETTE.stone, sx * 2.6, H / 2 + 0.9, 0, 8));
+    parts.push(cyl(0.36, SHRINE_GATE.r, H, PALETTE.stone,
+      sx * SHRINE_GATE.x, H / 2 + 0.9, 0, 8));
   }
   parts.push(box(7.2, 0.6, 0.9, color, 0, H + 1.1, 0));
   parts.push(box(6.0, 0.36, 1.1, 0x2a1a1e, 0, H + 1.5, 0));

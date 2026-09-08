@@ -120,11 +120,21 @@ html, body {
 /* Two layers: a blown-up blurred copy fills whatever shape the window is,
    and the real art sits on top at `contain` so the logo is never cropped.
    Deliberately no entrance animation — a frozen document timeline (which
-   happens in embedded preview contexts) would strand it mid-fade. */
+   happens in embedded preview contexts) would strand it mid-fade.
+
+   .WEBP, AND IT IS THE ONLY LOSSY IMAGE IN THE GAME. This is the kids'
+   painting and it is the first screen anybody sees, so the two things it
+   must not be are small and soft. It was a 5.5MB PNG — a sixth of the
+   whole first load, downloaded before the title even draws. Resizing it
+   would have halved the resolution of THEIR art; q92 WebP is 0.46MB at
+   the full 2752x1536, so it is both lighter and sharper than what shipped.
+   Rebuilt by `node tools/sprite-bake.mjs` from docs/art-masters/, which is
+   also what `tools/steam-art.mjs` measures its crops against — the PNG
+   master is the source of truth and `tools/png.mjs` cannot read WebP. */
 .title-art {
   position: absolute;
   inset: 0;
-  background-image: url('/sprites/title_art.png');
+  background-image: url('/sprites/title_art.webp');
   background-size: cover;
   background-position: center;
   filter: blur(26px) saturate(1.25) brightness(0.8);
@@ -134,7 +144,7 @@ html, body {
 .title-art-main {
   position: absolute;
   inset: 0;
-  background-image: url('/sprites/title_art.png');
+  background-image: url('/sprites/title_art.webp');
   background-size: contain;
   background-position: center;
   background-repeat: no-repeat;
@@ -3167,59 +3177,62 @@ body.touch-ui .kd-row { padding: 9px 6px; }
 }
 .kd-row-num { text-align: right; font-size: 13px; }
 
-/* --- the shelf is a box of a fixed number of rows, and it scrolls ---------
-   THERE WERE EIGHT KINDS OF ORB AND THE PANEL WAS EXACTLY EIGHT ROWS TALL.
-   Nothing said so; it was just true, and every layout number on this screen
-   had been settled against it. The roster is nine now (守 Long Guard, the
-   dealer's rare one) and there is no reason to think that is the last one — so
-   the shelf keeps the height it had and takes the growth as scroll, instead of
-   pushing the footer off the bottom of a laptop.
+/* --- the shelf does NOT scroll, because the panel around it already does ---
+   REPORTED AS "SCROLLING UP AND DOWN IN THE KOTODAMA DEALER DOES NOT MOVE THE
+   LIST", AND IT WAS TWO SCROLLERS FIGHTING. The shelf used to cap itself at
+   eight rows and scroll the rest, which is fine on its own — but `#kd-body`
+   around it is ALSO a scroller, and the cap was a fixed pixel height with no
+   idea how much room the panel had actually given it. Measured on a 919x479
+   window with the ten-orb roster:
 
-   THE FOOTER IS THE THING BEING PROTECTED. It carries the key names on a
-   desktop and the actual BUTTONS on a phone, so a list that grows downwards
-   past it does not merely look untidy — it takes away the only way out of the
-   screen on the device least able to spare it.
+       #kd-body    279px tall, 529px of content   -> 250px of scroll
+       .kd-shelf   483px tall, 616px of content   -> 133px of scroll
+                   ...and its own bottom edge 250px BELOW the panel's
 
-   `--shelf-rows` IS THE NUMBER OF ROWS, NOT A PIXEL HEIGHT, and the row height
-   is measured off the row's own padding and line box rather than typed in: the
-   rows carry two lines of text at a size that moves with the panel. Eight of
-   them is what the screen was designed around and what it still shows.
+   So the wheel drove the inner box, the inner box ran out after 133px, and the
+   last rows sat inside a scroller whose own bottom was off the screen. There
+   was no gesture that reached them. It looks like nothing happening, which is
+   exactly what was reported.
+
+   ONE BOX SCROLLS AND IT IS `#kd-body`, which the four-player rework already
+   made the right one: `.kd-panel` is a flex column at `max-height: 94vh` with
+   the body at `flex: 1 1 auto; min-height: 0`, so the body gets exactly the
+   room left after the title and the footer and never a pixel more.
+
+   THE FOOTER IS STILL THE THING BEING PROTECTED — it carries the key names on
+   a desktop and the actual BUTTONS on a phone, so a list growing past it takes
+   away the only way out of the screen on the device least able to spare it.
+   That is now the PANEL's job and it does it for the profile screen too. The
+   eight-row cap was written before the panel could do that and has been
+   protecting a footer that was already safe, at the cost of the list. On a
+   window with the room, all ten rows are simply shown.
 
    THE BAR IS HIDDEN BECAUSE THE STICK DRIVES IT. `ProfileScreen._followCursors`
    walks a moved cursor back into view after every repaint, and a scrollbar in
    a panel four kittens are sharing is a control only the one with the mouse
    can use. A finger can still drag it. */
-.kd-shelf {
-  --shelf-rows: 8;
-  /* 2 lines + padding, in the row's own units, so this tracks the type size */
-  --shelf-row: calc(2 * 1.45em + 14px);
-  max-height: calc(var(--shelf-rows) * var(--shelf-row));
-  overflow-y: auto;
+.kd-panel > #kd-body {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  /* THE FADE IS THE ONLY THING THAT SAYS THERE IS MORE. A hidden bar and a
-     hard bottom edge look identical to a list that has ended, and the sixth
-     non-negotiable is that a thing which is not yet true has to say so. The
-     mask only bites when there is something under it: at eight rows the box is
-     not scrollable, nothing is clipped, and the gradient falls on the padding
-     below the last row where it is invisible. */
+}
+.kd-panel > #kd-body::-webkit-scrollbar { display: none; }
+
+/* THE FADE IS THE ONLY THING THAT SAYS THERE IS MORE. A hidden bar and a hard
+   bottom edge look identical to a list that has ended, and the sixth
+   non-negotiable is that a thing which is not yet true has to say so.
+
+   IT IS MEASURED NOW, NOT COUNTED. It used to be `:not(:has(.kd-row:nth-child(9)))`
+   — a row count standing in for "is there anything below the fold", which was
+   only ever true while the box was a fixed eight rows tall. A box sized by the
+   window cannot be asked that in CSS at all, and the proxy would have lied in
+   both directions: off with rows hidden on a laptop, on with everything
+   visible on a desktop. `ProfileScreen._markOverflow` asks the box itself and
+   asks it again after every scroll, so the fade also goes out at the bottom of
+   the list, where there really is no more. */
+#kd-body.kd-more {
   mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent);
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent);
-}
-.kd-shelf::-webkit-scrollbar { display: none; }
-/* Nothing to scroll, nothing to fade. THE 9 IS `--shelf-rows` PLUS ONE and the
-   two have to move together — it is the row count at which the box first has
-   something below its own bottom edge. `world-check` pins the pair, because a
-   fade that lies in either direction is worse than no fade: on when nothing is
-   hidden it dims a row for no reason, off when something is says the list has
-   ended. Where `:has` is unsupported the fade stays on, which is the safe way
-   round of the two. */
-@supports (selector(:has(*))) {
-  .kd-shelf:not(:has(.kd-row:nth-child(9))) {
-    mask-image: none;
-    -webkit-mask-image: none;
-  }
 }
 
 /* THE RARE PRICE, ON THE ROW, IN THE ROW'S OWN COLOUR. It appears on exactly

@@ -27,7 +27,7 @@ look. Everything else is one level down and read on demand.
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
 npm run dev -- --host         # ...and on a phone on the same wifi, at the Network: URL it prints
-node tools/world-check.mjs    # 2628 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 2753 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 354 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 npm run docs                  # regenerate the controls + balance tables, in PROJECT.md AND
@@ -138,6 +138,14 @@ src/
   entities/  player  dragon  ryuuseki  panda  critter  angel  leader  satan
              griffin  orb  powerorb  dragonball  prop  shrine  stall
 tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
+             sprite-bake.mjs (builds public/sprites/ out of docs/art-masters/,
+               which is where the full-size originals live BECAUSE public/ is
+               copied wholesale into dist. It bakes the background key with the
+               depth bound OFF — the thing the loader can never do, since depth
+               is all that separates a sealed pocket from Mr. Satan's eye — and
+               writes a proof image over a checker for a human to look at. It
+               also resizes, which is where nearly all of the size saving is.
+               See docs/notes/art.md)
              doc-sync.mjs (writes the controls and balance tables out of
                input.js and player.js, between `<!-- doc-sync -->` markers, into
                BOTH PROJECT.md and docs/artifact/project-page.html — the source
@@ -217,7 +225,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 2628 assertions and why almost none of them are about
+  why `world-check` is 2753 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Measure, don't reason, about anything drawn.** Sizes, seat heights, mouth
   positions and facings are all read off the loaded atlas. Reasoned numbers have

@@ -51,6 +51,45 @@ without realising they had arrived; without the far layer they never found one.
 washed out the entire shrine at close range — the thing it exists to advertise
 became the thing you couldn't see.
 
+**And the dais is stone you stand on.** Reported as *"the player is in the
+ground on the shrine, like there is no collider"*, and that is exactly what it
+was: two stone cylinders drawn into the world mesh and nothing else. `heightAt`
+returned the hillside underneath, so a kitten walked around inside the top step
+with the stone at her chin — on the one piece of ground in the game that lights
+up and says STAND HERE. The leader was fine because `leaderSpot` added
+`SHRINE_DAIS.y` by hand, which is the shape of the bug: a special case for the
+one character somebody had noticed.
+
+`SHRINE_STEPS` is now the single source for both, and `_buildShrines` pushes one
+platform per step as well as drawing it. The lift comes out of `leaderSpot`
+entirely — she asks `heightAt` like everybody else — and the check that used to
+assert the leader was lifted now asserts she is on the deck, which catches the
+lift being left in as well as it caught it being missing.
+
+Three things about that were not obvious:
+
+- **The decks are round.** Platforms were axis-aligned boxes, and the sky
+  shards settle for a square deck inside a round pad, which is fine on a rock
+  nobody is told to walk to. Here the join ring IS the dais, so an inscribed
+  square would be a kid standing exactly where the game told her to stand and
+  falling through the corner. `p.r` is optional: a platform with one is a disc,
+  and everything already built stays a box.
+- **A deck you can stand on is not automatically a deck you can climb.**
+  `heightAt` is one-way — `fromY + step < p.y` skips a platform you are under —
+  and that tolerance is 0.4 against an outer step that rises 0.5. The first
+  version was a dais you could be on and could not get onto, which from the
+  hillside is indistinguishable from no dais at all: the same bug, with more
+  code. `step` is per platform (`climb: 0.62`) so the bridge decks keep the
+  reach they had and nobody gets snapped up through one from underneath.
+- **A platform sits ON an island, it does not replace it.** `heightAt` returned
+  `{y, platform}` for a deck hit and dropped the `island` field, which was
+  invisible for as long as the only decks were bridges over water. The moment
+  the dais became one, `leaderSpot` lost the axis it faces along (leaders on
+  outer islands turned to face the world origin) and — worse — a dragon decides
+  whether its rider is still nearby by comparing islands, so walking up to a
+  shrine sent your dragon home while you watched. The island under the stone is
+  threaded through now, and `world-check` pins it.
+
 **Every island needs its own thing to break.** The frost island was a white
 disc with a few trees and three crates on it — the emptiest place in the game.
 It now has icicles (its own prop kind), a shrine and a Frost-breed dragon,

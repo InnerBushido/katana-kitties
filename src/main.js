@@ -1085,7 +1085,9 @@ class Game {
     this.ryuArt = await loadSpriteAtlas('/sprites/ryuuseki.png',
       { views: 1, rows: 1, clearPockets: true, maxAtlas: this.device.atlasMax })
       .catch(() => null);
-    this.summonScene = new SummonScene({ world: this.world, audio: this.audio });
+    this.summonScene = new SummonScene({
+      scene: this.scene, world: this.world, audio: this.audio,
+    });
     await this.summonScene.load();
     /* Bigger than any storm dragon's because he IS bigger — a mount radius
        scaled to a 13-unit animal is unreachable on a 26-unit one, since the
@@ -3263,6 +3265,17 @@ class Game {
     for (const id of ['hud', 'pane-edges', 'pane-cards']) {
       document.getElementById(id)?.classList.toggle('scene-hidden', away);
     }
+    /* AND THE CLAN CALLOUT, WHICH IS THE SAME BUG ONE MORE TIME — this one in
+       the world rather than in the DOM. `_updateClanPrompt` already refuses to
+       show "[E] SWEAR TO RUN WITH THUNDERPAW" while a scene owns the screen,
+       and exactly like `_paintPaneEdges` above it runs at the END of
+       `_tickBody`, which every scene block returns before reaching. So the
+       caption the last playing frame drew hangs over the whole cutscene.
+
+       It never showed until the shrine scene started standing the kitten ON
+       the dais for her close-up: she is inside the clan's own ring now, which
+       is precisely where that caption is drawn. */
+    if (away) for (const p of this.players ?? []) p.setCallout(null);
   }
 
   /** The leader standing at a clan's shrine. Used to gate joining on `met`. */
@@ -7011,7 +7024,7 @@ class Game {
          per pane instead of once for the whole screen. */
       this.maps[i].focusIndex = shared ? null : members[0];
       this.maps[i].focusOn = members;
-      this.maps[i].draw(this.players, this.dragons, this.kotodama, this.satan);
+      this.maps[i].draw(this.players, this.dragons, this.kotodama, this.satan, this.ryu);
     }
 
     this._drawMathBoard(panes, groups, W, H, mathUp);

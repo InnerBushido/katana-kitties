@@ -170,8 +170,11 @@ export class Minimap {
    * @param kotodama the Kotodama system, or null before 100% mischief
    * @param satan MrSatan, or null. Drawn only once he is really in the world —
    *        see the star below for why he needs a mark at all.
+   * @param ryu Ryuuseki, or null before he is summoned. NOT one of `dragons` —
+   *        he is not a `Dragon` and has never been in that array; that is the
+   *        whole reason he was missing from here.
    */
-  draw(players, dragons, kotodama = null, satan = null) {
+  draw(players, dragons, kotodama = null, satan = null, ryu = null) {
     const focus = this.focusIndex != null && players[this.focusIndex]
       ? players[this.focusIndex].position
       : midpointOf(this.focusOn?.map((i) => players[i]).filter(Boolean) ?? players);
@@ -279,6 +282,70 @@ export class Minimap {
       c.lineWidth = 1.2 * this.dpr;
       c.strokeStyle = 'rgba(28,16,22,0.8)';
       c.stroke();
+    }
+
+    /* --- Ryuuseki, who is not in `dragons` and never was ---
+       HE WAS MISSING FROM THIS MAP ENTIRELY, and the reason is a fact about
+       the code rather than about the game: `Game.dragons` holds the five wild
+       ones, `Game.ryu` is its own field, and this loop was handed the array.
+       He is the one animal in the world you might genuinely have to look for —
+       there is exactly one, he is summoned to wherever the seventh ball was
+       gathered, and a kitten who wants the second seat has no other way to
+       find out where he went.
+
+       A TRIANGLE, BECAUSE HE IS A DRAGON — but nearly twice the size, and
+       named at zoom, because Frost's tint (#c9e8ff) is four pixels of pale
+       blue and his is white: shape and colour alone would have made him a
+       sixth wild dragon. The size and the label are what say "this one".
+
+       THE TWO PIPS ARE THE POINT OF DRAWING HIM AT ALL. He is the only
+       two-seat animal in the game and the fan only exists with somebody in
+       the gunner's chair, so the useful question is not "where is he" but
+       "is there a seat free" — filled in that rider's own colour, hollow when
+       empty. Same idiom as the panda's owner pip below.
+
+       And he vanishes only when BOTH seats are gone, not when he is merely
+       ridden. A dragon with somebody on it is nobody's destination; Ryuuseki
+       with one girl aboard is exactly the thing the other one is running
+       towards. */
+    if (ryu && !ryu.duo) {
+      const x = this._px(ryu.position.x);
+      const y = this._py(ryu.position.z);
+      const s = 7 * this.dpr;
+      c.beginPath();
+      c.moveTo(x, y - s);
+      c.lineTo(x + s * 0.92, y + s * 0.78);
+      c.lineTo(x - s * 0.92, y + s * 0.78);
+      c.closePath();
+      c.fillStyle = '#fdfbff';
+      c.fill();
+      c.lineWidth = 1.6 * this.dpr;
+      c.strokeStyle = '#1c1016';
+      c.stroke();
+
+      [ryu.pilot, ryu.gunner].forEach((who, i) => {
+        c.beginPath();
+        c.arc(x + (i ? 1 : -1) * s * 0.34, y + s * 0.3, s * 0.24, 0, Math.PI * 2);
+        if (who) {
+          c.fillStyle = cssFor(who.style);
+          c.fill();
+        }
+        c.lineWidth = 1.2 * this.dpr;
+        c.strokeStyle = '#1c1016';
+        c.stroke();
+      });
+
+      // Named only when there is room, exactly like the shrines and Mr. Satan.
+      if (this.zoom > 1) {
+        c.font = `800 ${9.5 * this.dpr}px Nunito, sans-serif`;
+        c.textAlign = 'center';
+        c.lineWidth = 3 * this.dpr;
+        c.lineJoin = 'round';
+        c.strokeStyle = 'rgba(20,12,18,0.9)';
+        c.strokeText('Ryuuseki', x, y - 11 * this.dpr);
+        c.fillStyle = '#fdfbff';
+        c.fillText('Ryuuseki', x, y - 11 * this.dpr);
+      }
     }
 
     /* --- a panda that has stopped following ---

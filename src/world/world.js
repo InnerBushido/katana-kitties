@@ -6,6 +6,7 @@ import {
   valueNoise, fbm,
   buildGrotto, buildSpire, buildShards, SPIRE_H,
   buildArena, ARENA_RING, ARENA_RISE, ARENA_OUT, ARENA_POSTS, postsFor,
+  SHRINE_STEPS, SHRINE_GATE,
   ARENA_BOOTH, ARENA_BOARD, ARENA_GATE,
 } from './build.js';
 import { Prop } from '../entities/prop.js';
@@ -481,7 +482,24 @@ export class World {
       /* The pillars are solid so you can't stand inside the stonework, but the
          trigger ring is the whole dais — you join by standing at the shrine,
          not by finding one exact pixel. */
-      for (const sx of [-1, 1]) this.solids.push({ x: spot.x + sx * 2.6, z: spot.z, r: 0.7 });
+      for (const sx of [-1, 1]) {
+        this.solids.push({ x: spot.x + sx * SHRINE_GATE.x, z: spot.z, r: 0.7 });
+      }
+      /* AND THE STONE HOLDS YOU UP. One disc platform per step, so a kitten
+         walks UP onto the dais and stands on it at the leader's own height
+         instead of wading through it at the hillside's. The leader used to be
+         lifted onto it by a special case in `leaderSpot` and the player was
+         not, which is the whole of "the player is in the ground on the shrine,
+         like there is no collider" — and the special case is gone now,
+         because this is the thing it was standing in for. */
+      for (const s of SHRINE_STEPS) {
+        this.platforms.push({
+          cx: spot.x, cz: spot.z, r: s.r, step: s.climb,
+          x0: spot.x - s.r, x1: spot.x + s.r,
+          z0: spot.z - s.r, z1: spot.z + s.r,
+          y: g.y + s.y,
+        });
+      }
       this.clanHalls.push({ x: spot.x, z: spot.z, r: shrine.radius, clan: w.clan, shrine });
       // Nothing grows on a shrine.
       this.keepClear.push({ x: spot.x, z: spot.z, r: 12 });
@@ -1050,11 +1068,37 @@ export class World {
       const h = isl.heightAt(x, z);
       if (h != null && (best == null || h > best.y)) best = { y: h, island: isl };
     }
+    /* WHICH ISLAND THE POINT IS OVER SURVIVES A PLATFORM WINNING, and that is
+       not cosmetic. Callers ask `heightAt(x, z).island` to answer "are these
+       two on the same island" — a dragon deciding whether to fly home, a check
+       counting where the pickups landed — and a platform used to REPLACE the
+       island entry rather than sit on top of it, so anyone standing on a
+       bridge deck was on no island at all. It only ever mattered out on the
+       bridges until the shrine dais became a platform: a kitten standing at a
+       shrine reported nowhere, and the dragon she had just landed next to flew
+       home while she watched. */
+    const over = best?.island ?? null;
     for (const p of this.platforms) {
       if (p.arena && !this.arenaOpen) continue;
       if (x < p.x0 || x > p.x1 || z < p.z0 || z > p.z1) continue;
-      if (fromY + 0.4 < p.y) continue;
-      if (best == null || p.y > best.y) best = { y: p.y, platform: p };
+      /* ROUND DECKS ARE A SECOND TEST, NOT A SECOND LOOP. The shrine dais is a
+         disc, and inscribing a square in it — which is what the sky shards do
+         — would have left a third of the visible stone unwalkable. That is
+         tolerable on a floating rock in the sky and not here: the clan's join
+         ring is the WHOLE dais, so unwalkable stone would be a kid standing
+         exactly where the game told her to stand and falling through it. The
+         box test above stays as the cheap reject; `cx/cz/r` refines it. */
+      if (p.r != null) {
+        const dx = x - p.cx;
+        const dz = z - p.cz;
+        if (dx * dx + dz * dz > p.r * p.r) continue;
+      }
+      /* How far you may step UP onto this deck from below. 0.4 is a lip you
+         walk over; the shrine's outer step is half a unit of deliberate
+         stonework and asks for its own. A deck you can stand on and cannot
+         climb onto is indistinguishable from no deck. */
+      if (fromY + (p.step ?? 0.4) < p.y) continue;
+      if (best == null || p.y > best.y) best = { y: p.y, platform: p, island: over };
     }
     return best;
   }

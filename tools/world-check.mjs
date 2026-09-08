@@ -19,25 +19,28 @@ import {
   Panda, PANDA, PANDA_TIERS, PANDA_SPEED, CLAW, tierFor, toNextTier, FULL_PANDA_COST,
 } from '../src/entities/panda.js';
 import {
-  LEADERS, ELDER, leaderSpot, LEADER_OFFSET, ClanLeader,
+  LEADERS, ELDER, leaderSpot, LEADER_OFFSET, FACE_BIAS_MAX, ClanLeader,
 } from '../src/entities/leader.js';
 import { promptGlyphs, PROMPTS, KEYSETS } from '../src/core/input.js';
 import { durationMs, delaysCs } from './gif-sync.mjs';
 import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
-import { SCENE_RADIUS, DWELL } from '../src/systems/shrinescene.js';
+import { SCENE_RADIUS, DWELL, ShrineScene } from '../src/systems/shrinescene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../src/entities/dragonball.js';
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import {
   SCRIPTS, DUSK_DEEP, DUSK_FALL, DAWN_RISE, DAWN_DEEP, SummonScene,
 } from '../src/systems/summonscene.js';
 import {
-  SHRINE_DAIS, SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest,
+  SHRINE_DAIS, SHRINE_STEPS, SHRINE_GATE,
+  SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest,
   buildArena,
 } from '../src/world/build.js';
 import { SatanBlast, BLAST, BLAST_LINES, card } from '../src/systems/satanblast.js';
 import { MrSatan } from '../src/entities/satan.js';
 import { ISLAND_MUSIC, MUSIC, SAMPLES, trackForIsland } from '../src/core/audio.js';
-import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync } from 'node:fs';
+import {
+  existsSync, readFileSync, readdirSync, statSync, writeFileSync, unlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
   floodBackground, clearSealedPockets, purelyWhite, pocketFloor,
@@ -3205,20 +3208,33 @@ console.log('\n--- clan leaders (the cast from her drawing) ---');
       `${LEADER_OFFSET} out, ring is ${hall.r}`);
     ok(`...on the far side of it`, dOut > dHall);
     ok('...on real ground', world.heightAt(s.x, s.z) != null);
-    /* ...and ON TOP of the stonework, not in it. The dais is decorative
-       geometry merged into the world mesh, so heightAt returns the hillside
-       underneath and using it planted every leader knee-deep in the top step.
-       This is the check that catches it, because a cat standing half inside a
-       stone platform still looks like a cat standing at a shrine. */
-    ok('...on top of the dais, not sunk into it',
-      Math.abs(s.y - (world.heightAt(hall.x, hall.z).y + SHRINE_DAIS.y)) < 0.001,
+    /* ...and ON TOP of the stonework, not in it and not over it. This check
+       has caught the same thing twice from opposite directions. The dais used
+       to be decoration, so `heightAt` returned the hillside and every leader
+       stood knee-deep in the top step until `leaderSpot` added the height by
+       hand. The dais is a real platform now, so what it catches is that hand
+       ADDED TWICE — the lift left in place on ground that already includes it,
+       which floats her 0.9 units above her own shrine. A cat standing half
+       inside a stone platform still looks like a cat standing at a shrine,
+       and so does one hovering just over it, which is why this is measured. */
+    const deck = world.heightAt(s.x, s.z);
+    ok('...on top of the dais, not sunk into it and not floating over it',
+      !!deck?.platform && Math.abs(s.y - deck.y) < 1e-6,
+      `${s.y.toFixed(3)} vs the deck at ${deck?.y.toFixed(3)}`);
+    ok('...and that deck is the shrine\'s own top step',
+      Math.abs(deck.y - (world.heightAt(hall.x, hall.z, -Infinity).y + SHRINE_DAIS.y)) < 1e-6,
       `+${SHRINE_DAIS.y} above the shrine floor`);
     ok('...well inside the stone she is standing on', LEADER_OFFSET < SHRINE_DAIS.r);
   }
 }
 
 console.log('\n--- one-way platforms (bridge deck) ---');
-const plat = world.platforms[0];
+/* THE FIRST RECTANGULAR ONE. It used to be `platforms[0]` full stop, which was
+   the bridge for exactly as long as the bridges were the first thing to push a
+   platform — the shrine daises are pushed earlier now, and a check named "the
+   bridge deck" would have gone on passing while measuring a shrine. Same
+   lesson as `dojoIsland`: a special case has to be asked for by name. */
+const plat = world.platforms.find((q) => q.r == null);
 const mx = (plat.x0 + plat.x1) / 2;
 const mz = (plat.z0 + plat.z1) / 2;
 const above = world.heightAt(mx, mz, plat.y + 0.2);
@@ -3228,6 +3244,303 @@ line('deck y / terrain y', `${plat.y.toFixed(2)} / ${terrain.y.toFixed(2)}`);
 ok('deck sits above the ground it spans', plat.y > terrain.y);
 ok('standing above snaps to the deck', above.platform === plat);
 ok('passing underneath ignores the deck', below.platform === undefined && below.y < plat.y);
+
+console.log('\n--- the shrine scene is a two-shot ---');
+{
+  /* WHAT THIS SECTION IS ABOUT. The scene used to have one person in it: the
+     camera sat ON the axis between the leader and the kitten, behind the
+     kitten looking past her, so the kitten was directly under the lens — a
+     blob at the bottom of frame with the dialogue box drawn over her — and the
+     leader was talking earnestly at a camera with nobody in front of it.
+     Asked for as "have the Clan Leader facing the player, but also facing
+     towards the camera so they do not look like a 2D thin paper, and the
+     player should be facing the Clan Leader when they are talking".
+
+     Everything below is measured off a real ShrineScene against the real
+     world, because "both of them are on screen" is not a thing you can assert
+     about a constant. */
+  /* AN ELEMENT FOR EVERY id, AND THE REAL CANVAS FACTORY KEPT. The ambient
+     stub answers `getElementById` with `null`, which is right for the
+     tournament (every use of those is `?.`-guarded) and wrong here: a shrine
+     scene really does write into its own name and text nodes. And a stub that
+     answers only `getElementById` makes constructing a `Player` throw a
+     hundred lines away, because a kitten builds a `Label` and a Label measures
+     on a canvas — so this borrows the installed `createElement` rather than
+     reimplementing it. Same trap, same fix, as the trade-screen block. */
+  const hadDoc = 'document' in globalThis;
+  const baseDoc = globalThis.document;
+  globalThis.document = {
+    createElement: (...a) => baseDoc.createElement(...a),
+    querySelectorAll: () => [],
+    getElementById: () => ({
+      classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+      style: { setProperty() {} },
+      textContent: '',
+      width: 96,
+      height: 96,
+      getContext: (...a) => baseDoc.createElement('canvas').getContext(...a),
+    }),
+  };
+
+  const spawn = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
+  const kit = (index = 0) => new Player({
+    texture: new THREE.Texture(), index, spawn: spawn.clone(),
+    cols: 8, rows: 4, mirror: false,
+  });
+
+  /* A STAND-IN LEADER, because a real `ClanLeader` needs a canvas for her
+     speech bubble and there is not one in node — the same dodge the cheer
+     checks use. Her `lookAt` and `faceCamera` are the REAL methods off the
+     prototype, which is the half this section actually tests. */
+  const standIn = (hall) => {
+    const spot = leaderSpot(hall, world);
+    const spec = LEADERS[hall.clan.id];
+    return {
+      clan: hall.clan, spec, art: null, met: false, sceneDur: 6.5,
+      textLine: spec.line.replace(/\n/g, ' '),
+      voiceEl: null, voiceDur: 0,
+      position: new THREE.Vector3(spot.x, spot.y, spot.z),
+      faceBias: 0, faceWant: 0, baseScaleX: 1,
+      sprite: { mesh: { rotation: { y: 0 }, scale: { x: 1 } }, faceCamera() {} },
+      bubble: { quaternion: { copy() {} } },
+      lookAt: ClanLeader.prototype.lookAt,
+      faceCamera: ClanLeader.prototype.faceCamera,
+    };
+  };
+
+  const S = new ShrineScene({ world, audio: null });
+  const shoot = (hall, p = kit()) => {
+    const L = standIn(hall);
+    S.finish();
+    S.start(L, p);
+    S.camera.aspect = 16 / 9;
+    for (let i = 0; i < 30; i++) S.update(1 / 60);
+    S.camera.updateMatrixWorld(true);
+    S.camera.updateProjectionMatrix();
+    return { L, p, spot: leaderSpot(hall, world) };
+  };
+  const ndc = (v) => v.clone().project(S.camera);
+
+  // --- both of them are stood on their marks -----------------------------
+  for (const hall of world.clanHalls) {
+    const { L, p, spot } = shoot(hall);
+    const name = L.spec.name;
+    const gap = Math.hypot(p.position.x - spot.x, p.position.z - spot.z);
+    ok(`${name} gets a kitten stood in front of her`, gap > 3 && gap < 6,
+      `${gap.toFixed(2)} units apart`);
+    /* ON THE STONE, at the leader's own height. Both halves matter: a mark
+       computed off the terrain would drop her through the dais, and a mark off
+       the dais would put her a step below the person she is talking to. */
+    ok('...on the dais, at the leader\'s own height',
+      Math.abs(p.position.y - spot.y) < 1e-6
+      && Math.hypot(p.position.x - hall.x, p.position.z - hall.z) < SHRINE_DAIS.r,
+      `y ${p.position.y.toFixed(2)} vs ${spot.y.toFixed(2)}`);
+    /* AND FACING HER. `facing` is a bearing measured atan2(x, z), the same
+       convention `Billboard.faceCamera` picks the drawn direction cell with —
+       get it backwards and she is stood on her mark with her back turned,
+       which is worse than where she was standing before. */
+    const want = Math.atan2(spot.x - p.position.x, spot.z - p.position.z);
+    const off = Math.abs(Math.atan2(
+      Math.sin(p.facing - want), Math.cos(p.facing - want)));
+    ok('...and turned to face her', off < 1e-6, `${(off * 57.3).toFixed(1)} degrees off`);
+    /* THE DRAWING GOES WITH HER. `position` is where she IS and
+       `group.position` is where she is DRAWN, and `Player.update` — the thing
+       that copies one to the other — is exactly what a scene does not run.
+       Setting only `position` framed an empty patch of dais. */
+    ok('...and the drawing goes with her, not just the position',
+      p.group.position.distanceTo(p.position) < 1e-6);
+
+    // --- ...and both of them are in the picture ---------------------------
+    const a = ndc(L.position.clone().setY(L.position.y + 2.1));
+    const b = ndc(p.position.clone().setY(p.position.y + 1.5));
+    ok(`${name}'s shot has both of them on screen`,
+      Math.abs(a.x) < 0.85 && Math.abs(b.x) < 0.85 && a.y > -0.4 && b.y > -0.4,
+      `leader ${a.x.toFixed(2)},${a.y.toFixed(2)}  kitten ${b.x.toFixed(2)},${b.y.toFixed(2)}`);
+    /* ACROSS THE FRAME FROM EACH OTHER, which is the fix stated as a number.
+       On the old shot the kitten was under the lens and this difference was
+       essentially zero. */
+    ok('...across the frame from each other, not one behind the other',
+      Math.abs(a.x - b.x) > 0.25, `${Math.abs(a.x - b.x).toFixed(2)} of frame apart`);
+    /* AND ABOVE THE DIALOGUE BOX, which covers the bottom of the screen. Their
+       heads are what has to clear it; their feet are allowed behind it, and
+       are, in every one of the six. */
+    const heads = [ndc(L.position.clone().setY(L.position.y + 4.2)),
+      ndc(p.position.clone().setY(p.position.y + 2.9))];
+    ok('...with both heads clear of the dialogue box',
+      heads.every((h) => h.y > 0.1 && h.y < 0.86),
+      heads.map((h) => h.y.toFixed(2)).join(' / '));
+  }
+
+  // --- she turns toward the kitten, and not one degree further ------------
+  {
+    const { L } = shoot(world.clanHalls[0]);
+    L.faceCamera(S.camera);
+    /* THE CAP IS A FACT ABOUT THE ART, not about this shot: she is a single
+       front-facing cell, and past about a quarter turn there is no drawing for
+       where she is looking and a billboard yawed that far shows its own edge.
+       "So they do not look like a 2D thin paper" is this number. */
+    ok('the leader turns toward the kitten',
+      Math.abs(L.faceWant) > 0.08, `${(L.faceWant ?? 0).toFixed(3)} rad`);
+    ok('...and never past the limit of the drawing',
+      Math.abs(L.faceWant) <= FACE_BIAS_MAX + 1e-9);
+    for (let i = 0; i < 200; i++) L.faceCamera(S.camera);
+    ok('...and the foreshortening never squashes her flat',
+      L.sprite.mesh.scale.x > 0.9, `x scale ${L.sprite.mesh.scale.x.toFixed(3)}`);
+  }
+
+  // --- the camera swings away from the stonework --------------------------
+  {
+    const hall = world.clanHalls[0];
+    const first = shoot(hall);
+    const was = S.swing;
+    ok('the shot is swung off the axis between them', Math.abs(was) > 0.5,
+      `${was.toFixed(2)} rad`);
+    /* PLANT SOMETHING TALL BETWEEN THE LENS AND THE KITTEN AND THE SHOT MOVES.
+       This is the whole of `_pickSwing` as a behaviour: a shrine is a gate,
+       its posts stand at a fixed offset in WORLD x whatever direction the
+       leader faces, and Pandapaw's is in a bamboo forest — so which shrine
+       puts eight metres of something through somebody's face is an accident of
+       geography that no framing rule can fix. The answer is to stand
+       somewhere else. */
+    const mid = new THREE.Vector3()
+      .addVectors(S.camera.position, first.p.position).multiplyScalar(0.5);
+    const fake = { home: mid, height: 8.5, radius: 0.7, knocked: false, gone: false };
+    world.props.push(fake);
+    shoot(hall);
+    const moved = S.swing;
+    world.props.pop();
+    ok('...and it swings somewhere else when a post is in the way',
+      Math.abs(moved - was) > 0.01, `${was.toFixed(2)} -> ${moved.toFixed(2)}`);
+    /* A prop already knocked over is lying on the stone and the lens looks
+       straight over it. Without this the shot would flinch at every barrel a
+       kitten has ever hit. */
+    world.props.push({ ...fake, knocked: true });
+    shoot(hall);
+    world.props.pop();
+    ok('...but not for something already knocked over', Math.abs(S.swing - was) < 1e-9);
+    /* AND THE GATE IT IS DODGING IS THE ONE THE SHRINE ACTUALLY BUILDS. Two
+       posts, at the offset the geometry uses, or `_pickSwing` is avoiding
+       stone that is not there. */
+    ok('...at the offset the gate is really built on', SHRINE_GATE.x < SHRINE_DAIS.r
+      && SHRINE_GATE.r > 0.2, `${SHRINE_GATE.x} out, ${SHRINE_GATE.r} thick`);
+  }
+
+  // --- and nothing happens to anybody else --------------------------------
+  {
+    const hall = world.clanHalls[0];
+    /* SECOND KITTEN UNTOUCHED. Everything four-player is additive and the
+       two-player game must come out bit-identical — a scene that quietly
+       teleported whoever was NOT its subject would be the loudest possible
+       violation of that. */
+    const other = kit(1);
+    const kept = other.position.clone();
+    shoot(hall);
+    ok('the scene moves the kitten it is about and nobody else',
+      other.position.distanceTo(kept) < 1e-9);
+    /* A KITTEN ON A MOUNT IS LEFT WHERE SHE IS. Nothing is ticked during a
+       scene, so moving a rider leaves the animal behind and sits her on air.
+       `watch` never fires for one; the debug key does, and the shot degrades
+       to framing her where she really is rather than breaking. */
+    const rider = kit();
+    const perch = rider.position.clone();
+    rider.mount = {};
+    shoot(hall, rider);
+    ok('...and never one who is riding something', rider.position.distanceTo(perch) < 1e-9);
+    rider.mount = null;
+  }
+
+  /* AND THE CAPTION COMES OFF THE SCREEN WHILE SHE TALKS. `_updateClanPrompt`
+     already refuses to draw "[E] SWEAR TO..." during a scene and runs at the
+     END of `_tickBody`, which every scene block returns before reaching — so
+     the last playing frame's caption hung over the whole cutscene. Invisible
+     until the scene started standing the kitten ON the dais, which is exactly
+     where that caption is drawn. */
+  const mainSrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('a scene takes the clan caption off the screen with the HUD',
+    /if \(away\) for \(const p of this\.players \?\? \[\]\) p\.setCallout\(null\);/.test(mainSrc));
+
+  S.finish();
+  globalThis.document = baseDoc;
+  if (!hadDoc) delete globalThis.document;
+}
+
+console.log('\n--- the shrine dais is stone you stand on ---');
+{
+  /* REPORTED AS "the player is in the ground on the shrine, like there is no
+     collider". The dais was drawn and nothing else: `world.heightAt` returned
+     the hillside underneath it, the LEADER was lifted onto the stone by a
+     special case, and the player was not — so a kitten walked around inside
+     the top step with the stone at her chin, on the one piece of ground in the
+     game the game tells her to go and stand on. */
+  for (const hall of world.clanHalls) {
+    const floor = world.heightAt(hall.x, hall.z, -Infinity).y;
+    const mine = world.platforms.filter(
+      (q) => q.r != null && Math.hypot(q.cx - hall.x, q.cz - hall.z) < 0.001);
+    ok(`${hall.clan.name}'s dais is a deck for every step it draws`,
+      mine.length === SHRINE_STEPS.length, `${mine.length} of ${SHRINE_STEPS.length}`);
+    for (const st of SHRINE_STEPS) {
+      ok(`...including the one at +${st.y}`,
+        mine.some((q) => Math.abs(q.y - (floor + st.y)) < 1e-6 && Math.abs(q.r - st.r) < 1e-6));
+    }
+  }
+
+  const hall = world.clanHalls[0];
+  const floor = world.heightAt(hall.x, hall.z, -Infinity).y;
+  const top = world.heightAt(hall.x, hall.z);
+  ok('standing in the middle of one puts you on the top step',
+    !!top.platform && Math.abs(top.y - (floor + SHRINE_DAIS.y)) < 1e-6,
+    `${top.y.toFixed(2)} vs hillside ${floor.toFixed(2)}`);
+
+  /* ROUND, NOT AN INSCRIBED SQUARE. The sky shards settle for a square deck
+     inside a round pad and that is fine on a rock in the sky; here the join
+     ring is the WHOLE dais, so unwalkable stone would be a kid standing
+     exactly where the game told her to stand and dropping through it. The
+     corner of the bounding box is the test: it is inside every rectangle a
+     square deck would use and outside the disc. */
+  const rim = SHRINE_DAIS.r * 0.98;
+  const corner = SHRINE_STEPS[0].r * 0.99;
+  ok('...and the deck is round',
+    world.heightAt(hall.x + rim, hall.z).platform != null
+    && world.heightAt(hall.x + corner * 0.9, hall.z + corner * 0.9).platform == null,
+    `${rim.toFixed(1)} out is stone, the box corner is not`);
+
+  /* AND YOU CAN GET ONTO IT. `heightAt` is one-way — a deck only counts once
+     you are at or above it — and the outer step rises 0.5 against a default
+     tolerance of 0.4, so without its own `step` the dais was a platform you
+     could stand on and could not climb. That is indistinguishable from no
+     platform at all, which is exactly what it looked like. */
+  const outer = SHRINE_STEPS[0];
+  const at = world.heightAt(hall.x + outer.r * 0.8, hall.z, floor);
+  ok('...and a kitten walking up from the hillside steps onto it',
+    at?.platform != null && at.y > floor, `${at?.y.toFixed(2)} from ${floor.toFixed(2)}`);
+  ok('...one step at a time, not one leap',
+    outer.climb >= outer.y && outer.climb < outer.y + 0.4,
+    `climb ${outer.climb} for a rise of ${outer.y}`);
+
+  /* ...WITHOUT MAKING EVERY OTHER DECK CLIMBABLE. `step` is per platform and
+     the bridge decks must keep the tolerance they had, or you start being
+     snapped up through them from underneath. */
+  ok('...and nothing else got a longer reach',
+    world.platforms.every((q) => q.step == null || q.r != null));
+
+  /* THE TWO OF THEM END UP AT THE SAME HEIGHT, which is the whole point: she
+     asked for the player to be "at the same height as the clan leader and
+     standing on top of the shrine, instead of in it". */
+  const spot = leaderSpot(hall, world);
+  const mid = world.heightAt(hall.x + 1, hall.z + 1);
+  ok('a kitten on the dais stands at the leader\'s own height',
+    Math.abs(mid.y - spot.y) < 1e-6, `${mid.y.toFixed(3)} vs ${spot.y.toFixed(3)}`);
+
+  /* AND THE POINT STILL KNOWS WHICH ISLAND IT IS ON. A platform used to
+     REPLACE the island on the answer rather than sit on top of it, so anyone
+     standing on a deck was on no island at all. That was invisible out on the
+     bridges and became a bug the moment the dais joined them: `heightAt(...)
+     .island` is how a dragon decides whether its rider is still nearby, so a
+     kitten who walked up to a shrine had her dragon fly home while she
+     watched. */
+  ok('...and still reports the island under the stone',
+    top.island === world.heightAt(hall.x, hall.z, -Infinity).island && top.island != null);
+}
 
 console.log('\n--- dragons ---');
 // Perched on the ground, exactly the way _spawnDragons places them.
@@ -4636,6 +4949,164 @@ console.log('\n--- background removal keeps the drawn whites ---');
   }
 }
 
+console.log('\n--- the art that ships is smaller than the art that made it ---');
+{
+  /* THE WHITE BETWEEN THE WINGS, AND WHY NO RUNTIME RULE COULD HAVE FIXED IT.
+     Both dragons shipped with sky showing as solid white — a huge pocket
+     between the neck ruff and the far wing on one, and the gap between the
+     hind legs on the other. The border flood cannot reach either (sealed by
+     lineart) and `clearSealedPockets` will not take them either, because they
+     are DEEP, and depth is the one thing separating a sealed pocket from Mr.
+     Satan's eye. The section above is the proof of that and it must keep
+     passing.
+
+     So the fix is offline: `tools/sprite-bake.mjs` bakes the key into the file
+     with the depth bound off, having written a proof image for a human to
+     look at — which is the thing the loader can never have. These checks are
+     what stops the un-baked masters being copied back over the shipped files,
+     which is the one mistake that would put the white straight back.
+
+     THE RESIZE IS PINNED HERE TOO, and it is not a cosmetic number. The
+     masters packed into the atlas at scale 0.698 — thirty per cent of every
+     pixel thrown away on every load on every device — and `contentScale` /
+     `contentArea`, the only two figures the game sizes a dragon quad from, are
+     RATIOS that do not move under a uniform resize. So a master shrunk to the
+     point where it packs at 1.000 draws identically and costs half the VRAM.
+     If somebody re-exports a dragon at some other size, `scale 1.000` is the
+     assertion that notices. */
+  const MASTERS = '../docs/art-masters';
+
+  /* The masters are the only copies of the input and a bake is one-way, so
+     the first thing to notice is one of them going missing. The second is one
+     of them being copied back over the file it produced — the shipped dragons
+     keep the master's NAME, so `public/sprites/dragon_sheet.png` being 4.5MB
+     again is a plain `cp` away and would look like nothing in a diff. */
+  for (const f of ['dragon_sheet.png', 'dragon_fly.png', 'title_art.png']) {
+    const url = new URL(`${MASTERS}/${f}`, import.meta.url);
+    ok(`${f} master is on disk and out of public/`, existsSync(url));
+    if (!existsSync(url)) continue;
+    const shipped = new URL(`../public/sprites/${f}`, import.meta.url);
+    ok('...and public/ does not hold a copy of it', !existsSync(shipped)
+      || statSync(shipped).size < statSync(url).size * 0.5,
+      existsSync(shipped)
+        ? `${(statSync(shipped).size / 1024).toFixed(0)}K vs `
+          + `${(statSync(url).size / 1024).toFixed(0)}K`
+        : 'ships as .webp');
+  }
+
+  /* `steam-art.mjs` measures crops in the MASTER's pixel coordinates and
+     re-derives them on every run, so pointing it at a resized copy would move
+     every one of them without an error. Pinned as text because the tool is a
+     script with side effects, not something this file can import. */
+  const steamSrc = readFileSync(new URL('./steam-art.mjs', import.meta.url), 'utf8');
+  ok('steam-art.mjs cuts the shelf from the master',
+    /const SRC = 'docs\/art-masters\/title_art\.png'/.test(steamSrc));
+
+  /* THE PAINTING IS THE ONE LOSSY IMAGE IN THE GAME. It is full bleed, so
+     there is nothing to key and nothing to measure — the only thing that can
+     go wrong is a stylesheet still asking for a .png that is no longer there,
+     which is a title screen with no title on it. */
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  ok('the title screen asks for the .webp',
+    (css.match(/sprites\/title_art\.webp/g) ?? []).length === 2
+    && !/sprites\/title_art\.png/.test(css));
+  ok('...and it is on disk',
+    existsSync(new URL('../public/sprites/title_art.webp', import.meta.url)));
+
+  const DRAGONS = [
+    { file: 'dragon_sheet.png', deep: 133549, what: 'between the ruff and the far wing' },
+    { file: 'dragon_fly.png', deep: 2731, what: 'between the hind legs' },
+  ];
+
+  for (const dg of DRAGONS) {
+    const shipped = new URL(`../public/sprites/${dg.file}`, import.meta.url);
+    const master = new URL(`${MASTERS}/${dg.file}`, import.meta.url);
+    if (!existsSync(shipped) || !existsSync(master)) {
+      line(dg.file, 'skipped (art not present)');
+      continue;
+    }
+
+    /* THE MASTER STILL HAS THE BUG IN IT, and asserting that is what makes the
+       line below a test rather than a tautology. If a future keyer learns to
+       clear these, this is the check that says so out loud instead of the
+       shipped-file check quietly passing for a new reason. */
+    {
+      const { w, h, d } = readPNG(master);
+      floodBackground(d, w, h);
+      clearSealedPockets(d, w, h);
+      const left = blobs(d, w, h, (p) => purelyWhite(d, p))
+        .filter((b) => b.n >= pocketFloor(w, h));
+      const biggest = Math.max(0, ...left.map((b) => b.n));
+      ok(`${dg.file}: the MASTER still keys to solid white`,
+        biggest > dg.deep * 0.9, `${biggest}px ${dg.what}`);
+    }
+
+    const { w, h, d } = readPNG(shipped);
+    line(`  ${dg.file}`, `${w}x${h}, ${(statSync(shipped).size / 1024).toFixed(0)}K`);
+
+    /* The convention flag the overlay checks already use: a sheet says whether
+       it carries its own alpha by whether its own border is transparent. */
+    let clear = 0;
+    for (let x = 0; x < w; x++) {
+      if (d[x * 4 + 3] < 8) clear++;
+      if (d[((h - 1) * w + x) * 4 + 3] < 8) clear++;
+    }
+    ok(`${dg.file} ships with a real alpha channel`, clear > w * 2 * 0.9);
+
+    floodBackground(d, w, h);
+    const left = blobs(d, w, h, (p) => purelyWhite(d, p))
+      .filter((b) => b.n >= pocketFloor(w, h));
+    ok('...and nothing white survives the flood', left.length === 0,
+      `${left.length} blob(s), biggest ${Math.max(0, ...left.map((b) => b.n))}px`);
+
+    /* AND THE DRAGON IS STILL IN THERE. Every assertion above would pass just
+       as happily on an empty file. */
+    let ink = 0;
+    let x0 = w; let y0 = h; let x1 = -1; let y1 = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (d[(y * w + x) * 4 + 3] > 8) {
+          ink++;
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+    }
+    const bw = x1 - x0 + 1;
+    const bh = y1 - y0 + 1;
+    ok('...with a dragon still drawn on it',
+      ink > w * h * 0.12 && bw > w * 0.85 && bh > h * 0.5,
+      `${(100 * ink / (w * h)).toFixed(0)}% inked, box ${bw}x${bh}`);
+
+    const m = packMetrics({
+      tallest: bh, widest: bw, inked: ink, cols: 1, rows: 1, cell: 384, pad: 0.06,
+      maxAtlas: 2048,
+    });
+    ok('...and packs into the atlas losing nothing', m.scale === 1,
+      `scale ${m.scale.toFixed(3)}, cell ${m.cellPx}`);
+  }
+
+  /* --- and nothing else in public/ is quietly enormous ----------------------
+     A first load is every byte in `public/`, downloaded before anybody plays.
+     The two grids are genuinely 40 cells of cat and are exempt by name; a NEW
+     name appearing here means somebody has dropped a full-resolution export
+     into the game, which is exactly how the dragons got there. */
+  const HEAVY = 1.5 * 1024 * 1024;
+  const GRIDS = ['frost_grid.png', 'ember_grid_v2.png'];
+  const over = readdirSync(new URL('../public/sprites/', import.meta.url))
+    .filter((f) => statSync(new URL(`../public/sprites/${f}`, import.meta.url)).size > HEAVY)
+    .filter((f) => !GRIDS.includes(f));
+  ok('nothing in public/sprites/ is over 1.5MB but the two grids',
+    over.length === 0, over.join(', ') || 'clean');
+
+  const total = readdirSync(new URL('../public/sprites/', import.meta.url))
+    .reduce((n, f) => n + statSync(new URL(`../public/sprites/${f}`, import.meta.url)).size, 0);
+  line('  public/sprites/', `${(total / 1048576).toFixed(1)}MB over `
+    + `${readdirSync(new URL('../public/sprites/', import.meta.url)).length} files`);
+}
+
 console.log('\n--- the Powerup Kotodama ---');
 {
   const ids = ORB_IDS;
@@ -5166,19 +5637,46 @@ console.log('\n--- the Powerup Kotodama ---');
        stick has no way to say there is a row below. */
     const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
     const prof = readFileSync(new URL('../src/systems/profile.js', import.meta.url), 'utf8');
-    ok('the dealer\'s shelf is its own scrolling box',
-      /\.kd-shelf\s*\{[^}]*overflow-y:\s*auto/.test(css) && /kd-shelf/.test(prof));
-    const rows = css.match(/--shelf-rows:\s*(\d+)/);
-    ok('...showing the eight the screen was built around', rows?.[1] === '8');
-    /* THE FADE'S ROW NUMBER IS `--shelf-rows` PLUS ONE and the two must move
-       together — it is the count at which something first sits below the box's
-       own bottom edge. On when nothing is hidden dims a row for no reason; off
-       when something is says the list has ended. */
-    const nth = css.match(/\.kd-shelf:not\(:has\(\.kd-row:nth-child\((\d+)\)\)\)/);
-    ok('...and the "there is more" fade turns on one row later',
-      Number(nth?.[1]) === Number(rows?.[1]) + 1, `${nth?.[1]} vs ${rows?.[1]}`);
-    ok('...and the roster has already outgrown the box, so it is doing work',
-      ORB_IDS.length > Number(rows?.[1]));
+    ok('the dealer\'s list scrolls, and the panel is the box that does it',
+      /#kd-body\s*\{[^}]*overflow-y:\s*auto/.test(css) && /kd-shelf/.test(prof));
+
+    /* ...AND IT IS THE ONLY ONE. Reported as "scrolling up and down in the
+       Kotodama dealer does not move the list", and it was two nested scrollers
+       fighting: `.kd-shelf` capped itself at a fixed eight rows and scrolled
+       the rest, inside a `#kd-body` that scrolls too and had given it 279px.
+       The shelf's own bottom edge ended up 250px BELOW the panel, so its last
+       rows lived inside a box whose bottom was off the screen and no gesture
+       could reach them.
+
+       A NESTED SCROLLER IS THE BUG, so that is what is asserted — not the
+       pixel numbers, which are a window size. `.kd-slots` is exempt because it
+       is a column in the PROFILE screen and does not sit inside the dealer's
+       list; it has its own line below. */
+    const nested = [...css.matchAll(/\.kd-(shelf|shop|purse|row)[^{]*\{([^}]*)\}/g)]
+      .filter((m) => /overflow-y:\s*(auto|scroll)/.test(m[2]))
+      .map((m) => m[1]);
+    ok('...and it is the ONLY scroller in the dealer', nested.length === 0,
+      nested.join(', ') || 'one box scrolls');
+    ok('...bounded by the panel rather than by a row count',
+      /\.kd-panel\s*\{[^}]*max-height:\s*94vh/.test(css)
+      && /\.kd-panel > #kd-body\s*\{[^}]*flex: 1 1 auto/.test(css)
+      && !/--shelf-rows/.test(css));
+
+    /* THE FADE IS MEASURED NOW, NOT COUNTED. It used to be
+       `:not(:has(.kd-row:nth-child(9)))` — a row count standing in for "is
+       there anything below the fold", which is only answerable in CSS while
+       the box is a fixed number of rows tall. A box sized by the window would
+       have made it lie in both directions, so the box is asked directly and
+       asked again after every scroll. */
+    ok('...and the "there is more" fade is measured off the box',
+      /#kd-body\.kd-more\s*\{[^}]*mask-image/.test(css)
+      && /_markOverflow\(\)/.test(prof)
+      && /scrollHeight - b\.clientHeight - b\.scrollTop/.test(prof));
+    ok('...and goes out at the bottom, where there really is no more',
+      /classList\.toggle\('kd-more', hidden > 2\)/.test(prof)
+      && /addEventListener\('scroll'/.test(prof));
+    ok('...and the roster has already outgrown a laptop\'s panel, so it is doing work',
+      ORB_IDS.length > 8);
     ok('her own slot rack is bounded too, for when MAX_EQUIPPED grows',
       /\.kd-slots\s*\{[^}]*overflow-y:\s*auto/.test(css));
     ok('the cursor is walked back into view after every repaint',
@@ -15210,6 +15708,76 @@ console.log('\n--- one press is not enough, and one player drives ---');
     && Math.abs(label[2] - (mapD._py(SATAN_TOWN.z) - 10)) < 1.5,
     label ? `${label[1].toFixed(1)},${label[2].toFixed(1)}` : 'not drawn');
   ok('...and not at world zoom', !said(a.ops, 'Mr. Satan'));
+
+  /* --- AND RYUUSEKI, WHO WAS ON NO MAP AT ALL ---
+     Reported as "Ryuuseki doesn't appear on Minimap at all", and it was true
+     for a reason no amount of reading `minimap.js` would have found: he is not
+     a `Dragon` and has never been in `Game.dragons`, so the loop that draws
+     dragons was correct and simply never saw him. THE BUG WAS THE WIRING, so
+     the first check here is about the wiring — pinned as text because `Game`
+     cannot be imported into this file, and a check that only exercised
+     `Minimap.draw` would pass forever on a game that never passes him in. */
+  ok('main.js hands the map its Ryuuseki',
+    /\.draw\(this\.players, this\.dragons, this\.kotodama, this\.satan, this\.ryu\)/
+      .test(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')));
+
+  const RYU_AT = { x: SATAN_TOWN.x + 60, y: 30, z: SATAN_TOWN.z - 40 };
+  const ryuWith = (pilot = null, gunner = null) => ({
+    position: RYU_AT, pilot, gunner, get duo() { return !!(pilot && gunner); },
+  });
+  const rider = (style) => ({ style });
+  /* His two seat pips are the only pair of `arc`s symmetric about his own x —
+     the kitten is elsewhere, the shrine haloes are on their shrines. Finding
+     them by geometry rather than by counting draws is what makes this a check
+     about the SEATS rather than about "something was drawn". */
+  const seatPips = (ops, map) => {
+    const cx = map._px(RYU_AT.x);
+    const cy = map._py(RYU_AT.z);
+    return ops.filter((o) => o.length === 5 && Math.abs(o[0] - cx) < 12 * map.dpr
+      && Math.abs(o[1] - cy) < 12 * map.dpr && o[2] < 3 * map.dpr);
+  };
+
+  const e = rec();
+  const mapE = new Minimap(e.cv, world, 0, { zoom: ZOOMS[1] });
+  mapE.draw([kitten], [], null, null, ryuWith());
+  const eName = said(e.ops, 'Ryuuseki');
+  ok('Ryuuseki is on the minimap', !!eName);
+  ok('...at his own position on it',
+    !!eName && Math.abs(eName[1] - mapE._px(RYU_AT.x)) < 1.5
+    && Math.abs(eName[2] - (mapE._py(RYU_AT.z) - 11 * mapE.dpr)) < 1.5);
+  ok('...with a pip for each of his two seats', seatPips(e.ops, mapE).length === 2,
+    `${seatPips(e.ops, mapE).length} pip(s)`);
+
+  /* ONE GIRL ABOARD IS THE WHOLE REASON HE IS DRAWN. A wild dragon with a
+     rider on it is nobody's destination and is skipped; Ryuuseki with a pilot
+     and an empty gunner's chair is exactly what the other kitten is running
+     towards, and the fan does not exist until she gets there. */
+  const f = rec();
+  const mapF = new Minimap(f.cv, world, 0, { zoom: ZOOMS[1] });
+  mapF.draw([kitten], [], null, null, ryuWith(rider(0)));
+  ok('...still drawn with one seat taken, because the other is free',
+    !!said(f.ops, 'Ryuuseki'));
+
+  const g = rec();
+  const mapG = new Minimap(g.cv, world, 0, { zoom: ZOOMS[1] });
+  mapG.draw([kitten], [], null, null, ryuWith(rider(0), rider(1)));
+  ok('...and gone once BOTH seats are full', !said(g.ops, 'Ryuuseki')
+    && seatPips(g.ops, mapG).length === 0);
+
+  /* Before the seventh ball there is no Ryuuseki, and the map still has to
+     draw — the same degrades-rather-than-vanishes rule as the champion. */
+  const h = rec();
+  const mapH = new Minimap(h.cv, world, 0, { zoom: ZOOMS[1] });
+  mapH.draw([kitten], [], null, null, null);
+  ok('...and a map handed no dragon at all still draws',
+    h.ops.length > 20 && !said(h.ops, 'Ryuuseki'), String(h.ops.length));
+
+  // Named only when there is room, exactly like the shrines and the champion.
+  const j = rec();
+  const mapJ = new Minimap(j.cv, world, 0);
+  mapJ.draw([kitten], [], null, null, ryuWith());
+  ok('...and not named at world zoom', !said(j.ops, 'Ryuuseki')
+    && seatPips(j.ops, mapJ).length === 2);
 }
 
 {
@@ -15340,11 +15908,24 @@ console.log('\n--- one press is not enough, and one player drives ---');
      would fail here for a reason that has nothing to do with the sky. Put back
      the way it was found, so nothing downstream inherits a DOM. */
   const hadDoc = 'document' in globalThis;
+  /* AND IT NOW HANDS BACK A CANVAS TOO, because the finale draws a portrait
+     into one — a no-op stub that returns an object with no `getContext` throws
+     inside `drawPortrait` before the scene has done anything this section is
+     about. The 2D context is a proxy that swallows every call and every
+     property: what is being checked here is the sky and the stage, and a
+     hand-written list of the eleven canvas methods `drawPortrait` happens to
+     use today would be a check on THAT function's implementation. */
   globalThis.document = {
     getElementById: () => ({
       classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
       style: { setProperty() {} },
       textContent: '',
+      width: 150,
+      height: 150,
+      getContext: () => new Proxy({}, {
+        get: () => () => ({ addColorStop() {} }),
+        set: () => true,
+      }),
     }),
   };
   const S = new SummonScene({ world: null, audio: null });
@@ -15368,6 +15949,111 @@ console.log('\n--- one press is not enough, and one player drives ---');
   ok('...and the sky clears within the finale\'s first two lines',
     DAWN_RISE > DUSK_FALL && DAWN_RISE < firstTwo,
     `${DAWN_RISE}s of ${firstTwo}s`);
+
+  /* --- AND SOMEBODY IS ON SCREEN SAYING IT ---
+     Reported as "Patchfur's sprite is not appearing in the final cutscene but
+     you hear her voice". Not a failed load and not a missing sheet: the
+     opening cutscene builds a stage character and this scene never did, so the
+     ending was four beats of a disembodied voice over an empty sky. The one
+     thing every check below has in common is that none of them would have
+     failed before the fix for a reason to do with art. */
+  const art = {
+    texture: new THREE.Texture(), contentScale: 0.88, pad: 0.06, cols: 1, rows: 1,
+  };
+  const staged = (which, withArt = art) => {
+    const T = new SummonScene({ scene: null, world: null, audio: null });
+    T.start(which, { x: 0, y: 0, z: 0 }, 30, withArt);
+    const on = T.stage.visible;
+    return { T, on };
+  };
+
+  const fin = staged('finale');
+  ok('the ending puts Patchfur on the stage, not just in the portrait box',
+    fin.on && !!fin.T.stageSprite);
+  fin.T.finish();
+  ok('...and takes her off again when it ends or is skipped',
+    !fin.T.stage.visible);
+
+  /* THE PORTRAIT AND THE STAGE ARE TWO DECISIONS. Mr Satan gets the box and
+     only the box — his shots frame the town and then the arena, the places he
+     is selling, and a flat drawing of him in front of them for three beats is
+     furniture. `found` and `summon` frame a place and a dragon and the speaker
+     is genuinely elsewhere. If this ever starts passing for `satanAnnounce`,
+     somebody has folded the two rules into one flag. */
+  for (const which of ['found', 'summon', 'satanAnnounce', 'satanOpen']) {
+    ok(`...and ${which} still shows nobody`, !staged(which).on);
+  }
+
+  /* THE FRAMING IS DERIVED FROM THE LENS, AND THIS IS THE CHECK THAT SAYS SO.
+     The opening cutscene composes its speaker 17 units in front of a 42°
+     camera. Copying those two numbers into a 54° scene puts her at 52% of the
+     frame instead of 69% — a third smaller, reading as a figure on the horizon
+     rather than as the person talking to you. So the stage distance is SOLVED
+     from the FOV, and what is asserted is the thing that must not drift: she
+     is the same fraction of the frame in both scenes. Change either lens and
+     this still passes; hardcode a distance in either and it fails. */
+  const cut = readFileSync(new URL('../src/systems/cutscene.js', import.meta.url), 'utf8');
+  const introFov = Number(cut.match(/PerspectiveCamera\((\d+), 1, /)?.[1]);
+  const introD = Number(cut.match(/const d = (\d+);/)?.[1]);
+  const introH = Number(cut.match(/const quad = (\d+) \/ \(art\.contentScale/)?.[1]);
+  ok('the intro still composes its speaker off a lens and a distance',
+    introFov > 0 && introD > 0 && introH > 0, `${introFov}deg, ${introD} units, ${introH} tall`);
+
+  const frameAt = (fov, dist) => 2 * dist * Math.tan((fov * Math.PI) / 360);
+  const introFrame = frameAt(introFov, introD);
+
+  const shot = staged('finale');
+  shot.T.sceneT = 99;                 // long past the slide-in
+  shot.T._parkStage();
+  const cam = shot.T.camera;
+  /* THE FORWARD COMPONENT, not the straight-line distance — she is offset
+     3.4 right and 5.2 down, so the hypotenuse is a unit and a half longer
+     than the distance the framing is actually solved for. */
+  const fwd = cam.getWorldDirection(new THREE.Vector3());
+  const d = shot.T.stage.position.clone().sub(cam.position).dot(fwd);
+  /* THE FRAME IS THE INVARIANT, NOT THE DISTANCE. Both scenes draw the same
+     `9 / contentScale` quad, so equal frames mean equal size on screen for
+     any sheet — which is also why this check does not mention `contentScale`
+     anywhere. */
+  ok('...and the ending frames her at the same size the intro does',
+    Math.abs(frameAt(cam.fov, d) - introFrame) < 0.05,
+    `${frameAt(cam.fov, d).toFixed(2)} units of frame vs the intro's ${introFrame.toFixed(2)}`);
+  ok('...from a distance solved off the lens, not typed in',
+    Math.abs(d - introD) > 0.5 && d > 5 && d < 40,
+    `${d.toFixed(2)} units at ${cam.fov}deg where the intro uses ${introD} at ${introFov}deg`);
+
+  /* SHE STANDS WHERE SHE STOOD IN THE OPENING, on the right of frame with her
+     feet out of shot — the scene that started the story and the scene that
+     ends it are the same picture on purpose. Measured in NDC, which is the
+     only place "on the right of the screen" means anything. */
+  const ndc = shot.T.stage.position.clone().project(
+    Object.assign(cam, cam.updateMatrixWorld(true), cam.updateProjectionMatrix() ?? {})
+  );
+  ok('...standing right of centre, with her feet below the frame',
+    ndc.x > 0.05 && ndc.x < 0.6 && ndc.y < 0, `ndc ${ndc.x.toFixed(2)},${ndc.y.toFixed(2)}`);
+
+  /* SHE ARRIVES ONCE, NOT FOUR TIMES. `t` is beat-local and the intro slides
+     its speaker in off that, which is right when every beat is a new character
+     walking on. Four beats of the same calico sliding in from the right reads
+     as a stutter, so the slide is driven by a scene clock. */
+  const slide = staged('finale');
+  slide.T.sceneT = 0.05;
+  slide.T._parkStage();
+  const early = slide.T.stage.position.clone();
+  slide.T.sceneT = 99;
+  slide.T._parkStage();
+  const settled = slide.T.stage.position.clone();
+  ok('...sliding in once, over the whole scene rather than once a beat',
+    early.distanceTo(settled) > 1 && /this\.sceneT/.test(
+      readFileSync(new URL('../src/systems/summonscene.js', import.meta.url), 'utf8')));
+
+  /* AND THE GAME HANDS IT A SCENE TO STAND IN. The stage is a Group in the
+     GAME's scene graph — `_renderView(summonScene.camera)` draws that one —
+     so a SummonScene built without it is a scene where every check above
+     passes and nothing is on screen. That is the exact shape of the bug. */
+  ok('main.js gives the scene somewhere to put her',
+    /new SummonScene\(\{\s*scene: this\.scene,/
+      .test(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')));
 
   if (!hadDoc) delete globalThis.document;
   world.setSky(0, 0);        // leave the world as the rest of the file found it

@@ -174,6 +174,11 @@ export class ProfileScreen {
 
     this.el = document.getElementById('panel-profile');
     this.body = document.getElementById('kd-body');
+    /* A REPAINT IS NOT THE ONLY THING THAT MOVES THE FADE. `_paint` runs on
+       a signature change — an orb bought, a cursor stepped — and scrolling
+       changes neither, so without this the gradient would stay on over the
+       last row of a list she had already scrolled to the end of. */
+    this.body?.addEventListener('scroll', () => this._markOverflow(), { passive: true });
     this.title = document.getElementById('kd-title');
     this.help = document.getElementById('kd-help');
     this.actions = document.getElementById('kd-actions');
@@ -966,6 +971,28 @@ export class ProfileScreen {
     }
     this._paintActions();
     this._followCursors();
+    this._markOverflow();
+  }
+
+  /**
+   * Say whether there is more of the list below the fold, by asking the box.
+   *
+   * THE FADE USED TO BE A ROW COUNT IN THE STYLESHEET and that only worked
+   * while the shelf was a fixed eight rows tall. It is sized by the window
+   * now (see the note on `#kd-body` in style.css, and the two-scrollers bug
+   * that put it there), so the only honest answer comes from measuring —
+   * eighth non-negotiable, applied to a panel instead of a sprite sheet.
+   *
+   * IT ALSO GOES OUT AT THE BOTTOM, which the row count could never do. A
+   * gradient that is still there when the last row is on screen says the list
+   * carries on, and the sixth non-negotiable cuts both ways: a screen must not
+   * claim something that is not true either.
+   */
+  _markOverflow() {
+    const b = this.body;
+    if (!b) return;
+    const hidden = b.scrollHeight - b.clientHeight - b.scrollTop;
+    b.classList.toggle('kd-more', hidden > 2);
   }
 
   /**
@@ -1322,21 +1349,28 @@ export class ProfileScreen {
          press <b>MOUNT</b> to shop too</div>`
       : '';
 
-    /* THE SHELF IS ITS OWN SCROLLING BOX, and the header, the invitation and
-       the questions are outside it.
+    /* THE SHELF DOES NOT SCROLL. `#kd-body` around it does, and the header,
+       the invitation and the questions scroll with it.
 
-       WHY IT HAD TO STOP BEING A LIST THAT JUST GETS LONGER. There were eight
-       kinds and the panel held eight rows; there are nine now and there is no
-       reason to expect that to be the last one. A tenth row pushes the footer
-       — which is where the buttons are on a phone and where the key names are
-       everywhere else — off the bottom of the screen, and the girl driving the
-       stick has no way of knowing there is a row below the one she can see.
-       So the shelf keeps a fixed height of `--shelf-rows` rows and scrolls
-       inside it, `_paint` walks the moved cursor back into view, and the panel
-       around it stops changing size when the roster does.
+       IT USED TO BE ITS OWN BOX, capped at eight rows, and that was two
+       scrollers fighting: the wheel drove the inner one, the inner one ran out
+       after 133px, and the shelf's own bottom edge sat 250px below the panel
+       with the last rows inside it. Reported as "scrolling up and down in the
+       Kotodama dealer does not move the list", which is what a list with no
+       gesture that reaches it looks like.
 
-       IT SHOWS EIGHT. That is what the screen was built around and what the
-       CSS variable says; past that it scrolls. */
+       WHAT THE CAP WAS PROTECTING IS STILL PROTECTED, by the panel instead.
+       The footer carries the key names on a desktop and the actual buttons on
+       a phone, so a list growing past it takes away the only way out of the
+       screen on the device least able to spare it. `.kd-panel` is a flex
+       column at `max-height: 94vh` with the body at `flex: 1 1 auto;
+       min-height: 0` — the four-player rework already made it the right box —
+       so the body gets the room left after the title and the footer and never
+       a pixel more. On a window with the room, all ten rows are simply shown.
+
+       `_followCursors` walks a moved cursor back into view; `_markOverflow`
+       measures the box for the fade. Neither counts rows any more, because a
+       box sized by the window cannot be asked "is there more" by counting. */
     return `<div class="kd-shop">
       <div class="kd-purse">${purses} · buy <b>${K.price}</b> · sell <b>${K.sellPrice}</b></div>
       ${invite}

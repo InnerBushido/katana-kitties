@@ -74,7 +74,7 @@ are not decoration; see the non-negotiables in [CLAUDE.md](CLAUDE.md).
 | **Play it** | **https://katana-kitties.vercel.app** — public, no login, nothing to install |
 | **Code** | **https://github.com/InnerBushido/katana-kitties** — **public** (`gh repo view` says so; this line said "private" until 30 Aug 2026 and was wrong) |
 | **Stack** | Vite 8 + three.js 0.185. Static build, no backend, no database, no env vars |
-| **First load** | ~35MB across 39 files, then cached. Sprites 42MB in repo, help clips 21MB, voices 6.4MB |
+| **First load** | ~30MB across 39 files, then cached. Sprites 30MB in repo, help clips 21MB, voices 6.4MB, plus 14MB of art masters that are NOT shipped (`docs/art-masters/`) |
 | **Size** | ~216 props, 6 clans, 7 dragon balls, 8 Powerup Kotodama, 15 Help clips, 62 voice files |
 
 ---
@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 2628 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 2753 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 354 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -413,7 +413,8 @@ to lock it on.** → [mobile.md](docs/notes/mobile.md)
 | **Mr. Satan's countdown** | `tools/capture/satan-countdown.mjs` cuts the five clips the last fifteen seconds of a round are made of, out of the takes in `tools/capture/satan-takes/`. The count is **one continuous performance re-timed** — `silencedetect` finds the words, the numbers are pinned to the seconds they name, and each shout between them is squeezed by exactly as much as its own gap demands. **A spoken card is shortened by closing its dead air, never by playing him faster** — pauses floored to 0.20s first, and a speed ceiling of 1.10x that throws with the line quoted rather than shipping a card that sounds sped up. Also cuts the six bare numbers `sat_n0`–`sat_n5`. | `node tools/capture/satan-countdown.mjs` → [voices.md](docs/notes/voices.md) |
 | **Brush kanji** | `tools/brush-kanji.mjs` — drawn, not typed, because ffmpeg's `drawtext` gives hairlines. | |
 | **PNG, with no dependencies** | `tools/png.mjs` — the codec everything else encodes through, same rule as `gif.mjs`. | |
-| **Steam shelf art & icons** | `tools/steam-art.mjs` crops and composites `public/sprites/title_art.png`. **Nothing here is a new drawing** — a prompt to an image model would put art on the box that is nowhere inside the game. | `node tools/steam-art.mjs` → `out/steam/` |
+| **Making the shipped art smaller than the art that made it** | `tools/sprite-bake.mjs` builds `public/sprites/` out of [`docs/art-masters/`](docs/art-masters/README.md). It bakes the background key into the file with the depth bound **off** — which the loader can never do, because depth is the only thing separating a sealed pocket from Mr. Satan's eye, and what this has that the loader has not is a human looking at `--proof`. It also resizes the dragons to where they pack at scale **1.000** instead of 0.698 (14MB → 2.1MB, and half the VRAM, drawing identically), and re-encodes the kids' painting as **q92 WebP at full resolution** — 5.5MB → 0.46MB, the only lossy image in the game. | `node tools/sprite-bake.mjs --proof` |
+| **Steam shelf art & icons** | `tools/steam-art.mjs` crops and composites `docs/art-masters/title_art.png` — the **master**, because every crop is a pixel coordinate measured on that 2752x1536 file and the shipped copy is WebP. **Nothing here is a new drawing** — a prompt to an image model would put art on the box that is nowhere inside the game. | `node tools/steam-art.mjs` → `out/steam/` |
 | **Steam store capsules** | `tools/steam-capsules.sh` | → [trailer.md](docs/notes/trailer.md) |
 | **Clan leader portraits (Help)** | `tools/help-portraits.mjs` | |
 | **A Help picture that isn't filmed yet** | `tools/help-blink-placeholder.mjs` draws the still that holds 瞬 Flash Step's cell in the abilities grid until its clip is shot. It reads the jade out of the orb roster and the kitten out of `PLAYER_STYLE`, so it cannot drift from the game, and it stamps **PLACEHOLDER** in its own corner — everything else on that page is an engine capture and a drawing must not pass for one. Swapping in the clip is one attribute in `index.html`. | `node tools/help-blink-placeholder.mjs` |
@@ -484,7 +485,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 2628
+the check that would have caught it.** That is why `world-check` is 2753
 assertions.
 
 **And a change a new developer would need to know about gets a line in this
