@@ -221,8 +221,17 @@ function keyOutBackground(ctx, w, h, clearPockets = false) {
   // ...and then the pockets the flood is structurally unable to reach.
   if (clearPockets) clearSealedPockets(d, w, h);
 
-  // Soften the cut edge: any surviving pale pixel touching transparency gets
-  // partial alpha, so the sprite doesn't get a hard white fringe.
+  /* Soften the cut edge: any surviving pale pixel touching transparency gets
+     partial alpha, so the sprite doesn't get a hard white fringe.
+
+     `Math.min` AND NOT A BARE ASSIGNMENT. On an opaque sheet every pixel
+     reaching this line has alpha 255, so the two are identical and every
+     sheet in the game keys byte for byte the same. On a sheet that already
+     CARRIES alpha — the baked dragons, anything back from
+     `remove_background` — they are opposites: a soft cream edge pixel at
+     alpha 120 with one transparent neighbour would be RAISED to 170, which
+     is a pale fringe painted on by the very pass that exists to remove
+     one. */
   const out = new Uint8ClampedArray(d);
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
@@ -234,7 +243,7 @@ function keyOutBackground(ctx, w, h, clearPockets = false) {
       if (d[(p + 1) * 4 + 3] === 0) open++;
       if (d[(p - w) * 4 + 3] === 0) open++;
       if (d[(p + w) * 4 + 3] === 0) open++;
-      if (open) out[p * 4 + 3] = Math.max(0, 255 - open * 85);
+      if (open) out[p * 4 + 3] = Math.min(d[p * 4 + 3], Math.max(0, 255 - open * 85));
     }
   }
   img.data.set(out);

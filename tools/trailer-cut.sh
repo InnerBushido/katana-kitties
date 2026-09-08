@@ -185,7 +185,9 @@ done
 # The cream plate at the bottom of title_art.png is the menu's button panel and
 # is empty by design, so the address goes there rather than on top of anything
 # they drew.
-ffmpeg -v error -y -loop 1 -i public/sprites/title_art.png -frames:v $((TITLE * FPS)) \
+# The MASTER, not public/sprites/title_art.webp — same picture, but this is
+# the 2752x1536 PNG and the trailer is cut at full resolution.
+ffmpeg -v error -y -loop 1 -i docs/art-masters/title_art.png -frames:v $((TITLE * FPS)) \
   -vf "scale=2560:1440:force_original_aspect_ratio=increase,crop=2560:1440,\
 zoompan=z='min(zoom+0.00035,1.09)':d=$((TITLE*FPS)):x='iw/2-(iw/zoom/2)':\
 y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=$FPS,\

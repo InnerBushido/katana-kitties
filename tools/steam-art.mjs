@@ -6,7 +6,7 @@
    icon on the desktop. Steam will not draw one for you and never has — it only
    ships artwork for real appids.
 
-   So this makes the five images by hand, from `public/sprites/title_art.png`,
+   So this makes the five images by hand, from `docs/art-masters/title_art.png`,
    which is the piece the whole UI's palette was taken from. Nothing here is a
    new drawing. That is the point: the shelf should be THE GAME, not a picture
    of a game, and the alternative — a prompt to an image model — would put art
@@ -31,7 +31,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { readPNG, writePNG, writeICO, blobs } from './png.mjs';
 
-const SRC = 'public/sprites/title_art.png';
+/* THE MASTER, NOT THE SHIPPED COPY. `public/sprites/title_art.webp` is the
+   same picture at the same size, but it is WebP and `png.mjs` is a PNG codec
+   — and every crop below is a pixel coordinate measured on this 2752x1536
+   file, so pointing this at a resized copy would silently move all of them.
+   See tools/sprite-bake.mjs, which builds the shipped copy from this. */
+const SRC = 'docs/art-masters/title_art.png';
 const OUT = 'out/steam';
 
 /* --- THE ART, MEASURED, NOT REMEMBERED -------------------------------------

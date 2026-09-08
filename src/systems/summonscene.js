@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Billboard } from '../core/gfx.js';
 import { beatOver, TAIL, drawPortrait } from './cutscene.js';
 
 /* ---------------------------------------------------------------------------
@@ -53,6 +54,34 @@ export const DUSK_LIFT = 1.6;
  */
 export const DAWN_RISE = 12;
 export const DAWN_DEEP = 1;
+
+/* --- WHERE THE SPEAKER STANDS ---------------------------------------------
+   THE INTRO'S COMPOSITION, VERBATIM, AND ONE DERIVED NUMBER. The opening
+   cutscene parks whoever is talking 17 units in front of a 42° camera, 3.4
+   right of centre and 5.2 down. Those offsets are what the picture IS and they
+   are copied here unchanged — but 17 is not, because this scene's lens is 54°
+   and the same distance frames a box a third bigger. She came out at 52% of
+   the frame's height instead of 69%, which reads as a figure standing on the
+   horizon rather than as the person talking to you.
+
+   So the invariant is the FRAME, not the distance: the intro composes against
+   a box 2 x 17 x tan(21°) = 13.05 world units tall, and `_parkStage` solves
+   for whatever distance gives this camera the same one. Everything else is the
+   intro's own numbers, and neither lens can be touched without the framing
+   following it — including the sprite's own size, which is `9 / contentScale`
+   in both scenes and therefore cancels.
+
+   IT IS THE INTRO'S FRAMING ON PURPOSE. She opened the story standing on the
+   right of the screen and she closes it standing in the same place; a kid who
+   has seen the first scene knows what an old calico appearing over there means
+   before she has said a word. */
+const STAGE_FRAME = 2 * 17 * Math.tan((42 * Math.PI) / 360);
+const STAGE_X = 3.4;               // where she settles, right of centre
+const STAGE_FROM = 9;              // ...and where she slides in from
+const STAGE_Y = -5.2;              // ...and how far down, so her feet are out
+/** Seconds she takes to slide in. ONCE PER SCENE, NOT ONCE PER BEAT — see
+ *  `sceneT` in `update`. */
+const STAGE_IN = 0.9;
 
 export const SCRIPTS = {
   found: [
@@ -185,7 +214,8 @@ export const SCRIPTS = {
 };
 
 export class SummonScene {
-  constructor({ world, audio }) {
+  constructor({ scene, world, audio }) {
+    this.scene = scene;
     this.world = world;
     this.audio = audio;
     this.active = false;
@@ -208,6 +238,25 @@ export class SummonScene {
     this.camera = new THREE.PerspectiveCamera(54, 16 / 9, 0.1, 4000);
     this._look = new THREE.Vector3();
     this.focus = new THREE.Vector3();
+
+    /* THE SPEAKER'S CLOSE-UP, and the ending had nobody in it. Reported as
+       "Patchfur's sprite is not appearing in the final cutscene but you hear
+       her voice" — and it was not a missing sheet or a failed load: this scene
+       was written to show the WORLD with her in the little portrait box, and
+       the opening cutscene's stage character was simply never built here. Four
+       beats of a voice with an empty sky under it is the one part of the game
+       where a kid could reasonably think something was broken.
+
+       One quad in a group of its own, parked in front of the camera every
+       frame — the same grammar `Cutscene._setStage` uses, and deliberately the
+       same single quad rather than one billboard per speaker: only one thing
+       is ever on this stage. Added to the GAME's scene because that is what
+       `_renderView(summonScene.camera)` draws. */
+    this.stage = new THREE.Group();
+    this.stage.visible = false;
+    this.stageSprite = null;
+    this.stageArt = null;
+    this.scene?.add(this.stage);
 
     this.el = document.getElementById('cutscene');
     this.boxEl = document.getElementById('cs-box');
@@ -299,6 +348,18 @@ export class SummonScene {
     if (showPortrait) {
       drawPortrait(this.portraitEl, art, which.startsWith('satan') ? '#ffd24a' : '#e8c98a');
     }
+    /* ...AND SHE STANDS ON THE STAGE AS WELL, for the finale only.
+       THE PORTRAIT AND THE STAGE ARE NOT THE SAME DECISION, which is why this
+       is a second test and not a second use of `showPortrait`. Mr Satan keeps
+       the box and only the box: his shots frame the town and then the arena —
+       the places he is selling — and a flat drawing of him standing in front
+       of them for three beats is furniture. Patchfur's four beats are her
+       talking directly to two kittens about what they did, and the wide shot
+       behind her is the subject of the sentence rather than a thing being
+       pointed at. `found` and `summon` still show nobody: they frame a place
+       and a dragon, and the speaker is genuinely elsewhere. */
+    this.sceneT = 0;
+    this._setStage(which === 'finale' ? art : null);
     if (which === 'summon') this.duskWant = DUSK_DEEP;
     /* THE ENDING TAKES THE STORM DOWN AND PUTS A MORNING UP, and both halves
        matter. The finale fires at 100% mischief, which in a real run happens
@@ -339,6 +400,31 @@ export class SummonScene {
     this.voiceEl = this.audio?.speak(b.el ?? b.voice) ?? null;
   }
 
+  /**
+   * Point the one stage quad at an atlas, or take it off stage.
+   *
+   * The twin of `Cutscene._setStage`, down to `9 / contentScale`: that is the
+   * figure's height in world units taken off the SHEET's own measurement of
+   * how much of its cell the drawing fills, so a leader drawn small in her
+   * cell is not silently shrunk on screen. Eighth non-negotiable — the size
+   * comes off the loaded atlas, never off the file name.
+   */
+  _setStage(art) {
+    if (!art) { this.stage.visible = false; return; }
+    if (!this.stageSprite || this.stageArt !== art) {
+      if (this.stageSprite) this.stage.remove(this.stageSprite);
+      const quad = 9 / (art.contentScale || 1);
+      this.stageSprite = new Billboard(art.texture, {
+        cols: 1, rows: 1, width: quad, height: quad,
+        footOffset: (art.pad ?? 0) * quad, mirror: false,
+      });
+      this.stageQuad = quad;
+      this.stage.add(this.stageSprite);
+      this.stageArt = art;
+    }
+    this.stage.visible = true;
+  }
+
   skip() { if (this.active) this.finish(); }
 
   /** ONE BEAT ON — the debug nudge. See `Cutscene.nextBeat`, which this is the
@@ -356,6 +442,11 @@ export class SummonScene {
   finish() {
     this.active = false;
     this.script = null;
+    /* SHE GOES WITH THE SCENE. The stage lives in the game's own scene graph,
+       so a quad left visible is a nine-foot calico standing in mid-air over
+       the archipelago for the rest of the session — and `skip` comes through
+       here too, which is the path a kid who has seen it once actually takes. */
+    this.stage.visible = false;
     this.el.classList.add('hidden');
     this.portraitEl.style.display = '';
     /* Clear the black. `#cs-fade` is SHARED with the opening cutscene and the
@@ -407,9 +498,62 @@ export class SummonScene {
     return this.dusk;
   }
 
+  /**
+   * Stand the speaker in front of the camera, in the intro's own composition.
+   *
+   * THE OFFSETS ARE DERIVED FROM THE LENS, NOT COPIED. The opening cutscene's
+   * numbers (17 units out, 3.4 right, 5.2 down) were composed against a 42°
+   * camera; this one is 54° and the same numbers put her a third smaller and
+   * further from the edge. So they are carried as fractions of the frame
+   * (`STAGE_FILL` and friends) and multiplied back up by the frame this camera
+   * actually has, which also means neither FOV can be touched without the
+   * framing following it.
+   *
+   * SHE IS PARKED, NOT PLACED IN THE WORLD. The finale's camera pulls back
+   * until the whole archipelago is in shot — she would be a speck if she stood
+   * anywhere in it — so she rides in front of the lens like a foreground
+   * cut-out, which is exactly what the opening does and what makes both scenes
+   * read as somebody talking to you over a view.
+   */
+  _parkStage() {
+    if (!this.stage.visible || !this.stageSprite) return;
+    const inT = Math.min(1, this.sceneT / STAGE_IN);
+    const ease = 1 - (1 - inT) * (1 - inT);
+
+    /* The distance that gives this lens the intro's frame. Solved rather than
+       tuned: frame height at distance d is 2*d*tan(fov/2), so
+       d = STAGE_FRAME / (2*tan(fov/2)). At 54° that is 12.8 units where the
+       intro uses 17, and the drawing comes out the same size on screen. */
+    const d = STAGE_FRAME / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
+
+    const fwd = new THREE.Vector3();
+    this.camera.getWorldDirection(fwd);
+    const right = new THREE.Vector3()
+      .crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+    const side = STAGE_FROM + (STAGE_X - STAGE_FROM) * ease;
+    /* A slow breath, so a still drawing is not a still frame. The same trick
+       and the same reason as the intro's — and slower, because this scene is
+       four beats long and anything with a period a kid can count becomes the
+       thing she is watching instead of the sky. */
+    const bob = Math.sin(this.sceneT * 1.15) * 0.14;
+
+    this.stage.position.copy(this.camera.position)
+      .addScaledVector(fwd, d)
+      .addScaledVector(right, side)
+      .add(new THREE.Vector3(0, STAGE_Y + bob, 0));
+    this.stageSprite.mat.transparent = true;
+    this.stageSprite.mat.opacity = ease;
+  }
+
   update(dt) {
     if (!this.active) return false;
     this.t += dt;
+    /* A SECOND CLOCK, AND IT IS THE WHOLE DIFFERENCE FROM THE INTRO. `t` is
+       beat-local and resets four times; the opening cutscene slides its
+       speaker in off that, which is right when every beat is a different
+       character arriving. Four beats of the SAME calico sliding in from the
+       right four times reads as a stutter. She arrives once. */
+    this.sceneT = (this.sceneT ?? 0) + dt;
     this.fadeIn = Math.max(0, this.fadeIn - dt);
     const b = this.script[this.beat];
 
@@ -481,6 +625,7 @@ export class SummonScene {
       this._look.set(F.x, F.y + 4, F.z);
     }
     this.camera.lookAt(this._look);
+    this._parkStage();
 
     // --- typewriter on the audio's playhead. See Cutscene.update.
     const clock = (this.voiceEl && b.voiceDur && this.voiceEl.currentTime > 0)

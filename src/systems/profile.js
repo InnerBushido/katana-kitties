@@ -174,6 +174,11 @@ export class ProfileScreen {
 
     this.el = document.getElementById('panel-profile');
     this.body = document.getElementById('kd-body');
+    /* A REPAINT IS NOT THE ONLY THING THAT MOVES THE FADE. `_paint` runs on
+       a signature change — an orb bought, a cursor stepped — and scrolling
+       changes neither, so without this the gradient would stay on over the
+       last row of a list she had already scrolled to the end of. */
+    this.body?.addEventListener('scroll', () => this._markOverflow(), { passive: true });
     this.title = document.getElementById('kd-title');
     this.help = document.getElementById('kd-help');
     this.actions = document.getElementById('kd-actions');
@@ -966,6 +971,28 @@ export class ProfileScreen {
     }
     this._paintActions();
     this._followCursors();
+    this._markOverflow();
+  }
+
+  /**
+   * Say whether there is more of the list below the fold, by asking the box.
+   *
+   * THE FADE USED TO BE A ROW COUNT IN THE STYLESHEET and that only worked
+   * while the shelf was a fixed eight rows tall. It is sized by the window
+   * now (see the note on `#kd-body` in style.css, and the two-scrollers bug
+   * that put it there), so the only honest answer comes from measuring —
+   * eighth non-negotiable, applied to a panel instead of a sprite sheet.
+   *
+   * IT ALSO GOES OUT AT THE BOTTOM, which the row count could never do. A
+   * gradient that is still there when the last row is on screen says the list
+   * carries on, and the sixth non-negotiable cuts both ways: a screen must not
+   * claim something that is not true either.
+   */
+  _markOverflow() {
+    const b = this.body;
+    if (!b) return;
+    const hidden = b.scrollHeight - b.clientHeight - b.scrollTop;
+    b.classList.toggle('kd-more', hidden > 2);
   }
 
   /**

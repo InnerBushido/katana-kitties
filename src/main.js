@@ -1085,7 +1085,9 @@ class Game {
     this.ryuArt = await loadSpriteAtlas('/sprites/ryuuseki.png',
       { views: 1, rows: 1, clearPockets: true, maxAtlas: this.device.atlasMax })
       .catch(() => null);
-    this.summonScene = new SummonScene({ world: this.world, audio: this.audio });
+    this.summonScene = new SummonScene({
+      scene: this.scene, world: this.world, audio: this.audio,
+    });
     await this.summonScene.load();
     /* Bigger than any storm dragon's because he IS bigger — a mount radius
        scaled to a 13-unit animal is unreachable on a 26-unit one, since the
@@ -7011,7 +7013,7 @@ class Game {
          per pane instead of once for the whole screen. */
       this.maps[i].focusIndex = shared ? null : members[0];
       this.maps[i].focusOn = members;
-      this.maps[i].draw(this.players, this.dragons, this.kotodama, this.satan);
+      this.maps[i].draw(this.players, this.dragons, this.kotodama, this.satan, this.ryu);
     }
 
     this._drawMathBoard(panes, groups, W, H, mathUp);
