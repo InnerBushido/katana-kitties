@@ -117,22 +117,36 @@ the loader's own numbers and not a re-derivation):
 | --- | --- | --- | --- | --- |
 | ember_grid_v2 | 2752x1536 | 3840x1536 | 22.5 MB | `cell` floor — **off-limits** |
 | frost_grid | 2752x1536 | 3072x1536 | 18.0 MB | `cell` floor — **off-limits** |
-| dragon_fly | 2752x1536 | 2048x2048 | 16.0 MB | `maxAtlas` |
-| dragon_sheet | 2752x1536 | 2048x2048 | 16.0 MB | `maxAtlas` |
+| dragon_fly | 1376x768 | 1475x1475 | 8.3 MB | art-sized — **was 16.0** |
+| dragon_sheet | 1376x768 | 1469x1469 | 8.2 MB | art-sized — **was 16.0** |
 | ryuuseki | 1376x768 | 1386x1386 | 7.3 MB | art-sized |
 | 7 leaders | 1024x1024 ea. | ~1150² ea. | 32.4 MB | art-sized |
 | panda, griffin, satan | 1024x1024 ea. | ~1000² ea. | 13.9 MB | art-sized |
 | 10 critter sheets | 768x768 ea. | ~750² ea. | 19.9 MB | **pinned by checks** |
-| | | **total** | **147 MB** | (~196 MB with mipmaps) |
+| | | **total** | **131 MB** | (~175 MB with mipmaps) |
+
+**The two dragons lost half their VRAM for nothing, and that is worth
+understanding rather than copying.** Their masters were 2752x1536 and
+`packMetrics` was packing them at **scale 0.698** — 2582 source pixels squeezed
+into a 1802-pixel cell, thirty per cent of the art discarded on every device on
+every load, then rounded up to `maxAtlas` anyway. `contentScale` and
+`contentArea`, the only two numbers a dragon quad is sized from, are RATIOS and
+do not move under a uniform resize, so a master shrunk until it packs at 1.000
+draws at exactly the same size and fits inside `maxAtlas` on its own merits.
+`tools/sprite-bake.mjs` does it offline; the cell is now what the art is worth
+rather than what the cap allows. **`ryuuseki` was already this shape**, which is
+why it was the file that was pointed at as the size that works.
 
 `title_art.png` is a **CSS background**, not an atlas — it never becomes a GPU
-texture, so it is not in the total. It is still 5.5 MB of download and a
-2752x1536 decode the browser holds for the layer, which is worth revisiting and
-is not urgent.
+texture, so it is not in the total. It is `title_art.webp` now, 0.46 MB instead
+of 5.5, and still a full 2752x1536 decode the browser holds for the layer. The
+decode is the part that was never the download.
 
 Dropping `maxAtlas` from 2048 to 1024 on a touch device takes the total from
-**147 MB to 115 MB** (196 to 153 with mipmaps). That is the whole of the current
-saving: 22%, from one argument.
+**131 MB to 115 MB** (175 to 153 with mipmaps): 13%, from one argument. It used
+to be 22%, and the difference is not the knob getting weaker — it is that two
+sheets which were being *held down* by the cap now fit under it, so there is
+less for it to do.
 
 ---
 

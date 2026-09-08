@@ -1349,21 +1349,28 @@ export class ProfileScreen {
          press <b>MOUNT</b> to shop too</div>`
       : '';
 
-    /* THE SHELF IS ITS OWN SCROLLING BOX, and the header, the invitation and
-       the questions are outside it.
+    /* THE SHELF DOES NOT SCROLL. `#kd-body` around it does, and the header,
+       the invitation and the questions scroll with it.
 
-       WHY IT HAD TO STOP BEING A LIST THAT JUST GETS LONGER. There were eight
-       kinds and the panel held eight rows; there are nine now and there is no
-       reason to expect that to be the last one. A tenth row pushes the footer
-       — which is where the buttons are on a phone and where the key names are
-       everywhere else — off the bottom of the screen, and the girl driving the
-       stick has no way of knowing there is a row below the one she can see.
-       So the shelf keeps a fixed height of `--shelf-rows` rows and scrolls
-       inside it, `_paint` walks the moved cursor back into view, and the panel
-       around it stops changing size when the roster does.
+       IT USED TO BE ITS OWN BOX, capped at eight rows, and that was two
+       scrollers fighting: the wheel drove the inner one, the inner one ran out
+       after 133px, and the shelf's own bottom edge sat 250px below the panel
+       with the last rows inside it. Reported as "scrolling up and down in the
+       Kotodama dealer does not move the list", which is what a list with no
+       gesture that reaches it looks like.
 
-       IT SHOWS EIGHT. That is what the screen was built around and what the
-       CSS variable says; past that it scrolls. */
+       WHAT THE CAP WAS PROTECTING IS STILL PROTECTED, by the panel instead.
+       The footer carries the key names on a desktop and the actual buttons on
+       a phone, so a list growing past it takes away the only way out of the
+       screen on the device least able to spare it. `.kd-panel` is a flex
+       column at `max-height: 94vh` with the body at `flex: 1 1 auto;
+       min-height: 0` — the four-player rework already made it the right box —
+       so the body gets the room left after the title and the footer and never
+       a pixel more. On a window with the room, all ten rows are simply shown.
+
+       `_followCursors` walks a moved cursor back into view; `_markOverflow`
+       measures the box for the fade. Neither counts rows any more, because a
+       box sized by the window cannot be asked "is there more" by counting. */
     return `<div class="kd-shop">
       <div class="kd-purse">${purses} · buy <b>${K.price}</b> · sell <b>${K.sellPrice}</b></div>
       ${invite}

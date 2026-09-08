@@ -547,3 +547,26 @@ where the girls are *drawn*, averaged over whichever seats are filled.
 **A new music track** (`MUSIC.ryu`) plays while he is ridden: insen like the
 intro, but nearly twice the game tempo, an octave up, taiko every other step,
 and every pluck doubled a fifth above. Same synthesis, no new files.
+
+### He is on the minimap, and he was on no map at all
+
+Reported as *"Ryuuseki doesn't appear on Minimap at all, would be good to be
+able to locate them by using mini-map, since it is a unique dragon that can seat
+2 players"*, and no amount of reading `minimap.js` would have found the reason:
+**he is not a `Dragon` and has never been in `Game.dragons`**. The map drew
+every dragon, correctly, and he was not one of them. A whole class of bug —
+"the loop is right and the thing is not in the list" — and the tell is that the
+feature looks unwritten rather than broken.
+
+He gets a triangle a size up from a dragon's and his name at zoom, and **two
+seat pips**, which are the reason for drawing him at all. He is the only
+two-seat animal in the game and the seven-beam fan only exists with somebody in
+the second seat, so the useful question the map can answer is not *where is he*
+but *is there a seat free*: a pip filled in that rider's own colour, hollow when
+empty. Same idiom as the panda's owner pip.
+
+**He disappears from the map only when BOTH seats are taken, not when he is
+merely ridden.** A storm dragon with somebody on it is nobody's destination, so
+the map drops it — but a Ryuuseki with one girl aboard is exactly the thing the
+other one is trying to walk to.
+

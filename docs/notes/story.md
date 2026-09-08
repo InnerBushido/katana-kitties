@@ -238,3 +238,143 @@ The one scene it treats carefully is `shrine`: it clears `met` **for the nearest
 leader only**, because that flag is also what gates joining her clan, and
 clearing all six would silently undo the player's progress through the
 introductions.
+
+## The shrine scene is a two-shot
+
+It had one person in it for a long time and nobody noticed, because the person
+it had was the one talking. The camera sat **on** the axis between the leader
+and the kitten — behind the kitten, looking past her — so the kitten was
+directly under the lens: a blob at the bottom of the frame with the dialogue
+box drawn over her, while a grown-up cat talked earnestly at a camera with
+nobody in front of it.
+
+Reported as *"have the Clan Leader facing the player, but also facing towards
+the camera so they do not look like a 2D thin paper, and the player should be
+facing the Clan Leader when they are talking."* Two changes, and they only work
+together.
+
+**The kitten is stood on a mark.** She stopped wherever she stopped — behind
+the leader, off the edge of the stone, at the far rim of a ten-unit radius with
+her back turned — and no camera rule can make a composition out of an arbitrary
+arrangement of two bodies. `_stand` puts her `TALK_GAP` in front of the leader
+on the leader's own axis, facing her, and everything after that is a **fixed
+shot of a known pair**. The move is hidden by the half second of black the
+scene opens on, and she is left there when it ends: putting her back would be a
+second teleport out of a fade she *can* see, and the mark is the middle of the
+dais she was walking onto anyway, with the join ring under her feet.
+
+**Not while she is riding something.** Nothing is ticked during a scene, so
+moving a rider leaves the animal behind and sits her on thin air. `watch` never
+fires for a mounted kitten; the debug key does, and the shot degrades to
+framing her where she really is rather than breaking.
+
+**Setting `position` was not enough, and the failure was instructive.**
+`position` is where she IS; `group.position` is where she is DRAWN, and the
+thing that copies one to the other is `Player.update` — which is exactly what a
+scene does not run. The first version moved her logically and left the drawing
+standing wherever the dwell had expired, so the new camera framed a beautifully
+composed empty patch of dais. `camTarget` goes with it too, or the play camera
+whips across the island the moment the scene hands control back.
+
+**The camera swings off the axis.** About 66°, which is what puts both bodies
+across the frame instead of one behind the other. The leader keeps the
+turn-toward-you she always had — a bias on top of the billboard's camera-facing
+turn, capped at `FACE_BIAS_MAX` because past about a quarter turn there is no
+drawing for where she is looking and a billboard yawed that far shows its own
+edge. **That cap is the "thin paper" half of the report and it was already
+there**; what was missing was a shot from which you could see her turn at all.
+
+**The heights are the other half, and they are not in this file.** Both of them
+stand on the dais now, because every step of it is a walkable disc platform —
+see [world.md](world.md). Before that the leader was lifted onto the stone by a
+special case and the player was not, so a two-shot would have been a grown-up
+on a plinth talking down to a kitten buried to the ears.
+
+### Which way it swings is scored, not picked
+
+A shrine is a gate, and its two pillars stand at a fixed offset along **world
+x** whatever direction the leader faces. So which of the six shrines happens to
+put seven units of stone through somebody's face is an accident of where that
+island's centre is — Shadowtail drew one straight down the kitten and
+Thunderpaw did not, from identical code. And Pandapaw's shrine is in a bamboo
+*forest*, where the same accident is eight metres of cane.
+
+There is no framing rule that fixes that, because there is nothing about the
+pair of them to fix. The answer is to stand somewhere else. `_pickSwing` builds
+four candidate cameras (the shot, its mirror, and a tighter pair), projects both
+characters and every tall thing nearby from each, and takes the widest closest
+approach **on screen** — an angular gap, minus the obstacle's own half-width as
+an angle, because a post two units from the lens hides far more of the frame
+than the same post ten units away.
+
+Two things are deliberately *not* counted. Something **behind** a character is
+scenery: that is a gate they are standing in front of, which is the picture the
+shrine was built for. And a prop somebody has already knocked over is lying on
+the stone with the lens looking straight over it — without that, the shot would
+flinch at every barrel either girl has ever hit.
+
+Five of the six shrines keep the shot they were framed with. The sixth moves,
+which is the entire reason the function exists.
+
+**The threshold was 0.16 radians for one commit, and that was wrong.** Measured
+at a shrine, the whole spread between the best and worst candidate is about
+five degrees — so a nine-degree tax pinned every shrine to the default and the
+function may as well not have been written. It is 0.012 now: enough to resolve
+two candidates that are the same shot to the pixel, nowhere near enough to hold
+the camera on a post.
+
+### ...and the caption comes off the screen with the HUD
+
+`[E] SWEAR TO RUN WITH THUNDERPAW` hung across the top of the whole cutscene.
+`_updateClanPrompt` already refuses to draw it while a scene owns the screen —
+and, exactly like `_paintPaneEdges` before it, runs at the END of `_tickBody`,
+which every scene block returns before reaching. **A rule that has to be re-run
+to take effect cannot be the rule for a case where nothing runs**, so the
+clearing moved into `_hudDuringScenes` with the HUD, the pane frames and the
+pane cards.
+
+It had never shown before, because until the scene started standing the kitten
+ON the dais she was never inside a clan ring while a scene was up.
+
+## Patchfur is on screen at the ending
+
+Reported as *"Patchfur's sprite is not appearing in the final cutscene but you
+hear her voice"*, and it was not a missing sheet or a failed load. The finale is
+a `SummonScene`, and that class was written to show the **world** with the
+speaker in the little portrait box; the opening cutscene's stage character was
+simply never built for it. Four beats of a disembodied voice over an empty sky
+is the one place in the game where a kid could reasonably think something was
+broken.
+
+She stands on one quad in a group of its own, parked in front of the camera
+every frame — the same grammar `Cutscene._setStage` uses, and deliberately the
+same *single* quad rather than one billboard per speaker, because only one
+thing is ever on this stage. It is added to the **game's** scene, because
+`_renderView(summonScene.camera)` is what draws it; a `SummonScene` built
+without one is a scene where every other check passes and nothing is on screen.
+
+**The portrait and the stage are two decisions, not one flag.** Mr Satan keeps
+the box and only the box: his shots frame the town and then the arena — the
+places he is selling — and a flat drawing of him standing in front of them for
+three beats is furniture. `found` and `summon` show nobody either; they frame a
+place and a dragon, and the speaker is genuinely elsewhere. Patchfur's four
+beats are her talking to two kittens about what they did, with the wide shot
+behind her as the subject of the sentence rather than a thing being pointed at.
+
+**The framing is derived from the lens, not copied from the intro.** The
+opening cutscene composes its speaker 17 units in front of a 42° camera, 3.4
+right of centre and 5.2 down. The offsets are what the picture *is* and they are
+carried over unchanged — but 17 is not, because this scene's lens is 54° and
+the same distance frames a box a third bigger: she came out at 52% of the
+frame's height instead of 69%, which reads as a figure standing on the horizon
+rather than as the person talking to you. So the invariant is the **frame**:
+the intro composes against a box 13.05 world units tall, and `_parkStage` solves
+for whatever distance gives this camera the same one. Neither lens can be
+touched without the framing following it.
+
+**She arrives once, not four times.** `t` is beat-local and resets on every
+line; the opening cutscene slides its speaker in off that, which is right when
+every beat is a different character walking on. Four beats of the same calico
+sliding in from the right reads as a stutter, so the slide runs off a separate
+scene clock.
+

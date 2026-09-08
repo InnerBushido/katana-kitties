@@ -523,8 +523,8 @@ footer b { color: var(--text); }
   <div class="tw"><table>
     <tbody>
       <tr><th>Stack</th><td>Vite 8 + three.js 0.185. Static build — no backend, no database, no environment variables.</td></tr>
-      <tr><th>First load</th><td class="num">~35 MB across 39 files, then cached</td></tr>
-      <tr><th>In the repo</th><td class="num">42 MB sprites · 21 MB help clips · 6.4 MB voices · 20 MB trailer (opt-in)</td></tr>
+      <tr><th>First load</th><td class="num">~30 MB across 39 files, then cached</td></tr>
+      <tr><th>In the repo</th><td class="num">30 MB sprites · 21 MB help clips · 6.4 MB voices · 20 MB trailer (opt-in) · 14 MB art masters, not shipped</td></tr>
       <tr><th>The world</th><td class="num">216 props · 6 clans · 7 dragon balls · 8 Powerup Kotodama · 15 help clips · 62 voice lines</td></tr>
       <tr><th>Thresholds</th><td><b>80%</b> mischief opens the tournament. <b>100%</b> wakes the Kotodama and gets the ending.</td></tr>
     </tbody>
@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 2628 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 2753 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 354 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -979,10 +979,27 @@ git push origin alpha</code></pre>
         <td><code>help-blink-placeholder.mjs</code></td>
       </tr>
       <tr>
+        <td><b>Making the shipped art smaller than the art that made it</b></td>
+        <td>Builds <code>public/sprites/</code> out of <code>docs/art-masters/</code>, which is
+          where the full-size originals live <em>because</em> anything inside <code>public/</code>
+          is copied wholesale into the build and downloaded by every player. It bakes the
+          background key into the file with the depth bound <b>off</b> — something the loader can
+          never do, since depth is the only thing separating a sealed pocket between two wings
+          from a champion's eye, and what this has that the loader has not is a human looking at
+          the proof image. It also <b>resizes</b>, which is where nearly all of the saving is: the
+          two dragons were packing at scale 0.698 and throwing thirty per cent of their own art
+          away on every load, so a master shrunk to pack at 1.000 draws identically for half the
+          VRAM. 14 MB → 2.1 MB. The kids' painting cannot be resized — it is theirs, on the first
+          screen anybody sees — so it is <b>q92 WebP at full resolution</b> instead: 5.5 MB →
+          0.46 MB, and the only lossy image in the game.</td>
+        <td><code>sprite-bake.mjs</code></td>
+      </tr>
+      <tr>
         <td><b>Steam shelf art &amp; icons</b></td>
-        <td>Crops and composites the title art into all six sizes. <b>Nothing here is a new
-          drawing</b> — a prompt to an image model would put art on the box that is nowhere inside
-          the game.</td>
+        <td>Crops and composites the title art into all six sizes — from the <b>master</b>, because
+          every crop is a pixel coordinate measured on that file and the shipped copy is now WebP.
+          <b>Nothing here is a new drawing</b> — a prompt to an image model would put art on the
+          box that is nowhere inside the game.</td>
         <td><code>steam-art.mjs</code>, <code>steam-capsules.sh</code></td>
       </tr>
     </tbody>
@@ -1084,7 +1101,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 2628 assertions and why almost none of them are about
+      is why <code>world-check</code> is 2753 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,

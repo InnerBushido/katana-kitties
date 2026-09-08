@@ -285,6 +285,66 @@ first thing that happens with it. → [input.md](docs/notes/input.md)
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Six reported from play are fixed and not yet played back.** One branch,
+`mixed/lighter-art-clearer-scenes`. Two are about weight, four are about things
+that were plainly not working.
+
+- **14MB came off the first load, and the dragons got sharper doing it.**
+  `packMetrics` had both dragons packing at scale **0.698** — thirty per cent of
+  their own art discarded on every device on every load — and `contentScale` and
+  `contentArea` are ratios that do not move under a uniform resize, so a master
+  shrunk to pack at 1.000 draws identically for half the VRAM. `title_art` could
+  not be resized (it is the kids' painting, full bleed, on the first screen
+  anybody sees), so it is q92 WebP at full resolution: 5.5MB → 0.46MB, and the
+  only lossy image in the game. New tool, `tools/sprite-bake.mjs`; the masters
+  live in `docs/art-masters/`.
+  → [art.md](docs/notes/art.md), [hosting.md](docs/notes/hosting.md),
+  [mobile.md](docs/notes/mobile.md)
+- **The white between the wings is gone**, which no runtime rule could have
+  done: `clearSealedPockets` is bounded by DEPTH because size and purity alone
+  ate Mr. Satan's teeth, and both dragons had a pocket far past that bound.
+  The bake turns the bound off per file and writes a proof image over a magenta
+  checker, because what the loader can never have is **a human who looks**.
+  New art from here on is generated with a transparent background.
+- **The shrine dais is stone you stand on.** Reported as *"the player is in the
+  ground on the shrine, like there is no collider"* — it was drawn and nothing
+  else, and the leader was on top of it only because `leaderSpot` added the
+  height by hand. Every step is a walkable disc platform now, which needed
+  round decks, a per-platform climb tolerance, and `heightAt` learning that a
+  platform sits ON an island rather than replacing it.
+  → [world.md](docs/notes/world.md)
+- **...and the shrine scene has two people in it.** The camera sat on the axis
+  between the leader and the kitten, so the kitten was a blob under the lens
+  with the dialogue box over her and the leader talked at nobody. She is stood
+  on a mark in front of the leader, the camera swings ~66° off the axis, and
+  **which way it swings is scored rather than picked** — a shrine is a gate
+  whose posts stand at a fixed offset in world x, so which of the six puts stone
+  through a face is an accident of geography.
+  → [story.md](docs/notes/story.md)
+- **The dealer's list scrolls.** It was two scrollers fighting: the shelf capped
+  itself at eight rows inside a `#kd-body` that scrolls too, so the last rows
+  lived in a box whose own bottom was 250px below the panel and no gesture
+  reached them. → [endgame.md](docs/notes/endgame.md)
+- **Ryuuseki is on the minimap**, with two seat pips saying whether there is a
+  seat free. He was on no map at all for a reason no amount of reading
+  `minimap.js` would find: he is not a `Dragon` and has never been in
+  `Game.dragons`. → [dragon-hunt.md](docs/notes/dragon-hunt.md)
+- **Patchfur is on screen at her own ending.** The finale is a `SummonScene`,
+  which shows the world with the speaker in a portrait box — so it was four
+  beats of a disembodied voice over an empty sky. She stands where she stood in
+  the opening, with the intro's composition carried over and only the distance
+  re-solved, because that lens is 42° and this one is 54°.
+
+125 new checks (2628 → 2753). Two things from that list are **still open** and
+want Richard's answer: the maths readout showing on only the lead worn orb (it
+is deliberate — eight at once is an illegible swarm — but it also hides the kana
+rain, which is probably what looked broken), and the *rest* of the Patchfur
+ending: the Bugenhagen-style magical maths lesson, extra emotes, and any script
+or voice rewrite, which spends credits and needs the current audio backed up
+first.
+
+---
+
 **The panda fights now, and the cub heals you.** Branch
 `feature/panda-in-the-arena`, and the biggest single addition since the Cross
 Slash. On `alpha`, not played back yet.
