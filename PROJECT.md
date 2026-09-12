@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 3085 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 3253 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -240,6 +240,15 @@ tappable**, so the whole debug set works on a phone.
 | `-` `=` `0` | scene viewer: previous · next · play this scene |
 | **`\`** | **force-spawn** — ENTER then seats a third and fourth kitten on the keyboard alone |
 | `R` `U` | step WASD · step the arrows round the kittens sharing that set — her, her sister, then **both at once** |
+| *(no key)* | **wipe the RECORD BOARD** — every league, on this device |
+| *(no key)* | **wipe the SAVED GAMES** — all five autosave slots |
+
+The last two rows are **panel-only and have no shortcut on purpose**: they are
+the two things in the game that survive closing the tab, and a keystroke that
+deletes either is exactly what non-negotiable 7 is about. Both ask first and
+both put the count in the YES button. There is no other way to clear the record
+board from inside the game — the only alternative is the browser console:
+`Object.keys(localStorage).filter(k => k.startsWith('kk.arena.board')).forEach(k => localStorage.removeItem(k))`.
 
 ### Testing four players by yourself
 
@@ -515,7 +524,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 3085
+the check that would have caught it.** That is why `world-check` is 3253
 assertions.
 
 **And a change a new developer would need to know about gets a line in this
@@ -600,13 +609,18 @@ rather than the first.
 
 ### The backend that should come first anyway
 
-**The game currently saves nothing between sessions** — only the record board,
-the controller calibration and the stick setting survive a reload, all in
-`localStorage`, and the Help panel apologises for it in a warning box. Accounts
-and saved progress are a much easier project than netcode, independently useful,
-and the half players would actually notice. `systems/leaderboard.js` already has
-the shape; pointing it at a real table is a small change behind the same
-interface. Then national boards (and the moderation question a public board with
+**The game now saves itself, but only into this browser.**
+`systems/savegame.js` writes the afternoon down every 30 seconds once a run is
+5 minutes old, keeps the last five, and loads one from the pause menu
+(**LOAD A SAVED GAME**); the record board, the controller calibration and the
+stick setting survive a reload the same way. All of it is `localStorage`, so
+none of it follows a child to a phone, to a second machine, or past a cleared
+cache — which is the half of the problem an account would solve and the reason
+this is still on the list. Accounts and hosted progress are a much easier
+project than netcode, independently useful, and the half players would actually
+notice. `systems/leaderboard.js` and `systems/savegame.js` both already have the
+shape; pointing them at a real table is a small change behind the same
+interfaces. Then national boards (and the moderation question a public board with
 kid-entered names always brings). **Then**, if it still looks worth it, netcode —
 by which point there is an identity system to hang a session on.
 

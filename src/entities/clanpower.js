@@ -118,8 +118,31 @@ export const DBREATH = tune('DBREATH', {
   /** Seconds the flame is on screen — doubled from the 0.5 it shipped at, and
    *  the half of the move that KEPT the doubling. It is a live hitbox for all
    *  of it now: the cone sweeps with her facing and catches anybody it crosses,
-   *  once each. See `Player._sweepArenaBreath`. */
+   *  once per `tick` each. See `Player._sweepArenaBreath`. */
   fire: 1,
+  /**
+   * Seconds a kitten the flame has already caught is safe from it, before the
+   * same flame may catch her again.
+   *
+   * IT USED TO BE "ONCE, FOR EVER", which was the right answer to the wrong
+   * question. The tally exists so a cone cannot deal damage at the frame rate
+   * (see `BreathTally`), and "never again" is only the crudest way to get
+   * that; what it actually bought was a flame you could stand inside for a
+   * whole second having already paid for it. Asked for directly: "the shield
+   * takes damage over time, so for every 0.5s the flame is on it, the shield
+   * takes the equivalent of 1 swing hit on it, with the first hit happening as
+   * soon as it collides. If the shield is broken and the player is still being
+   * hit by it after 0.5s, then the player gets hit."
+   *
+   * SO THE NUMBERS SAY THE WHOLE RULE, AND NONE OF IT IS WRITTEN TWICE.
+   * `fire` 1s at `tick` 0.5 is two bites: `WARD.hits` is 2, so a bubble is
+   * absorbed on the first and smashed on the second, and a kitten standing in
+   * it without one takes the hit on the first and is still invulnerable
+   * (`COMBAT.invuln` 0.55 > 0.5) when the second arrives. Lengthen the flame on
+   * the balance page and she burns; that is the move getting stronger, plainly,
+   * rather than a second rule nobody can see.
+   */
+  tick: 0.5,
   /** How far, and how wide. Both well under a dragon's; see above. */
   range: 8.5,
   spread: 0.42,
@@ -162,6 +185,60 @@ export const DBREATH = tune('DBREATH', {
  * on running, reaching and jumping, and those already apply in the ring because
  * nothing about them ever asked where she was standing.
  */
+/**
+ * Who a live flame has already bitten, and until when.
+ *
+ * WHAT IT IS FOR. `Game.strikePlayers` is handed one of these by 息 Dragon
+ * Breath and by nothing else, and it asks it two questions: `has(body)` before
+ * a blow and `add(body)` after one that landed. Everything else in the game
+ * swings once and is done; a cone is a hitbox for a whole second and would
+ * otherwise deal damage in proportion to how well the machine was running —
+ * sixty bites a second on a fast one, thirty on a slow one. That is the bug
+ * this object exists to make impossible.
+ *
+ * WHY IT IS NOT A `Set`. It was, and "caught once, safe for ever" is a rule
+ * that reads correctly and plays wrong: a kitten who walked into the first
+ * frame of the cone had paid for the entire breath and could stand in it. A
+ * stamp per body says the same thing about the frame rate — the gap is in
+ * SECONDS, so the number of bites is the same on any machine — while letting
+ * a flame held on somebody go on costing her, which is what a flame is.
+ *
+ * PER BODY, NOT ONE CLOCK FOR THE WHOLE CONE. A sister caught 0.4s in must get
+ * her own half second, not the 0.1 left of somebody else's; and a panda is a
+ * body of its own here exactly as it is in the gate.
+ */
+export class BreathTally {
+  /** @param {number} gap seconds before the same body may be bitten again */
+  constructor(gap) {
+    this.gap = Math.max(0, Number.isFinite(gap) ? gap : 0);
+    /** Seconds since the flame left her. Advanced by the owner, never by a
+     *  clock of its own — a tally that read the wall would keep running while
+     *  the game was paused behind a scene. */
+    this.t = 0;
+    this.until = new Map();
+    this.count = new Map();
+  }
+
+  step(dt) { this.t += dt; }
+
+  has(body) {
+    const until = this.until.get(body);
+    return until !== undefined && this.t < until;
+  }
+
+  add(body) {
+    this.until.set(body, this.t + this.gap);
+    this.count.set(body, (this.count.get(body) ?? 0) + 1);
+  }
+
+  /** How many separate bites this flame has taken out of one body. Read by
+   *  nothing in the game and by `world-check`, which is the point: the rule
+   *  above is about a count over time, and a count over time is the thing that
+   *  has to be asserted — "it did not hurt her twice" passes just as happily
+   *  on a cone that stopped working. */
+  bites(body) { return this.count.get(body) ?? 0; }
+}
+
 export const ARENA_POWERS = {
   steal: { id: 'steal', kana: '盗', name: 'Steal Mischief', cool: STEAL.cool },
   dbreath: { id: 'dbreath', kana: '息', name: 'Dragon Breath', cool: DBREATH.cool },

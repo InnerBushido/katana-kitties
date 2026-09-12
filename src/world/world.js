@@ -218,6 +218,31 @@ export class World {
      *  at whoever is in there. */
     this.grottos = [];
     /** Road corridors: no grass, flowers or rocks grow through paving. */
+    /**
+     * The built things that are NOT solids and NOT props — the torii and the
+     * stone lanterns.
+     *
+     * EVERY OTHER LANDMARK IN THE TOWN IS ALREADY FINDABLE AND THESE TWO WERE
+     * NOT. A house is in `solids` because you bump into it, a cane is in
+     * `props` because you can knock it over, a shrine is in `clanHalls`
+     * because you swear at it. A torii you walk straight through and a stone
+     * lantern is decor, so both of them were merged into one anonymous mesh
+     * at build time and there was no way, afterwards, to ask the world where
+     * any of them were.
+     *
+     * WHICH MADE THEM UNDRAWABLE AT THE ONE MOMENT THEY MATTER. The ending
+     * builds a model of the archipelago on the Dojo floor out of what the
+     * world reports about itself (`systems/finaleshow.js`), and a model of
+     * this town with no red gate at the head of the street and no lanterns
+     * down it is a model of somewhere else. Eighth non-negotiable: it has to
+     * be measured, and the only honest place to measure it is where the thing
+     * is actually built.
+     *
+     * `{ kind: 'torii' | 'lantern', x, z, s }` — s is the build scale, which
+     * is what anything drawing them needs and is the one number that is not
+     * recoverable from a position.
+     */
+    this.landmarks = [];
     this.roadMask = [];
     this.mischiefTotal = 0;
     this.time = 0;
@@ -382,9 +407,11 @@ export class World {
         if (this.solids.some((s) => Math.hypot(x - s.x, z - s.z) < s.r + 2.5)) continue;
         // No decorative bamboo anywhere: if it looks like bamboo it must cut,
         // so every cane in the game is a prop. Trees and lanterns only here.
-        const parts = i % 6 === 0
+        const lit = i % 6 === 0;
+        const parts = lit
           ? buildLantern(0.8)
           : buildTree(i * 7 + k, 0.8 + valueNoise(i, k, 3) * 0.5, leaf);
+        if (lit) this.landmarks.push({ kind: 'lantern', x, z, s: 0.8 });
         transformParts(parts, x, g, z, valueNoise(i, k, 9) * 6);
         decor.push(...parts);
         this.solids.push({ x, z, r: isl.biome === 'bamboo' ? 0.7 : 0.9 });
@@ -1197,6 +1224,7 @@ export class World {
         const bx = h.x + Math.cos(h.ry) * sx * 7;
         const bz = h.z + Math.sin(h.ry) * sx * 7 + 7;
         put(buildLantern(1.1), bx, bz, 0, 1, 0, decor);
+        this.landmarks.push({ kind: 'lantern', x: bx, z: bz, s: 1.1 });
       }
     });
 
@@ -1223,12 +1251,17 @@ export class World {
     put(buildTorii(1.6), 0, -46, 0);
     this.solids.push({ x: -5.6, z: -46, r: 0.9 }, { x: 5.6, z: -46, r: 0.9 });
     put(buildTorii(0.8), 0, 62, 0);
+    this.landmarks.push(
+      { kind: 'torii', x: 0, z: -46, s: 1.6 },
+      { kind: 'torii', x: 0, z: 62, s: 0.8 }
+    );
 
     // --- stone lanterns lining the approach ---
     for (let i = 0; i < 9; i++) {
       const z = -40 + i * 11;
       for (const sx of [-1, 1]) {
         put(buildLantern(0.85), sx * 9.5, z, 0, 1, 0, decor);
+        this.landmarks.push({ kind: 'lantern', x: sx * 9.5, z, s: 0.85 });
       }
     }
 
@@ -1311,6 +1344,10 @@ export class World {
     // A little torii at each grove mouth so they read as destinations.
     put(buildTorii(0.7), 46, 44, Math.PI / 2, 1, 0, decor);
     put(buildTorii(0.7), -72, -47, 0, 1, 0, decor);
+    this.landmarks.push(
+      { kind: 'torii', x: 46, z: 44, s: 0.7 },
+      { kind: 'torii', x: -72, z: -47, s: 0.7 }
+    );
 
     // --- cherry trees scattered over the whole island ---
     let planted = 0;

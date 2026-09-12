@@ -172,23 +172,85 @@ export const SCRIPTS = {
      same one she uses for the intro and for `found` — a narrator who is
      ElevenLabs for seven lines and synthesised blips for the ending would make
      the ending sound like the part nobody finished. `dur` is still authored as
-     a floor; `load()` grows it to the real clip length plus TAIL. */
+     a floor; `load()` grows it to the real clip length plus TAIL.
+
+     `runs` IS WHERE SHE ACTUALLY SPEAKS, MEASURED OFF THE RECORDING. Each row
+     is one unbroken run of speech: the first few words of it, the second it
+     starts and the second it ends, read off the clip with
+     `ffmpeg -af silencedetect=noise=-32dB:d=0.09` and nothing typed by ear.
+
+     IT IS HERE BECAUSE COUNTING CHARACTERS IS A LIE, and the ending was cut on
+     that lie for its whole first version. `say()` used to divide the index of
+     a word by the length of the line, which assumes a narrator who speaks at
+     one rate and never breathes. Patchfur does neither. Measured against the
+     clips: "You crossed" sits at character fraction 0.568 of its line and is
+     spoken at 7.94s of a 15.68s recording — 0.51 — so the cut arrived a full
+     second after the words, and the padding below put another second on top of
+     that. "It is as if this whole section is delayed by almost 2 seconds", and
+     it was: 1.8s, measured, on that one cue.
+
+     SO A WORD IS FOUND BY INTERPOLATING INSIDE ITS OWN RUN. Within a run she
+     really does speak at a steady rate — that is what a run IS — so characters
+     are a good ruler over two seconds of continuous speech and a terrible one
+     over a sentence with three pauses in it. Every pause in every clip has a
+     row here, which is what makes the ruler short enough to be honest.
+
+     RE-RECORD A LINE AND THESE GO STALE. They degrade rather than vanish: with
+     no `runs` at all `say()` falls straight back to the old uniform reading,
+     which is roughly right and never NaN. `tools/world-check.mjs` pins every
+     phrase in here against the text it claims to be quoting, so a typo in one
+     of them is a failed check rather than a cut in the wrong place. */
   finale: [
     {
       id: 'done1', who: 'Patchfur', sub: 'Calico', voice: '/voice/done1.mp3', dur: 7.5,
       text: 'Every barrel. Every lantern. Every last cane of bamboo. There is nothing left standing on any of these islands that you two have not put your paws through.',
+      clip: 10.16,
+      runs: [
+        ['Every barrel', 0, 1.00],
+        ['Every lantern', 1.19, 2.14],
+        ['Every last cane', 2.41, 4.35],
+        ['There is nothing left', 4.92, 10.16],
+      ],
     },
     {
       id: 'done2', who: 'Patchfur', sub: 'Calico', voice: '/voice/done2.mp3', dur: 8.5,
       text: 'The elders called it mischief. I think it is simpler than that. A tidy town is only one way for a town to be. Every other way is the rest of them — and you have been counting your way through the rest of them all afternoon.',
+      clip: 15.28,
+      runs: [
+        ['The elders', 0, 1.52],
+        ['I think it is simpler', 2.39, 4.01],
+        ['A tidy town', 4.85, 7.92],
+        ['Every other way', 8.27, 10.33],
+        ['and you have been', 10.97, 13.89],
+        ['all afternoon', 14.05, 15.28],
+      ],
     },
     {
       id: 'done3', who: 'Patchfur', sub: 'Calico', voice: '/voice/done3.mp3', dur: 8.5,
       text: 'The islands did not drift apart because something broke. They drifted because nobody was crossing between them any more. You crossed. An angle, a circle, and the nerve to jump — that is all a bridge has ever been.',
+      clip: 15.68,
+      runs: [
+        ['The islands did not', 0, 3.06],
+        ['They drifted', 3.83, 7.00],
+        ['You crossed', 7.94, 8.86],
+        ['An angle', 9.61, 10.28],
+        ['a circle', 10.49, 11.11],
+        ['and the nerve to jump', 11.45, 12.87],
+        ['that is all a bridge', 13.70, 15.68],
+      ],
     },
     {
       id: 'done4', who: 'Patchfur', sub: 'Calico', voice: '/voice/done4.mp3', dur: 9.0,
       text: 'So stay. Fly. Knock it all down again tomorrow. And when you would rather test what you have learned on each other than on the furniture — the arena is open. Go and find out which of you is the strongest fighter on this world.',
+      clip: 15.60,
+      runs: [
+        ['So stay', 0, 0.81],
+        ['Fly', 1.22, 1.85],
+        ['Knock it all', 2.30, 4.13],
+        ['And when you', 4.75, 8.77],
+        ['the arena is open', 9.38, 10.61],
+        ['Go and find out', 11.50, 15.60],
+      ],
     },
   ],
 
@@ -258,14 +320,44 @@ export const SCRIPTS = {
    holds. Inside a shot the camera still turns and pushes in on its own clock,
    so no row here is a locked-off frame.
 
-   `from` IS MEASURED OFF THE LINE, NOT TYPED. `say(beat, 'lantern')` is where
-   that word falls in the sentence being spoken, as a fraction of it — so a shot
-   meant to land on "bamboo" lands on "bamboo", and re-timing a line by
-   rewriting it carries the cut along with the word instead of silently leaving
-   it behind. It is not sample-accurate and does not need to be: the typewriter
-   under the subtitle is paced the same way off the same text, so the cut and
-   the word on screen agree with each other, and that agreement is the thing
-   anybody watching can actually see.
+   `from` IS MEASURED OFF THE LINE AND OFF THE RECORDING, NOT TYPED.
+   `say(beat, 'lantern')` is where that word is SPOKEN, as a fraction of the
+   clip — so a shot meant to land on "bamboo" lands on "bamboo", and re-timing
+   a line by rewriting it carries the cut along with the word instead of
+   silently leaving it behind. See `say`, and `beat.runs`, for why it is a
+   fraction of the recording rather than of the text: counting characters put
+   every cut in the second half of a line up to 1.8 seconds late.
+
+   `from` IS A FRACTION OF THE SPOKEN CLIP AND `_from` PUTS IT ON THE BEAT.
+   A beat is `voiceDur + TAIL` long — a second and a half of held frame after
+   she stops talking, so the last words are not cut off by the next line
+   arriving — and a fraction of THAT is not a fraction of the speech. It is the
+   other half of the "delayed by almost two seconds" report, and it is worth a
+   number: `TAIL` is 1.5s on a 15.3s clip, so a cue written at 0.65 of the line
+   fired 0.98 seconds after the word it names. Everything in this table is
+   written against the speech; `_from` is the one place that knows about the
+   padding.
+
+   `off` IS SECONDS, AND IT IS FOR TASTE AND NOT FOR TIMING. A cut that wants
+   to land a little before or after the word it is cut to — the shove that
+   Richard asked to come "about a second sooner" — says so in seconds here,
+   rather than by having its `say()` quietly point at a different word. It
+   survives a re-recording because it is relative to a cue that re-measures
+   itself.
+
+   `lin` IS A CAMERA THAT DOES NOT EASE. Every shot in here runs on
+   `1 - (1 - s)²`, which arrives fast and settles — right for a cut that has to
+   establish something in under a second, and wrong for a shot whose whole job
+   is to be a steady move. "It should do a slower, smoother pan rather than a
+   bigger movement with an ease-out, should be more linear movement."
+
+   `keep` IS A CUE WITH NO CUT. A row with it fires its cue at the second it is
+   written to and leaves the camera exactly where the previous row put it,
+   still running that row's own clock — so the model of the world can begin
+   fading in while the Dojo shot is still pushing in, and Mr Satan can raise his
+   arms without the frame jumping. Without it, cueing anything mid-shot meant
+   adding a row, and a row restarts the easing at zero: a duplicate of the shot
+   it interrupts still reads as a jump, because the push-in snaps back.
 
    `at` IS A NAME, RESOLVED AGAINST THE WORLD at `start()` — never a literal.
    `dojoCentre`, `bridge` and `arenaRing` are published by `world/world.js` from
@@ -306,42 +398,100 @@ export const SCRIPTS = {
    be built is a no-op, which is why the arena shot is safe on a world where
    the tournament has not opened yet.
 
-   `fade` IS A CUT THROUGH BLACK, and there are exactly three: the crash to the
-   Dojo, the Dojo to the real bridge, and the bridge to the arena. Each of those
+   `fade` IS A CUT THROUGH BLACK, and there are exactly four: the two halves of
+   the town square putting itself back together, the crash to the Dojo, the
+   Dojo to the real bridge, and the bridge to the arena. Each of the last three
    is a jump of hundreds of units to a place the previous shot could not see,
-   which is the one case where a straight cut reads as a glitch. Everything else
-   cuts hard on purpose. The black is DERIVED from this table rather than
-   triggered — see `_cutBlack` — so it darkens on the way in as well as out.
+   which is the one case where a straight cut reads as a glitch; the first is
+   the one place the ending SKIPS time rather than distance, and it is a cut
+   through black for the same reason a film cuts through black — what happens
+   behind it is a stagehand's job. Everything else cuts hard on purpose. The
+   black is DERIVED from this table rather than triggered — see `_cutBlack` —
+   so it darkens on the way in as well as out.
 
-   `stage` IS WHETHER PATCHFUR IS IN THE PICTURE, AND IT IS TRUE EXACTLY ONCE.
+   `fade` IS ALSO A LENGTH. `true` is the old blink, `CUT_FADE` end to end; a
+   number is that many seconds of black, half of it either side of the cut. A
+   blink is right for a jump the audience is not meant to dwell on and too fast
+   for one that is covering a scene change.
+
+   `dark` IS WHERE THE WAY DOWN STARTS, and it is a fraction of the line like
+   `from` is. "At the end of 'I think it is simpler than that.' is where we
+   should have the camera fade out. Then on the start of the words 'A tidy
+   town', we can have the camera fade in." That is not a symmetrical blink —
+   it is a long fade out on the end of one clause and a quick fade in on the
+   start of another — and the only honest way to write it is as the two words
+   it is pinned to. Left out, the fade is symmetrical and nothing changes.
+
+   `stage` IS WHETHER PATCHFUR IS IN THE PICTURE, AND IT IS TRUE TWICE.
    She is a foreground cut-out nine units tall; parked in front of a close shot
    of a bridge she IS the bridge. The five-shot version had her walking on and
    off between subjects, which worked when a shot was a whole line long — the
    shortest one here is under a second, and a nine-foot calico sliding in and
    straight back out inside a second reads as a rendering fault rather than as
    a person. So she keeps the PORTRAIT BOX for the whole ending, which is the
-   same argument Mr Satan's scenes already make, and takes the stage only for
-   the last shot: the one line that is her talking to the two of them rather
-   than pointing at something.
+   same argument Mr Satan's scenes already make.
+
+   THE TWO SHOTS SHE STANDS UP FOR ARE BOTH LONGER THAN FOUR SECONDS, which is
+   the rule that argument actually produces — it was never "once", it was "not
+   inside a second". They are the slow push toward the heap that opens her
+   second line ("we can have Patchfur appear temporarily before disappearing
+   for the next part") and the last shot of all, the one line that is her
+   talking to the two of them rather than pointing at something. Both end on a
+   cut she is walked out of under cover of: the first into black, the last into
+   the credits.
 
    @see docs/notes/story.md */
 
 /**
- * Where a word falls in its own line, 0..1.
+ * Where a word is SPOKEN in its own line, as a fraction of the recording.
  *
- * READ OFF THE SCRIPT, so the shot list cannot drift away from the text it is
- * cut to. `tail` puts the cut at the END of the phrase instead of its start,
- * which is what a beat wants when the thing it is waiting for is the clause
- * finishing rather than beginning — the slam lands after "the rest of them",
- * not on "rest". A phrase that is not in the line comes back as 0 rather than
- * a negative: a cut in the wrong place is a blemish and a camera at a negative
- * fraction of a beat is a black screen.
+ * READ OFF THE SCRIPT AND OFF THE RECORDING, so the shot list cannot drift
+ * away from either the text it is cut to or the performance of it. `tail` puts
+ * the cut at the END of the phrase instead of its start, which is what a beat
+ * wants when the thing it is waiting for is the clause finishing rather than
+ * beginning — the slam lands after "the rest of them", not on "rest". A phrase
+ * that is not in the line comes back as 0 rather than a negative: a cut in the
+ * wrong place is a blemish and a camera at a negative fraction of a beat is a
+ * black screen.
+ *
+ * CHARACTERS ARE THE RULER AND THE PAUSES ARE THE MARKS ON IT. Dividing the
+ * index of a word by the length of the line — which is what this used to do —
+ * assumes a narrator who never breathes, and every pause in a clip pushes
+ * every later cut earlier than the words. Measured, that error reached 1.8
+ * seconds on "You crossed", which is the whole of the "this section is delayed
+ * by almost two seconds" report. So the line is cut into the RUNS of speech
+ * the recording actually contains (`beat.runs`, measured with ffmpeg) and a
+ * character index is interpolated inside its own run, where a steady rate is
+ * a fair assumption because an unbroken run of speech is exactly the thing
+ * that has one.
+ *
+ * A BEAT WITH NO `runs` GETS THE OLD UNIFORM READING. Ninth non-negotiable: a
+ * line that has not been measured yet must still be cuttable, roughly, rather
+ * than throwing the whole ending at 0.
  */
-const say = (beat, phrase, tail = false) => {
-  const t = SCRIPTS.finale[beat]?.text ?? '';
+export const say = (beat, phrase, tail = false) => {
+  const b = SCRIPTS.finale[beat];
+  const t = b?.text ?? '';
   const i = t.indexOf(phrase);
   if (i < 0) return 0;
-  return Math.min(0.96, (i + (tail ? phrase.length : 0)) / t.length);
+  const c = i + (tail ? phrase.length : 0);
+  const runs = b?.runs;
+  const clip = b?.clip;
+  if (!runs?.length || !(clip > 0)) return Math.min(0.96, c / Math.max(1, t.length));
+  /* THE RUN THIS CHARACTER IS IN — the last one that starts at or before it.
+     A character in a PAUSE (past the end of its run's text) belongs to the run
+     before it and lands on that run's end, which is where the pause begins:
+     `say(1, '...simpler than that.', true)` is the moment she stops talking,
+     which is exactly what a fade-out wants. */
+  let r = 0;
+  for (let j = 1; j < runs.length; j++) {
+    if (t.indexOf(runs[j][0]) <= c) r = j; else break;
+  }
+  const c0 = t.indexOf(runs[r][0]);
+  const c1 = r + 1 < runs.length ? t.indexOf(runs[r + 1][0]) : t.length;
+  const [, t0, t1] = runs[r];
+  const f = Math.min(1, Math.max(0, (c - c0) / Math.max(1, c1 - c0)));
+  return Math.min(0.999, Math.max(0, (t0 + f * (t1 - t0)) / clip));
 };
 
 export const FINALE_SHOTS = [
@@ -381,53 +531,130 @@ export const FINALE_SHOTS = [
     beat: 0, from: say(0, 'bamboo'), at: 'bamboo', a: 0, dist: 14, high: 6, lift: 0.13,
     turn: 0.45, in: 0.1, clear: true, stage: false, cue: 'name-bamboo',
   },
-  /* "...there is nothing left standing on any of these islands." Up and off the
-     three of them, over the wreckage — and then out again, far enough that the
-     archipelago is the frame. "Zoom out to show all the area and all the
-     knocked over mischief, and also zoom out far enough at the end of the
-     paragraph that we can see all or most of the islands in the shot." */
+  /* "...there is nothing left standing..." — ONE STEADY MOVE ACROSS THE
+     WRECKAGE, and the only shot in the ending that does not ease.
+
+     IT WAS A PULL-BACK AND THAT WAS THE WRONG SHAPE. "It should do a slower,
+     smoother pan rather than a bigger movement with an ease-out, should be
+     more linear movement and should just pan from left to right, showing the
+     destruction on the island." An eased half-turn with `in: -0.25` on top of
+     it does two things at once — it swings AND it retreats — and the eye reads
+     the retreat, so the wreckage it is meant to be showing slides away instead
+     of past. What is left is a truck: `lin`, a quarter of a turn at a fixed
+     distance, and barely any dolly at all, which at 46 units is the camera
+     moving about twelve units sideways over the wreck of a town.
+
+     LOWER, TOO. 25 units up was looking down ON the heap; 21 puts the ruined
+     roofline across the frame, which is what "showing the destruction" means
+     when the destruction is lying on the ground. */
   {
-    beat: 0, from: say(0, 'nothing left'), at: 'heap', a: 1.0, dist: 44, high: 25, turn: 0.5, in: -0.25,
-    stage: false, cue: null,
+    beat: 0, from: say(0, 'There is nothing left'), at: 'heap', a: 0.86, dist: 46, high: 21,
+    lift: 0.12, turn: 0.26, in: -0.04, lin: true, stage: false, cue: null,
   },
+  /* ...AND OUT, far enough that the archipelago is the frame. "Zoom out to show
+     all the area and all the knocked over mischief, and also zoom out far
+     enough at the end of the paragraph that we can see all or most of the
+     islands in the shot."
+
+     ON "ON ANY", NOT ON "ISLANDS". "It needs to show that part like a second
+     earlier, around when the 'on any' words are spoken." Measured off the
+     clip, those two words are 1.05 seconds apart in the reading — "on any of
+     these islands" is a slow phrase — so this is exactly the second that was
+     asked for, taken off the line rather than off a stopwatch. */
   {
-    beat: 0, from: say(0, 'islands'), at: 'wide', a: 1.4, dist: 1.15, high: 0.66, turn: 0.3, in: -0.18,
+    beat: 0, from: say(0, 'on any'), at: 'wide', a: 1.4, dist: 1.15, high: 0.66, turn: 0.3, in: -0.18,
     stage: false, cue: null,
   },
 
   /* --- LINE 2: "The elders called it mischief..." ------------------------
-     "Before the line is spoken, we can just have the camera panning around and
-     then ending by focusing on the area." So it opens still drifting over the
-     world the last shot pulled out to, and comes down on ONE place. */
+     A SLOW PUSH TOWARD THE PLACE THE NEXT SHOT IS ALREADY IN. "For the 'The
+     elders called it mischief' part, we can have the camera zoom in slowly
+     towards the new section that will be in the next scene... For this zoom in
+     part we can have Patchfur appear temporarily before disappearing for the
+     next part."
+
+     SO THE CUT AT THE OTHER END IS NOT A CUT AT ALL. It used to open wide,
+     drift, and then hard-cut down onto the heap; now it is one four-and-a-half
+     second move onto the heap from sixty units out, and the "cut" is the black
+     it fades into. Nothing about the framing changes across it, which is the
+     whole point — behind the black the town stands itself back up, and the
+     audience is looking at the same square before and after.
+
+     SHE IS IN IT. Four and a half seconds is long enough for a foreground
+     figure to arrive, be a person, and go; it is the length the argument
+     against her walking on and off was always really about. She leaves into
+     the black, so she is never seen to go. */
   {
-    beat: 1, from: 0, at: 'wide', a: 2.2, dist: 1.1, high: 0.62, turn: 0.55, in: 0.1,
-    stage: false, cue: null,
+    beat: 1, from: 0, at: 'heap', a: 0.3, dist: 62, high: 30, lift: 0.1,
+    turn: 0.12, in: 0.42, lin: true, stage: true, cue: null,
   },
-  /* "I think it is simpler than that." — down on the heap, and it starts
-     putting itself back together underneath the rest of the line. THE SAME
-     PLACE EVERY TIME, which is what was asked for: by now every last thing in
-     the world is over, so the deepest knot of it is wherever the deepest knot
-     is, and it does not move between one playing and the next. */
+  /* "A TIDY TOWN IS ONLY ONE WAY FOR A TOWN TO BE." — and it is, again, in
+     front of you: the reconstruction starts HERE rather than four seconds
+     earlier under "simpler than that", because that is the sentence it
+     illustrates. "Then on the start of the words 'A tidy town', we can have the
+     camera fade in and show the mischief being put back in order."
+
+     THE SAME PLACE EVERY TIME, which is what was asked for: by now every last
+     thing in the world is over, so the deepest knot of it is wherever the
+     deepest knot is, and it does not move between one playing and the next.
+
+     THE FADE IS THE LONG ONE. Out over most of a second from the moment she
+     stops saying "simpler than that", and back up in half of that — see `dark`
+     on the header above. What it covers is the reconstruction being SET, not
+     run: `heap-raise` fires on this row. */
   {
-    beat: 1, from: say(1, 'simpler'), at: 'heap', a: 0.75, dist: 30, high: 15, turn: 0.45, in: 0.22,
+    beat: 1, from: say(1, 'A tidy town'), at: 'heap', a: 0.75, dist: 30, high: 15, turn: 0.45, in: 0.22,
     stage: false, cue: 'heap-raise',
+    fade: 0.9, dark: say(1, 'I think it is simpler than that.', true),
   },
   /* "...every other way is the rest of them" — and over it all goes again, in
      a different direction this time. `tail` because the shove belongs at the
-     END of that clause. */
+     END of that clause.
+
+     A SECOND SOONER, AND THEN IT RESTS. "We should have the mischief being
+     knocked over at the end of the sentence 'every other way is the rest of
+     them.' which should occur about a second sooner than it currently does.
+     There needs to be a second or two camera rest and fade out before
+     transitioning." Measuring the clause against the recording instead of
+     against the character count took 0.74s off it on its own; `off` takes the
+     last quarter. And the camera almost stops — a sixth of a turn and no dolly
+     worth the name — because a shot that is still swinging while a town falls
+     over is a shot about the camera. */
   {
-    beat: 1, from: say(1, 'Every other way is the rest of them', true), at: 'heap',
-    a: 1.4, dist: 26, high: 12, turn: 0.5, in: 0.14,
+    beat: 1, from: say(1, 'Every other way is the rest of them', true), off: -0.25, at: 'heap',
+    a: 1.4, dist: 26, high: 12, turn: 0.16, in: 0.04, lin: true,
     stage: false, cue: 'heap-slam',
   },
   /* "...you have been COUNTING your way through the rest of them." The word is
      the cut, exactly as asked — "we can transition the camera to be there when
      the word counting is said, to give time between the knocked over mischief
      and this new scene" — and the black over it is what covers the four hundred
-     units between a town square and the Dojo. */
+     units between a town square and the Dojo.
+
+     AND IT GOES DARK BEFORE THE WORD, NOT AROUND IT. "Currently it just
+     transitions right away and feels abrupt." A 0.34s blink centred on a cut
+     gives the shot it is leaving about a sixth of a second of dimming, which
+     is not a fade, it is a flicker. `dark` starts the way down where she picks
+     the sentence back up after the shove — nearly a second of it — so the town
+     lies still, darkens, and is gone. */
   {
     beat: 1, from: say(1, 'counting'), at: 'dojo', a: 2.1, dist: 46, high: 27, lift: 0.07,
-    turn: 0.34, in: 0.12, stage: false, cue: 'dojo-run', fade: true,
+    turn: 0.34, in: 0.12, stage: false, cue: 'dojo-run',
+    fade: 1.1, dark: say(1, 'and you have been'),
+  },
+  /* ...AND THE WORLD BEGINS ARRIVING ON THE FLOOR BEFORE THE LINE IS OVER.
+     "When the text 'all afternoon.' ends, that's when we should have the
+     islands start to fade in and appear on the dojo as the player is still
+     running around and slowly fading out, can have a few seconds of transition
+     between the player running around the dojo and the holograms appearing."
+
+     A `keep` ROW, so the Dojo shot keeps pushing in through it. The whole
+     transition lives inside the beat's own TAIL — the second and a half of
+     held frame after she stops talking — which is the one stretch of the
+     ending with no words over it and is exactly where a two-second dissolve
+     belongs. */
+  {
+    beat: 1, from: say(1, 'all afternoon', true), keep: true, cue: 'isles-wake',
   },
 
   /* --- LINE 3: the model of the world, on the floor of the Dojo -----------
@@ -460,10 +687,34 @@ export const FINALE_SHOTS = [
     beat: 3, from: 0, at: 'bridge', a: Math.PI / 2, dist: 22, high: 7, lift: 0.16,
     turn: 0.34, in: 0.12, stage: false, cue: 'bridge-run', fade: true,
   },
-  /* "...the arena is open." */
+  /* "...THE arena is open." — in on the first word of the clause, not on the
+     third. "For the 'the arena is open' section, let's have camera fade into
+     the arena sooner, as soon as 'the' is said." Measured, that is 1.44
+     seconds earlier than where this cut was landing, and most of that was the
+     padding rather than the choice of word.
+
+     AND LOWER, AND CLOSER. "The camera angle can be better here, to show Mr.
+     Satan and his standing area, or just a more dynamic 3D angle to show all
+     the players and the arena." Forty units up at twenty-two high is a
+     surveillance photograph of a ring; thirty at twelve stands in the ring with
+     them, and half a radian of swing across three seconds makes it an angle
+     rather than a diagram. */
   {
-    beat: 3, from: say(3, 'arena is open'), at: 'arena', a: 0.7, dist: 40, high: 22, lift: 0.13,
-    turn: 0.3, in: 0.3, stage: false, cue: 'arena-in', fade: true,
+    beat: 3, from: say(3, 'the arena'), at: 'arena', a: 0.7, dist: 30, high: 12, lift: 0.15,
+    turn: 0.5, in: 0.22, stage: false, cue: 'arena-in', fade: true,
+  },
+  /* "...is OPEN." — and his arms go up on the word, without the camera
+     noticing. "Can show Mr. Satan standing with arms crossed for a few seconds
+     and then with his arms raised upwards for the last few seconds, when the
+     words 'arena is open' can have his arms raised up using the sprite
+     'satan_charge.png'."
+
+     ON "IS OPEN" RATHER THAN ON "ARENA", because "arena" is 0.27s after the
+     fade-in starts and the crossed-arms pose would never be seen. This way he
+     is standing there with his arms folded while the picture arrives, and the
+     champion's pose lands on the word that means the thing. */
+  {
+    beat: 3, from: say(3, 'is open'), keep: true, cue: 'arena-raise',
   },
   /* "...find out WHICH OF YOU is the strongest fighter ON THIS WORLD." — and
      out, off the ring, until the whole world is in the frame again. The line
@@ -1032,12 +1283,49 @@ export class SummonScene {
     /* THE WIDE SHOT IS THE FALLBACK, not an error. A script that grows a fifth
        line would otherwise have a beat with no shot at all; it gets the
        archipelago, which is the one framing that is right for any line. */
-    if (!mine.length) return { shot: FINALE_SHOTS[FINALE_SHOTS.length - 1], s: k };
+    const last = FINALE_SHOTS[FINALE_SHOTS.length - 1];
+    if (!mine.length) return { shot: last, s: k, cue: last };
     let ix = 0;
-    for (let i = 0; i < mine.length; i++) if (k >= mine[i].from) ix = i;
-    const from = mine[ix].from;
-    const to = ix + 1 < mine.length ? mine[ix + 1].from : 1;
-    return { shot: mine[ix], s: Math.min(1, Math.max(0, (k - from) / Math.max(1e-4, to - from))) };
+    for (let i = 0; i < mine.length; i++) if (k >= this._from(mine[i])) ix = i;
+    /* A `keep` ROW IS A CUE AND NOT A CAMERA. It is the row whose CUE is live —
+       so the stage hears it on the frame it is written to — while the framing,
+       and the shot clock the framing is eased on, both walk back to the last
+       row that actually cut. Sharing the previous row's object instead would
+       have been simpler and would have meant the cue never fired: `_cue` knows
+       a new shot by identity. */
+    let ci = ix;
+    while (ci > 0 && mine[ci].keep) ci--;
+    let ni = ci + 1;
+    while (ni < mine.length && mine[ni].keep) ni++;
+    const from = this._from(mine[ci]);
+    const to = ni < mine.length ? this._from(mine[ni]) : 1;
+    return {
+      shot: mine[ci],
+      s: Math.min(1, Math.max(0, (k - from) / Math.max(1e-4, to - from))),
+      cue: mine[ix],
+    };
+  }
+
+  /**
+   * A shot's `from`, as a fraction of its BEAT rather than of the speech.
+   *
+   * THE ONE PLACE THAT KNOWS ABOUT `TAIL`. Every `from` in the table is
+   * measured against the recording — `say()` returns a fraction of the clip —
+   * and a beat is the clip plus a second and a half of held frame. Multiplying
+   * a fraction of the speech by the length of the beat is how every cue in the
+   * back half of a line ended up around a second late, on top of the second
+   * that counting characters was already costing.
+   *
+   * IT DEGRADES TO THE OLD BEHAVIOUR. A beat whose audio never loaded has
+   * `voiceDur` 0 and a typed `dur` with no padding in it, so the spoken span
+   * IS the beat and this returns exactly what it was handed.
+   */
+  _from(sh) {
+    const b = this.script?.[sh.beat];
+    if (!b) return sh.from ?? 0;
+    const dur = Math.max(0.001, b.dur);
+    const spoken = b.voiceDur > 0 ? b.voiceDur : dur;
+    return Math.min(0.999, Math.max(0, ((sh.from ?? 0) * spoken + (sh.off ?? 0)) / dur));
   }
 
   /**
@@ -1050,11 +1338,18 @@ export class SummonScene {
    * a constant cannot.
    */
   _at(sh) {
-    const b = this.script?.[sh.beat];
+    return this._atF(sh.beat, this._from(sh));
+  }
+
+  /** ...and the same thing for a bare fraction of a beat, which is what `dark`
+   *  is. Split out so `_cutBlack` can ask "when does she stop saying THIS" of
+   *  a phrase that has no shot of its own. */
+  _atF(beat, f) {
+    const b = this.script?.[beat];
     if (!b) return 0;
     let before = 0;
-    for (let i = 0; i < sh.beat; i++) before += this.script[i].dur;
-    return before + sh.from * b.dur;
+    for (let i = 0; i < beat; i++) before += this.script[i].dur;
+    return before + Math.min(1, Math.max(0, f)) * b.dur;
   }
 
   /** ...and where we actually are, on the same clock. */
@@ -1081,9 +1376,29 @@ export class SummonScene {
     let black = 0;
     for (const sh of FINALE_SHOTS) {
       if (!sh.fade || !this.script[sh.beat]) continue;
-      black = Math.max(black, 1 - Math.abs(now - this._at(sh)) / (CUT_FADE * 0.5));
+      const at = this._at(sh);
+      /* HALF EITHER SIDE, unless the table says otherwise. `fade: true` is the
+         blink this started as; a number is a length in seconds. */
+      const half = (sh.fade === true ? CUT_FADE : sh.fade) * 0.5;
+      /* ...AND THE WAY DOWN CAN BE ITS OWN LENGTH, pinned to a word. A cut
+         that is covering a scene change wants to leave slowly and arrive
+         quickly, which is not a shape a single number can describe. */
+      const down = sh.dark != null
+        ? Math.max(0.08, at - this._atF(sh.beat, this._fromF(sh.beat, sh.dark)))
+        : half;
+      black = Math.max(black, 1 - Math.abs(now - at) / Math.max(0.01, now < at ? down : half));
     }
     return Math.min(1, Math.max(0, black));
+  }
+
+  /** `_from` for a bare fraction — the same map off the speech and onto the
+   *  beat, without a shot row to read `off` from. */
+  _fromF(beat, f) {
+    const b = this.script?.[beat];
+    if (!b) return f;
+    const dur = Math.max(0.001, b.dur);
+    const spoken = b.voiceDur > 0 ? b.voiceDur : dur;
+    return Math.min(0.999, Math.max(0, (f * spoken) / dur));
   }
 
   /**
@@ -1346,12 +1661,15 @@ export class SummonScene {
          archipelagos: `dist` and `high` are multiples of `radius` there and
          world units everywhere else, which is what lets the same table hold a
          bridge 24 units away and a world 400 across. */
-      const { shot, s: sk } = this._shotFor(this.beat, k);
+      const { shot, s: sk, cue } = this._shotFor(this.beat, k);
       /* A CUT IS NOTICED HERE AND NOWHERE ELSE. Doing it on the frame the shot
          actually changes — rather than in `_next`, a beat at a time — is what
-         lets one line carry seven of them. */
-      if (shot !== this._shot) { this._shot = shot; this._cue(shot); }
-      const se = 1 - (1 - sk) * (1 - sk);
+         lets one line carry seven of them. It is the CUE row that is watched,
+         not the camera row, so a `keep` row fires without moving the lens. */
+      if (cue !== this._shot) { this._shot = cue; this._cue(cue); }
+      /* EASED, OR NOT. `lin` is for the one shot whose job is to be a steady
+         move rather than to arrive somewhere; see the note on the table. */
+      const se = shot.lin ? sk : 1 - (1 - sk) * (1 - sk);
       const P = this.marks?.[shot.at] ?? F;
       const wide = shot.at === 'wide';
       /* MEASURED BEARING PLUS THE SHOT'S OWN OFFSET, where there is one — so

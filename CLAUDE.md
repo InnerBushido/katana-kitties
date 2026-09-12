@@ -27,7 +27,7 @@ look. Everything else is one level down and read on demand.
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
 npm run dev -- --host         # ...and on a phone on the same wifi, at the Network: URL it prints
-node tools/world-check.mjs    # 3085 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 3253 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 npm run docs                  # regenerate the controls + balance tables, in PROJECT.md AND
@@ -125,6 +125,13 @@ src/
   tuning-page.js   /tuning.html's brain — dev only, never built
   world/     build (all the geometry)  world (assembly, height queries)
   systems/   tournament  menagerie  arenaquest  announce  leaderboard
+             savegame (the afternoon, written down every 30s once a game is
+               5 minutes old, five kept, loaded from the pause menu. It saves
+               what the PLAYERS have done — which props are down, which orbs
+               are worn, who swore where — and never the world, which rebuilds
+               itself from its own seeds; so a save is 2KB and `worldSig`
+               refuses one taken in a build with a different prop count rather
+               than putting the wrong barrels down)
              kotodama  profile  cutscene  shrinescene  summonscene
              mathdojo  minimap  menunav  trailer (the opt-in video player)
              finaletide (what is BEHIND Patchfur at the ending: one measured
@@ -211,6 +218,12 @@ tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
 docs/notes/  the design notes — why things are the way they are
 ```
 
+**Two rows in the debug panel have no key on purpose** — *wipe the RECORD
+BOARD* and *wipe the SAVED GAMES*. They are the two things that outlive the tab,
+both ask first with the count in the button, and neither is reachable from a
+keyboard because a single keystroke that deletes them is what non-negotiable 7
+is about.
+
 **Debug keys, in play:** `` ` `` opens the panel and lists them. `6` unlocks the
 whole endgame, `7`/`8`/`9` are Ryuuseki, `4` ends a live round, `2` makes Mr.
 Satan lose his temper, `5` opens the trade screen, `-`/`=`/`0` are the scene
@@ -244,7 +257,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 3085 assertions and why almost none of them are about
+  why `world-check` is 3253 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Before designing a menu, dialog or any list, read "UI FALL-THROUGH" in
   [gotchas.md](docs/notes/gotchas.md).** It is the bug this project keeps

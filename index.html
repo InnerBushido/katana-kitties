@@ -1203,17 +1203,39 @@
             <span class="ht-title">Saving your progress</span>
             <span class="ht-chev" aria-hidden="true">▸</span>
           </summary>
+          <!-- THIS CARD USED TO CARRY A WARNING TRIANGLE AND THE SENTENCE
+               "Progress is NOT saved between sessions", and it was true for two
+               years. It is not any more, and a Help page that apologises for a
+               thing the game now does is worse than one that never mentioned
+               it: a kid who reads this and then loses an afternoon she could
+               have loaded back has been told by the game itself not to look.
+
+               WHAT IT SAYS IS WHAT THE CODE DOES, in the same numbers:
+               `AUTOSAVE_EVERY`, `AUTOSAVE_AFTER` and `MAX_SAVES` in
+               systems/savegame.js. The five-minute wait is SAID OUT LOUD rather
+               than hidden, because otherwise a girl who quits after three
+               minutes finds an empty list and concludes the feature is broken -
+               sixth non-negotiable, a refusal has to say so. -->
           <div class="ht-body">
-            <p class="ht-note warn">
-              <b>⚠ Progress is NOT saved between sessions.</b> You can't save your
-              build or setup — every new game starts from scratch.
+            <p class="ht-note">
+              <b>The game saves itself.</b> Once you have been playing for five
+              minutes it writes your adventure down every thirty seconds — no
+              button to press, nothing to remember. Open the pause menu with
+              <b>Esc</b> or <b>+ / Start</b> and choose <b>LOAD A SAVED GAME</b>
+              to pick one up again.
             </p>
             <p class="ht-note">
-              Restart or close the tab and clans, stars, orbs, points and mischief
-              all reset. Only three things are remembered on this computer: the
-              <b>record board</b> (high scores), your <b>controller
-              calibration</b>, and your <b>on-screen-stick</b> setting. So finish
-              an adventure in one sitting!
+              It keeps the <b>last five</b>, and each one says who was playing,
+              what orbs they were wearing and how far the town had come down, so
+              you can find the afternoon you wanted. The oldest drops off the
+              bottom as new ones arrive.
+            </p>
+            <p class="ht-note warn">
+              <b>⚠ The saves live in THIS browser on THIS computer.</b> They do
+              not follow you to a phone or to another machine, and clearing your
+              browser's site data throws them away — along with the
+              <b>record board</b>, your <b>controller calibration</b> and your
+              <b>on-screen-stick</b> setting, which are kept the same way.
             </p>
           </div>
         </details>
@@ -1402,7 +1424,7 @@
              half-height window that measured 200px below the fold - see
              style.css, which also records why sticky was tried and dropped. -->
         <p class="menu-owner hidden" id="menu-owner"></p>
-        <!-- SEVEN ROWS AT MOST, AND IT USED TO BE FIFTEEN.
+        <!-- EIGHT ROWS AT MOST, AND IT USED TO BE FIFTEEN.
              Reported from play: "the list on the pause menu is getting too
              long, can we clean it up or organize it by breaking the commands
              into sub menus — Gameplay, Players, Storyline, Stats/Features."
@@ -1447,6 +1469,14 @@
                nothing. -->
           <button class="menu-btn hidden" id="btn-quit-match" data-action="quit-match">
             QUIT THE MATCH</button>
+          <!-- THE SAVES, DIRECTLY ABOVE THE ENDINGS AND NOT INSIDE THEM.
+               Loading one throws the current afternoon away exactly the way
+               RESTART does, so it belongs at the final end of the list - but it
+               is not an ENDING, it is the opposite of one, and burying "carry
+               on from Tuesday" inside a panel called END THE GAME is the kind
+               of filing that makes a nine-year-old believe the feature is not
+               there. It asks first, like everything else down here. -->
+          <button class="menu-btn" data-action="saves">LOAD A SAVED GAME</button>
           <button class="menu-btn" data-action="ending">END THE GAME</button>
         </div>
         <p class="note">
@@ -1529,6 +1559,30 @@
           Each of these asks you first, and the record board is kept whichever
           one you pick.
         </p>
+        <button class="menu-btn back" data-close>BACK</button>
+      </div>
+    </div>
+
+    <!-- THE SAVED AFTERNOONS. Written by systems/savegame.js every thirty
+         seconds once a game has been running for five minutes, five kept at
+         most, and painted here by Game._paintSaves.
+
+         THE ROWS SAY WHAT IS IN THEM AND NOT WHICH SLOT THEY ARE. Asked for in
+         exactly those terms - "people should be able to find the save they
+         want based on some of the information shown in the save list" - and it
+         is the whole design of the panel: a slot number is the one fact about
+         a save that nobody can recognise, so a row carries who was playing,
+         what each of them was wearing, how far the town had come down, and
+         whether the ring was open. Four girls pick their afternoon out of five
+         by reading it, not by remembering it.
+
+         `data-nav="scroll"` for the same reason `panel-board` carries it: five
+         rows of four kittens each is taller than a phone in landscape. -->
+    <div id="panel-saves" class="screen overlay hidden" data-nav="scroll">
+      <div class="panel pause-panel">
+        <h2>LOAD A SAVED GAME</h2>
+        <div id="saves-body" class="pause-menu"></div>
+        <p class="note" id="saves-note"></p>
         <button class="menu-btn back" data-close>BACK</button>
       </div>
     </div>

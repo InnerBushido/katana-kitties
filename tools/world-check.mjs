@@ -29,10 +29,17 @@ import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../s
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import {
   SCRIPTS, DUSK_DEEP, DUSK_FALL, DAWN_RISE, DAWN_DEEP, SummonScene, BEAT_ACTS,
-  FINALE_SHOTS,
+  FINALE_SHOTS, say,
 } from '../src/systems/summonscene.js';
 import { FinaleTide } from '../src/systems/finaletide.js';
-import { STEAL, DBREATH, ARENA_POWERS, arenaPowerFor } from '../src/entities/clanpower.js';
+import { FinaleShow } from '../src/systems/finaleshow.js';
+import {
+  SAVE_VERSION, MAX_SAVES, AUTOSAVE_EVERY, AUTOSAVE_AFTER,
+  worldSig, listSaves, putSave, dropSave, clearSaves,
+  snapshot, describe, restore,
+} from '../src/systems/savegame.js';
+import { Prop } from '../src/entities/prop.js';
+import { STEAL, DBREATH, ARENA_POWERS, BreathTally, arenaPowerFor } from '../src/entities/clanpower.js';
 import {
   SHRINE_DAIS, SHRINE_STEPS, SHRINE_GATE,
   SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest,
@@ -13374,12 +13381,19 @@ console.log('\n--- 息 the breath cannot leak out of the ring ---');
       b.maxHp - b.hp === DBREATH.dmg, `${b.maxHp - b.hp}`);
   }
 
-  /* --- ONE KITTEN, ONCE — HOWEVER LONG IT IS HELD ON HER ----------------
-     The cone is asked of the world sixty times a second now, so the thing that
+  /* --- ONE KITTEN, ONCE EVERY HALF SECOND — NOT ONCE PER FRAME ----------
+     The cone is asked of the world sixty times a second, so the thing that
      stops it being a frame-rate weapon is the tally, and this is the check
-     that the tally does the work. `invulT` IS CLEARED BETWEEN THE TWO SWEEPS
-     on purpose: half a second of invulnerability would refuse the second blow
-     all by itself and this would pass with the tally deleted. */
+     that the tally does the work. `invulnT` IS CLEARED BETWEEN THE SWEEPS on
+     purpose: half a second of invulnerability would refuse the second blow all
+     by itself and this would pass with the tally deleted.
+
+     AND THE SECOND HALF OF IT IS THE NEW RULE. It was a `Set` — caught once,
+     safe for the whole breath — which played as a flame you could stand in
+     having already paid for it. It is a stamp per body now, so time has to be
+     part of the assertion: within the tick, nothing; past it, a second bite.
+     "It did not hurt her twice" would pass just as happily on a cone that had
+     stopped working altogether. */
   {
     const a = mkP(0, 0);
     const b = mkP(1, 4);
@@ -13387,21 +13401,64 @@ console.log('\n--- 息 the breath cannot leak out of the ring ---');
     b.position.y = a.position.y;
     const dir = { x: Math.sin(a.facing), y: Math.cos(a.facing) };
     const G = mkGame([a, b], true);
-    const spent = new Set();
+    const spent = new BreathTally(DBREATH.tick);
     strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
     const first = b.maxHp - b.hp;
     ok('a sweeping cone hurts the kitten it crosses', first === DBREATH.dmg, `${first}`);
     b.invulnT = 0;
+    for (let i = 0; i < 29; i++) {           // just under half a second
+      spent.step(1 / 60);
+      strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
+    }
+    ok('...and thirty frames of the same flame cost her nothing more',
+      b.maxHp - b.hp === first, `${b.maxHp - b.hp} after 29 more sweeps`);
+    ok('...having bitten her exactly once so far', spent.bites(b) === 1);
+    /* PAST THE TICK, IT BITES AGAIN. This is the ask: "for every 0.5s the
+       flame is on it... the first hit happening as soon as it collides". */
+    spent.step(DBREATH.tick);
     strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
-    ok('...and cannot hurt her again, however long it is held on her',
-      b.maxHp - b.hp === first, `${b.maxHp - b.hp} after a second sweep`);
+    ok('...but holding it on her past the tick costs her again',
+      b.maxHp - b.hp === first * 2, `${b.maxHp - b.hp}`);
+    ok('...and the tally counted both bites', spent.bites(b) === 2);
     /* AND THE HAZARD IS REAL. Without the tally the same cone on the same
-       frame-clear body takes her down again — so the line above is a rule
-       being enforced rather than a coincidence of the test. */
-    b.invulnT = 0;
-    strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, new Set());
-    ok('...and without the tally it would have, which is why there is one',
-      b.maxHp - b.hp > first);
+       frame-clear body takes her down every frame — so the lines above are a
+       rule being enforced rather than a coincidence of the test. */
+    /* Ten frames is a sixth of a second. Asserted as a KNOCKOUT rather than
+       as a number of points, because her bar has a floor and the arithmetic
+       would otherwise be a check on how much health she had left. */
+    for (let i = 0; i < 10; i++) {
+      b.invulnT = 0;
+      strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, new BreathTally(DBREATH.tick));
+    }
+    ok('...and with a fresh tally every frame it would knock her out in a sixth of a second',
+      b.hp === 0, `${b.hp} left after ten untallied frames`);
+  }
+
+  /* --- THE TICK IS IN SECONDS, WHICH IS THE WHOLE POINT OF IT -------------
+     A tally counted in FRAMES would bite twice as often on a machine running
+     at 120, which is the bug the tally exists to prevent wearing a different
+     hat. Stepped at two frame rates over the same second of flame; the number
+     of bites has to come out identical. */
+  {
+    const bites = (fps) => {
+      const a = mkP(0, 0);
+      const b = mkP(1, 4);
+      a.facing = Math.PI / 2;
+      b.position.y = a.position.y;
+      const dir = { x: Math.sin(a.facing), y: Math.cos(a.facing) };
+      const G = mkGame([a, b], true);
+      const spent = new BreathTally(DBREATH.tick);
+      for (let i = 0; i < fps * DBREATH.fire; i++) {
+        b.invulnT = 0;                       // the tally alone, not invulnerability
+        strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
+        spent.step(1 / fps);
+      }
+      return spent.bites(b);
+    };
+    const slow = bites(30);
+    const fast = bites(144);
+    ok('a flame bites the same number of times on any machine',
+      slow === fast && slow >= 2, `${slow} at 30fps, ${fast} at 144`);
   }
 
   /* ...BUT TURNING INSIDE YOUR OWN FLAME CATCHES THE NEXT ONE. The other half
@@ -13413,7 +13470,7 @@ console.log('\n--- 息 the breath cannot leak out of the ring ---');
     const west = mkP(2, -4);
     east.position.y = west.position.y = a.position.y;
     const G = mkGame([a, east, west], true);
-    const spent = new Set();
+    const spent = new BreathTally(DBREATH.tick);
     strikePlayers.call(G, a, 'dbreath', BASE_REACH, { x: 1, y: 0 }, spent);
     ok('the cone catches the one it is pointed at', east.hp < east.maxHp);
     ok('...and not the one behind her', west.hp === west.maxHp);
@@ -13422,12 +13479,25 @@ console.log('\n--- 息 the breath cannot leak out of the ring ---');
       west.hp < west.maxHp);
     ok('...while the first one is not caught twice for it',
       east.maxHp - east.hp === DBREATH.dmg);
+    /* HER HALF SECOND IS HERS, not whatever is left of somebody else's. The
+       cheap version of the tick is one clock for the whole cone, and it would
+       hand a kitten caught late a sliver of a gap — or none. */
+    ok('...and each of them is on her own clock',
+      spent.bites(east) === 1 && spent.bites(west) === 1);
   }
 
-  /* A BUBBLE SPENDS THE BREATH TOO. "It can only hurt a player once, OR damage
-     their shield once" — so a kitten who blocked it is finished with this cone
-     even though she took nothing, and a flame parked on a ward cannot grind it
-     down at sixty hits a second. */
+  /* --- A BUBBLE TAKES ONE SWING'S WORTH EVERY TICK, AND TWO SMASH IT ------
+     Reported from play: "Dragon breath seems to not damage the player's shield,
+     should damage it or remove it if the player is hit — the shield takes
+     damage over time, so for every 0.5s the flame is on it the shield takes the
+     equivalent of 1 swing hit on it, with the first hit happening as soon as it
+     collides." It DID cost her a hit; what it could not do was cost her a
+     second one, because the tally was "caught once, safe for ever" and a bubble
+     survives two. So a shielded kitten could stand in the whole breath and walk
+     out still holding it.
+
+     THE FRAME-BY-FRAME CASE IS STILL PINNED, three lines down. That rule never
+     went away — it is a tick now instead of a wall. */
   {
     const a = mkP(0, 0);
     const b = mkP(1, 4);
@@ -13436,14 +13506,53 @@ console.log('\n--- 息 the breath cannot leak out of the ring ---');
     b.wardOn = true;
     const dir = { x: 1, y: 0 };
     const G = mkGame([a, b], true);
-    const spent = new Set();
+    const spent = new BreathTally(DBREATH.tick);
     strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
     ok('a blocked breath costs her nothing', b.hp === b.maxHp);
     ok('...and is spent on her all the same', spent.has(b));
+    ok('...but it did cost her the bubble a hit', b.wardHits === 1);
     const hits = b.wardHits;
-    strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
-    ok('...so the same flame cannot grind her bubble down frame by frame',
+    for (let i = 0; i < 29; i++) {
+      spent.step(1 / 60);
+      strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
+    }
+    ok('...and the same flame cannot grind it down frame by frame',
       b.wardHits === hits, `${b.wardHits} of ${hits}`);
+    /* AND THE SECOND BITE IS THE ONE THAT BREAKS IT. `WARD.hits` is 2 and
+       `fire / tick` is 2, so a whole breath held on a bubble is exactly enough
+       to take it — which is the balance this number was chosen for. */
+    spent.step(DBREATH.tick);
+    strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
+    ok('...but holding it there past the tick takes the bubble down',
+      b.wardHits === 2 && b.warded === false && b.hp === b.maxHp,
+      `${b.wardHits} hits, warded ${b.warded}`);
+    ok('...and one flame is exactly long enough to do it',
+      Math.floor(DBREATH.fire / DBREATH.tick) >= (WARD.hits ?? 2),
+      `${DBREATH.fire}s of flame at ${DBREATH.tick}s a bite`);
+  }
+
+  /* --- ...AND ONCE IT IS GONE, THE FLAME REACHES HER -----------------------
+     "If the shield is broken and the player is still being hit by it after
+     0.5s, then the player gets hit." The bubble is not a wall the rest of the
+     breath breaks against. */
+  {
+    const a = mkP(0, 0);
+    const b = mkP(1, 4);
+    a.facing = Math.PI / 2;
+    b.position.y = a.position.y;
+    b.wardOn = true;
+    b.wardHits = (WARD.hits ?? 2) - 1;       // one bite from broken
+    const dir = { x: 1, y: 0 };
+    const G = mkGame([a, b], true);
+    const spent = new BreathTally(DBREATH.tick);
+    strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
+    ok('the bite that breaks the bubble still costs her no health',
+      b.warded === false && b.hp === b.maxHp);
+    spent.step(DBREATH.tick);
+    b.invulnT = 0;
+    strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
+    ok('...and the next one reaches the kitten behind it',
+      b.maxHp - b.hp === DBREATH.dmg, `${b.maxHp - b.hp}`);
   }
 
   /* IT REACHES FURTHER THAN A BLADE AND STILL NOT FOR EVER. Both ends of the
@@ -13803,6 +13912,51 @@ console.log('\n--- the two powers, from the kitten\'s side ---');
     ok('...and the wait is still owed', a.stealCool > 0);
   }
 
+  /* --- BEING CAUGHT IS NOT A REFUND -------------------------------------
+     Reported from play: "when using cross-slash on an opponent, it resets the
+     timer of the dragon breath ability on that player — it shouldn't do that,
+     these should be two separate mechanics." It was one function doing two
+     jobs. `_clearSpecials` drops every move in flight, which is always right,
+     and it also forgave every WAIT, which is only right when the move those
+     seconds were owed on never happened — a round reset, or climbing onto an
+     animal. `triCapture` calls it on the KITTEN BEING CAUGHT, so every landed
+     Cross Slash handed her sister 息 Dragon Breath back.
+
+     ASKED OF ALL FOUR WAITS, not just the one that was reported. The bug is
+     one line of a shared function and it was never about the breath in
+     particular: the steal, the Flash Step and the bubble were all being handed
+     back by the same press. */
+  {
+    const a = mkP(0, 0, wind);
+    const b = mkP(1, 3, ice);
+    const hud = mkHud([a, b]);
+    b.breathCool = 20;
+    b.stealCool = 18;
+    b.dodgeCool = 4;
+    b.wardCool = 1.2;
+    /* AND SHE IS MID-MOVE, so the half of `_clearSpecials` that is right is
+       still being asked for: caught, she must stop breathing. */
+    b.breathChargeT = DBREATH.charge;
+    b.wardOn = false;
+    const caught = b.triCapture(a, 10, 0, 1, hud);
+    ok('a Cross Slash catches her', caught === true && b.heldBy === a);
+    ok('...and stops the move she was in the middle of',
+      b.breathChargeT === 0 && b.breathFireT === 0);
+    ok('...but her 息 Dragon Breath wait keeps running', b.breathCool === 20);
+    ok('...and so does her 盗 Steal Mischief wait', b.stealCool === 18);
+    ok('...and her Flash Step and her bubble',
+      b.dodgeCool === 4 && b.wardCool === 1.2);
+    /* THE OTHER HALF OF THE RULE, or the fix is "never forgive anything" and
+       a kitten teleported to her post would start the round unable to block.
+       A round reset erases the move, so it erases the wait with it. */
+    const c = mkP(2, 6, wind);
+    c.breathCool = 20;
+    c.wardCool = 1.2;
+    c._clearSpecials();
+    ok('...while a round reset still forgives the wait it erased',
+      c.breathCool === 0 && c.wardCool === 0);
+  }
+
   {
     /* REFUSALS THAT SAY WHAT THEY WANT, and do not charge for nothing. */
     const a = mkP(0, 0, ice);
@@ -13856,7 +14010,8 @@ console.log('\n--- the two powers, from the kitten\'s side ---');
        rather than against a number, so the flame lengthening cannot silently
        stop meaning one sweep a frame. */
     const tally = hud.strikes[0][4];
-    ok('...carrying a tally of whom it has already caught', tally instanceof Set);
+    ok('...carrying a tally of whom it has already bitten, and when',
+      tally instanceof BreathTally && tally.gap === DBREATH.tick);
     let frames = 0;
     while (a.breathFireT > 0 && frames < 600) { a._stepClanPower(1 / 60, hud); frames++; }
     ok('...and the cone is asked of the world again on every frame of the flame',
@@ -13875,7 +14030,12 @@ console.log('\n--- the two powers, from the kitten\'s side ---');
     a._startClanPower(null, hud);
     a._stepClanPower(DBREATH.charge, hud);
     ok('...and the next breath starts a tally of its own',
-      a.breathHit instanceof Set && a.breathHit !== tally);
+      a.breathHit instanceof BreathTally && a.breathHit !== tally);
+    /* AND THE FLAME WOUND IT ON. A tally that is never stepped is a `Set` with
+       extra steps — it would hold its first stamps for ever and the tick would
+       silently not exist. Read off the one that just burned down. */
+    ok('...and the flame that just ran wound its tally forward',
+      tally.t >= DBREATH.fire - 1 / 30, `${tally.t.toFixed(2)}s of ${DBREATH.fire}`);
   }
 
   {
@@ -16121,9 +16281,51 @@ console.log('\n--- Mr. Satan loses his temper ---');
   ok('every debug key the game answers to is listed in the panel',
     handled.length > 8 && handled.every((c) => listed.has(c)),
     handled.filter((c) => !listed.has(c)).join(', ') || `${handled.length} keys`);
-  ok('...and every one of them has a label to print',
-    handled.every((c) => labelBlock.includes(`${c}:`)),
-    handled.filter((c) => !labelBlock.includes(`${c}:`)).join(', ') || 'all');
+  /* --- A ROW THAT IS NOT A KEY -------------------------------------------
+     MOST OF THE PANEL IS A KEYBOARD SHORTCUT THAT HAPPENS TO BE TAPPABLE, and
+     that is why every code used to need a label: a handled key with no label
+     printed a blank key column, which is a shortcut nobody can discover.
+
+     BUT SOME ACTIONS MUST NOT HAVE A KEY AT ALL. Wiping the record board is
+     the first: it deletes something that survives closing the tab, and a
+     single keystroke that does that is exactly what the seventh
+     non-negotiable is about — four kids hold sticks and mash. So a code with
+     no label is read as a PANEL-ONLY row, and the two things that makes true
+     are checked rather than assumed. */
+  const noKey = handled.filter((c) => !labelBlock.includes(`${c}:`));
+  ok('...and every one of them that a keyboard can produce has a label to print',
+    noKey.every((c) => !/^(Digit|Key|Numpad|Arrow|Backquote|Minus|Equal|Backslash|Bracket|Semicolon|Quote|Comma|Period|Slash)/.test(c)),
+    noKey.join(', ') || 'all labelled');
+  /* ...AND A ROW WITH NO KEY ASKS BEFORE IT ACTS. The reason it has no key is
+     that it is dangerous; a dangerous thing reachable in one tap is the same
+     bug with a mouse instead of an elbow. Read out of the method the
+     dispatcher actually calls, so adding a second panel-only row without a
+     dialog fails here rather than being noticed by a child. */
+  {
+    let asked = 0;
+    let quiet = '';
+    for (const c of noKey) {
+      const call = new RegExp(`code === '${c}'\\)[^\\n]*this\\.(_[A-Za-z0-9]+)\\(`).exec(dbgBody);
+      const at = call ? msrc.indexOf(`\n  ${call[1]}(`) : -1;
+      const body = at > 0 ? msrc.slice(at, msrc.indexOf('\n  }\n', at)) : '';
+      if (body.includes('confirm.ask(')) asked++;
+      else quiet += ` ${c}`;
+    }
+    ok('...and a row the keyboard cannot reach asks before it throws anything away',
+      asked === noKey.length, `unguarded:${quiet || ' none'}`);
+    /* AND THERE REALLY IS ONE, or the two checks above are a pair of
+       statements about an empty list. */
+    ok('...which is how the record board is wiped, since nothing else could',
+      noKey.includes('BoardWipe'), noKey.join(', ') || 'no panel-only rows');
+    /* AND THE SAVED GAMES, which arrived with the autosave and made the
+       separator above these two rows ("the only thing that outlives the tab")
+       false. Two persistent things and one wipe would send a tester to the dev
+       tools for the other half. */
+    ok('...and how the saved games are, which arrived with the autosave',
+      noKey.includes('SaveWipe'), noKey.join(', '));
+    ok('...and the panel no longer claims the board is the only thing kept',
+      !/the only thing that outlives the tab/.test(msrc));
+  }
   ok("...including Mr. Satan's", handled.includes('Digit2') && listed.has('Digit2'));
 
   /* --- AND THE PANEL LISTS NOTHING IT NO LONGER DOES ---
@@ -17773,13 +17975,26 @@ console.log('\n--- one press is not enough, and one player drives ---');
         mine[0].from === 0
         && mine.every((sh, i) => i === 0 || sh.from > mine[i - 1].from));
     }
+    /* A `keep` ROW IS A CUE AND NOT A CAMERA, so it carries none of the
+       framing fields and must not be asked for them — but it still has to be
+       cued to a word, and it must never be the first row of a beat, because
+       there would be nothing for it to keep. */
+    const cuts = FINALE_SHOTS.filter((sh) => !sh.keep);
+    const keeps = FINALE_SHOTS.filter((sh) => sh.keep);
+    ok('...and a cue-only row carries no camera of its own',
+      keeps.every((sh) => sh.at === undefined && sh.dist === undefined
+        && sh.stage === undefined && !!sh.cue),
+      keeps.map((sh) => sh.cue).join(' '));
+    ok('...and never opens a beat, which would leave it nothing to keep',
+      keeps.every((sh) => FINALE_SHOTS.some(
+        (o) => !o.keep && o.beat === sh.beat && o.from < sh.from)));
     /* THE NAMES ARE RESOLVED AGAINST THE WORLD, so a shot pointing at
        somewhere the scene has never heard of is a camera aimed at undefined. */
     const KNOWN = ['wide', 'dojo', 'bridge', 'barrel', 'lantern', 'bamboo', 'heap', 'arena'];
     ok('...and every shot points somewhere the scene can find',
-      FINALE_SHOTS.every((sh) => KNOWN.includes(sh.at)),
-      FINALE_SHOTS.map((sh) => sh.at).join(' '));
-    ok('...including the bridge, by name', FINALE_SHOTS.some((sh) => sh.at === 'bridge'));
+      cuts.every((sh) => KNOWN.includes(sh.at)),
+      cuts.map((sh) => sh.at).join(' '));
+    ok('...including the bridge, by name', cuts.some((sh) => sh.at === 'bridge'));
     ok('...and the Dojo of the Turning Circle', FINALE_SHOTS.some((sh) => sh.at === 'dojo'));
     ok('...and the mischief itself', FINALE_SHOTS.some((sh) => sh.at === 'heap'));
     ok('...and all three of the things she names, each with a shot of its own',
@@ -17798,22 +18013,29 @@ console.log('\n--- one press is not enough, and one player drives ---');
       const WORDS = [
         ['name-lantern', 0, 'lantern'],
         ['name-bamboo', 0, 'bamboo'],
-        ['heap-raise', 1, 'simpler'],
+        ['heap-raise', 1, 'A tidy town'],
         ['dojo-run', 1, 'counting'],
+        ['isles-wake', 1, 'all afternoon', true],
         ['isles-drift', 2, 'They drifted'],
         ['isles-cross', 2, 'You crossed'],
         ['isles-angle', 2, 'An angle'],
         ['isles-circle', 2, 'a circle'],
         ['isles-leap', 2, 'nerve to jump'],
         ['isles-bridge', 2, 'all a bridge'],
-        ['arena-in', 3, 'arena is open'],
+        ['arena-in', 3, 'the arena'],
+        ['arena-raise', 3, 'is open'],
       ];
       let landed = 0;
       let wrong = '';
-      for (const [cue, beat, word] of WORDS) {
+      for (const [cue, beat, word, tail] of WORDS) {
         const sh = FINALE_SHOTS.find((x) => x.cue === cue);
-        const t = SCRIPTS.finale[beat].text;
-        const want = t.indexOf(word) / t.length;
+        /* AGAINST `say` ITSELF, not against a second copy of its arithmetic.
+           The old version of this check divided the character index by the
+           length of the line, which was fine while that was also what `say`
+           did and would now be a check that the cues are wrong in exactly the
+           way the ending was just fixed for. What it is actually pinning is
+           that the cue is cut to the WORD — whatever finding a word costs. */
+        const want = say(beat, word, tail === true);
         if (sh && sh.beat === beat && Math.abs(sh.from - want) < 1e-6) landed++;
         else wrong += ` ${cue}`;
       }
@@ -17829,10 +18051,76 @@ console.log('\n--- one press is not enough, and one player drives ---');
          when the line is spoken 'Every other way is the rest of them' we can
          knock over all the reconstructed mischief again." */
       const slam = FINALE_SHOTS.find((x) => x.cue === 'heap-slam');
-      const line = SCRIPTS.finale[1].text;
       const clause = 'Every other way is the rest of them';
       ok('...and the shove lands after the clause it belongs to, not on it',
-        !!slam && Math.abs(slam.from - (line.indexOf(clause) + clause.length) / line.length) < 1e-6);
+        !!slam && Math.abs(slam.from - say(1, clause, true)) < 1e-6);
+      /* ...AND A SECOND SOONER THAN IT WAS, WHICH IS WHAT WAS ASKED FOR. The
+         nudge is in seconds and negative, and it is small: a whole second of
+         `off` would mean the cue is pinned to the wrong word. */
+      ok('...and nudged a little earlier than the clause ends, not re-pinned',
+        slam.off < 0 && slam.off > -0.6, `${slam.off}s`);
+
+      /* --- AND `say` ITSELF IS MEASURED --------------------------------------
+         THE RULER THE WHOLE LIST IS CUT WITH. `say` interpolates a character
+         index inside the run of speech it falls in, and those runs were read
+         off the recordings with ffmpeg. A typo in one of those phrases does not
+         throw: `indexOf` returns -1, the run silently starts at the top of the
+         line, and every cue after it slides. So every phrase is checked against
+         the text it claims to quote, and the runs are checked for being in
+         order in BOTH characters and seconds — a pair that disagrees would map
+         a later word to an earlier second. */
+      let runsOk = 0;
+      let runsBad = '';
+      for (let b = 0; b < SCRIPTS.finale.length; b++) {
+        const line = SCRIPTS.finale[b];
+        const rs = line.runs ?? [];
+        let lastC = -1;
+        let lastT = -1;
+        let good = rs.length > 0 && line.clip > 0;
+        for (const [phrase, t0, t1] of rs) {
+          const c = line.text.indexOf(phrase);
+          if (c < 0 || c <= lastC || t0 < lastT || t1 <= t0 || t1 > line.clip + 1e-9) {
+            good = false;
+            runsBad += ` ${b}:${JSON.stringify(phrase)}`;
+          }
+          lastC = c;
+          lastT = t1;
+        }
+        if (good) runsOk++;
+      }
+      ok('every line of the ending has its speech measured, run by run',
+        runsOk === SCRIPTS.finale.length, `bad:${runsBad || ' none'}`);
+      /* AND THE RULER READS ITS OWN MARKS BACK. Asking `say` for the first words
+         of a run has to come back as the second that run was measured to start
+         on — which is the one thing that fails if the interpolation picks the
+         wrong run, and it is silent otherwise. */
+      {
+        let marks = 0;
+        let want = 0;
+        for (let b = 0; b < SCRIPTS.finale.length; b++) {
+          const line = SCRIPTS.finale[b];
+          for (const [phrase, t0] of line.runs ?? []) {
+            want++;
+            if (Math.abs(say(b, phrase) * line.clip - t0) < 1e-6) marks++;
+          }
+        }
+        ok('...and asking it for a run comes back with the second that run starts on',
+          marks === want, `${marks} of ${want}`);
+      }
+      /* AND IT IS NOT THE OLD UNIFORM READING WEARING A HAT. The whole reason
+         this exists is that she pauses: if the measured map agreed with
+         character-counting everywhere, nothing would have been fixed. Measured
+         on the shipped clips, "You crossed" is 1.0s earlier than counting
+         characters says it is — and that, plus the padding `_from` now takes
+         off, is the "delayed by almost 2 seconds" report. */
+      {
+        const t = SCRIPTS.finale[2].text;
+        const flat = t.indexOf('You crossed') / t.length;
+        const real = say(2, 'You crossed');
+        ok('...and it disagrees with counting characters, which is why it exists',
+          flat - real > 0.04,
+          `${(flat * 15.68).toFixed(2)}s counted vs ${(real * 15.68).toFixed(2)}s spoken`);
+      }
       /* ...AND THE WORLD GOES OVER BEFORE THE CAMERA LEAVES IT. A shove the
          audience does not see is a sound effect. */
       const cut = FINALE_SHOTS.find((x) => x.cue === 'dojo-run');
@@ -17847,15 +18135,34 @@ console.log('\n--- one press is not enough, and one player drives ---');
        bridge to the ring in the sky. Every other cut in the ending is hard. */
     {
       const fades = FINALE_SHOTS.filter((sh) => sh.fade);
-      ok('the ending blinks exactly three times', fades.length === 3,
+      ok('the ending goes to black exactly four times', fades.length === 4,
         fades.map((sh) => sh.cue).join(' '));
-      ok('...and every one of them is a jump to somewhere the last shot could not see',
-        fades.every((sh) => ['dojo', 'bridge', 'arena'].includes(sh.at)));
+      /* THREE OF THEM CROSS THE WORLD and one of them crosses TIME — the town
+         square putting itself back together happens behind the black, which is
+         a stagehand's job and not a shot. */
+      ok('...three of them jumps to somewhere the last shot could not see',
+        fades.filter((sh) => ['dojo', 'bridge', 'arena'].includes(sh.at)).length === 3);
+      ok('...and the fourth a cut in time, on the same square, so nothing moves across it',
+        fades.filter((sh) => sh.at === 'heap').length === 1);
       /* AND NOT ON THE LINE THAT NAMES THE THINGS. Three rings closing on three
          props a second apart is a shot, and a blink between each of them is a
          strobe. */
       ok('...and none of them inside the naming',
         !FINALE_SHOTS.some((sh) => sh.fade && ['barrel', 'lantern', 'bamboo'].includes(sh.at)));
+      /* A LENGTH, AND A SANE ONE. `true` is the blink it started as; a number
+         is seconds of black. Anything over two seconds in a scene this long is
+         a hole in it. */
+      ok('...and every one of them is a blink or a length, never a flag with a number in it',
+        fades.every((sh) => sh.fade === true || (sh.fade > 0.2 && sh.fade <= 2)),
+        fades.map((sh) => sh.fade).join(' '));
+      /* THE TWO THAT COVER SOMETHING LEAVE SLOWLY. `dark` pins the start of the
+         way down to a word, and the only reason to do that is to make it longer
+         than the way back up — a symmetrical fade is what `fade` alone gives. */
+      const slow = fades.filter((sh) => sh.dark != null);
+      ok('...and the two that are covering something start going dark on a word',
+        slow.length === 2, slow.map((sh) => sh.cue).join(' '));
+      ok('...which is earlier in the line than the cut it covers',
+        slow.every((sh) => sh.dark < sh.from));
     }
     /* AND IT STILL ENDS WHERE IT ALWAYS ENDED. The last beat is the one the
        whole world goes over on, and that cannot be watched from the ground. */
@@ -17871,12 +18178,30 @@ console.log('\n--- one press is not enough, and one player drives ---');
        keeps the portrait box for the whole ending instead, which is the same
        argument Mr Satan's scenes already make, and stands up for the one line
        that is her talking to the two of them rather than pointing. */
-    ok('Patchfur takes the stage for exactly one shot of the ending',
-      FINALE_SHOTS.filter((sh) => sh.stage).length === 1,
+    ok('Patchfur takes the stage for exactly two shots of the ending',
+      FINALE_SHOTS.filter((sh) => sh.stage).length === 2,
       FINALE_SHOTS.filter((sh) => sh.stage).map((sh) => sh.at).join(' '));
-    ok('...and it is the one that sends them off', last.stage === true);
-    ok('...so she is never standing in front of a place she is pointing at',
-      FINALE_SHOTS.filter((sh) => sh.at !== 'wide').every((sh) => sh.stage === false));
+    ok('...and one of them is the one that sends them off', last.stage === true);
+    /* AND NEITHER OF THEM IS A FLICKER. The rule was never "once" — it was
+       "not inside a second": a nine-unit cut-out that slides in and straight
+       back out reads as a rendering fault. `STAGE_SWAP` is 0.75s each way, so
+       a shot she stands up for has to be long enough to hold her still for
+       longer than she spends arriving and leaving. Measured on the beat, not
+       typed: re-time a line and this re-measures. */
+    {
+      let shortest = Infinity;
+      for (const sh of FINALE_SHOTS.filter((x) => x.stage)) {
+        const mine = FINALE_SHOTS.filter((o) => o.beat === sh.beat && !o.keep);
+        const i = mine.indexOf(sh);
+        const clip = SCRIPTS.finale[sh.beat].clip;
+        /* THE LAST SHOT OF A BEAT RUNS INTO ITS TAIL, which is a second and a
+           half of held frame and is very much time she is standing there. */
+        const to = i + 1 < mine.length ? mine[i + 1].from * clip : clip + TAIL;
+        shortest = Math.min(shortest, to - sh.from * clip);
+      }
+      ok('...and she is on screen for longer than she spends walking on and off',
+        shortest > 4, `${shortest.toFixed(1)}s is the shorter of the two`);
+    }
     /* AND THE BOX IS WHY THAT IS NOT A LOSS. A narrator who is neither on
        screen nor in the portrait for thirty seconds is a disembodied voice. */
     ok('...because the portrait carries her for the rest of it',
@@ -17962,6 +18287,101 @@ console.log('\n--- one press is not enough, and one player drives ---');
      watches, once, at the moment they have earned it.
 
      @see src/systems/finaletide.js, docs/notes/story.md */
+
+  /* --- ...AND A DEBUG RUN HAS TO ARRIVE WITH A WRECKED TOWN -------------
+     REPORTED FROM PLAY: "having no mischief knocked over and starting the
+     cutscene in debug currently causes major issues during the cutscene
+     playback." The whole of the next block is why. `FinaleTide.start` holds
+     exactly the props that are KNOCKED, so pressing `6` on a standing world
+     gave the ending a tide holding nothing: no reconstruction, no shove, and
+     `_heap()` — which measures the tightest knot of knocked props — coming back
+     null, so all four shots framed on the heap fell through to the wide one.
+     Patchfur then said "there is nothing left standing" over a town that was
+     entirely standing.
+
+     LIFTED OUT OF `main.js` RATHER THAN RE-IMPLEMENTED, the same trick
+     `strikePlayers` is checked with: a second copy of the method here would
+     pass for ever while the real one rotted. Run on a small world of REAL
+     `Prop`s rather than on the one the rest of this section is using, because
+     the thing it does is knock over everything it can see. */
+  {
+    const msrc2 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+      .replace(/\r\n/g, '\n');
+    const at = msrc2.indexOf('\n  _wreckWorld() {');
+    ok('the debug wreck is where this check thinks it is', at > 0);
+    const from = msrc2.indexOf('{', at + 1) + 1;
+    const body = msrc2.slice(from, msrc2.indexOf('\n  }\n', from));
+    /* THE ONE THING IT REACHES FOR OUTSIDE ITSELF — the mischief readout.
+       Handed in rather than left to the global, because this file swaps the DOM
+       stub out and back around the HUD checks and a lifted method must not
+       depend on which side of that it happens to run on. */
+    // eslint-disable-next-line no-new-func
+    const wreck = new Function('document', `return function () {${body}\n};`)(
+      globalThis.document ?? { getElementById: () => null });
+
+    const mk = (x, z) => new Prop('barrel', x, world.heightAt(x, z)?.y ?? 0, z, x + z);
+    const mine = [];
+    for (let i = 0; i < 24; i++) mine.push(mk(-20 + i * 1.7, 30 + (i % 5) * 2));
+    /* ONE ALREADY OVER, so "idempotent" is a reading and not an assumption,
+       and ONE RETIRED, which is the thing that must never come back. */
+    mine[0].knock(new THREE.Vector3(1, 0, 0), 1);
+    mine[0].group.position.set(mine[0].home.x + 1, mine[0].home.y, mine[0].home.z);
+    mine[0].group.rotation.set(1.4, 0.6, 0.3);
+    const keptPos = mine[0].group.position.clone();
+    const keptRot = mine[0].group.rotation.clone();
+    mine[1]._retire();
+    mine[1].scored = true;
+    const W2 = {
+      props: mine,
+      mischiefTotal: mine.length,
+      heightAt: (x, z) => world.heightAt(x, z),
+    };
+    const standing = wreck.call({ world: W2 });
+
+    ok('the debug endgame knocks over everything still standing',
+      standing === mine.length - 2, `${standing} of ${mine.length}`);
+    ok('...so the tide has something to take hold of at all',
+      mine.filter((q) => q.knocked && !q.gone).length === mine.length - 1);
+    ok('...and the counter it feeds reads a full clear',
+      mine.every((q) => q.scored));
+    /* NOTHING COMES BACK. `Prop._retire` is the rule that makes the mischief
+       counter trustworthy, and a debug key that quietly stood a retired cane
+       back up would break it in the one scene everybody watches. */
+    ok('...without standing anything back up that fell off the world',
+      mine[1].gone && !mine[1].knocked && mine[1].group.visible === false);
+    /* IDEMPOTENT ON WHAT IS ALREADY DOWN. Pressing `6` twice is explicitly
+       supported, and re-posing a barrel that is already lying there would make
+       the second press visibly re-scatter the town. */
+    ok('...and leaving the ones already lying down exactly where they landed',
+      mine[0].group.position.equals(keptPos)
+      && mine[0].group.rotation.equals(keptRot));
+
+    /* A POSE EACH, AND NOT THE ONE `Prop.update` SETTLES TO. A town where
+       every barrel is flat on x and square on z is a town that was placed
+       rather than knocked over — and it is exactly the pose a prop converges
+       to on its own over about a second, so it is also the tell. */
+    const fresh = mine.slice(2);
+    const tips = new Set(fresh.map((q) => q.group.rotation.x.toFixed(3)));
+    ok('...each of them lying in a direction of its own',
+      tips.size >= fresh.length - 1, `${tips.size} distinct tilts of ${fresh.length}`);
+    ok('...none of them in the pose a prop settles into by itself',
+      fresh.every((q) => Math.abs(q.group.rotation.z) > 1e-3));
+    ok('...and all of them near the spot they were built on',
+      fresh.every((q) => Math.hypot(
+        q.group.position.x - q.home.x, q.group.position.z - q.home.z) < 2.1));
+    /* AND NOT MID-FLIGHT. `slam` and the wave both read the pose they find as
+       "where this thing is lying"; a prop still carrying velocity would be
+       snapshot in the air and put back there by `finish`. */
+    ok('...and none of them still falling',
+      fresh.every((q) => q.vel.lengthSq() === 0 && q.spin.lengthSq() === 0));
+
+    /* THE BUG, ASKED DIRECTLY. */
+    const t2 = new FinaleTide(W2);
+    const n2 = t2.start();
+    ok('...so the ending arrives with a whole town in its hands',
+      n2 === mine.length - 1, `${n2} held`);
+    t2.finish();
+  }
 
   /* KNOCK A REAL SLICE OF THE REAL WORLD OVER, the way an afternoon does, and
      settle it untidily rather than leaving it mid-flight. */
@@ -18389,6 +18809,905 @@ console.log('\n--- one press is not enough, and one player drives ---');
 
   // Leave the world as the rest of the file found it.
   tprops.forEach((q) => q._reset());
+}
+
+{
+  /* --- 4g. THE MODEL OF THE WORLD ON THE DOJO FLOOR ----------------------
+     The middle of the ending is a hologram of the whole archipelago assembling
+     itself in front of the girls while Patchfur explains why the islands
+     drifted — the Bugenhagen shot, with islands instead of planets. It huddles
+     up first, rims nearly touching, with little bridges between them and a
+     town full of people; then the bridges go, the people go, and the islands
+     fly apart.
+
+     EVERY CHECK HERE IS THE EIGHTH NON-NEGOTIABLE POINTED AT A PICTURE. The
+     model is a reading of the REAL world — real islands at real bearings, real
+     houses, real roads, the real shrines, the real bridge — and the failure it
+     is guarding against is not a crash. It is a model that still draws
+     something plausible after the town it is a model of has moved, which
+     nobody would notice until a nine-year-old did.
+
+     @see src/systems/finaleshow.js, docs/notes/story.md */
+
+  const sheet = (cols, rows) => {
+    const t = new THREE.Texture({ width: 256, height: 256 });
+    return { texture: t, cols, rows, contentScale: 0.88, pad: 0.06, contentArea: 0.6 };
+  };
+  const CAST = {
+    kittens: [sheet(4, 3), sheet(4, 3), sheet(4, 3), sheet(4, 3)],
+    bless: [sheet(1, 1), sheet(1, 1), sheet(1, 1), sheet(1, 1)],
+    dragon: sheet(1, 1),
+    satan: sheet(1, 1),
+    satanCharge: sheet(1, 1),
+  };
+  const spot = (x, y, z, r) => { const v = new THREE.Vector3(x, y, z); v.r = r; return v; };
+  const mkShow = () => {
+    const S = new FinaleShow(new THREE.Scene());
+    S.marks = { trioSpots: [spot(0, 1, 0, 2), spot(4, 1, 4, 2), spot(-4, 1, 4, 2)] };
+    S.start(world, CAST);
+    return S;
+  };
+
+  /* --- THE TWO THINGS THE WORLD HAD TO BE ASKED FOR --------------------
+     A torii is not a solid — you walk through it — and a stone lantern is
+     decor, so both of them were merged into one anonymous mesh at build time
+     and nothing could find them afterwards. The model needs them, because a
+     model of this town with no red gate at the head of the street is a model
+     of somewhere else. `World.landmarks` is the answer, and it is recorded at
+     the same `put()` calls that build them so it cannot drift. */
+  {
+    const L = world.landmarks ?? [];
+    ok('the world says where its torii and its lanterns are', L.length > 20,
+      `${L.length} landmarks`);
+    ok('...and every one of them is a real kind at a real place',
+      L.every((m) => (m.kind === 'torii' || m.kind === 'lantern')
+        && Number.isFinite(m.x) && Number.isFinite(m.z) && m.s > 0),
+      [...new Set(L.map((m) => m.kind))].join(' '));
+    /* COUNTED OFF THE SOURCE, not typed. A torii added to the town without a
+       line in `landmarks` would simply be missing from the model, which is a
+       thing no screenshot of the model would tell you. */
+    const wsrc = readFileSync(new URL('../src/world/world.js', import.meta.url), 'utf8');
+    const built = (wsrc.match(/buildTorii\(/g) ?? []).length;
+    ok('...and there is one entry for every torii the world builds',
+      L.filter((m) => m.kind === 'torii').length === built,
+      `${L.filter((m) => m.kind === 'torii').length} listed, ${built} built`);
+    /* ON LAND. A landmark outside every island's rim would be drawn by nothing
+       and is far more likely to mean a coordinate was copied wrong. */
+    ok('...and all of them are standing on an island',
+      L.every((m) => world.islands.some(
+        (i) => Math.hypot(m.x - i.x, m.z - i.z) <= (i.radius ?? 0) + 1)));
+  }
+
+  /* --- THE HUDDLE IS A PACK, NOT A SCALE FACTOR -------------------------
+     REPORTED FROM PLAY: "they seem to be all ontop of each other, it would be
+     better if their rims were slightly touching or near to touching, rather
+     than be colliding with each other." It used to multiply every island's
+     position by 0.17, which pulls the far ones in far harder than the near
+     ones in absolute terms and buries six of them inside the town. A distance
+     cannot be solved with a scale factor. */
+  {
+    const S = mkShow();
+    ok('the ending builds a model of the archipelago', S.isles.length >= 6,
+      `${S.isles.length} islands`);
+    ok('...and leaves the arena out of it, because it is not adrift',
+      !S.isles.some((i) => i.kind === 'arena'));
+    let worst = Infinity;
+    for (let a = 0; a < S.isles.length; a++) {
+      for (let b = a + 1; b < S.isles.length; b++) {
+        const A = S.isles[a];
+        const B = S.isles[b];
+        worst = Math.min(worst,
+          Math.hypot(A.near.x - B.near.x, A.near.z - B.near.z) - A.r - B.r);
+      }
+    }
+    ok('no two islands in the huddle are inside each other', worst >= 0,
+      `tightest rim gap ${worst.toFixed(3)}`);
+    /* ...AND MEASURED AGAINST THE MODEL'S OWN SIZE rather than against a
+       number typed here, so re-scaling the hologram cannot quietly turn
+       "nearly touching" into "half a town apart". */
+    const span = Math.max(...S.isles.map(
+      (i) => Math.hypot(i.home.x, i.home.z) + i.r));
+    ok('...and the tightest pair is very nearly touching', worst < span * 0.05,
+      `${worst.toFixed(3)} across a model ${span.toFixed(1)} to the rim`);
+    /* AND IT IS STILL THE SAME MAP. Which direction the frost island lies in
+       from the town is a fact the girls know by heart; only the DISTANCE is
+       what the beat changes. A pack that rotated anything would be a different
+       archipelago wearing this one's colours. */
+    const off = S.isles.filter((i) => Math.hypot(i.home.x, i.home.z) > 1e-6)
+      .map((i) => {
+        const a = Math.atan2(i.home.z, i.home.x);
+        const b = Math.atan2(i.near.z, i.near.x);
+        return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+      });
+    ok('...and every island keeps the bearing it has in the real world',
+      off.every((d) => d < 1e-6), `worst ${Math.max(...off).toExponential(1)}`);
+    /* AND EVERY ONE OF THEM IS CLOSER IN THAN IT REALLY IS, which is the
+       difference between a huddle and a slightly smaller map. */
+    ok('...and every one of them is pulled in from where it really sits',
+      S.isles.every((i) => Math.hypot(i.near.x, i.near.z)
+        <= Math.hypot(i.home.x, i.home.z) + 1e-9));
+    /* THE HEIGHTS ARE "MOSTLY CONNECTED" AND THEN THEY ARE NOT. */
+    const nearSpread = Math.max(...S.isles.map((i) => i.nearY))
+      - Math.min(...S.isles.map((i) => i.nearY));
+    const farSpread = Math.max(...S.isles.map((i) => i.farY))
+      - Math.min(...S.isles.map((i) => i.farY));
+    ok('...and they start at almost one height and end up staggered',
+      nearSpread > 0 && farSpread > nearSpread * 4,
+      `${nearSpread.toFixed(2)} -> ${farSpread.toFixed(2)}`);
+    S.finish();
+  }
+
+  /* --- THE LOST CONNECTIONS ---------------------------------------------
+     "Can even have mini-bridges between them that disappear when they start to
+     separate to symbolize the lost connection." One per island bar the first,
+     which makes the set a spanning tree: everywhere reachable from the town,
+     nothing reachable two ways. That IS the sentence the shot plays under. */
+  {
+    const S = mkShow();
+    ok('every island but one is bridged to a neighbour',
+      S.bridges.children.length === S.isles.length - 1,
+      `${S.bridges.children.length} bridges for ${S.isles.length} islands`);
+    ok('...and following those bridges from anywhere gets you to the town',
+      S.isles.every((i) => {
+        let at = i;
+        for (let n = 0; n < 20 && at.parent; n++) at = at.parent;
+        return !at.parent && Math.hypot(at.home.x, at.home.z) < 1e-6;
+      }));
+    /* AND THEY GO BEFORE THE ISLANDS DO. The picture has to be "the roads
+       break and then the islands go", which is the order the sentence puts
+       them in. */
+    S.cue('isles-in');
+    for (let i = 0; i < 200; i++) S.update(1 / 60, null);
+    const linked = S.bridgeMat.opacity;
+    S.cue('isles-drift');
+    for (let i = 0; i < 42; i++) S.update(1 / 60, null);   // 0.7s of a 2.1s drift
+    ok('the bridges are up while the islands are still together', linked > 0.5,
+      linked.toFixed(2));
+    ok('...and gone before the islands are a third of the way apart',
+      S.bridgeMat.opacity < 0.01, S.bridgeMat.opacity.toFixed(3));
+    S.finish();
+  }
+
+  /* --- NOBODY CROSSES, WHICH IS THE WHOLE LINE --------------------------
+     "Can also have a few animals on the other islands but have the
+     animals/people not crossing into the other islands, which is why the
+     islands drifted." The wander is a small orbit around a fixed home point
+     rather than a walk, so this is provable rather than probable — and being
+     provable is the reason it was written that way. */
+  {
+    const S = mkShow();
+    const all = [...S.folk.list, ...S.beasts.list];
+    ok('the model town has people and animals in it',
+      S.folk.list.length >= 10 && S.folk.list.length <= 20
+      && S.beasts.list.length >= 10,
+      `${S.folk.list.length} people, ${S.beasts.list.length} animals`);
+    ok('...and not one of them can wander off the island it was born on',
+      all.every((f) => Math.hypot(f.hx, f.hz) + f.wr < f.host.r),
+      `worst ${Math.max(...all.map(
+        (f) => (Math.hypot(f.hx, f.hz) + f.wr) / f.host.r)).toFixed(2)} of a radius`);
+    /* PEOPLE ONLY IN THE TOWN. The other islands are where nobody goes any
+       more; a crowd on the ash island would be the model disagreeing with the
+       narration over the top of it. */
+    const town = S.isles.reduce((a, b) => (a.r >= b.r ? a : b));
+    ok('...and the people are all in the main town',
+      S.folk.list.every((f) => f.host === town));
+    ok('...with a few animals out on the other islands',
+      new Set(S.beasts.list.map((f) => f.host)).size >= 4);
+    /* AND THEY GO WHEN THE ISLANDS DO. */
+    S.cue('isles-in');
+    for (let i = 0; i < 200; i++) S.update(1 / 60, null);
+    const lived = S.folkMat.opacity;
+    S.cue('isles-drift');
+    for (let i = 0; i < 90; i++) S.update(1 / 60, null);
+    ok('the town is busy while it is still one place', lived > 0.5, lived.toFixed(2));
+    ok('...and empty by the time the islands are apart', S.folkMat.opacity < 0.01);
+    S.finish();
+  }
+
+  /* --- THE MODEL IS THE REAL TOWN, AND IT IS READ RATHER THAN COPIED ----
+     Nothing in `_isleDetail` is a coordinate typed twice: the houses come out
+     of `world.solids`, the streets out of `world.roadMask`, the shrines out of
+     `world.clanHalls`, the gates and the lanterns out of `world.landmarks`.
+     The proof is by TAKING THE TOWN AWAY — a model built from literals would
+     come out identical, and this one has to come out empty. */
+  {
+    const A = mkShow();
+    const vertsOf = (S) => S.isles.map(
+      (i) => i.g.children.find((c) => c.isMesh)?.geometry.attributes.position.count ?? 0);
+    const before = vertsOf(A);
+    ok('every island in the model has something built on it',
+      before.filter((n) => n > 400).length >= 3, before.join(' '));
+    ok('...and the busiest one is the town', Math.max(...before) === before[0]);
+    A.finish();
+
+    const kept = {
+      solids: world.solids, halls: world.clanHalls,
+      marks: world.landmarks, roads: world.roadMask,
+    };
+    world.solids = kept.solids.filter((q) => Math.hypot(q.x, q.z) > 96);
+    world.roadMask = kept.roads.filter((q) => Math.hypot(q.x, q.z) > 96);
+    world.clanHalls = [];
+    world.landmarks = [];
+    const B = mkShow();
+    const after = vertsOf(B);
+    ok('...and a town with nothing in it builds a model with nothing on it',
+      after[0] < before[0] / 4, `${before[0]} -> ${after[0]}`);
+    B.finish();
+    world.solids = kept.solids;
+    world.roadMask = kept.roads;
+    world.clanHalls = kept.halls;
+    world.landmarks = kept.marks;
+  }
+
+  /* --- A BILLBOARD ON A TURNTABLE ---------------------------------------
+     REPORTED FROM PLAY: "the players are right now 2D cutout looking and are
+     not facing the camera properly while navigating the island." The model
+     turns for the whole beat, and `Billboard.faceCamera` writes a LOCAL yaw —
+     so every figure standing on it was rotated by the model's spin ON TOP of
+     the camera angle and spent most of the shot edge-on, which is precisely
+     what a cardboard cut-out looks like.
+
+     ASKED AS THE THING THAT WAS WRONG: after a frame, is the quad's WORLD
+     rotation the bearing to the camera? Nothing about the fix is inspected —
+     only whether the kittens are facing the lens. */
+  {
+    const S = mkShow();
+    const cam = new THREE.PerspectiveCamera(50, 1.6, 0.1, 1000);
+    cam.position.set(world.dojoCentre.x + 41, world.dojoCentre.y + 19,
+      world.dojoCentre.z - 23);
+    S.cue('isles-cross');
+    for (let i = 0; i < 180; i++) S.update(1 / 60, cam);
+    S.model.updateMatrixWorld(true);
+    ok('the model is turning while the little ones cross it',
+      Math.abs(S.model.rotation.y) > 0.2, S.model.rotation.y.toFixed(2));
+    const wp = new THREE.Vector3();
+    const errs = S.kits.filter((k) => k.mini.bb.visible).map((k) => {
+      k.mini.bb.getWorldPosition(wp);
+      const want = Math.atan2(cam.position.x - wp.x, cam.position.z - wp.z);
+      const m = k.mini.bb.mesh.matrixWorld.elements;
+      const got = Math.atan2(m[8], m[10]);
+      return Math.abs(Math.atan2(Math.sin(got - want), Math.cos(got - want)));
+    });
+    ok('...and every one of them is square to the camera anyway',
+      errs.length >= 2 && errs.every((e) => e < 1e-5),
+      `worst ${Math.max(...errs).toExponential(1)} rad`);
+    S.finish();
+  }
+
+  /* --- THE CROSS-FADE THAT USED TO BLINK --------------------------------
+     "When the text 'all afternoon.' ends, that's when we should have the
+     islands start to fade in as the player is still running around and slowly
+     fading out... It is about a 2 seconds transition."
+
+     THE FADE USED TO BE SOLVED FROM `phaseT`, and `phaseT` restarts on every
+     cue — so the model dipped to nothing and came back on each of the six
+     `isles-*` lines she speaks over it. Chasing a target instead is the one
+     thing that survives the cuts inside a cross-fade, and this asks that
+     directly: walk the whole middle of the ending and watch for a dip. */
+  {
+    const S = mkShow();
+    S.cue('dojo-run');
+    for (let i = 0; i < 120; i++) S.update(1 / 60, null);
+    ok('the kitten on the painted circle is who the lesson reads',
+      (S.drivers() ?? []).length === 1);
+    let peak = 0;
+    let dip = 0;
+    for (const c of ['isles-wake', 'isles-in', 'isles-drift', 'isles-cross',
+      'isles-angle', 'isles-circle', 'isles-leap', 'isles-bridge']) {
+      S.cue(c);
+      for (let i = 0; i < 90; i++) {
+        S.update(1 / 60, null);
+        peak = Math.max(peak, S.modelOn);
+        if (peak > 0.99) dip = Math.max(dip, peak - S.modelOn);
+      }
+    }
+    ok('the model arrives once and stays', peak > 0.99 && dip < 1e-9,
+      `worst dip ${dip.toFixed(3)}`);
+    /* ...AND SHE DOES NOT COME BACK. "When the player fades out, let's also
+       remove them as currently, they are fading in/out with the other players
+       in the cutscene which looks bad." */
+    ok('...and the kitten who was running the Dojo is gone for good',
+      S.runner.done && !S.runner.bb.visible && S.drivers() === null);
+    S.finish();
+    /* AND IT TAKES ABOUT TWO SECONDS, which is the number that was asked for
+       and is measured here rather than read off the constant that sets it. */
+    const T = mkShow();
+    T.cue('dojo-run');
+    for (let i = 0; i < 120; i++) T.update(1 / 60, null);
+    T.cue('isles-wake');
+    let frames = 0;
+    while (T.modelOn < 0.999 && frames < 600) { T.update(1 / 60, null); frames++; }
+    ok('...and the hand-over takes about two seconds',
+      frames / 60 > 1.4 && frames / 60 < 2.6, `${(frames / 60).toFixed(2)}s`);
+    T.finish();
+  }
+
+  /* --- AN ANGLE AND A CIRCLE, MADE OF WHERE THE KITTENS ACTUALLY ARE -----
+     "Would be good if we can show 'angles' between all the players and the
+     islands and circle connecting the players with the islands, show them
+     expanding the circle while navigating between the islands."
+
+     THE SAME RULE THE KOTODAMA ORB LIVES BY, one non-negotiable up: a diagram
+     laid over four kittens is decoration, and a diagram drawn FROM the four
+     kittens is the thing the line is about. So the circle's radius has to move
+     when they do. */
+  {
+    const S = mkShow();
+    S.cue('isles-cross');
+    for (let i = 0; i < 120; i++) S.update(1 / 60, null);
+    S.cue('isles-circle');
+    for (let i = 0; i < 40; i++) S.update(1 / 60, null);
+    const r0 = S.tiers[0].skin[0].scale.x;
+    /* Send them all further out — by moving where they are GOING, since the
+       positions themselves are re-solved from the path every frame — and ask
+       the circle again. */
+    for (const k of S.kits) { k.from.multiplyScalar(1.9); k.to.multiplyScalar(1.9); }
+    S.update(1 / 60, null);
+    const r1 = S.tiers[0].skin[0].scale.x;
+    ok('the circle is drawn from where the kittens have got to',
+      r1 > r0 * 1.3, `${r0.toFixed(1)} -> ${r1.toFixed(1)}`);
+    /* THICKER AT THE BASE, NARROWING UPWARD — and every half of that is a
+       measurement off the built rings rather than a promise in a comment.
+       `linewidth` is a documented dead end in WebGL, so "thicker" is N lines
+       stacked, and this is what says so. */
+    const top = S.tiers[S.tiers.length - 1];
+    ok('...and the stack is a cone, not a cylinder',
+      top.skin[0].scale.x < S.tiers[0].skin[0].scale.x * 0.6);
+    ok('...heaviest at the bottom, because a WebGL line is one pixel wide',
+      S.tiers[0].skin.length > top.skin.length,
+      S.tiers.map((t) => t.skin.length).join('-'));
+    ok('...and it climbs as it narrows',
+      top.skin[0].position.y > S.tiers[0].skin[0].position.y + 2);
+    /* THE OVERLAY DOES NOT TURN WITH THE TABLE. It is the strongest single cue
+       that a thing is projected over the islands rather than painted on them. */
+    ok('...and none of it spins with the model underneath it',
+      Math.abs(S.shapes.rotation.y + S.model.rotation.y) < 1e-6);
+    /* AND IT IS NOT ON SCREEN WHEN SHE IS NOT SAYING IT. */
+    S.cue('isles-bridge');
+    for (let i = 0; i < 60; i++) S.update(1 / 60, null);
+    ok('...and it is gone by the time she has moved on', !S.shapes.visible);
+    S.finish();
+  }
+
+  /* --- THE CHAMPION IN THE MIDDLE OF THE RING ---------------------------
+     "Can have Mr. Satan standing in the center of the 4 players and have all
+     the players facing him... can have his arms raised up using the sprite
+     'satan_charge.png'. Can also have the players do their 'bless' sprite, to
+     make it look like they are cheering." */
+  {
+    const S = mkShow();
+    S.cue('arena-in');
+    for (let i = 0; i < 60; i++) S.update(1 / 60, null);
+    const R = world.arenaRing;
+    ok('the champion stands in the middle of his own ring',
+      Math.hypot(S.satan.bb.position.x - R.x, S.satan.bb.position.z - R.z) < 0.01);
+    ok('...with everybody on a circle around him',
+      S.kits.every((k) => {
+        const d = Math.hypot(k.stand.x - R.x, k.stand.z - R.z);
+        return d > R.half * 0.3 && d < R.half * 0.8;
+      }));
+    /* FACING HIM, asked as a bearing rather than as a number: at two players
+       and at four this has to come out right without a special case. */
+    ok('...and every one of them looking at him',
+      S.kits.every((k) => {
+        const want = Math.atan2(R.x - k.stand.x, R.z - k.stand.z);
+        return Math.abs(Math.atan2(Math.sin(k.big.bb.facing - want),
+          Math.cos(k.big.bb.facing - want))) < 1e-6;
+      }));
+    ok('...and his arms are down while he is being looked at',
+      S.satan.bb.visible && !S.satanUp.bb.visible);
+    S.cue('arena-raise');
+    for (let i = 0; i < 30; i++) S.update(1 / 60, null);
+    ok('and up on the word, in a second drawing rather than a second row',
+      S.satanUp.bb.visible && !S.satan.bb.visible);
+    ok('...with the four of them cheering him',
+      S.kits.every((k) => k.cheer.bb.visible && !k.big.bb.visible));
+    /* SIZED THE WAY THE GAME SIZES IT. `player.js` measured this exact drawing
+       against this exact kitten — an ear span counted in pixels off both
+       sheets — and the ending drawing it at some other size would be the one
+       shot in the game where a kitten changes height when she cheers. Compared
+       as a RATIO so it is the rule being checked and not two heights that
+       happen to agree. */
+    const ratio = S.kits[0].cheer.bb.height / S.kits[0].big.bb.height;
+    /* A REAL `Player`, WHICH WANTS A DOM for her floating name tag. Put back
+       straight afterwards: this file hands the stub round between sections and
+       a check that left one installed would quietly change what the sections
+       after it are testing. */
+    const hadDoc2 = 'document' in globalThis;
+    if (!hadDoc2) globalThis.document = domStub();
+    const P = new Player({
+      texture: CAST.kittens[0].texture, index: 0, height: 2.9,
+      cols: 4, rows: 3, contentScale: 0.88, pad: 0.06,
+    });
+    P.setBlessArt(CAST.bless[0]);
+    if (!hadDoc2) delete globalThis.document;
+    ok('...and at exactly the proportion a real kitten cheers at',
+      Math.abs(ratio - BLESS_STRETCH) < 1e-9
+      && Math.abs(P.blessPose.height / P.sprite.height - ratio) < 1e-9,
+      ratio.toFixed(4));
+    S.finish();
+  }
+
+  /* --- AND THE CAST IT ALL NEEDS IS HANDED OVER ------------------------
+     Read out of `main.js` rather than assumed: the cheer and the arms-up pose
+     are the two sheets this scene added, and a `_finaleCast` that forgot
+     either would cost the last shot of the game in silence. */
+  {
+    const msrc3 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    const at3 = msrc3.indexOf('_finaleCast() {');
+    const body3 = msrc3.slice(at3, msrc3.indexOf('\n  }', at3));
+    ok('the ending is handed the blessing pose and the champion’s arms',
+      /bless:\s*this\.blessArt/.test(body3)
+      && /satanCharge:\s*this\.satanChargeArt/.test(body3));
+    ok('...and the arms-up sheet is kept somewhere the ending can reach it',
+      /this\.satanChargeArt = satanChargeArt/.test(msrc3));
+  }
+
+  /* --- AND NOTHING IT BUILT OUTLIVES IT --------------------------------- */
+  {
+    const sc = new THREE.Scene();
+    const S = new FinaleShow(sc);
+    S.marks = { trioSpots: null };
+    S.start(world, CAST);
+    const grew = sc.children.length;
+    S.finish();
+    ok('the ending leaves the scene exactly as it found it',
+      grew > 0 && sc.children.length === 0,
+      `${grew} added, ${sc.children.length} left`);
+    /* AND IT PLAYS ON A WORLD THAT HAS NOTHING IN IT. The scene viewer can
+       open the ending anywhere at all; ninth non-negotiable. */
+    const E = new FinaleShow(sc);
+    ok('...and survives being asked to model a world with no islands',
+      E.start({ islands: [] }, null) === true);
+    E.cue('isles-in');
+    for (let i = 0; i < 30; i++) E.update(1 / 60, null);
+    ok('...without inventing an island to draw',
+      E.isles.length === 0 && E.model.children.length === 0);
+    E.finish();
+  }
+}
+
+/* ===========================================================================
+   THE AFTERNOON, WRITTEN DOWN — src/systems/savegame.js
+
+   WHY THIS SECTION IS LONG. A save is the only thing in this project that can
+   be WRONG SILENTLY and stay wrong: a bad ending plays once and you watch it
+   happen, and a bad save sits in localStorage looking fine until somebody
+   loads it four hours later and finds her clan gone. So almost nothing here
+   asks whether a field is set — it asks whether loading actually put the
+   afternoon back, against the REAL World and REAL Players.
+
+   IT BUILDS ITS OWN WORLD. `restore` retires props, and a retired prop is
+   permanent by design (fourth non-negotiable), so running it over the shared
+   `world` would quietly change what every section after this one is testing.
+   =========================================================================== */
+{
+  console.log('\n--- the afternoon, written down ---');
+
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const KEY = 'kk.saves.v1';
+
+  /* A save with just enough in it to be legal, taken at a chosen moment. */
+  const row = (at, over = {}) => ({
+    v: SAVE_VERSION, id: `s${at}`, at, played: 600,
+    sig: worldSig(world), players: [{ style: 'Ember', orbs: [] }],
+    world: { knocked: [], gone: [], scored: [], pickups: [], balls: [], arena: false },
+    ...over,
+  });
+
+  /* A world of its own to wreck, and enough of a Game around it for a save to
+     be taken from and put back into. Everything here is either the real class
+     or a spy that records that it was called: the point of the restore checks
+     below is WHICH of the game's own doors a load goes through, and a stub
+     that silently accepted anything would pass all of them. */
+  const sheet = { width: 256, height: 256 };
+  const fakeGame = (w, n) => {
+    const scene = new THREE.Scene();
+    const G = {
+      log: [], world: w, scene, playT: 0, ballsHeld: 0,
+      _endingShown: false, _finaleDue: false,
+      pickups: [0, 1, 2].map(() => ({ taken: false, group: new THREE.Group() })),
+      balls: [0, 1, 2].map(() => ({ taken: false, take() { this.taken = true; } })),
+      kotodama: { awakened: false, awaken() { this.awakened = true; G.log.push('awaken'); } },
+      quest: { stage: 'waiting', spent: new Set(), rodeRyu: false },
+      summonScene: { played: {}, duskWant: 0, dusk: 0, dawnWant: 0, dawn: 0 },
+      players: [],
+      restart() {
+        G.log.push('restart');
+        w.props.forEach((p) => { if (!p.gone) { p.knocked = false; p.scored = false; } });
+        G.players.forEach((p) => { p.setPowerOrbs([]); p.clan = null; p.score = 0; });
+        G.balls.forEach((b) => { b.taken = false; });
+        G.pickups.forEach((p) => { p.taken = false; });
+        G.ballsHeld = 0;
+        G.quest.spent = new Set();
+        G.kotodama.awakened = false;
+      },
+      /* THE CEREMONY, WIRED UP SO THAT CALLING IT WOULD BE CAUGHT. */
+      onJoinClan() { G.log.push('onJoinClan'); },
+      onScoreChanged() { G.log.push('score'); },
+      _updateClanBadge() { G.log.push('clanBadge'); },
+      syncOrbMeshes() {}, _reseedRigs() {}, _updateBallHud() {},
+    };
+    for (let i = 0; i < n; i++) {
+      G.players.push(new Player({
+        texture: new THREE.Texture(sheet), index: i, height: 2.9,
+        cols: 4, rows: 3, contentScale: 0.88, pad: 0.06,
+      }));
+    }
+    return G;
+  };
+
+  const hadDocS = 'document' in globalThis;
+  if (!hadDocS) globalThis.document = domStub();
+  const W2 = new World(new THREE.Scene());
+
+  /* --- 1. FIVE SLOTS, AND THE OLDEST IS THE ONE THAT GOES ---------------
+     Asked for as "let's have a maximum of only 5 saves in the save list", and
+     the half that matters is WHICH five: a cap that dropped the newest would
+     mean the afternoon you are in the middle of can never be saved at all. */
+  {
+    clearSaves();
+    for (let i = 1; i <= 8; i++) putSave(row(i * 1000));
+    const keep = listSaves();
+    ok('the save list holds five and no more', keep.length === MAX_SAVES, keep.length);
+    ok('...and it is the five newest, newest first',
+      keep.map((r) => r.at).join() === '8000,7000,6000,5000,4000',
+      keep.map((r) => r.at).join());
+    ok('...so the afternoon you are in the middle of is never the one dropped',
+      keep[0].at === 8000);
+    ok('...and dropping one by name leaves the rest alone',
+      dropSave('s6000') && listSaves().map((r) => r.at).join() === '8000,7000,5000,4000');
+    clearSaves();
+    ok('...and clearing takes the lot', listSaves().length === 0);
+  }
+
+  /* --- 2. VALIDATED ON THE WAY IN, LIKE THE RECORD BOARD ----------------
+     Same rule and the same reason: this survives a reload, so it can also be
+     sitting there half-written from a tab that was closed mid-save, or edited
+     by a nine-year-old who found the dev tools. Ninth non-negotiable. */
+  {
+    globalThis.localStorage.setItem(KEY, 'not json at all');
+    ok('a corrupted save file reads as no saves rather than throwing',
+      Array.isArray(listSaves()) && listSaves().length === 0);
+    globalThis.localStorage.setItem(KEY, '{"not":"an array"}');
+    ok('...and so does one that is not a list', listSaves().length === 0);
+    clearSaves();
+    putSave(row(1000));
+    putSave({ ...row(2000), v: SAVE_VERSION - 1 });
+    ok('...and a save from an older format is thrown away, not misread',
+      listSaves().length === 1 && listSaves()[0].at === 1000);
+    putSave({ ...row(3000), players: 'not a list' });
+    ok('...and one with no player list at all is dropped too',
+      listSaves().every((r) => Array.isArray(r.players)));
+    clearSaves();
+  }
+
+  /* --- 3. IT IS PINNED TO THE WORLD IT WAS TAKEN IN ---------------------
+     Every prop, pickup and star in a save is an INDEX, and a build that
+     changes how many props the town has renumbers all of them. The honest
+     answer is a row you cannot load with a line saying why — sixth
+     non-negotiable — and never a load that puts the wrong barrels down. */
+  {
+    const here = worldSig(world);
+    ok('a save knows which world it was taken in', /^\d+:\d+:\d+:\d+$/.test(here), here);
+    ok('...and a save from this world is loadable',
+      describe(row(1000), world).stale === false);
+    const other = { ...world, props: [...world.props, {}] };
+    ok('...and one prop more makes every index in it a guess, so it refuses',
+      describe(row(1000), other).stale === true, worldSig(other));
+    ok('...and it refuses on the island count too',
+      describe(row(1000), { ...world, islands: [] }).stale === true);
+  }
+
+  /* --- 4. WHAT A SAVE ACTUALLY IS ---------------------------------------
+     "It does not describe the world; it describes what the PLAYERS have done
+     to it." Worth pinning as a SIZE: the moment somebody serialises a mesh in
+     here, the number below moves by three orders of magnitude. */
+  {
+    const G = fakeGame(W2, 2);
+    W2.props[0].knocked = true;                       // down, never counted
+    W2.props[1].knocked = true; W2.props[1].scored = true;   // down and counted
+    W2.props[2].scored = true; W2.props[2].gone = true;      // counted, then retired
+    G.players[0].setPowerOrbs(['swift', 'swift']);
+    G.players[0].score = 410;
+    G.players[0].clan = CLANS[0];
+    G.playT = 1234;
+    const snap = snapshot(G);
+
+    ok('a save is taken', !!snap && snap.v === SAVE_VERSION);
+    /* KNOCKED AND SCORED ARE TWO LISTS AND THEY GENUINELY DIFFER. The MISCHIEF
+       counter reads the second; a save that collapsed them would come back with
+       a counter that had invented points or lost them. Fourth non-negotiable —
+       the counter has to be honest. */
+    ok('...and "lying down" and "counted" are two different lists',
+      snap.world.knocked.join() === '0,1' && snap.world.scored.join() === '1,2',
+      `${snap.world.knocked.join()} vs ${snap.world.scored.join()}`);
+    ok('...with a retired prop out of the standing list entirely',
+      snap.world.gone.join() === '2' && !snap.world.knocked.includes(2));
+    ok('...and it carries the orbs she was wearing, stacks and all',
+      snap.players[0].orbs.join() === 'swift,swift');
+    ok('...and her kitten by NAME, not by which seat she sat in',
+      typeof snap.players[0].style === 'string'
+      && PLAYER_STYLE.some((st) => st.name === snap.players[0].style));
+    ok('...and her clan by id', snap.players[0].clan === CLANS[0].id);
+    ok('...and how long the afternoon had been going', snap.played === 1234);
+
+    const bytes = JSON.stringify(snap).length;
+    ok('...and the whole afternoon is a couple of kilobytes, not a town',
+      bytes < 20000, `${bytes} bytes for ${W2.props.length} props`);
+    ok('...because nothing in it describes a shape',
+      !/geometry|vertices|matrix|quaternion/i.test(JSON.stringify(snap)));
+    ok('...and a game nobody has joined yet is not worth saving',
+      snapshot({ world: W2, players: [] }) === null);
+  }
+
+  /* --- 5. THE ROW SAYS THE THINGS IT WAS ASKED TO SAY -------------------
+     "People should be able to find the save they want based on some of the
+     information shown in the save list (like how many players, whether arena
+     is unlocked, each players kotodama orbs equipped etc.)" — checked as those
+     four facts, because a list that cannot be chosen from is the feature
+     missing rather than a detail of it. */
+  {
+    const snap = row(1000, {
+      played: 3930,
+      players: [
+        { style: 'Ember', clan: CLANS[0].id, orbs: ['swift', 'reach'], score: 90 },
+        { style: 'Storm', clan: null, orbs: [], score: 40 },
+      ],
+      world: {
+        knocked: [], gone: [], scored: world.props.map((_, i) => i).slice(0, 54),
+        pickups: [], balls: [true, true, false], arena: true,
+      },
+    });
+    const d = describe(snap, world);
+    ok('a row says how many were playing', d.party === 2);
+    ok('...and whether the arena was open', d.arena === true);
+    ok('...and what each of them was wearing',
+      d.players[0].orbs.join() === 'swift,reach' && d.players[1].orbs.length === 0);
+    ok('...and which clan each had sworn to, by name rather than by id',
+      d.players[0].clan === CLANS[0].name && d.players[1].clan === null);
+    ok('...and how far the town had come down, as a percentage',
+      d.mischief === Math.round((54 / world.mischiefTotal) * 100), `${d.mischief}%`);
+    ok('...and how many stars had been found', d.balls === 2);
+    /* HOURS AND MINUTES. "65 minutes" is a number a nine-year-old has to do
+       arithmetic on before she can recognise her own afternoon. */
+    ok('...and how long it ran, in hours a child can read', d.played === '1h 5m', d.played);
+    ok('...and when it was', /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(d.when), d.when);
+    ok('...and never a slot number, which is the one fact nobody can recognise',
+      !('slot' in d) && !('index' in d));
+    ok('...and a world it cannot vouch for degrades to no percentage at all',
+      describe(snap, null).mischief === null);
+  }
+
+  /* --- 6. LOADING ONE PUTS THE AFTERNOON BACK --------------------------- */
+  {
+    const G = fakeGame(W2, 4);
+    G.players[0].setPowerOrbs(['swift', 'reach', 'reach']);
+    G.players[2].setPowerOrbs(['vigor']);
+    G.players.forEach((p, i) => { p.clan = CLANS[i % CLANS.length]; p.score = 70 * (i + 1); });
+    G.players[1].position.set(11, 3, -7);
+    W2.props.forEach((p, i) => {
+      if (i % 3 === 0) { p.knocked = true; p.scored = true; }
+      if (i % 37 === 0) { p.gone = true; p.scored = true; }
+    });
+    W2.arenaOpen = true;
+    G.balls[1].taken = true;
+    G.pickups[0].taken = true;
+    G.kotodama.awakened = true;
+    G.quest.spent = new Set([MILESTONES[0].id, 'a-milestone-that-never-existed']);
+    G.playT = 2400;
+    const snap = snapshot(G);
+
+    /* ...and now throw the afternoon away completely and put it back. */
+    const G2 = fakeGame(W2, 4);
+    const out = restore(G2, snap);
+
+    ok('a load starts by throwing the current game away, through restart',
+      G2.log[0] === 'restart', G2.log.slice(0, 3).join(' '));
+    ok('...and every kitten with a seat gets her afternoon back',
+      out.seated === 4 && out.dropped === 0, JSON.stringify(out));
+    ok('...with exactly the props that were lying down lying down again',
+      W2.props.filter((p) => p.knocked && !p.gone).length === snap.world.knocked.length,
+      `${W2.props.filter((p) => p.knocked && !p.gone).length} of ${snap.world.knocked.length}`);
+    ok('...and the MISCHIEF counter comes back honest',
+      W2.props.filter((p) => p.scored).length === snap.world.scored.length);
+    ok('...and a prop that was gone is gone again, permanently',
+      W2.props.filter((p) => p.gone).length === snap.world.gone.length);
+    /* THEY DO NOT ALL FALL THE SAME WAY. A save does not record which way each
+       barrel went — 216 numbers for a detail nobody could name afterwards — so
+       they are re-scattered with the debug wreck's own recipe, and a town where
+       every barrel lies along one axis reads as a bug rather than as mischief. */
+    const tips = W2.props.filter((p) => p.knocked && !p.gone)
+      .map((p) => p.group.rotation.x.toFixed(3));
+    ok('...and they are not all lying the same way',
+      new Set(tips).size > tips.length * 0.5, `${new Set(tips).size} of ${tips.length} angles`);
+
+    ok('...and each kitten gets HER OWN orbs, matched by name and not by seat',
+      G2.players[0].powerOrbs.join() === 'swift,reach,reach'
+      && G2.players[2].powerOrbs.join() === 'vigor'
+      && G2.players[1].powerOrbs.length === 0);
+    ok('...and her clan, her score and where she was standing',
+      G2.players[1].clan?.id === CLANS[1 % CLANS.length].id
+      && G2.players[1].score === 140
+      && Math.abs(G2.players[1].position.x - 11) < 0.01);
+    /* HER CLAN IS SET, NOT SWORN. `onJoinClan` is a CEREMONY — a toast, a pose,
+       a camera, a first-time celebration — and replaying four of them over a
+       world that has just been rebuilt is the load announcing itself four times
+       as something that has just happened. */
+    ok('...without re-running the swearing-in ceremony over the top of it',
+      !G2.log.includes('onJoinClan') && G2.log.includes('clanBadge'));
+    ok('...and the stars she had found are held again',
+      G2.ballsHeld === 1 && G2.balls[1].taken === true);
+    ok('...and the Kotodama she had picked up stay picked up',
+      G2.pickups[0].taken === true);
+    ok('...and the arena is open again rather than being unlocked a second time',
+      W2.arenaOpen === true);
+    /* A MILESTONE THIS BUILD HAS NEVER HEARD OF IS DROPPED RATHER THAN CARRIED,
+       for the same reason the save refuses a world it does not recognise. */
+    ok('...and a quest step from some other build is filtered out',
+      G2.quest.spent.has(MILESTONES[0].id) && G2.quest.spent.size === 1);
+    ok('...and nothing the story has already played plays at her twice',
+      G2.kotodama.awakened === true);
+    ok('...and the clock carries on from where the save was taken, not from zero',
+      G2.playT === 2400);
+
+    /* --- IT RESTORES ONTO THE SEATS BEING PLAYED, AND SAYS WHAT IT DROPPED
+       A save of four loaded into a two-kitten game COULD seat two more — the
+       game can do it — but two kittens nobody is holding a controller for
+       would stand in the town for the rest of the afternoon. Fifth and sixth
+       non-negotiables at once: seat who is here, and say how many were not. */
+    const G3 = fakeGame(W2, 2);
+    const out2 = restore(G3, snap);
+    ok('a party of four loaded into a two-kitten game seats two',
+      out2.seated === 2, JSON.stringify(out2));
+    ok('...and says out loud that two are waiting for a controller',
+      out2.dropped === 2);
+    ok('...and the two it seated are the two whose kittens are being played',
+      G3.players.every((p) => snap.players.some((r) => r.style === p.style.name)));
+  }
+
+  if (!hadDocS) delete globalThis.document;
+
+  /* --- 7. IT NEVER ASKS, AND IT DOES NOT START STRAIGHT AWAY ------------
+     "The save should happen automatically and shouldn't start auto-saving
+     until after the player has played for more than 5 minutes." Both halves
+     are read out of main.js, because both are one line and both are the kind
+     of line a refactor moves without noticing it has moved. */
+  {
+    ok('a save happens every half minute and not sooner',
+      AUTOSAVE_EVERY === 30, AUTOSAVE_EVERY);
+    ok('...and not at all for the first five minutes',
+      AUTOSAVE_AFTER === 300, AUTOSAVE_AFTER);
+    const at = main.indexOf('_tickBody() {');
+    const body = main.slice(at, at + 30000);
+    /* AFTER THE PAUSE RETURN. A tab left open on the pause menu over lunch is
+       not five minutes of play — it would fill all five slots with the same
+       untouched town and push the afternoon somebody cared about off the end
+       of the list. */
+    const paused = body.indexOf('if (this.paused) {');
+    const ticks = body.indexOf('this.playT += dt');
+    ok('...and the play clock only runs while the game is actually running',
+      paused > 0 && ticks > paused
+      && /state === 'play'/.test(body.slice(paused, ticks)),
+      `paused at ${paused}, ticks at ${ticks}`);
+    ok('...measured in play, not in wall clock',
+      /this\.playT \+= dt/.test(main) && !/playT.*Date\.now/.test(main));
+    ok('...and the first one is due five minutes and one interval in',
+      /_saveAt = AUTOSAVE_AFTER \+ AUTOSAVE_EVERY/.test(main));
+    /* A RESTART IS A NEW AFTERNOON. Carrying the old clock over would have the
+       fresh world photographed thirty seconds later, pushing the run somebody
+       actually wanted off the bottom of a five-slot list. */
+    const rst = main.slice(main.indexOf('  restart() {'), main.indexOf('  toTitle() {'));
+    ok('...and a restart puts the clock and the next save back to the start',
+      /this\.playT = 0/.test(rst) && /_saveAt = AUTOSAVE_AFTER/.test(rst));
+    /* AND IT NEVER TOASTS. A notification every thirty seconds for four hours
+       is a notification a player learns to stop reading. */
+    const auto = main.slice(main.indexOf('  _autoSave() {'),
+      main.indexOf('  _autoSave() {') + 700);
+    ok('...and it never says anything while it does it', !/this\.toast/.test(auto));
+    ok('...and a browser that refuses to store it does not take the game down',
+      /catch \(err\)/.test(auto) && /_saveBroke/.test(auto));
+  }
+
+  /* --- 8. THE WAY IN, AND THE QUESTION IT ASKS -------------------------- */
+  {
+    ok('the pause menu offers to load one',
+      /data-action="saves">LOAD A SAVED GAME/.test(html.replace(/\s+/g, ' ')));
+    /* ABOVE END THE GAME, NOT INSIDE IT. Loading one throws the afternoon away
+       exactly the way RESTART does, so it belongs at the final end of the list
+       — but it is not an ENDING, it is the opposite of one, and filing "carry
+       on from Tuesday" inside a panel called END THE GAME teaches a child that
+       the feature is not there. */
+    ok('...directly above END THE GAME, and not buried inside it',
+      html.indexOf('data-action="saves"') < html.indexOf('data-action="ending"')
+      && html.indexOf('data-action="saves"') > html.indexOf('data-action="watch"'));
+    ok('...and the list it opens is a panel like every other',
+      html.includes('id="panel-saves"') && html.includes('id="saves-body"'));
+    /* IT SCROLLS. Five rows of four kittens each is taller than a phone held
+       sideways, and `data-nav="scroll"` is the mode that exists for exactly
+       that — see `panel-board`, which is the reason the mode exists at all. */
+    ok('...which scrolls, because five parties of four is taller than a phone',
+      /id="panel-saves"[^>]*data-nav="scroll"/.test(html));
+    /* SEVENTH NON-NEGOTIABLE, AND THIS IS THE STRONGEST CASE FOR IT IN THE
+       GAME: on the other side of this button is four hours of somebody else's
+       afternoon, and the button is in a menu four children push at. */
+    const ask = main.slice(main.indexOf('  _askLoadSave(row) {'),
+      main.indexOf('  _loadSave(id) {'));
+    ok('...and loading one asks first, in words that say what happens',
+      /confirm\.ask/.test(ask) && /NO, KEEP PLAYING/.test(ask)
+      && /YES, LOAD IT/.test(ask));
+    ok('...and a save it cannot load refuses out loud rather than doing nothing',
+      /if \(row\.stale\)/.test(ask) && /this\.toast/.test(ask));
+    /* THE ROW IS STILL A `.menu-btn` AND A CURSOR STILL REACHES IT. A row a
+       stick skips over is a save that has silently disappeared. */
+    const paint = main.slice(main.indexOf('  _paintSaves() {'),
+      main.indexOf('  _askLoadSave(row) {'));
+    ok('...while a stale row is still a row a stick can land on',
+      /menu-btn sv-row/.test(paint) && !/\.disabled = /.test(paint));
+    ok('...and the list shows every kitten in her own colour, wearing her orbs',
+      /cssFor\(st\)/.test(paint) && /POWER_ORBS\.find/.test(paint)
+      && /o\.kanji/.test(paint));
+    ok('...and says how many it keeps, which is the one fact the list cannot show',
+      /MAX_SAVES/.test(paint));
+    /* AND A LOAD THAT THREW HALF-WAY LEAVES A CLEAN WORLD, BECAUSE `restore`
+       OPENS WITH `restart`. Saying so and dropping the row is the only honest
+       answer: a row that crashes the game every time it is pressed has to stop
+       being offered. */
+    const load = main.slice(main.indexOf('  _loadSave(id) {'),
+      main.indexOf('  _loadSave(id) {') + 1800);
+    ok('...and a save that cannot be loaded is removed rather than re-offered',
+      /dropSave\(id\)/.test(load) && /this\.toast/.test(load));
+    ok('...and a load that seats fewer kittens than it saved says so',
+      /out\.dropped/.test(load));
+  }
+
+  /* --- 9. AND THE HELP PAGE STOPS APOLOGISING FOR IT --------------------
+     That card carried a warning triangle and the sentence "Progress is NOT
+     saved between sessions" for two years, and it was true for two years. A
+     Help page that apologises for a thing the game now does is worse than one
+     that never mentioned it: a kid who reads it and then loses an afternoon she
+     could have loaded back has been told by the game itself not to look.
+
+     THE NUMBERS ARE READ OUT OF THE PAGE AND COMPARED WITH THE CODE, because a
+     sentence that says "every minute" over a thirty-second timer is the same
+     class of lie in a slower voice. */
+  {
+    const at = html.indexOf('Saving your progress');
+    /* THE COMMENTS COME OUT FIRST. The one above this card quotes the sentence
+       it replaced, word for word and on purpose — that is how a comment records
+       what was tried — and a check reading the raw markup would find the old
+       apology in the note explaining why it went. What a player sees is the
+       text, so the text is what is read. */
+    const card = html.slice(at, html.indexOf('</details>', at))
+      .replace(/<!--[\s\S]*?-->/g, '').replace(/\s+/g, ' ');
+    ok('the Help page no longer says progress is not saved',
+      !/NOT saved/i.test(card) && !/starts from scratch/i.test(card));
+    ok('...and points at the row that loads one',
+      card.includes('LOAD A SAVED GAME'));
+    /* IN WORDS OR IN DIGITS, BUT THE SAME NUMBER. This card is read out loud to
+       a nine-year-old, so "five minutes" beats "5 minutes" — and the point of
+       the check is that the sentence cannot drift away from the constant, not
+       which of the two spellings somebody picked. */
+    const WORD = { 5: 'five', 30: 'thirty' };
+    const says = (n, unit) =>
+      new RegExp(`(${n}|${WORD[n]}) ${unit}`, 'i').test(card);
+    ok('...and says the five-minute wait out loud, so an empty list is not a bug',
+      says(AUTOSAVE_AFTER / 60, 'minutes'));
+    ok('...with the same half-minute the code actually uses',
+      says(AUTOSAVE_EVERY, 'seconds'));
+    ok('...and the same number of slots',
+      /last five/.test(card) && MAX_SAVES === 5);
+    /* THE ONE WARNING THAT IS STILL TRUE STAYS. They live in this browser on
+       this computer, and clearing site data takes them — along with the record
+       board. Dropping that with the rest of the apology would be trading one
+       wrong sentence for a missing one. */
+    ok('...while still warning that they live in this browser and nowhere else',
+      /ht-note warn/.test(card) && /site data/i.test(card)
+      && /record board/i.test(card));
+  }
+
+  clearSaves();
 }
 
 {
