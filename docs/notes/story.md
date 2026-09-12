@@ -404,35 +404,211 @@ of the same camera, which a nailed-down quad also passes.
 > the math concepts.
 
 The ending used to be **one continuous pull-back**: open low behind Patchfur,
-climb and widen for thirty seconds, finish on the archipelago. It is five shots
-now, one table in [summonscene.js](../../src/systems/summonscene.js):
+climb and widen for thirty seconds, finish on the archipelago. Then it was five
+shots. It is **nineteen** now, one table in
+[summonscene.js](../../src/systems/summonscene.js), and the thing that changed
+between five and nineteen is not the count — it is that every cut in it lands on
+a **word**.
 
-| line | shot | what is in frame |
-| --- | --- | --- |
-| 1 | `mischief`, close | down among the wreckage, with her in front of it |
-| 2 | `mischief`, high | the same heap from forty-six units up, as it stands itself back up |
-| 3 | `dojo` | the Dojo of the Turning Circle, under the line about the maths |
-| 3 | `bridge` | and then the bridge itself, from the deck's own height |
-| 4 | `wide` | the whole archipelago, her back in front of it |
+| line | what is on screen |
+| --- | --- |
+| 1 | a barrel, then a lantern-or-box, then a cane of bamboo, one per word as she names them, each picked out by a ring of light; then up and off the heap; then the whole archipelago |
+| 2 | wide, then down onto one corner of the town as it **stands itself back up**, which goes over again on the end of the clause; then a cut to the Dojo |
+| 3 | the Dojo of the Turning Circle — a kitten running the painted circle with the real sin and cos drawn off her, then a model of the whole archipelago huddling, shaking, drifting apart, and four tiny kittens crossing it |
+| 4 | the actual bridge with kittens pouring over it, then the arena and Mr Satan, then the world |
 
-Each row is `{ beat, from, at, a, dist, high, turn, in, stage }`. `beat` is
-which line it belongs to and `from` is how far through that line it cuts — so a
-line can carry **two** shots, which is how beat 3 gets both of the places that
-were asked for by name inside one seven-second sentence. `in` is the push: the
-camera closes that fraction of its own distance across the shot's own clock,
-which is why `_shotFor` returns a shot-local `s` rather than the beat's `k`. A
-cut that landed on a camera already halfway through somebody else's easing reads
-as a jump rather than as a cut.
+Each row is
+`{ beat, from, at, a, dist, high, lift?, turn, in, clear?, stage, cue, fade? }`.
+`beat` is which line it belongs to and `from` is how far through that line it
+cuts. `in` is the push: the camera closes that fraction of its own distance
+across the shot's own clock, which is why `_shotFor` returns a shot-local `s`
+rather than the beat's `k` — a cut that landed on a camera already halfway
+through somebody else's easing reads as a jump rather than as a cut.
 
-**Nothing in the table is a coordinate.** `_markFinale` resolves the four names
-once, at the top of the scene: `dojo` and `bridge` come from `world.dojoCentre`
-and `world.bridge`, both published by the world off the same numbers those
-things are *built* from, and `wide` is the focus point the scene was started on.
-A camera aimed at a bridge that has since been moved is a shot of an empty road,
-and it is exactly the kind of thing nobody notices until a nine-year-old watches
-the ending.
+### It is cut to words, not to seconds
 
-**`mischief` is measured, not guessed at.** `_heap()` walks every knocked-over,
+`from` is almost never a number. It is `say(beat, phrase)`, which finds the
+phrase in that beat's own `text` and returns how far through the line it sits.
+`from: say(0, 'lantern')` means *when she says lantern*, and it keeps meaning
+that if the line is rewritten.
+
+**It has to be a fraction of the line, because the line's length is not known
+here.** The finale plays real voice clips, and `SummonScene.load()` grows every
+beat to the length of its mp3: the four beats are authored 7.5 / 8.5 / 8.5 / 9
+and play at roughly 11.7 / 16.8 / 17.2 / 17.1. Anything typed in seconds would
+have been correct in `world-check`, which has no audio, and a second and a half
+late in the game — which is the worst possible place for a bug to live.
+
+`say` returns 0 for a phrase it cannot find, and `world-check` has a table of
+every cue and the word it is supposed to land on that asserts **none of them
+quietly fell back to the top of the line**. A silent 0 is the failure mode this
+whole mechanism invites: a typo'd phrase does not crash, it just plays the shot
+early. Hence also the one ordering rule — **`FINALE_SHOTS` is declared after
+`SCRIPTS`**, because `say` reads the script at module load.
+
+### Three items, three shots — because the world will not put them in one frame
+
+> Would be good if all 3 of those items were close to each other and then we can
+> have the camera quick pan between each item as they are said... or find an area
+> where there are the 3 items and have them in the framed shot.
+
+Both readings were asked for, so the first one was **measured** before it was
+designed around. `_trio()` walks the props and looks for a barrel, a
+lantern-or-basket-or-crate and a cane of bamboo standing close enough to share a
+frame. On a real world the tightest barrel-and-box pair is about eight units
+apart and the nearest cane of bamboo to either of them is over thirty, every
+time — and not by accident: **furniture stands in a town and bamboo grows in a
+grove**, which is a fact about how the world generates and not a tuning number
+to be nudged. One frame containing all three does not exist.
+
+So it is the other reading: three close shots, one per word, each with its own
+ring of light dropped around the subject (`FinaleShow._light`). `_trio` still
+does the measuring — it picks the tightest such triple it can find and hands
+back three spots and a ring radius solved off each prop's own height — there is
+just no distance cap on how far apart they are allowed to be.
+
+And every one of the three falls back: no barrel, no basket, no grove, and the
+shot is the heap, then the wide. A world with nothing in it still plays this
+scene.
+
+### The camera is pointed somewhere it can see — `_clearAngle`
+
+A close shot of a barrel is a close shot of whatever is standing between the
+camera and the barrel, and a town is mostly things standing. `_clearAngle`
+scores sixteen bearings around the subject against `world.solids` — the upright
+collision cylinders the world already publishes — by the distance from each
+solid's centre to the **segment** camera-to-subject, less its radius. Best
+clearance wins; if everything is blocked it still returns the least bad bearing
+rather than nothing, because a shot of the inside of a wall is better than a
+`null` that stops the ending.
+
+**It scores the whole swing, not one bearing.** The first version measured the
+middle of the shot, and the shot then turned 0.7 radians off it into the side of
+a house — a clear angle measured correctly and then walked away from. It now
+takes the worst of `a - sweep/2`, `a` and `a + sweep/2`, with `sweep` read off
+the shot's own `turn`.
+
+**And a measured shot swings AROUND its bearing rather than away from it**:
+`turn * (se - 0.5)` where every other shot gets `turn * se`. The two changes are
+the same fix said twice, and both are needed — scoring an arc the camera then
+leaves is as useless as not scoring it.
+
+### `lift` is a fraction of the frame, not a number of units
+
+The subtitle box owns the bottom two-fifths of the screen, so a subject on the
+optical centre is a subject resting on the box. The fix is to point the lens
+*below* the mark, and the first version of that was a number of world units.
+
+It was right for the shot it was tuned on and wrong three seconds later. The
+model of the archipelago sat beautifully at forty units out and was off the top
+of the screen at twenty-six, because the frame is `2 * d * tan(fov/2)` units
+tall and the camera pushes in for the whole sequence. `lift` is that fraction
+now — the same composition at any distance, which is what the field was always
+trying to say. Solved off the lens, like the stage's distance is.
+
+### The town stands up where the camera is looking, and goes over on the clause
+
+> Then we can be zoomed on a specific area that has a lot of mischief and
+> furniture and have it be reconstructed rather than focusing on random
+> locations throughout the world, should be the same every time.
+
+The tide used to be driven by beat number and decide for itself what a beat
+meant. The shot list drives it now, on three verbs called from `_cue()`:
+
+- `only(at, r)` narrows what **moves** to one corner — the heap, which `_heap()`
+  finds by measuring rather than by pointing at the town centre.
+- `raise(secs)` stands that corner up over a span the shot list **measures off
+  the script**: the gap between the shot on "simpler" and the shot on the end of
+  "Every other way is the rest of them". A rewritten line cannot leave the wave
+  finishing early, and nothing here is typed in seconds.
+- `slam()` puts it all back over on the end of the clause, with the first dozen
+  landings sounding through `onCrash`.
+
+**`only` narrows what moves and never what is held.** That distinction is the
+fourth non-negotiable: `finish()` still restores every prop in the world,
+including the two hundred that never moved. Verified end to end on a real world
+— the full run and an Escape at twenty seconds both come back with zero props
+off their transform, nothing left held, and `scene.children` back to what it
+was.
+
+> can even play the sound effect of them getting knocked over, just stagger the
+> sound a bit so it is not too loud and on top of itself
+
+The stagger already existed and it was still wrong, in a way only listening
+caught: ten canes cracked inside a tenth of a second. `focusOn` was ranking
+phases across **all** two hundred held props, and the things in a town square
+are by definition the ones nearest the mark — so thirty of them took ranks 0-29
+out of 215 and shared the first seven hundredths of a wave that is spread over
+nearly half. Ranking only the in-shot props spreads the same ten crashes over
+two-thirds of a second. `world-check` now asserts both the span of the phases
+and the number of separate frames the bangs land on, because the count alone
+passed the whole time it was broken.
+
+### The lesson at the end is the real lesson — `finaleshow.js`
+
+Everything the ending draws that the world does not already have lives in
+[finaleshow.js](../../src/systems/finaleshow.js): the three rings, the kitten
+running the Dojo, the model of the archipelago that huddles and shakes and
+shoots apart, the angle and the circle drawn over the crossing, the four tiny
+kittens leaping together, the bridge crossing, and Mr Satan in the ring.
+
+**It is a composite, not the cast.** Every figure is a billboard the module
+owns, drawn from the atlases the real kittens use. Flying the actual `Player`
+objects along these paths would have made the ending depend on where four girls
+happened to be standing when it fired, and would have rested the fourth
+non-negotiable on this file putting them back. `finish()` deletes the lot.
+
+**The one exception is the maths, and that is the point.** The runner in the
+Dojo does not draw her own sine and cosine. `SummonScene.dojoDrivers()` hands
+her to `MathDojo` as its driver, and the real lesson — same radius, same legs,
+same board — reads her position exactly as it reads a nine-year-old's. A
+second, prettier, cutscene-only copy of that diagram would be the first
+non-negotiable broken in the one scene that is about it. `dojoDrivers()` returns
+`null` the instant the scene is not running, so the Dojo goes straight back to
+the players.
+
+### She walks off for everything that is about somewhere else
+
+A nine-unit cut-out parked in front of a close shot of a bridge **is** the
+bridge. `stage` is a column in the table, `_parkStage` eases `stageOn` toward
+`stageWant` over `STAGE_SWAP` 0.75s, and her opacity and her parked position
+both ride that one scalar: she slides out to `STAGE_FROM` and fades as she goes,
+rather than blinking out.
+
+**She is on for exactly one row, and it is the last.** When the ending was five
+long shots she could hold the first and the last; at nineteen, the shots that
+are about *them* are a second each and a calico sliding in and out of frame
+eleven times is a flicker, not a performance. So the whole ending is the world,
+and she steps into the final wide to close it — which is also the shot the
+opening cutscene's framing was solved against. `world-check` pins it as exactly
+one staged row and that row being the last one.
+
+`finish()` puts `stageOn` and `stageWant` back to 1, because every other scene
+in the game leaves them alone: a finale that ended on a shot she was not in
+would otherwise hand the next scene a speaker already off the side of the frame.
+
+### Three cuts are cuts — `fade`
+
+Most of the list dissolves by moving. Three of them change place entirely — the
+heap to the Dojo, the Dojo to the real bridge, the bridge to the arena — and a
+camera teleporting across an archipelago mid-sentence reads as a bug. Those rows
+carry `fade: true`, and `_cutBlack()` ramps the same overlay the scene already
+fades in and out with over `CUT_FADE` 0.34s centred on the cut. `world-check`
+asserts there are exactly three of them and that none lands inside the naming
+shots, where a blink would eat a word.
+
+### Nothing in the table is a coordinate
+
+`_markFinale` resolves every name once, at the top of the scene. `dojo` and
+`bridge` come from `world.dojoCentre` and `world.bridge`, both published by the
+world off the same numbers those things are *built* from; `arena` is the ring's
+own centre when the arena is open; `barrel`, `lantern` and `bamboo` come out of
+`_trio()`; `heap` is measured; and `wide` is the focus point the scene was
+started on. A camera aimed at a bridge that has since been moved is a shot of an
+empty road, and it is exactly the kind of thing nobody notices until a
+nine-year-old watches the ending.
+
+**`heap` is measured, not guessed at.** `_heap()` walks every knocked-over,
 un-retired prop against every other one and returns the centre of the tightest
 knot of them — O(n²) over a couple of hundred things, once, on the frame a
 half-minute scene opens. The cheap version is "point at the town centre", and it
@@ -444,44 +620,6 @@ which is exactly how `world-check` builds one, and what the scene viewer opens
 on a fresh save — still plays, framed on the archipelago, rather than aiming a
 camera at `NaN` and drawing the inside of somebody's head. `_heap()` returns
 `null` rather than a number when there are fewer than three things down.
-
-### She walks off for the shots that are about somewhere
-
-A nine-unit cut-out parked in front of a close shot of a bridge **is** the
-bridge. So `stage` is a column in the table, `_parkStage` eases `stageOn` toward
-`stageWant` over `STAGE_SWAP` 0.75s, and her opacity and her parked position
-both ride that one scalar: she slides out to `STAGE_FROM` and fades as she goes,
-rather than blinking out. She is on for the first line and the last — the two
-that are about *them* — and off for the three in the middle, which are about
-places.
-
-`finish()` puts `stageOn` and `stageWant` back to 1, because every other scene
-in the game leaves them alone: a finale that ended on a shot she was not in
-would otherwise hand the next scene a speaker already off the side of the frame.
-
-### ...and the wave follows the camera
-
-> We should just have the camera zoom in on a few areas where there are some
-> mischief, and then can just animate mainly the mischief that is in the view of
-> the camera, or the main ones being focused on.
-
-`FinaleTide.focusOn(at)` re-deals `phase` by distance from a point, and `_next()`
-calls it on every beat with wherever that beat's first shot is pointing. The
-ripple therefore *starts* in frame and spreads outward from it.
-
-**Nothing is skipped and nothing is culled**, which is the important half. The
-obvious implementation — move only what is on screen — would leave the far
-islands standing tidy at the end of a scene whose whole argument is that they do
-not stay that way, and the last beat's fall is a **restoration** that can only
-put back what it stood up. `focusOn` changes the ORDER and only the order;
-`world-check` runs the whole wave through and asserts every held prop, in shot
-or not, still ends up on its home transform.
-
-**It refuses mid-move.** `k` is one scalar for the whole world and `phase` is
-where each prop sits inside it, so re-sorting halfway through the rise would
-teleport two hundred objects on a single frame. A cut that lands inside a beat
-keeps the order that beat started with — which is right, because the wave it is
-in the middle of is the one the previous shot began.
 
 ## The world behind her — `src/systems/finaletide.js`
 
@@ -509,16 +647,22 @@ screen behind her while she talks about them.
 
 So the picture behind her is the world, and it moves.
 
-| beat | the line | the world |
-| --- | --- | --- |
-| 1 | "Every barrel. Every lantern. Every last cane of bamboo." | the archipelago exactly as they left it — on its side |
-| 2 | "A tidy town is only one way for a town to be." | every last one of them **stands back up**, from the far island inwards |
-| 3 | the bridge line | it holds. One tidy arrangement, the only one there is. |
-| 4 | "The arena is open." | and it all goes over again, landing on exactly the pose it was in |
+| the words | the world |
+| --- | --- |
+| "Every barrel. Every lantern. Every last cane of bamboo." | the archipelago exactly as they left it — on its side, three of them picked out one at a time as she names them |
+| "I think it is simpler than that." | one corner of the town **stands back up** in front of the camera, from the thing it is pointed at outwards |
+| "...is the rest of them." | and the whole corner goes over again on the end of the clause, a dozen of them making a noise as they land |
 
 That is the second law acted out by the set, in a scene where the set is the
 thing the kid built. The tidy arrangement is one; the untidy ones are all the
 rest; it does not stay tidy; and she is standing in front of the evidence.
+
+**One corner rather than the whole world, and the same corner every time.** The
+first version raised every island at once, which reads as a cutscene doing a
+trick; and it raised them wherever the camera happened to be, which means a
+different ending every playthrough. `only()` narrows what MOVES to the measured
+heap. It never narrows what is HELD — see below, that distinction is the entire
+fourth non-negotiable.
 
 ### ...and it is why the Kotodama woke up
 
@@ -572,24 +716,34 @@ place in `prop.js`. It is not an optimisation and it must not be reused as one.
 
 ### The wave, and why it is not a snap
 
-Two hundred objects standing upright on the same frame reads as a **rendering
-glitch**. A ripple crossing the archipelago reads as a town tidying itself, and
-the eye follows it. `STAGGER` 0.45 spreads the props over the first 45% of the
-move, leaving every individual prop more than half the move to itself. The order
-is world order to begin with — the order they were planted, island by island —
-and is then re-dealt on every cut by `focusOn`, so the ripple starts wherever
-the camera is pointing (above).
+Thirty objects standing upright on the same frame reads as a **rendering
+glitch**. A ripple crossing the square reads as a place tidying itself, and the
+eye follows it. `STAGGER` 0.45 spreads the props over the first 45% of the move,
+leaving every individual prop more than half the move to itself. The order is
+world order to begin with — the order they were planted, island by island — and
+`focusOn` re-deals it by distance from whatever the camera is pointed at, so the
+ripple starts in frame and spreads outward from it.
 
-Standing up takes `RISE` 6 seconds; going over takes `FALL` 4.2, because going
-over always does. Patchfur's lines run 7.5–9 seconds each, so the wave is still
-travelling while she is still talking: the picture sits *under* the line rather
-than punctuating it, the same rule her gestures follow below. Three seconds was
-tried and reads as a cut.
+**It deals across what is going to MOVE, not across the world.** Getting that
+wrong is what collapsed the stagger into a tenth of a second — the story is
+above, under the shot list. It also **refuses mid-move**: `k` is one scalar for
+the whole world and `phase` is where each prop sits inside it, so re-sorting
+halfway through the rise would teleport everything on a single frame.
 
-**The last beat is derived, not typed.** `setBeat` is handed the script's own
-length, so a line added to the ending cannot leave the archipelago standing
-tidily at the end of a scene whose entire argument is that it does not stay
-that way.
+**How long standing up takes is measured off the script, not typed here.**
+`RISE` 6 is only the floor now. The shot list knows which word the rise starts
+on and which word it has to be finished by, hands `raise()` the gap between
+them, and a line rewritten to be longer stretches the wave with it. It used to
+be a constant, and a constant is how the picture ends up punctuating the line
+instead of sitting under it — the same rule her gestures follow below. Three
+seconds was tried and reads as a cut.
+
+**Going over is not the rise run backwards.** `FALL` is gone; `slam()` drops
+each prop on its own short arc with its own bounce, because the clause it lands
+on is "every other way is the rest of them" and the picture there is chaos
+rather than a rewind. The first dozen landings call `onCrash`, which the scene
+wires to the game's own `bamboo` and `hit` sounds — the noise the girls made
+knocking them over in the first place.
 
 ### It is the ordinary render, and it costs nothing
 
@@ -598,6 +752,12 @@ a paragraph in [performance.md](performance.md) justifying the buffer. The tide
 allocates nothing and draws nothing: the props are already in the scene, already
 batched, already being drawn. It writes two transforms per fallen prop per
 frame and stops existing the moment the scene ends.
+
+`finaleshow.js` does allocate — a model of the archipelago, four tiny kittens,
+a handful of lines and rings — but it builds each piece on the cue that first
+needs it and disposes the lot in `finish()`. The scene graph is the check: it
+goes out at 307 children and comes back at 307, on the full run and on the skip
+alike.
 
 ### Her acting, with one drawing
 

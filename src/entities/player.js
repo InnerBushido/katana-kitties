@@ -588,6 +588,9 @@ export class Player {
     this.breathFireT = 0;
     this.breathCool = 0;
     this.breathSeq = 0;
+    /** Who this breath has already caught. Opened by `_fireArenaBreath` and
+     *  never read outside a live flame — see `_sweepArenaBreath`. */
+    this.breathHit = null;
     /** Seconds left of a charge, and the direction it is committed to. */
     this.chargeT = 0;
     this.chargeDir = new THREE.Vector2(0, 1);
@@ -3698,10 +3701,21 @@ export class Player {
   /**
    * ...and let it go.
    *
-   * ONE APPLICATION, ON THE FRAME IT LEAVES HER, and the flame that follows is
-   * a drawing. A cone that hurt every frame it was on screen would be a move
-   * whose damage depended on the frame rate, and it would hit a kitten who ran
-   * INTO it after it had already been aimed somewhere else.
+   * THE FLAME IS A HITBOX FOR AS LONG AS IT IS ON SCREEN, AND IT SPENDS ITSELF
+   * ONCE PER KITTEN. It used to apply its damage on the single frame it left
+   * her, and the cone after that was a drawing — which made the eighth
+   * non-negotiable true only for one frame out of sixty. Asked for directly:
+   * "it is constantly checking for hits if the player rotates around, and if it
+   * hits a player while it is active they should take damage... but it should
+   * only affect each player once".
+   *
+   * `breathHit` IS WHAT KEEPS IT FROM BEING A FRAME-RATE WEAPON. A cone that
+   * hurt every frame it touched somebody would deal damage in proportion to
+   * how well the machine was running, which is the reason the single
+   * application existed in the first place. The tally answers that without
+   * giving up the sweep: she may turn and catch her sister and then her
+   * sister's partner, and neither of them can be caught twice by the same
+   * breath. It is opened here, so it cannot outlive its own flame.
    *
    * `BASE_REACH` AND NOT HER OWN REACH. `Game.strikePlayers` recovers the clan
    * multiplier from the reach it is handed — that is right for a blade and
@@ -3715,12 +3729,33 @@ export class Player {
     this.breathFireT = DBREATH.fire;
     this.breathCool = DBREATH.cool;
     this.squash = 0.6;
+    this.breathHit = new Set();
     /* NOT the dragon's `breath`, which is a third of a second long and now
        stops well before the cone it belongs to. `dbreathout` is built to the
        doubled `DBREATH.fire`. */
     hud?.sfx?.('dbreathout');
+    this._sweepArenaBreath(hud);
+  }
+
+  /**
+   * The cone, asked of the world again, on her CURRENT facing.
+   *
+   * ONE CALL A FRAME WHILE `breathFireT` RUNS. The aim is re-read every time
+   * because the whole point of the sweep is that she can turn inside her own
+   * flame — "if they move it around, they can hit multiple people around them
+   * while it is happening" — and her facing is already following the stick at
+   * `DBREATH.moveK`, so there is no second aiming system to write.
+   *
+   * THE SET GOES THROUGH THE GATE, NOT ROUND IT. `Game.strikePlayers` is the
+   * only thing in this game allowed to decide that two kittens may hurt each
+   * other (third non-negotiable), so "and not this one again" is a parameter
+   * it takes rather than a test done out here — out here it would be a second
+   * copy of the target list, and the first rule it would get wrong is the
+   * panda, which is a body of its own and is spent separately.
+   */
+  _sweepArenaBreath(hud) {
     const dir = new THREE.Vector2(Math.sin(this.facing), Math.cos(this.facing));
-    hud?.strikePlayers?.(this, 'dbreath', BASE_REACH, dir);
+    hud?.strikePlayers?.(this, 'dbreath', BASE_REACH, dir, this.breathHit);
   }
 
   /**
@@ -3787,6 +3822,11 @@ export class Player {
       if (this.breathChargeT === 0) this._fireArenaBreath(hud);
     } else if (this.breathFireT > 0) {
       this.breathFireT = Math.max(0, this.breathFireT - dt);
+      /* AND THE CONE IS ASKED AGAIN. Before the clock is allowed to reach zero
+         on the same frame it would otherwise be, so the last frame of flame is
+         a frame of flame: a kitten standing in the tip of it when it goes out
+         has been stood in it. */
+      this._sweepArenaBreath(hud);
     }
   }
 
@@ -5083,30 +5123,32 @@ export class Player {
        — but "which drawing is on screen" has one answer and this is where it is
        decided.
 
-       ONE POSE FOR BOTH HALVES OF THE MOVE, and that is deliberate rather than
-       lazy: the drawing is a cat with her mouth wide open, which is exactly as
-       true of blowing out as of sucking in. Dropping back to her standing
-       drawing on the frame the cone leaves her would close her mouth in front
-       of a flame that is coming out of it.
+       IT IS THE INHALE'S POSE AND NOTHING ELSE'S. It used to be held through
+       the flame as well, on the argument that a cat with her mouth open is as
+       true of blowing out as of sucking in — which is true of the DRAWING and
+       false of the move: held through the fire it froze her into a still for
+       two and a half seconds while she was walking, and the run cycle stopping
+       is what a player reads, not the shape of the mouth. Asked for as "after
+       breathing in, when the attack is initiated, we should go back to normal
+       running/walking/idling animation... they are just moving around normally
+       but with the breath attack happening". So the pose is the rear-back, and
+       the flame is `systems/clanfx.js`'s to carry — which it can, because it
+       is drawn from her mouth in world space and does not care what she is
+       standing in.
 
-       SHE FILLS UP AND THEN SHE GOES OFF. Through the rear-back she swells
-       (wider, slightly shorter — a held breath), and on the frames the flame
-       leaves she snaps the other way and shakes, which is the recoil. Both are
-       scale on the quad, so neither can move where the cone reaches. */
+       SHE FILLS UP. Through the rear-back she swells — wider, slightly shorter,
+       a held breath — as scale on the quad, so it cannot move where the cone
+       reaches. The recoil that used to answer it is now `this.squash`, the
+       ordinary one every other attack in the game uses, set in
+       `_fireArenaBreath`: her own drawing does it, so it survives her running. */
     if (this.breathPose) {
-      const breathing = this.arenaBreathAt && !this.ko;
+      const breathing = this.breathChargeT > 0 && !this.ko;
       this.breathPose.visible = breathing;
       if (breathing) {
         this.sprite.mesh.visible = false;
-        if (this.breathChargeT > 0) {
-          const k = 1 - Math.min(1, Math.max(0, this.breathChargeT / DBREATH.charge));
-          this.breathPose.mesh.scale.set(1 + k * 0.10, 1 - k * 0.05, 1);
-          this.breathPose.mesh.rotation.z = Math.sin(k * 42) * 0.02 * k;
-        } else {
-          const k = Math.min(1, Math.max(0, this.breathFireT / Math.max(0.0001, DBREATH.fire)));
-          this.breathPose.mesh.scale.set(1 - k * 0.07, 1 + k * 0.05, 1);
-          this.breathPose.mesh.rotation.z = Math.sin(k * 70) * 0.035 * k;
-        }
+        const k = 1 - Math.min(1, Math.max(0, this.breathChargeT / DBREATH.charge));
+        this.breathPose.mesh.scale.set(1 + k * 0.10, 1 - k * 0.05, 1);
+        this.breathPose.mesh.rotation.z = Math.sin(k * 42) * 0.02 * k;
         this.breathPose.mat.color.copy(mat.color);
         this.breathPose.mat.opacity = mat.opacity;
       }

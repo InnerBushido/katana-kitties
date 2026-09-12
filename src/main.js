@@ -1057,6 +1057,11 @@ class Game {
     await frame();
     this._spawnPlayers(ember, frost);
     this._spawnDragons(dragonTex, dragonFlyTex);
+    /* KEPT FOR THE ENDING, and for nothing else. `FinaleShow` draws two little
+       dragons carrying two little kittens between the islands on the Dojo
+       floor, and the only honest source for what a dragon looks like is the
+       sheet the real ones are drawn from. */
+    this.dragonArt = dragonTex ?? null;
     this._spawnPickups();
     this._spawnLeaders();
 
@@ -1633,6 +1638,24 @@ class Game {
    * Every other island gets its own breed, which is the reason to fly out to
    * one — you can see the colour from a long way off.
    */
+  /**
+   * Who is in the ending, by sheet.
+   *
+   * BUILT AT THE MOMENT IT IS ASKED FOR, not kept as a field. The finale can
+   * fire an hour into a session, by which time the roster has been recoloured,
+   * a champion may or may not have loaded and the girls may have joined in any
+   * order — so the cast is read off the game as it stands rather than off a
+   * snapshot taken during boot. Every entry is allowed to be null: the show
+   * builds what it can and skips what it cannot. Ninth non-negotiable.
+   */
+  _finaleCast() {
+    return {
+      kittens: this.kittenArt ?? [],
+      dragon: this.dragonArt ?? null,
+      satan: this.satan?.art ?? null,
+    };
+  }
+
   _spawnDragons(art, flyArt) {
     /* The perches come from `world.dragonPerches()`, not from a list here.
        The spots and the "never inside a house" tidy-up used to live in this
@@ -3818,7 +3841,8 @@ class Game {
            scene the moment this one closes. */
         this._finaleDue = false;
         this.summonScene.played.finale = false;
-        this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder);
+        this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder,
+          this._finaleCast());
         break;
       case 'satanAnnounce':
         this.summonScene.played.satanAnnounce = false;
@@ -4419,7 +4443,7 @@ class Game {
    * not merely because both kittens happen to be standing on the arena
    * island. See Tournament.fighting.
    */
-  strikePlayers(attacker, kind, reach, dir) {
+  strikePlayers(attacker, kind, reach, dir, spent = null) {
     if (!this.tournament?.fighting) return;
     const A = ATTACKS[kind] ?? ATTACKS.stand;
     /* The clan buff still multiplies, and the round card shows both badges so
@@ -4486,6 +4510,21 @@ class Game {
 
     for (const target of this.players) {
       if (target === attacker || target.ko) continue;
+      /* --- ALREADY CAUGHT BY THIS ONE ---------------------------------------
+         `spent` is passed by exactly one caller: 息 Dragon Breath, whose cone
+         is a live hitbox for the whole second it is on screen and may be swung
+         round by the girl breathing it. It is the difference between "she can
+         turn and catch two of them" and "she can hold a flame on one of them
+         and delete her at whatever frame rate the machine manages" — see
+         `Player._sweepArenaBreath`, which owns the set and throws it away with
+         the flame.
+
+         HER AND HER ANIMAL ARE SPENT SEPARATELY, because they are two bodies
+         with two range tests and the cone can genuinely reach one and not the
+         other. Folding them into one mark would mean a flame that grazed a
+         panda could never afterwards touch the kitten riding it. */
+      const doneHer = !!spent?.has(target);
+      const doneBeast = !!spent?.has(target.panda);
       /* NO FRIENDLY FIRE, and it is one more clause on the SINGLE gate rather
          than a rule of its own — the whole reason `strikePlayers` exists is
          that there is exactly one place asking whether two kittens may hurt
@@ -4493,7 +4532,7 @@ class Game {
          with two sisters on a side the first accident becomes an argument about
          whether it was an accident. Free-for-all and duel are unaffected:
          nobody shares a side in either. */
-      const found = reaches(target.position);
+      const found = doneHer ? null : reaches(target.position);
       /* HER PANDA IS A SECOND BODY IN THE RING, and `fighter` is the whole of
          the question of whether it may be hit: grown, standing, and not
          already knocked down. A cub is never a target — it is the size of a
@@ -4503,7 +4542,7 @@ class Game {
          A KNOCKED-OUT OWNER'S PANDA IS SKIPPED with her, by the `target.ko`
          line above. Her round is finished; there is nothing to win by hitting
          an animal belonging to somebody already flat on her back. */
-      const beast = target.panda?.fighter
+      const beast = (target.panda?.fighter && !doneBeast)
         ? reaches(target.panda.position, target.panda.hitRadius, target.panda.hitUp)
         : null;
       if (!found && !beast) continue;
@@ -4545,6 +4584,11 @@ class Game {
           this.sfx('hit');
           this.toast(`${attacker.name} dazed ${target.name} — watch your team!`, attacker.index);
         }
+        /* A SWEEPING FLAME DAZES HER PARTNER ONCE, not sixty times a second.
+           Without this the one thing a Windwhisker kitten could reliably do
+           with her clan power in a tag round is hold her own sister in a
+           half-second daze for the length of the cone. */
+        if (found) spent?.add(target);
         continue;
       }
 
@@ -4604,6 +4648,7 @@ class Game {
       const both = onIt && !!found && !!beast;
 
       if (beast) {
+        spent?.add(target.panda);
         const bit = target.panda.hurt(dmg, attacker.position);
         if (bit) {
           this.hitSpark({ position: target.panda.position, height: target.panda.spec.size }, kind);
@@ -4632,7 +4677,16 @@ class Game {
         const force = both
           ? { ...A, knock: A.knock * PANDA.knockK, lift: A.lift * PANDA.knockK }
           : A;
+        /* READ BEFORE THE BLOW, because the blow is what takes it down. A
+           cone eaten by a bubble has still been spent on her — "it can only
+           hurt a player once, OR damage their shield once" — and `hurt`
+           returns 0 for a blocked hit and for half a second of invulnerability
+           alike, which are not the same thing to this tally: the first is the
+           flame doing its job and the second is the flame arriving while she
+           is still somewhere else. */
+        const blocked = target.warded && !force?.pierce;
         const dealt = target.hurt(dmg, attacker.position, force, this);
+        if (dealt || blocked) spent?.add(target);
         if (dealt) {
           /* 盗 AND HERE IS WHERE A MARK IS PAID. Inside `if (dealt)` and not
              above it: a swing eaten by a bubble or by half a second of
@@ -6021,7 +6075,8 @@ class Game {
        into a retry every frame forever. */
     if (this._finaleDue && !this._sceneActive()) {
       const B = this._worldBounds();
-      if (this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder)) {
+      if (this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder,
+        this._finaleCast())) {
         this._finaleDue = false;
         this.sfx('starfound');
         this.toast('100% MISCHIEF — every last thing, knocked over', 0);
@@ -6145,7 +6200,15 @@ class Game {
          off costs nothing at all. */
       if (p.panda?.lickSfx) { p.panda.lickSfx = false; this.sfx('lick'); }
     }
-    this.dojo.update(dt, this.players);
+    /* THE ENDING BORROWS THE LESSON RATHER THAN DRAWING ITS OWN COPY. During
+       the finale's Dojo shot a kitten runs the painted circle and the sine and
+       cosine legs follow her — and they follow her because `MathDojo` is
+       handed HER as its driver, not because a second diagram was animated to
+       look like this one. First non-negotiable: the maths is the point, and a
+       cutscene that faked it would be the exact thing that rule forbids.
+       `dojoDrivers` is null in every other frame of the game, including every
+       other frame of the ending, so the players drive it as they always did. */
+    this.dojo.update(dt, this.summonScene?.dojoDrivers?.() ?? this.players);
     for (const s of this.world.shrines) s.update(dt, this.players);
     for (const L of this.leaders) L.update(dt, this.players);
     /* Loitering at an unmet shrine starts her introduction. Checked after the

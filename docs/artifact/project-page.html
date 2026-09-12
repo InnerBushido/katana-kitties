@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 3038 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 3085 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 362 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -784,12 +784,14 @@ git push origin alpha</code></pre>
       knocks one of her <b>Kotodama onto the deck</b> — untouchable by everybody for four seconds,
       so all four of them have to fight over it. It is returned to its real owner when the
       tournament ends, down every path: still loose, worn by the thief, worn by whoever grabbed it,
-      or sold. <b>息 Dragon Breath</b> (Windwhisker) rears back for 1.6&nbsp;s and then breathes a
-      cone <b>in her own colour</b> wherever the stick is pointing; it cannot be interrupted, it does
-      not throw her when she is hit, and it drops her own shield while it runs. <b>The wind-up is
-      loud on purpose</b> — a head-back inhale pose, a vortex of specks spiralling into her mouth, a
-      ring closing round her feet and a rising gulp on the speakers — because the other three are
-      meant to have time to get out of the way.</p>
+      or sold. <b>息 Dragon Breath</b> (Windwhisker) rears back for 0.8&nbsp;s and then breathes a
+      cone <b>in her own colour</b> wherever the stick is pointing, for a full second, <b>walking and
+      turning as she goes</b>: the cone is a live hitbox for all of it, so sweeping it across the
+      ring catches everybody it crosses — and catches each of them exactly once. It cannot be
+      interrupted, it does not throw her when she is hit, and it drops her own shield while it runs.
+      <b>The wind-up is loud on purpose</b> — a head-back inhale pose, a vortex of specks spiralling
+      into her mouth, a ring closing round her feet and a rising gulp on the speakers — because the
+      other three are meant to have time to get out of the way.</p>
     <p><b>Neither is a second combat path.</b> The breath is a row in the same <code>ATTACKS</code>
       table as every other swing, and the steal is a <em>mark</em> paid by an ordinary hit the one
       gate had already allowed — so combat still cannot happen outside the ring. Both are on the
@@ -799,10 +801,13 @@ git push origin alpha</code></pre>
   <p><b>MISCHIEF is the story's spine as well as the game's.</b> The mischief the girls made is the
     <b>entropy</b> that was sitting dormant in every standing object in the world; knocking it all
     over let it out, and the Kotodama are what it looks like once it is out. That is why an orb can
-    be knocked loose from somebody — and why, at 100%, Patchfur closes the story standing in front
-    of the whole archipelago while it <b>stands itself back up</b> in a wave, holds, and goes over
-    again. That scene moves meshes and nothing else: it cannot touch the counter, and skipping it
-    puts every prop back on the exact transform it was holding.</p>
+    be knocked loose from somebody — and why, at 100%, Patchfur closes the story over nineteen shots
+    cut to her own words: the three things she names picked out one at a time, a corner of the town
+    <b>standing itself back up</b> and crashing over again on the end of her clause, the Dojo of the
+    Turning Circle with the real sine and cosine drawn off a running kitten, a model of the
+    archipelago drifting apart on its floor, the bridge, and the arena. That scene moves meshes and
+    nothing else: it cannot touch the counter, and skipping it puts every prop back on the exact
+    transform it was holding.</p>
 </section>
 
 <section id="controls">
@@ -1129,7 +1134,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 3038 assertions and why almost none of them are about
+      is why <code>world-check</code> is 3085 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,

@@ -2683,8 +2683,8 @@ console.log('\n--- the panda in the ring ---');
     return new Function('ATTACKS', 'COMBAT', 'PANDA', 'BASE_REACH', 'Panda', 'tierFor',
       `return function (${args}) {${body}\n};`)(ATTACKS, COMBAT, PANDA, BASE_REACH, Panda, tierFor);
   };
-  const strikePlayers = lift('strikePlayers(attacker, kind, reach, dir)',
-    'attacker, kind, reach, dir');
+  const strikePlayers = lift('strikePlayers(attacker, kind, reach, dir, spent = null)',
+    'attacker, kind, reach, dir, spent = null');
   const updatePanda = lift('_updatePanda(player)', 'player');
 
   const art = { cub: { texture: new THREE.Texture() }, adult: { texture: new THREE.Texture() } };
@@ -13338,12 +13338,12 @@ console.log('\n--- 息 the breath cannot leak out of the ring ---');
      tournament off, the new attack does nothing at all. */
   const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
     .replace(/\r\n/g, '\n');
-  const at = msrc.indexOf('\n  strikePlayers(attacker, kind, reach, dir) {');
+  const at = msrc.indexOf('\n  strikePlayers(attacker, kind, reach, dir, spent = null) {');
   const from = msrc.indexOf('{', at + 1) + 1;
   const body = msrc.slice(from, msrc.indexOf('\n  }\n', from));
   // eslint-disable-next-line no-new-func
   const strikePlayers = new Function('ATTACKS', 'COMBAT', 'PANDA', 'BASE_REACH',
-    `return function (attacker, kind, reach, dir) {${body}\n};`)(
+    `return function (attacker, kind, reach, dir, spent = null) {${body}\n};`)(
     ATTACKS, COMBAT, PANDA, BASE_REACH);
 
   const gy = world.heightAt(0, 40).y;
@@ -13372,6 +13372,78 @@ console.log('\n--- 息 the breath cannot leak out of the ring ---');
     strikePlayers.call(mkGame([a, b], true), a, 'dbreath', BASE_REACH, dir);
     ok('...and in a live round it takes the breath\'s own damage',
       b.maxHp - b.hp === DBREATH.dmg, `${b.maxHp - b.hp}`);
+  }
+
+  /* --- ONE KITTEN, ONCE — HOWEVER LONG IT IS HELD ON HER ----------------
+     The cone is asked of the world sixty times a second now, so the thing that
+     stops it being a frame-rate weapon is the tally, and this is the check
+     that the tally does the work. `invulT` IS CLEARED BETWEEN THE TWO SWEEPS
+     on purpose: half a second of invulnerability would refuse the second blow
+     all by itself and this would pass with the tally deleted. */
+  {
+    const a = mkP(0, 0);
+    const b = mkP(1, 4);
+    a.facing = Math.PI / 2;
+    b.position.y = a.position.y;
+    const dir = { x: Math.sin(a.facing), y: Math.cos(a.facing) };
+    const G = mkGame([a, b], true);
+    const spent = new Set();
+    strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
+    const first = b.maxHp - b.hp;
+    ok('a sweeping cone hurts the kitten it crosses', first === DBREATH.dmg, `${first}`);
+    b.invulnT = 0;
+    strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
+    ok('...and cannot hurt her again, however long it is held on her',
+      b.maxHp - b.hp === first, `${b.maxHp - b.hp} after a second sweep`);
+    /* AND THE HAZARD IS REAL. Without the tally the same cone on the same
+       frame-clear body takes her down again — so the line above is a rule
+       being enforced rather than a coincidence of the test. */
+    b.invulnT = 0;
+    strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, new Set());
+    ok('...and without the tally it would have, which is why there is one',
+      b.maxHp - b.hp > first);
+  }
+
+  /* ...BUT TURNING INSIDE YOUR OWN FLAME CATCHES THE NEXT ONE. The other half
+     of the ask, and the reason the sweep exists: "if they move it around, they
+     can hit multiple people around them while it is happening". */
+  {
+    const a = mkP(0, 0);
+    const east = mkP(1, 4);
+    const west = mkP(2, -4);
+    east.position.y = west.position.y = a.position.y;
+    const G = mkGame([a, east, west], true);
+    const spent = new Set();
+    strikePlayers.call(G, a, 'dbreath', BASE_REACH, { x: 1, y: 0 }, spent);
+    ok('the cone catches the one it is pointed at', east.hp < east.maxHp);
+    ok('...and not the one behind her', west.hp === west.maxHp);
+    strikePlayers.call(G, a, 'dbreath', BASE_REACH, { x: -1, y: 0 }, spent);
+    ok('...and turning round inside the same flame catches her too',
+      west.hp < west.maxHp);
+    ok('...while the first one is not caught twice for it',
+      east.maxHp - east.hp === DBREATH.dmg);
+  }
+
+  /* A BUBBLE SPENDS THE BREATH TOO. "It can only hurt a player once, OR damage
+     their shield once" — so a kitten who blocked it is finished with this cone
+     even though she took nothing, and a flame parked on a ward cannot grind it
+     down at sixty hits a second. */
+  {
+    const a = mkP(0, 0);
+    const b = mkP(1, 4);
+    a.facing = Math.PI / 2;
+    b.position.y = a.position.y;
+    b.wardOn = true;
+    const dir = { x: 1, y: 0 };
+    const G = mkGame([a, b], true);
+    const spent = new Set();
+    strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
+    ok('a blocked breath costs her nothing', b.hp === b.maxHp);
+    ok('...and is spent on her all the same', spent.has(b));
+    const hits = b.wardHits;
+    strikePlayers.call(G, a, 'dbreath', BASE_REACH, dir, spent);
+    ok('...so the same flame cannot grind her bubble down frame by frame',
+      b.wardHits === hits, `${b.wardHits} of ${hits}`);
   }
 
   /* IT REACHES FURTHER THAN A BLADE AND STILL NOT FOR EVER. Both ends of the
@@ -13420,12 +13492,12 @@ console.log('\n--- 盗 a mark is paid by a hit, and only by a hit ---');
 {
   const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
     .replace(/\r\n/g, '\n');
-  const at = msrc.indexOf('\n  strikePlayers(attacker, kind, reach, dir) {');
+  const at = msrc.indexOf('\n  strikePlayers(attacker, kind, reach, dir, spent = null) {');
   const from = msrc.indexOf('{', at + 1) + 1;
   const body = msrc.slice(from, msrc.indexOf('\n  }\n', from));
   // eslint-disable-next-line no-new-func
   const strikePlayers = new Function('ATTACKS', 'COMBAT', 'PANDA', 'BASE_REACH',
-    `return function (attacker, kind, reach, dir) {${body}\n};`)(
+    `return function (attacker, kind, reach, dir, spent = null) {${body}\n};`)(
     ATTACKS, COMBAT, PANDA, BASE_REACH);
 
   const gy = world.heightAt(0, 40).y;
@@ -13775,27 +13847,61 @@ console.log('\n--- the two powers, from the kitten\'s side ---');
     ok('...aimed where she is pointing', a.breathFireT === DBREATH.fire);
     ok('...and the wait starts at the flame, not at the press',
       a.breathCool === DBREATH.cool);
-    a._stepClanPower(DBREATH.fire, hud);
+
+    /* --- AND IT KEEPS ASKING, FOR AS LONG AS IT IS ON SCREEN ---
+       It used to strike once, on the frame the cone left her, and everything
+       after that was a drawing — which made the eighth non-negotiable true for
+       one frame in sixty. Asked for as "it is constantly checking for hits if
+       the player rotates around". Counted against the frames actually stepped
+       rather than against a number, so the flame lengthening cannot silently
+       stop meaning one sweep a frame. */
+    const tally = hud.strikes[0][4];
+    ok('...carrying a tally of whom it has already caught', tally instanceof Set);
+    let frames = 0;
+    while (a.breathFireT > 0 && frames < 600) { a._stepClanPower(1 / 60, hud); frames++; }
+    ok('...and the cone is asked of the world again on every frame of the flame',
+      hud.strikes.length === frames + 1,
+      `${hud.strikes.length} sweeps over ${frames} frames of flame`);
+    /* ONE TALLY FOR THE WHOLE BREATH. A fresh set per frame would be a cone
+       that hurts at the frame rate, which is the reason the single application
+       existed in the first place — so this is the check that keeps the fix
+       from becoming the bug it replaced. */
+    ok('...all of them sharing the one tally, so nobody is caught twice',
+      hud.strikes.every((x) => x[4] === tally));
     ok('...and it is over when the flame is', a.arenaBreathAt === false);
-    ok('...and the damage was applied exactly once', hud.strikes.length === 1);
+    /* AND THE TALLY DOES NOT OUTLIVE ITS OWN FLAME: the next press opens a new
+       one, or the sister caught by the first breath is immune to the second. */
+    a.breathCool = 0;
+    a._startClanPower(null, hud);
+    a._stepClanPower(DBREATH.charge, hud);
+    ok('...and the next breath starts a tally of its own',
+      a.breathHit instanceof Set && a.breathHit !== tally);
   }
 
   {
-    /* --- THE REAR-BACK IS THE WARNING, AND IT IS TWICE WHAT IT SHIPPED AS ---
-       "The duration of the attack should be twice as long", and the pause is
-       half the attack. What is pinned here is not the literal 1.6 — that is a
-       `tune()` field and the page may move it — but the two things that make
-       the move fair: the warning may never be SHORTER than the thing it warns
-       about, and it has to last long enough for somebody on the other half of
-       the screen to look up and start running. A kitten sprints 17 a second;
-       under a second and a half she cannot clear an 8.5-unit cone from the
-       middle of it. */
-    ok('the rear-back is at least as long as the flame it warns about',
-      DBREATH.charge >= DBREATH.fire, `${DBREATH.charge}s vs ${DBREATH.fire}s`);
-    ok('...and long enough to be run away from',
-      DBREATH.charge >= 1.5, `${DBREATH.charge}s`);
+    /* --- THE REAR-BACK IS THE WARNING, AND IT IS SHORT ON PURPOSE ---------
+       It was doubled to 1.6 with the flame, on the argument that a warning may
+       never be shorter than the thing it warns about. Played, that argument
+       lost: "the charge up is taking too long, we should keep it charging for
+       as long as it did previously". So the rule pinned here is no longer
+       about the two clocks against each other — it is the two things that
+       actually make the move fair.
+
+       LONG ENOUGH TO BE A TELL AT ALL. Under about half a second nothing on
+       the other half of the screen can be reacted to, whatever it looks like;
+       this is the floor, not the design. What buys the reaction now is that
+       the tell is LOUD rather than slow — the inhale pose, the intake vortex,
+       the foot ring and `dbreathin`, all checked below. */
+    ok('the rear-back is long enough to be a tell at all',
+      DBREATH.charge >= 0.6, `${DBREATH.charge}s`);
     ok('...and the flame is on screen long enough to be seen crossing the deck',
       DBREATH.fire >= 0.9, `${DBREATH.fire}s`);
+    /* AND THE FLAME IS THE HALF THAT KEPT THE DOUBLING. "The duration of the
+       attack should be twice as long" is still owed, and the cone is where it
+       is paid: it is the part that is a live hitbox and the part anybody is
+       looking at. */
+    ok('...and the flame is the longer half of the move now',
+      DBREATH.fire >= DBREATH.charge, `${DBREATH.fire}s vs ${DBREATH.charge}s`);
     /* AND THE WHOLE MOVE STILL FITS INSIDE ITS OWN WAIT, or she could start a
        second one before the first had finished. */
     ok('...and the whole thing is over long before it comes back',
@@ -13823,6 +13929,48 @@ console.log('\n--- the two powers, from the kitten\'s side ---');
        one would cost sixty. */
     ok('...and the rear-back cue is one call, not one a frame',
       (psrc.match(/sfx\?\.\('dbreathin'\)/g) ?? []).length === 1);
+
+    /* --- ...AND IT IS THE LENGTH OF THE REAR-BACK IT IS WARNING ABOUT ---
+       This has been wrong once. The cue was written against a 1.6s charge as
+       five gulps 0.3s apart under a 1.5s whine; the charge went back to 0.8
+       and the warning went on climbing for most of a second after the flame
+       had already come and gone, which reads as a second attack that never
+       arrives. The numbers are scraped back out of the cue rather than typed
+       here, so this is the schedule that actually plays.
+
+       THE LAST GULP MAY RING PAST THE CHARGE and is meant to — it lands in the
+       roar. What may not happen is the last gulp STARTING after the flame has
+       left her, or the whine still climbing when it does. */
+    const cue = asrc.slice(asrc.indexOf("case 'dbreathin':"),
+      asrc.indexOf("case 'dbreathout':"));
+    const gulps = Number((cue.match(/i < (\d+); i\+\+/) ?? [])[1]);
+    const step = Number((cue.match(/delay: i \* ([\d.]+)/) ?? [])[1]);
+    const whine = Number((cue.match(/dur: ([\d.]+), gain: [\d.]+ \* v, delay/) ?? [])[1]);
+    ok('the gulps are spread over the rear-back, not over the old one',
+      gulps > 1 && step > 0 && (gulps - 1) * step < DBREATH.charge,
+      `${gulps} gulps ending at ${((gulps - 1) * step).toFixed(2)}s of ${DBREATH.charge}s`);
+    ok('...and the whine under them stops climbing when the flame arrives',
+      whine > 0 && whine <= DBREATH.charge + 0.05, `${whine}s of ${DBREATH.charge}s`);
+    /* AND IT IS STILL MORE THAN ONE NOISE. The whole reason it stopped being
+       `wardup` was that one short note leaves a silence to forget in. */
+    ok('...and it is still a run of them, not one chirp', gulps >= 3);
+
+    /* --- AND SHE GOES BACK TO BEING A CAT THE MOMENT IT LEAVES HER --------
+       The inhale pose is one drawn cell with no walk in it, and it used to be
+       held for the whole move: two and a half seconds of a still kitten
+       sliding around the deck, which reads as the game having frozen and not
+       as a technique. Asked for as "after breathing in, when the attack is
+       initiated, we should go back to normal running/walking/idling animation
+       ... they are just moving around normally, but with the breath attack
+       happening". The flame does not need her to hold the pose — it is drawn
+       from her mouth in world space by `systems/clanfx.js`. */
+    const drawAt = psrc.indexOf('if (this.breathPose) {');
+    const draw = drawAt < 0 ? '' : psrc.slice(drawAt, drawAt + 900);
+    ok('the inhale pose is worn for the rear-back and not for the flame',
+      /const breathing = this\.breathChargeT > 0/.test(draw)
+      && !/const breathing = this\.arenaBreathAt/.test(draw));
+    ok('...and nothing in the drawing reads the flame clock any more',
+      !/breathFireT/.test(draw));
   }
 
   {
@@ -17561,14 +17709,19 @@ console.log('\n--- one press is not enough, and one player drives ---');
     F.update(1 / 60);
     const openedAt = F.camera.position.clone();
     const early = facing();
-    /* THIRTY SECONDS IN — the last beat, and the last SHOT. The reading used
-       to be taken at twenty, which was the middle of one long continuous
-       pull-back; the ending is a five-shot list now (`FINALE_SHOTS`) and the
-       middle of it is a close shot of a bridge, lower and nearer than the one
-       it opened on. The pair of readings still has to be far apart for this to
-       mean anything, and the two ENDS of the scene are as far apart as it gets:
-       down among the barrels, then the whole archipelago. */
-    for (let i = 0; i < 1800; i++) F.update(1 / 60);
+    /* THE LAST SHOT, FOUND RATHER THAN TIMED. The reading used to be taken
+       twenty seconds in, which was the middle of one long continuous
+       pull-back; then thirty, when the ending became a five-shot list. Both
+       were a second count standing in for "the end", and the second one
+       quietly stopped meaning that the moment the list grew to nineteen shots
+       — thirty seconds now lands on a low, close shot of a bridge. So it runs
+       until the LAST SHOT is the one on screen, which cannot drift. The pair
+       of readings still has to be far apart for this to mean anything, and the
+       two ends of the ending are as far apart as it gets: down among the
+       barrels, then the whole archipelago. */
+    const finalShot = FINALE_SHOTS[FINALE_SHOTS.length - 1];
+    for (let i = 0; i < 4000 && F.active && F._shot !== finalShot; i++) F.update(1 / 60);
+    for (let i = 0; i < 60; i++) F.update(1 / 60);
     const late = facing();
     ok('the ending turns her to face the lens, at both ends of the shot',
       early < -0.999 && late < -0.999, `${early.toFixed(4)} then ${late.toFixed(4)}`);
@@ -17598,13 +17751,15 @@ console.log('\n--- one press is not enough, and one player drives ---');
   ok('...and at least one of them moves at all',
     BEAT_ACTS.some((a) => a.lean !== 0 || a.push !== 0));
 
-  /* --- ...AND THE ENDING IS A SHOT LIST NOW -------------------------------
-     "Let's have the camera zoom in on a few areas on the map where the action
-     of the mischief will happen... would be good to zoom in on the actual
-     Bridge... can have camera zoom in on the Dojo of the Turning Circle."
+  /* --- ...AND THE ENDING IS A SHOT LIST, CUT TO THE WORDS -----------------
+     "The camera should actually have a rotating shot on every one of those
+     items and show them as it is being said... we can transition the camera to
+     be there when the word counting is said."
      What is pinned here is the SHAPE of the list, not the numbers in it: every
      line has a shot, every shot points at somewhere the scene can actually
-     resolve, and the two places that were asked for by name are both in it. */
+     resolve, every place asked for by name is in it, and — the thing that makes
+     this a cut list rather than a zoom list — the shots that are supposed to
+     land on a word actually land on that word. */
   {
     for (let b = 0; b < SCRIPTS.finale.length; b++) {
       ok(`line ${b + 1} of the ending has a shot of its own`,
@@ -17620,42 +17775,131 @@ console.log('\n--- one press is not enough, and one player drives ---');
     }
     /* THE NAMES ARE RESOLVED AGAINST THE WORLD, so a shot pointing at
        somewhere the scene has never heard of is a camera aimed at undefined. */
-    const KNOWN = ['wide', 'dojo', 'bridge', 'mischief'];
+    const KNOWN = ['wide', 'dojo', 'bridge', 'barrel', 'lantern', 'bamboo', 'heap', 'arena'];
     ok('...and every shot points somewhere the scene can find',
       FINALE_SHOTS.every((sh) => KNOWN.includes(sh.at)),
       FINALE_SHOTS.map((sh) => sh.at).join(' '));
     ok('...including the bridge, by name', FINALE_SHOTS.some((sh) => sh.at === 'bridge'));
     ok('...and the Dojo of the Turning Circle', FINALE_SHOTS.some((sh) => sh.at === 'dojo'));
-    ok('...and the mischief itself', FINALE_SHOTS.some((sh) => sh.at === 'mischief'));
+    ok('...and the mischief itself', FINALE_SHOTS.some((sh) => sh.at === 'heap'));
+    ok('...and all three of the things she names, each with a shot of its own',
+      ['barrel', 'lantern', 'bamboo'].every((m) => FINALE_SHOTS.some((sh) => sh.at === m)));
+    ok('...and the ring she sends them to', FINALE_SHOTS.some((sh) => sh.at === 'arena'));
+
+    /* --- AND EVERY CUT LANDS ON THE WORD IT IS CUT TO -----------------------
+       THE POINT OF THE WHOLE REWRITE, and the one thing a table of numbers
+       cannot be trusted about: `from` is written as `say(beat, 'lantern')` so
+       that the shot of the lantern arrives with the word "lantern", and a typo
+       in the phrase comes back as 0 — which silently stacks every shot of the
+       beat on top of the first one and looks, from the table, exactly like a
+       deliberate 0. So each cue is checked against the text it claims: the
+       fraction it opens at has to be the fraction that word sits at. */
+    {
+      const WORDS = [
+        ['name-lantern', 0, 'lantern'],
+        ['name-bamboo', 0, 'bamboo'],
+        ['heap-raise', 1, 'simpler'],
+        ['dojo-run', 1, 'counting'],
+        ['isles-drift', 2, 'They drifted'],
+        ['isles-cross', 2, 'You crossed'],
+        ['isles-angle', 2, 'An angle'],
+        ['isles-circle', 2, 'a circle'],
+        ['isles-leap', 2, 'nerve to jump'],
+        ['isles-bridge', 2, 'all a bridge'],
+        ['arena-in', 3, 'arena is open'],
+      ];
+      let landed = 0;
+      let wrong = '';
+      for (const [cue, beat, word] of WORDS) {
+        const sh = FINALE_SHOTS.find((x) => x.cue === cue);
+        const t = SCRIPTS.finale[beat].text;
+        const want = t.indexOf(word) / t.length;
+        if (sh && sh.beat === beat && Math.abs(sh.from - want) < 1e-6) landed++;
+        else wrong += ` ${cue}`;
+      }
+      ok('...and every shot that names a thing opens on the word for it',
+        landed === WORDS.length, `missed:${wrong || ' none'}`);
+      /* AND NOT ONE OF THEM IS SITTING AT ZERO BY ACCIDENT. `say` returns 0 for
+         a phrase it cannot find, which is also a legitimate value for the first
+         shot of a beat — so the only way to tell a measured 0 from a lost one
+         is that a word cue should never be at the very top of its line. */
+      ok('...none of them quietly fallen back to the top of the line',
+        WORDS.every(([cue]) => (FINALE_SHOTS.find((x) => x.cue === cue)?.from ?? 0) > 0.02));
+      /* THE SHOVE COMES AFTER THE CLAUSE, NOT ON ITS FIRST WORD. "At the end of
+         when the line is spoken 'Every other way is the rest of them' we can
+         knock over all the reconstructed mischief again." */
+      const slam = FINALE_SHOTS.find((x) => x.cue === 'heap-slam');
+      const line = SCRIPTS.finale[1].text;
+      const clause = 'Every other way is the rest of them';
+      ok('...and the shove lands after the clause it belongs to, not on it',
+        !!slam && Math.abs(slam.from - (line.indexOf(clause) + clause.length) / line.length) < 1e-6);
+      /* ...AND THE WORLD GOES OVER BEFORE THE CAMERA LEAVES IT. A shove the
+         audience does not see is a sound effect. */
+      const cut = FINALE_SHOTS.find((x) => x.cue === 'dojo-run');
+      ok('...and the camera is still on it when it does',
+        !!cut && cut.from > slam.from, `${slam?.from} then ${cut?.from}`);
+    }
+
+    /* --- THE THREE FADES, AND ONLY THOSE THREE ------------------------------
+       A cut through black is expensive — it is the one transition that stops
+       the picture entirely — and it is here for exactly the jumps a straight
+       cut cannot carry: a town square to the Dojo, the Dojo to the bridge, the
+       bridge to the ring in the sky. Every other cut in the ending is hard. */
+    {
+      const fades = FINALE_SHOTS.filter((sh) => sh.fade);
+      ok('the ending blinks exactly three times', fades.length === 3,
+        fades.map((sh) => sh.cue).join(' '));
+      ok('...and every one of them is a jump to somewhere the last shot could not see',
+        fades.every((sh) => ['dojo', 'bridge', 'arena'].includes(sh.at)));
+      /* AND NOT ON THE LINE THAT NAMES THE THINGS. Three rings closing on three
+         props a second apart is a shot, and a blink between each of them is a
+         strobe. */
+      ok('...and none of them inside the naming',
+        !FINALE_SHOTS.some((sh) => sh.fade && ['barrel', 'lantern', 'bamboo'].includes(sh.at)));
+    }
     /* AND IT STILL ENDS WHERE IT ALWAYS ENDED. The last beat is the one the
        whole world goes over on, and that cannot be watched from the ground. */
     const last = FINALE_SHOTS[FINALE_SHOTS.length - 1];
     ok('...and the last line is still the whole archipelago',
       last.beat === SCRIPTS.finale.length - 1 && last.at === 'wide');
 
-    /* SHE IS IN THE FIRST SHOT AND THE LAST, AND OUT OF THE ONES THAT ARE
-       ABOUT SOMEWHERE. A nine-unit cut-out parked in front of a close shot of
-       a bridge is the bridge. */
-    ok('Patchfur is on screen for the line that opens it', FINALE_SHOTS[0].stage === true);
-    ok('...and for the one that sends them off', last.stage === true);
-    ok('...and out of the way of the places she is pointing at',
-      FINALE_SHOTS.filter((sh) => sh.at !== 'wide' && sh.beat > 0)
-        .every((sh) => sh.stage === false));
+    /* SHE TAKES THE STAGE EXACTLY ONCE, AND IT IS THE LAST SHOT.
+       She used to walk on and off between subjects, which worked when a shot
+       was a whole line long. The shortest shot in the list is now under a
+       second — "Every barrel. Every lantern." — and a nine-unit cut-out sliding
+       in and straight back out inside a second reads as a rendering fault. She
+       keeps the portrait box for the whole ending instead, which is the same
+       argument Mr Satan's scenes already make, and stands up for the one line
+       that is her talking to the two of them rather than pointing. */
+    ok('Patchfur takes the stage for exactly one shot of the ending',
+      FINALE_SHOTS.filter((sh) => sh.stage).length === 1,
+      FINALE_SHOTS.filter((sh) => sh.stage).map((sh) => sh.at).join(' '));
+    ok('...and it is the one that sends them off', last.stage === true);
+    ok('...so she is never standing in front of a place she is pointing at',
+      FINALE_SHOTS.filter((sh) => sh.at !== 'wide').every((sh) => sh.stage === false));
+    /* AND THE BOX IS WHY THAT IS NOT A LOSS. A narrator who is neither on
+       screen nor in the portrait for thirty seconds is a disembodied voice. */
+    ok('...because the portrait carries her for the rest of it',
+      /showPortrait = \(which === 'finale'/.test(readFileSync(
+        new URL('../src/systems/summonscene.js', import.meta.url), 'utf8')));
 
     /* --- and now watch it actually happen --- */
     const W = staged('finale').T;
-    const opacity = () => W.stageSprite.mat.opacity;
-    for (let i = 0; i < 120; i++) W.update(1 / 60);       // two seconds: she is in
-    const onAtFirst = opacity();
-    ok('she is on screen while the first line plays', onAtFirst > 0.8,
-      onAtFirst.toFixed(2));
-    while (W.active && W.beat < 1) W.update(1 / 60);
-    for (let i = 0; i < 120; i++) W.update(1 / 60);       // ...and two into the second
-    ok('...and she has walked out of the shot by the second',
-      opacity() < 0.05, opacity().toFixed(2));
-    while (W.active && W.beat < SCRIPTS.finale.length - 1) W.update(1 / 60);
-    for (let i = 0; i < 150; i++) W.update(1 / 60);
-    ok('...and is back for the last one', opacity() > 0.8, opacity().toFixed(2));
+    const opacity = () => W.stageSprite?.mat.opacity ?? 0;
+    /* Two seconds in: the camera is down among the barrels and she is not in
+       front of them. The stage quad exists — it was built at `start` — so this
+       is a real reading of a real sprite that has been walked off. */
+    for (let i = 0; i < 120; i++) W.update(1 / 60);
+    ok('she is out of the way while the ending names things', opacity() < 0.05,
+      opacity().toFixed(2));
+    /* ...and on for the last shot. Run to it off the table rather than to a
+       typed second, so re-timing a line cannot quietly make this a reading of
+       the shot before. */
+    const lastAt = W._at(last);
+    let guard = 0;
+    while (W.active && W._now() < lastAt + 1.4 && guard++ < 6000) W.update(1 / 60);
+    ok('...and stands up for the line that sends them off', opacity() > 0.8,
+      opacity().toFixed(2));
     W.finish();
 
     /* --- AND `mischief` IS MEASURED, NOT GUESSED AT ---
@@ -17687,8 +17931,9 @@ console.log('\n--- one press is not enough, and one player drives ---');
     const bare = new SummonScene({ scene: null, world: null, audio: null });
     bare.start('finale', { x: 5, y: 6, z: 7 }, 30, art);
     ok('...and every shot falls back to the wide one without a world',
-      ['wide', 'dojo', 'bridge', 'mischief']
-        .every((m) => bare.marks[m].x === 5 && bare.marks[m].z === 7));
+      ['wide', 'dojo', 'bridge', 'barrel', 'lantern', 'bamboo', 'heap', 'arena']
+        .every((m) => bare.marks[m].x === 5 && bare.marks[m].z === 7),
+      Object.keys(bare.marks).join(' '));
     bare.update(1 / 60);
     ok('...and the camera it produces is a real place',
       Number.isFinite(bare.camera.position.x) && Number.isFinite(bare.camera.position.y));
@@ -17774,9 +18019,9 @@ console.log('\n--- one press is not enough, and one player drives ---');
   const lastBeat = SCRIPTS.finale.length - 1;
   ok('the ending has a middle to stand the town up in', lastBeat >= 2,
     `${SCRIPTS.finale.length} lines`);
-  tide.setBeat(1, lastBeat);
+  tide.raise(6);
   for (let i = 0; i < 60 * 20; i++) tide.update(1 / 60);
-  ok('a middle beat puts the town back on its feet', tide.k === 1);
+  ok('a town asked to stand up ends up on its feet', tide.k === 1);
   ok('...standing up', tprops.every((q) => Math.abs(q.group.rotation.x) < 1e-6
     && Math.abs(q.group.rotation.z) < 1e-6));
   ok('...on the spot it was built on',
@@ -17798,27 +18043,81 @@ console.log('\n--- one press is not enough, and one player drives ---');
     world.mischiefTotal === wasTotal && world.props.length === wasCount,
     `${world.mischiefTotal} of ${world.props.length}`);
 
-  /* --- AND THEN IT ALL GOES OVER AGAIN, EXACTLY WHERE IT WAS --- */
-  tide.setBeat(lastBeat, lastBeat);
-  for (let i = 0; i < 60 * 20; i++) tide.update(1 / 60);
-  ok('the last beat knocks the whole thing over again', tide.k === 0);
-  ok('...landing on the exact pose the afternoon left it in', tprops.every(
-    (q, i) => q.group.position.distanceTo(was[i].p) < 1e-6
-      && Math.abs(q.group.rotation.x - was[i].r.x) < 1e-6
-      && Math.abs(q.group.rotation.y - was[i].r.y) < 1e-6
-      && Math.abs(q.group.rotation.z - was[i].r.z) < 1e-6));
+  /* --- AND THEN IT ALL GOES OVER AGAIN, DIFFERENTLY --------------------
+     IT USED TO REWIND. The last beat ran the same wave backwards, which landed
+     every barrel on the exact pose it had been lying in — and that is what the
+     film running in reverse looks like, under a line that says "every OTHER
+     way is the rest of them". Asked for as "knock over all the reconstructed
+     mischief again in a chaotic way, as if they were knocked over again". So
+     `slam` invents a fresh fall for each of them, and the pose the afternoon
+     left behind is kept untouched somewhere else — which is what `finish` puts
+     back, and is checked a few lines down. */
+  const crashes = [];
+  const crashAt = [];
+  let frame = 0;
+  tide.onCrash = (kind) => { crashes.push(kind); crashAt.push(frame); };
+  tide.slam();
+  for (let i = 0; i < 60 * 20; i++) { frame = i; tide.update(1 / 60); }
+  ok('the shove knocks the whole thing over again', tide.k === 0);
+  ok('...and every one of them is lying down', tprops.every(
+    (q) => Math.abs(q.group.rotation.x) + Math.abs(q.group.rotation.z) > 0.3));
+  ok('...near the spot it was built on, not thrown across the island',
+    tprops.every((q) => q.group.position.distanceTo(q.home) < 3.2));
+  /* NOT THE OLD POSE. The point of the beat: it is a second fall, not the
+     first one replayed. Read across the whole set rather than prop by prop,
+     because one barrel CAN land back roughly where it was by chance. */
+  {
+    const moved = tprops.filter((q, i) => q.group.position.distanceTo(was[i].p) > 0.2);
+    ok('...and it is a new fall rather than the old one played back',
+      moved.length > tprops.length * 0.6, `${moved.length} of ${tprops.length}`);
+  }
+  /* AND IT IS AUDIBLE, IN A RIPPLE. "Can even play the sound effect of them
+     getting knocked over, just stagger the sound a bit so it is not too loud
+     and on top of itself... could be about like 10 or more bamboo being
+     knocked over." Capped, so sixty props are not sixty simultaneous bangs,
+     and spread, so the ones that do sound arrive across the fall. */
+  ok('...and you can hear it happen', crashes.length >= 3, `${crashes.length} bangs`);
+  ok('...without the whole town landing on one frame',
+    crashes.length <= 14, `${crashes.length} bangs`);
+  ok('...each of them the sound of the thing that actually fell',
+    crashes.every((k) => typeof k === 'string' && k.length > 0),
+    [...new Set(crashes)].join(' '));
+  /* AND THEY ARRIVE ACROSS THE FALL, NOT ON ONE FRAME. The cap alone is not
+     enough: ten bangs inside a tenth of a second is ten bangs on top of each
+     other, which is the thing the ask named — "just stagger the sound a bit so
+     it is not too loud and on top of itself". Counted in FRAMES the crashes
+     landed on, which is what "staggered" means to an ear. */
+  ok('...spread out across the fall rather than stacked on one frame',
+    new Set(crashAt).size >= Math.min(5, crashes.length),
+    `${new Set(crashAt).size} separate moments for ${crashes.length} bangs`);
+
+  /* ONE BANG EACH, TOO. `bang` is spent as the prop lands and only `slam` sets
+     it, so a wave that is still settling cannot keep re-firing the same crash
+     every frame for the rest of the beat. */
+  {
+    const after = crashes.length;
+    for (let i = 0; i < 120; i++) tide.update(1 / 60);
+    ok('...and none of them goes on crashing after it has landed',
+      crashes.length === after, `${crashes.length - after} extra`);
+  }
+  tide.onCrash = null;
 
   /* THE WAVE. Two hundred objects snapping upright on the same frame reads as
      a rendering glitch; a ripple crossing the archipelago reads as a town
      tidying itself. Measured as "part way through, some have moved and some
      have not" rather than by reading STAGGER back out of the module. */
   {
-    tide.setBeat(1, lastBeat);
+    /* MEASURED FROM WHERE THE WAVE STARTS, not from the afternoon's pose. The
+       town has been knocked over a second time by now and is lying somewhere
+       new, so comparing against the original would report every prop as
+       "moved" on the first frame and the wave would look instantaneous. */
+    const down = tprops.map((q) => q.group.position.clone());
+    tide.raise(6);
     let split = false;
     for (let i = 0; i < 60 * 20 && !split; i++) {
       tide.update(1 / 60);
       const moved = tprops.filter(
-        (q, ix) => q.group.position.distanceTo(was[ix].p) > 0.01);
+        (q, ix) => q.group.position.distanceTo(down[ix]) > 0.01);
       split = moved.length > 0 && moved.length < tprops.length;
     }
     ok('the town stands up as a wave, not all at once', split);
@@ -17844,7 +18143,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
   {
     const empty = new FinaleTide({ props: [] });
     empty.start();
-    empty.setBeat(1, 3);
+    empty.raise(3);
     empty.update(1 / 60);
     empty.finish();
     ok('an untouched world simply has nothing to rewind', empty.running === false);
@@ -17888,7 +18187,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
        direction: the last beat's fall is a RESTORATION and it can only put
        back what was stood up, so a wave that skipped the far islands would
        leave them upright for ever. */
-    F.setBeat(1, lastBeat);
+    F.raise(6);
     for (let i = 0; i < 60 * 20; i++) F.update(1 / 60);
     ok('...and every single one of them still stands up, in shot or not',
       F.held.every((h) => h.prop.group.position.distanceTo(h.home) < 1e-6));
@@ -17897,7 +18196,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
        is where each prop sits inside it, so re-sorting halfway through the
        rise teleports two hundred objects on one frame. A cut that lands inside
        a beat therefore keeps the order the beat started with. */
-    F.setBeat(lastBeat, lastBeat);
+    F.slam();
     for (let i = 0; i < 10; i++) F.update(1 / 60);
     const frozen = F.held.map((h) => h.phase);
     ok('...but not while the wave is halfway through a move',
@@ -17910,6 +18209,93 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...as does one pointed at nowhere',
       (F.start(), F.focusOn(null) === false));
     F.finish();
+  }
+
+  /* --- ...AND THE RECONSTRUCTION IS ONE CORNER, NOT THE SKY ---------------
+     "We can be zoomed on a specific area that has a lot of mischief and
+     furniture and have it be reconstructed rather than focusing on random
+     locations throughout the world, should be the same every time."
+
+     THE WHOLE DANGER OF THIS FEATURE IS IN THE SECOND HALF OF IT. Narrowing
+     what MOVES is a shot; narrowing what is HELD would be the fourth
+     non-negotiable going out of the window, because `finish` restores from the
+     held list and a prop dropped from it is a prop nobody ever puts back. So
+     every check here is really the same check asked twice: did the wave get
+     smaller, and is the promise still the same size. */
+  {
+    const F = new FinaleTide(world);
+    F.start();
+    const all = F.held.length;
+    const at = F.held[0].home.clone();
+    const inShot = F.only(at, 14);
+    ok('the wave can be narrowed to one corner of the world',
+      inShot > 0 && inShot < all, `${inShot} of ${all} in shot`);
+    /* IT IS THE RIGHT CORNER. Every prop counted in is inside the circle and
+       every prop counted out is outside it — not merely "fewer than before",
+       which a stray `Math.random` would also satisfy. */
+    ok('...and it is the corner it was pointed at',
+      F.held.every((h) => h.inShot
+        === (Math.hypot(h.home.x - at.x, h.home.z - at.z) <= 14)));
+    ok('...and it still has hold of every last thing in the world',
+      F.held.length === all && world.props.filter((q) => q.held).length === all,
+      `${F.held.length} held`);
+
+    /* --- AND THE RIPPLE IS DEALT ACROSS WHAT MOVES, NOT ACROSS THE WORLD ---
+       FOUND BY WATCHING IT. The corner rose and fell as a block and the ten
+       crashes arrived inside a tenth of a second, which is the one thing the
+       stagger exists to prevent. The cause was that the phases were ranked
+       over every held prop: the things in a town square are by definition the
+       ones NEAREST the mark, so thirty of two hundred took the first thirty
+       ranks and shared a few hundredths of a wave spread over nearly half.
+       Measured as the SPAN the moving props occupy, because that is the thing
+       the eye and the ear are both actually reading. */
+    {
+      const ph = F.held.filter((h) => h.inShot).map((h) => h.phase);
+      const span = Math.max(...ph) - Math.min(...ph);
+      const whole = F.held.map((h) => h.phase);
+      ok('...and the wave is spread across the corner, not squeezed into a corner of the wave',
+        span > (Math.max(...whole) - Math.min(...whole)) * 0.9 && span > 0.3,
+        `${span.toFixed(3)} of the stagger`);
+      ok('...starting with the one it is pointed at, still',
+        Math.min(...ph) === 0);
+    }
+
+    /* NOW RUN IT. The corner stands up; the rest of the world does not move a
+       millimetre, because a barrel four islands away standing up under a close
+       shot of a town square is work nobody can see. */
+    const before = F.held.map((h) => h.prop.group.position.clone());
+    F.raise(4);
+    for (let i = 0; i < 60 * 10; i++) F.update(1 / 60);
+    const up = F.held.filter((h) => h.inShot)
+      .every((h) => h.prop.group.position.distanceTo(h.home) < 1e-6);
+    ok('...so the corner in shot stands itself back up', up);
+    ok('...and not one thing outside it has moved',
+      F.held.every((h, i) => h.inShot
+        || h.prop.group.position.distanceTo(before[i]) < 1e-9));
+
+    /* AND THE PROMISE IS UNCHANGED. The corner that got a performance and the
+       rest of the world that did not are put back the same way. This is the
+       check that would have caught the cheap version of this feature. */
+    F.slam();
+    for (let i = 0; i < 60 * 5; i++) F.update(1 / 60);
+    F.finish();
+    ok('...and a narrowed wave still gives the whole world back',
+      F.held.length === 0 && world.props.every((q, i) => !q.held
+        && (!tprops.includes(q)
+          || q.group.position.distanceTo(was[tprops.indexOf(q)].p) < 1e-6)));
+
+    /* IT DEGRADES BOTH WAYS. Pointed at nowhere it puts the whole world back
+       in shot rather than emptying the wave — a scene viewer opening the
+       ending on a world with no measurable heap must still get a picture. */
+    const G = new FinaleTide(world);
+    G.start();
+    G.only(G.held[0].home.clone(), 6);
+    ok('a wave pointed at nowhere goes back to being the whole world',
+      G.only(null) === G.held.length && G.held.every((h) => h.inShot));
+    /* AND A SHOVE ON A TIDE THAT IS NOT RUNNING IS NOT A CRASH. */
+    G.finish();
+    ok('...and neither a shove nor a raise means anything once it is over',
+      G.slam() === 0 && G.raise(2) === false);
   }
 
   /* --- AND THE BRIDGE THE ENDING CUTS TO IS THE BRIDGE ---
@@ -17967,15 +18353,31 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('the ending starts the tide and the other two scenes stop it',
       /which === 'finale'\) this\.tide\.start\(\);\s*else this\.tide\.finish\(\)/
         .test(src));
-    ok('...and every beat tells it where it is in the script',
-      /this\.tide\.setBeat\(this\.beat, this\.script\.length - 1\)/.test(src));
+    /* THE SHOT LIST DRIVES IT, NOT THE BEAT NUMBER. It used to be beats: a
+       middle one meant rise, the last one meant fall. That was right when the
+       picture was one wave across four lines; the reconstruction now starts on
+       a word and has to be finished by another word in the same line, which a
+       beat is far too coarse to say. */
+    ok('the reconstruction and the shove are cued by the shot list',
+      /shot\.cue === 'heap-raise'/.test(src) && /shot\.cue === 'heap-slam'/.test(src));
+    ok('...and it is told how long it has by measuring, not by a typed number',
+      /this\.tide\.raise\(slam \? this\._at\(slam\) - this\._at\(shot\)/.test(src));
+    ok('...and the corner is narrowed before it is asked to stand up',
+      src.indexOf('this.tide.only(') > 0
+      && src.indexOf('this.tide.only(') < src.indexOf('this.tide.raise('));
     ok('...and finishing or skipping puts the world back',
       /this\.tide\.finish\(\);/.test(src));
-    /* THE LAST BEAT IS DERIVED, NOT TYPED. A line added to the ending must not
-       be able to leave the archipelago standing tidily at the end of a scene
-       whose whole argument is that it does not stay that way. */
-    ok('...off the script own length, so a new line cannot strand it tidy',
-      !/setBeat\(this\.beat, [0-9]/.test(src));
+    /* AND NOTHING IS LEFT DRIVING IT BY BEAT NUMBER. Two systems steering one
+       wave is the bug where the world starts rising a second and a half before
+       the camera has found it. */
+    ok('...with nothing else steering the same wave behind its back',
+      !/setBeat/.test(src));
+    /* THE CRASHES ARE THE PROPS' OWN SOUNDS, and the tide cannot make them
+       itself: it never reaches the audio engine, same rule as
+       `entities/panda.js`. The scene is what wires the two together. */
+    ok('...and the scene is what turns a falling barrel into a noise',
+      /this\.tide\.onCrash = /.test(src)
+      && /'bamboo' : 'hit'/.test(src));
   }
 
   /* AND THE DIAGRAM IT REPLACED IS GONE, not merely unused. Dead code under a
