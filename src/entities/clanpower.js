@@ -105,16 +105,20 @@ export const DBREATH = tune('DBREATH', {
   /** Seconds of rearing back before it leaves her. The tell everybody else
    *  gets, and the reason this is not just a second slash.
    *
-   *  DOUBLED FROM THE 0.8 IT SHIPPED AT, along with the flame, and asked for as
-   *  one thing: "the duration of the attack should be twice as long". Both
-   *  halves of it are the same move to a player — she rears back, she breathes
-   *  — and lengthening only the flame would have made the warning shorter than
-   *  the thing it warns about. It costs nothing in damage (that is applied once
-   *  either way) and it buys the other kitten a whole second and a half to get
-   *  out of a cone she can now see coming. */
-  charge: 1.6,
-  /** Seconds the flame is on screen. Damage is applied ONCE, on the frame it
-   *  starts — see `Player._fireArenaBreath`. */
+   *  IT WENT TO 1.6 AND CAME STRAIGHT BACK. "The duration of the attack should
+   *  be twice as long" was read as the whole move, charge included; played, the
+   *  charge was the half that felt wrong — "the charge up is taking too long,
+   *  we should keep it charging for as long as it did previously". So the
+   *  rear-back is the 0.8 it shipped at and the FLAME is the half that is
+   *  twice as long. The warning is not weaker for it: what it lost in seconds
+   *  it more than got back in `systems/clanfx.js` — the inhale pose, the
+   *  vortex, the foot ring and `dbreathin` all landed in the same change, and
+   *  the point of a tell is that it is noticed, not that it is slow. */
+  charge: 0.8,
+  /** Seconds the flame is on screen — doubled from the 0.5 it shipped at, and
+   *  the half of the move that KEPT the doubling. It is a live hitbox for all
+   *  of it now: the cone sweeps with her facing and catches anybody it crosses,
+   *  once each. See `Player._sweepArenaBreath`. */
   fire: 1,
   /** How far, and how wide. Both well under a dragon's; see above. */
   range: 8.5,

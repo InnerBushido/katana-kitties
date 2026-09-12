@@ -285,6 +285,53 @@ first thing that happens with it. → [input.md](docs/notes/input.md)
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**The ending and the Dragon Breath are rebuilt and not yet played back.** One
+branch, `mixed/an-ending-cut-to-the-words`. Both came out of one note after
+watching the ending through.
+
+- **The ending is nineteen shots cut to Patchfur's own words.** It was five,
+  and the five were cut to beat NUMBERS, which is why the town started tidying
+  itself before the camera found it and the crash landed in the middle of a
+  clause. Every row of `FINALE_SHOTS` now says which *phrase* it cuts on
+  (`say(beat, 'lantern')`), which has to be a fraction of the line rather than a
+  time because the real voice clips stretch the four beats from 7.5/8.5/8.5/9 to
+  about 11.7/16.8/17.2/17.1 the moment they load. What is on screen: the barrel,
+  the box and the cane picked out one at a time with a ring of light as she
+  names them; one measured corner of the town standing itself back up and
+  **crashing over again** on the end of "the rest of them", a dozen of them
+  audible and staggered; the **real** Dojo of the Turning Circle with a kitten
+  running the painted circle and the game's own sine and cosine drawn off her;
+  a model of the archipelago huddling, shaking and drifting apart on its floor,
+  crossed by four tiny kittens who leap together at the bridge; the actual
+  bridge, with kittens pouring over it past the lens; then the arena, Mr Satan,
+  and the world. Three of the cuts are cuts, with a 0.34s dip to black.
+  *Three things were measured rather than reasoned:* the three named items
+  cannot share a frame on any real world (furniture stands in a town and bamboo
+  grows in a grove — the nearest cane to the tightest barrel-and-box pair is
+  over thirty units), so it is three close shots; the camera's bearing is scored
+  against `world.solids` across the whole arc it will swing through, after the
+  first version measured one direction and then turned into a house; and `lift`
+  is a fraction of the frame height rather than a number of units, after a
+  number of units held the model beautifully at 40 units out and threw it off
+  the top of the screen at 26. **The fourth non-negotiable is verified end to
+  end on a real world**, not just in `world-check`: the full run and an Escape
+  at twenty seconds both come back with zero props off their transform, nothing
+  still held, the MISCHIEF total untouched and the scene graph back to the
+  count it started on.
+  → [story.md](docs/notes/story.md), `src/systems/finaleshow.js`,
+  `src/systems/finaletide.js`
+- **息 Dragon Breath charges half as long and hits everybody it sweeps.** Three
+  things, all from playing it. The charge went back to **0.8s** — "twice as
+  long" had been read as the whole move and applied to the wrong half; the
+  **flame** is the half that kept the doubling, at 1s. The cone is a **live
+  hitbox for the whole second** now instead of one test at the start, so turning
+  on the spot catches everybody it crosses — and catches each of them exactly
+  once, shield or health, however many times the cone passes over them. And she
+  goes back to her ordinary run/walk/idle the moment the flame starts: the
+  head-back inhale pose is the *charge*, and holding it through the breath read
+  as a stuck animation.
+  → [tournament.md](docs/notes/tournament.md), `src/entities/clanpower.js`
+
 **Six reported from play are fixed and not yet played back.** One branch,
 `mixed/lighter-art-clearer-scenes`. Two are about weight, four are about things
 that were plainly not working.
@@ -371,13 +418,13 @@ that were plainly not working.
 - **The ending's picture is the world itself now.** The four white line
   figures drawn behind Patchfur are gone — replaced, not disabled — because the
   ending's idea is entropy and entropy in this game is a couple of hundred
-  objects the girls actually knocked over. So while she talks, the whole
-  archipelago **stands back up** in a wave from the far island inwards, holds
-  for a beat, and goes over again on her last line. It moves meshes and never
+  objects the girls actually knocked over. So while she talks, the world
+  **stands back up** in a wave and goes over again. It moves meshes and never
   touches `knocked`, `scored`, `gone` or the MISCHIEF total, and `finish()` —
   which is the SKIP path too — restores every prop's exact transform from a
   snapshot rather than running the wave back to zero. She still acts it with
-  the one drawing she has, a lean and a step per beat.
+  the one drawing she has, a lean and a step per beat. **The scene has since
+  been cut to the words** — see Open items.
   → [story.md](docs/notes/story.md), `src/systems/finaletide.js`
 - **...and she had been foreshortening for the whole ending.** `faceCamera()`
   on `SummonScene` is a no-op, so the stage quad kept its build orientation
@@ -411,9 +458,9 @@ that were plainly not working.
   now, with additive kept only for the gather ball and the muzzle flash. It was
   `0x8fe0a0` **green for everybody**, and is the firing player's own colour with
   a white-hot nose (`DBREATH.hot`) so you can see whose it is across a split
-  screen. And it lasted 0.8s; the charge is **1.6s**, twice as long, because
-  the ask was for the attack to be twice as long and the charge is the half you
-  are meant to react to.
+  screen. And it lasted 0.8s; the FLAME is **1s**, and the charge went to 1.6s
+  and came straight back to 0.8 — played, the charge was the half that felt
+  wrong. See the breath bullet under Open items for where it landed.
   **The wind-up is now loud on purpose**, so the other three can prepare: a
   drawn **head-back inhale pose** (`ember_inhale.png`, `frost_inhale.png` —
   generated, background-removed, cropped to the cat's own bbox so

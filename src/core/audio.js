@@ -530,15 +530,24 @@ export class Audio {
            per-frame version would stutter under a frame drop, which is exactly
            when a warning matters most. It is also why it cannot be cut short
            if she is knocked out: see the note on that in `Player.hurt`. */
+        /* THE SPACING IS `DBREATH.charge` SHARED OUT, and it has been wrong
+           once already: the cue was written against a 1.6s rear-back and the
+           rear-back went back to 0.8, which left five gulps and a whine still
+           climbing a second after the flame had come and gone. The last gulp
+           STARTS before the charge ends and is allowed to ring past it into
+           the roar — a warning that stops early reads as a cancelled attack.
+           `world-check` reads these numbers back out of this file and asks
+           them of `DBREATH.charge`, so the next time that number moves this
+           does not quietly survive it. */
         for (let i = 0; i < 5; i++) {
           const k = i / 4;
           this._noise({
-            from: 260 + k * 900, to: 1500 + k * 2600, dur: 0.26 + k * 0.1,
-            gain: (0.14 + k * 0.3) * v, type: 'bandpass', q: 0.8, delay: i * 0.3,
+            from: 260 + k * 900, to: 1500 + k * 2600, dur: 0.15 + k * 0.08,
+            gain: (0.14 + k * 0.3) * v, type: 'bandpass', q: 0.8, delay: i * 0.15,
           });
         }
         // ...and a thin whine underneath it, climbing the whole way.
-        this._tone({ type: 'triangle', from: 180, to: 760, dur: 1.5, gain: 0.09 * v, delay: 0.05 });
+        this._tone({ type: 'triangle', from: 180, to: 760, dur: 0.78, gain: 0.09 * v, delay: 0.05 });
         break;
       case 'dbreathout':
         /* THE FLAME, AND IT IS A BIGGER EVENT THAN A DRAGON'S. Not louder —

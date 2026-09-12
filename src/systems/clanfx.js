@@ -28,9 +28,14 @@ import { STEAL, DBREATH } from '../entities/clanpower.js';
          are on the deck rather than on her face, and the same shape the steal's
          mark uses, so the vocabulary is one vocabulary.
 
-     She also wears a drawn pose through all of it (`Player.breathPose`), head
+     She also wears a drawn pose FOR THE REAR-BACK (`Player.breathPose`), head
      back and cheeks full, which is the fourth indicator and the only one that
-     survives her being behind a stall.
+     survives her being behind a stall. It comes off on the frame the flame
+     leaves her and she goes back to her ordinary run and idle — a single
+     drawn cell held over a second of walking reads as the game having frozen,
+     and by then the cone is doing the talking anyway. Everything below is
+     drawn from her mouth in world space and does not care which cell of her
+     sheet is up.
 
      THE FLAME. A cone of shards fired from the mouth, which is the same
      drawing a dragon's breath is (`Dragon._updateBreath`) at a kitten's size,

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
 import { beatOver, TAIL, drawPortrait } from './cutscene.js';
 import { FinaleTide } from './finaletide.js';
+import { FinaleShow } from './finaleshow.js';
 
 /* ---------------------------------------------------------------------------
    The two story beats of the dragon hunt.
@@ -111,79 +112,6 @@ export const BEAT_ACTS = [
 /** Seconds a gesture takes to arrive. Slower than a beat's opening words, so
  *  the move is under the line rather than punctuating it. */
 const ACT_IN = 1.8;
-
-/* --- THE ENDING'S SHOT LIST ------------------------------------------------
-   IT USED TO BE ONE MOVE. The finale opened wide on the archipelago and pulled
-   further out, beat after beat, on the argument that four separate zooms would
-   read as four cuts. That argument was right about CUTS and wrong about this
-   scene: Patchfur spends four lines naming specific things — the barrels, a
-   tidy town, a circle, a bridge — over a shot in which none of them is bigger
-   than a few pixels. Asked for directly: "let's have the camera zoom in on a
-   few areas on the map where the action of the mischief will happen... would be
-   good to zoom in on the actual Bridge... can have camera zoom in on the Dojo
-   of the Turning Circle when talking about some of the math concepts".
-
-   SO IT IS A SHOT LIST, AND A CUT IS ALLOWED WHEN THE SUBJECT CHANGES. Each
-   entry is a PLACE she is talking about; inside a shot the camera still turns
-   and pushes in slowly, so no single shot is a static frame. The last one is
-   the old wide pull-back, unchanged in spirit, because the last beat is where
-   the whole world goes over at once and that cannot be seen from the ground.
-
-   `at` IS A NAME, RESOLVED AGAINST THE WORLD at `start()` — never a literal.
-   `dojoCentre` and `bridge` are published by `world/world.js` from the numbers
-   those things are actually built from, and `mischief` is MEASURED: the
-   tightest cluster of knocked-over props in the world, found once. A shot aimed
-   at where the wreckage ought to be would be a shot of an empty field the first
-   time somebody rearranges the town.
-
-   `from` IS A FRACTION OF ITS BEAT, so one line can carry two shots. The third
-   line is two sentences with two subjects in them — "the islands did not drift
-   apart... you crossed" and "an angle, a circle, and the nerve to jump" — and
-   it gets the Dojo and then the bridge. Richard's own licence for that:
-   "the animations and cutscene cameras may not align exactly with the
-   text/words being spoken, but that is okay".
-
-   `stage` IS WHETHER PATCHFUR IS IN THE PICTURE. She is a foreground cut-out
-   nine units tall; parked in front of a close shot of a bridge she is the
-   bridge. So she is pulled off the side of the frame for the three shots that
-   are ABOUT somewhere, and pulled back on for the first and the last, which are
-   the ones where she is talking to the girls rather than pointing —
-   "we can have Patchfur off of the screen and pull her on/off the screen as
-   needed".
-
-   @see docs/notes/story.md */
-export const FINALE_SHOTS = [
-  /* "Every barrel. Every lantern. Every last cane of bamboo." — down among the
-     wreckage, which is the only line in the game where the mischief counter
-     stops being a number and becomes a heap of things on their sides. */
-  { beat: 0, from: 0, at: 'mischief', a: 0.5, dist: 17, high: 8, turn: 0.55, in: 0.16, stage: true },
-  /* "A tidy town is only one way for a town to be" — and it is standing itself
-     back up while she says so. Over the town, high enough to watch the wave
-     cross it. */
-  { beat: 1, from: 0, at: 'mischief', a: 1.15, dist: 46, high: 26, turn: 0.42, in: 0.14, stage: false },
-  /* "The islands did not drift apart... you crossed." — the Dojo, from above,
-     where the circle painted on the ground reads as a circle. */
-  { beat: 2, from: 0, at: 'dojo', a: 2.3, dist: 58, high: 34, turn: 0.30, in: 0.12, stage: false },
-  /* "An angle, a circle, and the nerve to jump — that is all a bridge has ever
-     been." — the red bridge, low, along the arch. */
-  /* `a` IS ALONG THE DECK, not across it. The bridge is 18 units of arch on
-     the x axis, so a camera at sin(a)=1 sits off its end and sees it as a
-     bridge; one at right angles to that sees a red wall. */
-  { beat: 2, from: 0.46, at: 'bridge', a: Math.PI / 2, dist: 24, high: 9, turn: 0.5, in: 0.18, stage: false },
-  /* "So stay. Fly. Knock it all down again tomorrow." — everything at once, and
-     everything goes over. */
-  /* THE ONE SHOT MEASURED IN ARCHIPELAGOS. `dist` and `high` here are
-     multiples of the world's own radius — the same numbers the old single
-     pull-back ended on — so this cannot be quietly wrong if the world grows. */
-  { beat: 3, from: 0, at: 'wide', a: 0.95, dist: 1.34, high: 0.76, turn: 0.22, in: -0.1, stage: true },
-];
-/** Seconds she takes to walk out of the frame, and back into it. Slower than a
- *  cut, so the cut is the thing you notice and she is not. */
-const STAGE_SWAP = 0.75;
-/** How far out the mischief cluster is measured. A cart's width of a town
- *  square: big enough that a heap counts as one heap, small enough that the
- *  whole island is not one cluster. */
-const HEAP_R = 9;
 
 export const SCRIPTS = {
   found: [
@@ -315,6 +243,266 @@ export const SCRIPTS = {
   ],
 };
 
+/* --- THE ENDING'S SHOT LIST ------------------------------------------------
+   IT USED TO BE ONE MOVE, and then it was five. The finale opened wide on the
+   archipelago and pulled further out, beat after beat, on the argument that
+   separate zooms would read as separate cuts; the five-shot version fixed the
+   scale but still gave each of Patchfur's four lines one place to look at.
+   That is still not what the lines are. She names a barrel, a lantern and a
+   cane of bamboo in one breath, and then an angle, a circle and the nerve to
+   jump in another — six subjects in two sentences.
+
+   SO IT IS A SHOT LIST, AND IT IS CUT TO THE WORDS. Each row is one shot: where
+   the camera is, when it takes over, whether Patchfur is standing in front of
+   it, whether it arrives through black, and what the STAGE is doing while it
+   holds. Inside a shot the camera still turns and pushes in on its own clock,
+   so no row here is a locked-off frame.
+
+   `from` IS MEASURED OFF THE LINE, NOT TYPED. `say(beat, 'lantern')` is where
+   that word falls in the sentence being spoken, as a fraction of it — so a shot
+   meant to land on "bamboo" lands on "bamboo", and re-timing a line by
+   rewriting it carries the cut along with the word instead of silently leaving
+   it behind. It is not sample-accurate and does not need to be: the typewriter
+   under the subtitle is paced the same way off the same text, so the cut and
+   the word on screen agree with each other, and that agreement is the thing
+   anybody watching can actually see.
+
+   `at` IS A NAME, RESOLVED AGAINST THE WORLD at `start()` — never a literal.
+   `dojoCentre`, `bridge` and `arenaRing` are published by `world/world.js` from
+   the numbers those things are built from; `heap` is MEASURED as the tightest
+   knot of knocked-over props, and `barrel`, `lantern` and `bamboo` are three
+   specific objects found lying in the world by `_trio`. Every one of them falls
+   back to the wide shot, so a scene built without a world still plays — ninth
+   non-negotiable.
+
+   `clear` MEANS THE ANGLE IS MEASURED, NOT TYPED. A barrel lying in a market
+   square has stalls on three sides of it, and a camera 8 units out on a typed
+   bearing spends a third of its takes looking at the back of a stall roof with
+   the subject somewhere behind it. So a shot with `clear` set asks the world
+   which way round the thing is actually visible from — `_clearAngle`, which
+   measures against the same collision cylinders the players bump into — and
+   `a` becomes an OFFSET from that bearing rather than a compass reading.
+   Eighth non-negotiable in a new place: what you can see is the shot, and the
+   only way to know what you can see is to measure it.
+
+   `lift` IS HOW FAR UP THE FRAME THE SUBJECT SITS, as a fraction of the frame
+   — and it is a fraction rather than a number of units because a number of
+   units is only correct at one distance. The subtitle box owns the bottom
+   two-fifths of the screen, so a subject on the optical centre is a subject
+   resting on the box, and the lens is pointed BELOW the mark to raise it into
+   the clear half. Written in units this was right for the shot it was tuned on
+   and wrong three seconds later: `lift: 0.17` held the model of the
+   archipelago beautifully at 40 units out and threw it off the top of the
+   screen at 26. A fraction of the frame is the same picture at any distance,
+   which is what the field is actually trying to say. Left out, a shot gets the
+   old rule — a little above the ground on a close shot, so a heap has sky over
+   it, and the world's own middle on a wide one.
+
+   `cue` IS WHAT THE STAGE DOES, and `systems/finaleshow.js` owns almost all of
+   it: the rings, the model of the archipelago on the Dojo floor, the little
+   figures crossing it, the run over the real bridge, the ring at the end. The
+   two exceptions are `heap-raise` and `heap-slam`, which are the WORLD moving
+   and therefore belong to `FinaleTide`. A cue naming something that could not
+   be built is a no-op, which is why the arena shot is safe on a world where
+   the tournament has not opened yet.
+
+   `fade` IS A CUT THROUGH BLACK, and there are exactly three: the crash to the
+   Dojo, the Dojo to the real bridge, and the bridge to the arena. Each of those
+   is a jump of hundreds of units to a place the previous shot could not see,
+   which is the one case where a straight cut reads as a glitch. Everything else
+   cuts hard on purpose. The black is DERIVED from this table rather than
+   triggered — see `_cutBlack` — so it darkens on the way in as well as out.
+
+   `stage` IS WHETHER PATCHFUR IS IN THE PICTURE, AND IT IS TRUE EXACTLY ONCE.
+   She is a foreground cut-out nine units tall; parked in front of a close shot
+   of a bridge she IS the bridge. The five-shot version had her walking on and
+   off between subjects, which worked when a shot was a whole line long — the
+   shortest one here is under a second, and a nine-foot calico sliding in and
+   straight back out inside a second reads as a rendering fault rather than as
+   a person. So she keeps the PORTRAIT BOX for the whole ending, which is the
+   same argument Mr Satan's scenes already make, and takes the stage only for
+   the last shot: the one line that is her talking to the two of them rather
+   than pointing at something.
+
+   @see docs/notes/story.md */
+
+/**
+ * Where a word falls in its own line, 0..1.
+ *
+ * READ OFF THE SCRIPT, so the shot list cannot drift away from the text it is
+ * cut to. `tail` puts the cut at the END of the phrase instead of its start,
+ * which is what a beat wants when the thing it is waiting for is the clause
+ * finishing rather than beginning — the slam lands after "the rest of them",
+ * not on "rest". A phrase that is not in the line comes back as 0 rather than
+ * a negative: a cut in the wrong place is a blemish and a camera at a negative
+ * fraction of a beat is a black screen.
+ */
+const say = (beat, phrase, tail = false) => {
+  const t = SCRIPTS.finale[beat]?.text ?? '';
+  const i = t.indexOf(phrase);
+  if (i < 0) return 0;
+  return Math.min(0.96, (i + (tail ? phrase.length : 0)) / t.length);
+};
+
+export const FINALE_SHOTS = [
+  /* --- LINE 1: "Every barrel. Every lantern. Every last cane of bamboo." ---
+     Asked for outright: "the camera should actually have a rotating shot on
+     every one of those items and show them as it is being said, each one
+     knocked over."
+
+     THE ONE-FRAME VERSION WAS TRIED FIRST AND THE WORLD SAYS NO. "Would be
+     good if all 3 of those items were close to each other... or find an area
+     where there are the 3 items and have them in the framed shot." There is no
+     such area. Measured, on a fully wrecked town: the tightest barrel-and-box
+     pair in the world is 8 units apart and the nearest cane of bamboo to
+     either of them is 32, because bamboo grows in a GROVE and furniture stands
+     in a TOWN and the two are never in the same place. A shot wide enough to
+     hold all three would be a shot in which none of them is bigger than a
+     thumbnail, which is the exact failure this whole list exists to fix.
+
+     SO IT IS THE OTHER THING THAT WAS ASKED FOR: "have the camera quick pan
+     between each item as they are said". One close shot per word, each of them
+     turning around its own object, with a ring closing on it as it is named.
+     `_trio` still does the finding — it picks the tightest three it can, so
+     the two that CAN be near each other are, and the cut between them is
+     almost no move at all. */
+  {
+    beat: 0, from: 0, at: 'barrel', a: 0, dist: 8, high: 3.4, lift: 0.14,
+    turn: 0.5, in: 0.12, clear: true, stage: false, cue: 'name-barrel',
+  },
+  {
+    beat: 0, from: say(0, 'lantern'), at: 'lantern', a: 0, dist: 8, high: 3.4, lift: 0.14,
+    turn: 0.5, in: 0.12, clear: true, stage: false, cue: 'name-lantern',
+  },
+  /* A CANE IS 8.5 UNITS LONG AND IT IS LYING DOWN, so this one stands further
+     off and higher than the other two: framed like a barrel it would be a
+     green line leaving the picture at both edges. */
+  {
+    beat: 0, from: say(0, 'bamboo'), at: 'bamboo', a: 0, dist: 14, high: 6, lift: 0.13,
+    turn: 0.45, in: 0.1, clear: true, stage: false, cue: 'name-bamboo',
+  },
+  /* "...there is nothing left standing on any of these islands." Up and off the
+     three of them, over the wreckage — and then out again, far enough that the
+     archipelago is the frame. "Zoom out to show all the area and all the
+     knocked over mischief, and also zoom out far enough at the end of the
+     paragraph that we can see all or most of the islands in the shot." */
+  {
+    beat: 0, from: say(0, 'nothing left'), at: 'heap', a: 1.0, dist: 44, high: 25, turn: 0.5, in: -0.25,
+    stage: false, cue: null,
+  },
+  {
+    beat: 0, from: say(0, 'islands'), at: 'wide', a: 1.4, dist: 1.15, high: 0.66, turn: 0.3, in: -0.18,
+    stage: false, cue: null,
+  },
+
+  /* --- LINE 2: "The elders called it mischief..." ------------------------
+     "Before the line is spoken, we can just have the camera panning around and
+     then ending by focusing on the area." So it opens still drifting over the
+     world the last shot pulled out to, and comes down on ONE place. */
+  {
+    beat: 1, from: 0, at: 'wide', a: 2.2, dist: 1.1, high: 0.62, turn: 0.55, in: 0.1,
+    stage: false, cue: null,
+  },
+  /* "I think it is simpler than that." — down on the heap, and it starts
+     putting itself back together underneath the rest of the line. THE SAME
+     PLACE EVERY TIME, which is what was asked for: by now every last thing in
+     the world is over, so the deepest knot of it is wherever the deepest knot
+     is, and it does not move between one playing and the next. */
+  {
+    beat: 1, from: say(1, 'simpler'), at: 'heap', a: 0.75, dist: 30, high: 15, turn: 0.45, in: 0.22,
+    stage: false, cue: 'heap-raise',
+  },
+  /* "...every other way is the rest of them" — and over it all goes again, in
+     a different direction this time. `tail` because the shove belongs at the
+     END of that clause. */
+  {
+    beat: 1, from: say(1, 'Every other way is the rest of them', true), at: 'heap',
+    a: 1.4, dist: 26, high: 12, turn: 0.5, in: 0.14,
+    stage: false, cue: 'heap-slam',
+  },
+  /* "...you have been COUNTING your way through the rest of them." The word is
+     the cut, exactly as asked — "we can transition the camera to be there when
+     the word counting is said, to give time between the knocked over mischief
+     and this new scene" — and the black over it is what covers the four hundred
+     units between a town square and the Dojo. */
+  {
+    beat: 1, from: say(1, 'counting'), at: 'dojo', a: 2.1, dist: 46, high: 27, lift: 0.07,
+    turn: 0.34, in: 0.12, stage: false, cue: 'dojo-run', fade: true,
+  },
+
+  /* --- LINE 3: the model of the world, on the floor of the Dojo -----------
+     Every row here is one sentence of the ask, in its order, and the camera
+     does not leave the Dojo for any of them: the MODEL is what acts. Cutting
+     away from a thing that is itself moving would throw away the only shot in
+     the game where the whole archipelago is small enough to watch at once. */
+  /* THE MODEL FLOATS OVER THE PAINTED CIRCLE, so every one of these lifts it
+     the same fraction of the frame — which is the whole reason `lift` is a
+     fraction. These shots run from 40 units out to 26 as the camera pushes in,
+     and one number of units would have been right for the first of them. */
+  { beat: 2, from: 0, at: 'dojo', a: 2.4, dist: 40, high: 24, lift: 0.17, turn: 0.25, in: 0.14, stage: false, cue: 'isles-in' },
+  { beat: 2, from: say(2, 'They drifted'), at: 'dojo', a: 2.75, dist: 38, high: 21, lift: 0.17, turn: 0.3, in: 0.12, stage: false, cue: 'isles-drift' },
+  { beat: 2, from: say(2, 'You crossed'), at: 'dojo', a: 3.1, dist: 33, high: 17, lift: 0.17, turn: 0.3, in: 0.14, stage: false, cue: 'isles-cross' },
+  { beat: 2, from: say(2, 'An angle'), at: 'dojo', a: 3.4, dist: 31, high: 16, lift: 0.17, turn: 0.22, in: 0.1, stage: false, cue: 'isles-angle' },
+  { beat: 2, from: say(2, 'a circle'), at: 'dojo', a: 3.6, dist: 31, high: 16, lift: 0.17, turn: 0.22, in: 0.1, stage: false, cue: 'isles-circle' },
+  { beat: 2, from: say(2, 'nerve to jump'), at: 'dojo', a: 3.8, dist: 28, high: 14, lift: 0.17, turn: 0.2, in: 0.12, stage: false, cue: 'isles-leap' },
+  { beat: 2, from: say(2, 'all a bridge'), at: 'dojo', a: 4.0, dist: 26, high: 12, lift: 0.17, turn: 0.2, in: 0.12, stage: false, cue: 'isles-bridge' },
+
+  /* --- LINE 4: the real bridge, then the ring ----------------------------
+     "After they all jump to the bridge, can have a fade out and fade in from
+     the Dojo to the actual bridge on the main world map... then when the lines
+     'So stay. Fly.' we can have the camera fade in at the bridge and then show
+     the players running together and jumping together."
+
+     `a` IS ALONG THE DECK, not across it. The span is 18 units of arch on the
+     x axis, so a camera at sin(a)=1 sits off its end and sees a bridge; one at
+     right angles to that sees a red wall. */
+  {
+    beat: 3, from: 0, at: 'bridge', a: Math.PI / 2, dist: 22, high: 7, lift: 0.16,
+    turn: 0.34, in: 0.12, stage: false, cue: 'bridge-run', fade: true,
+  },
+  /* "...the arena is open." */
+  {
+    beat: 3, from: say(3, 'arena is open'), at: 'arena', a: 0.7, dist: 40, high: 22, lift: 0.13,
+    turn: 0.3, in: 0.3, stage: false, cue: 'arena-in', fade: true,
+  },
+  /* "...find out WHICH OF YOU is the strongest fighter ON THIS WORLD." — and
+     out, off the ring, until the whole world is in the frame again. The line
+     answers itself: the question is which of them, and the picture pulls back
+     to the place they are going to settle it in.
+
+     NOT ON "GO AND FIND OUT", WHICH IS THE OBVIOUS CUE AND IS TOO EARLY. It
+     sits one clause after "the arena is open", which left the ring on screen
+     for 1.2 seconds — and the ask for that shot was "fade in and zoom in on
+     arena FOR A BIT and then on Mr. Satan with all the players teleported near
+     him". A second and a bit is not a bit. Moving the cut one clause later
+     gives the ring time to arrive and still leaves the pull-back four seconds,
+     which is longer than the ending has ever held any other frame.
+
+     THE ONE SHOT MEASURED IN ARCHIPELAGOS: `dist` and `high` are multiples of
+     the world's own radius here and world units everywhere else, which is what
+     lets one table hold a bridge 22 units away and a world 400 across. */
+  {
+    beat: 3, from: say(3, 'which of you'), at: 'wide', a: 0.95, dist: 1.34, high: 0.76, turn: 0.22, in: -0.12,
+    stage: true, cue: 'out',
+  },
+];
+/** Seconds she takes to walk out of the frame, and back into it. Slower than a
+ *  cut, so the cut is the thing you notice and she is not. */
+const STAGE_SWAP = 0.75;
+/** How far out the mischief cluster is measured. A cart's width of a town
+ *  square: big enough that a heap counts as one heap, small enough that the
+ *  whole island is not one cluster. */
+const HEAP_R = 9;
+/** ...and how much of the world around that knot is allowed to join in when it
+ *  stands back up. Wider than the knot itself, so the reconstruction fills a
+ *  close shot instead of being six barrels in the middle of an empty square —
+ *  and far narrower than the world, which is the whole point of it. */
+const RAISE_R = 26;
+/** Seconds of black on a cut that crosses the world, half of it either side.
+ *  Short: it is a cut with a blink in it, not a scene change. */
+const CUT_FADE = 0.34;
+
+
 export class SummonScene {
   constructor({ scene, world, audio }) {
     this.scene = scene;
@@ -335,6 +523,20 @@ export class SummonScene {
        be drawn here. It allocates nothing until the scene starts: it holds
        props that already exist. */
     this.tide = new FinaleTide(world);
+    /* ...AND EVERYTHING THE WORLD DOES NOT ALREADY HAVE. The rings that close
+       on the three things she names, the model of the archipelago on the
+       Dojo's floor, the little figures that cross it and then cross the real
+       bridge. It allocates nothing until the ending starts and takes all of it
+       down again on `finish` — including the skip path. */
+    this.show = new FinaleShow(scene);
+    /* THE CRASHES ARE THE PROPS' OWN SOUNDS. `slam()` reports each one's
+       `kind` as it lands and the wave's stagger is what spreads them out, so
+       "ten or more bamboo being knocked over" arrives as a ripple rather than
+       as one wall of noise. The tide cannot reach the audio engine itself —
+       same rule as `entities/panda.js`, and for the same reason. */
+    this.tide.onCrash = (kind) => this.audio?.play?.(kind === 'bamboo' ? 'bamboo' : 'hit', 0.7);
+    /** The shot on screen, by identity, so a cut can be noticed exactly once. */
+    this._shot = null;
 
     /** 0..1, how dark the sky is right now. Owned here, applied by the game. */
     this.dusk = 0;
@@ -428,7 +630,7 @@ export class SummonScene {
    *        put the camera inside him and filled the screen with a green wall.
    *        A shot of something enormous has to know it is enormous.
    */
-  start(which, focus, radius = 30, art = null) {
+  start(which, focus, radius = 30, art = null, cast = null) {
     this.radius = radius;
     if (this.active || this.played[which]) return false;
     this.played[which] = true;
@@ -480,6 +682,7 @@ export class SummonScene {
        not going to move during the scene and because `_heap` walks every prop
        in it against every other one. */
     if (which === 'finale') this._markFinale();
+    this._shot = null;
     this._setStage(which === 'finale' ? art : null);
     /* ...AND THE TIDE, for the finale alone. `found` and `summon` happen in
        the middle of the afternoon, with the girls standing in a town they are
@@ -489,6 +692,14 @@ export class SummonScene {
        `FinaleTide.finish`. */
     if (which === 'finale') this.tide.start();
     else this.tide.finish();
+    /* ...AND THE STAGE THE WORLD DOES NOT PROVIDE. `marks` is handed over
+       rather than recomputed: the rings have to close on the same three props
+       the camera is framing, and two independent searches for "a barrel near a
+       lantern" would agree right up until the day they did not. */
+    if (which === 'finale') {
+      this.show.marks = this.marks;
+      this.show.start(this.world, cast);
+    } else this.show.finish();
     if (which === 'summon') this.duskWant = DUSK_DEEP;
     /* THE ENDING TAKES THE STORM DOWN AND PUTS A MORNING UP, and both halves
        matter. The finale fires at 100% mischief, which in a real run happens
@@ -518,19 +729,16 @@ export class SummonScene {
        Handed the script's own length rather than a constant, so a line added
        to the ending cannot leave the archipelago standing tidily at the end of
        a scene whose whole argument is that it does not stay that way. */
-    if (this.which === 'finale') {
-      this.tide.setBeat(this.beat, this.script.length - 1);
-      /* AND THE WAVE STARTS WHERE THE CAMERA IS LOOKING. Asked for as "we
-         should just have the camera zoom in on a few areas where there are some
-         mischief, and then can just animate mainly the mischief that is in the
-         view of the camera". Re-ordering the ripple is the honest version of
-         that: nothing is skipped — the world still ends the scene tidy, which
-         the last beat's fall depends on — but the things standing up FIRST are
-         the ones in shot, and the ripple then spreads outward from them.
-         `focusOn` refuses while the wave is mid-move, so a cut in the middle of
-         the rise cannot make two hundred props jump. */
-      this.tide.focusOn(this.marks?.[this._shotFor(this.beat, 0).shot.at] ?? null);
-    }
+    /* THE TIDE IS NOT DRIVEN FROM HERE ANY MORE. It used to be: a middle beat
+       meant the world stood up, the last beat meant it went over, and the last
+       beat's index was handed in rather than typed so a line added to the
+       ending could not leave the archipelago standing tidily. That was right
+       for a scene whose picture was one continuous wave across four lines, and
+       the ending is cut to words now — the reconstruction starts on "simpler",
+       is finished by "the rest of them", and is a corner of one town rather
+       than the whole sky. Beats are too coarse to say any of that, so the SHOT
+       LIST says it instead and `_cue` is where it is said. `finish()` is still
+       what puts the world back, on the skip path as much as the end. */
     this.t = 0;
     this.typed = 0;
     this.lineEndedAt = null;
@@ -588,12 +796,193 @@ export class SummonScene {
   _markFinale() {
     const wide = this.focus.clone();
     const w = this.world;
+    const trio = this._trio();
+    const heap = this._heap();
+    /* THE RING IS ONLY IN THE SKY IF THE TOURNAMENT IS OPEN. `arenaRing` is
+       published whether or not the island has appeared, so the flag is what
+       decides — and a finale played before Mr Satan has built anything gets the
+       wide shot for that row instead of a camera pointed at empty air. It can
+       happen: the scene viewer opens the ending on any world at all. */
+    const ring = w?.arenaOpen && w?.arenaRing
+      ? new THREE.Vector3(w.arenaRing.x, w.arenaRing.y, w.arenaRing.z)
+      : null;
     this.marks = {
       wide,
       dojo: w?.dojoCentre?.clone?.() ?? wide.clone(),
       bridge: w?.bridge?.clone?.() ?? wide.clone(),
-      mischief: this._heap() ?? wide.clone(),
+      /* ONE MARK PER WORD SHE SAYS, under the name of the word — so a reader
+         of the shot list can see that the shot on "bamboo" is pointed at a
+         cane of bamboo without going anywhere else to find out. `lantern` is
+         whatever stood in for one; see `_trio`. */
+      barrel: trio?.spots?.[0] ?? heap ?? wide.clone(),
+      lantern: trio?.spots?.[1] ?? heap ?? wide.clone(),
+      bamboo: trio?.spots?.[2] ?? heap ?? wide.clone(),
+      /* ...AND THE SAME THREE AGAIN AS A LIST, which is what the rings in
+         `FinaleShow` close on. The camera wants a place and the ring wants a
+         size, and one Vector3 carrying both would have saved a line here and
+         cost the next person an afternoon. */
+      trioSpots: trio?.spots ?? null,
+      heap: heap ?? wide.clone(),
+      arena: ring ?? wide.clone(),
     };
+    /* WHICH WAY ROUND EACH OF THEM IS VISIBLE FROM. Measured here, once, for
+       the same reason the marks are: the world is not going to move during the
+       scene, and `_clearAngle` walks every solid on the island for every
+       bearing it tries. A mark with no measured bearing simply uses the shot's
+       own `a`, which is what every shot did before this existed. */
+    this.bearing = {};
+    for (const sh of FINALE_SHOTS) {
+      if (!sh.clear || this.bearing[sh.at] !== undefined) continue;
+      /* MEASURED AGAINST THE SHOT'S OWN NUMBERS — its distance and the whole
+         arc it is going to swing through — rather than against a typed pair
+         here. The first version measured one bearing at one distance and the
+         shot then turned 0.7 radians off it into the side of a house, which is
+         a clear angle being measured correctly and then walked away from. */
+      this.bearing[sh.at] = this._clearAngle(this.marks[sh.at], sh.dist, sh.turn);
+    }
+  }
+
+  /**
+   * Which way to stand to actually SEE something.
+   *
+   * THE EIGHTH NON-NEGOTIABLE, POINTED AT A CAMERA. A barrel in a market
+   * square has stalls on three sides of it, and the first version of the
+   * ending's opening shot typed a bearing and hoped — which came out, on a real
+   * wrecked town, as eight seconds of the back of a stall roof with the thing
+   * being named somewhere behind it. What you can see IS the shot, and the only
+   * honest way to know what you can see is to go and measure it.
+   *
+   * IT MEASURES AGAINST THE SAME CYLINDERS THE PLAYERS BUMP INTO.
+   * `world.solids` is every upright thing on the islands — houses, stalls,
+   * trunks, shrine gates — as `{x, z, r}`, which is exactly the shape this
+   * needs and is maintained by the world because the game already depends on
+   * it. A second list of "things that block a camera" would be a second list
+   * to forget to add to.
+   *
+   * SIXTEEN BEARINGS, BEST CLEARANCE WINS. Scored by how far the worst solid
+   * sits off the line of sight, so a direction that merely grazes a stall
+   * loses to one that is open — and if every direction is blocked (a barrel
+   * inside a house, which the world does not build but a future one might) it
+   * still returns the least bad one rather than nothing. Degrades rather than
+   * vanishes.
+   *
+   * AND IT SCORES THE WHOLE SWING, NOT ONE BEARING. The shots that use this
+   * turn while they hold, so the answer has to be a direction that is still
+   * clear a quarter of a turn either side of itself. Measuring the middle
+   * alone is how the first version came out pointing at an open barrel and
+   * ended up inside the wall of a house three seconds later.
+   *
+   * @param {{x:number,z:number}} at the thing to be looked at
+   * @param {number} dist how far back the camera will stand
+   * @param {number} [sweep] how far the shot turns while it holds
+   * @returns {?number} a bearing in the same convention the shot list uses
+   *          (x = sin a, z = cos a), or null if there is nothing to measure.
+   */
+  _clearAngle(at, dist, sweep = 0) {
+    const solids = this.world?.solids;
+    if (!at || !solids?.length) return null;
+    /* Only the ones that could possibly be in the way. The archipelago has
+       hundreds and all but a handful are on other islands. */
+    const near = solids.filter(
+      (o) => Math.hypot(o.x - at.x, o.z - at.z) < dist + o.r + 2);
+    if (!near.length) return null;
+    /** How clear the view is from one bearing: the worst solid's gap. */
+    const gapAt = (a) => {
+      const cx = at.x + Math.sin(a) * dist;
+      const cz = at.z + Math.cos(a) * dist;
+      const dx = at.x - cx;
+      const dz = at.z - cz;
+      const len2 = dx * dx + dz * dz;
+      let worst = Infinity;
+      for (const o of near) {
+        /* Distance from the solid's centre to the SEGMENT camera-to-subject,
+           less its radius. Negative means the line goes through it. */
+        const t = Math.max(0, Math.min(1, ((o.x - cx) * dx + (o.z - cz) * dz) / (len2 || 1)));
+        const gap = Math.hypot(cx + dx * t - o.x, cz + dz * t - o.z) - o.r;
+        if (gap < worst) worst = gap;
+      }
+      return worst;
+    };
+    let best = null;
+    let bestScore = -Infinity;
+    const STEPS = 16;
+    for (let i = 0; i < STEPS; i++) {
+      const a = (i / STEPS) * Math.PI * 2;
+      const score = Math.min(
+        gapAt(a - sweep / 2), gapAt(a), gapAt(a + sweep / 2)
+      );
+      if (score > bestScore) { bestScore = score; best = a; }
+    }
+    return best;
+  }
+
+  /**
+   * A barrel, a lantern and a cane of bamboo — the tightest three in the world.
+   *
+   * THIS IS THE LINE'S OWN REQUIREMENT. "Every barrel. Every lantern. Every
+   * last cane of bamboo" is three nouns in one breath and each of them gets a
+   * shot, so each of them has to be a real object lying somewhere real. A
+   * camera aimed at "where the barrels probably are" is a camera aimed at an
+   * empty square the first time somebody rearranges the town.
+   *
+   * TIGHTEST, NOT NEAREST TO ANYTHING. Nothing depends on the three being
+   * close any more — the grove settled that argument, see `FINALE_SHOTS` — but
+   * picking the closest arrangement still costs nothing and buys the two cuts
+   * that CAN be small. On a real wrecked town the barrel and the box come out
+   * about eight units apart, so the first cut of the ending is a small move
+   * and the second is a proper change of place.
+   *
+   * A LANTERN IS ALLOWED TO BE A BASKET OR A CRATE. Richard's own licence:
+   * "if we dont have a lantern, we can find an item that is similar like a box
+   * or fruit barrel". Lanterns are the rarest of the six kinds and a town can
+   * genuinely have none within thirteen units of a grove; a shot that silently
+   * became a shot of two things would be worse than a shot of a crate.
+   *
+   * THE RING SIZE IS MEASURED OFF THE PROP. A cane is 8.5 units long and lies
+   * down; a lantern is 2.2 and does not. One typed radius would either lose the
+   * bamboo inside its own ring or draw a hoop around a lantern big enough to
+   * park a cart in.
+   *
+   * @returns {?{spots: Array}} null if the world has not got one of each,
+   *          in which case all three shots fall back to the heap.
+   */
+  _trio() {
+    const all = (this.world?.props ?? []).filter((p) => p?.knocked && !p.gone && p.group);
+    if (all.length < 3) return null;
+    const of = (kinds) => all.filter((p) => kinds.includes(p.kind));
+    const want = [of(['barrel']), of(['lantern', 'basket', 'crate']), of(['bamboo'])];
+    if (want.some((g) => !g.length)) return null;
+
+    const far = (a, b) => Math.hypot(
+      a.group.position.x - b.group.position.x, a.group.position.z - b.group.position.z
+    );
+    let best = null;
+    /* WALKED FROM THE RAREST KIND OUTWARDS. Lanterns are the scarce one, so
+       starting there is a few dozen comparisons rather than a few thousand —
+       and this runs on the frame a scene opens that is about to hold for half a
+       minute, so the cost is not the point; the bound is. */
+    for (const mid of want[1]) {
+      const pick = [want[0], want[2]].map((g) => {
+        let near = null;
+        for (const p of g) if (!near || far(mid, p) < far(mid, near)) near = p;
+        return near;
+      });
+      if (pick.some((p) => !p)) continue;
+      const spread = Math.max(far(mid, pick[0]), far(mid, pick[1]), far(pick[0], pick[1]));
+      if (!best || spread < best.spread) best = { spread, props: [pick[0], mid, pick[1]] };
+    }
+    if (!best) return null;
+
+    const spots = best.props.map((p) => {
+      const at = new THREE.Vector3(p.group.position.x, (p.home?.y ?? 0) + 0.05, p.group.position.z);
+      /* Half its longest side, and never smaller than the thing it is around.
+         A knocked cane lies flat, so its 8.5 units of length are what the ring
+         has to contain; an upright measurement would draw a hoop the width of
+         a stick. */
+      at.r = Math.min(4.5, Math.max(1.3, (p.height ?? 1) * 0.55, (p.radius ?? 0.6) * 2));
+      return at;
+    });
+    return { spots };
   }
 
   /**
@@ -651,6 +1040,88 @@ export class SummonScene {
     return { shot: mine[ix], s: Math.min(1, Math.max(0, (k - from) / Math.max(1e-4, to - from))) };
   }
 
+  /**
+   * Absolute seconds, from the top of the scene, at which a shot takes over.
+   *
+   * OFF THE SCRIPT'S OWN DURATIONS, so nothing in the cut plan is a second
+   * typed twice. It is what `_cutBlack` darkens around and what tells the tide
+   * how long the reconstruction has before the shove comes — "be standing by
+   * the time she gets to `the rest of them`" is a sentence this can answer and
+   * a constant cannot.
+   */
+  _at(sh) {
+    const b = this.script?.[sh.beat];
+    if (!b) return 0;
+    let before = 0;
+    for (let i = 0; i < sh.beat; i++) before += this.script[i].dur;
+    return before + sh.from * b.dur;
+  }
+
+  /** ...and where we actually are, on the same clock. */
+  _now() {
+    let before = 0;
+    for (let i = 0; i < this.beat; i++) before += this.script[i].dur;
+    return before + this.t;
+  }
+
+  /**
+   * How black the screen is for a cut that crosses the world.
+   *
+   * DERIVED FROM THE TABLE, NOT TRIGGERED BY THE CUT. A flag set when the shot
+   * changes can only fade UP, because by the time it is set the new shot is
+   * already on screen — and what was asked for is "a fade out and fade in from
+   * the Dojo to the actual bridge". Measuring the distance to the nearest
+   * fading cut gives both halves for free, and gives them whether the scene is
+   * playing forward, has been nudged a beat on, or is being stepped a frame at
+   * a time by `world-check`.
+   */
+  _cutBlack() {
+    if (this.which !== 'finale' || !this.script) return 0;
+    const now = this._now();
+    let black = 0;
+    for (const sh of FINALE_SHOTS) {
+      if (!sh.fade || !this.script[sh.beat]) continue;
+      black = Math.max(black, 1 - Math.abs(now - this._at(sh)) / (CUT_FADE * 0.5));
+    }
+    return Math.min(1, Math.max(0, black));
+  }
+
+  /**
+   * A shot has taken over: tell the stage, and the world.
+   *
+   * ONE PLACE, CALLED ONCE PER CUT. `_shotFor` is asked on every frame and the
+   * shots are stable objects out of the table, so identity is what says whether
+   * this is a new one — a fraction compared against a fraction would fire twice
+   * on the frame a beat rolls over.
+   */
+  _cue(shot) {
+    this.show?.cue(shot.cue ?? null);
+    if (shot.cue === 'heap-raise') {
+      /* THE CORNER, AND ONLY THE CORNER. `only` narrows what MOVES and never
+         what is HELD: every knocked prop in the world is still in the tide's
+         list and still restored by `finish`, so the fourth non-negotiable does
+         not notice this. What changes is that the reconstruction is a town
+         square putting itself back together in front of you, which is a thing
+         you can see from thirty units up, instead of two hundred objects
+         spread over four hundred units, which is not. */
+      this.tide.only(this.marks?.heap ?? null, RAISE_R);
+      /* ...AND IT HAS EXACTLY UNTIL THE SHOVE. Measured between this shot and
+         the one that knocks it all down again, rather than typed: re-time the
+         line and the wave re-times itself. */
+      const slam = FINALE_SHOTS.find((sh) => sh.cue === 'heap-slam');
+      this.tide.raise(slam ? this._at(slam) - this._at(shot) : undefined);
+    }
+    if (shot.cue === 'heap-slam') this.tide.slam();
+  }
+
+  /** Who the Dojo's lesson is reading its angle from, or null for nobody.
+   *  THE LESSON IS THE REAL ONE — see `FinaleShow.drivers`. The game asks this
+   *  every frame and falls back to its players, so nothing changes outside the
+   *  ending. First non-negotiable: the maths in the cutscene is the maths. */
+  dojoDrivers() {
+    return this.active && this.which === 'finale' ? this.show?.drivers?.() ?? null : null;
+  }
+
   skip() { if (this.active) this.finish(); }
 
   /** ONE BEAT ON — the debug nudge. See `Cutscene.nextBeat`, which this is the
@@ -684,6 +1155,12 @@ export class SummonScene {
        Escape four seconds in, and what she gets back has to be the town she
        wrecked, on its side, to the last decimal. */
     this.tide.finish();
+    /* ...AND THE STAGE COMES DOWN WITH IT, on the skip path as much as the
+       end. Everything `FinaleShow` builds lives in the game's own scene graph:
+       a model of the archipelago left behind on the Dojo floor would be there
+       for the rest of the session. */
+    this.show.finish();
+    this._shot = null;
     this.el.classList.add('hidden');
     this.portraitEl.style.display = '';
     /* Clear the black. `#cs-fade` is SHARED with the opening cutscene and the
@@ -870,10 +1347,26 @@ export class SummonScene {
          world units everywhere else, which is what lets the same table hold a
          bridge 24 units away and a world 400 across. */
       const { shot, s: sk } = this._shotFor(this.beat, k);
+      /* A CUT IS NOTICED HERE AND NOWHERE ELSE. Doing it on the frame the shot
+         actually changes — rather than in `_next`, a beat at a time — is what
+         lets one line carry seven of them. */
+      if (shot !== this._shot) { this._shot = shot; this._cue(shot); }
       const se = 1 - (1 - sk) * (1 - sk);
       const P = this.marks?.[shot.at] ?? F;
       const wide = shot.at === 'wide';
-      const a = shot.a + shot.turn * se;
+      /* MEASURED BEARING PLUS THE SHOT'S OWN OFFSET, where there is one — so
+         the three naming shots each look at their thing from a different side
+         of the one direction it can be seen from at all. A mark with nothing
+         measured falls straight through to the typed angle. */
+      const measured = shot.clear && this.bearing?.[shot.at] != null;
+      const base = measured ? this.bearing[shot.at] : 0;
+      /* A MEASURED SHOT TURNS AROUND ITS BEARING RATHER THAN AWAY FROM IT.
+         `_clearAngle` scored the whole arc as centred on what it returned, so
+         starting the swing there and running a half-turn off one side would
+         spend the back half of the shot in ground it never checked. Every
+         other shot keeps the old behaviour: `a` is where it starts and `turn`
+         is how far it goes. */
+      const a = base + shot.a + shot.turn * (measured ? se - 0.5 : se);
       const dist = (wide ? this.radius * shot.dist : shot.dist) * (1 - shot.in * se);
       const high = wide ? this.radius * shot.high : shot.high;
       this.camera.position.set(
@@ -881,11 +1374,24 @@ export class SummonScene {
         P.y + high,
         P.z + Math.cos(a) * dist
       );
-      /* AIMED A LITTLE ABOVE THE GROUND ON A CLOSE SHOT, so a heap of barrels
-         sits in the lower half of the frame with sky over it rather than in the
-         dead centre of a downward stare. The wide shot keeps looking at the
-         world's own middle, which is where it has always looked. */
-      this._look.set(P.x, P.y + (wide ? 0 : Math.min(4, high * 0.25)), P.z);
+      /* WHERE IN THE FRAME THE SUBJECT SITS, and the subtitle box is why this
+         is not simply "at it". The box owns the bottom two-fifths of the
+         screen, so a barrel on the optical centre is a barrel resting on the
+         box; a close shot therefore looks BELOW its subject to lift it into the
+         clear half.
+
+         SOLVED OFF THE LENS, LIKE THE STAGE'S DISTANCE IS. The frame is
+         `2 * d * tan(fov/2)` units tall at the subject, so a lift of 0.17
+         means 17% of whatever the camera can see from where it is standing —
+         the same composition at 40 units and at 26, which a number of units is
+         not. Where a shot says nothing, the old rule stands: a little above the
+         ground on a close shot, so a heap has sky over it, and the world's own
+         middle on a wide one. */
+      const frameH = 2 * dist * Math.tan((this.camera.fov * Math.PI) / 360);
+      const aim = shot.lift != null
+        ? -shot.lift * frameH
+        : (wide ? 0 : Math.min(4, high * 0.25));
+      this._look.set(P.x, P.y + aim, P.z);
       this.stageWant = shot.stage ? 1 : 0;
     } else if (this.which === 'satanAnnounce' || this.which === 'satanOpen') {
       /* HIS SHOTS ARE ABOUT THE PLACE, NOT ABOUT HIM. He is a billboard
@@ -922,7 +1428,15 @@ export class SummonScene {
        but it runs here, inside the scene's own update, because it is part of
        the scene and must not tick for a single frame outside it. The props it
        moves are drawn by the ordinary render, like everything else out there. */
-    if (this.which === 'finale') this.tide.update(dt);
+    if (this.which === 'finale') {
+      this.tide.update(dt);
+      /* AND THE STAGE AFTER THE CAMERA, because every billboard in it squares
+         itself to the lens and the lens moved this frame. A show updated before
+         the camera is a scene of figures facing where the camera used to be —
+         one frame behind, all the way through, and most visible on exactly the
+         shots that swing fastest. */
+      this.show.update(dt, this.camera);
+    }
 
     // --- typewriter on the audio's playhead. See Cutscene.update.
     const clock = (this.voiceEl && b.voiceDur && this.voiceEl.currentTime > 0)
@@ -939,7 +1453,15 @@ export class SummonScene {
     this.barEl.style.width = `${((before + this.t) / total) * 100}%`;
     const last = this.beat === this.script.length - 1;
     const fadeOut = Math.max(0, FADE - (b.dur - this.t)) / FADE;
-    this.fadeEl.style.opacity = Math.max(this.fadeIn / FADE, last ? Math.min(1, fadeOut) : 0);
+    /* THREE BLACKS, AND THE DARKEST WINS: the scene opening, a cut that
+       crosses the world, and the scene closing. Taking the maximum rather than
+       choosing between them means a cut that lands near the end of the last
+       line cannot brighten the screen on its way out. */
+    this.fadeEl.style.opacity = Math.max(
+      this.fadeIn / FADE,
+      this._cutBlack(),
+      last ? Math.min(1, fadeOut) : 0
+    );
 
     if (this.lineEndedAt == null && this._lineFinished(b)) this.lineEndedAt = this.t;
     const started = !!this.voiceEl && this.voiceEl.currentTime > 0;
