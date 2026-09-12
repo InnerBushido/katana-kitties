@@ -553,6 +553,32 @@ class PadState {
   constructor() {
     this.mx = 0;
     this.my = 0;
+    /* --- THE SAME STICK, BEFORE THE DEADZONE ATE IT -----------------------
+       `mx`/`my` have been through `dead()`, which throws away the first 22%
+       of the stick and rescales the rest. That is the right curve for WALKING
+       — it is what stops a worn Joy-Con drifting a kitten across the arena
+       while nobody is holding it — and it is the wrong curve for AIMING.
+
+       The evolved 瞬 Flash Step reads "how far did she push" as a distance to
+       land at, and the ask was in as many words: she must be able to nudge
+       the landing "without needing to push in that direction too much", with
+       a live band starting at 5%. Under `mx` there is no such band: 5% of the
+       stick is exactly zero and always will be.
+
+       SO THE RAW AXES ARE CARRIED ALONGSIDE, and exactly one thing reads
+       them: `Player._stickAim`, which is only ever called by a kitten wearing
+       TWO 瞬 Flash Step orbs. Everything else in the game — walking, the
+       ordinary Flash Step's heading, every menu — goes on reading `mx`/`my`
+       and is bit-identical to what it was.
+
+       THAT NARROWNESS IS THE WHOLE SAFETY ARGUMENT. A worn Joy-Con resting at
+       8% off centre is the reason `dead()` exists; opening the game up to it
+       generally would have a kitten drifting across the arena with nobody
+       holding the pad. Here it costs at most a teleport landing slightly off
+       where she meant, on a move she chose to fire, on a kitten who spent two
+       orbs to be asked the question. */
+    this.rx = 0;
+    this.ry = 0;
     this.held = Object.fromEntries(ACTIONS.map((a) => [a, false]));
     this.prev = { ...this.held };
     /** What was driving this slot last frame — device AND the right to drive
@@ -575,6 +601,21 @@ class PadState {
 
   pressed(action) {
     return this.held[action] && !this.prev[action];
+  }
+
+  /**
+   * How far the stick is pushed, 0..1, BEFORE the walking deadzone.
+   *
+   * FOR AIMING A DISTANCE, AND NOTHING ELSE. See `rx`/`ry`. A keyboard has no
+   * analogue to report, so a held direction key comes back as a full push,
+   * which is the honest answer: she cannot nudge, so she gets the far band,
+   * and the move still works on the arrow keys.
+   *
+   * CLAMPED TO THE CIRCLE, like `mx`/`my`, so a diagonal is not 1.41 and
+   * cannot read as further than a stick pushed as hard as it goes.
+   */
+  nudge() {
+    return Math.min(1, Math.hypot(this.rx, this.ry));
   }
 
   /**
@@ -1998,6 +2039,9 @@ export class InputManager {
 
       let mx = 0;
       let my = 0;
+      /* The same two, straight off the device. See `PadState.rx`. */
+      let rawx = 0;
+      let rawy = 0;
       const next = Object.fromEntries(ACTIONS.map((a) => [a, false]));
 
       if (bnd.touch && this.touch) {
@@ -2015,6 +2059,8 @@ export class InputManager {
         const r = this.touch.read({ keyset: KEYSETS[TOUCH_KEYSET], keys: this.keys });
         mx = dead(r.ax);
         my = dead(r.ay);
+        rawx = r.ax;
+        rawy = r.ay;
         for (const a of ACTIONS) next[a] = !!r[a];
       } else if (gp) {
         st.source = 'gamepad';
@@ -2025,6 +2071,11 @@ export class InputManager {
         });
         mx = dead(r.ax) + (r.dpad ? r.dpad[0] : 0);
         my = dead(r.ay) + (r.dpad ? r.dpad[1] : 0);
+        /* A D-PAD IS ALL OR NOTHING and it counts as all of it. There is no
+           halfway on a d-pad, so a kid playing on one gets the far band —
+           the same answer the keyboard gets, for the same reason. */
+        rawx = r.ax + (r.dpad ? r.dpad[0] : 0);
+        rawy = r.ay + (r.dpad ? r.dpad[1] : 0);
         for (const a of ACTIONS) next[a] = !!r[a];
       } else if (bnd.keyset != null && this.keysetDrives(bnd.keyset, i)) {
         st.source = 'keyboard';
@@ -2037,6 +2088,8 @@ export class InputManager {
         if (on('right')) mx += 1;
         if (on('up')) my -= 1;
         if (on('down')) my += 1;
+        rawx = mx;
+        rawy = my;
         for (const a of ACTIONS) next[a] = on(a);
       } else {
         /* NO DEVICE AT ALL — a slot past the party size. It must report
@@ -2062,6 +2115,8 @@ export class InputManager {
       if (suppress) {
         mx = 0;
         my = 0;
+        rawx = 0;
+        rawy = 0;
         for (const a of ACTIONS) next[a] = false;
       }
 
@@ -2073,6 +2128,14 @@ export class InputManager {
       }
       st.mx = mx;
       st.my = my;
+      /* AND THE RAW PAIR, CLAMPED THE SAME WAY AND DEADZONED NOT AT ALL. It
+         is suppressed by a remap capture along with everything else, which is
+         why it is taken from `rawx`/`rawy` rather than re-read from the
+         device here: a thumb calibrating a button must not also be aiming a
+         teleport. See `PadState.nudge`. */
+      const rlen = Math.hypot(rawx, rawy);
+      st.rx = rlen > 1 ? rawx / rlen : rawx;
+      st.ry = rlen > 1 ? rawy / rlen : rawy;
       /* --- A DEVICE THAT JUST CHANGED HANDS MAY NOT MANUFACTURE A PRESS -----
 
          `pressed` is `held && !prev`, and `prev` is last frame's `held` — which

@@ -241,29 +241,53 @@ export const CRITTERS = [
        to be the smallest number on the board or the trick becomes a healing
        move with a teleport attached.
 
-       A HOPPER, NOT A FLIER, and that is what makes it hard rather than
-       impossible. The rabbit's machinery does all of this already: it hops, it
-       is caught on the way up or the way down, and the whole difficulty is
-       timing a swing at something that is only briefly in the arc. It just does
-       all of it faster and higher. A flier would have needed the bird's cruise
-       rules, which put it out of reach from the floor entirely — an animal
-       nobody can catch is not a rare treat, it is a taunt. */
+       A HOPPER THAT SOMETIMES FLIES, which is the third answer and the right
+       one. It was written as a pure hopper first, on the argument that a flier
+       would have needed the bird's cruise rules and an animal permanently out
+       of reach from the floor is not a rare treat, it is a taunt. That
+       argument is still true of a PERMANENT flier and says nothing about a
+       temporary one: "can jump and fly to get away too (randomly)" is an
+       animal that is on the floor most of the time and takes off when it is
+       cornered, which is both harder to catch and a great deal more like an
+       insect. It is caught out of the air the way the bird is — see
+       `Critter.airborne` and `Menagerie.strike`. */
     id: 'mantis',
     name: 'mantis',
     kind: 'hopper',
     rare: true,
-    /* THE SMALLEST NUMBER ON THE BOARD, and it is exactly the free regen
-       between rounds — so catching one is worth precisely what standing still
-       for fifteen seconds is worth, which is the honest price for an animal
-       that arrived by itself. `world-check` pins it against `REGEN_FRAC`. */
-    heal: Math.round(MAX_HP * 0.10),
-    size: 0.7,
+    /* THE BIGGEST NUMBER ON THE BOARD, AND IT USED TO BE THE SMALLEST.
+
+       The old argument was that a free animal has to pay the least or the
+       trick becomes a healing move with a teleport attached, and it priced
+       this at exactly the free regen between rounds. What that missed is how
+       hard it actually is: it is now half again as fast as it was, it takes
+       off when you get close, and a nine-year-old who lands a swing on one has
+       done something genuinely difficult. Paying her the same as standing
+       still for fifteen seconds is the game telling her it did not notice.
+
+       FOUR TIMES, ASKED FOR BY NAME — "will heal 4x's as much health, will
+       make a tasty treat!" — which puts it at double the bird, the hardest
+       animal you can go and find. That is the right shape: the ladder rat <
+       rabbit < bird is what you can HUNT, and this sits above all of it
+       because you cannot hunt it at all. It only ever turns up in the smoke of
+       somebody's Flash Step, five times in a hundred. */
+    heal: Math.round(MAX_HP * 0.40),
+    /* HALF AGAIN, because at 0.7 it read as a speck rather than as an animal —
+       "currently it is too small". It is still the second-smallest thing on
+       the deck, which is right for an insect; it is simply now big enough to
+       see coming, which a thing you are supposed to chase has to be. */
+    size: 1.05,
     /* OVER A WALK, WELL UNDER A SPRINT, and further over the walk than the
        rabbit is. The ladder that matters here is not the reward one, it is
        "what does it cost you to close" — and this costs a committed sprint plus
        a swing timed against a hop, which is both of the other two animals'
        difficulties at once. */
-    speed: 12.6,
+    /* HALF AGAIN ON TOP OF THAT, and it is now the only animal in the game
+       that a sprint does not simply run down: 18.9 against a kitten's 17. She
+       cannot catch it by chasing it, which means every catch is a swing timed
+       against a hop or a take-off. That is the whole difficulty of the animal
+       and it is the reason the reward moved. */
+    speed: 18.9,
     /** It notices you from further off than anything else on the deck. */
     flee: 16,
     eatLift: 1,
@@ -283,6 +307,29 @@ export const CRITTERS = [
        noticed yet is a mantis you can still walk up to. */
     hopGap: 0.34,
     hopIdle: 1.8,
+    /* --- AND EVERY SO OFTEN IT DOES NOT HOP, IT LEAVES ---
+       Rolled at the moment it would have hopped rather than on a clock of its
+       own, so the two evasions share one cadence and a player cannot learn to
+       wait out the flying to get the hopping. A third of them, so the hop is
+       still what it mostly does. */
+    canFly: true,
+    flyChance: 0.34,
+    /** How long a flight lasts, and how much longer at most. */
+    flyFor: 1.4,
+    flyVary: 1.6,
+    /**
+     * How high it flies while it is up there.
+     *
+     * DELIBERATELY UNDER THE BIRD'S 7.8. The bird's whole cost is that it
+     * cannot be taken from the floor at all, which is fair for an animal that
+     * sits up there permanently and would be a taunt on one that is up there
+     * for two seconds — she would have no time to get airborne, and the flight
+     * would read as the animal cheating. At 5.2 it is at the very top of the
+     * window a swing reaches from the ground (6.5 above her feet), so a
+     * perfectly timed swing takes it and a late one does not. Being harder is
+     * the ask; being impossible is not.
+     */
+    cruise: 5.2,
     colour: 0x7fd44a,
   },
 ];
@@ -354,6 +401,9 @@ export class Critter {
     this.side = 1;
     this.step = Math.random() * Math.PI * 2;
 
+    /** Seconds of flight left, for an animal that can choose to fly. Zero on
+     *  everything else, for ever. See `airborne` and the mantis's spec. */
+    this.flyT = 0;
     /** roam | stunned | pinned | mouthed | gone */
     this.state = 'roam';
     /** Counts down in `stunned` and in `mouthed`; counts up in `pinned`. */
@@ -439,8 +489,22 @@ export class Critter {
     if (this.state !== 'roam') return false;
     // A rabbit in mid-hop and a bird in the air are not grabbed off the floor;
     // each has its own way in. See Menagerie.strike.
-    if (this.spec.kind === 'flier') return false;
+    if (this.airborne) return false;
     return this.onGround;
+  }
+
+  /**
+   * Is it flying RIGHT NOW — whatever species it is?
+   *
+   * THE QUESTION USED TO BE ASKED OF THE SPECIES and that was fine while
+   * exactly one animal flew and it always flew. A mantis that takes off when
+   * it is cornered breaks that: `kind === 'flier'` is false for it and it is
+   * nonetheless twenty feet up, so a swing that reached it would have grabbed
+   * it off a floor it is nowhere near. Asking the ANIMAL is the version that
+   * stays true when something else learns to fly.
+   */
+  get airborne() {
+    return this.spec.kind === 'flier' || this.flyT > 0;
   }
 
   /**
@@ -501,6 +565,12 @@ export class Critter {
     const again = this.state === 'stunned';
     this.state = 'stunned';
     this.t = STUN_TIME;
+    /* AND THE FLIGHT IS OVER. `_fall` brings it down, and without this the
+       clock would go on running underneath and hand it back to `_flyStep` the
+       moment it woke up — an animal that was stunned out of the air and then
+       shot back into it. Cleared here rather than in `_fall` because being
+       stopped is the fact; falling is a consequence of it. */
+    this.flyT = 0;
     this.velocity.set(0, 0, 0);
     this.setShocked(true);
     return !again;
@@ -511,6 +581,7 @@ export class Critter {
     this.state = 'pinned';
     this.holder = player;
     this.t = 0;
+    this.flyT = 0;
     this.velocity.set(0, 0, 0);
     this.setShocked(true);
   }
@@ -520,6 +591,7 @@ export class Critter {
     this.state = 'mouthed';
     this.holder = player;
     this.t = MOUTH_TIME;
+    this.flyT = 0;
     this.velocity.set(0, 0, 0);
     this.setShocked(true);
   }
@@ -625,7 +697,11 @@ export class Critter {
     const top = this.spec.speed * (scared ? 1 : 0.42) * (this.panicT > 0 ? 1.15 : 1);
     const rate = 34 * dt;
 
-    if (this.spec.kind === 'flier') this._flyStep(dt, top, rate, world, deck);
+    /* A FLIGHT IS A STATE, NOT A SPECIES, and it outranks whatever the animal
+       normally does — so a mantis in the air is flown by exactly the bird's
+       code rather than by a second copy of it with an insect's name on. */
+    if (this.flyT > 0) this.flyT = Math.max(0, this.flyT - dt);
+    if (this.airborne) this._flyStep(dt, top, rate, world, deck);
     else if (this.spec.kind === 'hopper') this._hopStep(dt, top, rate, world, deck, scared);
     else this._runStep(dt, top, rate, world, deck);
   }
@@ -700,6 +776,19 @@ export class Critter {
         this.hopT = scared
           ? this.spec.hopGap + Math.random() * this.spec.hopGap
           : this.spec.hopIdle + Math.random() * this.spec.hopIdle;
+        /* ...OR IT LEAVES ALTOGETHER. Rolled here, at the instant it would
+           have hopped, so flying and hopping share one cadence — an animal
+           with a second timer of its own would give a player two rhythms to
+           learn instead of one unpredictable thing to react to. Only when
+           something is CHASING it: a calm mantis nobody has noticed is still a
+           mantis you can walk up to, which is the line its spec already draws
+           about hopping and is what keeps it findable. */
+        if (scared && this.spec.canFly && Math.random() < (this.spec.flyChance ?? 0)) {
+          this.flyT = this.spec.flyFor + Math.random() * (this.spec.flyVary ?? 0);
+          this.velocity.y = 0;
+          this.onGround = false;
+          return;
+        }
         /* It keeps the speed it was already running at rather than being
            re-launched at top speed: a hop out of a standstill should be a
            little bunny bounce, and a hop out of a full run should carry. */

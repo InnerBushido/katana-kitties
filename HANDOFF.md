@@ -624,9 +624,11 @@ first move that takes her feet away, and the second orb the dealer alone has.
   shield button as she goes and she pivots around *herself* instead — the flee.
 - **Whoever she is looking at gets an 8-bit target ring in her colour**, drawn
   narrowing in and springing open again when it ends. Targets have to be inside
-  a 120° cone at 10 units, or already inside her swing, and on the same
-  strike-height the katana asks about: if you could not hit her, you cannot
-  pivot around her.
+  a 120° cone at **15 units** (half again as far as it shipped at), or already
+  inside her swing, and on the same strike-height the katana asks about: if you
+  could not hit her, you cannot pivot around her. **That strike height is now
+  3.4** — one storey rather than half of one — and it is deliberately the ONE
+  vertical plane anything reaching for a person uses, blade and reticle alike.
 - **The radius is the SHORTER of the gap at the press and the gap at the
   commit**, so a sister sprinting away does not tow the landing spot behind her.
   A landing over nothing is refused outright with a `deny` — the fourth
@@ -634,10 +636,38 @@ first move that takes her feet away, and the second orb the dealer alone has.
   not walk to.
 - **She leaves something behind in the smoke.** A log, a bow-tie, a scarf, a
   boiled sweet, or her clan's emblem, dealt round in order rather than shuffled
-  so four dodges are four different jokes. **One time in twenty it is a live
-  mantis** — capped at one per kitten per round, the fastest and least
-  nourishing animal on the deck, and Mr. Satan has five things to say about
-  somebody smuggling snacks into his arena.
+  so four dodges are four different jokes. It hangs in the air for a second with
+  no gravity — which is what sells the substitution — then **falls** to the
+  floor she was standing on, does not revolve, and stays for **twelve seconds**
+  rather than one and a half: the joke is for her sister on the other half of
+  the screen, who looks over later, not for the kitten who threw it.
+- **One time in twenty it is a live mantis** — capped at one per kitten per
+  round, and no longer the booby prize. It is the fastest thing in the game
+  (18.9 against a sprint's 17, so a chase cannot close on it), half again as big
+  as it was, it **takes off and flies** a third of the times it would have
+  hopped, and it heals **four times** the free regen — double the bird. You
+  cannot hunt one; you can only time a swing at a hop or a take-off. Mr. Satan
+  has five things to say about somebody smuggling snacks into his arena.
+- **A second 瞬 upgrades the move instead of doing nothing.** Two orbs and how
+  far she pushes the stick decides how far round her sister she comes out:
+  under 5% is not an aim at all, 5–20% puts her right next to her (inside a
+  standing swing — the backstab), and 20–100% scales out to the full radius. The
+  walking deadzone was NOT lowered to allow the nudge — a worn Joy-Con would
+  walk a kitten across the arena — the raw axes are carried on `PadState`
+  instead and exactly one function reads them. At a full push the one-orb and
+  two-orb kittens land identically, to the last decimal: the upgrade buys
+  precision and never reach.
+- **The move draws its own working now.** The circle of every landing she could
+  reach, around whoever she locked, following them until she goes and then
+  frozen; a see-through her standing on the landing she has chosen, from the
+  SAME arithmetic that moves her; the right triangle between the two kittens
+  with theta, `r cos θ` and `r sin θ` printed off the drawn vectors in the
+  Dojo's own colours; and 瞬's kana raining at both ends of the jump. She fades
+  out and fades in, which her own sprite cannot do (`alphaTest: 0.35` makes any
+  fade a hard cut) — two sprite ghosts do it over exactly the post-commit
+  window. **Gravity now waits for the paralysis**, so a teleport onto a roof is
+  not a teleport onto a roof followed by sliding off it while helpless.
+  → [endgame.md](docs/notes/endgame.md)
 - **A new concentrating pose**, two fingers to the forehead and eyes shut, worn
   for the four fifths of the move that happen before she goes. Two sheets, four
   kittens, through the same recolour loop as the eating and blessing poses.

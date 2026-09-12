@@ -1071,12 +1071,122 @@ least one, which is not rare, it is most rounds. Capped at one, the first
 success is the only one and the *feeling* of five percent survives being rolled
 a dozen times. The animal is kept out of the ordinary lottery by `rare: true`
 filtered inside `Menagerie.species`, not by special-casing the two call sites,
-so a third call site added later cannot quietly put a mantis in the rotation. It
-heals exactly `REGEN_FRAC` — the least of any animal — and it is the fastest
-thing on the deck, which is the trade: a snack you conjured is a snack you still
-have to catch. Mr Satan gets a line about it, and he comments rather than rules:
+so a third call site added later cannot quietly put a mantis in the rotation.
+
+**AND IT PAYS THE MOST, WHICH IS THE OPPOSITE OF WHAT IT USED TO PAY.** The
+first version priced it at exactly `REGEN_FRAC` — the least of any animal — on
+the argument that a free animal must pay the least or the trick becomes a
+healing move with a teleport attached. What that missed is how hard it actually
+is to catch one. It is now half again as fast as it was (18.9 against a
+sprinting kitten's 17, making it the only animal in the game a chase cannot
+close on), half again as big so it reads as an animal rather than a speck, and
+it **takes off and flies** a third of the times it would have hopped — the
+bird's own cruise code, borrowed through `Critter.airborne`, which asks the
+ANIMAL and not its species so that a swing cannot pluck a flying mantis off a
+floor it is nowhere near. Its cruise is deliberately *under* the bird's, because
+a bird is permanently out of reach by design and a mantis that was would be a
+taunt: at 5.2 a perfectly timed swing still takes it and a late one does not.
+Paying a nine-year-old who lands that swing the same as standing still for
+fifteen seconds is the game telling her it did not notice, so it now heals four
+times the free regen — double the bird, and the only animal outside the
+10–20% band every huntable snack sits in. `world-check` scopes that band, the
+feast budget and the "nothing outruns a sprint" rule to `!c.rare`, because a
+mantis cannot be spawned, cannot be drawn from the pool and can never appear in
+a feast; folding it into those sums was a check quietly policing a rule about a
+lottery the animal is not in. Mr Satan gets a line about it, and he comments
+rather than rules:
 he never says it is against the rules, because it is not, and a nine-year-old
 who hears the announcer call her trick illegal will believe him.
+
+### A second 瞬 buys an AIM, and may not buy a metre
+
+The tenth orb does not stack, so a second one had nothing to do. It does now:
+**two of them upgrade the Flash Step from "somewhere around her" to "exactly
+there"** — the cheesy backstab, which is the thing anybody who has watched
+Dragon Ball wants a teleport for. How far she pushes the stick decides how far
+round her sister she comes out.
+
+Three bands, and they are `DODGE.aimDead` / `DODGE.aimNear` / `DODGE.nearK`:
+
+| push | where she lands |
+| --- | --- |
+| under 5% | not an aim at all — the move's old answer, stay put, silently |
+| 5–20% | at `BASE_REACH * nearK`, next to her, inside a standing swing |
+| 20–100% | scaled from that out to the full pivot radius |
+
+**THE WALKING DEADZONE WAS NOT LOWERED TO MAKE ROOM FOR THE NUDGE, AND THAT WAS
+THE TEMPTING FIX.** `dead()` in `core/input.js` is 0.22 because a worn Joy-Con
+drifts, and dropping it to 0.05 would let a controller nobody is holding walk a
+kitten across the arena for an hour. Instead `PadState` now carries `rx`/`ry` —
+the raw axes, clamped to the circle, deadzoned not at all — and `nudge()` over
+them. Exactly one function reads them (`Player._stickAim`), for a tenth of a
+second, on a kitten who bought two orbs. Walking is read every frame of the
+afternoon; the two cannot share a threshold.
+
+**THE FIFTH NON-NEGOTIABLE APPLIES TO UPGRADES.** At the far end of the stick
+the one-orb and the two-orb kitten come out at the same distance to the last
+decimal place, and the aimed band's far end IS the unaimed radius. The upgrade
+buys precision and never reach. A one-orb kitten never reaches `_stickAim` at
+all, so her move is bit-identical rather than merely equivalent.
+
+### The picture: the move draws its own working
+
+The first non-negotiable says the maths is the point, and until now the Flash
+Step picked a person, a radius and an angle in silence. `systems/dodgefx.js`
+draws all three, out of the numbers she is already publishing:
+
+* **the circle of every landing she could reach**, around the person she locked,
+  following them until the instant she goes and then frozen — a thin DRAWN line
+  at radius 1 scaled by the reach, deliberately the same object as the Dojo of
+  the Turning Circle's unit circle. It was a stair-stepped pixel band first, to
+  match the eight-bit target reticle; that matched the wrong thing. The reticle
+  is a *sight* on a person. This is a circle of radius r about a centre, and a
+  kitten who has walked that circle has to recognise this one as it. A line also
+  deletes a lie: a painted band sits at some fraction of its quad, so the quad
+  had to be scaled by the inverse of that fraction or the drawn circle would
+  have promised a reach a few per cent bigger than the real one.
+* **a see-through her, standing on the landing she has currently chosen**, so
+  she can see where she is going before she goes. It cannot be wrong, because
+  `_dodgeSpotFor` is ONE piece of arithmetic called twice — once by `_stepDodge`
+  for the preview, once by `_commitDodge` to move her. A second copy of the
+  sin/cos in the commit is how the two would come to disagree.
+* **the triangle.** A spoke in her colour from her sister to where she comes
+  out; a dashed line in her SISTER'S colour from where that sister was at the
+  press to where she is now; theta between them at the shared vertex; and the
+  adjacent and opposite legs in the Dojo's own orange and green, with
+  `r cos θ` and `r sin θ` printed from the drawn vectors. `world-check` reads
+  the lengths back off the geometry and compares them to the text, so the figure
+  cannot draw one thing and say another. When the target has genuinely not moved
+  the angle is undefined and the triangle is simply not drawn — inventing a
+  theta against a zero-length line would be the orb lying about its own position
+  in a different hat.
+* **kana raining at both ends of the jump**, from `kanaFor('blink')` — 瞬's own
+  five glyphs, the same ones the orb on her shoulder rains, which is also what
+  bounds the never-freed label cache to five entries instead of forty-six.
+
+**AND THE VANISH FADES NOW, WHICH HER OWN SPRITE CANNOT DO.** The player
+material runs `alphaTest: 0.35`: any opacity under that discards every pixel at
+once, so turning her down is a hard cut wearing a fade's clothes. The fade is
+drawn by two `THREE.Sprite` ghosts instead, one fading out where she left and
+one fading in where she arrives, over exactly the post-commit window — so the
+arriving ghost reaches full strength on the frame her real drawing returns. They
+borrow `warpPose`'s texture rather than cloning an atlas, which is only safe
+because that sheet is one cell with no mirroring and therefore never touches its
+own UV transform; her walking billboard rewrites it once per camera per frame.
+
+**AND GRAVITY NOW WAITS FOR THE PARALYSIS, NOT THE VANISH.** The gap between
+them is `dodgeLockT`, the half second she stands there unable to walk, and
+falling through it turned a teleport onto a rooftop into a teleport onto a
+rooftop followed by sliding off it while helpless.
+
+**AND THE THING SHE LEAVES BEHIND IS AN OBJECT.** It hangs in the smoke for a
+second with no gravity — which is what sells the substitution, a log standing
+exactly where a kitten was — and then falls to the floor she was standing on,
+measured once at the drop. It no longer revolves on the spot (twelve seconds of
+a slowly turning log reads as a collectable in a menu) and it stays for twelve
+seconds rather than one and a half, because the joke is not for the kitten who
+threw it — she is busy — it is for her sister on the other half of the screen,
+who looks over a few seconds later.
 
 ## The screens had to learn that eight was two different numbers
 

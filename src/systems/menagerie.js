@@ -411,7 +411,11 @@ export class Menagerie {
       this.game.sfx?.('squeak');
       return true;
     }
-    if (air.spec.kind === 'flier') {
+    /* IN THE AIR IS IN THE AIR. Asked of the animal rather than of its
+       species, because a mantis that has just taken off is twenty feet up and
+       is not a thing you grab off the floor — "when flying, make it get into
+       the cats mouth when caught, like the bird". See `Critter.airborne`. */
+    if (air.airborne) {
       air.mouth(player);
       this.held[player.index] = air;
       this.chew[player.index] = 0;

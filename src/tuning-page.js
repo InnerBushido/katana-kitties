@@ -99,6 +99,9 @@ const GROUPS = {
       range: ['Lock range', 'How far away somebody can be and still be locked on to. Also sets the flee distance — with nobody locked, or with Shield held, she pivots on herself at HALF of this.', 'm', 2, 30, 0.5],
       arc: ['Lock arc', 'How far off dead ahead she can be looking and still lock somebody. Anybody her sword would already reach qualifies whatever this says.', '°', 5, 180, 5],
       selfK: ['Flee distance', 'The fraction of Lock range she travels when there is nobody to pivot around — or when Shield is held at the end of the aim window, which overrides the lock outright.', '×', 0.1, 1.5, 0.05],
+      aimDead: ['Nudge deadzone', 'TWO ORBS ONLY. How far off centre the stick has to be before an aimed Flash Step counts it as a direction at all. It is deliberately far smaller than the walking deadzone (0.22): walking has to survive a worn Joy-Con drifting on its own for an hour, and this is read for a tenth of a second during a move somebody is deliberately making, so a nudge is allowed to be a nudge.', '×', 0.01, 0.2, 0.01],
+      aimNear: ['Nudge band', 'TWO ORBS ONLY. Under this, she lands at Backstab distance and nowhere else — one band, no interpolation, so the smallest real push has a definite answer. Above it, the push is scaled from Backstab distance out to the full pivot radius.', '×', 0.05, 0.6, 0.01],
+      nearK: ['Backstab distance', 'TWO ORBS ONLY. The closest an aimed Flash Step will put her to the kitten she pivoted around, as a fraction of a standing sword\u2019s reach. Under 1 means she arrives already inside her own swing — which is the entire point of buying the second orb.', '×', 0.3, 1.5, 0.05],
     },
   },
   /* NOT AN ABILITY — a gag, and the one table on this page that belongs to

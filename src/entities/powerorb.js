@@ -644,9 +644,35 @@ export const DODGE = tune('DODGE', {
   cool: 1.5,
   commit: 0.8,
   lockDeg: 5,
-  range: 10,
+  /* HOW FAR AWAY SOMEBODY CAN BE AND STILL BE PIVOTED AROUND.
+
+     WAS 10, AND 10 WAS SHORT — reported from play as the reticle refusing
+     people who were plainly right there. 15 is half again, which is the
+     number that was asked for and the only one defensible without a play
+     session behind it. `selfK` rides on this, so the flee teleport got its
+     half again in the same breath: 5 units became 7.5, and that one was
+     asked for by name. */
+  range: 15,
   arc: 60,
   selfK: 0.5,
+  /* --- THE EVOLVED AIM, and every number in it is a FRACTION OF THE STICK.
+     A second 瞬 turns the landing from "which side of her" into "exactly
+     where", and these are the three bands the thumb is divided into. See
+     `Player._commitDodge`. */
+  /** Under this much stick, she has not aimed at all. DELIBERATELY UNDER THE
+   *  GAME'S WALKING DEADZONE (0.22): a nudge that would not move her feet
+   *  still has to be able to steer a teleport, which was the ask in as many
+   *  words. Read off the RAW axes for exactly that reason — see `PadState`. */
+  aimDead: 0.05,
+  /** Under this much, she lands AT `aimNear` — close in, one band, no
+   *  interpolation. The cheesy backstab wants a repeatable distance, not a
+   *  distance that depends on how hard a nine-year-old's thumb happened to
+   *  press. */
+  aimNear: 0.20,
+  /** ...and that distance, as a multiple of BASE_REACH. Inside a standing
+   *  swing (1.0) but not inside her drawing: she arrives able to cut, which
+   *  is the whole point of choosing to land there. */
+  nearK: 0.85,
 });
 
 /* ------------------------------- aggregation ------------------------------ */
@@ -696,14 +722,23 @@ export function aggregate(ids = []) {
     dive: dive ? { dmg: DIVE.dmg + 6 * (dive - 1) } : null,
     tri: tri ? { dmgK: 1 + 0.15 * (tri - 1) } : null,
     charge: charge ? { dist: CHARGE.dist + 4 * (charge - 1) } : null,
-    /* NOTHING TO STACK, SO NOTHING IN THE OBJECT. It is the only entry here
-       that is a bare flag, and that is the honest shape: a second 瞬 Flash
-       Step buys nothing, the shelf stocks it like a move rather than like a
-       booster, and every timing the move has lives in DODGE where the
-       balance page can reach it. An empty object rather than `true` so a
-       later field (a longer vanish for a second copy, say) is an addition
-       and not a change of type. */
-    blink: blink ? {} : null,
+    /* AND THE SECOND ONE IS THE ONLY UPGRADE IN THE GAME THAT CHANGES A MOVE
+       RATHER THAN A NUMBER. Every other stack here is arithmetic — more
+       damage, more distance, a longer bubble. A second 瞬 hands her the
+       stick: instead of picking which SIDE of her sister she comes out on,
+       she picks the exact spot, by how far she pushes. See
+       `Player._commitDodge` and DODGE's three aim bands.
+
+       This is the field the empty object was left here for. It was written as
+       `{}` rather than `true` precisely so that the day a second copy bought
+       something, it would be an ADDITION and not a change of type — and this
+       is that day. Nothing that reads `power.blink` as a flag has to change.
+
+       `>= 2` AND NOT `=== 2`: eight of them is still the aimed version, the
+       same way the ninth Long Cut is still a longer cut. There is no rung
+       above this one, and an orb that silently stopped working at three
+       would be the kind of rule nobody could ever discover. */
+    blink: blink ? { aim: blink >= 2 } : null,
   };
 }
 
@@ -814,8 +849,14 @@ const KANA = [...'アイウエオカキクケコサシスセソタチツテト�
  * Deterministic from the id, not from the slot: an orb has to look like itself
  * wherever she is wearing it, and `syncOrbMeshes` re-slots the whole set every
  * time she picks one up.
+ *
+ * EXPORTED BECAUSE 瞬'S PICTURE NEEDS THE SAME FIVE. `systems/dodgefx.js` rains
+ * characters at both ends of a Flash Step, and a second hand-written list there
+ * would be a rain that does not match the orb the kitten is wearing — and,
+ * worse, five more never-freed entries in the label cache this function exists
+ * to bound. One source, one slice.
  */
-function kanaFor(id) {
+export function kanaFor(id) {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   const n = 5;

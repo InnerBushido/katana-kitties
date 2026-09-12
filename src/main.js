@@ -6189,7 +6189,10 @@ class Game {
     /* AFTER crossfx and for the same class of reason: this reads positions
        that `Player.update` has already settled this frame, so the ring lands
        on where her sister IS rather than on where she was. */
-    this.dodgeFx?.update(dt, this.players);
+    /* THE WORLD, because the thing she leaves behind FALLS now — it hangs for
+       a second in the smoke and then drops, and a drop needs a floor to find.
+       See `systems/dodgefx.js`. */
+    this.dodgeFx?.update(dt, this.players, this.world);
     /* AND THE CLAN POWERS LAST OF THE THREE, for the same reason dodgefx runs
        after crossfx: the mark is drawn on the kitten it is following, and by
        here every position this frame is settled. */
@@ -8141,6 +8144,11 @@ class Game {
     this.ryu?.faceCamera(camera);
     this.satan?.faceCamera(camera);
     this.griffin?.faceCamera(camera);
+    /* THE FLASH STEP'S FIGURE, and only its three readouts: everything else it
+       draws is a `THREE.Sprite`, which three.js turns during each pane's own
+       render and so needs nothing from here. A `Label` is a quad on a mesh and
+       does. See `DodgeFx.faceCamera`. */
+    this.dodgeFx?.faceCamera(camera);
     this.dojo.faceCamera(camera);
   }
 
