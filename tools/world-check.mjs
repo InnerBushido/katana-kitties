@@ -30,7 +30,8 @@ import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_
 import {
   SCRIPTS, DUSK_DEEP, DUSK_FALL, DAWN_RISE, DAWN_DEEP, SummonScene, BEAT_ACTS,
 } from '../src/systems/summonscene.js';
-import { FinaleLesson, FIGURES } from '../src/systems/finalelesson.js';
+import { FinaleTide } from '../src/systems/finaletide.js';
+import { STEAL, DBREATH, ARENA_POWERS, arenaPowerFor } from '../src/entities/clanpower.js';
 import {
   SHRINE_DAIS, SHRINE_STEPS, SHRINE_GATE,
   SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest,
@@ -2696,6 +2697,12 @@ console.log('\n--- the panda in the ring ---');
     players,
     tournament: { fighting: true, allies: () => false, onHit: () => {} },
     sfx: () => {}, toast: () => {}, hitSpark: () => {},
+    /* THE CLAN STEAL'S HOOK. The gate calls it on every landed blow — see
+       `Game._clanStealHit` — so a stub without it throws, and a stub that
+       throws would take every check below with it. Overridable, because the
+       Steal Mischief section further down wants to know whether it was
+       called and with whom. */
+    _clanStealHit: () => {},
     _pandaDown(pl) { this.downed = pl; pl.panda.collapse(); },
     ...over,
   });
@@ -12762,6 +12769,606 @@ console.log('\n--- the trailer is opt-in ---');
    rather than a bug: a UI FALL-THROUGH, where something that was true a
    moment ago is acted on now.
 --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   WHAT YOUR OATH IS WORTH IN THE RING.
+
+   Two clans went quiet in the arena — Icewhisker's Sense Mischief points at
+   barrels and there are none, Windwhisker's buff stretches a DRAGON'S flame and
+   there are none — so both got an arena answer. Everything below is about the
+   two rules that answer has to keep: it may not leak out of the ring (third
+   non-negotiable), and nothing may be lost by it (fourth).
+--------------------------------------------------------------------------- */
+console.log('\n--- an oath is worth something in the ring ---');
+{
+  const ice = CLANS.find((c) => c.id === 'ice');
+  const wind = CLANS.find((c) => c.id === 'wind');
+  ok('Icewhisker steals mischief in here', arenaPowerFor(ice) === ARENA_POWERS.steal);
+  ok('...and Windwhisker breathes it', arenaPowerFor(wind) === ARENA_POWERS.dbreath);
+  /* AND THE OTHER FOUR HAVE NOTHING TO DRAW. Their oaths pay out in the ring
+     already — running, reaching, jumping, an animal — as multipliers that were
+     never asked where she was standing. A pip over their bars reading READY for
+     two minutes solid is furniture saying nothing; `Tournament._paintHud` draws
+     it only when this function answers. */
+  const armed = CLANS.filter((c) => arenaPowerFor(c));
+  ok('...and exactly two clans have an arena power at all', armed.length === 2,
+    armed.map((c) => c.name).join(' + '));
+  ok('a kitten with no clan has none of this', arenaPowerFor(null) === null);
+  /* THE WORLD BUFF IS UNTOUCHED. `steal` was added ALONGSIDE `seek`, not
+     instead of it: the finder is what the oath is for outside the ring, and a
+     clan that stopped finding barrels the day it learned to rob people would
+     have had its own feature quietly taken away. Same for the dragon. */
+  ok('...and Icewhisker still finds the last barrel', ice.buff.seek === true);
+  ok('...and Windwhisker still stretches a dragon\'s flame', wind.buff.breath > 1);
+
+  /* --- THE FLAME IS SMALLER THAN A DRAGON'S, WHICH IS THE WHOLE BRIEF ---
+     "not as powerful/long range as normal Dragonbreath, should be smaller".
+     Asked of EVERY breed rather than of a number typed in here, so a future
+     breed with a short breath moves this check with it. */
+  const ranges = Object.values(BREEDS).map((b) => b.breath.range);
+  ok('a kitten breathes shorter than every dragon in the game',
+    DBREATH.range < Math.min(...ranges), `${DBREATH.range} against ${Math.min(...ranges)}`);
+  ok('...and narrower than every dragon in the game',
+    DBREATH.spread < Math.min(...Object.values(BREEDS).map((b) => b.breath.spread)));
+  /* ...AND STILL WORTH A FORTY-SECOND WAIT. Between a standing slash and a
+     dash: it is a whole clan power, on a long wait, and it is the only attack
+     in the game that cannot be interrupted. */
+  ok('...but it hits harder than a standing slash',
+    DBREATH.dmg > ATTACKS.stand.dmg, `${DBREATH.dmg} vs ${ATTACKS.stand.dmg}`);
+  ok('...and not harder than a dash', DBREATH.dmg <= ATTACKS.dash.dmg);
+  ok('...and reaches further than a katana', DBREATH.range > ATTACKS.stand.reach);
+
+  /* THE DRAWN CONE IS THE HIT BOX. Eighth non-negotiable across two files:
+     `systems/clanfx.js` draws from `DBREATH.range`/`spread` and the strike gate
+     reads `ATTACKS.dbreath`, so the row is DERIVED rather than typed twice. */
+  ok('the breath row is derived from the breath, not typed beside it',
+    ATTACKS.dbreath.reach === DBREATH.range
+    && ATTACKS.dbreath.dmg === DBREATH.dmg
+    && ATTACKS.dbreath.knock === DBREATH.knock
+    && ATTACKS.dbreath.lift === DBREATH.lift);
+  ok('...including the arc, which is the drawn spread', ATTACKS.dbreath.arc === 1 - DBREATH.spread);
+  const fxsrc = readFileSync(new URL('../src/systems/clanfx.js', import.meta.url), 'utf8');
+  ok('...and the drawing reads the same two numbers',
+    /DBREATH\.range/.test(fxsrc) && /DBREATH\.spread/.test(fxsrc));
+
+  /* BOTH WAITS ARE IN THE 30-60s RICHARD ASKED FOR, and long enough that a
+     round of two minutes holds a handful of uses rather than a rotation. */
+  for (const [id, cool] of [['STEAL', STEAL.cool], ['DBREATH', DBREATH.cool]]) {
+    ok(`${id}'s wait is the once-in-a-while it was asked to be`,
+      cool >= 30 && cool <= 60, `${cool}s`);
+  }
+  ok('a stolen orb cannot be picked up immediately', STEAL.lock >= 3 && STEAL.lock <= 5,
+    `${STEAL.lock}s`);
+  ok('...and the mark is shorter than the wait, so it cannot overlap itself',
+    STEAL.window < STEAL.cool);
+}
+
+console.log('\n--- 息 the breath cannot leak out of the ring ---');
+{
+  /* THE REAL GATE AGAIN, lifted exactly as the panda section lifts it. A clan
+     power with its own damage path would be a SECOND answer to "may these two
+     hurt each other", so the check that matters is this one: with the
+     tournament off, the new attack does nothing at all. */
+  const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+    .replace(/\r\n/g, '\n');
+  const at = msrc.indexOf('\n  strikePlayers(attacker, kind, reach, dir) {');
+  const from = msrc.indexOf('{', at + 1) + 1;
+  const body = msrc.slice(from, msrc.indexOf('\n  }\n', from));
+  // eslint-disable-next-line no-new-func
+  const strikePlayers = new Function('ATTACKS', 'COMBAT', 'PANDA', 'BASE_REACH',
+    `return function (attacker, kind, reach, dir) {${body}\n};`)(
+    ATTACKS, COMBAT, PANDA, BASE_REACH);
+
+  const gy = world.heightAt(0, 40).y;
+  const mkP = (i, x) => new Player({
+    texture: new THREE.Texture(), index: i, cols: 8, rows: 4, mirror: false,
+    spawn: new THREE.Vector3(x, gy, 40), name: i ? 'Sky' : 'Ember',
+  });
+  const mkGame = (players, fighting, over = {}) => ({
+    players,
+    tournament: { fighting, allies: () => false, onHit: () => {} },
+    sfx: () => {}, toast: () => {}, hitSpark: () => {},
+    _clanStealHit: () => {},
+    _pandaDown() {},
+    ...over,
+  });
+
+  {
+    const a = mkP(0, 0);
+    const b = mkP(1, 4);
+    a.facing = Math.PI / 2;
+    b.position.y = a.position.y;
+    const dir = { x: Math.sin(a.facing), y: Math.cos(a.facing) };
+    strikePlayers.call(mkGame([a, b], false), a, 'dbreath', BASE_REACH, dir);
+    ok('breathing at your sister in the market square does nothing at all',
+      b.hp === b.maxHp);
+    strikePlayers.call(mkGame([a, b], true), a, 'dbreath', BASE_REACH, dir);
+    ok('...and in a live round it takes the breath\'s own damage',
+      b.maxHp - b.hp === DBREATH.dmg, `${b.maxHp - b.hp}`);
+  }
+
+  /* IT REACHES FURTHER THAN A BLADE AND STILL NOT FOR EVER. Both ends of the
+     range, because a cone that reached the whole deck would make the move a
+     sniper rifle and a cone that reached three units would be a worse slash. */
+  {
+    const a = mkP(0, 0);
+    const near = mkP(1, DBREATH.range - 1);
+    const far = mkP(2, DBREATH.range + 2);
+    a.facing = Math.PI / 2;
+    near.position.y = far.position.y = a.position.y;
+    const dir = { x: Math.sin(a.facing), y: Math.cos(a.facing) };
+    strikePlayers.call(mkGame([a, near, far], true), a, 'dbreath', BASE_REACH, dir);
+    ok('the cone catches somebody inside it', near.hp < near.maxHp);
+    ok('...and nobody beyond the end of it', far.hp === far.maxHp);
+  }
+
+  /* AND IT IS NOT LENGTHENED BY HER BLADE. The gate recovers the clan reach
+     multiplier from the reach it is HANDED, which is right for a katana and
+     wrong for a flame — `_fireArenaBreath` passes `BASE_REACH` for exactly
+     this reason, and a future edit passing `this._reach()` would make a Long
+     Cut orb quietly stretch a cone that is drawn at a fixed length. */
+  {
+    const src = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+    const fire = src.slice(src.indexOf('_fireArenaBreath(hud) {'));
+    ok('the flame is not stretched by the katana orbs',
+      /strikePlayers\?\.\(this, 'dbreath', BASE_REACH/.test(fire));
+    /* AND THE GATE REALLY WOULD STRETCH IT, which is the other half of why
+       that line matters rather than being decoration: handed a longer reach
+       the cone grows, exactly as a katana's does. The protection is the number
+       the call site passes, so this asserts the hazard is real. */
+    const a = mkP(0, 0);
+    const b = mkP(1, DBREATH.range + 2);
+    a.facing = Math.PI / 2;
+    b.position.y = a.position.y;
+    const dir = { x: Math.sin(a.facing), y: Math.cos(a.facing) };
+    strikePlayers.call(mkGame([a, b], true), a, 'dbreath', BASE_REACH, dir);
+    ok('...and at her own reach the cone stops where it is drawn', b.hp === b.maxHp);
+    strikePlayers.call(mkGame([a, b], true), a, 'dbreath', BASE_REACH * 2.4, dir);
+    line('what a doubled reach would do to the cone', `${DBREATH.range} -> ${DBREATH.range * 2.4}`);
+    ok('...and the hazard the BASE_REACH above avoids is a real one', b.hp < b.maxHp);
+  }
+}
+
+console.log('\n--- 盗 a mark is paid by a hit, and only by a hit ---');
+{
+  const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+    .replace(/\r\n/g, '\n');
+  const at = msrc.indexOf('\n  strikePlayers(attacker, kind, reach, dir) {');
+  const from = msrc.indexOf('{', at + 1) + 1;
+  const body = msrc.slice(from, msrc.indexOf('\n  }\n', from));
+  // eslint-disable-next-line no-new-func
+  const strikePlayers = new Function('ATTACKS', 'COMBAT', 'PANDA', 'BASE_REACH',
+    `return function (attacker, kind, reach, dir) {${body}\n};`)(
+    ATTACKS, COMBAT, PANDA, BASE_REACH);
+
+  const gy = world.heightAt(0, 40).y;
+  const mkP = (i, x) => new Player({
+    texture: new THREE.Texture(), index: i, cols: 8, rows: 4, mirror: false,
+    spawn: new THREE.Vector3(x, gy, 40), name: i ? 'Sky' : 'Ember',
+  });
+  const swing = (a, b, paid, over = {}) => {
+    a.facing = Math.PI / 2;
+    b.position.y = a.position.y;
+    const g = {
+      players: [a, b],
+      tournament: { fighting: true, allies: () => false, onHit: () => {} },
+      sfx: () => {}, toast: () => {}, hitSpark: () => {}, _pandaDown() {},
+      _clanStealHit: (x, y) => paid.push([x.name, y.name]),
+      ...over,
+    };
+    strikePlayers.call(g, a, 'stand', BASE_REACH,
+      { x: Math.sin(a.facing), y: Math.cos(a.facing) });
+  };
+
+  {
+    const paid = [];
+    const a = mkP(0, 0);
+    const b = mkP(1, 2);
+    swing(a, b, paid);
+    ok('a landed blow asks whether it was a marked one', paid.length === 1);
+    ok('...and says who swung and who was hit',
+      paid[0][0] === 'Ember' && paid[0][1] === 'Sky');
+  }
+  {
+    /* A SWING THAT MISSED IS NOT A HIT. Hung inside the range test, so nothing
+       about a mark can fire on a swing at thin air. */
+    const paid = [];
+    const a = mkP(0, 0);
+    const b = mkP(1, 20);
+    swing(a, b, paid);
+    ok('a swing at nobody pays nothing', paid.length === 0);
+  }
+  {
+    /* AND NEITHER IS ONE THE BUBBLE ATE. The shield she bought has to stop the
+       theft as well as the damage, or 守 would be a shield against half a blow.
+       `hurt` returns 0 for a warded blow and the hook is INSIDE `if (dealt)`. */
+    const paid = [];
+    const a = mkP(0, 0);
+    const b = mkP(1, 2);
+    b.wardOn = true;
+    b.wardMax = 2;
+    swing(a, b, paid);
+    ok('a blow the bubble ate steals nothing', paid.length === 0);
+    ok('...and did not get through to her bar either', b.hp === b.maxHp);
+  }
+  {
+    /* NOR ONE INSIDE HER HALF SECOND OF INVULNERABILITY, for the same reason
+       and through the same `dealt` test. */
+    const paid = [];
+    const a = mkP(0, 0);
+    const b = mkP(1, 2);
+    b.invulnT = 0.4;
+    swing(a, b, paid);
+    ok('a blow inside her invulnerability steals nothing', paid.length === 0);
+  }
+  {
+    /* AND NOT OFF YOUR OWN PARTNER. The ally test comes first in the gate, so
+       this needs no clause of its own — which is exactly what makes it worth
+       asserting: a future steal rule written outside the gate would not
+       inherit it. */
+    const paid = [];
+    const a = mkP(0, 0);
+    const b = mkP(1, 2);
+    swing(a, b, paid, { tournament: { fighting: true, allies: () => true, onHit: () => {} } });
+    ok('you cannot rob your own partner', paid.length === 0);
+  }
+}
+
+console.log('\n--- 盗 the theft itself, and the loan behind it ---');
+{
+  /* A REAL `Kotodama`, ON A REAL WORLD, with a Game stubbed down to the five
+     things it touches. The orbs, the pickups, the lock and the loans are all
+     its own — this is the shipped class, so a rule that stopped giving orbs
+     back would fail here rather than in somebody's afternoon. */
+  const gy = world.heightAt(0, 40).y;
+  const mkP = (i, x) => new Player({
+    texture: new THREE.Texture(), index: i, cols: 8, rows: 4, mirror: false,
+    spawn: new THREE.Vector3(x, gy, 40), name: ['Ember', 'Frost', 'Storm'][i],
+  });
+  const mkK = (players) => {
+    const g = {
+      players, world, scene: new THREE.Scene(),
+      partySize: players.length,
+      sfx: () => {}, toast: () => {},
+      syncOrbMeshes: () => {},
+    };
+    const k = new Kotodama(g);
+    k.awakened = true;
+    return k;
+  };
+
+  {
+    const thief = mkP(0, 0);
+    const victim = mkP(1, 2);
+    const k = mkK([thief, victim]);
+    k.give(victim, 'ward', { quiet: true });
+    const spec = k.knockLoose(thief, victim);
+    ok('a steal takes the orb off her', spec?.id === 'ward' && victim.powerOrbs.length === 0);
+    ok('...and puts it on the deck rather than into the thief\'s paws',
+      k.pickups.length === 1 && thief.powerOrbs.length === 0);
+    /* THE HEIGHT IS HERS. `dropInWorld` asks `heightAt` with NO height hint,
+       which on a deck floating in the sky answers with the island underneath
+       it and posts the orb a hundred units below the fight. This is the whole
+       reason `dropAt` exists. */
+    ok('...at the height she was standing at, not the island under the arena',
+      Math.abs(k.pickups[0].position.y - victim.position.y) < 3,
+      `${k.pickups[0].position.y.toFixed(1)} vs ${victim.position.y.toFixed(1)}`);
+    ok('...and nobody may touch it for a moment', k.pickups[0].lockT === STEAL.lock);
+    /* NOBODY MEANS THE THIEF TOO. The pickup loop skips a locked orb entirely,
+       so standing on it changes nothing until the lock has run out — which is
+       what turns a steal into a scrap over it. */
+    thief.position.copy(k.pickups[0].position);
+    k.update(0.1);
+    ok('...including the kitten who knocked it loose', thief.powerOrbs.length === 0);
+    k.update(STEAL.lock);
+    k.update(0.016);
+    ok('...and once the lock is out, whoever is standing there gets it',
+      thief.powerOrbs.includes('ward'));
+
+    /* AND IT GOES HOME WHEN THE FIGHT DOES. "The orb is returned to the
+       original player after the fight" — off the thief, back onto the girl it
+       was taken from. */
+    const n = k.settleLoans();
+    ok('the fight ending gives it back', n === 1
+      && victim.powerOrbs.includes('ward') && !thief.powerOrbs.includes('ward'));
+    ok('...and the loan is spent, so settling twice changes nothing',
+      k.settleLoans() === 0 && victim.powerOrbs.length === 1);
+  }
+
+  {
+    /* NEVER PICKED UP AT ALL is the commonest ending of the lot: four seconds
+       of everybody swinging at each other over it, and then the gong. */
+    const thief = mkP(0, 0);
+    const victim = mkP(1, 2);
+    const k = mkK([thief, victim]);
+    k.give(victim, 'swift', { quiet: true });
+    k.knockLoose(thief, victim);
+    k.settleLoans();
+    ok('an orb nobody picked up still goes home', victim.powerOrbs.includes('swift'));
+    ok('...and is taken off the deck on the way', k.pickups.every((pk) => pk.taken));
+  }
+
+  {
+    /* A THIRD KITTEN GOT THERE FIRST. She really does have it for the rest of
+       the fight — it is a loan, not an illusion — and it still goes back to
+       the girl it came off. */
+    const thief = mkP(0, 0);
+    const victim = mkP(1, 2);
+    const other = mkP(2, 4);
+    const k = mkK([thief, victim, other]);
+    k.give(victim, 'blink', { quiet: true });
+    const pk = (k.knockLoose(thief, victim), k.pickups[0]);
+    /* THE FOUR SECONDS ARE WHAT SHE HAS TO GET CLEAR OF IT. The orb lands
+       about two units off her and she picks up at 2.8 — so standing over it
+       when the lock runs out really does hand it back to her, and that is the
+       fight the lock exists to create. Here she has been knocked away from it,
+       which is the other half of the same second. */
+    pk.lockT = 0;
+    victim.position.set(pk.position.x + 20, pk.position.y, pk.position.z);
+    other.position.copy(pk.position);
+    k.update(0.016);
+    ok('anybody on the deck can take a loose Kotodama', other.powerOrbs.includes('blink'));
+    k.settleLoans();
+    ok('...and it goes back to the kitten it was knocked off, not to the thief',
+      victim.powerOrbs.includes('blink') && !other.powerOrbs.includes('blink'));
+  }
+
+  {
+    /* STOLEN BACK, AND STOLEN AGAIN. Three kittens and one orb: whoever bought
+       it gets it, and the middle one gets nothing — `_loanOwner` retires the
+       older loan rather than stacking a second. */
+    const a = mkP(0, 0);
+    const b = mkP(1, 2);
+    const c = mkP(2, 4);
+    const k = mkK([a, b, c]);
+    k.give(c, 'ward', { quiet: true });
+    k.knockLoose(a, c);            // off its owner
+    k.pickups[0].lockT = 0;
+    a.position.copy(k.pickups[0].position);
+    k.update(0.016);               // ...and the thief picks it up
+    k.knockLoose(b, a);            // now it is stolen off the thief
+    ok('an orb stolen twice makes one loan, not two', k.loans.length === 1);
+    k.settleLoans();
+    ok('...and goes home to the kitten who owns it', c.powerOrbs.includes('ward'));
+    ok('...and to nobody else', !a.powerOrbs.includes('ward') && !b.powerOrbs.includes('ward'));
+  }
+
+  {
+    /* A FULL OWNER LOSES NOTHING. `give` refuses at eight and it has to;
+       silently dropping the ninth is how a girl ends a tournament with less
+       than she walked in with. Fourth non-negotiable. */
+    const thief = mkP(0, 0);
+    const victim = mkP(1, 2);
+    const k = mkK([thief, victim]);
+    k.give(victim, 'ward', { quiet: true });
+    k.knockLoose(thief, victim);
+    for (const id of ORB_IDS.slice(0, MAX_EQUIPPED)) k.give(victim, id, { quiet: true });
+    ok('...she really is full', victim.powerOrbs.length === MAX_EQUIPPED);
+    const before = k.pickups.filter((pk) => !pk.taken).length;
+    k.settleLoans();
+    ok('a full owner gets it at her feet instead of losing it',
+      k.pickups.filter((pk) => !pk.taken).length === before);
+  }
+
+  {
+    /* A KITTEN WHO IS NOT PLAYING ANY MORE. She dropped out between the theft
+       and the gong; there is nobody to give it back to, and the check that
+       matters is that this does not throw and does not delete anything. */
+    const thief = mkP(0, 0);
+    const victim = mkP(1, 2);
+    const k = mkK([thief, victim]);
+    k.give(victim, 'swift', { quiet: true });
+    k.knockLoose(thief, victim);
+    k.game.players = [thief];
+    ok('a theft from somebody who has since left the game settles quietly',
+      k.settleLoans() === 0);
+  }
+
+  {
+    /* NOTHING TO STEAL IS AN ANSWER, NOT A CRASH. `Player._startSteal` refuses
+       to spend the wait on an orb-less kitten in the first place, but a mark
+       can outlive the last orb she was wearing — her sister can trade it away
+       mid-window. */
+    const thief = mkP(0, 0);
+    const victim = mkP(1, 2);
+    const k = mkK([thief, victim]);
+    ok('robbing a kitten who is wearing nothing takes nothing',
+      k.knockLoose(thief, victim) === null && k.loans.length === 0);
+  }
+}
+
+console.log('\n--- the two powers, from the kitten\'s side ---');
+{
+  const gy = world.heightAt(0, 40).y;
+  const mkP = (i, x, clan = null) => {
+    const p = new Player({
+      texture: new THREE.Texture(), index: i, cols: 8, rows: 4, mirror: false,
+      spawn: new THREE.Vector3(x, gy, 40), name: i ? 'Frost' : 'Ember',
+    });
+    p.clan = clan;
+    p.onGround = true;
+    return p;
+  };
+  const ice = CLANS.find((c) => c.id === 'ice');
+  const wind = CLANS.find((c) => c.id === 'wind');
+  /** A Game stub: a live round, two kittens, and a note of what it was told. */
+  const mkHud = (players, fighting = true) => ({
+    players,
+    tournament: { fighting, allies: () => false },
+    toasts: [],
+    strikes: [],
+    arenaLive(p) { return fighting && !p.ko && !p.angel; },
+    sfx() {},
+    toast(msg) { this.toasts.push(msg); },
+    strikePlayers(...a) { this.strikes.push(a); },
+  });
+
+  {
+    /* THE BUTTON MEANS NOTHING EXTRA WITHOUT AN OATH, and nothing extra
+       outside a live round — which is the half that keeps ACTION free for the
+       oath, the stall, the panda and the power dive. It must also be SILENT:
+       a toast every time anybody presses interact in the market square would
+       be shouting over four buttons that work. */
+    const a = mkP(0, 0);
+    const b = mkP(1, 3);
+    const hud = mkHud([a, b]);
+    ok('a kitten with no clan cannot do any of this', a._startClanPower(null, hud) === false);
+    const sworn = mkP(0, 0, ice);
+    const off = mkHud([sworn, b], false);
+    ok('...and neither can a sworn one outside a live round',
+      sworn._startClanPower(null, off) === false);
+    ok('...and it says nothing while refusing, so the button keeps its day job',
+      off.toasts.length === 0);
+  }
+
+  {
+    /* 盗 THE MARK. Aimed at somebody wearing something, inside the arc. */
+    const a = mkP(0, 0, ice);
+    const b = mkP(1, 3);
+    b.setPowerOrbs(['ward']);
+    a.facing = Math.PI / 2;                   // looking at her
+    const hud = mkHud([a, b]);
+    ok('pointing 盗 at a fighter marks her', a._startClanPower(null, hud) === true);
+    ok('...and the mark is on the one she was looking at', a.stealTarget === b);
+    ok('...and the wait is spent at the press, not at the theft',
+      a.stealCool === STEAL.cool);
+    ok('...and the window is the window', a.stealMarkT === STEAL.window);
+    ok('...and she is told what to do with it',
+      hud.toasts.some((t) => /marked Frost/.test(t)));
+
+    /* AND IT RUNS OUT, OUT LOUD. A mark that expired in silence is a wait she
+       cannot account for — sixth non-negotiable. */
+    a._stepClanPower(STEAL.window, hud);
+    ok('a mark nobody cashed fades', !a.stealMarked && a.stealTarget === null);
+    ok('...and says so', hud.toasts.some((t) => /mark on Frost faded/.test(t)));
+    ok('...and the wait is still owed', a.stealCool > 0);
+  }
+
+  {
+    /* REFUSALS THAT SAY WHAT THEY WANT, and do not charge for nothing. */
+    const a = mkP(0, 0, ice);
+    const b = mkP(1, 3);
+    a.facing = Math.PI / 2;
+    const hud = mkHud([a, b]);
+    ok('a kitten wearing no Kotodama cannot be robbed',
+      a._startClanPower(null, hud) === false);
+    ok('...and the wait is NOT spent on finding that out', a.stealCool === 0);
+    ok('...and she is told why', hud.toasts.some((t) => /no Kotodama to steal/.test(t)));
+
+    b.setPowerOrbs(['ward']);
+    a.facing = -Math.PI / 2;                  // looking the other way
+    ok('...and pointing it at nobody marks nobody', a._startClanPower(null, hud) === false);
+    ok('...and says so as an instruction', hud.toasts.some((t) => /point 盗/.test(t)));
+    ok('...and still has not spent the wait', a.stealCool === 0);
+
+    a.facing = Math.PI / 2;
+    a._startClanPower(null, hud);
+    a._endMark(hud);
+    ok('...but a mark that WAS made spends it', a.stealCool === STEAL.cool);
+    const said = hud.toasts.length;
+    ok('...and pressing again inside the wait refuses',
+      a._startClanPower(null, hud) === false);
+    ok('...and says how long is left', hud.toasts.length === said + 1
+      && /comes back in/.test(hud.toasts[hud.toasts.length - 1]));
+  }
+
+  {
+    /* 息 THE BREATH: press, rear back, and it goes off by itself. */
+    const a = mkP(0, 0, wind);
+    const b = mkP(1, 3);
+    const hud = mkHud([a, b]);
+    ok('息 starts charging rather than firing', a._startClanPower(null, hud) === true
+      && a.breathChargeT === DBREATH.charge && a.breathFireT === 0);
+    ok('...and nothing has been struck yet', hud.strikes.length === 0);
+    /* SHE KEEPS HER FEET AND HER AIM — the one rule that is NOT `busy`. */
+    ok('...and she is not planted, because the stick is her aim', a.busy === false);
+    a._stepClanPower(DBREATH.charge, hud);
+    ok('the flame leaves her when the rear-back runs out', hud.strikes.length === 1
+      && hud.strikes[0][1] === 'dbreath');
+    ok('...aimed where she is pointing', a.breathFireT === DBREATH.fire);
+    ok('...and the wait starts at the flame, not at the press',
+      a.breathCool === DBREATH.cool);
+    a._stepClanPower(DBREATH.fire, hud);
+    ok('...and it is over when the flame is', a.arenaBreathAt === false);
+    ok('...and the damage was applied exactly once', hud.strikes.length === 1);
+  }
+
+  {
+    /* SHE CANNOT BE STOPPED, AND SHE CANNOT BE THROWN. All three halves of
+       "they can be attacked... but they will continue... unless they die. They
+       don't get knocked back." */
+    const a = mkP(0, 0, wind);
+    const hud = mkHud([a], true);
+    a._startClanPower(null, hud);
+    const hp0 = a.hp;
+    const dealt = a.hurt(10, { x: 0, z: -5 }, ATTACKS.stand, hud);
+    /* The half second of invulnerability a blow buys her is real and is not
+       what this section is about — spent here so the next blow lands. */
+    ok('a blow lands on a breathing kitten for its full damage',
+      dealt === 10 && a.hp === hp0 - 10);
+    ok('...and does not throw her',
+      a.velocity.lengthSq() === 0 && a.onGround === true);
+    ok('...and does not stop the breath', a.breathChargeT > 0);
+
+    /* ...UNLESS SHE DIES. `becomeAngel` clears everything, but that is a
+       second or so after the knockout (`KO_TIME`) and the ground controller is
+       still running her the whole time — so the charge has to be stopped by
+       the knockout itself, or a flame comes out of a kitten on her back. */
+    a.invulnT = 0;
+    a.hurt(9999, { x: 0, z: -5 }, ATTACKS.stand, hud);
+    ok('...but a knockout does stop it', a.ko === true);
+    a._stepClanPower(DBREATH.charge, hud);
+    ok('...and no flame leaves a kitten who is out of the fight',
+      a.arenaBreathAt === false && hud.strikes.length === 0);
+  }
+
+  {
+    /* THE BUBBLE GOES DOWN AND MAY NOT COME BACK UP. Asked for outright, and
+       it is two rules: the one she had is dropped, and `_popWard` refuses for
+       as long as the move is out. */
+    const a = mkP(0, 0, wind);
+    const hud = mkHud([a], true);
+    a.setPowerOrbs(['ward']);
+    a._popWard(hud);
+    ok('...she has a bubble to lose', a.wardOn === true);
+    a._startClanPower(null, hud);
+    ok('starting 息 drops her shield', a.wardOn === false);
+    ok('...and she cannot put it straight back up', a._popWard(hud) === false);
+    ok('...and is told why', hud.toasts.some((t) => /no shield while/.test(t)));
+    /* TWO STEPS, NOT ONE BIG ONE: the frame the rear-back ends is the frame
+       the flame STARTS, so a single dt covering both leaves her mid-flame. */
+    a._stepClanPower(DBREATH.charge, hud);
+    a._stepClanPower(DBREATH.fire, hud);
+    ok('...and gets it back when the flame is out', a.arenaBreathAt === false);
+    /* SHE PAYS THE ORDINARY WAIT FOR THE BUBBLE SHE LOST, and nothing more —
+       `_dropWard` was used rather than clearing the flag precisely so that the
+       block she was holding ends the way every other block ends. Cleared here
+       to prove the BREATH is no longer what is refusing her. */
+    a.wardCool = 0;
+    a.wardTail = 0;
+    ok('...and may block again', a._popWard(hud) === true);
+  }
+
+  {
+    /* AND A ROUND RESET TAKES BOTH POWERS WITH IT, waits included. A mark that
+       survived one would take a Kotodama off somebody on the next round's
+       first hit, for a press in a round that is over. */
+    const a = mkP(0, 0, ice);
+    const b = mkP(1, 3);
+    b.setPowerOrbs(['ward']);
+    a.facing = Math.PI / 2;
+    const hud = mkHud([a, b]);
+    a._startClanPower(null, hud);
+    ok('...a mark exists to be cleared', a.stealMarked === true);
+    a.resetForRound(0, gy, 40, 0);
+    ok('a round reset forgets the mark', a.stealMarked === false && a.stealTarget === null);
+    ok('...and the wait with it', a.stealCool === 0);
+    const w = mkP(0, 0, wind);
+    w._startClanPower(null, mkHud([w], true));
+    w.resetForRound(0, gy, 40, 0);
+    ok('...and a charging breath never goes off', w.arenaBreathAt === false);
+  }
+}
+
 console.log('\n--- a rebuilt list may not slide a new answer under the cursor ---');
 {
   /* `_reseat` touches nothing but `items.indexOf`, `classList.contains` and
@@ -16342,235 +16949,191 @@ console.log('\n--- one press is not enough, and one player drives ---');
 }
 
 {
-  /* --- 4f. THE LESSON BEHIND HER IS THE MATHS, NOT A PICTURE OF MATHS ---
-     Non-negotiable #1: the maths is the point and not a bolt-on, and the only
-     way to hold a diagram to that is to measure what it DREW against the two
-     functions it claims to have drawn it with. Every check in this section
-     reads the geometry buffers; not one of them asks whether a label exists.
-     A version of this scene that drew a handsome circle and printed an angle
-     it had nothing to do with would pass a "has labels" check and would be
-     precisely the version that is not allowed.
+  /* --- 4f. THE ENDING'S PICTURE IS THE WORLD ITSELF ----------------------
+     The finale used to draw four white line figures behind Patchfur. It now
+     rewinds the archipelago instead: every knocked-over thing stands back up
+     while she talks, holds for a beat, and goes over again — because the idea
+     the ending is about is ENTROPY, and entropy in this game is not an
+     abstraction. It is a couple of hundred specific objects that two girls
+     spent an afternoon putting their paws through.
 
-     @see src/systems/finalelesson.js, docs/notes/story.md */
-  const hadDoc = !!globalThis.document;
-  /* The ambient stub is deleted long before this line, and a `Label` measures
-     its text on a canvas — so borrow the factory back rather than typing a
-     third copy of it. `getElementById` too: the last block here builds a whole
-     SummonScene, which goes looking for its dialogue box. */
-  globalThis.document = Object.assign(domStub(), {
-    getElementById: () => ({
-      classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
-      style: { setProperty() {} },
-      textContent: '', width: 150, height: 150,
-      getContext: () => new Proxy({}, {
-        get: () => () => ({ addColorStop() {} }), set: () => true,
-      }),
-    }),
+     EVERY CHECK HERE IS REALLY ONE CHECK ASKED SEVERAL WAYS. The fourth
+     non-negotiable says nothing regrows and nothing is lost, and this is a
+     scene that stands the whole world back up in front of the player. So it
+     may move meshes and it may never touch a fact — and whatever it moves, it
+     puts back. "The ending tidied my town up" would be the worst bug this
+     game could ship, and the scene that could produce it is the one everybody
+     watches, once, at the moment they have earned it.
+
+     @see src/systems/finaletide.js, docs/notes/story.md */
+
+  /* KNOCK A REAL SLICE OF THE REAL WORLD OVER, the way an afternoon does, and
+     settle it untidily rather than leaving it mid-flight. */
+  const tprops = world.props.filter((q) => !q.gone).slice(0, 40);
+  ok('there is a world with things in it to knock over', tprops.length > 10,
+    `${tprops.length} props`);
+  const tdir = new THREE.Vector3(1, 0, 0.4).normalize();
+  tprops.forEach((q, i) => {
+    q.knock(tdir, 1);
+    q.group.position.set(q.home.x + 1.4, q.home.y + 0.2, q.home.z - 0.8);
+    q.group.rotation.set(Math.PI / 2, 0.3 + i * 0.01, 0.2);
   });
+  const was = tprops.map((q) => ({
+    p: q.group.position.clone(), r: q.group.rotation.clone(),
+    knocked: q.knocked, scored: q.scored, gone: q.gone,
+  }));
+  const wasTotal = world.mischiefTotal;
+  const wasCount = world.props.length;
 
-  /* A null scene is legal AND STILL BUILDS THE FIGURE. That is the property
-     this whole section rests on: without it the only checkable thing about a
-     drawing system with no renderer is its source text. */
-  const L = new FinaleLesson(null, 216);
-  ok('the lesson builds without a scene, so its geometry can be measured',
-    !!L.marks && L.pos.length === L.n * 6, `${L.n} marks`);
+  const tide = new FinaleTide(world);
+  const held = tide.start();
+  ok('the tide takes hold of every knocked-over thing it can see',
+    held >= tprops.length, `${held} held`);
+  /* AND OF NOTHING ELSE, which is not a nicety. A prop still standing has no
+     fallen pose to rewind from, and one that fell off the edge of the world is
+     hidden for ever on purpose (`Prop._retire`) — standing a retired one back
+     up would undo that rule in the single most visible place there is. */
+  const upProps = world.props.filter((q) => !q.knocked && !q.gone);
+  ok('...and none of the ones still standing', upProps.every((q) => !q.held),
+    `${upProps.length} left alone`);
+  const goneProps = world.props.filter((q) => q.gone);
+  ok('...and nothing that fell off the world', goneProps.every((q) => !q.held),
+    `${goneProps.length} retired`);
 
-  /* --- the four arrangements ---------------------------------------------- */
-  ok('there is one figure per line she says',
-    FIGURES.length === SCRIPTS.finale.length,
-    `${FIGURES.join(', ')} for ${SCRIPTS.finale.length} lines`);
-
-  const at = (figure) => {
-    const out = new Float32Array(L.n * 3);
-    L._fill(out, figure);
-    return out;
-  };
-  /* THE CIRCLE IS `(cos φ, sin φ)` AND IS CHECKED AS SUCH — not "is roughly
-     round", which a hand-placed ring of points also is. Every mark is compared
-     to the value the two functions give for its own index. */
+  /* THE PROP STOPS ARGUING WITH IT. A settled prop is lerped flat by its own
+     `update` every frame — that is what makes it LIE there rather than stand
+     on one end — so without `held` the rewind and the prop would fight for the
+     whole scene and the prop would win about half the frames. */
   {
-    const c = at('circle');
-    let worst = 0;
-    for (let i = 0; i < L.n; i++) {
-      const phi = (i / L.n) * Math.PI * 2;
-      worst = Math.max(worst,
-        Math.hypot(c[i * 3] - Math.cos(phi), c[i * 3 + 1] - Math.sin(phi)));
+    const q = tprops[0];
+    const at = q.group.position.clone();
+    q.update(1 / 60, world);
+    ok('a held prop does not move itself while the tide has it',
+      q.group.position.distanceTo(at) === 0);
+    q.held = false;
+    q.update(1 / 60, world);
+    ok('...and goes straight back to falling the moment it is let go',
+      q.group.position.distanceTo(at) > 0);
+    q.held = true;
+    q.group.position.copy(was[0].p);
+    q.group.rotation.copy(was[0].r);
+  }
+
+  /* --- IT STANDS UP, AND IT STANDS UP WHERE IT BELONGS --- */
+  const lastBeat = SCRIPTS.finale.length - 1;
+  ok('the ending has a middle to stand the town up in', lastBeat >= 2,
+    `${SCRIPTS.finale.length} lines`);
+  tide.setBeat(1, lastBeat);
+  for (let i = 0; i < 60 * 20; i++) tide.update(1 / 60);
+  ok('a middle beat puts the town back on its feet', tide.k === 1);
+  ok('...standing up', tprops.every((q) => Math.abs(q.group.rotation.x) < 1e-6
+    && Math.abs(q.group.rotation.z) < 1e-6));
+  ok('...on the spot it was built on',
+    tprops.every((q) => q.group.position.distanceTo(q.home) < 1e-6));
+  /* ITS OWN YAW, NOT A NEW ONE. A barrel put back facing some other direction
+     has been REPLACED rather than stood up, and the eye can tell. */
+  ok('...and facing the way it was facing', tprops.every(
+    (q, i) => Math.abs(q.group.rotation.y - was[i].r.y) < 1e-6));
+
+  /* ...AND NOT ONE FACT HAS MOVED. This is the whole of the fourth
+     non-negotiable, asked of the flags the MISCHIEF counter is made of. */
+  ok('the ending moves meshes and never touches what is knocked over',
+    tprops.every((q, i) => q.knocked === was[i].knocked));
+  ok('...nor what has been scored',
+    tprops.every((q, i) => q.scored === was[i].scored));
+  ok('...nor what has been retired',
+    tprops.every((q, i) => q.gone === was[i].gone));
+  ok('...nor the count the whole ending is about',
+    world.mischiefTotal === wasTotal && world.props.length === wasCount,
+    `${world.mischiefTotal} of ${world.props.length}`);
+
+  /* --- AND THEN IT ALL GOES OVER AGAIN, EXACTLY WHERE IT WAS --- */
+  tide.setBeat(lastBeat, lastBeat);
+  for (let i = 0; i < 60 * 20; i++) tide.update(1 / 60);
+  ok('the last beat knocks the whole thing over again', tide.k === 0);
+  ok('...landing on the exact pose the afternoon left it in', tprops.every(
+    (q, i) => q.group.position.distanceTo(was[i].p) < 1e-6
+      && Math.abs(q.group.rotation.x - was[i].r.x) < 1e-6
+      && Math.abs(q.group.rotation.y - was[i].r.y) < 1e-6
+      && Math.abs(q.group.rotation.z - was[i].r.z) < 1e-6));
+
+  /* THE WAVE. Two hundred objects snapping upright on the same frame reads as
+     a rendering glitch; a ripple crossing the archipelago reads as a town
+     tidying itself. Measured as "part way through, some have moved and some
+     have not" rather than by reading STAGGER back out of the module. */
+  {
+    tide.setBeat(1, lastBeat);
+    let split = false;
+    for (let i = 0; i < 60 * 20 && !split; i++) {
+      tide.update(1 / 60);
+      const moved = tprops.filter(
+        (q, ix) => q.group.position.distanceTo(was[ix].p) > 0.01);
+      split = moved.length > 0 && moved.length < tprops.length;
     }
-    ok('...and beat 3\'s circle is cos and sin of its own index, to the bit',
-      worst < 1e-6, `worst mark off by ${worst.toExponential(1)}`);
+    ok('the town stands up as a wave, not all at once', split);
   }
-  /* THE RING IS THE SAME CIRCLE, TIGHTENED — which is what the last beat is
-     saying, so it had better be true of the drawing and not just of the words.
-     Every mark on one radius, and that radius smaller than the circle's. */
+
+  /* --- THE SKIP, which is the path a kid who has seen it once takes. --- */
+  tide.finish();
+  ok('a scene abandoned halfway gives the world back exactly as it was',
+    tprops.every((q, i) => q.group.position.distanceTo(was[i].p) < 1e-6
+      && Math.abs(q.group.rotation.x - was[i].r.x) < 1e-6
+      && Math.abs(q.group.rotation.z - was[i].r.z) < 1e-6));
+  ok('...and lets go of every prop it was holding',
+    world.props.every((q) => !q.held));
+  ok('...and a second call does nothing at all',
+    (tide.finish(), tide.held.length === 0 && tide.running === false));
+  ok('...and a tide that was let go has stopped moving the world',
+    (tide.update(1 / 60), tide.k === 0));
+
+  /* A WORLD WITH NOTHING KNOCKED OVER IS NOT A CRASH. It cannot happen on the
+     real path — the ending only fires at 100% — but the scene viewer (`0`) can
+     play this scene on a fresh world at any time, and "degrades rather than
+     vanishes" is the house rule. */
   {
-    const r = at('ring');
-    const radii = [];
-    for (let i = 0; i < L.n; i++) radii.push(Math.hypot(r[i * 3], r[i * 3 + 1]));
-    const lo = Math.min(...radii), hi = Math.max(...radii);
-    ok('...and beat 4 tightens that same circle into the arena ring',
-      hi - lo < 1e-6 && hi < 0.999, `radius ${hi.toFixed(3)}, spread ${(hi - lo).toExponential(1)}`);
+    const empty = new FinaleTide({ props: [] });
+    empty.start();
+    empty.setBeat(1, 3);
+    empty.update(1 / 60);
+    empty.finish();
+    ok('an untouched world simply has nothing to rewind', empty.running === false);
+    const none = new FinaleTide(null);
+    none.start();
+    none.update(1 / 60);
+    ok('...and neither does no world at all', none.running === false);
   }
-  /* THE SCATTER IS DETERMINISTIC. The Help clips are filmed out of the running
-     game with interframe differencing, so a figure that landed somewhere new
-     on every play could never be filmed — and, less exotically, a scene the
-     kids watch twice should be the same scene twice. */
+
+  /* THE SCENE IS WIRED TO IT, AND ONLY FOR THE ENDING. `found` and `summon`
+     play in the middle of the afternoon with the girls standing in a town they
+     are still working on; rewinding it under them would be the game undoing
+     their work in front of them. */
   {
-    const a = at('scatter'), b = at('scatter');
-    ok('...and beat 1\'s scatter falls in the same places every time it plays',
-      a.every((v, i) => v === b[i]));
-  }
-  /* THE STROKES MUST BE SHORTER THAN THE LATTICE IS FINE. The first take had
-     216 marks on a 15x15 grid — rows 0.123 apart — drawn as strokes 0.15 long,
-     so every column fused and the tidy town came out as a barcode. It is a
-     statement about the COUNT, so it is checked at both ends of the range a
-     world can have rather than at the 216 that happen to exist today. */
-  for (const n of [64, 216, 400]) {
-    const M = new FinaleLesson(null, n);
-    const cols = Math.ceil(Math.sqrt(M.n));
-    const gap = 1.72 / (cols - 1);
-    ok(`...and at ${n} things knocked over the grid still reads as marks`,
-      M._stroke('lattice') * 2 < gap * 0.9,
-      `stroke ${(M._stroke('lattice') * 2).toFixed(3)} in a ${gap.toFixed(3)} gap`);
-  }
-
-  /* --- the bridge is the chord, and the printed number is the drawn one ----
-     "An angle, a circle, and the nerve to jump — that is all a bridge has ever
-     been." The span is drawn from (1,0) to (cos θ, sin θ) and its length is
-     printed as 2·sin(θ/2). Those are the same number by identity, which is the
-     entire reason the beat is worth having — so it is checked as one number
-     measured two ways rather than as two numbers that happen to agree. */
-  {
-    const B = new FinaleLesson(null, 216);
-    B.start(216);
-    B.setBeat(FIGURES.indexOf('circle'));
-    const cam = new THREE.PerspectiveCamera(54, 1.8, 0.1, 3000);
-    cam.position.set(0, 20, 60);
-    cam.lookAt(0, 0, 0);
-    cam.updateMatrixWorld(true);
-    for (let i = 0; i < 240; i++) B.update(1 / 60, cam, 9);
-    ok('the bridge beat is on screen once the strokes have arrived',
-      B.diagram.visible && B.theta > 0.5, `θ ${B.theta.toFixed(2)} rad`);
-
-    const th = B.theta;
-    const c = Math.cos(th), sn = Math.sin(th);
-    ok('...the arm ends at (cos θ, sin θ), where the point is',
-      Math.abs(B.lineR.geometry.attributes.position.array[3] - c) < 1e-6
-      && Math.abs(B.lineR.geometry.attributes.position.array[4] - sn) < 1e-6);
-    /* THE RIGHT TRIANGLE IS DRAWN, NOT ASSERTED: the cosine leg runs the axis
-       out to cos θ and the sine leg rises from THAT SAME x to the point. If
-       the two legs ever stop meeting, the figure is claiming a triangle it is
-       not showing. */
-    const cosArr = B.lineCos.geometry.attributes.position.array;
-    const sinArr = B.lineSin.geometry.attributes.position.array;
-    ok('...the cosine leg lies on the axis and stops under the point',
-      Math.abs(cosArr[3] - c) < 1e-6 && cosArr[4] === 0);
-    ok('...and the sine leg stands on the end of it and reaches the point',
-      Math.abs(sinArr[0] - c) < 1e-6 && sinArr[1] === 0
-      && Math.abs(sinArr[4] - sn) < 1e-6);
-    /* THE SPAN IS A QUAD BECAUSE `linewidth` IS IGNORED by every desktop WebGL
-       implementation — a one-pixel bridge is not the thing the line is about.
-       So its LENGTH is a scale, and the scale is what gets measured. */
-    const drawn = B.span.scale.x;
-    const printed = 2 * Math.sin(th / 2);
-    ok('...and the bridge is drawn at exactly the width it prints',
-      Math.abs(drawn - printed) < 1e-6 && Math.abs(drawn - Math.hypot(c - 1, sn)) < 1e-6,
-      `${drawn.toFixed(4)} drawn, ${printed.toFixed(4)} printed`);
-    ok('...saying so in words a nine-year-old can check against the picture',
-      B.lblSpan._want === `the bridge is ${printed.toFixed(2)} wide`, B.lblSpan._want);
-    ok('...and the two islands sit on the chord\'s own two ends',
-      B.isleA.position.x === 1 && B.isleA.position.y === 0
-      && Math.abs(B.isleB.position.x - c) < 1e-6
-      && Math.abs(B.isleB.position.y - sn) < 1e-6);
-    /* IT STOPS AT THREE QUARTERS OF A TURN. A closed circle puts the far
-       island back on top of the near one and the bridge vanishes on the line
-       about crossing it. */
-    for (let i = 0; i < 2400; i++) B.update(1 / 60, cam, 9);
-    ok('...and the sweep stops before the far island lands on the near one',
-      B.theta <= Math.PI * 1.5 + 1e-9 && 2 * Math.sin(B.theta / 2) > 1,
-      `θ ${((B.theta * 180) / Math.PI).toFixed(0)}deg, bridge ${(2 * Math.sin(B.theta / 2)).toFixed(2)} wide`);
-
-    /* THE LABELS ARE `live`, so the never-freed texture cache cannot grow with
-       the clock. Same leak that crashed the Dojo of the Turning Circle: four
-       labels rewritten sixty times a second is four canvases a frame. */
-    const before = labelCacheStats().entries;
-    for (let i = 0; i < 1800; i++) B.update(1 / 60, cam, 9);
-    ok('...and thirty seconds of it cannot grow the label cache',
-      labelCacheStats().entries === before,
-      `+${labelCacheStats().entries - before}`);
+    const src = readFileSync(
+      new URL('../src/systems/summonscene.js', import.meta.url), 'utf8'
+    ).replace(/\r\n/g, '\n');
+    ok('the ending starts the tide and the other two scenes stop it',
+      /which === 'finale'\) this\.tide\.start\(\);\s*else this\.tide\.finish\(\)/
+        .test(src));
+    ok('...and every beat tells it where it is in the script',
+      /this\.tide\.setBeat\(this\.beat, this\.script\.length - 1\)/.test(src));
+    ok('...and finishing or skipping puts the world back',
+      /this\.tide\.finish\(\);/.test(src));
+    /* THE LAST BEAT IS DERIVED, NOT TYPED. A line added to the ending must not
+       be able to leave the archipelago standing tidily at the end of a scene
+       whose whole argument is that it does not stay that way. */
+    ok('...off the script own length, so a new line cannot strand it tidy',
+      !/setBeat\(this\.beat, [0-9]/.test(src));
   }
 
-  /* --- SHE IS IN FRONT OF IT, AND THE WORLD IS NOT ---
-     One flag settles both, and it is the opposite of what everything else
-     parked in front of a lens in this game does. `depthTest: true` means
-     Patchfur — parked nearer and writing depth — occludes the figure, while
-     the archipelago two hundred units further back does not. `depthWrite`
-     stays off or the transparent lines hide each other. */
-  {
-    const mats = [];
-    L.group.traverse((o) => { if (o.material) mats.push(o.material); });
-    ok('every part of the lesson is depth-tested, so she stands in front of it',
-      mats.length > 5 && mats.every((m) => m.depthTest === true), `${mats.length} materials`);
-    ok('...and none of it stamps the depth buffer',
-      mats.every((m) => m.depthWrite === false));
-    /* AND EVERY BUFFER THIS THING REWRITES IS EXEMPT FROM CULLING. Not the
-       whole figure — three.js culls off `matrixWorld`, so a static quad on a
-       moving parent is culled correctly and the labels are fine as they are.
-       The ones that are not fine are the geometries whose VERTICES move: a
-       bounding sphere is computed once, on the first render, and never again,
-       so 216 strokes that start as a scatter and become a circle are being
-       tested against the shape they had four beats ago. Same reason the orb's
-       arc does it, and the same reason it is these objects and not all of
-       them. */
-    const live = [L.marks, L.lineR, L.lineCos, L.lineSin, L.arc, L.isleA, L.isleB];
-    ok('...and every buffer it rewrites is exempt from a stale bounding sphere',
-      live.every((o) => o.frustumCulled === false), `${live.length} moving geometries`);
-  }
+  /* AND THE DIAGRAM IT REPLACED IS GONE, not merely unused. Dead code under a
+     long comment explaining why it is right is the most convincing wrong
+     answer a codebase can hold: the next person to open `finalelesson.js`
+     would believe every word of it. */
+  ok('the white line figures are gone rather than left lying about',
+    !existsSync(new URL('../src/systems/finalelesson.js', import.meta.url)));
 
-  /* --- IT BELONGS TO THE ENDING AND TO NOTHING ELSE ---
-     `found` and `summon` are two beats of somebody telling you where to go.
-     There is nothing to illustrate and a diagram over them is a screensaver. */
-  {
-    const S2 = new SummonScene({ scene: null, world: null, audio: null });
-    S2.start('summon', { x: 0, y: 0, z: 0 }, 30, null);
-    ok('the lesson stays shut for the summoning', !S2.lesson.group.visible);
-    S2.finish();                     // a scene already running refuses a second
-    S2.start('finale', { x: 0, y: 0, z: 0 }, 30, null);
-    ok('...opens for the ending', S2.lesson.group.visible);
-    S2.finish();
-    ok('...and closes again when the ending does', !S2.lesson.group.visible);
-  }
-
-  /* --- AND A MORPH TAKES THE SHORT WAY ROUND ---
-     Lerping raw angles sends a stroke at 350deg back through 180 to reach 10,
-     so a third of the marks spin the wrong way across every change of figure.
-     Visible, and exactly the kind of thing that reads as a physics bug rather
-     than as arithmetic. Measured as: no mark's own heading ever moves further
-     in one frame than the morph could justify. */
-  {
-    const W = new FinaleLesson(null, 216);
-    W.start(216);
-    const cam = new THREE.PerspectiveCamera(54, 1.8, 0.1, 3000);
-    cam.updateMatrixWorld(true);
-    W.update(1 / 60, cam, 9);
-    W.setBeat(2);
-    let worst = 0, prev = null;
-    for (let i = 0; i < 200; i++) {
-      W.update(1 / 60, cam, 9);
-      const now = Float32Array.from(W._live);
-      if (prev) {
-        for (let j = 0; j < W.n; j++) {
-          let d = now[j * 3 + 2] - prev[j * 3 + 2];
-          worst = Math.max(worst, Math.abs(Math.atan2(Math.sin(d), Math.cos(d))));
-        }
-      }
-      prev = now;
-    }
-    ok('a stroke never spins the long way round to reach its next heading',
-      worst < 0.09, `worst ${worst.toFixed(4)} rad in one frame`);
-  }
-
-  L.dispose();
-  if (!hadDoc) delete globalThis.document;
+  // Leave the world as the rest of the file found it.
+  tprops.forEach((q) => q._reset());
 }
 
 {

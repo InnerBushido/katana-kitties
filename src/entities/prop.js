@@ -180,6 +180,16 @@ export class Prop {
 
   update(dt, world) {
     if (this.gone || !this.knocked) return;
+    /* SOMEBODY ELSE IS HOLDING THIS ONE. Set by `systems/finaletide.js` for
+       the length of the ending, and read in exactly this one place.
+
+       IT IS NOT AN OPTIMISATION. A settled prop is still being lerped flat by
+       the branch below every frame — that is what makes it LIE there instead
+       of standing on one end — so without this the ending's rewind and the
+       prop's own idea of how a fallen barrel looks would fight for the whole
+       scene, and the barrel would win about half the frames. The tide puts
+       every transform back when it lets go; nothing here is remembered. */
+    if (this.held) return;
 
     this.vel.y -= 22 * dt;
     this.group.position.addScaledVector(this.vel, dt);

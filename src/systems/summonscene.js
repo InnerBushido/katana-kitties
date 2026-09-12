@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
 import { beatOver, TAIL, drawPortrait } from './cutscene.js';
-import { FinaleLesson } from './finalelesson.js';
+import { FinaleTide } from './finaletide.js';
 
 /* ---------------------------------------------------------------------------
    The two story beats of the dragon hunt.
@@ -255,10 +255,13 @@ export class SummonScene {
       satanAnnounce: false, satanOpen: false,
     };
 
-    /* THE LESSON BEHIND HER, and it is built here rather than in `start`
-       because a 216-stroke buffer allocated on the frame the ending fires is a
-       hitch on the one frame nobody may have. It is invisible until then. */
-    this.lesson = new FinaleLesson(scene, world?.mischiefTotal ?? 216);
+    /* WHAT IS BEHIND HER AT THE ENDING IS THE WORLD, AND IT MOVES.
+       Every knocked-over thing on every island stands back up while she
+       talks, holds, and goes over again — see `systems/finaletide.js`, which
+       also explains why this replaced the four white line figures that used to
+       be drawn here. It allocates nothing until the scene starts: it holds
+       props that already exist. */
+    this.tide = new FinaleTide(world);
 
     /** 0..1, how dark the sky is right now. Owned here, applied by the game. */
     this.dusk = 0;
@@ -394,11 +397,14 @@ export class SummonScene {
        and a dragon, and the speaker is genuinely elsewhere. */
     this.sceneT = 0;
     this._setStage(which === 'finale' ? art : null);
-    /* ...AND THE LESSON, for the finale alone. `found` and `summon` are two
-       beats of somebody telling you where to go; there is nothing to
-       illustrate and a diagram over them would be a screensaver. */
-    if (which === 'finale') this.lesson.start(this.world?.mischiefTotal);
-    else this.lesson.finish();
+    /* ...AND THE TIDE, for the finale alone. `found` and `summon` happen in
+       the middle of the afternoon, with the girls standing in a town they are
+       still working on; rewinding it under them would be the game undoing
+       their work in front of them. The ending is the one moment the world is
+       allowed to move like this, and even then only as a picture — see
+       `FinaleTide.finish`. */
+    if (which === 'finale') this.tide.start();
+    else this.tide.finish();
     if (which === 'summon') this.duskWant = DUSK_DEEP;
     /* THE ENDING TAKES THE STORM DOWN AND PUTS A MORNING UP, and both halves
        matter. The finale fires at 100% mischief, which in a real run happens
@@ -424,7 +430,11 @@ export class SummonScene {
     this.beat++;
     if (this.beat >= this.script.length) { this.finish(); return; }
     const b = this.script[this.beat];
-    if (this.which === 'finale') this.lesson.setBeat(this.beat);
+    /* THE LAST BEAT IS THE ONE THAT PUTS IT BACK, whichever number that is.
+       Handed the script's own length rather than a constant, so a line added
+       to the ending cannot leave the archipelago standing tidily at the end of
+       a scene whose whole argument is that it does not stay that way. */
+    if (this.which === 'finale') this.tide.setBeat(this.beat, this.script.length - 1);
     this.t = 0;
     this.typed = 0;
     this.lineEndedAt = null;
@@ -487,7 +497,11 @@ export class SummonScene {
        the archipelago for the rest of the session — and `skip` comes through
        here too, which is the path a kid who has seen it once actually takes. */
     this.stage.visible = false;
-    this.lesson.finish();
+    /* AND THE WORLD GOES BACK EXACTLY AS IT WAS. `finish` is the skip path
+       too, which is the one that matters: a kid who has seen this once presses
+       Escape four seconds in, and what she gets back has to be the town she
+       wrecked, on its side, to the last decimal. */
+    this.tide.finish();
     this.el.classList.add('hidden');
     this.portraitEl.style.display = '';
     /* Clear the black. `#cs-fade` is SHARED with the opening cutscene and the
@@ -689,12 +703,11 @@ export class SummonScene {
     this.camera.lookAt(this._look);
     this.camera.updateMatrixWorld(true);
     this._parkStage();
-    /* AFTER the camera is aimed and its matrix is current: the lesson is parked
-       off `getWorldDirection`, which reads the matrix rather than the euler,
-       so parking it first would hang the figure off LAST frame's aim — a lag
-       that is invisible on a still camera and a wobble on this one, which
-       climbs and turns for the whole scene. */
-    if (this.which === 'finale') this.lesson.update(dt, this.camera, this.sceneT);
+    /* THE TIDE RUNS ON THE WORLD, SO IT DOES NOT CARE WHERE THE CAMERA IS —
+       but it runs here, inside the scene's own update, because it is part of
+       the scene and must not tick for a single frame outside it. The props it
+       moves are drawn by the ordinary render, like everything else out there. */
+    if (this.which === 'finale') this.tide.update(dt);
 
     // --- typewriter on the audio's playhead. See Cutscene.update.
     const clock = (this.voiceEl && b.voiceDur && this.voiceEl.currentTime > 0)

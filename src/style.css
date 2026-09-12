@@ -2444,6 +2444,25 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
   animation: hpBubble 1.7s linear infinite;
 }
 #arena-hud .ah-side.r .ah-over { border-radius: 4px 0 0 4px; }
+/* WHAT HER CLAN IS WORTH IN HERE, AND WHEN SHE CAN USE IT AGAIN.
+   Drawn only for the two clans that have an arena power — see
+   `Tournament._paintHud`, which decides — and deliberately SMALLER and quieter
+   than the bar above it: the bar is the fight, this is a kitchen timer. Dim
+   while it is counting, her clan's own bright paper when it is ready, because
+   the only frame that matters is the one it changes on. */
+#arena-hud .ah-pow {
+  margin-top: 2px;
+  font-family: 'Bangers', cursive;
+  font-size: 13px;
+  letter-spacing: 1.2px;
+  color: rgba(255, 255, 255, 0.5);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+#arena-hud .ah-side.r .ah-pow { text-align: right; }
+#arena-hud .ah-pow.on {
+  color: var(--gold);
+  text-shadow: 0 0 10px rgba(255, 199, 61, 0.75), 0 2px 4px rgba(0, 0, 0, 0.8);
+}
 @keyframes hpBubble {
   from { background-position: 0 0, 0 0, 0 0, 0 0; }
   to { background-position: 0 -18px, 0 -22px, 0 -14px, 0 0; }

@@ -2,6 +2,7 @@
 import { Billboard } from '../core/gfx.js';
 import { PANDA_SPEED, PANDA_JUMP, CLAW } from './panda.js';
 import { aggregate, WARD, AEGIS, DIVE, CROSS, CHARGE, DODGE } from './powerorb.js';
+import { STEAL, DBREATH, arenaPowerFor } from './clanpower.js';
 import { ANGEL_ALPHA } from './angel.js';
 import { styleFor } from '../core/palette.js';
 import { tune } from '../core/tuning.js';
@@ -167,6 +168,22 @@ export const ATTACKS = tune('ATTACKS', {
      the katana by a long way, which is the payoff for riding a very large,
      very visible animal that anybody can hit back. */
   claw: { knock: 11, lift: 4.0, reach: CLAW.range, arc: 1 - CLAW.spread },
+  /* 息 THE KITTEN'S OWN DRAGON BREATH, AND IT IS A ROW IN THIS TABLE FOR
+     EXACTLY THE REASON THE ORB MOVES ARE. `Game.strikePlayers` is the one
+     gate on two kittens hurting each other (third non-negotiable) and a clan
+     power with its own damage path would be a second one — which is how a
+     nine-year-old ends up breathing fire on her sister in the market square.
+     Outside a live round this entry does nothing at all, because the gate
+     refuses before it is ever read.
+
+     `arc` IS THE DRAWN CONE, converted once. `DBREATH.spread` is the same
+     fraction a dragon's breath is authored in (`BREEDS[*].breath.spread`) and
+     `systems/clanfx.js` draws the flame from it, so the eighth non-negotiable
+     holds across the two files: the thing you can see IS the hitbox. */
+  dbreath: {
+    dmg: DBREATH.dmg, knock: DBREATH.knock, lift: DBREATH.lift,
+    reach: DBREATH.range, arc: 1 - DBREATH.spread,
+  },
   dive: { dmg: DIVE.dmg, knock: DIVE.knock, lift: DIVE.lift, reach: DIVE.radius, arc: -1 },
   charge: { dmg: CHARGE.dmg, knock: CHARGE.knock, lift: CHARGE.lift, reach: CHARGE.radius, arc: -0.6 },
 });
@@ -505,6 +522,31 @@ export class Player {
      *  to know a NEW one began, which a clock alone cannot say: two dodges in
      *  a row with a frame between them look identical to `dodgeT > 0`. */
     this.dodgeSeq = 0;
+    /* --- WHAT HER CLAN IS WORTH IN THE RING ---
+
+       TWO POWERS, ONE SHAPE, AND EVERY CLOCK HERE IS READ BY A POLLER.
+       `systems/clanfx.js` draws the mark and the flame off these numbers and
+       nothing in this file knows it exists — the same argument `dodgeSeq`
+       makes, and for the same reason: a clan power can end six ways (it lands,
+       it times out, she is knocked out, the round ends under her, she gets on
+       a panda, `_clearSpecials` fires) and the one ending nobody remembered to
+       tell the effects about is a ring welded to somebody's head.
+
+       `stealTarget` + `stealMarkT` ARE THE PROMISE, NOT THE THEFT. The press
+       marks somebody; a hit landed on her inside the window is what knocks the
+       Kotodama loose (`Game._clanStealHit`). See `entities/clanpower.js`.
+
+       `breathChargeT` RUNS DOWN TO THE FLAME, `breathFireT` IS THE FLAME. Two
+       clocks and not one, because the first is a tell everybody else in the
+       ring is entitled to see and the second is the part that hurts. */
+    this.stealTarget = null;
+    this.stealMarkT = 0;
+    this.stealCool = 0;
+    this.stealSeq = 0;
+    this.breathChargeT = 0;
+    this.breathFireT = 0;
+    this.breathCool = 0;
+    this.breathSeq = 0;
     /** Seconds left of a charge, and the direction it is committed to. */
     this.chargeT = 0;
     this.chargeDir = new THREE.Vector2(0, 1);
@@ -1281,6 +1323,27 @@ export class Player {
     return this.triAt || this.chargeT > 0;
   }
 
+  /**
+   * True from the first frame of the rear-back to the last frame of the flame.
+   *
+   * DELIBERATELY NOT PART OF `busy`. `busy` takes her feet AND her stick away,
+   * and this move is the one that must keep both: "can be used when standing
+   * still or moving", and "make sure the ability is able to work in any
+   * direction, controlled by the joystick" — the joystick IS her facing, so
+   * planting her would be the same as taking the aim away. What it costs her
+   * instead is speed (`DBREATH.moveK`), her jump, her blade and her bubble.
+   *
+   * It is also the flag `hurt` asks before it throws her: see there.
+   */
+  get arenaBreathAt() {
+    return this.breathChargeT > 0 || this.breathFireT > 0;
+  }
+
+  /** True while she is holding a mark on somebody. */
+  get stealMarked() {
+    return this.stealMarkT > 0 && !!this.stealTarget;
+  }
+
   /* ------------------------------ helpers ------------------------------- */
 
   /** Camera-relative basis, so "up on the stick" is always "away from you".
@@ -1479,9 +1542,24 @@ export class Player {
 
     // Smash's percent rule: the more she has taken, the further she flies.
     const rage = 1 + (1 - this.hp / this.maxHp) * (RAGE_MAX - 1);
-    this.velocity.x = dx * force.knock * rage;
-    this.velocity.z = dz * force.knock * rage;
-    this.velocity.y = Math.max(this.velocity.y, force.lift * rage);
+    /* SHE IS NOT THROWN WHILE SHE IS BREATHING, AND SHE TAKES THE DAMAGE
+       ANYWAY. Asked for in one sentence: "they can be attacked while doing the
+       ability, but they will continue with the ability if attacked or hit
+       unless they die. They don't get knocked back when hit while doing the
+       ability." A throw would end it by itself — she would leave the ground,
+       lose her facing to the tumble, and the flame would go out sideways — so
+       this is not a separate "cannot be cancelled" rule, it IS that rule.
+
+       IT IS THE ONLY EXEMPTION FROM THE PUSH IN THE GAME, and it is paid for:
+       0.8 seconds of rearing back in front of a sister who can see it coming,
+       no bubble (dropped at the start), no blade and no jump. If her bar runs
+       out she goes down like anybody else — the knockout below is untouched,
+       and `_clearSpecials` takes the flame with her. */
+    if (!this.arenaBreathAt) {
+      this.velocity.x = dx * force.knock * rage;
+      this.velocity.z = dz * force.knock * rage;
+      this.velocity.y = Math.max(this.velocity.y, force.lift * rage);
+    }
 
     /* --- AND IT STOPS A CROSS SLASH DEAD ---
        THE ONE WAY OUT OF THE TECHNIQUE ONCE IT HAS STARTED. Everything else
@@ -1519,7 +1597,11 @@ export class Player {
     this.flashT = 0.3;
     this.squash = 1;
     this.hitLean = Math.sign(dx * Math.cos(this.camYaw) - dz * Math.sin(this.camYaw)) || 1;
-    this.onGround = false;
+    /* THE OTHER HALF OF THE THROW. This line exists so a hit lifts her off the
+       floor; leaving it in for a kitten who was not pushed would take her feet
+       away while she stands perfectly still — no jump left, no coyote time,
+       and the landing sound a moment later for a landing that never happened. */
+    if (!this.arenaBreathAt) this.onGround = false;
 
     if (this.hp <= 0) {
       this.ko = true;
@@ -1758,6 +1840,20 @@ export class Player {
     this.dodgePlaced = false;
     this.dodgeAimed = false;
     this.dodgeAim = null;
+    /* AND THE CLAN POWERS, WAITS AND ALL, for the reason `dodgeCool` is
+       cleared two lines up: this fires when a round resets or she climbs onto
+       an animal, both of which have just erased the move, and a wait owed on a
+       move that no longer happened is a wait nobody can explain. A MARK that
+       survived a round reset would be worse than a stale clock — the next
+       round's first hit on a kitten who was never marked would take one of her
+       Kotodama off her. The sequence counters are NOT cleared: the effects tell
+       one use from the next by them, exactly as they do for `dodgeSeq`. */
+    this.stealTarget = null;
+    this.stealMarkT = 0;
+    this.stealCool = 0;
+    this.breathChargeT = 0;
+    this.breathFireT = 0;
+    this.breathCool = 0;
     this.dodgeAim0 = null;
     this.attackHeld = 0;
     this._triPend = false;
@@ -2057,7 +2153,13 @@ export class Player {
        is 2.54, which is absurd and correct: the orbs only exist after 100%
        mischief, the clans are a mid-game choice, and a kid who has done both
        has earned the silly number. Nothing downstream reads speed as bounded. */
-    const speedK = (buff?.speed ?? 1) * this.power.speed;
+    /* ...AND THE BREATH SLOWS HER, IN THE SAME PRODUCT. She is not planted
+       (see `arenaBreathAt` — the stick is her aim, and planting her would take
+       the aim with it), she is heavy: 0.45 of whatever she would otherwise
+       have run at, clan and orbs included, so the cost scales with her rather
+       than fighting the two multipliers above it. */
+    const speedK = (buff?.speed ?? 1) * this.power.speed
+      * (this.arenaBreathAt ? DBREATH.moveK : 1);
     /* A grown panda is a mount, not a buff — riding one multiplies whatever
        you already had, so a Thunderpaw kitten on a panda is the fastest thing
        in the game. It is ground movement throughout: same gravity, same
@@ -2127,7 +2229,7 @@ export class Player {
        wearing three of them has six. The count is read wherever jumps are
        refilled, so landing restores all of them however many that is. */
     this.maxJumps = (buff?.jumps ?? 2) + this.power.jumps;
-    if (pad.pressed('jump') && !this.busy && !this.dodgePlanted) {
+    if (pad.pressed('jump') && !this.busy && !this.dodgePlanted && !this.arenaBreathAt) {
       if (this.coyote > 0 || this.jumpsLeft > 1) {
         this.velocity.y = JUMP_V * jumpK;
         this.jumpsLeft = Math.max(1, this.jumpsLeft - 1);
@@ -2216,7 +2318,8 @@ export class Player {
        buys an orb. Step off the animal and the technique is hers again. */
     const deferred = !!this.power.tri && !this.pandaMount
       && !hud?.critterHold?.(this);
-    if (pad.pressed('attack') && this.attackCooldown <= 0 && !this.busy) {
+    if (pad.pressed('attack') && this.attackCooldown <= 0 && !this.busy
+        && !this.arenaBreathAt) {
       if (this.pandaMount) {
         this.attackTimer = 0.26;
         this.attackCooldown = 0.45;
@@ -2294,11 +2397,27 @@ export class Player {
     const dodged = pad.down('sprint') && pad.pressed('interact')
       && this._startDodge(world, pad, hud);
 
+    /* --- and the clan's own arena power, on the same button ---
+       AFTER THE FLASH STEP AND BEFORE THE DIVE, which is the same precedence
+       the dive already lives under and for the same reason: three moves share
+       ACTION, and the order is the contract. The 瞬 additionally wants SPRINT
+       held, so it cannot be taken by this; the dive is airborne and this is
+       grounded, so those two can never both be true.
+
+       IT SPENDS THE PRESS WHEN IT TAKES IT. `gotchas.md § UI FALL-THROUGH`,
+       shape one: the oath branch a hundred lines below reads `interact` again
+       in this same frame. There is no clan hall in the sky and the branch
+       would find nothing today — which is exactly the kind of "it happens not
+       to matter yet" that this project keeps re-inventing the bug out of. */
+    const clanned = !dodged && pad.pressed('interact') && this.onGround
+      && this._startClanPower(pad, hud);
+    if (clanned) pad.consume?.('interact');
+
     /* --- the power dive ---
        Airborne only, which is what keeps `interact` free for the oath and the
        stall: neither of those is reachable off the floor, so the two meanings
        of the button can never both be live at once. */
-    if (this.power.dive && !dodged && pad.pressed('interact') && !this.onGround
+    if (this.power.dive && !dodged && !clanned && pad.pressed('interact') && !this.onGround
         && !this.diving && !this.busy && !this.dodgePlanted) {
       this._startDive(hud);
     }
@@ -2575,6 +2694,10 @@ export class Player {
        only sequencer here that MOVES her, so running it after the ward's
        clocks keeps "where is she" and "what is she wearing" in one order. */
     this._stepDodge(dt, pad, world, hud);
+    /* ...and the clan powers next, because the breath can END this frame and
+       everything below it — the ward, the charge — has to see a kitten who is
+       no longer breathing rather than one who still is. */
+    this._stepClanPower(dt, hud);
     /* --- ward: HELD, capped, with a short tail and a wait that starts on the
        RELEASE ---
        Three ways out and they are not the same event. Letting go is the
@@ -2813,6 +2936,18 @@ export class Player {
   }
 
   _popWard(hud) {
+    /* NOT WHILE SHE IS BREATHING, and this is the other half of "it should
+       disable active shields while doing the ability". `_startArenaBreath`
+       drops the bubble she had; without this she could put a new one straight
+       back up on the next frame and the rule would mean nothing. It SAYS so,
+       for the same reason the Cross Slash's refusal below does: she is visibly
+       mid-move, the button does nothing, and there is no other way to find out
+       why. */
+    if (this.arenaBreathAt && this.power.ward) {
+      hud?.sfx?.('deny');
+      hud?.toast?.(`${this.name} — no shield while 息 Dragon Breath is out`, this.index);
+      return false;
+    }
     if (this.triLockT > 0 && this.power.ward) {
       hud?.sfx?.('deny');
       hud?.toast?.(`${this.name} — finish the Cross Slash before you block`, this.index);
@@ -3196,6 +3331,267 @@ export class Player {
        frame the decision was actually made on. */
     if (this.dodgeTarget) hud?.sfx?.('dodgelock');
     return true;
+  }
+
+  /* ----------------------- the clan's arena powers ----------------------- */
+
+  /**
+   * ACTION, in the ring, with an oath behind it.
+   *
+   * @returns {boolean} whether it took the press — the caller spends it, and
+   *   the dive is guarded on the answer. `false` means the button still means
+   *   everything it has always meant.
+   *
+   * IT REFUSES SILENTLY OUTSIDE A LIVE ROUND, and that is the one refusal in
+   * here that says nothing. Everywhere else ACTION is the oath, the dealer's
+   * stall, the panda getting up or the power dive, and a clan power that
+   * toasted "not in a fight" every time a kitten pressed interact in the market
+   * square would be shouting over four buttons that work.
+   *
+   * NOT OFF AN ANIMAL AND NOT OUT OF ANOTHER MOVE, the same list `_startDodge`
+   * keeps and for the same reason: every one of those already owns her for the
+   * next second. A kitten on her panda is holding the reins with both paws.
+   */
+  _startClanPower(pad, hud) {
+    const power = arenaPowerFor(this.clan);
+    if (!power) return false;
+    if (!hud?.arenaLive?.(this)) return false;
+    if (this.mount || this.rideAlong || this.pandaMount) return false;
+    if (this.ko || this.angel || this.busy || this.eatT > 0 || this.dodgeAt) return false;
+    return power.id === 'steal' ? this._startSteal(hud) : this._startArenaBreath(hud);
+  }
+
+  /**
+   * 盗 Steal Mischief: put a mark on somebody.
+   *
+   * THE PRESS IS NOT THE THEFT. It chooses who, and it starts a clock; the
+   * Kotodama comes off her on the next hit that lands inside it, from any
+   * attack this kitten has — see `Game._clanStealHit`, which is one line in the
+   * one gate rather than a second combat path.
+   *
+   * A KITTEN WEARING NOTHING CANNOT BE ROBBED, and she is told so BEFORE the
+   * wait is spent. Sixth non-negotiable: this is a refusal that has to say what
+   * it wants, because from the floor "I pressed it at her and nothing happened"
+   * is indistinguishable from a broken button — and forty seconds is a very
+   * expensive way to find out she had nothing on her.
+   */
+  _startSteal(hud) {
+    if (this.stealCool > 0) {
+      hud?.sfx?.('deny');
+      hud?.toast?.(
+        `${this.name} — 盗 Steal Mischief comes back in ${Math.ceil(this.stealCool)}s`,
+        this.index
+      );
+      return false;
+    }
+    const target = this._arenaTargetFor(hud, STEAL.range, STEAL.arc);
+    if (!target) {
+      hud?.sfx?.('deny');
+      hud?.toast?.(`${this.name} — point 盗 Steal Mischief at a fighter`, this.index);
+      return false;
+    }
+    if (!target.powerOrbs?.length) {
+      hud?.sfx?.('deny');
+      hud?.toast?.(`${target.name} has no Kotodama to steal`, this.index);
+      return false;
+    }
+
+    this.stealTarget = target;
+    this.stealMarkT = STEAL.window;
+    this.stealCool = STEAL.cool;
+    this.stealSeq++;
+    /* THE SAME THIN, DRY NOISE THE FLASH STEP'S LOCK MAKES, deliberately: both
+       are the same announcement — somebody has been chosen — and four of them
+       in a scrap must not be four alarms. */
+    hud?.sfx?.('dodgelock');
+    hud?.toast?.(
+      `${this.name} marked ${target.name} — hit her within ${STEAL.window}s to knock a Kotodama loose`,
+      this.index
+    );
+    return true;
+  }
+
+  /** The mark, let go of. `why` is for the toast; null says nothing. */
+  _endMark(hud, why = null) {
+    if (why && this.stealTarget) {
+      hud?.sfx?.('deny');
+      hud?.toast?.(why.replace('%s', this.stealTarget.name), this.index);
+    }
+    this.stealTarget = null;
+    this.stealMarkT = 0;
+  }
+
+  /**
+   * 息 Dragon breath, on foot: start rearing back.
+   *
+   * THE CHARGE IS THE WHOLE DESIGN. "There should be a slight charge up timer
+   * before the player uses it" — and everything else about the move follows
+   * from what that charge is FOR: it is the three quarters of a second in which
+   * her sister can see it coming and do something about it. So it is loud, it
+   * is visible from the other side of the deck (`systems/clanfx.js`), and it
+   * cannot be taken back.
+   *
+   * THE BUBBLE GOES DOWN WITH IT. Asked for outright — "it should disable
+   * active shields while doing the ability" — and dropped through `_dropWard`
+   * rather than by clearing the flag, so she pays the ordinary wait for it and
+   * every rule hung off a block ending still gets to run. `_popWard` refuses
+   * while `arenaBreathAt`, which is the other half: no bubble may go UP inside
+   * the window either, or "disabled" would mean "off for one frame".
+   */
+  _startArenaBreath(hud) {
+    if (this.arenaBreathAt) return false;
+    if (this.breathCool > 0) {
+      hud?.sfx?.('deny');
+      hud?.toast?.(
+        `${this.name} — 息 Dragon Breath comes back in ${Math.ceil(this.breathCool)}s`,
+        this.index
+      );
+      return false;
+    }
+
+    if (this.wardOn) this._dropWard(hud, 'breath');
+    this.diving = false;
+    this.breathChargeT = DBREATH.charge;
+    this.breathSeq++;
+    /* THE INHALE, NOT THE FLAME. `wardup` is a short rising note and it is
+       exactly what this is — something being gathered. The flame gets `breath`,
+       the same sound a dragon makes, because it IS the same trick. */
+    hud?.sfx?.('wardup');
+    return true;
+  }
+
+  /**
+   * ...and let it go.
+   *
+   * ONE APPLICATION, ON THE FRAME IT LEAVES HER, and the flame that follows is
+   * a drawing. A cone that hurt every frame it was on screen would be a move
+   * whose damage depended on the frame rate, and it would hit a kitten who ran
+   * INTO it after it had already been aimed somewhere else.
+   *
+   * `BASE_REACH` AND NOT HER OWN REACH. `Game.strikePlayers` recovers the clan
+   * multiplier from the reach it is handed — that is right for a blade and
+   * wrong for a flame, which is not a blade and does not get longer because
+   * she is wearing Long Cut orbs. Passing her real reach would also break the
+   * eighth non-negotiable across two files: `clanfx` draws the cone from
+   * `DBREATH.range`, and a hitbox that quietly out-reached the drawing is the
+   * exact bug that rule exists to prevent.
+   */
+  _fireArenaBreath(hud) {
+    this.breathFireT = DBREATH.fire;
+    this.breathCool = DBREATH.cool;
+    this.squash = 0.6;
+    hud?.sfx?.('breath');
+    const dir = new THREE.Vector2(Math.sin(this.facing), Math.cos(this.facing));
+    hud?.strikePlayers?.(this, 'dbreath', BASE_REACH, dir);
+  }
+
+  /**
+   * Every clan clock, once a frame.
+   *
+   * THE WAIT RUNS EVERYWHERE, not only in the ring. A kitten who used her power
+   * in round one, lost, and is standing in the ready room for the round card
+   * has to come back into round two with the seconds she spent waiting actually
+   * spent — a cooldown that only ticks while a round is live would hand the
+   * whole wait back at the gong and make it mean nothing.
+   *
+   * THE MARK DOES NOT. It is a promise about a fight, so it dies with the
+   * fight, with her, with the person she marked, and with the round.
+   */
+  _stepClanPower(dt, hud) {
+    const power = arenaPowerFor(this.clan);
+    const steal0 = this.stealCool;
+    const breath0 = this.breathCool;
+    this.stealCool = Math.max(0, this.stealCool - dt);
+    this.breathCool = Math.max(0, this.breathCool - dt);
+
+    /* AND IT SAYS SO WHEN IT COMES BACK. Asked for as "indicate to the player
+       when they can use it again". The HUD pip counts the seconds down all the
+       way (`Tournament._paintHud`); this is the moment itself, which a number
+       ticking over in the corner of the screen cannot carry — she is looking at
+       her sister, not at the bar. Same chime the ward's recovery uses. */
+    const back = (was, now) => was > 0 && now === 0 && !!hud?.arenaLive?.(this);
+    if (power?.id === 'steal' && back(steal0, this.stealCool)) {
+      hud?.sfx?.('wardready');
+      hud?.toast?.(`${this.name} — 盗 Steal Mischief is ready`, this.index);
+    }
+    if (power?.id === 'dbreath' && back(breath0, this.breathCool)) {
+      hud?.sfx?.('wardready');
+      hud?.toast?.(`${this.name} — 息 Dragon Breath is ready`, this.index);
+    }
+
+    if (this.stealMarkT > 0) {
+      const t = this.stealTarget;
+      /* THE MARK IS ONLY WORTH ANYTHING WHILE BOTH OF THEM ARE STILL IN THE
+         FIGHT. Dropped silently when it is not the mark that failed — she is
+         down, the round ended, the target went out — because a toast then is
+         the game explaining a rule to somebody who is watching herself being
+         knocked out. Running out IS the mark failing, and that one is said. */
+      if (!t || t.ko || t.angel || this.ko || this.angel || !hud?.arenaLive?.(this)) {
+        this._endMark(hud);
+      } else {
+        this.stealMarkT = Math.max(0, this.stealMarkT - dt);
+        if (this.stealMarkT === 0) this._endMark(hud, 'The mark on %s faded');
+      }
+    }
+
+    /* "UNLESS THEY DIE" — the one thing that stops it, said in the ask and
+       enforced here rather than in `hurt`. A knockout does not run
+       `_clearSpecials` immediately: `becomeAngel` does, and that is a second
+       or so later (`KO_TIME`), during which the ground controller is still
+       running her with a frozen pad. Without this the charge would go on
+       counting down while she lies on her back and a flame would come out of
+       a kitten who is out of the fight. */
+    if ((this.ko || this.angel) && this.arenaBreathAt) {
+      this.breathChargeT = 0;
+      this.breathFireT = 0;
+    } else if (this.breathChargeT > 0) {
+      this.breathChargeT = Math.max(0, this.breathChargeT - dt);
+      if (this.breathChargeT === 0) this._fireArenaBreath(hud);
+    } else if (this.breathFireT > 0) {
+      this.breathFireT = Math.max(0, this.breathFireT - dt);
+    }
+  }
+
+  /**
+   * Who a clan power is aimed at — or null.
+   *
+   * THE SAME MEASURE `_dodgeTargetFor` USES: the one closest to the forward
+   * CENTRE, which is an angle and not a distance, because both moves are aimed
+   * with the camera and "the one I am looking at" is what a nine-year-old means
+   * when she points. Distance only breaks a tie.
+   *
+   * WHAT IS DIFFERENT IS WHO COUNTS. A Flash Step pivots around anybody,
+   * partner included, and works in the market square — it hurts nobody. These
+   * two are attacks, so this asks the tournament the same question the strike
+   * gate asks: not yourself, not your partner, not somebody already down.
+   */
+  _arenaTargetFor(hud, range, arcDeg) {
+    const list = hud?.players;
+    if (!list) return null;
+    const fx = Math.sin(this.facing);
+    const fz = Math.cos(this.facing);
+    const cosArc = Math.cos(THREE.MathUtils.degToRad(arcDeg));
+    let best = null;
+    let bestDot = -2;
+    let bestD = Infinity;
+    for (const q of list) {
+      if (!q || q === this || q.ko || q.angel) continue;
+      if (hud?.tournament?.allies?.(this, q)) continue;
+      const dy = q.position.y - this.position.y;
+      if (Math.abs(dy) > COMBAT.strikeHeight) continue;
+      const dx = q.position.x - this.position.x;
+      const dz = q.position.z - this.position.z;
+      const d = Math.hypot(dx, dz);
+      if (d > range) continue;
+      const dot = d > 0.001 ? (dx * fx + dz * fz) / d : 1;
+      if (dot < cosArc) continue;
+      if (dot > bestDot + 1e-4 || (Math.abs(dot - bestDot) <= 1e-4 && d < bestD)) {
+        best = q;
+        bestDot = dot;
+        bestD = d;
+      }
+    }
+    return best;
   }
 
   /**

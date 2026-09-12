@@ -485,7 +485,7 @@ footer b { color: var(--text); }
 <div class="wrap">
 
 <header class="mast">
-  <div class="stamp">Last updated <span>·</span> 5 Sep 2026</div>
+  <div class="stamp">Last updated <span>·</span> 11 Sep 2026</div>
   <h1>Katana Kitties<em>The whole project on one page</em></h1>
   <p class="lede">A <b>split-screen co-op browser game for up to four players</b>: samurai kittens
     knocking over a chain of floating Japanese islands, riding storm dragons between them, and
@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 2810 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 2911 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 362 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -775,6 +775,31 @@ git push origin alpha</code></pre>
     </tbody>
 </table></div>
 <!-- /doc-sync:numbers -->
+
+  <div class="note">
+    <span class="hd">An oath is worth something in the ring</span>
+    <p>Two of the six clans have an <b>arena power</b> on the ACTION button, aimed with the stick,
+      on a ~40&nbsp;second cooldown with a HUD pip that counts it down and chimes when it is back.
+      <b>盗 Steal Mischief</b> (Icewhisker) marks an opponent, and any hit landed inside the window
+      knocks one of her <b>Kotodama onto the deck</b> — untouchable by everybody for four seconds,
+      so all four of them have to fight over it. It is returned to its real owner when the
+      tournament ends, down every path: still loose, worn by the thief, worn by whoever grabbed it,
+      or sold. <b>息 Dragon Breath</b> (Windwhisker) rears back for 0.8&nbsp;s and then breathes a
+      cone wherever the stick is pointing; it cannot be interrupted, it does not throw her when she
+      is hit, and it drops her own shield while it runs.</p>
+    <p><b>Neither is a second combat path.</b> The breath is a row in the same <code>ATTACKS</code>
+      table as every other swing, and the steal is a <em>mark</em> paid by an ordinary hit the one
+      gate had already allowed — so combat still cannot happen outside the ring. Both are on the
+      balance page.</p>
+  </div>
+
+  <p><b>MISCHIEF is the story's spine as well as the game's.</b> The mischief the girls made is the
+    <b>entropy</b> that was sitting dormant in every standing object in the world; knocking it all
+    over let it out, and the Kotodama are what it looks like once it is out. That is why an orb can
+    be knocked loose from somebody — and why, at 100%, Patchfur closes the story standing in front
+    of the whole archipelago while it <b>stands itself back up</b> in a wave, holds, and goes over
+    again. That scene moves meshes and nothing else: it cannot touch the counter, and skipping it
+    puts every prop back on the exact transform it was holding.</p>
 </section>
 
 <section id="controls">
@@ -1101,7 +1126,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 2810 assertions and why almost none of them are about
+      is why <code>world-check</code> is 2911 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,

@@ -1783,3 +1783,101 @@ first is what lets a good feast make the panda tougher too.
 the rest of the game and comes back only at the Pandapaw shrine. The distinction
 is the whole reason `Panda.knockedDown` is a flag of its own rather than
 `tier === 0`.
+
+## What an oath is worth in the ring — `entities/clanpower.js`
+
+> Should make it that each Clan you join, will have a benefit in the Arena.
+
+Every clan buff before this was a **world** buff. Riverclaw's reach, Pandapaw's
+cub, Icewhisker's nose for the last unbroken barrel, Windwhisker's bigger dragon
+flame — all of them are about knocking things over on an island, and three of
+them do nothing whatsoever once the bell goes. A kid who swore an oath and then
+walked into the arena had chosen a colour.
+
+So two of the six now have a move in the ring, on the **ACTION button**, aimed
+with the stick, on a long cooldown with a HUD pip counting it down. Both are
+shaped by the same three rules:
+
+- **The ring is still the only place combat happens.** Non-negotiable 3 says
+  `Game.strikePlayers` is the one gate and it asks one question. The breath does
+  not get its own damage path — it is a row in `ATTACKS` like every other swing
+  and goes through that gate. The steal is not an attack at all: it is a *mark*,
+  and the theft is paid by an ordinary hit that was already gated. Outside a
+  live round, `_startClanPower` returns false in silence and ACTION does what it
+  has always done.
+- **You cannot buy one.** Orbs are bought, traded and stolen; this is the one
+  thing in the game that only an oath can give you, which is what makes the
+  choice at the clan hall a choice.
+- **Both share the button with the power dive and the Flash Step.**
+  `Player._startClanPower` owns the precedence and consumes the press, so the
+  dive cannot also fire off the same frame.
+
+### 盗 Steal Mischief — Icewhisker
+
+In the world her oath *senses* mischief. In the ring it takes it.
+
+ACTION toward another kitten **marks** her for `window` seconds. Land any hit on
+a marked kitten inside that window and one of her Kotodama comes off — knocked
+loose onto the deck, thrown clear along the line between the two of them, and
+**untouchable by everybody for `lock` seconds, thief included.** That last
+number is the whole move. Set it to zero and the steal hands the orb straight to
+whoever swung; at 4 seconds it puts a live prize on the floor and makes four
+kittens fight over it, which is the version that is actually fun.
+
+**The wait is spent at the press, not at the theft.** A mark that missed costs
+the full 40 seconds, which is what makes aiming it a decision rather than
+something you hold down.
+
+**Any already-gated hit pays it**, because the hook lives inside
+`if (dealt) {` in `strikePlayers` — so a ward eats the theft along with the
+damage, invulnerability frames stop it, and an ally in a team round cannot be
+robbed. That is one line in one place instead of five rules that would drift.
+
+**And the orb goes home.** `Kotodama.loans` records who really owns it, and
+`settleLoans()` runs at the top of both `_finishTournament()` and `finish()`, so
+every path out of the tournament returns it. It covers the four cases: still
+lying on the deck, worn by the thief, worn by a *third* kitten who picked it up
+in the scramble, or sold to the dealer while the round was live. If the owner
+has no room, it is dropped at her feet rather than destroyed — nothing is lost.
+An orb stolen twice retires the older loan, so it has exactly one owner.
+
+### 息 Dragon Breath — Windwhisker
+
+> I think it will be easier to do Dragonbreath, so let's add that.
+
+Her oath makes a *dragon's* flame bigger, and there are no dragons in the ring —
+so in here she breathes it herself. ACTION, a `charge` of rearing back, then a
+cone wherever the stick is pointing. It is a kitten's version of the thing:
+8.5 units where a dragon reaches 15–20, once every 40 seconds rather than held
+down.
+
+**The rear-back is the move's fairness.** 0.8 seconds between the press and the
+flame is the time her sister gets to move, and it is the only reason a 13-damage
+cone is allowed to exist on a shared cooldown.
+
+**It cannot be interrupted, and that is deliberate in both directions.** She can
+be hit, and hitting her does not throw her — `hurt` skips the knockback and the
+`onGround = false` while `arenaBreathAt` — so a chip hit cannot cancel it and
+neither can a wall of them. The only thing that stops it is a knockout, which
+`_stepClanPower` checks explicitly. (That clause is not theoretical: a KO does
+not run `_clearSpecials` immediately, so before it was written a downed kitten
+breathed fire off the floor. `world-check` caught it.)
+
+**It drops her ward.** A shield and a held-open mouth are two different moves
+and she does not get both; `_popWard` refuses while the breath is up, and the
+ward comes down when it starts.
+
+**She keeps `moveK` of her speed through it.** Slowed, never planted — the stick
+is her aim, so taking the stick would take the aim away, and "works in any
+direction" was the request.
+
+**The cone is drawn from the numbers that hit.** `ATTACKS.dbreath.arc` is
+derived from `DBREATH.spread` and its reach from `DBREATH.range`, the same two
+numbers `systems/clanfx.js` marches its nine flame instances along — so the
+picture and the hit box cannot disagree, which is non-negotiable 8 in its
+smallest form. `clanfx` is a **poller** over the player's clocks, like `crossfx`
+and `dodgefx` before it, because a move can end six ways and only a poller sees
+all six.
+
+Both powers' numbers live in `clanpower.js` behind `tune()`, so they are edited
+on `/tuning.html` with a sentence each, like everything else.

@@ -1,4 +1,5 @@
 import { MAX_HP, KO_TIME } from '../entities/player.js';
+import { arenaPowerFor } from '../entities/clanpower.js';
 import { scoreOf, saveResult, loadBoard, NameEntry, ALPHABET, NAME_MAX } from './leaderboard.js';
 import { styleCss } from '../core/palette.js';
 
@@ -757,6 +758,11 @@ export class Tournament {
   /** Tear it all down — used on restart, and when the girls go home. */
   finish() {
     this.state = 'off';
+    /* AND A TOURNAMENT TORN DOWN HALFWAY STILL GIVES THE ORBS BACK. This is
+       the restart path, the going-home path and the debug path; a kitten who
+       had her 守 stolen in a match that was abandoned must not be walking round
+       the market square missing it. Fourth non-negotiable. */
+    this.game.kotodama?.settleLoans?.();
     /* THE COUNT AND THE POSE OUTLIVE THE TOURNAMENT OTHERWISE. `clear` reaches
        neither: the count plays on the speech channel (see `_hushCount`) and the
        charging sprite is Mr Satan's, not the announcer's — so a tournament torn
@@ -1537,6 +1543,15 @@ export class Tournament {
   _finishTournament() {
     this.state = 'result';
     this.t = 0;
+    /* EVERY BORROWED KOTODAMA GOES HOME, and this is the moment "after the
+       fight" means: the match is decided, nobody is going to steal anything
+       else, and the purse has not been paid yet. Settled here rather than at
+       the end of each ROUND because a steal that only lasted one round of
+       three would be a loan of about forty seconds, which is not long enough
+       to be worth the forty-second wait it costs. `settleLoans` is idempotent
+       — `finish` calls it too, for the tournament that ends by everybody going
+       home. See `Kotodama.loans`. */
+    this.game.kotodama?.settleLoans?.();
 
     /* THE WINNER IS A SIDE. Most round wins takes it; a dead heat — three
        rounds with one of them drawn on the clock — falls through to total
@@ -2115,12 +2130,35 @@ export class Tournament {
       return `<div class="ah-bar"><span class="ah-fill${cls}" `
         + `style="width:${k * 100}%;${style}">${green}</span></div>`;
     };
+    /* WHAT HER OATH IS WORTH IN HERE, AND WHEN SHE CAN USE IT AGAIN.
+       Asked for with the breath — "indicate to the player when they can use it
+       again" — and given to both powers, because a forty-second wait you
+       cannot see is a button that is broken for most of a round.
+
+       IT IS ONLY DRAWN FOR THE TWO CLANS THAT HAVE ONE. Thunderpaw, Riverclaw,
+       Shadowtail and Pandapaw pay out in the ring as multipliers on running,
+       reaching and jumping — always on, nothing to wait for, and a pip reading
+       READY for two minutes solid would be four kittens' worth of furniture
+       saying nothing. `arenaPowerFor` is the one place that answers this, so
+       the HUD cannot call it Sense Mischief while the toast calls it Steal
+       Mischief.
+
+       SECONDS, ROUNDED UP, for the same reason the round clock is: the number
+       on screen must never claim she has less time than she has. */
+    const pip = (p) => {
+      const pw = arenaPowerFor(p.clan);
+      if (!pw) return '';
+      const left = pw.id === 'steal' ? (p.stealCool ?? 0) : (p.breathCool ?? 0);
+      return `<div class="ah-pow${left > 0 ? '' : ' on'}">${pw.kana} `
+        + `${left > 0 ? `${Math.ceil(left)}s` : 'READY'}</div>`;
+    };
     /* A fighter's own line: her name, and a KO cross once she is down. Knowing
        your partner has gone is the whole shape of a tag-team round. */
     const fighter = (p) => `
       <div class="ah-f${p.ko ? ' out' : ''}">
         <div class="ah-name">${escapeHtml(p.name)}</div>
         ${bar(p)}
+        ${pip(p)}
       </div>`;
     const sideBlock = (side, align) => {
       const mates = players.filter((_, i) => this.sides[i] === side);
