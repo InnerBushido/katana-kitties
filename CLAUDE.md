@@ -27,7 +27,7 @@ look. Everything else is one level down and read on demand.
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
 npm run dev -- --host         # ...and on a phone on the same wifi, at the Network: URL it prints
-node tools/world-check.mjs    # 2810 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 2911 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 npm run docs                  # regenerate the controls + balance tables, in PROJECT.md AND
@@ -127,19 +127,28 @@ src/
   systems/   tournament  menagerie  arenaquest  announce  leaderboard
              kotodama  profile  cutscene  shrinescene  summonscene
              mathdojo  minimap  menunav  trailer (the opt-in video player)
-             finalelesson (the four figures drawn BEHIND Patchfur at the
-               ending, one per beat, all placed by cos and sin — the bridge
-               beat's chord is drawn at 2sin(theta/2) and prints that number)
+             finaletide (what is BEHIND Patchfur at the ending: the whole
+               archipelago standing itself back up while she talks and going
+               over again on her last line. It moves meshes and never touches
+               a fact, and `finish()` — the SKIP path too — puts every prop
+               back on the transform it was holding. See docs/notes/story.md)
              satanblast (his ten-second fuse and the explosion — a gag that
                never calls `hurt` and never asks the combat gate)
              confirm (are you sure? - every irreversible button)
              crossfx (the Cross Slash's tell and its seal - a poller,
                so player.js does not know it exists)
+             clanfx (the same trick again, for the two clan powers: Steal
+               Mischief's mark ring and the Dragon Breath's charge and cone)
              dodgefx (the Flash Step's target ring, its smoke, and the silly
                thing left standing in it - the same poller trick, over
                Player.dodgeSeq)
   entities/  player  dragon  ryuuseki  panda  critter  angel  leader  satan
              griffin  orb  powerorb  dragonball  prop  shrine  stall
+             clanpower (what an OATH is worth in the ring — 盗 Steal Mischief
+               and 息 Dragon Breath, both on ACTION, both tune()d. The steal is
+               a MARK paid by an ordinary gated hit, not a second combat path;
+               the breath is a row in ATTACKS. Non-negotiable 3 is intact.
+               docs/notes/tournament.md)
 tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
              sprite-bake.mjs (builds public/sprites/ out of docs/art-masters/,
                which is where the full-size originals live BECAUSE public/ is
@@ -228,7 +237,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 2810 assertions and why almost none of them are about
+  why `world-check` is 2911 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Before designing a menu, dialog or any list, read "UI FALL-THROUGH" in
   [gotchas.md](docs/notes/gotchas.md).** It is the bug this project keeps

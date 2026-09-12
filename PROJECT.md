@@ -1,6 +1,6 @@
 # Katana Kitties — the whole project on one page
 
-**Last updated: 5 September 2026.** Anything below with a cost or an account
+**Last updated: 11 September 2026.** Anything below with a cost or an account
 attached was true on that date; check the dashboard before quoting a number.
 
 This is the **one-stop sheet**: what the project is, how to run it, how to test
@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 2810 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 2911 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -332,7 +332,28 @@ mark is derived too: it means the number was read out of a `tune()` table, so a
 
 **MISCHIEF is the spine**: 80% opens the tournament, 100% wakes the Powerup
 Kotodama and gets the ending. **Nothing regrows and nothing is lost**, so the
-counter is honest.
+counter is honest. And it is the story's spine too — the mischief they made is
+the **entropy** that was dormant in every standing object, the Kotodama are what
+it looks like once it is out, and that is why an orb can be knocked loose.
+
+**An oath is worth something in the ring.** Two of the six clans have an **arena
+power** on the ACTION button, aimed with the stick, on a ~40s cooldown with a
+HUD pip that counts it down: **盗 Steal Mischief** (Icewhisker) marks an
+opponent, and any hit landed inside the window knocks one of her **Kotodama onto
+the deck** for everybody to fight over — returned to its owner when the
+tournament ends, down every path. **息 Dragon Breath** (Windwhisker) rears back
+for 0.8s and then breathes a cone wherever the stick points; it cannot be
+interrupted and it drops her own shield. Neither is a second combat path — the
+breath is a row in the same `ATTACKS` table and the steal is a *mark* paid by an
+ordinary hit that the one gate had already allowed — so combat still cannot
+happen outside the ring. Both are on the balance page.
+→ [tournament.md](docs/notes/tournament.md)
+
+**The ending's picture is the world.** At 100% Patchfur closes the story in
+front of the whole archipelago, and while she talks it **stands itself back up**
+in a wave, holds, and goes over again. It moves meshes only: nothing it does can
+touch the MISCHIEF count, and skipping the scene puts every prop back on the
+exact transform it was holding. → [story.md](docs/notes/story.md)
 
 ---
 
@@ -485,7 +506,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 2810
+the check that would have caught it.** That is why `world-check` is 2911
 assertions.
 
 **And a change a new developer would need to know about gets a line in this

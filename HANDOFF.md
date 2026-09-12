@@ -289,6 +289,30 @@ is listed here is untested-by-players, not untested-by-machine.
 `mixed/lighter-art-clearer-scenes`. Two are about weight, four are about things
 that were plainly not working.
 
+- **An oath is worth something in the ring now.** Two of the six clans got an
+  arena move, on ACTION, aimed with the stick, on a ~40s cooldown with a HUD
+  pip that counts it down and chimes when it is back.
+  **盗 Steal Mischief** (Icewhisker) marks an opponent; any hit landed on her
+  inside the window knocks one of her **Kotodama onto the deck**, thrown clear
+  and untouchable by everybody for 4 seconds so the four of them have to fight
+  over it. It is returned to its real owner when the tournament ends, down every
+  path — still loose, worn by the thief, worn by a third kitten, or sold — and
+  dropped at her feet if she has no room. **息 Dragon Breath** (Windwhisker) is
+  a kitten-sized version of her own clan buff: rear back for 0.8s, then a cone
+  8.5 units out wherever the stick points. It cannot be interrupted, does not
+  get knocked back when hit, and drops her ward while it runs.
+  **Neither is a second combat path** — the breath is a row in `ATTACKS` and the
+  steal is a mark paid by an ordinary already-gated hit — so non-negotiable 3 is
+  intact. The charge is drawn procedurally for now; a real head-back sprite for
+  all four kittens is the obvious follow-up.
+  → [tournament.md](docs/notes/tournament.md), `src/entities/clanpower.js`
+- **...and the storyline says why.** Knocking the world over is what woke the
+  Kotodama: mischief is the entropy dormant in every standing object, and the
+  orbs are what it looks like once it is out — which is why "stealing mischief"
+  is literally knocking an orb loose. The ending's rewinding town is that
+  argument acted out by the set. **Patchfur's ending script has not been
+  rewritten or re-recorded yet** — the new lines are drafted for Richard to read
+  first, and no ElevenLabs audio is generated until he approves them.
 - **14MB came off the first load, and the dragons got sharper doing it.**
   `packMetrics` had both dragons packing at scale **0.698** — thirty per cent of
   their own art discarded on every device on every load — and `contentScale` and
@@ -345,14 +369,17 @@ that were plainly not working.
   the orb's angular speed — and each orb now has its own five kana, hashed from
   its id so a scene is filmable and an orb keeps its character when the one
   before it comes off. → [endgame.md](docs/notes/endgame.md)
-- **There is a maths lesson behind Patchfur at the ending**, one figure per
-  beat, drawn from the world's own MISCHIEF count: her strokes scatter, snap
-  into a lattice, become the unit circle with the chord that is the bridge, and
-  tighten into the arena ring. The chord is drawn at `hypot(cos θ - 1, sin θ)`
-  and captioned `2·sin(θ/2)`, and `world-check` asserts those are one number
-  rather than two that agree. She acts it with the one drawing she has — a lean
-  and a step per beat, anchored to the lines.
-  → [story.md](docs/notes/story.md), `src/systems/finalelesson.js`
+- **The ending's picture is the world itself now.** The four white line
+  figures drawn behind Patchfur are gone — replaced, not disabled — because the
+  ending's idea is entropy and entropy in this game is a couple of hundred
+  objects the girls actually knocked over. So while she talks, the whole
+  archipelago **stands back up** in a wave from the far island inwards, holds
+  for a beat, and goes over again on her last line. It moves meshes and never
+  touches `knocked`, `scored`, `gone` or the MISCHIEF total, and `finish()` —
+  which is the SKIP path too — restores every prop's exact transform from a
+  snapshot rather than running the wave back to zero. She still acts it with
+  the one drawing she has, a lean and a step per beat.
+  → [story.md](docs/notes/story.md), `src/systems/finaletide.js`
 - **...and she had been foreshortening for the whole ending.** `faceCamera()`
   on `SummonScene` is a no-op, so the stage quad kept its build orientation
   while the finale camera climbs and turns most of a quadrant. Never edge-on

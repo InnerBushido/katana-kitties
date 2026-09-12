@@ -395,7 +395,7 @@ two points in the shot twenty seconds apart, plus a third check that the camera
 really moved in between — because without that last one the pair is two readings
 of the same camera, which a nailed-down quad also passes.
 
-## The lesson behind her — `src/systems/finalelesson.js`
+## The world behind her — `src/systems/finaletide.js`
 
 > The cutscene is a little boring currently. Is there a way we can add more
 > character to Patchfur for the ending? Maybe use Bugenhagen from FF7 and his
@@ -403,109 +403,111 @@ of the same camera, which a nailed-down quad also passes.
 
 Bugenhagen's planetarium is not a slideshow. He turns the lights off and the
 **thing he is describing appears around you**, and the lesson lands because you
-are looking at the argument while he makes it. So: four figures drawn behind
-her, one per beat, each one illustrating the line she is actually saying.
+are looking at the argument while he makes it.
 
-**It draws the script she already has.** Deliberately — the recording and the
-words are untouched, so this cost nothing to try and would cost nothing to
-undo, and every figure is anchored to words she is already speaking:
+The first answer to that was a diagram: four white line figures drawn behind
+her, a scatter, a lattice, a unit circle and a chord, one per beat. It was
+correct and it was the wrong idea, for a reason worth writing down — this game
+already has two maths lessons, the Kotodama Orb and the Dojo of the Turning
+Circle, and both of them are things you can **walk into**. A third one, drawn
+flat on a quad and unable to be touched, is the decorative version of the two
+good ones standing next to it.
 
-| beat | the line | the figure |
+And it was drawing a picture of a thing that was standing right there. Richard's
+note settled it: the ending's idea is **entropy**, and entropy in this game is
+not an abstraction. It is a couple of hundred specific objects that two girls
+spent an afternoon putting their paws through, and every one of them is on
+screen behind her while she talks about them.
+
+So the picture behind her is the world, and it moves.
+
+| beat | the line | the world |
 | --- | --- | --- |
-| 1 | "Every barrel. Every lantern. Every last cane of bamboo." | one stroke per knockable thing in the world, scattered |
-| 2 | "A tidy town is only one way for a town to be." | the same strokes snap into a lattice |
-| 3 | "An angle, a circle, and the nerve to jump — that is all a bridge has ever been." | the unit circle, and the chord it subtends |
-| 4 | "The arena is open." | the circle tightens into the ring |
+| 1 | "Every barrel. Every lantern. Every last cane of bamboo." | the archipelago exactly as they left it — on its side |
+| 2 | "A tidy town is only one way for a town to be." | every last one of them **stands back up**, from the far island inwards |
+| 3 | the bridge line | it holds. One tidy arrangement, the only one there is. |
+| 4 | "The arena is open." | and it all goes over again, landing on exactly the pose it was in |
 
-**The mark count is the world's own count.** `mischiefTotal` — the number the
-MISCHIEF counter has been counting all afternoon — is how many strokes are on
-screen, so the first beat is literally her naming the things they knocked over
-and the things they knocked over being on screen.
+That is the second law acted out by the set, in a scene where the set is the
+thing the kid built. The tidy arrangement is one; the untidy ones are all the
+rest; it does not stay tidy; and she is standing in front of the evidence.
 
-### The bridge IS the chord
+### ...and it is why the Kotodama woke up
 
-This is the beat that has to earn non-negotiable 1, and the test it has to pass
-is the one the Kotodama Orb passes: **every position on screen is computed from
-the two numbers printed beside it.** A figure that drew a handsome circle and
-printed an unrelated angle would be the decorative version, and the decorative
-version is worse than no figure at all.
+The same idea gave the orbs a reason to exist, which they did not have before.
 
-So the radius arm ends at `(cos θ, sin θ)`. The cosine leg runs the axis out to
-`cos θ` and the sine leg **stands on the end of that same leg** and reaches the
-point, which is the right triangle drawn rather than asserted. The two islands
-are not placed anywhere — they are put on the two ends of the chord, which is
-where the circle already put them. And the span between them is drawn at
-`Math.hypot(cos θ - 1, sin θ)` while the caption under it reads
+Knocking the world over did not just make a number go up. Mischief — entropy —
+was the potential sitting dormant inside every standing object in the universe,
+and creating disorder on that scale **let it out**. The Kotodama are what it
+looks like once it is out: the magical abilities of the world, unlocked by two
+children being a menace to some furniture.
 
-    the bridge is 1.41 wide
+`entities/clanpower.js` is that sentence with a cooldown on it. 盗 **Steal
+Mischief** knocks a Kotodama off another kitten in the ring — and it can,
+because an orb *is* mischief made solid, and mischief can be knocked loose the
+same way a barrel can. It is the story and the mechanic saying the same thing,
+which is the only kind of lore this project keeps.
+→ [endgame.md](endgame.md)
 
-which is `2·sin(θ/2)`. Those are the same number by identity, and that identity
-is the whole reason the beat is worth having — so `world-check` measures the
-drawn quad's scale, computes the printed number independently, and asserts they
-agree to a millionth rather than asserting that both exist.
+### Nothing regrows, and this does not break that
 
-**The sweep stops at three quarters of a turn.** A closed circle puts the far
-island back on top of the near one, so the bridge would vanish on the exact line
-about crossing it.
+The fourth non-negotiable is that a prop knocked over **stays** knocked over, so
+the MISCHIEF counter is honest — and here is a scene that stands the entire
+world back up in front of the player. The line that makes it legal:
 
-**The span is a quad and not a line, and that is WebGL rather than taste.**
-`LineBasicMaterial.linewidth` is ignored by every desktop WebGL implementation,
-so every line in this figure is one pixel wide whatever it asks for. The chord
-is the thing the beat is about and one pale pixel is not it — so it is a
-unit-long plane along +X, then positioned, turned and scaled to the chord it is
-drawing. The geometry is still the maths; it is just thick enough to see.
+> It may move meshes and it may never touch a fact, and whatever it moves, it
+> puts back.
 
-### Four figures, one buffer
+`FinaleTide` never writes `knocked`, `scored`, `gone` or `mischiefTotal`. It
+snapshots every fallen prop's transform on `start()`, and `finish()` restores
+that snapshot — **restores it, rather than running the wave back down to zero**,
+because floating point and a skipped scene both make "back to zero"
+approximately right, and approximately right is a town that ends the afternoon a
+few degrees tidier than the kid left it.
 
-216 strokes is 432 vertices in a single `LineSegments`, rewritten in place every
-frame — one draw call, one buffer, no allocation. The alternative is 216
-objects, and the reason that matters is [performance.md](performance.md): this
-scene runs on a phone with the whole archipelago in shot.
+`finish()` is also the *skip* path, which is the one that actually matters. A
+nine-year-old who has seen the ending once presses Escape four seconds in, and
+what she gets back has to be her wrecked town, on its side, to the last decimal.
+`world-check` asserts precisely that, plus the three flags and the count, plus
+that a retired prop — one that fell off the edge of the world and is hidden for
+ever on purpose — is never stood back up. "The ending tidied my world up" would
+be the single worst bug this game could ship, and the scene that could produce
+it is the one everybody watches.
 
-**A stroke takes the short way round to its next heading.** Lerping raw angles
-sends a mark at 350° all the way back through 180 to reach 10, so about a third
-of them spin the wrong way across every change of figure — visible, and exactly
-the kind of thing that reads as a physics bug rather than as arithmetic.
-`atan2(sin(da), cos(da))` picks the short arc, and `world-check` watches every
-mark's heading frame by frame through a morph and fails if any of them ever
-moves further in one frame than the morph could justify.
+### `Prop.held`, the one flag that keeps the two of them apart
 
-**The scatter is hashed, not random.** The Help clips are filmed out of the
-running game with interframe differencing, so a figure that landed somewhere new
-on every play could never be filmed — and, less exotically, a scene the kids
-watch twice should be the same scene twice.
+A settled prop is not asleep. Its own `update` lerps it flat every frame — that
+is what makes it *lie* there instead of standing on one end — so the rewind and
+the prop would fight for the whole scene, and the prop would win about half the
+frames. `held` is set by the tide, cleared by the tide, and read in exactly one
+place in `prop.js`. It is not an optimisation and it must not be reused as one.
 
-### The lattice came out as a barcode, and the reason is arithmetic
+### The wave, and why it is not a snap
 
-216 marks is a 15×15 grid, so its rows are 0.123 apart in figure units — and a
-stroke drawn 0.075 each way is 0.150 tall, taller than the gap. Every column
-fused into one continuous vertical line and the tidy town read as a barcode.
+Two hundred objects standing upright on the same frame reads as a **rendering
+glitch**. A ripple crossing the archipelago reads as a town tidying itself, and
+the eye follows it. `STAGGER` 0.45 spreads the props over the first 45% of the
+move in world order — which is the order they were planted, island by island —
+leaving every individual prop more than half the move to itself.
 
-The fix is not a smaller number typed into the table. The constraint is a
-statement about the **count**, and the count is the world's, so it is derived:
-the lattice's stroke is capped at two fifths of its own row spacing, which
-leaves three fifths of the gap showing whether the world has 64 knockable things
-or 400. `world-check` checks it at both ends of that range rather than at the
-216 that happen to exist today.
+Standing up takes `RISE` 6 seconds; going over takes `FALL` 4.2, because going
+over always does. Patchfur's lines run 7.5–9 seconds each, so the wave is still
+travelling while she is still talking: the picture sits *under* the line rather
+than punctuating it, the same rule her gestures follow below. Three seconds was
+tried and reads as a cut.
 
-### It is depth-tested, which is the opposite of everything else parked here
+**The last beat is derived, not typed.** `setBeat` is handed the script's own
+length, so a line added to the ending cannot leave the archipelago standing
+tidily at the end of a scene whose entire argument is that it does not stay
+that way.
 
-Every other thing this game parks in front of a lens turns depth testing **off**,
-because it is drawn over a world it is not part of. Doing that here draws the
-diagram over Patchfur, who is the person the scene is about.
+### It is the ordinary render, and it costs nothing
 
-One flag settles both ends of it. She is parked at 12.8 units and writes depth;
-the figure sits at 20.7 and the archipelago is two hundred further back — so
-`depthTest: true` means **she occludes the figure and the figure occludes
-nothing**. `depthWrite` stays off, or the transparent lines hide each other.
-
-**Culling is off only on the buffers that get rewritten.** Not on the whole
-group — three.js culls against `matrixWorld`, so a static quad on a moving
-parent is culled correctly and the labels are fine as they are. The ones that
-are not fine are the geometries whose vertices move: a bounding sphere is
-computed once, on the first render, and never again, so 216 strokes that started
-as a scatter and became a circle are being tested against the shape they had
-four beats ago.
+The diagram this replaced was 432 vertices rewritten in place every frame, with
+a paragraph in [performance.md](performance.md) justifying the buffer. The tide
+allocates nothing and draws nothing: the props are already in the scene, already
+batched, already being drawn. It writes two transforms per fallen prop per
+frame and stops existing the moment the scene ends.
 
 ### Her acting, with one drawing
 

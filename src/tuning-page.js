@@ -123,6 +123,46 @@ const GROUPS = {
       cool: ['Cooldown', 'How long before he will do it again.', 's', 5, 120, 1],
     },
   },
+  /* --- THE TWO CLAN POWERS THE RING GAVE BACK ---
+     Not orbs and not bought: these are what an OATH is worth in the arena, so
+     the only way to have one is to have sworn to that clan. Both sit on the
+     same button as the power dive and the Flash Step; `Player._startClanPower`
+     owns the precedence. */
+  STEAL: {
+    title: 'Steal Mischief (Icewhisker)',
+    blurb: 'In the world her oath finds the last unbroken barrel. In the ring '
+      + 'it takes Kotodama off people: ACTION at somebody marks her, and a hit '
+      + 'landed inside the window knocks one of her orbs onto the deck for '
+      + 'anybody to fight over. It goes back to her when the match ends.',
+    fields: {
+      cool: ['Wait', 'How long before she can mark anybody again. Spent at the PRESS, not at the theft — a mark that missed still costs the whole wait, which is what makes aiming it a decision.', 's', 5, 120, 1],
+      window: ['Mark window', 'How long the mark lasts. Land any hit on that kitten inside it and a Kotodama comes off her; miss for this long and the mark fades and says so.', 's', 1, 15, 0.5],
+      range: ['Mark range', 'How far away somebody can be and still be marked.', 'm', 2, 20, 0.5],
+      arc: ['Mark arc', 'How far off dead ahead she can be looking and still mark somebody.', '°', 5, 180, 5],
+      lock: ['Untouchable for', 'How long the knocked-loose orb refuses EVERYBODY, thief included. Zero hands it straight back to whoever swung; this is the number that turns a steal into a scrap.', 's', 0, 10, 0.5],
+      toss: ['Thrown clear', 'How far the orb is knocked away from her, along the line between the two of them. It lands in the open ground between them rather than under either.', 'm', 0, 8, 0.2],
+    },
+  },
+  DBREATH: {
+    title: 'Dragon breath on foot (Windwhisker)',
+    blurb: 'Her oath makes a DRAGON’S flame bigger, and there are no dragons '
+      + 'in the ring — so in here she breathes it herself. ACTION, a moment of '
+      + 'rearing back, then a cone wherever the stick is pointing. It cannot '
+      + 'be interrupted, it does not throw her when she is hit, and it drops '
+      + 'her shield.',
+    fields: {
+      cool: ['Wait', 'How long before she can breathe again. The HUD pip counts it down and it chimes when it is back.', 's', 5, 120, 1],
+      charge: ['Rear-back', 'The tell. Seconds between the press and the flame — this is the time her sister gets to move, and it is the whole reason the move is fair.', 's', 0.1, 3, 0.05],
+      fire: ['Flame length', 'How long the cone is on screen. PICTURE ONLY: the damage is applied once, on the frame it leaves her.', 's', 0.1, 2, 0.05],
+      range: ['Range', 'How far the cone reaches. A dragon breathes 15-20; this is a kitten.', 'm', 2, 20, 0.5],
+      spread: ['Spread', 'How wide it opens. Authored exactly as a breed’s breath spread is, and the ATTACKS.dbreath arc is derived from it — so the drawing and the hit box cannot disagree.', '', 0.1, 1, 0.02],
+      dmg: ['Damage', 'On the kittens the cone catches. Also feeds ATTACKS.dbreath.', '', 1, 60, 1],
+      knock: ['Knockback', 'How far it throws them.', '', 1, 60, 1],
+      lift: ['Lift', 'How far up.', '', 0, 25, 0.5],
+      moveK: ['Speed while charging', 'The fraction of her own speed she keeps during the rear-back. She is slowed, never planted — the stick is her aim, so taking it would take the aim away.', '×', 0.05, 1, 0.05],
+      color: ['Flame colour', 'Windwhisker green, as a hex number. Not really a balance knob; it is here because the page shows every field a table has.', '', 0, 16777215, 1],
+    },
+  },
   DIVE: {
     title: 'Power dive',
     blurb: 'Interact, in the air, and she drops. It lands on everything under '

@@ -4,6 +4,7 @@ import {
   orbPrice, orbSellPrice, orbPriceFor, orbSellPriceFor, stockFor,
 } from '../entities/powerorb.js';
 import { KotodamaStall } from '../entities/stall.js';
+import { STEAL } from '../entities/clanpower.js';
 
 /* ---------------------------------------------------------------------------
    THE AWAKENING — what happens to the Kotodama at 100% mischief.
@@ -137,6 +138,26 @@ export class Kotodama {
     this.pickups = [];
     /** @type {KotodamaStall|null} */
     this.stall = null;
+
+    /**
+     * Orbs that changed paws in a fight and are owed back. `[{id, owner}]`.
+     *
+     * 盗 STEAL MISCHIEF IS A LOAN, NOT A TRANSFER, and this list is the whole
+     * of that promise: "the orb is returned to the original player after the
+     * fight". Fourth non-negotiable — nothing is lost — so it survives the orb
+     * being stolen, dropped, picked up by a third kitten, stolen off HER, and
+     * left lying on the deck when the last round ends. `settleLoans` walks it
+     * once, at the end of the match, and every one of those endings is the
+     * same two questions: where is it now, and who does it belong to.
+     *
+     * IT IS NOT A TRADE AND MUST NOT LOOK LIKE ONE. The dealer's screen, the
+     * profile and the trade window all ask `player.powerOrbs` — a borrowed orb
+     * really is hers for the length of the fight, she really can use it, and
+     * the shop really will let her sell it. That last one is the hole this
+     * closes at settle time rather than by making the orb magic: if it has
+     * been sold, `settleLoans` buys it back off the shelf for its owner.
+     */
+    this.loans = [];
 
     /** What the dealer has left. Four of each stat orb, one of each move, plus
      *  one of everything per player past the second — see `stockFor`, which
@@ -549,6 +570,166 @@ export class Kotodama {
     return n;
   }
 
+  /* ------------------------------ 盗 stealing ----------------------------- */
+
+  /**
+   * Knock one Kotodama off somebody, into the ring.
+   *
+   * Called from `Game._clanStealHit` — the strike gate — which is the only
+   * place that knows a marked hit actually landed. Nothing in here asks whether
+   * the two of them were allowed to fight: that question was answered before
+   * the hit was, by the one gate that owns it.
+   *
+   * RANDOM, AND THAT IS THE DESIGN. Richard offered "a random (or selected)"
+   * orb; random is the one that keeps the move a piece of mischief instead of a
+   * surgical strike. A thief who could name the orb would take the 守 every
+   * time and the answer to Steal Mischief would be "do not wear your good one",
+   * which is a worse game than "she got my Flash Step, get it back".
+   *
+   * IT LANDS BESIDE HER, NOT UNDER THE THIEF. Thrown a short way along the line
+   * between them (`STEAL.toss`) so it reads as knocked OUT of her rather than
+   * pulled towards him — and so it is in the open ground between the two of
+   * them, which is where the scrap over it happens.
+   *
+   * @returns {?object} the orb spec that came off, or null if nothing did
+   */
+  knockLoose(thief, victim) {
+    if (!victim?.powerOrbs?.length) return null;
+    /* THE ORB IS PUT DOWN BEFORE IT IS TAKEN OFF HER — the same ordering
+       `drop` keeps and for the same reason: `dropAt` is the one step here that
+       can decline, and taking first would delete one of twenty-six orbs in the
+       world on exactly that path. */
+    const id = victim.powerOrbs[Math.floor(Math.random() * victim.powerOrbs.length)];
+    const pk = this.dropAt(id, victim.position, thief?.position);
+    if (!pk) return null;
+    this.take(victim, id);
+
+    /* WHOSE IT REALLY IS. Recorded against the kitten it came off, not against
+       the thief — and only once per orb, so an orb stolen, stolen back and
+       stolen again still goes home to the girl who bought it. */
+    const owner = this._loanOwner(victim, id);
+    this.loans.push({ id, owner });
+
+    this.game.sfx('orb');
+    return ORB_BY_ID[id] ?? null;
+  }
+
+  /**
+   * Who a newly stolen orb belongs to.
+   *
+   * IF THE VICTIM WAS HERSELF BORROWING IT, the owner is whoever she borrowed
+   * it from. Two thefts of the same orb in one match otherwise produce two
+   * loans, and settling them in order would hand it to the middle kitten. The
+   * older loan is retired here, because there is only ever one answer to "whose
+   * is this" and this is it.
+   */
+  _loanOwner(victim, id) {
+    const at = this.loans.findIndex((l) => l.id === id && l.owner !== victim);
+    if (at < 0) return victim;
+    const [old] = this.loans.splice(at, 1);
+    return old.owner;
+  }
+
+  /**
+   * Put an orb down at an exact spot — the ring, mid-fight.
+   *
+   * NOT `dropInWorld`, AND THE DIFFERENCE IS THE ARENA. That one fans the orb
+   * out, runs `findOpenSpot` over open ground and then asks `heightAt` with no
+   * height hint at all — which on a deck floating in the sky answers with the
+   * ISLAND UNDERNEATH IT, and posts the stolen Kotodama a hundred units below
+   * the fight where nobody can ever reach it. Here the height hint is the
+   * kitten it came off, and a deck with nothing under it falls back to her own
+   * feet rather than refusing.
+   *
+   * @param {?{x:number,z:number}} from  who knocked it loose; the orb is thrown
+   *        AWAY from them. Null drops it straight down.
+   */
+  dropAt(id, at, from = null) {
+    const spec = ORB_BY_ID[id];
+    if (!spec || !at) return null;
+    let x = at.x;
+    let z = at.z;
+    if (from) {
+      const dx = at.x - from.x;
+      const dz = at.z - from.z;
+      const len = Math.hypot(dx, dz);
+      /* TWO KITTENS IN THE SAME SPOT GIVE A ZERO-LENGTH VECTOR, which
+         normalises to NaN and posts the orb to the origin — the same fallback
+         `Player.hurt` needs for the same reason, and in a game where they are
+         trying to hit each other it is not a hypothetical. */
+      if (len > 0.001) {
+        x += (dx / len) * STEAL.toss;
+        z += (dz / len) * STEAL.toss;
+      }
+    }
+    const g = this.world.heightAt(x, z, at.y);
+    const pk = new PowerOrbPickup(spec, x, g ? g.y : at.y, z);
+    /* NOBODY MAY TOUCH IT FOR FOUR SECONDS, thief included. Asked for as "make
+       it that it can't be picked up for 3-5 secs after it is knocked out to
+       force players to battle for it" — without it the thief walks through his
+       own steal on the next frame and the orb never touches the deck. */
+    pk.lockT = STEAL.lock;
+    this.scene.add(pk.group);
+    this.pickups.push(pk);
+    return pk;
+  }
+
+  /**
+   * The fight is over: every borrowed orb goes home.
+   *
+   * FOUR PLACES IT CAN BE, and all four are the same two questions — where is
+   * it, and has its owner got room. Lying on the deck, worn by the thief, worn
+   * by a third kitten who picked it up off the floor, or sold to the dealer
+   * while the round was still running.
+   *
+   * A FULL OWNER GETS IT AT HER FEET rather than losing it. `give` refuses at
+   * eight and it has to: silently dropping the ninth is how a girl ends a
+   * tournament with less than she walked into it with. So it is dropped in the
+   * world beside her — visible, hers to pick up, and nothing is lost.
+   *
+   * IDEMPOTENT, because two callers end a match (`Tournament._finishTournament`
+   * and `finish`, which also fires on restart and on going home) and a list
+   * that had already been settled must not settle again.
+   */
+  settleLoans() {
+    const back = [];
+    for (const { id, owner } of this.loans) {
+      if (!owner || !this.game.players.includes(owner)) continue;
+      /* ON THE DECK FIRST. An orb nobody managed to pick up is the commonest
+         ending of all — four seconds of everybody swinging at each other over
+         it and then the gong. */
+      const loose = this.pickups.find((pk) => !pk.taken && pk.id === id);
+      if (loose) {
+        loose.taken = true;
+        this.scene.remove(loose.group);
+      } else {
+        const holder = this.game.players.find(
+          (q) => q !== owner && q.powerOrbs.includes(id)
+        );
+        /* SOLD, OR OTHERWISE NOWHERE. The dealer takes returns (`sell` puts it
+           back on the shelf), so the orb still exists — it is on the shelf, and
+           this takes it off again. Only if the shelf has none either is there
+           genuinely nothing to give back, and that cannot happen from a sale. */
+        if (holder) this.take(holder, id);
+        else if (this.stock[id] > 0) this.stock[id] -= 1;
+        else continue;
+      }
+      if (!this.give(owner, id, { quiet: true })) this.dropInWorld(id, owner.position, 1);
+      back.push({ id, owner });
+    }
+    this.loans = [];
+    if (!back.length) return 0;
+    this.game.sfx('powerorb');
+    for (const who of new Set(back.map((b) => b.owner))) {
+      const n = back.filter((b) => b.owner === who).length;
+      this.game.toast(
+        `${who.name} got ${n === 1 ? 'her Kotodama' : `${n} Kotodama`} back — a steal only lasts the fight`,
+        who.index
+      );
+    }
+    return back.length;
+  }
+
   /* -------------------------------- frame -------------------------------- */
 
   update(dt) {
@@ -557,6 +738,14 @@ export class Kotodama {
     for (const pk of this.pickups) {
       if (pk.taken) continue;
       pk.update(dt);
+      /* STILL TOO HOT TO TOUCH. See `dropAt`: an orb knocked out of somebody
+         refuses EVERYBODY for four seconds, which is what turns a steal into a
+         scrap over it instead of a transfer. It is still drawn and still bobs —
+         a Kotodama that vanished for four seconds would read as lost. */
+      if (pk.lockT > 0) {
+        pk.lockT -= dt;
+        continue;
+      }
       for (const p of this.game.players) {
         const near = p.position.distanceTo(pk.position) <= PICKUP_RADIUS;
         /* SHE HAS TO STEP OFF IT FIRST — and only she does. `drop` sets this
@@ -614,6 +803,11 @@ export class Kotodama {
   clear() {
     for (const pk of this.pickups) this.scene.remove(pk.group);
     this.pickups = [];
+    /* THE LOANS GO WITH THE WORLD THEY WERE MADE IN. This is the restart path:
+       every orb is about to be dealt again from scratch, so a promise to give
+       one back would be a promise about a kitten who no longer has it, made to
+       one who no longer wants it. */
+    this.loans = [];
     if (this.stall) this.scene.remove(this.stall.group);
     this.stall = null;
     this.forParty(this.game.partySize ?? 2, { restock: true });

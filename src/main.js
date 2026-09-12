@@ -31,6 +31,7 @@ import { Cutscene } from './systems/cutscene.js';
 import { Trailer } from './systems/trailer.js';
 import { CrossFx } from './systems/crossfx.js';
 import { DodgeFx } from './systems/dodgefx.js';
+import { ClanFx } from './systems/clanfx.js';
 import { Confirm } from './systems/confirm.js';
 import { ShrineScene, SCENE_RADIUS } from './systems/shrinescene.js';
 import { SummonScene } from './systems/summonscene.js';
@@ -474,6 +475,13 @@ class Game {
        argument: a poller over the kittens' own clocks, so no way of the move
        ending has to remember to tell it. See systems/dodgefx.js. */
     this.dodgeFx = new DodgeFx(this.scene);
+
+    /* THE TWO CLAN POWERS THE RING GAVE BACK TO ICEWHISKER AND WINDWHISKER:
+       the mark 盗 Steal Mischief puts on somebody, and the inhale and cone of
+       息 Dragon Breath. A poller again, over `stealMarkT` and `breathChargeT`,
+       for the third time and the third identical reason — see
+       systems/clanfx.js. */
+    this.clanFx = new ClanFx(this.scene);
 
     /* THE ON-SCREEN PAD EXISTS ON EVERY MACHINE AND IS SHOWN ON SOME. Building
        it always — rather than only when `touchPrimary` — is what makes the test
@@ -2512,6 +2520,9 @@ class Game {
     /* And no target ring welded to somebody who is about to be a different
        kitten, for exactly the reason above. */
     this.dodgeFx?.reset();
+    /* ...and no mark on a kitten nobody is hunting, and no flame hanging in
+       the air over a deck with no fight on it. */
+    this.clanFx?.reset();
     /* Un-meet every leader. A restart is the world put back to its opening
        state, and six introductions already spent is exactly the sort of
        leftover that makes a "restart" feel like it only half worked. */
@@ -4323,6 +4334,55 @@ class Game {
   }
 
   /**
+   * May this kitten use her clan's arena power right now?
+   *
+   * A SECOND GATE ALONGSIDE `strikePlayers`, AND IT ASKS THE SAME QUESTION OF
+   * THE SAME OBJECT. It exists because a clan power has to be refused BEFORE
+   * it starts — the mark, the wait and the rear-back all happen in front of
+   * any damage — and `strikePlayers` can only refuse a blow that has already
+   * been thrown. What it must never become is a SECOND ANSWER: it reads
+   * `Tournament.fighting`, exactly as the strike gate does, so there is no
+   * arrangement of the two in which one says yes and the other says no.
+   *
+   * AND IT IS SILENT OUTSIDE A ROUND ON PURPOSE. ACTION means four other
+   * things in the world (`Player._startClanPower` lists them), so this is the
+   * one refusal in the clan powers that says nothing at all.
+   */
+  arenaLive(player) {
+    if (!this.tournament?.fighting) return false;
+    return !!player && !player.ko && !player.angel;
+  }
+
+  /**
+   * A marked kitten has just been hit: knock a Kotodama off her.
+   *
+   * CALLED FROM INSIDE THE STRIKE GATE, on the two paths where a blow is known
+   * to have LANDED — the ordinary hit and a Cross Slash's catch. Not from
+   * `Player.hurt`, which cannot tell an arena blow from a ring-out, and not
+   * from a callback on the mark, which would have to be told about every way a
+   * hit can fail to land (a bubble, invulnerability, a partner, a dodge).
+   *
+   * THE MARK IS SPENT EITHER WAY. She marked, she landed the hit, the promise
+   * is kept — and if her sister was wearing nothing by then, that is the
+   * gamble, not a refund. `knockLoose` says so out loud rather than leaving
+   * the press unexplained.
+   */
+  _clanStealHit(attacker, target) {
+    if (!attacker?.stealMarked || attacker.stealTarget !== target) return;
+    attacker._endMark(this);
+    const spec = this.kotodama?.knockLoose?.(attacker, target);
+    if (!spec) {
+      this.toast(`${target.name} had no Kotodama left to lose`, attacker.index);
+      return;
+    }
+    this.toast(
+      `${attacker.name} knocked ${spec.kanji} ${spec.name} off ${target.name} — `
+      + 'anybody can take it in a moment',
+      attacker.index
+    );
+  }
+
+  /**
    * One kitten's blade reaching the other.
    *
    * THE SINGLE GATE ON PLAYER-VERSUS-PLAYER DAMAGE. `Player._doSlash` calls
@@ -4493,6 +4553,11 @@ class Game {
              two sisters still counts as one of the three — see
              `Player.triHits`, which decides which cackle she gets. */
           attacker._triLanded = true;
+          /* A CAUGHT KITTEN IS A HIT KITTEN. The technique banks its damage
+             and pays out later, but the CATCH is the moment the blade found
+             her, and a mark that ignored it would make Steal Mischief useless
+             to the one kitten in the game who can hold somebody still. */
+          this._clanStealHit(attacker, target);
         }
         /* THE BLOCKED CASE MAKES ITS OWN NOISE NOW, inside `triCapture`.
            It used to be an `else if (target.warded)` here playing `wardhit`,
@@ -4548,6 +4613,11 @@ class Game {
           : A;
         const dealt = target.hurt(dmg, attacker.position, force, this);
         if (dealt) {
+          /* 盗 AND HERE IS WHERE A MARK IS PAID. Inside `if (dealt)` and not
+             above it: a swing eaten by a bubble or by half a second of
+             invulnerability is not a hit, and taking a Kotodama for one would
+             mean the shield she bought stopped the damage and not the theft. */
+          this._clanStealHit(attacker, target);
           /* AND THE BLOW THAT FOUND HER AND MISSED THE ANIMAL TAKES HER OFF
              IT. Only that one: a blade that hit both is a blade the panda
              took most of, which is what riding one is for. */
@@ -6120,6 +6190,10 @@ class Game {
        that `Player.update` has already settled this frame, so the ring lands
        on where her sister IS rather than on where she was. */
     this.dodgeFx?.update(dt, this.players);
+    /* AND THE CLAN POWERS LAST OF THE THREE, for the same reason dodgefx runs
+       after crossfx: the mark is drawn on the kitten it is following, and by
+       here every position this frame is settled. */
+    this.clanFx?.update(dt, this.players);
     this._updateBooms(dt);
     this._updateShake(dt);
     /* One flag, set where the fact becomes true. `ArenaQuest` needs to know

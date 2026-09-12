@@ -155,7 +155,14 @@ export const CLANS = [
     color: 0x8fe0a0,
     tile: 0x3d6b57,
     motto: 'loudest paws in the sky',
-    buff: { id: 'breath', label: 'Huge dragon breath', breath: 1.9 },
+    /* `breath` STRETCHES A DRAGON'S FLAME; `arenaBreath` GIVES HER ONE OF HER
+       OWN. Two keys because they are two different animals — the multiplier is
+       applied to whatever she is riding, and in the ring she is riding nothing.
+       See `entities/clanpower.js` for why the ring needed an answer at all. */
+    buff: {
+      id: 'breath', label: 'Huge dragon breath', breath: 1.9,
+      arenaBreath: true, arena: 'Dragon breath on foot',
+    },
   },
   {
     id: 'ice',
@@ -167,7 +174,14 @@ export const CLANS = [
     /* The finder. Hunting the last three unbroken barrels across six islands
        is the part of a 100% run that stops being a game and starts being a
        chore — this points at the nearest one you haven't knocked over yet. */
-    buff: { id: 'seek', label: 'Sense mischief', seek: true },
+    /* AND IN THE RING IT BECOMES STEALING IT. Same oath, same idea, somewhere
+       with no barrels in it: a Kotodama is mischief that has been woken out of
+       the furniture, so the clan that can FEEL mischief is the one that can
+       knock it loose from whoever is wearing it. `entities/clanpower.js`. */
+    buff: {
+      id: 'seek', label: 'Sense mischief', seek: true,
+      steal: true, arena: 'Steal mischief',
+    },
   },
   {
     id: 'panda',
