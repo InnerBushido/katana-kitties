@@ -2817,6 +2817,57 @@ body.touch-ui .ne-ask-q { font-size: 16px; }
 #panel-board .menu-btn { margin-top: 18px; }
 #panel-board .lb-empty { display: block; padding: 14px 0; opacity: 0.7; }
 
+/* ------------------------- the saved afternoons --------------------------- */
+
+/* A ROW IS THREE LINES AND THEY ARE DELIBERATELY UNEQUAL. Who was playing is
+   the fact somebody recognises their own game by, so it is the biggest thing
+   on the row; what had happened to the town is next; when it was is smallest
+   and last. Reading a list of five is then one sweep down the left-hand names
+   rather than five dates that all say the same afternoon.
+
+   THE ROWS ARE `.menu-btn` BECAUSE MenuNav WALKS THEM, so everything here is
+   an override of the ordinary button rather than a new kind of control: a
+   stick moves the cursor down the list exactly the way it does in every other
+   panel, and the cursor's own ring is the one the button already had. */
+#panel-saves .panel { max-height: 82vh; overflow-y: auto; overscroll-behavior: contain; }
+#panel-saves .lb-empty { display: block; padding: 14px 0; opacity: 0.75; text-align: center; }
+.sv-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  text-align: left;
+  line-height: 1.25;
+  padding: 9px 12px;
+}
+.sv-who { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+/* EACH KITTEN IN HER OWN COLOUR — the same one that frames her pane, badges her
+   score and rings her feet. It is the whole reason the row is scannable from
+   the other side of a sofa: nobody reads four names, they see two oranges and
+   a purple and know which afternoon that was. */
+.sv-kit { display: inline-flex; align-items: baseline; gap: 4px; }
+.sv-kit b {
+  font-family: 'Bangers', cursive;
+  font-size: 17px;
+  letter-spacing: 1px;
+}
+.sv-clan { font-style: normal; font-size: 11px; opacity: 0.75; }
+/* THE ORBS SHE HAD ON, AS THE GLYPHS THEY WEAR IN THE WORLD. Not a count and
+   not names: 疾疾 is two Gales, and it is the same character painted on the orb
+   bobbing over her shoulder, so the row is read rather than decoded. */
+.sv-orbs { font-size: 13px; letter-spacing: 1px; }
+.sv-orb { text-shadow: 0 0 4px currentColor; }
+.sv-none { font-size: 10px; opacity: 0.5; letter-spacing: 0; }
+.sv-what { font-size: 12px; opacity: 0.85; letter-spacing: 0; }
+.sv-when { font-size: 11px; opacity: 0.55; letter-spacing: 0; }
+/* A SAVE THAT CANNOT BE LOADED IS DIMMED AND STILL THERE. It keeps its place
+   in the list and the cursor still reaches it, because a row that silently
+   vanished would read as a save the game had lost - and the third line on it
+   says, in words, what is wrong with it. */
+.sv-stale { opacity: 0.5; }
+#panel-saves .back { margin-top: 16px; }
+#saves-note { font-size: 12px; opacity: 0.75; margin: 10px 0 0; }
+
 /* ------------------- Character Profile / Kotodama dealer ------------------ */
 
 /* TWO CURSORS ON ONE SCREEN, so each girl's highlight has to be HERS. The

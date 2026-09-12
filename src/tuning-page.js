@@ -156,7 +156,8 @@ const GROUPS = {
     fields: {
       cool: ['Wait', 'How long before she can breathe again. The HUD pip counts it down and it chimes when it is back.', 's', 5, 120, 1],
       charge: ['Rear-back', 'The tell. Seconds between the press and the flame — this is the time her sister gets to move, and it is the whole reason the move is fair.', 's', 0.1, 3, 0.05],
-      fire: ['Flame length', 'How long the cone is on screen. PICTURE ONLY: the damage is applied once, on the frame it leaves her.', 's', 0.1, 2, 0.05],
+      fire: ['Flame length', 'How long the cone is on screen — and a live hit box for every frame of it, so she can turn inside her own flame and catch somebody else. Divided by “Bites every”, this is how many times it can cost one kitten.', 's', 0.1, 3, 0.05],
+      tick: ['Bites every', 'How long a kitten the flame has already caught is safe from it before it catches her again. The first bite lands the moment the cone touches her. A bubble takes one swing’s worth each time (two of them smash it); with no bubble she takes the hit, and half a second of invulnerability usually eats the next bite. Zero would make it a frame-rate weapon — that is what this number is for.', 's', 0.05, 2, 0.05],
       range: ['Range', 'How far the cone reaches. A dragon breathes 15-20; this is a kitten.', 'm', 2, 20, 0.5],
       spread: ['Spread', 'How wide it opens. Authored exactly as a breed’s breath spread is, and the ATTACKS.dbreath arc is derived from it — so the drawing and the hit box cannot disagree.', '', 0.1, 1, 0.02],
       dmg: ['Damage', 'On the kittens the cone catches. Also feeds ATTACKS.dbreath.', '', 1, 60, 1],

@@ -47,7 +47,12 @@ import { Menagerie } from './systems/menagerie.js';
 import { AngelForm } from './entities/angel.js';
 import { ArenaQuest, SATAN_TOWN, MILESTONES } from './systems/arenaquest.js';
 import { SatanBlast } from './systems/satanblast.js';
-import { loadBoard, BOARD_MODES } from './systems/leaderboard.js';
+import { loadBoard, clearBoard, BOARD_MODES } from './systems/leaderboard.js';
+import {
+  listSaves, putSave, dropSave, clearSaves, snapshot, describe, restore,
+  AUTOSAVE_EVERY, AUTOSAVE_AFTER, MAX_SAVES,
+} from './systems/savegame.js';
+import { POWER_ORBS } from './entities/powerorb.js';
 import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
 import { ORB_IDS, CROSS } from './entities/powerorb.js';
 import { ProfileScreen } from './systems/profile.js';
@@ -98,7 +103,7 @@ const HINT_CLEAR = 30;
  * place. Everything else in here can only ever be the innermost thing open.
  */
 const SUB_PANELS = ['panel-board', 'panel-help', 'panel-settings',
-  'panel-kittens', 'panel-watch', 'panel-ending'];
+  'panel-kittens', 'panel-watch', 'panel-saves', 'panel-ending'];
 
 /** The key each debug action is bound to, for the panel's own labels. */
 const DEBUG_KEY_LABEL = {
@@ -358,6 +363,24 @@ class Game {
 
     this.state = 'loading';
     this.paused = false;
+    /**
+     * SECONDS OF ACTUAL PLAY in this run, and the only thing the autosave is
+     * gated on.
+     *
+     * NOT WALL CLOCK AND NOT FRAMES. Asked for as "shouldn't start auto-saving
+     * until after the player has played for more than 5 minutes", and a tab
+     * left open on the pause menu over lunch is not five minutes of play — it
+     * would fill all five slots with the same untouched town and push the
+     * afternoon somebody cared about off the end of the list. So it ticks in
+     * `_tickBody` AFTER the pause check and only while `state === 'play'`: a
+     * frozen world does not age, and neither does the title screen.
+     *
+     * A LOAD SETS IT rather than resetting it (see savegame.js `restore`), so
+     * the afternoon you carried on from keeps counting up from where it was.
+     */
+    this.playT = 0;
+    /** When the next autosave is due, on the same clock. */
+    this._saveAt = AUTOSAVE_AFTER + AUTOSAVE_EVERY;
     /* WHICH PLAYER IS DRIVING THE MENU, as a slot index, or null for "anybody".
        See `_claimMenu` — this is the whole of the one-cursor rule. */
     this.menuOwner = null;
@@ -1185,6 +1208,13 @@ class Game {
          exists. See it for why the two sheets are measured against each other
          rather than each sized on its own. */
       this.satan.setChargeArt(satanChargeArt);
+      /* AND KEPT, because the ENDING wants it too and the ending happens long
+         after this closure has gone. It is his arms-up pose, and the last shot
+         of the game is him throwing them up on the word "open" — see
+         `FinaleShow._stepArena`. Held on the game rather than dug back out of
+         `this.satan`, so a champion who never loaded costs the gesture and not
+         the lookup. */
+      this.satanChargeArt = satanChargeArt;
       /* Remembered, because he MOVES: he stands in the town to invite them
          and in his box at the arena to call the rounds, and `reset` has to be
          able to put him back without recomputing a spot that depends on a
@@ -1651,8 +1681,18 @@ class Game {
   _finaleCast() {
     return {
       kittens: this.kittenArt ?? [],
+      /* HER CHEER, BY STYLE. The four of them applaud the champion in the last
+         shot, and the blessing pose is the one drawing in the game of a kitten
+         with her paws in the air. Indexed the same way `kittens` is — by
+         STYLE, never by seat — for the reason the three derivation loops that
+         build these sheets each repeat at length: Storm cheering as a grey
+         Frost is one slot-vs-style slip away and has happened before. */
+      bless: this.blessArt ?? [],
       dragon: this.dragonArt ?? null,
       satan: this.satan?.art ?? null,
+      /* His arms up. Measured against his idle sheet by ink area at the moment
+         it is used, not here — see `poseQuad`. */
+      satanCharge: this.satanChargeArt ?? null,
     };
   }
 
@@ -1817,6 +1857,7 @@ class Game {
         if (a === 'help') { show('panel-help'); this._warmHelpClips(); }
         if (a === 'settings') { this._refreshPads(); show('panel-settings'); }
         if (a === 'board') { this._paintBoard(); show('panel-board'); }
+        if (a === 'saves') { this._paintSaves(); show('panel-saves'); }
         /* The three groups the pause menu was cut into. They carry no state of
            their own — every row inside is the same `data-action` it was when
            it sat in the pause menu — so opening one is only a `show`. */
@@ -2669,6 +2710,14 @@ class Game {
       this.summonScene.played.satanOpen = false;
     }
 
+    /* THE PLAY CLOCK GOES BACK TOO, and the next save is five minutes away
+       again. A restart is a new afternoon: carrying the old clock over would
+       have the fresh world photographed thirty seconds later and pushing the
+       run somebody actually wanted off the bottom of a five-slot list.
+       `restore` sets both explicitly afterwards, so a LOAD is unaffected. */
+    this.playT = 0;
+    this._saveAt = AUTOSAVE_AFTER + AUTOSAVE_EVERY;
+
     this.setPaused(false);
     this.toast('Adventure restarted!', 0);
   }
@@ -3465,6 +3514,28 @@ class Game {
        `1 + k*n` rule in powerorb.js is written for and the hardest one to reach
        by hand. */
     if (code === 'Digit3') this._debugAllOrbs();
+    /* --- THE ONE THING IN THE GAME THAT OUTLIVES THE TAB ---
+       `BoardWipe` IS NOT A KEY AND DELIBERATELY HAS NO LABEL. Every other row
+       in the panel is a keyboard shortcut that also happens to be tappable;
+       this one is a panel row and nothing else, because a single keystroke
+       that deletes the only persistent thing in the project is exactly the
+       kind of thing an elbow finds. `DEBUG_KEY_LABEL` has no entry for it, so
+       the key column renders empty, and no `code` a keyboard can produce
+       matches it.
+
+       Asked for as "for now, we can add a setting in the Debug menu to clear
+       out the leaderboard" — there was no way to do it from inside the game at
+       all. `clearBoard()` had existed since the board was written, with a
+       comment claiming it was reachable from the pause menu; nothing had ever
+       called it. */
+    if (code === 'BoardWipe') this._debugClearBoard();
+    /* AND ITS SIBLING, ADDED WITH THE SAVES AND FOR THE SAME REASONS. The
+       separator above these two rows used to say "the only thing that outlives
+       the tab" and it was true; the autosaves made it false, and a debug panel
+       that could wipe one persistent thing and not the other would send a
+       tester to the dev tools for the other half. No key, for the same reason
+       `BoardWipe` has none. */
+    if (code === 'SaveWipe') this._debugClearSaves();
     /* --- the scene viewer ---
        Every cutscene in the game is gated behind hours of play and fires ONCE
        per session, which makes the last thing anybody writes also the hardest
@@ -3680,7 +3751,89 @@ class Game {
     this.toast(`[debug] every kitten wearing all ${ORB_IDS.length} kotodama`, 0);
   }
 
+  /** How many results are on this device, across every league. Read fresh
+   *  rather than cached: the panel is rebuilt on every interaction and a count
+   *  that lags by one tournament is a count nobody can trust. */
+  _boardRows() {
+    return BOARD_MODES.reduce((n, m) => n + loadBoard(m).length, 0);
+  }
+
+  /**
+   * Throw away every tournament result on this device.
+   *
+   * IT ASKS FIRST, AND IT IS NOT BEING POLITE. Seventh non-negotiable: nothing
+   * irreversible happens on one press and the default answer is no. This is the
+   * single most irreversible button in the game — the record board is the ONLY
+   * thing in Katana Kitties that survives closing the tab, which is the whole
+   * argument `systems/leaderboard.js` opens with — and there is no backend to
+   * recover it from. The dialog has no `.primary`, like every other one, so the
+   * cursor opens on "no".
+   *
+   * THE BUTTONS SAY WHAT THEY DO AND THE NUMBER IS IN THEM. "Yes" on a dialog
+   * a child has stopped reading is a coin toss; "YES, WIPE ALL 7" is a
+   * sentence she has to disagree with on purpose. Sixth non-negotiable.
+   *
+   * EVERY LEAGUE, because that is what "clear out the leaderboard" means to
+   * somebody looking at a device — a duel board wiped and a 3v1 board left
+   * standing would read as the button having half worked.
+   */
+  _debugClearBoard() {
+    const rows = this._boardRows();
+    if (!rows) {
+      this.toast('[debug] the record board is already empty', 0);
+      return;
+    }
+    this.confirm.ask({
+      title: 'WIPE THE RECORD BOARD?',
+      body: `Every tournament result saved on this device goes — all ${rows} of `
+        + 'them, in every league. It is the one thing in the game that survives '
+        + 'closing the tab, and there is no way to get it back.',
+      no: 'NO, KEEP THE RECORDS',
+      yes: `YES, WIPE ALL ${rows}`,
+      onYes: () => {
+        clearBoard();
+        this.toast(`[debug] record board wiped — ${rows} results gone`, 0);
+        /* The row prints the count, so it is now wrong until the panel is
+           rebuilt — and "the button did nothing" is what a stale row reads as. */
+        this._refreshDebugPanel();
+      },
+    });
+  }
+
+  /**
+   * Throw away every saved afternoon on this device.
+   *
+   * THE SAME SHAPE AS THE BOARD WIPE NEXT TO IT, and deliberately so: a number
+   * in the button, words that say what goes, and no `.primary` so the cursor
+   * opens on "no". What differs is what it is FOR — the board is a trophy
+   * cabinet and this is a filing cabinet, and a tester who wants to watch the
+   * five-slot cap fill from empty has no other way to empty it.
+   */
+  _debugClearSaves() {
+    const n = listSaves().length;
+    if (!n) {
+      this.toast('[debug] there are no saved games on this device', 0);
+      return;
+    }
+    this.confirm.ask({
+      title: 'WIPE EVERY SAVED GAME?',
+      body: `All ${n} saved ${n === 1 ? 'afternoon' : 'afternoons'} on this `
+        + 'device go, and there is no way to get them back. The record board '
+        + 'is kept.',
+      no: 'NO, KEEP THEM',
+      yes: `YES, WIPE ALL ${n}`,
+      onYes: () => {
+        clearSaves();
+        this.toast(`[debug] saved games wiped — ${n} gone`, 0);
+        /* The row prints the count, so it is wrong until the panel is rebuilt,
+           and a stale row reads as a button that did nothing. */
+        this._refreshDebugPanel();
+      },
+    });
+  }
+
   _debugEndgame() {
+    const standing = this.world.props.filter((p) => !p.knocked && !p.gone).length;
     const { share, orbs } = this._unlockEndgame();
 
     // And the ending, on the first frame nothing else owns the screen.
@@ -3688,7 +3841,8 @@ class Game {
     this._finaleDue = true;
 
     this.toast(
-      `[debug] endgame: ${share} pts each, ${orbs} orbs out, arena open`, 0
+      `[debug] endgame: ${standing} knocked over, ${share} pts each, `
+      + `${orbs} orbs out, arena open`, 0
     );
   }
 
@@ -3717,6 +3871,12 @@ class Game {
    * @returns {{share: number, orbs: number}} for the debug toast
    */
   _unlockEndgame() {
+    /* THE MISCHIEF ITSELF, FIRST. See `_wreckWorld` — the ending is a scene
+       ABOUT a wrecked town and half of it does not exist over a standing one.
+       Before the purses and the arena, because the purses are a share of a
+       total this does not change and the ending's own `_heap()` is measured
+       off the props the moment the scene starts. */
+    this._wreckWorld();
     /* AN EQUAL SHARE EACH, AT WHATEVER THE PARTY SIZE IS NOW. `Math.floor`
        rather than `round`, so four shares can never add up to more than the
        world actually contains. */
@@ -3753,6 +3913,88 @@ class Game {
     }
 
     return { share, orbs: this.pickups.filter((k) => !k.taken).length };
+  }
+
+  /**
+   * Put the whole world on its side, quietly, the way an afternoon would have.
+   *
+   * REPORTED FROM PLAY: "having no mischief knocked over and starting the
+   * cutscene in debug currently causes major issues during the cutscene
+   * playback, so let's just knock it all over before starting the cutscene."
+   * It is not a cosmetic mismatch. `FinaleTide.start` takes hold of exactly the
+   * props that are `knocked`, so over a standing town it holds NOTHING: the
+   * reconstruction beat never runs, the shove has nothing to shove, and
+   * `_heap()` — which measures the tightest knot of KNOCKED props — comes back
+   * null, so all four of the shots framed on it fall through to the wide shot.
+   * Patchfur then says "there is nothing left standing" over a town that is
+   * entirely standing, which is the one line in the game it is least possible
+   * to get away with.
+   *
+   * IT LIVES IN `_unlockEndgame` AND NOT IN THE `6` HANDLER, for the reason
+   * that method already gives about everything else in it: the scene viewer can
+   * open the ending too, and an ending that unlocks the endgame but leaves the
+   * town upright is the same bug by the other door.
+   *
+   * SILENTLY. No toast per prop, no `onMischief`, no score storm — 216 props
+   * going through the normal path would be 216 toasts and a soundtrack of
+   * splintering bamboo. The points are handled above, as an even share of
+   * `pointsTotal`, which is what a full clear is worth however it was reached.
+   *
+   * A POSE EACH, AND IT IS THE SAME RECIPE THE SHOVE USES. `FinaleTide.slam`
+   * invents a direction, a tilt and a scatter per prop, and this wants the
+   * identical picture for the identical reason — a town where every barrel is
+   * lying along the same axis reads as a bug, and the tide SNAPSHOTS whatever
+   * pose it finds as the one it will put back. What it must NOT do is look
+   * like the pose `Prop.update` settles to (flat on x, square on z), because
+   * that is what a prop converges to over about a second and every one of them
+   * arriving there at once is the tell.
+   *
+   * NOTHING IS LOST. `gone` props stay gone and stay hidden — the retirement
+   * rule is the whole reason the mischief counter can be trusted — and they are
+   * still counted as scored, which they were, on their way over the edge.
+   *
+   * @returns {number} how many were still standing.
+   */
+  _wreckWorld() {
+    const W = this.world;
+    const props = W?.props ?? [];
+    let standing = 0;
+    for (const prop of props) {
+      /* SCORED EITHER WAY. The counter reads `scored`, not `knocked`, and a
+         prop that fell off the world was paid for on the way down. */
+      prop.scored = true;
+      if (prop.gone || prop.knocked || !prop.group) continue;
+      standing++;
+      prop.knocked = true;
+      prop.settleTimer = 9;
+      prop.vel.set(0, 0, 0);
+      prop.spin.set(0, 0, 0);
+      const a = Math.random() * Math.PI * 2;
+      const tip = 1.15 + Math.random() * 0.5;
+      const away = 0.5 + Math.random() * 1.3;
+      const x = prop.home.x + Math.cos(a) * away;
+      const z = prop.home.z + Math.sin(a) * away;
+      /* ON THE GROUND WHERE IT LANDED, not at the height it was built at. A
+         cane that rolled off a step and is hanging in the air is the sort of
+         thing that only shows up in the one shot that is eight units from it.
+         `heightAt` is null over a gap, which is a prop that would have fallen
+         off the world; it keeps its own height rather than being retired,
+         because retiring things is `Prop._retire`'s job and not this one's. */
+      const g = W.heightAt(x, z);
+      prop.group.position.set(x, g ? g.y : prop.home.y, z);
+      prop.group.rotation.set(
+        Math.cos(a) * tip,
+        prop.group.rotation.y + (Math.random() - 0.5) * 0.9,
+        Math.sin(a) * tip
+      );
+    }
+    /* AND THE ONE NUMBER THE GIRLS HAVE BEEN WATCHING ALL AFTERNOON. Written
+       here rather than through `onMischief`, which is a per-prop path with a
+       toast and a scene queue hanging off it. */
+    const done = props.filter((p) => p.scored).length;
+    const el = document.getElementById('mtotal');
+    if (el) el.textContent = `${done} / ${W.mischiefTotal}`;
+    return standing;
   }
 
   /** The scenes the viewer can replay, in the order they happen in a playthrough. */
@@ -4247,6 +4489,9 @@ class Game {
       ${row('KeyR', `WASD &#8594; ${this._keyboardHeldBy(0)}`)}
       ${row('KeyU', `${KEYSETS[1].name} &#8594; ${this._keyboardHeldBy(1)}`)}
       ${TUNING_ROW}
+      <div class="dbg-sep">THIS DEVICE — what outlives the tab</div>
+      ${row('BoardWipe', `wipe the RECORD BOARD (${this._boardRows()} results)`)}
+      ${row('SaveWipe', `wipe the SAVED GAMES (${listSaves().length} of ${MAX_SAVES})`)}
       <div class="dbg-sep">SCENE VIEWER — choose, then play</div>
       ${row('Minus', '&#9664; previous scene')}
       ${row('Equal', 'next scene &#9654;')}
@@ -4510,14 +4755,21 @@ class Game {
 
     for (const target of this.players) {
       if (target === attacker || target.ko) continue;
-      /* --- ALREADY CAUGHT BY THIS ONE ---------------------------------------
+      /* --- ALREADY BITTEN BY THIS ONE, AND NOT YET OFF THE HOOK -------------
          `spent` is passed by exactly one caller: 息 Dragon Breath, whose cone
          is a live hitbox for the whole second it is on screen and may be swung
          round by the girl breathing it. It is the difference between "she can
          turn and catch two of them" and "she can hold a flame on one of them
          and delete her at whatever frame rate the machine manages" — see
-         `Player._sweepArenaBreath`, which owns the set and throws it away with
-         the flame.
+         `entities/clanpower.js`, where `BreathTally` owns the whole rule, and
+         `Player._sweepArenaBreath`, which opens one and throws it away with the
+         flame.
+
+         THIS GATE ASKS IT TWO QUESTIONS AND KNOWS NOTHING ELSE ABOUT IT:
+         `has` before a blow, `add` after one that landed. It was a `Set` and is
+         now a stamp per body — a flame held on somebody bites her again every
+         `DBREATH.tick` — and nothing here had to change for that, which is the
+         point of it being a parameter rather than a rule written out in here.
 
          HER AND HER ANIMAL ARE SPENT SEPARATELY, because they are two bodies
          with two range tests and the cone can genuinely reach one and not the
@@ -5325,6 +5577,173 @@ class Game {
   }
 
   /**
+   * Write the afternoon down, if there is one worth writing.
+   *
+   * IT FAILS QUIETLY AND CARRIES ON. `putSave` writes to localStorage, which
+   * throws on a full quota and on a browser in private mode with site data
+   * off — and a game that stops dead every thirty seconds because it cannot
+   * keep a diary is worse than a game with no diary. Ninth non-negotiable:
+   * degrade rather than vanish. The failure shows up where it can be acted
+   * on, which is the list saying it is empty.
+   */
+  _autoSave() {
+    try {
+      const snap = snapshot(this);
+      if (snap) putSave(snap);
+    } catch (err) {
+      /* ONCE, NOT EVERY THIRTY SECONDS. A console filling with the same line
+         for four hours hides everything else in it. */
+      if (!this._saveBroke) console.warn('[saves] could not write', err);
+      this._saveBroke = true;
+    }
+  }
+
+  /**
+   * THE LIST, AND WHAT A ROW HAS TO SAY.
+   *
+   * "People should be able to find the save they want based on some of the
+   * information shown in the save list (like how many players, whether arena
+   * is unlocked, each players kotodama orbs equipped etc.)" — so a row leads
+   * with WHO, in their own colours, wearing the kanji of the orbs they had on,
+   * and then says how far the town had come down and what was open. The
+   * timestamp is last. A slot number appears nowhere: it is the one fact about
+   * a save that nobody can recognise.
+   *
+   * A STALE ROW IS SHOWN AND SAYS WHY. It is still a `.menu-btn` and MenuNav
+   * still walks onto it, because a row a cursor skips over is a row that has
+   * silently disappeared — pressing it toasts the reason instead of loading.
+   * Sixth non-negotiable.
+   */
+  _paintSaves() {
+    const el = document.getElementById('saves-body');
+    const note = document.getElementById('saves-note');
+    if (!el) return;
+    el.textContent = '';
+    let rows = [];
+    try {
+      rows = listSaves().map((snap) => describe(snap, this.world));
+    } catch { rows = []; }
+
+    if (!rows.length) {
+      const p = document.createElement('p');
+      p.className = 'lb-empty';
+      p.textContent = 'No saved games yet. The game starts keeping one by '
+        + `itself every ${AUTOSAVE_EVERY} seconds, once you have been playing `
+        + `for ${Math.round(AUTOSAVE_AFTER / 60)} minutes.`;
+      el.appendChild(p);
+      if (note) note.textContent = '';
+      return;
+    }
+
+    const kanji = (ids) => {
+      /* THE SAME GLYPH THE ORB ITSELF WEARS. Eight orbs and four kittens is
+         thirty-two words on a row nobody would read; it is four characters per
+         kitten in the colours she saw them in, which is how she recognises her
+         own setup from across the room. Stacks count, so three 疾 means three. */
+      const seen = ids.map((id) => POWER_ORBS.find((o) => o.id === id))
+        .filter(Boolean);
+      if (!seen.length) return '<span class="sv-none">no orbs</span>';
+      return seen.map((o) =>
+        `<span class="sv-orb" style="color:#${o.color.toString(16).padStart(6, '0')}"`
+        + ` title="${escapeHtml(o.label)}">${o.kanji}</span>`).join('');
+    };
+
+    rows.forEach((r) => {
+      const b = document.createElement('button');
+      b.className = `menu-btn sv-row${r.stale ? ' sv-stale' : ''}`;
+      b.dataset.save = r.id;
+      const who = r.players.map((p) => {
+        const st = PLAYER_STYLE.find((x) => x.name === p.style);
+        const col = st ? cssFor(st) : '#fff';
+        return `<span class="sv-kit" style="color:${col}">`
+          + `<b>${escapeHtml(p.style)}</b>`
+          + (p.clan ? `<i class="sv-clan">${escapeHtml(p.clan)}</i>` : '')
+          + `<span class="sv-orbs">${kanji(p.orbs)}</span></span>`;
+      }).join('');
+      const bits = [
+        `${r.party} kitten${r.party === 1 ? '' : 's'}`,
+        r.mischief == null ? null : `${r.mischief}% mischief`,
+        r.balls ? `${r.balls}/7 stars` : null,
+        r.arena ? 'arena open' : null,
+      ].filter(Boolean);
+      b.innerHTML = `<span class="sv-who">${who}</span>`
+        + `<span class="sv-what">${bits.join(' · ')}</span>`
+        + `<span class="sv-when">${escapeHtml(r.when)} · ${escapeHtml(r.played)} played`
+        + (r.stale ? ' · <b>from a different version of the game</b>' : '')
+        + '</span>';
+      b.addEventListener('click', () => this._askLoadSave(r));
+      el.appendChild(b);
+    });
+
+    if (note) {
+      /* THE CAP, NOT THE COUNT. It said "the last 4 of these" while four were
+         showing, which is a sentence that teaches somebody the wrong rule the
+         moment a fifth appears — and the fact worth knowing here is precisely
+         the one the list cannot show you: that the oldest is about to go. */
+      note.textContent = `The game keeps the last ${MAX_SAVES} of these by`
+        + ` itself — a new one every ${AUTOSAVE_EVERY} seconds once you have`
+        + ` played for ${Math.round(AUTOSAVE_AFTER / 60)} minutes, and the`
+        + ' oldest drops off the bottom. Loading one ends the game you are'
+        + ' playing now.';
+    }
+  }
+
+  /**
+   * Load it — after asking, because it throws the current afternoon away.
+   *
+   * SEVENTH NON-NEGOTIABLE, and this is the strongest case for it in the
+   * game: the thing on the other side of this button is four hours of
+   * somebody else's work, and the button is in a menu four children are
+   * pushing at. The dialog has no `.primary`, so the cursor opens on "no".
+   */
+  _askLoadSave(row) {
+    if (row.stale) {
+      this.toast('That save was made by a different version of the game.', 0);
+      return;
+    }
+    this.confirm.ask({
+      title: 'LOAD THIS SAVED GAME?',
+      body: 'The game you are playing now ends — every prop, orb, clan and '
+        + 'star goes back to how it was in the save. The record board is kept.',
+      no: 'NO, KEEP PLAYING',
+      yes: 'YES, LOAD IT',
+      onYes: () => this._loadSave(row.id),
+    });
+  }
+
+  _loadSave(id) {
+    const snap = listSaves().find((r) => r.id === id);
+    if (!snap) { this.toast('That save is gone.', 0); return; }
+    let out;
+    try {
+      out = restore(this, snap);
+    } catch (err) {
+      /* A HALF-LOADED WORLD IS THE ONE OUTCOME WORSE THAN A REFUSED LOAD, and
+         `restore` starts with `restart()`, so what is standing after a throw is
+         a clean opening world rather than a mixture. Say so and drop the save:
+         a row that crashes the game every time it is pressed is a row that has
+         to stop being offered. */
+      console.warn('[saves] could not load', err);
+      dropSave(id);
+      this.toast('That save could not be loaded, so it has been removed.', 0);
+      this._paintSaves();
+      return;
+    }
+    this._saveAt = this.playT + AUTOSAVE_EVERY;
+    for (const pid of [...SUB_PANELS, 'panel-pause']) {
+      document.getElementById(pid)?.classList.add('hidden');
+    }
+    this.setPaused(false);
+    /* HOW MANY KITTENS DID NOT GET A SEAT, said out loud. See `restore`: a
+       save of four loaded into a two-kitten game restores two, and silently
+       losing two girls' orbs is exactly the silent failure invariant 6 is
+       about. */
+    this.toast(out.dropped
+      ? `Loaded — ${out.seated} back, ${out.dropped} waiting for a controller.`
+      : 'Saved game loaded!', 0);
+  }
+
+  /**
    * Which league are we fighting? Shown only when the party can run more
    * than one.
    *
@@ -5896,6 +6315,29 @@ class Game {
       this.ryu?.update(dt, this.world);
       for (const s of this.world.shrines) s.update(dt, []);
       for (const L of this.leaders) L.update(dt, []);
+      /* --- AND THE LESSON, WHICH THE ENDING IS ABOUT ------------------------
+         Reported from play: "for the Dojo of the Turning Circle part, it seems
+         that the game is paused and the text, spheres and graphics are not
+         moving with the player that is moving around on the dojo screen." They
+         were not: this branch returns before the frame ever reaches the one
+         call that ticks the Dojo, so the ending spent its whole third line
+         looking at a diagram frozen on whatever angle the world happened to be
+         holding when the last barrel went over. The runner ran the rim of a
+         still picture.
+
+         NOBODY, RATHER THAN FOUR FROZEN KITTENS. Every scene stops ticking the
+         players, so handing the lesson their positions pins theta to wherever
+         they were standing — which is the same frozen diagram by a different
+         route, and worse, because it looks deliberate. With an empty list
+         `MathDojo` falls back to its own slow idle turn, which is exactly what
+         it does when the island is empty. When the ending's runner IS on the
+         circle, `dojoDrivers` hands her over and the legs follow her: the real
+         lesson, read off the cutscene's own kitten. First non-negotiable.
+
+         AND WITHOUT THE ONE LINE THAT IS TALKING TO A PLAYER. See the doc on
+         `MathDojo.update` — "nobody on the circle" is an invitation, and there
+         is nobody to invite in the middle of a cutscene. */
+      this.dojo.update(dt, this.summonScene.dojoDrivers?.() ?? [], { hint: false });
       this._renderView(this.summonScene.camera, 0, 0,
         ...this.renderer.getSize(new THREE.Vector2()).toArray());
       return;
@@ -6061,6 +6503,24 @@ class Game {
       // Keep drawing the world behind the menu, but freeze it.
       this._render();
       return;
+    }
+
+    /* THE AFTERNOON, WRITTEN DOWN. Below the pause return and above everything
+       that moves, so a paused game does not age and a frozen one is never
+       photographed mid-freeze. See systems/savegame.js for what a save is and
+       why it is a list of what the girls have DONE rather than a description
+       of the world.
+
+       IT NEVER ASKS AND NEVER SAYS. A toast here would fire every thirty
+       seconds for the rest of the game, which is the kind of notification a
+       player learns to stop reading — and the list is in the menu whenever
+       anybody wants to look at it. */
+    if (this.state === 'play') {
+      this.playT += dt;
+      if (this.playT >= this._saveAt) {
+        this._saveAt = this.playT + AUTOSAVE_EVERY;
+        this._autoSave();
+      }
     }
 
     /* The ending, cashed in on the first frame nothing else owns the screen.

@@ -107,6 +107,22 @@ const STAGGER = 0.45;
  */
 const SLAM = 1.5;
 const CRASHES = 12;
+/**
+ * How much of the wave's stagger a SHOVE gets. Standing up is a ripple and
+ * being knocked over is not.
+ *
+ * "When the mischief gets knocked over, all the sounds should be played in a
+ * duration that is half the time, so it sounds closer to as if they are all
+ * getting knocked over around the same time." Exactly half, and it is the
+ * stagger that is halved rather than `SLAM`: shortening the fall itself would
+ * have made every barrel move twice as fast, which is a different note
+ * entirely — the ask is about a town going over TOGETHER, not about it going
+ * over FASTER. Measured, the bangs now arrive across 0.34s instead of 0.67s.
+ *
+ * THE RISE KEEPS THE FULL WAVE. A town tidying itself is the one place a long
+ * ripple is the whole picture; see `STAGGER`.
+ */
+const SLAM_BUNCH = 0.5;
 
 /** 0..1 ease. Slow at both ends — a thing standing up thinks about it. */
 const ease = (t) => t * t * (3 - 2 * t);
@@ -122,6 +138,9 @@ export class FinaleTide {
     this.rate = 1 / RISE;
     /** @type {Array} one entry per prop we are holding. */
     this.held = [];
+    /** How wide the wave's fan is right now, as a fraction of `STAGGER`. See
+     *  `SLAM_BUNCH`. */
+    this.bunch = 1;
     /** True once `slam()` has rewritten where "down" is. Nothing reads it but
      *  the checks and a future beat; it is here so the state is askable. */
     this.slamming = false;
@@ -323,6 +342,11 @@ export class FinaleTide {
     this.want = 0;
     this.rate = 1 / SLAM;
     this.slamming = true;
+    /* AND THE WAVE CLOSES UP UNDER IT. See `SLAM_BUNCH`: the ranks stay where
+       `focusOn` dealt them — nearest the mark first, which is still the shape
+       of the thing — and the whole fan is squeezed to half its width for as
+       long as the shove is running. */
+    this.bunch = SLAM_BUNCH;
     return n;
   }
 
@@ -351,6 +375,7 @@ export class FinaleTide {
     this.want = 1;
     this.rate = 1 / Math.max(0.4, Number.isFinite(secs) ? secs : RISE);
     this.slamming = false;
+    this.bunch = 1;
     return true;
   }
 
@@ -367,10 +392,13 @@ export class FinaleTide {
          prop lying exactly where the girls left it, which is the picture. */
       if (!h.inShot) continue;
       /* EACH PROP'S OWN SLICE OF THE MOVE. `phase` is where it sits in the
-         wave and `1 - STAGGER` is what is left for any one of them, so the
-         first prop has finished standing up while the last has not started. */
+         wave and what is left over is what any one of them has to move in, so
+         the first prop has finished standing up while the last has not
+         started. `bunch` narrows the fan without re-dealing it — 1 while the
+         town stands up, `SLAM_BUNCH` while it goes over. */
+      const bunch = this.bunch ?? 1;
       const t = ease(
-        Math.min(1, Math.max(0, (this.k - h.phase) / (1 - STAGGER)))
+        Math.min(1, Math.max(0, (this.k - h.phase * bunch) / (1 - STAGGER * bunch)))
       );
       /* AND IT LANDS AUDIBLY. Fired as the prop passes the bottom of its own
          slice rather than when the whole wave ends, so the bang is under the
@@ -414,6 +442,7 @@ export class FinaleTide {
     this.held = [];
     this.running = false;
     this.slamming = false;
+    this.bunch = 1;
     this.k = 0;
     this.want = 0;
   }

@@ -78,7 +78,8 @@
    profile up in front. */
 const PANELS = ['panel-confirm', 'panel-trailer-offer', 'panel-profile',
   'panel-league', 'panel-board', 'panel-settings', 'panel-help',
-  'panel-kittens', 'panel-watch', 'panel-ending', 'panel-pause'];
+  'panel-kittens', 'panel-watch', 'panel-saves', 'panel-ending',
+  'panel-pause'];
 
 /* Stick/d-pad repeat. The first step is instant, then it waits, then it runs —
    the shape every menu in every console game uses, because a list that scrolls

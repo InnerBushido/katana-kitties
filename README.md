@@ -52,8 +52,11 @@ work out by playing.
    Powerup Kotodama and gets you the ending.
 6. **The screen splits itself**, by GROUP rather than by player — stand together
    and you share a view, walk away and you get your own.
-7. **Only the record board survives closing the tab.** Everything else — clans,
-   stars, orbs, points — lives in the session, so finish what you start.
+7. **The game saves itself every 30 seconds**, once you've been playing for
+   five minutes, and keeps the last five. **LOAD A SAVED GAME** in the pause
+   menu picks one up again — the rows say who was playing, what orbs they had
+   on and how far the town had come down, so you can find the right afternoon.
+   They live in this browser on this computer and go nowhere else.
 
 ## Contents
 
@@ -573,8 +576,10 @@ Everybody else's stick is ignored for the whole thing, so nobody can spell your
 name for you or press JUMP on a name you haven't finished. In a team match
 either of the two who won can type it. Your score comes from
 how many rounds you won, how much damage you dealt, how fast you did it and how
-little you took. **The board is saved** — it's the only thing in the game that
-survives closing the tab, so a win last Saturday is still there today. Top ten,
+little you took. **The board is saved** — like the autosaves, it lives in this
+browser and survives closing the tab, so a win last Saturday is still there
+today. Unlike them it is never dropped to make room, and nothing that ends an
+adventure clears it. Top ten,
 and you can look at it any time from the pause menu (**RECORD BOARD**) or by
 walking up to the big board beside the ring.
 
@@ -969,6 +974,10 @@ src/
     arenaquest.js       how the tournament unlocks
     announce.js         Mr. Satan's pop-in card
     leaderboard.js      the saved record board + joystick name entry
+    savegame.js         the afternoon, written down every 30 seconds - what
+                        the girls have DONE to the world, never the world
+                        itself, so a save is 2KB and cannot be wrong about
+                        the shape of a town it never described
     kotodama.js         the Awakening, the eight scattered orbs, the economy
     profile.js          Character Profile / trading / the shop — one cursor
                         per player, because a trade needs both sides

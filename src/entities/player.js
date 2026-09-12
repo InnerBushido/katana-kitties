@@ -2,7 +2,7 @@
 import { Billboard } from '../core/gfx.js';
 import { PANDA_SPEED, PANDA_JUMP, CLAW } from './panda.js';
 import { aggregate, WARD, AEGIS, DIVE, CROSS, CHARGE, DODGE } from './powerorb.js';
-import { STEAL, DBREATH, arenaPowerFor } from './clanpower.js';
+import { STEAL, DBREATH, BreathTally, arenaPowerFor } from './clanpower.js';
 import { ANGEL_ALPHA } from './angel.js';
 import { styleFor } from '../core/palette.js';
 import { tune } from '../core/tuning.js';
@@ -588,8 +588,9 @@ export class Player {
     this.breathFireT = 0;
     this.breathCool = 0;
     this.breathSeq = 0;
-    /** Who this breath has already caught. Opened by `_fireArenaBreath` and
-     *  never read outside a live flame — see `_sweepArenaBreath`. */
+    /** Who this breath has already bitten, and until when — a `BreathTally`.
+     *  Opened by `_fireArenaBreath` and never read outside a live flame; see
+     *  `_sweepArenaBreath` and `DBREATH.tick`. */
     this.breathHit = null;
     /** Seconds left of a charge, and the direction it is committed to. */
     this.chargeT = 0;
@@ -1877,8 +1878,24 @@ export class Player {
     this._clearSpecials();
   }
 
-  /** Drop every power move on the floor. Safe to call at any time. */
-  _clearSpecials() {
+  /**
+   * Drop every power move on the floor. Safe to call at any time.
+   *
+   * `keepWaits` IS THE DIFFERENCE BETWEEN ERASING A MOVE AND INTERRUPTING ONE,
+   * and it was found by playing: "when using cross-slash on an opponent, it
+   * resets the timer of the dragon breath ability on that player — it
+   * shouldn't do that, these should be two separate mechanics." It was one
+   * function doing two jobs. Clearing the moves themselves is always right; the
+   * WAITS below — `wardCool`, `dodgeCool`, `stealCool`, `breathCool` — are only
+   * forgivable when the thing they were owed on never happened, which is true
+   * of a round reset and of climbing onto an animal and is flatly untrue of
+   * somebody else catching her. Being caught is not a refund. It handed a
+   * Windwhisker kitten her clan power back every time her sister landed a
+   * Cross Slash on her, which is the opposite of a punishment.
+   *
+   * @param {boolean} [keepWaits] leave the cooldowns running
+   */
+  _clearSpecials(keepWaits = false) {
     this.wardOn = false;
     /* THE LATCH GOES WITH THE BUBBLE IT WAS HOLDING. It is a promise about one
        particular block — "this one does not need your thumb" — and a promise
@@ -1888,7 +1905,7 @@ export class Player {
     this.wardRegrab = 0;
     this.wardUsed = 0;
     this.wardTail = 0;
-    this.wardCool = 0;
+    if (!keepWaits) this.wardCool = 0;
     /* THE CEILING AND THE TALLY GO WITH THE BUBBLE. Left behind, a kitten
        who was smashed out of a block would pop her next one already half
        spent and one blow from breaking — a punishment outliving the thing
@@ -1931,7 +1948,7 @@ export class Player {
        watch it to tell one Flash Step from the next. */
     this.dodgeT = 0;
     this.dodgeLockT = 0;
-    this.dodgeCool = 0;
+    if (!keepWaits) this.dodgeCool = 0;
     this.dodgeTarget = null;
     this.dodgePlaced = false;
     this.dodgeAimed = false;
@@ -1946,10 +1963,12 @@ export class Player {
        one use from the next by them, exactly as they do for `dodgeSeq`. */
     this.stealTarget = null;
     this.stealMarkT = 0;
-    this.stealCool = 0;
     this.breathChargeT = 0;
     this.breathFireT = 0;
-    this.breathCool = 0;
+    if (!keepWaits) {
+      this.stealCool = 0;
+      this.breathCool = 0;
+    }
     this.dodgeAim0 = null;
     this.attackHeld = 0;
     this._triPend = false;
@@ -3123,8 +3142,11 @@ export class Player {
        is how every other "she is somewhere else now" path ends a technique —
        a kitten mid-charge or mid-block who is suddenly airborne over the
        island keeps the move's state otherwise, and a latched Ward would ride
-       all the way down with her. */
-    this._clearSpecials();
+       all the way down with her.
+       HER WAITS SURVIVE IT, for the same reason they survive a Cross Slash: he
+       is a gag with a ten-second fuse, not a rule about her clan power, and
+       being blown across the ring by one may not hand it back. */
+    this._clearSpecials(true);
     this.hitLean = Math.sign(dx * Math.cos(this.camYaw) - dz * Math.sin(this.camYaw)) || 1;
     this.squash = 1;
 
@@ -3714,8 +3736,20 @@ export class Player {
    * how well the machine was running, which is the reason the single
    * application existed in the first place. The tally answers that without
    * giving up the sweep: she may turn and catch her sister and then her
-   * sister's partner, and neither of them can be caught twice by the same
-   * breath. It is opened here, so it cannot outlive its own flame.
+   * sister's partner, and a body it has bitten is safe from it for
+   * `DBREATH.tick` seconds. It is opened here, so it cannot outlive its own
+   * flame.
+   *
+   * ONCE EVERY HALF SECOND, NOT ONCE FOR EVER. The tally used to be a `Set`,
+   * which is a rule that reads correctly and plays wrong: a kitten who caught
+   * the first frame of the cone had paid for the whole breath and could stand
+   * in the rest of it. "The shield takes damage over time, so for every 0.5s
+   * the flame is on it, the shield takes the equivalent of 1 swing hit" — so
+   * it is a stamp per body now, and what that buys at the shipped numbers is
+   * exactly what was asked for: a bubble absorbed then smashed, or one hit and
+   * then half a second of invulnerability that swallows the next bite. See
+   * `BreathTally` and `DBREATH.tick`, which own the whole of that reasoning
+   * between them.
    *
    * `BASE_REACH` AND NOT HER OWN REACH. `Game.strikePlayers` recovers the clan
    * multiplier from the reach it is handed — that is right for a blade and
@@ -3729,7 +3763,7 @@ export class Player {
     this.breathFireT = DBREATH.fire;
     this.breathCool = DBREATH.cool;
     this.squash = 0.6;
-    this.breathHit = new Set();
+    this.breathHit = new BreathTally(DBREATH.tick);
     /* NOT the dragon's `breath`, which is a third of a second long and now
        stops well before the cone it belongs to. `dbreathout` is built to the
        doubled `DBREATH.fire`. */
@@ -3822,6 +3856,10 @@ export class Player {
       if (this.breathChargeT === 0) this._fireArenaBreath(hud);
     } else if (this.breathFireT > 0) {
       this.breathFireT = Math.max(0, this.breathFireT - dt);
+      /* THE TALLY IS ADVANCED BY THE GAME'S CLOCK AND NOT BY ITS OWN, so a
+         flame held over a pause, a scene or a dropped frame bites the same
+         number of times it would have on a machine that never stuttered. */
+      this.breathHit?.step(dt);
       /* AND THE CONE IS ASKED AGAIN. Before the clock is allowed to reach zero
          on the same frame it would otherwise be, so the last frame of flame is
          a frame of flame: a kitten standing in the tip of it when it goes out
@@ -4202,8 +4240,12 @@ export class Player {
       /* Whatever she was doing, she is not doing it. Her own charge or dive
          would otherwise keep driving her velocity straight through the freeze,
          and a "frozen" kitten sliding across the ring is worse than no freeze
-         at all. */
-      this._clearSpecials();
+         at all.
+
+         BUT HER WAITS KEEP RUNNING. Being caught in somebody else's technique
+         is not a refund on her own — see `_clearSpecials`, where this cost a
+         Windwhisker kitten nothing and gave her 息 Dragon Breath back. */
+      this._clearSpecials(true);
       this.velocity.set(0, 0, 0);
       this.onGround = false;
     }

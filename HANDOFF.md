@@ -278,6 +278,48 @@ keyboard, and **pressing ENTER twice quickly overwrote the first card** — the
 second was reachable before this feature (two pads, two fast presses) and is the
 first thing that happens with it. → [input.md](docs/notes/input.md)
 
+**The game saves itself now, and an afternoon can be picked back up.**
+`systems/savegame.js` takes a snapshot every 30 seconds once a run is five
+minutes old, keeps the last five, and **LOAD A SAVED GAME** in the pause menu
+puts one back. It never asks and never toasts: a notification every half minute
+for four hours is one a player learns to stop reading.
+
+- **A save describes what the girls DID, never the world.** The islands, the
+  houses, the roads and the props all rebuild identically from their own seeds
+  on every boot, so a save is the list of which props are lying down, which orbs
+  are worn, who swore where and how far the tournament got — **639 bytes** for a
+  216-prop town, and it cannot be wrong about the shape of a place it never
+  described. `worldSig` pins it to the prop/island/star counts it was taken
+  under and a save from a build with different ones is **shown, greyed, and says
+  why** rather than quietly putting the wrong barrels down.
+- **A load is `restart()` and then replay.** `restart` is the one heavily-argued
+  reset path in the project and the one `world-check` already covers; a second
+  "undo everything" list here would be that one copied, and the copy would rot
+  the first time a subsystem was added. Knocked props are **re-scattered** with
+  the debug wreck's own recipe, because a save does not record which way each
+  barrel fell and a town lying along one axis reads as a bug.
+- **It restores onto the seats being played**, matched by kitten NAME first so a
+  girl who changed controller still gets her own orbs, and it says out loud how
+  many were dropped. Seating four kittens nobody is holding a controller for
+  would be non-negotiables 5 and 6 at once.
+- **The rows are chosen by content, not by slot number** — who was playing, in
+  their own colours, wearing the *kanji* of the orbs they had on, then the
+  mischief percentage, the stars and whether the ring was open. A slot number is
+  the one fact about a save that nobody can recognise.
+- **Loading asks first** and the dialog has no `.primary`, so the cursor opens on
+  "NO, KEEP PLAYING". On the other side of that button is four hours of somebody
+  else's afternoon and the button is in a menu four children push at.
+- **The Help card stopped apologising.** It carried "⚠ Progress is NOT saved
+  between sessions" for two years and it was true for two years; a Help page that
+  apologises for a thing the game now does tells a kid not to go and look. The
+  one warning still there is the true one — they live in this browser on this
+  computer and clearing site data takes them.
+- **Two panel-only debug rows**, neither with a key: *wipe the RECORD BOARD* and
+  *wipe the SAVED GAMES*. Both ask, both put the count in the YES button. Before
+  the first one there was **no** way to clear the board from inside the game at
+  all — `clearBoard()` had existed since the board was written with a comment
+  claiming the pause menu called it, and nothing ever had.
+
 ---
 
 ## Open items

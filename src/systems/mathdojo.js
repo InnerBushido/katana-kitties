@@ -374,7 +374,20 @@ export class MathDojo {
 
   /* ------------------------------ update -------------------------------- */
 
-  update(dt, players) {
+  /**
+   * @param {number} dt
+   * @param {Array} players whoever might be steering the angle this frame
+   * @param {{hint?: boolean}} [opts] `hint: false` takes the one line of
+   *   plain English off the board. It is there to tell a nine-year-old
+   *   standing in the Dojo that the circle is waiting for her, and it is wrong
+   *   in the one place nobody IS standing there on purpose: the ending, where
+   *   the lesson is being shown to her rather than used by her. "Also there is
+   *   text saying 'Nobody on the circle' this should be removed for this
+   *   cutscene." Everything else on the board is a NUMBER and stays: the
+   *   whole argument for putting the real lesson in the cutscene is that the
+   *   numbers are real.
+   */
+  update(dt, players, opts = undefined) {
     // Whoever is standing nearest the circle *line* steers theta — not whoever
     // is nearest the origin, or a player wandering past the middle would yank
     // the angle away from the one deliberately walking the rim.
@@ -451,6 +464,10 @@ export class MathDojo {
     this.lblSin.position.set(px + 6.4 * Math.sign(c || 1), 1.3, pz / 2);
     this.lblPoint.position.set(px * 1.2, 3.4, pz * 1.2);
     this.lblHint.position.set(0, 2.6, wz(-0.46));
+    /* THE ONE LINE THAT IS ADDRESSED TO SOMEBODY, and the only one a scene can
+       switch off. See the doc on `update`. */
+    const hint = opts?.hint !== false;
+    this.lblHint.visible = hint;
 
     if (!this.readable) return;
 
@@ -458,11 +475,17 @@ export class MathDojo {
     this.lblCos.setText(`cos θ = ${c.toFixed(2)}`);
     this.lblSin.setText(`sin θ = ${s.toFixed(2)}`);
     this.lblPoint.setText(`( ${c.toFixed(2)} , ${s.toFixed(2)} )`);
-    this.lblHint.setText(
-      this.driver
-        ? `${this.driver.name} is at ${(this.playerRadius).toFixed(2)} × radius`
-        : 'nobody on the circle — spinning by itself'
-    );
+    /* A DRIVER WITHOUT A NAME IS STILL A DRIVER. The ending hands this the
+       cutscene's own runner, which is a billboard with a position and nothing
+       else — `undefined is at 1.00 × radius` was one missing `?.` away, and the
+       hint is switched off in that scene anyway. Degrade, do not vanish. */
+    if (hint) {
+      this.lblHint.setText(
+        this.driver
+          ? `${this.driver.name ?? 'somebody'} is at ${(this.playerRadius).toFixed(2)} × radius`
+          : 'nobody on the circle — spinning by itself'
+      );
+    }
 
     /* The board is a 1280x720 2D redraw feeding a HUD element that is
        `display: none` unless somebody is standing in the Dojo. It ran thirty
