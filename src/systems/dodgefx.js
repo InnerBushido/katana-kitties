@@ -16,6 +16,17 @@
      spot she left gets a puff of smoke — soft, white, cartoon, nothing sharp,
      the same rule `Menagerie._poof` follows.
 
+     THE PICTURE. Everything below the THE PICTURE banner is one
+     figure drawn out of numbers the kitten is already publishing, and it is
+     there because of the first non-negotiable: the maths is the point. The
+     Flash Step picks a person, picks a radius and picks an angle, and until
+     now it did all three in silence. Now it draws them — the ring of every
+     landing that was available, a see-through her standing on the one she has
+     chosen, and, when she has locked somebody, the right triangle that says
+     how far round them she came. Every number printed is computed FROM the
+     drawn vectors, so the figure cannot disagree with the move. See
+     `_updateFigure`.
+
      AND THE THING LEFT BEHIND. A ninja vanish leaves a log. This one leaves a
      log, or her own bow tie, or a scarf, or a boiled sweet the size of her
      head, or — if she has sworn — her clan's emblem on a little post. It is
@@ -51,7 +62,8 @@
 
 import * as THREE from 'three';
 import { toonMat } from '../core/gfx.js';
-import { ORB_BY_ID } from '../entities/powerorb.js';
+import { Label, makeLabelTexture } from '../core/label.js';
+import { DODGE, ORB_BY_ID, kanaFor } from '../entities/powerorb.js';
 
 /** The orb's own jade, read from the table rather than restated — the shelf,
  *  the profile card and the orb itself are already this colour and a fourth
@@ -61,13 +73,102 @@ const JADE = ORB_BY_ID.blink?.color ?? 0x21d6a8;
 /** How long the ring takes to snap shut, and to spring open again. */
 const NARROW = 0.14;
 const OPEN = 0.26;
-/** How long a decoy stands there before it puffs out. Comfortably longer than
- *  the move itself (2 x `DODGE.invuln` = 1s), so the joke is still on the floor
- *  when she lands and can be seen NEXT to her. */
-const DECOY = 1.45;
-/** How many decoys may be on the ground at once. Four kittens, one each, plus
- *  one for a fast second dodge. Never grown. */
-const DECOYS = 5;
+/**
+ * How long a decoy stands there before it puffs out.
+ *
+ * TWELVE SECONDS, AND IT USED TO BE 1.45. The old number was reasoned from the
+ * move — "comfortably longer than 2 x `DODGE.invuln`, so the joke is still on
+ * the floor when she lands" — which turned out to be the wrong thing to
+ * measure against. The joke is not for the kitten who threw it, who is busy
+ * and looking somewhere else; it is for her SISTER, on the other half of a
+ * split screen, who looks over a few seconds later. Asked for directly: "stay
+ * active longer before disappearing, like 10 more seconds at least".
+ */
+const DECOY = 12;
+/**
+ * How long it hangs in the air before it remembers gravity.
+ *
+ * A SECOND, ON PURPOSE, AND THEN IT FALLS. "It should fall with gravity after
+ * floating without gravity for a second" — and the hang is what makes the
+ * substitution read: the log is left standing exactly where she was, for long
+ * enough to be seen standing there, and only then does it stop being a kitten
+ * and become an object.
+ */
+const FLOAT = 1;
+/** Its own gravity, so retuning the kittens cannot change how a log drops. */
+const DECOY_G = 22;
+/**
+ * How many decoys may be on the ground at once. Never grown.
+ *
+ * TWELVE, BECAUSE THE LIFETIME WENT UP EIGHT-FOLD. Five was one per kitten
+ * plus a spare, which was right when they lasted a second and a half; at
+ * twelve seconds, four kittens dodging as fast as `DODGE.cool` allows can have
+ * two dozen on the floor. Twelve is the compromise: past it the oldest is
+ * recycled, which is a joke that ends early rather than a joke that never
+ * appears, and the game is fill-bound (docs/notes/performance.md) so an
+ * unbounded pool is not on the table.
+ */
+const DECOYS = 12;
+
+/* ============================== THE PICTURE ===============================
+
+   HOW LONG EACH END OF THE TELEPORT FADES.
+
+   NOT A NUMBER — THE WINDOW ITSELF. `DODGE.commit` is the fraction of the
+   vanish she spends winding up, so what is left after the commit is exactly
+   how long she is gone before her own sprite comes back. Fading over that
+   means the arriving ghost reaches full strength on the very frame the real
+   drawing returns, and the hand-off is invisible. Typing 0.1 here instead
+   would be right until somebody moved `commit` on the tuning page, and then
+   it would be a ghost that lingered over the top of her or snapped off early.
+
+   THE FADE HAS TO BE DRAWN BY SOMETHING ELSE, and that is not a choice. Her
+   own material runs `alphaTest: 0.35` — every pixel under that threshold is
+   discarded outright — so turning her opacity down is a hard cut wearing a
+   fade's clothes. `entities/player.js` says so twice and refuses to pretend.
+   These sprites carry no alpha test, so they really do fade. */
+const FADE = DODGE.invuln * (1 - DODGE.commit);
+
+/** How solid the "you will come out HERE" preview stands. Faint enough to
+ *  read as a projection of her rather than as a second kitten — the whole
+ *  point is that she can see it and still see the fight through it. */
+const AIM_A = 0.36;
+/** How long the whole figure takes to dissolve once the move is over. */
+const FIG_OUT = 0.5;
+/**
+ * How far the kitten she locked has to have MOVED before the angle means
+ * anything.
+ *
+ * AN ANGLE NEEDS TWO DIRECTIONS AND A STATIONARY TARGET ONLY GIVES ONE. The
+ * second line of the figure is "where you were when she pressed, to where you
+ * are now"; a sister who has not taken a step has no such direction, and
+ * drawing theta against a zero-length line would be inventing a number and
+ * printing it as if it had been measured. So under this, the triangle and its
+ * three readouts are simply not drawn and the ring, the spoke and the ghost
+ * carry on. Half a metre: at a walk she covers that in a fifth of a second, so
+ * in practice the only time it hides is when somebody genuinely froze.
+ */
+const MOVED_MIN = 0.35;
+/** Points in the theta arc. It is at most half a turn, so this is generous. */
+const ARC_MAX = 28;
+/** The Dojo's own leg colours, restated on purpose: a kitten who has walked
+ *  the unit circle has already learnt that orange is the adjacent side and
+ *  green is the opposite one, and this figure is the same lesson happening to
+ *  her in a fight. Changing them here would throw that away. */
+const COS_C = 0xffb347;
+const SIN_C = 0x8bff9a;
+const GOLD = 0xffd76a;
+/** Glyphs falling in each of the two columns, and how high the column is. */
+const DROPS = 5;
+const COL_TOP = 4.6;
+/** Segments in a landing circle. 96 is the Dojo's own count for its unit
+ *  circle, and these two circles are meant to be read as the same object. */
+const RING_SEG = 96;
+
+/** `0x21d6a8` as `#21d6a8`, for the label painter, which speaks CSS. */
+function css(hex) {
+  return `#${(hex >>> 0).toString(16).padStart(6, '0')}`;
+}
 
 /* ------------------------------- the reticle ------------------------------ */
 
@@ -133,6 +234,198 @@ function ringTexture() {
   t.generateMipmaps = false;
   _ring = t;
   return t;
+}
+
+/**
+ * The circle of everywhere she could come out: a thin DRAWN line, flat on the
+ * ground, unit radius, scaled to whatever the reach is that frame.
+ *
+ * THE SAME OBJECT AS THE DOJO'S UNIT CIRCLE, and that is the whole reason it is
+ * a line. It was a stair-stepped pixel-art band first, on the argument that it
+ * should match the eight-bit target reticle — and that was matching the wrong
+ * thing. The reticle is a SIGHT, drawn on a person, and it belongs to the
+ * arcade half of the game. This is a circle of radius r drawn around a centre,
+ * which is the Dojo of the Turning Circle's one and only idea, and a kitten who
+ * has walked that circle has to be able to recognise this one as it. Reported
+ * in exactly those terms: "similar to the line circle in the Dojo of the
+ * Turning Circle, just a thin line, not a texture."
+ *
+ * It also deletes a lie. A texture paints its band at some fraction of the
+ * quad, so the quad had to be scaled by the inverse of that fraction or the
+ * drawn circle would have been a few per cent inside the reach it claimed to
+ * be. A line at radius 1 scaled by r is at r, with nothing to get wrong.
+ *
+ * `dashed` is the inner circle — the closest she may land. Solid reads as a
+ * wall, dashed as a boundary you are allowed to cross, which is exactly the
+ * difference between the two.
+ */
+function groundRing(dashed, colour) {
+  const pts = new Float32Array((RING_SEG + 1) * 3);
+  const dist = new Float32Array(RING_SEG + 1);
+  for (let i = 0; i <= RING_SEG; i++) {
+    const a = (i / RING_SEG) * Math.PI * 2;
+    pts[i * 3] = Math.cos(a);
+    pts[i * 3 + 2] = Math.sin(a);
+    dist[i] = a;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+  /* THE DASH LENGTHS ARE IN RADIANS, on a circle of radius 1, and they are
+     written once here rather than recomputed by `computeLineDistances()` every
+     time the reach changes. The consequence is deliberate: the dashes are a
+     fixed FRACTION of the circle, so a small circle and a big one have the same
+     number of them and read as the same drawing at two sizes. Measuring them in
+     world units instead would give a tight circle four dashes and a wide one
+     forty. */
+  geo.setAttribute('lineDistance', new THREE.BufferAttribute(dist, 1));
+  const mat = dashed
+    ? new THREE.LineDashedMaterial({
+      color: colour, dashSize: 0.09, gapSize: 0.07,
+      transparent: true, opacity: 0, depthWrite: false, toneMapped: false,
+    })
+    : new THREE.LineBasicMaterial({
+      color: colour, transparent: true, opacity: 0,
+      depthWrite: false, toneMapped: false,
+    });
+  const l = new THREE.Line(geo, mat);
+  /* DEPTH-TESTED, unlike the reticle. That one is a UI element about a PERSON
+     and has to be visible through the scenery; this is a mark on the FLOOR, and
+     a floor mark that shone through the hill in front of it would stop reading
+     as being on the floor at all. */
+  l.renderOrder = 25;
+  l.frustumCulled = false;
+  l.visible = false;
+  return l;
+}
+
+/**
+ * A see-through copy of her, for the preview and for the two fades.
+ *
+ * THE TEXTURE IS SHARED, NOT CLONED, AND THAT IS THE WHOLE REASON THIS TAKES
+ * THE WIND-UP POSE. A kitten's atlas is megabytes; `texture.clone()` makes a
+ * second GPU upload of every one of them, four times over, for a ghost that is
+ * on screen for a tenth of a second. Sharing is only safe if nothing else
+ * moves the map's offset and repeat — and her WALKING billboard moves both,
+ * once per camera, every frame. `warpPose` is a single-cell sheet with no
+ * mirroring, so its UV transform never changes and can be borrowed for free.
+ * It is also, conveniently, exactly the right drawing: fingers to her
+ * forehead, eyes shut, which is what a ghost of somebody mid-teleport should
+ * be doing.
+ *
+ * A SPRITE, so it faces all four split-screen cameras at once — `Game._faceAll`
+ * does not know this file exists and a hand-turned billboard would be edge-on
+ * in three of the four panes.
+ *
+ * @param {?object} bb the `Billboard` to borrow from, or null — no warp art
+ *        means no ghost and no fade, and the move still happens in full. Ninth
+ *        non-negotiable, the same trade the pose itself makes.
+ */
+function ghostOf(bb, colour, tint) {
+  if (!bb?.tex || !bb.mesh) return null;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: bb.tex,
+    color: tint ? colour : 0xffffff,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    toneMapped: false,
+  }));
+  /* THE FEET ARE MEASURED OFF THE GEOMETRY, not reasoned about. The Billboard
+     shifts its quad up by the atlas's transparent padding so the drawn feet sit
+     on the pivot; that shift is recoverable from the bounding box and nowhere
+     else, and guessing it is how a ghost ends up hovering. House rule: measure
+     anything drawn. */
+  bb.mesh.geometry.computeBoundingBox();
+  const foot = -(bb.mesh.geometry.boundingBox?.min.y ?? 0);
+  sp.center.set(0.5, bb.height > 0 ? foot / bb.height : 0);
+  sp.scale.set(bb.width, bb.height, 1);
+  sp.renderOrder = 23;
+  sp.visible = false;
+  return sp;
+}
+
+/** One two-point line. `frustumCulled` off because the endpoints are written
+ *  in world space into a geometry whose bounding sphere is never recomputed —
+ *  the same trade `mathdojo` makes, and for the same reason. */
+function lineOf(colour, dashed = false) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  if (dashed) {
+    geo.setAttribute('lineDistance', new THREE.BufferAttribute(new Float32Array(2), 1));
+  }
+  const mat = dashed
+    ? new THREE.LineDashedMaterial({
+      color: colour, dashSize: 0.85, gapSize: 0.6,
+      transparent: true, opacity: 0, depthWrite: false, toneMapped: false,
+    })
+    : new THREE.LineBasicMaterial({
+      color: colour, transparent: true, opacity: 0,
+      depthWrite: false, toneMapped: false,
+    });
+  const l = new THREE.Line(geo, mat);
+  l.frustumCulled = false;
+  l.renderOrder = 26;
+  l.visible = false;
+  return l;
+}
+
+/* THE DASH DISTANCES ARE WRITTEN IN PLACE, never by `computeLineDistances()`.
+   That call reallocates the attribute, and doing it every frame on a line
+   whose ends move is a fresh buffer per frame per kitten. A two-point line's
+   distances are 0 and its own length, which is one `hypot`. Same trick, same
+   argument, as `mathdojo._setLine`. */
+function setSeg(line, ax, ay, az, bx, by, bz) {
+  const pos = line.geometry.attributes.position;
+  pos.setXYZ(0, ax, ay, az);
+  pos.setXYZ(1, bx, by, bz);
+  pos.needsUpdate = true;
+  const ld = line.geometry.attributes.lineDistance;
+  if (ld) {
+    ld.setX(0, 0);
+    ld.setX(1, Math.hypot(bx - ax, by - ay, bz - az));
+    ld.needsUpdate = true;
+  }
+}
+
+/**
+ * A falling column of katakana, at one end of the teleport.
+ *
+ * THE GLYPHS ARE 瞬'S OWN FIVE. `kanaFor('blink')` is the same deterministic
+ * slice the orb she is wearing rains, so the characters coming off the teleport
+ * are the characters on her shoulder — and, just as importantly, they are five
+ * entries in a label cache that never frees anything rather than forty-six.
+ * That bound is the reason `kanaFor` exists at all; helping myself to the whole
+ * alphabet here would have quietly undone it.
+ *
+ * SPRITES AGAIN, for the split screen, and spread on a little circle rather
+ * than stacked on one line so the column has depth from every angle.
+ */
+function column(hex, pool) {
+  const group = new THREE.Group();
+  group.visible = false;
+  const drops = [];
+  for (let i = 0; i < DROPS; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      transparent: true, opacity: 0, depthWrite: false, toneMapped: false,
+    }));
+    sp.renderOrder = 27;
+    group.add(sp);
+    const a = (i / DROPS) * Math.PI * 2;
+    drops.push({ sp, t: i / DROPS, ox: Math.cos(a) * 0.62, oz: Math.sin(a) * 0.62 });
+  }
+  /* AND THE KANJI ITSELF, once, big, over the middle of the column. The rain
+     is texture; this is the word. It is the same character on the orb, on the
+     shelf and on the profile card. */
+  const { texture, aspect } = makeLabelTexture('瞬', {
+    size: 132, color: hex, stroke: '#06131a', strokeWidth: 9,
+  });
+  const mark = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: texture, transparent: true, opacity: 0, depthWrite: false, toneMapped: false,
+  }));
+  mark.scale.set(2.1 * aspect, 2.1, 1);
+  mark.renderOrder = 27;
+  group.add(mark);
+  return { group, drops, mark, hex, pool };
 }
 
 /* -------------------------------- decoys ---------------------------------- */
@@ -244,6 +537,10 @@ export class DodgeFx {
     this.scene = scene;
     /** One reticle per player index, built the first time she locks somebody. */
     this.rigs = new Map();
+    /** One FIGURE per player index — the rings, the ghosts, the triangle and
+     *  the two rains. Built the first time she Flash Steps and never freed; a
+     *  kitten who never buys 瞬 allocates none of it. */
+    this.figs = new Map();
     /** A fixed ring buffer of decoys. Built lazily, never grown. */
     this.decoys = [];
     this.decoyIx = 0;
@@ -265,6 +562,12 @@ export class DodgeFx {
     for (const d of this.decoys) {
       d.group.visible = false;
       d.t = 0;
+    }
+    for (const f of this.figs.values()) {
+      f.group.visible = false;
+      f.seq = -1;
+      f.shown = false;
+      f.out = 0;
     }
     this.seen.clear();
   }
@@ -296,7 +599,133 @@ export class DodgeFx {
     return r;
   }
 
-  _decoy() {
+  /**
+   * Build one kitten's figure. Lazy, once, and never taken down.
+   *
+   * @param {object} p the player
+   * @returns {?object} the rig, or null when there is no document to draw on
+   */
+  _fig(p) {
+    let f = this.figs.get(p.index);
+    if (f) return f;
+    if (typeof document === 'undefined') return null;         // headless
+    const colour = p.style?.colour ?? JADE;
+    const hex = css(colour);
+    const group = new THREE.Group();
+
+    const add = (o) => { if (o) group.add(o); return o; };
+    /* THE OUTER RING IS EVERY LANDING SHE CAN REACH and the inner one is the
+       closest she is allowed to come. Without the two-orb aim upgrade there is
+       exactly ONE distance — the move lands her on the far edge and nowhere
+       else — so the inner ring is not merely hidden in that case, it does not
+       exist, and `_updateFigure` refuses to draw a boundary that is not there.
+       Drawing a faint "nearest" circle on a kitten who cannot choose her
+       distance would be the picture promising a control she does not own. */
+    const ringFar = add(groundRing(false, colour));
+    const ringNear = add(groundRing(true, colour));
+
+    /* Her, three times over, and all three borrow one texture.
+
+       THE WALKING SPRITE IS NOT AN ACCEPTABLE FALLBACK, which is why this is
+       `?? null` and not `?? p.sprite`. Her walk billboard rewrites the shared
+       map's offset once per camera, per frame, to pick the cell that faces
+       that pane — a sprite borrowing it would flick through the whole sheet
+       four times a frame. No warp art, no ghost and no fade; the move still
+       happens in full, exactly as it does without the pose. */
+    const bb = p.warpPose ?? null;
+    const ghost = add(ghostOf(bb, colour, true));   // where she is aiming
+    const echoOut = add(ghostOf(bb, colour, false));  // the place she leaves
+    const echoIn = add(ghostOf(bb, colour, false));   // the place she arrives
+
+    /* HER COLOUR ON THE SPOKE, THE TARGET'S ON THE PATH, and that is the whole
+       legend: the line in YOUR colour is the one you are steering, the line in
+       your sister's colour is what she did about it. `moved` is dashed because
+       it is history rather than a live measurement — the same grammar the Dojo
+       uses for its dropped coordinates. The target's colour is written every
+       frame rather than at build time, because the figure outlives any one
+       opponent and the second Flash Step may be at somebody else. */
+    const vec = add(lineOf(colour, false));
+    const moved = add(lineOf(0xffffff, true));
+    const cosLeg = add(lineOf(COS_C, true));
+    const sinLeg = add(lineOf(SIN_C, true));
+
+    const arcGeo = new THREE.BufferGeometry();
+    arcGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARC_MAX * 3), 3));
+    const arc = new THREE.Line(arcGeo, new THREE.LineBasicMaterial({
+      color: GOLD, transparent: true, opacity: 0, depthWrite: false, toneMapped: false,
+    }));
+    arc.frustumCulled = false;
+    arc.renderOrder = 26;
+    arc.visible = false;
+    group.add(arc);
+
+    /* LIVE LABELS, WITH THE WIDEST STRING DECLARED. A `setText` whose value
+       moves every frame and does NOT say `live` mints a never-freed canvas per
+       distinct value — the bug that used to kill a phone inside the Dojo, all
+       of it written up in core/label.js. Three readouts changing at 60Hz on
+       four kittens is precisely that shape. */
+    const mk = (colr, live) => {
+      const l = new Label(live, {
+        live,
+        height: 1.0,
+        fixedScreenSize: true,
+        refDistance: 44,
+        size: 52,
+        color: colr,
+        stroke: '#0d1319',
+        strokeWidth: 8,
+        depthTest: false,
+      });
+      l.visible = false;
+      group.add(l);
+      return l;
+    };
+    const lblTheta = mk(css(GOLD), 'θ = 180°');
+    const lblCos = mk(css(COS_C), 'r cos θ = -00.0');
+    const lblSin = mk(css(SIN_C), 'r sin θ = -00.0');
+
+    const pool = kanaFor('blink');
+    const colA = column(hex, pool);
+    const colB = column(hex, pool);
+    group.add(colA.group);
+    group.add(colB.group);
+
+    group.visible = false;
+    this.scene.add(group);
+    f = {
+      group, ringFar, ringNear, ghost, echoOut, echoIn,
+      vec, moved, cosLeg, sinLeg, arc,
+      lblTheta, lblCos, lblSin, colA, colB,
+      /** Which `dodgeSeq` is on screen, -1 for none. */
+      seq: -1,
+      /** Is that move still running? */
+      shown: false,
+      /** Seconds left of the dissolve. */
+      out: 0,
+      /** Seconds since the figure appeared, and since she committed. */
+      age: 0,
+      since: 0,
+      placed: false,
+      /* WHAT IS BEING DRAWN, held apart from the player on purpose. The circle
+         follows the kitten it is drawn around until the instant she teleports
+         and then STOPS — asked for in exactly those words — and the only way a
+         poller can stop following something is to have kept its own copy. It is
+         also what lets the numbers be readable: frozen for the half second the
+         move takes to finish, rather than a blur nobody can read. */
+      s: {
+        hasT: false, ok: false, tcol: JADE,
+        px: 0, py: 0, pz: 0,
+        fx: 0, fy: 0, fz: 0,
+        hx: 0, hy: 0, hz: 0,
+        sx: 0, sy: 0, sz: 0,
+        near: 0, far: 0,
+      },
+    };
+    this.figs.set(p.index, f);
+    return f;
+  }
+
+  _decoy(world) {
     if (!this.decoys.length) {
       for (let i = 0; i < DECOYS; i++) {
         const group = new THREE.Group();
@@ -317,11 +746,17 @@ export class DodgeFx {
           group.add(m);
           return m;
         });
-        this.decoys.push({ group, puff, prop: null, t: 0, spin: 0 });
+        this.decoys.push({
+          group, puff, prop: null, t: 0,
+          /* Falling state. `float` counts the hang down; `vy` only starts
+             accumulating once it reaches zero. */
+          vy: 0, float: 0, floor: -Infinity, world: null,
+        });
       }
     }
     const d = this.decoys[this.decoyIx];
     this.decoyIx = (this.decoyIx + 1) % this.decoys.length;
+    d.world = world ?? null;
     return d;
   }
 
@@ -334,8 +769,8 @@ export class DodgeFx {
    * handful of small buffers, and the pool bounds how many can exist at once.
    * Caching would be the optimisation that costs more memory than it saves.
    */
-  _drop(p) {
-    const d = this._decoy();
+  _drop(p, world) {
+    const d = this._decoy(world);
     /* AN UNSWORN KITTEN NEVER DRAWS THE EMBLEM, which is why this filters the
        list instead of rolling an index into it and re-rolling on a miss: a
        re-roll makes the OTHER four rarer for her than for her sister, for no
@@ -364,11 +799,28 @@ export class DodgeFx {
     d.group.position.copy(p.dodgeFrom);
     d.group.rotation.y = p.facing + (Math.random() - 0.5) * 1.2;
     d.t = DECOY;
-    d.spin = (Math.random() - 0.5) * 2.4;
+    /* IT DOES NOT TURN. It used to spin slowly on the spot, which was fine for
+       a second and a half of comedy and is wrong for twelve seconds of object:
+       a log revolving in place reads as a collectable in a menu, not as
+       something dropped. Reported as exactly that. The random yaw at the drop
+       stays — that is what stops four of them lining up — it simply keeps it.
+       `spin` is gone rather than set to zero, so nothing can put it back by
+       accident. */
+    d.vy = 0;
+    d.float = FLOAT;
+    /* WHERE IT WILL COME TO REST, measured ONCE, at the drop. `heightAt` from
+       a falling object every frame would ask about a column it is halfway
+       down; asking from the spot she vanished on gets the floor she was
+       standing on, which is where a thing left in her place belongs. Null is
+       the void — she flash-stepped off the edge of something — and a decoy
+       with no floor simply falls out of sight and times out, which is the
+       degrade-don't-vanish rule and also quite funny. */
+    const g = d.world?.heightAt?.(p.dodgeFrom.x, p.dodgeFrom.z, p.dodgeFrom.y + 1);
+    d.floor = g ? g.y : -Infinity;
     d.group.visible = true;
   }
 
-  update(dt, players) {
+  update(dt, players, world) {
     for (const p of players ?? []) {
       if (!p) continue;
 
@@ -380,8 +832,10 @@ export class DodgeFx {
          twice on the frames after the commit. */
       if (p.dodgeT > 0 && p.dodgePlaced && this.seen.get(p.index) !== p.dodgeSeq) {
         this.seen.set(p.index, p.dodgeSeq);
-        this._drop(p);
+        this._drop(p, world);
       }
+
+      this._updateFigure(dt, p);
 
       const locked = p.dodgePlanted && p.dodgeTarget && !p.dodgeTarget.ko;
       const r = locked ? this._rig(p) : this.rigs.get(p.index);
@@ -436,6 +890,306 @@ export class DodgeFx {
     this._updateDecoys(dt);
   }
 
+  /**
+   * Draw one kitten's Flash Step as a figure.
+   *
+   * A POLLER, LIKE EVERYTHING ELSE IN THIS FILE. It reads `dodgeT`,
+   * `dodgeLockT`, `dodgePlaced`, `dodgeSeq` and the landing numbers she
+   * publishes every frame, and derives what should be on screen. Six ways for
+   * the move to end, and none of them has to know this exists.
+   *
+   * THE ARITHMETIC IS HERS, NOT MINE. `dodgeSpot`, `dodgeRNear`, `dodgeRFar`
+   * and `dodgePivot` all come out of `Player._dodgeSpotFor` — the single piece
+   * of arithmetic that also decides where she actually goes. That is what
+   * makes the ghost honest: it is not a guess at her landing drawn next to the
+   * real one, it IS the real one, published a few frames early. If the two ever
+   * disagreed it would be because the game had changed her mind, which it
+   * cannot do without changing both.
+   */
+  _updateFigure(dt, p) {
+    const live = p.dodgeT > 0 || p.dodgeLockT > 0;
+    let f = this.figs.get(p.index);
+    if (!f) {
+      if (!live) return;
+      f = this._fig(p);
+      if (!f) return;
+    }
+
+    /* --- which move, and has it ended? ---
+       `dodgeSeq` and not a clock, for the reason the decoy needs it: two Flash
+       Steps a frame apart are indistinguishable to `dodgeT > 0`, and the second
+       one would inherit the first one's frozen snapshot. */
+    if (live && f.seq !== p.dodgeSeq) {
+      f.seq = p.dodgeSeq;
+      f.shown = true;
+      f.placed = false;
+      f.since = 0;
+      f.age = 0;
+      f.out = 0;
+    }
+    if (!live && f.shown) {
+      f.shown = false;
+      f.out = FIG_OUT;
+    }
+    if (!live) f.out = Math.max(0, f.out - dt);
+    if (!live && f.out <= 0) {
+      if (f.group.visible) f.group.visible = false;
+      return;
+    }
+    f.age += dt;
+    f.group.visible = true;
+
+    /* --- sample, until she goes, and then never again ---
+       "This should stop updating once the player teleports and can stay on
+       screen until the technique is finished." The freeze is the whole point:
+       up to the commit the ring chases whoever she locked, so she can watch it
+       move and re-aim; from the commit it is a record of the move that was
+       made, which is the only version of it anybody can actually read. */
+    const s = f.s;
+    if (live && !p.dodgePlaced) {
+      const q = p.dodgeTarget && !p.dodgeTarget.ko ? p.dodgeTarget : null;
+      s.hasT = !!q;
+      s.tcol = q?.style?.colour ?? JADE;
+      s.px = p.dodgePivot.x;
+      s.pz = p.dodgePivot.z;
+      s.py = q ? q.position.y : p.dodgeFrom.y;
+      s.fx = p.dodgeTargetFrom.x;
+      s.fy = p.dodgeTargetFrom.y;
+      s.fz = p.dodgeTargetFrom.z;
+      s.near = p.dodgeRNear;
+      s.far = p.dodgeRFar;
+      s.sx = p.dodgeFrom.x;
+      s.sy = p.dodgeFrom.y;
+      s.sz = p.dodgeFrom.z;
+      s.ok = p.dodgeSpotOk;
+      if (s.ok) {
+        s.hx = p.dodgeSpot.x;
+        s.hy = p.dodgeSpot.y;
+        s.hz = p.dodgeSpot.z;
+      }
+    } else if (live && !f.placed) {
+      /* THE ONE FRAME THE COMMIT HAPPENS. `dodgeTo` and not `dodgeSpot`,
+         because the commit is allowed to refuse — a thumb that never moved
+         leaves her standing where she was — and the figure has to show where
+         she ENDED, including when that is nowhere. */
+      f.placed = true;
+      f.since = 0;
+      s.ok = true;
+      s.hx = p.dodgeTo.x;
+      s.hy = p.dodgeTo.y;
+      s.hz = p.dodgeTo.z;
+    }
+    if (f.placed) f.since += dt;
+
+    /* One master alpha: in over a tenth of a second, out over the dissolve. */
+    const inK = Math.min(1, f.age / 0.12);
+    const outK = f.out > 0 ? f.out / FIG_OUT : 1;
+    const A = inK * outK;
+    const bloom = 1 + (1 - outK) * 0.5;
+
+    /* --- the ring of everywhere she could come out --- */
+    const y = s.py + 0.07;
+    f.ringFar.visible = s.far > 0.01;
+    if (f.ringFar.visible) {
+      f.ringFar.position.set(s.px, y, s.pz);
+      /* THE SCALE IS THE RADIUS, because the circle is drawn at radius 1. That
+         is the whole benefit of a line over a painted band: there is no
+         fraction-of-a-quad to divide back out and therefore no way for the
+         drawn reach to quietly disagree with the real one. `bloom` is the
+         dissolve opening outwards and is 1 for the whole live move. */
+      const w = s.far * bloom;
+      f.ringFar.scale.set(w, 1, w);
+      f.ringFar.rotation.y = f.age * 0.5;
+      f.ringFar.material.opacity = 0.8 * A;
+    }
+    /* Only when there really are two distances — see `_fig`. */
+    f.ringNear.visible = s.near > 0.01 && s.far - s.near > 0.08;
+    if (f.ringNear.visible) {
+      f.ringNear.position.set(s.px, y + 0.01, s.pz);
+      const w = s.near * bloom;
+      f.ringNear.scale.set(w, 1, w);
+      f.ringNear.rotation.y = -f.age * 0.85;
+      f.ringNear.material.opacity = 0.55 * A;
+    }
+
+    /* --- the see-through her, standing on the landing she has chosen --- */
+    const previewing = live && !f.placed && s.ok;
+    if (f.ghost) {
+      f.ghost.visible = previewing;
+      if (previewing) {
+        f.ghost.position.set(s.hx, s.hy, s.hz);
+        f.ghost.material.opacity = AIM_A * inK;
+      }
+    }
+
+    /* --- and the fade out of one place and into the other ---
+       Two sprites and not one, because for the length of `FADE` she is
+       genuinely in both: leaving is not finished before arriving starts, which
+       is what makes it read as a teleport rather than as a cut. */
+    if (f.echoOut) {
+      const k = f.placed ? 1 - f.since / FADE : 0;
+      f.echoOut.visible = k > 0;
+      if (f.echoOut.visible) {
+        f.echoOut.position.set(s.sx, s.sy, s.sz);
+        f.echoOut.material.opacity = k;
+      }
+    }
+    if (f.echoIn) {
+      f.echoIn.visible = f.placed && f.since < FADE;
+      if (f.echoIn.visible) {
+        f.echoIn.position.set(s.hx, s.hy, s.hz);
+        /* REACHES 1 ON THE FRAME HER REAL SPRITE COMES BACK, because `FADE` is
+           the post-commit window itself rather than a number that resembles
+           it. That is the hand-off, and it is why this is not tuned by eye. */
+        f.echoIn.material.opacity = Math.min(1, f.since / FADE);
+      }
+    }
+
+    /* --- the spoke, in her colour: the target, to where she comes out --- */
+    const ly = 0.09;
+    f.vec.visible = s.ok;
+    if (s.ok) {
+      setSeg(f.vec, s.px, s.py + ly, s.pz, s.hx, s.hy + ly, s.hz);
+      f.vec.material.opacity = 0.95 * A;
+    }
+
+    /* --- the path, in the target's colour: where she was, to where she is --- */
+    const mvx = s.px - s.fx;
+    const mvz = s.pz - s.fz;
+    const moved = Math.hypot(mvx, mvz);
+    const showB = s.hasT && moved > MOVED_MIN;
+    f.moved.visible = showB;
+    if (showB) {
+      f.moved.material.color.set(s.tcol);
+      setSeg(f.moved, s.fx, s.fy + ly, s.fz, s.px, s.py + ly, s.pz);
+      f.moved.material.opacity = 0.9 * A;
+    }
+
+    /* --- and theta, which is the angle between those two lines ---
+       BOTH LINES END AT THE PERSON SHE PICKED, so the angle between them is a
+       real angle at a real vertex and not an abstraction: the rays leaving her
+       sister are "towards where you came out" and "back the way you came".
+       Everything printed below is computed from those two rays, so the triangle
+       cannot draw one thing and say another — which is the entire rule the
+       Kotodama Orb is built on. */
+    const tri = s.ok && showB;
+    for (const o of [f.cosLeg, f.sinLeg, f.arc]) o.visible = tri;
+    for (const l of [f.lblTheta, f.lblCos, f.lblSin]) l.visible = tri;
+    if (tri) {
+      const bx = -mvx / moved;                    // the ray back along her path
+      const bz = -mvz / moved;
+      const ax = s.hx - s.px;
+      const az = s.hz - s.pz;
+      const r = Math.max(1e-6, Math.hypot(ax, az));
+      const ux = ax / r;
+      const uz = az / r;
+      const cos = Math.max(-1, Math.min(1, ux * bx + uz * bz));
+      const th = Math.acos(cos);
+      const sin = Math.sin(th);
+      /* The adjacent leg, laid along her path, and the opposite one closing on
+         the landing. `r * cos` goes NEGATIVE past a right angle and the foot
+         lands on the far side of her — which is correct, is what the Dojo
+         draws for an obtuse angle, and is the case a clamp would have hidden. */
+      const fx = s.px + bx * (r * cos);
+      const fz = s.pz + bz * (r * cos);
+      const ty = s.py + ly * 0.8;
+      setSeg(f.cosLeg, s.px, ty, s.pz, fx, ty, fz);
+      setSeg(f.sinLeg, fx, ty, fz, s.hx, s.hy + ly * 0.8, s.hz);
+      f.cosLeg.material.opacity = 0.85 * A;
+      f.sinLeg.material.opacity = 0.85 * A;
+
+      /* The swept arc, from the path round to the spoke, the short way. The
+         2D cross product gives the sense of the turn; rotating `b` by a
+         positive angle produces a positive cross with it, so the two agree by
+         construction rather than by a sign somebody guessed. */
+      const ar = Math.min(2.4, r * 0.42);
+      const sgn = bx * uz - bz * ux >= 0 ? 1 : -1;
+      const steps = Math.max(2, Math.min(ARC_MAX, Math.ceil(th / 0.12) + 1));
+      const ap = f.arc.geometry.attributes.position;
+      for (let i = 0; i < steps; i++) {
+        const a = sgn * th * (i / (steps - 1));
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        ap.setXYZ(i, s.px + (bx * ca - bz * sa) * ar, ty + 0.02, s.pz + (bx * sa + bz * ca) * ar);
+      }
+      ap.needsUpdate = true;
+      f.arc.geometry.setDrawRange(0, steps);
+      f.arc.material.opacity = 0.9 * A;
+
+      const ha = sgn * th * 0.5;
+      const hc = Math.cos(ha);
+      const hs = Math.sin(ha);
+      f.lblTheta.position.set(
+        s.px + (bx * hc - bz * hs) * ar * 1.5,
+        ty + 1.15,
+        s.pz + (bx * hs + bz * hc) * ar * 1.5
+      );
+      f.lblCos.position.set((s.px + fx) / 2, ty + 0.8, (s.pz + fz) / 2);
+      f.lblSin.position.set((fx + s.hx) / 2, ty + 0.8, (fz + s.hz) / 2);
+      f.lblTheta.setText(`θ = ${Math.round((th * 180) / Math.PI)}°`);
+      f.lblCos.setText(`r cos θ = ${(r * cos).toFixed(1)}`);
+      f.lblSin.setText(`r sin θ = ${(r * sin).toFixed(1)}`);
+      for (const l of [f.lblTheta, f.lblCos, f.lblSin]) l.mat.opacity = A;
+    }
+
+    /* --- and the rain, at both ends of the jump ---
+       TWO SITES, asked for by name: the place she leaves and the place she
+       arrives. The first runs through the wind-up and a little past the fade,
+       so the column is still falling over the smoke; the second starts the
+       instant she commits, so the characters are already there when she is. */
+    this._column(f.colA, live && (!f.placed || f.since < FADE * 2.4),
+      s.sx, s.sy, s.sz, dt, A);
+    this._column(f.colB, f.placed, s.hx, s.hy, s.hz, dt, A);
+  }
+
+  /** One rain column, moved to a spot and stepped. */
+  _column(col, on, x, y, z, dt, A) {
+    col.group.visible = on;
+    if (!on) return;
+    col.group.position.set(x, y, z);
+    for (const d of col.drops) {
+      d.t += dt * 1.3;
+      if (d.t > 1 || !d.sp.material.map) {
+        if (d.t > 1) d.t -= 1;
+        /* A NEW GLYPH, NOT A NEW MESH. `makeLabelTexture` caches on content
+           and colour, so after the first few frames of the first Flash Step
+           this is a map swap and nothing else — and the pool is five, so the
+           cache it is drawing from is bounded at five per kitten colour. */
+        const { texture, aspect } = makeLabelTexture(
+          col.pool[(Math.random() * col.pool.length) | 0],
+          { size: 60, color: col.hex, stroke: '#06131a', strokeWidth: 7 }
+        );
+        d.sp.material.map = texture;
+        d.sp.material.needsUpdate = true;
+        d.sp.scale.set(0.78 * aspect, 0.78, 1);
+      }
+      d.sp.position.set(d.ox, COL_TOP * (1 - d.t), d.oz);
+      // Brightest at the head of the fall and gone by the floor — the detail
+      // that makes falling characters read as falling. Same curve as the orb.
+      d.sp.material.opacity = 0.95 * A * Math.sin(d.t * Math.PI);
+    }
+    col.mark.position.set(0, COL_TOP * 0.52, 0);
+    col.mark.material.opacity = 0.85 * A;
+  }
+
+  /**
+   * Turn the figure's readouts toward THIS camera.
+   *
+   * THE ONLY THING IN THIS FILE THAT NEEDS A HOOK, and it is worth saying why
+   * nothing else does: every other new piece is a `THREE.Sprite`, which three.js
+   * turns during each pane's own render, so it faces all four at once by
+   * itself. A `Label` is a quad on a mesh and has to be told. Called from
+   * `Game._faceAll`.
+   */
+  faceCamera(camera) {
+    for (const f of this.figs.values()) {
+      if (!f.group.visible) continue;
+      f.lblTheta.faceCamera(camera);
+      f.lblCos.faceCamera(camera);
+      f.lblSin.faceCamera(camera);
+    }
+  }
+
   _updateDecoys(dt) {
     for (const d of this.decoys) {
       if (d.t <= 0) continue;
@@ -462,7 +1216,20 @@ export class DodgeFx {
       const pop = age < 0.18 ? Math.sin((age / 0.18) * Math.PI * 0.72) * 1.28 : 1;
       const outK = d.t < 0.3 ? d.t / 0.3 : 1;
       d.prop.scale.setScalar(Math.max(0.001, pop * outK));
-      d.prop.rotation.y += dt * d.spin;
+
+      /* --- IT HANGS, AND THEN IT FALLS ---
+         The hang is the trick: a log standing in mid-air exactly where a
+         kitten was is what sells the substitution. Then gravity arrives and it
+         is an object again. The fall is its own constant and its own integrator
+         — three lines rather than a shared physics step, because there is no
+         shared physics step in this game and inventing one for a joke would be
+         the wrong trade. */
+      if (d.float > 0) d.float = Math.max(0, d.float - dt);
+      else if (d.group.position.y > d.floor) {
+        d.vy -= DECOY_G * dt;
+        d.group.position.y = Math.max(d.floor, d.group.position.y + d.vy * dt);
+        if (d.group.position.y <= d.floor) d.vy = 0;
+      }
     }
   }
 }

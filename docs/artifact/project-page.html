@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 2911 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 2978 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 362 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -766,7 +766,7 @@ git push origin alpha</code></pre>
       <tr><td>hit stun / invulnerable <b>✎</b></td><td class="num"><b>0.26s</b> / <b>0.55s</b></td><td></td></tr>
       <tr><td>KO / partner daze <b>✎</b></td><td class="num"><b>1.8s</b> / <b>1.5s</b></td><td>friendly fire dazes <em>your partner</em>, costs <em>you</em> the swing</td></tr>
       <tr><td>rage <b>✎</b></td><td class="num"><b>×1.6</b> at zero health</td><td>Smash's percent rule — knockback grows as she loses HP</td></tr>
-      <tr><td>strike height <b>✎</b></td><td class="num"><b>2.25</b></td><td>how far above/below a blade reaches. Was 4.5 and read as "hits from nowhere"</td></tr>
+      <tr><td>strike height <b>✎</b></td><td class="num"><b>3.4</b></td><td>how far above/below a blade reaches. Was 4.5 and read as "hits from nowhere"</td></tr>
       <tr><td>base reach</td><td class="num"><b>3.4</b></td><td>every other reach is a multiple of this</td></tr>
       <tr><td><b>stand</b> <b>✎</b></td><td class="num">dmg 10 · knock 9 · lift 3.5 · reach 3.4</td><td>a standing slash</td></tr>
       <tr><td><b>dash</b> <b>✎</b></td><td class="num">dmg 15 · knock 19 · lift 5.0 · reach 3.9</td><td>slash while sprinting</td></tr>
@@ -1126,7 +1126,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 2911 assertions and why almost none of them are about
+      is why <code>world-check</code> is 2978 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,

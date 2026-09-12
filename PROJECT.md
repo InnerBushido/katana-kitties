@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 2911 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 2978 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -322,7 +322,7 @@ mark is derived too: it means the number was read out of a `tune()` table, so a
 | hit stun / invulnerable ✎ | **0.26s** / **0.55s** | |
 | KO / partner daze ✎ | **1.8s** / **1.5s** | friendly fire dazes _your partner_, costs _you_ the swing |
 | rage ✎ | **×1.6** at zero health | Smash's percent rule — knockback grows as she loses HP |
-| strike height ✎ | **2.25** | how far above/below a blade reaches. Was 4.5 and read as "hits from nowhere" |
+| strike height ✎ | **3.4** | how far above/below a blade reaches. Was 4.5 and read as "hits from nowhere" |
 | base reach | **3.4** | every other reach is a multiple of this |
 | **stand** ✎ | dmg 10 · knock 9 · lift 3.5 · reach 3.4 | a standing slash |
 | **dash** ✎ | dmg 15 · knock 19 · lift 5.0 · reach 3.9 | slash while sprinting |
@@ -506,7 +506,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 2911
+the check that would have caught it.** That is why `world-check` is 2978
 assertions.
 
 **And a change a new developer would need to know about gets a line in this

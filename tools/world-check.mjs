@@ -5750,6 +5750,23 @@ console.log('\n--- half a second of not being there ---');
   });
   const NONE = pad();
   const GO = (extra = {}) => pad({ hold: ['sprint'], tap: ['interact'], ...extra });
+  /* THE SAME PAD, PLUS THE RAW STICK — which only an AIMED Flash Step reads.
+     `mx`/`my` are what every other move sees and they are deadzoned at 0.22
+     (`dead` in core/input.js); `rx`/`ry` are the untouched axes. Producing both
+     from one push here is what makes these checks honest about the difference:
+     a nudge of 0.12 is genuinely nothing to the walking code and genuinely a
+     direction to the upgrade, and a stub that set only one of the pairs could
+     not tell those apart. */
+  const DEADZONE = 0.22;
+  const deadz = (v) => (Math.abs(v) < DEADZONE
+    ? 0 : Math.sign(v) * ((Math.abs(v) - DEADZONE) / (1 - DEADZONE)));
+  const AIM = (nx, ny, o = {}) => {
+    const p = pad({ mx: deadz(nx), my: deadz(ny), hold: ['sprint'], ...o });
+    p.rx = nx;
+    p.ry = ny;
+    p.nudge = () => Math.min(1, Math.hypot(nx, ny));
+    return p;
+  };
 
   /* Away from every clan hall and every solid, on flat ground, so the only
      thing deciding where she ends up is the move. */
@@ -5805,9 +5822,12 @@ console.log('\n--- half a second of not being there ---');
   ok('...and the party bonus still reaches it',
     stockFor('blink', 4) === stockFor('blink', 2) + 2);
   ok('...and it costs two and a half times an ordinary orb', spec.priceK === 2.5);
-  /* A SECOND COPY BUYS NOTHING, WHICH IS WHY IT MUST NOT BE `stack`. If the
-     shelf ever holds two, the second one has to be a wasted slot and not a
-     silent doubling — so the aggregate has to be identical. */
+  /* A SECOND COPY BUYS THE AIM, AND NOTHING ELSE IN THE WHOLE AGGREGATE.
+     It used to buy nothing at all; the note left on `blink: {}` said that the
+     day a second one bought something it would be an ADDITION rather than a
+     change of type, and this is the check that it stayed one. Everything that
+     is not the aim has to fold identically, or the second orb is quietly a
+     stat booster as well and nobody would ever find out which. */
   /* THE TALLY IS ALLOWED TO DIFFER — `counts` is what the profile screen prints
      and two orbs really are two orbs. What must be identical is everything that
      CHANGES HOW SHE PLAYS, which is every other field. */
@@ -5815,8 +5835,22 @@ console.log('\n--- half a second of not being there ---');
     const { counts, total, ...rest } = aggregate(ids);
     return JSON.stringify(rest);
   };
-  ok('a second 瞬 changes nothing at all',
-    effect(['blink']) === effect(['blink', 'blink']));
+  const noAim = (ids) => {
+    const { counts, total, blink, ...rest } = aggregate(ids);
+    return JSON.stringify(rest);
+  };
+  ok('a second 瞬 changes nothing except the aim',
+    noAim(['blink']) === noAim(['blink', 'blink'])
+    && effect(['blink']) !== effect(['blink', 'blink']));
+  ok('...one orb aims the old way', aggregate(['blink']).blink.aim === false);
+  ok('...two orbs aim by the stick', aggregate(['blink', 'blink']).blink.aim === true);
+  /* AND THERE IS NO RUNG ABOVE IT. An orb that silently stopped paying at
+     three is a rule nobody could ever discover by playing. */
+  ok('...and so do eight', aggregate(Array(8).fill('blink')).blink.aim === true);
+  /* IT IS STILL A FLASH STEP AT ONE, which is the fifth non-negotiable read
+     onto an upgrade: what she already had may not change under her because
+     somebody else bought a second one. */
+  ok('...and one orb still IS the Flash Step', !!aggregate(['blink']).blink);
   /* AND THE TWO-PLAYER GAME IS UNTOUCHED. Fifth non-negotiable: a kitten
      wearing nothing, and a kitten wearing the four world moves, must fold to
      exactly what they folded to before this orb existed. */
@@ -6136,6 +6170,189 @@ console.log('\n--- half a second of not being there ---');
     ok('...turning it a quarter of the way round is', q.dodgeAimed === true);
   }
 
+  /* --- 8b. THE SECOND ORB, WHICH BUYS AN AIM AND NOT A METRE -------------- */
+  {
+    /* THE NUMBERS FIRST, because two of them are safety rails rather than
+       taste. */
+    ok('the nudge deadzone is far inside the walking one',
+      DODGE.aimDead > 0 && DODGE.aimDead < DEADZONE / 3,
+      `${DODGE.aimDead} vs ${DEADZONE}`);
+    /* AND THE WALKING ONE DID NOT MOVE TO MEET IT. That was the tempting fix —
+       "lower the no-drift zone so she can nudge" — and it would have let a worn
+       Joy-Con with nobody holding it walk a kitten across the arena. The
+       nudge is read for a tenth of a second, during a move somebody is
+       deliberately making, by one function, on one kitten. Walking is read
+       every frame of the afternoon. They cannot share a threshold. */
+    const isrc = readFileSync(new URL('../src/core/input.js', import.meta.url), 'utf8');
+    ok('...and the walking deadzone was NOT lowered to make room for it',
+      /function dead\(v, threshold = 0\.22\)/.test(isrc));
+    ok('...the raw stick is carried alongside it, clamped and not deadzoned',
+      /st\.rx = rlen > 1 \? rawx \/ rlen : rawx/.test(isrc) && /nudge\(\)/.test(isrc));
+    ok('the closest she can land is inside a standing swing',
+      BASE_REACH * DODGE.nearK <= ATTACKS.stand.reach,
+      `${(BASE_REACH * DODGE.nearK).toFixed(2)} vs ${ATTACKS.stand.reach}`);
+    ok('...and not on top of her', BASE_REACH * DODGE.nearK > 1.5);
+    ok('the nudge band ends well before a full push', DODGE.aimNear < 0.5);
+
+    /* --- and now what it actually DOES ---
+       One kitten, one opponent ten paces north, and the same pushes given to a
+       one-orb and a two-orb version of her.
+
+       IT IS THE CHOSEN RADIUS THAT IS ASSERTED, NOT THE FINAL COORDINATE, and
+       that distinction cost an hour. `dodgeR` is the answer the band arithmetic
+       gave; where she ENDS UP is that answer plus whatever the world did about
+       it, and the world out here has lanterns and market stalls in it — a
+       landing that clips one is pushed clear by the ordinary solid resolution,
+       which is correct behaviour and moves the measurement by a few tenths for
+       reasons that have nothing to do with the aim. Asking the arithmetic what
+       it decided tests the thing this block is about; measuring the floor tests
+       the furniture. (That the landing then MATCHES the preview is section 8c's
+       job, and it is the check that would catch the commit drifting.) */
+    const around = (orbs, p) => {
+      const q = kitten(orbs);
+      const foe = kitten([], new THREE.Vector3(0, SPOT.y, 50), 1);
+      const hud = hudFor(q, foe);
+      q.facing = 0;
+      step(q, GO(), hud);
+      if (q.dodgeTarget !== foe) return null;
+      for (let i = 0; i < 200 && q.dodgeT > 0; i++) step(q, p, hud);
+      return {
+        r: q.dodgeR,
+        near: q.dodgeRNear,
+        far: q.dodgeRFar,
+        /* WHETHER SHE WENT ANYWHERE AT ALL, which is the only question worth
+           asking when there was no aim: `dodgeR` is the radius of a landing
+           that was CHOSEN, and a kitten who never aimed never chose one, so it
+           is honestly still zero. */
+        went: Math.hypot(q.position.x - q.dodgeFrom.x, q.position.z - q.dodgeFrom.z),
+      };
+    };
+    /* THE BAND, written once and read three times, so the expectations below
+       are the same formula the code uses rather than three transcriptions of
+       it that can each be wrong on their own. */
+    const band = (mag, near, far) => (mag <= DODGE.aimNear ? near
+      : near + (far - near) * Math.min(1, (mag - DODGE.aimNear) / (1 - DODGE.aimNear)));
+
+    /* A FULL push — the stick on the rim. Both kittens see a direction and the
+       only question is how far it throws them. */
+    const full1 = around(['blink'], AIM(1, 0));
+    const full2 = around(['blink', 'blink'], AIM(1, 0));
+    ok('the pivot radius is the distance to the person she locked',
+      full1 != null && Math.abs(full1.far - 10) < 1e-6, `${full1?.far.toFixed(4)}`);
+    ok('a full push throws a one-orb kitten the whole way',
+      full1 != null && Math.abs(full1.r - full1.far) < 1e-6, `${full1?.r.toFixed(4)}`);
+    /* THE FIFTH NON-NEGOTIABLE, ON AN UPGRADE. A second orb may buy precision
+       and it may NOT buy reach: at the far end of the stick the two kittens
+       have to come out at the same distance, to the last decimal place. */
+    ok('...and the second orb changes nothing about it',
+      full2 != null && Math.abs(full2.r - full1.r) < 1e-9,
+      `${full1?.r.toFixed(6)} vs ${full2?.r.toFixed(6)}`);
+
+    /* Half a push. This is where they are allowed to differ, and must. */
+    const half1 = around(['blink'], AIM(0.6, 0));
+    const half2 = around(['blink', 'blink'], AIM(0.6, 0));
+    ok('half a push STILL throws a one-orb kitten the whole way',
+      half1 != null && Math.abs(half1.r - full1.r) < 1e-9, `${half1?.r.toFixed(4)}`);
+    ok('...and brings a two-orb kitten in closer',
+      half2 != null && half2.r < half1.r - 1,
+      `${half2?.r.toFixed(2)} vs ${half1?.r.toFixed(2)}`);
+    ok('...to exactly where the band says',
+      half2 != null && Math.abs(half2.r - band(0.6, half2.near, half2.far)) < 1e-9,
+      `${half2?.r.toFixed(3)}`);
+
+    /* And the nudge itself: under the WALKING deadzone entirely, so the move
+       the girls already know cannot even see it. */
+    const nudge1 = around(['blink'], AIM(0.12, 0));
+    const nudge2 = around(['blink', 'blink'], AIM(0.12, 0));
+    ok('a nudge is not a direction at all without the second orb',
+      nudge1 != null && nudge1.went < 1e-6, `moved ${nudge1?.went.toFixed(3)}`);
+    ok('...and with it, it puts her next to her sister',
+      nudge2 != null && Math.abs(nudge2.r - BASE_REACH * DODGE.nearK) < 1e-9,
+      `${nudge2?.r.toFixed(2)}`);
+    ok('...close enough to swing at her without taking a step',
+      nudge2 != null && nudge2.r <= ATTACKS.stand.reach);
+    /* THE DEAD BAND IS STILL DEAD. Below `aimDead` there is no aim, which for
+       a kitten whose thumb never left centre means the move's old answer:
+       stay where you are. */
+    const still = around(['blink', 'blink'], AIM(0.02, 0));
+    ok('...but a thumb that barely twitched is still not an aim',
+      still != null && still.went < 1e-6, `moved ${still?.went.toFixed(3)}`);
+    /* AND "NOT AN AIM" IS SILENT, not a refusal. The two are different
+       outcomes and the sixth non-negotiable only governs the second: standing
+       still for half a second of invulnerability is a thing she may have
+       meant, and a game that blipped at her for it would be scolding her for
+       using the move defensively. */
+    ok('...and it is silent about it, because nothing was refused',
+      nudge2 != null && nudge2.r > 0);
+  }
+
+  /* --- 8c. THE GHOST CANNOT LIE ------------------------------------------- */
+  {
+    /* ONE PIECE OF ARITHMETIC, CALLED TWICE. The whole point of the preview is
+       that it is not a guess at her landing drawn next to the real one — it IS
+       the real one, published a few frames early. The only way to guarantee
+       that is for `_stepDodge` and `_commitDodge` to ask the same function, so
+       this asserts both that they do and that the answer came out the same. */
+    const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+    const calls = (psrc.match(/_dodgeSpotFor\(/g) ?? []).length;
+    ok('the preview and the commit are one piece of arithmetic',
+      calls >= 3, `${calls} mentions`);
+
+    const q = kitten(['blink', 'blink']);
+    const foe = kitten([], new THREE.Vector3(0, SPOT.y, 50), 1);
+    const hud = hudFor(q, foe);
+    q.facing = 0;
+    step(q, GO(), hud);
+    const p = AIM(0.6, 0.3);
+    let last = null;
+    for (let i = 0; i < 200 && q.dodgeT > 0; i++) {
+      if (!q.dodgePlaced && q.dodgeSpotOk) last = q.dodgeSpot.clone();
+      step(q, p, hud);
+    }
+    ok('she showed a landing before she took it', !!last);
+    ok('...and she landed on the one she showed', !!last
+      && Math.hypot(q.position.x - last.x, q.position.z - last.z) < 1e-6,
+      last ? `${last.x.toFixed(3)},${last.z.toFixed(3)}` : '');
+    /* AND THE RING'S TWO RADII ARE THE BAND THE ARITHMETIC USED, so the circle
+       drawn round her sister is the set of landings she could actually have
+       chosen and not a decorative annulus. */
+    ok('...and the ring she was shown was the reach she had',
+      Math.abs(q.dodgeRFar - 10) < 0.05
+      && Math.abs(q.dodgeRNear - BASE_REACH * DODGE.nearK) < 0.02,
+      `${q.dodgeRNear.toFixed(2)}..${q.dodgeRFar.toFixed(2)}`);
+  }
+
+  /* --- 8d. GRAVITY WAITS FOR THE PARALYSIS -------------------------------- */
+  {
+    /* SHE IS WEIGHTLESS UNTIL SHE CAN MOVE AGAIN, and it used to be only until
+       she landed. The gap between them is `dodgeLockT` — the half second she
+       stands there unable to walk — and falling through it turned a teleport
+       onto a rooftop into a teleport onto a rooftop followed by sliding off it
+       while helpless. Asked for directly: "after teleporting, the player
+       doesn't get gravity until after their paralysis wears off". */
+    const src = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+    const i = src.indexOf('_gravityK(');
+    const body = i < 0 ? '' : src.slice(i, src.indexOf('\n  }', i));
+    ok('gravity asks the PARALYSIS, not the vanish',
+      /this\.dodgePlanted/.test(body) && !/this\.dodgeAt/.test(body));
+
+    const q = kitten(['blink']);
+    const hud = hudFor(q);
+    q.position.y += 8;                 // up in the air, with nothing under her
+    step(q, GO(), hud);
+    for (let i2 = 0; i2 < 200 && q.dodgeT > 0; i2++) step(q, NONE, hud);
+    ok('the vanish is over and the paralysis is not',
+      q.dodgeT === 0 && q.dodgeLockT > 0);
+    const held = q.position.y;
+    for (let i2 = 0; i2 < 10; i2++) step(q, NONE, hud);
+    ok('...and she has not started falling yet',
+      Math.abs(q.position.y - held) < 1e-6 && q.velocity.y === 0);
+    for (let i2 = 0; i2 < 200 && q.dodgePlanted; i2++) step(q, NONE, hud);
+    step(q, NONE, hud, 6);
+    ok('...and she does the moment she can move',
+      q.position.y < held - 0.01, `${(held - q.position.y).toFixed(2)} down`);
+  }
+
   /* --- 9. NOTHING IS STRANDED --------------------------------------------- */
   {
     const q = kitten(['blink']);
@@ -6213,6 +6430,161 @@ console.log('\n--- half a second of not being there ---');
     ok('a restart clears every decoy on the ground', live() === 0);
   }
 
+  /* --- 10b. THE THING LEFT BEHIND IS AN OBJECT, NOT AN ORNAMENT ----------- */
+  {
+    const src = readFileSync(new URL('../src/systems/dodgefx.js', import.meta.url), 'utf8');
+    /* IT DOES NOT TURN. It span slowly on the spot, which was funny for a
+       second and a half and read as a collectable in a menu once it stayed for
+       twelve. `spin` was deleted rather than set to zero precisely so this
+       check can be about the field not existing. */
+    ok('the decoy does not revolve on the spot',
+      !/\bd\.spin\b/.test(src) && !/prop\.rotation\.y \+=/.test(src));
+    ok('...and it stands there ten seconds longer than it used to',
+      /const DECOY = 12;/.test(src));
+    ok('...and it hangs before it falls, with its own gravity',
+      /const FLOAT = 1;/.test(src) && /const DECOY_G = 22;/.test(src));
+
+    /* AND IT ACTUALLY FALLS. The floor is measured ONCE at the drop — from the
+       spot she vanished on, not from a body halfway down a column — so this
+       needs a real world to have anything to land on. */
+    const fx = new DodgeFx(new THREE.Scene());
+    const q = kitten(['blink']);
+    const hud = hudFor(q);
+    q.position.y += 6;                       // dropped from above the ground
+    step(q, GO(), hud);
+    for (let i = 0; i < 200 && !q.dodgePlaced; i++) { step(q, NONE, hud); fx.update(1 / 60, [q], world); }
+    fx.update(1 / 60, [q], world);
+    const d = fx.decoys.find((x) => x.t > 0);
+    ok('something was left hanging in the air', !!d && d.group.position.y > d.floor + 1,
+      d ? `${(d.group.position.y - d.floor).toFixed(2)} up` : '');
+    if (d) {
+      const up = d.group.position.y;
+      for (let i = 0; i < 30; i++) fx.update(1 / 60, [q], world);   // half a second
+      ok('...and it is still hanging there a moment later',
+        Math.abs(d.group.position.y - up) < 1e-6);
+      for (let i = 0; i < 120; i++) fx.update(1 / 60, [q], world);  // two seconds
+      ok('...and then gravity remembers it',
+        d.group.position.y < up - 0.5, `${(up - d.group.position.y).toFixed(2)} down`);
+      for (let i = 0; i < 300; i++) fx.update(1 / 60, [q], world);
+      ok('...and it comes to rest on the floor she was standing on',
+        Math.abs(d.group.position.y - d.floor) < 1e-6);
+    }
+  }
+
+  /* --- 10c. THE PICTURE CANNOT LIE ---------------------------------------- */
+  {
+    const src = readFileSync(new URL('../src/systems/dodgefx.js', import.meta.url), 'utf8');
+    /* A DRAWN LINE, LIKE THE DOJO'S. It was a stair-stepped pixel band first,
+       matching the target reticle; that matched the wrong thing. The reticle is
+       a SIGHT on a person. This is a circle of radius r about a centre, which is
+       the Dojo of the Turning Circle's one idea, and a kitten who has walked
+       that circle has to recognise this one as it. Reported as exactly that. */
+    const i = src.indexOf('function groundRing(');
+    const ring = i < 0 ? '' : src.slice(i, src.indexOf('\n}', i));
+    ok('the landing circle is a drawn line, not a painted texture',
+      /new THREE\.Line\(/.test(ring) && !/CanvasTexture|PlaneGeometry/.test(ring));
+    ok('...at radius 1, so its scale IS the reach',
+      /Math\.cos\(a\)/.test(ring) && /Math\.sin\(a\)/.test(ring)
+      && !/BAND/.test(src));
+    /* THE READOUTS ARE `live`, which is the bug core/label.js exists to
+       document: text that moves every frame without it mints a never-freed
+       canvas per value and killed a phone inside the Dojo in four seconds. */
+    ok('...and its three readouts declare their widest string',
+      /live,\s*$/m.test(src) || /live,/.test(src));
+
+    /* --- and now the figure itself, out of the running game ---
+       Two kittens, one locked, and the target then WALKED so that the second
+       line of the figure has a direction. Everything printed is read back off
+       the geometry that was drawn and compared with the text that was written
+       beside it: if the triangle ever drew one thing and said another, this is
+       the check that fails. */
+    const fx = new DodgeFx(new THREE.Scene());
+    const q = kitten(['blink', 'blink']);
+    const foe = kitten([], new THREE.Vector3(0, SPOT.y, 50), 1);
+    const hud = hudFor(q, foe);
+    q.facing = 0;
+    step(q, GO(), hud);
+    ok('she locked somebody to draw a figure about', q.dodgeTarget === foe);
+    const p = AIM(0.7, 0.35);
+    for (let n = 0; n < 200 && q.dodgeT > 0; n++) {
+      foe.position.x += 0.04;                  // her sister does not stand still
+      foe.position.z += 0.02;
+      step(q, p, hud);
+      fx.update(1 / 60, [q, foe], world);
+    }
+    const f = fx.figs.get(0);
+    ok('a figure was built for her', !!f);
+    if (f) {
+      ok('...and the triangle is on screen', f.cosLeg.visible && f.sinLeg.visible
+        && f.arc.visible && f.lblTheta.visible);
+      /* READ BACK OFF THE DRAWN GEOMETRY. `seg` is the length of a line as it
+         actually sits in the scene — not the number that was used to place it,
+         which is the whole point: this compares the DRAWING with the WORDS. */
+      const seg = (ln) => {
+        const a = ln.geometry.attributes.position;
+        return Math.hypot(a.getX(1) - a.getX(0), a.getZ(1) - a.getZ(0));
+      };
+      const num = (t) => Math.abs(parseFloat(String(t).replace(/[^-\d.]/g, '')));
+      /* `_want` AND NOT `_text`, and the difference is the point of a live
+         label: `_text` is what is PAINTED and the repaint is deliberately
+         throttled (core/label.js — it is what stopped the Dojo's readouts
+         stalling the pipeline every frame), so it can be one tick behind. What
+         the figure SAID this frame is `_want`. Reading the painted string here
+         would make this check fail at random on a number that was correct. */
+      const said = (l) => l._want ?? l._text;
+      ok('the printed cosine is the length of the drawn adjacent side',
+        Math.abs(seg(f.cosLeg) - num(said(f.lblCos))) < 0.06,
+        `${seg(f.cosLeg).toFixed(2)} vs "${said(f.lblCos)}"`);
+      ok('...and the printed sine is the length of the drawn opposite side',
+        Math.abs(seg(f.sinLeg) - num(said(f.lblSin))) < 0.06,
+        `${seg(f.sinLeg).toFixed(2)} vs "${said(f.lblSin)}"`);
+      /* AND IT IS A RIGHT TRIANGLE, which is the claim the two legs make by
+         being drawn the way they are. Pythagoras on the drawn lengths against
+         the drawn hypotenuse — the spoke between the two kittens. */
+      ok('...and the two legs really do close on the line between them',
+        Math.abs(Math.hypot(seg(f.cosLeg), seg(f.sinLeg)) - seg(f.vec)) < 0.06,
+        `${Math.hypot(seg(f.cosLeg), seg(f.sinLeg)).toFixed(2)} vs ${seg(f.vec).toFixed(2)}`);
+      /* THETA IS THE ANGLE BETWEEN THE TWO DRAWN LINES, measured off them
+         rather than recomputed from the players. */
+      const dir = (ln, end) => {
+        const a = ln.geometry.attributes.position;
+        const j = end ? 0 : 1;
+        return Math.atan2(a.getX(j) - a.getX(1 - j), a.getZ(j) - a.getZ(1 - j));
+      };
+      let dth = dir(f.vec, false) - dir(f.moved, true);
+      dth = Math.abs(Math.atan2(Math.sin(dth), Math.cos(dth))) * 180 / Math.PI;
+      ok('...and theta is the angle between the two drawn lines',
+        Math.abs(dth - num(said(f.lblTheta))) < 1.5,
+        `${dth.toFixed(1)}° vs "${said(f.lblTheta)}"`);
+      /* THE CIRCLE IS THE REACH, with nothing between the number and the
+         drawing to get wrong. */
+      ok('the outer circle is drawn at exactly the pivot radius',
+        Math.abs(f.ringFar.scale.x - f.s.far) < 1e-9,
+        `${f.ringFar.scale.x.toFixed(3)} vs ${f.s.far.toFixed(3)}`);
+      ok('...and the inner one at the closest she may land',
+        Math.abs(f.ringNear.scale.x - f.s.near) < 1e-9);
+      /* AND IT STOPPED FOLLOWING HER WHEN SHE WENT. "This should stop updating
+         once the player teleports." */
+      const froze = f.s.px;
+      for (let n = 0; n < 20; n++) { foe.position.x += 0.5; fx.update(1 / 60, [q, foe], world); }
+      ok('...and the circle stopped following once she teleported',
+        f.s.px === froze);
+      /* AND NOTHING IS STRANDED. */
+      for (let n = 0; n < 300 && q.dodgePlanted; n++) { step(q, NONE, hud); fx.update(1 / 60, [q, foe], world); }
+      for (let n = 0; n < 120; n++) fx.update(1 / 60, [q, foe], world);
+      ok('...and the whole figure puts itself away afterwards',
+        f.group.visible === false);
+    }
+
+    /* THE ONE HOOK IT NEEDS. Every other new piece is a Sprite, which three.js
+       turns during each pane's own render; a Label is a quad on a mesh and has
+       to be told, so `_faceAll` has to know. Without this line the three
+       readouts face whichever of the four cameras drew last. */
+    const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('the figure\'s readouts are turned toward every pane',
+      /this\.dodgeFx\?\.faceCamera\(camera\);/.test(msrc));
+  }
+
   /* --- 11. THE INSECT ----------------------------------------------------- */
   /* The same stub the feast's own checks build further down: a `Critter` builds
      real `Billboard`s out of it, so `{}` is not an atlas, it is a crash. */
@@ -6224,21 +6596,70 @@ console.log('\n--- half a second of not being there ---');
     const m = CRITTER_BY_ID.mantis;
     ok('there is a rare animal and it is the only one', !!m && m.rare === true
       && CRITTERS.filter((c) => c.rare).length === 1);
-    /* IT PAYS THE LEAST, WHICH IS OFF THE LADDER ON PURPOSE. rat < rabbit <
-       bird prices the three you go and FIND; this one arrives by itself, so it
-       is worth exactly what standing still between rounds is worth. */
-    ok('...worth the least of anything on the deck',
-      CRITTERS.every((c) => c === m || c.heal > m.heal));
-    ok('...and exactly the free regen, which is the floor',
-      m.heal === Math.round(MAX_HP * REGEN_FRAC));
-    ok('...it cannot be walked down, and cannot outrun a sprint',
-      m.speed > 10.5 && m.speed < 17);
+    /* IT PAYS THE MOST, WHICH IS OFF THE LADDER ON PURPOSE — AND IT USED TO
+       PAY THE LEAST, for an argument that has since been overtaken. rat <
+       rabbit < bird prices the three you go and FIND; this one you cannot hunt
+       at all, it turns up in the smoke of somebody's Flash Step five times in
+       a hundred, and it is now the only animal a sprint cannot run down. The
+       old answer (exactly the free regen) paid a difficult catch what standing
+       still is worth. Four times that was asked for by name. */
+    ok('...worth the most of anything in the game',
+      CRITTERS.every((c) => c === m || c.heal < m.heal));
+    ok('...and four times the free regen it used to be worth',
+      m.heal === Math.round(MAX_HP * REGEN_FRAC * 4));
+    /* THE ONE THING ON THE DECK A SPRINT CANNOT CLOSE ON, and the only reason
+       that is allowed is that fleeing is not its resting state: `top` is
+       0.42 of this while it is calm, so a mantis nobody has spooked is
+       slower than a walk and can be crept up on. Chase it and you have lost
+       it; time a swing and you have it. */
+    ok('...and it is the one animal a sprint cannot run down', m.speed > 17);
+    ok('...but calm, it is slower than a walk', m.speed * 0.42 < 10.5);
     ok('...and it is the fastest thing on the deck',
       CRITTERS.every((c) => c === m || c.speed < m.speed));
     const hop = m.hopV ** 2 / (2 * 24);
     line('mantis hop height', `${hop.toFixed(2)} units`);
     ok('...it hops higher than a rabbit', hop > CRITTER_BY_ID.rabbit.hopV ** 2 / (2 * 24));
     ok('...and still inside the swing\'s upward reach', hop + m.size < 6.5);
+    /* --- AND SOMETIMES IT LEAVES ---
+       A flight has to stay inside the same window a hop does, for exactly the
+       reason the hop does: past it the animal stops being harder to catch and
+       starts being impossible, which is the trap this spec's own note spells
+       out about the rabbit. `cruise` is measured from the floor and the swing
+       reaches 6.5 above her feet, so the whole animal has to fit under that. */
+    ok('a flying mantis is still inside the swing\'s upward reach',
+      m.canFly === true && m.cruise + m.size < 6.5,
+      `${m.cruise} + ${m.size}`);
+    ok('...and lower than the bird, which cannot be taken from the floor at all',
+      m.cruise < CRITTER_BY_ID.bird.cruise);
+    ok('...it is a third of its evasions, not most of them',
+      m.flyChance > 0.15 && m.flyChance < 0.5);
+    ok('...and a flight is seconds, not a lifestyle',
+      m.flyFor > 0.5 && m.flyFor + m.flyVary < 6);
+    /* NOTHING ELSE FLIES BY ACCIDENT. `canFly` is read on every hopper, so a
+       rabbit that gained the field would quietly start leaving the ground. */
+    ok('...and the rabbit did not learn to fly', !CRITTER_BY_ID.rabbit.canFly);
+    {
+      /* IT IS ASKED OF THE ANIMAL AND NOT OF ITS SPECIES, which is the whole
+         bug this getter exists to prevent: `kind === 'flier'` is false for a
+         mantis that is twenty feet up, so a swing would have grabbed it off a
+         floor it is nowhere near. */
+      const c = new Critter(m, stubArt(), new THREE.Vector3(0, 0, 0));
+      c.onGround = true;
+      ok('a mantis on the ground can be pinned like anything else',
+        c.airborne === false && c.pinnable === true);
+      c.flyT = 1;
+      ok('...and one in the air cannot, and counts as flying',
+        c.airborne === true && c.pinnable === false);
+      /* AND A BLOW ENDS THE FLIGHT. Without this the clock runs on underneath
+         and hands it straight back to `_flyStep` when it wakes up — an animal
+         stunned out of the air and then shot back into it. */
+      c.stun();
+      ok('...and a blow takes it out of the sky for good', c.flyT === 0);
+      const msrc2 = readFileSync(new URL('../src/systems/menagerie.js', import.meta.url), 'utf8');
+      ok('...and the catch asks the animal, not the species',
+        /if \(air\.airborne\) \{/.test(msrc2)
+        && !/air\.spec\.kind === 'flier'/.test(msrc2));
+    }
   }
   {
     /* IT IS NOT IN THE LOTTERY. `species` is what `start` seeds and `_spawn`
@@ -7049,15 +7470,54 @@ console.log('\n--- the three power moves ---');
      nowhere.
 
      CHECKED AGAINST THE NUMBER IT REPLACED, not against a number typed twice.
-     "At least half as big" was the ask, and stating it that way is what makes
-     this an assertion about the change rather than a copy of the answer — a
-     later tuning session may well move it again, and this stays true until
-     somebody moves it back UP, which is the thing worth catching. */
+     A later tuning session may well move it again, and this stays true until
+     somebody moves it back UP to where it was, which is the thing worth
+     catching.
+
+     IT WAS `<= OLD / 2` AND PLAY MOVED IT. Halved was the defensible answer
+     with no play session behind it; with one behind it, 2.25 read as a blade
+     that gave up on somebody barely off the floor, and the 瞬 reticle refused
+     people for the same reason. It went back up by half, to 3.4 — which is
+     still comfortably under the column that was reported, and is what this
+     now asserts. The check did not get weaker: it still fails the day
+     somebody types 4.5 back in. */
   const OLD_STRIKE_HEIGHT = 4.5;
-  ok('a blade no longer reaches half a storey up',
+  ok('a blade still does not reach the storey above',
     Number.isFinite(COMBAT.strikeHeight) && COMBAT.strikeHeight > 0
-    && COMBAT.strikeHeight <= OLD_STRIKE_HEIGHT / 2,
+    && COMBAT.strikeHeight <= OLD_STRIKE_HEIGHT * 0.8,
     `${COMBAT.strikeHeight}m (was ${OLD_STRIKE_HEIGHT}m)`);
+  /* AND IT IS ONE PLANE FOR EVERYTHING THAT REACHES FOR A PERSON. Asked for
+     by name — "a standard plane height for attacking/targeting opponents, now
+     and in the future" — and the way to hold a rule like that is to count the
+     places that ask the question and fail when a new one appears with a
+     number of its own. Two of them: the blade, in `main.js`, and the 瞬
+     reticle, in `player.js`. */
+  {
+    const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8')
+      .replace(/\r\n/g, '\n');
+    /* THE TWO FUNCTIONS THAT PICK A PERSON, read one at a time rather than as
+       a count over the whole file — because the file ALSO has height gates on
+       barrels and bamboo, and those are a different question. A lantern is not
+       an opponent, and a dragon's flame reaching a shelf has nothing to do
+       with how far above you a kitten counts as reachable. Conflating the two
+       is how a rule about people ends up being enforced on furniture. */
+    const fn = (name) => {
+      const i = psrc.indexOf(`  ${name}(`);
+      return i < 0 ? '' : psrc.slice(i, psrc.indexOf('\n  }', i));
+    };
+    for (const [name, what] of [
+      ['_dodgeTargetFor', 'who a 瞬 Flash Step may pivot around'],
+      ['_arenaTargetFor', 'who a clan power may be aimed at'],
+    ]) {
+      const body = fn(name);
+      ok(`...and ${what} asks the SAME question`,
+        /Math\.abs\(dy\) > COMBAT\.strikeHeight/.test(body), name);
+      /* THE REAL CATCH IS A NEW NUMBER, not a missing one: somebody adding a
+         third way to reach for a person and typing a height into it. */
+      ok('...with no vertical range of its own',
+        !/Math\.abs\(dy\) > (?!COMBAT\.strikeHeight)/.test(body));
+    }
+  }
   line('vertical strike window', `+/-${COMBAT.strikeHeight}m (was +/-${OLD_STRIKE_HEIGHT}m)`);
   {
     const src = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
@@ -7936,8 +8396,17 @@ console.log('\n--- the three power moves ---');
      percentage of `player.maxHp` would have broken silently: an Adamant orb
      raises that, so a fraction of it would make every snack in the ring
      stronger for whichever kitten is wearing more armour. */
-  ok('every snack heals 10-20% of the base bar',
-    CRITTERS.every((c) => c.heal >= MAX_HP * 0.10 - 0.5 && c.heal <= MAX_HP * 0.20 + 0.5));
+  /* THE BAND IS ABOUT THE DECK, AND THE DECK IS THE THREE YOU CAN HUNT.
+     `CRITTERS` also holds the rare one, which cannot be spawned, cannot be
+     drawn from the pool, and only exists because somebody flash-stepped — so
+     folding it into "every snack" is the check quietly asserting a rule about
+     the lottery over an animal that is not in it. `rare` is the line, and it
+     is the same line `Menagerie.species` draws. */
+  const deck = CRITTERS.filter((c) => !c.rare);
+  ok('every snack on the deck heals 10-20% of the base bar',
+    deck.every((c) => c.heal >= MAX_HP * 0.10 - 0.5 && c.heal <= MAX_HP * 0.20 + 0.5));
+  ok('...and the one that is not on the deck is the only one outside it',
+    CRITTERS.filter((c) => c.heal > MAX_HP * 0.20 + 0.5).every((c) => c.rare));
   ok('...and the harder the catch, the bigger it is',
     CRITTER_BY_ID.rat.heal < CRITTER_BY_ID.rabbit.heal
     && CRITTER_BY_ID.rabbit.heal < CRITTER_BY_ID.bird.heal);
@@ -8186,11 +8655,19 @@ console.log('\n--- the three power moves ---');
      chase attached. Above a walk it cannot be caught by walking; well under a
      sprint, it is always caught by a sprint you commit to.
 
-     NOTHING REACHES A SPRINT, or it could never be closed on at all. */
+     NOTHING ON THE DECK REACHES A SPRINT, or it could never be closed on at
+     all — and the deck is the three you can hunt. The rare one is the stated
+     exception and it is the whole character of the animal: you do not catch a
+     mantis by chasing it, you catch it by timing a swing at a hop or a
+     take-off. It is allowed to be uncatchable-by-running precisely because
+     nobody ever has to find one. */
   ok('the rat stays catchable at a walk', CRITTER_BY_ID.rat.speed < 10.5);
   ok('a rabbit cannot be caught by walking after it',
     CRITTER_BY_ID.rabbit.speed > 10.5);
-  ok('...and nothing on the deck outruns a sprint', CRITTERS.every((c) => c.speed < 17));
+  ok('...and nothing you can HUNT outruns a sprint',
+    CRITTERS.filter((c) => !c.rare).every((c) => c.speed < 17));
+  ok('...and the one thing that does is the one you cannot go looking for',
+    CRITTERS.filter((c) => c.speed >= 17).every((c) => c.rare));
 
   /* A rabbit hops twice as high as it first did — and height is v²/2g, so that
      is the launch times root two, not times two. Bounded at the top by the
@@ -8813,9 +9290,18 @@ console.log('\n--- the three power moves ---');
   ok('...and smaller than every snack on the deck',
     CRITTERS.every((c) => c.heal >= MAX_HP * REGEN_FRAC));
   /* And the deck has to be able to cover a bad round. Three animals plus the
-     regen against a kitten who won on her last two health. */
+     regen against a kitten who won on her last two health.
+
+     THE RARE ONE IS NOT IN THIS SUM, and leaving it in was the bug: a feast
+     cannot contain a mantis. `_spawn` draws from `species`, which is
+     `CRITTERS` minus `rare`, and the only door the rare pool has is
+     `_conjure` off a Flash Step. Summing it here would have this check
+     policing a budget against an animal the budget can never buy — and it
+     would have failed the day that animal's reward changed, which is exactly
+     what it did. */
   const feastMax = Math.round(MAX_HP * REGEN_FRAC)
-    + CRITTERS.map((c) => c.heal).sort((a, b) => b - a).slice(0, MAX_ON_STAGE)
+    + CRITTERS.filter((c) => !c.rare).map((c) => c.heal).sort((a, b) => b - a)
+      .slice(0, MAX_ON_STAGE)
       .reduce((n, h) => n + h, 0);
   line('most a feast can be worth', `${feastMax} of ${MAX_HP}`);
   ok('a perfect feast is worth about half a bar, not a whole one',

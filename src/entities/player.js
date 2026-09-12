@@ -110,11 +110,25 @@ export const COMBAT = tune('COMBAT', {
    * the balance page for exactly that reason: the right value is a thing you
    * find by playing, and this is the shape that lets somebody find it.
    *
+   * AND THEN PLAY FOUND IT: 2.25 read as a blade that gave up on somebody
+   * barely off the floor, and the reticle refused people for the same reason
+   * — so it went back up by half, to 3.4. That is still a long way under the
+   * 4.5 that was reported as hitting from nowhere, and it is the shape the
+   * knob exists for: a number found by playing rather than argued for.
+   *
+   * IT IS THE ONE VERTICAL PLANE, AND THAT IS THE POINT OF IT. Cutting
+   * somebody, and picking somebody to flash-step around, ask the same
+   * question with the same constant, and anything added later that reaches
+   * for an opponent must ask it here too rather than inventing a height of
+   * its own. Two numbers that mean "how far above me counts" is two numbers
+   * that will disagree, and a player would experience the disagreement as the
+   * game being arbitrary about who is in range.
+   *
    * IT IS NOT THE SAME NUMBER AS `lift`. `lift` is how far a hit throws her UP;
    * this is how far apart you may be VERTICALLY for the hit to happen at all.
    * They were never related and the resemblance is a trap.
    */
-  strikeHeight: 2.25,
+  strikeHeight: 3.4,
 });
 
 /**
@@ -518,6 +532,33 @@ export class Player {
     /** Where she went, and where she came from — read by the effects to put
      *  the decoy on the spot she left rather than the spot she is now. */
     this.dodgeFrom = new THREE.Vector3();
+    /** Where she ended up. Set by `_commitDodge`, read by the effects so the
+     *  arrival flourish happens where she arrived rather than where the
+     *  camera guessed. */
+    this.dodgeTo = new THREE.Vector3();
+    /* --- THE PICTURE'S THREE NUMBERS, and they are the move's own ---
+       `dodgeSpot` is where she would land if the commit happened this frame,
+       `dodgeR` the radius she would land at, `dodgePivot` the point she is
+       going round — herself, or whoever the reticle is on. All three are
+       written by `_stepDodge` from `_dodgeSpotFor`, which is the SAME call
+       the commit makes, so nothing drawn from them can disagree with where
+       she actually goes. `dodgeSpotOk` is false while the stick is centred or
+       aimed over the edge of the world: there is no spot, so there is nothing
+       honest to draw. */
+    this.dodgeSpot = new THREE.Vector3();
+    this.dodgeSpotOk = false;
+    this.dodgeR = 0;
+    this.dodgePivot = new THREE.Vector3();
+    /** The two ends of everywhere she could come out — the ring the picture
+     *  draws. Equal without the aim upgrade, because without it there is only
+     *  one distance and the "ring of possible landings" really is a ring. */
+    this.dodgeRNear = 0;
+    this.dodgeRFar = 0;
+    /** Where the kitten she locked was STANDING at the press. The second of
+     *  the two lines the figure is built from is hers: where she started
+     *  against where she is now. Meaningless without a target and left alone
+     *  in that case. */
+    this.dodgeTargetFrom = new THREE.Vector3();
     /** Bumped every time a Flash Step starts. `systems/dodgefx.js` watches it
      *  to know a NEW one began, which a clock alone cannot say: two dodges in
      *  a row with a frame between them look identical to `dodgeT > 0`. */
@@ -1279,11 +1320,19 @@ export class Player {
   /** How much of gravity applies this frame. See WARD / CROSS / CHARGE. */
   _gravityK() {
     if (this.chargeT > 0) return 0;
-    /* GONE MEANS GONE. Asked for outright — "while this ability is active,
-       gravity should be turned off for the player" — and it is also the only
-       thing that makes a Flash Step thrown mid-jump land where the stick
-       said rather than a metre and a half below it. */
-    if (this.dodgeAt) return 0;
+    /* GONE MEANS GONE — AND SO DOES JUST-ARRIVED. Asked for outright first as
+       "while this ability is active, gravity should be turned off", and then
+       again for the half-second of paralysis after she lands: "the player
+       doesn't get gravity until after their paralysis wears off".
+
+       WHICH IS ALSO THE ONLY WAY THE LANDING IS HONEST. Without it a Flash
+       Step thrown mid-jump puts her exactly where the stick said and then
+       drops her a metre and a half while she is frozen and cannot do anything
+       about it, so the spot she was shown and the spot she ends up on are two
+       different places. She hangs instead, and falls the frame her feet come
+       back to her. `dodgePlanted` is the vanish AND the lock; `dodgeAt` is
+       only the vanish, which is why this moved. */
+    if (this.dodgePlanted) return 0;
     /* CAUGHT MID-AIR AND STAYING THERE. Weightless is not a detail of the
        hold, it IS the hold — a kitten who keeps falling while the other three
        cuts land is a kitten the other three cuts miss, which is the bug the
@@ -2187,13 +2236,20 @@ export class Player {
        So during the stun the movement accel is skipped entirely and the
        throw decays on its own gentle drag instead. Gravity is untouched, so
        she still falls, still lands, and still slides to a stop. */
-    if (this.dodgeAt) {
-      /* NOTHING MOVES HER WHILE SHE IS NOT THERE. "Velocity set to zero
-         before, during, and at the end of the ability" — so it is pinned
-         every frame rather than zeroed once at the press, which is the
-         difference between a teleport and a teleport you can be knocked out
-         of by a shove that landed a frame earlier. Gravity is off too; see
-         `_gravityK`. */
+    if (this.dodgePlanted) {
+      /* NOTHING MOVES HER WHILE SHE IS NOT THERE — AND NOTHING MOVES HER WHILE
+         SHE IS GETTING HER FEET BACK. "Velocity set to zero before, during,
+         and at the end of the ability", so it is pinned every frame rather
+         than zeroed once at the press: the difference between a teleport and
+         a teleport you can be knocked out of by a shove that landed a frame
+         earlier.
+
+         IT COVERS THE PARALYSIS TOO, because gravity does (`_gravityK`) and
+         the two have to agree. Weightless with a stale velocity is a kitten
+         drifting gently sideways in mid-air for half a second, which is the
+         exact bug this pin was written to prevent, moved half a second later.
+         She is still hittable through all of it — `hurt` asks `dodgeAt`, not
+         this — which is the trade the lock exists to be. */
       this.velocity.set(0, 0, 0);
     } else if (this.chargeT > 0) {
       /* A CHARGE IS A VELOCITY, NOT A TARGET. Feeding it through the ordinary
@@ -3193,6 +3249,126 @@ export class Player {
   }
 
   /**
+   * The same stick, read for AIM instead of for walking — heading AND how far.
+   *
+   * TWO ORBS ONLY. A kitten with one 瞬 never reaches this function and her
+   * move is exactly the move it has always been, which is the fifth
+   * non-negotiable applied to an upgrade: the thing you already had may not
+   * change under you because somebody else bought a second one.
+   *
+   * IT READS THE RAW AXES, and that is the entire reason it exists. The
+   * walking deadzone throws away the first 22% of the stick — see
+   * `PadState.rx` — and the ask here was that a kitten can "nudge the
+   * direction of where they want to teleport without needing to push in that
+   * direction too much", with a live band opening at 5%. Under `mx`/`my` that
+   * band is not small, it is EMPTY: 5% of the stick is zero and no amount of
+   * arithmetic downstream can get it back.
+   *
+   * `DODGE.aimDead` STILL EXISTS, AND STILL MEANS "STAY HERE". Half a second
+   * of being untouchable, spent standing still, is the defensive half of this
+   * move and it is not being taken away — it just now needs a thumb genuinely
+   * off the stick rather than merely not pushing hard.
+   *
+   * @returns {{heading:number, mag:number}|null} null when she has not aimed
+   */
+  _stickAim(pad) {
+    const mag = pad?.nudge?.() ?? 0;
+    if (mag < DODGE.aimDead) return null;
+    const { fwd, right } = this._basis();
+    const wish = new THREE.Vector3()
+      .addScaledVector(right, pad?.rx ?? 0)
+      .addScaledVector(fwd, -(pad?.ry ?? 0));
+    if (wish.lengthSq() <= 1e-8) return null;
+    return { heading: Math.atan2(wish.x, wish.z), mag: Math.min(1, mag) };
+  }
+
+  /**
+   * How far from the pivot she comes out, given how hard the stick is pushed.
+   *
+   * THREE BANDS, AND THEY WERE SPECIFIED AS PERCENTAGES OF THE STICK.
+   *
+   *   under `aimDead`   she has not aimed — the caller never gets here.
+   *   under `aimNear`   ONE distance, `nearK` of a base reach. A nudge means
+   *                     "put me next to her", and it has to mean the same
+   *                     distance every time: the backstab is a repeatable
+   *                     thing you learn, not a thing that depends on how hard
+   *                     a nine-year-old's thumb happened to press. It is
+   *                     inside a standing swing, so she arrives able to cut.
+   *   above it          straight-line from that near distance out to `far`,
+   *                     which is whatever the UNAIMED move would have used.
+   *
+   * SO THE UPGRADE NEVER OUT-RANGES THE MOVE IT UPGRADES. The top of the band
+   * is exactly where a one-orb kitten would have landed; everything the
+   * second orb buys is BETWEEN there and her sister's elbow. An upgrade that
+   * also reached further would be two changes wearing one name.
+   */
+  _aimRadius(mag, far) {
+    const near = Math.min(far, BASE_REACH * DODGE.nearK);
+    if (mag <= DODGE.aimNear) return near;
+    const k = (mag - DODGE.aimNear) / Math.max(1e-6, 1 - DODGE.aimNear);
+    return near + (far - near) * Math.min(1, k);
+  }
+
+  /**
+   * WHERE SHE WOULD LAND IF THE COMMIT HAPPENED THIS FRAME — or null.
+   *
+   * THIS FUNCTION EXISTS SO THAT THE PICTURE CANNOT LIE. `systems/dodgefx.js`
+   * draws a ring of everywhere she could go and a faded ghost of her standing
+   * where she is about to, and the eighth non-negotiable's argument applies
+   * exactly: the drawn thing has to BE the thing. So the preview and the
+   * teleport are not two pieces of arithmetic that agree — they are one piece
+   * of arithmetic, called twice. `_stepDodge` calls it every frame and parks
+   * the answer on her; `_commitDodge` calls it once and moves her there.
+   *
+   * IT REFUSES THE VOID, here rather than in the commit, so the ghost is never
+   * standing somewhere she will then be denied. `heightAt` returning null is
+   * the edge of the world and a teleport into it is a fall she did not ask
+   * for — the fourth non-negotiable on the one move that can put a kitten
+   * somewhere she did not walk to.
+   */
+  _dodgeSpotFor(pad, world) {
+    const aimed = this.power.blink?.aim ? this._stickAim(pad) : null;
+    const live = aimed ? aimed.heading : this._stickHeading(pad);
+    const aim = live != null ? live : (this.dodgeAimed ? this.dodgeAim : null);
+    if (aim == null) return null;
+
+    /* THE SHIELD BUTTON STILL OVERRIDES THE RETICLE OUTRIGHT. This is the
+       flee: pivot on herself, at half the detection range, whoever the ring
+       is on. It got its half again when `DODGE.range` did — 5 units became
+       7.5 — because it is `range * selfK` and always has been. */
+    const flee = !!pad?.down?.('mount');
+    const t = flee ? null : this.dodgeTarget;
+
+    let px = this.dodgeFrom.x;
+    let pz = this.dodgeFrom.z;
+    let far = DODGE.range * DODGE.selfK;
+    if (t) {
+      px = t.position.x;
+      pz = t.position.z;
+      /* THE SHORTER OF THEN AND NOW. The other one lets a sister who ran away
+         during the vanish drag the landing further than the move reaches. */
+      const now = Math.hypot(px - this.dodgeFrom.x, pz - this.dodgeFrom.z);
+      far = Math.min(this.dodgeD0, now);
+    }
+    const near = this.power.blink?.aim
+      ? Math.min(far, BASE_REACH * DODGE.nearK)
+      : far;
+    const r = aimed ? this._aimRadius(aimed.mag, far) : far;
+
+    /* THE SAME sin/cos THAT PLACES EVERY ORB IN THIS GAME. A heading and a
+       radius are a point on a circle, and this is that arithmetic written out
+       rather than borrowed — see systems/kotodama.js for the version a
+       nine-year-old is supposed to read off the screen. */
+    const x = px + Math.sin(aim) * r;
+    const z = pz + Math.cos(aim) * r;
+    const g = world?.heightAt?.(x, z, this.position.y);
+    if (!g) return null;
+    return {
+      x, z, y: Math.max(this.position.y, g.y), r, near, far, px, pz, aim, target: t,
+    };
+  }
+
+  /**
    * Who the reticle goes on — or null.
    *
    * "THE ONE CLOSEST TO THE FORWARD CENTRE", which is an ANGLE and not a
@@ -3316,6 +3492,16 @@ export class Player {
     this.dodgeAim = this.dodgeAim0;
     this.dodgeAimed = false;
     this.dodgeTarget = this._dodgeTargetFor(hud);
+    /* WHERE SHE WAS WHEN THE MOVE STARTED. Half of the figure `dodgefx` draws
+       is "how far has the kitten you locked moved since you locked her", and
+       that is not recoverable after the fact from anything else on either of
+       them. Copied rather than referenced for the obvious reason. */
+    if (this.dodgeTarget) this.dodgeTargetFrom.copy(this.dodgeTarget.position);
+    /* AND SHE ARRIVES WHERE SHE IS UNTIL SHE DOESN'T. `_commitDodge` overwrites
+       this; seeding it here is what makes the arrival flourish land on her if
+       the commit decides she stays put, which is a real outcome of the move
+       and not an error case. */
+    this.dodgeTo.copy(this.position);
     this.dodgeD0 = this.dodgeTarget
       ? Math.hypot(
         this.dodgeTarget.position.x - this.position.x,
@@ -3633,6 +3819,51 @@ export class Player {
 
     this.dodgeT = Math.max(0, this.dodgeT - dt);
 
+    /* --- WHERE SHE IS ABOUT TO BE, RECOMPUTED EVERY FRAME ---
+       Parked on her rather than handed to anybody, because `systems/dodgefx.js`
+       is a POLLER: it reads her clocks and derives what should be on screen,
+       and a Flash Step can end six ways that a callback would have to enumerate
+       one at a time. This is the field the landing ring and the faded ghost
+       are drawn from, and it goes on updating while the target moves — which
+       was the ask in as many words: "if the targeted player moves, then the
+       circle should adjust".
+
+       IT STOPS THE INSTANT SHE COMMITS. `dodgePlaced` is the gate, so the
+       picture freezes on the spot she actually took and holds there for the
+       rest of the move instead of chasing a sister who has since walked off.
+       That freeze is what makes the drawing a record of the decision. */
+    if (!this.dodgePlaced) {
+      const spot = this._dodgeSpotFor(pad, world);
+      if (spot) {
+        this.dodgeSpot.set(spot.x, spot.y, spot.z);
+        this.dodgeSpotOk = true;
+        this.dodgeR = spot.r;
+        this.dodgeRNear = spot.near;
+        this.dodgeRFar = spot.far;
+        this.dodgePivot.set(spot.px, 0, spot.pz);
+      } else {
+        /* NO SPOT, BUT THE RING STAYS HONEST. She is not aiming — or she is
+           aiming at the void — and the circle of everywhere she COULD go is
+           still a true thing to draw, so the pivot and the two radii are kept
+           up to date and only the ghost goes away. A ring that vanished the
+           moment her thumb centred would flicker through every pass across
+           the deadzone. */
+        this.dodgeSpotOk = false;
+        const flee = !!pad?.down?.('mount');
+        const t = flee ? null : this.dodgeTarget;
+        const px = t ? t.position.x : this.dodgeFrom.x;
+        const pz = t ? t.position.z : this.dodgeFrom.z;
+        const far = t
+          ? Math.min(this.dodgeD0, Math.hypot(px - this.dodgeFrom.x, pz - this.dodgeFrom.z))
+          : DODGE.range * DODGE.selfK;
+        this.dodgePivot.set(px, 0, pz);
+        this.dodgeRFar = far;
+        this.dodgeRNear = this.power.blink?.aim
+          ? Math.min(far, BASE_REACH * DODGE.nearK)
+          : far;
+      }
+    }
+
     if (!this.dodgePlaced && this.dodgeT <= DODGE.invuln * (1 - DODGE.commit)) {
       this._commitDodge(pad, world, hud);
     }
@@ -3678,54 +3909,58 @@ export class Player {
   _commitDodge(pad, world, hud) {
     this.dodgePlaced = true;
 
-    const live = this._stickHeading(pad);
-    const aim = live != null ? live : (this.dodgeAimed ? this.dodgeAim : null);
-    if (aim == null) return;
-
-    const flee = !!pad?.down?.('mount');
-    const t = flee ? null : this.dodgeTarget;
-
-    let px = this.dodgeFrom.x;
-    let pz = this.dodgeFrom.z;
-    let r = DODGE.range * DODGE.selfK;
-    if (t) {
-      px = t.position.x;
-      pz = t.position.z;
-      const now = Math.hypot(px - this.dodgeFrom.x, pz - this.dodgeFrom.z);
-      r = Math.min(this.dodgeD0, now);
-    }
-
-    /* THE SAME sin/cos THAT PLACES EVERY ORB IN THIS GAME. A heading and a
-       radius are a point on a circle, and this is that arithmetic written out
-       rather than borrowed — see systems/kotodama.js for the version a
-       nine-year-old is supposed to read off the screen. */
-    const x = px + Math.sin(aim) * r;
-    const z = pz + Math.cos(aim) * r;
-
-    const g = world?.heightAt?.(x, z, this.position.y);
-    if (!g) {
+    /* ONE PIECE OF ARITHMETIC, CALLED TWICE. `_dodgeSpotFor` is what the ghost
+       and the landing ring were drawn from on every frame of the vanish (see
+       `systems/dodgefx.js`); asking it again here is what makes the picture a
+       promise rather than an illustration. A second copy of the sin/cos in
+       this method is how the two would come to disagree. */
+    const spot = this._dodgeSpotFor(pad, world);
+    /* NOTHING AIMED AT ALL — she stays exactly where she is, and that is a
+       CHOICE rather than a failure: half a second of being untouchable, spent
+       standing still, is the defensive half of this move. Silent, because
+       nothing was refused. */
+    if (!spot && !this._dodgeAimedThisFrame(pad)) return;
+    if (!spot) {
+      /* SHE AIMED AT THE VOID. Refused out loud — the sixth non-negotiable —
+         and she stays put rather than falling out of the world. */
       hud?.sfx?.('deny');
       return;
     }
 
-    this.position.x = x;
-    this.position.z = z;
+    this.dodgeTo.set(spot.x, spot.y, spot.z);
+    this.position.x = spot.x;
+    this.position.z = spot.z;
     /* SHE KEEPS HER HEIGHT UNLESS THE FLOOR IS HIGHER. A flash step is a
        sideways move; carrying her altitude across is what makes one thrown
-       mid-jump land her mid-jump. The `max` is the one case that cannot be
-       carried — arriving inside a terrace — and the ordinary ground snap two
-       screens down does the rest. */
-    this.position.y = Math.max(this.position.y, g.y);
+       mid-jump land her mid-jump. The `max` is inside `_dodgeSpotFor` — the
+       one case that cannot be carried is arriving inside a terrace — and the
+       ordinary ground snap two screens down does the rest. */
+    this.position.y = spot.y;
     this.velocity.set(0, 0, 0);
 
     /* SHE COMES OUT LOOKING AT WHOEVER SHE PIVOTED AROUND. Landing behind a
        sister while still facing the way you travelled means the first thing
        you do is turn round, and the move's whole promise is that you arrive
-       ready. With nobody to pivot on there is nothing to look at, so she faces
-       the way she went. */
-    this.facing = t
-      ? Math.atan2(t.position.x - x, t.position.z - z)
-      : aim;
+       ready — which matters twice as much now that a second orb lets her
+       choose to land at swinging distance. With nobody to pivot on there is
+       nothing to look at, so she faces the way she went. */
+    this.facing = spot.target
+      ? Math.atan2(spot.target.position.x - spot.x, spot.target.position.z - spot.z)
+      : spot.aim;
+  }
+
+  /**
+   * Did she ask for a direction at all, by whichever rule applies to her?
+   *
+   * SPLIT OUT BECAUSE "NO SPOT" HAS TWO MEANINGS and they get opposite
+   * answers: a stick she never touched means stay here and say nothing, and a
+   * stick pointed over the edge of the world means refuse out loud. Without
+   * this the two collapse into one and the defensive Flash Step starts
+   * blipping at her for using it.
+   */
+  _dodgeAimedThisFrame(pad) {
+    if (this.power.blink?.aim) return this._stickAim(pad) != null || this.dodgeAimed;
+    return this._stickHeading(pad) != null || this.dodgeAimed;
   }
 
   /** True while she is GONE — untouchable, weightless, and not drawn. */
