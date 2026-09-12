@@ -395,6 +395,94 @@ two points in the shot twenty seconds apart, plus a third check that the camera
 really moved in between — because without that last one the pair is two readings
 of the same camera, which a nailed-down quad also passes.
 
+## The ending is a shot list — `FINALE_SHOTS`
+
+> Let's have the camera zoom in on a few areas on the map where the action of
+> the mischief will happen... Would be good to zoom in on the actual Bridge in
+> the main level during the dialogue when we mention about a bridge. Can have
+> camera zoom in on the Dojo of the Turning Circle when talking about some of
+> the math concepts.
+
+The ending used to be **one continuous pull-back**: open low behind Patchfur,
+climb and widen for thirty seconds, finish on the archipelago. It is five shots
+now, one table in [summonscene.js](../../src/systems/summonscene.js):
+
+| line | shot | what is in frame |
+| --- | --- | --- |
+| 1 | `mischief`, close | down among the wreckage, with her in front of it |
+| 2 | `mischief`, high | the same heap from forty-six units up, as it stands itself back up |
+| 3 | `dojo` | the Dojo of the Turning Circle, under the line about the maths |
+| 3 | `bridge` | and then the bridge itself, from the deck's own height |
+| 4 | `wide` | the whole archipelago, her back in front of it |
+
+Each row is `{ beat, from, at, a, dist, high, turn, in, stage }`. `beat` is
+which line it belongs to and `from` is how far through that line it cuts — so a
+line can carry **two** shots, which is how beat 3 gets both of the places that
+were asked for by name inside one seven-second sentence. `in` is the push: the
+camera closes that fraction of its own distance across the shot's own clock,
+which is why `_shotFor` returns a shot-local `s` rather than the beat's `k`. A
+cut that landed on a camera already halfway through somebody else's easing reads
+as a jump rather than as a cut.
+
+**Nothing in the table is a coordinate.** `_markFinale` resolves the four names
+once, at the top of the scene: `dojo` and `bridge` come from `world.dojoCentre`
+and `world.bridge`, both published by the world off the same numbers those
+things are *built* from, and `wide` is the focus point the scene was started on.
+A camera aimed at a bridge that has since been moved is a shot of an empty road,
+and it is exactly the kind of thing nobody notices until a nine-year-old watches
+the ending.
+
+**`mischief` is measured, not guessed at.** `_heap()` walks every knocked-over,
+un-retired prop against every other one and returns the centre of the tightest
+knot of them — O(n²) over a couple of hundred things, once, on the frame a
+half-minute scene opens. The cheap version is "point at the town centre", and it
+is wrong in the one case that matters: at 100% mischief the deepest heap might
+be the bamboo grove, over a line that says *every last cane of bamboo*.
+
+**And every name falls back to the wide shot.** A scene built with no world —
+which is exactly how `world-check` builds one, and what the scene viewer opens
+on a fresh save — still plays, framed on the archipelago, rather than aiming a
+camera at `NaN` and drawing the inside of somebody's head. `_heap()` returns
+`null` rather than a number when there are fewer than three things down.
+
+### She walks off for the shots that are about somewhere
+
+A nine-unit cut-out parked in front of a close shot of a bridge **is** the
+bridge. So `stage` is a column in the table, `_parkStage` eases `stageOn` toward
+`stageWant` over `STAGE_SWAP` 0.75s, and her opacity and her parked position
+both ride that one scalar: she slides out to `STAGE_FROM` and fades as she goes,
+rather than blinking out. She is on for the first line and the last — the two
+that are about *them* — and off for the three in the middle, which are about
+places.
+
+`finish()` puts `stageOn` and `stageWant` back to 1, because every other scene
+in the game leaves them alone: a finale that ended on a shot she was not in
+would otherwise hand the next scene a speaker already off the side of the frame.
+
+### ...and the wave follows the camera
+
+> We should just have the camera zoom in on a few areas where there are some
+> mischief, and then can just animate mainly the mischief that is in the view of
+> the camera, or the main ones being focused on.
+
+`FinaleTide.focusOn(at)` re-deals `phase` by distance from a point, and `_next()`
+calls it on every beat with wherever that beat's first shot is pointing. The
+ripple therefore *starts* in frame and spreads outward from it.
+
+**Nothing is skipped and nothing is culled**, which is the important half. The
+obvious implementation — move only what is on screen — would leave the far
+islands standing tidy at the end of a scene whose whole argument is that they do
+not stay that way, and the last beat's fall is a **restoration** that can only
+put back what it stood up. `focusOn` changes the ORDER and only the order;
+`world-check` runs the whole wave through and asserts every held prop, in shot
+or not, still ends up on its home transform.
+
+**It refuses mid-move.** `k` is one scalar for the whole world and `phase` is
+where each prop sits inside it, so re-sorting halfway through the rise would
+teleport two hundred objects on a single frame. A cut that lands inside a beat
+keeps the order that beat started with — which is right, because the wave it is
+in the middle of is the one the previous shot began.
+
 ## The world behind her — `src/systems/finaletide.js`
 
 > The cutscene is a little boring currently. Is there a way we can add more
@@ -487,8 +575,10 @@ place in `prop.js`. It is not an optimisation and it must not be reused as one.
 Two hundred objects standing upright on the same frame reads as a **rendering
 glitch**. A ripple crossing the archipelago reads as a town tidying itself, and
 the eye follows it. `STAGGER` 0.45 spreads the props over the first 45% of the
-move in world order — which is the order they were planted, island by island —
-leaving every individual prop more than half the move to itself.
+move, leaving every individual prop more than half the move to itself. The order
+is world order to begin with — the order they were planted, island by island —
+and is then re-dealt on every cut by `focusOn`, so the ripple starts wherever
+the camera is pointing (above).
 
 Standing up takes `RISE` 6 seconds; going over takes `FALL` 4.2, because going
 over always does. Patchfur's lines run 7.5–9 seconds each, so the wave is still

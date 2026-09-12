@@ -514,6 +514,43 @@ export class Audio {
         this._noise({ from: 400, to: 2600, dur: 0.38, gain: 0.55 * v, type: 'lowpass', q: 0.9 });
         this._tone({ type: 'sawtooth', from: 90, to: 42, dur: 0.36, gain: 0.1 * v });
         break;
+      case 'dbreathin':
+        /* A KITTEN FILLING HER LUNGS, over the whole of `DBREATH.charge`.
+           THIS IS A WARNING SOUND AND IT IS BUILT LIKE ONE. It used to be
+           `wardup` — one short rising note, which says "something started" and
+           then leaves a second of silence in which the other three players
+           forget. So it is five gulps instead of one, each higher and louder
+           than the last, and they run right up to the frame the flame leaves
+           her: a sound that is visibly ACCELERATING is the only kind anybody
+           reacts to without being told what it means.
+
+           EVERY LAYER IS SCHEDULED IN ONE CALL rather than re-played each
+           frame from the effects poller. `play` is voice-capped and the cap is
+           per call, so this costs one voice no matter how long it is — and a
+           per-frame version would stutter under a frame drop, which is exactly
+           when a warning matters most. It is also why it cannot be cut short
+           if she is knocked out: see the note on that in `Player.hurt`. */
+        for (let i = 0; i < 5; i++) {
+          const k = i / 4;
+          this._noise({
+            from: 260 + k * 900, to: 1500 + k * 2600, dur: 0.26 + k * 0.1,
+            gain: (0.14 + k * 0.3) * v, type: 'bandpass', q: 0.8, delay: i * 0.3,
+          });
+        }
+        // ...and a thin whine underneath it, climbing the whole way.
+        this._tone({ type: 'triangle', from: 180, to: 760, dur: 1.5, gain: 0.09 * v, delay: 0.05 });
+        break;
+      case 'dbreathout':
+        /* THE FLAME, AND IT IS A BIGGER EVENT THAN A DRAGON'S. Not louder —
+           longer and lower, which is what `DBREATH.fire` doubling asked for: a
+           cue that stops before its cone does reads as the cone having missed.
+           The transient on the front is what makes it GO OFF rather than fade
+           up, the same trick `ryubeam` uses and for the same reason. */
+        this._noise({ from: 5200, to: 900, dur: 0.12, gain: 0.5 * v, type: 'bandpass', q: 1.4 });
+        this._noise({ from: 380, to: 2400, dur: 0.95, gain: 0.6 * v, type: 'lowpass', q: 0.9 });
+        this._tone({ type: 'sawtooth', from: 104, to: 38, dur: 0.9, gain: 0.14 * v });
+        this._tone({ type: 'square', from: 190, to: 62, dur: 0.7, gain: 0.07 * v, delay: 0.04 });
+        break;
       case 'ryubeam':
         /* Ryuuseki's fan. It has to be audibly a bigger event than 'breath',
            and louder alone would just be louder — so it is built the other way

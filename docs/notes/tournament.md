@@ -1851,9 +1851,52 @@ cone wherever the stick is pointing. It is a kitten's version of the thing:
 8.5 units where a dragon reaches 15–20, once every 40 seconds rather than held
 down.
 
-**The rear-back is the move's fairness.** 0.8 seconds between the press and the
-flame is the time her sister gets to move, and it is the only reason a 13-damage
-cone is allowed to exist on a shared cooldown.
+**The rear-back is the move's fairness.** The seconds between the press and the
+flame are the time her sister gets to move, and they are the only reason a
+13-damage cone is allowed to exist on a shared cooldown.
+
+**It shipped at 0.8 and 0.5 and it is now 1.6 and 1.0**, asked for as one thing:
+"the duration of the attack should be twice as long". Both halves doubled
+together on purpose — lengthening only the flame would have made the warning
+shorter than the thing it warns about. It costs nothing in damage, which is
+applied once on the frame the cone leaves her either way; it buys the other
+kitten a second and a half to get out of a cone she can now see coming.
+`world-check` pins the relationship rather than the literals, since both are
+`tune()` fields the page may move: the warning may never be shorter than the
+flame, the warning is long enough to be run away from at a sprint, and the whole
+move still fits inside its own 40-second wait.
+
+**And the warning is now four things at once, because one was not enough.**
+Reported after play as "it is hard to see the dragon breath in the match" and
+"we need more indicators that the attack is happening... to warn the other
+players to prepare":
+
+* **She wears the rear-back.** A drawn pose — head thrown up, mouth wide, cheeks
+  full of air, the intake drawn around her — on `Player.breathPose`, generated
+  the same way the Flash Step's concentrating pose was: two sheets
+  (`ember_inhale`, `frost_inhale`) recoloured into four kittens by style. It is
+  the one indicator that survives her standing behind a market stall, because it
+  is drawn where she is drawn. It stays up through the flame as well: the
+  drawing is a cat with her mouth wide open, which is as true of blowing out as
+  of sucking in, and closing her mouth in front of a cone coming out of it would
+  be worse than not swapping at all.
+* **Air, dragged in.** A vortex of specks spiralling out of the sky into her
+  mouth, in her own colour, whose laps get visibly FASTER as the charge fills —
+  "show air being drawn into the players mouth". A stream that is accelerating
+  is the kind of thing people react to without being told what it means.
+* **The ball at her mouth**, swelling and paling towards white — *when*.
+* **A ring closing round her feet** — *who*, for anybody whose eyes are on the
+  deck rather than on her face. Deliberately the same shape as the steal's mark,
+  so there is one vocabulary and not two; the mark is in the THIEF'S colour on
+  somebody else's feet, this one is her own colour on her own.
+
+**And a cue built like a warning.** It was `wardup` — one short rising note,
+which says "something started" and then leaves a second of silence to forget in.
+`dbreathin` is five gulps that climb and speed up into the flame, and
+`dbreathout` is built to the doubled `fire` rather than being the dragon's own
+third-of-a-second `breath`. Both are scheduled in a single `play` call, because
+`Audio.play` is voice-capped per call and because a per-frame version stutters
+under a frame drop — which is exactly when a warning matters most.
 
 **It cannot be interrupted, and that is deliberate in both directions.** She can
 be hit, and hitting her does not throw her — `hurt` skips the knockback and the
@@ -1873,11 +1916,38 @@ direction" was the request.
 
 **The cone is drawn from the numbers that hit.** `ATTACKS.dbreath.arc` is
 derived from `DBREATH.spread` and its reach from `DBREATH.range`, the same two
-numbers `systems/clanfx.js` marches its nine flame instances along — so the
-picture and the hit box cannot disagree, which is non-negotiable 8 in its
-smallest form. `clanfx` is a **poller** over the player's clocks, like `crossfx`
-and `dodgefx` before it, because a move can end six ways and only a poller sees
-all six.
+numbers `systems/clanfx.js` marches its flame instances along — so the picture
+and the hit box cannot disagree, which is non-negotiable 8 in its smallest form.
+`clanfx` is a **poller** over the player's clocks, like `crossfx` and `dodgefx`
+before it, because a move can end six ways and only a poller sees all six.
+
+**...and `world-check` now reads the cone back off the instance matrices rather
+than taking the file's word for it — which immediately found the drawing
+reaching 9.3 units out of a hit box that stops at 8.5.** The sideways scatter
+was written as a straight offset in world *x* and *z*, so a kitten facing due
+east had her scatter added to the same axis the cone travels down. It is
+perpendicular to her facing now, by construction. That is the failure mode the
+eighth non-negotiable exists for and the direction that matters: a flame drawn
+on somebody it cannot hurt.
+
+**And it is fire, in her own colour.** "Dragon breath should be color of the
+player, not green." It was nine flat green lumps, on the argument that four
+kittens breathing should read as one clan's trick; played, four identical green
+cones read as nobody's, and the one thing a flame crossing the deck should say
+first is whose it is. Four things separate a flame from a spell and it had none
+of them: it was one flat colour (fire is pale at its heart and coloured at its
+edge), it did not flicker, it did not rise, and there were not enough shards to
+read as anything but shards. It is now 26 of them, graded from `DBREATH.hot`
+through the player's colour to a cooling tip, each on its own flicker beat, each
+corkscrewing and lifting as it travels — the lift quadratic, so the root stays on
+her mouth and only the far end curls up.
+
+**Additive blending was tried first and was wrong**, which is worth writing down
+because it is the obvious answer. Adding an orange kitten's flame to a sunlit
+green deck clips every channel and the cone comes out WHITE — four players' fire
+in one colour again, the exact complaint being fixed. The shards are solid; the
+two things that genuinely should blow out, the gathered ball and the muzzle
+flash, are still additive and are one object each, so nothing piles up.
 
 Both powers' numbers live in `clanpower.js` behind `tune()`, so they are edited
 on `/tuning.html` with a sentence each, like everything else.

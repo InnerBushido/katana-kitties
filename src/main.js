@@ -1265,6 +1265,15 @@ class Game {
          "generate a new player sprite" is two drawings rather than four. */
       ['ember_warp', 'ember_warp.png', false],
       ['frost_warp', 'frost_warp.png', false],
+      /* THE REAR-BACK — head thrown up, mouth open, cheeks full of air, with
+         the intake drawn around her. It is the second and a half between 息
+         Dragon Breath's press and its flame, and it exists because that pause
+         is the other kitten's whole warning: "we need more indicators that the
+         attack is happening". A pose is the indicator that survives her being
+         behind a market stall, which none of the effects in `systems/clanfx.js`
+         do. Two files and four kittens, the same as the two above. */
+      ['ember_inhale', 'ember_inhale.png', false],
+      ['frost_inhale', 'frost_inhale.png', false],
       /* THE CONJURED INSECT. Loaded with the other animals because it is one,
          and kept out of the ordinary lottery by a flag on its spec rather than
          by anything here — see `Menagerie.species`. No `_shock` sheet: a
@@ -1367,6 +1376,16 @@ class Game {
       if (!s.recolour) return base;
       const a = recolourAtlas(base, s.recolour);
       console.log(`[art] ${s.name} flash-step pose ← ${s.sheet}_warp recoloured`);
+      return a;
+    });
+    /* AND A FOURTH TIME, FOR THE REAR-BACK. Same shape, same reason, same
+       warning: by STYLE and never by slot. */
+    this.breathArt = PLAYER_STYLE.map((s) => {
+      const base = s.sheet === 'ember' ? critterArt.ember_inhale : critterArt.frost_inhale;
+      if (!base) return null;
+      if (!s.recolour) return base;
+      const a = recolourAtlas(base, s.recolour);
+      console.log(`[art] ${s.name} dragon-breath pose ← ${s.sheet}_inhale recoloured`);
       return a;
     });
 
@@ -1600,6 +1619,7 @@ class Game {
     p.setEatArt(this.eatArt?.[this.roster[p.index]] ?? null);
     p.setBlessArt(this.blessArt?.[this.roster[p.index]] ?? null);
     p.setWarpArt(this.warpArt?.[this.roster[p.index]] ?? null);
+    p.setBreathArt(this.breathArt?.[this.roster[p.index]] ?? null);
   }
 
   /**
@@ -2501,6 +2521,7 @@ class Game {
       if (p.aloftGlow) p.aloftGlow.visible = false;
       if (p.blessPose) p.blessPose.visible = false;
       if (p.warpPose) p.warpPose.visible = false;
+      if (p.breathPose) p.breathPose.visible = false;
       /* `marker` is her own colour and is no longer repainted by swearing, so
          this restore is now only undoing the ring-edge flash. Kept for exactly
          that: a restart during a ring-out would otherwise leave somebody red.

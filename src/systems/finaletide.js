@@ -123,9 +123,11 @@ export class FinaleTide {
            is a barrel that has been REPLACED, not stood up. */
         home: p.home.clone(),
         yaw: g.rotation.y,
-        /* Its place in the wave. Spread over the props in world order, which
-           is the order they were planted island by island — so the ripple
-           crosses the archipelago rather than firing at random. */
+        /* Its place in the wave. Spread over the props in world order to
+           begin with — the order they were planted, island by island, so the
+           ripple crosses the archipelago rather than firing at random — and
+           then re-dealt by `focusOn` on every cut, so the things that stand up
+           first are the ones the camera is pointing at. */
         phase: 0,
       });
       p.held = true;
@@ -137,6 +139,44 @@ export class FinaleTide {
     this.want = 0;
     this.rate = 1 / RISE;
     return this.held.length;
+  }
+
+  /**
+   * Point the wave at somewhere, so the things in shot are the things that move.
+   *
+   * THE RIPPLE USED TO START AT PROP ZERO. `phase` was handed out in world
+   * order — the order the props were planted, island by island — which made a
+   * ripple that crossed the archipelago in a sensible direction and had nothing
+   * whatever to do with where the camera was pointing. Now that the ending cuts
+   * to specific places (`FINALE_SHOTS`), the thing on screen was as likely as
+   * not to be a corner of the world the wave had already been through, or had
+   * not reached yet. Asked for as "just animate mainly the mischief that is in
+   * the view of the camera, or the main ones being focused on".
+   *
+   * NOTHING IS SKIPPED AND NOTHING IS CULLED, which is the important half. Every
+   * held prop still stands up and still goes over again — the last beat's fall
+   * is a restoration and depends on it — and this only decides the ORDER. A
+   * version that moved only what was on screen would leave the far islands tidy
+   * at the end of a scene whose whole argument is that they do not stay that
+   * way.
+   *
+   * AND IT REFUSES WHILE THE WAVE IS MOVING. `k` is one scalar for the whole
+   * world and `phase` is where each prop sits inside it, so re-sorting halfway
+   * through the rise teleports two hundred objects. A cut in the middle of a
+   * beat therefore keeps the order it already had, which is right: the wave it
+   * is in the middle of is the one the previous shot started.
+   *
+   * @param {?{x:number, z:number}} at where the ripple should begin, or null to
+   *        leave it as it is.
+   */
+  focusOn(at) {
+    if (!this.running || !at || this.k > 0.001) return false;
+    const n = Math.max(1, this.held.length - 1);
+    const by = this.held
+      .map((h, ix) => ({ ix, d: Math.hypot(h.home.x - at.x, h.home.z - at.z) }))
+      .sort((a, b) => a.d - b.d);
+    by.forEach((e, rank) => { this.held[e.ix].phase = (rank / n) * STAGGER; });
+    return true;
   }
 
   /**

@@ -1218,6 +1218,49 @@ export class Player {
     this.group.add(this.warpPose);
   }
 
+  /**
+   * Give her the REARING-BACK drawing: head thrown up, mouth wide, lungs full.
+   *
+   * IT IS THE WARNING, AND THE ONLY ONE THAT CANNOT BE HIDDEN. 息 Dragon Breath
+   * spends `DBREATH.charge` doing nothing, and that pause is the other kitten's
+   * entire chance to move — so it has to be legible. `systems/clanfx.js` draws
+   * three effects around her for it, and every one of them is a thing in the
+   * WORLD: a market stall, a lantern or her sister standing in front of her
+   * hides them. The pose is drawn where she is drawn, at her size, so it is the
+   * indicator that survives.
+   *
+   * SAME SHAPE AS `setWarpArt`, and the argument there applies word for word:
+   * one front-facing cell that never mirrors, because this pose has no
+   * direction. She is looking straight up. Mirroring it by heading would be
+   * inventing a facing for a drawing that does not have one — and unlike the
+   * walk, nobody can tell which way a cat looking at the sky is pointing.
+   *
+   * THE FLAME STILL GOES WHERE THE STICK POINTS. The pose does not turn, the
+   * CONE does, and those are two different things: `_fireArenaBreath` reads
+   * `this.facing` at the moment it leaves her. A pose that cannot show a
+   * direction is not a pose that takes one away.
+   *
+   * @param {?object} art loaded atlas, or null — a missing sheet costs the pose
+   *        and nothing else. The charge, the effects, the sound and the flame
+   *        are all code; she simply rears back in her ordinary standing
+   *        drawing. Ninth non-negotiable, same as the voices and the trailer.
+   */
+  setBreathArt(art) {
+    if (!art?.texture) return;
+    if (this.breathPose) this.group.remove(this.breathPose);
+    const quad = this.height / (art.contentScale || 1);
+    this.breathPose = new Billboard(art.texture, {
+      cols: 1,
+      rows: 1,
+      mirror: false,
+      width: quad,
+      height: quad,
+      footOffset: (art.pad ?? 0) * quad,
+    });
+    this.breathPose.visible = false;
+    this.group.add(this.breathPose);
+  }
+
   /* ------------------------ Powerup Kotodama ---------------------------- */
 
   /**
@@ -1413,6 +1456,7 @@ export class Player {
     if (this.eatPose?.visible) this.eatPose.faceCamera(camera);
     if (this.blessPose?.visible) this.blessPose.faceCamera(camera);
     if (this.warpPose?.visible) this.warpPose.faceCamera(camera);
+    if (this.breathPose?.visible) this.breathPose.faceCamera(camera);
 
     /* THE HEALTH BAR IS A FLAT QUAD AND HAS TO BE TURNED, like the leaders'
        speech bubbles are. It is parented to `group`, which never rotates, so
@@ -3639,10 +3683,15 @@ export class Player {
     this.diving = false;
     this.breathChargeT = DBREATH.charge;
     this.breathSeq++;
-    /* THE INHALE, NOT THE FLAME. `wardup` is a short rising note and it is
-       exactly what this is — something being gathered. The flame gets `breath`,
-       the same sound a dragon makes, because it IS the same trick. */
-    hud?.sfx?.('wardup');
+    /* THE INHALE, NOT THE FLAME — and it runs for the WHOLE rear-back.
+       It was `wardup`, a short rising note, which says "something started" and
+       then leaves a second of silence for everybody else to forget in. Asked
+       for directly: "we need more indicators that the attack is happening...
+       to warn the other players to prepare". `dbreathin` is five gulps that
+       climb and speed up into the flame, scheduled in one go so a frame drop
+       cannot stutter the one cue that matters most when the frame rate is
+       struggling. See core/audio.js. */
+    hud?.sfx?.('dbreathin');
     return true;
   }
 
@@ -3666,7 +3715,10 @@ export class Player {
     this.breathFireT = DBREATH.fire;
     this.breathCool = DBREATH.cool;
     this.squash = 0.6;
-    hud?.sfx?.('breath');
+    /* NOT the dragon's `breath`, which is a third of a second long and now
+       stops well before the cone it belongs to. `dbreathout` is built to the
+       doubled `DBREATH.fire`. */
+    hud?.sfx?.('dbreathout');
     const dir = new THREE.Vector2(Math.sin(this.facing), Math.cos(this.facing));
     hud?.strikePlayers?.(this, 'dbreath', BASE_REACH, dir);
   }
@@ -5023,6 +5075,43 @@ export class Player {
       }
     }
 
+    /* --- 息 Dragon Breath: fill your lungs, then empty them ---
+
+       AFTER THE BLESSING AND BEFORE THE VANISH, which is the ordering the two
+       notes above are about. It cannot collide with either today — `_startWard`
+       and the breath refuse each other, and nothing hands out a star mid-round
+       — but "which drawing is on screen" has one answer and this is where it is
+       decided.
+
+       ONE POSE FOR BOTH HALVES OF THE MOVE, and that is deliberate rather than
+       lazy: the drawing is a cat with her mouth wide open, which is exactly as
+       true of blowing out as of sucking in. Dropping back to her standing
+       drawing on the frame the cone leaves her would close her mouth in front
+       of a flame that is coming out of it.
+
+       SHE FILLS UP AND THEN SHE GOES OFF. Through the rear-back she swells
+       (wider, slightly shorter — a held breath), and on the frames the flame
+       leaves she snaps the other way and shakes, which is the recoil. Both are
+       scale on the quad, so neither can move where the cone reaches. */
+    if (this.breathPose) {
+      const breathing = this.arenaBreathAt && !this.ko;
+      this.breathPose.visible = breathing;
+      if (breathing) {
+        this.sprite.mesh.visible = false;
+        if (this.breathChargeT > 0) {
+          const k = 1 - Math.min(1, Math.max(0, this.breathChargeT / DBREATH.charge));
+          this.breathPose.mesh.scale.set(1 + k * 0.10, 1 - k * 0.05, 1);
+          this.breathPose.mesh.rotation.z = Math.sin(k * 42) * 0.02 * k;
+        } else {
+          const k = Math.min(1, Math.max(0, this.breathFireT / Math.max(0.0001, DBREATH.fire)));
+          this.breathPose.mesh.scale.set(1 - k * 0.07, 1 + k * 0.05, 1);
+          this.breathPose.mesh.rotation.z = Math.sin(k * 70) * 0.035 * k;
+        }
+        this.breathPose.mat.color.copy(mat.color);
+        this.breathPose.mat.opacity = mat.opacity;
+      }
+    }
+
     /* --- 瞬 Flash Step: concentrate, then stop being drawn ---
 
        TWO STATES OUT OF ONE CLOCK. `dodgeT` is running and the teleport has
@@ -5068,6 +5157,7 @@ export class Player {
       if (this.warpPose) this.warpPose.visible = false;
       if (this.eatPose) this.eatPose.visible = false;
       if (this.blessPose) this.blessPose.visible = false;
+      if (this.breathPose) this.breathPose.visible = false;
       this.slash.visible = false;
     }
 

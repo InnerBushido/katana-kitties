@@ -163,7 +163,7 @@ const GROUPS = {
       knock: ['Knockback', 'How far it throws them.', '', 1, 60, 1],
       lift: ['Lift', 'How far up.', '', 0, 25, 0.5],
       moveK: ['Speed while charging', 'The fraction of her own speed she keeps during the rear-back. She is slowed, never planted — the stick is her aim, so taking it would take the aim away.', '×', 0.05, 1, 0.05],
-      color: ['Flame colour', 'Windwhisker green, as a hex number. Not really a balance knob; it is here because the page shows every field a table has.', '', 0, 16777215, 1],
+      hot: ['Flame core', 'The pale, hot HEART of the flame, as a hex number. The rest of the cone is the PLAYER’S own colour — this is only the end of the grade that her colour may not move, because a fire is palest where it is hottest. Not really a balance knob; it is here because the page shows every field a table has.', '', 0, 16777215, 1],
     },
   },
   DIVE: {

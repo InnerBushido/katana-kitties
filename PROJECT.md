@@ -1,6 +1,6 @@
 # Katana Kitties — the whole project on one page
 
-**Last updated: 11 September 2026.** Anything below with a cost or an account
+**Last updated: 12 September 2026.** Anything below with a cost or an account
 attached was true on that date; check the dashboard before quoting a number.
 
 This is the **one-stop sheet**: what the project is, how to run it, how to test
@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 2978 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 3038 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -342,8 +342,11 @@ HUD pip that counts it down: **盗 Steal Mischief** (Icewhisker) marks an
 opponent, and any hit landed inside the window knocks one of her **Kotodama onto
 the deck** for everybody to fight over — returned to its owner when the
 tournament ends, down every path. **息 Dragon Breath** (Windwhisker) rears back
-for 0.8s and then breathes a cone wherever the stick points; it cannot be
-interrupted and it drops her own shield. Neither is a second combat path — the
+for 1.6s — a head-back inhale pose, a vortex of specks drawn into her mouth, a
+ring closing round her feet and a rising gulp on the speakers, all so the other
+three can see it coming — and then breathes a cone **in her own colour**
+wherever the stick points; it cannot be interrupted and it drops her own
+shield. Neither is a second combat path — the
 breath is a row in the same `ATTACKS` table and the steal is a *mark* paid by an
 ordinary hit that the one gate had already allowed — so combat still cannot
 happen outside the ring. Both are on the balance page.
@@ -506,7 +509,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 2978
+the check that would have caught it.** That is why `world-check` is 3038
 assertions.
 
 **And a change a new developer would need to know about gets a line in this
