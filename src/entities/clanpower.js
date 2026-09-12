@@ -103,11 +103,19 @@ export const DBREATH = tune('DBREATH', {
   /** Seconds between uses — the same argument STEAL.cool makes. */
   cool: 40,
   /** Seconds of rearing back before it leaves her. The tell everybody else
-   *  gets, and the reason this is not just a second slash. */
-  charge: 0.8,
+   *  gets, and the reason this is not just a second slash.
+   *
+   *  DOUBLED FROM THE 0.8 IT SHIPPED AT, along with the flame, and asked for as
+   *  one thing: "the duration of the attack should be twice as long". Both
+   *  halves of it are the same move to a player — she rears back, she breathes
+   *  — and lengthening only the flame would have made the warning shorter than
+   *  the thing it warns about. It costs nothing in damage (that is applied once
+   *  either way) and it buys the other kitten a whole second and a half to get
+   *  out of a cone she can now see coming. */
+  charge: 1.6,
   /** Seconds the flame is on screen. Damage is applied ONCE, on the frame it
    *  starts — see `Player._fireArenaBreath`. */
-  fire: 0.5,
+  fire: 1,
   /** How far, and how wide. Both well under a dragon's; see above. */
   range: 8.5,
   spread: 0.42,
@@ -120,9 +128,22 @@ export const DBREATH = tune('DBREATH', {
   /** How fast she may walk while it charges, as a fraction of her own speed.
    *  Slow enough to read as a commitment, not so slow it is a stun. */
   moveK: 0.45,
-  /** The flame's colour. Her own clan green — Windwhisker's, so four kittens
-   *  breathing in one round still read as one clan's trick. */
-  color: 0x8fe0a0,
+  /** THE HEART OF THE FLAME, and the only part of it that is not hers.
+   *
+   *  IT USED TO BE WINDWHISKER GREEN ALL THROUGH, on the argument that four
+   *  kittens breathing in one round should read as one clan's trick. Played,
+   *  that was exactly backwards: green on green on green is four people doing
+   *  the same anonymous thing, and "it is hard to see the dragon breath in the
+   *  match" was the report. A flame is now drawn in the PLAYER'S colour — the
+   *  same colour as her ring, her name and her half of the screen — so a cone
+   *  crossing the deck says who threw it before it says what it is.
+   *
+   *  What stays fixed is the core. Every fire anybody has ever looked at is
+   *  hottest and therefore palest in the middle and coloured at its edges, and
+   *  a cone that is one flat colour from mouth to tip reads as a spell. So the
+   *  shards are mixed from this towards her colour as they travel, and this end
+   *  of that mix is the one thing a clan colour may not move. */
+  hot: 0xffe9a8,
 });
 
 /**

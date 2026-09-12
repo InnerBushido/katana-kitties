@@ -303,8 +303,7 @@ that were plainly not working.
   get knocked back when hit, and drops her ward while it runs.
   **Neither is a second combat path** — the breath is a row in `ATTACKS` and the
   steal is a mark paid by an ordinary already-gated hit — so non-negotiable 3 is
-  intact. The charge is drawn procedurally for now; a real head-back sprite for
-  all four kittens is the obvious follow-up.
+  intact. **The breath has since been rebuilt to be seen** — see below.
   → [tournament.md](docs/notes/tournament.md), `src/entities/clanpower.js`
 - **...and the storyline says why.** Knocking the world over is what woke the
   Kotodama: mischief is the entropy dormant in every standing object, and the
@@ -404,7 +403,54 @@ that were plainly not working.
   [gotchas.md § UI FALL-THROUGH](docs/notes/gotchas.md)**, linked from
   CLAUDE.md's house style, with the four questions to ask of any new screen.
 
-182 new checks (2628 → 2810), and pad-check 354 → 362. One thing is
+- **息 Dragon Breath is a dragon now, not a green puff.** Reported as *"it is
+  hard to see the dragon breath in the match"*, and it was three separate
+  things. The flame was **additive**, which over a sunlit green deck washes an
+  orange cone to white — found by looking at a screenshot, because no amount of
+  reading the material would have said it; it is ordinary transparent blending
+  now, with additive kept only for the gather ball and the muzzle flash. It was
+  `0x8fe0a0` **green for everybody**, and is the firing player's own colour with
+  a white-hot nose (`DBREATH.hot`) so you can see whose it is across a split
+  screen. And it lasted 0.8s; the charge is **1.6s**, twice as long, because
+  the ask was for the attack to be twice as long and the charge is the half you
+  are meant to react to.
+  **The wind-up is now loud on purpose**, so the other three can prepare: a
+  drawn **head-back inhale pose** (`ember_inhale.png`, `frost_inhale.png` —
+  generated, background-removed, cropped to the cat's own bbox so
+  `contentScale` measures the cat and not the swirls), a vortex of 16 specks
+  spiralling *into* her mouth in her colour, a closing ring round her feet, a
+  white gather ball at the muzzle, and two new synthesised cues —
+  `dbreathin` (five escalating gulps over a climbing tone) and `dbreathout`.
+  **The intake is drawn in 3D, not on the sprite**, so it reads from any camera
+  angle and at any of the four colours.
+  *Found by the checks that went in with it:* the lateral scatter was a straight
+  world-x/z offset, so a kitten facing east had her cone's spread added to its
+  own travel axis and the drawn flame overshot the hitbox — a real pre-existing
+  bug, fixed with a perpendicular basis. `world-check` now reads the cone back
+  off `flame.getMatrixAt` and asserts it reaches no further than the hit does.
+  → [tournament.md](docs/notes/tournament.md), `src/systems/clanfx.js`
+- **The ending is a shot list, and the town stands up where you are looking.**
+  Asked for as *"zoom in on a few areas on the map where the action of the
+  mischief will happen... would be good to zoom in on the actual Bridge...
+  can have camera zoom in on the Dojo of the Turning Circle"*. Five shots over
+  four lines (`FINALE_SHOTS`), each with its own push-in on its own clock so a
+  cut never lands mid-easing: down among the wreckage, the same heap from 46
+  units up as it rights itself, the Dojo, then the bridge, then the whole
+  archipelago. Beat 3 carries two shots, which is how both places Richard named
+  get one inside a single seven-second sentence. **No coordinate is typed** —
+  `world.bridge` and `world.dojoCentre` are published off the numbers those
+  things are built from, and `mischief` is `_heap()`, the measured centre of the
+  tightest knot of things actually lying on their sides this afternoon.
+  **Patchfur walks off for the three shots that are about somewhere** and back
+  for the last one, because a nine-unit cut-out in front of a close shot of a
+  bridge is the bridge. **And the wave follows the camera**: `FinaleTide.focusOn`
+  re-deals the ripple's order by distance from the shot, so the things standing
+  up first are the ones in frame — the ORDER only, nothing culled and nothing
+  skipped, since the last beat's fall is a restoration of everything the wave
+  stood up. The dialogue is unchanged, as asked.
+  → [story.md](docs/notes/story.md), `src/systems/summonscene.js`
+
+228 new checks (2810 → 3038), and pad-check steady at 362. One thing is
 **still open**: the
 Patchfur ending's *script*. Richard asked for staging first and the script
 after, so the visual half is done and the recording is untouched — the next step

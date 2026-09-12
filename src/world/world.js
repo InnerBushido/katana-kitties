@@ -1251,6 +1251,15 @@ export class World {
          straight through the hump. Stepping the platforms along the same curve
          turns it into stairs you can run up, jump off, and stand on top of. */
       const base = (home.heightAt(BRIDGE.x, BRIDGE.z) ?? 0) + 0.52;
+      /* WHERE THE BRIDGE IS, PUBLISHED — for the ending, which cuts to it on
+         the line "an angle, a circle, and the nerve to jump". Taken from the
+         same three numbers the deck is built from and at the top of the same
+         arch, rather than typed again in `systems/summonscene.js`: a camera
+         aimed at a bridge that has since been moved is a shot of an empty road,
+         and it is exactly the kind of thing nobody notices until a nine-year-old
+         watches the ending. `dojoCentre` above is published for the same
+         reason and in the same shape. */
+      this.bridge = new THREE.Vector3(BRIDGE.x, base + BRIDGE.rise, BRIDGE.z);
       const segs = 10;
       for (let i = 0; i < segs; i++) {
         const t = (i + 0.5) / segs;

@@ -29,6 +29,7 @@ import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../s
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import {
   SCRIPTS, DUSK_DEEP, DUSK_FALL, DAWN_RISE, DAWN_DEEP, SummonScene, BEAT_ACTS,
+  FINALE_SHOTS,
 } from '../src/systems/summonscene.js';
 import { FinaleTide } from '../src/systems/finaletide.js';
 import { STEAL, DBREATH, ARENA_POWERS, arenaPowerFor } from '../src/entities/clanpower.js';
@@ -65,6 +66,7 @@ import {
 import { Kotodama } from '../src/systems/kotodama.js';
 import { CrossFx, sealStage, SIDES_BY_CUT } from '../src/systems/crossfx.js';
 import { DodgeFx } from '../src/systems/dodgefx.js';
+import { ClanFx } from '../src/systems/clanfx.js';
 import { ATTACKS, COMBAT, BASE_REACH, MAX_HP, DAZE_TIME } from '../src/entities/player.js';
 import {
   Tournament, WINS_NEEDED, MAX_ROUNDS, FEAST_TIME, REGEN_FRAC, OUT_FLOOR,
@@ -13779,6 +13781,164 @@ console.log('\n--- the two powers, from the kitten\'s side ---');
   }
 
   {
+    /* --- THE REAR-BACK IS THE WARNING, AND IT IS TWICE WHAT IT SHIPPED AS ---
+       "The duration of the attack should be twice as long", and the pause is
+       half the attack. What is pinned here is not the literal 1.6 — that is a
+       `tune()` field and the page may move it — but the two things that make
+       the move fair: the warning may never be SHORTER than the thing it warns
+       about, and it has to last long enough for somebody on the other half of
+       the screen to look up and start running. A kitten sprints 17 a second;
+       under a second and a half she cannot clear an 8.5-unit cone from the
+       middle of it. */
+    ok('the rear-back is at least as long as the flame it warns about',
+      DBREATH.charge >= DBREATH.fire, `${DBREATH.charge}s vs ${DBREATH.fire}s`);
+    ok('...and long enough to be run away from',
+      DBREATH.charge >= 1.5, `${DBREATH.charge}s`);
+    ok('...and the flame is on screen long enough to be seen crossing the deck',
+      DBREATH.fire >= 0.9, `${DBREATH.fire}s`);
+    /* AND THE WHOLE MOVE STILL FITS INSIDE ITS OWN WAIT, or she could start a
+       second one before the first had finished. */
+    ok('...and the whole thing is over long before it comes back',
+      DBREATH.charge + DBREATH.fire < DBREATH.cool);
+
+    /* THE SOUND IS PART OF THE WARNING, and it is not the ward's chirp any
+       more. Asked for as "other special effects and sounds, to warn the other
+       players to prepare" — the point being that `wardup` said "something
+       started" and then left a second of silence to forget in. */
+    const asrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+    ok('the rear-back has a cue of its own', /case 'dbreathin':/.test(asrc));
+    ok('...and so does the flame', /case 'dbreathout':/.test(asrc));
+    const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+    /* AND THE REAR-BACK NO LONGER BORROWS THE WARD'S CHIRP. Read out of the
+       function itself rather than off the whole file, because `wardup` is still
+       right where it belongs — on the ward. */
+    const startAt = psrc.indexOf('_startArenaBreath(hud) {');
+    const startBody = startAt < 0 ? '' : psrc.slice(startAt, psrc.indexOf('\n  }', startAt));
+    ok('...and she plays them rather than the ward\'s and the dragon\'s',
+      /sfx\?\.\('dbreathin'\)/.test(startBody) && !/sfx\?\.\('wardup'\)/.test(startBody)
+      && /sfx\?\.\('dbreathout'\)/.test(psrc));
+    /* THE CUE IS SCHEDULED IN ONE GO. A per-frame version stutters under a
+       frame drop, which is exactly when a warning matters most — and `play` is
+       voice-capped per call, so the long one costs one voice and a per-frame
+       one would cost sixty. */
+    ok('...and the rear-back cue is one call, not one a frame',
+      (psrc.match(/sfx\?\.\('dbreathin'\)/g) ?? []).length === 1);
+  }
+
+  {
+    /* --- AND THE FLAME IS DRAWN IN HER OWN COLOUR, AND IT IS FIRE ---------
+       "Dragon breath should be color of the player, not green." It shipped in
+       Windwhisker's clan green on the argument that four kittens breathing
+       should read as one clan's trick; played, four identical green cones read
+       as nobody's. */
+    const fxsrc = readFileSync(new URL('../src/systems/clanfx.js', import.meta.url), 'utf8');
+    ok('nothing in the drawing reads a fixed clan colour any more',
+      !/DBREATH\.color\b/.test(fxsrc));
+    ok('...and the one colour it does hold is the white-hot core',
+      /DBREATH\.hot/.test(fxsrc) && Number.isFinite(DBREATH.hot));
+    /* AND THE CORE IS PALE. It is the hottest part of a flame and the only
+       part of the grade a player's colour may not move; a dark "hot" would
+       invert the whole thing. */
+    /* OFF THE BYTES, NOT OFF A THREE.Color. `setHex` converts sRGB into the
+       renderer's working space, so a perfectly pale gold reads as 0.39 there
+       and a check written against `.r/.g/.b` fails a colour that is correct.
+       What is being asserted is what a PERSON sees. */
+    const chan = [16, 8, 0].map((sh) => ((DBREATH.hot >> sh) & 255) / 255);
+    ok('...which is pale, because that is what hot looks like',
+      Math.min(...chan) > 0.5, `#${DBREATH.hot.toString(16)}`);
+
+    /* --- now the cone itself, read back off what was actually drawn --- */
+    const fire = (i) => {
+      const fx = new ClanFx(new THREE.Scene());
+      const q = mkP(i, i * 6, wind);
+      q.facing = Math.PI / 2;                 // due east, so forward is +x
+      const hud = mkHud([q]);
+      q._startClanPower(null, hud);
+      q._stepClanPower(DBREATH.charge, hud);  // ...and the flame leaves her
+      fx.update(1 / 60, [q]);
+      return { fx, q, r: fx.rigs.get(i) };
+    };
+    const a = fire(0);
+    ok('a flame was drawn at all', !!a.r && a.r.flame.visible === true);
+    if (a.r) {
+      /* WHAT YOU CAN SEE IS THE HIT BOX — eighth non-negotiable, measured off
+         the instance matrices rather than argued from the source. The shards
+         corkscrew and they RISE, and neither of those may lengthen the cone:
+         `strikePlayers` was handed `DBREATH.range` and a flat direction. */
+      const m = new THREE.Matrix4();
+      const v = new THREE.Vector3();
+      const mouth = new THREE.Vector3(
+        a.q.position.x + 0.55, a.q.position.y + a.q.height * 0.66, a.q.position.z
+      );
+      let far = 0; let behind = 0; let side = 0; let rise = 0;
+      for (let i = 0; i < a.r.flame.count; i++) {
+        a.r.flame.getMatrixAt(i, m);
+        v.setFromMatrixPosition(m).sub(mouth);
+        far = Math.max(far, v.x);
+        behind = Math.min(behind, v.x);
+        side = Math.max(side, Math.abs(v.z));
+        rise = Math.max(rise, v.y);
+      }
+      ok('the drawn cone reaches no further than the hit box does',
+        far <= DBREATH.range + 1e-6, `${far.toFixed(2)} of ${DBREATH.range}`);
+      ok('...and goes most of the way, so it is not a puff',
+        far > DBREATH.range * 0.8, `${far.toFixed(2)}`);
+      ok('...and none of it comes out behind her', behind > -0.01, `${behind.toFixed(3)}`);
+      /* The widest the drawing may open, straight out of the two numbers the
+         cone is authored with. */
+      const widest = DBREATH.spread * DBREATH.range * 0.42;
+      ok('...and it opens no wider than its own spread',
+        side <= widest + 1e-6, `${side.toFixed(2)} of ${widest.toFixed(2)}`);
+      /* IT RISES, WHICH IS HALF OF WHY IT READS AS FIRE. Hot air goes up; a
+         cone that travels dead straight reads as a beam. */
+      ok('...and it lifts as it travels, the way hot air does', rise > 0.3,
+        `${rise.toFixed(2)} up`);
+    }
+
+    /* HER COLOUR AND NOT HER SISTER'S. Two kittens, two seats, two styles —
+       and the drawn grade has to land nearer its own owner's colour than the
+       other's, which no fixed clan colour could ever do. */
+    const b = fire(1);
+    const mine = (t, idx) => {
+      const c = new THREE.Color();
+      let best = 1e9; let at = 0;
+      for (let i = 0; i < t.r.flame.count; i++) {
+        c.fromBufferAttribute(t.r.flame.instanceColor, i);
+        // The body of the cone, past the white nose: that is where her colour is.
+        const d = c.getHSL({}).l;
+        if (d < best) { best = d; at = i; }
+      }
+      c.fromBufferAttribute(t.r.flame.instanceColor, at);
+      const own = new THREE.Color(t.q.style.colour);
+      const other = new THREE.Color(idx.style.colour);
+      const dist = (x, y) => (x.r - y.r) ** 2 + (x.g - y.g) ** 2 + (x.b - y.b) ** 2;
+      return dist(c, own) < dist(c, other);
+    };
+    ok('the two kittens are not the same colour to begin with',
+      a.q.style.colour !== b.q.style.colour);
+    ok('...and each one\'s flame is nearer her own colour than her sister\'s',
+      a.r && b.r && mine(a, b.q) && mine(b, a.q));
+    /* AND THE BALL SHE GATHERS IS HERS TOO, so the rear-back says whose it is
+       a second and a half before the flame does. */
+    ok('...and so is the ball she gathers before it',
+      a.r.gather.material.color.getHex() === a.q.style.colour
+      || b.r.gather.material.color.getHex() === b.q.style.colour);
+
+    /* AND IT ALL PUTS ITSELF AWAY. A poller's whole job. */
+    const done = fire(0);
+    done.q._stepClanPower(DBREATH.fire, done.hud ?? mkHud([done.q]));
+    done.fx.update(1 / 60, [done.q]);
+    ok('nothing of it is left on screen when the move is over',
+      done.r.flame.visible === false && done.r.gather.visible === false
+      && done.r.sip.visible === false && done.r.foot.visible === false
+      && done.r.flash.visible === false);
+    const stale = fire(0);
+    stale.fx.reset();
+    ok('...and a restart clears it even mid-flame',
+      stale.r.flame.visible === false && stale.r.foot.visible === false);
+  }
+
+  {
     /* SHE CANNOT BE STOPPED, AND SHE CANNOT BE THROWN. All three halves of
        "they can be attacked... but they will continue... unless they die. They
        don't get knocked back." */
@@ -17401,13 +17561,21 @@ console.log('\n--- one press is not enough, and one player drives ---');
     F.update(1 / 60);
     const openedAt = F.camera.position.clone();
     const early = facing();
-    for (let i = 0; i < 1200; i++) F.update(1 / 60);   // twenty seconds in
+    /* THIRTY SECONDS IN — the last beat, and the last SHOT. The reading used
+       to be taken at twenty, which was the middle of one long continuous
+       pull-back; the ending is a five-shot list now (`FINALE_SHOTS`) and the
+       middle of it is a close shot of a bridge, lower and nearer than the one
+       it opened on. The pair of readings still has to be far apart for this to
+       mean anything, and the two ENDS of the scene are as far apart as it gets:
+       down among the barrels, then the whole archipelago. */
+    for (let i = 0; i < 1800; i++) F.update(1 / 60);
     const late = facing();
     ok('the ending turns her to face the lens, at both ends of the shot',
       early < -0.999 && late < -0.999, `${early.toFixed(4)} then ${late.toFixed(4)}`);
     /* ...AND THE SHOT REALLY DID MOVE BETWEEN THOSE TWO. Without this the pair
        above is two readings of the same camera, which a nailed-down quad also
-       passes. The finale is the one shot that climbs and pulls back. */
+       passes. The ending still finishes high and wide, whatever it does in
+       between. */
     ok('...from a camera that climbed and pulled back in between',
       F.camera.position.y - openedAt.y > 3
       && F.camera.position.length() - openedAt.length() > 3,
@@ -17429,6 +17597,103 @@ console.log('\n--- one press is not enough, and one player drives ---');
     BEAT_ACTS.map((a) => `${a.lean}/${a.push}`).join(' '));
   ok('...and at least one of them moves at all',
     BEAT_ACTS.some((a) => a.lean !== 0 || a.push !== 0));
+
+  /* --- ...AND THE ENDING IS A SHOT LIST NOW -------------------------------
+     "Let's have the camera zoom in on a few areas on the map where the action
+     of the mischief will happen... would be good to zoom in on the actual
+     Bridge... can have camera zoom in on the Dojo of the Turning Circle."
+     What is pinned here is the SHAPE of the list, not the numbers in it: every
+     line has a shot, every shot points at somewhere the scene can actually
+     resolve, and the two places that were asked for by name are both in it. */
+  {
+    for (let b = 0; b < SCRIPTS.finale.length; b++) {
+      ok(`line ${b + 1} of the ending has a shot of its own`,
+        FINALE_SHOTS.some((sh) => sh.beat === b));
+    }
+    ok('...and every shot opens on its beat, or later in it',
+      FINALE_SHOTS.every((sh) => sh.from >= 0 && sh.from < 1));
+    for (let b = 0; b < SCRIPTS.finale.length; b++) {
+      const mine = FINALE_SHOTS.filter((sh) => sh.beat === b);
+      ok(`...and line ${b + 1}'s shots are in the order they play`,
+        mine[0].from === 0
+        && mine.every((sh, i) => i === 0 || sh.from > mine[i - 1].from));
+    }
+    /* THE NAMES ARE RESOLVED AGAINST THE WORLD, so a shot pointing at
+       somewhere the scene has never heard of is a camera aimed at undefined. */
+    const KNOWN = ['wide', 'dojo', 'bridge', 'mischief'];
+    ok('...and every shot points somewhere the scene can find',
+      FINALE_SHOTS.every((sh) => KNOWN.includes(sh.at)),
+      FINALE_SHOTS.map((sh) => sh.at).join(' '));
+    ok('...including the bridge, by name', FINALE_SHOTS.some((sh) => sh.at === 'bridge'));
+    ok('...and the Dojo of the Turning Circle', FINALE_SHOTS.some((sh) => sh.at === 'dojo'));
+    ok('...and the mischief itself', FINALE_SHOTS.some((sh) => sh.at === 'mischief'));
+    /* AND IT STILL ENDS WHERE IT ALWAYS ENDED. The last beat is the one the
+       whole world goes over on, and that cannot be watched from the ground. */
+    const last = FINALE_SHOTS[FINALE_SHOTS.length - 1];
+    ok('...and the last line is still the whole archipelago',
+      last.beat === SCRIPTS.finale.length - 1 && last.at === 'wide');
+
+    /* SHE IS IN THE FIRST SHOT AND THE LAST, AND OUT OF THE ONES THAT ARE
+       ABOUT SOMEWHERE. A nine-unit cut-out parked in front of a close shot of
+       a bridge is the bridge. */
+    ok('Patchfur is on screen for the line that opens it', FINALE_SHOTS[0].stage === true);
+    ok('...and for the one that sends them off', last.stage === true);
+    ok('...and out of the way of the places she is pointing at',
+      FINALE_SHOTS.filter((sh) => sh.at !== 'wide' && sh.beat > 0)
+        .every((sh) => sh.stage === false));
+
+    /* --- and now watch it actually happen --- */
+    const W = staged('finale').T;
+    const opacity = () => W.stageSprite.mat.opacity;
+    for (let i = 0; i < 120; i++) W.update(1 / 60);       // two seconds: she is in
+    const onAtFirst = opacity();
+    ok('she is on screen while the first line plays', onAtFirst > 0.8,
+      onAtFirst.toFixed(2));
+    while (W.active && W.beat < 1) W.update(1 / 60);
+    for (let i = 0; i < 120; i++) W.update(1 / 60);       // ...and two into the second
+    ok('...and she has walked out of the shot by the second',
+      opacity() < 0.05, opacity().toFixed(2));
+    while (W.active && W.beat < SCRIPTS.finale.length - 1) W.update(1 / 60);
+    for (let i = 0; i < 150; i++) W.update(1 / 60);
+    ok('...and is back for the last one', opacity() > 0.8, opacity().toFixed(2));
+    W.finish();
+
+    /* --- AND `mischief` IS MEASURED, NOT GUESSED AT ---
+       The obvious cheap version of this shot is "point at the town centre",
+       and it is wrong in the one case that matters: at 100% mischief the
+       deepest heap might be the bamboo grove, over a line that says "every
+       last cane of bamboo". Fed a world with one real knot in it and a
+       scattering of lonely props elsewhere, it has to find the knot. */
+    const heapOf = (pts) => {
+      const H = new SummonScene({ scene: null, world: null, audio: null });
+      H.world = {
+        props: pts.map(([x, z]) => ({
+          knocked: true, gone: false, home: new THREE.Vector3(x, 0, z),
+        })),
+      };
+      return H._heap();
+    };
+    const knot = [[100, 100], [102, 101], [99, 103], [101, 98], [103, 102], [98, 99]];
+    const lonely = [[-200, 0], [0, -240], [260, 260]];
+    const found = heapOf([...lonely, ...knot]);
+    ok('the mischief shot finds the deepest heap in the world',
+      !!found && Math.hypot(found.x - 100.5, found.z - 100.5) < 4,
+      found ? `${found.x.toFixed(0)},${found.z.toFixed(0)}` : 'nothing');
+    /* AND IT DEGRADES. The scene viewer can open the ending on a world nobody
+       has touched, and a camera aimed at NaN draws the inside of somebody's
+       head. Ninth non-negotiable. */
+    ok('...and says so honestly when there is nothing down yet',
+      heapOf([[0, 0]]) === null);
+    const bare = new SummonScene({ scene: null, world: null, audio: null });
+    bare.start('finale', { x: 5, y: 6, z: 7 }, 30, art);
+    ok('...and every shot falls back to the wide one without a world',
+      ['wide', 'dojo', 'bridge', 'mischief']
+        .every((m) => bare.marks[m].x === 5 && bare.marks[m].z === 7));
+    bare.update(1 / 60);
+    ok('...and the camera it produces is a real place',
+      Number.isFinite(bare.camera.position.x) && Number.isFinite(bare.camera.position.y));
+    bare.finish();
+  }
 
   if (!hadDoc) delete globalThis.document;
   world.setSky(0, 0);        // leave the world as the rest of the file found it
@@ -17587,6 +17852,108 @@ console.log('\n--- one press is not enough, and one player drives ---');
     none.start();
     none.update(1 / 60);
     ok('...and neither does no world at all', none.running === false);
+  }
+
+  /* --- AND THE WAVE STARTS WHERE THE CAMERA IS LOOKING ---
+     The ending cuts between five shots now, and a ripple handed out in world
+     order has no idea which of them is on screen: the thing being framed was
+     as likely as not a corner the wave had already crossed. Asked for as
+     "just animate mainly the mischief that is in the view of the camera".
+
+     WHAT IS BEING CHECKED IS THE ORDER AND THE NON-CULLING TOGETHER, because
+     the cheap version of this feature is the one that must never ship: moving
+     only the props in shot would leave the far islands tidy at the end of a
+     scene whose entire argument is that they do not stay that way. */
+  {
+    const F = new FinaleTide(world);
+    F.start();
+    ok('there are enough things down to make a wave out of', F.held.length > 10,
+      `${F.held.length} held`);
+    const at = F.held[F.held.length - 1].home.clone();   // somewhere off in the world
+    ok('the tide can be pointed at a place', F.focusOn(at) === true);
+    /* NEAREST FIRST. Read as "every prop's phase rises with its distance from
+       the mark", which is the property the shot actually needs, rather than by
+       re-deriving the sort here and comparing two copies of the same code. */
+    const byPhase = F.held.slice().sort((a, b) => a.phase - b.phase);
+    let monotonic = true;
+    for (let i = 1; i < byPhase.length; i++) {
+      const p = Math.hypot(byPhase[i - 1].home.x - at.x, byPhase[i - 1].home.z - at.z);
+      const q = Math.hypot(byPhase[i].home.x - at.x, byPhase[i].home.z - at.z);
+      if (q < p - 1e-9) monotonic = false;
+    }
+    ok('...and the things nearest it stand up first', monotonic);
+    ok('...starting with the one it is pointed at',
+      byPhase[0].home.distanceTo(at) < 1e-6);
+    /* AND NOTHING IS LEFT LYING DOWN. The fourth non-negotiable in its other
+       direction: the last beat's fall is a RESTORATION and it can only put
+       back what was stood up, so a wave that skipped the far islands would
+       leave them upright for ever. */
+    F.setBeat(1, lastBeat);
+    for (let i = 0; i < 60 * 20; i++) F.update(1 / 60);
+    ok('...and every single one of them still stands up, in shot or not',
+      F.held.every((h) => h.prop.group.position.distanceTo(h.home) < 1e-6));
+
+    /* IT REFUSES MID-MOVE. `k` is one scalar for the whole world and `phase`
+       is where each prop sits inside it, so re-sorting halfway through the
+       rise teleports two hundred objects on one frame. A cut that lands inside
+       a beat therefore keeps the order the beat started with. */
+    F.setBeat(lastBeat, lastBeat);
+    for (let i = 0; i < 10; i++) F.update(1 / 60);
+    const frozen = F.held.map((h) => h.phase);
+    ok('...but not while the wave is halfway through a move',
+      F.k > 0.001 && F.k < 0.999 && F.focusOn(F.held[0].home.clone()) === false,
+      F.k.toFixed(4));
+    ok('...and it leaves the order it refused to change alone',
+      F.held.every((h, i) => h.phase === frozen[i]));
+    ok('...and a tide that is not running refuses too',
+      (F.finish(), F.focusOn(at) === false));
+    ok('...as does one pointed at nowhere',
+      (F.start(), F.focusOn(null) === false));
+    F.finish();
+  }
+
+  /* --- AND THE BRIDGE THE ENDING CUTS TO IS THE BRIDGE ---
+     "Would be good to zoom in on the actual Bridge in the main level during
+     the dialogue when we mention about a bridge." `world.bridge` is published
+     off the same numbers `BRIDGE` builds the span from, and this is the check
+     that it is not a stale copy of them: the point has to land on ground the
+     world agrees is there, at the height the world says. */
+  {
+    const B = world.bridge;
+    ok('the world publishes where its bridge is',
+      !!B && Number.isFinite(B.x) && Number.isFinite(B.y) && Number.isFinite(B.z),
+      B ? `${B.x.toFixed(1)}, ${B.y.toFixed(1)}, ${B.z.toFixed(1)}` : 'nowhere');
+    const on = world.heightAt(B.x, B.z);
+    ok('...on ground a kitten could be standing on', !!on,
+      on ? on.y.toFixed(2) : 'thin air');
+    ok('...at the height the deck actually is',
+      !!on && Math.abs(on.y - B.y) < 0.6,
+      on ? `${on.y.toFixed(2)} against ${B.y.toFixed(2)}` : 'no ground');
+    /* AND THE GROUND IT IS ON IS THE BRIDGE'S OWN DECKING, not the island it
+       happens to be near. The span is built as a row of platforms, so this is
+       askable directly: is the published point inside one of those boxes, at
+       roughly that box's height? A `bridge` left behind by a moved span would
+       still pass everything above and fail this.
+
+       ROUGHLY, and on purpose. `bridge.y` is the crest of the arch the deck is
+       DRAWN as — `base + rise`, the value at t = 0.5 — while the platforms are
+       that same curve sampled at ten segment centres, so the tallest of them
+       sits a couple of centimetres below the true top. Pinning these to each
+       other exactly would be pinning the platform count. */
+    const deck = world.platforms.filter(
+      (pl) => pl.x0 !== undefined && B.x >= pl.x0 && B.x <= pl.x1
+        && B.z >= pl.z0 && B.z <= pl.z1 && Math.abs(pl.y - B.y) < 0.15);
+    ok('...and the ground is a piece of the bridge itself', deck.length > 0,
+      `${deck.length} of ${world.platforms.length} platforms`);
+    /* AND IT IS THE CREST. The deck is a sine arch and the shot pushes in on
+       the middle of it; a point on the run-up would frame the island. */
+    const spanY = world.platforms
+      .filter((pl) => pl.x0 !== undefined && pl.z0 !== undefined
+        && Math.abs((pl.z0 + pl.z1) / 2 - B.z) < 0.01 && !pl.arena)
+      .map((pl) => pl.y);
+    ok('...and the highest piece of it, which is the middle of the arch',
+      spanY.length > 2 && B.y >= Math.max(...spanY) - 0.01,
+      `${B.y.toFixed(2)} of ${Math.max(...spanY).toFixed(2)} over ${spanY.length} spans`);
   }
 
   /* THE SCENE IS WIRED TO IT, AND ONLY FOR THE ENDING. `found` and `summon`
