@@ -5202,6 +5202,13 @@ class Game {
 
   /** The middle of the town, for shots that are about the place. */
   townCentre() {
+    /* THE WORLD KNOWS. `World.townCentre` is the middle of the market stalls,
+       published at the `put()` calls that build them — see world.js. This used
+       to be the literal pair (0, 20), which is up the main street rather than
+       in the square, and which nothing else in the game could see: the ending
+       needed the same answer and had no way to ask for it. */
+    const c = this.world.townCentre;
+    if (c) return c.clone();
     const g = this.world.heightAt(0, 20);
     return new THREE.Vector3(0, g ? g.y : 4, 20);
   }
@@ -6499,7 +6506,9 @@ class Game {
          AND WITHOUT THE ONE LINE THAT IS TALKING TO A PLAYER. See the doc on
          `MathDojo.update` — "nobody on the circle" is an invitation, and there
          is nobody to invite in the middle of a cutscene. */
-      this.dojo.update(dt, this.summonScene.dojoDrivers?.() ?? [], { hint: false });
+      this.dojo.update(dt, this.summonScene.dojoDrivers?.() ?? [], {
+        hint: false, live: this.summonScene.dojoLesson?.() ?? true,
+      });
       this._renderView(this.summonScene.camera, 0, 0,
         ...this.renderer.getSize(new THREE.Vector2()).toArray());
       return;

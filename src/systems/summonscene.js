@@ -345,6 +345,17 @@ export const SCRIPTS = {
    survives a re-recording because it is relative to a cue that re-measures
    itself.
 
+   `dolly` IS A PUSH THAT KEEPS ITS ANGLE. `dist` is the camera's distance out
+   across the ground and `high` is how far above the mark it stands, and `in`
+   only ever shrank the first of them — so every push-in in this table was
+   really a CRANE, sliding down the hypotenuse and getting steeper the whole
+   way. Nobody noticed while the pushes were small. On the one shot that closes
+   by a third on a flat model of the world it came out as the map tipping into
+   a plan view halfway through the line, which is what "zooming in somewhat
+   strangely on the islands" was. With `dolly` set, `high` closes by the same
+   fraction `dist` does, which is the definition of moving toward a thing
+   rather than over it.
+
    `lin` IS A CAMERA THAT DOES NOT EASE. Every shot in here runs on
    `1 - (1 - s)²`, which arrives fast and settles — right for a cut that has to
    establish something in under a second, and wrong for a shot whose whole job
@@ -524,12 +535,27 @@ export const FINALE_SHOTS = [
     beat: 0, from: say(0, 'lantern'), at: 'lantern', a: 0, dist: 8, high: 3.4, lift: 0.14,
     turn: 0.5, in: 0.12, clear: true, stage: false, cue: 'name-lantern',
   },
-  /* A CANE IS 8.5 UNITS LONG AND IT IS LYING DOWN, so this one stands further
-     off and higher than the other two: framed like a barrel it would be a
-     green line leaving the picture at both edges. */
+  /* "...EVERY LAST CANE OF BAMBOO" IS A FOREST, NOT A CANE. "After the words
+     'every lantern' then we should switch to the bamboo forest for when she
+     says 'every last cane of bamboo'. Can show multiple of the bamboo for that
+     part instead of just 1 bamboo, but can still be mostly zoomed in."
+
+     The word is a plural and the first two are not: a barrel and a lantern are
+     single objects and the third is a stand of forty. So this one is aimed at
+     the GROVE — `world.groves`, the real ones the road leads to — and stands
+     off far enough to hold a dozen canes lying across each other while staying
+     close enough to read as bamboo rather than as a green patch. The ring
+     still closes on one cane inside it, so the naming gesture is the same
+     three times; see `_grove`, which is what picks the cane.
+
+     AND IT RESTS AFTERWARDS. "Can have a slight pause at the end of the bamboo
+     for rest time after the list of 3 items is finished." The recording
+     already leaves 0.57s between "bamboo" and "There is nothing left"; the
+     `off` on the next row adds not quite half a second more, so the third of
+     three quick shots is the one that is allowed to breathe. */
   {
-    beat: 0, from: say(0, 'bamboo'), at: 'bamboo', a: 0, dist: 14, high: 6, lift: 0.13,
-    turn: 0.45, in: 0.1, clear: true, stage: false, cue: 'name-bamboo',
+    beat: 0, from: say(0, 'bamboo'), at: 'grove', a: 0.4, dist: 21, high: 8.5, lift: 0.13,
+    turn: 0.3, in: 0.16, clear: true, stage: false, cue: 'name-bamboo',
   },
   /* "...there is nothing left standing..." — ONE STEADY MOVE ACROSS THE
      WRECKAGE, and the only shot in the ending that does not ease.
@@ -540,16 +566,28 @@ export const FINALE_SHOTS = [
      destruction on the island." An eased half-turn with `in: -0.25` on top of
      it does two things at once — it swings AND it retreats — and the eye reads
      the retreat, so the wreckage it is meant to be showing slides away instead
-     of past. What is left is a truck: `lin`, a quarter of a turn at a fixed
-     distance, and barely any dolly at all, which at 46 units is the camera
-     moving about twelve units sideways over the wreck of a town.
+     of past. What is left is a truck: `lin`, a slow swing at a fixed distance,
+     and barely any dolly at all, which at 82 units is the camera moving about
+     twenty-five units sideways over the wreck of a town.
 
-     LOWER, TOO. 25 units up was looking down ON the heap; 21 puts the ruined
-     roofline across the frame, which is what "showing the destruction" means
-     when the destruction is lying on the ground. */
+     AND IT IS THE TOWN IT TRUCKS ACROSS, NOT THE DEEPEST HEAP. "Can have the
+     camera pan sideways slightly maybe starting by where the bridge or town
+     center is, showing as much of the knocked over mischief in the frame,
+     showing the entire destruction of the main island, does not need to be
+     centered around the bamboo forest or anything."
+
+     `heap` is MEASURED as the tightest knot of knocked-over props in the
+     world, and on a fully wrecked archipelago that knot is the west bamboo
+     grove every single time — forty canes inside fifteen units beats a market
+     square hands down. It is the right answer to the question `_heap` asks and
+     the wrong subject for this line, which is about a town. So this row asks a
+     different question: `town` is the deepest knot of mischief IN THE TOWN,
+     measured around `world.townCentre`, which is published off the same
+     numbers the market is built on. The shot stands far enough back to hold
+     the plaza and the roofs behind it rather than one corner of it. */
   {
-    beat: 0, from: say(0, 'There is nothing left'), at: 'heap', a: 0.86, dist: 46, high: 21,
-    lift: 0.12, turn: 0.26, in: -0.04, lin: true, stage: false, cue: null,
+    beat: 0, from: say(0, 'There is nothing left'), off: 0.45, at: 'town', a: 0.62, dist: 82, high: 34,
+    lift: 0.11, turn: 0.3, in: -0.03, lin: true, stage: false, cue: null,
   },
   /* ...AND OUT, far enough that the archipelago is the frame. "Zoom out to show
      all the area and all the knocked over mischief, and also zoom out far
@@ -560,10 +598,17 @@ export const FINALE_SHOTS = [
      earlier, around when the 'on any' words are spoken." Measured off the
      clip, those two words are 1.05 seconds apart in the reading — "on any of
      these islands" is a slow phrase — so this is exactly the second that was
-     asked for, taken off the line rather than off a stopwatch. */
+     asked for, taken off the line rather than off a stopwatch.
+
+     AND IT TAKES ITS TIME. "For the 'on any of these islands' can be a slower
+     pan movement as right now, it feels a bit fast." It was an EASED pull-back
+     - 1 - (1 - s) squared, which spends most of its travel in the first third
+     - and that is what "fast" was: the same move, front-loaded. `lin` spreads
+     it evenly and the swing and the dolly are both cut by about half, so the
+     archipelago arrives rather than being flung at you. */
   {
-    beat: 0, from: say(0, 'on any'), at: 'wide', a: 1.4, dist: 1.15, high: 0.66, turn: 0.3, in: -0.18,
-    stage: false, cue: null,
+    beat: 0, from: say(0, 'on any'), at: 'wide', a: 1.4, dist: 1.15, high: 0.66, turn: 0.16, in: -0.1,
+    lin: true, stage: false, cue: null,
   },
 
   /* --- LINE 2: "The elders called it mischief..." ------------------------
@@ -573,20 +618,30 @@ export const FINALE_SHOTS = [
      part we can have Patchfur appear temporarily before disappearing for the
      next part."
 
-     SO THE CUT AT THE OTHER END IS NOT A CUT AT ALL. It used to open wide,
-     drift, and then hard-cut down onto the heap; now it is one four-and-a-half
-     second move onto the heap from sixty units out, and the "cut" is the black
-     it fades into. Nothing about the framing changes across it, which is the
-     whole point — behind the black the town stands itself back up, and the
-     audience is looking at the same square before and after.
+     AND IT IS THE TOWN IT PUSHES OVER. "For the 'The elders called it
+     mischief' part, we can focus on a more interesting part than just the
+     bamboo forest, can show the town center and more of the destruction
+     again." It was aimed at `heap`, and `heap` is the west grove on any world
+     where everything is down — so the line about what the elders called this
+     played over forty canes lying in a field. The town is the place with
+     elders in it.
 
      SHE IS IN IT. Four and a half seconds is long enough for a foreground
      figure to arrive, be a person, and go; it is the length the argument
-     against her walking on and off was always really about. She leaves into
-     the black, so she is never seen to go. */
+     against her walking on and off was always really about.
+
+     AND SHE FADES OUT RATHER THAN LEAVING THROUGH BLACK. "We should have
+     Patchfur fade out at the end of the scene, but let's remove the fade to
+     black and then fade in on that part, it is not needed." There used to be
+     most of a second of black over this cut, and what it was covering was the
+     reconstruction being SET UP — `only()` and `raise()`, neither of which
+     moves anything on the frame it is called. A curtain over a stagehand who
+     is not carrying anything. `stageWant` drops to 0 on the next row, which is
+     what walks her out; see `_parkStage`, where her opacity and her parked
+     position ride the same scalar. */
   {
-    beat: 1, from: 0, at: 'heap', a: 0.3, dist: 62, high: 30, lift: 0.1,
-    turn: 0.12, in: 0.42, lin: true, stage: true, cue: null,
+    beat: 1, from: 0, at: 'town', a: 0.3, dist: 118, high: 52, lift: 0.1,
+    turn: 0.14, in: 0.42, lin: true, stage: true, cue: null,
   },
   /* "A TIDY TOWN IS ONLY ONE WAY FOR A TOWN TO BE." — and it is, again, in
      front of you: the reconstruction starts HERE rather than four seconds
@@ -594,18 +649,28 @@ export const FINALE_SHOTS = [
      illustrates. "Then on the start of the words 'A tidy town', we can have the
      camera fade in and show the mischief being put back in order."
 
-     THE SAME PLACE EVERY TIME, which is what was asked for: by now every last
-     thing in the world is over, so the deepest knot of it is wherever the
-     deepest knot is, and it does not move between one playing and the next.
+     THE SAME PLACE EVERY TIME, which is what was asked for — and the place is
+     now NAMED rather than measured. "For the part 'A tidy town is only' we
+     should have a better section than just the bamboo forest with the blue sky
+     background... I think the bamboo forest near the red bridge would work
+     better, let's give that a try, as the big castle near the other bamboo
+     forest is blocking the camera."
 
-     THE FADE IS THE LONG ONE. Out over most of a second from the moment she
-     stops saying "simpler than that", and back up in half of that — see `dark`
-     on the header above. What it covers is the reconstruction being SET, not
-     run: `heap-raise` fires on this row. */
+     Both of those are the same bug wearing two hats. `heap` finds the tightest
+     knot of knocked-over props in the world and that is ALWAYS the west grove
+     — thirty-six canes inside fifteen units — which is the one with the hall
+     standing between it and every camera that can reach it, and which has
+     nothing but sky behind it because it is on the island's western lip. So
+     this row asks for the grove by the CROSSING instead: `grove` is the one
+     nearest `world.bridge`, which has the road, the torii and the red arch in
+     the background and a whole island behind that.
+
+     THE CANES ARE ALSO THE BETTER RECONSTRUCTION. Forty of them going up in a
+     ripple is a wave you can read from thirty units; six barrels in a square
+     is six barrels. */
   {
-    beat: 1, from: say(1, 'A tidy town'), at: 'heap', a: 0.75, dist: 30, high: 15, turn: 0.45, in: 0.22,
-    stage: false, cue: 'heap-raise',
-    fade: 0.9, dark: say(1, 'I think it is simpler than that.', true),
+    beat: 1, from: say(1, 'A tidy town'), at: 'grove', a: 0.75, dist: 34, high: 15, lift: 0.1,
+    turn: 0.4, in: 0.22, stage: false, cue: 'heap-raise',
   },
   /* "...every other way is the rest of them" — and over it all goes again, in
      a different direction this time. `tail` because the shove belongs at the
@@ -621,8 +686,8 @@ export const FINALE_SHOTS = [
      worth the name — because a shot that is still swinging while a town falls
      over is a shot about the camera. */
   {
-    beat: 1, from: say(1, 'Every other way is the rest of them', true), off: -0.25, at: 'heap',
-    a: 1.4, dist: 26, high: 12, turn: 0.16, in: 0.04, lin: true,
+    beat: 1, from: say(1, 'Every other way is the rest of them', true), off: -0.25, at: 'grove',
+    a: 1.35, dist: 30, high: 13, lift: 0.1, turn: 0.16, in: 0.04, lin: true,
     stage: false, cue: 'heap-slam',
   },
   /* "...you have been COUNTING your way through the rest of them." The word is
@@ -658,21 +723,56 @@ export const FINALE_SHOTS = [
   },
 
   /* --- LINE 3: the model of the world, on the floor of the Dojo -----------
-     Every row here is one sentence of the ask, in its order, and the camera
-     does not leave the Dojo for any of them: the MODEL is what acts. Cutting
-     away from a thing that is itself moving would throw away the only shot in
-     the game where the whole archipelago is small enough to watch at once. */
-  /* THE MODEL FLOATS OVER THE PAINTED CIRCLE, so every one of these lifts it
-     the same fraction of the frame — which is the whole reason `lift` is a
-     fraction. These shots run from 40 units out to 26 as the camera pushes in,
-     and one number of units would have been right for the first of them. */
-  { beat: 2, from: 0, at: 'dojo', a: 2.4, dist: 40, high: 24, lift: 0.17, turn: 0.25, in: 0.14, stage: false, cue: 'isles-in' },
-  { beat: 2, from: say(2, 'They drifted'), at: 'dojo', a: 2.75, dist: 38, high: 21, lift: 0.17, turn: 0.3, in: 0.12, stage: false, cue: 'isles-drift' },
-  { beat: 2, from: say(2, 'You crossed'), at: 'dojo', a: 3.1, dist: 33, high: 17, lift: 0.17, turn: 0.3, in: 0.14, stage: false, cue: 'isles-cross' },
-  { beat: 2, from: say(2, 'An angle'), at: 'dojo', a: 3.4, dist: 31, high: 16, lift: 0.17, turn: 0.22, in: 0.1, stage: false, cue: 'isles-angle' },
-  { beat: 2, from: say(2, 'a circle'), at: 'dojo', a: 3.6, dist: 31, high: 16, lift: 0.17, turn: 0.22, in: 0.1, stage: false, cue: 'isles-circle' },
-  { beat: 2, from: say(2, 'nerve to jump'), at: 'dojo', a: 3.8, dist: 28, high: 14, lift: 0.17, turn: 0.2, in: 0.12, stage: false, cue: 'isles-leap' },
-  { beat: 2, from: say(2, 'all a bridge'), at: 'dojo', a: 4.0, dist: 26, high: 12, lift: 0.17, turn: 0.2, in: 0.12, stage: false, cue: 'isles-bridge' },
+     ONE SHOT. It was seven, one per clause, and every one of them re-seated the
+     camera and restarted the push — which is a cut, however small the move is.
+
+     "When stating 'The islands did not drift apart' and after that until the
+     end of the Dojo section, there are about 7 camera cuts in this entire
+     section, I think these camera cuts are unnecessary and very distracting. I
+     think we can reduce this into just 1 smooth camera cut, rotating all the
+     way around while the hologram is rotating."
+
+     He is right, and the reason is that this beat is the one place in the
+     ending where the SUBJECT moves. Everywhere else the world is lying still
+     and the camera has to do the acting; here the model huddles, shakes, flies
+     apart and is crossed, and cutting around a thing that is already moving
+     throws the movement away. So the seven rows are now one camera and six
+     `keep` rows — cues with no cut, which is exactly what that field is for.
+
+     ALL THE WAY AROUND, AGAINST THE SPIN. `turn` is NEGATIVE here and it is the
+     only row in the table that is. The model turns at 0.12 rad/s for the whole
+     beat (`FinaleShow._stepModel`), so a camera orbiting the same way subtracts
+     from its own movement and seventeen seconds of orbit come out as a third of
+     a revolution. Counter-orbiting adds: 3.6 radians of camera against 2.0 of
+     table is 5.6 relative, which is all the way around with a little to spare,
+     and it is also the shot in which the near side of the model is always the
+     side coming toward you.
+
+     AND IT IS A DOLLY, NOT A CRANE. `dolly` closes `high` by the same fraction
+     as `dist`, which is the difference between moving toward a thing and
+     climbing over it; see the field's note in the header. Without it a push
+     from 34 units to 22 at a fixed height tips a map into a plan view halfway
+     through, which is what "zooming in somewhat strangely" was.
+
+     BIG, AND IN THE MIDDLE. "The islands should be more at the center of the
+     camera... they should take up at least 1/3 of the screen and be at least
+     1/2 the screen when fully zoomed in on it. The camera angle is too above
+     them all, should be rotated downward a bit more to see them better." The
+     lift was 0.17 — seventeen per cent of the frame ABOVE the optical centre,
+     which is how a subject ends up in the top third with its own shadow under
+     it. Most of that existed to clear the subtitle box and the model is big
+     enough now to be over the box rather than behind it, so 0.07 is the whole
+     of what it needs. */
+  {
+    beat: 2, from: 0, at: 'dojo', a: 2.4, dist: 34, high: 21, lift: 0.07,
+    turn: -3.6, in: 0.34, dolly: true, lin: true, stage: false, cue: 'isles-in',
+  },
+  { beat: 2, from: say(2, 'They drifted'), keep: true, cue: 'isles-drift' },
+  { beat: 2, from: say(2, 'You crossed'), keep: true, cue: 'isles-cross' },
+  { beat: 2, from: say(2, 'An angle'), keep: true, cue: 'isles-angle' },
+  { beat: 2, from: say(2, 'a circle'), keep: true, cue: 'isles-circle' },
+  { beat: 2, from: say(2, 'nerve to jump'), keep: true, cue: 'isles-leap' },
+  { beat: 2, from: say(2, 'all a bridge'), keep: true, cue: 'isles-bridge' },
 
   /* --- LINE 4: the real bridge, then the ring ----------------------------
      "After they all jump to the bridge, can have a fade out and fade in from
@@ -682,10 +782,18 @@ export const FINALE_SHOTS = [
 
      `a` IS ALONG THE DECK, not across it. The span is 18 units of arch on the
      x axis, so a camera at sin(a)=1 sits off its end and sees a bridge; one at
-     right angles to that sees a red wall. */
+     right angles to that sees a red wall.
+
+     AND THE WAY IN IS LONGER THAN A BLINK. "It should end at 'all a bridge has
+     ever been.' with a slightly longer fade out and fade in on the next part."
+     `CUT_FADE` is a third of a second end to end, which is right for a jump the
+     audience is not meant to dwell on and too quick for the one place the
+     ending changes subject: the model of the world goes out and the real one
+     comes back. A second of it, and the four of them are already running when
+     it lifts — see `FinaleShow._seedBridge`. */
   {
     beat: 3, from: 0, at: 'bridge', a: Math.PI / 2, dist: 22, high: 7, lift: 0.16,
-    turn: 0.34, in: 0.12, stage: false, cue: 'bridge-run', fade: true,
+    turn: 0.34, in: 0.12, stage: false, cue: 'bridge-run', fade: 1.0,
   },
   /* "...THE arena is open." — in on the first word of the clause, not on the
      third. "For the 'the arena is open' section, let's have camera fade into
@@ -712,9 +820,18 @@ export const FINALE_SHOTS = [
      ON "IS OPEN" RATHER THAN ON "ARENA", because "arena" is 0.27s after the
      fade-in starts and the crossed-arms pose would never be seen. This way he
      is standing there with his arms folded while the picture arrives, and the
-     champion's pose lands on the word that means the thing. */
+     champion's pose lands on the word that means the thing.
+
+     ON THE END OF IT, NOT THE START. "When in the Arena, the players and Mr.
+     Satan should not do their excited animation until after the words 'the
+     arena is open' is spoken, currently they are doing it about 2 seconds too
+     early." `tail` moves the cue to where the clause FINISHES — 0.6s later on
+     the recording — and `_seedArena` takes the rest of it off the other end by
+     no longer dropping the four of them in on a jump frame; see
+     `FinaleShow._stepArena`, where the arrival is now an arrival and the
+     celebration is the celebration. */
   {
-    beat: 3, from: say(3, 'is open'), keep: true, cue: 'arena-raise',
+    beat: 3, from: say(3, 'is open', true), keep: true, cue: 'arena-raise',
   },
   /* "...find out WHICH OF YOU is the strongest fighter ON THIS WORLD." — and
      out, off the ring, until the whole world is in the frame again. The line
@@ -731,10 +848,16 @@ export const FINALE_SHOTS = [
 
      THE ONE SHOT MEASURED IN ARCHIPELAGOS: `dist` and `high` are multiples of
      the world's own radius here and world units everywhere else, which is what
-     lets one table hold a bridge 22 units away and a world 400 across. */
+     lets one table hold a bridge 22 units away and a world 400 across.
+
+     AND THE RING GOES OUT THROUGH BLACK. "We should have a fade out and fade in
+     at the end before the next section 'go and find out'." The way down is
+     pinned to that phrase and the cut itself stays a clause later, which is
+     what `dark` is for: a long leave on the end of one thought, a quick arrival
+     on the start of the next. */
   {
     beat: 3, from: say(3, 'which of you'), at: 'wide', a: 0.95, dist: 1.34, high: 0.76, turn: 0.22, in: -0.12,
-    stage: true, cue: 'out',
+    stage: true, cue: 'out', fade: 0.8, dark: say(3, 'Go and find out'),
   },
 ];
 /** Seconds she takes to walk out of the frame, and back into it. Slower than a
@@ -749,6 +872,11 @@ const HEAP_R = 9;
  *  close shot instead of being six barrels in the middle of an empty square —
  *  and far narrower than the world, which is the whole point of it. */
 const RAISE_R = 26;
+/** How far out of the town centre still counts as the town, when the ending
+ *  goes looking for the deepest heap of mischief in it. Wide enough to hold the
+ *  market, the main street and the houses either side of it; narrow enough that
+ *  the bamboo grove out past the crossing cannot win. See `_town`. */
+const TOWN_R = 44;
 /** Seconds of black on a cut that crosses the world, half of it either side.
  *  Short: it is a cut with a blink in it, not a scene change. */
 const CUT_FADE = 0.34;
@@ -785,7 +913,15 @@ export class SummonScene {
        "ten or more bamboo being knocked over" arrives as a ripple rather than
        as one wall of noise. The tide cannot reach the audio engine itself —
        same rule as `entities/panda.js`, and for the same reason. */
-    this.tide.onCrash = (kind) => this.audio?.play?.(kind === 'bamboo' ? 'bamboo' : 'hit', 0.7);
+    /* QUIETER, AND NO TWO THE SAME. "It is a bit loud and robotic sounding (too
+       metronomic)." Half the bangs and a jittered pick are `FinaleTide`'s half
+       of that; this is the other half — 0.7 was loud enough to sit on top of
+       the line she is speaking over it, and six identical hits at one level
+       read as a sample being retriggered rather than as things falling over.
+       A fifth either way is the difference between a barrel across the square
+       and one at your feet. */
+    this.tide.onCrash = (kind) => this.audio?.play?.(
+      kind === 'bamboo' ? 'bamboo' : 'hit', 0.34 + Math.random() * 0.14);
     /** The shot on screen, by identity, so a cut can be noticed exactly once. */
     this._shot = null;
 
@@ -1049,6 +1185,17 @@ export class SummonScene {
     const w = this.world;
     const trio = this._trio();
     const heap = this._heap();
+    const grove = this._grove();
+    const town = this._town();
+    /* THE RING ON "BAMBOO" FOLLOWS THE CAMERA. The naming shots are three close
+       shots with a ring of light dropped around the subject, and the third one
+       is pointed at a GROVE now rather than at whichever cane `_trio` happened
+       to find nearest a crate — which on a real world is thirty units away from
+       the stand the camera is looking at, so the ring would have closed on
+       nothing at all. `_grove` hands back a cane INSIDE its own knot, measured
+       the same way `_trio` measures its three, so the gesture is identical and
+       the thing it lands on is in shot. */
+    if (grove?.spot && trio?.spots) trio.spots[2] = grove.spot;
     /* THE RING IS ONLY IN THE SKY IF THE TOURNAMENT IS OPEN. `arenaRing` is
        published whether or not the island has appeared, so the flag is what
        decides — and a finale played before Mr Satan has built anything gets the
@@ -1068,6 +1215,11 @@ export class SummonScene {
       barrel: trio?.spots?.[0] ?? heap ?? wide.clone(),
       lantern: trio?.spots?.[1] ?? heap ?? wide.clone(),
       bamboo: trio?.spots?.[2] ?? heap ?? wide.clone(),
+      /* A FOREST, AND A TOWN — the two marks that exist because `heap` kept
+         giving the honest answer to a question nobody was asking. See
+         `_grove` and `_town`. */
+      grove: grove?.at ?? trio?.spots?.[2] ?? heap ?? wide.clone(),
+      town: town ?? heap ?? wide.clone(),
       /* ...AND THE SAME THREE AGAIN AS A LIST, which is what the rings in
          `FinaleShow` close on. The camera wants a place and the ring wants a
          size, and one Vector3 carrying both would have saved a line here and
@@ -1246,11 +1398,17 @@ export class SummonScene {
    * deepest heap might be the bamboo grove, and the line being spoken over it
    * says "every last cane of bamboo".
    *
+   * @param {?{x:number,z:number}} [near] only count what is within `r` of here,
+   *        which is what `_town` uses to ask the same question about one place.
+   * @param {number} [r] how far out that fence stands.
    * @returns {?THREE.Vector3} null if there is nothing down, which happens
    *          when the ending is opened from the scene viewer in a fresh world.
    */
-  _heap() {
-    const props = (this.world?.props ?? []).filter((p) => p?.knocked && !p.gone && p.home);
+  _heap(near = null, r = Infinity) {
+    const props = (this.world?.props ?? []).filter(
+      (p) => p?.knocked && !p.gone && p.home
+        && (!near || Math.hypot(p.home.x - near.x, p.home.z - near.z) <= r)
+    );
     if (props.length < 3) return null;
     let best = -1;
     let at = null;
@@ -1265,6 +1423,78 @@ export class SummonScene {
       if (n > best) { best = n; at = c.multiplyScalar(1 / Math.max(1, n)); }
     }
     return at;
+  }
+
+  /**
+   * The bamboo grove by the crossing — where the camera goes for "every last
+   * cane of bamboo", and where the town stands itself back up.
+   *
+   * NAMED OFF THE WORLD, NOT MEASURED. `world.groves` is the list the canes are
+   * actually planted from, so this cannot drift from where the bamboo is; the
+   * only choice made here is WHICH of them, and the answer is the one nearest
+   * the red bridge. Asked for by eye and true for a reason: the west grove sits
+   * on the island's lip with a clan hall between it and any camera that can
+   * reach it, so its close shots are a wall with sky behind them. The east one
+   * has the road, its own torii, the arch and a whole island behind it.
+   *
+   * AND IT HANDS BACK A CANE AS WELL AS A CENTRE. The shot wants the middle of
+   * the stand; the ring of light wants one object to close on, sized off that
+   * object. Those are two different things and a single Vector3 carrying both
+   * would save a line here and cost the next reader an afternoon — the same
+   * argument `trioSpots` already makes.
+   *
+   * @returns {?{at: THREE.Vector3, r: number, spot: ?THREE.Vector3}} null when
+   *          the world has no groves, in which case the shots fall back to the
+   *          single cane `_trio` found and then to the heap.
+   */
+  _grove() {
+    const groves = this.world?.groves;
+    if (!groves?.length) return null;
+    const b = this.world?.bridge;
+    const pick = b
+      ? groves.reduce((a, g) => (
+        Math.hypot(g.x - b.x, g.z - b.z) < Math.hypot(a.x - b.x, a.z - b.z) ? g : a))
+      : groves[0];
+    const ground = this.world?.heightAt?.(pick.x, pick.z);
+    const at = new THREE.Vector3(pick.x, ground?.y ?? 0, pick.z);
+    /* THE NEAREST CANE TO THE MIDDLE OF IT, which is the one guaranteed to be
+       in frame however the clear-angle solve turns the camera. Knocked over
+       and not retired, like every other subject in this scene: a cane still
+       standing at the ending is a cane that cannot exist. */
+    let spot = null;
+    let best = Infinity;
+    for (const p of this.world?.props ?? []) {
+      if (p.kind !== 'bamboo' || !p.knocked || p.gone || !p.group) continue;
+      const d = Math.hypot(p.group.position.x - pick.x, p.group.position.z - pick.z);
+      if (d >= best) continue;
+      best = d;
+      spot = new THREE.Vector3(p.group.position.x, (p.home?.y ?? at.y) + 0.05, p.group.position.z);
+      spot.r = Math.min(4.5, Math.max(1.3, (p.height ?? 1) * 0.55, (p.radius ?? 0.6) * 2));
+    }
+    return { at, r: pick.r ?? 16, spot };
+  }
+
+  /**
+   * Where the mischief is piled deepest IN THE TOWN.
+   *
+   * THE SAME MEASUREMENT AS `_heap`, ASKED INSIDE A FENCE. `_heap` answers
+   * "where is the deepest knot in the world" and on a fully wrecked
+   * archipelago the answer is always a bamboo grove, because forty canes inside
+   * fifteen units beats a market square and always will. That is the right
+   * answer to that question and the wrong subject for two lines that are about
+   * a town — "there is nothing left standing" and "the elders called it
+   * mischief" both want roofs in the frame.
+   *
+   * `world.townCentre` IS THE FENCE, and it is published off the same numbers
+   * the market stalls are built on rather than typed here. A town moved and a
+   * camera left behind is exactly the failure `_markFinale` exists to prevent.
+   *
+   * @returns {?THREE.Vector3} null when there is no town or nothing down in it.
+   */
+  _town() {
+    const c = this.world?.townCentre;
+    if (!c) return null;
+    return this._heap(c, TOWN_R) ?? c.clone();
   }
 
   /**
@@ -1419,7 +1649,13 @@ export class SummonScene {
          square putting itself back together in front of you, which is a thing
          you can see from thirty units up, instead of two hundred objects
          spread over four hundred units, which is not. */
-      this.tide.only(this.marks?.heap ?? null, RAISE_R);
+      /* AND IT IS THE SHOT'S OWN MARK, not a second name that has to be kept in
+         step with it. This read `marks.heap` while the row it fires on was
+         pointed at `heap` too, which was one edit away from a town rebuilding
+         itself somewhere off screen — and that edit has now happened: the row
+         is aimed at the grove by the crossing. A cue that reconstructs
+         WHEREVER THE CAMERA IS cannot be pointed at the wrong place. */
+      this.tide.only(this.marks?.[shot.at] ?? null, RAISE_R);
       /* ...AND IT HAS EXACTLY UNTIL THE SHOVE. Measured between this shot and
          the one that knocks it all down again, rather than typed: re-time the
          line and the wave re-times itself. */
@@ -1427,6 +1663,24 @@ export class SummonScene {
       this.tide.raise(slam ? this._at(slam) - this._at(shot) : undefined);
     }
     if (shot.cue === 'heap-slam') this.tide.slam();
+    if (shot.cue === 'arena-raise') {
+      /* THE SOUND OF A THING BEING UNLOCKED, on the word that unlocks it. "Can
+         also play an 'unlocked' sound after it is said that it is open and the
+         players rejoice."
+
+         `starfound` IS ALREADY THAT SOUND IN THIS GAME. It is what plays when
+         one of the seven stars is picked up — the full fanfare, arpeggio over
+         a held fifth with a bell on top — so a kid hearing it here has heard it
+         mean exactly this before, and the ending does not have to teach her a
+         new noise in its last ten seconds. Inventing a ninth fanfare would have
+         been a second vocabulary for one line.
+
+         HALF VOLUME, BECAUSE SHE IS STILL TALKING. The cue lands on the END of
+         "the arena is open" and "Go and find out" begins 0.89 seconds later,
+         while the fanfare rings for about two; at full gain the bell sits on
+         top of the last line of the game. */
+      this.audio?.play?.('starfound', 0.45);
+    }
   }
 
   /** Who the Dojo's lesson is reading its angle from, or null for nobody.
@@ -1435,6 +1689,17 @@ export class SummonScene {
    *  ending. First non-negotiable: the maths in the cutscene is the maths. */
   dojoDrivers() {
     return this.active && this.which === 'finale' ? this.show?.drivers?.() ?? null : null;
+  }
+
+  /** Whether the Dojo should still draw its LIVE triangle, or only its island.
+   *  A SECOND QUESTION FROM `dojoDrivers`, and the difference is the bug it
+   *  fixes: no driver means the lesson turns itself, which under the model of
+   *  the world is a diagram spinning the other way for no reason. Once the
+   *  ending's runner is gone the diagram goes with her.
+   *  @see FinaleShow.lessonLive */
+  dojoLesson() {
+    if (!this.active || this.which !== 'finale') return true;
+    return this.show?.lessonLive?.() ?? true;
   }
 
   skip() { if (this.active) this.finish(); }
@@ -1685,8 +1950,14 @@ export class SummonScene {
          other shot keeps the old behaviour: `a` is where it starts and `turn`
          is how far it goes. */
       const a = base + shot.a + shot.turn * (measured ? se - 0.5 : se);
-      const dist = (wide ? this.radius * shot.dist : shot.dist) * (1 - shot.in * se);
-      const high = wide ? this.radius * shot.high : shot.high;
+      const close = 1 - shot.in * se;
+      const dist = (wide ? this.radius * shot.dist : shot.dist) * close;
+      /* A DOLLY CLOSES BOTH, A CRANE CLOSES ONE. `in` only ever shrank `dist`,
+         so every push in this table slid down the hypotenuse and got steeper as
+         it went — invisible on a shot that closes by a tenth and, on the one
+         that closes by a third onto a flat model of the world, the difference
+         between moving toward the islands and climbing over them. */
+      const high = (wide ? this.radius * shot.high : shot.high) * (shot.dolly ? close : 1);
       this.camera.position.set(
         P.x + Math.sin(a) * dist,
         P.y + high,

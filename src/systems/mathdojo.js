@@ -286,6 +286,13 @@ export class MathDojo {
     );
     this.point.add(halo);
 
+    /* EVERY PIECE THAT ONLY MEANS SOMETHING WITH SOMEBODY ON THE CIRCLE.
+       Collected so one flag can put the whole diagram away — see `opts.live` on
+       `update`. The labels join this list where they are built, because they
+       are the half of it that is about a specific reading. */
+    this._liveBits = [this.vec, this.cosLeg, this.sinLeg, this.dropX, this.dropY,
+      this.arc, this.point];
+
     /* EVERY ONE OF THESE IS `live`, AND THAT IS LOAD-BEARING.
 
        These five are rewritten every frame from a float. Through the shared
@@ -313,6 +320,7 @@ export class MathDojo {
     this.lblPoint = L('#7fe3ff', '#0c2733', '( -0.00 , -0.00 )', 72, 2.9);
     this.lblHint = L('#fff0d0', '#1d1216',
       'nobody on the circle — spinning by itself', 56, 1.7);
+    this._liveBits.push(this.lblTheta, this.lblCos, this.lblSin, this.lblPoint);
   }
 
   /* ------------------------------- board -------------------------------- */
@@ -388,6 +396,26 @@ export class MathDojo {
    *   numbers are real.
    */
   update(dt, players, opts = undefined) {
+    /* THE WHOLE LIVE DIAGRAM, OR NONE OF IT. `opts.live === false` puts the
+       radius vector, the legs, the swept arc, the point and its four readouts
+       away and leaves the island — the painted circle, the axes, the graph
+       paper and the board. There is exactly one caller: the ending, once its
+       runner has faded off the circle.
+
+       WHY IT IS NOT "NO DRIVERS". With nobody to read, this method turns theta
+       by itself at 0.42 rad/s, which is correct on an empty island (the lesson
+       demonstrates itself to whoever walks up) and wrong under a model of the
+       archipelago: a second diagram spinning at its own rate, the other way
+       round from the hologram above it. Reported as exactly that. The idle turn
+       is a good behaviour that this one scene has to be able to switch off.
+
+       IT RUNS THE REST OF THE METHOD REGARDLESS, because a hidden label is
+       still a label whose content is gated by `readable` and whose position is
+       three floats — and because a scene that turned this back on would
+       otherwise show one frame of a diagram from wherever it was left. */
+    const live = opts?.live !== false;
+    for (const b of this._liveBits) b.visible = live;
+
     // Whoever is standing nearest the circle *line* steers theta — not whoever
     // is nearest the origin, or a player wandering past the middle would yank
     // the angle away from the one deliberately walking the rim.

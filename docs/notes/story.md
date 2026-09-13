@@ -405,25 +405,76 @@ of the same camera, which a nailed-down quad also passes.
 
 The ending used to be **one continuous pull-back**: open low behind Patchfur,
 climb and widen for thirty seconds, finish on the archipelago. Then it was five
-shots. It is **nineteen** now, one table in
-[summonscene.js](../../src/systems/summonscene.js), and the thing that changed
-between five and nineteen is not the count — it is that every cut in it lands on
-a **word**.
+shots. It is **twenty-one rows** now — thirteen cuts and eight `keep`s — one
+table in [summonscene.js](../../src/systems/summonscene.js), and the thing that
+changed between five and twenty-one is not the count: it is that every cut in it
+lands on a **word**.
 
 | line | what is on screen |
 | --- | --- |
-| 1 | a barrel, then a lantern-or-box, then a cane of bamboo, one per word as she names them, each picked out by a ring of light; then up and off the heap; then the whole archipelago |
-| 2 | wide, then down onto one corner of the town as it **stands itself back up**, which goes over again on the end of the clause; then a cut to the Dojo |
-| 3 | the Dojo of the Turning Circle — a kitten running the painted circle with the real sin and cos drawn off her, then a model of the whole archipelago huddling, shaking, drifting apart, and four tiny kittens crossing it |
-| 4 | the actual bridge with kittens pouring over it, then the arena and Mr Satan, then the world |
+| 1 | a barrel, then a lantern-or-box, then **the grove** as she says *every last cane of bamboo*; a held beat; then a slow truck across the town with the whole wreck in it; then the archipelago |
+| 2 | the town from height, then down onto the grove by the crossing as it **stands itself back up**, which goes over again on the end of the clause; then a cut to the Dojo |
+| 3 | the Dojo of the Turning Circle — a kitten running the painted circle with the real sin and cos drawn off her, then a model of the whole archipelago huddling, shaking, drifting apart, and four tiny kittens crossing it. **One camera, all the way round** |
+| 4 | the actual bridge with kittens already pouring over it, then the arena and Mr Satan, then the world |
 
 Each row is
-`{ beat, from, at, a, dist, high, lift?, turn, in, clear?, stage, cue, fade? }`.
+`{ beat, from, off?, at, a, dist, high, lift?, turn, in, lin?, dolly?, clear?,
+keep?, stage, cue, fade?, dark? }`.
 `beat` is which line it belongs to and `from` is how far through that line it
 cuts. `in` is the push: the camera closes that fraction of its own distance
 across the shot's own clock, which is why `_shotFor` returns a shot-local `s`
 rather than the beat's `k` — a cut that landed on a camera already halfway
 through somebody else's easing reads as a jump rather than as a cut.
+
+### `keep` is a cue without a cut, and `dolly` is a push without a climb
+
+Two fields do most of the work of the recut, and both exist because a note came
+back that named a symptom rather than a cause.
+
+**`keep: true`** is a row that fires its cue and **does not move the camera**.
+`_shotFor` walks `ci` back to the last real cut and `ni` forward past the keeps,
+so the shot clock runs across all of them as one move. That is how beat 3's
+seven cues — huddle, drift, cross, angle, circle, leap, bridge — play under a
+single camera:
+
+> When stating "The islands did not drift apart" and after that until the end of
+> the Dojo section, there are about 7 camera cuts in this entire section, I think
+> these camera cuts are unnecessary and very distracting. I think we can reduce
+> this into just 1 smooth camera cut, rotating all the way around while the
+> hologram is rotating.
+
+**`dolly: true`** takes the height down with the distance. `in` only ever shrank
+`dist`, which means **every push-in in this table was really a crane**: the
+camera came closer and the angle got steeper, so a shot that started level
+finished looking down at the top of its subject. That is what *"the camera is
+zoomed in and zooming in somewhat strangely on the islands"* was. One field,
+applied to the one shot that needed it.
+
+### `town` and `grove` — because `heap` is the right answer to the wrong question
+
+`_heap()` finds the deepest knot of mischief **in the world**, and on a fully
+wrecked archipelago that answer is a bamboo grove every time: forty canes inside
+fifteen units beats a market square and always will. Measured on a real
+playthrough it came back at (-64, -34) — the **west** grove, with a hall standing
+between it and any camera — and three separate lines were pointed at it.
+
+So there are two more marks, both derived from data the world already publishes
+rather than typed:
+
+- **`_town()`** is the same measurement asked **inside a fence**:
+  `_heap(world.townCentre, TOWN_R)`. `world.townCentre` is the mean of the market
+  stalls' own coordinates, published by `World` at the same loop that builds
+  them, so a town that moves takes its camera with it.
+- **`_grove()`** picks the entry in `world.groves` **nearest `world.bridge`** and
+  returns the grove's centre, its radius, and the nearest knocked cane to the
+  middle of it. That is the east grove, which is the one you can see into:
+
+> I think the bamboo forest near the red bridge would work better, let's give
+> that a try, as the big castle near the other bamboo forest is blocking the
+> camera.
+
+`heap` is still built, still falls back, and is still what `_trio` degrades to.
+Nothing points at it any more.
 
 ### It is cut to words, not to seconds
 
@@ -470,6 +521,14 @@ just no distance cap on how far apart they are allowed to be.
 And every one of the three falls back: no barrel, no basket, no grove, and the
 shot is the heap, then the wide. A world with nothing in it still plays this
 scene.
+
+**The third of the three is the grove itself, not one cane.** *"After the words
+'every lantern' then we should switch to the bamboo forest for when she says
+'every last cane of bamboo'. Can show multiple of the bamboo for that part
+instead of just 1 bamboo."* So `_markFinale` overrides the trio's third spot with
+`_grove().spot` and the shot is framed on the grove's own radius — the ring of
+light still lands on a real cane, because the ring is a measurement and the wide
+framing is a taste.
 
 ### The camera is pointed somewhere it can see — `_clearAngle`
 
@@ -784,3 +843,154 @@ of them non-zero, so a table of zeroes is not a passing table.
 **The push is applied to the parked distance, not to `scale`.** Moving her
 toward the lens is a step forward; scaling her up is a drawing getting bigger.
 The two look different and only one of them reads as a person.
+
+## The recut — what the second pass changed, and why
+
+The ending was rebuilt once more after a full watch-through. Every note below is
+a symptom that was reported and a cause that was measured; the dialogue and the
+on-screen text did not change a word.
+
+### The hologram is a model of THIS world, not a diagram of one
+
+> The buildings on the holographic islands look like normal buildings. We should
+> use the buildings with the cool oriental roofs that we have in the main
+> island... Essentially, these holographic islands should look exactly the same
+> as the real islands, just smaller versions.
+
+`_isleDetail` draws the same shapes the world does, at a third of the detail:
+
+- **Roofs are `pagodaRoof`,** the real one out of `build.js`, asked for three
+  rings and two segments a side. Thirty-three vertices, and it is unmistakably
+  the same roof. *Shrinking the actual mesh was the other reading and it is
+  worse:* `buildHouse` returns eleven parts with a lantern and a door frame on
+  it, and four hundred of those merged is a quarter of a million triangles to
+  draw a town the size of a saucer. The **shape** is what has to match.
+- **Trees got trunks** — four triangles, and the difference between a tree and a
+  green cone.
+- **Bamboo is planted where `world.groves` says it is**, ten canes a stand
+  rather than eighty. The two stands on the model are the two the girls walked
+  to.
+- **The Dojo island is drawn the way the Dojo is drawn**: a dark plate, graph
+  paper ruled at `R/4`, and a white ring, every number off `MathDojo`'s own. The
+  hologram floats over the real one, so a kid who looks down and then up sees
+  the same mark twice.
+
+### The mini-bridges bend and then tear
+
+> There are the bridges between the holographic islands, but they are hard to
+> see and are too small. They look like just yellow lines... When the islands are
+> shaking, they can have an animated bend or shader to show them bending with the
+> islands before snapping and breaking when the islands separate.
+
+Each span is a Catmull-Rom curve sliced into fourteen **slats** — a vermillion
+deck with two gold rails — with a **torii** at each end, drawn as two
+`InstancedMesh`es sharing one material. Two draw calls for the whole set.
+
+The bend and the snap **fall out of the anchoring** rather than being animated:
+every piece records which island its own end is tied to, the near half riding the
+child and the far half its parent. Shaking the islands bows the span; separating
+them tears it from the middle outwards (`BR_SNAP`), each piece falling and
+spinning about an axis rolled once at build so a broken bridge falls the same way
+every time the scene plays. The light goes out at `BR_SNAP * 2`, so the roads are
+gone before the islands are a third of the way apart — which is the order the
+sentence puts them in.
+
+The **red bridge** in the model — the one everybody jumps at on the last line of
+the beat — is built in the same vocabulary and merged into one mesh. It was a
+single 0.7 x 0.12 x 0.5 box, which at this distance is a scratch, and four cats
+shrink onto it. It rides `holo` rather than `bridgeMat`, because the connecting
+spans are supposed to dim as the islands separate and this one must not: they
+have already separated by the time anybody jumps.
+
+### The angle and the circle stay up together
+
+> When stating "an angle" we should draw the angle on the screen and keep it on
+> the screen until the end of the math section. Same with the "a circle" part...
+> With the "angle" part can show the theta signa and value.
+
+Each half latches on its own word and both leave together on `isles-leap`.
+`_shapeLevel(cue)` answers *how lit, and how far blown out* by walking the cue
+order — a question about **sequence**, which the current cue's name cannot
+answer: by "the nerve to jump" the angle is up and the phase is not
+`isles-angle`.
+
+It is **solved, not chased**, which is the opposite of the model and the runner
+above it. Those two survive six cuts, so a target they run toward is the only
+thing that does not restart on every cue; this one is lit by one named word, held
+across a known stretch and taken away on another named word — so it reads
+straight off the clock, and a seek into the middle of the section shows the right
+thing.
+
+The angle drops nearly to the islands and the cone of circles starts above head
+height, because with both up on one plane the arms read as chords of the bottom
+ring. Every wedge carries a **theta readout** in the Dojo's own colour and with
+the Dojo's own `live` reserve — a label whose text moves every frame must own its
+canvas, or it mints a texture per distinct string and never frees one. A wedge of
+under three degrees gets no label: four gold zeroes fanned along one line is the
+diagram announcing it has nothing to say.
+
+They leave by **expanding out and fading**, not by shrinking: a diagram
+collapsing to a point puts the eye in the middle of the frame at exactly the
+moment the kittens are jumping the gap. The reach is **held** once the blow-out
+starts — the four of them converge on the bridge during `isles-leap`, so a radius
+still solved from where they are would shrink while the blow-out pushed it out,
+and measured, the two almost cancelled.
+
+### Nothing shakes while it is arriving, and the lesson goes with her
+
+The hologram's earthquake belongs to `isles-in`. During `isles-wake` the islands
+are not drifting, so the drift fraction is zero, so `(1 - dk) * 0.16` was the
+**full** earthquake under a model that had not finished fading in. The guard was
+written for the shot the shake belongs to and the fall-through caught the one it
+does not.
+
+The whole cross-fade also has to fit in the **tail**: `isles-wake` fires on the
+end of *"all afternoon."* and the next line begins 1.5 seconds later. Two seconds
+of dissolve does not fit in a second and a half, which is why the runner was
+still half there when *"The islands did not drift apart"* began. She **holds**
+while the world arrives — she is watching it, which is the picture — and then
+goes: 0.5 + 0.6 against 1.5 available, with the model up at 1.2.
+
+And when she is gone the **live** layer of the real `MathDojo` goes with her.
+`drivers()` returning null makes the Dojo do what it does on an empty island —
+turn the point by itself, at its own rate, in what reads from this camera as the
+opposite direction to everything else on screen. `MathDojo.update(dt, [], { live:
+false })` puts the radius vector, the legs, the swept arc, the point and its four
+readouts away and leaves the island: the painted circle and the graph paper are
+the island, and the model is floating over them on purpose.
+
+### The last two shots
+
+**The bridge run opens mid-crossing.** *"We should already have the animated
+characters spawned in before the camera starts fading in and have them running
+towards the bridge already."* The old seed put every kitten at a negative
+position along the deck — off the end and invisible — staggered by `-i * 0.22`,
+which is a parade. Now each gets a random head start and a lane wobble, and jumps
+on a **schedule** rather than a waveform: a timer per kitten, re-rolled at every
+landing, with the height rolled alongside it. Between jumps she may swing (the
+attack row), **Dash** (a surge in her own rate, squashed into it, since an
+ability that only changed the pose would be a costume), **Smash** (a jump that
+meant it, landing inside a shockwave ring) or throw an **Orb** (a ring that rises
+past her head) — the four the game actually has, to show what is still to unlock.
+
+**Mr Satan's arms go up on the end of the clause, not its start.** `arena-raise`
+is `say(3, 'is open', true)`; it was two seconds early because it was pinned to
+the first word. It also plays `starfound` at half volume — the sound this game
+already uses for *you got one*, so nobody has to be taught a new noise in the
+last ten seconds, and quiet enough not to sit on top of *"Go and find out"*.
+
+### The crash sounds were loud, late and metronomic
+
+> Seems the sound of when they are falling over is a bit delayed, it should start
+> playing as soon as they start getting knocked over. Also, it is a bit loud and
+> robotic sounding (too metronomic) so we can reduce the sounds that is played by
+> half and try to stagger/randomize the way they are played.
+
+All three, and the first one is the interesting one: **`t` in a slam runs 1 to 0**,
+so the gate `t < 0.12` looks like *at the start* and means *in the last eighth*.
+Every barrel banged as it settled, a beat after it went over. `CRASH_AT = 0.9`.
+
+The count halved (`CRASHES = 6`) and the picking changed from *every Nth prop* to
+*one inside each slot, jittered* (`CRASH_JITTER`), so the gaps between bangs are
+not all the same number — which is what "too metronomic" is, stated as something
+`world-check` can measure. The volume is randomised per bang as well.

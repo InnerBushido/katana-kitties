@@ -106,7 +106,44 @@ const STAGGER = 0.45;
  * they sound like when the girls do it.
  */
 const SLAM = 1.5;
-const CRASHES = 12;
+/**
+ * How many of the falling props are allowed to make a noise, and how far from
+ * an even share of them each one is allowed to stand.
+ *
+ * HALVED, AND THEN UNPICKED FROM THE GRID IT WAS ON. "It is a bit loud and
+ * robotic sounding (too metronomic) so we can reduce the sounds that is played
+ * by half and try to stagger/randomize the way they are played so it is not as
+ * robotic." Both halves of that are one bug: twelve bangs was already too many
+ * for a shove that lasts a second and a half, and they were picked as EVERY
+ * NTH PROP IN WAVE ORDER — a perfectly even comb over a wave whose phases are
+ * themselves evenly dealt, which is a metronome by construction. Six of them,
+ * each nudged off its slot by up to most of a slot, is a town going over.
+ *
+ * THE JITTER IS IN THE PICK, NOT IN A DELAY. Nothing here can hold a sound
+ * back: a bang fires when its own prop moves, which is the whole reason it
+ * lands under the thing the eye is looking at. So the randomness has to be in
+ * WHICH props are the loud ones, and a prop half a rank further along the wave
+ * is a bang a few hundredths later.
+ */
+const CRASHES = 6;
+const CRASH_JITTER = 0.8;
+/**
+ * How far into a prop's own fall its bang goes off, as a fraction of the fall.
+ *
+ * IT USED TO BE THE LANDING AND THAT IS WHY IT SOUNDED LATE. "Seems the sound
+ * of when they are falling over is a bit delayed, it should start playing as
+ * soon as they start getting knocked over." `t` runs 1 -> 0 through a shove —
+ * 1 is standing, 0 is flat — and the test was `t < 0.12`, which is the moment
+ * the barrel finishes arriving on the ground. Half a second after the eye saw
+ * it topple, every time, and on a wave whose whole point is that the bangs
+ * ripple with the picture.
+ *
+ * A CANE CRACKS WHEN IT IS CUT, NOT WHEN IT STOPS ROLLING. That is also what
+ * these sounds ARE: they are the prop's own hit, the noise the girls make
+ * knocking it over, and that noise belongs to the blow rather than to the
+ * landing.
+ */
+const CRASH_AT = 0.9;
 /**
  * How much of the wave's stagger a SHOVE gets. Standing up is a ripple and
  * being knocked over is not.
@@ -332,12 +369,22 @@ export class FinaleTide {
       h.bang = false;
       n++;
     }
-    /* THE BANGS ARE SPREAD OVER THE FALL, not fired with it. Every twelfth prop
-       in wave order makes a noise, so the sounds arrive in the same ripple the
-       eye is watching and the other fifty go over quietly. */
-    const step = Math.max(1, Math.ceil(mine.length / CRASHES));
+    /* THE BANGS ARE SPREAD OVER THE FALL, not fired with it. A handful of props
+       in wave order make a noise, so the sounds arrive in the same ripple the
+       eye is watching and the other fifty go over quietly.
+
+       AND THEY ARE NOT ON A GRID. Every Nth prop out of a list whose phases
+       were themselves dealt evenly is a metronome — the bangs came out at one
+       rate, in one rhythm, every time the ending played. Each pick is nudged
+       off its slot by up to `CRASH_JITTER` of a slot instead, which is the
+       difference between a drum machine and a town falling over. */
+    const step = Math.max(1, mine.length / CRASHES);
     mine.sort((x, y) => x.phase - y.phase);
-    for (let i = 0; i < mine.length; i += step) mine[i].bang = true;
+    for (let i = 0; i < CRASHES; i++) {
+      const slot = (i + 0.5 + (Math.random() - 0.5) * CRASH_JITTER) * step;
+      const ix = Math.max(0, Math.min(mine.length - 1, Math.floor(slot)));
+      mine[ix].bang = true;
+    }
 
     this.want = 0;
     this.rate = 1 / SLAM;
@@ -400,11 +447,14 @@ export class FinaleTide {
       const t = ease(
         Math.min(1, Math.max(0, (this.k - h.phase * bunch) / (1 - STAGGER * bunch)))
       );
-      /* AND IT LANDS AUDIBLY. Fired as the prop passes the bottom of its own
-         slice rather than when the whole wave ends, so the bang is under the
-         thing the eye is looking at. One per prop per slam: `bang` is spent
-         here and only `slam()` sets it. */
-      if (h.bang && t < 0.12) {
+      /* AND IT IS AUDIBLE AS IT GOES, not once it has got there. Fired as the
+         prop LEAVES its standing pose — `t` runs 1 to 0 through a shove — so
+         the bang is under the thing the eye is looking at on the frame the eye
+         sees it move. See `CRASH_AT`: this used to be `t < 0.12`, the far end
+         of the same fall, which put every crash most of half a second behind
+         its own picture. One per prop per slam: `bang` is spent here and only
+         `slam()` sets it. */
+      if (h.bang && t < CRASH_AT) {
         h.bang = false;
         this.onCrash?.(h.prop.kind);
       }
