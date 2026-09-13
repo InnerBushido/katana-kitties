@@ -27,7 +27,7 @@ look. Everything else is one level down and read on demand.
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
 npm run dev -- --host         # ...and on a phone on the same wifi, at the Network: URL it prints
-node tools/world-check.mjs    # 3334 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 3372 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 npm run docs                  # regenerate the controls + balance tables, in PROJECT.md AND
@@ -124,7 +124,17 @@ src/
   tuning.json      the overrides, and nothing else. `{}` is the shipped balance.
   tuning-page.js   /tuning.html's brain — dev only, never built
   world/     build (all the geometry)  world (assembly, height queries)
-  systems/   tournament  menagerie  arenaquest  announce  leaderboard
+  systems/   tournament  menagerie  arenaquest  leaderboard
+             announce (ONE #announce card, one queue, and a speaker per line.
+               Mr Satan's, and Patchfur borrows it - two cards would be two
+               people talking in the same corner of the screen, and the moment
+               they can collide is the moment the countdown below exists for)
+             lasthunt (the elder counting the last five pieces of mischief
+               down. It is HANDED the count and keeps none of its own, which is
+               what makes it unable to be wrong about it; a minute of no
+               progress and she names Icewhisker AND the island, but only if
+               nobody in the party has the buff already; at three the minimap
+               starts marking the nearest one. docs/notes/endgame.md)
              savegame (the afternoon, written down every 30s once a game is
                5 minutes old, loaded from the pause menu. It saves what the
                PLAYERS have done — which props are down, which orbs are worn,
@@ -269,7 +279,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 3334 assertions and why almost none of them are about
+  why `world-check` is 3372 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Before designing a menu, dialog or any list, read "UI FALL-THROUGH" in
   [gotchas.md](docs/notes/gotchas.md).** It is the bug this project keeps

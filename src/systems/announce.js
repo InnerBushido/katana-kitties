@@ -18,7 +18,19 @@ import { drawPortrait } from './cutscene.js';
    IT NEVER TAKES THE INPUT. The girls keep playing straight through. That is
    the whole difference between this and a scene, and it is why `Game._skipPressed`
    and `_sceneActive` know nothing about it.
---------------------------------------------------------------------------- */
+
+   AND IT IS NOT ONLY HIS ANY MORE. Patchfur counts the last five pieces of
+   mischief down over this same card — see `systems/lasthunt.js` — and the
+   reason she borrows it rather than getting her own is the QUEUE. There is one
+   `#announce` in the document and there has to be: two cards would be two
+   speakers talking over each other in the same corner of the screen, and the
+   moment the two of them can collide is exactly the moment this feature
+   exists for (the last barrel in the world is also, often, the one that crosses
+   80% and opens the tournament). One queue means they take turns, which is
+   what people do.
+
+   So the SPEAKER travels with the line rather than with the announcer. See
+   `say`'s third argument. --------------------------------------------------- */
 
 /** Slide in, slide out. Short — this is punctuation, not a scene. */
 const SLIDE = 0.32;
@@ -39,6 +51,11 @@ export class Announcer {
     this.name = name;
     this.sub = sub;
     this.art = null;
+    /** Who the card is currently dressed as, so a repaint only happens when
+     *  the speaker actually changes. `drawPortrait` is a canvas draw off a
+     *  sprite sheet; doing it per line was the cost `_painted` was added to
+     *  avoid, and that reasoning survives more than one speaker. */
+    this._dressed = null;
 
     this.el = document.getElementById('announce');
     this.portraitEl = document.getElementById('an-portrait');
@@ -50,7 +67,6 @@ export class Announcer {
     this.current = null;
     this.t = 0;
     this.voiceEl = null;
-    this._painted = false;
 
     /** Preloaded clips by id. Filled by `load`. */
     this.clips = new Map();
@@ -102,9 +118,13 @@ export class Announcer {
    *
    * @param {string} id   key into the preloaded clips
    * @param {string} text what he says, on screen
+   * @param {?{name: string, sub: string, art: object, colour: string}} who
+   *        the speaker, when it is not the announcer this was built as. The
+   *        card is dressed from this — name, subtitle, portrait and the one
+   *        accent colour the border, the portrait frame and the name share.
    */
-  say(id, text) {
-    this.queue.push({ id, text });
+  say(id, text, who = null) {
+    this.queue.push({ id, text, who });
   }
 
   /**
@@ -142,20 +162,34 @@ export class Announcer {
   _start(item) {
     this.current = item;
     this.t = 0;
+    /* WHOEVER THIS LINE BELONGS TO, falling back to whoever this announcer was
+       built as. A line with no speaker is Mr Satan's, which is every line this
+       card carried before Patchfur started using it. */
+    const who = item.who ?? { name: this.name, sub: this.sub, art: this.art, colour: '#ffd24a' };
     this.textEl.textContent = item.text;
-    this.nameEl.textContent = `${this.name}  ·  ${this.sub}`;
+    this.nameEl.textContent = `${who.name}  ·  ${who.sub}`;
     this.el.classList.remove('hidden');
     this.el.classList.add('in');
 
-    /* The portrait is painted ONCE, lazily, and then left alone. It is the
-       same square crop the cutscene box uses (`drawPortrait`), which is
-       measured off the sheet's own content rather than off the whole image —
+    /* The portrait is painted ONCE PER SPEAKER, lazily, and then left alone.
+       It is the same square crop the cutscene box uses (`drawPortrait`), which
+       is measured off the sheet's own content rather than off the whole image —
        see the portrait note in HANDOFF, where taking the crop off the image
-       squashed every leader's face by more than half. */
-    if (this.art && !this._painted) {
-      drawPortrait(this.portraitEl, this.art, '#ffd24a');
-      this._painted = true;
+       squashed every leader's face by more than half.
+
+       KEYED ON THE ART rather than on a boolean, because the card has two
+       speakers now and `_painted` would have left Mr Satan's face over
+       Patchfur's line. A missing sheet leaves whatever was there, which is the
+       ninth non-negotiable's answer: the words are the line, the face is the
+       dressing. */
+    if (who.art && this._dressed !== who.art) {
+      drawPortrait(this.portraitEl, who.art, who.colour ?? '#ffd24a');
+      this._dressed = who.art;
     }
+    /* THE ONE ACCENT, SET IN ONE PLACE. The border, the portrait frame and the
+       name all read `--an-accent` in the stylesheet, so a speaker is a colour
+       and not three rules that have to be kept in step. */
+    this.el.style.setProperty('--an-accent', who.colour ?? 'var(--gold)');
 
     const clip = this.clips.get(item.id);
     this.dur = clip ? clip.dur + HOLD_TAIL : SILENT_DUR;

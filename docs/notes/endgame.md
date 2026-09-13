@@ -140,6 +140,147 @@ keep, and the dragon would have to be taught about it.
 
 ---
 
+## The last five — the hunt before the ending
+
+`systems/lasthunt.js`, and three joins in `main.js`.
+
+Everything above is about the moment the counter reaches 216. This is about the
+twenty minutes before it, which nobody had ever written anything for:
+
+> Make it that if there are less than 5 Mischief in the world, then a countdown
+> begins by the Elder (similar to the countdown that Mr. Satan does) announcing
+> how many are left for the last 5. Whenever one is found, then it says how many
+> more are left and excitement builds up. If they aren't able to find the next
+> one for more than 1 minute, then the Elder should chime in and remind them to
+> unlock the Sense Mischief ability with Ice Whisker at the Ice floating island,
+> if they don't already have it enabled. Once there are 3 or less mischief left,
+> then let's highlight on the mini-map where the next/closest "Sense Mischief"
+> item is, so that it is not just highlighted on the world map, but on the
+> mini-map as well.
+
+**The game already had an answer and the answer was invisible.** Icewhisker's
+Sense Mischief has said, since it was written, that *"hunting the last three
+unbroken barrels across six islands is the part of a 100% run that stops being a
+game and starts being a chore"* — and it is a clan buff, on a shrine, on an
+island a flight away, mentioned nowhere at the moment it would have helped. A
+feature that exists and is never surfaced is a feature nobody has.
+
+### Three things, escalating, and they are deliberately separate
+
+| | when | what |
+| --- | --- | --- |
+| the count | 5 left | she names the number, every time one goes down |
+| the hint | 60s with the number unmoved | *and* nobody in the party has the buff |
+| the map | 3 left | the nearest remaining prop, marked on every pane's minimap |
+
+They are three different promises and they escalate on purpose. **A hint that
+fires immediately is a walkthrough; a hint that never fires is a nine-year-old
+wandering an island for twenty minutes.** Both have happened here.
+
+The map is last, and three rather than five, because between five and four the
+hunt is still a hunt: being shown where to go takes the last discovery in the
+game away from them. Three is the line the clan's own description already drew.
+
+### It is handed the count and never keeps one
+
+`Game.onMischief` is the only thing in the codebase that knows how many props
+are down — it recomputes `props.filter(p => p.scored).length` from scratch on
+every hit, which is also what the HUD is showing. `LastHunt` is handed
+`mischiefTotal - done` and holds nothing of its own about the world.
+
+That is not tidiness, it is the fourth non-negotiable: **nothing regrows and
+nothing is lost, so the MISCHIEF counter is honest.** A countdown able to be
+*wrong* about how many are left would be worse than no countdown, and the only
+way to guarantee it cannot be is to give it nothing to be wrong with. Three
+consequences fall straight out:
+
+- **`tick` is idempotent on the number.** `onMischief` can fire twice for one
+  prop in the frame a dragon's breath crosses a market stall, and "Three!" twice
+  is the elder talking to herself.
+- **It only ever counts downwards.** A count that went up would be a bug
+  somewhere else, and the right response from here is silence rather than a
+  countdown in reverse.
+- **`sync` is not `tick`.** A save taken at three remaining is loaded at three
+  remaining; announcing it over the loading screen is the elder reacting to
+  something that happened yesterday. The map still comes on, because the map is
+  about where the player is *now*.
+
+**Zero is not hers.** The 216th prop is the ending — Patchfur is about to say
+all of this at length, over a sunrise — and a countdown card appearing under the
+finale's first line is two of her talking at once.
+
+### She borrows Mr. Satan's card
+
+`systems/announce.js` had one `#announce` node, one queue, and one speaker baked
+into it. It now takes a speaker per line (`say(id, text, who)`), and Patchfur is
+the second one.
+
+**One card rather than two, and the collision case is the reason.** A second
+`#announce` would be two speakers in the same corner of the screen — and the
+barrel that takes the count to four is quite capable of being the one that
+crosses 80% and opens the tournament. That is precisely the moment this feature
+exists for, so it is precisely the moment they must not talk over each other.
+One queue means they take turns, which is what people do.
+
+The dressing travels with the line: name, subtitle, portrait, and **one accent
+colour** — `--an-accent`, read by the border, the portrait frame and the name,
+so a speaker is one value and not three rules somebody has to keep in step.
+Hers is the parchment `#e8c98a` the finale's dialogue box uses rather than his
+gold; the girls tell a Patchfur scene from a Ryuuseki scene by its colour
+already. The portrait repaint is keyed on **the art** rather than on a boolean —
+`_painted` would have left Mr. Satan's face over her line.
+
+### The map mark, and the one thing it must not be
+
+`Minimap.draw` gained a sixth argument: the prop this pane should point at, or
+null. A ring and a crosshair, pulsing on the map's own slow clock, painted dark
+then bright so it reads over snow, ash and the town's green alike — and drawn
+**before the kittens**, the rule every landmark on that map already follows.
+
+**It is handed the target rather than finding one.** `Game._updateSeek` already
+solves *nearest unscored prop to this kitten* four times a second for the buff;
+a map that went and found its own answer would be a second opinion about the
+same question, free to disagree with the chevron floating over the barrel in the
+world. Which is the one thing it must never do.
+
+That did require one change to `_updateSeek`: it used to `continue` past the
+search for anybody who had not sworn to Icewhisker, so `p.seekTarget` existed
+only for a kitten who already had the answer — and the party this countdown is
+talking to is exactly the party that never went to the ice island. The search
+now runs for everyone; **the chevron in the world is still the buff's alone**,
+because that is what the shrine promised and giving it away here would be paying
+out an oath nobody swore. The map mark needs *either* the oath or the last
+three, which is the other half of *"not just on the world map, but on the
+mini-map as well"*: a kitten who swore has asked for it and gets it whatever the
+count says.
+
+`_seekMarkFor(members)` asks it **per pane**, from that pane's own kittens. Two
+sisters on one screen looking at two different islands are two different answers
+to "the nearest one", and a shared pane takes the first of its members who has
+one rather than averaging two positions into a point neither is standing on.
+
+### The writing is the direction
+
+Seven lines, generated with Mabel like every other Patchfur clip — see
+[voices.md](voices.md), which now carries the measurements. The thing worth
+knowing here is that `text2speech_v2` with a preset takes the text and the voice
+id and **nothing else**: no style field, no direction. So *"excitement builds
+up"* is not something anybody can ask the model for. It is sentence length, and
+it is the one place Patchfur's own house rule — long, unhurried, the only voice
+allowed to take its time — is broken deliberately.
+
+`huntIce` names the clan **and the island**, because a hint that names an
+ability and not a destination is a hint a nine-year-old cannot act on, and the
+island is the half of it she can find on the map. The second telling is shorter,
+and there is never a fourth: a voice that never gives up is a voice a kid learns
+to tune out, which would cost the *countdown* its audience too — same card.
+
+And all of it degrades. The text lives beside the id in `HUNT_LINES`, so with
+`public/voice/` deleted every line still appears on the card and still holds for
+its own length. Ninth non-negotiable.
+
+---
+
 ## The Powerup Kotodama — the endgame
 
 `entities/powerorb.js`, `systems/kotodama.js`, `systems/profile.js`,

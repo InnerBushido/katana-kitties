@@ -103,6 +103,9 @@ import { postsFor } from '../src/world/build.js';
 import { MathDojo, DOJO_RADIUS, DOJO_VIEW_R, inDojoView } from '../src/systems/mathdojo.js';
 import { Orb } from '../src/entities/orb.js';
 import { Minimap, ZOOMS } from '../src/systems/minimap.js';
+import {
+  LastHunt, HUNT_LINES, HUNT_FROM, MAP_FROM, STUCK_FIRST, STUCK_AGAIN, STUCK_MAX,
+} from '../src/systems/lasthunt.js';
 import { Label, labelCacheStats } from '../src/core/label.js';
 import {
   MODES, MODE_BY_ID, modesFor, handicapFor, HANDICAP_MAX, NO_SIDE, ROUND_LIMIT,
@@ -17687,7 +17690,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
      cannot be imported into this file, and a check that only exercised
      `Minimap.draw` would pass forever on a game that never passes him in. */
   ok('main.js hands the map its Ryuuseki',
-    /\.draw\(this\.players, this\.dragons, this\.kotodama, this\.satan, this\.ryu\)/
+    /\.draw\(this\.players, this\.dragons, this\.kotodama, this\.satan,\s+this\.ryu, this\._seekMarkFor\(members\)\)/
       .test(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')));
 
   const RYU_AT = { x: SATAN_TOWN.x + 60, y: 30, z: SATAN_TOWN.z - 40 };
@@ -17747,6 +17750,266 @@ console.log('\n--- one press is not enough, and one player drives ---');
   mapJ.draw([kitten], [], null, null, ryuWith());
   ok('...and not named at world zoom', !said(j.ops, 'Ryuuseki')
     && seatPips(j.ops, mapJ).length === 2);
+
+  /* --- 2c. AND THE LAST ONE STANDING, ONCE THERE ARE THREE ---
+     Icewhisker's Sense Mischief marks the nearest unbroken prop IN THE WORLD,
+     which answers "which way" and not "which island" — and by the last three
+     that is the whole question. The mark is drawn in the map's own
+     coordinates rather than under a `translate`, which is what lets this ask
+     the only question worth asking: is it over the right barrel. */
+  const lastProp = { scored: false, group: { position: { x: 42, y: 3, z: -88 } } };
+  const ring = (ops, map, p) => ops.find((o) => o.length === 5
+    && Math.abs(o[0] - map._px(p.x)) < 0.5 && Math.abs(o[1] - map._py(p.z)) < 0.5
+    && o[2] > 2 * map.dpr);
+
+  const k = rec();
+  const mapK = new Minimap(k.cv, world, 0);
+  mapK.draw([kitten], [], null, null, null, lastProp);
+  ok('the last piece of mischief is marked on the minimap',
+    !!ring(k.ops, mapK, lastProp.group.position));
+
+  const l = rec();
+  const mapL = new Minimap(l.cv, world, 0);
+  mapL.draw([kitten], [], null, null, null, null);
+  ok('...and a map handed none draws nothing extra',
+    !ring(l.ops, mapL, lastProp.group.position) && l.ops.length < k.ops.length,
+    `${l.ops.length} -> ${k.ops.length}`);
+
+  /* A PROP ALREADY OVER IS NOT A DESTINATION, and the map must say so on the
+     same frame rather than one retarget later: `Game._updateSeek` re-solves
+     four times a second, so for up to a quarter of a second after the last
+     barrel goes down the mark it was handed is a barrel lying on its side. */
+  const m = rec();
+  const mapM = new Minimap(m.cv, world, 0);
+  mapM.draw([kitten], [], null, null, null, { ...lastProp, scored: true });
+  ok('...and nothing at all for one that has already been knocked over',
+    !ring(m.ops, mapM, lastProp.group.position));
+
+  /* UNDER THE KITTENS, like every other landmark on this map. The kitten's
+     wedge is drawn under a `translate` to her own map position, so that op is
+     what the mark has to come before — a sister hidden under a landmark is the
+     bug this map has already been fixed for once. */
+  const kitIdx = k.ops.findIndex((o) => o.length === 2
+    && Math.abs(o[0] - mapK._px(kitten.position.x)) < 0.5
+    && Math.abs(o[1] - mapK._py(kitten.position.z)) < 0.5);
+  const ringIdx = k.ops.indexOf(ring(k.ops, mapK, lastProp.group.position));
+  ok('...and it is drawn under the kittens, never over one',
+    kitIdx > 0 && ringIdx > 0 && ringIdx < kitIdx, `${ringIdx} vs ${kitIdx}`);
+
+  /* IT PULSES, and that is not decoration: it is the one mark on this map a
+     kid is looking for rather than glancing at, and a steady ring of the same
+     size as a shrine's halo is a ring she has already learned to ignore. `_t`
+     is the map's own slow clock — the same one the haloes breathe on. */
+  const n = rec();
+  const mapN = new Minimap(n.cv, world, 0);
+  mapN._t = 1.0;
+  mapN.draw([kitten], [], null, null, null, lastProp);
+  const o2 = rec();
+  const mapO = new Minimap(o2.cv, world, 0);
+  mapO._t = 3.0;
+  mapO.draw([kitten], [], null, null, null, lastProp);
+  const rN = ring(n.ops, mapN, lastProp.group.position);
+  const rO = ring(o2.ops, mapO, lastProp.group.position);
+  ok('...and it pulses rather than sitting there',
+    !!rN && !!rO && Math.abs(rN[2] - rO[2]) > 0.5 * mapN.dpr,
+    `${rN ? rN[2].toFixed(1) : '-'} vs ${rO ? rO[2].toFixed(1) : '-'}`);
+}
+
+{
+  /* --- 2d. THE LAST FIVE ---
+     A 100% run ends with a hunt, and the game's answer to that hunt — sworn to
+     Icewhisker, out on the ice island — was invisible at the moment it would
+     have helped. `systems/lasthunt.js` is the elder counting the last five
+     down, one hint when the hunt actually stalls, and the map pointing once it
+     is nearly over.
+
+     EVERY CHECK HERE IS ABOUT WHAT IS SAID, not about whether a field is set.
+     The class holds no world state on purpose — it is handed a count — so all
+     of this is "given this many standing, does she say the right thing". */
+  const heard = [];
+  const hunt = () => {
+    heard.length = 0;
+    return new LastHunt({ announcer: { say: (id, text, who) => heard.push({ id, text, who }) } });
+  };
+
+  const A = hunt();
+  A.tick(40);
+  A.tick(HUNT_FROM + 1);
+  ok('the elder says nothing while there is still a world to wreck',
+    heard.length === 0, heard.map((h) => h.id).join(','));
+
+  A.tick(HUNT_FROM);
+  ok('...and starts counting at five', heard.length === 1 && heard[0].id === 'hunt5');
+
+  for (let i = HUNT_FROM - 1; i >= 1; i--) A.tick(i);
+  ok('...and names every number down to one',
+    heard.map((h) => h.id).join(',') === 'hunt5,hunt4,hunt3,hunt2,hunt1',
+    heard.map((h) => h.id).join(','));
+
+  /* THE 216th IS NOT HERS. Zero left is the ending — Patchfur is about to say
+     all of this at length, over a sunrise, and a countdown card popping up
+     underneath the finale's first line is two of her talking at once. */
+  A.tick(0);
+  ok('...and leaves the last one to the ending', heard.length === HUNT_FROM,
+    heard.map((h) => h.id).join(','));
+
+  /* ONE SENTENCE PER NUMBER, NOT ONE SENTENCE WITH A NUMBER IN IT: a template
+     would make "two" arrive in the same breath as "five", which is a counter
+     rather than an elder. Each line names its own number, and they get shorter
+     as the count comes down, which is what "excitement builds up" is when it
+     is written down as something a check can measure. */
+  const WORD = { 5: 'five', 4: 'four', 3: 'three', 2: 'two', 1: 'one' };
+  ok('...each line naming its own number',
+    Object.entries(WORD).every(([n, w]) => HUNT_LINES[`hunt${n}`].toLowerCase().includes(w)));
+  ok('...and every one of them different from the others',
+    new Set(Object.values(WORD).map((_, i) => HUNT_LINES[`hunt${i + 1}`])).size === HUNT_FROM);
+  ok('...and getting shorter as it builds',
+    HUNT_LINES.hunt1.length < HUNT_LINES.hunt5.length,
+    `${HUNT_LINES.hunt5.length} -> ${HUNT_LINES.hunt1.length}`);
+
+  /* SAID ONCE PER NUMBER. `onMischief` can fire twice for one prop in the
+     frame a dragon's breath crosses a market stall, and the counter is
+     recomputed from scratch each time — so the same count arrives twice, and
+     "Three!" twice is the elder talking to herself. */
+  const B = hunt();
+  B.tick(3);
+  B.tick(3);
+  ok('...and a number said twice is announced once', heard.length === 1);
+
+  /* AND ONLY DOWNWARDS. Nothing regrows — the fourth non-negotiable — so a
+     count that went up would be a bug somewhere else, and the right thing for
+     this file to do about it is nothing rather than a countdown in reverse. */
+  B.tick(4);
+  ok('...and she never counts back up', heard.length === 1,
+    heard.map((h) => h.id).join(','));
+
+  /* --- the map comes on later than the voice ---
+     Between five and four the hunt is still a hunt and being shown where to go
+     takes the last discovery in the game away. Three is the line CLANS already
+     draws for Icewhisker's buff in the first place. */
+  const C = hunt();
+  const mapAt = (n) => { C.tick(n); return C.mapOn; };
+  ok('the map does not point while five are standing', !mapAt(5) && !mapAt(4));
+  ok('...and points once three are left', mapAt(MAP_FROM) && mapAt(2) && mapAt(1));
+  ok('...and stops once there are none', !mapAt(0));
+
+  /* --- the minute, and the one thing it says --- */
+  const D = hunt();
+  D.tick(4);
+  D.update(STUCK_FIRST - 1, false);
+  ok('she gives them a full minute before mentioning Icewhisker',
+    heard.length === 1, heard.map((h) => h.id).join(','));
+  D.update(2, false);
+  ok('...and then does', heard.length === 2 && heard[1].id === 'huntIce');
+  /* A HINT THAT NAMES AN ABILITY AND NOT A DESTINATION IS A HINT A NINE-YEAR-
+     OLD CANNOT ACT ON. "Remind them to unlock the Sense Mischief ability with
+     Ice Whisker at the Ice floating island" — so the line has to carry the
+     clan AND the island, and the island is the half that is actually
+     findable from the map. */
+  ok('...naming the clan', /icewhisker|snowmantle/i.test(HUNT_LINES.huntIce));
+  ok('...and the island it is on', /\b(ice|frozen|frost)\b/i.test(HUNT_LINES.huntIce));
+
+  /* "IF THEY DON'T ALREADY HAVE IT ENABLED." Telling somebody to go and fetch
+     a thing she is holding is the game not looking at her. */
+  const E = hunt();
+  E.tick(3);
+  E.update(STUCK_FIRST * 4, true);
+  ok('...and never says it to a party that already has Sense Mischief',
+    heard.length === 1 && heard[0].id === 'hunt3', heard.map((h) => h.id).join(','));
+
+  /* AND NOT BEFORE THE COUNT HAS STARTED. Two hundred props standing and a
+     party who have been in the Dojo for five minutes are not stuck; they are
+     doing something else. */
+  const F = hunt();
+  F.tick(60);
+  F.update(STUCK_FIRST * 4, false);
+  ok('...nor to a party who have not started the hunt at all', heard.length === 0);
+
+  /* THE CLOCK RESTARTS WHENEVER THE NUMBER MOVES. The minute is about the NEXT
+     one; a pair who took ten minutes to get from five to four have not been
+     stuck since. */
+  const G = hunt();
+  G.tick(4);
+  G.update(STUCK_FIRST * 0.8, false);
+  G.tick(3);
+  G.update(STUCK_FIRST * 0.8, false);
+  ok('...and the minute starts again every time one goes over',
+    heard.every((h) => h.id.startsWith('hunt') && !h.id.startsWith('huntIce')),
+    heard.map((h) => h.id).join(','));
+
+  /* THE SECOND TELLING IS SHORTER, and there is never a fourth. A voice that
+     never gives up is a voice a kid learns to tune out, which would cost the
+     COUNTDOWN its audience as well — it is the same card. */
+  const H = hunt();
+  H.tick(2);
+  H.update(STUCK_FIRST + 1, false);
+  for (let i = 0; i < 5; i++) H.update(STUCK_AGAIN + 1, false);
+  const hints = heard.filter((h) => h.id.startsWith('huntIce'));
+  ok('...she reminds them at most three times, ever',
+    hints.length === STUCK_MAX, `${hints.length} hint(s)`);
+  ok('...and the reminder is shorter than the instruction',
+    HUNT_LINES.huntIce2.length < HUNT_LINES.huntIce.length);
+
+  /* A LOADED GAME ADOPTS ITS COUNT WITHOUT REMARKING ON IT — a save taken at
+     three remaining is loaded at three remaining, and "Three!" over the
+     loading screen is the elder reacting to something that happened
+     yesterday. The MAP still points: that is about where the player is now. */
+  const J = hunt();
+  J.sync(3);
+  ok('a loaded game gets the map without the announcement',
+    heard.length === 0 && J.mapOn);
+  J.tick(2);
+  ok('...and she picks the count up from there', heard.length === 1 && heard[0].id === 'hunt2');
+
+  /* A RESTART PUTS EVERY PROP BACK UP, so "three left" is a fact about a world
+     that no longer exists — and without the reset she would never say it
+     again either, since she only ever announces a number she has not said. */
+  const K = hunt();
+  K.tick(1);
+  K.reset();
+  ok('...and a restart makes her willing to count again',
+    !K.mapOn && !K.counting);
+  K.tick(1);
+  ok('...from the same numbers', heard.length === 2
+    && heard.every((h) => h.id === 'hunt1'));
+
+  /* SHE IS SOMEBODY, NOT A TICKER. The card carries a name, a portrait and an
+     accent per line — see `announce.js` — and hers is the parchment the
+     finale's dialogue box uses rather than Mr Satan's gold: the girls tell a
+     Patchfur scene from a Ryuuseki scene by its colour already. */
+  const L = hunt();
+  L.tick(3);
+  ok('...and every line she says is dressed as her, not as the champion',
+    heard.length === 1 && heard[0].who?.name === 'PATCHFUR'
+    && /^#[0-9a-f]{6}$/i.test(heard[0].who?.colour ?? ''),
+    JSON.stringify(heard[0]?.who ?? null));
+
+  /* --- and the wiring, pinned as text ---
+     `Game` cannot be imported here, and every check above would pass forever
+     on a game that never built a LastHunt at all. These are the five joins
+     that make the feature exist, each one a thing that was actually wired. */
+  const M = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('main.js hands the hunt the same count the HUD is showing',
+    /this\.lastHunt\?\.tick\(this\.world\.mischiefTotal - done\)/.test(M));
+  ok('...and asks whether ANYBODY has Sense Mischief before hinting at it',
+    /this\.lastHunt\?\.update\(dt, this\.players\.some\(\(p\) => !!p\.clan\?\.buff\?\.seek\)\)/
+      .test(M));
+  ok('...and forgets the count on a restart', /this\.lastHunt\?\.reset\(\)/.test(M));
+  ok('...and adopts one from a loaded game',
+    /this\.lastHunt\?\.sync\(W\.mischiefTotal - done\)/.test(M));
+  ok('...and buffers her clips at boot with the rest of the voice',
+    /Object\.keys\(HUNT_LINES\)\.map\(\(id\) => \[id, `\/voice\/\$\{id\}\.mp3`\]\)/.test(M));
+
+  /* THE SEEK TARGET IS SOLVED FOR EVERYBODY AND THE CHEVRON IS STILL THE
+     BUFF'S. `_updateSeek` used to `continue` before the search for anyone who
+     had not sworn, which left `p.seekTarget` undefined for exactly the party
+     the countdown is talking to — and giving the 3D arrow away for free would
+     be paying for an oath nobody swore. */
+  ok('...and the world chevron is still only for a kitten who swore the oath',
+    /const sworn = !!p\.clan\?\.buff\?\.seek;/.test(M)
+    && /if \(!t \|\| t\.scored \|\| !sworn\) \{ p\.seekMark\.visible = false; continue; \}/.test(M));
+  ok('...while the map mark needs either the oath or the last three',
+    /if \(!this\.lastHunt\?\.mapOn && !p\.clan\?\.buff\?\.seek\) continue;/.test(M));
 }
 
 {

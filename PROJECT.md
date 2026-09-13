@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 3334 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 3372 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -477,7 +477,7 @@ other.
 | **Vercel** | hosting `katana-kitties.vercel.app`. Git-connected: push to `main` deploys. Static build, no backend, no env vars. | **`dream-dojo` team scope**, not personal. `vercel --scope dream-dojo` if the CLI default moves. `.vercel/project.json` is gitignored. | Static hosting; no paid feature in use |
 | **GitHub** | the private repo | `InnerBushido` — **pinned repo-locally** so a global config change cannot attribute commits here to a work account. Pushes go through the `gh` CLI credential helper (a headless `git push` fails without it). **`gh` may be signed in as a work account — run `gh auth status` before pushing.** | Free for private repos |
 | **Higgsfield** | all generated art, video and voice | **No unlim allowance** — every generation spends credits, so `use_unlim` stays false unless asked for by name. `get_cost: true` preflights free. **Failed jobs are refunded.** `grok_video` is the reliable model (7.5 credits, ~5s); several others fail or rate-limit. | per-credit |
-| **ElevenLabs** | the voice cast | **No separate account** — reached *through* Higgsfield. ~0.15 credits a line. | via Higgsfield |
+| **ElevenLabs** | the voice cast | **No separate account** — reached *through* Higgsfield. **Preflight it (`get_cost: true`) rather than trusting a figure here** — long quoted at ~0.15 credits a line, measured at **0.30** on 13 Sep 2026. Batches of more than four lines hit a 429 and the over-spill has to be resubmitted; nothing is charged for a submission that failed. | via Higgsfield |
 | **Steam** | a non-Steam shortcut on Richard's own machine, for controller support and Steam Link | no Steamworks account | **$0** — a non-Steam shortcut is free. A real store page needs the Steam Direct fee (~$100 USD per title) and a review |
 
 ### Two things to know before shipping anything publicly
@@ -524,7 +524,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 3334
+the check that would have caught it.** That is why `world-check` is 3372
 assertions.
 
 **And a change a new developer would need to know about gets a line in this
@@ -564,7 +564,7 @@ you are about to change that area, and not before.
 | [help.md](docs/notes/help.md) | the Help panel and the rig that films it |
 | [tournament.md](docs/notes/tournament.md) | the ring, rounds, attacks, ring-outs, the feast |
 | [dragon-hunt.md](docs/notes/dragon-hunt.md) | the seven stars, the grottos, the spire, Ryuuseki |
-| [endgame.md](docs/notes/endgame.md) | the 100% ending, the eight Kotodama, the economy, **the balance page** |
+| [endgame.md](docs/notes/endgame.md) | the 100% ending, the eight Kotodama, the economy, **the last five and the hunt for them**, **the balance page** |
 | [story.md](docs/notes/story.md) | the opening cutscene, the six leaders, the shrine scenes |
 | [world.md](docs/notes/world.md) | the six clans and what each buff changes; the panda |
 | [art.md](docs/notes/art.md) | atlas cells, and the two rules for generating new sprites |
