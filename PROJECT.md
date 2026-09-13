@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 3293 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 3311 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -524,7 +524,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 3293
+the check that would have caught it.** That is why `world-check` is 3311
 assertions.
 
 **And a change a new developer would need to know about gets a line in this
@@ -616,8 +616,12 @@ row per play session** — a session keeps overwriting its own row however long 
 runs, so the five slots are five different games rather than the last five
 half-minutes of one — and a row holds **every kitten who played in that
 session**, not only the ones holding a controller when it was taken, so a girl
-who drops out and comes back picks up her points, her clan and her panda where
-she left them. The record board, the controller calibration and the stick
+who drops out and comes back picks up her points, her clan, her panda **and her
+orbs** where she left them — dropping out keeps everything, and the way to
+leave orbs for somebody else is the **DROP HER ORBS** row beside each kitten's
+DROP OUT. An orb left lying in the town is saved with its coordinates and comes
+back on the same spot. Dropping out also writes a save immediately, since the
+party and the orb positions both just moved. The record board, the controller calibration and the stick
 setting survive a reload the same way. All of it is `localStorage`, so
 none of it follows a child to a phone, to a second machine, or past a cleared
 cache — which is the half of the problem an account would solve and the reason

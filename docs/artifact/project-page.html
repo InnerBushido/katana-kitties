@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 3293 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 3311 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 362 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -1143,7 +1143,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 3293 assertions and why almost none of them are about
+      is why <code>world-check</code> is 3311 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,
@@ -1253,8 +1253,11 @@ git push origin alpha</code></pre>
       play session</b> — a session keeps overwriting its own row however long it runs, so the five
       slots are five different games rather than the last five half-minutes of one — and a row holds
       <b>every kitten who played in that session</b>, not only the ones holding a controller when it
-      was taken, so a girl who drops out and comes back picks up her points, her clan and her panda
-      where she left them. The record board, the controller calibration and the stick setting
+      was taken, so a girl who drops out and comes back picks up her points, her clan, her panda
+      <b>and her orbs</b> where she left them — dropping out keeps everything, and the way to leave
+      orbs for somebody else is the <b>DROP HER ORBS</b> row beside each kitten's DROP OUT. An orb
+      left lying in the town is saved with its coordinates and comes back on the same spot. Dropping
+      out also writes a save immediately, since the party and the orb positions both just moved. The record board, the controller calibration and the stick setting
       survive a reload the same way. All of it is <code>localStorage</code>, so none of it follows a
       child to a phone, to a second machine, or past a cleared cache — which is the half of the
       problem an account would solve and the reason this is still on the list. Accounts and hosted

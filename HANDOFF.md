@@ -310,10 +310,30 @@ player learns to stop reading.
   out, or her sister swaps away from her in the character picker — that second
   one used to bin an afternoon *silently*, without even dropping her orbs — and
   she is still on the row, dimmed and marked `·away`, still in the count. Pick
-  her up again and `_recallPlayer` hands back her score, her clan, her oaths and
-  her panda. **Not her orbs**, when she dropped out: `_leavePlayer` put them in
-  the town where anyone may walk over them, and there are only ever twenty-six.
-  The row says both numbers — "4 kittens, 2 playing".
+  her up again and `_recallPlayer` hands back her score, her clan, her oaths,
+  her panda **and her orbs**. The row says both numbers — "4 kittens, 2
+  playing".
+- **Dropping out keeps her orbs, and putting them down is a button.** Leaving
+  used to tip her whole neck onto the floor — the dealer's supply rule read
+  across from SELLING, and selling is not leaving: a girl who put the
+  controller down for twenty minutes came back to an empty neck and eight orbs
+  shared out among whoever was standing nearest. They now travel in her cast
+  row as a **reservation**, so twenty-six is still twenty-six and nothing is
+  copied. The generous thing is now a thing you can DO: **`NAME — DROP HER n
+  ORBS`** sits above her DROP OUT in the pause menu, goes through the same
+  `Kotodama.drop` the Character Profile uses (the fan, the `shyOf`, the refusal
+  to delete an orb it cannot find ground for), asks first, says how many
+  actually landed, and disappears when she has none left.
+- **A steal cannot be carried out of the game.** 盗 Steal Mischief is a loan,
+  and `settleLoans` looks in three places — loose on the deck, worn by a live
+  player, sold back to the dealer. A leaver's orbs are in none of them, so
+  `Kotodama.reclaimFrom` runs first and hands back anything she only borrowed.
+  It used to be covered by accident, because leaving dropped the orb.
+- **Leaving autosaves.** The party and the orb positions both change at once,
+  and up to twenty-nine seconds of that unwritten is twenty-nine seconds in
+  which closing the tab brings back a kitten who left. `_saveOnPartyChange`
+  still respects the five-minute gate and pushes the next ordinary save out, so
+  one change is one write.
 - **It restores onto the seats being played**, matched by kitten NAME and *only*
   by name, and it says out loud how many are **waiting** rather than dropped.
   The old fallback ("the first row nobody has claimed") handed Ember somebody

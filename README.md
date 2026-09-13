@@ -59,8 +59,11 @@ work out by playing.
    say who played, what orbs they had on and how far the town had come down, so
    you can find the right afternoon; **everybody who played is in one**, even a
    kitten who stopped an hour ago, and picking her back up hands her back her
-   points, her clan and her panda. They live in this browser on this computer
-   and go nowhere else.
+   points, her clan, her panda **and her orbs** — dropping out keeps
+   everything. To leave orbs behind for somebody else there is a **DROP HER
+   ORBS** row beside each **DROP OUT** in the pause menu; they stay lying where
+   she put them, and they are still there when you load that game again. The
+   saves live in this browser on this computer and go nowhere else.
 
 ## Contents
 
