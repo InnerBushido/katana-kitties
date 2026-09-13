@@ -1271,6 +1271,19 @@ export class World {
       put(buildStall(i), x, z, ry, 1, 0, decor);
       this.solids.push({ x, z, r: 2.0 });
     });
+    /* WHERE THE TOWN IS, published off the four things that make it a town.
+       The ending needs to point a camera at the market — "showing the entire
+       destruction of the main island" is a line about roofs, and the honest
+       measurement of "the deepest heap of mischief in the world" is always a
+       bamboo grove — and `Game.townCentre` was a literal pair of numbers in
+       main.js that nothing here knew about. A camera aimed at where the market
+       used to be is the exact failure `SummonScene._markFinale` exists to
+       prevent, so the stalls themselves are what says where it is.
+       @see systems/summonscene.js `_town` */
+    const tc = stalls.reduce((a, [x, z]) => ({ x: a.x + x / stalls.length, z: a.z + z / stalls.length }),
+      { x: 0, z: 0 });
+    const tg = home.heightAt(tc.x, tc.z);
+    this.townCentre = new THREE.Vector3(tc.x, tg ?? 0, tc.z);
 
     /* --- the red bridge, now actually on the way to somewhere ---
        It used to sit off the side of the map spanning nothing. It's on the

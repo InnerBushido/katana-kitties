@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
+import { Label } from '../core/label.js';
 import { PLAYER_STYLE } from '../core/palette.js';
 import { BLESS_STRETCH } from '../entities/player.js';
-import { BIOMES, mergeParts } from '../world/build.js';
+import { BIOMES, mergeParts, pagodaRoof } from '../world/build.js';
 import { poseQuad } from '../entities/critter.js';
 
 /* ---------------------------------------------------------------------------
@@ -103,6 +104,29 @@ const REAL_H = 2.9;
  */
 const WAKE = 2.0;
 /**
+ * How long the model takes to ARRIVE, and how long the Dojo runner stands
+ * there watching it before she goes.
+ *
+ * THE WHOLE CROSS-FADE HAS TO FIT IN THE TAIL. `isles-wake` fires on the end of
+ * "all afternoon." and the next line begins 1.5 seconds later — that is the
+ * beat's own `TAIL`, the held frame after she stops speaking, and it is the
+ * only stretch of the ending with no words over it. Two seconds of dissolve
+ * does not fit in a second and a half, which is why the runner was still half
+ * there when "The islands did not drift apart" began.
+ *
+ * "Maybe the player should stay on screen while the islands fade in, until the
+ * islands are done fading out and when the text starts 'The islands did not
+ * drift apart', can have the player fade out completely before that part
+ * begins."
+ *
+ * So she HOLDS while the world arrives — she is watching it, which is the whole
+ * picture — and then goes, and both are finished inside the tail: 0.5 + 0.6 is
+ * 1.1 seconds against 1.5 available, and the model is up at 1.2.
+ */
+const MODEL_IN = 1.2;
+const RUN_HOLD = 0.5;
+const RUN_OUT = 0.6;
+/**
  * How many tiny people and animals live in the model's main town.
  *
  * "We can show tiny players and animals in the main town slightly moving about
@@ -119,6 +143,30 @@ const WAKE = 2.0;
  */
 const FOLK = 16;
 const BEASTS = 14;
+/**
+ * The mini-bridges' deck: how wide it is, how thick a plank is, how many
+ * planks a span is cut into, and how far into the drift the last of them has
+ * let go.
+ *
+ * THE WIDTH IS WHY THEY WERE INVISIBLE. The first version was a tube of radius
+ * `MINI_R * 0.004` — six hundredths of a unit, which from twenty-six units out
+ * through a 54 degree lens is one pixel, and one pixel of gold is a yellow
+ * line. Six per cent of the model's radius is about the width of a house in
+ * the same model, which is roughly what a bridge is.
+ *
+ * FOURTEEN PIECES IS ENOUGH TO BEND AND FEW ENOUGH TO BREAK. Below about ten
+ * the bow reads as a chain of straight segments; above twenty the individual
+ * pieces are too small to see fall, which is the whole point of breaking it.
+ *
+ * `BR_SNAP` IS A FRACTION OF THE DRIFT, NOT SECONDS. The islands take `DRIFT`
+ * to separate and the bridges have to be gone well inside that; a sixth of it
+ * puts the break in the first third of a second and leaves the rest of the
+ * move to the islands, which is the thing the shot is actually about.
+ */
+const BR_W = MINI_R * 0.06;
+const BR_T = MINI_R * 0.012;
+const BR_SLATS = 14;
+const BR_SNAP = 0.16;
 /** How tall a townsperson is drawn in the model, and an animal. A shade over
  *  life size at this scale — see `MINI_H`, which is the same measurement and
  *  the same argument. Big enough to catch the eye against a house, small
@@ -143,6 +191,98 @@ const BEAST_H = 0.1;
  */
 const HUD_Y = 2.4;
 const HUD_FAT = 3;
+
+/**
+ * How long the angle and the circle stay up, and how they leave.
+ *
+ * THEY USED TO LAST ONE CUE EACH. "An angle" drew an angle for 0.9 seconds,
+ * "a circle" replaced it with a circle, and by "the nerve to jump" the board
+ * was empty — so the sentence that names the three things a bridge is made of
+ * never once had two of them on screen together.
+ *
+ * "When stating 'an angle' we should draw the angle on the screen and keep it
+ * on the screen until the end of the math section. Same with the 'a circle'
+ * part, I think we can have both on screen at the same time... We can start to
+ * fade out the angle and circles and can even have them scale to zero... or
+ * expand out to infinity and disappear/fade out, can have it all faded out by
+ * the time the 'that is all a bridge' part begins."
+ *
+ * SO EACH ONE LATCHES ON ITS OWN WORD AND BOTH LEAVE TOGETHER, on the last cue
+ * before the bridge. The window is measured, not guessed: in `done3` "the
+ * nerve to jump" starts at 11.45 s and "that is all a bridge" at 13.70, so
+ * there are 2.25 seconds to hold and then get out of, and 0.5 + 1.35 fits with
+ * room to spare. Change the recording and this is the number to re-check.
+ *
+ * OUTWARDS, NOT DOWN TO NOTHING. Both readings were offered; blowing them out
+ * past the edge of the model is the one that leaves the shot on the islands —
+ * a diagram shrinking to a point puts the eye in the middle of the frame at
+ * exactly the moment the kittens are jumping the gap.
+ */
+const SHAPE_IN = 0.45;
+const SHAPE_HOLD = 0.5;
+const SHAPE_OUT = 1.35;
+const SHAPE_BLOW = 2.4;
+
+/**
+ * The two heights the overlay is drawn at, and why they are not one.
+ *
+ * "I think we can have both on screen at the same time, just have the angle
+ * part underneath the circle." Both of them were on `HUD_Y` because only one
+ * of them was ever up; with both up they occupy the same plane and the arms
+ * read as chords of the bottom ring.
+ *
+ * The angle drops nearly to the islands — it is a measurement OF the world, so
+ * it belongs on it — and the cone of circles starts above head height and
+ * climbs from there. From the ending's camera that is a floor plan with a
+ * lantern of rings over it, which is the picture.
+ */
+/**
+ * The bridge run: how fast they cross, where they start, and how often one of
+ * them does something.
+ *
+ * THEY ARE ALREADY RUNNING WHEN THE LIGHTS COME UP. "We should already have
+ * the animated characters spawned in before the camera starts fading in and
+ * have them running towards the bridge already." The old seed put every kitten
+ * at a NEGATIVE position along the deck — off the end and invisible — and let
+ * them walk on one at a time, so the first thing the shot showed was an empty
+ * bridge and then a queue. `BR_HEAD` is a random head start each, so the fade
+ * lifts on four cats already mid-crossing.
+ *
+ * AND STAGGERED BY DICE, NOT BY INDEX. The old offset was `-i * 0.22`: four
+ * cats in a perfectly even line, which is a parade. A random head start and a
+ * random lane wobble is four kids who set off when they felt like it.
+ *
+ * THE RATE CAME DOWN WITH IT. `bridge-run` holds 9.4 seconds; the furthest
+ * back starts at 0.02 and has 1.33 of deck to clear, which at 0.17 is 7.8
+ * seconds and still leaves the lens a beat of empty bridge before the arena —
+ * the picture that line wants under it, and the reason the old rate was what
+ * it was.
+ */
+const BR_RATE = 0.17;
+const BR_HEAD = [0.02, 0.34];
+
+/** How long one flourish lasts, and the gap between them. Both ends random per
+ *  kitten per go: "jumping randomly, multiple times, with random pauses between
+ *  jumps, to show they are having random/chaotic fun." */
+const HOP_DUR = [0.42, 0.34];
+const HOP_GAP = [0.30, 1.30];
+const ACT_DUR = [0.38, 0.30];
+const ACT_GAP = [1.10, 2.40];
+
+/** The four things a kitten might do on the way across, and they are the four
+ *  the game actually has. "Can even have some swinging swords or using random
+ *  abilities like the Orb or Smash, or Dash abilities, to show players what
+ *  abilities they can unlock later." */
+const BR_ACTS = ['swing', 'orb', 'smash', 'dash'];
+
+const ANG_Y = 0.55;
+const CIR_Y = HUD_Y * 1.15;
+
+/** The order the Dojo's cues arrive in. The overlay needs to know whether a
+ *  phase is BEFORE or AFTER the word that lit it, which is a question about
+ *  sequence and not about the current cue's name. */
+const ISLE_CUES = ['isles-wake', 'isles-in', 'isles-drift', 'isles-cross',
+  'isles-angle', 'isles-circle', 'isles-leap', 'isles-bridge'];
 
 const TAU = Math.PI * 2;
 
@@ -337,7 +477,14 @@ export class FinaleShow {
     this.beasts = null;
     this.model = null;
     this.bridges = null;
+    this.slats = null;
+    this.gates = null;
+    this.slatMesh = null;
+    this.gateMesh = null;
     this.shapes = null;
+    this._reach = null;
+    this.arms = null;
+    this.wedges = null;
     this.satan = null;
     this._drivers = [];
     this._disposables = [];
@@ -553,14 +700,23 @@ export class FinaleShow {
     if (this.world.bridge) {
       const b = this.world.bridge;
       const host = this._isleNearest(b.x, b.z);
-      const span = new THREE.Mesh(
-        this._keep(new THREE.BoxGeometry(Math.max(0.7, 18 * this.scaleK), 0.12, 0.5)),
-        this._keep(new THREE.MeshBasicMaterial({
-          color: 0xe0512c, transparent: true, opacity: 0, toneMapped: false,
-          depthWrite: false,
-        }))
-      );
-      this.modelMats.push(span.material);
+      /* AND IT IS AN ACTUAL BRIDGE NOW, NOT A RED DASH. It was one box —
+         0.7 x 0.12 x 0.5 — which at the distance this shot is framed at is a
+         scratch, and it is the thing the whole last line of the beat is about:
+         "make sure to keep the bridge on the hologram as it is currently
+         disappearing before the scene is over." Four cats shrink onto it, so
+         it has to be somewhere you can see them land.
+
+         SAME VOCABULARY AS THE SPANS BETWEEN THE ISLANDS — arched deck,
+         gold rails, a torii at each end — because it is the same kind of
+         object, and because the eye has just spent ten seconds learning to
+         read that shape as a crossing.
+
+         AND IT RIDES `holo`, NOT `bridgeMat`. The connecting spans dim with
+         `dk` as the islands separate, which is the whole point of them; this
+         one must not, because the islands have already separated by the time
+         anybody jumps at it. */
+      const span = new THREE.Mesh(this._keep(this._miniSpanGeo()), this.holo);
       span.position.set(
         b.x * this.scaleK - (host?.home.x ?? 0),
         0.3,
@@ -629,20 +785,69 @@ export class FinaleShow {
       if (!inside(s.x, s.z)) continue;
       const rr = s.r * K;
       if (s.r >= 1.6) {
-        /* A BUILDING: a plaster box with a dark pagoda cap, which is the
-           silhouette of every structure in this game from twenty units up. */
-        const h = s.r * 1.55 * K;
-        parts.push(boxAt(rr * 1.5, h, rr * 1.5, pal.rock, lx(s.x), 0.08 + h / 2, lz(s.z)));
-        parts.push(coneAt(rr * 1.25, h * 0.55, 0x6e3a33,
-          lx(s.x), 0.08 + h + h * 0.26, lz(s.z), 4));
+        /* A BUILDING, AND IT IS THE GAME'S OWN ROOF. "The buildings on the
+           holographic islands look like normal buildings. We should use the
+           buildings with the cool oriental roofs that we have in the main
+           island as they should look similar or be the same if possible. Can
+           just use those 3D models and shrink them down."
+
+           It was a plaster box with a four-sided cone on it, which from
+           twenty-six units out is a hut with a party hat. `pagodaRoof` is the
+           real one — the flared eaves and the kicked-up corners that
+           `build.js` says do "most of the work of selling Japan" — and it takes
+           its detail as arguments, so the same function that builds a house you
+           can walk around builds this one at three rings and two segments a
+           side. Thirty-three vertices, and it is unmistakably the same roof.
+
+           SHRINKING THE ACTUAL MESH WAS THE OTHER READING AND IT IS WORSE.
+           `buildHouse` returns eleven parts with a lantern and a door frame on
+           it; four hundred of those merged is a quarter of a million triangles
+           to draw a town the size of a saucer. The SHAPE is what has to be the
+           same, and the shape is one call. */
+        const h = s.r * 1.3 * K;
+        const hw = rr * 0.72;
+        parts.push(boxAt(hw * 2, h, hw * 2, pal.rock, lx(s.x), 0.08 + h / 2, lz(s.z)));
+        /* The timber under the eaves, which is what stops a white box from
+           reading as a white box. */
+        parts.push(boxAt(hw * 2.1, h * 0.12, hw * 2.1, 0x6b4a34,
+          lx(s.x), 0.08 + h * 0.94, lz(s.z)));
+        const roof = pagodaRoof(hw, hw, h * 0.62,
+          { overhang: 0.55, cornerLift: 0.5, rings: 3, perSide: 2 });
+        paint(roof, 0x4a4a6e);
+        roof.translate(lx(s.x), 0.08 + h * 0.96, lz(s.z));
+        parts.push(roof);
       } else {
-        /* A TREE. Thinned, because the autumn and dusk islands carry 180
-           each and a model of a forest is a green disc either way — every
-           third one keeps the canopy legible and the merge cheap. */
+        /* A TREE, WITH A TRUNK UNDER IT. Thinned, because the autumn and dusk
+           islands carry 180 each and a model of a forest is a green disc either
+           way — every third one keeps the canopy legible and the merge cheap.
+           The trunk is four more triangles and it is the difference between a
+           tree and a green cone. */
         if ((trees++) % 3) continue;
         const h = Math.max(0.12, s.r * 3.4 * K);
-        parts.push(coneAt(Math.max(0.05, rr * 2.6), h, pal.grassDark,
-          lx(s.x), 0.08 + h / 2, lz(s.z), 5));
+        parts.push(cylAt(rr * 0.5, rr * 0.6, h * 0.4, 0x6b4a34,
+          lx(s.x), 0.08 + h * 0.2, lz(s.z), 4));
+        parts.push(coneAt(Math.max(0.05, rr * 2.4), h * 0.85, pal.grassDark,
+          lx(s.x), 0.08 + h * 0.6, lz(s.z), 5));
+      }
+    }
+
+    /* --- the bamboo, where the bamboo really is --------------------------
+       "Can add some low poly bamboo or trees even to make replica look
+       similar." `world.groves` is the list the canes are actually planted from
+       — the same one the ending's camera uses to find the forest it opens on —
+       so the two stands on the model are the two stands the girls walked to.
+       Ten canes each rather than eighty: at this scale a cane is a hair, and
+       what the eye is reading is that there is a green patch out past the
+       crossing with something growing in it. */
+    for (const grove of this.world.groves ?? []) {
+      if (!inside(grove.x, grove.z)) continue;
+      const n = 10;
+      for (let i = 0; i < n; i++) {
+        const a = i * 2.39996;
+        const rr = Math.sqrt((i + 0.5) / n) * grove.r * K * 0.8;
+        const h = 5.5 * K;
+        parts.push(cylAt(0.16 * K, 0.2 * K, h, 0x7bb05a,
+          lx(grove.x) + Math.cos(a) * rr, 0.08 + h / 2, lz(grove.z) + Math.sin(a) * rr, 4));
       }
     }
 
@@ -700,80 +905,286 @@ export class FinaleShow {
        re-scaled cannot leave a circle here at the old size. */
     const dc = this.world.dojoCentre;
     if (dc && inside(dc.x, dc.z)) {
+      /* AND IT IS DRAWN THE WAY THE DOJO IS DRAWN. "The dojo of the turning
+         circle holographic island can also look more like the real thing with
+         the black circle in the center with the line graph look." It was a pale
+         ring on grass, which is the one thing on that island the ring is NOT
+         painted on: the real floor is a dark plate with graph paper on it and a
+         white circle over the top, and it is the most recognisable mark in the
+         game to anybody who has stood in it. Every number here comes off
+         `MathDojo`'s own — R is 24, the plate reaches R + 8, the paper is ruled
+         at R/4 — so a lesson re-scaled cannot leave a diagram here at the old
+         size.
+
+         THE MODEL OF THE ISLAND THE AUDIENCE IS STANDING ON. That is why it is
+         worth the eleven parts: the hologram is floating over the real one, and
+         a kid who looks down and then looks up should see the same mark twice. */
       const dr = 24 * K;
-      parts.push(cylAt(dr, dr, 0.02, 0xf4ecd8, lx(dc.x), 0.1, lz(dc.z), 22));
-      parts.push(cylAt(dr * 0.9, dr * 0.9, 0.03, pal.grass, lx(dc.x), 0.11, lz(dc.z), 22));
+      const plate = (24 + 8) * K;
+      parts.push(cylAt(plate, plate, 0.02, 0x141026, lx(dc.x), 0.1, lz(dc.z), 24));
+      /* The graph paper: the two axes, and four rules either side of them. */
+      for (let i = -4; i <= 4; i++) {
+        if (Math.abs(i) * 6 * K > plate) continue;
+        const off = i * 6 * K;
+        const c = i === 0 ? 0x9fc0ea : 0x4a6fa5;
+        const w = i === 0 ? 0.035 * 24 * K : 0.018 * 24 * K;
+        parts.push(boxAt(plate * 1.9, 0.006, w, c, lx(dc.x), 0.115, lz(dc.z) + off));
+        parts.push(boxAt(w, 0.006, plate * 1.9, c, lx(dc.x) + off, 0.115, lz(dc.z)));
+      }
+      /* ...and the circle itself, as a ring rather than as a disc: a filled
+         white plate would bury the paper it is supposed to be drawn on. */
+      parts.push(cylAt(dr, dr, 0.014, 0xf4ecd8, lx(dc.x), 0.125, lz(dc.z), 32));
+      parts.push(cylAt(dr * 0.94, dr * 0.94, 0.03, 0x141026, lx(dc.x), 0.128, lz(dc.z), 32));
     }
 
     return parts;
   }
 
   /**
-   * The mini-bridges, in the DBZ idiom, and they only exist while the islands
-   * are one place.
+   * The mini-bridges: red-lacquered causeways with a torii at each end, and
+   * they come apart when the islands do.
    *
    * "Can even have mini-bridges between them that disappear when they start to
    * separate to symbolize the lost connection. Can have a DBZ reference art
    * style for the bridge, like a 'Snake Way' way of representing them being
-   * connected if it looks nice." So each one is a winding gold ribbon that
-   * humps over the gap rather than a straight plank — and there is exactly one
-   * per island, running to whichever neighbour the pack left it leaning
-   * against, which makes the set a spanning tree: every island reachable from
-   * the town, nothing reachable two ways. That is the shape the line is about.
+   * connected if it looks nice." There is exactly one per island, running to
+   * whichever neighbour the pack left it leaning against, which makes the set a
+   * spanning tree: every island reachable from the town, nothing reachable two
+   * ways. That is the shape the line is about.
    *
-   * BUILT ONCE, IN HUDDLE SPACE, AND NEVER MOVED. They have no meaning once
-   * the islands are apart — that is the point of them — so animating their
-   * ends across the drift would be work spent on a thing that is fading out.
+   * IT USED TO BE A HAIRLINE TUBE AND THAT IS WHAT IT LOOKED LIKE. "There are
+   * the bridges between the holographic islands, but they are hard to see and
+   * are too small. They look like just yellow lines. Maybe we can improve the
+   * way those bridges look, to look more oriental and cool. Can look more
+   * dragon bridges, connecting the islands together." Six hundredths of a unit
+   * of gold tube at twenty-six units out is one pixel, and one pixel of
+   * anything is a line. So it is a DECK now — vermillion planks with gold
+   * rails, on the Snake Way curve, with a little red gate standing at each end
+   * of it, which is the same vocabulary the real crossing on the home island
+   * is built in.
+   *
+   * AND IT BENDS, AND THEN IT BREAKS. "When the islands are shaking, they can
+   * have an animated bend or shader to show them bending with the islands
+   * before snapping and breaking when the islands separate." That is why this
+   * is a chain of SLATS rather than one tube: every piece rides the island its
+   * own end is anchored to, so the earthquake bows the span for free and the
+   * drift tears it in half without a line of code about either. See
+   * `_stepBridges`, which is the whole of the animation and is thirty lines
+   * because the geometry is doing the work.
+   *
+   * ONE DRAW CALL FOR ALL OF IT, which is the other reason for slats. Six
+   * spans of fourteen pieces is eighty-four little meshes and would cost more
+   * per frame than the model they are standing between; as two `InstancedMesh`
+   * es it is two. Same argument as `_buildFolk`.
    */
   _buildMiniBridges() {
     this.bridges = new THREE.Group();
     this.bridgeMat = this._keep(new THREE.MeshBasicMaterial({
-      color: 0xf0c14b, transparent: true, opacity: 0,
-      toneMapped: false, depthWrite: false,
+      vertexColors: true, transparent: true, opacity: 0,
+      toneMapped: false, depthWrite: false, side: THREE.DoubleSide,
     }));
     this.model.add(this.bridges);
+    this.slats = [];
+    this.gates = [];
+    this.slatMesh = null;
+    this.gateMesh = null;
+
+    /* --- where each span runs, and how its ends are anchored ------------- */
+    const spans = [];
     for (const isl of this.isles) {
       const p = isl.parent;
       if (!p) continue;
-      const ax = isl.near.x;
-      const az = isl.near.z;
-      const bx = p.near.x;
-      const bz = p.near.z;
-      const dx = bx - ax;
-      const dz = bz - az;
+      const dx = p.near.x - isl.near.x;
+      const dz = p.near.z - isl.near.z;
       const len = Math.hypot(dx, dz) || 1;
       /* FROM RIM TO RIM, not centre to centre — a road that starts in the
          middle of an island is a road through a town. */
       const ux = dx / len;
       const uz = dz / len;
-      const x0 = ax + ux * isl.r * 0.92;
-      const z0 = az + uz * isl.r * 0.92;
-      const x1 = bx - ux * p.r * 0.92;
-      const z1 = bz - uz * p.r * 0.92;
+      const x0 = isl.near.x + ux * isl.r * 0.92;
+      const z0 = isl.near.z + uz * isl.r * 0.92;
+      const x1 = p.near.x - ux * p.r * 0.92;
+      const z1 = p.near.z - uz * p.r * 0.92;
       const span = Math.hypot(x1 - x0, z1 - z0);
-      /* THE SNAKE. Four control points, alternating either side of the
-         straight line and rising over the middle, which is Snake Way in the
-         one gesture that reads at this size. */
+      /* THE SNAKE, FLATTENED. The old wobble was a fifth of the span either
+         side, which on a ribbon reads as Snake Way and on a deck two hundredths
+         wide reads as a road that has been dropped. An eighth keeps the gesture
+         and lets the thing look like a bridge. */
       const pts = [];
       const px = -uz;
       const pz = ux;
       for (let i = 0; i <= 4; i++) {
         const u = i / 4;
-        const wob = Math.sin(u * Math.PI * 2) * span * 0.22;
-        const lift = Math.sin(u * Math.PI) * (span * 0.3 + 0.18)
-          + (isl.nearY - p.nearY) * (1 - u) * 0 + (p.nearY - isl.nearY) * u;
+        const wob = Math.sin(u * Math.PI * 2) * span * 0.12;
+        const lift = Math.sin(u * Math.PI) * (span * 0.24 + 0.18)
+          + (p.nearY - isl.nearY) * u;
         pts.push(new THREE.Vector3(
           x0 + (x1 - x0) * u + px * wob,
           0.14 + lift,
           z0 + (z1 - z0) * u + pz * wob
         ));
       }
-      const curve = new THREE.CatmullRomCurve3(pts);
-      const geo = this._keep(new THREE.TubeGeometry(
-        curve, 20, Math.max(0.012, MINI_R * 0.004), 4, false
-      ));
-      this.bridges.add(new THREE.Mesh(geo, this.bridgeMat));
+      spans.push({ curve: new THREE.CatmullRomCurve3(pts), a: isl, b: p });
     }
+    if (!spans.length) return;
+
+    /* --- one plank, one gate, and then eighty copies of each ------------- */
+    const deck = [
+      boxAt(BR_W, BR_T, 1, 0xd8482f, 0, BR_T * 0.5, 0),
+      boxAt(BR_T * 0.5, BR_T * 2.1, 1, 0xf0c14b, -BR_W * 0.5, BR_T * 1.5, 0),
+      boxAt(BR_T * 0.5, BR_T * 2.1, 1, 0xf0c14b, BR_W * 0.5, BR_T * 1.5, 0),
+    ];
+    const slatGeo = this._keep(mergeParts(deck));
+    for (const g of deck) g.dispose();
+    /* A TORII, ONE UNIT TALL, so one instance scale is its height. Two posts, a
+       lintel over them and a gold tie under it — the same four shapes the real
+       ones in the world are made of and the same four `_isleDetail` draws. */
+    const gate = [
+      boxAt(BR_T * 0.7, 1, BR_T * 0.7, 0xd8482f, -BR_W * 0.62, 0.5, 0),
+      boxAt(BR_T * 0.7, 1, BR_T * 0.7, 0xd8482f, BR_W * 0.62, 0.5, 0),
+      boxAt(BR_W * 2.0, BR_T * 0.9, BR_T * 1.0, 0xe8623f, 0, 1.0, 0),
+      boxAt(BR_W * 1.6, BR_T * 0.6, BR_T * 0.8, 0xf0c14b, 0, 0.82, 0),
+    ];
+    const gateGeo = this._keep(mergeParts(gate));
+    for (const g of gate) g.dispose();
+
+    this.slatMesh = new THREE.InstancedMesh(
+      slatGeo, this.bridgeMat, spans.length * BR_SLATS);
+    this.gateMesh = new THREE.InstancedMesh(gateGeo, this.bridgeMat, spans.length * 2);
+    this.bridges.add(this.slatMesh, this.gateMesh);
+
+    const M = new THREE.Matrix4();
+    const pos = new THREE.Vector3();
+    const tan = new THREE.Vector3();
+    const scl = new THREE.Vector3();
+    const q = new THREE.Quaternion();
+    const FWD = new THREE.Vector3(0, 0, 1);
+    const home = (isl) => new THREE.Vector3(isl.near.x, isl.nearY, isl.near.z);
+    let gi = 0;
+    for (const sp of spans) {
+      const total = sp.curve.getLength();
+      const seg = total / BR_SLATS;
+      for (let i = 0; i < BR_SLATS; i++) {
+        const u = (i + 0.5) / BR_SLATS;
+        sp.curve.getPointAt(u, pos);
+        sp.curve.getTangentAt(u, tan);
+        q.setFromUnitVectors(FWD, tan.normalize());
+        /* WHICH ISLAND THIS PIECE BELONGS TO. The near half rides the child and
+           the far half rides its parent, which is what makes the span tear in
+           the middle when they separate rather than sliding off one end. */
+        const isl = u < 0.5 ? sp.a : sp.b;
+        const anchor = home(isl);
+        this.slats.push({
+          isl,
+          rel: pos.clone().sub(anchor),
+          quat: q.clone(),
+          len: seg * 1.04,
+          u,
+          seed: Math.random() * TAU,
+          /* WHICH WAY THE PIECE GOES WHEN IT LETS GO, and how it turns doing
+             it. Random per piece and fixed at build, so a broken bridge falls
+             the same way every time this scene plays and no two pieces fall
+             alike. */
+          axis: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5,
+            Math.random() - 0.5).normalize(),
+          away: new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5)
+            .normalize().multiplyScalar(0.4 + Math.random() * 0.6),
+        });
+      }
+      /* ...and the gate at each end, standing on the land rather than on the
+         deck: `0` and `1` of the curve are the rims themselves. */
+      for (const [u, isl] of [[0, sp.a], [1, sp.b]]) {
+        sp.curve.getPointAt(u, pos);
+        sp.curve.getTangentAt(u, tan);
+        q.setFromUnitVectors(FWD, tan.normalize());
+        const anchor = home(isl);
+        M.compose(pos, q, scl.set(1, BR_W * 1.5, 1));
+        this.gateMesh.setMatrixAt(gi, M);
+        this.gates.push({ isl, rel: pos.clone().sub(anchor), quat: q.clone(), ix: gi });
+        gi++;
+      }
+    }
+    this.gateMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /**
+   * The bridges bowing, and then coming apart.
+   *
+   * NOTHING HERE IS A SPECIAL CASE FOR EITHER. Every slat is positioned as
+   * "wherever my island is, plus the offset I was built at", so an island that
+   * shakes shakes its half of the span and an island that leaves takes its half
+   * with it. The bow and the break are the two things added on top of that, and
+   * both are solved from one number.
+   *
+   * THE MIDDLE GOES FIRST. `thresh` is smallest at `u = 0.5` and largest at the
+   * ends, so the break travels outwards from the centre of the span toward the
+   * two shores — which is what a rope bridge under tension does and is also the
+   * picture the line wants: the connection fails in the middle, not at the
+   * anchors.
+   *
+   * @param {number} on how far in the model is, 0..1
+   * @param {number} dk how far apart the islands have drifted, 0..1
+   * @param {number} shake how hard the ground is moving right now
+   */
+  _stepBridges(on, dk, shake) {
+    if (!this.slatMesh) return;
+    /* GONE BY THE TIME THEY ARE A THIRD OF THE WAY OUT, so the picture is "the
+       roads break and then the islands go", which is the order the sentence
+       puts them in — and slowly enough that the pieces are seen to fall.
+
+       AND IT IS `BR_SNAP` THAT SAYS WHEN, not a second number beside it. The
+       tear finishes at `BR_SNAP` and the light goes out at twice that, so the
+       pieces are visibly loose before they are gone; a hand-typed 2.2 here
+       drifted past a third the moment the snap was re-timed, which is exactly
+       the check that caught it. */
+    const linked = Math.max(0, 1 - dk / (BR_SNAP * 2));
+    this.bridgeMat.opacity = on * linked * 0.95;
+    const show = this.bridgeMat.opacity > 0.02;
+    this.slatMesh.visible = show;
+    this.gateMesh.visible = show;
+    if (!show) return;
+
+    const M = this._bm ?? (this._bm = new THREE.Matrix4());
+    const pos = this._bp ?? (this._bp = new THREE.Vector3());
+    const scl = this._bs ?? (this._bs = new THREE.Vector3());
+    const q = this._bq ?? (this._bq = new THREE.Quaternion());
+    const q2 = this._bq2 ?? (this._bq2 = new THREE.Quaternion());
+
+    this.slats.forEach((s, i) => {
+      const P = s.isl.g.position;
+      pos.set(P.x + s.rel.x, P.y + s.rel.y, P.z + s.rel.z);
+      q.copy(s.quat);
+      let k = 1;
+      if (shake > 0.001) {
+        /* THE BOW. Deepest in the middle of the span and nothing at the shores,
+           breathing at its own rate per bridge — a deck under strain, not a
+           deck being shaken. */
+        const bow = Math.sin(s.u * Math.PI);
+        const w = shake * bow;
+        pos.y -= w * (1.4 + Math.sin(this.t * 5.5 + s.seed));
+        pos.x += Math.sin(this.t * 8 + s.seed) * w * 1.1;
+        pos.z += Math.cos(this.t * 7 + s.seed * 1.3) * w * 1.1;
+      }
+      const br = dk / BR_SNAP - (0.15 + Math.abs(s.u - 0.5) * 1.7);
+      if (br > 0) {
+        pos.y -= br * br * 7;
+        pos.x += s.away.x * br * 2.2;
+        pos.z += s.away.z * br * 2.2;
+        q.multiply(q2.setFromAxisAngle(s.axis, br * 4.5));
+        k = Math.max(0, 1 - br * 1.1);
+      }
+      M.compose(pos, q, scl.set(k, k, s.len * k));
+      this.slatMesh.setMatrixAt(i, M);
+    });
+    this.slatMesh.instanceMatrix.needsUpdate = true;
+
+    for (const g of this.gates ?? []) {
+      const P = g.isl.g.position;
+      pos.set(P.x + g.rel.x, P.y + g.rel.y, P.z + g.rel.z);
+      M.compose(pos, g.quat, scl.set(1, BR_W * 1.5, 1));
+      this.gateMesh.setMatrixAt(g.ix, M);
+    }
+    this.gateMesh.instanceMatrix.needsUpdate = true;
   }
 
   /**
@@ -867,6 +1278,58 @@ export class FinaleShow {
     this._m = new THREE.Matrix4();
   }
 
+  /**
+   * The red bridge, in the model, as one merged mesh.
+   *
+   * ITS LENGTH IS THE REAL ONE'S. `18 * scaleK` is the world's span through the
+   * model's own scale, floored at two units so that a very large world cannot
+   * shrink the one landmark the beat ends on down to nothing again.
+   *
+   * ALONG X, because `_stepBridge` already says the deck is the x axis and the
+   * two have to agree — the kittens who run it full-size and the kittens who
+   * land on it here are reading the same fact about the same bridge.
+   */
+  _miniSpanGeo() {
+    const len = Math.max(2.0, 18 * this.scaleK);
+    const W = BR_W * 1.3;
+    const T = BR_T;
+    const N = 11;
+    const rise = Math.min(len * 0.17, W * 1.5);
+    const parts = [];
+    for (let i = 0; i < N; i++) {
+      const u = (i + 0.5) / N;
+      const x = (u - 0.5) * len;
+      /* THE ARCH, which is the silhouette that says taiko-bashi and not plank.
+         Built as eleven flat slats stepped up a sine rather than as a curved
+         surface: it is the same trick the spans use and it merges to 264
+         triangles. */
+      const y = Math.sin(u * Math.PI) * rise;
+      parts.push(boxAt(len / N * 1.06, T, W, 0xd8482f, x, y, 0));
+      parts.push(boxAt(len / N * 1.06, T * 2.4, T * 0.6, 0xf0c14b, x, y + T * 1.6, -W * 0.5));
+      parts.push(boxAt(len / N * 1.06, T * 2.4, T * 0.6, 0xf0c14b, x, y + T * 1.6, W * 0.5));
+    }
+    /* A TORII AT EACH END, standing on the land the deck starts from. */
+    for (const s of [-1, 1]) {
+      const x = s * len * 0.5;
+      const h = W * 1.6;
+      parts.push(boxAt(T * 0.7, h, T * 0.7, 0xd8482f, x, h / 2, -W * 0.62));
+      parts.push(boxAt(T * 0.7, h, T * 0.7, 0xd8482f, x, h / 2, W * 0.62));
+      parts.push(boxAt(T * 1.0, T * 0.9, W * 2.0, 0xe8623f, x, h, 0));
+      parts.push(boxAt(T * 0.8, T * 0.6, W * 1.6, 0xf0c14b, x, h * 0.82, 0));
+    }
+    const geo = mergeParts(parts);
+    for (const g of parts) g.dispose();
+    return geo;
+  }
+
+  /** One unit circle, shared by every kitten's flourish ring. Built on first
+   *  ask because `_buildCast` runs before `_buildShapes`, and there is exactly
+   *  one of it either way. */
+  _bridgeRing() {
+    if (!this._ringGeo) this._ringGeo = this._keep(ringGeo(40));
+    return this._ringGeo;
+  }
+
   _isleNearest(x, z) {
     let best = null;
     let bd = Infinity;
@@ -930,7 +1393,49 @@ export class FinaleShow {
     };
     for (let i = 0; i < PLAYER_STYLE.length; i++) {
       this.arms.push({ geo: fat(lineGeo(2)) });
-      this.wedges.push({ geo: fat(lineGeo(18)), tick: { geo: fat(lineGeo(2)) } });
+      /* AND EVERY WEDGE SAYS WHAT IT IS WORTH. "With the 'angle' part can show
+         the theta signa and value for the values of the angle being made by the
+         connecting parts." Same glyph, same colour and the same `live` reserve
+         as the Dojo's own readout — this is the same measurement in a smaller
+         world, and a kid who has stood in the circle should recognise it.
+
+         `live` IS NOT OPTIONAL HERE. The number moves every frame while the
+         four of them walk, and a `setText` that mints a texture per distinct
+         string is the bug that used to kill the Dojo on a phone: four labels
+         cycling 0-360 is 1440 supersampled canvases that are never freed. See
+         `CACHE` in label.js. The reserve is the widest string it can ever
+         show. */
+      /* AND IT IS THE ONE PIECE OF THIS FILE THAT NEEDS A DOM. `Label` paints
+         its glyphs onto a canvas, and `world-check` builds this whole show in
+         Node to assert against it — so a label built unconditionally turns
+         every finale assertion in the suite into a `document is not defined`.
+
+         NOT SHIMMED, SKIPPED. A fake canvas in the checker would be a second
+         implementation of text measurement that nothing else in the game uses,
+         and the honest statement is the ninth non-negotiable's: the angle is
+         still drawn, still measured and still correct without its readout, in
+         exactly the way a missing sprite sheet costs a gesture and not a
+         character. Everything downstream tests for the label. */
+      const lbl = typeof document === 'undefined' ? null : new Label('', {
+        height: 2.0, size: 62, color: '#ffd76a', stroke: '#2a1c06', strokeWidth: 9,
+        fixedScreenSize: true, live: 'θ = 360°',
+      });
+      if (lbl) lbl.visible = false;
+      /* A LIVE LABEL OWNS ITS CANVAS AND NOTHING ELSE WILL FREE IT. `Label` has
+         no `dispose` — the static ones are shared out of a cache that never
+         evicts, so there is nothing to free — but a `live` one mints its own
+         texture, and the ending can be played more than once in an afternoon.
+         Three pieces, handed to the same list that frees every geometry and
+         material in this file. */
+      if (lbl) {
+        this._keep(lbl.mat);
+        this._keep(lbl.mat.map);
+        this._keep(lbl.mesh.geometry);
+        this.angleFx.add(lbl);
+      }
+      this.wedges.push({
+        geo: fat(lineGeo(18)), tick: { geo: fat(lineGeo(2)) }, lbl,
+      });
     }
     this.shapes.add(this.angleFx);
 
@@ -1010,9 +1515,18 @@ export class FinaleShow {
           { cols: 1, rows: 1, mirror: false });
         this.group.add(cheer.bb);
       }
+      /* ONE RING EACH, FOR WHATEVER SHE DOES WITH IT. The Smash lands inside
+         it and the Orb rises out of it — one `LineLoop` per kitten, its own
+         material so its own opacity, sharing one geometry. Four draw calls for
+         nine seconds, and no texture: the same answer `_buildShapes` gives. */
+      const ringMat = this._lineMat(PLAYER_STYLE[i].colour, 0);
+      const ring = new THREE.LineLoop(this._bridgeRing(), ringMat);
+      ring.visible = false;
+      this.group.add(ring);
       this.kits.push({
         mini, big, cheer, colour: PLAYER_STYLE[i].colour, i,
         seed: (i / PLAYER_STYLE.length) * TAU, from: null, to: null, k: 0, hop: 0,
+        ring, ringMat,
       });
     }
 
@@ -1208,13 +1722,26 @@ export class FinaleShow {
   _seedBridge() {
     const b = this.world?.bridge;
     if (!b) return;
+    const rng = (r) => r[0] + Math.random() * r[1];
     for (let i = 0; i < this.kits.length; i++) {
       const k = this.kits[i];
-      /* SPREAD ACROSS THE DECK AND STAGGERED ALONG IT. Four cats abreast on a
-         4.4-unit bridge is a wall; four cats at four different points of the
-         run reads as four kids racing. */
-      k.lane = (i - (this.kits.length - 1) / 2) * 1.1;
-      k.k = -i * 0.22 - Math.random() * 0.1;
+      /* SPREAD ACROSS THE DECK, AND NOT IN A RULED LINE. Four cats abreast on
+         a 4.4-unit bridge is a wall, so the lanes are still dealt out by index
+         — that part has to stay spread or they overlap — but the wobble on top
+         of it is what stops four evenly spaced cats reading as a formation. */
+      k.lane = (i - (this.kits.length - 1) / 2) * 1.1 + (Math.random() - 0.5) * 0.55;
+      k.k = rng(BR_HEAD);
+      /* EVERY TIMER STARTS PART-USED. A kitten whose first jump is a full gap
+         away spends the opening of the shot walking, and the opening of the
+         shot is the only part of it the fade is coming up on. */
+      k.hopT = 0;
+      k.hopFor = 0;
+      k.hopH = 0;
+      k.hopWait = Math.random() * HOP_GAP[1] * 0.5;
+      k.actT = 0;
+      k.actFor = 0;
+      k.act = null;
+      k.actWait = Math.random() * ACT_GAP[1];
       k.big.bb.visible = true;
     }
   }
@@ -1283,7 +1810,7 @@ export class FinaleShow {
     this._stepFade(dt);
     this._stepRings(dt);
     this._stepRunner(dt);
-    this._stepModel(dt);
+    this._stepModel(dt, camera);
     this._stepBridge(dt);
     this._stepArena(dt);
 
@@ -1323,12 +1850,53 @@ export class FinaleShow {
    */
   _stepFade(dt) {
     const P = this.phase ?? '';
-    const wantModel = P === 'isles-wake' || P.startsWith('isles-') ? 1 : 0;
-    const wantRun = P === 'dojo-run' ? 1 : 0;
-    const rate = dt / WAKE;
-    this.modelOn = Math.max(0, Math.min(1, this.modelOn + (wantModel ? rate : -rate * 2)));
-    this.runnerOn = Math.max(0, Math.min(1, this.runnerOn + (wantRun ? rate * 4 : -rate)));
+    const wantModel = P.startsWith('isles-') ? 1 : 0;
+    this.modelOn = Math.max(0, Math.min(1,
+      this.modelOn + (wantModel ? dt / MODEL_IN : -dt / WAKE)));
+
+    /* SHE HOLDS, THEN SHE GOES, AND THE HOLD IS ON THE WAKE'S OWN CLOCK.
+       Everything else about this pair is chased rather than solved, for the
+       reason above — six cues arrive during the model's life and a solved fade
+       would restart on each of them. The runner is the exception to the
+       exception: she is only ever leaving, she leaves during exactly one cue,
+       and what was asked for is a HOLD followed by a fade, which a chase toward
+       a constant target cannot express. `Math.min` is what makes it one-way —
+       nothing can bring her back up once the wake has begun, and `done` below
+       is what makes that true for the rest of the scene. */
+    const want = P === 'dojo-run'
+      ? 1
+      : (P === 'isles-wake'
+        ? 1 - Math.max(0, Math.min(1, (this.phaseT - RUN_HOLD) / RUN_OUT))
+        : 0);
+    this.runnerOn = P === 'dojo-run'
+      ? Math.max(0, Math.min(1, this.runnerOn + dt / (RUN_OUT * 0.5)))
+      : Math.min(this.runnerOn, want);
     if (this.runner && this.runnerOn <= 0.001 && this.runner.a > 0.4) this.runner.done = true;
+  }
+
+  /**
+   * Whether the Dojo's own live diagram should still be drawn.
+   *
+   * "When player completely fades out, the dojo sin/cos can stop following them
+   * and can be removed moving forward, so that we can focus on the hologram
+   * being shown."
+   *
+   * IT IS NOT THE SAME QUESTION AS `drivers()`. That one asks who steers theta,
+   * and its answer went to null the moment she started fading — at which point
+   * `MathDojo` did what it does on an empty island and began turning the point
+   * by itself, at its own rate, in what reads from this camera as the opposite
+   * direction to everything else on screen. "The sin/cos orb is rotating around
+   * in the opposite direction which seems strange." A lesson with nobody in it
+   * idling under a model of the world is two diagrams competing, and only one
+   * of them is the one she is talking about.
+   *
+   * THE PAINTED CIRCLE STAYS. What goes is the LIVE layer — the radius vector,
+   * the legs, the swept arc, the point and its four readouts. The circle and
+   * the graph paper are the island, and the model is floating over them on
+   * purpose.
+   */
+  lessonLive() {
+    return !this.running || !this.runner?.done;
   }
 
   _stepRings(dt) {
@@ -1389,7 +1957,7 @@ export class FinaleShow {
    * accumulate error over thirty seconds, and lands on exactly the same frame
    * whether it is watched at 30fps or 144.
    */
-  _stepModel(dt) {
+  _stepModel(dt, camera) {
     if (!this.model) return;
     const P = this.phase ?? '';
     const on = this.modelOn;
@@ -1424,9 +1992,20 @@ export class FinaleShow {
        The shake used to run off `isles-in`'s own clock, which begins the
        moment the line does — under a hologram that is still fading up. */
     const settled = P === 'isles-in' ? Math.max(0, this.phaseT - 0.4) : 0;
+    /* AND `isles-wake` IS NOT `isles-in`. "When switching to the Dojo of the
+       Turning Circle, when the hologram islands appear, they appear to be
+       shaking when they should be stationary and should appear orderly."
+
+       The guard above was written for the shot the shake belongs to and the
+       fall-through caught the one it does not: during the wake `drifting` is
+       false, so `dk` is 0, so `(1 - dk) * 0.16` is the FULL earthquake — under
+       a hologram that is still arriving. The comment two lines up already said
+       this was wrong ("it does not start until the model has arrived") and was
+       only half enforced. A cue that is not about the islands moving gets no
+       shake at all now, which is stated rather than arrived at. */
     const shake = P === 'isles-in'
       ? Math.min(1, settled / 1.4) * 0.16 * on
-      : (1 - dk) * 0.16;
+      : (drifting ? (1 - dk) * 0.16 : 0);
     for (const isl of this.isles) {
       /* An overshoot that settles: out past the mark and back, on one curve,
          so nothing has to remember whether it is coming or going. */
@@ -1444,15 +2023,8 @@ export class FinaleShow {
       );
     }
 
-    /* --- the connections, and losing them -------------------------------- */
-    if (this.bridgeMat) {
-      /* GONE BY THE TIME THEY HAVE MOVED A QUARTER OF THE WAY, so the picture
-         is "the roads break and then the islands go", which is the order the
-         sentence puts them in. */
-      const linked = Math.max(0, 1 - dk * 4);
-      this.bridgeMat.opacity = on * linked * 0.9;
-      if (this.bridges) this.bridges.visible = this.bridgeMat.opacity > 0.02;
-    }
+    /* --- the connections, bending, and losing them ----------------------- */
+    this._stepBridges(on, dk, shake);
 
     /* --- and the people who stopped using them --------------------------- */
     this._stepFolk(on, dk);
@@ -1549,7 +2121,7 @@ export class FinaleShow {
       }
     }
 
-    this._stepShapes();
+    this._stepShapes(camera);
   }
 
   /**
@@ -1596,14 +2168,22 @@ export class FinaleShow {
    * only the live half: where the four of them are this frame, what angle that
    * makes at the middle of the world, and how far out the circles have grown.
    */
-  _stepShapes() {
+  _stepShapes(camera) {
     if (!this.shapes) return;
-    const P = this.phase;
-    const ang = P === 'isles-angle' ? Math.min(1, this.phaseT / 0.45) : 0;
-    const cir = P === 'isles-circle' ? Math.min(1, this.phaseT / 0.45) : 0;
-    const any = Math.max(ang, cir);
+    const lv = this._shapeLevel('isles-angle');
+    const lc = this._shapeLevel('isles-circle');
+    const ang = lv.on;
+    const cir = lc.on;
+    /* ONE BLOW-OUT FOR BOTH OF THEM, because they leave on the same cue and a
+       diagram that expands at two rates is two diagrams. */
+    const out = Math.max(lv.out, lc.out);
+    const blow = 1 + out * SHAPE_BLOW;
+    const any = Math.max(ang, cir) * (1 - out);
     this.shapes.visible = any > 0.02;
-    if (!this.shapes.visible) return;
+    if (!this.shapes.visible) {
+      for (const w of this.wedges) if (w.lbl) w.lbl.visible = false;
+      return;
+    }
 
     /* THE HUD DOES NOT TURN WITH THE TABLE. Counter-rotated out of the model's
        own spin, so it reads as a thing projected OVER the islands rather than
@@ -1623,13 +2203,18 @@ export class FinaleShow {
     }
 
     /* --- the angles ------------------------------------------------------ */
-    this.angleMat.opacity = ang * 0.95;
+    /* THE BLOW-OUT IS THE FADE. `out` widens the geometry and takes the light
+       out of it on one number, so a diagram that is still growing is always
+       also still going — the two cannot come apart and leave a huge bright
+       ring parked over the islands. */
+    this.angleMat.opacity = ang * (1 - out) * 0.95;
     /* NOBODY TO MEASURE BETWEEN IS NOT A SMALL ANGLE, IT IS NO ANGLE. Without
        this the group stays lit holding whatever geometry the last frame with
        kittens in it left behind — a diagram of four cats who are not there. */
     this.angleFx.visible = ang > 0.02 && at.length > 0;
+    for (const w of this.wedges) if (w.lbl) w.lbl.visible = false;
     if (this.angleFx.visible) {
-      const y = HUD_Y;
+      const y = ANG_Y;
       for (let i = 0; i < this.arms.length; i++) {
         const p = at[i % at.length];
         const grow = Math.min(1, ang * 1.4);
@@ -1641,7 +2226,7 @@ export class FinaleShow {
         const a0 = Math.atan2(p.z, p.x);
         let a1 = Math.atan2(q.z, q.x);
         while (a1 < a0) a1 += TAU;
-        const rr = (MINI_R * 0.2) + i * (MINI_R * 0.055);
+        const rr = ((MINI_R * 0.2) + i * (MINI_R * 0.055)) * blow;
         const pts = [];
         for (let j = 0; j < 18; j++) {
           const a = a0 + (a1 - a0) * (j / 17) * grow;
@@ -1654,26 +2239,57 @@ export class FinaleShow {
           Math.cos(a0) * rr * 0.86, y, Math.sin(a0) * rr * 0.86,
           Math.cos(a0) * rr * 1.16, y, Math.sin(a0) * rr * 1.16,
         ]);
+
+        /* θ, WHERE THE WEDGE IS WIDEST, and reading the wedge's own two
+           bearings rather than anything stored. Only lit where there is a
+           wedge to label: at two players `at.length` is 2, so the same pair of
+           cats generates the same angle twice round and the second copy is a
+           duplicate sitting on top of the first. */
+        const lbl = this.wedges[i].lbl;
+        const deg = ((a1 - a0) * 180 / Math.PI) % 360;
+        /* AND A WEDGE OF NOTHING GETS NO READING. Two kittens standing on the
+           same bearing — which is every one of them for the frame before the
+           crossing seeds, and any pair who happen to line up during it — make
+           an angle of zero, and four gold `0 deg` labels fanned out along one
+           line is the diagram announcing that it has nothing to say. Three
+           degrees is below what the arc can draw at this scale anyway. */
+        if (lbl && i < at.length && at.length > 1 && grow > 0.5 && Math.abs(deg) >= 3) {
+          const half = a0 + (a1 - a0) * 0.5;
+          lbl.setText(`θ = ${deg.toFixed(0)}°`);
+          lbl.position.set(Math.cos(half) * rr * 1.3, y + 0.5, Math.sin(half) * rr * 1.3);
+          lbl.mat.opacity = this.angleMat.opacity;
+          lbl.visible = true;
+          if (camera) lbl.faceCamera(camera);
+        }
       }
     }
 
     /* --- and the circles ------------------------------------------------- */
-    this.circleMat.opacity = cir * 0.9;
-    this.reticleMat.opacity = cir * 0.75;
-    this.circleFx.visible = cir > 0.02;
+    this.circleMat.opacity = cir * (1 - out) * 0.9;
+    this.reticleMat.opacity = cir * (1 - out) * 0.75;
+    this.circleFx.visible = cir * (1 - out) > 0.02;
     if (this.circleFx.visible) {
       /* EXPANDING, AND OUT PAST THE FURTHEST OF THEM. "Show them expanding the
          circle while navigating between the islands" — so the radius is solved
          from how far out the kittens have actually got, which means the circle
          grows because they did. */
-      const reach = at.reduce((m, p) => Math.max(m, Math.hypot(p.x, p.z)), MINI_R * 0.35);
+      /* AND THE REACH IS HELD ONCE IT STARTS LEAVING. The four of them converge
+         on the bridge during `isles-leap`, so a radius still solved from where
+         they are would SHRINK while the blow-out is trying to push it out —
+         measured, the two almost cancelled and the circle sat still while it
+         dimmed. The circle grew because they did, which was the whole argument
+         for solving it from them; once they have stopped spreading, the last
+         thing they said is the honest number to leave on screen. */
+      const live = at.reduce((m, p) => Math.max(m, Math.hypot(p.x, p.z)), MINI_R * 0.35);
+      if (out <= 0) this._reach = live;
+      const reach = out > 0 ? (this._reach ?? live) : live;
       const e = 1 - (1 - cir) * (1 - cir);
       for (const tier of this.tiers) {
         /* NARROWING AS IT CLIMBS — a cone of rings rather than a cylinder of
            them, which is the shape in the reference and the reason it reads as
            3D at all from a camera that is nearly level with it. */
-        const rr = (reach * 1.06) * (1 - tier.k * 0.6) * e;
-        const y = HUD_Y * 0.5 + tier.k * (MINI_R * 0.55);
+        const rr = (reach * 1.06) * (1 - tier.k * 0.6) * e * blow;
+        const y = CIR_Y + tier.k * (MINI_R * 0.55);
         tier.skin.forEach((l, j) => {
           l.position.y = y + j * 0.05;
           l.scale.set(rr, 1, rr);
@@ -1681,12 +2297,49 @@ export class FinaleShow {
         });
       }
       for (const R of this.reticles) {
-        R.g.position.y = HUD_Y + R.y;
-        R.g.scale.setScalar(reach * R.r * e);
+        R.g.position.y = CIR_Y + R.y;
+        R.g.scale.setScalar(reach * R.r * e * blow);
         R.g.rotation.y = this.t * R.spin;
       }
     }
     for (const R of this.reticles) R.g.visible = this.circleFx.visible;
+  }
+
+  /**
+   * How lit one half of the overlay is this frame, and how far it has blown
+   * out: `{ on, out }` for the cue that lights it.
+   *
+   * IT IS A QUESTION ABOUT SEQUENCE, which is the whole reason it is not two
+   * lines in `_stepShapes`. "Is the angle up?" cannot be answered from the
+   * current cue's name — by "the nerve to jump" the answer is yes and the cue
+   * is not `isles-angle` — so the phases are put in order once, at the top of
+   * this file, and this walks that order.
+   *
+   * AND IT IS SOLVED, NOT CHASED, unlike the model and the runner above. Those
+   * two survive six cuts between them, so a target they run toward is the only
+   * thing that does not restart on every cue. This one is the opposite case:
+   * it is lit by one named word, held across a known stretch, and taken away on
+   * another named word, so it can be read straight off the clock — and being
+   * solved, a seek into the middle of the section shows the right thing rather
+   * than fading up from wherever it was left.
+   */
+  _shapeLevel(from) {
+    const i = ISLE_CUES.indexOf(this.phase);
+    const k = ISLE_CUES.indexOf(from);
+    if (i < 0 || i < k) return { on: 0, out: 0 };
+    if (i === k) return { on: Math.min(1, this.phaseT / SHAPE_IN), out: 0 };
+    if (this.phase === 'isles-leap') {
+      return {
+        on: 1,
+        out: Math.max(0, Math.min(1, (this.phaseT - SHAPE_HOLD) / SHAPE_OUT)),
+      };
+    }
+    /* PAST THE LEAP IS PAST THE MATHS. `isles-bridge` is "that is all a bridge
+       has ever been", and what has to be on screen under that line is the
+       bridge — which is the thing the blow-out above has already cleared the
+       way for. */
+    if (i > ISLE_CUES.indexOf('isles-leap')) return { on: 0, out: 1 };
+    return { on: 1, out: 0 };
   }
 
   /** Rewrite a line's points in place. Takes the GEOMETRY, not the mesh,
@@ -1711,30 +2364,104 @@ export class FinaleShow {
    */
   _stepBridge(dt) {
     const b = this.world?.bridge;
-    if (this.phase !== 'bridge-run' || !b) return;
+    if (this.phase !== 'bridge-run' || !b) {
+      for (const k of this.kits) if (k.ring) k.ring.visible = false;
+      return;
+    }
+    const rng = (r) => r[0] + Math.random() * r[1];
     for (const k of this.kits) {
-      /* TIMED TO CLEAR THE SHOT. `bridge-run` holds for 9.4 seconds and the
-         last kitten starts two thirds of a second late, so this is the fastest
-         rate that still leaves the lens looking at an empty bridge for a beat
-         before the arena — which is the picture the line wants under it. */
-      k.k += dt * 0.22;
+      /* --- the jumps, which are now a schedule and not a waveform --------
+         It was `sin(u * 3.1 + seed)`: exactly three hops each, evenly spaced,
+         at one height, for the whole crossing. Offset per kitten, so it did not
+         read as a chorus line — but it did read as four metronomes, which is
+         the same note the crash sounds got. "Jumping randomly, multiple times,
+         with random pauses between jumps, to show they are having random/
+         chaotic fun."
+
+         A TIMER PER KITTEN, REROLLED AT EVERY LANDING. Height is rolled with the
+         jump, so a run of hops is a small one, a big one and a middling one
+         rather than three of the same. */
+      if (k.hopT > 0) {
+        k.hopT -= dt;
+      } else {
+        k.hopWait -= dt;
+        if (k.hopWait <= 0) {
+          k.hopFor = rng(HOP_DUR);
+          k.hopT = k.hopFor;
+          k.hopH = 1.1 + Math.random() * 1.5;
+          k.hopWait = rng(HOP_GAP);
+          /* A SMASH IS A JUMP THAT MEANT IT, so the two schedules agree: if she
+             is mid-Smash when she takes off, she takes off higher. */
+          if (k.act === 'smash') k.hopH *= 1.5;
+        }
+      }
+      const hop = k.hopT > 0 && k.hopFor > 0
+        ? Math.sin((1 - k.hopT / k.hopFor) * Math.PI) * k.hopH
+        : 0;
+
+      /* --- and what she is doing with her paws --------------------------- */
+      if (k.actT > 0) {
+        k.actT -= dt;
+        if (k.actT <= 0) k.act = null;
+      } else {
+        k.actWait -= dt;
+        if (k.actWait <= 0) {
+          k.act = BR_ACTS[Math.floor(Math.random() * BR_ACTS.length)];
+          k.actFor = rng(ACT_DUR);
+          k.actT = k.actFor;
+          k.actWait = rng(ACT_GAP);
+        }
+      }
+      const ae = k.actFor > 0 ? 1 - Math.max(0, k.actT) / k.actFor : 1;
+
+      /* THE DASH IS THE ONE THAT MOVES HER, so it is added to the rate rather
+         than drawn: an ability that only changed the pose would be a costume,
+         and this one is about covering ground. */
+      k.k += dt * BR_RATE * (k.act === 'dash' ? 3.2 : 1);
       const u = k.k;
-      if (u < 0 || u > 1.35) { k.big.bb.visible = false; continue; }
+      if (u < 0 || u > 1.35) {
+        k.big.bb.visible = false;
+        /* AND SHE LEAVES THE SHOT THE SHAPE SHE ARRIVED IN. A kitten who ran
+           off the end mid-Dash kept the squash, and the next thing that draws
+           her is the arena. */
+        k.big.bb.mesh.scale.set(1, 1, 1);
+        if (k.ring) k.ring.visible = false;
+        continue;
+      }
       k.big.bb.visible = true;
       /* ALONG THE DECK, which is the x axis — the span is 18 units of arch on
          x and 4.4 wide on z, and `world.bridge` is its crest. */
       const x = b.x - 16 + u * 32;
       const arch = Math.cos(Math.max(-1, Math.min(1, (x - b.x) / 9)) * Math.PI / 2);
-      /* AND THEY JUMP. Not once, and not in step: three hops each over the
-         crossing, offset per kitten, because four cats jumping on the same
-         frame is a chorus line. */
-      const hop = Math.max(0, Math.sin((u * 3.1 + k.seed) * Math.PI)) * 1.9;
-      k.big.bb.position.set(x, b.y - 2.2 + arch * 2.2 + hop, b.z + k.lane);
+      const y = b.y - 2.2 + arch * 2.2;
+      k.big.bb.position.set(x, y + hop, b.z + k.lane);
       k.big.bb.facing = Math.PI / 2;
-      k.big.bb.row = hop > 0.3 ? 2 : 1;
+      /* THE ATTACK ROW IS THE SWORD, and three of the four flourishes use it —
+         a swing, a Smash and a Dash all look like a cat with a katana out, and
+         the game has one drawing of that. A one-row atlas collapses every row
+         to 0 and the shot still plays; see `Billboard._setCell`. */
+      k.big.bb.row = k.act && k.act !== 'orb' ? 3 : (hop > 0.25 ? 2 : 1);
       k.big.bb.frame = Math.floor(this.t * 11 + k.seed) % Math.max(1, k.big.bb.cols);
       k.big.bb.mat.opacity = 1;
-      k.big.bb.mesh.scale.setScalar(1);
+      /* STRETCHED INTO THE DASH. One number, and it is the only motion blur a
+         billboard can afford. */
+      k.big.bb.mesh.scale.set(k.act === 'dash' ? 1.22 : 1,
+        k.act === 'dash' ? 0.86 : 1, 1);
+
+      /* --- the ring, for the two abilities that throw one ---------------- */
+      if (!k.ring) continue;
+      const ringy = k.act === 'orb' || k.act === 'smash';
+      k.ring.visible = ringy && k.actT > 0;
+      if (k.ring.visible) {
+        const grow = k.act === 'smash' ? 0.8 + ae * 3.4 : 0.5 + ae * 1.5;
+        k.ring.scale.set(grow, 1, grow);
+        /* THE SMASH'S RING IS ON THE DECK UNDER HER AND THE ORB'S RISES PAST
+           HER HEAD, which is the difference between the two abilities in one
+           coordinate. */
+        k.ring.position.set(x, k.act === 'smash' ? y + 0.06 : y + 1.1 + ae * 1.6,
+          b.z + k.lane);
+        k.ringMat.opacity = (1 - ae) * 0.85;
+      }
     }
   }
 

@@ -18129,16 +18129,62 @@ console.log('\n--- one press is not enough, and one player drives ---');
         (o) => !o.keep && o.beat === sh.beat && o.from < sh.from)));
     /* THE NAMES ARE RESOLVED AGAINST THE WORLD, so a shot pointing at
        somewhere the scene has never heard of is a camera aimed at undefined. */
-    const KNOWN = ['wide', 'dojo', 'bridge', 'barrel', 'lantern', 'bamboo', 'heap', 'arena'];
+    const KNOWN = ['wide', 'dojo', 'bridge', 'barrel', 'lantern', 'bamboo', 'heap',
+      'arena', 'grove', 'town'];
     ok('...and every shot points somewhere the scene can find',
       cuts.every((sh) => KNOWN.includes(sh.at)),
       cuts.map((sh) => sh.at).join(' '));
     ok('...including the bridge, by name', cuts.some((sh) => sh.at === 'bridge'));
     ok('...and the Dojo of the Turning Circle', FINALE_SHOTS.some((sh) => sh.at === 'dojo'));
-    ok('...and the mischief itself', FINALE_SHOTS.some((sh) => sh.at === 'heap'));
+    /* THE TOWN IS A SUBJECT NOW, AND `heap` IS NOT.
+       "For the 'The elders called it mischief' part, we can focus on a more
+       interesting part than just the bamboo forest, can show the town center
+       and more of the destruction again."
+
+       `heap` answers "where is the deepest knot of mischief in the world", and
+       on a fully wrecked archipelago that answer is a bamboo grove every single
+       time — forty canes inside fifteen units beats a market square and always
+       will. Measured on a real playthrough it came back as (-64, -34), the WEST
+       grove, with a hall between it and any camera. It was the right answer to
+       the wrong question for three separate lines, all of which want roofs. */
+    ok('...and the town she is standing over', cuts.some((sh) => sh.at === 'town'));
+    ok('...and the grove by the crossing, which is the one you can see into',
+      cuts.some((sh) => sh.at === 'grove'));
     ok('...and all three of the things she names, each with a shot of its own',
-      ['barrel', 'lantern', 'bamboo'].every((m) => FINALE_SHOTS.some((sh) => sh.at === m)));
+      ['barrel', 'lantern', 'grove'].every((m) => FINALE_SHOTS.some((sh) => sh.at === m)));
     ok('...and the ring she sends them to', FINALE_SHOTS.some((sh) => sh.at === 'arena'));
+
+    /* --- ONE CAMERA FOR THE WHOLE DOJO SECTION ------------------------------
+       "When stating 'The islands did not drift apart' and after that until the
+       end of the Dojo section, there are about 7 camera cuts in this entire
+       section, I think these camera cuts are unnecessary and very distracting.
+       I think we can reduce this into just 1 smooth camera cut, rotating all
+       the way around while the hologram is rotating."
+
+       SEVEN ROWS BECAME ONE ROW AND SIX `keep`s. A `keep` fires its cue and
+       does not cut, and `_shotFor` walks the clock back to the last real cut —
+       so the single camera runs its whole move across all seven cues. This is
+       the check that stops somebody adding an eighth shot back in. */
+    {
+      const b2 = FINALE_SHOTS.filter((sh) => sh.beat === 2);
+      const b2cuts = b2.filter((sh) => !sh.keep);
+      ok('the Dojo section is one camera move, not seven cuts',
+        b2cuts.length === 1 && b2.length === 7,
+        `${b2cuts.length} cut, ${b2.length - b2cuts.length} keeps`);
+      /* AND IT GOES ALL THE WAY ROUND. "Rotating all the way around while the
+         hologram is rotating" — more than half a turn, or it is a nudge. */
+      ok('...and it travels more than half a turn while it does',
+        Math.abs(b2cuts[0].turn) > Math.PI, b2cuts[0].turn.toFixed(2));
+      /* AND IT PUSHES IN WITHOUT CLIMBING. `in` only ever shrank `dist`, so
+         every push in this table was really a CRANE: the camera came closer and
+         the angle got steeper, which is "zooming in somewhat strangely on the
+         islands". `dolly` takes the height down with the distance, so the
+         framing stays put and only the size changes. */
+      ok('...and it dollies rather than cranes, which is the strange zoom',
+        b2cuts[0].dolly === true && b2cuts[0].in > 0);
+      ok('...and nothing else in the ending has been quietly turned into one',
+        FINALE_SHOTS.filter((sh) => sh.dolly).length === 1);
+    }
 
     /* --- AND EVERY CUT LANDS ON THE WORD IT IS CUT TO -----------------------
        THE POINT OF THE WHOLE REWRITE, and the one thing a table of numbers
@@ -18162,7 +18208,12 @@ console.log('\n--- one press is not enough, and one player drives ---');
         ['isles-leap', 2, 'nerve to jump'],
         ['isles-bridge', 2, 'all a bridge'],
         ['arena-in', 3, 'the arena'],
-        ['arena-raise', 3, 'is open'],
+        /* ON THE END OF "IS OPEN", NOT ITS START. "The players and Mr. Satan
+           should not do their excited animation until after the words 'the
+           arena is open' is spoken, currently they are doing it about 2 seconds
+           too early." The `tail` flag is the whole fix and this is what pins
+           it: a cue re-written to the start of the clause fails here. */
+        ['arena-raise', 3, 'is open', true],
       ];
       let landed = 0;
       let wrong = '';
@@ -18281,13 +18332,23 @@ console.log('\n--- one press is not enough, and one player drives ---');
          a stagehand's job and not a shot. */
       ok('...three of them jumps to somewhere the last shot could not see',
         fades.filter((sh) => ['dojo', 'bridge', 'arena'].includes(sh.at)).length === 3);
-      ok('...and the fourth a cut in time, on the same square, so nothing moves across it',
-        fades.filter((sh) => sh.at === 'heap').length === 1);
+      /* AND THE FOURTH IS THE WAY OUT. It used to be a cut in TIME — black
+         over the town square while it put itself back together — and that is
+         the one that was asked for back: "We should have Patchfur fade out at
+         the end of the scene, but let's remove the fade to black and then fade
+         in on that part, it is not needed." What took its place is the fade
+         the last line asked for: "We should have a fade out and fade in at the
+         end before the next section 'go and find out'." */
+      ok('...and the fourth is the way out, on the last line of the game',
+        fades.filter((sh) => sh.at === 'wide' && sh.beat === 3).length === 1);
+      ok('...and no shot goes to black to cover a rebuild any more',
+        !fades.some((sh) => sh.cue === 'heap-raise'));
       /* AND NOT ON THE LINE THAT NAMES THE THINGS. Three rings closing on three
          props a second apart is a shot, and a blink between each of them is a
          strobe. */
       ok('...and none of them inside the naming',
-        !FINALE_SHOTS.some((sh) => sh.fade && ['barrel', 'lantern', 'bamboo'].includes(sh.at)));
+        !FINALE_SHOTS.some((sh) => sh.fade
+          && ['barrel', 'lantern', 'bamboo', 'grove'].includes(sh.at)));
       /* A LENGTH, AND A SANE ONE. `true` is the blink it started as; a number
          is seconds of black. Anything over two seconds in a scene this long is
          a hole in it. */
@@ -18395,7 +18456,8 @@ console.log('\n--- one press is not enough, and one player drives ---');
     const bare = new SummonScene({ scene: null, world: null, audio: null });
     bare.start('finale', { x: 5, y: 6, z: 7 }, 30, art);
     ok('...and every shot falls back to the wide one without a world',
-      ['wide', 'dojo', 'bridge', 'barrel', 'lantern', 'bamboo', 'heap', 'arena']
+      ['wide', 'dojo', 'bridge', 'barrel', 'lantern', 'bamboo', 'heap', 'arena',
+        'grove', 'town']
         .every((m) => bare.marks[m].x === 5 && bare.marks[m].z === 7),
       Object.keys(bare.marks).join(' '));
     bare.update(1 / 60);
@@ -18636,8 +18698,12 @@ console.log('\n--- one press is not enough, and one player drives ---');
      knocked over." Capped, so sixty props are not sixty simultaneous bangs,
      and spread, so the ones that do sound arrive across the fall. */
   ok('...and you can hear it happen', crashes.length >= 3, `${crashes.length} bangs`);
+  /* AND THERE ARE HALF AS MANY OF THEM AS THERE WERE. "Also, it is a bit loud
+     and robotic sounding (too metronomic) so we can reduce the sounds that is
+     played by half and try to stagger/randomize the way they are played so it
+     is not as robotic." */
   ok('...without the whole town landing on one frame',
-    crashes.length <= 14, `${crashes.length} bangs`);
+    crashes.length <= 8, `${crashes.length} bangs`);
   ok('...each of them the sound of the thing that actually fell',
     crashes.every((k) => typeof k === 'string' && k.length > 0),
     [...new Set(crashes)].join(' '));
@@ -18658,6 +18724,50 @@ console.log('\n--- one press is not enough, and one player drives ---');
     for (let i = 0; i < 120; i++) tide.update(1 / 60);
     ok('...and none of them goes on crashing after it has landed',
       crashes.length === after, `${crashes.length - after} extra`);
+  }
+
+  /* --- AND THE NOISE ARRIVES WHEN THE THING STARTS GOING OVER --------------
+     "Seems the sound of when they are falling over is a bit delayed, it should
+     start playing as soon as they start getting knocked over."
+
+     IT WAS FIRING AT THE FAR END OF THE FALL, and the reason it read as a bug
+     rather than as a taste is that `t` in a slam runs 1 -> 0: the gate said
+     `t < 0.12`, which LOOKS like "at the start" and means "in the last eighth".
+     Every barrel banged as it settled, a beat after it went over.
+
+     MEASURED AGAINST THE FALL ITSELF rather than against the constant that
+     sets it — the question is where in the motion the sound lands, and only
+     the motion can answer it. */
+  {
+    const bangs = [];
+    let f = 0;
+    tide.onCrash = () => bangs.push(f);
+    tide.raise(2);
+    for (let i = 0; i < 60 * 4; i++) { f += 1; tide.update(1 / 60); }
+    bangs.length = 0;
+    const start = f;
+    tide.slam();
+    let lastMove = start;
+    let prev = tprops.map((q) => q.group.rotation.x + q.group.rotation.z);
+    for (let i = 1; i <= 60 * 8; i++) {
+      f = start + i;
+      tide.update(1 / 60);
+      const now = tprops.map((q) => q.group.rotation.x + q.group.rotation.z);
+      if (now.some((v, j) => Math.abs(v - prev[j]) > 1e-4)) lastMove = f;
+      prev = now;
+    }
+    const span = Math.max(1, lastMove - start);
+    const sorted = bangs.map((b) => b - start).sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)] ?? span;
+    ok('...and the noise lands while they are going over, not once they have landed',
+      bangs.length > 0 && median < span * 0.45,
+      `${median} into ${span} frames`);
+    /* AND NOT ON A METRONOME. Randomised inside each slot rather than one
+       every Nth prop, so the gaps between them are not all the same number —
+       which is the whole of "too metronomic" stated as a measurement. */
+    const gaps = sorted.slice(1).map((v, i) => v - sorted[i]);
+    ok('...and no two of them are the same distance apart, which is the robot',
+      gaps.length < 2 || new Set(gaps).size > 1, gaps.join(','));
   }
   tide.onCrash = null;
 
@@ -19083,9 +19193,36 @@ console.log('\n--- one press is not enough, and one player drives ---');
      nothing reachable two ways. That IS the sentence the shot plays under. */
   {
     const S = mkShow();
+    /* COUNTED IN PLANKS, NOT IN MESHES. The spans used to be one ribbon each,
+       so counting `bridges.children` counted bridges; they are two
+       `InstancedMesh`es now — every deck plank in one and every torii in the
+       other — because "maybe we can improve the way those bridges look, to
+       look more oriental and cool" has to survive the shot it is in, and a
+       per-span mesh cannot bend in the middle and tear from the middle
+       outwards. So the spanning tree is asserted against the pieces. */
+    const SLATS = S.slats.length / Math.max(1, S.isles.length - 1);
     ok('every island but one is bridged to a neighbour',
-      S.bridges.children.length === S.isles.length - 1,
-      `${S.bridges.children.length} bridges for ${S.isles.length} islands`);
+      S.bridges.children.length === 2 && Number.isInteger(SLATS) && SLATS > 6,
+      `${S.slats.length} planks over ${S.isles.length - 1} spans`);
+    ok('...with a gate at each end of every one of them',
+      S.gates.length === (S.isles.length - 1) * 2, `${S.gates.length} gates`);
+    /* AND EVERY PLANK IS ANCHORED TO THE ISLAND ITS OWN END BELONGS TO, which
+       is the fact the tear is made of: the near half rides the child and the
+       far half rides its parent, so separating them pulls the span apart from
+       the middle rather than sliding it off one end. */
+    ok('...and each half of a span rides the island that end is tied to',
+      (() => {
+        for (let i = 0; i < S.slats.length; i += SLATS) {
+          const chunk = S.slats.slice(i, i + SLATS);
+          const near = chunk.filter((s) => s.u < 0.5);
+          const far = chunk.filter((s) => s.u > 0.5);
+          if (!near.length || !far.length) return false;
+          if (near.some((s) => s.isl !== near[0].isl)) return false;
+          if (far.some((s) => s.isl !== far[0].isl)) return false;
+          if (near[0].isl === far[0].isl) return false;
+        }
+        return true;
+      })());
     ok('...and following those bridges from anywhere gets you to the town',
       S.isles.every((i) => {
         let at = i;
@@ -19242,22 +19379,90 @@ console.log('\n--- one press is not enough, and one player drives ---');
     }
     ok('the model arrives once and stays', peak > 0.99 && dip < 1e-9,
       `worst dip ${dip.toFixed(3)}`);
+    /* --- AND IT ARRIVES STANDING STILL ----------------------------------
+       "When switching to the Dojo of the Turning Circle, when the hologram
+       islands appear, they appear to be shaking when they should be stationary
+       and should appear orderly."
+
+       THE GUARD WAS WRITTEN FOR THE SHOT THE SHAKE BELONGS TO AND THE
+       FALL-THROUGH CAUGHT THE ONE IT DOES NOT. During `isles-wake` the islands
+       are not drifting, so the drift fraction is 0, so `(1 - dk) * 0.16` was the
+       FULL earthquake — under a hologram that had not finished fading in.
+       Measured as movement rather than read off the flag: an island that is
+       still is an island whose position does not change between frames. */
+    {
+      const W = mkShow();
+      W.cue('isles-wake');
+      for (let i = 0; i < 30; i++) W.update(1 / 60, null);
+      const a = W.isles.map((i) => i.g.position.clone());
+      let worst = 0;
+      for (let i = 0; i < 30; i++) {
+        W.update(1 / 60, null);
+        W.isles.forEach((isl, j) => {
+          worst = Math.max(worst, isl.g.position.distanceTo(a[j]));
+        });
+      }
+      ok('the hologram arrives stationary, not shaking',
+        worst < 1e-6, worst.toExponential(1));
+      /* ...AND THE EARTHQUAKE STILL HAPPENS WHERE IT BELONGS, which is the
+         half of this that a blanket `shake = 0` would have thrown away. */
+      W.cue('isles-in');
+      for (let i = 0; i < 120; i++) W.update(1 / 60, null);
+      const b = W.isles.map((i) => i.g.position.clone());
+      let moved = 0;
+      for (let i = 0; i < 30; i++) {
+        W.update(1 / 60, null);
+        W.isles.forEach((isl, j) => { moved = Math.max(moved, isl.g.position.distanceTo(b[j])); });
+      }
+      ok('...and still shakes on the line that says it did', moved > 0.01,
+        moved.toFixed(3));
+      W.finish();
+    }
+
     /* ...AND SHE DOES NOT COME BACK. "When the player fades out, let's also
        remove them as currently, they are fading in/out with the other players
        in the cutscene which looks bad." */
     ok('...and the kitten who was running the Dojo is gone for good',
       S.runner.done && !S.runner.bb.visible && S.drivers() === null);
     S.finish();
-    /* AND IT TAKES ABOUT TWO SECONDS, which is the number that was asked for
-       and is measured here rather than read off the constant that sets it. */
+    /* AND THE WHOLE HAND-OVER FITS IN THE TAIL, which is the number that
+       actually constrains it and is measured here rather than read off the
+       constants that set it.
+
+       IT USED TO TAKE TWO SECONDS AND THERE ARE ONLY ONE AND A HALF.
+       `isles-wake` fires on the end of "all afternoon." and the next line opens
+       1.5 seconds later — the beat's own `TAIL`, the held frame after she stops
+       speaking, and the only stretch of the ending with no words over it. A
+       two-second dissolve does not fit in it, which is why the runner was still
+       half there when "The islands did not drift apart" began. */
+    const TAIL_S = 1.5;
     const T = mkShow();
     T.cue('dojo-run');
     for (let i = 0; i < 120; i++) T.update(1 / 60, null);
     T.cue('isles-wake');
     let frames = 0;
-    while (T.modelOn < 0.999 && frames < 600) { T.update(1 / 60, null); frames++; }
-    ok('...and the hand-over takes about two seconds',
-      frames / 60 > 1.4 && frames / 60 < 2.6, `${(frames / 60).toFixed(2)}s`);
+    /* SAMPLED WHILE THE WORLD IS HALF THERE, not when it has finished. She is
+       meant to be GONE by then — the whole point is that both halves fit in the
+       tail — so asking at the end would be asking the wrong question and would
+       pass only if the cross-fade were too slow. */
+    let watching = 0;
+    while (T.modelOn < 0.999 && frames < 600) {
+      T.update(1 / 60, null);
+      frames++;
+      if (T.modelOn > 0.3 && T.modelOn < 0.7) watching = Math.max(watching, T.runnerOn);
+    }
+    ok('...and the world has arrived before the next line opens',
+      frames / 60 > 0.6 && frames / 60 < TAIL_S, `${(frames / 60).toFixed(2)}s`);
+    /* SHE WATCHES IT ARRIVE AND THEN SHE GOES, and both halves are inside the
+       same second and a half. "Maybe the player should stay on screen while the
+       islands fade in... can have the player fade out completely before that
+       part begins." */
+    ok('...and the kitten is still there while it does',
+      watching > 0.2, watching.toFixed(2));
+    let gone = frames;
+    while (T.runnerOn > 0.001 && gone < 600) { T.update(1 / 60, null); gone++; }
+    ok('...and gone by the end of the held frame, not across the next line',
+      gone / 60 < TAIL_S, `${(gone / 60).toFixed(2)}s`);
     T.finish();
   }
 
@@ -19301,10 +19506,102 @@ console.log('\n--- one press is not enough, and one player drives ---');
        that a thing is projected over the islands rather than painted on them. */
     ok('...and none of it spins with the model underneath it',
       Math.abs(S.shapes.rotation.y + S.model.rotation.y) < 1e-6);
+    /* --- BOTH OF THEM, AT ONCE, UNTIL THE MATHS IS OVER -------------------
+       "When stating 'an angle' we should draw the angle on the screen and keep
+       it on the screen until the end of the math section. Same with the 'a
+       circle' part, I think we can have both on screen at the same time, just
+       have the angle part underneath the circle."
+
+       THEY USED TO LAST ONE CUE EACH, so the sentence that names the three
+       things a bridge is made of never once had two of them up together. */
+    S.cue('isles-angle');
+    for (let i = 0; i < 40; i++) S.update(1 / 60, null);
+    const angOnly = { a: S.angleMat.opacity, c: S.circleMat.opacity };
+    ok('the angle is drawn on the word "an angle" and the circle is not yet',
+      angOnly.a > 0.5 && angOnly.c < 0.01,
+      `${angOnly.a.toFixed(2)} / ${angOnly.c.toFixed(2)}`);
+    S.cue('isles-leap');
+    for (let i = 0; i < 20; i++) S.update(1 / 60, null);
+    ok('...and by "the nerve to jump" they are both still up',
+      S.angleMat.opacity > 0.5 && S.circleMat.opacity > 0.5,
+      `${S.angleMat.opacity.toFixed(2)} / ${S.circleMat.opacity.toFixed(2)}`);
+    /* THE ANGLE UNDERNEATH THE CIRCLE, asked of the drawn geometry rather than
+       of the constants: both of them were on one plane, and with both up the
+       arms read as chords of the bottom ring. */
+    ok('...with the angle drawn under the stack of circles',
+      S.arms[0].geo.attributes.position.getY(0) < S.tiers[0].skin[0].position.y);
+    /* AND THEY LEAVE BY GETTING BIGGER. "We can start to fade out the angle and
+       circles and can even have them scale to zero... or expand out to infinity
+       and disappear/fade out." Outwards was the one chosen, because a diagram
+       shrinking to a point puts the eye in the middle of the frame at exactly
+       the moment the kittens are jumping the gap. */
+    const rHeld = S.tiers[0].skin[0].scale.x;
+    for (let i = 0; i < 75; i++) S.update(1 / 60, null);
+    const rGoing = S.tiers[0].skin[0].scale.x;
+    ok('...and they go out rather than in, fading as they widen',
+      rGoing > rHeld * 1.3 && S.circleMat.opacity < 0.5,
+      `${rHeld.toFixed(1)} -> ${rGoing.toFixed(1)} at ${S.circleMat.opacity.toFixed(2)}`);
     /* AND IT IS NOT ON SCREEN WHEN SHE IS NOT SAYING IT. */
     S.cue('isles-bridge');
     for (let i = 0; i < 60; i++) S.update(1 / 60, null);
     ok('...and it is gone by the time she has moved on', !S.shapes.visible);
+    S.finish();
+  }
+
+  /* --- FOUR KIDS ALREADY RUNNING WHEN THE LIGHTS COME UP -----------------
+     "When starting the next part, 'So stay. Fly' we should already have the
+     animated characters spawned in before the camera starts fading in and have
+     them running towards the bridge already. We should have them somewhat
+     randomly staggered from each other rather than orderly staggered, and
+     jumping randomly, multiple times, with random pauses between jumps." */
+  {
+    const S = mkShow();
+    S.cue('bridge-run');
+    ok('everybody is already on the deck when the shot opens',
+      S.kits.every((k) => k.k > 0), S.kits.map((k) => k.k.toFixed(2)).join(' '));
+    /* AND NOT IN A RULED LINE. The old seed was `-i * 0.22`: four cats spaced
+       by exactly the same gap, which is a parade and not a race. Two dice per
+       kitten — where she starts and which lane she is in — so the gaps between
+       them are not all one number. */
+    const order = S.kits.map((k) => k.k).sort((a, b) => a - b);
+    const gaps = order.slice(1).map((v, i) => v - order[i]);
+    ok('...staggered by dice rather than by index',
+      gaps.length < 2 || Math.max(...gaps) - Math.min(...gaps) > 1e-6,
+      gaps.map((g) => g.toFixed(3)).join(' '));
+    /* AND THEY JUMP AT DIFFERENT HEIGHTS AND DIFFERENT TIMES. It was one sine
+       per kitten: three hops each, evenly spaced, all the same height — four
+       metronomes rather than a chorus line, which is the same note the crash
+       sounds got. Collected over ten seconds of the shot. */
+    const heights = new Set();
+    let airborne = 0;
+    for (let i = 0; i < 60 * 10; i++) {
+      S.update(1 / 60, null);
+      for (const k of S.kits) if (k.hopT > 0) heights.add(k.hopH.toFixed(4));
+      if (S.kits[0].hopT > 0) airborne++;
+    }
+    ok('...and they jump more than once, at more than one height',
+      heights.size > 4, `${heights.size} different jumps`);
+    /* ASKED OF ONE KITTEN, NOT OF THE PARTY. "Is anybody in the air" is yes 85%
+       of the time with four of them hopping independently, which is the right
+       answer to a question nobody is asking — what has to be true is that each
+       of them lands between jumps. */
+    ok('...with her paws on the deck between them, not bouncing throughout',
+      airborne > 60 && airborne < 60 * 7, `${airborne} of 600 frames in the air`);
+    /* AND SOME OF THEM SHOW OFF. "Can even have some swinging swords or using
+       random abilities like the Orb or Smash, or Dash abilities, to show
+       players what abilities they can unlock later." */
+    S.finish();
+  }
+  {
+    const S = mkShow();
+    S.cue('bridge-run');
+    const seen = new Set();
+    for (let i = 0; i < 60 * 30; i++) {
+      S.update(1 / 60, null);
+      for (const k of S.kits) if (k.act) seen.add(k.act);
+    }
+    ok('...and every ability the game has gets shown off on the way across',
+      seen.size === 4, [...seen].join(' '));
     S.finish();
   }
 
