@@ -44,7 +44,7 @@ import { STEAL, DBREATH, ARENA_POWERS, BreathTally, arenaPowerFor } from '../src
 import {
   SHRINE_DAIS, SHRINE_STEPS, SHRINE_GATE,
   SHARD_RISE, SHARD_COUNT, SPIRE_H, __curvedWallForTest,
-  buildArena,
+  buildArena, pagodaRoof, FOLIAGE,
 } from '../src/world/build.js';
 import { SatanBlast, BLAST, BLAST_LINES, card } from '../src/systems/satanblast.js';
 import { MrSatan } from '../src/entities/satan.js';
@@ -19351,6 +19351,17 @@ console.log('\n--- one press is not enough, and one player drives ---');
     dragon: sheet(1, 1),
     satan: sheet(1, 1),
     satanCharge: sheet(1, 1),
+    /* THE MENAGERIE, because the model of the town is populated from it now.
+       Shaped exactly the way `Game.critterArt` is — `{ calm, shock, ... }` per
+       species — so a check that passes here is a check of the real handover
+       and not of a convenient shape. */
+    critters: {
+      rat: { calm: sheet(1, 1) },
+      rabbit: { calm: sheet(1, 1) },
+      bird: { calm: sheet(1, 1) },
+      mantis: { calm: sheet(1, 1) },
+    },
+    panda: sheet(1, 1),
   };
   const spot = (x, y, z, r) => { const v = new THREE.Vector3(x, y, z); v.r = r; return v; };
   const mkShow = () => {
@@ -19515,11 +19526,17 @@ console.log('\n--- one press is not enough, and one player drives ---');
      provable is the reason it was written that way. */
   {
     const S = mkShow();
-    const all = [...S.folk.list, ...S.beasts.list];
+    const sets = S.folkSets;
+    const kitTex = new Set(CAST.kittens.map((a) => a.texture));
+    const people = sets.filter((q) => kitTex.has(q.mat.map));
+    const animals = sets.filter((q) => !kitTex.has(q.mat.map));
+    const flat = (list) => list.flatMap((q) => q.list);
+    const folk = flat(people);
+    const beasts = flat(animals);
+    const all = [...folk, ...beasts];
     ok('the model town has people and animals in it',
-      S.folk.list.length >= 10 && S.folk.list.length <= 20
-      && S.beasts.list.length >= 10,
-      `${S.folk.list.length} people, ${S.beasts.list.length} animals`);
+      folk.length >= 10 && folk.length <= 20 && beasts.length >= 10,
+      `${folk.length} people, ${beasts.length} animals`);
     ok('...and not one of them can wander off the island it was born on',
       all.every((f) => Math.hypot(f.hx, f.hz) + f.wr < f.host.r),
       `worst ${Math.max(...all.map(
@@ -19529,17 +19546,131 @@ console.log('\n--- one press is not enough, and one player drives ---');
        narration over the top of it. */
     const town = S.isles.reduce((a, b) => (a.r >= b.r ? a : b));
     ok('...and the people are all in the main town',
-      S.folk.list.every((f) => f.host === town));
+      folk.every((f) => f.host === town));
     ok('...with a few animals out on the other islands',
-      new Set(S.beasts.list.map((f) => f.host)).size >= 4);
+      new Set(beasts.map((f) => f.host)).size >= 4);
+
+    /* --- AND THEY ARE CATS AND ANIMALS, NOT PILLS ----------------------
+       "The people, and likely animals appear as just little colored blobs.
+       Would be better if they were small versions of randomly recolored
+       versions of Ember and Frost... The animals can be the same animals we
+       already have sprites for."
+
+       ASKED AS "DOES EVERY VILLAGER DRAW A REAL SHEET", which a cylinder
+       cannot pass however it is coloured. */
+    ok('...and every one of them is drawn from a real sprite sheet',
+      sets.length >= 3 && sets.every((q) => !!q.mat.map),
+      `${sets.length} sheets`);
+    ok('...the townspeople off Ember and Frost, and only those two',
+      people.length === 2
+      && people.every((q) => q.mat.map === CAST.kittens[0].texture
+        || q.mat.map === CAST.kittens[1].texture));
+    /* THE ANIMALS ARE THE GAME'S OWN, handed over in `Game._finaleCast`. */
+    const critTex = new Set([...Object.values(CAST.critters).map((c) => c.calm),
+      CAST.panda].map((a) => a.texture));
+    ok('...and the animals are the menagerie the game already has',
+      animals.length >= 3 && animals.every((q) => critTex.has(q.mat.map)));
+
+    /* THE SHEET IS SHARED, NOT CLONED, AND THAT IS THE WHOLE REASON THIS IS
+       INSTANCED. `Billboard` clones its atlas so it can drive the cell through
+       `texture.offset`; thirty of those is thirty uploads of a sheet that is
+       megabytes on the card. A clone has a different uuid, so this is exactly
+       the question to ask. */
+    ok('...on the same texture object the rest of the game uses, never a copy',
+      people.every((q) => kitTex.has(q.mat.map))
+      && animals.every((q) => critTex.has(q.mat.map)));
+    ok('...one draw call per sheet, not one per villager',
+      sets.every((q) => q.mesh.isInstancedMesh && q.mesh.count === q.list.length));
+
+    /* RECOLOURED, AND ACTUALLY DIFFERENTLY. "Randomly recolored" is a promise
+       a constant also keeps if nobody looks: ask how many DISTINCT colours the
+       crowd came out with. */
+    const cols = new Set();
+    for (const q of people) {
+      const c = q.mesh.instanceColor;
+      if (!c) continue;
+      for (let i = 0; i < q.list.length; i++) {
+        cols.add(`${c.getX(i)},${c.getY(i)},${c.getZ(i)}`);
+      }
+    }
+    ok('...and no two of them are the same colour', cols.size === folk.length,
+      `${cols.size} of ${folk.length}`);
+
+    /* --- THE CELL IS A REAL CELL, AND IT IS `Billboard`'S CELL -----------
+       The instance attribute is the only thing standing between a shared atlas
+       and a village of garbage UVs, and it is the one piece of arithmetic in
+       this file that had to be written twice. So it is checked against
+       `Billboard._setCell`'s own output for the same sheet, the same facing and
+       the same camera — bit for bit, not approximately. */
+    const cam = new THREE.PerspectiveCamera(50, 1.6, 0.1, 1000);
+    cam.position.set(world.dojoCentre.x + 30, world.dojoCentre.y + 14,
+      world.dojoCentre.z + 30);
+    S.cue('isles-in');
+    for (let i = 0; i < 30; i++) S.update(1 / 60, cam);
+    const q0 = people[0];
+    ok('every villager is showing a cell that is inside its own sheet',
+      sets.every((q) => {
+        for (let i = 0; i < q.list.length; i++) {
+          const u = q.off.getX(i);
+          const v = q.off.getY(i);
+          if (!(u >= 0 && u < 1 && v >= 0 && v < 1)) return false;
+          if (!(q.flip.getX(i) === 0 || q.flip.getX(i) === 1)) return false;
+        }
+        return true;
+      }));
+    {
+      /* SAME SHEET, SAME `mirror` RULE `_mkFig` USES, same camera — and then
+         the comparison is on the UVs the two of them actually SAMPLE, at both
+         ends of the quad, rather than on `offset` alone. Three.js mirrors a
+         cell with a NEGATIVE repeat and the shader mirrors it by flipping the
+         coordinate, so the two agree on the picture and disagree on the two
+         numbers that make it: comparing offsets would be comparing
+         implementations, which is the thing this file is not for. */
+      const B = new Billboard(CAST.kittens[0].texture, {
+        cols: q0.cols, rows: q0.rows, width: 1, height: 1,
+        mirror: q0.mirror,
+      });
+      B.row = q0.row;
+      const fakeCam = new THREE.PerspectiveCamera();
+      fakeCam.position.set(0, 0, 10);
+      const camA = Math.atan2(0, 10);
+      let worst = 0;
+      for (const face of [0, 1.1, 2.4, -2.9, Math.PI, -0.4]) {
+        B.facing = face;
+        B.position.set(0, 0, 0);
+        B.updateMatrixWorld(true);
+        B.faceCamera(fakeCam);
+        S._folkCell(q0, 0, face, camA);
+        const fl = q0.flip.getX(0);
+        for (const t of [0, 1]) {
+          const mine = (fl ? 1 - t : t) * (1 / q0.cols - q0.iu * 2) + q0.off.getX(0);
+          const theirs = t * B.tex.repeat.x + B.tex.offset.x;
+          worst = Math.max(worst, Math.abs(mine - theirs));
+        }
+        const mineV = 0.5 * (1 / q0.rows - q0.iv * 2) + q0.off.getY(0);
+        const theirsV = 0.5 * B.tex.repeat.y + B.tex.offset.y;
+        worst = Math.max(worst, Math.abs(mineV - theirsV));
+      }
+      /* 1e-6 AND NOT ZERO, because the instance attribute is a `Float32Array`
+         and `Texture.offset` is a double. A texel on these sheets is 4e-3 of a
+         UV, so this is a thousandth of a pixel. */
+      ok('...and it is the same cell a Billboard would have chosen',
+        worst < 1e-6, worst.toExponential(1));
+    }
+
     /* AND THEY GO WHEN THE ISLANDS DO. */
     S.cue('isles-in');
     for (let i = 0; i < 200; i++) S.update(1 / 60, null);
-    const lived = S.folkMat.opacity;
+    const lived = S.folkMats[0].opacity;
+    /* ONE FADE FOR THE WHOLE CROWD. Six materials that dim at six rates is six
+       crowds, and the line they are dimming under is about one town. */
+    ok('...and the whole crowd fades as one',
+      new Set(S.folkMats.map((m) => m.opacity.toFixed(6))).size === 1);
     S.cue('isles-drift');
     for (let i = 0; i < 90; i++) S.update(1 / 60, null);
     ok('the town is busy while it is still one place', lived > 0.5, lived.toFixed(2));
-    ok('...and empty by the time the islands are apart', S.folkMat.opacity < 0.01);
+    ok('...and empty by the time the islands are apart',
+      S.folkMats.every((m) => m.opacity < 0.01));
     S.finish();
   }
 
@@ -19561,12 +19692,17 @@ console.log('\n--- one press is not enough, and one player drives ---');
 
     const kept = {
       solids: world.solids, halls: world.clanHalls,
-      marks: world.landmarks, roads: world.roadMask,
+      marks: world.landmarks, roads: world.roadMask, props: world.props,
     };
     world.solids = kept.solids.filter((q) => Math.hypot(q.x, q.z) > 96);
     world.roadMask = kept.roads.filter((q) => Math.hypot(q.x, q.z) > 96);
     world.clanHalls = [];
     world.landmarks = [];
+    /* AND THE CANES, WHICH ARE THE PROPS AND NOT THE SOLIDS. The model draws
+       bamboo from `world.props` — see `_isleDetail` — so a "take the town away"
+       proof that left the groves standing was leaving a quarter of the town's
+       geometry behind and still passing. */
+    world.props = kept.props.filter((p) => Math.hypot(p.home.x, p.home.z) > 96);
     const B = mkShow();
     const after = vertsOf(B);
     ok('...and a town with nothing in it builds a model with nothing on it',
@@ -19576,6 +19712,539 @@ console.log('\n--- one press is not enough, and one player drives ---');
     world.roadMask = kept.roads;
     world.clanHalls = kept.halls;
     world.landmarks = kept.marks;
+    world.props = kept.props;
+  }
+
+  /* --- THE MODEL IS BUILT OUT OF THE GAME'S OWN MODELS -------------------
+     "The roofs of the houses are inverted. Can we just use the same house
+     models that are in the main town island?" and "The trees can be the same
+     trees we use on the main island, just miniature versions of them."
+
+     THE REFUSAL IN THE OLD COMMENT WAS A NUMBER, AND THE NUMBER WAS WRONG. It
+     said `buildHouse` was unaffordable because "four hundred of those merged is
+     a quarter of a million triangles". Measured below: this world has ~500
+     solids and about forty of them are BUILDINGS. So the first check here is
+     the one that would have stopped the argument.
+
+     AND THE SECOND NUMBER WAS WRONG TOO, IN THE OTHER DIRECTION. The reply to
+     it — "467 of them are trees" — counted every solid under r 1.6 as a tree,
+     which is how the model came to draw the two star grottos' MAZE WALLS as a
+     forest. There are 70 trees in this archipelago and 348 buried maze arcs,
+     and the checks below are written so that confusing the two again fails
+     here rather than on screen. */
+  {
+    const solids = world.solids ?? [];
+    const big = solids.filter((q) => q.r >= 1.6);
+    const houses = solids.filter((q) => q.house);
+    const trees = solids.filter((q) => q.tree);
+    ok('the world has tens of buildings in it, not hundreds',
+      big.length > 20 && big.length < 80,
+      `${big.length} of ${solids.length} solids`);
+    /* NOT "ALL THE REST ARE TREES" — that was the wrong claim, and it is the
+       one that put a forest on top of a sealed cave. A tree is a solid that
+       SAYS it is a tree. */
+    ok('...and its trees are the ones that say they are trees',
+      trees.length >= 60 && trees.length < 200
+      && trees.every((q) => q.r < 1.6), `${trees.length} trees`);
+    /* AND THE THING THEY WERE BEING CONFUSED WITH, pinned by name. `buildGrotto`
+       lays its maze out as arcs of r-0.66 colliders; two grottos is nearly
+       three hundred and fifty of them, all inside a stone dome with one door.
+       If this number ever collapses, the "small solid" population has changed
+       shape and the model's tree rule is worth re-reading. */
+    const maze = solids.filter((q) => !q.tree && !q.house && q.r < 1.0
+      && (world.grottos ?? []).some(
+        (G) => Math.hypot(q.x - G.x, q.z - G.z) <= G.r));
+    ok('...and the biggest crowd of small solids is a buried maze, not a wood',
+      maze.length > trees.length * 2, `${maze.length} maze walls`);
+    /* SO THE MODEL DRAWS THE DOME AND NOT THE MAZE. Asked of the geometry: the
+       autumn island's model has to be far smaller than its collider count
+       suggests, and it has to contain the dome's own silhouette. */
+    ok('...and the world says where each dome is, and which way its door faces',
+      (world.grottos ?? []).length >= 2
+      && world.grottos.every((G) => G.r > 1 && Number.isFinite(G.yaw)),
+      `${(world.grottos ?? []).length} grottos`);
+    /* EVERY BUILDING SAYS WHAT IT WAS BUILT FROM. A solid carrying only a
+       radius is a solid the model has to GUESS a shape for, and guessing is
+       what produced the inverted roof. */
+    ok('...and every building carries the arguments it was built from',
+      houses.length >= 20
+      && houses.every((q) => q.house.w > 0 && q.house.d > 0
+        && q.house.floors >= 1 && Number.isFinite(q.house.ry)
+        && q.house.s > 0 && Number.isFinite(q.house.tile)),
+      `${houses.length} specs`);
+    /* ...AND THE SPEC AGREES WITH THE COLLIDER. The world plants big halls at
+       `r = 7.0 * s` and street houses at `4.2 * s`; if either literal moves and
+       its spec does not, this is what says so. */
+    ok('...and every spec agrees with the collider it was recorded beside',
+      houses.every((q) => Math.abs(q.r - 7.0 * q.house.s) < 1e-6
+        || Math.abs(q.r - 4.2 * q.house.s) < 1e-6));
+    ok('...and every tree names a foliage palette that exists',
+      trees.every((q) => !!FOLIAGE[q.tree.leaf] && q.tree.scale > 0));
+
+    /* --- AND THE ROOF IS THE RIGHT WAY UP ------------------------------
+       `cornerLift` is an ABSOLUTE distance added to the corner of every ring,
+       not a fraction of the roof — which is the whole of the inverted-roof bug:
+       the model passed 0.5 to a roof `h * 0.62` tall, so on a house 0.48 high
+       the corners were kicked 172% of the roof's own height and the thing came
+       out a funnel. Asked as the thing that was wrong: are the EAVES higher
+       than the RIDGE? */
+    const inverted = (height, lift) => {
+      const g = pagodaRoof(1, 1, height, {
+        overhang: 0.5, cornerLift: lift, rings: 3, perSide: 3,
+      });
+      const p = g.attributes.position;
+      let eaves = -Infinity;
+      let ridge = -Infinity;
+      for (let i = 0; i < p.count; i++) {
+        const rr = Math.max(Math.abs(p.getX(i)), Math.abs(p.getZ(i)));
+        ridge = Math.max(ridge, p.getY(i));
+        if (rr > 1.2) eaves = Math.max(eaves, p.getY(i));
+      }
+      g.dispose();
+      return eaves >= ridge;
+    };
+    ok('a roof kicked up by more than its own height is inverted',
+      inverted(0.29, 0.5));
+    ok('...and the proportions the real houses use are not',
+      !inverted(1.9, 0.6) && !inverted(0.29, 0.29 * 0.2));
+
+    /* --- AND THE MODEL ACTUALLY CALLS THE BUILDERS ----------------------
+       Proved by TAKING THE SPECS AWAY: with them, the town's island is built
+       out of `buildHouse` and `buildTree`; without them it falls back to a box
+       with a roof on it, which is a fraction of the geometry. A model that had
+       gone on drawing boxes either way would come out the same both times. */
+    const vertsOf = (S) => S.isles.map(
+      (i) => i.g.children.find((c) => c.isMesh)?.geometry.attributes.position.count ?? 0);
+    const A = mkShow();
+    const withSpecs = vertsOf(A)[0];
+    A.finish();
+    const stash = solids.map((q) => [q.house, q.tree]);
+    for (const q of solids) { delete q.house; delete q.tree; }
+    const B = mkShow();
+    const without = vertsOf(B)[0];
+    B.finish();
+    solids.forEach((q, i) => {
+      if (stash[i][0]) q.house = stash[i][0];
+      if (stash[i][1]) q.tree = stash[i][1];
+    });
+    ok('the model draws the real house and tree models, not stand-ins',
+      withSpecs > without * 1.5, `${without} -> ${withSpecs} vertices`);
+    /* ...AND THE FALLBACK STILL BUILDS SOMETHING. Ninth non-negotiable: a
+       collider that never was a building — the arena's, the grotto's, a market
+       stall — must still come out as a shape rather than as nothing. */
+    ok('...and a solid with no spec still comes out as a building',
+      without > 2000, `${without} vertices`);
+  }
+
+  /* --- THE BAMBOO IS WHERE THE BAMBOO IS --------------------------------
+     "For bamboo island, and in general on the main island, there should be
+     some small models of bamboo."
+
+     THE BUG WAS THAT THE MODEL READ `world.groves`, which is the two stands on
+     the HOME island and nothing else — so the island named after bamboo had
+     none on it. Every cane in this game is a knockable prop, so `world.props`
+     is the list, and the first check here is the one that makes the old source
+     provably wrong. */
+  {
+    const canes = (world.props ?? []).filter((p) => p.kind === 'bamboo');
+    const home = world.islands[0];
+    const bamboo = world.islands.find((i) => i.biome === 'bamboo');
+    const on = (isl, x, z) => Math.hypot(x - isl.x, z - isl.z) <= isl.radius;
+    ok('there is bamboo on the home island and on the bamboo island',
+      canes.some((p) => on(home, p.home.x, p.home.z))
+      && !!bamboo && canes.some((p) => on(bamboo, p.home.x, p.home.z)),
+      `${canes.length} canes`);
+    /* AND `groves` CANNOT SEE THE SECOND ONE. This is the fact that made the
+       old model wrong, pinned so that a future grove list cannot quietly make
+       this check meaningless without anybody noticing. */
+    ok('...and the grove list only knows about the home island ones',
+      !!bamboo && !(world.groves ?? []).some((g) => on(bamboo, g.x, g.z)));
+
+    const idx = world.islands.filter((i) => i.kind !== 'arena').indexOf(bamboo);
+    const vertsOf = (S) => S.isles.map(
+      (i) => i.g.children.find((c) => c.isMesh)?.geometry.attributes.position.count ?? 0);
+    const A = mkShow();
+    const withCanes = vertsOf(A)[idx];
+    A.finish();
+    const keptProps = world.props;
+    world.props = keptProps.filter((p) => p.kind !== 'bamboo');
+    const B = mkShow();
+    const without = vertsOf(B)[idx];
+    B.finish();
+    world.props = keptProps;
+    ok('...and the model of the bamboo island is mostly bamboo',
+      withCanes > without * 1.5, `${without} -> ${withCanes} vertices`);
+  }
+
+  /* --- A BRIDGE THE SIZE OF A BRIDGE, THE RIGHT WAY UP -------------------
+     "The bridge is too big compared to everything else." and "The bridges
+     connecting the islands are too big and they seem to be upside-down or
+     sideways." */
+  {
+    const S = mkShow();
+    const K = S.scaleK;
+    const span = world.bridgeSpan;
+    ok('the world publishes how big its crossing is, not just where',
+      span && span.len > 0 && span.wide > 0 && span.rise > 0,
+      `${span.len} x ${span.wide}`);
+    /* THE RED BRIDGE IS THE REAL ONE THROUGH THE MODEL'S SCALE, and the floor
+       that made it twice that size is gone. Measured off the built geometry
+       rather than off the constant. */
+    const g = S.miniBridge && S.isles.find((i) => i === S.miniBridge.host)?.g;
+    const deck = g?.children.find((c) => c.isMesh && c.geometry !== undefined
+      && c !== g.children[0]);
+    deck?.geometry.computeBoundingBox();
+    const bb = deck?.geometry.boundingBox;
+    const drawnLen = bb ? bb.max.x - bb.min.x : 0;
+    ok('the red bridge on the model is the size the real one is',
+      Math.abs(drawnLen - span.len * K) / (span.len * K) < 0.12,
+      `${drawnLen.toFixed(2)} against ${(span.len * K).toFixed(2)}`);
+    /* ...AND IT IS NOT THE BIGGEST THING ON THE TABLE. A house on this model is
+       about half a unit across; the old bridge was two units long and 1.25
+       wide, which is wider than the widest house. */
+    const houseW = Math.max(...(world.solids ?? []).filter((q) => q.house)
+      .map((q) => q.house.w * q.house.s * K));
+    ok('...and no wider than the widest house it stands beside',
+      (bb ? bb.max.z - bb.min.z : 9) < houseW,
+      `${(bb ? bb.max.z - bb.min.z : 9).toFixed(2)} against ${houseW.toFixed(2)}`);
+
+    /* --- AND NOTHING ON A SPAN IS UPSIDE DOWN -------------------------
+       `setFromUnitVectors((0,0,1), tangent)` is the SHORTEST rotation onto the
+       tangent, and the shortest rotation does not preserve up: a span that
+       climbs rolls its deck, and a tangent pointing near -Z flips it outright.
+       Asked of the built quaternions: does the piece's own up still point up? */
+    const up = new THREE.Vector3();
+    const side = new THREE.Vector3();
+    /* ROLL, NOT PITCH, IS THE FAULT — and they are different measurements on
+       the same quaternion. A plank on an arch IS pitched; that is what a ramp
+       is, and asking for `up.y` near 1 would be asking for a flat bridge. What
+       may never happen is the deck leaning SIDEWAYS, and that is exactly what
+       `setFromUnitVectors` did: its rotation is the shortest one onto the
+       tangent, which rolls by whatever the geometry happens to need. A piece
+       with no roll has its own X axis dead level, so this is asked as
+       `|right.y|` and the answer is allowed to be zero. */
+    const roll = (list) => Math.max(...list.map((q) => {
+      side.set(1, 0, 0).applyQuaternion(q.quat);
+      return Math.abs(side.y);
+    }));
+    const pitch = (list) => Math.max(...list.map((q) => {
+      up.set(0, 1, 0).applyQuaternion(q.quat);
+      return Math.acos(Math.min(1, Math.max(-1, up.y))) * 180 / Math.PI;
+    }));
+    ok('every plank on every span still has its deck on top',
+      S.slats.length > 40 && roll(S.slats) < 1e-6,
+      `worst roll ${roll(S.slats).toExponential(1)}`);
+    /* ...AND THE ARCH IS AN ARCH RATHER THAN A RAMP. `BR_ARCH` is a fraction of
+       the span, so the half-sine's own gradient at the rim is `PI * 0.12` — 21
+       degrees — on every span whatever its length. Everything over that is the
+       CLIMB between two islands sitting at different heights, which is honest
+       and is why this is 40 and not 22. At the old `span * 0.24 + 0.18` the
+       shortest span in the archipelago came out at 57. */
+    ok('...and no span is steeper than a road anybody would walk up',
+      pitch(S.slats) < 40, `worst ${pitch(S.slats).toFixed(1)} degrees`);
+    /* A GATE IS NOT A PLANK. It is turned by the crossing's bearing and by
+       nothing else — a torii built on the deck's tangent leans back by the
+       whole gradient of the arch, which was 57 degrees of lean at the rim. */
+    ok('...and every gate is standing on its posts, dead upright',
+      S.gates.length >= 8 && pitch(S.gates) < 1e-4 && roll(S.gates) < 1e-6,
+      `worst ${pitch(S.gates).toExponential(1)} degrees`);
+    S.finish();
+  }
+
+  /* --- THEY CROSS TO WHERE THE ISLANDS ARE, NOT WHERE THEY WERE ----------
+     "There are some issues with the way the players and the dragons are
+     traversing between the islands. Seems they may be moving to old locations
+     that no longer match with where the islands actually are."
+
+     THE MODEL'S ROTATION WAS NOT THE CAUSE — every mini is parented to it. The
+     cause was that a destination was SNAPSHOT as an absolute point at the
+     moment the cue fired, while the islands then drifted out, overshot, bobbed
+     and ROSE, by up to 2.4 units of model height. */
+  {
+    const S = mkShow();
+    const isl = S.isles[3] ?? S.isles[1];
+    const sp = S._pickIsle(null);
+    ok('a destination on the model names the island it is on',
+      !!sp?.isl && S.isles.includes(sp.isl));
+    ok('...and never the island the traveller is leaving',
+      Array.from({ length: 40 }, () => S._pickIsle(isl))
+        .every((q) => q.isl !== isl));
+    /* THE TEST THE OLD CODE FAILS: move the island, ask again. */
+    const before = S._resolve(sp, new THREE.Vector3()).clone();
+    sp.isl.g.position.x += 3.5;
+    sp.isl.g.position.y += 1.25;
+    const after = S._resolve(sp, new THREE.Vector3()).clone();
+    ok('...and it moves with the island, in all three axes',
+      Math.abs(after.x - before.x - 3.5) < 1e-9
+      && Math.abs(after.y - before.y - 1.25) < 1e-9
+      && Math.abs(after.z - before.z) < 1e-9);
+    sp.isl.g.position.x -= 3.5;
+    sp.isl.g.position.y -= 1.25;
+    /* AND IT IS ON THE ISLAND'S DECK, not at a typed height. The old code used
+       an absolute `y: 0.25` for every island on a model whose islands end up
+       spread from 0.00 to 2.40. */
+    ok('...and it stands on that island rather than at a typed height',
+      Array.from({ length: 30 }, () => S._pickIsle(null)).every((q) => {
+        const p = S._resolve(q, new THREE.Vector3());
+        return Math.abs(p.y - q.isl.g.position.y) < 0.3
+          && Math.hypot(q.ox, q.oz) <= q.isl.r;
+      }));
+
+    /* ...AND THE SAME THING END TO END, which is the only version of this a
+       screenshot could have caught: run the crossing through the drift and ask
+       how far each kitten is from the island she is heading for. */
+    S.cue('isles-drift');
+    /* THE COUNTERFACTUAL FIRST, because it is the proof the bug was real.
+       Take a spot, copy it the way the old code did — one absolute point,
+       frozen at the moment the cue fired — and then let the islands finish
+       arriving. The gap that opens is the distance a kitten used to land from
+       the island she was aiming at.
+
+       ASKED OF EVERY ISLAND, NOT OF ONE PICKED AT RANDOM. `_pickIsle` rolls a
+       die, and one of the seven — the town, which the rest come apart FROM —
+       moves a tenth of a unit in this window while the furthest moves seven. A
+       check that drew the anchor passed or failed by luck. */
+    const spots = S.isles.map((isl) => S._spot(isl, 0, 0.1, 0));
+    const frozen = spots.map((sp) => S._resolve(sp, new THREE.Vector3()).clone());
+    for (let i = 0; i < 90; i++) S.update(1 / 60, null);
+    const gaps = spots.map(
+      (sp, n) => S._resolve(sp, new THREE.Vector3()).distanceTo(frozen[n]));
+    ok('an island really does move out from under a point left behind on it',
+      gaps.filter((g) => g > 1).length >= S.isles.length - 2,
+      `worst ${Math.max(...gaps).toFixed(2)} units of drift`);
+
+    S.cue('isles-cross');
+    /* ...AND THE SAME THING END TO END, which is the only version of this a
+       screenshot could have caught: run the crossing through the drift and ask
+       where each kitten is as she comes down.
+
+       CAUGHT ON THE FRAME BEFORE SHE WRAPS, which is the only frame that means
+       "landed". `k.k` advances 0.0092 a frame and resets the moment it passes
+       1, so thresholding on it samples an arbitrary point of the descent — at
+       96% she is still 0.19 up on the arc with 4% of the span to cross, and on
+       the smallest island in the model that alone is a whole radius. Watching
+       for the reset instead costs one line of bookkeeping and asks the question
+       that was actually reported. */
+    let far = 0;
+    let high = 0;
+    let landings = 0;
+    const at = new THREE.Vector3();
+    const last = S.kits.map(() => ({ k: 0, px: 0, py: 0, pz: 0, gx: 0, gz: 0, ay: 0, r: 0, on: false }));
+    for (let i = 0; i < 600; i++) {
+      S.update(1 / 60, null);
+      S.kits.forEach((k, n) => {
+        const L = last[n];
+        if (L.on && k.k < L.k) {
+          landings++;
+          far = Math.max(far, Math.hypot(L.px - L.gx, L.pz - L.gz) / L.r);
+          high = Math.max(high, Math.abs(L.py - L.ay));
+        }
+        L.k = k.k;
+        L.on = !!k.to?.isl && k.mini.bb.visible;
+        if (L.on) {
+          const p = k.mini.bb.position;
+          L.px = p.x; L.py = p.y; L.pz = p.z;
+          L.gx = k.to.isl.g.position.x;
+          L.gz = k.to.isl.g.position.z;
+          L.r = k.to.isl.r;
+          S._resolve(k.to, at);
+          L.ay = at.y;
+        }
+      });
+    }
+    ok('...so a kitten who has landed is standing on her island, not beside it',
+      landings >= 4 && far < 1, `${landings} landings, worst ${far.toFixed(2)} of a radius out`);
+    /* AND SHE COMES DOWN ONTO ITS DECK, which is the axis the typed `y: 0.25`
+       was wrong about: the islands finish spread from 0.00 to 2.40 of model
+       height, so a fixed height is right for one of them and wrong for six. */
+    ok('...and at the height that island is floating at, not at a typed one',
+      high < 0.1, `worst ${high.toFixed(3)} units of air`);
+    S.finish();
+  }
+
+  /* --- THE CIRCLE FOLLOWS HER UNTIL SHE IS GONE --------------------------
+     "The dojo rotating circle stops following them for some reason and rotates
+     in the other direction, it should continue following them until they
+     disappear and then should disable for consistency."
+
+     `drivers()` went null the frame the phase left `dojo-run`, with a second
+     and a bit of her fade still to play — and `MathDojo` with no driver turns
+     theta by itself, which from that camera is the opposite direction to
+     everything else on screen. */
+  {
+    const S = mkShow();
+    S.cue('dojo-run');
+    for (let i = 0; i < 120; i++) S.update(1 / 60, null);
+    S.cue('isles-wake');
+    let orphan = 0;
+    let frames = 0;
+    for (let i = 0; i < 300; i++) {
+      S.update(1 / 60, null);
+      if (!S.runner.bb.visible) break;
+      frames++;
+      if (S.drivers() === null) orphan++;
+    }
+    ok('the lesson follows her for every frame she is still drawn',
+      frames > 30 && orphan === 0, `${orphan} orphaned of ${frames}`);
+    ok('...and lets go the moment she is gone',
+      S.drivers() === null && !S.runner.bb.visible);
+    /* AND THE LIVE LAYER GOES WITH HER, which is the second half of the ask
+       and is a DIFFERENT question — see `lessonLive`. */
+    ok('...and the live diagram switches off rather than idling', !S.lessonLive());
+    S.finish();
+  }
+
+  /* --- AND SHE FADES IN FRONT OF THE HOLOGRAM, NOT UNDER IT --------------
+     "When the player is fading out as holographic islands are fading in, they
+     are fading to a weird green color." Nothing tints her: `#cs-fade` is black.
+     What was green was the MODEL — sixteen units of meadow and bamboo hanging
+     over the floor she runs on — fading UP across the same second she fades
+     DOWN, and drawn OVER her because two transparent objects sort back to
+     front and her circle is wider than it is. */
+  {
+    const S = mkShow();
+    ok('the fading kitten is drawn over the hologram, not through it',
+      S.runner.bb.mat.depthTest === false
+      && S.runner.bb.mesh.renderOrder > (S.model?.renderOrder ?? 0));
+    /* SHE REALLY IS INSIDE ITS FOOTPRINT, which is the fact that makes the
+       above necessary rather than decorative. */
+    ok('...because her circle runs behind a model wider than nothing',
+      24 > 0 && S.isles.some((i) => Math.hypot(i.home.x, i.home.z) + i.r > 8));
+    S.finish();
+  }
+
+  /* --- SMASH, DASH AND WARD, AND THE WARD IS A BUBBLE --------------------
+     "It would also be good to give them the special abilities from the
+     kotodoma orbs (Smash, Dash, Ward) and show them using these abilities
+     while they are running, jumping, and crossing the bridge." */
+  {
+    const S = mkShow();
+    ok('every kitten on the bridge has a ward bubble to pop',
+      S.kits.length >= 2 && S.kits.every((k) => !!k.ward && k.ward.children.length === 2));
+    S.cue('bridge-run');
+    let wardUp = 0;
+    let wrong = 0;
+    for (let i = 0; i < 60 * 12; i++) {
+      S.update(1 / 60, null);
+      for (const k of S.kits) {
+        if (!k.ward) continue;
+        if (k.ward.visible) wardUp++;
+        if (k.ward.visible && k.act !== 'ward') wrong++;
+        if (k.ring?.visible && k.act !== 'smash') wrong++;
+      }
+    }
+    ok('...and it is up while she is warding and at no other time',
+      wardUp > 30 && wrong === 0, `${wardUp} frames up, ${wrong} wrong`);
+    /* THE FIRST ONE EACH IS DEALT, so all three are on screen inside the first
+       few seconds rather than three of one by chance. */
+    const T = mkShow();
+    T.cue('bridge-run');
+    ok('...and the four of them are dealt different ones to open with',
+      new Set(T.kits.map((k) => k.actNext)).size === Math.min(3, T.kits.length),
+      T.kits.map((k) => k.actNext).join(' '));
+    T.finish();
+    S.finish();
+  }
+
+  /* --- THE CHEER LANDS AFTER THE WORD, AND HE GOES FIRST -----------------
+     "We should delay everyone going into the cheering pose and playing the
+     unlock sound by 0.5s or more as right now, it happens before the words
+     'the arena is open' is finished being said... Let's also make Mr. Satan go
+     into cheering pose first, and then a moment after, the players can cheer
+     with him, maybe 0.1s or 0.2s after." */
+  {
+    const raise = FINALE_SHOTS.find((sh) => sh.cue === 'arena-raise');
+    ok('the cheer is held back past the end of the word',
+      (raise?.off ?? 0) >= 0.5, `${raise?.off ?? 0}s`);
+    /* AND THE FANFARE MOVES WITH IT. `_cue` plays `starfound` on this row, so
+       one number delays the pose and the sound together — two numbers is two
+       things to drift apart. */
+    const src = readFileSync(new URL('../src/systems/summonscene.js', import.meta.url), 'utf8');
+    /* ASKED OF THE CALL, NOT OF THE WORD. Counting every `starfound` in the
+       file counted the two comments that explain why it is the right noise,
+       which is a check that fails when somebody writes a better comment. */
+    const plays = src.match(/play\?\.\('starfound'/g) ?? [];
+    const raiseAt = src.indexOf("if (shot.cue === 'arena-raise') {");
+    const playAt = src.indexOf("play?.('starfound'");
+    const nextCue = src.indexOf('if (shot.cue', raiseAt + 10);
+    ok('...and the unlock fanfare is on that same row, not a second one',
+      plays.length === 1 && raiseAt > 0 && playAt > raiseAt
+      && (nextCue < 0 || playAt < nextCue),
+      `${plays.length} call(s)`);
+
+    const S = mkShow();
+    S.cue('arena-in');
+    for (let i = 0; i < 60; i++) S.update(1 / 60, null);
+    S.cue('arena-raise');
+    S.update(1 / 120, null);
+    const hisArmsUp = !!S.satanUp?.bb.visible;
+    const theyCheer = S.kits.some((k) => k.cheer?.bb.visible);
+    ok('the champion throws his arms up first', hisArmsUp && !theyCheer);
+    for (let i = 0; i < 30; i++) S.update(1 / 60, null);
+    ok('...and the four of them join him a moment later',
+      !!S.satanUp?.bb.visible && S.kits.every((k) => !k.cheer || k.cheer.bb.visible));
+    S.finish();
+  }
+
+  /* --- A TRUCK ACROSS THE WRECKAGE, NOT A SWING AROUND IT ----------------
+     "For the part 'there is nothing left standing', the camera is still moving
+     too fast and rotating around a point, it would be better if the camera just
+     pans slowly from left to right in a linear movement."
+
+     `turn` moves the camera along an ARC around the mark, which also rotates
+     what it is looking at — and the rotation is what the eye reads. */
+  {
+    const row = FINALE_SHOTS.find(
+      (sh) => sh.beat === 0 && sh.at === 'town' && sh.pan);
+    ok('the shot over the wreckage is a pan and not a turn',
+      !!row && row.turn === 0 && row.pan > 0.1 && row.lin === true,
+      `turn ${row?.turn} pan ${row?.pan}`);
+    ok('...and it is the only shot in the ending that moves that way',
+      FINALE_SHOTS.filter((sh) => sh.pan).length === 1);
+    /* AND THE CAMERA REALLY DOES HOLD ITS BEARING. Run the scene to that shot
+       and compare the direction it is looking in at two points far enough apart
+       that an arc could not hide. */
+    /* Staged the long way round: `staged()` is a helper that lives inside the
+       cutscene block far above this one, and by here the DOM stub has been
+       taken away again — a SummonScene builds its caption card out of real
+       elements, so it needs one back for as long as it exists. */
+    const docP = globalThis.document;
+    const createP = domStub().createElement;
+    globalThis.document = {
+      createElement: (...a) => createP(...a),
+      getElementById: () => ({
+        classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+        style: { setProperty() {} },
+        textContent: '', width: 150, height: 150,
+        getContext: () => new Proxy({}, {
+          get: () => () => ({ addColorStop() {} }), set: () => true,
+        }),
+      }),
+    };
+    const F = new SummonScene({ scene: null, world: null, audio: null });
+    F.start('finale', { x: 0, y: 0, z: 0 }, 30, {
+      texture: new THREE.Texture(), contentScale: 0.88, pad: 0.06, cols: 1, rows: 1,
+    });
+    let dirA = null;
+    let posA = null;
+    let dirB = null;
+    let posB = null;
+    const dir = () => F._look.clone().sub(F.camera.position).normalize();
+    for (let i = 0; i < 4000 && F.active; i++) {
+      F.update(1 / 60);
+      if (F._shot !== row) { if (dirA) break; continue; }
+      if (!dirA) { dirA = dir(); posA = F.camera.position.clone(); }
+      dirB = dir();
+      posB = F.camera.position.clone();
+    }
+    ok('...and the lens holds one bearing all the way across it',
+      !!dirA && dirA.angleTo(dirB) < 1e-9,
+      dirA ? `${(dirA.angleTo(dirB) * 180 / Math.PI).toExponential(1)} degrees` : 'never ran');
+    ok('...while the camera itself has actually travelled',
+      !!posA && posA.distanceTo(posB) > 8,
+      posA ? `${posA.distanceTo(posB).toFixed(1)} units` : 'never ran');
+    F.finish();
+    if (docP === undefined) delete globalThis.document; else globalThis.document = docP;
   }
 
   /* --- A BILLBOARD ON A TURNTABLE ---------------------------------------
@@ -19748,7 +20417,16 @@ console.log('\n--- one press is not enough, and one player drives ---');
     /* Send them all further out — by moving where they are GOING, since the
        positions themselves are re-solved from the path every frame — and ask
        the circle again. */
-    for (const k of S.kits) { k.from.multiplyScalar(1.9); k.to.multiplyScalar(1.9); }
+    /* THE ENDPOINTS ARE ISLAND-RELATIVE SPOTS NOW — see `FinaleShow._spot` —
+       so "further out" is: resolve where each end currently is, push that point
+       out from the middle of the model, and pin it there as a free spot. */
+    const scratch = new THREE.Vector3();
+    for (const k of S.kits) {
+      for (const key of ['from', 'to']) {
+        S._resolve(k[key], scratch).multiplyScalar(1.9);
+        k[key] = { isl: null, ox: scratch.x, oy: scratch.y, oz: scratch.z };
+      }
+    }
     S.update(1 / 60, null);
     const r1 = S.tiers[0].skin[0].scale.x;
     ok('the circle is drawn from where the kittens have got to',
@@ -19820,36 +20498,124 @@ console.log('\n--- one press is not enough, and one player drives ---');
   {
     const S = mkShow();
     S.cue('bridge-run');
-    ok('everybody is already on the deck when the shot opens',
-      S.kits.every((k) => k.k > 0), S.kits.map((k) => k.k.toFixed(2)).join(' '));
-    /* AND NOT IN A RULED LINE. The old seed was `-i * 0.22`: four cats spaced
-       by exactly the same gap, which is a parade and not a race. Two dice per
-       kitten — where she starts and which lane she is in — so the gaps between
-       them are not all one number. */
+    /* --- THE RUN-UP, AND THE QUEUE -------------------------------------
+       "Let's make them start further back, give them a few seconds of running
+       towards the bridge before they start crossing it and jumping over it."
+
+       The old seed dealt a RANDOM head start, which put half of them already
+       on the deck when the fade lifted — the thing that was asked for is the
+       approach, and an approach cannot be random about whether it happens. */
+    const bx = world.bridge.x;
+    const halfDeck = (world.bridgeSpan?.len ?? 18) / 2;
+    const startX = S.kits.map(
+      (k) => bx - halfDeck - S.brUp + k.k * S.brPath);
+    ok('nobody is on the bridge when the shot opens',
+      startX.every((x) => x < bx - halfDeck),
+      startX.map((x) => (x - bx).toFixed(1)).join(' '));
+    ok('...and the leader has a few seconds of road in front of her',
+      (bx - halfDeck - startX[0]) >= 12,
+      `${(bx - halfDeck - startX[0]).toFixed(0)} units`);
+
+    /* --- AND ALL OF IT FITS INSIDE THE SHOT -----------------------------
+       THE ONE THING NOBODY HAD MEASURED. The run-up, the crossing and the
+       one-second stagger are three numbers that each read fine on their own,
+       and together they came to 8.9 seconds of action cut into 5.4 seconds of
+       camera: the third and fourth kitten were still specks on the approach
+       road when the ending cut to the arena, and what the shot showed was an
+       empty bridge. The comment above `BR_RATE` claimed the shot held 9.4
+       seconds. It never had.
+
+       THE SHOT'S LENGTH COMES OFF THE SHOT LIST, not off a stopwatch: `from`
+       is a fraction of its beat, so this is the same arithmetic `_at` does. */
+    const beat3 = SCRIPTS.finale[3];
+    const runShot = FINALE_SHOTS.find((sh) => sh.cue === 'bridge-run');
+    const cutShot = FINALE_SHOTS.find((sh) => sh.cue === 'arena-in');
+    const hold = (cutShot.from - runShot.from) * (beat3.dur ?? 7)
+      + (cutShot.off ?? 0) - (runShot.off ?? 0);
+    const cross = 1 / S.brRate;
+    const toDeck = (S.brUp / S.brPath) * cross;
+    const offDeck = ((S.brUp + (world.bridgeSpan?.len ?? 18)) / S.brPath) * cross;
+    /* The stagger in SECONDS, read off the seeded positions rather than off
+       `BR_GAP`, which this file cannot see. */
+    const step = Math.abs(S.kits[1].k - S.kits[0].k) / S.brRate;
+    const lastOn = (S.kits.length - 1) * step + toDeck;
+    ok('the bridge shot is long enough to hold the whole crossing',
+      hold > 3, `${hold.toFixed(2)}s of camera`);
+    ok('...and the last of the four is on the deck before the cut to the arena',
+      lastOn < hold - 0.4, `she steps on at ${lastOn.toFixed(2)}s`);
+    /* AND SOMEBODY IS ON IT THE WHOLE TIME FROM THEN ON — no gap in the middle
+       where the deck is empty and the shot is a photograph of a bridge. The
+       leader is clear at `offDeck`; the second is clear one stagger later; so
+       the only way to open a hole is for a kitten to finish before the next one
+       arrives. */
+    ok('...and the deck is never empty between the first step and that cut',
+      offDeck > toDeck + step, `${(offDeck - toDeck).toFixed(2)}s on, ${step.toFixed(2)}s apart`);
+    /* ...AND THERE IS STILL AN APPROACH. The whole point of the road is that
+       she is running AT the bridge before she is on it. */
+    ok('...with a real run-up in front of it rather than a standing start',
+      toDeck > 1, `${toDeck.toFixed(2)}s of road`);
+    /* AND STAGGERED BY INDEX, ONE SECOND APART, WHICH IS THE OPPOSITE OF WHAT
+       THIS USED TO ASK. "The 4 players can be slightly staggered so that each
+       one crosses roughly a second apart from each other, so that they are not
+       right on top of each other and you can see them better as they cross."
+       Dice cannot promise that, and the promise is the point. */
     const order = S.kits.map((k) => k.k).sort((a, b) => a - b);
     const gaps = order.slice(1).map((v, i) => v - order[i]);
-    ok('...staggered by dice rather than by index',
-      gaps.length < 2 || Math.max(...gaps) - Math.min(...gaps) > 1e-6,
-      gaps.map((g) => g.toFixed(3)).join(' '));
+    ok('...and they enter one second apart, evenly, by index',
+      gaps.length >= 2
+      && gaps.every((g) => Math.abs(g / S.brRate - 1) < 0.02),
+      gaps.map((g) => (g / S.brRate).toFixed(2)).join(' ') + ' seconds');
+    /* ...AND THEY ARE NOT IN ONE LANE. That half of the old check still
+       stands: four cats abreast on a 4.4-unit deck is a wall. */
+    const lanes = S.kits.map((k) => k.lane).sort((a, b) => a - b);
+    ok('...in four different lanes across the deck',
+      lanes.slice(1).every((v, i) => v - lanes[i] > 0.3)
+      && Math.abs(lanes[lanes.length - 1] - lanes[0]) < (world.bridgeSpan?.wide ?? 4.4),
+      lanes.map((v) => v.toFixed(2)).join(' '));
     /* AND THEY JUMP AT DIFFERENT HEIGHTS AND DIFFERENT TIMES. It was one sine
        per kitten: three hops each, evenly spaced, all the same height — four
        metronomes rather than a chorus line, which is the same note the crash
        sounds got. Collected over ten seconds of the shot. */
     const heights = new Set();
     let airborne = 0;
+    let onDeck = 0;
+    let airBeforeDeck = 0;
+    const bx2 = world.bridge.x;
+    const half2 = (world.bridgeSpan?.len ?? 18) / 2;
     for (let i = 0; i < 60 * 10; i++) {
       S.update(1 / 60, null);
-      for (const k of S.kits) if (k.hopT > 0) heights.add(k.hopH.toFixed(4));
-      if (S.kits[0].hopT > 0) airborne++;
+      for (const k of S.kits) {
+        if (k.hopT > 0) heights.add(k.hopH.toFixed(4));
+        /* COUNTED PER KITTEN AND THEN ADDED UP, so these are cat-frames and
+           not wall-clock frames. Asking only of the leader was a sample of one
+           crossing: a Dash covers the deck at 3.2x, so how long she spends on
+           it is a die-roll and the totals swung either side of a second. */
+        if (k.k < 0 || k.k > 1) continue;
+        const x0 = bx2 - half2 - S.brUp + k.k * S.brPath;
+        if (Math.abs(x0 - bx2) <= half2) {
+          onDeck++;
+          if (k.hopT > 0) airborne++;
+        } else if (x0 < bx2 - half2 && k.hopT > 0) {
+          airBeforeDeck++;
+        }
+      }
     }
     ok('...and they jump more than once, at more than one height',
       heights.size > 4, `${heights.size} different jumps`);
+    /* AND THE JUMPS BELONG TO THE CROSSING. "A few seconds of running towards
+       the bridge before they start crossing it AND JUMPING OVER IT" — the
+       approach is running, the deck is where the hopping happens, and that is
+       the order the sentence puts them in. */
+    ok('...and none of it happens before she reaches the deck',
+      airBeforeDeck === 0 && onDeck > 200, `${airBeforeDeck} early, ${onDeck} on deck`);
     /* ASKED OF ONE KITTEN, NOT OF THE PARTY. "Is anybody in the air" is yes 85%
        of the time with four of them hopping independently, which is the right
        answer to a question nobody is asking — what has to be true is that each
-       of them lands between jumps. */
+       of them lands between jumps. As a FRACTION of the crossing, because the
+       crossing is now a measured length of a longer run. */
     ok('...with her paws on the deck between them, not bouncing throughout',
-      airborne > 60 && airborne < 60 * 7, `${airborne} of 600 frames in the air`);
+      airborne > onDeck * 0.08 && airborne < onDeck * 0.75,
+      `${airborne} of ${onDeck} deck frames in the air`);
     /* AND SOME OF THEM SHOW OFF. "Can even have some swinging swords or using
        random abilities like the Orb or Smash, or Dash abilities, to show
        players what abilities they can unlock later." */
@@ -19863,8 +20629,14 @@ console.log('\n--- one press is not enough, and one player drives ---');
       S.update(1 / 60, null);
       for (const k of S.kits) if (k.act) seen.add(k.act);
     }
-    ok('...and every ability the game has gets shown off on the way across',
-      seen.size === 4, [...seen].join(' '));
+    /* THE THREE THE ORBS ACTUALLY GRANT. "It would also be good to give them
+       the special abilities from the kotodoma orbs (Smash, Dash, Ward) and show
+       them using these abilities while they are running, jumping, and crossing
+       the bridge." A swing and a rising orb were the other two and neither was
+       an ability; the ward is, and it had never been drawn here. */
+    ok('...and every ability the orbs grant gets shown off on the way across',
+      seen.size === 3 && ['smash', 'dash', 'ward'].every((a) => seen.has(a)),
+      [...seen].sort().join(' '));
     S.finish();
   }
 

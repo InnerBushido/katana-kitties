@@ -857,23 +857,79 @@ on-screen text did not change a word.
 > island... Essentially, these holographic islands should look exactly the same
 > as the real islands, just smaller versions.
 
-`_isleDetail` draws the same shapes the world does, at a third of the detail:
+`_isleDetail` draws **the world's own models, shrunk** — which is what was asked
+for twice and refused once:
 
-- **Roofs are `pagodaRoof`,** the real one out of `build.js`, asked for three
-  rings and two segments a side. Thirty-three vertices, and it is unmistakably
-  the same roof. *Shrinking the actual mesh was the other reading and it is
-  worse:* `buildHouse` returns eleven parts with a lantern and a door frame on
-  it, and four hundred of those merged is a quarter of a million triangles to
-  draw a town the size of a saucer. The **shape** is what has to match.
-- **Trees got trunks** — four triangles, and the difference between a tree and a
-  green cone.
-- **Bamboo is planted where `world.groves` says it is**, ten canes a stand
-  rather than eighty. The two stands on the model are the two the girls walked
-  to.
+> The roofs of the houses are inverted. Can we just use the same house models
+> that are in the main town island? ... The trees can be the same trees we use on
+> the main island, just miniature versions of them.
+
+**The refusal was a number, and the number was wrong.** The comment that used to
+stand in `_isleDetail` said `buildHouse` was unaffordable because *"four hundred
+of those merged is a quarter of a million triangles."* Measured: this world has
+508 solids and **41** of them are buildings. Forty-one real houses is about 35k
+triangles across seven merged meshes — less than one market stall of the world
+standing behind them. There is no second copy of the shapes any more.
+
+**And the roof was inverted for a reason anybody can check.** `pagodaRoof`'s
+`cornerLift` is an **absolute distance**, not a fraction: 0.5 of lift on a roof
+`h * 0.62 = 0.29` tall kicked the corners to 172% of the roof's own height, which
+is a funnel. `buildHouse` passes 0.6 on a roof 1.9 tall — 32% — and that is the
+shape everybody recognises. Hand-tuning a second copy of a shape is how it drifts
+from the original.
+
+- **The arguments come off the solid, not off its radius.** `World.solids` now
+  records the `house` / `tree` options each one was built from, beside the
+  collider, at the same `push` — so the model knows which way a house faces and
+  what colour its tiles are, which are the two things a radius cannot say and
+  this file used to guess. A solid with no spec still gets the old box, so a
+  collider that never was a building degrades instead of vanishing.
+- **A tree is a solid that says it is a tree.** The old rule was *anything under
+  r 1.6*, and measured, that is a lie: of the 467 small solids here, **348 are
+  the two star grottos' maze walls** — rings of colliders sealed inside a stone
+  dome that nobody can see from the ground, let alone from a hologram. The
+  autumn island's sixty-tree forest was one buried maze drawn end to end. It
+  really has one tree on it.
+- **So the grottos are drawn as what they are**: a hemisphere in the island's own
+  rock with the doorway notched out of it, facing the way the real one faces.
+  `World.grottos` publishes the centre, the radius and the `yaw` — the yaw is the
+  only reason the door can be put on the right side rather than guessed.
+- **Bamboo is planted where `world.props` says it is**, every fourth stand, built
+  by `buildBamboo`. It read `world.groves` before, which is *the two stands on
+  the home island and nothing else* — so the island named after bamboo had
+  exactly zero canes on its model. Every cane in this game is a knockable prop;
+  `props` is the only honest list.
 - **The Dojo island is drawn the way the Dojo is drawn**: a dark plate, graph
   paper ruled at `R/4`, and a white ring, every number off `MathDojo`'s own. The
   hologram floats over the real one, so a kid who looks down and then up sees
   the same mark twice.
+
+### The town in the model is full of people
+
+> The people, and likely animals appear as just little colored blobs. Would be
+> better if they were small versions of randomly recolored versions of Ember and
+> Frost and have them moving around the world a little... The idea is to show a
+> vibrant city with inhabitants, rather than an empty one.
+
+They were five-sided cylinders. They are now the real sprite sheets — the
+townspeople off Ember's and Frost's atlases, tinted per villager; the animals off
+the menagerie the game already has, handed over by `Game._finaleCast`.
+
+**They are instanced, and that is not an optimisation, it is the only way this
+could be done at all.** `Billboard` clones its atlas so it can drive the cell
+through `texture.offset`; thirty of those is thirty uploads of a multi-megabyte
+sheet to the card. Instead there is **one `InstancedMesh` per sheet**, sharing
+the original texture, carrying `cellOff` and `cellFlip` per instance and a shader
+injected at `#include <uv_vertex>` that does what `Billboard._setCell` does with
+`offset` and `repeat`. Six sheets, six draw calls, no uploads. The tint rides
+`instanceColor`, which `MeshBasicMaterial` multiplies into the map.
+
+`world-check` compares the instanced cell against a real `Billboard`'s, for the
+same sheet, facing and camera — and compares the **UVs the two of them sample**
+rather than their offsets, because three.js mirrors with a negative repeat and
+the shader mirrors by flipping the coordinate. They agree on the picture and
+disagree on the numbers; comparing the numbers would be comparing
+implementations.
 
 ### The mini-bridges bend and then tear
 
@@ -885,6 +941,29 @@ on-screen text did not change a word.
 Each span is a Catmull-Rom curve sliced into fourteen **slats** — a vermillion
 deck with two gold rails — with a **torii** at each end, drawn as two
 `InstancedMesh`es sharing one material. Two draw calls for the whole set.
+
+**They are the size the real crossing is, and their decks are on top.** Two
+faults in one sentence — *"the bridges connecting the islands are too big and
+they seem to be upside-down or sideways"* — and they had different causes:
+
+- `setFromUnitVectors((0,0,1), tangent)` is the **shortest** rotation onto the
+  tangent, and the shortest rotation does not preserve up: a span that climbs
+  rolls its deck, and a tangent near -Z flips it outright. `deckQuat` builds the
+  basis from the **world up** instead, so roll is zero by construction and what
+  is left is honest pitch. The check asks `|right.y|`, not `up.y` — a plank on a
+  ramp *is* pitched, and asking for `up.y` near 1 would be asking for a flat
+  bridge.
+- The arch was `span * 0.24 + 0.18`. The fixed floor on a length that varies
+  eight-fold made the shortest span in the archipelago climb at **57 degrees**:
+  a ramp into the sky with a torii leaning off the top of it. `BR_ARCH` is a
+  fraction of the span alone, so the gradient at the rim is `PI * 0.12` = 21
+  degrees whatever the span is, and the rest is the climb between two islands at
+  different heights, which is real. **A gate is not a plank** — it is turned by
+  the crossing's bearing and by nothing else, so a torii stands up.
+- The red bridge's length came off `Math.max(2.0, 18 * scaleK)`, and the floor
+  won: 2.1 times too long, and wider than the widest house on the table.
+  `World.bridgeSpan` publishes the crossing's `len` / `wide` / `rise`, so the
+  model and the run both read one set of numbers.
 
 The bend and the snap **fall out of the anchoring** rather than being animated:
 every piece records which island its own end is tied to, the near half riding the
@@ -961,23 +1040,72 @@ the island, and the model is floating over them on purpose.
 
 ### The last two shots
 
-**The bridge run opens mid-crossing.** *"We should already have the animated
-characters spawned in before the camera starts fading in and have them running
-towards the bridge already."* The old seed put every kitten at a negative
-position along the deck — off the end and invisible — staggered by `-i * 0.22`,
-which is a parade. Now each gets a random head start and a lane wobble, and jumps
-on a **schedule** rather than a waveform: a timer per kitten, re-rolled at every
-landing, with the height rolled alongside it. Between jumps she may swing (the
-attack row), **Dash** (a surge in her own rate, squashed into it, since an
-ability that only changed the pose would be a costume), **Smash** (a jump that
-meant it, landing inside a shockwave ring) or throw an **Orb** (a ring that rises
-past her head) — the four the game actually has, to show what is still to unlock.
+**The bridge run is a run-up, a crossing and a queue.**
 
-**Mr Satan's arms go up on the end of the clause, not its start.** `arena-raise`
-is `say(3, 'is open', true)`; it was two seconds early because it was pinned to
-the first word. It also plays `starfound` at half volume — the sound this game
-already uses for *you got one*, so nobody has to be taught a new noise in the
-last ten seconds, and quiet enough not to sit on top of *"Go and find out"*.
+> Let's make them start further back, give them a few seconds of running towards
+> the bridge before they start crossing it and jumping over it. It would also be
+> good to give them the special abilities from the kotodoma orbs (Smash, Dash,
+> Ward)... The 4 players can be slightly staggered so that each one crosses,
+> roughly a second apart from each other.
+
+The path is `BR_UP + span + BR_OFF` and `BR_RATE` is a fraction of *that* per
+second, so a re-sized crossing re-times its own run. Each kitten is dealt one of
+**Smash, Dash and Ward** to open with — the three the Kotodama orbs actually
+grant; a swing and a rising orb were two of the old four and neither was an
+ability — and then rolls her own. Jumps wait for the **deck**; abilities play on
+the whole road, which is the order the sentence puts them in. The Ward is the
+same two shells `Player` pops, in the same blue, held three times as long as the
+other two because a shield up for a third of a second is a glitch.
+
+**And the whole thing is cut to the shot, which is 5.40 seconds.** Measured off
+the running scene: beat 3 lasts nine seconds and the bridge holds the first 0.60
+of it. The first pass at this ran a 52-unit path at 0.17 — 5.9 seconds for one
+kitten plus three of stagger — so the cut to the arena landed with two of them
+still specks on the approach road, and what the shot showed was an empty bridge.
+The comment above `BR_RATE` claimed the shot held 9.4 seconds; it never had, and
+nothing had ever asked it. `world-check` now asks: is the last of the four on the
+deck before the cut, and is the deck ever empty between the first step and it.
+
+**Nothing is scheduled for a kitten nobody can see.** The hop and ability clocks
+used to run before the visibility gate, so the stagger was spent off screen — the
+Ward, the longest of the three, is dealt to the kitten who enters *third*, and it
+had expired by the time she appeared. Measured: nine frames of bubble in a
+twelve-second run.
+
+**Mr Satan's arms go up on the end of the clause, and hers follow his.**
+`arena-raise` is `say(3, 'is open', true)` with `off: 0.55` — *"delay everyone
+going into the cheering pose and playing the unlock sound by 0.5s or more, as
+right now it happens before the words 'the arena is open' is finished being
+said"* — and the four of them join him `CHEER_LAG` (0.15s) later. That is a
+**lag on one cue**, not a second cue: two cues is two things to drift apart. The
+same row plays `starfound` at half volume — the sound this game already uses for
+*you got one*, so nobody has to be taught a new noise in the last ten seconds,
+and quiet enough not to sit on top of *"Go and find out"*.
+
+**A kitten lands where her island is now.** Every destination on the model used
+to be snapshot as an **absolute point** at the moment the cue fired, with a typed
+`y: 0.25` — while the islands went on drifting, overshooting, bobbing and rising
+through 2.4 units of model height. (The rotation was never the cause; every mini
+is parented to the model.) A destination is now `{ island, offset }` and is
+resolved every frame, so it moves with the ground it is on, in all three axes.
+
+**The fading runner is drawn over the hologram, not through it.** Reported as
+*"they are fading to a weird green color"*: nothing tints her. The green is the
+meadow and bamboo islands arriving at radius 16 over her R=24 circle and being
+drawn on top of her by transparent back-to-front sorting — 82% green where the
+model was behind her. `depthTest = false` and `renderOrder = 20` on the runner,
+and she fades out as herself. The Dojo's live circle now **follows her until she
+is gone** rather than stopping the instant the phase changes: `r.on = want ||
+fade > 0.02`.
+
+**And the shot over the wreckage pans.** *"The camera is still moving too fast
+and rotating around a point; it would be better if the camera just pans slowly
+from left to right in a linear movement."* `turn` moves the camera along an arc
+**around** the mark, which rotates what it is looking at, and the rotation is
+what the eye reads. `pan` is a lateral truck applied to the camera and the
+look-at together, so the bearing does not move at all — `world-check` runs the
+scene to that shot and compares the direction it is looking in at both ends of
+it. It is the only shot in the ending that moves that way.
 
 ### The crash sounds were loud, late and metronomic
 

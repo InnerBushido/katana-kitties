@@ -204,7 +204,27 @@ export class World {
     this.scene = scene;
     this.islands = [];
     this.props = [];
-    this.solids = [];        // upright cylinders players collide with
+    /* Upright cylinders players collide with.
+       AND, ON THE ONES THAT ARE A BUILDING OR A TREE, THE ARGUMENTS IT WAS
+       BUILT FROM. `house` and `tree` are the exact option objects handed to
+       `buildHouse` / `buildTree`, plus the rotation and scale `transformParts`
+       was given — so anything that wants to draw this town again can call the
+       same builder rather than inventing a shape from a radius.
+
+       THE ENDING IS WHY, AND THE REASON IS THE EIGHTH NON-NEGOTIABLE. The
+       hologram of the archipelago used to reconstruct a house as a box with a
+       cone on it, out of `r` alone, because `r` was all a solid carried; the
+       roof came out inverted and the model read as a hut village. A radius
+       cannot say which way a house faces, how many floors it has or what
+       colour its tiles are, and all three of those were GUESSED. They are
+       measured now, in the one place that knows them.
+
+       OPTIONAL, AND A MISSING ONE COSTS THE DETAIL AND NOTHING ELSE — the
+       arena's colliders, the grotto's, the spire's and the shrine gates have
+       no builder of their own to name, and `FinaleShow._isleDetail` falls back
+       to the old box for anything that does not carry a spec. Ninth
+       non-negotiable. */
+    this.solids = [];
     /** Flat-topped boxes you can stand and jump on (bridge decks, terraces). */
     this.platforms = [];
     /** [{x, z, r, clan, shrine}] — stand in it, press interact, swear. */
@@ -384,13 +404,17 @@ export class World {
           || this.solids.some((s) => Math.hypot(hx - s.x, hz - s.z) < s.r + 7)
           || this.props.some((pr) => Math.hypot(hx - pr.home.x, hz - pr.home.z) < 7);
         if (hg != null && !blocked) {
-          const parts = buildHouse({
+          /* SPELLED OUT RATHER THAN INLINED, so the solid can carry the same
+             numbers the geometry was built from. See `house` below. */
+          const spec = {
             w: 6, d: 5, floors: 1,
             tile: k % 4 === 1 ? PALETTE.tileIndigo : PALETTE.tileRed,
-          });
-          transformParts(parts, hx, hg, hz, valueNoise(k, 1, 1) * 6);
+            ry: valueNoise(k, 1, 1) * 6, s: 1,
+          };
+          const parts = buildHouse(spec);
+          transformParts(parts, hx, hg, hz, spec.ry, spec.s);
           decor.push(...parts);
-          this.solids.push({ x: hx, z: hz, r: 4.2 });
+          this.solids.push({ x: hx, z: hz, r: 4.2, house: spec });
         }
       }
 
@@ -408,13 +432,18 @@ export class World {
         // No decorative bamboo anywhere: if it looks like bamboo it must cut,
         // so every cane in the game is a prop. Trees and lanterns only here.
         const lit = i % 6 === 0;
+        const spec = { seed: i * 7 + k, scale: 0.8 + valueNoise(i, k, 3) * 0.5, leaf,
+          ry: valueNoise(i, k, 9) * 6 };
         const parts = lit
           ? buildLantern(0.8)
-          : buildTree(i * 7 + k, 0.8 + valueNoise(i, k, 3) * 0.5, leaf);
+          : buildTree(spec.seed, spec.scale, spec.leaf);
         if (lit) this.landmarks.push({ kind: 'lantern', x, z, s: 0.8 });
-        transformParts(parts, x, g, z, valueNoise(i, k, 9) * 6);
+        transformParts(parts, x, g, z, spec.ry);
         decor.push(...parts);
-        this.solids.push({ x, z, r: isl.biome === 'bamboo' ? 0.7 : 0.9 });
+        this.solids.push({
+          x, z, r: isl.biome === 'bamboo' ? 0.7 : 0.9,
+          tree: lit ? undefined : spec,
+        });
       }
     }
     if (!decor.length) return;
@@ -1218,8 +1247,9 @@ export class World {
       { x: 40, z: -40, ry: -1.1, s: 1.05, floors: 2, tile: PALETTE.tileIndigo },
     ];
     hallSpots.forEach((h) => {
-      put(buildHouse({ w: 11, d: 9, floors: h.floors, tile: h.tile }), h.x, h.z, h.ry, h.s);
-      this.solids.push({ x: h.x, z: h.z, r: 7.0 * h.s });
+      const spec = { w: 11, d: 9, floors: h.floors, tile: h.tile, ry: h.ry, s: h.s };
+      put(buildHouse(spec), h.x, h.z, h.ry, h.s);
+      this.solids.push({ x: h.x, z: h.z, r: 7.0 * h.s, house: spec });
       for (const sx of [-1, 1]) {
         const bx = h.x + Math.cos(h.ry) * sx * 7;
         const bz = h.z + Math.sin(h.ry) * sx * 7 + 7;
@@ -1243,8 +1273,9 @@ export class World {
     ];
     for (const [x, z, ry, tile, s] of street) {
       const floors = valueNoise(x, z, 5) > 0.62 ? 2 : 1;
-      put(buildHouse({ w: 6.5, d: 5.5, floors, tile }), x, z, ry, s);
-      this.solids.push({ x, z, r: 4.2 * s });
+      const spec = { w: 6.5, d: 5.5, floors, tile, ry, s };
+      put(buildHouse(spec), x, z, ry, s);
+      this.solids.push({ x, z, r: 4.2 * s, house: spec });
     }
 
     // --- the great torii at the head of the street ---
@@ -1306,6 +1337,16 @@ export class World {
          watches the ending. `dojoCentre` above is published for the same
          reason and in the same shape. */
       this.bridge = new THREE.Vector3(BRIDGE.x, base + BRIDGE.rise, BRIDGE.z);
+      /* ...AND HOW BIG IT IS, for the same reason and one step further. The
+         ending draws this crossing twice — once at full size, with four kittens
+         running the deck, and once as a red mark on the hologram — and both of
+         those had `18`, `4.4` and `2.2` typed into them by hand. The model's
+         copy was additionally floored at "at least two units", which on this
+         world is more than twice the real span and is what made it the biggest
+         thing on the table. `len` is along x and `wide` is across z, which is
+         the axis convention `put()` above has already fixed by turning the deck
+         a quarter turn. */
+      this.bridgeSpan = { len: BRIDGE.len, wide: BRIDGE.wide, rise: BRIDGE.rise, base };
       const segs = 10;
       for (let i = 0; i < segs; i++) {
         const t = (i + 0.5) / segs;
@@ -1377,8 +1418,10 @@ export class World {
       // and out of every building, hall and stall already placed
       if (this.solids.some((s) => Math.hypot(x - s.x, z - s.z) < s.r + 2.5)) continue;
       if (home.heightAt(x, z) == null) continue;
-      put(buildTree(i, 0.9 + valueNoise(i, 3, 5) * 0.5), x, z, valueNoise(i, 4, 2) * 6, 1, 0, decor);
-      this.solids.push({ x, z, r: 0.9 });
+      const spec = { seed: i, scale: 0.9 + valueNoise(i, 3, 5) * 0.5, leaf: 'blossom',
+        ry: valueNoise(i, 4, 2) * 6 };
+      put(buildTree(spec.seed, spec.scale, spec.leaf), x, z, spec.ry, 1, 0, decor);
+      this.solids.push({ x, z, r: 0.9, tree: spec });
       planted++;
     }
 

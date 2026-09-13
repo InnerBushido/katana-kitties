@@ -1747,6 +1747,17 @@ class Game {
       /* His arms up. Measured against his idle sheet by ink area at the moment
          it is used, not here — see `poseQuad`. */
       satanCharge: this.satanChargeArt ?? null,
+      /* THE MENAGERIE, FOR THE MODEL OF THE TOWN. "The animals can be the same
+         animals we already have sprites for, but a miniature version of them."
+         Handed over as the whole map rather than as a chosen three, because the
+         ending picks what it can draw and a missing species costs one kind of
+         animal and nothing else — `mantis` is already allowed to be absent from
+         a whole build, which is exactly the case this must not special-case.
+         Ninth non-negotiable. */
+      critters: this.critterArt ?? null,
+      /* And a panda, which is the one animal in the game a kitten RAISED. It
+         belongs on the model of the island she raised it on. */
+      panda: this.pandaArt?.adult ?? this.pandaArt?.cub ?? null,
     };
   }
 
