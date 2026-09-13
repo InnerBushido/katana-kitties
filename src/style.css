@@ -2852,6 +2852,13 @@ body.touch-ui .ne-ask-q { font-size: 16px; }
   letter-spacing: 1px;
 }
 .sv-clan { font-style: normal; font-size: 11px; opacity: 0.75; }
+/* A KITTEN WHO WENT HOME IS STILL ON THE ROW, AND STILL HERS. Dimmed rather
+   than dropped: she played this afternoon, her points and her clan are in the
+   file, and picking her back up returns all of it. Dropping her off the row
+   would answer "who is in this save" with "who happened to be holding a
+   controller when the clock ticked", which is the question nobody asked. */
+.sv-away { opacity: 0.62; }
+.sv-off { font-style: normal; font-size: 10px; opacity: 0.7; letter-spacing: 0; }
 /* THE ORBS SHE HAD ON, AS THE GLYPHS THEY WEAR IN THE WORLD. Not a count and
    not names: 疾疾 is two Gales, and it is the same character painted on the orb
    bobbing over her shoulder, so the row is read rather than decoded. */

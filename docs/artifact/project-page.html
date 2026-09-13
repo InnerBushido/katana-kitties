@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 3253 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 3293 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 362 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -680,7 +680,7 @@ git push origin alpha</code></pre>
       <tr><td><kbd class="hot">\</kbd></td><td><b>Force-spawn</b> — <kbd>ENTER</kbd> then seats a third and fourth kitten on the keyboard alone</td></tr>
       <tr><td><kbd>R</kbd><kbd>U</kbd></td><td>Step WASD · step the arrows round the kittens sharing that set — her, her sister, then <b>both at once</b></td></tr>
       <tr><td><i>no key</i></td><td><b>Wipe the RECORD BOARD</b> — every league, on this device</td></tr>
-      <tr><td><i>no key</i></td><td><b>Wipe the SAVED GAMES</b> — all five autosave slots</td></tr>
+      <tr><td><i>no key</i></td><td><b>Wipe the SAVED GAMES</b> — all five saved play sessions</td></tr>
     </tbody>
   </table></div>
 
@@ -1143,7 +1143,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 3253 assertions and why almost none of them are about
+      is why <code>world-check</code> is 3293 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,
@@ -1249,8 +1249,12 @@ git push origin alpha</code></pre>
     <span class="hd">The backend that should come first anyway</span>
     <p><b>The game now saves itself, but only into this browser.</b>
       <code>systems/savegame.js</code> writes the afternoon down every 30 seconds once a run is
-      5 minutes old, keeps the last five, and loads one from the pause menu
-      (<b>LOAD A SAVED GAME</b>); the record board, the controller calibration and the stick setting
+      5 minutes old and loads one from the pause menu (<b>LOAD A SAVED GAME</b>). <b>One row per
+      play session</b> — a session keeps overwriting its own row however long it runs, so the five
+      slots are five different games rather than the last five half-minutes of one — and a row holds
+      <b>every kitten who played in that session</b>, not only the ones holding a controller when it
+      was taken, so a girl who drops out and comes back picks up her points, her clan and her panda
+      where she left them. The record board, the controller calibration and the stick setting
       survive a reload the same way. All of it is <code>localStorage</code>, so none of it follows a
       child to a phone, to a second machine, or past a cleared cache — which is the half of the
       problem an account would solve and the reason this is still on the list. Accounts and hosted

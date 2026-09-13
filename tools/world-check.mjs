@@ -37,6 +37,7 @@ import {
   SAVE_VERSION, MAX_SAVES, AUTOSAVE_EVERY, AUTOSAVE_AFTER,
   worldSig, listSaves, putSave, dropSave, clearSaves,
   snapshot, describe, restore,
+  castRow, applyCast, meaningful, newSessionId,
 } from '../src/systems/savegame.js';
 import { Prop } from '../src/entities/prop.js';
 import { STEAL, DBREATH, ARENA_POWERS, BreathTally, arenaPowerFor } from '../src/entities/clanpower.js';
@@ -19288,7 +19289,11 @@ console.log('\n--- one press is not enough, and one player drives ---');
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const KEY = 'kk.saves.v1';
 
-  /* A save with just enough in it to be legal, taken at a chosen moment. */
+  /* A save with just enough in it to be legal, taken at a chosen moment.
+     NO `session` UNLESS A CHECK ASKS FOR ONE: these stand in for eight
+     different afternoons, and giving them all the same session id would have
+     `putSave` correctly collapse them into one row and fail the cap checks for
+     the right reason in the wrong place. */
   const row = (at, over = {}) => ({
     v: SAVE_VERSION, id: `s${at}`, at, played: 600,
     sig: worldSig(world), players: [{ style: 'Ember', orbs: [] }],
@@ -19302,10 +19307,15 @@ console.log('\n--- one press is not enough, and one player drives ---');
      below is WHICH of the game's own doors a load goes through, and a stub
      that silently accepted anything would pass all of them. */
   const sheet = { width: 256, height: 256 };
+  let sessionN = 0;
   const fakeGame = (w, n) => {
     const scene = new THREE.Scene();
     const G = {
       log: [], world: w, scene, playT: 0, ballsHeld: 0,
+      /* ONE AFTERNOON, ONE ID, AND EVERYBODY WHO WAS PART OF IT. Both are
+         plain fields on the real Game too — see its constructor. */
+      sessionId: `ptest${++sessionN}`,
+      sessionCast: new Map(),
       _endingShown: false, _finaleDue: false,
       pickups: [0, 1, 2].map(() => ({ taken: false, group: new THREE.Group() })),
       balls: [0, 1, 2].map(() => ({ taken: false, take() { this.taken = true; } })),
@@ -19360,6 +19370,50 @@ console.log('\n--- one press is not enough, and one player drives ---');
       dropSave('s6000') && listSaves().map((r) => r.at).join() === '8000,7000,5000,4000');
     clearSaves();
     ok('...and clearing takes the lot', listSaves().length === 0);
+  }
+
+  /* --- 1b. ONE ROW PER AFTERNOON, NOT ONE ROW PER PHOTOGRAPH -------------
+     REPORTED FROM PLAY, and it is the worst thing a save list can do: "it is
+     currently saving the last 30 secs of gameplay to a new save slot,
+     overriding one of the 5 save slots". Every autosave minted a fresh id, so
+     two and a half minutes of one game filled all five rows with itself at
+     thirty-second intervals and every other afternoon anybody had ever played
+     was gone — the feature deleting exactly what it existed to protect.
+
+     THE FIX IS THE `session` FIELD, and these checks are about the RULE rather
+     than about the field being present: a save carrying a session replaces the
+     row already holding that session, wherever it sits in the list. */
+  {
+    clearSaves();
+    const A = 'pTuesday';
+    const B = 'pThursday';
+    putSave(row(1000, { session: A, id: 'a1' }));
+    putSave(row(2000, { session: B, id: 'b1' }));
+    for (let i = 2; i <= 9; i++) putSave(row(2000 + i * 30, { session: B, id: `b${i}` }));
+    const keep = listSaves();
+    ok('nine autosaves of one afternoon are one row, not nine',
+      keep.length === 2, `${keep.length} rows: ${keep.map((r) => r.id).join()}`);
+    ok('...and it is the most recent photograph of it',
+      keep[0].session === B && keep[0].id === 'b9', keep[0].id);
+    ok('...and the OTHER afternoon is still sitting there untouched',
+      keep.some((r) => r.session === A && r.id === 'a1'));
+    /* AND A SECOND AFTERNOON STARTS A SECOND ROW. Five slots are five games,
+       which is the whole sentence: "the 5 save slots are for 5 different
+       individual play sessions." */
+    for (let i = 0; i < 4; i++) putSave(row(9000 + i, { session: `p${i}`, id: `n${i}` }));
+    ok('...while five different afternoons fill five different slots',
+      new Set(listSaves().map((r) => r.session)).size === MAX_SAVES,
+      listSaves().map((r) => r.session).join());
+    /* THE GAME BEING PLAYED NOW KEEPS ITS SLOT AS IT GETS LONGER. The cap
+       drops the OLDEST, and an afternoon that is still being played is never
+       the oldest because its own row keeps moving to the front. */
+    putSave(row(99999, { session: A, id: 'a2' }));
+    ok('...and a long afternoon never pushes itself off the bottom of the list',
+      listSaves().length === MAX_SAVES
+      && listSaves()[0].id === 'a2'
+      && listSaves().filter((r) => r.session === A).length === 1,
+      listSaves().map((r) => r.id).join());
+    clearSaves();
   }
 
   /* --- 2. VALIDATED ON THE WAY IN, LIKE THE RECORD BOARD ----------------
@@ -19432,6 +19486,8 @@ console.log('\n--- one press is not enough, and one player drives ---');
       && PLAYER_STYLE.some((st) => st.name === snap.players[0].style));
     ok('...and her clan by id', snap.players[0].clan === CLANS[0].id);
     ok('...and how long the afternoon had been going', snap.played === 1234);
+    ok('...and which afternoon it is, so the next one overwrites this row',
+      snap.session === G.sessionId, snap.session);
 
     const bytes = JSON.stringify(snap).length;
     ok('...and the whole afternoon is a couple of kilobytes, not a town',
@@ -19462,6 +19518,8 @@ console.log('\n--- one press is not enough, and one player drives ---');
     });
     const d = describe(snap, world);
     ok('a row says how many were playing', d.party === 2);
+    ok('...and how many of them were holding a controller at the time',
+      d.seated === 2, `${d.seated} of ${d.party}`);
     ok('...and whether the arena was open', d.arena === true);
     ok('...and what each of them was wearing',
       d.players[0].orbs.join() === 'swift,reach' && d.players[1].orbs.length === 0);
@@ -19506,7 +19564,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('a load starts by throwing the current game away, through restart',
       G2.log[0] === 'restart', G2.log.slice(0, 3).join(' '));
     ok('...and every kitten with a seat gets her afternoon back',
-      out.seated === 4 && out.dropped === 0, JSON.stringify(out));
+      out.seated === 4 && out.waiting === 0, JSON.stringify(out));
     ok('...with exactly the props that were lying down lying down again',
       W2.props.filter((p) => p.knocked && !p.gone).length === snap.world.knocked.length,
       `${W2.props.filter((p) => p.knocked && !p.gone).length} of ${snap.world.knocked.length}`);
@@ -19551,6 +19609,12 @@ console.log('\n--- one press is not enough, and one player drives ---');
       G2.kotodama.awakened === true);
     ok('...and the clock carries on from where the save was taken, not from zero',
       G2.playT === 2400);
+    /* AND CARRYING ON MEANS CARRYING ON IN THAT SLOT. A load that minted a
+       fresh session would fork a second row beside the one you just loaded —
+       so "load Tuesday, play another hour" would cost you a slot and leave the
+       stale Tuesday sitting above it. */
+    ok('...and playing on from a save keeps writing into that save\'s own slot',
+      G2.sessionId === snap.session, `${G2.sessionId} vs ${snap.session}`);
 
     /* --- IT RESTORES ONTO THE SEATS BEING PLAYED, AND SAYS WHAT IT DROPPED
        A save of four loaded into a two-kitten game COULD seat two more — the
@@ -19561,10 +19625,180 @@ console.log('\n--- one press is not enough, and one player drives ---');
     const out2 = restore(G3, snap);
     ok('a party of four loaded into a two-kitten game seats two',
       out2.seated === 2, JSON.stringify(out2));
-    ok('...and says out loud that two are waiting for a controller',
-      out2.dropped === 2);
+    /* WAITING, NOT DROPPED — and the word is the behaviour. The other two are
+       in the session's cast with everything they had, so a third controller or
+       a swap in the character picker hands one of them her whole afternoon. */
+    ok('...and says out loud that two are waiting rather than losing them',
+      out2.waiting === 2);
     ok('...and the two it seated are the two whose kittens are being played',
       G3.players.every((p) => snap.players.some((r) => r.style === p.style.name)));
+    ok('...while the two it could not seat are kept, whole, under their names',
+      G3.sessionCast.size === 4
+      && snap.players.every((r) => G3.sessionCast.has(r.style)),
+      `${G3.sessionCast.size} in the cast`);
+    /* AND A SEAT'S CAT IS NEVER HANDED SOMEBODY ELSE'S AFTERNOON. The first
+       version fell back to "the first row nobody has claimed", so a game whose
+       seats held two cats that were not in the save seated two strangers on
+       two other girls' scores, clans and orbs, under the wrong names. */
+    const G4 = fakeGame(W2, 2);
+    G4.players.forEach((p) => { p.style = { ...p.style, name: 'NotInTheSave' }; });
+    const out3 = restore(G4, snap);
+    ok('...and a kitten who is not in the save is not given a stranger\'s orbs',
+      out3.seated === 0 && out3.waiting === 4
+      && G4.players.every((p) => p.powerOrbs.length === 0 && p.score === 0),
+      JSON.stringify(out3));
+  }
+
+  /* --- 6b. EVERYBODY WHO PLAYED, NOT EVERYBODY IN A SEAT ----------------
+     REPORTED FROM PLAY, and asked for in two sentences that are one rule:
+     "if a player joins the play session and has some points, kotodama, or
+     joined a clan ... and even if the player leaves/drops out of the session,
+     then they should be marked as being in that session in the save file",
+     and "even if a player drops out, when they return with that player, they
+     will return with all their data from where they left off."
+
+     BEFORE THIS, A KITTEN WHO PUT HER CONTROLLER DOWN WAS GONE. Not dimmed,
+     not waiting — absent from the save and absent from the count, so a party
+     of four that became two saved as two, and the two who had stopped playing
+     lost an afternoon each. Worse, swapping cat in the character picker did
+     the same thing silently and did not even drop her orbs.
+
+     THE CAST IS KEYED BY THE KITTEN, because that is what a girl comes back
+     to: she picks Ember up again, not seat three. */
+  {
+    const G = fakeGame(W2, 2);
+    G.players[0].score = 300;
+    G.players[0].setPowerOrbs(['swift', 'reach']);
+    G.players[0].clan = CLANS[2];
+
+    /* --- what counts as having been part of the afternoon --- */
+    const gone = castRow(G.players[0], false);
+    ok('a kitten who did something is written down as part of the afternoon',
+      meaningful(gone) === true);
+    ok('...with everything she had, and marked as not being in a seat',
+      gone.score === 300 && gone.orbs.join() === 'swift,reach'
+      && gone.clan === CLANS[2].id && gone.here === false);
+    /* AND SOMEBODY WHO DID NOTHING IS NOT. A girl who joined, ran three steps
+       and put the controller down is not part of the afternoon, and a fourth
+       name on the row that nobody recognises makes the list harder to choose
+       from rather than more complete. */
+    ok('...while a kitten who joined and did nothing at all is not',
+      meaningful(castRow(G.players[1], false)) === false);
+    ok('...and the fields it counts are the ones that were asked for',
+      meaningful({ score: 10 }) && meaningful({ orbs: ['swift'] })
+      && meaningful({ clan: 'kaze' }) && meaningful({ sworn: ['kaze'] })
+      && meaningful({ raised: true }) && meaningful({ cut: 3 })
+      && !meaningful({ score: 0, orbs: [], clan: null, sworn: [] })
+      && !meaningful(null));
+
+    /* --- and she is still in the save after she leaves --- */
+    G.sessionCast.set(gone.style, gone);
+    G.players.splice(0, 1);                       // she has gone home
+    const snap = snapshot(G);
+    ok('a save taken after she leaves still has her in it',
+      snap.players.length === 2, snap.players.map((p) => p.style).join());
+    const d = describe(snap, W2);
+    ok('...and the row says four-versus-two rather than pretending she was never here',
+      d.party === 2 && d.seated === 1, `${d.party} / ${d.seated}`);
+    ok('...and says WHICH of them had gone home',
+      d.players.find((p) => p.style === gone.style).here === false
+      && d.players.find((p) => p.style !== gone.style).here === true);
+    ok('...and she keeps her score and her clan in the file',
+      snap.players.find((p) => p.style === gone.style).score === 300);
+
+    /* --- and picking her back up hands the whole lot over --- */
+    const G2 = fakeGame(W2, 2);
+    const back = G2.players[0];
+    const took = applyCast(G2, back, gone);
+    ok('...so picking her up again gives her back her afternoon, not a fresh cat',
+      took && back.score === 300 && back.powerOrbs.join() === 'swift,reach'
+      && back.clan?.id === CLANS[2].id);
+    /* WITHOUT THE CEREMONY, and without teleporting her. She is standing where
+       whoever just joined is standing; putting her back on the coordinates in
+       the row would drop a rejoining kitten across the map from the party. */
+    ok('...without swearing her into her clan a second time',
+      !G2.log.includes('onJoinClan') && G2.log.includes('clanBadge'));
+    ok('...and without teleporting her to wherever she was standing an hour ago',
+      Math.abs(back.position.x) < 0.01 && Math.abs(back.position.z) < 0.01,
+      `${back.position.x}, ${back.position.z}`);
+
+    /* --- and the game actually calls both halves, in the two places a cat
+           stops being played and the one place she starts --- */
+    const leave = main.slice(main.indexOf('  _leavePlayer(index) {'),
+      main.indexOf('  _leavePlayer(index) {') + 2500);
+    ok('dropping out writes her down before anything is taken off her',
+      leave.indexOf('_rememberPlayer') > 0
+      && leave.indexOf('_rememberPlayer') < leave.indexOf('_dropOrbInWorld'));
+    /* HER ORBS ARE BLANKED IN THE ROW, because the next line puts them in the
+       town. Handing her a second copy on the way back would put twenty-seven
+       orbs in a world that has twenty-six — the fourth non-negotiable broken
+       in the direction nobody checks for. */
+    ok('...with her orbs left in the world rather than kept in two places at once',
+      /_rememberPlayer\(p, \{ orbs: \[\] \}\)/.test(leave));
+    const seat = main.slice(main.indexOf('  _seatPlayer(index, styleIndex'),
+      main.indexOf('  _dressPlayer(p) {'));
+    /* THE PICKER SWAP WAS THE QUIET ONE. Nothing dropped her orbs, nothing
+       saved her score; the Player was simply removed from the scene. */
+    ok('...and swapping cat in the picker no longer bins the old one\'s afternoon',
+      seat.indexOf('_rememberPlayer(old)') > 0
+      && seat.indexOf('_rememberPlayer(old)') < seat.indexOf('scene.remove(old.group)'));
+    ok('...and every way a kitten arrives asks whether she has played today',
+      /_recallPlayer\(p\)/.test(seat));
+  }
+
+  /* --- 6c. TWENTY-SIX ORBS STAY TWENTY-SIX ACROSS A SAVE ----------------
+     FOUND WHILE FIXING THE TWO ABOVE, and it is the fourth non-negotiable
+     broken in the direction nobody looks for: things APPEARING. A load calls
+     `awaken()` for the stall and the dissolve, and `awaken` re-seeds every
+     Powerup Kotodama at its opening spot — on top of handing every kitten the
+     ones she was wearing straight back. Twenty-six became thirty-four, and
+     nothing on screen said so: the extras were on islands nobody was standing
+     on. The only fix is to record where the loose ones actually are, because
+     unlike every other index in a save they MOVE. */
+  {
+    const G = fakeGame(W2, 2);
+    const K = new Kotodama(G);
+    K.raiseStall = () => {};
+    G.kotodama = K;
+    K.awakened = true;
+    K.spawnPickups();
+    const seeded = K.pickups.length;
+    ok('the endgame seeds a countable supply of Powerup Kotodama', seeded > 0, seeded);
+
+    /* Two are collected and worn, and one of the rest is carried across town
+       and dropped — which is the whole reason their positions are a fact. */
+    const worn = [K.pickups.pop().id, K.pickups.pop().id];
+    G.players[0].setPowerOrbs(worn);
+    K.pickups[0].group.position.set(-13.5, 1.25, 26.5);
+    const supply = seeded;
+
+    const loose = K.worldOrbs();
+    ok('...and every one still lying about is written down with where it is',
+      loose.length === seeded - 2
+      && loose.some((r) => Math.abs(r.at[0] + 13.5) < 0.01 && Math.abs(r.at[2] - 26.5) < 0.01),
+      `${loose.length} loose`);
+    ok('...by kind, because one that moved has no index left to name it',
+      loose.every((r) => !!ORB_BY_ID[r.id]));
+
+    const snap = snapshot(G);
+    ok('...and the save carries them', snap.world.orbs.length === loose.length);
+
+    const G2 = fakeGame(W2, 2);
+    const K2 = new Kotodama(G2);
+    K2.raiseStall = () => {};
+    G2.kotodama = K2;
+    restore(G2, snap);
+    const held = G2.players.reduce((n, p) => n + p.powerOrbs.length, 0);
+    ok('...so loading it back gives the world exactly the orbs it had, and no more',
+      K2.pickups.length + held === supply,
+      `${K2.pickups.length} loose + ${held} worn = ${K2.pickups.length + held}, was ${supply}`);
+    ok('...including the one that had been carried across town',
+      K2.pickups.some((pk) => Math.abs(pk.group.position.x + 13.5) < 0.01
+        && Math.abs(pk.group.position.z - 26.5) < 0.01));
+    ok('...and none of them is a ghost left over from the reseed',
+      K2.pickups.every((pk) => G2.scene.children.includes(pk.group)));
+    ok('...and she is wearing hers rather than finding a second set on a beach',
+      held === 2 && G2.players[0].powerOrbs.join() === worn.join());
   }
 
   if (!hadDocS) delete globalThis.document;
@@ -19601,6 +19835,25 @@ console.log('\n--- one press is not enough, and one player drives ---');
     const rst = main.slice(main.indexOf('  restart() {'), main.indexOf('  toTitle() {'));
     ok('...and a restart puts the clock and the next save back to the start',
       /this\.playT = 0/.test(rst) && /_saveAt = AUTOSAVE_AFTER/.test(rst));
+    /* AND IT GETS A SLOT OF ITS OWN, so pressing RESTART does not write the
+       fresh empty world over the row for the game you just abandoned — which
+       is the one thing somebody who pressed it by accident would want back.
+       The cast goes with it: it is a list of what people did in a town that
+       has just stood itself back up. */
+    ok('...and a restart is a NEW afternoon, in a new slot, with nobody in it yet',
+      /this\.sessionId = newSessionId\(\)/.test(rst)
+      && /this\.sessionCast = new Map\(\)/.test(rst));
+    /* THE BUG THIS WHOLE FIELD EXISTS FOR. Reported as five slots filling with
+       one afternoon inside three minutes, because every autosave minted a
+       fresh id. The id belongs to the SESSION, so it is minted where a session
+       begins and nowhere else. */
+    const mints = main.match(/newSessionId\(\)/g) ?? [];
+    ok('...while an autosave itself never mints one, which is what filled all five',
+      mints.length === 2, `${mints.length} places mint a session id`);
+    const auto0 = main.slice(main.indexOf('  _autoSave() {'),
+      main.indexOf('  _autoSave() {') + 700);
+    ok('...so thirty seconds later it is the same row, brought up to date',
+      !/newSessionId/.test(auto0) && /putSave\(/.test(auto0));
     /* AND IT NEVER TOASTS. A notification every thirty seconds for four hours
        is a notification a player learns to stop reading. */
     const auto = main.slice(main.indexOf('  _autoSave() {'),
@@ -19650,6 +19903,19 @@ console.log('\n--- one press is not enough, and one player drives ---');
       && /o\.kanji/.test(paint));
     ok('...and says how many it keeps, which is the one fact the list cannot show',
       /MAX_SAVES/.test(paint));
+    /* AND THE OTHER FACT THE LIST CANNOT SHOW: one row is one game, however
+       long it runs. It is the sentence that tells somebody their Tuesday is
+       safe while they play on Thursday. */
+    ok('...and that one row is one game, which is the rule that was wrong',
+      /One row per game/.test(paint));
+    /* BOTH NUMBERS ON THE ROW. "let's state how many players have logged in
+       and played in that play session, versus just how many are currently
+       logged in" — and the kitten who went home is dimmed rather than
+       dropped, so the two numbers can be read against the names. */
+    ok('...and a row says who played as well as who was holding a controller',
+      /r\.seated/.test(paint) && /playing/.test(paint));
+    ok('...and a kitten who had gone home is dimmed on it rather than missing',
+      /sv-away/.test(paint) && /p\.here/.test(paint));
     /* AND A LOAD THAT THREW HALF-WAY LEAVES A CLEAN WORLD, BECAUSE `restore`
        OPENS WITH `restart`. Saying so and dropping the row is the only honest
        answer: a row that crashes the game every time it is pressed has to stop
@@ -19658,8 +19924,14 @@ console.log('\n--- one press is not enough, and one player drives ---');
       main.indexOf('  _loadSave(id) {') + 1800);
     ok('...and a save that cannot be loaded is removed rather than re-offered',
       /dropSave\(id\)/.test(load) && /this\.toast/.test(load));
+    /* WAITING, NOT DROPPED, AND IT SAYS WHAT TO DO ABOUT IT. Sixth
+       non-negotiable: a load that quietly seats two of four reads as a save
+       that only kept two, and "2 waiting" with no instruction reads as a
+       failure rather than as an invitation to pick up another controller. */
     ok('...and a load that seats fewer kittens than it saved says so',
-      /out\.dropped/.test(load));
+      /out\.waiting/.test(load) && !/out\.dropped/.test(load));
+    ok('...as an instruction, because those kittens come back the moment you play them',
+      /join or/.test(load) && /switch to that kitten/.test(load));
   }
 
   /* --- 9. AND THE HELP PAGE STOPS APOLOGISING FOR IT --------------------

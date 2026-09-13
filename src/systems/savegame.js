@@ -49,11 +49,32 @@ import { MILESTONES } from './arenaquest.js';
 --------------------------------------------------------------------------- */
 
 /** Where they live, and how the shape is versioned. Bumping `v` is how a
- *  format change throws the old ones away instead of misreading them. */
+ *  format change throws the old ones away instead of misreading them.
+ *
+ *  V2 ADDED `session` AND THE FULL CAST. A v1 row has neither, which would
+ *  read as "a game nobody ever played that is its own session" — five of those
+ *  would be exactly the bug v2 exists to fix, so they go rather than being
+ *  guessed at. */
 const KEY = 'kk.saves.v1';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
-/** How many are kept. Asked for: "a maximum of only 5 saves in the save list." */
+/**
+ * How many are kept — and what ONE of them is.
+ *
+ * ONE SLOT PER PLAY SESSION, NOT PER SAVE. Reported: "it is currently saving
+ * the last 30 secs of gameplay to a new save slot, overriding one of the 5
+ * save slots. Instead, it should have 1 save slot for the current play session
+ * and should override that save slot with the latest information for that
+ * particular play session."
+ *
+ * That is the whole of it, and the first version had it backwards in a way
+ * that made the feature useless within three minutes: five autosaves is two
+ * and a half minutes, so by minute eight the list held five photographs of the
+ * SAME afternoon, thirty seconds apart, and every other afternoon anybody had
+ * ever played was gone. `Game.sessionId` is stamped into each snapshot and
+ * `putSave` replaces the row carrying it, so an afternoon is one row that
+ * keeps getting more recent and the list is five different afternoons.
+ */
 export const MAX_SAVES = 5;
 
 /**
@@ -116,14 +137,29 @@ function writeAll(rows) {
 }
 
 /**
- * Put one away, dropping the oldest if there are already five.
+ * Put one away — over its OWN session's row if it has one, dropping the oldest
+ * afternoon only when a genuinely new one arrives.
+ *
+ * THIS IS THE WHOLE OF THE ONE-SLOT-PER-SESSION RULE and it is four words of
+ * code: filter out the row carrying this snapshot's `session`, then put this
+ * one on the front. Everything else about the list follows from it — five rows
+ * means five afternoons, the row for the game you are in the middle of is
+ * always the freshest thing in the list, and nothing you played last week can
+ * be pushed off the bottom by half an hour of playing today.
+ *
+ * A SNAPSHOT WITH NO SESSION STILL WORKS, and takes a slot of its own. That is
+ * the degradation path rather than a mode: a caller that forgot to stamp one
+ * gets the old behaviour instead of silently overwriting somebody else's
+ * afternoon, which is the wrong failure to pick.
  *
  * @returns {boolean} whether it was actually written
  */
 export function putSave(snap) {
   if (!snap) return false;
-  const rows = [snap, ...listSaves()].slice(0, MAX_SAVES);
-  return writeAll(rows);
+  const rest = snap.session
+    ? listSaves().filter((r) => r.session !== snap.session)
+    : listSaves();
+  return writeAll([snap, ...rest].slice(0, MAX_SAVES));
 }
 
 export function dropSave(id) {
@@ -137,6 +173,91 @@ export function clearSaves() {
 /* ------------------------------ writing -------------------------------- */
 
 const idOf = () => `s${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
+
+/** A fresh play-session id. One per game started or loaded; see `MAX_SAVES`. */
+export const newSessionId = () => `p${idOf().slice(1)}`;
+
+/**
+ * One kitten's afternoon, as facts.
+ *
+ * THE SAME SHAPE WHETHER SHE IS SITTING THERE OR WENT HOME, which is the point
+ * of having it in one function. Reported: "every player in the play sessions
+ * data should be saved in the save file, so that, even if a player drops out,
+ * when they return with that player, they will return with all their data from
+ * where they left off." A row written when she leaves and a row written by the
+ * autosave have to be interchangeable, or a rejoining kitten gets back a
+ * different subset of herself depending on when the save happened to land.
+ *
+ * `here` IS WHETHER SOMEBODY WAS HOLDING A CONTROLLER FOR HER at the moment
+ * the save was taken. It is not whether she counts — see `meaningful`.
+ */
+export function castRow(p, here = true) {
+  return {
+    style: p.style?.name ?? PLAYER_STYLE[0].name,
+    name: p.name ?? '',
+    here,
+    score: Math.round(p.score ?? 0),
+    at: [p.position.x, p.position.y, p.position.z].map((n) => +n.toFixed(2)),
+    facing: +(p.facing ?? 0).toFixed(3),
+    clan: p.clan?.id ?? null,
+    sworn: [...(p.clansSworn ?? [])],
+    orbs: [...(p.powerOrbs ?? [])],
+    cut: p.bambooCut ?? 0,
+    fedFrom: p.pandaFedFrom ?? null,
+    raised: !!p.raisedPanda,
+  };
+}
+
+/**
+ * Did this kitten actually do anything, or did she just appear?
+ *
+ * THE TEST FOR WHETHER A DEPARTED KITTEN IS REMEMBERED. Asked for in these
+ * words: "if a player joins the play session and has some points, kotodama, or
+ * joined a clan (something meaningful was done by that player) and even if the
+ * player leaves/drops out of the session, then they should be marked as being
+ * in that session."
+ *
+ * A kitten who joined, ran three steps and dropped out again is NOT part of
+ * the afternoon, and remembering her would put a fourth name on a save row
+ * that a girl reading the list would not recognise — which is the one thing
+ * the row exists to avoid. Somebody currently PLAYING is always counted
+ * whatever this says: she is there, holding a controller.
+ */
+export function meaningful(row) {
+  return !!(row && (row.score || row.orbs?.length || row.clan || row.sworn?.length
+    || row.cut || row.raised || row.fedFrom != null));
+}
+
+/**
+ * Put a remembered row back onto a kitten who has just sat down.
+ *
+ * HER CLAN IS SET, NOT SWORN, for the reason `restore` gives at length: joining
+ * one is a ceremony with a toast, a pose and a camera, and replaying it over a
+ * girl who is simply picking her controller back up would announce a thing
+ * that happened twenty minutes ago as news.
+ *
+ * WHERE SHE STANDS IS NOT IN HERE. A load places everybody; a REJOIN does not —
+ * she comes back beside the party, at the join spot her sisters can see, rather
+ * than being teleported to whatever hillside she was on when she put the
+ * controller down.
+ */
+export function applyCast(game, p, row) {
+  if (!p || !row) return false;
+  p.score = row.score ?? 0;
+  game.onScoreChanged?.(p);
+  p.clan = CLANS.find((c) => c.id === row.clan) ?? null;
+  p.clansSworn = new Set(
+    (row.sworn ?? []).filter((id) => CLANS.some((c) => c.id === id))
+  );
+  if (p.clanRing) p.clanRing.material.color.set(p.clan?.color ?? p.style.colour);
+  game._updateClanBadge?.(p);
+  p.setPowerOrbs?.(row.orbs ?? []);
+  game.syncOrbMeshes?.(p);
+  p.bambooCut = row.cut ?? 0;
+  p.pandaFedFrom = row.fedFrom ?? null;
+  p.raisedPanda = !!row.raised;
+  return true;
+}
 
 /**
  * Everything about this afternoon that the world will not rebuild by itself.
@@ -153,6 +274,19 @@ const idOf = () => `s${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)
 export function snapshot(game) {
   const world = game?.world;
   if (!world || !game.players?.length) return null;
+
+  /* --- EVERYBODY WHO PLAYED, NOT EVERYBODY IN A SEAT --------------------
+     `game.sessionCast` is the kittens who did something and then put the
+     controller down; the live players are written over the top of it, so
+     somebody who left and came back is one row and it is the recent one.
+     Asked for as "let's state how many players have logged in and played in
+     that play session, versus just how many are currently logged in" — both
+     numbers are in here, because `here` is per row. */
+  const cast = new Map();
+  for (const [style, row] of game.sessionCast ?? []) {
+    if (meaningful(row)) cast.set(style, { ...row, here: false });
+  }
+  for (const p of game.players) cast.set(p.style?.name ?? '?', castRow(p, true));
 
   const knocked = [];
   const gone = [];
@@ -177,27 +311,18 @@ export function snapshot(game) {
     played: Math.round(game.playT ?? 0),
     sig: worldSig(world),
 
-    players: game.players.map((p) => ({
-      style: p.style?.name ?? PLAYER_STYLE[0].name,
-      name: p.name ?? '',
-      score: Math.round(p.score ?? 0),
-      at: [p.position.x, p.position.y, p.position.z].map((n) => +n.toFixed(2)),
-      facing: +(p.facing ?? 0).toFixed(3),
-      clan: p.clan?.id ?? null,
-      sworn: [...(p.clansSworn ?? [])],
-      /* HER ORBS ARE THE THING THE LIST IS FOR. "People should be able to find
-         the save they want based on some of the information shown in the save
-         list... each players kotodama orbs equipped etc." */
-      orbs: [...(p.powerOrbs ?? [])],
-      /* THE PANDA IS NOT SAVED, THE FEEDING IS. `Game._updatePanda` grows one
-         out of these two numbers on the next frame it is asked — so a restore
-         hands the game's own rule the inputs and lets it build the animal,
-         rather than trying to reconstruct an entity from the outside and
-         getting its tier, its name or its mount state subtly wrong. */
-      cut: p.bambooCut ?? 0,
-      fedFrom: p.pandaFedFrom ?? null,
-      raised: !!p.raisedPanda,
-    })),
+    /** WHICH AFTERNOON THIS IS. `putSave` replaces the row carrying it, so
+     *  one play session is one slot however long it runs. */
+    session: game.sessionId ?? null,
+
+    /* THE WHOLE CAST — see the merge above and `castRow` for the shape. Her
+       orbs are in it because the list is partly for them ("each players
+       kotodama orbs equipped etc."), and the panda is NOT: `cut`, `fedFrom`
+       and `raised` are the inputs `Game._updatePanda` grows one out of on the
+       next frame it is asked, so a restore hands the game's own rule its
+       numbers rather than reconstructing an animal from the outside and
+       getting its tier, its name or its mount state subtly wrong. */
+    players: [...cast.values()],
 
     world: {
       knocked, gone, scored,
@@ -205,6 +330,16 @@ export function snapshot(game) {
       pickups: game.pickups?.map((k) => !!k.taken) ?? [],
       balls: game.balls?.map((b) => !!b.taken) ?? [],
       arena: !!world.arenaOpen,
+      /* THE POWERUP KOTODAMA LYING LOOSE IN THE WORLD, WHICH NOTHING RECORDED.
+         They are not `game.pickups` — those are the six plain orbs — and they
+         have no fixed index to name: `spawnPickups` seeds them at 100% and
+         then they move, because a kitten who drops out leaves hers on the
+         ground where she stood. A load used to call `awaken()`, which re-seeds
+         all of them at their opening spots, ON TOP OF handing every player her
+         worn ones back: twenty-six orbs became thirty-four. Recorded as facts
+         and put back exactly, so the supply is conserved and a dropped-out
+         kitten's neck is still lying where she left it. */
+      orbs: game.kotodama?.worldOrbs?.() ?? [],
     },
 
     quest: game.quest ? {
@@ -256,7 +391,15 @@ export function describe(snap, world = null) {
     /* HOURS AND MINUTES, because "247 minutes" is a number a nine-year-old has
        to do arithmetic on to recognise her own afternoon. */
     played: mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`,
+    /* TWO NUMBERS, BECAUSE THEY ARE TWO QUESTIONS. Asked for as "let's state
+       how many players have logged in and played in that play session, versus
+       just how many are currently logged in": `party` is the afternoon's whole
+       cast and `seated` is how many were holding controllers when the save
+       landed. A girl looking for the game her cousin was in needs the first;
+       a girl wondering why the row says four when she remembers two needs the
+       second. */
     party: snap.players.length,
+    seated: snap.players.filter((p) => p.here !== false).length,
     mischief: total ? Math.round((done / total) * 100) : null,
     arena: !!snap.world?.arena,
     balls: (snap.world?.balls ?? []).filter(Boolean).length,
@@ -265,6 +408,10 @@ export function describe(snap, world = null) {
       clan: p.clan ? (CLANS.find((c) => c.id === p.clan)?.name ?? p.clan) : null,
       orbs: p.orbs ?? [],
       score: p.score ?? 0,
+      /** Was somebody holding her controller when this was taken? A kitten who
+       *  had gone home is still in the row — that is the point — but she is
+       *  marked, or the row reads as four people in the room. */
+      here: p.here !== false,
     })),
     /** Whether this save can be loaded at all, and if not, why — in words,
      *  because a greyed-out row that will not say what is wrong with it is the
@@ -295,14 +442,24 @@ export function describe(snap, world = null) {
  * one-kitten session could seat three more — the game can do it — but three
  * kittens nobody is holding a controller for would stand in the town for the
  * rest of the afternoon, which is the fifth and sixth non-negotiables at once.
- * Matched BY STYLE first so a girl playing Blossom gets Blossom's orbs back,
- * then by seat for whoever is left. The caller is told how many were dropped
- * and says so out loud.
  *
- * @returns {{seated: number, dropped: number}}
+ * WHOEVER IS NOT SEATED IS NOT LOST. Every unseated row goes into
+ * `game.sessionCast`, so picking up a third controller — or swapping to that
+ * cat in the character picker — hands her back exactly what she had. The
+ * caller is told how many are waiting and says so out loud, because a load
+ * that quietly seats two of four reads as a save that only kept two.
+ *
+ * @returns {{seated: number, waiting: number}}
  */
 export function restore(game, snap) {
   game.restart();
+
+  /* THE AFTERNOON'S OWN NAME COMES WITH IT. Carrying the loaded session's id
+     rather than minting a fresh one is what makes carrying on from a save
+     carry on IN that save's slot: play for another hour and it is still one
+     row in the list, brought up to date, rather than a second afternoon
+     sitting beside the one it continues. */
+  game.sessionId = snap.session ?? newSessionId();
 
   /* --- the world, first: everybody's positions are on it ---------------- */
   const W = snap.world ?? {};
@@ -337,6 +494,13 @@ export function restore(game, snap) {
       Math.sin(a) * tip
     );
   });
+  /* THE LOOSE POWERUP KOTODAMA, PUT BACK EXACTLY. This has to happen after
+     `awaken()` below has run — it is what creates them at all — so it is
+     deferred to `putOrbs`, called down there. Declared here beside the rest of
+     the world for the same reason the props are: it is a fact about the town,
+     not about anybody playing. */
+  const putOrbs = () => game.kotodama?.setWorldOrbs?.(W.orbs ?? []);
+
   const mt = document.getElementById('mtotal');
   if (mt) mt.textContent = `${paid.size} / ${game.world.mischiefTotal}`;
 
@@ -356,6 +520,14 @@ export function restore(game, snap) {
 
   /* --- the tournament, which is what makes the eighth island exist ------ */
   if (snap.awakened && game.kotodama && !game.kotodama.awakened) {
+    /* `awaken` IS A CEREMONY AND A RESEED AT ONCE, and only the second half is
+       wanted here: it dissolves the plain orbs, hands a random prize to
+       whoever had collected the most, seeds every Powerup Kotodama at its
+       opening spot and raises the stall. The prize is overwritten by her own
+       row below and the reseed is overwritten by `putOrbs` — which is the only
+       reason calling it is safe, and the reason those two lines are not
+       optional. Doing the reseed by hand instead would be a second copy of the
+       rule that puts the stall in the market. */
     game.kotodama.awaken();
   }
   if (snap.quest && game.quest) {
@@ -386,46 +558,50 @@ export function restore(game, snap) {
   game._finaleDue = false;
 
   /* --- and the kittens ------------------------------------------------- */
+  /* --- BY KITTEN, AND ONLY BY KITTEN --------------------------------------
+     A row belongs to a CAT, not to a seat. The first version fell back to "the
+     first row nobody has claimed" when a seat's cat was not in the save, which
+     handed Ember somebody else's afternoon — her score, her clan, her orbs,
+     under the wrong name — and there is now no need for it: a row nobody is
+     playing goes into the session's cast a few lines down, and the moment
+     anybody picks up that cat, in the picker or on a new controller, she gets
+     her own afternoon back intact. Waiting is better than mis-assigned. */
   const rows = [...(snap.players ?? [])];
   let seated = 0;
   for (const p of game.players) {
-    /* HER OWN KITTEN'S ROW IF THERE IS ONE. Two girls who swapped seats
-       between sessions still each get their own orbs back, because what a save
-       is about is the KITTEN and not the socket the controller is in. */
-    let ix = rows.findIndex((r) => r.style === p.style?.name);
-    if (ix < 0) ix = 0;
+    const ix = rows.findIndex((r) => r.style === p.style?.name);
+    if (ix < 0) continue;
     const row = rows.splice(ix, 1)[0];
-    if (!row) break;
     seated++;
-    p.score = row.score ?? 0;
-    game.onScoreChanged?.(p);
+    applyCast(game, p, row);
+    /* A LOAD PLACES HER; A REJOIN DOES NOT. See `applyCast` — this is the
+       half that is only ever right when the whole world is being put back. */
     if (Array.isArray(row.at) && row.at.every(Number.isFinite)) {
       p.position.set(row.at[0], row.at[1], row.at[2]);
       p.camTarget.copy(p.position);
     }
     p.facing = row.facing ?? 0;
     p.velocity.set(0, 0, 0);
-    p.clan = CLANS.find((c) => c.id === row.clan) ?? null;
-    p.clansSworn = new Set(
-      (row.sworn ?? []).filter((id) => CLANS.some((c) => c.id === id))
-    );
-    /* HER CLAN IS SET, NOT SWORN. `Game.onJoinClan` is a CEREMONY — a toast, a
-       pose, a camera, a first-time celebration — and replaying four of them
-       over a world that has just been rebuilt would be the load announcing
-       itself four times as something that just happened. What swearing leaves
-       BEHIND is the field, the ring colour and the badge, and those are set
-       here directly. The ring's visibility is derived from `clan` every frame
-       by `Player`, so it comes back on its own. */
-    p.clanRing.material.color.set(p.clan?.color ?? p.style.colour);
-    game._updateClanBadge?.(p);
-    p.setPowerOrbs(row.orbs ?? []);
-    game.syncOrbMeshes?.(p);
-    p.bambooCut = row.cut ?? 0;
-    p.pandaFedFrom = row.fedFrom ?? null;
-    p.raisedPanda = !!row.raised;
   }
+  /* ...AND EVERY KITTEN WHO DID NOT GET ONE IS REMEMBERED RATHER THAN LOST.
+     Asked for as "even if a player drops out, when they return with that
+     player, they will return with all their data from where they left off" —
+     and a save loaded into a smaller party is the same situation arriving from
+     the other direction. The rows that found no seat go into the session's
+     cast, so the moment somebody picks up a fourth controller (or swaps to
+     that cat in the picker) `Game._recallPlayer` hands her back her score, her
+     clan, her oaths and her panda. Nothing is dropped; it is waiting. */
+  game.sessionCast = new Map();
+  for (const r of snap.players ?? []) {
+    if (r?.style) game.sessionCast.set(r.style, { ...r, here: false });
+  }
+
+  putOrbs();
   game._reseedRigs?.();
   game.playT = snap.played ?? 0;
 
-  return { seated, dropped: rows.length };
+  /* `waiting` RATHER THAN `dropped`, and the word matters because the caller
+     says it out loud: nothing was thrown away, those kittens are in the cast
+     and come back the moment somebody plays them. */
+  return { seated, waiting: rows.length };
 }
