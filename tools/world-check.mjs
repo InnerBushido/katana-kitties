@@ -6871,7 +6871,7 @@ console.log('\n--- half a second of not being there ---');
       const drops = ORB_IDS.slice(0, MAX_EQUIPPED)
         .map((id, i) => K.dropInWorld(id, at, i));
       if (round === 0) {
-        ok('a leaving kitten really puts every orb back in the world',
+        ok('a whole neck put down really reaches the world, every orb of it',
           drops.every((d) => d) && K.pickups.length === MAX_EQUIPPED,
           `${K.pickups.length}`);
       }
@@ -6892,8 +6892,9 @@ console.log('\n--- half a second of not being there ---');
     ok('...and no two of them are ever on top of each other', closest > 1.2,
       `${closest.toFixed(2)} apart`);
     /* AND STILL A PILE. Scattering them across the town would be the same
-       failure with the sign flipped: she has just left, and the sister picking
-       them up should not have to go hunting for the last one. */
+       failure with the sign flipped: she has put them down on purpose, for
+       somebody, and whoever collects them should not have to go hunting for
+       the last one. */
     ok('...but the whole drop is still a pile you can walk into', furthest < 12,
       `${furthest.toFixed(2)} out`);
   }
@@ -6908,8 +6909,84 @@ console.log('\n--- half a second of not being there ---');
       /for \(const o of p\.wornOrbs \?\? \[\]\) this\.scene\.remove/.test(body));
     ok('...and empties both, so nothing walks a list of removed meshes',
       /p\.orbs = \[\]/.test(body) && /p\.wornOrbs = \[\]/.test(body));
-    ok('...and fans the drop out rather than stacking it on one point',
-      /_dropOrbInWorld\(id, p\.position, i\)/.test(body));
+    /* --- BUT SHE TAKES THE ORBS THEMSELVES WITH HER ----------------------
+       Reported: "when a player leaves, they do not drop the kotodama orbs now,
+       but instead keep it, so if they rejoin, they will have their kotodama
+       orbs." Leaving used to tip her whole neck onto the ground, which was the
+       dealer's supply rule read across from SELLING — and selling is not
+       leaving. A girl who put the controller down for twenty minutes came back
+       to an empty neck and eight orbs shared out among whoever had been
+       standing nearest.
+
+       `wornOrbs` STILL GOES, AND THAT IS NOT THE SAME THING. It is the MESHES
+       orbiting her shoulder and it has to be removed because she is leaving
+       the scene; `powerOrbs` is the list of ids and is what she keeps. The two
+       have been confused here before, in the other direction, and the last
+       time cost a bug where her shells stayed spinning in an empty town. */
+    ok('...but she keeps the orbs THEMSELVES, rather than tipping them on the floor',
+      !/dropInWorld/.test(body) && !/_dropOrbInWorld/.test(body));
+    ok('...and the list of what she is wearing survives being taken off screen',
+      !/p\.powerOrbs = \[\]/.test(body) && !/setPowerOrbs\(\[\]\)/.test(body));
+    /* NOTHING IS DUPLICATED EITHER, which is the same non-negotiable read the
+       other way: her row is written from her live orbs, so there is exactly one
+       copy of each and it is in her pocket. */
+    ok('...and they go into the session cast whole, as a reservation',
+      /_rememberPlayer\(p\)/.test(body) && !/orbs: \[\]/.test(body));
+    /* --- AND THE PARTY CHANGING IS WORTH A SAVE OF ITS OWN ----------------
+       "We can do an autosave when the player drops out to save the state of
+       the amount of players and where the kotodama orbs are." Two things a
+       save is made of move at once here, and up to twenty-nine seconds of the
+       ordinary timer is up to twenty-nine seconds in which closing the tab
+       brings back a kitten who left. */
+    ok('...and leaving writes the afternoon down there and then',
+      /_saveOnPartyChange\(\)/.test(body));
+    const sop = stripComments(mn).slice(stripComments(mn).indexOf('_saveOnPartyChange() {'));
+    const sopBody = sop.slice(0, sop.indexOf('_autoSave() {'));
+    /* STILL BEHIND THE FIVE-MINUTE GATE. A game two minutes old has no row in
+       the list on purpose, and somebody joining and leaving in the first
+       minute is the likeliest way to get a row full of nothing. */
+    ok('...without going behind the five-minute gate to do it',
+      /playT < AUTOSAVE_AFTER/.test(sopBody));
+    ok('...and it pushes the next ordinary one out, so one change is one write',
+      /_saveAt = this\.playT \+ AUTOSAVE_EVERY/.test(sopBody));
+
+    /* --- THE WAY TO LEAVE THEM BEHIND ON PURPOSE -------------------------
+       "I guess we can add a 'Drop all orbs' button in the Drop Out screen for
+       the player as an option, so they can decide to drop the orbs before
+       dropping out." The generous thing — leaving eight orbs where her sister
+       can find them — used to happen automatically and now has to be possible
+       to DO, so it is a row beside the one it belongs to. */
+    const lb = stripComments(mn).slice(stripComments(mn).indexOf('_buildLeaveButtons() {'));
+    const lbBody = lb.slice(0, lb.indexOf('_orbDropButton(i, worn) {'));
+    ok('a kitten who could drop out is offered a way to put her orbs down first',
+      /_orbDropButton\(i, worn\)/.test(lbBody));
+    /* ONLY WHEN SHE HAS ANY. A row that cannot do anything is a row that reads
+       as broken the first time somebody presses it. */
+    ok('...and only when she is wearing some',
+      /if \(worn\) wrap\.appendChild/.test(lbBody));
+    /* ABOVE HER DROP OUT, because it is the step that comes first and a stick
+       going down the list should meet them in the order they are done. */
+    ok('...above her DROP OUT row, which is the order the two are used in',
+      lbBody.indexOf('_orbDropButton') < lbBody.indexOf('DROP OUT'));
+    const ob = stripComments(mn).slice(stripComments(mn).indexOf('_orbDropButton(i, worn) {'));
+    const obBody = ob.slice(0, ob.indexOf('_updateEconomyForParty() {'));
+    /* THROUGH `Kotodama.drop`, which is the Character Profile's path too — the
+       fan, the `shyOf` that stops her own pickup radius handing them straight
+       back, and the refusal to delete an orb it cannot find ground for. A
+       second copy of that here would get one of the three subtly wrong. */
+    ok('...and it puts them down the one way the game puts orbs down',
+      /this\.kotodama\?\.drop\(p, \[\.\.\.\(p\.powerOrbs \?\? \[\]\)\]\)/.test(obBody));
+    /* SEVENTH NON-NEGOTIABLE. They are anyone's the moment she walks away. */
+    ok('...and asks first, in words that say what happens to them',
+      /confirm\.ask/.test(obBody) && /NO, SHE KEEPS THEM/.test(obBody));
+    /* A PARTIAL DROP IS A REAL ANSWER on a slope — `drop` declines rather than
+       deletes — so "dropped them" would be the menu lying about where they are. */
+    ok('...and says how many actually landed rather than assuming all of them',
+      /dropped \$\{n\}/.test(obBody) && /if \(!n\)/.test(obBody));
+    ok('...and saves, because three orbs just moved into the town',
+      /_saveOnPartyChange\(\)/.test(obBody));
+    ok('...and rebuilds the rows, so the one with no work left goes away',
+      /_buildLeaveButtons\(\)/.test(obBody));
 
     /* --- AND TWO KITTENS JOINING CANNOT LAND ON ONE SPOT ------------------
        `_joinSpot` has no memory, so two joins a second apart asked the same
@@ -13820,6 +13897,62 @@ console.log('\n--- 盗 the theft itself, and the loan behind it ---');
   }
 
   {
+    /* --- THE THIEF WALKS OUT STILL WEARING IT -----------------------------
+       The ending nobody had written, and it only became reachable the day
+       leaving stopped tipping a kitten's neck onto the floor. `settleLoans`
+       looks in three places — loose on the deck, worn by a live player, sold
+       back to the dealer — and a leaver's orbs are now in the session's cast,
+       which is none of them. Her sister's orb would come home only if that
+       exact kitten happened to be picked up again before the gong.
+
+       "The orb is returned to the original player after the fight" is a
+       promise; walking out of the game is not a way to end the fight still
+       holding one. */
+    const thief = mkP(0, 0);
+    const victim = mkP(1, 2);
+    const k = mkK([thief, victim]);
+    k.give(victim, 'ward', { quiet: true });
+    k.give(thief, 'swift', { quiet: true });
+    k.knockLoose(thief, victim);
+    k.pickups[0].lockT = 0;
+    thief.position.copy(k.pickups[0].position);
+    k.update(0.016);
+    ok('a thief really is wearing the orb she took', thief.powerOrbs.includes('ward'));
+
+    const n = k.reclaimFrom(thief);
+    ok('...and dropping out hands it straight back rather than taking it home',
+      n === 1 && victim.powerOrbs.includes('ward')
+      && !thief.powerOrbs.includes('ward'));
+    /* HER OWN IS NOT TOUCHED. The whole point of the change is that she keeps
+       what is hers; a reclaim that swept her neck would be the old behaviour
+       back under a new name. */
+    ok('...while what was hers all along goes with her',
+      thief.powerOrbs.join() === 'swift');
+    /* AND THE LOAN IS SPENT, so the gong does not try to pay it a second time
+       out of whoever is wearing that kind of orb by then. */
+    ok('...and the loan is settled, not left for the gong to find',
+      k.loans.length === 0 && k.settleLoans() === 0);
+
+    /* NOTHING IS LOST WHEN BOTH OF THEM HAVE GONE. There is no owner to give
+       it to, so it goes on the ground where the thief was standing — it does
+       not quietly cease to exist. Fourth non-negotiable. */
+    const t2 = mkP(0, 0);
+    const v2 = mkP(1, 2);
+    const k2 = mkK([t2, v2]);
+    k2.give(v2, 'reach', { quiet: true });
+    k2.knockLoose(t2, v2);
+    k2.pickups[0].lockT = 0;
+    t2.position.copy(k2.pickups[0].position);
+    k2.update(0.016);
+    k2.game.players = [t2];
+    const loose0 = k2.pickups.filter((pk) => !pk.taken).length;
+    k2.reclaimFrom(t2);
+    ok('...and with the owner gone too it lands in the world, not in nothing',
+      k2.pickups.filter((pk) => !pk.taken).length === loose0 + 1
+      && !t2.powerOrbs.includes('reach'));
+  }
+
+  {
     /* A KITTEN WHO IS NOT PLAYING ANY MORE. She dropped out between the theft
        and the gong; there is nobody to give it back to, and the check that
        matters is that this does not throw and does not delete anything. */
@@ -16697,7 +16830,12 @@ console.log('\n--- one press is not enough, and one player drives ---');
      change depending on who joined, and what it throws away belongs to one
      named child. */
   const dAt = main.indexOf(NL + '  _buildLeaveButtons() {');
-  const drop = main.slice(dAt, dAt + 3000);
+  /* BOUNDED BY THE NEXT METHOD, not by a character count. It was `dAt + 3000`
+     and a new row in this builder pushed the leave call past the end of the
+     window, so the check went red for a reason that had nothing to do with
+     what it is about. A slice measured in characters is a check with a
+     deadline on it. */
+  const drop = main.slice(dAt, main.indexOf(NL + '  _orbDropButton(i, worn) {'));
   ok('drop out asks too', dAt > 0 && drop.indexOf('this.confirm.ask({') > 0
     && drop.indexOf('this.confirm.ask({') < drop.indexOf('this._leavePlayer('));
   ok('...and QUIT GAME exists at all', /data-action="quit"/.test(html));
@@ -19724,17 +19862,23 @@ console.log('\n--- one press is not enough, and one player drives ---');
 
     /* --- and the game actually calls both halves, in the two places a cat
            stops being played and the one place she starts --- */
+    /* BOUNDED BY THE NEXT METHOD. A character count is a check with a
+       deadline on it: this was `+ 2500` and one added comment pushed the line
+       it looks for out of the window. */
     const leave = main.slice(main.indexOf('  _leavePlayer(index) {'),
-      main.indexOf('  _leavePlayer(index) {') + 2500);
-    ok('dropping out writes her down before anything is taken off her',
+      main.indexOf('  _buildLeaveButtons() {'));
+    /* BEFORE ANYTHING IS TAKEN OFF HER. The lines below this one strip her
+       meshes out of the scene and splice her out of the party; a row written
+       after them would describe a cat that had already been dismantled. */
+    ok('dropping out writes her down before her kitten is taken apart',
       leave.indexOf('_rememberPlayer') > 0
-      && leave.indexOf('_rememberPlayer') < leave.indexOf('_dropOrbInWorld'));
-    /* HER ORBS ARE BLANKED IN THE ROW, because the next line puts them in the
-       town. Handing her a second copy on the way back would put twenty-seven
-       orbs in a world that has twenty-six — the fourth non-negotiable broken
-       in the direction nobody checks for. */
-    ok('...with her orbs left in the world rather than kept in two places at once',
-      /_rememberPlayer\(p, \{ orbs: \[\] \}\)/.test(leave));
+      && leave.indexOf('_rememberPlayer') < leave.indexOf('this.scene.remove(p.group)'));
+    /* AND THE ROW CARRIES HER ORBS. It used to say `{ orbs: [] }`, because the
+       next line tipped them onto the ground — see the drop-out block above for
+       why that stopped. There is still exactly one copy of each orb: it is in
+       her row, and she is the only one who can be handed it. */
+    ok('...with her orbs in it, because she is keeping them',
+      /_rememberPlayer\(p\)/.test(leave) && !/orbs: \[\]/.test(leave));
     const seat = main.slice(main.indexOf('  _seatPlayer(index, styleIndex'),
       main.indexOf('  _dressPlayer(p) {'));
     /* THE PICKER SWAP WAS THE QUIET ONE. Nothing dropped her orbs, nothing

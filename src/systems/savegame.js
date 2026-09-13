@@ -333,12 +333,14 @@ export function snapshot(game) {
       /* THE POWERUP KOTODAMA LYING LOOSE IN THE WORLD, WHICH NOTHING RECORDED.
          They are not `game.pickups` — those are the six plain orbs — and they
          have no fixed index to name: `spawnPickups` seeds them at 100% and
-         then they move, because a kitten who drops out leaves hers on the
-         ground where she stood. A load used to call `awaken()`, which re-seeds
-         all of them at their opening spots, ON TOP OF handing every player her
-         worn ones back: twenty-six orbs became thirty-four. Recorded as facts
-         and put back exactly, so the supply is conserved and a dropped-out
-         kitten's neck is still lying where she left it. */
+         then they move: the dealer sells one, a steal knocks one onto the
+         arena deck, and a kitten who does not want to carry hers any further
+         can put the lot on the ground wherever she is standing. A load used to
+         call `awaken()`, which re-seeds all of them at their opening spots, ON
+         TOP OF handing every player her worn ones back: twenty-six orbs became
+         thirty-four. Recorded as facts and put back exactly, so an orb left
+         lying in the town is still lying in the town — at the same place — the
+         next time that afternoon is loaded. */
       orbs: game.kotodama?.worldOrbs?.() ?? [],
     },
 

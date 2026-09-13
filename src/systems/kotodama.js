@@ -525,6 +525,13 @@ export class Kotodama {
    * `findOpenSpot`, the same pickups. What is different is that she is still
    * standing there, and the two consequences of that are the whole function.
    *
+   * IT IS NOW THE *ONLY* PATH. Dropping out does not put a kitten's orbs on
+   * the ground any more — she keeps them and gets them back when she returns —
+   * so every orb that ends up lying in the town got there because somebody
+   * chose to put it there, through here, having been asked. Both callers are
+   * a button: the Character Profile's drop pile, and the pause menu's DROP HER
+   * ORBS row beside her DROP OUT.
+   *
    * IT PUTS EACH ONE DOWN BEFORE IT TAKES IT OFF HER, one at a time. There are
    * twenty-six of these in the world and `dropInWorld` can decline — the
    * Kotodama are not awakened, or `heightAt` has nothing under the fanned
@@ -533,12 +540,13 @@ export class Kotodama {
    * lost. It also means a partial drop is a real answer, and the count comes
    * back so the caller can say so instead of claiming all eight landed.
    *
-   * THE FAN STARTS AT ONE, NOT AT ZERO. `_leavePlayer` starts at zero because
-   * the kitten it is dropping for has just been removed from the game; here
-   * she is standing on the spot, and `spread: 0` means "exactly at `at`" —
-   * eight orbs under her own feet. Starting at 1 puts the whole pile in the
-   * ring at `DROP_R0` and outwards, which is what "around the player" means
-   * when the player is still there.
+   * THE FAN STARTS AT ONE, NOT AT ZERO. `spread: 0` means "exactly at `at`",
+   * which is eight orbs under her own feet; starting at 1 puts the whole pile
+   * in the ring at `DROP_R0` and outwards, which is what "around the player"
+   * means when the player is standing there. Zero was right for the one caller
+   * that no longer exists — `_leavePlayer`, dropping for a kitten who had
+   * already been taken out of the game — and every caller left is a button
+   * pressed by somebody who is still on the spot.
    *
    * AND THE ORBS ARE SHY OF HER UNTIL SHE STEPS OFF THEM. `DROP_R0` is 2.6 and
    * `PICKUP_RADIUS` is 2.8, so every orb she drops lands INSIDE her own pickup
@@ -730,6 +738,66 @@ export class Kotodama {
     return back.length;
   }
 
+  /**
+   * She is leaving the game — give back anything she only BORROWED.
+   *
+   * 盗 STEAL MISCHIEF IS A LOAN AND THIS IS THE ENDING NOBODY HAD WRITTEN.
+   * `settleLoans` looks for a borrowed orb in three places: loose on the deck,
+   * worn by a live player, or sold back to the dealer. A thief who drops out
+   * mid-match used to be covered by accident — leaving tipped her whole neck
+   * onto the ground, so the orb turned up as `loose` — and the moment leaving
+   * stopped doing that, the orb went into her cast row instead, which is none
+   * of the three. Her sister's orb would come back only if that exact kitten
+   * were picked up again before the gong. "The orb is returned to the original
+   * player after the fight" is a promise, so it is kept here rather than left
+   * to a coincidence that has just been removed.
+   *
+   * AND IT IS THE RIGHT ANSWER ANYWAY, not merely a patch. A steal lasts the
+   * fight; walking out of the game is not a way to end the fight still holding
+   * it.
+   *
+   * WHAT SHE IS OWED IS LEFT ALONE. A loan where SHE is the owner — her orb,
+   * on somebody else's neck — stays on the list, because she keeps everything
+   * now and may well be picked up again before the match ends, and then
+   * `settleLoans` finds her in `game.players` and pays her back normally.
+   *
+   * @returns {number} how many went home
+   */
+  reclaimFrom(who) {
+    if (!who) return 0;
+    const keep = [];
+    const back = [];
+    for (const loan of this.loans) {
+      const { id, owner } = loan;
+      if (owner === who || !who.powerOrbs.includes(id)) { keep.push(loan); continue; }
+      this.take(who, id);
+      /* A FULL OWNER GETS IT AT HER FEET, and an owner who has ALSO left gets
+         it on the ground where the thief was standing. `give` refuses at eight
+         and it has to; silently dropping the ninth is how somebody ends a
+         tournament with less than she walked into it with. Fourth
+         non-negotiable — there is nowhere in here that an orb ceases to be. */
+      const home = owner && this.game.players.includes(owner) ? owner : null;
+      if (!home) this.dropInWorld(id, who.position, back.length + 1);
+      else if (!this.give(home, id, { quiet: true })) {
+        this.dropInWorld(id, home.position, 1);
+      }
+      back.push({ id, owner: home });
+    }
+    this.loans = keep;
+    if (!back.length) return 0;
+    this.game.sfx('powerorb');
+    for (const home of new Set(back.map((b) => b.owner))) {
+      if (!home) continue;
+      const n = back.filter((b) => b.owner === home).length;
+      this.game.toast(
+        `${home.name} got ${n === 1 ? 'her Kotodama' : `${n} Kotodama`} back`
+        + ' — a steal only lasts the fight',
+        home.index
+      );
+    }
+    return back.length;
+  }
+
   /* -------------------------------- frame -------------------------------- */
 
   update(dt) {
@@ -805,10 +873,15 @@ export class Kotodama {
    * THEY HAVE NO INDEX TO NAME, WHICH IS WHY THIS EXISTS. Everything else a
    * save records about the world is an index into a list the world rebuilds
    * identically from its own seed — prop 47 is prop 47 on every boot. These are
-   * not: `spawnPickups` seeds them at 100% and then they MOVE, because a kitten
-   * who drops out leaves her whole neck on the ground where she was standing,
-   * and a steal knocks one onto the arena deck. So the id and the place are the
-   * fact, and there is nothing shorter that is true.
+   * not: `spawnPickups` seeds them at 100% and then they MOVE — a steal knocks
+   * one onto the arena deck, and a kitten who is tired of carrying hers can put
+   * her whole neck on the ground wherever she happens to be standing. So the id
+   * and the place are the fact, and there is nothing shorter that is true.
+   *
+   * AND THAT IS WHAT MAKES A DROPPED ORB SURVIVE THE AFTERNOON. "If orbs are in
+   * the level, then when the level is loaded again later, they will still be
+   * there" — they are here, with their coordinates, and `setWorldOrbs` puts
+   * each one back on the spot it was left on rather than near it.
    *
    * @returns {Array<{id: string, at: number[]}>}
    */

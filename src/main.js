@@ -5650,9 +5650,16 @@ class Game {
    * afternoon, and putting her on the save row would give a girl reading the
    * list a fourth name she does not recognise.
    *
-   * @param over fields to write over the top — `_leavePlayer` passes
-   *   `{ orbs: [] }`, because by the time it calls this her orbs are lying in
-   *   the town and belong to whoever walks over them.
+   * HER ORBS ARE PART OF IT. They were not, once: `_leavePlayer` tipped them
+   * onto the ground on the way past and passed `{ orbs: [] }` here, so a girl
+   * who came back found her neck empty and eight orbs shared out among
+   * whoever had been standing nearest. They now travel with her row, and the
+   * way to leave them behind is the DROP HER ORBS button — a decision, made by
+   * her, before she goes.
+   *
+   * @param over fields to write over the top. Nothing in the game passes any
+   *   at the moment; it stays because the two callers are two DIFFERENT ways
+   *   of stopping being played and the next one may not be like these.
    */
   _rememberPlayer(p, over = {}) {
     if (!p?.style?.name) return false;
@@ -5670,19 +5677,52 @@ class Game {
    * costs nothing and removing it would mean a girl who rejoined, did nothing
    * and left again came back to an empty kitten.
    *
-   * HER ORBS COME BACK ONLY IF THEY WERE NEVER PUT DOWN. `_leavePlayer` drops
-   * them into the world — the dealer's own rule, and the reason only
-   * twenty-six exist — so her row says `orbs: []` and what she gets back is
-   * her score, her clan, her oaths and her panda. The orbs themselves are
-   * still hers to collect: they are lying where she was standing, in plain
-   * sight, and handing her a second copy would put twenty-seven in a world
-   * that has twenty-six. The picker path never dropped them, so there the row
-   * carries them and she gets them straight back.
+   * SHE GETS HER ORBS BACK TOO, and that is the whole of the change. What she
+   * had on when she stopped being played is what she is wearing again a
+   * heartbeat after somebody picks her up: "if they rejoin, they will have
+   * their kotodama orbs". They were never in the world while she was away —
+   * `_leavePlayer` no longer drops them — so this is handing back a reservation
+   * rather than minting a copy, and twenty-six stays twenty-six.
+   *
+   * UNLESS SHE PUT THEM DOWN HERSELF. The DROP HER ORBS row takes them off her
+   * BEFORE `_rememberPlayer` runs, so a row written after it honestly says she
+   * had none, and the orbs are pickups in the town that a save records by
+   * position. Either way there is exactly one copy of each orb and exactly one
+   * place it is.
    */
   _recallPlayer(p) {
     const row = this.sessionCast.get(p?.style?.name);
     if (!row) return false;
     applyCast(this, p, row);
+    return true;
+  }
+
+  /**
+   * Write the afternoon down NOW, because something happened that the
+   * thirty-second timer would otherwise round away.
+   *
+   * ASKED FOR ABOUT DROPPING OUT — "we can do an autosave when the player drops
+   * out to save the state of the amount of players and where the kotodama orbs
+   * are" — and that is exactly the shape of change the clock is bad at. A
+   * kitten leaving changes two things a save is made of at once: who is in the
+   * party, and where twenty-six orbs are. Up to twenty-nine seconds of that
+   * sitting unwritten is up to twenty-nine seconds in which closing the tab
+   * loses a girl's whole neck, or brings back a kitten who left.
+   *
+   * IT STILL RESPECTS THE FIVE-MINUTE GATE. A game two minutes old has no row
+   * in the list yet, deliberately — "shouldn't start auto-saving until after
+   * the player has played for more than 5 minutes" — and a drop-out is not a
+   * reason to go behind that. Somebody joining and leaving in the first minute
+   * is the single most likely way to get a row full of nothing.
+   *
+   * AND IT PUSHES THE NEXT ONE OUT. Without this, a drop-out at t+299 is
+   * followed by the ordinary autosave a second later: two writes for one state,
+   * and the interval quietly becoming "whenever" rather than thirty seconds.
+   */
+  _saveOnPartyChange() {
+    if (this.state !== 'play' || this.playT < AUTOSAVE_AFTER) return false;
+    this._saveAt = this.playT + AUTOSAVE_EVERY;
+    this._autoSave();
     return true;
   }
 
@@ -7174,11 +7214,29 @@ class Game {
   /**
    * A player drops out. The game must not notice beyond her being gone.
    *
-   * HER ORBS GO BACK INTO THE WORLD rather than vanishing with her, which is
-   * the dealer's own rule — a sold orb goes back on the shelf so the two of
-   * them cannot destroy the world's supply between them. Only twenty-six exist;
-   * a kitten leaving with eight of them would delete a third of the endgame for
-   * everybody still playing.
+   * HER ORBS GO WITH HER, AND COME BACK WITH HER. They used to be thrown on
+   * the floor here — the dealer's supply rule read across from selling, where
+   * a sold orb goes back on the shelf so the shop and a kitten cannot destroy
+   * the world's twenty-six between them. Selling is not leaving. A girl who
+   * puts the controller down for twenty minutes and picks it up again found
+   * her whole neck gone and eight orbs distributed among whoever had been
+   * standing nearest, which reads as the game taking them off her, and asked
+   * for directly: "when a player leaves, they do not drop the kotodama orbs
+   * now, but instead keep it, so if they rejoin, they will have their kotodama
+   * orbs."
+   *
+   * NOTHING IS LOST AND NOTHING IS DUPLICATED, which is the half of the fourth
+   * non-negotiable that actually binds. Her orbs are RESERVED, not destroyed:
+   * `_rememberPlayer` writes the ids into the session's cast under her kitten's
+   * name and `_recallPlayer` hands exactly those back. Twenty-six is still
+   * twenty-six; some of them are simply in a pocket rather than on a hillside,
+   * the same as if she were standing in the town square hoarding.
+   *
+   * AND IT IS HER CHOICE, NOT THE GAME'S. `_buildLeaveButtons` puts a DROP HER
+   * ORBS row beside her DROP OUT row whenever she is wearing any, so a girl who
+   * wants to leave them for her sister can — deliberately, before she goes,
+   * and having been asked. The old behaviour was that decision made for her
+   * every time.
    *
    * HER PANDA WAITS and her dragon goes home, which are the rules those animals
    * already have for an owner who is no longer there.
@@ -7192,19 +7250,21 @@ class Game {
     if (this.partySize <= 1 || !this.players[index]) return;
     const p = this.players[index];
 
-    /* SCATTERED, NOT STACKED. Every orb went to `p.position` and
-       `findOpenSpot` is deterministic, so a kitten leaving with eight of them
-       dropped eight pickups into one point — one orb's worth of geometry on
-       screen, z-fighting with itself, and a pile you cannot tell the size of.
-       They are her whole neck's worth going back into a world where only
-       twenty-six exist; they have to look like eight things. */
-    /* WHAT SHE HAD, WRITTEN DOWN BEFORE ANY OF IT IS TAKEN OFF HER — and with
-       her orbs blanked, because the next line puts them in the town where
-       anybody may pick them up. See `_recallPlayer`: rejoining gives her back
-       her points, her clan, her oaths and her panda, and her orbs are lying
-       where she left them rather than being handed out a second time. */
-    this._rememberPlayer(p, { orbs: [] });
-    (p.powerOrbs ?? []).forEach((id, i) => this._dropOrbInWorld(id, p.position, i));
+    /* BUT NOT ANYTHING SHE ONLY BORROWED. 盗 Steal Mischief is a loan for the
+       length of the fight, and leaving is not a way to end the fight still
+       holding one. This used to be covered by accident: leaving tipped her neck
+       on the floor, so `settleLoans` found the orb lying there. See
+       `Kotodama.reclaimFrom` — it runs BEFORE the line below, so what gets
+       written into her row is what is actually hers. */
+    this.kotodama?.reclaimFrom(p);
+
+    /* WHAT SHE HAD, WRITTEN DOWN BEFORE ANY OF IT IS TAKEN OFF HER — ORBS AND
+       ALL now. `p.powerOrbs` is the list of ids and nothing below clears it;
+       what the lines further down remove is `wornOrbs`, which is the MESHES
+       orbiting her shoulder and has to go because she is leaving the scene.
+       The two have been confused here before, in the other direction, and cost
+       a bug where her shells stayed spinning in the town after she left. */
+    this._rememberPlayer(p);
     if (p.mount) { p.mount.returnHome?.(); p.mount = null; }
     if (p.rideAlong) p.rideAlong = null;
     if (p.panda) p.panda.follows = false;
@@ -7268,6 +7328,11 @@ class Game {
     this._updateEconomyForParty();
     this.tournament?.onPartyChanged?.();
     this.toast(`${p.name} left the game`, 0);
+    /* AND WRITTEN DOWN IMMEDIATELY. The party is one smaller and her orbs have
+       moved — either into the cast with her, or onto the ground if she used the
+       row above first — and both are facts a save is made of. See
+       `_saveOnPartyChange` for why this is not simply `_autoSave`. */
+    this._saveOnPartyChange();
   }
 
   /**
@@ -7290,6 +7355,19 @@ class Game {
    * smaller number. Slot 0 is the seat every scene, every camera and every menu
    * owner falls back to; "drop out" for her means ending the game, and the
    * button for ending the game is RESTART, two rows down and already guarded.
+   *
+   * AND A DROP-HER-ORBS ROW BESIDE HER, WHEN SHE IS WEARING ANY. Leaving used
+   * to empty her neck into the town automatically; now she keeps them, so the
+   * generous thing — leaving eight orbs where her sister can find them — has to
+   * be a thing somebody can actually DO. It is offered next to the button it
+   * belongs to, and only to the kittens who have a DROP OUT row at all: player
+   * 1 is not leaving, and she has had a drop pile on the Character Profile
+   * since trading was written.
+   *
+   * IT IS NOT THE SAME AS DROPPING OUT AND IT DOES NOT IMPLY IT. She can drop
+   * her orbs and carry on playing. Pressing it rebuilds these rows, so the row
+   * disappears once she has nothing left to put down — a button that stays
+   * after it has run out of work reads as broken the second time it is pressed.
    */
   _buildLeaveButtons() {
     const wrap = document.getElementById('leave-buttons');
@@ -7298,6 +7376,14 @@ class Game {
     wrap.textContent = '';
     if (this.partySize > 1) {
       for (let i = 1; i < this.partySize; i++) {
+        /* HER ORBS FIRST, BECAUSE IT IS THE STEP THAT COMES FIRST. Asked for
+           as "they can decide to drop the orbs before dropping out" — so the
+           row that is a precondition sits above the row it is a precondition
+           for, and a thumbstick going down the list meets them in that order.
+           It is also the safer of the two to land on by accident. */
+        const worn = this.players[i].powerOrbs?.length ?? 0;
+        if (worn) wrap.appendChild(this._orbDropButton(i, worn));
+
         const b = document.createElement('button');
         b.className = 'menu-btn';
         b.textContent = `${this.players[i].name.toUpperCase()} — DROP OUT`;
@@ -7315,11 +7401,22 @@ class Game {
                splits between the ones who are left" is a lie when the one left
                is player 1 on a full-screen view, and a dialog that describes
                the wrong outcome is worse than one that describes none. */
+            /* AND THE SENTENCE HAS TO SURVIVE HER KEEPING HER ORBS, which
+               is the thing that just changed. "Her points and her orbs go with
+               her" was TRUE of the points and a lie about the orbs — they were
+               tipped onto the ground as she went — and it is now true of both.
+               Saying she gets them back if she returns is the whole reason the
+               row above exists: without that sentence, a girl who wants to
+               leave them for her sister has no reason to look for the button
+               that does it. */
             body: `${this.players[i].name}'s kitten goes away and `
               + (this.partySize > 2
                 ? 'the screen splits between the ones who are left. '
                 : 'you carry on by yourself. ')
-              + 'Her points and her orbs go with her.',
+              + 'She keeps her points and her orbs, and gets them all back if '
+              + 'she joins again later.'
+              + (worn ? ' To leave her orbs behind instead, say no and use'
+                + ' the row above first.' : ''),
             no: 'NO, SHE STAYS',
             yes: `YES, ${this.players[i].name.toUpperCase()} DROPS OUT`,
             onYes: () => {
@@ -7343,15 +7440,73 @@ class Game {
     }
   }
 
+  /**
+   * `NAME — DROP HER 3 ORBS`, for the pause menu.
+   *
+   * IT GOES THROUGH `Kotodama.drop`, which is the same call the Character
+   * Profile's drop pile makes, so there is one rule for putting an orb on the
+   * ground and not two. That matters for three things this would otherwise
+   * have to re-invent and get subtly wrong: the orbs are FANNED rather than
+   * stacked on one point (eight pickups at one coordinate is one orb's worth
+   * of geometry z-fighting with itself), each one is marked `shyOf` her so her
+   * own pickup radius does not hand them straight back on the next frame, and
+   * an orb that cannot find ground is DECLINED rather than deleted.
+   *
+   * WHICH IS WHY THE COUNT COMES BACK AND IS SAID OUT LOUD. "Dropped 3 of 8 —
+   * no room for the rest" is a real outcome on a slope, and a button that said
+   * "dropped them" would be the menu lying about where her orbs are. Sixth
+   * non-negotiable.
+   *
+   * IT ASKS FIRST, and the question is not a formality: they land inside her
+   * own circle and stay hers until she walks away, but the moment she does
+   * they are anyone's — and this is a menu four children are pushing at.
+   */
+  _orbDropButton(i, worn) {
+    const b = document.createElement('button');
+    b.className = 'menu-btn';
+    b.textContent = `${this.players[i].name.toUpperCase()} — DROP HER `
+      + `${worn} ORB${worn === 1 ? '' : 'S'}`;
+    b.addEventListener('click', () => {
+      const p = this.players[i];
+      if (!p) return;
+      this.confirm.ask({
+        title: `${p.name.toUpperCase()} PUTS HER ORBS DOWN?`,
+        body: `${p.name}'s ${worn} Kotodama go on the ground where she is`
+          + ' standing. They stay hers until she walks away from them — after'
+          + ' that anybody can pick them up. She does not leave the game.',
+        no: 'NO, SHE KEEPS THEM',
+        yes: `YES, PUT ${worn === 1 ? 'IT' : 'THEM'} DOWN`,
+        onYes: () => {
+          /* THE LIST IS COPIED. `drop` takes them off her as it goes, so
+             handing it the live array is iterating a thing while emptying it. */
+          const n = this.kotodama?.drop(p, [...(p.powerOrbs ?? [])]) ?? 0;
+          if (!n) {
+            this.toast('Nowhere to put them down here — try somewhere flatter',
+              p.index);
+            this.audio?.play('deny');
+          } else {
+            this.toast(`${p.name} dropped ${n} orb${n === 1 ? '' : 's'}`, p.index);
+            /* AND THE WORLD HAS CHANGED IN A WAY A SAVE CARES ABOUT: three
+               orbs that were on a kitten are now lying in the town at three
+               particular places. See `_leavePlayer` for why that is worth a
+               save of its own. */
+            this._saveOnPartyChange();
+          }
+          /* REBUILT EITHER WAY. On success the row has no work left and must
+             go; on failure the count on it is still right and rebuilding is
+             how the cursor gets re-seated on a list that may have changed
+             under it. */
+          this._buildLeaveButtons();
+        },
+      });
+    });
+    return b;
+  }
+
   /** Re-price and re-stock the dealer for the party as it is now. One call, so
    *  joining and leaving cannot each grow their own copy of the rule. */
   _updateEconomyForParty() {
     this.kotodama?.forParty(this.partySize);
-  }
-
-  /** An orb belonging to a player who has left, put back where she was. */
-  _dropOrbInWorld(id, at, spread = 0) {
-    this.kotodama?.dropInWorld(id, at, spread);
   }
 
   /**

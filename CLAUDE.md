@@ -27,7 +27,7 @@ look. Everything else is one level down and read on demand.
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
 npm run dev -- --host         # ...and on a phone on the same wifi, at the Network: URL it prints
-node tools/world-check.mjs    # 3293 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 3311 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 npm run docs                  # regenerate the controls + balance tables, in PROJECT.md AND
@@ -138,8 +138,12 @@ src/
                EVERY kitten who played, not just the seated ones:
                `Game.sessionCast` keeps a girl who dropped out or was swapped
                away from in the picker, and `_recallPlayer` hands her the lot
-               back. Her orbs are the exception — they were dropped in the town,
-               and there are only 26)
+               back — INCLUDING her orbs, which leaving no longer tips on the
+               floor. They are reserved in her row rather than copied, so 26 is
+               still 26; the way to leave them for a sister is the pause menu's
+               DROP HER ORBS row, and an orb left lying in the town is saved
+               with its coordinates and comes back on the same spot. Leaving
+               also autosaves, since the party and the orbs both just moved)
              kotodama  profile  cutscene  shrinescene  summonscene
              mathdojo  minimap  menunav  trailer (the opt-in video player)
              finaletide (what is BEHIND Patchfur at the ending: one measured
@@ -265,7 +269,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 3293 assertions and why almost none of them are about
+  why `world-check` is 3311 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **Before designing a menu, dialog or any list, read "UI FALL-THROUGH" in
   [gotchas.md](docs/notes/gotchas.md).** It is the bug this project keeps
