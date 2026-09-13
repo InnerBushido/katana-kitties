@@ -173,8 +173,16 @@ export class Minimap {
    * @param ryu Ryuuseki, or null before he is summoned. NOT one of `dragons` —
    *        he is not a `Dragon` and has never been in that array; that is the
    *        whole reason he was missing from here.
+   * @param seek the one piece of mischief still standing that this pane should
+   *        be pointed at, or null. A `Prop`, handed in rather than searched for:
+   *        `Game._updateSeek` already solves *nearest unscored prop to this
+   *        kitten* four times a second for Icewhisker's buff, and a map that
+   *        went and found its own answer would be a second opinion about the
+   *        same question — able to disagree with the chevron floating over the
+   *        barrel in the world, which is the one thing it must never do. See
+   *        `systems/lasthunt.js` for when it is non-null.
    */
-  draw(players, dragons, kotodama = null, satan = null, ryu = null) {
+  draw(players, dragons, kotodama = null, satan = null, ryu = null, seek = null) {
     const focus = this.focusIndex != null && players[this.focusIndex]
       ? players[this.focusIndex].position
       : midpointOf(this.focusOn?.map((i) => players[i]).filter(Boolean) ?? players);
@@ -487,6 +495,57 @@ export class Minimap {
         c.fillStyle = '#f5c341';
         c.fillText('Mr. Satan', x, y - 10 * this.dpr);
       }
+    }
+
+    /* --- THE LAST ONE STANDING ---
+       Icewhisker's Sense Mischief puts a chevron over the nearest unbroken prop
+       IN THE WORLD, which answers "which way" and not "which island" — and by
+       the last three, which island is the whole question. A kid holding the
+       buff has been watching an arrow point at a wall for ten minutes because
+       the barrel is on the ash island and she is standing in the town.
+
+       A RING AND A CROSSHAIR, PULSING, and deliberately not a shape anything
+       else on this map uses: dragons are triangles, the dealer and the shrines
+       are diamonds, Mr Satan is a star. This is the only mark on here that
+       means *go to this exact spot*, so it is drawn as the thing a sight is
+       drawn as.
+
+       Before the kittens, like everything else on this map. A sister is never
+       under a landmark — the rule the pandas, the orbs, the dealer and the
+       champion all already follow. */
+    if (seek && !seek.scored) {
+      const x = this._px(seek.group.position.x);
+      const y = this._py(seek.group.position.z);
+      /* The pulse rides `_t`, the same slow clock the shrine haloes use, so
+         everything on this map breathes together rather than beating against
+         itself. Sized off `dpr` like every other mark, so it is the same
+         fraction of a phone's map as of a desktop's. */
+      const beat = 0.5 + Math.sin((this._t ?? 0) * 1.6) * 0.5;
+      const s = (5.5 + beat * 3.5) * this.dpr;
+      /* IN THE MAP'S OWN COORDINATES, not translated into place. Mr Satan's
+         star has to be `translate`d because it is rotationally awkward and the
+         champion never moves; this is four lines and a circle, and drawing it
+         where it belongs is what lets anything — a check, or a person reading
+         this back — ask whether it is over the right barrel. A mark that can
+         only be verified relative to a transform is a mark nothing can pin. */
+      /* PAINTED TWICE, DARK THEN BRIGHT. It has to read over snow, over ash
+         and over the town's green, and one stroke cannot: the outline is what
+         the shrine labels already do for the same reason. */
+      for (const [col, w] of [['#1c1016', 4], ['#ffe9a8', 2]]) {
+        c.strokeStyle = col;
+        c.lineWidth = w * this.dpr;
+        c.lineCap = 'round';
+        c.beginPath();
+        c.arc(x, y, s, 0, Math.PI * 2);
+        c.stroke();
+        c.beginPath();
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          c.moveTo(x + dx * s * 0.5, y + dy * s * 0.5);
+          c.lineTo(x + dx * s * 1.55, y + dy * s * 1.55);
+        }
+        c.stroke();
+      }
+      c.lineCap = 'butt';
     }
 
     // --- the kitties, drawn last so they're never hidden ---

@@ -485,7 +485,7 @@ footer b { color: var(--text); }
 <div class="wrap">
 
 <header class="mast">
-  <div class="stamp">Last updated <span>·</span> 12 Sep 2026</div>
+  <div class="stamp">Last updated <span>·</span> 13 Sep 2026</div>
   <h1>Katana Kitties<em>The whole project on one page</em></h1>
   <p class="lede">A <b>split-screen co-op browser game for up to four players</b>: samurai kittens
     knocking over a chain of floating Japanese islands, riding storm dragons between them, and
@@ -525,7 +525,7 @@ footer b { color: var(--text); }
       <tr><th>Stack</th><td>Vite 8 + three.js 0.185. Static build — no backend, no database, no environment variables.</td></tr>
       <tr><th>First load</th><td class="num">~30 MB across 39 files, then cached</td></tr>
       <tr><th>In the repo</th><td class="num">30 MB sprites · 21 MB help clips · 6.4 MB voices · 20 MB trailer (opt-in) · 14 MB art masters, not shipped</td></tr>
-      <tr><th>The world</th><td class="num">216 props · 6 clans · 7 dragon balls · 8 Powerup Kotodama · 15 help clips · 62 voice lines</td></tr>
+      <tr><th>The world</th><td class="num">216 props · 6 clans · 7 dragon balls · 8 Powerup Kotodama · 15 help clips · 69 voice lines</td></tr>
       <tr><th>Thresholds</th><td><b>80%</b> mischief opens the tournament. <b>100%</b> wakes the Kotodama and gets the ending.</td></tr>
     </tbody>
   </table></div>
@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 3334 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 3372 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 362 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -1088,8 +1088,12 @@ git push origin alpha</code></pre>
       </tr>
       <tr>
         <td><b>ElevenLabs</b></td>
-        <td>The voice cast. <b>No separate account</b> — reached through Higgsfield.</td>
-        <td>≈0.15 credits a line</td>
+        <td>The voice cast. <b>No separate account</b> — reached through Higgsfield.
+          <b>Preflight the cost rather than trusting a figure</b> (<code>get_cost: true</code>);
+          long quoted at ≈0.15 a line, measured at 0.30 on 13 Sep 2026. More than four lines in
+          one batch hits a rate limit — the over-spill is resubmitted and nothing is charged for
+          a submission that failed.</td>
+        <td>0.30 credits a line</td>
       </tr>
       <tr>
         <td><b>Steam</b></td>
@@ -1143,7 +1147,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 3334 assertions and why almost none of them are about
+      is why <code>world-check</code> is 3372 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,
@@ -1182,7 +1186,7 @@ git push origin alpha</code></pre>
     <div><code>help.md</code><span>The Help panel, and the rig that films it</span></div>
     <div><code>tournament.md</code><span>The ring, rounds, attacks, ring-outs, the feast</span></div>
     <div><code>dragon-hunt.md</code><span>The seven stars, the grottos, the spire, Ryuuseki</span></div>
-    <div><code>endgame.md</code><span>The 100% ending, the eight Kotodama, the economy, the balance page</span></div>
+    <div><code>endgame.md</code><span>The 100% ending, the eight Kotodama, the economy, the last five and the hunt for them, the balance page</span></div>
     <div><code>story.md</code><span>The opening cutscene, the six leaders, the shrine scenes</span></div>
     <div><code>world.md</code><span>The six clans and what each buff changes; the panda</span></div>
     <div><code>art.md</code><span>Atlas cells, and the two rules for generating new sprites</span></div>

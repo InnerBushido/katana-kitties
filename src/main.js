@@ -40,6 +40,7 @@ import { Ryuuseki, HOVER, RYU_VIEW, RYU_SIZE } from './entities/ryuuseki.js';
 import { MrSatan } from './entities/satan.js';
 import { Griffin } from './entities/griffin.js';
 import { Announcer } from './systems/announce.js';
+import { LastHunt, HUNT_LINES } from './systems/lasthunt.js';
 import {
   Tournament, MODE_BY_ID, modesFor, teamColour, teamName, NO_SIDE,
 } from './systems/tournament.js';
@@ -1176,11 +1177,27 @@ class Game {
 
     this.announcer = new Announcer({ audio: this.audio });
     this.announcer.art = satanArt;
+    /* PATCHFUR SHARES HIS CARD. She counts the last five pieces of mischief
+       down over it — see `systems/lasthunt.js`, and the note at the top of
+       `announce.js` for why one card with a speaker per line rather than two
+       cards. She is built here, with him, because the thing she needs is this
+       announcer and her portrait, and both exist by this line. */
+    this.lastHunt = new LastHunt({
+      announcer: this.announcer,
+      art: this.leaderArt?.elder ?? null,
+    });
     /* Every line he says outside a full-screen scene, buffered at boot. These
        fire mid-play with nothing waiting on them, so a clip fetched at the
        moment he opens his mouth arrives over a game that has moved on. */
     await this.announcer.load({
       ...Object.fromEntries(MILESTONES.map((m) => [m.id, `/voice/${m.id}.mp3`])),
+      /* HER LINES, IN HIS BUFFER. Same card, same queue, so the same map of
+         preloaded clips — and the same reason for preloading them: these fire
+         the instant a barrel goes over, with nothing waiting on them, so a
+         clip fetched at the moment she opens her mouth arrives over a hunt
+         that has already found the next one. Ids come from `HUNT_LINES` so
+         the list cannot drift from the lines it is buffering. */
+      ...Object.fromEntries(Object.keys(HUNT_LINES).map((id) => [id, `/voice/${id}.mp3`])),
       sat_board: '/voice/sat_board.mp3',
       sat_r1: '/voice/sat_r1.mp3',
       sat_r2: '/voice/sat_r2.mp3',
@@ -2717,6 +2734,11 @@ class Game {
     this._finaleDue = false;
     this._endingShown = false;
     if (this.summonScene) this.summonScene.played.finale = false;
+    /* And the elder forgets she was counting. Every prop is standing again, so
+       "three left" is a fact about a world that no longer exists — and without
+       this she would never say it again either, since she only ever announces
+       a number she has not said yet. */
+    this.lastHunt?.reset();
     /* And the debug purse, or a restart would hand the world's money to the
        next kitten who joins a game where nothing has been knocked over yet. */
     this._debugPurse = null;
@@ -3252,10 +3274,19 @@ class Game {
         this.scene.add(p.seekMark);
       }
 
-      if (!p.clan?.buff?.seek) {
-        p.seekMark.visible = false;
-        continue;
-      }
+      /* THE TARGET IS SOLVED FOR EVERYBODY; ONLY THE CHEVRON IS THE BUFF'S.
+         It used to `continue` here, which meant `p.seekTarget` existed only
+         for a kitten who had sworn to Icewhisker — and the minimap's mark for
+         the last three (`systems/lasthunt.js`) has to point somewhere for a
+         party who never went to the ice island, which is precisely the party
+         the countdown is talking to. The search is a distance test over 216
+         props four times a second; measured against everything else in a
+         frame it does not appear.
+
+         THE ARROW IN THE WORLD IS STILL HERS ALONE. That is the buff, it is
+         what the shrine promised, and giving it away here would be paying for
+         an oath nobody swore. */
+      const sworn = !!p.clan?.buff?.seek;
 
       // Re-target a few times a second, not every frame: it only has to be
       // right, and a marker that twitches between two equidistant barrels is
@@ -3274,7 +3305,7 @@ class Game {
       }
 
       const t = p.seekTarget;
-      if (!t || t.scored) { p.seekMark.visible = false; continue; }
+      if (!t || t.scored || !sworn) { p.seekMark.visible = false; continue; }
       p.seekMark.visible = true;
       p.seekMark.position.set(
         t.group.position.x,
@@ -3283,6 +3314,33 @@ class Game {
       );
       p.seekMark.rotation.y += dt * 2.2;
     }
+  }
+
+  /**
+   * Which piece of mischief THIS PANE should be pointed at, or null.
+   *
+   * TWO REASONS A MAP POINTS, AND THEY ARE DIFFERENT REASONS. A kitten who
+   * swore to Icewhisker has a chevron over the barrel in the world already and
+   * asked for it; "so that it is not just highlighted on the world map, but on
+   * the mini-map as well" is the other half of the same promise, and it is
+   * hers whatever the count says. Everybody else gets it only at the end, when
+   * three things are left in the sky and the hunt has stopped being a hunt —
+   * see MAP_FROM in `systems/lasthunt.js` for why three and not five.
+   *
+   * PER PANE, FROM THAT PANE'S OWN KITTENS. Two sisters on one screen looking
+   * at two different islands are two different answers to "the nearest one",
+   * and a shared pane takes the first of its members who has an answer rather
+   * than averaging two positions into a point neither of them is standing on.
+   */
+  _seekMarkFor(members) {
+    for (const i of members) {
+      const p = this.players[i];
+      if (!p) continue;
+      if (!this.lastHunt?.mapOn && !p.clan?.buff?.seek) continue;
+      const t = p.seekTarget;
+      if (t && !t.scored) return t;
+    }
+    return null;
   }
 
   /**
@@ -4042,6 +4100,12 @@ class Game {
     const done = props.filter((p) => p.scored).length;
     const el = document.getElementById('mtotal');
     if (el) el.textContent = `${done} / ${W.mischiefTotal}`;
+    /* SHE ADOPTS THE COUNT WITHOUT REMARKING ON IT. `sync`, not `tick`: a save
+       taken at three remaining is loaded at three remaining, and shouting
+       "Three!" over the load is the elder reacting to something that happened
+       yesterday. The map still points, because the map is about where the
+       player is now. */
+    this.lastHunt?.sync(W.mischiefTotal - done);
     return standing;
   }
 
@@ -6304,6 +6368,11 @@ class Game {
   onMischief(player, prop, breath = null) {
     const done = this.world.props.filter((p) => p.scored).length;
     document.getElementById('mtotal').textContent = `${done} / ${this.world.mischiefTotal}`;
+    /* THE LAST FIVE, COUNTED OFF THE SAME NUMBER THE HUD IS. Handed the count
+       rather than allowed to keep one: this line is the only place in the game
+       that knows how many are down, and a countdown able to be wrong about it
+       would be worse than no countdown. See `systems/lasthunt.js`. */
+    this.lastHunt?.tick(this.world.mischiefTotal - done);
     /* 100%. QUEUED, NOT STARTED HERE — this runs from inside a prop being hit,
        which can perfectly well happen while a shrine introduction or the
        summon scene already owns the screen. `SummonScene.start` refuses when
@@ -6860,6 +6929,14 @@ class Game {
     }
     this.summonScene.updateSky(dt);
     this._updateSeek(dt);
+    /* ...AND THE MINUTE SHE WAITS BEFORE MENTIONING ICEWHISKER. Right after
+       the seek, because the question it asks is the one the seek answers: does
+       anybody in the party already have Sense Mischief? "If they don't already
+       have it enabled" — a hint telling you to go and fetch a thing you are
+       holding is the game not looking at you. ANYBODY, not the nearest kitten:
+       four girls share one screen and one of them pointing at the barrel is the
+       hunt solved for all of them. */
+    this.lastHunt?.update(dt, this.players.some((p) => !!p.clan?.buff?.seek));
     this._updateClanPrompt();
 
     /* --- the tournament ---
@@ -7952,7 +8029,8 @@ class Game {
          per pane instead of once for the whole screen. */
       this.maps[i].focusIndex = shared ? null : members[0];
       this.maps[i].focusOn = members;
-      this.maps[i].draw(this.players, this.dragons, this.kotodama, this.satan, this.ryu);
+      this.maps[i].draw(this.players, this.dragons, this.kotodama, this.satan,
+        this.ryu, this._seekMarkFor(members));
     }
 
     this._drawMathBoard(panes, groups, W, H, mathUp);

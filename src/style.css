@@ -2259,7 +2259,11 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
    the bottom-right corner. It sits over a game that is still running, so it
    is deliberately smaller and louder than the cutscene box rather than a
    shrunk copy of it — this is punctuation, not a scene. */
+/* ONE ACCENT PER SPEAKER. The card is Mr Satan's gold by default and Patchfur's
+   parchment when she is the one counting — see `Announcer.say`'s third
+   argument. Three rules read this and nothing else has to know. */
 #announce {
+  --an-accent: var(--gold);
   position: absolute;
   left: 18px;
   bottom: 18px;
@@ -2270,7 +2274,7 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
   max-width: min(560px, 52vw);
   padding: 10px 18px 10px 10px;
   background: rgba(29, 18, 22, 0.94);
-  border: 4px solid var(--gold);
+  border: 4px solid var(--an-accent);
   border-radius: 14px;
   box-shadow: 0 6px 0 rgba(0, 0, 0, 0.5);
   transform: translateX(0);
@@ -2282,7 +2286,7 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
   width: 72px;
   height: 72px;
   flex: 0 0 auto;
-  border: 3px solid var(--gold);
+  border: 3px solid var(--an-accent);
   border-radius: 10px;
   background: #2a1a20;
 }
@@ -2290,7 +2294,7 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
   font-family: 'Bangers', cursive;
   font-size: 17px;
   letter-spacing: 1.6px;
-  color: var(--gold);
+  color: var(--an-accent);
 }
 #an-text {
   font-size: 14.5px;

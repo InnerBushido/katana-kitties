@@ -103,6 +103,19 @@ deck while whoever went down flies over it as an **angel cat**.
 up to eight at once, scattered over the islands, with a dealer's stall and a
 two-cursor trade screen. Patchfur closes the story in her own voice.
 
+**And the elder counts the last five down.** Under five pieces of mischief left
+she names the number every time one goes over, in seven new recordings of her
+own, over Mr. Satan's announcer card — which now carries a speaker per line
+rather than one baked-in announcer, because the barrel that takes the count to
+four is quite capable of being the one that crosses 80% and opens the
+tournament. A minute with the number unmoved and she points at Icewhisker **and
+at the island the shrine is on**, but only if nobody in the party has Sense
+Mischief already, and never more than three times. At three left, every pane's
+minimap starts marking the nearest thing still standing — the same target the
+buff's chevron uses in the world, handed over rather than solved twice.
+`systems/lasthunt.js`, and [docs/notes/endgame.md](docs/notes/endgame.md) for
+why the three help each other in that order.
+
 **Sound.** Every effect and every piece of music is synthesised at runtime — a
 piece per island, one per dragon, one for the arena. The only audio files in the
 project are the recorded voice lines in `public/voice/`.

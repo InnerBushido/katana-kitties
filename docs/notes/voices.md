@@ -30,7 +30,7 @@ the `voice_id` below. About **0.15 credits a line**.
 
 | character | who they are | preset | `voice_id` | files |
 | --- | --- | --- | --- | --- |
-| **Patchfur** | the storyteller, a calico elder. Narrates the intro and the ending. | **Mabel** | `fa64fba4-ad02-405e-99d0-1f085d87c706` | `sky` `break` `elder1` `elder2` `close` `balls1` `balls2` `done1`–`done4` |
+| **Patchfur** | the storyteller, a calico elder. Narrates the intro and the ending — **and counts the last five pieces of mischief down**. | **Mabel** | `fa64fba4-ad02-405e-99d0-1f085d87c706` | `sky` `break` `elder1` `elder2` `close` `balls1` `balls2` `done1`–`done4`, and `hunt5`–`hunt1` `huntIce` `huntIce2` |
 | **Sunstreak** | Thunderpaw. Siamese. | **Quinn** | `80914268-dfae-4f76-8306-36f2d55f58f8` | `thunder` `shrine_thunder` |
 | **Rippleclaw** | Riverclaw. Turkish Van. | **Maya** | `b0f766b7-8703-4bd1-b973-f857c36837b6` | `river` `shrine_river` |
 | **Duskcoat** | Shadowtail. Tuxedo. | **Vesper** | `c3204739-4084-41a3-9dc5-c805b307ec18` | `shadow` `shrine_shadow`, **and trailer line 11** |
@@ -238,6 +238,57 @@ Neither is a bug any player has reported, and each would cost either a re-record
 (0.15 credits) or a longer card. Written down so the next session does not have
 to re-measure them.
 
+## Patchfur is on a clock exactly once, and it is measurable
+
+The rule two sections up says she is *"written in long, unhurried sentences —
+the only voice allowed to take its time; every other character is on a clock"*.
+`hunt5` through `hunt1` break it on purpose, and the reason is the one this file
+keeps coming back to: **there is no style prompt**, so "excitement builds up" is
+not a direction anybody can give the model. It can only be written. What builds
+is the sentence.
+
+```
+Five.  Out of everything in this whole sky, five things are still standing.
+Four now.  Four little things left upright in the world.
+Three!  Oh, I can count them on one paw — three!
+Two.  Two, and then one, and then it is done.
+One!  One last thing standing in the whole sky.  Go — find it!
+```
+
+Seventy-four characters down to sixty-one, full stops giving way to exclamation
+marks, and the elder taking her time is still audibly there in the first one.
+Mabel delivered the build without being asked for it:
+
+```
+                    f0Hz   range(st)  dyn(dB)   secs
+balls1               223       13.1     24.4   7.28    ← her existing lines
+close                216       15.3     24.7   7.92
+elder1               225       12.9     20.4   6.72
+hunt5                210       12.8     22.8   6.56
+huntIce              210       13.0     22.7  13.68
+huntIce2             225       12.1     27.4   6.08
+hunt3                240       15.9     29.0   4.56    ← the count tightening
+hunt1                245       16.9     24.6   6.72
+```
+
+**Two different questions are being asked of those numbers, and only one of
+them is a question f0 can answer.** *Is this Mabel* is answered by the unhurried
+lines — 210 to 225 against her existing 216–225, which is the same voice reading
+the same kind of sentence. *Does the count escalate* is answered by the gap
+between the two groups: `hunt3` and `hunt1` come out 30–35 Hz above her own band
+with the widest pitch range and the loudest dynamics in the set, off nothing but
+shorter sentences and an exclamation mark. That is the per-line volatility this
+file warns about (*"a laugh is an octave up"*) being **used** rather than
+tripped over — and it is only legitimate here because the speaker is already
+known. It still cannot tell Mabel from Quinn or Maya, and nothing below has
+changed about that.
+
+`huntIce` is 13.7 seconds, which is by a distance the longest single card in the
+game, and deliberate: it is the one line that has to carry a whole instruction —
+who, what and where — to a nine-year-old who is stuck. `huntIce2` is the same
+thing at 6.1s for the second telling, because a reminder that repeats the full
+sentence reads as a recording rather than as somebody in the room.
+
 ## Adding a voice
 
 1. **Read this table first.** If the character is in it, use that preset. There
@@ -261,6 +312,7 @@ to re-measure them.
 | surface | who talks | code |
 | --- | --- | --- |
 | the opening cutscene | Patchfur, then all six leaders, then Patchfur | [src/systems/cutscene.js](../../src/systems/cutscene.js) |
+| the last five pieces of mischief, counted down | Patchfur | [src/systems/lasthunt.js](../../src/systems/lasthunt.js) via [announce.js](../../src/systems/announce.js) |
 | a shrine, first visit | that clan's leader, once | [src/systems/shrinescene.js](../../src/systems/shrinescene.js) |
 | seven stars found, and the summon | Patchfur, then Ryuuseki | [src/systems/summonscene.js](../../src/systems/summonscene.js) |
 | 100% mischief, the ending | Patchfur | same file, `SCRIPTS.done` |
