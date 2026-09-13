@@ -53,10 +53,14 @@ work out by playing.
 6. **The screen splits itself**, by GROUP rather than by player — stand together
    and you share a view, walk away and you get your own.
 7. **The game saves itself every 30 seconds**, once you've been playing for
-   five minutes, and keeps the last five. **LOAD A SAVED GAME** in the pause
-   menu picks one up again — the rows say who was playing, what orbs they had
-   on and how far the town had come down, so you can find the right afternoon.
-   They live in this browser on this computer and go nowhere else.
+   five minutes. **One row per game** — however long you play, your adventure
+   stays one row and keeps getting more recent — and it keeps the last five
+   games. **LOAD A SAVED GAME** in the pause menu picks one up again. The rows
+   say who played, what orbs they had on and how far the town had come down, so
+   you can find the right afternoon; **everybody who played is in one**, even a
+   kitten who stopped an hour ago, and picking her back up hands her back her
+   points, her clan and her panda. They live in this browser on this computer
+   and go nowhere else.
 
 ## Contents
 
@@ -977,7 +981,9 @@ src/
     savegame.js         the afternoon, written down every 30 seconds - what
                         the girls have DONE to the world, never the world
                         itself, so a save is 2KB and cannot be wrong about
-                        the shape of a town it never described
+                        the shape of a town it never described. ONE ROW PER
+                        PLAY SESSION, holding EVERY kitten who played in it
+                        and not only the ones in a seat
     kotodama.js         the Awakening, the eight scattered orbs, the economy
     profile.js          Character Profile / trading / the shop — one cursor
                         per player, because a trade needs both sides

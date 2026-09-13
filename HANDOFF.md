@@ -280,9 +280,9 @@ first thing that happens with it. → [input.md](docs/notes/input.md)
 
 **The game saves itself now, and an afternoon can be picked back up.**
 `systems/savegame.js` takes a snapshot every 30 seconds once a run is five
-minutes old, keeps the last five, and **LOAD A SAVED GAME** in the pause menu
-puts one back. It never asks and never toasts: a notification every half minute
-for four hours is one a player learns to stop reading.
+minutes old and **LOAD A SAVED GAME** in the pause menu puts one back. It never
+asks and never toasts: a notification every half minute for four hours is one a
+player learns to stop reading.
 
 - **A save describes what the girls DID, never the world.** The islands, the
   houses, the roads and the props all rebuild identically from their own seeds
@@ -298,10 +298,36 @@ for four hours is one a player learns to stop reading.
   the first time a subsystem was added. Knocked props are **re-scattered** with
   the debug wreck's own recipe, because a save does not record which way each
   barrel fell and a town lying along one axis reads as a bug.
-- **It restores onto the seats being played**, matched by kitten NAME first so a
-  girl who changed controller still gets her own orbs, and it says out loud how
-  many were dropped. Seating four kittens nobody is holding a controller for
-  would be non-negotiables 5 and 6 at once.
+- **One row per play session, and five slots are five games.** Reported from
+  play: every autosave minted a fresh id, so two and a half minutes of one
+  afternoon filled all five rows with itself and binned every other game
+  anybody had played — the feature deleting exactly what it existed to protect.
+  `Game.sessionId` is minted at boot, again at `restart()`, and **inherited from
+  a save you load**, so carrying on from Tuesday carries on *in Tuesday's row*
+  rather than forking a second one beside it.
+- **A save holds everyone who PLAYED, not everyone in a seat.** `Game.sessionCast`
+  is keyed by the kitten, because that is what a girl comes back to. She drops
+  out, or her sister swaps away from her in the character picker — that second
+  one used to bin an afternoon *silently*, without even dropping her orbs — and
+  she is still on the row, dimmed and marked `·away`, still in the count. Pick
+  her up again and `_recallPlayer` hands back her score, her clan, her oaths and
+  her panda. **Not her orbs**, when she dropped out: `_leavePlayer` put them in
+  the town where anyone may walk over them, and there are only ever twenty-six.
+  The row says both numbers — "4 kittens, 2 playing".
+- **It restores onto the seats being played**, matched by kitten NAME and *only*
+  by name, and it says out loud how many are **waiting** rather than dropped.
+  The old fallback ("the first row nobody has claimed") handed Ember somebody
+  else's afternoon under the wrong name; now an unseated row goes into the cast
+  and the third controller picks it up whole. Seating four kittens nobody is
+  holding a controller for would be non-negotiables 5 and 6 at once.
+- **The orb supply is conserved in BOTH directions, which is where a bug was.**
+  `restore` calls `awaken()` for the stall and the dissolve, and `awaken`
+  re-seeds every Powerup Kotodama at its opening spot — on top of handing every
+  kitten back the ones she was wearing. 26 orbs became 34, on islands nobody was
+  standing on. The loose ones are the one thing in a save with no stable index
+  (they MOVE), so `Kotodama.worldOrbs()` records id-and-place and
+  `setWorldOrbs()` puts back exactly those. Fourth non-negotiable, broken in the
+  direction nobody checks for: things *appearing*.
 - **The rows are chosen by content, not by slot number** — who was playing, in
   their own colours, wearing the *kanji* of the orbs they had on, then the
   mischief percentage, the stars and whether the ring was open. A slot number is

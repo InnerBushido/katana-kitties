@@ -799,6 +799,57 @@ export class Kotodama {
     return player.position.distanceTo(this.stall.position) < this.stall.radius;
   }
 
+  /**
+   * Every Powerup Kotodama lying loose in the world, as facts a save can hold.
+   *
+   * THEY HAVE NO INDEX TO NAME, WHICH IS WHY THIS EXISTS. Everything else a
+   * save records about the world is an index into a list the world rebuilds
+   * identically from its own seed — prop 47 is prop 47 on every boot. These are
+   * not: `spawnPickups` seeds them at 100% and then they MOVE, because a kitten
+   * who drops out leaves her whole neck on the ground where she was standing,
+   * and a steal knocks one onto the arena deck. So the id and the place are the
+   * fact, and there is nothing shorter that is true.
+   *
+   * @returns {Array<{id: string, at: number[]}>}
+   */
+  worldOrbs() {
+    return this.pickups
+      .filter((pk) => pk && !pk.taken && pk.id)
+      .map((pk) => ({
+        id: pk.id,
+        at: [pk.group.position.x, pk.group.position.y, pk.group.position.z]
+          .map((n) => +n.toFixed(2)),
+      }));
+  }
+
+  /**
+   * Put exactly these back in the world, and nothing else.
+   *
+   * IT CLEARS FIRST, AND THAT IS THE POINT. A load runs `awaken()` to get the
+   * stall and the dissolve, and `awaken` re-seeds every orb at its opening
+   * spot — on top of every player being handed her worn ones back. Twenty-six
+   * orbs became thirty-four, which is the fourth non-negotiable broken in the
+   * direction nobody checks for: things APPEARING rather than being lost.
+   *
+   * NO `lockT` AND NO `shyOf`. Both are about the four seconds after an orb is
+   * knocked loose in a live round, and a save being loaded is not in one.
+   */
+  setWorldOrbs(rows) {
+    if (!Array.isArray(rows)) return 0;
+    for (const pk of this.pickups) this.scene.remove(pk.group);
+    this.pickups = [];
+    let n = 0;
+    for (const r of rows) {
+      const spec = ORB_BY_ID[r?.id];
+      if (!spec || !Array.isArray(r.at) || !r.at.every(Number.isFinite)) continue;
+      const pk = new PowerOrbPickup(spec, r.at[0], r.at[1], r.at[2]);
+      this.scene.add(pk.group);
+      this.pickups.push(pk);
+      n += 1;
+    }
+    return n;
+  }
+
   /** Reset to the state before 100% — used by Game.restart. */
   clear() {
     for (const pk of this.pickups) this.scene.remove(pk.group);

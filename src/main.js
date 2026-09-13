@@ -50,6 +50,7 @@ import { SatanBlast } from './systems/satanblast.js';
 import { loadBoard, clearBoard, BOARD_MODES } from './systems/leaderboard.js';
 import {
   listSaves, putSave, dropSave, clearSaves, snapshot, describe, restore,
+  castRow, applyCast, meaningful, newSessionId,
   AUTOSAVE_EVERY, AUTOSAVE_AFTER, MAX_SAVES,
 } from './systems/savegame.js';
 import { POWER_ORBS } from './entities/powerorb.js';
@@ -381,6 +382,26 @@ class Game {
     this.playT = 0;
     /** When the next autosave is due, on the same clock. */
     this._saveAt = AUTOSAVE_AFTER + AUTOSAVE_EVERY;
+    /**
+     * WHICH AFTERNOON THIS IS, and everyone who has been part of it.
+     *
+     * ONE SAVE SLOT PER PLAY SESSION. Reported: the autosave was writing a NEW
+     * slot every thirty seconds, so within two and a half minutes all five held
+     * the same afternoon at thirty-second intervals and every other game
+     * anybody had played was gone. `sessionId` is stamped into each snapshot
+     * and `putSave` replaces the row carrying it — so one afternoon is one row
+     * that keeps getting more recent, and five rows are five afternoons.
+     *
+     * AND THE CAST IS EVERYBODY WHO PLAYED, NOT EVERYBODY IN A SEAT. Keyed by
+     * the KITTEN's name, because that is what a girl comes back to: "even if a
+     * player drops out, when they return with that player, they will return
+     * with all their data from where they left off." A kitten who put her
+     * controller down twenty minutes ago is still in the save and still in the
+     * count, and picking her back up hands her everything.
+     * @type {Map<string, object>}
+     */
+    this.sessionId = newSessionId();
+    this.sessionCast = new Map();
     /* WHICH PLAYER IS DRIVING THE MENU, as a slot index, or null for "anybody".
        See `_claimMenu` — this is the whole of the one-cursor rule. */
     this.menuOwner = null;
@@ -1593,7 +1614,16 @@ class Game {
     // Replacing a kitten already in the scene — the character picker swapping
     // her for a different cat. Take the old one out or both are drawn.
     const old = this.players[index];
-    if (old) this.scene.remove(old.group);
+    if (old) {
+      /* AND REMEMBER WHAT SHE HAD. Swapping cat used to be the quietest way in
+         the game to lose an afternoon: the old Player is simply dropped here,
+         so her points, her clan, her oaths, her panda AND her orbs went with
+         her — and unlike dropping out, nothing even put the orbs back in the
+         world. Now she goes into the session's cast whole, so swapping back to
+         her returns every one of them. */
+      this._rememberPlayer(old);
+      this.scene.remove(old.group);
+    }
     this.roster[index] = styleIndex;
 
     const p = new Player({
@@ -1624,6 +1654,13 @@ class Game {
     this.players[index] = p;
     this.scene.add(p.group);
     this._dressPlayer(p);
+    /* IF THIS CAT HAS ALREADY PLAYED TODAY, SHE PICKS UP WHERE SHE LEFT OFF.
+       HERE RATHER THAN IN THE THREE CALLERS, for exactly the reason
+       `_dressPlayer` is here: a player is seated in three places — boot, a
+       controller joining, and the picker swapping cat — and a rule written
+       into one of them is a rule the other two quietly do not have. At boot
+       the cast is empty and this does nothing. */
+    this._recallPlayer(p);
     return p;
   }
 
@@ -2717,6 +2754,17 @@ class Game {
        `restore` sets both explicitly afterwards, so a LOAD is unaffected. */
     this.playT = 0;
     this._saveAt = AUTOSAVE_AFTER + AUTOSAVE_EVERY;
+    /* A NEW AFTERNOON GETS A NEW SLOT, and the old one keeps its row. That is
+       the whole reason the id is minted here rather than at boot only: pressing
+       RESTART is starting a different game, and writing it over the row for the
+       game you just abandoned would lose the one thing somebody might have
+       pressed RESTART by accident and wanted back.
+
+       AND THE CAST GOES WITH IT. It is a list of what people did in a world
+       that no longer exists; carrying it would hand a joining kitten a clan she
+       swore to in a town that has just stood itself back up. */
+    this.sessionId = newSessionId();
+    this.sessionCast = new Map();
 
     this.setPaused(false);
     this.toast('Adventure restarted!', 0);
@@ -5586,6 +5634,58 @@ class Game {
    * degrade rather than vanish. The failure shows up where it can be acted
    * on, which is the list saying it is empty.
    */
+  /**
+   * Write down what this kitten had, against her NAME, for the rest of the
+   * afternoon.
+   *
+   * CALLED WHEN SHE STOPS BEING PLAYED, never on a timer: dropping out, and
+   * being swapped away from in the character picker. Those are the two ways a
+   * cat leaves the screen while the game carries on, and before this they were
+   * also the two ways an afternoon's worth of clan, points and panda went
+   * quietly in the bin — the picker one silently, since nothing even dropped
+   * her orbs.
+   *
+   * NOTHING IS REMEMBERED ABOUT A KITTEN WHO DID NOTHING. See `meaningful`:
+   * somebody who joined, ran three steps and left again is not part of the
+   * afternoon, and putting her on the save row would give a girl reading the
+   * list a fourth name she does not recognise.
+   *
+   * @param over fields to write over the top — `_leavePlayer` passes
+   *   `{ orbs: [] }`, because by the time it calls this her orbs are lying in
+   *   the town and belong to whoever walks over them.
+   */
+  _rememberPlayer(p, over = {}) {
+    if (!p?.style?.name) return false;
+    const row = { ...castRow(p, false), ...over };
+    if (!meaningful(row)) return false;
+    this.sessionCast.set(p.style.name, row);
+    return true;
+  }
+
+  /**
+   * ...and hand it all back when somebody plays her again.
+   *
+   * THE ROW IS NOT CONSUMED. She may drop out and rejoin four times in an
+   * afternoon, and each leave writes a fresh row over this one — so keeping it
+   * costs nothing and removing it would mean a girl who rejoined, did nothing
+   * and left again came back to an empty kitten.
+   *
+   * HER ORBS COME BACK ONLY IF THEY WERE NEVER PUT DOWN. `_leavePlayer` drops
+   * them into the world — the dealer's own rule, and the reason only
+   * twenty-six exist — so her row says `orbs: []` and what she gets back is
+   * her score, her clan, her oaths and her panda. The orbs themselves are
+   * still hers to collect: they are lying where she was standing, in plain
+   * sight, and handing her a second copy would put twenty-seven in a world
+   * that has twenty-six. The picker path never dropped them, so there the row
+   * carries them and she gets them straight back.
+   */
+  _recallPlayer(p) {
+    const row = this.sessionCast.get(p?.style?.name);
+    if (!row) return false;
+    applyCast(this, p, row);
+    return true;
+  }
+
   _autoSave() {
     try {
       const snap = snapshot(this);
@@ -5655,13 +5755,27 @@ class Game {
       const who = r.players.map((p) => {
         const st = PLAYER_STYLE.find((x) => x.name === p.style);
         const col = st ? cssFor(st) : '#fff';
-        return `<span class="sv-kit" style="color:${col}">`
+        /* A KITTEN WHO HAD GONE HOME IS STILL ON THE ROW, dimmed and marked.
+           She is part of the afternoon — that is the whole point of keeping
+           her — but a row that listed her identically to the two girls holding
+           controllers would be answering the wrong question. `title` carries
+           the long form for a mouse; the dot is what reads at a glance. */
+        return `<span class="sv-kit${p.here ? '' : ' sv-away'}" style="color:${col}"`
+          + `${p.here ? '' : ' title="played earlier — rejoin as her to pick it up"'}>`
           + `<b>${escapeHtml(p.style)}</b>`
+          + (p.here ? '' : '<i class="sv-off">·away</i>')
           + (p.clan ? `<i class="sv-clan">${escapeHtml(p.clan)}</i>` : '')
           + `<span class="sv-orbs">${kanji(p.orbs)}</span></span>`;
       }).join('');
+      /* TWO NUMBERS WHEN THEY DIFFER, ONE WHEN THEY DO NOT. Asked for as "how
+         many players have logged in and played in that play session, versus
+         just how many are currently logged in" — but "4 kittens, 4 playing" on
+         every row of a list five rows long is noise that hides the one row
+         where it matters. */
       const bits = [
-        `${r.party} kitten${r.party === 1 ? '' : 's'}`,
+        r.seated === r.party
+          ? `${r.party} kitten${r.party === 1 ? '' : 's'}`
+          : `${r.party} kittens, ${r.seated} playing`,
         r.mischief == null ? null : `${r.mischief}% mischief`,
         r.balls ? `${r.balls}/7 stars` : null,
         r.arena ? 'arena open' : null,
@@ -5680,11 +5794,16 @@ class Game {
          showing, which is a sentence that teaches somebody the wrong rule the
          moment a fifth appears — and the fact worth knowing here is precisely
          the one the list cannot show you: that the oldest is about to go. */
-      note.textContent = `The game keeps the last ${MAX_SAVES} of these by`
-        + ` itself — a new one every ${AUTOSAVE_EVERY} seconds once you have`
-        + ` played for ${Math.round(AUTOSAVE_AFTER / 60)} minutes, and the`
-        + ' oldest drops off the bottom. Loading one ends the game you are'
-        + ' playing now.';
+      /* "ONE ROW PER GAME" IS THE FACT THE LIST CANNOT SHOW YOU, and it is
+         the one that was wrong: the first version wrote a new slot every
+         thirty seconds, so all five filled with the same afternoon inside
+         three minutes. Saying it here is how somebody knows their Tuesday is
+         safe while they play on Thursday. */
+      note.textContent = `One row per game, kept up to date every`
+        + ` ${AUTOSAVE_EVERY} seconds once you have played for`
+        + ` ${Math.round(AUTOSAVE_AFTER / 60)} minutes. The game keeps the last`
+        + ` ${MAX_SAVES} and the oldest drops off the bottom. Loading one ends`
+        + ' the game you are playing now.';
     }
   }
 
@@ -5734,12 +5853,15 @@ class Game {
       document.getElementById(pid)?.classList.add('hidden');
     }
     this.setPaused(false);
-    /* HOW MANY KITTENS DID NOT GET A SEAT, said out loud. See `restore`: a
-       save of four loaded into a two-kitten game restores two, and silently
-       losing two girls' orbs is exactly the silent failure invariant 6 is
-       about. */
-    this.toast(out.dropped
-      ? `Loaded — ${out.seated} back, ${out.dropped} waiting for a controller.`
+    /* HOW MANY KITTENS DID NOT GET A SEAT, SAID OUT LOUD — and said as
+       WAITING rather than as lost, because that is now what it is. Every
+       unseated row sits in the session's cast, so a third controller or a swap
+       in the character picker hands that kitten her whole afternoon back. A
+       load that quietly seated two of four would read as a save that had only
+       kept two, which is the silent failure invariant 6 is about. */
+    this.toast(out.waiting
+      ? `Loaded — ${out.seated} back. ${out.waiting} more waiting: join or `
+        + 'switch to that kitten to pick her up.'
       : 'Saved game loaded!', 0);
   }
 
@@ -7038,7 +7160,10 @@ class Game {
        Only ever set by `_debugEndgame`; a real run leaves it undefined and this
        does nothing. */
     if (this._debugPurse != null) {
-      p.score = this._debugPurse;
+      /* NEVER DOWNWARD, the same rule `_unlockEndgame` states at length. It
+         mattered the moment a rejoining kitten could arrive carrying the four
+         hundred points she had earned before she put the controller down. */
+      p.score = Math.max(p.score ?? 0, this._debugPurse);
       this.onScoreChanged(p);
     }
     this.picking = { index, style: this.roster[index] };
@@ -7073,6 +7198,12 @@ class Game {
        screen, z-fighting with itself, and a pile you cannot tell the size of.
        They are her whole neck's worth going back into a world where only
        twenty-six exist; they have to look like eight things. */
+    /* WHAT SHE HAD, WRITTEN DOWN BEFORE ANY OF IT IS TAKEN OFF HER — and with
+       her orbs blanked, because the next line puts them in the town where
+       anybody may pick them up. See `_recallPlayer`: rejoining gives her back
+       her points, her clan, her oaths and her panda, and her orbs are lying
+       where she left them rather than being handed out a second time. */
+    this._rememberPlayer(p, { orbs: [] });
     (p.powerOrbs ?? []).forEach((id, i) => this._dropOrbInWorld(id, p.position, i));
     if (p.mount) { p.mount.returnHome?.(); p.mount = null; }
     if (p.rideAlong) p.rideAlong = null;
