@@ -280,7 +280,7 @@ const _wp = new THREE.Vector3();
  * canvas and looking at which way the muzzle points; see the recipe in
  * HANDOFF.md.
  */
-const DIR_SENSE = 1;
+export const DIR_SENSE = 1;
 
 /**
  * A sprite that lives in the 3D world: always upright, rotates around Y to

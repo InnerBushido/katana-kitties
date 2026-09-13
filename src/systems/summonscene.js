@@ -356,6 +356,18 @@ export const SCRIPTS = {
    fraction `dist` does, which is the definition of moving toward a thing
    rather than over it.
 
+   `pan` IS A TRUCK AND NOT A SWING, and it is the one shot in this table that
+   holds a fixed direction. `turn` moves the camera along an ARC around the
+   mark, which at any distance also rotates what it is looking at — and that
+   rotation is what "the camera is still moving too fast and rotating around a
+   point, it would be better if the camera just pans slowly from left to right
+   in a linear movement" is about. With `pan`, the camera AND its look-at slide
+   together along the camera's own right vector, so the bearing never changes
+   and the wreckage travels across the frame instead of swinging past it. The
+   number is a fraction of the frame HEIGHT at the subject, like `lift` is, so
+   it means the same composition at any distance; it is centred on the mark, so
+   the shot starts left of it and ends right of it.
+
    `lin` IS A CAMERA THAT DOES NOT EASE. Every shot in here runs on
    `1 - (1 - s)²`, which arrives fast and settles — right for a cut that has to
    establish something in under a second, and wrong for a shot whose whole job
@@ -584,10 +596,21 @@ export const FINALE_SHOTS = [
      different question: `town` is the deepest knot of mischief IN THE TOWN,
      measured around `world.townCentre`, which is published off the same
      numbers the market is built on. The shot stands far enough back to hold
-     the plaza and the roofs behind it rather than one corner of it. */
+     the plaza and the roofs behind it rather than one corner of it.
+
+     AND IT IS A TRUCK NOW, NOT A SLOW SWING. "For the part 'there is nothing
+     left standing', the camera is still moving too fast and rotating around a
+     point, it would be better if the camera just pans slowly from left to right
+     in a linear movement." A `turn` of 0.3 at 82 units IS about 25 units of
+     sideways travel — which is what the note under this row used to claim was
+     "a truck" — but it is 17 degrees of rotation on top of it, and the eye
+     reads the rotation. `turn` is zero here and `pan` does the move instead:
+     the bearing is locked, the distance is locked, and the camera slides a
+     third of a frame width across the wreck of a town. Nothing about the shot
+     turns, which is what was asked for twice. */
   {
     beat: 0, from: say(0, 'There is nothing left'), off: 0.45, at: 'town', a: 0.62, dist: 82, high: 34,
-    lift: 0.11, turn: 0.3, in: -0.03, lin: true, stage: false, cue: null,
+    lift: 0.11, turn: 0, pan: 0.34, in: 0, lin: true, stage: false, cue: null,
   },
   /* ...AND OUT, far enough that the archipelago is the frame. "Zoom out to show
      all the area and all the knocked over mischief, and also zoom out far
@@ -830,8 +853,26 @@ export const FINALE_SHOTS = [
      no longer dropping the four of them in on a jump frame; see
      `FinaleShow._stepArena`, where the arrival is now an arrival and the
      celebration is the celebration. */
+  /* ...AND THE CHEER LANDS AFTER THE WORD, NOT ON IT. "For the Arena, we
+     should delay everyone going into the cheering pose and playing the unlock
+     sound by 0.5s or more as right now, it happens before the words 'the arena
+     is open' is finished being said, it is okay if there is a slight delay
+     before saying 'open' and then them cheering."
+
+     `tail` already puts this at the end of the clause AS MEASURED OFF THE
+     CLIP, and the clause it measures is "the arena is open" — but `say`'s map
+     from characters to seconds is an even one, and "open" is the slowest word
+     in the line. `off` is seconds, and seconds is what was asked for. It moves
+     the fanfare with it: `_cue` plays `starfound` on this row, so one number
+     delays the pose and the sound together rather than the two drifting apart.
+
+     MR SATAN GOES FIRST AND THEY FOLLOW. "Let's also make Mr. Satan go into
+     cheering pose first, and then a moment after, the players can cheer with
+     him, maybe 0.1s or 0.2s after." That part is not a second cue — it is a
+     lag inside this one, on the arena's own clock. See
+     `FinaleShow._stepArena`. */
   {
-    beat: 3, from: say(3, 'is open', true), keep: true, cue: 'arena-raise',
+    beat: 3, from: say(3, 'is open', true), off: 0.55, keep: true, cue: 'arena-raise',
   },
   /* "...find out WHICH OF YOU is the strongest fighter ON THIS WORLD." — and
      out, off the ring, until the whole world is in the frame again. The line
@@ -1981,6 +2022,22 @@ export class SummonScene {
         ? -shot.lift * frameH
         : (wide ? 0 : Math.min(4, high * 0.25));
       this._look.set(P.x, P.y + aim, P.z);
+      /* ...AND THEN THE WHOLE SHOT SLIDES SIDEWAYS, if the row asked for it.
+         Applied to the camera AND the look-at, which is the difference between
+         a truck and a pan-and-scan: move only the camera and it is an arc with
+         extra steps. The right vector of a camera on bearing `a` looking at the
+         mark is `(cos a, 0, -sin a)`; centred on `se - 0.5` so the mark passes
+         through the middle of the frame at the middle of the shot. See `pan` on
+         the table. */
+      if (shot.pan) {
+        const slide = (se - 0.5) * shot.pan * frameH;
+        const rx = Math.cos(a) * slide;
+        const rz = -Math.sin(a) * slide;
+        this.camera.position.x += rx;
+        this.camera.position.z += rz;
+        this._look.x += rx;
+        this._look.z += rz;
+      }
       this.stageWant = shot.stage ? 1 : 0;
     } else if (this.which === 'satanAnnounce' || this.which === 'satanOpen') {
       /* HIS SHOTS ARE ABOUT THE PLACE, NOT ABOUT HIM. He is a billboard

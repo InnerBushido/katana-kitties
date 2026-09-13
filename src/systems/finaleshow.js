@@ -1,9 +1,12 @@
 import * as THREE from 'three';
-import { Billboard } from '../core/gfx.js';
+import { Billboard, DIR_SENSE } from '../core/gfx.js';
 import { Label } from '../core/label.js';
 import { PLAYER_STYLE } from '../core/palette.js';
 import { BLESS_STRETCH } from '../entities/player.js';
-import { BIOMES, mergeParts, pagodaRoof } from '../world/build.js';
+import {
+  BIOMES, FOLIAGE, buildBamboo, buildHouse, buildTree, mergeParts, pagodaRoof,
+  transformParts,
+} from '../world/build.js';
 import { poseQuad } from '../entities/critter.js';
 
 /* ---------------------------------------------------------------------------
@@ -163,16 +166,59 @@ const BEASTS = 14;
  * puts the break in the first third of a second and leaves the rest of the
  * move to the islands, which is the thing the shot is actually about.
  */
-const BR_W = MINI_R * 0.06;
-const BR_T = MINI_R * 0.012;
+/* AND THEN IT WAS A MOTORWAY. "The bridges connecting the islands are too big
+ * and they seem to be upside-down or sideways." Six per cent of `MINI_R` is
+ * 0.96 units of deck — MEASURED against the things standing beside it, that is
+ * wider than the widest house in the model is wide (0.72) and twice as wide as
+ * a street house (0.53), on an island 5.0 across. The comment that used to
+ * stand here claimed it was "about the width of a house", which was the number
+ * nobody checked.
+ *
+ * THE REAL CROSSING IS THE MEASUREMENT. `world.bridge` is 4.4 units wide, which
+ * at `scaleK` (1/19.2 on this world) is 0.23 — so 1.6 per cent of `MINI_R` is
+ * the honest answer plus a little, and it still comes out six pixels across at
+ * the distance this shot is framed at rather than the one pixel the original
+ * gold tube was. */
+const BR_W = MINI_R * 0.016;
+const BR_T = MINI_R * 0.004;
 const BR_SLATS = 14;
 const BR_SNAP = 0.16;
-/** How tall a townsperson is drawn in the model, and an animal. A shade over
- *  life size at this scale — see `MINI_H`, which is the same measurement and
- *  the same argument. Big enough to catch the eye against a house, small
- *  enough that the town does not look like it is being attacked. */
-const FOLK_H = 0.16;
-const BEAST_H = 0.1;
+/** How high a span arches, as a fraction of its own length.
+ *
+ *  MEASURED OFF THE SLOPE IT PRODUCES, not chosen for a look. The arch is a
+ *  half-sine over the span, so its steepest tangent is at the rim and its
+ *  gradient there is exactly `PI * BR_ARCH`, whatever the span is — 0.12 is
+ *  21 degrees, an arch you can read as an arch.
+ *
+ *  IT USED TO BE `span * 0.24 + 0.18`, and the two halves of that were wrong in
+ *  different ways. 0.24 alone is 37 degrees; the +0.18 FLOOR is a fixed hump on
+ *  a length that varies eight-fold, so on the shortest span in this archipelago
+ *  — 0.76 units, town to the frost island — it was a third of the run again and
+ *  the ends came out at **57 degrees**. That is not a bridge, it is a ramp into
+ *  the sky with a torii leaning off the top of it, and it is half of "the
+ *  bridges connecting the islands... seem to be upside-down or sideways". The
+ *  roll was the other half and is `deckQuat`.
+ *
+ *  WHAT IS LEFT IS THE CLIMB, and the climb is honest: the islands do not float
+ *  at one height, so a span between two of them has to go up. That term is the
+ *  only reason the steepest plank is over 21 degrees. */
+const BR_ARCH = 0.12;
+/** How tall a townsperson is drawn in the model, and an animal.
+ *
+ *  A QUARTER OVER LIFE SIZE, AND THE RATIO IS THE POINT. A kitten is 2.9 units
+ *  in the world and a one-floor house is about 5.1 with its roof on, so life
+ *  size here is 0.15 against a house at 0.27. 0.19 keeps that reading — a cat
+ *  comes up the height of a door — while being big enough to catch the eye.
+ *
+ *  IT WAS NEVER THE SIZE THAT MADE THEM BLOBS. They were 0.16 already; what
+ *  they were was five-sided cylinders. See `_buildFolk`. */
+const FOLK_H = 0.19;
+const BEAST_H = 0.12;
+
+/** The axis every billboard in this file turns about. One vector, shared,
+ *  because a per-frame `new Vector3(0, 1, 0)` inside a thirty-instance loop is
+ *  thirty allocations a frame for a constant. */
+const UP_AXIS = new THREE.Vector3(0, 1, 0);
 
 /**
  * How far above the model's own ground plane the angle-and-circle overlay
@@ -240,40 +286,98 @@ const SHAPE_BLOW = 2.4;
  * The bridge run: how fast they cross, where they start, and how often one of
  * them does something.
  *
- * THEY ARE ALREADY RUNNING WHEN THE LIGHTS COME UP. "We should already have
- * the animated characters spawned in before the camera starts fading in and
- * have them running towards the bridge already." The old seed put every kitten
- * at a NEGATIVE position along the deck — off the end and invisible — and let
- * them walk on one at a time, so the first thing the shot showed was an empty
- * bridge and then a queue. `BR_HEAD` is a random head start each, so the fade
- * lifts on four cats already mid-crossing.
+ * THEY RUN AT IT BEFORE THEY RUN ACROSS IT. "Let's make them start further
+ * back, give them a few seconds of running towards the bridge before they start
+ * crossing it and jumping over it."
  *
- * AND STAGGERED BY DICE, NOT BY INDEX. The old offset was `-i * 0.22`: four
- * cats in a perfectly even line, which is a parade. A random head start and a
- * random lane wobble is four kids who set off when they felt like it.
+ * `BR_RATE` IS A FRACTION OF THE WHOLE PATH PER SECOND, and the path is
+ * `BR_UP + span + BR_OFF` = 42 units on this world. 0.24 of that is 10.1 units
+ * a second and 4.2 seconds end to end: 1.6 of approach, 1.8 of deck, 0.8 to
+ * leave.
  *
- * THE RATE CAME DOWN WITH IT. `bridge-run` holds 9.4 seconds; the furthest
- * back starts at 0.02 and has 1.33 of deck to clear, which at 0.17 is 7.8
- * seconds and still leaves the lens a beat of empty bridge before the arena —
- * the picture that line wants under it, and the reason the old rate was what
- * it was.
+ * AND ALL OF IT IS CUT TO THE SHOT, WHICH IS 5.40 SECONDS. Measured off the
+ * running scene rather than reasoned: beat 3 of the finale lasts 9 seconds and
+ * the bridge holds the first 0.60 of it. The first pass at this ran at 0.17 of
+ * a 52-unit path — 5.9 seconds for ONE kitten, plus three of stagger — so the
+ * cut to the arena landed with the third and fourth still out on the approach
+ * road as specks, and what the shot actually showed was an empty bridge with a
+ * cat somewhere behind it. The previous comment here claimed the shot held 9.4
+ * seconds. It does not, and nothing had ever asked it.
+ *
+ * SO SOMEBODY IS ON THE DECK FROM 1.6 SECONDS IN UNTIL THE CUT, and the last
+ * two are still crossing when it comes, which is the right way for this to end
+ * — the line over the top of it is "so stay", not "so leave".
+ *
+ * THE HEAD START IS GONE AND `BR_GAP` REPLACED IT. The old `BR_HEAD` was a
+ * random start each, which was written to solve "the shot opens on an empty
+ * bridge" and solved it by opening on four cats already halfway over with no
+ * approach at all. An index stagger is what was actually asked for.
  */
-const BR_RATE = 0.17;
-const BR_HEAD = [0.02, 0.34];
+const BR_RATE = 0.24;
 
 /** How long one flourish lasts, and the gap between them. Both ends random per
  *  kitten per go: "jumping randomly, multiple times, with random pauses between
  *  jumps, to show they are having random/chaotic fun." */
-const HOP_DUR = [0.42, 0.34];
-const HOP_GAP = [0.30, 1.30];
+const HOP_DUR = [0.34, 0.30];
+/* AND THE GAPS ARE CUT TO THE DECK, NOT TO A FEELING. The deck is 1.8 seconds
+   long at `BR_RATE` — see there — and a gap averaging 0.95 on top of a hop
+   averaging 0.6 is one and a half seconds a cycle, which is ONE jump per
+   kitten per crossing. "Jumping randomly, MULTIPLE times" is the line, so the
+   cycle has to fit inside the crossing twice: 0.2-0.8 of wait puts it at just
+   under a second. */
+const HOP_GAP = [0.20, 0.60];
 const ACT_DUR = [0.38, 0.30];
 const ACT_GAP = [1.10, 2.40];
 
-/** The four things a kitten might do on the way across, and they are the four
- *  the game actually has. "Can even have some swinging swords or using random
- *  abilities like the Orb or Smash, or Dash abilities, to show players what
- *  abilities they can unlock later." */
-const BR_ACTS = ['swing', 'orb', 'smash', 'dash'];
+/** The three things a kitten might do on the way across, and they are the
+ *  three the Kotodama orbs actually grant. "It would also be good to give them
+ *  the special abilities from the kotodoma orbs (Smash, Dash, Ward) and show
+ *  them using these abilities while they are running, jumping, and crossing the
+ *  bridge."
+ *
+ *  A SWING AND AN ORB WERE THE OTHER TWO AND THEY WERE NOT ABILITIES. A swing
+ *  is what the katana does all day and the rising ring read as a third kind of
+ *  smash; between them they took two of every four flourishes and neither said
+ *  anything. Each kitten is DEALT a different one of these to start with, so
+ *  all three are on screen in the first pass rather than three of one by
+ *  chance.
+ *
+ *  THE FIRST FLOURISH IS ALSO THE FIRST THING THAT HAPPENS. The approach is
+ *  when the abilities play; the jumps wait for the deck, which is the order the
+ *  sentence puts them in — "running towards the bridge before they start
+ *  crossing it and jumping over it." */
+const BR_ACTS = ['smash', 'dash', 'ward'];
+
+/**
+ * The approach, and the way out.
+ *
+ * 16 units is a second and a half of road with the crossing in front of them;
+ * the path used to begin 7 units short of the deck, which is 0.8 seconds and
+ * reads as a standing start. 8 past the far end takes them out of frame rather
+ * than stopping them on the tarmac. Both are in WORLD units and the deck
+ * between them comes off `world.bridgeSpan`, so a re-sized crossing re-times
+ * its own run.
+ *
+ * IT WAS 22 AND 12, AND THE SHOT COULD NOT AFFORD THEM. See `BR_RATE`: 5.40
+ * seconds of camera has to hold four staggered crossings, so every unit of road
+ * either side of the deck is a unit the fourth kitten does not get to cross.
+ * These two are the smallest pair that still read as running AT something.
+ *
+ * `BR_GAP` is the stagger, in seconds — "roughly a second apart from each
+ * other, so that they are not right on top of each other and you can see them
+ * better as they cross."
+ */
+const BR_UP = 16;
+const BR_OFF = 8;
+const BR_GAP = 1.0;
+
+/** How long after the champion throws his arms up the four of them join in.
+ *  "Let's also make Mr. Satan go into cheering pose first, and then a moment
+ *  after, the players can cheer with him, maybe 0.1s or 0.2s after." The middle
+ *  of what was asked for, and it is a LAG rather than a second cue: one cue
+ *  that two things answer at different times cannot get out of order with
+ *  itself, and the fanfare is nailed to the same instant. */
+const CHEER_LAG = 0.15;
 
 const ANG_Y = 0.55;
 const CIR_Y = HUD_Y * 1.15;
@@ -337,18 +441,46 @@ const boxAt = (w, h, d, colour, x, y, z, ry = 0) => {
   return g;
 };
 
-const coneAt = (r, h, colour, x, y, z, seg = 6) => {
-  const g = new THREE.ConeGeometry(r, h, seg);
-  paint(g, colour);
-  g.translate(x, y, z);
-  return g;
-};
-
 const cylAt = (rt, rb, h, colour, x, y, z, seg = 8) => {
   const g = new THREE.CylinderGeometry(rt, rb, h, seg);
   paint(g, colour);
   g.translate(x, y, z);
   return g;
+};
+
+/**
+ * Point a piece of bridge along a tangent WITHOUT ROLLING IT OVER.
+ *
+ * THE BUG THIS FIXES WAS REPORTED AS "THEY SEEM TO BE UPSIDE-DOWN OR SIDEWAYS."
+ * Every slat and every gate was oriented with
+ * `Quaternion.setFromUnitVectors((0,0,1), tangent)`, which is the SHORTEST
+ * rotation carrying +Z onto the tangent — and the shortest rotation is exactly
+ * the one that does not care which way up the thing ends. On a span that lifts
+ * (`lift` is a sine arch plus the height difference between two islands) the
+ * deck rolls as it climbs; on a tangent pointing anywhere near -Z the minimal
+ * rotation is a half-turn about a horizontal axis, which puts the planks on top
+ * of the rails and stands the torii on its lintel.
+ *
+ * SO THE BASIS IS WRITTEN OUT INSTEAD, AND THE UP VECTOR IS IN IT. Forward is
+ * the tangent, right is world-up crossed into it, and up is whatever is left —
+ * which is the definition of "banked to the slope but never rolled". A tangent
+ * that is exactly vertical has no such basis at all (right would be zero), so
+ * that one case falls back to +X rather than producing NaNs and un-drawing the
+ * span. Ninth non-negotiable.
+ */
+const _dqF = new THREE.Vector3();
+const _dqR = new THREE.Vector3();
+const _dqU = new THREE.Vector3();
+const _dqM = new THREE.Matrix4();
+const _dqWorldUp = new THREE.Vector3(0, 1, 0);
+const deckQuat = (out, tangent) => {
+  _dqF.copy(tangent).normalize();
+  _dqR.crossVectors(_dqWorldUp, _dqF);
+  if (_dqR.lengthSq() < 1e-8) _dqR.set(1, 0, 0);
+  _dqR.normalize();
+  _dqU.crossVectors(_dqF, _dqR).normalize();
+  _dqM.makeBasis(_dqR, _dqU, _dqF);
+  return out.setFromRotationMatrix(_dqM);
 };
 
 export class FinaleShow {
@@ -359,6 +491,14 @@ export class FinaleShow {
     this.scene = scene;
     this.world = null;
     this.cast = null;
+    /** One `InstancedMesh` per sprite sheet the crowd is drawn from, and the
+     *  materials that carry their fade. See `_buildFolk`. */
+    this.folkSets = [];
+    this.folkMats = [];
+    /** Scratch, for `_resolve`. Two of them because a crossing resolves both
+     *  of its ends in the same expression. */
+    this._pa = new THREE.Vector3();
+    this._pb = new THREE.Vector3();
     this.running = false;
     /** The cue currently playing, and how long it has been playing. */
     this.phase = null;
@@ -410,6 +550,8 @@ export class FinaleShow {
     this.finish();
     this.world = world ?? null;
     this.cast = cast ?? null;
+    this.folkSets = [];
+    this.folkMats = [];
     if (!this.scene || !this.world) return false;
 
     this.group = new THREE.Group();
@@ -473,8 +615,8 @@ export class FinaleShow {
     this.kits = [];
     this.drags = [];
     this.runner = null;
-    this.folk = null;
-    this.beasts = null;
+    this.folkSets = [];
+    this.folkMats = [];
     this.model = null;
     this.bridges = null;
     this.slats = null;
@@ -779,76 +921,150 @@ export class FinaleShow {
       parts.push(cylAt(m.r * K, m.r * K, 0.02, pal.dirt, lx(m.x), 0.09, lz(m.z), 7));
     }
 
-    /* --- the buildings and the trees ------------------------------------- */
-    let trees = 0;
+    /* --- the buildings and the trees -------------------------------------
+       THEY ARE THE REAL MODELS NOW, SHRUNK — which is what was asked for twice
+       and refused once. "The roofs of the houses are inverted. Can we just use
+       the same house models that are in the main town island?" and "The trees
+       can be the same trees we use on the main island, just miniature versions
+       of them."
+
+       THE REFUSAL WAS WRONG ON A NUMBER, AND THE NUMBER IS THE WHOLE STORY.
+       The comment that used to stand here said `buildHouse` was too expensive
+       because "four hundred of those merged is a quarter of a million
+       triangles". Measured: this world has 508 solids and **41** of them are
+       buildings — 467 are trees. Four hundred houses never existed. Forty-one
+       real houses is about 35k triangles across seven merged meshes, which is
+       less than one market stall's worth of the world standing behind them.
+
+       AND THE ROOF WAS INVERTED FOR A REASON ANYBODY CAN CHECK. `cornerLift`
+       is an ABSOLUTE distance in `pagodaRoof`, not a fraction: 0.5 of lift on a
+       roof `h * 0.62 = 0.29` tall kicked the corners up to 172% of the roof's
+       own height, which is a funnel. `buildHouse` passes 0.6 on a roof 1.9 tall
+       — 32% — and that is the shape everybody recognises. A hand-tuned second
+       copy of a shape will drift from the original; there is now only one copy.
+
+       AND THE ARGUMENTS COME OFF THE SOLID, NOT OFF ITS RADIUS. `world.js`
+       records the `house` / `tree` options it built each one from — see the
+       note on `World.solids`. A radius cannot say which way a house faces or
+       what colour its tiles are, and those were the two things this file used
+       to guess. Anything with no spec still gets the old box, so a collider
+       that was never a building degrades instead of vanishing. */
     for (const s of this.world.solids ?? []) {
       if (!inside(s.x, s.z)) continue;
       const rr = s.r * K;
       if (s.r >= 1.6) {
-        /* A BUILDING, AND IT IS THE GAME'S OWN ROOF. "The buildings on the
-           holographic islands look like normal buildings. We should use the
-           buildings with the cool oriental roofs that we have in the main
-           island as they should look similar or be the same if possible. Can
-           just use those 3D models and shrink them down."
+        const H = s.house;
+        if (H) {
+          const built = buildHouse({ w: H.w, d: H.d, floors: H.floors, tile: H.tile });
+          transformParts(built, lx(s.x), 0.08, lz(s.z), H.ry ?? 0, K * (H.s ?? 1));
+          parts.push(...built);
+        } else {
+          /* NOT A HOUSE, BUT STILL SOMETHING TALL — a market stall, a grotto
+             wall, a shrine gate. A box in the biome's own rock, which is what
+             this whole branch used to be. */
+          const h = s.r * 1.3 * K;
+          const hw = rr * 0.72;
+          parts.push(boxAt(hw * 2, h, hw * 2, pal.rock, lx(s.x), 0.08 + h / 2, lz(s.z)));
+          parts.push(boxAt(hw * 2.1, h * 0.12, hw * 2.1, 0x6b4a34,
+            lx(s.x), 0.08 + h * 0.94, lz(s.z)));
+          /* THE SAME ROOF THE REAL ONES WEAR, at the same PROPORTIONS — 32% of
+             its own height of corner lift, not 172%. */
+          const roof = pagodaRoof(hw, hw, h * 0.62,
+            { overhang: 0.5, cornerLift: h * 0.2, rings: 3, perSide: 3 });
+          paint(roof, 0x4a4a6e);
+          roof.translate(lx(s.x), 0.08 + h * 0.96, lz(s.z));
+          parts.push(roof);
+        }
+      } else if (s.tree) {
+        /* A TREE, AND IT IS THE ISLAND'S OWN TREE — all of them, unthinned,
+           because there are seventy trees in the entire archipelago and that
+           is a merge nobody can feel.
 
-           It was a plaster box with a four-sided cone on it, which from
-           twenty-six units out is a hut with a party hat. `pagodaRoof` is the
-           real one — the flared eaves and the kicked-up corners that
-           `build.js` says do "most of the work of selling Japan" — and it takes
-           its detail as arguments, so the same function that builds a house you
-           can walk around builds this one at three rings and two segments a
-           side. Thirty-three vertices, and it is unmistakably the same roof.
+           AND ONLY WHAT THE WORLD CALLS A TREE. This used to draw a cone for
+           EVERY solid under r 1.6 and keep one in three, which read as a forest
+           and was measured to be a lie: of the 467 small solids in this world,
+           **348 are the two star grottos' maze walls** — rings of colliders
+           sealed inside a stone dome, which nobody can see from the ground, let
+           alone from a hologram in the sky. The autumn island's sixty-tree
+           "forest" was one buried maze drawn end to end; that island really has
+           ONE tree on it. The dome is drawn below instead, which is the thing a
+           kitten standing there actually sees.
 
-           SHRINKING THE ACTUAL MESH WAS THE OTHER READING AND IT IS WORSE.
-           `buildHouse` returns eleven parts with a lantern and a door frame on
-           it; four hundred of those merged is a quarter of a million triangles
-           to draw a town the size of a saucer. The SHAPE is what has to be the
-           same, and the shape is one call. */
-        const h = s.r * 1.3 * K;
-        const hw = rr * 0.72;
-        parts.push(boxAt(hw * 2, h, hw * 2, pal.rock, lx(s.x), 0.08 + h / 2, lz(s.z)));
-        /* The timber under the eaves, which is what stops a white box from
-           reading as a white box. */
-        parts.push(boxAt(hw * 2.1, h * 0.12, hw * 2.1, 0x6b4a34,
-          lx(s.x), 0.08 + h * 0.94, lz(s.z)));
-        const roof = pagodaRoof(hw, hw, h * 0.62,
-          { overhang: 0.55, cornerLift: 0.5, rings: 3, perSide: 2 });
-        paint(roof, 0x4a4a6e);
-        roof.translate(lx(s.x), 0.08 + h * 0.96, lz(s.z));
-        parts.push(roof);
-      } else {
-        /* A TREE, WITH A TRUNK UNDER IT. Thinned, because the autumn and dusk
-           islands carry 180 each and a model of a forest is a green disc either
-           way — every third one keeps the canopy legible and the merge cheap.
-           The trunk is four more triangles and it is the difference between a
-           tree and a green cone. */
-        if ((trees++) % 3) continue;
-        const h = Math.max(0.12, s.r * 3.4 * K);
-        parts.push(cylAt(rr * 0.5, rr * 0.6, h * 0.4, 0x6b4a34,
-          lx(s.x), 0.08 + h * 0.2, lz(s.z), 4));
-        parts.push(coneAt(Math.max(0.05, rr * 2.4), h * 0.85, pal.grassDark,
-          lx(s.x), 0.08 + h * 0.6, lz(s.z), 5));
+           SO AN UNTAGGED SMALL SOLID DRAWS NOTHING, and that is the rule rather
+           than an oversight: a bare radius says something is in the way, and
+           "in the way" is not a shape. Anything that should appear says so —
+           `tree` here, `house` above, `landmarks` and `grottos` below.
+
+           `buildTree` applies the scale itself, so `transformParts` only ever
+           places and turns it — scaling twice is a forest of bonsai. */
+        const T = s.tree;
+        const built = buildTree(T.seed, T.scale * K, FOLIAGE[T.leaf] ? T.leaf : 'pine');
+        transformParts(built, lx(s.x), 0.08, lz(s.z), T.ry ?? 0, 1);
+        parts.push(...built);
       }
     }
 
     /* --- the bamboo, where the bamboo really is --------------------------
-       "Can add some low poly bamboo or trees even to make replica look
-       similar." `world.groves` is the list the canes are actually planted from
-       — the same one the ending's camera uses to find the forest it opens on —
-       so the two stands on the model are the two stands the girls walked to.
-       Ten canes each rather than eighty: at this scale a cane is a hair, and
-       what the eye is reading is that there is a green patch out past the
-       crossing with something growing in it. */
-    for (const grove of this.world.groves ?? []) {
-      if (!inside(grove.x, grove.z)) continue;
-      const n = 10;
-      for (let i = 0; i < n; i++) {
-        const a = i * 2.39996;
-        const rr = Math.sqrt((i + 0.5) / n) * grove.r * K * 0.8;
-        const h = 5.5 * K;
-        parts.push(cylAt(0.16 * K, 0.2 * K, h, 0x7bb05a,
-          lx(grove.x) + Math.cos(a) * rr, 0.08 + h / 2, lz(grove.z) + Math.sin(a) * rr, 4));
-      }
+       "For bamboo island, and in general on the main island, there should be
+       some small models of bamboo."
+
+       AND IT IS `props` THAT KNOWS WHERE THE BAMBOO IS, NOT `groves`. This read
+       `world.groves`, which is the list of the two stands on the HOME island
+       and nothing else — so the bamboo island, which carries seventy canes and
+       is named after them, had exactly zero drawn on the model. Every cane in
+       this game is a knockable `Prop` (see `world.js`: "if it looks like bamboo
+       it must cut"), and `p.home` is where it was planted, which is the honest
+       answer on an archipelago where every one of them has been knocked over by
+       the time this scene plays.
+
+       THE OTHER HALF OF IT WAS THAT A CANE WAS 0.0084 UNITS WIDE — a sixth of
+       a pixel at this framing, drawn as a four-sided tube with no joints and no
+       leaves. `buildBamboo` is the real stand, and at this scale its own height
+       rule gives it four segments, so a stand costs about a thousand triangles
+       instead of nine hundred at full size.
+
+       EVERY FOURTH ONE. 154 stands merged is 160k triangles for a green fuzz;
+       thirty-eight is a grove you can see is a grove. */
+    let canes = 0;
+    for (const p of this.world.props ?? []) {
+      if (p.kind !== 'bamboo') continue;
+      const h = p.home ?? p.group?.position;
+      if (!h || !inside(h.x, h.z)) continue;
+      if ((canes++) % 4) continue;
+      const built = buildBamboo(canes * 3 + 1, K * 1.15);
+      transformParts(built, lx(h.x), 0.08, lz(h.z), (canes % 7) * 0.9, 1);
+      parts.push(...built);
+    }
+
+    /* --- the star grottos ------------------------------------------------
+       THE THING THE MAZE WALLS WERE PRETENDING TO BE. Two of them — one on the
+       autumn island, one on the dusk one — and each is a sealed stone dome with
+       a single doorway and a maze of 174 colliders inside it. Those colliders
+       are what the tree loop above used to draw as a small forest; what is
+       actually visible from outside is the dome, so the dome is what is here.
+
+       `World.grottos` publishes the centre, the radius AND the `yaw` the mouth
+       faces, which is the only reason the doorway can be put on the right side
+       of it rather than guessed.
+
+       A HEMISPHERE, NOT THE REAL GEOMETRY. `buildGrotto` is a curved-wall maze
+       with a ceiling over it, tens of thousands of triangles of rooms nobody
+       can see into; the outside of it is a dome, and at 0.68 units across on
+       this model a dome is fourteen segments. */
+    for (const G of this.world.grottos ?? []) {
+      if (!inside(G.x, G.z)) continue;
+      const gr = Math.max(0.1, G.r * K);
+      const dome = new THREE.SphereGeometry(gr, 14, 7, 0, Math.PI * 2, 0, Math.PI * 0.5);
+      paint(dome, pal.rock);
+      dome.translate(lx(G.x), 0.1, lz(G.z));
+      parts.push(dome);
+      /* The doorway: the one dark mark on it, and the reason it reads as a
+         thing you can go inside rather than as a boulder. */
+      const dw = gr * 0.36;
+      const yaw = G.yaw ?? 0;
+      parts.push(boxAt(dw, dw * 1.15, dw * 0.6, 0x171320,
+        lx(G.x) + Math.sin(yaw) * gr * 0.94, 0.1 + dw * 0.58,
+        lz(G.z) + Math.cos(yaw) * gr * 0.94));
     }
 
     /* --- the clan shrines, in their own clans' colours -------------------
@@ -1016,7 +1232,7 @@ export class FinaleShow {
       for (let i = 0; i <= 4; i++) {
         const u = i / 4;
         const wob = Math.sin(u * Math.PI * 2) * span * 0.12;
-        const lift = Math.sin(u * Math.PI) * (span * 0.24 + 0.18)
+        const lift = Math.sin(u * Math.PI) * span * BR_ARCH
           + (p.nearY - isl.nearY) * u;
         pts.push(new THREE.Vector3(
           x0 + (x1 - x0) * u + px * wob,
@@ -1058,7 +1274,6 @@ export class FinaleShow {
     const tan = new THREE.Vector3();
     const scl = new THREE.Vector3();
     const q = new THREE.Quaternion();
-    const FWD = new THREE.Vector3(0, 0, 1);
     const home = (isl) => new THREE.Vector3(isl.near.x, isl.nearY, isl.near.z);
     let gi = 0;
     for (const sp of spans) {
@@ -1068,7 +1283,7 @@ export class FinaleShow {
         const u = (i + 0.5) / BR_SLATS;
         sp.curve.getPointAt(u, pos);
         sp.curve.getTangentAt(u, tan);
-        q.setFromUnitVectors(FWD, tan.normalize());
+        deckQuat(q, tan);
         /* WHICH ISLAND THIS PIECE BELONGS TO. The near half rides the child and
            the far half rides its parent, which is what makes the span tear in
            the middle when they separate rather than sliding off one end. */
@@ -1096,7 +1311,16 @@ export class FinaleShow {
       for (const [u, isl] of [[0, sp.a], [1, sp.b]]) {
         sp.curve.getPointAt(u, pos);
         sp.curve.getTangentAt(u, tan);
-        q.setFromUnitVectors(FWD, tan.normalize());
+        /* AND IT STANDS UP, whatever the deck under it is doing. A plank may
+           be pitched — it is a ramp, that is what a ramp is — but a torii is a
+           gate, and a gate built on the deck's own tangent leans back by the
+           whole gradient of the arch. `deckQuat` cannot fix that for it: it
+           kills the ROLL and keeps the pitch, faithfully, which is right for a
+           plank and wrong for a post. So the gate is turned by the crossing's
+           BEARING and by nothing else. */
+        tan.y = 0;
+        if (tan.lengthSq() < 1e-8) tan.set(0, 0, 1);
+        deckQuat(q, tan);
         const anchor = home(isl);
         M.compose(pos, q, scl.set(1, BR_W * 1.5, 1));
         this.gateMesh.setMatrixAt(gi, M);
@@ -1190,10 +1414,35 @@ export class FinaleShow {
   /**
    * The people and the animals, and the fact that none of them ever leaves.
    *
-   * INSTANCED, BECAUSE THIRTY BILLBOARDS IS THIRTY DRAW CALLS. At this scale a
-   * townsperson is a coloured pill four pixels tall; the cost of drawing them
-   * as sprites would be several times the cost of the entire model they are
-   * standing on, for a picture nobody could tell apart from this one.
+   * THEY ARE CATS AND ANIMALS NOW, NOT PILLS. "The people, and likely animals
+   * appear as just little colored blobs. Would be better if they were small
+   * versions of randomly recolored versions of Ember and Frost and have them
+   * moving around the world a little... Idea is to show a vibrant city with
+   * inhabitants, rather than an empty one. The animals can be the same animals
+   * we already have sprites for, but a miniature version of them."
+   *
+   * AND THE SIZE WAS NEVER THE PROBLEM — MEASURED. A townsperson is 0.19 model
+   * units tall against a one-floor house at 0.27, which is very close to the
+   * real ratio (a 2.9-unit kitten beside a 5.1-unit house). What made them
+   * blobs was that they were five-sided cylinders. The silhouette is the fix,
+   * so this draws the actual sheets.
+   *
+   * ONE DRAW CALL AND ONE TEXTURE PER SHEET, WHICH IS WHY THIS IS NOT SIX AND
+   * THIRTY `Billboard`s. `Billboard` CLONES its atlas so it can drive the cell
+   * through `texture.offset` — right for a dozen figures, ruinous for thirty,
+   * because a cloned texture is a second upload of a sheet that is several
+   * megabytes on the card. So the cell is a PER-INSTANCE ATTRIBUTE instead
+   * (`cellOff`, `cellFlip`) and the sheet itself is shared with the rest of the
+   * game: one `InstancedMesh` per sheet, one upload, thirty townspeople.
+   * `_folkUV` is the four lines of shader that does it, and it computes exactly
+   * what `Billboard._setCell` computes — same half-texel inset, same mirror,
+   * same top-down row order — so a villager and a player read the same atlas
+   * the same way.
+   *
+   * RECOLOURED WITH `instanceColor`, which `MeshBasicMaterial` multiplies into
+   * the map for free. A wash rather than a stain: saturation is low and
+   * lightness is high, so a tinted Ember is a different cat and not a stained
+   * one.
    *
    * BORN ON AN ISLAND AND CLAMPED TO IT. See `FOLK` — the line this plays under
    * is about nobody crossing, so the wander is bounded by the island's own
@@ -1206,95 +1455,213 @@ export class FinaleShow {
     if (!this.isles.length) return;
     const town = this.isles.reduce((a, b) => (a.r >= b.r ? a : b));
     const outer = this.isles.filter((i) => i !== town && i.kind !== 'dojo');
+    this.folkSets = [];
+    this._m = new THREE.Matrix4();
+    this._fq = new THREE.Quaternion();
+    this._fp = new THREE.Vector3();
+    this._fs = new THREE.Vector3();
 
-    const mk = (n, geo, base) => {
-      const mesh = new THREE.InstancedMesh(this._keep(geo), base, n);
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      mesh.frustumCulled = false;
-      this.model.add(mesh);
-      return mesh;
+    const spot = (host, spread) => {
+      const a = Math.random() * TAU;
+      const rr = Math.sqrt(Math.random()) * host.r * spread;
+      return {
+        host,
+        hx: Math.cos(a) * rr,
+        hz: Math.sin(a) * rr,
+        /* ITS OWN LITTLE ORBIT, and it is small. "Slightly moving about" —
+           a model village where everybody is sprinting reads as an ant farm,
+           and the shot is meant to be STILL while the camera pushes in. */
+        wr: host.r * (0.05 + Math.random() * 0.06),
+        sp: 0.25 + Math.random() * 0.5,
+        ph: Math.random() * TAU,
+        facing: 0,
+      };
     };
 
-    this.folkMat = this._keep(new THREE.MeshBasicMaterial({
-      transparent: true, opacity: 0, toneMapped: false, depthWrite: false,
-      vertexColors: true,
-    }));
-
-    const seed = (n, host, h, spread) => {
-      const out = [];
-      for (let i = 0; i < n; i++) {
-        const a = Math.random() * TAU;
-        const rr = Math.sqrt(Math.random()) * host.r * spread;
-        out.push({
-          host,
-          hx: Math.cos(a) * rr,
-          hz: Math.sin(a) * rr,
-          /* ITS OWN LITTLE ORBIT, and it is small. "Slightly moving about" —
-             a model village where everybody is sprinting reads as an ant farm,
-             and the shot is meant to be STILL while the camera pushes in. */
-          wr: host.r * (0.04 + Math.random() * 0.05),
-          sp: 0.25 + Math.random() * 0.5,
-          ph: Math.random() * TAU,
-          h,
+    /* --- the townspeople: Ember's sheet and Frost's, tinted ---------------
+       THE FIRST TWO STYLES AND NOT ALL FOUR, because Storm and Blossom ARE
+       Ember and Frost recoloured — a third and fourth sheet would be two more
+       uploads to say something `instanceColor` already says. */
+    const sheets = (this.cast?.kittens ?? []).filter((a) => a?.texture).slice(0, 2);
+    if (sheets.length) {
+      for (let i = 0; i < sheets.length; i++) {
+        const n = Math.round(FOLK / sheets.length);
+        const list = [];
+        for (let j = 0; j < n; j++) list.push(spot(town, 0.45));
+        const set = this._folkSet(sheets[i], list, FOLK_H, 1);
+        if (!set) continue;
+        /* A WHOLE-HUE SPREAD, AND IT IS DELIBERATE THAT IT IS RANDOM. A fixed
+           palette of four is the four PLAYERS, which is what this used to draw
+           — and a town where everybody is one of the four girls is not a town,
+           it is a mirror. */
+        const C = new THREE.Color();
+        list.forEach((f, k) => {
+          C.setHSL(Math.random(), 0.32, 0.78);
+          set.mesh.setColorAt(k, C);
         });
+        if (set.mesh.instanceColor) set.mesh.instanceColor.needsUpdate = true;
       }
-      return out;
-    };
-
-    this.folk = { list: seed(FOLK, town, FOLK_H, 0.45) };
-    this.beasts = { list: seed(BEASTS, town, BEAST_H, 0.72) };
-    /* A FEW ON THE OTHERS, so the archipelago is inhabited and not a town with
-       six empty rocks around it. One or two each, and never a person: the
-       islands are where nobody goes any more. They are ON TOP of the town's
-       own count rather than carved out of it — "about 10 - 20 people and
-       10 - 20 animals" is a description of the TOWN, and splitting fourteen
-       animals across seven islands would have put two in it. */
-    for (const isl of outer) {
-      this.beasts.list.push(...seed(1 + (Math.random() < 0.5 ? 1 : 0), isl, BEAST_H, 0.7));
     }
 
-    const pillar = new THREE.CylinderGeometry(FOLK_H * 0.3, FOLK_H * 0.34, FOLK_H, 5);
-    paint(pillar, 0xffffff);
-    const critter = new THREE.BoxGeometry(BEAST_H * 1.5, BEAST_H, BEAST_H * 0.8);
-    paint(critter, 0xffffff);
-    this.folk.mesh = mk(this.folk.list.length, pillar, this.folkMat);
-    this.beasts.mesh = mk(this.beasts.list.length, critter, this.folkMat);
+    /* --- and the animals, which are the game's own animals -----------------
+       ONE SET PER SPECIES, sized against a townsperson rather than typed: a
+       bird is smaller than a rabbit is smaller than a panda, and the numbers
+       here are ratios of `BEAST_H` so a change to the crowd's scale moves the
+       whole menagerie with it.
 
-    /* THE PEOPLE ARE THE PLAYERS' OWN COLOURS. Four kittens live in that town
-       and the model is of their town; a crowd in the four palette colours is a
-       crowd that belongs to them rather than a generic one. */
-    const C = new THREE.Color();
-    this.folk.list.forEach((f, i) => {
-      C.set(PLAYER_STYLE[i % PLAYER_STYLE.length].colour);
-      this.folk.mesh.setColorAt(i, C);
-    });
-    const FUR = [0xd8b071, 0x8e7357, 0xe6e0d2, 0x5d5a52, 0xc08a5a];
-    this.beasts.list.forEach((f, i) => {
-      C.set(FUR[i % FUR.length]);
-      this.beasts.mesh.setColorAt(i, C);
-    });
-    if (this.folk.mesh.instanceColor) this.folk.mesh.instanceColor.needsUpdate = true;
-    if (this.beasts.mesh.instanceColor) this.beasts.mesh.instanceColor.needsUpdate = true;
-    this._m = new THREE.Matrix4();
+       THE TOWN GETS MOST OF THEM AND EVERY OTHER ISLAND GETS ONE OR TWO, which
+       is the shape the old list had and the reason for it has not changed. */
+    const kinds = [];
+    const C = this.cast?.critters ?? null;
+    for (const [key, mul] of [['rabbit', 1.0], ['rat', 0.75], ['bird', 0.7]]) {
+      const a = C?.[key]?.calm ?? C?.[key];
+      if (a?.texture) kinds.push({ art: a, mul, air: key === 'bird' });
+    }
+    const panda = this.cast?.panda;
+    if (panda?.texture) kinds.push({ art: panda, mul: 2.1, air: false });
+    if (kinds.length) {
+      const homes = [];
+      for (let i = 0; i < BEASTS; i++) homes.push(spot(town, 0.72));
+      for (const isl of outer) {
+        const n = 1 + (Math.random() < 0.5 ? 1 : 0);
+        for (let i = 0; i < n; i++) homes.push(spot(isl, 0.7));
+      }
+      for (let i = 0; i < kinds.length; i++) {
+        const mine = homes.filter((_, j) => j % kinds.length === i);
+        if (!mine.length) continue;
+        const k = kinds[i];
+        for (const f of mine) f.air = k.air ? BEAST_H * 2.4 : 0;
+        this._folkSet(k.art, mine, BEAST_H * k.mul, 0);
+      }
+    }
+  }
+
+  /**
+   * One sprite sheet, N little copies of it, one draw call.
+   *
+   * `row` is which animation row these read — 1 is the walk row on a kitten
+   * sheet and collapses to 0 on the one-cell animal sheets, which is what lets
+   * the same function build both. See `Billboard._setCell` for why a one-row
+   * atlas is not a special case anywhere in this game.
+   */
+  _folkSet(art, list, height, row) {
+    if (!art?.texture || !list.length || !this.model) return null;
+    const cols = Math.max(1, art.cols ?? 1);
+    const rows = Math.max(1, art.rows ?? 1);
+    const quad = this._quad(art, height);
+    const geo = this._keep(new THREE.PlaneGeometry(quad, quad));
+    /* PIVOT AT THE DRAWN FEET, the same correction `Billboard` makes and for
+       the same reason: the atlas pads under the art, so a quad sitting on the
+       ground floats by exactly that margin. */
+    geo.translate(0, quad / 2 - (art.pad ?? 0) * quad, 0);
+
+    const n = list.length;
+    const off = new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 2);
+    const flip = new THREE.InstancedBufferAttribute(new Float32Array(n), 1);
+    off.setUsage(THREE.DynamicDrawUsage);
+    flip.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('cellOff', off);
+    geo.setAttribute('cellFlip', flip);
+
+    const iw = art.texture.image?.width || 1024;
+    const ih = art.texture.image?.height || 1024;
+    const mat = this._folkMatFor(art.texture, cols, rows, 0.5 / iw, 0.5 / ih);
+    const mesh = new THREE.InstancedMesh(geo, mat, n);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    /* NEVER CULLED. The instances are written every frame and the geometry's
+       own bounding sphere describes one quad at the origin, so three would cull
+       the whole crowd the moment the model turned away from it. */
+    mesh.frustumCulled = false;
+    this.model.add(mesh);
+
+    const set = {
+      mesh, mat, off, flip, list, cols, rows,
+      iu: 0.5 / iw, iv: 0.5 / ih,
+      /* THE SAME TEST `Billboard`'s constructor makes, and it has to be the
+         same one: a four-column sheet is a half-turn mirrored atlas and
+         anything wider is a full turn drawn out. */
+      mirror: cols <= 4 && rows === 1,
+      artFacesRight: art.facesRight !== false,
+      row: Math.min(row, rows - 1),
+    };
+    this.folkSets.push(set);
+    return set;
+  }
+
+  /**
+   * The four lines of shader that make a shared atlas instanceable.
+   *
+   * IT IS `Billboard._setCell`, MOVED ONTO THE CARD. Non-flipped:
+   * `u = uv.x * (w - 2i) + (c * w + i)`. Flipped, three.js does it with a
+   * NEGATIVE repeat, which is the same thing as mirroring `uv.x` first — so one
+   * `mix` covers both and the arithmetic below is identical to the CPU's. The
+   * row term is `1 - (r + 1) * h`, because three's UV origin is bottom-left and
+   * every atlas in this game is authored top-down.
+   *
+   * `customProgramCacheKey` IS NOT OPTIONAL. Without it three caches the
+   * compiled program by material type and defines, and the second sheet with
+   * different `cols` would silently be handed the first sheet's program.
+   */
+  _folkMatFor(texture, cols, rows, insetU, insetV) {
+    const scale = new THREE.Vector2(1 / cols - insetU * 2, 1 / rows - insetV * 2);
+    const mat = this._keep(new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      /* LOW ENOUGH TO FADE THROUGH, for the reason `_mkFig` gives: three tests
+         the FINAL alpha, so a crowd at 0.3 opacity with the shipped 0.35 would
+         not dim, it would vanish on one frame. */
+      alphaTest: 0.06,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+      opacity: 0,
+    }));
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.cellScale = { value: scale };
+      sh.vertexShader = `attribute vec2 cellOff;
+attribute float cellFlip;
+uniform vec2 cellScale;
+${sh.vertexShader}`.replace(
+        '#include <uv_vertex>',
+        `#include <uv_vertex>
+#ifdef USE_MAP
+  vMapUv = vec2( mix( vMapUv.x, 1.0 - vMapUv.x, cellFlip ), vMapUv.y ) * cellScale + cellOff;
+#endif`
+      );
+    };
+    mat.customProgramCacheKey = () => `folk-cell-${cols}-${rows}`;
+    this.folkMats.push(mat);
+    return mat;
   }
 
   /**
    * The red bridge, in the model, as one merged mesh.
    *
-   * ITS LENGTH IS THE REAL ONE'S. `18 * scaleK` is the world's span through the
-   * model's own scale, floored at two units so that a very large world cannot
-   * shrink the one landmark the beat ends on down to nothing again.
+   * ITS LENGTH AND ITS WIDTH ARE THE REAL ONE'S, AT THE MODEL'S SCALE, AND
+   * NOTHING HERE IS TYPED. `world.bridgeSpan` publishes the three numbers the
+   * full-size deck is built from; `scaleK` is the only thing this multiplies
+   * them by.
+   *
+   * "THE BRIDGE IS TOO BIG COMPARED TO EVERYTHING ELSE." It was
+   * `Math.max(2.0, 18 * scaleK)` — a FLOOR of two units under a true length of
+   * 0.94, so on this world the bridge was drawn at 2.1x size, on an island 5.0
+   * across, beside houses 0.53 wide. The floor was there to stop a very large
+   * world shrinking the landmark away; what it actually did was guarantee the
+   * landmark was wrong on the only world that exists. A minimum is expressed
+   * against the ISLAND it sits on now, not against a constant, so it can no
+   * longer be bigger than its own town.
    *
    * ALONG X, because `_stepBridge` already says the deck is the x axis and the
    * two have to agree — the kittens who run it full-size and the kittens who
    * land on it here are reading the same fact about the same bridge.
    */
   _miniSpanGeo() {
-    const len = Math.max(2.0, 18 * this.scaleK);
-    const W = BR_W * 1.3;
-    const T = BR_T;
+    const sp = this.world?.bridgeSpan;
+    const len = (sp?.len ?? 18) * this.scaleK;
+    const W = (sp?.wide ?? 4.4) * this.scaleK;
+    const T = Math.max(BR_T * 0.6, W * 0.12);
     const N = 11;
-    const rise = Math.min(len * 0.17, W * 1.5);
+    const rise = (sp?.rise ?? 2.2) * this.scaleK;
     const parts = [];
     for (let i = 0; i < N; i++) {
       const u = (i + 0.5) / N;
@@ -1523,10 +1890,28 @@ export class FinaleShow {
       const ring = new THREE.LineLoop(this._bridgeRing(), ringMat);
       ring.visible = false;
       this.group.add(ring);
+      /* AND ONE WARD BUBBLE EACH — the same two BackSide shells `Player` pops,
+         in the same blue, because a kid who has worn 壁 has already learned
+         what that drawing means and the last ten seconds of the game is not
+         where to teach her a second one. Built once and hidden: this pops three
+         or four times across nine seconds and a sphere allocated per press is
+         how a cutscene hitches. */
+      const ward = new THREE.Group();
+      for (const [rr, col, op] of [[1.0, 0x9fd8ff, 0.22], [0.82, 0xe8f6ff, 0.10]]) {
+        ward.add(new THREE.Mesh(
+          this._keep(new THREE.IcosahedronGeometry(REAL_H * 0.62 * rr, 2)),
+          this._keep(new THREE.MeshBasicMaterial({
+            color: col, transparent: true, opacity: op, side: THREE.BackSide,
+            depthWrite: false, toneMapped: false,
+          }))
+        ));
+      }
+      ward.visible = false;
+      this.group.add(ward);
       this.kits.push({
         mini, big, cheer, colour: PLAYER_STYLE[i].colour, i,
         seed: (i / PLAYER_STYLE.length) * TAU, from: null, to: null, k: 0, hop: 0,
-        ring, ringMat,
+        ring, ringMat, ward,
       });
     }
 
@@ -1536,6 +1921,28 @@ export class FinaleShow {
     const first = sheets.find((a) => a?.texture);
     if (first) {
       const fig = this._mkFig(first, this._quad(first, REAL_H));
+      /* SHE FADES IN FRONT OF THE HOLOGRAM, NOT UNDERNEATH IT.
+         "When the player is fading out as holographic islands are fading in,
+         they are fading to a weird green color."
+
+         She was, and nothing was tinting her — `#cs-fade` is `#000` and there
+         is no green light in this scene. What was green was THE MODEL, which is
+         sixteen units of meadow and bamboo island hanging at `MINI_Y` over the
+         floor she is running on, fading UP over the same second she is fading
+         DOWN. She orbits at R 24 and the model reaches 16 plus its overshoot,
+         so from the Dojo camera a good part of her circle passes behind it.
+         Two transparent objects sort back to front, so the hologram was drawn
+         OVER her: at a model on 0.7 and a kitten on 0.5 the pixel is 82% green
+         and 15% cat, which is a green smear of the right shape.
+
+         Drawn last instead, the same frame is 50% cat over 35% green — she
+         reads as herself dissolving, which is the cross-fade this was always
+         meant to be. `depthTest` has to go with the render order: `_holoMat`
+         writes depth, so a figure drawn after it and behind it would not be
+         tinted, it would be gone. Nothing else in this scene stands where she
+         does, so there is nothing for her to wrongly cover. */
+      fig.bb.mat.depthTest = false;
+      fig.bb.mesh.renderOrder = 20;
       this.group.add(fig.bb);
       const c = this.world.dojoCentre ?? new THREE.Vector3();
       this.runner = { ...fig, on: false, done: false, a: 0.4, centre: c.clone() };
@@ -1659,7 +2066,7 @@ export class FinaleShow {
     if (!this.isles.length) return;
     for (const k of this.kits) {
       k.from = this._pickIsle(null);
-      k.to = this._pickIsle(k.from);
+      k.to = this._pickIsle(k.from?.isl ?? null);
       k.k = Math.random() * 0.4;
       k.hop = 0;
     }
@@ -1685,52 +2092,137 @@ export class FinaleShow {
    */
   _seedLeap() {
     const bridge = this.phase === 'isles-bridge' && this.miniBridge;
-    const target = bridge ? this._bridgeSpot() : new THREE.Vector3(0, 1.6, 0);
-    const ring = bridge ? 0.55 : 1.15;
+    const target = bridge ? this._bridgeSpot() : this._spot(null, 0, 1.6, 0);
+    /* THE RING IS THE BRIDGE'S OWN LENGTH NOW. It was 0.55 against a deck that
+       was 2.0 units long because of a floor nobody had measured; the deck is
+       0.94 now, so a huddle spaced off a constant would have had two of them
+       standing in the sea beside it. Solved off `bridgeSpan` through `scaleK`,
+       like everything else about that crossing. */
+    const deck = (this.world?.bridgeSpan?.len ?? 18) * this.scaleK;
+    const ring = bridge ? deck * 0.34 : 1.15;
     const n = Math.max(1, this.kits.length);
     for (let i = 0; i < this.kits.length; i++) {
       const k = this.kits[i];
       const a = (i / n) * TAU;
-      k.from = k.mini.bb.position.clone();
-      k.to = target.clone().add(
-        new THREE.Vector3(Math.cos(a) * ring, 0, Math.sin(a) * ring)
-      );
+      k.from = this._here(k.mini.bb);
+      k.to = this._spot(target.isl,
+        target.ox + Math.cos(a) * ring, target.oy, target.oz + Math.sin(a) * ring);
       k.k = 0;
     }
     for (const d of this.drags) d.riding = null;
   }
 
-  _bridgeSpot() {
-    const b = this.miniBridge;
-    if (!b) return new THREE.Vector3(0, 1.6, 0);
-    const host = b.host?.g?.position ?? new THREE.Vector3();
-    return new THREE.Vector3(host.x + b.local.x, 0.9, host.z + b.local.z);
+  /**
+   * A place on the model, said in a way that is still true next frame.
+   *
+   * THE BUG THIS SHAPE FIXES WAS REPORTED AS "THERE ARE SOME ISSUES WITH THE
+   * WAY THE PLAYERS AND THE DRAGONS ARE TRAVERSING BETWEEN THE ISLANDS. SEEMS
+   * THEY MAY BE MOVING TO OLD LOCATIONS THAT NO LONGER MATCH WITH WHERE THE
+   * ISLANDS ACTUALLY ARE." They were, and the model's rotation was NOT why —
+   * every mini kitten and every mini dragon is parented to `this.model`, so
+   * they turn with it (see `_buildCast`, and `_face`, which exists because of
+   * it). What they were not parented to was the ISLAND.
+   *
+   * `_pickIsle` used to snapshot `isl.g.position` into an absolute
+   * `Vector3` at the moment the cue fired. Every island then moved: out from
+   * the huddle to its home over `DRIFT` seconds, overshooting by `OVERSHOOT`,
+   * bobbing by 0.12, and — this is the one that made it obvious — RISING, from
+   * `nearY` to `farY`, which on this world is a spread of 0.00 to 2.40. So a
+   * kitten spent the whole drift running at the coordinates her island had
+   * been standing at before it left, and landed under it.
+   *
+   * AND THE HEIGHT WAS TYPED. `y: 0.25` was an absolute height in model space
+   * for a target on an island whose own deck is at `isl.g.position.y + 0.08`.
+   * On the town, which sits at zero, that is very nearly right; on the dusk
+   * island at 2.40 it is two whole island-thicknesses underground.
+   *
+   * SO A SPOT IS AN OFFSET AND THE ISLAND IT IS AN OFFSET FROM, and `_resolve`
+   * adds them up every frame — the same "rides the island it is anchored to"
+   * idiom the bridge slats have always used, which is why the spans bend and
+   * tear for free. A spot with no island is a free point in model space (the
+   * middle of the world, or wherever a kitten happened to be standing when a
+   * leap began) and resolves to itself.
+   */
+  _spot(isl, ox, oy, oz) { return { isl, ox, oy, oz }; }
+
+  _resolve(sp, out) {
+    if (!sp) return out.set(0, 0, 0);
+    const p = sp.isl?.g?.position;
+    return p
+      ? out.set(p.x + sp.ox, p.y + sp.oy, p.z + sp.oz)
+      : out.set(sp.ox, sp.oy, sp.oz);
   }
 
+  /** Where a kitten is standing right now, as a free spot. */
+  _here(bb) { return this._spot(null, bb.position.x, bb.position.y, bb.position.z); }
+
+  _bridgeSpot() {
+    const b = this.miniBridge;
+    if (!b) return this._spot(null, 0, 1.6, 0);
+    /* ANCHORED TO THE ISLAND THE BRIDGE IS BUILT ON, which is the whole point:
+       `isles-bridge` plays while the islands are fully drifted and still
+       bobbing, and four cats aimed at where the crossing USED to be is the
+       last shot of the model. */
+    return this._spot(b.host ?? null, b.local.x, b.local.y + 0.6, b.local.z);
+  }
+
+  /**
+   * Somewhere to stand on an island that is not the one you are leaving.
+   *
+   * `not` IS AN ISLAND NOW, NOT A POINT. It was being handed a `Vector3`, which
+   * never matched anything in `this.isles`, so the filter never excluded
+   * anything and a kitten's next crossing could be to the island she was
+   * already standing on — a jump in place, on the line about crossing.
+   */
   _pickIsle(not) {
     const pool = this.isles.filter((i) => i !== not);
-    if (!pool.length) return new THREE.Vector3();
+    if (!pool.length) return null;
     const isl = pool[Math.floor(Math.random() * pool.length)];
     const a = Math.random() * TAU;
     const rr = isl.r * 0.55;
-    return new THREE.Vector3(
-      isl.g.position.x + Math.cos(a) * rr, 0.25, isl.g.position.z + Math.sin(a) * rr
-    );
+    /* 0.1 IS THE TOP OF THE ISLAND. The land disc is 0.16 thick and centred on
+       the island's own origin, so its surface is at +0.08 — everything
+       `_isleDetail` plants stands on 0.08 too. */
+    return this._spot(isl, Math.cos(a) * rr, 0.1, Math.sin(a) * rr);
   }
 
-  /** Line the four of them up at one end of the real bridge. */
+  /**
+   * Line the four of them up on the road, a second apart, and start them
+   * running at the bridge.
+   *
+   * THE STAGGER IS NEGATIVE `k` AND NOT A TIMER. `_stepBridge` already hides
+   * anybody outside 0..1 of the path, so a kitten dealt `-2 * BR_GAP * BR_RATE`
+   * is simply two seconds of path behind the start line and walks into
+   * existence when she gets there — no second clock, and nothing to get out of
+   * step with the one that moves her.
+   */
   _seedBridge() {
     const b = this.world?.bridge;
     if (!b) return;
-    const rng = (r) => r[0] + Math.random() * r[1];
+    /* THE CROSSING'S OWN NUMBERS, once, so every use below is the same bridge.
+       See `World.bridgeSpan` — these were three literals in this file and three
+       more in `_miniSpanGeo`. */
+    const sp = this.world?.bridgeSpan;
+    this.brLen = sp?.len ?? 18;
+    this.brRise = sp?.rise ?? 2.2;
+    this.brWide = sp?.wide ?? 4.4;
+    this.brPath = BR_UP + this.brLen + BR_OFF;
+    /* PUBLISHED, because `world-check` has to be able to ask where the road
+       starts without a second copy of these two numbers to drift from them. */
+    this.brUp = BR_UP;
+    this.brOff = BR_OFF;
+    this.brRate = BR_RATE;
     for (let i = 0; i < this.kits.length; i++) {
       const k = this.kits[i];
       /* SPREAD ACROSS THE DECK, AND NOT IN A RULED LINE. Four cats abreast on
          a 4.4-unit bridge is a wall, so the lanes are still dealt out by index
          — that part has to stay spread or they overlap — but the wobble on top
-         of it is what stops four evenly spaced cats reading as a formation. */
-      k.lane = (i - (this.kits.length - 1) / 2) * 1.1 + (Math.random() - 0.5) * 0.55;
-      k.k = rng(BR_HEAD);
+         of it is what stops four evenly spaced cats reading as a formation.
+         Measured off the deck rather than typed, so the lanes cannot end up
+         hanging over the rails of a narrower bridge. */
+      k.lane = (i - (this.kits.length - 1) / 2) * (this.brWide * 0.25)
+        + (Math.random() - 0.5) * this.brWide * 0.12;
+      k.k = -i * BR_GAP * BR_RATE;
       /* EVERY TIMER STARTS PART-USED. A kitten whose first jump is a full gap
          away spends the opening of the shot walking, and the opening of the
          shot is the only part of it the fade is coming up on. */
@@ -1741,8 +2233,13 @@ export class FinaleShow {
       k.actT = 0;
       k.actFor = 0;
       k.act = null;
-      k.actWait = Math.random() * ACT_GAP[1];
+      /* DEALT, NOT ROLLED, THE FIRST TIME. One each of Smash, Dash and Ward is
+         on screen inside the first three seconds; after that they are random
+         like everything else on this bridge. */
+      k.actNext = BR_ACTS[i % BR_ACTS.length];
+      k.actWait = 0.5 + Math.random() * 0.8;
       k.big.bb.visible = true;
+      if (k.ward) k.ward.visible = false;
     }
   }
 
@@ -1803,6 +2300,7 @@ export class FinaleShow {
     for (const k of this.kits) {
       k.big.bb.visible = false;
       if (k.cheer) k.cheer.bb.visible = false;
+      if (k.ward) k.ward.visible = false;
     }
     if (this.satan) this.satan.bb.visible = false;
     if (this.satanUp) this.satanUp.bb.visible = false;
@@ -1945,7 +2443,23 @@ export class FinaleShow {
     r.bb.frame = Math.floor(this.t * 9) % Math.max(1, r.bb.cols);
     r.bb.mat.opacity = fade;
     r.bb.visible = fade > 0.02;
-    r.on = want;
+    /* `on` MEANS "STILL ON THE CIRCLE", NOT "STILL IN HER OWN SHOT."
+       "The dojo rotating circle stops following them for some reason and
+       rotates in the other direction, it should continue following them until
+       they disappear and then should disable for consistency."
+
+       `drivers()` returns null the instant this goes false, and `MathDojo` does
+       what it does on an empty island: it turns theta by itself, at its own
+       rate, which from this camera is the opposite direction to everything else
+       on screen. It went false the frame the phase left `dojo-run` — with a
+       second and a bit of her fade still to play — so the point let go of a
+       kitten who was visibly still walking.
+
+       The fade is the honest test: she is on the circle while she is drawn on
+       it, and `lessonLive()` (which reads `done`, set once the fade reaches
+       zero) is what switches the live layer off afterwards. One question each,
+       and neither of them is the phase. */
+    r.on = want || fade > 0.02;
     if (this._drivers[0]) this._drivers[0].position.set(x, r.centre.y, z);
   }
 
@@ -1962,7 +2476,7 @@ export class FinaleShow {
     const P = this.phase ?? '';
     const on = this.modelOn;
     for (const m of this.modelMats) m.opacity = on * 0.95;
-    if (this.folkMat) this.folkMat.opacity = 0;
+    for (const m of this.folkMats) m.opacity = 0;
     this.model.visible = on > 0.02;
     if (!this.model.visible) {
       for (const k of this.kits) k.mini.bb.visible = false;
@@ -2027,7 +2541,7 @@ export class FinaleShow {
     this._stepBridges(on, dk, shake);
 
     /* --- and the people who stopped using them --------------------------- */
-    this._stepFolk(on, dk);
+    this._stepFolk(on, dk, camera);
 
     /* --- the little ones, crossing --------------------------------------- */
     const crossing = P === 'isles-cross' || P === 'isles-angle' || P === 'isles-circle';
@@ -2046,9 +2560,11 @@ export class FinaleShow {
       bb.frame = Math.floor(this.t * 10 + k.seed) % Math.max(1, bb.cols);
       if (crossing) {
         k.k += dt * 0.55;
-        if (k.k >= 1) { k.from = k.to; k.to = this._pickIsle(null); k.k = 0; }
-        const a = k.from ?? new THREE.Vector3();
-        const b = k.to ?? new THREE.Vector3();
+        if (k.k >= 1) { k.from = k.to; k.to = this._pickIsle(k.from?.isl ?? null); k.k = 0; }
+        /* RESOLVED THIS FRAME, BOTH ENDS. See `_spot` — the islands are moving
+           under these two points for the whole of this shot. */
+        const a = this._resolve(k.from, this._pa);
+        const b = this._resolve(k.to, this._pb);
         const u = Math.max(0, k.k);
         /* THE ARC IS THE JUMP. Every crossing in this game is a jump — that is
            the whole of "the nerve to jump" — so nobody walks between islands
@@ -2068,8 +2584,8 @@ export class FinaleShow {
         /* ...AND THEY GO TOGETHER. One clock for all four, because the line is
            "you crossed" and not "each of you crossed". */
         const u = Math.min(1, this.phaseT / 1.5);
-        const a = k.from ?? bb.position;
-        const b = k.to ?? bb.position;
+        const a = this._resolve(k.from, this._pa);
+        const b = this._resolve(k.to, this._pb);
         const e = 1 - (1 - u) * (1 - u);
         bb.position.set(
           a.x + (b.x - a.x) * e,
@@ -2133,31 +2649,105 @@ export class FinaleShow {
    * which is both cheaper and — see `FOLK` — the entire argument: a figure that
    * integrates a velocity can wander off its island, and this one provably
    * cannot.
+   *
+   * AND THEY WALK THE WAY THEY ARE GOING. The orbit's own tangent is the
+   * bearing, which is free and is also the only bearing that can never
+   * disagree with the motion; the walk row's frame runs off the clock, offset
+   * per villager so the town is not a chorus line. "Have them moving around the
+   * world a little, to show movement in the world, using their moving
+   * animations."
+   *
+   * SQUARE TO THE LENS, OUT OF THE MODEL'S TURN. Same correction `_face`
+   * makes for every other billboard standing on this table, and for the same
+   * reason: the model yaws at `t * 0.12`, so a figure yawed only by the camera
+   * angle spends most of the shot edge-on.
    */
-  _stepFolk(on, dk) {
-    if (!this.folk || !this.beasts || !this.folkMat) return;
+  _stepFolk(on, dk, camera) {
+    if (!this.folkSets?.length) return;
     /* THEY GO AS THE ISLANDS GO. "When the islands drift apart, the people/
        animals fade away." Faster than the islands move, so the model is empty
        by the time it is scattered rather than carrying a crowd through it. */
     const live = Math.max(0, 1 - dk * 2.5);
-    this.folkMat.opacity = on * live;
-    const show = this.folkMat.opacity > 0.02;
-    this.folk.mesh.visible = show;
-    this.beasts.mesh.visible = show;
+    const op = on * live;
+    const show = op > 0.02;
+    for (const m of this.folkMats) m.opacity = op;
+    for (const set of this.folkSets) set.mesh.visible = show;
     if (!show) return;
+
+    const yaw = this.model?.rotation.y ?? 0;
+    /* THE LENS, IN THE MODEL'S OWN SPACE. Taking the camera angle in world
+       space and then subtracting the yaw is two chances to be wrong about a
+       sign; converting the camera once is one. */
+    let camA = 0;
+    if (camera) {
+      this.model.worldToLocal(this._fp.copy(camera.position));
+      this._fcx = this._fp.x;
+      this._fcz = this._fp.z;
+    }
     const M = this._m;
-    for (const set of [this.folk, this.beasts]) {
+    const q = this._fq;
+    const P = this._fp;
+    const S = this._fs.set(1, 1, 1);
+    for (const set of this.folkSets) {
       set.list.forEach((f, i) => {
         const a = f.ph + this.t * f.sp;
-        M.makeTranslation(
-          f.host.g.position.x + f.hx + Math.cos(a) * f.wr,
-          f.host.g.position.y + 0.09 + f.h / 2,
-          f.host.g.position.z + f.hz + Math.sin(a) * f.wr
-        );
+        const x = f.host.g.position.x + f.hx + Math.cos(a) * f.wr;
+        const z = f.host.g.position.z + f.hz + Math.sin(a) * f.wr;
+        const y = f.host.g.position.y + 0.09 + (f.air ?? 0);
+        camA = Math.atan2((this._fcx ?? 0) - x, (this._fcz ?? 0) - z);
+        q.setFromAxisAngle(UP_AXIS, camA - yaw);
+        M.compose(P.set(x, y, z), q, S);
         set.mesh.setMatrixAt(i, M);
+        /* FACING THE TANGENT of its own little circle. */
+        this._folkCell(set, i, a + Math.PI / 2, camA);
       });
       set.mesh.instanceMatrix.needsUpdate = true;
+      set.off.needsUpdate = true;
+      set.flip.needsUpdate = true;
     }
+  }
+
+  /**
+   * Which cell of the sheet one villager is showing, written into the two
+   * instance attributes.
+   *
+   * THE DIRECTION RULE IS `Billboard.faceCamera`'S, CUT TO THE HALF-TURN CASE
+   * — which is the only case these sheets are: `mirror` is true for a
+   * four-column kitten sheet and a one-cell animal is one cell whatever it is
+   * asked for. Deliberately NOT the hysteresis `Billboard` carries (it holds
+   * the last side until a subject is decisively turned): that exists to stop a
+   * player strobing at the exact moment she faces the lens, and a villager
+   * walking a fixed circle passes through that moment at a known, slow rate.
+   */
+  _folkCell(set, i, facing, camA) {
+    let idx = 0;
+    let flip = false;
+    if (set.cols > 1) {
+      let rel = facing - camA;
+      rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+      if (set.mirror) {
+        const abs = Math.abs(rel);
+        idx = abs < Math.PI * 0.25 ? 0
+          : abs < Math.PI * 0.55 ? 1
+            : abs < Math.PI * 0.8 ? 2 : 3;
+        const right = Math.sin(rel) > 0;
+        flip = set.artFacesRight ? !right : right;
+      } else {
+        /* A FULL-TURN SHEET RUNS ITS COLUMNS ROUND THE CIRCLE and its ROWS are
+           the poses, which is what the kitten sheets are: there is no frame
+           cycle to run: the "moving animation" IS the walk row, plus the fact
+           that she is actually crossing ground. `DIR_SENSE` is `Billboard`'s
+           and is not re-derived here — it is one sheet-wide constant and a
+           second copy of it is a second thing to get wrong. */
+        let r = (rel * DIR_SENSE) % TAU;
+        if (r < 0) r += TAU;
+        idx = (-Math.round(-r / (TAU / set.cols))) % set.cols;
+      }
+    }
+    const c = Math.min(idx, set.cols - 1);
+    const r = Math.min(set.row, set.rows - 1);
+    set.off.setXY(i, c / set.cols + set.iu, 1 - (r + 1) / set.rows + set.iv);
+    set.flip.setX(i, flip ? 1 : 0);
   }
 
   /**
@@ -2365,9 +2955,16 @@ export class FinaleShow {
   _stepBridge(dt) {
     const b = this.world?.bridge;
     if (this.phase !== 'bridge-run' || !b) {
-      for (const k of this.kits) if (k.ring) k.ring.visible = false;
+      for (const k of this.kits) {
+        if (k.ring) k.ring.visible = false;
+        if (k.ward) k.ward.visible = false;
+      }
       return;
     }
+    const len = this.brLen ?? 18;
+    const rise = this.brRise ?? 2.2;
+    const path = this.brPath ?? (BR_UP + len + BR_OFF);
+    const half = len / 2;
     const rng = (r) => r[0] + Math.random() * r[1];
     for (const k of this.kits) {
       /* --- the jumps, which are now a schedule and not a waveform --------
@@ -2381,9 +2978,39 @@ export class FinaleShow {
          A TIMER PER KITTEN, REROLLED AT EVERY LANDING. Height is rolled with the
          jump, so a run of hops is a small one, a big one and a middling one
          rather than three of the same. */
+      /* --- BUT FIRST: IS SHE IN THE SHOT AT ALL --------------------------
+         SHE MOVES, AND THEN EVERYTHING ELSE DECIDES. This used to run the hop
+         and ability schedules before the visibility gate below, which meant a
+         kitten who had not entered yet spent her stagger burning through them
+         off screen: the four opening abilities are dealt one each by index (see
+         `_seedBridge`), and the Ward — a 1.1-second hold, the longest of the
+         three and the one that was asked for by name — is dealt to the kitten
+         who enters THIRD, so it fired at 0.9s and had expired by the 2s she
+         became visible. Measured: nine frames of bubble in a twelve-second run.
+
+         Nothing is scheduled for somebody nobody can see. Her clock starts when
+         she comes into shot, which also makes the run-up mean what it says —
+         "a few seconds of running towards the bridge" with her abilities going
+         off while she does it. */
+      k.k += dt * BR_RATE * (k.act === 'dash' ? 3.2 : 1);
+      if (k.k < 0 || k.k > 1) {
+        k.big.bb.visible = false;
+        /* AND SHE LEAVES THE SHOT THE SHAPE SHE ARRIVED IN. A kitten who ran
+           off the end mid-Dash kept the squash, and the next thing that draws
+           her is the arena. */
+        k.big.bb.mesh.scale.set(1, 1, 1);
+        if (k.ring) k.ring.visible = false;
+        if (k.ward) k.ward.visible = false;
+        continue;
+      }
+
+      /* WHERE SHE IS, BEFORE ANYTHING DECIDES WHAT SHE IS DOING — the jumps
+         are the deck's and the abilities are the whole road's. */
+      const xNow = b.x - half - BR_UP + k.k * path;
+      const deck = Math.abs(xNow - b.x) <= half;
       if (k.hopT > 0) {
         k.hopT -= dt;
-      } else {
+      } else if (deck) {
         k.hopWait -= dt;
         if (k.hopWait <= 0) {
           k.hopFor = rng(HOP_DUR);
@@ -2406,41 +3033,42 @@ export class FinaleShow {
       } else {
         k.actWait -= dt;
         if (k.actWait <= 0) {
-          k.act = BR_ACTS[Math.floor(Math.random() * BR_ACTS.length)];
-          k.actFor = rng(ACT_DUR);
+          k.act = k.actNext
+            ?? BR_ACTS[Math.floor(Math.random() * BR_ACTS.length)];
+          k.actNext = null;
+          /* THE WARD IS HELD, NOT FLICKED. A shield that is up for a third of
+             a second is a glitch; the other two are a blow and a burst and the
+             short window is what makes them read as one. */
+          k.actFor = rng(ACT_DUR) * (k.act === 'ward' ? 3.2 : 1);
           k.actT = k.actFor;
           k.actWait = rng(ACT_GAP);
         }
       }
       const ae = k.actFor > 0 ? 1 - Math.max(0, k.actT) / k.actFor : 1;
 
-      /* THE DASH IS THE ONE THAT MOVES HER, so it is added to the rate rather
-         than drawn: an ability that only changed the pose would be a costume,
-         and this one is about covering ground. */
-      k.k += dt * BR_RATE * (k.act === 'dash' ? 3.2 : 1);
-      const u = k.k;
-      if (u < 0 || u > 1.35) {
-        k.big.bb.visible = false;
-        /* AND SHE LEAVES THE SHOT THE SHAPE SHE ARRIVED IN. A kitten who ran
-           off the end mid-Dash kept the squash, and the next thing that draws
-           her is the arena. */
-        k.big.bb.mesh.scale.set(1, 1, 1);
-        if (k.ring) k.ring.visible = false;
-        continue;
-      }
+      /* THE DASH IS THE ONE THAT MOVES HER, and it is paid at the top of the
+         loop rather than drawn: an ability that only changed the pose would be
+         a costume, and this one is about covering ground. */
       k.big.bb.visible = true;
-      /* ALONG THE DECK, which is the x axis — the span is 18 units of arch on
-         x and 4.4 wide on z, and `world.bridge` is its crest. */
-      const x = b.x - 16 + u * 32;
-      const arch = Math.cos(Math.max(-1, Math.min(1, (x - b.x) / 9)) * Math.PI / 2);
-      const y = b.y - 2.2 + arch * 2.2;
+      /* ALONG THE DECK, which is the x axis — the span is `len` units of arch
+         on x and `wide` across z, and `world.bridge` is its CREST, which is why
+         the road either side sits `rise` below it. Off the deck the clamp puts
+         `arch` at zero, so the approach is flat ground and the crossing is the
+         only thing that climbs. */
+      const x = xNow;
+      const arch = Math.cos(Math.max(-1, Math.min(1, (x - b.x) / half)) * Math.PI / 2);
+      const y = b.y - rise + arch * rise;
       k.big.bb.position.set(x, y + hop, b.z + k.lane);
       k.big.bb.facing = Math.PI / 2;
       /* THE ATTACK ROW IS THE SWORD, and three of the four flourishes use it —
          a swing, a Smash and a Dash all look like a cat with a katana out, and
          the game has one drawing of that. A one-row atlas collapses every row
          to 0 and the shot still plays; see `Billboard._setCell`. */
-      k.big.bb.row = k.act && k.act !== 'orb' ? 3 : (hop > 0.25 ? 2 : 1);
+      /* THE ATTACK ROW IS THE SWORD, and the two abilities that swing one use
+         it. The Ward does not — she is standing behind a shield, not cutting —
+         so she keeps the run. */
+      k.big.bb.row = (k.act === 'smash' || k.act === 'dash')
+        ? 3 : (hop > 0.25 ? 2 : 1);
       k.big.bb.frame = Math.floor(this.t * 11 + k.seed) % Math.max(1, k.big.bb.cols);
       k.big.bb.mat.opacity = 1;
       /* STRETCHED INTO THE DASH. One number, and it is the only motion blur a
@@ -2448,19 +3076,30 @@ export class FinaleShow {
       k.big.bb.mesh.scale.set(k.act === 'dash' ? 1.22 : 1,
         k.act === 'dash' ? 0.86 : 1, 1);
 
-      /* --- the ring, for the two abilities that throw one ---------------- */
-      if (!k.ring) continue;
-      const ringy = k.act === 'orb' || k.act === 'smash';
-      k.ring.visible = ringy && k.actT > 0;
-      if (k.ring.visible) {
-        const grow = k.act === 'smash' ? 0.8 + ae * 3.4 : 0.5 + ae * 1.5;
-        k.ring.scale.set(grow, 1, grow);
-        /* THE SMASH'S RING IS ON THE DECK UNDER HER AND THE ORB'S RISES PAST
-           HER HEAD, which is the difference between the two abilities in one
-           coordinate. */
-        k.ring.position.set(x, k.act === 'smash' ? y + 0.06 : y + 1.1 + ae * 1.6,
-          b.z + k.lane);
-        k.ringMat.opacity = (1 - ae) * 0.85;
+      /* --- the Smash's shockwave, on the deck under her ------------------ */
+      if (k.ring) {
+        k.ring.visible = k.act === 'smash' && k.actT > 0;
+        if (k.ring.visible) {
+          const grow = 0.8 + ae * 3.4;
+          k.ring.scale.set(grow, 1, grow);
+          k.ring.position.set(x, y + 0.06, b.z + k.lane);
+          k.ringMat.opacity = (1 - ae) * 0.85;
+        }
+      }
+
+      /* --- and the Ward, which is a bubble and not a ring ----------------
+         SAME TWO SHELLS `Player` POPS, in the same blue. A kid who has worn 壁
+         has seen exactly this, and the ending is not the place to teach her a
+         second drawing of it. It grows in over the first fifth of the hold and
+         is held the rest of the way, rather than expanding for its whole life
+         like the shockwave does: a shield that keeps growing is a blast. */
+      if (k.ward) {
+        k.ward.visible = k.act === 'ward' && k.actT > 0;
+        if (k.ward.visible) {
+          const born = Math.min(1, ae * 5);
+          k.ward.position.set(x, y + REAL_H * 0.55, b.z + k.lane);
+          k.ward.scale.setScalar(born * (1 + Math.sin(this.t * 3.1) * 0.04));
+        }
       }
     }
   }
@@ -2485,6 +3124,9 @@ export class FinaleShow {
     const P = this.phase;
     if (P !== 'arena-in' && P !== 'arena-raise') return;
     const up = P === 'arena-raise';
+    /* HIM FIRST, AND THEN THEM. See `CHEER_LAG` — the cue is his, and hers is
+       the same cue read a sixth of a second later. */
+    const cheerUp = up && this.phaseT >= CHEER_LAG;
     const R = this.world?.arenaRing;
     if (this.satan) {
       const lit = !!this.satanLit;
@@ -2511,7 +3153,7 @@ export class FinaleShow {
          at four it is right without a special case. */
       const face = R ? Math.atan2(R.x - k.stand.x, R.z - k.stand.z) : Math.PI;
       /* HER CHEER ONCE HIS ARMS ARE UP, and her ordinary self before that. */
-      const cheering = up && k.cheer;
+      const cheering = cheerUp && k.cheer;
       const bb = cheering ? k.cheer.bb : k.big.bb;
       bb.visible = true;
       bb.position.copy(pos);

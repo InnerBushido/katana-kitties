@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 3372 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 3431 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -364,11 +364,12 @@ happen outside the ring. Both are on the balance page.
 → [tournament.md](docs/notes/tournament.md)
 
 **The ending's picture is the world.** At 100% Patchfur closes the story over
-nineteen shots cut to her own words: the three things she names picked out one
+twenty-one shots cut to her own words: the three things she names picked out one
 at a time, a corner of the town **standing itself back up** and crashing over
 again on the end of her clause, the Dojo of the Turning Circle with the real
 sine and cosine drawn off a running kitten, a model of the archipelago drifting
-apart on its floor, the bridge, and the arena. It moves meshes only: nothing it
+apart on its floor — built out of the world's **own** houses, trees and bamboo,
+with its own townspeople walking about on it — the bridge, and the arena. It moves meshes only: nothing it
 does can touch the MISCHIEF count, and skipping the scene puts every prop back
 on the exact transform it was holding.
 → [story.md](docs/notes/story.md)
@@ -524,7 +525,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 3372
+the check that would have caught it.** That is why `world-check` is 3431
 assertions.
 
 **And a change a new developer would need to know about gets a line in this
