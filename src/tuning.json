@@ -1,1 +1,13 @@
-{}
+{
+  "CROSS": {
+    "gravity": 0
+  },
+  "DODGE": {
+    "range": 10,
+    "selfK": 0.75
+  },
+  "PANDA": {
+    "lickBelow": 0.35,
+    "lickRate": 0.01
+  }
+}
