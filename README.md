@@ -55,7 +55,11 @@ work out by playing.
 7. **The game saves itself every 30 seconds**, once you've been playing for
    five minutes. **One row per game** — however long you play, your adventure
    stays one row and keeps getting more recent — and it keeps the last five
-   games. **LOAD A SAVED GAME** in the pause menu picks one up again. The rows
+   games. **PLAY SETTINGS → LOAD A SAVED GAME** in the pause menu picks one up
+   again, and saves the game you are leaving first. **SAVE & QUIT GAME** (under
+   END THE GAME) saves before it goes, and once a game is five minutes long it
+   is **★ kept**: newer games can't push it off. Keep more than four and the list
+   grows to eight, always with room for two more — ten at most. The rows
    say who played, what orbs they had on and how far the town had come down, so
    you can find the right afternoon; **everybody who played is in one**, even a
    kitten who stopped an hour ago, and picking her back up hands her back her

@@ -79,6 +79,9 @@
 const PANELS = ['panel-confirm', 'panel-trailer-offer', 'panel-profile',
   'panel-league', 'panel-board', 'panel-settings', 'panel-help',
   'panel-kittens', 'panel-watch', 'panel-saves', 'panel-ending',
+  /* PLAY SETTINGS IS BELOW THE THREE IT OPENS, by the same rule: WATCH AGAIN,
+     LOAD A SAVED GAME and END THE GAME all open from it with it still up. */
+  'panel-play',
   'panel-pause'];
 
 /* Stick/d-pad repeat. The first step is instant, then it waits, then it runs —

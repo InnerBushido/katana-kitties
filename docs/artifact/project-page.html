@@ -485,7 +485,7 @@ footer b { color: var(--text); }
 <div class="wrap">
 
 <header class="mast">
-  <div class="stamp">Last updated <span>·</span> 13 Sep 2026</div>
+  <div class="stamp">Last updated <span>·</span> 14 Sep 2026</div>
   <h1>Katana Kitties<em>The whole project on one page</em></h1>
   <p class="lede">A <b>split-screen co-op browser game for up to four players</b>: samurai kittens
     knocking over a chain of floating Japanese islands, riding storm dragons between them, and
@@ -680,7 +680,7 @@ git push origin alpha</code></pre>
       <tr><td><kbd class="hot">\</kbd></td><td><b>Force-spawn</b> — <kbd>ENTER</kbd> then seats a third and fourth kitten on the keyboard alone</td></tr>
       <tr><td><kbd>R</kbd><kbd>U</kbd></td><td>Step WASD · step the arrows round the kittens sharing that set — her, her sister, then <b>both at once</b></td></tr>
       <tr><td><i>no key</i></td><td><b>Wipe the RECORD BOARD</b> — every league, on this device</td></tr>
-      <tr><td><i>no key</i></td><td><b>Wipe the SAVED GAMES</b> — all five saved play sessions</td></tr>
+      <tr><td><i>no key</i></td><td><b>Wipe the SAVED GAMES</b> — every saved play session, kept ones included</td></tr>
     </tbody>
   </table></div>
 
@@ -1255,7 +1255,12 @@ git push origin alpha</code></pre>
     <span class="hd">The backend that should come first anyway</span>
     <p><b>The game now saves itself, but only into this browser.</b>
       <code>systems/savegame.js</code> writes the afternoon down every 30 seconds once a run is
-      5 minutes old and loads one from the pause menu (<b>LOAD A SAVED GAME</b>). <b>One row per
+      5 minutes old and loads one from the pause menu (<b>PLAY SETTINGS → LOAD A SAVED GAME</b>,
+      which saves the game being left first). <b>SAVE &amp; QUIT GAME</b> is the save made on
+      purpose: past five minutes it marks the row <b>kept</b>, and <code>capFor</code> /
+      <code>trimSaves</code> go round kept rows — five rows, eight once more than four are kept,
+      always two spare beside them, ten at most; past eight kept, the least-played kept row goes,
+      never the one saved last. <b>One row per
       play session</b> — a session keeps overwriting its own row however long it runs, so the five
       slots are five different games rather than the last five half-minutes of one — and a row holds
       <b>every kitten who played in that session</b>, not only the ones holding a controller when it

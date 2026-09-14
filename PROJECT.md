@@ -241,7 +241,7 @@ tappable**, so the whole debug set works on a phone.
 | **`\`** | **force-spawn** — ENTER then seats a third and fourth kitten on the keyboard alone |
 | `R` `U` | step WASD · step the arrows round the kittens sharing that set — her, her sister, then **both at once** |
 | *(no key)* | **wipe the RECORD BOARD** — every league, on this device |
-| *(no key)* | **wipe the SAVED GAMES** — all five saved play sessions |
+| *(no key)* | **wipe the SAVED GAMES** — every saved play session, kept ones included |
 
 The last two rows are **panel-only and have no shortcut on purpose**: they are
 the two things in the game that survive closing the tab, and a keystroke that
@@ -613,7 +613,12 @@ rather than the first.
 
 **The game now saves itself, but only into this browser.**
 `systems/savegame.js` writes the afternoon down every 30 seconds once a run is
-5 minutes old and loads one from the pause menu (**LOAD A SAVED GAME**). **One
+5 minutes old and loads one from the pause menu (**PLAY SETTINGS → LOAD A SAVED
+GAME**, which saves the game being left first). **SAVE & QUIT GAME** is the save
+made on purpose: past five minutes it marks the row **kept**, and `capFor` /
+`trimSaves` go round kept rows — five rows, eight once more than four are kept,
+always two spare beside them, ten at most; past eight kept, the least-played
+kept row goes, never the one saved last. **One
 row per play session** — a session keeps overwriting its own row however long it
 runs, so the five slots are five different games rather than the last five
 half-minutes of one — and a row holds **every kitten who played in that

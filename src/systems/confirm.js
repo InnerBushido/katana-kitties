@@ -2,7 +2,7 @@
    ARE YOU SURE?
 
    One panel and one class for every irreversible button in the pause menu:
-   RESTART, TITLE SCREEN, QUIT THE MATCH, DROP OUT and QUIT GAME. Each of them
+   RESTART, TITLE SCREEN, QUIT THE MATCH, DROP OUT and SAVE & QUIT GAME. Each of them
    throws away something a nine-year-old spent an afternoon on — clans, stars,
    orbs, a live round — and each of them sits in a vertical list that is driven
    with a thumbstick, one row above or below something harmless.

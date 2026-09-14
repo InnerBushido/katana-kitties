@@ -52,7 +52,7 @@ import { loadBoard, clearBoard, BOARD_MODES } from './systems/leaderboard.js';
 import {
   listSaves, putSave, dropSave, clearSaves, snapshot, describe, restore,
   castRow, applyCast, meaningful, newSessionId,
-  AUTOSAVE_EVERY, AUTOSAVE_AFTER, MAX_SAVES,
+  AUTOSAVE_EVERY, AUTOSAVE_AFTER, MAX_SAVES, MAX_LIST, saveCap, saveByHand,
 } from './systems/savegame.js';
 import { POWER_ORBS } from './entities/powerorb.js';
 import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
@@ -104,8 +104,11 @@ const HINT_CLEAR = 30;
  * pause menu — a back button that skips a level reads as the game losing her
  * place. Everything else in here can only ever be the innermost thing open.
  */
+/* PLAY SETTINGS IS LAST OF THE GROUPS for the same innermost-first reason:
+ * WATCH AGAIN, LOAD A SAVED GAME and END THE GAME all open from it with it
+ * still up, so Escape has to close them before it. */
 const SUB_PANELS = ['panel-board', 'panel-help', 'panel-settings',
-  'panel-kittens', 'panel-watch', 'panel-saves', 'panel-ending'];
+  'panel-kittens', 'panel-watch', 'panel-saves', 'panel-ending', 'panel-play'];
 
 /** The key each debug action is bound to, for the panel's own labels. */
 const DEBUG_KEY_LABEL = {
@@ -1949,8 +1952,12 @@ class Game {
            their own — every row inside is the same `data-action` it was when
            it sat in the pause menu — so opening one is only a `show`. */
         if (a === 'kittens') show('panel-kittens');
-        if (a === 'watch') show('panel-watch');
+        if (a === 'playset') show('panel-play');
+        /* WATCH AGAIN IS PAINTED ON THE WAY IN, because one of its rows only
+           exists once the ending has played — see `_paintWatch`. */
+        if (a === 'watch') { this._paintWatch(); show('panel-watch'); }
         if (a === 'ending') show('panel-ending');
+        if (a === 'ending-again') this.replayEnding();
         if (a === 'profile') this.profile.open('profile', { fromPause: true });
         if (a === 'resume') this.setPaused(false);
         /* EVERY IRREVERSIBLE BUTTON IN THIS MENU ASKS FIRST, and each of them
@@ -1980,13 +1987,25 @@ class Game {
           });
         }
         if (a === 'quit') {
+          /* THE QUESTION SAYS WHICH OF THE TWO SAVES SHE IS ABOUT TO GET. A
+             game past the five minutes is kept for good and one short of it is
+             saved but can still be pushed off the list — and a player who
+             finds her three-minute game gone next week has to have been told
+             that could happen, in the sentence she answered. */
+          const keeps = this.playT >= AUTOSAVE_AFTER;
+          const mins = Math.round(AUTOSAVE_AFTER / 60);
           this.confirm.ask({
-            title: 'QUIT THE GAME?',
-            body: 'This closes the window. Nothing is saved except the record '
-              + 'board, which is always kept.',
+            title: 'SAVE AND QUIT?',
+            body: keeps
+              ? 'Your game is saved and KEPT — newer games will not push it off '
+                + 'the list — and then the window closes. Find it again in '
+                + 'PLAY SETTINGS → LOAD A SAVED GAME.'
+              : `Your game is saved, and then the window closes. It is shorter `
+                + `than ${mins} minutes, so it is not kept — newer games can `
+                + 'still push it off the list.',
             no: 'NO, KEEP PLAYING',
-            yes: 'YES, QUIT',
-            onYes: () => this.quitGame(),
+            yes: 'YES, SAVE AND QUIT',
+            onYes: () => this.saveAndQuit(),
           });
         }
         if (a === 'story') this.replayIntro();
@@ -2605,14 +2624,50 @@ class Game {
    * keystroke that actually closes a tab. Prefer a rule that degrades over one
    * that vanishes.
    */
-  quitGame() {
+  quitGame(said = '') {
     window.close();
     setTimeout(() => {
       if (window.closed) return;
       this.toTitle();
       const key = navigator.platform?.startsWith('Mac') ? '⌘W' : 'Ctrl+W';
-      this.toast(`Your browser will not let the game close its own window — press ${key} to close the tab.`);
+      this.toast(`${said}Your browser will not let the game close its own window — press ${key} to close the tab.`);
     }, 350);
+  }
+
+  /**
+   * SAVE & QUIT GAME — the save a player makes on purpose.
+   *
+   * Asked for as "if players Quit Game (we can rename it to 'Save & Quit
+   * Game'), it will save the current play session. This is the 'Save' feature
+   * other than auto-save." The writing, and whether it is kept, is
+   * `saveByHand`; this is the order of events around it.
+   *
+   * THE SAVE HAPPENS FIRST AND SYNCHRONOUSLY, because `window.close` can
+   * succeed: launched from the Steam shortcut the window really does go, and
+   * anything queued after it would never run.
+   *
+   * A SAVE THAT FAILED DOES NOT QUIT. Private browsing refuses localStorage,
+   * and a button called SAVE & QUIT that closes the window on an unsaved game
+   * has done the one thing its name promised it would not. So it stays open
+   * and says why — sixth non-negotiable — and QUIT is still one press away for
+   * somebody who reads that and wants to go anyway: TITLE SCREEN is the row
+   * above it.
+   */
+  saveAndQuit() {
+    let out = null;
+    try {
+      out = saveByHand(this);
+    } catch (err) {
+      console.warn('[saves] could not write', err);
+    }
+    if (!out) {
+      this.toast('Your game could NOT be saved — this browser is not letting the '
+        + 'game store anything — so the game is still open.', 0);
+      return false;
+    }
+    this._saveAt = this.playT + AUTOSAVE_EVERY;
+    this.quitGame(out.kept ? 'Your game is saved and kept. ' : 'Your game is saved. ');
+    return true;
   }
 
   /** Put the world back to its opening state without a page reload. */
@@ -3227,6 +3282,65 @@ class Game {
     this.setPaused(false);
     this.audio.resume();
     this.cutscene?.play();
+  }
+
+  /**
+   * Has THIS game's ending really played?
+   *
+   * TWO FACTS, BOTH NEEDED. `_endingShown` is "this afternoon reached 100%" —
+   * but it is set the moment the last prop falls, a frame or several before
+   * the scene can start. `played.finale` is "the scene started" — but the
+   * debug scene viewer sets it on a preview, over a world nobody finished.
+   * Together they mean exactly "the girls got there and were shown it", and a
+   * restart clears both. A save carries both too, so loading a finished game
+   * offers the ending again as well.
+   */
+  _endingSeen() {
+    return !!(this._endingShown && this.summonScene?.played?.finale);
+  }
+
+  /** WATCH AGAIN's rows, painted as it opens. See the markup. */
+  _paintWatch() {
+    document.getElementById('btn-ending-again')
+      ?.classList.toggle('hidden', !this._endingSeen());
+  }
+
+  /**
+   * WATCH THE ENDING AGAIN — from Play Settings → Watch Again.
+   *
+   * THE SAME DOOR THE SCENE VIEWER USES: clear the scene's once-latch and
+   * start it. Nothing else is needed and nothing else is done, because the
+   * finale is already built to change nothing it does not put back — its
+   * `finish` stands every prop back on its own transform and takes the stage
+   * down (skip path included), and the dawn it raises is already up in a world
+   * that has had its ending. What is deliberately NOT here is anything the
+   * real 100% does beside the scene: the Awakening, the toasts, `_finaleDue`.
+   * Watching it again is watching, not finishing the game a second time.
+   *
+   * IT REFUSES OUT LOUD in the two places it cannot start. In a live match
+   * the ring's clock would run under a minute of cutscene; over another scene
+   * `start` would say no and the button would look dead.
+   */
+  replayEnding() {
+    if (!this._endingSeen()) return false;
+    if (this.tournament?.active) {
+      this.toast('Finish or leave the match first — then the ending can play.', 0);
+      return false;
+    }
+    if (this._sceneActive()) {
+      this.toast('Something is already playing — watch the ending when it is done.', 0);
+      return false;
+    }
+    this.setPaused(false);
+    this.audio.resume();
+    const B = this._worldBounds();
+    this.summonScene.played.finale = false;
+    const ok = this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder,
+      this._finaleCast());
+    /* PUT THE LATCH BACK IF IT DID NOT START, or a refusal would quietly turn
+       the "has she seen it" answer to no and hide this row next time. */
+    if (!ok) this.summonScene.played.finale = true;
+    return ok;
   }
 
   /**
@@ -4636,7 +4750,7 @@ class Game {
       ${TUNING_ROW}
       <div class="dbg-sep">THIS DEVICE — what outlives the tab</div>
       ${row('BoardWipe', `wipe the RECORD BOARD (${this._boardRows()} results)`)}
-      ${row('SaveWipe', `wipe the SAVED GAMES (${listSaves().length} of ${MAX_SAVES})`)}
+      ${row('SaveWipe', `wipe the SAVED GAMES (${listSaves().length} of ${saveCap()})`)}
       <div class="dbg-sep">SCENE VIEWER — choose, then play</div>
       ${row('Minus', '&#9664; previous scene')}
       ${row('Equal', 'next scene &#9654;')}
@@ -5830,10 +5944,10 @@ class Game {
     return true;
   }
 
-  _autoSave() {
+  _autoSave(opts = {}) {
     try {
       const snap = snapshot(this);
-      if (snap) putSave(snap);
+      if (snap) putSave(snap, opts);
     } catch (err) {
       /* ONCE, NOT EVERY THIRTY SECONDS. A console filling with the same line
          for four hours hides everything else in it. */
@@ -5873,7 +5987,8 @@ class Game {
       p.className = 'lb-empty';
       p.textContent = 'No saved games yet. The game starts keeping one by '
         + `itself every ${AUTOSAVE_EVERY} seconds, once you have been playing `
-        + `for ${Math.round(AUTOSAVE_AFTER / 60)} minutes.`;
+        + `for ${Math.round(AUTOSAVE_AFTER / 60)} minutes — and SAVE & QUIT GAME `
+        + 'saves one whenever you leave.';
       el.appendChild(p);
       if (note) note.textContent = '';
       return;
@@ -5894,7 +6009,7 @@ class Game {
 
     rows.forEach((r) => {
       const b = document.createElement('button');
-      b.className = `menu-btn sv-row${r.stale ? ' sv-stale' : ''}`;
+      b.className = `menu-btn sv-row${r.stale ? ' sv-stale' : ''}${r.kept ? ' sv-kept' : ''}`;
       b.dataset.save = r.id;
       const who = r.players.map((p) => {
         const st = PLAYER_STYLE.find((x) => x.name === p.style);
@@ -5927,6 +6042,10 @@ class Game {
       b.innerHTML = `<span class="sv-who">${who}</span>`
         + `<span class="sv-what">${bits.join(' · ')}</span>`
         + `<span class="sv-when">${escapeHtml(r.when)} · ${escapeHtml(r.played)} played`
+        /* KEPT SAYS SO ON THE ROW — see `MAX_KEPT`. A list that deletes some
+           games and not others has to show which are which, or it reads as
+           random. */
+        + (r.kept ? ' · <b class="sv-keep">★ kept — you saved it</b>' : '')
         + (r.stale ? ' · <b>from a different version of the game</b>' : '')
         + '</span>';
       b.addEventListener('click', () => this._askLoadSave(r));
@@ -5943,11 +6062,16 @@ class Game {
          thirty seconds, so all five filled with the same afternoon inside
          three minutes. Saying it here is how somebody knows their Tuesday is
          safe while they play on Thursday. */
+      /* AND THE KEEP RULE, because it is the other thing the list cannot
+         show: why one old row survives while a newer one went. */
+      const mins = Math.round(AUTOSAVE_AFTER / 60);
       note.textContent = `One row per game, kept up to date every`
-        + ` ${AUTOSAVE_EVERY} seconds once you have played for`
-        + ` ${Math.round(AUTOSAVE_AFTER / 60)} minutes. The game keeps the last`
-        + ` ${MAX_SAVES} and the oldest drops off the bottom. Loading one ends`
-        + ' the game you are playing now.';
+        + ` ${AUTOSAVE_EVERY} seconds once you have played for ${mins} minutes.`
+        + ` The list holds ${MAX_SAVES} and the oldest drops off the bottom —`
+        + ` except a ★ kept game, which SAVE & QUIT GAME makes of any game`
+        + ` ${mins} minutes long. Keep more than ${MAX_SAVES - 1} and the list`
+        + ` grows, up to ${MAX_LIST}. Loading one ends the game you are playing`
+        + ` now, saving it first if it is ${mins} minutes long.`;
     }
   }
 
@@ -5964,19 +6088,45 @@ class Game {
       this.toast('That save was made by a different version of the game.', 0);
       return;
     }
+    /* SAYS WHETHER THE GAME BEING LEFT IS SAVED FIRST — see `_loadSave`. */
+    const savesFirst = this._saveBeforeLoad(row.session);
     this.confirm.ask({
       title: 'LOAD THIS SAVED GAME?',
-      body: 'The game you are playing now ends — every prop, orb, clan and '
-        + 'star goes back to how it was in the save. The record board is kept.',
+      body: (savesFirst
+        ? 'The game you are playing now is saved first, and then it ends — '
+        : 'The game you are playing now ends — ')
+        + 'every prop, orb, clan and star goes back to how it was in the save. '
+        + 'The record board is kept.',
       no: 'NO, KEEP PLAYING',
       yes: 'YES, LOAD IT',
       onYes: () => this._loadSave(row.id),
     });
   }
 
+  /**
+   * Is the game being left worth writing down before a load throws it away?
+   *
+   * Asked for as "the current play session should auto-save when Loading a new
+   * play session, that is, if past the 5 minutes of play requirement for
+   * auto-saving." So: the same five-minute gate as every autosave, and —
+   *
+   * NOT WHEN SHE IS LOADING THIS VERY GAME. Loading the row for the afternoon
+   * she is playing is "take me back thirty seconds", and saving first would
+   * write the present over the row she chose and then load the present back.
+   */
+  _saveBeforeLoad(session) {
+    return this.state === 'play' && this.playT >= AUTOSAVE_AFTER
+      && session !== this.sessionId;
+  }
+
   _loadSave(id) {
     const snap = listSaves().find((r) => r.id === id);
     if (!snap) { this.toast('That save is gone.', 0); return; }
+    /* THE GAME BEING LEFT, WRITTEN DOWN FIRST — sparing the row being loaded,
+       so that write cannot push the chosen afternoon off the list under the
+       load. `snap` is already in hand, so the load itself is safe either way;
+       sparing it is about the list still showing it afterwards. */
+    if (this._saveBeforeLoad(snap.session)) this._autoSave({ spare: snap.id });
     let out;
     try {
       out = restore(this, snap);

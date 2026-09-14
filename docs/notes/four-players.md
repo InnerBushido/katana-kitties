@@ -1649,12 +1649,19 @@ RESUME
 HOW TO PLAY
 SETTINGS
 KITTENS & SCORES   →  character profile · record board · DROP OUT ×N
-WATCH AGAIN        →  the story · the trailer
 QUIT THE MATCH        (hidden unless a match is live)
-END THE GAME       →  restart · title screen · quit
+PLAY SETTINGS      →  WATCH AGAIN        →  the story · the ending (once seen) · the trailer
+                      LOAD A SAVED GAME
+                      END THE GAME       →  restart · title screen · save & quit
 ```
 
-Six rows at any party size, seven mid-match, down from fifteen.
+Five rows at any party size, six mid-match, down from fifteen.
+
+**PLAY SETTINGS came later**, asked for as "add a new section called Play
+Settings and let's move the Load a Saved Game, End the Game, Watch Again to it.
+Any new menu settings should either be added to this Play Settings or Kittens &
+Scores screen." That last sentence is now a rule: `world-check` pins the
+top-level rows by name, so a new row has to go in one of the two groups.
 
 **QUIT THE MATCH is the one ending left at the top level**, on purpose: it is the
 only one that is ever *urgent* — a pair who got into a 2v2 they did not mean to
