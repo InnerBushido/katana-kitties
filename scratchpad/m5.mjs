@@ -1,0 +1,10 @@
+import * as THREE from 'three';
+const stub = () => new Proxy({}, { get: () => () => stub(), set: () => true });
+globalThis.document = { createElement: () => ({ getContext: () => stub(), width:0, height:0, style:{} }), getElementById: () => null, querySelectorAll: () => [] };
+globalThis.window = {};
+const { World } = await import('../src/world/world.js');
+const world = new World(new THREE.Scene());
+console.log('grottos', JSON.stringify(world.grottos.map(g=>({x:+g.x.toFixed(0),z:+g.z.toFixed(0),r:g.r,yaw:+(g.yaw??0).toFixed(2)}))));
+const isls = world.islands.filter(i=>i.kind!=='arena');
+const R = Math.max(1, ...isls.map(i=>Math.hypot(i.x,i.z)+(i.radius??10)));
+console.log('grotto model radius', (world.grottos[0].r*16/R).toFixed(3), 'island model radius', (40*16/R).toFixed(2));

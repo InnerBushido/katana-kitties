@@ -1,0 +1,10 @@
+import * as THREE from 'three';
+const stub = () => new Proxy({}, { get: () => () => stub(), set: () => true });
+globalThis.document = { createElement: () => ({ getContext: () => stub(), width:0, height:0, style:{} }), getElementById: () => null, querySelectorAll: () => [] };
+globalThis.window = {};
+const { World } = await import('../src/world/world.js');
+const world = new World(new THREE.Scene());
+const s = world.solids;
+for (const q of s.filter(q=>q.r>=1.6&&!q.house)) console.log(q.r.toFixed(2), q.x.toFixed(0), q.z.toFixed(0), q.arena?'arena':'', q.top!=null?'top':'');
+const g = s.filter(q=>Math.abs(q.r-0.66)<0.001);
+console.log('r0.66 sample', g.slice(0,3).map(q=>`${q.x.toFixed(1)},${q.z.toFixed(1)}`).join(' | '), 'arena?', g.filter(q=>q.arena).length, 'top?', g.filter(q=>q.top!=null).length);
