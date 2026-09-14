@@ -33,6 +33,7 @@ import {
 } from '../src/systems/summonscene.js';
 import { FinaleTide } from '../src/systems/finaletide.js';
 import { FinaleShow } from '../src/systems/finaleshow.js';
+import { buildBridge, mergeParts as mergeBuilt } from '../src/world/build.js';
 import {
   SAVE_VERSION, MAX_SAVES, AUTOSAVE_EVERY, AUTOSAVE_AFTER,
   worldSig, listSaves, putSave, dropSave, clearSaves,
@@ -18485,8 +18486,10 @@ console.log('\n--- one press is not enough, and one player drives ---');
     {
       const b2 = FINALE_SHOTS.filter((sh) => sh.beat === 2);
       const b2cuts = b2.filter((sh) => !sh.keep);
+      /* NINE ROWS NOW, STILL ONE CUT: `isles-quake` and `isles-stand` are two
+         more words the stage listens for, and neither moves the lens. */
       ok('the Dojo section is one camera move, not seven cuts',
-        b2cuts.length === 1 && b2.length === 7,
+        b2cuts.length === 1 && b2.length === 9,
         `${b2cuts.length} cut, ${b2.length - b2cuts.length} keeps`);
       /* AND IT GOES ALL THE WAY ROUND. "Rotating all the way around while the
          hologram is rotating" — more than half a turn, or it is a nudge. */
@@ -18518,7 +18521,9 @@ console.log('\n--- one press is not enough, and one player drives ---');
         ['heap-raise', 1, 'A tidy town'],
         ['dojo-run', 1, 'counting'],
         ['isles-wake', 1, 'all afternoon', true],
+        ['isles-quake', 2, 'because something broke'],
         ['isles-drift', 2, 'They drifted'],
+        ['isles-stand', 2, 'between them'],
         ['isles-cross', 2, 'You crossed'],
         ['isles-angle', 2, 'An angle'],
         ['isles-circle', 2, 'a circle'],
@@ -19738,19 +19743,46 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...one draw call per sheet, not one per villager',
       sets.every((q) => q.mesh.isInstancedMesh && q.mesh.count === q.list.length));
 
-    /* RECOLOURED, AND ACTUALLY DIFFERENTLY. "Randomly recolored" is a promise
-       a constant also keeps if nobody looks: ask how many DISTINCT colours the
-       crowd came out with. */
-    const cols = new Set();
-    for (const q of people) {
-      const c = q.mesh.instanceColor;
-      if (!c) continue;
-      for (let i = 0; i < q.list.length; i++) {
-        cols.add(`${c.getX(i)},${c.getY(i)},${c.getZ(i)}`);
-      }
+    /* RECOLOURED, ONE LOOK EACH, AND NONE OF THEM EMBER OR FROST. "We should
+       recolorize all the people in the town so each one has a different and
+       unique look and not just look exactly the same as Ember and Frost." The
+       wash this replaces passed the old version of this check — sixteen
+       distinct `instanceColor`s — while every villager read as one of the two
+       girls. So it asks about the recolour itself: distinct per villager, a
+       real turn of the hue away from the drawing, and actually wired into both
+       shaders, because an `onBeforeCompile` whose `replace` finds nothing
+       compiles perfectly and recolours nobody. */
+    const looks = people.flatMap((q) => q.list.map((f) => f.recol));
+    ok('...and every townsperson has a recolour of her own',
+      looks.length === folk.length && new Set(looks.map((r) => r.join(','))).size === folk.length,
+      `${new Set(looks.map((r) => r.join(','))).size} of ${folk.length}`);
+    const turn = (r) => Math.min(r[0], 1 - r[0]) * 360;
+    ok('...a real turn of the hue away from Ember and Frost, never a wash',
+      looks.every((r) => turn(r) >= 40 - 1e-9 && r[3] === 1),
+      `smallest ${Math.min(...looks.map(turn)).toFixed(0)} degrees`);
+    ok('...and the animals are left the animals they are',
+      animals.every((q) => q.list.every((f) => f.recol.every((v) => v === 0))));
+    {
+      const again = mkShow();
+      const looks2 = again.folkSets.filter((q) => kitTex.has(q.mat.map))
+        .flatMap((q) => q.list.map((f) => f.recol));
+      const homes = (T) => T.folkSets.flatMap((q) => q.list.map((f) => `${f.hx},${f.hz},${f.ph}`)).join('|');
+      ok('...and it is the same town every time the ending plays — seeded, not rolled',
+        looks2.map((r) => r.join(',')).join('|') === looks.map((r) => r.join(',')).join('|')
+        && homes(again) === homes(S));
+      again.finish();
     }
-    ok('...and no two of them are the same colour', cols.size === folk.length,
-      `${cols.size} of ${folk.length}`);
+    {
+      const sh = {
+        uniforms: {},
+        vertexShader: THREE.ShaderLib.basic.vertexShader,
+        fragmentShader: THREE.ShaderLib.basic.fragmentShader,
+      };
+      people[0].mat.onBeforeCompile(sh);
+      ok('...and the recolour is spliced into this three.js\'s own basic shaders',
+        sh.vertexShader.includes('vRecol = recol;')
+        && sh.fragmentShader.includes('diffuseColor.rgb = folkRecolour( diffuseColor.rgb, vRecol );'));
+    }
 
     /* --- THE CELL IS A REAL CELL, AND IT IS `Billboard`'S CELL -----------
        The instance attribute is the only thing standing between a shared atlas
@@ -19827,6 +19859,181 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('the town is busy while it is still one place', lived > 0.5, lived.toFixed(2));
     ok('...and empty by the time the islands are apart',
       S.folkMats.every((m) => m.opacity < 0.01));
+    S.finish();
+  }
+
+  /* --- THE TOWN YOU CAN SEE, AND THE FOUR WHO ARRIVE STANDING STILL --------
+     The fifth pass over the model, nine notes from watching it. Each is asked
+     as what was seen, with a real lens over the Dojo. */
+  {
+    const S = mkShow();
+    const cam = new THREE.PerspectiveCamera(54, 16 / 9, 0.1, 2000);
+    const dc = world.dojoCentre;
+    cam.position.set(dc.x + 14, dc.y + 17, dc.z - 12);
+    cam.lookAt(dc.x, dc.y + 3, dc.z);
+    cam.updateMatrixWorld(true);
+    const kitTex = new Set(CAST.kittens.map((a) => a.texture));
+    const people = S.folkSets.filter((q) => kitTex.has(q.mat.map));
+    const animals = S.folkSets.filter((q) => !kitTex.has(q.mat.map));
+
+    /* "Very hard to see them... maybe two or three times as large", animals
+       "twice as big". Read off the built quads against the true figures. */
+    const cs = CAST.kittens[0].contentScale || 1;
+    const tall = people.map((q) => q.mesh.geometry.parameters.height * cs);
+    ok('the townspeople are drawn two to three times their true size',
+      tall.every((h) => h >= 0.19 * 2 - 1e-6 && h <= 0.19 * 3 + 1e-6),
+      tall.map((h) => h.toFixed(2)).join(' '));
+    const beastCs = CAST.critters.rabbit.calm.contentScale || 1;
+    const rabbit = animals.find((q) => q.mat.map === CAST.critters.rabbit.calm.texture);
+    ok('...and the animals twice theirs',
+      !!rabbit && Math.abs(rabbit.mesh.geometry.parameters.height * beastCs - 0.12 * 2) < 1e-6,
+      rabbit ? (rabbit.mesh.geometry.parameters.height * beastCs).toFixed(3) : 'no rabbit');
+
+    /* THE FLICKER, AS THE RENDERER SORTS IT. `WebGLRenderList` orders
+       transparent objects by renderOrder, then by projected depth of the
+       object's origin, far first. Shaken, the town's origin jitters either side
+       of the crowd's (the model's middle, where the town also is), and on every
+       frame the town sorted second it painted its ground over a crowd that does
+       not write depth. So this replays that comparison over a second of the
+       earthquake: the depth test alone must be seen to flip (or the check is
+       not looking at the bug), and the stated order must never let it. */
+    S.cue('isles-in');
+    for (let i = 0; i < 90; i++) S.update(1 / 60, cam);
+    ok('before the ground moves the town walks, on its walk sheets',
+      people.every((q) => q.mesh.visible && q.alt && !q.alt.mesh.visible));
+    const town = S.isles.reduce((a, b) => (a.r >= b.r ? a : b));
+    const townMesh = town.g.children.find((c) => c.isMesh);
+    const PS = new THREE.Matrix4();
+    const zOf = (o) => new THREE.Vector3().setFromMatrixPosition(o.matrixWorld).applyMatrix4(PS).z;
+    const at = (q) => {
+      const m = new THREE.Matrix4();
+      const out = [];
+      for (let i = 0; i < q.list.length; i++) {
+        q.mesh.getMatrixAt(i, m);
+        out.push(new THREE.Vector3().setFromMatrixPosition(m).sub(q.list[i].host.g.position));
+      }
+      return out;
+    };
+    S.cue('isles-quake');
+    S.update(1 / 60, cam);
+    const p0 = people.map(at);
+    let flips = 0;
+    let wrong = 0;
+    let lastSide = null;
+    for (let i = 0; i < 60; i++) {
+      S.update(1 / 60, cam);
+      S.model.updateMatrixWorld(true);
+      PS.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+      const folkMesh = people[0].alt.mesh;
+      /* true when the depth test alone would draw the town AFTER the crowd */
+      const side = zOf(folkMesh) > zOf(townMesh);
+      if (lastSide != null && side !== lastSide) flips++;
+      lastSide = side;
+      const byOrder = folkMesh.renderOrder !== townMesh.renderOrder
+        ? folkMesh.renderOrder - townMesh.renderOrder
+        : zOf(townMesh) - zOf(folkMesh);
+      if (byOrder < 0) wrong++;
+    }
+    ok('shaking, a sort on depth alone swaps the town and its crowd (the flicker)',
+      flips > 0, `${flips} swaps in a second`);
+    ok('...and the crowd is drawn after the town on every frame anyway',
+      wrong === 0 && S.folkSets.every((q) => !q.alt || q.alt.mesh.renderOrder === q.mesh.renderOrder),
+      `${wrong} frames wrong`);
+
+    const p1 = people.map(at);
+    let walked = 0;
+    p0.forEach((l, a) => l.forEach((v, b) => { walked = Math.max(walked, v.distanceTo(p1[a][b])); }));
+    ok('when the ground moves every villager throws her paws in the air',
+      people.every((q) => !q.mesh.visible && q.alt.mesh.visible && q.alt.mat.map !== q.mat.map));
+    ok('...and stops walking where she stood', walked < 1e-6, walked.toExponential(1));
+    {
+      const m = new THREE.Matrix4();
+      people[0].alt.mesh.getMatrixAt(0, m);
+      const got = new THREE.Quaternion();
+      m.decompose(new THREE.Vector3(), got, new THREE.Vector3());
+      const want = S.model.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(cam.quaternion);
+      /* 1e-3, because an instance matrix is a `Float32Array`: decomposed, a
+         quaternion written exactly comes back about 1e-4 off. The fault this
+         catches — turned about UP only — is 0.6 rad off from this lens. */
+      ok('...and every one of them faces the lens square — tilted up to it, not only turned',
+        got.angleTo(want) < 1e-3, `${got.angleTo(want).toExponential(1)} rad`);
+    }
+
+    /* "AT THE END OF 'NOBODY WAS CROSSING BETWEEN THEM ANYMORE' ... FADE IN AND
+       STAND STILL." */
+    S.cue('isles-drift');
+    for (let i = 0; i < 150; i++) S.update(1 / 60, cam);
+    S.cue('isles-stand');
+    S.update(1 / 60, cam);
+    const kits = S.kits;
+    const v = new THREE.Vector3();
+    ok('the four little ones arrive before they move, faded right down',
+      kits.length === 4 && kits.every((k) => k.mini.bb.visible && k.mini.bb.mat.opacity < 0.05));
+    let drift = 0;
+    for (let i = 0; i < 90; i++) {
+      S.update(1 / 60, cam);
+      for (const k of kits) drift = Math.max(drift, k.mini.bb.position.distanceTo(S._resolve(k.from, v)));
+    }
+    ok('...standing on the spot they will leave from while they fade up',
+      drift < 1e-9 && kits.every((k) => k.mini.bb.mat.opacity > 0.9 && k.mini.bb.row === 0),
+      `${drift.toExponential(1)} off, opacity ${kits[0].mini.bb.mat.opacity.toFixed(2)}`);
+    const mounts = S.drags.filter((d) => d.mount);
+    ok('...and the dragons they ride arrive with them, at the same strength',
+      mounts.length === 2 && mounts.every((d) => d.riding && d.bb.visible
+        && Math.abs(d.bb.mat.opacity - d.riding.mini.bb.mat.opacity) < 1e-9));
+    const before = kits.map((k) => k.mini.bb.position.clone());
+    S.cue('isles-cross');
+    S.update(1 / 60, cam);
+    const jump = Math.max(...kits.map((k, i) => k.mini.bb.position.distanceTo(before[i])));
+    ok('...and "You crossed" sets off from there, not from a new spot',
+      jump < 0.15, `${jump.toFixed(3)} units in the first frame`);
+    for (let i = 0; i < 40; i++) S.update(1 / 60, cam);
+    ok('...while the six on the islands stay on their perches',
+      S.drags.filter((d) => !d.mount && d.host).every((d) => d.bb.visible));
+
+    /* THE RIDER IS IN FRONT. "The player is not always appearing in front of
+       the dragon." Measured as the lens sees it: the dragon under her must be
+       FURTHER from the camera than she is, not level with her. */
+    const wk = new THREE.Vector3();
+    const wd = new THREE.Vector3();
+    const gaps = mounts.filter((d) => d.riding?.mini.bb.visible).map((d) => {
+      d.riding.mini.bb.getWorldPosition(wk);
+      d.bb.getWorldPosition(wd);
+      /* along the sight line, so the 0.35 it is dropped by does not count */
+      const dir = wk.clone().sub(cam.position).normalize();
+      return wd.clone().sub(cam.position).dot(dir) - wk.clone().sub(cam.position).dot(dir);
+    });
+    ok('a dragon is drawn behind the kitten riding it, not in her plane',
+      gaps.length === 2 && gaps.every((gp) => gp > 0.2)
+      && mounts.every((d) => d.bb.mesh.renderOrder < kits[0].mini.bb.mesh.renderOrder),
+      gaps.map((gp) => gp.toFixed(2)).join(' '));
+
+    /* THE SAME BRIDGE, AND THEY LAND ON IT. */
+    const sp = world.bridgeSpan;
+    const K = S.scaleK;
+    const host = S.miniBridge.host;
+    const deck = host.g.children.find((c) => c.isMesh && c !== host.g.children[0]);
+    const ref = mergeBuilt(buildBridge(sp.len, sp.wide));
+    ok('the bridge on the model is buildBridge itself, not one drawn like it',
+      !!deck && deck.geometry.attributes.position.count === ref.attributes.position.count,
+      `${deck?.geometry.attributes.position.count} vertices against ${ref.attributes.position.count}`);
+    ref.dispose();
+    const gate = (world.landmarks ?? []).filter((m) => m.kind === 'torii')
+      .sort((p, q) => Math.hypot(p.x - world.bridge.x, p.z - world.bridge.z)
+        - Math.hypot(q.x - world.bridge.x, q.z - world.bridge.z))[0];
+    ok('...and the gate at the end of it is turned the way the world turns it, so the road runs through',
+      Math.abs((gate.ry ?? 0) - Math.PI / 2) < 1e-9 && Math.abs(gate.z - world.bridge.z) < 1e-6);
+    S.cue('isles-leap');
+    for (let i = 0; i < 100; i++) S.update(1 / 60, cam);
+    S.cue('isles-bridge');
+    for (let i = 0; i < 120; i++) S.update(1 / 60, cam);
+    const off = kits.map((k) => {
+      const l = k.mini.bb.position.clone().sub(host.g.position).sub(S.miniBridge.local);
+      const arch = Math.sin((l.x / (sp.len * K) + 0.5) * Math.PI) * sp.rise * K + 0.15 * K;
+      return Math.max(Math.abs(l.z) - sp.wide * K / 2, Math.abs(l.x) - sp.len * K / 2, Math.abs(l.y - arch) - 0.02);
+    });
+    ok('...and all four land ON its deck, up its arch, not in the air beside it',
+      off.every((o) => o <= 0), off.map((o) => o.toFixed(3)).join(' '));
     S.finish();
   }
 
@@ -20486,6 +20693,63 @@ console.log('\n--- one press is not enough, and one player drives ---');
       posA ? `${posA.distanceTo(posB).toFixed(1)} units` : 'never ran');
     F.finish();
 
+    /* AND IT HOLDS TWO SECONDS LONGER, AT THE SAME SPEED. "For the 'there's
+       nothing left standing' part, we can delay the transition to the next
+       scene by 2 seconds." Real seconds off the recording, and `pan` per
+       second against the speed approved the pass before (0.17 over 1.19s). */
+    {
+      const wideRow = FINALE_SHOTS.find((sh) => sh.beat === 0 && sh.at === 'wide');
+      const clip0 = SCRIPTS.finale[0].clip;
+      const t0 = row.from * clip0 + (row.off ?? 0);
+      const t1 = wideRow.from * clip0 + (wideRow.off ?? 0);
+      ok('"there is nothing left standing" holds two seconds longer than it did',
+        t1 - t0 > 1.19 + 2 - 0.05, `${(t1 - t0).toFixed(2)}s`);
+      ok('...trucking at the speed it was slowed to, not faster',
+        Math.abs(row.pan / (t1 - t0) - 0.17 / 1.19) < 0.01,
+        `${(row.pan / (t1 - t0)).toFixed(3)} frames a second`);
+    }
+
+    /* `into`: THE PUSH THAT MAKES A CUT NOT A CUT. "When the holographic islands
+       start to fade in, or maybe even 2 seconds before... have the camera zoom
+       in on them, to about the point where the next camera angle/scene
+       starts." Run the scene over the join and compare the last frame of line 2
+       with the first of line 3 — the lens and where it looks. */
+    {
+      const D = new SummonScene({ scene: null, world: null, audio: null });
+      D.start('finale', { x: 0, y: 0, z: 0 }, 30, {
+        texture: new THREE.Texture(), contentScale: 0.88, pad: 0.06, cols: 1, rows: 1,
+      });
+      /* THE BEATS AT THEIR REAL LENGTHS, and put back — see the sky check. At
+         the authored floors line 2's last shot is under two seconds long, and a
+         two-second lead has nothing to lead from. */
+      const scr = D.script;
+      const floors = scr.map((b) => b.dur);
+      for (const b of scr) if (b.clip != null) b.dur = b.clip + TAIL;
+      const pushRow = FINALE_SHOTS.find((sh) => sh.into != null);
+      let lastB1 = null;
+      let lookB1 = null;
+      let firstB2 = null;
+      let lookB2 = null;
+      let early = null;
+      const wakeAt = D._atF(1, D._fromF(1, pushRow.into));
+      for (let i = 0; i < 6000 && D.active; i++) {
+        D.update(1 / 60);
+        if (D.beat === 1) {
+          lastB1 = D.camera.position.clone();
+          lookB1 = D._look.clone();
+          if (D._shot === pushRow && D._now() < wakeAt - pushRow.lead - 0.25) early = D.camera.position.length();
+        }
+        if (D.beat === 2 && !firstB2) { firstB2 = D.camera.position.clone(); lookB2 = D._look.clone(); break; }
+      }
+      ok('the Dojo push lands on the first frame of the next shot, so the join is not a cut',
+        !!firstB2 && lastB1.distanceTo(firstB2) < 0.6 && lookB1.distanceTo(lookB2) < 0.6,
+        firstB2 ? `lens ${lastB1.distanceTo(firstB2).toFixed(2)}, look ${lookB1.distanceTo(lookB2).toFixed(2)} units apart` : 'never reached line 3');
+      ok('...and it has not started pushing before it was asked to',
+        early != null && early > 40, early == null ? 'never sampled' : `${early.toFixed(1)} units out`);
+      scr.forEach((b, i) => { b.dur = floors[i]; });
+      D.finish();
+    }
+
     /* --- AND THE CROSSING IS SHOT DOWN THE ROAD, WITH THE GATE IN IT ------
        These replace four checks that kept the lens out of the east grove. They
        were honest and they were answering the wrong question: the canes were
@@ -20569,6 +20833,45 @@ console.log('\n--- one press is not enough, and one player drives ---');
         seg.set(p, d);
         if (crowns.some((w) => seg.closestPointToPoint(w.c, true, near).distanceTo(w.c) < w.r)) bad.tree++;
       }
+    }
+    /* AND THE FOUR OF THEM ARE IN IT, WHICH IS WHAT THE SHOT IS FOR. "You can
+       see the players more before they got on the bridge and you can see them
+       better when they are jumping on the bridge... It is okay if they go out
+       of frame of the camera a bit, while double jumping, but should be in the
+       camera view most of the time, even before they enter the bridge." The
+       checks above all passed on a lens that cut them off, so this replays the
+       real run — ten times a second for the length of the shot, feet and head
+       through the scene's own lens. The old row scores 86% here. */
+    {
+      const run = mkShow();
+      run.cue('bridge-run');
+      const SHOT = say(3, 'the arena') * SCRIPTS.finale[3].clip;
+      const inside = (q) => q.z < 1 && Math.abs(q.x) < 0.98 && q.y > -0.98 && q.y < 0.98;
+      let seen = 0;
+      let counted = 0;
+      let clear = 0;
+      for (let i = 0; i / 60 < SHOT; i++) {
+        run.update(1 / 60, null);
+        if (i % 6) continue;
+        const sk = Math.min(1, i / 60 / SHOT);
+        solve(1 - (1 - sk) * (1 - sk));
+        for (const k of run.kits) {
+          if (!k.big.bb.visible) continue;
+          const p = k.big.bb.position;
+          const f = ndc(p.x, p.y, p.z);
+          const h = ndc(p.x, p.y + 2.9, p.z);
+          counted++;
+          if (inside(f) && inside(h)) seen++;
+          if (inside(h) && h.y > SUBS) clear++;
+        }
+      }
+      run.finish();
+      ok('the four of them are in the picture from the far end of the road to the gate',
+        counted > 100 && seen / counted >= 0.97,
+        `${(100 * seen / Math.max(1, counted)).toFixed(1)}% of ${counted} sightings`);
+      ok('...with their heads clear of the subtitles nearly all of it, even in a small window',
+        clear / Math.max(1, counted) >= 0.9, `${(100 * clear / Math.max(1, counted)).toFixed(1)}%`);
+      solve(0);
     }
     ok('the crossing is looked at down the road it is crossed on, from beyond the gate',
       bad.along === 0, `${bad.along} of 11 moments off it`);
@@ -20686,9 +20989,23 @@ console.log('\n--- one press is not enough, and one player drives ---');
       }
       ok('the hologram arrives stationary, not shaking',
         worst < 1e-6, worst.toExponential(1));
+      /* ...AND STILL THROUGH "THE ISLANDS DID NOT DRIFT APART". "The islands
+         shouldn't start shaking and separating until the words 'because
+         something broke' is started to be said." Two and a half seconds of
+         `isles-in` is past where the old clock had it at full strength. */
+      W.cue('isles-in');
+      for (let i = 0; i < 30; i++) W.update(1 / 60, null);
+      const c0 = W.isles.map((i) => i.g.position.clone());
+      let stirred = 0;
+      for (let i = 0; i < 150; i++) {
+        W.update(1 / 60, null);
+        W.isles.forEach((isl, j) => { stirred = Math.max(stirred, isl.g.position.distanceTo(c0[j])); });
+      }
+      ok('...and the town stands still until "because something broke"',
+        stirred < 1e-6, stirred.toExponential(1));
       /* ...AND THE EARTHQUAKE STILL HAPPENS WHERE IT BELONGS, which is the
          half of this that a blanket `shake = 0` would have thrown away. */
-      W.cue('isles-in');
+      W.cue('isles-quake');
       for (let i = 0; i < 120; i++) W.update(1 / 60, null);
       const b = W.isles.map((i) => i.g.position.clone());
       let moved = 0;
@@ -20698,6 +21015,19 @@ console.log('\n--- one press is not enough, and one player drives ---');
       }
       ok('...and still shakes on the line that says it did', moved > 0.01,
         moved.toFixed(3));
+      /* HALF AS HARD. "They shake too much and make the bridges look bad." At
+         full strength, before the drift, an island is displaced by `QUAKE` on
+         each of two axes — so this is the reach off its packed spot, and it
+         was twice this before. */
+      let reach = 0;
+      for (let i = 0; i < 240; i++) {
+        W.update(1 / 60, null);
+        W.isles.forEach((isl) => {
+          reach = Math.max(reach, Math.hypot(isl.g.position.x - isl.near.x, isl.g.position.z - isl.near.z));
+        });
+      }
+      ok('...at half the strength it had, so the bridges read as bridges',
+        reach > 0.04 && reach <= 0.08 * Math.SQRT2 + 1e-6, `${reach.toFixed(3)} units`);
       W.finish();
     }
 

@@ -735,6 +735,11 @@ const LINE_FULL = 0.30;
 const SPEC_L = 0.97;
 /** Saturation at which a pixel counts as fully coloured rather than grey. */
 const GREY_S = 0.16;
+/** The four bands, published for the one other place that applies this rule:
+ *  the ending's model town recolours thirty villagers on the card rather than
+ *  minting thirty atlases (see `FinaleShow._folkMatFor`). A second typed copy
+ *  of these numbers would be a second rule that only agrees by accident. */
+export const RECOLOUR_BANDS = { LINE_L, LINE_FULL, SPEC_L, GREY_S };
 
 function rgb2hsl(r, g, b) {
   r /= 255; g /= 255; b /= 255;

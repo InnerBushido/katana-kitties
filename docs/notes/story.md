@@ -1456,3 +1456,117 @@ The harness: `S.finish()` before every `S.start('finale', ...)`, set
 `S.update(1/60)` to the moment, then replace `S.update` so the frame holds. A
 screenshot shows the previous seek unless you wait about a second after it, and
 any edit to `src/` hot-reloads the page and wipes what was recorded.
+
+## The fifth pass
+
+Nine notes on the hologram, one on the bridge, one on a transition. Every one
+of them was a thing on screen, and four of them had a cause nobody would have
+guessed from the screen.
+
+### The town you can see
+
+> We need to see the small people/animals on the island.
+
+Two changes, because size alone was not enough. The townspeople and animals now
+**billboard fully** to the lens — tilted up to it as well as turned — so from a
+camera fourteen units up they are drawings facing you and not slivers on the
+floor. People are drawn **2.5×** and animals **2×**. And the camera **pushes in
+on the model as it arrives**: a new shot field, `into`/`lead`, eases a row's
+bearing, distance, height and lift onto the *next* cutting row's first frame,
+starting `lead` seconds before a named word, so the cut at the top of the next
+line lands on a frame the camera is already showing. `world-check` holds the two
+frames either side of that join together (0.00 apart) and asserts the push
+starts more than 40 units out.
+
+Each townsperson is **recoloured on its own**, in the shader: the same hue-turn,
+grey-tint and saturation-lift rule `recolourPixels` uses on the kittens, ported
+to GLSL and fed per instance through a `recol` attribute, with the rule's bands
+exported from `spritesheet.js` so there is one copy of the numbers. The looks
+come off a **seeded** mulberry32, so the town is the same town every time it is
+shown — a check builds it twice and compares. Animals are left their own
+colours. The bamboo is a darker green.
+
+### Why they flickered, which was not the shake
+
+The townspeople flickered while the islands shook. The shake was the trigger,
+not the cause. three.js sorts transparent meshes by `renderOrder` and then by
+distance, and the town island's origin is **the same point** as the model's
+origin, which is where the folk `InstancedMesh` sits. Two objects at one depth
+swap order on a rounding error, and a shaking island is a machine for making
+rounding errors — ten swaps a second, measured. When the island painted second,
+its ground (which writes depth) drew over the folk (which do not). Fixed with
+explicit `renderOrder` bands — folk 2, dragons 3, kittens 4 — and the check runs
+both: depth sort alone swaps; with the bands, wrong on zero frames.
+
+The same bands fixed the **rider**: the dragon and the kitten on its back were
+at one depth too. The dragon is now pushed 0.3 back along the line of sight and
+drawn below the kitten, so the rider stays, and is not z-fighting.
+
+### The ground moves on its word
+
+> The islands shouldn't start shaking and separating until the words "because
+> something broke" is started to be said.
+
+The line's run was split at *because* — 1.59 s, measured with `silencedetect` —
+and `isles-quake` is a keep row on that word. The town stands still through
+`isles-in`, then shakes at **half** the old energy (so the bridges still read as
+bridges), and the drift follows on *They drifted*. The townspeople **stop and
+throw their paws up** when it starts: the people swap to the bless sheet, the
+animals to their shock sheets, and their animation clock freezes at the quake.
+That reuses art the game already had; a dedicated scared drawing would be a new
+sprite, for all of them.
+
+### The four of them, standing, before they go
+
+`isles-stand` lands on *between them*. The kittens and the two mount dragons fade
+in over 1.4 s and stand on their starting islands, idle row, facing where they
+are going; `isles-cross` then starts them from exactly there (a check holds the
+jump under 0.15) with a staggered first step.
+
+### The same bridge, and the same gate
+
+The model's bridge was a diagram of a bridge. It is now `buildBridge` — the same
+function, the same 912 vertices — scaled down and turned onto the model, and the
+kittens leap to points **on its arched deck** rather than to a line above it. The
+real east torii was turned a quarter so it stands across the road, which is the
+way the model's copy already stood, so the two line up.
+
+### Two more seconds of nothing left standing
+
+The truck on *there's nothing left standing* holds two seconds longer. `pan` is a
+distance across the whole shot, so it grew by the same ratio (0.17 → 0.46) to
+keep the speed that was asked for last time. The shot after it starts two
+seconds later on the same path, with its swing cut to match, so the frame the
+line ends on did not move.
+
+### The bridge camera, and the lesson it cost
+
+> The angle of the camera, relative to the bridge should be the same as it was
+> for the first camera shot we had... we may need to zoom the camera out a bit.
+
+**A pitch change is not a zoom.** The fourth pass kept the bearing, changed the
+pitch to stand the gate on the subtitle box, and tipped the far road — where the
+kittens are for the first three seconds — off the top of the picture. This pass
+keeps every angle of the first row and changes only the distance: `high` in
+proportion to `dist` (the same 17.7° elevation), `lift` a fraction of the frame
+(the same pitch), the same `turn` and `in`. Backing a camera away on its own ray
+changes size and nothing else.
+
+The distance was chosen against a **recording of the run**, not reasoned: every
+kitten's feet and head ten times a second through the scene's lens. The first
+row had them in frame 86% of the time and most of the gate out of it; at 34
+units every kitten is in frame for 100% of 238 sightings, 94% of heads clear the
+subtitles of a small window, and the whole gate is in. That replay is now a
+check.
+
+### Additions to how a shot is directed
+
+6. **Once an angle is liked, leave the angle alone.** Zoom with distance.
+7. **Put cues on measured words**, and split a run at the word when the brief
+   names one. Timing reasoned from a sentence's length was wrong every time.
+8. **When something flickers, look for two things at one depth** before
+   touching the thing that moves.
+9. **Hide a cut with `into`** when the next shot looks at the same mark: the
+   push is the transition.
+10. **Seed anything a crowd is made of.** A town that changes between showings
+    cannot be art-directed.

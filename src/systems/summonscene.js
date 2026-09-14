@@ -230,7 +230,11 @@ export const SCRIPTS = {
       text: 'The islands did not drift apart because something broke. They drifted because nobody was crossing between them any more. You crossed. An angle, a circle, and the nerve to jump — that is all a bridge has ever been.',
       clip: 15.68,
       runs: [
-        ['The islands did not', 0, 3.06],
+        /* SPLIT AT "BECAUSE", which is a cue now (`isles-quake`). Measured with
+           ffmpeg's silencedetect at -35dB: a 0.10s pause at 1.49s, the word at
+           1.59s. The rest of the sentence ends where it always did. */
+        ['The islands did not', 0, 1.49],
+        ['because something broke', 1.59, 3.06],
         ['They drifted', 3.83, 7.00],
         ['You crossed', 7.94, 8.86],
         ['An angle', 9.61, 10.28],
@@ -419,6 +423,14 @@ export const SCRIPTS = {
    NO ROW USES THEM TODAY: the crossing that taught the measurement all three
    went back to a typed bearing (see its row, and why). They are kept because
    what they fix is still true of any shot that names a thing to look at.
+
+   `into` IS A PUSH THAT LANDS ON THE NEXT SHOT'S FIRST FRAME, so the cut
+   between them is not a cut. From `lead` seconds before the word it names, the
+   row eases every number it frames with — bearing, distance, height, lift —
+   onto the next cutting row's opening values, and arrives as that row takes
+   over. It only does this when the next row looks at the same mark; anything
+   else would be a dissolve pretending to be a move. One row uses it: the Dojo,
+   pushing in on the model as it appears.
 
    `sky` IS WHERE THE MORNING STARTS. The ending takes Ryuuseki's storm down
    and puts a dawn up, and both used to begin on the scene's first frame — under
@@ -647,12 +659,20 @@ export const FINALE_SHOTS = [
      still centred on the mark, so the shot starts and ends a twelfth of a frame
      either side of the town instead of a sixth.
 
+     AND TWO SECONDS LONGER, AT THAT SPEED. "For the 'there's nothing left
+     standing' part, we can delay the transition to the next scene by 2 seconds,
+     as it is currently too fast of a transition between the scenes." The shot
+     was 1.19s — 5.37 to "on any" at 6.56 — and the next row now waits two more
+     (`off: 2` there). `pan` is a distance across the whole shot, so it grows by
+     the same 3.19/1.19 to keep the speed that was asked for last time: the
+     truck is longer, not faster.
+
      `sky` — THE MORNING STARTS HERE. This is the first shot of the ending with
      any sky in it, so the storm is seen going rather than found gone. See `sky`
      on the table. */
   {
     beat: 0, from: say(0, 'There is nothing left'), off: 0.45, at: 'town', a: 0.62, dist: 82, high: 34,
-    lift: 0.11, turn: 0, pan: 0.17, in: 0, lin: true, stage: false, cue: null, sky: true,
+    lift: 0.11, turn: 0, pan: 0.46, in: 0, lin: true, stage: false, cue: null, sky: true,
   },
   /* ...AND OUT, far enough that the archipelago is the frame. "Zoom out to show
      all the area and all the knocked over mischief, and also zoom out far
@@ -670,10 +690,17 @@ export const FINALE_SHOTS = [
      - 1 - (1 - s) squared, which spends most of its travel in the first third
      - and that is what "fast" was: the same move, front-loaded. `lin` spreads
      it evenly and the swing and the dolly are both cut by about half, so the
-     archipelago arrives rather than being flung at you. */
+     archipelago arrives rather than being flung at you.
+
+     AND IT STARTS TWO SECONDS LATER AND ENDS WHERE IT DID. The shot before it
+     holds for two more seconds (see there), which leaves this one 3.10s
+     instead of 5.10. Its swing and its pull-back are cut by the same ratio so
+     it moves at the speed that was asked for, and it starts that much further
+     along the same path, so the frame the line ends on — the archipelago,
+     most of the islands in it — is the frame it always ended on. */
   {
-    beat: 0, from: say(0, 'on any'), at: 'wide', a: 1.4, dist: 1.15, high: 0.66, turn: 0.16, in: -0.1,
-    lin: true, stage: false, cue: null,
+    beat: 0, from: say(0, 'on any'), off: 2, at: 'wide', a: 1.463, dist: 1.1925, high: 0.66,
+    turn: 0.097, in: -0.0608, lin: true, stage: false, cue: null,
   },
 
   /* --- LINE 2: "The elders called it mischief..." ------------------------
@@ -766,11 +793,21 @@ export const FINALE_SHOTS = [
      gives the shot it is leaving about a sixth of a second of dimming, which
      is not a fade, it is a flicker. `dark` starts the way down where she picks
      the sentence back up after the shove — nearly a second of it — so the town
-     lies still, darkens, and is gone. */
+     lies still, darkens, and is gone.
+
+     AND IT PUSHES IN ON THE MODEL AS THE MODEL ARRIVES. "When the holographic
+     islands start to fade in, or maybe even 2 seconds before they start to fade
+     in, we should have the camera zoom in on them, to about the point where the
+     next camera angle/scene starts, we need this because we need to see the
+     small people/animals on the island." `into` is that, exactly: from two
+     seconds before `isles-wake` the lens eases from 46 units out onto the Dojo
+     row's own first frame, 20 out and 14 up, so the cut at the top of line 3
+     lands on the frame the camera is already showing. */
   {
     beat: 1, from: say(1, 'counting'), at: 'dojo', a: 2.1, dist: 46, high: 27, lift: 0.07,
     turn: 0.34, in: 0.12, stage: false, cue: 'dojo-run',
     fade: 1.1, dark: say(1, 'and you have been'),
+    into: say(1, 'all afternoon', true), lead: 2,
   },
   /* ...AND THE WORLD BEGINS ARRIVING ON THE FLOOR BEFORE THE LINE IS OVER.
      "When the text 'all afternoon.' ends, that's when we should have the
@@ -876,7 +913,19 @@ export const FINALE_SHOTS = [
     beat: 2, from: 0, at: 'dojo', a: 2.4, dist: 20, high: 14, lift: -0.18,
     turn: -3.6, in: 0.16, dolly: true, lin: true, stage: false, cue: 'isles-in',
   },
+  /* THE GROUND MOVES ON "BECAUSE". "The islands shouldn't start shaking and
+     separating until the words 'because something broke' is started to be
+     said... That way, we can see the town in a 'stabilized' state longer."
+     `isles-in` is the town standing still, the camera having just pushed in on
+     it; this is where it stops being still. */
+  { beat: 2, from: say(2, 'because something broke'), keep: true, cue: 'isles-quake' },
   { beat: 2, from: say(2, 'They drifted'), keep: true, cue: 'isles-drift' },
+  /* ...AND THE FOUR OF THEM ARE THERE BEFORE THEY GO. "At the end of 'nobody
+     was crossing between them anymore' we can have the players and the dragons
+     they are riding fade in and stand still... about 2 seconds before they start
+     moving around." "Between them" is 5.86s, "You crossed" 7.94 — two seconds
+     and a word, which is the same second and a bit of fade and a held beat. */
+  { beat: 2, from: say(2, 'between them'), keep: true, cue: 'isles-stand' },
   { beat: 2, from: say(2, 'You crossed'), keep: true, cue: 'isles-cross' },
   { beat: 2, from: say(2, 'An angle'), keep: true, cue: 'isles-angle' },
   { beat: 2, from: say(2, 'a circle'), keep: true, cue: 'isles-circle' },
@@ -889,43 +938,38 @@ export const FINALE_SHOTS = [
      'So stay. Fly.' we can have the camera fade in at the bridge and then show
      the players running together and jumping together."
 
-     IT LOOKS DOWN THE ROAD AGAIN, FROM BEHIND THE GATE. The pass before this
-     one swung it square across the deck, on the argument that the side of a
-     bridge is its arch. Wrong call, and said so twice: "can we have the camera
-     angle like it was before? Just need to make sure it works well with the
-     torii gate in the view", and then "should have the players running towards
-     the camera like in the previous camera shot, but just have the camera
-     zoomed out a bit to show the bridge and the torii gate."
+     THE FIRST SHOT'S ANGLES, FROM FURTHER AWAY. Two passes of moving this lens
+     ended here: "I liked the previous camera angle more because you can see the
+     players more before they got on the bridge and you can see them better when
+     they are jumping on the bridge... the angle of the camera, relative to the
+     bridge should be the same as it was for the first camera shot we had... we
+     may need to zoom the camera out a bit."
 
-     WHAT WAS WRONG WITH "BEFORE" WAS NEVER THE BEARING. The canes it looked
-     past stood at every angle between upright and flat, because
-     `FinaleTide.slam` never actually laid them down (see `FLAT_SLACK`). And
-     22 units out at 7 up put the lens six units behind a gate four units tall:
-     the top beam was a bar across the bottom of the frame with the gate's feet
-     a third of a frame below the edge, and the swing of 0.34 carried it out of
-     the left of the picture before the shot was half over.
+     SO EVERY ANGLE IS THE OLD ROW'S AND ONLY THE DISTANCE IS NOT. The first
+     shot was `dist 22, high 7, lift 0.16, turn 0.34, in 0.12`. `high` in
+     proportion to `dist` keeps the elevation (17.7 degrees); `lift` is a
+     fraction of the frame, so it keeps the pitch; `turn` and `in` are the same
+     swing and the same push. Backing a camera away from the point it looks at,
+     on the same ray, is a zoom that changes nothing but size: the crest sits at
+     0.28 in NDC in both, the road climbs the frame at the same slant, and what
+     changes is what fits — the gate the old lens stood six units behind, and
+     the far end of the road.
 
-     SO: EIGHT BACK, TWO UP, SAME ROAD. Solved in the frame rather than typed,
-     with the top edge of the subtitle box as the floor of the picture: -0.22 in
-     NDC in a small window, the worst case, because the box is a fixed height in
-     pixels. At the cut the gate's feet stand on that edge, its top beam is at
-     0.26 just under the near end of the deck (0.19), the crest is at 0.60, the
-     far railing 0.70, and a kitten at the top of a double jump on the crest
-     0.92. The gate frames the road onto the bridge and the four of them run
-     down it at the lens and out underneath it — the old shot, with room.
+     MEASURED AGAINST A RECORDING OF THE RUN, NOT GUESSED. Every kitten's feet
+     and head, ten times a second for the whole shot, projected through the
+     lens. The old row had them in frame 86% of the time and three-quarters of
+     the gate's corners out of it. 30 units out had every kitten and all of the
+     gate; 34 is the first distance at which the gate's beam also clears a small
+     window's subtitles for the whole push, and it keeps 96% of heads above
+     them there (all of them in a full-size window). The angles were the brief;
+     the only number the recording chose was how far.
 
-     THE SWING IS SMALL. -0.1 rather than +0.34: a gate fourteen units from the
-     lens crosses the frame three times faster than a bridge thirty units off,
-     so the big swing that read as movement on the old shot is what walks the
-     gate out of this one. `world-check` holds all eight of its corners in frame
-     for the whole push.
-
-     AND THE SEARCH THAT FOUND "BETTER" IS WRITTEN DOWN HERE ON PURPOSE. A grid
-     of some twenty thousand rows scored only on what was in the frame chose,
-     first, a three-quarter view half a radian off the deck, and then a lens a
-     metre and a half up with the bridge pinned to the top edge. Both ticked
-     every box and neither was the shot. The numbers can say what is in frame;
-     which frame it is was the brief.
+     THE PASS BEFORE THIS ONE IS WHAT NOT TO DO AGAIN. It kept the bearing and
+     changed the pitch — `lift 0.36`, aimed low so the gate stood on the
+     subtitle box — and a pitch change is not a zoom: it tipped the far road up
+     and off the top of the picture, which is where the kittens are for the
+     first three seconds of the shot. Change the distance to zoom. Once an
+     angle is liked, leave the angle alone.
 
      AND THE WAY IN IS LONGER THAN A BLINK. "It should end at 'all a bridge has
      ever been.' with a slightly longer fade out and fade in on the next part."
@@ -935,8 +979,8 @@ export const FINALE_SHOTS = [
      comes back. A second of it, and the four of them are already running when
      it lifts — see `FinaleShow._seedBridge`. */
   {
-    beat: 3, from: 0, at: 'bridge', a: Math.PI / 2, dist: 30, high: 9, lift: 0.36,
-    turn: -0.1, in: 0.08, stage: false, cue: 'bridge-run', fade: 1.0,
+    beat: 3, from: 0, at: 'bridge', a: Math.PI / 2, dist: 34, high: 10.8, lift: 0.16,
+    turn: 0.34, in: 0.12, stage: false, cue: 'bridge-run', fade: 1.0,
   },
   /* "...THE arena is open." — in on the first word of the clause, not on the
      third. "For the 'the arena is open' section, let's have camera fade into
@@ -1792,6 +1836,16 @@ export class SummonScene {
     };
   }
 
+  /** The next row after this one that actually moves the camera — `into`'s
+   *  destination. Across a beat boundary on purpose: the Dojo's push ends on
+   *  the first row of the next line. */
+  _nextCut(sh) {
+    const i = FINALE_SHOTS.indexOf(sh);
+    if (i < 0) return null;
+    for (let j = i + 1; j < FINALE_SHOTS.length; j++) if (!FINALE_SHOTS[j].keep) return FINALE_SHOTS[j];
+    return null;
+  }
+
   /**
    * A shot's `from`, as a fraction of its BEAT rather than of the speech.
    *
@@ -2217,15 +2271,33 @@ export class SummonScene {
          spend the back half of the shot in ground it never checked. Every
          other shot keeps the old behaviour: `a` is where it starts and `turn`
          is how far it goes. */
-      const a = base + shot.a + shot.turn * (measured ? se - 0.5 : se);
+      let a = base + shot.a + shot.turn * (measured ? se - 0.5 : se);
       const close = 1 - shot.in * se;
-      const dist = (wide ? this.radius * shot.dist : shot.dist) * close;
+      let dist = (wide ? this.radius * shot.dist : shot.dist) * close;
       /* A DOLLY CLOSES BOTH, A CRANE CLOSES ONE. `in` only ever shrank `dist`,
          so every push in this table slid down the hypotenuse and got steeper as
          it went — invisible on a shot that closes by a tenth and, on the one
          that closes by a third onto a flat model of the world, the difference
          between moving toward the islands and climbing over them. */
-      const high = (wide ? this.radius * shot.high : shot.high) * (shot.dolly ? close : 1);
+      let high = (wide ? this.radius * shot.high : shot.high) * (shot.dolly ? close : 1);
+      let lift = shot.lift;
+      /* `into` — AND THEN ONTO THE NEXT SHOT'S FIRST FRAME. See the table's
+         header. Everything here is the NEXT row at its own `se = 0`, which for
+         a row with no measured bearing is its typed numbers and nothing else;
+         `world-check` holds the two frames either side of the join together. */
+      if (shot.into != null) {
+        const nx = this._nextCut(shot);
+        if (nx && nx.at === shot.at && !wide && nx.at !== 'wide' && !nx.clear) {
+          const t0 = this._atF(shot.beat, this._fromF(shot.beat, shot.into)) - (shot.lead ?? 0);
+          const t1 = this._at(nx);
+          const u = Math.min(1, Math.max(0, (this._now() - t0) / Math.max(0.01, t1 - t0)));
+          const w = u * u * (3 - 2 * u);
+          a += Math.atan2(Math.sin(nx.a - a), Math.cos(nx.a - a)) * w;
+          dist += (nx.dist - dist) * w;
+          high += (nx.high - high) * w;
+          if (lift != null && nx.lift != null) lift += (nx.lift - lift) * w;
+        }
+      }
       this.camera.position.set(
         P.x + Math.sin(a) * dist,
         P.y + high,
@@ -2245,8 +2317,8 @@ export class SummonScene {
          ground on a close shot, so a heap has sky over it, and the world's own
          middle on a wide one. */
       const frameH = 2 * dist * Math.tan((this.camera.fov * Math.PI) / 360);
-      const aim = shot.lift != null
-        ? -shot.lift * frameH
+      const aim = lift != null
+        ? -lift * frameH
         : (wide ? 0 : Math.min(4, high * 0.25));
       this._look.set(P.x, P.y + aim, P.z);
       /* ...AND THEN THE WHOLE SHOT SLIDES SIDEWAYS, if the row asked for it.
