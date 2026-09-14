@@ -210,7 +210,7 @@ from before four players existed, so kittens three and four were never cut for
 anywhere, grottos included.
 
 **A Help page that shows the game instead of describing it.** Twelve topics,
-each a `<details>` a kid opens; **fifteen** GIFs **captured out of the running
+each a `<details>` a kid opens; **eighteen** GIFs **captured out of the running
 game**, three stills, and the Clans topic on the six leaders. A
 new dependency-free GIF encoder (`tools/gif.mjs`, alongside `png.mjs`, for the
 same rule-9 reason) does the filming, and `tools/gif-selftest.mjs` reads its

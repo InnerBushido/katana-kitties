@@ -152,3 +152,31 @@ transitions for the take, and sleep in real time between beats.*
 
 **A DOM overlay is invisible to `readPixels`.** *Lesson: redraw it onto the
 frame from the live DOM's measurements; don't add a rasteriser dependency.*
+
+**A finished take vanished before it was encoded.** Nothing had crashed. A
+Help-page edit was saved between filming and encoding, the dev server
+hot-reloaded the page, and the frames, the injected rig and the staged round
+went with it.
+*Lesson: never save a file the dev server watches while a take is in memory.
+Encode first, then edit the page.*
+
+**"The orb falls off" showed no orb.** The steal worked (the log said so), but
+the thief was still holding sprint when the blow landed. She coasted onto the
+orb it knocked loose, and the other kitten walked at it from the same side, so
+three things finished in one place.
+*Lesson: release movement keys on the frame of the hit. When two actors go for
+one prop, send them to opposite sides of it.*
+
+**A shot framed for kittens cut the head off a kitten riding a panda.**
+Distance 19 made a 2.9-unit kitten 80px tall, which was right for a mark ring
+at her feet. The rider sat 7.6 units up and was above the top edge on every
+frame she rode.
+*Lesson: frame for the tallest thing in the beat. When one clip holds a
+kitten-scale beat and a mount-scale beat, change the distance at a caption
+change (same angle, aim offset scaled with distance), not in the middle of an
+action.*
+
+**Critters crossed the action.** A hare as big as a kitten ran through the
+foreground on the beat the orb fell. The ring's animals belong to a different
+lesson.
+*Lesson: turn off every ambient system the clip isn't about.*

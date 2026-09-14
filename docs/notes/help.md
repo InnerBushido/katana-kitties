@@ -475,7 +475,7 @@ are really two subjects, so they fold:
 | now a top-level card | and inside it |
 | --- | --- |
 | **Moving & fighting** | Every button · Flying a dragon · Fighting in the arena · Good to know |
-| **The arena** | How the arena works · Battle Feast · Power-up orbs · Special abilities · Dealer's Stall & Trading |
+| **The arena** | How the arena works · Battle Feast · Power-up orbs · The rare orbs · Special abilities · Clan abilities · Dealer's Stall & Trading |
 
 Eight cards became two, so the list a reader faces is **eight** long. Nothing is
 hidden — every topic is still its own card, one tap further in — and the four
@@ -496,6 +496,61 @@ captions, which is the shape a reader learned one topic earlier. The cap only
 works because **`width` is released as well** — `.help-shot img` pins it at
 `100%`, and a `max-height` against a pinned width squashes the picture instead
 of shrinking it. Same trick, same reason, as `.help-shot-pair img`.
+
+### "Clan abilities": three clips filmed on the arena's own stage
+
+Asked for as: add *"the 2 new combat abilities obtained by joining the two
+Clans: Windwhisker and Icewhisker, and also … the Panda in the ring and its
+abilities for Pandapaw"* as a new card under The arena, with *"three gifs,
+showing the 3 different clan abilities being used in the arena"*, the panda
+one in *"two parts, one with a full grown panda, and one with a baby panda
+healing the player with low health"*, and *"the buttons that need to be
+pressed"*. The Clans topic and "Fighting in the arena" both point there now.
+
+**The pairing is the code's, not the request's.** The request put Steal on
+Windwhisker. `arenaPowerFor` gives 盗 Steal Mischief to **Icewhisker** and
+息 Dragon Breath to **Windwhisker**, the card follows the game, and
+`world-check` pins the pairing so a card rewritten from memory cannot swap it.
+
+**Every number on the card is read back** against `STEAL`, `DBREATH`, `PANDA`
+and `ATTACKS.claw`, and every button against `KEYSETS` and `PROMPTS`. They are
+all `tune()` tables, and nothing on screen would notice if the card went stale.
+
+The three clips are [shots/clan.js](../../tools/capture/shots/clan.js), which
+borrows `fight.js`'s rig: the same ring, angle, caption strip and drawn panels
+as `move-arena`. Each take leaves a log in `window.__clanLog`, including where
+each kitten's feet and head land in the frame.
+
+| clip | frames | size | what was wrong with the take before it |
+| --- | --- | --- | --- |
+| `clan-steal` | 140 | 358KB | At distance 31 the mark ring and the orb on the deck were specks. The thief coasted onto the orb she had just knocked loose. Both kittens walked at it from the same side. A hare crossed the foreground. |
+| `clan-breath` | 132 | 346KB | first framed take kept |
+| `clan-panda` | 205 | 754KB | At distance 19 the rider's head was above the frame on every frame she rode. |
+
+**The camera is `move-arena`'s angle pulled in along its own ray**, from 31 to
+19, and aimed 2.5 units towards the lens. That was measured before filming: at
+19, feet land at y≈200 and heads at y≈120 of the 432-pixel game area. Both
+diagrams start lower than that (the pad's ears at y≈235, the keyboard panel at
+y≈276), so the kittens never stand behind them.
+
+**The panda clip changes distance once, at the cut.** A kitten is 2.9 units
+tall; a kitten riding a grown panda is 7.6. So the grown half is filmed from 27
+and the cub half from 19. The camera moves on the same frame the caption
+changes, with the aim offset scaled by distance so the deck stays on the same
+line of the frame.
+
+**Ember's health is set at that cut** (22% of her maximum), because the cub
+only nurses a kitten under `PANDA.lickBelow`, and losing a round to get there
+would be a minute of footage nobody needs. Everything after the cut is the game
+running: the cub walks in, waits its `lickWarm` second, and heals her 22 → 26.5.
+
+**The ring's animals are stopped** (`menagerie.stop()`) in all three. They are
+the Battle Feast's lesson, and in the first steal take they were the busiest
+thing on screen.
+
+**Don't save index.html or anything in `src/` while a take is in memory.** Vite
+hot-reloads the page, and the frames, the rig and the staged round all go with
+it. A finished steal take was lost that way between filming and encoding.
 
 ### Two things that will bite the next person
 
