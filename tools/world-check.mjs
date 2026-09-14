@@ -19509,6 +19509,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
   const CAST = {
     kittens: [sheet(4, 3), sheet(4, 3), sheet(4, 3), sheet(4, 3)],
     bless: [sheet(1, 1), sheet(1, 1), sheet(1, 1), sheet(1, 1)],
+    scared: [sheet(1, 1), sheet(1, 1), sheet(1, 1), sheet(1, 1)],
     dragon: sheet(1, 1),
     satan: sheet(1, 1),
     satanCharge: sheet(1, 1),
@@ -19885,9 +19886,19 @@ console.log('\n--- one press is not enough, and one player drives ---');
       tall.map((h) => h.toFixed(2)).join(' '));
     const beastCs = CAST.critters.rabbit.calm.contentScale || 1;
     const rabbit = animals.find((q) => q.mat.map === CAST.critters.rabbit.calm.texture);
-    ok('...and the animals twice theirs',
-      !!rabbit && Math.abs(rabbit.mesh.geometry.parameters.height * beastCs - 0.12 * 2) < 1e-6,
+    /* "Some of the animals are too big, like the rat and the rabbit, so we can
+       make them 1/3rd smaller." Twice their true size, and then two thirds of
+       that: the rabbit was 1.0 of a beast and the rat 0.75. */
+    ok('...and the animals twice theirs, less a third off the rabbit',
+      !!rabbit && Math.abs(rabbit.mesh.geometry.parameters.height * beastCs - 0.12 * 2 * (2 / 3)) < 1e-6,
       rabbit ? (rabbit.mesh.geometry.parameters.height * beastCs).toFixed(3) : 'no rabbit');
+    const rat = animals.find((q) => q.mat.map === CAST.critters.rat.calm.texture);
+    ok('...and a third off the rat',
+      !!rat && Math.abs(rat.mesh.geometry.parameters.height * beastCs - 0.12 * 2 * 0.75 * (2 / 3)) < 1e-6,
+      rat ? (rat.mesh.geometry.parameters.height * beastCs).toFixed(3) : 'no rat');
+    const bird = animals.find((q) => q.mat.map === CAST.critters.bird.calm.texture);
+    ok('...and not off the bird, which was not named',
+      !!bird && Math.abs(bird.mesh.geometry.parameters.height * beastCs - 0.12 * 2 * 0.7) < 1e-6);
 
     /* THE FLICKER, AS THE RENDERER SORTS IT. `WebGLRenderList` orders
        transparent objects by renderOrder, then by projected depth of the
@@ -19945,6 +19956,25 @@ console.log('\n--- one press is not enough, and one player drives ---');
     p0.forEach((l, a) => l.forEach((v, b) => { walked = Math.max(walked, v.distanceTo(p1[a][b])); }));
     ok('when the ground moves every villager throws her paws in the air',
       people.every((q) => !q.mesh.visible && q.alt.mesh.visible && q.alt.mat.map !== q.mat.map));
+    /* IN HER OWN FRIGHT, NOT THE BLESSING THAT STOOD IN FOR IT. "Let's generate
+       the scared pose for the players only (Ember and Frost) and use them in
+       the cutscene." */
+    const frightTex = new Set(CAST.scared.map((a) => a.texture));
+    ok('...wearing the scared drawing, not the blessing it replaced',
+      people.every((q) => frightTex.has(q.alt.mat.map)));
+    {
+      /* AND WITHOUT THE SHEET, THE BLESSING AGAIN. Ninth non-negotiable: a
+         missing file costs the face and nothing else. */
+      const saved = CAST.scared;
+      CAST.scared = [];
+      const B = mkShow();
+      const blessTex = new Set(CAST.bless.map((a) => a.texture));
+      const folk = (B.folkSets ?? []).filter((q) => kitTex.has(q.mat.map));
+      ok('...and with no scared sheet, the blessing pose stands in again',
+        folk.length > 0 && folk.every((q) => q.alt && blessTex.has(q.alt.mat.map)));
+      B.finish();
+      CAST.scared = saved;
+    }
     ok('...and stops walking where she stood', walked < 1e-6, walked.toExponential(1));
     {
       const m = new THREE.Matrix4();
@@ -20489,12 +20519,25 @@ console.log('\n--- one press is not enough, and one player drives ---');
     let wrong = 0;
     let ringUp = 0;
     const ringAt = new Map();
+    const floatAir = new Map();
+    let floatBest = 0;
+    let floatLanded = 0;
     for (let i = 0; i < 60 * 12; i++) {
       S.update(1 / 60, null);
       for (const k of S.kits) {
         if (!k.ward) continue;
         if (k.ward.visible) wardUp++;
-        if (k.ward.visible && k.mv !== 'ward') wrong++;
+        if (k.ward.visible && k.mv !== 'ward' && !(k.mv === 'float' && !k.fell)) wrong++;
+        /* THE FLOAT: bubble up and feet off the deck for a few seconds at a
+           stretch, and then down again. */
+        if (k.mv === 'float' && k.ward.visible && k.air > 0.01) {
+          const t = (floatAir.get(k) ?? 0) + 1 / 60;
+          floatAir.set(k, t);
+          floatBest = Math.max(floatBest, t);
+        } else if (floatAir.has(k) && k.air <= 0.01) {
+          floatLanded++;
+          floatAir.delete(k);
+        }
         /* THE SHOCKWAVE IS THE LANDING, NOT THE MOVE, and so it belongs to
            the PLANK and not to the cat. Lit for as long as the ability's own
            timer said, it was a ring expanding around a kitten who was still
@@ -20518,6 +20561,11 @@ console.log('\n--- one press is not enough, and one player drives ---');
       wardUp > 30 && wrong === 0, `${wardUp} frames up, ${wrong} wrong`);
     ok('...and the Power Dive rings the deck it landed on, not the cat',
       ringUp > 10, `${ringUp} frames of shockwave`);
+    /* "Use the Ward ability to jump and float in the air for a few seconds
+       before falling." Measured as seconds in the air with the bubble up, in
+       one go, and a landing after it. */
+    ok('...and one of them floats in her Ward for a few seconds, then comes down',
+      floatBest >= 2 && floatLanded >= 1, `${floatBest.toFixed(2)}s up, ${floatLanded} landed`);
     /* EVERY ONE OF THEM IS DEALT A DIFFERENT OPENING, and between the first two
        rows all four abilities are on screen — which is the fifth non-negotiable
        pointed at a cutscene, because the ending plays at two as often as at
@@ -21473,6 +21521,38 @@ console.log('\n--- one press is not enough, and one player drives ---');
       && /satanCharge:\s*this\.satanChargeArt/.test(body3));
     ok('...and the arms-up sheet is kept somewhere the ending can reach it',
       /this\.satanChargeArt = satanChargeArt/.test(msrc3));
+    /* THE SCARED POSE: two drawings, four kittens, handed to the ending. By
+       style, as the four loops above it are, and both files really on disk
+       with an alpha channel — generated transparent, not keyed off white. */
+    ok('the ending is handed the scared pose, derived for all four by style',
+      /scared:\s*this\.scaredArt/.test(body3)
+      && /this\.scaredArt = PLAYER_STYLE\.map/.test(msrc3)
+      && /\['ember_scared', 'ember_scared\.png', false\]/.test(msrc3)
+      && /\['frost_scared', 'frost_scared\.png', false\]/.test(msrc3));
+    const alphaPng = (f) => {
+      try {
+        const b = readFileSync(new URL(`../public/sprites/${f}`, import.meta.url));
+        return b.readUInt32BE(16) > 0 && b[25] === 6;
+      } catch { return false; }
+    };
+    ok('...and both scared sheets are on disk with real transparency',
+      alphaPng('ember_scared.png') && alphaPng('frost_scared.png'));
+  }
+
+  /* --- THE CUTSCENE SKILL TRAVELS WITH THE REPO ---------------------------
+     "Let's include the skill in the project." Checked in under `.claude/skills`
+     so every session in this repo loads it, with the frontmatter Claude Code
+     reads to decide when to use it. */
+  {
+    let skill = '';
+    try { skill = readFileSync(new URL('../.claude/skills/game-cutscene-director/SKILL.md', import.meta.url), 'utf8'); } catch {}
+    ok('the cutscene director skill is in the repo, named and described',
+      /^---\s*\r?\nname:\s*game-cutscene-director\s*\r?\ndescription:\s*\S/.test(skill));
+    const refs = ['camera-and-framing', 'failures', 'recording-gifs', 'collaboration', 'katana-kitties'];
+    ok('...with every reference file it points at',
+      refs.every((r) => skill.includes(`references/${r}.md`) && (() => {
+        try { return readFileSync(new URL(`../.claude/skills/game-cutscene-director/references/${r}.md`, import.meta.url), 'utf8').length > 200; } catch { return false; }
+      })()));
   }
 
   /* --- AND NOTHING IT BUILT OUTLIVES IT --------------------------------- */

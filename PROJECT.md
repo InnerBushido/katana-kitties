@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 3494 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 3503 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -525,7 +525,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 3494
+the check that would have caught it.** That is why `world-check` is 3503
 assertions.
 
 **And a change a new developer would need to know about gets a line in this
@@ -554,6 +554,7 @@ Richard has played it**. Branches are kept until pushed, then `git branch -d`
 | [docs/artifact/project-page.html](docs/artifact/project-page.html) | **the source of the published page** — edit this, never the page. `docs/artifact/published.json` records what was last pushed to it |
 | [docs/notes/README.md](docs/notes/README.md) | the index to the design notes, with a "read it before you touch" column |
 | [tools/capture/README.md](tools/capture/README.md) | **the director's guide** to filming the game to teach the game |
+| [.claude/skills/game-cutscene-director/](.claude/skills/game-cutscene-director/SKILL.md) | **a Claude Code skill**, checked in: how to direct a cutscene, a camera move or a recorded clip and prove each shot by measuring it. Every session in this repo loads it when the work is a scene. Written from the ending's five review passes; `references/failures.md` is where the next lesson goes |
 
 **The design notes** — *the WHY behind code that already exists.* Read one when
 you are about to change that area, and not before.

@@ -474,6 +474,13 @@ watching the ending through.
   The crossing is the first row's angles from 34 units instead of 22, chosen by
   replaying the run through the lens (100% of sightings in frame).
   → [story.md](docs/notes/story.md) *"The fifth pass"*
+- **The ending's sixth pass: a scared pose, a smaller rabbit and rat, a Ward
+  float, and the cutscene skill in the repo.** `ember_scared.png` and
+  `frost_scared.png` (four kittens by recolour) are what the model town wears in
+  the earthquake, and are there for any future fright. **Known and not yet
+  fixed:** on the bridge run a kitten can run into a torii post, and one can
+  spawn inside the Kotodama dealer's cart.
+  → [story.md](docs/notes/story.md) *"The sixth pass"*
 - **息 Dragon Breath charges half as long and hits everybody it sweeps.** Three
   things, all from playing it. The charge went back to **0.8s** — "twice as
   long" had been read as the whole move and applied to the wrong half; the

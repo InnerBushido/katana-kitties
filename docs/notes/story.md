@@ -1570,3 +1570,52 @@ check.
    push is the transition.
 10. **Seed anything a crowd is made of.** A town that changes between showings
     cannot be art-directed.
+
+## The sixth pass
+
+> "Let's generate the scared pose for the players only (Ember and Frost) and use
+> them in the cutscene. These may be useful later for when we need a scared pose
+> for future abilities or cutscenes."
+
+**The town has its own fright now.** `ember_scared.png` and `frost_scared.png`
+show a kitten looking straight up, with her eyes wide, mouth open, fur on end
+and both paws beside her head. They're the first player sheets generated with
+real alpha: `gpt_image_2_5` drew each from its own kitten's existing single
+pose, then Higgsfield's `remove_background` cut them out. Storm and Blossom are
+`recolourAtlas` of them by style, like the four poses before, so this is two
+drawings and four cats. The townspeople wear them from "because" onwards, and
+`_buildFolk` falls back to the blessing pose if the sheet is missing.
+
+**Sized against the drawing they replaced, using the belt as a yardstick.** Ear
+tips don't work here, because the fright has her fur standing up above them.
+The rope belt is the same belt at the same size in every pose. Ink height over
+belt width was +2.6% on Ember and -3.6% on Frost against the blessing drawing:
+opposite signs, about half a percent apart on average. So `SCARED_STRETCH` is
+0.86, the same as `BLESS_STRETCH`, and kept as its own literal.
+
+> "Some of the animals are too big, like the rat and the rabbit, so we can make
+> them 1/3rd smaller."
+
+**A third off those two and nothing else.** `RAT_RABBIT_SHRINK` is 2/3, applied
+to the rabbit's 1.0 and the rat's 0.75. The bird and the panda weren't named,
+and `world-check` checks that the bird didn't move.
+
+> "I'd also make one of the players at the ending bridge cutscene use the Ward
+> ability to jump and float in the air for a few seconds before falling."
+
+**A `float` move, on the second row of `BR_SCRIPT` at the start of the deck.**
+It's one jump. At the top she hangs in her Ward bubble for `BR_FLOAT` (2.4 s),
+drifting up at 0.3 units a second, then lets go and falls under ordinary
+gravity. It reuses the Power Dive's `hang`, so it needs no second physics. It
+replaced that row's double jump and Dash, because a float spans both their
+places. The other two rows still double-jump, and the two-sisters check still
+sees all four orb moves. `BR_FLOAT_SPAN` stops a filler hop being dealt on the
+frame she lands.
+
+**Noted and left alone, as asked:** a kitten running into the torii post, and
+one spawning inside the Kotodama dealer's cart. Both are world placement, not
+direction, and neither was asked to be fixed in this pass.
+
+**And the skill that came out of the first five passes is in the repo** at
+`.claude/skills/game-cutscene-director/`. Every session here can load it now,
+not just the machine it was written on.

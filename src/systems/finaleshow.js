@@ -228,6 +228,26 @@ const BEAST_H = 0.12;
  */
 const FOLK_GROW = 2.5;
 const BEAST_GROW = 2;
+/** A third off the rabbit and the rat, and only those two. See the species
+ *  list in `_buildFolk`. */
+const RAT_RABBIT_SHRINK = 2 / 3;
+/**
+ * How tall the SCARED drawing is, against her standing height.
+ *
+ * THE SAME AS THE BLESSING POSE IT REPLACES, AND THAT IS MEASURED. Ear tips
+ * will not do here: the fright has her fur standing up above them. So the
+ * yardstick is the rope belt, the widest tan row in each drawing, which is the
+ * same belt at the same size in every pose:
+ *
+ *   ember_bless   704px tall / 183px belt  ->  3.847
+ *   ember_scared  714px tall / 181px belt  ->  3.945   (+2.6%)
+ *   frost_bless   708px tall / 131px belt  ->  5.405
+ *   frost_scared  724px tall / 139px belt  ->  5.209   (-3.6%)
+ *
+ * Opposite signs, half a percent apart on average, so one number for both. Its
+ * own literal and not an alias, for the reason `BLESS_STRETCH` gives.
+ */
+const SCARED_STRETCH = 0.86;
 /**
  * How hard the ground moves under the huddle, in model units.
  *
@@ -477,6 +497,21 @@ const BR_DASH_DUR = 0.4;
  *  a shield up for a third of a second is a glitch, and this is the one of the
  *  three that was asked for by name. */
 const BR_WARD_DUR = 1.25;
+/**
+ * 壁 WARD, FLOATED: how long she hangs in her bubble at the top of a jump, and
+ * how slowly she drifts up while she does.
+ *
+ * "I'd also make one of the players at the ending bridge cutscene use the Ward
+ * ability to jump and float in the air for a few seconds before falling." A
+ * third move rather than a longer Ward, because the Ward on the approach is the
+ * real ability and this one is showing off. It uses the Power Dive's `hang` and
+ * lets gravity have her back afterwards, so the fall is an ordinary fall.
+ * `BR_FLOAT_SPAN` is how much of the path that covers, so a filler hop is not
+ * dropped on the moment she lands.
+ */
+const BR_FLOAT = 2.4;
+const BR_FLOAT_RISE = 0.3;
+const BR_FLOAT_SPAN = 0.45;
 /** 瞬 FLASH STEP: how long she is gone, and how far down the road she comes
  *  back. `DODGE.invuln` is 0.5 seconds in the real move and this is the same
  *  half second; 11 units is a little over a second of running, which is far
@@ -518,7 +553,10 @@ const BR_RING = 0.45;
  */
 const BR_SCRIPT = [
   [[0.02, 'blink'], [0.26, 'dash'], [0.52, 'jump'], [0.66, 'dive']],
-  [[0.14, 'ward'], [0.48, 'double'], [0.70, 'dash']],
+  /* The second of them floats in her Ward from the start of the deck. It was
+     a double jump and a Dash here; the float covers both their places, and the
+     other two rows still carry double jumps. */
+  [[0.14, 'ward'], [0.44, 'float']],
   [[0.10, 'dash'], [0.46, 'dive'], [0.72, 'double']],
   [[0.08, 'dive'], [0.30, 'ward'], [0.54, 'blink'], [0.70, 'double']],
 ];
@@ -1777,13 +1815,16 @@ export class FinaleShow {
       const art = this.cast.kittens[si];
       const set = this._folkSet(art, list, FOLK_H * FOLK_GROW, 1);
       if (!set) continue;
-      /* HER PAWS IN THE AIR, for the earthquake — see `_stepFolk`. Sized the
-         way `_buildCast` sizes the cheer: `BLESS_STRETCH` is `player.js`'s own
-         measurement of this drawing against this kitten. */
-      const up = this.cast?.bless?.[si];
+      /* HER FRIGHT, for the earthquake — see `_stepFolk`. The scared sheet
+         when there is one, and the blessing pose it replaced when there is
+         not: that was the stand-in for a whole pass, and a missing file costs
+         the face and nothing else. Sized with `SCARED_STRETCH`, measured
+         against the blessing drawing, or `BLESS_STRETCH` for the fallback. */
+      const fright = this.cast?.scared?.[si];
+      const up = fright?.texture ? fright : this.cast?.bless?.[si];
       if (up?.texture) {
         set.alt = this._folkSet(up, list, 0, 0,
-          this._quad(up, FOLK_H * FOLK_GROW * BLESS_STRETCH), false);
+          this._quad(up, FOLK_H * FOLK_GROW * (up === fright ? SCARED_STRETCH : BLESS_STRETCH)), false);
       }
     }
 
@@ -1797,7 +1838,12 @@ export class FinaleShow {
        is the shape the old list had and the reason for it has not changed. */
     const kinds = [];
     const C = this.cast?.critters ?? null;
-    for (const [key, mul] of [['rabbit', 1.0], ['rat', 0.75], ['bird', 0.7]]) {
+    /* THE RABBIT AND THE RAT ARE A THIRD SMALLER THAN THEY WERE. "Some of the
+       animals are too big, like the rat and the rabbit, so we can make them
+       1/3rd smaller." They were 1.0 and 0.75, and `BEAST_GROW` doubled them,
+       so a rabbit stood nearly as tall as a townsperson. The bird and the panda
+       were not named and keep their sizes. */
+    for (const [key, mul] of [['rabbit', 1.0 * RAT_RABBIT_SHRINK], ['rat', 0.75 * RAT_RABBIT_SHRINK], ['bird', 0.7]]) {
       const a = C?.[key]?.calm ?? C?.[key];
       const shock = C?.[key]?.shock;
       if (a?.texture) {
@@ -2588,6 +2634,7 @@ ${sh.fragmentShader}`.replace(
       for (const at of BR_FILL) {
         const jitter = at + (Math.random() - 0.5) * 0.06;
         if (list.some((m) => Math.abs(m.at - jitter) < 0.07)) continue;
+        if (list.some((m) => m.kind === 'float' && jitter > m.at && jitter < m.at + BR_FLOAT_SPAN)) continue;
         list.push({ at: jitter, kind: 'jump' });
       }
       list.sort((x, y) => x.at - y.at);
@@ -3457,8 +3504,9 @@ ${sh.fragmentShader}`.replace(
            from the same jump, which is exactly the "interrupted" look. She is on
            the ground here in every authored case; the guard is for the day
            somebody re-times the table. */
-        if (m.kind === 'jump' || m.kind === 'double' || m.kind === 'dive') {
+        if (m.kind === 'jump' || m.kind === 'double' || m.kind === 'dive' || m.kind === 'float') {
           if (k.air > 0.01) { k.mv = null; } else {
+            if (m.kind === 'float') { k.fell = false; sfx('wardup', 0.30); }
             /* AND NOT ALL THE SAME HEIGHT. "Jumping randomly, multiple times,
                with random pauses between jumps" — the pauses come off the move
                list, which is the half of it a clock could never get right, and
@@ -3500,10 +3548,24 @@ ${sh.fragmentShader}`.replace(
         k.dropping = true;
         sfx('slash', 0.34);
       }
+      /* THE FLOAT IS THE SAME HANG AT THE TOP OF ONE JUMP, only long, rising
+         a little, and let go of rather than thrown down. */
+      if (k.mv === 'float' && k.vy <= 0 && k.hang === 0 && !k.fell) {
+        k.hang = BR_FLOAT;
+      }
       if (k.hang > 0) {
+        const floating = k.mv === 'float';
         k.hang = Math.max(0, k.hang - dt);
-        k.vy = 0;
-        if (k.hang === 0) k.vy = -BR_DIVE;
+        k.vy = floating ? BR_FLOAT_RISE : 0;
+        if (k.hang === 0) {
+          if (floating) {
+            k.vy = 0;
+            k.fell = true;
+            sfx('warddown', 0.22);
+          } else {
+            k.vy = -BR_DIVE;
+          }
+        }
       }
 
       /* --- gravity, and the ground under it ------------------------------- */
@@ -3539,7 +3601,7 @@ ${sh.fragmentShader}`.replace(
         } else {
           sfx('land', 0.22);
         }
-        if (k.mv === 'jump' || k.mv === 'double' || k.mv === 'dive') {
+        if (k.mv === 'jump' || k.mv === 'double' || k.mv === 'dive' || k.mv === 'float') {
           k.mv = null;
           k.dropping = false;
         }
@@ -3623,7 +3685,8 @@ ${sh.fragmentShader}`.replace(
          is held the rest of the way, rather than expanding for its whole life
          like the shockwave does: a shield that keeps growing is a blast. */
       if (k.ward) {
-        k.ward.visible = k.mv === 'ward';
+        /* ...and for the float, until she lets go of it. */
+        k.ward.visible = k.mv === 'ward' || (k.mv === 'float' && !k.fell);
         if (k.ward.visible) {
           const born = Math.min(1, (k.mvT / BR_WARD_DUR) * 5);
           k.ward.position.set(x, y + REAL_H * 0.55, z);
