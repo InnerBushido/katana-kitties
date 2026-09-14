@@ -293,9 +293,23 @@ first thing that happens with it. → [input.md](docs/notes/input.md)
 
 **The game saves itself now, and an afternoon can be picked back up.**
 `systems/savegame.js` takes a snapshot every 30 seconds once a run is five
-minutes old and **LOAD A SAVED GAME** in the pause menu puts one back. It never
-asks and never toasts: a notification every half minute for four hours is one a
-player learns to stop reading.
+minutes old and **PLAY SETTINGS → LOAD A SAVED GAME** in the pause menu puts one
+back (saving the game being left first, past five minutes). It never asks and
+never toasts: a notification every half minute for four hours is one a player
+learns to stop reading.
+
+**…and SAVE & QUIT GAME is the save made on purpose, and a kept game stays.**
+The old QUIT GAME saves before it closes; past five minutes the row is marked
+**kept** and the cap goes round it — five rows, eight once more than four are
+kept, always two spare beside them, ten at most; past eight kept, the
+least-played kept row goes, never the one saved last. The rule is `capFor` and
+`trimSaves` in `savegame.js`, and `world-check` §1c walks every sentence of the
+request through the real `putSave`. A save that fails does NOT quit.
+
+**The pause menu grew a PLAY SETTINGS group** holding WATCH AGAIN, LOAD A SAVED
+GAME and END THE GAME, and **new pause-menu rows go in PLAY SETTINGS or KITTENS &
+SCORES** — asked for in those words, and the top level is now pinned by name.
+WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 
 - **A save describes what the girls DID, never the world.** The islands, the
   houses, the roads and the props all rebuild identically from their own seeds

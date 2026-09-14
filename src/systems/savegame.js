@@ -30,6 +30,11 @@ import { MILESTONES } from './arenaquest.js';
    meant to be: this is one world that keeps going, not a branching save tree,
    and five is enough to get back past whatever just went wrong.
 
+   AND A GAME SOMEBODY ASKED TO KEEP IS NEVER "THE OLDEST". SAVE & QUIT GAME
+   marks a game that is five minutes long or more as kept, and the cap goes
+   round it rather than through it — `capFor` and `trimSaves` are the whole
+   rule, in the words it was asked for in.
+
    WHAT IT DOES *NOT* SAVE IS THE POINT OF `restore`. It does not describe the
    world; it describes what the PLAYERS have done to it. The islands, the
    houses, the roads and the props all rebuild themselves identically from
@@ -78,6 +83,48 @@ export const SAVE_VERSION = 2;
 export const MAX_SAVES = 5;
 
 /**
+ * THE GAMES SOMEBODY ASKED TO KEEP, and the room left beside them.
+ *
+ * Asked for in these words. A game saved by SAVE & QUIT GAME once it is past
+ * the five minutes is "marked as do not delete", so the cap takes another row
+ * instead; "if there are more than 4 saved like this, then we will increase
+ * the list to be 8 long maximum instead of 5"; past eight, "the one with the
+ * minimum amount of play time will be deleted first"; there is always "room
+ * for at least 1 new save file", with "a buffer of 2 more", "so a maximum of
+ * 10 can be on the list (8 manually saved and 2 non-manually, auto-saved,
+ * saves)"; and "if a manually saved game was the last one saved, even if it
+ * has the minimum amount of play time, it should not be deleted."
+ *
+ * A KEPT ROW STAYS KEPT FOR THE REST OF ITS AFTERNOON. Loading a kept game and
+ * playing on autosaves it every thirty seconds, and each of those writes is
+ * the same session's row — `putSave` carries the mark across, or the first
+ * autosave after a load would quietly un-keep the game somebody saved by hand.
+ */
+export const MAX_KEPT = 8;
+export const SPARE_SLOTS = 2;
+export const MAX_LIST = MAX_KEPT + SPARE_SLOTS;
+
+/**
+ * How long the list may be, given how many rows in it are kept.
+ *
+ *     kept 0–4   →  5    the old five; at four kept, one slot still turns over
+ *     kept 5–6   →  8    "increase the list to be 8 long maximum"
+ *     kept 7     →  9    so the buffer of two is still there
+ *     kept 8     →  10   "8 manually saved and 2 non-manually"
+ *
+ * THE KEPT-7 ROW IS WHERE THE SENTENCES HAD TO BE RECONCILED. A flat eight
+ * would leave one free slot at seven kept and none at eight — and "we need to
+ * leave room for at least 1 new save file" is the sentence the rest of the
+ * rule exists to protect. So from five kept up the list is the larger of
+ * eight and the kept count plus the two spare, which honours all four numbers
+ * as they were given.
+ */
+export function capFor(kept) {
+  if (kept < MAX_SAVES) return MAX_SAVES;
+  return Math.min(MAX_LIST, Math.max(MAX_KEPT, kept + SPARE_SLOTS));
+}
+
+/**
  * Seconds between automatic saves, and how long she has to have been playing
  * before the first one.
  *
@@ -117,8 +164,11 @@ export function listSaves() {
     return rows
       .filter((r) => r && r.v === SAVE_VERSION && typeof r.id === 'string'
         && Number.isFinite(r.at) && Array.isArray(r.players))
+      /* KEPT IS `true` OR IT IS NOT KEPT. A hand-edited `"yes"` is a string
+         somebody typed, not a decision somebody made in the game. */
+      .map((r) => (r.kept === true ? r : { ...r, kept: false }))
       .sort((a, b) => b.at - a.at)
-      .slice(0, MAX_SAVES);
+      .slice(0, MAX_LIST);
   } catch {
     return [];
   }
@@ -126,7 +176,7 @@ export function listSaves() {
 
 function writeAll(rows) {
   try {
-    window.localStorage.setItem(KEY, JSON.stringify(rows.slice(0, MAX_SAVES)));
+    window.localStorage.setItem(KEY, JSON.stringify(rows.slice(0, MAX_LIST)));
     return true;
   } catch {
     /* A FULL OR BLOCKED STORE IS NOT A CRASH. Private browsing throws on
@@ -154,12 +204,80 @@ function writeAll(rows) {
  *
  * @returns {boolean} whether it was actually written
  */
-export function putSave(snap) {
+export function putSave(snap, { spare = null } = {}) {
   if (!snap) return false;
-  const rest = snap.session
-    ? listSaves().filter((r) => r.session !== snap.session)
-    : listSaves();
-  return writeAll([snap, ...rest].slice(0, MAX_SAVES));
+  const all = listSaves();
+  const mine = snap.session ? all.find((r) => r.session === snap.session) : null;
+  /* THE MARK TRAVELS WITH THE AFTERNOON — see `MAX_KEPT`. */
+  const row = mine?.kept && !snap.kept ? { ...snap, kept: true } : snap;
+  const rest = snap.session ? all.filter((r) => r.session !== snap.session) : all;
+  return writeAll(trimSaves([row, ...rest], [row.id, spare]));
+}
+
+/**
+ * Cut a list (newest first) down to what `capFor` allows. PURE — no storage —
+ * so `world-check` can hand it any list it likes and read the answer.
+ *
+ * `spare` IS WHAT THIS CUT MAY NOT TAKE, whatever else is true of it: the row
+ * that was just written ("if a manually saved game was the last one saved ...
+ * it should not be deleted"), and during a load, the row being loaded — the
+ * game being left is written down first, and that write must not push the
+ * afternoon she just chose off the list out from under the load.
+ *
+ * KEPT ROWS GO ONLY PAST EIGHT, the least played first (and the older of two
+ * equal ones). UNKEPT ROWS GO OLDEST FIRST, which is the rule the list always
+ * had.
+ *
+ * IT CAN END ONE ROW OVER, IN ONE CASE, ON PURPOSE. Four kept, a fresh
+ * autosave, and a second unkept row being spared for a load is six rows
+ * against a cap of five with nothing it is allowed to take. Over by one until
+ * the next write is the right failure; deleting a game somebody asked to keep
+ * to make the number come out is the wrong one.
+ */
+export function trimSaves(rows, spare = []) {
+  const safe = new Set(spare.filter(Boolean));
+  let out = [...rows];
+  const keptRows = () => out.filter((r) => r.kept);
+  while (keptRows().length > MAX_KEPT) {
+    const victim = keptRows().filter((r) => !safe.has(r.id))
+      .sort((a, b) => (a.played ?? 0) - (b.played ?? 0) || a.at - b.at)[0];
+    if (!victim) break;
+    out = out.filter((r) => r !== victim);
+  }
+  const cap = capFor(keptRows().length);
+  while (out.length > cap) {
+    const victim = out.filter((r) => !r.kept && !safe.has(r.id))
+      .sort((a, b) => a.at - b.at)[0];
+    if (!victim) break;
+    out = out.filter((r) => r !== victim);
+  }
+  return out;
+}
+
+/** How long the list on this device may be right now. */
+export function saveCap(rows = listSaves()) {
+  return capFor(rows.filter((r) => r.kept).length);
+}
+
+/**
+ * SAVE & QUIT GAME's half of it: write this afternoon down NOW, and keep it if
+ * it is long enough to be worth keeping.
+ *
+ * UNDER FIVE MINUTES IT IS STILL WRITTEN, just not kept. Asked for as "if a
+ * player manually saves ... and over the 5 minutes minimum play time, then
+ * that save will be marked as do not delete" — so the gate decides the MARK,
+ * not whether the button saves. Somebody who presses SAVE & QUIT after three
+ * minutes has asked for a save and gets one; it simply turns over like an
+ * autosave, because three minutes is the length the five-minute rule was
+ * written to keep from crowding the list.
+ *
+ * @returns {?{kept: boolean, id: string}} null if nothing could be written
+ */
+export function saveByHand(game) {
+  const snap = snapshot(game);
+  if (!snap) return null;
+  snap.kept = (game.playT ?? 0) >= AUTOSAVE_AFTER;
+  return putSave(snap) ? { kept: snap.kept, id: snap.id } : null;
 }
 
 export function dropSave(id) {
@@ -388,7 +506,11 @@ export function describe(snap, world = null) {
   const done = snap.world?.scored?.length ?? 0;
   return {
     id: snap.id,
-    when: `${when.getFullYear()}-${two(when.getMonth() + 1)}-${two(when.getDate())}`
+    session: snap.session ?? null,
+    /** Saved by hand and kept — see `MAX_KEPT`. The row says so, or a list
+     *  that deletes some games and not others reads as random. */
+    kept: !!snap.kept,
+    when:`${when.getFullYear()}-${two(when.getMonth() + 1)}-${two(when.getDate())}`
       + ` ${two(when.getHours())}:${two(when.getMinutes())}`,
     /* HOURS AND MINUTES, because "247 minutes" is a number a nine-year-old has
        to do arithmetic on to recognise her own afternoon. */

@@ -1339,8 +1339,21 @@
               <b>The game saves itself.</b> Once you have been playing for five
               minutes it writes your adventure down every thirty seconds — no
               button to press, nothing to remember. Open the pause menu with
-              <b>Esc</b> or <b>+ / Start</b> and choose <b>LOAD A SAVED GAME</b>
-              to pick one up again.
+              <b>Esc</b> or <b>+ / Start</b>, go to <b>PLAY SETTINGS</b> and
+              choose <b>LOAD A SAVED GAME</b> to pick one up again. Loading one
+              saves the game you are playing first, if it is five minutes long.
+            </p>
+            <!-- THE KEEP RULE, IN THE SAME NUMBERS AS `capFor`. `world-check`
+                 reads "five", "eight" and "ten" out of this paragraph against
+                 MAX_SAVES, MAX_KEPT and MAX_LIST. -->
+            <p class="ht-note">
+              <b>Want to keep a game for good?</b> Go to <b>PLAY SETTINGS → END
+              THE GAME → SAVE &amp; QUIT GAME</b>. Once a game is five minutes
+              long, that marks it <b>★ kept</b>, and newer games can't push it off
+              the list. Keep more than four and the list grows to eight, and it
+              always leaves room for two more games beside them — ten at most.
+              Keep more than eight and the kept game you played for the shortest
+              time goes first, but never the one you saved last.
             </p>
             <p class="ht-note">
               <b>One row per game.</b> However long you play, your adventure is
@@ -1581,13 +1594,21 @@
              Moving RESTART, TITLE SCREEN and QUIT GAME inside END THE GAME
              makes that stronger rather than weaker: there is now no way to
              reach any of them by overshooting RESUME, and each still asks
-             first once you get there. -->
+             first once you get there.
+
+             AND THE ONCE-AN-AFTERNOON ROWS ARE ONE PRESS DOWN AGAIN, UNDER
+             PLAY SETTINGS. Asked for as: "add a new section called Play
+             Settings and let's move the Load a Saved Game, End the Game, Watch
+             Again to it. Any new menu settings should either be added to this
+             Play Settings or Kittens & Scores screen." THAT LAST SENTENCE IS A
+             RULE FOR THIS LIST: a new row goes inside one of those two panels,
+             never up here, and `world-check` pins the rows below by name so the
+             list cannot grow back to fifteen one honest row at a time. -->
         <div class="pause-menu">
           <button class="menu-btn primary" data-action="resume">RESUME</button>
           <button class="menu-btn" data-action="help">HOW TO PLAY</button>
           <button class="menu-btn" data-action="settings">SETTINGS</button>
           <button class="menu-btn" data-action="kittens">KITTENS &amp; SCORES</button>
-          <button class="menu-btn" data-action="watch">WATCH AGAIN</button>
           <!-- ONLY WHILE A MATCH IS ON. Shown by Game.setPaused, which asks
                `tournament.active`, and hidden the rest of the time: an offer to
                quit a match nobody is fighting is a button that cannot mean
@@ -1603,15 +1624,11 @@
                nothing. -->
           <button class="menu-btn hidden" id="btn-quit-match" data-action="quit-match">
             QUIT THE MATCH</button>
-          <!-- THE SAVES, DIRECTLY ABOVE THE ENDINGS AND NOT INSIDE THEM.
-               Loading one throws the current afternoon away exactly the way
-               RESTART does, so it belongs at the final end of the list - but it
-               is not an ENDING, it is the opposite of one, and burying "carry
-               on from Tuesday" inside a panel called END THE GAME is the kind
-               of filing that makes a nine-year-old believe the feature is not
-               there. It asks first, like everything else down here. -->
-          <button class="menu-btn" data-action="saves">LOAD A SAVED GAME</button>
-          <button class="menu-btn" data-action="ending">END THE GAME</button>
+          <!-- LAST, BECAUSE WHAT IS INSIDE IT IS THE MOST FINAL THING HERE:
+               loading a save and the three endings both throw this afternoon
+               away. The watch rows ride along because they are the other thing
+               you do once an afternoon, and they are the first row inside. -->
+          <button class="menu-btn" data-action="playset">PLAY SETTINGS</button>
         </div>
         <p class="note">
           <b>Esc</b> or <b>+ / Start</b> on a controller opens and closes this.
@@ -1654,6 +1671,37 @@
       </div>
     </div>
 
+    <!-- PLAY SETTINGS: the afternoon itself — watch it, pick an old one up,
+         or end this one. Three rows that each open their own panel, with this
+         one still up behind them, so BACK from any of them lands here.
+
+         LEAST TO MOST FINAL, the order every list in this menu keeps: watching
+         changes nothing, loading throws this game away (after saving it), and
+         the endings throw it away on purpose.
+
+         THE SAVES ARE DIRECTLY ABOVE THE ENDINGS AND NOT INSIDE THEM, for the
+         reason they were given at the top level: loading is the opposite of an
+         ending, and burying "carry on from Tuesday" inside a panel called END
+         THE GAME makes a nine-year-old believe the feature is not there.
+
+         A NEW ROW FOR THE PAUSE MENU GOES IN HERE OR IN KITTENS & SCORES —
+         asked for in those words; see the comment on the pause menu. -->
+    <div id="panel-play" class="screen overlay hidden">
+      <div class="panel pause-panel">
+        <h2>PLAY SETTINGS</h2>
+        <div class="pause-menu">
+          <button class="menu-btn" data-action="watch">WATCH AGAIN</button>
+          <button class="menu-btn" data-action="saves">LOAD A SAVED GAME</button>
+          <button class="menu-btn" data-action="ending">END THE GAME</button>
+        </div>
+        <p class="note">
+          Loading a saved game or ending this one asks you first.
+          <b>SAVE &amp; QUIT GAME</b> is inside END THE GAME.
+        </p>
+        <button class="menu-btn back" data-close>BACK</button>
+      </div>
+    </div>
+
     <!-- The user's "Storyline". Both rows play something AT you and neither
          changes anything, which is why they are the group it was safe to move
          furthest from the top. -->
@@ -1662,11 +1710,20 @@
         <h2>WATCH AGAIN</h2>
         <div class="pause-menu">
           <button class="menu-btn" data-action="story">WATCH THE STORY AGAIN</button>
+          <!-- ONLY ONCE THE ENDING HAS REALLY PLAYED. Asked for as "after the
+               ending cutscene plays, let's add that ... so people can rewatch
+               it". Hidden until then by Game._paintWatch, which asks the two
+               honest questions together — did THIS game reach 100%, and did the
+               scene actually start — so a row cannot offer to "watch again" a
+               thing nobody has seen, and cannot spoil it either. A hidden row
+               is skipped by MenuNav, which filters on `offsetParent`. -->
+          <button class="menu-btn hidden" id="btn-ending-again"
+            data-action="ending-again">WATCH THE ENDING AGAIN</button>
           <button class="menu-btn" data-action="trailer">WATCH THE TRAILER</button>
         </div>
         <p class="note">
-          Nothing here changes your game — the story and the trailer just play,
-          and <b>Esc</b> or <b>+ / Start</b> stops either one.
+          Nothing here changes your game — they just play, and <b>Esc</b> or
+          <b>+ / Start</b> stops any of them.
         </p>
         <button class="menu-btn back" data-close>BACK</button>
       </div>
@@ -1685,13 +1742,20 @@
         <div class="pause-menu">
           <button class="menu-btn" data-action="restart">RESTART</button>
           <button class="menu-btn" data-action="title">TITLE SCREEN</button>
-          <!-- QUIT GAME IS LAST, UNDER TITLE SCREEN. What it can actually DO
-               depends on the browser — see Game.quitGame. -->
-          <button class="menu-btn" data-action="quit">QUIT GAME</button>
+          <!-- SAVE & QUIT GAME IS LAST, UNDER TITLE SCREEN. It was QUIT GAME,
+               and it now writes this afternoon down before it goes — the one
+               save a player makes on purpose, beside the automatic ones — and
+               a game five minutes long or more is KEPT: newer games cannot push
+               it off the list. See Game.saveAndQuit and `saveByHand`. What
+               closing can actually DO depends on the browser — Game.quitGame.
+               The action name stays `quit`, so every check and confirm that
+               already pointed at it still does. -->
+          <button class="menu-btn" data-action="quit">SAVE &amp; QUIT GAME</button>
         </div>
         <p class="note">
           Each of these asks you first, and the record board is kept whichever
-          one you pick.
+          one you pick. <b>SAVE &amp; QUIT GAME</b> saves your game before it
+          goes, and keeps it once it is five minutes long.
         </p>
         <button class="menu-btn back" data-close>BACK</button>
       </div>

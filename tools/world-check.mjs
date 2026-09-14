@@ -36,6 +36,7 @@ import { FinaleShow } from '../src/systems/finaleshow.js';
 import { buildBridge, mergeParts as mergeBuilt } from '../src/world/build.js';
 import {
   SAVE_VERSION, MAX_SAVES, AUTOSAVE_EVERY, AUTOSAVE_AFTER,
+  MAX_KEPT, SPARE_SLOTS, MAX_LIST, capFor, trimSaves, saveCap,
   worldSig, listSaves, putSave, dropSave, clearSaves,
   snapshot, describe, restore,
   castRow, applyCast, meaningful, newSessionId,
@@ -16881,8 +16882,12 @@ console.log('\n--- one press is not enough, and one player drives ---');
      of these throws away something a nine-year-old spent an afternoon on. */
   for (const act of ['restart', 'quit-match', 'quit', 'title']) {
     const at = main.indexOf("if (a === '" + act + "') {");
+    /* BOUNDED BY THE NEXT HANDLER, not by 200 characters. SAVE & QUIT's
+       handler grew a comment saying why its question has two wordings, and
+       the fixed window went red over a handler that still asks first. */
+    const end = main.indexOf("if (a === '", at + 10);
     ok(act + ' asks before it acts',
-      at > 0 && main.slice(at, at + 200).includes('this.confirm.ask({'));
+      at > 0 && main.slice(at, end > at ? end : at + 1500).includes('this.confirm.ask({'));
   }
   /* DROP OUT is built in JS rather than sitting in the markup, and it matters
      more than the rest: it is directly above RESTART in the list, its words
@@ -16934,6 +16939,30 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...except QUIT THE MATCH, which is the exit you need in a hurry',
       order.includes('quit-match') && /id="btn-quit-match"[^>]*class="[^"]*hidden|class="[^"]*hidden[^"]*"[^>]*id="btn-quit-match"/
         .test(pause.replace(/\n\s*/g, ' ')));
+
+    /* --- AND THE ONCE-AN-AFTERNOON ROWS LIVE UNDER PLAY SETTINGS ---------
+       Asked for as "add a new section called Play Settings and let's move the
+       Load a Saved Game, End the Game, Watch Again to it. Any new menu settings
+       should either be added to this Play Settings or Kittens & Scores screen."
+       The last sentence is a rule about THIS list, so the list is pinned by
+       name, exactly: a seventh row up here is the drift this block exists for,
+       and it now has to be argued with rather than slipped in. */
+    ok('...and the top level is exactly these rows, new ones go in a group',
+      order.join(' ') === 'resume help settings kittens quit-match playset', order.join(' '));
+    for (const act of ['watch', 'saves', 'ending']) {
+      ok(`...so ${act.toUpperCase()} moved one press down, into PLAY SETTINGS`,
+        !order.includes(act));
+    }
+    const pAt = html.indexOf('id="panel-play"');
+    const play = html.slice(pAt, html.indexOf('id="panel-', pAt + 20));
+    const inPlay = [...play.matchAll(/data-action="([a-z-]+)"/g)].map((m) => m[1]);
+    /* LEAST TO MOST FINAL INSIDE IT TOO: watching changes nothing, a load
+       saves and then leaves, the endings leave on purpose. */
+    ok('...where they run watch, load, end — least to most final',
+      pAt > 0 && inPlay.join(' ') === 'watch saves ending', inPlay.join(' '));
+    ok('...under a heading that says PLAY SETTINGS',
+      /<h2>PLAY SETTINGS<\/h2>/.test(play)
+      && /data-action="playset">PLAY SETTINGS</.test(pause));
   }
 
   /* --- ONE LIST OF SUB-PANELS, BECAUSE THERE WERE FOUR ------------------
@@ -16968,7 +16997,14 @@ console.log('\n--- one press is not enough, and one player drives ---');
       ids[0] === 'panel-board', ids[0]);
     /* AND EVERY ONE OF THEM CAN BE LEFT. A group you can open and not close is
        the frozen game the sixth non-negotiable is about. */
-    for (const id of ['panel-kittens', 'panel-watch', 'panel-ending']) {
+    /* PLAY SETTINGS IS INNERMOST OF NOTHING AND OUTERMOST OF THREE, so it has
+       to come after them in both lists or Escape closes it from under them. */
+    ok('...and PLAY SETTINGS closes after the three panels it opens',
+      ids.indexOf('panel-play') > ids.indexOf('panel-ending')
+      && ids.indexOf('panel-play') > ids.indexOf('panel-saves')
+      && menuNav.indexOf("'panel-play'") > menuNav.indexOf("'panel-ending'")
+      && menuNav.indexOf("'panel-play'") < menuNav.indexOf("'panel-pause'"));
+    for (const id of ['panel-kittens', 'panel-watch', 'panel-ending', 'panel-play']) {
       const seg = html.slice(html.indexOf(`id="${id}"`), html.indexOf(`id="${id}"`) + 2200);
       ok(`...and ${id} carries a way out`, /class="menu-btn back" data-close/.test(seg));
     }
@@ -21782,6 +21818,99 @@ console.log('\n--- one press is not enough, and one player drives ---');
     clearSaves();
   }
 
+  /* --- 1c. A GAME SOMEBODY ASKED TO KEEP IS NEVER "THE OLDEST" -----------
+     Asked for in one long paragraph, and every sentence of it is a check
+     here: SAVE & QUIT GAME past five minutes marks a save "do not delete";
+     "more than 4 saved like this" grows the list to eight; past eight "the one
+     with the minimum amount of play time will be deleted first"; there is
+     always room for two more games beside them, "so a maximum of 10"; and "if a
+     manually saved game was the last one saved, even if it has the minimum
+     amount of play time, it should not be deleted."
+
+     BEHAVIOUR, THROUGH THE REAL `putSave`, not a table of constants — the
+     constants are checked once, and then every rule is a list written and read
+     back. */
+  {
+    const K = (at, played = 600) =>
+      row(at, { session: `k${at}`, id: `k${at}`, played, kept: true });
+    const U = (at) => row(at, { session: `u${at}`, id: `u${at}` });
+    const ids = () => listSaves().map((r) => r.id).join();
+    const keptN = () => listSaves().filter((r) => r.kept).length;
+
+    ok('the keep rule is five, then eight, then ten — two spare beside eight kept',
+      MAX_SAVES === 5 && MAX_KEPT === 8 && SPARE_SLOTS === 2 && MAX_LIST === 10);
+    ok('...and the cap for 0–8 kept rows reads 5 5 5 5 5 8 8 9 10',
+      [0, 1, 2, 3, 4, 5, 6, 7, 8].map(capFor).join(' ') === '5 5 5 5 5 8 8 9 10',
+      [0, 1, 2, 3, 4, 5, 6, 7, 8].map(capFor).join(' '));
+    /* "WE NEED TO LEAVE ROOM FOR AT LEAST 1 NEW SAVE FILE" — at every count. */
+    ok('...so from five kept up there is always room for two games that are not',
+      [5, 6, 7, 8].every((k) => capFor(k) - k >= SPARE_SLOTS));
+
+    clearSaves();
+    putSave(K(100, 900));
+    for (let i = 1; i <= 8; i++) putSave(U(1000 * i));
+    ok('a kept game is not pushed off by eight newer ones',
+      listSaves().length === MAX_SAVES && listSaves().some((r) => r.id === 'k100'), ids());
+    ok('...and the four that share the list with it are the newest four',
+      ids() === 'u8000,u7000,u6000,u5000,k100', ids());
+
+    clearSaves();
+    for (let i = 1; i <= 5; i++) putSave(K(i * 100));
+    for (let i = 1; i <= 6; i++) putSave(U(1000 * i));
+    ok('five kept games grow the list to eight',
+      listSaves().length === 8 && keptN() === 5, ids());
+    ok('...and the three unkept rows beside them are the three newest',
+      listSaves().filter((r) => !r.kept).map((r) => r.id).join() === 'u6000,u5000,u4000', ids());
+
+    clearSaves();
+    for (let i = 1; i <= 8; i++) putSave(K(i * 100));
+    for (let i = 1; i <= 5; i++) putSave(U(1000 * i));
+    ok('eight kept games make ten rows: eight kept and two that are not',
+      listSaves().length === MAX_LIST && keptN() === MAX_KEPT
+      && listSaves().filter((r) => !r.kept).map((r) => r.id).join() === 'u5000,u4000', ids());
+
+    clearSaves();
+    for (let i = 1; i <= 8; i++) putSave(K(i * 100, 600 + i * 60));
+    putSave(K(5000, 301));
+    ok('a ninth kept game drops the kept game with the least play time',
+      keptN() === MAX_KEPT && !listSaves().some((r) => r.id === 'k100'), ids());
+    ok('...but never the one just saved, even when it is the shortest of them all',
+      listSaves().some((r) => r.id === 'k5000'), ids());
+    putSave(K(6000, 1200));
+    ok('...which becomes fair game once it is no longer the last one saved',
+      !listSaves().some((r) => r.id === 'k5000') && keptN() === MAX_KEPT, ids());
+
+    /* THE MARK TRAVELS WITH THE AFTERNOON. Load a kept game, play on, and the
+       autosave thirty seconds later is the same session's row without a `kept`
+       on it — which would un-keep it without anybody deciding to. */
+    clearSaves();
+    putSave(K(100, 900));
+    putSave(row(200, { session: 'k100', id: 'k100b', played: 930 }));
+    ok('an autosave of a kept game keeps it kept',
+      listSaves().length === 1 && listSaves()[0].id === 'k100b' && listSaves()[0].kept === true,
+      JSON.stringify(listSaves().map((r) => [r.id, r.kept])));
+
+    /* A LOAD WRITES THE GAME BEING LEFT FIRST, and that write must not push
+       the chosen row off the list under it. Five unkept rows, the oldest being
+       loaded, a sixth afternoon written with the oldest spared. */
+    clearSaves();
+    for (let i = 1; i <= 5; i++) putSave(U(1000 * i));
+    putSave(U(9000), { spare: 'u1000' });
+    ok('the row being loaded is spared by the save written before the load',
+      listSaves().some((r) => r.id === 'u1000') && !listSaves().some((r) => r.id === 'u2000'), ids());
+
+    /* KEPT IS `true` OR NOTHING — a hand edit is not a decision. */
+    clearSaves();
+    localStorage.setItem(KEY, JSON.stringify([{ ...U(100), kept: 'yes' }]));
+    ok('a row whose kept is not literally true is not kept',
+      listSaves()[0]?.kept === false);
+    ok('...and the debug row counts against the cap this device really has',
+      saveCap([]) === MAX_SAVES && saveCap([...Array(8)].map(() => ({ kept: true }))) === MAX_LIST);
+    ok('...while trimming is pure, so a check can hand it any list at all',
+      trimSaves([U(3), U(2), U(1)], []).length === 3);
+    clearSaves();
+  }
+
   /* --- 2. VALIDATED ON THE WAY IN, LIKE THE RECORD BOARD ----------------
      Same rule and the same reason: this survives a reload, so it can also be
      sitting there half-written from a tab that was closed mid-save, or edited
@@ -22222,14 +22351,16 @@ console.log('\n--- one press is not enough, and one player drives ---');
     const mints = main.match(/newSessionId\(\)/g) ?? [];
     ok('...while an autosave itself never mints one, which is what filled all five',
       mints.length === 2, `${mints.length} places mint a session id`);
-    const auto0 = main.slice(main.indexOf('  _autoSave() {'),
-      main.indexOf('  _autoSave() {') + 700);
+    /* `_autoSave(` AND NOT `_autoSave() {`: it takes the load's `spare` now,
+       and the exact signature was never what these checks were about. */
+    const auto0 = main.slice(main.indexOf('  _autoSave('),
+      main.indexOf('  _autoSave(') + 700);
     ok('...so thirty seconds later it is the same row, brought up to date',
       !/newSessionId/.test(auto0) && /putSave\(/.test(auto0));
     /* AND IT NEVER TOASTS. A notification every thirty seconds for four hours
        is a notification a player learns to stop reading. */
-    const auto = main.slice(main.indexOf('  _autoSave() {'),
-      main.indexOf('  _autoSave() {') + 700);
+    const auto = main.slice(main.indexOf('  _autoSave('),
+      main.indexOf('  _autoSave(') + 700);
     ok('...and it never says anything while it does it', !/this\.toast/.test(auto));
     ok('...and a browser that refuses to store it does not take the game down',
       /catch \(err\)/.test(auto) && /_saveBroke/.test(auto));
@@ -22292,8 +22423,18 @@ console.log('\n--- one press is not enough, and one player drives ---');
        OPENS WITH `restart`. Saying so and dropping the row is the only honest
        answer: a row that crashes the game every time it is pressed has to stop
        being offered. */
-    const load = main.slice(main.indexOf('  _loadSave(id) {'),
-      main.indexOf('  _loadSave(id) {') + 1800);
+    /* TO THE END OF THE METHOD, not 1800 characters: the save-before-load
+       comment pushed the waiting toast past a fixed window. */
+    /* THE METHOD'S OWN CLOSING BRACE, CRLF OR NOT. The first version looked
+       for '\n  }\n', which never occurs in a CRLF checkout — indexOf gave -1,
+       the slice ran to the end of main.js, and every check reading it passed
+       or failed on text from forty other methods. */
+    const endOf = (src, from) => {
+      const m = /\r?\n {2}\}\r?\n/.exec(src.slice(from));
+      return m ? from + m.index : from;
+    };
+    const loadAt = main.indexOf('  _loadSave(id) {');
+    const load = main.slice(loadAt, endOf(main, loadAt));
     ok('...and a save that cannot be loaded is removed rather than re-offered',
       /dropSave\(id\)/.test(load) && /this\.toast/.test(load));
     /* WAITING, NOT DROPPED, AND IT SAYS WHAT TO DO ABOUT IT. Sixth
@@ -22304,6 +22445,75 @@ console.log('\n--- one press is not enough, and one player drives ---');
       /out\.waiting/.test(load) && !/out\.dropped/.test(load));
     ok('...as an instruction, because those kittens come back the moment you play them',
       /join or/.test(load) && /switch to that kitten/.test(load));
+
+    /* --- 8b. LOADING SAVES THE GAME BEING LEFT ----------------------------
+       Asked for as "the current play session should auto-save when Loading a
+       new play session, that is, if past the 5 minutes of play requirement."
+       Before `restore`, because `restore` opens with `restart` and after it
+       there is nothing left to save. */
+    const pre = main.slice(main.indexOf('  _saveBeforeLoad(session) {'), loadAt);
+    ok('a load writes the game being left down first',
+      load.indexOf('_saveBeforeLoad(snap.session)') > 0
+      && load.indexOf('_saveBeforeLoad(snap.session)') < load.indexOf('restore(this, snap)'),
+      `${load.indexOf('_saveBeforeLoad(snap.session)')} vs ${load.indexOf('restore(this, snap)')}`);
+    ok('...sparing the row being loaded, so that write cannot push it off',
+      /spare: snap\.id/.test(load));
+    ok('...behind the same five minutes as every autosave, and not over its own row',
+      /this\.playT >= AUTOSAVE_AFTER/.test(pre) && /session !== this\.sessionId/.test(pre));
+    ok('...and the question says so before she answers it',
+      /_saveBeforeLoad\(row\.session\)/.test(ask) && /saved first/.test(ask));
+
+    /* --- 8c. SAVE & QUIT GAME ---------------------------------------------
+       "Make it if players Quit Game (we can rename it to 'Save & Quit Game'),
+       it will save the current play session." */
+    ok('QUIT GAME is SAVE & QUIT GAME now',
+      /data-action="quit">SAVE &amp; QUIT GAME</.test(html) && !/>QUIT GAME</.test(html));
+    const qAt = main.indexOf("if (a === 'quit') {");
+    const quitH = main.slice(qAt, main.indexOf("if (a === '", qAt + 10));
+    ok('...and its question says whether the game will be kept, in words',
+      /SAVE AND QUIT\?/.test(quitH) && /YES, SAVE AND QUIT/.test(quitH)
+      && /NO, KEEP PLAYING/.test(quitH) && /AUTOSAVE_AFTER/.test(quitH)
+      && /not kept/.test(quitH) && /saveAndQuit\(\)/.test(quitH));
+    const sq = main.slice(main.indexOf('  saveAndQuit() {'),
+      endOf(main, main.indexOf('  saveAndQuit() {')));
+    ok('...and it saves BEFORE the window is asked to close',
+      sq.indexOf('saveByHand(this)') > 0 && sq.indexOf('saveByHand(this)') < sq.indexOf('this.quitGame('));
+    /* A BUTTON CALLED SAVE & QUIT THAT QUITS ON A FAILED SAVE broke the one
+       promise in its name. */
+    ok('...and a save that failed stays open and says so, rather than quitting',
+      /if \(!out\)/.test(sq) && sq.indexOf('this.toast(') < sq.indexOf('this.quitGame(')
+      && /return false/.test(sq));
+    const sgSrc = readFileSync(new URL('../src/systems/savegame.js', import.meta.url), 'utf8');
+    const byHand = sgSrc.slice(sgSrc.indexOf('export function saveByHand('),
+      sgSrc.indexOf('export function dropSave('));
+    ok('...and it is kept only past the same five minutes',
+      /snap\.kept = \(game\.playT \?\? 0\) >= AUTOSAVE_AFTER/.test(byHand));
+    ok('...and a kept row says so on the list',
+      /r\.kept/.test(paint) && /sv-kept/.test(paint) && /★ kept/.test(paint)
+      && /MAX_LIST/.test(paint));
+
+    /* --- 8d. WATCH THE ENDING AGAIN ----------------------------------------
+       "After the ending cutscene plays, let's add that to the Play Settings so
+       people can rewatch it if they want." Only AFTER: a row offering to watch
+       again a thing nobody has seen is a spoiler with a wrong verb. */
+    const wAt = html.indexOf('id="panel-watch"');
+    const watchP = html.slice(wAt, html.indexOf('id="panel-', wAt + 20)).replace(/\s+/g, ' ');
+    ok('the ending can be watched again from WATCH AGAIN, inside PLAY SETTINGS',
+      /class="menu-btn hidden" id="btn-ending-again" data-action="ending-again">WATCH THE ENDING AGAIN/
+        .test(watchP));
+    const seen = main.slice(main.indexOf('  _endingSeen() {'), main.indexOf('  _paintWatch() {'));
+    ok('...shown only once THIS game reached the ending and the scene really started',
+      /this\._endingShown && this\.summonScene\?\.played\?\.finale/.test(seen)
+      && /_paintWatch\(\); show\('panel-watch'\)/.test(main));
+    const re = main.slice(main.indexOf('  replayEnding() {'),
+      endOf(main, main.indexOf('  replayEnding() {')));
+    ok('...and it refuses out loud in a live match or over another scene',
+      /tournament\?\.active/.test(re) && /_sceneActive\(\)/.test(re)
+      && (re.match(/this\.toast\(/g) ?? []).length >= 2);
+    ok('...and replays the scene only — no second Awakening, no second 100%',
+      re.indexOf('played.finale = false') < re.indexOf("start('finale'")
+      && !/_finaleDue/.test(re.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, ''))
+      && !/awaken\(/.test(re));
   }
 
   /* --- 9. AND THE HELP PAGE STOPS APOLOGISING FOR IT --------------------
@@ -22342,6 +22552,13 @@ console.log('\n--- one press is not enough, and one player drives ---');
       says(AUTOSAVE_EVERY, 'seconds'));
     ok('...and the same number of slots',
       /last five/.test(card) && MAX_SAVES === 5);
+    /* AND THE KEEP RULE IN THE SAME NUMBERS AS `capFor`. */
+    ok('...and the keep rule, in the numbers the code keeps',
+      /PLAY SETTINGS/.test(card) && /SAVE &amp; QUIT GAME/.test(card)
+      && /more than four/.test(card) && MAX_SAVES - 1 === 4
+      && /grows to eight/.test(card) && MAX_KEPT === 8
+      && /ten at most/.test(card) && MAX_LIST === 10
+      && /more than eight/.test(card) && /never the one you saved last/.test(card));
     /* THE ONE WARNING THAT IS STILL TRUE STAYS. They live in this browser on
        this computer, and clearing site data takes them — along with the record
        board. Dropping that with the rest of the apology would be trading one

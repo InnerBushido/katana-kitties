@@ -96,6 +96,15 @@ plus a toast naming Ctrl+W / ⌘W. **A button that silently does nothing reads a
 broken**, and "the browser will not let me" is a real answer where nothing at
 all is not.
 
+**It is SAVE & QUIT GAME now, and its question has two wordings.** It saves the
+afternoon before `window.close()` (which can succeed, so nothing may be queued
+after it), and past five minutes the save is kept for good. Under five it is
+saved but NOT kept, and the dialog says so — a girl who finds a three-minute
+game gone next week has to have been told, in the sentence she answered, that it
+could go. **A save that fails does not quit**: a button named SAVE & QUIT that
+closes an unsaved game has broken the one promise in its name, so it toasts and
+stays open, and TITLE SCREEN is still the row above it.
+
 ## The trade screen asks each girl separately, and only she can answer
 
 [systems/profile.js](../../src/systems/profile.js). This one does **not** use
