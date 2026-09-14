@@ -1333,3 +1333,126 @@ draws it as circles, which is what the first non-negotiable asks of it. The top
 tiers do run off the top edge at the widest moment — that is the licence in
 "even if parts of the island are cut off", spent on the part of the diagram that
 is already blowing out and fading.
+
+## The fourth pass — the road, the flat canes, the morning, and the action
+
+> For the "Crossing a bridge" with the 4 players doing special abilities, can
+> we have the camera angle like it was before? ... The bamboo is still not all
+> knocked over in the cutscene ... looks like the time is frozen and looks buggy
+> with them half fallen over.
+
+And, while it was being worked on: *"Should have the players running towards
+the camera like in the previous camera shot, but just have the camera zoomed
+out a bit to show the bridge and the torii gate."*
+
+### "Time looks frozen" — the third pass fixed the wrong thing
+
+The third pass concluded that nothing was paused, that the lens was standing in
+a grove, and moved the lens. The move was rejected and the canes were still
+wrong, because the canes were the fault. Measured at the cut to the crossing,
+the first shot after the shove that holds still long enough to look at: **of the
+46 canes the shove put down, 18 stood more than thirty degrees off the floor and
+one stood ten degrees off upright.** Every one of them was exactly where `slam`
+had told it to be. `slam` was the bug, twice:
+
+- it asked for 66 to 95 degrees of tip, so a third of the town went over
+  two-thirds of the way and stopped in mid-air; and
+- it wrote that tip as `(cos a * tip, yaw, sin a * tip)` on an XYZ euler, with
+  the yaw in the middle of the three turns. The yaw rotates the first tilt's axis
+  before the second is applied, so the two halves of the lean partly cancel and
+  how far a prop tipped depended on which way it happened to be facing.
+
+A fall is now two rotations composed in order — turn on its own axis, then lay
+it down about `up × direction` — to flat less at most 0.08 radians, and the wave
+**slerps** rather than lerping eulers. That also retires a fault nobody had
+reported: `Prop.update` integrates spin onto `rotation` while a prop tumbles, so
+a barrel can lie flat on `x = 2π + π/2`, and a lerp to zero stood it up by
+cartwheeling it. All 46 now rest between 85 and 90 degrees.
+
+**The check that existed passed the whole time.** `|x| + |z| > 0.3` is a prop
+that has *moved*, not a prop that is down. The new one reads the angle between
+the prop's own up and the world's off the quaternion.
+
+### The crossing, down the road again
+
+Side-on was the wrong call. What was wrong with the old shot was never its
+bearing: 22 units out and 7 up put the lens **six units behind a gate four units
+tall**, so the gate's feet were a third of a frame below the bottom edge, and the
+swing of 0.34 carried it out of the side before the shot was half over. The row
+is now the same road, eight back and two up — `a: π/2, dist 30, high 9, lift
+0.36, turn -0.1, in 0.08` — and at the cut the gate's feet stand on the subtitle
+box, its beam is at 0.26 in NDC under the near end of the deck, the crest is at
+0.60 and a kitten at the top of a double jump is at 0.92.
+
+**A search that scores only the frame will game the brief.** Some twenty
+thousand rows were solved against a recording of the crossing. The top of that
+list was first a three-quarter view half a radian off the deck, then a lens a
+metre and a half up with the bridge pinned to the top edge. Both ticked every
+box; neither was the shot, and the three-quarter view turned out to look at the
+deck through a cherry tree — 29 of its 33 sight lines. What the shot *is* comes
+from the brief and a reference frame; the numbers fit the framing inside it.
+
+`world-check` now asks what the shot is for, with the scene's own lens at eleven
+points across the push: it looks down the road from beyond the gate; the whole
+gate is in the picture and its beam is clear of the subtitles; the crest stands
+above the beam in the frame; there is room over it for a double jump; and no
+sight line from the lens to the deck crosses a cherry tree's crown. The four
+grove checks they replace were honest and were answering the wrong question.
+
+**The subtitle box is a fixed height in pixels**, so its top edge is -0.22 in
+NDC in an 800x475 preview and nearer -0.7 in a full-size window. The checks use
+the small window, which is the worst case.
+
+### Half the speed, and a sky you can watch change
+
+The "There is nothing left standing" truck is half its `pan` — a twelfth of a
+frame either side of the town instead of a sixth.
+
+The storm used to come down and the dawn go up from the ending's first frame,
+under three close shots of a barrel, a lantern and a cane, so most of the change
+was over before any shot had sky in it. A row can now carry `sky`. `start` still
+sets both targets — the seventh non-negotiable: what the world becomes is decided
+when the scene is accepted — but holds the easing, and the row carrying `sky`
+releases it. That row is the truck, about six and a half seconds in.
+`finish` releases it too, so an ending skipped before that shot still ends in
+the morning, and `resetSky` clears it for a new game.
+
+### The Dojo, aimed at the action and not at the model
+
+> Much of the action happens on the top 1/4th of the screen ... we should aim
+> the camera mostly where the action is taking place.
+
+Measured over a recording of the beat — every drawn corner of the show at
+sixty-nine moments — the median sat at **0.37 in NDC** and the circle's cone
+reached **1.57**, off the top of the picture. That is the structure of the scene
+and not a bad number: the model is the floor the action stands on, and the
+kittens, the angle and the cone all rise above it, so a lens aimed at the
+model's middle puts the action at the top by construction. The row now has a
+**negative** `lift` — the look point is above the mark — and starts three units
+closer with a smaller push: median 0.08, cone inside the frame to its 98th
+percentile. The note in the third pass about the tiers being licensed to run off
+the top is superseded.
+
+### How a shot is directed now
+
+This is the first draft of a method, kept because Richard wants it to become a
+skill once the ending's shots are right.
+
+1. **Fix the intent from the brief** — who runs at whom, what must be in view —
+   and a reference frame if there is one.
+2. **Record once, in a browser.** Play the scene with the harness below and save
+   the world-space positions of everything that matters, several times a second.
+3. **Search camera rows analytically** against that recording, scoring in NDC
+   with the scene's own lens: subject inside the frame, the action's median near
+   the centre, nothing important under the subtitle box, sight lines clear of
+   tree crowns and parked animals.
+4. **Screenshot the winner.** If it is not the brief, the scorer is wrong, not
+   the brief.
+5. **Write the check** that asks what the shot is for, so the next pass cannot
+   quietly undo it.
+
+The harness: `S.finish()` before every `S.start('finale', ...)`, set
+`b.dur = b.clip + TAIL` on each beat (and put it back in anything shared), step
+`S.update(1/60)` to the moment, then replace `S.update` so the frame holds. A
+screenshot shows the previous seek unless you wait about a second after it, and
+any edit to `src/` hot-reloads the page and wipes what was recorded.

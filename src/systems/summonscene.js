@@ -416,6 +416,21 @@ export const SCRIPTS = {
    not a shot of a crossing. `face` says which way the shot is about and `span`
    how far either side of it the measurement may go looking for air. Leave both
    out and it searches the circle, which is what the three naming shots want.
+   NO ROW USES THEM TODAY: the crossing that taught the measurement all three
+   went back to a typed bearing (see its row, and why). They are kept because
+   what they fix is still true of any shot that names a thing to look at.
+
+   `sky` IS WHERE THE MORNING STARTS. The ending takes Ryuuseki's storm down
+   and puts a dawn up, and both used to begin on the scene's first frame — under
+   three close shots of a barrel, a lantern and a cane, so most of the change
+   was over before the camera was ever on a shot with sky in it. "Can we also
+   have the 'sky changing' happening starting around this time, so that the
+   players can see the sky changing from the previous sky to the new sky?" The
+   row carrying `sky` releases the hold `start` puts on both channels, and
+   `finish` releases it too, so an ending skipped before that line still ends
+   in the morning. WHAT the sky will be is still decided when the scene is
+   accepted — the seventh non-negotiable — and only WHEN it starts to show is
+   cued.
 
    `lift` IS HOW FAR UP THE FRAME THE SUBJECT SITS, as a fraction of the frame
    — and it is a fraction rather than a number of units because a number of
@@ -624,10 +639,20 @@ export const FINALE_SHOTS = [
      reads the rotation. `turn` is zero here and `pan` does the move instead:
      the bearing is locked, the distance is locked, and the camera slides a
      third of a frame width across the wreck of a town. Nothing about the shot
-     turns, which is what was asked for twice. */
+     turns, which is what was asked for twice.
+
+     AND THEN AT HALF THE SPEED. "For the part 'there is nothing left standing'
+     let's have the camera move at half the speed, it moves too fast now." Half
+     the `pan` across the same stretch of line is half the speed, and it is
+     still centred on the mark, so the shot starts and ends a twelfth of a frame
+     either side of the town instead of a sixth.
+
+     `sky` — THE MORNING STARTS HERE. This is the first shot of the ending with
+     any sky in it, so the storm is seen going rather than found gone. See `sky`
+     on the table. */
   {
     beat: 0, from: say(0, 'There is nothing left'), off: 0.45, at: 'town', a: 0.62, dist: 82, high: 34,
-    lift: 0.11, turn: 0, pan: 0.34, in: 0, lin: true, stage: false, cue: null,
+    lift: 0.11, turn: 0, pan: 0.17, in: 0, lin: true, stage: false, cue: null, sky: true,
   },
   /* ...AND OUT, far enough that the archipelago is the frame. "Zoom out to show
      all the area and all the knocked over mischief, and also zoom out far
@@ -825,13 +850,31 @@ export const FINALE_SHOTS = [
      rings standing ON the model, so a shallow camera squashes it into a band of
      ellipses and a steep one draws it as circles — which is what the FIRST
      non-negotiable asks of it, and the reason that half of the ask is not a
-     contradiction of the other half. The tiers do run off the top edge at the
-     widest moment; that is the licence in "even if parts of the island are cut
-     off", spent on the part of the diagram that is already blowing out and
-     fading. */
+     contradiction of the other half.
+
+     AND THEN IT WAS AIMED AT THE ACTION, NOT AT THE MODEL. "Much of the action
+     happens on the top 1/4th of the screen... the bottom 3/4th of the screen
+     has not much action going on, so we should aim the camera mostly where the
+     action is taking place." Measured, every drawn corner of the show had its
+     median at 0.37 in NDC across the beat — well up the top half — and the
+     circle's cone reached 1.57, off the top of the picture. That is the
+     structure of the thing and not a bad number: the model is the FLOOR the
+     action stands on, and the kittens, the angle and the cone all rise above
+     it, so a lens aimed at the model's own middle puts the action at the top of
+     the frame by construction. `lift` is NEGATIVE here, the only row where it
+     is: the look point is above the mark rather than below it.
+
+     CHOSEN BY SCORING A RECORDING, NOT BY EYE. One real playthrough of the beat
+     was recorded — every drawn corner, sixty-nine moments — and a grid of rows
+     was solved against it in the frame. This one puts the median at 0.08 on
+     average, keeps the cone inside the frame to its 98th percentile, and starts
+     the lens three units closer than it was. A fixed `in` of a quarter could
+     not keep the cone in frame at the end of a closer push, so the push is
+     smaller and starts nearer: closer for the whole beat, not just the end of
+     it. */
   {
-    beat: 2, from: 0, at: 'dojo', a: 2.4, dist: 23, high: 18, lift: 0.07,
-    turn: -3.6, in: 0.24, dolly: true, lin: true, stage: false, cue: 'isles-in',
+    beat: 2, from: 0, at: 'dojo', a: 2.4, dist: 20, high: 14, lift: -0.18,
+    turn: -3.6, in: 0.16, dolly: true, lin: true, stage: false, cue: 'isles-in',
   },
   { beat: 2, from: say(2, 'They drifted'), keep: true, cue: 'isles-drift' },
   { beat: 2, from: say(2, 'You crossed'), keep: true, cue: 'isles-cross' },
@@ -846,42 +889,43 @@ export const FINALE_SHOTS = [
      'So stay. Fly.' we can have the camera fade in at the bridge and then show
      the players running together and jumping together."
 
-     IT USED TO LOOK ALONG THE DECK AND THAT PUT THE CAMERA INSIDE A GROVE.
-     Reported from play: "seems like time is paused at this part, so the bamboo
-     in the scene is not fully knocked over and is blocking the view." Nothing
-     was paused — `world.update` runs in the summon-scene branch of `Game._tick`
-     and the canes were mid-fall because they had only just been pushed. What
-     was wrong was where the lens was standing. `a: PI/2` at 22 units puts it at
-     (56, 12, 46), and the east grove is 48 canes on a 20-unit disc centred at
-     (58, 44): the camera was 2.8 units from the middle of a forest that
-     `heap-slam` had tipped over in forty-eight directions two shots earlier,
-     looking out through the whole thickness of it. A shot cannot be fixed by
-     un-pausing a clock that was already running.
+     IT LOOKS DOWN THE ROAD AGAIN, FROM BEHIND THE GATE. The pass before this
+     one swung it square across the deck, on the argument that the side of a
+     bridge is its arch. Wrong call, and said so twice: "can we have the camera
+     angle like it was before? Just need to make sure it works well with the
+     torii gate in the view", and then "should have the players running towards
+     the camera like in the previous camera shot, but just have the camera
+     zoomed out a bit to show the bridge and the torii gate."
 
-     AND THE REASON IT WAS AIMED THERE WAS A GUESS THAT DOES NOT SURVIVE BEING
-     LOOKED AT: that a bridge seen from the side is "a red wall". It is not.
-     This bridge's sides are eighteen railing POSTS — you see straight through
-     them — and from across the deck you get the arch, which is the only angle
-     that says bridge rather than red rectangle, and you get four kittens strung
-     out along it at four different distances instead of one behind another. So
-     `face` is 0.32 radians: square across the crossing and a fifth of a turn
-     toward its far end, which brings the road in at frame left and the torii
-     out at frame right.
+     WHAT WAS WRONG WITH "BEFORE" WAS NEVER THE BEARING. The canes it looked
+     past stood at every angle between upright and flat, because
+     `FinaleTide.slam` never actually laid them down (see `FLAT_SLACK`). And
+     22 units out at 7 up put the lens six units behind a gate four units tall:
+     the top beam was a bar across the bottom of the frame with the gate's feet
+     a third of a frame below the edge, and the swing of 0.34 carried it out of
+     the left of the picture before the shot was half over.
 
-     `span` LETS THE MEASUREMENT MOVE, AND `need` STOPS IT WANDERING. Measured
-     at nineteen units, the clearance climbs from 2 units at 0.2 radians to 7.5
-     at 0.6 and then falls off a cliff into the grove — so a plain "most
-     daylight wins" search went to 0.6 out of any arc that contained it and slid
-     the deck corner-to-corner through the subtitle box. Three units of air is
-     clear; past that the composition decides. `self` is ten units, because the
-     bridge's own posts stand on the sight line of every view of the bridge and
-     scored the entire compass negative. See `_clearAngle`, which had to learn
-     all three of those things before it could answer this.
+     SO: EIGHT BACK, TWO UP, SAME ROAD. Solved in the frame rather than typed,
+     with the top edge of the subtitle box as the floor of the picture: -0.22 in
+     NDC in a small window, the worst case, because the box is a fixed height in
+     pixels. At the cut the gate's feet stand on that edge, its top beam is at
+     0.26 just under the near end of the deck (0.19), the crest is at 0.60, the
+     far railing 0.70, and a kitten at the top of a double jump on the crest
+     0.92. The gate frames the road onto the bridge and the four of them run
+     down it at the lens and out underneath it — the old shot, with room.
 
-     AND IT IS CLOSER AND LOWER THAN IT WAS. Twenty-two units at seven high is a
-     shot looking down on a bridge; nineteen at nine and a half stands on the
-     bank with the deck across the frame, which is the one you can read a jump
-     against.
+     THE SWING IS SMALL. -0.1 rather than +0.34: a gate fourteen units from the
+     lens crosses the frame three times faster than a bridge thirty units off,
+     so the big swing that read as movement on the old shot is what walks the
+     gate out of this one. `world-check` holds all eight of its corners in frame
+     for the whole push.
+
+     AND THE SEARCH THAT FOUND "BETTER" IS WRITTEN DOWN HERE ON PURPOSE. A grid
+     of some twenty thousand rows scored only on what was in the frame chose,
+     first, a three-quarter view half a radian off the deck, and then a lens a
+     metre and a half up with the bridge pinned to the top edge. Both ticked
+     every box and neither was the shot. The numbers can say what is in frame;
+     which frame it is was the brief.
 
      AND THE WAY IN IS LONGER THAN A BLINK. "It should end at 'all a bridge has
      ever been.' with a slightly longer fade out and fade in on the next part."
@@ -891,9 +935,8 @@ export const FINALE_SHOTS = [
      comes back. A second of it, and the four of them are already running when
      it lifts — see `FinaleShow._seedBridge`. */
   {
-    beat: 3, from: 0, at: 'bridge', a: 0, dist: 19, high: 9.5, lift: 0.16,
-    turn: 0.15, in: 0.06, clear: true, face: 0.32, span: 1.6, self: 10,
-    stage: false, cue: 'bridge-run', fade: 1.0,
+    beat: 3, from: 0, at: 'bridge', a: Math.PI / 2, dist: 30, high: 9, lift: 0.36,
+    turn: -0.1, in: 0.08, stage: false, cue: 'bridge-run', fade: 1.0,
   },
   /* "...THE arena is open." — in on the first word of the clause, not on the
      third. "For the 'the arena is open' section, let's have camera fade into
@@ -1229,6 +1272,10 @@ export class SummonScene {
     if (which === 'finale') {
       this.duskWant = 0;
       this.dawnWant = DAWN_DEEP;
+      /* ...AND HOLDS IT THERE UNTIL THE LINE THAT SHOWS IT. See `sky` on the
+         shot table: the targets are set now, on acceptance, and the easing
+         toward them waits for the row that carries `sky`. */
+      this.skyHold = true;
     }
     this._next();
     return true;
@@ -1850,6 +1897,7 @@ export class SummonScene {
    */
   _cue(shot) {
     this.show?.cue(shot.cue ?? null);
+    if (shot.sky) this.skyHold = false;
     if (shot.cue === 'heap-raise') {
       /* THE CORNER, AND ONLY THE CORNER. `only` narrows what MOVES and never
          what is HELD: every knocked prop in the world is still in the tide's
@@ -1944,6 +1992,9 @@ export class SummonScene {
        Escape four seconds in, and what she gets back has to be the town she
        wrecked, on its side, to the last decimal. */
     this.tide.finish();
+    /* ...AND THE SKY IS LET GO, so an ending skipped before its `sky` row still
+       turns into the morning it promised rather than holding the storm. */
+    this.skyHold = false;
     /* ...AND THE STAGE COMES DOWN WITH IT, on the skip path as much as the
        end. Everything `FinaleShow` builds lives in the game's own scene graph:
        a model of the archipelago left behind on the Dojo floor would be there
@@ -1975,6 +2026,7 @@ export class SummonScene {
     this.dusk = 0;
     this.dawnWant = 0;
     this.dawn = 0;
+    this.skyHold = false;
   }
 
   /**
@@ -1989,6 +2041,12 @@ export class SummonScene {
    * call, both numbers, in the order `World.setSky` blends them.
    */
   updateSky(dt) {
+    /* HELD, NOT FROZEN AT A VALUE. The targets are already the morning; this
+       only stops the sky moving toward them until the ending says so. */
+    if (this.skyHold) {
+      this.world?.setSky(this.dusk, this.dawn);
+      return this.dusk;
+    }
     const rate = this.duskWant > this.dusk ? dt / DUSK_FALL : dt / DUSK_LIFT;
     if (this.dusk < this.duskWant) this.dusk = Math.min(this.duskWant, this.dusk + rate);
     else this.dusk = Math.max(this.duskWant, this.dusk - rate);

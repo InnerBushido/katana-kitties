@@ -450,6 +450,17 @@ watching the ending through.
   — and the crossing was paced to fit half the shot it is cut into. `clip` is the
   recording's own length and had been in the table all along.
   → [story.md](docs/notes/story.md) *"The third pass"*
+- **...and a fourth, because the third fixed the wrong thing.** The "frozen,
+  half-fallen" canes were `FinaleTide.slam` itself: 66–95° of tip written onto an
+  XYZ euler whose middle turn cancelled part of it, so 18 of 46 canes stood
+  mid-air. Now a quaternion fall to flat. The crossing is back down the road
+  from behind the gate, eight units back and two up, with the gate whole in
+  frame. The Dojo looks *above* the model at the action (median NDC 0.37 → 0.08).
+  The "nothing left standing" truck runs at half speed, and the sky change now
+  starts on it, about 6.5 s in, via a new `sky` shot field. A draft **method for
+  directing a shot** is at the end of the story note, seed for a future
+  "Gaming Movie Director" skill.
+  → [story.md](docs/notes/story.md) *"The fourth pass"*
 - **息 Dragon Breath charges half as long and hits everybody it sweeps.** Three
   things, all from playing it. The charge went back to **0.8s** — "twice as
   long" had been read as the whole move and applied to the wrong half; the

@@ -18175,19 +18175,73 @@ console.log('\n--- one press is not enough, and one player drives ---');
   S.start('finale', { x: 0, y: 0, z: 0 });
   ok('...the ending lifts the storm and raises the dawn',
     S.duskWant === 0 && S.dawnWant === DAWN_DEEP);
+  /* --- ...BUT NOT ON ITS FIRST FRAME -------------------------------------
+     "Can we also have the 'sky changing' happening starting around this time,
+     so that the players can see the sky changing from the previous sky to the
+     new sky? it can start around this time which is the around 7 seconds into
+     the cutscene." The targets above are set on acceptance — seventh
+     non-negotiable — and the EASING waits for the shot carrying `sky`. Asked of
+     the easing itself, with a storm up to lift, rather than of the flag. */
+  {
+    S.dusk = DUSK_DEEP;
+    S.dawn = 0;
+    S.updateSky(DAWN_RISE);
+    ok('...but the sky does not start to change on the scene\'s first frame',
+      S.dusk === DUSK_DEEP && S.dawn === 0, `${S.dusk} / ${S.dawn}`);
+    const skyRows = FINALE_SHOTS.filter((sh) => sh.sky);
+    ok('...it waits for exactly one shot, and a real cut rather than a keep',
+      skyRows.length === 1 && !skyRows[0].keep, `${skyRows.length} rows`);
+    S._cue(skyRows[0]);
+    S.updateSky(1);
+    ok('...and from that shot on, the old sky visibly turns into the new one',
+      S.dusk < DUSK_DEEP && S.dawn > 0 && S.dawn < DAWN_DEEP,
+      `${S.dusk.toFixed(2)} / ${S.dawn.toFixed(2)}`);
+    /* ON THE RECORDING'S CLOCK. `dur` in Node is the authored floor and not the
+       line — see the crossing's pacing check, where that cost a whole pass. */
+    const floors = S.script.map((b) => b.dur);
+    for (const b of S.script) if (b.clip != null) b.dur = b.clip + TAIL;
+    const at = S._at(skyRows[0]);
+    /* ...AND PUT BACK. `script` IS the shared table, not a copy: left written,
+       this made the crossing's "not the floor the table ships with" check read
+       17.10 against 17.1 and fail for a reason that had nothing to do with it. */
+    S.script.forEach((b, i) => { b.dur = floors[i]; });
+    ok('...about seven seconds in, which is the first shot with any sky in it',
+      at > 5 && at < 9, `${at.toFixed(2)}s`);
+    S.finish();
+  }
+  /* AND A SKIPPED ENDING STILL ENDS IN THE MORNING. Escape four seconds in is
+     the path a kid who has seen it once takes, and it lands before that shot. */
+  {
+    if (S.played) S.played.finale = false;
+    S.start('finale', { x: 0, y: 0, z: 0 });
+    S.dawn = 0;
+    S.finish();
+    S.updateSky(1);
+    ok('...and an ending skipped before that shot still turns into the morning',
+      S.dawn > 0, S.dawn.toFixed(3));
+    if (S.played) S.played.finale = false;
+    S.start('finale', { x: 0, y: 0, z: 0 });
+  }
   S.clearDusk();
   ok('...and Ryuuseki leaving does not undo it', S.dawnWant === DAWN_DEEP);
   S.resetSky();
   ok('...but a restart does', S.dawnWant === 0 && S.dawn === 0);
+  ok('...and lets go of the ending\'s hold on it, so a new game\'s sky moves',
+    S.skyHold === false);
 
   /* IT TAKES LONGER THAN ANY OTHER SKY CHANGE, on purpose: it has to land
      inside Patchfur's first two lines, slowly enough to be noticed happening.
-     Measured against the script rather than against a number typed twice. */
+     Measured against the script rather than against a number typed twice —
+     and FROM THE SHOT IT STARTS ON, now that it no longer starts at zero, on
+     the recordings' own lengths rather than the authored floors. */
   const firstTwo = SCRIPTS.finale.slice(0, 2)
-    .reduce((a, b) => a + (b.dur ?? 7), 0);
+    .reduce((a, b) => a + (b.clip != null ? b.clip + TAIL : (b.dur ?? 7)), 0);
+  const skyRow = FINALE_SHOTS.find((sh) => sh.sky);
+  const skyAt = skyRow ? skyRow.from * (SCRIPTS.finale[skyRow.beat].clip + TAIL)
+    + (skyRow.off ?? 0) : 0;
   ok('...and the sky clears within the finale\'s first two lines',
-    DAWN_RISE > DUSK_FALL && DAWN_RISE < firstTwo,
-    `${DAWN_RISE}s of ${firstTwo}s`);
+    DAWN_RISE > DUSK_FALL && skyAt + DAWN_RISE < firstTwo,
+    `${skyAt.toFixed(1)} + ${DAWN_RISE}s of ${firstTwo.toFixed(1)}s`);
 
   /* --- AND SOMEBODY IS ON SCREEN SAYING IT ---
      Reported as "Patchfur's sprite is not appearing in the final cutscene but
@@ -18945,6 +18999,27 @@ console.log('\n--- one press is not enough, and one player drives ---');
   ok('the shove knocks the whole thing over again', tide.k === 0);
   ok('...and every one of them is lying down', tprops.every(
     (q) => Math.abs(q.group.rotation.x) + Math.abs(q.group.rotation.z) > 0.3));
+  /* ...AND LYING FLAT, NOT LEANING ON THIN AIR. "The bamboo is still not all
+     knocked over in the cutscene, they should be knocked over fully as
+     currently, looks like the time is frozen and looks buggy with them half
+     fallen over." The check above passed the whole time that was true: 0.3
+     radians of |x| + |z| is a prop that has MOVED, not a prop that is down.
+     Measured at the cut to the crossing, eighteen canes in forty-six stood
+     thirty degrees or more off the floor and one ten degrees off upright —
+     `slam` asked for 66-95 degrees of tip, and wrote it as an XYZ euler whose
+     middle turn (the yaw) partly cancelled it. Asked here of the angle between
+     the prop's own up and the world's, off the quaternion, which is the only
+     thing that says where it actually points. */
+  {
+    const up = new THREE.Vector3();
+    const tilt = tprops.map((q) => Math.acos(Math.min(1, Math.max(-1,
+      up.set(0, 1, 0).applyQuaternion(q.group.quaternion).y))));
+    const lo = Math.min(...tilt);
+    const hi = Math.max(...tilt);
+    ok('...and every one of them is lying FLAT, not leaning on thin air',
+      lo > Math.PI / 2 - 0.1 && hi <= Math.PI / 2 + 1e-6,
+      `${(lo * 180 / Math.PI).toFixed(1)} to ${(hi * 180 / Math.PI).toFixed(1)} degrees off upright`);
+  }
   ok('...near the spot it was built on, not thrown across the island',
     tprops.every((q) => q.group.position.distanceTo(q.home) < 3.2));
   /* NOT THE OLD POSE. The point of the beat: it is a second fall, not the
@@ -20411,71 +20486,112 @@ console.log('\n--- one press is not enough, and one player drives ---');
       posA ? `${posA.distanceTo(posB).toFixed(1)} units` : 'never ran');
     F.finish();
 
-    /* --- AND THE CROSSING'S CAMERA IS NOT STANDING IN A FOREST -----------
-       REPORTED AS A PAUSE, AND IT WAS A PLACE. "Seems like time is paused at
-       this part, so the bamboo in the scene is not fully knocked over and is
-       blocking the view." Nothing was paused: `world.update` runs in the
-       summon-scene branch of `Game._tick` and the canes were mid-fall because
-       `heap-slam` had only just pushed them. The camera was inside the grove
-       that was falling — 2.8 units from the middle of a 20-unit disc holding
-       48 of them — and what a lens inside a thicket shows is the thicket.
+    /* --- AND THE CROSSING IS SHOT DOWN THE ROAD, WITH THE GATE IN IT ------
+       These replace four checks that kept the lens out of the east grove. They
+       were honest and they were answering the wrong question: the canes were
+       only ever in the way because `slam` left a third of them standing (the
+       tide's own check now asks that they lie flat), and moving the camera
+       square across the deck to avoid them was reported back as the wrong
+       shot — "should have the players running towards the camera like in the
+       previous camera shot, but just have the camera zoomed out a bit to show
+       the bridge and the torii gate."
 
-       THE CHECK IS THE ONE THAT WOULD HAVE CAUGHT IT: solve the shot's camera
-       the way `update` does, at both ends of its swing and at both ends of its
-       push, and ask the world whether any of those four points is inside one of
-       its own groves. A single answer would have passed for most of the tuning
-       that produced the fault; the shot MOVES, and the whole of what went wrong
-       was where it moved to. */
+       SO THESE ASK WHAT THE SHOT IS FOR, IN THE FRAME, with the scene's own
+       lens solved the way `update` solves it at eleven points across the push.
+       The old row fails two of them — the gate's feet were below the bottom
+       edge and it swung out of the side — and the three-quarter view a
+       frame-only search chose on the way here fails the last: 29 of its 33
+       sight lines to the deck run through a cherry tree's crown. */
     const RUN = FINALE_SHOTS.find((sh) => sh.cue === 'bridge-run');
     const G = new SummonScene({ scene: null, world, audio: null });
-    const seat = G._clearAngle(world.bridge, RUN.dist, RUN.turn,
-      { self: RUN.self, face: RUN.face, span: RUN.span });
-    ok('the crossing is looked at from a measured direction, not a typed one',
-      RUN.clear === true && seat != null, seat == null ? 'nothing measured' : seat.toFixed(2));
-    /* AND INSIDE THE ARC THE SHOT ASKED FOR. A measurement free to answer
-       anything is a typed angle with extra steps. */
-    ok('...inside the arc the shot asked to be looked at from',
-      seat != null && Math.abs(seat - RUN.face) <= RUN.span / 2 + 1e-6,
-      seat == null ? '-' : `${(seat - RUN.face).toFixed(2)} off ${RUN.face.toFixed(2)}`);
-    const seats = [];
-    for (const se of [0, 1]) {
-      for (const turn of [-0.5, 0.5]) {
-        const a = seat + RUN.a + RUN.turn * turn;
-        const close = 1 - RUN.in * se;
-        const d = RUN.dist * close;
-        seats.push({
-          x: world.bridge.x + Math.sin(a) * d,
-          z: world.bridge.z + Math.cos(a) * d,
-          y: world.bridge.y + RUN.high * (RUN.dolly ? close : 1),
-        });
+    const B = world.bridge;
+    const SP = world.bridgeSpan ?? { len: 18, base: B.y - 2.2 };
+    const gate = (world.landmarks ?? []).filter((m) => m.kind === 'torii')
+      .sort((p, q) => Math.hypot(p.x - B.x, p.z - B.z) - Math.hypot(q.x - B.x, q.z - B.z))[0];
+    const gy = world.heightAt(gate.x, gate.z)?.y ?? B.y;
+    /* `buildTorii`'s own sizes, times the landmark's scale: six high plus the
+       stacked top beam, and that beam 4.4 + 2.5 across. */
+    const tall = (6 + 0.67) * gate.s;
+    const half = ((4.4 + 2.5) / 2) * gate.s;
+    const lens = G.camera.clone();
+    const look = new THREE.Vector3();
+    const solve = (se) => {
+      const a = RUN.a + RUN.turn * se;
+      const close = 1 - RUN.in * se;
+      const d = RUN.dist * close;
+      lens.position.set(B.x + Math.sin(a) * d,
+        B.y + RUN.high * (RUN.dolly ? close : 1), B.z + Math.cos(a) * d);
+      look.set(B.x, B.y - RUN.lift * 2 * d * Math.tan((lens.fov * Math.PI) / 360), B.z);
+      lens.lookAt(look);
+      lens.updateMatrixWorld(true);
+    };
+    const ndc = (x, y, z) => new THREE.Vector3(x, y, z).project(lens);
+    /* THE TOP EDGE OF THE SUBTITLE BOX, measured off a screenshot in a SMALL
+       window (800x475), which is the worst case: the box is a fixed height in
+       pixels, so in a full-size window its top edge sits nearer -0.7. The
+       gate's beam has to clear it even there; its feet only have to be in the
+       picture, and in a small window they stand on the box. */
+    const SUBS = -0.22;
+    const deckPts = [
+      new THREE.Vector3(B.x + SP.len / 2, SP.base, B.z),
+      new THREE.Vector3(B.x, B.y, B.z),
+      new THREE.Vector3(B.x - SP.len / 2, SP.base, B.z),
+    ];
+    /* A CHERRY TREE'S CROWN as `buildTree` builds it: blobs of 1.5-2.4 on
+       boughs 1.1-2.4 out, on a trunk 4-6.4 tall, all times its scale. */
+    const crowns = (world.solids ?? []).filter((q) => q.tree).map((q) => {
+      const sc = q.tree.scale ?? 1;
+      return { c: new THREE.Vector3(q.x, (world.heightAt(q.x, q.z)?.y ?? 0) + 5.2 * sc, q.z), r: 3.7 * sc };
+    });
+    const seg = new THREE.Line3();
+    const near = new THREE.Vector3();
+    const bad = { along: 0, gate: 0, crest: 0, jump: 0, tree: 0 };
+    for (let i = 0; i <= 10; i++) {
+      const sk = i / 10;
+      solve(1 - (1 - sk) * (1 - sk));
+      const p = lens.position;
+      if (!(p.x > gate.x && Math.abs(Math.atan2(p.z - B.z, p.x - B.x)) < 0.4)) bad.along++;
+      let gateTop = -9;
+      for (const dx of [-0.43, 0.43]) {
+        for (const y of [gy, gy + tall]) {
+          for (const dz of [-half, half]) {
+            const q = ndc(gate.x + dx * gate.s, y, gate.z + dz);
+            if (!(q.z < 1 && Math.abs(q.x) < 0.98 && q.y > -0.98 && q.y < 0.98)) bad.gate++;
+            if (y > gy && q.y <= SUBS) bad.gate++;
+            gateTop = Math.max(gateTop, q.y);
+          }
+        }
+      }
+      const c = ndc(B.x, B.y, B.z);
+      if (!(c.z < 1 && Math.abs(c.x) < 0.9 && c.y > gateTop && c.y < 0.9)) bad.crest++;
+      if (ndc(B.x, B.y + 4.5, B.z).y > 0.98) bad.jump++;
+      for (const d of deckPts) {
+        seg.set(p, d);
+        if (crowns.some((w) => seg.closestPointToPoint(w.c, true, near).distanceTo(w.c) < w.r)) bad.tree++;
       }
     }
-    const inGrove = seats.filter((p) => (world.groves ?? []).some(
-      (gr) => Math.hypot(p.x - gr.x, p.z - gr.z) < gr.r));
-    ok('...and the lens never stands inside a stand of bamboo',
-      inGrove.length === 0,
-      inGrove.map((p) => `${p.x.toFixed(0)},${p.z.toFixed(0)}`).join(' ') || 'all four corners clear');
-    /* AND IT DOES NOT SHOOT THROUGH ONE EITHER. Standing clear of a grove and
-       looking straight down the length of it is the same picture. */
-    const through = seats.filter((p) => (world.groves ?? []).some((gr) => {
-      const dx = world.bridge.x - p.x;
-      const dz = world.bridge.z - p.z;
-      const len2 = dx * dx + dz * dz;
-      const t = Math.max(0, Math.min(1, ((gr.x - p.x) * dx + (gr.z - p.z) * dz) / (len2 || 1)));
-      return Math.hypot(p.x + dx * t - gr.x, p.z + dz * t - gr.z) < gr.r;
-    }));
-    ok('...nor looks at the bridge through the length of one',
-      through.length === 0, `${through.length} of ${seats.length} sight lines in bamboo`);
-    /* AND THE BRIDGE'S OWN RAILINGS ARE NOT COUNTED AGAINST IT. Without
-       `self` every bearing on the compass scores negative — eighteen posts
-       standing on the deck lie across every view of the deck — and the answer
-       becomes the least bad of a set of impossible ones, which is a
-       measurement that has stopped measuring anything. */
-    const bare = G._clearAngle(world.bridge, RUN.dist, RUN.turn,
-      { face: RUN.face, span: RUN.span });
-    ok('...and the span\'s own railings are not treated as things in the way',
-      bare != null && Math.abs(bare - seat) > 0.01,
-      `${bare == null ? '-' : bare.toFixed(2)} without self, ${seat.toFixed(2)} with`);
+    ok('the crossing is looked at down the road it is crossed on, from beyond the gate',
+      bad.along === 0, `${bad.along} of 11 moments off it`);
+    ok('...with the whole torii in the picture and its beam clear of the subtitles',
+      bad.gate === 0, `${bad.gate} corners out`);
+    ok('...the crest standing above the gate in the frame, not behind its beam',
+      bad.crest === 0, `${bad.crest} of 11`);
+    ok('...with room over it for a kitten at the top of a double jump',
+      bad.jump === 0, `${bad.jump} of 11`);
+    ok('...and not one cherry tree on a sight line from the lens to the deck',
+      bad.tree === 0, `${bad.tree} blocked sight lines`);
+
+    /* `face`, `span` AND `self` NOW HAVE NO ROW (see the table's header), and a
+       feature nothing exercises is a feature that quietly stops working. These
+       two keep `_clearAngle` honest about both. */
+    const seat = G._clearAngle(B, 19, 0.15, { self: 10, face: 0.32, span: 1.6 });
+    ok('_clearAngle still answers inside the arc it is asked to search',
+      seat != null && Math.abs(seat - 0.32) <= 0.8 + 1e-6,
+      seat == null ? 'nothing measured' : seat.toFixed(2));
+    const bare = G._clearAngle(B, 19, 0.15, { face: 0.32, span: 1.6 });
+    ok('...and still does not count a span\'s own railings as things in the way',
+      bare != null && seat != null && Math.abs(bare - seat) > 0.01,
+      `${bare == null ? '-' : bare.toFixed(2)} without self, ${seat == null ? '-' : seat.toFixed(2)} with`);
     G.finish();
 
     if (docP === undefined) delete globalThis.document; else globalThis.document = docP;
