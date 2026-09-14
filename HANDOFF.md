@@ -421,6 +421,35 @@ watching the ending through.
   count it started on.
   → [story.md](docs/notes/story.md), `src/systems/finaleshow.js`,
   `src/systems/finaletide.js`
+- **...and its last two shots were rebuilt a third time, after watching them.**
+  Six reports, five of which turned out to have a cause other than the one the
+  report guessed. *"Time is paused here, the bamboo is blocking the view"* was
+  the camera standing **2.8 units from the middle of a 48-cane grove** — nothing
+  was paused — so `_clearAngle` learned what a thicket is (a disc, charged by the
+  chord a sight line cuts through it), that a subject is not its own obstacle
+  (`self`: eighteen railing posts stand on the deck they belong to and scored the
+  whole compass negative), that a shot may name the arc it wants to be looked at
+  from (`face` / `span`), and that past three units of daylight the composition
+  should decide rather than the clearance (`need`). *"They are passing through a
+  tree"* was a trunk growing in the **road**: cherry trees consulted `keepClear`
+  and `solids` and never `roadMask`, which the grass tufts always had. *"The
+  bridge on the road and the torii gate look sloppy"* was three independent sets
+  of literals — the spur crossed the deck at 9.5° and a metre off its centreline
+  — now all solved off one `BRIDGE`. The abilities were two free-running random
+  clocks and are **one state machine with real gravity**: 落 Power Dive is a
+  double jump, a fifth of a second hanging dead still and then 24 units a second
+  straight down onto a shockwave, 突 Charge works in the air, 壁 Ward is the two
+  shells `Player` pops, and 瞬 Flash Step takes her off the screen with smoke at
+  both ends. **Every one of them makes a noise the real move makes**, through a
+  callback `world-check` hooks. And the model of the archipelago is a third
+  closer and eight degrees steeper, measured **in the frame** — it covered 40% of
+  the picture's width and now covers 56–70%.
+  *One measurement error is recorded at length because it cost a whole pass:*
+  `beat.dur` is `voiceDur + TAIL` and `voiceDur` is read off the mp3 **in a
+  browser**, so in Node it is the authored floor — 9 seconds against a real 17.1
+  — and the crossing was paced to fit half the shot it is cut into. `clip` is the
+  recording's own length and had been in the table all along.
+  → [story.md](docs/notes/story.md) *"The third pass"*
 - **息 Dragon Breath charges half as long and hits everybody it sweeps.** Three
   things, all from playing it. The charge went back to **0.8s** — "twice as
   long" had been read as the whole move and applied to the wrong half; the

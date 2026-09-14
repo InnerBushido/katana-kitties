@@ -1186,6 +1186,31 @@ export class World {
       bucket.push(...parts);
     };
 
+    /* WHERE THE CROSSING IS, BEFORE ANYTHING THAT HAS TO AGREE WITH IT.
+
+       These five numbers used to be declared two hundred lines below, next to
+       the mesh they build — which is the natural place for them right up until
+       something ELSE has to line up with the crossing, and then it is the
+       reason nothing does. The east road was drawn from five hand-typed points
+       that passed 1 unit north of the bridge on a bearing 9.5 degrees off its
+       deck, and the grove's torii stood 2 units south of the deck's centreline
+       on no particular axis at all. Reported from watching the ending: "looks a
+       little sloppy currently, the way the bridge is on the road and the torii
+       gate is offset strangely." It was sloppy because three things that have
+       to be square to each other were three independent sets of literals.
+
+       A ROAD IS STRAIGHT WHERE IT CROSSES A RIVER, which is true of every real
+       one and is the whole of the fix: the spur bends out of town and is then
+       dead straight on the deck's own axis from `x - RUN` to `x + RUN`, with
+       the gate standing on the far end of that straight. Move the bridge and
+       the road, the gate and the ending's run-up all move with it. */
+    const BRIDGE = { x: 34, z: 46, len: 18, wide: 4.4, rise: 2.2 };
+    /* HOW MUCH STRAIGHT ROAD EITHER SIDE, and it is not a taste decision: the
+       ending runs four kittens at the crossing down this road (`BR_UP` in
+       systems/finaleshow.js, 16 units) and out the far side through the gate.
+       A straight shorter than the run-up is a run-up that leaves the paving. */
+    const BRIDGE_RUN = 16;
+
     /* --- the roads ---
        Laid before the buildings so nothing is buried. A town without a road
        is just houses in a field: the yellow street is what tells you where to
@@ -1206,12 +1231,19 @@ export class World {
         color: PALETTE.dirt,
         pts: [{ x: -2, z: -14, w: 7 }, { x: -16, z: -20, w: 6 }, { x: -30, z: -27, w: 7 }],
       },
-      // east spur out to the crossing and the bamboo grove
+      /* east spur out to the crossing and the bamboo grove — and it is SQUARE
+         TO THE CROSSING, which the five numbers it used to be were not. The
+         bend is spent west of the bridge; from there the paving runs dead
+         straight along the deck's own centreline, under the arch, and out
+         through the gate before it turns for the grove. */
       {
         color: PALETTE.dirt,
         pts: [
-          { x: 4, z: 52, w: 7 }, { x: 18, z: 50, w: 6 }, { x: 34, z: 47, w: 6 },
-          { x: 48, z: 45, w: 6 }, { x: 60, z: 44, w: 8 },
+          { x: 4, z: 52, w: 7 },
+          { x: BRIDGE.x - BRIDGE_RUN - 4, z: BRIDGE.z, w: 7 },
+          { x: BRIDGE.x - BRIDGE_RUN, z: BRIDGE.z, w: 6 },
+          { x: BRIDGE.x + BRIDGE_RUN, z: BRIDGE.z, w: 6 },
+          { x: 60, z: 44, w: 8 },
         ],
       },
     ];
@@ -1320,7 +1352,6 @@ export class World {
        It used to sit off the side of the map spanning nothing. It's on the
        east road to the bamboo grove, its deck is a real platform you stand on,
        and its railings are solid so you can't walk out through the sides. */
-    const BRIDGE = { x: 34, z: 46, len: 18, wide: 4.4, rise: 2.2 };
     put(buildBridge(BRIDGE.len, BRIDGE.wide), BRIDGE.x, BRIDGE.z, Math.PI / 2, 1, 0.1, decor);
     {
       /* The deck is an ARCH, not a plank — buildBridge lifts each segment by
@@ -1395,11 +1426,18 @@ export class World {
       { x: 58, z: 44, r: 20, n: 48 },
       { x: -72, z: -30, r: 15, n: 36 },
     ];
-    // A little torii at each grove mouth so they read as destinations.
-    put(buildTorii(0.7), 46, 44, Math.PI / 2, 1, 0, decor);
+    /* A little torii at each grove mouth so they read as destinations.
+
+       THE EAST ONE STANDS ON THE ROAD IT IS A GATE FOR, which is the thing it
+       was not: (46, 44) is 2 units off the crossing's centreline and was turned
+       a quarter turn on a bearing nothing else shared, so from the ending's
+       camera it read as a gate to one side of the way through. Solved off
+       `BRIDGE` like the paving is — the far end of the straight, square to it. */
+    const EAST_GATE = { x: BRIDGE.x + BRIDGE_RUN, z: BRIDGE.z };
+    put(buildTorii(0.7), EAST_GATE.x, EAST_GATE.z, Math.PI / 2, 1, 0, decor);
     put(buildTorii(0.7), -72, -47, 0, 1, 0, decor);
     this.landmarks.push(
-      { kind: 'torii', x: 46, z: 44, s: 0.7 },
+      { kind: 'torii', x: EAST_GATE.x, z: EAST_GATE.z, s: 0.7 },
       { kind: 'torii', x: -72, z: -47, s: 0.7 }
     );
 
@@ -1415,6 +1453,16 @@ export class World {
       if (Math.hypot(x + 34, z + 30) < 16) continue;
       // and the bridge and grove approaches — see keepClear
       if (this.keepClear.some((k) => Math.hypot(x - k.x, z - k.z) < k.r)) continue;
+      /* AND NOT IN THE ROAD, which was covered for grass tufts and flowers and
+         not for the one thing big enough to stand in your way. `roadMask` is
+         the paving's own corridor and has existed since the roads were laid;
+         the tufts have consulted it all along (see the loop that plants them)
+         and the cherry trees never did, so a trunk could and did grow on the
+         east spur — reported from the ending as four kittens running THROUGH a
+         tree on their way to the bridge. 1.4 is the trunk's own radius plus a
+         cat's shoulder: a canopy may lean over a road, a trunk may not stand
+         in one. */
+      if (this.roadMask.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + 1.4)) continue;
       // and out of every building, hall and stall already placed
       if (this.solids.some((s) => Math.hypot(x - s.x, z - s.z) < s.r + 2.5)) continue;
       if (home.heightAt(x, z) == null) continue;

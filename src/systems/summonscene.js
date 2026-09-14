@@ -400,6 +400,23 @@ export const SCRIPTS = {
    Eighth non-negotiable in a new place: what you can see is the shot, and the
    only way to know what you can see is to measure it.
 
+   `face`, `span` AND `self` ARE WHAT THE MEASUREMENT IS TOLD. They only mean
+   anything beside `clear`, and each of them exists because the crossing broke
+   the plain version of it.
+
+   `self` is how much of what is around the mark IS the mark. The bridge has
+   eighteen railing posts standing on its own deck and every one of them lies on
+   the sight line of every side-on view of it, so the honest answer to "which
+   way round is this visible from" came back as "none of them, here is the
+   least bad". Ten units of bridge is not an obstacle to a shot of the bridge.
+
+   `face` and `span` are an arc to search instead of the whole compass. The
+   clearest view of a bridge is from directly over its side, and from there a
+   bridge is a red wall with nothing on it — the shot is ALONG the deck or it is
+   not a shot of a crossing. `face` says which way the shot is about and `span`
+   how far either side of it the measurement may go looking for air. Leave both
+   out and it searches the circle, which is what the three naming shots want.
+
    `lift` IS HOW FAR UP THE FRAME THE SUBJECT SITS, as a fraction of the frame
    — and it is a fraction rather than a number of units because a number of
    units is only correct at one distance. The subtitle box owns the bottom
@@ -785,10 +802,36 @@ export const FINALE_SHOTS = [
      which is how a subject ends up in the top third with its own shadow under
      it. Most of that existed to clear the subtitle box and the model is big
      enough now to be over the box rather than behind it, so 0.07 is the whole
-     of what it needs. */
+     of what it needs.
+
+     AND THEN A THIRD OF THE WAY IN AGAIN. "Why is the camera so zoomed out? I
+     think we can be 25% or more zoomed in more, even if parts of the island are
+     cut off after they are separated. Maybe have the camera a bit higher and
+     more angled towards the action so that when the 'angle' and 'circle'
+     section happens, we can still see the circle animation lines, even when we
+     are zoomed in."
+
+     MEASURED IN THE FRAME AND NOT IN UNITS. The model was projected into
+     normalised device coordinates at seven points across the beat and asked how
+     much of the picture it covered: at 34 units out it was 40 per cent of the
+     frame's width through the middle of the shot, which is a map of an
+     archipelago sitting in a large black room. At 23 it is between 56 and 70,
+     which is a thing you are looking AT. The two other numbers move with it —
+     23 and 18 is 38 degrees above the floor against 31, and `dolly` holds that
+     angle for the whole push, so the steeper look is the shot rather than
+     something that happens to it on the way in.
+
+     AND STEEPER IS WHAT KEEPS THE WORKING IN FRAME. The circle is a cone of
+     rings standing ON the model, so a shallow camera squashes it into a band of
+     ellipses and a steep one draws it as circles — which is what the FIRST
+     non-negotiable asks of it, and the reason that half of the ask is not a
+     contradiction of the other half. The tiers do run off the top edge at the
+     widest moment; that is the licence in "even if parts of the island are cut
+     off", spent on the part of the diagram that is already blowing out and
+     fading. */
   {
-    beat: 2, from: 0, at: 'dojo', a: 2.4, dist: 34, high: 21, lift: 0.07,
-    turn: -3.6, in: 0.34, dolly: true, lin: true, stage: false, cue: 'isles-in',
+    beat: 2, from: 0, at: 'dojo', a: 2.4, dist: 23, high: 18, lift: 0.07,
+    turn: -3.6, in: 0.24, dolly: true, lin: true, stage: false, cue: 'isles-in',
   },
   { beat: 2, from: say(2, 'They drifted'), keep: true, cue: 'isles-drift' },
   { beat: 2, from: say(2, 'You crossed'), keep: true, cue: 'isles-cross' },
@@ -803,9 +846,42 @@ export const FINALE_SHOTS = [
      'So stay. Fly.' we can have the camera fade in at the bridge and then show
      the players running together and jumping together."
 
-     `a` IS ALONG THE DECK, not across it. The span is 18 units of arch on the
-     x axis, so a camera at sin(a)=1 sits off its end and sees a bridge; one at
-     right angles to that sees a red wall.
+     IT USED TO LOOK ALONG THE DECK AND THAT PUT THE CAMERA INSIDE A GROVE.
+     Reported from play: "seems like time is paused at this part, so the bamboo
+     in the scene is not fully knocked over and is blocking the view." Nothing
+     was paused — `world.update` runs in the summon-scene branch of `Game._tick`
+     and the canes were mid-fall because they had only just been pushed. What
+     was wrong was where the lens was standing. `a: PI/2` at 22 units puts it at
+     (56, 12, 46), and the east grove is 48 canes on a 20-unit disc centred at
+     (58, 44): the camera was 2.8 units from the middle of a forest that
+     `heap-slam` had tipped over in forty-eight directions two shots earlier,
+     looking out through the whole thickness of it. A shot cannot be fixed by
+     un-pausing a clock that was already running.
+
+     AND THE REASON IT WAS AIMED THERE WAS A GUESS THAT DOES NOT SURVIVE BEING
+     LOOKED AT: that a bridge seen from the side is "a red wall". It is not.
+     This bridge's sides are eighteen railing POSTS — you see straight through
+     them — and from across the deck you get the arch, which is the only angle
+     that says bridge rather than red rectangle, and you get four kittens strung
+     out along it at four different distances instead of one behind another. So
+     `face` is 0.32 radians: square across the crossing and a fifth of a turn
+     toward its far end, which brings the road in at frame left and the torii
+     out at frame right.
+
+     `span` LETS THE MEASUREMENT MOVE, AND `need` STOPS IT WANDERING. Measured
+     at nineteen units, the clearance climbs from 2 units at 0.2 radians to 7.5
+     at 0.6 and then falls off a cliff into the grove — so a plain "most
+     daylight wins" search went to 0.6 out of any arc that contained it and slid
+     the deck corner-to-corner through the subtitle box. Three units of air is
+     clear; past that the composition decides. `self` is ten units, because the
+     bridge's own posts stand on the sight line of every view of the bridge and
+     scored the entire compass negative. See `_clearAngle`, which had to learn
+     all three of those things before it could answer this.
+
+     AND IT IS CLOSER AND LOWER THAN IT WAS. Twenty-two units at seven high is a
+     shot looking down on a bridge; nineteen at nine and a half stands on the
+     bank with the deck across the frame, which is the one you can read a jump
+     against.
 
      AND THE WAY IN IS LONGER THAN A BLINK. "It should end at 'all a bridge has
      ever been.' with a slightly longer fade out and fade in on the next part."
@@ -815,8 +891,9 @@ export const FINALE_SHOTS = [
      comes back. A second of it, and the four of them are already running when
      it lifts — see `FinaleShow._seedBridge`. */
   {
-    beat: 3, from: 0, at: 'bridge', a: Math.PI / 2, dist: 22, high: 7, lift: 0.16,
-    turn: 0.34, in: 0.12, stage: false, cue: 'bridge-run', fade: 1.0,
+    beat: 3, from: 0, at: 'bridge', a: 0, dist: 19, high: 9.5, lift: 0.16,
+    turn: 0.15, in: 0.06, clear: true, face: 0.32, span: 1.6, self: 10,
+    stage: false, cue: 'bridge-run', fade: 1.0,
   },
   /* "...THE arena is open." — in on the first word of the clause, not on the
      third. "For the 'the arena is open' section, let's have camera fade into
@@ -963,6 +1040,14 @@ export class SummonScene {
        and one at your feet. */
     this.tide.onCrash = (kind) => this.audio?.play?.(
       kind === 'bamboo' ? 'bamboo' : 'hit', 0.34 + Math.random() * 0.14);
+    /* ...AND THE SAME DOOR FOR THE BRIDGE RUN. "When these abilities are being
+       played, they should make some sounds, including jumping sounds." Every
+       one of those names is a sound the GAME already makes for that exact move
+       — see `FinaleShow._stepBridge` — so this is one line and no new library.
+       The gain each one asks for is its own, because a landing and a Power Dive
+       are not the same size of event; what this end owns is that they all go
+       through `audio` and nothing in `finaleshow.js` ever holds it. */
+    this.show.onSfx = (name, gain) => this.audio?.play?.(name, gain);
     /** The shot on screen, by identity, so a cut can be noticed exactly once. */
     this._shot = null;
 
@@ -1276,13 +1361,21 @@ export class SummonScene {
        own `a`, which is what every shot did before this existed. */
     this.bearing = {};
     for (const sh of FINALE_SHOTS) {
-      if (!sh.clear || this.bearing[sh.at] !== undefined) continue;
+      if (!sh.clear) continue;
+      /* KEYED BY THE MARK AND BY WHAT THE SHOT ASKED OF IT. Two rows can want
+         the same place from deliberately different sides — the crossing wants
+         to look ALONG its own deck and nothing else does — and a cache keyed by
+         the mark alone would hand the second one the first one's answer. */
+      const key = sh.face != null ? `${sh.at}@${sh.face.toFixed(3)}` : sh.at;
+      if (this.bearing[key] !== undefined) continue;
       /* MEASURED AGAINST THE SHOT'S OWN NUMBERS — its distance and the whole
          arc it is going to swing through — rather than against a typed pair
          here. The first version measured one bearing at one distance and the
          shot then turned 0.7 radians off it into the side of a house, which is
          a clear angle being measured correctly and then walked away from. */
-      this.bearing[sh.at] = this._clearAngle(this.marks[sh.at], sh.dist, sh.turn);
+      this.bearing[key] = this._clearAngle(this.marks[sh.at], sh.dist, sh.turn, {
+        self: sh.self, face: sh.face, span: sh.span,
+      });
     }
   }
 
@@ -1316,20 +1409,70 @@ export class SummonScene {
    * alone is how the first version came out pointing at an open barrel and
    * ended up inside the wall of a house three seconds later.
    *
+   * A SUBJECT IS NOT ITS OWN OBSTACLE — `self`. A barrel is a point and every
+   * solid near it is in the way; a BRIDGE is eighteen units of deck with
+   * eighteen railing posts standing on it, and every one of those posts lies on
+   * the sight line of every side-on view of the thing they belong to. This
+   * scored the whole compass negative and handed back the least bad of a set of
+   * equally impossible answers. Anything inside `self` of the mark is the shot.
+   *
+   * AND A GROVE IS NOT FORTY SEPARATE MISSES — `world.groves`. The nearest cane
+   * to a sight line can be nine units off it while the line still runs the
+   * whole length of a twenty-unit stand of bamboo, because the gap this scores
+   * is to the nearest CANE and a thicket is not made of its nearest cane. So a
+   * grove is measured the way it is actually in the way: as a disc, by the
+   * chord the sight line cuts through it. That is the bug the ending was
+   * reported with — the crossing's camera stood 2.8 units inside a grove of 48
+   * and the shot was a wall of bamboo — and it is invisible to a per-solid test.
+   *
+   * AND IT CAN BE TOLD WHICH WAY ROUND TO LOOK — `face` and `span`. Some shots
+   * do not want the clearest bearing on the compass, they want the clearest one
+   * WITHIN an arc: the crossing is a shot ACROSS the deck, a little off square,
+   * because that is the angle the arch and four kittens strung out along it are
+   * both readable from. `face` is the direction the shot is about and `span` is
+   * how far either side of it the measurement may wander to find air. Without
+   * them this searches the whole circle, which is what every shot that came
+   * before wanted.
+   *
+   * AND WHERE A SHOT SAYS WHICH WAY IT WANTS TO LOOK, ENOUGH IS ENOUGH. The
+   * plain rule is "most daylight wins", and with an arc to search that turns
+   * into "go to whichever end of the arc is most open" every single time —
+   * measured on the crossing, the clearance climbs steadily from 2 units at
+   * 0.2 radians to 7.5 at 0.6 and then falls off a cliff into the grove, so
+   * every arc containing 0.6 came back as 0.6 and the shot slid round until
+   * the deck ran corner to corner through the subtitle box. Three units of air
+   * either side of the sight line is the difference between a clear shot and a
+   * shot with something in the corner of it; past that, more of it buys
+   * nothing and the composition should decide. So clearance is capped at
+   * `need` and the tie is broken by staying near `face` — clear enough, and
+   * then as close to the angle the shot was written for as that allows. A shot
+   * that named no `face` keeps the old rule exactly, which is the three naming
+   * shots and every one of them wants the whole compass searched.
+   *
    * @param {{x:number,z:number}} at the thing to be looked at
    * @param {number} dist how far back the camera will stand
    * @param {number} [sweep] how far the shot turns while it holds
+   * @param {{self?:number, face?:number, span?:number, need?:number}} [opt]
    * @returns {?number} a bearing in the same convention the shot list uses
    *          (x = sin a, z = cos a), or null if there is nothing to measure.
    */
-  _clearAngle(at, dist, sweep = 0) {
+  _clearAngle(at, dist, sweep = 0, opt = {}) {
     const solids = this.world?.solids;
-    if (!at || !solids?.length) return null;
+    if (!at) return null;
+    const self = opt.self ?? 0;
     /* Only the ones that could possibly be in the way. The archipelago has
-       hundreds and all but a handful are on other islands. */
-    const near = solids.filter(
-      (o) => Math.hypot(o.x - at.x, o.z - at.z) < dist + o.r + 2);
-    if (!near.length) return null;
+       hundreds and all but a handful are on other islands — and the ones
+       standing ON the subject are the subject. */
+    const near = (solids ?? []).filter(
+      (o) => {
+        const d = Math.hypot(o.x - at.x, o.z - at.z);
+        return d > self && d < dist + o.r + 2;
+      });
+    /* THE THICKETS, separately, because they are scored differently. Only the
+       ones a camera at this distance could stand in or shoot through. */
+    const groves = (this.world?.groves ?? []).filter(
+      (g) => Math.hypot(g.x - at.x, g.z - at.z) < dist + g.r + 4);
+    if (!near.length && !groves.length) return null;
     /** How clear the view is from one bearing: the worst solid's gap. */
     const gapAt = (a) => {
       const cx = at.x + Math.sin(a) * dist;
@@ -1345,16 +1488,41 @@ export class SummonScene {
         const gap = Math.hypot(cx + dx * t - o.x, cz + dz * t - o.z) - o.r;
         if (gap < worst) worst = gap;
       }
+      /* AND HOW MUCH BAMBOO THE LINE GOES THROUGH. The chord of a disc, in
+         units, charged one for one against the clearance — a sight line that
+         crosses twelve units of grove is twelve units worse than one that
+         crosses none, which is enough to lose to any open bearing anywhere on
+         the compass. Half that was tried and lost: a clearance of 12 units on
+         the open side of the crossing still beat a 25-unit penalty halved. */
+      for (const g of groves) {
+        const t = Math.max(0, Math.min(1, ((g.x - cx) * dx + (g.z - cz) * dz) / (len2 || 1)));
+        const off = Math.hypot(cx + dx * t - g.x, cz + dz * t - g.z);
+        if (off >= g.r) continue;
+        worst -= 2 * Math.sqrt(g.r * g.r - off * off);
+      }
       return worst;
     };
     let best = null;
     let bestScore = -Infinity;
-    const STEPS = 16;
+    const STEPS = 48;
+    /* SWEPT ACROSS THE ARC THE SHOT ASKED FOR, or the whole circle if it asked
+       for nothing. Forty-eight steps rather than sixteen because an arc can be
+       narrow: a quarter turn at sixteen-steps-to-the-circle is four samples. */
+    const facing = opt.face != null;
+    const face = opt.face ?? 0;
+    const span = opt.span != null ? opt.span : Math.PI * 2;
+    const need = opt.need ?? 3;
     for (let i = 0; i < STEPS; i++) {
-      const a = (i / STEPS) * Math.PI * 2;
-      const score = Math.min(
+      const a = face + (i / STEPS - 0.5) * span;
+      const raw = Math.min(
         gapAt(a - sweep / 2), gapAt(a), gapAt(a + sweep / 2)
       );
+      /* THE TIE-BREAK IS A THOUSANDTH OF A UNIT PER RADIAN, which is far too
+         small to buy a bearing anything real and is exactly enough to settle a
+         draw between two that are both clear enough. */
+      const score = facing
+        ? Math.min(raw, need) - Math.abs(a - face) * 1e-3
+        : raw;
       if (score > bestScore) { bestScore = score; best = a; }
     }
     return best;
@@ -1982,8 +2150,9 @@ export class SummonScene {
          the three naming shots each look at their thing from a different side
          of the one direction it can be seen from at all. A mark with nothing
          measured falls straight through to the typed angle. */
-      const measured = shot.clear && this.bearing?.[shot.at] != null;
-      const base = measured ? this.bearing[shot.at] : 0;
+      const bkey = shot.face != null ? `${shot.at}@${shot.face.toFixed(3)}` : shot.at;
+      const measured = shot.clear && this.bearing?.[bkey] != null;
+      const base = measured ? this.bearing[bkey] : 0;
       /* A MEASURED SHOT TURNS AROUND ITS BEARING RATHER THAN AWAY FROM IT.
          `_clearAngle` scored the whole arc as centred on what it returned, so
          starting the swing there and running a half-turn off one side would
