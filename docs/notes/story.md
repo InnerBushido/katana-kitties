@@ -534,12 +534,16 @@ framing is a taste.
 
 A close shot of a barrel is a close shot of whatever is standing between the
 camera and the barrel, and a town is mostly things standing. `_clearAngle`
-scores sixteen bearings around the subject against `world.solids` — the upright
-collision cylinders the world already publishes — by the distance from each
-solid's centre to the **segment** camera-to-subject, less its radius. Best
+scores forty-eight bearings around the subject against `world.solids` — the
+upright collision cylinders the world already publishes — by the distance from
+each solid's centre to the **segment** camera-to-subject, less its radius. Best
 clearance wins; if everything is blocked it still returns the least bad bearing
 rather than nothing, because a shot of the inside of a wall is better than a
 `null` that stops the ending.
+
+It learned three more things from the crossing — `self`, `face`/`span` and
+`need`, plus groves measured as discs rather than as forty separate canes. See
+**"Three more things the measurement had to learn"**, below.
 
 **It scores the whole swing, not one bearing.** The first version measured the
 middle of the shot, and the shot then turned 0.7 radians off it into the side of
@@ -1122,3 +1126,210 @@ The count halved (`CRASHES = 6`) and the picking changed from *every Nth prop* t
 *one inside each slot, jittered* (`CRASH_JITTER`), so the gaps between bangs are
 not all the same number — which is what "too metronomic" is, stated as something
 `world-check` can measure. The volume is randomised per bang as well.
+
+## The third pass — the crossing, and the model on the floor
+
+Six things were reported at once, all from the last two lines of the ending, and
+five of them turned out to be one fault each with a completely different cause
+from the one the report guessed. That is the useful part of this section: every
+one of them was measured before it was touched, and three of the guesses were
+wrong.
+
+### "Time is paused here" — it was not, the camera was in a forest
+
+> Seems like time is paused at this part, so the bamboo in the scene is not
+> fully knocked over and is blocking the view.
+
+Nothing was paused. `world.update` runs inside the summon-scene branch of
+`Game._tick` — it has since the Dojo lesson stopped moving behind Patchfur — and
+the canes were mid-fall because `heap-slam` had only just pushed them over.
+
+What was wrong was where the lens was standing. The crossing's shot was
+`a: PI/2, dist: 22`, which puts the camera at **(56, 12, 46)**. The east grove is
+48 canes on a 20-unit disc centred at **(58, 44)**. The camera was 2.8 units from
+the middle of it, looking out through the entire thickness of a forest that the
+previous shot had tipped over in forty-eight random directions. A shot cannot be
+fixed by un-pausing a clock that was already running.
+
+**`_clearAngle` could not have caught it**, and now can. It scored every solid
+individually, so a grove was forty separate misses: the nearest cane to a sight
+line can be nine units off it while the line still runs the whole length of the
+stand. Groves are measured as **discs, by the chord the sight line cuts**, and
+charged one unit of clearance per unit of bamboo. Half that was tried first and
+lost — twelve units of daylight on the open side beat a halved 25-unit penalty.
+
+### Three more things the measurement had to learn
+
+**`self` — a subject is not its own obstacle.** This bridge has eighteen railing
+posts standing on its own deck, and every one of them lies across every side-on
+view of the deck they belong to. The honest answer to "which way round is this
+visible from" came back as *none of them, here is the least bad*, which is a
+measurement that has stopped measuring. Anything within `self` of the mark is
+the shot.
+
+**`face` and `span` — an arc, not the compass.** And the reason the old shot
+looked along the deck was a guess that does not survive being looked at: that a
+bridge seen from the side is "a red wall". It is not — the sides are posts, you
+see through them, and from across the deck you get the **arch**, which is the
+only angle that says *bridge* rather than *red rectangle*, and four kittens
+strung out along it at four different distances instead of one behind another.
+
+**`need` — enough is enough.** "Most daylight wins" plus an arc to search is
+"go to whichever end of the arc is most open", every single time. Measured at
+nineteen units, the clearance around the crossing climbs from 2 units at 0.2
+radians to 7.5 at 0.6 and then falls off a cliff into the grove — so every arc
+containing 0.6 came back as 0.6, and the deck ran corner to corner through the
+subtitle box. Three units of air is clear; past that the composition decides, so
+clearance is capped and the tie is broken by staying near `face`. A shot that
+names no `face` keeps the old rule exactly, which is the three naming shots and
+every one of them wants the whole compass searched.
+
+### The tree they ran through was a tree that should not have been there
+
+> Right now, they are passing through a tree; we can either have them starting
+> in front of the tree or have them running around the tree.
+
+Neither. A cherry tree stood at **(16.9, 44.5)** with a radius of 0.9, in the
+middle of the east spur. Cherry trees consulted `keepClear` and `solids` and
+never `roadMask` — the paving's own corridor, which the grass tufts have
+consulted since the roads were laid. A trunk could grow in a road, and one had.
+
+One line in `world.js`, and it is general: a canopy may lean over a road, a
+trunk may not stand in one.
+
+### The bridge, the road and the gate were three sets of literals
+
+> Alternatively, we can rotate the bridge to match the road and the torii gate
+> to make this shot better... Looks a little sloppy currently.
+
+Measured: the east spur crossed the deck at **9.5 degrees** to it and a metre
+north of its centreline, and the torii stood two metres south of it on a bearing
+nothing else shared. Three independent sets of numbers that had never been asked
+to agree.
+
+They are one now. `BRIDGE` and `BRIDGE_RUN` are hoisted above `roadDefs`, the
+spur bends out of town and is then **dead straight on the deck's own axis** from
+`x - RUN` to `x + RUN`, and the gate stands at the far end of that straight. A
+road is straight where it crosses a river; that is not a style choice, it is what
+a bridge is for.
+
+`world-check` asks the built world, not the source: every length of paving near
+the deck is within a cat's width of its centreline, the paving is no narrower
+than the deck it runs onto, the nearest torii is on the line and past the deck,
+no trunk stands in any road on the island, and nothing at all stands inside the
+width of the way the four of them run.
+
+### The abilities were two free-running clocks
+
+> We are also trying to show the different special abilities here, and seems
+> their animations are being interrupted... when doing the power dive ability,
+> it is not being shown.
+
+It was `hopT` and `actT`: two random timers per kitten that knew nothing about
+where she was or what she was already doing, so one ability started on top of
+another roughly as often as not. And the Power Dive was never a dive — the old
+`smash` multiplied a hop's sine amplitude by 1.5 if a hop happened to be running
+when it fired.
+
+What replaced it is **one state machine and real gravity**. `air` is her height
+above whatever she is standing on and `vy` is the only thing that changes it;
+`jumps` counts the shoves she has spent since her feet were last down. Every move
+is those three variables:
+
+| move | what it is |
+| --- | --- |
+| `jump` | one shove, `BR_HOP` |
+| `double` | and a second at the apex, `BR_HOP2` — no orb, just a kitten |
+| `dive` | 落 **POWER DIVE**: double up, hang 0.22s dead still, then −24 u/s and a shockwave on the plank she hits |
+| `dash` | 突 **CHARGE**: 3.2x forward for 0.4s, and it works in the air |
+| `ward` | 壁 **WARD**: the same two blue shells `Player` pops |
+| `blink` | 瞬 **FLASH STEP**: gone for half a second, smoke at both ends, eleven units further down the road |
+
+**The hang is the whole reason the dive is visible.** A dive from a single jump
+is 2.2 units of drop at 24 units a second — nine hundredths of a second, five
+frames, which reads as the sprite teleporting to the floor. Doubling up first
+puts her four units high, and a fifth of a second stopped dead in the air is the
+frame the eye actually catches.
+
+**And when they fire is a place, not a time.** `BR_SCRIPT` is one row per
+kitten, each move keyed to a *fraction of the path*, guaranteed 0.07 apart, plus
+a couple of filler jumps dropped in wherever they do not crowd anything already
+on the list. Two moves on top of each other is the one thing the structure cannot
+express, which is the fault it exists to answer. All four open with a different
+one, and between the first two rows all four abilities are on screen — the fifth
+non-negotiable pointed at a cutscene, because the ending plays at two as often
+as at four.
+
+**The shockwave belongs to the plank, not to the cat.** Pinned to her position
+it was a puddle of light she dragged down the bridge, because she is off again
+inside the half second it takes to fade. `world-check` found that one by asking
+why a shockwave was in the air.
+
+### ...and all of it makes a noise
+
+> When these abilities are being played, they should make some sounds,
+> including jumping sounds.
+
+`FinaleShow.onSfx` is a callback and not an audio engine — the same line
+`FinaleTide.onCrash` draws, and `entities/panda.js` before it. `SummonScene`
+wires it to `audio.play`; a show built without one is silent and complete, which
+is the ninth non-negotiable.
+
+`world-check` hooks it, runs twelve seconds of the shot, and asks four things:
+that every one of `jump doubleJump land slash rockbreak wardup dodgeout dodgein`
+fires; that **every name it heard appears as a `case` in `src/core/audio.js`**, so
+a sound invented for the cutscene cannot pass; that nothing is asked for above
+0.4 gain, because Patchfur's last line is playing across all of it; and that more
+than one of them jumps and more than one lands, since one of each would mean
+three kittens running the deck in silence.
+
+### The measurement that was wrong for a whole pass — `dur` against `clip`
+
+This one is worth the space, because it invalidated a complete round of tuning
+and nothing about it looked like a bug.
+
+A beat's `dur` is `voiceDur + TAIL`, and `voiceDur` is read off the mp3 by
+`SummonScene.load` — **in a browser**. Ask a beat how long it is in Node, where
+there is no `Audio` element and no file to decode, and it answers with the
+authored floor the table ships with: **9 seconds against a real 17.1**.
+`world-check` timed the crossing against that floor, so a 10.28-second shot was
+paced as 5.4 seconds of camera, and everybody was over and gone with two and a
+half seconds of empty bridge still to run.
+
+`clip` is the recording's own measured length and has been sitting beside every
+finale line in `SCRIPTS` all along — `_trio` already measures against it, so it
+was load-bearing and correct the whole time. The checker reads it now, and there
+is a check saying so out loud: every finale beat carries a clip length, and it
+differs from the authored floor by more than a second.
+
+**And the pacing check plays the shot rather than solving it.** The arithmetic
+answer is wrong in the flattering direction — a Charge covers ground at 3.2x, a
+Flash Step skips eleven units, the falling half of a dive nearly stops — so a
+check that worked the finish time out on paper reported *less* empty bridge than
+the camera sees. It runs the crossing for the length of the shot and watches for
+the last frame anybody is on the deck.
+
+### The model on the Dojo floor was a map in a large black room
+
+> Why is the camera so zoomed out? I think we can be 25% or more zoomed in more,
+> even if parts of the island are cut off after they are separated. Maybe have
+> the camera a bit higher and more angled towards the action so that when the
+> "angle" and "circle" section happens, we can still see the circle animation
+> lines.
+
+Measured **in the frame** rather than in units: the model was projected into
+normalised device coordinates at seven points across the beat and asked how much
+of the picture it covered. At 34 units out it was **40 per cent of the frame's
+width** through the middle of the shot. At 23 it is between 56 and 70.
+
+The other two numbers move with it — 23 and 18 is 38 degrees above the floor
+against 31 — and `dolly` holds that angle for the whole push, so the steeper look
+is the shot rather than something that happens to it on the way in.
+
+**Steeper is also what keeps the working in frame**, which is why the two halves
+of that ask are not a contradiction. The circle is a cone of rings standing *on*
+the model: a shallow camera squashes it into a band of ellipses and a steep one
+draws it as circles, which is what the first non-negotiable asks of it. The top
+tiers do run off the top edge at the widest moment — that is the licence in
+"even if parts of the island are cut off", spent on the part of the diagram that
+is already blowing out and fading.

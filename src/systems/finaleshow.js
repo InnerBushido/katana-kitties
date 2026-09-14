@@ -283,93 +283,172 @@ const SHAPE_BLOW = 2.4;
  * lantern of rings over it, which is the picture.
  */
 /**
- * The bridge run: how fast they cross, where they start, and how often one of
- * them does something.
+ * The bridge run: how fast they cross, where they start, and what each of them
+ * does on the way over.
  *
  * THEY RUN AT IT BEFORE THEY RUN ACROSS IT. "Let's make them start further
  * back, give them a few seconds of running towards the bridge before they start
  * crossing it and jumping over it."
  *
  * `BR_RATE` IS A FRACTION OF THE WHOLE PATH PER SECOND, and the path is
- * `BR_UP + span + BR_OFF` = 42 units on this world. 0.24 of that is 10.1 units
- * a second and 4.2 seconds end to end: 1.6 of approach, 1.8 of deck, 0.8 to
- * leave.
+ * `BR_UP + span + BR_OFF` = 50 units on this world. 0.142 of that is 7.1 units
+ * a second — a kitten at a trot, which is what a cutscene wants where the game
+ * wants a sprint — and 7.0 seconds end to end: 3.1 of approach, 2.5 of deck,
+ * 1.4 to leave.
  *
- * AND ALL OF IT IS CUT TO THE SHOT, WHICH IS 5.40 SECONDS. Measured off the
- * running scene rather than reasoned: beat 3 of the finale lasts 9 seconds and
- * the bridge holds the first 0.60 of it. The first pass at this ran at 0.17 of
- * a 52-unit path — 5.9 seconds for ONE kitten, plus three of stagger — so the
- * cut to the arena landed with the third and fourth still out on the approach
- * road as specks, and what the shot actually showed was an empty bridge with a
- * cat somewhere behind it. The previous comment here claimed the shot held 9.4
- * seconds. It does not, and nothing had ever asked it.
+ * AND ALL OF IT IS CUT TO THE SHOT, WHICH IS 10.28 SECONDS. That number had to
+ * be measured twice, and the reason is worth writing down because it invalidated
+ * a whole pass of tuning. A beat's `dur` is `voiceDur + TAIL`, and `voiceDur` is
+ * read off the mp3 by `SummonScene.load`. Ask a beat how long it is in NODE —
+ * where there is no `Audio` element and no file to decode — and it answers with
+ * the authored floor, which on this line is 9 seconds against a real 17.1. The
+ * previous pass paced this crossing against that floor: built to fit a shot 58%
+ * of its actual length, so everybody was over and gone with two and a half
+ * seconds of empty bridge still to run. `clip` is the RECORDING's measured
+ * length and has been sitting in the script table beside every finale line all
+ * along; `world-check` reads it now instead of `dur`, so the checker and the
+ * game are timing the same shot.
  *
- * SO SOMEBODY IS ON THE DECK FROM 1.6 SECONDS IN UNTIL THE CUT, and the last
- * two are still crossing when it comes, which is the right way for this to end
- * — the line over the top of it is "so stay", not "so leave".
+ * SO THE LAST OF THE FOUR STEPS ONTO THE DECK AT 6.1 SECONDS and is off the far
+ * end at about 8.3, which leaves two seconds of empty crossing before the cut —
+ * the road, the gate and the arch with nobody on it, which is the picture that
+ * line wants under it, and no more of it than that.
+ *
+ * AND THE CHECK THAT PINS IT PLAYS THE SHOT RATHER THAN SOLVING IT. Working the
+ * finish time out from the rate is wrong, and wrong in the flattering
+ * direction: a Charge covers ground at 3.2x, a Flash Step skips eleven units of
+ * it, and the falling half of a Power Dive nearly stops. The arithmetic answer
+ * came out a third of a second early every time.
  *
  * THE HEAD START IS GONE AND `BR_GAP` REPLACED IT. The old `BR_HEAD` was a
  * random start each, which was written to solve "the shot opens on an empty
  * bridge" and solved it by opening on four cats already halfway over with no
  * approach at all. An index stagger is what was actually asked for.
  */
-const BR_RATE = 0.24;
-
-/** How long one flourish lasts, and the gap between them. Both ends random per
- *  kitten per go: "jumping randomly, multiple times, with random pauses between
- *  jumps, to show they are having random/chaotic fun." */
-const HOP_DUR = [0.34, 0.30];
-/* AND THE GAPS ARE CUT TO THE DECK, NOT TO A FEELING. The deck is 1.8 seconds
-   long at `BR_RATE` — see there — and a gap averaging 0.95 on top of a hop
-   averaging 0.6 is one and a half seconds a cycle, which is ONE jump per
-   kitten per crossing. "Jumping randomly, MULTIPLE times" is the line, so the
-   cycle has to fit inside the crossing twice: 0.2-0.8 of wait puts it at just
-   under a second. */
-const HOP_GAP = [0.20, 0.60];
-const ACT_DUR = [0.38, 0.30];
-const ACT_GAP = [1.10, 2.40];
-
-/** The three things a kitten might do on the way across, and they are the
- *  three the Kotodama orbs actually grant. "It would also be good to give them
- *  the special abilities from the kotodoma orbs (Smash, Dash, Ward) and show
- *  them using these abilities while they are running, jumping, and crossing the
- *  bridge."
- *
- *  A SWING AND AN ORB WERE THE OTHER TWO AND THEY WERE NOT ABILITIES. A swing
- *  is what the katana does all day and the rising ring read as a third kind of
- *  smash; between them they took two of every four flourishes and neither said
- *  anything. Each kitten is DEALT a different one of these to start with, so
- *  all three are on screen in the first pass rather than three of one by
- *  chance.
- *
- *  THE FIRST FLOURISH IS ALSO THE FIRST THING THAT HAPPENS. The approach is
- *  when the abilities play; the jumps wait for the deck, which is the order the
- *  sentence puts them in — "running towards the bridge before they start
- *  crossing it and jumping over it." */
-const BR_ACTS = ['smash', 'dash', 'ward'];
+const BR_RATE = 0.142;
 
 /**
- * The approach, and the way out.
+ * The approach, the way out, and the second between them.
  *
- * 16 units is a second and a half of road with the crossing in front of them;
- * the path used to begin 7 units short of the deck, which is 0.8 seconds and
- * reads as a standing start. 8 past the far end takes them out of frame rather
- * than stopping them on the tarmac. Both are in WORLD units and the deck
- * between them comes off `world.bridgeSpan`, so a re-sized crossing re-times
- * its own run.
- *
- * IT WAS 22 AND 12, AND THE SHOT COULD NOT AFFORD THEM. See `BR_RATE`: 5.40
- * seconds of camera has to hold four staggered crossings, so every unit of road
- * either side of the deck is a unit the fourth kitten does not get to cross.
- * These two are the smallest pair that still read as running AT something.
+ * 22 units is two and a half seconds of road with the crossing in front of
+ * them; the path used to begin 7 units short of the deck, which is 0.8 seconds
+ * and reads as a standing start. 10 past the far end takes them out through the
+ * gate rather than stopping them on the tarmac — and the gate is really there
+ * now: `World` builds the east torii at `BRIDGE.x + BRIDGE_RUN`, which is 16
+ * units past the crest, so the last thing each of them does is run through it.
+ * Both are in WORLD units and the deck between them comes off
+ * `world.bridgeSpan`, so a re-sized crossing re-times its own run.
  *
  * `BR_GAP` is the stagger, in seconds — "roughly a second apart from each
  * other, so that they are not right on top of each other and you can see them
  * better as they cross."
  */
-const BR_UP = 16;
-const BR_OFF = 8;
+const BR_UP = 22;
+const BR_OFF = 10;
 const BR_GAP = 1.0;
+
+/**
+ * A JUMP IS A JUMP NOW, AND NOT A SINE.
+ *
+ * It used to be `sin((1 - t/dur) * PI) * height` — an arc played out of a timer,
+ * which is fine for one hop and cannot express any of what was asked for:
+ *
+ *   "Seems their animations are being interrupted... when doing the power dive
+ *   ability, it is not being shown, maybe they need to double or triple jump
+ *   before doing it, so that it can be seen... Some players can double jump or
+ *   single jump while crossing the bridge or before. Also, the dash ability can
+ *   happen in the air."
+ *
+ * Every one of those is a sentence about a SECOND impulse arriving partway
+ * through the first one's arc, and a sine has nowhere to put it. So the
+ * crossing runs on the same two numbers the game itself runs on: a height, a
+ * vertical speed, and gravity pulling on it. A double jump is one more shove at
+ * the top; a dive is a hang and then a shove downward; a dash in the air is a
+ * change to the horizontal and nothing else. None of them can interrupt another
+ * because none of them is a clock — they are all the same two variables.
+ *
+ * `BR_GRAV` and `BR_HOP` are solved together, not typed: `2 * v / g` is the
+ * airtime and `v * v / (2 * g)` the apex, so 11 and 28 give 0.79 seconds and
+ * 2.16 units — a jump you can read at nineteen units from a 54-degree lens, and
+ * one that fits inside the two seconds of deck three times.
+ */
+const BR_GRAV = 28;
+const BR_HOP = 11;
+/** The second shove, a shade weaker than the first — the real one is too (see
+ *  `Player._jump`), and the difference is what makes a double jump read as two
+ *  jumps rather than as one tall one. */
+const BR_HOP2 = 10;
+/** 落 POWER DIVE: how long she hangs at the top, and how hard she comes down.
+ *
+ *  THE HANG IS THE WHOLE REASON IT IS VISIBLE. A dive from a single jump is 2.2
+ *  units of drop at 24 units a second — nine hundredths of a second, which is
+ *  five frames and reads as the sprite teleporting to the floor. Doubling up
+ *  first puts her 4 units up, and a fifth of a second of stopped-dead-in-the-air
+ *  before she drops is the frame the eye actually catches. "Maybe they need to
+ *  double or triple jump before doing it, so that it can be seen" — she does. */
+const BR_HANG = 0.22;
+const BR_DIVE = 24;
+/** ...and how much of her forward speed the dive costs. `Player._startDive`
+ *  keeps 0.3 of it for exactly this reason: a power dive that sailed on down
+ *  the deck would be a swan dive. */
+const BR_DIVE_K = 0.32;
+/** 突 CHARGE: how much faster, and for how long. */
+const BR_DASH = 3.2;
+const BR_DASH_DUR = 0.4;
+/** 壁 WARD: how long the bubble is held. Longer than the other two on purpose —
+ *  a shield up for a third of a second is a glitch, and this is the one of the
+ *  three that was asked for by name. */
+const BR_WARD_DUR = 1.25;
+/** 瞬 FLASH STEP: how long she is gone, and how far down the road she comes
+ *  back. `DODGE.invuln` is 0.5 seconds in the real move and this is the same
+ *  half second; 11 units is a little over a second of running, which is far
+ *  enough to read as a teleport and near enough that both ends are in frame.
+ *  "Can also show someone doing the Flash Step to teleport from far away towards
+ *  the bridge." */
+const BR_BLINK_GONE = 0.5;
+const BR_BLINK_FAR = 11;
+/** How long the smoke she leaves behind lasts. Shorter than the vanish, so the
+ *  puff she leaves and the puff she arrives in are never on screen together —
+ *  one pool of four little spheres per kitten does both. */
+const BR_PUFF = 0.38;
+/** ...and how long the Smash's shockwave rings on the deck after she lands. */
+const BR_RING = 0.45;
+
+/**
+ * What each of them does, and where on the path she does it.
+ *
+ * DEALT BY INDEX AND PINNED TO A PLACE, NOT ROLLED AGAINST A TIMER. The old
+ * version had two random clocks per kitten — one for jumps, one for abilities —
+ * and the trouble with a clock is that it does not know where she is. It fired
+ * a Ward on the approach and a jump off the end of the deck, it dealt the same
+ * move twice to the same kitten, and when the stagger meant she was not on
+ * screen yet it spent her whole opening flourish in the dark. (That last one
+ * was found by measurement: nine frames of visible bubble in a twelve-second
+ * run.) A move keyed to a FRACTION OF THE PATH cannot do any of that: she is
+ * where the number says she is, which is the definition of being on screen.
+ *
+ * ALL FOUR ABILITIES ARE ON SCREEN AT TWO PLAYERS, which is the fifth
+ * non-negotiable pointed at a cutscene. The first two rows between them carry
+ * 瞬 Flash Step, 突 Charge, 壁 Ward and 落 Power Dive, plus a double jump, so a
+ * pair of sisters sees the same show four of them do.
+ *
+ * THE APPROACH IS 0..0.44 OF THE PATH AND THE DECK IS 0.44..0.80. The abilities
+ * play on the road, the jumps play on the crossing — "running towards the bridge
+ * before they start crossing it and jumping over it" is the order the sentence
+ * puts them in — and the Flash Step is first of all, because it is the one that
+ * comes from far away.
+ */
+const BR_SCRIPT = [
+  [[0.02, 'blink'], [0.26, 'dash'], [0.52, 'jump'], [0.66, 'dive']],
+  [[0.14, 'ward'], [0.48, 'double'], [0.70, 'dash']],
+  [[0.10, 'dash'], [0.46, 'dive'], [0.72, 'double']],
+  [[0.08, 'dive'], [0.30, 'ward'], [0.54, 'blink'], [0.70, 'double']],
+];
+/** ...and one or two more hops each, dropped on the deck at random, because
+ *  four cats doing exactly what the table says is four cats on rails. They are
+ *  only ever ordinary jumps: a filler that could deal an ability would put the
+ *  guarantee above back at the mercy of a die. */
+const BR_FILL = [0.44, 0.78];
 
 /** How long after the champion throws his arms up the four of them join in.
  *  "Let's also make Mr. Satan go into cheering pose first, and then a moment
@@ -528,6 +607,17 @@ export class FinaleShow {
      *  there is a ring for them to drop into. See `_seedArena`. */
     this.arenaT = 0;
     this.satanLit = false;
+    /**
+     * What to play, when something on the bridge does something.
+     *
+     * A CALLBACK AND NOT AN AUDIO ENGINE, which is the same line `FinaleTide`
+     * draws and `entities/panda.js` before it: this file knows what happened
+     * and has no business knowing how loud the game is. `SummonScene` wires it
+     * to `audio.play`; a show built without one is silent and complete, which
+     * is the ninth non-negotiable — the ending must play with no sound at all.
+     * @type {?(name: string, gain?: number) => void}
+     */
+    this.onSfx = null;
     this._drivers = [];
     this._disposables = [];
   }
@@ -1908,10 +1998,28 @@ ${sh.vertexShader}`.replace(
       }
       ward.visible = false;
       this.group.add(ward);
+      /* ...AND THE SMOKE SHE VANISHES IN. 瞬 Flash Step takes her off the screen
+         for half a second and a sprite that simply switches off reads as the
+         game dropping a frame — `systems/dodgefx.js` says so at length and this
+         is the same rule in a cutscene. Four soft balls, one material each so
+         each can fade on its own, allocated once: the alternative is minting
+         geometry in the middle of the ending. */
+      const puff = new THREE.Group();
+      for (let j = 0; j < 4; j++) {
+        puff.add(new THREE.Mesh(
+          this._keep(new THREE.IcosahedronGeometry(0.5, 1)),
+          this._keep(new THREE.MeshBasicMaterial({
+            color: 0xf6f2ea, transparent: true, opacity: 0,
+            depthWrite: false, toneMapped: false,
+          }))
+        ));
+      }
+      puff.visible = false;
+      this.group.add(puff);
       this.kits.push({
         mini, big, cheer, colour: PLAYER_STYLE[i].colour, i,
         seed: (i / PLAYER_STYLE.length) * TAU, from: null, to: null, k: 0, hop: 0,
-        ring, ringMat, ward,
+        ring, ringMat, ward, puff,
       });
     }
 
@@ -2187,14 +2295,19 @@ ${sh.vertexShader}`.replace(
   }
 
   /**
-   * Line the four of them up on the road, a second apart, and start them
-   * running at the bridge.
+   * Line them up on the road, a second apart, and start them running at the
+   * bridge with a move list each.
    *
    * THE STAGGER IS NEGATIVE `k` AND NOT A TIMER. `_stepBridge` already hides
    * anybody outside 0..1 of the path, so a kitten dealt `-2 * BR_GAP * BR_RATE`
    * is simply two seconds of path behind the start line and walks into
    * existence when she gets there — no second clock, and nothing to get out of
    * step with the one that moves her.
+   *
+   * AND THE MOVE LIST IS PLACES, NOT TIMES. See `BR_SCRIPT`. Each row is dealt
+   * whole, the fillers are dropped in where they do not crowd anything already
+   * on the list, and the lot is sorted so `_stepBridge` only ever has to look at
+   * the next one.
    */
   _seedBridge() {
     const b = this.world?.bridge;
@@ -2223,23 +2336,42 @@ ${sh.vertexShader}`.replace(
       k.lane = (i - (this.kits.length - 1) / 2) * (this.brWide * 0.25)
         + (Math.random() - 0.5) * this.brWide * 0.12;
       k.k = -i * BR_GAP * BR_RATE;
-      /* EVERY TIMER STARTS PART-USED. A kitten whose first jump is a full gap
-         away spends the opening of the shot walking, and the opening of the
-         shot is the only part of it the fade is coming up on. */
-      k.hopT = 0;
-      k.hopFor = 0;
-      k.hopH = 0;
-      k.hopWait = Math.random() * HOP_GAP[1] * 0.5;
-      k.actT = 0;
-      k.actFor = 0;
-      k.act = null;
-      /* DEALT, NOT ROLLED, THE FIRST TIME. One each of Smash, Dash and Ward is
-         on screen inside the first three seconds; after that they are random
-         like everything else on this bridge. */
-      k.actNext = BR_ACTS[i % BR_ACTS.length];
-      k.actWait = 0.5 + Math.random() * 0.8;
+
+      /* HER OWN ROW OF THE SCRIPT, PLUS A COUPLE OF HOPS. A filler within 0.07
+         of something already on the list is dropped rather than moved: two
+         moves on top of each other is the one thing this structure cannot
+         express, because the second would cut the first off at the knees, and
+         that is the fault this whole rewrite exists to answer. */
+      const list = (BR_SCRIPT[i % BR_SCRIPT.length] ?? [])
+        .map(([at, kind]) => ({ at, kind }));
+      for (const at of BR_FILL) {
+        const jitter = at + (Math.random() - 0.5) * 0.06;
+        if (list.some((m) => Math.abs(m.at - jitter) < 0.07)) continue;
+        list.push({ at: jitter, kind: 'jump' });
+      }
+      list.sort((x, y) => x.at - y.at);
+      k.moves = list;
+      k.next = 0;
+
+      /* WHERE SHE IS IN THE AIR, AND WHAT SHE IS DOING WITH IT. `air` is height
+         above whatever she is standing on — road or deck, the arch is solved
+         separately — and `vy` is the only thing that changes it. `jumps` is how
+         many shoves she has spent since she last had her feet down, which is
+         what makes a double jump a double jump and not two singles. */
+      k.air = 0;
+      k.vy = 0;
+      k.jumps = 0;
+      k.mv = null;
+      k.mvT = 0;
+      k.hang = 0;
+      k.ringT = 0;
+      k.puffT = 0;
+      k.gone = false;
       k.big.bb.visible = true;
+      k.big.bb.mesh.scale.set(1, 1, 1);
       if (k.ward) k.ward.visible = false;
+      if (k.ring) k.ring.visible = false;
+      if (k.puff) k.puff.visible = false;
     }
   }
 
@@ -2944,13 +3076,32 @@ ${sh.vertexShader}`.replace(
   }
 
   /**
-   * Four kittens running the real bridge, and over the camera.
+   * Four kittens running the real bridge, with the four things they can do.
    *
    * THEY RUN PAST THE LENS AND OUT OF THE SHOT. "Can have them all pass over
    * and through the bridge and past the camera while the camera is just focused
    * on the bridge." So the path runs the whole length of the deck and keeps
-   * going: the last thing the shot holds is an empty bridge, which is the
-   * picture that line wants under it.
+   * going, out through the gate on the far side: the last thing the shot holds
+   * is an empty bridge, which is the picture that line wants under it.
+   *
+   * EVERY MOVE IS THE SAME TWO VARIABLES. `air` and `vy`, with `BR_GRAV`
+   * pulling on them — see the note there. A jump is one shove, a double jump is
+   * a second one at the top, a Power Dive is a hang and then a shove downward, a
+   * Charge is a multiplier on the horizontal, a Flash Step takes the horizontal
+   * away and gives it back eleven units later. Because they are all the same two
+   * variables, there is no state in which one of them can cut another off —
+   * which is the whole of "their animations are being interrupted".
+   *
+   * AND THEY ARE AUDIBLE. "When these abilities are being played, they should
+   * make some sounds, including jumping sounds." Every one of them fires the
+   * sound the REAL move fires, off the same names in `core/audio.js`: `jump`
+   * and `doubleJump` off `Player._jump`, `land` off the ground snap, `slash`
+   * and `rockbreak` off `_startDive` and `_diveImpact`, `wardup` / `warddown`
+   * off the bubble, `dodgeout` / `dodgein` off the Flash Step. Nothing new was
+   * invented for the cutscene: a kid who has played the game has heard all of
+   * this mean exactly this. Quietly, because Patchfur is talking over it, and
+   * through `onSfx` rather than by reaching for the audio engine — the same
+   * rule `FinaleTide.onCrash` follows and for the same reason.
    */
   _stepBridge(dt) {
     const b = this.world?.bridge;
@@ -2958,6 +3109,7 @@ ${sh.vertexShader}`.replace(
       for (const k of this.kits) {
         if (k.ring) k.ring.visible = false;
         if (k.ward) k.ward.visible = false;
+        if (k.puff) k.puff.visible = false;
       }
       return;
     }
@@ -2965,34 +3117,13 @@ ${sh.vertexShader}`.replace(
     const rise = this.brRise ?? 2.2;
     const path = this.brPath ?? (BR_UP + len + BR_OFF);
     const half = len / 2;
-    const rng = (r) => r[0] + Math.random() * r[1];
+    const sfx = (name, gain) => this.onSfx?.(name, gain);
     for (const k of this.kits) {
-      /* --- the jumps, which are now a schedule and not a waveform --------
-         It was `sin(u * 3.1 + seed)`: exactly three hops each, evenly spaced,
-         at one height, for the whole crossing. Offset per kitten, so it did not
-         read as a chorus line — but it did read as four metronomes, which is
-         the same note the crash sounds got. "Jumping randomly, multiple times,
-         with random pauses between jumps, to show they are having random/
-         chaotic fun."
-
-         A TIMER PER KITTEN, REROLLED AT EVERY LANDING. Height is rolled with the
-         jump, so a run of hops is a small one, a big one and a middling one
-         rather than three of the same. */
-      /* --- BUT FIRST: IS SHE IN THE SHOT AT ALL --------------------------
-         SHE MOVES, AND THEN EVERYTHING ELSE DECIDES. This used to run the hop
-         and ability schedules before the visibility gate below, which meant a
-         kitten who had not entered yet spent her stagger burning through them
-         off screen: the four opening abilities are dealt one each by index (see
-         `_seedBridge`), and the Ward — a 1.1-second hold, the longest of the
-         three and the one that was asked for by name — is dealt to the kitten
-         who enters THIRD, so it fired at 0.9s and had expired by the 2s she
-         became visible. Measured: nine frames of bubble in a twelve-second run.
-
-         Nothing is scheduled for somebody nobody can see. Her clock starts when
-         she comes into shot, which also makes the run-up mean what it says —
-         "a few seconds of running towards the bridge" with her abilities going
-         off while she does it. */
-      k.k += dt * BR_RATE * (k.act === 'dash' ? 3.2 : 1);
+      /* --- IS SHE IN THE SHOT AT ALL -------------------------------------
+         SHE MOVES, AND THEN EVERYTHING ELSE DECIDES. Her move list is keyed to
+         places on the path rather than to a clock (see `BR_SCRIPT`), so nothing
+         below can fire for somebody who has not arrived — but the rings, the
+         bubble and the smoke are all still hers to take down when she leaves. */
       if (k.k < 0 || k.k > 1) {
         k.big.bb.visible = false;
         /* AND SHE LEAVES THE SHOT THE SHAPE SHE ARRIVED IN. A kitten who ran
@@ -3001,88 +3132,177 @@ ${sh.vertexShader}`.replace(
         k.big.bb.mesh.scale.set(1, 1, 1);
         if (k.ring) k.ring.visible = false;
         if (k.ward) k.ward.visible = false;
+        if (k.puff) k.puff.visible = false;
+        k.k += dt * BR_RATE;
         continue;
       }
 
-      /* WHERE SHE IS, BEFORE ANYTHING DECIDES WHAT SHE IS DOING — the jumps
-         are the deck's and the abilities are the whole road's. */
-      const xNow = b.x - half - BR_UP + k.k * path;
-      const deck = Math.abs(xNow - b.x) <= half;
-      if (k.hopT > 0) {
-        k.hopT -= dt;
-      } else if (deck) {
-        k.hopWait -= dt;
-        if (k.hopWait <= 0) {
-          k.hopFor = rng(HOP_DUR);
-          k.hopT = k.hopFor;
-          k.hopH = 1.1 + Math.random() * 1.5;
-          k.hopWait = rng(HOP_GAP);
-          /* A SMASH IS A JUMP THAT MEANT IT, so the two schedules agree: if she
-             is mid-Smash when she takes off, she takes off higher. */
-          if (k.act === 'smash') k.hopH *= 1.5;
+      /* --- has she reached the next thing she is going to do -------------- */
+      if (!k.mv && k.next < (k.moves?.length ?? 0)
+          && k.k >= k.moves[k.next].at) {
+        const m = k.moves[k.next++];
+        k.mv = m.kind;
+        k.mvT = 0;
+        /* A JUMP-SHAPED MOVE ONLY STARTS WITH HER FEET DOWN. The alternative —
+           letting one fire in mid-air — is a kitten who leaves the deck twice
+           from the same jump, which is exactly the "interrupted" look. She is on
+           the ground here in every authored case; the guard is for the day
+           somebody re-times the table. */
+        if (m.kind === 'jump' || m.kind === 'double' || m.kind === 'dive') {
+          if (k.air > 0.01) { k.mv = null; } else {
+            /* AND NOT ALL THE SAME HEIGHT. "Jumping randomly, multiple times,
+               with random pauses between jumps" — the pauses come off the move
+               list, which is the half of it a clock could never get right, and
+               this is the other half. One sine per kitten gave four identical
+               hops and read as four metronomes; a shove that varies by a fifth
+               is four kids. On the SHOVE and not on the height, because
+               gravity is doing the rest and a height that was rolled would be
+               a height she does not fall from. */
+            k.vy = BR_HOP * (0.86 + Math.random() * 0.30);
+            k.air = 0.001;
+            k.jumps = 1;
+            sfx('jump', 0.30);
+          }
+        } else if (m.kind === 'dash') {
+          sfx('slash', 0.26);
+        } else if (m.kind === 'ward') {
+          sfx('wardup', 0.30);
+        } else if (m.kind === 'blink') {
+          sfx('dodgeout', 0.34);
+          k.gone = true;
+          this._puff(k);
         }
       }
-      const hop = k.hopT > 0 && k.hopFor > 0
-        ? Math.sin((1 - k.hopT / k.hopFor) * Math.PI) * k.hopH
-        : 0;
+      if (k.mv) k.mvT += dt;
 
-      /* --- and what she is doing with her paws --------------------------- */
-      if (k.actT > 0) {
-        k.actT -= dt;
-        if (k.actT <= 0) k.act = null;
-      } else {
-        k.actWait -= dt;
-        if (k.actWait <= 0) {
-          k.act = k.actNext
-            ?? BR_ACTS[Math.floor(Math.random() * BR_ACTS.length)];
-          k.actNext = null;
-          /* THE WARD IS HELD, NOT FLICKED. A shield that is up for a third of
-             a second is a glitch; the other two are a blow and a burst and the
-             short window is what makes them read as one. */
-          k.actFor = rng(ACT_DUR) * (k.act === 'ward' ? 3.2 : 1);
-          k.actT = k.actFor;
-          k.actWait = rng(ACT_GAP);
+      /* --- the second shove, and the hang above it ------------------------
+         A DOUBLE JUMP AND A DIVE START THE SAME WAY, and they have to: the dive
+         is only visible because she is four units up when it begins rather than
+         two. The one line of difference is what happens at the second apex. */
+      if ((k.mv === 'double' || k.mv === 'dive') && k.jumps === 1 && k.vy <= 0) {
+        k.vy = BR_HOP2 * (0.9 + Math.random() * 0.2);
+        k.jumps = 2;
+        sfx('doubleJump', 0.28);
+      }
+      if (k.mv === 'dive' && k.jumps === 2 && k.vy <= 0 && k.hang === 0
+          && !k.dropping) {
+        k.hang = BR_HANG;
+        k.vy = 0;
+        k.dropping = true;
+        sfx('slash', 0.34);
+      }
+      if (k.hang > 0) {
+        k.hang = Math.max(0, k.hang - dt);
+        k.vy = 0;
+        if (k.hang === 0) k.vy = -BR_DIVE;
+      }
+
+      /* --- gravity, and the ground under it ------------------------------- */
+      let landed = false;
+      if (k.air > 0 || k.vy > 0) {
+        if (k.hang === 0) k.vy -= BR_GRAV * dt;
+        k.air += k.vy * dt;
+        if (k.air <= 0) {
+          landed = true;
+          k.air = 0;
+          k.vy = 0;
+          k.jumps = 0;
         }
       }
-      const ae = k.actFor > 0 ? 1 - Math.max(0, k.actT) / k.actFor : 1;
+      if (landed) {
+        if (k.mv === 'dive') {
+          /* THE SHOCKWAVE IS THE LANDING AND NOT THE MOVE. It used to be lit
+             for as long as the ability's timer said, which meant a ring
+             expanding around a cat who was still in the air.
 
-      /* THE DASH IS THE ONE THAT MOVES HER, and it is paid at the top of the
-         loop rather than drawn: an ability that only changed the pose would be
-         a costume, and this one is about covering ground. */
-      k.big.bb.visible = true;
+             AND IT BELONGS TO THE PLANK SHE HIT, not to her. She is off again
+             inside the half second it takes to fade — that is what the move
+             list is for — and a ring that followed her was a cat dragging a
+             puddle of light down the bridge. `world-check` caught this by
+             asking why a shockwave was in the air; the answer was that it was
+             wherever she was. Pinned on the frame it is struck, in world
+             units, so nothing below has to know it exists. */
+          k.ringT = BR_RING;
+          k.ringX = k.big.bb.position.x;
+          k.ringY = k.big.bb.position.y;
+          k.ringZ = k.big.bb.position.z;
+          sfx('rockbreak', 0.36);
+        } else {
+          sfx('land', 0.22);
+        }
+        if (k.mv === 'jump' || k.mv === 'double' || k.mv === 'dive') {
+          k.mv = null;
+          k.dropping = false;
+        }
+      }
+
+      /* --- the ones that end on their own clock --------------------------- */
+      if (k.mv === 'dash' && k.mvT >= BR_DASH_DUR) k.mv = null;
+      if (k.mv === 'ward' && k.mvT >= BR_WARD_DUR) { k.mv = null; sfx('warddown', 0.22); }
+      if (k.mv === 'blink' && k.mvT >= BR_BLINK_GONE) {
+        /* ...AND ELEVEN UNITS FURTHER DOWN THE ROAD. Moved in PATH units and
+           not in `k`, so a longer bridge does not turn this into a longer
+           teleport: the distance she covers is the distance, whatever fraction
+           of the crossing it happens to be. */
+        k.k = Math.min(0.999, k.k + BR_BLINK_FAR / path);
+        k.mv = null;
+        k.gone = false;
+        /* THE ARRIVAL PUFF WAITS FOR THE POSITION IT IS ARRIVING AT. Dropped
+           here it would mark the spot she left, which is where the OTHER puff
+           already is — two clouds of smoke at one end of a teleport and none at
+           the other. See the flag below the position write. */
+        k.puffDue = true;
+        sfx('dodgein', 0.34);
+      }
+
+      /* --- and forward, at whatever speed she is owed --------------------- */
+      let rush = 1;
+      if (k.mv === 'dash') rush = BR_DASH;
+      else if (k.mv === 'blink') rush = 0;
+      else if (k.mv === 'dive' && k.jumps >= 2) rush = BR_DIVE_K;
+      k.k += dt * BR_RATE * rush;
+
       /* ALONG THE DECK, which is the x axis — the span is `len` units of arch
          on x and `wide` across z, and `world.bridge` is its CREST, which is why
          the road either side sits `rise` below it. Off the deck the clamp puts
          `arch` at zero, so the approach is flat ground and the crossing is the
          only thing that climbs. */
-      const x = xNow;
+      const x = b.x - half - BR_UP + k.k * path;
       const arch = Math.cos(Math.max(-1, Math.min(1, (x - b.x) / half)) * Math.PI / 2);
-      const y = b.y - rise + arch * rise;
-      k.big.bb.position.set(x, y + hop, b.z + k.lane);
+      const floor = b.y - rise + arch * rise;
+      const y = floor + k.air;
+      const z = b.z + k.lane;
+      k.big.bb.position.set(x, y, z);
+      if (k.puffDue) { k.puffDue = false; this._puff(k); }
       k.big.bb.facing = Math.PI / 2;
-      /* THE ATTACK ROW IS THE SWORD, and three of the four flourishes use it —
-         a swing, a Smash and a Dash all look like a cat with a katana out, and
-         the game has one drawing of that. A one-row atlas collapses every row
-         to 0 and the shot still plays; see `Billboard._setCell`. */
-      /* THE ATTACK ROW IS THE SWORD, and the two abilities that swing one use
-         it. The Ward does not — she is standing behind a shield, not cutting —
-         so she keeps the run. */
-      k.big.bb.row = (k.act === 'smash' || k.act === 'dash')
-        ? 3 : (hop > 0.25 ? 2 : 1);
+      /* GONE MEANS GONE. `Player._updateFeedback` stops drawing her for the
+         half second of a Flash Step and so does this; the smoke below is the
+         whole of what says where she went. */
+      k.big.bb.visible = !k.gone;
+      /* THE ATTACK ROW IS THE SWORD, and the two moves that have one out use
+         it — a Charge and the falling half of a Power Dive. The Ward does not:
+         she is standing behind a shield, not cutting. A one-row atlas collapses
+         every row to 0 and the shot still plays; see `Billboard._setCell`. */
+      const cutting = k.mv === 'dash' || (k.mv === 'dive' && k.jumps >= 2);
+      k.big.bb.row = cutting ? 3 : (k.air > 0.25 ? 2 : 1);
       k.big.bb.frame = Math.floor(this.t * 11 + k.seed) % Math.max(1, k.big.bb.cols);
       k.big.bb.mat.opacity = 1;
-      /* STRETCHED INTO THE DASH. One number, and it is the only motion blur a
-         billboard can afford. */
-      k.big.bb.mesh.scale.set(k.act === 'dash' ? 1.22 : 1,
-        k.act === 'dash' ? 0.86 : 1, 1);
+      /* STRETCHED INTO THE CHARGE AND SQUASHED INTO THE DIVE. One number each,
+         and it is the only motion blur a billboard can afford. */
+      const diving = k.mv === 'dive' && k.vy < -1;
+      k.big.bb.mesh.scale.set(
+        k.mv === 'dash' ? 1.22 : (diving ? 0.86 : 1),
+        k.mv === 'dash' ? 0.86 : (diving ? 1.2 : 1), 1);
 
-      /* --- the Smash's shockwave, on the deck under her ------------------ */
+      /* --- the Power Dive's shockwave, on the deck under her -------------- */
       if (k.ring) {
-        k.ring.visible = k.act === 'smash' && k.actT > 0;
+        k.ringT = Math.max(0, k.ringT - dt);
+        k.ring.visible = k.ringT > 0;
         if (k.ring.visible) {
+          const ae = 1 - k.ringT / BR_RING;
           const grow = 0.8 + ae * 3.4;
           k.ring.scale.set(grow, 1, grow);
-          k.ring.position.set(x, y + 0.06, b.z + k.lane);
+          k.ring.position.set(k.ringX ?? x, (k.ringY ?? floor) + 0.06, k.ringZ ?? z);
           k.ringMat.opacity = (1 - ae) * 0.85;
         }
       }
@@ -3094,14 +3314,48 @@ ${sh.vertexShader}`.replace(
          is held the rest of the way, rather than expanding for its whole life
          like the shockwave does: a shield that keeps growing is a blast. */
       if (k.ward) {
-        k.ward.visible = k.act === 'ward' && k.actT > 0;
+        k.ward.visible = k.mv === 'ward';
         if (k.ward.visible) {
-          const born = Math.min(1, ae * 5);
-          k.ward.position.set(x, y + REAL_H * 0.55, b.z + k.lane);
+          const born = Math.min(1, (k.mvT / BR_WARD_DUR) * 5);
+          k.ward.position.set(x, y + REAL_H * 0.55, z);
           k.ward.scale.setScalar(born * (1 + Math.sin(this.t * 3.1) * 0.04));
         }
       }
+
+      /* --- the smoke she left, or arrived in ----------------------------- */
+      this._stepPuff(k, dt);
     }
+  }
+
+  /**
+   * Drop a puff of smoke where she is standing.
+   *
+   * SOFT, WHITE, CARTOON, NOTHING SHARP — `systems/dodgefx.js` states the rule
+   * and `Menagerie._poof` follows it too, and this is the third place that
+   * wants it. It is NOT dodgefx: that file is driven off a real `Player`'s
+   * clocks and draws a target ring, a decoy and a whole right-triangle figure
+   * round a girl who has locked somebody, none of which exists here. Four
+   * spheres and a clock is the whole of what a cutscene needs.
+   */
+  _puff(k) {
+    if (!k.puff) return;
+    k.puffT = BR_PUFF;
+    k.puff.position.copy(k.big.bb.position);
+    k.puff.visible = true;
+  }
+
+  /** ...and take it away again, over `BR_PUFF`: out, up, and thinner. */
+  _stepPuff(k, dt) {
+    if (!k.puff || k.puffT <= 0) return;
+    k.puffT = Math.max(0, k.puffT - dt);
+    const u = 1 - k.puffT / BR_PUFF;
+    k.puff.visible = k.puffT > 0;
+    k.puff.children.forEach((m, i) => {
+      const a = (i / k.puff.children.length) * TAU + 0.4;
+      m.position.set(Math.cos(a) * u * 1.5, 0.5 + u * 1.5, Math.sin(a) * u * 1.5);
+      m.scale.setScalar(0.5 + u * 0.9);
+      m.material.opacity = (1 - u) * 0.75;
+    });
   }
 
   /**

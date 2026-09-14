@@ -19272,6 +19272,87 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...and the highest piece of it, which is the middle of the arch',
       spanY.length > 2 && B.y >= Math.max(...spanY) - 0.01,
       `${B.y.toFixed(2)} of ${Math.max(...spanY).toFixed(2)} over ${spanY.length} spans`);
+
+    /* --- A ROAD IS STRAIGHT WHERE IT CROSSES A RIVER --------------------
+       Reported from the ending, looking at the crossing: "Looks a little
+       sloppy currently, the way the bridge is on the road and the torii gate
+       is offset strangely." Both of those are one fault with two faces. The
+       bridge, the spur that runs over it and the gate at the end of it were
+       three independent sets of literals in `world/world.js`, and measured
+       against each other the spur crossed the deck at 9.5 degrees and a metre
+       north of its centreline while the gate stood two metres south of it. All
+       three are solved off one `BRIDGE` now, and this is what says so — asked
+       of the built world rather than of the source, so it is still true after
+       somebody moves the crossing.
+
+       ASKED OF THE PAVING, WHICH IS THE THING YOU SEE. `roadMask` is the
+       corridor the roads are actually drawn along, sampled every three units;
+       the discs near the deck are the ones a camera at the crossing has in
+       frame. */
+    const sp = world.bridgeSpan;
+    const half = (sp?.len ?? 18) / 2;
+    const run = world.roadMask.filter(
+      (m) => Math.abs(m.x - B.x) < half + 8 && Math.abs(m.z - B.z) < 12);
+    ok('the road comes to the crossing on the crossing\'s own line',
+      run.length > 6, `${run.length} lengths of paving at the deck`);
+    /* STRAIGHT: every disc across the crossing is on one z, which is the
+       deck's z, to within the width of a cat. A spur that bends over the
+       water reads as a bridge dropped on a road rather than built into it. */
+    const off = run.map((m) => Math.abs(m.z - B.z));
+    ok('...square to the deck, and on its centreline',
+      off.every((d) => d < 1), `worst ${Math.max(...off).toFixed(2)} off`);
+    /* AND WIDE ENOUGH TO BE THE WAY THROUGH rather than a footpath beside it.
+       The deck is 4.4 across; the paving either side of it has to be at least
+       that or the crossing narrows where it should not. */
+    const wide = Math.min(...run.map((m) => m.r * 2));
+    ok('...and no narrower than the deck it runs onto',
+      wide >= (sp?.wide ?? 4.4) - 0.01, `${wide.toFixed(1)} units of paving`);
+
+    /* AND THE GATE STANDS ON THAT LINE TOO. A torii is a doorway: half a
+       metre out of true and it reads as a gate to one side of the way
+       through, which is exactly how the ending's camera found it. */
+    const gate = (world.landmarks ?? [])
+      .filter((m) => m.kind === 'torii')
+      .sort((p, q) => Math.hypot(p.x - B.x, p.z - B.z) - Math.hypot(q.x - B.x, q.z - B.z))[0];
+    ok('the gate at the far end stands on the crossing\'s line',
+      !!gate && Math.abs(gate.z - B.z) < 0.5,
+      gate ? `${Math.abs(gate.z - B.z).toFixed(2)} off the centreline` : 'no gate');
+    /* AND PAST THE DECK, NOT ON IT. It is the end of the straight, which is
+       what makes it read as somewhere the road is going. */
+    ok('...at the end of the straight rather than on the deck',
+      !!gate && Math.abs(gate.x - B.x) > half + 2,
+      gate ? `${Math.abs(gate.x - B.x).toFixed(1)} units out` : 'no gate');
+
+    /* AND NOTHING GROWS IN A ROAD. "They are passing through a tree, we can
+       either have them starting in front of the tree or have them running
+       around the tree so they dont pass through it." Neither: the tree should
+       never have been there. Cherry trees consulted `keepClear` and `solids`
+       and never the paving — grass tufts always had — so a trunk grew on the
+       east spur at (16.9, 44.5) and the ending ran four kittens through it.
+       Asked of EVERY road on the island, because the fix was general and a
+       check that only asked about this one would let the next one through. */
+    const trunks = world.solids.filter((o) => o.tree);
+    const inRoad = trunks.filter(
+      (o) => world.roadMask.some((m) => Math.hypot(o.x - m.x, o.z - m.z) < m.r));
+    ok('no tree grows in the middle of a road',
+      inRoad.length === 0,
+      inRoad.map((o) => `${o.x.toFixed(1)},${o.z.toFixed(1)}`).join(' ') || `${trunks.length} trees, none of them`);
+    /* AND THE WAY THE FOUR OF THEM RUN IS CLEAR OF EVERYTHING, not only of
+       trees. The run-up is `BR_UP` of road plus the deck plus `BR_OFF`; this
+       asks the world for the corridor the ending actually uses.
+
+       ANYTHING STANDING INSIDE THE WIDTH OF THE WAY THROUGH, which is not the
+       same as anything that OVERLAPS it: the deck's own eighteen railing posts
+       sit at z +-2.5 on a 4.4-wide span, half a metre outside the way and
+       leaning their radius into it, and they are the thing you run BETWEEN.
+       Asking about overlap listed all eighteen of them; asking where a thing
+       is standing is the question that was meant. */
+    const lane = world.solids.filter(
+      (o) => Math.abs(o.z - B.z) < (sp?.wide ?? 4.4) / 2
+        && o.x > B.x - half - 22 && o.x < B.x + half + 10);
+    ok('...and nothing at all stands in the way they run',
+      lane.length === 0,
+      lane.map((o) => `${o.x.toFixed(1)},${o.z.toFixed(1)}`).join(' ') || 'clear');
   }
 
   /* THE SCENE IS WIRED TO IT, AND ONLY FOR THE ENDING. `found` and `summon`
@@ -20124,25 +20205,110 @@ console.log('\n--- one press is not enough, and one player drives ---');
     S.cue('bridge-run');
     let wardUp = 0;
     let wrong = 0;
+    let ringUp = 0;
+    const ringAt = new Map();
     for (let i = 0; i < 60 * 12; i++) {
       S.update(1 / 60, null);
       for (const k of S.kits) {
         if (!k.ward) continue;
         if (k.ward.visible) wardUp++;
-        if (k.ward.visible && k.act !== 'ward') wrong++;
-        if (k.ring?.visible && k.act !== 'smash') wrong++;
+        if (k.ward.visible && k.mv !== 'ward') wrong++;
+        /* THE SHOCKWAVE IS THE LANDING, NOT THE MOVE, and so it belongs to
+           the PLANK and not to the cat. Lit for as long as the ability's own
+           timer said, it was a ring expanding around a kitten who was still
+           four units above the deck; pinned to her position instead, it was a
+           puddle of light she dragged along behind her, because she is off
+           again inside the half second it takes to fade. Both of those are
+           this one question: does it stay where it was struck. */
+        if (k.ring?.visible) {
+          ringUp++;
+          const key = `${k.i}`;
+          const was = ringAt.get(key);
+          if (was && Math.hypot(k.ring.position.x - was.x,
+            k.ring.position.z - was.z) > 0.01) wrong++;
+          if (!was) ringAt.set(key, k.ring.position.clone());
+        } else {
+          ringAt.delete(`${k.i}`);
+        }
       }
     }
     ok('...and it is up while she is warding and at no other time',
       wardUp > 30 && wrong === 0, `${wardUp} frames up, ${wrong} wrong`);
-    /* THE FIRST ONE EACH IS DEALT, so all three are on screen inside the first
-       few seconds rather than three of one by chance. */
+    ok('...and the Power Dive rings the deck it landed on, not the cat',
+      ringUp > 10, `${ringUp} frames of shockwave`);
+    /* EVERY ONE OF THEM IS DEALT A DIFFERENT OPENING, and between the first two
+       rows all four abilities are on screen — which is the fifth non-negotiable
+       pointed at a cutscene, because the ending plays at two as often as at
+       four. Read off the move list rather than watched for: a promise a die
+       could break is not a promise. */
     const T = mkShow();
     T.cue('bridge-run');
+    const opens = T.kits.map((k) => k.moves[0].kind);
     ok('...and the four of them are dealt different ones to open with',
-      new Set(T.kits.map((k) => k.actNext)).size === Math.min(3, T.kits.length),
-      T.kits.map((k) => k.actNext).join(' '));
+      new Set(opens).size === opens.length, opens.join(' '));
+    const pair = new Set([...(T.kits[0]?.moves ?? []), ...(T.kits[1]?.moves ?? [])]
+      .map((m) => m.kind));
+    ok('...and two sisters alone still see all four of the orbs\' moves',
+      ['dive', 'dash', 'ward', 'blink'].every((m) => pair.has(m)),
+      [...pair].sort().join(' '));
+    /* AND NO TWO MOVES SIT ON TOP OF EACH OTHER. One cutting another off at
+       the knees is the whole of "their animations are being interrupted", and
+       with a list keyed to places on the path it is a thing this file can ask
+       about directly rather than by watching for a symptom. */
+    let crowded = 0;
+    for (const k of T.kits) {
+      for (let i = 1; i < k.moves.length; i++) {
+        if (k.moves[i].at - k.moves[i - 1].at < 0.07) crowded++;
+      }
+    }
+    ok('...with room between them, so nothing cuts anything else off',
+      crowded === 0, `${crowded} crowded pairs`);
     T.finish();
+    S.finish();
+  }
+
+  /* --- AND ALL OF IT MAKES A NOISE --------------------------------------
+     "When these abilities are being played, they should make some sounds,
+     including jumping sounds."
+
+     ASKED THROUGH THE HOOK THE GAME USES. `FinaleShow.onSfx` is the one door
+     out of that file to the audio engine — same rule `FinaleTide.onCrash`
+     follows — so listening on it is listening to exactly what a player hears,
+     and every name collected here has to be a name `core/audio.js` answers to.
+     A sound invented for the cutscene would pass a test that only checked that
+     something fired. */
+  {
+    const S = mkShow();
+    const heard = new Map();
+    let loudest = 0;
+    S.onSfx = (name, gain) => {
+      heard.set(name, (heard.get(name) ?? 0) + 1);
+      loudest = Math.max(loudest, gain ?? 1);
+    };
+    S.cue('bridge-run');
+    for (let i = 0; i < 60 * 12; i++) S.update(1 / 60, null);
+    const asrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+    const want = ['jump', 'doubleJump', 'land', 'slash', 'rockbreak',
+      'wardup', 'dodgeout', 'dodgein'];
+    ok('every move on the bridge makes the sound the real one makes',
+      want.every((n) => heard.has(n)),
+      want.filter((n) => !heard.has(n)).join(' ') || 'all of them');
+    ok('...and every one of those is a sound this game already has',
+      [...heard.keys()].every((n) => asrc.includes(`case '${n}':`)),
+      [...heard.keys()].sort().join(' '));
+    /* UNDER HER, NOT OVER HER. Patchfur's last line plays across the whole of
+       this and the loudest of these is the Power Dive landing, which in the
+       ring is a full-gain `rockbreak`. Nothing on this bridge may be asked for
+       at more than 0.4: the crashes of the town going over are 0.34-0.48 and
+       they are the reference for how loud a thing under her voice may be. */
+    ok('...quietly enough to leave the narrator on top of it',
+      loudest > 0 && loudest <= 0.4, `loudest ${loudest.toFixed(2)}`);
+    /* AND NOT ONCE EACH, EITHER. Four kittens crossing means the jumps and the
+       landings come in a stream; one of each would mean three of them were
+       running the deck in silence. */
+    ok('...and more than one of them lands and more than one jumps',
+      (heard.get('jump') ?? 0) >= 3 && (heard.get('land') ?? 0) >= 3,
+      `${heard.get('jump') ?? 0} jumps, ${heard.get('land') ?? 0} landings`);
     S.finish();
   }
 
@@ -20244,6 +20410,74 @@ console.log('\n--- one press is not enough, and one player drives ---');
       !!posA && posA.distanceTo(posB) > 8,
       posA ? `${posA.distanceTo(posB).toFixed(1)} units` : 'never ran');
     F.finish();
+
+    /* --- AND THE CROSSING'S CAMERA IS NOT STANDING IN A FOREST -----------
+       REPORTED AS A PAUSE, AND IT WAS A PLACE. "Seems like time is paused at
+       this part, so the bamboo in the scene is not fully knocked over and is
+       blocking the view." Nothing was paused: `world.update` runs in the
+       summon-scene branch of `Game._tick` and the canes were mid-fall because
+       `heap-slam` had only just pushed them. The camera was inside the grove
+       that was falling — 2.8 units from the middle of a 20-unit disc holding
+       48 of them — and what a lens inside a thicket shows is the thicket.
+
+       THE CHECK IS THE ONE THAT WOULD HAVE CAUGHT IT: solve the shot's camera
+       the way `update` does, at both ends of its swing and at both ends of its
+       push, and ask the world whether any of those four points is inside one of
+       its own groves. A single answer would have passed for most of the tuning
+       that produced the fault; the shot MOVES, and the whole of what went wrong
+       was where it moved to. */
+    const RUN = FINALE_SHOTS.find((sh) => sh.cue === 'bridge-run');
+    const G = new SummonScene({ scene: null, world, audio: null });
+    const seat = G._clearAngle(world.bridge, RUN.dist, RUN.turn,
+      { self: RUN.self, face: RUN.face, span: RUN.span });
+    ok('the crossing is looked at from a measured direction, not a typed one',
+      RUN.clear === true && seat != null, seat == null ? 'nothing measured' : seat.toFixed(2));
+    /* AND INSIDE THE ARC THE SHOT ASKED FOR. A measurement free to answer
+       anything is a typed angle with extra steps. */
+    ok('...inside the arc the shot asked to be looked at from',
+      seat != null && Math.abs(seat - RUN.face) <= RUN.span / 2 + 1e-6,
+      seat == null ? '-' : `${(seat - RUN.face).toFixed(2)} off ${RUN.face.toFixed(2)}`);
+    const seats = [];
+    for (const se of [0, 1]) {
+      for (const turn of [-0.5, 0.5]) {
+        const a = seat + RUN.a + RUN.turn * turn;
+        const close = 1 - RUN.in * se;
+        const d = RUN.dist * close;
+        seats.push({
+          x: world.bridge.x + Math.sin(a) * d,
+          z: world.bridge.z + Math.cos(a) * d,
+          y: world.bridge.y + RUN.high * (RUN.dolly ? close : 1),
+        });
+      }
+    }
+    const inGrove = seats.filter((p) => (world.groves ?? []).some(
+      (gr) => Math.hypot(p.x - gr.x, p.z - gr.z) < gr.r));
+    ok('...and the lens never stands inside a stand of bamboo',
+      inGrove.length === 0,
+      inGrove.map((p) => `${p.x.toFixed(0)},${p.z.toFixed(0)}`).join(' ') || 'all four corners clear');
+    /* AND IT DOES NOT SHOOT THROUGH ONE EITHER. Standing clear of a grove and
+       looking straight down the length of it is the same picture. */
+    const through = seats.filter((p) => (world.groves ?? []).some((gr) => {
+      const dx = world.bridge.x - p.x;
+      const dz = world.bridge.z - p.z;
+      const len2 = dx * dx + dz * dz;
+      const t = Math.max(0, Math.min(1, ((gr.x - p.x) * dx + (gr.z - p.z) * dz) / (len2 || 1)));
+      return Math.hypot(p.x + dx * t - gr.x, p.z + dz * t - gr.z) < gr.r;
+    }));
+    ok('...nor looks at the bridge through the length of one',
+      through.length === 0, `${through.length} of ${seats.length} sight lines in bamboo`);
+    /* AND THE BRIDGE'S OWN RAILINGS ARE NOT COUNTED AGAINST IT. Without
+       `self` every bearing on the compass scores negative — eighteen posts
+       standing on the deck lie across every view of the deck — and the answer
+       becomes the least bad of a set of impossible ones, which is a
+       measurement that has stopped measuring anything. */
+    const bare = G._clearAngle(world.bridge, RUN.dist, RUN.turn,
+      { face: RUN.face, span: RUN.span });
+    ok('...and the span\'s own railings are not treated as things in the way',
+      bare != null && Math.abs(bare - seat) > 0.01,
+      `${bare == null ? '-' : bare.toFixed(2)} without self, ${seat.toFixed(2)} with`);
+    G.finish();
+
     if (docP === undefined) delete globalThis.document; else globalThis.document = docP;
   }
 
@@ -20517,20 +20751,36 @@ console.log('\n--- one press is not enough, and one player drives ---');
       `${(bx - halfDeck - startX[0]).toFixed(0)} units`);
 
     /* --- AND ALL OF IT FITS INSIDE THE SHOT -----------------------------
-       THE ONE THING NOBODY HAD MEASURED. The run-up, the crossing and the
-       one-second stagger are three numbers that each read fine on their own,
-       and together they came to 8.9 seconds of action cut into 5.4 seconds of
-       camera: the third and fourth kitten were still specks on the approach
-       road when the ending cut to the arena, and what the shot showed was an
-       empty bridge. The comment above `BR_RATE` claimed the shot held 9.4
-       seconds. It never had.
+       THE ONE THING NOBODY HAD MEASURED, AND THEN IT WAS MEASURED WRONG.
 
-       THE SHOT'S LENGTH COMES OFF THE SHOT LIST, not off a stopwatch: `from`
-       is a fraction of its beat, so this is the same arithmetic `_at` does. */
+       The run-up, the crossing and the one-second stagger are three numbers
+       that each read fine on their own and have to add up to less than the shot
+       they are cut into. Nothing asked that until this block existed. What this
+       block then got wrong is subtler and cost a whole pass of tuning: it asked
+       the beat how long it was, and a beat's `dur` is `voiceDur + TAIL`, and
+       `voiceDur` is read off the mp3 by `SummonScene.load` — IN A BROWSER. Here
+       in Node there is no `Audio` and no file to decode, so `dur` is still the
+       authored floor the table ships with: 9 seconds against a real 17.1. Every
+       number in the crossing was then paced to fit 5.4 seconds of camera that
+       is really 9.4, and the last two seconds of the shot held an empty bridge.
+
+       `clip` IS THE RECORDING'S OWN LENGTH and has been sitting beside every
+       finale line in `SCRIPTS` all along — `_trio`'s `runs` are measured against
+       it, so it is already load-bearing and already correct. Read it here and
+       the checker and the game are timing the same shot. */
     const beat3 = SCRIPTS.finale[3];
+    const beat3Dur = (beat3.clip ?? 0) > 0 ? beat3.clip + TAIL : beat3.dur;
+    ok('the ending knows how long each of its recordings actually is',
+      SCRIPTS.finale.every((b) => b.clip > 0),
+      SCRIPTS.finale.map((b) => b.clip).join(' '));
+    /* AND THE FLOOR IS NOT THE TRUTH, stated as a check so that nobody reaches
+       for `dur` here again: the two disagree by eight seconds on this line. */
+    ok('...and it is not the floor the table ships with',
+      Math.abs(beat3Dur - (beat3.dur ?? 0)) > 1,
+      `${beat3Dur.toFixed(2)}s recorded, ${beat3.dur}s authored`);
     const runShot = FINALE_SHOTS.find((sh) => sh.cue === 'bridge-run');
     const cutShot = FINALE_SHOTS.find((sh) => sh.cue === 'arena-in');
-    const hold = (cutShot.from - runShot.from) * (beat3.dur ?? 7)
+    const hold = (cutShot.from - runShot.from) * beat3Dur
       + (cutShot.off ?? 0) - (runShot.off ?? 0);
     const cross = 1 / S.brRate;
     const toDeck = (S.brUp / S.brPath) * cross;
@@ -20550,6 +20800,35 @@ console.log('\n--- one press is not enough, and one player drives ---');
        arrives. */
     ok('...and the deck is never empty between the first step and that cut',
       offDeck > toDeck + step, `${(offDeck - toDeck).toFixed(2)}s on, ${step.toFixed(2)}s apart`);
+    /* ...AND THE LENS IS NOT LEFT LOOKING AT NOTHING EITHER. What is left
+       after the last of them is clear is an empty crossing, which is the
+       picture that line wants — a beat of it, not a third of the shot. This is
+       the other side of the fault above and neither bound had ever been
+       written down.
+
+       RUN, DON'T SOLVE. The arithmetic answer is wrong by a second and a half
+       and wrong in the flattering direction: a Charge covers the deck at 3.2x
+       and a Flash Step skips eleven units of it, so every kitten leaves EARLIER
+       than a constant rate says she does, and a check that worked it out on
+       paper would report less empty bridge than the camera sees. This one plays
+       the shot and watches. */
+    let lastOff = 0;
+    {
+      const R = mkShow();
+      R.cue('bridge-run');
+      for (let i = 0; i < Math.ceil(hold * 60); i++) {
+        R.update(1 / 60, null);
+        for (const k of R.kits) {
+          if (k.k < 0 || k.k > 1) continue;
+          const xr = bx - halfDeck - R.brUp + k.k * R.brPath;
+          if (Math.abs(xr - bx) <= halfDeck) lastOff = (i + 1) / 60;
+        }
+      }
+      R.finish();
+    }
+    ok('...and what is left of the shot after them is a beat, not a third of it',
+      hold - lastOff > 0.2 && hold - lastOff < hold * 0.25,
+      `${(hold - lastOff).toFixed(2)}s of empty bridge`);
     /* ...AND THERE IS STILL AN APPROACH. The whole point of the road is that
        she is running AT the bridge before she is on it. */
     ok('...with a real run-up in front of it rather than a standing start',
@@ -20572,42 +20851,67 @@ console.log('\n--- one press is not enough, and one player drives ---');
       lanes.slice(1).every((v, i) => v - lanes[i] > 0.3)
       && Math.abs(lanes[lanes.length - 1] - lanes[0]) < (world.bridgeSpan?.wide ?? 4.4),
       lanes.map((v) => v.toFixed(2)).join(' '));
-    /* AND THEY JUMP AT DIFFERENT HEIGHTS AND DIFFERENT TIMES. It was one sine
-       per kitten: three hops each, evenly spaced, all the same height — four
-       metronomes rather than a chorus line, which is the same note the crash
-       sounds got. Collected over ten seconds of the shot. */
-    const heights = new Set();
+    /* AND THEY JUMP MORE THAN ONCE, AT MORE THAN ONE HEIGHT. It was one sine
+       per kitten — three hops each, evenly spaced, all the same height, four
+       metronomes rather than a chorus line. It is gravity now, so an APEX is a
+       thing that happens rather than a number that was rolled, and the way to
+       count jumps is to watch her leave the ground. */
+    const apex = [];
     let airborne = 0;
     let onDeck = 0;
-    let airBeforeDeck = 0;
+    let leaps = 0;
+    let doubles = 0;
+    let deepest = 0;
+    const was = S.kits.map((k) => ({ air: k.air, vy: k.vy, jumps: k.jumps }));
+    const top = S.kits.map(() => 0);
     const bx2 = world.bridge.x;
     const half2 = (world.bridgeSpan?.len ?? 18) / 2;
     for (let i = 0; i < 60 * 10; i++) {
       S.update(1 / 60, null);
-      for (const k of S.kits) {
-        if (k.hopT > 0) heights.add(k.hopH.toFixed(4));
+      S.kits.forEach((k, n) => {
+        const w = was[n];
+        if (k.air > 0.01 && w.air <= 0.01) leaps++;
+        /* THE SECOND SHOVE, caught as the frame her jump count goes up in the
+           air — which is the only thing that separates a double jump from a
+           tall single one, and the reason a sine could not express it. */
+        if (k.jumps > w.jumps && w.jumps >= 1) doubles++;
+        top[n] = Math.max(top[n], k.air);
+        if (k.air <= 0.01 && w.air > 0.01) { apex.push(top[n].toFixed(2)); top[n] = 0; }
+        /* AND HOW FAR SHE CAME DOWN FROM, which is the Power Dive: a hang at
+           four units and then a drop at 24 a second is a fall nothing else in
+           this shot makes. */
+        if (k.vy < deepest) deepest = k.vy;
+        w.air = k.air; w.vy = k.vy; w.jumps = k.jumps;
         /* COUNTED PER KITTEN AND THEN ADDED UP, so these are cat-frames and
            not wall-clock frames. Asking only of the leader was a sample of one
            crossing: a Dash covers the deck at 3.2x, so how long she spends on
            it is a die-roll and the totals swung either side of a second. */
-        if (k.k < 0 || k.k > 1) continue;
+        if (k.k < 0 || k.k > 1) return;
         const x0 = bx2 - half2 - S.brUp + k.k * S.brPath;
         if (Math.abs(x0 - bx2) <= half2) {
           onDeck++;
-          if (k.hopT > 0) airborne++;
-        } else if (x0 < bx2 - half2 && k.hopT > 0) {
-          airBeforeDeck++;
+          if (k.air > 0.01) airborne++;
         }
-      }
+      });
     }
     ok('...and they jump more than once, at more than one height',
-      heights.size > 4, `${heights.size} different jumps`);
-    /* AND THE JUMPS BELONG TO THE CROSSING. "A few seconds of running towards
-       the bridge before they start crossing it AND JUMPING OVER IT" — the
-       approach is running, the deck is where the hopping happens, and that is
-       the order the sentence puts them in. */
-    ok('...and none of it happens before she reaches the deck',
-      airBeforeDeck === 0 && onDeck > 200, `${airBeforeDeck} early, ${onDeck} on deck`);
+      leaps >= S.kits.length * 2 && new Set(apex).size > 2,
+      `${leaps} jumps, ${new Set(apex).size} different heights`);
+    /* AND ONE OF THEM GOES UP TWICE BEFORE COMING DOWN. "Some players can
+       double jump or single jump while crossing the bridge or before." */
+    ok('...and somebody jumps again in mid-air rather than only off the deck',
+      doubles >= 2, `${doubles} second jumps`);
+    /* AND SOMEBODY COMES DOWN LIKE A HAMMER. "When doing the power dive
+       ability, it is not being shown" — it was not: the old Smash multiplied a
+       hop's height by 1.5 and there was no dive in it anywhere. A drop faster
+       than gravity alone could produce out of these jumps is the only honest
+       way to ask whether one happened. */
+    /* 16 UNITS A SECOND IS THE BAR. A double jump's second shove leaves at 10
+       and the hang is 0.22s, so an ordinary fall off the top of one reaches
+       about 13 before she lands; the dive leaves the hang at 24. Anything at or
+       past 16 could only have been thrown. */
+    ok('...and one of them comes down faster than a fall',
+      deepest <= -16, `${deepest.toFixed(1)} units a second`);
     /* ASKED OF ONE KITTEN, NOT OF THE PARTY. "Is anybody in the air" is yes 85%
        of the time with four of them hopping independently, which is the right
        answer to a question nobody is asking — what has to be true is that each
@@ -20616,27 +20920,38 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...with her paws on the deck between them, not bouncing throughout',
       airborne > onDeck * 0.08 && airborne < onDeck * 0.75,
       `${airborne} of ${onDeck} deck frames in the air`);
-    /* AND SOME OF THEM SHOW OFF. "Can even have some swinging swords or using
-       random abilities like the Orb or Smash, or Dash abilities, to show
-       players what abilities they can unlock later." */
     S.finish();
   }
   {
     const S = mkShow();
     S.cue('bridge-run');
     const seen = new Set();
-    for (let i = 0; i < 60 * 30; i++) {
+    let vanished = 0;
+    let jumped = 0;
+    for (let i = 0; i < 60 * 14; i++) {
       S.update(1 / 60, null);
-      for (const k of S.kits) if (k.act) seen.add(k.act);
+      for (const k of S.kits) {
+        if (k.mv) seen.add(k.mv);
+        /* GONE MEANS GONE — the half second of a Flash Step is the one stretch
+           of this shot where a kitten who is on the path is not drawn. */
+        if (k.mv === 'blink' && !k.big.bb.visible && k.k >= 0 && k.k <= 1) vanished++;
+        if (k.k >= 0 && k.k <= 1 && k.air > 0.01) jumped++;
+      }
     }
-    /* THE THREE THE ORBS ACTUALLY GRANT. "It would also be good to give them
-       the special abilities from the kotodoma orbs (Smash, Dash, Ward) and show
-       them using these abilities while they are running, jumping, and crossing
-       the bridge." A swing and a rising orb were the other two and neither was
-       an ability; the ward is, and it had never been drawn here. */
+    /* EVERY MOVE THE ORBS GRANT. "It would also be good to give them the
+       special abilities from the kotodoma orbs (Smash, Dash, Ward)... Can also
+       show someone doing the Flash Step to teleport from far away towards the
+       bridge." Four abilities and two shapes of jump, and every one of the four
+       is a real orb in `POWER_ORBS`: 落 dive, 突 dash, 壁 ward, 瞬 blink. A
+       swing and a rising orb were two of the old four and neither was an
+       ability at all. */
     ok('...and every ability the orbs grant gets shown off on the way across',
-      seen.size === 3 && ['smash', 'dash', 'ward'].every((a) => seen.has(a)),
+      ['dive', 'dash', 'ward', 'blink'].every((a) => seen.has(a)),
       [...seen].sort().join(' '));
+    ok('...and the one who flashes really does stop being drawn for it',
+      vanished > 15, `${vanished} frames gone`);
+    ok('...and they are jumping the whole time as well as using them',
+      jumped > 60, `${jumped} airborne frames`);
     S.finish();
   }
 
