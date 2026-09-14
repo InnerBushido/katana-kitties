@@ -1437,7 +1437,10 @@ export class World {
     put(buildTorii(0.7), EAST_GATE.x, EAST_GATE.z, Math.PI / 2, 1, 0, decor);
     put(buildTorii(0.7), -72, -47, 0, 1, 0, decor);
     this.landmarks.push(
-      { kind: 'torii', x: EAST_GATE.x, z: EAST_GATE.z, s: 0.7 },
+      /* `ry` BECAUSE THIS ONE IS TURNED. The model of the town drew every torii
+         square to x, so the gate at the end of the crossing stood across the
+         road in the hologram and along it in the world. */
+      { kind: 'torii', x: EAST_GATE.x, z: EAST_GATE.z, s: 0.7, ry: Math.PI / 2 },
       { kind: 'torii', x: -72, z: -47, s: 0.7 }
     );
 

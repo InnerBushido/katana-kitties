@@ -461,6 +461,19 @@ watching the ending through.
   directing a shot** is at the end of the story note, seed for a future
   "Gaming Movie Director" skill.
   → [story.md](docs/notes/story.md) *"The fourth pass"*
+- **The ending's fifth pass: the town you can see, and a bridge shot that only
+  zoomed.** The hologram's people (2.5×) and animals (2×) billboard to the lens
+  and each wear a seeded recolour done in the shader; they flickered because the
+  town island and the crowd shared one depth, fixed with `renderOrder` bands that
+  also cured the rider. The quake starts on *because something broke*, at half
+  energy, and the town throws its paws up and freezes. The kittens and their
+  dragons fade in and stand on *between them*. The model's bridge is the real
+  `buildBridge`, and the real east torii turned to line up with it. A new shot
+  field, `into`/`lead`, pushes the camera in on the model and lands on the next
+  shot's first frame. "Nothing left standing" holds 2 s longer at the same speed.
+  The crossing is the first row's angles from 34 units instead of 22, chosen by
+  replaying the run through the lens (100% of sightings in frame).
+  → [story.md](docs/notes/story.md) *"The fifth pass"*
 - **息 Dragon Breath charges half as long and hits everybody it sweeps.** Three
   things, all from playing it. The charge went back to **0.8s** — "twice as
   long" had been read as the whole move and applied to the wrong half; the
