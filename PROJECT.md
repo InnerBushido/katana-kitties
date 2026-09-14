@@ -75,7 +75,7 @@ are not decoration; see the non-negotiables in [CLAUDE.md](CLAUDE.md).
 | **Code** | **https://github.com/InnerBushido/katana-kitties** — **public** (`gh repo view` says so; this line said "private" until 30 Aug 2026 and was wrong) |
 | **Stack** | Vite 8 + three.js 0.185. Static build, no backend, no database, no env vars |
 | **First load** | ~30MB across 39 files, then cached. Sprites 30MB in repo, help clips 21MB, voices 6.4MB, plus 14MB of art masters that are NOT shipped (`docs/art-masters/`) |
-| **Size** | ~216 props, 6 clans, 7 dragon balls, 8 Powerup Kotodama, 15 Help clips, 62 voice files |
+| **Size** | ~216 props, 6 clans, 7 dragon balls, 8 Powerup Kotodama, 18 Help clips, 62 voice files |
 
 ---
 
@@ -441,7 +441,7 @@ to lock it on.** → [mobile.md](docs/notes/mobile.md)
 
 | what | how | run it |
 | --- | --- | --- |
-| **The 15 Help clips** | The game, playing itself, recorded. A script drives it, grabs one frame per tick off the WebGL back buffer, and `tools/gif.mjs` encodes. Nothing in the pipeline can invent a frame. | [tools/capture/README.md](tools/capture/README.md) — **the director's guide** |
+| **The 18 Help clips** | The game, playing itself, recorded. A script drives it, grabs one frame per tick off the WebGL back buffer, and `tools/gif.mjs` encodes. Nothing in the pipeline can invent a frame. | [tools/capture/README.md](tools/capture/README.md) — **the director's guide** |
 | **GIF encoding** | `tools/gif.mjs`, dependency-free GIF89a: median-cut palette, interframe differencing. `dither: false` is required or the diff bites on nothing. `gif-selftest.mjs` reads its own output back. | `node tools/gif-selftest.mjs` |
 | **Looping two clips together** | `tools/gif-sync.mjs` rewrites delay bytes only, no re-encode. It pads the **last frame**; it used to spread the difference across every frame, which stretched the clip. | `node tools/gif-sync.mjs` |
 | **Sprite sheets** | Higgsfield image models. **Two rules**: a new player pose is *four* poses (all four kittens, never two), and everything goes through `remove_background` — do not trust the runtime white-keyer. | → [art.md](docs/notes/art.md) |

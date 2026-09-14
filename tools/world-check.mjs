@@ -1820,7 +1820,7 @@ console.log('\n--- every Help clip is the size its markup claims ---');
      re-filmed at a different size has to fail here rather than in her lap. */
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const imgs = [...html.matchAll(/<img[^>]*data-help-gif="\/help\/([^"]+)"[^>]*>/g)];
-  ok('the panel leads on fifteen engine-captured clips', imgs.length === 15, `${imgs.length}`);
+  ok('the panel leads on eighteen engine-captured clips', imgs.length === 18, `${imgs.length}`);
   for (const [tag, file] of imgs) {
     const buf = readFileSync(new URL(`../public/help/${file}`, import.meta.url));
     const gw = buf.readUInt16LE(6), gh = buf.readUInt16LE(8);
@@ -14617,7 +14617,7 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
      a check tells you WHICH one went missing, not just that the count slipped. */
   for (const t of ['Moving', 'On a phone', 'Clans', 'Raise a panda',
     'Dragon balls', 'The arena', 'Battle Feast', 'Power-up orbs',
-    'Special abilities', 'Trading', 'Dojo', 'Saving your progress']) {
+    'Special abilities', 'Clan abilities', 'Trading', 'Dojo', 'Saving your progress']) {
     ok(`...including "${t}"`, help.includes(t));
   }
 
@@ -14647,6 +14647,7 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
     ['Power-up orbs', 'The arena'],
     ['The rare orbs — dealer only', 'The arena'],
     ['Special abilities', 'The arena'],
+    ['Clan abilities', 'The arena'],
     ["Dealer's Stall &amp; Trading", 'The arena'],
   ]) {
     const plain = (s) => s.replace(/&amp;/g, '&');
@@ -14661,7 +14662,7 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
   const subs = [...help.matchAll(/<details class="help-card help-sub" name="([^"]+)">/g)]
     .map((m) => m[1]);
   ok('...and every sub-card is in its parent\'s own accordion group',
-    subs.length === 10 && subs.every((n) => n === 'help-move' || n === 'help-arena'),
+    subs.length === 11 && subs.every((n) => n === 'help-move' || n === 'help-arena'),
     `${subs.length}: ${[...new Set(subs)].join(', ')}`);
   ok('...never in the top-level group, which would close its parent',
     !subs.includes('help'));
@@ -14846,6 +14847,60 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
     ok(`the ${g}.gif clip is on disk`,
       existsSync(new URL(`../public/help/${g}.gif`, import.meta.url)));
   }
+
+  /* --- "CLAN ABILITIES": WHAT AN OATH IS WORTH IN THE RING ---
+     Asked for as its own card under The arena, with a clip of each of the three
+     being used against another kitten and "how the ability works and the
+     buttons that need to be pressed". Every figure on it is a `tune()` number,
+     so the card is read back against the tables rather than trusted — a card
+     that still says 5 seconds after the balance page moved the window to 4 is
+     teaching the wrong fight, and nothing on screen would ever say so. */
+  /* Whitespace collapsed, because the markup wraps where the line gets long and
+     "(player 2:\n  <kbd>I</kbd>)" is the same words to a reader — the first
+     run of this check failed on exactly that line break. */
+  const clanCard = helpTopic(help, 'Clan abilities').replace(/\s+/g, ' ');
+  for (const [kanji, clan, gif] of [['盗', 'Icewhisker', 'clan-steal'],
+    ['息', 'Windwhisker', 'clan-breath'], ['🐼', 'Pandapaw', 'clan-panda']]) {
+    ok(`...Clan abilities names ${kanji} for ${clan}`, clanCard.includes(kanji) && clanCard.includes(clan));
+    ok(`...and shows it with ${gif}.gif, deferred until Help opens`,
+      new RegExp(`<img data-help-gif="/help/${gif}\\.gif"(?![^>]*\\ssrc=)[^>]*>`).test(clanCard));
+  }
+  /* The pairing is the game's, not the card's: the task that asked for this
+     card named them the other way round, and the code is what a player gets. */
+  const clanOf = (id) => CLANS.find((k) => k.id === id);
+  ok('...and the pairing is the game\'s: Icewhisker steals, Windwhisker breathes',
+    arenaPowerFor(clanOf('ice'))?.id === 'steal' && arenaPowerFor(clanOf('wind'))?.id === 'dbreath'
+    && /Icewhisker/.test(clanOf('ice')?.name ?? '') && /Windwhisker/.test(clanOf('wind')?.name ?? ''),
+    `${clanOf('ice')?.name}=${arenaPowerFor(clanOf('ice'))?.id}, ${clanOf('wind')?.name}=${arenaPowerFor(clanOf('wind'))?.id}`);
+  const txt = clanCard.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+  for (const [what, n, unit] of [
+    ['the steal window', STEAL.window, 'seconds'],
+    ['the stolen orb\'s lock', STEAL.lock, 'seconds'],
+    ['the steal\'s wait', STEAL.cool, 'seconds'],
+    ['the breath\'s flame', DBREATH.fire, DBREATH.fire === 1 ? 'second' : 'seconds'],
+    ['the breath\'s wait', DBREATH.cool, 'seconds'],
+  ]) {
+    ok(`...states ${what} as the game has it (${n} ${unit})`, txt.includes(`${n} ${unit}`));
+  }
+  ok('..."about a third of your health" is still what the cub waits for',
+    Math.abs(PANDA.lickBelow - 1 / 3) < 0.05 && txt.includes('about a third of your health'),
+    `lickBelow ${PANDA.lickBelow}`);
+  ok('...the claw really does hit harder than a katana, and reach further',
+    PANDA.dmgK > 1 && ATTACKS.claw.reach > Math.max(ATTACKS.stand.reach, ATTACKS.dash.reach),
+    `dmgK ${PANDA.dmgK}, claw ${ATTACKS.claw.reach} vs ${ATTACKS.dash.reach}`);
+  /* THE BUTTONS ARE READ OFF THE BINDINGS AND THE PROMPT GLYPHS, both sides,
+     keyboard and pad. The pad lettering is the Xbox set because "Every button"
+     prints that one; PlayStation rides beside it because that is the other pad
+     in the house. */
+  for (const act of ['interact', 'mount', 'attack']) {
+    const [k1, k2] = [KEYSETS[0][act], KEYSETS[1][act]]
+      .map((ks) => ks.find((c) => /^Key[A-Z]$/.test(c))?.slice(3));
+    const glyphs = `<kbd>${PROMPTS.standard[act]}</kbd> / <kbd>${PROMPTS.playstation[act]}</kbd>`;
+    ok(`...${act} is taught as ${k1}, player 2's ${k2}, and ${PROMPTS.standard[act]} / ${PROMPTS.playstation[act]}`,
+      clanCard.includes(`<kbd>${k1}</kbd> (player 2: <kbd>${k2}</kbd>)`) && clanCard.includes(glyphs));
+  }
+  ok('the Clans topic sends a reader to The arena → Clan abilities',
+    /The arena → Clan abilities/.test(helpTopic(help, 'Clans')));
 
   const nav = readFileSync(new URL('../src/systems/menunav.js', import.meta.url), 'utf8');
   ok('a pad can land on a topic header (summary.help-topic in items())',

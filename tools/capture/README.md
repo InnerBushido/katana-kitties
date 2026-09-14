@@ -218,6 +218,7 @@ un-hiding whatever you are about to measure.
 | `move-keys.js` | `move-keys.gif` | On foot, keyboard. Draws the key panel. **Shoot it `{ w: 512, fps: 7 }`** — the default is 8, and `move-pad` films at 7; `world-check` compares the pair delay by delay, not just by total. 106 frames. |
 | `move-pad.js` | `move-pad.gif` | The same run on a pad. Draws the cat controller — `movekit.padGeom`/`padPanel`, and the source the Help page's SVG diagram is transcribed from. |
 | `fight.js` | `move-arena.gif`, `move-air.gif` | Two kittens, both input panels on every frame. `__arenaShot` and `__airShot`. |
+| `clan.js` | `clan-steal.gif`, `clan-breath.gif`, `clan-panda.gif` | `fight.js`'s stage and panels, borrowed through `window.__mvKit` — **eval `fight.js` first**. Camera pulled in to distance 19 and aimed 2.5 units towards the lens, so the kittens stand above both diagrams. Ring snacks stopped (`menagerie.stop()`). `__stealShot`, `__breathShot`, `__pandaArenaShot`; each leaves a pixel-position log in `window.__clanLog`. |
 | `phone.js` | `phone.gif` | The touch overlay, redrawn from the DOM. Filmed at a real phone viewport (812×375) so `--tp-unit` is what a phone gets. |
 | `ryuuseki.js` | `ryuuseki.gif` | Four fixed cameras and one the game directs. |
 | `panda.js` | `panda.gif` | |

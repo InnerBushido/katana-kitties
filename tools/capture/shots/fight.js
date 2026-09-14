@@ -201,6 +201,12 @@
     return { tx, frames, delays, stage, run, linger, place };
   }
 
+  /* SHARED WITH `shots/clan.js`, which films the three arena clan abilities on
+     this exact stage — the same strip, the same two diagrams, the same pinned
+     ring camera. Handed out rather than copied, because a second copy of the
+     caption strip is a second set of measured numbers to drift. */
+  window.__mvKit = { rig, P1, P2, allUp, R, F, YAW, V3 };
+
   /* --------------------------------------------------------------- arena */
   window.__arenaShot = async function () {
     const p = g.players[0], q = g.players[1];

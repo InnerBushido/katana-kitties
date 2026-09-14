@@ -578,10 +578,17 @@
                       <li><b>Sprint</b> <span class="cp-chip">R2</span> <span>hold it</span></li>
                     </ul>
                   </div>
+                  <!-- IT USED TO SAY A FIGHT "ONLY EVER NEEDS THESE FOUR", which
+                       stopped being true the day three oaths got an arena power:
+                       ACTION is Icewhisker's steal and Windwhisker's breath, and
+                       RIDE puts a Pandapaw kitten on her panda. The diagram still
+                       lights four, because four is the fight every kitten has. -->
                   <p class="ht-note">
-                    The two dark buttons are <b>ride</b> and <b>action</b>. They are
-                    not missing — there is nothing to climb on and nobody to talk to
-                    in the middle of a round, so a fight only ever needs these four.
+                    The two dark buttons are <b>ride</b> and <b>action</b>. Every
+                    kitten fights with the four lit ones — but <b>Icewhisker</b> and
+                    <b>Windwhisker</b> use <b>action</b> for their clan power, and a
+                    <b>Pandapaw</b> kitten can <b>ride</b> her panda into the fight.
+                    See <b>The arena → Clan abilities</b>.
                   </p>
                 </div>
               </details>
@@ -823,6 +830,18 @@
               <b>Pandapaw are the odd ones out.</b> They hand out a job, not a
               power — cut bamboo, and something very small follows you home. See
               <b>Raise a panda</b>, below.
+            </p>
+            <!-- THE ARENA HALF OF THREE OATHS, POINTED AT RATHER THAN TAUGHT HERE.
+                 The cards above are what a clan does on the islands, which is
+                 where she is standing when she chooses one. What Icewhisker,
+                 Windwhisker and Pandapaw do IN THE RING is taught with its own
+                 clips under The arena, beside the other fighting moves — this
+                 note exists so the choice at the shrine is made knowing that. -->
+            <p class="ht-note">
+              <b>Three clans have a power in the arena too.</b> Icewhisker can
+              <b>steal an orb</b> off another kitten, Windwhisker <b>breathes
+              fire</b>, and a Pandapaw <b>panda fights beside you</b>. See
+              <b>The arena → Clan abilities</b> for how to use them.
             </p>
           </div>
         </details>
@@ -1127,6 +1146,105 @@
                         <i>(Picture for now — the clip is coming.)</i></figcaption>
                     </figure>
                   </div>
+                </div>
+              </details>
+
+              <!-- WHAT AN OATH IS WORTH IN THE RING, AS ITS OWN CARD, beside the
+                   orb moves and not inside "Special abilities". Those five are
+                   BOUGHT or found and anybody can wear them; these three are only
+                   ever given by a clan, which is the one thing about them a
+                   nine-year-old choosing a shrine needs to know — and the Clans
+                   topic points here for exactly that reason.
+
+                   THREE CLIPS, ONE PER CLAN, ALL FILMED ON `move-arena`'S STAGE
+                   (tools/capture/shots/clan.js): the same ring, the same keyboard
+                   and cat-pad diagrams, pulled in closer because a mark ring and an
+                   orb on the floor are small things. ACTION is lit off the game's
+                   own input, so the key a clip shows is the key the game read.
+
+                   EVERY NUMBER IN THIS CARD IS READ BACK BY `world-check` against
+                   `STEAL`, `DBREATH` and `PANDA` — all three are `tune()` tables,
+                   and a card that says "5 seconds" after the balance page moved it
+                   to 4 is teaching the wrong fight. -->
+              <details class="help-card help-sub" name="help-arena">
+                <summary class="help-topic">
+                  <span class="ht-ico" aria-hidden="true">⛩️</span>
+                  <span class="ht-title">Clan abilities</span>
+                  <span class="ht-chev" aria-hidden="true">▸</span>
+                </summary>
+                <div class="ht-body">
+                  <p class="ht-note">
+                    <b>Three clans fight differently in the ring.</b> Join one at its
+                    shrine and its power is yours in every round — you can't buy
+                    these, only swear for them. They only work <b>while a round is
+                    on</b>.
+                  </p>
+
+                  <figure class="help-shot">
+                    <img data-help-gif="/help/clan-steal.gif" width="512" height="332"
+                      alt="Steal Mischief in the ring: Ember presses action at Frost and a ring in Ember's colour appears round Frost's feet, Ember runs in and slashes her, one of Frost's orbs falls onto the deck, both kittens stand either side of it while it can't be touched, then Ember grabs it">
+                    <figcaption>Mark her, hit her in time, and one of her orbs falls off — then grab it.</figcaption>
+                  </figure>
+                  <p class="ht-note">
+                    <b>盗 Steal Mischief — Icewhisker.</b> Face a kitten who is
+                    wearing orbs and press <b>Action</b> — <kbd>E</kbd> (player 2:
+                    <kbd>I</kbd>), or <kbd>B</kbd> / <kbd>○</kbd> on a gamepad. A ring
+                    in your colour appears round her feet: she's <b>marked</b>.
+                    <b>Hit her within 5 seconds</b>, before the ring shrinks away, and
+                    one of her orbs <b>falls onto the floor</b>. Nobody can pick it up
+                    for <b>4 seconds</b> — then it's anybody's, so be ready to grab it.
+                  </p>
+                  <p class="ht-note">
+                    Then you wait <b>40 seconds</b> before you can use it again, even if
+                    you missed. A stolen orb is only <b>borrowed</b>: when the
+                    tournament ends it goes back to the kitten it came off.
+                  </p>
+
+                  <figure class="help-shot">
+                    <img data-help-gif="/help/clan-breath.gif" width="512" height="332"
+                      alt="Dragon Breath in the ring: Ember presses action, throws her head back and breathes in, then breathes a cone of orange fire that knocks Frost away; then Frost does it back on the controller in her own colour, and Ember's slash can't stop her">
+                    <figcaption>Breathe in, then fire — and a slash won't stop it.</figcaption>
+                  </figure>
+                  <p class="ht-note">
+                    <b>息 Dragon Breath — Windwhisker.</b> Press <b>Action</b> — the same
+                    buttons. Your kitten throws her head back and <b>breathes in</b>, so
+                    everybody can see and hear it coming, then breathes <b>fire in your
+                    colour</b> for <b>1 second</b>, wherever your <b>stick</b> points.
+                    Keep walking and you can swing it across more than one kitten.
+                  </p>
+                  <p class="ht-note">
+                    <b>Hitting her won't stop it</b> — only knocking her out does. It
+                    drops your own shield while you breathe, and then you wait
+                    <b>40 seconds</b> to use it again.
+                  </p>
+
+                  <figure class="help-shot">
+                    <img data-help-gif="/help/clan-panda.gif" width="512" height="332"
+                      alt="The Pandapaw panda in the ring: Ember climbs onto her big panda and its claw knocks Frost away; Frost slashes the panda until it shrinks back into a cub; then, with Ember low on health, the cub runs over and licks her while green sparkles rise off her">
+                    <figcaption>Ride your big panda into the fight — and if you're hurt, your cub licks you better.</figcaption>
+                  </figure>
+                  <p class="ht-note">
+                    <b>🐼 Panda — Pandapaw.</b> Grow a big panda first (see <b>Raise a
+                    panda</b>) and it follows you to the arena. Stand next to it and
+                    press <b>Ride</b> — <kbd>Q</kbd> (player 2: <kbd>P</kbd>), or
+                    <kbd>Y</kbd> / <kbd>△</kbd> on a gamepad — to climb on. Then
+                    <b>Slash</b> — <kbd>F</kbd> (player 2: <kbd>J</kbd>), or
+                    <kbd>X</kbd> / <kbd>□</kbd> — swipes its <b>claw</b>, which hits
+                    harder than a katana and reaches further. Press Ride again to hop
+                    off.
+                  </p>
+                  <p class="ht-note">
+                    The panda has <b>its own health</b>. Knock it out and it
+                    <b>shrinks back into a cub</b> and stays one — walk back to the
+                    <b>Pandapaw shrine</b> and press <b>Action</b> to make it big
+                    again, no bamboo needed.
+                  </p>
+                  <p class="ht-note">
+                    A <b>cub</b> can't be hurt, and it looks after you. When you're down
+                    to about <b>a third of your health</b>, it runs over and <b>licks
+                    you</b>, and gives you a little health back for as long as it stays
+                    beside you.
+                  </p>
                 </div>
               </details>
 

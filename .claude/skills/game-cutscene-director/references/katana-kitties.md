@@ -29,6 +29,15 @@ window.__f = (t) => { delete S.update; try { S.finish(); } catch (e) {}
 
 Wait about 1 s before a screenshot. Source edits hot-reload and wipe `__f`.
 
+**Help clips** are filmed with the rig in `tools/capture/` (its README is the
+guide). The arena clips share one stage: eval `harness.js`, `movekit.js`,
+`shots/fight.js` (which exports `window.__mvKit`), then the shot file. Seat a
+second kitten with `g.input.forceSeats = true; g._joinPlayer({ shadow: true })`.
+Set the Browser viewport to 16:9 (1024×576) first, or the frames are squashed.
+Encode (`__encodeMv`) **before** saving `index.html` or anything in `src/`,
+because the reload loses the take. `shots/clan.js` logs each kitten's feet and
+head as frame pixels, so framing can be checked from numbers before looking.
+
 ## House rules that shape directing here
 
 - Ending dialogue and text are locked; runs and timings may change.
