@@ -164,6 +164,33 @@ const SLAM_BUNCH = 0.5;
 /** 0..1 ease. Slow at both ends — a thing standing up thinks about it. */
 const ease = (t) => t * t * (3 - 2 * t);
 
+/**
+ * How far off dead flat a shoved prop may come to rest, in radians.
+ *
+ * "THE BAMBOO IS STILL NOT ALL KNOCKED OVER... looks like the time is frozen
+ * and looks buggy with them half fallen over." Measured at the cut to the
+ * crossing, which is the first shot after the shove that holds still long
+ * enough to look at: of the 46 canes the shove had put down, EIGHTEEN were
+ * standing more than thirty degrees off the floor and three were within thirty
+ * of upright. Nothing was frozen — every one of them was exactly where `slam`
+ * had told it to be. `slam` was the bug, twice over:
+ *
+ *   - it asked for 66 to 95 degrees of tip, so a third of the town went over
+ *     two-thirds of the way and stopped in mid-air; and
+ *   - it wrote that tip as `(cos a * tip, yaw, sin a * tip)` on an XYZ euler,
+ *     with the yaw in the MIDDLE of the three turns. The yaw rotates the first
+ *     tilt's axis before the second is applied, so the two halves of the lean
+ *     partly cancel and how far a prop actually tipped depended on which way it
+ *     happened to be facing. Ten degrees, for one of them.
+ *
+ * Flat, less a whisker, and never PAST flat: the prop's origin is its base, so
+ * a lean beyond ninety degrees is a cane with its top half under the grass.
+ */
+const FLAT_SLACK = 0.08;
+const _UP = new THREE.Vector3(0, 1, 0);
+const _axis = new THREE.Vector3();
+const _yawQ = new THREE.Quaternion();
+
 export class FinaleTide {
   /** @param {object} world the real World — its real props */
   constructor(world) {
@@ -231,7 +258,10 @@ export class FinaleTide {
            `finish` puts back, and the whole fourth non-negotiable rests on
            those two fields being the ones the kid left behind. */
         downPos: g.position.clone(),
-        downRot: g.rotation.clone(),
+        /* AS A QUATERNION, and the upright one beside it — see `update` for
+           why the fall is no longer an euler lerp. */
+        downQuat: g.quaternion.clone(),
+        upQuat: new THREE.Quaternion().setFromAxisAngle(_UP, g.rotation.y),
         /* Its place in the wave. Spread over the props in world order to
            begin with — the order they were planted, island by island, so the
            ripple crosses the archipelago rather than firing at random — and
@@ -355,17 +385,20 @@ export class FinaleTide {
     let n = 0;
     for (const h of mine) {
       const a = seedTurn ?? Math.random() * Math.PI * 2;
-      const tip = 1.15 + Math.random() * 0.5;
+      const tip = Math.PI / 2 - Math.random() * FLAT_SLACK;
       h.downPos.set(
         h.home.x + Math.cos(a) * (0.5 + Math.random() * 1.3),
         h.home.y + 0.1,
         h.home.z + Math.sin(a) * (0.5 + Math.random() * 1.3)
       );
-      h.downRot.set(
-        Math.cos(a) * tip,
-        h.yaw + (Math.random() - 0.5) * 0.9,
-        Math.sin(a) * tip
-      );
+      /* TURN ON ITS OWN AXIS, THEN LAY IT DOWN TOWARD `a`. Two separate
+         rotations composed in that order, so the lean is `tip` whichever way
+         the prop was facing — see `FLAT_SLACK` for the euler that could not
+         promise that. The axis is `up x (cos a, 0, sin a)`, which is the one
+         that swings the top of the prop toward the side its base slid to. */
+      _axis.set(Math.sin(a), 0, -Math.cos(a));
+      _yawQ.setFromAxisAngle(_UP, h.yaw + (Math.random() - 0.5) * 0.9);
+      h.downQuat.setFromAxisAngle(_axis, tip).multiply(_yawQ);
       h.bang = false;
       n++;
     }
@@ -460,17 +493,18 @@ export class FinaleTide {
       }
       const g = h.prop.group;
       g.position.lerpVectors(h.downPos, h.home, t);
-      /* AND IT TURNS AS IT RISES. Lerped on the euler rather than slerped on a
-         quaternion, deliberately: these are pitch-and-roll falls of less than
-         half a turn from an upright pose, the shortest path is the obvious
-         one, and a lerped euler is what the rest of this file's numbers are
-         written in. A cane spinning the long way round to stand up would be
-         funny once and wrong for the whole scene. */
-      g.rotation.set(
-        THREE.MathUtils.lerp(h.downRot.x, 0, t),
-        THREE.MathUtils.lerp(h.downRot.y, h.yaw, t),
-        THREE.MathUtils.lerp(h.downRot.z, 0, t)
-      );
+      /* AND IT TURNS AS IT RISES — ON A QUATERNION NOW. This was a lerp on the
+         euler, on the argument that these are falls of under half a turn and
+         the shortest path is the obvious one. Neither half held. The fall the
+         euler DESCRIBED was not the fall it drew (see `FLAT_SLACK`: eighteen
+         canes in forty-six left standing at an angle), and the pose a prop
+         arrives in from the afternoon is not under half a turn of anything:
+         `Prop.update` integrates spin onto `rotation` for as long as it
+         tumbles, so a barrel can lie flat on `x = 2PI + PI/2` and a lerp to zero
+         stands it up by cartwheeling it four times. A slerp is the shortest
+         way between two orientations by construction, which is what the old
+         comment was asking for. */
+      g.quaternion.slerpQuaternions(h.downQuat, h.upQuat, t);
     }
   }
 
