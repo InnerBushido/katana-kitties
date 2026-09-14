@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 3494 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 3503 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 362 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -1148,7 +1148,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 3494 assertions and why almost none of them are about
+      is why <code>world-check</code> is 3503 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,
@@ -1204,6 +1204,7 @@ git push origin alpha</code></pre>
     <div><code>networking.md</code><span>The one plan in the folder, not a record — see below</span></div>
     <div><code>docs.md</code><span>This page's own rules — when a change earns a line, and how the tables above generate themselves</span></div>
     <div><code>tools/capture/README.md</code><span>The director's guide to filming the game to teach the game</span></div>
+    <div><code>.claude/skills/game-cutscene-director/</code><span>A Claude Code skill, checked in — how to direct a cutscene, camera move or recorded clip and prove each shot by measuring it. Loads itself when the work is a scene; <code>references/failures.md</code> is where the next lesson goes</span></div>
   </div>
 
   <p style="margin-top:16px">Plus <code>git log</code> — <b>the commit messages are the session

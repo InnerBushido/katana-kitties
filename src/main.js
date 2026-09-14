@@ -1347,6 +1347,16 @@ class Game {
          do. Two files and four kittens, the same as the two above. */
       ['ember_inhale', 'ember_inhale.png', false],
       ['frost_inhale', 'frost_inhale.png', false],
+      /* THE FRIGHT — looking straight up, eyes wide, mouth open, fur on end,
+         both paws thrown up beside her head. Drawn for the ending's earthquake
+         ("stop and do a new 'shocked' or 'scared' sprite animation where they
+         are looking up with their arms in the air"), which borrowed the
+         blessing pose until it existed, and loaded here with the other single
+         poses because "these may be useful later for when we need a scared
+         pose for future abilities or cutscenes". Two files, four kittens. The
+         first sheets generated with real alpha rather than keyed off white. */
+      ['ember_scared', 'ember_scared.png', false],
+      ['frost_scared', 'frost_scared.png', false],
       /* THE CONJURED INSECT. Loaded with the other animals because it is one,
          and kept out of the ordinary lottery by a flag on its spec rather than
          by anything here — see `Menagerie.species`. No `_shock` sheet: a
@@ -1459,6 +1469,15 @@ class Game {
       if (!s.recolour) return base;
       const a = recolourAtlas(base, s.recolour);
       console.log(`[art] ${s.name} dragon-breath pose ← ${s.sheet}_inhale recoloured`);
+      return a;
+    });
+    /* AND A FIFTH, FOR THE FRIGHT. By STYLE, never by slot. */
+    this.scaredArt = PLAYER_STYLE.map((s) => {
+      const base = s.sheet === 'ember' ? critterArt.ember_scared : critterArt.frost_scared;
+      if (!base) return null;
+      if (!s.recolour) return base;
+      const a = recolourAtlas(base, s.recolour);
+      console.log(`[art] ${s.name} scared pose ← ${s.sheet}_scared recoloured`);
       return a;
     });
 
@@ -1742,6 +1761,9 @@ class Game {
          build these sheets each repeat at length: Storm cheering as a grey
          Frost is one slot-vs-style slip away and has happened before. */
       bless: this.blessArt ?? [],
+      /* HER FRIGHT, BY STYLE, for the townspeople when the ground moves. A
+         missing sheet falls back to `bless` in `_buildFolk`. */
+      scared: this.scaredArt ?? [],
       dragon: this.dragonArt ?? null,
       satan: this.satan?.art ?? null,
       /* His arms up. Measured against his idle sheet by ink area at the moment

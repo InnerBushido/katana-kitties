@@ -176,7 +176,8 @@ because every crop it makes was measured on `title_art.png` at full size.
 **A new player pose is FOUR kittens, always.** There are two drawn sheets and
 four playable cats: Storm is `recolourAtlas` of Ember's, Blossom of Frost's.
 Every per-pose sheet therefore comes in a pair — `ember_eat`/`frost_eat`,
-`ember_bless`/`frost_bless` — and the pair is expanded in `Game._loadArt` by a
+`ember_bless`/`frost_bless`, `ember_scared`/`frost_scared` (the first pair
+generated with real alpha) — and the pair is expanded in `Game._loadArt` by a
 loop over **`PLAYER_STYLE`, not over the roster slots**. Deriving by slot is one
 copy-paste away and gives you Storm eating as a grey Frost. Never generate a
 pose for Ember alone.
