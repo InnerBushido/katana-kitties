@@ -2108,11 +2108,14 @@ export class Player {
    *        own flourishes off one clock.
    * @param {object} [opts] `{ flat: true }` hangs the picture on a card facing
    *        the camera instead of painting it round the ball, and `{ tint }`
-   *        colours the halo.
+   *        colours the halo. `{ zoom: false }` keeps her camera where it is —
+   *        a quest done is a nod, not a fanfare, and the pull-in is the part
+   *        of this pose that takes the game away from her for two seconds.
    */
   holdAloft(map, dur = 2.0, opts = {}) {
     this.aloftT = dur;
     this.aloftDur = dur;
+    this.aloftZoom = opts.zoom !== false;
     if (!this.aloft) {
       this.aloft = new THREE.Mesh(
         new THREE.SphereGeometry(0.62, 20, 14),
@@ -5357,7 +5360,7 @@ export class Player {
        systems fighting over one field.
        Eased in and out on a sine so it never snaps — the pose is two seconds
        long and half a second of that is the camera moving. */
-    if (this.aloftT > 0) {
+    if (this.aloftT > 0 && this.aloftZoom !== false) {
       const dur = this.aloftDur || 2;
       const k = Math.sin(Math.min(1, (1 - this.aloftT / dur) / 0.25) * Math.PI * 0.5)
         * Math.min(1, this.aloftT / 0.45);

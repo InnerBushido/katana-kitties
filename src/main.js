@@ -58,6 +58,7 @@ import { POWER_ORBS } from './entities/powerorb.js';
 import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
 import { ORB_IDS, CROSS } from './entities/powerorb.js';
 import { ProfileScreen } from './systems/profile.js';
+import { Feats } from './systems/feats.js';
 import { Inspector } from './systems/inspector.js';
 
 /* ---------------------------------------------------------------------------
@@ -1527,6 +1528,9 @@ class Game {
        minimap and the stall prompt all read that rather than each keeping
        their own idea of whether the endgame has started. */
     this.kotodama = new Kotodama(this);
+    /* The quests — the other ways to earn a Powerup Kotodama. After the
+       Kotodama, because every quest is paid through `kotodama.give`. */
+    this.feats = new Feats(this);
     this.profile = new ProfileScreen(this);
     /* The personal, pane-sized half of the dealer. Built after the profile
        screen because choosing TRADE hands straight over to it. */
@@ -1662,6 +1666,13 @@ class Game {
          her returns every one of them. */
       this._rememberPlayer(old);
       this.scene.remove(old.group);
+      /* HER ORBITING THINGS ARE SCENE CHILDREN, NOT HERS, so removing her
+         group leaves them circling an empty spot. The same three lists
+         `_leavePlayer` takes down, for the same reason. Remembered above
+         first, so nothing she owned is lost with the meshes. */
+      for (const o of old.orbs ?? []) this.scene.remove(o.group);
+      for (const o of old.wornOrbs ?? []) this.scene.remove(o.group);
+      this.feats?.dropTokens(old);
     }
     this.roster[index] = styleIndex;
 
@@ -2827,6 +2838,9 @@ class Game {
        this she would never say it again either, since she only ever announces
        a number she has not said yet. */
     this.lastHunt?.reset();
+    /* And every quest un-done, with its gold token. A restart is a new game,
+       and a promise of an orb carried over from the old one is a free orb. */
+    this.feats?.reset();
     /* And the debug purse, or a restart would hand the world's money to the
        next kitten who joins a game where nothing has been knocked over yet. */
     this._debugPurse = null;
@@ -4147,7 +4161,7 @@ class Game {
     }
 
     if (!this.kotodama.awakened) {
-      this._announceAwakening(this.kotodama.awaken());
+      this._awaken(null);
     }
 
     // The tournament, open and waiting in the town.
@@ -4838,6 +4852,7 @@ class Game {
 
         b.take();
         this.ballsHeld++;
+        this.feats?.onBall(p);
         this._updateBallHud();
         /* The Zelda beat. She stops, lifts it, the camera comes in — and the
            star she holds up is this star's own face, so a kid can see which
@@ -6549,6 +6564,9 @@ class Game {
   }
 
   onMischief(player, prop, breath = null) {
+    /* HER OWN TALLY, for the Most mischief quest. Counted BEFORE the 100%
+       check below, so the last prop counts for the kitten who hit it. */
+    this.feats?.onMischief(player);
     const done = this.world.props.filter((p) => p.scored).length;
     document.getElementById('mtotal').textContent = `${done} / ${this.world.mischiefTotal}`;
     /* THE LAST FIVE, COUNTED OFF THE SAME NUMBER THE HUD IS. Handed the count
@@ -6587,7 +6605,7 @@ class Game {
        change off the end of it hands a kid who presses Start no orbs at all.
        `awaken()` is idempotent, so the guard is belt and braces. */
     if (done >= this.world.mischiefTotal && !this.kotodama.awakened) {
-      this._announceAwakening(this.kotodama.awaken());
+      this._awaken(player);
     }
     const el = document.getElementById(`score-${player.index}`);
     if (el) el.textContent = player.score;
@@ -7042,8 +7060,10 @@ class Game {
     for (const p of this.players) {
       for (const o of p.orbs ?? []) o.update(dt, p.position);
       for (const o of p.wornOrbs ?? []) o.update(dt, p.position);
+      for (const o of p.featOrbs ?? []) o.update(dt, p.position);
     }
     this.kotodama.update(dt);
+    this.feats.update(dt);
     for (const pk of this.pickups) {
       if (pk.taken) continue;
       pk.update(dt);
@@ -7560,6 +7580,7 @@ class Game {
        thing that walks one. */
     for (const o of p.orbs ?? []) this.scene.remove(o.group);
     for (const o of p.wornOrbs ?? []) this.scene.remove(o.group);
+    this.feats?.dropTokens(p);
     p.orbs = [];
     p.wornOrbs = [];
     this.scene.remove(p.group);
@@ -8537,6 +8558,23 @@ class Game {
    * about where it came from. Two toasts, one per half of the screen, because
    * in split screen a single toast is a message half the players never see.
    */
+  /**
+   * The Awakening, and everything that has to happen on its frame.
+   *
+   * ONE DOOR, BECAUSE THERE ARE TWO WAYS IN — the real last prop and the debug
+   * unlock — and the quests have to be settled by both. `feats.onAwaken` runs
+   * AFTER `awaken`, so it can record the plain-orb prize `awaken` just paid.
+   *
+   * @param lastPlayer whoever hit the last prop; null from the debug unlock,
+   *   which has nobody to hand "The very last one" to
+   */
+  _awaken(lastPlayer = null) {
+    const result = this.kotodama.awaken();
+    this._announceAwakening(result);
+    if (result) this.feats?.onAwaken(lastPlayer, result);
+    return result;
+  }
+
   _announceAwakening(result) {
     if (!result) return;
     this.sfx('powerorb');
@@ -8556,7 +8594,7 @@ class Game {
     this.toast('A dealer has opened a stall in the market', 1);
   }
 
-  _giveOrb(player) {
+  _giveOrb(player, { quiet = false } = {}) {
     player.orbs = player.orbs ?? [];
     const n = player.orbs.length;
     const orb = new Orb({
@@ -8573,6 +8611,7 @@ class Game {
     orb.setMathVisible(this.mathVisible);
     this.scene.add(orb.group);
     player.orbs.push(orb);
+    if (quiet) return;
     this.sfx('orb');
     this.toast(`${player.name} found a Kotodama Orb!`, player.index);
   }

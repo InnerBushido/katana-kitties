@@ -1,7 +1,7 @@
 import {
   POWER_ORBS, ORB_BY_ID, ORB_IDS, WORLD_ORB_IDS, MAX_EQUIPPED,
   PowerOrb, PowerOrbPickup,
-  orbPrice, orbSellPrice, orbPriceFor, orbSellPriceFor, stockFor,
+  orbPrice, orbSellPrice, orbPriceFor, orbSellPriceFor, stockFor, drawOrb,
 } from '../entities/powerorb.js';
 import { KotodamaStall } from '../entities/stall.js';
 import { STEAL } from '../entities/clanpower.js';
@@ -233,12 +233,13 @@ export class Kotodama {
 
     // 2 — the prize. Random per winner, so a tie is not two of the same thing
     //     unless the dice say so.
-    //     Drawn from the FINDABLE orbs only — a rare shop orb arriving free at
-    //     the moment the endgame opens is the one way to make it not rare, and
-    //     it would also hand somebody a booster for a Ward she has not got.
+    //     IT CAN BE RARE. It was findable-only, and then this prize became one
+    //     of the quests only one kitten can win (systems/feats.js, "Orb
+    //     collector"), and those are the lottery for the dealer's rare orbs.
+    //     A 守 without a Ward is a real possible draw and that is accepted:
+    //     it is a lottery, and it is something to trade.
     const prizes = winners.map((p) => {
-      const pool = WORLD_ORB_IDS;
-      const spec = ORB_BY_ID[pool[(Math.random() * pool.length) | 0]];
+      const spec = ORB_BY_ID[drawOrb({ rare: true })];
       this.give(p, spec.id, { quiet: true });
       return { player: p, spec };
     });

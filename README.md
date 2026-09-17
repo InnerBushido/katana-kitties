@@ -611,6 +611,30 @@ and if you both collected the same number, you *both* get one, including if
 that number is zero. It's random: you get a thing you *have*, not a thing you
 picked, which is what makes trading worth doing.
 
+**And quests pay out at the same moment.** Before the ending, a few things earn
+you a free orb — a little **gold orb** starts circling you, with a chime and a
+quick blessing pose, as a promise. When the Kotodama wake, every gold orb turns
+into a real one, **one at a time**. Anything done after 100% doesn't count, and
+a kitten already wearing eight is told there's no room.
+
+| quest | who | how |
+| --- | --- | --- |
+| Six oaths | everybody | swear to all six clans |
+| Student of the circle | everybody | 45 seconds in the Dojo of the Turning Circle |
+| Panda keeper | everybody | raise a panda to fully grown |
+| Dragon pilot | everybody | fly Ryuuseki from the front seat |
+| Beam gunner | the **first** | 45 seconds in Ryuuseki's second seat |
+| The very last one | one | knock over the last piece of mischief |
+| Most mischief | the leader | knock over the most things |
+| Star finder | the leader | find the most dragon balls |
+| Orb collector | the leader | collect the most Kotodama Orbs (the prize above) |
+
+The five that only one of you can win are **special**: their orb is a lucky dip
+over all ten kinds, so it can be one of the two **rare** orbs the dealer sells
+(2 in 10 today). The dealer's own stock is unchanged. A tie for "most" gives it
+to everybody tied. The Character Profile shows the checklist, with a ★ on every
+quest you'd be paid for if the game ended now.
+
 The old orbs dissolve. From then on there are **eight kinds** hidden around the
 islands, and you can wear up to **eight at once** — they stack, so two Gale
 orbs make you twice as much faster, and a kitten in a full set is visibly

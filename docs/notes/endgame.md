@@ -375,7 +375,8 @@ unnoticed: the world unlocked correctly and only the ending was missing.
 
 On the frame the last knockable thing goes over: the plain Kotodama Orbs each
 kitten collected are counted, whoever has more is given a Powerup Kotodama
-drawn at random, every plain orb is dissolved off both kittens and out of the
+drawn at random (from the whole roster since the quests — see below), every
+plain orb is dissolved off both kittens and out of the
 world, **eight** Powerup Kotodama — one of each kind — are scattered over the
 islands, and a dealer's stall appears in the market.
 
@@ -1044,6 +1045,54 @@ partial case.
 when the pile is non-empty — and the interesting bug is the other half of that:
 the function early-returns on an unchanged signature, so the offer count had to
 go **into** the signature or the button would be drawn once and never change.
+
+## Quests — the other ways to earn an orb
+
+Asked for as *"new ways to unlock powerup orbs after the Ending Cutscene. These
+can be viewed as like Quests, Achievements, or Accomplishments."* The game
+already had one, unnamed — the plain-orb prize above. `systems/feats.js` holds
+it and eight more, and it is the one list the Help card and the Character
+Profile checklist both read, so the three cannot disagree about what counts.
+
+| id | who | earned when |
+| --- | --- | --- |
+| `clans` | each | all six oaths sworn — cheered 3s later |
+| `dojo` | each | 45s (cumulative) inside `inDojoView`, not counted during a scene |
+| `panda` | each | her panda is `rideable` — cheered 3s later |
+| `pilot` | each | `ryu.pilot === p` — cheered 3s later |
+| `rider` | one | FIRST to 45s as `ryu.gunner`; the claim is by style name and saved |
+| `last` | one | hit the last prop — settled in `onAwaken` |
+| `mischief` | most | her own `onMischief` tally, settled in `onAwaken` |
+| `balls` | most | settled by the seventh star (cheered after the summoning scene), or in `onAwaken` if it never came |
+| `orbs` | most | the plain-orb prize, paid by `Kotodama.awaken` itself; `paidByAwaken` |
+
+**EARNED BEFORE THE END, PAID AT IT.** No Powerup Kotodama exists before 100%,
+so what a kitten gets on the spot is a promise she can see: a smaller, gold copy
+of the plain `Orb` with the working switched off, one per unpaid quest, plus the
+`quest` chime, a toast, and — on foot only — `holdAloft(null, 1.2, { zoom: false })`,
+which is the "slight pause" through the dead pad without the camera move. The
+door is `!kotodama.awakened` and nothing else; after it `earn` and the counters
+refuse.
+
+**THE PAYOUT IS A QUEUE, NOT AN ENDING CALLBACK.** Seventh non-negotiable: it
+waits for `_finaleDue` and `_sceneActive()` to clear, then a 1.5s beat, then
+one orb every 0.9s, round the party so nobody watches a sister's eight go first.
+A skip and a watch reach the same frame. A full neck is marked paid and TOLD —
+marking it paid is what stops the refusal repeating forever.
+
+**SPECIAL MEANS THE LOTTERY.** `drawOrb({ rare: true })` is uniform over
+`ORB_IDS`, so the rare odds are whatever the roster is (2 in 10 today) and a new
+rare orb moves them without anybody editing a percentage. The dealer's stock is
+never touched. This reverses the old "the prize is findable-only" rule on
+purpose; only five prizes a game can roll one.
+
+**TIES SHARE, AND NOBODY LEADS AT ZERO** — except the plain-orb prize, which
+keeps its 0-0 rule, and whose checklist star follows that rule so the screen
+never disagrees with who is paid.
+
+**THE SAVE LEARNED ONE FACT IT NEVER HAD.** A row now carries `plain`, the
+number of plain orbs she holds. Before this, a load or a drop-out handed those
+orbs to nobody, which was invisible until a quest was decided by the count.
 
 ## 守 Long Guard — the ninth orb, and the first one you cannot find
 

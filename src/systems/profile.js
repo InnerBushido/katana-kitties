@@ -1138,6 +1138,12 @@ export class ProfileScreen {
          never appeared. */
       this.mode === 'shop' ? [...this.joined].sort().join(',') : '',
       this._flashT > 0 ? this._flash : '',
+      /* THE QUEST LIST MOVES WHILE THE SCREEN IS UP — her Dojo seconds tick,
+         a sister overtakes her on mischief — and a checklist that only
+         repainted when an orb changed hands would show a lead she has lost. */
+      this.mode === 'shop' ? '' : this.game.players
+        .map((p) => (this.game.feats?.status(p) ?? [])
+          .map((r) => `${+r.star}${+r.paid}${r.note}`).join(',')).join(';'),
     ].join('#');
   }
 
@@ -1206,8 +1212,14 @@ export class ProfileScreen {
         ? `offering <b>${offered.join(' + ')}</b>`
         : '<span class="kd-dim">offering nothing</span>';
 
+    const quests = this.game.feats?.status(player) ?? [];
+    const stars = quests.filter((q) => q.star).length;
+    /* "They get a star next to their name if they currently will get it if
+       the game ends" — the count of them, beside her name, so the one thing a
+       girl glancing at the screen learns is how many are coming to her. */
+    const starTag = stars ? ` <span class="kd-stars" title="orbs coming at the ending">★${stars}</span>` : '';
     return `<div class="${cls}">
-      <div class="kd-name">${player.name}</div>
+      <div class="kd-name">${player.name}${starTag}</div>
       ${this._clanMarkup(player)}
       <div class="kd-meta">${player.score} pts · ${owned.length}/${MAX_EQUIPPED} orbs</div>
       ${this._askMarkup(index)}
@@ -1215,7 +1227,40 @@ export class ProfileScreen {
       ${this.mode === 'profile' ? pointsRow : ''}
       <div class="kd-detail">${detail}</div>
       <div class="kd-state">${state}</div>
+      ${this._questMarkup(quests)}
     </div>`;
+  }
+
+  /**
+   * THE QUESTS, AS A CHECKLIST — every way to earn a Powerup Kotodama at the
+   * ending, and whether she will.
+   *
+   * A STAR IS "WILL GET IT IF THE GAME ENDS NOW", NOT "HAS DONE IT". For the
+   * quests that are decided at the end — most mischief, most dragon balls,
+   * most Kotodama Orbs — being in the lead IS the whole state, and a box
+   * that only ticked at the end would tell her nothing while it can still
+   * change. A tick, once the ending has paid it.
+   *
+   * AN UNSTARRED ROW IS AN INSTRUCTION. Sixth non-negotiable: "Spend 45
+   * seconds in the Dojo" with "12s / 45s" beside it, never a greyed-out name.
+   *
+   * THE SPECIAL ONES SAY SO. They are the ones that can roll a rare orb, and
+   * that is the reason a girl would go for one rather than another.
+   */
+  _questMarkup(quests) {
+    if (!quests.length) return '';
+    const rows = quests.map((q) => {
+      const mark = q.paid ? '✔' : q.star ? '★' : '☆';
+      const cls = ['kd-quest', q.star ? 'on' : '', q.paid ? 'paid' : '',
+        q.special ? 'special' : ''].filter(Boolean).join(' ');
+      const tag = q.special ? ' <span class="kd-q-rare">special · could be rare</span>' : '';
+      return `<li class="${cls}"><span class="kd-q-mark">${mark}</span>`
+        + `<span class="kd-q-text"><b>${q.feat.title}</b>${tag}<br>`
+        + `<span class="kd-dim">${q.feat.how}</span>`
+        + `${q.note ? ` <span class="kd-q-note">${q.note}</span>` : ''}</span></li>`;
+    });
+    return `<div class="kd-quests"><div class="kd-q-head">QUESTS — orbs at the ending</div>`
+      + `<ul>${rows.join('')}</ul></div>`;
   }
 
   /**

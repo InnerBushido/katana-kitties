@@ -103,6 +103,19 @@ deck while whoever went down flies over it as an **angel cat**.
 up to eight at once, scattered over the islands, with a dealer's stall and a
 two-cursor trade screen. Patchfur closes the story in her own voice.
 
+**Quests pay out at the Awakening, one orb at a time.** Nine ways to earn a free
+Powerup Kotodama, listed in `systems/feats.js` and read by both the Help card
+("Quests & achievements") and a checklist on the Character Profile. Four are
+anybody's (six oaths, 45s in the Dojo, a fully grown panda, flying Ryuuseki);
+five go to one kitten (first to 45s in the second seat, the last prop, most
+mischief, most dragon balls, most plain orbs — the old Awakening prize, now on
+the list) and draw from the WHOLE roster, so they are the only free route to a
+rare orb. Earned before 100% it becomes a small gold token circling her, with a
+chime and a zoomless bless; at 100% the door shuts and the tokens pay out once
+no scene is up. A save carries each kitten's ledger, and — new, because a quest
+now depends on it — how many plain orbs she is holding, which nothing recorded
+before. **Not yet played back.**
+
 **And the elder counts the last five down.** Under five pieces of mischief left
 she names the number every time one goes over, in seven new recordings of her
 own, over Mr. Satan's announcer card — which now carries a speaker per line
