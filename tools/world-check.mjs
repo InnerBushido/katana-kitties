@@ -74,6 +74,11 @@ import {
   PowerOrb, PowerOrbPickup, ORB_BY_ID,
 } from '../src/entities/powerorb.js';
 import { Kotodama } from '../src/systems/kotodama.js';
+import {
+  Feats, FEATS, FEAT_BY_ID, isSpecial, blankFeats, cleanFeats, leaders,
+  DOJO_NEED, RIDER_NEED, CELEBRATE_AFTER, PAY_LEAD, PAY_GAP, TOKEN_COLOR,
+} from '../src/systems/feats.js';
+import { drawOrb } from '../src/entities/powerorb.js';
 import { CrossFx, sealStage, SIDES_BY_CUT } from '../src/systems/crossfx.js';
 import { DodgeFx } from '../src/systems/dodgefx.js';
 import { ClanFx } from '../src/systems/clanfx.js';
@@ -5729,8 +5734,15 @@ console.log('\n--- the Powerup Kotodama ---');
        the wrong card's body and failed every assertion below. */
     const card = helpHtml.slice(helpHtml.indexOf('<span class="ht-title">The rare orb'));
     const body = card.slice(0, card.indexOf('</details>'));
-    ok('the Help card says the dealer is the only place it is',
-      /only the dealer has (it|them)|only ever at the dealer/i.test(body));
+    /* NOT "ONLY THE DEALER" ANY MORE, and the card has to stop saying so. A
+       special quest can roll one at the ending (systems/feats.js), so the
+       card says the dealer SELLS them, that they are not on the islands, and
+       names the one other way — luck — rather than promising a shop monopoly
+       the game no longer has. */
+    ok('the Help card says the dealer sells them and they are not on the islands',
+      /the dealer has them/i.test(body) && /not out in\s+the world/i.test(body));
+    ok('...and names the only other way: a special quest, by luck',
+      /special quest/i.test(body) && /luck/i.test(body));
     ok('...and that it does nothing on its own',
       /does nothing on its own/i.test(body));
     ok('...and warns about the longer wait',
@@ -22805,6 +22817,345 @@ console.log('\n--- one press is not enough, and one player drives ---');
     !art.pageStale, art.pageStale ? 'run `npm run artifact` for what to do' : art.publishedAt);
   ok('...and has been revised since PROJECT.md last changed',
     !art.sourceStale, art.sourceStale ? 'PROJECT.md has moved ahead of the page' : 'in step');
+}
+
+/* ---------------------------------------------------------------------------
+   QUESTS — the other ways to earn a Powerup Kotodama (systems/feats.js).
+
+   DRIVEN, NOT READ. Every rule below is a sentence from the request, and the
+   check is the Feats system being run over fake kittens until the sentence is
+   true or is not: the door shutting at the Awakening, the three-second wait,
+   the one-kitten quests staying with one kitten, the full neck being refused
+   out loud, and the lottery reaching the rare orbs and nothing else doing so.
+--------------------------------------------------------------------------- */
+console.log('\n--- quests: earned before the end, paid one at a time after it ---');
+{
+  /* The tokens are real `Orb`s, an Orb builds labels, and a label needs a
+     canvas. An earlier section deletes the stub on its way out, so this one
+     puts its own back and restores whatever it found. */
+  const hadDocQ = 'document' in globalThis;
+  const docQ = globalThis.document;
+  globalThis.document = domStub();
+  const mkK = (i, name) => {
+    const p = new Player({
+      texture: new THREE.Texture(), index: i,
+      spawn: new THREE.Vector3(0, world.heightAt(0, 40).y, 40),
+      cols: 8, rows: 4, mirror: false,
+    });
+    p.name = name;
+    p.style = { name };
+    return p;
+  };
+  const toasts = [];
+  const sounds = [];
+  const mkGame = () => {
+    const g = {
+      world, scene: new THREE.Scene(), pickups: [],
+      players: [mkK(0, 'Ember'), mkK(1, 'Frost')],
+      sfx: (n) => sounds.push(n), toast: (t, i) => toasts.push([t, i]),
+      syncOrbMeshes: () => {}, onScoreChanged: () => {},
+      _sceneActive: () => !!g.scene_, _finaleDue: false,
+      ballsHeld: 0, ryu: null,
+    };
+    g.kotodama = new Kotodama(g);
+    g.kotodama.spawnPickups = () => {};
+    g.kotodama.raiseStall = () => {};
+    g.feats = new Feats(g);
+    return g;
+  };
+
+  /* --- the list itself --- */
+  ok('nine quests: four for everybody, five special',
+    FEATS.length === 9 && FEATS.filter((f) => f.who === 'each').length === 4
+      && FEATS.filter((f) => isSpecial(f.id)).length === 5,
+    FEATS.map((f) => `${f.id}:${f.who}`).join(' '));
+  ok('...and the plain-orb prize is one of them, paid by the Awakening itself',
+    FEAT_BY_ID.orbs?.paidByAwaken === true && isSpecial('orbs'));
+  ok('the numbers are the asked-for numbers',
+    DOJO_NEED === 45 && RIDER_NEED === 45 && CELEBRATE_AFTER === 3,
+    `${DOJO_NEED}/${RIDER_NEED}/${CELEBRATE_AFTER}`);
+  ok('every unticked row is an instruction, not a label',
+    FEATS.every((f) => /^[A-Z][a-z]+ /.test(f.how) && f.how.endsWith('.')));
+
+  /* --- the lottery --- */
+  {
+    const seq = (n) => { let k = 0; return () => ((k++ % n) + 0.5) / n; };
+    const plain = new Set();
+    const rare = new Set();
+    const r1 = seq(WORLD_ORB_IDS.length);
+    const r2 = seq(ORB_IDS.length);
+    for (let k = 0; k < 40; k++) {
+      plain.add(drawOrb({ rand: r1 }));
+      rare.add(drawOrb({ rare: true, rand: r2 }));
+    }
+    ok('an ordinary quest orb is never a rare one',
+      [...plain].every((id) => !SHOP_ONLY_IDS.includes(id)) && plain.size === WORLD_ORB_IDS.length);
+    ok('...and a special one can be ANY kind, rare included',
+      rare.size === ORB_IDS.length && SHOP_ONLY_IDS.every((id) => rare.has(id)),
+      `${SHOP_ONLY_IDS.length} rare in ${ORB_IDS.length}`);
+    ok('...and a rand of 1.0 still lands on a real orb',
+      !!ORB_BY_ID[drawOrb({ rare: true, rand: () => 1 })]);
+  }
+
+  /* --- earning: polled, delayed three seconds, once --- */
+  {
+    const g = mkGame();
+    const [E, F] = g.players;
+    E.clansSworn = new Set(CLANS.map((c) => c.id));
+    g.feats.update(0.1);
+    ok('all six oaths earns the quest on the frame it becomes true', g.feats.has(E, 'clans'));
+    ok('...but nothing is said and no token appears for three seconds',
+      !sounds.includes('quest') && (E.featOrbs?.length ?? 0) === 0);
+    g.feats.update(CELEBRATE_AFTER);
+    ok('...then the chime, the words and ONE gold token',
+      sounds.includes('quest') && E.featOrbs?.length === 1
+        && E.featOrbs[0].color === TOKEN_COLOR
+        && toasts.some(([t, i]) => i === 0 && /QUEST/.test(t) && /Six oaths/.test(t)));
+    ok('...and she holds it up without the camera moving in',
+      E.aloftT > 0 && E.aloftZoom === false);
+    ok('...and the token does not print a lesson it is too small to read',
+      E.featOrbs[0].showMath === false);
+    const before = E.feats.got.length;
+    g.feats.update(5);
+    ok('a quest is earned once', E.feats.got.length === before && E.featOrbs.length === 1);
+    ok('...and her sister has not got it', !g.feats.has(F, 'clans'));
+
+    /* the celebration waits for a free screen */
+    E.aloftT = 0;
+    E.panda = { spec: { rideable: true } };
+    g.scene_ = true;
+    g.feats.update(CELEBRATE_AFTER + 1);
+    ok('a quest finished during a scene is earned, and not cheered over it',
+      g.feats.has(E, 'panda') && E.featOrbs.length === 1);
+    g.scene_ = false;
+    g.feats.update(0.01);
+    ok('...but on the first free frame after', E.featOrbs.length === 2);
+
+    /* the Dojo, and not during a scene */
+    const dc = world.dojoCentre;
+    F.position.set(dc.x, F.position.y, dc.z);
+    g.scene_ = true;
+    for (let k = 0; k < 60; k++) g.feats.update(1);
+    ok('seconds in the Dojo do not count while a scene owns the screen', F.feats.dojoT === 0);
+    g.scene_ = false;
+    for (let k = 0; k < 44; k++) g.feats.update(1);
+    ok('...44 seconds is not enough', !g.feats.has(F, 'dojo'));
+    g.feats.update(1);
+    ok('...45 is', g.feats.has(F, 'dojo'), `${F.feats.dojoT.toFixed(1)}s`);
+    F.position.set(0, F.position.y, 40);
+
+    /* Ryuuseki: every pilot; the second seat is FIRST to 45 only */
+    g.ryu = { pilot: E, gunner: F };
+    for (let k = 0; k < 45; k++) g.feats.update(1);
+    ok('flying Ryuuseki earns Dragon pilot', g.feats.has(E, 'pilot'));
+    ok('45 seconds in the second seat earns Beam gunner, and claims it',
+      g.feats.has(F, 'rider') && g.feats.claimed.rider === 'Frost');
+    g.ryu = { pilot: F, gunner: E };
+    for (let k = 0; k < 90; k++) g.feats.update(1);
+    ok('...so her sister riding there for longer does not get it too',
+      !g.feats.has(E, 'rider') && E.feats.riderT === 0);
+    ok('...but can still earn Dragon pilot for herself — that one is everybody\'s',
+      g.feats.has(F, 'pilot'));
+    ok('the profile names who got there first',
+      g.feats.status(E).find((r) => r.feat.id === 'rider').note.includes('Frost'));
+    g.ryu = null;
+
+    /* counters and "most" stars */
+    for (let k = 0; k < 5; k++) g.feats.onMischief(E);
+    for (let k = 0; k < 3; k++) g.feats.onMischief(F);
+    const star = (p, id) => g.feats.status(p).find((r) => r.feat.id === id).star;
+    ok('the kitten ahead on mischief has the star, and only she does',
+      star(E, 'mischief') && !star(F, 'mischief'));
+    ok('...and nobody leads a count of nothing', leaders(g.players, () => 0).length === 0);
+    E.orbs = [1, 2];
+    F.orbs = [1, 2];
+    ok('the Orb collector star follows the plain-orb prize\'s tie rule',
+      star(E, 'orbs') && star(F, 'orbs'));
+    E.orbs = [];
+    F.orbs = [];
+
+    /* dragon balls: settled by the seventh, cheered after the scene */
+    for (let k = 0; k < 20; k++) g.feats.update(1);   // let every cheer above land
+    g.feats.onBall(F);
+    g.feats.onBall(F);
+    g.feats.onBall(E);
+    g.ballsHeld = BALL_COUNT;
+    g.scene_ = true;
+    g.feats.update(0.1);
+    ok('the seventh dragon ball settles Star finder for whoever found most',
+      g.feats.has(F, 'balls') && !g.feats.has(E, 'balls') && g.feats.ballsSettled);
+    const tokensF = F.featOrbs.length;
+    g.feats.update(2);
+    ok('...and it is not cheered over the summoning scene', F.featOrbs.length === tokensF);
+    g.scene_ = false;
+    F.aloftT = 0;
+    g.feats.update(0.1);
+    ok('...but straight after it', F.featOrbs.length === tokensF + 1);
+    g.feats.onBall(E);
+    g.feats.onBall(E);
+    g.feats.update(1);
+    ok('...and a settled count is not re-decided', !g.feats.has(E, 'balls'));
+
+    /* --- the Awakening --- */
+    E.setPowerOrbs([]);
+    F.setPowerOrbs([]);
+    E.orbs = [{ group: new THREE.Group() }];
+    const res = g.kotodama.awaken();
+    g.feats.onAwaken(F, res);
+    ok('the last hit, most mischief and the plain-orb prize are settled on the Awakening frame',
+      g.feats.has(F, 'last') && g.feats.has(E, 'mischief') && g.feats.has(E, 'orbs'));
+    ok('...and the plain-orb prize is ticked as already paid, not paid twice',
+      E.feats.paid.includes('orbs') && E.powerOrbs.length === 1);
+    ok('...and it is not drawn as a token', E.featOrbs.length === g.feats.tokenCount(E)
+      && g.feats.unpaid(E).every((id) => id !== 'orbs'));
+
+    const shut = g.feats.earn(E, 'dojo');
+    for (let k = 0; k < 60; k++) g.feats.onMischief(E);
+    ok('after the Awakening nothing counts: no new quest, no new mischief',
+      shut === false && !g.feats.has(E, 'dojo') && E.feats.mischief === 5);
+
+    /* the payout: one at a time, round the party, waiting for the ending */
+    const worn = () => E.powerOrbs.length + F.powerOrbs.length;
+    const w0 = worn();
+    g._finaleDue = true;
+    for (let k = 0; k < 20; k++) g.feats.update(1);
+    ok('nothing is paid while the ending is queued', worn() === w0);
+    g._finaleDue = false;
+    g.scene_ = true;
+    for (let k = 0; k < 20; k++) g.feats.update(1);
+    ok('...or while it plays', worn() === w0);
+    g.scene_ = false;
+    g.feats.update(PAY_LEAD - 0.1);
+    ok('...and not on the frame it ends — a beat first', worn() === w0);
+    g.feats.update(0.2);
+    ok('then ONE orb', worn() === w0 + 1);
+    g.feats.update(PAY_GAP * 0.5);
+    ok('...and not a second one straight after', worn() === w0 + 1);
+    const e1 = E.powerOrbs.length;
+    const f1 = F.powerOrbs.length;
+    g.feats.update(PAY_GAP);
+    ok('...then the next, to the OTHER kitten — round the party',
+      worn() === w0 + 2 && (E.powerOrbs.length - e1) + (F.powerOrbs.length - f1) === 1
+        && E.powerOrbs.length > 1 && F.powerOrbs.length > 0);
+    for (let k = 0; k < 30; k++) g.feats.update(PAY_GAP);
+    ok('every earned quest is paid in the end, and every token is gone',
+      g.players.every((p) => g.feats.unpaid(p).length === 0 && p.featOrbs.length === 0),
+      `Ember ${E.powerOrbs.length}, Frost ${F.powerOrbs.length}`);
+    ok('...one real orb per quest (the plain-orb prize counted once)',
+      E.powerOrbs.length === E.feats.got.length && F.powerOrbs.length === F.feats.got.length);
+  }
+
+  /* --- a full neck is refused out loud, and only once --- */
+  {
+    const g = mkGame();
+    const [E] = g.players;
+    E.setPowerOrbs(Array(8).fill('swift'));
+    E.feats = { ...blankFeats(), got: ['clans', 'pilot'] };
+    g.kotodama.awakened = true;
+    toasts.length = 0;
+    for (let k = 0; k < 20; k++) g.feats.update(1);
+    ok('a kitten already wearing eight is not given a ninth',
+      E.powerOrbs.length === 8 && E.feats.paid.length === 2);
+    ok('...and is told why, once per quest, not every second',
+      toasts.filter(([t]) => /already wearing 8/.test(t)).length === 2);
+  }
+
+  /* --- the rare lottery reaches the shelf's orbs without touching the shelf --- */
+  {
+    const g = mkGame();
+    const [E] = g.players;
+    E.feats = { ...blankFeats(), got: ['last', 'clans'] };
+    g.kotodama.awakened = true;
+    const stock = { ...g.kotodama.stock };
+    toasts.length = 0;
+    const r = g.feats.pay(E, 'last', () => 0.95);
+    const q = g.feats.pay(E, 'clans', () => 0.95);
+    ok('a special quest can hand her a rare orb',
+      r.rare === true && SHOP_ONLY_IDS.includes(r.spec.id), r.spec.id);
+    ok('...an everybody quest cannot, on the same roll', q.rare === false);
+    ok('...and the dealer still has every one he had',
+      ORB_IDS.every((id) => g.kotodama.stock[id] === stock[id]));
+    ok('...and a rare prize says so', toasts.some(([t]) => /RARE ONE/.test(t)));
+  }
+
+  /* --- saved, loaded, dropped out, restarted --- */
+  {
+    const g = mkGame();
+    const [E] = g.players;
+    E.feats = {
+      ...blankFeats(), got: ['dojo', 'rider'], paid: ['dojo'],
+      dojoT: 45, riderT: 45.5, mischief: 12, balls: 3,
+    };
+    E.orbs = [{ group: new THREE.Group() }, { group: new THREE.Group() }];
+    g.feats.claimed.rider = 'Ember';
+    const row = castRow(E, false);
+    ok('her row carries her ledger and her plain orbs',
+      row.feats.got.join() === 'dojo,rider' && row.feats.mischief === 12 && row.plain === 2);
+    E.feats.got.push('clans');
+    ok('...copied, not shared — the row does not keep counting', row.feats.got.length === 2);
+    ok('a kitten whose only deed is a quest counter is still remembered',
+      meaningful({ feats: { got: [], mischief: 3 } }) && meaningful({ plain: 1 }));
+    ok('a ledger off disk is cleaned: unknown quests and unearned "paid" dropped',
+      cleanFeats({ got: ['dojo', 'bogus'], paid: ['dojo', 'last'], dojoT: -4, mischief: NaN })
+        .got.join() === 'dojo'
+        && cleanFeats({ got: ['dojo'], paid: ['last'] }).paid.length === 0
+        && cleanFeats({ dojoT: -4 }).dojoT === 0 && cleanFeats(null).got.length === 0);
+
+    const g2 = mkGame();
+    const B = g2.players[0];
+    g2._giveOrb = (p) => { p.orbs = [...(p.orbs ?? []), { group: new THREE.Group() }]; };
+    g2._updateClanBadge = () => {};
+    g2.feats.load(g.feats.save());
+    applyCast(g2, B, row);
+    ok('handing the row back restores the ledger, the claim and a token for the unpaid quest',
+      B.feats.got.join() === 'dojo,rider' && g2.feats.claimed.rider === 'Ember'
+        && B.featOrbs.length === 1);
+    ok('...and her plain orbs, which a drop-out used to lose', B.orbs.length === 2);
+    ok('...with no ceremony — it is not news', g2.feats.pending.length === 0);
+
+    g2.feats.reset();
+    ok('a restart forgets every quest, claim and token',
+      B.feats.got.length === 0 && g2.feats.claimed.rider === null && B.featOrbs.length === 0
+        && !g2.feats.ballsSettled);
+  }
+
+  /* --- wiring: the things a fake game cannot prove --- */
+  {
+    const src = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
+    const main = stripComments(src('../src/main.js'));
+    const save = stripComments(src('../src/systems/savegame.js'));
+    ok('the game runs the quests every frame, and moves the tokens',
+      /this\.feats\.update\(dt\)/.test(main)
+        && /featOrbs \?\? \[\]\) o\.update\(dt, p\.position\)/.test(main));
+    ok('BOTH ways into the Awakening settle the quests',
+      (main.match(/this\._awaken\(/g) || []).length >= 2
+        && !/_announceAwakening\(this\.kotodama\.awaken\(\)\)/.test(main)
+        && /this\.feats\?\.onAwaken\(lastPlayer, result\)/.test(main));
+    ok('...and the last prop names the kitten who hit it', /this\._awaken\(player\)/.test(main));
+    ok('mischief and dragon balls are counted where they happen',
+      /this\.feats\?\.onMischief\(player\)/.test(main) && /this\.feats\?\.onBall\(p\)/.test(main));
+    ok('a restart, a drop-out and a swap all take the tokens down',
+      /this\.feats\?\.reset\(\)/.test(main)
+        && (main.match(/this\.feats\?\.dropTokens\(/g) || []).length >= 2);
+    ok('a save writes the claims and a load reads them',
+      /feats: game\.feats\?\.save\?\.\(\)/.test(save) && /game\.feats\?\.load\(snap\.feats\)/.test(save));
+    ok('the quest chime exists', /case 'quest':/.test(src('../src/core/audio.js')));
+    const prof = src('../src/systems/profile.js');
+    ok('the profile draws the checklist and the star count by her name',
+      /_questMarkup\(quests\)/.test(prof) && /kd-stars/.test(prof) && /feats\?\.status\(/.test(prof));
+
+    const html = src('../index.html');
+    const card = helpTopic(html, 'Quests &amp; achievements');
+    ok('Help has a Quests & achievements card', card.length > 200, `${card.length} chars`);
+    ok('...listing every quest by its own title, in order',
+      FEATS.every((f) => card.includes(f.title))
+        && FEATS.map((f) => card.indexOf(f.title)).every((v, k, a) => !k || v > a[k - 1]));
+    ok('...with the real numbers',
+      card.includes(`${DOJO_NEED} seconds`) && card.includes(`${RIDER_NEED} seconds`));
+    ok('...and says what does not count, the cap, and the rare chance',
+      /doesn't count/.test(card) && /eight/.test(card) && /rare/.test(card) && /★/.test(card));
+  }
+  if (hadDocQ) globalThis.document = docQ; else delete globalThis.document;
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

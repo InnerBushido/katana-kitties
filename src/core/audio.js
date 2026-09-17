@@ -953,6 +953,18 @@ export class Audio {
         this._tone({ type: 'sine', from: semi(36), dur: 0.8, gain: 0.09 * v, delay: 0.1 });
         this._tone({ type: 'triangle', from: semi(43), dur: 0.6, gain: 0.05 * v, delay: 0.16 });
         break;
+      case 'quest':
+        /* A quest done. SMALLER THAN `starfound` ON PURPOSE — it plays while
+           she keeps playing, and the star's fanfare is the sound of the game
+           stopping for her. Three quick rising notes and the powerorb bell on
+           the end, because what she has just earned is a promise of one. */
+        [7, 12, 19].forEach((n, i) => this._tone({
+          type: 'triangle', from: semi(n + 24), dur: 0.14,
+          gain: 0.14 * v, delay: i * 0.07,
+        }));
+        this._tone({ type: 'sine', from: semi(36), dur: 0.9, gain: 0.12 * v, delay: 0.21 });
+        this._tone({ type: 'sine', from: semi(43), dur: 0.7, gain: 0.06 * v, delay: 0.24 });
+        break;
       case 'coin':
         this._tone({ type: 'square', from: semi(24), dur: 0.06, gain: 0.09 * v });
         this._tone({ type: 'square', from: semi(31), dur: 0.16, gain: 0.09 * v, delay: 0.06 });

@@ -323,6 +323,18 @@ export function castRow(p, here = true) {
     cut: p.bambooCut ?? 0,
     fedFrom: p.pandaFedFrom ?? null,
     raised: !!p.raisedPanda,
+    /* HOW MANY PLAIN ORBS SHE IS CARRYING, WHICH NOTHING RECORDED. The world
+       remembered which pedestals were empty and nobody remembered who had
+       emptied them, so a load — or a kitten dropping out and back in — handed
+       the orbs to nobody. That was invisible until a quest was decided by it:
+       "Orb collector" is whoever has the most, and a count that silently goes
+       to zero on a load is a prize handed to the wrong sister. */
+    plain: p.orbs?.length ?? 0,
+    /* Her quest ledger — see systems/feats.js. Copied, so a row taken now does
+       not keep counting her Dojo seconds while it sits in the cast. */
+    feats: p.feats ? {
+      ...p.feats, got: [...p.feats.got], paid: [...p.feats.paid],
+    } : null,
   };
 }
 
@@ -343,7 +355,8 @@ export function castRow(p, here = true) {
  */
 export function meaningful(row) {
   return !!(row && (row.score || row.orbs?.length || row.clan || row.sworn?.length
-    || row.cut || row.raised || row.fedFrom != null));
+    || row.cut || row.raised || row.fedFrom != null || row.plain
+    || row.feats?.got?.length || row.feats?.mischief || row.feats?.balls));
 }
 
 /**
@@ -374,6 +387,17 @@ export function applyCast(game, p, row) {
   p.bambooCut = row.cut ?? 0;
   p.pandaFedFrom = row.fedFrom ?? null;
   p.raisedPanda = !!row.raised;
+  /* HER PLAIN ORBS, BUT ONLY BEFORE THE AWAKENING — after it there are none
+     anywhere, on anybody, and a row taken before 100% being loaded after it
+     is not a thing that can happen (a load rebuilds the world from the save).
+     Quiet: she is picking her controller back up, not finding them again. */
+  if (!game.kotodama?.awakened && game._giveOrb) {
+    for (const o of p.orbs ?? []) game.scene?.remove(o.group);
+    p.orbs = [];
+    const n = Math.max(0, Math.min(20, Math.floor(row.plain ?? 0)));
+    for (let k = 0; k < n; k++) game._giveOrb(p, { quiet: true });
+  }
+  game.feats?.applyRow(p, row.feats);
   return true;
 }
 
@@ -469,6 +493,9 @@ export function snapshot(game) {
     } : null,
 
     awakened: !!game.kotodama?.awakened,
+    /** Who claimed the one-kitten quest, and whether the dragon-ball count is
+     *  settled. Everything per kitten is in her row. */
+    feats: game.feats?.save?.() ?? null,
     /** Which story scenes have been spent. A restore that forgot these would
      *  play the dragon's arrival a second time over a world that already has
      *  him in it. */
@@ -680,6 +707,10 @@ export function restore(game, snap) {
   }
   game._endingShown = !!snap.ending;
   game._finaleDue = false;
+  /* BEFORE THE KITTENS, because handing each her ledger rebuilds her tokens
+     and asks this for nothing — but a load that set the claims after would
+     leave a window where the Beam gunner quest looked unclaimed. */
+  game.feats?.load(snap.feats);
 
   /* --- and the kittens ------------------------------------------------- */
   /* --- BY KITTEN, AND ONLY BY KITTEN --------------------------------------

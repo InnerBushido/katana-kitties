@@ -566,7 +566,7 @@ you are about to change that area, and not before.
 | [help.md](docs/notes/help.md) | the Help panel and the rig that films it |
 | [tournament.md](docs/notes/tournament.md) | the ring, rounds, attacks, ring-outs, the feast |
 | [dragon-hunt.md](docs/notes/dragon-hunt.md) | the seven stars, the grottos, the spire, Ryuuseki |
-| [endgame.md](docs/notes/endgame.md) | the 100% ending, the eight Kotodama, the economy, **the last five and the hunt for them**, **the balance page** |
+| [endgame.md](docs/notes/endgame.md) | the 100% ending, the eight Kotodama, the economy, **the quests that pay an orb at the ending**, **the last five and the hunt for them**, **the balance page** |
 | [story.md](docs/notes/story.md) | the opening cutscene, the six leaders, the shrine scenes |
 | [world.md](docs/notes/world.md) | the six clans and what each buff changes; the panda |
 | [art.md](docs/notes/art.md) | atlas cells, and the two rules for generating new sprites |

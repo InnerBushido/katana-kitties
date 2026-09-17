@@ -3184,6 +3184,19 @@ body.touch-ui .kd-row { padding: 9px 6px; }
 
 .kd-detail { margin-top: 12px; font-size: 14px; min-height: 40px; }
 .kd-state { margin-top: 6px; font-size: 14px; }
+
+/* The quest checklist. Gold, because the tokens circling her are gold and the
+   star on this screen is the same promise. Paid rows fade: they are done. */
+.kd-stars { color: #d98a00; font-size: 0.8em; margin-left: 6px; }
+.kd-quests { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.15); }
+.kd-q-head { font-size: 12px; letter-spacing: 0.08em; opacity: 0.8; margin-bottom: 4px; }
+.kd-quests ul { list-style: none; margin: 0; padding: 0; }
+.kd-quest { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.25; padding: 3px 0; }
+.kd-q-mark { width: 1.1em; flex: none; text-align: center; opacity: 0.55; }
+.kd-quest.on .kd-q-mark { color: #d98a00; opacity: 1; font-weight: 700; }
+.kd-q-note { font-weight: 700; white-space: nowrap; }
+.kd-quest.paid { opacity: 0.6; }
+.kd-q-rare { color: #7a45d1; font-size: 11px; font-weight: 400; margin-left: 4px; }
 .kd-ready {
   font-family: 'Bangers', cursive;
   letter-spacing: 2px;

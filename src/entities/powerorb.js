@@ -236,16 +236,36 @@ export const POWER_ORBS = [
  * A SHOP-ONLY ORB IS A NEW KIND OF THING and everything that reads the roster
  * has to be asked which list it wants. `spawnPickups` cycles WORLD_ORB_IDS so
  * the guarantee that every power is findable on foot still holds for every
- * power that is supposed to be; the Awakening prize draws from the same list,
- * because a rare orb falling out of the sky at the moment the endgame opens is
- * the one way to make it not rare. `ORB_IDS` stays the whole roster and is
- * what the shelf, the profile and the trade screen count.
+ * power that is supposed to be. `ORB_IDS` stays the whole roster and is what
+ * the shelf, the profile and the trade screen count.
  */
 export const WORLD_ORB_IDS = POWER_ORBS.filter((o) => !o.shopOnly).map((o) => o.id);
 export const SHOP_ONLY_IDS = POWER_ORBS.filter((o) => o.shopOnly).map((o) => o.id);
 
 export const ORB_BY_ID = Object.fromEntries(POWER_ORBS.map((o) => [o.id, o]));
 export const ORB_IDS = POWER_ORBS.map((o) => o.id);
+
+/**
+ * A free orb, drawn at random.
+ *
+ * `rare: false` draws from the findable orbs only; `rare: true` draws from the
+ * WHOLE roster, dealer's shelf included, uniformly. That uniformity is the
+ * lottery as it was asked for — "the chances are randomly selected between all
+ * regular and Rare powerup orbs" — so the odds are whatever the roster says:
+ * today 2 rare kinds in 10, and a new rare orb changes them without anybody
+ * editing a percentage. The quests that only ONE kitten can win (and the
+ * plain-orb prize, which is one of them) draw rare; see `systems/feats.js`.
+ *
+ * THIS WAS "NEVER RARE" UNTIL IT WAS ASKED FOR. The reasoning then was that a
+ * rare orb arriving free at the Awakening makes it not rare. What keeps it rare
+ * now is that only five prizes in a whole game can roll one, and the dealer's
+ * stock is never touched by them — "the same amount of the Rare orbs will still
+ * be available at the store regardless, these are just extras".
+ */
+export function drawOrb({ rare = false, rand = Math.random } = {}) {
+  const pool = rare ? ORB_IDS : WORLD_ORB_IDS;
+  return pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))];
+}
 
 /**
  * How many of each kind are in a list of ids.
