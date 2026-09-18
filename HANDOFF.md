@@ -109,7 +109,7 @@ Powerup Kotodama, listed in `systems/feats.js` and read by both the Help card
 anybody's (six oaths, 45s in the Dojo, a fully grown panda, flying Ryuuseki);
 five go to one kitten (first to 45s in the second seat, the last prop, most
 mischief, most dragon balls, most plain orbs — the old Awakening prize, now on
-the list) and draw from the WHOLE roster, so they are the only free route to a
+the list and paid at the ceremony rather than on the Awakening frame) and draw from the WHOLE roster, so they are the only free route to a
 rare orb. Earned before 100% it becomes a small gold token circling her, with a
 chime and a zoomless bless; at 100% the door shuts and, once no scene is up,
 each kitten in turn is handed EVERYTHING she won at once — `#award` names the

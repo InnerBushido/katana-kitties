@@ -6834,13 +6834,19 @@ console.log('\n--- half a second of not being there ---');
   };
 
   const lead = run(4, 1, true);
-  ok('the kitten with more plain orbs gets the prize', lead.res.prizes.length === 1
-    && lead.res.prizes[0].player.index === 0);
-  ok('...and the other one does not', lead.g.players[1].powerOrbs.length === 0);
+  ok('the kitten with more plain orbs wins the count', lead.res.winners.length === 1
+    && lead.res.winners[0].index === 0);
+  ok('...and the other one does not', lead.res.winners.includes(lead.g.players[1]) === false);
+  /* THE PRIZE IS NOT HANDED OVER HERE ANY MORE. It was, and that made "Orb
+     collector" the one quest that skipped the award ceremony — reported as
+     "instead being gifted right away". `Feats.onAwaken` turns the win into the
+     same gold token as the other eight; the orb is drawn at her turn. */
+  ok('...but nobody is wearing anything yet — the ceremony hands it over',
+    lead.g.players.every((p) => p.powerOrbs.length === 0));
 
   const tied = run(3, 3);
-  ok('a tie gives one to BOTH', tied.res.tie && tied.res.prizes.length === 2
-    && tied.g.players.every((p) => p.powerOrbs.length === 1));
+  ok('a tie means BOTH have won it', tied.res.tie && tied.res.winners.length === 2
+    && tied.g.players.every((p) => p.powerOrbs.length === 0));
 
   /* --- A KITTEN WALKS OUT, AND HER WHOLE NECK GOES ON THE FLOOR ----------
      Two bugs in the same six lines, both reported from play.
@@ -7057,7 +7063,7 @@ console.log('\n--- half a second of not being there ---');
      they both lost, and handed nothing to trade with. */
   const nil = run(0, 0);
   ok('...including nobody having collected any',
-    nil.res.tie && nil.g.players.every((p) => p.powerOrbs.length === 1));
+    nil.res.tie && nil.res.winners.length === 2);
 
   const { g: aw, K } = lead;
   ok('every plain orb is gone from both kittens',
@@ -22870,8 +22876,13 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     FEATS.length === 9 && FEATS.filter((f) => f.who === 'each').length === 4
       && FEATS.filter((f) => isSpecial(f.id)).length === 5,
     FEATS.map((f) => `${f.id}:${f.who}`).join(' '));
-  ok('...and the plain-orb prize is one of them, paid by the Awakening itself',
-    FEAT_BY_ID.orbs?.paidByAwaken === true && isSpecial('orbs'));
+  ok('...and the plain-orb prize is one of them, and special like the rest of them',
+    !!FEAT_BY_ID.orbs && isSpecial('orbs'));
+  /* NOTHING IS PAID OUTSIDE THE CEREMONY. The plain-orb prize used to carry a
+     `paidByAwaken` flag and be handed over on the Awakening frame, which is
+     what made it the one quest with no token and no turn. */
+  ok('...and no quest is handed over anywhere but at a kitten’s turn',
+    FEATS.every((f) => f.paidByAwaken === undefined));
   ok('the numbers are the asked-for numbers',
     DOJO_NEED === 45 && RIDER_NEED === 45 && CELEBRATE_AFTER === 3,
     `${DOJO_NEED}/${RIDER_NEED}/${CELEBRATE_AFTER}`);
@@ -23005,10 +23016,12 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     g.feats.onAwaken(F, res);
     ok('the last hit, most mischief and the plain-orb prize are settled on the Awakening frame',
       g.feats.has(F, 'last') && g.feats.has(E, 'mischief') && g.feats.has(E, 'orbs'));
-    ok('...and the plain-orb prize is ticked as already paid, not paid twice',
-      E.feats.paid.includes('orbs') && E.powerOrbs.length === 1);
-    ok('...and it is not drawn as a token', E.featOrbs.length === g.feats.tokenCount(E)
-      && g.feats.unpaid(E).every((id) => id !== 'orbs'));
+    ok('...and the plain orbs she collected are gone, in exchange for a token',
+      E.orbs.length === 0 && E.powerOrbs.length === 0
+        && g.feats.unpaid(E).includes('orbs'));
+    ok('...so it waits for her turn like every other quest',
+      E.featOrbs.length === g.feats.tokenCount(E)
+        && E.featOrbs.length === g.feats.unpaid(E).length);
 
     const shut = g.feats.earn(E, 'dojo');
     for (let k = 0; k < 60; k++) g.feats.onMischief(E);
@@ -23037,7 +23050,7 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     E.aloftT = 0;
     g.feats.update(0.2);
     ok('then ONE kitten is called up — and is given EVERY orb she won at once',
-      g.feats.show?.player === E && E.powerOrbs.length === 1 + owedE
+      g.feats.show?.player === E && E.powerOrbs.length === owedE
         && g.feats.unpaid(E).length === 0,
       `${owedE} at once`);
     ok('...her sister is not paid in the same breath',
@@ -23218,6 +23231,18 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     ok('a save writes the claims and a load reads them',
       /feats: game\.feats\?\.save\?\.\(\)/.test(save) && /game\.feats\?\.load\(snap\.feats\)/.test(save));
     ok('the quest chime exists', /case 'quest':/.test(src('../src/core/audio.js')));
+    /* THE AWAKENING HANDS NOTHING OVER. It did — `this.give` on the winner, on
+       the frame the last prop fell — and that one line is what made the Orb
+       collector quest skip the ceremony. Asserted against the source because
+       the bug was a prize arriving too EARLY, which a finished ceremony cannot
+       tell apart from one arriving on time. */
+    const kot = stripComments(src('../src/systems/kotodama.js'));
+    const awakenSrc = kot.slice(kot.indexOf('awaken() {'), kot.indexOf('dissolvePlain() {'));
+    ok('the Awakening counts the plain orbs and gives nobody anything',
+      awakenSrc.includes('return { counts, best, winners') && !/this\.give\(/.test(awakenSrc));
+    ok('...and the quests turn that win into a token like any other',
+      /result\?\.winners \?\? \[\]\) this\.earn\(p, 'orbs', \{ atEnd: true \}\)/
+        .test(stripComments(src('../src/systems/feats.js')).replace(/\s+/g, ' ')));
     const prof = src('../src/systems/profile.js');
     ok('the profile draws the checklist and the star count by her name',
       /_questMarkup\(quests\)/.test(prof) && /kd-stars/.test(prof) && /feats\?\.status\(/.test(prof));

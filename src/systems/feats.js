@@ -118,9 +118,11 @@ export const TOKEN_COLOR = 0xffc93c;
  * to say what to DO (sixth non-negotiable). `short` is what the payout toast
  * names.
  *
- * `paidByAwaken` marks the one quest `Kotodama.awaken` already pays itself.
- * It is on the list because it IS one of the ways, and a Help page that listed
- * eight of nine would teach the wrong number.
+ * `orbs` — the plain-orb prize the game has always had — is on this list
+ * because it IS one of the ways, and a Help page that listed eight of nine
+ * would teach the wrong number. It USED to be paid by `Kotodama.awaken` on the
+ * spot, and was the only quest that skipped the ceremony; it now goes through
+ * the same token and the same turn as the other eight.
  */
 export const FEATS = [
   { id: 'clans', who: 'each', icon: '⛩️', title: 'Six oaths',
@@ -142,8 +144,7 @@ export const FEATS = [
   { id: 'balls', who: 'most', icon: '⭐', title: 'Star finder',
     short: 'Star finder', how: 'Find more dragon balls than anybody else.' },
   { id: 'orbs', who: 'most', icon: '🔮', title: 'Orb collector',
-    short: 'Orb collector', how: 'Collect more Kotodama Orbs than anybody else.',
-    paidByAwaken: true },
+    short: 'Orb collector', how: 'Collect more Kotodama Orbs than anybody else.' },
 ];
 export const FEAT_BY_ID = Object.fromEntries(FEATS.map((f) => [f.id, f]));
 export const isSpecial = (id) => FEAT_BY_ID[id]?.who !== 'each';
@@ -243,8 +244,8 @@ export class Feats {
    *
    * @param lastPlayer whoever knocked over the last prop, or null (a debug
    *   unlock has nobody to name, and nobody is given it)
-   * @param result `Kotodama.awaken`'s return — the plain-orb prize, which it
-   *   has already paid, recorded here so the checklist ticks it
+   * @param result `Kotodama.awaken`'s return — `winners` is whoever collected
+   *   the most plain orbs, which is the "Orb collector" quest
    */
   onAwaken(lastPlayer = null, result = null) {
     const players = this.game.players ?? [];
@@ -260,11 +261,11 @@ export class Feats {
         this.earn(p, 'balls', { atEnd: true });
       }
     }
-    for (const { player } of result?.prizes ?? []) {
-      const L = this.ledger(player);
-      if (!L.got.includes('orbs')) L.got.push('orbs');
-      if (!L.paid.includes('orbs')) L.paid.push('orbs');
-    }
+    /* THE PLAIN-ORB PRIZE IS A QUEST LIKE THE OTHERS NOW. Her plain orbs have
+       just dissolved in `awaken`, and one gold token takes their place until
+       her turn comes round. It is `atEnd` for the same reason the three above
+       are: this runs on the frame the door shuts. */
+    for (const p of result?.winners ?? []) this.earn(p, 'orbs', { atEnd: true });
     /* A celebration still counting down its three seconds is DROPPED, not
        lost: the quest is in `got`, so its token is built right here and it is
        paid with the rest. Holding up a promise on the frame it turns into the
@@ -583,12 +584,14 @@ export class Feats {
 
   /* ---------------------------- the tokens ------------------------------- */
 
-  /** How many promises she should be seen carrying. */
+  /** How many promises she should be seen carrying. EVERY unpaid quest leaves
+   *  one now, the plain-orb prize included — that prize used to be handed over
+   *  on the Awakening frame and so drew no token, which is precisely the thing
+   *  that made it look forgotten by the ceremony. */
   tokenCount(p) {
     const L = this.ledger(p);
     const waiting = new Set(this.pending.filter((c) => c.player === p).map((c) => c.id));
-    return L.got.filter((id) => !FEAT_BY_ID[id].paidByAwaken
-      && !L.paid.includes(id) && !waiting.has(id)).length;
+    return L.got.filter((id) => !L.paid.includes(id) && !waiting.has(id)).length;
   }
 
   /**

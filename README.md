@@ -605,11 +605,12 @@ nothing.
 
 ## The Powerup Kotodama
 
-**Knock over every last thing in the world and the Kotodama wake up.** Whoever
-collected more of the little sin/cos orbs is handed a **Powerup Kotodama** —
-and if you both collected the same number, you *both* get one, including if
-that number is zero. It's random: you get a thing you *have*, not a thing you
-picked, which is what makes trading worth doing.
+**Knock over every last thing in the world and the Kotodama wake up.** Every
+little sin/cos orb dissolves, and whoever collected the most of them has won a
+**Powerup Kotodama** — if you collected the same number, you *both* win one,
+including if that number is zero. You're handed it at the ceremony below, with
+everything else you won. It's random: you get a thing you *have*, not a thing
+you picked, which is what makes trading worth doing.
 
 **And quests pay out at the same moment.** Before the ending, a few things earn
 you a free orb — a little **gold orb** starts circling you, with a chime and a
@@ -630,7 +631,7 @@ kitten already wearing eight is told on her card that there was no room.
 | The very last one | one | knock over the last piece of mischief |
 | Most mischief | the leader | knock over the most things |
 | Star finder | the leader | find the most dragon balls |
-| Orb collector | the leader | collect the most Kotodama Orbs (the prize above) |
+| Orb collector | the leader | collect the most of the little sin/cos orbs |
 
 The five that only one of you can win are **special**: their orb is a lucky dip
 over all ten kinds, so it can be one of the two **rare** orbs the dealer sells
