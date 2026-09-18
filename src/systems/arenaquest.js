@@ -297,6 +297,20 @@ export class ArenaQuest {
           break;
         }
 
+        /* AND NOT DURING THE AWARD CEREMONY. The Kotodama are handed out one
+           kitten at a time at the ending, and a party that boards halfway
+           through leaves the rest of those turns stranded behind a tournament.
+           Said at the prompt rather than only refused at the door, so nobody
+           presses INTERACT and watches nothing happen — and said as a thing
+           that is HAPPENING, not as a lock, because it clears itself in a few
+           seconds without her doing anything. */
+        if (hud.feats?.ceremonyBusy) {
+          S.setLine('The Kotodama are waking! Take your prizes first, kittens —'
+            + '\nthe ring will still be here.');
+          this.bothHere = false;
+          break;
+        }
+
         /* BOTH OF THEM, AND THAT IS THE POINT. The tournament is the one
            thing in this game that cannot be done alone, so the door to it
            asks for both — and it says so out loud when only one is standing
