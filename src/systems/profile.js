@@ -1144,6 +1144,11 @@ export class ProfileScreen {
       this.mode === 'shop' ? '' : this.game.players
         .map((p) => (this.game.feats?.status(p) ?? [])
           .map((r) => `${+r.star}${+r.paid}${r.note}`).join(',')).join(';'),
+      /* AND WHETHER THE DOOR IS STILL OPEN, because that is now a fact about
+         the HEADING rather than about the rows. It used to ride along inside
+         every row's note, so the screen repainted at the Awakening by
+         accident; with the note gone, nothing else on this list moves. */
+      this.mode === 'shop' ? '' : String(+!this.game.feats?.open),
     ].join('#');
   }
 
@@ -1259,7 +1264,13 @@ export class ProfileScreen {
         + `<span class="kd-dim">${q.feat.how}</span>`
         + `${q.note ? ` <span class="kd-q-note">${q.note}</span>` : ''}</span></li>`;
     });
-    return `<div class="kd-quests"><div class="kd-q-head">QUESTS — orbs at the ending</div>`
+    /* "THE GAME HAS ENDED" BELONGS TO THE HEADING, NOT TO NINE ROWS. It is one
+       fact about the whole list — no unearned quest can be earned any more —
+       and repeating it per row was making this screen longest exactly when it
+       is read most, in the minutes after the ending. */
+    const ended = this.game.feats && !this.game.feats.open
+      ? ' <span class="kd-q-over">the game has ended</span>' : '';
+    return `<div class="kd-quests"><div class="kd-q-head">QUESTS — orbs at the ending${ended}</div>`
       + `<ul>${rows.join('')}</ul></div>`;
   }
 

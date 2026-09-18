@@ -1788,6 +1788,33 @@ Two things it has to clear, and both are **measured, not assumed**:
   pass, because the board's height is `a·w + c` and scaling by `room / h` always
   lands tall by the fixed part.
 
+#### ...and again in a pane that is a column
+
+> when 3 players are in 1 split screen and 1 player in their own split screen,
+> when at the Dojo of the Turning Circle, the Sin/Cos screen is too small.
+> Should take up nearly the entirety of the width of the screen, as it is a
+> smaller screen with the entire height of the window screen. Should be shifted
+> towards the top to not interfere with the minimap.
+
+Three sisters together and one on her own is the 62/38 split **side by side**,
+so the girl on her own plays in a 730x1080 column and 42% of that is a 307px
+board with a thousand pixels of empty height beside it. The first fix above had
+keyed the full-size rule to the pane being SHARED, and she is alone in hers.
+
+The rule is the pane's **shape**, not the party's size: `tall = v.h > v.w`. In a
+portrait pane the width is the scarce axis and the height is the plentiful one,
+so the board takes the width and the top and the kitten still has most of a tall
+window to be seen in. The **540 ceiling is lifted there and only there** —
+540 is what an unsplit screen gives the board, and capping a 730 column at it
+leaves the thing a quarter narrower than the space it was asked to fill.
+
+Everything landscape is untouched, which is every quadrant, every stacked half
+and the unsplit screen. Fifth non-negotiable: nothing here asks how many players
+there are, so four-player quadrants and a two-player game that has not been
+deliberately set side by side both come out bit-identical. A two-player game
+that HAS been set side by side gets the bigger board too — it is the same column
+with the same complaint, and it was always the same bug.
+
 ### Her worn orbs were squares, and did not say which was which
 
 > it just shows the kanji character and color, but it's hard to know which one
