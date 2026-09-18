@@ -1663,7 +1663,10 @@ class Game {
          so her points, her clan, her oaths, her panda AND her orbs went with
          her — and unlike dropping out, nothing even put the orbs back in the
          world. Now she goes into the session's cast whole, so swapping back to
-         her returns every one of them. */
+         her returns every one of them. Quests she has won but not yet been
+         handed are settled first, for the same reason and in the same order as
+         in `_leavePlayer`: a row is written once. */
+      this.feats?.settleOnLeave(old);
       this._rememberPlayer(old);
       this.scene.remove(old.group);
       /* HER ORBITING THINGS ARE SCENE CHILDREN, NOT HERS, so removing her
@@ -5452,6 +5455,17 @@ class Game {
    */
   enterArena() {
     if (this.travel) return;
+    /* NOT WHILE THE KOTODAMA ARE STILL BEING HANDED OUT. "The players must all
+       receive their awards before they can enter the Arena": a griffin taking
+       off mid-ceremony would carry the party away from the turns that have not
+       happened yet, and the kitten frozen in her blessing pose would be flown
+       north holding it. The prompt at Mr Satan says the same thing in his own
+       words BEFORE anybody presses anything (see `arenaquest.js`); this is the
+       door itself, because the debug key reaches it without passing him. */
+    if (this.feats?.ceremonyBusy) {
+      this.toast('The Kotodama are still being given out — wait for the ceremony.', 0);
+      return;
+    }
     for (const p of this.players) {
       if (p.pandaMount) { p.pandaMount.rider = null; p.pandaMount = null; }
       if (p.mount) {
@@ -7546,6 +7560,13 @@ class Game {
        `Kotodama.reclaimFrom` — it runs BEFORE the line below, so what gets
        written into her row is what is actually hers. */
     this.kotodama?.reclaimFrom(p);
+
+    /* AND ANYTHING THE AWARD CEREMONY STILL OWES HER, PAID ON THE SPOT. A
+       kitten who leaves between the Awakening and her turn would otherwise
+       carry unpaid quests into her row and be handed a promise instead of the
+       orbs she won. No card, no pose, no sound: she is not here to watch it.
+       BEFORE `_rememberPlayer` below, so her row is written with the orbs. */
+    this.feats?.settleOnLeave(p);
 
     /* WHAT SHE HAD, WRITTEN DOWN BEFORE ANY OF IT IS TAKEN OFF HER — ORBS AND
        ALL now. `p.powerOrbs` is the list of ids and nothing below clears it;

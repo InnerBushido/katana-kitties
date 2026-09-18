@@ -156,10 +156,13 @@ src/
                with its coordinates and comes back on the same spot. Leaving
                also autosaves, since the party and the orbs both just moved)
              feats (the quests: nine ways to earn a free Powerup Kotodama,
-               earned before 100% as a gold token circling her and paid one
-               at a time once the ending is out of the way. The five that only
-               one kitten can win draw from the whole roster, rares included.
-               One list, read by the Help card and the profile checklist)
+               earned before 100% as a gold token circling her and paid at an
+               AWARD CEREMONY once the ending is out of the way — one KITTEN
+               at a time, everything she won at once, on one card she is given
+               time to read, with the arena's door shut until the last turn is
+               done. The five that only one kitten can win draw from the whole
+               roster, rares included. One list, read by the Help card and the
+               profile checklist)
              kotodama  profile  cutscene  shrinescene  summonscene
              mathdojo  minimap  menunav  trailer (the opt-in video player)
              finaletide (what is BEHIND Patchfur at the ending: one measured

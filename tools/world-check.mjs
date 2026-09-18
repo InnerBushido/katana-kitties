@@ -76,7 +76,8 @@ import {
 import { Kotodama } from '../src/systems/kotodama.js';
 import {
   Feats, FEATS, FEAT_BY_ID, isSpecial, blankFeats, cleanFeats, leaders,
-  DOJO_NEED, RIDER_NEED, CELEBRATE_AFTER, PAY_LEAD, PAY_GAP, TOKEN_COLOR,
+  DOJO_NEED, RIDER_NEED, CELEBRATE_AFTER, TOKEN_COLOR,
+  CEREMONY_LEAD, CEREMONY_BLESS, CEREMONY_GAP, CARD_EXTRA,
 } from '../src/systems/feats.js';
 import { drawOrb } from '../src/entities/powerorb.js';
 import { CrossFx, sealStage, SIDES_BY_CUT } from '../src/systems/crossfx.js';
@@ -23014,50 +23015,90 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     ok('after the Awakening nothing counts: no new quest, no new mischief',
       shut === false && !g.feats.has(E, 'dojo') && E.feats.mischief === 5);
 
-    /* the payout: one at a time, round the party, waiting for the ending */
+    /* the ceremony: one KITTEN at a time, all of her orbs at once */
     const worn = () => E.powerOrbs.length + F.powerOrbs.length;
     const w0 = worn();
+    const owedE = g.feats.unpaid(E).length;
+    const owedF = g.feats.unpaid(F).length;
+    ok('both kittens are owed something, so the ceremony has two turns to run',
+      owedE > 1 && owedF > 0, `Ember ${owedE}, Frost ${owedF}`);
+    ok('and nobody may fly to the arena until they have had them',
+      g.feats.ceremonyBusy === true);
     g._finaleDue = true;
     for (let k = 0; k < 20; k++) g.feats.update(1);
-    ok('nothing is paid while the ending is queued', worn() === w0);
+    ok('nothing is awarded while the ending is queued', worn() === w0 && !g.feats.show);
     g._finaleDue = false;
     g.scene_ = true;
     for (let k = 0; k < 20; k++) g.feats.update(1);
-    ok('...or while it plays', worn() === w0);
+    ok('...or while it plays', worn() === w0 && !g.feats.show);
     g.scene_ = false;
-    g.feats.update(PAY_LEAD - 0.1);
+    g.feats.update(CEREMONY_LEAD - 0.1);
     ok('...and not on the frame it ends — a beat first', worn() === w0);
+    E.aloftT = 0;
     g.feats.update(0.2);
-    ok('then ONE orb', worn() === w0 + 1);
-    g.feats.update(PAY_GAP * 0.5);
-    ok('...and not a second one straight after', worn() === w0 + 1);
-    const e1 = E.powerOrbs.length;
-    const f1 = F.powerOrbs.length;
-    g.feats.update(PAY_GAP);
-    ok('...then the next, to the OTHER kitten — round the party',
-      worn() === w0 + 2 && (E.powerOrbs.length - e1) + (F.powerOrbs.length - f1) === 1
-        && E.powerOrbs.length > 1 && F.powerOrbs.length > 0);
-    for (let k = 0; k < 30; k++) g.feats.update(PAY_GAP);
+    ok('then ONE kitten is called up — and is given EVERY orb she won at once',
+      g.feats.show?.player === E && E.powerOrbs.length === 1 + owedE
+        && g.feats.unpaid(E).length === 0,
+      `${owedE} at once`);
+    ok('...her sister is not paid in the same breath',
+      g.feats.unpaid(F).length === owedF && F.powerOrbs.length === 0);
+    ok('...she holds the pose, and this time her camera DOES come in',
+      E.aloftT > CEREMONY_BLESS - 0.3 && E.aloftZoom === true);
+    ok('...and her tokens are gone, because the promise has been kept',
+      E.featOrbs.length === 0);
+
+    /* the card: two or three sentences, her name, and every orb drawn */
+    const card = g.feats.show.card;
+    ok('her card names her, her quests and her orbs, in 2-3 sentences',
+      card.sentences.length >= 2 && card.sentences.length <= 4
+        && card.sentences[0].startsWith('Ember finished')
+        && card.orbs.length === owedE,
+      `${card.sentences.length} sentences`);
+    ok('...every orb carries its own colour and kanji for a kid who cannot read yet',
+      card.orbs.every((o) => /^#[0-9a-f]{6}$/.test(o.colour) && o.kanji.length === 1));
+    ok('...and it is held on screen longer than the pose, to be READ',
+      card.hold >= CEREMONY_BLESS + CARD_EXTRA, `${card.hold.toFixed(1)}s`);
+
+    /* the gap, then the next kitten */
+    g.feats.update(card.hold - 0.1);
+    ok('the next kitten does not start while the card is still up',
+      g.feats.show?.player === E && F.powerOrbs.length === 0);
+    g.feats.update(0.2);
+    ok('...the card comes down first', g.feats.show === null && F.powerOrbs.length === 0);
+    g.feats.update(CEREMONY_GAP - 0.3);
+    ok('...and there is a beat of nothing before her sister is called up',
+      g.feats.show === null && F.powerOrbs.length === 0);
+    g.feats.update(0.4);
+    ok('then the OTHER kitten has her turn',
+      g.feats.show?.player === F && F.powerOrbs.length === owedF);
+    for (let k = 0; k < 40; k++) g.feats.update(1);
     ok('every earned quest is paid in the end, and every token is gone',
       g.players.every((p) => g.feats.unpaid(p).length === 0 && p.featOrbs.length === 0),
       `Ember ${E.powerOrbs.length}, Frost ${F.powerOrbs.length}`);
     ok('...one real orb per quest (the plain-orb prize counted once)',
       E.powerOrbs.length === E.feats.got.length && F.powerOrbs.length === F.feats.got.length);
+    ok('...the card is down and the arena is open again',
+      g.feats.show === null && g.feats.ceremonyBusy === false);
   }
 
-  /* --- a full neck is refused out loud, and only once --- */
+  /* --- a full neck is refused on the card, and never asked again --- */
   {
     const g = mkGame();
     const [E] = g.players;
     E.setPowerOrbs(Array(8).fill('swift'));
     E.feats = { ...blankFeats(), got: ['clans', 'pilot'] };
     g.kotodama.awakened = true;
-    toasts.length = 0;
-    for (let k = 0; k < 20; k++) g.feats.update(1);
+    g.feats.update(CEREMONY_LEAD + 0.1);
     ok('a kitten already wearing eight is not given a ninth',
       E.powerOrbs.length === 8 && E.feats.paid.length === 2);
-    ok('...and is told why, once per quest, not every second',
-      toasts.filter(([t]) => /already wearing 8/.test(t)).length === 2);
+    const said = g.feats.show?.card.sentences.join(' ') ?? '';
+    ok('...and her card says so, once, rather than once per orb',
+      /no room for 2 more/.test(said) && /already wearing 8/.test(said), said);
+    ok('...and names both quests she won anyway',
+      /Six oaths/.test(said) && /Dragon pilot/.test(said));
+    for (let k = 0; k < 40; k++) g.feats.update(1);
+    ok('...and the ceremony ends rather than offering them forever',
+      g.feats.ceremonyBusy === false && E.powerOrbs.length === 8);
   }
 
   /* --- the rare lottery reaches the shelf's orbs without touching the shelf --- */
@@ -23067,7 +23108,6 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     E.feats = { ...blankFeats(), got: ['last', 'clans'] };
     g.kotodama.awakened = true;
     const stock = { ...g.kotodama.stock };
-    toasts.length = 0;
     const r = g.feats.pay(E, 'last', () => 0.95);
     const q = g.feats.pay(E, 'clans', () => 0.95);
     ok('a special quest can hand her a rare orb',
@@ -23075,7 +23115,37 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     ok('...an everybody quest cannot, on the same roll', q.rare === false);
     ok('...and the dealer still has every one he had',
       ORB_IDS.every((id) => g.kotodama.stock[id] === stock[id]));
-    ok('...and a rare prize says so', toasts.some(([t]) => /RARE ONE/.test(t)));
+    const rareCard = g.feats.cardFor(E, [
+      { feat: FEAT_BY_ID.last, spec: r.spec, rare: true },
+      { feat: FEAT_BY_ID.clans, spec: q.spec, rare: false },
+    ]);
+    ok('...and a rare prize gets a sentence of its own, not a line in a list',
+      rareCard.sentences.some((s) => /RARE one/.test(s) && s.includes(r.spec.name)),
+      rareCard.sentences[rareCard.sentences.length - 1]);
+    ok('...and its chip is the one that glows', rareCard.orbs[0].rare === true
+      && rareCard.orbs[1].rare === false);
+  }
+
+  /* --- she left before her turn: no ceremony, but she keeps the orbs --- */
+  {
+    const g = mkGame();
+    const [E, F] = g.players;
+    E.feats = { ...blankFeats(), got: ['clans', 'dojo'] };
+    F.feats = { ...blankFeats(), got: ['panda'] };
+    g.kotodama.awakened = true;
+    const paid = g.feats.settleOnLeave(E);
+    ok('a kitten who drops out is handed her orbs on the spot, ceremony cancelled',
+      paid === 2 && E.powerOrbs.length === 2 && g.feats.unpaid(E).length === 0
+        && E.featOrbs.length === 0);
+    ok('...and it is silent — she is not there to watch it', !g.feats.show);
+    ok('...while her sister still has a turn coming', g.feats.ceremonyBusy === true);
+    /* and the card is pulled down if it was HERS that was up */
+    g.feats.update(CEREMONY_LEAD + 0.1);
+    ok('her sister is called up as normal', g.feats.show?.player === F);
+    g.players.splice(1, 1);
+    g.feats.update(0.1);
+    ok('...and a kitten who leaves mid-card takes the card down with her',
+      g.feats.show === null && g.feats.ceremonyBusy === false);
   }
 
   /* --- saved, loaded, dropped out, restarted --- */
@@ -23137,6 +23207,14 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     ok('a restart, a drop-out and a swap all take the tokens down',
       /this\.feats\?\.reset\(\)/.test(main)
         && (main.match(/this\.feats\?\.dropTokens\(/g) || []).length >= 2);
+    ok('...and a drop-out and a swap both settle what she is owed, BEFORE her row',
+      (main.match(/this\.feats\?\.settleOnLeave\(/g) || []).length >= 2
+        && main.indexOf('this.feats?.settleOnLeave(old)')
+          < main.indexOf('this._rememberPlayer(old)'));
+    ok('the arena refuses to take off mid-ceremony, and says so',
+      /ceremonyBusy/.test(main) && /enterArena\(\) \{[\s\S]{0,700}?ceremonyBusy[\s\S]{0,200}?this\.toast\(/.test(main));
+    ok('...and Mr Satan says it at the prompt, before anybody presses anything',
+      /ceremonyBusy/.test(stripComments(src('../src/systems/arenaquest.js'))));
     ok('a save writes the claims and a load reads them',
       /feats: game\.feats\?\.save\?\.\(\)/.test(save) && /game\.feats\?\.load\(snap\.feats\)/.test(save));
     ok('the quest chime exists', /case 'quest':/.test(src('../src/core/audio.js')));
@@ -23145,6 +23223,10 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
       /_questMarkup\(quests\)/.test(prof) && /kd-stars/.test(prof) && /feats\?\.status\(/.test(prof));
 
     const html = src('../index.html');
+    ok('the award card has somewhere to be drawn, and starts hidden',
+      /<div id="award" class="hidden">/.test(html)
+        && /#award \{/.test(src('../src/style.css')));
+
     const card = helpTopic(html, 'Quests &amp; achievements');
     ok('Help has a Quests & achievements card', card.length > 200, `${card.length} chars`);
     ok('...listing every quest by its own title, in order',

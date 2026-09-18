@@ -613,9 +613,12 @@ picked, which is what makes trading worth doing.
 
 **And quests pay out at the same moment.** Before the ending, a few things earn
 you a free orb — a little **gold orb** starts circling you, with a chime and a
-quick blessing pose, as a promise. When the Kotodama wake, every gold orb turns
-into a real one, **one at a time**. Anything done after 100% doesn't count, and
-a kitten already wearing eight is told there's no room.
+quick blessing pose, as a promise. When the Kotodama wake there is an **award
+ceremony**: one kitten at a time, all of her gold orbs turn into real ones at
+once, she holds the blessing pose with her own camera pushed in on her, and a
+card names every orb she won in its own colour. Nobody flies to the arena until
+the last kitten has had her turn. Anything done after 100% doesn't count, and a
+kitten already wearing eight is told on her card that there was no room.
 
 | quest | who | how |
 | --- | --- | --- |

@@ -2302,6 +2302,91 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
   color: var(--paper);
 }
 
+/* --- the award card at the ending ----------------------------------------
+   One kitten's turn. TOP-CENTRE and wide rather than in a corner: this is the
+   one card in the game the whole sofa reads at once, and a corner card belongs
+   to the pane it is nearest. It never takes the input — her sisters keep
+   playing while she takes her bow — so it has no pointer events and no
+   backdrop. The accent is HER colour, set from `cssFor(player.style)`, which
+   is the only thing that says whose turn this is when four are playing. */
+#award {
+  position: absolute;
+  /* LOW, WHERE THE CUTSCENE'S WORDS GO, and not at the top where the toasts
+     and the scoreboard are. Her own camera has just pushed in on her, so she
+     is in the middle of her pane — a card across the top covered the kitten
+     the card is about, which was the first thing a screenshot showed. */
+  bottom: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 44;
+  width: min(620px, 88vw);
+  padding: 12px 20px 14px;
+  background: rgba(29, 18, 22, 0.95);
+  border: 4px solid var(--aw-me, var(--gold));
+  border-radius: 16px;
+  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  text-align: center;
+  animation: awIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes awIn { from { transform: translate(-50%, 18px) scale(0.94); opacity: 0; } }
+.aw-head {
+  font-family: 'Bangers', cursive;
+  font-size: 26px;
+  letter-spacing: 2px;
+  color: var(--aw-me, var(--gold));
+}
+/* The orbs themselves, in their own colours — "the kotodama orb colors/icon
+   representation next to their names ... so its easier for player to see what
+   they unlocked". A kid who cannot yet read 疾 can still match the colour to
+   the shell now circling her sister. */
+.aw-orbs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin: 8px 0 6px;
+  padding: 0;
+  list-style: none;
+}
+.aw-orb {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px 4px 6px;
+  border: 3px solid var(--aw-orb);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.aw-kanji {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--aw-orb);
+  color: #1d1216;
+  font-size: 18px;
+  font-weight: 700;
+}
+.aw-oname {
+  font-family: 'Bangers', cursive;
+  font-size: 17px;
+  letter-spacing: 1.2px;
+  color: var(--aw-orb);
+}
+/* A rare orb is the only prize here that cannot be found in the world, so it
+   is the only chip that glows. */
+.aw-orb.rare {
+  background: rgba(122, 69, 209, 0.35);
+  box-shadow: 0 0 14px var(--aw-orb);
+}
+.aw-text {
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--paper);
+}
+
 /* --- both fighters' health ------------------------------------------------
    Along the top, one bar each side, because that is where every fighting
    game a nine-year-old has already seen puts them. It stands in for the

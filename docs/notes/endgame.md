@@ -1075,10 +1075,42 @@ door is `!kotodama.awakened` and nothing else; after it `earn` and the counters
 refuse.
 
 **THE PAYOUT IS A QUEUE, NOT AN ENDING CALLBACK.** Seventh non-negotiable: it
-waits for `_finaleDue` and `_sceneActive()` to clear, then a 1.5s beat, then
-one orb every 0.9s, round the party so nobody watches a sister's eight go first.
-A skip and a watch reach the same frame. A full neck is marked paid and TOLD —
-marking it paid is what stops the refusal repeating forever.
+waits for `_finaleDue` and `_sceneActive()` to clear, then a 1.5s beat, then the
+ceremony. A skip and a watch reach the same frame. A full neck is marked paid
+and TOLD — marking it paid is what stops the refusal repeating forever.
+
+**AND THE QUEUE IS OF KITTENS, NOT OF ORBS.** The first version handed out one
+orb every 0.9 seconds, round the party, each with its own toast; it was rejected
+on sight as *"a bit jarring and it spams the screen with text for each orb"*,
+and the note here is the reason it will not come back. Eleven toasts in ten
+seconds is a wall nobody reads, and a kitten with three quests could not tell
+which of the three a sentence was about. A turn now belongs to a KITTEN:
+
+| beat | seconds | what |
+| --- | --- | --- |
+| lead-in | `CEREMONY_LEAD` 1.5 | nothing, so the first turn does not land on the frame the finale lets go |
+| her turn | `CEREMONY_BLESS` 3.5 | every orb she won at once, the `powerorb` sound, and `holdAloft` WITH the zoom — this is the fanfare, unlike the token's nod |
+| her card | `CARD_BASE` + per-character, at least the pose, + `CARD_EXTRA` 2.5 | `#award`: her name in her own colour, a chip per orb in the orb's colour, 2-3 sentences |
+| gap | `CEREMONY_GAP` 2 | the card is down and nothing is on screen |
+
+`cardFor` is pure and separate from `_paintCard` for the reason every sentence
+in this project is written that way: a string that only exists in the DOM cannot
+be checked, and this one has grammar in it (a list of three, a singular kitten
+with one orb, a rare orb's own sentence). The rare one gets that sentence
+because burying it in a list of three is exactly how a nine-year-old misses that
+she just won the lottery.
+
+**NOBODY FLIES NORTH MID-CEREMONY.** `ceremonyBusy` is true from the Awakening
+until the last unpaid quest is gone — *owed*, not *on screen*, because the
+two-second gap between turns is precisely when a griffin would otherwise take
+off. It is asked at Mr Satan's prompt (so the refusal is a sentence in his mouth
+before anybody presses anything) and again in `Game.enterArena` (because the
+debug key reaches the door without passing him).
+
+**A KITTEN WHO LEAVES IS PAID ON HER WAY OUT.** `settleOnLeave` hands her
+everything she is owed with no card, no pose and no sound, and it runs BEFORE
+`_rememberPlayer` writes her row — so what is written down is the orbs and not
+the promise. The character picker's swap does the same, in the same order.
 
 **SPECIAL MEANS THE LOTTERY.** `drawOrb({ rare: true })` is uniform over
 `ORB_IDS`, so the rare odds are whatever the roster is (2 in 10 today) and a new

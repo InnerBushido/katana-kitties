@@ -2,7 +2,16 @@ import { Orb } from '../entities/orb.js';
 import { ORB_BY_ID, MAX_EQUIPPED, drawOrb } from '../entities/powerorb.js';
 import { BALL_COUNT } from '../entities/dragonball.js';
 import { CLANS } from '../world/world.js';
+import { cssFor } from '../core/palette.js';
 import { inDojoView } from './mathdojo.js';
+
+/** A three.js colour as CSS, for the chips on the award card. */
+const hex = (c) => `#${(c ?? 0).toString(16).padStart(6, '0')}`;
+/** Names come off the character picker and orb specs, so nothing here is
+ *  hostile — but this markup is built with a template string, and the one rule
+ *  about those is that the rule is never bent "just this once". */
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 /* ---------------------------------------------------------------------------
    QUESTS — the other way to earn a Powerup Kotodama.
@@ -19,8 +28,26 @@ import { inDojoView } from './mathdojo.js';
    endgame is built on the Awakening being the moment they arrive. What a
    kitten gets on the spot is a TOKEN: a small gold copy of the plain orb
    circling her, one per quest, which is a promise she can see. At the
-   Awakening every token turns into a real one, ONE AT A TIME, so each is a
-   moment rather than eight toasts in a pile.
+   Awakening every token turns into a real one — at an AWARD CEREMONY, one
+   KITTEN at a time.
+
+   ONE KITTEN AT A TIME, NOT ONE ORB AT A TIME. The first version of this paid
+   a single orb every 0.9 seconds, round the party, and was rejected on sight:
+   "a bit jarring and it spams the screen with text for each orb". Eleven
+   toasts in ten seconds is a wall of words nobody reads, and a kitten with
+   three quests could not tell which of the three the sentence was about. So a
+   turn belongs to a KITTEN: everything she won arrives at once, on one card,
+   in two or three sentences with the orbs drawn beside their names, held long
+   enough to be read by a seven-year-old rather than long enough to be seen.
+   She holds the blessing pose for three and a half seconds with her own camera
+   pushed in on her — the star's fanfare, because this IS the fanfare — and
+   only when her card is gone does the next kitten's turn begin.
+
+   AND NOBODY FLIES TO THE ARENA IN THE MIDDLE OF IT. "The players must all
+   receive their awards before they can enter the Arena" — `ceremonyBusy` is
+   the one question, asked at Mr Satan's prompt and again at the door in
+   `Game.enterArena`, because a griffin taking off mid-ceremony would strand
+   the rest of the party's turns behind a tournament.
 
    THE DOOR SHUTS AT THE AWAKENING. "If achieved after the end of the game,
    after the ending cutscene, it does not count" — `open` is simply
@@ -62,9 +89,21 @@ export const CELEBRATE_AFTER = 3;
  *  with no camera move, because "not disturb gameplay too much" — this is a
  *  nod, and the star is a fanfare. */
 export const BLESS_T = 1.2;
-/** The payout's pace: a beat before the first, and a gap between each. */
-export const PAY_LEAD = 1.5;
-export const PAY_GAP = 0.9;
+/* --- the award ceremony's clock ---
+   A beat before the first kitten is called up; her pose; her card; and the
+   "second or two later" before the next kitten's turn. The card is held for
+   as long as its own words need (`CARD_BASE` plus a per-character allowance,
+   the toast's rule) PLUS `CARD_EXTRA`, which is the asked-for "2 - 3 seconds
+   longer than normal" — this is the one card in the game somebody is meant to
+   study rather than glance at, and a card that outlives the pose is better
+   than a pose left standing in silence. */
+export const CEREMONY_LEAD = 1.5;
+export const CEREMONY_BLESS = 3.5;
+export const CEREMONY_GAP = 2;
+export const CARD_BASE = 2.6;
+export const CARD_PER_CHAR = 0.045;
+export const CARD_EXTRA = 2.5;
+export const CARD_MAX = 12;
 /** The token's colour. GOLD, because the plain orbs are cyan and pink and the
  *  point is that she can tell at a glance which of the things circling her is
  *  a lesson and which is a promise. */
@@ -149,8 +188,10 @@ export class Feats {
     this.ballsSettled = false;
     /** Celebrations waiting on their three seconds, or on a free screen. */
     this.pending = [];
-    this.payT = PAY_LEAD;
-    this._payFrom = 0;
+    /** Whose turn is on screen right now: `{ player, t, card }`, or null. */
+    this.show = null;
+    /** Seconds until the next kitten is called up. */
+    this.gapT = CEREMONY_LEAD;
   }
 
   /** The door. Quests count until the Awakening and not a frame after. */
@@ -230,7 +271,20 @@ export class Feats {
        real thing would be two moments for one quest. */
     this.pending.length = 0;
     for (const p of players) this.syncTokens(p);
-    this.payT = PAY_LEAD;
+    this.gapT = CEREMONY_LEAD;
+  }
+
+  /**
+   * Is a ceremony owed or running? The arena's door asks this.
+   *
+   * IT IS OWED RATHER THAN RUNNING, deliberately: between two kittens' turns
+   * there is a two-second gap with no card on screen, and a griffin taking off
+   * in that gap is exactly the hole this closes.
+   */
+  get ceremonyBusy() {
+    if (this.open) return false;
+    return !!this.show
+      || (this.game.players ?? []).some((p) => this.unpaid(p).length > 0);
   }
 
   /* ------------------------------ per frame ------------------------------ */
@@ -240,7 +294,7 @@ export class Feats {
     const busy = !!(g._sceneActive?.() || g._finaleDue);
     if (this.open) this._watch(dt, busy);
     this._celebrate(dt, busy);
-    if (!this.open) this._pay(dt, busy);
+    if (!this.open) this._ceremony(dt, busy);
   }
 
   /**
@@ -326,26 +380,170 @@ export class Feats {
   }
 
   /**
-   * One token at a time turns into a Powerup Kotodama, round the party.
+   * The award ceremony: one kitten's whole haul, then the next kitten's.
    *
-   * ROUND THE PARTY, NOT KITTEN BY KITTEN, so the girl with one quest is not
-   * watching her sister's eight go off before her own.
+   * NOTHING RUNS WHILE A SCENE OWNS THE SCREEN — a card behind the ending's
+   * letterbox is a card nobody read, and her pose would run out under it. The
+   * gap is pushed back out to a full lead-in so the first turn does not land
+   * on the frame the finale lets go.
    */
-  _pay(dt, busy) {
-    if (busy) { this.payT = Math.max(this.payT, PAY_LEAD); return; }
-    this.payT -= dt;
-    if (this.payT > 0) return;
-    const players = this.game.players ?? [];
-    for (let k = 0; k < players.length; k++) {
-      const p = players[(this._payFrom + k) % players.length];
-      const id = this.unpaid(p)[0];
-      if (!id) continue;
-      this._payFrom = (this._payFrom + k + 1) % players.length;
-      this.pay(p, id);
-      this.payT = PAY_GAP;
+  _ceremony(dt, busy) {
+    if (busy) { this.gapT = Math.max(this.gapT, CEREMONY_LEAD); return; }
+
+    if (this.show) {
+      /* SHE DROPPED OUT MID-CEREMONY. "Their award ceremony cancelled and will
+         just automatically have their awards already equipped" — which is what
+         `settleOnLeave` did on her way out, so there is nothing left to give;
+         all that happens here is the card coming down. */
+      if (!(this.game.players ?? []).includes(this.show.player)) {
+        this._closeCard();
+        this.gapT = CEREMONY_GAP;
+        return;
+      }
+      this.show.t -= dt;
+      if (this.show.t > 0) return;
+      this._closeCard();
+      this.gapT = CEREMONY_GAP;
       return;
     }
-    this.payT = PAY_GAP;
+
+    this.gapT -= dt;
+    if (this.gapT > 0) return;
+    /* IN SEAT ORDER, because that is the order the panes are in and the order
+       their names are read out everywhere else in the game. */
+    const next = (this.game.players ?? []).find((p) => this.unpaid(p).length > 0);
+    if (!next) { this.gapT = 0; return; }
+    this._award(next);
+  }
+
+  /**
+   * One kitten's turn: every orb she won, at once, with her name on the card.
+   *
+   * @param rand injectable for world-check
+   */
+  _award(p, rand = Math.random) {
+    const g = this.game;
+    const given = [];
+    const refused = [];
+    for (const id of this.unpaid(p)) {
+      const r = this.pay(p, id, rand);
+      if (r?.refused) refused.push(FEAT_BY_ID[id]);
+      else if (r) given.push({ feat: FEAT_BY_ID[id], spec: r.spec, rare: r.rare });
+    }
+    const card = this.cardFor(p, given, refused);
+    this.show = { player: p, t: card.hold, card };
+    this._paintCard(card);
+    g.sfx?.('powerorb');
+
+    /* THE BLESSING, WITH THE CAMERA THIS TIME. The token's nod deliberately
+       refused the zoom ("camera doesn't need to zoom") because it happens in
+       the middle of play; this is the ceremony, the game is over, and the
+       pane is hers for three and a half seconds. `holdAloft` freezing her is
+       the "pause" — and a kitten flying, riding, carried or knocked out gets
+       the card and the sound without a pose, rather than her paws up in
+       mid-air. Prefer a rule that degrades. */
+    const onFoot = !p.mount && !p.rideAlong && !p.pandaMount && !p.carried
+      && !p.ko && !p.angel && !g.tournament?.fighting;
+    if (onFoot && p.holdAloft) {
+      p.holdAloft(null, CEREMONY_BLESS, { tint: given[0]?.spec.color ?? TOKEN_COLOR });
+      p.aloft?.material.color.set(given[0]?.spec.color ?? TOKEN_COLOR);
+    }
+    return card;
+  }
+
+  /**
+   * The words on the card, as data — two or three sentences and a chip per orb.
+   *
+   * PURE, AND SEPARATE FROM THE PAINTING, for the reason every other text in
+   * this project is: a sentence that only exists once it is in the DOM cannot
+   * be checked, and this one has grammar in it (a list of three, an "and", a
+   * singular kitten with one orb).
+   */
+  cardFor(p, given, refused = []) {
+    const names = [...given.map((o) => o.feat.title), ...refused.map((f) => f.title)];
+    const rares = given.filter((o) => o.rare);
+    const list = (a) => (a.length > 1
+      ? `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`
+      : a[0] ?? '');
+    const n = given.length;
+    const sentences = [];
+    sentences.push(`${p.name} finished ${names.length === 1 ? 'a quest' : `${names.length} quests`}`
+      + `${names.length ? `: ${list(names)}` : ''}.`);
+    if (n) {
+      sentences.push(n === 1
+        ? 'One Kotodama wakes for her.'
+        : `${n} Kotodama wake for her, and take their places around her.`);
+    }
+    /* THE RARE ONE IS ITS OWN SENTENCE. It is the only prize in the game that
+       cannot be found in the world, and burying it in a list of three is
+       exactly how a nine-year-old misses that she just won the lottery. */
+    if (rares.length) {
+      sentences.push(`${list(rares.map((o) => `${o.spec.kanji} ${o.spec.name}`))} `
+        + `${rares.length === 1 ? 'is a RARE one' : 'are RARE ones'} — the dealer's own!`);
+    }
+    /* A REFUSAL SAYS SO (sixth non-negotiable). A neck already full is the one
+       way a kitten can win a quest and be handed nothing, and silence there
+       reads as the game forgetting her. */
+    if (refused.length) {
+      sentences.push(`There was no room for ${refused.length === 1 ? 'one more' : `${refused.length} more`} — `
+        + `she is already wearing ${MAX_EQUIPPED}.`);
+    }
+    const text = sentences.join(' ');
+    const hold = Math.min(CARD_MAX,
+      Math.max(CEREMONY_BLESS, CARD_BASE + text.length * CARD_PER_CHAR)) + CARD_EXTRA;
+    return {
+      player: p,
+      name: p.name,
+      colour: cssFor(p.style),
+      index: p.index ?? 0,
+      sentences,
+      orbs: given.map((o) => ({
+        kanji: o.spec.kanji, name: o.spec.name, colour: hex(o.spec.color), rare: o.rare,
+      })),
+      refused: refused.length,
+      hold,
+    };
+  }
+
+  /** Put the card on screen. Silently does nothing without a document — the
+   *  ceremony's clock, its orbs and its words do not depend on the DOM. */
+  _paintCard(card) {
+    const el = typeof document !== 'undefined' && document.getElementById?.('award');
+    if (!el) return;
+    el.className = '';
+    el.style.setProperty('--aw-me', card.colour);
+    el.innerHTML = `<div class="aw-head">${esc(card.name)}</div>`
+      + `<ul class="aw-orbs">${card.orbs.map((o) => '<li class="aw-orb'
+        + `${o.rare ? ' rare' : ''}" style="--aw-orb:${o.colour}">`
+        + `<span class="aw-kanji">${esc(o.kanji)}</span>`
+        + `<span class="aw-oname">${esc(o.name)}</span></li>`).join('')}</ul>`
+      + `<div class="aw-text">${card.sentences.map(esc).join(' ')}</div>`;
+  }
+
+  _closeCard() {
+    this.show = null;
+    const el = typeof document !== 'undefined' && document.getElementById?.('award');
+    if (el) el.className = 'hidden';
+  }
+
+  /**
+   * She is leaving (dropped out, or swapped away from in the picker): hand her
+   * everything she won, with no ceremony at all.
+   *
+   * "If a player drops out of the game before receiving their awards, then they
+   * will have their award ceremony cancelled and will just automatically have
+   * their awards already equipped/assigned." It runs BEFORE `_rememberPlayer`
+   * writes her row, so what is written down is the orbs and not the promise —
+   * a kitten who comes back is wearing them, and a kitten who does not has
+   * still been paid.
+   */
+  settleOnLeave(p) {
+    if (!p || this.open) return 0;
+    const owed = this.unpaid(p);
+    for (const id of owed) this.pay(p, id);
+    if (this.show?.player === p) this._closeCard();
+    this.syncTokens(p);
+    return owed.length;
   }
 
   /** Quests she has earned and not yet been paid for, in list order. */
@@ -356,35 +554,30 @@ export class Feats {
   }
 
   /**
-   * Turn one token into a real orb.
+   * Turn one token into a real orb. SILENT: the card her turn puts on screen
+   * is the only place the ceremony speaks, and this is called once per quest
+   * inside one turn.
    *
    * PAID BEFORE IT IS GIVEN, and a full neck is still paid. "It is possible
    * for someone to get more than 8 ... so let's not award them one if they
    * already have 8" — that is a refusal, and the sixth non-negotiable says a
-   * refusal is said out loud. Marking it paid either way is what stops a
-   * kitten wearing eight from being refused once every 0.9 seconds forever.
+   * refusal is said out loud, which her card does by counting them. Marking it
+   * paid either way is what stops a kitten wearing eight from being offered
+   * the same orb on every frame of the rest of the game.
    *
    * @param rand injectable for world-check
    */
   pay(p, id, rand = Math.random) {
-    const g = this.game;
     const L = this.ledger(p);
     if (!L.got.includes(id) || L.paid.includes(id)) return null;
     L.paid.push(id);
-    const f = FEAT_BY_ID[id];
     if ((p.powerOrbs?.length ?? 0) >= MAX_EQUIPPED) {
       this.syncTokens(p);
-      g.sfx?.('deny');
-      g.toast?.(`${f.short}: ${p.name} is already wearing ${MAX_EQUIPPED} orbs — `
-        + 'no room for this one.', p.index);
       return { refused: true };
     }
     const spec = ORB_BY_ID[drawOrb({ rare: isSpecial(id), rand })];
-    g.kotodama?.give(p, spec.id, { quiet: true });
+    this.game.kotodama?.give(p, spec.id, { quiet: true });
     this.syncTokens(p);
-    g.sfx?.('powerorb');
-    g.toast?.(`★ ${f.short} — ${p.name} is given ${spec.name} ${spec.kanji}`
-      + (spec.shopOnly ? ' — a RARE ONE!' : `! ${spec.blurb}`), p.index);
     return { spec, rare: !!spec.shopOnly };
   }
 
@@ -491,7 +684,8 @@ export class Feats {
     this.claimed.rider = typeof s?.rider === 'string' ? s.rider : null;
     this.ballsSettled = !!s?.balls;
     this.pending.length = 0;
-    this.payT = PAY_LEAD;
+    this._closeCard();
+    this.gapT = CEREMONY_LEAD;
   }
 
   /** Hand a remembered ledger back — a load, or a kitten played again. No
@@ -508,8 +702,8 @@ export class Feats {
     this.claimed.rider = null;
     this.ballsSettled = false;
     this.pending.length = 0;
-    this.payT = PAY_LEAD;
-    this._payFrom = 0;
+    this._closeCard();
+    this.gapT = CEREMONY_LEAD;
     for (const p of this.game.players ?? []) {
       this.dropTokens(p);
       p.feats = blankFeats();
