@@ -3282,6 +3282,9 @@ body.touch-ui .kd-row { padding: 9px 6px; }
 .kd-q-note { font-weight: 700; white-space: nowrap; }
 .kd-quest.paid { opacity: 0.6; }
 .kd-q-rare { color: #7a45d1; font-size: 11px; font-weight: 400; margin-left: 4px; }
+/* "the game has ended", said once beside the heading. Darker than the heading
+   it sits on rather than bigger: it is a state, not a warning. */
+.kd-q-over { color: #b4432c; font-weight: 700; opacity: 1; margin-left: 6px; }
 .kd-ready {
   font-family: 'Bangers', cursive;
   letter-spacing: 2px;

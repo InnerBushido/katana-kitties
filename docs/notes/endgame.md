@@ -1129,6 +1129,15 @@ rare orb moves them without anybody editing a percentage. The dealer's stock is
 never touched. This reverses the old "the prize is findable-only" rule on
 purpose; only five prizes a game can roll one.
 
+**THE CHECKLIST SAYS "THE GAME HAS ENDED" ONCE, IN ITS HEADING.** Every
+unearned row carried it at first — one fact about the whole list, printed nine
+times — and it made the profile screen tallest exactly when it is read most, in
+the minutes after the ending. `status` rows now say only what is true about
+themselves; `ProfileScreen._questMarkup` puts the state beside the QUESTS
+heading. The repaint signature had to learn `feats.open` at the same time,
+because the screen used to refresh at the Awakening by ACCIDENT: every row's
+note changed, and with the note gone nothing else on the signature moves.
+
 **TIES SHARE, AND NOBODY LEADS AT ZERO** — except the plain-orb prize, which
 keeps its 0-0 rule, and whose checklist star follows that rule so the screen
 never disagrees with who is paid.

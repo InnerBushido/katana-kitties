@@ -672,7 +672,12 @@ export class Feats {
           default: break;
         }
       }
-      if (!got && !this.open) note = 'the game has ended';
+      /* THE ENDING IS SAID ONCE, AT THE TOP, NOT NINE TIMES DOWN THE LIST.
+         Every unearned row used to carry "the game has ended", which is one
+         fact about the WHOLE list repeated per row — and it made the tallest,
+         least readable version of this screen the one a kid reads right after
+         the ending. `ProfileScreen` puts it beside the QUESTS heading instead;
+         the rows keep saying only what is true about themselves. */
       return { feat: f, got, paid, star, note, special: f.who !== 'each' };
     });
   }

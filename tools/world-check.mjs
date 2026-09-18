@@ -17070,10 +17070,20 @@ console.log('\n--- one press is not enough, and one player drives ---');
     const fn = main.slice(at, main.indexOf('\n  onJoinClan(', at));
     ok('the maths board is sized by whether the pane is SHARED, not by a fraction',
       /const shared = \(groups\[best\]\?\.length \?\? 0\) > 1;/.test(fn));
-    ok('...taking its full width there and the 42% only when she is alone',
-      /shared[\s\S]{0,120}?Math\.min\(540, v\.w - \d+\)[\s\S]{0,120}?Math\.round\(v\.w \* 0\.42\)/.test(fn));
+    /* ...OR TALLER THAN IT IS WIDE. "The Sin/Cos screen is too small. Should
+       take up nearly the entirety of the width of the screen, as it is a
+       smaller screen with the entire height of the window screen" — three
+       kittens together and one alone is a 62/38 SIDE BY SIDE split, so the
+       solo pane is a 730x1080 column and 42% of it is a 307px board. The rule
+       is the pane's SHAPE, so a quadrant and a stacked half are untouched. */
+    ok('...or by whether the pane is a column, which is the same argument',
+      /const tall = v\.h > v\.w;/.test(fn) && /const full = shared \|\| tall;/.test(fn));
+    ok('...taking its full width in both, and the 42% only in a landscape pane of her own',
+      /full[\s\S]{0,160}?v\.w - \d+\)[\s\S]{0,160}?Math\.round\(v\.w \* 0\.42\)/.test(fn));
+    ok('...with the 540 ceiling lifted for a column and kept everywhere else',
+      /Math\.min\(tall \? Infinity : 540, v\.w - \d+\)/.test(fn));
     ok('...and the top corner, since at full size the bottom is not a corner',
-      /inner: false, top: shared/.test(fn));
+      /inner: false, top: full/.test(fn));
     /* HOW FAR DOWN THE SCOREBOARD REACHES IS MEASURED, and only asked when the
        two would actually meet — "as close to the corner as we can" means the
        drop has to be nothing at all when the corner is free. */
@@ -23246,6 +23256,25 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     const prof = src('../src/systems/profile.js');
     ok('the profile draws the checklist and the star count by her name',
       /_questMarkup\(quests\)/.test(prof) && /kd-stars/.test(prof) && /feats\?\.status\(/.test(prof));
+    /* AND THE ENDING IS SAID ONCE, IN THE HEADING. It used to be the note on
+       every unearned row — one fact about the whole list, repeated nine times,
+       making this screen tallest exactly when it is read most. */
+    ok('...and says the game has ended beside the heading, not on nine rows',
+      /kd-q-head">QUESTS[^<]*\$\{ended\}/.test(prof) && /kd-q-over/.test(prof)
+        && /kd-q-over/.test(src('../src/style.css')));
+    /* THE ROWS THEMSELVES STAY QUIET ABOUT IT, driven rather than grepped:
+       a note there is what this fix removed. */
+    ok('...and a closed door puts no note on any row',
+      (() => {
+        const g = mkGame();
+        g.kotodama.awakened = true;
+        return g.feats.status(g.players[0]).every((r) => !/ended/.test(r.note));
+      })());
+    /* AND THE SCREEN STILL REPAINTS WHEN THE DOOR SHUTS. That used to happen
+       by accident, because every row's note changed; with the note gone the
+       signature has to carry the door itself or the heading never appears. */
+    ok('...and the door is in the repaint signature now that the rows are quiet',
+      /String\(\+!this\.game\.feats\?\.open\)/.test(prof));
 
     const html = src('../index.html');
     ok('the award card has somewhere to be drawn, and starts hidden',

@@ -8357,14 +8357,39 @@ class Game {
        to leave a corner over. At 540 in a 960-wide pane it is most of the
        bottom edge, and the two kittens the board is FOR are standing on the
        circle underneath it. The top-outer corner is the only one nothing else
-       claims — the scoreboard is centred — and it is what was asked for. */
+       claims — the scoreboard is centred — and it is what was asked for.
+
+       AND THE SAME IS TRUE OF A PANE THAT IS TALLER THAN IT IS WIDE, however
+       many kittens are in it. Three sisters together and one on her own is a
+       62/38 split SIDE BY SIDE (see `splitLayout`), so the girl on her own
+       plays in a column — 730 by 1080 on a 1080p screen — and 42% of that is a
+       307px board with a thousand pixels of empty height beside it. Reported
+       as exactly that: "the Sin/Cos screen is too small. Should take up nearly
+       the entirety of the width of the screen, as it is a smaller screen with
+       the entire height of the window screen."
+
+       SO THE RULE IS ABOUT THE PANE'S SHAPE, NOT THE PARTY'S SIZE. In a
+       portrait pane the width is the scarce axis and the height is the
+       plentiful one: the board takes the width and the top, and the kitten
+       below it still has most of a tall window to be seen in. In a landscape
+       pane nothing changes, which is every quadrant, every stacked half and
+       the unsplit screen — the two-player game a player has not deliberately
+       set side by side is bit-identical, and so is four-player quadrants.
+
+       THE 540 CEILING IS LIFTED IN A PORTRAIT PANE AND ONLY THERE. 540 is the
+       width an unsplit screen gives the board, and capping a 730-wide column
+       at it would leave the thing 26% narrower than the space it was asked to
+       fill. A landscape pane keeps the cap so a shared screen and a big pane
+       still come out the same. */
     const shared = (groups[best]?.length ?? 0) > 1;
-    let w = shared
-      ? Math.max(1, Math.min(540, v.w - 28))
+    const tall = v.h > v.w;
+    const full = shared || tall;
+    let w = full
+      ? Math.max(1, Math.min(tall ? Infinity : 540, v.w - 28))
       : Math.min(540, Math.round(v.w * 0.42));
     st.width = `${w}px`;
     let h = el.getBoundingClientRect().height || Math.round(w * 0.78);
-    const spot = mapSpot({ v, W, H, w, h, pad: 14, hint: HINT_CLEAR, inner: false, top: shared });
+    const spot = mapSpot({ v, W, H, w, h, pad: 14, hint: HINT_CLEAR, inner: false, top: full });
     /* HOW FAR DOWN THE SCOREBOARD REACHES IS MEASURED, NOT ASSUMED, and only
        asked when the two would actually meet across the screen. It is a
        centred row of badges whose count and whose NAMES change with the party,
@@ -8373,7 +8398,7 @@ class Game {
        at all when the corner is free. Degrades to the bare corner if the
        scoreboard is missing, which is the pause menu's own case. */
     let top = spot.top;
-    if (shared) {
+    if (full) {
       const sb = document.querySelector('.scoreboard')?.getBoundingClientRect();
       if (sb?.height && spot.left < sb.right && spot.left + w > sb.left) {
         top = Math.max(top, sb.bottom + 8);
