@@ -374,8 +374,9 @@ unnoticed: the world unlocked correctly and only the ending was missing.
 ### The Awakening
 
 On the frame the last knockable thing goes over: the plain Kotodama Orbs each
-kitten collected are counted, whoever has more is given a Powerup Kotodama
-drawn at random (from the whole roster since the quests — see below), every
+kitten collected are counted and whoever has more has won the **Orb collector**
+quest — she is handed nothing here, she is left a token and paid at the award
+ceremony with the other eight (see below); every
 plain orb is dissolved off both kittens and out of the
 world, **eight** Powerup Kotodama — one of each kind — are scattered over the
 islands, and a dealer's stall appears in the market.
@@ -1054,6 +1055,16 @@ already had one, unnamed — the plain-orb prize above. `systems/feats.js` holds
 it and eight more, and it is the one list the Help card and the Character
 Profile checklist both read, so the three cannot disagree about what counts.
 
+**AND THAT NINTH ONE IS PAID LIKE THE OTHER EIGHT.** It was not, at first:
+`Kotodama.awaken` gave the winner her orb on the frame the last prop fell, which
+is how the game had always done it, and the award ceremony was then built around
+the other eight. Reported immediately — it *"is not being counted in the
+ceremony and is instead being gifted right away"*. `awaken` now returns
+`winners` and gives nobody anything; her plain orbs dissolve as they always did,
+one gold token takes their place, and her turn converts it. The one line that
+used to hand it over is asserted absent, because a prize arriving too EARLY
+looks exactly like one arriving on time once the ceremony has finished.
+
 | id | who | earned when |
 | --- | --- | --- |
 | `clans` | each | all six oaths sworn — cheered 3s later |
@@ -1064,7 +1075,7 @@ Profile checklist both read, so the three cannot disagree about what counts.
 | `last` | one | hit the last prop — settled in `onAwaken` |
 | `mischief` | most | her own `onMischief` tally, settled in `onAwaken` |
 | `balls` | most | settled by the seventh star (cheered after the summoning scene), or in `onAwaken` if it never came |
-| `orbs` | most | the plain-orb prize, paid by `Kotodama.awaken` itself; `paidByAwaken` |
+| `orbs` | most | the plain-orb prize — whoever collected the most, settled from `awaken`'s `winners` |
 
 **EARNED BEFORE THE END, PAID AT IT.** No Powerup Kotodama exists before 100%,
 so what a kitten gets on the spot is a promise she can see: a smaller, gold copy

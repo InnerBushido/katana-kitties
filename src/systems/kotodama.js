@@ -1,7 +1,7 @@
 import {
   POWER_ORBS, ORB_BY_ID, ORB_IDS, WORLD_ORB_IDS, MAX_EQUIPPED,
   PowerOrb, PowerOrbPickup,
-  orbPrice, orbSellPrice, orbPriceFor, orbSellPriceFor, stockFor, drawOrb,
+  orbPrice, orbSellPrice, orbPriceFor, orbSellPriceFor, stockFor,
 } from '../entities/powerorb.js';
 import { KotodamaStall } from '../entities/stall.js';
 import { STEAL } from '../entities/clanpower.js';
@@ -13,8 +13,10 @@ import { STEAL } from '../entities/clanpower.js';
    the last knockable thing in the world goes over:
 
      1. the plain orbs each kitten collected are COUNTED
-     2. whoever has more is given a Powerup Kotodama, drawn at random
-        (a tie gives one to both — see below)
+     2. whoever has more has won the "Orb collector" quest (a tie gives it to
+        both — see below). She is NOT handed anything here: the win goes to
+        `Feats`, which leaves her the same gold token as every other quest, and
+        her turn at the award ceremony converts it. See `systems/feats.js`
      3. every plain orb is dissolved: off both kittens, out of the world
      4. eight Powerup Kotodama — one of each — are scattered over the islands
      5. a dealer's stall appears in the market
@@ -27,7 +29,8 @@ import { STEAL } from '../entities/clanpower.js';
    anyway — the alternative is an endgame that opens by telling both of them
    they lost.
 
-   THE PRIZE IS RANDOM, WHICH IS THE POINT. A chosen prize is a menu, and a
+   THE PRIZE IS RANDOM, WHICH IS THE POINT — it is drawn at the ceremony now,
+   but the reasoning is the prize's, not the ceremony's. A chosen prize is a menu, and a
    menu at the top of the endgame means both girls pick the same obvious thing
    and the trading never happens. A random one is the first card in the hand:
    it is a thing you have, not a thing you wanted, which is what makes the
@@ -231,24 +234,23 @@ export class Kotodama {
     // 3 — dissolve every plain orb, on the kittens and in the world.
     this.dissolvePlain();
 
-    // 2 — the prize. Random per winner, so a tie is not two of the same thing
-    //     unless the dice say so.
-    //     IT CAN BE RARE. It was findable-only, and then this prize became one
-    //     of the quests only one kitten can win (systems/feats.js, "Orb
-    //     collector"), and those are the lottery for the dealer's rare orbs.
-    //     A 守 without a Ward is a real possible draw and that is accepted:
-    //     it is a lottery, and it is something to trade.
-    const prizes = winners.map((p) => {
-      const spec = ORB_BY_ID[drawOrb({ rare: true })];
-      this.give(p, spec.id, { quiet: true });
-      return { player: p, spec };
-    });
+    /* 2 — THE PRIZE IS NO LONGER HANDED OUT HERE. It used to be given on this
+       frame, quietly, while the winner was still watching the ending — and
+       that made "Orb collector" the one quest that skipped the award ceremony
+       the other eight go through. Reported as exactly that: it "is not being
+       counted in the ceremony and is instead being gifted right away".
+
+       So this returns WHO WON and nothing else. `Feats.onAwaken` turns that
+       into the same gold token every other quest leaves behind — the plain
+       orbs she collected have just dissolved above, and one token takes their
+       place — and her turn at the ceremony converts it, from the same rare
+       lottery this line used to draw from. */
 
     // 4 and 5 — reseed the world, and open the shop.
     this.spawnPickups();
     this.raiseStall();
 
-    return { counts, best, prizes, tie: winners.length > 1 };
+    return { counts, best, winners, tie: winners.length > 1 };
   }
 
   /**

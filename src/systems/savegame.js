@@ -671,14 +671,17 @@ export function restore(game, snap) {
 
   /* --- the tournament, which is what makes the eighth island exist ------ */
   if (snap.awakened && game.kotodama && !game.kotodama.awakened) {
-    /* `awaken` IS A CEREMONY AND A RESEED AT ONCE, and only the second half is
-       wanted here: it dissolves the plain orbs, hands a random prize to
-       whoever had collected the most, seeds every Powerup Kotodama at its
-       opening spot and raises the stall. The prize is overwritten by her own
-       row below and the reseed is overwritten by `putOrbs` — which is the only
-       reason calling it is safe, and the reason those two lines are not
-       optional. Doing the reseed by hand instead would be a second copy of the
-       rule that puts the stall in the market. */
+    /* `awaken` IS A COUNT AND A RESEED AT ONCE, and only the second half is
+       wanted here: it dissolves the plain orbs, seeds every Powerup Kotodama
+       at its opening spot and raises the stall. The reseed is overwritten by
+       `putOrbs` — which is the only reason calling it is safe, and the reason
+       that line is not optional. Doing the reseed by hand instead would be a
+       second copy of the rule that puts the stall in the market.
+
+       IT HANDS NOTHING TO ANYBODY ANY MORE, which makes this safer than it
+       was: the plain-orb prize used to be given here and then overwritten by
+       her saved row a few lines down. Now the win is a quest in her ledger,
+       and her ledger is restored like everything else. */
     game.kotodama.awaken();
   }
   if (snap.quest && game.quest) {

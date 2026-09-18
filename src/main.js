@@ -8606,10 +8606,14 @@ class Game {
     for (const p of this.players) {
       this.toast(`THE KOTODAMA AWAKEN — ${tally}`, p.index);
     }
-    for (const { player, spec } of result.prizes) {
-      this.toast(
-        `${player.name} is given ${spec.name} ${spec.kanji} — ${spec.blurb}`, player.index
-      );
+    /* WHO WON THE COUNT, NOT WHAT SHE GOT FOR IT. The orb itself is drawn at
+       her turn in the award ceremony now, like every other quest's — saying
+       "Ember is given 疾 Hayate" here and again on her card thirty seconds
+       later would be the same prize announced twice, and the first of the two
+       would land under the ending. */
+    for (const p of result.winners) {
+      this.toast(`${p.name} collected the most — an orb is waiting for her at the ending`,
+        p.index);
     }
     this.toast('Powerup Kotodama are scattered across the islands', 0);
     this.toast('A dealer has opened a stall in the market', 1);
