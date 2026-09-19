@@ -1924,10 +1924,27 @@ console.log('\n--- the Joy-Con shoulders are in the twenties, and 0-3 do nothing
     return im;
   };
 
-  ok('L (20) zooms the LEFT kitten\'s map', press(20).players[0].down('map'));
-  ok('R (21) zooms the RIGHT kitten\'s map', press(21).players[1].down('map'));
+  /* 21 IS THE LEFT HALF'S L AND 20 IS THE RIGHT HALF'S R, and the pair was the
+     other way round until it was played. Reported: "Player 1 (Ember) is
+     zooming in the Minimap of Player 2 (Frost), consistently, so it seems it
+     just needs to be switched."
+
+     THAT SYMPTOM ONLY HAS ONE CAUSE HERE. Both halves read the SAME merged
+     pad, so an index named by the wrong half does that half's job for the
+     other girl — and `map` is the only action on the shoulders, which is why
+     this one control was wrong on its own while both clusters were right. It
+     is also why the keyboard was unaffected: Z and X never go near this table.
+
+     THE NAMES MOVED WITH IT. `promptFor` reads the bound index and looks it up
+     in `VJOY_BUTTON_NAMES`, so a swap that left the names behind would print
+     "#21" over a kitten's head. Asserted below rather than trusted. */
+  ok('L (21) zooms the LEFT kitten\'s map', press(21).players[0].down('map'));
+  ok('R (20) zooms the RIGHT kitten\'s map', press(20).players[1].down('map'));
   ok('...and neither zooms the other one\'s',
-    !press(20).players[1].down('map') && !press(21).players[0].down('map'));
+    !press(21).players[1].down('map') && !press(20).players[0].down('map'));
+  ok('...and each half still calls its own shoulder by its printed name',
+    split.promptFor(0, 'map') === 'L' && split.promptFor(1, 'map') === 'R',
+    `${split.promptFor(0, 'map')} / ${split.promptFor(1, 'map')}`);
 
   /* ONE INDEX FOR THE OVERLAY, ON BOTH HALVES. The feeder reports ZL and ZR as
      the same button, and the overlay is one global thing on screen — so this

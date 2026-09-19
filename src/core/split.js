@@ -320,11 +320,39 @@ export function paneWiden(panes, i, W, H) {
    swaps to same-size rectangles means every permutation this considers is one
    `splitLayout` itself would have been willing to return.
 
-   TIES GO TO THE IDENTITY, so behaviour is unchanged wherever this has no
-   opinion: one pane, two even panes, or a frame where nobody has moved. The
-   two-player game never reaches a case where two same-shaped panes have
-   different costs unless the players actually swapped sides, which is the
-   fifth non-negotiable satisfied by construction rather than by a special case.
+   TIES ARE BROKEN BY WHERE THE GROUPS ACTUALLY ARE, AND THEN BY THE IDENTITY.
+   Reported from play, and it is the case this function is MOST often asked
+   about: "when the player screen split happens in a certain direction (such
+   as, player moving off the screen to the left when in Top and Bottom Split
+   direction) then the player moving to the left should be on the Left
+   quadrant and the other player on the Right quadrant, right now, it is
+   ambiguous or random. Seems it depends on the player which way it will
+   split, rather than who is splitting and in which direction they are moving."
+
+   IT DEPENDED ON THE PLAYER BECAUSE OF THE PARAGRAPH THIS ONE REPLACES. On
+   the frame a screen splits, every kitten involved was in the SAME pane a
+   frame ago, so `prev` gives both new groups the same wanted centre, every
+   permutation costs exactly the same, and the tie fell to the identity — i.e.
+   to group order, i.e. to whoever had the lower player index. That is not
+   random, but from the sofa it is indistinguishable from random, because the
+   one thing it is not is a function of where the kittens are.
+
+   SO A TIE NOW ASKS THE WORLD. `hint` is where each group is on the screen
+   they were sharing — the caller projects it, because only the caller has the
+   camera — and among the permutations that tie on `prev`, the cheapest
+   against `hint` wins. The kitten who walked left gets the left pane because
+   she IS on the left, not because she is player 1.
+
+   AND ONLY A TIE, which is what keeps everything above true. A group with a
+   real history still goes where its history says: `hint` cannot drag a pane
+   across the screen, it can only answer a question `prev` had no opinion on.
+   With no `hint` — the first frame, and every check that does not pass one —
+   this is the old function exactly, ties and all.
+
+   THE TWO-PLAYER ANSWER DOES MOVE HERE, AND ON PURPOSE. The fifth
+   non-negotiable is that a rule generalised for four must come out
+   bit-identical at two; this is not that. It is a two-player report, fixed at
+   two players, and the four-player case inherits it for free.
 =========================================================================== */
 
 /** Permutations of 0..n-1, n <= 4. Written out rather than generated because
@@ -359,9 +387,13 @@ const centreOf = (v, W, H) => ({ cx: (v.x + v.w / 2) / W, cy: (v.y + v.h / 2) / 
  *               fractions. Missing entries are players who were not on screen,
  *               and a group of only those has no opinion and costs nothing.
  * @param W,H    the frame the panes were laid out in
+ * @param hint   group index -> { cx, cy } where that group IS on screen right
+ *               now, in the same bottom-left frame fractions. Used ONLY to
+ *               break a tie in `prev`; null entries and a null array both mean
+ *               "no opinion", which is the old behaviour exactly.
  * @returns a new array of the SAME rects, permuted; index still means group
  */
-export function stablePanes(panes, groups, prev, W, H) {
+export function stablePanes(panes, groups, prev, W, H, hint = null) {
   const n = panes.length;
   if (n < 2 || !prev || !(W > 0) || !(H > 0)) return panes;
 
@@ -384,24 +416,54 @@ export function stablePanes(panes, groups, prev, W, H) {
      See the header: this is what keeps splitLayout's size rules true. */
   const shape = panes.map((v) => `${v.w}x${v.h}`);
 
-  let best = null;
-  let bestCost = Infinity;
-  for (const p of permutations(n)) {
-    let ok = true;
+  /* How far a permutation drags the groups from `marks`, or -1 if no group in
+     it has an opinion. One function for both passes, because two copies of
+     this sum is two places for the weighting to drift apart. */
+  const costOf = (p, marks) => {
     let cost = 0;
+    let heard = false;
     for (let g = 0; g < n; g++) {
-      if (shape[p[g]] !== shape[g]) { ok = false; break; }
-      const w = want[g];
+      const w = marks[g];
       if (!w) continue;
+      heard = true;
       /* Weighted by how many kittens are being moved: dragging a pair across
          the screen is twice the disruption of dragging one player. */
       cost += Math.hypot(at[p[g]].cx - w.cx, at[p[g]].cy - w.cy) * groups[g].length;
     }
-    /* STRICTLY cheaper, and the identity is tried first, so a tie leaves
-       everything exactly where it is. */
-    if (ok && cost < bestCost - 1e-9) { bestCost = cost; best = p; }
+    return heard ? cost : -1;
+  };
+
+  /* PASS ONE: EVERY PERMUTATION THAT TIES FOR CHEAPEST, not just the first.
+     The identity is generated first, so it is at the head of this list and
+     wins a tie that pass two also cannot separate. */
+  let bestCost = Infinity;
+  let tied = [];
+  for (const p of permutations(n)) {
+    let ok = true;
+    for (let g = 0; g < n; g++) {
+      if (shape[p[g]] !== shape[g]) { ok = false; break; }
+    }
+    if (!ok) continue;
+    const cost = Math.max(0, costOf(p, want));
+    if (cost < bestCost - 1e-9) { bestCost = cost; tied = [p]; }
+    else if (cost <= bestCost + 1e-9) tied.push(p);
   }
-  if (!best) return panes;
+  if (!tied.length) return panes;
+
+  /* PASS TWO: THE TIE GOES TO WHERE THE KITTENS ACTUALLY ARE. This is the
+     whole of the "it depends on the player, not on who walked left" report —
+     see the header. It runs only over what pass one could not separate, so it
+     can never move a group that had a history to go on. */
+  let best = tied[0];
+  if (tied.length > 1 && hint) {
+    let bestHint = costOf(best, hint);
+    if (bestHint >= 0) {
+      for (const p of tied.slice(1)) {
+        const c = costOf(p, hint);
+        if (c >= 0 && c < bestHint - 1e-9) { bestHint = c; best = p; }
+      }
+    }
+  }
   return best.map((src) => panes[src]);
 }
 
@@ -711,13 +773,31 @@ export function assignMaps(sizes, prev = [], nMaps = 2) {
  * kittens, two maps, two drivers each — and this is the rule that decides which
  * pair share which.
  *
- * NEAREST BY PANE CENTRE, not by player position. The question is "which of
+ * NEAREST BY SCREEN POSITION, not by player position. The question is "which of
  * these boxes is the one my eye is already on", and that is a fact about the
  * screen, not about the world — two kittens standing on the same rock can be in
- * panes at opposite corners. Distance between pane centres is the whole of it,
- * and it comes out right for every layout the game has: with quadrants the pane
- * across the seam beats the pane diagonally opposite, and with two full-height
- * columns there is only ever one answer.
+ * panes at opposite corners.
+ *
+ * AND IT IS THE BOX, NOT THE PANE THAT OWNS IT. Reported from play: "when Split
+ * direction is Top and Bottom, it is not selecting the closest mini-map to the
+ * quadrant the player is in for zooming — should detect the quadrant, then look
+ * at the distance from that quadrant to the minimaps, find the closest."
+ *
+ * Exactly the bug, and the cause is that this used to measure pane centre to
+ * pane centre. A map is NOT at its pane's centre: `mapSpot` puts it in the
+ * corner of its pane nearest the seam, so in a stacked layout two maps owned by
+ * panes directly above one another can be drawn at opposite ends of the screen,
+ * and the near one by pane centre is the far one by eye. It comes out the same
+ * on a side-by-side split, which is why it went unnoticed: there the seam
+ * corner is on the same side as the pane centre it was standing in for.
+ *
+ * `spots` IS PASSED IN RATHER THAN COMPUTED. `mapSpot` needs the box's own
+ * size, which is `mapWidth` of a pane and a device, and re-deriving that here
+ * would be a second copy of the layout that could disagree with the one on
+ * screen. `Game._drawMaps` already computes both and remembers them, the same
+ * way it already remembers `_mapPane` — so this reads the drawing rather than
+ * predicting it. With no `spots` it falls back to pane centres, which is what
+ * it always did.
  *
  * TIES GO TO THE LOWER MAP INDEX, which is what the epsilon is for. A pane can
  * be genuinely equidistant from both maps — quadrants with the maps on a
@@ -727,21 +807,34 @@ export function assignMaps(sizes, prev = [], nMaps = 2) {
  * @param panes every pane's rect, in pane order
  * @param owner `assignMaps`' answer: the pane index each map sits in, -1 if none
  * @param pane  the pane asking
+ * @param spots where each map is actually DRAWN, map index -> {x, y} at the
+ *              CENTRE of the box, in CSS page coordinates. Optional; without it
+ *              the old pane-centre rule is used unchanged.
+ * @param H     the frame's height, needed only to read `panes` (bottom-left
+ *              origin) in the same space as `spots` (top-left origin)
  * @returns a map index, or -1 when there are no maps on screen at all
  */
-export function nearestMap(panes, owner, pane) {
+export function nearestMap(panes, owner, pane, spots = null, H = 0) {
   const own = (owner ?? []).indexOf(pane);
   if (own >= 0) return own;
   const me = panes?.[pane];
   if (!me) return -1;
+  /* ONE COORDINATE SPACE FOR BOTH SIDES OF THE COMPARISON. `panes` count up
+     from the bottom and `spots` count down from the top, and a distance
+     measured across the two is a number that means nothing. Flipping the panes
+     rather than the spots keeps the fallback below EXACTLY what it was: both
+     ends of it are flipped by the same H, and a flip preserves distance. */
   const cx = me.x + me.w / 2;
-  const cy = me.y + me.h / 2;
+  const cy = H - me.y - me.h / 2;
   let best = -1;
   let bestD = Infinity;
   for (let m = 0; m < (owner ?? []).length; m++) {
     const v = panes[owner[m]];
     if (!v) continue;
-    const d = Math.hypot(v.x + v.w / 2 - cx, v.y + v.h / 2 - cy);
+    const at = spots?.[m];
+    const d = at
+      ? Math.hypot(at.x - cx, at.y - cy)
+      : Math.hypot(v.x + v.w / 2 - cx, (H - v.y - v.h / 2) - cy);
     if (d < bestD - 0.5) { best = m; bestD = d; }
   }
   return best;

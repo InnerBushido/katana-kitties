@@ -2073,7 +2073,22 @@ class Game {
       });
     };
     bind('set-split', 'split');
-    bind('set-dir', 'dir');
+    /* THE MAPS MOVE WHEN THE DIRECTION DOES, AND NOT AT THE NEXT UNPAUSE.
+       Reported from play alongside the stacked-split bug: "maybe something in
+       the code needs to get triggered to calculate this when the player
+       changes the Split Direction in the settings."
+
+       It did need to. `_drawMaps` is what repositions the boxes AND what
+       records where they ended up for `nearestMap`, and it is called from the
+       tail of `_tickBody` — which the pause branch returns before reaching.
+       So with the settings menu open the world behind it kept the old
+       arrangement, and the first bumper press after closing the menu was
+       answered from a layout that no longer existed. Same argument as the
+       maths row below: the menu is over a frozen world you can see. */
+    bind('set-dir', 'dir', () => {
+      this._mapT = 1;        // ...and un-throttle it, so it lands this frame
+      this._drawMaps();
+    });
     /* APPLIED ON THE SPOT, not at the next boot. The pause menu is over a
        frozen world with the orbs still on screen behind it, so a row that took
        effect "next time" would look like a row that did nothing. */
@@ -2340,6 +2355,11 @@ class Game {
           this.input.cancelCapture();
           if (this.state === 'title') this.paused = false;
         } else if (this.state === 'play') {
+          /* ...and not over the name entry — see `_menuRefused`. It sits under
+             `_closeSubPanel` rather than above it so a panel the winner opened
+             from the results screen still closes on Escape; the refusal is
+             only for the press that would open the pause menu itself. */
+          if (this._menuRefused()) { e.preventDefault(); return; }
           const opening = !this.paused;
           this.setPaused(opening);
           /* ESC BELONGS TO WHOEVER IS AT THE KEYBOARD, so the menu goes to the
@@ -6574,6 +6594,37 @@ class Game {
    * brisk for an adult and about right for a kid who is also playing a game at
    * the time — the cap stops a paragraph parking itself over the picture.
    */
+  /**
+   * May the pause menu open right now? Reported from play: "pressing Start in
+   * the name input screen can be problematic as it brings up the main menu
+   * behind the name input menu. Should not be possible to bring up the Main
+   * Menu when in the name input screen."
+   *
+   * ONE PLACE, BECAUSE THERE ARE TWO DOORS. Escape on a keyboard and `start`
+   * on a pad are handled hundreds of lines apart, and the inspector's own
+   * exemption right beside the pad one is the proof that fixing one door is
+   * not fixing the problem — it went in for the card and left this open.
+   *
+   * IT REFUSES OUT LOUD. A Start that silently does nothing reads as the pad
+   * having died, which is the sixth non-negotiable, and the message is an
+   * INSTRUCTION naming the way out rather than a description of the lock.
+   *
+   * @returns {boolean} true if the press was refused and consumed.
+   */
+  _menuRefused(playerIndex = 0) {
+    /* THE NAME ENTRY OWNS THE SCREEN. It is the one thing in the game holding
+       letters somebody is halfway through spelling, and there is no way back
+       into it once a menu has taken the keyboard off it. The rest of the
+       result screen goes with it, rather than only the typing, because from a
+       player's side it is one screen — and `modal` is the flag every other
+       reader of this state already uses. */
+    if (this.tournament?.modal) {
+      this.toast('Sign the board first — then fly home', playerIndex);
+      return true;
+    }
+    return false;
+  }
+
   toast(text, playerIndex = 0) {
     const wrap = document.getElementById('toasts');
     const el = document.createElement('div');
@@ -6863,6 +6914,30 @@ class Game {
       for (const d of this.dragons) d.update(dt, this.world, []);
       for (const s of this.world.shrines) s.update(dt, this.players);
       for (const L of this.leaders) L.update(dt, []);
+      /* HER ORBS KEEP TURNING, AND SO DOES THEIR WORKING. Reported from play:
+         "when in cutscene with Clan Leader, the kotodama orbs stop spinning
+         around the player and everything pauses, including the kana, should
+         still continue during the cutscene."
+
+         NOT THE SAME THING AS NOT TICKING THE PLAYER. The kitten is frozen on
+         purpose — she is stood on a mark by `_stand` and a stick still pushed
+         when the scene opened must not walk her off the dais — but her orbs
+         are not her: they are the one object in this game that draws its own
+         sine and cosine off its own angle, and an orb stopped dead beside a
+         talking leader is the first non-negotiable failing in the one scene
+         that is entirely about a clan. `Orb.update` advances theta AND
+         redraws the working from it, so the kana come back with the motion;
+         there is nothing separate to tick.
+
+         IT IS SAFE HERE BECAUSE IT MOVES NOTHING BUT ITSELF. `update` reads
+         the centre and writes only the orb's own transform — no world query,
+         no collision, no input — which is why this is three lines rather than
+         an exception carved out of `_tickPlayers`. */
+      for (const p of this.players) {
+        for (const o of p.orbs ?? []) o.update(dt, p.position);
+        for (const o of p.wornOrbs ?? []) o.update(dt, p.position);
+        for (const o of p.featOrbs ?? []) o.update(dt, p.position);
+      }
       this._renderView(this.shrineScene.camera, 0, 0,
         ...this.renderer.getSize(new THREE.Vector2()).toArray());
       return;
@@ -6976,6 +7051,11 @@ class Game {
        everywhere else. */
     if (asked >= 0 && this.inspector.busy(asked)) {
       // fall through to Inspector.update, which reads the same press
+    } else if (asked >= 0 && this._menuRefused(asked)) {
+      /* The name entry owns the screen — see `_menuRefused`. The press is
+         eaten here rather than left to fall through, because the result
+         screen's own pads read `jump` and not `start`: letting it through
+         would toast AND do nothing, twice a frame. */
     } else if (asked >= 0) {
       const opening = !this.paused;
       this.setPaused(opening);
@@ -8134,7 +8214,12 @@ class Game {
        this press taking part in a decision that belongs to the drawing. The
        fallback covers the one frame before `_drawMaps` has ever run. */
     const owner = this._mapPane ?? this._mapPanes(groups);
-    return nearestMap(panes, owner, pane);
+    /* AND WHERE THE BOXES REALLY ARE — see `nearestMap`. Read, never derived,
+       for the same reason `owner` is: a second copy of the layout arithmetic
+       is a second thing that can disagree with the screen. On the one frame
+       before `_drawMaps` has ever run there is nothing to read and the
+       fallback is the old pane-centre rule, which is the right failure. */
+    return nearestMap(panes, owner, pane, this._mapSpot, window.innerHeight);
   }
 
   /**
@@ -8187,6 +8272,12 @@ class Game {
       const pane = owner[i] ?? -1;
       const shown = pane >= 0 && !!panes[pane] && !!groups[pane]?.length;
       box.classList.toggle('hidden', !shown);
+      /* A HIDDEN BOX HAS NO PLACE ON SCREEN, and leaving last frame's would
+         let `nearestMap` measure to where a map used to be. It is cleared here
+         and in the merged branch below — the two paths that do not set one —
+         rather than only where it is written, so there is no arrangement that
+         can carry a stale answer. */
+      (this._mapSpot ??= [])[i] = null;
       if (!shown) continue;
 
       const v = panes[pane];
@@ -8257,6 +8348,17 @@ class Game {
         box.style.bottom = 'auto';
         box.style.left = `${spot.left}px`;
         box.style.top = `${spot.top}px`;
+        /* WHERE IT REALLY ENDED UP, REMEMBERED FOR THE BUMPER. `nearestMap`
+           used to measure pane centre to pane centre and got a stacked split
+           wrong: a map lives in the corner of its pane NEAREST THE SEAM, so
+           two maps in panes directly above one another can be drawn at
+           opposite ends of the screen, and the near one by pane centre is the
+           far one by eye. Recorded here rather than re-derived there for the
+           reason `_mapPane` is: this is the drawing, and a second copy of the
+           arithmetic is a second thing that can disagree with the screen. */
+        (this._mapSpot ??= [])[i] = {
+          x: spot.left + size / 2, y: spot.top + size / 2,
+        };
       }
 
       /* THE TAG NAMES WHOEVER IS IN THE PANE, read off the group rather than
@@ -8913,6 +9015,61 @@ class Game {
     return this.rigs[members[0]]?.camera ?? null;
   }
 
+  /**
+   * Where each group is on the screen it is being drawn on, 0..1 from the
+   * bottom-left — the tie-break `stablePanes` asks for.
+   *
+   * MEASURED THROUGH THE LENS SHE WAS SEEN THROUGH, not through a fresh one.
+   * `_paneCamOf` is last frame's, and last frame is the frame that matters:
+   * the two halves of a splitting group were both in it, so their x's are
+   * comparable. A camera picked per group this frame would compare a kitten
+   * against herself and always answer "centre".
+   *
+   * A GROUP WITH NO CAMERA YET GETS NULL, NOT A GUESS — the first frame, a
+   * kitten who just joined, a pane that has never been drawn. `stablePanes`
+   * treats a null as no opinion and falls back to the identity, so the worst
+   * this can do is the behaviour it replaced. A guessed 0.5 would instead be a
+   * confident vote for the middle, which is a vote for whichever pane happens
+   * to be nearest the middle — the exact kind of quiet wrong answer the fourth
+   * house rule is about.
+   *
+   * BEHIND THE CAMERA IS ALSO NULL. `Vector3.project` mirrors a point behind
+   * the lens to the far side of the screen, so a kitten who has just walked
+   * out through the bottom of the frame would vote for the wrong side with
+   * full confidence. `w <= 0` is the test, and it is why this does the
+   * projection by hand instead of calling `project`.
+   */
+  _groupHints(groups) {
+    if (!groups?.length) return null;
+    const v = (this._hintV ??= new THREE.Vector3());
+    const mat = (this._hintM ??= new THREE.Matrix4());
+    return groups.map((members) => {
+      let sx = 0;
+      let sy = 0;
+      let seen = 0;
+      for (const i of members ?? []) {
+        const cam = this._paneCamOf?.[i];
+        const at = this.players[i]?.position;
+        if (!cam || !at) continue;
+        mat.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+        v.copy(at).applyMatrix4(mat);
+        /* `applyMatrix4` divides by w and then THROWS W AWAY, and its sign was
+           the only thing that said the point is behind the lens — a negative w
+           divides both coordinates through and lands the kitten, mirrored, on
+           the far side of the screen. So recompute it: same four multiplies
+           three.js just did, kept this time. */
+        const e = mat.elements;
+        const w = e[3] * at.x + e[7] * at.y + e[11] * at.z + e[15];
+        if (!(w > 0) || !Number.isFinite(v.x) || !Number.isFinite(v.y)) continue;
+        sx += (v.x + 1) / 2;
+        sy += (v.y + 1) / 2;   // NDC counts up, and so do the pane fractions
+        seen++;
+      }
+      if (!seen) return null;
+      return { cx: sx / seen, cy: sy / seen };
+    });
+  }
+
   _updateSplit(dt) {
     /* WHO IS SHARING A VIEW WITH WHOM. With two kittens this is exactly the
        boolean it replaced — one group or two — and nothing about the game the
@@ -8920,6 +9077,24 @@ class Game {
        together get a pane between them and the kitten two islands away gets one
        of her own, instead of the screen being all-or-nothing for everybody. */
     this.groups = this._clusters();
+    /* ...AND WHEREABOUTS ON THE SCREEN EACH OF THEM IS, which is what decides
+       the sides when the split is brand new. See `stablePanes` in
+       core/split.js for the report; the short version is that on the frame a
+       pane divides, `_paneSeats` says both halves want the same place, so
+       without this the tie fell to the lower player index.
+
+       PROJECTED HERE BECAUSE ONLY HERE HAS THE CAMERA. `stablePanes` is pure
+       geometry and gets to stay that way. Written ONCE a frame, for the same
+       reason `_paneSeats` is: `_panes` is asked the same question three times
+       a frame by the renderer, the HUD and the minimaps, and they must not be
+       answering from different states. */
+    this._paneHint = this._groupHints(this.groups);
+    /* AND WHOSE GROUPING IT WAS FOR. `_panes` has a fallback grouping for the
+       frames before `this.groups` exists, and a hint array lined up with a
+       DIFFERENT grouping is worse than none: index g would mean one set of
+       kittens to `stablePanes` and another to this. Identity, not length —
+       two groupings of the same size are exactly the case that has to fail. */
+    this._paneHintFor = this.groups;
     /* `merged` STILL MEANS "ONE VIEW FOR EVERYBODY", which is what the HUD, the
        minimaps and the map-zoom key all read it for. It is now a consequence of
        the grouping rather than a thing decided separately — two answers to one
@@ -9419,6 +9594,13 @@ class Game {
     panes.forEach((v, i) => {
       const cam = this._cameraFor(groups[i]);
       if (cam) this._renderView(cam, v.x, v.y, v.w, v.h);
+      /* WHICH LENS EACH KITTEN WAS LAST SEEN THROUGH. `_paneHint` needs to
+         compare two groups' screen positions, and that only means anything if
+         both are measured through the SAME camera — which, on the frame a pane
+         splits in two, is the camera that drew the pane they were sharing. It
+         is recorded here because here is the only place that knows it, and
+         next to `_paneSeats` because the two are read together. */
+      for (const m of groups[i] ?? []) (this._paneCamOf ??= [])[m] = cam ?? null;
     });
     /* WRITTEN ONCE, HERE, AT THE END OF THE FRAME. `_panes` is asked the same
        question by the HUD and the minimaps as well, and if any of them updated
@@ -9513,7 +9695,8 @@ class Game {
        must agree; a function of (panes, groups, seats) gives the same answer
        every time, and `_paneSeats` is only rewritten once, at the end of the
        frame, by `_render`. */
-    return stablePanes(panes, groups, this._paneSeats, W, H);
+    const hint = this._paneHintFor === groups ? this._paneHint : null;
+    return stablePanes(panes, groups, this._paneSeats, W, H, hint);
   }
 
   /** Slow drifting fly-over behind the title screen. */
