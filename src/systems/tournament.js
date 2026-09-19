@@ -616,6 +616,59 @@ export class Tournament {
     return this.game.players.filter((_, i) => this.sides[i] === side);
   }
 
+  /**
+   * PUT MR. SATAN BACK IN HIS BOX, if he is not in it.
+   *
+   * Reported from play: "it's possible for Mr. Satan to not be in the Arena
+   * when the match is happening if triggering the cutscene to happen ... at
+   * least, at the start and end of every round, we need to move Mr. Satan into
+   * the Arena, if he is not there for any reason."
+   *
+   * HE IS ONE OBJECT WITH SEVEN THINGS ENTITLED TO MOVE HIM — `_travel` both
+   * ways, the quest's `reset`, a save being loaded, the endgame unlock, the
+   * debug scene viewer, and the summon scene that plays over the TOWN SQUARE
+   * and needs him standing in it. Chasing every one of them means the next
+   * thing added to that list is the bug again; asking the question at the two
+   * moments it matters cannot be forgotten by code that does not exist yet.
+   * The announcer's box is the only place he may be while a round is running,
+   * so this is not a heuristic — it is the invariant, checked.
+   *
+   * IDLE ONLY IF HE WAS AWAY. The countdown deliberately puts him in the
+   * charge pose for the last seconds of a round and clears it itself; forcing
+   * `idle` unconditionally here would fight it every round. A Satan who was
+   * somewhere else entirely has no business keeping the pose he struck there.
+   *
+   * @returns {boolean} true if he had to be fetched — for the checks, and for
+   *          the one-line note in the console when he did.
+   */
+  _postSatan() {
+    const s = this.game.satan;
+    const booth = this.world?.arenaBooth;
+    /* NOTHING TO DO WITH NO DRAWING. `public/sprites/` can be deleted down to
+       nothing and the game still runs — ninth non-negotiable — so `satan` is
+       allowed to be null and this has to be a no-op when it is.
+
+       `position` AND `group` ARE CHECKED SEPARATELY, and not out of caution: a
+       Satan with neither is what every tournament check in `world-check` has
+       always stubbed, because none of them were ever about where he stands.
+       Reading `.x` off the first one threw and took the whole run down. A rule
+       that degrades beats one that vanishes — a missing field here costs a
+       repositioning, not a round. */
+    if (!s || !booth || !s.position || !s.group) return false;
+    const off = Math.hypot(s.position.x - booth.x, s.position.z - booth.z) > 1
+      || Math.abs(s.position.y - booth.y) > 1
+      || !s.group.visible;
+    if (!off) return false;
+    s.moveTo(booth.x, booth.y, booth.z);
+    s.group.visible = true;
+    /* AND NOTHING HE SAID SOMEWHERE ELSE. His bubble is a line the quest sets
+       at the gate; carried into the ring it is a speech about walking to the
+       arena, hanging over the arena. */
+    s.setLine('');
+    s.setPose?.('idle');
+    return true;
+  }
+
   /** Sides with at least one fighter still standing. */
   _sidesUp() {
     const up = new Set();
@@ -1004,6 +1057,10 @@ export class Tournament {
     this.round++;
     this.t = 0;
     this.state = 'card';
+    /* THE HOST IS IN HIS BOX BEFORE THE CARD GOES UP. See `_postSatan` — this
+       is the "start of every round" half of it, and it covers round one too,
+       since `begin` reaches the first round through here like any other. */
+    this._postSatan();
 
     /* POSTED ON OPPOSITE SIDES, FACING EACH OTHER, AND FROZEN.
        `resetForRound` puts each of them on her mark with no timers, and the
@@ -1217,6 +1274,10 @@ export class Tournament {
     if (leaders.length !== 1) {
       this.state = 'ko';
       this.t = 0;
+      /* A DRAW IS A ROUND ENDING TOO. This branch does not go through
+         `_roundOver`, which is exactly the kind of second exit that makes an
+         invariant hold everywhere except the one place nobody looked. */
+      this._postSatan();
       /* A DRAW HEALS NOBODY, because nobody lost. See `_nextRound`. */
       this._lastWinner = -1;
       /* THE SAME BELL, ASKING A QUESTION. A draw needs to sound different from
@@ -1264,6 +1325,12 @@ export class Tournament {
    */
   _roundOver(winnerSide, message, wait = null) {
     if (this.state !== 'live') return;
+    /* AND THE OTHER HALF OF IT, IMMEDIATELY. Not inside the `_announce`
+       closure below: that can be held for as long as Mr. Satan takes to finish
+       a sentence, and the camera cuts to HIM on a round called by the clock —
+       so a host fetched a second and a half late is a second and a half of
+       camera pointed at an empty box. See `_postSatan`. */
+    this._postSatan();
     /* "K.O." IS A CLAIM ABOUT SOMEBODY'S BODY, AND HALF THE TIME IT WAS FALSE.
        A round ends two ways: a side is wiped out, or the clock runs out and it
        is given to whoever was ahead on damage. Only the first is a knockout —

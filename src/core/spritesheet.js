@@ -174,6 +174,204 @@ export function clearSealedPockets(
 }
 
 /**
+ * THE SAME QUESTION, ASKED THE OTHER WAY UP: transparency the drawing has
+ * completely sealed IN, which somebody else's background remover punched
+ * through a white feature.
+ *
+ * Reported from play: "the mantis.png seems to have transparency in its eyes
+ * when it should be white."
+ *
+ * Measured on that sheet, every enclosed transparent region with its distance
+ * from the real outdoors:
+ *
+ * ```
+ *   1148 px   depth 15   the gap between its back legs   <- REALLY transparent
+ *     57 px   depth 36   an eye                          <- PUNCHED THROUGH
+ *     15 px   depth  7   a nick in the antenna line      <- REALLY transparent
+ *      1 px   depth 2,8  three single-pixel specks       <- REALLY transparent
+ * ```
+ *
+ * THAT IS THE BOUND `clearSealedPockets` ALREADY USES, and it is not reused
+ * because it happens to fit — it is the same geometric fact seen from the
+ * other side. A gap between two legs is outdoors, pinched shut by a hairline;
+ * an eye is indoors, behind a whole head. `POCKET_DEPTH_FRAC` puts the line at
+ * 19 px on a 768 sheet, so the eye is the only thing here on the far side of
+ * it, by a factor of two. Inventing a second constant for this would be a
+ * number tuned to one file — which is exactly how the first pocket rule came
+ * to eat Mr. Satan's face, and there is a long comment above about it.
+ *
+ * WHITE IS A RESTORATION, NOT A GUESS. The hole exists because a remover
+ * decided those pixels were background, and background on these sheets is
+ * white — it is the colour that was there before somebody took it away.
+ *
+ * OPT-IN, for the reason `clearPockets` is: the sheets already in the game do
+ * not need it, and a loader that silently repaints working art is the thing
+ * this file has been bitten by before.
+ */
+export function fillSealedHoles(
+  d, w, h, rgb = [255, 255, 255], depthFrac = POCKET_DEPTH_FRAC
+) {
+  const clear = (p) => d[p * 4 + 3] === 0;
+  const stack = new Int32Array(w * h);
+
+  /* THE OUTDOORS IS THE TRANSPARENCY THE BORDER CAN REACH, and it has to be
+     computed here rather than borrowed from `nearOutsideMask`: that one seeds
+     from every transparent pixel touching something opaque, which includes the
+     inside edge of the very hole being measured. It would call every hole
+     shallow and this function would do nothing at all. */
+  const outside = new Uint8Array(w * h);
+  let sp = 0;
+  const push = (x, y) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return;
+    const p = y * w + x;
+    if (outside[p] || !clear(p)) return;
+    outside[p] = 1;
+    stack[sp++] = p;
+  };
+  for (let x = 0; x < w; x++) { push(x, 0); push(x, h - 1); }
+  for (let y = 0; y < h; y++) { push(0, y); push(w - 1, y); }
+  while (sp > 0) {
+    const p = stack[--sp];
+    const x = p % w;
+    const y = (p / w) | 0;
+    push(x + 1, y); push(x - 1, y); push(x, y + 1); push(x, y - 1);
+  }
+
+  /* HOW FAR EVERY PIXEL IS FROM THE OUTDOORS, through whatever is in the way.
+     A plain BFS over the whole sheet, which is 4-connected and therefore the
+     same metric `nearOutsideMask` grew its own radius with. */
+  const bound = Math.max(8, Math.round(Math.min(w, h) * depthFrac));
+  const dist = new Int32Array(w * h).fill(-1);
+  const q = new Int32Array(w * h);
+  let tail = 0;
+  for (let p = 0; p < w * h; p++) if (outside[p]) { dist[p] = 0; q[tail++] = p; }
+  let head = 0;
+  while (head < tail) {
+    const p = q[head++];
+    const x = p % w;
+    const y = (p / w) | 0;
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      const np = ny * w + nx;
+      if (dist[np] >= 0) continue;
+      dist[np] = dist[p] + 1;
+      q[tail++] = np;
+    }
+  }
+
+  /* EVERY ENCLOSED HOLE, KEPT OR FILLED WHOLE. Measured on its SHALLOWEST
+     pixel: a region is outdoors if any part of it is, or a gap that narrows to
+     a point deep under the drawing would be filled from its far end. */
+  const seen = new Uint8Array(w * h);
+  let filled = 0;
+  for (let s = 0; s < w * h; s++) {
+    if (seen[s] || !clear(s) || outside[s]) continue;
+    let n = 0;
+    let sp2 = 0;
+    let shallowest = Infinity;
+    const found = [];
+    stack[sp2++] = s;
+    seen[s] = 1;
+    while (sp2 > 0) {
+      const p = stack[--sp2];
+      found.push(p);
+      n++;
+      if (dist[p] < shallowest) shallowest = dist[p];
+      const x = p % w;
+      const y = (p / w) | 0;
+      for (const nq of [x < w - 1 ? p + 1 : -1, x > 0 ? p - 1 : -1,
+        y < h - 1 ? p + w : -1, y > 0 ? p - w : -1]) {
+        if (nq < 0 || seen[nq] || !clear(nq) || outside[nq]) continue;
+        seen[nq] = 1;
+        stack[sp2++] = nq;
+      }
+    }
+    if (shallowest <= bound) continue;
+    for (const p of found) {
+      d[p * 4] = rgb[0];
+      d[p * 4 + 1] = rgb[1];
+      d[p * 4 + 2] = rgb[2];
+      d[p * 4 + 3] = 255;
+    }
+    filled += n;
+  }
+  return filled;
+}
+
+/* --- the way out of all of the above -------------------------------------
+   "When we generate the images, can we generate them with a pink/bright green
+   background and then after generating them, we can make the bright color
+   transparent? Generating the images with white background is problematic and
+   makes it hard to remove the background when we need to."
+
+   Yes, and it dissolves the entire family of bugs above rather than adding a
+   rule to it. Every one of them — Mr. Satan's eaten teeth, the depth bound,
+   the size floor, the `clearPockets` flag, the `fillHoles` flag, the flood
+   itself — exists for ONE reason: on a white background, a background pixel
+   and a drawn pixel can be the same colour, so the only thing telling them
+   apart is whether the border can walk to it. Every rule in this file is a
+   proxy for a fact the image threw away.
+
+   On magenta they are never the same colour. Nothing is drawn in
+   (255,0,255) — it is not in the palette, it is not in fur, paper, steel or
+   sky — so the test is per-pixel and needs no geometry at all:
+
+   - it reaches SEALED pockets, because it never had to walk anywhere;
+   - it cannot eat a white eye, because an eye is not magenta;
+   - it cannot punch a hole, for the same reason;
+   - a checkable failure looks like magenta left on screen, which is the
+     loudest possible thing to miss and the reason for magenta over green:
+     green is one bad prompt away from a leaf, a bamboo cane or a jade orb.
+
+   THIS IS THE PIPELINE FOR NEW ART, not a migration of the old. The 42 sheets
+   already in the game were generated on white years of sessions ago, and
+   regenerating one is a paid call that changes a drawing the kids have already
+   seen. They keep the flood. See docs/notes/art.md.
+*/
+export const CHROMA_MAGENTA = [255, 0, 255];
+
+/**
+ * Key one known background colour out of a sheet, per pixel.
+ *
+ * `near` and `far` are Euclidean RGB distances: at or under `near` the pixel
+ * is background and goes to alpha 0; between them it fades, which is what
+ * keeps a soft antialiased edge from turning into a staircase; past `far` it
+ * is paint and is not touched.
+ *
+ * The middle band is also DE-SPILLED — a pixel that is 70% magenta is pulled
+ * back toward the grey of its own brightness by the same fraction it is being
+ * faded. Without that, a keyed sprite wears a pink rim on a dark background:
+ * the colour is still in there, it is just partly see-through. That fringe was
+ * the first thing anybody noticed in the white pipeline too (see the `Math.min`
+ * note in `keyOutBackground`), and it is worth fixing at the source rather
+ * than twice.
+ */
+export function chromaKey(d, w, h, rgb = CHROMA_MAGENTA, near = 70, far = 150) {
+  const [kr, kg, kb] = rgb;
+  let cleared = 0;
+  for (let p = 0; p < w * h; p++) {
+    const i = p * 4;
+    if (d[i + 3] === 0) continue;
+    const dist = Math.hypot(d[i] - kr, d[i + 1] - kg, d[i + 2] - kb);
+    if (dist <= near) {
+      d[i + 3] = 0;
+      cleared++;
+      continue;
+    }
+    if (dist >= far) continue;
+    const keep = (dist - near) / (far - near);
+    d[i + 3] = Math.round(d[i + 3] * keep);
+    /* De-spill: the more of this pixel we just took away, the more of the key
+       colour we pull out of what is left. Grey of matching luminance rather
+       than a hue rotation — a sprite edge has no hue worth preserving at one
+       pixel wide, and luminance is what makes it read as an edge at all. */
+    const lum = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+    for (let c = 0; c < 3; c++) d[i + c] = Math.round(d[i + c] * keep + lum * (1 - keep));
+  }
+  return cleared;
+}
+
+/**
  * Flood transparency inward from every border pixel. Pixel data in, pixel data
  * out — no canvas, which is what lets `tools/world-check.mjs` run the real
  * background removal over the real sheets with no DOM and no GPU.
@@ -213,9 +411,90 @@ export function floodBackground(d, w, h) {
   }
 }
 
-function keyOutBackground(ctx, w, h, clearPockets = false) {
+/**
+ * What fraction of the border has to be transparent before we believe the
+ * sheet arrived with its background already removed.
+ *
+ * NOT A JUDGEMENT CALL — MEASURED, and the two populations do not overlap by a
+ * little, they do not overlap at all. Every sheet in `public/sprites/`, on its
+ * border ring:
+ *
+ * ```
+ *   opaque, needs keying     0.0%      31 sheets — the kitten grids, the
+ *                                      leaders, the critters, the clan crests,
+ *                                      ryuuseki, the griffin, the pandas
+ *   arrives keyed           97.5-100%  10 sheets — both dragons, satan_charge,
+ *                                      the inhale / scared / warp poses, mantis
+ * ```
+ *
+ * A floor anywhere between 1% and 97% gives the same answer, so 0.9 is not
+ * tuned to the data — it is a long way from either edge of it.
+ */
+export const KEYED_BORDER_FRAC = 0.9;
+
+/**
+ * Has somebody already removed this sheet's background?
+ *
+ * ASKED ON THE BORDER, because that is exactly where `floodBackground` seeds:
+ * the honest form of "is there anything for the flood to do" is "is the flood's
+ * starting ring already transparent".
+ *
+ * Exported so `world-check` asks the sheets the same question the loader does
+ * rather than a paraphrase of it.
+ */
+export function alreadyKeyed(d, w, h, frac = KEYED_BORDER_FRAC) {
+  let clear = 0;
+  let total = 0;
+  const look = (x, y) => {
+    total++;
+    if (d[((y * w + x) << 2) + 3] === 0) clear++;
+  };
+  for (let x = 0; x < w; x++) { look(x, 0); look(x, h - 1); }
+  for (let y = 0; y < h; y++) { look(0, y); look(w - 1, y); }
+  return total > 0 && clear / total >= frac;
+}
+
+function keyOutBackground(ctx, w, h, clearPockets = false, fillHoles = false) {
   const img = ctx.getImageData(0, 0, w, h);
   const d = img.data;
+
+  /* BEFORE ANYTHING ELSE, because it repairs damage that arrived with the file
+     rather than damage this function could do. It has to sit above the
+     early-out below as well as the flood: the sheet it was written for
+     (mantis) is one of the already-keyed ones, so an early return would skip
+     it. On an opaque sheet it is a no-op — there is no transparency to be
+     sealed in. */
+  if (fillHoles) fillSealedHoles(d, w, h);
+
+  /* A SHEET THAT IS ALREADY KEYED IS LEFT ALONE, AND THE WHITE ON IT IS PAINT.
+     Reported from play: "the satan_charge.png image seems to have transparency
+     around the shoulders where it should be white ... if the image has
+     transparency already, we shouldn't be finding/removing the white from the
+     image, because that means the white is part of the image."
+
+     Exactly right, and the mechanism is worth writing down because it looks
+     like it could not happen. `isBackgroundish` reads RGB and **never looks at
+     alpha**. A background remover leaves the pixels it cleared at alpha 0 with
+     their ORIGINAL colour underneath — and these sheets were drawn on white,
+     so the whole border ring is (255,255,255,0): transparent, and backgroundish.
+     The flood seeds there happily, walks inward through the transparency it did
+     not need to touch, arrives at the shoulders, finds drawn white that is also
+     backgroundish, and keeps going. The alpha channel already held the answer
+     and we overwrote it with a guess.
+
+     MEASURED, not inferred: of the ten sheets that arrive keyed, the six with
+     white under their transparency (both dragons, satan_charge, both inhales)
+     are precisely the ones the flood could eat. The other four are cleared to
+     a non-white RGB, which is why mantis and the warps were never damaged this
+     way — the flood could not even start on them. See `alreadyKeyed`.
+
+     THE FRINGE PASS GOES WITH IT, and it is the same bug in miniature: it
+     lowers the alpha of any pale pixel touching transparency, which on a keyed
+     sheet is every white pixel along a real drawn edge. That is a hole punched
+     by the very pass that exists to avoid one. `clearPockets` goes too — a
+     sealed white pocket on a keyed sheet is drawn white by definition, because
+     whoever keyed it had the whole image and decided to keep it. */
+  if (alreadyKeyed(d, w, h)) return img;
 
   floodBackground(d, w, h);
   // ...and then the pockets the flood is structurally unable to reach.
@@ -560,6 +839,11 @@ export async function loadSpriteAtlas(url, opts = {}) {
        clearSealedPockets. Opt-in, because the sheets already in the game do
        not need it. */
     clearPockets = false,
+    /* The mirror of it: paint back the white that somebody else's background
+       remover punched THROUGH the drawing — see fillSealedHoles. Opt-in for
+       the same reason, and named for what it repairs rather than for the sheet
+       that needed it, because the next one will be a different sheet. */
+    fillHoles = false,
   } = opts;
 
   const img = await new Promise((res, rej) => {
@@ -576,7 +860,9 @@ export async function loadSpriteAtlas(url, opts = {}) {
   const sctx = src.getContext('2d', { willReadFrequently: true });
   sctx.drawImage(img, 0, 0);
 
-  const keyed = keyOutBackground(sctx, src.width, src.height, clearPockets);
+  const keyed = keyOutBackground(
+    sctx, src.width, src.height, clearPockets, fillHoles
+  );
   const grid = findViewBoxes(keyed, src.width, src.height, views, wantRows);
 
   const flat = grid.flat();

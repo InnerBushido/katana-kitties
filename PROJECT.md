@@ -1,6 +1,6 @@
 # Katana Kitties — the whole project on one page
 
-**Last updated: 12 September 2026.** Anything below with a cost or an account
+**Last updated: 19 September 2026.** Anything below with a cost or an account
 attached was true on that date; check the dashboard before quoting a number.
 
 This is the **one-stop sheet**: what the project is, how to run it, how to test
@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 3503 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 3744 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -444,7 +444,7 @@ to lock it on.** → [mobile.md](docs/notes/mobile.md)
 | **The 18 Help clips** | The game, playing itself, recorded. A script drives it, grabs one frame per tick off the WebGL back buffer, and `tools/gif.mjs` encodes. Nothing in the pipeline can invent a frame. | [tools/capture/README.md](tools/capture/README.md) — **the director's guide** |
 | **GIF encoding** | `tools/gif.mjs`, dependency-free GIF89a: median-cut palette, interframe differencing. `dither: false` is required or the diff bites on nothing. `gif-selftest.mjs` reads its own output back. | `node tools/gif-selftest.mjs` |
 | **Looping two clips together** | `tools/gif-sync.mjs` rewrites delay bytes only, no re-encode. It pads the **last frame**; it used to spread the difference across every frame, which stretched the clip. | `node tools/gif-sync.mjs` |
-| **Sprite sheets** | Higgsfield image models. **Two rules**: a new player pose is *four* poses (all four kittens, never two), and everything goes through `remove_background` — do not trust the runtime white-keyer. | → [art.md](docs/notes/art.md) |
+| **Sprite sheets** | Higgsfield image models. **Two rules**: a new player pose is *four* poses (all four kittens, never two), and new art is generated on **flat magenta (255,0,255)** and chroma-keyed by the bake tool — never on white, and no longer via `remove_background`, which left cleared pixels at their original white RGB and cost Mr. Satan's shoulders and the mantis's eyes. | → [art.md](docs/notes/art.md) |
 | **Voices** | ElevenLabs **preset** voices, reached through Higgsfield's `text2speech_v2` (`variant: 'elevenlabs'`, `voice_type: 'preset'`). ~0.15 credits a line. **Every character is pinned to one preset with an id** — read the registry before generating any line. | → [voices.md](docs/notes/voices.md) |
 | **Sound & music** | Fully synthesised in `core/audio.js` — a sound set and a piece of music per island. `public/voice/*.mp3` are the only audio *files*, and the game falls back to synthesised blips without them. | → [audio.md](docs/notes/audio.md) |
 | **The demon cackle** | `tools/kitten-cackle.mjs` — one meow at nine speeds. `--game` cuts bursts 1/4/6/9 into the Cross Slash's four graded purrs. **Carries a licensing decision**; see below. | `node tools/kitten-cackle.mjs --game` |
@@ -453,7 +453,7 @@ to lock it on.** → [mobile.md](docs/notes/mobile.md)
 | **Mr. Satan's countdown** | `tools/capture/satan-countdown.mjs` cuts the five clips the last fifteen seconds of a round are made of, out of the takes in `tools/capture/satan-takes/`. The count is **one continuous performance re-timed** — `silencedetect` finds the words, the numbers are pinned to the seconds they name, and each shout between them is squeezed by exactly as much as its own gap demands. **A spoken card is shortened by closing its dead air, never by playing him faster** — pauses floored to 0.20s first, and a speed ceiling of 1.10x that throws with the line quoted rather than shipping a card that sounds sped up. Also cuts the six bare numbers `sat_n0`–`sat_n5`. | `node tools/capture/satan-countdown.mjs` → [voices.md](docs/notes/voices.md) |
 | **Brush kanji** | `tools/brush-kanji.mjs` — drawn, not typed, because ffmpeg's `drawtext` gives hairlines. | |
 | **PNG, with no dependencies** | `tools/png.mjs` — the codec everything else encodes through, same rule as `gif.mjs`. | |
-| **Making the shipped art smaller than the art that made it** | `tools/sprite-bake.mjs` builds `public/sprites/` out of [`docs/art-masters/`](docs/art-masters/README.md). It bakes the background key into the file with the depth bound **off** — which the loader can never do, because depth is the only thing separating a sealed pocket from Mr. Satan's eye, and what this has that the loader has not is a human looking at `--proof`. It also resizes the dragons to where they pack at scale **1.000** instead of 0.698 (14MB → 2.1MB, and half the VRAM, drawing identically), and re-encodes the kids' painting as **q92 WebP at full resolution** — 5.5MB → 0.46MB, the only lossy image in the game. | `node tools/sprite-bake.mjs --proof` |
+| **Making the shipped art smaller than the art that made it** | `tools/sprite-bake.mjs` builds `public/sprites/` out of [`docs/art-masters/`](docs/art-masters/README.md). It bakes the background key into the file with the depth bound **off** — which the loader can never do, because depth is the only thing separating a sealed pocket from Mr. Satan's eye, and what this has that the loader has not is a human looking at `--proof`. It also resizes the dragons to where they pack at scale **1.000** instead of 0.698 (14MB → 2.1MB, and half the VRAM, drawing identically), and re-encodes the kids' painting as **q92 WebP at full resolution** — 5.5MB → 0.46MB, the only lossy image in the game. **It is also where new art comes in**: a master generated on flat magenta gets `{ chroma: true }` and is keyed per pixel, with no flood, no depth bound and no judgement call, and the tool hard-fails if the key clears under 5% of the sheet. | `node tools/sprite-bake.mjs --proof` |
 | **Steam shelf art & icons** | `tools/steam-art.mjs` crops and composites `docs/art-masters/title_art.png` — the **master**, because every crop is a pixel coordinate measured on that 2752x1536 file and the shipped copy is WebP. **Nothing here is a new drawing** — a prompt to an image model would put art on the box that is nowhere inside the game. | `node tools/steam-art.mjs` → `out/steam/` |
 | **Steam store capsules** | `tools/steam-capsules.sh` | → [trailer.md](docs/notes/trailer.md) |
 | **Clan leader portraits (Help)** | `tools/help-portraits.mjs` | |
