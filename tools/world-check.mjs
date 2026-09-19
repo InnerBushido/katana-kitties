@@ -3489,6 +3489,64 @@ console.log('\n--- the shrine scene is a two-shot ---');
   ok('a scene takes the clan caption off the screen with the HUD',
     /if \(away\) for \(const p of this\.players \?\? \[\]\) p\.setCallout\(null\);/.test(mainSrc));
 
+  /* --- BUT HER ORBS KEEP TURNING ----------------------------------------
+     Reported from play: "when in cutscene with Clan Leader, the kotodama orbs
+     stop spinning around the player and everything pauses, including the kana,
+     should still continue during the cutscene."
+
+     THE KITTEN IS FROZEN ON PURPOSE AND THE ORB IS NOT HER. Every check above
+     pins that a scene must not move a player; this pins the thing that made
+     that rule read as a bug. Driven through a REAL `Orb` rather than asserted
+     off the source, because "the kana still move" is a claim about what
+     `update` does and not about which line calls it — the working is redrawn
+     from theta inside the same call, so an orb that turns has kana that move
+     and there is nothing separate that could be left out. */
+  {
+    const p = kit();
+    const o = new Orb({ radius: 3.2, speed: 1.15, phase: 0, color: 0x7fe3ff, height: 1.7 });
+    o.setMathVisible(true);
+    p.orbs = [o];
+    const hall = world.clanHalls[0];
+    const L = standIn(hall);
+    S.finish();
+    S.start(L, p);
+    const before = o.theta;
+    const wasAt = o.orbNode.position.clone();
+    /* THE REAL LOOP BODY, cut out of `main.js` and run — so a future edit that
+       deletes the three lines fails here rather than passing on a stub. The
+       slice is the `for (const p of this.players)` block inside the shrine
+       branch, found by the comment that names the report. */
+    const at = mainSrc.indexOf('HER ORBS KEEP TURNING, AND SO DOES THEIR WORKING');
+    const loopAt = mainSrc.indexOf('for (const p of this.players) {', at);
+    const end = mainSrc.indexOf('      }', loopAt);
+    const body = at < 0 || loopAt < 0 ? '' : mainSrc.slice(loopAt, end + 7);
+    ok('the shrine scene ticks the orbs it is standing beside',
+      /o\.update\(dt, p\.position\)/.test(body) && /featOrbs/.test(body)
+      && /wornOrbs/.test(body), `${body.length} chars`);
+    /* CALLED WITH A `this`, not wrapped in `with`. The body says
+       `this.players`, and `with` binds names rather than the receiver — the
+       first version threw "this.players is not iterable" on a scope object
+       that had `players` on it. */
+    const tick = new Function('dt', `${body}`);
+    const host = { players: [p] };
+    for (let i = 0; i < 30; i++) tick.call(host, 1 / 60);
+    ok('...so theta really advances while the leader is talking',
+      o.theta > before + 0.4, `${before.toFixed(3)} -> ${o.theta.toFixed(3)} rad`);
+    /* AND THE DRAWING FOLLOWS IT. Theta moving with the orb sitting still
+       would be the maths overlay telling the truth about a picture that is
+       not — the first non-negotiable's exact failure mode, inverted. */
+    ok('...and the orb is really somewhere else on its circle',
+      o.orbNode.position.distanceTo(wasAt) > 0.5,
+      `${o.orbNode.position.distanceTo(wasAt).toFixed(2)} units round`);
+    /* AND IT STILL HAS NOT MOVED THE KITTEN. The whole reason this could not
+       simply be `_tickPlayers` with a dead pad. */
+    const stood = p.position.clone();
+    for (let i = 0; i < 30; i++) tick.call(host, 1 / 60);
+    ok('...without the tick moving the kitten it orbits',
+      p.position.distanceTo(stood) < 1e-9);
+    p.orbs = [];
+  }
+
   S.finish();
   globalThis.document = baseDoc;
   if (!hadDoc) delete globalThis.document;
@@ -10308,6 +10366,114 @@ console.log('\n--- the three power moves ---');
         ok(`...and untouched again once seated (${dir})`,
           JSON.stringify(stablePanes(raw2, g2, seats(raw2, g2), VW, VH))
             === JSON.stringify(raw2));
+      }
+
+      /* --- WHO GETS THE LEFT ONE, WHEN NOBODY HAS A HISTORY -------------
+         Reported from play: "when player screen split happens in a certain
+         direction (such as, player moving off the screen to the left when in
+         Top and Bottom Split direction) then the player moving to the left
+         should be on the Left quadrant and the other player on the Right
+         quadrant, right now, it is ambiguous or random."
+
+         IT WAS THE TIE-TO-THE-IDENTITY RULE, and the split frame is the one
+         frame where that rule has nothing to go on: everybody involved was in
+         the SAME pane last frame, so both halves want the same centre, every
+         permutation costs the same, and the answer fell to group order — the
+         lower player index. These check the fix by the report's own words:
+         the same two groups, the same seats, and only the positions swapped.
+         If the answer does not swap with them, it is not reading them. */
+      {
+        const merged = { 0: { cx: 0.5, cy: 0.5 }, 1: { cx: 0.5, cy: 0.5 } };
+        const twoUp = [[0], [1]];
+        let indexLed = 0;
+        let followed = 0;
+        for (const dir of ['vertical', 'horizontal']) {
+          const raw = splitLayout(2, VW, VH, 3, dir);
+          /* The axis the setting actually cut on — x for columns, y for rows —
+             read off the rects rather than assumed from `dir`, because that
+             assumption is the thing bug 7 was made of. */
+          const axis = raw[0].x !== raw[1].x ? 'cx' : 'cy';
+          const low = { cx: 0.5, cy: 0.5 };
+          const high = { cx: 0.5, cy: 0.5 };
+          low[axis] = 0.15;
+          high[axis] = 0.85;
+          const key = axis === 'cx' ? 'x' : 'y';
+          const lowFirst = stablePanes(raw, twoUp, merged, VW, VH, [low, high]);
+          const highFirst = stablePanes(raw, twoUp, merged, VW, VH, [high, low]);
+          /* Compared on the axis the split was CUT on. Reading `.x` here
+             instead cost a take: in a stacked split both panes start at x=0,
+             so a check that watched x would have called a working swap a
+             failure — and, worse, would have called a broken one a pass. */
+          if (lowFirst[0][key] === highFirst[0][key]) indexLed += 1;
+          /* AND THE RIGHT WAY ROUND, not merely different. The kitten on the
+             low side of the screen gets the low-coordinate pane. */
+          if (lowFirst[0][key] > lowFirst[1][key]) followed += 1;
+          if (highFirst[1][key] > highFirst[0][key]) followed += 1;
+          /* NO HINT IS THE OLD ANSWER, byte for byte — everything above this
+             block passes five arguments and must keep the behaviour it pins. */
+          if (JSON.stringify(stablePanes(raw, twoUp, merged, VW, VH))
+            !== JSON.stringify(raw)) followed += 1;
+        }
+        ok('a brand-new split is decided by where the kittens are, not by index',
+          indexLed === 0, `${indexLed} of 2 directions ignored the positions`);
+        ok('...and the one on the near side gets the near pane', followed === 0,
+          `${followed} wrong`);
+
+        /* A HISTORY OUTRANKS THE HINT, which is the whole of "only a tie".
+           Player 0 is settled on the right of a four-way split; a hint that
+           says she belongs on the left must not drag her across, because that
+           would be this function undoing its own reason for existing. */
+        const settled = seats(p4, g4);
+        const liar = g4.map(() => ({ cx: 0.5, cy: 0.5 }));
+        liar[0] = { cx: 0.95, cy: 0.05 };
+        ok('...but a kitten who has been somewhere all along is not dragged off it',
+          JSON.stringify(stablePanes(p4, g4, settled, VW, VH, liar))
+            === JSON.stringify(stablePanes(p4, g4, settled, VW, VH)));
+
+        /* AND A HINT NOBODY COULD MEASURE IS NOT A VOTE. Nulls are what
+           `_groupHints` returns for a kitten with no camera yet or one behind
+           the lens; the answer has to be the no-hint answer, not a lurch
+           towards whichever pane is nearest the origin. */
+        const raw2n = splitLayout(2, VW, VH, 3, 'vertical');
+        ok('...and a hint of nulls is the same as no hint at all',
+          JSON.stringify(stablePanes(raw2n, twoUp, merged, VW, VH, [null, null]))
+            === JSON.stringify(stablePanes(raw2n, twoUp, merged, VW, VH)));
+
+        /* FOUR QUADRANTS TOO, which is where the report's word "quadrant" is
+           literal: at four apart both directions lay out quadrants (pinned
+           further up), so the kitten who walked left must get a left one. */
+        const q4 = splitLayout(4, VW, VH, 3, 'horizontal', [1, 1, 1, 1]);
+        const mergedQ = { 0: { cx: 0.5, cy: 0.5 }, 1: { cx: 0.5, cy: 0.5 },
+          2: { cx: 0.5, cy: 0.5 }, 3: { cx: 0.5, cy: 0.5 } };
+        const spread = [
+          { cx: 0.85, cy: 0.2 }, { cx: 0.15, cy: 0.2 },
+          { cx: 0.85, cy: 0.8 }, { cx: 0.15, cy: 0.8 },
+        ];
+        const fixedQ = stablePanes(q4, g4, mergedQ, VW, VH, spread);
+        let wrongQ = 0;
+        spread.forEach((s, g) => {
+          const v = fixedQ[g];
+          const onLeft = v.x + v.w / 2 < VW / 2;
+          const onTop = v.y + v.h / 2 > VH / 2;     // GL origin: high y is up
+          if (onLeft !== (s.cx < 0.5)) wrongQ += 1;
+          if (onTop !== (s.cy > 0.5)) wrongQ += 1;
+        });
+        ok('...and four kittens each land in the quadrant they are standing in',
+          wrongQ === 0, `${wrongQ} of 8 sides wrong`);
+      }
+
+      /* AND main.js REALLY HANDS IT THE HINT, gated on the grouping it was
+         measured for. A hint lined up with a different grouping votes for the
+         wrong kittens with full confidence, so the guard is the check. */
+      {
+        const ms = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+        ok('main.js passes the hint into stablePanes',
+          /stablePanes\(panes, groups, this\._paneSeats, W, H, hint\)/.test(ms));
+        ok('...and only when it was measured for this very grouping',
+          /this\._paneHintFor === groups \? this\._paneHint : null/.test(ms));
+        ok('...and drops a kitten who is behind the lens rather than mirroring her',
+          /const w = e\[3\] \* at\.x \+ e\[7\] \* at\.y \+ e\[11\] \* at\.z \+ e\[15\];/.test(ms)
+          && /if \(!\(w > 0\)/.test(ms));
       }
 
       /* A MERGED VIEW HAS NOTHING TO DECIDE, and asking must not throw. */
@@ -17528,6 +17694,71 @@ console.log('\n--- one press is not enough, and one player drives ---');
   ok("...and by a real pad's START, never by a keyboard slot's",
     /source !== 'keyboard'/.test(sp) && /pressed\('start'\)/.test(sp));
 
+  /* --- THE NAME ENTRY OWNS THE SCREEN -----------------------------------
+     Reported from play: "pressing Start in the name input screen can be
+     problematic as it brings up the main menu behind the name input menu.
+     Should not be possible to bring up the Main Menu when in the name input
+     screen."
+
+     THE BUG IS THAT THERE ARE TWO DOORS. Escape on a keyboard and `start` on
+     a pad open the same menu from two places hundreds of lines apart, and the
+     inspector's exemption sitting right beside the pad one is the proof that
+     patching whichever door was reported is not a fix — it went in for the
+     card and left this one open. So the rule lives in `_menuRefused` and both
+     doors are checked separately. */
+  {
+    const endOfM = (from) => {
+      const m = /\r?\n {2}\}\r?\n/.exec(main.slice(from));
+      return m ? from + m.index : from;
+    };
+    const rAt = main.indexOf(NL + '  _menuRefused(');
+    const refused = rAt < 0 ? '' : main.slice(rAt, endOfM(rAt));
+    /* THE FLAG IT ASKS FOR, not a re-derivation of it. `Tournament.modal` is
+       what every other reader of this state uses, so a change to what "the
+       results screen" means reaches here for free. */
+    ok('the pause menu asks one question before it opens',
+      /tournament\?\.modal/.test(refused), `${refused.length} chars`);
+    /* AND IT REFUSES OUT LOUD. Sixth non-negotiable — a Start that silently
+       does nothing reads as the pad having died — and the toast is an
+       INSTRUCTION naming the way out, not a description of the lock. */
+    ok('...and refuses out loud, as an instruction',
+      /this\.toast\(/.test(refused) && /Sign the board first/.test(refused));
+    ok('...telling her what to do rather than what she may not do',
+      !/cannot|can't|not allowed|blocked/i.test(refused));
+
+    /* DOOR ONE: ESCAPE. Bounded by the `_zoomMapKey` line above it and the end
+       of the listener, because the Escape branch is a block inside a handler
+       and has no method of its own to anchor on. */
+    const escAt = main.indexOf("if (e.code === 'Escape') {");
+    const esc = escAt < 0 ? '' : main.slice(escAt, escAt + 2200);
+    ok('Escape on a keyboard is refused over the name entry',
+      /_menuRefused\(\)/.test(esc));
+    /* ...AND BELOW `_closeSubPanel`, not above it. A winner who opened the
+       record board off the results screen must still be able to close it;
+       only the press that would open the pause menu itself is refused. */
+    ok('...but a panel she opened from it still closes on Escape',
+      esc.indexOf('_closeSubPanel()') >= 0
+      && esc.indexOf('_closeSubPanel()') < esc.indexOf('_menuRefused()'));
+
+    /* DOOR TWO: A PAD'S START. It must be refused AND eaten — the results
+       screen's own pads read `jump`, not `start`, so letting the press fall
+       through would toast and still do nothing. */
+    const padAt = main.indexOf('if (asked >= 0 && this.inspector.busy(asked))');
+    const padStart = padAt < 0 ? '' : main.slice(padAt, padAt + 900);
+    ok("a pad's START is refused over it too",
+      /_menuRefused\(asked\)/.test(padStart));
+    ok('...before the branch that would have opened the menu',
+      padStart.indexOf('_menuRefused(asked)') >= 0
+      && padStart.indexOf('_menuRefused(asked)') < padStart.indexOf('this.setPaused(opening)'));
+    /* AND THE CARD'S OWN EXEMPTION IS UNTOUCHED. It was there first, it is a
+       different question (whose card is it), and a refactor that folded the
+       two together would silently start toasting at a kitten putting a screen
+       away. */
+    ok('...and the inspector card keeps its own, separate exemption',
+      padStart.indexOf('this.inspector.busy(asked)')
+        < padStart.indexOf('_menuRefused(asked)'));
+  }
+
   /* --- the confirm dialog --- */
   const conf = readFileSync(new URL('../src/systems/confirm.js', import.meta.url), 'utf8');
   const panel = html.slice(html.indexOf('id="panel-confirm"'),
@@ -17778,10 +18009,19 @@ console.log('\n--- one press is not enough, and one player drives ---');
   ok('the menu reads only its owner, when it has one',
     /menuOwner/.test(nav) && /\[all\[owner\]\] : all/.test(nav));
   /* WHICH pad asked, not whether any did. `some` returns a boolean and there
-     is no way back from a boolean to the slot that pressed. */
-  ok('...and the pause button claims the menu for the pad that pressed it',
-    /findIndex/.test(main.slice(main.indexOf('_claimMenu(asked)') - 900,
-      main.indexOf('_claimMenu(asked)'))));
+     is no way back from a boolean to the slot that pressed.
+
+     ANCHORED ON `const asked`, NOT ON A CHARACTER COUNT. This was
+     `indexOf('_claimMenu(asked)') - 900`, and the name-entry refusal above
+     added six lines between the two — so the window opened past the
+     `findIndex` and the check went red over code that had not changed. The
+     same trap the save-menu checks name, one section down. */
+  {
+    const from = main.indexOf('    const asked = this.input.players.findIndex(');
+    const to = main.indexOf('_claimMenu(asked)');
+    ok('...and the pause button claims the menu for the pad that pressed it',
+      from >= 0 && to > from && /findIndex/.test(main.slice(from, to)));
+  }
   /* A DEAD PAD MUST NOT LOCK FOUR PEOPLE OUT OF RESUME. Checked every frame
      rather than on the disconnect event, because a pad that simply stops
      reporting never fires one. */
@@ -23332,6 +23572,121 @@ console.log('\n--- one press is not enough, and one player drives ---');
      it and this is what keeps that branch honest. */
   ok('...and a screen with no maps answers -1 rather than throwing',
     nearestMap(quad, [-1, -1], 0) === -1 && nearestMap(quad, [], 0) === -1);
+
+  /* --- NEAREST MEANS NEAREST TO THE BOX, NOT TO ITS PANE ----------------
+     Reported from play: "when Split direction is Top and Bottom, it is not
+     selecting the closest mini-map to the quadrant the player is in for
+     zooming — should detect the quadrant, then look at the distance from that
+     quadrant to the minimaps, find the closest."
+
+     THE RULE WAS RIGHT AND THE MEASUREMENT WAS NOT. `nearestMap` compared pane
+     CENTRES, and a map is not at its pane's centre: `mapSpot` puts it in the
+     corner nearest the seam. So the rule was answering a question about tiles
+     when the kid is looking at boxes. It now measures to the boxes.
+
+     THE HONEST PART, MEASURED RATHER THAN CLAIMED: on every layout this game
+     can currently produce, the two measurements AGREE — the assertion below
+     says so, with the list. The boxes all converge on the seam, which keeps
+     their ordering the same as their panes'. So this change is correctness in
+     the measurement, and it is NOT yet known to be the whole of that report;
+     see the note that follows it. Do not delete these rows on the grounds that
+     they prove nothing — proving the answers did not move is exactly what the
+     fifth non-negotiable needs from a change to a shared rule. */
+  {
+    const spotsFor = (panes, own) => own.map((p) => {
+      const v = panes[p];
+      if (!v) return null;
+      const size = mapWidth({ paneW: v.w, paneH: v.h, screenH: H, merged: false });
+      const s = mapSpot({ v, W, H, size, pad: 14, hint: 0 });
+      return { x: s.left + size / 2, y: s.top + size / 2 };
+    });
+    const moved = [];
+    for (const dir of ['vertical', 'horizontal']) {
+      for (const sizes of [[1, 1], [1, 1, 1], [1, 1, 1, 1],
+        [2, 1, 1], [1, 2, 1], [1, 1, 2], [2, 1, 1, 1], [3, 1], [2, 2]]) {
+        const panes = splitLayout(sizes.length, W, H, 3, dir, sizes);
+        const own = assignMaps(sizes, [], 2);
+        if (own.some((o) => o < 0)) continue;
+        const spots = spotsFor(panes, own);
+        for (let p = 0; p < sizes.length; p++) {
+          if (own.includes(p)) continue;
+          if (nearestMap(panes, own, p) !== nearestMap(panes, own, p, spots, H)) {
+            moved.push(`${dir} ${sizes.join('')} pane${p}`);
+          }
+        }
+      }
+    }
+    ok('measuring to the boxes moves no answer the game can currently reach',
+      moved.length === 0, moved.join(' ') || 'every layout agrees');
+
+    /* AND IT IS REALLY MEASURING THEM, which the row above cannot show
+       precisely because nothing moved. A synthetic pair of spots — one box
+       dragged to the far corner of the screen — must flip the answer, or the
+       argument is passed and ignored. */
+    const rows = splitLayout(4, W, H, 3, 'vertical', [1, 1, 1, 1]);
+    const own = [0, 1];
+    const far = [{ x: W - 20, y: H - 20 }, { x: 20, y: 20 }];
+    ok('...and a box dragged across the screen really does change the answer',
+      nearestMap(rows, own, 2, far, H) !== nearestMap(rows, own, 2),
+      `${nearestMap(rows, own, 2)} -> ${nearestMap(rows, own, 2, far, H)}`);
+
+    /* AND WITH NOTHING TO READ IT FALLS BACK RATHER THAN THROWING — the frame
+       before `_drawMaps` has ever run, and every caller that has no spots. */
+    ok('...and no recorded spots is the old rule, not a crash',
+      nearestMap(rows, own, 2, null, H) === nearestMap(rows, own, 2)
+      && nearestMap(rows, own, 2, [null, null], H) === nearestMap(rows, own, 2));
+  }
+
+  /* --- WHERE THE SPLIT DIRECTION ACTUALLY DOES ANYTHING -----------------
+     MEASURED IN THE RUNNING GAME, and written down because it is the fact the
+     report above needs and nothing in `src/` says: with four kittens standing
+     apart, Left/Right and Top/Bottom produce the SAME FOUR QUADRANTS — same
+     pane rects, same map boxes to the pixel, same answer from every bumper.
+     `splitLayout` only branches on `dir` where there is a row or a column to
+     choose, which is two panes, or three where a pair has taken a full side.
+
+     SO A REPORT ABOUT "TOP AND BOTTOM" CANNOT BE ABOUT FOUR SEPARATED
+     KITTENS. The next session should not spend an afternoon rediscovering
+     that, which is the whole reason this is a check and not a comment. */
+  {
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    ok('at four apart, the two split directions are the same four quadrants',
+      same(splitLayout(4, W, H, 3, 'vertical', [1, 1, 1, 1]),
+        splitLayout(4, W, H, 3, 'horizontal', [1, 1, 1, 1])));
+    ok('...and at three apart too', same(splitLayout(3, W, H, 3, 'vertical', [1, 1, 1]),
+      splitLayout(3, W, H, 3, 'horizontal', [1, 1, 1])));
+    /* ...AND THE TWO PLACES IT IS NOT. Asserted the other way round, so a
+       change that made `dir` stop mattering ANYWHERE fails here rather than
+       silently turning a settings row into decoration. */
+    ok('...but two kittens really do get columns or rows as asked',
+      !same(splitLayout(2, W, H, 3, 'vertical', [1, 1]),
+        splitLayout(2, W, H, 3, 'horizontal', [1, 1])));
+    ok('...and so does a pair with two on their own',
+      !same(splitLayout(3, W, H, 3, 'vertical', [2, 1, 1]),
+        splitLayout(3, W, H, 3, 'horizontal', [2, 1, 1])));
+  }
+
+  /* THE GAME READS THE DRAWING RATHER THAN PREDICTING IT. `_drawMaps` records
+     where each box landed and `_mapForPlayer` passes that in — a second copy
+     of `mapSpot` in the zoom path is the thing this design exists to avoid. */
+  {
+    const m = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('the bumper measures to where the boxes were really drawn',
+      /nearestMap\(panes, owner, pane, this\._mapSpot, window\.innerHeight\)/.test(m));
+    ok('...off the same `mapSpot` call that positioned them',
+      /\(this\._mapSpot \?\?= \[\]\)\[i\] = \{/.test(m));
+    /* AND A HIDDEN OR MERGED MAP LEAVES NOTHING STALE BEHIND. Those are the
+       two paths that do not set a spot, so both have to clear one. */
+    ok('...and a box that is not drawn there leaves no stale position',
+      (m.match(/\(this\._mapSpot \?\?= \[\]\)\[i\] = null;/g) || []).length >= 1);
+    /* THE DIRECTION ROW TAKES EFFECT WHILE THE MENU IS STILL UP. `_drawMaps`
+       is what both moves the boxes and records them, and the pause branch
+       returns before the tail of `_tickBody` ever calls it. */
+    const dAt = m.indexOf("bind('set-dir', 'dir'");
+    const dir = dAt < 0 ? '' : m.slice(dAt, dAt + 200);
+    ok('changing the split direction moves the maps on the spot',
+      /_drawMaps\(\)/.test(dir) && /_mapT = 1/.test(dir));
+  }
 
   /* --- AND BETWEEN THEM, Z AND X REACH EVERY BOX ON SCREEN ---
      REPORTED: "the Z and X keys should zoom it in, regardless of who owns the

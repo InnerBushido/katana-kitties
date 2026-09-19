@@ -111,7 +111,26 @@ const DEFAULT_VJOY_MAP = {
        shoulders in the twenties, and 0-3 report nothing at all. Leaving the
        old guesses in place meant four buttons that did something when nothing
        was pressed and two controls that could not be found. */
-    map: [20],         // L
+    /* 21, AND IT WAS 20 UNTIL IT WAS PLAYED. Reported from play: "zooming
+       Player 1 and Player 2 on Joycons, seems they are zooming the wrong
+       mini-map. Player 1 (Ember) is zooming in the Minimap of Player 2
+       (Frost), consistently, so it seems it just needs to be switched."
+
+       THAT IS THE SIGNATURE OF A SWAPPED INDEX AND OF NOTHING ELSE. Both
+       halves read the SAME merged pad (see the header), so an index named by
+       the wrong half does that half's job for the other girl — and `map` is
+       the only action on the shoulders, which is why this one control was
+       wrong on its own while every button in both clusters was right. If the
+       minimaps themselves were being picked wrongly it would go wrong on the
+       keyboard too, and Z and X are fine.
+
+       THE 20/21 PAIR WAS ALWAYS A GUESS and the file says so at the top —
+       only the two SRs were ever confirmed on hardware. This is the guess
+       being replaced by a measurement, the same way 8 and 7 replaced a whole
+       rotation of guessed cluster names below. Settings -> Controllers can
+       still rebind it by pressing the button, on a feeder that wires it a
+       third way. */
+    map: [21],         // L
     math: [22],        // ZL — the SAME index the right half reads, see below
   },
   right: {
@@ -122,7 +141,7 @@ const DEFAULT_VJOY_MAP = {
     mount: [5, 15],   // B / SL — SL is the shield, see the header
     sprint: [14],     // SR  (confirmed)
     start: [12],       // Plus
-    map: [21],         // R
+    map: [20],         // R — the other half of the swap above
     /* ONE BUTTON FOR BOTH HALVES, AND THAT IS NOT A TYPO. The feeder reports
        ZL and ZR as the same index, and the overlay is one global thing on
        screen rather than one per kitten — so a shared toggle is the right
@@ -182,14 +201,19 @@ export const HALVES = ['left', 'right'];
  * appeal to, so the only name that means anything to a kid is the direction
  * her thumb travels — and every one of these is drawn over her own kitten's
  * head, in her own quarter of the screen, while she is holding the thing. */
+/* AND THE SHOULDER NAMES MOVED WITH THE BINDING. `promptFor` reads the index
+ * out of `vjoyMap` and looks it up in HERE, so leaving 20:'L' behind after
+ * `map` became 21 would print "#21" over a kitten's head — a prompt naming a
+ * button that is not there, which is the one failure this table exists to
+ * prevent. See the note on `map` in DEFAULT_VJOY_MAP. */
 const VJOY_BUTTON_NAMES = {
   left: {
     8: 'UP', 9: 'DOWN', 10: 'LEFT', 11: 'RIGHT',
-    13: '-', 16: 'SL', 17: 'SR', 20: 'L', 22: 'ZL',
+    13: '-', 16: 'SL', 17: 'SR', 21: 'L', 22: 'ZL',
   },
   right: {
     4: 'X', 5: 'B', 6: 'A', 7: 'Y',
-    12: '+', 14: 'SR', 15: 'SL', 21: 'R', 22: 'ZR',
+    12: '+', 14: 'SR', 15: 'SL', 20: 'R', 22: 'ZR',
   },
 };
 
