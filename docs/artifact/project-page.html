@@ -485,7 +485,7 @@ footer b { color: var(--text); }
 <div class="wrap">
 
 <header class="mast">
-  <div class="stamp">Last updated <span>·</span> 17 Sep 2026</div>
+  <div class="stamp">Last updated <span>·</span> 19 Sep 2026</div>
   <h1>Katana Kitties<em>The whole project on one page</em></h1>
   <p class="lede">A <b>split-screen co-op browser game for up to four players</b>: samurai kittens
     knocking over a chain of floating Japanese islands, riding storm dragons between them, and
@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 3503 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 3744 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 362 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -975,8 +975,10 @@ git push origin alpha</code></pre>
       <tr>
         <td><b>Sprite sheets</b></td>
         <td>Higgsfield image models. Two rules: <b>a new player pose is four poses</b> (all four
-          kittens, never two), and everything goes through background removal — do not trust the
-          runtime white-keyer.</td>
+          kittens, never two), and new art is generated on <b>flat magenta (255,0,255)</b> and
+          chroma-keyed by the bake tool — never on white, and no longer through a background
+          remover, which left cleared pixels at their original white RGB and cost Mr. Satan's
+          shoulders and the mantis's eyes.</td>
         <td><code>art.md</code></td>
       </tr>
       <tr>
@@ -1034,7 +1036,9 @@ git push origin alpha</code></pre>
           away on every load, so a master shrunk to pack at 1.000 draws identically for half the
           VRAM. 14 MB → 2.1 MB. The kids' painting cannot be resized — it is theirs, on the first
           screen anybody sees — so it is <b>q92 WebP at full resolution</b> instead: 5.5 MB →
-          0.46 MB, and the only lossy image in the game.</td>
+          0.46 MB, and the only lossy image in the game. <b>It is also where new art comes in</b>:
+          a master generated on flat magenta is keyed per pixel, with no flood, no depth bound and
+          no judgement call, and the tool hard-fails if the key clears under 5% of the sheet.</td>
         <td><code>sprite-bake.mjs</code></td>
       </tr>
       <tr>
@@ -1148,7 +1152,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 3503 assertions and why almost none of them are about
+      is why <code>world-check</code> is 3744 assertions and why almost none of them are about
       whether a number is set.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,

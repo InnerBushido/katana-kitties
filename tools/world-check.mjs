@@ -57,7 +57,8 @@ import {
 import { tmpdir } from 'node:os';
 import {
   floodBackground, clearSealedPockets, purelyWhite, pocketFloor,
-  packMetrics, countInk,
+  packMetrics, countInk, alreadyKeyed, KEYED_BORDER_FRAC,
+  fillSealedHoles, chromaKey,
 } from '../src/core/spritesheet.js';
 import {
   profileFor as deviceProfileFor, effectivePixelRatio,
@@ -4975,6 +4976,234 @@ console.log('\n--- background removal keeps the drawn whites ---');
       `${gone.length} (${s.what})`);
     ok(`${s.file}: ${s.bigWhites} big drawn white(s) kept`, kept === s.bigWhites,
       `${kept} of ${bigBefore.length} over the ${floor}px floor`);
+  }
+
+  /* --- A SHEET THAT ARRIVES KEYED IS NOT KEYED AGAIN ----------------------
+     Reported: "the satan_charge.png image seems to have transparency around
+     the shoulders where it should be white ... if the image has transparency
+     already, we shouldn't be finding/removing the white from the image."
+
+     `isBackgroundish` reads RGB and never looks at alpha. A remover leaves
+     cleared pixels at alpha 0 with their ORIGINAL colour underneath, and these
+     sheets were drawn on white — so the border ring is (255,255,255,0), the
+     flood seeds on it, walks inward through transparency it did not need to
+     touch, and carries on into drawn white when it gets there.
+
+     THE TWO POPULATIONS ARE CHECKED, NOT THE THRESHOLD. What makes this a
+     check rather than a restatement of `KEYED_BORDER_FRAC` is that every sheet
+     the game ships is sorted by it and the answer has to match what the file
+     actually is. */
+  const KEYED = [
+    'dragon_sheet.png', 'dragon_fly.png', 'satan_charge.png', 'mantis.png',
+    'ember_inhale.png', 'frost_inhale.png', 'ember_scared.png',
+    'frost_scared.png', 'ember_warp.png', 'frost_warp.png',
+  ];
+  {
+    const dir = new URL('../public/sprites/', import.meta.url);
+    const sheets = readdirSync(dir).filter((n) => n.endsWith('.png')).sort();
+    const said = [];
+    for (const f of sheets) {
+      const { w, h, d } = readPNG(new URL(f, dir));
+      if (alreadyKeyed(d, w, h)) said.push(f);
+    }
+    ok('every sheet is sorted into keyed-already or needs-keying',
+      said.join() === KEYED.slice().sort().join(),
+      said.join(' ') || '(none)');
+    /* AND THE SORT IS NOWHERE NEAR ITS OWN EDGE. A rule that only just decided
+       is a rule that will change its mind when a sheet is redrawn; these two
+       populations sit at 0% and 97.5%+ with nothing between them. */
+    let worstKeyed = 1;
+    let worstOpaque = 0;
+    for (const f of sheets) {
+      const { w, h, d } = readPNG(new URL(f, dir));
+      let clear = 0;
+      let total = 0;
+      const look = (x, y) => { total++; if (d[((y * w + x) << 2) + 3] === 0) clear++; };
+      for (let x = 0; x < w; x++) { look(x, 0); look(x, h - 1); }
+      for (let y = 0; y < h; y++) { look(0, y); look(w - 1, y); }
+      const frac = clear / total;
+      if (KEYED.includes(f)) worstKeyed = Math.min(worstKeyed, frac);
+      else worstOpaque = Math.max(worstOpaque, frac);
+    }
+    ok('...with a gap between them nothing sits in',
+      worstOpaque < 0.5 && worstKeyed > 0.95 && worstKeyed > worstOpaque,
+      `opaque up to ${(worstOpaque * 100).toFixed(1)}%, keyed from ${(worstKeyed * 100).toFixed(1)}%`);
+    /* AND THE THRESHOLD IS INSIDE THAT GAP WITH ROOM EITHER SIDE. Asserted on
+       the exported constant, so moving it into the crowd fails here rather
+       than re-keying a sheet somebody has to notice by eye. */
+    ok('...and the threshold sits in the middle of it, not on an edge',
+      KEYED_BORDER_FRAC > worstOpaque + 0.4 && KEYED_BORDER_FRAC < worstKeyed - 0.05,
+      `${KEYED_BORDER_FRAC}`);
+
+    /* WHAT THE OLD BEHAVIOUR ACTUALLY COST, measured rather than described, so
+       a change that quietly reinstates it fails here. The flood is run over
+       each keyed sheet and asked how many OPAQUE pixels it would have taken —
+       which is the hole in the shoulders, in pixels. */
+    const eaten = {};
+    for (const f of KEYED) {
+      const { w, h, d } = readPNG(new URL(f, dir));
+      const before = new Uint8Array(w * h);
+      for (let p = 0; p < w * h; p++) before[p] = d[p * 4 + 3];
+      floodBackground(d, w, h);
+      let lost = 0;
+      for (let p = 0; p < w * h; p++) if (before[p] > 200 && d[p * 4 + 3] === 0) lost++;
+      eaten[f] = lost;
+    }
+    ok('re-keying satan_charge would eat the white off his shoulders',
+      eaten['satan_charge.png'] > 100, `${eaten['satan_charge.png']} opaque px`);
+    ok('...and far more off the two inhale poses',
+      eaten['ember_inhale.png'] > 1000 && eaten['frost_inhale.png'] > 5000,
+      `${eaten['ember_inhale.png']} / ${eaten['frost_inhale.png']} opaque px`);
+    /* AND THE LOADER DOES NOT DO IT. Asked of the loader's own function rather
+       than of the flood, because the flood is still exactly right for the
+       thirty-one sheets that arrive opaque. */
+    for (const f of ['satan_charge.png', 'frost_inhale.png']) {
+      const { w, h, d } = readPNG(new URL(f, dir));
+      ok(`${f} is left exactly as it arrived`, alreadyKeyed(d, w, h));
+    }
+    /* THE OTHER HALF, OR THE FIX IS "STOP KEYING ANYTHING". The sheets that
+       arrive opaque must still be keyed, and `leader_satan.png` above is the
+       one that proves the flood still works on them. */
+    const { w: gw, h: gh, d: gd } = readPNG(new URL('leader_satan.png', dir));
+    ok('...while an opaque sheet is still keyed as it always was',
+      !alreadyKeyed(gd, gw, gh) && gd[3] === 255);
+  }
+
+  /* --- THE MANTIS'S EYES, WHICH ARRIVED PUNCHED OUT ---------------------
+     Reported from play: "the mantis.png seems to have transparency in its
+     eyes when it should be white. Also, it has white in-between its insect
+     arms where it should be transparent."
+
+     Two different problems in one sentence, and only one of them is ours.
+     The eyes are holes in the FILE — whatever removed its background took
+     them with it — and `fillSealedHoles` paints them back. The white between
+     the arms is upstream damage in the drawing itself and no rule can undo
+     it: there is nothing to tell that white apart from the white of a knee.
+
+     These checks pin the bound, because the bound is the whole design. A
+     hole is filled on DEPTH, and the numbers below are the reason a second
+     constant was not invented for it. */
+  {
+    const dir = new URL('../public/sprites/', import.meta.url);
+    const mainSrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    const { w, h, d } = readPNG(new URL('mantis.png', dir));
+    const before = new Uint8Array(w * h);
+    for (let p = 0; p < w * h; p++) before[p] = d[p * 4 + 3];
+    const filled = fillSealedHoles(d, w, h);
+
+    /* THE EYE AND ONLY THE EYE. Measured: the eye is 57 px at depth 36; the
+       gap between the back legs is 1148 px at depth 15; a nick in the antenna
+       is 15 px at depth 7. `POCKET_DEPTH_FRAC` puts the line at 19 px on this
+       768 sheet, so the eye clears it by a factor of two and nothing else is
+       close. An exact equality rather than a range: if this number moves, the
+       rule has started taking something new and somebody should look at what. */
+    ok('the fill paints the mantis\'s eye back and nothing else',
+      filled === 57, `${filled} px`);
+    let eye = 0;
+    for (let y = 198; y <= 210; y++) {
+      for (let x = 178; x <= 184; x++) {
+        const i = (y * w + x) * 4;
+        if (before[y * w + x] === 0 && d[i + 3] === 255 && d[i] === 255) eye++;
+      }
+    }
+    ok('...as opaque white, in the eye box it was measured in', eye === 57);
+    /* THE OTHER SIDE OF THE SAME BOUND. A gap between two legs is outdoors
+       pinched shut by a hairline; an eye is indoors behind a whole head. If
+       the rule ever fills this, the mantis grows a white slab. */
+    let gap = 0;
+    for (let y = 560; y <= 630; y++) {
+      for (let x = 555; x <= 604; x++) if (d[(y * w + x) * 4 + 3] === 0) gap++;
+    }
+    ok('...and leaves the gap between its back legs alone', gap > 1000, `${gap} px`);
+
+    /* AND IT STAYS OPT-IN. Run over every sheet in the game, this rule would
+       repaint eight of them, and one of those is 32,944 px of sky enclosed by
+       a dragon's own wing and tail. That is not a bug in the bound — it is a
+       genuinely sealed hole that is genuinely background, which is the exact
+       thing `clearSealedPockets` had to grow a depth test to protect. Two
+       rules, opposite directions, same unanswerable question, and the answer
+       is a human naming the one file. */
+    const sheets = readdirSync(dir).filter((f) => f.endsWith('.png')).sort();
+    const touched = [];
+    for (const f of sheets) {
+      const im = readPNG(new URL(f, dir));
+      if (fillSealedHoles(im.d, im.w, im.h) > 0) touched.push(f);
+    }
+    ok('turning the fill on for every sheet would repaint eight of them',
+      touched.length === 8 && touched.includes('dragon_sheet.png'),
+      touched.join(' '));
+    ok('...so exactly one sheet in the game asks for it',
+      (mainSrc.match(/fillHoles: true/g) || []).length === 1
+      && /'mantis', 'mantis\.png', false, \{ fillHoles: true \}/.test(mainSrc));
+  }
+
+  /* --- MAGENTA, WHICH IS THE WAY OUT OF ALL OF IT -----------------------
+     "When we generate the images, can we generate them with a pink/bright
+     green background and then after generating them, we can make the bright
+     color transparent?"
+
+     The checks are synthetic on purpose: no sheet in the game was generated
+     this way yet, and the rule has to be proven before the first one is paid
+     for rather than after. The case it has to survive is the one white cannot:
+     a white feature sealed inside the drawing, with background on both sides
+     of it. */
+  {
+    const w = 64;
+    const h = 64;
+    const d = new Uint8ClampedArray(w * h * 4);
+    const put = (x, y, r, g, b) => {
+      const i = (y * w + x) * 4;
+      d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255;
+    };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) put(x, y, 255, 0, 255);
+    /* A ring of black lineart with white inside it — an eye — and a second
+       patch of white OUTSIDE it, which is the thing a flood would have to
+       guess about and a chroma key does not. */
+    for (let y = 20; y < 44; y++) for (let x = 20; x < 44; x++) put(x, y, 20, 20, 20);
+    for (let y = 26; y < 38; y++) for (let x = 26; x < 38; x++) put(x, y, 255, 255, 255);
+    for (let y = 4; y < 10; y++) for (let x = 4; x < 10; x++) put(x, y, 255, 255, 255);
+
+    const cleared = chromaKey(d, w, h);
+    const alpha = (x, y) => d[((y * w + x) << 2) + 3];
+    ok('a chroma key clears the background it was told about',
+      cleared > 3000 && alpha(0, 0) === 0, `${cleared} px`);
+    ok('...keeps a white eye sealed inside the lineart', alpha(32, 32) === 255);
+    /* THE ONE THE FLOOD GETS WRONG. White outside the drawing, touching the
+       border's reachable region: `floodBackground` eats it because it is
+       backgroundish and reachable. The chroma key keeps it, because it is not
+       magenta, and that is the entire difference between the two pipelines. */
+    ok('...and keeps white that is OUTSIDE it, which the flood eats',
+      alpha(6, 6) === 255);
+    const fd = new Uint8ClampedArray(d.length);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      fd[i] = 255; fd[i + 1] = 255; fd[i + 2] = 255; fd[i + 3] = 255;
+    }
+    for (let y = 20; y < 44; y++) for (let x = 20; x < 44; x++) {
+      const i = (y * w + x) * 4;
+      fd[i] = 20; fd[i + 1] = 20; fd[i + 2] = 20;
+    }
+    for (let y = 4; y < 10; y++) for (let x = 4; x < 10; x++) fd[(y * w + x) * 4 + 3] = 255;
+    floodBackground(fd, w, h);
+    ok('...proven by running the flood over the same drawing',
+      fd[((6 * w + 6) << 2) + 3] === 0 && fd[((32 * w + 32) << 2) + 3] === 255);
+
+    /* NOTHING IN THE PALETTE IS MAGENTA, which is the load-bearing claim and
+       not a matter of taste. If a clan colour ever lands near (255,0,255),
+       that clan's sprites lose their fur. */
+    const paletteSrc = readFileSync(
+      new URL('../src/core/palette.js', import.meta.url), 'utf8');
+    const hexes = (paletteSrc.match(/#[0-9a-fA-F]{6}/g) || []);
+    const nearKey = hexes.filter((x) => {
+      const n = parseInt(x.slice(1), 16);
+      return Math.hypot((n >> 16) - 255, ((n >> 8) & 255), (n & 255) - 255) < 90;
+    });
+    ok('...and nothing in the palette is anywhere near the key colour',
+      nearKey.length === 0, `${hexes.length} colours, closest clear`);
+    const bakeSrc = readFileSync(
+      new URL('../tools/sprite-bake.mjs', import.meta.url), 'utf8');
+    ok('the bake tool offers the chroma route and refuses a white master',
+      /job\.chroma/.test(bakeSrc) && /cleared only/.test(bakeSrc));
   }
 }
 

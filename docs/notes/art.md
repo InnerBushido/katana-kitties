@@ -121,10 +121,133 @@ nearly wrong about Mr. Satan's teeth. Higgsfield's image models return opaque
 PNGs, so the route is: generate on white, then run the result through the
 Higgsfield `remove_background` tool before it lands in `public/sprites/`.
 
-The loader needs no change for this and must not get one. `isBackgroundish`
+~~The loader needs no change for this and must not get one. `isBackgroundish`
 requires r, g, b >= 218; a transparent pixel reads (0, 0, 0, 0) off the canvas,
 so on an alpha sheet the border flood never seeds and `loadSpriteAtlas` passes
-the drawing through untouched. The two conventions coexist with no flag.
+the drawing through untouched. The two conventions coexist with no flag.~~
+
+**That paragraph was wrong, and it is struck through rather than deleted
+because it is the most plausible wrong thing in this file and somebody will
+reason their way back to it.** A transparent pixel does *not* read (0, 0, 0, 0)
+off the canvas. `getImageData` returns whatever RGB is stored under the alpha,
+and `remove_background` leaves the pixels it cleared at their **original**
+colour — which, on art generated on white, is (255, 255, 255, 0). Transparent,
+and backgroundish. The flood seeded on it happily, walked inward through
+transparency it never needed to touch, arrived at the drawing, found drawn
+white that is also backgroundish, and kept going.
+
+Reported from play as *"the `satan_charge.png` image seems to have transparency
+around the shoulders where it should be white… if the image has transparency
+already, we shouldn't be finding/removing the white from the image, because
+that means the white is part of the image."* Exactly right. Measured: of the
+ten sheets that arrive keyed, the six with white under their transparency
+(both dragons, `satan_charge`, both inhales, `ember_scared`) are precisely the
+ones the flood could eat — 224 opaque pixels off Mr Satan's shoulders, 2,838
+off Ember's inhale, 11,062 off Frost's. The other four were cleared to a
+non-white RGB, which is the only reason `mantis` and the warps escaped.
+
+The fix is `alreadyKeyed()`: **if 90% or more of a sheet's border is alpha 0,
+the sheet has been keyed by somebody who had the whole image, and every pixel
+on it — white included — is paint.** `keyOutBackground` returns it untouched,
+skipping the flood, the pocket pass *and* the soften pass, which was the same
+bug in miniature (it lowers the alpha of any pale pixel touching transparency,
+which on a keyed sheet is every white pixel along a real drawn edge). The two
+populations are not close: the sheets that arrive opaque have **0.0%** border
+transparency and the keyed ones **97.5%** or more, and `world-check` asserts
+both that gap and that the threshold sits inside it.
+
+### Magenta, and why it ends this whole family of bugs
+
+Asked as *"when we generate the images, can we generate them with a pink/bright
+green background and then after generating them, we can make the bright color
+transparent? Generating the images with white background is problematic and
+makes it hard to remove the background when we need to."*
+
+Yes — and it does not add a rule, it removes all of them. Every rule in
+`spritesheet.js` exists for one reason: **on a white background a background
+pixel and a drawn pixel can be the same colour**, so the only thing separating
+them is whether the border can walk to it. The flood, `clearSealedPockets`, the
+size floor, the depth bound, `fillHoles`, `alreadyKeyed` — all of it is a proxy
+for a fact the image threw away.
+
+On magenta they are never the same colour, so the test is per pixel and needs
+no geometry:
+
+- it reaches **sealed** pockets, because it never had to walk anywhere;
+- it cannot eat a white eye, or punch a hole in one, because an eye is not
+  magenta;
+- a failure looks like **magenta left on screen**, which is the loudest thing
+  in the world to miss.
+
+**Magenta (255, 0, 255), not green.** Green is one prompt away from a leaf, a
+bamboo cane or a jade orb; nothing in this game's palette is within 90 units of
+magenta, and `world-check` asserts that against the real palette file.
+
+The route for any new sheet:
+
+1. Prompt for the art **on a flat magenta (255, 0, 255) background**, and say
+   so explicitly — "solid magenta #FF00FF background, no gradient, no shadow on
+   the background".
+2. Drop the master in `docs/art-masters/`.
+3. Add it to `WORK` in `tools/sprite-bake.mjs` as `{ chroma: true }` and run
+   `node tools/sprite-bake.mjs --proof`. The bake **hard-fails** if the key
+   clears less than 5% of the sheet, which is what a master accidentally
+   generated on white looks like.
+4. The baked file lands in `public/sprites/` already keyed, so `alreadyKeyed`
+   leaves it alone at runtime and none of the white-background machinery ever
+   touches it.
+
+No flood and no pocket pass run on a chroma master — running either afterwards
+would put back exactly the guessing this route exists to avoid.
+
+**This is for new art only.** The 42 sheets already in the game were generated
+on white; regenerating one is a paid call that changes a drawing the kids have
+already seen.
+
+### When a sheet arrives with its eyes punched out
+
+Reported from play: *"the `mantis.png` seems to have transparency in its eyes
+when it should be white. Also, it has white in-between its insect arms where it
+should be transparent."*
+
+Two different problems in one sentence, and only one of them is fixable here.
+
+**The eyes are holes in the file.** Whatever removed the mantis's background
+took them with it, and it has been that way on disk ever since — nothing in
+this codebase did it. `fillSealedHoles` paints them back, and it is the exact
+mirror of `clearSealedPockets`: same depth metric, same constant, asked from
+the other side. A transparent region that the border cannot reach, and that
+sits deeper than `POCKET_DEPTH_FRAC` from the outdoors, is a hole punched
+through the drawing; white is a restoration rather than a guess, because the
+hole exists precisely because some remover decided those pixels were
+background, and background on these sheets is white.
+
+Measured on the sheet, every enclosed transparent region with its depth:
+
+    1,148 px   depth 15   the gap between its back legs     REALLY transparent
+       57 px   depth 36   an eye                            PUNCHED THROUGH
+       15 px   depth  7   a nick in the antenna line        REALLY transparent
+        1 px   depth 2,8  three single-pixel specks         REALLY transparent
+
+The bound lands at 19 px on a 768 sheet, so the eye clears it by a factor of
+two and nothing else is close. **No second constant was invented for this**, and
+that is the point: a gap between two legs is outdoors pinched shut by a
+hairline, an eye is indoors behind a whole head, and that is one geometric fact
+seen from two sides. A number tuned to one file is how the first pocket rule
+came to eat Mr Satan's face.
+
+**It stays opt-in, and the reason is measurable.** Run over every sheet in the
+game, the fill would repaint eight of them — including 32,944 px of sky
+enclosed by a dragon's own wing and tail, which is a genuinely sealed hole that
+is genuinely background. Two rules, opposite directions, the same unanswerable
+question, and the answer is a human naming the one file. `mantis.png` is the
+only sheet in the game with `fillHoles: true`, and `world-check` pins that it
+is the only one.
+
+**The white between its arms is upstream damage and cannot be fixed here.**
+There is nothing to tell that white apart from the white of a knee — it is 265
+px in thirteen scattered regions, the biggest 173 px. The only real fix is
+regenerating the sheet, on magenta, per the section above.
 
 **One correction the alpha route did need**, and it had been wrong the whole
 time: `keyOutBackground`'s soften pass was `Math.max` on the alpha it wrote. On

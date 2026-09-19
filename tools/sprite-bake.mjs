@@ -67,7 +67,9 @@
 import { mkdirSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { readPNG, writePNG } from './png.mjs';
-import { floodBackground, clearSealedPockets } from '../src/core/spritesheet.js';
+import {
+  floodBackground, clearSealedPockets, chromaKey, CHROMA_MAGENTA,
+} from '../src/core/spritesheet.js';
 
 const MASTERS = 'docs/art-masters';
 const SHIP = 'public/sprites';
@@ -76,7 +78,20 @@ const PROOF = 'out/bake';
 /* --- what gets built ------------------------------------------------------
    `deep` turns the depth bound off. It is per-file and it means somebody has
    opened the proof image for that file and seen that every cleared region is
-   sky. Do not add a file here without doing that. */
+   sky. Do not add a file here without doing that.
+
+   `chroma` IS THE ROUTE FOR ANYTHING NEW, and it is not a variant of `key` —
+   it replaces it. Generate the sheet on flat magenta (255,0,255), drop the
+   master in `docs/art-masters/`, and give it `{ chroma: true }`. No flood, no
+   depth bound, no size floor, no `deep` judgement call, and no proof image to
+   squint at for a pocket that should not have gone: a per-pixel test on a
+   colour nothing in this game is drawn in cannot reach the wrong pixel. The
+   whole argument is above `chromaKey` in src/core/spritesheet.js, and the
+   prompt wording to use is in docs/notes/art.md.
+
+   The two dragons keep `key` because they were generated on white long before
+   this existed, and regenerating art the kids have already seen to save a tool
+   a branch is the wrong trade. */
 const WORK = [
   { file: 'dragon_sheet.png', to: [1376, 768], key: true, deep: true },
   { file: 'dragon_fly.png', to: [1376, 768], key: true, deep: true },
@@ -181,7 +196,22 @@ for (const job of WORK) {
   }
 
   const { w, h, d } = readPNG(src);
-  if (job.key) {
+  if (job.chroma) {
+    /* AND NOTHING ELSE. No flood and no pocket pass — running either after a
+       chroma key would put back exactly the guessing this route exists to
+       avoid, on a sheet where the answer is already known per pixel. */
+    const rgb = Array.isArray(job.chroma) ? job.chroma : CHROMA_MAGENTA;
+    const cleared = chromaKey(d, w, h, rgb);
+    /* LOUD, because the one way this can fail is a master that was generated
+       on white after all, where the key finds nothing and the sheet ships with
+       its background baked in — which looks like a working file until it is on
+       screen with a white box around it. */
+    if (cleared < w * h * 0.05) {
+      throw new Error(`${job.file}: chroma key cleared only ${cleared}px `
+        + `(${(cleared / (w * h) * 100).toFixed(1)}%) — was this master really `
+        + `generated on ${rgb.join(',')}?`);
+    }
+  } else if (job.key) {
     floodBackground(d, w, h);
     /* depthFrac 1 puts the whole sheet inside the "near the outside" mask, so
        every sealed pocket over the size floor goes. The floor stays on: it is

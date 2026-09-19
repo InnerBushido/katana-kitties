@@ -1369,10 +1369,18 @@ class Game {
          by anything here — see `Menagerie.species`. No `_shock` sheet: a
          stunned mantis falls back to its calm drawing, exactly as the rat and
          the bird do when theirs is missing. */
-      ['mantis', 'mantis.png', false],
+      /* `fillHoles` BECAUSE ITS EYES ARRIVED PUNCHED OUT: "the mantis.png seems
+         to have transparency in its eyes when it should be white." Whatever
+         removed its background took the eyes with them, and the file has been
+         that way on disk ever since — nothing in this codebase did it and
+         nothing here could undo it without being asked. The fill is bounded by
+         depth, so the 57-pixel eye 36 pixels in gets painted and the 1148-pixel
+         gap between its back legs, 15 pixels in, does not. See
+         `fillSealedHoles`. It is the only sheet in the game that needs it. */
+      ['mantis', 'mantis.png', false, { fillHoles: true }],
     ];
     const critterArt = {};
-    await Promise.all(CRITTER_ART.map(async ([key, file, facesRight]) => {
+    await Promise.all(CRITTER_ART.map(async ([key, file, facesRight, extra]) => {
       /* NO `clearPockets` ON ANY OF THESE, and the startled sheets are exactly
          why. Every one of them is drawn with big white cartoon eyes sealed
          inside the lineart — which is the shape `clearSealedPockets` was built
@@ -1388,7 +1396,7 @@ class Game {
          move an assertion rather than save a pixel: at 768 these sheets are
          already smaller than the reduced ceiling. */
       const a = await loadSpriteAtlas(`/sprites/${file}`, {
-        views: 1, rows: 1, cell: 256, maxAtlas: 768,
+        views: 1, rows: 1, cell: 256, maxAtlas: 768, ...extra,
       }).catch(() => null);
       if (a) critterArt[key] = { ...a, facesRight };
     }));
