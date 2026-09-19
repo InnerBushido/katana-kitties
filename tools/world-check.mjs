@@ -10931,7 +10931,7 @@ console.log('\n--- the three power moves ---');
       const T = mkT();
       T.state = 'live';
       T._callTheClock(COUNT_LAST);
-      const got = T.callOnDamage('Time!', true);
+      const got = T.callRound('Time!', true);
       ok('a round called by the CLOCK ends on his ZERO', got === 'draw' && said.includes('sat_zero'));
       /* AND THE COUNT IS STOPPED DEAD, not left playing under him. `clear`
          cannot do it: it empties the card queue and touches no audio. */
@@ -11007,7 +11007,7 @@ console.log('\n--- the three power moves ---');
       const D = mkT();
       D.state = 'live';
       D.game.players = [];
-      D.callOnDamage('[debug] round called!');
+      D.callRound('[debug] round called!');
       ok('the debug key ends a round on the spot', D._pending === null && played.includes('drawgong'));
     }
     {
@@ -11017,7 +11017,7 @@ console.log('\n--- the three power moves ---');
       const N = mkT([]);
       N.state = 'live';
       N.game.players = [];
-      N.callOnDamage('Time!', true);
+      N.callRound('Time!', true);
       ok('with no recording the round does not wait for a shout that cannot happen',
         N._pending === null && played.includes('drawgong'), played.join(','));
       ok('...and his arms stay down', !posed.includes('charge'), posed.join(','));
@@ -11030,7 +11030,7 @@ console.log('\n--- the three power moves ---');
       B.game.satanBlast.stage = 'charge';
       B.state = 'live';
       B.game.players = [];
-      B.callOnDamage('Time!', true);
+      B.callRound('Time!', true);
       ok('a tantrum already in progress keeps his arms', !posed.includes('charge'), posed.join(','));
       ok('...and the round does not put down a pose it did not raise',
         (B.finish(), !posed.includes('idle')), posed.join(','));
@@ -11053,7 +11053,7 @@ console.log('\n--- the three power moves ---');
       G.state = 'live';
       G.game.players = [];
       G._callTheClock(COUNT_LAST);
-      G.callOnDamage('Time!', true);
+      G.callRound('Time!', true);
       posed.length = 0;
       G.finish();
       ok('...and flying home mid-shout puts his arms down',
@@ -11275,7 +11275,7 @@ console.log('\n--- the three power moves ---');
       a.hp = 30;
       b.hp = 30;
       T.state = 'live';
-      T.callOnDamage('Time!');              // nobody dealt anything: a draw
+      T.callRound('Time!');              // nobody dealt anything: a draw
       ok('a draw is a draw', T._lastWinner === -1);
       T._startFeast();
       const regen = Math.round(MAX_HP * REGEN_FRAC);
@@ -11344,9 +11344,11 @@ console.log('\n--- the three power moves ---');
        the markup `_paintHud` actually writes, because that is where it goes
        wrong: every number behind it can be right while the bar says nothing.
 
-       THE GREEN IS INSIDE THE FILL, NOT BESIDE IT. It is a fraction OF THE
-       FILL, so the two shrink together as she is hit and the overflow drains
-       from the far end first — which is the behaviour the ask describes. */
+       THE GREEN IS A SLICE OF THE BAR, IN HEALTH. It used to be nested in the
+       fill and sized as a fraction of it, which can only ever pin overflow to
+       the fill's own far end; the feast's green now has a case where it sits
+       in the MIDDLE of the bar, growing backwards out of the mark with red on
+       both sides of it, and nothing inside the fill can be drawn there. */
     {
       const T = mkT();
       const a = mkF2(0, 'Ember');
@@ -11364,64 +11366,420 @@ console.log('\n--- the three power moves ---');
       T._paintHud();
       const html = T.hudEl.innerHTML;
       ok('...and a bar with overflow does', /ah-over/.test(html));
-      /* IT IS NESTED IN THE FILL. Written as a sibling it would sit in the
-         empty part of the bar and grow as she was hurt. */
-      ok('...inside the fill rather than beside it',
-        /class="ah-fill[^"]*"[^>]*>\s*<i class="ah-over"/.test(html), html.slice(0, 220));
-      /* AND IT IS THE RIGHT SIZE: 20 of 120 is a sixth of the fill. */
-      const pct = Number((html.match(/ah-over" style="width:([\d.]+)%/) ?? [])[1]);
-      ok('...sized as its share of the fill, not of the bar',
-        Math.abs(pct - (20 / 120) * 100) < 0.01, `${pct}%`);
+      /* IT IS A SIBLING OF THE FILL, POSITIONED ON THE BAR. Nested inside the
+         fill it cannot be drawn anywhere but the fill's own end, which is
+         every case except the one the feast's leftward growth is about. */
+      ok('...positioned on the bar rather than nested in the fill',
+        /<\/span><i class="ah-over"/.test(html), html.slice(0, 260));
+
+      /** Where a green slice starts and how wide it is, both as % of the bar. */
+      const slice = (s) => {
+        const m = s.match(/ah-over" style="inset-inline-start:([\d.]+)%;width:([\d.]+)%/);
+        return m ? { at: Number(m[1]), w: Number(m[2]) } : null;
+      };
+      /** Where the feast mark is, as % of the bar, or null. */
+      const markAt = (s) => {
+        const m = s.match(/ah-mark" style="inset-inline-start:([\d.]+)%/);
+        return m ? Number(m[1]) : null;
+      };
+      const near = (v, want) => v != null && Math.abs(v - want) < 0.01;
+
+      /* AND IT IS THE RIGHT SLICE OF THE RIGHT BAR: 20 of overflow sits on top
+         of her ordinary 100, on a bar that is 120 long. */
+      const g0 = slice(html);
+      ok('...running from her ordinary top to the end of her bar',
+        near(g0?.at, (100 / 120) * 100) && near(g0?.w, (20 / 120) * 100),
+        JSON.stringify(g0));
+      /* THE MARK IS HER ORDINARY TOP while she is carrying green into a round
+         — the line the bonus sits above, and the green's own left edge. */
+      ok('...with the mark on the ordinary top it is sitting above',
+        near(markAt(html), (100 / 120) * 100), `${markAt(html)}`);
 
       /* IT DRAINS FIRST AND THEN GOES. */
       a.hp = a.baseMaxHp + 5;
       T._paintHud();
-      ok('...shrinking as she is hit', /ah-over/.test(T.hudEl.innerHTML)
-        && Number((T.hudEl.innerHTML.match(/ah-over" style="width:([\d.]+)%/) ?? [])[1]) < pct);
+      const g1 = slice(T.hudEl.innerHTML);
+      ok('...shrinking as she is hit', g1 != null && g1.w < g0.w
+        && near(g1.at, (100 / 120) * 100), JSON.stringify(g1));
       a.hp = a.baseMaxHp;
       T._paintHud();
       ok('...and gone the moment she is back at her ordinary top',
         !/ah-over/.test(T.hudEl.innerHTML));
 
-      /* AND DURING THE FEAST IT SHOWS WHAT SHE IS GATHERING, which is the
-         other half of the ask: "a visual indicator on the screen that they are
-         gathering the overflow effect that will carry to the next battle". The
-         figure is what will CARRY — half of what she healed — because green
-         means one thing everywhere, and a green that halved itself at the gong
-         would read as losing something. */
+      /* --- AND AT THE FEAST IT IS THE WHOLE MEAL, NOT HALF OF IT ------------
+         It used to paint half of what she had eaten, on the argument that the
+         honest indicator is the quantity that will CARRY. The rule is now that
+         the green IS her health — she is really standing on it, and she would
+         really keep it if the round started now — and the halving is a thing
+         that happens TO it at the gong. A bar showing half of the rat she just
+         swallowed under-reports the only reward the loser gets.
+
+         AND IT IS THE LOSER'S ALONE. Asked for as "the only person that gets
+         the health overflow, and therefore the green health bar, is the player
+         or players that lost the round". */
       a.setRoundBonus(0);
       a.hp = 60;
+      a.feastMark = 60;
+      a.overflowing = false;
       a.fedHp = 20;
       T.state = 'feast';
       T._paintHud();
-      const feastPct = Number((T.hudEl.innerHTML.match(/ah-over" style="width:([\d.]+)%/) ?? [])[1]);
-      ok('eating at the feast paints the carry green as she gathers it',
-        Math.abs(feastPct - (10 / 60) * 100) < 0.01, `${feastPct}%`);
+      ok('the kitten who WON the round eats no green at all',
+        !/ah-over/.test(T.hudEl.innerHTML));
+      ok('...though her bar still says where it started',
+        near(markAt(T.hudEl.innerHTML), 60), `${markAt(T.hudEl.innerHTML)}`);
+
+      a.overflowing = true;
+      T._paintHud();
+      const gf = slice(T.hudEl.innerHTML);
+      ok('the kitten who LOST paints the whole meal green, out of the mark',
+        near(gf?.at, 60) && near(gf?.w, 20), JSON.stringify(gf));
+
+      /* PAST THE TOP IT GROWS THE OTHER WAY. Asked for as "from the visual
+         mark to maximum health it grows to the right, but once past maximum
+         health it needs to grow to the left past the visual marker" — there is
+         no room to the right of a full bar, and a meal that stopped paying
+         there would be a meal she was punished for having earned. */
+      a.fedHp = 60;                       // 40 of room, so 20 of spill
+      T._paintHud();
+      const gs = slice(T.hudEl.innerHTML);
+      ok('...and past the top it grows BACK past the mark instead',
+        near(gs?.at, 40) && near(gs?.w, 60), JSON.stringify(gs));
+      ok('...with the mark left where her bar actually started',
+        near(markAt(T.hudEl.innerHTML), 60), `${markAt(T.hudEl.innerHTML)}`);
+      ok('...and the number behind it says 120 on a bar of 100',
+        a.feastHp === 120 && a.hp <= a.maxHp, `${a.feastHp} / ${a.hp}`);
+      /* A COLOSSAL FEAST FILLS THE BAR AND STOPS. Unclamped, the spill would
+         walk the left edge off the front of the bar and paint a negative
+         offset — which is a bar that vanishes rather than one that is full. */
+      a.fedHp = 400;
+      T._paintHud();
+      const gx = slice(T.hudEl.innerHTML);
+      ok('...and an enormous one fills the bar rather than running off it',
+        near(gx?.at, 0) && near(gx?.w, 100), JSON.stringify(gx));
+
       /* AND ONLY AT THE FEAST. Mid-round `fedHp` is stale by definition — it
          is spent at the gong — and reading it there would put a green segment
          on a bar that has no overflow behind it. */
+      a.fedHp = 20;
       T.state = 'live';
       T._paintHud();
       ok('...and a live round shows nothing for a tally already spent',
         !/ah-over/.test(T.hudEl.innerHTML));
+
+      /* --- THE NUMBERS BEHIND THE PICTURE ----------------------------------
+         Asked for as "a way to debug and make sure this is working correctly".
+         It exists because the bar CANNOT show the case it is for: she is on
+         120 of a 100 bar and the bar is full either way. */
+      ok('the health numbers are off unless somebody asks for them',
+        !/ah-dbg/.test(T.hudEl.innerHTML));
+      T.game._overflowDbg = true;
+      T.state = 'feast';
+      a.overflowing = true;
+      a.fedHp = 60;
+      T._paintHud();
+      const dbgHtml = T.hudEl.innerHTML;
+      ok('...and on, they say what she is really standing on',
+        /ah-dbg/.test(dbgHtml) && /120/.test(dbgHtml), dbgHtml.slice(0, 400));
+      ok('...her ordinary maximum, which is what the % is out of',
+        /\/ <b>100<\/b>/.test(dbgHtml));
+      ok('...how much of it is green', /green 60/.test(dbgHtml));
+      ok('...where the mark is', /mark 60/.test(dbgHtml));
+      ok('...and the percentage a round is decided on',
+        /<u>100%<\/u>/.test(dbgHtml));
+      T.game._overflowDbg = false;
 
       /* THE CSS IS THE OTHER HALF, and a class with no rule is a segment that
          inherits the fill colour and is invisible. Asserted on the sheet. */
       const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
       ok('the green has a rule to be green by', /\.ah-over\s*\{/.test(css));
       ok('...and bubbles inside it', /@keyframes hpBubble/.test(css));
-      /* PINNED TO THE FAR END WITH A LOGICAL MARGIN, not a physical edge: the
-         right-hand side's bars are `direction: rtl` so they drain toward their
-         own edge of the screen, and `right: 0` would put the green on the
-         wrong end of half the HUD. */
-      ok('...pinned to the end of the fill in BOTH directions',
-        /margin-inline-start:\s*auto/.test(css));
+      /* POSITIONED, AND AGAINST THE BAR. Both halves are load-bearing: without
+         `position: absolute` on the slice the offset does nothing, and without
+         `position: relative` on the bar it is measured against whatever
+         ancestor happens to be positioned — which is the page. */
+      ok('...absolutely positioned, since it can sit mid-bar now',
+        /\.ah-over\s*\{[^}]*position:\s*absolute/.test(css));
+      ok('...against the bar, which has to be the positioned box',
+        /\.ah-bar\s*\{[^}]*position:\s*relative/.test(css));
+      /* A LOGICAL OFFSET, not a physical edge: the right-hand side's bars are
+         `direction: rtl` so they drain toward their own edge of the screen,
+         and `left` would mirror the green onto the wrong end of half the HUD.
+         Asserted on the MARKUP, which is where the offset is written. */
+      ok('...offset logically, so the right-hand bars mirror it',
+        /inset-inline-start/.test(html) && !/ah-over" style="left:/.test(html));
+      ok('the mark has a rule to be drawn by', /\.ah-mark\s*\{/.test(css));
+      ok('...over the green rather than under it',
+        /\.ah-mark\s*\{[^}]*z-index:\s*2/.test(css));
+      ok('the debug numbers have a rule too', /\.ah-dbg\s*\{/.test(css));
     }
+
+    /* --- WHO THE GREEN IS FOR ---------------------------------------------
+       "The only person that gets the health overflow, and therefore the green
+       health bar, is the player or players that lost the round." It used to be
+       everybody, which paid the winner twice: she keeps the health she is
+       standing on into the next round AND banked half of everything she ate on
+       top of it, so a lead compounded and a best-of-three was decided in round
+       one. Driven through `_startFeast` rather than asserted on the flag,
+       because the flag is only as right as the thing that sets it. */
+    {
+      const T = mkT();
+      const a = mkF2(0, 'Ember');
+      const b = mkF2(1, 'Frost');
+      const c = mkF2(2, 'Cinder');
+      T.game.players = [a, b, c];
+      T.sides = [0, 0, 1];       // a pair, and a lone fighter
+      T.wins = [0, 0];
+      T.state = 'live';
+      a.hp = 80; b.hp = 80; c.hp = 40;
+      T._roundOver(0, 'time');   // the PAIR win it
+      T._startFeast();
+      ok('the kitten who lost may eat past the top of her bar',
+        c.overflowing === true);
+      ok('...and neither of the two who won may',
+        a.overflowing === false && b.overflowing === false);
+      ok('...and every bar remembers where it stood when the food appeared',
+        a.feastMark === a.hp && c.feastMark === c.hp,
+        `${a.feastMark} / ${c.feastMark}`);
+
+      /* A DRAW GIVES NOBODY ANY, and it falls out of the same field rather
+         than being a special case: nobody lost, so nobody is healed to full at
+         the gong, so nobody has a wasted meal to be compensated for. */
+      T.state = 'live';
+      T._lastWinner = -1;
+      T._startFeast();
+      ok('a draw leaves nobody with green, because nobody lost',
+        [a, b, c].every((p) => p.overflowing === false));
+
+      /* AN ANGEL GETS NONE EITHER. She cannot eat while she is flying, and a
+         licence granted to somebody with no mouth is the kind of latch that
+         survives into a round and confuses the bar. */
+      T.state = 'live';
+      c.ko = true;
+      T._roundOver(0, 'time');
+      T._startFeast();
+      ok('...and a knocked-out kitten gets no licence she could not use',
+        c.overflowing === false && c.angel === true);
+    }
+
+    /* --- AND WHAT A MOUTHFUL IS WORTH TO HER -------------------------------
+       "If their health goes past maximum with the green health, then the
+       amount still gets applied." An ordinary kitten banks HEALTH RESTORED, so
+       eating while full gains her nothing; the loser banks the WHOLE mouthful,
+       because she is being healed to full at the gong anyway and a cap at a
+       top she is about to be handed for free would make the last seconds of
+       every feast worthless to the only player they exist for. */
+    {
+      const M = new Menagerie({
+        game: {
+          players: [], toast() {}, sfx() {}, scene: new THREE.Scene(),
+        },
+        world,
+      });
+      const eat = (p, heal) => {
+        M.held = []; M.chew = []; M.eaten = [0, 0, 0, 0];
+        M.game.players = [p];
+        M.list = [];
+        M._devour(p, {
+          spec: { name: 'rat', heal, size: 0.4 },
+          position: new THREE.Vector3(),
+          dispose() {}, release() {},
+        });
+      };
+      const a = mkF2(0, 'Ember');
+      a.hp = a.maxHp;
+      a.overflowing = false;
+      a.fedHp = 0;
+      eat(a, 12);
+      ok('a kitten at the top of her bar who is not overflowing banks nothing',
+        a.fedHp === 0 && a.hp === a.maxHp, `${a.fedHp} / ${a.hp}`);
+
+      a.overflowing = true;
+      a.feastMark = a.hp;
+      eat(a, 12);
+      ok('...but the kitten who lost banks the whole mouthful past her top',
+        a.fedHp === 12, `${a.fedHp}`);
+      ok('...without her health ever going over her own bar',
+        a.hp === a.maxHp, `${a.hp} of ${a.maxHp}`);
+      ok('...and the number behind the bar says what she is really on',
+        a.feastHp === a.maxHp + 12, `${a.feastHp}`);
+      eat(a, 8);
+      ok('...and it keeps paying, mouthful after mouthful', a.fedHp === 20);
+    }
+
+    /* --- AND IT IS HALVED ONTO A REAL BAR AT THE GONG -----------------------
+       "It will take the green health overflow, divide it by two, and add that
+       amount to the total starting health of the player." Driven end to end,
+       because the halving lives in `_nextRound` and the tally it halves is
+       written by a different file. */
+    {
+      const T = mkT();
+      const a = mkF2(0, 'Ember');
+      const b = mkF2(1, 'Frost');
+      const full = a.maxHp;
+      T.game.players = [a, b];
+      T.sides = [0, 1];
+      T.wins = [0, 0];
+      T.state = 'live';
+      a.hp = 90; b.hp = 30;
+      T._roundOver(0, 'time');
+      T._startFeast();
+      /* 90 + the tenth she is given back, then 40 swallowed on top of it —
+         which takes her past her own 100 and keeps counting. */
+      b.fedHp = 40;
+      T._nextRound();
+      ok('the loser starts the next round FULL, with half her meal on top',
+        b.hp === full + 20 && b.maxHp === full + 20 && b.bonusHp === 20,
+        `${b.hp} of ${b.maxHp}`);
+      ok('...and that bar is still 100% of her, not 120%',
+        b.healthFrac === 1 && b.baseMaxHp === full, `${b.healthFrac}`);
+      ok('...so dropping to her ordinary top is still 100%',
+        (() => { b.hp = full; return b.healthFrac === 1; })());
+      ok('...and only below it does the number start falling',
+        (() => { b.hp = full / 2; return Math.abs(b.healthFrac - 0.5) < 1e-9; })(),
+        `${b.healthFrac}`);
+      ok('...while the winner banks nothing at all', a.bonusHp === 0);
+      /* THE FEAST'S LATCHES ARE DROPPED WITH THE TALLY THEY DESCRIBE, or the
+         HUD paints a feast over a live round and the next round's tiebreak
+         opens holding the last round's damage. */
+      ok('...and the round opens with the feast’s latches all cleared',
+        [a, b].every((p) => p.overflowing === false && p.feastMark === null
+          && p.fedHp === 0 && p.roundDmg === 0));
+
+      /* AND THE HANDICAP BAR IS HER OWN 100%, which is what stops a 3v1 being
+         decided by the fact that the lone fighter was handed more to lose.
+         Asked for in exactly these numbers: "if a player's normal maximum is
+         120, and they have 15 overflow, the 120 is used for the calculation". */
+      a.setHpScale(1.2);
+      a.setRoundBonus(15);
+      a.hp = a.maxHp;
+      ok('a handicap bar with green on it is still 100%',
+        a.maxHp === Math.round(full * 1.2) + 15 && a.healthFrac === 1,
+        `${a.hp} of ${a.maxHp}`);
+      a.hp = Math.round(full * 1.2);
+      ok('...and still 100% once the green is gone', a.healthFrac === 1);
+      a.hp = Math.round(full * 0.6);
+      ok('...and half of her own bar is 50%, not 41%',
+        Math.abs(a.healthFrac - 0.5) < 0.01, `${a.healthFrac}`);
+    }
+
+    /* --- AND NOTHING GREEN WALKS OUT OF THE ARENA --------------------------
+       `setRoundBonus` is INSIDE `maxHp`, so a tournament torn down mid-match —
+       the girls going home, a restart, the debug path — left a kitten with a
+       longer bar round the town until the next `begin` happened to clear it,
+       and `finish` filled her to it on the way out. Same class of latch as the
+       pennant and the wings beside it. */
+    {
+      const T = mkT();
+      const a = mkF2(0, 'Ember');
+      T.game.players = [a];
+      T.sides = [0];
+      T.wins = [0];
+      T.state = 'feast';
+      const full = a.maxHp;
+      a.setRoundBonus(18);
+      a.hp = a.maxHp;
+      a.overflowing = true;
+      a.feastMark = 50;
+      a.fedHp = 30;
+      a.roundDmg = 22;
+      T.finish();
+      ok('a tournament torn down takes its green home with it',
+        a.bonusHp === 0 && a.maxHp === full && a.hp === full,
+        `${a.hp} of ${a.maxHp}`);
+      ok('...and every feast latch with it',
+        a.overflowing === false && a.feastMark === null && a.fedHp === 0
+        && a.roundDmg === 0);
+    }
+
+    /* --- THE PURSE IS SPLIT, AND A DUEL IS BIT-IDENTICAL -------------------
+       Asked for as "the 3 should split the prize if they win". It used to pay
+       every winner the WHOLE purse, which meant three kittens beating one took
+       home three orbs while the girl who beat three of them took home one —
+       the longest odds in the building paying the worst per head. Fifth
+       non-negotiable: at two players this has to come out exactly as it was. */
+    {
+      const mkPurse = (n, sides) => {
+        const players = Array.from({ length: n }, (_, i) => ({
+          index: i, name: `P${i}`, score: 0, dmgDealt: n - i,
+        }));
+        const T = new Tournament({
+          game: {
+            players, toast() {}, sfx() {}, audio: null,
+            kotodama: { price: 100 }, onScoreChanged() {},
+          },
+          world,
+          audio: null,
+          announcer: null,
+        });
+        T.sides = sides;
+        T.wins = Array.from({ length: Math.max(...sides) + 1 }, () => 0);
+        return { T, players };
+      };
+      const duel = mkPurse(2, [0, 1]);
+      duel.T.winners = [duel.players[0]];
+      duel.T.winner = duel.players[0];
+      duel.T._payPurse(duel.T.winners);
+      ok('a duel winner takes the whole purse, exactly as she always did',
+        duel.players[0].score === 100 && duel.players[1].score === 0,
+        `${duel.players[0].score}`);
+
+      const pair = mkPurse(4, [0, 0, 1, 1]);
+      pair.T.winners = [pair.players[0], pair.players[1]];
+      pair.T.winner = pair.players[0];
+      pair.T._payPurse(pair.T.winners);
+      ok('...a 2v2 is half each, which is the trade this change makes',
+        pair.players[0].score === 50 && pair.players[1].score === 50);
+
+      /* THREE WAYS IS THE CASE IT WAS ASKED FOR, AND IT DOES NOT ROUND AWAY.
+         100 split three ways is 33 each and one point that has to land
+         somewhere: dropped, the ring destroys money; rounded up, it prints
+         it. The odd point goes to `winner`, the girl the record row is
+         already filed under. */
+      const three = mkPurse(4, [0, 0, 0, 1]);
+      three.T.winners = three.players.slice(0, 3);
+      three.T.winner = three.players[0];
+      three.T._payPurse(three.T.winners);
+      const paid = three.players.map((p) => p.score);
+      ok('...a 3v1 win is a third each, and the purse is neither lost nor made',
+        paid[0] + paid[1] + paid[2] === 100 && paid[3] === 0
+        && Math.max(...paid.slice(0, 3)) - Math.min(...paid.slice(0, 3)) <= 1,
+        paid.join(','));
+      /* AND THE LONE FIGHTER WHO BEATS THREE KEEPS THE LOT, which is the whole
+         reason this changed: she is one winner, so there is nobody to split
+         with. */
+      const lone = mkPurse(4, [0, 0, 0, 1]);
+      lone.T.winners = [lone.players[3]];
+      lone.T.winner = lone.players[3];
+      lone.T._payPurse(lone.T.winners);
+      ok('...and beating three on your own still pays a whole orb',
+        lone.players[3].score === 100);
+    }
+
+    /* --- THE TWO TALLIES ARE WRITTEN TOGETHER ------------------------------
+       `roundDmg` is only as good as the place that increments it, and a blow
+       counted into `dmgDealt` alone is a tiebreak that silently does not see
+       it. Both writers in main.js are pinned: the ordinary gate, and the Cross
+       Slash, which has its own. */
+      {
+        const msrc2 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+        const dealt = [...msrc2.matchAll(/\.dmgDealt \+= dealt;/g)].length;
+        const round = [...msrc2.matchAll(/\.roundDmg \+= dealt;/g)].length;
+        ok('every blow counted into the match is counted into the round too',
+          dealt > 0 && round === dealt, `${dealt} match / ${round} round`);
+        /* AND THE DEBUG ROW EXISTS TO SWITCH THE NUMBERS ON WITH. A readout
+           nobody can reach is a readout nobody uses — which is the whole
+           reason the panel has rows rather than a printed list of keys. */
+        ok('the debug panel can switch the health numbers on',
+          /data-debug="\$\{code\}"|row\('OverflowDbg'/.test(msrc2)
+          && /'OverflowDbg'/.test(msrc2)
+          && /_toggleOverflowDbg\(\)/.test(msrc2));
+      }
     {
       const T = mkT();
       T.state = 'live';
       T.game.players = [];
-      const got = T.callOnDamage('Time!');
+      const got = T.callRound('Time!');
       ok('nobody ahead on damage is a draw', got === 'draw');
       ok('...and it does NOT ring the knockout bell', !played.includes('endgong'));
       ok('...it asks a question instead', played.includes('drawgong'), played.join(','));
@@ -11550,16 +11908,30 @@ console.log('\n--- the three power moves ---');
      and left two standing; in a 2v2 it did not end the round AT ALL, because a
      side is not out until everybody on it is.
 
-     `callOnDamage` is the `ROUND_LIMIT` branch, extracted so the clock and the
+     `callRound` is the `ROUND_LIMIT` branch, extracted so the clock and the
      key cannot disagree about who won. These check the behaviour rather than
      the extraction: that it ends the round at a league size the old code could
-     not, that it awards the round to the side ahead on damage, and — the part
-     that says it is not the old fix wearing a new name — that it hurts nobody
-     to do it. */
+     not, that it awards the round to the side with the most bar left, and —
+     the part that says it is not the old fix wearing a new name — that it
+     hurts nobody to do it. */
   {
-    const mk = (dmg) => {
-      const players = dmg.map((d, i) => ({
-        index: i, name: `P${i}`, hp: 100, ko: false, dmgDealt: d,
+    /**
+     * @param {number[]} hp   health per fighter, out of an ordinary 100
+     * @param {number[]} dmg  damage dealt THIS ROUND per fighter
+     * @param {number[]} old  damage dealt earlier in the MATCH per fighter —
+     *        the counter the bug was about
+     */
+    const mk = (hp, dmg = [0, 0, 0, 0], old = [0, 0, 0, 0]) => {
+      const players = hp.map((h, i) => ({
+        index: i,
+        name: `P${i}`,
+        hp: h,
+        maxHp: 100,
+        baseMaxHp: 100,
+        ko: h <= 0,
+        get healthFrac() { return Math.max(0, Math.min(1, this.hp / this.baseMaxHp)); },
+        roundDmg: dmg[i] ?? 0,
+        dmgDealt: (dmg[i] ?? 0) + (old[i] ?? 0),
         position: { x: 0, y: 0, z: 0 },
       }));
       const T = new Tournament({
@@ -11575,39 +11947,86 @@ console.log('\n--- the three power moves ---');
       return { T, players };
     };
     /* A 2v2 IS THE CASE THE OLD KEY COULD NOT END, so it is the case checked
-       first: side 1 is ahead, so side 1 takes it. */
-    const a = mk([5, 0, 40, 0]);
-    const verdict = a.T.callOnDamage('[debug] round called!');
+       first: side 1 has more bar left, so side 1 takes it. */
+    const a = mk([60, 100, 100, 100]);
+    const verdict = a.T.callRound('[debug] round called!');
     ok('the debug round-ender ends a 2v2, which the old one could not',
       a.T.state === 'ko' && verdict === 'won', `${a.T.state} / ${verdict}`);
-    ok('...and gives it to the side that was ahead on damage',
+    ok('...and gives it to the side with the most bar left',
       a.T.wins[1] === 1 && a.T.wins[0] === 0, a.T.wins.join(','));
     /* IT KILLS NOBODY. A round called on time is not a knockout, and the whole
        complaint was that this key was a knockout wearing the wrong label. */
     ok('...and nobody is knocked down or loses a single point of health',
-      a.players.every((p) => p.hp === 100 && !p.ko));
-    /* COUNTED PER SIDE, not per fighter. Two kittens landing 20 each beat one
-       landing 30, or a tag team is scored as two separate duels. */
-    const b = mk([30, 0, 20, 20]);
-    b.T.callOnDamage();
-    ok('...and the damage is added up per SIDE, not per fighter',
+      a.players.every((p, i) => p.hp === [60, 100, 100, 100][i] && p.ko === (i === -1)));
+    /* --- THE BUG THIS PASS IS ABOUT ---------------------------------------
+       Reported as: "when someone has dealt damage, and then the next round,
+       even if everyone is at full health, the person that dealt damage in a
+       previous round will automatically be the winner of the new round."
+
+       `dmgDealt` only ever reset at `begin`, so `_sideDamage` was the whole
+       MATCH's damage and every round after the first blow of the tournament
+       was pre-decided. Four full bars and a stale 40 on side 0 is exactly that
+       frame, and the answer has to be a draw. */
+    const stale = mk([100, 100, 100, 100], [0, 0, 0, 0], [40, 0, 0, 0]);
+    const staleGot = stale.T.callRound('Time!', true);
+    ok('a round where nobody was touched is a DRAW, whatever happened last round',
+      staleGot === 'draw' && stale.T.wins.every((w) => w === 0),
+      `${staleGot} / ${stale.T.wins.join(',')}`);
+    ok('...because the round asks THIS round’s damage, not the match’s',
+      stale.T._roundDamage(0) === 0 && stale.T._sideDamage(0) === 40,
+      `${stale.T._roundDamage(0)} / ${stale.T._sideDamage(0)}`);
+
+    /* A SIDE'S HEALTH IS THE MEAN OF ITS FIGHTERS, which is what makes an
+       uneven league fair — and it is the number the 3v1 was asked for in:
+       "if 1 player gets knocked out of the 3, then they are at 66% total".
+       SUMMING would hand every handicap league to the pack at the gong. */
+    const mean = mk([100, 0, 100, 100]);
+    ok('a side is the MEAN of its bars, so two kittens beat one on health',
+      Math.abs(mean.T._sideHealth(0) - 0.5) < 1e-9
+      && Math.abs(mean.T._sideHealth(1) - 1) < 1e-9,
+      `${mean.T._sideHealth(0)} / ${mean.T._sideHealth(1)}`);
+    mean.T.callRound();
+    ok('...and the round goes to the side that still has both of hers up',
+      mean.T.wins[1] === 1, mean.T.wins.join(','));
+    /* OVERFLOW IS INVISIBLE TO IT. Asked for as "if a player has 135 health
+       and their normal maximum is 120, it will still return 100%" — a kitten
+       carrying green is not winning the round for carrying it. */
+    const green = mk([100, 100, 100, 100]);
+    green.players[0].maxHp = 120;
+    green.players[0].hp = 115;
+    ok('a bar full of green is 100%, not 115%',
+      green.T._sideHealth(0) === 1, `${green.T._sideHealth(0)}`);
+    green.T.callRound();
+    ok('...so spending overflow costs her nothing and the round is a draw',
+      green.T.wins.every((w) => w === 0), green.T.wins.join(','));
+    /* DEAD LEVEL ON HEALTH FALLS THROUGH TO THIS ROUND'S DAMAGE — which is
+       the case two kittens who only ever spent each other's green land in. */
+    const tie = mk([100, 100, 100, 100], [0, 0, 12, 0]);
+    tie.T.callRound();
+    ok('...and level on health, this round’s damage breaks the tie',
+      tie.T.wins[1] === 1 && tie.T.wins[0] === 0, tie.T.wins.join(','));
+    /* COUNTED PER SIDE, not per fighter. One kitten on 40 drags her side under
+       two on 100 and 60, or a tag team is scored as two separate duels. */
+    const b = mk([100, 40, 100, 60]);
+    b.T.callRound();
+    ok('...and the health is averaged per SIDE, not compared per fighter',
       b.T.wins[1] === 1, b.T.wins.join(','));
     /* A DRAW STILL ENDS IT. Refusing the round and leaving it live is the one
        outcome that would hang the tournament open. */
-    const c = mk([0, 0, 0, 0]);
-    const drew = c.T.callOnDamage();
+    const c = mk([100, 100, 100, 100]);
+    const drew = c.T.callRound();
     ok('...and an untouched round is a draw that still ends',
       drew === 'draw' && c.T.state === 'ko' && c.T.wins.every((w) => w === 0));
     /* AND IT REFUSES OUTSIDE A LIVE ROUND rather than half-ending something. */
-    const d = mk([9, 0, 0, 0]);
+    const d = mk([100, 100, 90, 100]);
     d.T.state = 'card';
     ok('...and it does nothing at all when no round is live',
-      d.T.callOnDamage() === null && d.T.state === 'card');
+      d.T.callRound() === null && d.T.state === 'card');
     /* THE CLOCK GOES THROUGH IT TOO, which is what stops the two answers
        drifting apart again — the old duplicate is the reason this exists. */
     const tsrc = readFileSync(new URL('../src/systems/tournament.js', import.meta.url), 'utf8');
     ok('...and the clock running out calls exactly the same method',
-      /if \(this\.t > ROUND_LIMIT\) this\.callOnDamage\(/.test(tsrc));
+      /if \(this\.t > ROUND_LIMIT\) this\.callRound\(/.test(tsrc));
     const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
     const at = msrc.indexOf("if (code === 'Digit4' || code === 'Digit5') {");
     const key = at > 0 ? msrc.slice(at, at + 1400) : '';
@@ -11615,7 +12034,7 @@ console.log('\n--- the three power moves ---');
       at > 0 && /this\.tournament\.(endBeat|nudge)\(/.test(key)
       && !/\.hurt\(/.test(key), at > 0 ? '' : 'the Digit4/5 branch moved');
     /* IT ASKS `Tournament` AND DECIDES NOTHING ITSELF. The whole point of the
-       key going through `callOnDamage` was that it could not disagree with the
+       key going through `callRound` was that it could not disagree with the
        game about who won; `endBeat` and `nudge` inherit that only for as long
        as they are the ones setting the state. A `this.tournament.state =` in
        main.js would be the old bug wearing a new label. */
@@ -11670,7 +12089,7 @@ console.log('\n--- the three power moves ---');
     ok('...then to fifteen', rung(WARN_AT) === COUNT_AT, `${rung(WARN_AT)}`);
     ok('...then to five', rung(COUNT_AT) === COUNT_LAST, `${rung(COUNT_AT)}`);
     /* AND PAST THE LAST MARK IT HANDS OVER TO THE CLOCK RATHER THAN CALLING
-       THE ROUND ITSELF. `callOnDamage(_, false)` here would look identical and
+       THE ROUND ITSELF. `callRound(_, false)` here would look identical and
        silently skip his ZERO shout, the bell's timing and the camera on him. */
     /* STRICTLY past the limit, because `update` tests `>` and a `t` landing
        exactly on it would leave the round live and the key looking dead. */
@@ -11688,11 +12107,11 @@ console.log('\n--- the three power moves ---');
        camera on the man shouting about it" from "somebody pressed 4". */
     const byKey = mk([9, 0, 0, 0]);
     byKey.T.state = 'live';
-    byKey.T.callOnDamage('[debug] round called!');
+    byKey.T.callRound('[debug] round called!');
     ok('a round ended by the debug key is NOT the clock', !byKey.T._onTheClock);
     const byClock = mk([9, 0, 0, 0]);
     byClock.T.state = 'live';
-    byClock.T.callOnDamage('Time!', true);
+    byClock.T.callRound('Time!', true);
     ok('...and a round ended by the clock is', byClock.T._onTheClock === true);
   }
 
@@ -14740,10 +15159,16 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
      it (the dealer). Pinned because a kid out of points who does not know the
      arena refills them is simply stuck, and the fix was two paragraphs a later
      trim could quietly drop. The mechanic itself is checked with the shop above
-     (a whole purse buys 3 orbs); see tournament._payPurse — every winner is paid
-     one orb's price. */
+     (a whole purse buys 3 orbs); see tournament._payPurse — the purse is one
+     orb's price and the winning side SPLITS it. */
   ok('the arena section says winning pays a purse worth an orb',
     /Winning pays[\s\S]*?one orb from the dealer/i.test(help));
+  /* AND THAT IT IS SHARED, which is the half a kid will otherwise learn by
+     being disappointed: the toast says "33 points" over a purse she watched
+     being announced as 100. It used to be a whole purse EACH, so a card that
+     did not mention splitting was right; now it would be a lie. */
+  ok('...and says the winning side splits it',
+    /split between them/i.test(help) && /half each/i.test(help));
   ok('...and the dealer points back to the ring to earn more',
     /Win in the arena[\s\S]*?purse[\s\S]*?The arena/i.test(help));
   /* The two hero stills are trailer shots (out/trailer/shots/s08,s12) resampled

@@ -623,11 +623,56 @@ export class Tournament {
     return [...up];
   }
 
-  /** Total damage a side has dealt this tournament — the timeout tiebreak. */
+  /** Total damage a side has dealt THIS TOURNAMENT — the match tiebreak. */
   _sideDamage(side) {
     return this.game.players.reduce(
       (n, p, i) => n + (this.sides[i] === side ? p.dmgDealt : 0), 0
     );
+  }
+
+  /**
+   * Damage a side has dealt THIS ROUND — the tiebreak under `_sideHealth`.
+   *
+   * THE WHOLE REASON `Player.roundDmg` EXISTS. `_sideDamage` is a running
+   * total and was what decided a round on the clock, which meant a kitten who
+   * landed one blow in round one won round two without touching anybody: two
+   * fighters at the top of their bars, the clock running out, and the round
+   * handed to whoever had swung first several minutes earlier. Reported from
+   * play as exactly that.
+   */
+  _roundDamage(side) {
+    return this.game.players.reduce(
+      (n, p, i) => n + (this.sides[i] === side ? (p.roundDmg ?? 0) : 0), 0
+    );
+  }
+
+  /**
+   * HOW MUCH BAR A SIDE HAS LEFT, 0..1 — what a round is decided on.
+   *
+   * THE MEAN OF ITS FIGHTERS, WHICH IS WHAT MAKES AN UNEVEN LEAGUE FAIR, and
+   * it was asked for in those words: "the 3 players' health should equal the
+   * 100% of health, so if 1 player gets knocked out of the 3, then that means
+   * they are at 66% total for the team". Three kittens are one bar between
+   * them, so losing one of them costs the side a third — and a lone fighter on
+   * 65% has genuinely lost to three on 66%, which is the comparison the girls
+   * will make out loud anyway while watching the HUD.
+   *
+   * SUMMING HEALTH INSTEAD WOULD HAND EVERY HANDICAP LEAGUE TO THE PACK before
+   * anybody swung: three bars beat one bar at any fraction, so the 3v1 would
+   * be over at the gong.
+   *
+   * EACH KITTEN'S SHARE IS CAPPED AT HER OWN 100% — see `Player.healthFrac`.
+   * A sister carrying 20 of green cannot lend the fraction she does not have
+   * room for to a partner who is on her knees.
+   */
+  _sideHealth(side) {
+    const mates = this.game.players.filter((_, i) => this.sides[i] === side);
+    if (!mates.length) return 0;
+    /* A KNOCKED-OUT KITTEN IS A ZERO, said explicitly rather than trusted to
+       fall out of `hp`. It does fall out of `hp` today — `hurt` leaves her on
+       nought — but "she is out of this round" and "her bar happens to read 0"
+       are two different facts and only the first one is the rule. */
+    return mates.reduce((n, p) => n + (p.ko ? 0 : p.healthFrac), 0) / mates.length;
   }
 
   /** Which board this league writes to. See leaderboard.js. */
@@ -709,6 +754,10 @@ export class Tournament {
     this.game.players.forEach((p, i) => {
       p.dmgDealt = 0;
       p.dmgTaken = 0;
+      /* AND THE PER-ROUND ONE, which `_nextRound` clears at the top of every
+         round anyway — said here too because `begin` is the one entry point
+         that does not go through a round boundary first. */
+      p.roundDmg = 0;
       /* THE PENNANT OVER HER HEAD, and it is only ever on in a team match —
          see `teamed`. This is the half of "who is with me" that lives in the
          world rather than on the HUD, and it is the half that matters while
@@ -736,6 +785,8 @@ export class Tournament {
          before the fill, so the fill is to the ordinary top. */
       p.setRoundBonus?.(0);
       p.fedHp = 0;
+      p.overflowing = false;
+      p.feastMark = null;
       p.hp = p.maxHp;
       /* AND HER PANDA COMES IN ON A FULL BAR TOO. Nothing carries a wound
          between matches, for the animal for exactly the reason it does not for
@@ -805,6 +856,18 @@ export class Tournament {
          below: nothing else ever clears it, so a kitten flown home from a
          2v2 would wear a red flag over her head round the town all afternoon. */
       p.setTeamMark(null);
+      /* THE GREEN GOES HOME WITH THE PENNANT, and it is the same class of
+         latch. `setRoundBonus` is INSIDE `maxHp`, so a kitten who walked out
+         of the arena carrying 15 of overflow — a match abandoned, the girls
+         going home, a restart — kept a longer bar round the town until the
+         next `begin` happened to clear it, and `p.hp = p.maxHp` on the line
+         below would have filled her to it. Cleared BEFORE the fill, so the
+         fill is to the ordinary top. */
+      p.setRoundBonus?.(0);
+      p.overflowing = false;
+      p.feastMark = null;
+      p.fedHp = 0;
+      p.roundDmg = 0;
       p.hp = p.maxHp;
       p.ko = false;
       p.koT = 0;
@@ -835,7 +898,21 @@ export class Tournament {
     this.t = 0;
 
     const regen = Math.round(MAX_HP * REGEN_FRAC);
+    /* WHO WON, ASKED ONCE. -1 after a draw, which is what makes a draw hand
+       nobody any green — and it is the same `_lastWinner` that decides who is
+       healed to full at the gong, so the two answers cannot disagree. A kitten
+       is either "healed back to full next round, so eat for the green" or
+       "keeps what she is standing on, so eat for the health"; those are the
+       two halves of one rule and one field decides both. */
+    const wonSide = this._lastWinner;
     for (const p of this.game.players) {
+      /* ASKED BEFORE SHE GROWS WINGS, AND THAT IS NOT TIDINESS. `becomeAngel`
+         CLEARS `ko` — being knocked out is a thing that happened, being an
+         angel is what she is now — so a `!p.ko` read after the branch below
+         is true for the one kitten it is most obviously meant to exclude, and
+         `world-check` caught exactly that: a flying cat handed a licence to
+         eat past the top of a bar she cannot reach with no mouth. */
+      const down = p.ko;
       /* THE TALLY STARTS AT ZERO, HERE, FOR EVERYBODY. It is what she eats
          THIS feast that carries, and a counter that survived a round would
          hand her the same meal twice. Zeroed for the angel too: she cannot eat
@@ -853,6 +930,36 @@ export class Tournament {
            an Adamant orb must not quietly make the regen bigger too. */
         p.hp = Math.min(p.maxHp, p.hp + regen);
       }
+      /* THE GREEN IS THE LOSER'S, AND ONLY THE LOSER'S. Asked for in those
+         words: "the only person that gets the health overflow, and therefore
+         the green health bar, is the player or players that lost the round".
+
+         IT IS THE HALF THAT MAKES THE FEAST WORTH ANYTHING TO HER. She is
+         going to be healed to full at the gong whatever she does in the next
+         fifteen seconds, so every mouthful she eats is a mouthful she would
+         otherwise have been wasting her time on — the green is what the food
+         turns into for somebody who cannot be healed by it.
+
+         AND IT IS THE HALF THAT STOPS THE WINNER DOUBLE-DIPPING. She keeps the
+         health she is standing on into the next round (see `_nextRound`), so
+         eating already pays her in the only currency that lasts; banking half
+         of it AS WELL was paying her twice for winning, and a lead that pays
+         compound interest is a best-of-three decided in round one.
+
+         A DRAW GIVES NOBODY ANY, because nobody lost and nobody is healed —
+         `wonSide` is -1 and nothing matches it. Same clause, no special case.
+
+         NOT FOR AN ANGEL. She cannot eat while she is flying, and a flag set
+         on somebody with no mouth is the kind of thing that survives into a
+         round and confuses the bar. */
+      p.overflowing = !down && wonSide >= 0 && this.sides[p.index] !== wonSide;
+      /* WHERE HER BAR STOOD WHEN THE FOOD APPEARED — set AFTER the regen, for
+         EVERYBODY. After, because the regen is not something she earned by
+         hunting and the mark is what the hunting is measured from; for
+         everybody, because "how far did my bar move in those fifteen seconds"
+         is a question the winner asks too and a tick on her bar costs nothing
+         to answer it with. See `_paintHud`. */
+      p.feastMark = p.hp;
     }
 
     /* Stocked NOW rather than on the respawn clock. Fifteen seconds of bare
@@ -875,10 +982,20 @@ export class Tournament {
          to be healed to full anyway. Half of it now comes back as a bar that
          goes PAST full next round, so the instruction has to say so or the
          green on her HUD is a mystery. */
+      /* THREE DIFFERENT JOBS, THREE DIFFERENT SENTENCES — and the split is the
+         feature rather than the writing. What eating buys you now depends on
+         whether you won the round, so one instruction for everybody would be
+         wrong for two thirds of the ring: the loser is told to eat for GREEN
+         she keeps past the gong, the winner is told to eat for health she
+         keeps because nobody is going to top her up, and the angel is told she
+         is coming back full anyway. */
       this.game.toast(p.angel
         ? 'Knocked out — fly it off! You come back with a full bar'
-        : 'Catch and eat! Hold ATTACK next to a critter — half of what you'
-          + ' heal comes back as GREEN overflow next round',
+        : p.overflowing
+          ? 'You lost that one — you come back FULL, so eat for GREEN! Half of'
+            + ' what you swallow rides into the next round on top of your bar'
+          : 'Catch and eat! Hold ATTACK next to a critter — you keep the health'
+            + ' you win with into the next round',
       p.index);
     }
   }
@@ -923,6 +1040,17 @@ export class Tournament {
          adds, so this lasts exactly one round. */
       p.setRoundBonus?.(Math.round((p.fedHp ?? 0) * OVERFLOW_FRAC));
       p.fedHp = 0;
+      /* THE FEAST'S TWO LATCHES, DROPPED TOGETHER WITH THE TALLY THEY DESCRIBE.
+         `overflowing` is the licence to eat past the top of her bar and
+         `feastMark` is the tick the green grew out of; both are about fifteen
+         seconds that are now over, and either one left set would have the HUD
+         drawing a feast over a live round. */
+      p.overflowing = false;
+      p.feastMark = null;
+      /* AND THE ROUND'S DAMAGE, which is the whole of the bug this counter was
+         added for: it is the tiebreak for the round ABOUT TO START, so it has
+         to be zero here and nowhere else. See `Player.roundDmg`. */
+      p.roundDmg = 0;
 
       /* THE PANDA IS PATCHED UP BETWEEN ROUNDS, like she is — and AFTER the
          overflow is banked, because its bar is a fraction of hers and banking
@@ -1006,8 +1134,26 @@ export class Tournament {
   }
 
   /**
-   * End the live round NOW and give it to whoever is ahead on damage — the
+   * End the live round NOW and give it to whoever has the most bar left — the
    * clock running out, and the debug key that stands in for it.
+   *
+   * IT USED TO BE DECIDED ON DAMAGE, AND THE DAMAGE WAS THE WHOLE MATCH'S.
+   * `_sideDamage` is a running total that only ever resets at `begin`, so the
+   * moment anybody landed anything, every later round on the clock was already
+   * decided: round two opened with both kittens on full bars and ended with
+   * the round handed to whoever had hit somebody in round one. Reported from
+   * play as "even if everyone is at full health, the person that dealt damage
+   * in a previous round will automatically be the winner of the new round".
+   *
+   * HEALTH IS ALSO THE HONEST QUESTION. "Who is winning" while two kittens
+   * circle each other is a thing a nine-year-old reads off the two bars at the
+   * top of the screen; damage dealt is a number nothing on screen has ever
+   * shown her. A rule she can see being applied is worth more than a rule that
+   * is marginally better at rewarding aggression.
+   *
+   * DAMAGE IS STILL THE TIEBREAK — but THIS round's, which is the counter the
+   * bug was about. Level on health and level on damage is a draw, exactly as
+   * "nobody landed anything" was before.
    *
    * IT IS A METHOD BECAUSE IT HAS TWO CALLERS AND HAD ONE. Debug `4` used to
    * end a round by making player 1 hit player 2 for her whole health bar,
@@ -1023,13 +1169,32 @@ export class Tournament {
    *
    * @returns {'won'|'draw'|null} what it decided, or null if no round is live.
    */
-  callOnDamage(why = 'Time!', onTheClock = false) {
+  callRound(why = 'Time!', onTheClock = false) {
     if (this.state !== 'live') return null;
     /* Counted PER SIDE — in a 2v2 the honest reading of who was winning is
-       what the team did between them, not which individual landed most. */
-    const scores = this.wins.map((_, s) => this._sideDamage(s));
-    const best = Math.max(...scores);
-    const leaders = scores.map((v, s) => (v === best ? s : -1)).filter((s) => s >= 0);
+       what the team has left between them, not which individual is healthiest.
+       `_sideHealth` is a MEAN, so a side is never rewarded for being bigger. */
+    const health = this.wins.map((_, s) => this._sideHealth(s));
+    const best = Math.max(...health);
+    let leaders = health.map((v, s) => (v === best ? s : -1)).filter((s) => s >= 0);
+    /* DEAD LEVEL ON HEALTH FALLS THROUGH TO THIS ROUND'S DAMAGE, and it is
+       not an edge case: two kittens who never touched each other are both on
+       100%, and so are two who only ever spent each other's green. Something
+       has to separate "nobody fought" from "we both fought and neither of us
+       got through", and the second one is a round somebody earned.
+
+       `> 0` MATTERS. Without it a round where nobody landed anything would
+       find every side level on nought, pick the first one, and crown her — the
+       draw would stop existing. */
+    let onDamage = false;
+    if (leaders.length > 1) {
+      const dmg = leaders.map((s) => this._roundDamage(s));
+      const top = Math.max(...dmg);
+      if (top > 0) {
+        onDamage = true;
+        leaders = leaders.filter((_, k) => dmg[k] === top);
+      }
+    }
     /* HIS SENTENCE BEFORE THE ROUND'S. On the clock this starts ZERO and hands
        back how long it runs; on anything else it silences him and hands back
        nought, and both endings below read the same either way. */
@@ -1043,8 +1208,13 @@ export class Tournament {
        rest of the per-round latches. */
     this._onTheClock = onTheClock;
     /* A DRAW IS NOT A WIN FOR NOBODY — it still has to move the state on, or
-       the round the clock just refused to keep open stays open. */
-    if (leaders.length !== 1 || best <= 0) {
+       the round the clock just refused to keep open stays open.
+       `best <= 0` IS GONE AND IS NOT MISSING. It used to mean "nobody dealt
+       any damage", which was the draw; on health it would mean "every side is
+       wiped out", which cannot happen while a round is live — `_checkRoundOver`
+       ends the round the moment one side is left. The draw is now the clause
+       above: level on health and level on damage. */
+    if (leaders.length !== 1) {
       this.state = 'ko';
       this.t = 0;
       /* A DRAW HEALS NOBODY, because nobody lost. See `_nextRound`. */
@@ -1063,12 +1233,22 @@ export class Tournament {
         this.announcer?.say('sat_draw',
           'A DRAW?! Have you kittens decided that FRIENDSHIP IS MAGIC?! I LOVE it! '
           + 'Strength through LOVE, not war! BEAUTIFUL! ...Now get OUT of my ring.');
-        this.game.toast(`${why} Nobody landed enough — the round is a draw`, 0);
+        this.game.toast(`${why} Dead level — the round is a draw`, 0);
       });
       return 'draw';
     }
     const names = this.sideMembers(leaders[0]).map((p) => p.name).join(' and ');
-    this._roundOver(leaders[0], `${why} ${names} was ahead on damage`, wait);
+    /* IT SAYS WHICH RULE DECIDED IT, and that is sixth-non-negotiable work
+       rather than flavour. Two sides on 100% and one of them handed the round
+       reads as the game picking a favourite unless the toast says the damage
+       broke the tie; and "finished with more health" is a claim a kid can
+       check against the two bars she was just looking at, which is the whole
+       reason the rule is health in the first place. `pct` is the side's, not
+       any one kitten's — see `_sideHealth`. */
+    const pct = Math.round(this._sideHealth(leaders[0]) * 100);
+    this._roundOver(leaders[0], onDamage
+      ? `${why} Level on health — ${names} landed more this round`
+      : `${why} ${names} finished with more health (${pct}%)`, wait);
     return 'won';
   }
 
@@ -1160,7 +1340,7 @@ export class Tournament {
         this.t = this.state === 'card' ? CARD_TIME : COUNT_FROM;
         return 'skipped to FIGHT!';
       case 'live': {
-        const how = this.callOnDamage(why);
+        const how = this.callRound(why);
         return how === 'draw' ? 'round ended — a draw' : 'round ended';
       }
       case 'ko':
@@ -1201,7 +1381,7 @@ export class Tournament {
    * PAST THE LAST MARK IT HANDS OVER TO THE CLOCK rather than calling the
    * round itself — `t` past `ROUND_LIMIT` is what `update` is already testing,
    * so the round ends ON THE CLOCK, with `_onTheClock` set, his ZERO shout and
-   * the camera on him. A `callOnDamage(_, false)` here would look like the
+   * the camera on him. A `callRound(_, false)` here would look like the
    * same thing and silently skip all three.
    *
    * @returns {string|null} what it did, for the toast, or null if nothing
@@ -1298,7 +1478,7 @@ export class Tournament {
            otherwise hold the tournament open forever with no way out but the
            pause menu. Whoever has done the most damage takes it — the honest
            reading of who was winning. */
-        if (this.t > ROUND_LIMIT) this.callOnDamage('Time!', true);
+        if (this.t > ROUND_LIMIT) this.callRound('Time!', true);
         break;
 
       case 'ko':
@@ -1523,18 +1703,49 @@ export class Tournament {
    * costs for this party size, so the purse tracks the price automatically
    * instead of being a second number that has to be kept in step with it.
    *
-   * EVERY MEMBER OF THE WINNING SIDE IS PAID THE SAME. Splitting it would make
-   * a 2v2 win worth half a duel win each, which teaches two sisters that
-   * teaming up is worse than fighting — the exact opposite of the reason the
-   * team modes exist.
+   * THE PURSE IS SPLIT BETWEEN THE WINNERS, AND IT DID NOT USED TO BE. Asked
+   * for as "the 3 should split the prize if they win". Every member of the
+   * winning side used to be paid the WHOLE purse, on the argument — written
+   * here, in this comment — that splitting would make a 2v2 win worth half a
+   * duel win each and teach two sisters that teaming up is worse than
+   * fighting alone.
+   *
+   * WHAT THAT ARGUMENT MISSED IS THE HANDICAP LEAGUES. Three kittens beating
+   * one were being paid THREE orbs for it while the girl who took on three of
+   * them and won was paid one — the mode with the longest odds paid the worst,
+   * per head, of anything in the building. A prize that is one orb is one orb
+   * however many of you carry it home, and the lone fighter now gets a whole
+   * purse for a whole purse's worth of risk.
+   *
+   * IT COSTS THE 2v2 EXACTLY WHAT THAT OLD COMMENT SAID IT WOULD — half each.
+   * That is the trade, it is deliberate, and it is the thing to change back
+   * first if the girls stop picking the team modes.
+   *
+   * A DUEL IS BIT-IDENTICAL. One winner, `purse / 1`, no remainder — fifth
+   * non-negotiable, and `world-check` pins it.
+   *
+   * THE REMAINDER GOES TO `winner` RATHER THAN BEING ROUNDED AWAY. A purse of
+   * 100 split three ways is 33 each and one point that has to land somewhere;
+   * dropping it would mean the ring quietly destroys money, and rounding each
+   * share UP would mean it quietly prints it. `winner` is the top scorer on
+   * the side — already the kitten the record board files the row under — so
+   * the odd point goes to the same girl the match is named after.
    */
   _payPurse(winners) {
     const purse = this.game.kotodama?.price ?? 0;
-    if (purse <= 0) return;
+    if (purse <= 0 || !winners.length) return;
+    const share = Math.floor(purse / winners.length);
+    const odd = purse - share * winners.length;
+    const split = winners.length > 1;
     for (const p of winners) {
-      p.score += purse;
+      const got = share + (p === this.winner ? odd : 0);
+      p.score += got;
       this.game.onScoreChanged?.(p);
-      this.game.toast(`${p.name} won ${purse} points in the ring!`, p.index);
+      /* IT SAYS IT IS A SHARE. "Ember won 33 points" over a purse everybody
+         watched being announced as 100 reads as the game short-changing her;
+         the sum in brackets is what makes it read as a team prize instead. */
+      this.game.toast(`${p.name} won ${got} points in the ring!`
+        + (split ? ` (${purse} split ${winners.length} ways)` : ''), p.index);
     }
   }
 
@@ -1743,7 +1954,7 @@ export class Tournament {
        moments in a round where the thing worth looking at is not in the ring —
        two kittens standing still while a man in a box shouts ZEEEEROOOO is a
        shot of the wrong half of the arena. `_onTheClock` is set only by
-       `callOnDamage(_, true)`, so it is the CLOCK and never the debug key.
+       `callRound(_, true)`, so it is the CLOCK and never the debug key.
 
        A KNOCKOUT IS DELIBERATELY NOT IN THIS. The thing worth looking at there
        is the kitten who just went down, and cutting away from her to the
@@ -2080,25 +2291,92 @@ export class Tournament {
       `<i class="${k < (this.wins[side] ?? 0) ? 'won' : ''}"></i>`
     )).join('');
     /**
-     * How much of her bar is GREEN, in health.
+     * WHICH SLICE OF HER BAR IS GREEN, in health, as `{ from, to }` on a scale
+     * of 0..`maxHp` — plus where the mark goes.
      *
-     * TWO DIFFERENT SUMS, AND ONE MEANING: "this is overflow". During a round
-     * it is what she is actually carrying above her ordinary top. During the
-     * FEAST it is that plus what she is in the middle of gathering — half of
-     * what she has healed by eating — because the ask was for "a visual
-     * indicator on the screen that they are gathering the overflow effect that
-     * will carry to the next battle", and the honest indicator is the quantity
-     * that will actually carry rather than the whole mouthful. Half of a meal
-     * shown as green and then halved again at the gong would read as losing
-     * something.
+     * TWO DIFFERENT PICTURES, AND ONE MEANING: "this is overflow".
      *
-     * CAPPED BY WHAT SHE HAS. The green is drawn INSIDE the fill, so a figure
-     * bigger than her health would paint a bar that is entirely overflow.
+     * DURING A ROUND it is what she is carrying above her ordinary top, so the
+     * slice runs from `baseMaxHp` up to `hp` and the mark sits on `baseMaxHp`
+     * — which is the same far-end-of-the-fill picture it has always drawn,
+     * said in absolute health instead of as a fraction of the fill. It drains
+     * first and then the ordinary bar starts moving, unchanged.
+     *
+     * DURING THE FEAST it is the WHOLE of what she has eaten — not half of it.
+     * It used to be half, on the argument that the honest indicator is the
+     * quantity that will carry; the rule is now that the green IS her health
+     * (she really is standing on it, and she really would keep it if the round
+     * started now) and the halving is a thing that happens TO it at the gong.
+     * A bar that showed half of what you just swallowed was under-reporting
+     * the only reward the loser gets.
+     *
+     * AND IT CAN GO PAST THE TOP, WHICH IS WHY THE MARK EXISTS. Asked for as:
+     * "from the visual mark to maximum health it grows to the right, but once
+     * past maximum health it needs to grow to the left past the visual
+     * marker". A bar is as long as it is — there is no room to the right of
+     * full — so a meal that takes her past her own maximum keeps paying, and
+     * the green eats BACKWARDS into the red she started on. The mark stays
+     * where her bar stood when the food appeared, so the two directions are
+     * readable against each other: green to the right of the tick is health
+     * she was missing, green to the left of it is the overflow.
+     *
+     * ONLY THE LOSER HAS ANY. See `_startFeast` — `overflowing` is the one
+     * question, and a winner eating at the feast paints ordinary bar.
      */
-    const overOf = (p) => {
-      const gathering = this.state === 'feast'
-        ? Math.round((p.fedHp ?? 0) * OVERFLOW_FRAC) : 0;
-      return Math.max(0, Math.min(p.hp, (p.overflowHp ?? 0) + gathering));
+    const greenOf = (p) => {
+      const max = Math.max(1, p.maxHp);
+      if (this.state === 'feast') {
+        const mark = Math.max(0, Math.min(max, p.feastMark ?? p.hp));
+        const fed = p.overflowing ? Math.max(0, p.fedHp ?? 0) : 0;
+        if (fed <= 0) return { from: 0, to: 0, mark };
+        /* RIGHT FIRST, THEN LEFT. `room` is what is left between the mark and
+           the top; anything past it is the spill, and the spill is what walks
+           back down the bar. Clamped at the mark's own distance from zero, so
+           a colossal feast fills the bar green and stops rather than painting
+           a negative left edge. */
+        const room = max - mark;
+        const spill = Math.min(mark, Math.max(0, fed - room));
+        return { from: mark - spill, to: Math.min(max, mark + fed), mark };
+      }
+      const over = Math.max(0, Math.min(p.hp, p.overflowHp ?? 0));
+      return {
+        from: Math.max(0, p.hp - over),
+        to: p.hp,
+        /* THE MARK IS HER ORDINARY TOP while she is carrying green into a
+           round — the line the bonus sits above — and nothing at all when she
+           is not, because a tick at the very end of a full bar is furniture
+           that says nothing. */
+        mark: (p.bonusHp ?? 0) > 0 ? p.baseMaxHp : null,
+      };
+    };
+    /**
+     * The numbers behind the picture — debug panel row "health overflow".
+     *
+     * IT EXISTS BECAUSE THE PICTURE CANNOT BE CHECKED BY LOOKING AT IT. The
+     * green growing leftward past the mark is exactly the case where the bar
+     * stops being able to show the truth: it is full, and she is on 110 of
+     * 100. Asked for as "a way to debug and make sure this is working
+     * correctly ... show their current health, their normal maximum health,
+     * and the health overflow amount, so that I can make sure the numbers are
+     * correct".
+     *
+     * `%` IS ON IT TOO, AND IT IS THE OTHER HALF OF THIS PASS. It is the
+     * number a round is now decided by (`Player.healthFrac`), it is the one
+     * the overflow is deliberately invisible to, and the two features are
+     * impossible to check against each other without seeing both.
+     */
+    const dbg = (p) => {
+      if (!this.game._overflowDbg) return '';
+      const g = greenOf(p);
+      const green = Math.round(Math.max(0, g.to - g.from));
+      const shown = Math.round(this.state === 'feast' ? p.feastHp : p.hp);
+      return `<div class="ah-dbg">${shown}`
+        + (shown !== Math.round(p.hp) ? ` <s>${Math.round(p.hp)}</s>` : '')
+        + ` / <b>${p.baseMaxHp}</b>`
+        + (p.maxHp !== p.baseMaxHp ? ` (bar ${p.maxHp})` : '')
+        + ` · green ${green}`
+        + ` · mark ${g.mark == null ? '—' : Math.round(g.mark)}`
+        + ` · <u>${Math.round(p.healthFrac * 100)}%</u></div>`;
     };
     const bar = (p) => {
       /* CLAMPED AT THE TOP NOW THAT THERE IS AN ABOVE-THE-TOP. `hp` never
@@ -2113,22 +2391,42 @@ export class Tournament {
          the marker ring, the minimap pip and the score badge already read, so a
          bar cannot end up a different orange from the cat it belongs to. */
       const style = cls ? '' : `background:${styleCss(this.game.roster?.[p.index] ?? p.index)};`;
-      /* THE OVERFLOW RIDES INSIDE THE FILL, AT ITS FAR END, and it is a
-         fraction OF THE FILL rather than of the bar — so it stays put as she
-         is hit and the two shrink together. `margin-inline-start: auto` is
-         what pins it to the end in both directions: the right-hand side's bars
-         are `direction: rtl` so they drain toward their own edge of the
-         screen, and a hard `right: 0` would put the green on the wrong end of
-         half the HUD.
+      /* THE OVERFLOW IS POSITIONED ON THE BAR NOW, NOT TUCKED INSIDE THE FILL.
+         It used to be a child of `.ah-fill` with `margin-inline-start: auto`,
+         which pins a slice to the far END of the fill and can therefore only
+         ever draw overflow that sits on TOP of her health. That is every case
+         except the one this pass is about: green growing back to the LEFT of
+         the mark is green in the MIDDLE of the bar, behind health she still
+         has, and no amount of auto-margin inside the fill can put it there.
+
+         `inset-inline-start` AND NOT `left`, for the reason the old margin was
+         not `right: 0`: the right-hand side's bars are `direction: rtl` so the
+         two sides drain toward their own edges of the screen, and a physical
+         edge would mirror the green onto the wrong end of half the HUD.
+
+         MEASURED AGAINST `maxHp`, WHICH IS WHAT THE FILL IS MEASURED AGAINST.
+         Both are fractions of the same bar, so the green cannot drift off the
+         end of the fill it is supposed to be sitting in.
 
          DRAWN ONLY WHEN THERE IS SOME. An empty span is a repaint and a rule
          nobody can see, and this markup is rebuilt every frame. */
-      const over = overOf(p);
-      const green = over > 0 && p.hp > 0
-        ? `<i class="ah-over" style="width:${Math.min(100, (over / p.hp) * 100)}%"></i>`
+      const max = Math.max(1, p.maxHp);
+      const g = greenOf(p);
+      const width = Math.max(0, g.to - g.from);
+      const green = width > 0
+        ? `<i class="ah-over" style="inset-inline-start:${(g.from / max) * 100}%;`
+          + `width:${Math.min(100, (width / max) * 100)}%"></i>`
+        : '';
+      /* WHERE THE BAR STOOD WHEN THIS STARTED. Hidden at either extreme, where
+         it would be a tick drawn on the bar's own border and unreadable: a
+         mark at 0 or at the very top is a mark you cannot tell from the frame
+         around it. */
+      const mk = g.mark;
+      const mark = mk != null && mk > 0.5 && mk < max - 0.5
+        ? `<i class="ah-mark" style="inset-inline-start:${(mk / max) * 100}%"></i>`
         : '';
       return `<div class="ah-bar"><span class="ah-fill${cls}" `
-        + `style="width:${k * 100}%;${style}">${green}</span></div>`;
+        + `style="width:${k * 100}%;${style}"></span>${green}${mark}</div>`;
     };
     /* WHAT HER OATH IS WORTH IN HERE, AND WHEN SHE CAN USE IT AGAIN.
        Asked for with the breath — "indicate to the player when they can use it
@@ -2158,17 +2456,27 @@ export class Tournament {
       <div class="ah-f${p.ko ? ' out' : ''}">
         <div class="ah-name">${escapeHtml(p.name)}</div>
         ${bar(p)}
+        ${dbg(p)}
         ${pip(p)}
       </div>`;
     const sideBlock = (side, align) => {
       const mates = players.filter((_, i) => this.sides[i] === side);
       if (!mates.length) return '';
       const col = teamColour(side);
+      /* THE SIDE'S OWN PERCENTAGE, ON THE SIDE'S OWN LINE, and only with the
+         debug row on. It is the number the round is actually decided by in a
+         team league — the mean of the bars underneath it — and it is the one
+         figure in the whole feature that is not derivable by eye: three
+         kittens on 100, 100 and 0 are a side on 66, and nobody works that out
+         from three bars while a round is ending. */
+      const sideDbg = this.game._overflowDbg
+        ? `<span class="ah-dbg">${Math.round(this._sideHealth(side) * 100)}%`
+          + ` · ${Math.round(this._roundDamage(side))} dmg</span>` : '';
       // The team swatch and the round pips ride together: both are facts about
       // the SIDE rather than about any one kitten in it.
       const head = `<div class="ah-team" style="--team:${col}">`
         + `<span class="ah-swatch"></span>${this.teamed ? escapeHtml(teamName(side)) : ''}`
-        + `<span class="ah-pips">${pips(side)}</span></div>`;
+        + `${sideDbg}<span class="ah-pips">${pips(side)}</span></div>`;
       return `<div class="ah-side ${align}" style="--team:${col}">`
         + `${head}${mates.map(fighter).join('')}</div>`;
     };

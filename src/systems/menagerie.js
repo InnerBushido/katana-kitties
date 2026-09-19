@@ -830,12 +830,32 @@ export class Menagerie {
     const before = player.hp;
     player.hp = Math.min(player.maxHp, player.hp + c.spec.heal);
     const gained = Math.round(player.hp - before);
-    /* AND HALF OF IT COMES BACK NEXT ROUND. The tally is HEALTH RESTORED, not
-       animals swallowed: a kitten already at the top of her bar gains nothing
-       here and banks nothing, which is what stops the feast being "stand still
-       and chew" for whoever is already ahead. Read by
-       `Tournament._nextRound`, zeroed by `_startFeast`. */
-    player.fedHp = (player.fedHp ?? 0) + Math.max(0, gained);
+    /* WHAT THE MOUTHFUL IS WORTH DEPENDS ON WHETHER SHE IS OVERFLOWING, and
+       that is the one branch in this function.
+
+       AN ORDINARY KITTEN BANKS HEALTH RESTORED. She is at the top of her bar,
+       she swallows a rat, she has gained nothing and she banks nothing — which
+       is what stops the feast being "stand still and chew" for whoever is
+       already ahead.
+
+       THE KITTEN WHO LOST THE ROUND BANKS THE WHOLE MOUTHFUL, past the top of
+       her bar and on up. Asked for as "if their health goes past maximum with
+       the green health, then the amount still gets applied". She is being
+       healed to full at the gong whatever happens, so capping her at a top she
+       is about to be handed for free would make the last few seconds of every
+       feast worthless to the only player they exist for.
+
+       `hp` IS STILL CLAMPED, AND THAT IS NOT A CONTRADICTION. Her BAR cannot
+       be longer than it is; what is past the end of it lives in `fedHp`, gets
+       drawn as green walking backwards out of the feast mark (see
+       `Tournament._paintHud`), and is halved into a real, longer bar at the
+       gong. `Player.feastHp` is the two added back together for the debug
+       readout. Nothing outside a feast ever sees `hp > maxHp`, which is an
+       invariant a dozen other things lean on.
+
+       Read by `Tournament._nextRound`, zeroed by `_startFeast`. */
+    player.fedHp = (player.fedHp ?? 0)
+      + (player.overflowing ? Math.max(0, c.spec.heal) : Math.max(0, gained));
 
     this.held[i] = null;
     this.chew[i] = 0;
@@ -853,13 +873,21 @@ export class Menagerie {
        round, and a green segment appearing on her HUD with nothing having said
        why is a mystery rather than a prize. The carry is quoted as the RUNNING
        total, not this mouthful's share, because that is the number she will
-       see on the bar. */
+       see on the bar.
+
+       "ALREADY FULL!" IS A LIE TO AN OVERFLOWING KITTEN and it would be the
+       line she saw most: she starts the feast healed by the regen, eats past
+       her own top almost immediately, and from there every mouthful restores
+       nothing and banks everything. The branch is on who she is, not on
+       whether the number moved. */
     const carry = Math.round((player.fedHp ?? 0) * OVERFLOW_FRAC);
     this.game.toast(
-      gained > 0
-        ? `${player.name} ate the ${c.spec.name} — +${gained} health`
-          + (carry > 0 ? ` · +${carry} overflow next round` : '')
-        : `${player.name} ate the ${c.spec.name} — already full!`,
+      player.overflowing
+        ? `${player.name} ate the ${c.spec.name} — +${c.spec.heal} GREEN`
+          + (carry > 0 ? ` · +${carry} on her bar next round` : '')
+        : gained > 0
+          ? `${player.name} ate the ${c.spec.name} — +${gained} health`
+          : `${player.name} ate the ${c.spec.name} — already full!`,
       i
     );
     /* The replacement is scheduled from NOW rather than left on whatever was
