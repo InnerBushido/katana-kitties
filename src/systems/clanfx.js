@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { STEAL, DBREATH } from '../entities/clanpower.js';
+import { ringTexture } from './dodgefx.js';
 
 /* ---------------------------------------------------------------------------
    THE TWO ARENA CLAN POWERS, MADE VISIBLE.
@@ -11,6 +12,25 @@ import { STEAL, DBREATH } from '../entities/clanpower.js';
      THIEF'S colour, and the ring SHRINKS as the window runs out. She can tell
      that she is the one being hunted, by whom, and roughly how long she has to
      stay out of reach — three facts, no numbers, no HUD.
+
+     AND A SIGHT OVER HER HEAD, WHICH IS THE OTHER HALF OF THE SAME REPORT:
+     "let's have a target over the player that is targeted with the Steal
+     Mischief ability, so that they know they are targeted and able to lose an
+     orb if attacked ... keep the 'by their feet' target as well, so we will
+     have 2 indicators". TWO, on purpose, and they answer different questions.
+     A ring on the deck is where the kitten LOOKING DOWN AT HER OWN FEET reads
+     it, and it is the one that survives a crowd; a sight over her head is
+     what somebody watching the fight from across the ring sees, and it is the
+     one that survives her running behind a stall (`depthTest: false`).
+
+     IT IS THE SAME EIGHT-BIT SIGHT THE FLASH STEP AIMS WITH, imported rather
+     than redrawn — see `dodgefx.ringTexture`. One word, one picture.
+
+     IT FADES OUT RATHER THAN VANISHING. "Can have the target above targeted
+     person's head fade when it is about to expire, to indicate it is ending."
+     The ring under her feet says the same thing by shrinking; the sight says
+     it by going out, because a sight that shrank would read as getting further
+     away rather than as running out.
 
      THE INHALE. 息 Dragon Breath spends a second and a half rearing back
      before anything happens, and that pause exists entirely for the other
@@ -81,6 +101,27 @@ import { STEAL, DBREATH } from '../entities/clanpower.js';
 /** How big the mark is when it lands, and how small it gets before it goes. */
 const MARK_R0 = 1.45;
 const MARK_R1 = 0.85;
+/** How wide the sight over her head is, in world units. MEASURED ON SCREEN IN
+ *  THE RING, not reasoned: at 1.5 it came out 20 pixels across in an 800-wide
+ *  window against a kitten 38 tall, which is a smudge — the arena camera sits
+ *  49 units out with a 38° lens and everything in it is small. 2.1 is about
+ *  three quarters of her height and reads from the far corner of the deck. */
+const SIGHT_W = 2.1;
+/** Where it floats, as a multiple of her drawn height — and there are two,
+ *  because there are two things it has to clear.
+ *
+ *  `Player._updateBars` owns the ladder over a kitten's head: the health bar
+ *  at 1.32, the team pennant at 1.62 (with the bar up), the callout at 1.98.
+ *  At 1.9 the sight sat ON the bar and at 2.0 it clears it with a gap — both
+ *  looked at, in the ring, at the distance the fight is actually watched
+ *  from. The pennant is half a unit tall on top of its own 1.62, so a 2v2
+ *  needs the extra: two marks in one place in exactly the mode where both
+ *  are on is the worst case, not the rare one. */
+const HEAD_Y = 2.0;
+const HEAD_Y_TEAM = 2.3;
+/** The last fraction of the window, over which the sight fades out. Long
+ *  enough to read as "going", short enough that most of the mark is solid. */
+const SIGHT_FADE = 0.35;
 /** Shards in one flame. The dragon uses 26 over 17-20 units; this is a third
  *  the length, so at the dragon's density it would be nine — which is what it
  *  was, and which read as nine lumps rather than as a flame. A dragon's cone is
@@ -134,6 +175,7 @@ export class ClanFx {
   reset() {
     for (const r of this.rigs.values()) {
       r.mark.visible = false;
+      if (r.sight) r.sight.visible = false;
       r.flame.visible = false;
       r.gather.visible = false;
       r.sip.visible = false;
@@ -160,6 +202,32 @@ export class ClanFx {
     mark.renderOrder = 26;
     mark.visible = false;
     this.scene.add(mark);
+
+    /* THE SIGHT OVER HER HEAD. A `THREE.Sprite`, which is the one exception to
+       this file's no-billboards rule and for the reason the rule exists: three
+       .js turns a Sprite during EACH pane's render, so it faces all four
+       cameras at once, where a hand-turned quad faces whichever asked last.
+       `dodgefx` makes the same argument at length over the same texture.
+
+       `depthTest: false`, so being behind a stall does not hide the one thing
+       telling her to run. The feet ring keeps its depth test, because a ring
+       drawn through the deck would read as being under it. */
+    const tex = ringTexture();
+    const sight = tex ? new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex,
+      color: colour,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      depthTest: false,
+      toneMapped: false,
+    })) : null;
+    if (sight) {
+      sight.scale.setScalar(SIGHT_W);
+      sight.renderOrder = 27;
+      sight.visible = false;
+      this.scene.add(sight);
+    }
 
     /* ORDINARY BLENDING, AND THAT WAS MEASURED RATHER THAN REASONED.
        Additive is the obvious answer for a flame and it was tried first, on the
@@ -265,6 +333,11 @@ export class ClanFx {
 
     r = {
       mark,
+      /** null with no `document` — headless, and world-check runs there. The
+       *  feet ring is geometry and always exists, so the move never loses BOTH
+       *  of its indicators: prefer a rule that degrades over one that
+       *  vanishes. */
+      sight,
       flame,
       gather,
       sip,
@@ -303,6 +376,11 @@ export class ClanFx {
     const t = p.stealMarked ? p.stealTarget : null;
     if (!t) {
       r.mark.visible = false;
+      /* "IF THEY ARE NO LONGER BEING TARGETED, YOU CAN REMOVE THE TARGET." It
+         is the same poll `mark` above answers to, so the sight cannot outlive
+         the mark by a frame whichever of the six ways the move ended — see the
+         WHY HERE note at the top of this file. */
+      if (r.sight) r.sight.visible = false;
       return;
     }
     r.spin += dt * 1.6;
@@ -319,6 +397,35 @@ export class ClanFx {
        That one is steady and in her OWN colour; this one beats and is in
        somebody else's. */
     r.mark.material.opacity = 0.55 + Math.sin(r.spin * 3.4) * 0.22;
+
+    if (!r.sight) return;
+    /* IT RIDES HER HEAD, NOT A FIXED HEIGHT. `t.height` is per sheet (Ember is
+       2.9, Frost 2.85) and a mount or a panda changes where she actually is —
+       everything here is in world space off her own position, so the sight
+       cannot end up at the ankles of a kitten on a dragon. */
+    r.sight.position.set(
+      t.position.x,
+      t.position.y + (t.height ?? 2.9)
+        * (t.teamMark?.visible ? HEAD_Y_TEAM : HEAD_Y),
+      t.position.z
+    );
+    /* A SLOW BOB, so it reads as hovering over her rather than being pinned to
+       her. Off the same clock the ring spins on, so the two indicators beat
+       together instead of against each other. */
+    r.sight.position.y += Math.sin(r.spin * 1.7) * 0.09;
+    /* AND IT GOES OUT AS THE WINDOW CLOSES. `left` is the same fraction the
+       ring shrinks on, so the two cannot disagree about how long she has. The
+       last 35% fades; before that it is solid, because a sight that started
+       dimming immediately would read as broken rather than as expiring. */
+    const fade = Math.min(1, left / SIGHT_FADE);
+    r.sight.visible = fade > 0.02;
+    r.sight.material.opacity = 0.95 * fade;
+    /* AND IT IS IN THE THIEF'S COLOUR, re-asked every frame for the reason
+       `_breath` re-asks: a seat keeps its rig and can be handed a different
+       kitten between rounds, so a colour set once at build time is a wrong
+       colour waiting for the character picker. */
+    const mine = p.style?.colour ?? 0xffffff;
+    if (r.sight.material.color.getHex() !== mine) r.sight.material.color.setHex(mine);
   }
 
   /** The inhale, and then the cone. */

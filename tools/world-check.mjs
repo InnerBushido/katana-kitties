@@ -23,7 +23,7 @@ import {
 } from '../src/entities/leader.js';
 import { promptGlyphs, PROMPTS, KEYSETS } from '../src/core/input.js';
 import { durationMs, delaysCs } from './gif-sync.mjs';
-import { beatOver, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
+import { beatOver, drawPortrait, TAIL, LINE_TAIL, MAX_SLIP } from '../src/systems/cutscene.js';
 import { SCENE_RADIUS, DWELL, ShrineScene } from '../src/systems/shrinescene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../src/entities/dragonball.js';
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
@@ -50,7 +50,9 @@ import {
 } from '../src/world/build.js';
 import { SatanBlast, BLAST, BLAST_LINES, card } from '../src/systems/satanblast.js';
 import { MrSatan } from '../src/entities/satan.js';
-import { ISLAND_MUSIC, MUSIC, SAMPLES, trackForIsland } from '../src/core/audio.js';
+import {
+  ISLAND_MUSIC, MUSIC, SAMPLES, trackForIsland, voicePath,
+} from '../src/core/audio.js';
 import {
   existsSync, readFileSync, readdirSync, statSync, writeFileSync, unlinkSync,
 } from 'node:fs';
@@ -82,7 +84,7 @@ import {
 } from '../src/systems/feats.js';
 import { drawOrb } from '../src/entities/powerorb.js';
 import { CrossFx, sealStage, SIDES_BY_CUT } from '../src/systems/crossfx.js';
-import { DodgeFx } from '../src/systems/dodgefx.js';
+import { DodgeFx, ringTexture } from '../src/systems/dodgefx.js';
 import { ClanFx } from '../src/systems/clanfx.js';
 import { ATTACKS, COMBAT, BASE_REACH, MAX_HP, DAZE_TIME } from '../src/entities/player.js';
 import {
@@ -119,6 +121,7 @@ import { Label, labelCacheStats } from '../src/core/label.js';
 import {
   MODES, MODE_BY_ID, modesFor, handicapFor, HANDICAP_MAX, NO_SIDE, ROUND_LIMIT,
   WARN_AT, COUNT_AT, COUNT_MID, COUNT_LAST, ZERO_BEAT, ROUND_OVER_LINE,
+  teamColour, teamName,
 } from '../src/systems/tournament.js';
 import { worldSpawnCount, WORLD_PER_PLAYER } from '../src/systems/kotodama.js';
 import {
@@ -127,6 +130,24 @@ import {
 } from '../src/systems/leaderboard.js';
 
 const line = (l, v) => console.log(String(l).padEnd(42) + v);
+
+/**
+ * Every sheet under `public/sprites/`, as a path relative to it.
+ *
+ * IT WALKS, BECAUSE THE FOLDER STOPPED BEING FLAT. "We have a lot of art,
+ * voices, sprites, help assets and it is getting disorganized" — so the 43
+ * files that used to sit in one directory are grouped by subject now
+ * (`kittens/ember/`, `leaders/`, `critters/`, `beasts/`...). Three checks in
+ * this file used a plain `readdirSync().filter(endsWith('.png'))`, and the
+ * failure mode of leaving them alone is the bad one: they would have found
+ * ZERO sheets, sorted an empty list against an empty list, and gone green
+ * while looking at nothing at all.
+ */
+const spriteFiles = (sub = '') => readdirSync(
+  new URL(`../public/sprites/${sub}`, import.meta.url), { withFileTypes: true },
+).flatMap((e) => (e.isDirectory()
+  ? spriteFiles(`${sub}${e.name}/`)
+  : [`${sub}${e.name}`]));
 let fails = 0;
 let checks = 0;
 const ok = (label, cond, extra = '') => {
@@ -1457,13 +1478,13 @@ console.log('\n--- the four "Moving & fighting" clips ---');
   const extraSec = topic('Good to know');
   ok('...and a "Good to know" topic for what belongs to neither', !!extraSec);
 
-  const CLIPS = ['/help/move-keys.gif', '/help/move-pad.gif',
-    '/help/move-arena.gif', '/help/move-air.gif'];
+  const CLIPS = ['/help/move/keys.gif', '/help/move/pad.gif',
+    '/help/move/arena.gif', '/help/move/air.gif'];
   const HOME = {
-    '/help/move-keys.gif': ['Moving & fighting', sec],
-    '/help/move-pad.gif': ['Moving & fighting', sec],
-    '/help/move-air.gif': ['Flying a dragon', dragonSec],
-    '/help/move-arena.gif': ['Fighting in the arena', arenaSec],
+    '/help/move/keys.gif': ['Moving & fighting', sec],
+    '/help/move/pad.gif': ['Moving & fighting', sec],
+    '/help/move/air.gif': ['Flying a dragon', dragonSec],
+    '/help/move/arena.gif': ['Fighting in the arena', arenaSec],
   };
   /* TWO IN THE FIRST TOPIC, AND THE PAIR IS THE POINT. `move-keys` and
      `move-pad` are one run filmed twice, so they have to stay together and
@@ -1786,7 +1807,7 @@ console.log('\n--- the "On a phone" clip, and the gesture it exists for ---');
   const start = html.indexOf('<span class="ht-title">On a phone</span>');
   ok('Help still has an "On a phone" topic', start > 0);
   const sec = helpTopic(html, 'On a phone');
-  const at = sec.indexOf('/help/phone.gif');
+  const at = sec.indexOf('/help/move/phone.gif');
   ok('...and it leads on the phone clip', at > 0);
   const tag = at < 0 ? '' : sec.slice(sec.lastIndexOf('<img', at), sec.indexOf('>', at) + 1);
   ok('...deferred like every other picture in the panel',
@@ -1854,7 +1875,7 @@ console.log('\n--- every Help clip is the size its markup claims ---');
   ok('Help still has a "Dragon balls & Ryuuseki" topic', at > 0);
   const sec = helpTopic(html, 'Dragon balls &amp; Ryuuseki');
   ok('...and it leads on the engine capture, not on a still',
-    sec.includes('data-help-gif="/help/ryuuseki.gif"') && !sec.includes('ryuuseki.jpg'));
+    sec.includes('data-help-gif="/help/world/ryuuseki.gif"') && !sec.includes('ryuuseki.jpg'));
 }
 
 console.log('\n--- nothing in public/help/ is dead weight ---');
@@ -3068,6 +3089,118 @@ console.log('\n--- the panda in the ring ---');
     ok('...so it can never overfill her bar', owner.hp <= owner.maxHp);
   }
 
+  /* --- AND IT TAKES A BOW, SO THE END OF A HEAL SAYS SO ------------------
+     Asked for after play: "have the panda do a happy dance and play a happy
+     sound so the player knows they are done being healed by the baby panda."
+
+     THE HEAL USED TO END SILENTLY — the tongue simply stopped — and a thing
+     that stops looks exactly like a thing that broke. Sixth non-negotiable,
+     read about an animal instead of a button.
+
+     THE CHECK IS ABOUT WHY IT ENDED, NOT THAT IT ENDED. A heal also ends when
+     she is knocked out, climbs onto a dragon or is carried off, and a cub
+     dancing over an unconscious kitten is the game cheering at the worst
+     possible moment. Every one of those endings is asked about separately
+     below, because they are all the same line of code and only one of them is
+     supposed to celebrate. */
+  {
+    const owner = mkP(0, 0);
+    const cub = new Panda(art, { owner, tier: 0 });
+    cub.position.copy(owner.position);
+    const heal = () => {
+      owner.ko = false; owner.angel = false; owner.carried = null;
+      owner.hp = owner.maxHp * 0.05;
+      cub.danceT = 0; cub.danceSfx = false;
+      for (let i = 0; i < Math.round(PANDA.lickWarm * 60) + 10; i++) {
+        cub._stepLick(1 / 60, owner);
+      }
+      return cub.licking;
+    };
+
+    ok('(the cub is licking her)', heal());
+    ok('...and is not celebrating while there is work left',
+      cub.danceT === 0 && cub.danceSfx === false);
+    owner.hp = owner.maxHp * PANDA.lickBelow;
+    cub._stepLick(1 / 60, owner);
+    ok('a kitten patched up to the threshold gets a happy dance',
+      cub.danceT > 0 && cub.danceSfx === true);
+    ok('...and one noise, not one a frame', (() => {
+      cub.danceSfx = false;                 // main.js spends the flag
+      for (let i = 0; i < 30; i++) cub._stepLick(1 / 60, owner);
+      return cub.danceSfx === false;
+    })());
+
+    /* THE THREE ENDINGS THAT ARE NOT GOOD NEWS. Each one is set up from a live
+       heal and then broken in exactly one way. */
+    for (const [why, breakIt] of [
+      ['knocked out', () => { owner.ko = true; }],
+      ['flying home as an angel', () => { owner.angel = true; }],
+      ['carried off by the griffin', () => { owner.carried = {}; }],
+    ]) {
+      heal();
+      breakIt();
+      cub._stepLick(1 / 60, owner);
+      ok(`...but a kitten ${why} gets no celebration`,
+        cub.danceT === 0 && cub.danceSfx === false);
+    }
+    owner.ko = false; owner.angel = false; owner.carried = null;
+
+    /* AND A CUB THAT WAS ONLY WARMING UP HAS NOTHING TO CELEBRATE. Trotting
+       over and being interrupted inside the warm-up second is not a heal. */
+    owner.hp = owner.maxHp * 0.05;
+    cub.danceT = 0; cub.danceSfx = false; cub.licking = false; cub.lickT = 0;
+    cub._stepLick(1 / 60, owner);
+    owner.hp = owner.maxHp;
+    cub._stepLick(1 / 60, owner);
+    ok('...and a cub that never got past its warm-up does not take a bow',
+      cub.danceT === 0 && cub.danceSfx === false);
+
+    /* SHE CAN BE KNOCKED STRAIGHT BACK DOWN INSIDE THE DANCE. An animal still
+       celebrating the last heal while it starts the next one looks broken. */
+    heal();
+    owner.hp = owner.maxHp * PANDA.lickBelow;
+    cub._stepLick(1 / 60, owner);
+    ok('(dancing)', cub.danceT > 0);
+    owner.hp = owner.maxHp * 0.05;
+    for (let i = 0; i < Math.round(PANDA.lickWarm * 60) + 10; i++) {
+      cub._stepLick(1 / 60, owner);
+    }
+    ok('...and a cub needed again stops dancing and gets back to work',
+      cub.danceT === 0 && cub.licking === true);
+
+    /* IT IS DRAWN, NOT WALKED, and it ENDS. `_drawDance` writes a bounce on
+       the group and a wiggle on the sprite; the cub keeps following her the
+       whole time (fourth non-negotiable — a pet can never be lost, including
+       to an animation), and everything it touched has to come back. */
+    heal();
+    owner.hp = owner.maxHp * PANDA.lickBelow;
+    cub._stepLick(1 / 60, owner);
+    cub.group.position.copy(cub.position);
+    const floor = cub.group.position.y;
+    let lift = 0; let tilt = 0;
+    for (let i = 0; i < Math.round(PANDA.danceTime * 60) - 6; i++) {
+      cub.group.position.y = floor;
+      cub.sprite.mesh.rotation.z = 0;
+      cub._drawDance(1 / 60);
+      lift = Math.max(lift, cub.group.position.y - floor);
+      tilt = Math.max(tilt, Math.abs(cub.sprite.mesh.rotation.z));
+    }
+    ok('the dance is a hop off the floor', lift > 0.05, lift.toFixed(3));
+    ok('...with a wiggle on it', tilt > 0.05, tilt.toFixed(3));
+    /* AND THE HOP IS ON THE GROUP, NOT THE SPRITE — the shadow is a child of
+       the group, so a bounce on the sprite alone is an animal detaching from
+       its own shadow. */
+    ok('...and the shadow comes up with it', cub.shadow.parent === cub.group);
+    for (let i = 0; i < Math.round(PANDA.danceTime * 60) + 10; i++) {
+      cub._drawDance(1 / 60);
+    }
+    ok('...and it stops of its own accord', cub.danceT === 0);
+    const settled = cub.group.position.y;
+    cub._drawDance(1 / 60);
+    ok('...leaving the cub back on the floor rather than hovering',
+      cub.group.position.y === settled);
+  }
+
   /* --- WHAT THE LICK ACTUALLY LOOKS LIKE -------------------------------- */
   {
     /* MEASURED, NOT REASONED ABOUT. The house rule for anything drawn, and it
@@ -3177,7 +3310,7 @@ console.log('\n--- the panda in the ring ---');
   /* --- AND THE BALANCE PAGE CAN REACH ALL OF IT ------------------------- */
   {
     ok('PANDA is reachable from the balance page',
-      !!DEFAULTS.PANDA && Object.keys(DEFAULTS.PANDA).length === 9);
+      !!DEFAULTS.PANDA && Object.keys(DEFAULTS.PANDA).length === 10);
     const page = readFileSync(new URL('../src/tuning-page.js', import.meta.url), 'utf8');
     /* EVERY KNOB HAS A SENTENCE, not just a slider. The generic fallback would
        render an undescribed field with its raw name and a guessed range, which
@@ -4659,7 +4792,7 @@ console.log('\n--- Mr. Satan has a voice ---');
     'sat_board', 'sat_r1', 'sat_r2', 'sat_r3', 'sat_fight', 'sat_ko', 'sat_over',
     'sat_win1', 'sat_win2'];
   const missingPop = popIn.filter(
-    (id) => !existsSync(new URL(`../public/voice/${id}.mp3`, import.meta.url))
+    (id) => !existsSync(new URL(`../public${voicePath(id)}`, import.meta.url))
   );
   ok('every pop-in line has one too', missingPop.length === 0, missingPop.join(' '));
 
@@ -4667,11 +4800,89 @@ console.log('\n--- Mr. Satan has a voice ---');
      and two recordings is a final round that opens in silence. */
   ok('there is a round call for every round',
     Array.from({ length: MAX_ROUNDS }, (_, i) => `sat_r${i + 1}`)
-      .every((id) => existsSync(new URL(`../public/voice/${id}.mp3`, import.meta.url))));
+      .every((id) => existsSync(new URL(`../public${voicePath(id)}`, import.meta.url))));
+
+  /* --- EVERY CLIP THE CODE ASKS FOR IS ACTUALLY THERE --------------------
+     A MISSING VOICE FILE MAKES NO NOISE, WHICH IS THE WHOLE PROBLEM. The
+     ninth non-negotiable says the game must survive `public/voice/` being
+     deleted, so nothing throws and nothing logs — a 404 is a line that simply
+     never plays, over a scene that runs on regardless. The three checks above
+     cover the lists somebody remembered to list; this one covers the rest by
+     reading the source.
+     Written when the sixty-nine flat mp3s were filed into five folders, one
+     per character ("we have a lot of art, voices, sprites, help assets and it
+     is getting disorganized"). That move could have silenced any line in the
+     game without a single test going red, and `voicePath`'s fallback — an
+     unfiled id looks where the files used to be — is exactly the kind of
+     safety net that hides a mistake instead of showing it. This is the check
+     that makes the fallback safe to have. */
+  {
+    const src = ['main.js', 'core/audio.js', 'entities/leader.js',
+      'systems/cutscene.js', 'systems/summonscene.js', 'systems/lasthunt.js',
+      'systems/tournament.js', 'systems/menagerie.js']
+      .map((f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8'))
+      .join('\n');
+    /* `voicePath('x')` and nothing else — every literal path in `src/` was
+       turned into one of these, so a new literal that skips the resolver is
+       invisible here. That is what the next assertion is for. */
+    const asked = [...new Set(
+      [...src.matchAll(/voicePath\('([A-Za-z0-9_]+)'\)/g)].map((m) => m[1]),
+    )].sort();
+    const gone = asked.filter(
+      (id) => !existsSync(new URL(`../public${voicePath(id)}`, import.meta.url)),
+    );
+    ok('every clip the code asks for by name is on disk',
+      asked.length > 40 && gone.length === 0,
+      gone.join(' ') || `${asked.length} ids, all present`);
+
+    /* AND EVERY ONE OF THEM IS FILED, rather than riding the fallback. The
+       fallback exists so an unfiled id degrades to the old flat path instead
+       of 404ing inside somebody else's folder; it is not meant to be load
+       bearing, and an id that needs it means a character has no home. */
+    const unfiled = asked.filter((id) => !voicePath(id).slice(7).includes('/'));
+    ok('...and every one of them is filed under a speaker',
+      unfiled.length === 0, unfiled.join(' ') || 'clean');
+
+    /* NO LITERAL PATHS LEFT. One of these in a new line would work perfectly
+       today and break the day that clip is re-filed, with no noise at all.
+
+       COMMENTS ARE STRIPPED FIRST AND `core/audio.js` IS LEFT OUT, because
+       both of them legitimately write the path: audio.js IS the resolver, and
+       half a dozen comments elsewhere say things like "delete `public/voice/`
+       and every one of these still appears on the card". The first cut of this
+       check failed on its own documentation, which is a check measuring the
+       wrong thing rather than a codebase with a problem. */
+    const code = ['main.js', 'entities/leader.js', 'systems/cutscene.js',
+      'systems/summonscene.js', 'systems/lasthunt.js', 'systems/tournament.js',
+      'systems/menagerie.js']
+      .map((f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8'))
+      .join('\n')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/[^\n]*/g, '');
+    ok('...and nothing in src/ writes a voice path by hand',
+      !/\/voice\//.test(code), 'voicePath() is the only way in');
+
+    /* AND THE FOLDERS HOLD WHAT THE REGISTRY SAYS THEY HOLD. Five characters,
+       five folders, nothing loose — the same rule `public/sprites/` gets, and
+       the same way it drifts back: a new clip dropped at the top because that
+       is where the old ones were. */
+    const voiceFiles = (sub = '') => readdirSync(
+      new URL(`../public/voice/${sub}`, import.meta.url), { withFileTypes: true },
+    ).flatMap((e) => (e.isDirectory()
+      ? voiceFiles(`${sub}${e.name}/`)
+      : [`${sub}${e.name}`]));
+    const loose = voiceFiles().filter((f) => !f.includes('/'));
+    ok('...and no clip is loose in public/voice/',
+      loose.length === 0, loose.join(' ') || 'clean');
+    for (const who of ['satan', 'patchfur', 'leaders', 'ryuuseki', 'kittens']) {
+      const n = voiceFiles().filter((f) => f.startsWith(`${who}/`)).length;
+      ok(`...and ${who}/ has their lines in it`, n > 0, `${n} clip(s)`);
+    }
+  }
 
   ok('the champion and the griffin both have art',
-    existsSync(new URL('../public/sprites/leader_satan.png', import.meta.url))
-    && existsSync(new URL('../public/sprites/griffin.png', import.meta.url)));
+    existsSync(new URL('../public/sprites/satan/satan.png', import.meta.url))
+    && existsSync(new URL('../public/sprites/beasts/griffin.png', import.meta.url)));
 
   /* --- the recorded SOUND EFFECTS, which are not dialogue ----------------
      A different contract from every line above, and the difference is the
@@ -4976,9 +5187,9 @@ console.log('\n--- background removal keeps the drawn whites ---');
      none may be removed, so a rule that goes back to size alone fails here
      instead of in front of a nine-year-old. */
   const SHEETS = [
-    { file: 'leader_satan.png', pockets: 0, bigWhites: 3, what: 'teeth and eyes' },
-    { file: 'ryuuseki.png', pockets: 2, bigWhites: 0, what: 'sealed under his chin' },
-    { file: 'griffin.png', pockets: 1, bigWhites: 0, what: 'sealed under a wing' },
+    { file: 'satan/satan.png', pockets: 0, bigWhites: 3, what: 'teeth and eyes' },
+    { file: 'beasts/ryuuseki.png', pockets: 2, bigWhites: 0, what: 'sealed under his chin' },
+    { file: 'beasts/griffin.png', pockets: 1, bigWhites: 0, what: 'sealed under a wing' },
   ];
 
   /* --- and the clan emblems, which are the shape most likely to break it ---
@@ -4991,12 +5202,12 @@ console.log('\n--- background removal keeps the drawn whites ---');
      zero — Icewhisker's emblem has a cat's eye in it, and its white must
      survive for the same reason Satan's does. */
   const EMBLEMS = [
-    { file: 'clan_thunder.png', whites: 0, what: 'a paw behind a bolt, open on all sides' },
-    { file: 'clan_river.png', whites: 0, what: 'a wave in a ring the flood gets into' },
-    { file: 'clan_shadow.png', whites: 0, what: 'an open crescent, nothing enclosed' },
-    { file: 'clan_wind.png', whites: 0, what: 'a filled disc with no white left in it' },
-    { file: 'clan_ice.png', whites: 2, what: 'the eye, either side of the pupil — DRAWN' },
-    { file: 'clan_panda.png', whites: 0, what: 'bamboo crossed behind a cream face' },
+    { file: 'clans/thunder.png', whites: 0, what: 'a paw behind a bolt, open on all sides' },
+    { file: 'clans/river.png', whites: 0, what: 'a wave in a ring the flood gets into' },
+    { file: 'clans/shadow.png', whites: 0, what: 'an open crescent, nothing enclosed' },
+    { file: 'clans/wind.png', whites: 0, what: 'a filled disc with no white left in it' },
+    { file: 'clans/ice.png', whites: 2, what: 'the eye, either side of the pupil — DRAWN' },
+    { file: 'clans/panda.png', whites: 0, what: 'bamboo crossed behind a cream face' },
   ];
 
   for (const e of EMBLEMS) {
@@ -5052,13 +5263,14 @@ console.log('\n--- background removal keeps the drawn whites ---');
      the game ships is sorted by it and the answer has to match what the file
      actually is. */
   const KEYED = [
-    'dragon_sheet.png', 'dragon_fly.png', 'satan_charge.png', 'mantis.png',
-    'ember_inhale.png', 'frost_inhale.png', 'ember_scared.png',
-    'frost_scared.png', 'ember_warp.png', 'frost_warp.png',
+    'beasts/dragon_sheet.png', 'beasts/dragon_fly.png', 'satan/charge.png',
+    'critters/mantis.png', 'kittens/ember/inhale.png', 'kittens/frost/inhale.png',
+    'kittens/ember/scared.png', 'kittens/frost/scared.png',
+    'kittens/ember/warp.png', 'kittens/frost/warp.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
-    const sheets = readdirSync(dir).filter((n) => n.endsWith('.png')).sort();
+    const sheets = spriteFiles().filter((n) => n.endsWith('.png')).sort();
     const said = [];
     for (const f of sheets) {
       const { w, h, d } = readPNG(new URL(f, dir));
@@ -5108,21 +5320,23 @@ console.log('\n--- background removal keeps the drawn whites ---');
       eaten[f] = lost;
     }
     ok('re-keying satan_charge would eat the white off his shoulders',
-      eaten['satan_charge.png'] > 100, `${eaten['satan_charge.png']} opaque px`);
+      eaten['satan/charge.png'] > 100, `${eaten['satan/charge.png']} opaque px`);
     ok('...and far more off the two inhale poses',
-      eaten['ember_inhale.png'] > 1000 && eaten['frost_inhale.png'] > 5000,
-      `${eaten['ember_inhale.png']} / ${eaten['frost_inhale.png']} opaque px`);
+      eaten['kittens/ember/inhale.png'] > 1000
+      && eaten['kittens/frost/inhale.png'] > 5000,
+      `${eaten['kittens/ember/inhale.png']} / `
+      + `${eaten['kittens/frost/inhale.png']} opaque px`);
     /* AND THE LOADER DOES NOT DO IT. Asked of the loader's own function rather
        than of the flood, because the flood is still exactly right for the
        thirty-one sheets that arrive opaque. */
-    for (const f of ['satan_charge.png', 'frost_inhale.png']) {
+    for (const f of ['satan/charge.png', 'kittens/frost/inhale.png']) {
       const { w, h, d } = readPNG(new URL(f, dir));
       ok(`${f} is left exactly as it arrived`, alreadyKeyed(d, w, h));
     }
     /* THE OTHER HALF, OR THE FIX IS "STOP KEYING ANYTHING". The sheets that
-       arrive opaque must still be keyed, and `leader_satan.png` above is the
+       arrive opaque must still be keyed, and `satan/satan.png` above is the
        one that proves the flood still works on them. */
-    const { w: gw, h: gh, d: gd } = readPNG(new URL('leader_satan.png', dir));
+    const { w: gw, h: gh, d: gd } = readPNG(new URL('satan/satan.png', dir));
     ok('...while an opaque sheet is still keyed as it always was',
       !alreadyKeyed(gd, gw, gh) && gd[3] === 255);
   }
@@ -5144,7 +5358,7 @@ console.log('\n--- background removal keeps the drawn whites ---');
   {
     const dir = new URL('../public/sprites/', import.meta.url);
     const mainSrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
-    const { w, h, d } = readPNG(new URL('mantis.png', dir));
+    const { w, h, d } = readPNG(new URL('critters/mantis.png', dir));
     const before = new Uint8Array(w * h);
     for (let p = 0; p < w * h; p++) before[p] = d[p * 4 + 3];
     const filled = fillSealedHoles(d, w, h);
@@ -5181,18 +5395,18 @@ console.log('\n--- background removal keeps the drawn whites ---');
        thing `clearSealedPockets` had to grow a depth test to protect. Two
        rules, opposite directions, same unanswerable question, and the answer
        is a human naming the one file. */
-    const sheets = readdirSync(dir).filter((f) => f.endsWith('.png')).sort();
+    const sheets = spriteFiles().filter((f) => f.endsWith('.png')).sort();
     const touched = [];
     for (const f of sheets) {
       const im = readPNG(new URL(f, dir));
       if (fillSealedHoles(im.d, im.w, im.h) > 0) touched.push(f);
     }
     ok('turning the fill on for every sheet would repaint eight of them',
-      touched.length === 8 && touched.includes('dragon_sheet.png'),
+      touched.length === 8 && touched.includes('beasts/dragon_sheet.png'),
       touched.join(' '));
     ok('...so exactly one sheet in the game asks for it',
       (mainSrc.match(/fillHoles: true/g) || []).length === 1
-      && /'mantis', 'mantis\.png', false, \{ fillHoles: true \}/.test(mainSrc));
+      && /'mantis', 'critters\/mantis\.png', false, \{ fillHoles: true \}/.test(mainSrc));
   }
 
   /* --- MAGENTA, WHICH IS THE WAY OUT OF ALL OF IT -----------------------
@@ -5297,11 +5511,18 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
      of them being copied back over the file it produced — the shipped dragons
      keep the master's NAME, so `public/sprites/dragon_sheet.png` being 4.5MB
      again is a plain `cp` away and would look like nothing in a diff. */
-  for (const f of ['dragon_sheet.png', 'dragon_fly.png', 'title_art.png']) {
+  /* THE MASTERS ARE FLAT AND THE SHIPPED TREE IS NOT, which is why the pair
+     is written out rather than derived. `sprite-bake.mjs` carries the same two
+     paths on each job, as `file` and `out`. */
+  for (const [f, ship] of [
+    ['dragon_sheet.png', 'beasts/dragon_sheet.png'],
+    ['dragon_fly.png', 'beasts/dragon_fly.png'],
+    ['title_art.png', 'title_art.png'],
+  ]) {
     const url = new URL(`${MASTERS}/${f}`, import.meta.url);
     ok(`${f} master is on disk and out of public/`, existsSync(url));
     if (!existsSync(url)) continue;
-    const shipped = new URL(`../public/sprites/${f}`, import.meta.url);
+    const shipped = new URL(`../public/sprites/${ship}`, import.meta.url);
     ok('...and public/ does not hold a copy of it', !existsSync(shipped)
       || statSync(shipped).size < statSync(url).size * 0.5,
       existsSync(shipped)
@@ -5330,12 +5551,12 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
     existsSync(new URL('../public/sprites/title_art.webp', import.meta.url)));
 
   const DRAGONS = [
-    { file: 'dragon_sheet.png', deep: 133549, what: 'between the ruff and the far wing' },
-    { file: 'dragon_fly.png', deep: 2731, what: 'between the hind legs' },
+    { file: 'dragon_sheet.png', ship: 'beasts/dragon_sheet.png', deep: 133549, what: 'between the ruff and the far wing' },
+    { file: 'dragon_fly.png', ship: 'beasts/dragon_fly.png', deep: 2731, what: 'between the hind legs' },
   ];
 
   for (const dg of DRAGONS) {
-    const shipped = new URL(`../public/sprites/${dg.file}`, import.meta.url);
+    const shipped = new URL(`../public/sprites/${dg.ship}`, import.meta.url);
     const master = new URL(`${MASTERS}/${dg.file}`, import.meta.url);
     if (!existsSync(shipped) || !existsSync(master)) {
       line(dg.file, 'skipped (art not present)');
@@ -5404,23 +5625,70 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
       `scale ${m.scale.toFixed(3)}, cell ${m.cellPx}`);
   }
 
+  /* --- AND EVERY SHEET IS FILED WHERE IT SAYS IT IS ----------------------
+     "We have a lot of art, voices, sprites, help assets and it is getting
+     disorganized. Let's organize all the assets and group the assets in
+     logical orders."
+
+     The shape only holds if something notices it drifting, and the way it
+     drifts is always the same: a new sheet dropped at the top of
+     `public/sprites/` because that is where the old ones used to be. Nothing
+     breaks when that happens — it loads perfectly well — so the folder is
+     flat again in a year with nobody having decided anything.
+
+     `title_art.webp` is the one exemption, and it is exempt for a reason
+     rather than by history: it is the title screen's background, not a sprite,
+     and a folder holding one file is filing rather than organisation. */
+  {
+    const SUBJECTS = ['kittens', 'leaders', 'clans', 'satan', 'critters',
+      'beasts', 'fx'];
+    const loose = spriteFiles().filter((f) => !f.includes('/')
+      && f !== 'title_art.webp');
+    ok('every sheet is filed under a subject, not loose in public/sprites/',
+      loose.length === 0, loose.join(', ') || 'clean');
+    for (const s of SUBJECTS) {
+      ok(`...and ${s}/ is a folder with something in it`,
+        spriteFiles().some((f) => f.startsWith(`${s}/`)),
+        `${spriteFiles().filter((f) => f.startsWith(`${s}/`)).length} sheet(s)`);
+    }
+    /* TWO FOLDERS FOR FOUR KITTENS, which is the fifth non-negotiable wearing
+       a directory. Storm recolours Ember's sheet and Blossom recolours
+       Frost's, so a `kittens/storm/` appearing here means somebody has started
+       drawing four of everything and the recolour loop in `main.js` has gone
+       quietly unused — see `docs/notes/art.md`. */
+    const cats = [...new Set(spriteFiles('kittens/').map((f) => f.split('/')[1]))];
+    ok('...and kittens/ holds two drawn cats, not four',
+      cats.length === 2 && cats.includes('ember') && cats.includes('frost'),
+      cats.join(' '));
+    /* THE SAME FIVE POSES IN BOTH, or a recolour reaches for a sheet that is
+       not there. This is the check that would have caught a move that dropped
+       one file on the floor. */
+    const posesOf = (c) => spriteFiles(`kittens/${c}/`)
+      .map((f) => f.slice(`kittens/${c}/`.length))
+      .filter((f) => !f.startsWith('grid')).sort().join(' ');
+    ok('...with the same five poses drawn for each of them',
+      posesOf('ember') === posesOf('frost')
+      && posesOf('ember').split(' ').length === 5, posesOf('ember'));
+  }
+
   /* --- and nothing else in public/ is quietly enormous ----------------------
      A first load is every byte in `public/`, downloaded before anybody plays.
      The two grids are genuinely 40 cells of cat and are exempt by name; a NEW
      name appearing here means somebody has dropped a full-resolution export
      into the game, which is exactly how the dragons got there. */
   const HEAVY = 1.5 * 1024 * 1024;
-  const GRIDS = ['frost_grid.png', 'ember_grid_v2.png'];
-  const over = readdirSync(new URL('../public/sprites/', import.meta.url))
+  const GRIDS = ['kittens/frost/grid.png', 'kittens/ember/grid_v2.png'];
+  const shipped = spriteFiles();
+  const over = shipped
     .filter((f) => statSync(new URL(`../public/sprites/${f}`, import.meta.url)).size > HEAVY)
     .filter((f) => !GRIDS.includes(f));
   ok('nothing in public/sprites/ is over 1.5MB but the two grids',
     over.length === 0, over.join(', ') || 'clean');
 
-  const total = readdirSync(new URL('../public/sprites/', import.meta.url))
+  const total = shipped
     .reduce((n, f) => n + statSync(new URL(`../public/sprites/${f}`, import.meta.url)).size, 0);
   line('  public/sprites/', `${(total / 1048576).toFixed(1)}MB over `
-    + `${readdirSync(new URL('../public/sprites/', import.meta.url)).length} files`);
+    + `${shipped.length} files`);
 }
 
 console.log('\n--- the Powerup Kotodama ---');
@@ -7053,7 +7321,7 @@ console.log('\n--- half a second of not being there ---');
        has to be one attribute — so the placeholder sits in the same figure, at
        the same size, as the four clips beside it. */
     ok('...with a placeholder image standing in for the clip',
-      /help\/ability-blink/.test(card));
+      /help\/ability\/blink/.test(card));
     ok('...and it says the shield trick, which nothing else would teach her',
       /shield|Ward/i.test(card) && /Sprint/i.test(card));
 
@@ -8930,16 +9198,16 @@ console.log('\n--- the three power moves ---');
     };
 
     const SHEETS = {
-      rabbit: ['rabbit_run.png', 'rabbit.png', 'rabbit_shock.png'],
-      rat: ['rat.png', 'rat_shock.png'],
-      bird: ['bird.png', 'bird_shock.png'],
+      rabbit: ['critters/rabbit_run.png', 'critters/rabbit.png', 'critters/rabbit_shock.png'],
+      rat: ['critters/rat.png', 'critters/rat_shock.png'],
+      bird: ['critters/bird.png', 'critters/bird_shock.png'],
       /* ONE DRAWING, AND THE SPREAD CHECKS BELOW GO TRIVIAL ON IT — which is
          fine, because the one that matters here is the FIRST: a conjured mantis
          has to come out exactly `size` tall like every other animal, and that
          is a real assertion about a sheet nobody has looked at since it was
          generated. It gets a second sheet the day somebody draws it startled,
          and the spread checks start doing work on their own. */
-      mantis: ['mantis.png'],
+      mantis: ['critters/mantis.png'],
     };
     const spread = (v) => Math.max(...v) / Math.min(...v);
 
@@ -8952,7 +9220,8 @@ console.log('\n--- the three power moves ---');
      concentrated — on screen for four tenths of a second, in a pose nobody has
      a reason to stare at. Measured, never eyeballed: eighth non-negotiable. */
   {
-    const OVERLAY = ['ember_warp.png', 'frost_warp.png', 'mantis.png'];
+    const OVERLAY = ['kittens/ember/warp.png', 'kittens/frost/warp.png',
+      'critters/mantis.png'];
     for (const f of OVERLAY) {
       const url = new URL(`../public/sprites/${f}`, import.meta.url);
       if (!existsSync(url)) { line(f, 'skipped (art not present)'); continue; }
@@ -11136,8 +11405,18 @@ console.log('\n--- the three power moves ---');
           players: [],
           toast() {},
           sfx() {},
-          satan: { setPose: (name) => posed.push(name) },
-          satanBlast: { stage: 'off' },
+          /* RECORDS THE OWNER TOO, because the owner is the whole of the
+             "they both use the same sprite" fix — a check that watched only
+             the pose name could not tell an arms-up from an arms-up that had
+             just stolen the gag's. */
+          satan: { setPose: (name, owner = null) => posed.push(`${name}:${owner}`) },
+          /* A REAL `busy`, matching `SatanBlast`'s own getter. The stub used
+             to carry a bare `stage`, so `blast.busy` read `undefined` and
+             every check about "not while the gag is performing" was passing
+             for the wrong reason. */
+          satanBlast: { stage: 'off', get busy() {
+            return this.stage === 'taunt' || this.stage === 'charge' || this.stage === 'boom';
+          } },
         },
         world,
         audio: {
@@ -11348,7 +11627,7 @@ console.log('\n--- the three power moves ---');
       /* `_banner` sets `_bannerText` and only then touches an element, so with
          no element this reads the real method rather than a stub of it. */
       ok('...and not the banner either', T._bannerText !== 'DRAW', `${T._bannerText}`);
-      ok('...his arms go up instead', posed.includes('charge'), posed.join(','));
+      ok('...his arms go up instead', posed.some((x) => x.startsWith('charge')), posed.join(','));
       /* MEASURED OFF THE CLIP AND NOT GUESSED, so a re-cut that runs longer
          cannot start clipping itself again — plus the beat that was asked for
          ("maybe even adding a 1 - 2 second pause for him to calm down"). */
@@ -11367,8 +11646,8 @@ console.log('\n--- the three power moves ---');
       T.update(0, []);
       ok('...and THEN the banner and his line',
         said.includes('sat_draw') && T._bannerText === 'DRAW');
-      ok('...and his arms come down with them',
-        posed[posed.length - 1] === 'idle', posed.join(','));
+      ok('...and his arms come down with them, by the hand that raised them',
+        posed[posed.length - 1] === 'idle:round', posed.join(','));
       /* AND THE BELL IS NOT RUNG AGAIN BY THE CLOSURE IT LEFT. One strike, at
          the start — this counts the whole beat, so it fails in both directions:
          a bell moved back inside the wait, or a bell rung twice. */
@@ -11391,7 +11670,7 @@ console.log('\n--- the three power moves ---');
       K._roundOver(0, 'x');
       ok('a knockout rings straight away', played.includes('endgong'), played.join(','));
       ok('...with nothing pending behind it', K._pending === null);
-      ok('...and nobody strikes a pose for it', !posed.includes('charge'), posed.join(','));
+      ok('...and nobody strikes a pose for it', !posed.some((x) => x.startsWith('charge')), posed.join(','));
       ok('...and he does not shout ZERO at a round that had time left',
         !said.includes('sat_zero'));
     }
@@ -11415,7 +11694,15 @@ console.log('\n--- the three power moves ---');
       N.callRound('Time!', true);
       ok('with no recording the round does not wait for a shout that cannot happen',
         N._pending === null && played.includes('drawgong'), played.join(','));
-      ok('...and his arms stay down', !posed.includes('charge'), posed.join(','));
+      /* ...AND HIS ARMS GO UP ANYWAY, WHICH IS THE OPPOSITE OF WHAT THIS ROW
+         USED TO SAY. Reported from play: "Mr. Satan is not doing his angry
+         animation when the timer counts down to zero." The `setPose` call sat
+         BELOW the early return for a missing recording, so deleting an mp3
+         also deleted a drawing. The ninth non-negotiable costs you the voice
+         clip and nothing else; the round still does not WAIT (the row above),
+         because there is nothing to wait for. */
+      ok('...but his arms go up anyway, because a missing mp3 is not a missing drawing',
+        posed.includes('charge:round'), posed.join(','));
     }
     {
       /* THE BLAST GAG OWNS THE POSE FOR ITS OWN TEN SECONDS and puts it back
@@ -11426,9 +11713,9 @@ console.log('\n--- the three power moves ---');
       B.state = 'live';
       B.game.players = [];
       B.callRound('Time!', true);
-      ok('a tantrum already in progress keeps his arms', !posed.includes('charge'), posed.join(','));
+      ok('a tantrum already in progress keeps his arms', !posed.some((x) => x.startsWith('charge')), posed.join(','));
       ok('...and the round does not put down a pose it did not raise',
-        (B.finish(), !posed.includes('idle')), posed.join(','));
+        (B.finish(), !posed.some((x) => x.startsWith('idle'))), posed.join(','));
     }
     {
       /* AND FLYING HOME PUTS EVERYTHING BACK, from either half of it. `clear`
@@ -11452,7 +11739,7 @@ console.log('\n--- the three power moves ---');
       posed.length = 0;
       G.finish();
       ok('...and flying home mid-shout puts his arms down',
-        posed.includes('idle'), posed.join(','));
+        posed.some((x) => x.startsWith('idle')), posed.join(','));
       ok('...and drops what was waiting to be announced', G._pending === null);
     }
 
@@ -11594,7 +11881,7 @@ console.log('\n--- the three power moves ---');
          "not down" would leave a child looking for the result. */
       ok('...and it tells her somebody won', /winner/i.test(ROUND_OVER_LINE),
         ROUND_OVER_LINE);
-      const mp3 = new URL('../public/voice/sat_over.mp3', import.meta.url);
+      const mp3 = new URL(`../public${voicePath('sat_over')}`, import.meta.url);
       ok('...and there is a recording of exactly that sentence',
         existsSync(mp3));
     }
@@ -12287,6 +12574,186 @@ console.log('\n--- the three power moves ---');
     T.winner = P[3];
     ok('a champion with no controller does not strand the board',
       T._signingPads([PADS4[0], PADS4[1], PADS4[2]]).length === 3);
+  }
+
+  /* --- AND THE SCREEN SHE SIGNS IT ON SAYS WHO SHE IS -------------------
+     Reported from play: "show the winning player's icon/face at the end of the
+     match that won the match, so the person entering in their name/initials
+     knows who they are, currently only shows the player's name which is not
+     enough, we need a name, image of the player, colors, etc."
+
+     THE OLD HEADING WAS `.ar-win.p${w.index}`, WHICH IS THE SEAT-IS-NOT-A-CAT
+     BUG. `cssFor`'s own note in core/palette.js catalogues nine callers that
+     made it; this was a tenth. Player one picking Blossom was crowned in
+     Ember's vermillion, and players three and four were crowned in nothing at
+     all, because the stylesheet only ever had `.p0` and `.p1`.
+
+     SO THE CHECK ASKS THE QUESTION BY CAT, NOT BY SEAT. It seats a roster that
+     is deliberately NOT the identity and asserts the card comes out in the
+     colour of the cat in the chair. Asserting that `.p2` and `.p3` exist in
+     the stylesheet would have passed the bug. */
+  console.log('\n--- the results screen shows who won ---');
+  {
+    const roster = [3, 2, 1, 0];          // everybody playing somebody else's seat
+    const P = roster.map((s, i) => ({
+      index: i, name: PLAYER_STYLE[s].name, style: PLAYER_STYLE[s],
+      dmgDealt: i, dmgTaken: 0, clan: null,
+    }));
+    const T = new Tournament({
+      game: { players: P, roster, toast() {}, sfx() {} },
+      world, audio: null, announcer: null,
+    });
+    T.mode = MODE_BY_ID.free;
+    T.sides = [0, 1, 2, 3];
+    for (let i = 0; i < 4; i++) {
+      T.winners = [P[i]];
+      T.winner = P[i];
+      const card = T._championCard(P[i]);
+      const want = cssFor(PLAYER_STYLE[roster[i]]);
+      ok(`player ${i + 1}'s card is drawn in the colour of the cat in the chair`,
+        card.includes(`--champ:${want}`) && card.includes(`color:${want}`), want);
+      ok('...and it names her and says which seat she is sitting in',
+        card.includes(PLAYER_STYLE[roster[i]].name) && card.includes(`PLAYER ${i + 1}`));
+      ok('...and it carries a square face for her portrait to go in',
+        /<canvas id="ar-face"[^>]*width="(\d+)"[^>]*height="\1"/.test(card));
+    }
+    /* A TEAM WIN NAMES THE TEAM. `winner` is only the kitten the board row is
+       filed under, and a 2v2 that crowned her alone would be telling her
+       partner she had not won. */
+    T.mode = MODE_BY_ID.pairs;
+    T.sides = [0, 0, 1, 1];
+    T.winners = [P[2], P[3]];
+    T.winner = P[3];
+    const team = T._championCard(P[3]);
+    ok('a pairs win crowns the SIDE, with the signer on the card',
+      !team.includes(`${P[3].name} WINS`) && team.includes(teamName(1))
+      && team.includes(`--champ:${cssFor(P[3].style)}`));
+    /* AND THE HEADING IS THE SIDE'S COLOUR WHEN IT IS THE SIDE'S NAME. "BLUE
+       WINS" in Blossom's purple is two things disagreeing in one sentence, and
+       BLUE is the word the HUD painted in `teamColour` all match. */
+    ok('...and BLUE is written in blue, not in the signer\'s own colour',
+      team.includes(`color:${teamColour(1)}`)
+      && !team.includes(`color:${cssFor(P[3].style)}`),
+      `${teamColour(1)} vs ${cssFor(P[3].style)}`);
+    /* HER OATH IS ON IT, because with four kittens two of them are the same cat
+       recoloured and the clan is the other thing she chose about herself. */
+    T.winners = [P[0]];
+    T.winner = P[0];
+    P[0].clan = { name: 'Windwhisker' };
+    ok('...and her clan is on the card when she has sworn one',
+      T._championCard(P[0]).includes('Windwhisker'));
+    P[0].clan = null;
+    ok('...and nothing is said about a clan when she has none',
+      !/ar-champ-clan/.test(T._championCard(P[0])));
+
+    const src = readFileSync(new URL('../src/systems/tournament.js', import.meta.url), 'utf8');
+    ok('...the result screen is built from that card and from no seat class',
+      /\$\{this\._championCard\(w\)\}/.test(src) && !/ar-win p\$\{/.test(src));
+    /* THE FACE IS PAINTED AFTER THE MARKUP AND ON EVERY REPAINT. `_paintResult`
+       replaces the whole box on each letter she types, so the canvas is a new
+       element every time; a paint that ran once would show her face until she
+       touched the stick and a blank frame for the rest of the entry. */
+    ok('...and the face is repainted every time the box is rebuilt',
+      /this\._paintChampionFace\(w\);/.test(src)
+      && src.indexOf('this._paintChampionFace(w);')
+        > src.indexOf('${this._championCard(w)}'));
+    ok('...and it crops a MEASURED cell rather than trusting contentScale',
+      /drawPortrait\(cv, art, cssFor\(w\.style\), \{ col: 0, row: 0, measure: true \}\)/
+        .test(src));
+
+    const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+    ok('...and the stylesheet no longer crowns anybody by seat number',
+      !/\.ar-win\.p\d/.test(css));
+    ok('...the frame and the name read one colour, set once on the card',
+      (css.match(/var\(--champ/g) || []).length >= 2);
+  }
+
+  /* --- A TURNAROUND SHEET'S FACE IS MEASURED, NOT COMPUTED --------------
+     Eighth non-negotiable, and the specific trap that made this an argument to
+     `drawPortrait` rather than a fourth copy of it: `contentScale` is ONE
+     number for a whole sheet (loadSpriteAtlas scales every row together, or
+     she would change size the instant she started walking), so on a kitten it
+     describes her JUMP frame. Her idle is shorter by that difference, and a
+     crop placed from `contentScale` starts that far above her ears - a
+     portrait of the paper over her head.
+
+     A SYNTHETIC SHEET WITH A DELIBERATELY SHORT IDLE, and the assertion is on
+     the source rectangle `drawImage` is handed. Checking the drawn pixels
+     would need a real canvas; checking the rectangle is checking the
+     decision. */
+  console.log('\n--- the champion\'s face is cropped off her own ink ---');
+  {
+    const CELL = 100;
+    const INK = { x0: 30, y0: 40, x1: 70, y1: 90 };   // a short, centred idle
+    const alpha = new Uint8ClampedArray(CELL * CELL * 4);
+    for (let y = INK.y0; y <= INK.y1; y++) {
+      for (let x = INK.x0; x <= INK.x1; x++) alpha[(y * CELL + x) * 4 + 3] = 255;
+    }
+    const sheet = (onRead) => ({
+      width: CELL * 4,
+      height: CELL * 4,
+      getContext: () => ({
+        getImageData: (sx, sy, w, h) => {
+          onRead?.();
+          return sx === 0 && sy === 0 && w === CELL && h === CELL
+            ? { data: alpha } : { data: new Uint8ClampedArray(w * h * 4) };
+        },
+      }),
+    });
+    const shots = [];
+    const cv = {
+      width: 128, height: 128, style: {},
+      getContext: () => ({ clearRect() {}, drawImage: (...a) => shots.push(a) }),
+    };
+    /* `contentScale` 0.8 is the jump frame; the idle above reaches 0.5. That
+       gap is the bug, written down as a number. */
+    const art = () => ({
+      texture: { image: sheet() }, cols: 4, rows: 4, contentScale: 0.8, pad: 0.06,
+    });
+    drawPortrait(cv, art(), '#fff');
+    const plain = shots.pop();
+    drawPortrait(cv, art(), '#fff', { measure: true });
+    const meas = shots.pop();
+    ok('the unmeasured crop starts in the paper above her ears',
+      plain[2] < INK.y0 - 20, `y=${plain[2].toFixed(1)} vs ink at ${INK.y0}`);
+    ok('...and the measured one starts on her ears',
+      Math.abs(meas[2] - INK.y0) <= (INK.y1 - INK.y0) * 0.12,
+      `y=${meas[2].toFixed(1)} vs ink at ${INK.y0}`);
+    ok('...and it is a SQUARE crop, so her face is not stretched',
+      meas[3] === meas[4] && meas[3] > 0, `${meas[3]} x ${meas[4]}`);
+    ok('...and it stays inside the cell it was asked for',
+      meas[1] >= 0 && meas[2] >= 0
+      && meas[1] + meas[3] <= CELL && meas[2] + meas[4] <= CELL,
+      `${meas[1].toFixed(1)},${meas[2].toFixed(1)} +${meas[3].toFixed(1)}`);
+    /* AND A CELL THAT IS NOT (0,0) IS TAKEN FROM WHERE THAT CELL ACTUALLY IS.
+       A version that measured cell (1,2) and then cropped the top-left corner
+       anyway would pass every check above. */
+    drawPortrait(cv, art(), '#fff', { col: 1, row: 2, measure: true });
+    const other = shots.pop();
+    ok('...and another cell is cropped from where that cell actually is',
+      other[1] >= CELL && other[1] < CELL * 2
+      && other[2] >= CELL * 2 && other[2] < CELL * 3,
+      `${other[1].toFixed(1)},${other[2].toFixed(1)}`);
+    /* THE MEASUREMENT IS CACHED, because the card is repainted on every letter
+       she types and a `getImageData` per keystroke is a readback off a canvas
+       the GPU may still be holding. */
+    let reads = 0;
+    const counted = {
+      texture: { image: sheet(() => { reads++; }) },
+      cols: 4, rows: 4, contentScale: 0.8, pad: 0.06,
+    };
+    for (let i = 0; i < 3; i++) drawPortrait(cv, counted, '#fff', { measure: true });
+    shots.length = 0;
+    ok('...and the sheet is measured once, not once per repaint', reads === 1, `${reads}`);
+    /* AND A SHEET WITH NO CANVAS BEHIND IT DEGRADES rather than throwing. The
+       fallback atlases are flat textures with no 2D context to read; ninth
+       non-negotiable, and "prefer a rule that degrades over one that
+       vanishes". */
+    const flat = { texture: { image: { width: 64, height: 64 } }, cols: 1, rows: 1 };
+    let threw = false;
+    try { drawPortrait(cv, flat, '#fff', { measure: true }); } catch { threw = true; }
+    ok('...and a sheet with nothing to measure still draws something',
+      !threw && shots.length === 1, threw ? 'threw' : `${shots.length} draws`);
   }
 
   /* A ROUND HAS A CLOCK AND IT IS ON SCREEN. `ROUND_LIMIT` can hand the round
@@ -14884,6 +15351,100 @@ console.log('\n--- the two powers, from the kitten\'s side ---');
     ok('...and the wait is still owed', a.stealCool > 0);
   }
 
+  /* --- AND SHE IS TOLD TWICE THAT SHE IS BEING HUNTED -------------------
+     Asked for after play: "let's have a target over the player that is
+     targeted with the Steal Mischief ability, so that they know they are
+     targeted and able to lose an orb if attacked ... show the color of the
+     person targeting them ... keep the 'by their feet' target as well, so we
+     will have 2 indicators ... can have the target above targeted person's
+     head fade when it is about to expire."
+
+     TWO INDICATORS IS THE CHECK, not one. The ring on the deck shipped first
+     and the sight over the head is the addition, so the failure this block
+     exists to catch is the obvious one: somebody tidying the two into one.
+     Both are asserted at once, every time, for that reason. */
+  {
+    const fx = new ClanFx(new THREE.Scene());
+    const a = mkP(0, 0, ice);
+    const b = mkP(1, 3);
+    b.setPowerOrbs(['ward']);
+    a.facing = Math.PI / 2;
+    const hud = mkHud([a, b]);
+    a._startClanPower(null, hud);
+    fx.update(1 / 60, [a, b]);
+    const r = fx.rigs.get(0);
+    const headless = typeof document === 'undefined';
+    ok('the ring by her feet says she is marked', !!r && r.mark.visible === true);
+    ok('...and a sight over her head says it again', headless || !!r.sight?.visible,
+      headless ? 'headless: no canvas to draw a sight on' : '');
+
+    if (r?.sight) {
+      /* ONE PICTURE FOR ONE WORD. It is the Flash Step's own reticle texture,
+         imported rather than redrawn — two drawings of a target would be two
+         things a nine-year-old has to learn mean the same thing, and they
+         would drift the first time either was tuned. */
+      ok('...and it is the same target the Flash Step aims with',
+        r.sight.material.map === ringTexture());
+      /* IT IS OVER THE VICTIM AND IN THE THIEF'S COLOUR — the two halves of
+         "show the color of the person targeting them". A sight over the
+         hunter, or in the hunted kitten's own colour, would say the opposite
+         of what happened. */
+      ok('...over the kitten being hunted, not the one hunting her',
+        Math.abs(r.sight.position.x - b.position.x) < 1e-6
+        && Math.abs(r.sight.position.z - b.position.z) < 1e-6);
+      ok('...and in the hunter\'s colour, so she knows who',
+        r.sight.material.color.getHex() === a.style.colour
+        && a.style.colour !== b.style.colour);
+      /* CLEAR OF EVERYTHING ELSE SHE WEARS. `Player._updateBars` puts the
+         health bar at 1.32 of her height and the team pennant at 1.62; a
+         sight drawn through either of them is two marks in one place. */
+      ok('...clear of the health bar over her head',
+        r.sight.position.y > b.position.y + b.height * 1.32,
+        `${(r.sight.position.y - b.position.y).toFixed(2)} up`);
+      b.teamMark.visible = true;
+      fx.update(1 / 60, [a, b]);
+      ok('...and it moves up again when she is also wearing a team pennant',
+        r.sight.position.y > b.position.y + b.height * 1.62 + 0.52);
+      b.teamMark.visible = false;
+
+      /* IT FADES RATHER THAN VANISHING, and it is SOLID until then. A sight
+         that started dimming on the frame it landed would read as broken; one
+         that blinked out at zero would say nothing about running out. */
+      fx.update(1 / 60, [a, b]);
+      const full = r.sight.material.opacity;
+      ok('a fresh mark is a solid sight', full > 0.8, full.toFixed(2));
+      a._stepClanPower(STEAL.window * 0.5, hud);
+      fx.update(1 / 60, [a, b]);
+      ok('...still solid with half the window left',
+        Math.abs(r.sight.material.opacity - full) < 1e-6,
+        r.sight.material.opacity.toFixed(2));
+      a._stepClanPower(STEAL.window * 0.4, hud);
+      fx.update(1 / 60, [a, b]);
+      const dim = r.sight.material.opacity;
+      ok('...and fading with a tenth of it left', dim > 0 && dim < full * 0.6,
+        dim.toFixed(2));
+      /* AND THE RING IS STILL THERE WHILE IT FADES. The two indicators say the
+         same thing two ways and neither may go early. */
+      ok('...while the ring by her feet is still on', r.mark.visible === true);
+
+      /* "IF THEY ARE NO LONGER BEING TARGETED, YOU CAN REMOVE THE TARGET."
+         Both of them, on the same frame, off the same poll. */
+      a._stepClanPower(STEAL.window, hud);
+      fx.update(1 / 60, [a, b]);
+      ok('a mark that ran out takes both indicators with it',
+        r.mark.visible === false && r.sight.visible === false);
+
+      /* AND A RESTART TAKES THEM DOWN WHATEVER THE CLOCKS SAY. A sight welded
+         over the head of somebody who is about to be a different player is
+         the failure this file's own `reset` note is about. */
+      r.mark.visible = true;
+      r.sight.visible = true;
+      fx.reset();
+      ok('...and a reset takes them down whatever the clocks say',
+        r.mark.visible === false && r.sight.visible === false);
+    }
+  }
+
   /* --- BEING CAUGHT IS NOT A REFUND -------------------------------------
      Reported from play: "when using cross-slash on an opponent, it resets the
      timer of the dragon breath ability on that player — it shouldn't do that,
@@ -15591,7 +16152,7 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
     /between rounds/i.test(feast) && /feast/i.test(feast));
   ok('...and does not pretend the animals are only there in the break',
     /during the fights|mid-fight|in the fights/i.test(feast));
-  ok('...and it shows the eating clip', /feast-eat\.gif/.test(feast));
+  ok('...and it shows the eating clip', /world\/feast-eat\.gif/.test(feast));
 
   const orbsSec = help.slice(help.indexOf('Power-up orbs'), help.indexOf('Special abilities'));
   ok('the orbs section shows the eight-orb still', /orbs\.jpg/.test(orbsSec));
@@ -15607,7 +16168,7 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
      capture must be the panda one and wired the deferred (src-less) way. */
   const pandaSec = help.slice(help.indexOf('Raise a panda'), help.indexOf('Dragon balls'));
   ok('the raise-a-panda topic shows the panda-raising clip',
-    /data-help-gif="\/help\/panda\.gif"/.test(pandaSec));
+    /data-help-gif="\/help\/world\/panda\.gif"/.test(pandaSec));
 
   /* THE DOJO IS TWO CLIPS NOW, SIDE BY SIDE. The sin/cos board used to be burnt
      ON TOP of the 3D circle in one frame and covered it; it is a separate clip
@@ -15615,14 +16176,14 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
      synced capture. Both must be present and in order inside the pair figure —
      dropping the board, or un-pairing them, is the regression this pins. */
   ok('the Dojo topic pairs the 3D circle clip with the sin/cos board clip',
-    /class="help-shot help-shot-pair"[\s\S]*?data-help-gif="\/help\/dojo-world\.gif"[\s\S]*?data-help-gif="\/help\/dojo-sincos\.gif"[\s\S]*?<\/figure>/.test(help));
+    /class="help-shot help-shot-pair"[\s\S]*?data-help-gif="\/help\/dojo\/world\.gif"[\s\S]*?data-help-gif="\/help\/dojo\/sincos\.gif"[\s\S]*?<\/figure>/.test(help));
 
   /* THE DEALER'S STALL IS A DOM PANEL (profile.js innerHTML), not a canvas —
      the engine canvas-mirror rig cannot film it, which is why it was a static
      photo. The clip is an html2canvas raster of the REAL shop being used, so pin
      that the topic now shows the clip and not the old stall screenshot. */
   ok('the Dealer topic shows the buying-an-orb clip',
-    /Dealer's Stall[\s\S]*?data-help-gif="\/help\/dealer\.gif"/.test(help));
+    /Dealer's Stall[\s\S]*?data-help-gif="\/help\/world\/dealer\.gif"/.test(help));
 
   const imgs = [...help.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
   ok('the panel carries its screenshots and clips', imgs.length >= 4, `(${imgs.length})`);
@@ -15640,9 +16201,66 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
   ok('...no clip carries a src that would fetch it before Help is opened',
     imgs.every((t) => !(/data-help-gif="/.test(t) && /\bsrc="/.test(t))));
 
+  /* --- AND EVERY ONE OF THEM FITS A PHONE HELD SIDEWAYS -----------------
+     Reported from play: "on Mobile, the gif under Flying a Dragon, Battling
+     In the Arena are too large, they need to be half the size or same size as
+     the gif of the 'On a Phone' section."
+
+     IT WAS ONE FIGURE CLASS MISSING FROM ONE MEDIA QUERY. `.help-shot` and
+     `.move` are capped by viewport HEIGHT — the axis that runs out on a phone
+     in landscape — and `.move-wide` was written months later and never added.
+     Measured at 915x412: 630x411, the clip alone taller than the whole
+     screen, against the phone section's 342x190.
+
+     SO THE CHECK IS STRUCTURAL, NOT A NUMBER. It reads the figures that
+     actually hold clips out of the MARKUP and asserts each one is capped
+     somewhere in a `max-height` block — which is the only version of this
+     that catches the NEXT figure somebody adds. A check that named
+     `.move-wide` would have passed for every month this bug did not exist,
+     and passed again the day it came back under a different class.
+
+     A FIGURE, NOT A CLASS, IS THE UNIT. `class="help-shot help-shot-pair"`
+     is capped by `.help-shot img` and its second class is styling that has
+     nothing to do with size; asking after every class separately would fail
+     on a figure that is demonstrably fine. */
+  {
+    const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+    /* Only the blocks that bound HEIGHT count. A `max-width` query is about a
+       narrow panel, and width is not the axis that runs out when a phone is
+       turned over — at 915x412 the clip was 630 WIDE and still too tall. */
+    const tall = [...css.matchAll(/@media\s*\(max-height:[^)]*\)\s*\{([\s\S]*?)\n\}/g)]
+      .map((m) => m[1]).join('\n');
+    ok('style.css caps things by viewport height for a phone held sideways',
+      tall.length > 0);
+
+    const clip = /<figure class="([^"]+)"[^>]*>\s*(?:<!--[\s\S]*?-->\s*)*<img\b[^>]*data-help-gif/g;
+    const figs = [...help.matchAll(clip)].map((m) => m[1]);
+    ok('...and the Help panel wraps its clips in named figures', figs.length >= 4,
+      `${figs.length}`);
+
+    const capped = (cls) => new RegExp(`\\.${cls} img\\b`).test(tall);
+    const bare = figs.filter((f) => !f.split(/\s+/).some((c) => c && capped(c)));
+    ok('...and every clip figure is height-capped there',
+      bare.length === 0, bare.join(' | ') || [...new Set(figs)].join(' | '));
+
+    /* AND A HEIGHT CAP ONLY WORKS WITH `width: auto`, which is the half of
+       this that was got wrong first: `.move-wide img { width: 100% }` sits at
+       equal specificity LATER in the file, so the cap set the height to 190
+       and left the width at 630 — a stretched clip rather than a fitted one.
+       Measured at 915x412 before the media block was moved below its own
+       rule; 289x190 after. */
+    for (const cls of new Set(figs.flatMap((f) => f.split(/\s+/)).filter(capped))) {
+      const body = [...tall.matchAll(new RegExp(`\\.${cls} img[^{]*\\{([^}]*)\\}`, 'g'))]
+        .map((m) => m[1]).join(';');
+      if (!/max-height/.test(body)) continue;
+      ok(`...and .${cls}'s cap lets the width follow the height`,
+        /width:\s*auto/.test(body), body.replace(/\s+/g, ' ').trim());
+    }
+  }
+
   /* COMMENTS ARE NOT MARKUP, and this check reads them if you let it. The
      placeholder figure's comment spells out the exact one-line edit that
-     replaces it with a clip — `data-help-gif="/help/ability-blink.gif"` — and
+     replaces it with a clip — `data-help-gif="/help/ability/blink.gif"` — and
      the first run of it duly failed on a file that is not supposed to exist
      yet. A note about a future filename is the most useful thing that comment
      could say; stripping comments here is what lets it say it. */
@@ -15675,15 +16293,15 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
     `(${moveFigs.length})`);
   ok('...four of them filmed, and exactly one still awaiting its clip',
     moveFigs.filter((f) => /data-help-gif=/.test(f)).length === 4
-    && moveFigs.filter((f) => /src="\/help\/ability-blink\.png"/.test(f)).length === 1);
-  for (const [kanji, gif] of [['壁', 'ability-ward'], ['落', 'ability-dive'],
-    ['十', 'ability-cross'], ['突', 'ability-charge']]) {
+    && moveFigs.filter((f) => /src="\/help\/ability\/blink\.png"/.test(f)).length === 1);
+  for (const [kanji, gif] of [['壁', 'ability/ward'], ['落', 'ability/dive'],
+    ['十', 'ability/cross'], ['突', 'ability/charge']]) {
     ok(`...the ${kanji} move is illustrated by ${gif}.gif`,
       moveFigs.some((f) => f.includes(`${gif}.gif`) && f.includes(kanji)));
   }
-  for (const g of ['feast-eat', 'ability-ward', 'ability-dive',
-    'ability-cross', 'ability-charge', 'panda', 'dojo-world', 'dojo-sincos', 'dealer',
-    'ryuuseki']) {
+  for (const g of ['world/feast-eat', 'ability/ward', 'ability/dive',
+    'ability/cross', 'ability/charge', 'world/panda', 'dojo/world', 'dojo/sincos',
+    'world/dealer', 'world/ryuuseki']) {
     ok(`the ${g}.gif clip is on disk`,
       existsSync(new URL(`../public/help/${g}.gif`, import.meta.url)));
   }
@@ -15699,8 +16317,8 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
      "(player 2:\n  <kbd>I</kbd>)" is the same words to a reader — the first
      run of this check failed on exactly that line break. */
   const clanCard = helpTopic(help, 'Clan abilities').replace(/\s+/g, ' ');
-  for (const [kanji, clan, gif] of [['盗', 'Icewhisker', 'clan-steal'],
-    ['息', 'Windwhisker', 'clan-breath'], ['🐼', 'Pandapaw', 'clan-panda']]) {
+  for (const [kanji, clan, gif] of [['盗', 'Icewhisker', 'clan/steal'],
+    ['息', 'Windwhisker', 'clan/breath'], ['🐼', 'Pandapaw', 'clan/panda']]) {
     ok(`...Clan abilities names ${kanji} for ${clan}`, clanCard.includes(kanji) && clanCard.includes(clan));
     ok(`...and shows it with ${gif}.gif, deferred until Help opens`,
       new RegExp(`<img data-help-gif="/help/${gif}\\.gif"(?![^>]*\\ssrc=)[^>]*>`).test(clanCard));
@@ -16982,7 +17600,7 @@ console.log('\n--- Mr. Satan loses his temper ---');
     lines: [],
     poses: [],
     setLine(t) { this.lines.push(t); },
-    setPose(p) { this.poses.push(p); },
+    setPose(p, owner = null) { this.poses.push(`${p}:${owner}`); },
   };
   const said = [];
   const toasts = [];
@@ -17088,7 +17706,7 @@ console.log('\n--- Mr. Satan loses his temper ---');
   run(1.1);
   ok('at ten he has had enough', blast.stage === 'charge');
   ok('...and says so', said[1] === 'sat_blast');
-  ok('...and puts his arms up', satan.poses.at(-1) === 'charge');
+  ok('...and puts his arms up', satan.poses.at(-1) === 'charge:blast');
 
   /* THE CHARGE IS A BEAT, NOT A DELAY. One second is long enough to read the
      pose and short enough that a child does not wander off during it. */
@@ -17142,7 +17760,7 @@ console.log('\n--- Mr. Satan loses his temper ---');
 
   /* --- AND HE CALMS DOWN --- */
   run(BLAST.boom + 0.05);
-  ok('afterwards he puts his arms down', satan.poses.at(-1) === 'idle');
+  ok('afterwards he puts his arms down', satan.poses.at(-1)?.startsWith('idle'));
   ok('...and the drawing is put away', blast.fx.visible === false);
   ok('...and he will not do it again immediately', blast.stage === 'cool');
   run(BLAST.cool - 1);
@@ -17162,7 +17780,7 @@ console.log('\n--- Mr. Satan loses his temper ---');
      fuse is still not cancellable — the ten seconds run down whatever she does
      — but what it finds at the bottom now matters. */
   {
-    const wasCharge = satan.poses.filter((x) => x === 'charge').length;
+    const wasCharge = satan.poses.filter((x) => x.startsWith('charge')).length;
     /* He is mid-taunt with her standing there (the line above left him so). */
     ok('he is mid-taunt with somebody on the box', blast.stage === 'taunt');
     victim.position.set(B.x + 40, B.y, B.z + 40);       // she legs it
@@ -17170,7 +17788,7 @@ console.log('\n--- Mr. Satan loses his temper ---');
     ok('...and with nobody up there at zero, nothing goes off',
       blast.stage === 'off', blast.stage);
     ok('...he never raised his arms',
-      satan.poses.filter((x) => x === 'charge').length === wasCharge);
+      satan.poses.filter((x) => x.startsWith('charge')).length === wasCharge);
     ok('...and the bubble came down with him', satan.lines.at(-1) === '');
     /* BACK TO `off` AND NOT TO `cool`, which is the half a player can feel:
        nothing happened, so nothing is spent, and the next kitten up gets the
@@ -17229,7 +17847,7 @@ console.log('\n--- Mr. Satan loses his temper ---');
        runs 8.6 seconds and the old card was seven words. Harrison reads about
        2.5 words a second, so a card with fewer than two words per second of
        recording is a card that has run out before he has. */
-    const mp3 = new URL('../public/voice/sat_taunt.mp3', import.meta.url);
+    const mp3 = new URL(`../public${voicePath('sat_taunt')}`, import.meta.url);
     if (existsSync(mp3)) {
       const words = card(BLAST_LINES.taunt).split(/\s+/).length;
       ok('...and there are enough words on it to fill the recording',
@@ -17242,7 +17860,7 @@ console.log('\n--- Mr. Satan loses his temper ---');
   blast.update(1 / 60, false);
   ok('closing the arena stops him where he stands', blast.stage === 'off');
   ok('...and tidies the explosion away',
-    !blast.fx.visible && !blast.charge.visible && satan.poses.at(-1) === 'idle');
+    !blast.fx.visible && !blast.charge.visible && satan.poses.at(-1)?.startsWith('idle'));
   run(30, false);
   ok('...and he cannot start again while it is shut', blast.stage === 'off');
 
@@ -17276,6 +17894,68 @@ console.log('\n--- Mr. Satan loses his temper ---');
   bare.setPose('charge');
   ok('with no charge sheet he simply stays in his ordinary pose',
     bare.pose === 'idle' && bare.sprite.visible && !bare.chargeSprite);
+
+  /* --- AND TWO SYSTEMS CANNOT DROP EACH OTHER'S ARMS -------------------
+     Reported from play: "Mr. Satan is not doing his angry animation when the
+     timer counts down to zero and then later in a new round, after a player
+     jumps on his platform. Probably because they both use the same sprite."
+
+     THAT GUESS WAS EXACTLY RIGHT. `Tournament._letHimFinish` raises his arms
+     for ZEEEROOO and `SatanBlast._shout` raises them for the tantrum, and each
+     had its own idea of when to lower them — so `_dropPose` at the end of a
+     round reached into the middle of a live gag, and `_postSatan` (which now
+     fetches him back at the start and end of EVERY round) lowered them
+     unconditionally on whichever frame a round happened to change. From the
+     sofa that is an animation that did not play.
+
+     RAISING ALWAYS WINS, LOWERING NEEDS A RECEIPT. Checked on the real class
+     rather than on a stub, because the arbitration IS the class's. */
+  {
+    const two = new MrSatan(
+      { texture: new THREE.Texture(), contentScale: 1, pad: 0 },
+      { x: 0, y: 0, z: 0 },
+    );
+    two.setChargeArt({ texture: new THREE.Texture(), contentScale: 1, pad: 0 });
+    ok('the charge pose exists once there is a sheet for it', !!two.chargeSprite);
+
+    two.setPose('charge', 'blast');
+    ok('whoever raises his arms owns them',
+      two.pose === 'charge' && two.poseOwner === 'blast');
+    two.setPose('idle', 'round');
+    ok('...and the OTHER system cannot put them down',
+      two.pose === 'charge' && two.poseOwner === 'blast');
+    two.setPose('idle', 'blast');
+    ok('...while the one that raised them can', two.pose === 'idle' && !two.poseOwner);
+
+    /* AND THE SAME BOTH WAYS ROUND, or this is one system given priority
+       rather than a rule. */
+    two.setPose('charge', 'round');
+    two.setPose('idle', 'blast');
+    ok('...and it is a rule, not a pecking order', two.pose === 'charge');
+    two.setPose('idle', 'round');
+    ok('...still symmetrical on the way down', two.pose === 'idle');
+
+    /* A LATER RAISE TAKES OVER, so the gag interrupting the shout is the gag
+       owning it afterwards — not two owners, and never a stranded pose. */
+    two.setPose('charge', 'round');
+    two.setPose('charge', 'blast');
+    two.setPose('idle', 'round');
+    ok('a second raise takes the arms over rather than sharing them',
+      two.pose === 'charge' && two.poseOwner === 'blast');
+
+    /* AND THE TEARDOWN WINS WHATEVER IS GOING ON. `SatanBlast.reset` is the
+       arena closing and the game restarting; without this a tournament torn
+       down mid-shout leaves the World Champion standing in the town square
+       with his fists in the air for the rest of the afternoon. Nothing may be
+       stranded — fourth non-negotiable, read about a sprite. */
+    two.setPose('idle');
+    ok('...but a forced reset puts them down from any owner',
+      two.pose === 'idle' && !two.poseOwner);
+    ok('...and it is the teardown path that forces, not the ordinary ones',
+      /this\.satan\?\.setPose\?\.\('idle'\);/.test(bsrc)
+      && /this\.satan\?\.setPose\?\.\('idle', 'blast'\);/.test(bsrc)
+      && /this\.satan\?\.setPose\?\.\('charge', 'blast'\);/.test(bsrc));
+  }
   /* --- IT CAN BE LOOKED AT WITHOUT PLAYING FOR TEN SECONDS ---
      `provoke` is the debug key's entire implementation, and the point of it
      being one line is that the sequence it starts is the REAL one. A key that
@@ -17287,7 +17967,7 @@ console.log('\n--- Mr. Satan loses his temper ---');
   ok('the debug key skips the fuse and goes straight to the shout',
     blast.stage === 'charge');
   ok('...through the real path, so he says the line and raises his arms',
-    said.at(-1) === 'sat_blast' && satan.poses.at(-1) === 'charge');
+    said.at(-1) === 'sat_blast' && satan.poses.at(-1) === 'charge:blast');
   run(BLAST.charge + BLAST.boom + 0.1);
   ok('...and it really does end in the explosion', blast.stage === 'cool');
 
@@ -17602,6 +18282,45 @@ console.log('\n--- seeing through the arena ---');
   ok('...and four kittens all get one',
     [...shader.uniforms.uCutOn.value].every((v) => v === 1));
 
+  /* --- AND THE FLOOR SHE IS STANDING ON --------------------------------
+     Reported from play: "fix the x-ray issue where we can see through the
+     ground (ceiling of the platform) that Mr. Satan is standing on in the
+     arena." The cut was not wrong — the lid he stands on IS on the segment
+     between the camera and his chest, so opening a hole in it was the shader
+     doing exactly what it was told. These are the checks that would have
+     caught it, and the ones that stop the guard being quietly disarmed. */
+  ok('a cut with no floor protects nothing, exactly as before',
+    [...shader.uniforms.uCutFloor.value].every((v) => v === -1e9));
+  mat.setCuts(new THREE.Vector3(0, 0, 0),
+    [new THREE.Vector3(1, 2, 3), new THREE.Vector3(4, 5, 6)], [7.5, 8.25]);
+  ok('...and a cut that is given one carries it into the shader',
+    shader.uniforms.uCutFloor.value[0] === 7.5
+    && shader.uniforms.uCutFloor.value[1] === 8.25);
+  /* THE SLOTS NOBODY IS IN GO BACK TO OPEN, rather than keeping the floor of
+     whoever stood in them last frame — which would be a building that will
+     not dissolve, in a pane with nobody in it to explain why. */
+  ok('...and an unused slot keeps no floor from the frame before',
+    shader.uniforms.uCutFloor.value[2] === -1e9
+    && shader.uniforms.uCutFloor.value[3] === -1e9);
+  /* A GUARD THAT SILENTLY STOPS GUARDING IS THE WORST OF THE THREE OUTCOMES.
+     `y < NaN` is false for every fragment, so one stray `undefined` from a
+     caller would turn the floor off everywhere and never throw, and the bug
+     above would come back looking brand new. */
+  mat.setCuts(new THREE.Vector3(0, 0, 0),
+    [new THREE.Vector3(1, 2, 3), new THREE.Vector3(4, 5, 6)],
+    [undefined, NaN]);
+  ok('...and a floor that is not a number is no floor, never NaN',
+    shader.uniforms.uCutFloor.value[0] === -1e9
+    && shader.uniforms.uCutFloor.value[1] === -1e9);
+  ok('the shader refuses to cut anything below that floor',
+    /if \(vXrayWorld\.y < uCutFloor\[i\]\) continue;/.test(shader.fragmentShader));
+  /* BEFORE THE SEGMENT MATHS, NOT AFTER IT. Below the `cut = max(...)` line
+     the fragment has already been marked for discard, and the guard reads as
+     working right up until somebody looks at the lid. */
+  ok('...and it asks that before it works out where the fragment sits',
+    shader.fragmentShader.indexOf('uCutFloor[i]) continue;')
+      < shader.fragmentShader.indexOf('float t = dot(vXrayWorld'));
+
   /* --- the arena's own see-through furniture --- */
   const built = buildArena();
   ok('the arena comes back in two piles', Array.isArray(built.seeThrough));
@@ -17637,10 +18356,54 @@ console.log('\n--- seeing through the arena ---');
     world.arenaProps.visible === false && world.arenaSeeThrough.visible === false);
   world.openArena(wasOpen);
 
+  /* --- AND THE TOWN, WHICH IS WHERE THEY ACTUALLY PLAY ------------------
+     "Enable the x-ray shader when the player goes behind buildings or trees
+     so that they can see mischief hiding behind the buildings/trees."
+
+     BOTH PILES. `structural` is the buildings and stalls, `decor` is the
+     cherry trees — and the trees are the half that was asked for by name, so
+     the version of this that gives the material only to the buildings is the
+     version that gets reported again. */
+  ok('the town is see-through too', Array.isArray(world.townXray)
+    && world.townXray.length === 2, `${world.townXray?.length} meshes`);
+  ok('...buildings AND trees, not just the buildings',
+    world.townXray.every((m) => typeof m.material.setCuts === 'function'));
+  /* SHADOWS STAY ON HERE AND ARE OFF ON THE ARENA POSTS, which looks
+     inconsistent and is not — see `_buildTown`. A porthole in a ten-unit
+     wall leaves a shadow nobody has ever looked for; a hole through most of
+     an eleven-unit column leaves one that reads as a bug. Turning these off
+     to match would cost every building in the town its own shade. */
+  ok('...and they go on casting their shadows, unlike the posts',
+    world.townXray.every((m) => m.castShadow === true));
+
   const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
     .replace(/\r/g, '');
+  /* THE TWO ARRAYS ARE READ BY INDEX, so a subject pushed without a floor
+     does not lose its own guard — it hands every subject after it somebody
+     else's, and the wrong building stops dissolving. Counting the pushes is
+     the only cheap way to pin that from the outside. */
+  for (const fn of ['_aimArenaXray', '_aimTownXray']) {
+    const at = msrc.indexOf(`  ${fn}(camera`);
+    const body = msrc.slice(at, msrc.indexOf('\n  }\n', at));
+    const subjects = (body.match(/seen\.push\(/g) || []).length;
+    const floors = (body.match(/floors\.push\(/g) || []).length;
+    ok(`${fn} gives every subject its own floor`,
+      at > 0 && subjects > 0 && subjects === floors,
+      `${subjects} subject(s), ${floors} floor(s)`);
+    ok(`...and hands them both to the material`,
+      /setCuts\?\.\(camera\.position, seen, floors\)/.test(body));
+  }
   ok('the arena cut is aimed per view, like the grottos',
-    /_aimXray\(camera\) \{\n    this\._aimArenaXray\(camera\);/.test(msrc));
+    /_aimXray\(camera, members = null\) \{\n    this\._aimArenaXray\(camera\);/.test(msrc));
+  /* AND SO IS THE TOWN'S, WHICH IS THE ONE THAT NEEDED THE EXTRA ARGUMENT.
+     "Enable the x-ray shader when the player goes behind buildings or trees."
+     A grotto filters by "is she near this dome"; the town has no such filter,
+     because the town is one place and everybody is in it — so without the
+     pane's own group the kitten in the top-left pane bores a tunnel through
+     the tea house in the bottom-right one. */
+  ok('...and so is the town\'s, for the pane it is about to draw',
+    /this\._aimTownXray\(camera, members\);/.test(msrc)
+    && /this\._renderView\(cam, v\.x, v\.y, v\.w, v\.h, groups\[i\]\)/.test(msrc));
   /* HE GOES IN FIRST. Four kittens plus Mr Satan is five names for four slots,
      and he is the one everybody is looking at. */
   const aimAt = msrc.indexOf('_aimArenaXray(camera) {');
@@ -17968,7 +18731,8 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...with the 540 ceiling lifted for a column and kept everywhere else',
       /Math\.min\(tall \? Infinity : 540, v\.w - \d+\)/.test(fn));
     ok('...and the top corner, since at full size the bottom is not a corner',
-      /inner: false, top: full/.test(fn));
+      /inner: false, top: toTop/.test(fn)
+      && /const toTop = full && panes\.length > 1;/.test(fn));
     /* HOW FAR DOWN THE SCOREBOARD REACHES IS MEASURED, and only asked when the
        two would actually meet — "as close to the corner as we can" means the
        drop has to be nothing at all when the corner is free. */
@@ -17980,6 +18744,68 @@ console.log('\n--- one press is not enough, and one player drives ---');
        sixteen pixels short because it forgot `HINT_CLEAR`. */
     ok('...and it never grows down into the pane\'s own minimap',
       /const mapAt = mapSpot\(\{/.test(fn) && /const room = mapAt\.top/.test(fn));
+
+    /* --- AND TWO KITTENS ON ONE SCREEN IS A SHARED PANE TOO ------------
+       Reported from play: "if split-screen is set to Top and Bottom and two
+       players are in the Dojo of the Turning Circle together, the Sin-Cos UI
+       is very small for some reason. It gets bigger when there are 3 players."
+
+       IT GOT BIGGER AT THREE BECAUSE THREE IS WHERE THE SCREEN SPLITS. Two
+       kittens on the circle together is `allInDojo`, which forces ONE view,
+       and this function used to return on `this.merged` before looking at
+       anything — dropping the board back on the stylesheet's
+       `min(540px, 42vw)`. Measured in the running game at 900x600: 378px
+       before, 540px after. At 858x477: 360 -> 516. At 1280x720: 538 -> 540.
+       The split direction is a red herring; a pair in the Dojo is merged
+       whichever way it points. */
+    ok('a merged screen no longer gives up before it has looked',
+      !/if \(!mathUp \|\| this\.merged \|\| panes\.length < 2\)/.test(fn)
+      && /if \(!mathUp\) \{ toSheet\(\); return; \}/.test(fn));
+    ok('...and one pane with one kitten in it is still the stylesheet, untouched',
+      /if \(panes\.length < 2 && !shared\) \{ toSheet\(\); return; \}/.test(fn));
+    ok('...and on one screen it clears the map SIDEWAYS, which is the axis they share',
+      /if \(full && !toTop\) \{/.test(fn) && /const room = mapAt\.left - 28;/.test(fn));
+
+    /* AND THE ONE THING THAT MUST BE TRUE OF THE WHOLE CHANGE: IT CAN NEVER
+       HAND BACK A SMALLER BOARD THAN THE STYLESHEET DID. Worked out from the
+       real `mapSpot` and `mapWidth` over a spread of real window sizes, so a
+       later tweak to either cannot quietly undo the report's fix. The 1280
+       case is why this exists: a first version moved the board to the top
+       corner, which dragged the vertical map-shrink in with it and came out
+       at 481 against the stylesheet's 537 — a fix that made the thing
+       smaller on the commonest window in the house. */
+    {
+      const sizes = [[858, 477], [900, 600], [1024, 640], [1280, 720],
+        [1366, 768], [1600, 900], [1920, 1080], [2560, 1440]];
+      /* READ OFF main.js RATHER THAN RESTATED. It is the number `mapSpot`
+         lifts a box off the bottom of the screen by, and a second copy of it
+         here is a second copy that can drift from the one being checked. */
+      const HINT_CLEAR = Number(/const HINT_CLEAR = (\d+);/.exec(main)?.[1]);
+      ok('the board check reads the real bottom clearance out of main.js',
+        Number.isFinite(HINT_CLEAR) && HINT_CLEAR > 0, `${HINT_CLEAR}`);
+      const bad = [];
+      for (const [W, H] of sizes) {
+        const v = { x: 0, y: 0, w: W, h: H };
+        let w = Math.max(1, Math.min(540, v.w - 28));
+        const mapAt = mapSpot({
+          v,
+          W,
+          H,
+          size: mapWidth({ paneW: v.w, paneH: v.h, screenH: H, merged: true, mathUp: true }),
+          pad: 14,
+          hint: HINT_CLEAR,
+        });
+        const room = mapAt.left - 28;
+        if (room > 180) w = Math.min(w, Math.round(room));
+        const wasCss = Math.min(540, 0.42 * W);
+        /* BIGGER, AND NOT TOUCHING THE MAP. Both, at every size — a board that
+           grew by overlapping the thing beside it is not a fix. */
+        if (w < wasCss - 0.5) bad.push(`${W}x${H} shrank ${Math.round(wasCss)}->${w}`);
+        if (14 + w > mapAt.left) bad.push(`${W}x${H} overlaps the map by ${14 + w - mapAt.left}`);
+      }
+      ok('two kittens on one screen always get a board at least as big as before',
+        bad.length === 0, bad.join('; ') || `${sizes.length} sizes, all bigger and all clear`);
+    }
   }
 
   /* --- THE MATHS OVERLAY IS A SETTING, NOT ONLY A BUTTON ----------------
@@ -19012,8 +19838,12 @@ console.log('\n--- one press is not enough, and one player drives ---');
   ok('...and forgets the count on a restart', /this\.lastHunt\?\.reset\(\)/.test(M));
   ok('...and adopts one from a loaded game',
     /this\.lastHunt\?\.sync\(W\.mischiefTotal - done\)/.test(M));
+  /* THE IDS COME FROM `HUNT_LINES` ITSELF, which is the point of the
+     assertion: a hand-written list here could go stale against the lines it is
+     buffering. `voicePath` is how a path is spelled now — see core/audio.js —
+     so the shape is the same and the folder is somebody else's problem. */
   ok('...and buffers her clips at boot with the rest of the voice',
-    /Object\.keys\(HUNT_LINES\)\.map\(\(id\) => \[id, `\/voice\/\$\{id\}\.mp3`\]\)/.test(M));
+    /Object\.keys\(HUNT_LINES\)\.map\(\(id\) => \[id, voicePath\(id\)\]\)/.test(M));
 
   /* THE SEEK TARGET IS SOLVED FOR EVERYBODY AND THE CHEVRON IS STILL THE
      BUFF'S. `_updateSeek` used to `continue` before the search for anyone who
@@ -19898,9 +20728,23 @@ console.log('\n--- one press is not enough, and one player drives ---');
        rather than knocked over — and it is exactly the pose a prop converges
        to on its own over about a second, so it is also the tell. */
     const fresh = mine.slice(2);
-    const tips = new Set(fresh.map((q) => q.group.rotation.x.toFixed(3)));
+    /* MEASURED ON THE RAW ANGLES, AND WITH A SPREAD BESIDE THE COUNT. This
+       rounded to three decimals and allowed one collision, which made it a
+       birthday test rather than a check: the tilt is `Math.cos(a) * tip`, and
+       cosine piles its values up at both ends, so 22 draws landed on the same
+       thousandth twice about one run in ten and world-check went red over a
+       town that was fine. Unrounded, two independent draws colliding is a
+       2^-52 event, while a constant pose — the regression this is here for —
+       still collides exactly. The spread is what the rounding was really
+       reaching for: 22 barrels tipped a thousandth of a radian apart would be
+       distinct and would still look placed. Measured 2.73-3.17 rad over
+       twenty runs; the bar is 1.5. */
+    const tilt = fresh.map((q) => q.group.rotation.x);
+    const tips = new Set(tilt);
+    const spread = Math.max(...tilt) - Math.min(...tilt);
     ok('...each of them lying in a direction of its own',
-      tips.size >= fresh.length - 1, `${tips.size} distinct tilts of ${fresh.length}`);
+      tips.size === fresh.length && spread > 1.5,
+      `${tips.size} distinct tilts of ${fresh.length}, ${spread.toFixed(2)} rad apart`);
     ok('...none of them in the pose a prop settles into by itself',
       fresh.every((q) => Math.abs(q.group.rotation.z) > 1e-3));
     ok('...and all of them near the spot they were built on',
@@ -22365,13 +23209,21 @@ console.log('\n--- one press is not enough, and one player drives ---');
        thing that happens rather than a number that was rolled, and the way to
        count jumps is to watch her leave the ground. */
     const apex = [];
-    let airborne = 0;
-    let onDeck = 0;
     let leaps = 0;
     let doubles = 0;
     let deepest = 0;
     const was = S.kits.map((k) => ({ air: k.air, vy: k.vy, jumps: k.jumps }));
     const top = S.kits.map(() => 0);
+    /* PER KITTEN, NEVER SUMMED: her longest unbroken stretch in the air, how
+       many deck frames she spends standing on it, how many she is on the deck
+       at all, and whether she was ever seen floating. Summing these across the
+       party is what made the check below a coin flip; the note there has the
+       numbers. */
+    const runAir = S.kits.map(() => 0);
+    const maxAir = S.kits.map(() => 0);
+    const grounded = S.kits.map(() => 0);
+    const deckOf = S.kits.map(() => 0);
+    const floater = S.kits.map(() => false);
     const bx2 = world.bridge.x;
     const half2 = (world.bridgeSpan?.len ?? 18) / 2;
     for (let i = 0; i < 60 * 10; i++) {
@@ -22390,15 +23242,22 @@ console.log('\n--- one press is not enough, and one player drives ---');
            this shot makes. */
         if (k.vy < deepest) deepest = k.vy;
         w.air = k.air; w.vy = k.vy; w.jumps = k.jumps;
-        /* COUNTED PER KITTEN AND THEN ADDED UP, so these are cat-frames and
-           not wall-clock frames. Asking only of the leader was a sample of one
-           crossing: a Dash covers the deck at 3.2x, so how long she spends on
-           it is a die-roll and the totals swung either side of a second. */
+        /* COUNTED PER KITTEN AND KEPT THAT WAY. Asking only of the leader was
+           a sample of one crossing: a Dash covers the deck at 3.2x, so how long
+           she spends on it is a die-roll and the totals swung either side of a
+           second. Adding the four of them up instead was worse — see below. */
         if (k.k < 0 || k.k > 1) return;
         const x0 = bx2 - half2 - S.brUp + k.k * S.brPath;
         if (Math.abs(x0 - bx2) <= half2) {
-          onDeck++;
-          if (k.air > 0.01) airborne++;
+          deckOf[n] += 1;
+          if (k.mv === 'float') floater[n] = true;
+          if (k.air > 0.01) {
+            runAir[n] += 1;
+            maxAir[n] = Math.max(maxAir[n], runAir[n]);
+          } else {
+            runAir[n] = 0;
+            grounded[n]++;
+          }
         }
       });
     }
@@ -22420,14 +23279,39 @@ console.log('\n--- one press is not enough, and one player drives ---');
        past 16 could only have been thrown. */
     ok('...and one of them comes down faster than a fall',
       deepest <= -16, `${deepest.toFixed(1)} units a second`);
-    /* ASKED OF ONE KITTEN, NOT OF THE PARTY. "Is anybody in the air" is yes 85%
-       of the time with four of them hopping independently, which is the right
-       answer to a question nobody is asking — what has to be true is that each
-       of them lands between jumps. As a FRACTION of the crossing, because the
-       crossing is now a measured length of a longer run. */
+    /* ASKED OF EACH KITTEN, NOT OF THE PARTY — and the floater is asked a
+       different question. "Is anybody in the air" is yes 85% of the time with
+       four of them hopping independently, which is the right answer to a
+       question nobody is asking; what has to be true is that each of them
+       LANDS between her jumps.
+
+       THIS WAS ONE AGGREGATE FRACTION UNDER A 0.75 CEILING AND IT WAS A COIN
+       FLIP — twelve runs measured 68%-79% of deck frames in the air, so this
+       file went red about half the time and green the other half, which is
+       worse than having no check at all. The noise was not in the jumps. It is
+       the SECOND kitten, who floats in her Ward across the whole deck ON
+       PURPOSE ("jump and float in the air for a few seconds before falling")
+       and is airborne for 152 of her 153 deck frames in every run ever
+       measured. She is a quarter of the party's deck frames and almost all of
+       them are off the ground, which parks the party average on the bar and
+       leaves the other three's die-rolled filler hops to decide it. An average
+       over four cats cannot say "each of them lands", and it hid the one that
+       never does. Worst measured margin below is 0.53 against the 0.80. */
+    const hoppers = S.kits.map((_, n) => n).filter((n) => !floater[n]);
     ok('...with her paws on the deck between them, not bouncing throughout',
-      airborne > onDeck * 0.08 && airborne < onDeck * 0.75,
-      `${airborne} of ${onDeck} deck frames in the air`);
+      hoppers.length === 3 && hoppers.every(
+        (n) => grounded[n] > 0 && maxAir[n] > 0 && maxAir[n] < deckOf[n] * 0.8),
+      `${hoppers.map((n) => `${maxAir[n]}/${deckOf[n]}`).join(' ')} air/deck`);
+    /* AND THE ONE WHO DOES NOT LAND IS THE ONE WHO IS MEANT NOT TO. The
+       exemption above is a hole, so it is nailed shut here: the float is found
+       by WATCHING for it rather than by trusting an index, exactly one kitten
+       may be doing it, and she has to be up there for the crossing rather than
+       merely somewhere in the air. The thing that broke the old check is the
+       check now. */
+    const fl = floater.indexOf(true);
+    ok('...and exactly one of them floats her Ward the whole way across',
+      floater.filter(Boolean).length === 1 && maxAir[fl] > deckOf[fl] * 0.9,
+      `kitten ${fl + 1}, ${maxAir[fl]} of ${deckOf[fl]} deck frames airborne`);
     S.finish();
   }
   {
@@ -22541,8 +23425,8 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('the ending is handed the scared pose, derived for all four by style',
       /scared:\s*this\.scaredArt/.test(body3)
       && /this\.scaredArt = PLAYER_STYLE\.map/.test(msrc3)
-      && /\['ember_scared', 'ember_scared\.png', false\]/.test(msrc3)
-      && /\['frost_scared', 'frost_scared\.png', false\]/.test(msrc3));
+      && /\['ember_scared', 'kittens\/ember\/scared\.png', false\]/.test(msrc3)
+      && /\['frost_scared', 'kittens\/frost\/scared\.png', false\]/.test(msrc3));
     const alphaPng = (f) => {
       try {
         const b = readFileSync(new URL(`../public/sprites/${f}`, import.meta.url));
@@ -22550,7 +23434,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
       } catch { return false; }
     };
     ok('...and both scared sheets are on disk with real transparency',
-      alphaPng('ember_scared.png') && alphaPng('frost_scared.png'));
+      alphaPng('kittens/ember/scared.png') && alphaPng('kittens/frost/scared.png'));
   }
 
   /* --- THE CUTSCENE SKILL TRAVELS WITH THE REPO ---------------------------

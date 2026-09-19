@@ -4,7 +4,7 @@ import './style.css';
 import {
   InputManager, HALVES, MAP_FIELDS, VJOY_AXIS_NAMES, deviceId, KEYSETS,
 } from './core/input.js';
-import { Audio, trackForIsland } from './core/audio.js';
+import { Audio, trackForIsland, voicePath } from './core/audio.js';
 import { loadSpriteAtlas, recolourAtlas } from './core/spritesheet.js';
 import { placeholderCatAtlas, placeholderDragonTexture, placeholderPandaTexture } from './core/gfx.js';
 import {
@@ -274,6 +274,20 @@ const DEAD_PAD = { mx: 0, my: 0, down: () => false, pressed: () => false };
    flatten them (see xrayVertexMat for the measurements). */
 const CAVE_DIST = 30;
 const CAVE_PITCH = 0.82;
+
+/**
+ * How far from a pane's camera a kitten may be and still open a hole in the
+ * town. See `Game._aimTownXray`.
+ *
+ * MEASURED AGAINST THE CAMERA, NOT AGAINST A BUILDING, because the cut is a
+ * capsule from the lens to her and what it costs is what it swallows on the
+ * way. The walking camera sits about 30 units out and a dragon pulls it to
+ * around 90; past that she is a few pixels tall and the hole would be smaller
+ * than she is, while the capsule would be long enough to take the whole market
+ * square with it on the way past. 120 keeps every on-foot camera and the low
+ * end of flight, and drops the high tour.
+ */
+const TOWN_XRAY_FAR = 120;
 
 /** How long the triple slash's burst lives. Longer than `hitSpark`'s 0.26 by
  *  design: this one has to cover a kitten switching from frozen to flying, and
@@ -1057,25 +1071,25 @@ class Game {
        one animation pose per row. The column count is detected rather than
        assumed — see loadSpriteAtlas. */
     const [ember, frost, dragonTex, dragonFlyTex, pandaCub, pandaAdult] = await Promise.all([
-      this._loadSprite('/sprites/ember_grid_v2.png', 'auto', 4,
+      this._loadSprite('/sprites/kittens/ember/grid_v2.png', 'auto', 4,
         () => placeholderCatAtlas('#f2683c', '#c33a22', '#33408c')),
-      /* frost_grid.png, NOT the v2 sheet. v2's four rows disagree with each
+      /* frost/grid.png, NOT the v2 sheet. v2's four rows disagree with each
          other about which way the character turns — its jump and attack rows
          are drawn mirrored against its idle and walk rows — so no single
          mapping can be right for all of them. This older sheet is internally
          consistent: column 4 is a back view in every row. */
-      this._loadSprite('/sprites/frost_grid.png', 'auto', 4,
+      this._loadSprite('/sprites/kittens/frost/grid.png', 'auto', 4,
         () => placeholderCatAtlas('#b9b6c4', '#7d7a8c', '#d86a9e')),
-      this._loadSprite('/sprites/dragon_sheet.png', 1, 1,
+      this._loadSprite('/sprites/beasts/dragon_sheet.png', 1, 1,
         () => ({ texture: placeholderDragonTexture(), cols: 1, rows: 1, aspect: 1.9 })),
-      this._loadSprite('/sprites/dragon_fly.png', 1, 1,
+      this._loadSprite('/sprites/beasts/dragon_fly.png', 1, 1,
         () => ({ texture: placeholderDragonTexture(), cols: 1, rows: 1, aspect: 1.9 })),
       /* The two panda tiers. Single side-on cells like the dragon, not
          turnarounds — the billboard mirrors them and the heading is locked
          broadside, so one drawing per tier is all there is to read. */
-      this._loadSprite('/sprites/panda_cub.png', 1, 1,
+      this._loadSprite('/sprites/beasts/panda_cub.png', 1, 1,
         () => ({ texture: placeholderPandaTexture(true), cols: 1, rows: 1, aspect: 1 })),
-      this._loadSprite('/sprites/panda_adult.png', 1, 1,
+      this._loadSprite('/sprites/beasts/panda_adult.png', 1, 1,
         () => ({ texture: placeholderPandaTexture(false), cols: 1, rows: 1, aspect: 1 })),
     ]);
     this.pandaArt = { cub: pandaCub, adult: pandaAdult };
@@ -1088,7 +1102,7 @@ class Game {
     const leaderNames = ['thunderpaw', 'riverclaw', 'shadowtail', 'windwhisker',
       'icewhisker', 'pandapaw', 'elder'];
     const leaderArt = await Promise.all(leaderNames.map((n) => this._loadSprite(
-      `/sprites/leader_${n}.png`, 1, 1,
+      `/sprites/leaders/${n}.png`, 1, 1,
       () => ({ texture: placeholderCatAtlas(), cols: 4, rows: 1, aspect: 1 }),
     )));
     this.leaderArt = Object.fromEntries(leaderNames.map((n, i) => [n, leaderArt[i]]));
@@ -1147,7 +1161,7 @@ class Game {
     this.balls = this.world.dragonBalls;
     this.ballsHeld = 0;
     this.ryu = null;
-    this.ryuArt = await loadSpriteAtlas('/sprites/ryuuseki.png',
+    this.ryuArt = await loadSpriteAtlas('/sprites/beasts/ryuuseki.png',
       { views: 1, rows: 1, clearPockets: true, maxAtlas: this.device.atlasMax })
       .catch(() => null);
     this.summonScene = new SummonScene({
@@ -1166,10 +1180,10 @@ class Game {
     setLoad('Building the arena…');
     await frame();
     const [satanArt, griffinArt, satanChargeArt] = await Promise.all([
-      loadSpriteAtlas('/sprites/leader_satan.png',
+      loadSpriteAtlas('/sprites/satan/satan.png',
         { views: 1, rows: 1, clearPockets: true, maxAtlas: this.device.atlasMax })
         .catch(() => null),
-      loadSpriteAtlas('/sprites/griffin.png',
+      loadSpriteAtlas('/sprites/beasts/griffin.png',
         { views: 1, rows: 1, clearPockets: true, maxAtlas: this.device.atlasMax })
         .catch(() => null),
       /* His arms-up pose, for the one second before he detonates. Loaded with
@@ -1177,7 +1191,7 @@ class Game {
          other (see `MrSatan.setChargeArt`), and a different `clearPockets` or
          `maxAtlas` between them would mean comparing two numbers taken with
          two different rulers. Missing costs the pose and nothing else. */
-      loadSpriteAtlas('/sprites/satan_charge.png',
+      loadSpriteAtlas('/sprites/satan/charge.png',
         { views: 1, rows: 1, clearPockets: true, maxAtlas: this.device.atlasMax })
         .catch(() => null),
     ]);
@@ -1197,26 +1211,26 @@ class Game {
        fire mid-play with nothing waiting on them, so a clip fetched at the
        moment he opens his mouth arrives over a game that has moved on. */
     await this.announcer.load({
-      ...Object.fromEntries(MILESTONES.map((m) => [m.id, `/voice/${m.id}.mp3`])),
+      ...Object.fromEntries(MILESTONES.map((m) => [m.id, voicePath(m.id)])),
       /* HER LINES, IN HIS BUFFER. Same card, same queue, so the same map of
          preloaded clips — and the same reason for preloading them: these fire
          the instant a barrel goes over, with nothing waiting on them, so a
          clip fetched at the moment she opens her mouth arrives over a hunt
          that has already found the next one. Ids come from `HUNT_LINES` so
          the list cannot drift from the lines it is buffering. */
-      ...Object.fromEntries(Object.keys(HUNT_LINES).map((id) => [id, `/voice/${id}.mp3`])),
-      sat_board: '/voice/sat_board.mp3',
-      sat_r1: '/voice/sat_r1.mp3',
-      sat_r2: '/voice/sat_r2.mp3',
-      sat_r3: '/voice/sat_r3.mp3',
-      sat_fight: '/voice/sat_fight.mp3',
-      sat_feast: '/voice/sat_feast.mp3',
-      sat_ko: '/voice/sat_ko.mp3',
+      ...Object.fromEntries(Object.keys(HUNT_LINES).map((id) => [id, voicePath(id)])),
+      sat_board: voicePath('sat_board'),
+      sat_r1: voicePath('sat_r1'),
+      sat_r2: voicePath('sat_r2'),
+      sat_r3: voicePath('sat_r3'),
+      sat_fight: voicePath('sat_fight'),
+      sat_feast: voicePath('sat_feast'),
+      sat_ko: voicePath('sat_ko'),
       /* THE OTHER WAY A ROUND ENDS. `sat_ko` is "DOWN!", which is a claim
          about somebody's body and is only true when a side was actually wiped
          out; the clock running out leaves both fighters standing. See
          `Tournament._roundOver`. */
-      sat_over: '/voice/sat_over.mp3',
+      sat_over: voicePath('sat_over'),
       /* THE CLOCK, IN FOUR CUES AND NOT ONE CLIP. Thirty, fifteen, ten, and
          then the count — which is the odd one out twice over: it is the only
          thing in this list PLAYED rather than said (no card; the number it is
@@ -1224,21 +1238,21 @@ class Game {
          late means arriving WRONG, because each number inside it is nailed to
          the second it names. `sat_zero` is the shout the round ends on.
          All four are cut by tools/capture/satan-countdown.mjs. */
-      sat_t30: '/voice/sat_t30.mp3',
-      sat_last1: '/voice/sat_last1.mp3',
-      sat_last2: '/voice/sat_last2.mp3',
-      sat_count: '/voice/sat_count.mp3',
-      sat_zero: '/voice/sat_zero.mp3',
-      sat_draw: '/voice/sat_draw.mp3',
-      sat_win1: '/voice/sat_win1.mp3',
-      sat_win2: '/voice/sat_win2.mp3',
+      sat_t30: voicePath('sat_t30'),
+      sat_last1: voicePath('sat_last1'),
+      sat_last2: voicePath('sat_last2'),
+      sat_count: voicePath('sat_count'),
+      sat_zero: voicePath('sat_zero'),
+      sat_draw: voicePath('sat_draw'),
+      sat_win1: voicePath('sat_win1'),
+      sat_win2: voicePath('sat_win2'),
       /* His tantrum, both halves. Buffered here with the rest and not lazily,
          for the reason `load` gives at length: these fire mid-play with
          nothing waiting on them, and the second one is the cue for an
          explosion one second later — a clip that arrives late arrives after
          the bang it was supposed to announce. */
-      sat_taunt: '/voice/sat_taunt.mp3',
-      sat_blast: '/voice/sat_blast.mp3',
+      sat_taunt: voicePath('sat_taunt'),
+      sat_blast: voicePath('sat_blast'),
     });
 
     if (satanArt) {
@@ -1310,25 +1324,25 @@ class Game {
     setLoad('Letting the rats in…');
     await frame();
     const CRITTER_ART = [
-      ['rat', 'rat.png', false],
-      ['rat_shock', 'rat_shock.png', false],
+      ['rat', 'critters/rat.png', false],
+      ['rat_shock', 'critters/rat_shock.png', false],
       /* TWO RABBIT BODIES: one scampering along the floor and one mid-leap.
          It shipped with only the leap, so the animal was frozen in a jumping
          pose while running along the ground — which reads as a broken sprite
          rather than as a rabbit, and it also threw away the one visual cue
          that says whether it can be pinned right now. */
-      ['rabbit_run', 'rabbit_run.png', false],
-      ['rabbit_air', 'rabbit.png', false],
-      ['rabbit_shock', 'rabbit_shock.png', true],
-      ['bird', 'bird.png', false],
-      ['bird_shock', 'bird_shock.png', false],
-      ['angel_wings', 'angel_wings.png', false],
+      ['rabbit_run', 'critters/rabbit_run.png', false],
+      ['rabbit_air', 'critters/rabbit.png', false],
+      ['rabbit_shock', 'critters/rabbit_shock.png', true],
+      ['bird', 'critters/bird.png', false],
+      ['bird_shock', 'critters/bird_shock.png', false],
+      ['angel_wings', 'fx/angel_wings.png', false],
       /* The kittens' own crouched eating pose. Loaded here rather than with
          the turnaround sheets because it is the same KIND of thing as the rest
          of this block — a single front-facing cell that never mirrors — and
          because a missing one costs the pose and nothing else. */
-      ['ember_eat', 'ember_eat.png', false],
-      ['frost_eat', 'frost_eat.png', false],
+      ['ember_eat', 'kittens/ember/eat.png', false],
+      ['frost_eat', 'kittens/frost/eat.png', false],
       /* THE RECEIVING POSE — both paws to the sky, taking the thing above her
          head. Worn for a dragon ball and for a first clan oath, which are the
          same moment twice: see `Player.setBlessArt`.
@@ -1337,14 +1351,14 @@ class Game {
          `recolourAtlas` below — so "generate a new player sprite" is two
          drawings and four cats, and the two recolours cannot be forgotten
          because nothing has to remember them. */
-      ['ember_bless', 'ember_bless.png', false],
-      ['frost_bless', 'frost_bless.png', false],
+      ['ember_bless', 'kittens/ember/bless.png', false],
+      ['frost_bless', 'kittens/frost/bless.png', false],
       /* THE CONCENTRATING POSE — two fingers to her forehead, eyes shut, the
          beat before a 瞬 Flash Step takes her. Two files and four kittens
          again; the recolour loop below is what makes that true, and it is why
          "generate a new player sprite" is two drawings rather than four. */
-      ['ember_warp', 'ember_warp.png', false],
-      ['frost_warp', 'frost_warp.png', false],
+      ['ember_warp', 'kittens/ember/warp.png', false],
+      ['frost_warp', 'kittens/frost/warp.png', false],
       /* THE REAR-BACK — head thrown up, mouth open, cheeks full of air, with
          the intake drawn around her. It is the second and a half between 息
          Dragon Breath's press and its flame, and it exists because that pause
@@ -1352,8 +1366,8 @@ class Game {
          attack is happening". A pose is the indicator that survives her being
          behind a market stall, which none of the effects in `systems/clanfx.js`
          do. Two files and four kittens, the same as the two above. */
-      ['ember_inhale', 'ember_inhale.png', false],
-      ['frost_inhale', 'frost_inhale.png', false],
+      ['ember_inhale', 'kittens/ember/inhale.png', false],
+      ['frost_inhale', 'kittens/frost/inhale.png', false],
       /* THE FRIGHT — looking straight up, eyes wide, mouth open, fur on end,
          both paws thrown up beside her head. Drawn for the ending's earthquake
          ("stop and do a new 'shocked' or 'scared' sprite animation where they
@@ -1362,8 +1376,8 @@ class Game {
          poses because "these may be useful later for when we need a scared
          pose for future abilities or cutscenes". Two files, four kittens. The
          first sheets generated with real alpha rather than keyed off white. */
-      ['ember_scared', 'ember_scared.png', false],
-      ['frost_scared', 'frost_scared.png', false],
+      ['ember_scared', 'kittens/ember/scared.png', false],
+      ['frost_scared', 'kittens/frost/scared.png', false],
       /* THE CONJURED INSECT. Loaded with the other animals because it is one,
          and kept out of the ordinary lottery by a flag on its spec rather than
          by anything here — see `Menagerie.species`. No `_shock` sheet: a
@@ -1377,7 +1391,7 @@ class Game {
          depth, so the 57-pixel eye 36 pixels in gets painted and the 1148-pixel
          gap between its back legs, 15 pixels in, does not. See
          `fillSealedHoles`. It is the only sheet in the game that needs it. */
-      ['mantis', 'mantis.png', false, { fillHoles: true }],
+      ['mantis', 'critters/mantis.png', false, { fillHoles: true }],
     ];
     const critterArt = {};
     await Promise.all(CRITTER_ART.map(async ([key, file, facesRight, extra]) => {
@@ -1507,7 +1521,7 @@ class Game {
        wrong — and the leaders' loader measures turnarounds. */
     this.clanArt = {};
     await Promise.all(CLANS.map(async (c) => {
-      const a = await loadSpriteAtlas(`/sprites/clan_${c.id}.png`, {
+      const a = await loadSpriteAtlas(`/sprites/clans/${c.id}.png`, {
         views: 1, rows: 1, cell: 256, maxAtlas: 768,
       }).catch(() => null);
       if (a) this.clanArt[c.id] = a;
@@ -4923,7 +4937,7 @@ class Game {
            star she holds up is this star's own face, so a kid can see which
            one she just got without reading the toast. */
         p.holdAloft(b.ball.material.map);
-        this.starShot = { player: p, t: STAR_POSE };
+        this.aloftShot = { player: p, t: STAR_POSE, dur: STAR_POSE };
         this.sfx('starfound');
         const left = BALL_COUNT - this.ballsHeld;
         this.toast(
@@ -4936,10 +4950,22 @@ class Game {
       }
     }
     this._wardNagT = Math.max(0, (this._wardNagT ?? 0) - dt);
-    if (this.starShot) {
-      this.starShot.t -= dt;
-      if (this.starShot.t <= 0) this.starShot = null;
-    }
+  }
+
+  /**
+   * Run down the "somebody is holding something up" shot.
+   *
+   * LIFTED OUT OF THE DRAGON BALL HUNT, where it lived while a star was the
+   * only thing that set it. The clan ceremony sets it too now, and a clock
+   * ticking at the bottom of `_updateBalls` is a clock the next caller has to
+   * go and FIND before they can trust it — the kind of coupling that only
+   * shows up as "the camera stayed pulled in forever" long after the change
+   * that caused it. Same frame, same order; only the address is different.
+   */
+  _tickAloftShot(dt) {
+    if (!this.aloftShot) return;
+    this.aloftShot.t -= dt;
+    if (this.aloftShot.t <= 0) this.aloftShot = null;
   }
 
   /**
@@ -7245,6 +7271,11 @@ class Game {
          spends it, which also means a panda drawn on a screen with the sound
          off costs nothing at all. */
       if (p.panda?.lickSfx) { p.panda.lickSfx = false; this.sfx('lick'); }
+      /* AND THE BOW AT THE END OF IT. Same one-frame-flag trick, same reason —
+         see `Panda._stepLick` for why the cub only celebrates when she is
+         actually better, and `audio.js` `'lickdone'` for why the sound is the
+         rising figure this game uses for every yes. */
+      if (p.panda?.danceSfx) { p.panda.danceSfx = false; this.sfx('lickdone'); }
     }
     /* THE ENDING BORROWS THE LESSON RATHER THAN DRAWING ITS OWN COPY. During
        the finale's Dojo shot a kitten runs the painted circle and the sine and
@@ -7262,6 +7293,7 @@ class Game {
        ended the frame. */
     this.shrineScene?.watch(dt, this.leaders, this.players);
     this._updateBalls(dt);
+    this._tickAloftShot(dt);
     /* After the players have moved and after the mounts are resolved, so the
        track is decided from where everybody actually IS this frame. */
     this._updateMusic(dt);
@@ -8458,7 +8490,11 @@ class Game {
        so the next time it appeared it appeared in the pane of whoever was in
        the Dojo LAST TIME — for one tick, in somebody else's window. Nothing is
        on screen while this runs, so it costs nothing. */
-    if (!mathUp || this.merged || panes.length < 2) { toSheet(); return; }
+    /* A MERGED SCREEN IS NOT A REASON TO GIVE UP ANY MORE, and that early
+       return is the whole of the next report. See `shared` below — the
+       one-pane case is now refused down there, on whether the pane is really
+       one kitten's, rather than up here on whether the screen is split. */
+    if (!mathUp) { toSheet(); return; }
 
     const dc = this.world?.dojoCentre;
     if (!dc) { toSheet(); return; }
@@ -8533,14 +8569,83 @@ class Game {
        fill. A landscape pane keeps the cap so a shared screen and a big pane
        still come out the same. */
     const shared = (groups[best]?.length ?? 0) > 1;
+
+    /* AND TWO KITTENS ON ONE SCREEN IS A SHARED PANE TOO — WHICH IS THE ONE
+       CASE THE RULE ABOVE COULD NEVER REACH. Reported from play: "if
+       split-screen is set to Top and Bottom and two players are in the Dojo of
+       the Turning Circle together, the Sin-Cos UI is very small for some
+       reason. It gets bigger when there are 3 players."
+
+       IT GETS BIGGER AT THREE BECAUSE THREE IS WHERE THE SCREEN SPLITS. Two
+       kittens standing on the circle together is `allInDojo` in `_clusters`,
+       which forces ONE view — and this function used to return on
+       `this.merged` before it had looked at anything, dropping the board back
+       on the stylesheet's `min(540px, 42vw)`. On any window under about
+       1290px that 42vw is the binding term, so the board came out a few
+       hundred pixels narrower than the 540 a shared PANE is given. Put a
+       third sister somewhere else and the screen splits, the pair's pane goes
+       down the `shared` branch, and the board jumps to full size — the exact
+       "it gets bigger with three" in the report, and the tell that the merge
+       was what did it.
+
+       THE SPLIT DIRECTION IS A RED HERRING HERE, and worth saying so: two
+       kittens in the Dojo are merged whichever way the setting points, so
+       Top/Bottom was what was on rather than what was wrong.
+
+       ONE PANE AND ONE KITTEN IN IT IS STILL THE STYLESHEET'S, UNTOUCHED.
+       That is the solo desktop game and a phone, both of which have a hand-
+       tuned corner in `style.css` that this function has no business
+       overriding — and `toSheet` here rather than a computed 42% is what
+       keeps them byte for byte. The fifth non-negotiable is about the game at
+       two not moving under a four-player rule; this moves it at two ON
+       PURPOSE, because the report is a two-player report. */
+    if (panes.length < 2 && !shared) { toSheet(); return; }
+
     const tall = v.h > v.w;
     const full = shared || tall;
+    /* AND ONE PANE IS NOT A SHARED PANE FOR THE PURPOSE OF MOVING HOUSE.
+       Measured, after the version that did move it: on a 1280x720 window two
+       kittens in the Dojo got a 481px board, DOWN from the stylesheet's 537,
+       because the top corner drags the whole scoreboard-and-map dodge below
+       in with it — and on an unsplit screen the map is in the other bottom
+       corner, so that dodge is paying for a collision that cannot happen.
+       The bottom-outer corner is where this board has always lived on a
+       screen nobody has split, and there is nothing up there it needs to
+       escape. So `full` still means "take the full width" and `toTop` is the
+       separate question "is there something in the bottom corner". */
+    const toTop = full && panes.length > 1;
     let w = full
       ? Math.max(1, Math.min(tall ? Infinity : 540, v.w - 28))
       : Math.min(540, Math.round(v.w * 0.42));
+    /* AND ON ONE SCREEN IT STOPS BEFORE THE MAP SIDEWAYS, not downwards.
+       The two boxes share the bottom edge there — board on the left, map on
+       the right, which `mapSpot` calls the "unsplit arrangement" and has
+       always produced — so the axis they can collide on is x, and the
+       `toTop` branch's vertical shrink below would be measuring the wrong
+       one. Measured at 858x477: a full-size board reaches x=554 and the map
+       starts at x=544, ten pixels of overlap, which is the kind of thing that
+       only shows up on somebody's laptop. Asking the same two functions that
+       place the map is exact by construction, the same argument the vertical
+       version makes. The 180 floor is that branch's too: below it the board
+       is unreadable and a map-sized hole is the better trade. */
+    if (full && !toTop) {
+      const mapAt = mapSpot({
+        v,
+        W,
+        H,
+        size: mapWidth({
+          paneW: v.w, paneH: v.h, screenH: H, touch: this.device.touchPrimary,
+          merged: this.merged, mathUp: true,
+        }),
+        pad: 14,
+        hint: HINT_CLEAR,
+      });
+      const room = mapAt.left - 28;          // her own 14 of pad, and 14 of gap
+      if (room > 180) w = Math.min(w, Math.round(room));
+    }
     st.width = `${w}px`;
     let h = el.getBoundingClientRect().height || Math.round(w * 0.78);
-    const spot = mapSpot({ v, W, H, w, h, pad: 14, hint: HINT_CLEAR, inner: false, top: full });
+    const spot = mapSpot({ v, W, H, w, h, pad: 14, hint: HINT_CLEAR, inner: false, top: toTop });
     /* HOW FAR DOWN THE SCOREBOARD REACHES IS MEASURED, NOT ASSUMED, and only
        asked when the two would actually meet across the screen. It is a
        centred row of badges whose count and whose NAMES change with the party,
@@ -8549,7 +8654,7 @@ class Game {
        at all when the corner is free. Degrades to the bare corner if the
        scoreboard is missing, which is the pause menu's own case. */
     let top = spot.top;
-    if (full) {
+    if (toTop) {
       const sb = document.querySelector('.scoreboard')?.getBoundingClientRect();
       if (sb?.height && spot.left < sb.right && spot.left + w > sb.left) {
         top = Math.max(top, sb.bottom + 8);
@@ -8583,7 +8688,12 @@ class Game {
         H,
         size: mapWidth({
           paneW: v.w, paneH: v.h, screenH: H, touch: this.device.touchPrimary,
-          merged: false, mathUp: true,
+          /* `this.merged` AND NOT A HARD `false`, now that this branch can be
+             reached on an unsplit screen. It was false because it could only
+             ever run on a split one; on a merged screen `mapWidth` sizes the
+             map differently, and a reservation made for the wrong map is a
+             reservation that can leave the board sitting on it. */
+          merged: this.merged, mathUp: true,
         }),
         pad: 14,
         hint: HINT_CLEAR,
@@ -8712,6 +8822,11 @@ class Game {
     const emblem = this.clanArt?.[clan.id]?.texture ?? null;
     player.holdAloft(emblem, CLAN_POSE, { flat: true, tint: clan.color });
     if (!emblem && player.aloft) player.aloft.material.color.set(clan.color);
+    /* AND THE SHARED RIG IS TOLD, which is the whole of the "it zooms for a
+       dragon ball but not for a clan" report. `holdAloft` moves HER camera,
+       and hers is not the one drawing when she is sharing a pane with a
+       sister. See `aloftShot` in `_updateRig`. */
+    this.aloftShot = { player, t: CLAN_POSE, dur: CLAN_POSE };
 
     /* HER LEADER, NOT EVERY LEADER. Four kittens can be in four different
        halls, and six cats bouncing because one of them swore somewhere else is
@@ -9290,9 +9405,31 @@ class Game {
          while it was the only shared camera in the game. Now it can: a pair
          hunting together still get the shot, because the finder is in their
          group, and a kitten across the archipelago does not. */
-      const shot = this.starShot;
+      /* AND IT IS EVERY HELD-UP THING NOW, NOT JUST A STAR. Reported from
+         play: "when multiple players are on the same screen, if one of the
+         players pledges to a Clan, the camera is not zooming in or doing the
+         cutscene animation. It seems to do it with the Dragonballs though."
+
+         THE DRAGON BALL WAS THE ONLY CALLER THAT TOLD THIS RIG. Both routes
+         go through `Player.holdAloft`, which pulls HER camera in — and when
+         she is sharing a pane, her camera is not the one drawing. The ball
+         route happened to set this field as well; the clan ceremony did not,
+         so a kitten who swore next to her sister got the pose, the emblem and
+         the dancing leader with the camera sitting exactly where it was. It
+         was named `starShot` while it was a star's, and it is named for what
+         it actually is now, so the third caller does not have to guess.
+
+         "EVEN IF IT IS SOMEWHAT DISRUPTIVE FOR THE OTHER PLAYERS, THAT IS
+         OKAY" — the director's ruling, and it is why the pull-in is not
+         softened for a shared pane. It still only swings the group SHE is in.
+
+         `dur` RATHER THAN A CONSTANT, because a clan oath is 2.4s and a star
+         is 2.0s; reading `STAR_POSE` here made the longer pose ease in as
+         though it were already 0.4s further along. */
+      const shot = this.aloftShot;
       if (shot && !ryuMid && members.includes(shot.player.index)) {
-        const k = Math.sin(Math.min(1, (STAR_POSE - shot.t) / 0.3) * Math.PI * 0.5)
+        const sdur = shot.dur || STAR_POSE;
+        const k = Math.sin(Math.min(1, (sdur - shot.t) / 0.3) * Math.PI * 0.5)
           * Math.min(1, shot.t / 0.45);
         want.lerp(
           new THREE.Vector3(shot.player.position.x, shot.player.position.y + 2.2, shot.player.position.z),
@@ -9433,8 +9570,9 @@ class Game {
    * wall from every angle, and the building looks perforated for no reason
    * anybody watching can see.
    */
-  _aimXray(camera) {
+  _aimXray(camera, members = null) {
     this._aimArenaXray(camera);
+    this._aimTownXray(camera, members);
     const list = this.world.grottos;
     if (!list?.length) return;
     for (const G of list) {
@@ -9457,6 +9595,49 @@ class Game {
       G.walls.material.setCuts(camera.position, seen);
       G.roof.material.setCuts?.(camera.position, seen);
     }
+  }
+
+  /**
+   * The town's buildings and cherry trees, for THIS camera and THIS pane.
+   *
+   * Asked for after play: "enable the x-ray shader when the player goes behind
+   * buildings or trees so that they can see mischief hiding behind the
+   * buildings/trees." `World._buildTown` owns the material; this owns who the
+   * hole is for.
+   *
+   * IT CUTS FOR THIS PANE'S KITTENS AND NOBODY ELSE'S, which the grotto rule
+   * gets for free and this one does not. A grotto is a dome on an island, so
+   * "near it" is a real filter; the town is one place and everybody is in it,
+   * so cutting for all four would mean the kitten in the top-left pane bores a
+   * tunnel through the tea house in the bottom-right one. `members` is the
+   * group the pane was drawn for — `_render` knows it and nothing downstream
+   * did, which is why it is threaded through `_renderView`.
+   *
+   * AND ONLY ON THE HOME ISLAND'S SIDE OF THE WORLD. A kitten on a dragon two
+   * hundred units up is still "in this pane", and a capsule drawn from that
+   * camera to her passes through half the town on its way — so the whole
+   * market square would dissolve while she flew over it. The bound is her
+   * distance to the camera rather than to any building: past it the hole would
+   * be smaller than the kitten it is for.
+   */
+  _aimTownXray(camera, members) {
+    const meshes = this.world.townXray;
+    if (!meshes?.length) return;
+    const seen = [];
+    const floors = [];
+    const who = members ?? this.players.map((_, i) => i);
+    for (const i of who) {
+      const p = this.players[i];
+      if (!p) continue;
+      if (seen.length >= 4) break;
+      if (camera.position.distanceTo(p.position) > TOWN_XRAY_FAR) continue;
+      seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
+      /* HER OWN FEET. A kitten standing on a stall's roof, or on the bridge,
+         is standing on town geometry — the same case Mr. Satan's box is, and
+         the same guard. See `gfx.xrayVertexMat`. */
+      floors.push(p.position.y - 0.05);
+    }
+    for (const m of meshes) m.material.setCuts?.(camera.position, seen, floors);
   }
 
   /**
@@ -9490,10 +9671,23 @@ class Game {
     const mesh = this.world.arenaSeeThrough;
     if (!mesh?.visible) return;
     const seen = [];
+    /* EVERY CUT CARRIES THE FLOOR ITS SUBJECT IS STANDING ON. Reported from
+       play: "fix the x-ray issue where we can see through the ground (ceiling
+       of the platform) that Mr. Satan is standing on in the arena." His own
+       feet ARE that lid, and the lid is geometrically between the camera and
+       his chest, so the cut was correctly opening a hole in the one thing
+       holding him up. `gfx.xrayVertexMat` owns the guard; this is the only
+       place that knows how high off the deck anybody is standing. */
+    const floors = [];
     if (this.satan?.group.visible) {
       seen.push(new THREE.Vector3(
         this.satan.position.x, this.satan.position.y + 2.2, this.satan.position.z,
       ));
+      /* HIS FEET, LESS A HAIR. Exactly his own Y leaves the lid's top face ON
+         the boundary, where a fragment either side of a rounding error is cut
+         or not - which is a floor that flickers rather than one that is
+         there. */
+      floors.push(this.satan.position.y - 0.05);
     }
     const R = this.world.arenaRing;
     for (const p of this.players) {
@@ -9505,8 +9699,12 @@ class Game {
          the island entirely is past it and stops carving. */
       if (R && this.world.arenaOutBy(p.position.x, p.position.z) > 40) continue;
       seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
+      /* AND A KITTEN WHO CLIMBS ONTO HIS BOX GETS THE SAME PROTECTION, which
+         is not hypothetical - getting up there is half of what debug `2` and
+         the temper gag are about. Her feet are wherever she is standing. */
+      floors.push(p.position.y - 0.05);
     }
-    mesh.material.setCuts?.(camera.position, seen);
+    mesh.material.setCuts?.(camera.position, seen, floors);
   }
 
   /**
@@ -9565,12 +9763,12 @@ class Game {
     this.dojo.faceCamera(camera);
   }
 
-  _renderView(camera, x, y, w, h) {
+  _renderView(camera, x, y, w, h, members = null) {
     if (w < 2 || h < 2) return;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     this._faceAll(camera);
-    this._aimXray(camera);
+    this._aimXray(camera, members);
     this.renderer.setViewport(x, y, w, h);
     this.renderer.setScissor(x, y, w, h);
     this.renderer.setScissorTest(true);
@@ -9593,7 +9791,7 @@ class Game {
     const panes = this._panes(W, H, groups);
     panes.forEach((v, i) => {
       const cam = this._cameraFor(groups[i]);
-      if (cam) this._renderView(cam, v.x, v.y, v.w, v.h);
+      if (cam) this._renderView(cam, v.x, v.y, v.w, v.h, groups[i]);
       /* WHICH LENS EACH KITTEN WAS LAST SEEN THROUGH. `_paneHint` needs to
          compare two groups' screen positions, and that only means anything if
          both are measured through the SAME camera — which, on the frame a pane

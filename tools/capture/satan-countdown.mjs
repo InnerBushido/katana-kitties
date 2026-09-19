@@ -208,7 +208,11 @@ const arg = (name, def) => {
   return i >= 0 ? process.argv[i + 1] : def;
 };
 const SRC = arg('--src', join(ROOT, 'tools', 'capture', 'satan-takes'));
-const OUT = join(ROOT, 'public', 'voice');
+/* HIS OWN FOLDER. `public/voice/` is filed by character now — see
+   `voicePath` in src/core/audio.js, and the registry in
+   docs/notes/voices.md. The clip NAMES are unchanged: they are ids the
+   game keys its announcer buffer on, not just paths. */
+const OUT = join(ROOT, 'public', 'voice', 'satan');
 const TMP = join(ROOT, 'tools', 'capture', '.satan-tmp');
 
 const run = (bin, args) => execFileSync(bin, args, { encoding: 'utf8' });

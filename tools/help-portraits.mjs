@@ -161,7 +161,7 @@ function onCanvas(small, W, H, bottom = true) {
    canvas standing on the bottom edge, and the card just draws the file. Six
    identical boxes cannot fall out of alignment with each other. */
 const boxes = CLANS.map(([, art]) => {
-  const src = keyed(`public/sprites/leader_${art}.png`);
+  const src = keyed(`public/sprites/leaders/${art}.png`);
   return { src, box: inkBox(src) };
 });
 const widest = Math.max(...boxes.map(({ box }) => box.w / box.h));
@@ -175,7 +175,7 @@ CLANS.forEach(([id, art], ci) => {
   say(`public/help/clan/leader-${id}.png`,
     onCanvas(resample(src, box, w, LEADER_H), LEADER_W, LEADER_H));
 
-  const sym = keyed(`public/sprites/clan_${id}.png`);
+  const sym = keyed(`public/sprites/clans/${id}.png`);
   const sbox = inkBox(sym);
   /* A symbol is a badge in a fixed round slot, so it is fitted into a SQUARE
      rather than sized by one edge — the bolt is tall and the paw is wide, and
@@ -189,6 +189,6 @@ CLANS.forEach(([id, art], ci) => {
 });
 
 const before = CLANS.reduce((n, [id, art]) => n
-  + readFileSync(`public/sprites/leader_${art}.png`).length
-  + readFileSync(`public/sprites/clan_${id}.png`).length, 0);
+  + readFileSync(`public/sprites/leaders/${art}.png`).length
+  + readFileSync(`public/sprites/clans/${id}.png`).length, 0);
 console.log(`\n  ${(before / 1024 / 1024).toFixed(2)}MB of source art -> ${(total / 1024).toFixed(0)}KB of cards\n`);

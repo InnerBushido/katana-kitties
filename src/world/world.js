@@ -1477,15 +1477,48 @@ export class World {
     }
 
 
-    const sMesh = new THREE.Mesh(mergeParts(structural), toonVertexMat());
+    /* --- AND THE TOWN GETS OUT OF THE WAY TOO -----------------------------
+       Asked for after play: "enable the x-ray shader when the player goes
+       behind buildings or trees so that they can see mischief hiding behind
+       the buildings/trees."
+
+       IT IS THE SAME MATERIAL THE GROTTOS AND THE ARENA POSTS ALREADY USE,
+       pointed at the town. The argument for it is the one written at length
+       over `xrayVertexMat`, and it applies here MORE than it did there: a
+       grotto is one dome on one island, and the town is thirty buildings and
+       sixty cherry trees standing between a fixed three-quarter camera and
+       everywhere the girls actually play. The market square in particular is
+       stalls on all four sides of the props they are there to knock over.
+
+       SHADOWS STAY ON HERE, AND THEY ARE OFF ON THE ARENA POSTS. That looks
+       inconsistent and is not: the cut is a `discard` in the colour pass and
+       the shadow pass knows nothing about it, so whatever is cut goes on
+       casting. On a corner post the hole is most of an eleven-unit column and
+       the leftover shade reads as a bug (see `_buildArena`); on a town wall it
+       is a two-unit porthole in a ten-unit building, and the missing hole in
+       the shadow is not something anybody has ever looked for. Turning the
+       town's shadows off to be consistent would cost every building its own
+       shade, which is most of what makes the town look like a place.
+
+       BOTH MESHES, and the trees are the half that was asked for by name.
+       `structural` is the buildings, halls and stalls; `decor` is the cherry
+       trees, lanterns and tufts. Giving only the first one the material is the
+       version of this that would have shipped and been reported again. */
+    const sMesh = new THREE.Mesh(mergeParts(structural), xrayVertexMat());
     sMesh.castShadow = true;
     sMesh.receiveShadow = true;
     this.scene.add(sMesh);
 
-    const dMesh = new THREE.Mesh(mergeParts(decor), toonVertexMat());
+    const dMesh = new THREE.Mesh(mergeParts(decor), xrayVertexMat());
     dMesh.castShadow = true;
     dMesh.receiveShadow = true;
     this.scene.add(dMesh);
+
+    /* KEPT, BECAUSE SOMETHING HAS TO AIM THEM. `Game._aimXray` points every
+       x-ray material at the kittens in the pane it is about to draw, once per
+       view - see there for why it cannot be done once per frame. One array
+       rather than two fields, because every caller wants both. */
+    this.townXray = [sMesh, dMesh];
 
     this._buildProps();
   }

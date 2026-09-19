@@ -92,9 +92,15 @@ const PROOF = 'out/bake';
    The two dragons keep `key` because they were generated on white long before
    this existed, and regenerating art the kids have already seen to save a tool
    a branch is the wrong trade. */
+/* `out` IS WHERE IT LANDS UNDER `public/sprites/`, AND IT IS NOT `file`.
+   The masters are a flat handful and the shipped tree is foldered by subject
+   (`beasts/`, `kittens/`, `leaders/`...), so the two stopped matching the day
+   the sprites were tidied up. Defaulting `out` to `file` rather than deriving
+   it keeps a master free to be named after the drawing while the shipped copy
+   is named after where it is used. */
 const WORK = [
-  { file: 'dragon_sheet.png', to: [1376, 768], key: true, deep: true },
-  { file: 'dragon_fly.png', to: [1376, 768], key: true, deep: true },
+  { file: 'dragon_sheet.png', out: 'beasts/dragon_sheet.png', to: [1376, 768], key: true, deep: true },
+  { file: 'dragon_fly.png', out: 'beasts/dragon_fly.png', to: [1376, 768], key: true, deep: true },
   { file: 'title_art.png', webp: 92 },
 ];
 
@@ -187,7 +193,7 @@ for (const job of WORK) {
        about once a year. ffmpeg is already a dependency of the trailer and
        the Steam capsules (tools/capture/trailer-cut.sh). Hard-fail rather
        than skip: a silent skip here ships whatever stale .webp is on disk. */
-    const out = `${SHIP}/${job.file.replace(/\.png$/, '.webp')}`;
+    const out = `${SHIP}/${(job.out ?? job.file).replace(/\.png$/, '.webp')}`;
     execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y',
       '-i', src, '-c:v', 'libwebp', '-quality', String(job.webp),
       '-compression_level', '6', out], { stdio: ['ignore', 'inherit', 'inherit'] });
@@ -222,7 +228,7 @@ for (const job of WORK) {
   const [nw, nh] = job.to ?? [w, h];
   const out = nw === w && nh === h ? d : resample(d, w, h, nw, nh);
   const png = writePNG(nw, nh, out);
-  writeFileSync(`${SHIP}/${job.file}`, png);
+  writeFileSync(`${SHIP}/${job.out ?? job.file}`, png);
 
   let clear = 0;
   for (let i = 0; i < nw * nh; i++) if (out[i * 4 + 3] === 0) clear++;

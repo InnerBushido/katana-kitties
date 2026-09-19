@@ -2,7 +2,7 @@
  * The evil kitten. Two outputs, one ladder.
  *
  *   node tools/kitten-cackle.mjs out/trailer/vo/12.wav   the trailer's demon
- *   node tools/kitten-cackle.mjs --game                  public/voice/cross0..3
+ *   node tools/kitten-cackle.mjs --game            public/voice/kittens/cross0..3
  *
  * The first writes a 48kHz mono 16-bit WAV, so the trailer's mixer treats it
  * as a take like any other line — trimmed, levelled and ducked by the same
@@ -400,7 +400,9 @@ if (GAME) {
      artefact, and a stray 48kHz WAV beside it would eventually get shipped. */
   const tmp = 'out/trailer/ref/rungs';
   mkdirSync(tmp, { recursive: true });
-  mkdirSync('public/voice', { recursive: true });
+  /* `public/voice/` is filed by character — see `voicePath` in
+     src/core/audio.js. The demon kitten's four rungs are the kittens'. */
+  mkdirSync('public/voice/kittens', { recursive: true });
 
   const ref = existsSync(REF) ? readWav(REF) : null;
   const rungs = ref ? ladder(ref) : null;
@@ -426,7 +428,7 @@ if (GAME) {
     }
     const wav = `${tmp}/${r.out}.wav`;
     const secs = writeWav(wav, take);
-    const mp3 = `public/voice/${r.out}.mp3`;
+    const mp3 = `public/voice/kittens/${r.out}.mp3`;
     execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', wav, '-ac', '1', '-ar', '44100', '-b:a', '128k', mp3]);
     console.log(`${mp3}  ${secs.toFixed(2)}s  ${r.why}\n    ${how}`);
   }

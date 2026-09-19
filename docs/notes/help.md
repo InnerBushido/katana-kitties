@@ -106,6 +106,45 @@ after the two captured clips replaced it.
 
 ---
 
+## One folder per subject
+
+`public/help/` is filed by what the picture is of:
+
+```
+help/
+  ability/   ward  dive  cross  charge  blink.png (the one still)
+  clan/      steal  breath  panda, and the six chiefs + six emblems
+  move/      keys  pad  air  arena  phone
+  dojo/      world  sincos
+  place/     arena.jpg  orbs.jpg  shrine.jpg   — the three topic stills
+  world/     dealer  feast-eat  panda  ryuuseki
+```
+
+Asked for after play: *"we have a lot of art, voices, sprites, help assets and
+it is getting disorganized."* The hyphenated prefix these files used to carry
+(`move-keys`, `ability-ward`) was already doing the folder's job inside the
+filename, so it became the folder and left the name behind.
+
+**THE SHOT NAMES DID NOT CHANGE.** A shot is still `move-keys` — that is the
+file in `tools/capture/shots/`, the key the frame sink buffers under, and the
+word a director says out loud. `helpGifPath` in
+[tools/capture/assetserver.mjs](../../tools/capture/assetserver.mjs) turns the
+name into the path on the way out, which is the same trick `voicePath` plays
+for the voices and for the same reason — see
+[voices.md](voices.md).
+
+**Two different `panda.gif`s, and they are different pandas.**
+`clan/panda.gif` is the Pandapaw ability used in the ring; `world/panda.gif` is
+raising the pet. In one flat folder they were told apart by a prefix; now the
+folder says it.
+
+**The safety net is the orphan check, and it already existed.** `world-check`
+fails on any file under `public/help/` that `index.html` does not point at, so
+a clip filed somewhere the panel does not look shows up by name on the next
+run rather than shipping forever as invisible bytes.
+
+---
+
 ## "Moving & fighting" is two clips, and the reason is the encoder
 
 It leads on a keyboard clip and a controller clip **side by side**, not one

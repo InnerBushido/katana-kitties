@@ -255,6 +255,21 @@ export const PANDA = tune('PANDA', {
   lickWarm: 1.0,
   /** How close "beside her" is. */
   lickNear: 3.0,
+  /**
+   * How long the cub celebrates once she is patched up.
+   *
+   * Asked for as: "have the panda do a happy dance and play a happy sound so
+   * the player knows they are done being healed by the baby panda." The heal
+   * ENDS SILENTLY otherwise — the tongue simply stops — and from the sofa a
+   * thing that stops looks exactly like a thing that broke. It is the sixth
+   * non-negotiable read about an animal instead of a button: a confirmation
+   * has to say so.
+   *
+   * 1.6 seconds is four hops at the rate below. Longer and the cub is still
+   * dancing when she has run back into the fight, which turns a full bar into
+   * an animal that has stopped following her.
+   */
+  danceTime: 1.6,
 });
 
 /* A follower has to out-run what it is following, or it trails further behind
@@ -325,6 +340,14 @@ export class Panda {
      *  call because nothing in this file may reach the audio system. */
     this.lickSfx = false;
     this._lickBeat = -1;
+    /* --- and the cub taking a bow ------------------------------------- */
+    /** Seconds of happy dance left. Counts down; zero is not dancing. */
+    this.danceT = 0;
+    /** True for ONE frame, when the dance starts. Read and spent by `main.js`,
+     *  exactly as `lickSfx` is and for the same reason — nothing in this file
+     *  may reach the audio system. */
+    this.danceSfx = false;
+    this.dancePhase = 0;
 
     this.group = new THREE.Group();
 
@@ -837,6 +860,10 @@ export class Panda {
     );
     this.sprite.mesh.rotation.z = Math.sin(this.step * 0.5) * 0.035;
     this.sprite.facing = this.facing;
+    /* AFTER THE WADDLE, because it writes over the same two things the waddle
+       just set. A dance added to the waddle rather than replacing it is two
+       animations at once, which reads as a stutter rather than as a jig. */
+    this._drawDance(dt);
 
     // Drop the shadow onto whatever is below.
     const below = world.heightAt(this.position.x, this.position.z);
@@ -878,7 +905,34 @@ export class Panda {
       && owner.hp < owner.maxHp * PANDA.lickBelow;
     this.lickWanted = want;
     this.lickSfx = false;
-    if (!want) { this.lickT = 0; this.licking = false; this._lickBeat = -1; return; }
+    if (!want) {
+      /* --- AND IT TAKES A BOW WHEN THE JOB IS DONE ----------------------
+         "Have the panda do a happy dance and play a happy sound so the player
+         knows they are done being healed by the baby panda."
+
+         ONLY WHEN SHE IS ACTUALLY BETTER. A heal also ends when she is knocked
+         out, climbs onto a dragon, is carried off by the griffin or dies — and
+         a cub dancing over an unconscious kitten is the game cheering at the
+         worst possible moment. So the reason is asked for explicitly rather
+         than inferred from the tongue going away: she is alive, on her own
+         feet, and back above the line that brought the cub over. Same shape as
+         `want` above, minus the one clause that just went false.
+
+         AND ONLY IF IT WAS REALLY HEALING. `licking` and not merely
+         `lickWanted`, so a cub that trotted up and was interrupted during its
+         warm-up second does not celebrate work it never did. */
+      if (this.licking && owner && !owner.ko && !owner.angel && owner.hp > 0
+        && owner.hp >= owner.maxHp * PANDA.lickBelow) {
+        this.danceT = PANDA.danceTime;
+        this.dancePhase = 0;
+        this.danceSfx = true;
+      }
+      this.lickT = 0; this.licking = false; this._lickBeat = -1; return;
+    }
+    /* A CUB THAT IS NEEDED AGAIN STOPS DANCING. She can be knocked straight
+       back down inside the second and a half, and an animal still celebrating
+       the last heal while it starts the next one is a cub that looks broken. */
+    this.danceT = 0;
 
     const d = Math.hypot(owner.position.x - this.position.x,
       owner.position.z - this.position.z);
@@ -903,6 +957,52 @@ export class Panda {
        Fractional health is fine — nothing in this game prints the number, and
        every reader of it is a ratio or a comparison. */
     owner.hp = Math.min(owner.maxHp, owner.hp + owner.maxHp * PANDA.lickRate * dt);
+  }
+
+  /**
+   * The happy dance: four hops with a wiggle on each, then back to waddling.
+   *
+   * IT IS DRAWN, NOT WALKED. The cub keeps following her the whole time — the
+   * dance is a transform on the sprite and a bounce on the group's Y, so it
+   * cannot leave the animal standing in the middle of the deck admiring its
+   * work while she runs off. Fourth non-negotiable, in its smallest form: a
+   * pet can never be lost, including to an animation.
+   *
+   * THE HOP IS ON THE GROUP AND THE WIGGLE IS ON THE SPRITE, and that split is
+   * the same one `_drawLick` makes: the shadow is a child of the group, so a
+   * bounce applied to the sprite alone would be an animal detaching from its
+   * own shadow, and a spin applied to the group would swing the shadow round
+   * with it. What you want is a cub jumping up and down ON its shadow.
+   *
+   * IT EASES OUT. The last third shrinks the whole figure towards nothing, so
+   * the dance ENDS rather than being cut off mid-hop — the same reason the
+   * motes fade in and out rather than popping.
+   */
+  _drawDance(dt) {
+    if (this.danceT <= 0) return;
+    this.danceT = Math.max(0, this.danceT - dt);
+    this.dancePhase += dt;
+    /* FOUR HOPS OVER `danceTime`, off the dance's OWN clock rather than off
+       `step`. `step` runs at the walk's speed and a cub that happened to be
+       sprinting would celebrate at double time. */
+    const beats = 4;
+    const turn = (this.dancePhase / PANDA.danceTime) * Math.PI * beats;
+    const hop = Math.abs(Math.sin(turn));
+    /* Easing out over the last third, so it lands rather than stopping. */
+    const ease = Math.min(1, (this.danceT / PANDA.danceTime) * 3);
+    const size = this.spec.size;
+    this.group.position.y += hop * size * 0.16 * ease;
+    /* A WIGGLE, NOT A SPIN. The cub is drawn front-on from one cell; turning
+       it through a whole circle would show its side and it has not got one.
+       Rocking it a fifth of a radian each way is the cartoon shorthand a
+       nine-year-old reads as dancing, and it is the same axis the waddle
+       already uses so the two cannot look like different animals. */
+    this.sprite.mesh.rotation.z = Math.sin(turn * 2) * 0.22 * ease;
+    /* And squash on the landing, stretch at the top — the oldest trick there
+       is, and the one thing that makes a hop read as weight rather than as a
+       sprite sliding up and down. */
+    const sq = 0.14 * ease;
+    this.sprite.mesh.scale.set(1 + (0.5 - hop) * sq, 1 + (hop - 0.5) * sq * 1.6, 1);
   }
 
   /** The hit flash and the flinch. The flash is the kitten's own idiom — see

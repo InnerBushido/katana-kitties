@@ -153,6 +153,27 @@ against 2.0 ms of `renderer.render` at 0.36 Mpx and 15.7 ms at 2.27 Mpx. **If a
 number in this file is ever wrong, re-measure before reasoning** — that is what
 `1` is for.
 
+**The town's x-ray costs 0.3 ms, and it is the one thing on this page that is
+actually guilty.** Everything above was accused and acquitted; this one was
+measured on the way in, because it is the only change that has ever put a
+per-fragment loop on the two biggest meshes of the home island. Standing in the
+market square at 1287×715 (0.92 Mpx), alternating the two town meshes between
+`xrayVertexMat()` and the plain toon material three times each, three seconds a
+sample:
+
+```
+x-ray town   11.0  11.0  11.0 ms      (median 11.0)
+plain town   10.7  10.7  10.8 ms      (median 10.7)
+```
+
+**0.3 ms, 2.8%, six samples with no overlap** — draw calls and triangles
+identical at 170 / 198,494, which is what says it is fill and not the scene. It
+scales with the buffer like everything else on this page, so a 4 K panel pays
+about nine times that; the quality tiers are the lever, as ever. The cost is
+paid whether or not anybody is being cut for — the loop is four iterations and
+an empty slot `continue`s on its first line — so it does not grow with the
+number of kittens, and **the two-player frame is the four-player frame.**
+
 ---
 
 ## `1` — the frame cost on screen

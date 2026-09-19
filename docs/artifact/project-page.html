@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 3775 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 3886 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 362 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -1053,6 +1053,29 @@ git push origin alpha</code></pre>
   </table></div>
 
   <div class="note">
+    <span class="hd">Where a finished asset lives</span>
+    <p><code>public/</code> is filed by subject, not flat: <b><code>sprites/</code></b> by who is
+      drawn (<code>kittens/ember</code>, <code>kittens/frost</code>, <code>leaders/</code>,
+      <code>clans/</code>, <code>satan/</code>, <code>critters/</code>, <code>beasts/</code>,
+      <code>fx/</code>), <b><code>voice/</code></b> by who is speaking (<code>satan/</code>,
+      <code>patchfur/</code>, <code>leaders/</code>, <code>ryuuseki/</code>,
+      <code>kittens/</code>), and <b><code>help/</code></b> by what the picture is of
+      (<code>ability/</code>, <code>clan/</code>, <code>move/</code>, <code>dojo/</code>,
+      <code>place/</code>, <code>world/</code>).</p>
+    <p style="margin-top:10px"><b>The sprites were renamed; the voices and the Help clips were
+      not</b>, and the difference is worth knowing before you go looking. A sprite's filename was
+      only ever a path, but <code>sat_over</code> and <code>move-keys</code> are <em>identifiers</em>
+      — a key in the announcer's buffer, a beat id in a cutscene, a file in
+      <code>tools/capture/shots/</code>, a row in a doc. So the folder is added on the way out
+      instead, by <code>voicePath(id)</code> in <code>core/audio.js</code> and
+      <code>helpGifPath(name)</code> in <code>capture/assetserver.mjs</code>.</p>
+    <p style="margin-top:10px">Nothing in <code>src/</code> writes a voice path by hand and
+      <code>world-check</code> pins that, <b>because the failure here is silent</b>: the ninth
+      non-negotiable says a missing clip throws nothing and logs nothing, so filing sixty-nine mp3s
+      could have killed any line in the game without a test going red.</p>
+  </div>
+
+  <div class="note">
     <span class="hd">The rule under all of it</span>
     <p><b>Measure, never reason, about anything drawn.</b> Sizes, seat heights, mouth positions and
       facings are all read off the loaded atlas. Sprite sheets are <b>measured, not assumed</b>:
@@ -1152,8 +1175,10 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 3775 assertions and why almost none of them are about
-      whether a number is set.</p>
+      is why <code>world-check</code> is 3886 assertions and why almost none of them are about
+      whether a number is set. <b>A check that is sometimes red is a bug in the check</b> — two were
+      found being coin flips, an aggregate that hid the one kitten it was asking about and a
+      distinctness test rounded until it was a birthday problem.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,
       tested or shipped. Not a refactor and not a bug fix: the test is whether anybody could find it

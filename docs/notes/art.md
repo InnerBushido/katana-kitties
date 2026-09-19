@@ -98,10 +98,55 @@ side is cheaper, but it flips asymmetric details — Ember's tail and shoulder
 guard swap sides when facing right. `mirror: false` on the `Billboard` uses the
 drawn cell for every direction instead.
 
+## Where a sheet lives
+
+`public/sprites/` is grouped by subject, one folder per kind of thing:
+
+```
+sprites/
+  kittens/ember/   grid_v2.png  bless.png  eat.png  inhale.png  scared.png  warp.png
+  kittens/frost/   grid.png     (the same five poses)
+  leaders/         thunderpaw  riverclaw  shadowtail  windwhisker  icewhisker
+                   pandapaw  elder          — one front-facing cell each
+  clans/           thunder  river  shadow  wind  ice  panda   (the emblems)
+  satan/           satan.png  charge.png
+  critters/        rat  rat_shock  rabbit  rabbit_run  rabbit_shock
+                   bird  bird_shock  mantis
+  beasts/          dragon_sheet  dragon_fly  griffin  ryuuseki
+                   panda_adult  panda_cub
+  fx/              angel_wings.png
+  title_art.webp
+```
+
+**TWO FOLDERS FOR FOUR KITTENS, and that is the whole point of the shape.**
+Storm draws from Ember's sheet and Blossom from Frost's, through
+`recolourAtlas` — so `kittens/` having exactly two children is the file tree
+saying out loud that a new pose is **two drawings**, and that nothing has to
+remember the other two. A `kittens/storm/` folder appearing here would be the
+first sign somebody has started drawing four.
+
+**THE NAME INSIDE THE FOLDER DROPS WHAT THE FOLDER ALREADY SAYS.**
+`leader_icewhisker.png` became `leaders/icewhisker.png` and `clan_ice.png`
+became `clans/ice.png`, which is what lets `main.js` build both from the same
+id it already had — `` `/sprites/leaders/${n}.png` ``. The two turnarounds keep
+theirs: `ember/grid_v2.png` against `frost/grid.png` is the one difference
+between the two sheets that a reader has to know about, because Frost's v2 is
+the sheet that contradicts itself and is parked in `docs/unused-art/`.
+
+**`title_art.webp` stays loose, because it is not a sprite.** It is the title
+screen's background, read by `style.css` and by `steam-art.mjs`, and a folder
+of one file is filing rather than organisation.
+
+**The masters in `docs/art-masters/` are flat and stay flat** — there are three
+of them. `sprite-bake.mjs` carries the shipped path on each job as `out`, so a
+master is free to be named after the drawing while the shipped copy is named
+after where it is used.
+
 ## Replacing the art
 
-Drop a new sheet into `public/sprites/` with the same filename and refresh.
-Live files are `ember_grid_v2.png` and `frost_grid.png`; the game logs
+Drop a new sheet into `public/sprites/` over the same path and refresh.
+The live turnarounds are `kittens/ember/grid_v2.png` and
+`kittens/frost/grid.png`; the game logs
 `[art] <file> → N directions x M poses` at boot so you can check what it found.
 
 Ask for a grid of 4 rows (idle, walk, jump, attack) and 8+ columns rotating a

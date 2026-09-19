@@ -234,6 +234,7 @@ const GROUPS = {
       lickRate: ['Lick heal rate', 'Health per second, as a fraction of her maximum bar. 0.005 is half a percent a second, which is about three minutes for a full bar — slow on purpose, so it never beats getting hit.', '×bar/s', 0, 0.05, 0.001],
       lickWarm: ['Lick warm-up', 'How long the cub has to keep station beside her before any healing starts. Leaving the radius resets this to zero rather than pausing it.', 's', 0, 5, 0.1],
       lickNear: ['Lick radius', 'How close counts. The cub also walks in to half this on its own when it wants to lick, so making it tiny makes the cub crowd her.', 'm', 0.5, 10, 0.25],
+      danceTime: ['Happy dance', 'How long the cub celebrates once she is patched up, so the end of a heal says so rather than just stopping. Four hops however long it is; longer and the cub is still dancing while she runs back into the fight.', 's', 0, 5, 0.1],
     },
   },
 };

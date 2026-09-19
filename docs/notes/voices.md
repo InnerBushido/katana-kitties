@@ -47,6 +47,49 @@ uses, in its own `CAST` table. **If a `voice_id` here and there ever disagree,
 this file is right** — but fix both, because the trailer script is what actually
 generates.
 
+## One folder per character
+
+`public/voice/` is filed by who is speaking — the same five names as the table
+above, because a character has ONE voice and therefore ONE folder:
+
+```
+voice/
+  satan/      33 clips, every `sat_*`
+  patchfur/   18 — the intro, the ending, and the last-hunt countdown
+  leaders/    12 — the six chiefs, a bare take and a shrine take each
+  ryuuseki/    2 — `summon1` `summon2`
+  kittens/     4 — `cross0`-`cross3`, the Cross Slash's verdict
+```
+
+Asked for after play: *"we have a lot of art, voices, sprites, help assets and
+it is getting disorganized. Let's organize all the assets and group the assets
+in logical orders."* Sixty-nine flat mp3s answered the question "how many are
+there" and no other; the one actually asked of these files, constantly, is
+**who is talking** — which used to mean reading the table above.
+
+**THE FILENAMES DID NOT CHANGE, and that is the difference between these and
+the sprites**, which were renamed in the same pass. A sprite's filename was
+only ever a path. A voice clip's filename is an **identifier**: `sat_over` is a
+key in the announcer's buffer, a beat id in `cutscene.js` (*"every beat's id
+doubles as its voice filename"*), a row in the table above, and the output name
+of `tools/capture/satan-countdown.mjs`. Stripping `sat_` would fork that name
+across four places to save five characters in a path nobody types.
+
+**Nothing in `src/` writes a voice path by hand.** `voicePath(id)` in
+[core/audio.js](../../src/core/audio.js) is the only way in, and it is where
+the folders are listed. `world-check` pins three things about it: every id the
+code asks for is on disk, every one of them resolves into a speaker's folder
+rather than riding the fallback, and no literal `/voice/...` has crept back
+into `src/`.
+
+**That last group of checks exists because the failure here is silent.** The
+ninth non-negotiable says the game must survive `public/voice/` being deleted,
+so a missing clip throws nothing and logs nothing — the line simply never
+plays, over a scene that runs on regardless. Filing sixty-nine files could have
+silenced any line in the game without a single test going red.
+
+---
+
 ## The kitten is now in the game, and that is a licensing decision
 
 `public/voice/cross0.mp3` through `cross3.mp3` are the Cross Slash's verdict:

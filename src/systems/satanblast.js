@@ -211,6 +211,11 @@ export class SatanBlast {
     this.t = 0;
     this.fx.visible = false;
     this.charge.visible = false;
+    /* A FORCE, AND ONE OF ONLY TWO IN THE GAME. This is the teardown — the
+       arena closing, the game restarting, the debug key — and it has to win
+       whoever last raised his arms, or a tournament shut down mid-shout
+       leaves the World Champion standing in the town square with his fists in
+       the air for the rest of the afternoon. See `MrSatan.setPose`. */
     this.satan?.setPose?.('idle');
     /* THE BUBBLE IS PART OF THE POSE. The arena closing mid-taunt used to
        leave "you think you are TOUGH, huh?" floating over a man walking back
@@ -335,7 +340,7 @@ export class SatanBlast {
           this.stage = 'cool';
           this.t = 0;
           this.fx.visible = false;
-          this.satan?.setPose?.('idle');
+          this.satan?.setPose?.('idle', 'blast');
           this.satan?.setLine?.('');
         }
         break;
@@ -370,7 +375,7 @@ export class SatanBlast {
        that has to be a working game rather than a broken one: he stands there
        in his ordinary pose, the ball still gathers, the explosion still goes
        off and the joke still lands. One drawing quieter, and nothing else. */
-    this.satan?.setPose?.('charge');
+    this.satan?.setPose?.('charge', 'blast');
     this.game?.sfx?.('wardup');
     this.fx.visible = true;
     this.charge.visible = true;

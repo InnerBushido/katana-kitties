@@ -103,6 +103,22 @@ export function xrayVertexMat(opts = {}) {
     uCutR: { value: 2.1 },
     uCutFlare: { value: 0.5 },
     uCutSoft: { value: 1.0 },
+    /* THE FLOOR EACH SUBJECT IS STANDING ON, and nothing below it is ever cut.
+       Reported from play: "fix the x-ray issue where we can see through the
+       ground (ceiling of the platform) that Mr. Satan is standing on in the
+       arena."
+
+       IT IS NOT A BUG IN THE CUT, IT IS THE CUT WORKING. He stands ON the
+       announcer's box, so the box's own lid is on the segment between the
+       camera and his chest and is therefore, correctly, in the way — the
+       shader has no idea it is also the thing holding him up. From the sofa
+       that reads as the floor dissolving and the champion standing on air.
+
+       So a cut carries the height of whatever its subject's feet are on and
+       stops there. `-1e9` is the default and means "no floor", which is what
+       every existing caller gets until it says otherwise — the two-player
+       answer, and every other one, is bit-identical. */
+    uCutFloor: { value: new Float32Array(MAX).fill(-1e9) },
   };
 
   mat.onBeforeCompile = (shader) => {
@@ -122,6 +138,7 @@ export function xrayVertexMat(opts = {}) {
         uniform float uCutR;
         uniform float uCutFlare;
         uniform float uCutSoft;
+        uniform float uCutFloor[${MAX}];
 
         // 4x4 Bayer, so the cut edge dissolves instead of stair-stepping.
         float xrayDither(vec2 p) {
@@ -141,6 +158,12 @@ export function xrayVertexMat(opts = {}) {
           float cut = 0.0;
           for (int i = 0; i < ${MAX}; i++) {
             if (uCutOn[i] < 0.5) continue;
+            /* NOTHING UNDER HER FEET IS EVER IN THE WAY. See uCutFloor, up
+               in the uniforms: the lid she is standing on is, geometrically,
+               between the camera and her chest, and cutting it leaves her
+               standing on air. (No backticks in here — this is inside a JS
+               template literal and one would end the shader.) */
+            if (vXrayWorld.y < uCutFloor[i]) continue;
             vec3 a = uCamPos;
             vec3 b = uCutPos[i];
             vec3 ab = b - a;
@@ -165,15 +188,26 @@ export function xrayVertexMat(opts = {}) {
 
   /**
    * Point the cut at whoever is on screen. Call once per view, before drawing.
+   *
    * @param {THREE.Vector3} camPos
    * @param {THREE.Vector3[]} points world positions to keep visible
+   * @param {number[]} [floors] for each point, the height of the surface its
+   *        subject is standing on — nothing below it is cut. Omit it and
+   *        nothing is protected, which is what every caller did before the
+   *        announcer's box needed its own lid back.
    */
-  mat.setCuts = (camPos, points) => {
+  mat.setCuts = (camPos, points, floors = null) => {
     u.uCamPos.value.copy(camPos);
     for (let i = 0; i < MAX; i++) {
       const p = points[i];
       u.uCutOn.value[i] = p ? 1 : 0;
       if (p) u.uCutPos.value[i].copy(p);
+      /* A FINITE NUMBER OR NOTHING. A stray `undefined` here becomes `NaN` in
+         the Float32Array, and `y < NaN` is false for every fragment — so the
+         guard would silently stop guarding rather than crash, which is the
+         worst of the three possible outcomes. */
+      const f = floors?.[i];
+      u.uCutFloor.value[i] = Number.isFinite(f) ? f : -1e9;
     }
   };
   return mat;

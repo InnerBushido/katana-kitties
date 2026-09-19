@@ -180,6 +180,47 @@ const semi = (n, scaleRoot = ROOT) => scaleRoot * Math.pow(2, n / 12);
 const SFX_MAKEUP = 3.2;
 
 /**
+ * WHO SAYS IT DECIDES WHERE IT LIVES. `voicePath('sat_over')` is
+ * `/voice/satan/sat_over.mp3`.
+ *
+ * "We have a lot of art, voices, sprites, help assets and it is getting
+ * disorganized." `public/voice/` was sixty-nine flat mp3s; it is five folders
+ * now, one per character, and the folders come straight off the registry table
+ * in `docs/notes/voices.md` — a character has ONE voice, so a character gets
+ * ONE folder. That is also the property worth having: the question this
+ * project keeps asking of these files is "who is talking", and the answer used
+ * to require reading a table.
+ *
+ * THE FILENAMES DID NOT CHANGE, AND THAT IS NOT LAZINESS — it is the
+ * difference between these and the sprites, which were renamed in the same
+ * pass. A sprite's filename was only ever a path. A voice clip's filename is
+ * an IDENTIFIER: `sat_over` is a key in the announcer's buffer, a beat id in
+ * `cutscene.js` ("every beat's id doubles as its voice filename"), a row in
+ * voices.md, and the output name of `tools/capture/satan-countdown.mjs`.
+ * Stripping the prefix would fork that name across four places to save eight
+ * characters in a path nobody types.
+ *
+ * AN UNKNOWN ID FALLS BACK TO THE FLAT PATH, DELIBERATELY. A wrong folder is
+ * worse than no folder: it would be a 404, and a 404 here is SILENCE — the
+ * line simply never plays, the scene runs on, and nothing reports it. So a new
+ * id nobody has filed looks where the files used to be, and `world-check`
+ * fails loudly on any referenced path that is not on disk, which is where a
+ * missing clip is supposed to be caught.
+ */
+const VOICE_FOLDERS = [
+  [/^sat_/, 'satan'],
+  [/^shrine_|^(thunder|river|shadow|wind|ice|panda)$/, 'leaders'],
+  [/^summon/, 'ryuuseki'],
+  [/^cross/, 'kittens'],
+  [/^(sky|break|close|elder\d|balls\d|done\d|hunt)/, 'patchfur'],
+];
+
+export const voicePath = (id) => {
+  const hit = VOICE_FOLDERS.find(([re]) => re.test(id));
+  return hit ? `/voice/${hit[1]}/${id}.mp3` : `/voice/${id}.mp3`;
+};
+
+/**
  * Recorded SOUND EFFECTS, as opposed to recorded dialogue — see `loadSamples`.
  *
  * The Cross Slash grades itself out loud: cross0 for a technique that landed
@@ -193,10 +234,10 @@ const SFX_MAKEUP = 3.2;
  * depends on and there is a world-check pinning it.
  */
 export const SAMPLES = {
-  cross0: '/voice/cross0.mp3',
-  cross1: '/voice/cross1.mp3',
-  cross2: '/voice/cross2.mp3',
-  cross3: '/voice/cross3.mp3',
+  cross0: voicePath('cross0'),
+  cross1: voicePath('cross1'),
+  cross2: voicePath('cross2'),
+  cross3: voicePath('cross3'),
 };
 
 export class Audio {
@@ -776,6 +817,34 @@ export class Audio {
            a sound about water rather than about an animal. */
         this._noise({ from: 1500, to: 520, dur: 0.07, gain: 0.085 * v, q: 0.7 });
         this._tone({ type: 'sine', from: semi(19), to: semi(26), dur: 0.10, gain: 0.06 * v, delay: 0.04 });
+        break;
+      case 'lickdone':
+        /* ...AND THE CUB'S LITTLE BOW. "Have the panda do a happy dance and
+           play a happy sound so the player knows they are done being healed by
+           the baby panda."
+
+           IT IS THE LOUD ONE OF THE PAIR, AND THAT IS THE WHOLE POINT. `lick`
+           is deliberately the quietest thing in this file because it fires
+           once a second for most of a round; this fires ONCE, at the end, and
+           is the thing she is actually meant to notice. Making them the same
+           size would bury the announcement under sixty repetitions of the
+           announcement's own footsteps.
+
+           A RISING THREE-NOTE AND A BELL — the same figure `pandapoof` uses
+           for getting the animal back, deliberately, because the two moments
+           are the same kind of good news and this game only has one grammar
+           for yes. A fifth up rather than `pandapoof`'s octave, so a girl who
+           knows both can still tell them apart with her eyes on the fight.
+
+           NO NOISE LAYER. `pandapoof` has a whoosh because something appears;
+           nothing appears here, and a puff of air over a finished heal reads
+           as the panda leaving. */
+        [0, 7, 12].forEach((n, i) => this._tone({
+          type: 'triangle', from: semi(n + 12), to: semi(n + 16), dur: 0.22,
+          gain: 0.10 * v, delay: i * 0.065,
+        }));
+        this._tone({ type: 'sine', from: semi(31), dur: 0.7, gain: 0.085 * v, delay: 0.2 });
+        this._tone({ type: 'sine', from: semi(36), dur: 0.5, gain: 0.04 * v, delay: 0.23, detune: 6 });
         break;
       case 'pandadown':
         /* THE ANIMAL GETS SMALL. NOT A DEATH — fourth non-negotiable, a pet

@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 3775 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 3886 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -460,6 +460,25 @@ to lock it on.** → [mobile.md](docs/notes/mobile.md)
 | **A Help picture that isn't filmed yet** | `tools/help-blink-placeholder.mjs` draws the still that holds 瞬 Flash Step's cell in the abilities grid until its clip is shot. It reads the jade out of the orb roster and the kitten out of `PLAYER_STYLE`, so it cannot drift from the game, and it stamps **PLACEHOLDER** in its own corner — everything else on that page is an engine capture and a drawing must not pass for one. Swapping in the clip is one attribute in `index.html`. | `node tools/help-blink-placeholder.mjs` |
 | **README screenshots** | Rendered to a canvas and POSTed to a throwaway local HTTP server — browser downloads don't reach disk from a preview pane. | → [hosting.md](docs/notes/hosting.md) |
 
+**Where a finished asset lives.** `public/` is filed by subject, not flat:
+**`sprites/`** by who is drawn (`kittens/ember`, `kittens/frost`, `leaders/`,
+`clans/`, `satan/`, `critters/`, `beasts/`, `fx/`), **`voice/`** by who is
+speaking (`satan/`, `patchfur/`, `leaders/`, `ryuuseki/`, `kittens/`), and
+**`help/`** by what the picture is of (`ability/`, `clan/`, `move/`, `dojo/`,
+`place/`, `world/`). **The sprites were renamed; the voices and the Help clips
+were not**, and the difference is worth knowing before you go looking: a
+sprite's filename was only ever a path, but `sat_over` and `move-keys` are
+*identifiers* — a key in the announcer's buffer, a beat id in a cutscene, a file
+in `tools/capture/shots/`, a row in a doc — so the folder is added on the way
+out instead, by `voicePath(id)` in [`core/audio.js`](src/core/audio.js) and
+`helpGifPath(name)` in
+[`capture/assetserver.mjs`](tools/capture/assetserver.mjs). Nothing in `src/`
+writes a voice path by hand and `world-check` pins that, **because the failure
+here is silent**: the ninth non-negotiable says a missing clip throws nothing
+and logs nothing, so filing sixty-nine mp3s could have killed any line in the
+game without a test going red. → [art.md](docs/notes/art.md),
+[voices.md](docs/notes/voices.md), [help.md](docs/notes/help.md)
+
 **Rules that apply to all of it:** measure, never reason, about anything drawn —
 sizes, seat heights, mouth positions and facings are read off the loaded atlas,
 and reasoned numbers have been wrong roughly every time. Sprite sheets are
@@ -525,8 +544,11 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 3775
-assertions.
+the check that would have caught it.** That is why `world-check` is 3886
+assertions — **and why a check that is sometimes red is treated as a bug in the
+check.** Two of them were coin flips: an aggregate that hid the one kitten it
+was asking about, and a distinctness test rounded until it became a birthday
+problem. Both are written up where they live.
 
 **And a change a new developer would need to know about gets a line in this
 file** — a new tool, document, account, cost, or a new way the project is built,
