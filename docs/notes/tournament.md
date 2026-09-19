@@ -337,12 +337,111 @@ about something other than the fight.
 
 **A ROUND CANNOT RUN FOREVER.** Two bored kittens, or one sitting on the
 announcer's box, would otherwise hold the tournament open with no way out but
-the pause menu. At `ROUND_LIMIT` (120s) whoever has dealt the most damage takes
-it, and an exact tie is a draw.
+the pause menu. At `ROUND_LIMIT` (120s) the side with **the most bar left**
+takes it — see *Who wins a round*, below.
 
-**A whole tournament can be a draw** — three rounds with one timed out level on
-damage. Nobody signs the board, and it says so out loud rather than silently
+**A whole tournament can be a draw** — three rounds with one timed out dead
+level. Nobody signs the board, and it says so out loud rather than silently
 crowning player 1.
+
+### Who wins a round
+
+**It is health, and it used to be damage, and the damage was the whole match's.**
+Reported from play:
+
+> There is an issue where, it seems when someone has dealt damage, and then the
+> next round, even if everyone is at full health, then the person that dealt
+> damage in a previous round will automatically be the winner of the new round.
+
+Exactly that. `Tournament._sideDamage` sums `Player.dmgDealt`, which is reset in
+`begin` and **nowhere else**, so it is a running total for the tournament. Round
+two opened with both fighters on full bars, ran its 120 seconds untouched, and
+was handed to whoever had landed a blow in round one. Every round after the
+first blow of a match was pre-decided, and nothing on screen said so.
+
+**The rule now:**
+
+| | |
+| --- | --- |
+| a side is wiped out | that side loses, unchanged — `_checkRoundOver` |
+| the clock runs out | most **health percentage** wins — `_sideHealth` |
+| level on health | most damage **this round** — `_roundDamage` |
+| level on both | a draw, exactly as "nobody landed anything" was |
+
+**A side's percentage is the MEAN of its fighters' own bars**, each capped at
+her own 100%. Asked for in these words: *"the 3 players' health should equal the
+100% of health, so if 1 player gets knocked out of the 3, then that means they
+are at 66% total for the team … so if they are at 66% and the solo player drops
+to 65% health or lower, then that player will lose."* Summing instead would hand
+every handicap league to the pack at the gong — three bars beat one bar at any
+fraction.
+
+**Each kitten's share is `hp / baseMaxHp`, capped at 1** (`Player.healthFrac`).
+Two things follow, and both were asked for:
+
+- **The handicap bar is her own 100%.** A 3v1 lone fighter on 1.2 bars is at
+  100% on 120 health, so she is not punished for having been handed more to
+  lose.
+- **The feast's overflow is invisible to it.** *"If a player's normal maximum is
+  120, and they have 15 overflow, the 120 is used for the calculation for 100%,
+  so if the player has 135 health, it will still return 100%."* The green is a
+  bonus on top of her bar; spending it costs her nothing on this number, and she
+  only starts falling below 100% once she is under her ordinary top.
+
+**Health is also the honest question.** "Who is winning" while two kittens
+circle each other is something a nine-year-old reads off the two bars at the top
+of the screen. Damage dealt is a number nothing on screen has ever shown her, so
+a round decided on it was decided by a rule she could not see being applied —
+the same complaint `ROUND_LIMIT` got before its clock went on the HUD.
+
+**`Player.roundDmg` is a second counter, not a reset of the first.**
+`dmgDealt` is signed onto the record board at the end of the match and has to be
+the whole match; `roundDmg` is the tiebreak and has to be this round. Both are
+incremented on the same line in `Game.strikePlayers` (and again for the Cross
+Slash), and `world-check` counts the two writers and fails if they differ.
+
+**The toast says which rule decided it** — *"Frost finished with more health
+(82%)"* against *"Level on health — Frost landed more this round"*. Sixth
+non-negotiable: two sides on 100% and one of them handed the round reads as the
+game picking a favourite unless the sentence says what broke the tie.
+
+**The MATCH tiebreak is still cumulative damage** (`_finishTournament`), and
+that is deliberate rather than an oversight: health is an end-of-round state and
+means nothing across three rounds, whereas "who hit harder all afternoon" is
+exactly the right question for a 1-1-with-a-draw.
+
+### What the purse pays
+
+`_payPurse`, at `_finishTournament`, after the winners are known. The purse is
+**one orb's price** — `Kotodama.price`, derived rather than picked, so it tracks
+the shop automatically — and it is **split between the winning side**.
+
+| league | winners | each |
+| --- | --- | --- |
+| DUEL | 1 | the whole purse |
+| FREE FOR ALL | 1 | the whole purse |
+| TAG TEAM 2v2 | 2 | half each |
+| HANDICAP 2v1 / 3v1, the pack wins | 2 / 3 | half / a third each |
+| HANDICAP 2v1 / 3v1, the lone fighter wins | 1 | the whole purse |
+| FREE TEAMS 2v1v1, the pair wins | 2 | half each |
+| a draw | nobody | nothing, and nobody signs the board |
+
+**It used to pay every winner the whole purse**, and the comment defending that
+argued splitting would make a 2v2 win worth half a duel win each and teach two
+sisters that teaming up is worse than fighting alone. What that missed is the
+handicap leagues: three kittens beating one took home **three orbs** while the
+girl who beat three of them took home one — the longest odds in the building
+paying the worst per head. Asked for as *"the 3 should split the prize if they
+win"*. The 2v2 pays half each now; that is the trade, and it is the first thing
+to change back if the girls stop picking the team modes.
+
+**A duel is bit-identical** — one winner, `purse / 1`, no remainder. Fifth
+non-negotiable, pinned.
+
+**The odd point goes to `winner`.** 100 split three ways is 33 each and one
+point that has to land somewhere; dropped, the ring quietly destroys money,
+and rounding each share up quietly prints it. `winner` is the top scorer on the
+side — already the kitten the record row is filed under.
 
 **THE RING NEEDS ITS OWN CAMERA RIG.** The merged camera clamps at
 `26 + separation * 0.85` capped at **52**, written for two kittens in a town —
@@ -1148,10 +1247,48 @@ of what she healed by eating raises her **ceiling** for exactly one round, so
 100/100 becomes 110/110 and the feast is worth attending even when you are about
 to be healed to full anyway.
 
-**It is half of what she GAINED, not half of what she ate.** A kitten already at
-the top of her bar swallowing a rat has recovered nothing and banks nothing —
-which is what stops the feast being "stand still and chew" for whoever is
-already ahead.
+**THE GREEN IS THE LOSER'S, AND ONLY THE LOSER'S.**
+
+> The only person that gets the "health overflow", and therefore "green health"
+> bar, is the player or players that lost the round.
+
+`Player.overflowing`, set in `_startFeast` for anybody still on her feet whose
+side is not `_lastWinner`, cleared in `_nextRound`. It used to be everybody, and
+that paid the winner twice: she **keeps the health she is standing on** into the
+next round *and* banked half of everything she ate on top of it, so a lead
+compounded and a best-of-three was decided in round one. The loser is the one
+who is healed to full at the gong, so she is the one whose meal would otherwise
+be worth nothing — the green is what the food turns into for somebody who cannot
+be paid in health.
+
+**A draw gives nobody any**, and that falls out of the same field rather than
+being a special case: nobody lost, so nobody is healed, so nobody has a wasted
+meal to compensate for. An angel gets none either — she has no mouth.
+
+**Ask `ko` BEFORE the angel branch.** `becomeAngel` clears `ko` (being knocked
+out is a thing that *happened*; being an angel is what she *is* now), so a
+`!p.ko` read after it is true for the one kitten it most obviously means to
+exclude. `world-check` caught exactly that, and `_startFeast` now latches
+`const down = p.ko` first.
+
+**For her, a mouthful is worth the WHOLE mouthful — past the top of her bar.**
+
+> If their health goes past Maximum with the green health, then the amount still
+> gets applied.
+
+For an ordinary kitten `fedHp` is health *restored*, so eating while full gains
+her nothing and banks nothing — which is what stops the feast being "stand still
+and chew" for whoever is already ahead. For an overflowing one it is the whole
+heal, because she starts the feast with the regen already on her and would
+otherwise spend most of fifteen seconds eating for nothing.
+
+**`hp` is still clamped to `maxHp`, and that is not a contradiction.** Her *bar*
+is as long as it is; what is past the end of it lives in `fedHp`, is drawn as
+green walking backwards out of the feast mark, and is halved into a real longer
+bar at the gong. `Player.feastHp` adds the two back together for the debug
+readout. Nothing outside a feast ever sees `hp > maxHp` — an invariant a dozen
+other things lean on, and the reason the bonus lives inside `maxHp` at all (see
+below).
 
 **The bonus lives INSIDE `maxHp`, not beside it.** This is the whole design
 decision and it is worth a sentence. The obvious model is to let `hp` exceed
@@ -1173,20 +1310,63 @@ and `setHpScale` both recompute the whole bar, so a Vigor traded away mid-round
 or a handicap applied at the top of one would otherwise silently spend the
 overflow. Both add `bonusHp` back; `world-check` drives both.
 
-**The green is painted inside the fill, not beside it.** `.ah-over` is an `<i>`
-nested in `.ah-fill`, margin-start `auto`, width `overflowHp / hp` — so it sits
-at the *end* of the bar, cannot extend past it, and drains first when she is hit,
-which is the rule as it was asked for. Three radial gradients scroll upward at
-different rates under a green vertical ramp for the bubbling; it is one
-`@keyframes` on `background-position` and it is off under
+**The green is a slice of the bar, in health** — `Tournament._paintHud`'s
+`greenOf` returns `{ from, to, mark }` on a 0..`maxHp` scale and the markup
+positions `.ah-over` with `inset-inline-start` + `width`. Three radial gradients
+scroll upward at different rates under a green vertical ramp for the bubbling;
+it is one `@keyframes` on `background-position` and it is off under
 `prefers-reduced-motion`.
 
-**And she can see it being gathered.** During the feast the HUD adds
-`fedHp * OVERFLOW_FRAC` to what it draws, so the green creeps along the bar with
-every animal eaten rather than appearing from nowhere at the start of the next
-round; the feast toast says so in words, and `Menagerie._devour` names the
-running total on every meal. Sixth non-negotiable: a thing the game is quietly
-banking on your behalf has to be visible while it is happening.
+**It used to be nested in `.ah-fill` with `margin-inline-start: auto`**, which
+pins a slice to the fill's own far end. That is right for overflow during a
+*round* — it sits on top of her health and drains first when she is hit — and it
+cannot express the feast case at all, where the green ends up in the middle of
+the bar with red on both sides of it. Hence `position: absolute` on `.ah-over`
+and `position: relative` on `.ah-bar`, both load-bearing and both pinned.
+
+**`inset-inline-start`, never `left`.** The right-hand side's bars are
+`direction: rtl` so the two sides drain toward their own edges of the screen; a
+physical edge mirrors the green onto the wrong end of half the HUD. Same trap
+the old auto-margin was avoiding.
+
+**The mark, and which way the green grows.**
+
+> Mark visually where the health bar started, where it grew to, and if over the
+> maximum, how the green grew — should increase left past the visual mark, as
+> from visual mark to maximum health it grows to the right, but once past
+> maximum health, needs to grow to the left past the visual marker.
+
+`Player.feastMark` is where her bar stood when the food appeared — set in
+`_startFeast` **after** the regen (the regen is not something she earned by
+hunting) and for **everybody**, because "how far did my bar move in those
+fifteen seconds" is a question the winner asks too. `.ah-mark` is one paper tick
+at `z-index: 2`, drawn over the green because the moment it matters is the
+moment green is on both sides of it. Green to the **right** of the tick is
+health she was missing; green to the **left** of it is overflow, growing
+backwards because the bar has run out of room. The spill is clamped at the
+mark's own distance from zero, so an enormous feast fills the bar green and
+stops rather than painting a negative offset.
+
+**And it is the whole meal now, not half of it.** The HUD used to draw
+`fedHp * OVERFLOW_FRAC` on the argument that the honest indicator is the
+quantity that will *carry*. The rule is now that the green **is** her health —
+she is really standing on it, and she would really keep it if the round started
+now — and the halving is something that happens *to* it at the gong. A bar
+showing half of the rat she just swallowed under-reports the only reward the
+loser gets. The feast toast says which of the three jobs she has (eat for green
+/ eat for health you keep / fly it off), and `Menagerie._devour` names the
+running carry on every meal.
+
+**`debug` → "health overflow numbers under the arena bars".** A keyless row on
+the debug panel (`Game._toggleOverflowDbg`), because the picture cannot be
+checked by looking at it: the case it exists for is a kitten standing on 120 of
+a 100 bar, and the bar is full either way. It prints, under each fighter, what
+she is really on, her ordinary maximum, her drawn bar, how much is green, where
+the mark is, and — in gold — `healthFrac` as a percentage, which is the number
+the *round* is decided by and the number the overflow is deliberately invisible
+to. The side's own mean percentage and this round's damage go on the team line,
+because three kittens on 100/100/0 are a side on 66 and nobody works that out
+from three bars while a round is ending.
 
 ### The angel
 
@@ -1389,7 +1569,7 @@ delete the comment, which is the one outcome it is trying to prevent.
 
 > When a round is about to be over in the arena, there needs to be a countdown.
 
-`ROUND_LIMIT` has always been able to take a round off you on damage. Until the
+`ROUND_LIMIT` has always been able to take a round off you. Until the
 clock went into the HUD it did that silently; with the clock there, it did it
 in an eighteen-pixel box in the corner, going red — which is not something two
 kittens circling each other at 1:50 are reading. The rule was fair and
@@ -1595,7 +1775,7 @@ is what makes clearing safe here and nowhere else.
 
 Both bells were right and both banners were wrong. **K.O.** and *"DOWN! Oh, that
 had to hurt!"* were painted over every ending that had a winner, including the
-overwhelmingly common one: the clock ran out and one kitten was ahead on damage.
+overwhelmingly common one: the clock ran out and one kitten had more bar left.
 Nobody had been knocked out, nobody was down, and the game said both — which a
 nine-year-old reads as the game not having watched the round she just played.
 
@@ -1676,7 +1856,7 @@ shouted somewhere off the edge of it.
 `ko` is the state for every ending, and only one of them is his. A knockout
 deliberately keeps the ring camera: the thing worth looking at there is the
 kitten who just went down, and cutting away from her throws out the one frame
-the whole round was for. So `callOnDamage` records whether the CLOCK was what
+the whole round was for. So `callRound` records whether the CLOCK was what
 called it, and `cameraWant` reads that latch — cleared per round on the same
 `count` to `live` line every other per-round latch is cleared on, and again in
 `finish()`.

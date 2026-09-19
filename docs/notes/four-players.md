@@ -1878,7 +1878,7 @@ left two standing. In a 2v2 it did not end the round **at all**, because a side
 is not out until everybody on it is.
 
 The `ROUND_LIMIT` branch already knew how to end a round honestly at any league
-size, so that decision is `Tournament.callOnDamage` now and both callers go
+size, so that decision is `Tournament.callRound` now and both callers go
 through it: the clock and the debug key cannot disagree about who won.
 
 **And nobody is hurt to do it.** A round called on time is not a knockout, so

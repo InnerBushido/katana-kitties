@@ -354,6 +354,9 @@ class Game {
     this._perfLast = 0;
     this._perfPaint = 0;
     this._perfOn = false;
+    /** Debug: print the health numbers under every arena bar. Read by
+     *  `Tournament._paintHud`, toggled by the panel's own row. */
+    this._overflowDbg = false;
     /* AUTO-DOWNGRADE, ON UNTIL A HUMAN HAS AN OPINION. The moment somebody
        picks a quality in Settings this goes false and stays false for the
        session: a setting that argues back with the person using it is worse
@@ -3709,7 +3712,7 @@ class Game {
        round only in a duel. At four players it killed Frost and left the other
        two standing; in a 2v2 it did not end the round at all, because a side
        is not out until everybody on it is. Reported from play as "it doesn't
-       end the round, it just kills Frost". `callOnDamage` underneath both of
+       end the round, it just kills Frost". `callRound` underneath both of
        these is the same decision the clock makes at `ROUND_LIMIT`, so the key
        cannot disagree with the game about who won, at any league size, and
        nobody is hurt to get it: whoever was ahead on damage takes the round
@@ -3806,6 +3809,11 @@ class Game {
        tester to the dev tools for the other half. No key, for the same reason
        `BoardWipe` has none. */
     if (code === 'SaveWipe') this._debugClearSaves();
+    /* THE HEALTH NUMBERS BEHIND THE ARENA'S BARS. No key, because it is only
+       ever wanted while a tournament is running and a keyboard in that room
+       already has four kittens' worth of hands on it. See
+       `Tournament._paintHud`, which is the only thing that reads the flag. */
+    if (code === 'OverflowDbg') this._toggleOverflowDbg();
     /* --- the scene viewer ---
        Every cutscene in the game is gated behind hours of play and fires ONCE
        per session, which makes the last thing anybody writes also the hardest
@@ -4583,6 +4591,30 @@ class Game {
     return n ? sum / n : 0;
   }
 
+  /**
+   * Show the health numbers under every bar in the arena HUD — debug only.
+   *
+   * WHAT IT IS FOR is the one case the bar physically cannot show: a kitten
+   * overflowing at the feast is standing on 110 of a 100 bar, and the bar is
+   * as long as it is. It prints what she has, what her ordinary maximum is,
+   * how much of it is green, where the mark is, and — the number a round is
+   * decided by — her percentage of her OWN bar, capped at 100. Asked for as
+   * "a way to debug and make sure this is working correctly".
+   *
+   * IT SAYS SO WHEN THERE IS NOTHING TO LOOK AT. The HUD only exists during a
+   * tournament, so switching this on in the town square is a toggle that
+   * appears to do nothing — sixth non-negotiable, and the toast is cheaper
+   * than the confusion.
+   */
+  _toggleOverflowDbg() {
+    this._overflowDbg = !this._overflowDbg;
+    this.toast(this._overflowDbg
+      ? (this.tournament?.state && this.tournament.state !== 'off'
+        ? '[debug] health overflow numbers ON — under each bar'
+        : '[debug] health overflow numbers ON — they show in the arena HUD')
+      : '[debug] health overflow numbers off', 0);
+  }
+
   _togglePerf() {
     this._perfOn = !this._perfOn;
     document.getElementById('perf')?.remove();
@@ -4759,6 +4791,8 @@ class Game {
       ${row('Digit5', 'NUDGE it on — 30s, 15s, 5s, next line')}
       ${row('Digit2', 'Mr. Satan loses his temper (skip the fuse)')}
       ${row('Digit1', 'frame cost — fps, draws, pixels, GPU', this._perfOn)}
+      ${row('OverflowDbg', 'health overflow numbers under the arena bars',
+    this._overflowDbg)}
       <div class="dbg-sep">FOUR PLAYERS, ONE KEYBOARD</div>
       ${row('Backslash', 'force-spawn — ENTER seats 3 &amp; 4 on the keyboard',
     this.input.forceSeats)}
@@ -5232,7 +5266,12 @@ class Game {
             this.sfx('dismount');
             this.toast(`${target.name} was knocked off ${target.pandaName}!`, target.index);
           }
+          /* TWO TALLIES, ONE BLOW. `dmgDealt` is the match, for the record
+             board; `roundDmg` is this round, for the tiebreak a round that
+             ends level on health falls through to. Incremented together and
+             in one place, so they cannot disagree about a hit. */
           attacker.dmgDealt += dealt;
+          attacker.roundDmg += dealt;
           this.tournament.onHit(attacker, target, dealt, kind);
         }
       }
@@ -5726,7 +5765,9 @@ class Game {
     const from = { x: target.position.x - dx, z: target.position.z - dz };
     const dealt = target.hurt(dmg, from, { knock: CROSS.knock, lift: CROSS.lift }, this);
     if (dealt && by) {
+      // Both tallies, for the reason `strikePlayers` gives.
       by.dmgDealt += dealt;
+      by.roundDmg += dealt;
       this.tournament?.onHit(by, target, dealt, 'tri');
     }
     return hits >= CROSS.cuts;

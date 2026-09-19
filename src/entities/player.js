@@ -388,12 +388,29 @@ export class Player {
     /** Overflow banked off the feast, on her bar for ONE round. See
      *  `setRoundBonus` — it is INSIDE `maxHp`, not a second number beside it. */
     this.bonusHp = 0;
-    /** Health she has gained by EATING since this feast began — the figure the
+    /** Health the feast has put on her since it began — the figure the
      *  overflow is half of. Zeroed by `Tournament._startFeast`, added to by
-     *  `Menagerie._devour`, and read nowhere else. It is health RESTORED and
-     *  not food swallowed: a kitten who eats a rat while full has gained
-     *  nothing, and gets nothing to carry. */
+     *  `Menagerie._devour`, and read nowhere else.
+     *
+     *  IT IS HEALTH RESTORED *UNLESS SHE IS OVERFLOWING*, and that clause is
+     *  the feature. For anybody whose bar is an ordinary bar, eating while
+     *  full gains nothing and banks nothing — which is what stops the feast
+     *  being "stand still and chew" for whoever is already ahead. The kitten
+     *  who LOST the round is the one the green is for, and hers is the whole
+     *  mouthful: she is being healed to full at the gong anyway, so a meal
+     *  that stopped counting at the top of her bar would be a meal she was
+     *  punished for having earned. See `overflowing`. */
     this.fedHp = 0;
+    /** May she eat PAST the top of her own bar right now?
+     *
+     *  Set for exactly one group of kittens at exactly one moment: the ones who
+     *  LOST the round, still on their feet, for the length of the feast. See
+     *  `Tournament._startFeast`, which is the only thing that sets it, and
+     *  `_nextRound`, which is the only thing that clears it. */
+    this.overflowing = false;
+    /** Where her bar stood when the feast began — the mark the green grows
+     *  from, and out of which side of it. Null outside a feast. */
+    this.feastMark = null;
     /** Tournament handicap on the whole bar — see setHpScale. 1 outside the
      *  ring and in every mode that is not a handicap league. */
     this.hpScale = 1;
@@ -416,9 +433,21 @@ export class Player {
     this.koT = 0;
     /** True from the moment she is knocked out until the round resets her. */
     this.ko = false;
-    /** Scoring, per tournament. See Tournament.score. */
+    /** Scoring, per TOURNAMENT — the two numbers the record board keeps. See
+     *  `Tournament.score`, and `roundDmg` for the per-round one. */
     this.dmgDealt = 0;
     this.dmgTaken = 0;
+    /** Damage she has dealt THIS ROUND, and nothing before it.
+     *
+     *  A SECOND COUNTER RATHER THAN A RESET OF THE FIRST, because the two are
+     *  asked different questions. `dmgDealt` is signed onto the record board
+     *  at the end of the match and has to be the whole match; this one is the
+     *  tiebreak when a round ends dead level on health, and has to be this
+     *  round or it hands round two to whoever won round one. That is exactly
+     *  the bug this exists for: a round could be decided on damage a kitten
+     *  dealt several minutes earlier, with both fighters standing at full
+     *  health in front of her. Zeroed in `Tournament._nextRound`. */
+    this.roundDmg = 0;
     /** Drives the white hit-flash on the sprite. */
     this.flashT = 0;
     /** Which way the last hit threw her, for the recoil lean. */
@@ -1327,6 +1356,40 @@ export class Player {
    */
   get overflowHp() {
     return Math.max(0, Math.min(this.bonusHp, this.hp - this.baseMaxHp));
+  }
+
+  /**
+   * How much of her own bar she is standing on, 0..1 — THE NUMBER A ROUND IS
+   * DECIDED BY when the clock runs out. See `Tournament._sideHealth`.
+   *
+   * MEASURED AGAINST `baseMaxHp` AND CAPPED AT ONE, and both halves of that
+   * were asked for in those terms: "if a player's normal maximum is 120, and
+   * they have 15 overflow, the 120 is used for the calculation for 100%, so if
+   * the player has 135 health, it will still return 100%". The feast's
+   * overflow is a BONUS ON TOP of her bar, so spending it costs her nothing on
+   * this number — she is still at her maximum right up until she drops below
+   * the ordinary top of it — and two kittens who are both at their own
+   * maximum are level however much green either of them is carrying.
+   *
+   * `baseMaxHp` IS HER OWN BAR, NOT THE BASE HUNDRED, which is what makes this
+   * fair in a handicap league: the lone fighter's 1.2 bar is her 100%, so a
+   * 3v1 is not decided by the fact that she was handed more health to lose.
+   */
+  get healthFrac() {
+    return Math.max(0, Math.min(1, this.hp / this.baseMaxHp));
+  }
+
+  /**
+   * What the feast has put on her INCLUDING the part past the top of her bar —
+   * the "110 of 100" the debug readout shows.
+   *
+   * The bar itself cannot draw it: a bar is as long as it is, which is why the
+   * green grows back to the LEFT of the mark once it passes the top rather
+   * than running off the end. This is the number behind that picture, and it
+   * only exists for a kitten who is `overflowing`.
+   */
+  get feastHp() {
+    return (this.feastMark ?? this.hp) + (this.overflowing ? (this.fedHp ?? 0) : 0);
   }
 
   /**
