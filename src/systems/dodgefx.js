@@ -27,6 +27,17 @@
      drawn vectors, so the figure cannot disagree with the move. See
      `_updateFigure`.
 
+     AND WHEN SHE HAS LOCKED SOMEBODY, THE LANDING IS A SECRET UNTIL SHE
+     TAKES IT. The ring of available landings still snaps down, because that
+     is the warning; the ghost, the spoke and the triangle wait for the commit
+     frame and then hold for the dissolve. With nobody locked — the move used
+     as movement rather than as an attack — the preview is exactly what it
+     always was. See `secret` in `_updateFigure` for the report behind it.
+
+     THERE IS NO RAIN OF KANA ANY MORE. Two columns of falling glyphs used to
+     fall at both ends of the jump; they were cut as clutter, by name, and
+     `_updateFigure` says why at the bottom.
+
      AND THE THING LEFT BEHIND. A ninja vanish leaves a log. This one leaves a
      log, or her own bow tie, or a scarf, or a boiled sweet the size of her
      head, or — if she has sworn — her clan's emblem on a little post. It is
@@ -62,8 +73,8 @@
 
 import * as THREE from 'three';
 import { toonMat } from '../core/gfx.js';
-import { Label, makeLabelTexture } from '../core/label.js';
-import { DODGE, ORB_BY_ID, kanaFor } from '../entities/powerorb.js';
+import { Label } from '../core/label.js';
+import { DODGE, ORB_BY_ID } from '../entities/powerorb.js';
 
 /** The orb's own jade, read from the table rather than restated — the shelf,
  *  the profile card and the orb itself are already this colour and a fourth
@@ -158,9 +169,6 @@ const ARC_MAX = 28;
 const COS_C = 0xffb347;
 const SIN_C = 0x8bff9a;
 const GOLD = 0xffd76a;
-/** Glyphs falling in each of the two columns, and how high the column is. */
-const DROPS = 5;
-const COL_TOP = 4.6;
 /** Segments in a landing circle. 96 is the Dojo's own count for its unit
  *  circle, and these two circles are meant to be read as the same object. */
 const RING_SEG = 96;
@@ -195,8 +203,16 @@ function canvas(w, h) {
  * FOUR BRACKETS AND A GAP AT EACH DIAGONAL, because a closed ring is
  * rotationally symmetric and spinning one is a free frame that looks exactly
  * like a still one — the same reason `crossfx`'s aura rings are arcs.
+ *
+ * EXPORTED, BECAUSE "TARGETED" IS ONE WORD AND MUST BE ONE PICTURE. The steal's
+ * mark (`systems/clanfx.js`) puts this same sight over the head of whoever is
+ * being hunted, in the hunter's colour — asked for as "can be the same target
+ * we use with the Sense Mischief". A second drawing of a target would be a
+ * second thing a nine-year-old has to learn means the same as the first, and
+ * the two would drift the first time either was tuned. Cached in `_ring`, so
+ * the two systems share one texture as well as one shape.
  */
-function ringTexture() {
+export function ringTexture() {
   if (_ring) return _ring;
   const N = 32;
   const PX = 8;
@@ -385,47 +401,6 @@ function setSeg(line, ax, ay, az, bx, by, bz) {
     ld.setX(1, Math.hypot(bx - ax, by - ay, bz - az));
     ld.needsUpdate = true;
   }
-}
-
-/**
- * A falling column of katakana, at one end of the teleport.
- *
- * THE GLYPHS ARE 瞬'S OWN FIVE. `kanaFor('blink')` is the same deterministic
- * slice the orb she is wearing rains, so the characters coming off the teleport
- * are the characters on her shoulder — and, just as importantly, they are five
- * entries in a label cache that never frees anything rather than forty-six.
- * That bound is the reason `kanaFor` exists at all; helping myself to the whole
- * alphabet here would have quietly undone it.
- *
- * SPRITES AGAIN, for the split screen, and spread on a little circle rather
- * than stacked on one line so the column has depth from every angle.
- */
-function column(hex, pool) {
-  const group = new THREE.Group();
-  group.visible = false;
-  const drops = [];
-  for (let i = 0; i < DROPS; i++) {
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-      transparent: true, opacity: 0, depthWrite: false, toneMapped: false,
-    }));
-    sp.renderOrder = 27;
-    group.add(sp);
-    const a = (i / DROPS) * Math.PI * 2;
-    drops.push({ sp, t: i / DROPS, ox: Math.cos(a) * 0.62, oz: Math.sin(a) * 0.62 });
-  }
-  /* AND THE KANJI ITSELF, once, big, over the middle of the column. The rain
-     is texture; this is the word. It is the same character on the orb, on the
-     shelf and on the profile card. */
-  const { texture, aspect } = makeLabelTexture('瞬', {
-    size: 132, color: hex, stroke: '#06131a', strokeWidth: 9,
-  });
-  const mark = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: texture, transparent: true, opacity: 0, depthWrite: false, toneMapped: false,
-  }));
-  mark.scale.set(2.1 * aspect, 2.1, 1);
-  mark.renderOrder = 27;
-  group.add(mark);
-  return { group, drops, mark, hex, pool };
 }
 
 /* -------------------------------- decoys ---------------------------------- */
@@ -684,18 +659,12 @@ export class DodgeFx {
     const lblCos = mk(css(COS_C), 'r cos θ = -00.0');
     const lblSin = mk(css(SIN_C), 'r sin θ = -00.0');
 
-    const pool = kanaFor('blink');
-    const colA = column(hex, pool);
-    const colB = column(hex, pool);
-    group.add(colA.group);
-    group.add(colB.group);
-
     group.visible = false;
     this.scene.add(group);
     f = {
       group, ringFar, ringNear, ghost, echoOut, echoIn,
       vec, moved, cosLeg, sinLeg, arc,
-      lblTheta, lblCos, lblSin, colA, colB,
+      lblTheta, lblCos, lblSin,
       /** Which `dodgeSeq` is on screen, -1 for none. */
       seq: -1,
       /** Is that move still running? */
@@ -1012,8 +981,34 @@ export class DodgeFx {
       f.ringNear.material.opacity = 0.55 * A;
     }
 
+    /* --- IS SHE ALLOWED TO SEE IT COMING? ---
+       Reported from play: "when using the teleport ability, should not be
+       showing where the player is teleporting to before they teleport when a
+       player target is selected, should be a secret. It should only show where
+       the player is teleporting to, beforehand, when an enemy target is not
+       selected."
+
+       SO THE PREVIEW IS A FUNCTION OF WHETHER THERE IS A VICTIM. With nobody
+       locked the Flash Step is a movement tool and the ghost is how she aims
+       it — that case is untouched. With somebody locked it is an ATTACK, and
+       showing her sister the exact square she is about to appear on hands the
+       defender a half-second of free warning about the one thing that should
+       cost her a read. The ring around the victim still snaps down, so the
+       warning that matters — YOU are the one being circled, and here is the
+       colour of who is doing it — is unchanged and is about to get louder.
+
+       NOTHING IS DELETED, ONLY DELAYED. The spoke, the ghost and the whole
+       sin/cos triangle all come back the instant she commits, because
+       `f.placed` opens every one of them — and the figure is frozen at that
+       moment and holds for `FIG_OUT`, so there is MORE time to read the
+       working after the jump than there ever was before it. The first
+       non-negotiable is about the maths being drawn honestly, not about when.
+       A version of this that suppressed the triangle outright would be the
+       report used as an excuse to delete a lesson. */
+    const secret = s.hasT && !f.placed;
+
     /* --- the see-through her, standing on the landing she has chosen --- */
-    const previewing = live && !f.placed && s.ok;
+    const previewing = live && !f.placed && s.ok && !secret;
     if (f.ghost) {
       f.ghost.visible = previewing;
       if (previewing) {
@@ -1047,8 +1042,11 @@ export class DodgeFx {
 
     /* --- the spoke, in her colour: the target, to where she comes out --- */
     const ly = 0.09;
-    f.vec.visible = s.ok;
-    if (s.ok) {
+    /* THE SPOKE IS THE LANDING, DRAWN AS A LINE. It points from the victim
+       straight at the square she is about to stand on, so it gives the secret
+       away just as completely as the ghost does. Same gate. */
+    f.vec.visible = s.ok && !secret;
+    if (f.vec.visible) {
       setSeg(f.vec, s.px, s.py + ly, s.pz, s.hx, s.hy + ly, s.hz);
       f.vec.material.opacity = 0.95 * A;
     }
@@ -1072,7 +1070,13 @@ export class DodgeFx {
        Everything printed below is computed from those two rays, so the triangle
        cannot draw one thing and say another — which is the entire rule the
        Kotodama Orb is built on. */
-    const tri = s.ok && showB;
+    /* AND THE TRIANGLE IS BUILT ON THE SPOKE, so it cannot be drawn while the
+       spoke is a secret: `r cos θ` and `r sin θ` are the legs of the landing
+       itself, and a right angle drawn at the victim's feet points at the
+       answer as plainly as the line does. `showB` already required a locked
+       target, so with nobody locked nothing here changes at all — and with one
+       locked, the whole figure arrives together on the commit frame. */
+    const tri = s.ok && showB && !secret;
     for (const o of [f.cosLeg, f.sinLeg, f.arc]) o.visible = tri;
     for (const l of [f.lblTheta, f.lblCos, f.lblSin]) l.visible = tri;
     if (tri) {
@@ -1132,44 +1136,19 @@ export class DodgeFx {
       for (const l of [f.lblTheta, f.lblCos, f.lblSin]) l.mat.opacity = A;
     }
 
-    /* --- and the rain, at both ends of the jump ---
-       TWO SITES, asked for by name: the place she leaves and the place she
-       arrives. The first runs through the wind-up and a little past the fade,
-       so the column is still falling over the smoke; the second starts the
-       instant she commits, so the characters are already there when she is. */
-    this._column(f.colA, live && (!f.placed || f.since < FADE * 2.4),
-      s.sx, s.sy, s.sz, dt, A);
-    this._column(f.colB, f.placed, s.hx, s.hy, s.hz, dt, A);
-  }
+    /* THE RAIN OF KANA AT BOTH ENDS OF THE JUMP IS GONE, and it was asked for
+       by name: "remove the kanji symbols appearing before/after teleporting,
+       it is just extra unneeded screen clutter."
 
-  /** One rain column, moved to a spot and stepped. */
-  _column(col, on, x, y, z, dt, A) {
-    col.group.visible = on;
-    if (!on) return;
-    col.group.position.set(x, y, z);
-    for (const d of col.drops) {
-      d.t += dt * 1.3;
-      if (d.t > 1 || !d.sp.material.map) {
-        if (d.t > 1) d.t -= 1;
-        /* A NEW GLYPH, NOT A NEW MESH. `makeLabelTexture` caches on content
-           and colour, so after the first few frames of the first Flash Step
-           this is a map swap and nothing else — and the pool is five, so the
-           cache it is drawing from is bounded at five per kitten colour. */
-        const { texture, aspect } = makeLabelTexture(
-          col.pool[(Math.random() * col.pool.length) | 0],
-          { size: 60, color: col.hex, stroke: '#06131a', strokeWidth: 7 }
-        );
-        d.sp.material.map = texture;
-        d.sp.material.needsUpdate = true;
-        d.sp.scale.set(0.78 * aspect, 0.78, 1);
-      }
-      d.sp.position.set(d.ox, COL_TOP * (1 - d.t), d.oz);
-      // Brightest at the head of the fall and gone by the floor — the detail
-      // that makes falling characters read as falling. Same curve as the orb.
-      d.sp.material.opacity = 0.95 * A * Math.sin(d.t * Math.PI);
-    }
-    col.mark.position.set(0, COL_TOP * 0.52, 0);
-    col.mark.material.opacity = 0.85 * A;
+       IT WAS RIGHT ON ITS OWN TERMS AND WRONG IN THE FRAME. Two columns of
+       five falling glyphs plus a big 瞬 over each, at BOTH ends, on top of the
+       smoke, the decoy, two rings, a ghost, two coloured segments, a swept arc
+       and three floating readouts — in a quarter of a screen. The move already
+       says "瞬" on the orb, on the shelf and on the profile card; it did not
+       need to say it twice more mid-jump.
+
+       DO NOT PUT IT BACK WITHOUT TAKING SOMETHING ELSE OUT. The reason it went
+       is the density of this one figure, not the idea. */
   }
 
   /**

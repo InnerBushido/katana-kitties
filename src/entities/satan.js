@@ -79,9 +79,12 @@ export class MrSatan {
     this.line = '';
     this._lineSet = null;
 
-    /** 'idle' | 'charge'. Only ever anything but 'idle' while
-     *  `systems/satanblast.js` has him winding up. */
+    /** 'idle' | 'charge'. Anything but 'idle' while the temper gag has him
+     *  winding up, or while the round clock has him shouting ZEEEROOO. */
     this.pose = 'idle';
+    /** WHICH OF THOSE TWO PUT HIS ARMS UP, and therefore who is allowed to put
+     *  them down again. See `setPose` — null while they are down. */
+    this.poseOwner = null;
     this.chargeSprite = null;
   }
 
@@ -143,11 +146,40 @@ export class MrSatan {
    * strictly smaller promise than that. Called unconditionally by the blast so
    * there is no second place that has to remember whether the drawing exists.
    *
+   * TWO SYSTEMS RAISE HIS ARMS AND THEY USED TO FIGHT OVER THEM. Reported
+   * from play: "Mr. Satan is not doing his angry animation when the timer
+   * counts down to zero and then later in a new round, after a player jumps on
+   * his platform. Probably because they both use the same sprite." That guess
+   * was exactly right. The tournament raises them for ZEEEROOO
+   * (`Tournament._letHimFinish`) and the temper gag raises them for the shout
+   * (`SatanBlast._shout`), and each had its own idea of when to put them back
+   * down — so whichever finished first dropped the other one's arms
+   * mid-performance, and from the sofa that is an animation that simply did
+   * not play.
+   *
+   * SO RAISING ALWAYS WINS AND LOWERING NEEDS A RECEIPT. Whoever puts his arms
+   * up owns them; only that owner can put them down. `owner: null` is the
+   * deliberate override and belongs to the two teardown paths that have to win
+   * whatever is going on — the game restarting and the arena closing — because
+   * a rule that can strand a pose is worse than the bug it fixes. A drawing
+   * cannot be left in a state nobody asked for; fourth non-negotiable, read
+   * about a sprite instead of a barrel.
+   *
+   * THE ARBITRATION IS HERE RATHER THAN IN EITHER CALLER, because the thing
+   * being contended for is this object's. Two files each checking whether the
+   * other one is busy is how they got out of step in the first place.
+   *
    * @param {'idle'|'charge'} pose
+   * @param {string|null} owner who is asking; null forces, and only teardown
+   *        code may pass null
    */
-  setPose(pose) {
-    this.pose = pose === 'charge' && this.chargeSprite ? 'charge' : 'idle';
-    const charging = this.pose === 'charge';
+  setPose(pose, owner = null) {
+    const want = pose === 'charge' && this.chargeSprite ? 'charge' : 'idle';
+    if (want === 'idle' && owner !== null
+      && this.poseOwner && this.poseOwner !== owner) return;
+    this.pose = want;
+    this.poseOwner = want === 'charge' ? owner : null;
+    const charging = want === 'charge';
     this.sprite.visible = !charging;
     if (this.chargeSprite) this.chargeSprite.visible = charging;
   }

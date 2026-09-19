@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
+import { voicePath } from '../core/audio.js';
 
 /* ---------------------------------------------------------------------------
    Clan leaders.
@@ -47,7 +48,7 @@ export const LEADERS = {
     cheer: { hop: 0.85, rate: 4.6, lean: 0.05 },
     name: 'Sunstreak', breed: 'Siamese', art: 'thunderpaw',
     line: "I am Sunstreak of Thunderpaw.\nWe run so fast the rain never\nlands on us. Stand with me and\nyou'll outrun your own shadow.",
-    voice: '/voice/shrine_thunder.mp3',
+    voice: voicePath('shrine_thunder'),
   },
   river: {
     /* A long slow swell rather than a hop — she is the one who never walks
@@ -55,7 +56,7 @@ export const LEADERS = {
     cheer: { hop: 0.3, rate: 2.1, lean: 0.13 },
     name: 'Rippleclaw', breed: 'Turkish Van', art: 'riverclaw',
     line: "Rippleclaw of Riverclaw.\nWe never walk around a puddle.\nSwear here and your katana will\nreach what you cannot touch.",
-    voice: '/voice/shrine_river.mp3',
+    voice: voicePath('shrine_river'),
   },
   shadow: {
     /* Three jumps before she comes down, so she is the springiest of the six
@@ -63,7 +64,7 @@ export const LEADERS = {
     cheer: { hop: 1.05, rate: 5.4, lean: 0.02 },
     name: 'Duskcoat', breed: 'Tuxedo', art: 'shadowtail',
     line: "You didn't hear me arrive,\ndid you? Shadowtail jump three\ntimes before we come down.\nCome and learn the third one.",
-    voice: '/voice/shrine_shadow.mp3',
+    voice: voicePath('shrine_shadow'),
   },
   wind: {
     /* Floats rather than hops: slow, high, and rocking like something caught
@@ -71,7 +72,7 @@ export const LEADERS = {
     cheer: { hop: 0.7, rate: 1.8, lean: 0.16 },
     name: 'Galemane', breed: 'Maine Coon', art: 'windwhisker',
     line: "Galemane of Windwhisker.\nWe taught the storm dragons to\nbreathe. Ride with us and yours\nwill breathe twice as far.",
-    voice: '/voice/shrine_wind.mp3',
+    voice: voicePath('shrine_wind'),
   },
   ice: {
     /* Does not leave the ground at all. She is the still one — a shiver of
@@ -79,7 +80,7 @@ export const LEADERS = {
     cheer: { hop: 0, rate: 3.2, lean: 0.07 },
     name: 'Snowmantle', breed: 'Himalayan', art: 'icewhisker',
     line: "Nothing is ever truly lost,\nlittle one. Icewhisker can feel\nthe last unbroken barrel on any\nisland in the sky. Let me show you.",
-    voice: '/voice/shrine_ice.mp3',
+    voice: voicePath('shrine_ice'),
   },
   panda: {
     /* Pandapaw hand out a job, not a power, so she is the least excited of the
@@ -87,7 +88,7 @@ export const LEADERS = {
     cheer: { hop: 0.18, rate: 1.5, lean: 0.1 },
     name: 'Bambooheart', breed: 'Ragdoll', art: 'pandapaw',
     line: "Pandapaw hand out no power.\nWe hand out a job. Cut twenty\ncanes of bamboo, and something\nvery small will follow you home.",
-    voice: '/voice/shrine_panda.mp3',
+    voice: voicePath('shrine_panda'),
   },
 };
 

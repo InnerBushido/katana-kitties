@@ -119,7 +119,7 @@ No per-sheet value can satisfy a sheet that contradicts itself. `Billboard`
 takes `dirSense` (per sheet) and `rowSense` (per row, overrides it) — the
 per-row escape hatch is still there for the next sheet that misbehaves, but the
 better fix is to use art that is internally consistent, which is why Frost is
-on the older `frost_grid.png`.
+on the older sheet, shipped as `kittens/frost/grid.png`.
 
 If a future sheet is irregular in a way neither knob can express — cells not
 evenly spaced, or directions in an arbitrary order — the real answer is a

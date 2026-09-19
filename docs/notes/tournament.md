@@ -636,7 +636,7 @@ game noticing her again rather than like an instruction.
 ### He shipped with holes in his face, and SIZE is why
 
 He arrived with the world showing through the whites of his eyes and through
-his mouth. Nothing was wrong with the drawing — `public/sprites/leader_satan.png`
+his mouth. Nothing was wrong with the drawing — `public/sprites/satan/satan.png`
 is clean — and nothing was wrong with him: the loader ate them.
 
 `clearSealedPockets` in `spritesheet.js` exists because the border flood has one

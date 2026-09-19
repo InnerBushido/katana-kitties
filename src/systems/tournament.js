@@ -1,7 +1,8 @@
 import { MAX_HP, KO_TIME } from '../entities/player.js';
 import { arenaPowerFor } from '../entities/clanpower.js';
 import { scoreOf, saveResult, loadBoard, NameEntry, ALPHABET, NAME_MAX } from './leaderboard.js';
-import { styleCss } from '../core/palette.js';
+import { styleCss, cssFor } from '../core/palette.js';
+import { drawPortrait } from './cutscene.js';
 
 /* ---------------------------------------------------------------------------
    The World Martial Arts Tournament.
@@ -665,7 +666,13 @@ export class Tournament {
        at the gate; carried into the ring it is a speech about walking to the
        arena, hanging over the arena. */
     s.setLine('');
-    s.setPose?.('idle');
+    /* ...AND HIS ARMS COME DOWN ONLY IF THIS SYSTEM IS WHAT PUT THEM UP.
+       This runs at the start and end of EVERY round now (it is what fetches
+       him back to his box), so an unconditional idle here would reach into
+       the middle of the temper gag and drop a kitten's ten-second wind-up on
+       the frame a round happened to change. `'round'` is the receipt; see
+       `MrSatan.setPose`. */
+    s.setPose?.('idle', 'round');
     return true;
   }
 
@@ -2201,31 +2208,52 @@ export class Tournament {
 
     this.announcer?.say('sat_zero', 'ZEEEEROOOO! AAAARGHHH! NO! NO! NOOOO!');
     const zero = this.announcer?.clip('sat_zero');
-    /* NINTH NON-NEGOTIABLE, AND THE DEGRADE IS "DO NOT WAIT". With no recording
-       there is nothing to wait FOR, and waiting anyway is six seconds of a
-       frozen deck under a silent card — worse than the bug this delay fixes.
-       The card still shows, the bell still rings, and it rings now. */
-    if (!zero) return 0;
     /* HIS ARMS GO UP WHILE HE SHOUTS IT — asked for: "can also have him play
        his satan_charge.png animation while he is shouting ZEROOO... before
        reverting to his normal sprite". The same `setPose` the blast gag uses,
        and the same rule: a REQUEST, not a requirement. With `satan_charge.png`
        absent it does nothing at all and he shouts in his ordinary pose.
-       NOT WHILE THE BLAST IS RUNNING. That gag owns the pose for its own ten
-       seconds and puts it back to idle at the end of them, which would drop
-       his arms in the middle of this and leave `_posed` lying about it. */
-    if (!this.game.satanBlast || this.game.satanBlast.stage === 'off') {
-      this.game.satan?.setPose?.('charge');
+
+       ABOVE THE `!zero` RETURN, NOT BELOW IT, AND THAT WAS THE BUG. This sat
+       under the early return for a missing RECORDING, so deleting an mp3 also
+       deleted a DRAWING — two unrelated assets welded together by nothing but
+       statement order. The ninth non-negotiable is that a missing voice clip
+       costs you the voice clip; it is not a licence to take the animation
+       away as well. `_dropPose` reads `_posed` and not the clip, so the arms
+       come down either way.
+
+       NOT WHILE THE GAG IS ACTUALLY PERFORMING, which is `busy` and no longer
+       `!== 'off'`. That gag's `cool` stage is THIRTY SECONDS of nothing
+       visible, and testing for it meant one kid climbing the box early in a
+       three-minute round silently cancelled the ZERO animation at the end of
+       it. `busy` is taunt, charge and boom — the beats where his arms are
+       actually spoken for. */
+    const blast = this.game.satanBlast;
+    if (!blast || !blast.busy) {
+      this.game.satan?.setPose?.('charge', 'round');
       this._posed = true;
     }
+    /* NINTH NON-NEGOTIABLE, AND THE DEGRADE IS "DO NOT WAIT". With no recording
+       there is nothing to wait FOR, and waiting anyway is six seconds of a
+       frozen deck under a silent card — worse than the bug this delay fixes.
+       The card still shows, the bell still rings, and it rings now. */
+    if (!zero) return 0;
     return zero.dur + ZERO_BEAT;
   }
 
-  /** Arms down. Idempotent, and it never touches a pose it did not set. */
+  /**
+   * Arms down. Idempotent, and it never touches a pose it did not set.
+   *
+   * TWICE OVER NOW: `_posed` says THIS system raised them, and passing
+   * `'round'` makes `MrSatan.setPose` check the same thing from its own side.
+   * The belt-and-braces is not redundancy — `_posed` can be stale (a
+   * tournament torn down and restarted under a running gag), and the owner
+   * tag cannot be, because it is written by the raise itself.
+   */
   _dropPose() {
     if (!this._posed) return;
     this._posed = false;
-    this.game.satan?.setPose?.('idle');
+    this.game.satan?.setPose?.('idle', 'round');
   }
 
   /**
@@ -2682,7 +2710,7 @@ export class Tournament {
 
     this.resultEl.innerHTML = `
       <div class="ar-box">
-        <h2 class="ar-win p${w.index}">${w.name} WINS THE TOURNAMENT</h2>
+        ${this._championCard(w)}
         <div class="ar-stats">
           <!-- ROUNDS ARE COUNTED PER SIDE. Indexing wins by the PLAYER is the
                same number only in a duel: in a 2v2 the winner can be fighter 2
@@ -2717,6 +2745,103 @@ export class Tournament {
         <table class="lb">${rows}</table>
         ${this.entry.done ? flyHome : ''}
       </div>`;
+    this._paintChampionFace(w);
+  }
+
+  /**
+   * WHO WON, drawn rather than spelled.
+   *
+   * Reported from play: "show the winning player's icon/face at the end of the
+   * match that won the match, so the person entering in their name/initials
+   * knows who they are, currently only shows the player's name which is not
+   * enough, we need a name, image of the player, colors, etc."
+   *
+   * The heading used to be the whole answer — `${w.name} WINS THE TOURNAMENT`
+   * over `.ar-win.p0`/`.p1` — and it fails twice. With four kittens on a sofa
+   * "FROST WINS" is a word, and the cat it belongs to is one of four on a
+   * screen that has just gone away; and the girls do not all read a name
+   * faster than they read a face. So the card carries her PICTURE, cropped out
+   * of the sheet she is actually drawn from, framed and underlined in the
+   * colour her marker ring, her health bar and her minimap pip already use,
+   * with her seat number beside it — four things that agree, any one of which
+   * is enough to recognise her by.
+   *
+   * IT IS NOT A SEPARATE WINNER SCREEN. Offered as one ("can even have a
+   * 'Winner' screen ... before we go to the entering name/initials screen"),
+   * and a screen would be a new state with its own skip, its own ownership of
+   * the pads and its own way to get stuck in front of the board — and it would
+   * put the face on a screen she has already left by the time she is spelling
+   * her name, which is the moment the report is about. The card sits directly
+   * above the name entry and is still there while she types.
+   *
+   * THE COLOUR COMES OFF HER STYLE, NOT OFF HER SEAT, which also quietly fixes
+   * the heading. `.ar-win.p${index}` indexed by PLAYER index: player one who
+   * picked Blossom was crowned in Ember's vermillion. That is exactly the
+   * seat-is-not-a-cat bug `cssFor` exists for — see the long note on it in
+   * core/palette.js — and the fix here is the same fix, so the winner's colour
+   * cannot disagree with the ring under her paws.
+   */
+  _championCard(w) {
+    const colour = cssFor(w.style);
+    const seat = this.game.players.indexOf(w);
+    /* A TEAM WIN NAMES THE TEAM AND STILL SHOWS THE FACE. `winner` is only the
+       kitten the board row is filed under (the higher scorer); the tournament
+       was won by her side, and a card that said "FROST WINS" after a 2v2 would
+       be telling her partner she did not. */
+    const team = this.winners?.length > 1;
+    const title = team
+      ? `${teamName(this.sideOf(w))} WINS THE TOURNAMENT`
+      : `${w.name} WINS THE TOURNAMENT`;
+    /* AND THE HEADING TAKES THE SIDE'S COLOUR WHEN IT NAMES THE SIDE. "BLUE
+       WINS" written in Blossom's purple is two things disagreeing in one
+       sentence, and BLUE is the word the HUD spent the whole match painting in
+       `teamColour`. The card below it stays HER colour, because the card is
+       about which kitten is holding the pad that signs the board. */
+    const headColour = team ? teamColour(this.sideOf(w)) : colour;
+    /* Her oath, if she has one. Not decoration on this card: the clan is the
+       other thing she chose about herself, and in a four-kitten game two of
+       them can be the same cat recoloured. */
+    const clan = w.clan?.name
+      ? `<span class="ar-champ-clan">${escapeHtml(w.clan.name)}</span>` : '';
+    /* WIDTH AND HEIGHT ARE ON THE TAG. A canvas with no size attributes is
+       300x150 — a 2:1 box for a square crop — and it is sized in CSS, so the
+       stretch would only show up on the screen and never in the markup. */
+    return `
+      <div class="ar-champ" style="--champ:${colour}">
+        <canvas id="ar-face" class="ar-champ-face" width="128" height="128"></canvas>
+        <div class="ar-champ-who">
+          <span class="ar-champ-tag">CHAMPION${seat >= 0 ? ` · PLAYER ${seat + 1}` : ''}</span>
+          <span class="ar-champ-name">${escapeHtml(w.name)}</span>
+          ${clan}
+        </div>
+      </div>
+      <h2 class="ar-win" style="color:${headColour}">${escapeHtml(title)}</h2>`;
+  }
+
+  /**
+   * Crop her face out of the atlas she is drawn from and put it on the card.
+   *
+   * AFTER `innerHTML`, NOT INSIDE IT. A canvas cannot be expressed as markup,
+   * and `_paintResult` replaces the whole box on every letter she types — so
+   * the element is new each time and has to be painted each time. The crop
+   * itself is measured once and cached on the atlas (`drawPortrait`'s
+   * `measure` path), so the repaint is a `drawImage`.
+   *
+   * MEASURED, BECAUSE A TURNAROUND SHEET'S `contentScale` IS ITS JUMP FRAME.
+   * See the note on `drawPortrait`: trusting it here crops the sky above her
+   * ears. Cell (0,0) is front-facing idle.
+   *
+   * SILENT WHEN THERE IS NO ART. `public/sprites/` is deletable (ninth
+   * non-negotiable) and the fallback atlas is a flat texture with no canvas to
+   * read; the card then shows an empty frame in her colour, which still says
+   * which kitten it is.
+   */
+  _paintChampionFace(w) {
+    const cv = this.resultEl?.querySelector('#ar-face');
+    if (!cv) return;
+    const art = this.game.kittenArt?.[this.game.roster?.[w.index] ?? w.index];
+    if (!art) return;
+    drawPortrait(cv, art, cssFor(w.style), { col: 0, row: 0, measure: true });
   }
 }
 

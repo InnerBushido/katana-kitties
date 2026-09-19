@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
+import { voicePath } from '../core/audio.js';
 import { beatOver, TAIL, drawPortrait } from './cutscene.js';
 import { FinaleTide } from './finaletide.js';
 import { FinaleShow } from './finaleshow.js';
@@ -86,7 +87,7 @@ const STAGE_Y = -5.2;              // ...and how far down, so her feet are out
 const STAGE_IN = 0.9;
 
 /* --- HOW SHE PERFORMS, WITH ONE DRAWING -----------------------------------
-   There is exactly one Patchfur: `leader_elder.png`, a single front-facing
+   There is exactly one Patchfur: `sprites/leaders/elder.png`, a single front-facing
    cell, and there is no second pose without generating art. So the acting is
    done with the quad she has — a lean, a push toward the lens, a settle — one
    pair of numbers per beat, eased in over the beat's own clock.
@@ -117,24 +118,24 @@ export const SCRIPTS = {
   found: [
     {
       id: 'balls1', who: 'Patchfur', sub: 'Calico',
-      voice: '/voice/balls1.mp3',
+      voice: voicePath('balls1'),
       text: 'Seven stars. You found all seven. Nobody has held them together since before the islands broke apart.',
     },
     {
       id: 'balls2', who: 'Patchfur', sub: 'Calico',
-      voice: '/voice/balls2.mp3',
+      voice: voicePath('balls2'),
       text: 'Take them to the great torii, both of you. And when the sky goes dark, do not run.',
     },
   ],
   summon: [
     {
       id: 'summon1', who: 'Ryuuseki', sub: 'The Wish That Waits',
-      voice: '/voice/summon1.mp3',
+      voice: voicePath('summon1'),
       text: 'I am Ryuuseki. The wish that waits. Seven stars have called me out of the storm.',
     },
     {
       id: 'summon2', who: 'Ryuuseki', sub: 'The Wish That Waits',
-      voice: '/voice/summon2.mp3',
+      voice: voicePath('summon2'),
       text: 'One of you will steer. One of you will burn. Alone, you may ride me. Together, you will light the whole sky.',
     },
   ],
@@ -202,7 +203,7 @@ export const SCRIPTS = {
      of them is a failed check rather than a cut in the wrong place. */
   finale: [
     {
-      id: 'done1', who: 'Patchfur', sub: 'Calico', voice: '/voice/done1.mp3', dur: 7.5,
+      id: 'done1', who: 'Patchfur', sub: 'Calico', voice: voicePath('done1'), dur: 7.5,
       text: 'Every barrel. Every lantern. Every last cane of bamboo. There is nothing left standing on any of these islands that you two have not put your paws through.',
       clip: 10.16,
       runs: [
@@ -213,7 +214,7 @@ export const SCRIPTS = {
       ],
     },
     {
-      id: 'done2', who: 'Patchfur', sub: 'Calico', voice: '/voice/done2.mp3', dur: 8.5,
+      id: 'done2', who: 'Patchfur', sub: 'Calico', voice: voicePath('done2'), dur: 8.5,
       text: 'The elders called it mischief. I think it is simpler than that. A tidy town is only one way for a town to be. Every other way is the rest of them — and you have been counting your way through the rest of them all afternoon.',
       clip: 15.28,
       runs: [
@@ -226,7 +227,7 @@ export const SCRIPTS = {
       ],
     },
     {
-      id: 'done3', who: 'Patchfur', sub: 'Calico', voice: '/voice/done3.mp3', dur: 8.5,
+      id: 'done3', who: 'Patchfur', sub: 'Calico', voice: voicePath('done3'), dur: 8.5,
       text: 'The islands did not drift apart because something broke. They drifted because nobody was crossing between them any more. You crossed. An angle, a circle, and the nerve to jump — that is all a bridge has ever been.',
       clip: 15.68,
       runs: [
@@ -244,7 +245,7 @@ export const SCRIPTS = {
       ],
     },
     {
-      id: 'done4', who: 'Patchfur', sub: 'Calico', voice: '/voice/done4.mp3', dur: 9.0,
+      id: 'done4', who: 'Patchfur', sub: 'Calico', voice: voicePath('done4'), dur: 9.0,
       text: 'So stay. Fly. Knock it all down again tomorrow. And when you would rather test what you have learned on each other than on the furniture — the arena is open. Go and find out which of you is the strongest fighter on this world.',
       clip: 15.60,
       runs: [
@@ -276,17 +277,17 @@ export const SCRIPTS = {
   satanAnnounce: [
     {
       id: 'sat_ann1', who: 'MR. SATAN', sub: 'World Champion',
-      voice: '/voice/sat_ann1.mp3', dur: 7.0,
+      voice: voicePath('sat_ann1'), dur: 7.0,
       text: 'AHEM! Is this thing on? Citizens of the floating islands — it is I, MISTER SATAN! Strongest cat in the world, and yes, this magnificent moustache is absolutely real.',
     },
     {
       id: 'sat_ann2', who: 'MR. SATAN', sub: 'World Champion',
-      voice: '/voice/sat_ann2.mp3', dur: 6.5,
+      voice: voicePath('sat_ann2'), dur: 6.5,
       text: 'I have seen a green dragon as long as a street. I have seen two kittens climb on and ride it. And I thought — hoo hoo hoo! — those two need a proper stage.',
     },
     {
       id: 'sat_ann3', who: 'MR. SATAN', sub: 'World Champion',
-      voice: '/voice/sat_ann3.mp3', dur: 7.0,
+      voice: voicePath('sat_ann3'), dur: 7.0,
       text: 'So I am building one! The World Martial Arts Tournament returns! Knock this town flat, prove to me you are ready, and I will fly you there myself. Ho ho HO!',
     },
   ],
@@ -298,12 +299,12 @@ export const SCRIPTS = {
   satanOpen: [
     {
       id: 'sat_open1', who: 'MR. SATAN', sub: 'World Champion',
-      voice: '/voice/sat_open1.mp3', dur: 6.0,
+      voice: voicePath('sat_open1'), dur: 6.0,
       text: 'IT IS DONE! Every barrel, every lantern, every last cane of bamboo — and the arena is OPEN!',
     },
     {
       id: 'sat_open2', who: 'MR. SATAN', sub: 'World Champion',
-      voice: '/voice/sat_open2.mp3', dur: 7.0,
+      voice: voicePath('sat_open2'), dur: 7.0,
       text: 'Come and find me in the town, both of you, together. Say the word, and my griffin will carry you to the ring. Ho ho ho hooo!',
     },
   ],

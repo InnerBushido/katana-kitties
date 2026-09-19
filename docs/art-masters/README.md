@@ -18,8 +18,8 @@ just not in this form.
 
 | master | what ships | why the shipped one is different |
 | --- | --- | --- |
-| `dragon_sheet.png` 2752x1536, 4.5MB | `dragon_sheet.png` 1376x768, 1.0MB | Alpha baked in, and resized to the point where it packs into the atlas at scale **1.000** instead of 0.698. |
-| `dragon_fly.png` 2752x1536, 3.8MB | `dragon_fly.png` 1376x768, 0.6MB | Same. |
+| `dragon_sheet.png` 2752x1536, 4.5MB | `beasts/dragon_sheet.png` 1376x768, 1.0MB | Alpha baked in, and resized to the point where it packs into the atlas at scale **1.000** instead of 0.698. |
+| `dragon_fly.png` 2752x1536, 3.8MB | `beasts/dragon_fly.png` 1376x768, 0.6MB | Same. |
 | `title_art.png` 2752x1536, 5.5MB | `title_art.webp` 2752x1536, 0.46MB | **Same size, same picture** — WebP q92. Nothing is keyed; it is full bleed. |
 
 ## Why the dragons needed baking and not just shrinking

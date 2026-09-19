@@ -9,7 +9,8 @@
           the repo (the browser POSTs an encoded JPEG/PNG here).
      POST /gif/begin?name&w&h  /gif/frame?name  /gif/end?name&delay&colors&dither
           the frame sink: begin opens a clip, each frame is raw RGBA, end encodes
-          with tools/gif.mjs into public/help/<name>.gif.
+          with tools/gif.mjs into public/help/<subject>/<name>.gif
+          (see helpGifPath).
 
    Run: node tools/capture/assetserver.mjs   (port 7799)
    Frames and working files land in tools/capture/.out unless KK_SCRATCH says
@@ -19,7 +20,7 @@
 import http from 'node:http';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { resolve, extname, sep } from 'node:path';
+import { resolve, extname, sep, dirname } from 'node:path';
 
 /* DERIVED, NOT TYPED. Both of these were absolute paths to one machine and one
    session directory for as long as this file lived in a scratchpad, which was
@@ -36,6 +37,43 @@ const REPO = norm(fileURLToPath(new URL('../../', import.meta.url)));
 const SCRATCH = norm(process.env.KK_SCRATCH || `${REPO}/tools/capture/.out`);
 mkdirSync(SCRATCH, { recursive: true });
 const { encodeGIF } = await import(pathToFileURL(`${REPO}/tools/gif.mjs`).href);
+
+/**
+ * Where a clip lands under `public/help/`, from the shot's own name.
+ *
+ * "We have a lot of art, voices, sprites, help assets and it is getting
+ * disorganized." `public/help/` is filed by subject now — `ability/`, `clan/`,
+ * `move/`, `dojo/`, `place/`, `world/` — and the prefix that used to do that
+ * job in the filename is the folder instead: `move-keys` writes
+ * `move/keys.gif`.
+ *
+ * THE SHOT NAMES DID NOT CHANGE, and that is the same call `voicePath` makes
+ * in `src/core/audio.js` for the same reason. A shot's name is an id: it is
+ * the file in `shots/`, the key the frame sink buffers under, and the word a
+ * director says out loud. The folder is a fact about where the picture goes,
+ * which is this function's business and nobody else's.
+ *
+ * AN UNKNOWN NAME LANDS AT THE TOP, WHERE IT IS LOUD. `world-check` fails on
+ * any file under `public/help/` the panel does not point at, so a clip filed
+ * nowhere shows up as an orphan on the next run rather than quietly filling
+ * somebody else's folder.
+ */
+/* WRITTEN AS WHOLE ANSWERS, NOT AS "FOLDER PLUS STRIP THE PREFIX". The first
+   cut did it that way and turned `feast-eat` into `world/eat`, because the
+   hyphen that separates a prefix from a name and the hyphen inside a name look
+   identical from the outside. */
+const HELP_FOLDERS = [
+  [/^(ability|clan|move|dojo)-(.+)$/, (m) => `${m[1]}/${m[2]}`],
+  [/^phone$/, () => 'move/phone'],
+  [/^(dealer|feast-eat|panda|ryuuseki)$/, (m) => `world/${m[0]}`],
+];
+const helpGifPath = (name) => {
+  for (const [re, to] of HELP_FOLDERS) {
+    const m = re.exec(name);
+    if (m) return to(m);
+  }
+  return name;
+};
 
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif' };
 const jobs = new Map(); // name -> { w, h, frames: [Uint8Array] }
@@ -102,7 +140,9 @@ const server = http.createServer(async (req, res) => {
       const raw = await readBody(req);
       if (raw.length) { try { delaysMs = JSON.parse(raw.toString()).delays; } catch (e) {} }
       const buf = encodeGIF(job.frames, { width: job.w, height: job.h, delayMs, delaysMs, loop: 0, maxColors, dither });
-      writeFileSync(`${REPO}/public/help/${name}.gif`, buf);
+      const out = `${REPO}/public/help/${helpGifPath(name)}.gif`;
+      mkdirSync(dirname(out), { recursive: true });
+      writeFileSync(out, buf);
       last = job; last.name = name; last.delayMs = delayMs;
       jobs.delete(name);
       res.writeHead(200); res.end(JSON.stringify({ bytes: buf.length, frames: job.frames.length }));

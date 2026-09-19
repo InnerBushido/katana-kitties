@@ -824,7 +824,7 @@ alike.
 
 ### Her acting, with one drawing
 
-There is exactly one Patchfur — `leader_elder.png`, a single front-facing cell —
+There is exactly one Patchfur — `sprites/leaders/elder.png`, a single front-facing cell —
 and there is no second pose without generating art. So the performance is done
 with the quad she has: a lean, a step toward the lens, a settle. One
 `{ lean, push }` per beat, eased in over the beat's own clock at `ACT_IN` 1.8s,

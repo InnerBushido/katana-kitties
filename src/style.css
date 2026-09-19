@@ -2004,6 +2004,11 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
    kept and it centres in the frame) keeps the whole thing on screen. Driven off
    viewport HEIGHT, because width is not the axis that runs out here. Covers the
    animated clips and the static screenshots alike. */
+/* `.move-wide` IS CAPPED TOO, and its copy of this lives BELOW its own rule —
+   see the end of the `.move-wide` section further down. It cannot go in the
+   list here for the same reason `.help-shot-pair` could not: `width: auto` is
+   load-bearing, `.move-wide img` sets `width: 100%` at equal specificity two
+   hundred lines later, and source order would quietly win. */
 @media (max-height: 600px) {
   .help-shot img, .move img { max-height: 52vh; width: auto; max-width: 100%; margin-inline: auto; }
 }
@@ -2147,6 +2152,35 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
   line-height: 1.55;
 }
 .move-wide figcaption b { color: var(--vermillion); }
+/* --- AND ON A PHONE IT IS THE SAME SIZE AS EVERY OTHER CLIP ---------------
+   Reported from play: "on Mobile, the gif under Flying a Dragon, Battling In
+   the Arena are too large, they need to be half the size or same size as the
+   gif of the 'On a Phone' section."
+
+   MEASURED AT 915x412, WHICH IS A PHONE HELD SIDEWAYS: these two came out
+   630x411 — the clip ALONE was the full height of the screen, caption and
+   heading both off it — against the phone section's 342x190, which is the
+   mobile-fit rule up the file doing its job. `.move-wide` was written months
+   after that rule and nobody came back up to add it, so it kept the full-
+   width treatment that is right on a desktop panel and nowhere else.
+
+   IT IS DOWN HERE AND NOT UP THERE, AND THAT IS NOT TIDINESS. `width: auto`
+   is what makes the height cap work — the aspect follows it — and
+   `.move-wide img` sets `width: 100%` at exactly equal specificity a few
+   lines above. Put this in the list up the file and source order silently
+   throws the `width: auto` away: measured, the height capped to 190 and the
+   width stayed at 630, which is the clip stretched rather than the clip
+   fitted. The same trap `.help-shot-pair` documents.
+
+   SAME CAP AS `.help-shot`, NOT A SMALLER ONE, because "same size as the gif
+   of the On a Phone section" is what was asked for, and because a second set
+   of numbers here is a second set to forget. */
+@media (max-height: 600px) {
+  .move-wide img { max-height: 52vh; width: auto; max-width: 100%; margin-inline: auto; }
+}
+@media (max-height: 430px) {
+  .move-wide img { max-height: 46vh; }
+}
 
 /* ---------------------------------------------------------------------------
    THE CAT PAD — the same drawn controller that lights up inside `move-pad.gif`,
@@ -2786,8 +2820,70 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
   letter-spacing: 2.4px;
   color: var(--ink);
 }
-.ar-win.p0 { color: var(--vermillion); }
-.ar-win.p1 { color: #c2437c; }
+/* WHO WON, IN HER OWN COLOUR AND HER OWN FACE. See `Tournament._championCard`
+   for the report this answers and for why the colour is set inline off her
+   STYLE rather than by a `.p0`/`.p1` class off her SEAT (it is the
+   seat-is-not-a-cat bug, and those two rules were half of it - there were
+   never a `.p2` or a `.p3`, so two of the four champions were crowned in the
+   heading's default ink).
+
+   THE FRAME, THE RULE UNDER IT AND THE NAME ARE ONE COLOUR, `--champ`, set on
+   the card. Three declarations reading one custom property is how a card
+   cannot end up half Ember and half Blossom. */
+.ar-champ {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin: 0 0 10px;
+}
+.ar-champ-face {
+  width: 96px;
+  height: 96px;
+  flex: none;
+  /* The crop is square and the canvas is square (see `_championCard` for why
+     the size is on the tag as well). `image-rendering` is left alone: the
+     atlas is already downscaled art, not pixel art. */
+  border: 5px solid var(--champ, var(--ink));
+  border-radius: 16px;
+  background: var(--paper-2);
+  box-shadow: 0 5px 0 var(--ink);
+}
+.ar-champ-who { text-align: left; }
+.ar-champ-tag {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 2.2px;
+  opacity: 0.72;
+}
+.ar-champ-name {
+  display: block;
+  font-family: 'Bangers', cursive;
+  font-size: 44px;
+  line-height: 1.02;
+  letter-spacing: 2px;
+  color: var(--champ, var(--ink));
+  /* An outline, because four kitten colours on one paper background are not
+     all equally readable on it - Storm's teal at 44px is the one that goes
+     pale. The ink keeps every name the same weight whatever colour it is. */
+  -webkit-text-stroke: 2px var(--ink);
+  paint-order: stroke fill;
+}
+.ar-champ-clan {
+  display: block;
+  font-size: 13px;
+  letter-spacing: 0.4px;
+  opacity: 0.8;
+}
+/* ON A PHONE THE CARD STACKS. Side by side it is 96px of face plus a 44px
+   name, which is wider than the box at 380px and pushes the leaderboard off
+   the screen sideways. */
+@media (max-width: 460px) {
+  .ar-champ { flex-direction: column; gap: 8px; }
+  .ar-champ-who { text-align: center; }
+  .ar-champ-face { width: 76px; height: 76px; }
+  .ar-champ-name { font-size: 34px; }
+}
 .ar-sub { margin: 4px 0 14px; font-size: 15px; }
 .ar-stats {
   display: flex;

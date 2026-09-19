@@ -601,7 +601,25 @@ export const CROSS = tune('CROSS', {
 export const CHARGE = tune('CHARGE', {
   dist: 16,
   speed: 42,
-  dmg: 18,
+  /* 18 -> 10, AND 10 IS `ATTACKS.stand.dmg` ON PURPOSE. Reported from play:
+     "seems the charging ability does more damage than a regular swing, should
+     be the same or less, since it is very easy to hit with it."
+
+     IT WAS THE HARDEST-HITTING ATTACK IN THE GAME. 18 beat the aerial (14),
+     which asks you to jump and time it, and the dash (15), which asks you to
+     commit to a sprint — while the charge sweeps a 2.4-unit radius along
+     sixteen units of travel with `arc: -0.6`, i.e. behind her as well. Easy
+     to land AND the biggest number is the combination that makes every other
+     attack pointless, which is what the report is really describing.
+
+     THE SAME AS A STANDING SLASH, NOT A GUESS UNDER IT. "The same or less"
+     leaves a range and every point inside it would be an invention; the one
+     number in that range the game already justifies is the ordinary swing's.
+     WHAT THE MOVE IS FOR IS UNCHANGED: `knock` stays at 22, above the dash's
+     19, so a charge is still the best thing in the game for throwing somebody
+     off the deck. It buys position now instead of buying position AND the
+     damage race. The balance page is where this gets argued with, not here. */
+  dmg: 10,
   knock: 22,
   lift: 5.5,
   radius: 2.4,

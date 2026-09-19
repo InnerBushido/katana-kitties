@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
+import { voicePath } from '../core/audio.js';
 import { LEADERS, ELDER, leaderSpot } from '../entities/leader.js';
 
 /* ---------------------------------------------------------------------------
@@ -268,8 +269,9 @@ export class Cutscene {
       },
     });
 
-    // Every beat's id doubles as its voice filename.
-    for (const b of beats) b.voice = `/voice/${b.id}.mp3`;
+    /* Every beat's id doubles as its voice filename — `voicePath` adds
+       the speaker's folder and nothing else. See it in core/audio.js. */
+    for (const b of beats) b.voice = voicePath(b.id);
 
     this.beats = beats;
     this.total = beats.reduce((s, b) => s + b.dur, 0);
@@ -579,25 +581,109 @@ export class Cutscene {
  * be copy-pasted a third time. (`shrinescene.js` still carries its own copy; it
  * predates this and works, and rewiring a verified scene for tidiness alone is
  * not worth the risk — but a FOURTH caller should collapse both onto this.)
+ *
+ * **`measure: true` IS FOR A TURNAROUND SHEET, AND IT IS THE FOURTH CALLER.**
+ * Everything above is true of a one-drawing sheet, where `contentScale` is
+ * measured off the only frame there is. A kitten's sheet has thirty-two, and
+ * `contentScale` is deliberately ONE number for the whole sheet (see
+ * `loadSpriteAtlas` — scaling each row to its own tallest figure would make
+ * her change size the instant she started walking). Her tallest frame is the
+ * jump; her idle is shorter than it by that difference, so `head` computed
+ * from `contentScale` lands somewhere above her ears in empty paper and the
+ * crop comes back as forehead and sky.
+ *
+ * So the measured path reads the cell's OWN ink out of the packed canvas —
+ * eighth non-negotiable, and the same argument `sprite-bake` makes about
+ * facings. It costs one `getImageData` per cell, cached on the atlas object,
+ * and it is off by default so the seven leaders keep the crop they were
+ * checked with.
+ *
+ * @param {HTMLCanvasElement} cv
+ * @param {object} art  atlas from loadSpriteAtlas
+ * @param {string} color border colour
+ * @param {{col?:number,row?:number,measure?:boolean}} [opts]
+ *        which cell to crop, and whether to measure it rather than trust
+ *        `contentScale`. Cell (0,0) is front-facing idle on every sheet in
+ *        this game — `Billboard.faceCamera` documents why cell 0 faces the
+ *        camera, and the idle row is `Player.anim.idle`.
  */
-export function drawPortrait(cv, art, color) {
+export function drawPortrait(cv, art, color, opts = {}) {
+  const { col = 0, row = 0, measure = false } = opts;
   const img = art?.texture?.image;
   const g = cv.getContext('2d');
   g.clearRect(0, 0, cv.width, cv.height);
   if (!img) return;
 
   const cell = img.width / (art.cols || 1);
-  const figure = cell * (art.contentScale ?? 0.7);       // her drawn height
-  const feet = cell * (1 - (art.pad ?? 0.06));           // her ground line
-  const head = feet - figure;                            // top of her ears
+  const ox = col * cell;
+  const oy = row * cell;
+
+  /* Her drawn height and her ground line, INSIDE the chosen cell. `feet` is
+     where the packer put the row's baseline; `head` is the top of her ears. */
+  let figure = cell * (art.contentScale ?? 0.7);
+  let feet = cell * (1 - (art.pad ?? 0.06));
+  let head = feet - figure;
+  let centre = cell / 2;
+
+  const box = measure ? inkBox(art, img, col, row, cell) : null;
+  if (box) {
+    head = box.y0;
+    feet = box.y1;
+    figure = Math.max(1, feet - head);
+    centre = (box.x0 + box.x1) / 2;
+  }
 
   /* Head and upper body: a square 55% of her height. Much tighter crops the
      ears on the maned breeds; much looser and Galemane is a full-length cat in
      a thumbnail. */
   const side = Math.min(figure * 0.55, cell);
-  const sx = Math.max(0, Math.min(cell - side, cell / 2 - side / 2));
-  const sy = Math.max(0, Math.min(img.height - side, head - side * 0.08));
+  const sx = ox + Math.max(0, Math.min(cell - side, centre - side / 2));
+  const sy = oy + Math.max(0, Math.min(cell - side, head - side * 0.08));
 
   g.drawImage(img, sx, sy, side, side, 0, 0, cv.width, cv.height);
   cv.style.borderColor = color;
+}
+
+/**
+ * The ink bounding box of one cell, in cell-local pixels, or null.
+ *
+ * CACHED ON THE ATLAS, because the champion card is repainted on every letter
+ * she types into the name entry and a `getImageData` per keystroke is a read
+ * back off a canvas the GPU may still be holding. Keyed by cell, since the
+ * same sheet is cropped at different cells by different callers.
+ *
+ * Returns null rather than throwing for a texture whose image is not a canvas
+ * (the placeholder atlases are `DataTexture`s) or for a cell that is empty —
+ * the caller then falls back to `contentScale`, which is a worse crop and not
+ * a blank one. Prefer a rule that degrades over one that vanishes.
+ */
+function inkBox(art, img, col, row, cell) {
+  const key = `${col}:${row}`;
+  const cache = (art._inkBox ??= {});
+  if (key in cache) return cache[key];
+  let box = null;
+  try {
+    const g = img.getContext?.('2d', { willReadFrequently: true });
+    const d = g?.getImageData(col * cell, row * cell, cell, cell)?.data;
+    if (d) {
+      let x0 = cell; let y0 = cell; let x1 = -1; let y1 = -1;
+      for (let y = 0; y < cell; y++) {
+        for (let x = 0; x < cell; x++) {
+          /* 32, NOT 0. The packer resamples with smoothing on, so every figure
+             carries a fringe of nearly-transparent pixels; measuring at alpha
+             > 0 grows the box by that fringe on all four sides and the crop
+             creeps down her face. The same threshold `alphaTest` draws with. */
+          if (d[(y * cell + x) * 4 + 3] > 32) {
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          }
+        }
+      }
+      if (x1 >= x0 && y1 >= y0) box = { x0, y0, x1, y1 };
+    }
+  } catch { box = null; }   // a tainted canvas must not take the screen down
+  cache[key] = box;
+  return box;
 }

@@ -38,7 +38,7 @@
    rather than nearly equal — and "nearly" is worth nothing here, because it
    drifts by exactly that much on every wrap, forever.
 
-     node tools/gif-sync.mjs public/help/move-keys.gif public/help/move-pad.gif
+     node tools/gif-sync.mjs public/help/move/keys.gif public/help/move/pad.gif
      node tools/gif-sync.mjs --write --tail=60 <the same files>
 
    Without `--write` it only reports. `world-check` asserts the result, so a

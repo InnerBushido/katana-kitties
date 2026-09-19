@@ -9,8 +9,8 @@ They are kept rather than deleted because two of them are evidence.
 
 | file | why it's out |
 | --- | --- |
-| `frost_grid_v2.png` | **Unusable, and worth looking at.** Its idle and walk rows turn one way; its jump and attack rows are drawn mirrored against them. No per-sheet `dirSense` can satisfy a sheet that contradicts itself — fixing the walk breaks the idle. This is the sheet the `dirSense` / `rowSense` split in `gfx.js` exists because of. Frost uses the older `frost_grid.png`. |
-| `ember_grid.png` | Superseded by `ember_grid_v2.png` (10 directions, all four rows agreeing). |
+| `frost_grid_v2.png` | **Unusable, and worth looking at.** Its idle and walk rows turn one way; its jump and attack rows are drawn mirrored against them. No per-sheet `dirSense` can satisfy a sheet that contradicts itself — fixing the walk breaks the idle. This is the sheet the `dirSense` / `rowSense` split in `gfx.js` exists because of. Frost uses the older sheet, shipped as `kittens/frost/grid.png`. |
+| `ember_grid.png` | Superseded by the sheet shipped as `kittens/ember/grid_v2.png` (10 directions, all four rows agreeing). |
 | `kitten_ember_sheet.png` | First-generation art, superseded before the grid pipeline existed. |
 | `kitten_frost_sheet.png` | Ditto. |
 

@@ -226,6 +226,39 @@ turned up a four-player bug on the way in: the material's cut list was `MAX = 2`
 from before four players existed, so kittens three and four were never cut for
 anywhere, grottos included.
 
+**...and so are the town's buildings and trees, and the cut has a floor now.**
+"Enable the x-ray shader when the player goes behind buildings or trees so that
+they can see mischief hiding behind them. Also fix the x-ray issue where we can
+see through the ground that Mr. Satan is standing on." Both, and the second one
+was not a bug in the cut: his feet *are* the lid of his box, which is genuinely
+between the camera and his chest, so a cone that reaches his head is correctly
+taking the floor out from under him. The fix is a per-cut **floor** —
+`uCutFloor[i]`, defaulting to `-1e9` so every existing caller is bit-identical —
+below which nothing is discarded. Measured at ~1000 px of lid restored across
+eight approach angles, with a kitten standing on it, because the earlier
+eyeballed screenshots were dominated by his own animation. The town's cut is
+aimed **per pane** from that pane's own members, or the kitten in the top-left
+quadrant bores a tunnel through the tea house in the bottom-right one. Town
+shadows stay **on** while the arena posts' stay off: the cut is a `discard` in
+the colour pass, so a hole through an eleven-unit post leaves shade that reads
+as a bug, and a two-unit porthole in a ten-unit building does not. Costs
+**0.3 ms of 11.0** — six samples, identical draw calls and triangles.
+[performance.md](docs/notes/performance.md).
+
+**Every asset is filed by subject.** "We have a lot of art, voices, sprites,
+help assets and it is getting disorganized." `public/sprites/` by who is drawn
+(`kittens/ember`, `kittens/frost`, `leaders/`, `clans/`, `satan/`, `critters/`,
+`beasts/`, `fx/`), `public/voice/` by who is speaking, `public/help/` by what
+the picture is of. **The sprites were renamed and the voices and clips were
+not** — a sprite filename was only ever a path, but `sat_over` and `move-keys`
+are identifiers used in the code, the docs and the capture tools, so
+`voicePath(id)` and `helpGifPath(name)` add the folder on the way out instead.
+The risk here is silent: rule 9 means a missing clip throws nothing and logs
+nothing, and vite's dev server answers an unknown path with `index.html` and a
+**200**, so a wrong mp3 path decodes as garbage and the line simply never plays.
+`world-check` now proves every id the game asks for is on disk and filed, and
+that no literal `/voice/...` has crept back into `src/`.
+
 **A Help page that shows the game instead of describing it.** Twelve topics,
 each a `<details>` a kid opens; **eighteen** GIFs **captured out of the running
 game**, three stills, and the Clans topic on the six leaders. A
@@ -1770,7 +1803,7 @@ quotes:
 
 **The artwork is generated, not drawn:** `node tools/steam-art.mjs` builds the
 background, the logo, both covers and a 16–256px `.ico` out of
-`public/sprites/title_art.png`, into `out/` (gitignored — the tool is the thing
+`docs/art-masters/title_art.png`, into `out/` (gitignored — the tool is the thing
 worth versioning). **Steam does not make the desktop icon for you**, for
 non-Steam shortcuts or for real ones; set it by hand in the shortcut's
 Properties.
@@ -1833,7 +1866,7 @@ same table the game plays from rather than from a transcription of it. That is
 the only game-code change in the whole exercise.
 
 **The generated art did not touch the shelf.** `tools/steam-art.mjs` still cuts
-the library cover, the icon and the wordmark out of `public/sprites/title_art.png`,
+the library cover, the icon and the wordmark out of `docs/art-masters/title_art.png`,
 and `tools/steam-capsules.sh` is additive — it writes a separate
 `out/steam/capsules/` for the store page and composites the kids' wordmark onto
 every capsule that carries the name. The wordmark is never generated. Second

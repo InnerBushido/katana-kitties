@@ -93,7 +93,7 @@ The Vercel URL always works and needs no terminal — it does need the internet.
 
 ## The artwork
 
-`tools/steam-art.mjs` builds all of it from `public/sprites/title_art.png`:
+`tools/steam-art.mjs` builds all of it from `docs/art-masters/title_art.png`:
 
 ```bash
 node tools/steam-art.mjs        # writes out/steam/

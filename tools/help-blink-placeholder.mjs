@@ -1,5 +1,5 @@
 /**
- * The still that stands in for `help/ability-blink.gif` until it is filmed.
+ * The still that stands in for `help/ability/blink.gif` until it is filmed.
  *
  * WHY A DRAWING AND NOT A CAPTURE. Every other picture in the abilities card is
  * an engine capture, and this one will be too — `tools/capture/shots/` gets a
@@ -288,5 +288,5 @@ bar(0, H - 30, 150, 30, [10, 12, 18], 0.82);
 bar(0, H - 30, 150, 2, JADE, 0.9);
 text('PLACEHOLDER', 10, H - 21, 2, JADE, 0.95);
 
-writeFileSync(new URL('../public/help/ability-blink.png', import.meta.url), writePNG(W, H, d));
+writeFileSync(new URL('../public/help/ability/blink.png', import.meta.url), writePNG(W, H, d));
 console.log(`[help] ability-blink.png  ${W}x${H}  jade #${ORB_BY_ID.blink.color.toString(16)}`);
