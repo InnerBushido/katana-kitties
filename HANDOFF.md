@@ -510,6 +510,85 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Thirteen fixes off one afternoon's play, and not yet played back.** One
+branch. They came in as one list and they are listed here in the order they were
+reported, because several of them turned out to share a cause.
+
+- **The ending is one door now.** `Game._startFinale` is the only way into the
+  finale, and the counter reaching 100%, the scene viewer and WATCH THE ENDING
+  AGAIN all go through it. That matters because starting the ending now has
+  three jobs beside playing it: **it opens the arena** if 80% never did (the
+  last thing Patchfur says is to go and fight in it, and `1` can reach 100% with
+  the gate shut), **it hushes the announcer**, and **it takes the cast out of
+  the shot**. Three copies of that would have been two ways to watch an ending
+  with somebody talking over it.
+- **Nobody talks over it and nobody stands in it.** `Announcer.hush` is new and
+  is deliberately not `clear`: it empties the queue, stops the audio, takes the
+  card off the screen and then *goes on refusing* for the whole minute. The
+  collision is the likely one rather than a rare one — `lasthunt` says "One! One
+  last thing standing in the whole sky!" and the prop that answers her is the
+  hundredth percent, so without it the elder is talking on a card in the corner
+  while the elder starts talking in the dialogue box. The voice goes quiet from
+  `_finaleDue` (the frame the counter lands); the kittens and their worn orbs go
+  invisible only while the scene really plays, because `_finaleDue` can sit true
+  through somebody else's scene.
+- **It has its own music, and the music moves with the picture.** Three new
+  pieces in `core/audio.js` — `finale` under the whole scene, `finaleCross` on
+  the isles drifting apart, `finaleOpen` on the arena. The scene *names* a track
+  and `Game._updateMusic` reads it; the scene never starts a piece itself, or it
+  would be a second music authority. The switches are keyed to shot cues, so a
+  re-recorded line takes the music with it.
+- **The green health is a boost, not a new ceiling.** Two separate bugs wearing
+  one symptom. `_nextRound` banked half of what *anybody* had eaten, without
+  asking `overflowing` — which `_startFeast` had been setting correctly all
+  along — so a **draw**, where nobody is `overflowing`, still handed both
+  kittens a bar past full. And the overflow lives *inside* `maxHp`, so every
+  heal in the game was aiming at the raised ceiling: `Player.trimRoundBonus`,
+  called every frame of a live round, lowers the ceiling as the green is lost
+  and can never raise it again.
+- **A genuinely unplayable stretch is acted on in ~1.2s, not ~9s.**
+  `AUTO_HARD_MS` / `AUTO_HARD_HOLD_MS` are a second rung on the same decision:
+  four seconds of 25 FPS is worth waiting out, four seconds of 40 ms frames is
+  four seconds of a round she is losing. **And if a human has chosen a quality,
+  the automation is off for ever by design** — the game now says so once instead
+  of silently doing nothing. *Arena lag could not be reproduced in the preview
+  pane*, so this is a rule made stricter rather than a measured fix; if Richard
+  had Graphics set by hand, that was the whole of it.
+- **WATCH THE ENDING AGAIN** is in Play Settings ▸ Watch Again, on one latch
+  (`_endingWatched`) set when the scene really starts, carried in the save and
+  cleared by a restart. It used to be read off two other people's flags, one of
+  which the replay itself cleared — so watching it twice hid the row.
+- **Two fixes in the Character Profile, both CSS, both measured.** The orbs were
+  clipped and shifted sideways because `overflow-y: auto` **computes the other
+  axis to `auto` as well** — measured live as `overflowX === "auto"` — so the
+  1.12 cursor ring became real horizontal scrollable content that
+  `scrollIntoView`'s default `inline: "nearest"` chased. `overflow-x: clip` plus
+  a halo on `.kd-slots` that is the exact sum of the scale and the ring. And
+  LOOK AT MY ORBS showed half the orbs at one player because `--u` is a zoom off
+  the *pane*: at one player the list had 183px of room for 713px of rows (2.8 of
+  ten), at two it had 318px for 392px (9.0 of ten). A third `0.8vh` term caps
+  it, so everybody gets the card that was already right.
+- **Every other island sees through now.** `_scatterOutlying` and the shrine
+  islands build the same trees, lanterns and torii as the town and had the plain
+  toon material, so a kitten hunting the last barrel behind a pine simply
+  vanished — the exact bug the x-ray exists for, on the islands where the last
+  five pieces of mischief are. Both merges are kept in `world.outlyingXray` and
+  aimed by `_aimTownXray`, through the same rule rather than a copy of it: a
+  material nobody aims never cuts.
+- **The dialogue box re-mounts its two spans per beat.** There is one `#cs-text`
+  and three systems write to it; only `Cutscene` keeps children in it, and
+  `textContent` replaces children. After the summon or shrine scene had run, the
+  typewriter was writing into orphaned nodes — blank box, voice playing, nothing
+  thrown. Which is why the report was "watch the story again after forcing the
+  ending with the debug shortcut".
+- **The debug keys run in the order the afternoon does.** `1` mischief, `2`
+  endgame, `3` orbs, `4` arena, `5` the tantrum, `6` END, `7` NUDGE — and `8`
+  the frame-cost readout, last because it is the only row that is not a beat of
+  the game. **`1` was the frame cost and is not any more**; CLAUDE.md, PROJECT.md
+  and the published page all say `8` now, and `world-check` pins the whole map
+  in both directions so the next new key cannot land on whichever number is
+  free.
+
 **The ending and the Dragon Breath are rebuilt and not yet played back.** One
 branch, `mixed/an-ending-cut-to-the-words`. Both came out of one note after
 watching the ending through.

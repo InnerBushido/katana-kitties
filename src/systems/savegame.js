@@ -508,6 +508,13 @@ export function snapshot(game) {
       dawn: game.summonScene?.dawnWant ?? 0,
     },
     ending: !!game._endingShown,
+    /* SEPARATE FROM `ending`, because they answer different questions and a
+       save that carried only the first one came back with WATCH THE ENDING
+       AGAIN hidden for somebody who had watched it. `ending` is "this
+       afternoon reached 100%" and gates the real trigger; this is "the scene
+       has been played at somebody" and gates the menu row. See
+       `Game._endingSeen`. */
+    watched: !!game._endingWatched,
   };
 }
 
@@ -709,6 +716,13 @@ export function restore(game, snap) {
     game.summonScene.dawn = game.summonScene.dawnWant;
   }
   game._endingShown = !!snap.ending;
+  /* A SAVE WRITTEN BEFORE `watched` EXISTED STILL ANSWERS THE QUESTION, out of
+     the two facts that used to be ANDed to answer it — a finished game whose
+     finale scene had run. Degrading rather than vanishing (house rule): the
+     alternative is every save on the device losing the row. */
+  game._endingWatched = snap.watched != null
+    ? !!snap.watched
+    : !!(snap.ending && snap.scenes?.finale);
   game._finaleDue = false;
   /* BEFORE THE KITTENS, because handing each her ledger rebuilds her tokens
      and asks this for nothing — but a load that set the claims after would

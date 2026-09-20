@@ -1102,7 +1102,20 @@ export class Tournament {
          does the second one. Half of what she HEALED by eating — see
          `OVERFLOW_FRAC` and `Player.setRoundBonus`, which replaces rather than
          adds, so this lasts exactly one round. */
-      p.setRoundBonus?.(Math.round((p.fedHp ?? 0) * OVERFLOW_FRAC));
+      /* AND ONLY FOR SOMEBODY THE FEAST GAVE GREEN TO. `overflowing` is the
+         one question `_startFeast` asks, the HUD asks it too, and this line
+         did not ask it at all — it banked half of everything ANYBODY had
+         eaten. Reported from play: "even though there was a draw in the ring,
+         one of the players was able to get green health in the next round."
+         A draw is precisely the case that exposes it: `_lastWinner` is -1, so
+         nobody is `overflowing` and nobody should get any, but both kittens
+         still ate their way back up off the deck and both were handed a bar
+         that went past full for it.
+         It was wrong for a won round too, and in the way `_startFeast`'s own
+         comment forbids: the winner keeps the health she is standing on into
+         the next round, so eating already pays her — banking half of it as
+         well "was paying her twice for winning". */
+      p.setRoundBonus?.(p.overflowing ? Math.round((p.fedHp ?? 0) * OVERFLOW_FRAC) : 0);
       p.fedHp = 0;
       /* THE FEAST'S TWO LATCHES, DROPPED TOGETHER WITH THE TALLY THEY DESCRIBE.
          `overflowing` is the licence to eat past the top of her bar and
@@ -1545,6 +1558,16 @@ export class Tournament {
 
       case 'live':
         this.fightTime += dt;
+        /* THE GREEN IS SPENT AS IT IS LOST, EVERY FRAME OF A LIVE ROUND.
+           See `Player.trimRoundBonus`. Here rather than in `hurt`, because the
+           bar can come down five ways — a blade, a ring-out, Mr Satan's blast,
+           a clan breath, a partner's cross — and the rule is about HEALTH
+           BELOW A LINE rather than about being hit; a hook on the one path
+           anybody thought of is how this kind of rule ends up half true.
+           `live` ONLY: during the feast the green on the bar is the meal
+           (`feastMark` and `fedHp`), and trimming the ceiling under it would
+           clip health a winner is standing on. */
+        for (const p of this.game.players) p.trimRoundBonus?.();
         this._updateOut(dt, OUT_DAMAGE);
         this._callTheClock(ROUND_LIMIT - this.t);
         /* A round that never ends. Two kittens who are both bored, or one

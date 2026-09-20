@@ -282,6 +282,18 @@ export class World {
      *  `roof` while somebody is inside and points the x-ray cut on `walls`
      *  at whoever is in there. */
     this.grottos = [];
+    /**
+     * The OTHER islands' see-through furniture — one merged mesh per island
+     * from `_scatterOutlying`, plus each shrine island's own.
+     *
+     * KEPT FOR THE SAME REASON `townXray` IS: a material with nobody aiming it
+     * never cuts. Giving these meshes `xrayVertexMat` was half the fix for
+     * "trees on other islands do not have the x-ray shader applied like on the
+     * main island"; the other half is `Game._aimTownXray`, which walks this
+     * list beside the town's. Separate from `townXray` because they are built
+     * in three different places and none of them knows about the others.
+     */
+    this.outlyingXray = [];
     /** Road corridors: no grass, flowers or rocks grow through paving. */
     /**
      * The built things that are NOT solids and NOT props — the torii and the
@@ -458,7 +470,7 @@ export class World {
           };
           const parts = buildHouse(spec);
           transformParts(parts, hx, hg, hz, spec.ry, spec.s);
-          decor.push(...parts);
+          decor.push(...xrayStrength(parts, XRAY_K.house));
           this.solids.push({ x: hx, z: hz, r: 4.2, house: spec });
         }
       }
@@ -484,6 +496,16 @@ export class World {
           : buildTree(spec.seed, spec.scale, spec.leaf);
         if (lit) this.landmarks.push({ kind: 'lantern', x, z, s: 0.8 });
         transformParts(parts, x, g, z, spec.ry);
+        /* THE SAME TWO STRENGTHS THE HOME ISLAND'S TREES GET, and for the same
+           reason: a trunk is a stick and a canopy is a wall. See the tree loop
+           in `_buildTown`, which this is the twin of — `buildTree` puts the
+           trunk in part 0 and everything above it after, so the split is the
+           builder's own and not a guess made here. */
+        if (lit) xrayStrength(parts, XRAY_K.lantern);
+        else {
+          xrayStrength(parts.slice(0, 1), XRAY_K.trunk);
+          xrayStrength(parts.slice(1), XRAY_K.canopy);
+        }
         decor.push(...parts);
         this.solids.push({
           x, z, r: isl.biome === 'bamboo' ? 0.7 : 0.9,
@@ -492,10 +514,29 @@ export class World {
       }
     }
     if (!decor.length) return;
-    const mesh = new THREE.Mesh(mergeParts(decor), toonVertexMat());
+    /* AND IT SEES THROUGH, LIKE THE TOWN DOES.
+       REPORTED FROM PLAY: "trees on other islands do not have the xray shader
+       applied like on the main island, this should apply to everything in the
+       game." They never had it. The x-ray landed on the home island, where
+       the town is, and every other island's furniture was merged into this one
+       mesh in the plain toon material — so a kitten hunting the last barrel on
+       the ash island went behind a pine and vanished, which is the exact bug
+       the shader exists for and the exact island it matters most on (the last
+       five pieces of mischief are, by definition, the ones hiding behind
+       something).
+       THE SHADOWS STAY ON HERE, unlike the arena's posts. The cut is a
+       `discard` in the colour pass and the shadow pass knows nothing about it,
+       so anything that opens a hole for you goes on casting its full shadow
+       through the hole — which is unreadable on the arena's four vermillion
+       columns standing on a bare deck, and unnoticeable under a wood, where
+       the shadow it casts is one tree's worth inside a canopy's. Losing the
+       shade off every tree on six islands would be the bigger change of the
+       two. */
+    const mesh = new THREE.Mesh(mergeParts(decor), xrayVertexMat());
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     this.scene.add(mesh);
+    this.outlyingXray.push(mesh);
   }
 
   /**
@@ -588,6 +629,17 @@ export class World {
 
       const geo = buildShrine(w.clan.color, w.clan.id.length);
       transformParts(geo, spot.x, g.y, spot.z, 0, 1);
+      /* THE GATE SEES THROUGH AND THE DAIS DOES NOT, which is the road rule
+         one island along: `XRAY_K.road` is 0 because the thing you are
+         STANDING ON must never open a hole under you — reported as "the
+         transparency effect is happening on the ground" — and a shrine's two
+         stone discs are ground. `buildShrine` builds them first, both of them,
+         before anything vertical, so `slice(2)` is the gate, the lintel, the
+         banner and the ring of standing stones: the parts a kitten can walk
+         BEHIND. Torii strength, because that is what the gate is — the file
+         says so itself ("deliberately echoes the torii"). */
+      xrayStrength(geo.slice(0, 2), XRAY_K.road);
+      xrayStrength(geo.slice(2), XRAY_K.torii);
       parts.push(...geo);
 
       const shrine = new ClanShrine(w.clan, spot.x, g.y, spot.z);
@@ -621,10 +673,15 @@ export class World {
     }
 
     if (!parts.length) return;
-    const mesh = new THREE.Mesh(mergeParts(parts), toonVertexMat());
+    /* See `_scatterOutlying` — same change, same reason. A shrine is a seven-
+       unit gate standing on the one spot in the game a kitten is guaranteed to
+       walk to, and swearing an oath means standing under it with the camera
+       behind the lintel. */
+    const mesh = new THREE.Mesh(mergeParts(parts), xrayVertexMat());
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     this.scene.add(mesh);
+    this.outlyingXray.push(mesh);
   }
 
   /* ------------------------------ the arena ------------------------------ */

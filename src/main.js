@@ -121,7 +121,7 @@ const BULK_FINE_AT = 200;
 
 /** The key each debug action is bound to, for the panel's own labels. */
 const DEBUG_KEY_LABEL = {
-  /* `1` IS THE FRAME COST AND IT USED TO BE `P`. `P` was also player 2's mount
+  /* `8` IS THE FRAME COST; IT WAS `1`, AND BEFORE THAT `P`. `P` was also player 2's mount
      (`KEYSETS[1]` in core/input.js), so one press did both: she climbed onto a
      dragon and the readout flickered. Every other debug key is a digit or
      punctuation precisely because nothing in `BOUND_KEYS` is, and `P` was the
@@ -138,7 +138,7 @@ const DEBUG_KEY_LABEL = {
      `R` AND `U` BREAK THE DIGITS-AND-PUNCTUATION RULE ON PURPOSE, because for
      these two the position IS the feature: `R` sits above WASD and `U` beside
      O K L ;, so each hand passes its own keyboard along without moving. They
-     are safe for the same reason `1` is — `pad-check` asserts that nothing in
+     are safe for the same reason the digits are — `pad-check` asserts that nothing in
      any keyset answers to a key this file dispatches on — and they do nothing
      at all unless force-spawn is on. */
   Backslash: '\\', KeyR: 'R', KeyU: 'U',
@@ -386,6 +386,10 @@ class Game {
     this._autoQuality = true;
     this._autoBadSince = 0;
     this._autoNextAt = 0;
+    /** ...and whether the game has already told a player who is steering it
+     *  herself that it is struggling. Once per session — see
+     *  `_autoQualityCheck`. */
+    this._autoSaidSlow = false;
 
     this.scene = new THREE.Scene();
     this.input = new InputManager();
@@ -394,6 +398,14 @@ class Game {
 
     this.state = 'loading';
     this.paused = false;
+    /* THE ENDING'S TWO HOLDS, DECLARED RATHER THAN DISCOVERED. Both are edge
+       latches — `_updateFinaleHold` acts only when the answer CHANGES — and an
+       edge measured against `undefined` fires on the first frame of the game:
+       the very first pass would have told the announcer to un-hush before
+       anybody had said anything. Harmless, and the kind of harmless that makes
+       a check of the edge impossible to write. */
+    this._finaleHush = false;
+    this._castHidden = false;
     /**
      * SECONDS OF ACTUAL PLAY in this run, and the only thing the autosave is
      * gated on.
@@ -2896,6 +2908,10 @@ class Game {
        reset: those are tied to Ryuuseki, who is still in the world. */
     this._finaleDue = false;
     this._endingShown = false;
+    /* ...and WATCH THE ENDING AGAIN goes back off the menu with it. This is a
+       new game: an ending row offering to replay the last game's finale is the
+       one thing on that panel that could spoil this one. See `_endingSeen`. */
+    this._endingWatched = false;
     if (this.summonScene) this.summonScene.played.finale = false;
     /* And the elder forgets she was counting. Every prop is standing again, so
        "three left" is a fact about a world that no longer exists — and without
@@ -3363,18 +3379,141 @@ class Game {
   }
 
   /**
-   * Has THIS game's ending really played?
+   * Has the ending really played?
    *
-   * TWO FACTS, BOTH NEEDED. `_endingShown` is "this afternoon reached 100%" —
-   * but it is set the moment the last prop falls, a frame or several before
-   * the scene can start. `played.finale` is "the scene started" — but the
-   * debug scene viewer sets it on a preview, over a world nobody finished.
-   * Together they mean exactly "the girls got there and were shown it", and a
-   * restart clears both. A save carries both too, so loading a finished game
-   * offers the ending again as well.
+   * IT IS ONE FACT AND IT USED TO BE TWO ANDed TOGETHER — `_endingShown` ("this
+   * afternoon reached 100%") and `played.finale` ("the scene started"). The
+   * pair was reaching for "the girls got there and were shown it", and it got
+   * the second half of that sentence wrong in the one direction that matters:
+   * a preview through the debug scene viewer, or the endgame key, shows you the
+   * whole ending and never touches `_endingShown` — so the row that offers to
+   * play it again stayed hidden for the only person who had actually just
+   * watched it. Reported as a missing feature rather than as a bug ("at the
+   * end of the Ending Cutscene, let's add in Play Settings ▸ Watch Again the
+   * option to watch the Ending Cutscene again"), because from a chair those
+   * two things look identical.
+   *
+   * `_endingWatched` is set by `_startFinale` on the frame the scene really
+   * starts, whichever door opened it, which is exactly the question this row
+   * is asking: you cannot spoil an ending you have just been shown. A restart
+   * clears it and a save carries it.
+   *
+   * `_endingShown` IS UNTOUCHED AND STILL MEANS WHAT IT MEANT. It is the guard
+   * that stops a preview eating the REAL 100% — see `_mischiefComplete`, where
+   * getting these two confused means a girl knocking over the last barrel in
+   * the world and being shown nothing at all.
    */
   _endingSeen() {
-    return !!(this._endingShown && this.summonScene?.played?.finale);
+    return !!this._endingWatched;
+  }
+
+  /**
+   * START THE ENDING — the one door, whichever key or menu row asked for it.
+   *
+   * There are three ways into this scene (the counter reaching 100%, the debug
+   * scene viewer, and WATCH THE ENDING AGAIN) and they used to be three copies
+   * of the same four arguments to `summonScene.start`. That was survivable
+   * while the ending was only a scene; it is not now that starting one has to
+   * open the arena and take the announcer's card off the screen first, because
+   * three copies of THAT is two ways to watch an ending with somebody talking
+   * over it.
+   *
+   * BOTH OF THOSE HAPPEN BEFORE `start`, NOT ON THE SCENE FINISHING —
+   * seventh non-negotiable, and the reason the whole file keeps giving: the
+   * finale is a minute long and can be skipped on its first frame, so anything
+   * hung off the end of it is a thing a thumb on Start can throw away.
+   *
+   * @returns {boolean} whether the scene really started.
+   */
+  _startFinale() {
+    const B = this._worldBounds();
+    /* THE DOOR IT IS ABOUT TO TELL THEM TO WALK THROUGH. See
+       `_openTournament` for why 100% mischief does not guarantee it is open. */
+    this._openTournament();
+    /* AND SILENCE, BEFORE THE FIRST WORD. `_updateFinaleHold` will hush the
+       card on its next pass anyway; doing it here as well means the queue is
+       empty before `start` calls `audio.speak`, so a line that was half said
+       cannot be stopped by the same `stopSpeaking` that would take Patchfur's
+       first sentence with it. */
+    this._updateFinaleHold(true);
+    const ok = this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder,
+      this._finaleCast());
+    /* ...AND WATCH AGAIN CAN OFFER IT FROM HERE ON. Only if it really started:
+       `start` refuses over another scene, and a row that appeared because a
+       refusal happened would offer to replay something nobody has seen. See
+       `_endingSeen`. */
+    if (ok) this._endingWatched = true;
+    /* AND THE CAST GOES ON THIS FRAME, NOT THE NEXT ONE. The call above runs
+       before `start`, so `active` is still false there and only the hush
+       happens; without this the first frame of the ending is drawn with four
+       kittens standing in the middle of the town it opens on. */
+    if (ok) this._updateFinaleHold();
+    return ok;
+  }
+
+  /**
+   * Put the world on hold for the ending: no other voice, and no cast.
+   *
+   * TWO DIFFERENT GATES AND THEY ARE NOT THE SAME MOMENT, which is why this is
+   * one method with two flags rather than one flag used twice.
+   *
+   * THE VOICE IS HUSHED FROM THE MOMENT THE ENDING IS DUE. Reported from play:
+   * "when playing the ending cutscene, if there is any dialog happening (like
+   * by Patchfur counting down the final mischief) the dialog should be
+   * cancelled and removed and not queued up if the ending cutscene is being
+   * played or about to be played." It is not a rare collision, it is the
+   * COMMON one: `lasthunt` says "One! One last thing standing in the whole
+   * sky!" when the counter reaches one, and the very next prop is the
+   * hundredth percent — so the elder is reliably mid-sentence on her own card
+   * in the corner of the screen while the elder starts talking in the
+   * dialogue box. Two Patchfurs. `_finaleDue` is the honest edge of "about to
+   * be played": it is set the frame the counter lands, and the scene itself
+   * may wait several seconds for whatever owns the screen to finish.
+   *
+   * THE CAST IS HIDDEN ONLY WHILE IT ACTUALLY PLAYS, and that difference
+   * matters: `_finaleDue` can sit true through another scene, and a kitten who
+   * blinked out of the world during the tail of a shrine introduction would be
+   * a bug rather than a cut. Asked for as "when the ending cutscene is being
+   * played, we should temporarily remove or hide the players and their
+   * orbs/effects around them as they should not be appearing in the cutscene,
+   * they should reappear once the ending cutscene is complete."
+   *
+   * IT IS ALSO THE DIRECTOR'S RULE: a cutscene's figures are the cutscene's
+   * own actors. `FinaleShow` already builds its own kittens for the shot on
+   * the bridge — the real ones standing in the town square in the middle of a
+   * wide shot of the wreckage are four cats nobody cast.
+   *
+   * HELD EVERY FRAME, RESTORED ONCE. `syncOrbMeshes` rebuilds a kitten's worn
+   * orbs wholesale and hands back groups that are visible by default, so
+   * hiding them on the transition alone is one Awakening away from eight
+   * icosahedrons orbiting an invisible cat. Coming back is the other way
+   * round: put everything back once, on the frame the scene ends, and never
+   * touch it again — anything else is this method arguing every frame with
+   * whatever else has an opinion about whether a kitten is drawn.
+   *
+   * @param {boolean} [force] hush now, before the scene has started — used by
+   *        `_startFinale` so the card is gone before the first line.
+   */
+  _updateFinaleHold(force = false) {
+    const playing = !!(this.summonScene?.active && this.summonScene.which === 'finale');
+    const hush = force || playing || !!this._finaleDue;
+    if (hush !== this._finaleHush) {
+      this._finaleHush = hush;
+      this.announcer?.hush(hush);
+    }
+    if (playing) {
+      for (const p of this.players) {
+        p.group.visible = false;
+        for (const o of p.wornOrbs ?? []) o.group.visible = false;
+      }
+      this._castHidden = true;
+    } else if (this._castHidden) {
+      this._castHidden = false;
+      for (const p of this.players) {
+        p.group.visible = true;
+        for (const o of p.wornOrbs ?? []) o.group.visible = true;
+      }
+    }
   }
 
   /** WATCH AGAIN's rows, painted as it opens. See the markup. */
@@ -3411,10 +3550,8 @@ class Game {
     }
     this.setPaused(false);
     this.audio.resume();
-    const B = this._worldBounds();
     this.summonScene.played.finale = false;
-    const ok = this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder,
-      this._finaleCast());
+    const ok = this._startFinale();
     /* PUT THE LATCH BACK IF IT DID NOT START, or a refusal would quietly turn
        the "has she seen it" answer to no and hide this row next time. */
     if (!ok) this.summonScene.played.finale = true;
@@ -3733,39 +3870,63 @@ class Game {
   /* ---------------------------- debug keys ------------------------------- */
 
   /**
-   * Shortcuts for testing the dragon, which is otherwise about ten minutes of
-   * flying away and needs two players to see at its best.
+   * Every debug shortcut, and the one place a panel row and a keypress meet.
    *
-   * `7` collects all seven stars, `8` seats both kittens, `9` fires. They are
-   * deliberately unbound from anything a player would press by accident and
-   * they toast loudly, so nobody can trip one and wonder what happened.
+   * THIS DOC USED TO DESCRIBE THREE KEYS THAT NO LONGER EXIST — "`7` collects
+   * all seven stars, `8` seats both kittens, `9` fires", the dragon shortcuts,
+   * gone for long enough that the same sentence had also gone stale in
+   * CLAUDE.md and was found there first. The lesson is below the fix: a prose
+   * list of what the keys are will rot, and the panel is the list that cannot,
+   * because `_refreshDebugPanel` builds its rows out of the same codes this
+   * method switches on. So this comment says what the SHAPE is and the
+   * individual keys document themselves at the branch that runs them.
    *
-   * `9` exists because the DUO attack is the whole point of the feature and
-   * the hardest thing in the game to reach: it needs the second kitten's
-   * attack button while both are aboard. On a laptop that button was on a
-   * numpad that isn't there — the same gap the `alt` keys in `KEYSETS` close
-   * properly. This is the version that needs no hands on the other side of the
-   * keyboard at all.
+   * Every one of them is deliberately a digit or punctuation — nothing in
+   * `BOUND_KEYS` is, and `pad-check` asserts that no keyset answers to a key
+   * this method dispatches on — and every one of them toasts, so nobody can
+   * trip one and wonder what happened.
    */
   _debugKey(code) {
-    /* --- the two fast-forwards, `4` and `5` ---
-       `4` ENDS THE BEAT AND `5` NUDGES IT. One call each into `Tournament`,
-       which owns the transitions, so a key cannot disagree with the game about
-       what comes next — the same rule that made `4` stop hitting a kitten.
+    /* --- THE DIGITS RUN IN THE ORDER AN AFTERNOON DOES ---
+       Asked for as: "let's organize the Debug Menu items so they are in
+       chronological order with chronological numbers to trigger them in order
+       ... Knock over 50 happens before the Endgame which happens before Give
+       every kitten all 8 kotodama orbs."
+       So `1` to `7` are now the game's own running order — wreck the town,
+       unlock the endgame, hand out the orbs, fly to the arena, annoy Mr Satan,
+       then the two keys that fast-forward a round — and `8` is the one row
+       that is a TOOL rather than a beat, the frame-cost readout, which is why
+       it sits after them rather than in the middle of them.
+       THE PANEL IS STILL THE LIST. Every one of these is a row you can also
+       tap, the rows are in this same order, and `_refreshDebugPanel` builds
+       them from the same codes this method switches on — so the numbers on
+       screen cannot drift from the numbers that work. What CAN drift is prose
+       about them, which is why CLAUDE.md's debug sentence is written to point
+       at the panel.
+       `1` WAS THE FRAME COST AND IS NOW THE MISCHIEF. If a session reaches for
+       `1` expecting fps, the readout moved to `8`; nothing else about it
+       changed. */
 
-       `4` USED TO ONLY KNOW ABOUT A LIVE ROUND, and a key called "end the
+    /* --- the two fast-forwards, `6` and `7` ---
+       `6` ENDS THE BEAT AND `7` NUDGES IT. One call each into `Tournament`,
+       which owns the transitions, so a key cannot disagree with the game about
+       what comes next — the same rule that made END stop hitting a kitten.
+       (Both were `4` and `5` before the digits were put in the game's own
+       running order; the user quotes below are from then and say so.)
+
+       IT USED TO ONLY KNOW ABOUT A LIVE ROUND, and a key called "end the
        round" that does nothing for the fifteen seconds afterwards is a key you
        press, watch do nothing, and press again. Asked for as: "make the 4
        command to end the round work for the current battle round, and feast,
        it is like a fast forward button to move along the script to the next
        part." See `Tournament.endBeat`, where every state answers it.
 
-       `5` IS THE FINER ONE and it exists because of the last thirty seconds:
+       NUDGE IS THE FINER ONE and it exists because of the last thirty seconds:
        Mr. Satan says a different line at 30, at 15 and at 10, and each of them
        used to cost two minutes of a live round to hear. See `Tournament.nudge`
        for why it steps onto each mark rather than jumping past them.
 
-       IT CALLS THE ROUND, IT DOES NOT KILL ANYBODY. `4` used to hit
+       IT CALLS THE ROUND, IT DOES NOT KILL ANYBODY. END used to hit
        `this.players[1]` for her whole health bar — which read as ending the
        round only in a duel. At four players it killed Frost and left the other
        two standing; in a 2v2 it did not end the round at all, because a side
@@ -3780,9 +3941,9 @@ class Game {
        BOTH REFUSE OUT LOUD AND NAME THE KEY THAT FIXES IT. Sixth
        non-negotiable, and it earns its keep here: "no tournament is running"
        and "this key is broken" look identical from a chair. */
-    if (code === 'Digit4' || code === 'Digit5') {
-      const nudge = code === 'Digit5';
-      /* A STORY BEAT IS ONE OF THE THINGS `5` STEPS THROUGH, and `4`'s answer
+    if (code === 'Digit6' || code === 'Digit7') {
+      const nudge = code === 'Digit7';
+      /* A STORY BEAT IS ONE OF THE THINGS NUDGE STEPS THROUGH, and END's answer
          for a scene is Escape, which already exists and throws the whole thing
          away. Asked for as "skip forward in the current scene/match rather
          than skip it like the 4 command does" — so the scene is checked first,
@@ -3793,63 +3954,70 @@ class Game {
         return;
       }
       if (!this.tournament?.active) {
-        this.toast('[debug] no tournament running — press 7 to go to the arena', 0);
+        this.toast('[debug] no tournament running — press 4 to go to the arena', 0);
         return;
       }
       const did = nudge ? this.tournament.nudge() : this.tournament.endBeat();
       this.toast(did ? `[debug] ${did}` : '[debug] nothing to skip in this bit', 0);
     }
 
-    /* --- Mr. Satan's tantrum, without the ten seconds ---
-       Same argument as `4`. The gag is a FUSE: walk up to him, get taunted,
-       and then wait ten seconds before anything moves — which is what makes it
-       land in play and what made it unlookable-at while it was being written.
-       `2` jumps to the shout, the frame the charge and the explosion both hang
-       off, through `provoke` and therefore through the real `_shout`.
+    /* --- `1`: THE MISCHIEF, IN BATCHES — and it is FIRST because it is first.
+       `2` wrecks the whole town in one press and leaves nothing to knock over;
+       this is the same journey in steps you can watch, which is what makes it
+       the key that comes before it rather than after. See `_knockBatch`. */
+    if (code === 'Digit1') this._knockBatch();
+
+    /* --- `2`: THE WHOLE ENDGAME, IN ONE KEY ---
+       Everything this unlocks sits behind 216 props knocked over — most of an
+       afternoon — so checking one colour on one orb, or one word of the ending,
+       or whether a round card is centred, meant playing the whole game first.
+       See `_debugEndgame`. */
+    if (code === 'Digit2') this._debugEndgame();
+
+    /* --- `3`: EVERY ABILITY ON EVERY KITTEN, IN ONE KEY ---
+       The eight orbs are the endgame collectible, so trying one of them meant
+       either playing to 100% mischief or pressing the endgame key and then
+       trading orbs around the profile screen one at a time — and the abilities
+       are exactly the thing that needs trying repeatedly, because they change
+       verbs rather than numbers. Wearing all eight at once is also the stack
+       case every `1 + k*n` rule in powerorb.js is written for and the hardest
+       one to reach by hand.
+       THE ONE DIGIT THAT DID NOT MOVE when these were put in the game's
+       running order, which is luck rather than design: the orbs really are
+       handed out third. */
+    if (code === 'Digit3') this._debugAllOrbs();
+
+    /* --- `4`: AND THEN THE ARENA, WHICH IS WHERE YOU WERE GOING ---
+       It follows the endgame key because that is the order they are pressed
+       in: unlock the endgame, then fly out to the ring. It used to be the last
+       row of the SCENE VIEWER, labelled "not a scene, but it belongs in the
+       same list" — which was true of why it was hard to reach and false about
+       what it is, and it meant two keys and a cursor to do the thing the
+       endgame key sets up. Asked for as: "let's add the 'Go to the arena' to
+       be a number key press." Through `_goToArena`, the same path the scene
+       viewer's row called, so nothing about what it does has moved. */
+    if (code === 'Digit4') this._goToArena();
+
+    /* --- `5`: Mr. Satan's tantrum, without the ten seconds ---
+       Same argument as the fast-forwards. The gag is a FUSE: walk up to him,
+       get taunted, and then wait ten seconds before anything moves — which is
+       what makes it land in play and what made it unlookable-at while it was
+       being written. This jumps to the shout, the frame the charge and the
+       explosion both hang off, through `provoke` and therefore through the
+       real `_shout`.
 
        IT REFUSES OUT LOUD AND SAYS WHAT TO PRESS. Sixth non-negotiable: the
        key does nothing at all unless the arena is open and he is standing in
        his box, and a debug key that silently ignored you is one you would spend
        ten minutes deciding was broken. */
-    if (code === 'Digit2') {
+    if (code === 'Digit5') {
       if (!this.tournament?.active || !this.satan?.group.visible || this.travel) {
-        this.toast('[debug] no Mr. Satan to annoy — press 6, then fly to the arena', 0);
+        this.toast('[debug] no Mr. Satan to annoy — press 2, then fly to the arena', 0);
         return;
       }
       this.satanBlast?.provoke();
       this.toast('[debug] Mr. Satan has had enough of your kitty shenanigans', 0);
     }
-
-    /* --- THE WHOLE ENDGAME, IN ONE KEY ---
-       Everything this unlocks sits behind 216 props knocked over — most of an
-       afternoon — so checking one colour on one orb, or one word of the ending,
-       or whether a round card is centred, meant playing the whole game first.
-       See `_debugEndgame`. */
-    if (code === 'Digit6') this._debugEndgame();
-    /* --- AND THEN THE ARENA, WHICH IS WHERE YOU WERE GOING ---
-       `7` follows `6` because that is the order they are pressed in: unlock the
-       endgame, then fly out to the ring. It used to be the last row of the
-       SCENE VIEWER, labelled "not a scene, but it belongs in the same list" —
-       which was true of why it was hard to reach and false about what it is,
-       and it meant two keys and a cursor to do the thing `6` sets up. Asked
-       for as: "let's add the 'Go to the arena' to be a number key press."
-       Through `_goToArena`, the same path the scene viewer's row called, so
-       nothing about what it does has moved. */
-    if (code === 'Digit7') this._goToArena();
-    /* --- EVERY ABILITY ON EVERY KITTEN, IN ONE KEY ---
-       The eight orbs are the endgame collectible, so trying one of them meant
-       either playing to 100% mischief or pressing `6` and then trading orbs
-       around the profile screen one at a time — and the abilities are exactly
-       the thing that needs trying repeatedly, because they change verbs rather
-       than numbers. Wearing all eight at once is also the stack case every
-       `1 + k*n` rule in powerorb.js is written for and the hardest one to reach
-       by hand. */
-    if (code === 'Digit3') this._debugAllOrbs();
-
-    /* --- the mischief batch, `8` ---
-       `6` wrecks the whole town in one press and leaves nothing to knock over;
-       this is the same journey in steps you can watch. See `_knockBatch`. */
-    if (code === 'Digit8') this._knockBatch();
     /* --- THE ONE THING IN THE GAME THAT OUTLIVES THE TAB ---
        `BoardWipe` IS NOT A KEY AND DELIBERATELY HAS NO LABEL. Every other row
        in the panel is a keyboard shortcut that also happens to be tappable;
@@ -3892,8 +4060,12 @@ class Game {
        it goes through the one entry point the panel's rows call and cannot
        drift from the row that is labelled with it.
 
-       IT IS `1` AND IT USED TO BE `P` — see DEBUG_KEY_LABEL for why. */
-    if (code === 'Digit1') this._togglePerf();
+       IT IS `8` NOW AND IT WAS `1`, WHICH WAS `P` — see DEBUG_KEY_LABEL for
+       the first move and the digits note at the top of this method for the
+       second. It sits after the seven story keys because it is the only row in
+       that block that is not a thing the game DOES; CLAUDE.md's "if somebody
+       says it lags, press this before changing anything" points at `8`. */
+    if (code === 'Digit8') this._togglePerf();
     if (code === 'Backslash') this._toggleForceSeats();
     if (code === 'KeyR') this._passKeyboard(0);
     if (code === 'KeyU') this._passKeyboard(1);
@@ -4065,11 +4237,12 @@ class Game {
   /**
    * Put all eight kotodama on everybody who is playing.
    *
-   * IT DOES NOT UNLOCK THE ENDGAME AND MUST NOT. `6` is that key, and the two
+   * IT DOES NOT UNLOCK THE ENDGAME AND MUST NOT. `2` is that key, and the two
    * do different jobs: this one is for testing what the abilities DO, and
    * hanging the world state off it would mean anybody who wanted a triple slash
-   * also got the ending played at them. They compose — press 6 then 3 — which
-   * is the point of keeping them apart.
+   * also got the ending played at them. They compose — press 2 then 3 — which
+   * is the point of keeping them apart, and which is also why they sit next to
+   * each other in the panel's running order.
    *
    * Every player, not just player 1: half of what these do only shows up
    * against somebody else, and a stun that cannot be tested on a second kitten
@@ -4239,21 +4412,55 @@ class Game {
     }
 
     // The tournament, open and waiting in the town.
-    if (this.quest) {
-      this.quest.rodeRyu = true;
-      this.quest.stage = 'open';
-      for (const ms of MILESTONES) this.quest.spent.add(ms.id);
-      this.summonScene.played.satanAnnounce = true;
-      this.summonScene.played.satanOpen = true;
-      this.world.openArena(true);
-      if (this.satan) {
-        this.satan.group.visible = true;
-        this.satan.moveTo(this.satan.homeAt.x, this.satan.homeAt.y, this.satan.homeAt.z);
-        this.satan.setLine('');
-      }
-    }
+    this._openTournament();
 
     return { share, orbs: this.pickups.filter((k) => !k.taken).length };
+  }
+
+  /**
+   * Open the arena and stand Mr Satan in the town, wherever the party got to.
+   *
+   * LIFTED OUT OF `_unlockEndgame` SO THE ENDING ITSELF CAN CALL IT, and that
+   * is the whole of the bug. Asked for as: "the Arena should be unlocked with
+   * the Ending Cutscene if it is not currently unlocked yet."
+   *
+   * It reads like it cannot happen — `arenaquest` opens the arena at 80%
+   * mischief and the ending is 100%, so surely the 80% has been and gone. It
+   * has not, necessarily. `OPEN_AT` is a percentage of a counter, and the
+   * stage it moves to is gated behind Mr Satan's second SCENE: a girl who
+   * skipped him, or who crossed 80% while a shrine introduction owned the
+   * screen (the refusal `arenaquest` retries), or who simply never walked back
+   * into the town, can reach the last barrel in the world with the tournament
+   * still shut. And then Patchfur's last line — "the arena is open, go and
+   * find out" — is a promise with nothing behind it, which is the one failure
+   * mode this game has been careful about everywhere.
+   *
+   * THE REST OF `_unlockEndgame` IS DELIBERATELY NOT IN HERE. The ending calls
+   * THIS, not that: the purses are an even share of the world's points and
+   * handing them out on a real 100% run would overwrite what four kittens
+   * spent an afternoon earning, and the Awakening is already done by
+   * `_mischiefComplete` at the moment the counter lands. The only thing the
+   * scene has to guarantee is the door it tells them to walk through.
+   *
+   * IDEMPOTENT, which is what makes that safe: on the ordinary path every
+   * assignment in here is already true and `openArena(true)` is a visibility
+   * flag being set to the value it holds.
+   */
+  _openTournament() {
+    if (!this.quest) return false;
+    const was = this.quest.stage;
+    this.quest.rodeRyu = true;
+    this.quest.stage = 'open';
+    for (const ms of MILESTONES) this.quest.spent.add(ms.id);
+    this.summonScene.played.satanAnnounce = true;
+    this.summonScene.played.satanOpen = true;
+    this.world.openArena(true);
+    if (this.satan) {
+      this.satan.group.visible = true;
+      this.satan.moveTo(this.satan.homeAt.x, this.satan.homeAt.y, this.satan.homeAt.z);
+      this.satan.setLine('');
+    }
+    return was !== 'open';
   }
 
   /**
@@ -4271,7 +4478,7 @@ class Game {
    * entirely standing, which is the one line in the game it is least possible
    * to get away with.
    *
-   * IT LIVES IN `_unlockEndgame` AND NOT IN THE `6` HANDLER, for the reason
+   * IT LIVES IN `_unlockEndgame` AND NOT IN THE ENDGAME KEY'S HANDLER, for the reason
    * that method already gives about everything else in it: the scene viewer can
    * open the ending too, and an ending that unlocks the endgame but leaves the
    * town upright is the same bug by the other door.
@@ -4447,7 +4654,7 @@ class Game {
    *
    * AND "GO TO THE ARENA" IS NOT IN HERE ANY MORE. It carried a comment saying
    * it was not a scene, which was the honest half of the argument for keeping
-   * it; it is `7` now. See `_goToArena`.
+   * it; it is `4` now. See `_goToArena`.
    */
   get _scenes() {
     return [
@@ -4517,8 +4724,11 @@ class Game {
            scene the moment this one closes. */
         this._finaleDue = false;
         this.summonScene.played.finale = false;
-        this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder,
-          this._finaleCast());
+        /* THE SAME DOOR THE REAL 100% USES — see `_startFinale`. Previewing
+           the ending used to reach `summonScene.start` directly, which is how
+           a preview ends up being the one showing of this scene that talks
+           over itself. */
+        this._startFinale();
         break;
       case 'satanAnnounce':
         this.summonScene.played.satanAnnounce = false;
@@ -4538,7 +4748,7 @@ class Game {
   }
 
   /**
-   * GO TO THE ARENA NOW — debug `7`, and the whole unlock skipped.
+   * GO TO THE ARENA NOW — debug `4`, and the whole unlock skipped.
    *
    * Reaching the tournament honestly needs seven stars, a ride on Ryuuseki and
    * 80% of a world knocked over — which is right for a player and impossible
@@ -4568,7 +4778,7 @@ class Game {
   /* ------------------------ what the frame costs ------------------------ */
 
   /**
-   * The frame cost, in the corner, on `1`.
+   * The frame cost, in the corner, on `8`.
    *
    * BECAUSE "IT LAGS" IS NOT A MEASUREMENT AND THIS GAME IS FILL-BOUND.
    * A report of lag on a machine nobody here can see used to leave exactly two
@@ -4659,8 +4869,26 @@ class Game {
    * last changed something. `_sceneActive()` rather than listing the scenes,
    * for the reason that helper exists.
    */
+  /**
+   * Is this a frame the watcher is allowed to judge at all?
+   *
+   * LIFTED OUT OF `_autoQualityCheck` SO A CHECK CAN REACH IT, which is the
+   * half of this feature no check could see: `autoQualityVerdict` is pure and
+   * has a dozen assertions on it, and every one of them is handed
+   * `playable: true` or `false` by hand. Whether the ARENA — the heaviest
+   * thing the game draws, and the place the downgrade was reported as not
+   * happening — answers true was a question nothing had ever asked.
+   *
+   * It does. A live tournament is `state === 'play'`, is not paused and is not
+   * a scene; so are the league and team pickers, and so is the feast.
+   * `world-check` pins that now, so nothing can quietly gate the arena out of
+   * the one mechanism that makes it playable on a weak machine.
+   */
+  _autoJudgeable() {
+    return this.state === 'play' && !this.paused && !this._sceneActive();
+  }
+
   _autoQualityCheck(now) {
-    if (!this._autoQuality) return;
     const { verdict, next } = autoQualityVerdict({
       quality: this.settings.quality,
       medianMs: this._frameMedian(),
@@ -4668,7 +4896,7 @@ class Game {
          — this is the gate that was missing, and `_discardPerf` is its other
          half. */
       visible: document.visibilityState === 'visible',
-      playable: this.state === 'play' && !this.paused && !this._sceneActive(),
+      playable: this._autoJudgeable(),
       now,
       badSince: this._autoBadSince,
       notBefore: this._autoNextAt,
@@ -4676,6 +4904,27 @@ class Game {
     if (verdict === 'reset') { this._autoBadSince = 0; return; }
     if (verdict === 'start') { this._autoBadSince = now; return; }
     if (verdict === 'wait') return;
+
+    /* A HUMAN IS STEERING — SO SAY IT ONCE AND LEAVE IT ALONE.
+       Picking a quality in Settings turns this watcher off for the session and
+       that rule is right (see the `set-quality` binding: "a setting that gets
+       overruled four seconds after you touch it is broken"). What was wrong is
+       that it also turned off the game's ability to NOTICE, so a machine that
+       cannot afford the picture somebody chose says nothing at all and reads
+       as a game that is simply bad — the sixth non-negotiable's case exactly,
+       one step removed: a refusal that does not say so.
+       The verdict is computed above either way, so this fires on precisely the
+       evidence a downgrade would have fired on. Once, ever: a toast that
+       repeated every four seconds is the notification a player learns to stop
+       reading, and this one is asking her to go and do something. */
+    if (!this._autoQuality) {
+      this._autoBadSince = 0;
+      this._autoNextAt = now + AUTO_GRACE_MS;
+      if (this._autoSaidSlow) return;
+      this._autoSaidSlow = true;
+      this.toast('This is running slowly — Settings ▸ Graphics can turn the picture down', 0);
+      return;
+    }
 
     this.settings.quality = next;
     this._applyQuality();
@@ -4934,14 +5183,16 @@ class Game {
 
     el.innerHTML = `
       <b>DEBUG</b> <span class="k">\`</span> closes
-      ${row('Digit6', 'THE ENDGAME — ending, arena, orbs, purses')}
-      ${row('Digit7', 'go to the arena NOW (skips the whole unlock)')}
+      <div class="dbg-sep">THE AFTERNOON, IN ORDER — 1 to 7</div>
+      ${row('Digit1', `knock over ${this._batchLabel()} of the mischief`)}
+      ${row('Digit2', 'THE ENDGAME — ending, arena, orbs, purses')}
       ${row('Digit3', 'give EVERY kitten all 8 kotodama')}
-      ${row('Digit8', `knock over ${this._batchLabel()} of the mischief`)}
-      ${row('Digit4', 'END this bit — round, ceremony or feast')}
-      ${row('Digit5', 'NUDGE it on — 30s, 15s, 5s, next line')}
-      ${row('Digit2', 'Mr. Satan loses his temper (skip the fuse)')}
-      ${row('Digit1', 'frame cost — fps, draws, pixels, GPU', this._perfOn)}
+      ${row('Digit4', 'go to the arena NOW (skips the whole unlock)')}
+      ${row('Digit5', 'Mr. Satan loses his temper (skip the fuse)')}
+      ${row('Digit6', 'END this bit — round, ceremony or feast')}
+      ${row('Digit7', 'NUDGE it on — 30s, 15s, 5s, next line')}
+      <div class="dbg-sep">TOOLS — not a beat of the game</div>
+      ${row('Digit8', 'frame cost — fps, draws, pixels, GPU', this._perfOn)}
       ${row('OverflowDbg', 'health overflow numbers under the arena bars',
     this._overflowDbg)}
       <div class="dbg-sep">FOUR PLAYERS, ONE KEYBOARD</div>
@@ -6642,6 +6893,17 @@ class Game {
 
   /** What should be playing right now, or null for "leave it alone". */
   _wantedTrack(dt = 0) {
+    /* THE ENDING OUTRANKS EVERYTHING, INCLUDING THE DRAGONS. Its camera is
+       nowhere near the kittens and neither is its subject, so every rule below
+       this line is answering a question the scene is not asking — and the
+       answer it used to give was "whichever island somebody was standing in
+       when the last barrel went over". See `SummonScene.musicTrack` and
+       `MUSIC_CUES`; it is null for every other scene and for all of play, so
+       nothing outside the ending can reach this branch.
+       Before the `players.length` guard as well, because the ending is still
+       the ending in a world that is being torn down around it. */
+    const ending = this.summonScene?.musicTrack;
+    if (ending) return ending;
     if (!this.players?.length) return null;
     if (this.ryu?.ridden
       && this.players.some((p) => p.mount === this.ryu || p.rideAlong === this.ryu)) {
@@ -7011,6 +7273,15 @@ class Game {
 
     /* --- the dragon-hunt scenes own the screen the same way --- */
     if (this.summonScene?.active) {
+      /* THE ENDING'S HOLD, HERE AS WELL AS AT THE BOTTOM OF THIS METHOD, and
+         it has to be: this branch RETURNS, so the call down there never runs
+         on a single frame of the scene it is for. Measured in the running
+         game — the announcer was hushed (that one is forced at `_startFinale`)
+         and all four kittens were still standing in the shot, because hiding
+         them is the half that can only be done once `summonScene.active` is
+         true and the only thing that asks is this method.
+         The RESTORE stays at the bottom, where `active` is false again. */
+      this._updateFinaleHold();
       if (this._skipPressed()) {
         this.summonScene.skip();
       }
@@ -7270,10 +7541,13 @@ class Game {
        unreachable; this is the ordering being right rather than a bug being
        fixed, and the `played` branch is what stops a future refusal turning
        into a retry every frame forever. */
+    /* WHAT THE ENDING TAKES AWAY FROM THE WORLD WHILE IT RUNS. Before the
+       block below, so the corner card is already gone on the frame the scene
+       opens rather than one frame into it. See `_updateFinaleHold`. */
+    this._updateFinaleHold();
+
     if (this._finaleDue && !this._sceneActive()) {
-      const B = this._worldBounds();
-      if (this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder,
-        this._finaleCast())) {
+      if (this._startFinale()) {
         this._finaleDue = false;
         this.sfx('starfound');
         this.toast('100% MISCHIEF — every last thing, knocked over', 0);
@@ -9748,7 +10022,17 @@ class Game {
    * be smaller than the kitten it is for.
    */
   _aimTownXray(camera, members) {
-    const meshes = this.world.townXray;
+    /* THE TOWN'S TWO MESHES AND EVERY OTHER ISLAND'S. Reported from play:
+       "trees on other islands do not have the x-ray shader applied like on the
+       main island, this should apply to everything in the game." They are
+       aimed from here rather than from a second method because the RULE is
+       identical — cut for this pane's kittens, within `TOWN_XRAY_FAR` of the
+       camera — and a second copy of that rule is a second thing to drift. The
+       grottos have their own method precisely because their reach rule is
+       different; these do not. */
+    const meshes = this.world.outlyingXray?.length
+      ? [...this.world.townXray ?? [], ...this.world.outlyingXray]
+      : this.world.townXray;
     if (!meshes?.length) return;
     const seen = [];
     const floors = [];
@@ -9827,7 +10111,7 @@ class Game {
       if (R && this.world.arenaOutBy(p.position.x, p.position.z) > 40) continue;
       seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
       /* AND A KITTEN WHO CLIMBS ONTO HIS BOX GETS THE SAME PROTECTION, which
-         is not hypothetical - getting up there is half of what debug `2` and
+         is not hypothetical - getting up there is half of what debug `5` and
          the temper gag are about. Her feet are wherever she is standing. */
       floors.push(p.position.y - 0.05);
     }
@@ -9854,7 +10138,7 @@ class Game {
     if (!s) return;
     /* HIS DRAWING IS THE AUTHORITY. Everything else that asks whether he is
        really here asks the same question — the blast's arming test, the x-ray,
-       debug `2` — and a second opinion kept somewhere else is a second thing
+       debug `5` — and a second opinion kept somewhere else is a second thing
        that can disagree with what is on the screen. */
     const on = !!this.satan?.group.visible;
     s.off = !on;

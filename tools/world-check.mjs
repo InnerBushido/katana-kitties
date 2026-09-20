@@ -29,8 +29,9 @@ import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../s
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import {
   SCRIPTS, DUSK_DEEP, DUSK_FALL, DAWN_RISE, DAWN_DEEP, SummonScene, BEAT_ACTS,
-  FINALE_SHOTS, say,
+  FINALE_SHOTS, MUSIC_CUES, say,
 } from '../src/systems/summonscene.js';
+import { Announcer } from '../src/systems/announce.js';
 import { FinaleTide } from '../src/systems/finaletide.js';
 import { FinaleShow } from '../src/systems/finaleshow.js';
 import { buildBridge, mergeParts as mergeBuilt } from '../src/world/build.js';
@@ -65,7 +66,7 @@ import {
 import {
   profileFor as deviceProfileFor, effectivePixelRatio,
   QUALITY, QUALITY_ORDER, nextQualityDown,
-  autoQualityVerdict, AUTO_BAD_MS, AUTO_HOLD_MS,
+  autoQualityVerdict, AUTO_BAD_MS, AUTO_HOLD_MS, AUTO_HARD_MS, AUTO_HARD_HOLD_MS,
 } from '../src/core/device.js';
 import { readPNG, blobs, writePNG, writeICO } from './png.mjs';
 import { DEFAULTS, OVERRIDES, __mergeForTest as fold } from '../src/core/tuning.js';
@@ -5156,7 +5157,30 @@ console.log('\n--- a full-screen scene has no split to furnish ---');
   ok('the card is a size container, so it can see its own height', card.length > 0
     && /\.pane-card\s*\{[^}]*container-type:\s*size/.test(card));
   ok('...and its unit is the SMALLER of the two ways to measure the pane',
-    /--u:\s*min\(\s*1cqw\s*,\s*1\.78cqh\s*\)/.test(card));
+    /--u:\s*min\(\s*1cqw\s*,\s*1\.78cqh\s*,/.test(card));
+  /* --- ...AND THE WHOLE SHELF HAS TO FIT IN IT ----------------------------
+     THE TWO TERMS ABOVE ARE A ZOOM, and that is what they are for: type sized
+     off the pane is what makes a quarter-screen card readable. The bug is the
+     same property read the other way — a pane four times the size gets
+     furniture four times the size, and ten rows stop fitting in it.
+     Reported from play: "when at LOOK AT MY ORBS in single player, it is only
+     showing half the orbs instead of all of them, like it does when there are
+     2 players in the game." MEASURED in the running game on a 926x477 window,
+     which is where the number below comes from and not from taste:
+
+       one player   (926x477)  list 183px for 713px of rows  -  2.8 of ten
+       two players  (463x477)  list 318px for 392px of rows  -  9.0 of ten
+       with 0.9vh              15px over at every shape
+       with 0.85vh              2px over
+       with 0.8vh               0px over, at every pane tall enough at all
+
+     A THIRD TERM IN `vh` RATHER THAN A CONTAINER UNIT, deliberately: it is a
+     cap off the WINDOW, so the card comes out the same size however the screen
+     is split and the two-player card — the one that was right — is the card
+     everybody gets. A `cqh` cap would have gone on scaling with the pane and
+     reproduced the bug one size down. */
+  ok('...and a third that caps the zoom, so all ten rows fit at one player',
+    /--u:\s*min\([^)]*,\s*0\.8vh\s*\)/.test(card));
   /* 1.78 IS NOT A TASTE NUMBER. It is 16:9, and it is what makes the change a
      no-op on every pane that already worked: in a 16/9 pane `1.78cqh` IS
      `1cqw`, so a full screen, a half and a quadrant come out exactly as they
@@ -12057,9 +12081,88 @@ console.log('\n--- the three power moves ---');
       ok('a draw is a draw', T._lastWinner === -1);
       T._startFeast();
       const regen = Math.round(MAX_HP * REGEN_FRAC);
+      /* AND BOTH OF THEM EAT, WELL. This is the case that was reported:
+         "even though there was a draw in the ring, one of the players was able
+         to get green health in the next round, after the match started."
+         A draw heals nobody, so both kittens hunt their way back up off the
+         deck — and the banking line asked nobody whether they were allowed any
+         overflow, so it handed both of them a bar that went past full for it.
+         `_startFeast` had been asking the right question all along; nothing
+         downstream read the answer. */
+      a.fedHp = 40;
+      b.fedHp = 40;
+      ok('...and a draw licenses neither of them to overflow',
+        a.overflowing === false && b.overflowing === false);
       T._nextRound();
       ok('...and neither of them is handed a full bar for it',
         a.hp === 30 + regen && b.hp === 30 + regen, `${a.hp} / ${b.hp}`);
+      ok('...nor any green, however much they both ate at it',
+        a.bonusHp === 0 && b.bonusHp === 0
+        && a.maxHp === a.baseMaxHp && b.maxHp === b.baseMaxHp,
+        `${a.bonusHp} / ${b.bonusHp}`);
+    }
+
+    /* --- AND THE GREEN IS SPENT, NOT A NEW CEILING TO HEAL BACK TO ----------
+       Reported from play: "seems, if someone has boosted health at the start of
+       a round, that is like their new maximum for that round, so if they take
+       damage, they can heal back up to that health again. That is incorrect,
+       the green health is a boost that gets applied to the start of the round.
+       Once they lose the boosted health, they are no longer able to retrieve
+       it... it should be green/yellow full solid bar until the player's health
+       drops below their normal maximum."
+
+       THE OVERFLOW LIVES INSIDE `maxHp` — that is what makes the bar able to
+       draw it at all — so every heal in the game was quietly aiming at the
+       raised ceiling. `trimRoundBonus` lowers the ceiling to whatever green is
+       still standing, and the round loop calls it every frame, so the moment a
+       hit eats into the green the ceiling comes down with it and can never be
+       climbed back to. It only ever shrinks: a heal cannot re-grow `bonusHp`,
+       because the trim is `min(bonusHp, …)`. */
+    {
+      const p = mkF2(0, 'Ember');
+      const full = p.maxHp;
+      p.setRoundBonus(20);
+      ok('a boosted kitten really is over her normal top',
+        p.maxHp === full + 20 && p.baseMaxHp === full && p.bonusHp === 20);
+      p.hp = p.maxHp;
+      p.trimRoundBonus();
+      ok('...and an untouched boost is not trimmed away', p.bonusHp === 20);
+
+      p.hp -= 8;                              // a hit that eats into the green
+      p.trimRoundBonus();
+      ok('...a hit into the green lowers the ceiling with it',
+        p.bonusHp === 12 && p.maxHp === full + 12, `${p.bonusHp}`);
+      /* AND HEALING CANNOT PUT IT BACK. This is the whole of the report: she
+         heals, the ceiling does not move, so she tops out at the bar she has
+         left rather than at the one she started the round on. */
+      p.hp = p.maxHp;
+      p.trimRoundBonus();
+      ok('...and healing to that ceiling does not grow it again',
+        p.bonusHp === 12 && p.maxHp === full + 12);
+
+      p.hp = full - 5;                        // all of the green is gone
+      p.trimRoundBonus();
+      ok('...and once the green is gone her top is her ordinary one',
+        p.bonusHp === 0 && p.maxHp === full && p.overflowHp === 0);
+      p.hp = 999;
+      ok('...which is all a heal can ever reach from then on',
+        Math.min(p.hp, p.maxHp) === full);
+    }
+    /* AND THE ROUND LOOP RUNS IT. A trim nothing calls is a method that passes
+       its own unit test while the bar in the ring goes on lying. Read out of
+       the `live` case, because that is the only beat it belongs in: trimming
+       during the FEAST would take the green off somebody the moment she was
+       hit by a critter, fifteen seconds before the round it was for. */
+    {
+      const tsrc2 = readFileSync(new URL('../src/systems/tournament.js', import.meta.url), 'utf8');
+      /* CRLF: the repo is Windows line endings throughout, so this is found by
+         regex rather than by an `indexOf` carrying a bare `\n`. */
+      const liveAt = tsrc2.search(/ {6}case 'live':\r?\n/);
+      const live = liveAt > 0 ? tsrc2.slice(liveAt, liveAt + 2000) : '';
+      ok('...and a live round trims every kitten, every frame',
+        liveAt > 0 && /for \(const p of this\.game\.players\) p\.trimRoundBonus\?\.\(\);/.test(live));
+      ok('...and nothing else in the tournament calls it',
+        (tsrc2.match(/p\.trimRoundBonus\?\.\(\)/g) ?? []).length === 1);
     }
 
     /* THE OVERFLOW IS FOR ONE ROUND. A kitten who eats well three feasts
@@ -12073,13 +12176,17 @@ console.log('\n--- the three power moves ---');
       T.sides = [0, 1];
       T.wins = [0, 0];
       T.state = 'live';
-      T._roundOver(0, 'time');
+      /* SIDE 1 WINS, so `a` is the kitten who LOST on her feet — the only one
+         a feast gives green to. It used to read `_roundOver(0, …)`, which made
+         her the winner, and the bank happened anyway because the banking line
+         asked nobody anything; see the draw case below for the report. */
+      T._roundOver(1, 'time');
       T._startFeast();
       a.fedHp = 30;
       T._nextRound();
       ok('a big meal banks half of it', a.bonusHp === 15 && a.maxHp === full + 15);
       T.state = 'live';
-      T._roundOver(0, 'time');
+      T._roundOver(1, 'time');
       T._startFeast();
       T._nextRound();                        // ate nothing this time
       ok('...and a feast she ate nothing at takes it all back off',
@@ -12986,11 +13093,15 @@ console.log('\n--- the three power moves ---');
     ok('...and the clock running out calls exactly the same method',
       /if \(this\.t > ROUND_LIMIT\) this\.callRound\(/.test(tsrc));
     const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
-    const at = msrc.indexOf("if (code === 'Digit4' || code === 'Digit5') {");
+    /* END/NUDGE ARE `6` AND `7` NOW — the keys were renumbered into the order
+       an afternoon actually happens in (see the debug-key map below). The pair
+       is what matters, not the digits: find it by the branch, and say so when
+       it moves. */
+    const at = msrc.indexOf("if (code === 'Digit6' || code === 'Digit7') {");
     const key = at > 0 ? msrc.slice(at, at + 1400) : '';
     ok('...and so does the debug key, which no longer hurts anybody',
       at > 0 && /this\.tournament\.(endBeat|nudge)\(/.test(key)
-      && !/\.hurt\(/.test(key), at > 0 ? '' : 'the Digit4/5 branch moved');
+      && !/\.hurt\(/.test(key), at > 0 ? '' : 'the END/NUDGE branch moved');
     /* IT ASKS `Tournament` AND DECIDES NOTHING ITSELF. The whole point of the
        key going through `callRound` was that it could not disagree with the
        game about who won; `endBeat` and `nudge` inherit that only for as long
@@ -13649,20 +13760,45 @@ console.log('\n--- the three power moves ---');
      function in device.js rather than a pile of `if`s in the game loop where no
      check could reach it. The hidden-tab one is not hypothetical: it is the bug
      this function was extracted after. */
+  /* MERELY SLOW, not unplayable: one millisecond under the hard rung, so these
+     cases are about the ORDINARY hold. It used to sit at 40 exactly, which is
+     `AUTO_HARD_MS` — the day the hard rung was added, every case below started
+     measuring the 1.2 s hold instead of the 4 s one without a word. */
+  const SLOW = AUTO_HARD_MS - 1;
   const V = (over) => autoQualityVerdict({
-    quality: 'high', medianMs: 40, visible: true, playable: true,
+    quality: 'high', medianMs: SLOW, visible: true, playable: true,
     now: 100000, badSince: 0, notBefore: 0, ...over,
   }).verdict;
 
   ok('a slow frame, held long enough, turns the picture down',
     autoQualityVerdict({
-      quality: 'high', medianMs: 40, visible: true, playable: true,
+      quality: 'high', medianMs: SLOW, visible: true, playable: true,
       now: 100000, badSince: 100000 - AUTO_HOLD_MS - 1, notBefore: 0,
     }).next === 'medium');
   ok('...but the first bad reading only starts the clock',
     V({ badSince: 0 }) === 'start');
   ok('...and a bad stretch shorter than the hold does nothing yet',
     V({ badSince: 100000 - AUTO_HOLD_MS + 500 }) === 'wait');
+
+  /* --- AND A STRETCH THAT IS NOT SLOW BUT UNPLAYABLE IS ACTED ON FAST ------
+     Reported from play: "if lagging in the arena, the graphics currently
+     aren't automatically stepping down." Four seconds of 25 FPS is a fair
+     thing to wait out — it might be one summon, one explosion. Four seconds of
+     40 ms frames is four seconds of a round she is losing because the game is
+     not drawing, and it was the SAME four seconds. The hard rung is the same
+     decision on a shorter fuse; nothing else about it changes. */
+  ok('a frame that is not merely slow but unplayable is acted on sooner',
+    V({ medianMs: AUTO_HARD_MS, badSince: 100000 - AUTO_HARD_HOLD_MS - 1 }) === 'step');
+  ok('...where a merely-slow one of the same length is still only waiting',
+    V({ medianMs: SLOW, badSince: 100000 - AUTO_HARD_HOLD_MS - 1 }) === 'wait');
+  ok('...and the short fuse is genuinely shorter than the ordinary one',
+    AUTO_HARD_HOLD_MS < AUTO_HOLD_MS && AUTO_HARD_MS > AUTO_BAD_MS);
+  /* THE SHORT FUSE IS STILL A FUSE. Acting on the first bad frame would step
+     the picture down for one stutter — the thing `badSince` exists to stop. */
+  ok('...but even an unplayable frame does not act on its first reading',
+    V({ medianMs: 999, badSince: 0 }) === 'start');
+  ok('...nor before its own hold is up',
+    V({ medianMs: 999, badSince: 100000 - AUTO_HARD_HOLD_MS + 100 }) === 'wait');
 
   /* A HIDDEN TAB IS NOT A SLOW MACHINE. `requestAnimationFrame` is throttled to
      roughly half a hertz in a background tab, so the frame ring fills with
@@ -16054,7 +16190,11 @@ console.log('\n--- the profile is as big as its cards have earned ---');
      turn every pixel of extra width into height. At one player on a 1920 the
      card was 800px wide and each orb was a 189px circle: eight of them were
      385px of card inside a body with 250px to give. */
-  const slots = css.slice(css.indexOf('.kd-slots {'), css.indexOf('.kd-slots {') + 400);
+  /* READ TO THE CLOSING BRACE, not for a fixed 400 characters. The halo's own
+     comment is longer than that window was, which quietly emptied this slice
+     and failed four checks at once about rules that had not moved. */
+  const slots = css.slice(css.indexOf('.kd-slots {'),
+    css.indexOf('\n}', css.indexOf('.kd-slots {')));
   const slot = Number(slots.match(/--slot:\s*(\d+)px/)?.[1]);
   const gap = Number(slots.match(/--slot-gap:\s*(\d+)px/)?.[1]);
   ok('an orb slot has a size it cannot grow past',
@@ -16070,6 +16210,55 @@ console.log('\n--- the profile is as big as its cards have earned ---');
   const rack = 2 * slot + gap;
   ok('...so the whole rack is two rows and nowhere near a scrollbar',
     rack < 0.94 * 1080 * 0.5, `${rack}px of rack`);
+
+  /* --- AND THE CURSOR RING AROUND AN ORB IS NOT CLIPPED OR CHASED ----------
+     Reported from play: "when in Character Profile screen, the kotodama when
+     being selected are getting cut off and they are all slightly shifting side
+     to side when scrolling to the last orb of each row. This shouldn't be
+     happening, also this used to not happen. Seems there is some sort of
+     bounding box blocking the edges of the kotodama orb UI."
+
+     ONE CAUSE, TWO SYMPTOMS, AND IT IS A CSS RULE NOBODY WROTE. The selected
+     orb scales to 1.12, so its ring reaches ~9px outside the slot. `#kd-body`
+     has `overflow-y: auto` for the dealer's long shelf — and the spec says an
+     unset axis beside a scrolling one is COMPUTED to `auto`, not left at
+     `visible`. MEASURED in the running game:
+     `getComputedStyle(kdBody).overflowX === "auto"`. So the ring is clipped at
+     the edges of the body (symptom one), and the overhang at the ends of a row
+     is real horizontal scrollable content that `scrollIntoView`'s default
+     `inline: "nearest"` then scrolls to and back (symptom two — the side to
+     side shift, on the last orb of each row and nowhere else).
+
+     `clip` RATHER THAN `visible`: `visible` is the value that gets coerced.
+     `clip` is honoured beside a scrolling axis, so the body stops scrolling
+     sideways at all — and then the ring needs somewhere legal to be, which is
+     what the padding is. Negative margin takes the space straight back, so
+     nothing about the layout moves. */
+  ok('the profile body cannot scroll sideways, whatever it is told about height',
+    /\.kd-panel > #kd-body\s*\{[^}]*overflow-x:\s*clip/.test(css));
+  const halo = Number(slots.match(/--slot-halo:\s*(\d+)px/)?.[1]);
+  ok('...and the rack leaves room for the ring that grows outside a slot',
+    halo > 0 && /padding:\s*var\(--slot-halo\)/.test(slots)
+    && /margin:\s*calc\(-1 \* var\(--slot-halo\)\)/.test(slots), `${halo}px`);
+  /* THE HALO HAS TO COVER THE SCALE IT IS FOR. 1.12 of a slot overhangs by
+     6% of it on each side, and the number is read off both rules rather than
+     typed here, so growing the selection cue fails this instead of silently
+     clipping again. */
+  {
+    const cur = css.slice(css.indexOf('.kd-slot.cursor {'), css.indexOf('.kd-slot.cursor {') + 160);
+    const grow = Number(cur.match(/transform:\s*scale\(([\d.]+)\)/)?.[1]);
+    const ring = Number(cur.match(/box-shadow:\s*0 0 0 (\d+)px/)?.[1]);
+    const reach = (slot * ((grow || 1) - 1)) / 2 + (ring || 0);
+    ok('...enough room for the exact scale the selected orb grows to',
+      grow > 1 && ring > 0 && halo >= reach,
+      `${halo}px for ${reach.toFixed(2)}px of reach — ${grow}x of ${slot}px plus a ${ring}px ring`);
+    /* AND THE MAX-WIDTH GREW WITH IT. Four slots plus three gaps was the whole
+       rack before the padding existed; leaving it there would have squeezed a
+       column by 18px to pay for the halo. */
+    ok('...and the rack is widened by it rather than narrowed to pay for it',
+      /max-width:\s*calc\(4 \* var\(--slot\) \+ 3 \* var\(--slot-gap\) \+ 2 \* var\(--slot-halo\)\)/
+        .test(slots));
+  }
 
   /* THE PANEL IS TOLD, AND ONLY THE PROFILE TELLS IT. The dealer is one shelf
      of full-width rows whose HEIGHT is what matters — narrowing it makes the
@@ -18135,7 +18324,7 @@ console.log('\n--- Mr. Satan loses his temper ---');
     ok('...and the panel no longer claims the board is the only thing kept',
       !/the only thing that outlives the tab/.test(msrc));
   }
-  ok("...including Mr. Satan's", handled.includes('Digit2') && listed.has('Digit2'));
+  ok("...including Mr. Satan's", handled.includes('Digit5') && listed.has('Digit5'));
 
   /* --- AND THE PANEL LISTS NOTHING IT NO LONGER DOES ---
      The rule above catches a key with no row. This is the other direction, and
@@ -18145,20 +18334,72 @@ console.log('\n--- Mr. Satan loses his temper ---');
      debug to remove the 7 dragonballs scenes and unnecessary commands. Let's
      remove Debug items 7, 8, 9, 5, M, Z."
 
-     `7` AND `8` HAVE BEEN REUSED, so they are named here rather than dropped
-     from the check: `7` is GO TO THE ARENA and `8` is the mischief batch, and
-     what has to be gone is the dragon hunt that used to be behind them. The
-     request was about the seven-stars shortcuts, not about the digits. */
+     THE DIGITS HAVE ALL BEEN REUSED, so they are checked as a map below
+     rather than named one at a time here; what has to be gone is the dragon
+     hunt that used to be behind `7`/`8`/`9`. The request was about the
+     seven-stars shortcuts, not about the digits. */
   ok('every row in the panel is a key the game still answers to',
     [...listed].every((c) => handled.includes(c)),
     [...listed].filter((c) => !handled.includes(c)).join(', ') || `${listed.size} rows`);
   ok('...and the seven-stars shortcuts are gone from both',
     !/_onAllBalls\(\)/.test(dbgBody) && !/freeSeat\(\)/.test(dbgBody)
     && !handled.includes('Digit9'));
-  ok("...and 7 is the arena now, through the scene viewer's own path",
-    handled.includes('Digit7') && /Digit7'\) this\._goToArena\(\)/.test(dbgBody));
-  ok('...and 8 is the mischief batch now',
-    handled.includes('Digit8') && /Digit8'\) this\._knockBatch\(\)/.test(dbgBody));
+
+  /* --- AND THE DIGITS RUN IN THE ORDER THE AFTERNOON DOES ------------------
+     Asked for: "let's organize the debug menu items so they are in
+     chronological order with chronological numbers to trigger them in order...
+     make the numbers/actions match with the game's chronological order of
+     events (knock over 50 happens before the endgame which happens before give
+     every kitten all 8 kotodama orbs etc.)".
+
+     THE ORDER IS THE DOCUMENTATION. Nothing in the code cares which digit
+     calls which method, so nothing but a check can stop the next new key being
+     dropped on whichever number was free — which is exactly how the old map
+     ended up with the mischief batch on `8`, the arena on `7` and the frame
+     counter on `1`, three unrelated tools interleaved with the story beats.
+
+     1 knock the mischief over, in batches   -- the afternoon's own work
+     2 unlock the endgame                    -- what 80% and 100% buy
+     3 hand out all eight kotodama           -- what she collects along the way
+     4 go to the arena                       -- where it ends up
+     5 make Mr. Satan lose his temper        -- a thing that happens in there
+     6 end whatever beat is live             -- and 7 nudges it on; both are
+     7 nudge it on                              about a beat, so they come last
+     8 the frame cost readout                -- the one TOOL, off the end
+
+     `8` IS THE READOUT NOW, not the mischief batch. CLAUDE.md's "press 1
+     before changing anything" is about this key, and moving it without moving
+     that sentence would send the next session to the knock-over batch while
+     they are trying to measure a stutter. */
+  const KEY_ORDER = [
+    ['Digit1', '_knockBatch'],
+    ['Digit2', '_debugEndgame'],
+    ['Digit3', '_debugAllOrbs'],
+    ['Digit4', '_goToArena'],
+    ['Digit8', '_togglePerf'],
+  ];
+  for (const [code, fn] of KEY_ORDER) {
+    ok(`...and ${code.slice(5)} is ${fn}`,
+      handled.includes(code)
+      && new RegExp(`code === '${code}'\\) this\\.${fn}\\(\\)`).test(dbgBody));
+  }
+  /* 5 IS MR. SATAN and 6/7 are END and NUDGE. Both are multi-line branches
+     rather than one-liners, so they are asked about by what the branch
+     contains rather than by its shape. */
+  ok('...and 5 is the tantrum', handled.includes('Digit5')
+    && /code === 'Digit5'\)[\s\S]{0,400}?provoke\(/.test(dbgBody));
+  ok('...and 6 and 7 are END and NUDGE, in that order',
+    /code === 'Digit6' \|\| code === 'Digit7'\)[\s\S]{0,200}?const nudge = code === 'Digit7'/
+      .test(dbgBody));
+  /* AND THE PANEL PRINTS THEM IN THE SAME ORDER IT ASKS THEM TO BE PRESSED IN.
+     A map that runs 1..8 and a list that runs 8..1 is the same drift one level
+     out, and the panel is the only documentation these keys have. */
+  const digitRows = [...msrc.matchAll(/\$\{row\('Digit(\d)'/g)].map((m) => +m[1]);
+  const storyRows = digitRows.filter((d) => d >= 1 && d <= 8);
+  ok('...and the panel lists the digits in that same order, 1 to 8',
+    storyRows.length === 8
+    && storyRows.every((d, i) => i === 0 || d > storyRows[i - 1]),
+    storyRows.join(''));
 
   /* `M` AND `Z` WERE PROMOTED, NOT DELETED. They had rows because they were
      the only way to reach the maths overlay and the map zoom from a keyboard —
@@ -18253,7 +18494,7 @@ console.log('\n--- Mr. Satan loses his temper ---');
      for the key — the gag has to be reached by walking up to him. */
   ok('nothing but the debug key provokes him',
     (msrc.match(/provoke\(/g) ?? []).length === 1
-      && /Digit2'\)[\s\S]{0,600}?provoke\(\)/.test(msrc));
+      && /Digit5'\)[\s\S]{0,600}?provoke\(\)/.test(msrc));
 
   /* --- AND IT REALLY DOES COST NOTHING, WHICH IS ITS WHOLE LICENCE ---
      THIS IS THE CHECK THAT WOULD HAVE CAUGHT IT, and it is written on the two
@@ -18474,6 +18715,76 @@ console.log('\n--- seeing through the arena ---');
      to match would cost every building in the town its own shade. */
   ok('...and they go on casting their shadows, unlike the posts',
     world.townXray.every((m) => m.castShadow === true));
+
+  /* --- AND EVERY OTHER ISLAND, BECAUSE SHE PLAYS ON THOSE TOO -------------
+     Reported from play: "trees on other islands do not have the x-ray shader
+     applied like on the main island, this should apply to everything in the
+     game."
+
+     THE TOWN GOT IT AND THE OUTLYING ISLANDS DID NOT, which is the shape a
+     fix takes when it is applied where the bug was reported rather than where
+     the rule is. `_scatterOutlying` builds the same cherry trees, the same
+     stone lanterns and the same little house out of the same builders, merges
+     them into one mesh, and gave that mesh a plain toon material — so a kitten
+     chasing a barrel behind a tree on the second island stood behind a tree,
+     which is precisely the complaint the town's x-ray was added for.
+
+     ASKED OF THE MESHES THE WORLD ACTUALLY BUILT, not of the source: a
+     material handed to the wrong one of two merges is the failure this is
+     for, and source text cannot tell them apart. */
+  ok('the outlying islands are see-through as well', Array.isArray(world.outlyingXray)
+    && world.outlyingXray.length > 0, `${world.outlyingXray?.length} mesh(es)`);
+  ok('...in the same material the town uses, not a look-alike',
+    world.outlyingXray.every((m) => typeof m.material.setCuts === 'function'));
+  /* AND PER-PART, WHICH IS THE HALF THAT MAKES IT LOOK RIGHT. `xrayK` is a
+     vertex attribute: a canopy dissolves almost completely and the trunk it
+     hangs on barely does, because a trunk that vanishes leaves a tree floating.
+     A merge with the material but no attribute would come out uniform — every
+     vertex at the shader's default — which reads as a bug in the other
+     direction. */
+  ok('...and each piece carries its own strength, not one for the whole island',
+    world.outlyingXray.every((m) => {
+      const a = m.geometry.getAttribute('xrayK');
+      if (!a) return false;
+      const seen = new Set();
+      for (let i = 0; i < a.count; i++) seen.add(Math.round(a.getX(i) * 1000));
+      return seen.size >= 2;
+    }));
+  /* THE SHRINE ISLAND IS ONE OF THEM. It is built by its own function rather
+     than by the scatter, so it is the piece a fix aimed at "the islands" would
+     miss — and it carries a torii, which is exactly the sort of thing a kitten
+     walks behind. */
+  ok('...the shrine island among them, which is built by its own hand',
+    (world.outlyingXray.length >= 2), `${world.outlyingXray.length}`);
+  /* THE GROUND IS NOT. A floor that opened a hole under her would show the sky
+     through the island she is standing on — `XRAY_K.road` is zero for the same
+     reason, and the ground meshes are not in this list at all. */
+  ok('...and the ground they stand on is not in that pile',
+    world.outlyingXray.every((m) => m !== world.ground && m.name !== 'ground'));
+  /* AND SOMETHING AIMS THEM. THIS IS THE HALF THAT WOULD HAVE BEEN MISSED:
+     the material alone does nothing — the cut lives in its uniforms and never
+     opens until `setCuts` is called on it, so a mesh with `xrayVertexMat` and
+     nobody pointing it is a mesh that looks exactly like the bug. The first
+     pass of this fix did precisely that: both merges got the material, neither
+     was kept, and nothing in the game could have found them again. */
+  {
+    const mAim = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+      .replace(/\r/g, '');
+    const at = mAim.indexOf('  _aimTownXray(camera, members) {');
+    const body = at > 0 ? mAim.slice(at, mAim.indexOf('\n  }\n', at)) : '';
+    ok('...and the town\'s aim walks them beside the town\'s own meshes',
+      at > 0 && /this\.world\.outlyingXray/.test(body)
+      && /for \(const m of meshes\) m\.material\.setCuts\?\./.test(body));
+    /* AND THE WHOLE WORLD'S WORTH IN ONE CALL, not a second method with a
+       second copy of the same reach rule. The grottos have their own because
+       their rule genuinely differs; these do not, and two copies of one rule
+       is the thing this file exists to stop.
+       ASKED OF THE TEST, NOT OF THE WORD. Counting every `TOWN_XRAY_FAR` in
+       the file counts the comment that explains it, which is a check that
+       fails when somebody writes a better comment. */
+    ok('...through the one rule, not a second copy of it',
+      (mAim.match(/> TOWN_XRAY_FAR\) continue;/g) ?? []).length === 1);
+  }
 
   const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
     .replace(/\r/g, '');
@@ -20260,6 +20571,48 @@ console.log('\n--- one press is not enough, and one player drives ---');
      is the same fraction of the frame in both scenes. Change either lens and
      this still passes; hardcode a distance in either and it fails. */
   const cut = readFileSync(new URL('../src/systems/cutscene.js', import.meta.url), 'utf8');
+
+  /* --- AND THE WORDS SURVIVE SOMEBODY ELSE HAVING USED THE BOX ------------
+     Reported from play: "when doing 'watch the story again' after forcing the
+     ending cutscene using the debug shortcut, it is not showing the dialog
+     text correctly."
+
+     THE CAUSE IS SHARED FURNITURE, NOT THE REPLAY. There is one `#cs-text` in
+     the document and three systems write to it. `Cutscene` is the only one
+     that keeps CHILDREN in it — two spans, `saidEl` and `restEl`, which is the
+     hidden-tail trick that stops a typewriter reflowing its own line as it
+     types. `SummonScene` and `ShrineScene` write `textContent`, and writing
+     `textContent` REPLACES every child: after either of them has run, the two
+     spans are orphans and every `saidEl.textContent = …` in this file lands on
+     a node that is no longer in the page. The box goes blank, the voice plays
+     over it, and nothing throws.
+
+     SO THEY ARE RE-MOUNTED PER BEAT rather than once in `play()`. A scene can
+     be interrupted mid-beat by a pause, a skip, or the shrine introduction that
+     the debug key runs the finale from; the beat is the smallest unit that is
+     always entered before a word is drawn, and `replaceChildren` is a no-op
+     when the two are already the only children, so the cost is a comparison. */
+  ok('the dialogue box re-mounts its two spans as each beat starts',
+    /if \(this\.saidEl\.parentNode !== this\.textEl \|\| this\.textEl\.childNodes\.length !== 2\) \{/
+      .test(cut)
+    && cut.indexOf('this.textEl.replaceChildren(this.saidEl, this.restEl);')
+      > cut.indexOf('_nextBeat('));
+  /* IN `_nextBeat`, NOT IN `play`. A scene that started while the box was
+     intact and was interrupted later would put its own words back and lose
+     every word after the interruption. */
+  {
+    const nb = cut.indexOf('  _nextBeat(');
+    const nbEnd = cut.indexOf('\r\n  }\r\n', nb) + 1 || cut.indexOf('\n  }\n', nb);
+    ok('...inside the beat, which is the only thing entered before every line',
+      nb > 0 && cut.slice(nb, nbEnd).includes('replaceChildren(this.saidEl, this.restEl)'));
+  }
+  /* AND THE OTHER TWO SCENES REALLY DO CLEAR IT THAT WAY, which is what makes
+     the line above necessary rather than defensive. If this ever fails because
+     they stopped, the re-mount can go — but it must be deleted knowingly. */
+  ok('...because the other scenes in that box still replace its children',
+    ['summonscene', 'shrinescene'].every((f) => /textEl\.textContent = /.test(
+      readFileSync(new URL(`../src/systems/${f}.js`, import.meta.url), 'utf8'))));
+
   const introFov = Number(cut.match(/PerspectiveCamera\((\d+), 1, /)?.[1]);
   const introD = Number(cut.match(/const d = (\d+);/)?.[1]);
   const introH = Number(cut.match(/const quad = (\d+) \/ \(art\.contentScale/)?.[1]);
@@ -22766,6 +23119,289 @@ console.log('\n--- one press is not enough, and one player drives ---');
     S.finish();
   }
 
+  /* --- NOBODY TALKS OVER IT, AND NOBODY STANDS IN IT ----------------------
+     Two reports, one method, because they are two flags on one moment:
+
+       "when playing the ending cutscene, if there is any dialog happening
+       (like by Patchfur counting down the final mischief) the dialog should be
+       cancelled and removed and not queued up if the ending cutscene is being
+       played or about to be played as the final mischief has been knocked
+       over."
+
+       "when the ending cutscene is being played, we should temporarily remove
+       or hide the players and their orbs/effects around them as they should
+       not be appearing in the cutscene, they should reappear once the ending
+       cutscene is complete."
+
+     THE VOICE GOES QUIET EARLIER THAN THE CAST DOES. `_finaleDue` is set the
+     frame the counter lands and the scene may wait several seconds behind
+     whatever owns the screen — that whole wait is time the elder must not be
+     saying "One! One last thing standing in the whole sky!" in the corner. But
+     a kitten who blinked out of the world during the tail of somebody else's
+     scene would be a bug, so the cast waits for the finale to really be on.
+
+     LIFTED OUT OF `main.js`, not re-implemented — the `_wreckWorld` trick. */
+  {
+    const msrc3 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+      .replace(/\r\n/g, '\n');
+    const endOf = (src, at) => {
+      const m = /\n {2}\}\n/.exec(src.slice(at));
+      return m ? at + m.index : at;
+    };
+    const SIG = '\n  _updateFinaleHold(force = false) {';
+    const at = msrc3.indexOf(SIG);
+    ok('the finale hold is where this check thinks it is', at > 0);
+    const from = msrc3.indexOf('{', at + 1) + 1;
+    const body = msrc3.slice(from, msrc3.indexOf('\n  }\n', from));
+    // eslint-disable-next-line no-new-func
+    const hold = new Function(`return function (force = false) {${body}\n};`)();
+
+    const mkOrb = () => ({ group: { visible: true } });
+    const mkKit = () => ({ group: { visible: true }, wornOrbs: [mkOrb(), mkOrb()] });
+    const mkG = (over) => ({
+      players: [mkKit(), mkKit()],
+      summonScene: { active: false, which: null },
+      _finaleDue: false,
+      /* THE SAME TWO THE CONSTRUCTOR DECLARES, and for the same reason: both
+         are edges, and an edge against `undefined` fires once for free. */
+      _finaleHush: false,
+      _castHidden: false,
+      hushes: [],
+      announcer: { hush(on) { this.owner.hushes.push(on); } },
+      ...over,
+    });
+    const G = (over) => { const g = mkG(over); g.announcer.owner = g; return g; };
+    const seen = (g) => g.players.every((p) => p.group.visible)
+      && g.players.every((p) => p.wornOrbs.every((o) => o.group.visible));
+
+    const g1 = G();
+    hold.call(g1);
+    ok('an ordinary frame hushes nobody and hides nobody',
+      g1.hushes.length === 0 && seen(g1), g1.hushes.join(','));
+    /* AND THE GAME REALLY DOES START THERE, or the line above is a statement
+       about this fixture and not about the game. */
+    ok('...and the game declares both latches, so that first frame is free',
+      /this\._finaleHush = false;/.test(msrc3) && /this\._castHidden = false;/.test(msrc3));
+
+    /* DUE, BUT NOT YET PLAYING — the several seconds the report is about. */
+    g1._finaleDue = true;
+    hold.call(g1);
+    ok('...the frame the hundredth percent lands, the announcer goes quiet',
+      g1.hushes.at(-1) === true);
+    ok('...but the kittens are still in the world, since nothing is playing yet',
+      seen(g1));
+    /* AND IT IS AN EDGE, NOT A SHOUT. `hush(true)` empties the queue, so
+       calling it every frame would be a card that can never finish drawing. */
+    hold.call(g1);
+    hold.call(g1);
+    ok('...and it is said once, not on every frame of the wait',
+      g1.hushes.length === 1, `${g1.hushes.length}`);
+
+    g1.summonScene.active = true;
+    g1.summonScene.which = 'finale';
+    hold.call(g1);
+    ok('...and once it is really playing, the cast is out of the shot',
+      g1.players.every((p) => !p.group.visible));
+    ok('...their orbs with them, which orbit them and would be in it too',
+      g1.players.every((p) => p.wornOrbs.every((o) => !o.group.visible)));
+
+    g1.summonScene.active = false;
+    g1.summonScene.which = null;
+    g1._finaleDue = false;
+    hold.call(g1);
+    ok('...and every one of them is put back when it ends', seen(g1));
+    ok('...and the announcer gets her voice back with them',
+      g1.hushes.at(-1) === false);
+    /* NOTHING IS LOST — fourth non-negotiable, read about a kitten. A restore
+       that ran only on the falling edge of `playing` would leave her invisible
+       for ever if the scene was skipped on a frame the flag had already
+       dropped, which is why `_castHidden` is a latch and not a comparison. */
+    hold.call(g1);
+    ok('...and they stay put back, however many frames go by', seen(g1));
+
+    /* SOMEBODY ELSE'S SCENE IS NOT THE ENDING. A shrine introduction that
+       emptied the town of kittens would be this fix applied one scene too
+       wide. */
+    const g2 = G({ summonScene: { active: true, which: 'ryuuseki' } });
+    hold.call(g2);
+    ok('another scene entirely hides nobody', seen(g2));
+
+    /* AND THE DOOR FORCES IT, BEFORE THE FIRST WORD. `start` calls
+       `audio.speak`; a hush arriving on the NEXT frame would stop the elder's
+       own first sentence with the same `stopSpeaking` that was meant to take
+       the announcer's. */
+    const startF2 = msrc3.slice(msrc3.indexOf('  _startFinale() {'),
+      endOf(msrc3, msrc3.indexOf('  _startFinale() {')));
+    ok('...and the ending hushes the card before it says a word',
+      startF2.indexOf('this._updateFinaleHold(true)') > 0
+      && startF2.indexOf('this._updateFinaleHold(true)')
+        < startF2.indexOf("summonScene.start('finale'"));
+
+    /* --- AND SOMETHING CALLS IT ON EVERY FRAME OF THE SCENE ----------------
+       THIS IS THE CHECK THAT WOULD HAVE CAUGHT IT, and everything above passed
+       while it was broken. `_tickBody`'s scene branches each RETURN — that is
+       what "the scene owns the screen" means — so the call at the bottom of
+       the method, which is where this one started, never ran on a single frame
+       of the ending it was written for. MEASURED in the running game: the
+       announcer was hushed (that half is forced at `_startFinale`) and the
+       kitten was still standing in the shot 900ms in.
+
+       Three call sites, each for a different frame: the forced one before
+       `start` (silence before the first word), one inside the branch (every
+       frame of the scene), and one at the bottom (the restore, on the frame
+       `active` goes false again). */
+    const tick = msrc3.slice(msrc3.indexOf('  _tickBody() {'),
+      endOf(msrc3, msrc3.indexOf('  _tickBody() {')));
+    const brAt = tick.indexOf('if (this.summonScene?.active) {');
+    const branch = brAt > 0 ? tick.slice(brAt, tick.indexOf('\n    }\n', brAt)) : '';
+    ok('...and the hold is ticked INSIDE the branch that owns the screen',
+      brAt > 0 && /this\._updateFinaleHold\(\);/.test(branch),
+      brAt > 0 ? '' : 'the summon-scene branch moved');
+    /* BEFORE THE RENDER IN THAT BRANCH, or the frame it is called on is drawn
+       with the cast still in it and the fix is one frame late every time. */
+    ok('...before that branch draws anything',
+      branch.indexOf('this._updateFinaleHold();')
+        < branch.indexOf('this._renderView(this.summonScene.camera'));
+    /* AND THE RESTORE IS STILL OUTSIDE IT. A hold that only ran inside the
+       branch would leave four invisible kittens in the town for ever — fourth
+       non-negotiable, read about a player. */
+    const after = tick.slice(tick.indexOf('\n    }\n', brAt));
+    ok('...and it is still called where `active` is false, so they come back',
+      /this\._updateFinaleHold\(\);/.test(after));
+    ok('...and the scene’s own door hides them on its first frame, not its second',
+      (startF2.match(/this\._updateFinaleHold\(\)/g) ?? []).length === 1
+      && startF2.indexOf('this._updateFinaleHold();')
+        > startF2.indexOf("summonScene.start('finale'"));
+
+    /* --- AND THE DOOR IS OPEN BEFORE SHE TELLS THEM TO WALK THROUGH IT -----
+       "The arena should be unlocked with the ending cutscene if it is not
+       currently unlocked yet." 100% mischief does not guarantee it: the arena
+       opens at `OPEN_AT`, and `8` — or a kid who knocks the last prop over
+       having never gone near Mr. Satan — can reach the ending with the gate
+       still shut. The last thing the elder says is to go and fight in it. */
+    ok('...and it opens the arena on the way in',
+      startF2.indexOf('this._openTournament()') > 0
+      && startF2.indexOf('this._openTournament()')
+        < startF2.indexOf("summonScene.start('finale'"));
+    const openT = msrc3.slice(msrc3.indexOf('  _openTournament() {'),
+      endOf(msrc3, msrc3.indexOf('  _openTournament() {')));
+    /* IT IS SAFE TO ASK TWICE. Three doors lead here (the counter, the scene
+       viewer and WATCH AGAIN) and the arena is normally already open by the
+       time any of them fire, so the common case is the second call. */
+    ok('...through the one method, which says whether it did anything',
+      /const was =/.test(openT) && /return was !== 'open';/.test(openT));
+    ok('...and the unlock path uses that same method rather than a copy',
+      /this\._openTournament\(\)/.test(
+        msrc3.slice(msrc3.indexOf('  _unlockEndgame('),
+          endOf(msrc3, msrc3.indexOf('  _unlockEndgame(')))));
+  }
+
+  /* --- AND `hush` REALLY IS DIFFERENT FROM `clear` ------------------------
+     The other half of the same report, asked of the announcer itself. `clear`
+     empties the queue and lets a line that is mid-word finish — that is
+     deliberate and right everywhere else in the game. The ending is the one
+     moment it is wrong, and the two differences are the two halves of the ask:
+     "cancelled and removed" (the card on screen goes, audio and all) and "not
+     queued up" (it goes on refusing for the whole minute).
+
+     RUN AGAINST THE REAL CLASS on a DOM stub that returns elements, because
+     `_end` touches `classList` and the file-wide stub answers `null` — a check
+     written against source text would pass on a `hush` that threw. */
+  {
+    const docWas = globalThis.document;
+    const mkEl = () => ({
+      textContent: '', style: { setProperty() {} },
+      classList: { add() {}, remove() {}, toggle() {} },
+      replaceChildren() {}, appendChild() {}, getContext: () => null,
+    });
+    globalThis.document = { getElementById: () => mkEl(), createElement: () => mkEl() };
+    try {
+      const stopped = [];
+      const A = new Announcer({ audio: { stopSpeaking: () => stopped.push(1) } });
+      A.say('a', 'one');
+      A.say('b', 'two');
+      ok('the announcer queues lines in the ordinary way', A.queue.length === 2);
+      A.update(0);
+      ok('...and holds one on screen', A.active === true && A.queue.length === 1);
+
+      A.hush();
+      ok('a hush takes the card that is up off the screen', A.active === false);
+      ok('...and stops the voice with it, which `clear` deliberately does not',
+        stopped.length === 1);
+      ok('...and empties what was waiting behind it', A.queue.length === 0);
+      /* THE REFUSAL IS THE HALF THAT LASTS. `lasthunt`'s stalled-hunt hint and
+         Mr Satan's milestones both fire on their own clocks; without this they
+         queue up through the ending and the card slides in over the last shot
+         of it. */
+      A.say('c', 'three');
+      A.update(0);
+      ok('...and goes on refusing, so nothing queues up behind the ending',
+        A.queue.length === 0 && A.active === false);
+
+      A.hush(false);
+      A.say('d', 'four');
+      A.update(0);
+      ok('...until it is let go, and then he talks again', A.active === true);
+
+      /* AND `clear` IS UNCHANGED. It is called when the tournament is torn
+         down, dozens of times an afternoon; if the fix had been made there
+         instead, every round would cut him off mid-syllable. */
+      const B = new Announcer({ audio: { stopSpeaking: () => stopped.push(2) } });
+      B.say('e', 'five');
+      B.update(0);
+      const before = stopped.length;
+      B.clear();
+      ok('...and an ordinary clear still does not stop the audio',
+        stopped.length === before);
+      ok('...nor latch anything shut', B.hushed === false);
+    } finally {
+      globalThis.document = docWas;
+    }
+  }
+
+  /* --- AND IT HAS ITS OWN MUSIC, WHICH MOVES WITH THE PICTURE -------------
+     "We should play some nice ending cutscene music, specifically for the
+     ending cutscene, the music could match some of the actions being shown on
+     the screen in the cutscene."
+
+     THE SCENE NAMES A TRACK AND THE GAME'S ONE MUSIC AUTHORITY READS IT.
+     `Game._updateMusic` is the only thing that starts a piece; a scene calling
+     `audio.music(...)` itself would be a second authority, and the next thing
+     the game decided to play would talk over the ending without either of them
+     knowing. */
+  {
+    const ssrc = readFileSync(new URL('../src/systems/summonscene.js', import.meta.url), 'utf8');
+    const asrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+    const msrc4 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('the ending names its own piece of music',
+      /this\.musicTrack = which === 'finale' \? 'finale' : null;/.test(ssrc));
+    ok('...and drops it again when the scene is over',
+      /this\.musicTrack = null;/.test(
+        ssrc.slice(ssrc.indexOf('  finish('), ssrc.indexOf('  finish(') + 2500)));
+    ok('...and the game’s one music authority is what reads it',
+      /const ending = this\.summonScene\?\.musicTrack;/.test(msrc4)
+      && /if \(ending\) return ending;/.test(msrc4));
+    ok('...and the scene never starts a piece behind its back',
+      !/audio\?\.\.?music\(/.test(ssrc) && !/\.music\(/.test(ssrc));
+    /* THE CUES ARE REAL SHOTS AND THE PIECES ARE REAL PIECES. A typo in either
+       half is silence where a change of music was meant to be, which is the
+       one failure nobody notices while watching. */
+    const cues = Object.entries(MUSIC_CUES);
+    ok('...and every music cue is a shot the ending actually cuts to',
+      cues.length >= 2 && cues.every(([cue]) => FINALE_SHOTS.some((sh) => sh.cue === cue)),
+      cues.map(([c]) => c).join(' '));
+    ok('...and every piece it names is one the synth can play',
+      cues.every(([, piece]) => new RegExp(`\\n {2}${piece}: \\{`).test(asrc)),
+      cues.map(([, p]) => p).join(' '));
+    ok('...and the piece the scene opens on is one too',
+      /\n {2}finale: \{/.test(asrc));
+    /* AND THE CUE ROW IS WHAT SWITCHES IT, not a timer running beside the
+       scene. Word-keyed like everything else in this shot list, so a re-recorded
+       line takes the music with it. */
+    ok('...and the switch happens on the shot, not on a clock',
+      /if \(MUSIC_CUES\[shot\.cue\]\) this\.musicTrack = MUSIC_CUES\[shot\.cue\];/.test(ssrc));
+  }
+
   /* --- A TRUCK ACROSS THE WRECKAGE, NOT A SWING AROUND IT ----------------
      "For the part 'there is nothing left standing', the camera is still moving
      too fast and rotating around a point, it would be better if the camera just
@@ -24535,18 +25171,41 @@ console.log('\n--- one press is not enough, and one player drives ---');
       /class="menu-btn hidden" id="btn-ending-again" data-action="ending-again">WATCH THE ENDING AGAIN/
         .test(watchP));
     const seen = main.slice(main.indexOf('  _endingSeen() {'), main.indexOf('  _paintWatch() {'));
+    /* IT IS ONE LATCH NOW, SET AT THE ONE DOOR. It used to be read off two
+       other people's state — `_endingShown` (a queue flag) AND
+       `summonScene.played.finale` — which made `replayEnding` clear the second
+       one to replay, and clearing it un-answered the question that decides
+       whether the row exists at all. Watch it twice and the row vanished. */
     ok('...shown only once THIS game reached the ending and the scene really started',
-      /this\._endingShown && this\.summonScene\?\.played\?\.finale/.test(seen)
+      /return !!this\._endingWatched;/.test(seen)
       && /_paintWatch\(\); show\('panel-watch'\)/.test(main));
+    const startF = main.slice(main.indexOf('  _startFinale() {'),
+      endOf(main, main.indexOf('  _startFinale() {')));
+    ok('...and the latch is set by the scene STARTING, not by the counter landing',
+      /const ok = this\.summonScene\.start\('finale'/.test(startF)
+      && /if \(ok\) this\._endingWatched = true;/.test(startF));
+    /* AND IT IS THIS GAME'S. Carried in the save so an afternoon loaded back
+       still offers the row, and cleared by `_restart` so a brand new game does
+       not open with an offer to rewatch an ending nobody in it has seen. */
+    const sgAll = readFileSync(new URL('../src/systems/savegame.js', import.meta.url), 'utf8');
+    ok('...carried by the save and cleared by a restart, so it is THIS game’s',
+      /watched: !!game\._endingWatched/.test(sgAll)
+      && /game\._endingWatched = snap\.watched != null/.test(sgAll)
+      && /this\._endingWatched = false;/.test(
+        main.slice(main.indexOf('  restart() {'), endOf(main, main.indexOf('  restart() {')))));
     const re = main.slice(main.indexOf('  replayEnding() {'),
       endOf(main, main.indexOf('  replayEnding() {')));
     ok('...and it refuses out loud in a live match or over another scene',
       /tournament\?\.active/.test(re) && /_sceneActive\(\)/.test(re)
       && (re.match(/this\.toast\(/g) ?? []).length >= 2);
+    /* AND IT GOES THROUGH THE ONE DOOR. `_startFinale` is what hushes the
+       announcer, hides the cast and opens the arena; a replay that called
+       `summonScene.start` itself would be a second ending with Patchfur
+       talking over herself and four kittens standing in the shot. */
     ok('...and replays the scene only — no second Awakening, no second 100%',
-      re.indexOf('played.finale = false') < re.indexOf("start('finale'")
+      re.indexOf('played.finale = false') < re.indexOf('this._startFinale()')
       && !/_finaleDue/.test(re.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, ''))
-      && !/awaken\(/.test(re));
+      && !/awaken\(/.test(re) && !/summonScene\.start\(/.test(re));
   }
 
   /* --- 9. AND THE HELP PAGE STOPS APOLOGISING FOR IT --------------------

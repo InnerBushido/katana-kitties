@@ -83,6 +83,58 @@ export const MUSIC = {
   /* ---- the two story pieces, unchanged ---- */
   intro: { scale: INSEN, beat: 0.78, oct: 0.5, drone: 0.20, taiko: 8, rest: 0.62 },
 
+  /* ---- THE ENDING, IN THREE ACTS ------------------------------------------
+     Asked for as: "we should play some nice ending cutscene music, specifically
+     for the ending cutscene, the music could match some of the actions being
+     shown on the screen in the cutscene."
+
+     UNTIL NOW THE ENDING PLAYED THE ISLAND THEME. `Game._updateMusic` decides
+     from where the KITTENS are standing, and during the finale they are
+     standing wherever they were when the last barrel went over — so the last
+     minute of the game, a scene whose camera crosses the whole archipelago,
+     was scored by whichever meadow somebody happened to be in. Nothing was
+     wrong; nothing was about it either.
+
+     THREE PIECES, NOT ONE, AND THE CUTS ARE THE SCENE'S OWN. Every switch here
+     lands on a shot change that already exists in `FINALE_SHOTS` — see
+     `SummonScene._cue`, which is the one place that names them — so the music
+     turns when the picture turns rather than on a beat count that would have to
+     be re-timed every time a line is re-recorded. Three, because the ending has
+     three subjects: what they broke, what they crossed, and where they are
+     being sent next.
+
+     THEY ARE ALL THE SAME KOTO IN THE SAME KEY FAMILY as everything else. A
+     minute of something that does not sound like this game would read as a
+     video playing rather than as the game finishing. */
+  /* ACT ONE — the wreckage, and the elder's first two lines over it. INSEN,
+     the STORY scale: the same one the opening cutscene uses, so the ending
+     answers the beginning. Slower than anything else in the game, an octave
+     down, a heavy drone and no drum at all — she is talking over most of it
+     and a piece with an opinion would be competing with her. */
+  finale: { scale: INSEN, beat: 0.86, oct: 0.5, drone: 0.26, taiko: 0, rest: 0.66 },
+  /* ACT TWO — "you crossed." The archipelago drawing apart on the Dojo floor
+     and the two kittens on the bridge. YO has no semitones, so nothing in it
+     can come out sad, and it lifts an octave and a fifth out of act one's
+     gloom without changing instrument. The bell is the Dojo's (`dojo` and
+     `frost` are the only other pieces with one) — this act is the maths, and
+     it should sound like the room the maths lives in. */
+  finaleCross: {
+    scale: YO, beat: 0.58, root: 164.81, oct: 1, drone: 0.14,
+    taiko: 0, rest: 0.60, bell: true,
+  },
+  /* ACT THREE — "the arena is open. Go and find out." The matsuri arriving
+     from a long way off: HIRAJOSHI up a fifth with a taiko and fifths is the
+     ARENA's own theme (see `arena`), deliberately, because this is the last
+     shot pointing at it and the piece a kid hears next when she flies out
+     there is the piece she heard here. Slower than the real thing — the
+     tournament is a promise at this point, not a fight — and the drum is every
+     fourth step rather than every other, so `starfound` on "is open" has
+     somewhere to land. */
+  finaleOpen: {
+    scale: HIRAJOSHI, beat: 0.44, root: 174.61, oct: 1, drone: 0.18,
+    taiko: 4, rest: 0.54, fifths: true,
+  },
+
   /* ---- the islands ---- */
   /* HOME KEEPS THE TUNE THEY ALREADY KNOW. `play` is still the theme from
      before this existed, note for note, because the home island is where both

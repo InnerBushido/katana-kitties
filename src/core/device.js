@@ -168,6 +168,30 @@ export const AUTO_BAD_MS = 25;
 export const AUTO_HOLD_MS = 4000;
 export const AUTO_GRACE_MS = 3000;
 
+/* ...AND A SECOND RUNG FOR WHEN IT IS NOT MARGINAL.
+   40 ms is 25fps. The pair above is tuned for a machine that is a bit short of
+   sixty and describes a judgement — "bad enough that a kid has already noticed,
+   held long enough that one heavy moment cannot trip it". At 25fps there is
+   nothing left to judge: the game is visibly broken, and making somebody watch
+   it be broken for four more seconds to prove it is not a heavy moment is the
+   watcher being careful at the player's expense.
+
+   REPORTED FROM PLAY AS "if lagging in the arena, the graphics currently
+   aren't automatically stepping down". The arena is the heaviest thing this
+   game draws and the gates were all open there — `state` is `play`, nothing
+   is paused and no scene owns the screen (world-check pins that now, see
+   `Game._autoJudgeable`). What it had to survive was the WAIT: the frame ring
+   is 120 samples, so at 25fps it takes nearly five seconds to fill with the
+   truth, and only then does the four-second hold start. Nine seconds of a
+   round is most of a round.
+
+   1.2 s is still longer than any hitch this game produces — the ones that were
+   measured (flying into town, a tournament starting, twenty props going over)
+   are all well under a second — and it is the same clock, so a stretch that
+   is merely bad still has to hold for the full four. */
+export const AUTO_HARD_MS = 40;
+export const AUTO_HARD_HOLD_MS = 1200;
+
 /**
  * Should the game turn itself down this frame?
  *
@@ -200,7 +224,14 @@ export function autoQualityVerdict({
   if (!next) return { verdict: 'reset' };
   if (!medianMs || medianMs < AUTO_BAD_MS) return { verdict: 'reset' };
   if (!badSince) return { verdict: 'start' };
-  if (now - badSince < AUTO_HOLD_MS) return { verdict: 'wait' };
+  /* WHICH CLOCK THIS STRETCH IS ON is decided from the frame time as it stands
+     NOW, not from what it was when the clock started. A stretch that begins
+     merely bad and gets worse should be acted on at the short hold — that is
+     exactly the shape of a round starting in an arena that cannot afford it —
+     and one that starts terrible and recovers to merely bad goes back onto the
+     long hold on the same frame, which is the conservative direction. */
+  const hold = medianMs >= AUTO_HARD_MS ? AUTO_HARD_HOLD_MS : AUTO_HOLD_MS;
+  if (now - badSince < hold) return { verdict: 'wait' };
   return { verdict: 'step', next };
 }
 
