@@ -271,10 +271,37 @@ export const BIG_PANE_IN = 0.75;
 export function paneWiden(panes, i, W, H) {
   const p = panes?.[i];
   if (!p || p.w <= 0 || p.h <= 0 || W <= 0 || H <= 0) return 1;
-  if (panes.every((q) => q.w === p.w && q.h === p.h)) return 1;
   const k = (W / H) / (p.w / p.h);
-  const share = (W * H) / panes.length;
-  return Math.max(1, p.w * p.h > share ? k * BIG_PANE_IN : k);
+  /* AN EVEN SPLIT IS MEASURED AGAINST A QUADRANT, NOT AGAINST ITS SHARE.
+     The exemption above used to be unconditional — an even split returned 1
+     and stopped — and it was wrong in exactly one arrangement, which is the
+     one that was then reported: "camera is too zoomed in when just 2 players
+     on split screens and split direction set to side by side."
+
+     Two even panes side by side at 1920x1080 are 958x1080, aspect 0.89
+     against a quadrant's 1.78: that pane shows HALF the world across it that
+     a quarter of the same screen would, which is the narrowest framing in the
+     game and was the one rectangle the rule excused. Stacked, the same two
+     panes are 1920x538 — aspect 3.57, already wider than a quadrant, and k
+     clamps to 1 with nothing to fix. So this moves side by side and leaves
+     stacked, quadrants and the shared screen bit-identical, which is what the
+     report describes and all it describes.
+
+     THIS IS A DELIBERATE MOVE OF THE TWO-PLAYER CAMERA, asked for by name.
+     The fifth non-negotiable is about four-player work dragging the two-player
+     game with it by accident; it is not a veto on the director fixing the
+     two-player game on purpose. The checks that pinned the old number now pin
+     this one.
+
+     AND IT KEEPS ONLY PART OF THE WIDENING, by the same argument BIG_PANE_IN
+     already makes for the 62/38 split's wide column: a quadrant is the floor
+     for what a pane may SHOW, not the ceiling for how close it may sit, and
+     half the screen is twice a quadrant's pixels. 2.00x -> 1.50x. The four
+     even quadrants are exactly a quarter each, so the test is `>` and they
+     are left where they are. */
+  const even = panes.every((q) => q.w === p.w && q.h === p.h);
+  const ref = even ? (W * H) / 4 : (W * H) / panes.length;
+  return Math.max(1, p.w * p.h > ref ? k * BIG_PANE_IN : k);
 }
 
 

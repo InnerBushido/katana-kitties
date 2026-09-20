@@ -5,7 +5,7 @@ import {
   buildBridge, buildBamboo, buildRoad, buildShrine, mergeParts, transformParts,
   valueNoise, fbm,
   buildGrotto, buildSpire, buildShards, SPIRE_H,
-  buildArena, ARENA_RING, ARENA_RISE, ARENA_OUT, ARENA_POSTS, postsFor,
+  buildArena, ARENA_RING, ARENA_RISE, ARENA_OUT, ARENA_POSTS, postsFor, xrayStrength,
   SHRINE_STEPS, SHRINE_GATE,
   ARENA_BOOTH, ARENA_BOARD, ARENA_GATE,
 } from './build.js';
@@ -19,6 +19,51 @@ import { DRAGON_SPOTS } from '../entities/dragon.js';
    fully built town. Sized so the horizon reads as "there is a lot more out
    there" — the Dragon Ball Z brief — without actually paying for it.
 --------------------------------------------------------------------------- */
+
+/**
+ * HOW MUCH OF THE X-RAY EACH PIECE OF THE TOWN TAKES, 0 to 1.
+ *
+ * The first cut gave the whole town one answer, and four separate complaints
+ * came back off one afternoon: "the transparency effect is happening on the
+ * ground, should only happen on objects in front of the player, not underneath
+ * them. Shouldn't happen on small things like lanterns. We can have the shader
+ * affect happen to the bushy part of the trees but not needed on the trunk of
+ * the tree as much. We mainly need the shader on the big, castle shaped,
+ * building."
+ *
+ * THE RULE IS "WHAT CAN THIS THING ACTUALLY HIDE A KITTEN BEHIND". A castle
+ * keep is nine metres of wall and hides her completely, so it opens right up.
+ * A lantern is waist high and hides nothing; the full hole simply deleted the
+ * lantern whenever she walked past it, which is a worse picture than the one
+ * it was solving. The ground and the bridge deck are the case the shader can
+ * never be right about: she is STANDING on them, so they are always between
+ * her chest and a camera that looks down, and a hole there is a hole she falls
+ * through with her eyes. `uCutFloor` catches the deck she is on this frame;
+ * this catches the paving thirty units ahead that she is walking towards.
+ *
+ * ZERO IS NOT "SMALL", IT IS OFF: the shader skips the whole loop below 0.004,
+ * so a road costs nothing to have in the mesh.
+ */
+export const XRAY_K = {
+  /** The ground. Never. */
+  road: 0,
+  /** Her own bridge, for the same reason — and `platforms` proves she stands on it. */
+  bridge: 0,
+  /** Waist-high stone. Enough to notice a kitten through, nowhere near enough to lose the lantern. */
+  lantern: 0.25,
+  /** An open gate hides nothing but the two uprights. */
+  torii: 0.3,
+  /** A trunk is a post; you can already see round it. */
+  trunk: 0.25,
+  /** The bushy part, which is what a kitten actually vanishes behind. */
+  canopy: 0.85,
+  /** Market stalls: a low roof over exactly the props they are there to hide. */
+  stall: 0.55,
+  /** An ordinary one- or two-floor street house. */
+  house: 0.6,
+  /** The three-floor keep with the stacked pagoda roofs — the castle-shaped one. */
+  keep: 1,
+};
 
 const SKY_VERT = /* glsl */`
   varying vec3 vDir;
@@ -1163,12 +1208,27 @@ export class World {
         const dz = z - p.cz;
         if (dx * dx + dz * dz > p.r * p.r) continue;
       }
+      /* A DECK MAY BE A CURVE RATHER THAN A PLANE. The bridge is the only one,
+         and it is the reason this exists: its arch used to be ten flat
+         platforms stepped along the curve, and the first two risers are 0.65
+         and 0.56 against a step tolerance of 0.4 — so a kitten running at the
+         crossing walked into the side of the second plank and stopped, which
+         is what "rather than walking through/under it" was reported as. A
+         `yAt` deck has no risers at all: it is the same sine the mesh is
+         built from, read at her own x, and she is carried up and over it by
+         the ground-snap that already follows every hillside in the game.
+
+         READ ONCE. `p.y` stays the deck's high point for anything that wants
+         one number for the whole rectangle; everything below uses the local
+         height, including the one-way test — which is what stops her being
+         snapped up through the middle of the arch from the riverbed. */
+      const py = p.yAt ? p.yAt(x, z) : p.y;
       /* How far you may step UP onto this deck from below. 0.4 is a lip you
          walk over; the shrine's outer step is half a unit of deliberate
          stonework and asks for its own. A deck you can stand on and cannot
          climb onto is indistinguishable from no deck. */
-      if (fromY + (p.step ?? 0.4) < p.y) continue;
-      if (best == null || p.y > best.y) best = { y: p.y, platform: p, island: over };
+      if (fromY + (p.step ?? 0.4) < py) continue;
+      if (best == null || py > best.y) best = { y: py, platform: p, island: over };
     }
     return best;
   }
@@ -1180,9 +1240,10 @@ export class World {
     const structural = [];
     const decor = [];
 
-    const put = (parts, x, z, ry = 0, scale = 1, yOff = 0, bucket = structural) => {
+    const put = (parts, x, z, ry = 0, scale = 1, yOff = 0, bucket = structural, k = 1) => {
       const g = home.heightAt(x, z);
       transformParts(parts, x, (g ?? 0) + yOff, z, ry, scale);
+      if (k !== 1) xrayStrength(parts, k);
       bucket.push(...parts);
     };
 
@@ -1248,7 +1309,11 @@ export class World {
       },
     ];
     for (const def of roadDefs) {
-      decor.push(...buildRoad(def.pts, H, { color: def.color }));
+      /* THE PAVING IS NEVER CUT. This is the ground that was reported
+         dissolving: a road is flat, it is under her feet, and the cone from a
+         camera that looks down at her crosses the street she is walking along
+         for thirty units in front of her. */
+      decor.push(...xrayStrength(buildRoad(def.pts, H, { color: def.color }), XRAY_K.road));
       /* Remember the corridor so nothing grows through the paving. Grass
          tufts and flowers sprouting out of a packed sand road is the sort of
          detail that quietly makes a town look unfinished. */
@@ -1280,12 +1345,19 @@ export class World {
     ];
     hallSpots.forEach((h) => {
       const spec = { w: 11, d: 9, floors: h.floors, tile: h.tile, ry: h.ry, s: h.s };
-      put(buildHouse(spec), h.x, h.z, h.ry, h.s);
+      /* THE THREE-FLOOR ONE IS THE CASTLE. "We mainly need the shader on the
+         big, castle shaped, building" — `buildHouse` stacks a pagoda roof per
+         floor, so three floors at 1.25 scale is the keep at the head of the
+         town and the only thing in it eleven metres tall. Read off `floors`
+         rather than off its coordinates, so moving it does not quietly demote
+         it. */
+      put(buildHouse(spec), h.x, h.z, h.ry, h.s, 0, structural,
+        h.floors >= 3 ? XRAY_K.keep : XRAY_K.house);
       this.solids.push({ x: h.x, z: h.z, r: 7.0 * h.s, house: spec });
       for (const sx of [-1, 1]) {
         const bx = h.x + Math.cos(h.ry) * sx * 7;
         const bz = h.z + Math.sin(h.ry) * sx * 7 + 7;
-        put(buildLantern(1.1), bx, bz, 0, 1, 0, decor);
+        put(buildLantern(1.1), bx, bz, 0, 1, 0, decor, XRAY_K.lantern);
         this.landmarks.push({ kind: 'lantern', x: bx, z: bz, s: 1.1 });
       }
     });
@@ -1306,14 +1378,14 @@ export class World {
     for (const [x, z, ry, tile, s] of street) {
       const floors = valueNoise(x, z, 5) > 0.62 ? 2 : 1;
       const spec = { w: 6.5, d: 5.5, floors, tile, ry, s };
-      put(buildHouse(spec), x, z, ry, s);
+      put(buildHouse(spec), x, z, ry, s, 0, structural, XRAY_K.house);
       this.solids.push({ x, z, r: 4.2 * s, house: spec });
     }
 
     // --- the great torii at the head of the street ---
-    put(buildTorii(1.6), 0, -46, 0);
+    put(buildTorii(1.6), 0, -46, 0, 1, 0, structural, XRAY_K.torii);
     this.solids.push({ x: -5.6, z: -46, r: 0.9 }, { x: 5.6, z: -46, r: 0.9 });
-    put(buildTorii(0.8), 0, 62, 0);
+    put(buildTorii(0.8), 0, 62, 0, 1, 0, structural, XRAY_K.torii);
     this.landmarks.push(
       { kind: 'torii', x: 0, z: -46, s: 1.6 },
       { kind: 'torii', x: 0, z: 62, s: 0.8 }
@@ -1323,7 +1395,7 @@ export class World {
     for (let i = 0; i < 9; i++) {
       const z = -40 + i * 11;
       for (const sx of [-1, 1]) {
-        put(buildLantern(0.85), sx * 9.5, z, 0, 1, 0, decor);
+        put(buildLantern(0.85), sx * 9.5, z, 0, 1, 0, decor, XRAY_K.lantern);
         this.landmarks.push({ kind: 'lantern', x: sx * 9.5, z, s: 0.85 });
       }
     }
@@ -1331,7 +1403,7 @@ export class World {
     // --- market stalls in the plaza ---
     const stalls = [[-7, 52, 0.3], [7, 55, -0.35], [-9, 66, 0.1], [8, 68, 0.4]];
     stalls.forEach(([x, z, ry], i) => {
-      put(buildStall(i), x, z, ry, 1, 0, decor);
+      put(buildStall(i), x, z, ry, 1, 0, decor, XRAY_K.stall);
       this.solids.push({ x, z, r: 2.0 });
     });
     /* WHERE THE TOWN IS, published off the four things that make it a town.
@@ -1352,7 +1424,12 @@ export class World {
        It used to sit off the side of the map spanning nothing. It's on the
        east road to the bamboo grove, its deck is a real platform you stand on,
        and its railings are solid so you can't walk out through the sides. */
-    put(buildBridge(BRIDGE.len, BRIDGE.wide), BRIDGE.x, BRIDGE.z, Math.PI / 2, 1, 0.1, decor);
+    /* AND THE DECK IS NEVER CUT EITHER. It is the floor of the one place in
+       the town where she is guaranteed to be above the ground, and a hole in
+       the plank she is standing on is the announcer's-box bug again — see
+       `XRAY_K` and `gfx.xrayVertexMat`'s `uCutFloor`. */
+    put(buildBridge(BRIDGE.len, BRIDGE.wide), BRIDGE.x, BRIDGE.z, Math.PI / 2, 1, 0.1, decor,
+      XRAY_K.bridge);
     {
       /* The deck is an ARCH, not a plank — buildBridge lifts each segment by
          sin(t*PI)*rise. One flat platform at the base height meant walking
@@ -1378,18 +1455,48 @@ export class World {
          the axis convention `put()` above has already fixed by turning the deck
          a quarter turn. */
       this.bridgeSpan = { len: BRIDGE.len, wide: BRIDGE.wide, rise: BRIDGE.rise, base };
-      const segs = 10;
-      for (let i = 0; i < segs; i++) {
-        const t = (i + 0.5) / segs;
-        const y = base + Math.sin(t * Math.PI) * BRIDGE.rise;
-        const cx = BRIDGE.x + (t - 0.5) * BRIDGE.len;
-        const half = BRIDGE.len / segs / 2;
-        this.platforms.push({
-          x0: cx - half, x1: cx + half,
-          z0: BRIDGE.z - BRIDGE.wide / 2, z1: BRIDGE.z + BRIDGE.wide / 2,
-          y,
-        });
-      }
+      /* ONE DECK, AND IT IS THE CURVE ITSELF.
+
+         Reported from play: "make it that user can glide or automatically step
+         up/down across the bridge when running over it, rather than walking
+         through/under it."
+
+         IT WAS TEN FLAT PLATFORMS STEPPED ALONG THIS SAME SINE, which was the
+         fix for an earlier bug — one flat platform at the base height meant
+         walking straight through the hump — and it traded that bug for this
+         one. `buildBridge` lifts each plank by `sin(t*PI)*rise`, so over 18
+         units and 2.2 of rise the risers between the first few segments are
+         0.65 and 0.56, and `heightAt`'s step tolerance is 0.4. She could not
+         climb from the first plank to the second. Worse, the first plank
+         itself sits 0.86 above the road, so the near end of the bridge was not
+         reachable on foot at all: a kitten running at the crossing at full
+         sprint stopped dead at the foot of it and the only way up was a jump.
+         A staircase with risers taller than the legs that have to climb it is
+         a wall with a picture of stairs on it.
+
+         So the deck hands `heightAt` the function instead of a sampling of it.
+         There are no risers to climb because there are no steps, the surface
+         she stands on is the surface that is DRAWN rather than a ten-rung
+         approximation of it, and the one-way rule still works underneath: it
+         is tested against the local height, so the riverbed under the crown is
+         2.7 below a deck she cannot be snapped up onto.
+
+         `step` IS THE LIP AT EACH END and nothing else. The deck starts 0.52
+         above the road (`base`), which is over the 0.4 default — the same half
+         unit of deliberate stonework the shrine dais needed its own `step`
+         for. It is only ever reachable at the two ends, because everywhere
+         else `yAt` is higher than a kitten's stride. */
+      const x0 = BRIDGE.x - BRIDGE.len / 2;
+      this.platforms.push({
+        x0, x1: BRIDGE.x + BRIDGE.len / 2,
+        z0: BRIDGE.z - BRIDGE.wide / 2, z1: BRIDGE.z + BRIDGE.wide / 2,
+        /* The crown, for anything that wants one number for the rectangle. */
+        y: base + BRIDGE.rise,
+        yAt: (x) => base
+          + Math.sin(Math.min(1, Math.max(0, (x - x0) / BRIDGE.len)) * Math.PI) * BRIDGE.rise,
+        step: 0.7,
+        bridge: true,
+      });
       // Railings, so you can't stroll off the side of the arch.
       for (const sz of [-1, 1]) {
         for (let i = -4; i <= 4; i++) {
@@ -1434,8 +1541,8 @@ export class World {
        camera it read as a gate to one side of the way through. Solved off
        `BRIDGE` like the paving is — the far end of the straight, square to it. */
     const EAST_GATE = { x: BRIDGE.x + BRIDGE_RUN, z: BRIDGE.z };
-    put(buildTorii(0.7), EAST_GATE.x, EAST_GATE.z, Math.PI / 2, 1, 0, decor);
-    put(buildTorii(0.7), -72, -47, 0, 1, 0, decor);
+    put(buildTorii(0.7), EAST_GATE.x, EAST_GATE.z, Math.PI / 2, 1, 0, decor, XRAY_K.torii);
+    put(buildTorii(0.7), -72, -47, 0, 1, 0, decor, XRAY_K.torii);
     this.landmarks.push(
       /* `ry` BECAUSE THIS ONE IS TURNED. The model of the town drew every torii
          square to x, so the gate at the end of the crossing stood across the
@@ -1471,7 +1578,15 @@ export class World {
       if (home.heightAt(x, z) == null) continue;
       const spec = { seed: i, scale: 0.9 + valueNoise(i, 3, 5) * 0.5, leaf: 'blossom',
         ry: valueNoise(i, 4, 2) * 6 };
-      put(buildTree(spec.seed, spec.scale, spec.leaf), x, z, spec.ry, 1, 0, decor);
+      /* THE BLOSSOM OPENS AND THE TRUNK BARELY DOES. "We can have the shader
+         affect happen to the bushy part of the trees but not needed on the
+         trunk of the tree as much." `buildTree` returns the trunk first and
+         then one blob per bough — the only place in the town where one object
+         wants two answers, which is why `xrayStrength` takes PARTS. */
+      const tree = buildTree(spec.seed, spec.scale, spec.leaf);
+      xrayStrength(tree.slice(0, 1), XRAY_K.trunk);
+      xrayStrength(tree.slice(1), XRAY_K.canopy);
+      put(tree, x, z, spec.ry, 1, 0, decor);
       this.solids.push({ x, z, r: 0.9, tree: spec });
       planted++;
     }

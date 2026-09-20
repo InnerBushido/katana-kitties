@@ -1564,6 +1564,19 @@ export function mergeParts(parts) {
   const pos = new Float32Array(vertCount * 3);
   const nrm = new Float32Array(vertCount * 3);
   const col = new Float32Array(vertCount * 3);
+  /* HOW MUCH EACH VERTEX AGREES TO BE X-RAYED, 1 unless a part says otherwise.
+     `gfx.xrayVertexMat` reads it as `attribute float xrayK`, which is the whole
+     of "the shader should be smaller and weaker on the trees and the lanterns,
+     and off on the ground".
+
+     WRITTEN ON EVERY MERGE, NOT ONLY THE X-RAY ONES, and that is deliberate.
+     The alternative — write it only when a part asks — leaves the grottos and
+     the arena posts, which never ask, handing the shader a MISSING attribute;
+     WebGL then feeds it the generic vertex attrib, and a k of 0 there would
+     silently switch the grottos' x-ray off with nothing to see and nothing to
+     read. Four bytes a vertex on the meshes that ignore it is the cheaper
+     mistake by a long way. */
+  const xk = new Float32Array(vertCount).fill(1);
   const idx = vertCount > 65535 ? new Uint32Array(idxCount) : new Uint16Array(idxCount);
 
   let vo = 0;
@@ -1577,6 +1590,8 @@ export function mergeParts(parts) {
     nrm.set(nn, vo * 3);
     col.set(cc, vo * 3);
     const count = g.attributes.position.count;
+    const k = g.userData?.xrayK;
+    if (Number.isFinite(k) && k !== 1) xk.fill(Math.max(0, Math.min(1, k)), vo, vo + count);
     if (g.index) {
       const gi = g.index.array;
       for (let i = 0; i < gi.length; i++) idx[io + i] = gi[i] + vo;
@@ -1592,8 +1607,27 @@ export function mergeParts(parts) {
   out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   out.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
   out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  out.setAttribute('xrayK', new THREE.BufferAttribute(xk, 1));
   out.setIndex(new THREE.BufferAttribute(idx, 1));
   return out;
+}
+
+/**
+ * Stamp an x-ray strength onto some parts and hand them back.
+ *
+ * 0 is "never cut" and 1 is the full hole this material has always made.
+ * `mergeParts` reads it off `userData` and bakes it per vertex, so a single
+ * merged mesh can hold a road that is never cut, a lantern that thins a
+ * little and a castle that opens right up — which is what the town needs,
+ * since the whole town is two meshes.
+ *
+ * PARTS, NOT OBJECTS, because the one thing that genuinely wants two answers
+ * is a cherry tree: "we can have the shader affect happen to the bushy part of
+ * the trees but not needed on the trunk of the tree as much."
+ */
+export function xrayStrength(parts, k) {
+  for (const g of parts) g.userData.xrayK = k;
+  return parts;
 }
 
 export function transformParts(parts, x, y, z, ry = 0, scale = 1) {

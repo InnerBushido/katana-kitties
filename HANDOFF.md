@@ -245,6 +245,66 @@ as a bug, and a two-unit porthole in a ten-unit building does not. Costs
 **0.3 ms of 11.0** — six samples, identical draw calls and triangles.
 [performance.md](docs/notes/performance.md).
 
+**...and then the x-ray was turned down, per object, because it was eating the
+town.** "The transparency effect is happening on the ground... Shouldn't happen
+on small things like lanterns. Shouldn't happen on buildings when player is in
+front of them. We can have the shader affect happen to the bushy part of the
+trees but not needed on the trunk... We mainly need the shader on the big,
+castle shaped, building." Three separate things under one report:
+
+- **The "ground" was the roads.** Paving is in the same merged `decor` mesh as
+  the trees, so it was being cut like everything else and reading as a hole in
+  the island. Roads and the bridge deck are now `0`.
+- **"Buildings when the player is in front of them" was a real geometric bug.**
+  The cut tested `t < 1` — a projection onto the camera→chest ray — and the
+  camera looks *down*, so the roof of a house standing *behind* her projects to
+  `t < 1` and was cut anyway. The honest test is euclidean and is now
+  `if (dot(av, av) >= len2) continue;`.
+- **Strength is per vertex now**, not per object: `attribute float xrayK`,
+  written by `mergeParts` for every vertex it ever writes (default 1, so the
+  grottos and arena posts that never ask for it cannot be handed a missing
+  attribute and silently lose their x-ray). It scales the cone's radius, its
+  softness *and* the final cut, so a small `k` is a smaller, weaker, never-quite
+  -invisible hole. `XRAY_K` in [world.js](src/world/world.js) is the whole
+  table and is the thing to edit: road 0, bridge 0, lantern 0.25, torii 0.3,
+  trunk 0.25, canopy 0.85, stall 0.55, house 0.6, **keep 1**. A cherry tree is
+  stamped twice — trunk from the canopy — which is why this is an attribute and
+  not two materials.
+
+**The side-by-side split was zoomed in, and only at two.** `paneWiden` used to
+ask whether a pane was over its share of the screen; it now asks the question
+the complaint was about — *does this pane show less world across it than a
+quadrant of the same screen would* — and widens until it doesn't. Only the even
+**side-by-side** case changes; stacked already clamped to 1, and the 62/38
+asymmetric numbers (1.211 and 2.637) come out bit-identical, which is
+non-negotiable 5 and is pinned by its own checks.
+
+**Escape on the keyboard is player one's menu, always.** It used to hand the
+menu to the first player whose `source === 'keyboard'`, which at four players
+with two pads is not necessarily her. "One player drives a menu" is
+non-negotiable 7; who that is should not depend on the seating.
+
+**`8` knocks the mischief over in batches.** 50 a press to 200, then 5 to the
+end — 216 props is a long afternoon to reproduce by hand. It goes through
+`_wreckWorld`, which now takes a `limit`, so props fall by the same path a
+katana knocks them down; the 100% blocks came out of `onMischief` into
+`_mischiefComplete` so the batch fires the ending exactly as play would, and
+`arenaquest` reads the count live so 80% opens the arena on its own. PROJECT.md
+§4.
+
+**The bridge is run over, not walked under.** "Make it that user can glide or
+automatically step up/down across the bridge when running over it, rather than
+walking through/under it." The arch was ten stepped platforms with risers of
+0.65 and 0.56 against `heightAt`'s 0.4 step tolerance, and the first plank sat
+0.86 above the road — the near end was *literally unreachable on foot*, so she
+walked through it. It is one deck now with a `yAt(x, z)` that returns the sine
+arch's local height, which removes every riser and keeps the one-way rule
+honest: a kitten in the riverbed is compared against the 2.7 above her head, not
+against the 0.52 at the ends, so she still passes underneath. The old check
+asserted the deck was *stairs* and passed the whole way through the bug; it is a
+walk now — step a kitten across the crossing at 0.2 units a sample and ask the
+world where she ends up.
+
 **Every asset is filed by subject.** "We have a lot of art, voices, sprites,
 help assets and it is getting disorganized." `public/sprites/` by who is drawn
 (`kittens/ember`, `kittens/frost`, `leaders/`, `clans/`, `satan/`, `critters/`,
