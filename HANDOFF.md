@@ -515,6 +515,129 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Thirteen more, on the teleport and on what a save remembers.** One
+branch, `mixed/thirteen-notes-teleport-and-saves`. In the order they were
+reported. Four of them are one bug — a thing the game owns being taken out of
+the scene, or left in it, by whoever happened to be holding it.
+
+- **The Help pages had the second 瞬 orb backwards.** The rare-orbs card said
+  "a second one is a wasted slot", and `aggregate()` has read `blink >= 2` as an
+  **aim upgrade** for as long as the second orb has bought anything: one orb
+  picks which *side* of your sister you come out on, two pick the *exact spot*
+  by how far you push the stick. The one page in the game that exists to explain
+  the rare orbs was telling a nine-year-old not to buy the thing that makes the
+  move interesting. Rewritten on **both** cards — the rare-orbs card and
+  **Special abilities**, where the move itself is taught — with the part that is
+  a warning as well as a feature: it wants a **stick**, so a kitten on the
+  keyboard who buys a second one has bought a control she cannot use finely.
+  `world-check` now pins both paragraphs against `aggregate()` itself.
+- **The Flash Step comes apart, travels as a spirit, and bursts back.** Asked
+  for in detail and built in detail: a **half-strength ghost** of her boiling in
+  and out over the wind-up (her own pose *blinks* underneath it — `alphaTest:
+  0.35` means a player sprite can never fade, only blink, so the effect is two
+  halves in two files and neither works alone), a **glowing orb in her own
+  colour** where the see-through preview kitten used to stand, a **shell that
+  closes on the spot she left and throws itself open where she arrives**, and a
+  **column of falling kanji at both ends**. She is solid at **95% of the whole
+  move**, not of the tenth of a second she is gone for — measured, after the
+  first version was measured: 95% of `FADE` is five milliseconds, one frame at
+  60Hz, and on screen it was indistinguishable from the hand-off it replaced.
+  The rain had been **cut once by name**, with a rule attached: do not put it
+  back without taking something else out. What went out is the preview kitten,
+  and the comment that forbade it now records the trade instead of the ban.
+- **LOAD A SAVED GAME is on the title screen, and only when there is one.**
+  Second row, beside WATCH THE TRAILER — not a fourth cell in the top row, which
+  would move the cat-head menu the girls drew. It is **hidden until this browser
+  actually holds a save** (`_refreshTitleLoad`, at boot and on every return to
+  the title): a button that is always there and can only ever open an empty list
+  teaches a child that the game lost her afternoon.
+- **The kept star's word is black.** Gold on gold. The star stays gold.
+- **SAVE & QUIT GAME refuses under five minutes, and says so.** A reversal:
+  it used to write a short row and merely not mark it *kept*, on the reading
+  that the five-minute rule decides the mark. Reported against that reading —
+  and the old reading was worse than it looked, because a short row is still a
+  **row**: it takes a slot, and the autosave refuses to write exactly that, so
+  the button was a second door into the list with the opposite rule on it. Boot,
+  look at the town, SAVE & QUIT, four times, and the afternoon somebody cared
+  about is off the bottom. The refusal is its own return value (`short`) and not
+  a `null`, because "this browser will not store anything" must **not** close
+  the window and "there is nothing worth writing yet" may.
+- **Orbs stopped being left hanging in the air.** Reported from the character
+  picker with a photograph of it. Every orb a kitten owns — the plain kotodama,
+  the worn Powerup constellation, the gold quest tokens — now hangs off one
+  `Player.orbRoot` group, so a swap, a drop-out or a restart takes the lot in
+  one line. **This is a fix by construction and not a located cause**: the
+  symptom would not reproduce on any seating path tried (0 orphan groups, every
+  time), and the class of bug it belongs to is `scene.remove(orb.group)` on an
+  orb whose parent is something else — a **silent no-op**, three lists deep,
+  found stale in four places. `world-check` now scans main, kotodama, feats and
+  savegame and fails if any of them adds or removes an orb from the scene
+  directly.
+- **The debug keys are asleep until the panel has been opened once.** Asked for
+  to stop somebody enabling debug input without knowing. `` ` `` is the only key
+  that answers on a cold tab; `_debugArmed` is set by the panel actually
+  **opening** and never cleared. A gate that also swallowed the key that opens
+  the panel would be a panel nobody could reach — the same class of bug it is
+  guarding against. The phone's five-tap corner arms them the same way.
+- **A restart really does put the endgame back in its box.** Reported as the
+  kotodama and the dealer's stall still standing after RESTART or TITLE SCREEN
+  once the ending had played. `Kotodama.clear` had said *"used to by
+  Game.restart"* in its own doc comment since the day it was written and
+  **nothing had ever called it** — dead code that read as the rule being in
+  place. Calling it is also what makes a **load** correct, which is the half
+  nobody could see: `restore` tests `snap.awakened && !game.kotodama.awakened`,
+  and nothing ever put `awakened` back, so that test could never pass twice in
+  one tab. The parked pandas of kittens nobody is playing go too — they are in
+  the scene like any other, and `_recallPanda` would have adopted one into the
+  *next* game.
+- **Ryuuseki is not there when Patchfur sends you to fetch him.** He used to be
+  built on the frame the seventh star landed, so ALL SEVEN STARS played "take
+  them to the great torii... and when the sky goes dark, do not run" over a shot
+  of a forty-metre dragon already hanging above the torii, answering the errand
+  before she had finished setting it. He is built by the **arrival** scene now,
+  and the roar stays — with nothing on screen it is a thing heard from
+  somewhere else, which is what the line about the sky is for. The check that
+  fires the arrival measures to the **torii** rather than to the dragon (the
+  same number against the same point, because he was built standing on it), so
+  *when* it happens has not moved.
+- **Both dragon scenes in the debug viewer show the dragon, above ground.**
+  One line caused both halves: the two cases shared a body aiming at
+  `this.ryu?.position ?? B.centre`, and in a debug session there is almost never
+  a dragon — so the fallback was the middle of the whole archipelago, which is
+  open water, at a y averaged over the bounding box, which is **under the
+  ground**. They are two shots and they are two cases now: `found` aims at the
+  torii with nothing above it, `summon` **really summons him** (and toasts,
+  because a debug key that changes the world has to say so) and frames him at
+  `quad * 0.85`, which is what the game itself uses and what the preview never
+  did.
+- **A save remembers the panda, including how big it is.** Reported as a badge
+  reading "20 more bamboo" under a kitten who had had a full-grown one for an
+  hour. This file used to argue at length that the animal should be **rebuilt**
+  from `cut` / `fedFrom` / `raised` rather than recorded — a good argument that
+  the code did not implement (`applyCast` never called `_updatePanda`, which is
+  only reached by swearing or by cutting a cane) **and that could not have
+  worked anyway**: `tierFor` charges growth from the tally at the moment the
+  animal last grew, so replaying the rule over a grown panda's numbers yields a
+  **cub**. The tier is a fact now, with `down` beside it — a knocked-down panda
+  is a cub that must stay one until the shrine — and the spot it was standing
+  on. Bamboo never regrows, so an animal lost on a load was lost for that world.
+- **And it remembers the dragon, who cannot be summoned twice.** The more
+  serious half. Seven stars are taken once and `restore` puts them back exactly
+  as the save found them, so a save taken after the summon came back with the
+  scene spent, the stars gone and **no dragon anywhere**, with nothing in the
+  game able to make another. He is saved with where he was, and comes back at
+  the torii if that spot cannot be used.
+- **A rider can be knocked off her panda.** The two of them were one column:
+  she sits at the animal's feet as far as the hitbox is concerned, inside a box
+  padded wider and taller than she is, so no swing could find her without also
+  finding it — and the blow that unseats a rider is by definition the one that
+  *missed* the animal. Measured rather than reasoned: seat 4.14, saddle 1.90,
+  `strikeHeight` 3.4, jump apex 2.41. A `ceiling` on how far **above** the
+  target the attacker may be gives three reachable bands — a standing blow can
+  never reach a rider, a jump at the apex clears the panda and finds her, and
+  between them both are in range. The cap applies **only while she is ridden**,
+  so an unridden panda keeps its generous column.
+
 **Ten more off one afternoon's play, and not yet played back.** One branch,
 `mixed/ten-notes-from-an-afternoon`. In the order they were reported.
 

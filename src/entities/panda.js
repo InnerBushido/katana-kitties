@@ -237,6 +237,43 @@ export const PANDA = tune('PANDA', {
    */
   body: 2.8,
   bodyUp: 1.6,
+  /**
+   * WHERE THE ANIMAL STOPS AND THE KITTEN ON TOP OF IT BEGINS, as a fraction
+   * of the drawn animal's own cell — only while somebody is riding it.
+   *
+   * THE PAIR USED TO BE ONE HITBOX INSIDE ANOTHER, AND THAT WAS THE BUG.
+   * Reported: "when a player is riding a panda in the arena, possibly the
+   * players hitbox is on the ground, under the panda... We need the players
+   * hitbox to be above the panda, so that it is possible for the player to get
+   * knocked off the panda, by the opposing player hitting just the player and
+   * not the panda, currently that is not possible as the hitbox seems to be
+   * inside of the panda's hitbox." It was exactly that: riding LIFTS THE
+   * DRAWING ONLY (see `seatHeight`), so her body stayed on the ground at the
+   * animal's own feet, inside a hitbox padded `body` wider and `bodyUp`
+   * taller. Every swing that could reach her could reach it, so `strikePlayers`
+   * could produce "panda only" and "both" and never "her only" — and "her
+   * only" is the one that takes her off it.
+   *
+   * SO THE COLUMN IS SPLIT AND THIS IS WHERE. Below it a blade finds the
+   * animal; above it, the girl. `strikePlayers` reads her at `seatHeight` and
+   * caps the animal here, which gives three bands a nine-year-old can feel:
+   * standing and swinging hits the PANDA, jumping and swinging at the top of
+   * the jump hits HER, and the part of the jump in between hits BOTH.
+   *
+   * 0.34 IS SET AGAINST THE JUMP AND NOT AGAINST THE DRAWING, which is why it
+   * is smaller than the silhouette (the animal's back is about 0.66 of its
+   * cell). A kitten's jump is `JUMP_V^2 / 2g` = 11.2^2 / 52 = 2.41 units, and
+   * `quad * 0.34` on a grown panda is about 1.9 — so she really does clear the
+   * line, with about four tenths of a second above it rather than a single
+   * frame at the apex. Put this at the drawn back and "hit only the rider"
+   * goes back to being impossible on foot, which is the report.
+   *
+   * IT ONLY APPLIES WHILE THE PANDA IS RIDDEN. An animal on its own is one
+   * body and gets the generous `bodyUp` column it always had — a jump-slash
+   * that visibly lands on a panda must not miss it because of a rule about a
+   * rider who is not there.
+   */
+  saddle: 0.34,
   /* --- and the cub ----------------------------------------------------- */
   /** She has to be under this fraction of her bar before the cub comes. */
   lickBelow: 0.30,
@@ -563,6 +600,10 @@ export class Panda {
    *  `Game.strikePlayers` needs no second question. */
   get hitRadius() { return this.fighter ? PANDA.body : 0; }
   get hitUp() { return this.fighter ? PANDA.bodyUp : 0; }
+  /** How far above its own feet a blade may arrive and still find the ANIMAL
+   *  rather than the girl on it. See `PANDA.saddle`; only meaningful while
+   *  ridden, which is the one case `strikePlayers` passes it in. */
+  get saddleLine() { return this.quad * PANDA.saddle; }
 
   /**
    * Fill the bar, sized off its owner's.

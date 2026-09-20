@@ -34,9 +34,25 @@
      as movement rather than as an attack — the preview is exactly what it
      always was. See `secret` in `_updateFigure` for the report behind it.
 
-     THERE IS NO RAIN OF KANA ANY MORE. Two columns of falling glyphs used to
-     fall at both ends of the jump; they were cut as clutter, by name, and
-     `_updateFigure` says why at the bottom.
+     THE RAIN IS BACK, AND SOMETHING WENT OUT FOR IT. Two columns of falling
+     glyphs used to fall at both ends of the jump. They were cut as clutter,
+     by name, and the rule left attached to that cut was "do not put it back
+     without taking something else out" — so here is the something.
+
+     WHAT WENT OUT IS THE SEE-THROUGH KITTEN. The preview used to be a whole
+     second drawing of her, two units by three, standing on the landing. It is
+     now a glowing orb the size of her head: her SPIRIT, before it has
+     anywhere to be. Asked for in the same breath as the rain — "instead of
+     showing the player character and where they will teleport before the
+     teleport is complete, we can instead show a glowing orb version of them,
+     almost as if it is their spirit form" — and it is about a fifth of the
+     screen area the ghost was.
+
+     AND WHAT CAME BACK IS NOT WHAT WAS CUT. That was two columns of five
+     discrete glyphs plus a big 瞬 over each, at both ends: twelve objects
+     drawn per jump. This is ONE scrolling sprite per end, and every rain in
+     the game shares ONE texture and ONE scroll — see `rainTexture`. The
+     density argument the cut was made on is honoured rather than argued with.
 
      AND THE THING LEFT BEHIND. A ninja vanish leaves a log. This one leaves a
      log, or her own bow tie, or a scarf, or a boiled sweet the size of her
@@ -140,10 +156,10 @@ const DECOYS = 12;
    These sprites carry no alpha test, so they really do fade. */
 const FADE = DODGE.invuln * (1 - DODGE.commit);
 
-/** How solid the "you will come out HERE" preview stands. Faint enough to
- *  read as a projection of her rather than as a second kitten — the whole
- *  point is that she can see it and still see the fight through it. */
-const AIM_A = 0.36;
+/* `AIM_A` — how solid the "you will come out HERE" preview kitten stood — is
+   gone with the kitten. The preview is a spirit orb now (see THE SPIRIT FORM),
+   and its brightness is `SPIRIT_A`. Deleted rather than left at an unused 0.36,
+   so nothing can be tuned back into a drawing that is not there. */
 /** How long the whole figure takes to dissolve once the move is over. */
 const FIG_OUT = 0.5;
 /**
@@ -172,6 +188,116 @@ const GOLD = 0xffd76a;
 /** Segments in a landing circle. 96 is the Dojo's own count for its unit
  *  circle, and these two circles are meant to be read as the same object. */
 const RING_SEG = 96;
+
+/* ============================ THE SPIRIT FORM =============================
+
+   "Make it that, when using Flash Step, it shows a 'ghostly' version of the
+   player, about 50% transparent or more, could have them looking unstable and
+   flickering in and out, before they teleport."
+
+   HALF OF THAT IS HERE AND HALF IS IN `Player._updateFeedback`, AND NEITHER
+   HALF CAN DO THE JOB ALONE. Her own material runs `alphaTest: 0.35` — every
+   pixel under the threshold is discarded outright — so her SOLID wind-up pose
+   cannot be made 50% transparent at all; the only thing it can do is stop
+   being drawn, which is a blink. So it blinks, faster and thinner as the
+   commit comes, and this sprite stands on the same spot for the whole wind-up
+   at half strength. The frames she is missing are therefore not empty: what
+   reads is a kitten coming apart into her own spirit rather than a sprite
+   dropping frames. Either half on its own reads as a bug. */
+const WIND_A = 0.5;
+/** How fast the wind-up ghost boils, and how far it slides off her while it
+ *  does. Both small on purpose: this has to look UNSTABLE, not like a second
+ *  kitten standing next to the first one. */
+const WIND_HZ = 9;
+const WIND_DRIFT = 0.12;
+
+/**
+ * The spirit orb: its radius as a fraction of her own height, and how bright.
+ *
+ * MEASURED OFF HER, NOT TYPED IN WORLD UNITS. A kitten's height is set from
+ * her atlas (`contentScale`), so a number in units here would be right for
+ * whichever sheet happened to be loaded the day it was tuned. House rule:
+ * measure anything drawn.
+ */
+const SPIRIT_R = 0.21;
+const SPIRIT_A = 0.85;
+/** How far the manifestation throws itself open, against the orb's own size.
+ *  "The orb can expand/explode/dissipate once the player appears in the new
+ *  location, as if their spirit form manifested to physical form." */
+const BURST_X = 5.5;
+/**
+ * How long that takes.
+ *
+ * LONGER THAN `FADE`, AND THAT IS NOT A MISTAKE. `FADE` is a tenth of a second
+ * — it is the hand-off between two drawings of her and it is exactly as long
+ * as the window she is gone for, which is right for a hand-off and far too
+ * short to read as an EVENT. The figure is already on screen for `FIG_OUT`
+ * after the move ends, so a burst that outlives the jump has somewhere to
+ * finish; a burst pinned to `FADE` was three frames and looked like a flash.
+ */
+const BURST_T = 0.45;
+/**
+ * How far through the WHOLE MOVE her arriving self is solid.
+ *
+ * "Make their player avatar blink back into existence once they finish
+ * teleporting and make fully opaque once about 95% complete with the entire
+ * teleporting process."
+
+ * THE ENTIRE PROCESS, AND NOT THE WINDOW SHE IS GONE FOR — measured, after
+ * the first version was measured. `FADE` is a tenth of a second, so 95% of
+ * THAT is its last five milliseconds: exactly one frame at 60Hz, which is not
+ * an arrival, it is a rounding error, and on screen it was indistinguishable
+ * from the old hand-off it replaced. 95% of the whole Flash Step is the last
+ * twenty-five, which is two or three frames of her standing solid before her
+ * own sprite comes back — the overlap the note is asking for.
+ *
+ * A FRACTION, NOT A NUMBER OF SECONDS, for the same reason `FADE` is one: the
+ * tuning page can move `invuln` and `commit`, and a typed 0.075 would be right
+ * until somebody did.
+ */
+const MANIFEST = 0.95;
+/**
+ * ...and the same moment expressed where it is actually used: how far through
+ * `FADE` it falls.
+ *
+ * THE FLOOR IS NOT DECORATION. `commit` is editable, and a `commit` past
+ * `MANIFEST` makes this negative — at which point she would be solid on the
+ * commit frame itself and the whole arrival would vanish. 0.05 degrades to
+ * "solid almost at once", which is wrong but visible, rather than gone.
+ */
+const MANIFEST_K = Math.max(0.05, Math.min(1,
+  (DODGE.invuln * (MANIFEST - DODGE.commit)) / Math.max(1e-6, FADE)));
+/** How fast she blinks on her way back in. Fast enough to read as a signal
+ *  rather than as a frame rate, and it stops dead at `MANIFEST`. */
+const BLINK_HZ = 20;
+
+/* ============================== THE RAIN =================================
+
+   TYPED GLYPHS, AND `systems/crossfx.js` SAYS TYPED GLYPHS LOOK WRONG. It does
+   — at length, and it is right: the 十 on the Cross Slash's seal is drawn as
+   two brush strokes because "the only Japanese faces on the machine are
+   geometric sans with nothing to fall back to", and a typed one at size is two
+   hairlines.
+
+   THE CONDITION THAT ARGUMENT NAMES IS "HAS TO CARRY A FRAME ON ITS OWN", AND
+   THIS DOES NOT. A rain column is texture: a stream of small, dim, moving
+   marks nobody reads as language. Most of these are KATAKANA rather than
+   kanji, which is also what the film everybody is thinking of actually used,
+   and for the same reason — simple strokes survive being 30 pixels tall and
+   falling, where a dense kanji turns to mush. The one hero glyph is 瞬, the
+   move's own, which the orb and the shelf already print.
+*/
+const RAIN_GLYPHS = [
+  '瞬', 'ア', 'カ', '影', 'サ', 'タ', '閃', 'ナ',
+  '瞬', 'ハ', '疑', 'マ', 'ヤ', '空', 'ラ', 'ワ',
+];
+/** Rows in the strip. One per glyph above, and the window shows half of them. */
+const RAIN_ROWS = 16;
+/** The column, in world units: narrow and about twice a kitten tall. */
+const RAIN_W = 1.0;
+const RAIN_H = 6.0;
+/** Strips per second. One scroll for the whole game — see `update`. */
+const RAIN_SPEED = 1.35;
 
 /** `0x21d6a8` as `#21d6a8`, for the label painter, which speaks CSS. */
 function css(hex) {
@@ -251,6 +377,151 @@ export function ringTexture() {
   _ring = t;
   return t;
 }
+
+let _glow = null;
+let _burst = null;
+let _rain = null;
+
+/**
+ * A soft ball of light: white, so one texture tints to any kitten's colour.
+ *
+ * THE FALL-OFF IS NOT LINEAR AND THAT IS THE WHOLE LOOK. A straight ramp from
+ * white to nothing is a fuzzy disc; holding it near-white to a fifth of the
+ * radius and then dropping it away fast is a LIT thing with a core, which is
+ * what "glowing orb ... almost as if it is their spirit form" has to read as
+ * from the far side of a split-screen pane.
+ */
+function glowTexture() {
+  if (_glow) return _glow;
+  const S = 128;
+  const c = canvas(S, S);
+  if (!c) return null;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.20, 'rgba(255,255,255,0.95)');
+  grd.addColorStop(0.42, 'rgba(255,255,255,0.42)');
+  grd.addColorStop(0.72, 'rgba(255,255,255,0.10)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, S, S);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  _glow = t;
+  return t;
+}
+
+/**
+ * The manifestation: a soft SHELL rather than a ball.
+ *
+ * A RING AND NOT A DISC, BECAUSE AN EXPANDING DISC IS A FLASH. Scaling a ball
+ * of light up reads as the light getting brighter and nearer, which is what a
+ * muzzle flash does; scaling a hollow shell up reads as something leaving from
+ * the middle, which is what a spirit becoming a body does. Same texture at
+ * both ends of the jump — one collapsing inward, one throwing itself open.
+ */
+function burstTexture() {
+  if (_burst) return _burst;
+  const S = 128;
+  const c = canvas(S, S);
+  if (!c) return null;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  grd.addColorStop(0, 'rgba(255,255,255,0)');
+  grd.addColorStop(0.40, 'rgba(255,255,255,0.06)');
+  grd.addColorStop(0.62, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.74, 'rgba(255,255,255,0.30)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, S, S);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  _burst = t;
+  return t;
+}
+
+/**
+ * The falling glyphs, as ONE strip that every rain in the game shares.
+ *
+ * ONE TEXTURE, ONE SCROLL, EIGHT SPRITES. Four kittens with two ends each is
+ * eight columns, and the obvious build gives each its own `CanvasTexture` so
+ * each can scroll independently — eight uploads of a quarter of a megabyte,
+ * for a thing that is on screen for half a second. They do not need to scroll
+ * independently: the strip falls at a constant rate whether anybody is looking
+ * or not, and which phase a column starts on is not a fact about the game. So
+ * the offset is driven once, in `update`, and the sprites differ only in where
+ * they stand and how bright they are.
+ *
+ * THE HEAD-TO-TAIL RAMP IS BAKED IN, and it has to be: a sprite's opacity is
+ * one number for the whole quad, so a column whose every glyph was equally
+ * bright would be a barcode. The ramp repeats every eight rows and the window
+ * shows eight, so there is always exactly one bright head on screen with its
+ * tail fading behind it.
+ */
+function rainTexture() {
+  if (_rain) return _rain;
+  const CELL = 64;
+  const c = canvas(CELL, CELL * RAIN_ROWS);
+  if (!c) return null;
+  const g = c.getContext('2d');
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  /* A STACK AND NOT ONE FACE. There is no guarantee about which Japanese face
+     a machine has — crossfx.js found that out the expensive way — so this
+     names the four that cover Windows, macOS and a web font, and ends at
+     `sans-serif` so a machine with none of them draws boxes rather than
+     nothing. Boxes falling down a column still read as rain. */
+  g.font = `${Math.round(CELL * 0.8)}px "Yu Gothic", "Hiragino Kaku Gothic ProN", `
+    + `"Noto Sans JP", "MS Gothic", sans-serif`;
+  for (let i = 0; i < RAIN_ROWS; i++) {
+    const k = 1 - ((i % 8) / 8) * 0.86;
+    g.globalAlpha = k;
+    g.fillStyle = '#ffffff';
+    g.shadowColor = '#ffffff';
+    g.shadowBlur = i % 8 === 0 ? 20 : 6;
+    g.fillText(RAIN_GLYPHS[i % RAIN_GLYPHS.length], CELL / 2, CELL * (i + 0.5));
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.ClampToEdgeWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  /* HALF THE STRIP IS THE WINDOW — eight glyphs, which is one complete ramp.
+     Set once here rather than per sprite, because it is shared. */
+  t.repeat.set(1, 0.5);
+  _rain = t;
+  return t;
+}
+
+/**
+ * One additive sprite. Used for the orb, its core, both shells and both rains.
+ *
+ * ADDITIVE, AND DEPTH-TESTED. Additive because a spirit adds light to what is
+ * behind it and an alpha-blended one is a sticker; depth-tested because a
+ * spirit shining through the hill in front of it would stop being in the world
+ * at all. The reticle is the only thing in this file allowed through scenery,
+ * and that is because it is a UI element about a PERSON.
+ *
+ * @param {?THREE.Texture} tex the map, or null when there is no document
+ */
+function glowSprite(tex, colour, order, center) {
+  if (!tex) return null;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex,
+    color: colour,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+  }));
+  if (center) sp.center.copy(center);
+  sp.renderOrder = order;
+  sp.visible = false;
+  return sp;
+}
+
+/** The column: bottom-anchored, so its position is where it STANDS. */
+const RAIN_CENTRE = new THREE.Vector2(0.5, 0);
 
 /**
  * The circle of everywhere she could come out: a thin DRAWN line, flat on the
@@ -518,6 +789,18 @@ export class DodgeFx {
     this.figs = new Map();
     /** A fixed ring buffer of decoys. Built lazily, never grown. */
     this.decoys = [];
+    /**
+     * Where the shared rain strip has got to, in strips.
+     *
+     * ONE NUMBER FOR EVERY COLUMN IN THE GAME. See `rainTexture`: the offset
+     * lives on the texture, the texture is shared by all eight possible
+     * columns, and none of them needs its own phase — the rain falls at a
+     * constant rate whether anybody is Flash Stepping or not, and which glyph
+     * happens to be at the top when a column appears is not a fact about the
+     * game. Wrapped to [0,1) every frame so it cannot drift into the range
+     * where a float stops resolving a sixtieth of a strip.
+     */
+    this.rainPhase = 0;
     this.decoyIx = 0;
     /** Which `dodgeSeq` each seat was last seen dropping a decoy for. */
     this.seen = new Map();
@@ -608,9 +891,34 @@ export class DodgeFx {
        four times a frame. No warp art, no ghost and no fade; the move still
        happens in full, exactly as it does without the pose. */
     const bb = p.warpPose ?? null;
-    const ghost = add(ghostOf(bb, colour, true));   // where she is aiming
+    /* HER, COMING APART, ON THE SPOT SHE HAS NOT LEFT YET — see WIND_A. This
+       is the sprite that used to be the LANDING preview; the landing is now an
+       orb, and this drawing of her moved to the only place it can be honest
+       about, which is where she is actually standing. */
+    const windGhost = add(ghostOf(bb, colour, true));
     const echoOut = add(ghostOf(bb, colour, false));  // the place she leaves
     const echoIn = add(ghostOf(bb, colour, false));   // the place she arrives
+
+    /* HER SPIRIT, AND ITS TWO SHELLS. The orb is a ball of her own colour with
+       a white heart inside it, which is what stops four kittens' spirits all
+       reading as "a bright dot": the heart says LIGHT and the halo says WHOSE.
+       `burstOut` collapses inward on the spot she leaves and `burstIn` throws
+       itself open on the spot she arrives — one texture, two directions, so
+       the two ends of a teleport are visibly the same event twice. */
+    const glow = glowTexture();
+    const shell = burstTexture();
+    const spirit = add(glowSprite(glow, colour, 24));
+    const heart = add(glowSprite(glow, 0xffffff, 25));
+    const burstOut = add(glowSprite(shell, colour, 24));
+    const burstIn = add(glowSprite(shell, colour, 24));
+
+    /* AND THE TWO RAINS. Behind everything else in the figure on purpose —
+       renderOrder 22 against the ghosts' 23 — because it is the backdrop the
+       event happens in front of, not a thing to read. */
+    const rainTex = rainTexture();
+    const rainOut = add(glowSprite(rainTex, colour, 22, RAIN_CENTRE));
+    const rainIn = add(glowSprite(rainTex, colour, 22, RAIN_CENTRE));
+    for (const r of [rainOut, rainIn]) if (r) r.scale.set(RAIN_W, RAIN_H, 1);
 
     /* HER COLOUR ON THE SPOKE, THE TARGET'S ON THE PATH, and that is the whole
        legend: the line in YOUR colour is the one you are steering, the line in
@@ -662,7 +970,8 @@ export class DodgeFx {
     group.visible = false;
     this.scene.add(group);
     f = {
-      group, ringFar, ringNear, ghost, echoOut, echoIn,
+      group, ringFar, ringNear, echoOut, echoIn,
+      windGhost, spirit, heart, burstOut, burstIn, rainOut, rainIn,
       vec, moved, cosLeg, sinLeg, arc,
       lblTheta, lblCos, lblSin,
       /** Which `dodgeSeq` is on screen, -1 for none. */
@@ -790,6 +1099,16 @@ export class DodgeFx {
   }
 
   update(dt, players, world) {
+    /* THE RAIN FALLS ON ITS OWN CLOCK, once, before anything asks for it.
+       Increasing `offset.y` walks the sampling window UP the strip, which
+       walks every glyph DOWN the sprite — so this sign is falling, and it is
+       derived rather than picked: a glyph sitting at texture v is drawn at
+       sprite v of (v - offset) / repeat, which shrinks as the offset grows. */
+    if (_rain) {
+      this.rainPhase = (this.rainPhase + dt * RAIN_SPEED) % 1;
+      _rain.offset.y = this.rainPhase;
+    }
+
     for (const p of players ?? []) {
       if (!p) continue;
 
@@ -1007,13 +1326,90 @@ export class DodgeFx {
        report used as an excuse to delete a lesson. */
     const secret = s.hasT && !f.placed;
 
-    /* --- the see-through her, standing on the landing she has chosen --- */
+    /* --- her, coming apart, on the spot she has not left yet ---
+       ON HER LIVE POSITION AND NOT ON THE SNAPSHOT, which is the one place in
+       this file that wants the live number: the snapshot deliberately freezes
+       at the commit so the maths can be read, and a ghost of her that froze
+       with it would be standing behind her the moment she is nudged. */
+    const winding = live && p.dodgeT > 0 && !f.placed;
+    if (f.windGhost) {
+      f.windGhost.visible = winding;
+      if (winding) {
+        /* IT BOILS. One sine drives the slide, the lift and the brightness
+           together, so the whole thing breathes as one object rather than as
+           three effects that happen to share a sprite — and the lift takes
+           its MAGNITUDE, so she bobs twice per slide and never sinks into the
+           floor. */
+        const boil = Math.sin(f.age * WIND_HZ * Math.PI * 2);
+        f.windGhost.position.set(
+          p.position.x + boil * WIND_DRIFT,
+          p.position.y + Math.abs(boil) * WIND_DRIFT * 0.6,
+          p.position.z
+        );
+        f.windGhost.material.opacity = WIND_A * (0.7 + 0.3 * boil) * inK;
+      }
+    }
+
+    /* --- her spirit: a glowing orb, where the preview kitten used to stand ---
+       TWO PLACES IT CAN BE, AND THE SECRET PICKS WHICH. With nobody locked it
+       hovers over the landing and IS the preview — that is the aim, and it is
+       the case the whole ghost used to serve. With somebody locked the landing
+       is a secret until she takes it (see `secret`, above), so the orb hovers
+       over HER instead: her spirit gathered and not yet gone anywhere. Either
+       way every Flash Step has one, which is what makes the shell at the far
+       end read as the same object arriving rather than as a new effect. */
+    const hgt = p.height ?? 2.9;
     const previewing = live && !f.placed && s.ok && !secret;
-    if (f.ghost) {
-      f.ghost.visible = previewing;
-      if (previewing) {
-        f.ghost.position.set(s.hx, s.hy, s.hz);
-        f.ghost.material.opacity = AIM_A * inK;
+    const spiriting = live && p.dodgeT > 0 && !f.placed;
+    const ox = previewing ? s.hx : p.position.x;
+    const oy = (previewing ? s.hy : p.position.y) + hgt * 0.62;
+    const oz = previewing ? s.hz : p.position.z;
+    if (f.spirit && f.heart) {
+      for (const sp of [f.spirit, f.heart]) sp.visible = spiriting;
+      if (spiriting) {
+        /* A HALO IN HER COLOUR ROUND A WHITE HEART, and the heart is what
+           stops four kittens' spirits all reading as "a bright dot": the core
+           says LIGHT and the halo says WHOSE. It swells as she gathers. */
+        const pulse = 1 + Math.sin(f.age * 11) * 0.12;
+        const r = hgt * SPIRIT_R * (0.55 + 0.45 * Math.min(1, f.age / 0.22)) * pulse;
+        f.spirit.position.set(ox, oy, oz);
+        f.heart.position.copy(f.spirit.position);
+        f.spirit.scale.setScalar(r * 2.6);
+        f.heart.scale.setScalar(r * 1.05);
+        f.spirit.material.opacity = SPIRIT_A * inK;
+        f.heart.material.opacity = 0.95 * inK;
+      }
+    }
+
+    /* --- and the two shells: one closing on the spot she left, one opening on
+       the spot she arrives ---
+       ON `BURST_T` AND NOT ON `FADE`, for the reason written at `BURST_T`: the
+       hand-off between two drawings of her is a tenth of a second, and an
+       event that has to be READ is not. The figure holds for `FIG_OUT` after
+       the move ends, which is where the rest of this happens. */
+    const bk = f.placed ? Math.min(1, f.since / BURST_T) : 0;
+    const shellR = hgt * SPIRIT_R * 2.6;
+    if (f.burstIn) {
+      f.burstIn.visible = f.placed && bk < 1;
+      if (f.burstIn.visible) {
+        f.burstIn.position.set(s.hx, s.hy + hgt * 0.5, s.hz);
+        /* OUT FAST, THEN COASTING. The same ease the reticle's lock uses, and
+           for the same reason: a shell that opens at a constant rate reads as
+           a UI element resizing rather than as something happening. */
+        const ease = 1 - (1 - bk) * (1 - bk);
+        f.burstIn.scale.setScalar(shellR * (0.5 + ease * BURST_X));
+        f.burstIn.material.opacity = (1 - bk) * (1 - bk) * 1.1;
+      }
+    }
+    if (f.burstOut) {
+      f.burstOut.visible = f.placed && bk < 1;
+      if (f.burstOut.visible) {
+        /* THE SAME SHELL, RUN BACKWARDS. She did not appear here, she left —
+           so this one starts wide and closes on nothing, which is the only
+           drawing that says "gone" rather than "happened". */
+        f.burstOut.position.set(s.sx, s.sy + hgt * 0.5, s.sz);
+        f.burstOut.scale.setScalar(shellR * (0.3 + (1 - bk) * BURST_X * 0.7));
+        f.burstOut.material.opacity = (1 - bk) * 0.85;
       }
     }
 
@@ -1030,13 +1426,70 @@ export class DodgeFx {
       }
     }
     if (f.echoIn) {
-      f.echoIn.visible = f.placed && f.since < FADE;
+      /* SOLID AT `MANIFEST` OF THE WINDOW, NOT AT THE END OF IT. Asked for:
+         "make fully opaque once about 95% complete with the entire teleporting
+         process". It used to reach 1 on the very frame her real sprite came
+         back, which is a clean hand-off and therefore reads as nothing at all
+         — she was simply there. Landing the ghost a hair EARLY leaves one
+         frame where both drawings are solid, and that frame is what makes an
+         arrival an arrival.
+
+         AND SHE BLINKS ON HER WAY IN. "Make their player avatar blink back
+         into existence" — a square wave whose duty cycle climbs with `k`, so
+         she is mostly absent at the start of the window and continuous by the
+         end of it, and it stops DEAD at `MANIFEST` rather than trailing off.
+         A blink still running once she is supposed to be solid is the
+         invulnerability flicker, which means something else entirely. */
+      const k = Math.min(1, f.since / (FADE * MANIFEST_K));
+      const solid = k >= 1;
+      const strobe = solid
+        || Math.sin(f.since * BLINK_HZ * Math.PI * 2) > 0.55 - k * 1.6;
+      f.echoIn.visible = f.placed && f.since < FADE && strobe;
       if (f.echoIn.visible) {
         f.echoIn.position.set(s.hx, s.hy, s.hz);
-        /* REACHES 1 ON THE FRAME HER REAL SPRITE COMES BACK, because `FADE` is
-           the post-commit window itself rather than a number that resembles
-           it. That is the hand-off, and it is why this is not tuned by eye. */
-        f.echoIn.material.opacity = Math.min(1, f.since / FADE);
+        f.echoIn.material.opacity = k;
+      }
+    }
+
+    /* --- the rain, at both ends of the jump ---
+       "Can also show some kanji characters and matrix effect... can maybe have
+       the main effects happen at where the teleport begins and then have it
+       happen when the player teleports in the new location. So there are two
+       main locations where the cool kanji/matrix/spiritual effects happen."
+
+       THE ARRIVING COLUMN CANNOT EXIST BEFORE SHE ARRIVES, and that is not a
+       taste call. A column of light standing on the square she is about to
+       appear on gives the landing away exactly as completely as the ghost and
+       the spoke did, and the whole `secret` rule above is about not handing a
+       defender that half second for free. So `rainOut` runs from the press and
+       `rainIn` only from the commit — which is also the truer picture, since
+       she is not there yet.
+
+       BOTTOM-ANCHORED (`RAIN_CENTRE`), so the position IS the ground it stands
+       on and there is no half-height to get wrong. */
+    const clamp01 = (v) => Math.max(0, Math.min(1, v));
+    if (f.rainOut) {
+      const k = f.placed
+        ? clamp01(1 - f.since / BURST_T)
+        : clamp01(f.age / 0.18);
+      f.rainOut.visible = k > 0.01;
+      if (f.rainOut.visible) {
+        f.rainOut.position.set(
+          f.placed ? s.sx : p.position.x,
+          f.placed ? s.sy : p.position.y,
+          f.placed ? s.sz : p.position.z
+        );
+        f.rainOut.material.opacity = 0.7 * k * A;
+      }
+    }
+    if (f.rainIn) {
+      const k = f.placed
+        ? clamp01(f.since / 0.08) * clamp01(1 - f.since / (BURST_T * 1.4))
+        : 0;
+      f.rainIn.visible = k > 0.01;
+      if (f.rainIn.visible) {
+        f.rainIn.position.set(s.hx, s.hy, s.hz);
+        f.rainIn.material.opacity = 0.7 * k * A;
       }
     }
 
@@ -1136,19 +1589,22 @@ export class DodgeFx {
       for (const l of [f.lblTheta, f.lblCos, f.lblSin]) l.mat.opacity = A;
     }
 
-    /* THE RAIN OF KANA AT BOTH ENDS OF THE JUMP IS GONE, and it was asked for
-       by name: "remove the kanji symbols appearing before/after teleporting,
-       it is just extra unneeded screen clutter."
+    /* THE RAIN ABOVE IS THE SECOND VERSION OF ITSELF. The first was cut by
+       name — "remove the kanji symbols appearing before/after teleporting, it
+       is just extra unneeded screen clutter" — and the note left behind it
+       read: do not put it back without taking something else out.
 
-       IT WAS RIGHT ON ITS OWN TERMS AND WRONG IN THE FRAME. Two columns of
-       five falling glyphs plus a big 瞬 over each, at BOTH ends, on top of the
-       smoke, the decoy, two rings, a ghost, two coloured segments, a swept arc
-       and three floating readouts — in a quarter of a screen. The move already
-       says "瞬" on the orb, on the shelf and on the profile card; it did not
-       need to say it twice more mid-jump.
+       THE DIRECTOR ASKED FOR IT BACK AND PAID THE PRICE IN THE SAME NOTE. The
+       see-through KITTEN that used to stand on the landing is gone, replaced
+       by an orb the size of her head — about a fifth of the screen area, and
+       exactly the trade the rule demanded. What is above is also not what was
+       cut: twelve discrete objects per jump became two sprites sharing one
+       texture and one scroll. The header says all of this at length.
 
-       DO NOT PUT IT BACK WITHOUT TAKING SOMETHING ELSE OUT. The reason it went
-       is the density of this one figure, not the idea. */
+       THE RULE STILL STANDS FOR THE NEXT PERSON. This figure is dense — two
+       rings, a boiling ghost, an orb, two shells, two rains, a spoke, a path,
+       two coloured legs, a swept arc and three live readouts, in a quarter of
+       a screen — and nothing else goes into it without something coming out. */
   }
 
   /**

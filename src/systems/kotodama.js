@@ -256,15 +256,18 @@ export class Kotodama {
   /**
    * Take every plain Kotodama Orb out of the game.
    *
-   * BOTH HALVES OR NEITHER. The worn ones are children of the scene (not of
-   * the player group), and the uncollected ones are in `game.pickups`. Clear
+   * BOTH HALVES OR NEITHER. The carried ones hang in her own bag
+   * (`Player.orbRoot`) and the uncollected ones are in `game.pickups`. Clear
    * only the first and six pedestals keep glowing on six hillsides, promising
    * a collectible that no longer exists — which is worse than leaving them
    * all, because a kid will fly to one.
    */
   dissolvePlain() {
     for (const p of this.game.players) {
-      for (const o of p.orbs ?? []) this.scene.remove(o.group);
+      /* HER BAG. These used to be scene children; `scene.remove` on a child of
+         something else is a silent no-op, which is exactly the shape of bug
+         `orbRoot` exists to end. */
+      for (const o of p.orbs ?? []) p.orbRoot?.remove(o.group);
       p.plainOrbsHeld = p.orbs?.length ?? 0;   // kept for the toast, and only that
       p.orbs = [];
     }
@@ -926,7 +929,17 @@ export class Kotodama {
     return n;
   }
 
-  /** Reset to the state before 100% — used by Game.restart. */
+  /**
+   * Reset to the state before 100% — called by `Game.restart`, which is also
+   * the first thing `restore` does, so a LOAD goes through here too.
+   *
+   * IT WAS DEAD CODE FOR A WHILE AND THAT IS WORTH SAYING. This comment said
+   * "used by Game.restart" while nothing called it at all, so a restart left
+   * the dealer's stall standing over a town whose props had all stood back up,
+   * and `restore`'s `!game.kotodama.awakened` test could never pass. A doc
+   * comment that names its caller is not a guarantee that the caller exists —
+   * `world-check` now asserts the call site.
+   */
   clear() {
     for (const pk of this.pickups) this.scene.remove(pk.group);
     this.pickups = [];

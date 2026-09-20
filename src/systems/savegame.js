@@ -260,23 +260,40 @@ export function saveCap(rows = listSaves()) {
 }
 
 /**
- * SAVE & QUIT GAME's half of it: write this afternoon down NOW, and keep it if
- * it is long enough to be worth keeping.
+ * SAVE & QUIT GAME's half of it: write this afternoon down NOW — if it is old
+ * enough to be worth a row at all.
  *
- * UNDER FIVE MINUTES IT IS STILL WRITTEN, just not kept. Asked for as "if a
- * player manually saves ... and over the 5 minutes minimum play time, then
- * that save will be marked as do not delete" — so the gate decides the MARK,
- * not whether the button saves. Somebody who presses SAVE & QUIT after three
- * minutes has asked for a save and gets one; it simply turns over like an
- * autosave, because three minutes is the length the five-minute rule was
- * written to keep from crowding the list.
+ * UNDER FIVE MINUTES IT IS NOT WRITTEN, AND THAT IS A REVERSAL. It used to be
+ * written-but-not-kept, on the reading that "if a player manually saves ... and
+ * over the 5 minutes minimum play time, then that save will be marked as do not
+ * delete" decides the MARK and not whether the button saves. Reported from play
+ * against that reading, in these words: "When starting a new game and then doing
+ * Save & Quit Game, it is saving the game, even if it is not 5 minutes of
+ * gameplay. It should only save if they have more than 5 minutes of gameplay."
  *
- * @returns {?{kept: boolean, id: string}} null if nothing could be written
+ * AND THE OLD READING WAS WORSE THAN IT LOOKED. A short row is still a row: it
+ * takes a slot, it shows up in the list under two kittens who have done nothing,
+ * and it is the thing the five-minute rule exists to keep out — the autosave
+ * refuses to write it, so a button that wrote it anyway was a second door into
+ * the list with the opposite rule on it. Boot the game, look at the town, SAVE &
+ * QUIT, four times, and the afternoon somebody cared about is off the bottom.
+ *
+ * THE REFUSAL IS A RETURN VALUE AND NOT A `null`, because the caller has to tell
+ * the two apart: `null` is "this browser will not let the game store anything",
+ * which must not close the window, and `short` is "there is nothing worth
+ * writing yet", which may. Sixth non-negotiable — the caller says which.
+ *
+ * @returns {?{kept: boolean, id: ?string, short?: boolean}} null if nothing
+ *   could be written; `short` when the game is younger than `AUTOSAVE_AFTER`
+ *   and deliberately was not
  */
 export function saveByHand(game) {
+  if ((game.playT ?? 0) < AUTOSAVE_AFTER) {
+    return { kept: false, id: null, short: true };
+  }
   const snap = snapshot(game);
   if (!snap) return null;
-  snap.kept = (game.playT ?? 0) >= AUTOSAVE_AFTER;
+  snap.kept = true;
   return putSave(snap) ? { kept: snap.kept, id: snap.id } : null;
 }
 
@@ -323,6 +340,41 @@ export function castRow(p, here = true) {
     cut: p.bambooCut ?? 0,
     fedFrom: p.pandaFedFrom ?? null,
     raised: !!p.raisedPanda,
+    /* --- AND THE ANIMAL ITSELF, WHICH THOSE THREE NUMBERS COULD NOT REBUILD.
+       This file used to argue, at length, that saving the panda was wrong —
+       that `cut`, `fedFrom` and `raised` are the inputs `Game._updatePanda`
+       grows one out of, so a restore should hand the game's own rule its
+       numbers rather than reconstruct an animal from outside and get its tier
+       subtly wrong. The argument was good and the code did not do it:
+       `applyCast` never called `_updatePanda`, and `_updatePanda` is only ever
+       reached by swearing the oath or by cutting a cane. So a load came back
+       with no panda at all, and the badge said "20 more bamboo" under a kitten
+       who had had a full-grown one for an hour. Reported in exactly those
+       words.
+
+       AND THE RULE COULD NOT HAVE GOT IT RIGHT EVEN IF IT HAD RUN. `tierFor`
+       charges growth from `fedFrom`, the tally at the moment the animal last
+       grew — so a grown panda is saved with the debt already paid, and
+       replaying the rule over those numbers yields a CUB. "A fresh panda can
+       only ever be a cub" is written into `_updatePanda` as a consequence
+       worth knowing; here it is the thing that loses the animal.
+
+       SO THE TIER IS A FACT AND IT IS RECORDED. `down` with it, because a
+       knocked-down panda is a cub that must STAY one until the shrine, and
+       rebuilding it from the tally alone would quietly grow it back — the very
+       case `_updatePanda`'s `knockedDown` guard exists to prevent. Bamboo never
+       regrows (fourth non-negotiable), so an animal lost on a load is lost for
+       the rest of that world.
+
+       `at` IS WHERE IT WAS STANDING, for the same reason her own `at` is:
+       a pet that reappears in the town square when the party is three islands
+       away has been moved by the save rather than kept by it. */
+    panda: p.panda ? {
+      tier: p.panda.tier,
+      down: !!p.panda.knockedDown,
+      at: [p.panda.position.x, p.panda.position.y, p.panda.position.z]
+        .map((n) => +n.toFixed(2)),
+    } : null,
     /* HOW MANY PLAIN ORBS SHE IS CARRYING, WHICH NOTHING RECORDED. The world
        remembered which pedestals were empty and nobody remembered who had
        emptied them, so a load — or a kitten dropping out and back in — handed
@@ -387,12 +439,20 @@ export function applyCast(game, p, row) {
   p.bambooCut = row.cut ?? 0;
   p.pandaFedFrom = row.fedFrom ?? null;
   p.raisedPanda = !!row.raised;
+  /* HER PANDA, PUT BACK AS IT WAS — see `castRow`'s `panda` for why the tier
+     is a recorded fact and not something re-derived from the tally. The game
+     owns the building of it (`Game._recallPanda`), because a Panda needs the
+     art, the scene and the ground height, none of which this file has. It is
+     safe on the rejoin path as well as the load path: a kitten picking her
+     controller back up finds the same animal, at the same size, and it is the
+     one she left rather than a second one. */
+  game._recallPanda?.(p, row.panda ?? null);
   /* HER PLAIN ORBS, BUT ONLY BEFORE THE AWAKENING — after it there are none
      anywhere, on anybody, and a row taken before 100% being loaded after it
      is not a thing that can happen (a load rebuilds the world from the save).
      Quiet: she is picking her controller back up, not finding them again. */
   if (!game.kotodama?.awakened && game._giveOrb) {
-    for (const o of p.orbs ?? []) game.scene?.remove(o.group);
+    for (const o of p.orbs ?? []) p.orbRoot?.remove(o.group);
     p.orbs = [];
     const n = Math.max(0, Math.min(20, Math.floor(row.plain ?? 0)));
     for (let k = 0; k < n; k++) game._giveOrb(p, { quiet: true });
@@ -490,6 +550,28 @@ export function snapshot(game) {
       stage: game.quest.stage,
       spent: [...game.quest.spent],
       rodeRyu: !!game.quest.rodeRyu,
+    } : null,
+
+    /* RYUUSEKI, WHO CANNOT BE SUMMONED TWICE.
+       Reported with the panda, and it is the more serious half: "Ryuuseki was
+       also spawned before, but after loading, is no longer in the game. He
+       should stay spawned if already spawned and should be on the map where
+       last left, or respawned at the torii gate where he originally spawns, in
+       case he is lost floating in the world somewhere. This is important as
+       Ryuuseki cannot be respawned."
+
+       AND HE REALLY CANNOT. There are seven stars, they are taken once, and
+       `restore` puts them back exactly as the save found them — so a save
+       taken after the summon came back with `scenes.summon` spent, seven stars
+       gone, and no dragon anywhere, with nothing in the game able to make
+       another. Fourth non-negotiable, in the one place it had teeth.
+
+       ONE FLAG AND A POINT. He has no state worth keeping beyond where he was
+       floating: his riders are cleared by `restart`, and `restore` seats the
+       kittens on the ground. */
+    ryu: game.ryu ? {
+      at: [game.ryu.position.x, game.ryu.position.y, game.ryu.position.z]
+        .map((n) => +n.toFixed(2)),
     } : null,
 
     awakened: !!game.kotodama?.awakened,
@@ -715,6 +797,25 @@ export function restore(game, snap) {
     game.summonScene.dawnWant = snap.sky?.dawn ?? 0;
     game.summonScene.dawn = game.summonScene.dawnWant;
   }
+  /* ...AND THE DRAGON, WHO IS PART OF THE STORY RATHER THAN OF THE WORLD.
+     BEFORE the sky and the flags below only by accident of reading order; what
+     matters is that it is after `restart()`, which is what took him out.
+     `_spawnRyuuseki` puts him at the torii, and then the saved point moves him
+     — but ONLY if there is ground under it. "In case he is lost floating in the
+     world somewhere" was asked for in those words, and a y that came from a
+     build with different terrain is exactly how that happens; the torii is the
+     answer that is always framable. House rule: degrade, don't vanish. */
+  if (snap.ryu && game._spawnRyuuseki) {
+    const r = game._spawnRyuuseki();
+    const at = snap.ryu.at;
+    if (r && Array.isArray(at) && at.every(Number.isFinite)
+      && game.world?.heightAt?.(at[0], at[2])) {
+      r.position.set(at[0], at[1], at[2]);
+      r.group.position.copy(r.position);
+    }
+    game._updateBallHud?.();
+  }
+
   game._endingShown = !!snap.ending;
   /* A SAVE WRITTEN BEFORE `watched` EXISTED STILL ANSWERS THE QUESTION, out of
      the two facts that used to be ANDed to answer it — a finished game whose
