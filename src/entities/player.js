@@ -2820,14 +2820,29 @@ export class Player {
     if (pad.pressed('interact')) {
       const hall = world.clanHallNear(this.position.x, this.position.z);
       if (hall && this.clan?.id !== hall.clan.id) {
-        /* You cannot swear to somebody you have not met. The leader's shrine
-           scene is the introduction, and it fires on its own after two seconds
-           of standing here — so this branch is only reachable by pressing
-           interact within that window, which is a very small door. Saying so
-           out loud matters more than blocking silently: an interact button
-           that does nothing is indistinguishable from a broken one. */
+        /* You cannot swear to somebody you have not met, and PRESSING IS NOW
+           HOW YOU MEET HER. Asked for in as many words: "when going to a clan
+           leader and if they haven't had their cutscene yet, if the user
+           presses interact then they should just start the cutscene without
+           needing to wait the specific amount of time to see it."
+
+           IT USED TO REFUSE WITH A TOAST — "wait, she has something to say
+           first" — which is honest and is the game telling a kid to stand
+           still and do nothing for two seconds. `ShrineScene.watch` measures a
+           dwell because a kitten SPRINTING over a dais has not arrived
+           anywhere (see its rule 3); somebody who stopped and pressed the
+           button has arrived by any definition, so the dwell has nothing left
+           to prove and the button is the better door.
+
+           THROUGH THE GAME, NOT FROM HERE. `hud.onMeetLeader` is the one call
+           — a Player must not hold a ShrineScene, the same reason it does not
+           hold an Audio — and it answers false when the scene cannot start
+           (another scene is up, or she is on a dragon), which is when the
+           toast is still the right thing to say. */
         if (hud?.leaderFor && !hud.leaderFor(hall.clan)?.met) {
-          hud?.toast?.('Wait — she has something to say first…', this.index);
+          if (!hud.onMeetLeader?.(this, hall.clan)) {
+            hud?.toast?.('Wait — she has something to say first…', this.index);
+          }
         } else {
           this.clan = hall.clan;
           /* HER OWN RING KEEPS HER OWN COLOUR — see `clanRing` in the

@@ -504,6 +504,7 @@ export class Tournament {
 
     this.bannerEl = document.getElementById('arena-banner');
     this.hudEl = document.getElementById('arena-hud');
+    this.winnersEl = document.getElementById('arena-winners');
     this.countEl = document.getElementById('arena-countdown');
     this.resultEl = document.getElementById('arena-result');
     this._bindResultTaps();
@@ -901,6 +902,14 @@ export class Tournament {
        the town for the rest of the session. */
     this._hideCountdown();
     this.hudEl?.classList.add('hidden');
+    /* AND THE WINNERS' FACES, EXPLICITLY, for exactly the reason the countdown
+       above is: `_paintWinners` runs from `update`, and `update` returns on its
+       first line when the state is 'off' — so a tournament torn down during a
+       ceremony would leave two kittens grinning over the town square for the
+       rest of the afternoon. The signature is cleared with it, or the next
+       round won by the same side would find it unchanged and never repaint. */
+    this._winnersSig = '';
+    this.winnersEl?.classList.add('hidden');
     this.resultEl?.classList.add('hidden');
     this.game.menagerie?.stop();
     for (const p of this.game.players) {
@@ -1506,6 +1515,7 @@ export class Tournament {
 
     this.t += dt;
     this._paintHud();
+    this._paintWinners();
 
     /* BEFORE THE STATE MACHINE, AND IN EVERY STATE. See OUT_FLOOR: the
        ring-out rule has four exemptions that are each correct and that
@@ -2659,6 +2669,104 @@ export class Tournament {
       <div class="ah-wing">${left.map((s) => sideBlock(s, 'l')).join('')}</div>
       <div class="ah-mid">${mid}</div>
       <div class="ah-wing r">${right.map((s) => sideBlock(s, 'r')).join('')}</div>`;
+  }
+
+  /**
+   * WHO WON THAT ROUND, UNDER THE HEALTH BARS, WHILE HE IS SAYING SO.
+   *
+   * Asked for as: "when a round is over, should show the faces/names of the
+   * players that won that round when Mr. Satan is giving his speech on who
+   * won, can be under the health bars, towards the center of the screen."
+   *
+   * IT IS PAINTED FROM THE STATE, LIKE EVERYTHING ELSE ON THIS HUD, and for
+   * the reason `_paintCountdown` gives at length: a round can end six ways and
+   * a `hidden` hung off any one of them is five ways to leave two faces
+   * floating over the town. `ko` is the ceremony — the gong, the banner, his
+   * line and the toast — and it is exactly the beat that was asked for.
+   *
+   * A DRAW SHOWS NOTHING. `_lastWinner` is -1 and there is nobody to show;
+   * the banner already says ROUND OVER and he has already said he is
+   * disappointed. A box captioned WINS THE ROUND with no faces under it would
+   * be furniture claiming something that did not happen — sixth
+   * non-negotiable, which cuts both ways.
+   *
+   * REBUILT ONLY WHEN THE ANSWER CHANGES, AND THAT IS NOT AN OPTIMISATION —
+   * it is why the faces can be canvases at all. `_paintHud` replaces its whole
+   * markup every frame; a face in there would be a fresh element and a fresh
+   * `drawImage` sixty times a second for the length of a ceremony. The
+   * signature carries the round as well as the side, so back-to-back rounds
+   * won by the same side really do repaint (and re-run the entrance).
+   *
+   * THE TOP IS MEASURED OFF THE BARS, NOT TYPED. `#arena-hud` grows downward
+   * with the number of fighters stacked in a side and with the overflow debug
+   * row, so any constant here would be right at two players and sitting on the
+   * bars at four. Same rule the whole HUD follows: measure, don't reason,
+   * about anything drawn.
+   */
+  _paintWinners() {
+    const el = this.winnersEl;
+    if (!el) return;
+    const side = this.state === 'ko' ? this._lastWinner : -1;
+    const who = side >= 0 ? this.sideMembers(side) : [];
+    const sig = who.length
+      ? `${this.round}:${side}:${who.map((p) => p.index).join(',')}`
+      : '';
+    if (sig !== this._winnersSig) {
+      this._winnersSig = sig;
+      el.classList.toggle('hidden', !sig);
+      if (sig) {
+        /* THE CAPTION IS THE SIDE'S, SAID ONCE. Two faces with a caption each
+           reads as two separate results rather than as one team winning. It
+           names the TEAM when there are teams — the same `teamName` the bars
+           above already fly — and simply says WINS THE ROUND when there are
+           not, because in a free-for-all the face IS the name. */
+        const cap = this.teamed
+          ? `${escapeHtml(teamName(side))} WINS THE ROUND`
+          : 'WINS THE ROUND';
+        el.innerHTML = who.map((p) => `
+          <div class="aw-one" style="--who:${cssFor(p.style)}">
+            <canvas class="aw-face" data-aw="${p.index}" width="128" height="128"></canvas>
+            <span class="aw-who">${escapeHtml(p.name)}</span>
+          </div>`).join('') + `<span class="aw-cap">${cap}</span>`;
+        /* AFTER `innerHTML`, for the reason `_paintChampionFace` spells out: a
+           canvas cannot be expressed as markup, so the elements are new and
+           have to be painted. The crop is measured once and cached on the
+           atlas, so this is a `drawImage` per kitten and nothing else. */
+        for (const p of who) this._paintWinnerFace(p);
+      }
+    }
+    if (!sig) return;
+    /* EVERY FRAME, BECAUSE THE BARS MOVE UNDER IT. A fighter's KO cross and
+       the cooldown pip both change the height of `#arena-hud` during the
+       ceremony, and a box placed once would be sitting on them a moment later.
+       It is one `getBoundingClientRect` and one string write. */
+    const bars = this.hudEl?.getBoundingClientRect();
+    if (bars?.height) el.style.top = `${Math.round(bars.bottom + 10)}px`;
+  }
+
+  /**
+   * Crop one winner's face out of her own atlas.
+   *
+   * THE SAME CROP THE CHAMPION CARD USES, and deliberately the same call: cell
+   * (0,0) is front-facing idle, and `measure: true` reads the ink box off the
+   * sheet rather than trusting `contentScale`, which on a turnaround sheet is
+   * its jump frame and crops the sky above her ears. See `drawPortrait`.
+   *
+   * HER OWN COLOUR ROUND IT — `cssFor(p.style)`, the cat she is playing, not
+   * the seat she is sitting in. A girl who swapped cats in the picker must not
+   * be framed in somebody else's orange.
+   *
+   * SILENT WHEN THERE IS NO ART. `public/sprites/` is deletable (ninth
+   * non-negotiable) and the fallback atlas has no canvas to read; the box then
+   * shows an empty frame in her colour with her name under it, which still
+   * answers the question the whole strip is here to answer.
+   */
+  _paintWinnerFace(p) {
+    const cv = this.winnersEl?.querySelector(`.aw-face[data-aw="${p.index}"]`);
+    if (!cv) return;
+    const art = this.game.kittenArt?.[this.game.roster?.[p.index] ?? p.index];
+    if (!art) return;
+    drawPortrait(cv, art, cssFor(p.style), { col: 0, row: 0, measure: true });
   }
 
   _paintResult() {

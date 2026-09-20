@@ -1028,3 +1028,50 @@ export function mapWidth({
     : Infinity;
   return Math.min(MAP_MAX, paneW * MAP_WIDE, cap);
 }
+
+/* ===========================================================================
+   AND HOW WIDE THE DOJO'S SIN/COS BOARD IS IN A PANE TWO KITTENS ARE SHARING.
+
+   Here for the reason `mapWidth` is here: it is a function of the pane and of
+   nothing else, so `world-check` can assert it without a Game, a GPU or a
+   world. `Game._drawMathBoard` writes the result to `style.width`.
+=========================================================================== */
+
+/**
+ * THE ONE WIDTH A SHARED PANE'S BOARD TAKES — floor AND ceiling.
+ *
+ * 540 IS THE NUMBER THE STYLESHEET HAS ALWAYS USED for an unsplit screen, and
+ * it is the width a pane holding THREE kittens already got: at four players
+ * with three together, `splitLayout` gives the big group a 62% landscape pane,
+ * the cap bites, and the board comes out at 540. That is the size this was
+ * measured against and the size that was asked for.
+ *
+ * WHAT IT FIXES IS A PANE THAT IS TALLER THAN IT IS WIDE. Reported from play:
+ * "if split screen is set to side by side, the sin/cos UI is too big when
+ * there are 2 people in one split screen. We should make it the same size as
+ * when there are 3 people in one split screen and in the dojo... Sometimes the
+ * sin/cos UI is too small too, so let's make sure it is always at least the 3
+ * people size when more than 1 person in the same split screen."
+ *
+ * Both halves of that are ONE rule and the same number. A side-by-side split
+ * on a 1920x1080 screen gives each pane 958x1080 — PORTRAIT — and the portrait
+ * branch deliberately lifts the 540 cap so a kitten playing alone in a column
+ * gets a board that fills her width. Measured: 930px, which is most of the
+ * pane, drawn over the two kittens the board is for. That is "too big". The
+ * floor is the same number arrived at from the other side, on a window small
+ * enough that the pane cannot hold 540.
+ *
+ * THE PORTRAIT LIFT STAYS FOR A KITTEN ON HER OWN, which is the report it was
+ * put in for — "should take up nearly the entirety of the width of the screen,
+ * as it is a smaller screen with the entire height of the window screen". One
+ * kitten in a column is being asked to read a diagram; two kittens in a column
+ * are being asked to PLAY in one, and the diagram must not be the pane.
+ *
+ * @param paneW the pane's width in CSS pixels
+ * @param pad   the pixels of margin the board keeps either side
+ */
+export const MATH_SHARED_W = 540;
+
+export function mathSharedWidth(paneW, pad = 28) {
+  return Math.max(1, Math.min(MATH_SHARED_W, paneW - pad));
+}

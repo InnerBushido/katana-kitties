@@ -183,6 +183,29 @@ export class MenuNav {
     const all = this.game.input.players;
     const owner = this.game.menuOwner;
     const ps = owner != null && all[owner] ? [all[owner]] : all;
+    /* AND THE KEYBOARD IN FRONT OF THE LAPTOP, when player one opened this on
+       a pad. "When Player 1 brings up the Pause Menu, we should still be able
+       to control the menu using WASD controls" — even when WASD is walking
+       somebody else, which is exactly when `Input._spareHandPass` refuses to
+       fold it into her slot.
+
+       THE REFUSAL IS ABOUT PLAY, NOT ABOUT MENUS. Two kittens sharing WASD in
+       the world move as one and it reads as a broken controller. A menu has no
+       kitten in it: the game is paused, there is one cursor, and its owner is
+       already named — so a second device pushing that one cursor is the same
+       cursor, not a second body. `Input.menuHand` returns null in every case
+       where those keys are ALREADY in `ps` (touch, no pad, `alsoKeyset` set),
+       so this can never double a press; see the five refusals on it.
+
+       It joins the merge as an ordinary pad, which means `spend()` pays for
+       its edges too — a WASD confirm here must not fall through to the stall
+       branch any more than a Joy-Con one may.
+
+       ONLY ONTO THE OWNER'S OWN COPY. `ps` is `all` itself in the shared case,
+       and pushing onto that would add the hand to `Input.players` for the rest
+       of the frame — a fourth kitten made of nothing. */
+    const hand = ps !== all ? this.game.input.menuHand?.(owner) : null;
+    if (hand) ps.push(hand);
     let x = 0;
     let y = 0;
     for (const p of ps) {

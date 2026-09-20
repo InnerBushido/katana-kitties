@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import './style.css';
 
 import {
-  InputManager, HALVES, MAP_FIELDS, VJOY_AXIS_NAMES, deviceId, KEYSETS,
+  InputManager, HALVES, MAP_FIELDS, VJOY_AXIS_NAMES, KEYSETS,
 } from './core/input.js';
 import { Audio, trackForIsland, voicePath } from './core/audio.js';
 import { loadSpriteAtlas, recolourAtlas } from './core/spritesheet.js';
@@ -16,8 +16,8 @@ import { World, CLANS } from './world/world.js';
 import { Player, ATTACKS, COMBAT, BASE_REACH, MAX_HP, KO_TIME } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from './core/palette.js';
 import {
-  splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
-  paneSeats, outOfShot, framedMembers, paneWiden,
+  splitLayout, mapWidth, mapSpot, mathSharedWidth, assignMaps, nearestMap, keyMaps,
+  fitDistance, stablePanes, paneSeats, outOfShot, framedMembers, paneWiden,
 } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
@@ -182,6 +182,25 @@ const TOAST_BASE = 600;
 const TOAST_PER_CHAR = 55;
 const TOAST_MAX = 7000;
 const TOAST_FADE = 500;
+
+/* ...AND HOW LONG A WARNING DOES. See `Game.warn`: the same per-character
+   curve, with a floor of four seconds rather than 1.7 and a ceiling of nine.
+   A warning is about something that cannot be undone, it is addressed to the
+   room rather than to one kitten, and the player it is for is nine — so the
+   shortest one it can print still has to survive somebody looking up. */
+const WARN_HOLD_MIN = 4000;
+const WARN_HOLD_MAX = 9000;
+
+/* BAMBOO THAT NOBODY CAN EAT — see `Game._warnBamboo`.
+   Ten canes between repeats is what was asked for, and it is also roughly a
+   quarter of the forty a cub costs: often enough that a kid who is flattening
+   a grove hears it again, rare enough that it is not a line per swing. */
+const BAMBOO_WARN_EVERY = 10;
+/* ...and the two fractions of the whole sky's bamboo that warn the party,
+   HIGHEST FIRST. `_warnBamboo` walks them in order and keeps the last one it
+   crosses, so a swing that somehow takes the grove past both says the lower
+   number — the one that is actually true. */
+const BAMBOO_WARN_MARKS = [0.5, 0.25];
 
 
 
@@ -460,6 +479,11 @@ class Game {
          than only a button because "we may remove those from the controllers
          in the future", and because a kid on a phone has no `M` to press. */
       math: 'auto',
+      /* 'each' | 'two' — how many minimaps are on screen. See `_buildHud` and
+         the row in index.html. 'each' is the shipped answer: a map in every
+         window is what makes a zoom button turn the box its own player is
+         looking at, and at two players the two answers are the same screen. */
+      maps: 'each',
     };
     /* THE MATHS OVERLAY IS OFF BY DEFAULT ON A PHONE, and it turns itself on
        when she walks into the Dojo — see `_updateMathForDojo`. It is not a
@@ -664,7 +688,9 @@ class Game {
        setting that did not change is churn nobody asked for. */
     if (this._padOnLast !== undefined && this._padOnLast !== pad) {
       this.input.claims = {};
-      this._autoSeated?.clear();
+      /* The auto-seat latch was cleared here too, and there is no longer one
+         to clear: `_autoSeat` asks for a press of A or START and an edge does
+         not need forgiving. See `InputManager.sparePad`. */
       this._trimPartyToDevices();
     }
     this._padOnLast = pad;
@@ -949,16 +975,28 @@ class Game {
       if (busy || p.mount || p.rideAlong || p.pandaMount || p.angel
         || this.inspector?.busy(p.index)) { p.setCallout(null); continue; }
       const hall = this.world?.clanHallNear(p.position.x, p.position.z);
-      if (!hall || p.clan?.id === hall.clan.id || !this.leaderFor(hall.clan)?.met) {
-        p.setCallout(null);
-        continue;
-      }
+      if (!hall || p.clan?.id === hall.clan.id) { p.setCallout(null); continue; }
       const key = this.input.promptFor(p.index, 'interact');
       /* NO BUTTON, NO PROMPT. A slot with nothing bound to it cannot be told
          what to press, and "press ? to swear" is worse than the silence this
          whole function exists to fix. */
       if (!key) { p.setCallout(null); continue; }
-      p.setCallout(`[${key}]  ${hall.clan.oath.toUpperCase()}`);
+      /* AND BEFORE THE INTRODUCTION IT OFFERS THE INTRODUCTION.
+         This used to go silent on `!met` — "standing in a ring you have just
+         walked into shows nothing for two seconds while the scene fires,
+         which is correct: there is nothing to press yet". There is now: the
+         same button starts her scene (see the oath branch in
+         `entities/player.js`), so the two seconds are hers to skip and the
+         prompt has to say so or the door is invisible.
+         HER NAME, NOT THE OATH. The oath is what the button does AFTERWARDS,
+         and offering SWEAR TO ICEWHISKER for a press that plays a cutscene
+         would be the label lying about what the button does — the exact
+         failure the `met` test in here was added to prevent, facing the other
+         way. */
+      const leader = this.leaderFor(hall.clan);
+      p.setCallout(leader?.met
+        ? `[${key}]  ${hall.clan.oath.toUpperCase()}`
+        : `[${key}]  MEET ${(leader?.spec?.name ?? hall.clan.name).toUpperCase()}`);
     }
   }
 
@@ -2123,6 +2161,17 @@ class Game {
       this._mapT = 1;        // ...and un-throttle it, so it lands this frame
       this._drawMaps();
     });
+    /* HOW MANY MAPS, APPLIED ON THE SPOT — and it is a REBUILD, not a redraw.
+       The boxes are DOM elements made in `_buildHud`, so there is no version
+       of this that `_drawMaps` alone could do: going from two to four has to
+       create two canvases and two `Minimap`s. Same argument as the direction
+       row above about why it cannot wait for the next unpause — the pause menu
+       is over a frozen world with the maps still on screen behind it. */
+    bind('set-maps', 'maps', () => {
+      this._buildHud();
+      this._mapT = 1;
+      this._drawMaps();
+    });
     /* APPLIED ON THE SPOT, not at the next boot. The pause menu is over a
        frozen world with the orbs still on screen behind it, so a row that took
        effect "next time" would look like a row that did nothing. */
@@ -2438,12 +2487,15 @@ class Game {
    * under somebody.
    *
    * A KITTEN WITH NO MAP IN HER OWN PANE NOW DRIVES THE NEAREST ONE, and used
-   * to be told she had none. There are two maps at most (see `_buildHud`), so
-   * with three or four panes somebody's corner is empty — and the old answer,
-   * a toast reading "No map in your window", was honest and no use: the
-   * information she wants IS on screen, she simply had no way to change how
-   * much of it she could see. Two maps, four kittens, two drivers each is what
-   * Richard asked for, and `nearestMap` decides which pair share which.
+   * to be told she had none. THAT CASE IS UNREACHABLE AT THE SHIPPED SETTING:
+   * there is a map in every window now (see `_buildHud`), so `nearestMap`
+   * finds her own and never looks further. It is still here, and still exactly
+   * right, for `Minimaps: Only two, shared` — with three or four panes and two
+   * boxes somebody's corner is empty, and the old answer, a toast reading "No
+   * map in your window", was honest and no use: the information she wants IS
+   * on screen, she simply had no way to change how much of it she could see.
+   * Two maps, four kittens, two drivers each is what Richard asked for then,
+   * and `nearestMap` decides which pair share which.
    *
    * SHE IS STILL TOLD WHICH BOX MOVED, because a button whose effect is in
    * somebody else's corner reads as a button that did nothing — the same rule
@@ -2513,7 +2565,9 @@ class Game {
    * questions, one answer each, one implementation of the actual turn.
    *
    * `elsewhere` MAKES THE TOAST NAME THE BOX THAT MOVED. With four kittens and
-   * two maps, half of them are turning a dial in somebody else's corner — and
+   * only two maps — `Minimaps: Only two, shared`, which is no longer the
+   * shipped answer — half of them are turning a dial in somebody else's
+   * corner, and
    * "Map zoom 2.2x" printed over a pane whose map did not change is the game
    * telling her something happened where she cannot see it happen. Only ever
    * true for the bumper: a TAP is on the box itself, so there is nothing to
@@ -3594,6 +3648,12 @@ class Game {
       + `   ·   M: math overlay   ·   cut the bamboo east of town`
       + `   ·   fly south-east to Pandapaw and raise a panda`
       + `   ·   fly west to the Dojo of the Turning Circle`;
+    /* AND ANY WARNING SITTING ABOVE IT MOVES WITH IT. This line is the only
+       thing that changes the hint's height — it wraps to two lines on a narrow
+       window and back on a wide one — so it is the only place that can leave a
+       warning eight pixels inside it. Costs a measurement on the frames the
+       hint's text actually changed, which is rarely. */
+    this._placeWarnings();
   }
 
   /**
@@ -3681,13 +3741,24 @@ class Game {
   /**
    * Which piece of mischief THIS PANE should be pointed at, or null.
    *
-   * TWO REASONS A MAP POINTS, AND THEY ARE DIFFERENT REASONS. A kitten who
-   * swore to Icewhisker has a chevron over the barrel in the world already and
-   * asked for it; "so that it is not just highlighted on the world map, but on
-   * the mini-map as well" is the other half of the same promise, and it is
-   * hers whatever the count says. Everybody else gets it only at the end, when
-   * three things are left in the sky and the hunt has stopped being a hunt —
-   * see MAP_FROM in `systems/lasthunt.js` for why three and not five.
+   * THE COUNT DECIDES, AND NOTHING ELSE DOES. Reported from play: "on the
+   * minimap, the Sense Mischief ability should only work on the minimap when
+   * there are 3 or less mischief left."
+   *
+   * IT USED TO BE `mapOn || she has the buff`, so a kitten who swore to
+   * Icewhisker had the crosshair on her map from the moment she swore —
+   * with two hundred props still standing, which is a sight that points at
+   * whatever happens to be nearest and never stops moving. That is not help,
+   * it is a compass spinning; and it gives away the ISLAND for every barrel
+   * in the game, which is the one thing `MAP_FROM` exists to hold back (see
+   * `systems/lasthunt.js`: "between five and four the hunt is still a hunt
+   * and being told where to go would take the last discovery in the game away
+   * from them").
+   *
+   * WHAT THE BUFF STILL BUYS IS THE WORLD CHEVRON, unchanged — the arrow over
+   * the barrel in `_updateSeek` above, which answers "which way" from the
+   * first prop of the afternoon. The map answers "which island", and that
+   * question only becomes worth answering at three.
    *
    * PER PANE, FROM THAT PANE'S OWN KITTENS. Two sisters on one screen looking
    * at two different islands are two different answers to "the nearest one",
@@ -3695,10 +3766,10 @@ class Game {
    * than averaging two positions into a point neither of them is standing on.
    */
   _seekMarkFor(members) {
+    if (!this.lastHunt?.mapOn) return null;
     for (const i of members) {
       const p = this.players[i];
       if (!p) continue;
-      if (!this.lastHunt?.mapOn && !p.clan?.buff?.seek) continue;
       const t = p.seekTarget;
       if (t && !t.scored) return t;
     }
@@ -3865,6 +3936,45 @@ class Game {
   /** The leader standing at a clan's shrine. Used to gate joining on `met`. */
   leaderFor(clan) {
     return this.leaders.find((L) => L.clan.id === clan.id) ?? null;
+  }
+
+  /**
+   * SHE PRESSED THE BUTTON INSTEAD OF WAITING — start the introduction now.
+   *
+   * Asked for as: "when going to a clan leader and if they haven't had their
+   * cutscene yet, if the user presses interact then they should just start the
+   * cutscene without needing to wait the specific amount of time to see it."
+   *
+   * IT IS THE SAME DOOR `ShrineScene.watch` USES, not a second one. `start`
+   * latches `leader.met`, stands the kitten on her mark and picks the swing —
+   * so a scene begun this way is the scene, and the dwell timer that was
+   * halfway through simply never gets to fire (`watch` returns immediately on
+   * `L.met`). There is no version of this that plays it twice.
+   *
+   * THE DWELL IS CLEARED TOO. A kitten who skips the scene on its first frame
+   * is standing right back on the dais with a two-second clock that has been
+   * running the whole time, and `watch` would not restart it — but a SISTER
+   * standing there would, with a leader who is now `met`, which is a no-op.
+   * Clearing it is about the honest thing rather than a bug: the timer is
+   * measuring a wait that has been answered.
+   *
+   * IT ANSWERS FALSE RATHER THAN QUEUEING. A refusal here becomes the toast
+   * the oath branch already had, which is the sixth non-negotiable: a press
+   * that cannot do the thing says what it is waiting for. The cases are a
+   * scene or the ring already owning the screen, and a kitten in the air —
+   * `watch` skips a mounted player because "taking the screen off her
+   * mid-flight is theft", and a button press from the saddle is no different.
+   *
+   * @returns {boolean} whether the introduction really started.
+   */
+  onMeetLeader(player, clan) {
+    const L = this.leaderFor(clan);
+    if (!L || L.met) return false;
+    if (this._sceneActive() || this.tournament?.active) return false;
+    if (player.mount || player.rideAlong || player.pandaMount || player.angel) return false;
+    this.shrineScene.start(L, player);
+    this.shrineScene.dwell.set(clan.id, 0);
+    return !!this.shrineScene.active;
   }
 
   /* ---------------------------- debug keys ------------------------------- */
@@ -7041,6 +7151,154 @@ class Game {
   }
 
   /**
+   * A WARNING, AT THE BOTTOM, ADDRESSED TO EVERYBODY.
+   *
+   * NOT A TOAST, AND THE DIFFERENCE IS THE PROMISE EACH ONE MAKES. A toast is
+   * news about something that has happened and is addressed to ONE kitten —
+   * it carries her colour and it is one of four stacked at the top, where a
+   * kid learns to let things scroll past. This is a consequence that has not
+   * happened yet and is addressed to the room, so it is one line, centred, at
+   * the bottom, in warning colours. Mixing them would mean the sentence that
+   * most needs reading arrives in the shape of the ones that do not.
+   *
+   * IT HOLDS LONGER THAN A TOAST BY THE SAME RULE A LONG TOAST DOES — see
+   * `toast` — because the thing it is warning about is irreversible and the
+   * player it is for is nine. `WARN_HOLD_MIN` is deliberately above
+   * `TOAST_MIN`: there is no case where a warning worth printing is worth
+   * reading in a second and a half.
+   *
+   * TWO AT MOST. The one case that stacks is a cane that both crosses a
+   * kitten's tenth AND takes the grove past a mark, which is two true
+   * sentences about the same swing; a third would be a paragraph over the
+   * picture.
+   */
+  warn(text) {
+    const wrap = document.getElementById('warnings');
+    if (!wrap) return;
+    const el = document.createElement('div');
+    el.className = 'warn-line';
+    el.textContent = text;
+    wrap.appendChild(el);
+    const hold = Math.min(
+      WARN_HOLD_MAX,
+      Math.max(WARN_HOLD_MIN, TOAST_BASE + String(text).length * TOAST_PER_CHAR)
+    );
+    setTimeout(() => el.classList.add('fade'), hold);
+    setTimeout(() => el.remove(), hold + TOAST_FADE);
+    while (wrap.children.length > 2) wrap.firstChild.remove();
+    this._placeWarnings();
+  }
+
+  /**
+   * Park the warning strip just above `.hint`, by MEASURING the hint.
+   *
+   * IT WAS A NUMBER, AND THE NUMBER WAS RIGHT ONCE. `bottom: 44px` clears a
+   * ONE-LINE hint (16px up, ~17px tall) and is eight pixels inside a TWO-line
+   * one — and the hint wraps to two lines on a narrow window, which is every
+   * window a kid plays in on a laptop. Seen on the first warning ever printed:
+   * "EMBER has cut 10 bamboo…" sitting across "press ENTER to join as P2".
+   * Non-negotiable 8 — measure, don't reason, about anything drawn.
+   *
+   * THE CSS NUMBER STAYS AS THE FALLBACK for the frames before this runs and
+   * for a hidden hint, and `touch-ui` is left alone entirely: there the strip
+   * is at the TOP (the bottom of a phone is thumbs), and an inline `bottom`
+   * would beat the rule that puts it there.
+   */
+  _placeWarnings() {
+    const wrap = document.getElementById('warnings');
+    if (!wrap || document.body.classList.contains('touch-ui')) return;
+    if (!wrap.children.length) { wrap.style.bottom = ''; return; }
+    const hint = document.querySelector('.hint');
+    const b = hint?.offsetParent ? hint.getBoundingClientRect() : null;
+    wrap.style.bottom = b?.height
+      ? `${Math.round(window.innerHeight - b.top + 8)}px`
+      : '';
+  }
+
+  /**
+   * BAMBOO THAT NOBODY CAN EAT — the two warnings, on every cane cut.
+   *
+   * Asked for as: "once a player that has not pledged yet at Pandapaw cuts
+   * down 10 bamboo before pledging, we should display a small warning at the
+   * bottom of the screen that any more bamboo they cut down is wasted and will
+   * not regrow until they go to Pandapaw and pledge to obtain a baby panda. If
+   * they cut 10 more down before pledging, the warning should pop up again...
+   * We should have a similar warning appear to warn all the players when there
+   * is only 50% bamboo left and also at 25% bamboo left, if there are still
+   * players that have not yet pledged to Pandapaw yet."
+   *
+   * WHY IT NEEDS SAYING AT ALL. `bambooCut` is a LIFETIME tally, so canes cut
+   * before the oath are NOT wasted for the kitten who cuts them — they are
+   * banked, and `_updatePanda` spends them the moment she swears. What is
+   * wasted is the GROVE: nothing regrows (fourth non-negotiable), there are a
+   * fixed number of canes in the sky, and a panda costs forty of them. Four
+   * kittens who have not sworn can flatten every grove in the game in ten
+   * minutes and leave the party with no way to raise a second panda. That is
+   * the thing there is no way back from, and the thing the girls could not
+   * possibly know.
+   *
+   * TWO SENTENCES, TWO SCOPES, AND THEY ARE NOT THE SAME WARNING. Hers is
+   * about HER and repeats every ten canes because she is the one swinging;
+   * the grove's is about EVERYBODY and fires once per mark, because a
+   * threshold crossed twice has not been crossed twice.
+   *
+   * THE MARKS ARE LATCHED BY VALUE, NOT BY TIME. A set of the marks already
+   * announced, so no arrangement of dragon breath knocking three canes over in
+   * one frame can say "half the bamboo is gone" twice.
+   *
+   * THE GROVE'S WARNING IS SILENT ONCE EVERYBODY HAS SWORN, which is what
+   * "if there are still players that have not yet pledged" asks for — and it
+   * is also the honest rule: with every kitten sworn, every cane cut is
+   * feeding an animal that exists, and the counter is a shopping list rather
+   * than a waste.
+   */
+  _warnBamboo(cutter) {
+    /* HER OWN TALLY FIRST, and only while she is unsworn. `bambooCut` counts
+       up forever, so `% 10` is the tenth, twentieth, thirtieth... which is
+       exactly "if they cut 10 more down before pledging, the warning should
+       pop up again". */
+    if (cutter && !cutter.raisedPanda && cutter.bambooCut > 0
+      && cutter.bambooCut % BAMBOO_WARN_EVERY === 0) {
+      this.warn(`${cutter.name.toUpperCase()} has cut ${cutter.bambooCut} bamboo `
+        + 'and has no panda to eat it. Swear at PANDAPAW first — bamboo never grows back.');
+    }
+
+    /* AND THE GROVE.
+       COUNTED OFF THE PROPS, NOT KEPT. Same argument `lasthunt` is written on:
+       `prop.scored` is the only thing in the game that knows what is down, and
+       a second tally of it is a second thing that can be wrong about it —
+       dragon breath and a panda's claw both knock canes over without going
+       anywhere near the katana. The total is cached because it cannot change;
+       the remainder is a filter over ~216 props on the frame a cane goes over,
+       which does not appear next to anything else in that frame. */
+    this._bambooTotal ??= this.world.props.filter((p) => p.kind === 'bamboo').length;
+    if (this._bambooTotal <= 0) return;
+    const left = this.world.props.filter((p) => p.kind === 'bamboo' && !p.scored).length;
+    const frac = left / this._bambooTotal;
+
+    /* THE MARK IS LATCHED WHETHER OR NOT IT IS SPOKEN, and that ordering is
+       the whole of this block being right. Latching only on the sentence
+       would leave 50% unspent through a stretch where everybody had sworn —
+       and a kitten joining later, or one leaving Pandapaw for another clan,
+       would then be told "only 50% of the bamboo is left" standing in a grove
+       with a fifth of it standing. A threshold is a fact about the WORLD; who
+       it is worth telling is a separate question, asked after. */
+    this._bambooMarked ??= new Set();
+    let say = null;
+    for (const mark of BAMBOO_WARN_MARKS) {
+      if (frac > mark || this._bambooMarked.has(mark)) continue;
+      this._bambooMarked.add(mark);
+      say = mark;               // the LOWEST crossed this swing, since the
+    }                           // list runs high to low and this keeps writing
+    if (say == null) return;
+    const unsworn = (this.players ?? []).filter((p) => p && !p.raisedPanda);
+    if (!unsworn.length) return;
+    const who = unsworn.map((p) => p.name.toUpperCase()).join(', ');
+    this.warn(`Only ${Math.round(say * 100)}% of the bamboo is left — ${left} canes in the whole sky. `
+      + `${who} ${unsworn.length > 1 ? 'have' : 'has'} not sworn at PANDAPAW yet, and it never grows back.`);
+  }
+
+  /**
    * The whole archipelago: its middle, and how big it is.
    *
    * The finale frames every island at once, and the numbers for that have to
@@ -7149,6 +7407,12 @@ class Game {
       const left = toNextTier(player.bambooCut, player.pandaFedFrom, player.panda?.tier ?? -1);
       this._updatePanda(player);
       this._updateClanBadge(player);
+      /* AFTER `_updatePanda`, so a cane that BUYS her the cub does not also
+         warn her she has no cub. `raisedPanda` is set at the oath rather than
+         here, so in practice this only matters for the grove's own marks —
+         but the ordering is the thing that makes the sentence true, and it
+         cost nothing to get right. */
+      this._warnBamboo(player);
       if (player.raisedPanda && left > 0 && left % 5 === 0) {
         // Only every fifth cane: a countdown that fires on every swing buries
         // everything else in the toast stack.
@@ -7286,6 +7550,32 @@ class Game {
         this.summonScene.skip();
       }
       this.summonScene.update(dt);
+      /* ...AND THE MUSIC, FOR EXACTLY THE SAME REASON THE HOLD IS UP THERE.
+         Reported from play: "no music playing for the ending cutscene when
+         rewatching it. Should play the same music as when watching it
+         normally."
+
+         THE BRANCH RETURNS, AND `_updateMusic` IS AT THE BOTTOM OF THIS
+         METHOD. So during the ending the one thing allowed to start a track
+         never ran on a single frame — the first watch only had music by
+         accident of WHERE it starts: `_finaleDue` is cashed in near the end
+         of the ordinary path, so `active` is still false on that frame and
+         the frame carries on down to `_updateMusic` and starts `finale`.
+         WATCH THE ENDING AGAIN is a menu click, so by the next frame `active`
+         is already true, this branch returns, and the ending plays in silence.
+         Nothing about the scene was wrong; it was never asked.
+
+         AND IT IS WHAT MAKES THE CUES REAL. `MUSIC_CUES` moves `musicTrack`
+         to `finaleCross` on the isles and `finaleOpen` on the arena — see
+         `systems/summonscene.js` — and neither could ever have been heard,
+         first watch included, because both happen mid-scene. AFTER
+         `update(dt)`, so a cue set by this frame's beat is heard on this
+         frame rather than one late.
+
+         `_updateMusic` is the single authority and stays it; this is the call
+         site it was missing, not a second one. See `_wantedTrack`, whose very
+         first line is the ending. */
+      this._updateMusic(dt);
       this.summonScene.updateSky(dt);
       this.world.update(dt, this.players[0].position);
       for (const d of this.dragons) d.update(dt, this.world, []);
@@ -7901,28 +8191,35 @@ class Game {
    * that had not been grown. START still works and is still the explicit way
    * in; this is the same thing happening without anybody having to know that.
    *
-   * IT WAITS FOR REAL INPUT, NOT FOR CONNECTION. A pad charging on the side, or
-   * one left on the sofa, has sent nothing and seats nobody — see
-   * `InputManager.sparePad`. Picking it up is the gesture, and the character
-   * picker still runs, so nothing is decided for her.
+   * IT WAITS FOR A PRESS OF A OR START, NOT FOR CONNECTION AND NO LONGER FOR
+   * "this pad has sent something" — see `InputManager.sparePad`, which carries
+   * the reasoning. The short version is that the old gesture was a flag that
+   * never went back to false, so THIS method needed a permanent per-device
+   * latch to stop the controller in a departing girl's hands re-seating her on
+   * the next frame — and that latch is what "Joycon player is unable to join
+   * after dropping out" was. A press edge needs no latch: it is true on one
+   * frame, and asking again is a button she can press again.
    *
-   * ONCE PER DEVICE, LATCHED HERE. `hasSentInput` never goes back to false, so
-   * without the latch a player who drops out would be re-seated on the next
-   * frame by the controller still in her hands and could never leave. Dropping
-   * out is a decision; the latch is what makes it stick.
+   * The character picker still runs, so nothing is decided for her.
    */
   _autoSeat() {
     if (this._sceneActive() || this.tournament?.fighting) return;
     /* ONE AT A TIME. `this.picking` is a single card, so seating a second
        player while the first is still choosing her cat would overwrite it and
        leave a kitten nobody picked. Three spare controllers queue up instead:
-       each card appears as the one before it is confirmed. */
-    if (this.picking) return;
+       each card appears as the one before it is confirmed.
+       IT REFUSES OUT LOUD NOW, because it is a PRESS being refused rather than
+       a pad sitting there waiting to be noticed: under the old gesture the
+       offer was still on the table next frame, so saying nothing cost nothing.
+       An edge is gone the moment it is dropped, and a button that does nothing
+       reads as a broken controller — non-negotiable 6. */
+    const device = this.input.sparePad();
+    if (this.picking) {
+      if (device) this.toast('Wait — someone is still choosing her cat', this.picking.index);
+      return;
+    }
     if (this.partySize >= MAX_PLAYERS || this.partySize >= this.input.seatable) return;
-    this._autoSeated ??= new Set();
-    const device = this.input.sparePad(this._autoSeated);
     if (!device) return;
-    this._autoSeated.add(deviceId(device));
     this._joinPlayer(device);
   }
 
@@ -8538,28 +8835,46 @@ class Game {
       this._updateClanBadge(p);
     }
 
-    /* AT MOST TWO MAPS, AND WHICH PANES GET THEM IS DECIDED EVERY FRAME.
-       One map per kitten is the obvious rule and it is the wrong one at four.
-       A quadrant is a quarter of the screen; a map sized to stay legible eats a
-       real fraction of it, and four of them means four corners of the game
-       covered up at exactly the moment there is most to look at. It also stops
-       being a map and starts being furniture: nobody reads four.
+    /* ONE MAP PER WINDOW NOW, AND WHICH PANE GETS WHICH IS STILL DECIDED EVERY
+       FRAME.
 
-       THEY USED TO BE PANE 0 AND PANE 1 AND NOW THEY GO WHERE THEY ARE WORTH
-       MOST — see `_mapPanes`. The old rule was "the maps belong to Ember and
-       Frost", chosen so that a map never moves house when a sister joins, and
-       it had one bad case that four-player play walks into constantly: two
-       kittens exploring together on the far side of the archipelago, in a pane
-       of their own, with no map between them, while a map sat in a pane
-       holding one girl standing in the market. A pane with two kittens in it
-       needs the map MORE, not less.
+       IT USED TO BE TWO, WHATEVER THE PARTY. The argument was that a quadrant
+       is a quarter of the screen, a map sized to stay legible eats a real
+       fraction of it, and four of them means four corners of the game covered
+       up at exactly the moment there is most to look at. That is true and it
+       was the wrong trade, because of what it cost at the other end: players 3
+       and 4 had no map in their own window, and `nearestMap` had to hand them
+       a share of somebody else's — which is where every "it zoomed the wrong
+       minimap" report came from. Asked for directly: "let's add 2 more
+       optional mini-maps so that there is 1 mini-map per screen, so that
+       players 3 and 4 have a minimap. Whenever a player presses the zoom
+       button, it will zoom the minimap that is in the split screen they are
+       on. This should solve some of the issues we are having with players
+       zooming in/out the wrong minimaps."
 
-       Everybody is drawn ON both maps regardless; what is capped is how many
-       copies of the archipelago are on screen, not who appears on them. The
-       badges above are still one per player: a score badge is a line of text,
-       four of them fit, and a kid with no badge has no way to know what she
-       has scored. */
-    const nMaps = Math.min(n, 2);
+       IT SOLVES THEM BY CONSTRUCTION RATHER THAN BY A NEW RULE. `nearestMap`
+       answers "the map in my own pane, or failing that the nearest box" — with
+       one in every pane the second half is simply unreachable, and there is
+       nothing left to disagree about. `assignMaps` and `keyMaps` are untouched
+       and come out right on their own: every pane is its own incumbent, so
+       nothing ever moves house.
+
+       AND THE OLD ANSWER IS A SETTING, because the argument for it was never
+       wrong on a small window — see the `Minimaps` row in index.html.
+
+       TWO PLAYERS ARE BIT-IDENTICAL EITHER WAY. Two panes and two maps is the
+       same screen whichever row is picked, and one shared screen hides the
+       second map under both. Fifth non-negotiable, for free.
+
+       THE COUNT IS THE PARTY SIZE AND NOT THE PANE COUNT, because the panes
+       are re-clustered every frame and these boxes are DOM elements built on
+       join and leave. A map with nowhere to be comes back -1 from `assignMaps`
+       and `_drawMaps` hides it, which is the same path the second map has
+       always taken on a merged screen.
+
+       Everybody is drawn ON every map regardless; what this decides is how
+       many copies of the archipelago are on screen, not who appears on them. */
+    const nMaps = this.settings.maps === 'two' ? Math.min(n, 2) : n;
     for (let i = 0; i < nMaps; i++) {
       const box = document.createElement('div');
       box.className = 'map-box';
@@ -8600,7 +8915,7 @@ class Game {
   }
 
   /**
-   * WHICH PANES THE TWO MAPS ARE IN, this frame.
+   * WHICH PANE EACH MAP IS IN, this frame.
    *
    * `assignMaps` in core/split.js owns the rule and the argument for it —
    * pure, next door to the pane geometry it is a function of, and therefore
@@ -8656,7 +8971,7 @@ class Game {
   }
 
   /**
-   * Up to two maps, each positioned ON THE SEAM OF THE PANE THAT OWNS IT.
+   * Every map, positioned ON THE SEAM OF THE PANE THAT OWNS IT.
    *
    * The corner is computed from the same `splitLayout` the renderer uses. It
    * used to be four CSS rules keyed off `hud-split` / `hud-horizontal`, which
@@ -9015,9 +9330,34 @@ class Game {
        escape. So `full` still means "take the full width" and `toTop` is the
        separate question "is there something in the bottom corner". */
     const toTop = full && panes.length > 1;
-    let w = full
-      ? Math.max(1, Math.min(tall ? Infinity : 540, v.w - 28))
-      : Math.min(540, Math.round(v.w * 0.42));
+    /* A SHARED PANE GETS ONE WIDTH, AND IT IS BOTH THE FLOOR AND THE CEILING.
+       `mathSharedWidth` in core/split.js owns the number and the whole
+       argument for it — pure, next door to the pane geometry, assertable.
+
+       IT IS TESTED BEFORE `tall` ON PURPOSE. The portrait branch below lifts
+       the 540 cap so a kitten playing ALONE in a column gets a board that
+       fills her width, and a side-by-side split makes every pane portrait —
+       so two sisters sharing one were handed a 930px board drawn over the
+       pair of them. Reported as "too big when there are 2 people in one split
+       screen... make it the same size as when there are 3 people in one split
+       screen", and the three-player pane is landscape, so 540 is exactly what
+       it was already getting. One kitten in a column keeps the lift. */
+    let w = shared
+      ? mathSharedWidth(v.w)
+      : full
+        ? Math.max(1, Math.min(tall ? Infinity : 540, v.w - 28))
+        : Math.min(540, Math.round(v.w * 0.42));
+    /* HOW SMALL THE TWO COLLISION DODGES BELOW MAY MAKE IT. 180 is the old
+       floor and the argument for it stands — under that the board is
+       unreadable and a map-sized hole is the better trade. A SHARED pane's
+       floor is its one width, because "always at least the 3 people size when
+       more than 1 person in the same split screen" is half of what was asked
+       for, and a dodge that undercut it would be the too-small report coming
+       back by a different route. What it costs is a few pixels of board over
+       the corner of a map on a window narrow enough to need both, which the
+       board's new transparency (see `#math-board` in style.css) lets you read
+       straight through. Measured at 858x477: ten pixels. */
+    const floorW = shared ? mathSharedWidth(v.w) : 180;
     /* AND ON ONE SCREEN IT STOPS BEFORE THE MAP SIDEWAYS, not downwards.
        The two boxes share the bottom edge there — board on the left, map on
        the right, which `mapSpot` calls the "unsplit arrangement" and has
@@ -9042,7 +9382,7 @@ class Game {
         hint: HINT_CLEAR,
       });
       const room = mapAt.left - 28;          // her own 14 of pad, and 14 of gap
-      if (room > 180) w = Math.min(w, Math.round(room));
+      if (room > floorW) w = Math.min(w, Math.round(room));
     }
     st.width = `${w}px`;
     let h = el.getBoundingClientRect().height || Math.round(w * 0.78);
@@ -9078,9 +9418,10 @@ class Game {
          the SCREEN by `HINT_CLEAR` and that term was missing. Asking the two
          functions that actually place the map is exact by construction and
          cannot drift from them.
-         IT RESERVES THE SPACE WHETHER OR NOT THIS PANE HAS A MAP. At four
-         players there are two maps and up to four panes, so some panes have
-         none — and the cost of reserving anyway is a slightly narrower board
+         IT RESERVES THE SPACE WHETHER OR NOT THIS PANE HAS A MAP. Under
+         `Minimaps: Only two, shared` there are two maps and up to four panes,
+         so some panes have none — and the cost of reserving anyway is a
+         slightly narrower board
          on a window short enough to be shrinking it already, against a
          collision if `_mapPanes` moves a map in here on a later frame. */
       const mapAt = mapSpot({
@@ -9109,7 +9450,7 @@ class Game {
          cap. It only runs on a window short enough to need it; every real
          screen leaves the board its full size and never enters this branch. */
       for (let pass = 0; pass < 3 && h > room && room > 60; pass++) {
-        w = Math.max(180, Math.round(w * (room / h)));
+        w = Math.max(floorW, Math.round(w * (room / h)));
         st.width = `${w}px`;
         h = el.getBoundingClientRect().height || h;
       }

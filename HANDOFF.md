@@ -59,13 +59,16 @@ bamboo canes. All procedural geometry, merged to a handful of draw calls.
 dragons, ride a panda. **PLAY starts a solo game on every machine** — the phone
 already did, and the desktop's `defaultParty: 2` was never a decision, it was
 the game from before one kitten was a state this code could hold. The second
-seat is asked for rather than dealt to nobody: pick up a controller
-(`Game._autoSeat`) or press **ENTER**, which lands her on the ARROWS / `O K L ;`
-set because player 1 already has WASD. A third and fourth join the same way,
-mid-game, without interrupting anybody. Anyone who joined can drop out again
-from the pause menu — that used to be offered only above three players. The
-screen gives a pane per *group* of kittens standing together, not per kitten;
-two minimaps at most, and one at a party of one.
+seat is asked for rather than dealt to nobody: **press A or START on a spare
+controller** (`Game._autoSeat`, via `Input.sparePad` — a press edge, not merely
+having touched the pad, which is what lets a kitten drop out and come back) or
+press **ENTER**, which lands her on the ARROWS / `O K L ;` set because player 1
+already has WASD. A third and fourth join the same way, mid-game, without
+interrupting anybody. Anyone who joined can drop out again from the pause menu —
+that used to be offered only above three players. The screen gives a pane per
+*group* of kittens standing together, not per kitten, and **a minimap in every
+pane** (*Settings ▸ Minimaps* can put it back to two, shared; at two players the
+two settings are the same screen bit for bit).
 
 **Any mix of input devices**, with controllers outranking the keyboard and dealt
 in connection order; two full keyboard sets, each playable one-handed. Menus,
@@ -129,7 +132,9 @@ tournament. A minute with the number unmoved and she points at Icewhisker **and
 at the island the shrine is on**, but only if nobody in the party has Sense
 Mischief already, and never more than three times. At three left, every pane's
 minimap starts marking the nearest thing still standing — the same target the
-buff's chevron uses in the world, handed over rather than solved twice.
+buff's chevron uses in the world, handed over rather than solved twice. **At
+three and not before, whoever has sworn**: the oath buys the chevron, the count
+buys the map.
 `systems/lasthunt.js`, and [docs/notes/endgame.md](docs/notes/endgame.md) for
 why the three help each other in that order.
 
@@ -509,6 +514,84 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
+
+**Ten more off one afternoon's play, and not yet played back.** One branch,
+`mixed/ten-notes-from-an-afternoon`. In the order they were reported.
+
+- **The minimap's crosshair is the last three, and only the last three.**
+  Asked for in those words. It was `mapOn || she has the buff`, so a kitten who
+  swore to Icewhisker had a mark on her map from the moment she swore, with two
+  hundred props standing: a compass spinning between whatever happens to be
+  nearest, and the ISLAND given away for every barrel in the game, which is the
+  one thing `MAP_FROM` exists to hold back. **What the oath still buys is the
+  world chevron**, unchanged, from the first prop of the afternoon. The map
+  answers "which island"; that question is only worth answering at three.
+- **Bamboo that nobody can eat says so.** Nothing regrows (non-negotiable 4),
+  there are a fixed number of canes in the sky and a panda costs forty of them —
+  so four kittens who have not sworn can flatten every grove in the game in ten
+  minutes and leave the party unable to raise a second panda. A **new warning
+  strip** at the bottom of the screen (`#warnings`, `Game.warn` — not a toast:
+  a toast is news addressed to one kitten and this is a consequence addressed
+  to the room) tells a cutter every **tenth** cane that she has no panda to eat
+  it, and the whole party at **50%** and **25%** of the grove, naming who has
+  not sworn. A mark is spent when it is *passed*, not when it is spoken, or a
+  kitten joining at 30% would be told half the bamboo was left.
+- **A leader you walk up to will talk to you.** Interact on an unmet clan
+  leader starts her introduction instead of asking you to stand still for the
+  dwell timer. The prompt had to change with it: it used to go **silent** on an
+  unmet leader, so the one moment the new press exists was the one moment
+  nothing said it was there. It now reads `MEET ICEWHISKER`.
+- **The sin/cos board is one size in a shared pane, and 10% see-through.** The
+  arithmetic was the diagnosis: a side-by-side split on 1920×1080 gives each
+  pane 958×1080 — *portrait* — and the portrait branch lifts the 540 cap to
+  fill the width, so two sisters sharing a column got a ~930px board over the
+  game they were playing. A three-kitten pane at four players is the 62%
+  *landscape* pane and already came out at exactly 540. `MATH_SHARED_W` is now
+  both the ceiling **and the floor** for any shared pane; the portrait lift
+  stays for a kitten alone in a column.
+- **Who won the round, under the health bars, while he says it.** Her face —
+  the measured portrait crop, not a guess — her name and WINS THE ROUND, placed
+  by *measuring* `#arena-hud` rather than at a number that clears it at one
+  split and covers it at another.
+- **The ending has its music on a rewatch, and its cues fire at all.**
+  `_updateMusic` is the last call in `_tickBody` and **every scene branch
+  returns**, so during the ending the one thing allowed to start a track never
+  ran on a single frame. The first watch had music only by the accident of
+  where `_finaleDue` is cashed in; WATCH THE ENDING AGAIN is a click handler, so
+  by its next frame the branch was already returning and the ending played in
+  silence. The same gap meant `finaleCross` and `finaleOpen` had never been
+  heard on any watch. This is the third bug of exactly this shape.
+- **WASD is player one's second hand, and always her menu's.** With one
+  controller and nobody else playing, WASD drives her too (`_spareHandPass`).
+  The moment a sister is dealt WASD it is hers alone — *except in a menu*:
+  `Input.menuHand` lends it back for the pause menu, because a paused screen has
+  one cursor with a named owner and no kitten in it. Five refusals on that
+  method, each one a different way of counting a press twice.
+- **The quest checklist is twice the size, and scrolls.** 26px, a row of the
+  cursor with `▲ ▼ to read`, paging on the stick and remembering where it was.
+  `_scrollQuests` returns false at either end so the row can be *left* — a list
+  that swallowed up and down forever would be a cursor she cannot escape on the
+  one screen with no mouse.
+- **A spare pad joins on A or START, and a dropped-out Joy-Con can rejoin.**
+  Reported as "Joycon player is unable to join after dropping out", and the
+  cause was the *gesture*: it was `hasSentInput`, a flag that never goes back to
+  false, so `_autoSeat` needed a permanent per-device latch to stop a departing
+  girl's own controller re-seating her on the next frame — and that latch is
+  what made her device unseatable for the rest of the session. A press **edge**
+  needs no latch. **Richard offered a second option** — ENTER seating a padless
+  controller before it looks at the keyboard — and that one was deliberately not
+  taken: it would make ENTER do something surprising to the person sitting at
+  the keyboard, who pressed it to join *on the keyboard*. The refusal-while-
+  somebody-is-still-picking now toasts on this path too.
+- **One minimap per screen, optional.** *Settings ▸ Minimaps* — "one in every
+  window" (the new default) or "only two, shared". Players three and four get
+  their own, and the zoom button turns the map in the pane you are looking at,
+  which is what the wrong-map problem always was. Solved by construction rather
+  than by a new rule: `nearestMap` already answered "my own pane's map, or the
+  nearest box", so a map in every pane makes its second half unreachable and
+  not one line of `assignMaps`, `nearestMap` or `keyMaps` changed. At two
+  players both settings produce the same screen, bit for bit — non-negotiable 5,
+  and `world-check` pins it.
 
 **Thirteen fixes off one afternoon's play, and not yet played back.** One
 branch. They came in as one list and they are listed here in the order they were

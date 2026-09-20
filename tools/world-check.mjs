@@ -108,6 +108,7 @@ import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/co
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   paneSeats, outOfShot, framedMembers, OUT_DROP, paneWiden, BIG_PANE_IN,
+  mathSharedWidth, MATH_SHARED_W,
 } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
@@ -18486,10 +18487,16 @@ console.log('\n--- Mr. Satan loses his temper ---');
     joinBody.slice(0, 90));
   ok('...and says so rather than swallowing the press',
     /if \(this\.picking\) this\.toast\(/.test(joinBody));
-  /* THE RULE `_autoSeat` ALREADY HAD, restated so the two cannot drift apart
-     again — they are the same decision reached from a pad and from a key. */
+  /* THE SAME RULE `_autoSeat` HAS, restated so the two cannot drift apart
+     again — they are the same decision reached from a pad and from a key.
+     IT TOASTS ON BOTH PATHS NOW. The pad path used to refuse in silence, and
+     that was defensible while the gesture was `hasSentInput`: the offer was
+     still on the table the next frame, so nothing was lost by saying nothing.
+     The gesture is a PRESS of A or START now — an edge, gone the moment it is
+     dropped — so a silent refusal is a button that does nothing, which is
+     non-negotiable 6. */
   ok('...the same rule the spare-controller path already had',
-    /_autoSeat\(\) \{[\s\S]{0,600}?if \(this\.picking\) return;/.test(msrc));
+    /_autoSeat\(\) \{[\s\S]{0,1200}?if \(this\.picking\) \{[\s\S]{0,300}?this\.toast\(/.test(msrc));
   /* NOTHING IN PLAY CALLS IT. One mention in the whole game, in the handler
      for the key — the gag has to be reached by walking up to him. */
   ok('nothing but the debug key provokes him',
@@ -20293,8 +20300,19 @@ console.log('\n--- one press is not enough, and one player drives ---');
   ok('...and the world chevron is still only for a kitten who swore the oath',
     /const sworn = !!p\.clan\?\.buff\?\.seek;/.test(M)
     && /if \(!t \|\| t\.scored \|\| !sworn\) \{ p\.seekMark\.visible = false; continue; \}/.test(M));
-  ok('...while the map mark needs either the oath or the last three',
-    /if \(!this\.lastHunt\?\.mapOn && !p\.clan\?\.buff\?\.seek\) continue;/.test(M));
+  /* AND THE MAP MARK IS THE COUNT'S, NOT THE OATH'S. Reported from play: "on
+     minimap, the Sense Mischief ability should only work on minimap when there
+     are 3 or less Mischief left." It used to be `mapOn || she has the buff`,
+     which put a crosshair on the map of anybody who swore to Icewhisker from
+     the moment she swore — with two hundred props standing, a compass spinning
+     between whatever is nearest, and the ISLAND given away for every barrel in
+     the game. `MAP_FROM` exists precisely to hold that back.
+     ASSERTED AS AN EARLY RETURN WITH NOTHING ELSE ON IT, because the bug is
+     the `||`: a check that merely looked for `mapOn` somewhere in the function
+     would have passed on the line it was written to catch. */
+  ok('...while the map mark is the last three and only the last three',
+    /_seekMarkFor\(members\) \{\s*if \(!this\.lastHunt\?\.mapOn\) return null;/.test(M)
+    && !/mapOn[^\n]*(\|\||&&)[^\n]*buff\?\.seek/.test(M));
 }
 
 {
@@ -26033,7 +26051,42 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
         .test(stripComments(src('../src/systems/feats.js')).replace(/\s+/g, ' ')));
     const prof = src('../src/systems/profile.js');
     ok('the profile draws the checklist and the star count by her name',
-      /_questMarkup\(quests\)/.test(prof) && /kd-stars/.test(prof) && /feats\?\.status\(/.test(prof));
+      /_questMarkup\(quests, index\)/.test(prof) && /kd-stars/.test(prof)
+        && /feats\?\.status\(/.test(prof));
+    /* AND THE CHECKLIST IS A ROW OF THE CURSOR, WITH A SCROLLER IN IT. Asked
+       for as "for the quests, let's make the text twice as big and add
+       scrolling so that it is easier to read from a distance" — and twice as
+       big is what makes the scrolling necessary rather than optional: nine
+       rows at 26px do not fit on the card at any split.
+       THE ROW HAS TO BE ESCAPABLE, which is the whole of `_scrollQuests`
+       returning false at either end: a list that swallowed UP and DOWN
+       forever would be a cursor she cannot get out of, on the one screen with
+       no mouse. */
+    ok('...and the checklist is a cursor row with a scroller of its own',
+      /_onQuests\(index\)/.test(prof) && /_scrollQuests\(index, step\)/.test(prof)
+        && /questScroll/.test(prof));
+    /* AND THE POINTS ROW IS STILL THE POINTS ROW. `_onPoints` was `>=`, which
+       with a row added AFTER points made the quest row a points row too —
+       left/right would have changed a trade offer while she was reading a
+       checklist. Its `data-slot` was `_rowCount(index) - 1` for the same
+       reason and pointed at the quests once they existed. */
+    ok('...without the row after it becoming a second points row',
+      /_onPoints\(index\) \{[^}]*=== this\._pointsRow\(index\)/.test(prof)
+        && /data-slot="\$\{this\._pointsRow\(index\)\}"/.test(prof));
+    const css = src('../src/style.css');
+    /* MEASURED OFF THE SHEET, not off a number written down twice: the ask was
+       TWICE as big, and the row that was there was 13px. */
+    const qsize = /\.kd-quests \{[^}]*--q: (\d+)px/.exec(css);
+    ok('...at twice the size it was, on the sheet', Number(qsize?.[1]) >= 26,
+      `${qsize?.[1]}px`);
+    ok('...with the list itself scrolling and not the card',
+      /\.kd-quests ul \{[^}]*overflow-y: auto/.test(css)
+        && /\.kd-quests ul \{[^}]*max-height:/.test(css));
+    /* `overflow-x: clip` IS NOT DECORATION. An unset `overflow-x: visible`
+       beside `overflow-y: auto` is coerced to `auto` by the spec, so leaving
+       it out gives every quest list a horizontal scrollbar it never uses. */
+    ok('...and clipped sideways rather than given a second scrollbar',
+      /\.kd-quests ul \{[^}]*overflow-x: clip/.test(css));
     /* AND THE ENDING IS SAID ONCE, IN THE HEADING. It used to be the note on
        every unearned row — one fact about the whole list, repeated nine times,
        making this screen tallest exactly when it is read most. */
@@ -26070,6 +26123,219 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
       /doesn't count/.test(card) && /eight/.test(card) && /rare/.test(card) && /★/.test(card));
   }
   if (hadDocQ) globalThis.document = docQ; else delete globalThis.document;
+}
+
+/* ===========================================================================
+   A ROUND OF NOTES FROM PLAY, AND THE CHECK THAT WOULD HAVE CAUGHT EACH ONE.
+
+   Grouped because they arrived together, not because they are one subject.
+   Each block quotes the note it came from: the note is the specification, and
+   a check written from a paraphrase of a note drifts from it in one pass.
+=========================================================================== */
+{
+  console.log('\n--- notes from play: bamboo, leaders, the board, the winners ---');
+  const src = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
+  const M = src('../src/main.js');
+  /* AND THE SAME FILE WITH ITS COMMENTS BLANKED, for the handful of checks
+     below that are about two statements being NEIGHBOURS. This codebase puts a
+     paragraph between them as a matter of house style, so an adjacency test
+     over the raw text is really a test of how long the comment is. */
+  const Mc = stripComments(M).replace(/\s+/g, ' ');
+  const html = src('../index.html');
+  const css = src('../src/style.css');
+
+  /* --- BAMBOO THAT IS BEING WASTED SAYS SO -------------------------------
+     "Once a player, that has not pledged yet at Pandapaw, cuts down 10 bamboo
+     before pledging at Pandapaw, we should display a small warning at the
+     bottom of the screen that anymore bamboo they cutdown is wasted and will
+     not regrow... We should have a similar warning appear to warn all the
+     players when there is only 50% bamboo left and also at 25% bamboo left, if
+     there are still players that have not yet pledged."
+
+     THIS IS NON-NEGOTIABLE 4 SPEAKING UP FOR ITSELF. Nothing regrows, so a
+     nine-year-old cutting a grove down before she has a panda to eat it is
+     spending something she cannot get back and has no way to know it. */
+  ok('there is a warning strip, and it starts empty',
+    /<div id="warnings"><\/div>/.test(html) && /#warnings \{/.test(css));
+  ok('...at the bottom of the screen, where the note asked for it',
+    /#warnings \{[^}]*bottom:/.test(css));
+  ok('...and out of the way of the touch controls on a phone',
+    /body\.touch-ui #warnings \{[^}]*top:/.test(css));
+  ok('the cutter is warned every tenth cane until she swears',
+    /BAMBOO_WARN_EVERY = 10/.test(M)
+      && /!cutter\.raisedPanda[\s\S]{0,120}?cutter\.bambooCut % BAMBOO_WARN_EVERY === 0/.test(M));
+  ok('...and the whole party at half a grove and a quarter',
+    /BAMBOO_WARN_MARKS = \[0\.5, 0\.25\]/.test(M));
+  ok('...naming the kittens who still have no panda',
+    /!p\.raisedPanda/.test(M) && /unsworn\.map\(\(p\) => p\.name\.toUpperCase\(\)\)/.test(M));
+  /* AND THE MARK IS LATCHED WHETHER OR NOT IT IS SPOKEN. Latching only on the
+     frame somebody is warned would hold "50% left" in the chamber until a
+     kitten without a panda existed — so a girl joining at 30% would be told
+     half the bamboo was left, which is a warning that is simply untrue. */
+  ok('...and a mark is spent when it is PASSED, not when it is said',
+    /this\._bambooMarked\.add\(mark\);\s*say = mark;/.test(M)
+      && M.indexOf('_bambooMarked.add(mark)') < M.indexOf('const unsworn'));
+  ok('...counted off the grove that is really there, not off a constant',
+    /this\._bambooTotal \?\?= this\.world\.props\.filter\(\(p\) => p\.kind === 'bamboo'\)\.length/
+      .test(M));
+  /* IT IS THE CUT THAT WARNS, so the count the warning quotes is the count the
+     MISCHIEF counter just took. Hung off anything else it would be a number
+     from a different frame. */
+  ok('...and it is the cut itself that asks',
+    /this\._warnBamboo\(player\);/.test(M));
+
+  /* --- A LEADER SHE WALKS UP TO WILL TALK TO HER -------------------------
+     "When going to a Clan Leader and if they haven't had their cutscene yet,
+     if the user presses interact then they should just start the cutscene
+     without needing to wait the specific amount of time to see it."
+
+     THE PROMPT HAD TO CHANGE WITH IT. A button that starts something must say
+     so first — the callout went SILENT on an unmet leader, so the one moment
+     the new press exists was the one moment nothing said it was there. */
+  ok('interact on an unmet leader starts her scene',
+    /onMeetLeader\(player, clan\) \{/.test(M)
+      && /this\.shrineScene\.start\(L, player\);/.test(M));
+  ok('...and refuses while another scene or a round owns the screen',
+    /onMeetLeader\(player, clan\) \{[\s\S]{0,400}?if \(this\._sceneActive\(\) \|\| this\.tournament\?\.active\) return false;/
+      .test(M));
+  ok('...and the hall prompt names her instead of going quiet',
+    /\[\$\{key\}\]  MEET \$\{\(leader\?\.spec\?\.name \?\? hall\.clan\.name\)\.toUpperCase\(\)\}/.test(M));
+  ok('...and the oath path says so out loud when it cannot',
+    /if \(!hud\.onMeetLeader\?\.\(this, hall\.clan\)\)/
+      .test(src('../src/entities/player.js')));
+
+  /* --- THE SIN/COS BOARD IS ONE SIZE IN A SHARED PANE --------------------
+     "If split screen is set to side by side, the sin/cos UI is too big when
+     there are 2 people in one split screen. We should make it the same size as
+     when there are 3 people in one split screen and in the dojo... Sometimes
+     the sin/cos UI is too small too, so let's make sure it is always at least
+     the 3 people size when more than 1 person in the same split screen."
+
+     THE ARITHMETIC IS THE DIAGNOSIS. A side-by-side split on 1920x1080 gives
+     each pane 958x1080 — PORTRAIT — and the portrait branch lifts the 540 cap
+     to fill the width, so two sisters sharing a column got a ~930px board over
+     the game they were playing. A three-kitten pane at four players is the 62%
+     LANDSCAPE pane, which already came out at exactly 540. So one number is
+     both the ceiling and the floor for a shared pane, and it is the number the
+     note points at.
+
+     A PURE FUNCTION IN split.js SO THIS CAN ASK IT WITHOUT A GPU. Same reason
+     every other layout rule lives there. */
+  ok('the shared-pane board width is one number, stated once',
+    MATH_SHARED_W === 540, String(MATH_SHARED_W));
+  ok('...and a two-kitten side-by-side column gets exactly it, not the width',
+    mathSharedWidth(958) === 540, String(mathSharedWidth(958)));
+  ok('...and a narrow pane still fits inside its own padding',
+    mathSharedWidth(300) === 272, String(mathSharedWidth(300)));
+  ok('...and can never go to zero or negative on a sliver of a pane',
+    mathSharedWidth(10) >= 1 && mathSharedWidth(0) >= 1,
+    `${mathSharedWidth(10)} / ${mathSharedWidth(0)}`);
+  ok('...and it is the floor AND the ceiling in main.js, not just the cap',
+    /const floorW = shared \? mathSharedWidth\(v\.w\) : 180;/.test(M)
+      && /shared\s*\?\s*mathSharedWidth\(v\.w\)/.test(M));
+  /* AND YOU CAN SEE THROUGH IT — "let's also add slight transparency on the
+     sin/cos UI, so a player can be slightly seen if behind it, 10% may be
+     good." Read off the sheet rather than trusted to a comment. */
+  const mop = /#math-board \{[^}]*opacity: ([\d.]+)/.exec(css);
+  ok('...and the board is 10% see-through', Number(mop?.[1]) === 0.9,
+    String(mop?.[1]));
+
+  /* --- WHO WON THE ROUND, WHILE HE IS SAYING IT -------------------------
+     "When a round is over, should show the faces/names of the players that won
+     that round when Mr. Satan is giving his speech on who won, can be under
+     the health bars, towards the center of the screen." */
+  const trn = src('../src/systems/tournament.js');
+  ok('the round winners have a card, and it starts hidden',
+    /<div id="arena-winners" class="hidden"><\/div>/.test(html)
+      && /#arena-winners \{/.test(css));
+  ok('...painted from the side that actually won',
+    /_paintWinners\(\) \{/.test(trn) && /this\.state === 'ko' \? this\._lastWinner : -1/.test(trn));
+  ok('...with her own face, measured off the sheet like every other portrait',
+    /drawPortrait\(cv, art, cssFor\(p\.style\), \{ col: 0, row: 0, measure: true \}\)/.test(trn));
+  /* UNDER THE HEALTH BARS, MEASURED — not at a number that happens to clear
+     them at one split and cover them at another. Non-negotiable 8. */
+  ok('...placed under the health bars by measuring them',
+    /this\.hudEl\?\.getBoundingClientRect\(\)/.test(trn)
+      && /el\.style\.top = `\$\{Math\.round\(bars\.bottom \+ 10\)\}px`/.test(trn));
+  ok('...and gone the moment the tournament is over',
+    /finish\(\) \{[\s\S]{0,4000}?this\._winnersSig = '';\s*this\.winnersEl\?\.classList\.add\('hidden'\);/
+      .test(stripComments(trn)));
+  /* AND REBUILT ONLY WHEN IT CHANGES. `_paintHud` rewrites its markup every
+     frame; a canvas painted after `innerHTML` every frame is a portrait redrawn
+     sixty times a second for a card that says one thing for ten. */
+  ok('...without repainting a still card every frame',
+    /if \(sig !== this\._winnersSig\)/.test(trn));
+
+  /* --- THE ENDING HAS ITS MUSIC ON A REWATCH ----------------------------
+     "No music playing for the ending cutscene when rewatching it. Should play
+     the same music as when watching it normally."
+
+     THE CAUSE WAS NOT THE REWATCH. `_updateMusic` is the LAST call in
+     `_tickBody` and every scene branch RETURNS, so the ending never once ran
+     the thing that decides what is playing — the first watch had music only by
+     the accident of where `_finaleDue` is cashed in, one frame before the
+     scene takes the loop. `replayEnding` is a DOM click handler, so by its
+     next frame the branch was already returning and the ending played silent.
+     The same gap meant `MUSIC_CUES` had never fired on any watch at all.
+
+     ASSERTED AS "INSIDE THE BRANCH", because that is the bug. */
+  const sum = Mc.indexOf('this.summonScene.update(dt);');
+  ok('the ending updates the music from inside its own branch',
+    sum > 0
+    && /this\.summonScene\.update\(dt\); this\._updateMusic\(dt\); this\.summonScene\.updateSky\(dt\);/
+      .test(Mc));
+
+  /* --- ONE MINIMAP PER SCREEN, OPTIONAL --------------------------------
+     "Let's add 2 more optional mini-maps so that there is 1 mini-map per
+     screen, so that players 3 and 4 have a minimap. Whenever a player presses
+     the zoom button, it will zoom the minimap that is in the split screen they
+     are on."
+
+     SOLVED BY CONSTRUCTION RATHER THAN BY A NEW RULE. `nearestMap` already
+     answers "my own pane's map, or the nearest box"; with a map in every pane
+     the second half is simply unreachable, so not one line of `assignMaps`,
+     `nearestMap` or `keyMaps` had to change. That is also why the two-player
+     game is safe: at two, both settings produce the same screen.
+
+     NON-NEGOTIABLE 5, PINNED. */
+  ok('the minimap count is a setting, defaulting to one per screen',
+    /maps: 'each'/.test(M) && /id="set-maps"/.test(html)
+      && /<option value="two"/.test(html));
+  ok('...read where the HUD is built, and nowhere else',
+    /const nMaps = this\.settings\.maps === 'two' \? Math\.min\(n, 2\) : n;/.test(M));
+  ok('...and changing it rebuilds the HUD and redraws immediately',
+    /bind\('set-maps', 'maps', \(\) => \{ this\._buildHud\(\); this\._mapT = 1; this\._drawMaps\(\); \}\)/
+      .test(Mc));
+  for (const panes of [1, 2]) {
+    const sizes = Array.from({ length: panes }, () => 1);
+    const each = assignMaps(sizes, [], panes);
+    const two = assignMaps(sizes, [], Math.min(panes, 2));
+    ok(`...and at ${panes} pane(s) the two settings are the same screen`,
+      JSON.stringify(each) === JSON.stringify(two), JSON.stringify(each));
+  }
+  /* AND FOUR PANES REALLY DO GET FOUR. The whole ask in one assertion. */
+  ok('...while four panes get four maps, one each',
+    assignMaps([1, 1, 1, 1], [], 4).filter((v) => v != null).length === 4,
+    JSON.stringify(assignMaps([1, 1, 1, 1], [], 4)));
+
+  /* --- WASD DRIVES PLAYER ONE'S PAUSE MENU -----------------------------
+     "When Player 1 is being controlled by gamepad, then WASD controls should
+     work to control Player 1 as well, unless WASD is being used to controller
+     another player. Even if so, when Player 1 brings up the Pause Menu, we
+     should still be able to control the menu using WASD controls."
+
+     The input half is `pad-check`'s ("WASD as a spare hand, in play and in a
+     menu"). This is the half that is about the MENU: that it asks at all, that
+     it only asks for the owner's own list, and that the hand is spent like any
+     other pad — an unpaid confirm falls straight through into the frame
+     underneath, which is how B by the dealer used to open the dealer. */
+  const mn = stripComments(src('../src/systems/menunav.js'));
+  ok('the pause menu asks for the spare hand',
+    /this\.game\.input\.menuHand\?\.\(owner\)/.test(mn));
+  ok('...only for a named owner, never onto the shared list itself',
+    /const hand = ps !== all \? this\.game\.input\.menuHand\?\.\(owner\) : null;/.test(mn));
+  ok('...and it is merged before x, y, confirm and took are read',
+    mn.indexOf('ps.push(hand)') < mn.indexOf('for (const p of ps)'));
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150
