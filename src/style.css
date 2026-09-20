@@ -1357,6 +1357,27 @@ body.touch-ui .pane-edge { border-width: 4px; }
   border-radius: 12px;
   box-shadow: 0 5px 0 var(--ink);
   padding: 8px 8px 6px;
+  /* YOU CAN SEE THROUGH IT, JUST. Asked for as "add slight transparency on
+     the sin/cos UI, so a player can be slightly seen if behind it, 10% may be
+     good". The board is a solid box sitting in a corner of a pane somebody is
+     playing in, and in the Dojo it is exactly the corner a kitten walks the
+     unit circle through — so a shape moving behind it is information the box
+     was swallowing.
+
+     ON THE WHOLE ELEMENT AND NOT ON THE BACKGROUND. The diagram is a CANVAS,
+     which is opaque wherever it has drawn anything, so dropping the
+     background's alpha would have made the frame see-through and left the one
+     part covering the player exactly as solid as before. `opacity` takes the
+     canvas, the border and the shadow with it, which is the only way the
+     whole box gets fainter.
+
+     10% AND NOT MORE. First non-negotiable: the board draws the orb's own
+     working from the two numbers that position it, and it has to stay
+     READABLE over grass, snow and ash. 0.9 is a kitten visible as a moving
+     shape behind it; measured lower, the sine and cosine labels start losing
+     to whatever is underneath them, and the thing this island exists to teach
+     is the thing that gets lost. */
+  opacity: 0.9;
 }
 #math-board canvas {
   display: block;
@@ -1426,6 +1447,61 @@ body.touch-ui .pane-edge { border-width: 4px; }
 .toast.fade { animation: toastOut 0.45s ease forwards; }
 @keyframes toastIn  { from { transform: translateY(16px) scale(0.9); opacity: 0; } }
 @keyframes toastOut { to   { transform: translateY(-10px); opacity: 0; } }
+
+/* --- WARNINGS -------------------------------------------------------------
+   A strip above the hint line, for the one thing in this game that cannot be
+   undone by trying again: bamboo does not grow back (fourth non-negotiable),
+   so canes cut before anybody has sworn at Pandapaw are canes no panda will
+   ever eat. See `Game.warn`.
+
+   IT LOOKS LIKE A WARNING AND NOT LIKE A TOAST, deliberately: amber on ink
+   rather than the toasts' cream, and centred at the bottom rather than stacked
+   at the top. The two carry different promises — a toast is news, this is a
+   consequence — and a kid who has learned to let the top of the screen scroll
+   past her must not learn the same habit here.
+
+   `bottom` IS MEASURED OFF `.hint`'S OWN OFFSET plus its line, so the two
+   never sit on each other however the hint wraps on a narrow window. The hint
+   is 13px at `bottom: 16px`; 16 + a line and a gap is 44. */
+#warnings {
+  position: absolute;
+  bottom: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, 92vw);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.warn-line {
+  background: rgba(28, 16, 22, 0.9);
+  border: 3px solid var(--gold, #f5c341);
+  border-radius: 9px;
+  padding: 7px 16px;
+  color: #ffe9a8;
+  font-family: 'Nunito', system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 15px;
+  line-height: 1.3;
+  text-align: center;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.9);
+  animation: warnIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.warn-line.fade { animation: warnOut 0.45s ease forwards; }
+@keyframes warnIn  { from { transform: translateY(-14px) scale(0.92); opacity: 0; } }
+@keyframes warnOut { to   { transform: translateY(10px); opacity: 0; } }
+/* On a phone the bottom of the screen is thumbs, and `.hint` is hidden there
+   for exactly that reason — so this goes back up to just under the toasts
+   rather than into the stick's catchment. Narrower and smaller with it: a
+   720px box on a 390px screen is the whole width and most of the picture. */
+body.touch-ui #warnings {
+  bottom: auto;
+  top: calc(env(safe-area-inset-top) + 128px);
+  width: 92vw;
+}
+body.touch-ui .warn-line { font-size: 12px; padding: 5px 11px; }
 
 .hint {
   position: absolute;
@@ -2682,6 +2758,77 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
 @media (prefers-reduced-motion: reduce) {
   #arena-hud .ah-over { animation: none; }
 }
+
+/* --- WHO WON THAT ROUND ---------------------------------------------------
+   Under the health bars, centred, for as long as Mr. Satan is talking about
+   it. See `Tournament._paintWinners` — the `top` is written inline from the
+   measured bottom of `#arena-hud`, because how far down the bars reach depends
+   on how many fighters are stacked in a side.
+
+   GOLD, LIKE THE ROUND PIPS AND THE CHAMPION CARD. Winning is the one thing in
+   this game that is always that colour, and a kid should not have to read the
+   words to know which of the two things on screen is the good one. */
+#arena-winners {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 34;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  pointer-events: none;
+  animation: winnersIn 0.34s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+#arena-winners.hidden { display: none; }
+@keyframes winnersIn { from { transform: translate(-50%, -12px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  #arena-winners { animation: none; }
+}
+/* One kitten: her face in her own colour, her name under it. `--who` is
+   written inline from `cssFor(p.style)` — HER cat, not her seat. */
+.aw-one {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 74px;
+}
+.aw-face {
+  width: 58px;
+  height: 58px;
+  display: block;
+  border: 3px solid var(--who, var(--gold));
+  border-radius: 12px;
+  background: rgba(28, 16, 22, 0.72);
+  box-shadow: 0 3px 0 rgba(20, 12, 18, 0.9);
+}
+.aw-who {
+  font-family: 'Bangers', cursive;
+  font-size: 14px;
+  letter-spacing: 1.4px;
+  color: var(--who, var(--gold));
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.95);
+  max-width: 74px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* "WINS THE ROUND", said once for the whole side rather than once per kitten:
+   two faces with a caption each reads as two separate results. */
+.aw-cap {
+  align-self: center;
+  font-family: 'Bangers', cursive;
+  font-size: 17px;
+  letter-spacing: 2px;
+  color: var(--gold);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95);
+  padding-bottom: 18px;
+}
+body.touch-ui .aw-one { width: 52px; }
+body.touch-ui .aw-face { width: 40px; height: 40px; border-width: 2px; }
+body.touch-ui .aw-who { font-size: 10px; max-width: 52px; }
+body.touch-ui .aw-cap { font-size: 12px; padding-bottom: 12px; }
+
 #arena-hud .ah-mid {
   flex: 0 0 auto;
   align-self: center;
@@ -3505,15 +3652,78 @@ body.touch-ui .kd-row { padding: 9px 6px; }
 /* The quest checklist. Gold, because the tokens circling her are gold and the
    star on this screen is the same promise. Paid rows fade: they are done. */
 .kd-stars { color: #d98a00; font-size: 0.8em; margin-left: 6px; }
-.kd-quests { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.15); }
-.kd-q-head { font-size: 12px; letter-spacing: 0.08em; opacity: 0.8; margin-bottom: 4px; }
-.kd-quests ul { list-style: none; margin: 0; padding: 0; }
-.kd-quest { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.25; padding: 3px 0; }
+/* TWICE THE SIZE, AND IN A BOX OF ITS OWN THAT SCROLLS.
+
+   Asked for as: "for the quests, let's make the text twice as big and add
+   scrolling so that it is easier to read from a distance for the player."
+
+   THE TWO HALVES ARE ONE CHANGE. Nine quests at 13px is about 240px of card;
+   at 26px it is nearly 500, which on any window a kid actually plays on pushes
+   the points row and the orb grid off the top of `#kd-body` and makes the
+   screen worse at the thing it is mainly for. So the list gets a height of its
+   own and scrolls inside it — and `Profile._scrollQuests` is what drives that
+   from a stick, because a scroller a controller cannot reach is the silent
+   dead end the sixth non-negotiable is about.
+
+   `--q` IS THE DOUBLING, WRITTEN ONCE. Four rules read it, and the point of a
+   single variable is that "twice as big" stays one decision — the mark, the
+   `special` tag and the dim `how` line are all `em` off the row, so they
+   scale with it rather than needing their own numbers.
+
+   `max-height` IS IN `em` OF THE ROW, not in pixels or vh. It is "about four
+   quests at a time", which is what it has to be: a fixed pixel box would show
+   four rows at the old size and two at this one, and a `vh` box would be six
+   rows on a monitor and one on a laptop. */
+.kd-quests {
+  --q: 26px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.15);
+}
+.kd-q-head {
+  font-size: calc(var(--q) * 0.92);
+  letter-spacing: 0.08em;
+  opacity: 0.8;
+  margin-bottom: 4px;
+}
+.kd-quests ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 9.4em;
+  overflow-y: auto;
+  /* THE SAME `clip` THE ORB DRAWER NEEDED, and for the same reason: setting
+     `overflow-y` coerces the unset `overflow-x: visible` to `auto`, which
+     gives this box a scrollbar sideways and a scroll position that a long
+     quest title can move. The rows wrap; there is nothing to scroll across. */
+  overflow-x: clip;
+  font-size: var(--q);
+}
+/* THE CURSOR CAN LAND ON THE LIST, and when it does the stick reads it. Same
+   gold ring the orb slots use, drawn on the box rather than on a row: the
+   cursor is not pointing AT a quest, it is holding the list. */
+.kd-quests.cursor {
+  outline: 3px solid var(--gold, #f5c341);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+.kd-quest {
+  display: flex;
+  gap: 0.34em;
+  align-items: flex-start;
+  font-size: 1em;
+  line-height: 1.25;
+  padding: 0.14em 0;
+}
 .kd-q-mark { width: 1.1em; flex: none; text-align: center; opacity: 0.55; }
 .kd-quest.on .kd-q-mark { color: #d98a00; opacity: 1; font-weight: 700; }
 .kd-q-note { font-weight: 700; white-space: nowrap; }
 .kd-quest.paid { opacity: 0.6; }
-.kd-q-rare { color: #7a45d1; font-size: 11px; font-weight: 400; margin-left: 4px; }
+.kd-q-rare { color: #7a45d1; font-size: 0.84em; font-weight: 400; margin-left: 4px; }
+/* A PHONE IS NOT READ FROM ACROSS A ROOM. The whole ask is about distance —
+   four kids on a sofa looking at a television — and a 26px quest on a 390px
+   screen is four words a line. It is still bigger than the 13px it was. */
+body.touch-ui .kd-quests { --q: 17px; }
 /* "the game has ended", said once beside the heading. Darker than the heading
    it sits on rather than bigger: it is a state, not a warning. */
 .kd-q-over { color: #b4432c; font-weight: 700; opacity: 1; margin-left: 6px; }

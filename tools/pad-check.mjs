@@ -1135,6 +1135,13 @@ console.log('\n--- force-spawn: four kittens on one keyboard ---');
    broken hardware rather than as a party nobody had grown. `Game._autoSeat`
    seats her from `sparePad` instead. START still works and is still explicit;
    this is the same thing happening without anybody having to know that. */
+/* AND THE GESTURE IS A PRESS OF A OR START, WHICH IS THE OTHER HALF OF THIS.
+   It used to be `hasSentInput` — "this pad has sent SOMETHING this session" —
+   a flag that never goes back to false, so `Game._autoSeat` needed a permanent
+   per-device latch to stop a departing girl's own controller re-seating her on
+   the next frame. That latch was the reported bug: "Joycon player is unable to
+   join after dropping out", forever, because the latch had her device in it.
+   A press EDGE needs no latch, and it is the ask in its own words. */
 console.log('\n--- a spare controller somebody picks up becomes a player ---');
 {
   const mkPad = (i, down = []) => {
@@ -1143,6 +1150,11 @@ console.log('\n--- a spare controller somebody picks up becomes a player ---');
     p.buttons = buttons(17, down);
     return p;
   };
+  /* Press a button on an already-running manager and take one frame. `drive`
+     cannot express this: it holds its buttons down forever, which is three
+     frames of the SAME press and therefore exactly one edge — the thing under
+     test here is what happens on the frames after it. */
+  const tap = (im, p, down) => { p.buttons = buttons(p.buttons.length, down); im.update(); };
 
   /* CONNECTION IS NOT ENOUGH. A pad charging on the side, or left on the sofa,
      has sent nothing and must seat nobody — the same question the vJoy phantom
@@ -1151,30 +1163,63 @@ console.log('\n--- a spare controller somebody picks up becomes a player ---');
   ok('a pad nobody has touched is not offered', idle.sparePad() === null,
     JSON.stringify(idle.sparePad()));
 
-  const woken = drive([mkPad(0), mkPad(1), mkPad(2, [STANDARD.cross])]);
-  const dev = woken.sparePad();
-  ok('a pad somebody picks up is offered', dev?.pad === 2, JSON.stringify(dev));
-  ok('...and it is a spare, not one already being played',
-    !woken.bindings.slice(0, 2).some((b) => b.pad === 2));
+  /* AND NEITHER IS A STICK ANY MORE. A pad passed across a sofa brushes its
+     own stick, and that used to be a whole join. */
+  const nudged = mkPad(2);
+  const brushed = drive([mkPad(0), mkPad(1), nudged]);
+  nudged.axes = [0.9, 0, 0, 0];
+  brushed.update();
+  ok('a spare pad whose stick is brushed is still not offered',
+    brushed.sparePad() === null, JSON.stringify(brushed.sparePad()));
 
-  /* ONE OFFER PER DEVICE. `hasSentInput` never goes back to false, so without
-     the caller's latch a player who drops out would be re-seated on the next
-     frame by the controller still in her hands and could never leave. */
-  ok('an offer already taken is not repeated',
-    woken.sparePad(new Set(['pad:2'])) === null,
-    JSON.stringify(woken.sparePad(new Set(['pad:2']))));
+  /* BOTH BUTTONS, because A is the one a nine-year-old mashes and START is the
+     one that is written down. */
+  for (const [name, btn] of [['A', STANDARD.cross], ['START', STANDARD.options]]) {
+    const spare = mkPad(2);
+    const im = drive([mkPad(0), mkPad(1), spare]);
+    tap(im, spare, [btn]);
+    ok(`pressing ${name} on a spare pad offers it`, im.sparePad()?.pad === 2,
+      JSON.stringify(im.sparePad()));
+    ok(`...and it is a spare, not one already being played (${name})`,
+      !im.bindings.slice(0, 2).some((b) => b.pad === 2));
+    /* ONE OFFER PER PRESS, AND THIS IS THE BUG. Holding the button down is one
+       ask, not one per frame — otherwise a girl who drops out with her thumb
+       still on A is seated again before she has let go, which is what "unable
+       to join after dropping out" felt like from the other side. */
+    im.update();
+    ok(`...and holding ${name} down does not offer it again`,
+      im.sparePad() === null, JSON.stringify(im.sparePad()));
+    /* LET GO AND ASK AGAIN. The edge is the whole of the memory — there is no
+       latch to clear, which is what makes rejoining possible at all. */
+    tap(im, spare, []);
+    tap(im, spare, [btn]);
+    ok(`...and letting go and pressing ${name} again offers it once more`,
+      im.sparePad()?.pad === 2, JSON.stringify(im.sparePad()));
+  }
+
+  /* The caller's `skip` is still honoured — `Game._picker` has no use for it
+     any more, but a screen that has already dealt with a device can say so. */
+  {
+    const spare = mkPad(2);
+    const im = drive([mkPad(0), mkPad(1), spare]);
+    tap(im, spare, [STANDARD.cross]);
+    ok('a device the caller has already dealt with is not offered',
+      im.sparePad(new Set(['pad:2'])) === null,
+      JSON.stringify(im.sparePad(new Set(['pad:2']))));
+  }
 
   /* AND IT WORKS FOR THE COMBINATION THAT PROMPTED IT: two Joy-Cons arriving
      through Joy2Win as one vJoy device that has been split, plus a PS4 pad.
      The pad is the third device and nothing was seating anybody on it. */
   const v = DEVICES.vjoy();
   v.buttons = buttons(38, [2]);
-  const p = mkPad(1, [STANDARD.cross]);
+  const p = mkPad(1);
   const combo = drive([v, p], { padMode: 'split' });
   ok('split Joy-Cons take P1 and P2',
     combo.bindings[0].half === 'left' && combo.bindings[1].half === 'right');
-  ok('...and the PS4 pad is offered as P3', combo.sparePad()?.pad === 1,
-    JSON.stringify(combo.sparePad()));
+  tap(combo, p, [STANDARD.cross]);
+  ok('...and the PS4 pad is offered as P3 when its A is pressed',
+    combo.sparePad()?.pad === 1, JSON.stringify(combo.sparePad()));
 }
 
 
@@ -1507,11 +1552,12 @@ console.log('\n--- a party of one ---');
     withPad.pendingJoin()?.keyset === 0, JSON.stringify(withPad.pendingJoin()));
   withPad.keys.clear();
 
-  /* A CONTROLLER IS THE OTHER WAY IN, and it does not need a key at all —
-     `Game._autoSeat` seats whoever picks one up rather than making her find
-     START. From the input layer that is one question: is a second pad offered
-     as spare? `hasSentInput` is what "picked up" means, so the stick has to
-     have moved — a pad charging on the side seats nobody. */
+  /* A CONTROLLER IS THE OTHER WAY IN, and it does not need a KEY at all —
+     `Game._autoSeat` seats whoever asks on the pad itself rather than making
+     her reach the laptop. From the input layer that is one question: is a
+     second pad offered as spare? A OR START is what asking means (see the
+     spare-controller block above); a pad charging on the side seats nobody,
+     and neither does one whose stick is knocked. */
   const padA = DEVICES.ds4Chrome();
   const padB = DEVICES.ds4Chrome();
   padB.index = 1;
@@ -1522,7 +1568,11 @@ console.log('\n--- a party of one ---');
     twoPads.sparePad() === null, JSON.stringify(twoPads.sparePad()));
   padB.axes[0] = 0.9;
   twoPads.update();
-  ok('...and picking it up offers it, so `_autoSeat` can seat player 2',
+  ok('...nor is one whose stick has been knocked',
+    twoPads.sparePad() === null, JSON.stringify(twoPads.sparePad()));
+  padB.buttons = buttons(17, [STANDARD.cross]);
+  twoPads.update();
+  ok('...and pressing A offers it, so `_autoSeat` can seat player 2',
     twoPads.sparePad()?.pad === 1, JSON.stringify(twoPads.sparePad()));
 }
 
@@ -2219,6 +2269,107 @@ console.log('\n--- a second press, close behind the first ---');
   ok('...and passing it along mid-hold manufactures nothing either',
     now !== driver && !share.players[now].pressed('jump'),
     `${driver} -> ${now}`);
+}
+
+/* ----------- 11c. WASD as player one's second hand, and as a menu's ---------
+   THE ASK, IN ITS OWN WORDS: "When Player 1 is being controlled by gamepad,
+   then WASD controls should work to control Player 1 as well, unless WASD is
+   being used to controller another player. Even if so, when Player 1 brings up
+   the Pause Menu, we should still be able to control the menu using WASD."
+
+   Two different rules, and the second one is the one that is easy to get wrong
+   by making it the same rule. IN PLAY the hand is refused the moment somebody
+   else is on WASD, because two kittens on one keyboard move as one and read as
+   a broken controller. IN A MENU there is no kitten: the game is paused, there
+   is one cursor and its owner is already named, so a second device pushing that
+   one cursor is the same cursor. `menuHand` is where the difference lives, and
+   every refusal in it exists to stop a press being COUNTED TWICE. */
+console.log('\n--- WASD as a spare hand, in play and in a menu ---');
+{
+  const solo = DEVICES.ds4Chrome();
+  const im = drive([solo]);
+  im.slots = 1;
+  im.update();
+  ok('player 1 alone on a pad is handed WASD as a spare hand',
+    im.bindings[0].alsoKeyset === 0, JSON.stringify(im.bindings[0]));
+  im.keys.add('KeyD');
+  im.update();
+  ok('...and a WASD key really moves her', im.players[0].mx > 0.5,
+    String(im.players[0].mx));
+  ok('...without her source becoming the keyboard',
+    im.players[0].source === 'gamepad', im.players[0].source);
+  /* AND NOT A SECOND COPY IN THE MENU. The keys are already in her pad state,
+     so handing them out again would double every press she makes. */
+  ok('...and the menu is NOT offered them a second time',
+    im.menuHand(0) === null, JSON.stringify(im.menuHand(0)));
+  im.keys.delete('KeyD');
+
+  /* SOMEBODY ELSE ON WASD IS THE REFUSAL — in play. */
+  const two = drive([DEVICES.ds4Chrome()]);
+  two.slots = 2;
+  two.update();
+  ok('with a sister on WASD, player 1 gets no spare hand',
+    two.bindings[0].alsoKeyset === null && two.bindings[1].keyset === 0,
+    JSON.stringify(two.bindings.slice(0, 2)));
+  two.keys.add('KeyD');
+  two.update();
+  ok('...and W A S D moves the sister, not player 1',
+    two.players[0].mx === 0 && two.players[1].mx > 0.5,
+    `${two.players[0].mx} / ${two.players[1].mx}`);
+  /* ...AND THE MENU IS EXACTLY WHERE IT IS ALLOWED. "Even if so." */
+  ok('...but the menu hand IS offered to player 1', two.menuHand(0) !== null);
+  ok('...and it reads the same keys', two.menuHand(0).mx > 0.5,
+    String(two.menuHand(0).mx));
+  ok('...for player 1 only, never for the sister holding that keyboard',
+    two.menuHand(1) === null);
+  /* THE EDGE IS REAL, AND IT IS SPENDABLE — `MenuNav.spend` pays for it like
+     any other pad, or a confirm falls through into the frame underneath. */
+  two.keys.delete('KeyD');
+  two.update();
+  two.keys.add('Space');
+  two.update();
+  ok('...and a press on it edges once', two.menuHand(0).pressed('jump'));
+  two.menuHand(0).consume('jump');
+  ok('...and can be spent', !two.menuHand(0).pressed('jump'));
+  two.update();
+  ok('...and does not edge again while the key is held',
+    !two.menuHand(0).pressed('jump'));
+
+  /* A KEYBOARD PLAYER ONE IS ALREADY ON THOSE KEYS. `drive` leaves its pads
+     in the global navigator, so this one has to take them away again or it is
+     not a keyboard game at all. */
+  globalThis.navigator = { getGamepads: () => [] };
+  const kb = new InputManager();
+  kb.slots = 2;
+  kb.update();
+  ok('a keyboard player 1 is offered no menu hand',
+    kb.bindings[0].pad === null && kb.menuHand(0) === null);
+
+  /* AND GAINING THE SPARE HAND MID-HOLD MANUFACTURES NOTHING ON THE KEYS IT
+     BRINGS — while leaving the pad's own edges alone. Both halves of this were
+     wrong at different times: blanking nothing let a sister's held W hand
+     player 1 a fresh `up` the frame she left; blanking everything ate the
+     START player 1 was pressing at the same moment for a reason that had
+     nothing to do with her. */
+  const hand = DEVICES.xbox();
+  const gain = drive([hand]);
+  gain.slots = 2;
+  gain.update();                                   // sister on WASD, no spare
+  gain.keys.add('KeyF');                           // ...and her finger is on F
+  gain.keys.add('KeyW');                           // ...and her thumb on W
+  gain.update();
+  gain.slots = 1;                                  // she leaves, mid-hold
+  hand.buttons = buttons(17, [STANDARD.options]);  // and P1 presses START now
+  gain.update();
+  ok('the spare hand really did arrive', gain.bindings[0].alsoKeyset === 0,
+    JSON.stringify(gain.bindings[0]));
+  ok('...and manufactures no press on the key it brings',
+    !gain.players[0].pressed('attack'));
+  ok('...and does not eat the pad press made at the same moment',
+    gain.players[0].pressed('start'));
+  ok('...though the key it brings is still HELD, because it is',
+    gain.players[0].down('attack') && gain.players[0].my < -0.5,
+    String(gain.players[0].my));
 }
 
 console.log('');

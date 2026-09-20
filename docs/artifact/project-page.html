@@ -485,7 +485,7 @@ footer b { color: var(--text); }
 <div class="wrap">
 
 <header class="mast">
-  <div class="stamp">Last updated <span>·</span> 19 Sep 2026</div>
+  <div class="stamp">Last updated <span>·</span> 20 Sep 2026</div>
   <h1>Katana Kitties<em>The whole project on one page</em></h1>
   <p class="lede">A <b>split-screen co-op browser game for up to four players</b>: samurai kittens
     knocking over a chain of floating Japanese islands, riding storm dragons between them, and
@@ -540,9 +540,9 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 3983 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 4027 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
-node tools/pad-check.mjs      <span class="c"># 363 checks: controllers, keyboard sets,</span>
+node tools/pad-check.mjs      <span class="c"># 388 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
 npm run check                 <span class="c"># both of the above, in one line</span>
 npm run docs                  <span class="c"># this page's tables and PROJECT.md's, from the code</span>
@@ -733,6 +733,9 @@ git push origin alpha</code></pre>
       four-player dealing with nothing shared and no second code path. Turning the toggle off sends
       the extra kittens home properly — orbs back into the world, animals home — rather than leaving
       cats nobody can move.</p>
+    <p>With <b>one controller and nobody else playing</b>, WASD is <em>also</em> player one's — see
+      §6. It stops being hers the moment the table above deals it to a sister, and her pause menu
+      keeps it either way.</p>
   </div>
 
   <div class="note">
@@ -836,7 +839,24 @@ git push origin alpha</code></pre>
 
 <section id="controls">
   <h2><span class="n">6</span> The controls</h2>
-  <p class="sub">Pick up a controller and you are in. Pads are dealt in connection order and always outrank the keyboard.</p>
+  <p class="sub">Pick up a controller and press A or START. Pads are dealt in connection order and always outrank the keyboard.</p>
+
+  <p><b>A spare pad joins on a PRESS, not on being touched.</b> It used to be enough to have sent
+    anything at all that session, which read as friendly and had one consequence nobody wanted: that
+    flag never goes back to false, so the game had to keep a permanent list of devices it had already
+    seated to stop a departing girl's own controller putting her straight back in — and a Joy-Con on
+    that list could never rejoin for the rest of the session. A press of <kbd>A</kbd> or
+    <kbd>START</kbd> is an edge, so no list is needed and leaving and coming back both work.</p>
+
+  <p><b>WASD is player one's second hand when nobody else is on it</b> — one kitten on a pad with a
+    laptop in front of her, which is how this project is tested. The moment a sister is dealt WASD it
+    is hers alone, <em>except in a menu</em>: a paused screen has one cursor with a named owner, so
+    player one's pause menu still takes WASD even while it is walking somebody else.</p>
+
+  <p><b>The minimap is a setting.</b> <i>Settings ▸ Minimaps</i> is <b>one in every window</b> (the
+    default — players three and four get their own, and the zoom button turns the map in the pane you
+    are looking at) or <b>only two, shared</b>, which is what the game did before. At two players the
+    two settings produce the same screen, bit for bit.</p>
 
   <p style="font-size:14px;color:var(--text-dim)"><b>Both tables are generated out of
     <code>src/core/input.js</code></b> by the same tool that writes the balance numbers, for the same

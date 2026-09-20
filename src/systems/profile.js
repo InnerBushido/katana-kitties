@@ -425,12 +425,28 @@ export class ProfileScreen {
       if (side.repeatT <= 0) { side.repeatT = REPEAT_RATE; step = raw; }
     }
     if (step && rows > 0) {
-      side.i = (side.i + step + rows) % rows;
-      /* WHOSE CURSOR MOVED, for `_followCursors`. Only a STICK sets it: a tap
-         put the row under her finger, so it is on screen by definition, and
-         scrolling to it could only move it out from under somebody else. */
-      this._moved = index;
-      this.game.audio?.play('menu');
+      /* ON THE QUEST LIST, UP AND DOWN SCROLL IT UNTIL IT RUNS OUT, and only
+         then move the cursor off. A nested scroller, which is the same shape
+         the points row already uses on the other axis: one row carries a value
+         the stick changes, and the cursor leaves it when there is nothing left
+         to change. The list is twice the size it was and shows about four
+         quests, so without this there are five a stick could never read.
+
+         IT LEAVES AT THE END RATHER THAN TRAPPING HER. `_scrollQuests` answers
+         false when the box is already at that end — or has nothing to scroll
+         at all — so a push at the bottom wraps to the top of her card exactly
+         as it did before this existed. A row you cannot get out of is worse
+         than a row you cannot get into. */
+      if (this._onQuests(index) && this._scrollQuests(index, step)) {
+        this.game.audio?.play('menu');
+      } else {
+        side.i = (side.i + step + rows) % rows;
+        /* WHOSE CURSOR MOVED, for `_followCursors`. Only a STICK sets it: a tap
+           put the row under her finger, so it is on screen by definition, and
+           scrolling to it could only move it out from under somebody else. */
+        this._moved = index;
+        this.game.audio?.play('menu');
+      }
     }
 
     if (onPoints && Math.abs(pad.mx) > NAV_DEAD) {
@@ -481,6 +497,19 @@ export class ProfileScreen {
     const side = this.sides[index];
     if (!player || !side) return;
     const owned = player.powerOrbs;
+    /* THE QUEST LIST IS NOT AN ORB, AND `side.i` IS AN ORB INDEX BELOW.
+       Without this, JUMP on the quest row would toggle an offer at a slot past
+       the end of `powerOrbs` — an offer of nothing, which then prints as `—`
+       in the offered line and survives a confirm. `gotchas.md § UI
+       FALL-THROUGH`, shape one, arrived at by adding a row rather than by
+       double-reading a press.
+       IT SAYS WHAT THE ROW IS FOR rather than blipping a refusal: there is
+       nothing wrong with the press, she is simply on a list. */
+    if (this._onQuests(index)) {
+      this._say('The quests — push the stick UP and DOWN to read them all');
+      this.game.audio?.play('menu');
+      return;
+    }
     if (this._onPoints(index)) {
       /* The points row is a no-op by design: the amount IS the offer, so there
          is nothing to toggle. Zero means offering none. */
@@ -907,13 +936,48 @@ export class ProfileScreen {
        who has been to the ring has some and a kitten who has not wants them —
        and they need somewhere for the cursor to land. It is the LAST row, so
        the orbs keep the positions they had. */
-    return Math.max(1, this.game.players[index]?.powerOrbs.length ?? 0) + 1;
+    /* ...AND ONE MORE FOR THE QUEST LIST, WHICH IS NOW A SCROLLER.
+       The quests are twice the size they were (see `.kd-quests` in style.css)
+       and live in a box about four rows tall, so there is something to scroll
+       and there has to be a way to scroll it. A box a stick cannot reach is
+       the silent dead end the sixth non-negotiable is about — and this screen
+       is reached from the pause menu, which a kid can be holding nothing but
+       a Joy-Con to open.
+
+       IT IS THE LAST ROW, AFTER POINTS, so every position above it is exactly
+       where it was: the orbs keep their indices and so does the points row.
+       Only a card that HAS quests grows one, so a party with the feature off
+       or a kitten before the list exists comes out unchanged. */
+    return this._pointsRow(index) + 1 + (this._hasQuests(index) ? 1 : 0);
   }
 
-  /** True when this side's cursor is on the points row rather than an orb. */
+  /** Which row index the points row is — the one after the last orb. */
+  _pointsRow(index) {
+    return Math.max(1, this.game.players[index]?.powerOrbs.length ?? 0);
+  }
+
+  /** Does this kitten's card carry a quest list at all? `status` is the same
+   *  call `_cardMarkup` makes, so the row cannot exist without the box. */
+  _hasQuests(index) {
+    const p = this.game.players[index];
+    return !!p && (this.game.feats?.status(p)?.length ?? 0) > 0;
+  }
+
+  /** True when this side's cursor is on the points row rather than an orb.
+   *
+   *  `===`, AND IT USED TO BE `>=`. That was a safe reading of "the last row"
+   *  while points really were last; with the quest row after them it would
+   *  make the quest row a points row too, and left/right would be changing an
+   *  offer while she is reading a checklist. Nothing lands out of range —
+   *  `open` clamps and `_navSide` wraps modulo — so the loose test was only
+   *  ever belt and braces for a case that cannot happen. */
   _onPoints(index) {
-    return this.mode === 'profile'
-      && this.sides[index].i >= this._rowCount(index) - 1;
+    return this.mode === 'profile' && this.sides[index].i === this._pointsRow(index);
+  }
+
+  /** ...and true when it is holding the quest list. */
+  _onQuests(index) {
+    return this.mode === 'profile' && this.sides[index].i > this._pointsRow(index);
   }
 
   /* -------------------------------- paint -------------------------------- */
@@ -979,6 +1043,10 @@ export class ProfileScreen {
           + ' — <b>both</b> must confirm';
     }
     this._paintActions();
+    /* BEFORE `_followCursors`, so a card whose quest list has just been put
+       back where its reader left it is the card that gets scrolled into view.
+       The other order would measure a box that is about to change height. */
+    this._restoreQuestScroll();
     this._followCursors();
     this._markOverflow();
   }
@@ -1050,6 +1118,69 @@ export class ProfileScreen {
    * asks for the two-player game to come out bit-identical, and a scroll
    * container with nothing to scroll does nothing at all.
    */
+  /**
+   * Page one kitten's quest list, and say whether it actually moved.
+   *
+   * THE ANSWER IS WHAT MAKES THE ROW ESCAPABLE. `_navSide` only keeps the
+   * cursor on the list while this returns true, so "already at the bottom",
+   * "already at the top" and "there is nothing to scroll" all hand the press
+   * straight back and the cursor wraps like every other row.
+   *
+   * A PAGE AT A TIME, NOT A ROW. The box shows about four quests and the stick
+   * repeats at `REPEAT_RATE`; a row per repeat would take three seconds to
+   * cross a list a kid can read in two. 80% of the box rather than all of it
+   * so one quest stays on screen across the jump — otherwise every page lands
+   * on a list that looks completely different and she loses her place.
+   *
+   * THE POSITION IS REMEMBERED ON HER SIDE, because `_paint` replaces this
+   * card's markup whenever ANY value on the screen changes — a sister moving
+   * her own cursor, a points offer, a star arriving — and a scroller that went
+   * back to the top every time somebody else did something would be unusable
+   * in exactly the four-player game it exists for. `_restoreQuestScroll` puts
+   * it back after the repaint.
+   *
+   * @param {number} step -1 up, +1 down
+   * @returns {boolean} true if the box really moved
+   */
+  _scrollQuests(index, step) {
+    const ul = this.body?.querySelector(`.kd-card.kd-p${index} [data-quests]`);
+    if (!ul) return false;
+    const max = ul.scrollHeight - ul.clientHeight;
+    if (max <= 1) return false;                     // nothing hidden: not ours
+    const at = ul.scrollTop;
+    if (step > 0 ? at >= max - 1 : at <= 1) return false;
+    const page = Math.max(24, ul.clientHeight * 0.8);
+    const to = Math.max(0, Math.min(max, at + step * page));
+    ul.scrollTop = to;
+    this.sides[index].questScroll = to;
+    return true;
+  }
+
+  /**
+   * Put every quest list back where its reader left it, after a repaint.
+   *
+   * Called from `_paint`, right after the markup is replaced, for the reason
+   * spelled out on `_scrollQuests`: this card is rebuilt whenever anything on
+   * the screen changes, including things nobody on this card did.
+   *
+   * CLAMPED BY THE BOX ITSELF rather than by a remembered maximum. A quest
+   * that gets paid shortens the list, and a position saved against the old
+   * height would leave the box scrolled past its own end — which the browser
+   * silently corrects to the bottom, so the stored number and the screen would
+   * then disagree. Writing it back through the element and reading what stuck
+   * is the same "measure, don't reason" the rest of this file follows.
+   */
+  _restoreQuestScroll() {
+    if (!this.body || this.mode !== 'profile') return;
+    this.sides.forEach((side, i) => {
+      if (!side?.questScroll) return;
+      const ul = this.body.querySelector(`.kd-card.kd-p${i} [data-quests]`);
+      if (!ul) return;
+      ul.scrollTop = side.questScroll;
+      side.questScroll = ul.scrollTop;
+    });
+  }
+
   _followCursors() {
     const i = this._moved;
     this._moved = null;
@@ -1201,7 +1332,11 @@ export class ProfileScreen {
        stick to push while the trade screen is up, so the row carries its own
        two buttons. They call the same `_bumpPoints` the stick does. */
     const pointsRow = `<div class="kd-points${onPts ? ' cursor' : ''}" `
-      + `data-side="${index}" data-slot="${this._rowCount(index) - 1}">`
+      /* `_pointsRow` AND NOT `_rowCount - 1`, which is what this said while
+         points really were the last row. The quest list is after them now, so
+         the old expression would have written the QUEST row's index onto the
+         points row and a tap would have put the cursor in the wrong place. */
+      + `data-side="${index}" data-slot="${this._pointsRow(index)}">`
       + `<span>POINTS</span>`
       + `<button class="kd-step" type="button" data-side="${index}" data-pts="-1">−</button>`
       + `<b>${side.points}</b>`
@@ -1232,7 +1367,7 @@ export class ProfileScreen {
       ${this.mode === 'profile' ? pointsRow : ''}
       <div class="kd-detail">${detail}</div>
       <div class="kd-state">${state}</div>
-      ${this._questMarkup(quests)}
+      ${this._questMarkup(quests, index)}
     </div>`;
   }
 
@@ -1252,7 +1387,7 @@ export class ProfileScreen {
    * THE SPECIAL ONES SAY SO. They are the ones that can roll a rare orb, and
    * that is the reason a girl would go for one rather than another.
    */
-  _questMarkup(quests) {
+  _questMarkup(quests, index = -1) {
     if (!quests.length) return '';
     const rows = quests.map((q) => {
       const mark = q.paid ? '✔' : q.star ? '★' : '☆';
@@ -1270,8 +1405,23 @@ export class ProfileScreen {
        is read most, in the minutes after the ending. */
     const ended = this.game.feats && !this.game.feats.open
       ? ' <span class="kd-q-over">the game has ended</span>' : '';
-    return `<div class="kd-quests"><div class="kd-q-head">QUESTS — orbs at the ending${ended}</div>`
-      + `<ul>${rows.join('')}</ul></div>`;
+    /* THE LIST IS A CURSOR ROW NOW, and this is the three things that makes
+       true: `data-slot` so a TAP can land the cursor on it and so
+       `_followCursors` can bring it into view, `cursor` so a kid can see where
+       her cursor is, and `data-quests` for `_scrollQuests` to find the box.
+       The scrollable element is the `<ul>` and the ring is on the block around
+       it, so the outline does not scroll away with the rows. */
+    const on = index >= 0 && this._onQuests(index) ? ' cursor' : '';
+    const slot = index >= 0 ? ` data-side="${index}" data-slot="${this._pointsRow(index) + 1}"` : '';
+    /* AND THE HEADING SAYS THE LIST MOVES. A box that scrolls and does not say
+       so is a box a kid reads the top four rows of and concludes is the whole
+       list — sixth non-negotiable again, in its quieter form. Only while her
+       cursor is actually on it, because that is the only time the instruction
+       is true for the stick in her hands. */
+    const how = on ? ' <span class="kd-q-over">▲ ▼ to read</span>' : '';
+    return `<div class="kd-quests${on}"${slot}>`
+      + `<div class="kd-q-head">QUESTS — orbs at the ending${ended}${how}</div>`
+      + `<ul data-quests>${rows.join('')}</ul></div>`;
   }
 
   /**

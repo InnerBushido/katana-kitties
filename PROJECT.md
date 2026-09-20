@@ -1,6 +1,6 @@
 # Katana Kitties — the whole project on one page
 
-**Last updated: 19 September 2026.** Anything below with a cost or an account
+**Last updated: 20 September 2026.** Anything below with a cost or an account
 attached was true on that date; check the dashboard before quoting a number.
 
 This is the **one-stop sheet**: what the project is, how to run it, how to test
@@ -88,8 +88,8 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 3983 checks: world, dragons, clans, sprites, tournament, consent, balance
-node tools/pad-check.mjs      # 363 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
+node tools/world-check.mjs    # 4027 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/pad-check.mjs      # 388 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
                               #   in this file AND in the published page's source
@@ -297,6 +297,10 @@ the world, animals home — rather than leaving cats nobody can move.
 
 \* shares the set above it; `R` / `U` says which of the two is playing, or both.
 
+With **one controller and nobody else playing**, WASD is *also* player one's —
+see §6. It stops being hers the moment the table above deals it to a sister, and
+her pause menu keeps it either way.
+
 **If somebody says it lags, press `8` before changing anything.** The game is
 **fill-bound** — frame time is a straight line in the size of the drawing buffer
 and everything else is rounding.
@@ -393,10 +397,30 @@ on the exact transform it was holding.
 
 ## 6. The controls, summarised
 
-**Just pick up a controller.** Pads are dealt in connection order and always
-outrank the keyboard. On the keyboard, **`Enter`** joins — both sets answer to
-it, and `_findJoin` hands out the lowest set still free. **`Esc`, or Start on a
-pad, is the way out of anything.**
+**Pick up a controller and press A or START.** Pads are dealt in connection
+order and always outrank the keyboard. On the keyboard, **`Enter`** joins — both
+sets answer to it, and `_findJoin` hands out the lowest set still free.
+**`Esc`, or Start on a pad, is the way out of anything.**
+
+**A spare pad joins on a PRESS, not on being touched.** It used to be enough to
+have sent anything at all that session, which read as friendly and had one
+consequence nobody wanted: that flag never goes back to false, so the game had
+to keep a permanent list of devices it had already seated to stop a departing
+girl's own controller putting her straight back in — and a Joy-Con on that list
+could never rejoin for the rest of the session. A press of **A** or **START** is
+an edge, so no list is needed and leaving and coming back both work.
+
+**WASD is player one's second hand when nobody else is on it** — one kitten on a
+pad with a laptop in front of her, which is how this project is tested. The
+moment a sister is dealt WASD it is hers alone, *except in a menu*: a paused
+screen has one cursor with a named owner, so player one's pause menu still
+takes WASD even while it is walking somebody else.
+
+**The minimap is a setting.** *Settings ▸ Minimaps* is **one in every window**
+(the default — players three and four get their own, and the zoom button turns
+the map in the pane you are looking at) or **only two, shared**, which is what
+the game did before. At two players the two settings produce the same screen,
+bit for bit.
 
 **Both tables below are generated out of `src/core/input.js`** by the same
 `npm run docs` that writes the balance numbers, for the same reason: the
@@ -559,7 +583,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 3983
+the check that would have caught it.** That is why `world-check` is 4027
 assertions — **and why a check that is sometimes red is treated as a bug in the
 check.** Two of them were coin flips: an aggregate that hid the one kitten it
 was asking about, and a distinctness test rounded until it became a birthday

@@ -1519,6 +1519,36 @@
             <option value="horizontal">Top and bottom</option>
           </select>
         </label>
+        <!-- ONE MINIMAP PER WINDOW, OR TWO SHARED.
+             There were only ever two, on the argument that four copies of the
+             archipelago on four quadrants is four corners of the game covered
+             up — and the cost of that was players 3 and 4 having no map in
+             their own window and a zoom button that turned a box in somebody
+             else's corner. Reported as exactly that: "whenever a player
+             presses the zoom button, it will zoom the minimap that is in the
+             split screen they are on. This should solve some of the issues we
+             are having with players zooming in/out the wrong minimaps."
+
+             IT DOES SOLVE THEM, BY CONSTRUCTION. `nearestMap` answers "my own
+             pane's map, or failing that the nearest one" — with a map in every
+             pane the second half is unreachable and there is nothing left to
+             get wrong.
+
+             TWO PLAYERS ARE BIT-IDENTICAL EITHER WAY, which is why the option
+             is safe: two panes and two maps is the same arrangement whichever
+             row is picked, and one shared screen hides the second map under
+             both. Fifth non-negotiable, for free.
+
+             THE OLD BEHAVIOUR IS STILL HERE because the argument for it was
+             never wrong — on a small window four maps really is a lot of
+             furniture, and somebody who thinks so should be able to say so. -->
+        <label class="row">
+          <span>Minimaps</span>
+          <select id="set-maps">
+            <option value="each">One in every window</option>
+            <option value="two">Only two, shared</option>
+          </select>
+        </label>
         <!-- THE SIN/COS BOARD, ON OR OFF, WITHOUT A CONTROLLER.
              It has always been togglable — `M`, and a pad's own button — and
              that is exactly the problem: "let's add the Turn Math Overlay
@@ -1907,6 +1937,17 @@
            is a thing that appears rather than a counter that starts at zero
            and looks like a chore list. -->
       <div id="balls" class="hidden">★ 0 / 7</div>
+      <!-- WARNINGS, AT THE BOTTOM, WHERE THE TOASTS ARE NOT.
+           A toast says what just happened and scrolls away at the top of the
+           screen with four others; a warning says what is about to be wasted
+           and has to be read. Asked for as "a small warning at the bottom of
+           the screen", which is also the only strip of the frame nothing else
+           claims — the scoreboard and the toasts own the top, the maps and the
+           sin/cos board own the pane corners. It sits above `.hint` rather
+           than replacing it: the hint is what the buttons do, and a kid who
+           has just been told to go to Pandapaw still needs to know which
+           button walks her there. -->
+      <div id="warnings"></div>
       <div class="hint" id="hint"></div>
     </div>
 
@@ -1960,6 +2001,24 @@
 
     <!-- Both fighters' health, and the round pips. -->
     <div id="arena-hud" class="hidden"></div>
+
+    <!-- WHO WON THAT ROUND, WHILE MR. SATAN IS SAYING SO.
+         Asked for as: "when a round is over, should show the faces/names of
+         the players that won that round when Mr. Satan is giving his speech on
+         who won, can be under the health bars, towards the center of the
+         screen."
+
+         ITS OWN BOX RATHER THAN A ROW INSIDE `#arena-hud`. Faces are CANVASES
+         — cropped out of the kittens' own atlases, the same way the champion
+         card does it — and `_paintHud` rebuilds its markup every single frame.
+         A canvas in there would be a fresh element and a fresh `drawImage` at
+         60fps for the two seconds of a ceremony. This one is painted only when
+         the answer changes.
+
+         `top` IS MEASURED OFF THE HEALTH BARS rather than typed, because how
+         far down they reach depends on how many fighters are stacked in a side
+         and whether the overflow debug row is on. See `_paintWinners`. -->
+    <div id="arena-winners" class="hidden"></div>
 
     <!-- The last fifteen seconds of a round, counted down big. Under the HUD
          rather than in the middle: the middle is where the fight is, and it is

@@ -916,13 +916,35 @@ export class InputManager {
   constructor() {
     this.keys = new Set();
     this.players = Array.from({ length: MAX_SLOTS }, () => new PadState());
+    /**
+     * WASD, READ AS A PAD, FOR THE MENUS AND NOTHING ELSE.
+     *
+     * Asked for as the second half of player one's spare hand: "even if [WASD
+     * is being used to control another player], when Player 1 brings up the
+     * Pause Menu, we should still be able to control the menu using WASD
+     * controls."
+     *
+     * IN PLAY THAT WOULD BE TWO KITTENS ON ONE KEYBOARD, which is the failure
+     * `_freeKeysets` and `_padDevices` both exist to prevent — so the spare
+     * hand (`_spareHandPass`) only ever folds WASD into player 1 when nobody
+     * else is on it. A MENU IS DIFFERENT: it is modal, nobody is walking, and
+     * one cursor is being driven by the one person who opened it. There is no
+     * kitten for player 2's W to move, so there is nothing to collide with.
+     *
+     * A WHOLE `PadState` RATHER THAN A PAIR OF AXES, because `MenuNav` reads
+     * `mx`, `my`, `pressed` and `consume`, and half of those are edges. An
+     * object that only answered the first two would read as a stick that
+     * confirms nothing. It is stamped in `update` exactly like a slot, so its
+     * edges are this frame's.
+     */
+    this._menuHand = new PadState();
     /** How many slots are actually in play. The game moves this as players
      *  join and leave; two is the default and the girls' usual game. */
     this.slots = 2;
     /** Per player slot: which pad, which half of a merged pad, and which
      *  keyboard set — any of which may be null. */
     this.bindings = Array.from({ length: MAX_SLOTS },
-      () => ({ pad: null, half: null, keyset: null, touch: false }));
+      () => ({ pad: null, half: null, keyset: null, touch: false, alsoKeyset: null }));
     /** The on-screen pad, or null on a machine that has no business drawing
      *  one. Set by `Game` from the device profile — see `attachTouch`. */
     this.touch = null;
@@ -935,6 +957,10 @@ export class InputManager {
     /** Devices holding START last frame, and this frame's join candidate. */
     this._joinPrev = new Set();
     this._joinCandidate = null;
+    /** The same pair for the SEAT button — A or START on an unplayed pad. See
+     *  `_findSpare`, which is the one thing that reads them. */
+    this._seatPrev = new Set();
+    this._spareCandidate = null;
     /** slot -> device, set by the join flow. Empty means "deal by the default
      *  order", which is what a two-player game always does. */
     this.claims = {};
@@ -1599,7 +1625,7 @@ export class InputManager {
    */
   _assign(padDevs) {
     const next = Array.from({ length: MAX_SLOTS },
-      () => ({ pad: null, half: null, keyset: null, touch: false }));
+      () => ({ pad: null, half: null, keyset: null, touch: false, alsoKeyset: null }));
     const takenKeysets = new Set();
     const n = Math.min(this.slots, MAX_SLOTS);
 
@@ -1619,6 +1645,12 @@ export class InputManager {
         half: c.half ?? null,
         keyset: c.keyset ?? null,
         touch: !!c.touch,
+        /* THE SHAPE IS THE SAME EVERY TIME A BINDING IS BUILT, and it was not:
+           a claimed or pad-dealt slot came out without this field at all,
+           while `_spareHandPass` and `bindSig` both ask about it. `undefined`
+           and null happen to behave alike in both, which is exactly why it
+           would have gone on being missing. */
+        alsoKeyset: null,
       };
       if (c.keyset != null) takenKeysets.add(c.keyset);
       if (c.pad != null) claimedPads.add(`${c.pad}:${c.half ?? ''}`);
@@ -1631,7 +1663,7 @@ export class InputManager {
     // Pads first, so the affinity pass below knows which slots still need one.
     for (let i = 0, k = 0; i < n && k < free.length; i++) {
       if (this.claims[i]) continue;
-      next[i] = { ...free[k], keyset: null, touch: !!free[k].touch };
+      next[i] = { ...free[k], keyset: null, touch: !!free[k].touch, alsoKeyset: null };
       k += 1;
     }
     /* THE TOUCH PAD OWNS WASD WHENEVER IT IS UP — see `_freeKeysets` for why,
@@ -1657,7 +1689,61 @@ export class InputManager {
       }
     }
     this._shadowPass(next, n);
+    this._spareHandPass(next, n);
     return next;
+  }
+
+  /**
+   * PLAYER ONE'S SECOND HAND: WASD, when nobody else is on it.
+   *
+   * Asked for as: "when Player 1 is being controlled by gamepad, then WASD
+   * controls should work to control Player 1 as well, unless WASD is being
+   * used to control another player."
+   *
+   * THE CASE IT IS FOR IS ONE PERSON WITH BOTH. A single kitten on a pad, a
+   * laptop in front of her, and a keyboard that does nothing — which is also
+   * the arrangement every session of this project is tested in. It is the same
+   * idea the touch pad has always had (`_devices`: "on a tablet with a
+   * keyboard attached, or on the desktop test mode, it is player 1's second
+   * hand"), applied to the device that is actually in her hands.
+   *
+   * ONE SLOT AND ONE SET, AND BOTH NUMBERS ARE THE ASK RATHER THAN A RULE.
+   * Slot 0 because "Player 1" is what was asked for, and `TOUCH_KEYSET` — WASD
+   * — because that is the set that was named. Generalising it to "every padded
+   * slot takes the next free set" would hand player 2 the arrows behind
+   * everybody's back and there is no report asking for that.
+   *
+   * IT RUNS LAST, AFTER THE KEYSET PASS AND AFTER `_shadowPass`, so "free"
+   * means free: every slot that needs a keyboard of its own has already taken
+   * one, and a set the force-spawn ring is sharing is not going spare. That
+   * ordering IS the "unless WASD is being used to control another player"
+   * clause — there is no separate test for it, and therefore nothing that can
+   * disagree with the dealer.
+   *
+   * A CLAIM ON SLOT 0 DOES NOT EXEMPT IT. She claimed a PAD; the second hand
+   * is about the keyboard nobody claimed, and a girl who picked her controller
+   * off the join screen wants it just as much as one who was dealt it.
+   *
+   * IT IS NOT A BINDING. `bnd.keyset` stays null, so `promptFor` still names
+   * her pad's buttons, `describe` still says she is on a controller, and
+   * `keysetDrives` is never asked about a set she does not own. Only `update`
+   * reads it — see `alsoKeyset` there — and all it does is fold the keys in
+   * on top of the pad.
+   */
+  _spareHandPass(next, n) {
+    if (n <= 0 || !next[0] || next[0].pad == null) return;
+    /* THE TOUCH PAD ALREADY READS WASD THROUGH ITSELF (`_freeKeysets` keeps
+       the set out of the pool for exactly that reason), so a slot on a touch
+       pad is not this case and a phone with a keyboard must not end up with
+       two things folding the same keys in twice. */
+    if (this.touch) return;
+    const k = TOUCH_KEYSET;
+    /* `keyset` COVERS THE FORCE-SPAWN SHARE TOO, which is why there is only
+       one test here: `_shadowPass` hands a shared set out by writing
+       `next[i].keyset`, exactly as the ordinary pass does. A set with two
+       slots on it is as spoken for as a set with one. */
+    if (next.slice(0, n).some((b) => b.keyset === k)) return;
+    next[0].alsoKeyset = k;
   }
 
   /**
@@ -1981,8 +2067,8 @@ export class InputManager {
   }
 
   /**
-   * A controller nobody is playing on that somebody has actually picked up, or
-   * null. `skip` holds device ids that have already been offered.
+   * A controller nobody is playing on whose holder has ASKED to play, or null.
+   * `skip` holds device ids the caller has already dealt with.
    *
    * THE THIRD CONTROLLER USED TO DO NOTHING UNTIL A THIRD PLAYER JOINED, and
    * that reads as the controller being broken rather than as the party being
@@ -1991,27 +2077,59 @@ export class InputManager {
    * pressing anything except START gets a kitten out of it. `Game._autoSeat`
    * uses this to seat her automatically instead.
    *
-   * IT ASKS FOR REAL INPUT, NOT MERE CONNECTION (`hasSentInput`), which is the
-   * same question the vJoy phantom has to answer and it is doing the same job
-   * here: a pad that is plugged in to charge, or left on the sofa, has sent
-   * nothing and seats nobody. Picking it up and moving the stick is the gesture.
+   * THE GESTURE USED TO BE `hasSentInput` — "this pad has sent SOMETHING this
+   * session" — AND THAT IS WHAT BROKE DROPPING OUT. It is a one-way flag: it
+   * never goes back to false, so the controller still in the hands of a girl
+   * who has just left would seat her again on the very next frame. The caller
+   * answered that with a permanent per-device latch, and the latch is the bug
+   * that was reported: *"Joycon player is unable to join after dropping out."*
+   * Once latched, that Joy-Con could never be auto-seated again for the rest
+   * of the session, and START on a Joy-Con held sideways is not always a
+   * button she can reach.
    *
-   * ONE OFFER PER DEVICE, and the caller latches it. `hasSentInput` never goes
-   * back to false once a pad has been used, so without a latch a player who
-   * drops out would be re-seated on the next frame by the controller still in
-   * her hands — she could never leave.
+   * SO THE GESTURE IS NOW A PRESS OF A OR START, measured as an edge — which
+   * is the ask in its own words: *"players 2 - 4 need to press the a button or
+   * start button on the controller before they join the game. If they drop
+   * out, then they need to press the Start button to rejoin."* An edge is
+   * self-limiting in a way a flag never was: it is true on one frame, so no
+   * latch is needed, and leaving is a decision that sticks until she asks
+   * again. Two buttons rather than one because A is the button a nine-year-old
+   * mashes and START is the one that is written down.
+   *
+   * ALSO SAFER THAN WHAT IT REPLACED: a stick brushed while the pad is passed
+   * across a sofa used to be a whole join.
+   *
+   * The candidate is found inside `update` (`_findSpare`), because the edge has
+   * to be measured against the previous frame's buttons and this is read after
+   * `_rememberJoin` has already replaced them.
    */
   sparePad(skip = new Set()) {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const d = this._spareCandidate;
+    if (!d || skip.has(deviceId(d))) return null;
+    return d;
+  }
+
+  /** The unplayed device pressing A or START this frame, or null. See
+   *  `sparePad`, which hands it out. Halves are separate devices here — a
+   *  split Joy-Con pair is two seats and each asks for itself. */
+  _findSpare(pads) {
     const live = this._order.map((i) => pads[i]).filter(Boolean);
     const bound = this.bindings.slice(0, Math.min(this.slots, MAX_SLOTS));
     for (const d of this._padDevices(live)) {
       if (bound.some((b) => b.pad === d.pad && b.half === d.half)) continue;
-      if (skip.has(deviceId(d))) continue;
+      if (this._seatPrev.has(deviceId(d))) continue;
       const gp = pads[d.pad];
-      if (gp && this.hasSentInput(gp)) return { ...d, keyset: null };
+      if (gp && this._seatHeld(gp, d.half)) return { ...d, keyset: null };
     }
     return null;
+  }
+
+  /** Is the seat button — A or START — down on this device right now? */
+  _seatHeld(gp, half = null) {
+    const r = profileFor(gp).read(gp, {
+      rotation: this.joyconRotation, half, map: this.vjoyMap,
+    });
+    return !!(r.jump || r.start);
   }
 
   update() {
@@ -2101,6 +2219,33 @@ export class InputManager {
         rawx = r.ax + (r.dpad ? r.dpad[0] : 0);
         rawy = r.ay + (r.dpad ? r.dpad[1] : 0);
         for (const a of ACTIONS) next[a] = !!r[a];
+        /* ...AND HER SECOND HAND, IF NOBODY ELSE IS ON IT. See
+           `_spareHandPass`: player 1 on a pad with WASD going spare reads both.
+           `alsoKeyset` is null in every other arrangement, so this is one
+           null test for everybody else.
+
+           IT IS AN OR, NOT A REPLACEMENT. A stick pushed and a key held are
+           both "she wants to go left" and the honest answer is the sum — the
+           same thing the d-pad above does to the stick, and the same thing the
+           touch branch does with its own keys. Clamped to the circle below
+           like everything else, so a key plus a stick cannot be faster than
+           either.
+
+           `source` STAYS 'gamepad'. It answers "what is driving this slot",
+           the pad is the device she is bound to, and `Game`'s Escape handler
+           picks the lowest slot whose source is 'keyboard' to drive the pause
+           menu — saying 'keyboard' here would hand that to a girl holding a
+           controller. The menu reads the spare hand through `menuHand`
+           instead, which is a separate question with a separate answer. */
+        if (bnd.alsoKeyset != null) {
+          const ks = KEYSETS[bnd.alsoKeyset];
+          const held = (field) => (ks[field] ?? []).some((code) => this.keys.has(code));
+          if (held('left')) { mx -= 1; rawx -= 1; }
+          if (held('right')) { mx += 1; rawx += 1; }
+          if (held('up')) { my -= 1; rawy -= 1; }
+          if (held('down')) { my += 1; rawy += 1; }
+          for (const a of ACTIONS) next[a] = next[a] || held(a);
+        }
       } else if (bnd.keyset != null && this.keysetDrives(bnd.keyset, i)) {
         st.source = 'keyboard';
         const k = KEYSETS[bnd.keyset];
@@ -2190,11 +2335,35 @@ export class InputManager {
          both keep naming it (`keysetDrives`, and the R / U keys that pass the
          keyboard along). Handing the keyboard to the sister while a key is down
          is the same manufactured edge with the binding unchanged. */
-      const sig = `${bnd.pad ?? '-'}/${bnd.half ?? '-'}/${bnd.keyset ?? '-'}`
+      /* `alsoKeyset` IS ON THE SIGNATURE TOO. It appears the moment a second
+         player leaves and WASD goes spare, which is precisely a slot GAINING
+         a device — and the paragraph above is about the manufactured press
+         that causes. A sister holding W as she confirms FROST LEAVES THE GAME
+         would otherwise hand player 1 a fresh `up` on the next frame.
+
+         BUT IT RE-SEEDS ONLY THE KEYS THE SPARE HAND IS HOLDING, not the whole
+         frame, and that distinction cost a check to find. The spare hand is
+         not a device changing hands: her PAD has not moved, her thumb has not
+         left it, and blanking every edge would eat the START she is pressing
+         at the same moment for a reason that has nothing to do with her.
+         `pad-check` caught it as "a fresh press reads as pressed" going red
+         on the frame a slot gained the spare hand.
+
+         Only a GAIN can manufacture anything — an edge needs `held` true, and
+         a hand that has just been taken away contributes nothing to `held`. */
+      const core = `${bnd.pad ?? '-'}/${bnd.half ?? '-'}/${bnd.keyset ?? '-'}`
         + `/${bnd.touch ? 't' : '-'}/${st.source}`;
+      const sig = `${core}/${bnd.alsoKeyset ?? '-'}`;
       if (st.bindSig !== sig) {
+        const spareOnly = st.bindSig != null && st.bindSig.startsWith(`${core}/`);
         st.bindSig = sig;
-        st.prev = { ...next };
+        if (!spareOnly) st.prev = { ...next };
+        else if (bnd.alsoKeyset != null) {
+          const ks = KEYSETS[bnd.alsoKeyset];
+          for (const a of ACTIONS) {
+            if (next[a] && (ks[a] ?? []).some((c) => this.keys.has(c))) st.prev[a] = true;
+          }
+        }
       }
       st.held = next;
       /* AFTER `held`, BEFORE ANYTHING READS THE FRAME. `pressed` is the edge
@@ -2205,17 +2374,76 @@ export class InputManager {
       for (const a of ACTIONS) if (st.pressed(a)) this._anyPressLatch = true;
     }
 
+    /* THE MENU'S SPARE HAND, READ WHATEVER THE SLOTS ARE DOING WITH WASD.
+       Unconditional on purpose: whether it is USED is `menuHand`'s question,
+       and a state that is only stamped on the frames somebody asks for it
+       would have edges measured against whenever it was last read. Same
+       argument `_stamp` itself is written on — a clock that is not the
+       frame's clock is the wrong thing to compare a frame's edges against.
+       Suppressed by a remap capture with everything else. */
+    {
+      const mh = this._menuHand;
+      mh.prev = { ...mh.held };
+      const ks = KEYSETS[TOUCH_KEYSET];
+      const held = (f) => !suppress && (ks[f] ?? []).some((c) => this.keys.has(c));
+      mh.mx = (held('right') ? 1 : 0) - (held('left') ? 1 : 0);
+      mh.my = (held('down') ? 1 : 0) - (held('up') ? 1 : 0);
+      mh.rx = mh.mx;
+      mh.ry = mh.my;
+      mh.held = Object.fromEntries(ACTIONS.map((a) => [a, held(a)]));
+      mh._stamp(now);
+    }
+
     /* Joining, last: the edge is against the PREVIOUS frame, so the candidate
        has to be found before this frame's held state replaces it. A capture in
        progress swallows it like everything else — binding a button to START
        must not also seat a new kitten. */
     this._joinCandidate = suppress ? null : this._findJoin(pads);
+    /* THE SEAT EDGE, FOUND HERE FOR THE SAME REASON AND WITH THE SAME TIMING.
+       `sparePad` is called from the game loop, long after `_rememberJoin` has
+       overwritten what the previous frame was holding — so an edge worked out
+       there would be measured against this frame and never be true. */
+    this._spareCandidate = suppress ? null : this._findSpare(pads);
     this._rememberJoin(pads);
   }
 
   /** True on the frame any player presses any button — used by the title screen. */
   anyPressed() {
     return this._anyPressLatch;
+  }
+
+  /**
+   * WASD AS A SECOND CONTROLLER FOR A MENU `slot` IS DRIVING, or null.
+   *
+   * "Even if so, when Player 1 brings up the Pause Menu, we should still be
+   * able to control the menu using WASD controls." The "even if so" is the
+   * whole point: in play the spare hand is refused the moment somebody else is
+   * on WASD (`_spareHandPass`), because two kittens on one keyboard is two
+   * kittens moving as one. A menu has no kitten in it, so the refusal does not
+   * apply and the keyboard in front of the laptop can drive the cursor.
+   *
+   * FIVE REFUSALS, AND EACH ONE IS A DIFFERENT THING GOING WRONG IF IT IS NOT
+   * THERE:
+   *
+   *  - NO OWNER is the title screen, where `MenuNav` already merges every slot
+   *    and slot 0 is on WASD anyway. Adding this would be the same keys twice.
+   *  - NOT SLOT 0 is the ask. "Player 1 brings up the pause menu" — a sister
+   *    who opened it on her own pad drives it with her own pad, and handing
+   *    her WASD would let somebody at the laptop move a cursor she is holding.
+   *  - NO PAD means she is already on a keyboard, and WASD may well be the one
+   *    she is on.
+   *  - `alsoKeyset` ALREADY SET means WASD is folded into her slot by
+   *    `_spareHandPass`, so `MenuNav` is reading it through her pad state and
+   *    a second copy would double every press.
+   *  - TOUCH reads WASD through the on-screen pad, same double.
+   *
+   * @returns {?PadState}
+   */
+  menuHand(slot) {
+    if (slot !== 0 || this.touch) return null;
+    const bnd = this.bindings[0];
+    if (!bnd || bnd.pad == null || bnd.alsoKeyset != null) return null;
+    return this._menuHand;
   }
 
   /* ------------------------------ joining ------------------------------- */
@@ -2312,6 +2540,18 @@ export class InputManager {
     }
     if (this._joinKeyDown()) now.add('kb');
     this._joinPrev = now;
+
+    /* AND THE SEAT BUTTON, PER DEVICE RATHER THAN PER PAD. Two Joy-Cons
+       arriving as one split vJoy device are two seats, and each half has its
+       own A — so a latch keyed to the pad would let one sister's press block
+       the other's. `_padDevices` is the list of things that can BE a seat. */
+    const seat = new Set();
+    const live = this._order.map((i) => pads[i]).filter(Boolean);
+    for (const d of this._padDevices(live)) {
+      const gp = pads[d.pad];
+      if (gp && this._seatHeld(gp, d.half)) seat.add(deviceId(d));
+    }
+    this._seatPrev = seat;
   }
 }
 

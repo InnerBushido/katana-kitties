@@ -28,8 +28,8 @@ look. Everything else is one level down and read on demand.
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
 npm run dev -- --host         # ...and on a phone on the same wifi, at the Network: URL it prints
-node tools/world-check.mjs    # 3983 checks: world, dragons, clans, sprites, tournament, consent, balance
-node tools/pad-check.mjs      # 363 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
+node tools/world-check.mjs    # 4027 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/pad-check.mjs      # 388 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 npm run docs                  # regenerate the controls + balance tables, in PROJECT.md AND
                               #   in docs/artifact/project-page.html (the published twin)
@@ -118,7 +118,16 @@ Break any of these and the thing stops being the game it is. Each is enforced by
 ```
 src/
   main.js               game loop, split-screen rendering, boot, joining, debug keys
-  core/      gfx  input  palette  split  cluster  spritesheet  label  audio
+  core/      gfx  palette  split  cluster  spritesheet  label  audio
+             input (every device. TWO JOINING RULES, and they are different
+               questions: a spare pad seats a kitten on a PRESS of A or START
+               (`_findSpare` — an edge, so no latch is needed, and the latch it
+               replaced is what made a dropped-out Joy-Con unable to rejoin for
+               the rest of the session), and ENTER seats the lowest free
+               keyboard set. `_spareHandPass` gives player 1 WASD as a SECOND
+               HAND when nobody else is on it; `menuHand` lends it to her
+               MENU even when somebody is, because a paused screen has one
+               cursor with a named owner and no kitten in it)
              device (what this machine may spend — tiers, atlas budget)
              touchpad (the on-screen stick and buttons; a device like any other)
              tuning (folds tuning.json over the shipped balance; degrades hard)
@@ -135,7 +144,11 @@ src/
                what makes it unable to be wrong about it; a minute of no
                progress and she names Icewhisker AND the island, but only if
                nobody in the party has the buff already; at three the minimap
-               starts marking the nearest one. docs/notes/endgame.md)
+               starts marking the nearest one — AND ONLY AT THREE, whoever has
+               sworn to Icewhisker. The buff buys the world chevron from the
+               first barrel; the map answers "which island", a question worth
+               answering only when there is one left to find.
+               docs/notes/endgame.md)
              savegame (the afternoon, written down every 30s once a game is
                5 minutes old, loaded from the pause menu. It saves what the
                PLAYERS have done — which props are down, which orbs are worn,
@@ -164,7 +177,14 @@ src/
                roster, rares included. One list, read by the Help card and the
                profile checklist)
              kotodama  profile  cutscene  shrinescene  summonscene
-             mathdojo  minimap  menunav  trailer (the opt-in video player)
+             mathdojo  minimap (ONE PER PANE by default — *Settings ▸ Minimaps*
+               is "one in every window" or "only two, shared", and at two
+               players the two settings are the same screen bit for bit, which
+               is non-negotiable 5. The zoom button turns the map in YOUR pane:
+               `nearestMap` already answered "my own pane's map, or the nearest
+               box", so a map in every pane makes its second half unreachable
+               and not one line of the assignment had to change)
+             menunav  trailer (the opt-in video player)
              finaletide (what is BEHIND Patchfur at the ending: one measured
                corner of the town standing itself back up while she talks and
                going over again on the end of her clause. It moves meshes and
@@ -294,7 +314,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 3983 assertions and why almost none of them are about
+  why `world-check` is 4027 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **A check that is sometimes red is a bug in the check, not a re-run.** Two
   were found being coin flips: an aggregate over four kittens that hid the one
