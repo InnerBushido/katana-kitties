@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 3912 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 3983 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 363 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -230,21 +230,27 @@ tappable**, so the whole debug set works on a phone.
 
 | key | does |
 | --- | --- |
-| **`1`** | **frame cost** — fps, stutter, draw calls, buffer size, quality, dev-or-built, GPU string |
-| `2` | Mr. Satan loses his temper (skips the ten-second fuse) |
+| **`1`** | **knock over the mischief in batches** — 50 a press up to 200, then 5 a press to the end |
+| `2` | **the endgame** — ending, arena, orbs, purses |
 | `3` | give every kitten all 8 kotodama |
-| `4` | **END this bit** — the live round, the ending ceremony, or the feast |
-| `5` | **NUDGE it on** — the round clock to 30s, then 15s, then 5s; a scene to its next line |
-| `6` | **the endgame** — ending, arena, orbs, purses |
-| `7` | **go to the arena NOW** — skips the whole unlock, flies you out there |
-| `8` | **knock over the mischief in batches** — 50 a press up to 200, then 5 a press to the end |
+| `4` | **go to the arena NOW** — skips the whole unlock, flies you out there |
+| `5` | Mr. Satan loses his temper (skips the ten-second fuse) |
+| `6` | **END this bit** — the live round, the ending ceremony, or the feast |
+| `7` | **NUDGE it on** — the round clock to 30s, then 15s, then 5s; a scene to its next line |
+| **`8`** | **frame cost** — fps, stutter, draw calls, buffer size, quality, dev-or-built, GPU string |
 | `-` `=` `0` | scene viewer: previous · next · play this scene |
 | **`\`** | **force-spawn** — ENTER then seats a third and fourth kitten on the keyboard alone |
 | `R` `U` | step WASD · step the arrows round the kittens sharing that set — her, her sister, then **both at once** |
 | *(no key)* | **wipe the RECORD BOARD** — every league, on this device |
 | *(no key)* | **wipe the SAVED GAMES** — every saved play session, kept ones included |
 
-**`8` is coarse and then fine on purpose.** There are 216 pieces of mischief,
+**`8` is last because it is the only row that is not a beat of the game.**
+`1` to `7` run the afternoon in the order it happens in — knock the mischief
+over, unlock the endgame, hand out the orbs, go to the arena, provoke the
+champion, end the beat, nudge the beat — so the numbers are the order to press
+them in. `world-check` pins the whole map, in both directions.
+
+**`1` is coarse and then fine on purpose.** There are 216 pieces of mischief,
 the arena opens at 80% of them and the ending fires at 100%, so getting an
 afternoon to its interesting half by hand is a long walk. Fifty a press covers
 that; from 200 the step drops to five so the last stretch arrives a few at a
@@ -291,7 +297,7 @@ the world, animals home — rather than leaving cats nobody can move.
 
 \* shares the set above it; `R` / `U` says which of the two is playing, or both.
 
-**If somebody says it lags, press `1` before changing anything.** The game is
+**If somebody says it lags, press `8` before changing anything.** The game is
 **fill-bound** — frame time is a straight line in the size of the drawing buffer
 and everything else is rounding.
 
@@ -553,7 +559,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 3912
+the check that would have caught it.** That is why `world-check` is 3983
 assertions — **and why a check that is sometimes red is treated as a bug in the
 check.** Two of them were coin flips: an aggregate that hid the one kitten it
 was asking about, and a distinctness test rounded until it became a birthday

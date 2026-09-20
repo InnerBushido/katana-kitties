@@ -1422,6 +1422,44 @@ export class Player {
     this.hp = Math.min(this.hp, this.maxHp);
   }
 
+  /**
+   * Spend the overflow as it is lost — it is a BOOST, not a bigger bar.
+   *
+   * REPORTED FROM PLAY: "if someone has boosted health at the start of a
+   * round, that is like their new maximum for that round, so if they take
+   * damage, they can heal back up to that health again. That is incorrect ...
+   * once they lose the boosted health, they are no longer able to retrieve it
+   * and the maximum should be their normal maximum."
+   *
+   * That is exactly what `setRoundBonus` did on its own: the bonus is INSIDE
+   * `maxHp`, which is the right shape for drawing one bar and the wrong shape
+   * for a one-way gift, because a ceiling is something anything that heals can
+   * climb back to. Eating a rat at the end of a round put the green back.
+   *
+   * SO THE CEILING FOLLOWS HER DOWN. The bonus is re-set to whatever she is
+   * still carrying above her ordinary top, so the moment the green is gone the
+   * bar is an ordinary bar and nothing can raise it again this round. Going
+   * DOWN only — `Math.min` against what is left — so this can never hand any
+   * back.
+   *
+   * AND IT LEAVES HER FULL WHILE SHE HAS ANY. `hp` never moves here, and
+   * `maxHp` lands exactly on it, so a kitten carrying overflow draws a solid
+   * full bar with a shrinking green slice in it: "it should be green/yellow
+   * full solid bar until the player's health drops below their normal
+   * maximum". Which is also why this must not run during the FEAST — there
+   * the green is `fedHp` and the bar is drawn from `feastMark`, and trimming
+   * the last round's ceiling mid-meal would clip a winner's health.
+   */
+  trimRoundBonus() {
+    if (!(this.bonusHp > 0)) return;
+    /* `baseMaxHp`, NOT a second `power.hp * hpScale` of its own. That product
+       is what `setRoundBonus` writes into `maxHp`, and the getter subtracts
+       the bonus back off it — so asking the getter is asking the same number
+       the bar is drawn from, and an Adamant orb picked up mid-match cannot
+       make these two disagree about where her ordinary top is. */
+    this.setRoundBonus(Math.min(this.bonusHp, Math.max(0, this.hp - this.baseMaxHp)));
+  }
+
   /** True while the block is doing anything at all — held, or in its tail. */
   get warded() {
     return this.wardOn || this.wardTail > 0;

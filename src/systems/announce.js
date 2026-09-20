@@ -62,6 +62,9 @@ export class Announcer {
     this.nameEl = document.getElementById('an-name');
     this.textEl = document.getElementById('an-text');
 
+    /** Refusing every line, and holding no card. Set for the ending and
+     *  nothing else — see `hush`. */
+    this.hushed = false;
     /** Lines waiting to be said. See `say`. */
     this.queue = [];
     this.current = null;
@@ -124,7 +127,46 @@ export class Announcer {
    *        accent colour the border, the portrait frame and the name share.
    */
   say(id, text, who = null) {
+    if (this.hushed) return;
     this.queue.push({ id, text, who });
+  }
+
+  /**
+   * Take the card away and keep it away — the ending, and nothing else.
+   *
+   * `clear()` IS NOT ENOUGH AND THAT IS THE WHOLE POINT OF THIS. It empties
+   * the queue and deliberately lets a line that is mid-word finish, because
+   * cutting somebody off mid-syllable is the thing `say` exists not to do.
+   * There is exactly one moment in this game where that is the wrong answer:
+   * the ending. Reported from play — "when playing the ending cutscene, if
+   * there is any dialog happening (like by Patchfur counting down the final
+   * mischief) the dialog should be cancelled and removed and not queued up if
+   * the ending cutscene is being played or about to be played."
+   *
+   * And it is not a rare collision, it is the likely one. `lasthunt` says
+   * "One! One last thing standing in the whole sky!" at one remaining, and the
+   * prop that answers her is the hundredth percent — so without this the elder
+   * is talking on a card in the corner while the elder starts talking in the
+   * dialogue box. Two Patchfurs, over each other, in her own scene.
+   *
+   * THE REFUSAL IS THE OTHER HALF. Emptying the queue only deals with what has
+   * already been said; `say` has to go on saying no for the whole minute, or
+   * `lasthunt`'s stalled-hunt hint and Mr Satan's milestones queue up behind
+   * the ending and the card slides in over the last shot.
+   *
+   * IT STOPS THE AUDIO ITSELF. `_end` does not — see `clear` — so this is the
+   * one caller that has to, and `Game._startFinale` calls it BEFORE
+   * `SummonScene.start` for that reason: `stopSpeaking` is global, and
+   * afterwards it would take Patchfur's first sentence with it.
+   */
+  hush(on = true) {
+    this.hushed = !!on;
+    if (!on) return;
+    this.queue.length = 0;
+    if (this.current) {
+      this.audio?.stopSpeaking();
+      this._end();
+    }
   }
 
   /**

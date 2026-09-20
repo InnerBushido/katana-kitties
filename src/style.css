@@ -888,7 +888,35 @@ body.touch-ui .pane-edge { border-width: 4px; }
      the uneven-pair branch in core/split.js) — this is the half that means a
      squat pane merely looks small instead of breaking, because a rule that
      degrades beats one that vanishes. */
-  --u: min(1cqw, 1.78cqh);
+  /* ...AND A THIRD TERM, WHICH IS THE ONE THAT MAKES THE SHELF FIT.
+     REPORTED FROM PLAY: "when at LOOK AT MY ORBS in single player, it is only
+     showing half the orbs instead of all of them, like it does when there are
+     2 players in the game." Measured, on a 926x477 window: at one player the
+     list had 183px of room for 713px of rows — 2.8 of ten visible — and at two
+     players side by side the same list had 318px for 392px, which is 9 of ten
+     and is what "it works with two" was describing.
+
+     The cause is that the two terms above are a ZOOM, by design: the card is
+     sized off the PANE so that type is legible in a quarter of a screen, and a
+     pane four times the size therefore gets type four times the size, at which
+     point ten rows no longer fit in it. The `clamp` on `font-size` puts a
+     ceiling on the letters and nothing put a ceiling on the padding, the gaps,
+     the slot circles or the margin, so a bigger pane spent its extra height on
+     furniture and gave the list less than it had before.
+
+     `0.8vh` IS "THE WHOLE SHELF HAS TO FIT", stated as a fraction of the
+     WINDOW rather than of the pane. Measured the same way: at 0.8 the list's
+     scroll height equals its client height at every pane shape tall enough to
+     hold it at all, at 0.85 it is two pixels over, at 0.9 it is fifteen. And
+     because the cap is off the window, the card is now the same size however
+     the screen is split — the two-player card, which is the one that was
+     right, is the card everybody gets.
+
+     A SQUAT PANE STILL SCROLLS, and that is not a regression. A 2x2 quadrant
+     is half the window's height, and ten readable rows do not fit in it at any
+     size the `clamp`'s 9px floor allows; `.pc-list` scrolls the cursor into
+     view there exactly as it always has. */
+  --u: min(1cqw, 1.78cqh, 0.8vh);
   pointer-events: auto;
   flex: 1 1 auto;
   min-width: 0;
@@ -3193,7 +3221,35 @@ body.touch-ui .ne-ask-q { font-size: 16px; }
 .kd-panel.kd-cards {
   max-width: max(420px, calc(var(--kd-cards, 2) * 50vw));
 }
-.kd-panel > #kd-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* `overflow-x: clip` IS NOT TIDINESS, IT IS THE FIX FOR A REPORTED BUG.
+   `overflow-y: auto` on its own does NOT leave the other axis alone: CSS
+   computes a `visible` overflow to `auto` whenever its partner is not visible,
+   so the moment this box was given a vertical scrollbar it silently became
+   horizontally scrollable too. Nothing in the markup is wider than it — but
+   the cursor ring is: `.kd-slot.cursor` is `scale(1.12)` plus a 4px ring, and
+   a transform counts toward scrollable overflow.
+
+   Reported from play as: "when in Character Profile screen, the kotodama when
+   being selected are getting cut off and they are all slightly shifting side
+   to side when scrolling to the last orb of each row ... seems there is some
+   sort of bounding box blocking the edges of the kotodama orb UI." That is
+   exactly the shape of it — `_followCursors` calls `scrollIntoView`, whose
+   `inline` behaviour defaults to `nearest`, so landing on the orb at the end
+   of a row scrolls the box a few pixels sideways to fit the ring in, and
+   stepping back scrolls it back. The bounding box is this element.
+
+   `clip` rather than `hidden` because `hidden` is also a scroll CONTAINER — it
+   would stop the scrollbar and keep the programmatic scrolling that is doing
+   the shifting. `clip` cannot scroll at all, on that axis, ever.
+
+   AND THE RING NEEDS SOMEWHERE TO BE. Clipping alone would trade the shift for
+   a flat edge on the ring, so `.kd-slots` carries its own halo — see there. */
+.kd-panel > #kd-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: clip;
+}
 .kd-panel > h2 { flex: 0 0 auto; }
 .kd-foot {
   flex: 0 0 auto;
@@ -3359,13 +3415,36 @@ body.touch-ui .kd-row { padding: 9px 6px; }
    were 385px of card and the panel had to scroll to show a screen with room
    for four of it. `--slot` caps the BOX rather than the tracks, so the columns
    still shrink below it on a phone — an `fr` cannot be capped directly. */
+/* THE HALO IS ROOM FOR THE CURSOR, PAID FOR OUT OF NOTHING.
+   The orb under a cursor is drawn `scale(1.12)` with a 4px ring around it, and
+   on an 84px slot that is about 9px of paint outside its own grid cell. At the
+   ends of a row that paint lands outside this element, and whatever is
+   clipping — `#kd-body`, which is a scroll container — cuts it off. Reported
+   as the kotodama "getting cut off ... some sort of bounding box blocking the
+   edges of the kotodama orb UI".
+   The padding gives that paint a place to live INSIDE the grid's own box, and
+   the equal negative margin takes the space straight back, so the first
+   column's left edge and the last column's right edge sit exactly where they
+   sat before this rule existed — the grid has not moved, it has only grown a
+   margin of its own to overflow into. `max-width` grows by the same amount for
+   the same reason: it is a cap on the four COLUMNS, and without this the halo
+   would be taken out of their width and every orb would shrink by 5px. */
 .kd-slots {
   --slot: 84px;
   --slot-gap: 8px;
+  /* WHAT THE CURSOR RING REACHES OUTSIDE ITS SLOT, and it is a sum rather
+     than a taste: `.kd-slot.cursor` is `scale(1.12)` on an 84px slot, which
+     overhangs by 84 x 0.12 / 2 = 5.04px on each side, plus the ring's own 4px
+     — 9.04px. It sat at 9 and was a twentieth of a pixel short of its own
+     reason; `world-check` does that sum off these rules rather than off a
+     number typed twice, so growing the cue fails there instead of clipping. */
+  --slot-halo: 10px;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--slot-gap);
-  max-width: calc(4 * var(--slot) + 3 * var(--slot-gap));
+  padding: var(--slot-halo);
+  margin: calc(-1 * var(--slot-halo));
+  max-width: calc(4 * var(--slot) + 3 * var(--slot-gap) + 2 * var(--slot-halo));
 }
 .kd-slot {
   aspect-ratio: 1;

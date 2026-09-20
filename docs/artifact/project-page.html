@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 3912 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 3983 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 363 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -669,14 +669,14 @@ git push origin alpha</code></pre>
   <div class="tw"><table>
     <thead><tr><th style="width:120px">Key</th><th>Does</th></tr></thead>
     <tbody>
-      <tr><td><kbd class="hot">1</kbd></td><td><b>Frame cost</b> — fps, stutter, draw calls, buffer size, quality, dev-or-built, and the GPU string</td></tr>
-      <tr><td><kbd>2</kbd></td><td>Mr. Satan loses his temper — skips the ten-second fuse</td></tr>
+      <tr><td><kbd class="hot">1</kbd></td><td><b>Knock over the mischief in batches</b> — 50 a press up to 200, then 5 a press to the end</td></tr>
+      <tr><td><kbd class="gold">2</kbd></td><td><b>The endgame</b> — ending, arena, orbs, purses</td></tr>
       <tr><td><kbd>3</kbd></td><td>Give every kitten all eight kotodama</td></tr>
-      <tr><td><kbd>4</kbd></td><td><b>End this bit</b> — the live round, the ending ceremony, or the feast</td></tr>
-      <tr><td><kbd>5</kbd></td><td><b>Nudge it on</b> — the round clock to 30s, then 15s, then 5s; a scene to its next line</td></tr>
-      <tr><td><kbd class="gold">6</kbd></td><td><b>The endgame</b> — ending, arena, orbs, purses</td></tr>
-      <tr><td><kbd>7</kbd></td><td><b>Go to the arena NOW</b> — skips the whole unlock and flies you out there</td></tr>
-      <tr><td><kbd>8</kbd></td><td><b>Knock over the mischief in batches</b> — 50 a press up to 200, then 5 a press to the end</td></tr>
+      <tr><td><kbd>4</kbd></td><td><b>Go to the arena NOW</b> — skips the whole unlock and flies you out there</td></tr>
+      <tr><td><kbd>5</kbd></td><td>Mr. Satan loses his temper — skips the ten-second fuse</td></tr>
+      <tr><td><kbd>6</kbd></td><td><b>End this bit</b> — the live round, the ending ceremony, or the feast</td></tr>
+      <tr><td><kbd>7</kbd></td><td><b>Nudge it on</b> — the round clock to 30s, then 15s, then 5s; a scene to its next line</td></tr>
+      <tr><td><kbd class="hot">8</kbd></td><td><b>Frame cost</b> — fps, stutter, draw calls, buffer size, quality, dev-or-built, and the GPU string</td></tr>
       <tr><td><kbd>-</kbd><kbd>=</kbd><kbd>0</kbd></td><td>Scene viewer: previous · next · play this scene</td></tr>
       <tr><td><kbd class="hot">\</kbd></td><td><b>Force-spawn</b> — <kbd>ENTER</kbd> then seats a third and fourth kitten on the keyboard alone</td></tr>
       <tr><td><kbd>R</kbd><kbd>U</kbd></td><td>Step WASD · step the arrows round the kittens sharing that set — her, her sister, then <b>both at once</b></td></tr>
@@ -685,7 +685,13 @@ git push origin alpha</code></pre>
     </tbody>
   </table></div>
 
-  <p><b><kbd>8</kbd> is coarse and then fine on purpose.</b> There are 216 pieces of mischief, the
+  <p><b><kbd>8</kbd> is last because it is the only row that is not a beat of the game.</b>
+    <kbd>1</kbd> to <kbd>7</kbd> run the afternoon in the order it happens in — knock the mischief
+    over, unlock the endgame, hand out the orbs, go to the arena, provoke the champion, end the
+    beat, nudge the beat — so the numbers are the order to press them in. <code>world-check</code>
+    pins the whole map, in both directions.</p>
+
+  <p><b><kbd>1</kbd> is coarse and then fine on purpose.</b> There are 216 pieces of mischief, the
     arena opens at 80% of them and the ending fires at 100%, so getting an afternoon to its
     interesting half by hand is a long walk. Fifty a press covers that; from 200 the step drops to
     five so the last stretch arrives a few at a time instead of all at once. It knocks props over
@@ -730,7 +736,7 @@ git push origin alpha</code></pre>
   </div>
 
   <div class="note">
-    <span class="hd">If somebody says it lags, press 1 before changing anything</span>
+    <span class="hd">If somebody says it lags, press 8 before changing anything</span>
     <p>The game is <b>fill-bound</b>: frame time is a straight line in the size of the drawing
       buffer, and everything else is rounding.</p>
     <ul>
@@ -1183,7 +1189,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 3912 assertions and why almost none of them are about
+      is why <code>world-check</code> is 3983 assertions and why almost none of them are about
       whether a number is set. <b>A check that is sometimes red is a bug in the check</b> — two were
       found being coin flips, an aggregate that hid the one kitten it was asking about and a
       distinctness test rounded until it was a birthday problem.</p>

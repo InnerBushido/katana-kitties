@@ -1068,6 +1068,23 @@ export const FINALE_SHOTS = [
 ];
 /** Seconds she takes to walk out of the frame, and back into it. Slower than a
  *  cut, so the cut is the thing you notice and she is not. */
+/**
+ * Which piece the ending is playing, by the shot that starts it.
+ *
+ * A TABLE RATHER THAN THREE `if`s IN `_cue`, for the same reason the shot list
+ * is a table: it can be read against `FINALE_SHOTS` by eye and by a check, so
+ * a cue renamed in one of them cannot silently stop changing the music in the
+ * other. `world-check` asserts every key here is a cue that really fires and
+ * every value is a piece `MUSIC` really holds.
+ *
+ * The opening piece is NOT in here — it is set by `start`, because it has to
+ * be playing before the first shot rather than because of one.
+ */
+export const MUSIC_CUES = {
+  'isles-in': 'finaleCross',
+  'arena-in': 'finaleOpen',
+};
+
 const STAGE_SWAP = 0.75;
 /** How far out the mischief cluster is measured. A cart's width of a town
  *  square: big enough that a heap counts as one heap, small enough that the
@@ -1301,6 +1318,11 @@ export class SummonScene {
       this.show.marks = this.marks;
       this.show.start(this.world, cast);
     } else this.show.finish();
+    /* THE ENDING SCORES ITSELF, AND NOTHING ELSE DOES. Set on acceptance, so
+       the first bar is under her first word; `_cue` moves it twice after that
+       and `finish` drops it, which is what hands the islands their own themes
+       back on the skip path as much as on the end. See `MUSIC_CUES`. */
+    this.musicTrack = which === 'finale' ? 'finale' : null;
     if (which === 'summon') this.duskWant = DUSK_DEEP;
     /* THE ENDING TAKES THE STORM DOWN AND PUTS A MORNING UP, and both halves
        matter. The finale fires at 100% mischief, which in a real run happens
@@ -1953,6 +1975,18 @@ export class SummonScene {
   _cue(shot) {
     this.show?.cue(shot.cue ?? null);
     if (shot.sky) this.skyHold = false;
+    /* THE ENDING'S THREE ACTS, CUT WHERE THE PICTURE CUTS. See `MUSIC.finale`,
+       `finaleCross` and `finaleOpen` in core/audio.js for what each one is and
+       why there are three. The scene only ever states WHICH; `Game._wantedTrack`
+       reads `musicTrack` and `Game._updateMusic` is the single thing allowed to
+       start anything, which is the rule that stopped four scattered
+       `startMusic` calls disagreeing with each other about what should be
+       playing.
+       `isles-in` is the camera pulling back off the bridge onto the model of
+       the archipelago, and `arena-in` is the camera arriving over the ring —
+       both are hard cuts in the shot list already, so the piece changes on a
+       frame the eye is already changing on. */
+    if (MUSIC_CUES[shot.cue]) this.musicTrack = MUSIC_CUES[shot.cue];
     if (shot.cue === 'heap-raise') {
       /* THE CORNER, AND ONLY THE CORNER. `only` narrows what MOVES and never
          what is HELD: every knocked prop in the world is still in the tide's
@@ -2047,6 +2081,13 @@ export class SummonScene {
        Escape four seconds in, and what she gets back has to be the town she
        wrecked, on its side, to the last decimal. */
     this.tide.finish();
+    /* ...AND THE ISLANDS GET THEIR OWN THEMES BACK. `Game._updateMusic`
+       re-decides every frame and will fall straight through to whichever
+       island the party is standing on; this is only the ending letting go of
+       the answer. On the skip path too, which is the one that matters — the
+       alternative is an afternoon that goes on playing the last minute of the
+       game's music because somebody pressed Start. */
+    this.musicTrack = null;
     /* ...AND THE SKY IS LET GO, so an ending skipped before its `sky` row still
        turns into the morning it promised rather than holding the storm. */
     this.skyHold = false;

@@ -362,6 +362,28 @@ export class Cutscene {
     this.t = 0;
     this.typed = 0;
     this.flow = reflow(b.text);
+    /* PUT THE TWO SPANS BACK IN THE BOX BEFORE TYPING INTO THEM.
+       `#cs-text` IS SHARED WITH EVERY OTHER SCENE and this is the only scene
+       that keeps CHILDREN in it. `SummonScene._next` and `ShrineScene` both
+       write `textEl.textContent = ''`, which does not clear an element, it
+       REPLACES its children with a single text node — so the moment any of
+       them has run, `saidEl` and `restEl` are detached and this method is
+       typing into two spans that are no longer on the screen.
+       Reported from play as "when doing 'watch the story again' after forcing
+       the ending cutscene using the debug shortcut, it is not showing the
+       dialog text correctly": the opening story plays, the voices play, the
+       box is up, and it is empty. It is not about the ending — ANY scene
+       before it does it, and the ending is simply the one a debug key makes
+       easy to hit first.
+       Re-mounted per BEAT rather than in `play()`, because the scenes that
+       steal the box are not only the ones that ran before this one: nothing
+       stops a shrine introduction from being answered mid-story, and a
+       remount that only happened at the top would leave the rest of the
+       script blank. `replaceChildren` is a no-op when they are already the
+       only two children, which is every frame of the common case. */
+    if (this.saidEl.parentNode !== this.textEl || this.textEl.childNodes.length !== 2) {
+      this.textEl.replaceChildren(this.saidEl, this.restEl);
+    }
     this.saidEl.textContent = '';
     this.restEl.textContent = this.flow;
 
