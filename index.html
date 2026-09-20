@@ -99,7 +99,24 @@
                  here that is not about playing. MenuNav picks it up from
                  `button.menu-btn` like any other, so left/right on a pad
                  reaches it with nothing to change there. -->
+            <!-- LOAD SITS ON THE SECOND ROW WITH THE TRAILER, AND IS HIDDEN
+                 UNTIL THERE IS SOMETHING TO LOAD. Asked for as "should add a
+                 Load Game button before Starting the game, for when there is a
+                 saved game on the machine" — and the second clause is the whole
+                 of why it is not simply always there: a fresh install would
+                 show a button that can only ever refuse, which is the opposite
+                 of the sixth non-negotiable rather than an example of it.
+                 `Game._refreshTitleLoad` unhides it, at boot and on every
+                 return to the title.
+
+                 NOT A FOURTH BUTTON IN THE TOP ROW. SETTINGS / PLAY / HELP is
+                 the menu the girls drew and PLAY is centred in the cat's mouth
+                 by a three-column grid; a fourth cell there moves their artwork.
+                 Second non-negotiable, the same argument the trailer button
+                 already makes one line below. -->
             <div class="menu-row menu-row-2">
+              <button class="menu-btn small hidden" id="btn-title-load"
+                data-action="saves">LOAD A SAVED GAME</button>
               <button class="menu-btn small" data-action="trailer">WATCH THE TRAILER</button>
             </div>
           </div>
@@ -1076,8 +1093,25 @@
                   <p class="ht-note">
                     <b>It stacks</b>: each one you wear adds more time, so two are
                     twice as good as one — but each one is also another slot you
-                    aren't using for something else. (<b>瞬 Flash Step</b> doesn't;
-                    a second one is a wasted slot.)
+                    aren't using for something else.
+                  </p>
+                  <!-- IT SAID A SECOND 瞬 WAS A WASTED SLOT, AND THAT WAS FALSE.
+                       Reported from play in those words. `aggregate()` has read
+                       `blink >= 2` as an AIM UPGRADE since the day the second orb
+                       bought something, and this card never caught up — so the one
+                       page in the game that exists to explain the rare orbs was
+                       telling a nine-year-old not to buy the thing that makes the
+                       move interesting. Fixed here AND in Special abilities, which
+                       is where the move itself is taught; `world-check` now pins
+                       both strings, so the next balance change to 瞬 cannot leave
+                       this paragraph behind again. -->
+                  <p class="ht-note">
+                    <b>瞬 Flash Step is different.</b> A second one does <b>not</b>
+                    add more of anything — it <b>changes how the move works</b>.
+                    With one, you choose which <b>side</b> of your sister you come
+                    out on. With two, you choose the <b>exact spot</b>: how far you
+                    push the stick is how far away you land. More than two adds
+                    nothing again. It's taught in <b>Special abilities</b>.
                   </p>
                   <p class="ht-note">
                     <b>The catch.</b> If you hold your shield up for <b>longer than
@@ -1151,6 +1185,29 @@
                         <i>(Picture for now — the clip is coming.)</i></figcaption>
                     </figure>
                   </div>
+                  <!-- THE ONE ORB IN THE GAME WHOSE SECOND COPY CHANGES THE MOVE
+                       RATHER THAN A NUMBER — see `aggregate()` in
+                       entities/powerorb.js, which has read `blink >= 2` as an aim
+                       upgrade for as long as it has meant anything. It is outside
+                       the grid on purpose: every cell up there is one move on one
+                       button, and a paragraph about wearing two of something is
+                       not that. The rare-orbs card says the same thing from the
+                       other end, and `world-check` pins both. -->
+                  <p class="ht-note">
+                    <b>Two 瞬 Flash Step orbs change the move.</b> Wearing a second
+                    one doesn't make it longer or stronger — it hands you the
+                    <b>stick</b>. With one orb you pick which <b>side</b> of your
+                    sister you come out on; with two you pick the <b>exact spot</b>,
+                    by how far you push. A small push lands you right next to her,
+                    a hard push throws you out to the far edge.
+                  </p>
+                  <p class="ht-note">
+                    It works best with a <b>controller stick</b> or the
+                    <b>touch-screen stick</b> — those are the two that can say "a
+                    little bit" instead of just "that way". This is the
+                    <b>advanced</b> way to use the move, for someone who wants to
+                    choose exactly where she lands.
+                  </p>
                 </div>
               </details>
 
@@ -1411,7 +1468,9 @@
               <b>Want to keep a game for good?</b> Go to <b>PLAY SETTINGS → END
               THE GAME → SAVE &amp; QUIT GAME</b>. Once a game is five minutes
               long, that marks it <b>★ kept</b>, and newer games can't push it off
-              the list. Keep more than four and the list grows to eight, and it
+              the list. <b>Before</b> those five minutes that button saves
+              nothing at all — it says so, and it asks first. Keep more than four
+              and the list grows to eight, and it
               always leaves room for two more games beside them — ten at most.
               Keep more than eight and the kept game you played for the shortest
               time goes first, but never the one you saved last.
@@ -1846,7 +1905,8 @@
         <p class="note">
           Each of these asks you first, and the record board is kept whichever
           one you pick. <b>SAVE &amp; QUIT GAME</b> saves your game before it
-          goes, and keeps it once it is five minutes long.
+          goes, and keeps it — but only once it is five minutes long. Before
+          that the row says so and saves nothing.
         </p>
         <button class="menu-btn back" data-close>BACK</button>
       </div>

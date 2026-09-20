@@ -2752,7 +2752,14 @@ console.log('\n--- the panda in the ring ---');
     ...over,
   });
 
-  /** Attacker at 0, target at `gap`, both facing along +x. */
+  /** Attacker at 0, target at `gap`, both facing along +x.
+   *
+   *  IT LEVELS THEM, AND THAT COST AN AFTERNOON. `b.position.y = a.position.y`
+   *  is what makes every flat test in here about distance alone — but it also
+   *  means a test that wants the attacker IN THE AIR has to lift her AFTER
+   *  calling this, not before, or the target is quietly lifted with her and
+   *  the vertical window under test is 0 again. The rider checks below say so
+   *  at each site; this is the reason. */
   const face = (a, b) => {
     a.facing = Math.PI / 2;          // +x
     b.position.y = a.position.y;
@@ -2854,7 +2861,29 @@ console.log('\n--- the panda in the ring ---');
       asked.includes('claw'), asked.join(' '));
   }
 
-  /* --- THE THREE OUTCOMES, EXACTLY AS THEY WERE ASKED FOR --------------- */
+  /* --- THE THREE OUTCOMES, EXACTLY AS THEY WERE ASKED FOR ---------------
+
+     AND THEY ARE NOW THREE BANDS OF HEIGHT RATHER THAN ONE FLAT CASE. Reported
+     from play: "when a player is riding a panda in the arena, possibly the
+     players hitbox is on the ground, under the panda... We need the players
+     hitbox to be above the panda, so that it is possible for the player to get
+     knocked off the panda, by the opposing player hitting just the player and
+     not the panda."
+
+     THE REPORT WAS RIGHT AND THE CAUSE WAS `seatHeight`. Riding lifts her
+     DRAWING and leaves her entity on the ground (panda.js says why at length),
+     so the point this gate tested was under the animal, inside a hitbox padded
+     `PANDA.body` wider and `PANDA.bodyUp` taller than she is. There was no
+     swing that could find her and miss it. `strikePlayers` reads a rider at her
+     seat now, and caps the ANIMAL at `PANDA.saddle` while somebody is on it,
+     which cuts the shared column in two.
+
+     WHICH MEANS A BLOW FROM THE FLOOR CANNOT REACH A RIDER AT ALL, and that is
+     the consequence rather than a side effect: she is drawn four units up and
+     `COMBAT.strikeHeight` is 3.4. The way to her is a JUMP, which is the thing
+     the report asked to be made possible. The numbers below are taken from the
+     jump itself rather than typed, so retuning it fails this rather than
+     quietly closing the window. */
   {
     const ride = (x) => {
       const pl = mkP(1, x);
@@ -2863,19 +2892,60 @@ console.log('\n--- the panda in the ring ---');
       pl.panda = pet; pl.pandaMount = pet; pet.rider = pl;
       return pl;
     };
+    /* The apex of an ordinary jump, from the two constants that produce it.
+       `v^2 / 2g` — the same arithmetic the triple-jump check above does. */
+    const APEX = (11.2 * 11.2) / (2 * 26);
+    const seat = new Panda(art, { owner: mkP(1, 0), tier: 1 }).seatHeight;
+    const saddle = new Panda(art, { owner: mkP(1, 0), tier: 1 }).saddleLine;
+    line('rider seat / saddle cut / jump apex / strike height',
+      `${seat.toFixed(2)} / ${saddle.toFixed(2)} / ${APEX.toFixed(2)} `
+      + `/ ${COMBAT.strikeHeight}`);
+
+    /* THE BANDS EXIST, which is the whole fix stated as arithmetic. Below the
+       saddle cut the animal is hit; above it the animal is missed; and she is
+       reachable from `seat - strikeHeight` upward. The three have to overlap
+       in the right order or one of the outcomes below is unreachable in a real
+       fight however well it tests in here. */
+    ok('a rider is out of reach of a blow thrown from the floor',
+      seat > COMBAT.strikeHeight);
+    ok('...but inside the reach of one thrown at the top of a jump',
+      Math.abs(seat - APEX) <= COMBAT.strikeHeight);
+    ok('...and the top of that jump clears the animal\'s saddle line',
+      APEX > saddle);
+    ok('...leaving a band where a swing catches both',
+      saddle > seat - COMBAT.strikeHeight);
 
     /* HER ONLY. The blade found the kitten and missed the animal, so she takes
-       it in full and comes off. */
+       it in full and comes off. FROM THE AIR, because that is now the only
+       place the blow can come from. */
     {
       const a = mkP(0, 0);
       const b = ride(2);
       b.panda.position.set(40, b.position.y, 40);   // parked far away
       const dir = face(a, b);
+      a.position.y += APEX;                 // AFTER `face` — see its comment
       strikePlayers.call(mkGame([a, b]), a, 'stand', BASE_REACH, dir);
       ok('a blow that finds her and misses the panda knocks her off it',
         b.pandaMount === null && b.panda.rider === null);
       ok('...and she takes it in full', b.maxHp - b.hp === ATTACKS.stand.dmg);
       ok('...and the animal is untouched', b.panda.hp === b.panda.maxHp);
+    }
+
+    /* AND THE ANIMAL IS NOT MERELY OUT OF THE WAY IN THAT TEST. The one that
+       matters for the report is the same jump landing on a rider whose panda
+       is right underneath her: the swing has to find HER and miss IT, which is
+       what `PANDA.saddle` cuts the column for. Without the cap the animal's
+       own padded body would swallow the blow at every height. */
+    {
+      const a = mkP(0, 0);
+      const b = ride(2);
+      const dir = face(a, b);
+      a.position.y += APEX;                 // AFTER `face` — see its comment
+      strikePlayers.call(mkGame([a, b]), a, 'stand', BASE_REACH, dir);
+      ok('...and the same jump finds her while she is ON the animal',
+        b.hp < b.maxHp);
+      ok('...misses the animal it is standing on', b.panda.hp === b.panda.maxHp);
+      ok('...and therefore knocks her off it', b.pandaMount === null);
     }
 
     /* THE PANDA ONLY. Out of reach of the kitten, inside the animal's body. */
@@ -2892,11 +2962,28 @@ console.log('\n--- the panda in the ring ---');
       ok('...and stays on', b.pandaMount === b.panda);
     }
 
-    /* BOTH. Overlapping, which is what riding actually looks like. */
+    /* ...AND FROM THE FLOOR, DIRECTLY UNDERNEATH HER, IT IS STILL THE PANDA
+       ONLY. This is the case the report described from the other side: a
+       sister swinging at what she can see hits the animal, every time, until
+       she leaves the ground. */
     {
       const a = mkP(0, 0);
       const b = ride(2);
       const dir = face(a, b);
+      strikePlayers.call(mkGame([a, b]), a, 'stand', BASE_REACH, dir);
+      ok('a swing from the floor at a mounted kitten hits the animal',
+        b.panda.hp < b.panda.maxHp);
+      ok('...and not the girl four units above it', b.hp === b.maxHp);
+      ok('...so she stays on', b.pandaMount === b.panda);
+    }
+
+    /* BOTH. The middle band — on the way up, or on the way down. */
+    {
+      const a = mkP(0, 0);
+      const b = ride(2);
+      const dir = face(a, b);
+      // AFTER `face` — see its comment. Half way up the overlap.
+      a.position.y += (saddle + Math.max(0, seat - COMBAT.strikeHeight)) / 2;
       strikePlayers.call(mkGame([a, b]), a, 'stand', BASE_REACH, dir);
       ok('a blow that catches both takes health off both',
         b.hp < b.maxHp && b.panda.hp < b.panda.maxHp);
@@ -2916,6 +3003,22 @@ console.log('\n--- the panda in the ring ---');
         Math.abs(mounted - alone * PANDA.knockK) < 0.01);
       ok('...and it is genuinely less, not merely different', mounted < alone * 0.5);
       ok('...and she is lifted less too', b.velocity.y < d.velocity.y);
+    }
+
+    /* AN ANIMAL NOBODY IS ON KEEPS THE COLUMN IT ALWAYS HAD. The saddle cap is
+       conditional on `riding` for one reason: a jump-slash that visibly lands
+       on a grazing panda must not start missing it for the sake of a rider who
+       is not there. */
+    {
+      const a = mkP(0, 0);
+      const b = ride(2);
+      b.pandaMount = null;
+      b.panda.rider = null;
+      const dir = face(a, b);
+      a.position.y += APEX;                 // AFTER `face` — see its comment
+      strikePlayers.call(mkGame([a, b]), a, 'stand', BASE_REACH, dir);
+      ok('a jump-slash still lands on a panda nobody is riding',
+        b.panda.hp < b.panda.maxHp);
     }
   }
 
@@ -3312,7 +3415,7 @@ console.log('\n--- the panda in the ring ---');
   /* --- AND THE BALANCE PAGE CAN REACH ALL OF IT ------------------------- */
   {
     ok('PANDA is reachable from the balance page',
-      !!DEFAULTS.PANDA && Object.keys(DEFAULTS.PANDA).length === 10);
+      !!DEFAULTS.PANDA && Object.keys(DEFAULTS.PANDA).length === 11);
     const page = readFileSync(new URL('../src/tuning-page.js', import.meta.url), 'utf8');
     /* EVERY KNOB HAS A SENTENCE, not just a slider. The generic fallback would
        render an undescribed field with its raw name and a guessed range, which
@@ -7581,12 +7684,50 @@ console.log('\n--- half a second of not being there ---');
     const mn = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
     const leave = stripComments(mn).slice(stripComments(mn).indexOf('_leavePlayer(index)'));
     const body = leave.slice(0, leave.indexOf('_buildLeaveButtons'));
-    ok('a leaving kitten takes her PLAIN orbs out of the scene',
-      /for \(const o of p\.orbs \?\? \[\]\) this\.scene\.remove/.test(body));
-    ok('...and the power orbs she was WEARING, which she did not',
-      /for \(const o of p\.wornOrbs \?\? \[\]\) this\.scene\.remove/.test(body));
-    ok('...and empties both, so nothing walks a list of removed meshes',
+    /* --- SHE TAKES EVERY ORB WITH HER, AND IT IS ONE LINE NOW -------------
+       THIS USED TO BE TWO LISTS AND IT WAS THE WRONG SHAPE. `_leavePlayer`
+       walked `p.orbs` and `p.wornOrbs` and pulled each mesh out of the scene
+       by hand — and there are THREE lists (the gold quest tokens are the
+       third) across FOUR teardown sites, so the bug was not "one list was
+       missed once", it was that the same mistake was available twelve times
+       over. Reported once as worn shells left spinning in an empty town, and
+       once as a cloud of orbs left hanging in the air when a kitten was
+       toggled away in the picker.
+
+       SO OWNERSHIP IS A PARENT INSTEAD OF A LIST. `Player.orbRoot` is a group
+       every orb she owns hangs off, whichever list it is in, and taking her
+       apart is one `scene.remove`. What is asserted here is therefore not the
+       old loop but the property that made the old loop necessary: that her
+       orbs are not scene children at all. */
+    ok('a leaving kitten takes her orbs down with the rest of her',
+      /_undressPlayer\(p\)/.test(body));
+    ok('...and empties both lists, so nothing walks a list of removed meshes',
       /p\.orbs = \[\]/.test(body) && /p\.wornOrbs = \[\]/.test(body));
+    {
+      const und = stripComments(mn).slice(stripComments(mn).indexOf('_undressPlayer(p) {'));
+      const ubody = und.slice(0, und.indexOf('\n  }'));
+      ok('...and undressing her takes her body AND her orbs off the scene',
+        /scene\.remove\(p\.group\)/.test(ubody)
+        && /scene\.remove\(p\.orbRoot\)/.test(ubody));
+    }
+    /* AND NOTHING ANYWHERE PUTS AN ORB STRAIGHT ON THE SCENE. This is the
+       check that would have caught the original bug in every one of the
+       twelve places it could have happened, and it is the one that keeps the
+       fix: a single `scene.add(orb.group)` re-creates the whole class, because
+       that orb is then invisible to the one `remove` that takes the rest. */
+    {
+      const src = ['../src/main.js', '../src/systems/kotodama.js',
+        '../src/systems/feats.js', '../src/systems/savegame.js']
+        .map((f) => stripComments(readFileSync(new URL(f, import.meta.url), 'utf8')))
+        .join('\n');
+      const stray = src.match(/scene\??\.?\??\.(add|remove)\((o|orb)\.group\)/g) ?? [];
+      ok('no orb is ever added to or removed from the scene directly',
+        stray.length === 0, stray.join(' '));
+      /* NON-VACUOUS: the bag itself really is the thing they hang off. */
+      ok('...because they hang off her bag, which is what the scene holds',
+        /orbRoot\.add\(orb\.group\)/.test(src)
+        && /scene\.add\(p\.orbRoot\)/.test(src));
+    }
     /* --- BUT SHE TAKES THE ORBS THEMSELVES WITH HER ----------------------
        Reported: "when a player leaves, they do not drop the kotodama orbs now,
        but instead keep it, so if they rejoin, they will have their kotodama
@@ -8111,6 +8252,402 @@ console.log('\n--- half a second of not being there ---');
   ok('...and dropping it keeps the FRACTION, not the number',
     H.maxHp === MAX_HP && H.hp === 50);
   ok('...so it can never leave her over full', H.hp <= H.maxHp);
+}
+
+console.log('\n--- 瞬 the second orb, and what the page says about it ---');
+{
+  /* THE HELP PAGE SAID A SECOND 瞬 WAS A WASTED SLOT. Reported in those words:
+     "In the Rare Orbs Help menu, it says that Flash Step doesn't stack, this
+     is false, it stacks if there are 2 of them, but this is actually just a
+     modifier, not regular stacking."
+
+     IT IS THE ONE ORB WHOSE SECOND COPY CHANGES A MOVE RATHER THAN A NUMBER,
+     and the page telling a nine-year-old not to buy it was the one page in the
+     game that exists to explain the rare orbs. Both cards are pinned here
+     against `aggregate()` itself, so a balance change to 瞬 cannot leave either
+     paragraph behind again. */
+  const h = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const one = aggregate(['blink']);
+  const two = aggregate(['blink', 'blink']);
+  const three = aggregate(['blink', 'blink', 'blink']);
+  ok('one 瞬 does not hand her the stick', !one.blink?.aim);
+  ok('...a second one does, which is the fact the page had wrong',
+    two.blink?.aim === true);
+  ok('...and a third adds nothing again, exactly as both cards say',
+    JSON.stringify(three.blink) === JSON.stringify(two.blink));
+
+  const rare = helpTopic(h, 'The rare orbs — dealer only');
+  const special = helpTopic(h, 'Special abilities');
+  /* THE OLD SENTENCE, EXACTLY. "(瞬 Flash Step doesn't; a second one is a
+     wasted slot.)" — a parenthetical hung off the paragraph that teaches
+     stacking. "wasted slot" on its own is still TRUE of 守 Long Guard on a
+     kitten with no shield and appears in this same card for that reason, so
+     the negative has to be about 瞬 and nothing else. */
+  ok('the rare-orbs card no longer says a second 瞬 is wasted',
+    !/Flash Step<\/b> doesn't/.test(rare)
+    && !/a second one is a wasted slot/.test(rare));
+  ok('...and says instead that it CHANGES the move',
+    /Flash Step is different/.test(rare) && /changes how the move works/.test(rare));
+  ok('...naming both of them: the side with one, the exact spot with two',
+    /side/.test(rare) && /exact spot/.test(rare));
+  ok('...and points at the card that teaches it',
+    /Special abilities/.test(rare));
+  /* THE SAME FACT IN THE PLACE THE MOVE IS TAUGHT. Asked for as "in the
+     Special Abilities, we should also note this". One card knowing it and the
+     other not is how it went wrong the first time. */
+  ok('Special abilities teaches the two-orb modifier too',
+    /Two 瞬 Flash Step orbs change the move/.test(special)
+    && /exact spot/.test(special));
+  /* AND WHAT IT IS FOR. "works best when using a controller with a joystick or
+     touch screen with joystick input... for more advanced players that want
+     more control of exactly where they can teleport to." Both halves, because
+     the second is the warning: a kitten on the keyboard who buys a second orb
+     has bought a control she cannot use finely. */
+  ok('...and says which hands can actually use it',
+    /controller stick/.test(special) && /touch-screen stick/.test(special));
+  ok('...and that it is the advanced way to play the move',
+    /advanced/.test(special));
+}
+
+console.log('\n--- 瞬 the spirit, and the rain at both ends ---');
+{
+  const fx = readFileSync(new URL('../src/systems/dodgefx.js', import.meta.url), 'utf8');
+  const bare = stripComments(fx);
+  const pl = stripComments(readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8'));
+
+  /* --- SHE COMES APART BEFORE SHE GOES --------------------------------
+     "it shows a 'ghostly' version of the player, about 50% transparent or
+     more, could have them looking unstable and flickering in and out, before
+     they teleport."
+
+     TWO HALVES IN TWO FILES, AND THE CHECK IS THAT BOTH ARE THERE. Her own
+     material runs `alphaTest: 0.35`, so the solid pose can only blink; the
+     half-strength ghost has to be a separate sprite. Either half alone reads
+     as a bug — a sprite dropping frames, or a second kitten standing inside
+     the first — so neither may be removed without the other. */
+  ok('the wind-up draws a half-strength ghost of her',
+    /const WIND_A = 0\.5/.test(bare) && /windGhost/.test(bare));
+  ok('...at 50% or more see-through, as asked for', /WIND_A = 0\.[0-5]/.test(bare));
+  ok('...standing where she actually is, not on the frozen snapshot',
+    /windGhost\.position\.set\(\s*p\.position\.x/.test(bare.replace(/\s+/g, ' '))
+    || /windGhost\.position\.set\(\r?\n?\s*p\.position\.x/.test(bare));
+  /* AND THE REASON IT HAS TO BE A BLINK IS ASSERTED AGAINST THE MATERIAL, not
+     against the comment that explains it. `gfx.js` is where `alphaTest` is
+     actually set; drop it there and a fade would start working, at which point
+     this pair of effects is the wrong shape and should be reconsidered rather
+     than left running. */
+  ok('...and her solid pose blinks underneath it, because it cannot fade',
+    /warpPose\.visible = false/.test(pl)
+    && /alphaTest: 0\.35/.test(
+      readFileSync(new URL('../src/core/gfx.js', import.meta.url), 'utf8')));
+
+  /* --- THE PREVIEW IS A SPIRIT ORB, NOT A SECOND KITTEN ----------------
+     "instead of showing the player character and where they will teleport
+     before the teleport is complete, we can instead show a glowing orb version
+     of them, almost as if it is their spirit form... This glowing form can be
+     their color." */
+  ok('the see-through preview KITTEN is gone', !/\bf\.ghost\b/.test(bare)
+    && !/const AIM_A =/.test(bare));
+  ok('...replaced by a glowing orb in her own colour',
+    /const spirit = add\(glowSprite\(glow, colour/.test(bare));
+  ok('...with a white heart in it, so four of them are still telling apart',
+    /const heart = add\(glowSprite\(glow, 0xffffff/.test(bare));
+  ok('...and it is sized off HER height rather than typed in world units',
+    /hgt \* SPIRIT_R/.test(bare) && /p\.height \?\? 2\.9/.test(bare));
+
+  /* --- AND IT BURSTS WHEN SHE ARRIVES ---------------------------------
+     "The orb can expand/explode/dissipate once the player appears in the new
+     location, as if their spirit form manifested to physical form." */
+  ok('a shell throws itself open where she arrives',
+    /burstIn/.test(bare) && /BURST_X/.test(bare));
+  ok('...and the same shell closes on the spot she left',
+    /burstOut/.test(bare));
+  ok('...over longer than the hand-off, or it would be three frames',
+    /const BURST_T = 0\.45/.test(bare)
+    && DODGE.invuln * (1 - DODGE.commit) < 0.45);
+
+  /* --- SHE BLINKS BACK, AND IS SOLID AT 95% ----------------------------
+     "Make their player avatar blink back into existence once they finish
+     teleporting and make fully opaque once about 95% complete with the entire
+     teleporting process." */
+  ok('her arriving self is solid before the end, not on the last frame',
+    /const MANIFEST = 0\.95/.test(bare)
+    && /f\.since \/ \(FADE \* MANIFEST_K\)/.test(bare));
+  /* AND 95% IS OF THE WHOLE MOVE. Measured against `FADE` alone it is the last
+     five milliseconds of a tenth of a second — one frame — which is the
+     version that was built first and looked like nothing. This asserts the
+     moment in SECONDS rather than the formula, so a rewrite that arrives at
+     the same instant a different way still passes. */
+  {
+    const fade = DODGE.invuln * (1 - DODGE.commit);
+    const kk = Math.max(0.05, Math.min(1,
+      (DODGE.invuln * (0.95 - DODGE.commit)) / Math.max(1e-6, fade)));
+    const solidAt = DODGE.invuln * DODGE.commit + fade * kk;
+    line('she is solid at / the move ends at', `${solidAt.toFixed(3)}s / ${DODGE.invuln}s`);
+    ok('...at 95% of the whole Flash Step, as asked',
+      Math.abs(solidAt - DODGE.invuln * 0.95) < 1e-9);
+    ok('...which is more than one frame before her own sprite returns',
+      DODGE.invuln - solidAt > 1 / 60);
+  }
+  ok('...and blinks its way in', /BLINK_HZ/.test(bare) && /strobe/.test(bare));
+  ok('...and the blink stops dead once she is solid',
+    /const solid = k >= 1/.test(bare) && /solid\s*\n?\s*\|\|/.test(bare));
+
+  /* --- THE RAIN, AT BOTH ENDS -----------------------------------------
+     "Can also show some kanji characters and matrix effect... two main
+     locations where the cool kanji/matrix/spiritual effects happen."
+
+     IT WAS CUT ONCE, BY NAME, WITH A RULE ATTACHED: do not put it back without
+     taking something else out. What went out is the preview kitten, above.
+     This check exists so the next person can see that the trade was made
+     rather than forgotten. */
+  ok('there is a column of falling glyphs at each end of the jump',
+    /rainOut/.test(bare) && /rainIn/.test(bare) && /RAIN_GLYPHS/.test(bare));
+  ok('...sharing one texture and one scroll between every kitten',
+    /_rain\.offset\.y = this\.rainPhase/.test(bare)
+    && (bare.match(/new THREE\.CanvasTexture\(c\)/g) ?? []).length <= 4);
+  ok('...and the old comment that forbade it records the trade instead',
+    /taking something else out/.test(fx) && /fifth of the screen area/.test(fx));
+  /* THE ARRIVING COLUMN IS STILL A SECRET UNTIL SHE ARRIVES. A pillar of light
+     on the square she is about to appear on gives the landing away exactly as
+     the preview ghost did, and the whole `secret` rule is about not handing a
+     defender that half second. */
+  ok('...and the arriving column cannot exist before the commit',
+    /f\.rainIn[\s\S]{0,400}?f\.placed\s*\n?\s*\?/.test(bare));
+}
+
+console.log('\n--- the debug keys are asleep until the panel is opened ---');
+{
+  /* "Let's make it, that the debug keys don't do anything until after the
+     Debug menu is opened, at least once. This prevents people from accidentally
+     enabling debug input unknowingly."
+
+     ONE LATCH, AND THE BACKQUOTE IS THE ONLY WAY THROUGH IT. A gate that also
+     swallowed the key that opens the panel would be a debug panel nobody could
+     ever reach, which is the same class of bug as the thing it is guarding
+     against: a press that silently does nothing. */
+  const mn = stripComments(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'));
+  const dk = mn.slice(mn.indexOf('_debugKey(code) {'), mn.indexOf('_debugKey(code) {') + 600);
+  ok('a debug key does nothing until the panel has been opened',
+    /_debugArmed/.test(dk));
+  ok('...except the one that opens it, which would otherwise be unreachable',
+    /code !== 'Backquote'/.test(dk));
+  ok('...and the gate is the very first thing the handler does',
+    dk.indexOf('_debugArmed') < dk.indexOf('switch') || dk.indexOf('switch') < 0);
+  const tp = mn.slice(mn.indexOf('_toggleDebugPanel() {'),
+    mn.indexOf('_toggleDebugPanel() {') + 700);
+  ok('...and opening the panel is what arms them', /_debugArmed = true/.test(tp));
+  ok('...on OPEN and not merely on the key being pressed',
+    /this\._debugOpen\) this\._debugArmed = true/.test(tp));
+}
+
+console.log('\n--- 龍 the dragon arrives in his own scene, and not before ---');
+{
+  const mn = stripComments(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'));
+  const at = (s) => mn.indexOf(s);
+  const body = (sig, end) => mn.slice(at(sig), at(end));
+
+  /* --- HE USED TO BE ON SCREEN DURING THE ERRAND -----------------------
+     "When All Seven Stars cutscene happens, Ryuuseki should not appear, he
+     shouldn't appear until the Ryuuseki Arrives cutscene."
+
+     IT WAS ONE LINE IN THE WRONG FUNCTION. `_onAllBalls` built the dragon and
+     THEN started the scene where Patchfur says "take them to the great torii"
+     — over a shot of a forty-metre dragon already hanging above it, which
+     answers the errand while she is still setting it. */
+  const allBalls = body('_onAllBalls() {', '_checkSummonScene() {');
+  ok('the seventh star does not build the dragon',
+    !/new Ryuuseki\(/.test(allBalls) && !/_spawnRyuuseki/.test(allBalls));
+  ok('...it only points the camera at the torii and starts the scene',
+    /_toriiSpot\(\)/.test(allBalls) && /summonScene\.start\('found'/.test(allBalls));
+  ok('...and the roar stays, because it is now a sound from somewhere else',
+    /sfx\('ryuroar'\)/.test(allBalls));
+
+  /* --- AND THE WALK-UP IS WHAT MAKES HIM EXIST -------------------------
+     IT USED TO MEASURE TO THE DRAGON, which is a distance that could only be
+     asked because he had already been built. The torii is the same point — he
+     was standing on it — so nothing about WHEN the scene fires has moved. */
+  const chk = body('_checkSummonScene() {', 'onRyuMount(player, seat) {');
+  ok('walking up to the torii is what summons him',
+    /_spawnRyuuseki\(\)/.test(chk) && /_toriiSpot\(\)/.test(chk));
+  ok('...gated on the errand having been given, not on a count',
+    /played\.found/.test(chk));
+  ok('...and it degrades rather than half-playing when there is no art',
+    /if \(!this\._spawnRyuuseki\(\)\) return;/.test(chk));
+
+  /* --- ONE PLACE BUILDS HIM, AND IT IS IDEMPOTENT ----------------------
+     There is no second seventh star, so a function that built a SECOND dragon
+     would strand the first one in the scene for ever. Fourth non-negotiable. */
+  const spawn = body('_spawnRyuuseki() {', '_onAllBalls() {');
+  ok('one function builds the dragon, and only one',
+    (mn.match(/new Ryuuseki\(/g) ?? []).length === 1
+    && /new Ryuuseki\(/.test(spawn));
+  ok('...and asking twice hands back the one that exists',
+    /if \(this\.ryu \|\| !this\.ryuArt\) return this\.ryu;/.test(spawn));
+  ok('...and puts him on the torii, off the world rather than off a literal',
+    /_toriiSpot\(\)/.test(spawn) && /heightAt/.test(body('_toriiSpot() {', '_spawnRyuuseki() {')));
+
+  /* --- THE DEBUG VIEWER SHOWS THE SAME TWO SHOTS -----------------------
+     "The Ryuuseki cutscenes seem to be broken in the Debug viewer as, Ryuuseki
+     does not seem to appear when he should and the camera is under the ground
+     in the island, instead of by the Torii above the ground."
+
+     BOTH HALVES CAME FROM ONE SHARED CASE BODY. The two scenes were previewed
+     through the same lines, which aimed at `B.centre` — the middle of the
+     whole archipelago, which is open water with a y averaged over a bounding
+     box, i.e. under the ground. And neither preview summoned anything, so the
+     shot the `summon` scene is ABOUT had nothing in it. */
+  const viewer = mn.slice(mn.indexOf("case 'found': {"), mn.indexOf("case 'finale'"));
+  ok('the two dragon scenes are previewed separately now',
+    viewer.indexOf("case 'summon': {") > 0);
+  ok('...the errand one is aimed at the torii, not at the middle of the sea',
+    /_toriiSpot\(\)/.test(viewer) && !/_worldBounds\(\)/.test(viewer));
+  ok('...the arrival one really summons him first',
+    /_spawnRyuuseki\(\)/.test(viewer));
+  ok('...and says so, because a debug key that changes the world must',
+    /\[debug\] Ryuuseki summoned at the torii/.test(viewer));
+  /* THE FRAMING IS THE GAME'S OWN. It said `RYU_SIZE`, which is a different
+     number from the `quad * 0.85` the real scene uses — so the preview was
+     framing a shot nobody would ever see. He is a WORM: a radius off his
+     height crops the head, and the head is the shot. */
+  ok('...framed exactly as the game frames it, not off a second number',
+    (viewer.match(/quad \* 0\.85/g) ?? []).length === 1
+    && !/RYU_SIZE/.test(viewer)
+    && /quad \* 0\.85/.test(chk));
+}
+
+console.log('\n--- a restart really does put the endgame back in its box ---');
+{
+  /* "Seems restarting the game, does not actually restart the state of the
+     game correctly. For instance, if the End Cutscene was played, then all the
+     kotodama and dealer stall are still in the game on restart. Same with
+     going to Title Screen."
+
+     THE CAUSE WAS DEAD CODE WEARING A DOC COMMENT. `Kotodama.clear()` has said
+     "used by Game.restart" since the day it was written and NOTHING HAS EVER
+     CALLED IT. So a restart put 216 props back up and left the dealer's stall
+     standing in the market with sixteen Powerup Kotodama scattered over the
+     islands — the endgame furniture in an opening-state world.
+
+     IT CASCADED FURTHER THAN THE REPORT. `restore` opens with `restart`, and
+     then asks `if (snap.awakened && !kotodama.awakened) awaken()` — a test that
+     could never pass while nothing ever set `awakened` back to false. */
+  const mn = stripComments(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'));
+  const restart = mn.slice(mn.indexOf('  restart() {'), mn.indexOf('  restart() {') + 4500);
+  ok('a restart clears the Awakening', /this\.kotodama\?\.clear\(\)/.test(restart));
+  const kd = readFileSync(new URL('../src/systems/kotodama.js', import.meta.url), 'utf8');
+  /* A FIXED WINDOW, NOT A SLICE TO THE NEXT METHOD. `dropInWorld` is defined
+     ABOVE `clear` in this file, so slicing between them produced an empty
+     string and four checks that passed on nothing. */
+  const kdBare = stripComments(kd);
+  const clear = kdBare.slice(kdBare.indexOf('clear() {'), kdBare.indexOf('clear() {') + 600);
+  ok('...and clearing it takes the loose orbs out of the world',
+    /scene\.remove\(pk\.group\)/.test(clear) && /this\.pickups = \[\]/.test(clear));
+  ok('...takes the dealer\'s stall down with them',
+    /scene\.remove\(this\.stall\.group\)/.test(clear) && /this\.stall = null/.test(clear));
+  ok('...and puts the flag back, which is what a load then reads',
+    /this\.awakened = false/.test(clear));
+  /* AND IT IS ON BOTH WAYS OUT. "Same with going to Title Screen" — and
+     `toTitle` reaches it through `restart`, which is the only arrangement in
+     which the two cannot drift apart. */
+  const toTitle = mn.slice(mn.indexOf('  toTitle() {'), mn.indexOf('  toTitle() {') + 1200);
+  ok('...and going back to the title goes through the same restart',
+    /this\.restart\(\)/.test(toTitle));
+  /* NON-VACUOUS: the doc comment that lied is now the record of the bug, so
+     the next person reading `clear` is told it was orphaned rather than being
+     told again that something calls it. */
+  ok('...and the comment that claimed a caller now records that it had none',
+    /IT WAS DEAD CODE FOR A WHILE/.test(kd));
+}
+
+console.log('\n--- what a save remembers about an animal and a dragon ---');
+{
+  /* "Panda status is not being saved when the game is saved (says 20 more
+     bamboo when I already had a full grown panda before...). Ryuuseki was also
+     spawned before, but after loading, is no longer in the game... This is
+     important as Ryuuseki cannot be respawned, and also, Bamboo does not
+     respawn, so we need to keep the panda already retrieved from cutting
+     bamboo."
+
+     FOURTH NON-NEGOTIABLE, IN THE ONE PLACE IT HURTS MOST: both of these are
+     made of something that does not come back. */
+  const sg = readFileSync(new URL('../src/systems/savegame.js', import.meta.url), 'utf8');
+  const bare = stripComments(sg);
+  const row = bare.slice(bare.indexOf('export function castRow('),
+    bare.indexOf('export function applyCast('));
+  ok('a kitten\'s row remembers her panda',
+    /panda: p\.panda \?/.test(row));
+  /* THE TIER, BECAUSE IT CANNOT BE RE-DERIVED. `_updatePanda` charges growth
+     from `pandaFedFrom`, which a grown panda has already spent — replaying the
+     rule over a restored tally gives a CUB every time. That is the whole
+     reason the row carries the answer rather than the ingredients. */
+  ok('...which tier it is, since a fresh one can only ever be a cub',
+    /tier: p\.panda\.tier/.test(row));
+  /* AND WHETHER IT IS DOWN. "should save whether panda is grown or small (as
+     it can be small after getting hit in the arena)." */
+  ok('...and whether it is knocked down, which is the other way it is small',
+    /down: !!p\.panda\.knockedDown/.test(row));
+  ok('...and where it was standing', /at: \[p\.panda\.position\.x/.test(row));
+  const apply = bare.slice(bare.indexOf('export function applyCast('),
+    bare.indexOf('export function snapshot('));
+  ok('...and a rejoin or a load hands it back',
+    /game\._recallPanda\?\.\(p, row\.panda \?\? null\)/.test(apply));
+  {
+    const mn = stripComments(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'));
+    const rec = mn.slice(mn.indexOf('  _recallPanda(player, saved = null) {'),
+      mn.indexOf('  _recallPanda(player, saved = null) {') + 2600);
+    ok('...adopting the parked animal when there is one', /_parkedPandas\.get/.test(rec));
+    ok('...building the saved one when there is not', /new Panda\(/.test(rec)
+      && /saved\.tier/.test(rec));
+    ok('...and falling back to the old rule for a row that never had one',
+      /_updatePanda\(player\)/.test(rec));
+    /* THE GROUND IS RE-ASKED RATHER THAN TRUSTED. The world rebuilds itself
+       from its own seeds, so a y from an old row is a number about a hill that
+       may not be there. Degrade-don't-vanish: a refused point leaves it where
+       the fallback put it rather than NaN-ing a position. */
+    ok('...asking the world about the ground rather than trusting the row',
+      /heightAt/.test(rec));
+  }
+
+  const snap = bare.slice(bare.indexOf('export function snapshot('),
+    bare.indexOf('export function restore('));
+  ok('a save remembers whether the dragon had been summoned',
+    /ryu: game\.ryu \?/.test(snap) && /at: \[game\.ryu\.position\.x/.test(snap));
+  const rest = bare.slice(bare.indexOf('export function restore('));
+  ok('...and a load puts him back, because nothing else ever can',
+    /game\._spawnRyuuseki\(\)/.test(rest));
+  ok('...on the spot he was left, if the world still has ground there',
+    /heightAt\?\.\(at\[0\], at\[2\]\)/.test(rest));
+  /* AND A ROW THAT PREDATES EITHER FIELD STILL LOADS. `SAVE_VERSION` is NOT
+     bumped for this: both are additive and both degrade to what the old code
+     did, and throwing away every afternoon anybody had saved would be a worse
+     answer to "the panda was missing" than the missing panda. */
+  ok('...and neither field forced a version bump that would bin the old rows',
+    SAVE_VERSION === 2);
+}
+
+console.log('\n--- the kept star is legible, which it was not ---');
+{
+  /* "For the gold star showing in the Save Game, the text that says 'Kept' is
+     hard to read because it is yellow, maybe we should keep the star gold but
+     make the text black so it's easier to read."
+
+     THE STAR AND THE WORDS ARE TWO THINGS NOW. They were one gold span on a
+     dark panel: the star reads fine as a shape and the word next to it was
+     four gold letters at label size. So the star keeps the gold and the word
+     is black ON the gold, which is the highest contrast either of them can
+     have without changing what the row means. */
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const star = css.slice(css.indexOf('.sv-star {'), css.indexOf('.sv-star {') + 220);
+  const keep = css.slice(css.indexOf('.sv-keep {'), css.indexOf('.sv-keep {') + 320);
+  ok('the star is still gold', /#ffd24a/.test(star));
+  ok('...and the word beside it is dark on that same gold',
+    /background: #ffd24a/.test(keep) && /color: #12161c/.test(keep));
+  ok('...at full strength, so nothing else can fade it back',
+    /opacity: 1/.test(keep));
+  const mn = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('...and the list paints the two of them separately',
+    /class="sv-star"/.test(mn) && /class="sv-keep"/.test(mn));
 }
 
 console.log('\n--- the orbs face the camera ---');
@@ -24916,7 +25453,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
        after them would describe a cat that had already been dismantled. */
     ok('dropping out writes her down before her kitten is taken apart',
       leave.indexOf('_rememberPlayer') > 0
-      && leave.indexOf('_rememberPlayer') < leave.indexOf('this.scene.remove(p.group)'));
+      && leave.indexOf('_rememberPlayer') < leave.indexOf('this._undressPlayer(p)'));
     /* AND THE ROW CARRIES HER ORBS. It used to say `{ orbs: [] }`, because the
        next line tipped them onto the ground — see the drop-out block above for
        why that stopped. There is still exactly one copy of each orb: it is in
@@ -24927,9 +25464,15 @@ console.log('\n--- one press is not enough, and one player drives ---');
       main.indexOf('  _dressPlayer(p) {'));
     /* THE PICKER SWAP WAS THE QUIET ONE. Nothing dropped her orbs, nothing
        saved her score; the Player was simply removed from the scene. */
+    /* `_undressPlayer` AND NOT `scene.remove(old.group)`, WHICH IS WHAT THIS
+       ASKED FOR UNTIL HER ORBS STOPPED BEING SCENE CHILDREN. Taking a kitten
+       apart is one call now — see `Player.orbRoot` — so the line this has to
+       be ordered against is that call. Both halves still have teeth: the
+       `> 0` catches the row being dropped, the `<` catches it moving below the
+       teardown, and `indexOf` returning -1 fails rather than passing. */
     ok('...and swapping cat in the picker no longer bins the old one\'s afternoon',
       seat.indexOf('_rememberPlayer(old)') > 0
-      && seat.indexOf('_rememberPlayer(old)') < seat.indexOf('scene.remove(old.group)'));
+      && seat.indexOf('_rememberPlayer(old)') < seat.indexOf('_undressPlayer(old)'));
     ok('...and every way a kitten arrives asks whether she has played today',
       /_recallPlayer\(p\)/.test(seat));
   }
@@ -25062,9 +25605,49 @@ console.log('\n--- one press is not enough, and one player drives ---');
        — but it is not an ENDING, it is the opposite of one, and filing "carry
        on from Tuesday" inside a panel called END THE GAME teaches a child that
        the feature is not there. */
+    /* SCOPED TO THE PAUSE MENU, BECAUSE THERE ARE TWO OF THESE NOW. The title
+       screen grew its own LOAD A SAVED GAME (see below), which is earlier in
+       the document than everything this is about — so a bare `indexOf` reads
+       the wrong button and this passed or failed for reasons that had nothing
+       to do with the pause menu. */
+    const pausePanel = html.slice(html.indexOf('id="panel-pause"'));
     ok('...directly above END THE GAME, and not buried inside it',
-      html.indexOf('data-action="saves"') < html.indexOf('data-action="ending"')
-      && html.indexOf('data-action="saves"') > html.indexOf('data-action="watch"'));
+      pausePanel.indexOf('data-action="saves"') > 0
+      && pausePanel.indexOf('data-action="saves"') < pausePanel.indexOf('data-action="ending"')
+      && pausePanel.indexOf('data-action="saves"') > pausePanel.indexOf('data-action="watch"'));
+
+    /* --- AND THE TITLE SCREEN OFFERS IT TOO, WHEN THERE IS ONE -----------
+       "Should add a 'Load Game' button before Starting the game, for when
+       there is a saved game on the machine."
+
+       HIDDEN UNTIL THERE IS SOMETHING TO LOAD, and that is the sixth
+       non-negotiable rather than tidiness: a button whose only possible
+       answer is "you have no saved games" is a button that can only refuse,
+       and the rule is that a refusal has to say something worth reading. It
+       is shown by `_refreshTitleLoad`, which is the only thing that knows.
+
+       ON ROW TWO, WITH THE TRAILER. Not a fourth button beside SETTINGS, PLAY
+       and HELP — that row is the cat-head menu one of the girls drew, and the
+       second non-negotiable is that the art is theirs. */
+    ok('the title screen offers to load one as well',
+      /id="btn-title-load"[^>]*data-action="saves"/.test(html));
+    ok('...hidden until there is something to load',
+      /class="menu-btn small hidden" id="btn-title-load"/.test(html));
+    ok('...on the second row, beside the trailer, not in the cat-head menu',
+      html.indexOf('id="btn-title-load"') > html.indexOf('menu-row-2')
+      && html.indexOf('id="btn-title-load"') < html.indexOf('data-action="trailer"'));
+    {
+      const refresh = main.slice(main.indexOf('  _refreshTitleLoad() {'),
+        main.indexOf('  _refreshTitleLoad() {') + 900);
+      ok('...and something actually counts the saves before showing it',
+        /listSaves\(/.test(refresh) && /hidden/.test(refresh));
+      /* BOTH WAYS IN. Booting is the obvious one; coming BACK to the title
+         after a game is the one that gets missed, and it is the likelier of
+         the two to have a save behind it. */
+      const calls = (main.match(/_refreshTitleLoad\(\)/g) ?? []).length;
+      ok('...on the way in and on the way back to the title', calls >= 3,
+        `${calls} sites`);
+    }
     ok('...and the list it opens is a panel like every other',
       html.includes('id="panel-saves"') && html.includes('id="saves-body"'));
     /* IT SCROLLS. Five rows of four kittens each is taller than a phone held
@@ -25160,7 +25743,35 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...and its question says whether the game will be kept, in words',
       /SAVE AND QUIT\?/.test(quitH) && /YES, SAVE AND QUIT/.test(quitH)
       && /NO, KEEP PLAYING/.test(quitH) && /AUTOSAVE_AFTER/.test(quitH)
-      && /not kept/.test(quitH) && /saveAndQuit\(\)/.test(quitH));
+      && /saveAndQuit\(\)/.test(quitH));
+    /* --- AND UNDER FIVE MINUTES IT IS A DIFFERENT QUESTION ----------------
+       Reported: "When starting a new game and then doing Save & Quit Game, it
+       is saving the game, even if it is not 5 minutes of gameplay. It should
+       only save if they have more than 5 minutes of gameplay."
+
+       THE ROW USED TO SAVE A GAME IT WAS NOT ALLOWED TO KEEP, which is the
+       half of the old rule that was wrong: `saveByHand` wrote the snapshot
+       either way and only the KEPT mark was gated. So three minutes of play
+       took a slot, and five of those pushed a real afternoon off the end of
+       the list — which is the exact failure the five-minute gate was written
+       to prevent in the first place.
+
+       SO THE BUTTON MUST SAY SO BEFORE SHE PRESSES IT. Sixth non-negotiable:
+       "YES, SAVE AND QUIT" over a game that is about to be thrown away is a
+       button that silently does nothing, wearing a label that promises the
+       opposite. Title, body and BOTH the yes and the row itself change. */
+    ok('...and under the five minutes it asks a different question entirely',
+      /QUIT WITHOUT SAVING\?/.test(quitH)
+      && /YES, QUIT WITHOUT SAVING/.test(quitH)
+      && /is NOT saved/.test(quitH));
+    ok('...and the two questions are chosen by the same five-minute clock',
+      /const keeps = this\.playT >= AUTOSAVE_AFTER/.test(quitH));
+    {
+      const lb = main.slice(main.indexOf('  _buildLeaveButtons() {'),
+        endOf(main, main.indexOf('  _buildLeaveButtons() {')));
+      ok('...and the row in the menu says it too, before the dialog is opened',
+        /data-action="quit"/.test(lb) && /AUTOSAVE_AFTER/.test(lb));
+    }
     const sq = main.slice(main.indexOf('  saveAndQuit() {'),
       endOf(main, main.indexOf('  saveAndQuit() {')));
     ok('...and it saves BEFORE the window is asked to close',
@@ -25173,8 +25784,22 @@ console.log('\n--- one press is not enough, and one player drives ---');
     const sgSrc = readFileSync(new URL('../src/systems/savegame.js', import.meta.url), 'utf8');
     const byHand = sgSrc.slice(sgSrc.indexOf('export function saveByHand('),
       sgSrc.indexOf('export function dropSave('));
-    ok('...and it is kept only past the same five minutes',
-      /snap\.kept = \(game\.playT \?\? 0\) >= AUTOSAVE_AFTER/.test(byHand));
+    /* IT REFUSES RATHER THAN SAVING A ROW IT CANNOT KEEP — see the quit
+       dialog above. `short: true` is how the caller tells the two failures
+       apart: a browser that would not store it is an error to say out loud,
+       and a three-minute game is a rule to explain. */
+    ok('...and a game short of five minutes is not written down at all',
+      /\(game\.playT \?\? 0\) < AUTOSAVE_AFTER/.test(byHand)
+      && /short: true/.test(byHand)
+      && byHand.indexOf('AUTOSAVE_AFTER') < byHand.indexOf('snapshot(game)'));
+    ok('...and one past it is kept, which is the whole point of the button',
+      /snap\.kept = true/.test(byHand));
+    {
+      const sq2 = main.slice(main.indexOf('  saveAndQuit() {'),
+        endOf(main, main.indexOf('  saveAndQuit() {')));
+      ok('...and the short case quits with a line saying why, not in silence',
+        /out\.short/.test(sq2) && /too short to save/.test(sq2));
+    }
     ok('...and a kept row says so on the list',
       /r\.kept/.test(paint) && /sv-kept/.test(paint) && /★ kept/.test(paint)
       && /MAX_LIST/.test(paint));
@@ -26023,9 +26648,21 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     ok('...and the last prop names the kitten who hit it', /this\._awaken\(player\)/.test(main));
     ok('mischief and dragon balls are counted where they happen',
       /this\.feats\?\.onMischief\(player\)/.test(main) && /this\.feats\?\.onBall\(p\)/.test(main));
-    ok('a restart, a drop-out and a swap all take the tokens down',
+    /* THREE PATHS, AND ONE OF THEM STOPPED SAYING SO. The picker swap used to
+       call `dropTokens(old)` by name; it does not any more, because the gold
+       tokens hang off `Player.orbRoot` with every other orb she owns and
+       `_undressPlayer` takes the lot in one line. That is the whole point of
+       the bag, so the check asks for the bag on that path rather than for a
+       call that would now be doing the work twice. */
+    ok('a restart and a drop-out take the tokens down by name',
       /this\.feats\?\.reset\(\)/.test(main)
-        && (main.match(/this\.feats\?\.dropTokens\(/g) || []).length >= 2);
+        && /this\.feats\?\.dropTokens\(p\)/.test(main));
+    {
+      const seat2 = main.slice(main.indexOf('_seatPlayer(index, styleIndex'),
+        main.indexOf('_dressPlayer(p) {'));
+      ok('...and a swap takes them down with the rest of her bag',
+        /_undressPlayer\(old\)/.test(seat2));
+    }
     ok('...and a drop-out and a swap both settle what she is owed, BEFORE her row',
       (main.match(/this\.feats\?\.settleOnLeave\(/g) || []).length >= 2
         && main.indexOf('this.feats?.settleOnLeave(old)')

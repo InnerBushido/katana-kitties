@@ -21,7 +21,7 @@ import {
 } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
-import { Panda, PANDA, tierFor, toNextTier } from './entities/panda.js';
+import { Panda, PANDA, PANDA_TIERS, tierFor, toNextTier } from './entities/panda.js';
 import { ClanLeader, LEADERS } from './entities/leader.js';
 import { Orb, OrbPickup } from './entities/orb.js';
 import { MathDojo, DOJO_VIEW_R, inDojoView } from './systems/mathdojo.js';
@@ -36,7 +36,7 @@ import { Confirm } from './systems/confirm.js';
 import { ShrineScene, SCENE_RADIUS } from './systems/shrinescene.js';
 import { SummonScene } from './systems/summonscene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from './entities/dragonball.js';
-import { Ryuuseki, HOVER, RYU_VIEW, RYU_SIZE } from './entities/ryuuseki.js';
+import { Ryuuseki, HOVER, RYU_VIEW } from './entities/ryuuseki.js';
 import { MrSatan } from './entities/satan.js';
 import { Griffin } from './entities/griffin.js';
 import { Announcer } from './systems/announce.js';
@@ -463,6 +463,25 @@ class Game {
      */
     this.sessionId = newSessionId();
     this.sessionCast = new Map();
+    /**
+     * THE PANDAS OF KITTENS NOBODY IS PLAYING, keyed by the kitten's name.
+     *
+     * A PET CAN NEVER BE LOST — fourth non-negotiable — and a swap in the
+     * character picker used to lose one quietly. `_seatPlayer` drops the old
+     * `Player` object on the floor, and her panda was only ever referenced by
+     * it, so the animal stayed in the scene, unowned and unticked, forever; and
+     * swapping BACK to her built a second one beside it. Two pandas is the same
+     * bug as none, from the other side.
+     *
+     * PARKED RATHER THAN DESTROYED, because the alternative is destroying an
+     * animal that cost twenty canes of bamboo in a world where bamboo does not
+     * regrow. `_rememberPlayer` parks; `_recallPanda` adopts. It is a live
+     * `Panda`, so it never goes anywhere near a save file — the SAVE carries
+     * the tier as a fact (see `castRow`), and these two paths meet in
+     * `_recallPanda`, which builds one only when there is nothing to adopt.
+     * @type {Map<string, object>}
+     */
+    this._parkedPandas = new Map();
     /* WHICH PLAYER IS DRIVING THE MENU, as a slot index, or null for "anybody".
        See `_claimMenu` — this is the whole of the one-cursor rule. */
     this.menuOwner = null;
@@ -1637,6 +1656,9 @@ class Game {
     document.getElementById('loading').classList.add('hidden');
     document.getElementById('title').classList.remove('hidden');
     this.state = 'title';
+    /* ...AND LOAD A SAVED GAME APPEARS ON IT, but only on a machine that has
+       one. See `_refreshTitleLoad`. */
+    this._refreshTitleLoad();
 
     this.renderer.setAnimationLoop(() => this._tick());
   }
@@ -1751,14 +1773,7 @@ class Game {
          in `_leavePlayer`: a row is written once. */
       this.feats?.settleOnLeave(old);
       this._rememberPlayer(old);
-      this.scene.remove(old.group);
-      /* HER ORBITING THINGS ARE SCENE CHILDREN, NOT HERS, so removing her
-         group leaves them circling an empty spot. The same three lists
-         `_leavePlayer` takes down, for the same reason. Remembered above
-         first, so nothing she owned is lost with the meshes. */
-      for (const o of old.orbs ?? []) this.scene.remove(o.group);
-      for (const o of old.wornOrbs ?? []) this.scene.remove(o.group);
-      this.feats?.dropTokens(old);
+      this._undressPlayer(old);
     }
     this.roster[index] = styleIndex;
 
@@ -1789,6 +1804,10 @@ class Game {
     }
     this.players[index] = p;
     this.scene.add(p.group);
+    /* AND THE BAG HER ORBS HANG IN — see `Player.orbRoot`. Added here, beside
+       her own group, because these are the two things that make a kitten
+       visible and they have to arrive and leave together. */
+    this.scene.add(p.orbRoot);
     this._dressPlayer(p);
     /* IF THIS CAT HAS ALREADY PLAYED TODAY, SHE PICKS UP WHERE SHE LEFT OFF.
        HERE RATHER THAN IN THE THREE CALLERS, for exactly the reason
@@ -2091,17 +2110,26 @@ class Game {
              that could happen, in the sentence she answered. */
           const keeps = this.playT >= AUTOSAVE_AFTER;
           const mins = Math.round(AUTOSAVE_AFTER / 60);
+          /* AND UNDER THE FIVE MINUTES IT IS NOT A SAVE AT ALL ANY MORE — see
+             `saveByHand`. The question has to change with it, title and button
+             both: "YES, SAVE AND QUIT" over a game that is about to be thrown
+             away is the silent failure the sixth non-negotiable is about, and
+             it is the one dialog in the game where the words are the only
+             warning anybody gets. The row behind it says the same thing —
+             `_buildLeaveButtons` retitles it — so she has been told twice
+             before she is asked. */
           this.confirm.ask({
-            title: 'SAVE AND QUIT?',
+            title: keeps ? 'SAVE AND QUIT?' : 'QUIT WITHOUT SAVING?',
             body: keeps
               ? 'Your game is saved and KEPT — newer games will not push it off '
                 + 'the list — and then the window closes. Find it again in '
                 + 'PLAY SETTINGS → LOAD A SAVED GAME.'
-              : `Your game is saved, and then the window closes. It is shorter `
-                + `than ${mins} minutes, so it is not kept — newer games can `
-                + 'still push it off the list.',
+              : `This game is shorter than ${mins} minutes, so it is NOT saved `
+                + '— nothing about it is written down, and it is gone when the '
+                + `window closes. Play for ${mins} minutes and this button `
+                + 'saves and keeps it instead.',
             no: 'NO, KEEP PLAYING',
-            yes: 'YES, SAVE AND QUIT',
+            yes: keeps ? 'YES, SAVE AND QUIT' : 'YES, QUIT WITHOUT SAVING',
             onYes: () => this.saveAndQuit(),
           });
         }
@@ -2806,6 +2834,16 @@ class Game {
         + 'game store anything — so the game is still open.', 0);
       return false;
     }
+    /* TOO SHORT TO BE WORTH A ROW, AND SHE WAS TOLD SO BEFORE SHE ANSWERED —
+       the dialog this came through says QUIT WITHOUT SAVING in those words when
+       the clock is under the five minutes, and the pause row says it too. So
+       this closes the window: the refusal is the SAVE, not the QUIT, and a
+       button that refused both would be a second thing to argue with. See
+       `saveByHand`, which owns the gate. */
+    if (out.short) {
+      this.quitGame('Your game was too short to save. ');
+      return true;
+    }
     this._saveAt = this.playT + AUTOSAVE_EVERY;
     this.quitGame(out.kept ? 'Your game is saved and kept. ' : 'Your game is saved. ');
     return true;
@@ -2814,7 +2852,12 @@ class Game {
   /** Put the world back to its opening state without a page reload. */
   restart() {
     for (const p of this.players) {
-      for (const o of p.orbs ?? []) this.scene.remove(o.group);
+      /* HER BAG, NOT THE SCENE — `Player.orbRoot` is what these hang off now,
+         and `scene.remove` on a child of something else does nothing at all.
+         She is NOT undressed here: a restart keeps every Player object and
+         every seat, so her group and her bag both stay in the scene and only
+         what is IN the bag goes. */
+      for (const o of p.orbs ?? []) p.orbRoot.remove(o.group);
       p.orbs = [];
       /* The Powerup Kotodama go back too. A restart puts the world back to
          its opening state, and the opening state is one where they do not
@@ -2833,6 +2876,11 @@ class Game {
       if (p.panda) this.scene.remove(p.panda.group);
       p.panda = null;
       p.raisedPanda = false;
+      /* AND THE ONES BELONGING TO KITTENS NOBODY IS PLAYING, which live in
+         `_parkedPandas` and are in the scene exactly like these. Missed, a
+         restart would leave a grown panda standing in a town that has just
+         put every barrel back up — and `_recallPanda` would then adopt it
+         into the NEXT game. Cleared with the cast it belongs to, below. */
       p.bambooCut = 0;
       p.pandaFedFrom = null;
       p.velocity.set(0, 0, 0);
@@ -2845,6 +2893,29 @@ class Game {
        state, and there is no dealer in it — the stall does not exist until
        100% mischief. */
     this.inspector.closeAll();
+    /* ...AND THIS IS THE LINE THAT MAKES THE SENTENCE ABOVE TRUE. It was never
+       written. `Kotodama.clear` has said "used to by Game.restart" in its own
+       doc comment since the day it was added and NOTHING HAS EVER CALLED IT —
+       dead code that read as the rule being in place. Reported from play:
+       "restarting the game does not actually restart the state of the game
+       correctly. For instance, if the End Cutscene was played, then all the
+       kotodama and dealer stall are still in the game on restart. Same with
+       going to Title Screen."
+
+       IT IS ALSO WHAT MAKES A LOAD CORRECT, which is the half nobody could
+       see. `restore` begins with `restart()` and then says
+       `if (snap.awakened && !game.kotodama.awakened) game.kotodama.awaken()` —
+       a test that could never pass once anything had awakened, because nothing
+       ever put `awakened` back. So loading a pre-100% save into a finished
+       world left the stall standing in it, and loading a finished save into a
+       fresh one re-seeded nothing.
+
+       ORDER: AFTER the players have had `setPowerOrbs([])` and their meshes
+       synced, above, so nobody is left wearing an orb the dealer has just
+       taken back off the shelf; and `clear` ends with `forParty(..., restock)`,
+       which is what puts the full twenty-six back in the box. Fourth
+       non-negotiable — nothing is lost, and equally nothing is minted. */
+    this.kotodama?.clear();
     for (const d of this.dragons) {
       d.rider = null;
       d.state = 'perched';
@@ -3023,6 +3094,12 @@ class Game {
        swore to in a town that has just stood itself back up. */
     this.sessionId = newSessionId();
     this.sessionCast = new Map();
+    /* THE PARKED PANDAS GO WITH THE CAST THEY BELONG TO. Same argument, one
+       object further down: a live animal kept for a kitten who played in a
+       world that no longer exists. Their meshes come out of the scene here,
+       because nothing else holds them any more. */
+    for (const panda of this._parkedPandas.values()) this.scene.remove(panda.group);
+    this._parkedPandas.clear();
 
     this.setPaused(false);
     this.toast('Adventure restarted!', 0);
@@ -3039,6 +3116,9 @@ class Game {
        `_trailerOfferDue`: this one line is the whole difference between
        "offered once ever" and "offered whenever you start a new game". */
     this._offerAnswered = false;
+    /* AND THE LOAD ROW IS RE-ASKED, because the game she just left may be the
+       first save this machine has ever held. See `_refreshTitleLoad`. */
+    this._refreshTitleLoad();
   }
 
   /** Redraws the live controller readout while the settings panel is open. */
@@ -3325,6 +3405,67 @@ class Game {
     this.toast(this.mathVisible ? 'Math overlay ON' : 'Math overlay OFF', 0);
   }
 
+  /**
+   * Is there anything on this machine to load? Show or hide the title's row.
+   *
+   * ASKED FOR WITH ITS OWN CONDITION ON IT — "a Load Game button before
+   * Starting the game, FOR WHEN THERE IS A SAVED GAME on the machine" — and the
+   * condition is the interesting half. A button that is always there and can
+   * only ever open an empty list is a button that teaches a nine-year-old the
+   * game lost her afternoon; a button that appears the first time there IS one
+   * is the game telling her it kept it.
+   *
+   * CALLED AT BOOT AND ON EVERY RETURN TO THE TITLE, because both are moments
+   * the answer can have changed — the first save of an afternoon is written
+   * thirty seconds after the five minutes, and TITLE SCREEN is reached from a
+   * game that may just have written one.
+   *
+   * IT NEVER THROWS. `listSaves` reads localStorage, which private browsing
+   * refuses outright; no list is the same answer as an empty one here, and a
+   * title screen that failed to draw because of a storage permission would be
+   * the whole game gone over a button. House rule: degrade, don't vanish.
+   */
+  _refreshTitleLoad() {
+    const b = document.getElementById('btn-title-load');
+    if (!b) return;
+    let n = 0;
+    try { n = listSaves().length; } catch { n = 0; }
+    b.classList.toggle('hidden', n === 0);
+  }
+
+  /**
+   * The title screen goes away and the world is live — WITHOUT starting a new
+   * story.
+   *
+   * SPLIT OUT OF `startPlay` FOR THE LOAD BUTTON, and it is deliberately not
+   * all of it: a loaded game must not play the intro (she is resuming an
+   * afternoon, not beginning one), must not ask about the trailer (she has
+   * already chosen what she is doing), and must not be handed a fresh session
+   * id — `restore` sets that from the row. What it DOES share is every line
+   * that makes the world drawable and audible, which is why those live here and
+   * `startPlay` calls this rather than keeping a second copy: the two used to
+   * drift the moment anybody added a line to one of them.
+   */
+  _enterPlay() {
+    document.getElementById('title').classList.add('hidden');
+    for (const id of SUB_PANELS) document.getElementById(id)?.classList.add('hidden');
+    document.getElementById('hud').classList.remove('hidden');
+    this.state = 'play';
+    this.clock.getDelta();
+    this._updateHint();
+    // Browsers won't let audio start without a gesture, and pressing PLAY (or
+    // LOAD) is the first one we're guaranteed to get.
+    this.audio.resume();
+    /* Seed each kitten's island claim as already SETTLED, so the first frame
+       of play picks her island's theme instead of 1.1 seconds of silence while
+       the dwell counts up. It matters on restart too, which can drop them
+       somewhere other than home. */
+    for (const p of this.players) {
+      p._musicIsland = this._islandUnder(p);
+      p._musicSince = ISLAND_DWELL;
+    }
+  }
+
   startPlay() {
     /* THE OFFER GOES BEFORE ANY OF THIS, and returns without touching the
        state. The title screen stays up behind the panel, the HUD stays hidden,
@@ -3337,30 +3478,13 @@ class Game {
       return;
     }
 
-    document.getElementById('title').classList.add('hidden');
-    for (const id of SUB_PANELS) document.getElementById(id)?.classList.add('hidden');
-    document.getElementById('hud').classList.remove('hidden');
-    this.state = 'play';
-    this.clock.getDelta();
-    this._updateHint();
-    // Browsers won't let audio start without a gesture, and pressing PLAY is
-    // the first one we're guaranteed to get.
-    this.audio.resume();
+    this._enterPlay();
 
     /* The story, once per session. It plays here rather than on the title
        screen because this is the first guaranteed user gesture — the intro
        has music and voices, and starting it a moment earlier would mean
        starting it silently. Restarting the world doesn't replay it; the
        pause menu has a button for people who want it again. */
-    /* Seed each kitten's island claim as already SETTLED, so the first frame
-       of play picks her island's theme instead of 1.1 seconds of silence while
-       the dwell counts up. It matters on restart too, which can drop them
-       somewhere other than home. */
-    for (const p of this.players) {
-      p._musicIsland = this._islandUnder(p);
-      p._musicSince = ISLAND_DWELL;
-    }
-
     if (this.cutscene && !this.introPlayed) {
       this.introPlayed = true;
       this.cutscene.play();
@@ -3997,6 +4121,30 @@ class Game {
    * trip one and wonder what happened.
    */
   _debugKey(code) {
+    /* --- NOTHING HERE WORKS UNTIL THE PANEL HAS BEEN OPENED ONCE ---
+       Asked for in these words: "let's make it, that the debug keys don't do
+       anything until after the Debug menu is opened, at least once. This
+       prevents people from accidentally enabling debug input unknowingly."
+
+       AND IT IS THE RIGHT SHAPE OF GUARD BECAUSE OF WHO PLAYS THIS. Four kids
+       hold sticks and mash, and the row of digits above the letters is exactly
+       where a hand lands reaching for WASD — `1` alone knocks fifty props over
+       and cannot be undone (fourth non-negotiable: nothing regrows). The
+       backtick is not: it is a key nobody presses by accident, and it is the
+       one that both arms these and prints the list of them, so the gesture
+       that turns the tools on is the same gesture that explains them.
+
+       PER PAGE LOAD, NOT PERSISTED. A flag in localStorage would arm the keys
+       for good on the first curious press, which is the state this is here to
+       prevent; and a session is one afternoon, which is the unit everything
+       else about this game is measured in. It costs a developer one backtick.
+
+       `_debugArmed` IS SET BY `_toggleDebugPanel` AND NEVER CLEARED. Closing
+       the panel does not disarm — the ask was "opened at least once", and a
+       toggle that also took the keys away would make the panel a thing you had
+       to leave open to use the keys it documents. */
+    if (!this._debugArmed && code !== 'Backquote') return;
+
     /* --- THE DIGITS RUN IN THE ORDER AN AFTERNOON DOES ---
        Asked for as: "let's organize the Debug Menu items so they are in
        chronological order with chronological numbers to trigger them in order
@@ -4796,7 +4944,6 @@ class Game {
   _playScene() {
     if (this._sceneActive()) { this.toast('[debug] a scene is already running', 0); return; }
     const pick = this._scenes[this._sceneIx ?? this._scenes.length - 1];
-    const B = this._worldBounds();
     switch (pick.id) {
       case 'intro':
         // `play()` already clears `done` and refuses if it is running.
@@ -4816,12 +4963,50 @@ class Game {
         this.shrineScene.start(L, this.players[0]);
         break;
       }
-      case 'found':
-      case 'summon':
-        this.summonScene.played[pick.id] = false;
-        this.summonScene.start(pick.id, this.ryu?.position ?? B.centre,
-          this.ryu ? RYU_SIZE : 30);
+      /* --- THE TWO DRAGON SCENES, WHICH THE VIEWER USED TO GET WRONG BOTH WAYS
+         Reported: "The Ryuuseki cutscenes seem to be broken in the Debug viewer
+         as, Ryuuseki does not seem to appear when he should and the camera is
+         under the ground in the island, instead of by the Torii above the
+         ground and showing Ryuuseki."
+
+         BOTH HALVES CAME FROM ONE LINE. The two cases shared a body that aimed
+         at `this.ryu?.position ?? B.centre` — and in a debug session there is
+         almost never a dragon, so the fallback was `_worldBounds().centre`:
+         the middle of the whole archipelago, which is open water between the
+         islands and, with a y averaged over the bounding box, BELOW the
+         ground. A preview whose subject is a landmark must aim at the landmark.
+
+         SO THEY ARE TWO CASES NOW, because they are two different shots — and
+         that is the honest split rather than a tidy-up: `found` is the torii
+         with NOTHING above it (see `_onAllBalls`), and `summon` is the dragon,
+         who has to exist before there is anything to point at.
+
+         AND THE `summon` PREVIEW REALLY SUMMONS HIM. Same argument as the
+         finale preview unlocking the endgame two cases down: the scene is the
+         moment he arrives, so a preview that left the world without him would
+         be previewing a thing that cannot happen. It toasts, because a debug
+         key that changes the world has to say so. */
+      case 'found': {
+        this.summonScene.played.found = false;
+        const at = this._toriiSpot();
+        this.summonScene.start('found', new THREE.Vector3(at.x, at.y, at.z));
         break;
+      }
+      case 'summon': {
+        this.summonScene.played.summon = false;
+        const had = !!this.ryu;
+        if (!this._spawnRyuuseki()) {
+          this.toast('[debug] no dragon art loaded — nothing to show', 0);
+          return;
+        }
+        if (!had) this.toast('[debug] Ryuuseki summoned at the torii', 0);
+        /* `quad * 0.85`, THE SAME FRAMING THE GAME USES — see
+           `_checkSummonScene`, which explains why a worm is not framed off its
+           height. It said `RYU_SIZE` here, which is a different number, so the
+           preview was never the shot. */
+        this.summonScene.start('summon', this.ryu.position.clone(), this.ryu.quad * 0.85);
+        break;
+      }
       case 'finale':
         /* THE ENDING UNLOCKS THE ENDGAME, WHOEVER STARTED IT. Previewing it
            used to play the words over a world where none of it had happened —
@@ -5268,6 +5453,10 @@ class Game {
    *  panel reads the same on a phone, where the letter is decoration. */
   _toggleDebugPanel() {
     this._debugOpen = !this._debugOpen;
+    /* AND OPENING IT IS WHAT ARMS EVERY OTHER DEBUG KEY — see `_debugKey`,
+       which refuses them all until this has happened once. Set on the way in
+       and never cleared: "opened at least once" is the whole of the rule. */
+    if (this._debugOpen) this._debugArmed = true;
     this._refreshDebugPanel();
   }
 
@@ -5575,12 +5764,21 @@ class Game {
        buff is a statement about how far in front of her the arc goes, and
        letting it grow the vertical window as well would hand the one clan
        that out-reaches you the ability to reach up as well as out. */
-    const reaches = (at, pad = 0, padUp = 0) => {
+    /* `ceiling` IS HOW FAR THE ATTACKER MAY BE *ABOVE* `at` AND STILL CONNECT,
+       and it exists for exactly one situation: a kitten sitting on a panda.
+       The two of them are one column otherwise — she is physically at the
+       animal's feet, inside a hitbox padded wider and taller than she is — so
+       no swing could ever find her without also finding it, and the blow that
+       knocks a rider off is by definition the one that missed the animal. See
+       `PANDA.saddle`, which is where the column is cut. Infinity everywhere
+       else, so every other body keeps the symmetric window it had. */
+    const reaches = (at, pad = 0, padUp = 0, ceiling = Infinity) => {
       const dx = at.x - attacker.position.x;
       const dz = at.z - attacker.position.z;
       const dy = at.y - attacker.position.y;
       const dist = Math.hypot(dx, dz);
       if (dist > range + pad || Math.abs(dy) > COMBAT.strikeHeight + padUp) return null;
+      if (-dy > ceiling) return null;
       // Same forward-arc test the props get, widened for the dash so a charge
       // that visibly connects is not refused on a half-degree of facing.
       const dot = (dx * dir.x + dz * dir.y) / (dist || 1);
@@ -5619,7 +5817,30 @@ class Game {
          with two sisters on a side the first accident becomes an argument about
          whether it was an accident. Free-for-all and duel are unaffected:
          nobody shares a side in either. */
-      const found = doneHer ? null : reaches(target.position);
+      /* --- WHERE SHE ACTUALLY IS TO A BLADE ------------------------------
+         ON A PANDA SHE IS UP ON IT, and that is the whole of the rider fix.
+         Riding is ground movement, so `Panda.seatHeight` LIFTS THE DRAWING
+         ONLY — her entity stays on the ground where gravity, slope snapping
+         and collision expect it, and it says so at length in panda.js. This
+         gate is the one place that difference is a lie worth correcting: a
+         sister aiming at the girl she can see is aiming four units above the
+         point this used to test, and the point this used to test was buried
+         inside the animal's own hitbox. `PANDA.saddle` has the arithmetic and
+         the report it came from.
+
+         AN OBJECT AND NOT A MUTATION of `target.position`, because that vector
+         is the live one the whole game steers by; writing a seat height into
+         it for the length of a range test is the kind of borrowed mutation
+         that survives until something reads it one frame later. */
+      const riding = !!target.panda && target.pandaMount === target.panda;
+      const at = riding
+        ? {
+          x: target.position.x,
+          y: target.position.y + target.panda.seatHeight,
+          z: target.position.z,
+        }
+        : target.position;
+      const found = doneHer ? null : reaches(at);
       /* HER PANDA IS A SECOND BODY IN THE RING, and `fighter` is the whole of
          the question of whether it may be hit: grown, standing, and not
          already knocked down. A cub is never a target — it is the size of a
@@ -5629,8 +5850,14 @@ class Game {
          A KNOCKED-OUT OWNER'S PANDA IS SKIPPED with her, by the `target.ko`
          line above. Her round is finished; there is nothing to win by hitting
          an animal belonging to somebody already flat on her back. */
+      /* ...AND THE ANIMAL STOPS AT ITS OWN SADDLE WHILE SOMEBODY IS ON IT.
+         Only while ridden: an animal by itself is one body and keeps the
+         generous column it always had, or a jump-slash that visibly lands on a
+         panda would start missing it for the sake of a rider who is not
+         there. */
       const beast = (target.panda?.fighter && !doneBeast)
-        ? reaches(target.panda.position, target.panda.hitRadius, target.panda.hitUp)
+        ? reaches(target.panda.position, target.panda.hitRadius, target.panda.hitUp,
+          riding ? target.panda.saddleLine : Infinity)
         : null;
       if (!found && !beast) continue;
       const { dx, dz, dist } = found ?? beast;
@@ -5730,8 +5957,14 @@ class Game {
 
          Which one it is has to be decided from `found` and `beast` BEFORE
          anything is spent, because knocking the panda's bar out puts her on
-         the ground and would otherwise change the answer half way through. */
-      const onIt = !!target.panda && target.pandaMount === target.panda;
+         the ground and would otherwise change the answer half way through.
+
+         AND ALL THREE ARE REACHABLE NOW. The third was not: the rider's body
+         sat inside the animal's, so `found` without `beast` could not happen
+         and "her only" was unreachable prose. `riding`, above, is the same
+         test this line used to make for itself — it is asked once, up where
+         the two hitboxes are built, because those are what it decides. */
+      const onIt = riding;
       const both = onIt && !!found && !!beast;
 
       if (beast) {
@@ -5932,37 +6165,93 @@ class Game {
       : `★ ${this.ballsHeld} / ${BALL_COUNT}`;
   }
 
-  /** The seventh star: Patchfur speaks, and the dragon appears over the town. */
-  _onAllBalls() {
-    const torii = { x: 0, z: -46 };
-    const g = this.world.heightAt(torii.x, torii.z);
-    const y = (g ? g.y : 6) + HOVER;
-    if (this.ryuArt) {
-      this.ryu = new Ryuuseki(this.ryuArt, torii.x, y, torii.z);
-      this.scene.add(this.ryu.group);
-    }
-    this._updateBallHud();
-    this.sfx('ryuroar');
-    const focus = new THREE.Vector3(torii.x, g ? g.y : 6, torii.z);
-    /* The scene is a bonus, not the mechanism. If the voices never loaded the
-       dragon is still there and still rideable — a missing mp3 must not be the
-       difference between a summoned dragon and none. */
-    this.summonScene.start('found', focus);
+  /**
+   * WHERE THE GREAT TORII IS, in one place.
+   *
+   * It was a literal `{ x: 0, z: -46 }` inside `_onAllBalls`, which was fine
+   * while exactly one thing needed it. Three do now — the seventh star's
+   * camera, the walk-up that summons him, and the debug scene viewer — and two
+   * copies of a landmark's coordinates is how a preview ends up pointing at a
+   * different place from the game.
+   */
+  _toriiSpot() {
+    const x = 0;
+    const z = -46;
+    const g = this.world.heightAt(x, z);
+    const y = g ? g.y : 6;
+    return { x, y, z, hover: y + HOVER };
   }
 
-  /** Walking up to him the first time. The sky is already on its way down. */
+  /**
+   * Build the dragon and put him at the torii.
+   *
+   * ONE PLACE, because he is now summoned from two — the walk-up in a real
+   * game, and the debug viewer previewing either of his scenes. He cannot be
+   * respawned by the game once he exists (there is no second seventh star), so
+   * this is also the function a LOAD comes through.
+   */
+  _spawnRyuuseki() {
+    if (this.ryu || !this.ryuArt) return this.ryu;
+    const at = this._toriiSpot();
+    this.ryu = new Ryuuseki(this.ryuArt, at.x, at.hover, at.z);
+    this.scene.add(this.ryu.group);
+    this._updateBallHud();
+    return this.ryu;
+  }
+
+  /**
+   * The seventh star: Patchfur speaks. THE DRAGON IS NOT HERE YET.
+   *
+   * HE USED TO APPEAR ON THIS FRAME, and it made the scene contradict its own
+   * words. Reported: "When All Seven Stars cutscene happens, Ryuuseki should
+   * not appear, he shouldn't appear until the Ryuuseki Arrives cutscene." The
+   * lines are Patchfur saying "Take them to the great torii, both of you. And
+   * when the sky goes dark, do not run" — over a shot of the torii with a
+   * forty-metre dragon already hanging above it, which answers the errand
+   * before she has finished setting it.
+   *
+   * THE ROAR STAYS AND IS NOW DOING SOMETHING. With nothing on screen it is a
+   * thing heard from somewhere else, which is the half of the sentence about
+   * the sky going dark; it used to be the noise the dragon made arriving, in
+   * front of the dragon.
+   */
+  _onAllBalls() {
+    const at = this._toriiSpot();
+    this._updateBallHud();
+    this.sfx('ryuroar');
+    /* The scene is a bonus, not the mechanism. If the voices never loaded the
+       walk-up still summons him and he is still rideable — a missing mp3 must
+       not be the difference between a summoned dragon and none. */
+    this.summonScene.start('found', new THREE.Vector3(at.x, at.y, at.z));
+  }
+
+  /**
+   * Walking up to the torii with all seven: HE ARRIVES, and then he speaks.
+   *
+   * THIS IS WHAT MAKES HIM EXIST NOW. It used to ask "has anybody come within
+   * 46 of the dragon", which could only be asked because `_onAllBalls` had
+   * already built him; the distance is measured to the TORII instead, which is
+   * the same number against the same point — he was built standing on it — so
+   * nothing about WHEN this fires has moved. Only what is on screen before it.
+   *
+   * THE SEVEN STARS ARE THE GATE. `played.found` rather than a count: it is set
+   * by the scene the seventh star starts, so it cannot be true before the
+   * errand has been given, and it survives a load (the save carries `scenes`).
+   */
   _checkSummonScene() {
-    if (!this.ryu || this.summonScene.played.summon) return;
+    if (this.summonScene.played.summon || !this.summonScene.played.found) return;
+    if (!this.ryuArt) return;
+    const at = this._toriiSpot();
     for (const p of this.players) {
-      if (this.ryu.position.distanceTo(p.position) < 46) {
-        /* Framed off his own quad — see SummonScene.start. 0.85 rather than
-           the obvious 0.5, because he is a WORM: the drawn creature is only
-           about a third of the cell tall but nearly all of it wide, so a
-           radius taken from his height puts the camera close enough to crop
-           the head off, and the head is the whole shot. */
-        this.summonScene.start('summon', this.ryu.position.clone(), this.ryu.quad * 0.85);
-        return;
-      }
+      if (Math.hypot(p.position.x - at.x, p.position.z - at.z) >= 46) continue;
+      if (!this._spawnRyuuseki()) return;
+      /* Framed off his own quad — see SummonScene.start. 0.85 rather than
+         the obvious 0.5, because he is a WORM: the drawn creature is only
+         about a third of the cell tall but nearly all of it wide, so a
+         radius taken from his height puts the camera close enough to crop
+         the head off, and the head is the whole shot. */
+      this.summonScene.start('summon', this.ryu.position.clone(), this.ryu.quad * 0.85);
+      return;
     }
   }
 
@@ -6473,11 +6762,140 @@ class Game {
    *   at the moment; it stays because the two callers are two DIFFERENT ways
    *   of stopping being played and the next one may not be like these.
    */
+  /**
+   * Take a kitten out of the scene — her, and everything orbiting her.
+   *
+   * ONE FUNCTION, BECAUSE THERE ARE THREE WAYS TO STOP BEING PLAYED and they
+   * each used to carry their own copy of the same four lines: dropping out,
+   * being swapped for another cat in the character picker, and a restart. The
+   * copies had already drifted once — `_leavePlayer` says so at length, about
+   * a kitten's worn shells staying in the town after she left — and the second
+   * time it drifted it was the picker, reported as orbs "not being deleted
+   * while toggling the player and just left hanging in the air".
+   *
+   * AND THE ORBS GO BY THEIR PARENT, NOT BY THEIR LISTS. `Player.orbRoot` is
+   * the bag all three kinds hang in, so this cannot miss one — not the plain
+   * Kotodama, not the Powerup constellation, not the gold quest tokens, and
+   * not whatever is added next. That is the difference between a fix and a
+   * fourth copy of the same four lines.
+   *
+   * IT DOES NOT REMEMBER HER AND IT DOES NOT SETTLE ANYTHING. Callers do that
+   * first, in their own order, because what a leaver is owed is not the same
+   * question as what is drawn — see `_rememberPlayer` and `feats.settleOnLeave`.
+   */
+  _undressPlayer(p) {
+    if (!p) return;
+    this.scene.remove(p.group);
+    if (p.orbRoot) this.scene.remove(p.orbRoot);
+  }
+
   _rememberPlayer(p, over = {}) {
     if (!p?.style?.name) return false;
     const row = { ...castRow(p, false), ...over };
     if (!meaningful(row)) return false;
     this.sessionCast.set(p.style.name, row);
+    /* AND HER ANIMAL IS PARKED, NOT DROPPED. See `_parkedPandas`: the row above
+       is data and a panda is a live object with meshes in the scene, so the two
+       halves of "she is remembered" live in two places and both have to happen
+       here — this is the one function both ways of stopping being played go
+       through. `_recallPanda` is the other end. */
+    if (p.panda) {
+      p.panda.rider = null;
+      p.pandaMount = null;
+      this._parkedPandas.set(p.style.name, p.panda);
+    }
+    return true;
+  }
+
+  /**
+   * Put her panda back: adopt the one that was waiting, or build the one the
+   * save described.
+   *
+   * TWO CALLERS AND THEY ARE GENUINELY DIFFERENT. A REJOIN (or a swap back in
+   * the character picker) finds the real animal parked in `_parkedPandas` and
+   * simply hands it over — same meshes, same tier, standing where it was. A
+   * LOAD has nothing parked, because `restore` runs `restart()` first and that
+   * takes every panda in the world out of the scene, so there the save's own
+   * record is all there is.
+   *
+   * WHY THE SAVE IS BELIEVED ABOUT THE TIER. `_updatePanda` cannot re-derive
+   * it: growth is charged from `pandaFedFrom`, which a grown panda has already
+   * spent, so replaying the rule over a restored tally yields a CUB every time.
+   * That is the bug this whole function exists for — see `castRow`'s `panda`.
+   *
+   * AND IT DEGRADES RATHER THAN VANISHING. A v1 row, or any row written before
+   * `panda` existed, has `saved === null` — and then the old rule runs after
+   * all (`_updatePanda`), which gives her a cub rather than nothing. A cub is
+   * wrong; no animal at all, in a world where bamboo does not regrow, is
+   * unrecoverable.
+   *
+   * @param saved the row's `panda` record, or null
+   */
+  _recallPanda(player, saved = null) {
+    if (!player) return false;
+
+    const parked = this._parkedPandas.get(player.style?.name);
+    if (parked) {
+      this._parkedPandas.delete(player.style.name);
+      /* THE ANIMAL FOLLOWS THE KITTEN AND NOT THE SEAT. `owner` is read every
+         frame for `follows`, for the badge and for the lick, and it is pointing
+         at a `Player` that was spliced out of the game — leaving it would be an
+         animal trotting after somebody who is not there. */
+      parked.owner = player;
+      parked.rider = null;
+      player.panda = parked;
+      player.pandaMount = null;
+    }
+
+    if (!player.raisedPanda) {
+      /* SHE HAS NO PANDA IN THIS WORLD. Only reachable when a row says so —
+         a restart clears `raisedPanda` and the row is what puts it back — and
+         it has to take the meshes with it, or a load into an un-sworn kitten
+         leaves an animal standing in the town with nobody it belongs to. */
+      if (player.panda) {
+        this.scene.remove(player.panda.group);
+        player.panda = null;
+      }
+      this._updateClanBadge(player);
+      return false;
+    }
+
+    if (!player.panda) {
+      if (!saved) {
+        // No record of the animal: the old rule, which gives her a cub.
+        this._updatePanda(player);
+        return !!player.panda;
+      }
+      const tier = Math.max(0, Math.min(PANDA_TIERS.length - 1,
+        Math.floor(saved.tier ?? 0)));
+      const panda = new Panda(this.pandaArt, { owner: player, tier });
+      this.scene.add(panda.group);
+      player.panda = panda;
+    } else if (saved && Number.isFinite(saved.tier)) {
+      player.panda.setTier(Math.max(0, Math.min(PANDA_TIERS.length - 1,
+        Math.floor(saved.tier))));
+    }
+
+    /* KNOCKED DOWN IS A FACT AND NOT A SIZE. A collapsed panda is a cub that
+       must STAY one until the shrine, and `_updatePanda` only knows that
+       because of this flag — without it the next cane she cuts would find the
+       debt long paid and silently grow the animal back, which is the one thing
+       "stays baby panda for the rest of the game" was written to stop. */
+    if (saved) player.panda.knockedDown = !!saved.down;
+
+    /* WHERE IT WAS STANDING, ON GROUND THAT IS ACTUALLY THERE. The recorded
+       point is trusted for x/z and the height is re-asked of the world, which
+       is the same trade the props make: a save describes what the PLAYERS did,
+       never the terrain, and a y from a build with different ground would bury
+       the animal or hang it in the air. Degrades: no `at`, and it simply stands
+       where it was built, beside her. */
+    const at = saved?.at;
+    if (Array.isArray(at) && at.every(Number.isFinite)) {
+      const g = this.world.heightAt(at[0], at[2]);
+      player.panda.position.set(at[0], g ? g.y : at[1], at[2]);
+      player.panda.group.position.copy(player.panda.position);
+    }
+    this._updateClanBadge(player);
     return true;
   }
 
@@ -6579,10 +6997,14 @@ class Game {
     if (!rows.length) {
       const p = document.createElement('p');
       p.className = 'lb-empty';
+      /* THE FIVE MINUTES IS THE WHOLE SENTENCE NOW. It used to end "and SAVE &
+         QUIT GAME saves one whenever you leave", which stopped being true the
+         day that button started refusing short games — and this is the screen
+         somebody reads when they are wondering where their save went. */
       p.textContent = 'No saved games yet. The game starts keeping one by '
         + `itself every ${AUTOSAVE_EVERY} seconds, once you have been playing `
         + `for ${Math.round(AUTOSAVE_AFTER / 60)} minutes — and SAVE & QUIT GAME `
-        + 'saves one whenever you leave.';
+        + 'saves one when you leave, once you are past those same minutes.';
       el.appendChild(p);
       if (note) note.textContent = '';
       return;
@@ -6639,7 +7061,12 @@ class Game {
         /* KEPT SAYS SO ON THE ROW — see `MAX_KEPT`. A list that deletes some
            games and not others has to show which are which, or it reads as
            random. */
-        + (r.kept ? ' · <b class="sv-keep">★ kept — you saved it</b>' : '')
+        /* THE STAR AND THE WORDS ARE TWO ELEMENTS, because they are two
+           colours now — gold star, black-on-gold words. See `.sv-keep`. */
+        + (r.kept
+          ? ' · <span class="sv-star">★</span>'
+            + '<b class="sv-keep">kept — you saved it</b>'
+          : '')
         + (r.stale ? ' · <b>from a different version of the game</b>' : '')
         + '</span>';
       b.addEventListener('click', () => this._askLoadSave(r));
@@ -6684,11 +7111,21 @@ class Game {
     }
     /* SAYS WHETHER THE GAME BEING LEFT IS SAVED FIRST — see `_loadSave`. */
     const savesFirst = this._saveBeforeLoad(row.session);
+    /* AND FROM THE TITLE SCREEN THERE IS NO GAME TO END. The two sentences
+       above both open "the game you are playing now", which is the one thing
+       that is not true on the route this button arrived by — a dialog that
+       describes the wrong outcome is worse than one that describes none (the
+       same rule the DROP OUT dialog states). It is still a question, and the
+       cursor still opens on no: a girl who meant PLAY and hit LOAD is one
+       press from being back where she was. */
+    const playing = this.state === 'play';
     this.confirm.ask({
       title: 'LOAD THIS SAVED GAME?',
-      body: (savesFirst
-        ? 'The game you are playing now is saved first, and then it ends — '
-        : 'The game you are playing now ends — ')
+      body: (playing
+        ? (savesFirst
+          ? 'The game you are playing now is saved first, and then it ends — '
+          : 'The game you are playing now ends — ')
+        : 'The game starts from this save instead of from the beginning — ')
         + 'every prop, orb, clan and star goes back to how it was in the save. '
         + 'The record board is kept.',
       no: 'NO, KEEP PLAYING',
@@ -6741,6 +7178,23 @@ class Game {
       document.getElementById(pid)?.classList.add('hidden');
     }
     this.setPaused(false);
+    /* LOADED FROM THE TITLE SCREEN, WHICH IS A SECOND WAY IN. The pause menu's
+       route arrives here with the world already live and this does nothing; the
+       title's route arrives with the HUD hidden, no audio context and
+       `state === 'title'`, and without this the save would load perfectly into
+       a game nobody could see. `_enterPlay` and NOT `startPlay`: a loaded
+       afternoon must not replay the intro over the top of itself, and must not
+       stop to ask about the trailer.
+
+       AND THE STORY IS MARKED SPENT WITH IT. The intro is "once per session"
+       and this session is one somebody was already halfway through — the save
+       itself carries which scenes have played (`snap.scenes`), and the opening
+       narration is not one a girl resuming her afternoon should sit through. */
+    if (this.state !== 'play') {
+      this.introPlayed = true;
+      this._enterPlay();
+      this.audio.startMusic(this._wantedTrack(0) ?? 'play');
+    }
     /* HOW MANY KITTENS DID NOT GET A SEAT, SAID OUT LOUD — and said as
        WAITING rather than as lost, because that is now what it is. Every
        unseated row sits in the session's cast, so a third controller or a swap
@@ -7994,8 +8448,12 @@ class Game {
     if (this.ryu) {
       if (this.ryu.pilot) this.ryu.carry(this.ryu.pilot);
       this.ryu.update(dt, this.world);
-      this._checkSummonScene();
     }
+    /* OUTSIDE THE `if`, BECAUSE IT IS NOW WHAT MAKES HIM EXIST. It used to sit
+       inside — a dragon already standing at the torii was the thing that asked
+       "has anybody walked up to him yet" — and he does not arrive until this
+       fires any more. See `_checkSummonScene`. */
+    this._checkSummonScene();
     this.summonScene.updateSky(dt);
     this._updateSeek(dt);
     /* ...AND THE MINUTE SHE WAITS BEFORE MENTIONING ICEWHISKER. Right after
@@ -8436,34 +8894,37 @@ class Game {
     this._rememberPlayer(p);
     if (p.mount) { p.mount.returnHome?.(); p.mount = null; }
     if (p.rideAlong) p.rideAlong = null;
-    if (p.panda) p.panda.follows = false;
+    /* HER PANDA IS NOT TOLD ANYTHING, and that line used to THROW. It read
+       `p.panda.follows = false`, and `follows` is a getter with no setter on a
+       class in a module — which is strict mode — so assigning to it raises a
+       TypeError and took the whole of DROP OUT with it for any kitten who had
+       ever raised a panda. Found while adding the panda to the save file.
+
+       AND THE LINE WAS NEVER NEEDED. The animal only moves because something
+       walks `this.players` and ticks it, and she is about to be spliced out of
+       that list two lines down — so "her panda waits" is what happens by
+       itself. It keeps its meshes, it keeps its tier, and `_recallPlayer` puts
+       her back on it when somebody picks her up again. */
+    if (p.pandaMount) { p.pandaMount.rider = null; p.pandaMount = null; }
     if (this.ryu?.pilot === p) this.ryu.pilot = null;
     if (this.ryu?.gunner === p) this.ryu.gunner = null;
-    /* TWO CONSTELLATIONS ORBIT A KITTEN AND ONLY ONE WAS BEING TAKEN DOWN.
-       `orbs` is the PLAIN Kotodama she has collected; `wornOrbs` is the power
-       orbs she is wearing — the ones the line above has just thrown on the
-       floor. This removed the first and not the second, so the moment anybody
-       with a power orb dropped out, her worn shells stayed in the scene for
-       the rest of the game, frozen at wherever they last were: the thing that
-       moves them walks `this.players`, and she is about to be spliced out of
-       that. Up to eight icosahedrons parked in the town square, on top of the
-       pickups they had just become. Reported as "the rotating visual orbs stay
-       on screen and are buggy".
-
-       THE `?? []` IS WHY NOBODY SAW IT. Both fields are optional on purpose —
-       a kitten who has never picked anything up has neither — so a name that
-       is simply absent reads exactly like a kitten with nothing to remove.
+    /* HER, AND EVERYTHING ORBITING HER, IN ONE CALL — `_undressPlayer`.
+       This used to be three removals written out here, and the comment on them
+       was a paragraph about the second one having been missing: "the rotating
+       visual orbs stay on screen and are buggy", a kitten's worn shells parked
+       in the town square for the rest of the game. Then the gold quest tokens
+       became a third list, and the character picker became a third caller, and
+       the same bug came back somewhere else. Every orb she owns hangs off
+       `Player.orbRoot` now and one remove takes the lot.
 
        EMPTIED AS WELL AS REMOVED. `p` outlives this function; it is captured
        by the toast below and by anything else still holding her. A list of
        orbs that are no longer in any scene is a trap for whoever adds the next
        thing that walks one. */
-    for (const o of p.orbs ?? []) this.scene.remove(o.group);
-    for (const o of p.wornOrbs ?? []) this.scene.remove(o.group);
     this.feats?.dropTokens(p);
     p.orbs = [];
     p.wornOrbs = [];
-    this.scene.remove(p.group);
+    this._undressPlayer(p);
 
     this.players.splice(index, 1);
     this.roster.splice(index, 1);
@@ -8542,6 +9003,19 @@ class Game {
   _buildLeaveButtons() {
     const wrap = document.getElementById('leave-buttons');
     const note = document.getElementById('join-note');
+    /* THE QUIT ROW SAYS WHICH OF THE TWO THINGS IT DOES. Under the five
+       minutes nothing is written down (see `saveByHand`), and a row that still
+       read SAVE & QUIT GAME would be promising a save that is not coming —
+       the sixth non-negotiable, on the one button whose whole name is a
+       promise. Retitled here rather than in the markup because it depends on a
+       clock: `setPaused(true)` rebuilds these rows on the way in, so the words
+       are right for the afternoon as it is at the moment she looks at them. */
+    const quit = document.querySelector('[data-action="quit"]');
+    if (quit) {
+      quit.textContent = this.playT >= AUTOSAVE_AFTER
+        ? 'SAVE & QUIT GAME'
+        : 'QUIT GAME — TOO SHORT TO SAVE';
+    }
     if (!wrap) return;
     wrap.textContent = '';
     if (this.partySize > 1) {
@@ -9588,12 +10062,15 @@ class Game {
    * Eight icosahedrons is nothing; a wrong-looking constellation is not.
    */
   syncOrbMeshes(player) {
-    for (const o of player.wornOrbs ?? []) this.scene.remove(o.group);
+    for (const o of player.wornOrbs ?? []) player.orbRoot.remove(o.group);
     player.wornOrbs = buildWornOrbs(player.powerOrbs);
     for (const o of player.wornOrbs) {
       // Every worn orb rains, and none of them print numbers — _applyMath.
       o.setMathVisible(this.mathVisible);
-      this.scene.add(o.group);
+      /* HER BAG, NOT THE SCENE — see `Player.orbRoot`. Every orb she owns has
+         one parent, so one remove takes the lot and no teardown can forget a
+         list. */
+      player.orbRoot.add(o.group);
     }
   }
 
@@ -9667,7 +10144,7 @@ class Game {
        only place the two disagreed, so the second orb she picked up came up
        blank and then lit itself the next time anybody pressed M. */
     orb.setMathVisible(this.mathVisible);
-    this.scene.add(orb.group);
+    player.orbRoot.add(orb.group);      // her bag — see `Player.orbRoot`
     player.orbs.push(orb);
     if (quiet) return;
     this.sfx('orb');

@@ -604,10 +604,13 @@ export class Feats {
    * the worn Powerup Kotodama: a second copy of the lesson too small to read
    * teaches nothing and hides the first.
    */
+  /* THE TOKENS GO IN HER BAG LIKE EVERY OTHER ORB — `Player.orbRoot`, not the
+     scene. They are the third list of things orbiting a kitten, and being the
+     third is how one of them gets forgotten by a teardown; there is one parent
+     now and `Game._undressPlayer` is the one remove. */
   syncTokens(p) {
-    if (!p) return;
-    const scene = this.game.scene;
-    for (const o of p.featOrbs ?? []) scene?.remove(o.group);
+    if (!p?.orbRoot) return;
+    for (const o of p.featOrbs ?? []) p.orbRoot.remove(o.group);
     const n = this.tokenCount(p);
     p.featOrbs = Array.from({ length: n }, (_, k) => {
       const o = new Orb({
@@ -617,13 +620,13 @@ export class Feats {
       });
       o.setMathVisible(false);
       o.orbNode.scale.setScalar(0.45);
-      scene?.add(o.group);
+      p.orbRoot.add(o.group);
       return o;
     });
   }
 
   dropTokens(p) {
-    for (const o of p?.featOrbs ?? []) this.game.scene?.remove(o.group);
+    for (const o of p?.featOrbs ?? []) p.orbRoot?.remove(o.group);
     if (p) p.featOrbs = [];
   }
 

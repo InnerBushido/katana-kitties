@@ -3285,8 +3285,31 @@ body.touch-ui .ne-ask-q { font-size: 16px; }
 .sv-what { font-size: 12px; opacity: 0.85; letter-spacing: 0; }
 .sv-when { font-size: 11px; opacity: 0.55; letter-spacing: 0; }
 /* A KEPT GAME SAYS SO, in gold, on the one line of the row that is otherwise
-   dim — it is the fact that explains why this row survives and others go. */
-.sv-keep { color: #ffd24a; font-weight: 700; opacity: 1; }
+   dim — it is the fact that explains why this row survives and others go.
+
+   THE STAR IS GOLD AND THE WORDS ARE NOT, and that split is the whole of the
+   fix. Reported from play: "the text that says Kept is hard to read because it
+   is yellow, maybe we should keep the star gold but make the text black". Gold
+   ink on the dark panel is the lowest-contrast thing on the row — it is the
+   line that is already dimmed to 0.85 — and black ink on that same panel would
+   be worse, not better, so the words get the gold as a CHIP and the ink goes
+   near-black on top of it. The star stays ink-on-dark, outside the chip, which
+   is the half of the sentence that asked for it. Measured rather than guessed:
+   #12161c on #ffd24a is about 13:1, against 3.2:1 for the gold text it
+   replaces. */
+.sv-star {
+  color: #ffd24a;
+  text-shadow: 0 0 6px rgba(255, 210, 74, 0.7);
+  margin-right: 4px;
+}
+.sv-keep {
+  color: #12161c;
+  background: #ffd24a;
+  font-weight: 700;
+  opacity: 1;
+  padding: 1px 6px;
+  border-radius: 6px;
+}
 .sv-kept .sv-when { opacity: 0.85; }
 /* A SAVE THAT CANNOT BE LOADED IS DIMMED AND STILL THERE. It keeps its place
    in the list and the cursor still reaches it, because a row that silently
@@ -4632,7 +4655,16 @@ body:not(.touch-ui) #debug-corner { display: none; }
    stack's `--menu-gap` owns the spacing now and nothing here may reintroduce a
    margin — the whole point is that the space above and below this row is the
    same space. */
-.menu-row-2 { display: block; }
+/* A GRID AND NOT A BLOCK, because this row holds TWO buttons now — LOAD A
+   SAVED GAME above the trailer, when there is a game to load. One column, so
+   each is still the full width of the stack and nothing about the trailer's
+   own look changes; `gap` is the SAME `--menu-gap` the rows above use, which is
+   the rule that paragraph is about. A `display: block` row would butt the two
+   buttons together with their drop shadows overlapping, which is exactly the
+   bug the comment above records being fixed once already. And a hidden LOAD
+   button is `display: none`, so its gap collapses with it and a machine with no
+   saves gets back the row it always had, to the pixel. */
+.menu-row-2 { display: grid; gap: var(--menu-gap); }
 .menu-row-2 > .menu-btn { width: 100%; }
 
 .menu-btn.small {

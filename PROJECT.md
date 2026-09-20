@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 4027 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 4124 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 388 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -227,6 +227,13 @@ shortcuts**, and that is Valve's limit, not the game's.
 
 Press **`` ` ``** to open the panel; it lists everything and **every row is
 tappable**, so the whole debug set works on a phone.
+
+**Nothing in this table works until that panel has been opened once.**
+`` ` `` is the only key that answers on a cold tab; every other row is asleep
+until opening the panel arms them, and once armed they stay armed for the tab.
+It is there so nobody turns the debug set on by accident — `2` unlocks the
+endgame and `1` cannot be undone, and both are one keystroke away from a child
+leaning on a keyboard. On a phone the five-tap corner arms them the same way.
 
 | key | does |
 | --- | --- |
@@ -583,7 +590,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 4027
+the check that would have caught it.** That is why `world-check` is 4124
 assertions — **and why a check that is sometimes red is treated as a bug in the
 check.** Two of them were coin flips: an aggregate that hid the one kitten it
 was asking about, and a distinctness test rounded until it became a birthday
@@ -675,9 +682,14 @@ rather than the first.
 **The game now saves itself, but only into this browser.**
 `systems/savegame.js` writes the afternoon down every 30 seconds once a run is
 5 minutes old and loads one from the pause menu (**PLAY SETTINGS → LOAD A SAVED
-GAME**, which saves the game being left first). **SAVE & QUIT GAME** is the save
-made on purpose: past five minutes it marks the row **kept**, and `capFor` /
-`trimSaves` go round kept rows — five rows, eight once more than four are kept,
+GAME**, which saves the game being left first) **or from the title screen** —
+**LOAD A SAVED GAME** sits on the second row there beside the trailer, and is
+*hidden* until this browser actually holds a save, so a fresh install shows the
+three buttons it always showed. **SAVE & QUIT GAME** is the save made on
+purpose: **under five minutes it refuses and says so** — the autosave will not
+write a row that short either, and a button that did it anyway was a second door
+into the list with the opposite rule on it — and past five minutes it marks the
+row **kept**, and `capFor` / `trimSaves` go round kept rows — five rows, eight once more than four are kept,
 always two spare beside them, ten at most; past eight kept, the least-played
 kept row goes, never the one saved last. **One
 row per play session** — a session keeps overwriting its own row however long it

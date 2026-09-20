@@ -702,6 +702,36 @@ export class Player {
 
     this.group = new THREE.Group();
 
+    /**
+     * EVERYTHING THAT ORBITS HER, IN ONE BAG.
+     *
+     * THREE LISTS OF ORBS AND FOUR PLACES THAT TAKE THEM DOWN was the shape
+     * this replaces, and it is the shape a bug lives in: `orbs` (the plain
+     * Kotodama), `wornOrbs` (the Powerup constellation) and `featOrbs` (the
+     * gold quest tokens) were each added straight to the scene, and every
+     * route by which a kitten stops being played — dropping out, being swapped
+     * for another cat in the picker, a restart, a load — had to remember all
+     * three. Reported from play as orbs "not being deleted while toggling the
+     * player and just left hanging in the air", which is exactly what one
+     * missed list looks like: a constellation frozen at the last place its
+     * owner stood, because the thing that moves it walks `game.players` and
+     * she is no longer in it.
+     *
+     * SO OWNERSHIP IS A PARENT NOW, NOT A LIST. One `remove` of this takes
+     * every orb she has with it, whatever list it was in and whoever added it,
+     * and a fourth kind of orb added next year is covered by construction
+     * rather than by somebody remembering. `Game._undressPlayer` is the one
+     * remove; `world-check` pins that nothing adds an orb anywhere else.
+     *
+     * IT IS NOT `this.group`. The orbs are drawn in WORLD space — `Orb.update`
+     * writes an absolute position every frame, which is what lets the
+     * constellation lag and swing behind her rather than being welded to her
+     * feet — so this stays at the origin with an identity transform and is a
+     * bag rather than a rig. Parenting them to her sprite's group would turn
+     * every orbit into a decal.
+     */
+    this.orbRoot = new THREE.Group();
+
     /* `height` is how tall the KITTEN should be in world units. The quad has
        to be bigger than that, because the drawn art only fills part of its
        square atlas cell â€” dividing by contentScale keeps the character the
@@ -5353,6 +5383,31 @@ export class Player {
         this.warpPose.mesh.rotation.z = Math.sin(k * 34) * 0.012 * k;
         this.warpPose.mat.color.copy(mat.color);
         this.warpPose.mat.opacity = mat.opacity;
+
+        /* --- AND SHE COMES APART WHILE SHE DOES IT ---
+           "it shows a 'ghostly' version of the player, about 50% transparent
+           or more, could have them looking unstable and flickering in and
+           out, before they teleport."
+
+           A BLINK AND NOT A FADE, FOR THE THIRD TIME IN THIS FILE. This
+           material runs `alphaTest: 0.35`; every pixel under the threshold is
+           discarded outright, so "50% transparent" is not a thing this drawing
+           can be. What it can be is ABSENT, on some frames and not others.
+
+           THE OTHER HALF IS IN `systems/dodgefx.js`, AND NEITHER HALF WORKS
+           ALONE. That file stands a half-strength ghost of this same pose on
+           this same spot for the whole wind-up, so the frames she is missing
+           here are not empty: what reads is a kitten coming apart into her own
+           spirit. Without the ghost this is a sprite dropping frames; without
+           the blink the ghost is a second kitten standing inside the first.
+
+           IT TIGHTENS INTO THE COMMIT. `k` is how far through the wind-up she
+           is, so the strobe speeds up AND the gap widens — she is briefly
+           unstable at the start and barely here at the end, which is the shape
+           of somebody leaving rather than a light with a fault. */
+        const gap = 0.10 + k * 0.55;
+        const cycle = (this.dodgeT * (7 + k * 15)) % 1;
+        if (cycle < gap) this.warpPose.visible = false;
       }
     }
     if (gone) {
