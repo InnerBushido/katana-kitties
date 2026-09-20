@@ -88,8 +88,8 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 3886 checks: world, dragons, clans, sprites, tournament, consent, balance
-node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
+node tools/world-check.mjs    # 3912 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/pad-check.mjs      # 363 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
                               #   in this file AND in the published page's source
@@ -237,11 +237,20 @@ tappable**, so the whole debug set works on a phone.
 | `5` | **NUDGE it on** — the round clock to 30s, then 15s, then 5s; a scene to its next line |
 | `6` | **the endgame** — ending, arena, orbs, purses |
 | `7` | **go to the arena NOW** — skips the whole unlock, flies you out there |
+| `8` | **knock over the mischief in batches** — 50 a press up to 200, then 5 a press to the end |
 | `-` `=` `0` | scene viewer: previous · next · play this scene |
 | **`\`** | **force-spawn** — ENTER then seats a third and fourth kitten on the keyboard alone |
 | `R` `U` | step WASD · step the arrows round the kittens sharing that set — her, her sister, then **both at once** |
 | *(no key)* | **wipe the RECORD BOARD** — every league, on this device |
 | *(no key)* | **wipe the SAVED GAMES** — every saved play session, kept ones included |
+
+**`8` is coarse and then fine on purpose.** There are 216 pieces of mischief,
+the arena opens at 80% of them and the ending fires at 100%, so getting an
+afternoon to its interesting half by hand is a long walk. Fifty a press covers
+that; from 200 the step drops to five so the last stretch arrives a few at a
+time instead of all at once. It knocks props over through the same path a
+kitten's katana takes — nothing is set directly, so every gate, toast and
+counter fires exactly as it would in play.
 
 The last two rows are **panel-only and have no shortcut on purpose**: they are
 the two things in the game that survive closing the tab, and a keystroke that
@@ -544,7 +553,7 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 3886
+the check that would have caught it.** That is why `world-check` is 3912
 assertions — **and why a check that is sometimes red is treated as a bug in the
 check.** Two of them were coin flips: an aggregate that hid the one kitten it
 was asking about, and a distinctness test rounded until it became a birthday

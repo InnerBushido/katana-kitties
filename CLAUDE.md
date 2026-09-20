@@ -28,8 +28,8 @@ look. Everything else is one level down and read on demand.
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
 npm run dev -- --host         # ...and on a phone on the same wifi, at the Network: URL it prints
-node tools/world-check.mjs    # 3886 checks: world, dragons, clans, sprites, tournament, consent, balance
-node tools/pad-check.mjs      # 362 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
+node tools/world-check.mjs    # 3912 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/pad-check.mjs      # 363 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 npm run docs                  # regenerate the controls + balance tables, in PROJECT.md AND
                               #   in docs/artifact/project-page.html (the published twin)
@@ -255,10 +255,13 @@ both ask first with the count in the button, and neither is reachable from a
 keyboard because a single keystroke that deletes them is what non-negotiable 7
 is about.
 
-**Debug keys, in play:** `` ` `` opens the panel and lists them. `6` unlocks the
-whole endgame, `7`/`8`/`9` are Ryuuseki, `4` ends a live round, `2` makes Mr.
-Satan lose his temper, `5` opens the trade screen, `-`/`=`/`0` are the scene
-viewer, **`\` force-spawns** (then ENTER seats a third and fourth kitten on the
+**Debug keys, in play:** `` ` `` opens the panel and lists them, and the panel is
+the list that cannot go stale — this sentence can, and has. `6` unlocks the
+whole endgame, `7` goes straight to the arena, `3` gives every kitten all eight
+kotodama, **`8` knocks over the mischief in batches** (50 at a time to 200, then
+5s to the end, so the 80% arena unlock and the 100% ending both fire on their
+own terms), `4` ends whatever bit is live, `5` nudges it on, `2` makes Mr.
+Satan lose his temper, `-`/`=`/`0` are the scene viewer, **`\` force-spawns** (then ENTER seats a third and fourth kitten on the
 keyboard alone; `R`/`U` step WASD / the arrows round the two sharing them — her,
 her sister, then both at once — PROJECT.md §4), **`1` prints the frame cost** —
 fps, stutter, draw calls, buffer size, quality, dev-or-built, and the GPU
@@ -288,7 +291,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 3886 assertions and why almost none of them are about
+  why `world-check` is 3912 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **A check that is sometimes red is a bug in the check, not a re-run.** Two
   were found being coin flips: an aggregate over four kittens that hid the one

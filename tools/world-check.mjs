@@ -3738,11 +3738,21 @@ console.log('\n--- the shrine dais is stone you stand on ---');
     outer.climb >= outer.y && outer.climb < outer.y + 0.4,
     `climb ${outer.climb} for a rise of ${outer.y}`);
 
-  /* ...WITHOUT MAKING EVERY OTHER DECK CLIMBABLE. `step` is per platform and
-     the bridge decks must keep the tolerance they had, or you start being
-     snapped up through them from underneath. */
+  /* ...WITHOUT MAKING EVERY OTHER DECK CLIMBABLE. `step` is per platform, and
+     for a long time this said the ONLY platform allowed a longer reach was a
+     round one (the dais), because a taller step on a flat deck is a taller
+     step you can also be snapped up through from underneath.
+
+     The bridge is now the exception, and it is one because its deck answers
+     the one-way test with `yAt` — the LOCAL height under her feet — instead
+     of a single flat `y`. A kitten in the riverbed is compared against the
+     2.7 of the crown directly above her, not against the 0.52 of the ends,
+     so 0.7 of reach never reaches it. A flat deck has no such defence, which
+     is why the rule is still every-other-one. */
   ok('...and nothing else got a longer reach',
-    world.platforms.every((q) => q.step == null || q.r != null));
+    world.platforms.every((q) => q.step == null || q.r != null || q.yAt != null));
+  ok('...and the only flat-y deck exception is the bridge, which is curved',
+    world.platforms.every((q) => q.step == null || q.r != null || q.bridge === true));
 
   /* THE TWO OF THEM END UP AT THE SAME HEIGHT, which is the whole point: she
      asked for the player to be "at the same height as the clan leader and
@@ -3856,23 +3866,87 @@ console.log('\n--- flying ---');
     `landed ${miss.toFixed(1)} from the jump point, not at its perch`);
 }
 
-console.log('\n--- the bridge is climbable stairs ---');
+console.log('\n--- the bridge is run over, not walked under ---');
 {
-  const decks = world.platforms.filter((p) => p.z0 > 40 && p.z1 < 52);
-  const ys = decks.map((p) => p.y);
-  const lo = Math.min(...ys);
-  const hi = Math.max(...ys);
-  line('deck steps', decks.length);
-  line('rise across the arch', (hi - lo).toFixed(2));
-  ok('the deck is stepped, not one flat slab', decks.length >= 8 && hi - lo > 1.5);
-  // Every step reachable from the one before it (jump clears ~2.4).
-  const sorted = decks.slice().sort((a, b) => a.x0 - b.x0);
-  let worst = 0;
-  for (let i = 1; i < sorted.length; i++) {
-    worst = Math.max(worst, Math.abs(sorted[i].y - sorted[i - 1].y));
+  /* THIS SECTION USED TO ASSERT THE DECK WAS STAIRS, and it passed all the
+     way through the bug. It measured the platform list — eight or more
+     segments, a rise over 1.5, no gap between segments over 0.9 — and every
+     one of those was true of a bridge you could not get onto. 0.9 is not the
+     number that matters; `heightAt`'s step tolerance is 0.4, and the first
+     two risers of the arch are 0.65 and 0.56.
+
+     Reported from play: "make it that user can glide or automatically step
+     up/down across the bridge when running over it, rather than walking
+     through/under it." So the check is a WALK now. Nothing here looks at how
+     the deck is built; it starts a kitten on the road west of the crossing,
+     steps her across at a sprint, and asks the world where she ends up —
+     exactly the way `Player.update` does, including the ground snap that
+     carries her up whatever is under her. A deck of ten planks, one plank, a
+     curve or a staircase all pass this if she can run over it, and none of
+     them pass it if she cannot. */
+  const B = world.bridge;
+  const sp = world.bridgeSpan;
+  const half = sp.len / 2;
+  const STEP = 0.2;
+  let y = world.heightAt(B.x - half - 6, B.z, Infinity).y;
+  let onDeck = 0;
+  let top = -Infinity;
+  let worstRise = 0;
+  let missed = null;
+  let last = null;
+  let deckLow = Infinity;
+  for (let x = B.x - half - 6; x <= B.x + half + 6; x += STEP) {
+    const g = world.heightAt(x, B.z, y);
+    if (!g) { missed = x; break; }
+    /* THE GROUND SNAP, AS `Player.update` WRITES IT: standing at or below the
+       surface puts her on it. Rising is the case this is about, so the
+       tolerance for falling is not modelled — she would simply be airborne
+       for a frame, which is not a bug and never was. */
+    worstRise = Math.max(worstRise, g.y - y);
+    y = Math.max(y, g.y);
+    if (g.platform) { onDeck++; top = Math.max(top, g.y); deckLow = Math.min(deckLow, g.y); }
+    if (g.y < y - 0.001) y = g.y;
+    last = g;
   }
-  line('biggest step between segments', worst.toFixed(2));
-  ok('no step is too tall to walk up', worst < 0.9);
+  line('deck samples walked', `${onDeck} of ${Math.round((sp.len + 12) / STEP)}`);
+  line('highest point reached', top.toFixed(2));
+  ok('a kitten running at the crossing gets onto it', onDeck > 0 && missed == null,
+    missed == null ? `${onDeck} samples on the deck` : `no ground at x ${missed.toFixed(1)}`);
+  /* AND OVER THE TOP OF IT. Getting on is not enough — the old shape let her
+     onto nothing at all, but a future one could let her onto the first plank
+     and stop her at the second. */
+  ok('...and over the crown of the arch, not just onto the foot of it',
+    top >= B.y - 0.02, `${top.toFixed(2)} of ${B.y.toFixed(2)}`);
+  /* AND WITHOUT A SINGLE RISE SHE CANNOT MAKE. This is the number the old
+     check should have been measuring: `heightAt` refuses a deck more than
+     `step` above her, and her stride between frames is a fraction of this
+     sample spacing. */
+  ok('...without meeting a riser taller than a kitten can step',
+    worstRise < 0.4, `worst rise ${worstRise.toFixed(3)} over ${STEP} units`);
+  /* AND SHE GETS OFF AGAIN. Not "back to the height she started at" — the
+     island is not level under the crossing, the west approach sits 0.89
+     higher than the east one, and an earlier draft of this check failed on
+     exactly that and told us nothing. What matters is that the far end puts
+     her on the ISLAND and well below the crown, i.e. she walked down rather
+     than being left standing on the last plank. */
+  ok('...and she comes back down off it onto the road on the far side',
+    last != null && last.platform == null && last.y < top - 1.5,
+    `${last?.y.toFixed(2)} ${last?.platform ? 'still on the deck' : 'on the island'}`
+      + `, crown ${top.toFixed(2)}`);
+  /* AND THE ARCH IS STILL AN ARCH. A flat deck would pass everything above
+     and be the bug this shape replaced — "one flat platform at the base height
+     meant walking straight through the hump". */
+  ok('...over a deck that is still an arch, not a plank',
+    top - deckLow > 1.5, `${(top - deckLow).toFixed(2)} of rise across the deck`);
+
+  /* AND YOU STILL WALK UNDERNEATH IT. The one-way rule is what stops a kitten
+     in the riverbed being snapped up through the decking, and a curved deck
+     has to be tested at its own local height or the crown's 2.7 would be
+     compared against the end's 0.52. */
+  const under = world.heightAt(B.x, B.z, B.y - 4);
+  ok('...and passing underneath still ignores the deck',
+    under.platform == null && under.y < B.y - 1,
+    `${under.y.toFixed(2)} under a deck at ${B.y.toFixed(2)}`);
 }
 
 console.log('\n--- running downhill (the animation flicker) ---');
@@ -10900,21 +10974,43 @@ console.log('\n--- the three power moves ---');
           .every((_, i) => paneWiden(splitLayout(3, VW, VH, 3, 'horizontal', [2, 1, 1]),
             i, VW, VH) === 1));
 
-      /* THE COMPATIBILITY CLAIM, AND THE ONLY REASON THE EVEN-SPLIT GUARD
-         EXISTS. Two even panes side by side are just as narrow as the trio's
-         and are deliberately left alone: that is the two-player game, which
-         may not move (non-negotiable 5). The rule is about a rectangle nobody
-         asked for, not about width. */
+      /* WHICH EVEN SPLITS MOVE, AND WHICH MAY NOT.
+         The even-split guard used to be unconditional and the list below was
+         five arrangements long. Reported from play: "camera is too zoomed in
+         when just 2 players on split screens and split direction set to side
+         by side." An even pane is measured against a QUADRANT now, so the one
+         arrangement narrower than a quadrant — side by side — widens, and
+         every other one comes out where it always did because its widening was
+         already at or under 1. This is the two-player camera moving ON PURPOSE
+         and on a direct report; the fifth non-negotiable is about it moving by
+         accident under four-player work. */
       for (const [what, panes] of [
-        ['two even panes side by side', splitLayout(2, VW, VH, 3, 'vertical')],
         ['two even panes stacked', splitLayout(2, VW, VH, 3, 'horizontal')],
         ['quadrants', splitLayout(4, VW, VH, 3, 'vertical')],
         ['one shared screen', splitLayout(1, VW, VH, 3, 'vertical')],
-        ['two pairs', splitLayout(2, VW, VH, 3, 'vertical', [2, 2])],
       ]) {
         ok(`...and ${what} are widened by exactly 1 — nothing moves`,
           panes.every((_, i) => paneWiden(panes, i, VW, VH) === 1));
       }
+      /* AND THE ONE THAT DOES MOVE, PINNED TO ITS NUMBER. 958x1080 against a
+         quadrant's 958x538 is a factor of 2 exactly, and the pane owns half
+         the screen so `BIG_PANE_IN` takes a quarter of that back: 1.5. Both
+         panes, and both of them the same, or the two sisters would be framed
+         differently on one screen. */
+      for (const [what, panes] of [
+        ['two even panes side by side', splitLayout(2, VW, VH, 3, 'vertical')],
+        ['two pairs', splitLayout(2, VW, VH, 3, 'vertical', [2, 2])],
+      ]) {
+        const w = panes.map((_, i) => paneWiden(panes, i, VW, VH));
+        ok(`...and ${what} are pulled back to 1.5, the same for both`,
+          w.every((v) => Math.abs(v - 2 * BIG_PANE_IN) < 0.01) && w[0] === w[1],
+          w.map((v) => v.toFixed(3)).join(' '));
+      }
+      /* AND IT IS THE SPLIT DIRECTION THAT DECIDES IT, which is the sentence
+         the report is made of. Same two players, same screen, one setting. */
+      ok('...so side by side is pulled back and stacked is not, on one setting',
+        paneWiden(splitLayout(2, VW, VH, 3, 'vertical'), 0, VW, VH)
+        > paneWiden(splitLayout(2, VW, VH, 3, 'horizontal'), 0, VW, VH));
       /* NEVER A ZOOM IN. It is a floor on how much world is visible, so it can
          only ever push the camera out — a pane WIDER than a quadrant (the
          stacked trio's strip) has nothing to fix. */
@@ -18049,17 +18145,20 @@ console.log('\n--- Mr. Satan loses his temper ---');
      debug to remove the 7 dragonballs scenes and unnecessary commands. Let's
      remove Debug items 7, 8, 9, 5, M, Z."
 
-     `7` HAS BEEN REUSED, so it is named here rather than dropped from the
-     check: it is GO TO THE ARENA now, and what has to be gone is the dragon
-     hunt behind it. */
+     `7` AND `8` HAVE BEEN REUSED, so they are named here rather than dropped
+     from the check: `7` is GO TO THE ARENA and `8` is the mischief batch, and
+     what has to be gone is the dragon hunt that used to be behind them. The
+     request was about the seven-stars shortcuts, not about the digits. */
   ok('every row in the panel is a key the game still answers to',
     [...listed].every((c) => handled.includes(c)),
     [...listed].filter((c) => !handled.includes(c)).join(', ') || `${listed.size} rows`);
   ok('...and the seven-stars shortcuts are gone from both',
     !/_onAllBalls\(\)/.test(dbgBody) && !/freeSeat\(\)/.test(dbgBody)
-    && !handled.includes('Digit8') && !handled.includes('Digit9'));
+    && !handled.includes('Digit9'));
   ok("...and 7 is the arena now, through the scene viewer's own path",
     handled.includes('Digit7') && /Digit7'\) this\._goToArena\(\)/.test(dbgBody));
+  ok('...and 8 is the mischief batch now',
+    handled.includes('Digit8') && /Digit8'\) this\._knockBatch\(\)/.test(dbgBody));
 
   /* `M` AND `Z` WERE PROMOTED, NOT DELETED. They had rows because they were
      the only way to reach the maths overlay and the map zoom from a keyboard —
@@ -18856,6 +18955,36 @@ console.log('\n--- one press is not enough, and one player drives ---');
       main.indexOf('this.trailer.update();') + 400)));
   ok('...and closing the menu gives it back to nobody',
     /if \(!on\) this\._claimMenu\(null\);/.test(main));
+  /* AND ESCAPE IS PLAYER ONE'S, WHOEVER HAPPENS TO BE HOLDING WHAT. Reported
+     from play: "Player1 should always drive the Menu on keyboard, when
+     pressing Esc." It used to hand the cursor to the lowest slot on a
+     KEYBOARD, which is a different rule the moment player one is on a pad and
+     player two is not — pads are dealt first, so that is the ordinary two-
+     player arrangement, and Esc opened the menu under the younger sister's
+     name while the elder one held the key that opened it.
+
+     PINNED AS THE WHOLE EXPRESSION, not as "does slot 0 appear near Escape".
+     The thing that can regress here is somebody reintroducing a findIndex to
+     be helpful, and a looser regex would pass straight through that. */
+  {
+    const esc = main.indexOf("if (e.code === 'Escape') {");
+    /* END THE WINDOW ON THE LISTENER'S OWN CLOSE, and fail rather than run to
+       the end of the file if it is not found — `slice(esc, -1)` is the whole
+       rest of main.js, which would make the "no findIndex" half of this check
+       true of code five thousand lines away. */
+    const tail = esc > 0 ? main.slice(esc) : '';
+    /* `\r?\n`, BECAUSE THIS FILE IS CRLF ON DISK and `main` is read raw. The
+       first cut of this anchor used bare \n, found nothing, and reported a
+       zero-length window — which the check caught only because it was written
+       to fail on an empty body rather than to trust one. */
+    const end = tail.search(/\r?\n {4}\}\);\r?\n {2}\}/);
+    const body = end > 0 ? tail.slice(0, end) : '';
+    ok('...and Escape claims it for player one, not for the lowest keyboard',
+      esc > 0 && body.length > 0
+      && /if \(opening\) this\._claimMenu\(this\.players\[0\] \? 0 : null\);/.test(body)
+      && !/source === 'keyboard'/.test(body),
+      esc > 0 ? `${body.length} chars` : 'no Escape handler');
+  }
   /* AND IT SAYS SO. Three players pushing sticks at a cursor that will not
      move have no way to tell a lock from a crash; sixth non-negotiable. */
   ok('...and the screen names who is driving it', /id="menu-owner"/.test(html));
@@ -20674,7 +20803,12 @@ console.log('\n--- one press is not enough, and one player drives ---');
   {
     const msrc2 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
       .replace(/\r\n/g, '\n');
-    const at = msrc2.indexOf('\n  _wreckWorld() {');
+    /* THE SIGNATURE IS PART OF THE ANCHOR, and it earned that when the batch
+       row gave this method a `limit`. Lifting the body under a zero-argument
+       wrapper would have left `limit` undefined, `standing >= undefined` false
+       for ever, and a ceiling that this file could never see fail. */
+    const SIG = '\n  _wreckWorld(limit = Infinity) {';
+    const at = msrc2.indexOf(SIG);
     ok('the debug wreck is where this check thinks it is', at > 0);
     const from = msrc2.indexOf('{', at + 1) + 1;
     const body = msrc2.slice(from, msrc2.indexOf('\n  }\n', from));
@@ -20683,7 +20817,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
        stub out and back around the HUD checks and a lifted method must not
        depend on which side of that it happens to run on. */
     // eslint-disable-next-line no-new-func
-    const wreck = new Function('document', `return function () {${body}\n};`)(
+    const wreck = new Function('document', `return function (limit = Infinity) {${body}\n};`)(
       globalThis.document ?? { getElementById: () => null });
 
     const mk = (x, z) => new Prop('barrel', x, world.heightAt(x, z)?.y ?? 0, z, x + z);
@@ -20762,6 +20896,93 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...so the ending arrives with a whole town in its hands',
       n2 === mine.length - 1, `${n2} held`);
     t2.finish();
+
+    /* --- AND THE SAME METHOD WITH A CEILING ON IT ------------------------
+       The debug panel's batch row is `_wreckWorld(n)`, so everything above is
+       also the batch's implementation and the only thing left to ask is
+       whether the ceiling holds. Asked for as "knock over 50 mischief at a
+       time... then in 5 mischief increments until all of them are knocked
+       down."
+
+       THE COUNTER AND THE PROPS HAVE TO AGREE, which is the whole reason the
+       break sits ABOVE `scored`. A ceiling that stopped knocking but went on
+       scoring would put the MISCHIEF number ahead of the town — five barrels
+       down and the HUD reading fifty — and that number is the one thing the
+       game asks a kid to trust all afternoon. */
+    const batch = [];
+    for (let i = 0; i < 30; i++) batch.push(mk(40 + i * 1.7, 30 + (i % 5) * 2));
+    const W3 = {
+      props: batch, mischiefTotal: batch.length, heightAt: (x, z) => world.heightAt(x, z),
+    };
+    const first = wreck.call({ world: W3 }, 7);
+    ok('a ceiling on the wreck knocks over exactly that many',
+      first === 7, `${first} of 30`);
+    ok('...and scores exactly the ones it knocked, and no more',
+      batch.filter((q) => q.scored).length === 7
+      && batch.filter((q) => q.knocked).length === 7,
+      `${batch.filter((q) => q.scored).length} scored, ${
+        batch.filter((q) => q.knocked).length} knocked`);
+    /* IT CARRIES ON FROM WHERE IT STOPPED rather than starting over, which is
+       what makes four presses of fifty add up to two hundred. */
+    wreck.call({ world: W3 }, 7);
+    ok('...and a second press carries on rather than starting again',
+      batch.filter((q) => q.scored).length === 14);
+    /* AND THE LAST PRESS CANNOT OVERSHOOT THE WORLD. */
+    const rest = wreck.call({ world: W3 }, 99);
+    ok('...and a ceiling past the end just finishes the town',
+      rest === 16 && batch.every((q) => q.scored && q.knocked),
+      `${rest} in the last press`);
+    ok('...and a press with nothing left to knock over knocks nothing over',
+      wreck.call({ world: W3 }, 5) === 0);
+  }
+
+  /* --- THE BATCH'S OWN ARITHMETIC: 50 UNTIL 200, THEN 5 ------------------
+     Lifted out of `main.js` for the same reason `_wreckWorld` is: a second
+     copy of the rule here would agree with itself for ever. What is checked
+     is the SEQUENCE a finger actually presses, because the interesting claim
+     is not any one step — it is that the steps land on 200 exactly and then
+     walk the last stretch in fives, however many props the world has. */
+  {
+    const msrc3 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+      .replace(/\r\n/g, '\n');
+    const num = (name) => Number(new RegExp(`const ${name} = (\\d+);`).exec(msrc3)?.[1]);
+    const STEP = num('BULK_STEP');
+    const FINE = num('BULK_FINE');
+    const AT = num('BULK_FINE_AT');
+    ok('the batch sizes are the three the report named',
+      STEP === 50 && FINE === 5 && AT === 200, `${STEP} / ${FINE} after ${AT}`);
+    /* THE SAME EXPRESSION `_knockBatch` USES, read out of it rather than
+       retyped — if the rule changes there this reads the new one. */
+    const src = msrc3.slice(msrc3.indexOf('  _knockBatch() {'));
+    ok('...and it changes gear on the count, not on a press number',
+      /done >= BULK_FINE_AT\s*\n?\s*\? BULK_FINE\s*\n?\s*: Math\.min\(BULK_STEP, BULK_FINE_AT - done\)/
+        .test(src.slice(0, src.indexOf('\n  }\n'))));
+
+    const step = (done) => (done >= AT ? FINE : Math.min(STEP, AT - done));
+    for (const total of [216, 205, 187, 1000, 12]) {
+      const seq = [];
+      let done = 0;
+      /* A BOUND, because the thing that would hang here is a step of 0 — and
+         a check that hangs is a check nobody runs. */
+      for (let i = 0; i < 500 && done < total; i++) {
+        const n = Math.min(step(done), total - done);
+        seq.push(n);
+        done += n;
+      }
+      ok(`...and it walks a ${total}-prop world down to nothing`,
+        done === total && seq.every((n) => n > 0), `${seq.length} presses`);
+      /* IT LANDS ON THE MARK. Not "passes it" — the fine stretch exists to be
+         stepped through, and a press that jumps from 180 to 230 has skipped
+         the arena opening, the elder's countdown and the ending in one go. */
+      if (total > AT) {
+        let run = 0;
+        const marks = seq.map((n) => (run += n));
+        ok(`...landing exactly on ${AT} on the way`, marks.includes(AT),
+          marks.slice(0, 6).join(' '));
+        ok('...and taking the rest of it five at a time',
+          marks.filter((m) => m > AT).every((m, i, a) => (i ? m - a[i - 1] : m - AT) <= FINE));
+      }
+    }
   }
 
   /* KNOCK A REAL SLICE OF THE REAL WORLD OVER, the way an afternoon does, and
@@ -21186,30 +21407,35 @@ console.log('\n--- one press is not enough, and one player drives ---');
       !!on && Math.abs(on.y - B.y) < 0.6,
       on ? `${on.y.toFixed(2)} against ${B.y.toFixed(2)}` : 'no ground');
     /* AND THE GROUND IT IS ON IS THE BRIDGE'S OWN DECKING, not the island it
-       happens to be near. The span is built as a row of platforms, so this is
-       askable directly: is the published point inside one of those boxes, at
-       roughly that box's height? A `bridge` left behind by a moved span would
-       still pass everything above and fail this.
+       happens to be near. The span is a platform, so this is askable directly:
+       is the published point inside that box, at the height the box reports
+       THERE? A `bridge` left behind by a moved span would still pass
+       everything above and fail this.
 
-       ROUGHLY, and on purpose. `bridge.y` is the crest of the arch the deck is
-       DRAWN as — `base + rise`, the value at t = 0.5 — while the platforms are
-       that same curve sampled at ten segment centres, so the tallest of them
-       sits a couple of centimetres below the true top. Pinning these to each
-       other exactly would be pinning the platform count. */
+       `yAt`, NOT `y`. The deck used to be ten flat platforms sampled along the
+       arch and this compared against the tallest of them, "roughly" and on
+       purpose, because the sample sat a couple of centimetres under the true
+       crest. It is one curved deck now (see `World._buildTown`), so the
+       comparison can be exact: `bridge.y` and the deck's own height at the
+       bridge's own x are the same sine evaluated at the same place. */
     const deck = world.platforms.filter(
       (pl) => pl.x0 !== undefined && B.x >= pl.x0 && B.x <= pl.x1
-        && B.z >= pl.z0 && B.z <= pl.z1 && Math.abs(pl.y - B.y) < 0.15);
+        && B.z >= pl.z0 && B.z <= pl.z1
+        && Math.abs((pl.yAt ? pl.yAt(B.x, B.z) : pl.y) - B.y) < 0.15);
     ok('...and the ground is a piece of the bridge itself', deck.length > 0,
       `${deck.length} of ${world.platforms.length} platforms`);
     /* AND IT IS THE CREST. The deck is a sine arch and the shot pushes in on
-       the middle of it; a point on the run-up would frame the island. */
-    const spanY = world.platforms
-      .filter((pl) => pl.x0 !== undefined && pl.z0 !== undefined
-        && Math.abs((pl.z0 + pl.z1) / 2 - B.z) < 0.01 && !pl.arena)
-      .map((pl) => pl.y);
+       the middle of it; a point on the run-up would frame the island. Sampled
+       ACROSS the span rather than read off the platform list, which is what
+       made this a count of segments rather than a question about the curve. */
+    const span = deck[0];
+    const spanY = span ? Array.from({ length: 41 }, (_, i) => {
+      const x = span.x0 + ((span.x1 - span.x0) * i) / 40;
+      return span.yAt ? span.yAt(x, B.z) : span.y;
+    }) : [];
     ok('...and the highest piece of it, which is the middle of the arch',
       spanY.length > 2 && B.y >= Math.max(...spanY) - 0.01,
-      `${B.y.toFixed(2)} of ${Math.max(...spanY).toFixed(2)} over ${spanY.length} spans`);
+      `${B.y.toFixed(2)} of ${Math.max(...spanY).toFixed(2)} over ${spanY.length} samples`);
 
     /* --- A ROAD IS STRAIGHT WHERE IT CROSSES A RIVER --------------------
        Reported from the ending, looking at the crossing: "Looks a little

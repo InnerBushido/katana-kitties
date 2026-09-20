@@ -111,6 +111,14 @@ const HINT_CLEAR = 30;
 const SUB_PANELS = ['panel-board', 'panel-help', 'panel-settings',
   'panel-kittens', 'panel-watch', 'panel-saves', 'panel-ending', 'panel-play'];
 
+/**
+ * The debug panel's mischief batch: how many a press knocks over, and where it
+ * changes gear. See `Game._knockBatch` for the argument.
+ */
+const BULK_STEP = 50;
+const BULK_FINE = 5;
+const BULK_FINE_AT = 200;
+
 /** The key each debug action is bound to, for the panel's own labels. */
 const DEBUG_KEY_LABEL = {
   /* `1` IS THE FRAME COST AND IT USED TO BE `P`. `P` was also player 2's mount
@@ -2376,17 +2384,25 @@ class Game {
           if (this._menuRefused()) { e.preventDefault(); return; }
           const opening = !this.paused;
           this.setPaused(opening);
-          /* ESC BELONGS TO WHOEVER IS AT THE KEYBOARD, so the menu goes to the
-             lowest slot playing on one. If nobody is on a keyboard at all,
-             `_claimMenu(null)` leaves it shared: the person who pressed Esc has
-             a mouse and no slot, and handing her cursor to an arbitrary pad
-             would lock out the only player who asked for the menu. */
-          if (opening) {
-            const kb = this.input.players.findIndex(
-              (p, i) => i < this.players.length && p.source === 'keyboard',
-            );
-            this._claimMenu(kb >= 0 ? kb : null);
-          }
+          /* ESC BELONGS TO PLAYER ONE. Asked for by name: "Player1 should
+             always drive the Menu on keyboard, when pressing Esc."
+
+             IT USED TO BE THE LOWEST SLOT ON A KEYBOARD, which sounds like the
+             same rule and is not. Put a pad in player one's hands and a
+             keyboard in player two's — which is the ordinary way a controller
+             is dealt, pads outrank keyboards — and Esc handed the cursor to
+             player TWO. From the sofa that is the menu opening under somebody
+             else's name for no reason anybody can see, and the elder sister
+             pressing the key that opened it cannot move the cursor in it.
+
+             SHE IS ALWAYS THERE. Slot 0 is the first kitten seated and the
+             last to leave, and there is no arrangement of four players in
+             which the game is running and she is not one of them — so unlike
+             the pad path below, this needs no "if nobody" answer. The guard is
+             still written, because a menu nobody can drive is the one failure
+             this whole function exists to prevent, and `null` is the shared
+             cursor rather than a dead one. */
+          if (opening) this._claimMenu(this.players[0] ? 0 : null);
         }
       }
     });
@@ -3829,6 +3845,11 @@ class Game {
        `1 + k*n` rule in powerorb.js is written for and the hardest one to reach
        by hand. */
     if (code === 'Digit3') this._debugAllOrbs();
+
+    /* --- the mischief batch, `8` ---
+       `6` wrecks the whole town in one press and leaves nothing to knock over;
+       this is the same journey in steps you can watch. See `_knockBatch`. */
+    if (code === 'Digit8') this._knockBatch();
     /* --- THE ONE THING IN THE GAME THAT OUTLIVES THE TAB ---
        `BoardWipe` IS NOT A KEY AND DELIBERATELY HAS NO LABEL. Every other row
        in the panel is a keyboard shortcut that also happens to be tappable;
@@ -4275,11 +4296,22 @@ class Game {
    *
    * @returns {number} how many were still standing.
    */
-  _wreckWorld() {
+  _wreckWorld(limit = Infinity) {
     const W = this.world;
     const props = W?.props ?? [];
     let standing = 0;
     for (const prop of props) {
+      /* STOP BEFORE SCORING, NOT AFTER. `limit` is how many still-standing
+         props this call may knock over — the debug panel's batch row asks for
+         fifty, and everything else asks for all of them. It defaults to
+         Infinity, which is never reached, so the key-6 path through here is
+         the same loop it always was, character for character.
+
+         The break is ABOVE `scored` because a prop this call is not going to
+         knock over must not be paid for either; the counter and the props have
+         to agree, and that agreement is what the whole MISCHIEF number rests
+         on. */
+      if (standing >= limit) break;
       /* SCORED EITHER WAY. The counter reads `scored`, not `knocked`, and a
          prop that fell off the world was paid for on the way down. */
       prop.scored = true;
@@ -4321,6 +4353,82 @@ class Game {
        player is now. */
     this.lastHunt?.sync(W.mischiefTotal - done);
     return standing;
+  }
+
+  /**
+   * Knock over a batch of mischief, coarse at first and fine near the end.
+   *
+   * Asked for by name: "add to the Debug menu, a way to knock over 50 mischief
+   * at a time by pressing a button, once 200 are knocked down, then it will
+   * knock down in 5 mischief increments until all of them are knocked down."
+   *
+   * WHY IT CHANGES GEAR, which is the half of that sentence worth writing
+   * down: everything interesting in this game is in the last stretch. The
+   * arena opens at 80% (`OPEN_AT`), the elder starts counting at five
+   * remaining (`systems/lasthunt.js`) and marks the nearest one at three, and
+   * the ending is at 100%. Fifty at a time walks a standing town down to the
+   * edge of all that in four presses; five at a time then steps THROUGH it,
+   * which is the only way to watch a threshold land rather than jump it.
+   *
+   * THE COARSE STEP NEVER CARRIES YOU PAST THE SWITCH. 216 props divide into
+   * 50s to land on exactly 200, but that is an accident of this world's prop
+   * count and the rule has to hold for any of them — so a press from 180 does
+   * 20 and stops on the mark rather than 50 and lands at 230, past the fine
+   * stretch it exists to reach.
+   *
+   * IT IS NOT A SECOND WAY TO KNOCK A PROP OVER. `_wreckWorld` is the one
+   * implementation, given a ceiling; `_mischiefComplete` is the real 100%
+   * trigger, the same one a kitten's katana reaches. This function is a
+   * batch size and a toast.
+   */
+  /**
+   * What the batch row says it will do, counted before you press it.
+   *
+   * THE ROW SAYS THE NUMBER, because the whole feature is that the number
+   * changes under you: a row reading "knock over 50" that quietly knocks over
+   * 5 is the panel lying about what its own button does, and the panel is the
+   * one place in this game where a nine-year-old is being told what a control
+   * is for. `_refreshDebugPanel` runs after every row press, so this is
+   * re-read on the way out of each one.
+   */
+  _batchLabel() {
+    const props = this.world?.props ?? [];
+    const total = this.world?.mischiefTotal ?? 0;
+    if (!props.length || total <= 0) return `${BULK_STEP}`;
+    const done = props.filter((p) => p.scored).length;
+    if (done >= total) return 'the last 0';
+    const step = done >= BULK_FINE_AT
+      ? BULK_FINE
+      : Math.min(BULK_STEP, BULK_FINE_AT - done);
+    return `${Math.min(step, total - done)} more`;
+  }
+
+  _knockBatch() {
+    const W = this.world;
+    const props = W?.props ?? [];
+    const total = W?.mischiefTotal ?? 0;
+    /* A REFUSAL SAYS SO — sixth non-negotiable, and it earns its keep on this
+       row more than most: at 216 of 216 the row still looks pressable, and a
+       button that does nothing reads as broken rather than as finished. */
+    if (!props.length || total <= 0) {
+      this.toast('[debug] no world to knock over yet', 0);
+      return;
+    }
+    const done = props.filter((p) => p.scored).length;
+    if (done >= total) {
+      this.toast(`[debug] all ${total} are already down`, 0);
+      return;
+    }
+    const step = done >= BULK_FINE_AT
+      ? BULK_FINE
+      : Math.min(BULK_STEP, BULK_FINE_AT - done);
+    const did = this._wreckWorld(Math.min(step, total - done));
+    const now = props.filter((p) => p.scored).length;
+    /* THE SAME 100% EVERY OTHER PATH USES. Player one is credited because the
+       Awakening wants a kitten for its toast and this press has none; nothing
+       about the world event depends on which one it is. */
+    this._mischiefComplete(now, this.players[0]);
+    this.toast(`[debug] knocked over ${did} — ${now} / ${total}`, 0);
   }
 
   /** The scenes the viewer can replay, in the order they happen in a playthrough. */
@@ -4829,6 +4937,7 @@ class Game {
       ${row('Digit6', 'THE ENDGAME — ending, arena, orbs, purses')}
       ${row('Digit7', 'go to the arena NOW (skips the whole unlock)')}
       ${row('Digit3', 'give EVERY kitten all 8 kotodama')}
+      ${row('Digit8', `knock over ${this._batchLabel()} of the mischief`)}
       ${row('Digit4', 'END this bit — round, ceremony or feast')}
       ${row('Digit5', 'NUDGE it on — 30s, 15s, 5s, next line')}
       ${row('Digit2', 'Mr. Satan loses his temper (skip the fuse)')}
@@ -6703,6 +6812,56 @@ class Game {
     };
   }
 
+  /**
+   * What 100% does, wherever the hundredth percent came from.
+   *
+   * LIFTED OUT OF `onMischief` SO A SECOND DOOR COULD USE IT. It was two
+   * blocks inline there, which was right while a prop being hit was the only
+   * way the counter ever moved — and stopped being right the moment the debug
+   * panel grew a row that knocks fifty over at once. Two copies of the ending's
+   * trigger is the one duplication this game cannot afford: the symptom of
+   * them drifting is a girl knocking over the last barrel and being shown
+   * nothing, which is also the symptom of the bug the `_endingShown` note
+   * below was written for.
+   *
+   * QUEUED, NOT STARTED. On the real path this runs from inside a prop being
+   * hit, which can perfectly well happen while a shrine introduction or the
+   * summon scene already owns the screen. `SummonScene.start` refuses when one
+   * is running, and refusing here would lose the ending outright: there are no
+   * props left to hit, so nothing would ever ask again. The loop picks it up
+   * on the first frame the screen is free.
+   *
+   * THE REAL 100% OWNS ITS ENDING, AND A DEBUG PREVIEW MUST NOT EAT IT. The
+   * queue guard used to be `!played.finale` — the scene's own once-latch —
+   * which is right for "don't fire twice" and wrong for who set it. The scene
+   * viewer sets it every time somebody previews the ending, so previewing it
+   * once meant the girls could knock over all 216 props and be shown nothing
+   * at all: the flag said the ending had happened, and from here that is
+   * indistinguishable from it having happened for real. `_endingShown` is the
+   * honest guard — it is about THIS 100%, and nothing but a restart clears it.
+   *
+   * THE AWAKENING FIRES NOW, NOT WITH THE SCENE. `_finaleDue` is queued
+   * because a cutscene cannot start over another one; this cannot wait for the
+   * same reason it cannot be queued — the finale is 63 seconds and can be
+   * skipped on its first frame, so hanging the world's biggest state change
+   * off the end of it hands a kid who presses Start no orbs at all. `awaken()`
+   * is idempotent, so the guard is belt and braces.
+   *
+   * @param done    how many props are scored, counted by the caller
+   * @param player  who to credit the Awakening to. The debug row has no such
+   *                kitten and passes player one; the Awakening is a world
+   *                event and only the toast reads this.
+   */
+  _mischiefComplete(done, player) {
+    if (done < this.world.mischiefTotal) return;
+    if (!this._endingShown) {
+      this._endingShown = true;
+      if (this.summonScene) this.summonScene.played.finale = false;
+      this._finaleDue = true;
+    }
+    if (!this.kotodama.awakened) this._awaken(player);
+  }
+
   onMischief(player, prop, breath = null) {
     /* HER OWN TALLY, for the Most mischief quest. Counted BEFORE the 100%
        check below, so the last prop counts for the kitten who hit it. */
@@ -6714,39 +6873,7 @@ class Game {
        that knows how many are down, and a countdown able to be wrong about it
        would be worse than no countdown. See `systems/lasthunt.js`. */
     this.lastHunt?.tick(this.world.mischiefTotal - done);
-    /* 100%. QUEUED, NOT STARTED HERE — this runs from inside a prop being hit,
-       which can perfectly well happen while a shrine introduction or the
-       summon scene already owns the screen. `SummonScene.start` refuses when
-       one is running, and refusing here would lose the ending outright: there
-       are no props left to hit, so nothing would ever ask again. The loop
-       picks it up on the first frame the screen is free. */
-    /* THE REAL 100% OWNS ITS ENDING, AND A DEBUG PREVIEW MUST NOT EAT IT.
-       The queue guard used to be `!played.finale` — the scene's own once-latch
-       — which is right for "don't fire twice" and wrong for who set it. The
-       scene viewer sets it every time somebody previews the ending, so
-       previewing it once meant the girls could knock over all 216 props and be
-       shown nothing at all: the flag said the ending had happened, and from
-       here that is indistinguishable from it having happened for real.
-
-       `_endingShown` is the honest guard — it is about THIS 100%, and nothing
-       but a restart clears it — and the latch is cleared on the way past so
-       `start` cannot refuse. Everything ELSE already survived this (the
-       Awakening fires below, not with the scene), which is exactly why it went
-       unnoticed: the world unlocked correctly and only the ending was missing. */
-    if (done >= this.world.mischiefTotal && !this._endingShown) {
-      this._endingShown = true;
-      if (this.summonScene) this.summonScene.played.finale = false;
-      this._finaleDue = true;
-    }
-    /* THE AWAKENING FIRES HERE, NOT WITH THE SCENE. `_finaleDue` is queued
-       because a cutscene cannot start over another one; this cannot wait for
-       the same reason it cannot be queued — the finale is 63 seconds and can
-       be skipped on its first frame, so hanging the world's biggest state
-       change off the end of it hands a kid who presses Start no orbs at all.
-       `awaken()` is idempotent, so the guard is belt and braces. */
-    if (done >= this.world.mischiefTotal && !this.kotodama.awakened) {
-      this._awaken(player);
-    }
+    this._mischiefComplete(done, player);
     const el = document.getElementById(`score-${player.index}`);
     if (el) el.textContent = player.score;
     const pts = prop.points ?? 10;

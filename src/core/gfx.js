@@ -125,13 +125,23 @@ export function xrayVertexMat(opts = {}) {
     Object.assign(shader.uniforms, u);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
-        varying vec3 vXrayWorld;`)
+        varying vec3 vXrayWorld;
+        /* HOW MUCH THIS VERTEX AGREES TO BE CUT, 0 to 1. mergeParts writes it
+           on every geometry it builds, defaulting to 1 — which is exactly what
+           this material did before it existed. See there for why it is
+           unconditional rather than behind a define. (No backticks anywhere in
+           here: this is inside a JS template literal and one would end the
+           shader. It has cost a build already.) */
+        attribute float xrayK;
+        varying float vXrayK;`)
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
-        vXrayWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+        vXrayWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vXrayK = xrayK;`);
 
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vXrayWorld;
+        varying float vXrayK;
         uniform vec3 uCamPos;
         uniform vec3 uCutPos[${MAX}];
         uniform float uCutOn[${MAX}];
@@ -154,7 +164,7 @@ export function xrayVertexMat(opts = {}) {
           return 0.5;
         }`)
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-        {
+        if (vXrayK > 0.004) {
           float cut = 0.0;
           for (int i = 0; i < ${MAX}; i++) {
             if (uCutOn[i] < 0.5) continue;
@@ -173,10 +183,29 @@ export function xrayVertexMat(opts = {}) {
             // Only geometry IN FRONT of her is in the way; t > 1 is behind
             // her and must keep drawing or the far wall vanishes too.
             if (t <= 0.0 || t >= 1.0) continue;
+            /* AND FARTHER FROM THE CAMERA THAN SHE IS CANNOT BE HIDING HER,
+               whatever its t says. Reported from play: "shouldn't happen on
+               buildings when player is in front of them." The t test alone
+               does not cover it, because t is a projection onto the view ray
+               and the camera looks DOWN: the roof of a tall house standing
+               behind her is high enough to project short of her chest, so it
+               scored t < 1 and had holes punched in it while she stood in
+               front of the house. Distance is the honest question — nothing
+               beyond her can occlude her — and it is the same two vectors. */
+            vec3 av = vXrayWorld - a;
+            if (dot(av, av) >= len2) continue;
             float d = length(vXrayWorld - (a + ab * clamp(t, 0.0, 1.0)));
-            // Widen toward the camera so the hole is a steady size on screen.
-            float rad = uCutR * mix(uCutFlare, 1.0, t);
-            cut = max(cut, 1.0 - smoothstep(rad, rad + uCutSoft, d));
+            /* Widen toward the camera so the hole is a steady size on screen,
+               and SCALE THE WHOLE THING BY WHAT THIS VERTEX AGREED TO. "It is
+               not needed so much on the trees or smaller buildings or small
+               objects like lanterns, if we do have it on those, the shader
+               effect should be smaller and weaker, so as not to make them
+               disappear when player is near it." Smaller is the radius (and
+               its soft edge with it, or a 0.5-unit hole would be all edge);
+               weaker is the dither threshold, which at k below 1 leaves a
+               thinning rather than a hole. */
+            float rad = uCutR * vXrayK * mix(uCutFlare, 1.0, t);
+            cut = max(cut, (1.0 - smoothstep(rad, rad + uCutSoft * vXrayK, d)) * vXrayK);
           }
           if (cut > 0.001 && cut > xrayDither(gl_FragCoord.xy)) discard;
         }`);
