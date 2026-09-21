@@ -7586,21 +7586,96 @@ class Game {
     return false;
   }
 
-  toast(text, playerIndex = 0) {
+  /**
+   * ...AND `combo` MAKES REPEATS OF THE SAME NEWS ONE LINE THAT COUNTS UP.
+   *
+   * "On split screen, the UI messages appearing at the top of the screen are a
+   * bit overbearing and take up too much of the UI real estate... instead of
+   * spawning a single message per item, can just be 1 message for all the
+   * items cut recently, like a combo."
+   *
+   * A CANE IS NOT NEWS; TEN CANES ARE. The strip is four lines deep and a kid
+   * swinging at a grove filled all four in about two seconds, so the toasts
+   * that actually matter — she joined a clan, her panda grew, the match is
+   * being called off — were pushed off the top by the sound of her own katana.
+   * That is the report, and it is the same on a desktop with four panes; the
+   * phone is only where it is unmissable, so this is not a touch-only path.
+   * One behaviour beats two that drift.
+   *
+   * IT DOES NOT MOVE. The note offered "get deleted and respawned as a new
+   * message with the new number", and the count in place is the same thing
+   * minus the jumping: a line that re-enters the stack at the bottom on every
+   * swing is a card teleporting under a number nobody can finish reading.
+   * It re-arms its own hold instead, so a combo that is still growing is never
+   * the one the four-line cap drops.
+   *
+   * THE FIRST ONE KEEPS ITS OWN SENTENCE, `text`, with the verb variety and
+   * the exclamation mark. Only the second and later collapse. A kid who cuts
+   * one cane and walks off should not be told "1x bamboo".
+   *
+   * A FADING TOAST IS NOT FOLDED INTO. Once `.fade` is on it the animation is
+   * running to `opacity: 0` and there is no way back that is not a flicker, so
+   * a cane after the lull starts a fresh line — which is also what a player
+   * means by a new combo.
+   *
+   * @param combo `{key, add, text(n, total)}` — `key` is per player, `add` is
+   *   this event's points, and `text` renders the folded line. Omit it and
+   *   this is the toast it always was.
+   */
+  toast(text, playerIndex = 0, combo = null) {
     const wrap = document.getElementById('toasts');
-    const el = document.createElement('div');
-    el.className = `toast p${playerIndex}`;
-    el.textContent = text;
-    wrap.appendChild(el);
+    /* Lazy rather than a constructor field: `toast` is called from the very
+       first frames of boot, before anything that would own a Map. */
+    this._combos ||= new Map();
+    const key = combo && `${playerIndex}:${combo.key}`;
+    let live = key ? this._combos.get(key) : null;
+    /* `isConnected` because the four-line cap removes elements behind this
+       map's back — an evicted combo has to start again, which is right. */
+    if (live && (!live.el.isConnected || live.el.classList.contains('fade'))) {
+      this._combos.delete(key);
+      live = null;
+    }
+    let el;
+    if (live) {
+      live.n += 1;
+      live.total += combo.add ?? 1;
+      clearTimeout(live.fadeAt);
+      clearTimeout(live.gone);
+      el = live.el;
+      text = combo.text(live.n, live.total);
+      el.textContent = text;
+      /* Restart the pop so the new number is SEEN. Removing the class is not
+         enough on its own — the animation only replays after a reflow, which
+         is what reading `offsetWidth` forces. */
+      el.classList.remove('bump');
+      void el.offsetWidth;
+      el.classList.add('bump');
+    } else {
+      el = document.createElement('div');
+      el.className = `toast p${playerIndex}`;
+      el.textContent = text;
+      wrap.appendChild(el);
+      if (key) {
+        live = { el, n: 1, total: combo.add ?? 1, fadeAt: 0, gone: 0 };
+        this._combos.set(key, live);
+      }
+    }
     const hold = Math.min(
       TOAST_MAX,
       Math.max(TOAST_MIN, TOAST_BASE + String(text).length * TOAST_PER_CHAR)
     );
-    setTimeout(() => el.classList.add('fade'), hold);
-    setTimeout(() => el.remove(), hold + TOAST_FADE);
+    const fadeAt = setTimeout(() => el.classList.add('fade'), hold);
+    const gone = setTimeout(() => {
+      el.remove();
+      if (key && this._combos.get(key)?.el === el) this._combos.delete(key);
+    }, hold + TOAST_FADE);
+    if (live) { live.fadeAt = fadeAt; live.gone = gone; }
     /* THE STACK CAP STAYS AT FOUR even though toasts now live longer. It is
        about how much of the picture a pile of them may cover, which has not
-       changed; dropping the OLDEST is right for the same reason it always was. */
+       changed; dropping the OLDEST is right for the same reason it always was.
+       It is also the number the phone note asked for — "make it so that it
+       shows a maximum of 4 of the last messages" — so it is now pinned by a
+       check rather than only by this comment. */
     while (wrap.children.length > 4) wrap.firstChild.remove();
   }
 
@@ -7873,14 +7948,30 @@ class Game {
         this.toast(`${left} more bamboo for ${player.pandaName}…`, player.index);
         return;
       }
-      this.toast(`${player.name} cut a bamboo cane clean through!  +${pts}`, player.index);
+      /* NOT COMBOED WITH THE COUNTDOWN ABOVE, which returns before this. They
+         are different news — one is "you scored", the other is "you are five
+         canes from a cub" — and the countdown already throttles itself to
+         every fifth cane for exactly the reason the combo exists. */
+      this.toast(`${player.name} cut a bamboo cane clean through!  +${pts}`, player.index, {
+        key: 'bamboo',
+        add: pts,
+        text: (n, sum) => `${n}× bamboo cut by ${player.name}!  +${sum}`,
+      });
       return;
     }
     const verbs = ['knocked over', 'scattered', 'pounced on', 'sent flying'];
     const verb = breath === 'a panda claw' ? `clawed a ${prop.kind} to bits`
       : breath ? `hit a ${prop.kind} with ${breath}`
         : `${verbs[done % verbs.length]} a ${prop.kind}`;
-    this.toast(`${player.name} ${verb}!  +${pts}`, player.index);
+    /* ONE KEY FOR EVERY KIND OF PROP, not one per kind. A girl running down a
+       market row hits a barrel, a crate and a stall in three seconds; keyed by
+       `prop.kind` that is three lines counting to one each, which is the bug
+       with extra steps. The varied verb is what the FIRST line is for. */
+    this.toast(`${player.name} ${verb}!  +${pts}`, player.index, {
+      key: 'mischief',
+      add: pts,
+      text: (n, sum) => `${n}× knocked over by ${player.name}!  +${sum}`,
+    });
   }
 
   /* ------------------------------- loop --------------------------------- */

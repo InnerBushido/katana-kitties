@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 4145 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 4204 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 388 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -590,16 +590,29 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 4145
+the check that would have caught it.** That is why `world-check` is 4204
 assertions — **and why a check that is sometimes red is treated as a bug in the
-check.** **A Help card also has a length budget** — the visible text of the four
-longest, measured with its sub-cards lifted out, against a cap set just above
-what it is today. Four of them were reported too long on one afternoon and no
-check could have caught any of them: every sentence was true, most were pinned
-against the code by a check that wanted them kept, and nothing ever asked what
-they added up to. A card gets long one correct paragraph at a time. Two of them were coin flips: an aggregate that hid the one kitten it
+check.** Two of them were coin flips: an aggregate that hid the one kitten it
 was asking about, and a distinctness test rounded until it became a birthday
-problem. Both are written up where they live.
+problem. Both are written up where they live. **A Help card also has a length
+budget** — the visible text of the four longest, measured with its sub-cards
+lifted out, against a cap set just above what it is today. Four of them were
+reported too long on one afternoon and no check could have caught any of them:
+every sentence was true, most were pinned against the code by a check that
+wanted them kept, and nothing ever asked what they added up to. A card gets
+long one correct paragraph at a time.
+
+**Every new screen is designed for a phone at the same time as for a desktop**,
+and two rules come out of that. **A `body.touch-ui` rule is part of the work,
+not a follow-up** — the award card at the ending shipped with none at all, so a
+620px card with a 26px heading landed on a 390px-tall phone at exactly the size
+it lands on a 1080p screen. And **UI behind other UI that takes clicks or
+scrolls is unclickable**: a pane card open over the on-screen stick, a minimap
+in the corner a dialog leaves showing, a shelf under the touch pad. Richard's
+rule, from an afternoon where all three were live at once. `src/core/tap.js`
+carries the other half of it — a press and a release in the same place is a
+tap, a drag is a scroll, and the two bindings that tell them apart are there
+rather than copied into each list.
 
 **And a change a new developer would need to know about gets a line in this
 file** — a new tool, document, account, cost, or a new way the project is built,

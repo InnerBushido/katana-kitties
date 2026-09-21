@@ -1,5 +1,6 @@
 import { POWER_ORBS, ORB_BY_ID, ORB_IDS, MAX_EQUIPPED, countsOf } from '../entities/powerorb.js';
 import { MAX_PLAYERS } from '../core/palette.js';
+import { dragGuard } from '../core/tap.js';
 
 /* ---------------------------------------------------------------------------
    THE CHARACTER PROFILE — inventory, trading, and the dealer's counter.
@@ -202,8 +203,16 @@ export class ProfileScreen {
   _bindTaps() {
     if (!this.el || this.el._bound) return;
     this.el._bound = true;
+    /* AND A CLICK OFF THE END OF A DRAG IS NOT A TAP EITHER. The same note as
+       the pane card's — "it should only select on click" — but this panel
+       stays on `click` rather than moving to `onTap`, because YES, NO, BUY,
+       SELL and the point steppers are real `<button>`s: a keyboard Enter is a
+       click with no pointer behind it, and a pointer-only rewrite would take
+       the dealer away from anybody not using a thumb. `dragGuard` only
+       SUBTRACTS the drags. See core/tap.js. */
+    const dragged = dragGuard(this.el);
     this.el.addEventListener('click', (e) => {
-      if (!this.mode) return;
+      if (!this.mode || dragged()) return;
       const close = e.target.closest('#kd-close');
       if (close) { this.close(); return; }
 
@@ -1048,6 +1057,9 @@ export class ProfileScreen {
        The other order would measure a box that is about to change height. */
     this._restoreQuestScroll();
     this._followCursors();
+    /* AFTER `_followCursors`, and that order is the whole rule: a question
+       beats a cursor. See `_showQuestion`. */
+    this._showQuestion();
     this._markOverflow();
   }
 
@@ -1179,6 +1191,43 @@ export class ProfileScreen {
       ul.scrollTop = side.questScroll;
       side.questScroll = ul.scrollTop;
     });
+  }
+
+  /**
+   * A QUESTION THAT HAS JUST APPEARED SCROLLS ITSELF INTO VIEW.
+   *
+   * "When buying an orb at the Kotodama Dealer, when clicking Buy or Sell,
+   * player has to scroll to the top to confirm yes/no, this is confusing
+   * because the buttons are on the bottom of the screen and the confirm
+   * buttons are not visible until scrolling all the way to the top."
+   *
+   * `_askMarkup` ALREADY PUT IT AT THE TOP OF THE CARD FOR THIS REASON — read
+   * its note: "a question below the fold is a CONFIRM press that appears to do
+   * nothing". That was right and it was not enough, because the top of the
+   * card is not the top of the VIEW: `#kd-body` scrolls, and she pressed BUY
+   * from a footer button after scrolling down the shelf to find the orb she
+   * wanted. The question appeared exactly where the note says it should, 75px
+   * above everything she could see, with the footer still showing BUY.
+   *
+   * `block: 'nearest'` SCROLLS THE LEAST IT CAN, so a question that is already
+   * on screen does not move the shelf out from under her — which matters most
+   * in a four-player trade, where three other girls are reading their own
+   * cards in the same box.
+   *
+   * ONLY WHEN IT CHANGES. Running it every paint would pin the box to whoever's
+   * question is up and take the scroll away from the other three for as long as
+   * it stands. The signature is the questions' own text, so answering one,
+   * asking a different one, or a second kitten asking hers all count — and
+   * repainting for a tick of somebody's Dojo seconds does not.
+   */
+  _showQuestion() {
+    if (!this.body) return;
+    const sig = this.sides.map((s) => s?.pending?.text ?? '').join('|');
+    if (sig === this._askSig) return;
+    this._askSig = sig;
+    const i = this.sides.findIndex((s) => s?.pending);
+    if (i < 0) return;
+    this.body.querySelector(`.kd-ask.kd-p${i}`)?.scrollIntoView({ block: 'nearest' });
   }
 
   _followCursors() {

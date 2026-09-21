@@ -28,7 +28,7 @@ look. Everything else is one level down and read on demand.
 ```bash
 npm run dev      # then open it in FIREFOX (see below)
 npm run dev -- --host         # ...and on a phone on the same wifi, at the Network: URL it prints
-node tools/world-check.mjs    # 4145 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 4204 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 388 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run build                 # must stay clean; Vercel builds this on push to main
 npm run docs                  # regenerate the controls + balance tables, in PROJECT.md AND
@@ -130,6 +130,11 @@ src/
                cursor with a named owner and no kitten in it)
              device (what this machine may spend — tiers, atlas budget)
              touchpad (the on-screen stick and buttons; a device like any other)
+             tap (a press and a release in the same place is a TAP; a drag is a
+               scroll. Two bindings because there are two shapes of the bug:
+               `onTap` replaces a `pointerdown` handler outright, `dragGuard`
+               only SUBTRACTS drags from a `click` one, which is what a panel
+               made of real <button>s needs so a keyboard Enter still lands)
              tuning (folds tuning.json over the shipped balance; degrades hard)
   tuning.json      the overrides, and nothing else. `{}` is the shipped balance.
   tuning-page.js   /tuning.html's brain — dev only, never built
@@ -314,7 +319,7 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   codebase's comments are its main defence against a fix being undone by
   somebody who could not see the reason. Match the density around you.
 - **When you fix something, add the check that would have caught it.** That is
-  why `world-check` is 4145 assertions and why almost none of them are about
+  why `world-check` is 4204 assertions and why almost none of them are about
   whether a number is set — they are about whether behaviour actually changed.
 - **A check that is sometimes red is a bug in the check, not a re-run.** Two
   were found being coin flips: an aggregate over four kittens that hid the one
@@ -331,6 +336,21 @@ four times the jitter, fixed by one flag in [label.js](src/core/label.js).
   been wrong roughly every time.
 - **Prefer a rule that degrades over one that vanishes.** A missing field on a
   mount must not NaN a position and make a character silently undrawn.
+- **A new screen is designed for a PHONE at the same time as for a desktop, and
+  a `body.touch-ui` rule is part of the work rather than a follow-up.** The
+  award card at the ending shipped with none at all, so a 620px card with a
+  26px heading landed on a 390px-tall phone at exactly the size it lands on a
+  1080p screen. A landscape phone is 844x390: **short, not narrow** — the axis
+  that runs out is height, and nearly every fix is either a fraction of the
+  viewport or a column that was not there.
+- **UI behind other UI that takes clicks or scrolls is unclickable.** Richard's
+  rule, from an afternoon where three of them were live at once: the stick's
+  catchment is the bottom-left 46%×78% of the whole screen and it swallowed
+  every drag meant for the pane card over it; the minimap takes taps and sits
+  in the corner a card leaves showing. Say it with STACKING ORDER where the two
+  overlap and `pointer-events: none` where one is genuinely behind — and leave
+  the way OUT clickable, because a screen with no way out is worse than a
+  button that does nothing.
 - **Anything a new developer would need to know and could not find by reading
   the code gets a line in [PROJECT.md](PROJECT.md).** A new tool, doc, account,
   service, cost or future idea — and equally **a new way the project is built,
