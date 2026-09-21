@@ -88,7 +88,7 @@ npm run build      # must stay clean; Vercel builds this on push to main
 ```
 
 ```bash
-node tools/world-check.mjs    # 4124 checks: world, dragons, clans, sprites, tournament, consent, balance
+node tools/world-check.mjs    # 4145 checks: world, dragons, clans, sprites, tournament, consent, balance
 node tools/pad-check.mjs      # 388 checks: controllers, keyboard sets, button prompts, the stuck-vJoy latch
 npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
@@ -590,9 +590,14 @@ Full text and the reasoning in [CLAUDE.md](CLAUDE.md); each is enforced by
 **House style:** comments explain *why* and **name the thing that was tried and
 failed** — this codebase's comments are its main defence against a fix being
 undone by somebody who could not see the reason. **When you fix something, add
-the check that would have caught it.** That is why `world-check` is 4124
+the check that would have caught it.** That is why `world-check` is 4145
 assertions — **and why a check that is sometimes red is treated as a bug in the
-check.** Two of them were coin flips: an aggregate that hid the one kitten it
+check.** **A Help card also has a length budget** — the visible text of the four
+longest, measured with its sub-cards lifted out, against a cap set just above
+what it is today. Four of them were reported too long on one afternoon and no
+check could have caught any of them: every sentence was true, most were pinned
+against the code by a check that wanted them kept, and nothing ever asked what
+they added up to. A card gets long one correct paragraph at a time. Two of them were coin flips: an aggregate that hid the one kitten it
 was asking about, and a distinctness test rounded until it became a birthday
 problem. Both are written up where they live.
 

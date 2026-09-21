@@ -6489,9 +6489,23 @@ console.log('\n--- the Powerup Kotodama ---');
     const helpHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
     /* FROM THE SUMMARY, NOT THE FIRST MENTION. "The rare orb" also appears in
        the eight-orb card that points AT this one, and slicing from there read
-       the wrong card's body and failed every assertion below. */
-    const card = helpHtml.slice(helpHtml.indexOf('<span class="ht-title">The rare orb'));
-    const body = card.slice(0, card.indexOf('</details>'));
+       the wrong card's body and failed every assertion below.
+
+       AND TO THE CARD'S OWN `</details>`, NOT THE FIRST ONE IN THE FILE AFTER
+       IT. This was `card.slice(0, card.indexOf('</details>'))`, which is the
+       same thing only while the card holds no sub-cards — it holds two now
+       (Flash Step expanded, Long Guard expanded) and that slice stopped at the
+       end of the FIRST of them, so every fact below the expanders silently
+       left the region being checked. `helpTopic` counts the tags and is what
+       the rest of this file already uses; the naive slice is the bug, and it
+       was written before there was anything to trip it.
+
+       WHITESPACE IS FLATTENED because these are sentences in wrapped markup:
+       `<b>changes how the\n move works</b>` is the same sentence as the one
+       on a single line, and a check that can be broken by re-wrapping a
+       paragraph teaches the next person not to re-wrap paragraphs. */
+    const body = helpTopic(helpHtml, 'The rare orbs — dealer only')
+      .replace(/\s+/g, ' ');
     /* NOT "ONLY THE DEALER" ANY MORE, and the card has to stop saying so. A
        special quest can roll one at the ending (systems/feats.js), so the
        card says the dealer SELLS them, that they are not on the islands, and
@@ -7514,8 +7528,10 @@ console.log('\n--- half a second of not being there ---');
   /* --- 12. THE HELP PAGE AND THE BALANCE PAGE ----------------------------- */
   {
     const helpHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-    const at = helpHtml.indexOf('<span class="ht-title">Special abilities');
-    const card = helpHtml.slice(at, helpHtml.indexOf('</details>', at));
+    /* `helpTopic`, NOT A SLICE TO THE NEXT `</details>` — the same trap the
+       rare-orbs card fell into when it grew sub-cards. This card has none
+       today; it is read this way so that it may. */
+    const card = helpTopic(helpHtml, 'Special abilities');
     ok('the Flash Step is in the Special abilities card', /Flash Step/.test(card));
     ok('...on the same grid as the other four, ready for its clip',
       (card.match(/<figure class="move"/g) ?? []).length === 5);
@@ -8276,8 +8292,9 @@ console.log('\n--- 瞬 the second orb, and what the page says about it ---');
   ok('...and a third adds nothing again, exactly as both cards say',
     JSON.stringify(three.blink) === JSON.stringify(two.blink));
 
-  const rare = helpTopic(h, 'The rare orbs — dealer only');
-  const special = helpTopic(h, 'Special abilities');
+  const flat = (s) => s.replace(/\s+/g, ' ');
+  const rare = flat(helpTopic(h, 'The rare orbs — dealer only'));
+  const special = flat(helpTopic(h, 'Special abilities'));
   /* THE OLD SENTENCE, EXACTLY. "(瞬 Flash Step doesn't; a second one is a
      wasted slot.)" — a parenthetical hung off the paragraph that teaches
      stacking. "wasted slot" on its own is still TRUE of 守 Long Guard on a
@@ -8292,21 +8309,39 @@ console.log('\n--- 瞬 the second orb, and what the page says about it ---');
     /side/.test(rare) && /exact spot/.test(rare));
   ok('...and points at the card that teaches it',
     /Special abilities/.test(rare));
-  /* THE SAME FACT IN THE PLACE THE MOVE IS TAUGHT. Asked for as "in the
-     Special Abilities, we should also note this". One card knowing it and the
-     other not is how it went wrong the first time. */
-  ok('Special abilities teaches the two-orb modifier too',
-    /Two 瞬 Flash Step orbs change the move/.test(special)
-    && /exact spot/.test(special));
   /* AND WHAT IT IS FOR. "works best when using a controller with a joystick or
      touch screen with joystick input... for more advanced players that want
      more control of exactly where they can teleport to." Both halves, because
      the second is the warning: a kitten on the keyboard who buys a second orb
      has bought a control she cannot use finely. */
-  ok('...and says which hands can actually use it',
-    /controller stick/.test(special) && /touch-screen stick/.test(special));
-  ok('...and that it is the advanced way to play the move',
-    /advanced/.test(special));
+  ok('...and which hands can actually use it, and that it is the advanced way',
+    /controller stick/.test(rare) && /touch-screen stick/.test(rare)
+    && /advanced/.test(rare));
+  /* WRITTEN ONCE, IN THE EXPANDER, AND NOT TWICE ANY MORE.
+     "On the bottom of the Special Abilities, it describes the Flash Step and
+     its extended ability. Let's put this in The Rare Orbs page and have it as
+     an expandable page within it called 'Flash Step Expanded'."
+
+     BOTH CARDS CARRIED THE WHOLE EXPLANATION, and that was itself a fix: the
+     bug before this one was the rare-orbs card saying a second 瞬 was a wasted
+     slot while Special abilities said the opposite, and writing it out in both
+     places was how that was settled. Two copies is how it happened. So the
+     rule this pins is not "both cards say it" any more, it is the pair:
+     ONE card explains it, and the OTHER may not fall silent about it. A reader
+     who is being taught the move must still be told a second orb is worth
+     having — that is the original report — and told where the rest is. */
+  const expander = flat(helpTopic(h, 'Flash Step expanded'));
+  ok('the expanded card is inside the rare-orbs card, not loose in Help',
+    rare.includes('Flash Step expanded') && expander.length > 200,
+    `${expander.length} chars`);
+  ok('...and it is the one that explains the second orb',
+    /Two 瞬 Flash Step orbs change the move|瞬 Flash Step is different/.test(expander)
+    && /exact spot/.test(expander));
+  ok('...while Special abilities still says a second orb CHANGES the move',
+    /Two 瞬 Flash Step orbs change the move/.test(special));
+  ok('...and sends her to the expander rather than repeating it',
+    /Flash Step expanded/.test(special)
+    && !/touch-screen stick/.test(special));
 }
 
 console.log('\n--- 瞬 the spirit, and the rain at both ends ---');
@@ -16848,11 +16883,25 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
      names above are checked against the whole panel and not against the top
      level. What is pinned here is the SHAPE — that the fold happened, that the
      eight really are inside their parents, and that they cannot close them. */
+  /* THE INNERMOST PARENT WINS, and that is not a detail. "The rare orbs" is
+     itself inside "The arena", so an expander inside IT is inside both — and a
+     loop that returned the first match would report the arena and pass a check
+     that was asking whether the fold is one level or two. Shortest containing
+     topic is the innermost one. */
   const parentOf = (title) => {
-    for (const p of ['Moving &amp; fighting', 'The arena']) {
-      if (helpTopic(help, p).includes(`<span class="ht-title">${title}</span>`)) return p;
+    let best = null, len = Infinity;
+    for (const p of ['Moving &amp; fighting', 'The arena',
+      'The rare orbs — dealer only']) {
+      /* A TOPIC CONTAINS ITS OWN HEADING, so without this every candidate that
+         is also a sub-card answers "me" — "The rare orbs" came back as its own
+         parent, which is both true of the slice and useless. */
+      if (p === title) continue;
+      const sec = helpTopic(help, p);
+      if (sec.includes(`<span class="ht-title">${title}</span>`) && sec.length < len) {
+        best = p; len = sec.length;
+      }
     }
-    return null;
+    return best;
   };
   const MOVING = 'Moving &amp; fighting';
   for (const [title, parent] of [
@@ -16867,6 +16916,9 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
     ['Special abilities', 'The arena'],
     ['Clan abilities', 'The arena'],
     ["Dealer's Stall &amp; Trading", 'The arena'],
+    /* AND ONE LEVEL DEEPER AGAIN, which is where the detail went. */
+    ['Flash Step expanded', 'The rare orbs — dealer only'],
+    ['Long Guard expanded', 'The rare orbs — dealer only'],
   ]) {
     const plain = (s) => s.replace(/&amp;/g, '&');
     ok(`..."${plain(title)}" is inside "${plain(parent)}"`,
@@ -16879,9 +16931,17 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
      finger that tapped it. Two groups, one per parent. */
   const subs = [...help.matchAll(/<details class="help-card help-sub" name="([^"]+)">/g)]
     .map((m) => m[1]);
+  /* THREE GROUPS NOW, ONE PER PARENT, AND THE THIRD IS THE SAME LESSON A
+     LEVEL DOWN: the two expanders sit inside "The rare orbs", which is itself
+     a `help-arena` card, so an expander carrying `help-arena` would close the
+     card it lives in the instant it opened. `help-rare` is its own group for
+     exactly the reason `help-arena` is. */
   ok('...and every sub-card is in its parent\'s own accordion group',
-    subs.length === 11 && subs.every((n) => n === 'help-move' || n === 'help-arena'),
+    subs.length === 13
+    && subs.every((n) => n === 'help-move' || n === 'help-arena' || n === 'help-rare'),
     `${subs.length}: ${[...new Set(subs)].join(', ')}`);
+  ok('...and the two expanders are the ones in the third group',
+    subs.filter((n) => n === 'help-rare').length === 2);
   ok('...never in the top-level group, which would close its parent',
     !subs.includes('help'));
   /* THE CLIPS AND THE PICTURE STAY OUTSIDE THE FOLD. A reader who opens a topic
@@ -16895,6 +16955,71 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
       body.indexOf(mark) > 0 && body.indexOf(mark) < body.indexOf('ht-subs'),
       `${body.indexOf(mark)} vs ${body.indexOf('ht-subs')}`);
   }
+  /* --- AND A CARD MAY NOT GROW PAST WHAT A CHILD WILL READ ---------------
+     Four cards were reported on one afternoon for the same reason, in the same
+     words: "too much information, can we remove the unimportant information
+     and condense it", "also too long", "also too full of text, we should try
+     to remove unnecessary text and reduce the text by about half".
+
+     THERE WAS NO CHECK THAT COULD HAVE CAUGHT ANY OF THEM, because every
+     sentence on all four was TRUE, and almost every one of them was pinned
+     against the code by a check that wanted it to stay. A page gets long one
+     correct paragraph at a time, each added by somebody fixing something real,
+     and nothing in this file ever asked what it added up to. This is that
+     question: the VISIBLE text of a card, with comments and markup stripped,
+     against a budget.
+
+     THE BUDGET IS THE MEASURED LENGTH PLUS ROOM. Before this pass: Saving your
+     progress 2071 characters, Quests & achievements 1574, The rare orbs 1694,
+     Special abilities 1242. After: 1119, 1206, 536 and 847. The caps below sit
+     above the new numbers with a paragraph of headroom each — this is a
+     ratchet against the next slow drift, not a style guide, and a check that
+     fires on a legitimate sentence is worse than none.
+
+     A PARENT IS MEASURED WITHOUT ITS SUB-CARDS, which is the whole point of
+     the fold. "The rare orbs" still holds all of its old words; what changed
+     is that two thirds of them are one tap further in, and a check that
+     measured the whole subtree would call that no change at all. */
+  {
+    const vis = (s) => s.replace(/<!--[\s\S]*?-->/g, ' ')
+      .replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/g, 'x')
+      .replace(/\s+/g, ' ').trim();
+    /* THE CARD'S OWN BODY: everything at nesting depth zero, with each nested
+       <details> subtree lifted out whole. */
+    const own = (s) => {
+      let out = '', depth = 0, last = 0, m;
+      const re = /<details\b|<\/details>/g;
+      while ((m = re.exec(s))) {
+        if (m[0] === '</details>') {
+          if (--depth === 0) last = m.index + m[0].length;
+        } else {
+          if (depth === 0) out += s.slice(last, m.index);
+          depth++;
+        }
+      }
+      return out + s.slice(last);
+    };
+    for (const [title, cap, was] of [
+      ['Saving your progress', 1300, 2071],
+      ['Quests &amp; achievements', 1350, 1574],
+      ['The rare orbs — dealer only', 750, 1694],
+      ['Special abilities', 1000, 1242],
+    ]) {
+      const n = vis(own(helpTopic(help, title))).length;
+      ok(`"${title.replace('&amp;', '&')}" still fits in one reading`,
+        n > 0 && n <= cap, `${n} / ${cap} chars (was ${was})`);
+    }
+    /* AND THE TWO EXPANDERS REALLY HOLD SOMETHING. A fold that moved the words
+       out of the parent and into a card nobody filled would pass every budget
+       above and lose the explanation — which is the failure mode of trimming,
+       not of growing, and the one this pass could have caused. */
+    for (const t of ['Flash Step expanded', 'Long Guard expanded']) {
+      const n = vis(helpTopic(help, t)).length;
+      ok(`..."${t}" is where the detail went, not where it died`,
+        n > 250, `${n} chars`);
+    }
+  }
+
   /* AND THE ARENA SHOT IS CAPPED, which is the half of that bargain that broke.
      At full panel width `arena.jpg` is ~400px tall and filled the card on its
      own: opening "The arena" showed the arena and nothing else, with the four
@@ -25636,6 +25761,41 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...on the second row, beside the trailer, not in the cat-head menu',
       html.indexOf('id="btn-title-load"') > html.indexOf('menu-row-2')
       && html.indexOf('id="btn-title-load"') < html.indexOf('data-action="trailer"'));
+    /* BESIDE IT, NOT ABOVE IT — AND THAT IS `grid-auto-flow`, WHICH IS WHY IT
+       IS PINNED HERE AND NOT LEFT TO THE EYE. "The LOAD A SAVE GAME button
+       should appear after the player presses the Play button. Or at least,
+       have it to the left of the Watch the Trailer button so it is not messing
+       up the UI on the main menu." Stacked, it was a THIRD row under the cat
+       and pushed the girls' artwork up the screen.
+
+       THE HIDDEN CASE IS THE ONE THAT COULD REGRESS SILENTLY. Two spelt-out
+       columns (`grid-template-columns: 1fr 1fr`) would leave an empty right
+       half on a machine with no saves — the trailer button at half width with
+       nothing beside it, on every fresh install, which nobody testing with a
+       save on disk would ever see. `auto-flow: column` has no such case: a
+       `display: none` button is not a grid item, so one item is one full-width
+       column and the row goes back to exactly what it always was. */
+    {
+      /* THE STYLESHEET IS NOT IN SCOPE IN THIS BLOCK — it is read here rather
+         than hoisted, because the layout fact and the markup fact belong next
+         to each other and a reader of this check should not have to go and
+         find out where `css` came from. */
+      const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+      const row = css.slice(css.indexOf('.menu-row-2 {'),
+        css.indexOf('}', css.indexOf('.menu-row-2 {')));
+      ok('...side by side, on one row',
+        /grid-auto-flow:\s*column/.test(row));
+      ok('...and by auto-flow, so a hidden LOAD gives the trailer its row back',
+        /grid-auto-columns:\s*1fr/.test(row)
+        && !/grid-template-columns/.test(row));
+      /* AND IT FOLDS BACK TO A STACK WHERE TWO WILL NOT FIT. "LOAD A SAVED
+         GAME" at half of a narrow stack wraps to two lines and the pair stop
+         being the same height, which reads as a mistake rather than a layout.
+         The number is not checked — only that there IS a narrow case. */
+      ok('...with a narrow width where they stack again',
+        /@media \(max-width: \d+px\) \{\s*\.menu-row-2 \{ grid-auto-flow: row; \}/
+          .test(css));
+    }
     {
       const refresh = main.slice(main.indexOf('  _refreshTitleLoad() {'),
         main.indexOf('  _refreshTitleLoad() {') + 900);
@@ -25887,13 +26047,38 @@ console.log('\n--- one press is not enough, and one player drives ---');
       says(AUTOSAVE_EVERY, 'seconds'));
     ok('...and the same number of slots',
       /last five/.test(card) && MAX_SAVES === 5);
-    /* AND THE KEEP RULE IN THE SAME NUMBERS AS `capFor`. */
-    ok('...and the keep rule, in the numbers the code keeps',
+    /* AND THE KEEP RULE — THE DOOR AND THE MARK, WHICH ARE THE TWO THINGS A
+       PLAYER DECIDES. This used to read "more than four", "grows to eight",
+       "ten at most" and "never the one you saved last" back out of the card
+       and compare each with MAX_SAVES, MAX_KEPT and MAX_LIST. That was four
+       sentences of arithmetic on a card read aloud to a nine-year-old, and
+       none of it is a choice anybody makes — the game does it whatever she
+       thinks. Reported as "too much information... condense it so it is about
+       half as long", and this paragraph was most of the half.
+
+       THE CONSTANTS ARE STILL PINNED, just not to prose. `capFor` is asserted
+       against MAX_SAVES / MAX_KEPT / MAX_LIST directly a few blocks below —
+       which was always the check doing the work, because a sentence agreeing
+       with a constant never proved the CODE used it.
+
+       WHAT IS READ OFF THE CARD IS WHAT IT PROMISES: where the button is, what
+       it marks, and — the half that is a refusal and so cannot be dropped
+       (sixth non-negotiable) — that under five minutes it saves nothing and
+       says so. */
+    ok('...and the keep rule: the door, the mark, and the refusal',
       /PLAY SETTINGS/.test(card) && /SAVE &amp; QUIT GAME/.test(card)
-      && /more than four/.test(card) && MAX_SAVES - 1 === 4
-      && /grows to eight/.test(card) && MAX_KEPT === 8
-      && /ten at most/.test(card) && MAX_LIST === 10
-      && /more than eight/.test(card) && /never the one you saved last/.test(card));
+      && /★ kept/.test(card) && /saves nothing at all/.test(card)
+      && /it says so/.test(card));
+    /* AND IT MAY NOT CONTRADICT THE CODE EITHER. Cutting a number is fine;
+       leaving a WRONG one behind is the thing the old check existed to stop.
+       So the card is searched for any "N minutes" / "N seconds" / "last N" it
+       still states, and each has to be one the code agrees with. */
+    ok('...and every number still on the card is one the code uses',
+      [...card.matchAll(/(?:last |every )(\d+|five|ten|thirty)\b/gi)]
+        .map((m) => ({ five: 5, ten: 10, thirty: 30 }[m[1].toLowerCase()]
+          ?? +m[1]))
+        .every((n) => [MAX_SAVES, MAX_LIST, AUTOSAVE_EVERY,
+          AUTOSAVE_AFTER / 60].includes(n)));
     /* THE ONE WARNING THAT IS STILL TRUE STAYS. They live in this browser on
        this computer, and clearing site data takes them — along with the record
        board. Dropping that with the rest of the apology would be trading one
@@ -26798,6 +26983,73 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     /#warnings \{[^}]*bottom:/.test(css));
   ok('...and out of the way of the touch controls on a phone',
     /body\.touch-ui #warnings \{[^}]*top:/.test(css));
+  /* --- AND IN FRONT OF THE REST OF THE HUD -------------------------------
+     "The warning about the bamboo running out in the world is appearing
+     behind the UI elements of the minimap, it should appear above all other
+     UI (unless a cutscene like ryuuseki or the ending is playing, in that case
+     it should probably be hidden during the cutscene)."
+
+     ONE NUMBER, AND IT WAS MISSING RATHER THAN WRONG. Everything in `#hud`
+     that can overlap this strip carries a `z-index` — `.map-box` is 3,
+     `#join-card` and `#balls` are 6 — and a positioned box with `z-index:
+     auto` paints under every positioned sibling that has one, whatever the
+     document order says.
+
+     IT ONLY STARTED OVERLAPPING WHEN THE MAPS DID. index.html still calls the
+     bottom strip "the only strip of the frame nothing else claims", which was
+     true when there was one shared map in the bottom RIGHT. There is a map in
+     the bottom-left of EVERY pane now, so at three and four players the bottom
+     of the screen is a row of maps.
+
+     SO THE CHECK IS A COMPARISON, NOT A LITERAL. It reads every `z-index`
+     declared inside the `#hud` subtree out of the stylesheet and asserts this
+     one is strictly the largest — a future HUD part that arrives with a higher
+     number fails here rather than quietly covering a warning again. */
+  {
+    const zOf = (sel) => {
+      const at = css.indexOf(sel + ' {');
+      if (at < 0) return null;
+      const m = /z-index:\s*(\d+)/.exec(css.slice(at, css.indexOf('}', at)));
+      return m ? +m[1] : null;
+    };
+    const warnZ = zOf('#warnings');
+    /* THE OTHER POSITIONED CHILDREN OF `#hud`, BY NAME. Listed rather than
+       scraped because "inside #hud" is a DOM fact and this is a text file:
+       a regex over the whole stylesheet would sweep in the pause menu and the
+       cutscene, which are not in the contest at all. */
+    const siblings = ['.map-box', '#join-card', '#balls', '#toasts',
+      '#math-board', '.scoreboard', '.map-tag', '.hint']
+      .map((s) => [s, zOf(s)]).filter(([, z]) => z != null);
+    line('#warnings z-index / highest other in #hud',
+      `${warnZ} / ${Math.max(...siblings.map(([, z]) => z))}`);
+    ok('the warning strip has a z-index at all, which is the bug',
+      warnZ != null);
+    ok('...and it is above every other thing in the HUD, the minimap included',
+      siblings.every(([, z]) => warnZ > z),
+      siblings.map(([s, z]) => `${s}:${z}`).join(' '));
+    /* AND IT ESCAPES NOTHING. `#hud` is `position: fixed` with its own
+       `z-index`, so it is a stacking context and the number above is only ever
+       compared with its own siblings. The touch pad, the menu overlays and the
+       cutscene are outside it and must keep winning — a warning on top of a
+       story is the other half of the note. */
+    ok('...while the whole HUD still sits under the pad, the menus and a scene',
+      zOf('#hud') < zOf('#touch-pad') && zOf('#hud') < zOf('.overlay')
+      && zOf('#hud') < zOf('#cutscene'),
+      `hud ${zOf('#hud')}`);
+    /* THE HIDE DURING A SCENE NEEDED NO SECOND RULE, and that is worth pinning
+       rather than trusting: the strip is a CHILD of `#hud`, and
+       `#hud.scene-hidden` is an `opacity: 0` — which takes the whole subtree
+       with it however high a child's z-index is. Move `#warnings` out of `#hud`
+       to get it "above everything" and the Ryuuseki scene gets a warning
+       across it; this pair of checks is what would say so. */
+    ok('...and the strip is inside #hud, which is what hides it during a scene',
+      html.slice(html.indexOf('<div id="hud"'),
+        html.indexOf('opening cutscene')).includes('<div id="warnings">'));
+    ok('...by fading the whole HUD, not by hiding one box',
+      /#hud\.scene-hidden \{[^}]*opacity:\s*0/.test(css));
+    ok('...whenever any scene owns the screen, from one place',
+      /_sceneActive\(\)[\s\S]{0,200}scene-hidden/.test(M));
+  }
   ok('the cutter is warned every tenth cane until she swears',
     /BAMBOO_WARN_EVERY = 10/.test(M)
       && /!cutter\.raisedPanda[\s\S]{0,120}?cutter\.bambooCut % BAMBOO_WARN_EVERY === 0/.test(M));

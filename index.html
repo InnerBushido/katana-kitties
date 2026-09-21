@@ -113,7 +113,17 @@
                  the menu the girls drew and PLAY is centred in the cat's mouth
                  by a three-column grid; a fourth cell there moves their artwork.
                  Second non-negotiable, the same argument the trailer button
-                 already makes one line below. -->
+                 already makes one line below.
+
+                 BESIDE THE TRAILER AND NOT ABOVE IT. Reported as "at least,
+                 have it to the left of the Watch the Trailer button so it is
+                 not messing up the UI on the main menu" — stacked, it was a
+                 THIRD row under the cat, and the menu the girls drew stopped
+                 being the thing the eye lands on. It is first in the markup,
+                 so it is the left-hand cell and the pad's cursor reaches it
+                 first; `.menu-row-2` in style.css is what makes that one row
+                 rather than two, and makes it collapse back to the trailer's
+                 old full-width self on a machine with no saves. -->
             <div class="menu-row menu-row-2">
               <button class="menu-btn small hidden" id="btn-title-load"
                 data-action="saves">LOAD A SAVED GAME</button>
@@ -1064,68 +1074,119 @@
                   <span class="ht-title">The rare orbs — dealer only</span>
                   <span class="ht-chev" aria-hidden="true">▸</span>
                 </summary>
+                <!-- WHAT THEY DO, AND THEN A DOOR. Reported as "also too full
+                     of text, we should try to remove unnecessary text and
+                     reduce the text by about half", with the shape to put it
+                     in: "the main card should give a brief description of the
+                     ability and what it does, and expanded/detailed
+                     information of the ability/orbs should be in the Expanded
+                     sub-categories for those abilities."
+
+                     SO THE TEST FOR WHAT STAYS UP HERE IS "WOULD SHE BUY IT",
+                     not "is it true". Where they are, what each one does, what
+                     they cost, and the one warning that changes the answer —
+                     守 is worthless without a 壁 Ward, and a kitten who spends
+                     two and a half orbs' worth of points to find that out has
+                     lost her afternoon's savings. Everything else is a
+                     consequence of owning one, which is a question she asks
+                     AFTER she owns one, and that is what the two expanders are.
+
+                     `world-check` reads this card as a whole — both expanders
+                     are inside it — so nothing below can quietly stop being
+                     said; what it also reads now is the LENGTH of this body on
+                     its own, which is the thing that went wrong. -->
                 <div class="ht-body">
                   <p class="ht-note">
                     There are <b>two more Kotodama</b>, and they are <b>not out in
-                    the world</b> — <b>the dealer has them</b>. Don't go
-                    looking for them on the islands; they aren't there. The only
-                    other way to get one is <b>luck</b>: a <b>special quest</b>
-                    can hand you one at the ending — see <b>Quests &amp;
-                    achievements</b>.
+                    the world</b> — <b>the dealer has them</b>. The only other way
+                    to get one is <b>luck</b>: a <b>special quest</b> can hand you
+                    one at the ending.
                   </p>
                   <ul class="ability-list">
                     <li><b>守 Long Guard</b> — your <b>壁 Ward</b> bubble stays up
-                      for longer.</li>
+                      for longer. <b>It does nothing on its own</b>: with no 壁 Ward
+                      there is no shield for it to lengthen.</li>
                     <li><b>瞬 Flash Step</b> — vanish, and land somewhere else.
                       It's a <b>move</b>, so it's taught in <b>Special
                       abilities</b>.</li>
                   </ul>
                   <p class="ht-note">
-                    They both cost <b>two and a half times</b> what an ordinary orb
-                    does, and the dealer keeps <b>two of each</b>. The rest of this
-                    card is about <b>守 Long Guard</b>.
+                    Both cost <b>two and a half times</b> what an ordinary orb does,
+                    and the dealer keeps <b>two of each</b>.
                   </p>
-                  <p class="ht-note">
-                    <b>It does nothing on its own.</b> Wearing 守 without a 壁 Ward
-                    is a wasted slot — there's no shield for it to make longer. You
-                    need <b>both</b>.
-                  </p>
-                  <p class="ht-note">
-                    <b>It stacks</b>: each one you wear adds more time, so two are
-                    twice as good as one — but each one is also another slot you
-                    aren't using for something else.
-                  </p>
-                  <!-- IT SAID A SECOND 瞬 WAS A WASTED SLOT, AND THAT WAS FALSE.
-                       Reported from play in those words. `aggregate()` has read
-                       `blink >= 2` as an AIM UPGRADE since the day the second orb
-                       bought something, and this card never caught up — so the one
-                       page in the game that exists to explain the rare orbs was
-                       telling a nine-year-old not to buy the thing that makes the
-                       move interesting. Fixed here AND in Special abilities, which
-                       is where the move itself is taught; `world-check` now pins
-                       both strings, so the next balance change to 瞬 cannot leave
-                       this paragraph behind again. -->
-                  <p class="ht-note">
-                    <b>瞬 Flash Step is different.</b> A second one does <b>not</b>
-                    add more of anything — it <b>changes how the move works</b>.
-                    With one, you choose which <b>side</b> of your sister you come
-                    out on. With two, you choose the <b>exact spot</b>: how far you
-                    push the stick is how far away you land. More than two adds
-                    nothing again. It's taught in <b>Special abilities</b>.
-                  </p>
-                  <p class="ht-note">
-                    <b>The catch.</b> If you hold your shield up for <b>longer than
-                    the normal 2 seconds</b>, you have to wait <b>a fifth longer</b>
-                    before you can block again. Let go before 2 seconds and there's
-                    no penalty at all — so the orb isn't just "better shield", it's
-                    a <b>choice</b> every time you press the button.
-                  </p>
-                  <p class="ht-note">
-                    When that longer wait is over you'll <b>hear a chime and see a
-                    blue spark</b> gather into you: that means your shield is back.
-                    You only get it after a long block — an ordinary one recharges
-                    quietly like it always did.
-                  </p>
+                  <div class="ht-subs">
+                    <!-- THE TWO-ORB MODIFIER LIVES HERE NOW, AND IT USED TO BE
+                         SAID TWICE. Both this card and Special abilities
+                         carried the whole explanation, because the bug before
+                         this one was ONE of them being wrong while the other
+                         was right — and the fix at the time was to write it
+                         out in both. Two copies is still two copies. It is
+                         written once here, where a reader who has just been
+                         told what 瞬 costs is standing; Special abilities says
+                         that a second orb changes the move and points at this
+                         card, which is the half that cannot be dropped —
+                         nobody reading about the MOVE may be left thinking a
+                         second orb is wasted.
+
+                         IT SAID A SECOND 瞬 WAS A WASTED SLOT, AND THAT WAS
+                         FALSE. Reported from play in those words. `aggregate()`
+                         has read `blink >= 2` as an AIM UPGRADE since the day
+                         the second orb bought anything. `world-check` pins this
+                         paragraph against `aggregate()` itself, so the next
+                         balance change to 瞬 cannot leave it behind again. -->
+                    <details class="help-card help-sub" name="help-rare">
+                      <summary class="help-topic">
+                        <span class="ht-ico" aria-hidden="true">瞬</span>
+                        <span class="ht-title">Flash Step expanded</span>
+                        <span class="ht-chev" aria-hidden="true">▸</span>
+                      </summary>
+                      <div class="ht-body">
+                        <p class="ht-note">
+                          <b>瞬 Flash Step is different.</b> A second one does
+                          <b>not</b> add more of anything — it <b>changes how the
+                          move works</b>. With one, you choose which <b>side</b> of
+                          your sister you come out on. With two, you choose the
+                          <b>exact spot</b>: how far you push the stick is how far
+                          away you land. More than two adds nothing again.
+                        </p>
+                        <p class="ht-note">
+                          It works best with a <b>controller stick</b> or the
+                          <b>touch-screen stick</b> — those are the two that can say
+                          "a little bit" instead of just "that way". This is the
+                          <b>advanced</b> way to use the move, for someone who wants
+                          to choose exactly where she lands.
+                        </p>
+                      </div>
+                    </details>
+                    <details class="help-card help-sub" name="help-rare">
+                      <summary class="help-topic">
+                        <span class="ht-ico" aria-hidden="true">守</span>
+                        <span class="ht-title">Long Guard expanded</span>
+                        <span class="ht-chev" aria-hidden="true">▸</span>
+                      </summary>
+                      <div class="ht-body">
+                        <p class="ht-note">
+                          <b>It stacks</b>: each one you wear adds more time, so two
+                          are twice as good as one — but each one is also another
+                          slot you aren't using for something else.
+                        </p>
+                        <p class="ht-note">
+                          <b>The catch.</b> If you hold your shield up for
+                          <b>longer than the normal 2 seconds</b>, you have to wait
+                          <b>a fifth longer</b> before you can block again. Let go
+                          before 2 seconds and there's no penalty at all — so the
+                          orb isn't just "better shield", it's a <b>choice</b> every
+                          time you press the button.
+                        </p>
+                        <p class="ht-note">
+                          When that longer wait is over you'll <b>hear a chime and
+                          see a blue spark</b> gather into you: that means your
+                          shield is back. You only get it after a long block — an
+                          ordinary one recharges quietly like it always did.
+                        </p>
+                      </div>
+                    </details>
+                  </div>
                 </div>
               </details>
 
@@ -1188,25 +1249,30 @@
                   <!-- THE ONE ORB IN THE GAME WHOSE SECOND COPY CHANGES THE MOVE
                        RATHER THAN A NUMBER — see `aggregate()` in
                        entities/powerorb.js, which has read `blink >= 2` as an aim
-                       upgrade for as long as it has meant anything. It is outside
-                       the grid on purpose: every cell up there is one move on one
-                       button, and a paragraph about wearing two of something is
-                       not that. The rare-orbs card says the same thing from the
-                       other end, and `world-check` pins both. -->
+                       upgrade for as long as it has meant anything.
+
+                       THE FACT IS SAID HERE AND EXPLAINED ONE CARD AWAY. It used
+                       to be two full paragraphs here AND two in the rare-orbs
+                       card, because the bug before this one was one of them being
+                       wrong while the other was right, and writing it out twice
+                       was the fix at the time. Two copies is how that happened in
+                       the first place. What cannot be dropped is the SENTENCE:
+                       this is the card that teaches the move, so a reader here
+                       must not be left thinking a second orb is wasted — that was
+                       the original report. So the sentence stays and the detail
+                       goes, which is also what "the bottom of Special abilities
+                       describes the Flash Step and its extended ability, let's
+                       put this in the Rare Orbs page" asked for.
+
+                       OUTSIDE THE GRID, STILL. Every cell up there is one move on
+                       one button, and a line about wearing two of something is not
+                       that. `world-check` pins this pointer and the expander it
+                       points at, together. -->
                   <p class="ht-note">
-                    <b>Two 瞬 Flash Step orbs change the move.</b> Wearing a second
-                    one doesn't make it longer or stronger — it hands you the
-                    <b>stick</b>. With one orb you pick which <b>side</b> of your
-                    sister you come out on; with two you pick the <b>exact spot</b>,
-                    by how far you push. A small push lands you right next to her,
-                    a hard push throws you out to the far edge.
-                  </p>
-                  <p class="ht-note">
-                    It works best with a <b>controller stick</b> or the
-                    <b>touch-screen stick</b> — those are the two that can say "a
-                    little bit" instead of just "that way". This is the
-                    <b>advanced</b> way to use the move, for someone who wants to
-                    choose exactly where she lands.
+                    <b>Two 瞬 Flash Step orbs change the move</b> — a second one
+                    doesn't make it longer or stronger, it hands you the
+                    <b>stick</b>. See <b>Flash Step expanded</b>, in <b>The rare
+                    orbs — dealer only</b>.
                   </p>
                 </div>
               </details>
@@ -1360,19 +1426,31 @@
             <span class="ht-title">Quests &amp; achievements</span>
             <span class="ht-chev" aria-hidden="true">▸</span>
           </summary>
+          <!-- THE QUESTS, AND AS LITTLE ROUND THEM AS THE RULES ALLOW.
+               Reported as "too long in the Help menu, we should remove the
+               paragraph 'your card shows every orb you won' and any extra
+               fluff that is not needed. Keep the actual achievements with the
+               graphics." So the two lists and their emblems are untouched —
+               they are the page — and the prose around them is a third of what
+               it was.
+
+               ONE CLAUSE OF THAT PARAGRAPH IS NOT FLUFF AND IS KEPT AS A
+               CLAUSE. "Mr Satan's griffin won't take you to the arena until the
+               last kitten has hers" is the answer to a girl standing at a
+               griffin that will not move, and a Help page that has quietly
+               dropped the reason is a page that made the game look broken —
+               sixth non-negotiable. It is six words inside the ceremony
+               sentence now instead of a paragraph of its own. What went is the
+               sentence about the card's colours, which describes a thing she is
+               looking at while she looks at it. -->
           <div class="ht-body">
             <p class="ht-note">
               Do one of these <b>before the ending</b> and you earn a
-              <b>free power-up orb</b>. You'll hear a chime, and a <b>little gold
-              orb</b> starts circling you — that's your promise. When you knock
-              over everything (100%), there's an <b>award ceremony</b>: one kitten
-              at a time takes a bow while <b>all</b> her gold orbs turn into real
-              power-up orbs at once. Anything done <b>after</b> 100% doesn't count.
-            </p>
-            <p class="ht-note">
-              Your card shows every orb you won, in its own colour. Wait for
-              <b>everybody's</b> turn — Mr Satan's griffin won't take you to the
-              arena until the last kitten has hers.
+              <b>free power-up orb</b>: a <b>little gold orb</b> starts circling
+              you — that's your promise. At 100% there's an <b>award ceremony</b>
+              where they all turn real, one kitten at a time, and the griffin
+              waits until the last of you has had her turn. Anything done
+              <b>after</b> 100% doesn't count.
             </p>
             <p class="ht-note"><b>Everybody can do these:</b></p>
             <ul class="ability-list">
@@ -1390,15 +1468,13 @@
               <li><b>🔮 Orb collector</b> — collect more Kotodama Orbs than anybody else.</li>
             </ul>
             <p class="ht-note">
-              A <b>special</b> orb is a <b>lucky dip</b>: it could be any of the
-              ten kinds, <b>even one of the two rare ones</b> the dealer sells.
-              If two of you tie for "most", you <b>both</b> get it.
+              A <b>special</b> orb is a <b>lucky dip</b> — it could be any of the
+              ten kinds, <b>even one of the two rare ones</b>. Tie for "most" and
+              you <b>both</b> get it.
             </p>
             <p class="ht-note">
-              Open your <b>Character Profile</b> to see the list: a <b>★</b> means
-              you'll get that orb if the game ends now, and the number beside your
-              name is how many are coming. You can wear <b>eight</b> orbs at most —
-              if you're already wearing eight, there's no room for another.
+              Your <b>Character Profile</b> has the list: a <b>★</b> is an orb
+              you'll get if the game ends now. You can wear <b>eight</b> at most.
             </p>
           </div>
         </details>
@@ -1452,50 +1528,47 @@
                than hidden, because otherwise a girl who quits after three
                minutes finds an empty list and concludes the feature is broken -
                sixth non-negotiable, a refusal has to say so. -->
+          <!-- HALF THE WORDS. Reported as "too much information, can we remove
+               the unimportant information and condense it so it is about half
+               as long". What a nine-year-old needs from this card is: it
+               happens by itself, it starts after five minutes, here is the row
+               that loads one, here is how to keep one, and they live in this
+               browser. That is what is left.
+
+               WHAT WENT WAS THE ARITHMETIC. The list grows from five to eight
+               when you keep more than four, never past ten, and drops the
+               shortest kept game before the newest — all true (`capFor` in
+               systems/savegame.js), all four sentences, and none of it a
+               decision anybody makes. `world-check` used to read those numbers
+               back out of this paragraph to stop them drifting from the code;
+               it now asserts the card does not CONTRADICT them and reads the
+               numbers themselves off `capFor` directly, which is the stronger
+               test of the two and was always the one doing the work.
+
+               THE WARNING STAYS WHOLE. It is the one thing on this card that
+               can cost somebody something, and "condense it" is not a licence
+               to trim the sentence that stops an afternoon being thrown away
+               by a browser clean-up. -->
           <div class="ht-body">
             <p class="ht-note">
               <b>The game saves itself.</b> Once you have been playing for five
               minutes it writes your adventure down every thirty seconds — no
-              button to press, nothing to remember. Open the pause menu with
-              <b>Esc</b> or <b>+ / Start</b>, go to <b>PLAY SETTINGS</b> and
-              choose <b>LOAD A SAVED GAME</b> to pick one up again. Loading one
-              saves the game you are playing first, if it is five minutes long.
-            </p>
-            <!-- THE KEEP RULE, IN THE SAME NUMBERS AS `capFor`. `world-check`
-                 reads "five", "eight" and "ten" out of this paragraph against
-                 MAX_SAVES, MAX_KEPT and MAX_LIST. -->
-            <p class="ht-note">
-              <b>Want to keep a game for good?</b> Go to <b>PLAY SETTINGS → END
-              THE GAME → SAVE &amp; QUIT GAME</b>. Once a game is five minutes
-              long, that marks it <b>★ kept</b>, and newer games can't push it off
-              the list. <b>Before</b> those five minutes that button saves
-              nothing at all — it says so, and it asks first. Keep more than four
-              and the list grows to eight, and it
-              always leaves room for two more games beside them — ten at most.
-              Keep more than eight and the kept game you played for the shortest
-              time goes first, but never the one you saved last.
+              button to press, nothing to remember. To pick one up again, choose
+              <b>LOAD A SAVED GAME</b>: on the title screen, or in the pause menu
+              under <b>PLAY SETTINGS</b>. It keeps the <b>last five</b> games —
+              one row each, however long you played.
             </p>
             <p class="ht-note">
-              <b>One row per game.</b> However long you play, your adventure is
-              one row in the list and it keeps getting more recent — so the
-              <b>last five</b> are the last five <i>games</i>, not the last five
-              half-minutes. Each one says who played, what orbs they were
-              wearing and how far the town had come down, so you can find the
-              afternoon you wanted. The oldest drops off the bottom.
+              <b>Want to keep a game for good?</b> <b>PLAY SETTINGS → END THE
+              GAME → SAVE &amp; QUIT GAME</b> marks it <b>★ kept</b>, and newer
+              games can't push it off the list. <b>Before</b> five minutes that
+              button saves nothing at all — it says so, and it asks first.
             </p>
             <p class="ht-note">
               <b>Everyone who played is in it</b> — even a kitten who put her
-              controller down an hour ago. Pick her up again and she has her
-              points, her clan, her panda <b>and her orbs</b> back, exactly
-              where she left off. Dropping out keeps everything.
-            </p>
-            <p class="ht-note">
-              <b>Want to leave your orbs for somebody else?</b> There is a
-              <b>DROP HER ORBS</b> row next to each kitten's <b>DROP OUT</b> in
-              the pause menu. They land on the ground where she is standing and
-              stay hers until she walks away — after that anybody can pick them
-              up, and they will still be lying there the next time you load
-              that game.
+              controller down an hour ago. Pick her up and she has her points,
+              her clan, her panda <b>and her orbs</b> back. Orbs she left behind
+              with <b>DROP HER ORBS</b> are still lying where she dropped them.
             </p>
             <p class="ht-note warn">
               <b>⚠ The saves live in THIS browser on THIS computer.</b> They do
