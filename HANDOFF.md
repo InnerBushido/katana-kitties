@@ -515,6 +515,88 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Six more, and four of them are the same note: there is too much writing.**
+One branch, `mixed/help-pages-trimmed-and-the-warning-on-top`. Four Help cards
+were reported over-long on one afternoon, and nothing in `world-check` could
+have caught any of them — every sentence on all four was true, and most were
+pinned by a check that wanted them kept.
+
+- **LOAD A SAVED GAME sits beside the trailer, not above it.** Asked for as
+  "should appear after the player presses the Play button. Or at least, have it
+  to the left of the Watch the Trailer button so it is not messing up the UI on
+  the main menu." Stacked, it was a **third row** under the cat-head menu and
+  pushed the girls' artwork up the screen. One line of CSS: `.menu-row-2` is
+  `grid-auto-flow: column` now, which is also what makes the hidden case free —
+  a `display: none` button is not a grid item, so a machine with no saves gets
+  back the full-width trailer row it always had, to the pixel, with no second
+  rule and no `:has()`. Below 560px they stack again, because "LOAD A SAVED
+  GAME" at half of a narrow stack wraps to two lines and the pair stop being
+  the same height.
+- **Saving your progress is half as long.** 2071 characters of visible text
+  down to 1119. What went was the arithmetic: the list grows from five to eight
+  when you keep more than four, never past ten, and drops the shortest kept game
+  before the newest — four sentences, all true (`capFor`), none of them a
+  decision anybody makes. `world-check` used to read those numbers back out of
+  the prose; it now asserts the card cannot **contradict** them (every "last N"
+  and "every N" still on the card has to be a number the code uses) and reads
+  the numbers themselves off `capFor`, which was always the check doing the
+  work. **The browser warning is untouched** — "condense it" is not a licence
+  to trim the one sentence that stops an afternoon being thrown away.
+- **Quests & achievements keeps the quests and drops the prose round them.**
+  The "your card shows every orb you won" paragraph is gone, as asked. One
+  clause of it was not fluff and is kept as a clause: *the griffin waits until
+  the last of you has had her turn* is the answer to a girl standing at a
+  griffin that will not move, and a page that quietly dropped it would have
+  made the game look broken. Both lists and their emblems are untouched — they
+  are the page.
+- **The rare orbs card is what you would need to decide whether to buy one, and
+  nothing else.** 1694 characters down to **536** in the card itself. The test
+  for what stays up top is "would she buy it": where they are, what each does,
+  what they cost, and the one warning that changes the answer — 守 is worthless
+  without a 壁 Ward, and two and a half orbs' worth of points is an afternoon's
+  savings.
+- **…and the rest is behind 瞬 Flash Step expanded and 守 Long Guard expanded.**
+  Asked for by name. A third level of Help card, inheriting `.help-sub`
+  entirely and only stepping the heading down again — and in **its own
+  accordion group** (`help-rare`), because the exclusive group is matched
+  across the whole document and an expander carrying `help-arena` would close
+  the card it lives inside the instant it opened. That is the identical bug the
+  `help-move` / `help-arena` split was written to stop, one level further down.
+- **The two-orb Flash Step rule is written once now, not twice.** It was in
+  both cards because the bug *before* this one was one of them being right and
+  the other wrong, and writing it out in both was the fix at the time. Two
+  copies is how that happened. Special abilities keeps the **sentence** — a
+  reader being taught the move must not be left thinking a second orb is
+  wasted, which was the original report — and points at the expander for the
+  rest. `world-check` pins the pair rather than the duplication: one card
+  explains it, the other may not fall silent about it.
+- **The bamboo warning paints over the minimap instead of under it.** Reported
+  exactly, reproduced exactly, and the cause is one missing number: everything
+  in `#hud` that can overlap the strip carries a `z-index` (`.map-box` is 3,
+  `#join-card` and `#balls` are 6) and the strip carried none — and a
+  positioned box with `z-index: auto` paints **under** every positioned sibling
+  that has one, whatever the document order says. **It only started overlapping
+  when the maps did**: index.html still calls the bottom strip "the only strip
+  of the frame nothing else claims", which was true when there was one shared
+  map in the bottom right. There is a map in the bottom-left of every pane now.
+  The check is a **comparison**, not a literal 8: a future HUD part that
+  arrives with a higher number fails rather than quietly covering a warning
+  again.
+- **And it is still hidden during a cutscene, with no second rule.** The other
+  half of the note. The strip is a child of `#hud`, `#hud.scene-hidden` is an
+  `opacity: 0`, and opacity on a parent takes the whole subtree with it however
+  high a child's `z-index` is — measured mid-cutscene: the warning is in the
+  DOM and the computed opacity is 0. Move `#warnings` out of `#hud` to get it
+  "above everything" and Ryuuseki gets a warning across him; two checks now say
+  so.
+- **And a Help card has a length budget.** The check that would have caught all
+  four: the visible text of a card, with comments, markup and its own
+  sub-cards stripped out, against a cap set just above what it is today. It is
+  a ratchet against the next slow drift, not a style guide. There is a floor
+  under the two expanders as well — a fold that moved the words out of the
+  parent into a card nobody filled would pass every budget and lose the
+  explanation, which is the failure mode of *trimming*.
+
 **Thirteen more, on the teleport and on what a save remembers.** One
 branch, `mixed/thirteen-notes-teleport-and-saves`. In the order they were
 reported. Four of them are one bug — a thing the game owns being taken out of

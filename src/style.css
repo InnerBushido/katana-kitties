@@ -1463,6 +1463,31 @@ body.touch-ui .pane-edge { border-width: 4px; }
    `bottom` IS MEASURED OFF `.hint`'S OWN OFFSET plus its line, so the two
    never sit on each other however the hint wraps on a narrow window. The hint
    is 13px at `bottom: 16px`; 16 + a line and a gap is 44. */
+/* OVER EVERY OTHER PIECE OF HUD, AND THAT IS WHAT THE `z-index` IS FOR.
+   Reported as "the warning about the bamboo running out is appearing behind
+   the UI elements of the minimap". It was, and the cause is one number: every
+   other thing in `#hud` that could overlap this strip carries a `z-index`
+   (`.map-box` is 3, `#join-card` and `#balls` are 6) and this carried none —
+   and a positioned box with `z-index: auto` paints UNDER every positioned
+   sibling that has one, whatever the document order says.
+
+   IT ONLY STARTED OVERLAPPING WHEN THE MAPS DID. The comment in index.html
+   still says the bottom strip is "the only strip of the frame nothing else
+   claims", and that was true when there was one shared map in the bottom
+   RIGHT corner. There is a map in the bottom-left of EVERY pane now, so at
+   three and four players the bottom of the screen is most of a row of maps and
+   a 720px strip across the middle of it cannot avoid them.
+
+   8 IS ABOVE EVERYTHING IN `#hud` AND ESCAPES NOTHING. `#hud` is itself
+   `position: fixed; z-index: 5`, so it is a stacking context and this number
+   is only ever compared with its own siblings — the touch pad (7), the menu
+   overlays (20) and the cutscene (60) are all outside it and still win. Which
+   is the other half of the note: a warning must not sit on top of a story.
+   `#hud.scene-hidden` already fades the whole HUD to nothing while any scene
+   owns the screen (Game._hudDuringScenes), and `opacity` on the parent takes
+   the whole subtree with it however high a child's `z-index` is — so the
+   Ryuuseki and ending scenes needed no second rule, and this one cannot
+   accidentally grant an exemption from the first. */
 #warnings {
   position: absolute;
   bottom: 44px;
@@ -1474,6 +1499,7 @@ body.touch-ui .pane-edge { border-width: 4px; }
   align-items: center;
   gap: 6px;
   pointer-events: none;
+  z-index: 8;
 }
 .warn-line {
   background: rgba(28, 16, 22, 0.9);
@@ -1898,6 +1924,30 @@ details.help-card.help-sub:last-child { margin-bottom: 0; }
 .help-sub > summary.help-topic .ht-ico { font-size: 19px; }
 details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px; }
 .help-sub > .ht-body { padding: 4px 13px 12px; }
+/* ONE LEVEL DEEPER AGAIN, for the two "expanded" orb cards inside "The rare
+   orbs". Asked for as "expanded/detailed information of the ability/orbs
+   should be in the Expanded sub-categories for those abilities" — the top of
+   the card says what the orb DOES in two lines, and everything that is true
+   but not needed to decide whether to buy it is one more tap in.
+
+   IT INHERITS `.help-sub` ENTIRELY and only steps the heading down again, for
+   the same reason `.help-sub` only stepped it down once: the chevron, the gold
+   open state and the pad focus ring are what a child has already learned to
+   press, and a third level that looked like a new kind of thing would be a
+   third thing to learn rather than the same thing again.
+
+   `name="help-rare"` — ITS OWN ACCORDION GROUP, AND THAT IS NOT COSMETIC. The
+   exclusive group is matched across the whole document, so an expander sharing
+   the `help-arena` group would close "The rare orbs" the instant it opened and
+   the card would vanish under the finger that tapped it. That is the identical
+   bug the paragraph above records, one level further down. */
+.help-sub .help-sub > summary.help-topic {
+  font-size: 16px;
+  padding: 8px 11px;
+  gap: 9px;
+}
+.help-sub .help-sub > summary.help-topic .ht-ico { font-size: 17px; }
+.help-sub .ht-subs { margin: 12px 0 0; }
 .ht-note { margin: 12px 0 0; font-size: 14px; line-height: 1.6; }
 .ht-note.warn {
   padding: 10px 12px;
@@ -4656,16 +4706,37 @@ body:not(.touch-ui) #debug-corner { display: none; }
    margin — the whole point is that the space above and below this row is the
    same space. */
 /* A GRID AND NOT A BLOCK, because this row holds TWO buttons now — LOAD A
-   SAVED GAME above the trailer, when there is a game to load. One column, so
-   each is still the full width of the stack and nothing about the trailer's
-   own look changes; `gap` is the SAME `--menu-gap` the rows above use, which is
-   the rule that paragraph is about. A `display: block` row would butt the two
-   buttons together with their drop shadows overlapping, which is exactly the
-   bug the comment above records being fixed once already. And a hidden LOAD
-   button is `display: none`, so its gap collapses with it and a machine with no
-   saves gets back the row it always had, to the pixel. */
-.menu-row-2 { display: grid; gap: var(--menu-gap); }
+   SAVED GAME beside the trailer, when there is a game to load. `gap` is the
+   SAME `--menu-gap` the rows above use, which is the rule the paragraph above
+   is about. A `display: block` row would butt the two buttons together with
+   their drop shadows overlapping, which is exactly the bug that comment
+   records being fixed once already.
+
+   SIDE BY SIDE, AND THAT IS `grid-auto-flow: column` RATHER THAN TWO COLUMNS
+   SPELT OUT. Stacked, LOAD was a third row under the cat-head menu and pushed
+   the artwork up the screen — reported as "it is messing up the UI on the main
+   menu", with "at least, have it to the left of the Watch the Trailer button"
+   as the fix. `auto-flow` is what makes the hidden case free: a hidden LOAD
+   button is `display: none`, so it is not a grid item at all, so the row has
+   ONE auto column and the trailer gets back the full-width button it always
+   had — to the pixel, with no second rule and no `:has()`.
+
+   AND IT FOLDS BACK TO A STACK WHEN THE TWO WON'T FIT. `LOAD A SAVED GAME` is
+   sixteen characters of Bangers; at half of a narrow stack it wraps to two
+   lines and the two buttons stop being the same height, which looks like a
+   mistake rather than a layout. Below 560px they go back to one column — where
+   there is no room for the trailer and the cat-head menu side by side either,
+   so the stack is what the whole screen is doing. */
+.menu-row-2 {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--menu-gap);
+}
 .menu-row-2 > .menu-btn { width: 100%; }
+@media (max-width: 560px) {
+  .menu-row-2 { grid-auto-flow: row; }
+}
 
 .menu-btn.small {
   font-size: clamp(11px, 1.25vw, 16px);
