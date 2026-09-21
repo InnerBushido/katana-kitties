@@ -624,6 +624,25 @@ const MAP_TALL = 0.41;
 const MAP_DOJO = 0.33;
 /** ...and again when a phone is split side by side. See below. */
 const MAP_SPLIT = 0.67;
+/** AND EVERY PHONE MAP IS THIS MUCH BIGGER THAN THOSE THREE FRACTIONS SAY.
+ *  "The mini-maps on Mobile are a bit too small, let's increase their size by
+ *  20%."
+ *
+ *  A FACTOR RATHER THAN THREE RE-TUNED FRACTIONS, because "20% bigger" is the
+ *  note and three edited decimals are not readable as one. It also makes the
+ *  check say what the note said: `world-check` asserts the touch width is
+ *  exactly `MAP_TOUCH_UP` times what the bare fractions give, at every split,
+ *  which no comparison of literals could express.
+ *
+ *  AND IT REALLY IS 20% EVERYWHERE ON A PHONE, which is worth having measured
+ *  rather than assumed: the cap is the binding term in all four cases, so the
+ *  `MAP_MAX` ceiling and the `MAP_WIDE` fraction never clip the increase.
+ *  844x390 merged, 300 / 354 / 160 -> the cap. Side by side, 422x390:
+ *  300 / 177 / 129. Stacked, 844x195: 300 / 354 / 96. In the Dojo, merged:
+ *  300 / 354 / 129. The nearest of those to being clipped is the side-by-side
+ *  one and it has 37% of headroom, so this factor is not quietly a no-op on
+ *  some phone shape nobody tested. */
+export const MAP_TOUCH_UP = 1.2;
 
 /* A map must fit the pane it is in. At a flat 32vw a quadrant's map ate
    most of a quarter-screen; sized against the PANE it stays the same
@@ -1025,6 +1044,7 @@ export function mapWidth({
   const fullHeight = paneH > screenH * 0.75;
   const cap = touch
     ? paneH * (mathUp ? MAP_DOJO : MAP_TALL) * (merged || !fullHeight ? 1 : MAP_SPLIT)
+      * MAP_TOUCH_UP
     : Infinity;
   return Math.min(MAP_MAX, paneW * MAP_WIDE, cap);
 }

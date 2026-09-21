@@ -108,7 +108,7 @@ import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/co
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   paneSeats, outOfShot, framedMembers, OUT_DROP, paneWiden, BIG_PANE_IN,
-  mathSharedWidth, MATH_SHARED_W,
+  mathSharedWidth, MATH_SHARED_W, MAP_TOUCH_UP,
 } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
@@ -14585,13 +14585,44 @@ console.log('\n--- the minimap fits its pane ---');
      islands nobody can read. */
   const horiz = { paneW: PW, paneH: PH / 2, screenH: PH, touch: true, merged: false };
   ok('...but a stacked split does not, having already lost the height',
-    Math.abs(mapWidth(horiz) - (PH / 2) * 0.41) < 1e-9,
+    Math.abs(mapWidth(horiz) - (PH / 2) * 0.41 * MAP_TOUCH_UP) < 1e-9,
     `${mapWidth(horiz).toFixed(1)}`);
   /* Spelled as the number the double cut WOULD have produced, because "it is
      bigger than 54" is the whole claim and a ratio hides which 54. */
   ok('...which would have left 54 unreadable pixels if it had',
     Math.abs((PH / 2) * 0.41 * 0.67 - 54) < 1 && mapWidth(horiz) > 70,
     `${mapWidth(horiz).toFixed(1)}`);
+
+  /* --- AND EVERY PHONE MAP IS 20% BIGGER THAN THOSE FRACTIONS ALONE ------
+     "The mini-maps on Mobile are a bit too small, let's increase their size by
+     20%." Asserted as the note was WRITTEN — a ratio against the bare
+     fractions — rather than as four re-tuned decimals, which is the reason
+     `MAP_TOUCH_UP` is a separate constant at all.
+
+     AND AT ALL FOUR SHAPES, WHICH IS THE HALF THAT COULD HAVE GONE WRONG
+     SILENTLY. `mapWidth` is a `Math.min` of three terms and only one of them
+     carries the factor: on a phone shape where `MAP_MAX` or the width fraction
+     happened to be the smallest, a "+20%" would have come out as +0% and
+     nothing on screen would have said so. Measured: the tightest of the four
+     is the side-by-side split, and it still clears its next-smallest term by
+     37%. */
+  for (const [what, arg] of [
+    ['merged', { ...full, touch: true }],
+    ['side by side', { paneW: PW / 2, paneH: PH, screenH: PH, touch: true, merged: false }],
+    ['stacked', { paneW: PW, paneH: PH / 2, screenH: PH, touch: true, merged: false }],
+    ['in the Dojo', { ...full, touch: true, mathUp: true }],
+  ]) {
+    const bare = mapWidth(arg) / MAP_TOUCH_UP;
+    ok(`...and a ${what} phone map is exactly ${MAP_TOUCH_UP}x the bare fraction`,
+      Math.abs(mapWidth(arg) - bare * MAP_TOUCH_UP) < 1e-9
+      /* The real assertion: the cap is what BINDS, so the factor is not being
+         thrown away by `MAP_MAX` or by `paneW * MAP_WIDE`. */
+      && mapWidth(arg) < Math.min(300, arg.paneW * 0.42) - 1e-9,
+      `${mapWidth(arg).toFixed(1)} (bare ${bare.toFixed(1)})`);
+  }
+  ok('...and a desktop map is not touched by it at all',
+    mapWidth({ paneW: 1920, paneH: 1080, screenH: 1080 }) === 300
+    && mapWidth({ paneW: 600, paneH: 800, screenH: 800 }) === 600 * 0.42);
 
   /* NOTHING ABOUT A DESKTOP MOVED. The fifth invariant, asserted rather than
      hoped for: the split factor is inside the `touch` branch. */
@@ -27225,6 +27256,345 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     /const hand = ps !== all \? this\.game\.input\.menuHand\?\.\(owner\) : null;/.test(mn));
   ok('...and it is merged before x, y, confirm and took are read',
     mn.indexOf('ps.push(hand)') < mn.indexOf('for (const p of ps)'));
+}
+
+
+console.log('\n=== NINE NOTES FROM A PHONE ===');
+{
+  const src = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
+  const css = src('../src/style.css');
+  const M = stripComments(src('../src/main.js'));
+  const insp = stripComments(src('../src/systems/inspector.js'));
+  const prof = stripComments(src('../src/systems/profile.js'));
+  const tap = stripComments(src('../src/core/tap.js'));
+
+  /* The body of one rule, by its exact selector. Everything below is a
+     stylesheet question, and a regex over the whole file answers a different
+     one — `.kd-row` matches `.kd-row.cursor` and `body.touch-ui .kd-row` too. */
+  const rule = (sel) => {
+    const at = css.indexOf('\n' + sel + ' {');
+    return at < 0 ? null : css.slice(at, css.indexOf('}', at));
+  };
+  const has = (sel, prop) => new RegExp(prop).test(rule(sel) ?? '');
+
+  /* --- 1. THE AWARD CARD, HALF THE SIZE ON A PHONE ----------------------
+     "When Kotodama powerup orbs are being awarded in the ceremony from quests,
+     the text appearing on screen is too big... Maybe make half the size."
+
+     THE CHECK IS THE RATIO, NOT THE NUMBERS. Half is the note; 15px is an
+     implementation of it, and a check spelling 15 would pass a card that had
+     drifted to 15px with a 20px heading beside it. It reads both sizes and
+     asserts the touch one is between a third and two-thirds of the desktop
+     one — which is what "maybe half" means and what a human would look at. */
+  const px = (sel, prop) => {
+    const m = new RegExp(prop + ':\\s*([\\d.]+)px').exec(rule(sel) ?? '');
+    return m ? +m[1] : null;
+  };
+  for (const part of ['.aw-head', '.aw-oname']) {
+    const big = px(part, 'font-size');
+    const small = px('body.touch-ui ' + part, 'font-size');
+    ok(`the award card's ${part} is about half the size on a phone`,
+      big != null && small != null && small / big > 0.33 && small / big < 0.67,
+      `${small} / ${big}`);
+  }
+  /* THE BODY COPY IS THE ONE PART THAT IS NOT HALVED, AND THAT IS DELIBERATE.
+     Half of 15px is 7.5, which is not small text, it is a grey line — the
+     exact failure the pane card's own `--u` note is about one screen over.
+     It goes to 10.5 and stops. So the check on this one is a floor and a
+     ceiling rather than a ratio: smaller than the desktop's, never under ten
+     pixels. "Half the size" is a note about a CARD that was covering the
+     kitten it is about, and the card is half. */
+  {
+    const big = px('.aw-text', 'font-size');
+    const small = px('body.touch-ui .aw-text', 'font-size');
+    ok('...and its sentences are smaller, but never under ten pixels',
+      big != null && small != null && small < big && small >= 10,
+      `${small} / ${big}`);
+  }
+  ok('...and the whole card is narrower, not just the type inside it',
+    /body\.touch-ui #award \{[\s\S]{0,200}width:\s*min\(/.test(css));
+  /* THE CARD IS NOT `transform: scale`d, and this is the check that says why:
+     a scale would take the 88vw and the shadow with it and leave the card
+     floating inside its own footprint. */
+  ok('...and it is a smaller card, not a shrunken one',
+    !/body\.touch-ui #award \{[^}]*transform:\s*[^;]*scale/.test(css));
+
+  /* --- 2 + 9. A CARD THAT IS OPEN OWNS THE SCREEN UNDER IT ---------------
+     "When opening the Character Profile screen, the user is unable to scroll
+     up/down to see all the orbs, it is as if the touch and swipe functionality
+     has been removed above the orbs."
+     "The Look At My Orbs screen has the input buttons on top of it."
+     "Let's make a rule that any UI elements behind other UI elements with
+     clicking/scrolling is unclickable."
+
+     ONE BUG AND THREE REPORTS: `.tp-zone` is `pointer-events: auto` over the
+     bottom-left 46% x 78% of the screen at z-index 7, and the card was at 6. */
+  const z = (sel) => {
+    const m = /z-index:\s*(\d+)/.exec(rule(sel) ?? '');
+    return m ? +m[1] : null;
+  };
+  ok('an open pane card is in FRONT of the touch pad, not behind it',
+    z('#pane-cards:not(.hidden)') > z('#touch-pad'),
+    `${z('#pane-cards:not(.hidden)')} vs ${z('#touch-pad')}`);
+  ok('...and still behind the menus, so a pause screen covers it as before',
+    z('#pane-cards:not(.hidden)') < z('.overlay'),
+    `${z('#pane-cards:not(.hidden)')} vs ${z('.overlay')}`);
+  /* THE RAISE IS KEYED OFF THE ONE FLAG THAT ALREADY EXISTS. A second piece of
+     state — a `body.card-up` class, say — is a second thing to keep in step,
+     and the frame it is out of step on is a frame with the pad behind nothing. */
+  ok('...keyed off the class the Inspector already owns, with no second flag',
+    /:not\(\.hidden\)/.test(css.slice(css.indexOf('#pane-cards:not(.hidden)'),
+      css.indexOf('#pane-cards:not(.hidden)') + 40))
+    && /this\.host\.classList\.(add|remove)\('hidden'\)/.test(insp));
+  /* THE SIBLING SELECTORS ONLY WORK BECAUSE OF THE DOCUMENT ORDER, and nothing
+     in the stylesheet says so. Moving `#pane-cards` below `#hud` in index.html
+     would silently stop every one of these rules matching, with no error
+     anywhere — so the order is asserted here rather than hoped for. */
+  {
+    const html = src('../index.html');
+    ok('...and #pane-cards really does precede #hud and #touch-pad in the DOM',
+      html.indexOf('id="pane-cards"') < html.indexOf('id="hud"')
+      && html.indexOf('id="hud"') < html.indexOf('id="touch-pad"'));
+  }
+  /* Long enough to reach past the note that sits between the two rules — the
+     first slice was 1200 and stopped inside the comment, which is a check that
+     was measuring the length of a paragraph. */
+  const behind = css.slice(css.indexOf('#pane-cards:not(.hidden) ~ #hud'),
+    css.indexOf('#pane-cards:not(.hidden) ~ #hud') + 3000);
+  ok('...the minimap behind it stops taking taps',
+    /#pane-cards:not\(\.hidden\) ~ #hud \.map-box[\s\S]{0,120}pointer-events:\s*none/
+      .test(behind));
+  ok('...and so does the maths board, the other thing in HUD_PASSTHROUGH',
+    /#math-board \{ pointer-events: none/.test(behind));
+  ok('...and the buttons she cannot use from this card go with them',
+    /~ #touch-pad \.tp-btn \{ pointer-events: none/.test(behind));
+  /* ACTION AND START ARE THE TWO EXCEPTIONS AND BOTH ARE LOAD-BEARING. Action
+     is the card's back button; Start is the way out of the game. A screen with
+     no way out is worse than a button that does nothing, which is the far side
+     of the sixth non-negotiable. */
+  ok('...except ACTION, which is the back button, and START, which is the way out',
+    /\.tp-interact,[\s\S]{0,80}\.tp-pause \{ pointer-events: auto/.test(behind));
+  /* "We should make the Action button 50% or more transparent so user can read
+     text behind it." Read as a number, so a later restyle cannot quietly put it
+     back to opaque over the words. */
+  {
+    const m = /\.tp-pause \{ pointer-events: auto; opacity: ([\d.]+)/.exec(behind);
+    ok('...and the two that stay are at most half opaque, over the words',
+      m && +m[1] <= 0.5, m ? m[1] : 'no opacity');
+  }
+  /* THE STICK IS DELIBERATELY NOT IN THAT LIST — "joystick button is fine as
+     is" — and a future tidy-up that swept it in would strand a kitten standing
+     in the world while she reads, with her sisters still playing around her. */
+  ok('...while the STICK keeps working, which was asked for by name',
+    !/#pane-cards:not\(\.hidden\)[^{]*\.tp-zone/.test(css));
+
+  /* --- 3. A SCROLL IS NOT A SELECTION -----------------------------------
+     "When scrolling up/down, it is also selecting the orbs. It should not
+     select the orbs while scrolling up/down, it should only select on click.
+     This should apply on all screens that have scrolling and clickable UI
+     elements."
+
+     THE `pointerdown` BINDING WAS BOTH HALVES OF THE REPORT — it fired before
+     the gesture existed, and its `preventDefault` cancelled the scroll it was
+     mistaking for a tap. */
+  ok('the pane card acts on the RELEASE, not on the press',
+    /onTap\(this\.host,/.test(insp) && !/addEventListener\('pointerdown'/.test(insp));
+  ok('...and no longer cancels the scroll it was mistaking for a tap',
+    !/e\.preventDefault\(\)/.test(insp));
+  ok('...and a tap that travelled is not a tap',
+    /Math\.hypot\(e\.clientX - d\.x, e\.clientY - d\.y\) > slop/.test(tap));
+  /* THE TARGET COMES FROM THE PRESS. She aimed at a row; a list that moved two
+     pixels under her in the meantime has not changed which row she meant. Same
+     failure as "a row that slid under the cursor after she aimed at it" in
+     docs/notes/gotchas.md. */
+  ok('...and the row it acts on is the one she aimed at, not the one under her finger now',
+    /act\(d\.target, e\)/.test(tap));
+  /* THE DEALER'S COUNTER GETS THE OTHER HALF, and it has to be the other half:
+     YES, NO, BUY and SELL are real `<button>`s, so a pointer-only rewrite would
+     take this screen away from anybody using a keyboard. */
+  ok('the dealer counter subtracts drags instead of being rewritten',
+    /const dragged = dragGuard\(this\.el\);/.test(prof)
+    && /if \(!this\.mode \|\| dragged\(\)\) return;/.test(prof));
+  ok('...and a keyboard Enter, which has no pointer behind it, still goes through',
+    /if \(!e\.detail\) far = false;/.test(tap));
+  ok('...and the dealer\'s buttons really are buttons, which is why',
+    /<button type="button" class="kd-act go" data-act="yes"/.test(prof));
+
+  /* --- 4. ONE TOAST PER COMBO -------------------------------------------
+     "Instead of spawning a single message per item, can just be 1 message for
+     all the items cut recently, like a combo... We should only be taking up
+     screen UI real estate for important messages the user needs to see."
+     "Let's make it so that it shows a maximum of 4 of the last messages." */
+  ok('the toast strip shows at most four at once, which the note asked for',
+    /while \(wrap\.children\.length > 4\) wrap\.firstChild\.remove\(\);/.test(M));
+  ok('a repeat of the same news folds into the line already on screen',
+    /toast\(text, playerIndex = 0, combo = null\)/.test(M)
+    && /this\._combos \|\|= new Map\(\);/.test(M));
+  ok('...and it counts, rather than being replaced by the newest one alone',
+    /live\.n \+= 1;\s*live\.total \+= combo\.add \?\? 1;/.test(M));
+  /* IT DOES NOT MOVE. The note offered "get deleted and respawned as a new
+     message"; counting in place is the same thing minus a card teleporting
+     under a number nobody can finish reading. `appendChild` in the fold branch
+     would be the give-away. */
+  ok('...in place, without jumping to the bottom of the stack on every swing',
+    !/live\.n \+= 1;[\s\S]{0,400}wrap\.appendChild/.test(M));
+  /* AND IT RE-ARMS ITS OWN HOLD, which is what stops a combo that is still
+     growing being the one the four-line cap drops. */
+  ok('...re-arming its hold, so a growing combo is never the one dropped',
+    /clearTimeout\(live\.fadeAt\);\s*clearTimeout\(live\.gone\);/.test(M));
+  /* A FADING TOAST IS NOT FOLDED INTO — there is no way back from a running
+     `toastOut` that is not a flicker, and a cane after the lull is a new combo
+     to the player too. */
+  ok('...but never into one that is already fading out',
+    /live\.el\.classList\.contains\('fade'\)/.test(M));
+  ok('the two that filled the strip are the two that combo',
+    /key: 'bamboo',/.test(M) && /key: 'mischief',/.test(M));
+  /* ONE KEY FOR EVERY KIND OF PROP. Keyed by `prop.kind` a girl running down a
+     market row gets three lines counting to one each, which is the bug with
+     extra steps. */
+  ok('...and mischief is ONE key, not one per kind of prop',
+    !/key: `mischief/.test(M) && !/key: prop\.kind/.test(M));
+  ok('...and the number that is counting up is SEEN to change',
+    /el\.classList\.add\('bump'\)/.test(M) && /\.toast\.bump \{ animation: toastBump/.test(css));
+  /* Removing the class is not enough on its own: the animation only replays
+     after a reflow, and reading `offsetWidth` is what forces one. */
+  ok('...which needs the reflow between removing the class and adding it',
+    /classList\.remove\('bump'\);\s*void el\.offsetWidth;/.test(M));
+
+  /* --- 6. THE HELP CLIPS, BIG ENOUGH TO SEE ------------------------------
+     "The gifs can mostly be at least 50% bigger... The ones that are
+     side-by-side... should be able to be at least 25% bigger and still fit."
+
+     THE SIDE-BY-SIDE CLIPS WERE NEVER HITTING THEIR HEIGHT CAP AT ALL, which
+     is the thing worth pinning: at 844x390 the grid column is 313.8px and
+     332/512 of that is 203 — under the 179... no, over it, and that is the
+     point. Raising 46vh alone would have moved a pair by nothing. The lever is
+     the panel's WIDTH, so that is what this asserts. */
+  ok('the Help panel takes the width of a phone, not 90% of it',
+    /body\.touch-ui #panel-help \.panel \{[\s\S]{0,140}width:\s*96vw/.test(css));
+  ok('...and more of its height, which is what lets a clip and its caption fit',
+    /body\.touch-ui #panel-help \.panel \{[\s\S]{0,140}max-height:\s*94vh/.test(css));
+  {
+    const single = /body\.touch-ui #panel-help \.help-shot:not\(\.help-shot-pair\):not\(\.arena-shot\) img,[\s\S]{0,160}?max-height:\s*(\d+)vh/.exec(css);
+    const pair = /body\.touch-ui #panel-help \.move img,[\s\S]{0,120}?max-height:\s*(\d+)vh/.exec(css);
+    ok('a single clip is at least half again as tall as the 46vh it had',
+      single && +single[1] / 46 >= 1.5, single ? `${single[1]}vh` : 'missing');
+    ok('...and a side-by-side pair is smaller than a single, as asked',
+      single && pair && +pair[1] < +single[1], pair ? `${pair[1]}vh` : 'missing');
+    /* `width: auto` IS LOAD-BEARING AND HAS BEEN FORGOTTEN TWICE — both
+       `.help-shot-pair` and `.move-wide` carry a note about it. Without it the
+       `max-height` squashes the picture instead of fitting it, which looks
+       like a broken GIF rather than like a CSS bug. */
+    ok('...and the cap can still re-solve the aspect, which needs width: auto',
+      /:not\(\.arena-shot\) img,[\s\S]{0,200}width:\s*auto/.test(css));
+  }
+  /* THE ARENA SHOT IS LEFT OUT ON PURPOSE. It is the one picture with
+     sub-cards under it and it is capped so that opening "The arena" does not
+     show the arena and nothing else — growing it puts them back below the
+     fold, which is the bug that cap exists for. */
+  ok('...while the arena screenshot keeps its own cap and its sub-cards',
+    /:not\(\.arena-shot\)/.test(css) && /\.arena-shot img \{[^}]*height:\s*220px/.test(css));
+
+  /* --- 7. THE DEALER'S SHELF --------------------------------------------
+     "Let's also rework this screen so that we can fit at least 8 kotodama orbs
+     on the screen at once. Currently, it only fits about 3 orbs on the screen."
+
+     A THIRD OF THE HEIGHT WAS BEING TAKEN BY A SELECTOR COLLISION. `body.touch
+     -ui .panel` has exactly the same specificity as `body.touch-ui .kd-panel`
+     and comes 880 lines later, so on a phone it won both the `max-height`
+     (84vh instead of 96) and the `overflow` (auto instead of hidden) — the
+     second of which made the whole panel a second scroller around the one that
+     already scrolls, which is the bug the eight-row cap was removed to fix. */
+  ok('the general touch panel rule no longer eats the dealer\'s layout',
+    /body\.touch-ui \.panel:not\(\.kd-panel\) \{/.test(css));
+  ok('...which matters because the dealer is a flex column, not a block',
+    has('.kd-panel', 'display:\\s*flex') && has('.kd-panel', 'overflow:\\s*hidden'));
+  ok('...and its own touch rule is the one that gets to set the height',
+    /body\.touch-ui \.kd-panel \{[^}]*max-height:\s*96vh/.test(css));
+  /* TWO COLUMNS, FILLED DOWNWARDS. `grid-auto-flow: column` with five fixed
+     rows puts orbs 1-5 on the left and 6-10 on the right, so `side.i` going up
+     by one is still the row below and the stick keeps meaning what it meant.
+     Row-major would have made DOWN move RIGHT. */
+  ok('the shelf is two columns on a phone, so eight orbs are on screen',
+    has('body.touch-ui .kd-shelf', 'grid-auto-flow:\\s*column'));
+  ok('...filled DOWN each column, so the stick still moves down the list',
+    has('body.touch-ui .kd-shelf', 'grid-template-rows:\\s*repeat\\(5, auto\\)'));
+  /* `auto` AND NOT `1fr`, AND IT WAS MEASURED BOTH WAYS. `repeat(5, 1fr)` gives
+     every row the height of the tallest cell in it, the Cross Slash's blurb is
+     the tallest thing on the shelf, and rows went 40px -> 57 — six orbs instead
+     of eight, from a change made to tidy it up. */
+  ok('...with rows that size themselves, not to the tallest blurb on the shelf',
+    !has('body.touch-ui .kd-shelf', 'grid-template-rows:[^;]*1fr'));
+  ok('...and a blurb clamped to two lines rather than setting the row height',
+    /body\.touch-ui \.kd-row \.kd-dim \{[\s\S]{0,140}-webkit-line-clamp:\s*2/.test(css));
+  /* THE DESKTOP SHELF IS UNTOUCHED. A wide window has the height for ten
+     full-width rows and they read better; this is a phone's answer to a
+     phone's problem. */
+  ok('...and the desktop shelf is not a grid at all',
+    !/\n\.kd-shelf \{[^}]*grid/.test(css));
+
+  /* --- 7b. AND THE QUESTION IS WHERE SHE CAN SEE IT ----------------------
+     "When clicking Buy or Sell, player has to scroll to the top to confirm
+     yes/no... the confirm buttons are not visible until scrolling all the way
+     to the top."
+
+     `_askMarkup` ALREADY PUT THE QUESTION AT THE TOP OF THE CARD for this
+     reason — "a question below the fold is a CONFIRM press that appears to do
+     nothing". It was right and not enough: the top of the card is not the top
+     of the VIEW, and she presses BUY from a footer button after scrolling the
+     shelf down to find the orb. Measured at 844x390: the question appeared
+     75px above everything she could see. */
+  ok('a question that has just appeared scrolls itself into view',
+    /_showQuestion\(\)/.test(prof)
+    && /scrollIntoView\(\{ block: 'nearest' \}\)/.test(
+      /* THE METHOD BODY, NOT THE CALL SITE. `_showQuestion()` appears first as
+         a CALL, one line after `_followCursors()`'s call, so slicing between
+         the two `indexOf`s ran backwards and matched nothing at all. */
+      prof.slice(prof.indexOf('  _showQuestion() {'), prof.indexOf('  _followCursors() {'))));
+  ok('...after the cursor follow, so a question beats a cursor',
+    prof.indexOf('this._followCursors();\r\n') < prof.indexOf('this._showQuestion();')
+    || prof.indexOf('this._followCursors();\n') < prof.indexOf('this._showQuestion();'));
+  /* ONLY WHEN IT CHANGES. Every paint would pin the box to whoever's question
+     is up and take the scroll away from the other three for as long as it
+     stands — which on the four-player trade screen is most of it. */
+  ok('...and only when the question changes, not on every repaint',
+    /if \(sig === this\._askSig\) return;/.test(prof));
+  /* `nearest` SCROLLS THE LEAST IT CAN, so a question already on screen does
+     not move the shelf out from under her. */
+  ok('...moving the least it can, so a visible question moves nothing',
+    !/_showQuestion[\s\S]{0,700}block: 'start'/.test(prof));
+
+  /* --- 8. THE TYPE ON A PANE CARD ---------------------------------------
+     "The 'Ember at the Dealer' screen text UI is too small, should be at least
+     twice as big."
+
+     MEASURED AT 844x390: `--u` is `min(1cqw, 1.78cqh, 0.8vh)` = min(8.44, 6.94,
+     3.12) = 3.12, and `clamp(9px, 2.5 * 3.12, 22px)` lands on the 9px FLOOR —
+     where it has stopped responding to anything. Dropping the window term
+     gives 6.94, and 2.5 of that is 17.4px: 1.93x, within the card's own 22px
+     ceiling. */
+  ok('the pane card drops the WINDOW term of --u on a phone',
+    /body\.touch-ui \.pc-inner \{ --u: min\(1cqw, 1\.78cqh\); \}/.test(css));
+  ok('...keeping the two that are about the PANE, so a quarter pane still shrinks',
+    /\.pc-inner[\s\S]{0,4000}--u: min\(1cqw, 1\.78cqh, 0\.8vh\);/.test(css));
+  {
+    /* THE CHECK IS THE ARITHMETIC, not the string. It re-solves both `--u`
+       values at the phone size the report came from and asserts the type
+       really does roughly double — a later tweak to the multiplier or to the
+       clamp would pass a string test and fail this one. */
+    const u = (terms) => Math.min(...terms);
+    const size = (uu) => Math.min(22, Math.max(9, 2.5 * uu));
+    const was = size(u([8.44, 6.94, 3.12]));
+    const now = size(u([8.44, 6.94]));
+    ok('...and at 844x390 that really is at least twice as big',
+      was === 9 && now / was >= 1.9, `${was}px -> ${now.toFixed(1)}px`);
+  }
+  /* AND THE LIST UNDER IT HAS TO TELL THE BROWSER IT IS A SCROLLER. The card
+     sits in front of `#touch-pad`, which is `touch-action: none` over the whole
+     window; being a scroller in CSS is not the same as being allowed to
+     scroll. */
+  ok('...and the shelf under it says a vertical drag belongs to it',
+    has('.pc-list', 'touch-action:\\s*pan-y') && has('.pc-list', 'overscroll-behavior:\\s*contain'));
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

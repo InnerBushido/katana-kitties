@@ -1,5 +1,6 @@
 import { POWER_ORBS, ORB_BY_ID, MAX_EQUIPPED, countsOf } from '../entities/powerorb.js';
 import { MAX_PLAYERS, cssFor } from '../core/palette.js';
+import { onTap } from '../core/tap.js';
 
 /* ---------------------------------------------------------------------------
    THE PERSONAL CARD — one kitten's own screen, inside her own pane.
@@ -477,17 +478,28 @@ export class Inspector {
    *
    * A tap is "move THAT side's cursor there, then press JUMP" — nothing here
    * re-implements a rule, so the two paths cannot drift apart.
+   *
+   * AND A TAP IS A PRESS AND A RELEASE IN ONE PLACE. This was bound to
+   * `pointerdown` and called `preventDefault`, which is both halves of the
+   * report: "when scrolling up/down, it is also selecting the orbs", because
+   * the handler had already fired before the flick existed — and the flick
+   * then scrolled nothing, because `preventDefault` on a `pointerdown` cancels
+   * the scroll it was being mistaken for. `.pc-list` has been a scroller since
+   * a phone could reach this card; it has simply never been scrollable.
+   *
+   * `onTap` IS SHARED, not four lines here, because the note was general:
+   * "this should apply on all screens that have scrolling and clickable UI
+   * elements". See core/tap.js — the dealer's counter uses its other half.
    */
   _bindTaps() {
     if (!this.host) return;
-    this.host.addEventListener('pointerdown', (e) => {
-      const row = e.target.closest?.('[data-row]');
+    onTap(this.host, (target) => {
+      const row = target.closest?.('[data-row]');
       if (!row) return;
       const i = Number(row.dataset.side);
       const k = Number(row.dataset.row);
       const c = this.cards[i];
       if (!c?.state || !Number.isFinite(k)) return;
-      e.preventDefault();
       if (c.i !== k) { c.i = k; this.game.audio?.play('menu'); }
       if (c.state === 'choose') this._choose(i);
       this._paintCard(i);

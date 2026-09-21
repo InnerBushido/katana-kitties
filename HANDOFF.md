@@ -515,6 +515,118 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Nine from a phone, and most of them are one bug wearing different hats.**
+One branch, `mobile/nine-notes-from-a-phone`. Measured throughout at
+**844x390**, a landscape phone, which is the only shape a phone is ever in —
+the rotate gate says so. **Short, not narrow** is the sentence to remember: the
+axis that runs out is height, and three of the nine were fixed by finding width
+nobody was using.
+
+- **The award card is half the size on a phone.** It had **no `body.touch-ui`
+  rules at all** — every number in it is a desktop literal, so a 620px card with
+  a 26px heading landed on a 390px-tall phone at exactly the size it lands on a
+  1080p screen, across the kitten it is about. Halved rather than `scale()`d, so
+  it is a smaller card and not a shrunken one. **The sentences stop at 10.5px**
+  and the check on them is a floor rather than a ratio: half of 15 is 7.5, which
+  is not small text, it is a grey line.
+- **A pane card that is open owns the screen under it**, and that is three of
+  the nine at once — the Character Profile that would not scroll, the input
+  buttons on top of LOOK AT MY ORBS, and the minimap taking clicks through the
+  card in front of it. **One cause:** `#pane-cards` was z-index 6 and
+  `#touch-pad` is 7, and `.tp-zone` — the stick's catchment — is the bottom-left
+  46%x78% of the **whole screen** with `pointer-events: auto` and `touch-action:
+  none`. It swallowed every touch meant for the card under it, the scroll drag
+  included. Nothing was ever wrong with the card; it was not being reached. It
+  goes to 8 while it is open, which is above the pad and below the menus, keyed
+  off the `.hidden` class the Inspector already owns so there is no second flag.
+  The minimap, the maths board and the four buttons she cannot use from that
+  card stop taking taps; **ACTION and START stay**, at half opacity, because one
+  is the back button and the other is the only way out of the game. **The stick
+  is deliberately not in that list** — asked for by name, and taking it away
+  would strand a kitten standing in the world while she reads.
+- **A scroll is not a selection.** New module, `src/core/tap.js`, because the
+  note was general: *"this should apply on all screens that have scrolling and
+  clickable UI elements."* Two bindings, because there are two shapes of it.
+  `onTap` replaces a `pointerdown` handler outright — that is what the pane card
+  had, and it is **both halves** of the report: it fired before the gesture
+  existed, and its `preventDefault` cancelled the scroll it was mistaking for a
+  tap. `dragGuard` only **subtracts** drags from a `click` handler, which is
+  what the dealer's counter needs, because YES, NO, BUY and SELL are real
+  `<button>`s and a keyboard Enter is a click with no pointer behind it. **The
+  target comes from the press, not the release** — she aimed at a row, and a
+  list that moved two pixels under her has not changed which row she meant.
+- **One toast per combo, not one per cane.** A kid swinging at a grove filled
+  all four lines of the strip in about two seconds, so the toasts that matter —
+  *she joined a clan*, *the match is being called off* — were pushed off the top
+  by the sound of her own katana. The second and later repeats **fold into the
+  line already on screen** and count up: `10x bamboo cut by Ember!  +100`. **It
+  does not move** — the note offered "deleted and respawned", and counting in
+  place is the same thing minus a card teleporting under a number nobody can
+  finish reading. It re-arms its own hold, so a combo that is still growing is
+  never the one the four-line cap drops, and it never folds into a toast that is
+  already fading. **The first one keeps its own sentence**, verb variety and
+  all. Mischief is **one key**, not one per prop kind — keyed by kind, a girl
+  running down a market row gets three lines counting to one each.
+  **This one is not touch-only**: the same pile happens on a desktop with four
+  panes, and one behaviour beats two that drift.
+- **The minimap is 20% bigger on a phone.** A factor (`MAP_TOUCH_UP`) rather
+  than three re-tuned decimals, so the check can say what the note said. And it
+  really is 20% at every split, which had to be **measured** rather than
+  assumed: `mapWidth` is a `Math.min` of three terms and only one carries the
+  factor, so on a phone shape where `MAP_MAX` happened to be smallest a "+20%"
+  would have come out as +0% with nothing on screen to say so. The tightest of
+  the four is the side-by-side split and it still clears its next term by 37%.
+- **The Help clips are half again as big, and the pairs a quarter.** The one
+  that needed measuring: **a side-by-side clip was never hitting its height cap
+  at all.** Raising 46vh alone — the change anybody would try first — would have
+  moved it by nothing. The column is 313.8px inside a panel that is 759.6 inside
+  an 844px screen, spending 60 on padding and 32 more on the card's own inset.
+  **The lever is the width.** The panel goes to 96vw and 94vh on a phone (`min
+  (780px, 90vw)` is a desktop rule that has never once bitten on a desktop), and
+  then: singles 179 -> 273 (**+52%**), pairs 179 -> 226 (**+26%**), the Dojo's
+  two 179 -> 225 (**+25%**). **This is not an undo of the 46vh cap** — that went
+  in for the opposite report, a clip that was the whole screen with its caption
+  off the bottom, and the rule it was expressing is *a clip and its caption fit
+  together*. 46vh was too cheap a guess at what that costs.
+  `.arena-shot` is left out on purpose: it is the one picture with sub-cards
+  under it. **The four-up ability grid reaches +17% and not 25%** — those clips
+  are 16:9 and a 25% pair would need 800px of a 786px panel, so they would have
+  had to stack.
+- **Eight orbs at the dealer instead of three**, and a third of the height was
+  being taken by a **selector collision**. `body.touch-ui .panel` has exactly the
+  same specificity as `body.touch-ui .kd-panel` and comes 880 lines later, so on
+  a phone it won both: `max-height` 84vh instead of 96, and `overflow-y: auto`
+  instead of `hidden` — which made the whole panel a **second scroller** around
+  the one that already scrolls, the bug the shelf's eight-row cap was removed to
+  fix, quietly back on the device it hurts most. Then two columns, filled
+  **down** so the stick still moves down the list, rows trimmed 62 -> 40, and a
+  blurb clamped to two lines. Tried `repeat(5, 1fr)` first to line the columns
+  up: every row takes the height of the tallest cell in it, the Cross Slash's
+  three-line blurb is the tallest thing on the shelf, and rows went 40 -> 57 —
+  **six orbs instead of eight, from a change made to tidy it up.**
+- **…and the question scrolls itself into view.** `_askMarkup` already put it at
+  the top of the card for exactly this reason — read its note, *"a question below
+  the fold is a CONFIRM press that appears to do nothing"*. It was right and it
+  was not enough: the top of the card is not the top of the **view**, and she
+  presses BUY from a footer button after scrolling the shelf down to find the
+  orb. Measured: the question appeared 75px above everything she could see, with
+  the footer still showing BUY. `block: 'nearest'` and only when the question
+  changes, so a visible one moves nothing and the other three keep their scroll.
+- **The "Ember at the Dealer" text is 1.93x bigger.** `--u` is `min(1cqw,
+  1.78cqh, 0.8vh)` and at 844x390 that is `min(8.44, 6.94, 3.12)` — the **window
+  term wins by better than a factor of two**, and `clamp(9px, 2.5 * 3.12, 22px)`
+  lands on the 9px floor, where it has stopped responding to anything at all.
+  That term means *the whole shelf has to fit*, which is right on a desktop and
+  unreachable on a phone at any size — ten rows in 390px is 39px a row including
+  the orb circle — so it was spending legibility on a goal it could not reach.
+  On touch it keeps the two terms that are about the pane: 17.4px, inside the
+  card's own 22px ceiling.
+- **59 new checks** (4145 -> 4204), and the two that deserve naming: the
+  `#pane-cards` / `#hud` / `#touch-pad` **document order**, because the sibling
+  selectors silently stop matching if anybody reorders index.html and nothing
+  errors; and the `--u` arithmetic re-solved at 844x390, so a later tweak to the
+  multiplier or the clamp fails here rather than passing a string test.
+
 **Six more, and four of them are the same note: there is too much writing.**
 One branch, `mixed/help-pages-trimmed-and-the-warning-on-top`. Four Help cards
 were reported over-long on one afternoon, and nothing in `world-check` could

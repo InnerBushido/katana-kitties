@@ -485,7 +485,7 @@ footer b { color: var(--text); }
 <div class="wrap">
 
 <header class="mast">
-  <div class="stamp">Last updated <span>·</span> 20 Sep 2026</div>
+  <div class="stamp">Last updated <span>·</span> 21 Sep 2026</div>
   <h1>Katana Kitties<em>The whole project on one page</em></h1>
   <p class="lede">A <b>split-screen co-op browser game for up to four players</b>: samurai kittens
     knocking over a chain of floating Japanese islands, riding storm dragons between them, and
@@ -540,7 +540,7 @@ npm run dev        <span class="c"># http://localhost:5173 — then open it in F
 npm run build      <span class="c"># must stay clean; Vercel builds this on push to main</span></code></pre>
 
 <!-- doc-sync:checks -->
-<pre><code>node tools/world-check.mjs    <span class="c"># 4145 checks: world, dragons, clans, sprites,</span>
+<pre><code>node tools/world-check.mjs    <span class="c"># 4204 checks: world, dragons, clans, sprites,</span>
                               <span class="c"># tournament, consent, balance</span>
 node tools/pad-check.mjs      <span class="c"># 388 checks: controllers, keyboard sets,</span>
                               <span class="c"># button prompts, the stuck-vJoy latch</span>
@@ -1218,7 +1218,7 @@ git push origin alpha</code></pre>
     <p><b>Comments explain <em>why</em>, and name the thing that was tried and failed.</b> This
       codebase's comments are its main defence against a fix being undone by somebody who could not
       see the reason. <b>When you fix something, add the check that would have caught it</b> — which
-      is why <code>world-check</code> is 4145 assertions and why almost none of them are about
+      is why <code>world-check</code> is 4204 assertions and why almost none of them are about
       whether a number is set. <b>A check that is sometimes red is a bug in the check</b> — two were
       found being coin flips, an aggregate that hid the one kitten it was asking about and a
       distinctness test rounded until it was a birthday problem. <b>A Help card also has a length
@@ -1227,6 +1227,16 @@ git push origin alpha</code></pre>
       afternoon and no check could have caught any of them: every sentence was true, most were
       pinned against the code by a check that wanted them kept, and nothing ever asked what they
       added up to. A card gets long one correct paragraph at a time.</p>
+    <p style="margin-top:10px"><b>Every new screen is designed for a phone at the same time as for
+      a desktop</b>, and two rules come out of that. <b>A <code>body.touch-ui</code> rule is part of
+      the work, not a follow-up</b> — the award card at the ending shipped with none at all, so a
+      620px card with a 26px heading landed on a 390px-tall phone at exactly the size it lands on a
+      1080p screen. And <b>UI behind other UI that takes clicks or scrolls is unclickable</b>: a
+      pane card open over the on-screen stick, a minimap in the corner a dialog leaves showing, a
+      shelf under the touch pad. Richard's rule, from an afternoon where all three were live at
+      once. <code>src/core/tap.js</code> carries the other half of it — a press and a release in
+      the same place is a tap, a drag is a scroll, and the two bindings that tell them apart live
+      there rather than copied into each list.</p>
     <p style="margin-top:10px"><b>And a change a new developer would need to know about gets a line
       in the God Doc</b> — a new tool, document, account, cost, or a new way the project is built,
       tested or shipped. Not a refactor and not a bug fix: the test is whether anybody could find it

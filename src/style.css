@@ -853,6 +853,68 @@ body.touch-ui .pane-edge { border-width: 4px; }
   pointer-events: none;
   z-index: 6;                  /* above the pane frames (4), below the pad (7) */
 }
+/* --- ...EXCEPT WHILE ONE IS OPEN, WHEN IT IS IN FRONT OF THE PAD ----------
+   Three notes off a phone, and they are one bug:
+
+     "When opening the Character Profile screen, the user is unable to scroll
+      up/down to see all the orbs, it is as if the touch and swipe
+      functionality has been removed above the orbs."
+     "The Look At My Orbs screen has the input buttons on top of it."
+     "The user can click on the minimap behind the screen that currently has
+      focus for clicking, instead this UI screen should get the clicks."
+
+   THE PAD IS 7 AND THIS WAS 6, and `.tp-zone` — the stick's catchment — is the
+   bottom-left 46% x 78% of the WHOLE SCREEN with `pointer-events: auto` and
+   `touch-action: none`. Over that rectangle it swallowed every touch meant for
+   the card under it, including the drag that would have scrolled the shelf.
+   Nothing was ever wrong with the card; it was not being reached.
+
+   8 IS ABOVE THE PAD AND BELOW THE MENU OVERLAYS (20), so a pause menu still
+   covers a card exactly as it did. And it applies only while a card is up:
+   `Inspector.layout` is the only thing that touches `.hidden` here, so there is
+   no second flag to keep in step and no frame where the pad is behind nothing.
+
+   NOT SOLVED IN `HUD_PASSTHROUGH` (touchpad.js), which is the other half of
+   this same overlap and hands the zone's pointer to the minimap under it. That
+   works because a map tap is ONE event; a card wants the whole gesture —
+   the move and the release as well — and an `elementsFromPoint` handoff cannot
+   give it those. Stacking order can. */
+#pane-cards:not(.hidden) { z-index: 8; }
+/* AND WHAT IS LEFT BEHIND IT STOPS TAKING TAPS. "Let's make a rule that any UI
+   elements behind other UI elements with clicking/scrolling is unclickable."
+
+   THE MINIMAP IS THE ONE THAT WAS REPORTED, and it takes taps on a phone on
+   purpose — tapping it turns it. But it lives in the corner of the pane, which
+   is exactly the strip a card leaves showing round its own margin, so a girl
+   aiming at the edge of what she is reading zoomed the map instead. Same for
+   `#math-board`: both are in `HUD_PASSTHROUGH` for the same reason, so both are
+   here.
+
+   THE STICK IS DELIBERATELY NOT IN THIS LIST — "Joystick button is fine as is."
+   It is outside the card's rectangle everywhere it matters, and taking it away
+   would strand a kitten who is still standing in the world while she reads,
+   with her sisters still playing around her. The z-index above fixes the
+   OVERLAP; this fixes what is genuinely behind. */
+#pane-cards:not(.hidden) ~ #hud .map-box,
+#pane-cards:not(.hidden) ~ #hud #math-board { pointer-events: none; }
+/* AND SO DO THE BUTTONS SHE CANNOT USE FROM HERE. On this card JUMP chooses a
+   row and INTERACT backs out — but a thumb taps the row itself, so the only
+   button a phone needs is the way OUT. SLASH, RIDE and RUN do nothing at all
+   while a card is up (her pad is eaten — `Inspector.busy`), and a button that
+   lights up under a thumb and does nothing reads as broken, which is
+   non-negotiable 6 pointed at a control instead of at a menu.
+
+   INTERACT AND PAUSE STAY. Interact is the back button; pause is how anybody
+   leaves the game at all, and a screen with no way out is the one thing worse
+   than a button that does nothing.
+
+   HALF TRANSPARENT, BECAUSE THEY ARE OVER THE WORDS. "We should make the Action
+   button 50% or more transparent so user can read text behind it." They are the
+   two controls that have to stay both on top and usable, so they give up their
+   opacity rather than their place. */
+#pane-cards:not(.hidden) ~ #touch-pad .tp-btn { pointer-events: none; opacity: 0.3; }
+#pane-cards:not(.hidden) ~ #touch-pad .tp-interact,
+#pane-cards:not(.hidden) ~ #touch-pad .tp-pause { pointer-events: auto; opacity: 0.5; }
 .pane-card {
   position: absolute;
   /* `size`, NOT `inline-size`, so `cqh` is available inside — see `--u` below.
@@ -940,6 +1002,31 @@ body.touch-ui .pane-edge { border-width: 4px; }
   line-height: 1.32;
   overflow: hidden;
 }
+/* --- ON A PHONE THE THIRD TERM OF `--u` IS WHAT MAKES IT UNREADABLE --------
+   "The 'Ember at the Dealer' screen text UI is too small, should be at least
+   twice as big."
+
+   MEASURED, ON AN 844x390 LANDSCAPE PHONE AT ONE PLAYER: the pane is the whole
+   window, so `1cqw` is 8.44, `1.78cqh` is 6.94 and `0.8vh` is 3.12. The third
+   term wins by better than a factor of two, `--u` comes out 3.12px, and the
+   font size lands on the `clamp`'s 9px FLOOR — where it stops responding to
+   anything at all. Nine pixels of Nunito at arm's length is not small type, it
+   is a grey line, and that is the whole report.
+
+   THE THIRD TERM MEANS "THE WHOLE SHELF HAS TO FIT" and on a desktop it is
+   right — it buys ten readable rows in one card, which is the note directly
+   above. On a phone it cannot buy that at any size: ten rows in 390px of height
+   is 39px a row including the orb circle. So it was spending the only thing it
+   had, legibility, on a goal it could not reach either way. `.pc-list` scrolls,
+   which is what a phone does instead — and the sibling rules further up are
+   what finally let a thumb reach that scroll.
+
+   SO ON TOUCH IT KEEPS THE TWO PANE TERMS AND DROPS THE WINDOW ONE. Same
+   844x390 pane: `--u` becomes 6.94 and the type comes out 17.4px, 1.93x what it
+   was, inside the 22px ceiling the card has always had. A quarter pane on a
+   phone still shrinks, because the two terms it keeps are the two that are
+   about the pane. */
+body.touch-ui .pc-inner { --u: min(1cqw, 1.78cqh); }
 /* HER NAME IS IN HER OWN COLOUR AND SO IS THE BORDER, which is the same
    pairing the pane frames and the score badges make: "which one am I" is the
    question a four-way split asks constantly, and every answer to it in this
@@ -1111,6 +1198,16 @@ body.touch-ui .pane-edge { border-width: 4px; }
   scrollbar-width: none;
   flex: 1 1 auto;
   min-height: 0;
+  /* AND ON A PHONE IT HAS TO SAY SO TO THE BROWSER. `#touch-pad` is
+     `touch-action: none` over the whole window and this card now sits in front
+     of it (see `#pane-cards:not(.hidden)`), so being a scroller in CSS is not
+     the same as being allowed to scroll: `pan-y` is the declaration that a
+     vertical drag here belongs to this box. `contain` stops a flick at the end
+     of the shelf chaining out into the page behind — which on iOS is the
+     rubber-band that makes the whole game look like it came loose. */
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .pc-list::-webkit-scrollbar { display: none; }
 .pc-orb {
@@ -1445,6 +1542,15 @@ body.touch-ui .pane-edge { border-width: 4px; }
 .toast.p0 { border-left-color: var(--ember); }
 .toast.p1 { border-left-color: var(--frost); }
 .toast.fade { animation: toastOut 0.45s ease forwards; }
+/* A COMBO COUNTING UP IN PLACE NEEDS TO BE SEEN TO CHANGE. The line does not
+   move (see `Game.toast`), so without this the only thing that happens when
+   the tenth cane goes over is a digit quietly turning into another digit, in
+   the corner of an eye that is watching a katana. A quarter-second squash is
+   enough to catch it and short enough not to be a distraction on the twentieth.
+   It replaces `toastIn` rather than stacking with it — an element only runs one
+   `animation` — which is correct: this element already entered. */
+.toast.bump { animation: toastBump 0.22s ease-out; }
+@keyframes toastBump { 50% { transform: scale(1.09); } }
 @keyframes toastIn  { from { transform: translateY(16px) scale(0.9); opacity: 0; } }
 @keyframes toastOut { to   { transform: translateY(-10px); opacity: 0; } }
 
@@ -2336,6 +2442,86 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
   .move-wide img { max-height: 46vh; }
 }
 
+/* --- AND ON A PHONE THEY ARE THE SIZE OF THE THING THEY ARE TEACHING ------
+   "The gifs can mostly be at least 50% bigger. Ideally, the gifs should be big
+   enough to fit the entirety of it with the subtext below it on the screen,
+   right now they are too small. The ones that are side-by-side should be
+   smaller than the individual, mostly full-screen ones so they can both fit on
+   the screen without needing to stack but they should be able to be at least
+   25% bigger and still fit."
+
+   THIS IS NOT AN UNDO OF THE 46vh CAP TWO RULES UP, AND THE DISTINCTION IS THE
+   WHOLE DESIGN. That cap went in for the opposite report — "the gif under
+   Flying a Dragon, Battling In the Arena are too large, they need to be half
+   the size" — where a clip was 630x411 on a 915x412 phone: the picture ALONE
+   was the screen, with its caption and its heading both off the bottom. The
+   rule it was expressing is "a clip and its caption fit together", and 46vh
+   was a guess at what that costs. It was too cheap a guess. The clip and the
+   caption come to about 240px; the panel was giving them 320.
+
+   SO THE SPACE COMES FIRST AND THE CLIPS TAKE WHAT IT BUYS. Measured at
+   844x390 before any of this:
+
+       panel   82vh = 319.8 tall, 759.6 wide, 30px of side padding
+       body    671.6 wide            grid column  313.8 wide
+       clip    273x179 in a 313.8px column   <- WIDTH-BOUND, not height-bound
+
+   A SIDE-BY-SIDE CLIP WAS NEVER HITTING ITS HEIGHT CAP AT ALL. Raising 46vh
+   alone would have moved it by nothing, which is worth writing down because it
+   is the change anybody would try first. The panel is 759.6px inside an 844px
+   screen and spends 60 of those on padding and 32 more on the card's own inset;
+   the column the clip actually gets is 313.8, and 332/512 of that is 203. The
+   lever is the WIDTH, and on a phone every pixel of it is furniture.
+
+   AFTER, measured on the same phone:
+
+       panel   94vh = 366.6 tall, 96vw = 810.2 wide, 12px of side padding
+       grid column  365 wide        clip  365x237   -> +32% on the pairs
+       single clip  max-height 70vh = 273            -> +52% on the singles
+
+   BOTH PAIRS STILL FIT SIDE BY SIDE, which was the explicit condition: two
+   237px clips and a caption come to 277 of the 366 the panel now has. And the
+   singles clear the bar the 46vh cap was really defending — 273 of clip plus
+   48 of caption is 321, and the panel is 366.
+
+   THE PANEL GOES TO 96vw ON A PHONE AND NOWHERE ELSE. `min(780px, 90vw)` is a
+   desktop rule that has never bitten on a desktop: 90vw of a 1920 screen is
+   1728, so the 780 wins and the margin is enormous either way. On an 844px
+   phone 90vw is what is binding, and the 46px it is holding back is the
+   difference between a clip a child can see and one she cannot.
+
+   `.arena-shot` IS DELIBERATELY LEFT OUT. It is the one picture with sub-cards
+   underneath it, capped at 220 so opening "The arena" does not show the arena
+   and nothing else — see its own note. Growing it would put the four sub-cards
+   back below the fold, which is the bug that cap exists for. */
+body.touch-ui #panel-help .panel {
+  width: 96vw;
+  max-height: 94vh;
+  padding: 14px 12px 16px;
+}
+body.touch-ui #panel-help .ht-body { padding: 4px 8px 12px; }
+body.touch-ui #panel-help .help-sub > .ht-body { padding: 4px 7px 10px; }
+body.touch-ui #panel-help .move-grid,
+body.touch-ui #panel-help .help-shot-pair { gap: 8px; }
+/* A finger scrolls this; ten pixels of bar is ten pixels of clip. */
+body.touch-ui #panel-help .panel::-webkit-scrollbar { width: 0; }
+/* The singles: one clip, the width of the panel, half again as tall as it was.
+   `width: auto` is repeated here for the reason the two rules above it say —
+   without it the `max-height` squashes the picture instead of fitting it. */
+body.touch-ui #panel-help .help-shot:not(.help-shot-pair):not(.arena-shot) img,
+body.touch-ui #panel-help .move-wide img {
+  max-height: 70vh;
+  width: auto;
+  max-width: 100%;
+  margin-inline: auto;
+}
+/* The pairs. The cap is raised so it stops being what decides — the column's
+   width is — and so `.help-shot-pair`'s own declared 225px height, which the
+   46vh cap had been quietly clipping to 179, is what it says it is again. */
+body.touch-ui #panel-help .move img,
+body.touch-ui #panel-help .help-shot-pair img { max-height: 58vh; }
+
+
 /* ---------------------------------------------------------------------------
    THE CAT PAD — the same drawn controller that lights up inside `move-pad.gif`,
    standing still on the page so it can be read rather than watched.
@@ -2574,6 +2760,38 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
   line-height: 1.4;
   color: var(--paper);
 }
+/* --- AND ON A PHONE IT IS HALF THAT ---------------------------------------
+   "When Kotodama powerup orbs are being awarded in the ceremony from quests,
+   the text appearing on screen is too big. Maybe make half the size."
+
+   IT HAD NO TOUCH RULES AT ALL, which is the bug and not just the fix: every
+   number above is a desktop literal, so a 620px card with a 26px heading
+   landed on a 390px-tall phone at exactly the size it lands on a 1080p screen
+   — across most of the picture, over the kitten it is about, which is the
+   thing `bottom: 58px` was chosen to avoid in the first place.
+
+   HALVED, NOT `scale()`d. A transform would carry the border, the shadow and
+   the 88vw width with it and leave the card floating inside its own footprint;
+   these are the desktop numbers halved, so it is a smaller card rather than a
+   shrunken one. `bottom` is untouched on purpose — it is already measured
+   against her camera, and a smaller card only clears her by more.
+
+   THE ORB CHIPS DO NOT GO ALL THE WAY DOWN. 13px of kanji in a 20px circle is
+   small, but the chip is a SHAPE in a COLOUR and matching that colour to the
+   shell now circling her sister is the whole job — "so its easier for player to
+   see what they unlocked". The name beside it is the part that can afford it. */
+body.touch-ui #award {
+  width: min(400px, 76vw);
+  padding: 6px 11px 8px;
+  border-width: 3px;
+  border-radius: 11px;
+}
+body.touch-ui .aw-head { font-size: 15px; letter-spacing: 1.2px; }
+body.touch-ui .aw-orbs { gap: 5px; margin: 5px 0 4px; }
+body.touch-ui .aw-orb { gap: 4px; padding: 2px 7px 2px 3px; border-width: 2px; }
+body.touch-ui .aw-kanji { width: 20px; height: 20px; font-size: 13px; }
+body.touch-ui .aw-oname { font-size: 11px; letter-spacing: 0.8px; }
+body.touch-ui .aw-text { font-size: 10.5px; line-height: 1.35; }
 
 /* --- both fighters' health ------------------------------------------------
    Along the top, one bar each side, because that is where every fighting
@@ -3534,7 +3752,62 @@ body.touch-ui .kd-act { margin-top: 8px; padding: 11px 18px; font-size: 17px; }
 body.touch-ui .kd-step { width: 34px; height: 34px; font-size: 19px; }
 /* The orb slots are what she actually aims at. */
 body.touch-ui .kd-slot { min-width: 42px; min-height: 42px; }
-body.touch-ui .kd-row { padding: 9px 6px; }
+/* --- EIGHT ORBS ON A PHONE INSTEAD OF THREE ------------------------------
+   "Let's also rework this screen so that we can fit at least 8 kotodama orbs
+   on the screen at once. Currently, it only fits about 3 orbs on the screen."
+
+   MEASURED BEFORE AND AFTER, at 844x390 with the ten-orb roster:
+
+     before   #kd-body 205.6px tall, rows 62px   -> 3.3 orbs on screen
+     after    #kd-body 252.4px tall, rows 40px, two columns -> 8, and a ninth
+              and tenth under the fade
+
+   A LANDSCAPE PHONE IS SHORT, NOT NARROW, and that is the whole idea. The row
+   was full-width because the shelf has always been one column, and 770px of
+   width was being spent on a name and a blurb that need about 360 — so the
+   list ran downwards through the only dimension the device has none of. Two
+   columns cost nothing that was being used.
+
+   FILLED DOWN, NOT ACROSS. `grid-auto-flow: column` with five fixed rows puts
+   orbs 1-5 in the left column and 6-10 in the right, so `side.i` going up by
+   one is still the row below — the stick, `_followCursors` and the pips all
+   keep meaning what they meant. Row-major (`grid-template-columns`) would have
+   made DOWN move RIGHT, which is the sort of thing that only shows up when a
+   kid with a pad opens this screen on a tablet.
+
+   `auto` ROWS AND A TWO-LINE CLAMP, NOT `1fr`. Tried `repeat(5, 1fr)` first, to
+   line the two columns up: every row then takes the height of the tallest cell
+   IN ITS ROW, the Cross Slash's three-line blurb is the tallest thing on the
+   shelf, and rows went 40px -> 57px — six orbs on screen instead of eight,
+   from a change made to tidy it. The clamp fixes the same raggedness from the
+   other end and costs one line of the longest blurb, which is a line that ends
+   "...and ordinary swing" and says nothing the first two did not.
+
+   THE DESKTOP SHELF IS UNTOUCHED. A wide window has the height for ten
+   full-width rows and they are easier to read; this is a phone's answer to a
+   phone's problem. */
+body.touch-ui .kd-shelf {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(5, auto);
+  gap: 4px 10px;
+}
+body.touch-ui .kd-row {
+  padding: 4px 6px;
+  grid-template-columns: 30px 1fr auto auto;
+  gap: 7px;
+  font-size: 12px;
+}
+body.touch-ui .kd-row .kd-dot { font-size: 14px; border-width: 2px; }
+body.touch-ui .kd-row .kd-row-num { font-size: 10px; }
+body.touch-ui .kd-row .kd-seat { width: 12px; height: 12px; border-width: 2px; }
+/* Two lines, and the third is never the one that decides a purchase. */
+body.touch-ui .kd-row .kd-dim {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 /* AS MANY COLUMNS AS FIT, DOWN TO ONE. It was `1fr 1fr`, which is right for
    two kittens and wrong for one and for four: four cards became two rows and
    the bottom one fell off the panel (see `.kd-panel`). `auto-fit` with a
@@ -4407,7 +4680,27 @@ body.touch-ui .touch-only { display: block; }
 /* The panels are readable but desktop-sized; on a phone in landscape they have
    to fit inside 390px of height, which means scrolling rather than shrinking the
    type past legibility. */
-body.touch-ui .panel {
+/* `:not(.kd-panel)` IS NOT TIDINESS — IT IS THE FIX FOR TWO MEASURED BUGS.
+
+   The dealer's panel says `max-height: 94vh` (96 on touch) and `overflow:
+   hidden` because it is a FLEX COLUMN whose body scrolls and whose footer must
+   not: see `.kd-panel`. This rule is `body.touch-ui .panel`, which has exactly
+   the same specificity as `body.touch-ui .kd-panel` and comes 880 lines later,
+   so on a phone — and only on a phone — it won both. Measured at 844x390:
+
+     max-height  84vh (327.6px) instead of 96vh (374.4)   -> 47px of shelf gone
+     overflow-y  auto instead of hidden                    -> the panel became a
+                 SECOND scroller around the one that already scrolls
+
+   The first is a third of the reason "it only fits about 3 orbs on the screen".
+   The second is the two-scrollers-fighting bug the shelf's own eight-row cap
+   was removed to fix, quietly reintroduced on the device it hurts most — the
+   whole panel, footer and all, could drift up under a thumb.
+
+   THE DEALER IS EXCLUDED RATHER THAN THE TOUCH RULE MADE STRONGER, because
+   this rule is right for every other panel: they are plain blocks that want to
+   scroll as one. The dealer is the only one that is a layout. */
+body.touch-ui .panel:not(.kd-panel) {
   max-height: 84vh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
