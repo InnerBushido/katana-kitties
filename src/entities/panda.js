@@ -354,6 +354,11 @@ export class Panda {
      * have to be distinguishable and this is what distinguishes them.
      */
     this.knockedDown = false;
+    /** Has the ending played? Set by `Game._startFinale`; `follows` is the
+     *  only thing that reads it, and the argument is written out there. A
+     *  fresh Panda is mid-game by definition, so `false` is the right start
+     *  and `_startFinale` re-stamps every panda in the party. */
+    this.endgame = false;
     /** A blow taken while ridden: the rider keeps the push (see PANDA.knockK),
      *  the animal keeps the flinch. Decays. */
     this.recoil = 0;
@@ -701,12 +706,29 @@ export class Panda {
    * between a pet and a mount, and it's the same deal the dragons offer:
    * something big that waits for you at a place you have to remember.
    *
-   * A CUB follows regardless. It's a baby; it doesn't care which shrine you
-   * stood in, and stranding one somewhere a kid then has to remember is a
-   * worse outcome than the rule being slightly inconsistent.
+   * A CUB follows regardless, UNTIL THE ENDING. It's a baby; it doesn't care
+   * which shrine you stood in, and stranding one somewhere a kid then has to
+   * remember is a worse outcome than the rule being slightly inconsistent.
+   *
+   * THAT ARGUMENT EXPIRES AT 100%, AND `endgame` IS WHERE. Asked for as: "if
+   * the Ending Cutscene plays, and the player has a baby panda but is no
+   * longer pledged at Pandapaw, then the baby panda stops following the
+   * player. This is so that the player needs to be pledged at Pandapaw to get
+   * the benefits of having the panda in the arena." Both halves of the
+   * exemption stop being true at once — there is no afternoon left to strand
+   * an animal in, and the cub is about to be worth something in the ring, so
+   * "it's only a baby" turns from a kindness into a way of keeping a buff you
+   * swore away from. `Game._startFinale` sets the flag, before `start` and not
+   * on the scene finishing, for the reason that whole method gives: the ending
+   * is a minute long and can be skipped on its first frame.
+   *
+   * IT STOPS FOLLOWING; IT IS NOT TAKEN AWAY. Fourth non-negotiable — a pet
+   * can never be lost. The animal stands where it stood, keeps its name and
+   * its tier, and swearing at Pandapaw again is all it takes to have it trot
+   * after her once more.
    */
   get follows() {
-    if (!this.rideable) return true;
+    if (!this.rideable && !this.endgame) return true;
     return this.owner?.clan?.buff?.panda === true;
   }
 

@@ -991,7 +991,7 @@ export class DodgeFx {
          also what lets the numbers be readable: frozen for the half second the
          move takes to finish, rather than a blur nobody can read. */
       s: {
-        hasT: false, ok: false, tcol: JADE,
+        hasT: false, aim: false, ok: false, tcol: JADE,
         px: 0, py: 0, pz: 0,
         fx: 0, fy: 0, fz: 0,
         hx: 0, hy: 0, hz: 0,
@@ -1249,6 +1249,12 @@ export class DodgeFx {
       s.sx = p.dodgeFrom.x;
       s.sy = p.dodgeFrom.y;
       s.sz = p.dodgeFrom.z;
+      /* HAS SHE THE SECOND ORB? Snapshotted with everything else rather than
+         asked live, because this figure is frozen at the commit and every
+         other field it reads is — an orb cannot change hands mid-Flash-Step,
+         but a value that is sometimes live and sometimes frozen is a rule
+         nobody can hold. Drives `secret`, below. */
+      s.aim = !!p.power?.blink?.aim;
       s.ok = p.dodgeSpotOk;
       if (s.ok) {
         s.hx = p.dodgeSpot.x;
@@ -1316,6 +1322,21 @@ export class DodgeFx {
        warning that matters — YOU are the one being circled, and here is the
        colour of who is doing it — is unchanged and is about to get louder.
 
+       ...AND THE SECRET BELONGS TO THE SECOND ORB ONLY. Asked for as: "when a
+       player has 1 of the teleporting kotodama orbs, when an opponent is
+       selected, it should show the location of where they will teleport to,
+       before they teleport there, like it does when an opponent is not
+       selected. But it should not do this when the player has 2." That reads
+       as a reversal and is not one — it is the report above applied to the
+       only case where it was ever true. WITH ONE ORB THERE IS NOTHING TO KEEP.
+       She has no stick aim: the landing is a fixed radius on a heading the
+       camera already points, so the "secret" was hiding an answer her sister
+       could read off which way she was facing, and all it really cost was the
+       one-orb kitten's own picture of her jump. WITH TWO ORBS the landing is
+       genuinely chosen — anywhere on a disc, out to the whole lock range now
+       (see `Player._dodgeFar`) — so there IS a decision to hide, and that is
+       the decision the original report was about.
+
        NOTHING IS DELETED, ONLY DELAYED. The spoke, the ghost and the whole
        sin/cos triangle all come back the instant she commits, because
        `f.placed` opens every one of them — and the figure is frozen at that
@@ -1324,7 +1345,7 @@ export class DodgeFx {
        non-negotiable is about the maths being drawn honestly, not about when.
        A version of this that suppressed the triangle outright would be the
        report used as an excuse to delete a lesson. */
-    const secret = s.hasT && !f.placed;
+    const secret = s.hasT && s.aim && !f.placed;
 
     /* --- her, coming apart, on the spot she has not left yet ---
        ON HER LIVE POSITION AND NOT ON THE SNAPSHOT, which is the one place in

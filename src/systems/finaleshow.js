@@ -296,6 +296,78 @@ const BAMBOO_TINT = [0.36, 0.56, 0.44];
  *  when the cutscene is played." */
 const FOLK_SEED = 0x6b6b7a31;
 
+/* ---------------------------------------------------------------------------
+   HOW THE TOWN PANICS, AND WHY IT IS THREE THINGS AND NOT ONE.
+
+   Everybody used to do the same thing: swap to the scared drawing and freeze,
+   every villager on the same frame, holding the same pose for the rest of the
+   ending. Sixteen identical statues is not a crowd reacting, it is a crowd
+   that has been switched off — and the shot pushes IN on them, so there is
+   time to notice.
+
+   Asked for as: "have a quarter of the kittens on the holographic island
+   jumping up and down randomly when they are doing the scared animation.
+   Maybe half of them can be switching between running around, in panic, and
+   doing the scared animation."
+
+   So the roll is a quarter, a half and the remainder — and the remainder is
+   the behaviour that was there before, which is deliberate: a third of a crowd
+   standing rooted to the spot is what makes the other two thirds read as
+   MOVING. If everybody moved, nobody would.
+
+   IT IS THE KITTENS ONLY. The animals keep the freeze. A rabbit has one
+   drawing and one shock drawing and no walk cycle to run back to, and the note
+   named the kittens.
+
+   THE DICE ARE THE SAME DICE. `_buildFolk`'s seeded rng, rolled in the same
+   loop as the recolour, so the town panics identically every time it is shown
+   — the director's rule about a crowd being seeded. Two sisters watching the
+   ending on two screens see the same village.
+--------------------------------------------------------------------------- */
+/** A runner's full cycle, and the fraction of it she spends running. The rest
+ *  she is stopped with her paws up. Measured against the shot rather than
+ *  chosen: the push-in over the quake runs about eleven seconds, so at 2.2 a
+ *  villager is seen doing both things four or five times and neither reads as
+ *  a glitch. */
+const FRIGHT_CYCLE = 2.2;
+const FRIGHT_RUN = 0.55;
+/** How high a jumper leaves the ground, as a fraction of a villager's height,
+ *  and the spread of how fast. Small, because the whole town is 19cm tall on a
+ *  table — a hop that reads at that size is a couple of pixels, and anything
+ *  bigger turns the panic into a trampoline. */
+const FRIGHT_HOP = 0.42;
+const FRIGHT_HOP_HZ = [4.6, 2.8];
+
+/**
+ * A clock that RUNS for part of its cycle and HOLDS for the rest.
+ *
+ * This is what lets a runner stop dead and start again without storing
+ * anything. The villager's position is `angle = phase + clock * speed`, so
+ * freezing her is freezing the clock — and a clock that is a pure function of
+ * `t` cannot drift, cannot be double-advanced if this is ever called twice in
+ * a frame, and needs no `dt` plumbed through `_stepFolk`.
+ *
+ * TRIED FIRST AND THROWN AWAY: accumulating `frT += dt` per villager. It is
+ * the obvious version and it is wrong here for a reason that only shows up in
+ * split screen — `_stepFolk` takes a camera, and anything taking a camera in
+ * this file is one refactor away from being called once per pane. Sixteen
+ * villagers running at four times speed in a two-player game would have been
+ * a bug nobody could reproduce alone.
+ *
+ * ZEROED AT ITS OWN OFFSET, so `holdWarp(0, off)` is 0 for every villager
+ * whatever her offset. That is what makes the quake continuous: at the instant
+ * the crowd switches, every angle still equals the one the free-running clock
+ * had a frame earlier, so nobody teleports across her own little orbit.
+ *
+ * @param {number} t   seconds since the quake
+ * @param {number} off this villager's place in the cycle
+ */
+function holdWarp(t, off) {
+  const run = FRIGHT_CYCLE * FRIGHT_RUN;
+  const at = (x) => Math.floor(x / FRIGHT_CYCLE) * run + Math.min(x % FRIGHT_CYCLE, run);
+  return at(t + off) - at(off);
+}
+
 /**
  * mulberry32 — a seeded generator small enough to read in one go.
  *
@@ -1809,12 +1881,27 @@ export class FinaleShow {
            40 degrees of the drawing's own. */
         const hue = 40 + ((who * 0.618034 + rnd() * 0.12) % 1) * 280;
         f.recol = [hue / 360, rnd(), 0.28 + rnd() * 0.3, 1];
+        /* AND WHAT SHE DOES WHEN THE GROUND GOES. A quarter jump, a half run
+           and stop and run again, the rest stand still — see FRIGHT_CYCLE for
+           the whole argument, including why a third of them not moving is the
+           part that makes the other two thirds read. Rolled HERE, off the same
+           seeded rng as the recolour, so the panic is a property of the town
+           rather than of the afternoon. */
+        const roll = rnd();
+        f.fr = roll < 0.25 ? 'jump' : roll < 0.75 ? 'run' : 'still';
+        f.frPh = rnd() * FRIGHT_CYCLE;
+        f.frHz = FRIGHT_HOP_HZ[0] + rnd() * FRIGHT_HOP_HZ[1];
         who++;
         list.push(f);
       }
       const art = this.cast.kittens[si];
       const set = this._folkSet(art, list, FOLK_H * FOLK_GROW, 1);
       if (!set) continue;
+      /* THE SET THAT PANICS PER VILLAGER RATHER THAN ALL AT ONCE. `_stepFolk`
+         reads this to decide whether to run both meshes together and pick
+         between them instance by instance; every other set keeps the old
+         all-or-nothing swap. */
+      set.fright = true;
       /* HER FRIGHT, for the earthquake — see `_stepFolk`. The scared sheet
          when there is one, and the blessing pose it replaced when there is
          not: that was the stand-in for a whole pass, and a missing file costs
@@ -3145,7 +3232,14 @@ ${sh.fragmentShader}`.replace(
     const scared = pi >= ISLE_CUES.indexOf('isles-quake');
     for (const m of this.folkMats) m.opacity = op;
     for (const set of this.folkSets) {
-      set.mesh.visible = show && !(scared && set.alt);
+      /* A MIXED SET RUNS BOTH DRAWINGS AT ONCE and chooses per villager, which
+         is the only way an InstancedMesh can: one mesh is one visibility flag,
+         so the instances that are not showing this sheet are composed with a
+         ZERO SCALE instead. The cost is a second draw call for the kittens
+         during the quake — the other sheet is already uploaded, already
+         instanced and already faded with everybody else's. */
+      const mixed = scared && set.alt && set.fright;
+      set.mesh.visible = show && (mixed || !(scared && set.alt));
       if (set.alt) set.alt.mesh.visible = show && scared;
     }
     if (!show) return;
@@ -3174,17 +3268,59 @@ ${sh.fragmentShader}`.replace(
     const S = this._fs.set(1, 1, 1);
     /* ...AND THEY STAND WHERE THE GROUND MOVED UNDER THEM. */
     const clock = scared ? this.quakeT0 : this.t;
+    /* HOW LONG THE GROUND HAS BEEN GOING, which is the only clock the three
+       panics are measured on. Zero before the quake, so every expression below
+       collapses to the frozen version on the frame it starts. */
+    const qt = Math.max(0, this.t - this.quakeT0);
+    /* ONE ZERO-SCALE MATRIX, BUILT ONCE. Handing an instance this is how a
+       villager is hidden on the sheet she is not currently wearing. */
+    const zero = this._mZero ?? (this._mZero = new THREE.Matrix4().compose(
+      new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3(0, 0, 0)));
     for (const set of this.folkSets) {
+      const mixed = scared && set.alt && set.fright;
       set.list.forEach((f, i) => {
-        const a = f.ph + clock * f.sp;
+        /* THREE PANICS, AND THEY ARE ALL ONE LINE OF ARITHMETIC EACH. See
+           FRIGHT_CYCLE and `holdWarp` above for the whole argument.
+
+           A RUNNER'S CLOCK HOLDS while she is stopped, so she really is in the
+           same spot for that beat rather than sliding through it with her paws
+           up — which is what "switching between running around, in panic, and
+           doing the scared animation" has to mean to read as two behaviours.
+
+           A JUMPER AND A STANDER BOTH KEEP THE FROZEN CLOCK, so neither drifts
+           off her spot; the jumper adds height and nothing else. */
+        let a = f.ph + clock * f.sp;
+        let hop = 0;
+        let alt = mixed;
+        if (mixed && f.fr === 'run') {
+          const on2 = (qt + f.frPh) % FRIGHT_CYCLE < FRIGHT_CYCLE * FRIGHT_RUN;
+          a = f.ph + (this.quakeT0 + holdWarp(qt, f.frPh)) * f.sp;
+          alt = !on2;
+        } else if (mixed && f.fr === 'jump') {
+          /* `abs(sin)` AND NOT `sin`: a sine would put her under the island
+             for half of every cycle, and the ground of a hologram is the one
+             surface in this game a figure must not go through. The absolute
+             value is also the right SHAPE — a bounce is a series of arcs off
+             the floor, not a wave. */
+          hop = Math.abs(Math.sin(qt * f.frHz)) * FRIGHT_HOP * FOLK_H * FOLK_GROW;
+        }
         const x = f.host.g.position.x + f.hx + Math.cos(a) * f.wr;
         const z = f.host.g.position.z + f.hz + Math.sin(a) * f.wr;
-        const y = f.host.g.position.y + 0.09 + (f.air ?? 0);
+        const y = f.host.g.position.y + 0.09 + (f.air ?? 0) + hop;
         camA = Math.atan2((this._fcx ?? 0) - x, (this._fcz ?? 0) - z);
         if (!camera) q.setFromAxisAngle(UP_AXIS, camA - yaw);
         M.compose(P.set(x, y, z), q, S);
-        set.mesh.setMatrixAt(i, M);
-        if (set.alt) set.alt.mesh.setMatrixAt(i, M);
+        /* WHICHEVER DRAWING IS NOT HERS IS SCALED TO NOTHING. Only in a mixed
+           set: everywhere else one of the two meshes is switched off whole and
+           both keep their real matrices, so a set that is not panicking is
+           written exactly as it was before this existed. */
+        if (mixed) {
+          set.mesh.setMatrixAt(i, alt ? zero : M);
+          set.alt.mesh.setMatrixAt(i, alt ? M : zero);
+        } else {
+          set.mesh.setMatrixAt(i, M);
+          if (set.alt) set.alt.mesh.setMatrixAt(i, M);
+        }
         /* FACING THE TANGENT of its own little circle. */
         this._folkCell(set, i, a + Math.PI / 2, camA);
       });

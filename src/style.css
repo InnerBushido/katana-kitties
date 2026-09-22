@@ -4019,9 +4019,36 @@ body.touch-ui .kd-row .kd-dim {
    `max-height` IS IN `em` OF THE ROW, not in pixels or vh. It is "about four
    quests at a time", which is what it has to be: a fixed pixel box would show
    four rows at the old size and two at this one, and a `vh` box would be six
-   rows on a monitor and one on a laptop. */
+   rows on a monitor and one on a laptop.
+
+   26px WAS TOO BIG AND THE LIST WAS FOUR SCREENFULS. Reported from play:
+   "quests text in Character Profile look too big, right now there are 4
+   scrolls of text to see all the quests, there should be only 2 scrolls up and
+   down to see them all." Measured on the running game at 1600x900, on the card
+   width each number of players actually gets:
+
+     card 728px (one kitten)    content 798px in a 244px box  -> 3 presses
+     card 353px (two or four)   content 1351px in a 244px box -> 6 presses
+
+   so the report is the four-player card and it was worse than reported.
+
+   THE BOX IS THE SAME SIZE ON SCREEN AND THE TEXT INSIDE IT IS SMALLER — that
+   is the whole fix, and the `em` above is why 9.4 had to become 14 to say it:
+   9.4em of a 26px row is 244px, 14em of an 18px row is 252px. The box a kitten
+   looks at did not move. Dropping `--q` ALONE was tried first and changes
+   nothing, because the box is quoted in the row it is shrinking with — 26px to
+   18px took the content from 798 to 468 and the box from 244 to 169, and the
+   press count stayed at 3 the whole way down. Both numbers or neither.
+
+   AND THE `how` LINE IS THREE QUARTERS OF THE TITLE. Every quest is a title,
+   a hard `<br>`, and a sentence saying how to earn it — so the sentence is
+   what wraps, and on a 353px card it was wrapping to three lines. At 0.78em it
+   fits on one or two and the title still reads as the thing being scanned.
+   With all three together: 468px in a 252px box on a wide card (1.9
+   screenfuls) and 648px on a narrow one (2.6), which is two presses on both,
+   measured rather than argued. */
 .kd-quests {
-  --q: 26px;
+  --q: 18px;
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid rgba(0, 0, 0, 0.15);
@@ -4036,7 +4063,7 @@ body.touch-ui .kd-row .kd-dim {
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 9.4em;
+  max-height: 14em;
   overflow-y: auto;
   /* THE SAME `clip` THE ORB DRAWER NEEDED, and for the same reason: setting
      `overflow-y` coerces the unset `overflow-x: visible` to `auto`, which
@@ -4061,6 +4088,12 @@ body.touch-ui .kd-row .kd-dim {
   line-height: 1.25;
   padding: 0.14em 0;
 }
+/* THE SENTENCE UNDER THE TITLE, AND THE COUNTER THAT ENDS IT, ARE ONE THING
+   AND THEY ARE SMALLER THAN THE TITLE. They share a line, so they have to
+   share a size; scoping both to `.kd-quests` keeps `.kd-dim` alone everywhere
+   else it is used on this screen. */
+.kd-quests .kd-dim,
+.kd-quests .kd-q-note { font-size: 0.78em; }
 .kd-q-mark { width: 1.1em; flex: none; text-align: center; opacity: 0.55; }
 .kd-quest.on .kd-q-mark { color: #d98a00; opacity: 1; font-weight: 700; }
 .kd-q-note { font-weight: 700; white-space: nowrap; }
@@ -4068,8 +4101,15 @@ body.touch-ui .kd-row .kd-dim {
 .kd-q-rare { color: #7a45d1; font-size: 0.84em; font-weight: 400; margin-left: 4px; }
 /* A PHONE IS NOT READ FROM ACROSS A ROOM. The whole ask is about distance —
    four kids on a sofa looking at a television — and a 26px quest on a 390px
-   screen is four words a line. It is still bigger than the 13px it was. */
-body.touch-ui .kd-quests { --q: 17px; }
+   screen is four words a line. It is still bigger than the 13px it was.
+   AND ITS BOX IS PINNED IN PIXELS-VIA-EM TO WHAT IT ALREADY WAS: 11em of a
+   15px row is 165px, which is the 160px the phone had before this pass. A
+   landscape phone is 844x390 — SHORT, not narrow — so the desktop's 14em would
+   have taken 210px of a 390px screen for one list. The desktop box grew
+   because its text shrank; the phone's text shrank too, and its box must not
+   grow to match. */
+body.touch-ui .kd-quests { --q: 15px; }
+body.touch-ui .kd-quests ul { max-height: 11em; }
 /* "the game has ended", said once beside the heading. Darker than the heading
    it sits on rather than bigger: it is a state, not a warning. */
 .kd-q-over { color: #b4432c; font-weight: 700; opacity: 1; margin-left: 6px; }

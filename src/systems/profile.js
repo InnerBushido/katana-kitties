@@ -1,5 +1,5 @@
 import { POWER_ORBS, ORB_BY_ID, ORB_IDS, MAX_EQUIPPED, countsOf } from '../entities/powerorb.js';
-import { MAX_PLAYERS } from '../core/palette.js';
+import { MAX_PLAYERS, cssFor } from '../core/palette.js';
 import { dragGuard } from '../core/tap.js';
 
 /* ---------------------------------------------------------------------------
@@ -1336,7 +1336,32 @@ export class ProfileScreen {
   _cardMarkup(player, index) {
     const side = this.sides[index];
     const owned = player.powerOrbs;
+    /* A SEAT IS NOT A CAT, AND THIS SCREEN THOUGHT IT WAS. Reported from play:
+       "even if player 2 is not Frost on the Character Profile screen, the
+       Player2 name is pink instead of the colour of the character that was
+       selected — if player2 is Storm, the colour should be Teal, but instead
+       it is pink which is Frost's colour."
+
+       `.kd-p1 { --me: var(--frost) }` is a rule about SEAT TWO, and it was
+       right until the character picker existed. Every colour on this card
+       reads `--me` — the name, the cursor ring, the slot outlines, her pip on
+       the dealer's shelf — so one wrong custom property was the whole card.
+
+       THE CLASS STAYS AND THE VALUE IS WRITTEN OVER IT. Four other methods
+       find a card with `.kd-card.kd-p${index}` — `_scrollQuests`,
+       `_restoreQuestScroll`, `_showQuestion`, `_followCursors` — and those
+       really do want the SEAT, because they are looking for "the card
+       belonging to the kitten whose stick just moved". So the seat keeps its
+       class and the cat writes her colour on inline, which is the same answer
+       `Tournament._championCard` and the arena health bars reached: the
+       stylesheet's value is the fallback for a card drawn before a style is
+       known, and `cssFor(player.style)` is the truth.
+
+       `cssFor` AND NOT `styleCss(index)`. The whole point of that pair is
+       that `cssFor` cannot be handed a seat number by mistake — it takes the
+       style OBJECT the kitten was actually built from. See core/palette.js. */
     const cls = `kd-card kd-p${index}`;
+    const me = `style="--me:${cssFor(player.style)}"`;
 
     /* EIGHT SLOTS ARE ALWAYS DRAWN, filled or not. The cap is a rule she has
        to be able to see coming: three orbs in a row of eight says "five more"
@@ -1407,7 +1432,7 @@ export class ProfileScreen {
        the game ends" — the count of them, beside her name, so the one thing a
        girl glancing at the screen learns is how many are coming to her. */
     const starTag = stars ? ` <span class="kd-stars" title="orbs coming at the ending">★${stars}</span>` : '';
-    return `<div class="${cls}">
+    return `<div class="${cls}" ${me}>
       <div class="kd-name">${player.name}${starTag}</div>
       ${this._clanMarkup(player)}
       <div class="kd-meta">${player.score} pts · ${owned.length}/${MAX_EQUIPPED} orbs</div>
@@ -1551,7 +1576,14 @@ export class ProfileScreen {
       ? `<button type="button" class="kd-act go" data-act="yes" data-side="${index}">YES</button>`
         + `<button type="button" class="kd-act" data-act="no" data-side="${index}">NO</button>`
       : '<span>JUMP <b>yes</b> · ATTACK or INTERACT <b>no</b></span>';
-    return `<div class="kd-ask kd-p${index}">
+    /* HER COLOUR, OFF THE KITTEN — the same seat-is-not-a-cat fix the card
+       above carries, and it needs its own copy because the question is drawn
+       into `.kd-body` in shop mode, outside any card. Degrades to the
+       stylesheet's seat colour if the seat is somehow empty, which is a wrong
+       colour rather than a broken question. */
+    const who = this.game.players?.[index];
+    const me = who ? ` style="--me:${cssFor(who.style)}"` : '';
+    return `<div class="kd-ask kd-p${index}"${me}>
       <div class="kd-ask-q">${q.text}</div>
       <div class="kd-ask-keys">${keys}</div>
     </div>`;
@@ -1576,7 +1608,8 @@ export class ProfileScreen {
          have read as broken. */
       const here = shoppers.filter((p) => this.sides[p.index].i === k);
       const pips = here
-        .map((p) => `<i class="kd-seat kd-p${p.index}" title="${p.name}"></i>`).join('');
+        .map((p) => `<i class="kd-seat kd-p${p.index}" `
+          + `style="--me:${cssFor(p.style)}" title="${p.name}"></i>`).join('');
       const cls = ['kd-row', here.length ? 'cursor' : '', stock ? '' : 'out']
         .filter(Boolean).join(' ');
       /* THE COUNT IS WHOSE CURSOR IS ON THE ROW, not the opener's. "you have"
@@ -1625,7 +1658,8 @@ export class ProfileScreen {
       </div>`;
     }).join('');
 
-    const purses = shoppers.map((p) => `<span class="kd-purse-one kd-p${p.index}">
+    const purses = shoppers.map((p) => `<span class="kd-purse-one kd-p${p.index}" `
+      + `style="--me:${cssFor(p.style)}">
       ${p.name} · <b>${p.score}</b> · ${p.powerOrbs.length}/${MAX_EQUIPPED}</span>`).join('');
     /* THE INVITATION NAMES WHO IT IS FOR. "Press MOUNT to join" on a screen
        three of the four are already on reads as an instruction to all of them

@@ -3693,6 +3693,69 @@ console.log('\n--- the shrine scene is a two-shot ---');
       && SHRINE_GATE.r > 0.2, `${SHRINE_GATE.x} out, ${SHRINE_GATE.r} thick`);
   }
 
+  /* --- AND NOTHING STANDS IN FRONT OF ANY OF THE SIX --------------------
+     THE CHECK THAT WOULD HAVE CAUGHT IT. Reported from play: "during the
+     cutscene with Pandapaw there is a shrine beam covering Bambooheart, maybe
+     we can place the camera better so she is not covered in the cutscene by
+     the shrine beams." What was already here proved `_pickSwing` MOVES when
+     something is planted in front of the lens — it did, and the shot was still
+     blocked, because the four swings it may move BETWEEN were all blocked at
+     Pandapaw. A check that asks "did it move" cannot see that. This one asks
+     what the shot is FOR.
+
+     MEASURED OFF THE REAL CAMERA, over the whole push-in rather than at one
+     moment, because the dolly changes every bearing in the frame — a shrine
+     that is clear at SHOT_FAR and blocked at SHOT_NEAR is blocked. Sampled
+     every quarter second across the scene's own length.
+
+     ALL SIX, NOT THE FIRST. Pandapaw is `clanHalls[5]`, so a check written
+     against `clanHalls[0]` would have been green through the entire life of
+     the bug — and the numbers say five of the six were within five hundredths
+     of a radian of the same report. */
+  {
+    const gateGap = (cam, who, hall) => {
+      let worst = Math.PI;
+      const wa = Math.atan2(who.x - cam.x, who.z - cam.z);
+      const wd = Math.hypot(who.x - cam.x, who.z - cam.z);
+      for (const sx of [-1, 1]) {
+        const q = { x: hall.x + sx * SHRINE_GATE.x, z: hall.z };
+        const qd = Math.hypot(q.x - cam.x, q.z - cam.z);
+        if (qd >= wd) continue;               // behind her: that is the gate
+        const qa = Math.atan2(q.x - cam.x, q.z - cam.z);
+        const raw = Math.abs(Math.atan2(Math.sin(qa - wa), Math.cos(qa - wa)));
+        worst = Math.min(worst, raw - Math.atan2(SHRINE_GATE.r, qd));
+      }
+      return worst;
+    };
+    let worstHall = null;
+    let worstGap = Math.PI;
+    for (const hall of world.clanHalls) {
+      const { p, spot } = shoot(hall);
+      // The kitten is stood on her mark by `start`; read it rather than
+      // recompute it, or this check is testing its own arithmetic.
+      const her = { x: p.position.x, z: p.position.z };
+      for (let i = 0; i < 40; i++) {
+        S.update(0.25);
+        S.camera.updateMatrixWorld(true);
+        const cam = S.camera.position;
+        for (const who of [spot, her]) {
+          const g2 = gateGap(cam, who, hall);
+          if (g2 < worstGap) { worstGap = g2; worstHall = hall.clan?.name ?? '?'; }
+        }
+        if (!S.active) break;
+      }
+    }
+    S.finish();
+    ok('and at none of the six shrines is a gate post in front of anybody',
+      worstGap > 0, `worst ${worstGap.toFixed(4)} rad at ${worstHall}`);
+    /* AND WITH ROOM TO SPARE, which is the half that stops this coming back.
+       Shadowtail was +0.002 radians before this pass — clear by about two
+       centimetres at nine units, green on the line above, and one bamboo cane
+       from being the next report. */
+    ok('...with a margin, not by two centimetres of luck', worstGap > 0.03,
+      `worst ${worstGap.toFixed(4)} rad at ${worstHall}`);
+  }
+
   // --- and nothing happens to anybody else --------------------------------
   {
     const hall = world.clanHalls[0];
@@ -8495,8 +8558,14 @@ console.log('\n--- 龍 the dragon arrives in his own scene, and not before ---')
     !/new Ryuuseki\(/.test(allBalls) && !/_spawnRyuuseki/.test(allBalls));
   ok('...it only points the camera at the torii and starts the scene',
     /_toriiSpot\(\)/.test(allBalls) && /summonScene\.start\('found'/.test(allBalls));
-  ok('...and the roar stays, because it is now a sound from somewhere else',
-    /sfx\('ryuroar'\)/.test(allBalls));
+  /* AND THE ROAR WENT WITH HIM. It used to be asserted HERE, on the argument
+     that a roar over an empty torii is the sky going dark. Reported from play:
+     "that sound should play when Ryuuseki is summoned in the next cutscene
+     when the player goes to the great torii." Both halves are pinned — gone
+     from the errand, present at the arrival — because a move is two facts and
+     checking only the second one lets it end up in both. */
+  ok('...and the roar does NOT, because it belongs to the dragon',
+    !/sfx\('ryuroar'\)/.test(allBalls));
 
   /* --- AND THE WALK-UP IS WHAT MAKES HIM EXIST -------------------------
      IT USED TO MEASURE TO THE DRAGON, which is a distance that could only be
@@ -16215,12 +16284,37 @@ console.log('\n--- the two powers, from the kitten\'s side ---');
       headless ? 'headless: no canvas to draw a sight on' : '');
 
     if (r?.sight) {
-      /* ONE PICTURE FOR ONE WORD. It is the Flash Step's own reticle texture,
-         imported rather than redrawn — two drawings of a target would be two
-         things a nine-year-old has to learn mean the same thing, and they
-         would drift the first time either was tuned. */
-      ok('...and it is the same target the Flash Step aims with',
-        r.sight.material.map === ringTexture());
+      /* ONE PICTURE FOR ONE WORD, AND IT IS SENSE MISCHIEF'S. Asked for as
+         "the target that displays above the targeted player head should be the
+         same 3D shape we use when using the Sense Mischief ability". It was
+         the Flash Step's reticle texture, which says AIMED AT; the chevron
+         says FOUND, which is what a marked sister is. `_updateSeek` builds the
+         world one as a five-sided cone flipped to point down, so that is what
+         is asserted — the SHAPE, not a shared object, because the two are six
+         lines each and a constructor for six lines would be further to read
+         than the six. */
+      const g = r.sight.geometry;
+      ok('...and it is the same chevron Sense Mischief hangs over a barrel',
+        g?.type === 'ConeGeometry' && g.parameters.radialSegments === 5);
+      ok('...pointing DOWN at her, which is the half a cone cannot say itself',
+        !!g && new THREE.Vector3(0, 1, 0)
+          .applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(r.sight.rotation))
+          .y > 0
+        && (() => {
+          /* The flip is baked into the geometry (`rotateX(PI)`), so the tip is
+             found by reading the vertices rather than the transform: the
+             apex of a three.js cone is its highest point before the flip and
+             must be its lowest after. */
+          const p = g.attributes.position;
+          let lo = Infinity;
+          let hi = -Infinity;
+          for (let i = 0; i < p.count; i++) { lo = Math.min(lo, p.getY(i)); hi = Math.max(hi, p.getY(i)); }
+          let nLo = 0;
+          for (let i = 0; i < p.count; i++) if (Math.abs(p.getY(i) - lo) < 1e-6) nLo++;
+          let nHi = 0;
+          for (let i = 0; i < p.count; i++) if (Math.abs(p.getY(i) - hi) < 1e-6) nHi++;
+          return nLo < nHi;
+        })());
       /* IT IS OVER THE VICTIM AND IN THE THIEF'S COLOUR — the two halves of
          "show the color of the person targeting them". A sight over the
          hunter, or in the hunted kitten's own colour, would say the opposite
@@ -19836,10 +19930,19 @@ console.log('\n--- one press is not enough, and one player drives ---');
        is the pane's SHAPE, so a quadrant and a stacked half are untouched. */
     ok('...or by whether the pane is a column, which is the same argument',
       /const tall = v\.h > v\.w;/.test(fn) && /const full = shared \|\| tall;/.test(fn));
-    ok('...taking its full width in both, and the 42% only in a landscape pane of her own',
-      /full[\s\S]{0,160}?v\.w - \d+\)[\s\S]{0,160}?Math\.round\(v\.w \* 0\.42\)/.test(fn));
-    ok('...with the 540 ceiling lifted for a column and kept everywhere else',
-      /Math\.min\(tall \? Infinity : 540, v\.w - \d+\)/.test(fn));
+    /* ONE EXPRESSION FOR SHARED AND FOR TALL, which is the fix and not a
+       tidy-up. Reported from play: "when there is 1 player in the dojo and in
+       the Sin/Cos UI screen, when there are 2 players in the game, the UI is
+       too big. Should be the same size as when there are 3 players and 2
+       players are in the Sin/Cos dojo together." Two players side by side is a
+       958-wide column, the portrait branch lifted the 540 ceiling for it, and
+       a girl on her own got a 930px board over the circle she was standing on.
+       `mathSharedWidth` is the three-player answer BY DEFINITION, so using it
+       for both is what "the same size as" means. */
+    ok('...taking one shared width in both, and the 42% only in a landscape pane of her own',
+      /let w = full\s*\n?\s*\? mathSharedWidth\(v\.w\)\s*\n?\s*: Math\.min\(540, Math\.round\(v\.w \* 0\.42\)\)/.test(fn));
+    ok('...with the 540 ceiling no longer lifted for a column',
+      !/tall \? Infinity/.test(fn));
     ok('...and the top corner, since at full size the bottom is not a corner',
       /inner: false, top: toTop/.test(fn)
       && /const toTop = full && panes\.length > 1;/.test(fn));
@@ -23102,8 +23205,47 @@ console.log('\n--- one press is not enough, and one player drives ---');
     const p1 = people.map(at);
     let walked = 0;
     p0.forEach((l, a) => l.forEach((v, b) => { walked = Math.max(walked, v.distanceTo(p1[a][b])); }));
-    ok('when the ground moves every villager throws her paws in the air',
-      people.every((q) => !q.mesh.visible && q.alt.mesh.visible && q.alt.mat.map !== q.mat.map));
+    /* THE CROWD NO LONGER PANICS AS ONE OBJECT. Asked for as "have a quarter
+       of the kittens on the holographic island jumping up and down randomly
+       when they are doing the scared animation. Maybe half of them can be
+       switching between running around, in panic, and doing the scared
+       animation." So the two sheets now run TOGETHER over the town and the
+       choice is per villager — which an InstancedMesh can only express by
+       scaling the instance it is not drawing to nothing. */
+    ok('when the ground moves the town runs both drawings at once',
+      people.every((q) => q.mesh.visible && q.alt.mesh.visible && q.alt.mat.map !== q.mat.map));
+    {
+      /* AND EVERY VILLAGER IS ON EXACTLY ONE OF THEM. This is the check that
+         would have caught the version that got written first, where the
+         "hidden" instance was handed an IDENTITY matrix instead of a zero one
+         — sixteen kittens standing at the middle of the island in both poses,
+         which on a hologram looks like a rendering fault rather than a bug. */
+      const m = new THREE.Matrix4();
+      /* DRAWN AT ALL? Read off the matrix's first COLUMN rather than through
+         `Matrix4.decompose`, and that is not a style preference — decompose
+         was tried first and reports a scale of ONE for an all-zero matrix,
+         because it guards the division by a degenerate determinant by falling
+         back to an identity rotation. So the check passed a crowd that was
+         doubled and failed a crowd that was not. The column's own length is
+         the honest question and it is three multiplications. */
+      const drawn = (mesh, i) => {
+        mesh.getMatrixAt(i, m);
+        const e = m.elements;
+        return Math.hypot(e[0], e[1], e[2]) > 1e-6;
+      };
+      let both = 0;
+      let neither = 0;
+      for (const q of people) {
+        for (let i = 0; i < q.list.length; i++) {
+          const a = drawn(q.mesh, i);
+          const b = drawn(q.alt.mesh, i);
+          if (a && b) both++;
+          if (!a && !b) neither++;
+        }
+      }
+      ok('...with every villager drawn on exactly one of the two, never both',
+        both === 0 && neither === 0, `${both} doubled, ${neither} missing`);
+    }
     /* IN HER OWN FRIGHT, NOT THE BLESSING THAT STOOD IN FOR IT. "Let's generate
        the scared pose for the players only (Ember and Frost) and use them in
        the cutscene." */
@@ -23123,7 +23265,74 @@ console.log('\n--- one press is not enough, and one player drives ---');
       B.finish();
       CAST.scared = saved;
     }
-    ok('...and stops walking where she stood', walked < 1e-6, walked.toExponential(1));
+    {
+      /* A QUARTER, A HALF, AND THE REST. The roll is `_buildFolk`'s and comes
+         off the seeded rng, so this is a fact about the town rather than about
+         the afternoon — a director can give notes on it. Counted over the
+         whole crowd rather than per sheet, because the two townspeople sets
+         are one town split by which drawing it uses.
+
+         THE BAND IS WIDE ON PURPOSE AND THE REASON IS WRITTEN DOWN: sixteen
+         villagers means one roll is six points of the total, so an exact
+         quarter is not a thing sixteen dice can express. The bar is "each
+         behaviour really happens and the halves are ordered", which is what
+         the note asked for; a tighter bar here would be the birthday-problem
+         mistake this file has made twice. */
+      const all = people.flatMap((q) => q.list);
+      const n = (k) => all.filter((f) => f.fr === k).length;
+      ok('...a quarter of them jumping, half running, the rest rooted',
+        all.length >= 12 && n('jump') > 0 && n('run') > 0 && n('still') > 0
+        && n('run') > n('jump') && n('run') > n('still'),
+        `${n('jump')} jump / ${n('run')} run / ${n('still')} still of ${all.length}`);
+
+      /* AND THE THREE REALLY DO DIFFERENT THINGS ON SCREEN. Measured off the
+         matrices over a second of the quake rather than asserted off the
+         field, because the field is the INTENTION and the instance matrix is
+         what a kid sees. A stander must not drift; a jumper must leave the
+         ground and come back to it; a runner must cover ground. */
+      const track = () => {
+        const mm = new THREE.Matrix4();
+        /* WHICHEVER SHEET SHE IS ON THIS FRAME — see `drawn` above for why
+           this asks the matrix column and not `decompose`. */
+        const up = (mesh, i) => {
+          mesh.getMatrixAt(i, mm);
+          const e = mm.elements;
+          return Math.hypot(e[0], e[1], e[2]) > 1e-6;
+        };
+        const out = new Map();
+        for (const q of people) {
+          for (let i = 0; i < q.list.length; i++) {
+            const f = q.list[i];
+            const live = up(q.mesh, i) ? q.mesh : q.alt.mesh;
+            live.getMatrixAt(i, mm);
+            out.set(f, new THREE.Vector3().setFromMatrixPosition(mm)
+              .sub(f.host.g.position));
+          }
+        }
+        return out;
+      };
+      const t0 = track();
+      let flat = 0;
+      let air = 0;
+      let ran = 0;
+      for (let i = 0; i < 70; i++) {
+        S.update(1 / 60, cam);
+        const t1 = track();
+        for (const [f, v0] of t0) {
+          const v1 = t1.get(f);
+          const dy = Math.abs(v1.y - v0.y);
+          const dxz = Math.hypot(v1.x - v0.x, v1.z - v0.z);
+          if (f.fr === 'still') flat = Math.max(flat, dxz + dy);
+          if (f.fr === 'jump') air = Math.max(air, dy);
+          if (f.fr === 'run') ran = Math.max(ran, dxz);
+        }
+      }
+      ok('...and a rooted one really does stop where she stood',
+        flat < 1e-6, flat.toExponential(1));
+      ok('...a jumper leaves the ground', air > 1e-3, air.toFixed(4));
+      ok('...and a runner covers ground a rooted one does not',
+        ran > flat + 1e-4, ran.toFixed(4));
+    }
     {
       const m = new THREE.Matrix4();
       people[0].alt.mesh.getMatrixAt(0, m);
@@ -26927,11 +27136,42 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
       /_onPoints\(index\) \{[^}]*=== this\._pointsRow\(index\)/.test(prof)
         && /data-slot="\$\{this\._pointsRow\(index\)\}"/.test(prof));
     const css = src('../src/style.css');
-    /* MEASURED OFF THE SHEET, not off a number written down twice: the ask was
-       TWICE as big, and the row that was there was 13px. */
+    /* MEASURED OFF THE SHEET, not off a number written down twice. It used to
+       assert `--q >= 26px`, because the ask then was TWICE the 13px row that
+       was there. The ask now is the other way: "quests text in Character
+       Profile look too big, right now there are 4 scrolls of text to see all
+       the quests, there should be only 2 scrolls up and down to see them all."
+
+       BOTH NUMBERS ARE PINNED AND THAT IS THE POINT. A smaller row on its own
+       does NOTHING — the box is quoted in `em` OF THE ROW, so it shrinks by
+       exactly the same factor and the press count does not move. That was
+       tried first and measured on the running game: 26px to 18px took the
+       content from 798px to 468px and the box from 244px to 169px, three
+       presses at both ends. So the check is "the text came down AND the box in
+       pixels did not", which is the only pair that can be true together. */
     const qsize = /\.kd-quests \{[^}]*--q: (\d+)px/.exec(css);
-    ok('...at twice the size it was, on the sheet', Number(qsize?.[1]) >= 26,
-      `${qsize?.[1]}px`);
+    const qbox = /\.kd-quests ul \{[^}]*max-height: ([\d.]+)em/.exec(css);
+    const qpx = Number(qsize?.[1]) * Number(qbox?.[1]);
+    ok('...at a size read from across a room and not a size that fills the card',
+      Number(qsize?.[1]) > 0 && Number(qsize?.[1]) <= 20, `${qsize?.[1]}px`);
+    ok('...in a box that did NOT shrink with it, or nothing would have changed',
+      qpx >= 244, `${qsize?.[1]}px x ${qbox?.[1]}em = ${qpx}px`);
+    /* AND THE SENTENCE UNDER EACH TITLE IS SMALLER THAN THE TITLE. It is the
+       part that wraps — on a 353px four-player card it was going to three
+       lines — and it is the third of the three changes that got the narrow
+       card from six presses to two. */
+    ok('...with the how-to line three quarters of the title it sits under',
+      /\.kd-quests \.kd-dim,\s*\r?\n\.kd-quests \.kd-q-note \{ font-size: 0\.7\d+em/.test(css));
+    /* THE PHONE'S BOX IS PINNED SEPARATELY. A landscape phone is 844x390 and
+       the axis that runs out is HEIGHT, so the desktop's taller box may not
+       reach it — `body.touch-ui` has to override the max-height now that it
+       overrides the row. */
+    const tq = /body\.touch-ui \.kd-quests \{ --q: (\d+)px/.exec(css);
+    const tb = /body\.touch-ui \.kd-quests ul \{ max-height: ([\d.]+)em/.exec(css);
+    ok('...and a phone keeps the shorter box a 390px-tall screen has room for',
+      Number(tq?.[1]) > 0 && Number(tb?.[1]) > 0
+        && Number(tq[1]) * Number(tb[1]) < qpx,
+      `${tq?.[1]}px x ${tb?.[1]}em`);
     ok('...with the list itself scrolling and not the card',
       /\.kd-quests ul \{[^}]*overflow-y: auto/.test(css)
         && /\.kd-quests ul \{[^}]*max-height:/.test(css));

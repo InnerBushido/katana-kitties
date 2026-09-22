@@ -644,6 +644,38 @@ const MAP_SPLIT = 0.67;
  *  some phone shape nobody tested. */
 export const MAP_TOUCH_UP = 1.2;
 
+/**
+ * A QUARTER OFF A MAP THAT ONLY ONE KITTEN IS READING.
+ *
+ * Asked for as: "minimap for each player in each split-screen is too big, it
+ * needs to be 25% smaller. Can be the current size when there are 2 or more
+ * players in 1 split-screen."
+ *
+ * THE QUESTION IS HOW MANY KITTENS ARE IN THIS PANE, NOT WHETHER THE SCREEN IS
+ * SPLIT, and the second sentence is what says so. A map belonging to one girl
+ * is read by one pair of eyes from one seat, and it can afford to be small
+ * because she also has the whole pane to look at; a map two or three of them
+ * are sharing is read from further apart and across each other, and `merged`
+ * already exists as the name for exactly that. So the factor keys off the
+ * pane's own occupancy — which is `groups[pane].length` at the call site and
+ * has never been anything else.
+ *
+ * IT MULTIPLIES THE WHOLE ANSWER RATHER THAN JOINING THE `Math.min`. "25%
+ * smaller" has to be true of what ends up on screen, and a fourth term inside
+ * the min would have been 25% smaller only on the shapes where it happened to
+ * win — which is the trap `MAP_TOUCH_UP` had to be measured against in the
+ * other direction, and the same one twice is careless.
+ *
+ * WHAT IT ALSO MOVES, SAID OUT LOUD: a single kitten playing on an unsplit
+ * screen is a pane with one kitten in it, so her map comes down too — 300px to
+ * 225 on anything from a laptop up, since `MAP_MAX` is the binding term there.
+ * That was not named in the report, which is about split screen, but the rule
+ * given IS about occupancy and a map that shrank on a split and not on a whole
+ * screen would be two rules wearing one name. 225px is still bigger than the
+ * map a four-player quadrant ever gets.
+ */
+export const MAP_SOLO_DOWN = 0.75;
+
 /* A map must fit the pane it is in. At a flat 32vw a quadrant's map ate
    most of a quarter-screen; sized against the PANE it stays the same
    fraction of what its owner can actually see.
@@ -1037,16 +1069,18 @@ export function mapSpot({
  *  @param touch        is this a phone? The caps below apply to nothing else
  *  @param merged       one pane for everybody
  *  @param mathUp       the Dojo's sin/cos board is on screen
+ *  @param solo         exactly ONE kitten is in this pane — see MAP_SOLO_DOWN
  */
 export function mapWidth({
   paneW, paneH, screenH, touch = false, merged = true, mathUp = false,
+  solo = false,
 }) {
   const fullHeight = paneH > screenH * 0.75;
   const cap = touch
     ? paneH * (mathUp ? MAP_DOJO : MAP_TALL) * (merged || !fullHeight ? 1 : MAP_SPLIT)
       * MAP_TOUCH_UP
     : Infinity;
-  return Math.min(MAP_MAX, paneW * MAP_WIDE, cap);
+  return Math.min(MAP_MAX, paneW * MAP_WIDE, cap) * (solo ? MAP_SOLO_DOWN : 1);
 }
 
 /* ===========================================================================
