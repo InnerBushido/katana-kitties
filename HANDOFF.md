@@ -515,6 +515,89 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Thirteen from an afternoon of play.** One branch,
+`mixed/thirteen-fixes`. They arrived as one list and they are not one theme —
+three are framing, three are the arena, three are the profile and the HUD, and
+the rest are a scene each. What they have in common is that **every one of them
+was measured before it was changed**, and four of them turned out to be a
+different bug from the one the note describes.
+
+- **The gate post through Bambooheart.** *"During the cutscene with Pandapaw
+  there is a shrine beam covering Bambooheart."* `_pickSwing` already scored
+  four camera swings against the stonework and picked the best — and at
+  Pandapaw **all four were blocked**, so "the best" was a pillar across her
+  face. Scored at all six shrines and the blocker is a **gate post every time**:
+  the leader stands 3.4 out from her dais and the posts stand 2.6 out sideways,
+  so a lens swung 66° is always near a bearing with a post on it. Shadowtail was
+  clear by **0.002 radians** and was going to be the next report. Widening the
+  fan fixes everybody at ±1.75 rad — a side-on view with the gate out of frame,
+  five approved shots moved to fix one. Instead the coarse pass is untouched and
+  the winner now takes the **smallest step sideways that clears her**: five
+  shrines move 0.12–0.36 rad, Snowmantle does not move at all, and all six land
+  clear. **The check that was there asked whether the camera MOVED, which it
+  did**; the new one asks what the shot is for, at all six, across the push-in.
+- **The quest checklist is two screenfuls, not four.** Measured on the running
+  game: at the 353px card a two- or four-player profile gets, nine quests were
+  **1351px of content in a 244px box — six presses**, worse than the four
+  reported. **Shrinking the text alone does nothing**, and that is the whole
+  trap: the box is quoted in `em` of the row, so it shrinks by the same factor.
+  26px to 18px took the content from 798 to 468 and the box from 244 to 169 and
+  the press count never moved. Three things together — an 18px row, a 14em box
+  (which is the same 250px box on screen as before), and the how-to line at
+  0.78em, since it is the part that wraps. Two presses at both card widths.
+- **A map with one kitten reading it is a quarter smaller.** Keyed off how many
+  kittens are in **that pane**, not off whether the screen is split, because the
+  note says so in its second sentence: *"can be the current size when there are
+  2 or more players in 1 split-screen."* It multiplies the whole answer rather
+  than joining the `Math.min`, or it would only be 25% smaller on the shapes
+  where it happened to win.
+- **The Dojo board has one ceiling again.** *"When there is 1 player in the
+  dojo... the UI is too big. Should be the same size as when there are 3 players
+  and 2 players are in the Sin/Cos dojo together."* A portrait pane had the 540
+  cap lifted, which was tuned against the four-player 730px column — and the
+  same branch also covers a **958px half-screen**, where it handed a girl on her
+  own a 930px board over the circle she is standing on. `mathSharedWidth` **is**
+  the three-player answer, so "the same size as" is now satisfied by calling it.
+  Costs the case the lift was added for: that 730px column drops 702 to 540.
+- **A seat is not a cat, on the profile screen.** Third instance of this bug.
+  `.kd-p1 { --me: var(--frost) }` is a rule about SEAT TWO and every colour on
+  the card reads `--me`, so Storm in seat two was drawn pink throughout. The
+  seat keeps its class — four methods find a card by it and they really do want
+  the seat — and the cat writes her colour on inline, which is what
+  `Tournament._championCard` and the arena health bars already do.
+- **The panda stops following when the oath does.** Stamped at
+  `_startFinale` and rebuilt from the save, so the benefit in the ring belongs
+  to the kitten still sworn to Pandapaw.
+- **The summon roar belongs to the dragon.** Moved off the seventh star and on
+  to the torii, where he actually arrives. Pinned at **both** ends — gone from
+  the errand, present at the arrival — because a move is two facts and checking
+  only the second lets it end up in both places.
+- **The holographic town panics three ways.** A quarter jump on the spot, half
+  switch between running and throwing their paws up, the rest stand rooted. The
+  roll is off the seeded rng, so a director can give notes on it. An
+  InstancedMesh can only hide an instance by scaling it to nothing —
+  **`Matrix4.decompose()` reports a scale of ONE for an all-zero matrix**
+  (it guards the degenerate determinant), so the check reads the matrix column
+  length instead. That cost most of an hour and is written down in the check.
+- **Caught by the Cross Slash, she looks frightened before she flies.** A new
+  single-cell pose beside the eat, bless, warp and breath ones, on screen for
+  exactly the hold.
+- **Two Flash Step orbs teleport the full Lock Range at a target.** The near
+  clamp existed so one orb could not overshoot the opponent it was aimed at;
+  with two the range is the point of the second orb.
+- **One orb shows the landing, two keep it secret.** Reconciles with the
+  earlier opposite report: with one orb the landing is fully determined by
+  facing, so there was never a secret to keep. The secret belongs to the case
+  where the landing is genuinely chosen.
+- **Mr Satan's platform is opaque.** The x-ray's floor guard skips geometry
+  strictly below the feet, and the booth lid's top face sits at **exactly** his
+  foot height — right fix, off by one epsilon in the wrong direction. The lid
+  now opts out of the x-ray entirely (`xrayStrength(..., 0)`) rather than
+  widening the epsilon, which would have kept the shape of the bug.
+- **Steal Mischief marks her with the Sense Mischief chevron.** It was the Flash
+  Step's reticle, which says AIMED AT; the chevron says FOUND, which is what a
+  marked sister is. Same five-sided cone, flipped to point down.
+
 **Nine from a phone, and most of them are one bug wearing different hats.**
 One branch, `mobile/nine-notes-from-a-phone`. Measured throughout at
 **844x390**, a landscape phone, which is the only shape a phone is ever in —

@@ -1324,6 +1324,53 @@ export class Player {
     this.group.add(this.breathPose);
   }
 
+  /**
+   * Give her the FRIGHTENED drawing: both paws up, looking at what is coming.
+   *
+   * IT IS THE HELD BEAT OF A CROSS SLASH AND NOTHING ELSE. Asked for as "when
+   * a player gets hit/caught by the cross-slash ability, have it that they put
+   * on the scared animation before they get sent flying." That beat already
+   * exists and is already the longest pause in the game's combat — three cuts,
+   * then `CROSS.hang`, and everybody the technique caught hangs motionless
+   * through all of it (`heldBy`, `Game._updateTripleHolds`). What it did not
+   * have was a FACE. A kitten frozen in her run cycle reads as a dropped
+   * frame; a kitten frozen with her paws up reads as a kitten in trouble, and
+   * the hang is the one moment in a fight with time to read either.
+   *
+   * IT IS THE SHEET THE ENDING'S CROWD USES. `ember_scared` / `frost_scared`
+   * were drawn for the earthquake in the ending and loaded with a note saying
+   * "these may be useful later for when we need a scared pose"; `Game`
+   * recolours them per style exactly as it does the blessing and the warp, so
+   * Storm and Blossom are frightened in their own colours.
+   *
+   * SAME SHAPE AS `setWarpArt` AND `setBreathArt` — one front-facing cell that
+   * never mirrors — and the argument is the same one a third time, with the
+   * strongest version of it here: she is not looking anywhere, she is looking
+   * at the blade. Mirroring the drawing by her heading would invent a facing
+   * for a pose whose whole content is that she has stopped choosing one.
+   *
+   * @param {?object} art loaded atlas, or null — a missing sheet costs the
+   *        pose and nothing else. The hold, the damage, the launch and the
+   *        explosion are all code, so the technique still lands in full; she
+   *        simply hangs there in her ordinary drawing, which is what she did
+   *        before this existed. Ninth non-negotiable.
+   */
+  setScaredArt(art) {
+    if (!art?.texture) return;
+    if (this.scaredPose) this.group.remove(this.scaredPose);
+    const quad = this.height / (art.contentScale || 1);
+    this.scaredPose = new Billboard(art.texture, {
+      cols: 1,
+      rows: 1,
+      mirror: false,
+      width: quad,
+      height: quad,
+      footOffset: (art.pad ?? 0) * quad,
+    });
+    this.scaredPose.visible = false;
+    this.group.add(this.scaredPose);
+  }
+
   /* ------------------------ Powerup Kotodama ---------------------------- */
 
   /**
@@ -1592,6 +1639,7 @@ export class Player {
     if (this.blessPose?.visible) this.blessPose.faceCamera(camera);
     if (this.warpPose?.visible) this.warpPose.faceCamera(camera);
     if (this.breathPose?.visible) this.breathPose.faceCamera(camera);
+    if (this.scaredPose?.visible) this.scaredPose.faceCamera(camera);
 
     /* THE HEALTH BAR IS A FLAT QUAD AND HAS TO BE TURNED, like the leaders'
        speech bubbles are. It is parented to `group`, which never rotates, so
@@ -3544,6 +3592,53 @@ export class Player {
    * for — the fourth non-negotiable on the one move that can put a kitten
    * somewhere she did not walk to.
    */
+  /**
+   * HOW FAR SHE MAY COME OUT FROM THE PIVOT — one answer, asked twice.
+   *
+   * IT WAS WRITTEN TWICE AND IS NOW WRITTEN ONCE. `_dodgeSpotFor` uses it for
+   * the landing and `_stepDodge` uses it again, in the branch where there is
+   * no landing and the ring still has to be drawn; the two expressions agreed
+   * until this changed, which is exactly the kind of agreement that stops.
+   *
+   * WITH NOBODY LOCKED it is the flee: half the lock range, pivoting on
+   * herself, which is what `selfK` has always meant.
+   *
+   * WITH SOMEBODY LOCKED AND ONE ORB it is the shorter of the distance to her
+   * at the press and the distance to her now. The "now" term is the guard: a
+   * sister who ran away during the vanish must not be able to drag the landing
+   * further than the move reaches.
+   *
+   * WITH SOMEBODY LOCKED AND TWO ORBS IT IS THE WHOLE LOCK RANGE. Asked for
+   * as: "when player has 2 of the teleporting powerup kotodama orbs, when
+   * targeting a player, then they should be allowed to move their maximum
+   * distance (called Lock Range for Flash Step in the tuning page), currently
+   * it limits their maximum distance they can teleport when an opponent is
+   * selected." It did, and the way it did was not obvious from the fight: the
+   * radius was the distance to the sister you had locked, so locking on
+   * somebody standing two metres away turned a fifteen-metre teleport into a
+   * two-metre one — the upgrade punished you for using the reticle it exists
+   * to aim with. The second orb buys a stick you can put the landing anywhere
+   * on; "anywhere" now means the range the orb is sold with.
+   *
+   * THE RUNAWAY GUARD IS NOT LOST, IT IS ANSWERED BY A CONSTANT INSTEAD. Its
+   * whole job was "never further than the move reaches", and `DODGE.range` IS
+   * how far the move reaches — a sister sprinting during the vanish can no
+   * longer move the ceiling, because the ceiling stopped being about her.
+   * What it costs is that the far edge of the circle can now sit beyond the
+   * kitten it is drawn around, which is the point: she is choosing a spot near
+   * her sister, not orbiting her at a fixed radius.
+   *
+   * @param {?Player} t whoever the reticle is on, or null
+   */
+  _dodgeFar(t) {
+    if (!t) return DODGE.range * DODGE.selfK;
+    if (this.power.blink?.aim) return DODGE.range;
+    const now = Math.hypot(
+      t.position.x - this.dodgeFrom.x, t.position.z - this.dodgeFrom.z,
+    );
+    return Math.min(this.dodgeD0, now);
+  }
+
   _dodgeSpotFor(pad, world) {
     const aimed = this.power.blink?.aim ? this._stickAim(pad) : null;
     const live = aimed ? aimed.heading : this._stickHeading(pad);
@@ -3559,15 +3654,15 @@ export class Player {
 
     let px = this.dodgeFrom.x;
     let pz = this.dodgeFrom.z;
-    let far = DODGE.range * DODGE.selfK;
     if (t) {
       px = t.position.x;
       pz = t.position.z;
-      /* THE SHORTER OF THEN AND NOW. The other one lets a sister who ran away
-         during the vanish drag the landing further than the move reaches. */
-      const now = Math.hypot(px - this.dodgeFrom.x, pz - this.dodgeFrom.z);
-      far = Math.min(this.dodgeD0, now);
     }
+    /* ONE PLACE DECIDES HOW FAR, and it is `_dodgeFar` — the flee, the
+       one-orb lock and the two-orb lock are three answers to one question and
+       `_stepDodge` asks the same one for the ring it draws when there is no
+       landing. */
+    const far = this._dodgeFar(t);
     const near = this.power.blink?.aim
       ? Math.min(far, BASE_REACH * DODGE.nearK)
       : far;
@@ -4132,9 +4227,12 @@ export class Player {
         const t = flee ? null : this.dodgeTarget;
         const px = t ? t.position.x : this.dodgeFrom.x;
         const pz = t ? t.position.z : this.dodgeFrom.z;
-        const far = t
-          ? Math.min(this.dodgeD0, Math.hypot(px - this.dodgeFrom.x, pz - this.dodgeFrom.z))
-          : DODGE.range * DODGE.selfK;
+        /* THE SAME `_dodgeFar` THE LANDING USES. This branch draws the circle
+           of everywhere she COULD go while her thumb is centred, so a second
+           copy of the arithmetic here would be a ring that disagreed with the
+           jump it is a picture of — which is the eighth non-negotiable in its
+           smallest form. */
+        const far = this._dodgeFar(t);
         this.dodgePivot.set(px, 0, pz);
         this.dodgeRFar = far;
         this.dodgeRNear = this.power.blink?.aim
@@ -5342,6 +5440,43 @@ export class Player {
         this.breathPose.mesh.rotation.z = Math.sin(k * 42) * 0.02 * k;
         this.breathPose.mat.color.copy(mat.color);
         this.breathPose.mat.opacity = mat.opacity;
+      }
+    }
+
+    /* --- caught in a Cross Slash: paws up, and wait for it ---
+
+       AFTER EVERY OTHER POSE AND BEFORE THE VANISH, and this one really can
+       collide: `_startWard`, the breath's rear-back and a meal can all be
+       running on the frame a sister's first cut lands, because being caught is
+       something done TO her rather than something she chose. Held wins all
+       three. The pose is the only thing on screen saying what has happened to
+       her — she has stopped moving, which by itself is ambiguous — and a cat
+       hanging in the air still hunched over a rice ball would read as the
+       frame having stuck.
+
+       `heldBy` AND NOT A CLOCK OF ITS OWN. It is set by `takeHold` on the
+       first cut and cleared by `releaseHold` at the launch, which means the
+       pose covers exactly the freeze however the freeze ends — three cuts and
+       the hang, a holder knocked out between two of them, a ring-out, the
+       round finishing, `_clearSpecials` dragging her onto a dragon. Every one
+       of those is a path `Game._updateTripleHolds` already had to cover, and
+       hanging a second clock off the same moment is how the two come apart.
+       The comment on that method is the argument in full.
+
+       SHE FLINCHES ON EACH CUT. `hitT` is set by the `hurt` inside every
+       landed cut, so the squash below is already timed to the blade rather
+       than to a number invented here, and three cuts read as three hits
+       instead of as one long stillness. */
+    if (this.scaredPose) {
+      const held = !!this.heldBy && !this.ko;
+      this.scaredPose.visible = held;
+      if (held) {
+        this.sprite.mesh.visible = false;
+        const flinch = Math.max(0, Math.min(1, this.hitT / 0.18));
+        this.scaredPose.mesh.scale.set(1 + flinch * 0.12, 1 - flinch * 0.09, 1);
+        this.scaredPose.mesh.rotation.z = Math.sin(flinch * 34) * 0.05 * flinch;
+        this.scaredPose.mat.color.copy(mat.color);
+        this.scaredPose.mat.opacity = mat.opacity;
       }
     }
 

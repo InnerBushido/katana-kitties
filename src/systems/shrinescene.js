@@ -87,6 +87,52 @@ const SHOT_SWINGS = [SHOT_SWING, -SHOT_SWING, 0.86, -0.86];
  *  camera on a post. It was 0.16 for one commit and pinned every shrine to the
  *  default, which is the same as not having this function. */
 const SWING_COST = 0.012;
+/**
+ * HOW MUCH CLEAR LINE COUNTS AS CLEAR, and the most the camera may step
+ * sideways to buy it.
+ *
+ * Reported from play: "during the cutscene with Pandapaw there is a shrine
+ * beam covering Bambooheart, maybe we can place the camera better so she is
+ * not covered in the cutscene by the shrine beams."
+ *
+ * MEASURED, AND THE ANSWER WAS NOT THAT THE SCORER WAS WRONG. Every one of
+ * the four `SHOT_SWINGS` was scored at all six shrines, from the marks
+ * `leaderSpot` and `_stand` actually put the pair on — which are fixed, so
+ * this is a fact about the world and not about an afternoon:
+ *
+ *     Sunstreak    +1.15   +0.027 rad   post+
+ *     Rippleclaw   -1.15   +0.036 rad   post-
+ *     Duskcoat     +1.15   +0.002 rad   post+
+ *     Galemane     -1.15   +0.045 rad   post+
+ *     Snowmantle   +0.86   +0.076 rad   post-
+ *     Bambooheart  -1.15   -0.020 rad   post+   <- the report
+ *
+ * The blocker is a GATE POST at all six. That is not six accidents: the
+ * leader stands `LEADER_OFFSET` (3.4) out from the middle of her dais and the
+ * posts stand `SHRINE_GATE.x` (2.6) out sideways from the same middle, so a
+ * lens swung ~66° round the pair is always near a bearing that has a post on
+ * it. Pandapaw is simply the one where the margin went negative; Shadowtail
+ * was 0.002 radians — about two centimetres at nine units — and was going to
+ * be the next report.
+ *
+ * SO THE FIX IS A NUDGE, NOT A NEW SHOT. Widening `SHOT_SWINGS` was tried
+ * first and does clear everybody — at ±1.75, which is 100° and a side-on view
+ * of two cats with the gate out of frame. It moved five approved shots to fix
+ * one. Instead the coarse pass below is left exactly as it was, so the SIDE
+ * and the shot are still the ones that were signed off, and then the winner
+ * steps outward in `SWING_STEP` increments and stops at the FIRST swing that
+ * reaches `SWING_CLEAR`. Smallest move that clears; a shot already clear does
+ * not move at all.
+ *
+ * THE TWO NUMBERS ARE MEASURED. 0.06 rad is what every shrine can reach
+ * inside 0.4 rad, and 0.4 is what the worst of them (Bambooheart, -0.36)
+ * needs — so the window is the measurement plus one step, not a round number.
+ * With it: Snowmantle does not move, the other five move 0.12 to 0.36 rad and
+ * all six land between +0.063 and +0.076.
+ */
+const SWING_CLEAR = 0.06;
+const SWING_NUDGE = 0.4;
+const SWING_STEP = 0.04;
 /** Camera distance from the middle of the pair. Dollies in over the scene, the
  *  same slow push the opening cutscene uses and for the same reason. */
 const SHOT_FAR = 10.9;
@@ -329,9 +375,13 @@ export class ShrineScene {
     // to decide the whole shot on its own.
     const at = (SHOT_FAR + SHOT_NEAR) / 2;
 
-    let best = SHOT_SWINGS[0];
-    let bestGap = -Infinity;
-    for (const swing of SHOT_SWINGS) {
+    /* THE CLOSEST ANYTHING COMES TO EITHER OF THEM ON SCREEN, from a camera
+       at `swing`. Lifted out of the loop it used to be written inside, because
+       the refine pass below has to ask the same question of swings that are
+       not in `SHOT_SWINGS` — and two copies of this arithmetic drifting apart
+       would mean the coarse pass and the nudge disagreeing about what "clear"
+       is, which is the one thing that must not happen here. */
+    const gapAt = (swing) => {
       const cs = Math.cos(swing);
       const sn = Math.sin(swing);
       const camX = midX + (ux * cs - uz * sn) * at;
@@ -352,9 +402,38 @@ export class ShrineScene {
           gap = Math.min(gap, raw - Math.atan2(q.r, qd));
         }
       }
+      return gap;
+    };
+
+    let best = SHOT_SWINGS[0];
+    let bestGap = -Infinity;
+    for (const swing of SHOT_SWINGS) {
+      const gap = gapAt(swing);
       if (gap > bestGap + SWING_COST) { bestGap = gap; best = swing; }
     }
-    return best;
+
+    /* AND THEN THE SMALLEST STEP SIDEWAYS THAT CLEARS HER — see SWING_CLEAR
+       for the measurements. The loop walks OUTWARD and returns on the first
+       swing that is clear, so a shot only ever moves as far as it has to, and
+       it tries `+d` before `-d` for no reason other than that something has to
+       go first and a rule beats a coin.
+
+       IF NOTHING IN THE WINDOW IS CLEAR the best of what was looked at is
+       still taken, because a post half over her face is better than a post
+       whole over it — this degrades rather than vanishing, which is the house
+       rule, and the old code's answer (keep the coarse winner) is what put a
+       pillar through Bambooheart. */
+    if (bestGap >= SWING_CLEAR) return best;
+    let fall = best;
+    let fallGap = bestGap;
+    for (let d = SWING_STEP; d <= SWING_NUDGE + 1e-9; d += SWING_STEP) {
+      for (const sgn of [1, -1]) {
+        const gap = gapAt(best + sgn * d);
+        if (gap >= SWING_CLEAR) return best + sgn * d;
+        if (gap > fallGap) { fallGap = gap; fall = best + sgn * d; }
+      }
+    }
+    return fall;
   }
 
   /**

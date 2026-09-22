@@ -313,15 +313,75 @@ shrine was built for. And a prop somebody has already knocked over is lying on
 the stone with the lens looking straight over it — without that, the shot would
 flinch at every barrel either girl has ever hit.
 
-Five of the six shrines keep the shot they were framed with. The sixth moves,
-which is the entire reason the function exists.
-
 **The threshold was 0.16 radians for one commit, and that was wrong.** Measured
 at a shrine, the whole spread between the best and worst candidate is about
 five degrees — so a nine-degree tax pinned every shrine to the default and the
 function may as well not have been written. It is 0.012 now: enough to resolve
 two candidates that are the same shot to the pixel, nowhere near enough to hold
 the camera on a post.
+
+### And then a pillar went through Bambooheart anyway
+
+> During the cutscene with Pandapaw there is a shrine beam covering
+> Bambooheart, maybe we can place the camera better so she is not covered in
+> the cutscene by the shrine beams.
+
+The paragraph above used to end "five of the six shrines keep the shot they
+were framed with; the sixth moves, which is the entire reason the function
+exists." That was the *intention*. Measured, it was not what was happening.
+
+Every one of the four candidates was scored at all six shrines, from the marks
+`leaderSpot` and `_stand` actually put the pair on. Those marks are fixed, so
+this is a fact about the world and not about one afternoon:
+
+| leader | chosen swing | clear line | blocked by |
+| --- | --- | --- | --- |
+| Sunstreak | +1.15 | +0.027 rad | gate post |
+| Rippleclaw | −1.15 | +0.036 rad | gate post |
+| Duskcoat | +1.15 | **+0.002 rad** | gate post |
+| Galemane | −1.15 | +0.045 rad | gate post |
+| Snowmantle | +0.86 | +0.076 rad | gate post |
+| Bambooheart | −1.15 | **−0.020 rad** | gate post |
+
+Two things in that table matter more than the report did. The blocker is a
+**gate post at all six** — not the bamboo the section above is written about,
+and not six accidents of geography either. The leader stands `LEADER_OFFSET`
+(3.4) out from the middle of her dais and the posts stand `SHRINE_GATE.x` (2.6)
+out sideways from the same middle, so a lens swung 66° round the pair is
+*always* near a bearing with a post on it. And Duskcoat was clear by 0.002
+radians — about two centimetres at nine units — which is not a shot that works,
+it is a shot that has not been reported yet.
+
+So the scorer was not wrong. At Pandapaw it was choosing correctly between four
+cameras that were all blocked, and a best-of-four has no way to say "none of
+these".
+
+**Widening the fan was tried first and is why it is not what shipped.** Adding
+±1.75 clears every shrine comfortably — and 1.75 rad is 100°, a side-on view of
+two cats with the gate out of the frame. It moves five approved shots to fix
+one, which is the scorer gaming the brief: the numbers get better and the
+picture gets worse.
+
+What shipped instead leaves the coarse pass exactly as it was, so the **side**
+and the shot are still the ones that were signed off, and then steps the winner
+outward in 0.04 rad increments, stopping at the **first** swing that clears by
+`SWING_CLEAR` (0.06 rad). Smallest move that clears. A shot that is already
+clear does not move at all — Snowmantle does not — and the other five move 0.12
+to 0.36 radians, which is a nudge and not a re-frame. Bambooheart's −1.15
+becomes −1.51 and the post that was across her chest now stands at her
+shoulder, still framing her.
+
+Both numbers are measurements rather than round figures: 0.06 is what every
+shrine can reach, and 0.4 is what the worst of them needs plus one step.
+
+**The check that was already here could not have caught any of this.** It
+planted something tall in front of the lens and asserted the camera *moved* —
+which it did, from one blocked swing to another — and it ran against
+`clanHalls[0]`, while Pandapaw is `clanHalls[5]`. The new one asks what the
+shot is **for**: at every one of the six, across the whole push-in rather than
+at one moment, no gate post is between the lens and either character. It
+reports the worst margin of the six so the number is visible when it drifts;
+it is 0.057 rad today.
 
 ### ...and the caption comes off the screen with the HUD
 

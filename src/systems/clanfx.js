@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { STEAL, DBREATH } from '../entities/clanpower.js';
-import { ringTexture } from './dodgefx.js';
 
 /* ---------------------------------------------------------------------------
    THE TWO ARENA CLAN POWERS, MADE VISIBLE.
@@ -23,8 +22,14 @@ import { ringTexture } from './dodgefx.js';
      what somebody watching the fight from across the ring sees, and it is the
      one that survives her running behind a stall (`depthTest: false`).
 
-     IT IS THE SAME EIGHT-BIT SIGHT THE FLASH STEP AIMS WITH, imported rather
-     than redrawn — see `dodgefx.ringTexture`. One word, one picture.
+     IT IS THE SAME CHEVRON SENSE MISCHIEF HANGS OVER A BARREL, built rather
+     than imported — the arrow is six lines of cone in `Game._updateSeek` and
+     a shared constructor for six lines would be further to read than the six.
+     One word, one picture: that arrow has meant THE THING YOU ARE LOOKING FOR
+     IS HERE since the first island, and a marked sister is a barrel with legs.
+     It used to be the Flash Step's eight-bit ring sight, which said "aimed at"
+     rather than "found", and shared a drawing with a move that is not this
+     one. Asked for by name; see `_rig`.
 
      IT FADES OUT RATHER THAN VANISHING. "Can have the target above targeted
      person's head fade when it is about to expire, to indicate it is ending."
@@ -203,31 +208,45 @@ export class ClanFx {
     mark.visible = false;
     this.scene.add(mark);
 
-    /* THE SIGHT OVER HER HEAD. A `THREE.Sprite`, which is the one exception to
-       this file's no-billboards rule and for the reason the rule exists: three
-       .js turns a Sprite during EACH pane's render, so it faces all four
-       cameras at once, where a hand-turned quad faces whichever asked last.
-       `dodgefx` makes the same argument at length over the same texture.
+    /* THE SIGHT OVER HER HEAD IS THE SENSE MISCHIEF CHEVRON. Asked for as:
+       "the target that displays above the targeted player head should be the
+       same 3D shape we use when using the Sense Mischief ability in the game,
+       but instead of sensing Mischief in the world, we are sensing the player
+       that has kotodama orbs we can steal." That is the right reading of the
+       two moves: Icewhisker's chevron means THE THING YOU ARE LOOKING FOR IS
+       HERE, and a marked sister is exactly that — a barrel with legs and eight
+       orbs in it. One vocabulary, the same argument the feet ring makes by
+       being the same torus the Flash Step's target ring is.
+
+       SO IT IS `Game._updateSeek`'S GEOMETRY, LITERALLY: a five-sided cone
+       flipped to point down, turning slowly, in the colour of whoever is
+       asking. Sized against `SIGHT_W` rather than against the seek arrow's own
+       0.85 — that one hangs over a barrel on an empty hillside and this one
+       over a kitten's head in a fight, and the thing that has to stay true is
+       how big it is against HER.
+
+       IT REPLACED A SPRITE, WHICH IS WHY THE NO-BILLBOARDS NOTE ABOVE THE
+       FEET RING NO LONGER HAS A SECOND HALF. A Sprite is turned by three.js
+       during each pane's render, so it faces all four cameras at once and a
+       hand-turned quad cannot; a cone has no front, so the question does not
+       arise and the split screen gets the same picture for free.
 
        `depthTest: false`, so being behind a stall does not hide the one thing
        telling her to run. The feet ring keeps its depth test, because a ring
        drawn through the deck would read as being under it. */
-    const tex = ringTexture();
-    const sight = tex ? new THREE.Sprite(new THREE.SpriteMaterial({
-      map: tex,
+    const coneGeo = new THREE.ConeGeometry(SIGHT_W * 0.4, SIGHT_W * 0.86, 5);
+    coneGeo.rotateX(Math.PI);
+    const sight = new THREE.Mesh(coneGeo, new THREE.MeshBasicMaterial({
       color: colour,
       transparent: true,
       opacity: 0,
       depthWrite: false,
       depthTest: false,
       toneMapped: false,
-    })) : null;
-    if (sight) {
-      sight.scale.setScalar(SIGHT_W);
-      sight.renderOrder = 27;
-      sight.visible = false;
-      this.scene.add(sight);
-    }
+    }));
+    sight.renderOrder = 27;
+    sight.visible = false;
+    this.scene.add(sight);
 
     /* ORDINARY BLENDING, AND THAT WAS MEASURED RATHER THAN REASONED.
        Additive is the obvious answer for a flame and it was tried first, on the
@@ -420,6 +439,13 @@ export class ClanFx {
     const fade = Math.min(1, left / SIGHT_FADE);
     r.sight.visible = fade > 0.02;
     r.sight.material.opacity = 0.95 * fade;
+    /* IT TURNS, at the seek arrow's own 2.2 rad/s. A cone seen from one fixed
+       side is a triangle and reads as flat; the spin is what says "solid thing
+       hanging over her", and matching the world chevron's rate is what makes
+       the two register as the same object doing the same job. Off `r.spin`
+       like everything else in this rig, so the sight, the ring's pulse and the
+       ring's own turn beat together — see the bob above. */
+    r.sight.rotation.y = r.spin * 1.375;
     /* AND IT IS IN THE THIEF'S COLOUR, re-asked every frame for the reason
        `_breath` re-asks: a seat keeps its rig and can be handed a different
        kitten between rounds, so a colour set once at build time is a wrong

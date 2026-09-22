@@ -1504,7 +1504,27 @@ export function buildArena() {
      them. This is the case that was reported: not that the booth looked bad,
      but that you could not see who was on it. */
   seeThrough.push(box(10, 6.2, 5.6, PALETTE.plaster, B.x, 3.1, B.z));
-  seeThrough.push(box(11, 0.6, 6.6, PALETTE.tileRed, B.x, 6.4, B.z));
+  /* ...EXCEPT THE LID HE STANDS ON, WHICH IS NEVER CUT. Reported twice. The
+     first answer was the shader's floor guard (`uCutFloor` in gfx.js): every
+     cut carries the y of its subject's feet and skips geometry below it, so
+     the deck under him stops being "between the camera and his chest". That
+     was right and it was not enough, and the reason is one epsilon: the guard
+     is `y < feet - 0.05`, his feet are at 6.7 because that is what he is
+     standing ON, and the lid's TOP FACE is at exactly 6.7. The face is not
+     below the floor, so it was never skipped — the body of the lid was
+     protected and the surface was not, which is precisely "we can still see
+     through the ground of the platform Mr. Satan is standing on".
+
+     WIDENING THE EPSILON WOULD FIX THIS ONE LID AND KEEP THE SHAPE OF THE
+     BUG: it is a rule about a cut, and the lid is a fact about the world. So
+     the lid opts out for everybody, which is what was asked for — "let's just
+     make it that the xray shader does not show through that platform" — and
+     the four things the booth is see-through FOR (the body, the rail, the two
+     posts and the roof) are untouched, because they are the geometry that
+     really does stand between the lens and whoever is up there. */
+  seeThrough.push(...xrayStrength(
+    [box(11, 0.6, 6.6, PALETTE.tileRed, B.x, 6.4, B.z)], 0,
+  ));
   // The rail, on the RING side of the booth — he leans on it to shout at them.
   seeThrough.push(box(10.6, 0.5, 0.5, PALETTE.gold, B.x, 6.95, B.z + 2.9));
   for (const sx of [-1, 1]) {

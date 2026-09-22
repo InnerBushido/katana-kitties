@@ -180,3 +180,34 @@ action.*
 foreground on the beat the orb fell. The ring's animals belong to a different
 lesson.
 *Lesson: turn off every ambient system the clip isn't about.*
+
+**A best-of-N occlusion search picked a camera that was still blocked.** Four
+candidate swings were scored against the scenery and the widest gap was taken,
+which is a correct scorer — and at one location all four candidates were
+blocked, so "best" was a pillar across the character's face. Scoring every
+candidate at every location showed the margin was tiny everywhere (one was
+clear by 0.002 rad, about two centimetres at nine units) and blocked by the
+same piece of set dressing each time, because the actor's mark and the set
+piece are both placed at fixed offsets from the same centre.
+*Lesson: a best-of-N scorer cannot say "none of these". Score the WINNER
+against an absolute threshold, and when it fails, refine continuously around it
+— the smallest step that clears — rather than widening the discrete fan.
+Widening was tried and did clear everybody, by moving five approved shots 100°
+to fix one: the numbers improved and every picture got worse.*
+
+**A check asked whether the camera MOVED, and was green through the whole life
+of the bug.** It planted an obstacle in front of the lens and asserted the
+chosen angle changed. It did change — from one blocked candidate to another.
+The check also ran against the first location only, and the reported one was
+the sixth.
+*Lesson: assert what the shot is FOR ("no set piece is between the lens and
+either character"), at every location, sampled across the whole move — not that
+the search reacted. Print the worst margin so it is visible when it drifts.*
+
+**`THREE.Matrix4.decompose()` reports a scale of ONE for an all-zero matrix.**
+It guards the division by a degenerate determinant by falling back to an
+identity rotation and a unit scale. An InstancedMesh can only hide one instance
+by composing it with a zero scale, so a test that asked `decompose` which of two
+meshes was drawing an instance passed a doubled crowd and failed a correct one.
+*Lesson: read the matrix's own column length (`hypot(e[0], e[1], e[2])`) to ask
+whether an instance is drawn. Three multiplications, and it cannot lie.*

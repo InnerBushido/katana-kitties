@@ -1847,6 +1847,10 @@ class Game {
     p.setBlessArt(this.blessArt?.[this.roster[p.index]] ?? null);
     p.setWarpArt(this.warpArt?.[this.roster[p.index]] ?? null);
     p.setBreathArt(this.breathArt?.[this.roster[p.index]] ?? null);
+    /* The fright, for a Cross Slash's victim. `scaredArt` was built for the
+       ending's crowd and is per STYLE like the other three — `this.roster[i]`
+       and not `i`, because a seat is not a cat. */
+    p.setScaredArt(this.scaredArt?.[this.roster[p.index]] ?? null);
   }
 
   /**
@@ -3614,6 +3618,23 @@ class Game {
        cannot be stopped by the same `stopSpeaking` that would take Patchfur's
        first sentence with it. */
     this._updateFinaleHold(true);
+    /* AND THE CUBS STOP GETTING A FREE PASS. `Panda.follows` lets a cub follow
+       whoever raised it whatever shrine she has since sworn at, because a
+       stranded baby is worse than an inconsistent rule; that trade stops
+       paying at 100%, when there is no afternoon left to strand it in and the
+       arena is the only thing the animal is still worth anything in. Asked
+       for as "the player needs to be pledged at Pandapaw to get the benefits
+       of having the panda in the arena". See the long note on `follows`.
+
+       HERE, WITH THE HUSH, AND NOT ON THE SCENE FINISHING — the rule this
+       whole method is built on. A minute-long cutscene can be skipped on its
+       first frame, and a panda that only stopped following if you watched the
+       credits would be a buff you keep by pressing Start.
+
+       EVERY PANDA, NOT ONLY THE UNSWORN ONES. The flag says what time it is;
+       `follows` asks the oath question. Two flags for one state is how they
+       come apart. */
+    for (const p of this.players) if (p?.panda) p.panda.endgame = true;
     const ok = this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder,
       this._finaleCast());
     /* ...AND WATCH AGAIN CAN OFFER IT FROM HERE ON. Only if it really started:
@@ -6210,15 +6231,21 @@ class Game {
    * forty-metre dragon already hanging above it, which answers the errand
    * before she has finished setting it.
    *
-   * THE ROAR STAYS AND IS NOW DOING SOMETHING. With nothing on screen it is a
-   * thing heard from somewhere else, which is the half of the sentence about
-   * the sky going dark; it used to be the noise the dragon made arriving, in
-   * front of the dragon.
+   * AND THE ROAR HAS GONE WITH HIM — see `_checkSummonScene`. It used to fire
+   * here, on the argument that a noise from somewhere else is the half of the
+   * sentence about the sky going dark. Reported from play, and the report is
+   * the stronger argument: "when the 7 stars are found, the cutscene plays and
+   * there is a big Summon sound, that sound should play when Ryuuseki is
+   * summoned in the next cutscene when the player goes to the great torii."
+   * `ryuroar` is a second and a half of very low sawtooth and it is the only
+   * cue in the game allowed to be that long, because it happens once — and
+   * spending it on a scene where the dragon is deliberately NOT on screen is
+   * spending the arrival before the arrival. Nothing else moves: this scene
+   * still fires on the seventh star and still gives the errand.
    */
   _onAllBalls() {
     const at = this._toriiSpot();
     this._updateBallHud();
-    this.sfx('ryuroar');
     /* The scene is a bonus, not the mechanism. If the voices never loaded the
        walk-up still summons him and he is still rideable — a missing mp3 must
        not be the difference between a summoned dragon and none. */
@@ -6245,6 +6272,12 @@ class Game {
     for (const p of this.players) {
       if (Math.hypot(p.position.x - at.x, p.position.z - at.z) >= 46) continue;
       if (!this._spawnRyuuseki()) return;
+      /* AND HERE IS THE ROAR, on the frame he is built and one line before the
+         camera cuts to him. Moved off `_onAllBalls` on the report quoted up
+         there; the order matters and is why it sits above `start` rather than
+         after it — the sound is the sky going dark, so it wants to be under
+         the first frame of the shot rather than arriving behind it. */
+      this.sfx('ryuroar');
       /* Framed off his own quad — see SummonScene.start. 0.85 rather than
          the obvious 0.5, because he is a WORM: the drawn creature is only
          about a third of the cell tall but nearly all of it wide, so a
@@ -6869,6 +6902,14 @@ class Game {
       const tier = Math.max(0, Math.min(PANDA_TIERS.length - 1,
         Math.floor(saved.tier ?? 0)));
       const panda = new Panda(this.pandaArt, { owner: player, tier });
+      /* A PANDA BUILT AFTER THE ENDING STILL KNOWS THE ENDING HAPPENED.
+         `_startFinale` stamps the party it can see, and this is the one path
+         it cannot: a sister recalled from `sessionCast`, or a save loaded in
+         the minutes after 100%, builds a fresh animal whose `endgame` would
+         be the constructor's `false`. The scene's own `played` flag is the
+         honest source — it survives a load, which is exactly the case this
+         line is for. */
+      panda.endgame = !!this.summonScene?.played?.finale;
       this.scene.add(panda.group);
       player.panda = panda;
     } else if (saved && Number.isFinite(saved.tier)) {
@@ -9608,6 +9649,11 @@ class Game {
         touch: this.device.touchPrimary,
         merged: this.merged,
         mathUp,
+        /* HOW MANY KITTENS ARE IN THIS PANE — see `MAP_SOLO_DOWN`. `groups`
+           and not `this.players`: a pane is a cluster, and two sisters who
+           have walked back together share one whether the setting says side
+           by side or not. */
+        solo: (groups[pane]?.length ?? 1) <= 1,
       });
       box.style.width = `${size}px`;
 
@@ -9844,11 +9890,30 @@ class Game {
        the unsplit screen — the two-player game a player has not deliberately
        set side by side is bit-identical, and so is four-player quadrants.
 
-       THE 540 CEILING IS LIFTED IN A PORTRAIT PANE AND ONLY THERE. 540 is the
-       width an unsplit screen gives the board, and capping a 730-wide column
-       at it would leave the thing 26% narrower than the space it was asked to
-       fill. A landscape pane keeps the cap so a shared screen and a big pane
-       still come out the same. */
+       THE PORTRAIT LIFT IS GONE AND 540 IS THE CEILING EVERYWHERE. It used to
+       be lifted in a portrait pane, on the argument that capping a 730-wide
+       column at 540 leaves the board 26% narrower than the space it was asked
+       to fill. Reported from play, and the report is about the shape that
+       argument never considered: "when there is 1 player in the dojo and in
+       the Sin/Cos UI screen, when there are 2 players in the game, the UI is
+       too big. Should be the same size as when there are 3 players and 2
+       players are in the Sin/Cos dojo together."
+
+       TWO PLAYERS SIDE BY SIDE IS A 958-WIDE COLUMN, which is portrait, so the
+       lift fired and handed a girl on her own a 930px board — nearly the whole
+       pane, drawn over the circle she is standing on. The lift was tuned
+       against the 62/38 four-player split, where the lone column is 730 wide
+       and 702 is defensible; nothing told it the same branch also covers a
+       half-screen that is 30% wider.
+
+       SO THE CEILING IS ONE NUMBER AGAIN AND IT IS `mathSharedWidth`'S. Which
+       is exactly what the report asks for: the three-player pane is landscape,
+       so 540 is what the pair sharing it already gets, and "the same size as"
+       is satisfied by using the same function. WHAT IT COSTS is the case the
+       lift was put in for — that 730-wide column drops 702 to 540. Said out
+       loud because it is a partial walk-back of an earlier ask; what made that
+       ask reasonable was the 307px board it replaced, and 540 is still most of
+       the way there and is the size the board has on a screen nobody split. */
     const shared = (groups[best]?.length ?? 0) > 1;
 
     /* AND TWO KITTENS ON ONE SCREEN IS A SHARED PANE TOO — WHICH IS THE ONE
@@ -9907,11 +9972,15 @@ class Game {
        screen... make it the same size as when there are 3 people in one split
        screen", and the three-player pane is landscape, so 540 is exactly what
        it was already getting. One kitten in a column keeps the lift. */
-    let w = shared
+    /* ONE EXPRESSION FOR BOTH HALVES OF `full`, and that is not a tidy-up —
+       it is the fix. `shared` and `tall` used to take two different branches
+       that happened to write the same arithmetic with one term different, and
+       the term was the ceiling. `mathSharedWidth(v.w)` IS
+       `max(1, min(540, v.w - 28))`, so a shared pane and a portrait pane now
+       cannot disagree about how wide the board is, whatever the window does. */
+    let w = full
       ? mathSharedWidth(v.w)
-      : full
-        ? Math.max(1, Math.min(tall ? Infinity : 540, v.w - 28))
-        : Math.min(540, Math.round(v.w * 0.42));
+      : Math.min(540, Math.round(v.w * 0.42));
     /* HOW SMALL THE TWO COLLISION DODGES BELOW MAY MAKE IT. 180 is the old
        floor and the argument for it stands — under that the board is
        unreadable and a map-sized hole is the better trade. A SHARED pane's
@@ -9942,6 +10011,10 @@ class Game {
         size: mapWidth({
           paneW: v.w, paneH: v.h, screenH: H, touch: this.device.touchPrimary,
           merged: this.merged, mathUp: true,
+          /* The same pane's own occupancy the map itself is sized with, or
+             this dodge would be measuring to a map that is not the one on
+             screen. `best` is the pane holding the Dojo, chosen above. */
+          solo: (groups[best]?.length ?? 1) <= 1,
         }),
         pad: 14,
         hint: HINT_CLEAR,
