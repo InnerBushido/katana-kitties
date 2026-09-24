@@ -645,36 +645,59 @@ const MAP_SPLIT = 0.67;
 export const MAP_TOUCH_UP = 1.2;
 
 /**
- * A QUARTER OFF A MAP THAT ONLY ONE KITTEN IS READING.
+ * A QUARTER OFF A MAP IN A QUARTER-SCREEN PANE.
  *
- * Asked for as: "minimap for each player in each split-screen is too big, it
- * needs to be 25% smaller. Can be the current size when there are 2 or more
- * players in 1 split-screen."
+ * ASKED FOR TWICE, AND THE SECOND ASK OVERTURNS THE FIRST. It arrived as
+ * "minimap for each player in each split-screen is too big, it needs to be 25%
+ * smaller. Can be the current size when there are 2 or more players in 1
+ * split-screen", and was read as a rule about OCCUPANCY: one kitten in the
+ * pane, one pair of eyes, a smaller map. The paragraph that used to be here
+ * even named the thing that decision moved and the report had not — a girl
+ * playing alone on a whole screen is a pane with one kitten in it, so her 300px
+ * map came down to 225. That was the wrong call, and it came back:
  *
- * THE QUESTION IS HOW MANY KITTENS ARE IN THIS PANE, NOT WHETHER THE SCREEN IS
- * SPLIT, and the second sentence is what says so. A map belonging to one girl
- * is read by one pair of eyes from one seat, and it can afford to be small
- * because she also has the whole pane to look at; a map two or three of them
- * are sharing is read from further apart and across each other, and `merged`
- * already exists as the name for exactly that. So the factor keys off the
- * pane's own occupancy — which is `groups[pane].length` at the call site and
- * has never been anything else.
+ *   "when there is just 1 player in the main screen, it is too small! Should be
+ *   the big size, the small size is just when broken up into the 1/4th quadrant
+ *   split screens. Also, when 2 players in 2 split screens, it should also be
+ *   the bigger size... or if 2, 3, or 4 players are in one split screen
+ *   together, should be the bigger minimap size."
+ *
+ * SO THE PANE'S SIZE ASKS FIRST AND ITS OCCUPANCY SECOND. A quadrant is the
+ * only pane that has to give room back, because it is the only pane whose map
+ * is a quarter of a quarter of the screen; half a screen — two side by side,
+ * two stacked, the pair's strip in a three-pane split — has room for the map it
+ * has always had. Measured at 1920x1080, which is the thing the first pass
+ * never did:
+ *
+ *     one kitten, unsplit        1920x1080    300px   (was 225)
+ *     two side by side            958x1080    300px   (was 225)
+ *     two stacked                1920x538     300px   (was 225)
+ *     a pair's strip of three    1920x538     300px
+ *     the singles beside it       958x538     225px
+ *     four quadrants              958x538     225px
+ *     3v1, either column     1190 / 730x1080  300px
+ *
+ * A QUADRANT IS "SHORT OF THE SCREEN ON BOTH AXES", which is the same 0.75
+ * test `fullHeight` already makes one axis at a time, asked twice. Not a pixel
+ * count and not a pane count: the layouts that hand out quarter panes are
+ * `splitLayout`'s four-cell grid and the singles beside a three-pane pair, and
+ * both are exactly the panes that fail both tests.
+ *
+ * AND THE OCCUPANCY HALF IS KEPT, because the last sentence of the report is
+ * about it — a pane 2, 3 or 4 of them are sharing keeps the big map. Measured,
+ * the two halves cannot currently disagree: every layout that produces a
+ * quadrant produces it for one kitten (four groups means four kittens, three
+ * equal panes means three), so this is the rule being written down rather than
+ * a branch that fires. It fires the day a layout hands a quarter pane to a
+ * pair, and then it is already right.
  *
  * IT MULTIPLIES THE WHOLE ANSWER RATHER THAN JOINING THE `Math.min`. "25%
  * smaller" has to be true of what ends up on screen, and a fourth term inside
  * the min would have been 25% smaller only on the shapes where it happened to
  * win — which is the trap `MAP_TOUCH_UP` had to be measured against in the
  * other direction, and the same one twice is careless.
- *
- * WHAT IT ALSO MOVES, SAID OUT LOUD: a single kitten playing on an unsplit
- * screen is a pane with one kitten in it, so her map comes down too — 300px to
- * 225 on anything from a laptop up, since `MAP_MAX` is the binding term there.
- * That was not named in the report, which is about split screen, but the rule
- * given IS about occupancy and a map that shrank on a split and not on a whole
- * screen would be two rules wearing one name. 225px is still bigger than the
- * map a four-player quadrant ever gets.
  */
-export const MAP_SOLO_DOWN = 0.75;
+export const MAP_QUAD_DOWN = 0.75;
 
 /* A map must fit the pane it is in. At a flat 32vw a quadrant's map ate
    most of a quarter-screen; sized against the PANE it stays the same
@@ -1066,21 +1089,32 @@ export function mapSpot({
  *  @param paneW,paneH  the pane this map belongs to
  *  @param screenH      the whole window's height — the only way to tell a
  *                      side-by-side split (paneH unchanged) from a stacked one
+ *  @param screenW      ...and its width, which is the other half of "is this
+ *                      pane a quadrant". Defaults to `paneW`, which reads as an
+ *                      unsplit screen — a caller that forgets it gets the BIG
+ *                      map, and a map that is too big is a thing you can see
+ *                      rather than a quiet quarter off the wrong panes
  *  @param touch        is this a phone? The caps below apply to nothing else
  *  @param merged       one pane for everybody
  *  @param mathUp       the Dojo's sin/cos board is on screen
- *  @param solo         exactly ONE kitten is in this pane — see MAP_SOLO_DOWN
+ *  @param solo         exactly ONE kitten is in this pane — see MAP_QUAD_DOWN
  */
 export function mapWidth({
-  paneW, paneH, screenH, touch = false, merged = true, mathUp = false,
-  solo = false,
+  paneW, paneH, screenH, screenW = paneW, touch = false, merged = true,
+  mathUp = false, solo = false,
 }) {
   const fullHeight = paneH > screenH * 0.75;
   const cap = touch
     ? paneH * (mathUp ? MAP_DOJO : MAP_TALL) * (merged || !fullHeight ? 1 : MAP_SPLIT)
       * MAP_TOUCH_UP
     : Infinity;
-  return Math.min(MAP_MAX, paneW * MAP_WIDE, cap) * (solo ? MAP_SOLO_DOWN : 1);
+  /* SHORT OF THE SCREEN ON BOTH AXES — see MAP_QUAD_DOWN for the table. The
+     same 0.75 `fullHeight` uses, asked of the other axis too, so there is one
+     idea of "this pane is most of the screen that way" in this function
+     rather than two that can drift. */
+  const quadrant = !fullHeight && paneW <= screenW * 0.75;
+  return Math.min(MAP_MAX, paneW * MAP_WIDE, cap)
+    * (solo && quadrant ? MAP_QUAD_DOWN : 1);
 }
 
 /* ===========================================================================

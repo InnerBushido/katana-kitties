@@ -166,15 +166,23 @@
          CONTROLLER SUPPORT is one line in MenuNav: `summary.help-topic` joins
          its `items()`, so the stick lands on a header and JUMP toggles it
          (`_activate` clicks it, which is exactly how a <details> opens).
-         `data-nav="vertical"` + `data-nav-start="first"` make the cursor walk
-         header-to-header and open on the first topic rather than on BACK.
+
+         `data-nav="read"` IS WHAT MAKES THE STICK SCROLL THE PAGE, and it
+         replaced `data-nav="vertical"` because walking header-to-header steps
+         OVER everything between two headers — reported as "details, like in
+         Clan Abilities, can be missed that are not navigable to". Up and down
+         move the page now and the selection is whatever is nearest the middle
+         of it; `MenuNav._nearest` is the whole rule and carries the report.
+         `data-nav-start="first"` still earns its place: `read` falls back to
+         stepping the cursor when the page does not scroll at all, and that is
+         the case it is the answer to.
 
          WHY SCREENSHOTS, NOT GENERATED ART: the pictures have to match what she
          will actually see on screen, and they are the game's own procedural
          world (invariant 9). `loading="lazy"` inside this display:none panel
          means not one of them is fetched until she opens Help and scrolls to
          it — the 35MB boot is untouched, the same bargain the trailer strikes. -->
-    <div id="panel-help" class="screen overlay hidden" data-nav="vertical" data-nav-start="first">
+    <div id="panel-help" class="screen overlay hidden" data-nav="read" data-nav-start="first">
       <div class="panel help-panel">
         <h2>HOW TO PLAY</h2>
         <p class="help-lead">You're a samurai kitten. Knock over everything, ride

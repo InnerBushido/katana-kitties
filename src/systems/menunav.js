@@ -92,6 +92,25 @@ const REPEAT_RATE = 0.11;
 /** How far the stick has to go before it counts as a direction at all. */
 const NAV_DEAD = 0.55;
 
+/* HOW FAR ONE PRESS SCROLLS A PANEL YOU ARE READING.
+ *
+ * 48px is what `data-nav="scroll"` has always moved — most of a line of text,
+ * small enough to read as scrolling rather than paging. It is the FLOOR now
+ * rather than the whole answer, because Help is not the record board: it is
+ * eleven topics of pictures and prose, and 48px at a time down an opened
+ * "Clan abilities" is a minute of holding a stick.
+ *
+ * A FRACTION OF THE BOX, so a press is the same amount of READING on a phone
+ * and on a television rather than the same number of pixels. Just under seven
+ * presses to the bottom of one screenful, which is the shape that was asked
+ * for: "let's make pressing up/down do more scrolling/paging functionality".
+ * 0.15 of an 82vh panel is 133px on a 1080 screen, and 55px on a landscape
+ * phone (94vh of 390) — so the floor catches neither, and is kept for the
+ * window somebody has dragged down to 300px tall, where a fraction alone
+ * becomes a crawl. */
+const SCROLL_STEP = 48;
+const READ_FRAC = 0.15;
+
 export class MenuNav {
   constructor(game) {
     this.game = game;
@@ -295,6 +314,19 @@ export class MenuNav {
        be a title screen that cannot be started at all. */
     if (!items.length) return false;
 
+    /* WHICH AXIS MOVES THE CURSOR IS A PROPERTY OF THE LAYOUT, and it is
+       declared in the markup (`data-nav`) rather than guessed from CSS. The
+       title's three buttons sit in a flex ROW — pressing down to get from PLAY
+       to SETTINGS when SETTINGS is visibly to the left is the kind of thing a
+       nine-year-old reads as the controller not working. The record board is a
+       list too long to walk, and Help is a page you READ — see `_nearest`,
+       where up and down move the PAGE and the cursor follows it.
+
+       READ UP HERE RATHER THAN BESIDE ITS OWN USE, because the frame a panel
+       opens on needs it: a `read` panel has to be put back to the top of its
+       page before a cursor can be derived from where that page is. */
+    const mode = panel.dataset.nav ?? 'vertical';
+
     /* A panel that has just opened starts on its default. Settings and Help
        start on BACK — the thing you most want after reading them — while the
        title and the pause menu start on their primary action. */
@@ -314,6 +346,14 @@ export class MenuNav {
       }
       this.holdY = 0;
       this.holdX = 0;
+      /* AND A PAGE YOU READ OPENS AT THE TOP *BEFORE* ITS CURSOR IS READ OFF
+         IT. `read` derives the selection from the scroll position, so a panel
+         re-opened with last time's scrollTop still on it would spend its first
+         frame selecting whatever happened to be in the middle of where she
+         left off. The `scroll` panels keep their reset at the BOTTOM of this
+         method, where it has to be: there `_paint` really does call
+         `scrollIntoView`, and the reset is what undoes it. */
+      if (mode === 'read') this._toTop(panel);
     }
 
     let i = this._reseat(panel, items,
@@ -322,19 +362,29 @@ export class MenuNav {
     const dy = this._step(nav.y, 'y', dt);
     const dx = this._step(nav.x, 'x', dt);
 
-    /* WHICH AXIS MOVES THE CURSOR IS A PROPERTY OF THE LAYOUT, and it is
-       declared in the markup (`data-nav`) rather than guessed from CSS. The
-       title's three buttons sit in a flex ROW — pressing down to get from PLAY
-       to SETTINGS when SETTINGS is visibly to the left is the kind of thing a
-       nine-year-old reads as the controller not working. Help is a wall of
-       text with one button in it, so up/down belongs to the text. */
-    const mode = panel.dataset.nav ?? 'vertical';
-    const move = mode === 'horizontal' ? dx : dy;
+    /* `read` IS THE PAGE MOVING AND THE CURSOR FOLLOWING IT — see `_nearest`.
+       It degrades to plain `vertical` the moment there is nothing to scroll,
+       which is not a corner case: with every topic shut, Help fits on a tall
+       monitor, and a mode that did nothing there would be a screen with no
+       cursor in it at all. */
+    const reading = mode === 'read' && this._scrollable(panel);
+    const move = mode === 'horizontal' ? dx : (reading ? 0 : dy);
     if (move) {
       i = (i + move + items.length) % items.length;
       this.game.audio?.play('menu');
     }
     if (mode === 'scroll' && dy) this._scroll(panel, dy);
+    if (reading) {
+      if (dy) this._scroll(panel, dy, READ_FRAC);
+      /* EVERY FRAME, NOT ONLY THE ONES WITH A STICK IN THEM. The rule is
+         "whatever is nearest the middle of the page is selected", and a mouse
+         wheel and a finger drag scroll this box too — a ring that followed the
+         stick and ignored the wheel would be two cursors disagreeing about the
+         same page. */
+      const near = this._nearest(panel, items);
+      if (near !== i) this.game.audio?.play('menu');
+      i = near;
+    }
     // Left/right only edits a value on a vertical list; on a horizontal one it
     // is the cursor, and there is nothing there with a value anyway.
     if (mode !== 'horizontal' && dx) this._adjust(items[i], dx);
@@ -350,18 +400,86 @@ export class MenuNav {
 
     this.index.set(panel.id, i);
     this.focusEl.set(panel.id, items[i] ?? null);
-    this._paint(items, i);
+    /* AND THE RING DOES NOT DRAG THE PAGE WHILE THE PAGE IS DRIVING THE RING.
+       `_paint` scrolls the focused item into view, which in `read` mode is a
+       loop: a press moves the page, the page moves the selection, and the
+       paint pulls the page back to put what it just selected in view. `block:
+       'nearest'` makes that a small tug rather than a jump, which is the worse
+       of the two — an obvious fight is something you can see, and this one
+       would just make the page feel sticky. */
+    this._paint(items, i, !reading);
 
     /* A PAGE YOU OPEN TO READ OPENS AT THE TOP. `_paint` scrolls the focused
        item into view, and the only focusable thing on the help page is the
        BACK button at the very bottom — so opening it jumped straight past
        everything it exists to say. Done after the paint, and only on the frame
        the panel opens, so scrolling away from the top afterwards sticks. */
-    if (justOpened && mode === 'scroll') {
-      const box = panel.querySelector('.panel');
-      if (box) box.scrollTop = 0;
-    }
+    if (justOpened && mode === 'scroll') this._toTop(panel);
     return true;
+  }
+
+  /** Is there anything to scroll? Asked by `read`, which has nothing to do
+   *  when there is not, and falls back to stepping the cursor instead. */
+  _scrollable(panel) {
+    const box = panel.querySelector('.panel');
+    return !!box && box.scrollHeight > box.clientHeight + 1;
+  }
+
+  _toTop(panel) {
+    const box = panel.querySelector('.panel');
+    if (box) box.scrollTop = 0;
+  }
+
+  /**
+   * WHICHEVER ITEM IS NEAREST THE MIDDLE OF THE PAGE IS THE SELECTED ONE.
+   *
+   * Reported from play: "player should be able to scroll up/down in the Help
+   * Menu with the left joystick, not just select the buttons in the menu to
+   * scroll up/down, as details, like in Clan Abilities can be missed that are
+   * not navigable to... as user scrolls up/down, should select the closest
+   * button to the center of the screen, so as they scroll down, it will select
+   * the bottom/next button once scrolled down far enough."
+   *
+   * WHAT WAS WRONG IS THE FIRST HALF OF THAT SENTENCE, AND IT IS NOT THAT ROWS
+   * WERE MISSING. Help was `data-nav="vertical"`, so down meant "the next topic
+   * header" and `_paint`'s `scrollIntoView({ block: 'nearest' })` moved the
+   * page only far enough to show that header. Every pixel BETWEEN two headers
+   * was unreachable on a pad — which is most of the screen once a topic is
+   * open, and all of it inside "Clan abilities", whose sub-cards are pictures
+   * and prose with no control in them at all. The cursor was not skipping
+   * items; it was stepping OVER the page.
+   *
+   * SO THE PAGE IS WHAT MOVES AND THE CURSOR IS DERIVED FROM IT. That is the
+   * second half of the report and it is also the only way the two can be made
+   * to agree: a selection kept independently of the scroll position is a ring
+   * somewhere else on the screen, and JUMP then opens a topic she is not
+   * looking at.
+   *
+   * THE TWO ENDS ARE PINNED RATHER THAN MEASURED, AND THAT IS NOT TIDINESS. At
+   * the very bottom of Help the thing nearest the middle of the box is the last
+   * topic HEADER — BACK is below it, in a strip that no amount of further
+   * scrolling can bring to the centre, so measured alone a stick could never
+   * reach the way out. Pinned, the end of the page selects it, which is the
+   * thing she wants after reading. The top is pinned for the mirror of the same
+   * reason: the lead paragraph above the first topic would otherwise hold the
+   * selection off the first thing to read.
+   */
+  _nearest(panel, items) {
+    const box = panel.querySelector('.panel');
+    if (!box || !items.length) return 0;
+    if (box.scrollTop <= 1) return 0;
+    if (box.scrollTop + box.clientHeight >= box.scrollHeight - 1) return items.length - 1;
+    const r = box.getBoundingClientRect?.();
+    const mid = r ? r.top + r.height / 2 : box.clientHeight / 2;
+    let best = 0;
+    let bestD = Infinity;
+    for (let k = 0; k < items.length; k++) {
+      const b = items[k].getBoundingClientRect?.();
+      if (!b) continue;
+      const d = Math.abs(b.top + b.height / 2 - mid);
+      if (d < bestD) { bestD = d; best = k; }
+    }
+    return best;
   }
 
   /**
@@ -373,10 +491,10 @@ export class MenuNav {
    * page. A step is most of a line of text — small enough to read as scrolling
    * rather than paging, and with `_step`'s repeat it runs smoothly when held.
    */
-  _scroll(panel, dir) {
+  _scroll(panel, dir, frac = 0) {
     const box = panel.querySelector('.panel');
     if (!box || box.scrollHeight <= box.clientHeight) return;
-    box.scrollTop += dir * 48;
+    box.scrollTop += dir * Math.max(SCROLL_STEP, box.clientHeight * frac);
   }
 
   /** Left/right on a control that has a value. Buttons ignore it. */
@@ -431,14 +549,16 @@ export class MenuNav {
    * result is two highlights on screen, the stale one drawn first — so it is
    * also the one that looks like the cursor. Clear globally, then light one.
    */
-  _paint(items, i) {
+  _paint(items, i, follow = true) {
     const want = items[i] ?? null;
     if (want === this._lastPainted) return;
     this._clear();
     if (!want) return;
     want.classList.add('nav-focus');
     // Settings is taller than the screen; the ring is useless off-screen.
-    want.scrollIntoView({ block: 'nearest' });
+    // ...but NOT in `read` mode: see the call site. There the page is already
+    // where her own thumb put it, and moving it is a fight with her.
+    if (follow) want.scrollIntoView({ block: 'nearest' });
     this._lastPainted = want;
   }
 

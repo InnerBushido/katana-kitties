@@ -38,9 +38,11 @@ Three things to know before touching it:
 
 ## A piece of music per island, and one per dragon
 
-Ten tracks now, all still synthesised — see Sound below for the engine. `MUSIC`
-in `audio.js` holds them; `ISLAND_MUSIC` maps biome → piece and
-`trackForIsland()` resolves it.
+All still synthesised — see Sound below for the engine. `MUSIC` in `audio.js`
+holds every piece; `ISLAND_MUSIC` maps biome → piece and `trackForIsland()`
+resolves it. The table is the places you can stand and the things you can be
+carried by; the opening cutscene's `intro` and the ending's three acts are in
+[story.md](story.md).
 
 | where | piece | what makes it that place |
 | --- | --- | --- |
@@ -51,8 +53,10 @@ in `audio.js` holds them; `ISLAND_MUSIC` maps biome → piece and
 | ash | `ash` | iwato — the darkest of the five — low, drone-heavy |
 | dusk | `dusk` | insen with fifths: the island the story points at |
 | Dojo | `dojo` | the sparsest thing in the game, deliberately |
+| the arena | `arena` | a matsuri: home's scale, up a fifth, twice the tempo |
 | storm dragon | `flight` | **the only piece with a bassline** |
 | Ryuuseki | `ryu` | unchanged |
+| the griffin, outbound | `griffin` | the arena's key, arriving — see below |
 
 **HOME KEEPS THE TUNE THEY ALREADY KNOW.** It is where both girls start every
 session, and changing it is changing what the game sounds like.
@@ -74,6 +78,48 @@ silent wrong answer: the right number of themes exist, every biome maps to one,
 and the dojo just quietly plays the wrong one. `trackForIsland()` exists so the
 smoke test resolves it through the same function the game does; two copies of a
 rule with a special case in it is how the dragon-ball locks shipped unlocked.
+
+## The griffin ride was silent, and it was not a missing tune
+
+> Have music playing when riding the griffin to the arena. If we don't have
+> music that matches it, then let's generate some new music to get players
+> excited to fight in the arena.
+
+**THE CAUSE WAS A MISSING CALL.** `Game._updateMusic` is the single authority on
+what is playing and it is the LAST thing in `_updatePlay`; the griffin ride is a
+branch that `return`s. So for the whole eight seconds the one function allowed
+to decide anything never ran, and whatever had been playing when Mr. Satan
+finished talking simply carried on. That is the ending's bug one branch along —
+the same shape, found the same way, and the fix is the same one line in the
+branch. It is asserted as an *order* (`_arrive()` then `_updateMusic(dt)`),
+because `_arrive` is what clears `travel`: ask before it and the frame they land
+on plays one more frame of the ride.
+
+**NEITHER PIECE THAT COULD HAVE BEEN REACHED WAS RIGHT.** `flight` is the storm
+dragon's, and the island theme underneath is a question about where somebody is
+standing — asked of a kitten who is cargo on an animal crossing four islands, it
+changes key under itself.
+
+**SO `griffin` IS THE ARENA'S OWN KEY AND SCALE** — hirajoshi at F, the two
+numbers `arena` uses — and the point of that is the landing: the griffin puts
+them down and the festival carries on without a key change. `finaleOpen` makes
+the same move from much further off, for the same reason.
+
+**WHAT MAKES IT THE JOURNEY AND NOT THE DESTINATION** is a `snare`, which the
+arena theme has never had and is the one thing in this synth that says *moving*,
+and a step slower (0.36 against 0.32) so that arriving is a step up rather than
+sideways. Its `rest` is 0.44, the lowest in the game: excitement here is notes
+per second, since the mix is one bus and shouting at it is not available.
+No `bass` — the storm dragon keeps the only bassline.
+
+**THE WAY HOME IS NOT THE WAY OUT.** `'out'` gets `griffin` and `'home'` gets
+`flight`, which is what every other ride in the game plays. An arena fanfare
+over somebody being carried *away* from the arena is the game not knowing which
+way round it is.
+
+Measured in the running game rather than reasoned about: with `travel` set,
+`Audio.mode` really does become `griffin` outbound and `flight` homebound, and
+falls back to the island theme when the ride ends.
 
 **The storm-dragon theme is the Dragon Ball brief finally cashed in**, and it is
 the only piece with `bass` and `snare`. A driving low square on every other step

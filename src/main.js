@@ -7509,6 +7509,19 @@ class Game {
        the ending in a world that is being torn down around it. */
     const ending = this.summonScene?.musicTrack;
     if (ending) return ending;
+    /* THE GRIFFIN OWNS THE MUSIC WHILE IT IS CARRYING THEM, and it outranks
+       every rule below for the reason the ending does: the kittens are cargo,
+       the animal is writing their positions, and "which island is she standing
+       on" is a question about somebody being flown across four of them. Left
+       to `_islandTrack` the eight-second ride would change key under itself.
+
+       OUT AND HOME ARE DIFFERENT PIECES BECAUSE THEY ARE DIFFERENT ERRANDS.
+       Out is the one the report is about — see `MUSIC.griffin`, which is the
+       arena's key arriving from a long way off. Home is a flight and nothing
+       else, so it takes the flight theme every other ride in this game takes;
+       playing the arena fanfare at somebody being carried AWAY from the arena
+       would read as the game not knowing which way round it is. */
+    if (this.travel) return this.travel === 'out' ? 'griffin' : 'flight';
     if (!this.players?.length) return null;
     if (this.ryu?.ridden
       && this.players.some((p) => p.mount === this.ryu || p.rideAlong === this.ryu)) {
@@ -8256,6 +8269,19 @@ class Game {
       this.world.update(dt, this.griffin.position);
       this.announcer?.update(dt);
       if (!flying) this._arrive();
+      /* AND THE RIDE IS SCORED, which needed this line and not a new tune.
+         `_updateMusic` is at the BOTTOM of `_updatePlay` and this branch
+         returns, so during the flight the one thing allowed to start a track
+         never ran on a single frame — the same shape of bug the ending had,
+         and it is written up at that call site. Whatever was playing when Mr.
+         Satan finished talking simply kept playing over the flight.
+
+         AFTER `_arrive`, NOT BEFORE IT. That call is what clears `this.travel`,
+         so asking here means the frame they are put down on asks for the arena
+         and not for one more frame of the ride — the two pieces are in the same
+         key (see `MUSIC.griffin`) and a cut on the landing is the point of
+         that. */
+      this._updateMusic(dt);
       this._renderView(this.griffin.camera, 0, 0,
         ...this.renderer.getSize(new THREE.Vector2()).toArray());
       return;
@@ -9646,10 +9672,16 @@ class Game {
         paneW: v.w,
         paneH: v.h,
         screenH: H,
+        /* AND THE SCREEN'S WIDTH, which is half of "is this pane a quadrant"
+           — the other half of what `MAP_QUAD_DOWN` asks. Without it a pane
+           that is half the screen across cannot be told from one that is all
+           of it, which is exactly how a girl playing on her own ended up with
+           the quadrant's map. */
+        screenW: W,
         touch: this.device.touchPrimary,
         merged: this.merged,
         mathUp,
-        /* HOW MANY KITTENS ARE IN THIS PANE — see `MAP_SOLO_DOWN`. `groups`
+        /* HOW MANY KITTENS ARE IN THIS PANE — see `MAP_QUAD_DOWN`. `groups`
            and not `this.players`: a pane is a cluster, and two sisters who
            have walked back together share one whether the setting says side
            by side or not. */
@@ -10009,7 +10041,8 @@ class Game {
         W,
         H,
         size: mapWidth({
-          paneW: v.w, paneH: v.h, screenH: H, touch: this.device.touchPrimary,
+          paneW: v.w, paneH: v.h, screenH: H, screenW: W,
+          touch: this.device.touchPrimary,
           merged: this.merged, mathUp: true,
           /* The same pane's own occupancy the map itself is sized with, or
              this dodge would be measuring to a map that is not the one on
@@ -10067,13 +10100,16 @@ class Game {
         W,
         H,
         size: mapWidth({
-          paneW: v.w, paneH: v.h, screenH: H, touch: this.device.touchPrimary,
+          paneW: v.w, paneH: v.h, screenH: H, screenW: W,
+          touch: this.device.touchPrimary,
           /* `this.merged` AND NOT A HARD `false`, now that this branch can be
              reached on an unsplit screen. It was false because it could only
              ever run on a split one; on a merged screen `mapWidth` sizes the
              map differently, and a reservation made for the wrong map is a
              reservation that can leave the board sitting on it. */
           merged: this.merged, mathUp: true,
+          /* NO `solo`, DELIBERATELY: this reserves the space a map MIGHT take
+             and the full-size answer is the safe direction to be wrong in. */
         }),
         pad: 14,
         hint: HINT_CLEAR,

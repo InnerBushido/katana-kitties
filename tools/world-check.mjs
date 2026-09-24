@@ -108,7 +108,7 @@ import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/co
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   paneSeats, outOfShot, framedMembers, OUT_DROP, paneWiden, BIG_PANE_IN,
-  mathSharedWidth, MATH_SHARED_W, MAP_TOUCH_UP,
+  mathSharedWidth, MATH_SHARED_W, MAP_TOUCH_UP, MAP_QUAD_DOWN,
 } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
@@ -4270,6 +4270,61 @@ console.log('\n--- the two dragon themes ---');
   ok('the flight theme is the one with a bassline', !!F.bass && !R.bass);
   ok('and a backbeat', !!F.snare);
   ok('both dragon themes push the fanfare fifth', F.fifths && R.fifths);
+}
+
+console.log('\n--- and something to hear on the way to the fight ---');
+{
+  /* THE CHECK THAT WOULD HAVE CAUGHT IT. Reported from play: "have music
+     playing when riding the griffin to the arena. If we don't have music that
+     matches it, then let's generate some new music to get players excited to
+     fight in the arena."
+
+     THE SILENCE WAS A MISSING CALL, NOT A MISSING TUNE, and that is the half
+     worth pinning: `_updateMusic` is the LAST thing in `_updatePlay` and the
+     griffin branch RETURNS, so for the whole eight seconds the one function
+     allowed to decide what is playing never ran. Exactly the bug the ending
+     had, one branch along — which is why "does the piece exist" is the weaker
+     of the two assertions below. */
+  const G = MUSIC.griffin;
+  const A = MUSIC.arena;
+  ok('the griffin ride has a piece of its own', !!G);
+  /* IT LANDS IN THE ARENA'S KEY, which is the whole reason it is this piece
+     and not a fast island theme: the griffin puts them down and the festival
+     carries straight on without a key change. */
+  ok('...in the arena\'s own key and scale, so landing is not a key change',
+    G.scale === A.scale && G.root === A.root, `${G.root}Hz`);
+  /* AND IS STILL NOT THE ARENA THEME. Same key, same scale — so every
+     difference has to come from somewhere a listener can hear, or the ride is
+     scored with the destination and the report is not answered. */
+  ok('...and is still not the arena theme', G.beat !== A.beat && !!G.snare !== !!A.snare);
+  ok('...slower than the arena, so arriving is a step up rather than sideways',
+    G.beat > A.beat, `${G.beat} vs ${A.beat}`);
+  /* THE BUSIEST LINE IN THE GAME. "Excited" here is notes per second and not
+     volume — the mix is one bus and shouting at it is not available. */
+  ok('...and the busiest line in the game, which is what excitement is here',
+    Object.entries(MUSIC).every(([m, p]) => m === 'griffin' || (p.rest ?? 0.72) > G.rest),
+    `rest ${G.rest}`);
+  /* THE HOUSE RULE THE ARENA THEME WRITES DOWN: one bassline in the game, and
+     it belongs to the storm dragon. */
+  ok('...and it leaves the one bassline in the game to the storm dragon', !G.bass);
+
+  const gm = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const flat = stripComments(gm).replace(/\s+/g, ' ');
+  /* THE RIDE OWNS THE MUSIC WHILE IT IS CARRYING THEM. Without this branch
+     `_wantedTrack` falls through to `_islandTrack`, and the kittens' positions
+     during a ride are written by the griffin — so an eight-second flight over
+     four islands would change key under itself. */
+  ok('the ride outranks where the kittens are standing, because they are cargo',
+    /if \(this\.travel\) return this\.travel === 'out' \? 'griffin' : 'flight';/.test(flat));
+  /* AND THE BRANCH ASKS. This is the line that was missing, and it is asserted
+     as ORDER rather than as presence: after `_arrive`, which is what clears
+     `this.travel`, so the frame they are put down on asks for the arena. */
+  ok('...and the ride branch asks for it, after the landing has cleared',
+    /if \(!flying\) this\._arrive\(\); this\._updateMusic\(dt\);/.test(flat));
+  /* THE WAY HOME IS NOT THE WAY OUT. Flying AWAY from the arena to the arena's
+     own fanfare is the game not knowing which way round it is. */
+  ok('...and the way home takes the flight theme every other ride takes',
+    /'out' \? 'griffin' : 'flight'/.test(flat));
 }
 
 console.log('\n--- sprite directions ---');
@@ -14698,6 +14753,77 @@ console.log('\n--- the minimap fits its pane ---');
   ok('splitting a desktop screen does not shrink its map',
     mapWidth({ paneW: 960, paneH: 1080, screenH: 1080, merged: false })
       === mapWidth({ paneW: 960, paneH: 1080, screenH: 1080 }));
+
+  /* --- AND THE ONLY MAP THAT COMES DOWN IS A QUADRANT'S -------------------
+     THE CHECK THAT WOULD HAVE CAUGHT IT, and the honest version of that
+     sentence is that there was no check at all: `MAP_QUAD_DOWN` went in as
+     `MAP_SOLO_DOWN` with forty lines of reasoning above it and nothing
+     asserting any of it, so the one arrangement the rule was wrong about — a
+     girl playing on her own, on a whole screen — shipped. Reported straight
+     back: "when there is just 1 player in the main screen, it is too small!
+     Should be the big size, the small size is just when broken up into the
+     1/4th quadrant split screens."
+
+     THROUGH `splitLayout`, NOT AGAINST TYPED RECTANGLES. The panes below are
+     the panes the game lays out, from the same function `_drawMaps` calls, so
+     a layout change cannot leave this check testing an arrangement that no
+     longer happens. */
+  {
+    const W = 1920;
+    const H = 1080;
+    const full = mapWidth({ paneW: W, paneH: H, screenH: H, screenW: W });
+    const ask = (v, solo) => mapWidth({
+      paneW: v.w, paneH: v.h, screenH: H, screenW: W, merged: false, solo,
+    });
+    /* name, the panes, and how many kittens are in each — the second is what
+       `_drawMaps` passes as `solo`, and it is `groups[pane].length` there. */
+    const SHAPES = [
+      ['one kitten, unsplit', splitLayout(1, W, H), [1]],
+      ['two side by side', splitLayout(2, W, H, 3, 'vertical'), [1, 1]],
+      ['two stacked', splitLayout(2, W, H, 3, 'horizontal'), [1, 1]],
+      ['four quadrants', splitLayout(4, W, H, 3, 'vertical', [1, 1, 1, 1]), [1, 1, 1, 1]],
+      ['a pair and two singles', splitLayout(3, W, H, 3, 'horizontal', [2, 1, 1]), [2, 1, 1]],
+      ['three together and one alone', splitLayout(2, W, H, 3, 'vertical', [3, 1]), [3, 1]],
+    ];
+    const seen = [];
+    for (const [name, panes, counts] of SHAPES) {
+      const got = panes.map((v, k) => ask(v, counts[k] <= 1));
+      line(`map width, ${name}`, got.map((s) => Math.round(s)).join(' / '));
+      panes.forEach((v, k) => seen.push({ name, v, size: got[k] }));
+    }
+    /* THE RULE ITSELF, over every pane the game can lay out rather than over
+       the six the table above happens to name: a map is only ever smaller than
+       the full one in a pane that is short of the screen BOTH ways. The old
+       rule fails this on its first row. */
+    const shrunk = seen.filter((r) => r.size < full - 1e-9);
+    ok('a map only ever comes down in a pane short of the screen both ways',
+      shrunk.every((r) => r.v.w <= W * 0.75 && r.v.h <= H * 0.75),
+      shrunk.map((r) => `${r.name} ${r.v.w}x${r.v.h}`).join(', ') || 'none');
+    /* AND IT REALLY DOES COME DOWN IN ONE. The mirror of the line above, which
+       a `MAP_QUAD_DOWN` of 1 would pass on its own — that is the shape the
+       quest-list fix had to be written against too, and the same trap twice is
+       careless. */
+    ok('...and a quadrant\'s map really is the quarter smaller that was asked for',
+      shrunk.length > 0
+      && shrunk.every((r) => Math.abs(r.size - full * MAP_QUAD_DOWN) < 1e-9),
+      `${shrunk.length} of ${seen.length} panes at ${(full * MAP_QUAD_DOWN).toFixed(0)}px`);
+    /* THE ROW THAT WAS REPORTED, NAMED. */
+    ok('...so one kitten on a whole screen reads the big map',
+      ask(splitLayout(1, W, H)[0], true) === full, `${full}px`);
+    /* AND THE SENTENCE AFTER IT: "when 2 players in 2 split screens, it should
+       also be the bigger size" — both ways the screen can be cut in two. */
+    ok('...and so do two on a screen cut in half, whichever way it is cut',
+      splitLayout(2, W, H, 3, 'vertical').every((v) => ask(v, true) === full)
+      && splitLayout(2, W, H, 3, 'horizontal').every((v) => ask(v, true) === full));
+    /* AND THE LAST ONE: "if 2, 3, or 4 players are in one split screen
+       together, should be the bigger minimap size". Asked of a quadrant, which
+       is the only pane the size rule would otherwise shrink — so this is the
+       occupancy half on its own, with the geometry half held true. */
+    const quad = splitLayout(4, W, H, 3, 'vertical', [1, 1, 1, 1])[0];
+    ok('...and a pane two of them are sharing keeps the big map wherever it is',
+      ask(quad, false) === full && ask(quad, true) === full * MAP_QUAD_DOWN,
+      `${ask(quad, false)} shared vs ${ask(quad, true)} alone`);
+  }
 }
 
 console.log('\n--- and it sits on the seam, where both panes can read it ---');
@@ -16975,8 +17101,15 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
   const help = html.slice(html.indexOf('id="panel-help"'),
     html.indexOf('id="panel-settings"'));
 
-  ok('the help panel is a vertical accordion, not a scroll',
-    /data-nav="vertical"/.test(help) && /data-nav-start="first"/.test(help));
+  /* `read` AND NOT `vertical`. It was vertical, and vertical means "down is
+     the next topic HEADER" — so `_paint`'s `scrollIntoView` moved the page
+     exactly far enough to show that header and never a pixel further, and
+     everything between two headers was unreachable on a pad. See
+     `MenuNav._nearest`, and the driven check on it further down this file.
+     `data-nav-start="first"` still earns its place: `read` falls back to
+     stepping the cursor when the page does not scroll at all. */
+  ok('the help panel is a page you read, not a list you step',
+    /data-nav="read"/.test(help) && /data-nav-start="first"/.test(help));
 
   /* READ OFF THE TAGS, NOT OFF THE FILE. This counted every `name="help"` in
      the panel's source and compared it to the card count, which passed for as
@@ -20684,6 +20817,125 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...and an open one offers its sub-topics', got.includes(shown));
     ok('...but a sub-topic inside a shut one is not on the cursor',
       !got.includes(buried), `${got.length} items`);
+  }
+
+  /* --- AND THE STICK MOVES THE PAGE, NOT THE CURSOR ----------------------
+     THE CHECK THAT WOULD HAVE CAUGHT IT. Reported from play: "player should be
+     able to scroll up/down in the Help Menu with the left joystick, not just
+     select the buttons in the menu to scroll up/down, as details, like in Clan
+     Abilities can be missed that are not navigable to."
+
+     NOTHING THAT WAS HERE COULD HAVE SEEN IT. The checks above ask what the
+     cursor may LAND on, and every answer they give was right — the headers
+     really were all reachable. What was unreachable was the page: eight
+     hundred pixels of pictures and prose between one header and the next, with
+     no control in it for a cursor to stop at, and a `scrollIntoView` that
+     moved the panel just far enough to show the next header and no further.
+
+     DRIVEN, AND DRIVEN THROUGH `update`. A source check for `_nearest` would
+     pass a version that never called it, and one for `data-nav="read"` (above)
+     only says the mode was asked for. This runs the real loop against a panel
+     that really scrolls, and reads the scroll position back. */
+  {
+    /* A BOX THAT CLAMPS LIKE A REAL ONE. `scrollTop` saturates in a browser;
+       an unclamped fake would sail past the bottom and the end-pin below would
+       be testing arithmetic that cannot happen. */
+    const H = 600;
+    const DOC = 3000;
+    let top = 0;
+    const box = {
+      get scrollTop() { return top; },
+      set scrollTop(v) { top = Math.max(0, Math.min(v, DOC - H)); },
+      clientHeight: H,
+      scrollHeight: DOC,
+      getBoundingClientRect: () => ({ top: 0, height: H }),
+    };
+    /* Six topic headers spread down the page and a BACK at the very bottom —
+       the shape of the real panel, where BACK is below the last topic and in
+       the strip no amount of scrolling brings to the middle. */
+    const AT = [200, 650, 1100, 1550, 2000, 2450, 2950];
+    const rows = AT.map((at, k) => {
+      const e = el(k === 6 ? 'BUTTON' : 'SUMMARY',
+        k === 6 ? ['menu-btn', 'back'] : ['help-topic']);
+      e.seen = 0;
+      e.scrollIntoView = () => { e.seen += 1; };
+      e.getBoundingClientRect = () => ({ top: at - box.scrollTop, height: 40 });
+      return e;
+    });
+    const readPanel = (nav) => ({
+      id: 'panel-help',
+      dataset: { nav, navStart: 'first' },
+      classList: { contains: () => false },
+      querySelectorAll: () => rows,
+      querySelector: (q) => (q === '.panel' ? box : rows[6]),
+    });
+    /* A pad holding DOWN, and a `dt` past the repeat delay so every frame is
+       one press — the console-style repeat is not what is under test here. */
+    const hold = () => { const p = fakePad(); p.my = 1; return p; };
+    const run = (panel, frames) => {
+      globalThis.document = {
+        getElementById: (id) => (id === 'panel-help' ? panel : null),
+        querySelectorAll: () => [],
+      };
+      const pad = hold();
+      const nav = new MenuNav(navGame([pad]));
+      const at = [];
+      top = 0;
+      for (let f = 0; f < frames; f++) {
+        nav.update(1);
+        at.push({ top: box.scrollTop, on: rows.indexOf(nav.focusEl.get('panel-help')) });
+      }
+      return at;
+    };
+    for (const r of rows) r.seen = 0;
+    const read = run(readPanel('read'), 30);
+    line('help: scroll / selected, held down', read.slice(0, 6)
+      .map((s) => `${s.top}:${s.on}`).join(' '));
+    /* 1. THE PAGE MOVES AT ALL, which is the report in one line. */
+    ok('a stick held down the Help page scrolls it',
+      read[1].top > 0 && read[5].top > read[1].top, `${read[5].top}px in 6`);
+    /* 2. AND THE SELECTION FOLLOWS IT rather than running ahead of it. The
+       bug was a cursor that stepped over the page; the fix is a cursor that
+       cannot be anywhere the page is not. */
+    ok('...and the selection follows the page rather than leading it',
+      read.every((s) => s.on >= 0) && read[5].on > read[0].on
+      && read[5].on <= read[5].top / 450 + 1,
+      read.slice(0, 6).map((s) => s.on).join(' '));
+    /* 3. THE MIDDLE OF THE PAGE IS WHAT PICKS IT — the sentence from the
+       report. Row k sits at `200 + 450k`, the box is 600 tall with its middle
+       at 300, so the selected row is the one whose own middle is nearest. */
+    const nearestAt = (t) => {
+      let w = 0;
+      AT.forEach((a, k) => {
+        if (Math.abs(a - t + 20 - 300) < Math.abs(AT[w] - t + 20 - 300)) w = k;
+      });
+      return w;
+    };
+    const mid = read.filter((s) => s.top > 1 && s.top < DOC - H - 1);
+    ok('...on whichever row is nearest the middle of the page, at every stop',
+      mid.length > 4 && mid.every((s) => s.on === nearestAt(s.top)),
+      mid.map((s) => `${s.on}/${nearestAt(s.top)}`).join(' '));
+    /* 4. THE BOTTOM PIN. Held to the end, the selection is BACK — the way out.
+       Measured rather than assumed, because the row nearest the middle at the
+       bottom of this page is the last TOPIC, and unpinned a stick could never
+       reach the way out at all. */
+    const end = read[read.length - 1];
+    ok('...and the end of the page selects the way out, not the last topic',
+      end.top === DOC - H && end.on === rows.length - 1, `${end.top}px, row ${end.on}`);
+    /* 5. AND THE RING DOES NOT DRAG THE PAGE BACK. `scrollIntoView` is the
+       loop `_paint`'s new `follow` flag exists to break; if it is called at
+       all while reading, the page is fighting the thumb that moved it. */
+    ok('...without the ring pulling the page back to centre itself',
+      rows.every((r) => r.seen === 0), `${rows.reduce((n, r) => n + r.seen, 0)} pulls`);
+
+    /* 6. AND THE OLD MODE REALLY WAS THE BUG, not a thing that also worked.
+       The same page, the same presses, `vertical`: the panel never moves and
+       the cursor walks the headers — which is what a player was looking at. */
+    for (const r of rows) r.seen = 0;
+    const stepped = run(readPanel('vertical'), 6);
+    ok('...where `vertical` would have stepped the cursor and never the page',
+      stepped.every((s) => s.top === 0) && stepped[5].on > stepped[0].on,
+      `${stepped[5].top}px, row ${stepped[0].on} -> ${stepped[5].on}`);
   }
 
   if (!hadDoc) delete globalThis.document;
