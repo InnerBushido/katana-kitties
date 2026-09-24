@@ -71,15 +71,67 @@ the only one who can press RESUME locks the other girl out of her own pause menu
 **WHICH AXIS MOVES THE CURSOR IS DECLARED IN THE MARKUP** (`data-nav`), not
 guessed from CSS. The title's three buttons sit in a flex ROW, so pressing *down*
 to reach a button that is visibly to the *left* reads to a nine-year-old as the
-controller not working — `data-nav="horizontal"` puts them on left/right.
-`#panel-help` is `data-nav="scroll"`: it is a wall of text with one button in it,
-so up/down belongs to the text.
+controller not working — `data-nav="horizontal"` puts them on left/right. There
+are four modes: `vertical` (the default), `horizontal`, `scroll` for a list too
+long to walk, and `read` for a page — see below.
 
 **A page you open to read opens at the TOP.** `_paint` scrolls the focused item
 into view and the only focusable thing on the help page is BACK, at the very
 bottom — so opening Help jumped straight past everything it exists to say. The
 scroller is the `.panel` box rather than the page, because these overlays are
 `position: fixed` and the document behind them has nothing to scroll.
+
+### The stick has to move the PAGE, not the cursor
+
+> Player should be able to scroll up/down in the Help Menu with the left
+> joystick, not just select the buttons in the menu to scroll up/down, as
+> details, like in Clan Abilities can be missed that are not navigable to...
+> as user scrolls up/down, should select the closest button to the center of
+> the screen, so as they scroll down, it will select the bottom/next button
+> once scrolled down far enough.
+
+Help was `data-nav="vertical"` — a MENU of topic headers. Down meant "the next
+header", and `_paint`'s `scrollIntoView({ block: 'nearest' })` moved the panel
+exactly far enough to show that header and not a pixel further.
+
+**NOTHING WAS MISSING FROM THE CURSOR, AND THAT IS WHY IT WAS EASY TO MISS.**
+Every header really was reachable; `items()` had been fixed twice to make sure
+of it. What was unreachable was the *page* — eight hundred pixels of pictures
+and prose between one header and the next, with no control in it to stop at.
+Inside "The arena ▸ Clan abilities" that is the entire topic. The cursor was not
+skipping rows, it was stepping **over** them.
+
+**`data-nav="read"`: the page moves and the cursor is derived from it.**
+`MenuNav._nearest` returns whichever item's middle is nearest the middle of the
+box, and up/down scroll by `max(48px, 15% of the box)`. Keeping a selection
+independently of the scroll would put the ring somewhere she is not looking, and
+JUMP would then open a topic she cannot see.
+
+**THE TWO ENDS ARE PINNED RATHER THAN MEASURED.** At the bottom of Help the
+thing nearest the middle is the last *topic*; BACK is below it, in a strip no
+amount of further scrolling can bring to the centre — so measured alone, a stick
+could never reach the way out. Pinned, the end of the page selects it. The top
+is pinned for the mirror of that: the lead paragraph would otherwise hold the
+selection off the first thing to read.
+
+**AND `_paint` MUST NOT FOLLOW WHILE THE PAGE IS DRIVING.** `scrollIntoView` on
+the newly-derived item is a loop — press, page moves, selection moves, paint
+pulls the page back to centre it. `block: 'nearest'` makes that a small tug
+rather than a jump, which is the worse of the two: an obvious fight is something
+you can see, and this one would just make the page feel sticky. `_paint` takes a
+`follow` flag now and `read` passes false.
+
+**IT DEGRADES TO `vertical`** the moment there is nothing to scroll, which is not
+a corner case — with every topic shut, Help fits on a tall monitor. That is also
+why `data-nav-start="first"` is still on the panel: it is the answer for exactly
+that case.
+
+Driven against the real panel in the running game: with the box at 200px, seven
+presses walked the scroll 48px at a time from 48 to 576 and the ring moved down
+through *Moving & fighting → On a phone → Clans → Raise a panda → Dragon balls →
+The arena → Quests → The Dojo → Saving your progress* as each passed the middle.
+`world-check` asserts the same thing against a 3000px page, including that the
+end selects the way out and that nothing calls `scrollIntoView` while reading.
 
 **THE SHARED CAMERA IS UPDATED EVERY FRAME, SPLIT OR NOT.** This is the whole
 fix for the jarring rejoin. The block lerps `sharedTarget`/`sharedDist` toward

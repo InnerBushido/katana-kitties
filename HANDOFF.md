@@ -515,6 +515,53 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Three minor improvements, and one of them un-does the last pass.** One
+branch, `mixed/three-improvements`. Two are a second look at something that
+had just shipped; the third is a piece of music that turned out to be a
+missing function call.
+
+- **The minimap is small only in a QUADRANT.** *"When there is just 1 player in
+  the main screen, it is too small! Should be the big size, the small size is
+  just when broken up into the 1/4th quadrant split screens."* The pass below
+  keyed the 25% off the pane's OCCUPANCY — one kitten in the pane, one pair of
+  eyes — and named, out loud and in a comment, that this also brought a girl
+  playing alone on a whole screen down from 300px to 225. That was the wrong
+  call and it came straight back. The question is the pane's SIZE first: a
+  quadrant is short of the screen on both axes (the same 0.75 test `fullHeight`
+  already makes one axis at a time), and nothing else gives room back. Measured
+  at 1920x1080: unsplit 300, two side by side 300, two stacked 300, a three-pane
+  pair's strip 300, its singles 225, four quadrants 225, either column of a 3v1
+  300. The occupancy half is kept because the report's last sentence is about it
+  — but measured, the two halves cannot currently disagree, since every layout
+  that produces a quadrant produces it for one kitten. **There was no check on
+  any of this**, which is why forty lines of reasoning shipped wrong; there is
+  now, driven through `splitLayout` over every arrangement.
+- **The griffin ride has music, and the silence was a missing CALL.**
+  *"Have music playing when riding the griffin to the arena... let's generate
+  some new music to get players excited to fight in the arena."* `_updateMusic`
+  is the last thing in `_updatePlay` and the ride is a branch that returns, so
+  for eight seconds the one function allowed to decide what plays never ran —
+  the ending's bug, one branch along. `MUSIC.griffin` is the **arena's own key
+  and scale** (hirajoshi at F), so landing is not a key change; a `snare` the
+  arena theme has never had and a step slower (0.36 vs 0.32) are what make it
+  the journey rather than the destination, and its `rest` of 0.44 is the busiest
+  line in the game. The way HOME takes the flight theme instead — an arena
+  fanfare over somebody being carried away from the arena is the game not
+  knowing which way round it is.
+- **Help is a page you read, not a list you step.** *"Details, like in Clan
+  Abilities, can be missed that are not navigable to... as user scrolls up/down,
+  should select the closest button to the center of the screen."* Nothing was
+  missing from the cursor — every header really was reachable. What was
+  unreachable was the PAGE: `data-nav="vertical"` meant down was "the next
+  header" and `scrollIntoView` moved the panel exactly far enough to show it, so
+  eight hundred pixels of pictures and prose between two headers had nothing to
+  stop at. `data-nav="read"` moves the page by `max(48px, 15% of the box)` and
+  derives the selection from it. **Both ends are pinned**: at the bottom the
+  nearest row to the middle is the last topic and BACK is below it, so measured
+  alone a stick could never reach the way out. And `_paint` must not
+  `scrollIntoView` while reading, or the ring drags the page back under the
+  thumb that moved it.
+
 **Thirteen from an afternoon of play.** One branch,
 `mixed/thirteen-fixes`. They arrived as one list and they are not one theme —
 three are framing, three are the arena, three are the profile and the HUD, and
@@ -550,7 +597,11 @@ different bug from the one the note describes.
   note says so in its second sentence: *"can be the current size when there are
   2 or more players in 1 split-screen."* It multiplies the whole answer rather
   than joining the `Math.min`, or it would only be 25% smaller on the shapes
-  where it happened to win.
+  where it happened to win. **OVERTURNED BY THE PASS ABOVE** — the rule is the
+  pane's SIZE now, and this one shrank the map of a girl playing on her own on a
+  whole screen. Kept here because the paragraph that shipped it named that
+  consequence and argued for it, and the argument is the thing worth being able
+  to find.
 - **The Dojo board has one ceiling again.** *"When there is 1 player in the
   dojo... the UI is too big. Should be the same size as when there are 3 players
   and 2 players are in the Sin/Cos dojo together."* A portrait pane had the 540

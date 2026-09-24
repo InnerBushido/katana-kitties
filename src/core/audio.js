@@ -176,6 +176,40 @@ export const MUSIC = {
     taiko: 2, rest: 0.52, fifths: true,
   },
 
+  /* ---- THE GRIFFIN, CARRYING THEM TO THE FIGHT ---------------------------
+     Asked for as: "have music playing when riding the griffin to the arena. If
+     we don't have music that matches it, then let's generate some new music to
+     get players excited to fight in the arena."
+
+     THERE WAS NOTHING PLAYING, AND THAT WAS A MISSING CALL RATHER THAN A
+     MISSING TUNE — see `Game._wantedTrack`, where the ride branch now is. But
+     neither piece that could have been reached was the right one: the flight
+     theme is the storm dragon's, and the island theme underneath was whichever
+     meadow somebody was standing in when Mr. Satan finished talking. Eight
+     seconds is short, and short is exactly when the wrong tune is noticed.
+
+     IT IS THE ARENA'S OWN KEY AND SCALE, ON PURPOSE. HIRAJOSHI at F, the same
+     two numbers `arena` uses, so the moment the griffin puts them down the
+     piece they have been listening to does not change key — the ride resolves
+     INTO the festival rather than being interrupted by it. `finaleOpen` makes
+     the same move for the same reason and from much further away: the last
+     shot of the ending points at the arena and plays this key at it.
+
+     WHAT MAKES IT A JOURNEY AND NOT THE DESTINATION: a `snare` the arena theme
+     has never had, which is the one thing in this synth that says *moving*, and
+     a step slower (0.36 against 0.32) so that landing is a step UP rather than
+     a step sideways. `rest` is the lowest in the game at 0.44 — the busiest
+     line anywhere — because the brief is excitement and excitement here is
+     notes per second, not volume.
+
+     NO BASS. The storm dragon owns the only bassline in the game; the arena
+     theme gives its reason for refusing one and this is the piece that would
+     blur into both. */
+  griffin: {
+    scale: HIRAJOSHI, beat: 0.36, root: 174.61, oct: 1, drone: 0.22,
+    taiko: 2, rest: 0.44, fifths: true, snare: 4,
+  },
+
   /* ---- the dragons ---- */
   /* STORM DRAGON FLIGHT. The Dragon Ball brief, finally cashed in: this is the
      one moment in the game that should sound like a cartoon about flying, so
