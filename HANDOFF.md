@@ -515,6 +515,37 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Snake Way, eleven notes from Richard.** Branch `mixed/snake-way-eleven`.
+[world.md](docs/notes/world.md) has each one, [story.md](docs/notes/story.md)
+the new clock and [performance.md](docs/notes/performance.md) the lag.
+
+- **Music on the roads.** `snake` on any road, and on the arena road Mr
+  Satan's own: an ORIGINAL disco strut, not "Kung Fu Fighting" (a synth
+  playing somebody's tune is still their tune). One chorus is 24 s and the
+  arena road about 60 s, so she hears it round about two and a half times.
+- **X-ray through the clouds**, a player-sized hole at 50%, per pane.
+- **Seven roads.** The frost road was missing because a Powerup Kotodama
+  scattered at 100% sat on the only landing on the frost rim. Roads are now
+  solved against the world as BUILT, and anything play left on a road is moved
+  off it. The **arena road** is new: double width, room for four abreast, a
+  lap round the arena island before landing at its front, a Mr Satan lion and
+  a white/black/orange torii. It is there only while the arena is open.
+- **The far isles come up through a cloud portal**, one at a time and only
+  when the ending's camera can see them. The rest simply appear. Their
+  waterfalls grow from nothing afterwards, with spray.
+- **The ending's clock.** Isles from 15% of the "There is nothing left" pan,
+  torii through their clouds from 22%, roads from 50%, all done at 93% of the
+  wide pan. Measured: 5.85 / 6.07 / 6.97 / 11.44 s.
+- **A gold coin at the middle of every road.** Grabbed ON the road (never
+  from a dragon), it is held up over her head and pays five canes (125). The
+  arena's is twice the size, has Mr Satan's face and pays everybody. They stay
+  taken and are saved.
+- **Ramps with rocks and grass** where a road's end is above the ground.
+- **No hitch.** Worst frame of the ending 587 ms (HEAD) to 63 ms, and that
+  63 is the scene's own first frame, unchanged. The build is sliced
+  (worst slice 7 ms headless) and the ending's world is primed on the GPU.
+- **Not yet played by Richard.** Nothing here is pushed.
+
 **Snake Way: after the ending, gold roads join the islands through the
 clouds.** Branch `feature/snake-way-bridges`. [world.md](docs/notes/world.md)
 has the design and [story.md](docs/notes/story.md) the shot.
@@ -543,8 +574,6 @@ has the design and [story.md](docs/notes/story.md) the shot.
   - The roads are not on the minimap.
   - A pre-ending ruin of each road, broken stubs at the gates, would foreshadow
     them.
-  - A kitten inside a road's cloud bank is hidden for a moment. That is "through
-    the clouds", but the puffs could thin when the lens is inside them.
 
 **A Help topic she closes keeps the ring, as one she opens does.** One
 branch, `bugfix/help-ring-stays-on-topic`.

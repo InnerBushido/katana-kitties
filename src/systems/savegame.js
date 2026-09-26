@@ -538,6 +538,9 @@ export function snapshot(game) {
       pickups: game.pickups?.map((k) => !!k.taken) ?? [],
       balls: game.balls?.map((b) => !!b.taken) ?? [],
       arena: !!world.arenaOpen,
+      /* THE COINS ON SNAKE WAY THAT HAVE BEEN SPENT, by road name. Nothing
+         regrows — fourth non-negotiable. */
+      coins: world.coinsTaken?.() ?? [],
       /* THE POWERUP KOTODAMA LYING LOOSE IN THE WORLD, WHICH NOTHING RECORDED.
          They are not `game.pickups` — those are the six plain orbs — and they
          have no fixed index to name: `spawnPickups` seeds them at 100% and
@@ -812,6 +815,7 @@ export function restore(game, snap) {
     game.summonScene.bridges = roads;
     game.summonScene.bridgeHold = false;
     game.world?.setBridges?.(roads);
+    game.world?.setCoinsTaken?.(W.coins ?? []);
   }
   /* ...AND THE DRAGON, WHO IS PART OF THE STORY RATHER THAN OF THE WORLD.
      BEFORE the sky and the flags below only by accident of reading order; what

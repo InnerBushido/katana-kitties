@@ -72,8 +72,37 @@ export const DAWN_DEEP = 1;
  * road lands with the frame still wide and the whole network is the picture
  * the shot ends on. Re-time the line and the build re-times itself.
  */
-export const SNAKE_OF_SHOT = 0.92;
+export const SNAKE_OF_SHOT = 0.93;
 export const SNAKE_RISE = 5;
+
+/**
+ * THE ROADS ARE ON A CLOCK NOW, ACROSS TWO SHOTS, NOT A RATE ACROSS ONE.
+ *
+ * "They construct too quickly... we should be showing growth/movement of the
+ * bridges during the majority of the camera panning part of the cutscene."
+ * And: "have the bridges start being constructed at about 50% of the way
+ * through the first 'there is nothing left standing' speech... have the
+ * islands fade in at about the 10-20% mark... Before the bridges start
+ * constructing, the torii gate should be finished completely spawning in."
+ *
+ * So the build is laid over the `gates` row (the truck across the town) and
+ * the `snake` row (the pull-out to the archipelago), as fractions of the FIRST
+ * of them, measured off the table like everything else: the far islands start
+ * finding the camera at `isle`, the home gates form from `gate0` to `road0`,
+ * and the roads grow from `road0` to `SNAKE_OF_SHOT` of the wide shot. It used
+ * to be three seconds of the wide shot alone; it is about five now, over the
+ * two pans. Re-time the line and all of it re-times itself.
+ */
+export const SNAKE_TIMES = { isle: 0.15, gate0: 0.22, road0: 0.5 };
+
+/** Milliseconds a frame the ending spends winding the roads before it needs
+ *  them. See `World.prepareSnakeWay`. It was 3, and in Firefox on an Intel
+ *  UHD at 30fps that finished the build at 6.10s — three hundredths after the
+ *  first gate was due at 6.07, so the rest of it was drained on that frame
+ *  (115ms) and the gates drew before their shaders had been warmed. Six
+ *  finishes it in under two seconds at 60fps and under four at 30, which is
+ *  all before the first road-bearing shot. */
+export const SNAKE_BUDGET = 6;
 
 /* --- WHERE THE SPEAKER STANDS ---------------------------------------------
    THE INTRO'S COMPOSITION, VERBATIM, AND ONE DERIVED NUMBER. The opening
@@ -691,6 +720,8 @@ export const FINALE_SHOTS = [
   {
     beat: 0, from: say(0, 'There is nothing left'), off: 0.45, at: 'town', a: 0.62, dist: 82, high: 34,
     lift: 0.11, turn: 0, pan: 0.46, in: 0, lin: true, stage: false, cue: null, sky: true,
+    /* `gates` — THE ROADS START HERE, not on the wide shot. See `SNAKE_TIMES`. */
+    gates: true,
   },
   /* ...AND OUT, far enough that the archipelago is the frame. "Zoom out to show
      all the area and all the knocked over mischief, and also zoom out far
@@ -1195,6 +1226,9 @@ export class SummonScene {
     this.bridgeWant = 0;
     this.bridgeHold = false;
     this.bridgeRate = 1 / SNAKE_RISE;
+    /** True while THIS showing of the ending is the one building the roads —
+     *  the clock in `_updateBridges` drives them rather than the rate. */
+    this.snakeLive = false;
 
     this.camera = new THREE.PerspectiveCamera(54, 16 / 9, 0.1, 4000);
     this._look = new THREE.Vector3();
@@ -1375,6 +1409,7 @@ export class SummonScene {
          them again — the sky does not go back to the storm either. */
       this.bridgeWant = 1;
       this.bridgeHold = this.bridges < 1;
+      this.snakeLive = this.bridges < 1;
       /* ...AND HOLDS IT THERE UNTIL THE LINE THAT SHOWS IT. See `sky` on the
          shot table: the targets are set now, on acceptance, and the easing
          toward them waits for the row that carries `sky`. */
@@ -1895,6 +1930,30 @@ export class SummonScene {
     };
   }
 
+  /**
+   * When, on the scene's clock, the far islands start, the gates start, the
+   * roads start and the roads are done — see `SNAKE_TIMES`. Null outside the
+   * ending, or on a table that has lost either row.
+   */
+  _snakeTimes() {
+    if (this.which !== 'finale' || !this.script) return null;
+    const A = FINALE_SHOTS.find((sh) => sh.gates);
+    const B = FINALE_SHOTS.find((sh) => sh.snake);
+    if (!A || !B || !this.script[A.beat] || !this.script[B.beat]) return null;
+    const tA = this._at(A);
+    const tB = this._at(B);
+    const nx = this._nextCut(B);
+    const tC = nx && this.script[nx.beat] ? this._at(nx) : tB + SNAKE_RISE;
+    const lenA = Math.max(0.5, tB - tA);
+    return {
+      isle: tA + lenA * SNAKE_TIMES.isle,
+      gate0: tA + lenA * SNAKE_TIMES.gate0,
+      road0: tA + lenA * SNAKE_TIMES.road0,
+      end: tB + (tC - tB) * SNAKE_OF_SHOT,
+      stop: tC,
+    };
+  }
+
   /** The next row after this one that actually moves the camera — `into`'s
    *  destination. Across a beat boundary on purpose: the Dojo's push ends on
    *  the first row of the next line. */
@@ -2014,12 +2073,8 @@ export class SummonScene {
     /* A FIELD, NOT A CUE, like `sky` — `cue` is `FinaleShow`'s phase, and a
        phase named for something it does not draw would be a phase it has to
        learn to ignore. */
-    if (shot.snake) {
-      const nx = this._nextCut(shot);
-      const span = nx ? this._at(nx) - this._at(shot) : SNAKE_RISE;
-      this.bridgeRate = 1 / Math.max(0.5, span * SNAKE_OF_SHOT);
-      this.bridgeHold = false;
-    }
+    /* (Snake Way used to be released here, on the `snake` row, at a rate.
+       It is on the scene's clock now — see `_snakeTimes`.) */
     /* THE ENDING'S THREE ACTS, CUT WHERE THE PICTURE CUTS. See `MUSIC.finale`,
        `finaleCross` and `finaleOpen` in core/audio.js for what each one is and
        why there are three. The scene only ever states WHICH; `Game._wantedTrack`
@@ -2141,7 +2196,9 @@ export class SummonScene {
        the unbuilt end of — `World.setBridges` makes them ground only at 1 —
        so on the skip path they are simply up. */
     this.bridgeHold = false;
+    this.snakeLive = false;
     this.bridges = this.bridgeWant;
+    if (this.world) this.world.snakeGateShare = null;
     this.world?.setBridges(this.bridges);
     /* ...AND THE STAGE COMES DOWN WITH IT, on the skip path as much as the
        end. Everything `FinaleShow` builds lives in the game's own scene graph:
@@ -2178,7 +2235,11 @@ export class SummonScene {
     this.bridgeWant = 0;
     this.bridges = 0;
     this.bridgeHold = false;
+    this.snakeLive = false;
     this.world?.setBridges(0);
+    /* ...AND THE ISLANDS ON THE HORIZON GO BACK UNDER THEIR CLOUDS, for the
+       next ending to bring up again. */
+    this.world?.farIsles?.hideAll();
   }
 
   /**
@@ -2215,7 +2276,27 @@ export class SummonScene {
   /** Grow Snake Way toward what the run says it should be. Only ever up —
    *  `resetSky` is what takes it down, and it does that on the spot. */
   _updateBridges(dt) {
-    if (!this.bridgeHold && this.bridges < this.bridgeWant) {
+    /* THE BUILD IS PAID FOR BEFORE IT IS SHOWN. From the moment the ending is
+       accepted the roads are wound a few milliseconds a frame, so the frame
+       the first gate appears on is a frame like any other. See
+       `World.prepareSnakeWay` for the half-second spike this replaced. */
+    const W = this.world;
+    if (W && this.bridgeWant > 0 && !W.snakeWay) W.prepareSnakeWay(SNAKE_BUDGET);
+    if (this.snakeLive && this.active && W) {
+      const T = this._snakeTimes();
+      if (T) {
+        const now = this._now();
+        W.snakeGateShare = (T.road0 - T.gate0) / Math.max(0.01, T.end - T.gate0);
+        const p = Math.min(1, (now - T.gate0) / Math.max(0.01, T.end - T.gate0));
+        /* Only ever up, and a scene nudged past the whole build lands on 1. */
+        if (p > this.bridges) this.bridges = p;
+        /* THE ISLANDS COME THROUGH THEIR CLOUDS WHEN THIS CAMERA CAN SEE THEM,
+           one at a time, from the isle mark to the end of the wide shot —
+           "if the island is not in the camera frustum... it can just enable
+           in". The ones never seen are put up whole by `setBridges(1)`. */
+        if (now >= T.isle && now < T.stop) W.farIsles?.startVisible(this.camera);
+      }
+    } else if (!this.bridgeHold && this.bridges < this.bridgeWant) {
       this.bridges = Math.min(this.bridgeWant, this.bridges + dt * this.bridgeRate);
     }
     if (this.bridges !== this._bridgesSent) {

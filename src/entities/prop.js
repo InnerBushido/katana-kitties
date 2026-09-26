@@ -9,6 +9,10 @@ import { PALETTE, mergeParts, valueNoise } from '../world/build.js';
    enough to need a physics engine.
 --------------------------------------------------------------------------- */
 
+/** What a cane of bamboo is worth. Named because a Snake Way coin is worth
+ *  five of them (`COIN_CANES`), and a copy of 25 would drift. */
+export const BAMBOO_POINTS = 25;
+
 const SHARED_MAT = toonVertexMat();
 const GEO_CACHE = new Map();
 
@@ -161,7 +165,7 @@ export class Prop {
     this.katanaOnly = kind === 'bamboo';
     /** Worth more, because cutting it means landing first. Icicles are worth
      *  a little extra too — they're a flight away from anywhere. */
-    this.points = kind === 'bamboo' ? 25 : kind === 'icicle' ? 15 : 10;
+    this.points = kind === 'bamboo' ? BAMBOO_POINTS : kind === 'icicle' ? 15 : 10;
   }
 
   /** Shove it. `dir` is a normalised XZ direction, `power` roughly 1. */

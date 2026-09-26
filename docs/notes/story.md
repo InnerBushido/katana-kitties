@@ -722,6 +722,9 @@ shots, where a blink would eat a word.
 
 ### `snake` — the roads grow across the wide shot
 
+> Superseded in part: the roads now grow across TWO pans, on a clock. See
+> "The roads' clock, across two pans" below; this section is the first pass.
+
 > "During the ending cutscene, while viewing the entire islands (when the sky is
 > changing), it shows the bridges being constructed, magically, from the main
 > island, to the smaller islands."
@@ -747,6 +750,28 @@ of a 2.13 s shot.
   again**, just as the sky does not go back to the storm.
 - **Skipping finishes them outright.** See [world.md](world.md) for why a
   half-grown road may never be ground.
+
+### The roads' clock, across two pans
+
+> "Have the bridges start being constructed at about 50% of the way through
+> the first 'there is nothing left standing' speech ... have the islands fade
+> in at about the 10-20% mark ... Before the bridges start constructing, the
+> torii gate should be finished completely spawning in." And they should finish
+> at 90–95% of the second pan, growing for most of it.
+
+The `gates: true` row (A, the truck across the town on "There is nothing left")
+and the `snake: true` row (B, the pull-out) carry it together. `SNAKE_TIMES`
+holds fractions of A: `isle` 0.15, `gate0` 0.22, `road0` 0.5. The roads end at
+`SNAKE_OF_SHOT` (0.93) of B. `_snakeTimes()` reads them off the table, so a
+re-timed line re-times all of it. Measured in the pane: isles from 5.85 s,
+gates 6.07 s, roads 6.97 s, done 11.44 s, against A at 5.40 s and B at 8.57 s.
+Each road has its own span inside that window, and the longest takes all of it.
+
+**The roads are solved while the scene plays, before they are needed.**
+`prepareSnakeWay(SNAKE_BUDGET)` pumps the build generator for 6 ms a frame from
+acceptance. At 3 ms it finished at 6.10 s, three hundredths after the gates
+were due. The remainder was drained on that frame (115 ms). See
+[performance.md](performance.md) for the rest of the ending's hitches.
 
 ### Nothing in the table is a coordinate
 

@@ -5672,8 +5672,11 @@ export class Player {
         const R = this.snakeRide;
         R.s = hit.s;
         R.t += dt;
-        if (Math.abs(hit.lat) > SNAKE.lock) {
-          const over = hit.lat - Math.sign(hit.lat) * SNAKE.lock;
+        /* THE ROAD'S OWN RAILS: the arena's is twice as wide, so four can run
+           it abreast. */
+        const lock = road.lock ?? SNAKE.lock;
+        if (Math.abs(hit.lat) > lock) {
+          const over = hit.lat - Math.sign(hit.lat) * lock;
           const rx = -hit.tz;
           const rz = hit.tx;
           this.position.x -= rx * over;
@@ -5693,7 +5696,7 @@ export class Player {
       this.snakeRide = null;
       return;
     }
-    const near = R.road.locate(this.position.x, this.position.z, Infinity, SNAKE.halfW + 6);
+    const near = R.road.locate(this.position.x, this.position.z, Infinity, (R.road.halfW ?? SNAKE.halfW) + 6);
     if (near && this.position.y > near.y - 10) {
       R.s = near.s;
       R.t += dt;
@@ -5740,6 +5743,10 @@ export class Player {
   snakeSubject() {
     const R = this.snakeRide;
     if (!R || this.mount || this.rideAlong) return null;
+    /* A COIN IN HER PAWS IS HER MOMENT. The blessing pull-in is her own
+       follow camera's (`aloftT`), and the ride camera laid on top would swing
+       it away down the road. */
+    if (this.aloftT > 0) return null;
     return {
       road: R.road, s: R.s, dir: R.dir,
       x: this.position.x, y: this.position.y, z: this.position.z, spread: 0,

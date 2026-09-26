@@ -11,6 +11,7 @@
 --------------------------------------------------------------------------- */
 
 import * as THREE from 'three';
+import { Worker } from 'node:worker_threads';
 import { World, CLANS } from '../src/world/world.js';
 import { Dragon, BREEDS, DRAGON_SPOTS } from '../src/entities/dragon.js';
 import { Billboard, xrayVertexMat } from '../src/core/gfx.js';
@@ -29,9 +30,10 @@ import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../s
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import {
   SCRIPTS, DUSK_DEEP, DUSK_FALL, DAWN_RISE, DAWN_DEEP, SummonScene, BEAT_ACTS,
-  FINALE_SHOTS, MUSIC_CUES, say, SNAKE_RISE,
+  FINALE_SHOTS, MUSIC_CUES, say, SNAKE_RISE, SNAKE_TIMES, SNAKE_OF_SHOT,
 } from '../src/systems/summonscene.js';
-import { SNAKE, SNAKE_LINKS } from '../src/world/snakeway.js';
+import { SNAKE, SNAKE_LINKS, SNAKE_ARENA, COIN_CANES } from '../src/world/snakeway.js';
+import { FAR } from '../src/world/farisles.js';
 import { snakePose, SnakeCam, SNAKE_MOVE } from '../src/systems/snakecam.js';
 import { Announcer } from '../src/systems/announce.js';
 import { FinaleTide } from '../src/systems/finaletide.js';
@@ -44,7 +46,7 @@ import {
   snapshot, describe, restore,
   castRow, applyCast, meaningful, newSessionId,
 } from '../src/systems/savegame.js';
-import { Prop } from '../src/entities/prop.js';
+import { Prop, BAMBOO_POINTS } from '../src/entities/prop.js';
 import { STEAL, DBREATH, ARENA_POWERS, BreathTally, arenaPowerFor } from '../src/entities/clanpower.js';
 import {
   SHRINE_DAIS, SHRINE_STEPS, SHRINE_GATE,
@@ -23442,9 +23444,10 @@ console.log('\n--- one press is not enough, and one player drives ---');
     /* LESS SNAKE WAY'S GATES, which are the one torii that is meant to be
        missing from the model: they are built after the ending, and the model
        is the archipelago BEFORE the roads (Patchfur is telling the story of
-       how they were lost). They are the calls sized by `toriiScale()`, and
-       the SNAKE WAY section counts them against the roads instead. */
-    const built = (wsrc.match(/buildTorii\((?!toriiScale)/g) ?? []).length;
+       how they were lost). They are the calls sized by `toriiScale()` — as
+       `ts`, since Mr Satan's road picks his own torii off the same number —
+       and the SNAKE WAY section counts them against the roads instead. */
+    const built = (wsrc.match(/buildTorii\((?!toriiScale|ts\))/g) ?? []).length;
     ok('...and there is one entry for every torii the world builds',
       L.filter((m) => m.kind === 'torii').length === built,
       `${L.filter((m) => m.kind === 'torii').length} listed, ${built} built`);
@@ -29204,11 +29207,98 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
   W.setBridges(0);
   ok('...and asking for none of it still builds none of it', W.snakeWay == null);
 
+  /* THE ROADS ARE WOUND A FEW MILLISECONDS A FRAME, and the frame is what
+     this is about: "There is currently a lag when the snake bridges start to
+     be constructed during the cutscene." Built in one go it was 420ms here
+     and 650 in Firefox, on one frame. Every slice is timed; the worst was
+     9.3-9.4ms over a dozen runs on Richard's machine (the landing search was
+     13ms a call before it gathered its obstacles once, and one wind candidate
+     33ms before `windPath` yielded per attempt). The bar is 25 — well clear of
+     the spread, and still under the two frames a hitch has to be to show.
+
+     IN A HEAP OF ITS OWN. Timed here, one slice read 39ms on every run and
+     the same slice 9ms in a fresh process: by this point in the file the heap
+     holds everything four thousand checks above it built, and a major
+     collection landing inside a slice is THIS process's cost, not the game's
+     — a browser tab's heap is a fraction of it. Subtracting the collector's
+     reported pauses got it to 12-24ms, which is a coin flip against any bar
+     worth having. A worker thread is a fresh isolate with a fresh heap, which
+     is what a tab is; the roads below are still wound in this one. */
+  const sliceRun = await new Promise((resolve) => {
+    const w = new Worker(`
+      const { parentPort, workerData } = require('node:worker_threads');
+      (async () => {
+        const THREE = await import(workerData.three);
+        const cv = () => ({ width: 1, height: 1, getContext: () => new Proxy({}, {
+          get: (_, k) => (k === 'measureText' ? () => ({ width: 10 })
+            : String(k).startsWith('create') ? () => ({ addColorStop() {} }) : () => {}),
+          set: () => true }) });
+        globalThis.document = { createElement: cv, getElementById: () => null };
+        const { World } = await import(workerData.world);
+        const W = new World(new THREE.Scene());
+        const times = [];
+        for (let done = false; !done && times.length < 20000;) {
+          const t0 = performance.now();
+          done = W.prepareSnakeWay(0);
+          times.push(performance.now() - t0);
+        }
+        times.sort((a, b) => b - a);
+        parentPort.postMessage({ built: !!W.snakeWay, slices: times.length, worst: times[0] });
+      })().catch((e) => parentPort.postMessage({ error: String(e) }));
+    `, {
+      eval: true,
+      workerData: {
+        three: import.meta.resolve('three'),
+        world: new URL('../src/world/world.js', import.meta.url).href,
+      },
+    });
+    w.once('message', (m) => { resolve(m); w.terminate(); });
+    w.once('error', (e) => resolve({ error: String(e) }));
+  });
+  const slices = sliceRun.slices ?? 0;
+  const worstSlice = sliceRun.worst ?? Infinity;
+  if (sliceRun.error) console.log('   slice worker:', sliceRun.error);
+  while (!W.prepareSnakeWay(50));
+  ok('Snake Way is built in slices, none of them a hitch',
+    sliceRun.built && !!W.snakeWay && slices > 200 && worstSlice < 25,
+    `${slices} slices, worst ${worstSlice.toFixed(1)}ms`);
+  /* AND WHAT IT BUILT IS ON THE GPU BEFORE A SHOT SHOWS IT. Stepped in the
+     pane, a frame at a time with the event loop let run between frames, the
+     ending's worst frame went 587ms -> 63ms (the scene's own first frame,
+     unchanged) and every cut under 60. Four things made that, and each of them
+     was once missing in a way the screen could not show: */
+  {
+    const src = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    const endBranch = src.slice(src.indexOf('this.summonScene.dojoDrivers?.()'),
+      src.indexOf('this._renderView(this.summonScene.camera'));
+    ok('the ending\'s own draw warms and primes Snake Way (it never calls _render)',
+      /this\._warmSnake\(\);/.test(endBranch) && /this\._primeFinale\(\);/.test(endBranch),
+      'both calls once sat only in _render, which the ending does not use');
+    const prime = src.slice(src.indexOf('  _primeFinale() {'), src.indexOf('  _renderView('));
+    ok('the roads are primed only once their shaders have linked',
+      /this\._snakeLinked === W/.test(prime),
+      'drawn on the frame compileAsync was issued, the draw waits for the link');
+    const add = src.slice(src.indexOf('  _primeAdd(root'), src.indexOf('  _primeFinale() {'));
+    ok('priming skips what is hidden unless it is about to be revealed',
+      /if \(!lift && !o\.visible\) return;/.test(add)
+        && /_primeAdd\(W\.group, true\)/.test(prime) && /_primeAdd\(this\.scene\);/.test(src),
+      'lifting everything uploaded 200 meshes the ending never shows, one frame taking 1s');
+    ok('priming draws a fixed slice, not one timed on the JavaScript clock',
+      /q\.splice\(0, PRIME_BATCH\)/.test(prime) && !/performance\.now/.test(prime),
+      'render() returns before the GPU uploads; a timed slice grew to 256 and took a second');
+  }
+  /* AND THE ARENA'S ROAD IS DRAWN AND SOLID ONLY WITH AN ARENA AT THE END OF
+     IT. Every property below is asked of all seven, so it is asked open. */
+  const hadArena = W.arenaOpen;
+  W.openArena(true);
   const Sw = W.buildSnakeWay();
   const R = Sw.roads;
-  ok('six roads, from home to every island the old roads reached',
-    R.length === SNAKE_LINKS.length && SNAKE_LINKS.every((n) => R.some((r) => r.name === n)),
+  ok('seven roads: home to every island the old roads reached, and one to the arena',
+    R.length === SNAKE_LINKS.length + 1 && SNAKE_LINKS.every((n) => R.some((r) => r.name === n))
+    && R.some((r) => r.arena && r.to.kind === 'arena'),
     R.map((r) => r.name).join(' '));
+  ok('...the frost island included, which was the one that had none',
+    R.some((r) => r.name === 'frost'));
   ok('...and not one of them has a fault',
     R.every((r) => !r.faults.length),
     R.filter((r) => r.faults.length).map((r) => `${r.name}:${r.faults.join('|')}`).join(' ') || 'none');
@@ -29262,7 +29352,11 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
        the reason it may: it is built here, per road, and nowhere else. */
     const wsrc = readFileSync(new URL('../src/world/world.js', import.meta.url), 'utf8');
     ok('...and those gates are the only torii not in the landmarks',
-      (wsrc.match(/buildTorii\(toriiScale\(\)/g) ?? []).length === 1);
+      (wsrc.match(/buildTorii\(ts\)/g) ?? []).length === 1 && /const ts = toriiScale\(/.test(wsrc));
+    /* MR SATAN'S ROAD IS HIS: his torii, his lion. */
+    ok('...and the arena\'s gates are Mr Satan\'s torii, guarded by his lion',
+      /road\.arena \? buildSatanTorii\(ts\) : buildTorii\(ts\)/.test(wsrc)
+      && /buildSatanLion\(/.test(wsrc));
   }
 
   /* --- GROUND ONLY WHEN IT IS FINISHED ---------------------------------
@@ -29270,6 +29364,23 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
      and run off the unbuilt end of is a trap, so it is not ground at all
      until `setBridges(1)` — the arena's rule. */
   const mid = (r) => r.frameAt(r.length / 2);
+  /* --- THE GATES FIRST, THEN THE ROADS ------------------------------------
+     "Before the bridges start constructing, the torii gate should be finished
+     completely spawning in." */
+  const G = SNAKE.gateShare;
+  W.setBridges(G * 0.5);
+  ok('the home gates form first — part-way through, some are still forming',
+    R.some((r) => r.gateT > 0 && r.gateT < 1) && R.every((r) => r.grow === 0));
+  W.setBridges(G);
+  ok('...and every one of them is whole before any road has started',
+    R.every((r) => r.gateT === 1 && r.grow === 0),
+    R.map((r) => `${r.name}:${r.gateT.toFixed(2)}/${r.grow.toFixed(2)}`).join(' '));
+  /* "Some of the bridges can construct slower than the other bridges": the
+     longest takes the whole window and the rest land a little early. */
+  ok('...then the longest road takes all of the time there is, and the rest land just before it',
+    R.filter((r) => r.growWin[1] === 1).length === 1
+    && R.find((r) => r.growWin[1] === 1) === R.reduce((a, r) => (r.length > a.length ? r : a))
+    && R.every((r) => r.growWin[1] >= 0.85));
   W.setBridges(0.5);
   ok('half grown, no road is ground yet',
     R.every((r) => {
@@ -29281,8 +29392,8 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     W.solids.filter((s) => s.snake).length >= R.length * 4
     && W.solids.filter((s) => s.snake).every((s) => s.off));
   ok('...and it IS half grown — a prefix of every road drawn, from the home end',
-    R.every((r) => r.mesh.visible && r.grow > 0 && r.grow < 1)
-    && R.every((r, k) => k === 0 || R[k - 1].grow >= r.grow));
+    R.every((r) => r.mesh.visible && r.grow > 0 && r.grow < 1
+      && r.mesh.geometry.drawRange.start === 0 && r.mesh.geometry.drawRange.count < Infinity));
   W.setBridges(1);
   {
     let bad = 0;
@@ -29311,10 +29422,91 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
       const m = mid(r);
       const rx = -m.tz / Math.hypot(m.tx, m.tz);
       const rz = m.tx / Math.hypot(m.tx, m.tz);
-      const on = W.heightAt(m.x + rx * (SNAKE.halfW - 0.3), m.z + rz * (SNAKE.halfW - 0.3), m.y + 0.3);
-      const off = r.locate(m.x + rx * (SNAKE.halfW + 1), m.z + rz * (SNAKE.halfW + 1), m.y + 0.3);
+      const on = W.heightAt(m.x + rx * (r.halfW - 0.3), m.z + rz * (r.halfW - 0.3), m.y + 0.3);
+      const off = r.locate(m.x + rx * (r.halfW + 1), m.z + rz * (r.halfW + 1), m.y + 0.3);
       return on && Math.abs(on.y - m.y) < 0.3 && !off;
     }));
+  {
+    /* THE ARENA ROAD. "Make it wider so all 4 players can run on it together
+       (maybe twice as wide)... Should make the snake path longer and more
+       winding for the arena so they can hear at least 25% of the song, can
+       even have it go all the way around the arena island before landing at
+       the front of it." */
+    const A = R.find((r) => r.arena);
+    const plain = R.filter((r) => !r.arena);
+    ok('the arena road is at least twice as wide as the others',
+      A.halfW >= SNAKE.halfW * 2 && A.halfW === SNAKE_ARENA.halfW, `${A.halfW} vs ${SNAKE.halfW}`);
+    /* FOUR ABREAST: four kittens' shoulders (1.3 units each, measured off the
+       sheet at the height they are drawn) inside the rails. */
+    ok('...with room between its rails for four kittens side by side',
+      A.lock * 2 >= 4 * 1.3 && A.lock < A.halfW, `${(A.lock * 2).toFixed(1)} between the rails`);
+    const chorus = 96 * MUSIC.satan.beat;
+    const ride = A.length / (SNAKE.speed ?? 14.2);
+    ok('...and long enough to hear a good deal more than a quarter of his song',
+      ride >= chorus * 0.25 * 2 && A.length > Math.max(...plain.map((r) => r.length)),
+      `${A.length.toFixed(0)} units, ${ride.toFixed(0)}s against a ${chorus}s chorus`);
+    /* ROUND THE ISLAND: the bearing of the road from the arena's centre
+       sweeps most of a full turn before it lands. */
+    const c = W.arenaCentre;
+    let sweep = 0;
+    for (let i = 1; i < A.pts.length; i++) {
+      const a0 = Math.atan2(A.pts[i - 1].z - c.z, A.pts[i - 1].x - c.x);
+      const a1 = Math.atan2(A.pts[i].z - c.z, A.pts[i].x - c.x);
+      let d = a1 - a0;
+      if (d > Math.PI) d -= Math.PI * 2;
+      if (d < -Math.PI) d += Math.PI * 2;
+      if (Math.hypot(A.pts[i].x - c.x, A.pts[i].z - c.z) < (W.arenaIsland?.radius ?? 60) * 3) sweep += d;
+    }
+    ok('...going all the way round the arena island before it lands',
+      Math.abs(sweep) > Math.PI * 1.6, `${((Math.abs(sweep) * 180) / Math.PI).toFixed(0)}°`);
+    const end = A.pts.at(-1);
+    const front = W.arenaLanding ?? c;
+    ok('...and landing at its FRONT, where the griffin puts you down',
+      Math.hypot(end.x - front.x, end.z - front.z) < 16,
+      `${Math.hypot(end.x - front.x, end.z - front.z).toFixed(1)} from the landing`);
+    W.openArena(false);
+    const m = mid(A);
+    ok('...and while the arena is shut its road is not there at all',
+      !A.mesh.visible && W.snakeAt(m.x, m.z, m.y + 1) == null
+      && W.solids.filter((s) => s.arenaRoad).every((s) => s.off));
+    W.openArena(true);
+    ok('...and opening it brings the road with it',
+      A.mesh.visible && W.snakeAt(m.x, m.z, m.y + 1)?.road === A
+      && W.solids.filter((s) => s.arenaRoad).every((s) => !s.off));
+  }
+  {
+    /* THE LANDINGS MEET THE GROUND. "The entrance to the bridges on the
+       islands, seems to be a bit elevated... Should either have a ramp... or
+       add some rocks/grass". Both: a ramp that is real ground from the deck
+       down into the grass, and a skirt of rock under it. */
+    let worst = 0;
+    let where = '';
+    for (const r of R) {
+      for (const end of [0, 1]) {
+        const E = end ? r.pts.at(-1) : r.pts[0];
+        const hl = Math.hypot(E.tx, E.tz) || 1;
+        const ix = ((end ? 1 : -1) * E.tx) / hl;
+        const iz = ((end ? 1 : -1) * E.tz) / hl;
+        const top = W.heightAt(E.x + ix * 0.3, E.z + iz * 0.3, E.y + 0.5);
+        const fx = E.x + ix * 4.3;
+        const fz = E.z + iz * 4.3;
+        const foot = W.heightAt(fx, fz, E.y + 0.5);
+        /* The ground there is whatever stands on the island — the arena's
+           landing is on its plaza, not its grass — and past the foot of the
+           ramp is a step a kitten walks over, not a lip. */
+        const isl = end ? r.to : r.from;
+        const grass = W._standAt(fx, fz, isl);
+        const past = W.heightAt(E.x + ix * 5.2, E.z + iz * 5.2, E.y + 0.5);
+        const e1 = top ? Math.abs(top.y - E.y) : 9;
+        const e2 = foot && grass != null ? Math.abs(foot.y - grass) : 9;
+        const e3 = foot && past ? Math.abs(foot.y - past.y) * 0.75 : 9;
+        const e = Math.max(e1, e2, e3);
+        if (e > worst) { worst = e; where = `${r.name}:${end}`; }
+      }
+    }
+    ok('every landing has a ramp from its deck down to the grass, and it is ground',
+      worst < 0.3, `worst ${worst.toFixed(2)} at ${where}`);
+  }
   ok('...and it knows which road it is',
     R.every((r) => { const m = mid(r); return W.snakeAt(m.x, m.z, m.y + 1)?.road === r; }));
   ok('...and now the gates and the snakes are solid',
@@ -29324,21 +29516,133 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
   ok('...and building them changed nothing a save knows the world by',
     W.props.length === props0 && worldSig(W) === sig0, `${sig0} -> ${worldSig(W)}`);
 
-  /* --- THE FAR WORLDS -------------------------------------------------- */
-  W.setSky(0, 0);
-  ok('the far islands are not there before the ending', !W.farIsles.group.visible);
+  /* --- COINS ---------------------------------------------------------------
+     "Gold coins in the center of the bridges... they get the equivalent of
+     '5x bamboo cut' added to their score... The one for the arena can have a
+     Mr. Satan emblem... The coin can be twice as big too." */
+  {
+    const C = Sw.coins;
+    ok('one coin on every road, at its middle',
+      C.length === R.length && C.every((c) => Math.abs(c.s - c.road.length / 2) < 0.01));
+    const sat = C.find((c) => c.kind === 'satan');
+    ok('...Mr Satan\'s on his road, twice the size of the rest',
+      !!sat && sat.road.arena && C.every((c) => c === sat || Math.abs(sat.r - c.r * 2) < 1e-6));
+    ok('...worth five canes of bamboo', COIN_CANES * BAMBOO_POINTS === 125);
+    ok('...and all there once the roads are', C.every((c) => c.group.visible));
+    const c0 = C.find((c) => c.kind === 'snake');
+    ok('...touched on the deck, where a kitten running the road is',
+      W.coinAt(c0.x, c0.y, c0.z) === c0 && W.coinAt(c0.x, c0.y + 30, c0.z) == null);
+    ok('...and once taken, gone — nothing regrows',
+      W.takeCoin(c0) && !c0.group.visible && W.coinAt(c0.x, c0.y, c0.z) == null && !W.takeCoin(c0)
+      && W.coinsTaken().join() === c0.road.name);
+    W.setBridges(1);
+    ok('...not even when the roads are asked for again', !c0.group.visible);
+    W.setCoinsTaken([]);
+    ok('...and only a restart puts it back', c0.group.visible && !c0.taken);
+    W.setCoinsTaken([c0.road.name]);
+    ok('...which is also how a save brings a spent one back spent', c0.taken && !c0.group.visible);
+    W.setCoinsTaken([]);
+    const msrc = stripComments(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'))
+      .replace(/\s+/g, ' ');
+    /* "Any coin on bridge can only be grabbed if the player is on the bridge
+       (not on a dragon)" — `snakeRide` is null on every mount by
+       construction — and the arena's blesses everybody. */
+    ok('...taken only by a kitten ON the road, never from a dragon',
+      /if \(!p\?\.snakeRide \|\| p\.mount \|\| p\.rideAlong/.test(msrc));
+    ok('...and Mr Satan\'s blesses every kitten playing, and pays every one',
+      /c\.kind === 'satan' \? this\.players\.filter\(Boolean\) : \[p\]/.test(msrc)
+      && /q\.score \+= pts; .* q\.holdAloft\(c\.face/.test(msrc));
+    const svsrc = stripComments(readFileSync(new URL('../src/systems/savegame.js', import.meta.url), 'utf8'));
+    ok('...and a save remembers which are spent',
+      /coins: world\.coinsTaken/.test(svsrc) && /setCoinsTaken\?\.\(W\.coins/.test(svsrc));
+  }
+
+  /* --- THE CLOUDS SHE RUNS THROUGH -----------------------------------------
+     "Use the xray shader when player is running through the clouds, shouldn't
+     be too aggressive, so maybe 50% and about as big as the player." */
+  {
+    const pm = Sw.puffMat;
+    const u = pm.uniformsRef;
+    ok('the road\'s clouds thin where a kitten is behind them',
+      typeof pm.setCuts === 'function' && u.uCutK.value === 0.5,
+      `by ${u.uCutK.value}`);
+    ok('...by a hole about her own size', u.uCutR.value >= 1.2 && u.uCutR.value <= 2.4,
+      `${u.uCutR.value} units`);
+    pm.setCuts(new THREE.Vector3(0, 50, 0), [new THREE.Vector3(1, 2, 3)]);
+    ok('...aimed from the lens that is drawing, at her',
+      u.uCutOn.value[0] === 1 && u.uCutOn.value[1] === 0 && u.uCutPos.value[0].z === 3);
+    const msrc = stripComments(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'));
+    ok('...for every pane, like every other x-ray',
+      /this\._aimCloudXray\(camera, members\)/.test(msrc));
+  }
+
+  /* --- ANYTHING PLAY PUT DOWN IS STEPPED OFF THE ROADS -------------------
+     The roads are solved against the world as BUILT (`world.snakeBase`), so
+     an orb seeded at 100% can be lying where one lands. */
+  {
+    const e = R.find((r) => r.name === 'frost').pts[0];
+    const to = W.offRoads(e.x, e.z);
+    ok('a thing lying on a landing has somewhere clear to go',
+      !!to && !W.onSnakeWay(to.x, to.z) && W.offRoads(to.x, to.z) == null);
+    const msrc = stripComments(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'));
+    ok('...and the game moves the loose orbs there the moment the roads exist',
+      /this\.world\.onSnakeBuilt = \(\) => this\._clearRoads\(\)/.test(msrc));
+  }
+
+  /* --- THE FAR WORLDS --------------------------------------------------
+     "Make them appear and construct in a more cool way... through the clouds
+     ... as if the clouds act as a masking portal... We should make the islands
+     appear when they are in view of the camera in the cutscene... if the
+     island is not in the camera frustum... it can just enable in." */
+  {
+    const F = W.farIsles;
+    F.hideAll();
+    W.setSky(0, 1);
+    ok('the far islands are not there before the ending — not even under a clear sky',
+      !F.group.visible && !F.anyShown);
+    ok('...out on the horizon, clear of the arena, with water falling off them',
+      F.isles.length >= 5
+      && F.isles.every((i) => Math.hypot(i.x, i.z) > 400
+        && Math.hypot(i.x - W.arenaCentre.x, i.z - W.arenaCentre.z) > 300)
+      && !!F.meshes.water && !!F.meshes.points && !!F.meshes.portal);
+    const cam = new THREE.PerspectiveCamera(54, 16 / 9, 0.1, 4000);
+    const aimAt = (s) => {
+      cam.position.set(s.x * 0.5, s.y + 40, s.z * 0.5);
+      cam.lookAt(s.x, s.y, s.z);
+      cam.updateMatrixWorld();
+      cam.updateProjectionMatrix();
+    };
+    const s0 = F.isles[0];
+    cam.position.set(s0.x * 0.5, s0.y + 40, s0.z * 0.5);
+    cam.lookAt(s0.x * 2, s0.y + 900, s0.z * 2);
+    cam.updateMatrixWorld();
+    ok('...an island the camera cannot see does not start', F.startVisible(cam) === 0 && !F.anyShown);
+    aimAt(s0);
+    ok('...one it can see does, and alone',
+      F.startVisible(cam) === 1 && F.isles.filter((s) => s.started).length === 1);
+    ok('...and never two on one frame, so they arrive as a sequence', F.startVisible(cam) === 0);
+    const started = F.isles.find((s) => s.started);
+    const U = () => F.U.uIsle.value[started.slot];
+    F.update(FAR.reveal * 0.35);
+    ok('...coming UP THROUGH its cloud — below the cloud\'s plane, not drawn yet',
+      U().x > 0 && U().x < FAR.rise && U().y > -1e8 && U().z < 1,
+      `${U().x.toFixed(1)} below, clip at ${U().y.toFixed(1)}`);
+    ok('...its water not falling yet', started.fall === 0);
+    F.update(FAR.reveal);
+    ok('...then standing in the sky, whole, and its waterfall forming',
+      U().x === 0 && U().y < -1e8 && started.fall > 0 && started.fall < 1,
+      `fall ${started.fall.toFixed(2)}`);
+    F.update(FAR.fall + 1);
+    ok('...into a waterfall that has reached the cloud sea', started.fall === 1);
+    F.revealAll();
+    ok('...and the ones nobody saw are simply there when the roads are, water and all',
+      F.isles.every((s) => s.started && s.reveal === 1 && s.fall === 1));
+    F.hideAll();
+    W.setBridges(1);
+    ok('...which is what finishing the roads does', F.isles.every((s) => s.reveal === 1));
+  }
   W.setSky(0, 1);
-  ok('...and after it they have risen out of the clouds, all the way',
-    W.farIsles.group.visible && Math.abs(W.farIsles.group.position.y) < 0.01);
-  W.setSky(0, 0.3);
-  ok('...having come UP, rather than faded in where they stand',
-    W.farIsles.group.position.y < -50, W.farIsles.group.position.y.toFixed(1));
-  ok('...out on the horizon, clear of the arena, with water falling off them',
-    W.farIsles.isles.length >= 5
-    && W.farIsles.isles.every((i) => Math.hypot(i.x, i.z) > 400
-      && Math.hypot(i.x - W.arenaCentre.x, i.z - W.arenaCentre.z) > 300)
-    && W.farIsles.group.children.length > W.farIsles.isles.length);
-  W.setSky(0, 1);
+  W.openArena(hadArena);
 
   /* --- THE RIDE ---------------------------------------------------------
      "The input direction that is being pressed to go up (when starting the
@@ -29611,10 +29915,13 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
 }
 
 /* --- AND THE ENDING THAT BUILDS THEM ----------------------------------------
-   "It shows the bridges being constructed, magically, from the main island, to
-   the smaller islands, during the cutscene while the camera is panning and
-   showing all/mostly all the islands." Held until that shot, timed off it, and
-   finished outright if the ending is skipped. */
+   ON THE SCENE'S CLOCK, ACROSS TWO PANS. "Have the bridges start being
+   constructed at about 50% of the way through the first 'there is nothing left
+   standing' speech... have the islands fade in at about the 10-20% mark...
+   Before the bridges start constructing, the torii gate should be finished
+   completely spawning in... finish the construction at about the 90 - 95%
+   completion of the camera pan." Driven here the way the scene drives it: by
+   setting where the scene IS and asking. */
 {
   const prevDoc = globalThis.document;
   const hadDocB = 'document' in globalThis;
@@ -29630,36 +29937,77 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     }),
   };
   const sent = [];
-  const fakeW = { setBridges: (p) => sent.push(p), setSky() {} };
+  const looked = [];
+  let pumped = 0;
+  const fakeW = {
+    snakeWay: null,
+    setBridges: (p) => sent.push({ p, share: fakeW.snakeGateShare }),
+    setSky() {},
+    prepareSnakeWay() { pumped++; if (pumped > 3) fakeW.snakeWay = {}; return !!fakeW.snakeWay; },
+    farIsles: { startVisible: () => { looked.push(now); return 0; }, hideAll() {} },
+  };
+  let now = 0;
   const S = new SummonScene({ world: null, audio: null });
   S.start('finale', { x: 0, y: 0, z: 0 });
   ok('the ending decides the roads the moment it is accepted',
-    S.bridgeWant === 1 && S.bridges === 0 && S.bridgeHold === true);
+    S.bridgeWant === 1 && S.bridges === 0 && S.bridgeHold === true && S.snakeLive === true);
   S.world = fakeW;
-  S.updateSky(10);
-  ok('...but does not grow them on its first frame', S.bridges === 0);
-  const rows = FINALE_SHOTS.filter((sh) => sh.snake);
-  ok('...it waits for exactly one shot, a real cut, and a WIDE one',
-    rows.length === 1 && !rows[0].keep && rows[0].at === 'wide', `${rows.length} rows`);
   const floors = S.script.map((b) => b.dur);
   for (const b of S.script) if (b.clip != null) b.dur = b.clip + TAIL;
-  const nx = S._nextCut(rows[0]);
-  const span = nx ? S._at(nx) - S._at(rows[0]) : SNAKE_RISE;
-  S._cue(rows[0]);
-  let t = 0;
-  while (S.bridges < 1 && t < 30) { S.updateSky(1 / 30); t += 1 / 30; }
+  const setNow = (t) => {
+    now = t;
+    let i = 0;
+    let before = 0;
+    while (i < S.script.length - 1 && before + S.script[i].dur <= t) { before += S.script[i].dur; i++; }
+    S.beat = i;
+    S.t = t - before;
+  };
+  setNow(0);
+  S.updateSky(1 / 60);
+  ok('...and starts winding them on its first frame, before anything is shown',
+    pumped === 1 && S.bridges === 0);
+  const A = FINALE_SHOTS.filter((sh) => sh.gates);
+  const B = FINALE_SHOTS.filter((sh) => sh.snake);
+  ok('...over two shots: the truck across the town, then the pull-out to the whole archipelago',
+    A.length === 1 && B.length === 1 && !A[0].keep && !B[0].keep && B[0].at === 'wide'
+    && S._nextCut(A[0]) === B[0]);
+  const T = S._snakeTimes();
+  const tA = S._at(A[0]);
+  const tB = S._at(B[0]);
+  const tC = S._at(S._nextCut(B[0]));
+  const fa = (t) => (t - tA) / (tB - tA);
+  ok('...the far islands start at 10-20% of the first pan',
+    fa(T.isle) >= 0.1 && fa(T.isle) <= 0.2, `${(fa(T.isle) * 100).toFixed(0)}%`);
+  ok('...the gates after them, finished by half-way',
+    T.gate0 > T.isle && Math.abs(fa(T.road0) - 0.5) < 1e-6, `${(fa(T.gate0) * 100).toFixed(0)}%-50%`);
+  ok('...and the roads from half-way through it to 90-95% of the second',
+    (T.end - tB) / (tC - tB) >= 0.9 && (T.end - tB) / (tC - tB) <= 0.95,
+    `${(((T.end - tB) / (tC - tB)) * 100).toFixed(0)}% of the wide shot`);
+  ok('...which is growth on screen for most of both pans, not a blink',
+    T.end - T.road0 > 0.6 * (tC - tA) && T.end - T.road0 > 3,
+    `${(T.end - T.road0).toFixed(2)}s of ${(tC - tA).toFixed(2)}s`);
+  sent.length = 0;
+  let early = 0;
+  for (let t = 0; t <= tC + 1; t += 1 / 30) {
+    setNow(t);
+    S.updateSky(1 / 30);
+    if (t < T.gate0 && S.bridges > 0) early++;
+  }
+  ok('...nothing before the gates\' mark', early === 0);
+  const atRoad = sent.filter((x) => x.p <= x.share + 1e-9);
+  ok('...the gates alone up to the roads\' mark — the split is the scene\'s own',
+    atRoad.length > 10 && Math.abs(sent[0].share - (T.road0 - T.gate0) / (T.end - T.gate0)) < 1e-9);
+  ok('...growing, not appearing, and done by the end of its window',
+    sent.length > 60 && sent.every((x, i) => i === 0 || x.p >= sent[i - 1].p) && sent.at(-1).p === 1);
+  ok('...and the islands are looked for only while the camera is on those two pans',
+    looked.length > 30 && looked.every((t) => t >= T.isle - 1e-9 && t < T.stop));
   S.script.forEach((b, i) => { b.dur = floors[i]; });
-  ok('...and they are all built before that shot cuts away, but not in a blink',
-    S.bridges === 1 && t < span && t > span * 0.6,
-    `${t.toFixed(2)}s of a ${span.toFixed(2)}s shot`);
-  ok('...growing, not appearing', sent.length > 20 && sent.every((v, i) => i === 0 || v >= sent[i - 1])
-    && sent.at(-1) === 1);
   S.world = null;
   S.finish();
   if (S.played) S.played.finale = false;
   S.start('finale', { x: 0, y: 0, z: 0 });
   ok('...an ending watched again does not knock them down to build them twice',
-    S.bridges === 1 && S.bridgeHold === false);
+    S.bridges === 1 && S.bridgeHold === false && S.snakeLive === false);
   S.finish();
   S.resetSky();
   ok('...a restart takes them down', S.bridges === 0 && S.bridgeWant === 0);
@@ -29670,6 +30018,23 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     S.bridges === 1);
   S.resetSky();
   if (hadDocB) globalThis.document = prevDoc; else delete globalThis.document;
+}
+
+/* --- THE MUSIC ON THE ROADS -------------------------------------------------
+   "Some specific music is playing while on the bridges heading to the
+   islands", and on the arena's, "his preferred song". */
+{
+  ok('Snake Way has a piece of its own, and it slithers', !!MUSIC.snake && MUSIC.snake.glide === true);
+  ok('...and leaves the one koto bassline to the storm dragon', !MUSIC.snake.bass);
+  ok('Mr Satan\'s road plays HIS, an authored song rather than a wander',
+    MUSIC.satan?.tune === 'strut');
+  const asrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+  ok('...which is an original, and says why it is not the song that was asked for',
+    /NOT THAT SONG/.test(asrc) && /_tuneStep\(t, step, M\)/.test(asrc));
+  const msrc = stripComments(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'))
+    .replace(/\s+/g, ' ');
+  ok('...and a kitten on a road hears it — his outranking the plain one',
+    /if \(this\.players\.some\(\(p\) => p\.snakeRide\?\.road\.arena\)\) return 'satan'; if \(this\.players\.some\(\(p\) => p\.snakeRide\)\) return 'snake';/.test(msrc));
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

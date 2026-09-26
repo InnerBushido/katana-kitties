@@ -14,9 +14,12 @@ import { ClanShrine } from '../entities/shrine.js';
 import { DragonBall, ISLAND_LOCKS } from '../entities/dragonball.js';
 import { DRAGON_SPOTS } from '../entities/dragon.js';
 import {
-  SNAKE, SNAKE_LINKS, SnakeRoad, findLandings, windRoad, buildRoadMesh, buildSnakeHead,
-  toriiScale, buildSnakeClouds, buildFarIsles, waterTexture,
+  SNAKE, SNAKE_LINKS, SNAKE_ARENA, SnakeRoad, findLandings, windRoadSteps, windArenaRoad,
+  buildRoadMesh, buildSnakeHead, buildSatanTorii, buildSatanLion, buildLandingApron,
+  toriiScale, snakeCloudSteps, cloudPuff, mergeSlottedSteps, puffMaterial, dissolveMat,
+  coinFace, buildCoin,
 } from './snakeway.js';
+import { FarIsles } from './farisles.js';
 
 /* ---------------------------------------------------------------------------
    The world: a cluster of floating islands under a sunset sky, with one
@@ -364,6 +367,10 @@ export class World {
     /** True once the roads are finished and are ground. See `setBridges`. */
     this.snakeOpen = false;
     this.bridgeT = 0;
+    /* HOW MUCH OF EACH LIST THE WORLD WAS BUILT WITH. The roads are solved
+       against this much and no more — see `blocked` in snakeway.js, and the
+       frost road that went missing because of what 100% put down. */
+    this.snakeBase = { solids: this.solids.length, keepClear: this.keepClear.length };
   }
 
   /* ------------------------------ snake way ------------------------------ */
@@ -378,26 +385,74 @@ export class World {
    * the ash road took the one stretch of rim the bamboo road can leave from and
    * the bamboo road could not be wound at all ("touches another road"). The
    * bamboo road has the fewest ways out, so it goes first; the rest in order
-   * of how high they climb. `world-check` builds them and asserts every road
-   * came out with no fault, so a change that crowds one out is a failed check.
+   * of how high they climb, and the arena's LAST, because it is laid rather
+   * than wound and can go round whatever the six left it. `world-check` builds
+   * them and asserts every road came out with no fault, so a change that
+   * crowds one out is a failed check.
+   *
+   * THIS DRAINS `_snakeSteps` IN ONE GO, which is what a save that loads with
+   * the roads up needs. The ending does not call it cold — see
+   * `prepareSnakeWay`, which is the same work a few milliseconds a frame.
    */
   buildSnakeWay() {
     if (this.snakeWay) return this.snakeWay;
+    this._snakeGen ??= this._snakeSteps();
+    for (let r = this._snakeGen.next(); !r.done; r = this._snakeGen.next());
+    this._snakeGen = null;
+    return this.snakeWay;
+  }
+
+  /**
+   * Do up to `budget` milliseconds of building the roads, and say whether they
+   * are finished.
+   *
+   * "There is currently a lag when the snake bridges start to be constructed
+   * during the cutscene, let's make sure there is no major lag spike." THE
+   * SPIKE WAS THE BUILD ITSELF: `buildSnakeWay` ran on the first frame that
+   * asked for a road, and winding six (now seven) roads, sweeping their meshes
+   * and building their landings is 420 ms in Node and 650 in the browser —
+   * one frame, forty frames long, in the middle of a pan. The work was never
+   * the problem, only that it was all on one frame. So it is a generator that
+   * yields between candidates, and the ending pumps it from its first line,
+   * five seconds before the first gate, a few milliseconds at a time.
+   */
+  prepareSnakeWay(budget = 4) {
+    if (this.snakeWay) return true;
+    this._snakeGen ??= this._snakeSteps();
+    const t0 = performance.now();
+    do {
+      const r = this._snakeGen.next();
+      if (r.done) { this._snakeGen = null; return true; }
+    } while (performance.now() - t0 < budget);
+    return false;
+  }
+
+  *_snakeSteps() {
     const home = this.islands[0];
     const avoid = DRAGON_SPOTS.map((d) => ({ x: d.x, z: d.z, r: 8 }));
     const roads = [];
     const others = [];
+    const spacedFor = () => avoid.concat(roads.map((r) => ({ x: r.pts[0].x, z: r.pts[0].z, r: 16 })));
     for (const name of SNAKE_LINKS) {
       const isl = this.islands.find((i) => i.kind === name || (!i.kind && i.biome === name));
       if (!isl) continue;
       /* Two roads never leave from the same stretch of rim — a second gate
          beside the first is one gate with two roads out of it. */
-      const spaced = avoid.concat(roads.map((r) => ({ x: r.pts[0].x, z: r.pts[0].z, r: 16 })));
-      const As = findLandings(this, home, isl, spaced);
+      const As = findLandings(this, home, isl, spacedFor());
       const Bs = findLandings(this, isl, home, avoid);
-      if (!As.length || !Bs.length) continue;
-      const w = windRoad(As, Bs, this.islands, others);
-      if (!w) continue;
+      yield;
+      if (!As.length || !Bs.length) {
+        /* SAID OUT LOUD NOW. A road that could not be laid used to be skipped
+           in silence, which is how the frost road went missing without a
+           single check going red. See `blocked`. */
+        this.snakeMissing = (this.snakeMissing ?? []).concat(name);
+        continue;
+      }
+      const w = yield* windRoadSteps(As, Bs, this.islands, others);
+      if (!w) {
+        this.snakeMissing = (this.snakeMissing ?? []).concat(name);
+        continue;
+      }
       others.push(w.pts);
       const road = new SnakeRoad(roads.length, w.pts, home, isl, this.islands);
       road.name = name;
@@ -405,6 +460,27 @@ export class World {
       road.landA = w.A;
       road.landB = w.B;
       roads.push(road);
+    }
+    /* THE ARENA'S, laid after the six so it goes round them. Twice the width,
+       Mr Satan's colours, and a lap of his island. */
+    if (this.arenaIsland && this.arenaLanding) {
+      const w = windArenaRoad(this, home, this.arenaIsland, this.arenaLanding, spacedFor(), others);
+      yield;
+      if (w) {
+        const road = new SnakeRoad(roads.length, w.pts, home, this.arenaIsland, this.islands, {
+          halfW: SNAKE_ARENA.halfW, lock: SNAKE_ARENA.lock,
+        });
+        road.name = 'arena';
+        road.arena = true;
+        road.faults = w.faults;
+        road.landA = w.A;
+        road.landB = w.B;
+        w.pts.halfW = road.halfW;
+        others.push(w.pts);
+        roads.push(road);
+      } else {
+        this.snakeMissing = (this.snakeMissing ?? []).concat('arena');
+      }
     }
 
     const group = new THREE.Group();
@@ -415,7 +491,26 @@ export class World {
       color: 0xffe7a0, transparent: true, opacity: 0.9, toneMapped: false,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
+    const coinFaces = { snake: coinFace('snake'), satan: coinFace('satan') };
+    const puffClusters = [];
+    const coins = [];
+    /* THE WINDOWS: when in the build each road's gate forms and when the road
+       itself grows. "Some of the bridges can construct slower than the other
+       bridges" — the longest starts first and takes the whole of it, the
+       shorter ones start a beat apart and land a little earlier. */
+    const maxLen = Math.max(...roads.map((r) => r.length));
+    const byLen = [...roads].sort((a, b) => b.length - a.length);
+    roads.forEach((road, k) => {
+      const n = Math.max(1, roads.length - 1);
+      const g0 = 0.45 * (k / n);
+      road.gateWin = [g0, g0 + 0.55];
+      const j = byLen.indexOf(road);
+      const a = 0.05 * j;
+      road.growWin = [a, Math.max(a + 0.5, 1 - 0.1 * (1 - road.length / maxLen))];
+    });
+
     for (const road of roads) {
+      const hw = road.halfW;
       const built = buildRoadMesh(road);
       const mesh = new THREE.Mesh(built.geometry, mat);
       mesh.castShadow = true;
@@ -426,93 +521,196 @@ export class World {
       road.perSeg = built.perSeg;
       road.segs = built.segs;
       road.capIdx = built.caps;
+      yield;
 
       /* The growing tip: a knot of light that runs out ahead of the gold.
          It is the "magically" in "constructed, magically". */
-      const glow = new THREE.Mesh(new THREE.IcosahedronGeometry(2.2, 1), glowMat);
+      const glow = new THREE.Mesh(new THREE.IcosahedronGeometry(2.2 * hw / SNAKE.halfW, 1), glowMat);
       glow.visible = false;
       group.add(glow);
       road.glow = glow;
 
-      /* A torii at each end, facing along the road, posts outside the rails.
+      /* A torii at each end, facing along the road, posts outside the rails,
+         AND THE GROUND ROUND IT (`buildLandingApron`): the ramp, the skirt and
+         the stones are part of the gate's mesh, so they form with it.
          `transformParts` turns local +x onto (cos ry, -sin ry), and the beams
          want to lie across the road — along its right-hand normal. */
       const gates = [];
-      for (const end of [0, road.pts.length - 1]) {
-        const p = road.pts[end];
+      for (const [end, isl] of [[0, road.from], [1, road.to]]) {
+        const p = road.pts[end ? road.pts.length - 1 : 0];
         const ry = Math.atan2(-p.tx, -p.tz);
-        const parts = transformParts(buildTorii(toriiScale()), p.x, p.y - 0.45, p.z, ry);
-        const m = new THREE.Mesh(mergeParts(parts), mat);
-        m.castShadow = true;
-        const g = new THREE.Group();
-        g.add(m);
-        m.position.set(-p.x, -(p.y - 0.45), -p.z);
-        g.position.set(p.x, p.y - 0.45, p.z);
-        g.scale.setScalar(0.001);
-        group.add(g);
-        gates.push(g);
+        const ts = toriiScale(hw);
+        const parts = transformParts(road.arena ? buildSatanTorii(ts) : buildTorii(ts), p.x, p.y - 0.45, p.z, ry);
+        const apron = buildLandingApron(road, end, isl, (x, z) => this._standAt(x, z, isl));
+        parts.push(...apron.parts);
+        this.platforms.push(apron.platform);
+        const gm = new THREE.Mesh(mergeParts(parts), dissolveMat());
+        gm.castShadow = false;
+        gm.receiveShadow = true;
+        gm.visible = false;
+        group.add(gm);
+        gates.push(gm);
+        yield;
         /* The posts are solids — you walk through a torii, not through its
            posts — but only once it exists. `off` is the flag
            `resolveSolids` already honours (Mr Satan's is the other). */
         const hl = Math.hypot(p.tx, p.tz) || 1;
         const rx = -p.tz / hl;
         const rz = p.tx / hl;
-        const half = 2.2 * toriiScale();
+        const half = 2.2 * ts;
         for (const s of [-1, 1]) {
-          this.solids.push({ x: p.x + rx * half * s, z: p.z + rz * half * s, r: 0.6, off: true, snake: true });
+          this.solids.push({
+            x: p.x + rx * half * s, z: p.z + rz * half * s, r: 0.6, off: true, snake: true, arenaRoad: !!road.arena,
+          });
         }
+        /* A PORTAL OF CLOUD ROUND EACH GATE, which is what the gate forms
+           through: "have the Torii gates for the start of the bridges fade in,
+           similarly like how the islands fade in, through the clouds". Built
+           round the gate's own foot so the slot can grow it. Kept off the deck
+           itself — beside the posts, over the beam and behind — so nobody
+           walks through a wall of cloud to get on. */
+        const puffs = [];
+        const fx = p.tx / hl;
+        const fz = p.tz / hl;
+        const into = end ? 1 : -1;
+        for (let j = 0; j < 9; j++) {
+          const q = (a) => valueNoise(road.id * 41 + end * 7 + j, a, 83);
+          const side = j % 2 ? 1 : -1;
+          const high = j >= 6;
+          const lat = high ? (q(1) - 0.5) * hw * 2.4 : side * (hw + 2.4 + q(1) * 2.5);
+          const along = (q(2) - 0.3) * 6 * into;
+          const up = high ? 11 * ts / 1.8 + q(3) * 2 : 0.5 + q(3) * 4;
+          const g = cloudPuff((high ? 2.6 : 2.2) + q(4) * 1.6, road.id * 97 + end * 31 + j);
+          g.translate(rx * lat + fx * along, up, rz * lat + fz * along);
+          puffs.push(g);
+        }
+        puffClusters.push({ parts: puffs, slot: 1 + road.id * 3 + (end ? 2 : 0), at: { x: p.x, y: p.y - 0.45, z: p.z } });
       }
       road.gates = gates;
 
-      /* The head, at the far end, beside the landing and looking back down
-         the road it is the end of. */
+      /* The puff the road grows out of: a small cloud that runs out along the
+         road with the gold coming out of the back of it, so the growing end
+         is never a cut edge. It is centred on the tip; `setBridges` moves it. */
+      {
+        const puffs = [];
+        for (let j = 0; j < 6; j++) {
+          const q = (a) => valueNoise(road.id * 13 + j, a, 47);
+          const g = cloudPuff((2.2 + q(1) * 1.4) * hw / SNAKE.halfW, road.id * 53 + j);
+          g.translate((q(2) - 0.5) * hw * 1.6, (q(3) - 0.3) * 2.2, (q(4) - 0.5) * hw * 1.6);
+          puffs.push(g);
+        }
+        puffClusters.push({ parts: puffs, slot: 2 + road.id * 3 });
+      }
+
+      /* THE FAR END'S GUARDIAN. Snake Way's head for the six, looking back
+         down the road it is the end of. For the arena's, a pair of lions
+         that are Mr Satan, either side of where it lands — and one more at
+         the home end, so the road announces itself before anybody sets off. */
       const e = road.pts[road.pts.length - 1];
       const hl = Math.hypot(e.tx, e.tz) || 1;
       const rx = -e.tz / hl;
       const rz = e.tx / hl;
-      const side = road.id % 2 ? -1 : 1;
-      const hx = e.x + rx * side * (SNAKE.halfW + 4.5) - (e.tx / hl) * 3;
-      const hz = e.z + rz * side * (SNAKE.halfW + 4.5) - (e.tz / hl) * 3;
-      const hg = road.to.heightAt(hx, hz) ?? e.y;
       const face = Math.atan2(-e.tx, -e.tz);
-      const headMesh = new THREE.Mesh(mergeParts(buildSnakeHead(road.id)), mat);
-      headMesh.castShadow = true;
-      const head = new THREE.Group();
-      head.add(headMesh);
-      head.position.set(hx, hg - 0.2, hz);
-      head.rotation.y = face;
-      head.scale.setScalar(0.001);
-      group.add(head);
-      road.head = head;
-      this.solids.push({ x: hx, z: hz, r: 3.2, off: true, snake: true });
+      road.heads = [];
+      const statue = (parts, x, z, ry, isl, r) => {
+        const hg = isl.heightAt(x, z) ?? e.y;
+        const m = new THREE.Mesh(mergeParts(parts), dissolveMat());
+        m.castShadow = false;
+        const g = new THREE.Group();
+        g.add(m);
+        g.position.set(x, hg - 0.2, z);
+        g.rotation.y = ry;
+        g.visible = false;
+        group.add(g);
+        g.userData.mat = m.material;
+        g.userData.mesh = m;
+        road.heads.push(g);
+        this.solids.push({ x, z, r, off: true, snake: true, arenaRoad: !!road.arena });
+        return g;
+      };
+      if (road.arena) {
+        for (const side of [-1, 1]) {
+          const x = e.x + rx * side * (hw + 4.2) - (e.tx / hl) * 2;
+          const z = e.z + rz * side * (hw + 4.2) - (e.tz / hl) * 2;
+          statue(buildSatanLion(road.id + side), x, z, face, road.to, 2.4);
+        }
+        const s0 = road.pts[0];
+        const h0 = Math.hypot(s0.tx, s0.tz) || 1;
+        statue(buildSatanLion(road.id + 7),
+          s0.x + (-s0.tz / h0) * (hw + 4.2) - (s0.tx / h0) * 3,
+          s0.z + (s0.tx / h0) * (hw + 4.2) - (s0.tz / h0) * 3,
+          Math.atan2(-s0.tx, -s0.tz) + Math.PI, road.from, 2.4).userData.home = true;
+      } else {
+        const side = road.id % 2 ? -1 : 1;
+        const hx = e.x + rx * side * (hw + 4.5) - (e.tx / hl) * 3;
+        const hz = e.z + rz * side * (hw + 4.5) - (e.tz / hl) * 3;
+        statue(buildSnakeHead(road.id), hx, hz, face, road.to, 3.2);
+      }
+      road.head = road.heads.find((h) => !h.userData.home) ?? road.heads[0];
+      yield;
+
+      /* A COIN IN THE MIDDLE, for whoever runs the road: see `Game._takeCoin`.
+         On the deck's centre line at half its length, at a kitten's chest. The
+         arena's is Mr Satan's face and twice the size. */
+      {
+        const f = road.frameAt(road.length / 2);
+        const r = road.arena ? SNAKE.coinR * 2 : SNAKE.coinR;
+        const c = buildCoin(r, road.arena ? coinFaces.satan : coinFaces.snake);
+        c.group.position.set(f.x, f.y + 1.2 + r, f.z);
+        c.group.visible = false;
+        group.add(c.group);
+        coins.push({
+          road, kind: road.arena ? 'satan' : 'snake', r, taken: false,
+          x: f.x, y: f.y, z: f.z, s: road.length / 2, ...c,
+          face: road.arena ? coinFaces.satan : coinFaces.snake,
+        });
+      }
 
       this.platforms.push(road.platform());
+      yield;
     }
 
-    const cloudMat = new THREE.MeshBasicMaterial({
-      vertexColors: true, transparent: true, opacity: 0, fog: true,
-    });
-    const cloudParts = buildSnakeClouds(roads);
-    const clouds = cloudParts.length ? new THREE.Mesh(mergeParts(cloudParts), cloudMat) : null;
-    if (clouds) {
-      clouds.frustumCulled = false;
-      clouds.visible = false;
-      this.scene.add(clouds);
-    }
-    this.snakeWay = { roads, group, clouds, cloudMat };
-    return this.snakeWay;
+    /* EVERY CLOUD THAT COMES AND GOES IS ONE MESH: the banks the roads run
+       through (slot 0, placed where they stand), and each road's two portals
+       and the puff that runs ahead of it. See `puffMaterial`. */
+    const puffMat = puffMaterial();
+    const bank = [];
+    yield* snakeCloudSteps(roads, bank);
+    puffClusters.unshift({ parts: bank, slot: 0 });
+    const puffs = new THREE.Mesh(yield* mergeSlottedSteps(puffClusters), puffMat);
+    puffs.frustumCulled = false;
+    puffs.visible = false;
+    puffs.renderOrder = 1;
+    this.scene.add(puffs);
+    this.snakeWay = {
+      roads, group, puffs, puffMat, portals: puffClusters, coins,
+      // The old names, which the sky and the checks still read.
+      clouds: puffs, cloudMat: puffMat,
+    };
+    this.setBridges(this.bridgeT);
+    /* The game steps anything it put down since the world was built off the
+       roads — see `Game._clearRoads`. */
+    this.onSnakeBuilt?.(this.snakeWay);
   }
 
   /**
    * How far the roads have grown, 0..1 across all of them — the one number
    * the ending drives and a save restores.
    *
-   * STAGGERED, NOT TOGETHER: road k starts `SNAKE.stagger` of the way in after
-   * road k-1, and all of them finish at 1. Growth is `drawRange` over a mesh
-   * whose triangles are in order from the home end (`buildRoadMesh`), so a
-   * road half built is exactly the first half of the road. The gates at the
-   * home end come up as its road starts; the far gate and the head come up as
-   * it lands.
+   * TWO PHASES. The first `snakeGateShare` of it is the GATES: each home-end
+   * torii forms out of its own cloud, one after another. "Before the bridges
+   * start constructing, the torii gate should be finished completely spawning
+   * in." The rest is the ROADS, each in its own window (`growWin`): the longest
+   * starts first and takes the whole of it, the rest a beat apart and landing
+   * a little early. Growth is `drawRange` over a mesh whose triangles are in
+   * order from the home end (`buildRoadMesh`), so a road half built is exactly
+   * the first half of the road, and a puff of cloud rides the tip so the
+   * growing end is never a cut edge. The far gate and its guardian form through
+   * the far portal as the road arrives.
+   *
+   * The ending sets `snakeGateShare` from its own shot times (see
+   * `SummonScene._snakeClock`); anything else — a save, the scene viewer —
+   * gets the default split.
    *
    * GROUND ONLY AT 1. A road half grown is a picture in a cutscene, and a deck
    * a kitten could step onto and run off the unbuilt end of is a trap.
@@ -523,82 +721,184 @@ export class World {
     const W = this.buildSnakeWay();
     this.bridgeT = p;
     W.group.visible = p > 0;
-    const n = W.roads.length;
-    const span = 1 + SNAKE.stagger * Math.max(0, n - 1);
-    const ease = (t) => 1 - Math.pow(1 - t, 3);
-    W.roads.forEach((road, k) => {
-      const q = Math.max(0, Math.min(1, (p * span - SNAKE.stagger * k)));
+    const G = Math.max(0, Math.min(0.9, this.snakeGateShare ?? SNAKE.gateShare));
+    const gP = G > 0 ? Math.min(1, p / G) : 1;
+    const rP = p >= 1 ? 1 : Math.max(0, (p - G) / (1 - G));
+    const sm = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+    const pm = W.puffMat;
+    for (const road of W.roads) {
+      const shown = !road.arena || this.arenaOpen;
+      const gq = p >= 1 ? 1 : sm((gP - road.gateWin[0]) / (road.gateWin[1] - road.gateWin[0]));
+      const q = p >= 1 ? 1 : sm((rP - road.growWin[0]) / (road.growWin[1] - road.growWin[0]));
       road.grow = q;
-      const segs = Math.round(road.segs * ease(q));
-      road.mesh.visible = q > 0;
-      /* The start cap is first in the buffer after the body in `buildRoadMesh`,
-         so a partial road shows body only and the end cap arrives with 1. */
+      road.gateT = gq;
+      /* Growth eased at both ends: it gathers speed out of the gate and slows
+         as it comes in to land, so the tip is never a blur. */
+      const segs = Math.round(road.segs * q);
+      road.mesh.visible = shown && q > 0;
       road.mesh.geometry.setDrawRange(0, q >= 1 ? Infinity : segs * road.perSeg);
-      /* Gates and head pop up with a little overshoot, the way a thing that
-         has been conjured arrives. */
-      const pop = (t) => {
-        if (t <= 0) return 0.001;
-        if (t >= 1) return 1;
-        const u = t - 1;
-        return 1 + 2.70158 * u * u * u + 1.70158 * u * u;
+      const land = q >= 1 ? 1 : sm((q - 0.86) / 0.14);
+      const reveal = (m, v) => {
+        m.visible = shown && v > 0;
+        m.material.reveal = v;
+        m.castShadow = v >= 0.999;
       };
-      road.gates[0].scale.setScalar(pop(q * 6));
-      const land = q >= 1 ? 1 : Math.max(0, (ease(q) - 0.9) / 0.1);
-      road.gates[1].scale.setScalar(pop(land));
-      road.head.scale.setScalar(pop(land));
+      reveal(road.gates[0], gq);
+      reveal(road.gates[1], land);
+      for (const h of road.heads) {
+        const v = h.userData.home ? gq : land;
+        h.visible = shown && v > 0;
+        h.userData.mat.reveal = v;
+        h.userData.mesh.castShadow = v >= 0.999;
+        // A little overshoot on top of the forming, the way a conjured thing lands.
+        const u = Math.min(1, v * 1.4) - 1;
+        h.scale.setScalar(v >= 1 ? 1 : Math.max(0.001, 1 + 2.70158 * u * u * u + 1.70158 * u * u));
+      }
       const tip = road.pts[Math.min(road.pts.length - 1, segs)];
-      road.glow.visible = q > 0 && q < 1;
+      road.glow.visible = shown && q > 0 && q < 1;
       if (road.glow.visible) road.glow.position.set(tip.x, tip.y + 0.4, tip.z);
-    });
+      // The clouds: home portal, tip, far portal.
+      const k = road.id * 3;
+      const a0 = road.pts[0];
+      const a1 = road.pts[road.pts.length - 1];
+      const home = shown ? sm(gq / 0.3) * (1 - (1 - SNAKE.skirt) * sm(q / 0.3)) : 0;
+      const run = shown && q > 0 && q < 1 ? sm(q / 0.04) * (1 - sm((q - 0.94) / 0.06)) : 0;
+      const far = shown ? sm((q - 0.78) / 0.1) * (1 - (1 - SNAKE.skirt) * sm((q - 0.93) / 0.07)) : 0;
+      pm.slot(1 + k, a0.x, a0.y - 0.45, a0.z, home, 0.5 + 0.5 * sm(gq / 0.3));
+      pm.slot(2 + k, tip.x, tip.y + 0.6, tip.z, run, 0.4 + 0.6 * run);
+      pm.slot(3 + k, a1.x, a1.y - 0.45, a1.z, far, 0.5 + 0.5 * sm((q - 0.78) / 0.1));
+    }
+    W.puffs.visible = p > 0 || (this.dawnT ?? 0) > 0.002;
     const open = p >= 1;
     if (open !== this.snakeOpen) {
       this.snakeOpen = open;
-      for (const s of this.solids) if (s.snake) s.off = !open;
     }
+    this._syncSnakeSolids();
+    this._syncCoins();
+    /* THE FAR ISLANDS THAT NOBODY SAW ARRIVE ARE SIMPLY THERE when the roads
+       are. See `FarIsles.revealAll`: one already coming through its cloud
+       finishes; one the camera never looked at does not put on a show. */
+    if (open) this.farIsles?.revealAll();
+  }
+
+  /** The roads' posts and statues are solid while the road they belong to is
+   *  real: the arena's only while the arena is. */
+  _syncSnakeSolids() {
+    for (const s of this.solids) {
+      if (!s.snake) continue;
+      s.off = !(this.snakeOpen && (!s.arenaRoad || this.arenaOpen));
+    }
+  }
+
+  _syncCoins() {
+    for (const c of this.snakeWay?.coins ?? []) {
+      c.group.visible = this.snakeOpen && !c.taken && (!c.road.arena || this.arenaOpen);
+    }
+  }
+
+  /**
+   * The coin a kitten at (x, y, z) is touching, or null. Only a kitten ON the
+   * road may take it — "any coin on bridge can only be grabbed if the player
+   * is on the bridge (not on a dragon)" — which is the caller's question
+   * (`Player.snakeRide`); this one is only about where.
+   */
+  coinAt(x, y, z) {
+    for (const c of this.snakeWay?.coins ?? []) {
+      if (!c.group.visible) continue;
+      const dy = y + 1.2 - (c.y + 1.2 + c.r);
+      if (Math.abs(dy) > 1.6 + c.r) continue;
+      if (Math.hypot(x - c.x, z - c.z) < c.r + 1.1) return c;
+    }
+    return null;
+  }
+
+  /** Spend a coin. Nothing regrows (non-negotiable 4): only a restart
+   *  (`setCoinsTaken([])`) puts one back. */
+  takeCoin(c) {
+    if (!c || c.taken) return false;
+    c.taken = true;
+    this._syncCoins();
+    return true;
+  }
+
+  /** Which roads' coins are gone, by road name — what a save keeps. */
+  coinsTaken() {
+    return (this.snakeWay?.coins ?? []).filter((c) => c.taken).map((c) => c.road.name);
+  }
+
+  setCoinsTaken(names = []) {
+    if (!names.length && !this.snakeWay) return;
+    const W = this.buildSnakeWay();
+    for (const c of W.coins) c.taken = names.includes(c.road.name);
+    this._syncCoins();
   }
 
   /** The deck under (x, z) on any road, or null — for whoever needs the road
    *  itself rather than a height (the player's ride, the ride camera). */
-  snakeAt(x, z, fromY = Infinity, halfW = SNAKE.halfW) {
+  snakeAt(x, z, fromY = Infinity, halfW = null) {
     if (!this.snakeOpen || !this.snakeWay) return null;
     let best = null;
     for (const road of this.snakeWay.roads) {
+      if (road.arena && !this.arenaOpen) continue;
+      const hw = halfW ?? road.halfW;
       const b = road.box;
-      if (x < b.x0 - halfW || x > b.x1 + halfW || z < b.z0 - halfW || z > b.z1 + halfW) continue;
-      const hit = road.locate(x, z, fromY, halfW);
+      if (x < b.x0 - hw || x > b.x1 + hw || z < b.z0 - hw || z > b.z1 + hw) continue;
+      const hit = road.locate(x, z, fromY, hw);
       if (hit && (!best || hit.y > best.y)) best = { ...hit, road };
     }
     return best;
   }
 
+  /**
+   * Is (x, z) under a road, a ramp or a landing — anywhere a thing put down
+   * by play would be buried by one? Whether or not the roads are open yet:
+   * this is asked about where they WILL be.
+   */
+  onSnakeWay(x, z, pad = 2) {
+    for (const road of this.snakeWay?.roads ?? []) {
+      const b = road.box;
+      if (x < b.x0 - pad || x > b.x1 + pad || z < b.z0 - pad || z > b.z1 + pad) continue;
+      if (road.locate(x, z, Infinity, road.halfW + pad)) return true;
+      for (const e of [road.pts[0], road.pts[road.pts.length - 1]]) {
+        if (Math.hypot(x - e.x, z - e.z) < road.halfW + 7 + pad) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Somewhere near (x, z) that is off every road and clear, or null if (x, z)
+   * is already fine. For the things play put down before the roads were
+   * solved — see `blocked` in snakeway.js for why the road does not move.
+   */
+  offRoads(x, z) {
+    if (!this.onSnakeWay(x, z)) return null;
+    for (let r = 4; r <= 44; r += 2) {
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2 + r * 0.37;
+        const px = x + Math.cos(a) * r;
+        const pz = z + Math.sin(a) * r;
+        if (this.onSnakeWay(px, pz, 3)) continue;
+        const g = this.heightAt(px, pz);
+        if (!g || g.platform) continue;
+        if (this.solids.some((s) => !s.off && Math.hypot(px - s.x, pz - s.z) < s.r + 2)) continue;
+        return { x: px, z: pz, y: g.y };
+      }
+    }
+    return null;
+  }
+
   /* ----------------------------- far islands ----------------------------- */
 
   /**
-   * The new worlds on the horizon. See `buildFarIsles`. One merged mesh for
-   * the land and one per waterfall, all in a group that `setSky` lifts out of
-   * the clouds with the dawn.
+   * The new worlds on the horizon. See `world/farisles.js`: each comes up
+   * through its own cloud when the ending's camera can see it, and its water
+   * finds its way off the rim afterwards.
    */
   _buildFarIsles() {
-    const { land, falls, isles } = buildFarIsles([
+    this.farIsles = new FarIsles(this.scene, [
       { x: this.arenaCentre.x, z: this.arenaCentre.z, r: 300 },
     ]);
-    const group = new THREE.Group();
-    group.visible = false;
-    const mesh = new THREE.Mesh(mergeParts(land), toonVertexMat({ fog: true }));
-    mesh.frustumCulled = false;
-    group.add(mesh);
-    const tex = waterTexture();
-    const waterMat = new THREE.MeshBasicMaterial({
-      map: tex, transparent: true, opacity: 0.92, fog: true,
-      side: THREE.DoubleSide, depthWrite: false,
-    });
-    for (const g of falls) {
-      const m = new THREE.Mesh(g, waterMat);
-      m.frustumCulled = false;
-      group.add(m);
-    }
-    this.scene.add(group);
-    this.farIsles = { group, isles, tex, mat: waterMat };
   }
 
   /**
@@ -1067,6 +1367,9 @@ export class World {
        the arena will be, which is the exact failure the comment above is
        about. `world-check` pins the two visibilities equal. */
     if (this.arenaSeeThrough) this.arenaSeeThrough.visible = on;
+    /* ...AND ITS ROAD: the arena's Snake Way is drawn and solid only while
+       there is an arena at the end of it. */
+    if (this.snakeWay) this.setBridges(this.bridgeT);
   }
 
   /**
@@ -1303,15 +1606,13 @@ export class World {
        sea below the archipelago, so the ending's wide shot of the sky
        clearing has somewhere new coming up in it. Eased so they arrive rather
        than slide. */
+    /* THE FAR ISLANDS NO LONGER RISE WITH THE DAWN — each comes through its
+       own cloud when the ending's camera finds it (`world/farisles.js`). */
+    this.dawnT = dawn;
     const W = this.snakeWay;
-    if (W?.clouds) {
-      W.clouds.visible = dawn > 0.002;
-      W.cloudMat.opacity = dawn * 0.9;
-    }
-    if (this.farIsles) {
-      const k = 1 - Math.pow(1 - dawn, 3);
-      this.farIsles.group.visible = dawn > 0.002;
-      this.farIsles.group.position.y = -260 * (1 - k);
+    if (W?.puffs) {
+      W.puffMat.slot(0, 0, 0, 0, dawn * 0.9, 1);
+      W.puffs.visible = dawn > 0.002 || this.bridgeT > 0;
     }
     this.scene.fog.color.copy(D.fog).lerp(N.fog, dusk).lerp(M.fog, dawn);
     this.scene.fog.near = THREE.MathUtils.lerp(
@@ -1519,7 +1820,7 @@ export class World {
       if (p.arena && !this.arenaOpen) continue;
       /* Snake Way is not ground until the ending has finished building it —
          the arena's rule, for the arena's reason. */
-      if (p.snake && !this.snakeOpen) continue;
+      if ((p.snake || p.snakeRamp) && !this.snakeOpen) continue;
       if (x < p.x0 || x > p.x1 || z < p.z0 || z > p.z1) continue;
       /* ROUND DECKS ARE A SECOND TEST, NOT A SECOND LOOP. The shrine dais is a
          disc, and inscribing a square in it — which is what the sky shards do
@@ -1559,6 +1860,25 @@ export class World {
       if (best == null || py > best.y) best = { y: py, platform: p, island: over };
     }
     return best;
+  }
+
+  /**
+   * What a foot lands on at (x, z) on `isl`: its terrain, or any deck built
+   * on it that is higher — the arena's plaza INCLUDED WHETHER OR NOT THE
+   * ARENA IS OPEN, because a thing being built to meet it has to meet the
+   * ground that will be there. Snake Way's own decks never count; they are
+   * the thing being fitted.
+   */
+  _standAt(x, z, isl) {
+    let y = isl.heightAt(x, z);
+    for (const p of this.platforms) {
+      if (p.snake || p.snakeRamp) continue;
+      if (x < p.x0 || x > p.x1 || z < p.z0 || z > p.z1) continue;
+      if (p.r != null && (x - p.cx) ** 2 + (z - p.cz) ** 2 > p.r * p.r) continue;
+      const py = p.yAt ? p.yAt(x, z, Infinity) : p.y;
+      if (py != null && (y == null || py > y)) y = py;
+    }
+    return y;
   }
 
   /* ------------------------------- town --------------------------------- */
@@ -2655,10 +2975,18 @@ export class World {
        0.006 rad/s: fast enough that the ending is visibly alive, slow
        enough that nobody watches the whole sky rotate. */
     if (this.clouds?.mesh.visible) this.clouds.mesh.rotation.y += dt * 0.006;
-    /* The waterfalls fall — the streak texture scrolls down the sheet. */
-    if (this.farIsles?.group.visible) this.farIsles.tex.offset.y += dt * 0.9;
+    /* The islands on the horizon: their reveals, their water, their spray. */
+    this.farIsles?.update(dt);
     for (const road of this.snakeWay?.roads ?? []) {
       if (road.glow.visible) road.glow.scale.setScalar(1 + Math.sin(this.time * 14 + road.id) * 0.25);
+    }
+    /* The coins turn and bob, and the arena's turns slower because it is
+       twice the size and Mr Satan would want it seen. */
+    for (const c of this.snakeWay?.coins ?? []) {
+      if (!c.group.visible) continue;
+      c.mesh.rotation.y += dt * (c.kind === 'satan' ? 1.6 : 2.4);
+      c.group.position.y = c.y + 1.2 + c.r + Math.sin(this.time * 2.2 + c.road.id) * 0.18;
+      c.glow.material.opacity = 0.18 + Math.sin(this.time * 3.1 + c.road.id) * 0.06;
     }
   }
 

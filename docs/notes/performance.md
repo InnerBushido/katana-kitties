@@ -437,6 +437,52 @@ after you touch it is broken.
 
 ---
 
+## The ending: first sight of everything
+
+> "Let's make sure there is no major lag spike during the cutscene."
+
+**How it was measured, because the obvious way lies.** The pane throttles rAF
+to about 3 Hz, so the ending was stepped by hand. `clock.getDelta` was pinned
+to 1/30, the animation loop stopped, `_tick()` called in a loop with
+`gl.finish()` after each frame, and the event loop let run between frames with
+`await setTimeout(0)`. **Leave that last part out and you measure a different
+game**: `compileAsync` resolves on the event loop, so a synchronous loop turns
+every async shader link back into a blocking one. That misreport put 170 ms on
+the "There is nothing left" cut that was really 53.
+
+| worst frames, ms | HEAD before this pass | now |
+| --- | --- | --- |
+| first frame of the scene | 70 | 63 |
+| "bamboo" cut, 3.8 s | 285 | under 50 |
+| "There is nothing left", 5.4 s | 186 | 53 |
+| wide shot, 8.57 s | 587 (536 of it the roads built in one go) | under 50 |
+| median | not measured | 7 |
+
+The only other frames over 50 are two of the priming slices themselves (55 and
+57 ms, one large texture each) at 1.4 s and 3.6 s, on a slow shot, and before
+any road exists.
+
+Four things, each once missing in a way the screen could not show, and each
+pinned by world-check:
+1. **The build is sliced.** It runs as a generator at 6 ms a frame (worst slice
+   7 ms headless, timed in a worker thread because the check's own heap put GC
+   pauses in the slices).
+2. **`_warmFinale`** runs `compileAsync` over the whole scene on acceptance.
+   **`_warmSnake`** does the same for the roads and far isles once they exist.
+   Both had to be called from the ending's own draw: they sat in `_render`,
+   which the ending never calls.
+3. **`_primeFinale`** uploads buffers and textures ahead of the cuts. Each
+   frame it draws the next 12 meshes into one pixel of the real canvas, on layer
+   31, with the lights enabled on 31. It uses the real canvas and scene because
+   a render target or a scene of its own would compile a second copy of every
+   shader (colour space, tone mapping and lights are in the program key). It
+   primes only what is showing, plus the roads and isles about to be revealed:
+   lifting everything uploaded 200 meshes the ending never shows, one frame
+   taking a second. **The slice is fixed**: timed on the JavaScript clock, it
+   grew to 256 because `render()` returns before the GPU has done the upload.
+4. **The roads are primed only once their shaders have linked**; drawn on the
+   frame they were issued, the first draw waited (185 ms).
+
 ## Where to look next, if it is still slow
 
 In this order, because it is the order of how much they are worth:
