@@ -1265,6 +1265,9 @@ export const ARENA_RING = 28;
    of it or the ride ends by flying through the gate. Two literals four hundred
    lines apart is how that happened in the first place. */
 export const ARENA_GATE = 34;
+/** Half-width of the gap in the front (+z) stands where the arena's doors are
+ *  — the gatehouse in world/arenagate.js fills it, and reads it from here. */
+export const ARENA_DOOR_GAP = 10.5;
 /** How far the ring's deck stands above the island under it. */
 export const ARENA_RISE = 2.4;
 /**
@@ -1475,18 +1478,28 @@ export function buildArena() {
       const y = 1.1 + tier * 1.7;
       const len = R * 2 + 22 + tier * 7;
       const w = 3.4;
-      const g = new THREE.BoxGeometry(
-        nz ? len : w, y * 2, nz ? w : len
-      );
-      paint(g, tier % 2 ? PALETTE.wood : PALETTE.woodDark);
-      g.translate(nx * d, y, nz * d);
-      parts.push(g);
-      // A stripe of seated colour on top, so the stands don't read as crates.
-      const s = new THREE.BoxGeometry(nz ? len - 1 : 1.2, 0.5, nz ? 1.2 : len - 1);
-      paint(s, [PALETTE.tileIndigo, PALETTE.tileRed, PALETTE.tileGreen][tier]);
-      s.translate(nx * d, y * 2 + 0.25, nz * d);
-      parts.push(s);
-      solids.push({ x: nx * d, z: nz * d, r: tier === 2 ? 4.6 : 3.2, top: y * 2 + 0.5 });
+      /* THE FRONT STANDS ARE TWO BLOCKS, with the arena's front door between
+         them — `ENTRANCE.gap` either side of the axis, filled by the
+         gatehouse in world/arenagate.js. Every other side is one block. */
+      const runs = side === 0
+        ? [[-len / 2, -ARENA_DOOR_GAP], [ARENA_DOOR_GAP, len / 2]]
+        : [[-len / 2, len / 2]];
+      for (const [a0, a1] of runs) {
+        const l = a1 - a0;
+        const c = (a0 + a1) / 2;
+        const g = new THREE.BoxGeometry(nz ? l : w, y * 2, nz ? w : l);
+        paint(g, tier % 2 ? PALETTE.wood : PALETTE.woodDark);
+        g.translate(nx * d + (nz ? c : 0), y, nz * d + (nz ? 0 : c));
+        parts.push(g);
+        // A stripe of seated colour on top, so the stands don't read as crates.
+        const s = new THREE.BoxGeometry(nz ? l - 1 : 1.2, 0.5, nz ? 1.2 : l - 1);
+        paint(s, [PALETTE.tileIndigo, PALETTE.tileRed, PALETTE.tileGreen][tier]);
+        s.translate(nx * d + (nz ? c : 0), y * 2 + 0.25, nz * d + (nz ? 0 : c));
+        parts.push(s);
+      }
+      /* The collider stays one circle in the middle of each run, as it always
+         was — except the front, whose middle is now a doorway. */
+      if (side !== 0) solids.push({ x: nx * d, z: nz * d, r: tier === 2 ? 4.6 : 3.2, top: y * 2 + 0.5 });
     }
   }
 

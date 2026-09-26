@@ -325,16 +325,29 @@ export class ArenaQuest {
            three and reads as the game not knowing who is here. */
         this.bothHere = near.every(Boolean);
         const many = players.length > 2;
+        /* AT HIS DOORS THERE IS NO GRIFFIN — `Game.enterArena` walks a party
+           that is already on the arena island straight in, so offering them a
+           ride would be the line promising the thing the note asked to be rid
+           of. Same question `enterArena` asks, asked of the same getter. */
+        const here = !!hud.partyAtArena;
         S.setLine(this.bothHere
           ? `${many ? 'ALL of you' : 'BOTH of you'}! Excellent!`
-            + '\nPress INTERACT and my griffin will take you.'
+            + (here ? '\nPress INTERACT and I will open the doors!' : '\nPress INTERACT and my griffin will take you.')
           : `The ring is ready!\nI need ${many ? 'EVERYONE' : 'BOTH of you'} here.`);
 
         // Either of them may say yes once both are standing there.
         if (this.bothHere && pads.some((pad, i) => near[i] && pad.pressed('interact'))) {
           this.stage = 'boarding';
-          this.announcer?.say('sat_board',
-            'Excellent! Climb on, kittens! The World Martial Arts Tournament awaits!');
+          /* `sat_doors` has no recording yet, so it is a card with no voice —
+             `Announcer` gives a clipless line its silent duration. "Climb on"
+             is the one thing he must not say here. */
+          if (here) {
+            this.announcer?.say('sat_doors',
+              'Excellent! In you go, kittens! The World Martial Arts Tournament awaits!');
+          } else {
+            this.announcer?.say('sat_board',
+              'Excellent! Climb on, kittens! The World Martial Arts Tournament awaits!');
+          }
           hud.enterArena();
         }
         break;
@@ -388,7 +401,14 @@ export class ArenaQuest {
     if (want !== this.post) {
       this.post = want;
       this.toldAlone.clear();
-      if (want === 'gate') S.moveTo(gate.x, gate.y, gate.z + GATE_STAND);
+      if (want === 'gate') {
+        /* IN FRONT OF THE ARENA'S DOORS, not the torii: "can have Mr. Satan
+           appear in front of the arena doors instead of in front of the torii
+           gate". Off the carpet's middle, so the walk in goes past him. A
+           world with no doors (the checks' fake one) keeps the old post. */
+        const at = this.world.arenaDoorStand ?? { x: gate.x, y: gate.y, z: gate.z + GATE_STAND };
+        S.moveTo(at.x, at.y, at.z);
+      }
       else S.moveTo(S.homeAt.x, S.homeAt.y, S.homeAt.z);
     }
 

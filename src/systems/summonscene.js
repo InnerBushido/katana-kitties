@@ -4,6 +4,7 @@ import { voicePath } from '../core/audio.js';
 import { beatOver, TAIL, drawPortrait } from './cutscene.js';
 import { FinaleTide } from './finaletide.js';
 import { FinaleShow } from './finaleshow.js';
+import { FAR, FarIsles } from '../world/farisles.js';
 
 /* ---------------------------------------------------------------------------
    The two story beats of the dragon hunt.
@@ -72,7 +73,7 @@ export const DAWN_DEEP = 1;
  * road lands with the frame still wide and the whole network is the picture
  * the shot ends on. Re-time the line and the build re-times itself.
  */
-export const SNAKE_OF_SHOT = 0.93;
+export const SNAKE_OF_SHOT = 0.9;
 export const SNAKE_RISE = 5;
 
 /**
@@ -92,8 +93,38 @@ export const SNAKE_RISE = 5;
  * and the roads grow from `road0` to `SNAKE_OF_SHOT` of the wide shot. It used
  * to be three seconds of the wide shot alone; it is about five now, over the
  * two pans. Re-time the line and all of it re-times itself.
+ *
+ * AND THEN IT WAS RE-DIRECTED, NOTE BY NOTE, and the fractions below are what
+ * is left of that table:
+ *
+ *  - "When the 'There is nothing left standing' scene begins, we should have
+ *    one of the islands in the background already start to appear ... after
+ *    5% of the cutscene has been played." `isle` is 0.05 of the truck, and
+ *    the island is the one `FAR_PLACES` puts in that shot's sky.
+ *  - The gates start almost with it (`gate0`) and are SLOWER, one after
+ *    another nearest the camera first — `SNAKE.gateEach`, `gateStep`. Their
+ *    phase is however long that makes it (about 2.8s for seven), not a
+ *    fraction, because the note was a speed.
+ *  - "Once all of the torii gates are spawned ... then we can start to have
+ *    all of the bridges start to be formed ... at the same time". `road0` is
+ *    the gates' end — every cloud gone — and every road starts on it.
+ *  - The wide shot's islands are placed on the far side of the clock: "fully
+ *    formed and the clouds faded at least 2 seconds before the ending of this
+ *    scene". Their start is solved backwards from that (`_snakeTimes`), and
+ *    their shot through the cloud lands just after the cut to the wide.
+ *  - The ground round the gates fades in once every road has landed —
+ *    `SNAKE_APRON` seconds, which run into the next shot on purpose: that is
+ *    the town again, and the home gates are in it.
  */
-export const SNAKE_TIMES = { isle: 0.15, gate0: 0.22, road0: 0.5 };
+export const SNAKE_TIMES = { isle: 0.05, gate0: 0.04 };
+
+/** Seconds the ground round the gates takes to fade in, after the roads. */
+export const SNAKE_APRON = 0.7;
+
+/** How long before the wide shot's cut its islands must be finished — "at
+ *  least 2 seconds before the ending of this scene", and a hair more so a
+ *  rounding error cannot put it under. */
+export const ISLES_CLEAR = 2.05;
 
 /** Milliseconds a frame the ending spends winding the roads before it needs
  *  them. See `World.prepareSnakeWay`. It was 3, and in Firefox on an Intel
@@ -1410,6 +1441,7 @@ export class SummonScene {
       this.bridgeWant = 1;
       this.bridgeHold = this.bridges < 1;
       this.snakeLive = this.bridges < 1;
+      this._gateRanked = false;
       /* ...AND HOLDS IT THERE UNTIL THE LINE THAT SHOWS IT. See `sky` on the
          shot table: the targets are set now, on acceptance, and the easing
          toward them waits for the row that carries `sky`. */
@@ -1945,11 +1977,29 @@ export class SummonScene {
     const nx = this._nextCut(B);
     const tC = nx && this.script[nx.beat] ? this._at(nx) : tB + SNAKE_RISE;
     const lenA = Math.max(0.5, tB - tA);
+    const gate0 = tA + lenA * SNAKE_TIMES.gate0;
+    const end = tB + (tC - tB) * SNAKE_OF_SHOT;
+    /* The gates take as long as they take, but never so long the roads get
+       less than two seconds to grow in: a line re-timed shorter squeezes the
+       gates, not the roads to a blink. */
+    const span = this.world?.gateSpan?.() ?? 2.8;
+    const road0 = Math.min(gate0 + span, end - 2);
+    /* THE WIDE SHOT'S ISLANDS, SOLVED BACKWARDS. Their shot up through the
+       cloud should land just after the cut — the cloud gathers off screen in
+       the truck, where they are not in frame — unless that would finish the
+       last of them later than `ISLES_CLEAR` before the cut, in which case
+       the cut-off wins. */
+    const nB = this.world?.farIsles?.of('B').length ?? 4;
+    const shootAt = FAR.shoot[0] * FAR.show;
+    const isleB = Math.min(tB + 0.03 - shootAt, tC - ISLES_CLEAR - FarIsles.span(nB, FAR.show));
     return {
       isle: tA + lenA * SNAKE_TIMES.isle,
-      gate0: tA + lenA * SNAKE_TIMES.gate0,
-      road0: tA + lenA * SNAKE_TIMES.road0,
-      end: tB + (tC - tB) * SNAKE_OF_SHOT,
+      isleB,
+      gate0,
+      road0,
+      end,
+      apron: end + SNAKE_APRON,
+      wide: tB,
       stop: tC,
     };
   }
@@ -2198,7 +2248,11 @@ export class SummonScene {
     this.bridgeHold = false;
     this.snakeLive = false;
     this.bridges = this.bridgeWant;
-    if (this.world) this.world.snakeGateShare = null;
+    if (this.world) {
+      this.world.snakeGateShare = null;
+      this.world.snakeApronShare = null;
+    }
+    this._gateRanked = false;
     this.world?.setBridges(this.bridges);
     /* ...AND THE STAGE COMES DOWN WITH IT, on the skip path as much as the
        end. Everything `FinaleShow` builds lives in the game's own scene graph:
@@ -2286,15 +2340,32 @@ export class SummonScene {
       const T = this._snakeTimes();
       if (T) {
         const now = this._now();
-        W.snakeGateShare = (T.road0 - T.gate0) / Math.max(0.01, T.end - T.gate0);
-        const p = Math.min(1, (now - T.gate0) / Math.max(0.01, T.end - T.gate0));
+        /* NEAREST THE CAMERA FIRST, decided once, by the lens that is
+           looking at them when they start: "the first one spawning in being
+           closest to the camera". Ranked before the first gate is due, as
+           soon as the roads exist to be ranked. */
+        if (!this._gateRanked && W.snakeWay && now >= T.gate0 - 0.25) {
+          this._gateRanked = true;
+          const c = this.camera.position;
+          W.snakeGateRank = [...(W.snakeWay.roads ?? [])]
+            .sort((a, b) => Math.hypot(a.pts[0].x - c.x, a.pts[0].y - c.y, a.pts[0].z - c.z)
+              - Math.hypot(b.pts[0].x - c.x, b.pts[0].y - c.y, b.pts[0].z - c.z))
+            .map((r) => r.id);
+        }
+        const len = Math.max(0.01, T.apron - T.gate0);
+        W.snakeGateShare = (T.road0 - T.gate0) / len;
+        W.snakeApronShare = (T.apron - T.end) / len;
+        const p = Math.min(1, (now - T.gate0) / len);
         /* Only ever up, and a scene nudged past the whole build lands on 1. */
         if (p > this.bridges) this.bridges = p;
-        /* THE ISLANDS COME THROUGH THEIR CLOUDS WHEN THIS CAMERA CAN SEE THEM,
-           one at a time, from the isle mark to the end of the wide shot —
-           "if the island is not in the camera frustum... it can just enable
-           in". The ones never seen are put up whole by `setBridges(1)`. */
-        if (now >= T.isle && now < T.stop) W.farIsles?.startVisible(this.camera);
+        /* THE ISLANDS, EACH PAN'S ON ITS OWN MARK, on this clock — see
+           `FarIsles.show`. The ones behind the lens are put up whole by
+           `setBridges(1)`. */
+        const F = W.farIsles;
+        if (F && now < T.stop) {
+          if (now >= T.isle) F.show('A', now - T.isle, FAR.showFirst);
+          if (now >= T.isleB) F.show('B', now - T.isleB, FAR.show);
+        }
       }
     } else if (!this.bridgeHold && this.bridges < this.bridgeWant) {
       this.bridges = Math.min(this.bridgeWant, this.bridges + dt * this.bridgeRate);

@@ -270,9 +270,65 @@ export const MUSIC = {
      IT HAS A BASS, and the house rule that the storm dragon owns the only one
      is a rule about the KOTO pieces: this is not a koto with a bassline, it is
      a band, and a disco band without its bass is not the joke. */
-  satan: {
+  satanStrut: {
     scale: [0, 2, 4, 7, 9], beat: 0.25, root: 130.81, oct: 1, drone: 0,
     taiko: 0, rest: 1, tune: 'strut',
+  },
+
+  /* THE STRUT IS NOW THE BACKUP, KEPT WHOLE. "The music is funny, let's save
+     it as a backup, but let's try to change the music to be either the
+     'everybody was kungfu fighting' music ... or ... a funny version of the
+     Gold Saucer music from FF7."
+
+     STILL NOT THOSE SONGS, for the reason above, and a "funny version" does not
+     change it: a parody that is recognisably the tune is made OF the tune, and
+     the tune is the part that is owned — "Kung Fu Fighting" by its writers and
+     publisher since 1974, the Gold Saucer by Square Enix since 1997. A game on
+     Steam cannot lean on "it was a joke". What the note is really asking for is
+     the FEELING of each, and the feeling is free: so this is an original
+     kung-fu disco song, and `saucer` below is an original funfair march.
+     To put the strut back, point `satan` at `tune: 'strut'` — or read
+     `satanStrut`, which is it, untouched.
+
+     KUNG-FU DISCO, NOT LOUNGE BLUES. Where the strut is Vegas, this is the
+     1974 dance floor with a martial-arts film playing over it: E minor
+     pentatonic, the flamenco walk-down (Em D C B7) that every kung-fu poster
+     has underneath it, strings running up three octaves, a wah guitar on the
+     off-beats, an erhu-ish lead that scoops into every note — and a HUAH! on
+     the big hits, synthesised from formants (`_shout`), so it is nobody's
+     voice. 128 eighths at 0.26s, 33 seconds a chorus: a kitten on the road
+     hears it round nearly twice. */
+  satan: {
+    scale: [0, 3, 5, 7, 10], beat: 0.26, root: 82.41, oct: 1, drone: 0,
+    taiko: 0, rest: 1, tune: 'kungfu',
+    /* LEVEL MATCHED TO THE STRUT, measured rather than guessed: rendered
+       offline, the strut is 0.053 RMS and this was 0.045 with the band in. */
+    mix: 1.18,
+  },
+
+  /* ---- THE ARENA ISLAND, BEFORE THE FIGHT -----------------------------------
+     "...or can have that Gold Saucer music play when the player gets off the
+     snake bridge and onto the arena, before they join the arena and the arena
+     music plays."
+
+     AN ORIGINAL FUNFAIR MARCH (see `satan` for why not the real one): a
+     trumpet fanfare up the chord, then an oom-pah band under a steam
+     calliope, a glockenspiel doubling it the second time, a bicycle-horn honk
+     and a slide whistle up into the repeat. The feeling asked for is a theme
+     park's front gate, and every one of those is a sound the front gate of a
+     theme park makes.
+
+     IN F, THE ARENA'S OWN KEY, so the league picker opening does not change
+     key under them: the festival outside resolves into the fight inside, the
+     same move the griffin's ride makes (`griffin`). It plays on the island
+     whenever there is no match — so walking off the road, standing at his
+     doors, and the parade back out of them. `Game._wantedTrack` decides.
+     0.19s eighths, 24 seconds round. */
+  saucer: {
+    scale: [0, 2, 4, 7, 9], beat: 0.19, root: 174.61, oct: 1, drone: 0,
+    taiko: 0, rest: 1, tune: 'saucer',
+    /* Level matched the same way: 0.036 RMS against the strut's 0.053. */
+    mix: 1.45,
   },
 };
 
@@ -861,6 +917,16 @@ export class Audio {
         this._tone({ type: 'square', from: semi(12), dur: 0.12, gain: 0.20 * v });
         this._noise({ from: 2600, to: 1400, dur: 0.05, gain: 0.10 * v, q: 2.0 });
         break;
+      case 'doors':
+        /* THE ARENA'S FRONT DOORS, swinging in: a long low creak of wood on
+           its hinges for the second and a half they move, then the thud of
+           them coming to rest against the pillars. systems/arenaexit.js. */
+        this._noise({ type: 'lowpass', from: 260, to: 140, dur: 1.5, gain: 0.22 * v, q: 3 });
+        this._tone({ type: 'sawtooth', from: 72, to: 58, dur: 1.4, gain: 0.05 * v, curve: 'lin' });
+        this._tone({ type: 'triangle', from: 118, to: 96, dur: 0.9, gain: 0.05 * v, delay: 0.25 });
+        this._tone({ type: 'sine', from: 70, to: 38, dur: 0.5, gain: 0.34 * v, delay: 1.5 });
+        this._noise({ from: 600, to: 120, dur: 0.3, gain: 0.2 * v, q: 0.7, delay: 1.5 });
+        break;
       case 'gong':
         /* FIGHT. The one sound in the game that starts something. A big
            struck bell: fundamental, fifth and octave together with a noise
@@ -1442,15 +1508,15 @@ export class Audio {
   /* ------------------------------ the strut ------------------------------ */
 
   /**
-   * One eighth of Mr Satan's song. See `MUSIC.satan` for what it is and why it
-   * is not the song that was asked for.
+   * One eighth of Mr Satan's FIRST song, the backup now. See `MUSIC.satan` for
+   * what it is and why it is not the song that was asked for.
    *
    * THE CHORDS ARE A TWELVE-BAR BLUES: I I I I / IV IV I I / V IV I V. Each
    * bar is eight steps. The lead plays a lick on the bars that start a line
    * and the brass answers on the others — call and response is what makes a
    * blues a conversation rather than a scale.
    */
-  _tuneStep(t, step, M) {
+  _strutStep(t, step, M) {
     const ctx = this.ctx;
     const bus = this.musicBus;
     const beat = M.beat;
@@ -1595,6 +1661,388 @@ export class Audio {
         o.stop(t + 3.3);
       }
       noise(t, 'bandpass', 3200, 0.05, 1.2);
+    }
+  }
+
+  /* ----------------------------- the two new songs ----------------------------- */
+
+  /** Which authored song `M.tune` names. The strut is the fallback, so a piece
+   *  that names a tune nobody wrote still plays a song rather than silence. */
+  _tuneStep(t, step, M) {
+    if (M.tune === 'kungfu') this._kungfuStep(t, step, M);
+    else if (M.tune === 'saucer') this._saucerStep(t, step, M);
+    else this._strutStep(t, step, M);
+  }
+
+  /**
+   * The band the two newer songs are played on: the voices the strut builds
+   * inline, as one kit, so two songs do not carry two copies of an envelope.
+   */
+  _band(mix = 1) {
+    const ctx = this.ctx;
+    let bus = this.musicBus;
+    /* A song's own level, as one gain in front of the bus — see `mix` on
+       `MUSIC.satan` and `MUSIC.saucer`. */
+    if (mix !== 1) {
+      bus = ctx.createGain();
+      bus.gain.value = mix;
+      bus.connect(this.musicBus);
+    }
+    const env = (g, at, peak, a, d) => {
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.linearRampToValueAtTime(peak, at + a);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + a + d);
+    };
+    const noise = (at, type, freq, peak, d, q = 1) => {
+      const src = ctx.createBufferSource();
+      const f = ctx.createBiquadFilter();
+      const g = ctx.createGain();
+      src.buffer = this._noiseBuf;
+      src.loop = true;
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      env(g, at, peak, 0.004, d);
+      src.connect(f).connect(g).connect(bus);
+      src.start(at);
+      src.stop(at + d + 0.05);
+    };
+    const kick = (at, peak, from = 150, to = 44) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(from, at);
+      o.frequency.exponentialRampToValueAtTime(to, at + 0.16);
+      env(g, at, peak, 0.004, 0.26);
+      o.connect(g).connect(bus);
+      o.start(at);
+      o.stop(at + 0.3);
+    };
+    /* One pitched voice. `det` is a list of detunes — two saws a few cents
+       apart is what makes a synth a SECTION — `scoop` starts the note that
+       fraction under and slides up into it, and `vib` is a vibrato rate. */
+    const osc = ({ at, hz, type = 'sine', peak, a = 0.01, d, cut = 0, q = 1, det = [0], scoop = 0, vib = 0, depth = 0.012 }) => {
+      const g = ctx.createGain();
+      env(g, at, peak, a, d);
+      g.connect(bus);
+      let head = g;
+      if (cut) {
+        const f = ctx.createBiquadFilter();
+        f.type = 'lowpass';
+        f.frequency.value = cut;
+        f.Q.value = q;
+        f.connect(g);
+        head = f;
+      }
+      const end = at + a + d + 0.05;
+      for (const c of det) {
+        const o = ctx.createOscillator();
+        o.type = type;
+        o.detune.value = c;
+        o.frequency.setValueAtTime(scoop ? hz * scoop : hz, at);
+        if (scoop) o.frequency.exponentialRampToValueAtTime(hz, at + 0.06);
+        if (vib) {
+          const l = ctx.createOscillator();
+          const lg = ctx.createGain();
+          l.frequency.value = vib;
+          lg.gain.value = hz * depth;
+          l.connect(lg).connect(o.frequency);
+          l.start(at);
+          l.stop(end);
+        }
+        o.connect(head);
+        o.start(at);
+        o.stop(end);
+      }
+    };
+    /* The brass section: every note two detuned saws through a filter that
+       opens on the attack and closes on the tail — the "blat". The strut's
+       own, lifted out. */
+    const brass = (at, hzs, peak, len, mute = false) => {
+      const f = ctx.createBiquadFilter();
+      const g = ctx.createGain();
+      f.type = 'lowpass';
+      f.Q.value = mute ? 6 : 1.5;
+      f.frequency.setValueAtTime(mute ? 700 : 900, at);
+      f.frequency.linearRampToValueAtTime(mute ? 1400 : 3200, at + 0.05);
+      f.frequency.exponentialRampToValueAtTime(mute ? 500 : 1100, at + len);
+      env(g, at, peak, 0.02, len);
+      f.connect(g).connect(bus);
+      for (const h of hzs) {
+        for (const c of [-7, 7]) {
+          const o = ctx.createOscillator();
+          o.type = 'sawtooth';
+          o.frequency.value = h;
+          o.detune.value = c;
+          o.connect(f);
+          o.start(at);
+          o.stop(at + len + 0.05);
+        }
+      }
+    };
+    return { ctx, bus, env, noise, kick, osc, brass };
+  }
+
+  /**
+   * "HUAH!" — the kung-fu shout, from a buzz and three formants sliding from
+   * an "oo" to an "ah". SYNTHESISED, NOT RECORDED: there is nobody's voice in
+   * it, so there is no voice to license and no cast member to book, and it
+   * sits in the band's mix the way a sampled grunt never would.
+   */
+  _shout(at, pitch = 1, peak = 0.12) {
+    const B = this._band();
+    const { ctx } = B;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(170 * pitch, at);
+    o.frequency.linearRampToValueAtTime(235 * pitch, at + 0.05);
+    o.frequency.exponentialRampToValueAtTime(115 * pitch, at + 0.32);
+    const g = ctx.createGain();
+    B.env(g, at, peak, 0.015, 0.3);
+    g.connect(B.bus);
+    for (const [f0, f1, k] of [[330, 760, 1], [880, 1220, 0.55], [2300, 2600, 0.22]]) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.Q.value = 6;
+      bp.frequency.setValueAtTime(f0, at);
+      bp.frequency.linearRampToValueAtTime(f1, at + 0.07);
+      const fg = ctx.createGain();
+      fg.gain.value = 3 * k;
+      o.connect(bp).connect(fg).connect(g);
+    }
+    o.start(at);
+    o.stop(at + 0.36);
+    // The breath in front of it.
+    B.noise(at, 'bandpass', 1800, 0.05, 0.07, 2);
+  }
+
+  /** The kung-fu movie gong: four inharmonic partials and a shimmer. */
+  _gong(at, peak = 1) {
+    const B = this._band();
+    for (const [m, p] of [[1, 0.09], [1.48, 0.05], [2.13, 0.04], [2.76, 0.025]]) {
+      B.osc({ at, hz: 98 * m, peak: p * peak, a: 0.01, d: 3.2 });
+    }
+    B.noise(at, 'bandpass', 3200, 0.05 * peak, 1.2);
+  }
+
+  /**
+   * One eighth of Mr Satan's road song. See `MUSIC.satan` for what it is and
+   * why it is not the song that was asked for.
+   *
+   * SIXTEEN BARS IN FOUR SECTIONS, over one four-chord walk-down, E minor to
+   * D to C to B7 — the flamenco cadence, which every kung-fu film poster has
+   * underneath it and nobody owns:
+   *   0-3   INTRO. The gong, a string run up three octaves, the band arriving
+   *         a bar at a time, and the first HUAH on the downbeat of bar 3.
+   *   4-11  THE GROOVE. Four on the floor, the octave bass, a wah guitar
+   *         chicking on the off-beats, and the hook on an erhu-ish lead — a
+   *         saw scooping into every note with a wide vibrato.
+   *   12-15 THE SHOUT CHORUS. The run again, brass stabs, a HUAH on bars 12
+   *         and 14, a whip-crack, and a higher HYAH to go round again on.
+   */
+  _kungfuStep(t, step, M) {
+    const B = this._band(M.mix);
+    const beat = M.beat;
+    const s = step % 128;
+    const barN = Math.floor(s / 8);
+    const i = s % 8;
+    const CH = [0, -2, -4, -5];
+    const QUAL = [[0, 3, 7], [0, 4, 7], [0, 4, 7], [0, 4, 7, 10]];
+    const ch = CH[barN % 4];
+    const qual = QUAL[barN % 4];
+    const E2 = M.root;
+    const hz = (n, base = E2 * 4) => base * Math.pow(2, n / 12);
+    const shout = barN >= 12;
+
+    // THE KIT, arriving: nothing for two bars, then the kick and hat, then all
+    // of it from the groove on.
+    if (barN >= 2) {
+      if (i % 2 === 0) B.kick(t, 0.32);
+      else B.noise(t, 'highpass', 7000, 0.06, 0.12);
+    }
+    if (barN >= 4) {
+      if (i === 2 || i === 6) B.noise(t, 'bandpass', 1500, 0.13, 0.14);
+      B.noise(t + beat / 2, 'highpass', 9000, 0.022, 0.04);
+    }
+
+    // THE BASS, from bar 2: the octave bounce, and on the bar's last eighth a
+    // semitone over the next chord's root, so every change is fallen into.
+    if (barN >= 2) {
+      const next = CH[(barN + 1) % 4];
+      const n = i === 7 ? next - ch + 1 : (i % 2 ? 12 : 0);
+      B.osc({ at: t, hz: hz(ch + n, E2), type: 'sawtooth', peak: 0.12, a: 0.008, d: beat * 0.75, cut: 650 });
+    }
+
+    // THE STRINGS: the chord, held for the bar, under everything.
+    if (i === 0) {
+      for (const q of qual) {
+        B.osc({ at: t, hz: hz(ch + q, E2 * 2) * 2, type: 'sawtooth', peak: 0.012, a: 0.3, d: beat * 7.5, cut: 1800, det: [-9, 9] });
+      }
+    }
+
+    // THE RUN, on the intro's first bar and the chorus's: sixteenths up the
+    // pentatonic from E3 to E6.
+    if (barN === 0 || barN === 12) {
+      const RUN = [-12, -9, -7, -5, -2, 0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
+      for (const k of [0, 1]) {
+        B.osc({ at: t + (k * beat) / 2, hz: hz(RUN[i * 2 + k]), type: 'sawtooth', peak: 0.028, a: 0.005, d: 0.13, cut: 3200, det: [-6, 6] });
+      }
+    }
+
+    // THE WAH GUITAR, from the groove: the chord through a bandpass swept up
+    // on every off-beat — the "chicka".
+    if (barN >= 4 && i % 2 === 1) {
+      const { ctx } = B;
+      const f = ctx.createBiquadFilter();
+      const g = ctx.createGain();
+      f.type = 'bandpass';
+      f.Q.value = 5;
+      f.frequency.setValueAtTime(450, t);
+      f.frequency.exponentialRampToValueAtTime(2200, t + 0.07);
+      B.env(g, t, 0.07, 0.004, 0.09);
+      f.connect(g).connect(B.bus);
+      for (const q of qual) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = hz(ch + q, E2 * 2);
+        o.connect(f);
+        o.start(t);
+        o.stop(t + 0.13);
+      }
+    }
+
+    // THE HOOK. Semitones from E4, one row per bar of the groove and two for
+    // the chorus's answers. Original: written for this, out of the five notes
+    // of E minor pentatonic and the B7's leading tone.
+    const HOOK = {
+      4: [7, null, 5, 7, 10, null, 7, 5],
+      5: [3, 5, 0, null, null, 3, 0, -2],
+      6: [12, null, 10, 7, null, 5, 7, null],
+      7: [7, null, 3, 2, null, -1, null, null],
+      8: [7, null, 5, 7, 10, 12, 15, null],
+      9: [3, 5, 0, null, null, 3, 0, -2],
+      10: [15, null, 12, 10, null, 7, 5, null],
+      11: [7, null, 3, 2, null, -1, null, null],
+      13: [null, null, 7, 10, 12, null, 10, 7],
+    };
+    const n = HOOK[barN]?.[i];
+    if (n != null) {
+      B.osc({ at: t, hz: hz(n), type: 'sawtooth', peak: 0.055, a: 0.02, d: beat * 1.3, cut: 1900, q: 2, scoop: 0.94, vib: 6, depth: 0.014 });
+    }
+
+    // THE CHORUS: brass stabs on the downbeat, the and-of-two and four.
+    if (shout && (i === 0 || i === 3 || i === 6) && barN !== 15) {
+      B.brass(t, qual.map((q) => hz(ch + q, E2 * 4)), 0.06, i === 6 ? 0.4 : 0.18);
+    }
+
+    // THE SHOUTS, and the things that happen round them.
+    if (barN === 3 && i === 0) this._shout(t);
+    if ((barN === 12 || barN === 14) && i === 0) this._shout(t);
+    if (barN === 15 && i === 6) this._shout(t, 1.3, 0.13);
+    if (barN === 13 && i === 4) B.noise(t, 'highpass', 2500, 0.16, 0.06, 0.7);
+    if (s === 0) this._gong(t);
+  }
+
+  /**
+   * One eighth of the arena island's fanfare. See `MUSIC.saucer`.
+   *
+   * SIXTEEN BARS, A MARCH IN F, the arena theme's own key:
+   *   0-1   THE FANFARE. Trumpets up the F chord to a held top C over a snare
+   *         roll, and a crash — the gates of a funfair.
+   *   2-15  THE TUNE, on a calliope: a steam organ's tremolo, glockenspiel
+   *         doubling it in the second half. I-V7 for eight bars, the IV, and
+   *         back through a chromatic climb.
+   * Under all of it the oom-pah: a tuba on one and three, the band on two and
+   * four. And the three jokes a funfair is not a funfair without: a honk, a
+   * slide whistle, and a cymbal a beat too eager.
+   */
+  _saucerStep(t, step, M) {
+    const B = this._band(M.mix);
+    const beat = M.beat;
+    const s = step % 128;
+    const barN = Math.floor(s / 8);
+    const i = s % 8;
+    const F3 = M.root;
+    const hz = (n, base = F3 * 2) => base * Math.pow(2, n / 12);
+    const ROOTS = [0, 0, 0, 0, 7, 7, 7, 7, 0, 0, 5, 5, 0, 0, 7, 7];
+    const r = ROOTS[barN];
+    const qual = r === 7 ? [0, 4, 7, 10] : [0, 4, 7];
+    const chordAt = (base) => qual.map((q) => hz(r + q, base));
+
+    // OOM: the tuba, root on one and the fifth under it on three.
+    if (i === 0 || i === 4) {
+      const n = i === 0 ? r : r - 5;
+      B.osc({ at: t, hz: hz(n, F3 / 2), type: 'triangle', peak: 0.2, a: 0.01, d: beat * 1.4 });
+      B.osc({ at: t, hz: hz(n, F3 / 2), type: 'sawtooth', peak: 0.05, a: 0.01, d: beat * 1.2, cut: 420 });
+      B.kick(t, 0.2, 110, 55);
+    }
+    // PAH: the band, short, on two and four, and the snare with it.
+    if (i === 2 || i === 6) {
+      for (const h of chordAt(F3)) B.osc({ at: t, hz: h, type: 'square', peak: 0.018, a: 0.005, d: beat * 0.5, cut: 1600 });
+      B.noise(t, 'bandpass', 2600, 0.06, 0.08, 1.2);
+    }
+
+    // THE FANFARE.
+    const FANFARE = [[7, null, 7, 7, 12, null, 16, null], [19, null, null, null, 16, 19, 24, null]];
+    if (barN < 2) {
+      const n = FANFARE[barN][i];
+      if (n != null) B.brass(t, [hz(n), hz(n - 12)], 0.07, n === 19 && i === 0 ? beat * 3.6 : beat * 0.8);
+      // The roll under the held note, climbing.
+      if (barN === 1 && i < 4) {
+        for (const k of [0, 1]) B.noise(t + (k * beat) / 2, 'bandpass', 2600, 0.03 + i * 0.012, 0.06, 1.2);
+      }
+    }
+    if ((barN === 0 || barN === 8) && i === 0) B.noise(t, 'highpass', 5000, 0.07, 1.4);
+    // The eager cymbal: a crash on the and-of-four, one eighth before the tune.
+    if (barN === 1 && i === 7) B.noise(t, 'highpass', 5000, 0.06, 1.1);
+
+    // THE TUNE. Semitones from F4. Written for this.
+    const TUNE = [
+      null, null,
+      [12, null, 11, 12, 16, null, 12, null],
+      [9, 8, 9, 12, 7, null, null, null],
+      [7, null, 6, 7, 11, null, 7, null],
+      [14, 13, 14, 17, 14, null, null, null],
+      [17, null, 16, 14, 11, null, 7, null],
+      [-1, null, 2, null, 5, null, 11, null],
+      [12, null, 11, 12, 16, null, 19, null],
+      [16, null, 14, 16, 12, null, null, null],
+      [17, null, 16, 17, 21, null, 17, null],
+      [21, 20, 21, 17, 14, null, null, null],
+      [12, null, 11, 12, 16, null, 12, null],
+      [9, 8, 9, 12, 7, null, null, null],
+      [7, 6, 7, 11, 14, 13, 14, 17],
+      [19, null, 18, 19, null, 14, 11, 7],
+    ];
+    const n = TUNE[barN]?.[i];
+    if (n != null) {
+      const h = hz(n);
+      // The calliope: a pipe (triangle and its octave), wobbling.
+      B.osc({ at: t, hz: h, type: 'triangle', peak: 0.075, a: 0.012, d: beat * 1.1, vib: 7.5, depth: 0.01 });
+      B.osc({ at: t, hz: h * 2, type: 'sine', peak: 0.025, a: 0.012, d: beat * 0.9, vib: 7.5, depth: 0.01 });
+      // The glockenspiel, doubling it in the back half.
+      if (barN >= 8) {
+        B.osc({ at: t, hz: h * 2, type: 'sine', peak: 0.03, a: 0.002, d: 0.5 });
+        B.osc({ at: t, hz: h * 2 * 2.76, type: 'sine', peak: 0.008, a: 0.002, d: 0.14 });
+      }
+    }
+
+    // THE HONK, in the rest after the IV: a bicycle horn, twice.
+    if (barN === 11 && (i === 5 || i === 6)) {
+      B.osc({ at: t, hz: 330, type: 'square', peak: 0.05, a: 0.005, d: beat * 0.6, cut: 1400, q: 5, det: [-20, 20] });
+    }
+    // THE SLIDE WHISTLE, up into the next time round.
+    if (barN === 15 && i === 4) {
+      const { ctx } = B;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(620, t);
+      o.frequency.exponentialRampToValueAtTime(2100, t + beat * 3.4);
+      B.env(g, t, 0.045, 0.04, beat * 3.4);
+      o.connect(g).connect(B.bus);
+      o.start(t);
+      o.stop(t + beat * 3.6);
     }
   }
 }

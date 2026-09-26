@@ -741,7 +741,7 @@ export class Player {
        Square quad: the atlas cells are square and already preserve the art's
        own proportions (see loadSpriteAtlas). */
     const quad = height / (contentScale || 1);
-    this.sprite = new Billboard(texture, {
+    const spriteOpts = {
       cols,
       rows,
       width: quad,
@@ -751,7 +751,11 @@ export class Player {
       mirror,
       dirSense,
       rowSense,
-    });
+    };
+    this.sprite = new Billboard(texture, spriteOpts);
+    /** How her billboard was built, so a scene can build its own copy of her
+     *  — see systems/arenaexit.js, whose actors are its own. */
+    this.spriteSpec = { texture, opts: spriteOpts };
     /** Animation rows in the generated sheet, in order. A single-row fallback
      *  atlas collapses them all to 0. */
     this.anim = rows >= 4

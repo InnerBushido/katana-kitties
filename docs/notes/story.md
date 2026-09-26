@@ -1732,3 +1732,84 @@ direction, and neither was asked to be fixed in this pass.
 **And the skill that came out of the first five passes is in the repo** at
 `.claude/skills/game-cutscene-director/`. Every session here can load it now,
 not just the machine it was written on.
+
+## The ending, re-clocked: an island at 5%, slower gates, then the roads
+
+Richard's notes on the "There is nothing left standing" beat, each quoted in
+the header of `systems/summonscene.js`:
+
+- **"one of the islands in the background already start to appear ... after 5%
+  of the cutscene"**. The truck across the town has one strip of open sky, at
+  the top left; the right of the frame is the arena. So that shot's far island
+  is PLACED there (`FAR_PLACES`, `shot: 'A'`), 850 out. The camera is not moved
+  off the town to make room. It is in frame 206/206 samples, at (−0.47, 0.70),
+  from 5.0% in.
+- **The torii come up with it, slower, nearest the camera first**:
+  `SNAKE.gateEach` and `gateStep`, 2.77 s for seven. That is a length, not a
+  fraction, because the note was about speed.
+- **"Once all of the torii gates are spawned ... all of the bridges ... at the
+  same time"**: every road starts on the gates' end and is done at 90% of the
+  wide shot. It is 2.44 s of growth, not a blink.
+- **The islands shoot up through their clouds** (an ease-out-back, so they
+  overshoot) instead of rising. The wide shot's four are in its sky, mean |x|
+  0.38, closest pair 0.31 apart. Their start is solved backwards from **"fully
+  formed and the clouds faded at least 2 seconds before the ending of this
+  scene"**: they are done 2.05 s before the cut.
+- **The ground round the gates fades in after the roads land** (`SNAKE_APRON`,
+  0.7 s, `snakeWay.apronShare`). It runs into the next shot on purpose: that
+  shot is the town again, and the home gates are in it.
+
+## The arena exit
+
+> "Once the arena fight is over, if the players started the fight at the
+> entrance of the arena, it should return them there ... the doors to the arena
+> are opened and the players that won walk back to the entrance ... The players
+> that lost are 'knocked over' ... on a stretcher ... hospital cats carrying the
+> stretcher ... Mr. Satan should be waiting for them and when they walk past
+> him, he puts his arms up with the Charge animation ... as if he is excited and
+> sad at the same time, have him hold the pose for a few seconds before going
+> back to normal before the cutscene fades out and ends. The winning players
+> can be jumping around."
+
+`systems/arenaexit.js`. It plays only when the fight was started from the doors
+(`arenaFrom === 'gate'`). A called-off match from the doors gets no parade:
+everyone is set on the parade's end marks, and a toast says where they are.
+
+- **State changes on accept, not on finish.** `leaveArena` tears the tournament
+  down (`finish`, `satanBlast.reset`, `quest.onReturn`) before the scene starts,
+  so a skip at any moment leaves nothing half-standing. It is skipped by
+  Escape or Start and nothing else. `world-check` skips it at 0.5, 5 and 9.5 s
+  and plays it through. Every time, everybody ends on her mark, the doors are
+  closing, and his pose and line are his own again.
+- **The cast is the scene's own**: billboards made from each kitten's
+  `spriteSpec`, stretchers, and hospital cats (docs/notes/art.md). The real
+  kittens are hidden and put back on the marks at the end. **The scene shows
+  Mr Satan itself.** A three-kitten take once had nobody in it, because the
+  quest had never switched him on.
+- **Winners hop** (`|sin|`, jump row off the ground) out to marks round him.
+  **Losers are carried**: the jump row on its side, dimmed a shade. **In a draw
+  nobody lost, so they walk.**
+- **His arms go up as the first kitten reaches him, stay up for 2.6 s after the
+  last, and come down before the fade.** The check asks that of all four casts.
+- **His lines are his bubble, not the dialogue box.** On an 824×422 pane the
+  box covered the procession, which is exactly where it is.
+
+**Three shots, solved** (`SHOTS`), scored against the real entrance for a duel,
+one against three, two against two and a draw.
+
+- **doors**: low, through the torii, from between the nearest lanterns. The
+  first try sat inside a lantern's roof. **The push is 0.04**, because the
+  doorway is already 1.33 of the 1.56 of frame height the letterbox leaves. The
+  0.14 first chosen pushed a door's top 0.11 into the letterbox, and only 82%
+  of the corner sightings were in frame.
+- **along**: side-on from his far side, inside the lantern row, trucking with
+  each stretcher as it passes him. The one angle where a stretcher reads as
+  one.
+- **him**: from his left, inside the torii, fov 66. Two solves were thrown out.
+  The first was off his left at 18 out, where the winner's mark filled half the
+  frame; the actors are occluders now. The second was straight down the carpet,
+  with the torii's right post down the middle of the frame; a post in the
+  middle 60% now costs a candidate.
+- **along → him is a move, not a cut.** They ended four units apart on the same
+  side: a jump cut. It is a 1.4 s move from `along`'s last frame, fov and all.
+  A check pins that the join is continuous.

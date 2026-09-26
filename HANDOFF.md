@@ -515,6 +515,34 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**The arena's front door, and six notes from Richard.** Branch
+`mixed/arena-entrance-six`. [world.md](docs/notes/world.md) has the entrance,
+the road's shot list and the music, and [story.md](docs/notes/story.md) has the
+exit scene and the ending's new clock.
+
+- **Music.** The strut is kept as `satanStrut`, as a backup. `satan` is now an
+  original kung-fu disco song, and `saucer` is an original funfair march,
+  played on the arena island whenever there is no match. Neither is the song
+  that was asked for: a parody that is recognisably the tune is made of the
+  tune. All three are 0.052–0.053 RMS.
+- **No griffin at his doors.** A party standing on the arena island walks in.
+- **The entrance**: the gatehouse, two door leaves that open inward, two dragon
+  columns, four stacked fire lanterns and a red carpet to the road. Mr Satan
+  waits at the doors.
+- **The exit parade**, only when the fight started at the doors. The doors
+  open, winners hop out, and losers ride stretchers carried by hospital cats.
+  His arms go up as the first reaches him and stay up 2.6 s after the last.
+  Skip is Esc/Start. World-check replays three shots: 100% of 736 / 225 / 477
+  sightings.
+- **The arena road is shot, not orbited**, going up: six pre-planned shots,
+  each 100% in world-check's replay. The worst frame between them turns
+  2.79°.
+- **The ending**: a far island at 5% of the truck, slower gates, roads after
+  the gates, and islands done 2.05 s before the wide shot's cut. The ground
+  round the gates follows the roads.
+- **Open:** `sat_doors` has no voice yet (Harrison's preset, docs/notes/voices.md),
+  and nobody has played the parade with a real four.
+
 **Snake Way, eleven notes from Richard.** Branch `mixed/snake-way-eleven`.
 [world.md](docs/notes/world.md) has each one, [story.md](docs/notes/story.md)
 the new clock and [performance.md](docs/notes/performance.md) the lag.
