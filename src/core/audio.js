@@ -229,6 +229,51 @@ export const MUSIC = {
      He is legendary rather than exciting, and the two must not blur into each
      other in the one part of the game where you might hear both in a minute. */
   ryu: { scale: INSEN, beat: 0.28, oct: 2, drone: 0.26, taiko: 2, fifths: true },
+
+  /* ---- SNAKE WAY -----------------------------------------------------------
+     "Let's have it that some specific music is playing while on the bridges
+     heading to the islands." A road the size of the sky that coils: so the one
+     thing this piece has that nothing else does is `glide` — every pluck
+     slides up into its note from a third below, which is a slither in one
+     line of synth. KUMOI in G, between the home theme and the frost one, with
+     the Dojo's bell because the road is gold and the bell is the brightest
+     thing in the kit. NO BASS AND NO SNARE: the one bassline in the game is the
+     storm dragon's (see `arena`), and a backbeat is the flight theme — a road
+     is not a dragon. A taiko every bar is what keeps her running. */
+  snake: {
+    scale: KUMOI, beat: 0.3, root: 196.0, oct: 1, drone: 0.14,
+    taiko: 8, rest: 0.56, bell: true, glide: true,
+  },
+
+  /* ---- MR SATAN'S ROAD -----------------------------------------------------
+     "Have a special song play that is his preferred song (could be something
+     funny sounding, based on his character, like a throwback to Elvis Presley
+     ... maybe 'Everybody was kungfu fighting')."
+
+     NOT THAT SONG. "Kung Fu Fighting" is somebody's copyright, and so is
+     every Elvis record; a synth playing its tune is still its tune. What is
+     free is the GENRE, and the genre is the joke: this is an original strut —
+     a twelve-bar blues in C, the Vegas-lounge shape of an Elvis number, played
+     over a 1974 disco kit (four on the floor, open hat on the off-beat, the
+     octave-bouncing bass) with a brass section answering the lead. A kung-fu
+     movie gong opens every chorus, because he is a martial-arts champion in
+     his own head, and the last bar is a chromatic slide down on a muted horn:
+     the sound of a man pausing for applause.
+
+     IT IS AUTHORED, NOT GENERATED — `tune` below, read by `_tuneStep`. Every
+     other piece here is a koto wandering a scale; a song people are meant to
+     laugh at has to be a SONG, with a hook that comes back. One chorus is 96
+     eighths, 24 seconds, and the arena road is about sixty seconds long, so a
+     kitten hears it round twice and a half — well past the quarter asked
+     for. `scale` is there only so anything that reads every piece as a koto
+     (the trailer score) still finds five notes.
+     IT HAS A BASS, and the house rule that the storm dragon owns the only one
+     is a rule about the KOTO pieces: this is not a koto with a bassline, it is
+     a band, and a disco band without its bass is not the joke. */
+  satan: {
+    scale: [0, 2, 4, 7, 9], beat: 0.25, root: 130.81, oct: 1, drone: 0,
+    taiko: 0, rest: 1, tune: 'strut',
+  },
 };
 
 /** Biome → piece. Anything unrecognised falls back to the home theme. */
@@ -1244,6 +1289,7 @@ export class Audio {
   _pluck(t, step) {
     const bar = Math.floor(step / 8);
     const M = MUSIC[this._mode] ?? MUSIC.play;
+    if (M.tune) { this._tuneStep(t, step, M); return; }
     /* Every island transposes. `root` is the piece's own key; without it all
        seven would be different tunes in the same key, which from a hillside
        two hundred units away is one tune. */
@@ -1350,6 +1396,11 @@ export class Audio {
       const o = this.ctx.createOscillator();
       o.type = 'triangle';
       o.frequency.value = freq;
+      /* Snake Way's slither: from a minor third under, in 70ms. */
+      if (M.glide) {
+        o.frequency.setValueAtTime(freq * 0.8409, t);
+        o.frequency.exponentialRampToValueAtTime(freq, t + 0.07);
+      }
       o.detune.value = det;
       o.connect(f);
       o.start(t);
@@ -1386,5 +1437,164 @@ export class Audio {
     g.gain.linearRampToValueAtTime(0.16, t + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
     f.connect(g).connect(this.musicBus);
+  }
+
+  /* ------------------------------ the strut ------------------------------ */
+
+  /**
+   * One eighth of Mr Satan's song. See `MUSIC.satan` for what it is and why it
+   * is not the song that was asked for.
+   *
+   * THE CHORDS ARE A TWELVE-BAR BLUES: I I I I / IV IV I I / V IV I V. Each
+   * bar is eight steps. The lead plays a lick on the bars that start a line
+   * and the brass answers on the others — call and response is what makes a
+   * blues a conversation rather than a scale.
+   */
+  _tuneStep(t, step, M) {
+    const ctx = this.ctx;
+    const bus = this.musicBus;
+    const beat = M.beat;
+    const s = step % 96;
+    const barN = Math.floor(s / 8);
+    const i = s % 8;
+    const CHORD = [0, 0, 0, 0, 5, 5, 0, 0, 7, 5, 0, 7];
+    const ch = CHORD[barN];
+    const root = M.root * Math.pow(2, ch / 12);
+    const hz = (semis, base = root) => base * Math.pow(2, semis / 12);
+
+    const env = (g, at, peak, a, d) => {
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.linearRampToValueAtTime(peak, at + a);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + a + d);
+    };
+    const noise = (at, type, freq, peak, d) => {
+      const src = ctx.createBufferSource();
+      const f = ctx.createBiquadFilter();
+      const g = ctx.createGain();
+      src.buffer = this._noiseBuf;
+      src.loop = true;
+      f.type = type;
+      f.frequency.value = freq;
+      env(g, at, peak, 0.004, d);
+      src.connect(f).connect(g).connect(bus);
+      src.start(at);
+      src.stop(at + d + 0.05);
+    };
+
+    // FOUR ON THE FLOOR, and the open hat on every off-beat: disco, 1974.
+    if (i % 2 === 0) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(150, t);
+      o.frequency.exponentialRampToValueAtTime(44, t + 0.16);
+      env(g, t, 0.34, 0.004, 0.26);
+      o.connect(g).connect(bus);
+      o.start(t);
+      o.stop(t + 0.3);
+    } else {
+      noise(t, 'highpass', 7000, 0.07, 0.12);
+    }
+    // The clap on two and four.
+    if (i === 2 || i === 6) noise(t, 'bandpass', 1500, 0.14, 0.14);
+
+    // THE BASS: the octave bounce, root and its octave on alternate eighths,
+    // with a walk up to the next chord on the bar's last step.
+    {
+      const next = CHORD[(barN + 1) % 12];
+      const n = i === 7 ? (next - ch + 12) % 12 - 1 : (i % 2 ? 12 : 0);
+      const o = ctx.createOscillator();
+      const f = ctx.createBiquadFilter();
+      const g = ctx.createGain();
+      o.type = 'sawtooth';
+      o.frequency.value = hz(n, root / 2);
+      f.type = 'lowpass';
+      f.frequency.value = 700;
+      env(g, t, 0.12, 0.008, beat * 0.8);
+      o.connect(f).connect(g).connect(bus);
+      o.start(t);
+      o.stop(t + beat);
+    }
+
+    // THE BRASS: a dominant seventh, stabbed on the and-of-two and on four.
+    const brass = (at, semis, peak, len, mute = false) => {
+      const f = ctx.createBiquadFilter();
+      const g = ctx.createGain();
+      f.type = 'lowpass';
+      f.Q.value = mute ? 6 : 1.5;
+      f.frequency.setValueAtTime(mute ? 700 : 900, at);
+      f.frequency.linearRampToValueAtTime(mute ? 1400 : 3200, at + 0.05);
+      f.frequency.exponentialRampToValueAtTime(mute ? 500 : 1100, at + len);
+      env(g, at, peak, 0.02, len);
+      f.connect(g).connect(bus);
+      for (const n of semis) {
+        for (const det of [-7, 7]) {
+          const o = ctx.createOscillator();
+          o.type = 'sawtooth';
+          o.frequency.value = hz(n);
+          o.detune.value = det;
+          o.connect(f);
+          o.start(at);
+          o.stop(at + len + 0.05);
+        }
+      }
+    };
+    const answer = barN % 2 === 1 || barN === 10;
+    if (answer && (i === 3 || i === 6)) brass(t, [4, 10, 12 + 7], 0.07, i === 6 ? 0.45 : 0.18);
+
+    // THE LEAD: a square with a slow vibrato — the croon — on the call bars.
+    const LICKS = [
+      [12, null, 15, 16, null, 12, 10, null],     // the blue third, bent up
+      [7, null, 10, 12, 10, 7, null, null],
+      [null, null, 15, 16, 19, null, 16, 12],
+      [12, 11, 10, 9, 8, 7, null, null],          // the turnaround: applause, please
+    ];
+    let lick = null;
+    if (barN === 11) lick = LICKS[3];
+    else if (!answer) lick = LICKS[[0, 1, 0, 1, 2, 0, 2, 1, 0, 1, 0, 1][barN]];
+    const n = lick?.[i];
+    if (n != null) {
+      const mute = barN === 11;
+      if (mute) {
+        brass(t, [n], 0.09, beat * 0.95, true);
+      } else {
+        const o = ctx.createOscillator();
+        const lfo = ctx.createOscillator();
+        const lg = ctx.createGain();
+        const f = ctx.createBiquadFilter();
+        const g = ctx.createGain();
+        o.type = 'square';
+        o.frequency.value = hz(n);
+        // A scoop into the note from a semitone under: the croon.
+        o.frequency.setValueAtTime(hz(n - 1), t);
+        o.frequency.linearRampToValueAtTime(hz(n), t + 0.05);
+        lfo.frequency.value = 5.5;
+        lg.gain.value = hz(n) * 0.012;
+        lfo.connect(lg).connect(o.frequency);
+        f.type = 'lowpass';
+        f.frequency.value = 2400;
+        env(g, t, 0.07, 0.015, beat * 1.4);
+        o.connect(f).connect(g).connect(bus);
+        o.start(t);
+        lfo.start(t);
+        o.stop(t + beat * 1.5);
+        lfo.stop(t + beat * 1.5);
+      }
+    }
+
+    // THE GONG that opens every chorus: he is a champion, in his own head.
+    if (s === 0) {
+      for (const [m, peak] of [[1, 0.09], [1.48, 0.05], [2.13, 0.04], [2.76, 0.025]]) {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = 98 * m;
+        env(g, t, peak, 0.01, 3.2);
+        o.connect(g).connect(bus);
+        o.start(t);
+        o.stop(t + 3.3);
+      }
+      noise(t, 'bandpass', 3200, 0.05, 1.2);
+    }
   }
 }

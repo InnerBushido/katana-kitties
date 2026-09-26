@@ -494,8 +494,8 @@ the class's own indentation, which nothing inside a method body can reach.
 > clouds, connecting the islands, as a new way that the players can traverse to
 > the islands."
 
-Six gold roads with red rails, one from the home island to each island the old
-roads reached, winding through banks of cloud. A torii stands at each end and a
+Seven gold roads with red rails, one from the home island to each island the
+old roads reached and one to the arena, winding through banks of cloud. A torii stands at each end and a
 snake's head at the far one, looking back down the road it is the end of. They
 do not exist until the ending, which builds them in its wide shot of the whole
 archipelago (see [story.md](story.md)), and nothing takes them down but a
@@ -657,12 +657,102 @@ merge distance.
 ### The far islands
 
 Seven islands 440–640 units out, each with a pagoda or a house, a torii, trees
-and a waterfall. The water is a bowed sheet with a scrolling texture. They are
-scenery, not ground. They are kept 300 clear of the arena and **rise** out of
-the cloud sea with the dawn (`setSky`: `group.position.y = -260·(1−ease(dawn))`),
-so the ending's wide shot of the sky clearing has something new coming up in it.
-They never fade in where they stand. They are built with the world, because
-they are one merged mesh plus seven water sheets and the dawn needs them there.
+and a waterfall. They are scenery, not ground, kept 300 clear of the arena, and
+four draw calls for all seven: every vertex carries the index of its island and
+a uniform array per island is the whole animation. `world/farisles.js`.
+
+> "Have them fade into existence through some clouds ... the clouds act as a
+> masking portal." "If the island is not in the camera frustum during any of
+> the ending cutscene camera pans ... it can just spawn in."
+
+They used to rise all together with the dawn. Now each has its own clock: a disc
+of cloud gathers where its waist will be, the island comes UP THROUGH IT with
+everything below the cloud's plane clipped, the plane drops away under cover of
+the cloud, the cloud thins to a skirt, and **then** the waterfall grows from the
+rim down, with spray points. `startVisible(camera)` starts at most one island
+every `FAR.gap` (0.3 s) and only if its sphere is in the ending camera's
+frustum. Whatever is still unstarted when the two pans are over is simply put
+up by `revealAll`, with no show and no cost. Measured in the pane: the first
+starts at 5.87 s, inside the "There is nothing left" pan (the brief asked for at
+least one on that camera), and the rest during the wide shot.
+
+### The arena road
+
+> "Make it wider so all 4 players can run on it together (maybe twice as wide)
+> ... go all the way around the arena island before landing at the front of
+> it." A Mr Satan lion instead of the snake, a Mr Satan-coloured torii.
+
+`SNAKE_ARENA`: half-width 6 against 3, lock 5.3. It is not wound by `windRoad`.
+It is laid as an approach, a lap round the far side of the arena island 18
+outside its rim and up to 14 over its ground, and a hook in over the front to
+land where the griffin sets them down. Measured: 858 units long, a sweep of more
+than 1.6π round the ring. **It exists only while the arena is open**: drawn,
+solid and ground only then, so it is never a way round Mr Satan's griffin to a
+place he has not opened yet.
+
+### Why the frost road was missing
+
+> "The ice island doesn't have a bridge."
+
+Every headless build had all six. The game did not, because the roads are solved
+**at the ending**, and by then 100% has scattered the Powerup Kotodama over
+every island, each reserving `keepClear` round itself. One sat on the only
+stretch of the frost rim a road can land on; no landing was found, and the loop
+skipped the road in silence. Now:
+- the roads are solved against `world.snakeBase`, the lengths every obstacle
+  list had when the world finished building, so they are the same roads in
+  every game;
+- `Game._clearRoads` moves anything play left on a road (loose orbs, pickups,
+  dragon balls) off it with `World.offRoads`;
+- a road that cannot be laid is recorded in `snakeMissing` rather than skipped
+  in silence, and world-check asks for all seven.
+
+### Coins
+
+> "Gold coins in the centre of each bridge ... plays the bless animation and
+> zooms into the player with the coin above their head ... '5x bamboo cut' ...
+> only can be grabbed from being on the bridge, not from flying on the dragon."
+
+One at the middle of each road, a snake emblem on six and Mr Satan's face on
+the arena's, which is twice the size. `_checkCoins` takes one only when she is
+**riding** the road (`snakeRide`) and not mounted, carried, riding along or
+KO'd. It pays `COIN_CANES` × `BAMBOO_POINTS` = 125 to her score, never to the
+MISCHIEF counter, which stays honest. The arena's pays every kitten playing. The
+bless is `holdAloft` with the coin's own face. A coin stays taken and is saved
+(`world.coins`), because nothing regrows. A restart puts them back.
+
+### Through the clouds
+
+> "X-ray shader on the clouds when a player is running through them, about 50%
+> and about the size of the player."
+
+The puff material carries up to four cut points per pane (`setCuts`). Each is
+a cone from the lens to a kitten that is `uCutR` (1.7) across where she stands,
+which on a 2.9-tall kitten is her and a little round her. A puff fragment
+inside it, between the lens and her, is drawn at `uCutK` (0.5) of its alpha. It is aimed per pane in `_aimCloudXray`, from
+the same members list as the town x-ray.
+
+### Ramps
+
+> "Elevated bridge entrances need ramps and/or rocks and grass."
+
+`buildLandingApron` runs a ramp from the deck down to what a foot actually
+stands on. That is `World._standAt`: the terrain **or any stonework on the
+island**, the arena plaza included whether the arena is open or not. A ramp
+run to the grass under the plaza ended half a unit inside it. Rocks and tufts
+dress the sides. The road deck itself no longer overhangs its own end:
+`locate` cuts at arc length (`END_SLOP` 0.3). Before that, every end capsule
+reached `halfW` past it, and the arena's far ramp measured 0.46 of step.
+
+### Music
+
+`_wantedTrack`: any kitten on the arena road plays `satan`, otherwise any kitten
+on a road plays `snake`. This sits under the mount and flight rules. `satan`
+is authored, not generated, and it is **an original**. "Kung Fu Fighting" was
+asked for and is somebody's copyright, and a synth playing its tune is still
+its tune. What is free is the genre: a twelve-bar blues strut over a disco kit,
+with brass stabs, a gong at the top of each chorus and a muted chromatic slide
+at the end. The reasoning is in `core/audio.js` beside it.
 
 ### Saves
 

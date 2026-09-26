@@ -21,7 +21,8 @@ import {
   warnSpot, warnWidth, WARN_FIT,
 } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
-import { SNAKE } from './world/snakeway.js';
+import { SNAKE, COIN_CANES } from './world/snakeway.js';
+import { BAMBOO_POINTS } from './entities/prop.js';
 import { SnakeCam } from './systems/snakecam.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, PANDA, PANDA_TIERS, tierFor, toNextTier } from './entities/panda.js';
@@ -180,6 +181,13 @@ const PERF_WINDOW = 120;
 /* HOW LONG A TOAST STAYS UP. See `Game.toast` — the hold is a function of how
    much there is to read, and TOAST_MIN is the flat 1700ms every toast used to
    get, kept as the floor so short ones are bit-identical. */
+/** Seconds a Snake Way coin is held up for — the clan pose's length, which
+ *  is the blessing a kid already knows the rhythm of. */
+const COIN_BLESS = 2.2;
+/** `_primeFinale`: meshes drawn into its pixel a frame, and the layer nothing
+ *  else uses. */
+const PRIME_BATCH = 12;
+const PRIME_LAYER = 31;
 const TOAST_MIN = 1700;
 const TOAST_BASE = 600;
 const TOAST_PER_CHAR = 55;
@@ -1716,6 +1724,7 @@ class Game {
        minimap and the stall prompt all read that rather than each keeping
        their own idea of whether the endgame has started. */
     this.kotodama = new Kotodama(this);
+    this.world.onSnakeBuilt = () => this._clearRoads();
     /* The quests — the other ways to earn a Powerup Kotodama. After the
        Kotodama, because every quest is paid through `kotodama.give`. */
     this.feats = new Feats(this);
@@ -3169,6 +3178,8 @@ class Game {
        islands. `clearDusk` alone would restart the game under the morning it
        was finished in. */
     this.summonScene.resetSky();
+    /* ...and every coin back on its road, for the next afternoon's ending. */
+    this.world.setCoinsTaken([]);
     this._updateBallHud();
     for (const p of this.players) {
       const el = document.getElementById(`clan-${p.index}`);
@@ -3801,6 +3812,10 @@ class Game {
     for (const p of this.players) if (p?.panda) p.panda.endgame = true;
     const ok = this.summonScene.start('finale', B.centre, B.radius, this.leaderArt.elder,
       this._finaleCast());
+    if (ok) {
+      this._warmFinale();
+      this._primeAdd(this.scene);
+    }
     /* ...AND WATCH AGAIN CAN OFFER IT FROM HERE ON. Only if it really started:
        `start` refuses over another scene, and a row that appeared because a
        refusal happened would offer to replay something nobody has seen. See
@@ -7732,6 +7747,78 @@ class Game {
     if (want && want !== this.audio.mode) this.audio.startMusic(want);
   }
 
+  /**
+   * Step anything lying loose off the roads that have just been built.
+   *
+   * THE ROADS DO NOT MOVE FOR THE ORBS; THE ORBS MOVE FOR THE ROADS. The
+   * Powerup Kotodama are seeded at 100% and the roads are solved by the ending,
+   * after — and a road that had to route round them is how the frost island
+   * lost its road altogether (see `blocked` in world/snakeway.js). So the roads
+   * are solved against the world as it was BUILT, and anything play has put
+   * down since is moved to the nearest clear ground here.
+   *
+   * @returns {number} how many moved
+   */
+  _clearRoads() {
+    let n = 0;
+    const loose = [
+      ...(this.kotodama?.pickups ?? []), ...(this.pickups ?? []), ...(this.balls ?? []),
+    ];
+    for (const pk of loose) {
+      if (!pk?.group || pk.taken) continue;
+      const at = pk.position ?? pk.group.position;
+      const to = this.world.offRoads(at.x, at.z);
+      if (!to) continue;
+      pk.position?.set(to.x, to.y, to.z);
+      pk.group.position.set(to.x, to.y, to.z);
+      n++;
+    }
+    if (n) console.log(`[snake] ${n} loose thing(s) stepped off the new roads`);
+    return n;
+  }
+
+  /**
+   * A kitten running Snake Way has reached its coin.
+   *
+   * "Some gold coins in the center of the bridges that, if the player collides
+   * with it, it plays a 'bless' cutscene/zoom in with the coin above their head
+   * and they get the equivalent of '5x bamboo cut' added to their score... The
+   * one for the arena can have a Mr. Satan emblem and it will play the bless
+   * for all active players and they all get the points... any coin on bridge
+   * can only be grabbed if the player is on the bridge (not on a dragon)."
+   *
+   * ON THE ROAD MEANS `snakeRide`, which is null on a dragon, on a passenger
+   * seat and in a griffin's claws by construction — and still set in the air
+   * over the deck, so a jump for it counts. The blessing is `holdAloft`, the
+   * pose every other prize in the game uses, with the coin's own face on the
+   * card. Five canes is SCORE, not panda food: it is "added to their score".
+   */
+  _checkCoins() {
+    const W = this.world;
+    if (!W.snakeOpen || !W.snakeWay?.coins?.length) return;
+    for (const p of this.players) {
+      if (!p?.snakeRide || p.mount || p.rideAlong || p.carried || p.ko) continue;
+      const c = W.coinAt(p.position.x, p.position.y, p.position.z);
+      if (!c || !W.takeCoin(c)) continue;
+      const pts = COIN_CANES * BAMBOO_POINTS;
+      const who = c.kind === 'satan' ? this.players.filter(Boolean) : [p];
+      for (const q of who) {
+        q.score += pts;
+        const el = document.getElementById(`score-${q.index}`);
+        if (el) el.textContent = q.score;
+        q.holdAloft(c.face ?? null, COIN_BLESS, {
+          flat: true, tint: c.kind === 'satan' ? 0xff5a3c : 0xffd34a,
+        });
+      }
+      this.sfx('starfound');
+      if (c.kind === 'satan') {
+        this.toast(`${p.name} found MR. SATAN'S COIN! +${pts} for everybody!`, p.index);
+      } else {
+        this.toast(`A Snake Way coin! +${pts} — five canes' worth`, p.index);
+      }
+    }
+  }
+
   /** What should be playing right now, or null for "leave it alone". */
   _wantedTrack(dt = 0) {
     /* THE ENDING OUTRANKS EVERYTHING, INCLUDING THE DRAGONS. Its camera is
@@ -7764,6 +7851,15 @@ class Game {
       return 'ryu';
     }
     if (this.players.some((p) => p.mount)) return 'flight';
+    /* SNAKE WAY HAS ITS OWN, and Mr Satan's road has HIS. "Some specific
+       music is playing while on the bridges heading to the islands", and
+       "a special song play that is his preferred song". A road is a ride in
+       the sense the flight theme is — a kitten on it is between islands, and
+       `_islandTrack` would hand her whichever one her feet last settled on.
+       His outranks the plain one: a road with four kittens on two of them
+       plays the funnier song. */
+    if (this.players.some((p) => p.snakeRide?.road.arena)) return 'satan';
+    if (this.players.some((p) => p.snakeRide)) return 'snake';
     return this._islandTrack(dt);
   }
 
@@ -8618,6 +8714,13 @@ class Game {
       this.dojo.update(dt, this.summonScene.dojoDrivers?.() ?? [], {
         hint: false, live: this.summonScene.dojoLesson?.() ?? true,
       });
+      /* THE ENDING IS WHERE SNAKE WAY IS BUILT, AND IT NEVER CALLS `_render`.
+         Both of these sat only at the top of `_render`, so on the frames that
+         needed them they did not run at all: the stepped profile showed the
+         program count flat through the whole ending and the wide shot paying
+         for every road's upload on its first frame. */
+      this._warmSnake();
+      this._primeFinale();
       this._renderView(this.summonScene.camera, 0, 0,
         ...this.renderer.getSize(new THREE.Vector2()).toArray());
       return;
@@ -9008,6 +9111,7 @@ class Game {
        ended the frame. */
     this.shrineScene?.watch(dt, this.leaders, this.players);
     this._updateBalls(dt);
+    this._checkCoins();
     this._tickAloftShot(dt);
     /* After the players have moved and after the mounts are resolved, so the
        track is decided from where everybody actually IS this frame. */
@@ -11005,6 +11109,9 @@ class Game {
     let n = 0;
     let dir = 1;
     for (const i of members) {
+      /* A kitten holding a coin up is having her moment; the group rides on
+         past her rather than dropping to the ordinary camera for two seconds. */
+      if (this.players[i]?.aloftT > 0 && this.players[i]?.snakeRide) continue;
       const sub = this.players[i]?.snakeSubject?.();
       if (!sub) return null;
       if (road && sub.road !== road) return null;
@@ -11482,6 +11589,7 @@ class Game {
   _aimXray(camera, members = null) {
     this._aimArenaXray(camera);
     this._aimTownXray(camera, members);
+    this._aimCloudXray(camera, members);
     const list = this.world.grottos;
     if (!list?.length) return;
     for (const G of list) {
@@ -11504,6 +11612,30 @@ class Game {
       G.walls.material.setCuts(camera.position, seen);
       G.roof.material.setCuts?.(camera.position, seen);
     }
+  }
+
+  /**
+   * Snake Way's clouds, for THIS camera and THIS pane's kittens.
+   *
+   * "Let's use the xray shader when player is running through the clouds,
+   * shouldn't be too aggressive, so maybe 50% and about as big as the player."
+   * The roads run through banks of cloud on purpose, and a kitten inside one
+   * was a kitten you could not see. The puffs are one merged mesh on one
+   * material (`puffMaterial`), and the cut is a cone from the lens to her,
+   * `uCutR` wide at her end — about her own size — taking HALF the cloud
+   * away, not all of it: she is in a cloud, and it should still look like
+   * one. The same `setCuts(camPos, points)` shape every other x-ray here has.
+   */
+  _aimCloudXray(camera, members) {
+    const mat = this.world.snakeWay?.puffMat;
+    if (!mat?.setCuts || !this.world.snakeWay.puffs.visible) return;
+    const seen = [];
+    for (const i of members ?? this.players.map((_, k) => k)) {
+      const p = this.players[i];
+      if (!p || seen.length >= 4) continue;
+      seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.2, p.position.z));
+    }
+    mat.setCuts(camera.position, seen);
   }
 
   /**
@@ -11682,6 +11814,158 @@ class Game {
     this.dojo.faceCamera(camera);
   }
 
+  /**
+   * Compile Snake Way's shaders the moment it exists, before anything shows.
+   *
+   * THE OTHER HALF OF THE LAG SPIKE. With the winding spread over frames
+   * (`World.prepareSnakeWay`) the frame the first gate appeared on still
+   * hitched, because it was also the first frame anything drew with the
+   * dissolve, the cloud or the far islands' water — and a program is linked on
+   * the draw that first needs it. `compileAsync` links them now, off the
+   * critical path where the driver can (KHR_parallel_shader_compile), against
+   * the real scene so the lights match. It walks every mesh visible or not.
+   */
+  _warmSnake() {
+    const W = this.world.snakeWay;
+    if (!W || this._snakeWarm === W || !this.renderer.compileAsync) return;
+    this._snakeWarm = W;
+    const cam = this.players[0]?.camera ?? this.summonScene?.camera;
+    if (!cam) return;
+    const linked = () => { this._snakeLinked = W; };
+    try {
+      Promise.all([
+        this.renderer.compileAsync(W.group, cam, this.scene),
+        this.world.farIsles && this.renderer.compileAsync(this.world.farIsles.group, cam, this.scene),
+      ]).then(linked, linked);
+    } catch (e) {
+      console.warn('[snake] shader warm-up skipped', e);
+      linked();
+    }
+  }
+
+  /**
+   * Link every shader the ending will need, the moment it is accepted.
+   *
+   * MEASURED, NOT GUESSED. Stepping the ending a frame at a time in the pane's
+   * Firefox, every cut to a shot that looks somewhere new hitched on its first
+   * frame — 285ms at "bamboo", 186ms at "There is nothing left" — and it was
+   * the same before Snake Way existed. Part of each was a program being linked
+   * on the draw that first needed it. `compileAsync` over the whole scene
+   * issues them all now, where the driver can link them in parallel
+   * (KHR_parallel_shader_compile), against the scene's own lights so they are
+   * the variants that will be drawn. The rest of each hitch is geometry and
+   * textures reaching the GPU, which only a draw can do.
+   */
+  _warmFinale() {
+    if (!this.renderer.compileAsync) return;
+    try {
+      this.renderer.compileAsync(this.scene, this.summonScene.camera).catch(() => {});
+    } catch (e) {
+      console.warn('[finale] shader warm-up skipped', e);
+    }
+  }
+
+  /**
+   * Put the ending's world on the GPU a slice a frame, in the seconds before
+   * the shots that first show it.
+   *
+   * `_warmFinale` and `_warmSnake` link the shaders; this is the other half. A
+   * mesh's buffers and textures only go up on the first draw that includes it,
+   * and stepped frame by frame the ending paid for them on the frame of a cut:
+   * 127ms the moment the first far isle rose, and on the cut to the wide shot
+   * 352 meshes drawn for the first time at once — most of them the town and the
+   * other islands, which that shot is the first to see, and the rest Snake Way.
+   * So everything that exists when the ending is accepted is queued then, the
+   * roads and the far isles join the queue when they are built, and each frame
+   * draws the next slice into ONE PIXEL of the real canvas before the panes
+   * draw over it.
+   *
+   * ONLY WHAT IS SHOWING, from the scene. The first version lifted every hidden
+   * thing into view for its one-pixel draw too, and uploaded 200 geometries the
+   * ending never shows — the shut arena among them — with one frame of it
+   * taking a second. The roads and the far isles are the exception: they are
+   * hidden now BECAUSE they are about to be revealed, so they are lifted.
+   *
+   * A FIXED SLICE, NOT A TIMED ONE. The slice grew while `render` returned
+   * fast and shrank when it did not, and it grew to 256 and took a whole
+   * second: the call returns long before the GPU has done the upload, so the
+   * JavaScript clock cannot see what it is being asked to budget.
+   *
+   * THE REAL CANVAS, NOT A RENDER TARGET, and the real scene on a layer of its
+   * own. Both were the obvious thing and both would have compiled a second
+   * copy of every shader: a program's key includes the output colour space and
+   * tone mapping, which three drops for a render target, and the lights it was
+   * compiled against, which a scene of its own would not have had. On layer 31
+   * with the lights enabled on it too, every program here is the one the
+   * ending will use. Shadow maps are not re-rendered for it.
+   */
+  _primeAdd(root, lift = false) {
+    if (!root) return;
+    this._primeQueue ??= [];
+    this._primeHad ??= new WeakSet();
+    const walk = (o) => {
+      if (!lift && !o.visible) return;
+      if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && !this._primeHad.has(o)) {
+        this._primeHad.add(o);
+        this._primeQueue.push(o);
+      }
+      for (const c of o.children) walk(c);
+    };
+    walk(root);
+  }
+
+  _primeFinale() {
+    if (!this.summonScene?.active) return;
+    const W = this.world.snakeWay;
+    /* NOT UNTIL `_warmSnake`'s programs have linked. Drawn on the frame they
+       were issued, the first road's draw waited for them, and that was a
+       185ms frame at 3.37s — the thing `compileAsync` is there to avoid. */
+    if (W && this._primeFor !== W && (this._snakeLinked === W || !this.renderer.compileAsync)) {
+      this._primeFor = W;
+      this._primeAdd(W.group, true);
+      this._primeAdd(this.world.farIsles?.group, true);
+    }
+    const q = this._primeQueue;
+    if (!q?.length) return;
+    const cam = this.summonScene.camera;
+    const batch = q.splice(0, PRIME_BATCH).filter((m) => m.parent);
+    const saved = [];
+    const lift = (o) => {
+      for (let a = o; a; a = a.parent) {
+        if (!a.visible) { saved.push([a, 'visible', false]); a.visible = true; }
+      }
+    };
+    for (const m of batch) {
+      saved.push([m.layers, 'mask', m.layers.mask], [m, 'frustumCulled', m.frustumCulled]);
+      m.layers.set(PRIME_LAYER);
+      m.frustumCulled = false;
+      lift(m);
+    }
+    this.scene.traverse((o) => { if (o.isLight) o.layers.enable(PRIME_LAYER); });
+    const R = this.renderer;
+    const sm = [R.shadowMap.autoUpdate, R.shadowMap.needsUpdate];
+    R.shadowMap.autoUpdate = false;
+    R.shadowMap.needsUpdate = false;
+    const mask = cam.layers.mask;
+    cam.layers.set(PRIME_LAYER);
+    try {
+      R.setViewport(0, 0, 1, 1);
+      R.setScissor(0, 0, 1, 1);
+      R.setScissorTest(true);
+      R.render(this.scene, cam);
+    } catch (e) {
+      console.warn('[finale] prime skipped', e);
+      q.length = 0;
+    } finally {
+      cam.layers.mask = mask;
+      [R.shadowMap.autoUpdate, R.shadowMap.needsUpdate] = sm;
+      for (let i = saved.length - 1; i >= 0; i--) {
+        const [o, k, v] = saved[i];
+        o[k] = v;
+      }
+    }
+  }
+
   _renderView(camera, x, y, w, h, members = null) {
     if (w < 2 || h < 2) return;
     camera.aspect = w / h;
@@ -11695,6 +11979,7 @@ class Game {
   }
 
   _render() {
+    this._warmSnake();
     const size = this.renderer.getSize(new THREE.Vector2());
     const W = size.x;
     const H = size.y;
