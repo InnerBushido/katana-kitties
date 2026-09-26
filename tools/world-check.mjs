@@ -107,6 +107,7 @@ import { MenuNav } from '../src/systems/menunav.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
+  cardRect,
   paneSeats, outOfShot, framedMembers, OUT_DROP, paneWiden, BIG_PANE_IN,
   mathSharedWidth, MATH_SHARED_W, MAP_TOUCH_UP, MAP_QUAD_DOWN,
   warnSpot, warnWidth, WARN_UP, WARN_FIT, WARN_MAX_W,
@@ -14745,10 +14746,15 @@ console.log('\n--- the minimap fits its pane ---');
     `${mapWidth(vert).toFixed(1)} vs ${mapWidth({ ...full, touch: true }).toFixed(1)}`);
   /* AND A STACKED SPLIT DOES NOT TAKE THE CUT TWICE. `paneH` already halved, so
      the height cap already halved with it; a second third leaves 54px of
-     islands nobody can read. */
+     islands nobody can read.
+     ...AND SINCE "the minimap is too small, should be the same size as when
+     there are 3 players and 2 are in 1 split screen", IT GETS THE SIDE-BY-SIDE
+     HALF'S MAP: a third off the SCREEN's height, not the pane's. That is not
+     the double cut this refused — see `mapWidth` and the section at the end,
+     which asserts it over every phone layout. */
   const horiz = { paneW: PW, paneH: PH / 2, screenH: PH, touch: true, merged: false };
-  ok('...but a stacked split does not, having already lost the height',
-    Math.abs(mapWidth(horiz) - (PH / 2) * 0.41 * MAP_TOUCH_UP) < 1e-9,
+  ok('...and a stacked split gets exactly the side-by-side half\'s map',
+    Math.abs(mapWidth(horiz) - mapWidth(vert)) < 1e-9,
     `${mapWidth(horiz).toFixed(1)}`);
   /* Spelled as the number the double cut WOULD have produced, because "it is
      bigger than 54" is the whole claim and a ratio hides which 54. */
@@ -22400,8 +22406,20 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...each of them lying in a direction of its own',
       tips.size === fresh.length && spread > 1.5,
       `${tips.size} distinct tilts of ${fresh.length}, ${spread.toFixed(2)} rad apart`);
+    /* A SPREAD, NOT "EVERY ONE OFF ZERO". The roll is `Math.sin(a) * tip` with
+       `a` uniform, so each barrel lands inside a thousandth of zero about one
+       time in 2200 — and "all 22 clear of it" went red about one run in a
+       hundred (1.06% over 200,000 simulated wrecks), over a town that was
+       fine. The regression it is here for is a CONSTANT roll, which has a
+       spread of zero; the real one measured 2.18 at its lowest over 2,000
+       draws and 2.95 median. The bar is 1.5, and more than one barrel square
+       on z at once is a 1-in-22,000 event, so that is allowed to stay a
+       failure. */
+    const roll = fresh.map((q) => q.group.rotation.z);
+    const rollSpread = Math.max(...roll) - Math.min(...roll);
     ok('...none of them in the pose a prop settles into by itself',
-      fresh.every((q) => Math.abs(q.group.rotation.z) > 1e-3));
+      rollSpread > 1.5 && roll.filter((r) => Math.abs(r) <= 1e-3).length <= 1,
+      `roll ${rollSpread.toFixed(2)} rad apart`);
     ok('...and all of them near the spot they were built on',
       fresh.every((q) => Math.hypot(
         q.group.position.x - q.home.x, q.group.position.z - q.home.z) < 2.1));
@@ -28506,6 +28524,355 @@ console.log('\n=== NINE NOTES FROM A PHONE ===');
      scroll. */
   ok('...and the shelf under it says a vertical drag belongs to it',
     has('.pc-list', 'touch-action:\\s*pan-y') && has('.pc-list', 'overscroll-behavior:\\s*contain'));
+}
+
+console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
+{
+  const src = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
+  /* COMMENTS OFF. The notes beside these rules quote the very properties they
+     are about (`z-index: 3`, `overscroll-behavior: contain`), and the first
+     draft of this section read the prose and failed three checks on it. */
+  const css = src('../src/style.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const raw = src('../src/main.js');
+  const M = stripComments(raw);
+  const insp = stripComments(src('../src/systems/inspector.js'));
+  const rule = (sel) => {
+    const at = css.indexOf('\n' + sel + ' {');
+    return at < 0 ? null : css.slice(at, css.indexOf('}', at));
+  };
+  /* Every rule with exactly this selector, not just the first — `.kd-slots`
+     is declared twice on purpose (the grid, then the scroller), and the bug
+     was in the second one. */
+  const rules = (sel) => {
+    const out = [];
+    let at = css.indexOf('\n' + sel + ' {');
+    while (at >= 0) {
+      out.push(css.slice(at, css.indexOf('}', at)));
+      at = css.indexOf('\n' + sel + ' {', at + 1);
+    }
+    return out;
+  };
+  const px = (body, prop) => {
+    const m = new RegExp(`(?:^|[\\s;{])${prop}:\\s*([\\d.]+)px`).exec(body ?? '');
+    return m ? +m[1] : null;
+  };
+  /* Lift one method out of main.js by its signature, to its closing brace at
+     two-space indent — the same trick `_placeWarnings` is driven with. */
+  const lift = (sig) => {
+    const from = raw.indexOf(`  ${sig} {`);
+    const end = raw.indexOf('\n  }', from);
+    return from < 0 || end < 0 ? null : raw.slice(from + 2, end + 4);
+  };
+
+  /* --- 1. RYUUSEKI IS HERE, UNDER THE SCOREBOARD'S REAL BOTTOM ------------
+     "Sometimes, the 'Ryuuseki is here' text is overlaying on top of the top UI
+     for names/score, should be placed where the dragon balls counter was."
+
+     It WAS where the counter was — one element, one `top` — and that is the
+     bug: the `top` was measured against one scoreboard. Measured in the
+     running game at 1280x720 with four kittens sworn: the scoreboard ends at
+     81 and the tally started at 64, seventeen pixels inside the badges. A clan
+     label wrapping is what made the row taller, and nobody is sworn yet when
+     the star counter is up, which is the "sometimes".
+
+     DRIVEN, NOT GREPPED: `_stackUnderScores` lifted out of main.js and run
+     against boxes whose rectangles answer the way a browser's do — the
+     stylesheet's `top` unless an inline one has been written. */
+  {
+    const body = lift('_stackUnderScores()');
+    ok('the stack under the scoreboard is a method that can be lifted', !!body);
+    const place = new Function('HUD_STACK_GAP', 'document',
+      `return function ${body};`);
+    const box = (cssTop, h, hidden = false) => {
+      const el = {
+        style: { top: '' },
+        classList: { contains: (c) => c === 'hidden' && hidden },
+        getBoundingClientRect() {
+          const top = el.style.top ? parseFloat(el.style.top) : cssTop;
+          return { top, bottom: top + h, height: h };
+        },
+      };
+      return el;
+    };
+    const run = ({ sbBottom, balls, toasts, sbH = 42 }) => {
+      const doc = {
+        querySelector: (s) => (s === '.scoreboard'
+          ? { getBoundingClientRect: () => ({ top: sbBottom - sbH, bottom: sbBottom, height: sbH }) }
+          : null),
+        getElementById: (id) => ({ balls, toasts })[id] ?? null,
+      };
+      place(HUD_GAP, doc).call({});
+      return { balls, toasts };
+    };
+    const HUD_GAP = +(/const HUD_STACK_GAP = (\d+);/.exec(raw)?.[1] ?? NaN);
+    ok('...with a gap that is a small positive number of pixels',
+      HUD_GAP > 0 && HUD_GAP <= 12, `${HUD_GAP}`);
+
+    /* THE TWO-PLAYER DESKTOP, WHICH THE STYLESHEET WAS MEASURED AGAINST AND
+       WHICH MUST NOT MOVE. Numbers read off the running game at 1280x720:
+       scoreboard ends 56, tally 64-102, toasts under a tally at 112. */
+    const two = run({ sbBottom: 56, balls: box(64, 38), toasts: box(112, 0) });
+    ok('two kittens on a desktop: nothing is written, the stylesheet stands',
+      two.balls.style.top === '' && two.toasts.style.top === '');
+    /* THE REPORT. Four sworn kittens at 1280x720, scoreboard to 81. */
+    const four = run({ sbBottom: 81, balls: box(64, 38), toasts: box(112, 0) });
+    const bTop = four.balls.getBoundingClientRect().top;
+    line('four sworn: scoreboard ends / tally starts / toasts start',
+      `81 / ${bTop} / ${four.toasts.getBoundingClientRect().top}`);
+    ok('four sworn kittens: the banner is pushed under the badges, not drawn through them',
+      bTop >= 81 + HUD_GAP && bTop <= 81 + HUD_GAP + 1);
+    ok('...and the toasts are pushed under the banner in turn',
+      four.toasts.getBoundingClientRect().top >= bTop + 38 + HUD_GAP);
+    /* A HIDDEN TALLY IS NOT A FLOOR — the toasts only have to clear the
+       scoreboard, and a stale inline top from the tally's last showing must
+       come off. */
+    const gone = box(64, 38, true);
+    gone.style.top = '87px';
+    const hid = run({ sbBottom: 81, balls: gone, toasts: box(62, 0) });
+    ok('...a hidden tally loses its inline top and sets no floor',
+      hid.balls.style.top === ''
+        && hid.toasts.getBoundingClientRect().top === Math.ceil(81 + HUD_GAP));
+    /* AND A ROW THAT SHRINKS BACK GIVES THE ROOM BACK: an inline top from a
+       taller row must not outlive it. */
+    const was = box(64, 38);
+    was.style.top = '87px';
+    const back = run({ sbBottom: 56, balls: was, toasts: box(112, 0) });
+    ok('...and when the row shrinks back the stylesheet gets its number back',
+      back.balls.style.top === '');
+    /* AND WITH NO SCOREBOARD ON SCREEN IT HAS NO OPINION: a hidden HUD
+       measures zero, and a floor of six pixels would pin both boxes to the
+       top of the screen for the frame the HUD comes back. */
+    const blank = box(64, 38);
+    blank.style.top = '87px';
+    const off = run({ sbBottom: 0, sbH: 0, balls: blank, toasts: box(112, 0) });
+    ok('...and a hidden HUD clears both rather than pinning them to the top',
+      off.balls.style.top === '' && off.toasts.style.top === '');
+
+    ok('it runs on events: a ResizeObserver over the scoreboard and the tally',
+      /new ResizeObserver\(\(\) => this\._stackUnderScores\(\)\)/.test(M)
+        && /\['\.scoreboard', '#balls'\]/.test(M));
+    ok('...and on a window resize, which is what moves the scoreboard\'s top',
+      /this\.touchPad\?\.reflow\(\);\s*this\._stackUnderScores\(\);/.test(M));
+  }
+
+  /* --- ...AND IT COMES DOWN ONCE HE HAS BEEN RIDDEN -----------------------
+     "After players talk to and ride Ryuuseki, this message should stop
+     appearing." Driven, for the same reason: the rule is three booleans and
+     each of the three has been the wrong one somewhere in this game. */
+  {
+    const body = lift('_updateBallHud()');
+    const mk = () => {
+      const cls = new Set(['hidden']);
+      return {
+        cls,
+        textContent: '',
+        classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)) },
+      };
+    };
+    const show = (game) => {
+      const el = mk();
+      const hud = mk();
+      const doc = { getElementById: (id) => ({ balls: el, hud })[id] ?? null };
+      new Function('document', 'BALL_COUNT', `return function ${body};`)(doc, BALL_COUNT)
+        .call(game);
+      return { el, hud };
+    };
+    const here = show({ ballsHeld: 7, ryu: {}, quest: { rodeRyu: false } });
+    ok('RYUUSEKI IS HERE shows while he waits at the torii',
+      !here.el.cls.has('hidden') && here.el.textContent === 'RYUUSEKI IS HERE');
+    const rode = show({ ballsHeld: 7, ryu: {}, quest: { rodeRyu: true } });
+    ok('...and not once he has been ridden',
+      rode.el.cls.has('hidden') && !rode.hud.cls.has('has-balls'));
+    const hunt = show({ ballsHeld: 3, ryu: null, quest: { rodeRyu: false } });
+    ok('...while the star count before him is untouched',
+      !hunt.el.cls.has('hidden') && /3 \/ 7/.test(hunt.el.textContent));
+    const game = { ballsHeld: 7, ryu: {}, quest: { rodeRyu: true } };
+    show(game);
+    ok('...and it remembers what it painted, so the frame can ask for a change',
+      game._ballsRode === true);
+    ok('the frame repaints it the moment the latch flips, by whichever path',
+      /if \(!!this\.quest\.rodeRyu !== !!this\._ballsRode\) this\._updateBallHud\(\);/.test(M));
+  }
+
+  /* --- 2. THE SCOREBOARD IS IN FRONT OF THE MINIMAP -----------------------
+     "On Mobile, the mini-map is appearing above the top UI with name/scores
+     of players. It should appear behind it." The existing sibling check
+     already holds the warnings above both; this is the pair's own order. */
+  {
+    const z = (sel) => +(/z-index:\s*(\d+)/.exec(rule(sel) ?? '')?.[1] ?? NaN);
+    line('scoreboard z / map z', `${z('.scoreboard')} / ${z('.map-box')}`);
+    ok('the scoreboard paints over the minimap', z('.scoreboard') > z('.map-box'));
+    ok('...and nothing behind it stops taking taps, because the HUD takes none',
+      /pointer-events:\s*none/.test(rule('#hud') ?? '')
+        && !/pointer-events/.test(rule('.scoreboard') ?? ''));
+  }
+
+  /* --- 3. THE PIP IS A CIRCLE, AND THE SCORE IS NOT SMALLER THAN THE NAME ---
+     Measured at 844x390 with four sworn kittens: 7x11 before, 9.8x9.8 after.
+     A layout engine is what decides the shrink; what a check can pin is that
+     the height is no longer a number of its own. */
+  {
+    const pip = rule('.score .pip') ?? '';
+    ok('the pip\'s height follows its width, so a squeezed pip stays round',
+      /aspect-ratio:\s*1\b/.test(pip) && /height:\s*auto/.test(pip)
+        && /flex:\s*0 1 auto/.test(pip));
+    ok('...with a floor, so a long clan label cannot take it to a dot',
+      (px(pip, 'min-width') ?? 0) >= 12);
+    ok('...and the four-player tightening does not pin the height back',
+      !/\.hud-four \.score \.pip \{[^}]*height:\s*\d/.test(css));
+    /* SCORE >= NAME IN ALL THREE PLACES THE PAIR IS SET. */
+    const four = /\.hud-four \.score \.nm \{ font-size: (\d+)px[\s\S]{0,80}?\.hud-four \.score b \{ font-size: (\d+)px/.exec(css);
+    const pairs = [
+      ['desktop', px(rule('.score .nm'), 'font-size'), px(rule('.score b'), 'font-size')],
+      ['four-player', four ? +four[1] : null, four ? +four[2] : null],
+      ['phone', px(rule('body.touch-ui .score .nm'), 'font-size'),
+        px(rule('body.touch-ui .score b'), 'font-size')],
+    ];
+    line('name / score, desktop - four - phone',
+      pairs.map(([, n, s]) => `${n}/${s}`).join('  '));
+    ok('the score is at least as big as the name, everywhere the pair is set',
+      pairs.every(([, n, s]) => n > 0 && s >= n),
+      pairs.map(([w, n, s]) => `${w} ${n}/${s}`).join(', '));
+  }
+
+  /* --- 4. A PHONE'S HALVES ALL GET ONE MAP, AND ONLY A QUADRANT GIVES BACK ---
+     "When there are two players in split-screen (taking up half the screen
+     each), the minimap is too small, should be the same size as when there
+     are 3 players and 2 are in 1 split screen." The comparison only exists
+     with the split set to STACKED: two stacked players got 95, three with a
+     pair got 129. Asserted over every layout the game can hand a phone, not
+     at the one reported. */
+  {
+    for (const [W, H] of [[844, 390], [915, 412], [780, 360]]) {
+      const halfW = splitLayout(2, W, H, 3, 'vertical')[0];
+      const half = mapWidth({ paneW: halfW.w, paneH: halfW.h, screenH: H, screenW: W,
+        touch: true, merged: false, solo: true });
+      const seen = [];
+      let bad = null;
+      for (const dir of ['vertical', 'horizontal']) {
+        for (const sizes of [[1, 1], [2, 1], [1, 2], [2, 1, 1], [1, 1, 1], [1, 1, 1, 1], [3, 1], [2, 2]]) {
+          const ps = splitLayout(sizes.length, W, H, 3, dir, sizes);
+          ps.forEach((v, i) => {
+            const quad = v.h <= H * 0.75 && v.w <= W * 0.75;
+            const got = mapWidth({ paneW: v.w, paneH: v.h, screenH: H, screenW: W,
+              touch: true, merged: false, solo: sizes[i] <= 1 });
+            seen.push(Math.round(got));
+            /* A HALF IS THE HALF'S MAP, unless the pane is too narrow for it
+               to be 42% of — the width cap is a different rule and it is
+               allowed to win. */
+            const want = Math.min(half, v.w * 0.42);
+            if (!quad && Math.abs(got - want) > 1e-9) bad = `${W}x${H} ${dir} ${sizes} pane ${i}: ${got.toFixed(1)} vs ${want.toFixed(1)}`;
+          });
+        }
+      }
+      ok(`${W}x${H}: every phone pane that is not a quadrant gets the side-by-side half's map`,
+        !bad, bad ?? `${Math.round(half)}px`);
+    }
+    const W = 844;
+    const H = 390;
+    const stacked = splitLayout(2, W, H, 3, 'horizontal')[0];
+    const pair = splitLayout(2, W, H, 3, 'vertical', [2, 1])[0];
+    const mw = (v, solo) => mapWidth({ paneW: v.w, paneH: v.h, screenH: H, screenW: W,
+      touch: true, merged: false, solo });
+    line('844x390 stacked two / pair of three', `${mw(stacked, true).toFixed(1)} / ${mw(pair, false).toFixed(1)}`);
+    ok('THE REPORT: two stacked players now get what a pair of three gets',
+      Math.abs(mw(stacked, true) - mw(pair, false)) < 1e-9);
+    /* AND THE THREE THAT DID NOT MOVE, pinned to their old arithmetic. */
+    const quad = splitLayout(4, W, H, 3, 'vertical')[0];
+    ok('...while a quadrant\'s map is exactly what it was',
+      Math.abs(mw(quad, true) - quad.h * 0.41 * MAP_TOUCH_UP * 0.75) < 1e-9);
+    ok('...and a lone kitten\'s is exactly what it was',
+      Math.abs(mapWidth({ paneW: W, paneH: H, screenH: H, screenW: W, touch: true })
+        - H * 0.41 * MAP_TOUCH_UP) < 1e-9);
+    ok('...and a desktop does not know any of this happened',
+      mapWidth({ paneW: 1920, paneH: 538, screenH: 1080, screenW: 1920, merged: false, solo: true }) === 300);
+  }
+
+  /* --- 5. THE CHARACTER PROFILE AT HALF SIZE, AND A RACK THAT LETS GO -----
+     "When pressing and holding on the Kotodama orbs section, the scrolling
+     functionality is being blocked." Measured with a real wheel over the
+     rack: 0px with `contain`, 300px without. The rack is two rows of eight
+     orbs with nothing to scroll, so `contain` made it a wall. */
+  {
+    const slots = rules('.kd-slots');
+    ok('the orb rack is still declared (twice: the grid, then the scroller)',
+      slots.length === 2);
+    ok('...and neither declaration stops a drag chaining out to the panel',
+      slots.every((r) => !/overscroll-behavior:\s*contain/.test(r)));
+    ok('...while the panel itself still does, so the page never rubber-bands',
+      /\.kd-panel > #kd-body \{[^}]*overscroll-behavior:\s*contain/.test(css));
+    /* "LET'S ZOOM OUT THIS SCREEN BY TWICE AS MUCH." One number, so it stays
+       one decision. Measured at 844x390, four sworn: four cards across at
+       189x252 and the body's scroll height equal to its height, 503 of 503. */
+    ok('a phone\'s profile cards are drawn at exactly half size',
+      /body\.touch-ui \.kd-panel\.kd-cards > #kd-body \{ zoom: 0\.5; \}/.test(css));
+    ok('...the cards only: the heading and OFFER / CONFIRM / CLOSE keep their size',
+      !/body\.touch-ui \.kd-panel(\.kd-cards)? \{[^}]*zoom/.test(css)
+        && !/\.kd-foot[^{]*\{[^}]*zoom/.test(css));
+    const q = /body\.touch-ui \.kd-cards \.kd-quests ul \{ max-height: ([\d.]+)em; \}/.exec(css);
+    ok('...and the quests give up height, not type, to fit',
+      q && +q[1] < 11 && /body\.touch-ui \.kd-quests \{ --q: 15px; \}/.test(css), q?.[1]);
+    ok('...and the points steppers grow so they survive the halving as targets',
+      (px(rule('body.touch-ui .kd-cards .kd-step'), 'width') ?? 0) * 0.5 >= 20);
+  }
+
+  /* --- 6. A PHONE'S OWN CARD IS A HALF, AND IT HAS A WAY OUT -------------
+     "We need a way to click 'back' when on these pages. The Action button
+     can do it, but it is hidden behind the UI... make the size of this screen
+     the size it is when there are 2 players and screen gets split in half."
+     Measured at 844x390, one kitten: the card was 844 wide with 17.4px type
+     and 2 of 10 orbs on screen; it is 420 wide with 10.5px and 6 of 10. */
+  {
+    const W = 844;
+    const H = 390;
+    const halfP = splitLayout(2, W, H, 3, 'vertical')[0];
+    const lone = cardRect(splitLayout(1, W, H)[0], W, H, true);
+    line('lone kitten\'s card on a phone', `${lone.w}x${lone.h} at x ${lone.x}`);
+    ok('a lone kitten on a phone gets exactly the side-by-side half\'s card',
+      lone.w === halfP.w && lone.h === halfP.h);
+    ok('...centred in her pane', Math.abs(lone.x + lone.w / 2 - W / 2) <= 1);
+    const pair = splitLayout(2, W, H, 3, 'vertical', [2, 1])[0];
+    ok('...and so does a wide full-height pane, centred in it',
+      cardRect(pair, W, H, true).w === halfP.w
+        && cardRect(pair, W, H, true).x > pair.x);
+    for (const [what, v] of [
+      ['a side-by-side half', halfP],
+      ['a stacked strip', splitLayout(2, W, H, 3, 'horizontal')[0]],
+      ['a quadrant', splitLayout(4, W, H, 3, 'vertical')[0]],
+    ]) {
+      ok(`...while ${what} keeps its own pane, untouched`, cardRect(v, W, H, true) === v);
+    }
+    ok('...and a desktop is never touched', cardRect(splitLayout(1, 1920, 1080)[0], 1920, 1080, false).w === 1920);
+    ok('the Inspector draws over that rectangle, not the pane',
+      /const r = cardRect\(v, W, H, !!this\.game\.device\?\.touchPrimary\);/.test(insp)
+        && /c\.el\.style\.width = `\$\{r\.w\}px`;/.test(insp));
+
+    /* THE WAY OUT. Both cards carry it, it says what it does, and it is the
+       same body INTERACT runs — driven, so the two cannot come apart. */
+    ok('the chooser says LEAVE and the shelf says BACK, on the card itself',
+      /this\._backButton\(index, 'LEAVE'\)/.test(insp) && /this\._backButton\(index, 'BACK'\)/.test(insp)
+        && /data-back="\$\{index\}"/.test(insp));
+    ok('...INTERACT and a tap on it run one body',
+      /pad\.consume\?\.\('interact'\);\s*this\._back\(index\);/.test(insp)
+        && /closest\?\.\('\[data-back\]'\)[\s\S]{0,200}this\._back\(i\)/.test(insp));
+    ok('...and the tap is asked about the button before any row',
+      insp.indexOf("closest?.('[data-back]')") < insp.indexOf("closest?.('[data-row]')"));
+    {
+      const I = src('../src/systems/inspector.js');
+      const from = I.indexOf('  _back(index) {');
+      const body = I.slice(from + 2, I.indexOf('\n  }', from) + 4);
+      const back = new Function(`return function ${body};`)();
+      const self = { cards: [{ state: 'look', i: 4, _sig: 'x' }], game: {}, closed: 0,
+        closeOne() { this.closed++; this.cards[0].state = null; } };
+      back.call(self, 0);
+      ok('BACK on the shelf returns to the chooser, cursor on LOOK AT MY ORBS',
+        self.cards[0].state === 'choose' && self.cards[0].i === 1 && self.closed === 0);
+      back.call(self, 0);
+      ok('...and LEAVE on the chooser closes the card', self.closed === 1);
+    }
+    ok('...and on a phone it is a target a thumb can find',
+      (px(rule('body.touch-ui .pc-back'), 'min-height') ?? 0) >= 32);
+  }
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

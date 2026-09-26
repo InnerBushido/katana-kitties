@@ -1139,3 +1139,205 @@ constraint is actually against, and every phone then gets the same clearance.
 **None of this is scoped anywhere near a desktop** — every rule is under
 `body.touch-ui`, and the desktop title screen renders byte for byte what it did
 before. Fifth invariant.
+
+## The sixth pass: six notes, and the phone was measured against one scoreboard
+
+Six reports from one afternoon on a phone. Two turned out to be the same
+mistake: a number in the stylesheet that was measured once, against one layout,
+and then applied to every layout.
+
+### "Ryuuseki is here" through the names
+
+> Sometimes, the "Ryuuseki is here" text is overlaying on top of the top UI for
+> names/score, should be placed where the dragon balls counter was, since that
+> was correct placement of that for the UI. After players talk to and ride
+> Ryuuseki, this message should stop appearing.
+
+**It was already where the counter was.** `#balls` is one element with one
+`top`, and it shows the star count first and RYUUSEKI IS HERE later. That was
+the bug. Every `top` under the scoreboard in style.css (46, 64, 88, 112, and the
+phone's 44 / 62 / 72) was measured against a one-row scoreboard. A clan wraps a
+badge's label onto a second line, which is why it happened only "sometimes":
+nobody is sworn while the stars are being hunted, and somebody usually is by the
+time he lands.
+
+- At 713x422 with four kittens, the row ends at 52 and the tally starts at 46.
+- At 1280x720 with four kittens sworn, the row ends at 81 and the tally starts at 64.
+
+**`Game._stackUnderScores`** now measures the scoreboard's real bottom edge. The
+stylesheet's number is kept as a floor, and a box is pushed down only when that
+number would put it inside the badges. The tally sets the floor for the toasts
+in turn.
+
+It runs on events, not every frame. A `ResizeObserver` watches `.scoreboard` and
+`#balls`, which catches clan wraps, a joining kitten, `touch-ui` and late fonts
+without being told about any of them. A window resize catches the scoreboard's
+`top`.
+
+After the fix, measured:
+
+| layout | scoreboard ends | banner | toasts |
+| --- | --- | --- | --- |
+| desktop, 4 sworn | 81 | 87 (was 64) | 131 |
+| phone, 4 | 61 | 67 (was 44) | 101 |
+| desktop, 2 | — | 64, nothing written | 112, nothing written |
+| phone, 2 | — | tally 44..72 | 78 (was 72) |
+
+Two players on a desktop are byte-identical. Two players on a phone are not, and
+were wrong before: the 72 assumed a tally about 19px tall, but it is 28px, so
+the first toast sat touching it.
+
+**It comes down once he has been ridden.** `_updateBallHud` hides the banner
+when `quest.rodeRyu` is set. It uses the latch rather than `ryu.ridden` because
+the latch is saved and stays true after she climbs off. There is no talking to
+him without the summoning scene, so "talked to and ridden" is `rodeRyu` alone.
+The frame loop repaints when the latch disagrees with `_ballsRode`, so all four
+ways of setting it are covered by one line.
+
+### The orb rack was a wall
+
+> On Mobile, when opening the Character Profile screen, I still can't scroll
+> up/down when pressing and holding on the Kotodama orbs section, the scrolling
+> functionality is being blocked.
+
+`.kd-slots` had `overscroll-behavior: contain`, copied from `#kd-body`, where it
+belongs. At eight orbs the rack has nothing to scroll (186 of 186). A scroll
+container that cannot move and may not pass the gesture on blocks every drag
+that starts on it, and the rack is most of the card.
+
+**Measured with a real wheel over the rack**, with the body scrollable:
+`#kd-body` moved 0px with `contain` and 300px without it. The same wheel over the
+kitten's name moved 300px either way.
+
+The first reads of this test were stale, not wrong. Smooth scrolling in a hidden
+pane is throttled, so a read at 500ms came back mid-scroll. Setting
+`scrollBehavior: auto` and waiting 2s gave the clean 0/300 above.
+
+### "Zoom out this screen by twice as much"
+
+> Everything is still too zoomed in, we should be able to show all the kotodama
+> orbs on the screen and buttons without needing to scroll up/down. I'd say,
+> lets zoom out this screen by twice as much. This way, maybe we can fit 4
+> players on this screen, all at once.
+
+**`zoom: 0.5` on `#kd-body` only.** The heading and OFFER / CONFIRM / CLOSE sit
+outside it and keep their size, because the buttons are part of what must be
+visible and they are what a thumb has to hit. One declaration keeps "twice as
+much" as one decision, instead of thirty re-tuned sizes that drift apart.
+
+Measured at 844x390 with four kittens sworn:
+
+- **Before:** four 380x624 cards in two rows. That is 1258px of content in a
+  252px box, five screenfuls.
+- **Zoom alone:** four cards across at 189x311, still 59px too tall.
+- **After the trims:** the body's scroll height equals its height, 503 of 503.
+  Two players are also 503/503.
+
+**The quests gave up height, not type.** "Make the text in Quests section
+smaller" was followed in effect, not literally: at half size the quest text is
+already 7.5px on screen, and smaller is too small for a nine-year-old to read.
+The 11em box, 165px and the tallest thing on the card, is 5em now, and it still
+scrolls inside itself.
+
+The rack's `--slot` comes down so the slots are 36px on screen. The points
+steppers go up to 44px so they are still 22px targets after the halving.
+
+### The map drawn over the scores
+
+`.map-box` is `z-index: 3`. `.scoreboard` had no z-index, so it painted under
+the map. `_drawMaps` already chose to let a long name clip the shared map's
+corner; the stacking order was simply the wrong way round.
+
+The scoreboard is 4 now. Taps still reach the map through it, because the whole
+of `#hud` is `pointer-events: none`.
+
+### The oval pip, and a score smaller than its name
+
+> The circle in the top UI with their name is being squished and becomes an oval
+> instead of a circle. Should always be a circle, can become smaller if space is
+> getting tight. [...] we should keep the score text to be at least as big as
+> the players name, if not bigger.
+
+The scoreboard is absolutely positioned with `left: 50%` and no right edge, so
+it is laid out in half the screen: 422px for four badges with clan labels. Flex
+items shrink to fit. The pip is an empty span with no minimum content width, so
+it gave up its width and kept its height. **It measured 7x11.**
+
+The fix is `flex: 0 1 auto; height: auto; aspect-ratio: 1`: the width flexes and
+the height follows it. The four-player rule's `height: 16px` became `auto` as
+well, or it would pin the height back.
+
+**Tried and failed:** a `min-width` of 8px measured 7px on screen. It is 14px
+now, which measures 9.8x9.8.
+
+On touch the score was 13px, next to a 17px name (or 14px, since the
+four-player width query also matches a phone). It is 14/16 now, the same pair
+the four-player rule uses. world-check asserts score ≥ name for desktop,
+four-player and phone.
+
+### Two stacked players got a smaller map than a pair of three
+
+> When there are two players in split-screen (taking up half the screen each),
+> the minimap is too small, should be the same size as when there are 3 players
+> and 2 are in 1 split screen.
+
+**This comparison only exists with the split set to STACKED.** At 844x390:
+
+- Two players stacked are two 844x193 strips, and they got a **95px** map,
+  because the cap was a fraction of the pane's height.
+- Three players with a pair are not stacked. `splitLayout` gives the uneven
+  pair side-by-side columns, both full height, and those got **129px**.
+- Side by side, two players were already 129.
+
+On a phone, `mapWidth` now bases the cap on the **screen's** height times
+`MAP_SPLIT` for any pane that is neither merged nor a quadrant. This is the
+desktop's rule ("only a quadrant gives room back") applied to a phone, whose
+largest split map is the side-by-side half's 129.
+
+This is not the double cut an earlier note refused. That was `MAP_SPLIT` of the
+pane's height, which for a stacked strip is 54px.
+
+What moved and what did not:
+
+- Quadrants, merged panes, side-by-side panes and every desktop come out
+  unchanged.
+- A stacked strip and the pair's strip over two quadrants move from 95 to 129.
+- world-check asserts the rule over sixteen layouts at three phone sizes.
+
+**This deliberately changes a two-player layout** (fifth invariant), because it
+was asked for in those words, and only for the stacked setting on a phone.
+
+**Open, not redesigned:** on a stacked phone the bottom pane's map, at
+(701,211)–(830,340), sits under the face cluster, whose buttons cover
+x 620–828, y 207–342. It already overlapped at 95px.
+
+### The card with no way out
+
+> For the "At the dealer" page and the "Look at my orbs" we need a way to click
+> "back" when on these pages. The Action button can do it, but it is hidden
+> behind the UI [...] make the size of this screen the size it is when there are
+> 2 players and screen gets split in half.
+
+**The button is under the card on purpose.** `#pane-cards` is z 8 above the pad
+at z 7, so the stick's catchment stops swallowing drags meant for the shelf.
+Lifting the pad back over the card would reopen that bug. So the way out goes
+on the card instead:
+
+- **◀ LEAVE** on the chooser.
+- **◀ BACK** on her orbs.
+
+Both run `Inspector._back`, the same method INTERACT runs, so the button and the
+press cannot mean different things. It is drawn on every device, since a mouse
+had no way out of this card either.
+
+**The size is `cardRect`** in split.js. On a phone, a full-height pane wider
+than a side-by-side half gets that half's rectangle, centred. The card's `--u`
+is sized from its box, so this gives exactly the two-player card with no new
+unit to drift. The dealer's chooser is the same card, so "match this smaller UI
+style" needed nothing of its own.
+
+Measured, one player on a phone:
+
+- **Before:** 844 wide, 17.4px type, 2 of 10 orbs on screen.
+- **After:** 420 wide at x 212, 10.5px type, 6 of 10 orbs on screen.
+- The ACTION button (x 770–828) is now outside the card.
