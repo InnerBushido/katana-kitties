@@ -121,13 +121,37 @@ its power the moment you stand in the ring. Pandapaw hands you a job:
 ```
 
 **The two rungs are paid for in different currencies, and that is deliberate.**
-The cub costs *lifetime* canes; the adult costs canes cut *since the cub
-arrived* (`player.pandaFedFrom`, the tally at the moment the panda was last
-granted). Charging lifetime canes for both meant a player who had banked forty
-before finding the shrine watched her cub appear and grow up in the same
-breath — the cub stage, which is the whole point of raising the thing, lasted a
-single frame and she never saw it. **You cannot pre-pay for raising an animal.**
-`tierFor(400)` is asserted to be a cub, not an adult.
+The cub costs *lifetime* canes; growing an animal that already exists costs canes
+cut *since it last grew* (`player.pandaFedFrom`, the tally at the moment the
+panda was last granted). **You cannot pre-pay for raising an animal that is
+standing in front of you.**
+
+**But at the GRANT, banked canes buy every rung they cover — forty cut before
+the oath is a grown panda.** This is a reversal, and the paragraph it replaced
+argued the other way at length: charging lifetime canes for the adult too meant a
+player who had banked forty watched her cub appear and grow up in the same
+breath, so the cub stage, which is the whole point of raising the thing, lasted a
+single frame and she never saw it. All of that is still true and it is still what
+this costs.
+
+**What overturned it is that nothing regrows.** Asked for as *"if a player cuts
+down 40 bamboo without pledging to Pandapaw, then they can still summon a fully
+grown panda, automatically when they join Pandapaw... so that, if a player cuts
+down all the bamboo, they can still get a fully grown panda."* There are a fixed
+number of canes in the sky (fourth non-negotiable), so a kitten who flattens the
+groves before she finds the shrine was being handed a cub she could never feed:
+twenty canes owing and nothing standing to pay it with. A pet that can never grow
+up is not a stage of an arc, it is a dead end with no way back, and it is reached
+by doing the one thing this game rewards hardest. `tierFor(FULL_PANDA_COST)` is
+asserted to be the top of the ladder, `tierFor(39)` a cub, and the property
+underneath both — *no bank, however deep, leaves her with an animal she cannot
+finish* — is asserted over the range rather than at the one reported number.
+
+**The grant is the only place this applies.** Once there is an animal,
+`fedFrom` is the currency again, so a knocked-down panda cannot be stood back up
+out of a lifetime tally — which is also why a save records the panda's `tier` as
+a fact rather than re-deriving it. See `castRow` in
+[savegame.js](../../src/systems/savegame.js).
 
 `FULL_PANDA_COST` is exported for this reason: the total is no longer something
 a caller can derive by reading `.at` off the last tier, and the world builder's

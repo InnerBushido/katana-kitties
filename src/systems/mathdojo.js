@@ -24,6 +24,11 @@ import { Label } from '../core/label.js';
 
 const R = 24;                       // world units per 1.0 on the circle
 const AXIS = R * 1.42;
+/* THE DARK DISC THE WHOLE ROOM IS PAINTED ON — the axes plus a margin, so the
+   arrowheads have floor under them. It is also the edge of the Dojo as far as a
+   player can SEE, which is why `DOJO_VIEW_R` is this number and not one of its
+   own: see the note at the bottom of the file. */
+const FLOOR_R = AXIS + 8;
 /* The swept-angle arc at a full turn: 96 segments plus the closing point. The
    buffer is allocated at this length once and drawn short. */
 const ARC_MAX = 97;
@@ -87,7 +92,7 @@ export class MathDojo {
 
   _buildFloor() {
     const disc = new THREE.Mesh(
-      new THREE.CircleGeometry(AXIS + 8, 64).rotateX(-Math.PI / 2),
+      new THREE.CircleGeometry(FLOOR_R, 64).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: 0x141026, transparent: true, opacity: 0.88 })
     );
     disc.position.y = -0.06;
@@ -773,18 +778,49 @@ export class MathDojo {
   }
 }
 
-export { R as DOJO_RADIUS };
+export { R as DOJO_RADIUS, FLOOR_R as DOJO_FLOOR_R };
 
 /* HOW FAR OUT THE DOJO STILL COUNTS AS THE DOJO.
 
-   Bigger than `DOJO_RADIUS`, which is the painted circle: this is the distance
-   at which the ROOM takes over — the camera lifts to frame the whole diagram,
-   the sin/cos board comes up, and everybody inside shares one view. A kitten
-   standing just off the edge of the disc is still in the lesson.
+   Bigger than `DOJO_RADIUS`, which is the painted unit circle: this is the
+   distance at which the ROOM takes over — the camera lifts to frame the whole
+   diagram, the sin/cos board comes up, and everybody inside shares one view.
+
+   IT IS THE EDGE OF THE DARK DISC, AND IT WAS TEN UNITS PAST IT. Reported from
+   play: "let's shrink the radius of when the camera changes in the Dojo of the
+   Turning Circle so that the camera does not change until the player is within
+   the circular radius of the center black circle. It currently takes too long of
+   a distance for it to change to the regular camera view, especially when
+   leaving the circular area."
+
+   THE NUMBER WAS 52 AND THE DISC IS 42.08 — `AXIS + 8`, which is `24 * 1.42 + 8`
+   — so the lesson began ten units before there was any floor under her and, far
+   worse on the way out, held on for ten units after she had walked off the only
+   thing on the island that says where the room is. That is the half of the
+   report that is really a bug: an overlay that arrives early is a surprise, and
+   one that will not leave is a camera that has stopped answering the stick.
+
+   SO IT IS `FLOOR_R` NOW, NOT A NUMBER OF ITS OWN. The floor is the only thing
+   here a player can see, so it is the only honest place for the edge to be, and
+   deriving it means an art change to the disc cannot leave the trigger behind.
+   `world-check` measures the built mesh's own geometry and asserts the two are
+   the same — non-negotiable 8, because a typed 42.08 would be a reasoned number
+   about something drawn.
+
+   IT STAYS COMFORTABLY OUTSIDE THE PAINTED CIRCLE, which is the thing this
+   constant must never stop being: `DOJO_RADIUS` is 24 and you are meant to WALK
+   that circle, so an edge anywhere near it would flicker the camera and the
+   board on and off under the one kitten actually doing the lesson. 42.08 leaves
+   18 units of standing room past it, all of it on the disc.
+
+   NOT THE SAME QUESTION AS "MAY SOMETHING BE BUILT HERE" — see `World`'s
+   `offCircle`, which keeps grottos and wards a further ten units out. That one
+   is about the diagram being drawn ON, and it wants the margin this one just
+   gave up.
 
    IT LIVES HERE, WITH `inDojoView`, BECAUSE FOUR PLACES ASK THIS QUESTION and
    two of them used to answer it differently. See `inDojoView`. */
-export const DOJO_VIEW_R = 52;
+export const DOJO_VIEW_R = FLOOR_R;
 
 /**
  * Is this kitten in the Dojo, as far as the camera and the board are concerned?

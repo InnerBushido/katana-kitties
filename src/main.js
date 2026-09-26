@@ -18,6 +18,7 @@ import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from './core/pa
 import {
   splitLayout, mapWidth, mapSpot, mathSharedWidth, assignMaps, nearestMap, keyMaps,
   fitDistance, stablePanes, paneSeats, outOfShot, framedMembers, paneWiden,
+  warnSpot, warnWidth, WARN_FIT,
 } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
@@ -201,6 +202,56 @@ const BAMBOO_WARN_EVERY = 10;
    crosses, so a swing that somehow takes the grove past both says the lower
    number — the one that is actually true. */
 const BAMBOO_WARN_MARKS = [0.5, 0.25];
+
+/* HOW ALARMING A WARNING LOOKS, AND WHAT DECIDES IT.
+
+   Reported from play: "The more bamboo is cut and the more scarcity is lost in
+   the world, the messages should become more alarming, for instance, can start
+   with yellow border, then progress to orange warning, and then red alert,
+   should become progressively more overt to make sure players get the message."
+
+   IT IS THE WORLD'S BAMBOO THAT SETS THE LEVEL, NOT HER OWN TALLY, which is
+   what "the more scarcity is lost in the world" says and is also the only
+   reading that makes one rule out of two warnings: a kitten's tenth cane is a
+   small matter in a full grove and a serious one when there are forty canes
+   left in the sky, and the sentence she is shown is the same sentence either
+   way. So the level is a function of what is standing, and both warnings ask
+   for it through the same function.
+
+   AND IT IS THE MARKS THAT DECIDE, rather than three thresholds of its own.
+   `BAMBOO_WARN_MARKS` already names the fractions this game thinks are worth
+   shouting about, so keying the colours off the same list means the 50% shout
+   is ORANGE and the 25% shout is RED by construction — not because somebody
+   typed 0.5 twice and kept them in step. One more level than there are marks,
+   because the top of the scale is "nothing has been crossed yet"; `world-check`
+   pins that relationship so adding a third mark cannot silently leave the
+   lowest one un-coloured.
+
+   THE WORDS ARE THE OTHER HALF OF "PROGRESSIVELY MORE OVERT". The colour is
+   most of it, and the colour is the one thing a kid who is colour-blind cannot
+   read — so every level also says what it is, in a word, on a chip. The rest of
+   the escalation (how many times it blinks, how thick the border is, how big
+   the words are) is in style.css beside the colours. */
+const WARN_LEVELS = [
+  { cls: 'lv-care', word: 'CAREFUL' },
+  { cls: 'lv-warn', word: 'WARNING' },
+  { cls: 'lv-alert', word: 'RED ALERT' },
+];
+
+/** How alarming a warning printed with `frac` of the world's bamboo still
+ *  standing is. */
+function warnLevel(frac) {
+  let lv = 0;
+  for (const mark of BAMBOO_WARN_MARKS) if (frac <= mark) lv += 1;
+  return Math.min(lv, WARN_LEVELS.length - 1);
+}
+
+/* TWO LINES PER PANE AT MOST — the cap that was on the single strip, kept, and
+   for the reason it was: the one case that stacks is a cane that both crosses a
+   kitten's tenth AND takes the grove past a mark, which is two true sentences
+   about one swing. A third would be a paragraph over the picture, and it is a
+   paragraph in every pane now. */
+const WARN_STACK = 2;
 
 
 
@@ -3793,12 +3844,12 @@ class Game {
       + `   ·   M: math overlay   ·   cut the bamboo east of town`
       + `   ·   fly south-east to Pandapaw and raise a panda`
       + `   ·   fly west to the Dojo of the Turning Circle`;
-    /* AND ANY WARNING SITTING ABOVE IT MOVES WITH IT. This line is the only
-       thing that changes the hint's height — it wraps to two lines on a narrow
-       window and back on a wide one — so it is the only place that can leave a
-       warning eight pixels inside it. Costs a measurement on the frames the
-       hint's text actually changed, which is rarely. */
-    this._placeWarnings();
+    /* AND NOTHING SITS ABOVE IT ANY MORE. This used to re-place the warning
+       strip, because the strip was parked a measured distance over this line
+       and this is the only thing that changes how tall it is. The warnings are
+       two thirds of the way up their own panes now, so the hint's height is
+       nothing to do with them and `_drawMaps` — which knows where the panes
+       are — moves them instead. */
   }
 
   /**
@@ -3928,11 +3979,17 @@ class Game {
    * place that decides whether a panda exists and how big it is.
    *
    * `bambooCut` is a LIFETIME tally, so banked canes still buy the cub the
-   * moment she swears. Growing that cub UP is charged from `pandaFedFrom`, the
-   * tally at the instant the panda was last granted, so those same banked
-   * canes cannot also pay for the adult — see tierFor. One consequence worth
-   * knowing: a fresh panda can only ever be a cub, because tierFor with no
-   * panda yet returns tier 0 or nothing.
+   * moment she swears — and, past `FULL_PANDA_COST`, the adult with it: forty
+   * canes cut before the oath is a grown panda on the frame she swears. See
+   * `tierFor`, which carries the argument, and which is the ONLY place the
+   * ladder is priced. Growing an animal that already exists is charged from
+   * `pandaFedFrom`, the tally at the instant it last grew, so banked canes
+   * cannot be spent twice on the same rung.
+   *
+   * WHICH MEANS A FRESH PANDA CAN NOW ARRIVE FULLY GROWN, and the two things
+   * below that used to rely on it not being able to are fine: the constructor
+   * takes a tier and `setTier` fills the bar for a rideable one, and the toast
+   * reads its name and blurb off `panda.spec` rather than assuming a cub.
    */
   _updatePanda(player) {
     if (!player.raisedPanda) return;
@@ -7754,48 +7811,205 @@ class Game {
    * kitten's tenth AND takes the grove past a mark, which is two true
    * sentences about the same swing; a third would be a paragraph over the
    * picture.
+   *
+   * AND IT IS SAID ONCE IN EVERY PANE, not once on the screen. Reported from
+   * PC play: "maybe should also consider having it on a 'per split screen
+   * quadrant' so that all the players get the message and can see it". The
+   * strip belonged to the whole frame, so at four players three of them were
+   * being shown a consequence in somebody else's window — and it is the one
+   * piece of text in this game that is addressed to all of them at once, which
+   * is exactly why it read as belonging to nobody.
+   *
+   * @param text   the sentence
+   * @param level  0, 1 or 2 — see `WARN_LEVELS` and `warnLevel`
    */
-  warn(text) {
-    const wrap = document.getElementById('warnings');
-    if (!wrap) return;
-    const el = document.createElement('div');
-    el.className = 'warn-line';
-    el.textContent = text;
-    wrap.appendChild(el);
+  warn(text, level = 0) {
+    /* THE LATCH BELONGS TO WHAT IS ON SCREEN, so it is cleared here rather than
+       on a timer: with nothing live, a pane that gave up on the last warning
+       gets to try again on this one. Without this a single long message on a
+       small window would collapse the strips for the rest of the afternoon. */
+    if (!this._warnLive()) this._warnWide = false;
+    const strips = this._placeWarnings(true);
+    if (!strips.length) return;
+    const lv = WARN_LEVELS[Math.max(0, Math.min(level | 0, WARN_LEVELS.length - 1))];
+    /* ONE ELEMENT PER PANE AND NOT ONE CLONED FOUR TIMES. `cloneNode` would
+       copy an element whose entry animation has already started, so the second
+       pane's card would arrive mid-blink. */
+    const made = strips.map((strip) => {
+      const el = document.createElement('div');
+      el.className = `warn-line ${lv.cls}`;
+      /* THE HAZARD TRIANGLE IS AN EMPTY SPAN AND IS DRAWN IN CSS — see
+         `.warn-icon`. Ninth non-negotiable: no icon font, no image, and not a
+         `⚠` either, which on most of these machines is an emoji and arrives in
+         somebody else's colours. */
+      const icon = document.createElement('span');
+      icon.className = 'warn-icon';
+      const body = document.createElement('span');
+      body.className = 'warn-body';
+      const word = document.createElement('b');
+      word.className = 'warn-lv';
+      word.textContent = lv.word;
+      /* A TEXT NODE, NOT `innerHTML`. A player's name is in this sentence and a
+         name is typed in by a nine-year-old on the profile screen. */
+      body.append(word, ` ${text}`);
+      el.append(icon, body);
+      strip.appendChild(el);
+      while (strip.children.length > WARN_STACK) strip.firstChild.remove();
+      return el;
+    });
     const hold = Math.min(
       WARN_HOLD_MAX,
       Math.max(WARN_HOLD_MIN, TOAST_BASE + String(text).length * TOAST_PER_CHAR)
     );
-    setTimeout(() => el.classList.add('fade'), hold);
-    setTimeout(() => el.remove(), hold + TOAST_FADE);
-    while (wrap.children.length > 2) wrap.firstChild.remove();
-    this._placeWarnings();
+    setTimeout(() => { for (const el of made) el.classList.add('fade'); }, hold);
+    setTimeout(() => { for (const el of made) el.remove(); }, hold + TOAST_FADE);
+    /* AND THE FIT IS ASKED NOW THE WORDS ARE IN IT, which is the only moment
+       there is anything to measure. See `_fitWarnings`. */
+    this._fitWarnings();
+  }
+
+  /** Is any warning on screen? Strip 0 is the one every arrangement uses. */
+  _warnLive() {
+    const wrap = document.getElementById('warnings');
+    return !!wrap && [...wrap.children].some((s) => s.children.length > 0);
   }
 
   /**
-   * Park the warning strip just above `.hint`, by MEASURING the hint.
+   * The strip elements, made on demand. One per pane the game can ever lay out.
    *
-   * IT WAS A NUMBER, AND THE NUMBER WAS RIGHT ONCE. `bottom: 44px` clears a
-   * ONE-LINE hint (16px up, ~17px tall) and is eight pixels inside a TWO-line
-   * one — and the hint wraps to two lines on a narrow window, which is every
-   * window a kid plays in on a laptop. Seen on the first warning ever printed:
-   * "EMBER has cut 10 bamboo…" sitting across "press ENTER to join as P2".
-   * Non-negotiable 8 — measure, don't reason, about anything drawn.
-   *
-   * THE CSS NUMBER STAYS AS THE FALLBACK for the frames before this runs and
-   * for a hidden hint, and `touch-ui` is left alone entirely: there the strip
-   * is at the TOP (the bottom of a phone is thumbs), and an inline `bottom`
-   * would beat the rule that puts it there.
+   * NOT IN `index.html` and not built with the HUD, because the markup has no
+   * business knowing the party size and `_buildHud` is re-run when it changes —
+   * these four never change, they are just not all visible at once. Same shape
+   * as the two minimaps: made once, shown and hidden.
    */
-  _placeWarnings() {
+  _warnStrips() {
     const wrap = document.getElementById('warnings');
-    if (!wrap || document.body.classList.contains('touch-ui')) return;
-    if (!wrap.children.length) { wrap.style.bottom = ''; return; }
-    const hint = document.querySelector('.hint');
-    const b = hint?.offsetParent ? hint.getBoundingClientRect() : null;
-    wrap.style.bottom = b?.height
-      ? `${Math.round(window.innerHeight - b.top + 8)}px`
-      : '';
+    if (!wrap) return [];
+    while (wrap.children.length < MAX_PLAYERS) {
+      const s = document.createElement('div');
+      s.className = 'warn-strip hidden';
+      wrap.appendChild(s);
+    }
+    return [...wrap.children];
+  }
+
+  /**
+   * Put one warning strip in every pane, and say which of them are live.
+   *
+   * IT USED TO PARK ONE STRIP ABOVE `.hint` AND MEASURE THE HINT TO DO IT, and
+   * that whole problem is gone: the strip is two thirds of the way up its own
+   * pane now (`warnSpot`), nowhere near the sentence at the bottom of the
+   * screen. The lesson that put it there is kept in the file it moved to —
+   * layout arithmetic over a pane goes in core/split.js where it can be
+   * asserted, because a reasoned number about anything drawn has been wrong
+   * roughly every time.
+   *
+   * THE PANES COME FROM `_panes`, THE SAME CALL THE RENDERER AND THE MINIMAPS
+   * MAKE. The merged view needs no branch: everybody together is one group and
+   * `splitLayout(1)` is the whole frame, which is what the single strip always
+   * was. That is also the fallback shape — see `_fitWarnings` — so there is one
+   * code path and not two.
+   *
+   * CALLED FROM `_drawMaps` AS WELL, at its 20Hz, so a window resized or a
+   * sister joining while a warning is up moves the strips with the panes
+   * instead of leaving them over the wrong quarter of the screen. It costs
+   * nothing when nothing is up: without `force` it returns before it asks the
+   * layout anything.
+   *
+   * @param force place the strips even with no line in them — `warn` is about
+   *              to put one in and needs to know where they are first
+   * @returns the strips that should be filled, in pane order
+   */
+  _placeWarnings(force = false) {
+    const strips = this._warnStrips();
+    if (!strips.length) return [];
+    if (!force && !this._warnLive()) return [];
+    /* A PHONE IS ONE PANE BY DEFINITION — there is one pair of hands — so there
+       is nothing here to place, and the stylesheet's own rule puts the strip
+       under the toasts at the TOP because the bottom of a phone is thumbs. The
+       inline styles are CLEARED rather than merely not written: the desktop
+       test mode turns `touch-ui` on and off in a running game, and a `left` in
+       pixels left behind from before the switch beats the rule that centres
+       it. */
+    if (document.body.classList.contains('touch-ui')) {
+      strips.forEach((s, i) => {
+        s.style.cssText = '';
+        s.classList.toggle('hidden', i > 0);
+      });
+      return [strips[0]];
+    }
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const groups = this.groups?.length ? this.groups : [this.players.map((_, i) => i)];
+    const frame = [{ x: 0, y: 0, w: W, h: H }];
+    const rects = this._warnWide || !groups.length ? frame : this._panes(W, H, groups);
+    /* REMEMBERED FOR THE FIT TEST, which has to compare each strip's height
+       with the pane it is in and must not re-ask `_panes` to find out — the
+       panes it measured against have to be the panes it was drawn in. */
+    this._warnRects = rects;
+    const live = [];
+    strips.forEach((s, i) => {
+      const v = rects[i];
+      s.classList.toggle('hidden', !v);
+      if (!v) {
+        /* A STRIP WITH NO PANE LOSES ITS LINES. Four kittens going down to two
+           mid-warning takes two panes away with them, and a hidden strip still
+           holding a card would bring a stale message back the next time that
+           pane existed. */
+        s.replaceChildren();
+        return;
+      }
+      const w = warnWidth(v.w);
+      const spot = warnSpot({ v, H, w });
+      s.style.width = `${w}px`;
+      s.style.left = `${spot.left}px`;
+      s.style.top = `${spot.top}px`;
+      live.push(s);
+    });
+    return live;
+  }
+
+  /**
+   * Does the message actually FIT the panes it has just been put in?
+   *
+   * "IF THE SCREEN RESOLUTION IS BIG ENOUGH TO FIT THE MESSAGE ON THE SCREEN" —
+   * the condition the report attached to the per-pane idea, and the only honest
+   * way to answer it is to look. How tall a sentence and a half comes out is a
+   * function of the font, the wrap and the strip's width; every version of this
+   * that reasons about characters per line is wrong on the first window nobody
+   * tried. So the words go in, the height comes back off the DOM, and a pane
+   * whose strip is over `WARN_FIT` of its height has lost the argument.
+   *
+   * ALL OF THEM GIVE UP TOGETHER, and it is the whole party that reads one
+   * strip across the frame instead. Per-pane warnings in the two big panes of a
+   * 3v1 and nothing in the small one would be worse than either answer: the
+   * girl on her own is the one who would be shown nothing at all.
+   *
+   * IT IS SYNCHRONOUS AND IT IS ONE-WAY. Reading `getBoundingClientRect` forces
+   * the layout, and the strips are then re-placed in the same task — so the
+   * browser never paints the version that did not fit and there is nothing to
+   * see. One way, because `_warnWide` is only ever set here and only ever
+   * cleared when the screen is empty of warnings: a rule that could switch back
+   * mid-message could switch back and forth.
+   *
+   * THE CARDS ALREADY IN STRIP 0 ARE NOT TOUCHED. Strip 0 is live in both
+   * arrangements, so collapsing widens and moves the box a card is already
+   * sitting in rather than building a new one — moving an element restarts its
+   * animations, and a warning that blinks its entrance twice looks like two
+   * warnings.
+   */
+  _fitWarnings() {
+    if (this._warnWide) return;
+    const rects = this._warnRects ?? [];
+    if (rects.length < 2) return;
+    const strips = this._warnStrips();
+    const over = rects.some((v, i) => {
+      const h = strips[i]?.getBoundingClientRect?.().height ?? 0;
+      return h > v.h * WARN_FIT;
+    });
+    if (!over) return;
+    this._warnWide = true;
+    this._placeWarnings(true);
   }
 
   /**
@@ -7836,17 +8050,11 @@ class Game {
    * than a waste.
    */
   _warnBamboo(cutter) {
-    /* HER OWN TALLY FIRST, and only while she is unsworn. `bambooCut` counts
-       up forever, so `% 10` is the tenth, twentieth, thirtieth... which is
-       exactly "if they cut 10 more down before pledging, the warning should
-       pop up again". */
-    if (cutter && !cutter.raisedPanda && cutter.bambooCut > 0
-      && cutter.bambooCut % BAMBOO_WARN_EVERY === 0) {
-      this.warn(`${cutter.name.toUpperCase()} has cut ${cutter.bambooCut} bamboo `
-        + 'and has no panda to eat it. Swear at PANDAPAW first — bamboo never grows back.');
-    }
+    /* THE GROVE IS COUNTED FIRST, because how much is standing is what decides
+       how ALARMING both of these are — see `warnLevel`. It used to be counted
+       after her own warning had already been printed, which was fine while
+       every warning looked the same.
 
-    /* AND THE GROVE.
        COUNTED OFF THE PROPS, NOT KEPT. Same argument `lasthunt` is written on:
        `prop.scored` is the only thing in the game that knows what is down, and
        a second tally of it is a second thing that can be wrong about it —
@@ -7855,9 +8063,27 @@ class Game {
        the remainder is a filter over ~216 props on the frame a cane goes over,
        which does not appear next to anything else in that frame. */
     this._bambooTotal ??= this.world.props.filter((p) => p.kind === 'bamboo').length;
+    const left = this._bambooTotal > 0
+      ? this.world.props.filter((p) => p.kind === 'bamboo' && !p.scored).length : 0;
+    /* A WORLD WITH NO BAMBOO IN IT READS AS FULL rather than as empty. There is
+       no such world — `world-check` will not let one be built — but the level
+       of a division by zero is the sort of thing that reaches the screen as a
+       RED ALERT on the title island. */
+    const frac = this._bambooTotal > 0 ? left / this._bambooTotal : 1;
+    const level = warnLevel(frac);
+
+    /* HER OWN TALLY, and only while she is unsworn. `bambooCut` counts up
+       forever, so `% 10` is the tenth, twentieth, thirtieth... which is
+       exactly "if they cut 10 more down before pledging, the warning should
+       pop up again". */
+    if (cutter && !cutter.raisedPanda && cutter.bambooCut > 0
+      && cutter.bambooCut % BAMBOO_WARN_EVERY === 0) {
+      const hers = `${cutter.name.toUpperCase()} has cut ${cutter.bambooCut} bamboo `
+        + 'and has no panda to eat it. Swear at PANDAPAW first — bamboo never grows back.';
+      this.warn(hers, level);
+    }
+
     if (this._bambooTotal <= 0) return;
-    const left = this.world.props.filter((p) => p.kind === 'bamboo' && !p.scored).length;
-    const frac = left / this._bambooTotal;
 
     /* THE MARK IS LATCHED WHETHER OR NOT IT IS SPOKEN, and that ordering is
        the whole of this block being right. Latching only on the sentence
@@ -7877,8 +8103,15 @@ class Game {
     const unsworn = (this.players ?? []).filter((p) => p && !p.raisedPanda);
     if (!unsworn.length) return;
     const who = unsworn.map((p) => p.name.toUpperCase()).join(', ');
-    this.warn(`Only ${Math.round(say * 100)}% of the bamboo is left — ${left} canes in the whole sky. `
-      + `${who} ${unsworn.length > 1 ? 'have' : 'has'} not sworn at PANDAPAW yet, and it never grows back.`);
+    const all = `Only ${Math.round(say * 100)}% of the bamboo is left — ${left} canes in the whole sky. `
+      + `${who} ${unsworn.length > 1 ? 'have' : 'has'} not sworn at PANDAPAW yet, and it never grows back.`;
+    /* ASKED OF THE MARK BEING ANNOUNCED, not of what is standing this instant.
+       The two cannot currently disagree — the colour bands ARE the marks, and
+       the loop above keeps the lowest one crossed, so what is standing is
+       always inside the band of the mark it is announcing. This is the right
+       one of the two to ask anyway: the sentence is about the mark, and if the
+       bands are ever unpicked from the marks it should stay about the mark. */
+    this.warn(all, warnLevel(say));
   }
 
   /**
@@ -9801,6 +10034,12 @@ class Game {
     }
 
     this._drawMathBoard(panes, groups, W, H, mathUp);
+    /* AND ANY WARNING ON SCREEN MOVES WITH THE PANES. Riding this throttle
+       rather than growing one of its own, exactly as `_updateHint` does: both
+       are "something about the shape of the screen has changed", neither is
+       wanted per frame, and this returns before it asks the layout anything
+       unless a warning is actually up. */
+    this._placeWarnings();
   }
 
   /**

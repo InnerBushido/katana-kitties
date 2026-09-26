@@ -352,12 +352,18 @@ export function castRow(p, here = true) {
        who had had a full-grown one for an hour. Reported in exactly those
        words.
 
-       AND THE RULE COULD NOT HAVE GOT IT RIGHT EVEN IF IT HAD RUN. `tierFor`
-       charges growth from `fedFrom`, the tally at the moment the animal last
-       grew — so a grown panda is saved with the debt already paid, and
-       replaying the rule over those numbers yields a CUB. "A fresh panda can
-       only ever be a cub" is written into `_updatePanda` as a consequence
-       worth knowing; here it is the thing that loses the animal.
+       AND THE RULE COULD NOT BE TRUSTED TO GET IT RIGHT EVEN IF IT HAD RUN.
+       When this was written it could not get it right at ALL: `tierFor` would
+       only ever hand out a CUB to a kitten with no panda, so replaying it over
+       a grown panda's numbers lost the animal outright. That half has since
+       been overturned — banked canes now buy every rung they cover, so a
+       reconstruction would usually come back with the adult. USUALLY is the
+       word that keeps the tier a saved fact: a KNOCKED-DOWN panda is a cub
+       whose owner has forty-odd lifetime canes behind her, so the rule would
+       confidently stand it back up, which is precisely the state the shrine
+       exists to be the only way out of. A rule that is right about the common
+       case and wrong about the one that cannot be undone is worse here than no
+       rule at all.
 
        SO THE TIER IS A FACT AND IT IS RECORDED. `down` with it, because a
        knocked-down panda is a cub that must STAY one until the shrine, and

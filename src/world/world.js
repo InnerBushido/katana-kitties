@@ -1898,8 +1898,18 @@ export class World {
       /* THE DOJO'S CIRCLE IS NOT A BUILDING SITE. Its flattened disc is the
          maths lesson — a grotto standing on the graph paper would be a rock in
          the middle of the diagram the whole island exists to draw, and the
-         dojo camera frames that disc. Clear of `dojoRadius` and it is out on
-         the rim where the island has nothing else to do. */
+         dojo camera frames that disc. Clear of this and it is out on the rim
+         where the island has nothing else to do.
+
+         52 IS THE DRAWN DISC (42.08, `DOJO_FLOOR_R`) PLUS TEN UNITS OF
+         CLEARANCE, and it is deliberately NOT `DOJO_VIEW_R` any more, which
+         was the same 52 until the camera trigger was pulled back onto the edge
+         of the disc. These are two different questions: that one is "is she in
+         the lesson", answered on the floor she can see, and this one is "could
+         this thing end up IN SHOT", which wants a margin round the disc because
+         a grotto is 15 units of rock and the camera frames the whole diagram
+         from 104 back. Recoupling them would put a cave on the rim of the graph
+         paper. */
       const dc = this.dojoCentre;
       const offCircle = (x, z) => isl !== this.dojoIsland
         || Math.hypot(x - dc.x, z - dc.z) > 52;

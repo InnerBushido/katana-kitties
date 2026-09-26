@@ -1163,3 +1163,96 @@ export const MATH_SHARED_W = 540;
 export function mathSharedWidth(paneW, pad = 28) {
   return Math.max(1, Math.min(MATH_SHARED_W, paneW - pad));
 }
+
+/* ---------------------------------------------------------------------------
+   THE WARNING STRIP — ONE IN EVERY PANE THAT CAN HOLD IT.
+
+   Reported from play on a PC: "The Bamboo warning sign is too small and too
+   difficult to notice/see... It is currently at the bottom of the screen and
+   small... I'd recommend... moving it closer to the center of the screen (not
+   in the center so it doesn't distract players gameplay too much). Maybe should
+   also consider having it on a 'per split screen quadrant' so that all the
+   players get the message and can see it, if the screen resolution is big
+   enough to fit the message on the screen."
+
+   IT LIVES HERE, WITH `mapSpot` AND `mathSharedWidth`, FOR THE REASON THEY DO.
+   It is layout arithmetic over a pane; `world-check` cannot run a layout
+   engine, and the boxes that share a pane have to be placed by functions that
+   can be asserted side by side — a third copy of "where is this pane on the
+   page" inline in `main.js` is how the maths board ended up in a stranger's
+   window. `Game.warn` only writes these answers onto `style`.
+--------------------------------------------------------------------------- */
+
+/**
+ * How far down its pane the strip's TOP sits.
+ *
+ * NOT THE MIDDLE, AND THE REPORT SAYS WHY: "not in the center so it doesn't
+ * distract players gameplay too much". The camera is a fixed three-quarter
+ * follow, so the kitten is drawn a little under the middle of her own pane —
+ * a banner centred there is a banner across her. 0.6 puts the top of it just
+ * below her and still nowhere near the bottom edge, which is the half of the
+ * report this number is actually answering: the strip WAS at the bottom, 44px
+ * above the hint, where at 1080 it is 1,000 pixels away from where anybody is
+ * looking.
+ */
+export const WARN_UP = 0.6;
+
+/**
+ * The most of a pane's height a warning may cover before that pane stops
+ * getting one of its own.
+ *
+ * THIS IS "IF THE SCREEN RESOLUTION IS BIG ENOUGH TO FIT THE MESSAGE ON THE
+ * SCREEN", AND IT IS MEASURED RATHER THAN GUESSED AT. The message is a
+ * sentence and a half of ordinary prose, so how many lines it takes depends on
+ * the font, the wrap and the strip's width — none of which this file or
+ * `main.js` may reason about (non-negotiable 8). `Game._fitWarnings` puts the
+ * words in, reads the height back off the DOM and compares it with this;
+ * failing panes give up and the whole party reads one strip across the frame
+ * instead, which is worse than four and much better than four unreadable ones.
+ *
+ * AND `WARN_UP + WARN_FIT < 1` IS THE OTHER HALF OF THE RULE. A strip that
+ * passes the fit test starts at 0.6 and cannot reach past 0.94 of its pane, so
+ * it cannot run out of the bottom of the pane it belongs to — which is the
+ * failure that would put one kitten's warning in her sister's window. Asserted
+ * rather than left as arithmetic in a comment.
+ */
+export const WARN_FIT = 0.34;
+
+/** Widest a strip ever gets, however much pane there is. Long enough for the
+ *  longest warning in two lines at 15px; wider than that and the eye has to
+ *  travel across the whole screen to read one sentence. */
+export const WARN_MAX_W = 720;
+
+/** ...and it keeps a margin either side of its pane, so a strip in a quadrant
+ *  cannot touch the seam its neighbour's strip is on the other side of. */
+export const WARN_PANE_W = 0.92;
+
+/** How wide the strip in this pane is, in CSS pixels. */
+export function warnWidth(paneW) {
+  return Math.max(1, Math.min(WARN_MAX_W, paneW * WARN_PANE_W));
+}
+
+/**
+ * Where that strip sits on the page.
+ *
+ * NO `W` — AND THAT IS THE DIFFERENCE FROM `mapSpot`. A map picks the corner of
+ * its pane nearest the SEAM, so it has to know where the middle of the screen
+ * is; a warning is centred in its own pane and the screen's width never enters
+ * the answer. Taking a parameter it did not use would invite somebody to make
+ * it mean something.
+ *
+ * @param v  the pane, in WebGL bottom-left origin
+ * @param H  the whole frame's height — the flip to CSS coordinates
+ * @param w  the strip's width, from `warnWidth`
+ * @returns {{left: number, top: number}} CSS page coordinates, top-left origin
+ */
+export function warnSpot({ v, H, w }) {
+  /* Viewport coords count up from the bottom and CSS counts down from the top.
+     Same inversion `mapSpot` makes, and getting it wrong has the same symptom:
+     a message that reads as belonging to the pane above or below. */
+  const cssTop = H - v.y - v.h;
+  return {
+    left: Math.round(v.x + (v.w - w) / 2),
+    top: Math.round(cssTop + v.h * WARN_UP),
+  };
+}

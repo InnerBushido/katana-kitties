@@ -2078,16 +2078,21 @@
            is a thing that appears rather than a counter that starts at zero
            and looks like a chore list. -->
       <div id="balls" class="hidden">★ 0 / 7</div>
-      <!-- WARNINGS, AT THE BOTTOM, WHERE THE TOASTS ARE NOT.
+      <!-- WARNINGS, ONE IN EVERY PANE, WHERE THE TOASTS ARE NOT.
            A toast says what just happened and scrolls away at the top of the
            screen with four others; a warning says what is about to be wasted
-           and has to be read. Asked for as "a small warning at the bottom of
-           the screen", which is also the only strip of the frame nothing else
-           claims — the scoreboard and the toasts own the top, the maps and the
-           sin/cos board own the pane corners. It sits above `.hint` rather
-           than replacing it: the hint is what the buttons do, and a kid who
-           has just been told to go to Pandapaw still needs to know which
-           button walks her there. -->
+           and has to be read.
+           EMPTY ON PURPOSE. It held the lines themselves when there was one
+           strip for the whole screen; it holds one STRIP PER PANE now, built by
+           `Game._warnStrips` and placed by `Game._placeWarnings` from the same
+           `splitLayout` panes the renderer and the minimaps use. Asked for as
+           "having it on a 'per split screen quadrant' so that all the players
+           get the message" — at four players a strip on the whole frame is a
+           consequence addressed to the room, printed in one girl's window.
+           NOT AT THE BOTTOM ANY MORE EITHER: two thirds of the way up its own
+           pane, because "it is currently at the bottom of the screen and small"
+           was the other half of the same report. The hint keeps the bottom, and
+           keeps it to itself. -->
       <div id="warnings"></div>
       <div class="hint" id="hint"></div>
     </div>

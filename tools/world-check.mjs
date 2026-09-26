@@ -109,11 +109,14 @@ import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   paneSeats, outOfShot, framedMembers, OUT_DROP, paneWiden, BIG_PANE_IN,
   mathSharedWidth, MATH_SHARED_W, MAP_TOUCH_UP, MAP_QUAD_DOWN,
+  warnSpot, warnWidth, WARN_UP, WARN_FIT, WARN_MAX_W,
 } from '../src/core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
 import { postsFor } from '../src/world/build.js';
-import { MathDojo, DOJO_RADIUS, DOJO_VIEW_R, inDojoView } from '../src/systems/mathdojo.js';
+import {
+  MathDojo, DOJO_RADIUS, DOJO_FLOOR_R, DOJO_VIEW_R, inDojoView,
+} from '../src/systems/mathdojo.js';
 import { Orb } from '../src/entities/orb.js';
 import { Minimap, ZOOMS } from '../src/systems/minimap.js';
 import {
@@ -2388,20 +2391,53 @@ console.log('\n--- Pandapaw: the clan you have to earn ---');
     (p) => p.kind === 'bamboo'
       && Math.hypot(p.home.x - isl.x, p.home.z - isl.z) < isl.radius));
 
-  /* The growth ladder, and the two different currencies it is paid in.
-     The cub costs 20 LIFETIME canes, so an afternoon in the grove before she
-     ever found the shrine still counts. The adult costs 20 canes cut SINCE the
-     cub arrived, so those same banked canes cannot buy both rungs at once —
-     the check that matters most here is the 400-cane player, who used to get a
-     fully grown panda the instant she swore and never saw a cub at all. */
-  line('tier at 0 / 19 / 20 / 400 canes, no panda yet',
-    [0, 19, 20, 400].map((n) => tierFor(n)).join(', '));
+  /* The growth ladder, and the currencies it is paid in. The cub costs 20
+     LIFETIME canes, so an afternoon in the grove before she ever found the
+     shrine still counts. Growing an animal that already EXISTS costs 20 canes
+     cut since it last grew, so the same canes cannot be spent twice on one
+     rung.
+
+     AND AT THE GRANT, BANKED CANES BUY EVERY RUNG THEY COVER — which is a
+     REVERSAL, and the check that used to be here is the one it overturned:
+     `a fresh panda is ALWAYS a cub, however deep the bank`, written for the
+     400-cane player who got a fully grown panda the instant she swore and
+     never saw a cub at all.
+
+     WHAT OVERTURNED IT WAS THE GROVE RUNNING OUT. Reported as "if a player
+     cuts down 40 bamboo without pledging to Pandapaw, then they can still
+     summon a fully grown panda, automatically when they join Pandapaw...
+     so that, if a player cuts down all the bamboo, they can still get a fully
+     grown panda." Nothing regrows (fourth non-negotiable), so the old rule
+     handed a kitten who had flattened every grove a cub with twenty canes
+     owing and nothing standing to pay it with — a pet that can never grow up,
+     reached by doing the one thing this game rewards hardest. See `tierFor`,
+     which carries both sides of the argument. */
+  line('tier at 0 / 19 / 20 / 39 / 40 / 400 canes, no panda yet',
+    [0, 19, 20, 39, 40, 400].map((n) => tierFor(n)).join(', '));
   ok('no panda before the first tier is paid for', tierFor(0) === -1 && tierFor(19) === -1);
   ok('twenty canes buys a cub', tierFor(20) === 0);
-  ok('a fresh panda is ALWAYS a cub, however deep the bank',
-    tierFor(400) === 0 && tierFor(400, null, -1) === 0);
-  ok('banked canes cannot also buy the adult',
-    tierFor(400, 400, 0) === 0, 'sworn at 400 -> still a cub');
+  ok('...and it is still only a cub one cane short of the full price',
+    tierFor(FULL_PANDA_COST - 1) === 0);
+  /* THE REPORTED CASE, NAMED, AND READ OFF THE LADDER'S OWN TOTAL rather than
+     written as 40 — the number is `PANDA_TIERS` summed, so re-pricing a rung
+     moves this check with it instead of leaving it asserting an old total. */
+  ok('...but forty cut BEFORE the oath buy a grown panda outright',
+    tierFor(FULL_PANDA_COST) === PANDA_TIERS.length - 1,
+    `${FULL_PANDA_COST} canes -> tier ${tierFor(FULL_PANDA_COST)}`);
+  /* AND NO BANK, HOWEVER DEEP, LEAVES HER WITH AN ANIMAL SHE CANNOT FINISH.
+     The property rather than the case: this is what the report is actually
+     about, and it is the one thing a fixed number of canes in the sky can take
+     away for good. */
+  ok('...and a kitten who cut the whole sky down is never stuck with a cub',
+    [40, 41, 60, 216, 5000].every((n) => tierFor(n) === PANDA_TIERS.length - 1));
+  /* IT NEVER GOES BACKWARDS EITHER. A ladder read out of a cumulative sum is
+     one `+=` away from pricing a middle rung at nothing, and the symptom would
+     be a bank that buys LESS the bigger it gets. */
+  ok('...and a bigger bank never buys a smaller animal',
+    Array.from({ length: 200 }, (_, n) => tierFor(n))
+      .every((t, n, all) => n === 0 || t >= all[n - 1]));
+  ok('growing one that already exists is still charged from when it last grew',
+    tierFor(400, 400, 0) === 0, 'sworn at 400 -> her panda is a cub and stays one');
   ok('twenty more AFTER the cub grows it up',
     tierFor(419, 400, 0) === 0 && tierFor(420, 400, 0) === 1);
   ok('and it stops at the top', tierFor(9999, 420, 1) === 1);
@@ -8736,11 +8772,14 @@ console.log('\n--- what a save remembers about an animal and a dragon ---');
     bare.indexOf('export function applyCast('));
   ok('a kitten\'s row remembers her panda',
     /panda: p\.panda \?/.test(row));
-  /* THE TIER, BECAUSE IT CANNOT BE RE-DERIVED. `_updatePanda` charges growth
-     from `pandaFedFrom`, which a grown panda has already spent — replaying the
-     rule over a restored tally gives a CUB every time. That is the whole
-     reason the row carries the answer rather than the ingredients. */
-  ok('...which tier it is, since a fresh one can only ever be a cub',
+  /* THE TIER, BECAUSE IT CANNOT BE SAFELY RE-DERIVED. It used to be that it
+     could not be re-derived at all — `tierFor` handed a kitten with no panda a
+     CUB whatever her tally, so replaying the rule lost a grown animal every
+     time. Banked canes buy both rungs now, so the rule would usually get it
+     right; the case it would get WRONG is the knocked-down panda, a cub with
+     forty lifetime canes behind it that the rule would stand straight back up.
+     See `castRow` in savegame.js. */
+  ok('...which tier it is, since the rule would stand a knocked-down one back up',
     /tier: p\.panda\.tier/.test(row));
   /* AND WHETHER IT IS DOWN. "should save whether panda is grown or small (as
      it can be small after getting hit in the arena)." */
@@ -14986,6 +15025,69 @@ console.log('\n--- a kitten on a dragon is still in the Dojo ---');
   const d = DOJO_VIEW_R * 0.75;
   ok('...and the boundary is round: 0.75r on BOTH axes at once is outside it',
     !inDojoView(at(c.x + d, c.z + d), c));
+
+  /* --- AND THE EDGE IS THE EDGE OF THE FLOOR ----------------------------
+     THE CHECK THAT WOULD HAVE CAUGHT IT, and the honest version is that there
+     was nothing to catch: `DOJO_VIEW_R` was a typed 52 with a paragraph saying
+     it was "bigger than DOJO_RADIUS", which it was, and nothing said WHY 52.
+     Reported from play: "let's shrink the radius of when the camera changes in
+     the Dojo of the Turning Circle so that the camera does not change until the
+     player is within the circular radius of the center black circle. It
+     currently takes too long of a distance for it to change to the regular
+     camera view, especially when leaving the circular area."
+
+     THE BLACK CIRCLE IS THE ONLY DARK MESH IN THE ROOM and it is 42.08 across
+     the radius — so at 52 the lesson began ten units before there was floor
+     under her and, worse, held the camera for ten units after she had walked
+     off the only thing that says where the room is.
+
+     MEASURED OFF THE BUILT MESH, NOT OFF THE CONSTANT. Non-negotiable 8: the
+     disc is drawn, so the number is read back out of the geometry the room
+     actually built. A `CircleGeometry` keeps its radius in `parameters`, which
+     is what makes this askable without a GPU. */
+  {
+    const probe = new MathDojo(new THREE.Scene(), c);
+    const discs = [];
+    probe.group.traverse((o) => {
+      const p = o.geometry?.parameters;
+      /* THE DARK ONE, by colour rather than by position in the group: the ring
+         that paints the unit circle is also a disc-shaped geometry, and "the
+         first mesh added" is exactly the sort of thing a refactor reorders. */
+      if (p?.radius && o.material?.color?.getHex?.() === 0x141026) discs.push(p.radius);
+    });
+    line('the dark disc under the diagram / the camera radius',
+      `${discs.join(',')} / ${DOJO_VIEW_R}`);
+    ok('the Dojo is drawn on exactly one dark disc', discs.length === 1);
+    ok('...and the camera changes at the edge of it, not ten units past',
+      discs[0] === DOJO_VIEW_R && DOJO_VIEW_R === DOJO_FLOOR_R,
+      `${discs[0]} vs ${DOJO_VIEW_R}`);
+    /* THE WAY OUT IS THE HALF OF THE REPORT THAT WAS REALLY A BUG. "Especially
+       when leaving the circular area": a step off the floor is a step out of
+       the lesson, and it used to be a step plus ten units. */
+    ok('...so a step off the floor is out of the Dojo, and a step on is in',
+      inDojoView(at(c.x + DOJO_FLOOR_R - 1, c.z), c)
+        && !inDojoView(at(c.x + DOJO_FLOOR_R + 1, c.z), c));
+    /* AND IT CANNOT BE SHRUNK ONTO THE PAINTED CIRCLE, which is the way this
+       report could be over-read. You are meant to WALK the unit circle at
+       radius 24, so an edge anywhere near it would flicker the camera and the
+       board under the one kitten actually doing the lesson. */
+    ok('...while still leaving standing room outside the circle she walks',
+      DOJO_VIEW_R > DOJO_RADIUS * 1.5,
+      `${Math.round(DOJO_VIEW_R - DOJO_RADIUS)} units of floor past the circle`);
+    probe.dispose?.();
+  }
+
+  /* AND "MAY SOMETHING BE BUILT HERE" IS NOT THE SAME QUESTION, which is why
+     `World`'s `offCircle` still keeps a grotto a further ten units out. The two
+     were the same 52 and are now deliberately different; recoupling them would
+     put a cave on the rim of the graph paper the island exists to draw. */
+  {
+    const wj = readFileSync(new URL('../src/world/world.js', import.meta.url), 'utf8');
+    const keep = /Math\.hypot\(x - dc\.x, z - dc\.z\) > (\d+)/.exec(stripComments(wj));
+    ok('nothing is built on the graph paper, and it keeps a margin round it',
+      !!keep && +keep[1] > DOJO_FLOOR_R,
+      `${keep?.[1]} clear vs a ${DOJO_FLOOR_R} disc`);
+  }
 
   /* AND `main.js` HAS STOPPED WRITING IT OUT BY HAND. Four call sites, one
      answer — the whole point of moving it. The one survivor is the `!p.mount`
@@ -27502,8 +27604,18 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
      spending something she cannot get back and has no way to know it. */
   ok('there is a warning strip, and it starts empty',
     /<div id="warnings"><\/div>/.test(html) && /#warnings \{/.test(css));
-  ok('...at the bottom of the screen, where the note asked for it',
-    /#warnings \{[^}]*bottom:/.test(css));
+  /* IT IS NOT AT THE BOTTOM OF THE SCREEN ANY MORE, AND THIS CHECK IS WHY THAT
+     IS WORTH SAYING OUT LOUD. It used to read `/#warnings \{[^}]*bottom:/` and
+     it was RIGHT: the note it quotes asked for "a small warning at the bottom
+     of the screen", and this is what held it there. The next note overturned
+     it — "it is currently at the bottom of the screen and small... I'd
+     recommend... moving it closer to the center of the screen" — so the
+     container is the whole frame now and the strips inside it are placed per
+     pane. See the section further down, which is the check for the new rule.
+     Kept as a check rather than deleted, because "there is no rule about where
+     this box is" is exactly the state it was in before either note. */
+  ok('...and the container is the whole frame, not a box at one edge',
+    /#warnings \{[^}]*inset: 0/.test(css) && !/#warnings \{[^}]*bottom:/.test(css));
   ok('...and out of the way of the touch controls on a phone',
     /body\.touch-ui #warnings \{[^}]*top:/.test(css));
   /* --- AND IN FRONT OF THE REST OF THE HUD -------------------------------
@@ -27595,6 +27707,313 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
      from a different frame. */
   ok('...and it is the cut itself that asks',
     /this\._warnBamboo\(player\);/.test(M));
+
+  /* --- ...AND EVERY PLAYER CAN SEE IT, AND CANNOT MISS IT ----------------
+     "The Bamboo warning sign is too small and too difficult to notice/see when
+     playing on web/pc. It is currently at the bottom of the screen and small,
+     with no warning or danger sign/icon to catch players attention. I'd
+     recommend having it have a blinking in/out background for a few seconds to
+     catch players attention. Also, moving it closer to the center of the screen
+     (not in the center so it doesn't distract players gameplay too much). Maybe
+     should also consider having it on a 'per split screen quadrant' so that all
+     the players get the message and can see it, if the screen resolution is big
+     enough to fit the message on the screen. The more bamboo is cut and the more
+     scarcity is lost in the world, the messages should become more alarming...
+     can start with yellow border, then progress to orange warning, and then red
+     alert... but no sounds are needed."
+
+     THE CHECKS THAT EXISTED COULD NOT HAVE CAUGHT ANY OF IT, and one of them
+     was actively holding the strip at the bottom of the screen. They are about
+     WHETHER the sentence is printed and WHO it names, which was right the whole
+     time; nothing asked whether anybody could read it. Five separate answers
+     below, each with the half of the note it belongs to. */
+  {
+    /* 1. ONE STRIP PER PANE, PLACED FROM THE PANES. The whole per-pane half of
+       the note in three lines: the strips exist, they are put where the panes
+       are, and the function that knows where the panes are is the one that
+       moves them. */
+    ok('a warning gets a strip in every pane, not one box on the screen',
+      /\.warn-strip \{/.test(css) && /className = 'warn-strip hidden'/.test(M)
+        && /while \(wrap\.children\.length < MAX_PLAYERS\)/.test(M));
+    ok('...written into every one of them, so nobody reads a sister\'s window',
+      /const made = strips\.map\(\(strip\) => \{/.test(M)
+        && /strip\.appendChild\(el\);/.test(M));
+    ok('...from the same panes the renderer uses, and nothing hand-rolled',
+      /const rects = this\._warnWide \|\| !groups\.length \? frame : this\._panes\(W, H, groups\);/
+        .test(M));
+    /* AND THEY FOLLOW THE PANES AFTERWARDS. A window resized or a sister
+       joining while a warning is up has to move it; the strip used to be
+       centred by CSS and did this for free, and inline pixels do not. Pinned as
+       ADJACENCY to `_drawMathBoard` — the other box placed off the same panes —
+       because "somewhere in main.js" would pass with the call in a dead
+       branch. */
+    ok('...and they move with the panes for as long as they are up',
+      /this\._drawMathBoard\(panes, groups, W, H, mathUp\); this\._placeWarnings\(\);/
+        .test(Mc));
+    /* ...AND THE HINT NO LONGER MOVES THEM, which is the old rule and would now
+       fight the new one: it measured `.hint` and wrote a `bottom`. */
+    ok('...and the hint line has stopped placing them, since it is nowhere near',
+      !Mc.slice(Mc.indexOf('this._hintSig = sig;'), Mc.indexOf('setRowSense('))
+        .includes('_placeWarnings'));
+
+    /* 2. CLOSER TO THE MIDDLE, AND NOT IN IT. Driven through the real
+       `splitLayout` over every arrangement rather than asserted of a number, so
+       the property is stated once and every pane shape has to satisfy it. */
+    const W = 1920;
+    const H = 1080;
+    const SHAPES = [
+      ['unsplit', splitLayout(1, W, H)],
+      ['two side by side', splitLayout(2, W, H, 3, 'vertical')],
+      ['two stacked', splitLayout(2, W, H, 3, 'horizontal')],
+      ['four quadrants', splitLayout(4, W, H, 3, 'vertical', [1, 1, 1, 1])],
+      ['a pair and two singles', splitLayout(3, W, H, 3, 'horizontal', [2, 1, 1])],
+    ];
+    const boxes = [];
+    for (const [name, panes] of SHAPES) {
+      for (const v of panes) {
+        const w = warnWidth(v.w);
+        const s = warnSpot({ v, H, w });
+        /* THE TALLEST IT IS ALLOWED TO BE, which is what `_fitWarnings`
+           enforces by measurement. Everything below is asserted of a strip at
+           its worst permitted size, so a two-line warning cannot be the only
+           one that fits. */
+        boxes.push({ name, v, w, ...s, h: v.h * WARN_FIT });
+      }
+    }
+    const one = boxes[0];
+    line('warning strip, unsplit 1920x1080',
+      `${one.w}px wide at ${one.left},${one.top}`);
+    ok('a warning is below the middle of its pane, where the kitten is not',
+      boxes.every((b) => b.top > (H - b.v.y - b.v.h) + b.v.h * 0.5),
+      `WARN_UP ${WARN_UP}`);
+    /* AND IT IS NOT AT THE BOTTOM, which is the sentence the report opens with.
+       Stated as the gap it leaves under itself: the old strip sat 44px off the
+       floor of the screen with the hint under it. */
+    ok('...and not in the bottom third of it either, which is where it was',
+      boxes.every((b) => (H - b.v.y) - b.top > b.v.h * 0.3),
+      `${Math.round((H - one.v.y) - one.top)}px of pane below it, was 44`);
+    /* 3. AND IT STAYS INSIDE ITS OWN PANE. The failure this is really about is
+       a warning that belongs to one kitten's window drawn across her sister's,
+       which is the bug the maths board had and is invisible until four people
+       are playing. */
+    ok('...strictly inside its own pane, at the tallest it may ever be',
+      boxes.every((b) => b.left >= b.v.x && b.left + b.w <= b.v.x + b.v.w
+        && b.top >= H - b.v.y - b.v.h && b.top + b.h <= H - b.v.y),
+      boxes.filter((b) => b.top + b.h > H - b.v.y).map((b) => b.name).join(',') || 'all in');
+    /* AND THAT IS ARITHMETIC, NOT LUCK: a strip starts at `WARN_UP` of its pane
+       and may be `WARN_FIT` of it tall, so the two constants together are what
+       keep it off the seam below. Pinned so neither can be nudged alone. */
+    ok('...which is WARN_UP + WARN_FIT being under 1, not a coincidence',
+      WARN_UP + WARN_FIT < 1, `${WARN_UP} + ${WARN_FIT}`);
+    ok('...and centred across it, so it reads as that pane\'s message',
+      boxes.every((b) => Math.abs((b.left + b.w / 2) - (b.v.x + b.v.w / 2)) <= 1));
+    /* NO TWO OF THEM CAN TOUCH. Four quadrants is the arrangement that can go
+       wrong: the panes meet in the middle of the screen and the strips are
+       centred, so a width rule that ignored the pane would overlap two panes'
+       messages into one unreadable block. */
+    {
+      const quads = boxes.filter((b) => b.name === 'four quadrants');
+      const hit = (a, b) => a.left < b.left + b.w && b.left < a.left + a.w
+        && a.top < b.top + b.h && b.top < a.top + a.h;
+      ok('...and no two panes\' warnings can overlap, quadrants included',
+        quads.length === 4 && quads.every((a, i) => quads.every((b, j) => i === j || !hit(a, b))));
+    }
+    ok('...and one pane\'s strip is capped, so a wide screen is not one long line',
+      warnWidth(1920) === WARN_MAX_W && warnWidth(400) < WARN_MAX_W,
+      `${warnWidth(1920)} / ${Math.round(warnWidth(400))}`);
+
+    /* 4. "IF THE SCREEN RESOLUTION IS BIG ENOUGH TO FIT THE MESSAGE" — the
+       condition attached to the per-pane idea, and the only honest answer is to
+       put the words in and look. Pinned as three properties of `_fitWarnings`:
+       it MEASURES, it compares against the pane, and it is one-way. */
+    ok('a pane too small for the message gives the whole party one strip',
+      /getBoundingClientRect\?\.\(\)\.height/.test(M)
+        && /return h > v\.h \* WARN_FIT;/.test(M));
+    ok('...and they all give up together, so nobody is left with nothing',
+      /this\._warnWide = true; this\._placeWarnings\(true\);/.test(Mc));
+    /* ONE-WAY, because a rule that can switch back mid-message can switch back
+       and forth. It is set in `_fitWarnings` and nowhere else, and cleared only
+       with the screen empty of warnings. */
+    ok('...and that decision cannot flip back while the words are on screen',
+      (M.match(/_warnWide = true/g) ?? []).length === 1
+        && /if \(!this\._warnLive\(\)\) this\._warnWide = false;/.test(M));
+
+    /* 5. AND IT LOOKS LIKE AN ALARM. "No warning or danger sign/icon to catch
+       players attention", "a blinking in/out background for a few seconds",
+       "progressively more overt", "no sounds are needed". */
+    ok('a warning carries a danger sign, and it is DRAWN rather than typed',
+      /\.warn-icon \{[^}]*border-bottom:/.test(css)
+        && /icon\.className = 'warn-icon';/.test(M),
+      'a \u26a0 in the text is an emoji on most of these machines');
+    ok('...and its background blinks, a fixed number of times and then stops',
+      /@keyframes warnFlash/.test(css) && /warnFlash [\d.]+s [^,;]*var\(--wblinks\)/.test(css));
+    /* AND THE BLINK DOES NOT MOVE THE WORDS. An attention-getter that changes
+       the card's SIZE moves the sentence under the eye trying to read it. */
+    ok('...without moving the words it is trying to get read',
+      !/@keyframes warnFlash \{[^}]*(transform|font-size|padding|width)/.test(css));
+    /* THREE LEVELS, OFF THE MARKS THE GROVE ALREADY SHOUTS AT. Driven: the
+       real `warnLevel` and the real tables are lifted out of main.js and run,
+       because a regex would only say the function is there. */
+    {
+      const grab = (re) => {
+        const m = re.exec(M);
+        if (!m) throw new Error(`world-check: ${re} not in main.js`);
+        return m[0];
+      };
+      const lifted = new Function(`${grab(/const BAMBOO_WARN_MARKS = \[[^\]]*\];/)}
+        ${grab(/const WARN_LEVELS = \[[\s\S]*?\n\];/)}
+        ${grab(/function warnLevel\(frac\) \{[\s\S]*?\n\}/)}
+        return { warnLevel, WARN_LEVELS, BAMBOO_WARN_MARKS };`)();
+      const { warnLevel, WARN_LEVELS, BAMBOO_WARN_MARKS } = lifted;
+      line('warning level at 100 / 60 / 50 / 30 / 25 / 5% of the grove',
+        [1, 0.6, 0.5, 0.3, 0.25, 0.05].map((f) => warnLevel(f)).join(' '));
+      ok('a warning gets more alarming as the world runs out of bamboo',
+        warnLevel(1) === 0 && warnLevel(0.5) === 1 && warnLevel(0.25) === 2);
+      /* THE BANDS ARE THE MARKS, which is what makes the 50% shout orange and
+         the 25% shout red by construction rather than by two lists agreeing.
+         One more level than marks, because "nothing crossed yet" is a level. */
+      ok('...in as many steps as there are marks to cross, plus one',
+        WARN_LEVELS.length === BAMBOO_WARN_MARKS.length + 1,
+        `${WARN_LEVELS.length} levels, ${BAMBOO_WARN_MARKS.length} marks`);
+      ok('...and each mark takes it up exactly one step',
+        BAMBOO_WARN_MARKS.every((m, k) => warnLevel(m) === k + 1
+          && warnLevel(m + 1e-9) === k));
+      /* IT NEVER GOES BACKWARDS. Nothing regrows, so a warning can never become
+         less alarming than one already printed — a rule that could would be
+         telling a kid the world is recovering. */
+      const walk = [];
+      for (let f = 1; f >= 0; f -= 0.01) walk.push(warnLevel(f));
+      ok('...and it never eases off, because nothing regrows',
+        walk.every((lv, i) => i === 0 || lv >= walk[i - 1]));
+      /* EVERY LEVEL IS IN THE STYLESHEET AND SAYS ITS OWN NAME. The colour is
+         most of the escalation and is the one part a colour-blind kid cannot
+         read, so each level also carries a word. */
+      ok('...with a rule of its own for every level past the first',
+        WARN_LEVELS.slice(1).every((l) => css.includes(`.warn-line.${l.cls} {`)));
+      ok('...and a word, so the message does not rely on the colour alone',
+        WARN_LEVELS.every((l) => /^[A-Z ]{4,}$/.test(l.word))
+          && new Set(WARN_LEVELS.map((l) => l.word)).size === WARN_LEVELS.length,
+        WARN_LEVELS.map((l) => l.word).join(' / '));
+      /* AND THE TOP ONE IS MORE THAN A COLOUR: more blinks, a thicker border
+         and bigger words. "Progressively more overt" is not a hue. */
+      const top = css.slice(css.indexOf(`.warn-line.${WARN_LEVELS.at(-1).cls} {`));
+      const box = top.slice(0, top.indexOf('}'));
+      ok('...and the last one is louder in more ways than its colour',
+        /--wblinks: 8/.test(box) && /border-width: 4px/.test(box)
+          && /font-size: 17px/.test(box));
+    }
+    /* AND THE PLACING ITSELF, DRIVEN. Everything above is either pure
+       arithmetic or the shape of the source; what neither can see is the
+       BOOKKEEPING — a strip left visible with no pane behind it, a stale
+       `left` in pixels beating the stylesheet after a switch to touch, a
+       hidden strip still holding yesterday's card. Those are the three ways
+       this function can be wrong, they are all invisible until four people are
+       playing on one screen, and all three are one line each.
+
+       LIFTED OUT OF main.js AND RUN, the same way `strikePlayers` is: the
+       harness cannot build a `Game`, but it can hand this method a `this` and
+       a DOM that answer. What it stubs is only what it is not testing —
+       `_warnStrips` (the elements), `_warnLive` (whether a card is up) and
+       `_panes` (which is asserted to death elsewhere). */
+    {
+      const from = M.indexOf('  _placeWarnings(force = false) {');
+      const to = M.indexOf('    return live;', from);
+      const place = new Function('warnWidth', 'warnSpot', 'MAX_PLAYERS',
+        'document', 'window',
+        `return function ${M.slice(from, to)}    return live;\n  };`);
+      const W = 1920;
+      const H = 1080;
+      const mkStrip = () => {
+        const style = {};
+        /* A `cssText = ''` HAS TO REALLY CLEAR, because that is the assertion:
+           an object that merely records the write would pass while the game
+           left a pixel `left` on the element. */
+        Object.defineProperty(style, 'cssText', {
+          set(v) { if (!v) { delete style.left; delete style.top; delete style.width; } },
+          get() { return Object.keys(style).join(';'); },
+        });
+        const cls = new Set(['warn-strip', 'hidden']);
+        return {
+          style,
+          cls,
+          cards: 1,
+          classList: { toggle: (n, on) => (on ? cls.add(n) : cls.delete(n)) },
+          replaceChildren() { this.cards = 0; },
+        };
+      };
+      const run = ({ n = 4, touch = false, wide = false, force = true }) => {
+        const strips = Array.from({ length: MAX_PLAYERS }, mkStrip);
+        const groups = Array.from({ length: n }, (_, i) => [i]);
+        const game = {
+          groups,
+          players: groups.map(() => ({})),
+          _warnWide: wide,
+          _warnStrips: () => strips,
+          _warnLive: () => false,
+          _panes: (w, h, gr) => splitLayout(gr.length, w, h, 3, 'vertical',
+            gr.map((m) => m.length)),
+        };
+        const fakeDoc = { body: { classList: { contains: (c) => touch && c === 'touch-ui' } } };
+        const live = place(warnWidth, warnSpot, MAX_PLAYERS, fakeDoc, { innerWidth: W, innerHeight: H })
+          .call(game, force);
+        return { strips, live, game };
+      };
+
+      const quad = run({ n: 4 });
+      line('strips live at four / their widths', `${quad.live.length} / ${
+        quad.strips.map((s) => Math.round(parseFloat(s.style.width))).join(' ')}`);
+      ok('four panes get four strips, and every one of them is shown',
+        quad.live.length === 4 && quad.strips.every((s) => !s.cls.has('hidden'))
+          && quad.strips.every((s) => s.style.left && s.style.top && s.style.width));
+      /* THE ONE THAT MATTERS AT TWO: the strips a departing pane leaves behind
+         must be hidden AND emptied, or the next warning in that pane arrives
+         with the last one still under it. */
+      const two = run({ n: 2 });
+      ok('...and two panes leave the other two hidden and empty, not parked',
+        two.live.length === 2
+          && two.strips.slice(2).every((s) => s.cls.has('hidden') && s.cards === 0)
+          && two.strips.slice(0, 2).every((s) => !s.cls.has('hidden') && s.cards === 1));
+      /* A PHONE IS ONE PANE AND THE STYLESHEET OWNS IT. The desktop test mode
+         turns `touch-ui` on in a running game, so this is not a hypothetical:
+         a `left: 1200px` written before the switch would beat the rule that
+         centres it, and the warning would be off the side of the screen. */
+      const phone = run({ n: 4, touch: true });
+      ok('...while a phone gets one strip with no inline placement at all',
+        phone.live.length === 1
+          && phone.strips.every((s) => !s.style.left && !s.style.top && !s.style.width)
+          && phone.strips.slice(1).every((s) => s.cls.has('hidden')));
+      /* AND THE COLLAPSE IS THE WHOLE FRAME, which is the fallback shape and is
+         also what the merged view has always been — one code path, not two. */
+      const wide = run({ n: 4, wide: true });
+      ok('...and a collapsed warning is one strip across the whole frame',
+        wide.live.length === 1
+          && Math.round(parseFloat(wide.strips[0].style.width)) === warnWidth(W)
+          && parseFloat(wide.strips[0].style.left) === Math.round((W - warnWidth(W)) / 2));
+      /* AND IT COSTS NOTHING WITH NOTHING UP. It is called from `_drawMaps` at
+         20Hz all afternoon; `force` is what `warn` passes, and without it the
+         function has to leave before it asks the layout anything. */
+      const idle = run({ n: 4, force: false });
+      ok('...and it writes nothing at all when no warning is on screen',
+        idle.live.length === 0
+          && idle.strips.every((s) => !s.style.left && s.cls.has('hidden')));
+    }
+
+    /* AND NOT ONE SOUND. Asked for in those words, and it is the right call in
+       a room with four kids in it. `warn` may not reach the audio system at
+       all — which is also why `sfx` must not appear in it. */
+    {
+      /* COMMENTS STRIPPED, because this is about what the function DOES and
+         both of the things it must not do are named in its own paragraphs. */
+      const w = stripComments(M.slice(M.indexOf('  warn(text, level = 0) {'),
+        M.indexOf('  /** Is any warning on screen?')));
+      ok('...and it stays silent, however alarming it looks',
+        !/sfx|audio|play\(/.test(w));
+      /* A PLAYER'S NAME IS IN THIS SENTENCE and she typed it in herself on the
+         profile screen, so the words go in as a text node. */
+      ok('...and the sentence is text, never markup',
+        !/innerHTML/.test(w) && /body\.append\(word, ` \$\{text\}`\)/.test(w));
+    }
+  }
 
   /* --- A LEADER SHE WALKS UP TO WILL TALK TO HER -------------------------
      "When going to a Clan Leader and if they haven't had their cutscene yet,

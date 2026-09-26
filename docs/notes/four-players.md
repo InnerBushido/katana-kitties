@@ -2106,3 +2106,127 @@ same one answer the keys use, so the label cannot drift from the behaviour, and
 a map with no key on it is a map neither key can reach — which is a thing worth
 being able to see. With no map on screen at all the key toasts rather than doing
 nothing, the sixth non-negotiable.
+
+## The ninth session — a warning nobody read, and a camera that would not let go
+
+### The bamboo warning was in one girl's window, at the bottom of it
+
+**Reported:** *"The Bamboo warning sign is too small and too difficult to
+notice/see when playing on web/pc. It is currently at the bottom of the screen
+and small, with no warning or danger sign/icon to catch players attention. I'd
+recommend having it have a blinking in/out background for a few seconds to catch
+players attention. Also, moving it closer to the center of the screen (not in the
+center so it doesn't distract players gameplay too much). Maybe should also
+consider having it on a 'per split screen quadrant' so that all the players get
+the message and can see it, if the screen resolution is big enough to fit the
+message on the screen. The more bamboo is cut and the more scarcity is lost in
+the world, the messages should become more alarming... can start with yellow
+border, then progress to orange warning, and then red alert... but no sounds are
+needed, just they need to read the message with good UI placement and attention
+getters."*
+
+**Everything that was checked about this strip was true, and nobody could read
+it.** The checks asked whether the sentence is printed, who it names, when a
+mark is spent and whether it paints over the minimap — all of which had been
+wrong at some point and all of which were right. Not one of them asked whether
+it could be seen, and one of them, `/#warnings \{[^}]*bottom:/`, was actively
+holding it at the floor of the screen because that is what the *previous* note
+asked for. That check is still there, inverted, with the story attached: a rule
+nobody wrote down is how it ends up back where it was.
+
+**One strip belonged to the whole frame, and the message belongs to the room.**
+This is the only text in the game addressed to every player at once — the grove
+is shared, and nothing regrows — so at four players it was being printed in one
+girl's quarter and three of them never saw it. `#warnings` is now the whole
+frame with nothing of its own but `pointer-events: none` and its `z-index`; the
+strips inside it are placed per pane from the same `splitLayout` the renderer
+and the minimaps use.
+
+**"If the screen resolution is big enough" is measured, not guessed.** How tall
+a sentence and a half comes out depends on the font, the wrap and the strip's
+width, and every version of that rule that counts characters is wrong on the
+first window nobody tried. `Game.warn` fills the strips, `_fitWarnings` reads the
+heights back off the DOM, and if any pane's strip is over `WARN_FIT` (0.34) of
+its pane the **whole party** falls back to one strip across the frame. All of
+them give up together: per-pane cards in the two big panes of a 3v1 and nothing
+in the small one would leave the girl on her own with nothing at all. It is
+synchronous — measure, re-place, all before the browser paints — and one-way,
+because a rule that can switch back mid-message can switch back and forth.
+
+**Where it sits is `warnSpot` in [split.js](../../src/core/split.js), beside
+`mapSpot`.** Layout arithmetic over a pane goes there so `world-check` can assert
+it without a layout engine, and because the boxes that share a pane have to be
+placed by functions that can be read side by side. `WARN_UP` is 0.6 — below the
+kitten, who is drawn a little under the middle of her own pane by the follow
+camera, and nowhere near the bottom. `WARN_UP + WARN_FIT < 1` is what keeps a
+strip inside the pane it belongs to, and it is asserted rather than left as
+arithmetic in a comment.
+
+Measured in the running game at 1280×720, one pane: 720px wide at (280, 432),
+59px tall, 229px of screen clear underneath it — the old one sat at 617. At four
+panes on the same window: four cards at (26,215), (668,215), (26,577), (668,577),
+587px wide, each strictly inside its own quadrant. At 700×420 with four panes the
+message needs six lines in a 322px pane, the fit test fails and the party gets
+one 644px card across the middle.
+
+**And it looks like an alarm.** A hazard triangle drawn in CSS — a border
+triangle with a bar and a dot punched out of it, because `⚠` is an emoji on most
+of these machines and arrives in somebody else's colours; a background that
+blinks a fixed number of times and then stops (2.4s at the bottom level, 4.8s at
+the top), animating only the background and the ring so the words never move
+under the eye reading them; and three levels — `CAREFUL` gold, `WARNING` orange,
+`RED ALERT` red, each with more blinks than the last and the top one with a
+thicker border and bigger type.
+
+**The levels are the marks, not three numbers of their own.**
+`BAMBOO_WARN_MARKS` already names the fractions this game shouts at, so keying
+the colours off the same list makes the 50% shout orange and the 25% shout red by
+construction. One more level than there are marks, because "nothing crossed yet"
+is a level; `world-check` pins that relationship, so a third mark cannot quietly
+arrive with no colour to go with it. The level is a function of **the world's**
+bamboo and not of her own tally — *"the more scarcity is lost in the world"* —
+which is also the only reading that gives one rule for both warnings.
+
+**No sound, asked for in those words**, and `warn` is asserted not to be able to
+reach the audio system at all. The one thing four kids at one screen already have
+plenty of is noise.
+
+### The Dojo would not let go of the camera
+
+**Reported:** *"Let's shrink the radius of when the camera changes in the Dojo of
+the Turning Circle so that the camera does not change until the player is within
+the circular radius of the center black circle. It currently takes too long of a
+distance for it to change to the regular camera view, especially when leaving the
+circular area."*
+
+**The black circle is 42.08 and the trigger was 52.** `MathDojo._buildFloor`
+draws one dark mesh — `0x141026` at `AXIS + 8`, which is `24 * 1.42 + 8` — and
+that disc is the only thing on the island that says where the room is.
+`DOJO_VIEW_R` was a typed 52 whose comment said only that it was "bigger than
+`DOJO_RADIUS`", which it was, and never said why 52. So the lesson began ten
+units before there was any floor under her and, far worse, held on for ten units
+after she had walked off it: on the way out the camera stops answering the stick
+for a second and a half of walking, which is the half of the report that is
+really a bug.
+
+**`DOJO_VIEW_R` is `FLOOR_R` now.** Not 42.08 typed in — the disc is drawn, so
+the number is derived from the same constant the geometry is built with, and
+`world-check` reads the radius back off the built mesh's own `geometry.parameters`
+and asserts the two are equal. Non-negotiable 8: a typed 42.08 would be a
+reasoned number about something drawn, and an art change to the disc would leave
+it behind.
+
+**It cannot be shrunk any further, and that is worth saying.** The report could
+be read as "the painted circle", which is `DOJO_RADIUS`, 24 — and you are meant
+to *walk* that circle, so an edge anywhere near it would flicker the camera and
+the board on and off under the one kitten actually doing the lesson. 42.08 leaves
+18 units of standing room past it, all of it on the disc. Measured in the running
+game: `inDojoView` is true at 42.07 and false at 42.09, four kittens at r=36 get
+the overhead framing and the sin/cos board, and at r=46 both let go.
+
+**"May something be built here" is a different question** and keeps its own
+number. `World`'s `offCircle` still holds grottos, wards and stars 52 units out:
+that one is about a fifteen-unit rock ending up in shot of a camera that frames
+the whole diagram from 104 back, and it wants the margin the camera trigger just
+gave up. The two were the same 52 by coincidence and are now different on
+purpose, with a check and a comment either side saying so.

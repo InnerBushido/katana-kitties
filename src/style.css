@@ -1560,15 +1560,29 @@ body.touch-ui .pc-inner { --u: min(1cqw, 1.78cqh); }
    so canes cut before anybody has sworn at Pandapaw are canes no panda will
    ever eat. See `Game.warn`.
 
-   IT LOOKS LIKE A WARNING AND NOT LIKE A TOAST, deliberately: amber on ink
-   rather than the toasts' cream, and centred at the bottom rather than stacked
-   at the top. The two carry different promises — a toast is news, this is a
-   consequence — and a kid who has learned to let the top of the screen scroll
-   past her must not learn the same habit here.
+   IT LOOKS LIKE A WARNING AND NOT LIKE A TOAST, deliberately: a bordered
+   card with a hazard triangle and a word for how bad it is, against the toasts'
+   cream line of news. The two carry different promises — a toast is news, this
+   is a consequence — and a kid who has learned to let the top of the screen
+   scroll past her must not learn the same habit here.
 
-   `bottom` IS MEASURED OFF `.hint`'S OWN OFFSET plus its line, so the two
-   never sit on each other however the hint wraps on a narrow window. The hint
-   is 13px at `bottom: 16px`; 16 + a line and a gap is 44. */
+   AND THEN IT WAS REPORTED UNREAD ANYWAY. "The Bamboo warning sign is too
+   small and too difficult to notice/see when playing on web/pc. It is currently
+   at the bottom of the screen and small, with no warning or danger sign/icon to
+   catch players attention." Four answers, all of them here or in `Game.warn`:
+   a drawn hazard triangle, a background that blinks for a few seconds, a
+   position two thirds of the way up its PANE rather than 44px off the floor of
+   the screen, and three levels of alarm as the grove empties. No sound — asked
+   for in those words ("no sounds are needed, just they need to read the message
+   with good UI placement and attention getters"), and it is the right call
+   anyway: the one thing four kids at one screen already have plenty of is
+   noise.
+
+   THE POSITION IS NOT IN HERE ANY MORE. It used to be `bottom: 44px`, measured
+   off `.hint`, because there was one strip and it belonged to the whole screen.
+   There is now one per pane and `left`/`top`/`width` are written by
+   `Game._placeWarnings` from `warnSpot` in core/split.js — the same place the
+   minimap and the sin/cos board get their corners from, for the same reason. */
 /* OVER EVERY OTHER PIECE OF HUD, AND THAT IS WHAT THE `z-index` IS FOR.
    Reported as "the warning about the bamboo running out is appearing behind
    the UI elements of the minimap". It was, and the cause is one number: every
@@ -1594,46 +1608,159 @@ body.touch-ui .pc-inner { --u: min(1cqw, 1.78cqh); }
    the whole subtree with it however high a child's `z-index` is — so the
    Ryuuseki and ending scenes needed no second rule, and this one cannot
    accidentally grant an exemption from the first. */
+/* THE CONTAINER IS THE WHOLE FRAME NOW, and the strips inside it are placed
+   over panes. It holds nothing of its own — no size, no background, no gap —
+   because one box cannot be in four places; `pointer-events: none` and the
+   `z-index` are the two things that are still true of all of them at once. */
 #warnings {
   position: absolute;
-  bottom: 44px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(720px, 92vw);
+  inset: 0;
+  pointer-events: none;
+  z-index: 8;
+}
+/* ONE STRIP PER PANE, each stacking its own lines. `left`, `top` and `width`
+   are written by `Game._placeWarnings`; everything that is the same in every
+   pane is here. */
+.warn-strip {
+  position: absolute;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  pointer-events: none;
-  z-index: 8;
 }
 .warn-line {
-  background: rgba(28, 16, 22, 0.9);
-  border: 3px solid var(--gold, #f5c341);
+  /* THE THREE LEVELS ARE THREE SETS OF THESE, and nothing below refers to a
+     colour directly — so "more alarming" is one block of four values per level
+     rather than a rule per property per level, and the blink cannot end up a
+     different colour from the border it is blinking. */
+  --wc: var(--gold, #f5c341);          /* the border, the chip and the triangle */
+  --wtx: #ffe9a8;                     /* the words */
+  --wbg: rgba(28, 16, 22, 0.9);
+  --wbg-hi: rgba(122, 88, 16, 0.96);  /* ...and what it blinks to */
+  --wglow: rgba(245, 195, 65, 0.36);
+  --wblinks: 4;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 9px;
+  background: var(--wbg);
+  border: 3px solid var(--wc);
   border-radius: 9px;
   padding: 7px 16px;
-  color: #ffe9a8;
+  color: var(--wtx);
   font-family: 'Nunito', system-ui, sans-serif;
   font-weight: 800;
   font-size: 15px;
   line-height: 1.3;
   text-align: center;
   text-shadow: 0 2px 5px rgba(0, 0, 0, 0.9);
-  animation: warnIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* TWO ANIMATIONS, NOT ONE, and they cannot fight: `warnIn` owns `transform`
+     and `opacity`, `warnFlash` owns the background and the ring. A single
+     keyframe track doing both would have to carry the entry transform through
+     every blink. `.fade` replaces the whole shorthand, which is also how the
+     blinking stops if the line goes away while it is still going. */
+  animation:
+    warnIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+    warnFlash 0.6s ease-in-out 0.3s var(--wblinks);
+}
+/* THE LEVELS. Asked for as "can start with yellow border, then progress to
+   orange warning, and then red alert, should become progressively more overt" —
+   so each step up is FOUR things, not just a hue: the colour, the number of
+   blinks, and at the top a thicker border and bigger words. Which level a
+   warning gets is `warnLevel` in main.js, off how much bamboo is left in the
+   sky. */
+.warn-line.lv-warn {
+  --wc: #ff8c32;
+  --wtx: #ffe0c2;
+  --wbg-hi: rgba(142, 62, 10, 0.96);
+  --wglow: rgba(255, 140, 50, 0.42);
+  --wblinks: 6;
+}
+.warn-line.lv-alert {
+  --wc: #ff4a3d;
+  --wtx: #ffdad4;
+  --wbg-hi: rgba(150, 28, 20, 0.97);
+  --wglow: rgba(255, 74, 61, 0.5);
+  --wblinks: 8;
+  border-width: 4px;
+  font-size: 17px;
+}
+/* THE DANGER SIGN, DRAWN. Ninth non-negotiable — no icon font and no image
+   file, and `⚠` is worse than either: it is an emoji on most of these machines,
+   so it arrives in somebody else's colours at somebody else's size. This is a
+   border triangle with a bar and a dot punched out of it in the ink the card
+   sits on, sized in `em` so it grows with the level's font-size. */
+.warn-icon {
+  position: relative;
+  flex: none;
+  width: 0;
+  height: 0;
+  margin-top: 0.14em;
+  border-left: 0.72em solid transparent;
+  border-right: 0.72em solid transparent;
+  border-bottom: 1.25em solid var(--wc);
+}
+.warn-icon::before,
+.warn-icon::after {
+  content: '';
+  position: absolute;
+  left: -0.1em;
+  width: 0.2em;
+  background: #1c1016;
+}
+.warn-icon::before { top: 0.42em; height: 0.42em; border-radius: 0.06em; }
+.warn-icon::after  { top: 0.97em; height: 0.2em; border-radius: 50%; }
+.warn-body { flex: 0 1 auto; }
+/* HOW BAD IT IS, IN A WORD, as a filled chip rather than coloured text: a word
+   in the same colour as the border is a word a nine-year-old reads as part of
+   the sentence. */
+.warn-lv {
+  background: var(--wc);
+  color: #1c1016;
+  border-radius: 5px;
+  padding: 1px 7px;
+  margin-right: 7px;
+  font-size: 0.88em;
+  letter-spacing: 0.05em;
+  text-shadow: none;
+  white-space: nowrap;
 }
 .warn-line.fade { animation: warnOut 0.45s ease forwards; }
 @keyframes warnIn  { from { transform: translateY(-14px) scale(0.92); opacity: 0; } }
 @keyframes warnOut { to   { transform: translateY(10px); opacity: 0; } }
+/* THE BLINK. Background and border only — a card that changed SIZE would move
+   the words under the eye that is trying to read them, which is the opposite of
+   what an attention-getter is for. It runs a fixed number of times and stops:
+   0.6s a blink is 2.4s at the bottom level and 4.8s at the top, inside the
+   4-9 seconds the line is up for, so a warning finishes flashing and is then
+   simply there to be read. */
+@keyframes warnFlash {
+  50% {
+    background: var(--wbg-hi);
+    box-shadow: 0 0 0 5px var(--wglow), 0 4px 18px rgba(0, 0, 0, 0.55);
+  }
+}
 /* On a phone the bottom of the screen is thumbs, and `.hint` is hidden there
    for exactly that reason — so this goes back up to just under the toasts
    rather than into the stick's catchment. Narrower and smaller with it: a
-   720px box on a 390px screen is the whole width and most of the picture. */
+   720px box on a 390px screen is the whole width and most of the picture.
+   AND IT IS ONE STRIP, IN FLOW: a phone is one pane by definition (there is
+   one pair of hands), so the per-pane placement has nothing to do here and
+   `Game._placeWarnings` leaves the inline styles off entirely rather than
+   writing numbers this rule would then have to fight. */
 body.touch-ui #warnings {
-  bottom: auto;
+  inset: auto;
   top: calc(env(safe-area-inset-top) + 128px);
+  left: 50%;
+  transform: translateX(-50%);
   width: 92vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
+body.touch-ui .warn-strip { position: static; width: auto; }
 body.touch-ui .warn-line { font-size: 12px; padding: 5px 11px; }
+body.touch-ui .warn-line.lv-alert { font-size: 13px; }
 
 .hint {
   position: absolute;

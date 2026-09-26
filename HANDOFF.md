@@ -515,6 +515,53 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Three fixes from an afternoon: a warning nobody could read, a panda nobody
+could feed, and a camera that would not let go.** One branch,
+`mixed/three-fixes`. All three were reported as UI or feel and all three turned
+out to have a rule underneath them that nobody had written down.
+
+- **The bamboo warning is one card per pane now, six tenths of the way up, and
+  it blinks.** *"Too small and too difficult to notice... currently at the bottom
+  of the screen... no warning or danger sign/icon... blinking in/out background
+  for a few seconds... closer to the center... on a 'per split screen quadrant'
+  so that all the players get the message... yellow border, then orange warning,
+  then red alert... no sounds are needed."* Every check on this strip passed and
+  nobody could read it, and one of them — `/#warnings \{[^}]*bottom:/` — was
+  what held it at the floor of the screen. `#warnings` is the whole frame now,
+  with up to four `.warn-strip` boxes placed from the same `splitLayout` the
+  renderer and the minimaps use; `warnSpot`/`warnWidth` live in
+  [split.js](src/core/split.js) beside `mapSpot` so the arithmetic is assertable.
+  **"If the resolution is big enough" is MEASURED** — `_fitWarnings` reads the
+  rendered heights back off the DOM and, if any pane's card is over 34% of its
+  pane, the whole party collapses to one card across the frame, synchronously
+  and one-way. The three levels are keyed off `BAMBOO_WARN_MARKS` rather than
+  being three numbers of their own, so the 50% and 25% shouts go orange and red
+  by construction. Hazard triangle drawn in CSS, not `⚠`, which arrives as an
+  emoji in somebody else's colours. **No sound**, asked for in those words and
+  asserted.
+- **Forty canes cut before the oath now buy a grown panda.** *"If a player cuts
+  down 40 bamboo without pledging to Pandapaw, then they can still summon a fully
+  grown panda... so that, if a player cuts down all the bamboo, they can still
+  get a fully grown panda."* This reverses a rule with a long comment defending
+  it — a fresh panda was always a cub, so the cub stage could not last one
+  frame — and what overturns it is that nothing regrows: a kitten who flattened
+  the groves first was handed a cub with twenty canes owing and nothing standing
+  to pay it with. At the GRANT, banked lifetime canes now buy every rung they
+  cover; after that `pandaFedFrom` is the currency again, so a knocked-down panda
+  still cannot be stood back up out of a lifetime tally. Both sides of the
+  argument are kept in `tierFor`.
+- **The Dojo hands the camera back at the edge of the black disc.**
+  *"Shrink the radius of when the camera changes... so that the camera does not
+  change until the player is within the circular radius of the center black
+  circle. It currently takes too long... especially when leaving the circular
+  area."* `DOJO_VIEW_R` was a typed 52 whose comment only said it was bigger than
+  `DOJO_RADIUS`; the disc is 42.08, so the lesson started ten units before there
+  was floor and held on for ten units after she had walked off it — the second
+  half is the real bug. It is `FLOOR_R` now, not a typed number, and world-check
+  reads the radius back off the built mesh. `World.offCircle` keeps its own 52:
+  "may something be built here" is a different question, and the two being equal
+  was a coincidence.
+
 **Three minor improvements, and one of them un-does the last pass.** One
 branch, `mixed/three-improvements`. Two are a second look at something that
 had just shipped; the third is a piece of music that turned out to be a

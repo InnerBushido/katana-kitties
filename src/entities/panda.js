@@ -20,6 +20,10 @@ import { tune } from '../core/tuning.js';
    big enough to climb on. That's the whole arc, and it's deliberately made of
    the one verb the game already rewards — the katana in the grove.
 
+   AND FORTY CUT BEFORE THE OATH BUYS BOTH RUNGS AT ONCE. See `tierFor`: that is
+   a deliberate reversal of a deliberate decision, and the grove being a fixed
+   number of canes is what settled it.
+
    Two rules carried over from the dragons, both learned the hard way:
 
      A pet can never be lost. It follows on foot where it can and simply meets
@@ -113,21 +117,52 @@ export const PANDA_TIERS = [
 export const FULL_PANDA_COST = PANDA_TIERS[0].at
   + PANDA_TIERS.slice(1).reduce((n, t) => n + t.after, 0);
 
+/* AND IT IS WHAT `tierFor` HANDS A GROWN PANDA OVER FOR — the same total,
+   because "every rung her banked canes cover" with two rungs in the ladder is
+   "both of them, at the full price". Left as the sum rather than written as 40
+   in a second place: the check that this is what forty banked canes buy reads
+   the number from here. */
+
 /**
  * The tier this player has earned.
  *
- * The two rungs are paid for in deliberately different currencies.
+ * The two rungs are paid for in deliberately different currencies, and the
+ * GRANT — the moment she swears and an animal appears — is a third case again.
  *
  * **The cub costs LIFETIME canes.** A kid who spent the afternoon in the grove
  * before she ever found the shrine should not be told none of it counted; she
  * swears the oath and a cub is already there.
  *
  * **Every rung above it costs canes cut SINCE the panda last grew** — that is
- * what `fedFrom` records. Charging lifetime canes for the adult too meant a
- * player who had banked forty before joining watched her cub appear and grow
- * up in the same breath, so the cub stage — the whole point of raising the
- * thing — lasted a single frame and she never saw it. Raising an animal is a
- * job you do in front of the animal; you cannot pre-pay for it.
+ * what `fedFrom` records. Raising an animal is a job you do in front of the
+ * animal, so once there IS one, you cannot pre-pay for growing it.
+ *
+ * **AND AT THE GRANT, BANKED CANES BUY EVERY RUNG THEY COVER.** Forty cut before
+ * the oath and she swears in to a fully grown panda.
+ *
+ * THAT IS A REVERSAL, AND THE THING IT REVERSES WAS ARGUED FOR RIGHT HERE:
+ * charging lifetime canes for the adult too meant a player who had banked forty
+ * watched her cub appear and grow up in the same breath, so the cub stage — the
+ * whole point of raising the thing — lasted a single frame and she never saw it.
+ * All of that is still true, and it is still what this costs.
+ *
+ * **WHAT OVERTURNED IT IS THAT NOTHING REGROWS.** Asked for as "if a player cuts
+ * down 40 bamboo without pledging to Pandapaw, then they can still summon a
+ * fully grown panda, automatically when they join Pandapaw... so that, if a
+ * player cuts down all the bamboo, they can still get a fully grown panda."
+ * There are a fixed number of canes in the sky (fourth non-negotiable), so a
+ * kitten who flattens the groves before she finds the shrine was being handed a
+ * cub she could never feed: twenty canes owing, and nothing left standing to pay
+ * it with. A cub that can never grow up is not a stage of an arc, it is a dead
+ * end with no way back — and it is reached by doing the one thing this game
+ * rewards with its whole heart. Losing the cub stage for a kitten who banked
+ * forty is a far smaller loss, and she is the player least likely to feel robbed
+ * of it: she has just spent forty swings earning the animal.
+ *
+ * IT IS ONE RUNG DEEP IN PRACTICE AND IS WRITTEN AS A LOOP ANYWAY, so a third
+ * tier appended to `PANDA_TIERS` cannot silently change what the second costs.
+ * `break` rather than a filter: rungs are cumulative, and a bank that cannot
+ * reach the second must not be allowed to buy the third.
  *
  * @param {number}  bambooCut lifetime canes cut
  * @param {?number} fedFrom   the tally when the current panda was granted
@@ -135,12 +170,27 @@ export const FULL_PANDA_COST = PANDA_TIERS[0].at
  * @returns {number} tier earned, or -1 for none yet
  */
 export function tierFor(bambooCut, fedFrom = null, tier = -1) {
-  if (tier < 0 || fedFrom == null) return bambooCut >= PANDA_TIERS[0].at ? 0 : -1;
+  if (tier < 0 || fedFrom == null) {
+    let got = -1;
+    let owed = 0;
+    for (let k = 0; k < PANDA_TIERS.length; k++) {
+      owed += k === 0 ? PANDA_TIERS[0].at : PANDA_TIERS[k].after;
+      if (bambooCut < owed) break;
+      got = k;
+    }
+    return got;
+  }
   const next = PANDA_TIERS[tier + 1];
   return next && bambooCut - fedFrom >= next.after ? tier + 1 : tier;
 }
 
-/** Canes still to cut before the next growth, or 0 when fully grown. */
+/** Canes still to cut before the next growth, or 0 when fully grown.
+ *
+ *  WITH NO PANDA YET THIS IS "UNTIL AN ANIMAL APPEARS", not "until it is
+ *  grown", and that is still the right thing to count: the clan badge and the
+ *  swearing-in toast both use it to say what the next thing to happen is, and
+ *  the next thing to happen is a panda. A kitten past `FULL_PANDA_COST` reads 0
+ *  from here and gets an adult out of `tierFor`, so the two agree. */
 export function toNextTier(bambooCut, fedFrom = null, tier = -1) {
   if (tier < 0 || fedFrom == null) return Math.max(0, PANDA_TIERS[0].at - bambooCut);
   const next = PANDA_TIERS[tier + 1];
