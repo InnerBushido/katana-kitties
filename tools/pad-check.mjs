@@ -2372,6 +2372,35 @@ console.log('\n--- WASD as a spare hand, in play and in a menu ---');
     String(gain.players[0].my));
 }
 
+console.log('\n--- the d-pad, kept apart from the stick (Help steps between buttons on it) ---');
+{
+  /* Help scrolls the page on the STICK and steps between buttons on the ARROW
+     BUTTONS, and `my` is the two summed — so the d-pad is carried on its own
+     in `dpadY`, and these pin which devices put anything there. */
+  const dp = DEVICES.ds4Chrome();
+  dp.buttons = buttons(17, [STANDARD.down]);
+  let im = drive([dp]);
+  ok('d-pad down: dpadY is +1, and my still walks her down',
+    im.players[0].dpadY === 1 && im.players[0].my > 0.9,
+    `dpadY=${im.players[0].dpadY} my=${im.players[0].my}`);
+  dp.buttons = buttons(17, [STANDARD.up]);
+  im = drive([dp]);
+  ok('d-pad up: dpadY is -1', im.players[0].dpadY === -1, `${im.players[0].dpadY}`);
+  const st = DEVICES.ds4Chrome();
+  st.axes = [0, 1, 0, 0];
+  im = drive([st]);
+  ok('the stick pushed down puts NOTHING in dpadY, so Help scrolls on it',
+    im.players[0].dpadY === 0 && im.players[0].my > 0.9, `${im.players[0].dpadY}`);
+  /* THE KEYBOARD IS THE STICK, on purpose: WASD and the arrows are a keyboard
+     player's only direction, and on Help they have to reach the prose. */
+  const kb = drive([]);
+  kb.keys.add('KeyS');
+  kb.update();
+  ok('a keyboard held down is a stick, not an arrow button',
+    kb.players[0].my > 0.9 && kb.players[0].dpadY === 0,
+    `my=${kb.players[0].my} dpadY=${kb.players[0].dpadY}`);
+}
+
 console.log('');
 line('checks', String(checks));
 line('failures', String(fails));

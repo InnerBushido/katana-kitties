@@ -133,6 +133,80 @@ The arena → Quests → The Dojo → Saving your progress* as each passed the m
 `world-check` asserts the same thing against a 3000px page, including that the
 end selects the way out and that nothing calls `scrollIntoView` while reading.
 
+### ...and then the stick stepped over the buttons instead
+
+> Using the joystick makes the screen pan in steps, sometimes jumping over
+> submenu items and making them not selectable. I think a simple solution is to
+> make it jump/step but if it "jumps over" a button, then it will jump/step less
+> and only move the amount to where it actually selects the button. Another
+> option we can add is to use the arrow buttons on the controller [...] But, we
+> should not assume player has the arrow buttons, as on joycons, they only have
+> joystick.
+
+**"Whatever is nearest the middle" can only ever select something that can
+REACH the middle,** and two kinds of button cannot:
+
+- **Buttons packed closer together than one step.** A stick step is 15% of the
+  box, 87px at 1280x720. The sub-topics inside an open topic are 64px apart. A
+  step carried the middle straight past the band where one of them was the
+  nearest.
+- **Buttons in the first or last half-screen of the page.** The page cannot
+  scroll far enough to bring them to the middle. The two pins covered only the
+  first and last item, not the ones beside them. *On a phone*, *Clans*,
+  *Quests*, *The Dojo* and *Saving* were in those strips depending on which topic
+  was open.
+
+**Measured on the real panel at 1280x720,** with each topic open in turn and a
+held stick sampled at every position it could put the page: the old rule
+reached **5 to 10 of the 10 to 17 buttons**. With *The arena* open it missed
+*Power-up orbs* and *Special abilities*, plus three topics further down.
+
+**The fix is the report's first suggestion, as written.** `_scrollItem` asks how
+far the page would have to move to put the NEXT button in the middle. If that is
+no more than one step, the page moves exactly that far and the button is
+selected. Otherwise the page moves a whole step, and the selection follows the
+middle between the two, as before. The middle can never pass a button that has
+not been selected. Near the ends, "no further than one step" comes out as zero
+pixels, so the selection moves while the page stays. That also makes BACK
+reachable without a pin.
+
+**So the selection is no longer re-derived every frame.** It is derived only
+when the page moved by something this class did not do: a wheel, a finger, or
+the panel opening. That is detected by the scroll position not being where this
+class last left it.
+
+**The first version of that test was wrong.** It read `Math.abs(top - last) > 1`,
+and with nothing remembered that is `NaN > 1`, which is false. So "I do not know
+where I left it" read as "exactly where I left it". It is now "not within a
+pixel", and `world-check` pins it.
+
+**The arrow buttons are the second suggestion.** `_stepItem` moves to the next
+button and centres it. It wraps, like every vertical list, which is how Help
+worked before the stick. That needs the d-pad on its own, and `my` is the stick
+plus the d-pad, so `Input` carries `PadState.dpadY` alongside. Only `MenuNav`
+reads it.
+
+**The keyboard is deliberately not an arrow button.** WASD and the arrow keys
+are a keyboard player's only direction input, so on Help they scroll the page
+like the stick does. Otherwise the prose between topics would be unreachable
+again.
+
+A sideways Joy-Con reads 0 in `dpadY`, because its d-pad is her face buttons.
+That is why the stick path has to reach every button on its own, and it does:
+
+**Driven through the real `update` on the real panel,** with every topic open in
+turn, a held stick selects every button in order going down and again going up.
+It reaches both ends of the page, and no step is bigger than 87px. `world-check`
+builds a page with both failure shapes, where the old rule reaches 9 of 12
+buttons, and asserts that all 12 are reached in order both ways.
+
+**One harness trap, for the next session.** On the title screen the idle
+trailer starts on its own. While it plays, `MenuNav.panel()` returns null, so
+`update` does nothing and Help gets closed. Set `game._trailerOfferDue = () =>
+false` before driving anything there. The browser pane also throttles the game
+loop when it is not in front (4 frames in 2 seconds), so call
+`menuNav.update(0.12)` directly rather than waiting on frames.
+
 **THE SHARED CAMERA IS UPDATED EVERY FRAME, SPLIT OR NOT.** This is the whole
 fix for the jarring rejoin. The block lerps `sharedTarget`/`sharedDist` toward
 their targets, and it used to sit inside `if (this.merged)` — so while the

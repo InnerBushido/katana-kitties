@@ -515,6 +515,24 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**The Help page's stick no longer steps over buttons, and the d-pad steps
+between them.** One branch, `bugfix/help-stick-steps`. *"Using the joystick
+makes the screen pan in steps, sometimes jumping over submenu items and making
+them not selectable."*
+
+- **The cause.** Selecting "whatever is nearest the middle" can never pick a
+  button that cannot reach the middle. Sub-topics are 64px apart and a step is
+  87px, and a button in the page's first or last half-screen can never be
+  scrolled to the middle at all. Measured on the real panel, the old rule
+  reached only 5 to 10 of the 10 to 17 buttons.
+- **The stick.** A step now moves at most as far as selecting the next button
+  needs, which was the report's own suggestion. Near the ends, the selection
+  moves while the page stays.
+- **The arrow buttons** step button to button and centre each one, as Help did
+  before the stick. The d-pad is carried apart from the stick in
+  `PadState.dpadY`. The keyboard counts as a stick on purpose.
+- The full account is in [input.md](docs/notes/input.md).
+
 **Six notes from a phone: a banner under the badges, a rack that scrolls, a
 profile at half size, a round pip, one map size per half, and a card with a way
 out.** One branch, `mixed/six-phone-fixes`. The full account, with every

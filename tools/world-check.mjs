@@ -21044,6 +21044,149 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...where `vertical` would have stepped the cursor and never the page',
       stepped.every((s) => s.top === 0) && stepped[5].on > stepped[0].on,
       `${stepped[5].top}px, row ${stepped[0].on} -> ${stepped[5].on}`);
+
+    /* --- 7. AND A STICK NEVER STEPS OVER A BUTTON ---------------------------
+       Reported from play: "Using the joystick makes the screen pan in steps,
+       sometimes jumping over submenu items and making them not selectable. I
+       think a simple solution is to make it jump/step but if it 'jumps over' a
+       button, then it will jump/step less and only move the amount to where it
+       actually selects the button."
+
+       THE PAGE ABOVE COULD NOT HAVE SHOWN IT — its rows are 450px apart and a
+       step is 90, so no step can clear one. The real panel is not that page:
+       "Clan abilities" open is a column of sub-topic headers 40-odd pixels
+       apart, and there are buttons in the first and last half-screen, where
+       no scroll position puts them in the middle of the box. This one has
+       both, and it is held down and then up through the REAL `update`. */
+    {
+      const DOC2 = 2400;
+      let t2 = 0;
+      const box2 = {
+        get scrollTop() { return t2; },
+        set scrollTop(v) { t2 = Math.max(0, Math.min(v, DOC2 - H)); },
+        clientHeight: H,
+        scrollHeight: DOC2,
+        getBoundingClientRect: () => ({ top: 0, height: H }),
+      };
+      /* Two topics in the first half-screen, a run of five sub-topics 40px
+         apart mid-page, and three buttons in the last half-screen with BACK
+         at the very bottom. */
+      const AT2 = [20, 120, 700, 1100, 1140, 1180, 1220, 1260, 1700, 2000, 2200, 2340];
+      const rows2 = AT2.map((at, k) => {
+        const e = el(k === AT2.length - 1 ? 'BUTTON' : 'SUMMARY',
+          k === AT2.length - 1 ? ['menu-btn', 'back'] : ['help-topic']);
+        e.scrollIntoView = () => {};
+        e.getBoundingClientRect = () => ({ top: at - box2.scrollTop, height: 30 });
+        return e;
+      });
+      const panel2 = {
+        id: 'panel-help',
+        dataset: { nav: 'read', navStart: 'first' },
+        classList: { contains: () => false },
+        querySelectorAll: () => rows2,
+        querySelector: (q) => (q === '.panel' ? box2 : rows2[rows2.length - 1]),
+      };
+      globalThis.document = {
+        getElementById: (id) => (id === 'panel-help' ? panel2 : null),
+        querySelectorAll: () => [],
+      };
+      const pad2 = fakePad();
+      const nav7 = new MenuNav(navGame([pad2]));
+      const walk = (dir, frames) => {
+        pad2.my = dir;
+        const seen = [];
+        for (let f = 0; f < frames; f++) {
+          nav7.update(1);
+          seen.push({ top: box2.scrollTop, on: rows2.indexOf(nav7.focusEl.get('panel-help')) });
+        }
+        return seen;
+      };
+      pad2.my = 0;
+      nav7.update(1);                       // opens, at the top, on row 0
+      const down = walk(1, 60);
+      const ons = [0, ...down.map((s) => s.on)];
+      line('help, packed page held down: rows in order', [...new Set(ons)].join(' '));
+      ok('THE REPORT: a stick held down Help selects EVERY button on the way, in order',
+        [...new Set(ons)].join(' ') === AT2.map((_, k) => k).join(' '));
+      ok('...never more than one button per step',
+        ons.every((o, f) => f === 0 || o - ons[f - 1] <= 1 && o >= ons[f - 1]));
+      ok('...and never a step larger than the one it was given',
+        down.every((s, f) => s.top - (f ? down[f - 1].top : 0) <= Math.max(48, H * 0.15) + 1e-9));
+      ok('...and the page still gets to the bottom, on the way out',
+        down[down.length - 1].top === DOC2 - H && down[down.length - 1].on === AT2.length - 1);
+      const up = walk(-1, 60);
+      const upOns = [AT2.length - 1, ...up.map((s) => s.on)];
+      ok('...and held back UP it selects every one again, in order',
+        [...new Set(upOns)].join(' ') === AT2.map((_, k) => AT2.length - 1 - k).join(' ')
+          && up[up.length - 1].top === 0 && up[up.length - 1].on === 0,
+        [...new Set(upOns)].join(' '));
+
+      /* THE OLD RULE ON THE SAME PAGE, for the number: "whatever is nearest
+         the middle, every frame", sampled at every position the fixed step
+         could have put the page. */
+      const oldPick = (top) => {
+        if (top <= 1) return 0;
+        if (top >= DOC2 - H - 1) return AT2.length - 1;
+        let w = 0;
+        AT2.forEach((a, k) => {
+          if (Math.abs(a + 15 - top - H / 2) < Math.abs(AT2[w] + 15 - top - H / 2)) w = k;
+        });
+        return w;
+      };
+      const oldSeen = new Set();
+      for (let top = 0; ; top = Math.min(top + 90, DOC2 - H)) {
+        oldSeen.add(oldPick(top));
+        if (top === DOC2 - H) break;
+      }
+      line('the old rule on the same page reached', `${oldSeen.size} of ${AT2.length} buttons`);
+      ok('...where the old rule really did miss some (so this page can see the bug)',
+        oldSeen.size < AT2.length);
+
+      /* A WHEEL IS STILL A WHEEL. The page moved by something that is not
+         this class: the selection is the middle of the page again. */
+      box2.scrollTop = 900;
+      pad2.my = 0;
+      nav7.update(1);
+      ok('...and a wheel that moves the page still hands the selection to its middle',
+        rows2.indexOf(nav7.focusEl.get('panel-help')) === oldPick(900),
+        `${rows2.indexOf(nav7.focusEl.get('panel-help'))} vs ${oldPick(900)}`);
+      /* AND "I DO NOT KNOW WHERE I LEFT IT" IS "IT MOVED". `NaN > 1` is false,
+         which is how the first version of the test read a forgotten position
+         as an unmoved page. */
+      nav7._readTop = undefined;
+      box2.scrollTop = 0;
+      nav7.update(1);
+      ok('...and a forgotten scroll position counts as a moved page, not an unmoved one',
+        rows2.indexOf(nav7.focusEl.get('panel-help')) === 0,
+        `${rows2.indexOf(nav7.focusEl.get('panel-help'))}`);
+
+      /* --- 8. THE ARROW BUTTONS STEP BETWEEN BUTTONS, AND CENTRE THEM -------
+         "When you press up/down on arrow buttons, it will move between
+         buttons, like it used to do before we added the joystick adjustments.
+         But, we should not assume player has the arrow buttons" — the second
+         half is section 7, which uses the stick alone. */
+      const pad3 = fakePad();
+      const nav8 = new MenuNav(navGame([pad3]));
+      nav8.update(1);
+      pad3.my = 1;
+      pad3.dpadY = 1;
+      const steps = [];
+      for (let f = 0; f < AT2.length + 1; f++) {
+        nav8.update(1);
+        const k = rows2.indexOf(nav8.focusEl.get('panel-help'));
+        const c = AT2[k] + 15 - box2.scrollTop;
+        steps.push({ k, c, top: box2.scrollTop });
+      }
+      line('d-pad held down: rows', steps.map((s) => s.k).join(' '));
+      ok('the d-pad moves exactly one button per press, wrapping at the end',
+        steps.every((s, f) => s.k === (f + 1) % AT2.length),
+        steps.map((s) => s.k).join(' '));
+      ok('...and puts the one it lands on in the middle, wherever the page allows',
+        steps.every((s) => Math.abs(s.c - H / 2) < 1
+          || s.top === 0 || s.top === DOC2 - H));
+      pad3.my = 0;
+      pad3.dpadY = 0;
+    }
   }
 
   if (!hadDoc) delete globalThis.document;
