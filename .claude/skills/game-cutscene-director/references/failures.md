@@ -211,3 +211,20 @@ by composing it with a zero scale, so a test that asked `decompose` which of two
 meshes was drawing an instance passed a doubled crowd and failed a correct one.
 *Lesson: read the matrix's own column length (`hypot(e[0], e[1], e[2])`) to ask
 whether an instance is drawn. Three multiplications, and it cannot lie.*
+
+**A shot of a landmark on a rock passed every check and showed only the rock.**
+The opening of a ride's shot list aimed at a floating arena from 140 units
+below it. The occlusion test skipped the landmark's own island, because that
+island is the ground under the target and would otherwise block every shot. So
+the lens looked straight up into the keel, and the frame was a brown wall. Both
+subjects were in frame, and nothing was counted in the way.
+*Lesson: an exemption in an occlusion test is a blind spot. Add a check for the
+thing the exemption hides, e.g. "this landmark is only looked at from above its
+own floor", or aim that stretch at something else. Screenshot the first frame
+of every shot as well as its middle.*
+
+**Two consecutive shots that ended four units apart on the same side of the
+subject read as a jump cut, not a cut.** Neither shot was wrong alone.
+*Lesson: when two shots share a side and nearly share a position, one should
+MOVE into the other (from its last frame, fov included), and a check should pin
+that the join is continuous.*
