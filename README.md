@@ -49,7 +49,9 @@ work out by playing.
    record board, dropping out, quitting a match, replaying the story.
 5. **Nothing you knock over comes back.** The MISCHIEF counter at the top is the
    spine of the whole game: **80%** opens the tournament, **100%** wakes the
-   Powerup Kotodama and gets you the ending.
+   Powerup Kotodama and gets you the ending — which puts back the golden roads
+   the islands were once joined by. Run up one: hold the way you set off and it
+   carries you all the way to the other island, through the clouds.
 6. **The screen splits itself**, by GROUP rather than by player — stand together
    and you share a view, walk away and you get your own.
 7. **The game saves itself every 30 seconds**, once you've been playing for

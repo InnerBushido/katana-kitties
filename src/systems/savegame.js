@@ -594,6 +594,8 @@ export function snapshot(game) {
     sky: {
       dusk: game.summonScene?.duskWant ?? 0,
       dawn: game.summonScene?.dawnWant ?? 0,
+      /* Snake Way, which the ending builds and nothing takes down. */
+      bridges: game.summonScene?.bridgeWant ?? 0,
     },
     ending: !!game._endingShown,
     /* SEPARATE FROM `ending`, because they answer different questions and a
@@ -802,6 +804,14 @@ export function restore(game, snap) {
     game.summonScene.dusk = game.summonScene.duskWant;
     game.summonScene.dawnWant = snap.sky?.dawn ?? 0;
     game.summonScene.dawn = game.summonScene.dawnWant;
+    /* A SAVE FROM BEFORE SNAKE WAY EXISTED has no `bridges` and may still be
+       from after the ending, which built them; the dawn says which. Loaded up
+       whole, never grown — the growing belongs to the ending. */
+    const roads = snap.sky?.bridges ?? (game.summonScene.dawnWant >= 1 ? 1 : 0);
+    game.summonScene.bridgeWant = roads;
+    game.summonScene.bridges = roads;
+    game.summonScene.bridgeHold = false;
+    game.world?.setBridges?.(roads);
   }
   /* ...AND THE DRAGON, WHO IS PART OF THE STORY RATHER THAN OF THE WORLD.
      BEFORE the sky and the flags below only by accident of reading order; what

@@ -21,6 +21,8 @@ import {
   warnSpot, warnWidth, WARN_FIT,
 } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
+import { SNAKE } from './world/snakeway.js';
+import { SnakeCam } from './systems/snakecam.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, PANDA, PANDA_TIERS, tierFor, toNextTier } from './entities/panda.js';
 import { ClanLeader, LEADERS } from './entities/leader.js';
@@ -628,6 +630,9 @@ class Game {
       focusT: 0,
       caveT: 0,
       seeded: false,
+      /** The ride camera, for when every kitten this rig frames is on the same
+       *  road — see `_snakeGroup`. */
+      snakeCam: new SnakeCam(),
     }));
     this.sharedCamera = this.rigs[0].camera;
     /** Player index -> her group's lowest member, last frame. The hysteresis
@@ -10945,9 +10950,72 @@ class Game {
       prev: this._clusterOf,
       mergeIn: MERGE_IN,
       mergeOut: MERGE_OUT,
+      lanes: this._snakeLanes(),
     });
     this._clusterOf = of;
     return groups;
+  }
+
+  /**
+   * Which road's ride camera each kitten belongs to, or null.
+   *
+   * "If all players are running up together, they all share the same animated
+   * camera (like normal) but if just 1 player is running up, then they get
+   * their own camera (like normal). But if all players are nearby each other,
+   * and only 1 is climbing up, then after 2 - 3 seconds of climbing up, they
+   * get their own camera with the camera sequence, others can join that
+   * camera sequence if they also join and are close enough to the player with
+   * the camera sequence playing."
+   *
+   * So a lane is earned by `SNAKE.splitT` seconds on a road — before that she
+   * is still in whatever pane she set off from, and a group who all set off
+   * together are still one group when they all earn it at once. And it is
+   * JOINED at once: a kitten who boards the same road within `MERGE_OUT` of
+   * somebody already in its lane is in it straight away, which is "join that
+   * camera sequence", rather than a second wait in a pane of her own.
+   *
+   * ALL NULL OFF THE ROADS, which is every frame of the game before the
+   * ending — and `clusterPlayers` with all-null lanes is the function it
+   * always was. Fifth non-negotiable.
+   */
+  _snakeLanes() {
+    const P = this.players;
+    const lanes = P.map((p) => {
+      const R = p?.snakeRide;
+      return R && R.t >= SNAKE.splitT ? R.road.id : null;
+    });
+    P.forEach((p, i) => {
+      const R = p?.snakeRide;
+      if (!R || lanes[i] != null) return;
+      const joins = P.some((q, j) => q && lanes[j] === R.road.id
+        && Math.hypot(q.position.x - p.position.x, q.position.z - p.position.z) < MERGE_OUT);
+      if (joins) lanes[i] = R.road.id;
+    });
+    return lanes;
+  }
+
+  /**
+   * What a group's ride camera frames, or null if not every one of them is on
+   * the same road. A group that is half on a road and half off is framed the
+   * ordinary way — that is the two-to-three seconds before the lane splits it.
+   */
+  _snakeGroup(members) {
+    let road = null;
+    let s = 0;
+    let n = 0;
+    let dir = 1;
+    for (const i of members) {
+      const sub = this.players[i]?.snakeSubject?.();
+      if (!sub) return null;
+      if (road && sub.road !== road) return null;
+      if (!road) dir = sub.dir;
+      road = sub.road;
+      s += sub.s;
+      n++;
+    }
+    if (!n) return null;
+    const mid = this._centroid(members);
+    return { road, s: s / n, dir, x: mid.x, y: mid.y, z: mid.z, spread: this._spread(members) };
   }
 
   /**
@@ -11378,6 +11446,11 @@ class Game {
         rig.target.z + Math.cos(yaw) * Math.cos(pitch) * rig.dist
       );
       rig.camera.lookAt(rig.target);
+      /* THE RIDE CAMERA, when everybody this rig frames is on one road. A
+         group of one draws with her own camera instead (`_cameraFor`), and
+         hers carries the same layer — see `Player._updateCamera`. */
+      rig.snakeCam.apply(dt, members.length > 1 ? this._snakeGroup(members) : null,
+        rig.camera, rig.target, this.world.islands);
       /* AFTER `lookAt`, so the shake moves the camera without re-aiming it.
          Offsetting before would have `lookAt` cancel most of it out — the
          camera would swing back onto the same target and only the parallax

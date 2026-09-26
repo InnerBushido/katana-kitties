@@ -485,3 +485,189 @@ cut out of the file and evaluated** with the four tables they close over. What
 runs is the shipped code, character for character: change the rule and the
 checks move with it; delete the rule and they fail. The `\n  }\n` terminator is
 the class's own indentation, which nothing inside a method body can reach.
+
+## Snake Way — the roads the ending builds
+
+> "After the ending cutscene, should add some of the Dragonball Z bridges (Snake
+> Way) in the background of the worlds going through the clouds, since that is
+> how the islands used to be connected ... having staircases going through the
+> clouds, connecting the islands, as a new way that the players can traverse to
+> the islands."
+
+Six gold roads with red rails, one from the home island to each island the old
+roads reached, winding through banks of cloud. A torii stands at each end and a
+snake's head at the far one, looking back down the road it is the end of. They
+do not exist until the ending, which builds them in its wide shot of the whole
+archipelago (see [story.md](story.md)), and nothing takes them down but a
+restart. Patchfur's line about the islands drifting apart is the story they
+answer. The code is in `world/snakeway.js` (the roads, meshes, clouds and far
+islands), `World.buildSnakeWay` / `setBridges` / `snakeAt`, and
+`systems/snakecam.js` (the ride camera).
+
+### The roads are generated, and checked as if they were not
+
+**Landings.** `findLandings` walks each rim either side of the direct bearing,
+at several depths in from the edge, and keeps only spots whose whole deck
+footprint is clear of solids, props (by their `home`, so a knocked-over barrel
+still counts), `keepClear`, clan halls, landmarks, platforms and the dragon
+perches. The deck is raised 0.45 over the highest point under it, because the
+grass tufts poke through anything lower.
+
+**The winding is solved, not drawn.** The first version offset a sine sideways
+from the straight line and folded over itself (frost reached a grade of 0.455,
+ash 0.815). The second steered by heading, but leftover sideways error put kinks
+in autumn (a 3.8-unit bend radius) and a 2.05-rad hairpin in ash. The third
+solved swing and lean one after the other by bisection, and with no bracket it
+grew the ash road to 1011 units. What shipped solves **(swing, lean) together
+by Newton's method** at a fixed length, and grows the length by ×1.08 when it
+cannot converge. The climb is a linear ramp with eased shoulders, never steeper
+than `SNAKE.grade` (0.3).
+
+**Faults are what reject a pair.** A pair is rejected for a grade over 0.3, a
+road passing through an island, a bend tighter than 7.5, or crossing itself or
+another road within 9 units of height. The first fault-free landing pair wins.
+Ranking every pair to find the best took 1.6 s; with precomputed arrays and an
+early return it takes about 350 ms. It is also **lazy**, because every boot
+paid it for a thing only a finished game uses.
+
+**Laying order is part of the answer.** Order: bamboo, dusk, ash, frost, dojo,
+autumn. Bamboo has the fewest ways out, so it goes first. Laid later, its
+landing collided with ash's. Landings on the home rim are kept 16 apart, so two
+roads never share a gate.
+
+`world-check` asserts all of this on the real world:
+- six roads, no faults, grade under 0.3 as measured on the laid points;
+- both ends on the right islands and on the ground;
+- ground along the whole length once built, one-way, and exactly as wide as the
+  mesh;
+- `worldSig` unchanged.
+
+A house moved, a perch added or an island nudged would each show up here, long
+before anybody could see the roads, which only exist at 100%.
+
+### Ground only when finished
+
+A half-grown road is a picture in a cutscene. A deck a kitten could run off the
+unbuilt end of is a trap. So `heightAt` skips `p.snake` platforms until
+`snakeOpen`, which only `setBridges(1)` sets (the arena's rule). The gate posts
+and the heads are solids flagged `off` until the same moment. The ending
+**finishes** the roads on its skip path rather than letting them grow on after
+the box closes. A sky easing on is weather; a road still growing is something
+she could step onto.
+
+### `locate` was one bug that looked like four
+
+`SnakeRoad.locate(x, z)` returns the deck under a point: height, arc length,
+signed distance from the centre line. It clamped the projection onto each
+segment and then tested **only the perpendicular part**, so a stretch of road
+ten steps further round a bend, whose line ran through her, claimed her. Four
+checks went red from that one bug:
+- a deck half a unit above the real road;
+- the rail clamp pushing her off the wrong edge;
+- the ride dropping her on the way back down;
+- a road wider than its mesh.
+
+It is a capsule test now. The fix for that uncovered a second bug: "highest
+wins" (right between two decks, where a road winds over itself) also picked
+*the next segment's start* on a climb. That point is a hair higher and inside
+the capsule, so `lat` was measured from two units ahead and flipped side every
+frame. It is **the highest layer, then the nearest segment on it**. Decks of one
+road are never within 9 of each other, so anything within `LAYER` (3) is the
+same deck.
+
+### The ride
+
+> "The input direction that is being pressed to go up (when starting the bridge
+> climbing sequence) should continue to be the button/direction they need to
+> press to continue going in that direction, regardless of where the camera is
+> pointing or rotated."
+
+**The stick is read in stick space, against the stick she boarded with**
+(`Player._snakeWish`). The share of what she presses that points that way is
+how fast she goes on along the road, *wherever the road goes*. The opposite
+brings her back down. A camera-relative stick could not do this, for two
+reasons: the ride camera orbits her, and the roads wind (ash turns through
+more than a right angle). Holding one compass direction would put her into the
+rail on the first bend. If she boards pressing roughly onward, that press
+becomes onward. If she lands on the road from a jump or walks on at an angle,
+onward is whatever stick points along the road through the camera she can see.
+
+**Locked to the surface.** On the deck she is clamped inside `SNAKE.lock` of the
+centre line, and the part of her velocity heading over the side is dropped.
+Side input is scaled to 0.35 while grounded, so she can drift across but not
+fall off. In the air she is free, which is how she jumps off, and the ride
+lasts while she is still over the road. A jump along the road is still the
+ride; off the side, or 10 below the deck, it ends. **The glide:** ×1.35 on the
+road, feet on the deck only. Measured at 14.2 u/s in the running game against
+10.5 walking.
+
+`world-check` rides a real `Player` up the frost road (the one with a bend)
+with one stick held while her `camYaw` is spun under her. It then rides it
+again pushed into each rail in turn, reverses, jumps along the road, and falls
+off the side. **The rail check has to lean.** The first version ran up the
+middle and passed at 0.31 off centre, which proves nothing about a rail. The
+lean has to come *after* boarding, or the diagonal becomes her onward, which is
+the rule working.
+
+### The ride camera is a layer, not a camera
+
+> "Players can get a cool, cinematic camera that follows near them and rotates
+> around them in 3D ... like on a swivel or on a rollercoaster."
+
+`SnakeCam` is applied **on top of** whichever camera is already drawing: her
+own follow camera when she is alone in a pane, a group rig when all of them are
+on one road. It is blended in and out by a weight. This is the lesson Ryuuseki,
+the star shot and the grotto all taught: the camera that draws when she is with
+her sisters is not her own, so a feature on her own camera does nothing half the
+time.
+
+- **It starts where the camera already is.** The first key is the ordinary
+  pose's own bearing, pitch and distance, so there is no cut.
+- **The first move takes the short way to the chase.** Every move after it goes
+  *forward* round `SNAKE_SHOTS` (chase, side, front, over). A cycle orbits her
+  once, the same way round, like a car on a loop. The holds drift at 0.07 rad/s,
+  because a camera that stops on a rollercoaster looks broken.
+- **It blends as bearing, pitch and distance round her**, not as a straight
+  line, because the straight line from the far side of her back to the normal
+  view passes through her.
+- **The lens is held 3 over any island ground.** At the landings the low side
+  shot swings under the rim. The check walks both ends of every road for a full
+  cycle: 3.62 is the closest it comes.
+- **Off the roads it touches nothing.** Every rig carries one and calls it every
+  frame, so an idle `SnakeCam` must leave the camera exactly as it found it.
+  That is non-negotiable 5.
+
+### Who shares the ride camera: lanes
+
+> "If all players are nearby each other, and only 1 is climbing up, then after
+> 2 - 3 seconds of climbing up, they get their own camera ... others can join
+> that camera sequence if they also join and are close enough."
+
+`Game._snakeLanes` gives each kitten a road id or null, and `clusterPlayers`
+never links two whose lanes differ. It is the `solo` rule one level finer: a
+lane can be shared, `solo` never is. A kitten earns a lane after `SNAKE.splitT`
+(2.5 s) on a road. A sister who boards the same road within `MERGE_OUT` of
+someone already in the lane is in it at once, without her own wait. A party that
+sets off together earns it together and stays one pane. **All null off the
+roads** means `clusterPlayers` is bit-for-bit the function it was; the check
+compares the two over 400 random layouts. Measured in the running game: the
+split lands at 2.5 s with her sister still 25 units away, inside the ordinary
+merge distance.
+
+### The far islands
+
+Seven islands 440–640 units out, each with a pagoda or a house, a torii, trees
+and a waterfall. The water is a bowed sheet with a scrolling texture. They are
+scenery, not ground. They are kept 300 clear of the arena and **rise** out of
+the cloud sea with the dawn (`setSky`: `group.position.y = -260·(1−ease(dawn))`),
+so the ending's wide shot of the sky clearing has something new coming up in it.
+They never fade in where they stand. They are built with the world, because
+they are one merged mesh plus seven water sheets and the dawn needs them there.
+
+### Saves
+
+`sky.bridges` holds `bridgeWant`. A save from before Snake Way existed has no
+field, so the dawn it does carry says whether the ending had happened. Loaded
+roads are put up whole, never grown again, because the growing belongs to the
+ending. Adding no props was a hard constraint: `worldSig` counts them, and one
+more would refuse every existing save.
