@@ -244,6 +244,52 @@ that was opened:
 browser pane. Help closed twice between scripts, with the ring on BACK, and
 nobody at the keyboard. It was not the code.
 
+### ...and a topic she CLOSES keeps the ring too
+
+> In the Help menu, after opening or closing a category, the selection should
+> be on that category and pushing up/down will move up down to the next
+> category or scroll.
+
+Opening already kept the ring (above). **Closing did not.**
+
+Measured at 1280x720: close *Saving* or *The arena* and the page collapses.
+The scroll clamps to the new bottom, 655 to 248 for *Saving*, and `MenuNav`
+reads a page that moved without it as a wheel. So it handed the ring to the
+middle of the page, which at the bottom is pinned to **BACK**. The next stick
+press walked on from BACK, not from the topic she had just shut.
+
+Two gaps, closed in two places:
+
+- **`Game._helpToggled`, on the close `toggle`.** It keeps the ring on the
+  header (`MenuNav.keep`), and scrolls the header back to the top only if the
+  collapse left it off screen. A close near the top moves nothing above the
+  header, so the page stays put.
+- **`MenuNav.update`, in the same frame as the JUMP.** The `<details>` shuts
+  synchronously on the click, but `toggle` is queued. The frame in between
+  would already find the clamped page and move the ring, so a header that JUMP
+  just toggled is `keep`-ed right there.
+
+**The accordion's own close is not hers.** Opening a topic shuts the open one
+with the same `name`, and that fires a close `toggle` as well. In either order,
+it must not take the ring off the topic she opened. It is recognised by a card
+with the same name being open now. That is only ever true for the accordion's
+half of the pair; a close she made herself leaves none open.
+
+Driven in the running game after the fix:
+
+- *Saving*: close, ring stays; stick up goes to *The Dojo*.
+- *The arena*: close, ring stays; stick down goes to *Quests*.
+- *Special abilities* sub-topic: close, ring stays; down goes to *Clan
+  abilities*, up comes back.
+- A mouse opening *Clans*, then *Quests*: the accordion shuts *Clans* and the
+  ring is on *Quests*.
+- Closing *Quests* with the mouse: the ring stays on *Quests*.
+
+**The third harness trap.** Once the pane is in front, the game's own loop calls
+`update` as well. A fake `confirm` held for a whole tick is read twice, which
+toggles a topic open and straight back shut. Make the fake press one-shot, the
+way a real edge is.
+
 **THE SHARED CAMERA IS UPDATED EVERY FRAME, SPLIT OR NOT.** This is the whole
 fix for the jarring rejoin. The block lerps `sharedTarget`/`sharedDist` toward
 their targets, and it used to sit inside `if (this.merged)` — so while the

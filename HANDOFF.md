@@ -515,6 +515,18 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**A Help topic she closes keeps the ring, as one she opens does.** One
+branch, `bugfix/help-ring-stays-on-topic`.
+
+- **The bug.** Closing *Saving* or *The arena* collapsed the page and clamped
+  the scroll. `MenuNav` read that as a wheel and moved the ring to BACK.
+- **The fix.** `Game._helpToggled` keeps the ring on the closed header and
+  brings it back on screen if the collapse left it off. `MenuNav` also keeps a
+  JUMP-toggled header from that same frame, closing the gap before `toggle`
+  fires.
+- **The accordion's own close is ignored.** It is told apart by a card with
+  the same `name` being open now.
+
 **An opened Help topic scrolls to the top of the box.** One branch,
 `feature/help-open-scrolls-to-top`. *"Whenever opening a category in the Help
 menu, it should scroll so that the new category is at the top of the

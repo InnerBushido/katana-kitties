@@ -2094,6 +2094,43 @@ class Game {
    * a short page cannot reach the top, and `scrollTop` clamps rather than
    * leaving blank space under it.
    */
+  /**
+   * A Help topic opened OR closed: the page goes where it should, and the
+   * selection stays on the topic.
+   *
+   * REPORTED: "after opening or closing a category, the selection should be on
+   * that category and pushing up/down will move up down to the next category
+   * or scroll."
+   *
+   * OPENING already did (`_helpToTop`). CLOSING DID NOT, measured at 1280x720.
+   * Close *Saving* or *The arena* and the page collapses, so its scroll clamps
+   * to the new bottom. `MenuNav` reads a page that moved without it as a wheel
+   * and hands the ring to the middle of the page, which at the bottom is pinned
+   * to BACK. The next stick press then walked on from BACK, not from the topic
+   * she had just shut.
+   *
+   * THE ACCORDION'S OWN CLOSE IS NOT HERS. Opening a topic shuts the open one
+   * with the same `name`, and that fires a close `toggle` too. In either order,
+   * it must not take the ring off the topic she opened. It is recognised by a
+   * card with the same name being open now, which is only ever true for the
+   * accordion's side of the pair: a close she made herself leaves none open.
+   */
+  _helpToggled(card) {
+    if (card.open) { this._helpToTop(card); return; }
+    if (card.name && document.querySelector(
+      `#panel-help details[name="${card.name}"][open]`)) return;
+    const box = card.closest('.panel');
+    const head = card.querySelector(':scope > summary');
+    if (!box || !head) return;
+    /* STILL ON SCREEN, THEN LEAVE THE PAGE ALONE. A close near the top changes
+       nothing above the header, so the page not moving is the right answer;
+       only a collapse that clamped the scroll past it has to bring it back. */
+    const b = head.getBoundingClientRect();
+    const r = box.getBoundingClientRect();
+    if (b.top < r.top || b.bottom > r.bottom) box.scrollTop += b.top - r.top - HELP_TOP_GAP;
+    this.menuNav?.keep(document.getElementById('panel-help'), head);
+  }
+
   _helpToTop(card) {
     const box = card.closest('.panel');
     if (!box || box.scrollHeight <= box.clientHeight) return;
@@ -2143,7 +2180,7 @@ class Game {
     let restarts = 0;
     document.querySelectorAll('#panel-help details.help-card').forEach((card) => {
       card.addEventListener('toggle', () => {
-        if (card.open) this._helpToTop(card);
+        this._helpToggled(card);
         if (card.open) card.querySelectorAll('img[data-help-gif], img[loading]').forEach(load);
         restarts++;
         card.querySelectorAll('img[data-help-gif]').forEach((img) => {

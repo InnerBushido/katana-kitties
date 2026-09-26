@@ -21211,8 +21211,72 @@ console.log('\n--- one press is not enough, and one player drives ---');
         nav9.update(1);
         ok('...while a wheel afterwards still hands it to the middle of the page',
           rows2.indexOf(nav9.focusEl.get('panel-help')) === oldPick(900));
-        ok('...and it happens on OPENING only, on the toggle that sees both accordion cards settled',
-          /addEventListener\('toggle', \(\) => \{\s*if \(card\.open\) this\._helpToTop\(card\);/.test(MS));
+        ok('...and it happens on the toggle, which sees both accordion cards settled',
+          /addEventListener\('toggle', \(\) => \{\s*this\._helpToggled\(card\);/.test(MS)
+            && /_helpToggled\(card\) \{\s*if \(card\.open\) \{ this\._helpToTop\(card\); return; \}/.test(MS));
+
+        /* --- 10. AND A TOPIC SHE CLOSES KEEPS THE RING TOO -----------------
+           "After opening or closing a category, the selection should be on
+           that category and pushing up/down will move up down to the next
+           category or scroll." Measured before the fix at 1280x720: close
+           *Saving* or *The arena* and the collapse clamps the scroll, the next
+           frame reads that as a wheel, and the ring goes to BACK. */
+        const hf = MS.indexOf('  _helpToggled(card) {');
+        const hbody = MS.slice(hf + 2, MS.indexOf('\n  }', hf) + 4);
+        const openNow = new Set();
+        const toggled = new Function('HELP_TOP_GAP', 'document', `return function ${hbody};`)(GAP, {
+          getElementById: () => panel2,
+          querySelector: (q) => {
+            const m = /name="([^"]+)"/.exec(q);
+            return m && openNow.has(m[1]) ? {} : null;
+          },
+        });
+        const shut = (at, name) => ({
+          open: false,
+          name,
+          closest: () => box2,
+          querySelector: () => ({
+            ...rows2[5],
+            getBoundingClientRect: () => ({ top: BOX_AT + at - box2.scrollTop,
+              bottom: BOX_AT + at - box2.scrollTop + 30 }),
+          }),
+        });
+        box2.getBoundingClientRect = () => ({ top: BOX_AT, bottom: BOX_AT + H, height: H });
+        const kept2 = [];
+        const self2 = { menuNav: { keep: (p, el) => kept2.push(el) }, _helpToTop: () => kept2.push('top') };
+        /* Closed by her, header still on screen: the page does not move. */
+        box2.scrollTop = 1000;
+        toggled.call(self2, shut(1200, 'help'));
+        ok('a topic she closes keeps the ring on its header',
+          kept2.length === 1 && box2.scrollTop === 1000, `${kept2.length} ${box2.scrollTop}`);
+        /* Closed by her, and the collapse left the header above the box. */
+        toggled.call(self2, shut(700, 'help'));
+        ok('...and a header the collapse left off screen is brought back to the top',
+          kept2.length === 2 && box2.scrollTop === 700 - GAP, `${box2.scrollTop}`);
+        /* Closed by the ACCORDION, because another topic with its name opened. */
+        openNow.add('help');
+        toggled.call(self2, shut(1200, 'help'));
+        ok('...while the accordion shutting one does NOT take the ring off the topic she opened',
+          kept2.length === 2);
+        openNow.clear();
+        box2.getBoundingClientRect = realRect;
+
+        /* THE ONE-FRAME GAP: the <details> shuts on the click, `toggle` comes
+           later. Driven through `update` with a JUMP on a header, a page that
+           collapses under the click, and no toggle at all: the ring must still
+           be on the header next frame. */
+        const jumpPad = fakePad('jump');
+        const navJ = new MenuNav(navGame([jumpPad]));
+        navJ.update(1);
+        navJ.keep(panel2, rows2[9]);
+        box2.scrollTop = 1500;
+        navJ.keep(panel2, rows2[9]);
+        rows2[9].click = () => { box2.scrollTop = 1800; };   // the collapse clamps the scroll
+        navJ.update(1);
+        navJ.update(1);
+        ok('...and from the very frame JUMP shut it, before the toggle event arrives',
+          rows2.indexOf(navJ.focusEl.get('panel-help')) === 9,
+          `${rows2.indexOf(navJ.focusEl.get('panel-help'))}`);
       }
 
       /* --- 8. THE ARROW BUTTONS STEP BETWEEN BUTTONS, AND CENTRE THEM -------
