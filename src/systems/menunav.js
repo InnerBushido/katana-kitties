@@ -434,6 +434,14 @@ export class MenuNav {
        ordering to get wrong. */
     if (nav.confirm || nav.back) nav.spend();
     if (nav.confirm) this._activate(items[i]);
+    /* A TOPIC HEADER SHE JUST OPENED OR SHUT KEEPS THE RING, from THIS frame.
+       The click opens or shuts the <details> synchronously and the page
+       reflows with it, but `toggle` (where `Game._helpToggled` settles the page
+       properly) is queued. In between, the next frame would find the page moved
+       by something that was not this class, usually a scroll clamped by a
+       collapse, and hand the ring to the middle of the page, which at the
+       bottom is BACK. Recording the position now closes that one-frame gap. */
+    if (nav.confirm && reading && items[i]?.tagName === 'SUMMARY') this.keep(panel, items[i]);
     if (nav.back) this._back(panel);
 
     this.index.set(panel.id, i);
