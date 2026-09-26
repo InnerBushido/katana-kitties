@@ -637,6 +637,57 @@ time.
   frame, so an idle `SnakeCam` must leave the camera exactly as it found it.
   That is non-negotiable 5.
 
+### The arena road is shot, not orbited
+
+> "When players are climbing the bridge to the arena, we should have some
+> cinematic camera angle shots to show off the new floating islands to the
+> sides, show off the arena as we are circling it ... and show a nice view of
+> the Main island and the islands off in the distance as we climb higher up.
+> The camera angle shots should be pre-planned ... and not random camera angles
+> like it currently is."
+
+**The orbit is keyed to time, so what it shows depends on when you look, not
+where you are.** Going UP the arena road, `SnakeCam` now plays `ARENA_RIDE`
+instead: six shots, each owning a stretch of the road as a fraction of its
+length. Coming down, and on every other road, it still orbits.
+
+| shot | from | looks at | what it is |
+| --- | --- | --- | --- |
+| climb | 0 | the floating isle | behind her, the road climbing away towards it, the frost island beside |
+| home | 0.13 | the main island | in front of her, above, looking back down the road at the town |
+| isle | 0.27 | the floating isle | from inside the lap, looking out past her at it |
+| ring | 0.42 | the ring | from outside the lap, over her shoulder and down into the arena as she circles it |
+| gate | 0.70 | the doors | down the east side, the entrance coming round |
+| doors | 0.90 | the doors | low behind her, down the carpet through the road's torii |
+
+- **Every shot is one shape**, an over-the-shoulder at a landmark. The lens
+  stands `dist` out on her far side from the landmark, swung `off` degrees,
+  `h` up, and is aimed so that she sits at `ky` in the frame. The aim is a
+  bisection between her and the landmark, done each frame, because how far
+  above her the landmark is changes all the way up.
+- **The landmarks are the world's**, `road.marks` (`World._arenaRideMarks`):
+  the ring's centre, the doors, the main island, and the far isle nearest the
+  road, measured over the whole road rather than picked.
+- **The numbers were solved** against the real road and all seven decks: her
+  and the landmark both in frame, in a full-width pane and a 0.89-aspect half
+  pane, with no island and no deck between the lens and either, and the lens
+  clear of every deck. `world-check` replays the same test: every shot 100% of
+  its samples.
+- **The first opening looked at the arena and showed its keel.** From the
+  bottom of the road the arena is 140 units up the sight line, and the 38°
+  lens is 97 units high there, so the frame was a brown wall. It passed every
+  number, because a landmark's own rock is not counted as in its way. Now the
+  opening looks at the floating isle, and a check holds every shot of the ring
+  above the ring's floor.
+- **Changes of shot are moves, not cuts.** She is steering. The move is round
+  her as bearing / pitch / distance, over `ARENA_BLEND` (about 1.5 s). The three
+  big swings (behind to in front, round to face out of the lap, over to face
+  into it) take about 3 s each (`blend: 0.05` on their rows). Over the
+  standard blend they peaked at 5.6, 4.2 and 4.3° a frame. The worst frame on
+  the whole road is now 2.79°, and the check's bar is 4.
+- **A coin in her paws still takes the lens back to her**, as on every road.
+  That is her moment (`snakeSubject`), and the plan resumes after it.
+
 ### Who shares the ride camera: lanes
 
 > "If all players are nearby each other, and only 1 is climbing up, then after
@@ -689,6 +740,43 @@ land where the griffin sets them down. Measured: 858 units long, a sweep of more
 than 1.6π round the ring. **It exists only while the arena is open**: drawn,
 solid and ground only then, so it is never a way round Mr Satan's griffin to a
 place he has not opened yet.
+
+### The arena's front door
+
+> "The arena entrance is a bit bland and boring with just a Torii gate ...
+> dragon snakes around the entrance of the arena with giant arena doors that
+> are closed ... Mr. Satan appear infront of the arena doors ... a red carpet
+> that leads to where the snake bridge is ... large elevated flaming lanterns
+> stacked on the entrance."
+
+`world/arenagate.js` builds it, in arena-local numbers (`ENTRANCE`), and
+`World._buildArena` places it.
+
+- **A gatehouse in the grandstand**: the south stand is built as two runs
+  either side of `ARENA_DOOR_GAP` (10.5), with pillars and a pagoda lintel.
+  **Two door leaves**, 6.5 × 12, hinged at the pillars. **They open inward**,
+  because the first cut swung them out through the spot Mr Satan waits on.
+  They are `arenaDoorLeaves`, moved by `setArenaDoors(open)` over 1.6 s. Shut,
+  each leaf is a solid, so a closed door cannot be walked through into the
+  ring.
+- **Two dragon columns** instead of snakes coiled round the pillars: a coil on
+  a pillar cuts into the doorway. Each is a vermilion column with a gold helix
+  and the road's own snake head, turned to the carpet.
+- **Four stacked lanterns** (three paper tiers, pagoda caps, a bronze bowl)
+  with real fire: one merged mesh of cones, a shader, `uTime`.
+- **The red carpet**, from inside the doorway to past the torii, where the
+  arena road lands. Nothing stands on it, and a check keeps it that way.
+- **The torii stays**, now as the front of the approach.
+- **Mr Satan waits at `arenaDoorStand`**, in front of the doors, not at the
+  torii.
+
+**At his doors there is no griffin.** A party standing on the arena island
+(`Game.partyAtArena`: every kitten on it, none mounted) walks straight in:
+`_arrive` without the ride. His yes is `sat_doors` ("In you go, kittens!"), never
+`sat_board`'s "Climb on". It has no recording yet, so it plays as a card
+with no voice.
+`arenaFrom = 'gate'` is remembered, because it decides the way out: the doors
+and the parade (`systems/arenaexit.js`, docs/notes/story.md), not the griffin.
 
 ### Why the frost road was missing
 
@@ -750,9 +838,31 @@ reached `halfW` past it, and the arena's far ramp measured 0.46 of step.
 on a road plays `snake`. This sits under the mount and flight rules. `satan`
 is authored, not generated, and it is **an original**. "Kung Fu Fighting" was
 asked for and is somebody's copyright, and a synth playing its tune is still
-its tune. What is free is the genre: a twelve-bar blues strut over a disco kit,
-with brass stabs, a gong at the top of each chorus and a muted chromatic slide
-at the end. The reasoning is in `core/audio.js` beside it.
+its tune. What is free is the genre. The reasoning is in `core/audio.js`
+beside it.
+
+**The second pass asked for the song again, or the Gold Saucer's, "a funny
+version".** A parody that is recognisably the tune is still made of the tune.
+The tune is the part that is owned: by the song's writers and publisher since
+1974, and by Square Enix since 1997. So there are two more originals:
+
+- **`satan` is a kung-fu disco song now** (`_kungfuStep`). It is E minor
+  pentatonic over the flamenco walk-down (Em D C B7). It has a string run up
+  three octaves, a wah guitar on the off-beats, an erhu-ish lead that scoops
+  into every note, and a synthesised HUAH! on the big hits: formants, not
+  anybody's voice (`_shout`). It is 128 eighths, 33 s a chorus.
+- **The strut is kept whole as `satanStrut`**, "as a backup". Point `satan`
+  at `tune: 'strut'` to put it back.
+- **`saucer` is an original funfair march** (`_saucerStep`): a trumpet fanfare,
+  an oom-pah band, a steam calliope, a glockenspiel, a honk and a slide
+  whistle. **It is in F, the arena theme's key.** It plays on the arena island
+  whenever there is no match (`isl === 'arena' && !inMatch`): walking off the
+  road, at his doors, and during the parade back out. The fight's own piece
+  still starts at the league picker.
+- **Levels are measured, not guessed.** Rendered offline, the strut is 0.052
+  RMS. The new two were 0.045 and 0.036, and each carries a `mix` to 0.053.
+
+### Saves
 
 ### Saves
 

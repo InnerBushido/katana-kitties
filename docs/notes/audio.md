@@ -53,7 +53,10 @@ carried by; the opening cutscene's `intro` and the ending's three acts are in
 | ash | `ash` | iwato — the darkest of the five — low, drone-heavy |
 | dusk | `dusk` | insen with fifths: the island the story points at |
 | Dojo | `dojo` | the sparsest thing in the game, deliberately |
-| the arena | `arena` | a matsuri: home's scale, up a fifth, twice the tempo |
+| the arena | `arena` | a matsuri: home's scale, up a fifth, twice the tempo. From the league picker on |
+| the arena island, no match | `saucer` | an original funfair march in the arena's key — see world.md |
+| any road | `snake` | |
+| the arena road | `satan` | an original kung-fu disco song, **authored note by note**; `satanStrut` is the old one, kept |
 | storm dragon | `flight` | **the only piece with a bassline** |
 | Ryuuseki | `ryu` | unchanged |
 | the griffin, outbound | `griffin` | the arena's key, arriving — see below |

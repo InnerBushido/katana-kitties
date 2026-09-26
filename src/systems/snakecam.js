@@ -121,6 +121,156 @@ function nextKey(prev, i) {
   return { ...k, rel: from + step };
 }
 
+/* ---------------------------------------------------------------------------
+   THE ARENA ROAD IS SHOT, NOT ORBITED.
+
+   "When players are climbing the bridge to the arena, we should have some
+   cinematic camera angle shots to show off the new floating islands to the
+   sides, show off the arena as we are circling it (mainly the entrance and as
+   we are near the center of it and near the entrance of it, to build up
+   excitement) and show a nice view of the Main island and the islands off in
+   the distance as we climb higher up. The camera angle shots should be
+   pre-planned ... and not random camera angles like it currently is."
+
+   THE ORBIT ABOVE IS KEYED TO TIME, so what it shows depends on when you look,
+   not on where you are — the same bend is a view of the arena one ride and a
+   view of the underside of the deck the next. This is keyed to PLACE: each
+   shot owns a stretch of the road (`from`, as a fraction of its length going
+   up) and looks at a LANDMARK from over her shoulder — a named mark the world
+   resolves (`road.marks`, see `World.buildSnakeWay`), never a typed
+   coordinate. Only going UP: coming down, and every other road, still orbit.
+
+   EVERY SHOT IS THE SAME SHAPE, an over-the-shoulder: the lens stands `dist`
+   out from her on the far side from the landmark, swung `off` degrees round
+   her, `h` up, and is AIMED so that she sits at `ky` in the frame — which
+   leaves the landmark above her, beyond. One shape, five numbers, so a shot is
+   a row a person can read and a solver can search. The numbers are SOLVED
+   (docs/notes/world.md): she and the landmark both in frame, in a full-width
+   pane and in a half-width one, with no island and no road between the lens
+   and either, and the lens clear of every deck.
+
+   THE SHOTS, in the order the road gives them:
+     climb  leaving home — behind her, the road climbing away ahead towards
+            the floating island, the frost island and the other roads beside
+            it. NOT THE ARENA, which is what this shot was first: from the
+            bottom of the road the arena is 140 units up the sight line and
+            the 38-degree lens is 97 units of it high, so "look at the arena"
+            was a frame of its keel — a brown wall — and passed every number,
+            because a landmark's own rock is not counted in its way.
+     home   the climb — in front of her and above, looking back past her and
+            down the road to the main island and the islands round it.
+     isle   the west side of the lap — from inside the loop, looking out past
+            her at the floating island off the road.
+     ring   the back of the lap, at the top — from outside the loop, over her
+            shoulder and down into the ring, turning with her as she circles.
+     gate   down the east side — the doors coming round into view.
+     doors  the hook onto the carpet — low behind her, the torii, the lanterns
+            and the shut doors ahead.
+--------------------------------------------------------------------------- */
+export const ARENA_RIDE = [
+  { name: 'climb', from: 0, at: 'isle', off: -15, dist: 14, h: 3, ky: -0.45 },
+  /* LONGER MOVES INTO THESE THREE, each about three seconds: each is a big
+     swing round her — behind to in front, then round to face out of the lap,
+     then all the way over to face into it — and over the standard blend they
+     peaked at 5.6, 4.2 and 4.3 degrees a frame. */
+  { name: 'home', from: 0.13, at: 'home', off: 0, dist: 16, h: 5, ky: -0.3, blend: 0.05 },
+  { name: 'isle', from: 0.27, at: 'isle', off: 0, dist: 16, h: 3, ky: -0.3, blend: 0.05 },
+  { name: 'ring', from: 0.42, at: 'arena', off: 0, dist: 16, h: 5, ky: -0.3, blend: 0.05 },
+  { name: 'gate', from: 0.7, at: 'doors', off: 0, dist: 16, h: 4, ky: -0.3 },
+  { name: 'doors', from: 0.9, at: 'doors', off: 0, dist: 14, h: 2.5, ky: -0.3 },
+];
+/** How much of the road a change of shot is spread over, as a fraction of
+ *  its length: about a second and a half at a run. A MOVE, NOT A CUT — she is
+ *  steering, and a cut under a kitten mid-stride is a jump of the world. A
+ *  row's own `blend` overrides it. */
+export const ARENA_BLEND = 0.025;
+
+const DEG = Math.PI / 180;
+
+/**
+ * The lens and its aim for one shot, with her at `K` (her feet). Pure.
+ * @returns {{x:number, y:number, z:number, lx:number, ly:number, lz:number}}
+ */
+export function shotPose(sh, marks, K, spread = 0, fov = 38) {
+  const T = marks[sh.at];
+  const kx = K.x;
+  const ky = K.y + 1.3;
+  const kz = K.z;
+  const away = Math.atan2(kx - T.x, kz - T.z) + sh.off * DEG;
+  const d = sh.dist + spread * 0.7;
+  /* HEIGHT SCALES WITH DISTANCE, so a group pulled back is the same shot
+     further away rather than a flatter one. */
+  const cx = kx + Math.sin(away) * d;
+  const cy = ky + (sh.h * d) / sh.dist;
+  const cz = kz + Math.cos(away) * d;
+  /* THE AIM: somewhere between her and the landmark, found so that she sits
+     at `ky` down the frame. Bisection on the blend, because the answer
+     depends on how far above her the landmark is, which the road changes. */
+  const nrm = (x, y, z) => { const l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l]; };
+  const dK = nrm(kx - cx, ky - cy, kz - cz);
+  const dT = nrm(T.x - cx, T.y - cy, T.z - cz);
+  const tanH = Math.tan((fov * DEG) / 2);
+  const ndcY = (a) => {
+    const v = nrm(dK[0] + (dT[0] - dK[0]) * a, dK[1] + (dT[1] - dK[1]) * a, dK[2] + (dT[2] - dK[2]) * a);
+    // right = v x up, up' = right x v
+    const r = nrm(-v[2], 0, v[0]);
+    const u = [r[1] * v[2] - r[2] * v[1], r[2] * v[0] - r[0] * v[2], r[0] * v[1] - r[1] * v[0]];
+    const px = kx - cx; const py = ky - cy; const pz = kz - cz;
+    const zc = px * v[0] + py * v[1] + pz * v[2];
+    const yc = px * u[0] + py * u[1] + pz * u[2];
+    return { y: yc / Math.max(1e-6, zc) / tanH, v };
+  };
+  let lo = 0;
+  let hi = 1;
+  let best = ndcY(1);
+  if (best.y < sh.ky) {
+    for (let k = 0; k < 18; k++) {
+      const mid = (lo + hi) / 2;
+      const m = ndcY(mid);
+      if (m.y > sh.ky) lo = mid; else { hi = mid; best = m; }
+    }
+  }
+  const v = best.v;
+  return { x: cx, y: cy, z: cz, lx: cx + v[0] * 20, ly: cy + v[1] * 20, lz: cz + v[2] * 20 };
+}
+
+/**
+ * Where the planned lens is at arc length `s` going up the arena road.
+ * Inside `ARENA_BLEND` after a shot's `from` it is travelling from the last
+ * shot to this one — round her, as bearing / pitch / distance, so the move
+ * never passes through her. Pure.
+ */
+export function arenaRidePose(road, s, K, spread = 0, fov = 38) {
+  const u = s / road.length;
+  let i = 0;
+  while (i + 1 < ARENA_RIDE.length && u >= ARENA_RIDE[i + 1].from) i++;
+  const cur = shotPose(ARENA_RIDE[i], road.marks, K, spread, fov);
+  const into = i === 0 ? 1 : (u - ARENA_RIDE[i].from) / (ARENA_RIDE[i].blend ?? ARENA_BLEND);
+  if (into >= 1) return { ...cur, shot: i };
+  const prev = shotPose(ARENA_RIDE[i - 1], road.marks, K, spread, fov);
+  const e = ss(Math.max(0, into));
+  const ky = K.y + 1.3;
+  const sph = (p) => {
+    const dx = p.x - K.x; const dy = p.y - ky; const dz = p.z - K.z;
+    const d = Math.hypot(dx, dy, dz) || 1;
+    return { b: Math.atan2(dx, dz), p: Math.asin(Math.max(-1, Math.min(1, dy / d))), d };
+  };
+  const A = sph(prev);
+  const B = sph(cur);
+  const b = A.b + wrap(B.b - A.b) * e;
+  const p = A.p + (B.p - A.p) * e;
+  const d = A.d + (B.d - A.d) * e;
+  return {
+    x: K.x + Math.sin(b) * Math.cos(p) * d,
+    y: ky + Math.sin(p) * d,
+    z: K.z + Math.cos(b) * Math.cos(p) * d,
+    lx: prev.lx + (cur.lx - prev.lx) * e,
+    ly: prev.ly + (cur.ly - prev.ly) * e,
+    lz: prev.lz + (cur.lz - prev.lz) * e,
+    shot: i,
+  };
+}
+
 /**
  * One per camera that can draw a road: one per kitten, one per group rig.
  */
@@ -187,14 +337,32 @@ export class SnakeCam {
     }
     if (subject) this.clock += dt;
     const P = snakePose(this.clock, this.start);
-    const dist = P.dist + (S.spread ?? 0) * 0.7;
-
+    let dist = P.dist + (S.spread ?? 0) * 0.7;
     this._look.set(S.x + tx * P.ahead, S.y + 1.3, S.z + tz * P.ahead);
+    let bb = behind + P.rel;
+    let pitch = P.pitch;
+    let banks = 1;
+    /* THE ARENA ROAD, GOING UP, IS THE SHOT LIST instead of the orbit (see
+       `ARENA_RIDE`). It comes back as a lens and an aim, and is turned into
+       the same bearing / pitch / distance round the aim the orbit is, so the
+       blend in and out below is the one both use. No bank: a planned shot is
+       composed level. */
+    const plan = S.road.arena && S.dir > 0 && S.road.marks
+      ? arenaRidePose(S.road, S.s, S, S.spread ?? 0, camera.fov) : null;
+    if (plan) {
+      this._look.set(plan.lx, plan.ly, plan.lz);
+      const dx = plan.x - plan.lx;
+      const dy = plan.y - plan.ly;
+      const dz = plan.z - plan.lz;
+      dist = Math.hypot(dx, dy, dz) || 1;
+      bb = Math.atan2(dx, dz);
+      pitch = Math.asin(Math.max(-1, Math.min(1, dy / dist)));
+      banks = 0;
+    }
     const w = ss(Math.min(1, this.w));
-    const bb = behind + P.rel;
     // Blend round her, not across her.
     const b = nb + wrap(bb - nb) * w;
-    const p = np + (P.pitch - np) * w;
+    const p = np + (pitch - np) * w;
     const d = nd + (dist - nd) * w;
     const L = this._v.copy(look).lerp(this._look, w);
     const want3 = this._r.set(
@@ -217,7 +385,7 @@ export class SnakeCam {
 
     /* THE BANK. Up is tipped round the line of sight by the roll, weighted
        like everything else so it is never there when the ride is not. */
-    const roll = P.roll * w;
+    const roll = P.roll * w * banks;
     const vx = L.x - this._pos.x;
     const vy = L.y - this._pos.y;
     const vz = L.z - this._pos.z;

@@ -70,9 +70,26 @@ export const SNAKE = {
   /** The share of the whole build that is the home gates forming, before any
    *  road starts — what `setBridges` uses when the ending has not measured
    *  its own (a save, the scene viewer). */
-  gateShare: 0.14,
-  /** What is left of a gate's cloud once its road is through: a wisp. */
-  skirt: 0.4,
+  gateShare: 0.35,
+  /** ...and the share at the END that is the ground round the gates — the
+   *  ramps, the grass, the stones — fading in once every road has landed. */
+  apronShare: 0.08,
+  /** Seconds ONE home gate takes, from its cloud gathering to its cloud gone.
+   *  "The torii gates should take a bit longer to spawn in ... maybe 2 or 3
+   *  x's as long": it was 0.5s; the torii itself now forms over about 1.1s of
+   *  this, which is 2.2 times. */
+  gateEach: 1.75,
+  /** Seconds between one gate starting and the next, nearest the camera
+   *  first. "The rate at which all the torii gates are spawned can also be 2
+   *  or 3x's as long": it was 0.07s; 0.17 is 2.5 times. */
+  gateStep: 0.17,
+  /** One gate's show, as fractions of `gateEach`: the cloud gathers, the
+   *  torii forms out of it, and only once it is whole does the cloud go —
+   *  "after the torii gates are done spawning into existence, then the clouds
+   *  would fade out and we would be left with the torii gate". */
+  gateCloud: [0, 0.16],
+  gateForm: [0.11, 0.74],
+  gateClear: [0.74, 1],
   /** A coin's radius. The arena's is twice it. */
   coinR: 0.9,
 };
@@ -1054,8 +1071,10 @@ export function* snakeCloudSteps(roads, parts) {
         g.translate(p.x + rx * lat + fx * along, p.y + up, p.z + rz * lat + fz * along);
         parts.push(g);
       }
+      /* A bank at a time, not a road at a time: a road's three were the
+         slowest slice left in the build (5ms alone, 20-36ms in a busy tab). */
+      yield;
     }
-    yield;
   }
 }
 
@@ -1748,6 +1767,11 @@ export function cloudPuff(rad, seed, squash = 0.62) {
 /** How many independently faded, moved and scaled clusters one puff mesh holds. */
 export const PUFF_SLOTS = 32;
 
+/** The seconds every cloud billows by: one uniform, shared by reference into
+ *  every `puffMaterial`, so the world ticks it once a frame. */
+const PUFF_TIME = { value: 0 };
+export function tickPuffs(t) { PUFF_TIME.value = t % 10000; }
+
 /**
  * Glue clusters of puffs into ONE mesh, each cluster tagged with the slot that
  * drives it. `mergeParts` keeps only the attributes every mesh here shares, so
@@ -1763,18 +1787,28 @@ export function mergeSlotted(clusters) {
   return r.value;
 }
 
-/** `mergeSlotted`, yielding after each cluster is merged — see `snakeCloudSteps`. */
+/**
+ * `mergeSlotted`, yielding by the VERTEX, not by the cluster — see
+ * `snakeCloudSteps`. It yielded every six clusters, and one of those six was
+ * every cloud bank on every road; that and the final copy were the two worst
+ * slices of the whole build. `SLICE_VERTS` is about 2ms of either.
+ */
+const SLICE_VERTS = 12000;
 export function* mergeSlottedSteps(clusters) {
   const geos = [];
+  let since = 0;
   for (const c of clusters) {
     if (!c.parts.length) continue;
-    geos.push({ g: mergeParts(c.parts), slot: c.slot });
-    if (geos.length % 6 === 0) yield;
+    const g = mergeParts(c.parts);
+    geos.push({ g, slot: c.slot });
+    since += g.attributes.position.count;
+    if (since > SLICE_VERTS) { since = 0; yield; }
   }
   let nv = 0;
   let ni = 0;
   for (const { g } of geos) { nv += g.attributes.position.count; ni += g.index.count; }
   const pos = new Float32Array(nv * 3);
+  const nrm = new Float32Array(nv * 3);
   const col = new Float32Array(nv * 3);
   const slot = new Float32Array(nv);
   const idx = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
@@ -1783,15 +1817,19 @@ export function* mergeSlottedSteps(clusters) {
   for (const { g, slot: s } of geos) {
     const n = g.attributes.position.count;
     pos.set(g.attributes.position.array, vo * 3);
+    nrm.set(g.attributes.normal.array, vo * 3);
     col.set(g.attributes.color.array, vo * 3);
     slot.fill(s, vo, vo + n);
     const gi = g.index.array;
     for (let i = 0; i < gi.length; i++) idx[io + i] = gi[i] + vo;
     io += gi.length;
     vo += n;
+    since += n;
+    if (since > SLICE_VERTS * 3) { since = 0; yield; }
   }
   const out = new THREE.BufferGeometry();
   out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
   out.setAttribute('color', new THREE.BufferAttribute(col, 3));
   out.setAttribute('slot', new THREE.BufferAttribute(slot, 1));
   out.setIndex(new THREE.BufferAttribute(idx, 1));
@@ -1818,13 +1856,32 @@ export function* mergeSlottedSteps(clusters) {
  * soft hole with no pattern to it. The capsule is a CONE from the lens, so the
  * hole is the size of her on screen at every distance, which is "about as big
  * as the player".
+ *
+ * AND IT BILLOWS, AND ITS EDGES ARE SOFT. "The clouds that are around the
+ * torii gates ... does not look good, the idea was that large clouds would
+ * fade in, slightly moving clouds". What was there was a squashed icosahedron
+ * drawn flat — a white disc with a hard outline, standing still — and a
+ * cluster of them read as a pile of plates. Now every vertex drifts on a slow
+ * wave of its own (`billow` world units, `wave` per unit of distance, so a
+ * forty-unit bank moves like a big thing and a four-unit puff like a small
+ * one), the whole cluster breathes a little, and a puff thins to nothing
+ * where it turns away from the lens, so where two overlap there is no line
+ * between them. The normals it needs are the icosahedron's own, carried
+ * through `mergeSlotted`.
+ *
+ * @param opts.billow how far a vertex drifts, in world units at scale 1
+ * @param opts.wave   how many waves per world unit
  */
-export function puffMaterial() {
+export function puffMaterial({ billow = 0.45, wave = 0.3 } = {}) {
   const N = PUFF_SLOTS;
   const mat = new THREE.MeshBasicMaterial({
     vertexColors: true, transparent: true, depthWrite: false, fog: true,
   });
   const u = {
+    /* ONE CLOCK FOR EVERY CLOUD, shared by reference — see `tickPuffs`. */
+    uPuffTime: PUFF_TIME,
+    uBillow: { value: billow },
+    uWave: { value: wave },
     uSlotA: { value: Array.from({ length: N }, () => new THREE.Vector4(0, 0, 0, 0)) },
     uSlotS: { value: new Float32Array(N).fill(1) },
     uCamPos: { value: new THREE.Vector3() },
@@ -1843,11 +1900,27 @@ export function puffMaterial() {
         attribute float slot;
         uniform vec4 uSlotA[${N}];
         uniform float uSlotS[${N}];
+        uniform float uPuffTime;
+        uniform float uBillow;
+        uniform float uWave;
         varying float vPuffFade;
-        varying vec3 vPuffWorld;`)
+        varying vec3 vPuffWorld;
+        varying vec3 vPuffN;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         int puffI = int(slot + 0.5);
-        transformed = transformed * uSlotS[puffI] + uSlotA[puffI].xyz;
+        float puffS = uSlotS[puffI];
+        /* The wave's phase is where the vertex sits, so neighbours move
+           together and a puff rolls rather than jitters; the slot offsets it
+           so two clusters never move in step. */
+        vec3 puffP = transformed * uWave + vec3(slot * 1.7);
+        float puffT = uPuffTime;
+        vec3 puffD = vec3(
+          sin(puffT * 0.55 + puffP.y * 1.3 + puffP.z * 0.7),
+          sin(puffT * 0.47 + puffP.x * 1.1 + puffP.z * 0.9) * 0.6,
+          cos(puffT * 0.61 + puffP.x * 0.8 + puffP.y * 1.2));
+        float puffBreath = 1.0 + 0.035 * sin(puffT * 0.7 + slot * 2.3);
+        transformed = (transformed + puffD * uBillow) * puffS * puffBreath + uSlotA[puffI].xyz;
+        vPuffN = normalize(normal);
         vPuffFade = uSlotA[puffI].w;`)
       .replace('#include <project_vertex>', `#include <project_vertex>
         vPuffWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
@@ -1855,6 +1928,7 @@ export function puffMaterial() {
       .replace('#include <common>', `#include <common>
         varying float vPuffFade;
         varying vec3 vPuffWorld;
+        varying vec3 vPuffN;
         uniform vec3 uCamPos;
         uniform vec3 uCutPos[4];
         uniform float uCutOn[4];
@@ -1873,7 +1947,13 @@ export function puffMaterial() {
           float rad = uCutR * max(t, 0.12);
           puffCut = max(puffCut, 1.0 - smoothstep(rad * 0.55, rad, d));
         }
-        diffuseColor.a *= vPuffFade * (1.0 - uCutK * puffCut);
+        /* SOFT AT THE EDGE: a puff thins to nothing where its surface turns
+           away from the lens, so a cluster is one cloud, not a stack of
+           outlined discs; and it is a shade warmer underneath. */
+        vec3 puffV = normalize(cameraPosition - vPuffWorld);
+        float puffRim = smoothstep(0.05, 0.6, abs(dot(normalize(vPuffN), puffV)));
+        diffuseColor.rgb *= mix(0.9, 1.04, clamp(vPuffN.y * 0.5 + 0.5, 0.0, 1.0));
+        diffuseColor.a *= vPuffFade * puffRim * (1.0 - uCutK * puffCut);
         if (diffuseColor.a < 0.004) discard;`);
   };
   mat.customProgramCacheKey = () => 'snake-puff';

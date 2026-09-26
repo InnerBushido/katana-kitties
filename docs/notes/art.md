@@ -376,3 +376,19 @@ The general rule: **generate the pose with the same silhouette budget as the
 one it swaps against.** Anything a pose adds that the base drawing does not have
 — an aura, a weapon trail, wings — is a thing the matcher will pay for out of
 the character's own size.
+
+## The hospital cats — ten views, and they are not even
+
+`public/sprites/hospital/cat.png`, baked from `docs/art-masters/hospital_cat.png`
+(Higgsfield, on magenta, `chroma: true` in `sprite-bake`'s WORK). The sheet is
+10 columns (views round the turn) by 2 rows (stand, walk). The cat wears a
+nurse's cap and holds its arms down, so a pair reads as carrying a stretcher.
+
+**The views are not 36° apart.** Measured off the drawings, by where the eyes
+sit on the head: the right profile is column 3 and the left is column 7, and the
+back is 5. An even grid drew the bearers three-quarter at exactly the angle a
+stretcher is carried past a lens. `CAT_VIEWS` in `systems/arenaexit.js` is the
+measured angle of each column: 0, 28, 55, 90, 135, 180, 225, 270, 310, 345.
+`_faceBearer` picks the nearest one, instead of `Billboard`'s even grid. The
+eyes were the measure: 0.00, 0.10, 0.14, 0.24 of a head off centre across
+columns 0–3, none at all on 4–6, and −0.21, −0.11, 0.00 across 7–9.

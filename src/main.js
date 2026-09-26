@@ -38,6 +38,7 @@ import { DodgeFx } from './systems/dodgefx.js';
 import { ClanFx } from './systems/clanfx.js';
 import { Confirm } from './systems/confirm.js';
 import { ShrineScene, SCENE_RADIUS } from './systems/shrinescene.js';
+import { ArenaExit } from './systems/arenaexit.js';
 import { SummonScene } from './systems/summonscene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from './entities/dragonball.js';
 import { Ryuuseki, HOVER, RYU_VIEW } from './entities/ryuuseki.js';
@@ -1319,6 +1320,18 @@ class Game {
        buffered here at boot, not fetched at the moment she opens her mouth. */
     this.shrineScene = new ShrineScene({ world: this.world, audio: this.audio });
     await this.shrineScene.load(this.leaders);
+
+    /* The walk out of the arena's front door, and its stretcher-bearers. The
+       bearers fall back to a drawn placeholder rather than to nothing: a
+       stretcher carried by nobody is a stranger picture than one carried by
+       two blobs. See systems/arenaexit.js. */
+    this.arenaExit = new ArenaExit({ world: this.world, audio: this.audio });
+    /* TEN VIEWS, SAID, NOT 'auto'. The ten cats stand 6-35px apart on the
+       baked sheet, and at the loader's working scale the narrow gaps close:
+       'auto' found six columns and sliced cats in half. Measured off the
+       alpha — see docs/notes/art.md. */
+    this.arenaExit.catArt = await this._loadSprite('/sprites/hospital/cat.png', 10, 2,
+      () => placeholderCatAtlas('#f4f1ea', '#c9c4bb', '#8fb6e0'));
 
     /* The dragon hunt: seven stars, one per island, and the animal they call.
        The art is loaded here rather than with the other sprites because a
@@ -2794,7 +2807,7 @@ class Game {
   /** True while any full-screen story scene owns the screen. */
   _sceneActive() {
     return !!(this.cutscene?.active || this.summonScene?.active
-      || this.shrineScene?.active || this.finaleScene?.active);
+      || this.shrineScene?.active || this.finaleScene?.active || this.arenaExit?.active);
   }
 
   /** Skip whichever scene is up. Harmless if none is. */
@@ -2803,6 +2816,7 @@ class Game {
     if (this.summonScene?.active) this.summonScene.skip();
     if (this.shrineScene?.active) this.shrineScene.skip();
     if (this.finaleScene?.active) this.finaleScene.skip();
+    if (this.arenaExit?.active) this.arenaExit.skip();
     if (this.travel) this.griffin?.skip();
   }
 
@@ -6612,13 +6626,66 @@ class Game {
       if (p.rideAlong) { this.ryu.gunner = null; p.rideAlong = null; }
     }
 
+    /* ALREADY THERE, SO NO GRIFFIN. "When players are at the arena and Mr.
+       Satan is there, he says 'Jump on my griffin' ... then they are on a
+       griffin that just flies up and back down because it is flying to the
+       arena, but they are already there." A party that walked up Snake Way
+       and met him at the doors goes straight in — `_arrive` exactly as the
+       ride would have ended, minus the ride, so the league picker and the
+       tournament cannot tell the two apart. And it is REMEMBERED, because it
+       decides how they leave: out through the doors (`leaveArena`). */
+    this.arenaFrom = this.partyAtArena ? 'gate' : 'town';
+    if (this.arenaFrom === 'gate') {
+      this.travel = 'out';
+      this._arrive();
+      return;
+    }
     const L = this.world.arenaLanding;
     this._ride('out', new THREE.Vector3(L.x, L.y, L.z));
   }
 
-  /** The tournament is over. Fly them home. */
-  leaveArena() {
+  /**
+   * True when every kitten is standing on the arena island — which is what
+   * "they are already there" means, and the only party that can meet Mr Satan
+   * at the arena's doors.
+   */
+  get partyAtArena() {
+    const isl = this.world?.arenaIsland;
+    if (!isl || !this.world.arenaOpen || !this.players.length) return false;
+    return this.players.every((p) => !p.mount && !p.rideAlong
+      && Math.hypot(p.position.x - isl.x, p.position.z - isl.z) < isl.radius);
+  }
+
+  /**
+   * The tournament is over. Fly them home — or, if they came in through the
+   * front door, walk them back out of it.
+   *
+   * `cheer` is false when the match was called off rather than finished: a
+   * party that quit is put back on the carpet without a parade for a result
+   * nobody got. Either way the tournament is torn down HERE, before any scene
+   * starts, so skipping the scene cannot leave half of it standing.
+   */
+  leaveArena({ cheer = true } = {}) {
     if (this.travel) return;
+    if (this.arenaFrom === 'gate' && this.world.arenaDoors && this.arenaExit) {
+      this.arenaFrom = null;
+      const T = this.tournament;
+      const winners = new Set(T?.winners ?? []);
+      const won = this.players.map((p) => winners.has(p));
+      T?.finish();
+      this.satanBlast?.reset();
+      this.quest.onReturn();
+      const on = this.arenaExit.start({
+        players: this.players, won, satan: this.satan, scene: this.scene,
+      });
+      if (on && cheer) return;
+      /* No parade: the same marks the parade ends on, now — `finish` is the
+         one place those are decided, so a quit cannot land anywhere else. */
+      if (on) this.arenaExit.finish();
+      this.toast('Back at the arena doors — Mr. Satan will run it again whenever you like', 0);
+      return;
+    }
+    this.arenaFrom = null;
     const t = this.townCentre();
     this._ride('home', new THREE.Vector3(t.x, t.y, t.z + 14));
   }
@@ -6635,6 +6702,8 @@ class Game {
    * prevent, arrived at from the other direction.
    */
   _goHome() {
+    /* Before `finish` forgets who won — a called-off match is no parade. */
+    if (this.arenaFrom === 'gate') { this.leaveArena({ cheer: false }); return; }
     this.tournament?.finish();
     this.leaveArena();
   }
@@ -6670,8 +6739,10 @@ class Game {
     this.leaguePicking = false;
     this.teamPicking = false;
     this.teamPick = null;
+    /* Asked before `_goHome`, which forgets it. The doors say their own. */
+    const fromGate = this.arenaFrom === 'gate';
     this._goHome();
-    this.toast('Match called off — the griffin is taking you back to town', 0);
+    if (!fromGate) this.toast('Match called off — the griffin is taking you back to town', 0);
   }
 
   /**
@@ -6701,7 +6772,13 @@ class Game {
        cat, and the very first thing either girl does on landing is look for
        herself. */
     const spread = 4;
+    /* NOT MOVED WHEN THEY WALKED IN. A party that came through the doors is
+       standing in front of them, and the tournament posts its fighters itself;
+       teleporting them to the griffin's landing first would be a jump cut to
+       a place eighteen units behind where they were. */
+    const walkedIn = going === 'out' && this.arenaFrom === 'gate';
     for (const [i, p] of this.players.entries()) {
+      if (walkedIn) break;
       const at = going === 'out' ? this.world.arenaLanding : this.townCentre();
       const x = at.x + (i === 0 ? -spread : spread);
       const g = this.world.heightAt(x, at.z);
@@ -7860,7 +7937,16 @@ class Game {
        plays the funnier song. */
     if (this.players.some((p) => p.snakeRide?.road.arena)) return 'satan';
     if (this.players.some((p) => p.snakeRide)) return 'snake';
-    return this._islandTrack(dt);
+    /* THE ARENA ISLAND PLAYS THE FUNFAIR UNTIL THERE IS A MATCH. "Have that
+       Gold Saucer music play when the player gets off the snake bridge and
+       onto the arena, before they join the arena and the arena music plays."
+       `inMatch` is true from the league picker on, so the fight's own piece
+       still starts where it always did; the parade back out of the doors is
+       after `Tournament.finish`, so it gets the fanfare too. The griffin's
+       party never hears it — they land straight into the picker. */
+    const isl = this._islandTrack(dt);
+    if (isl === 'arena' && !this.inMatch) return 'saucer';
+    return isl;
   }
 
   /**
@@ -8733,6 +8819,24 @@ class Game {
        is the one difference from a paused game — a stick still pushed when the
        scene opened must not walk somebody off the island while nobody is
        looking at her. */
+    /* --- the walk out of the arena's front door ---
+       The shrine scene's furniture again, and its rule: the kittens are not
+       ticked (the scene has its own copies of them, and the real ones are
+       hidden), but the world, the dragons and Mr Satan — who is the real one
+       — go on living. `_updateMusic` because this branch returns before the
+       bottom of `_updatePlay`, where it otherwise lives. */
+    if (this.arenaExit?.active) {
+      if (this._skipPressed()) this.arenaExit.skip();
+      this.arenaExit.update(dt);
+      this.world.update(dt, this.world.arenaDoors ?? this.players[0].position);
+      for (const d of this.dragons) d.update(dt, this.world, []);
+      this.announcer?.update(dt);
+      this._updateMusic(dt);
+      this._renderView(this.arenaExit.camera, 0, 0,
+        ...this.renderer.getSize(new THREE.Vector2()).toArray());
+      return;
+    }
+
     if (this.shrineScene?.active) {
       if (this._skipPressed()) {
         this.shrineScene.skip();
@@ -11806,6 +11910,7 @@ class Game {
     this.ryu?.faceCamera(camera);
     this.satan?.faceCamera(camera);
     this.griffin?.faceCamera(camera);
+    this.arenaExit?.faceCamera(camera);
     /* THE FLASH STEP'S FIGURE, and only its three readouts: everything else it
        draws is a `THREE.Sprite`, which three.js turns during each pane's own
        render and so needs nothing from here. A `Label` is a quad on a mesh and

@@ -102,6 +102,11 @@ const WORK = [
   { file: 'dragon_sheet.png', out: 'beasts/dragon_sheet.png', to: [1376, 768], key: true, deep: true },
   { file: 'dragon_fly.png', out: 'beasts/dragon_fly.png', to: [1376, 768], key: true, deep: true },
   { file: 'title_art.png', webp: 92 },
+  /* The arena's stretcher-bearers: a nurse-capped tabby, ten views round and
+     two poses (standing, walking), arms down at her sides so the stretcher
+     can be carried at her hips. Generated on magenta, same column order as
+     Ember's sheet (0 front, 2-3 facing right, 5 back, 7 facing left). */
+  { file: 'hospital_cat.png', out: 'hospital/cat.png', to: [1792, 1013], chroma: true },
 ];
 
 /* ========================================================================== */

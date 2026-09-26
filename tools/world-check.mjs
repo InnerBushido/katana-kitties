@@ -30,15 +30,18 @@ import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../s
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import {
   SCRIPTS, DUSK_DEEP, DUSK_FALL, DAWN_RISE, DAWN_DEEP, SummonScene, BEAT_ACTS,
-  FINALE_SHOTS, MUSIC_CUES, say, SNAKE_RISE, SNAKE_TIMES, SNAKE_OF_SHOT,
+  FINALE_SHOTS, MUSIC_CUES, say, SNAKE_RISE, SNAKE_TIMES, SNAKE_OF_SHOT, SNAKE_APRON, ISLES_CLEAR,
 } from '../src/systems/summonscene.js';
 import { SNAKE, SNAKE_LINKS, SNAKE_ARENA, COIN_CANES } from '../src/world/snakeway.js';
-import { FAR } from '../src/world/farisles.js';
-import { snakePose, SnakeCam, SNAKE_MOVE } from '../src/systems/snakecam.js';
+import { FAR, FAR_PLACES, FarIsles } from '../src/world/farisles.js';
+import { snakePose, SnakeCam, SNAKE_MOVE, ARENA_RIDE, ARENA_BLEND, shotPose, arenaRidePose } from '../src/systems/snakecam.js';
 import { Announcer } from '../src/systems/announce.js';
 import { FinaleTide } from '../src/systems/finaletide.js';
 import { FinaleShow } from '../src/systems/finaleshow.js';
 import { buildBridge, mergeParts as mergeBuilt } from '../src/world/build.js';
+import { ARENA_DOOR_GAP, ARENA_RING as A_RING, ARENA_GATE as A_GATE } from '../src/world/build.js';
+import { ENTRANCE } from '../src/world/arenagate.js';
+import { ArenaExit, EXIT, CAT_VIEWS } from '../src/systems/arenaexit.js';
 import {
   SAVE_VERSION, MAX_SAVES, AUTOSAVE_EVERY, AUTOSAVE_AFTER,
   MAX_KEPT, SPARE_SLOTS, MAX_LIST, capFor, trimSaves, saveCap,
@@ -5628,6 +5631,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'critters/mantis.png', 'kittens/ember/inhale.png', 'kittens/frost/inhale.png',
     'kittens/ember/scared.png', 'kittens/frost/scared.png',
     'kittens/ember/warp.png', 'kittens/frost/warp.png',
+    // Chroma-keyed off magenta by sprite-bake, so it ships already cut out.
+    'hospital/cat.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -20516,6 +20521,47 @@ console.log('\n--- one press is not enough, and one player drives ---');
       r.q.post === 'town' && r.satan.position.z === home.z, `${r.q.post}`);
   }
 
+  /* AT HIS DOORS THERE IS NO GRIFFIN. "When players are at the arena and Mr.
+     Satan is there, he says 'Jump on my griffin' ... then they are on a
+     griffin that just flies up and back down because it is flying to the
+     arena, but they are already there." `Game.enterArena` walks a party that
+     is on the island straight in, so the one thing he may not do here is
+     promise the ride — and he waits in front of the doors, not the torii. */
+  {
+    const r = rig();
+    /* Nearer the torii than the real one, so the two kittens below are "here"
+       by HIS measure — `near` is taken from where he stands. */
+    const stand = { x: gate.x + 1.5, y: gate.y, z: gate.z + 1 };
+    r.q.world.arenaDoorStand = stand;
+    r.hud.partyAtArena = true;
+    const lines = [];
+    const said = [];
+    r.satan.setLine = (t) => lines.push(t);
+    r.q.announcer = { say: (id) => said.push(id) };
+    step(r, [atGate(2), atGate(-2)]);
+    ok('with the doors built, he waits in front of them rather than the torii',
+      r.satan.position.x === stand.x && r.satan.position.z === stand.z,
+      `${r.satan.position.x},${r.satan.position.z}`);
+    const last = lines.at(-1) ?? '';
+    ok('...and offers to open them, not his griffin',
+      /open the doors/.test(last) && !/griffin/.test(last), JSON.stringify(last));
+    step(r, [atGate(2), atGate(-2)], [yes, nopad]);
+    ok('...and a yes says so — "in you go", never "climb on"',
+      r.hud.boarded && said.includes('sat_doors') && !said.includes('sat_board'), said.join());
+  }
+  {
+    const r = rig();
+    r.hud.partyAtArena = false;
+    const lines = [];
+    const said = [];
+    r.satan.setLine = (t) => lines.push(t);
+    r.q.announcer = { say: (id) => said.push(id) };
+    step(r, [atGate(2), atGate(-2)]);
+    step(r, [atGate(2), atGate(-2)], [yes, nopad]);
+    ok('...while a party that is NOT on his island is still offered the ride',
+      /griffin/.test(lines.find((l) => /INTERACT/.test(l)) ?? '') && said.includes('sat_board'), said.join());
+  }
+
   /* =========================================================================
      ...AND THE DOORMAN SHUTS UP ONCE THE DOOR IS BEHIND THEM.
 
@@ -29235,15 +29281,27 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
           set: () => true }) });
         globalThis.document = { createElement: cv, getElementById: () => null };
         const { World } = await import(workerData.world);
-        const W = new World(new THREE.Scene());
-        const times = [];
-        for (let done = false; !done && times.length < 20000;) {
-          const t0 = performance.now();
-          done = W.prepareSnakeWay(0);
-          times.push(performance.now() - t0);
+        /* EACH SLICE'S BEST OF TWO BUILDS. One build alone was a coin flip:
+           the slowest slices are 5-7ms on their own and 20-37ms here, with
+           the rest of this file's heap being collected alongside, and the
+           bar sat between the two (HEAD passed at 24.5, the next run failed
+           at 33.5 and 36.6 with the same slices slowest). A stall is one
+           moment; a slice that is genuinely too big is too big twice. */
+        let best = null;
+        let built = true;
+        for (let run = 0; run < 2; run++) {
+          const W = new World(new THREE.Scene());
+          const times = [];
+          for (let done = false; !done && times.length < 20000;) {
+            const t0 = performance.now();
+            done = W.prepareSnakeWay(0);
+            times.push(performance.now() - t0);
+          }
+          built = built && !!W.snakeWay;
+          best = best ? best.map((t, i) => Math.min(t, times[i] ?? t)) : times;
         }
-        times.sort((a, b) => b - a);
-        parentPort.postMessage({ built: !!W.snakeWay, slices: times.length, worst: times[0] });
+        const times = [...best].sort((a, b) => b - a);
+        parentPort.postMessage({ built, slices: best.length, worst: times[0] });
       })().catch((e) => parentPort.postMessage({ error: String(e) }));
     `, {
       eval: true,
@@ -29368,13 +29426,85 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
      "Before the bridges start constructing, the torii gate should be finished
      completely spawning in." */
   const G = SNAKE.gateShare;
+  const Ap = SNAKE.apronShare;
+  const slotW = (i) => Sw.puffMat.uniformsRef.uSlotA.value[i].w;
   W.setBridges(G * 0.5);
   ok('the home gates form first — part-way through, some are still forming',
     R.some((r) => r.gateT > 0 && r.gateT < 1) && R.every((r) => r.grow === 0));
+  /* "Large clouds would fade in ... and from those clouds the Torii gate
+     entrance would spawn out of and after the torii gates are done spawning
+     into existence, then the clouds would fade out". */
+  ok('...each out of a cloud that is there while it forms',
+    R.filter((r) => r.gateT > 0.2 && r.gateT < 0.8).every((r) => slotW(1 + r.id * 3) > 0.9)
+    && R.some((r) => r.gateT > 0.2 && r.gateT < 0.8));
   W.setBridges(G);
   ok('...and every one of them is whole before any road has started',
     R.every((r) => r.gateT === 1 && r.grow === 0),
     R.map((r) => `${r.name}:${r.gateT.toFixed(2)}/${r.grow.toFixed(2)}`).join(' '));
+  ok('...with every cloud it came out of GONE, not left as a wisp',
+    R.every((r) => slotW(1 + r.id * 3) === 0),
+    R.map((r) => slotW(1 + r.id * 3).toFixed(2)).join(' '));
+  /* "The torii gates should take a bit longer to spawn in ... maybe 2 or 3
+     x's as long ... and also the rate at which all the torii gates are
+     spawned can also be 2 or 3x's as long". It was a 0.5s gate, 0.07s apart. */
+  {
+    const formS = SNAKE.gateEach * (SNAKE.gateForm[1] - SNAKE.gateForm[0]);
+    ok('...each forming 2-3 times as slowly as it did, and 2-3 times as far apart',
+      formS >= 1.0 && formS <= 1.5 && SNAKE.gateStep >= 0.14 && SNAKE.gateStep <= 0.21,
+      `${formS.toFixed(2)}s each, ${SNAKE.gateStep}s apart`);
+    ok('...and a cloud is only thinned once its torii is whole',
+      SNAKE.gateClear[0] >= SNAKE.gateForm[1]);
+  }
+  /* "...each one spawns in at a staggered time with the first one spawning in
+     being closest to the camera." The ending ranks them; the world obeys. */
+  {
+    const want = [...R].reverse().map((r) => r.id);
+    W.snakeGateRank = want;
+    W.setBridges(G * 0.3);
+    const got = [...R].sort((a, b) => a.gateWin[0] - b.gateWin[0]).map((r) => r.id);
+    ok('...one after another in the order the ending ranks them',
+      got.join() === want.join() && R.every((r, i) => i === 0 || r.gateWin[0] !== R[0].gateWin[0]),
+      got.join());
+    W.snakeGateRank = null;
+    W.openArena(false);
+    W.setBridges(G * 0.3);
+    const shownR = R.filter((r) => !r.arena);
+    const last = Math.max(...shownR.map((r) => r.gateWin[1]));
+    ok('...with no turn kept for a road that is not showing — the arena\'s, while it is shut',
+      Math.abs(last - 1) < 1e-9 && R.find((r) => r.arena).gateRank === -1,
+      `last gate ends at ${last.toFixed(3)} of the phase`);
+    W.openArena(true);
+  }
+  /* "Once all of the torii gates are spawned, then we can start to have all
+     of the bridges start to be formed but they should all start to be formed
+     at the same time." */
+  ok('...then every road starts growing at the same moment',
+    R.every((r) => r.growWin[0] === 0));
+  W.setBridges(G + (1 - G - Ap) * 0.02);
+  ok('...and they are all under way together, just after it',
+    R.every((r) => r.grow > 0 && r.grow < 0.2), R.map((r) => r.grow.toFixed(3)).join(' '));
+  /* "We shouldn't have a cloud at the front of the bridge being formed ...
+     we can have it be what it was previously" — the knot of light. */
+  W.setBridges(G + (1 - G - Ap) * 0.5);
+  ok('...with a knot of light at the growing end and no cloud',
+    R.every((r) => r.glow.visible && slotW(2 + r.id * 3) === 0)
+    && !Sw.portals.some((c) => R.some((r) => c.slot === 2 + r.id * 3)));
+  /* "We are currently spawning the grass, rocks, and ramp with the torii
+     gates, this does not look good as they are floating in the air ... fade
+     these extra models in" once the bridges are connected. */
+  ok('...and no ground round any gate while the roads are still growing',
+    R.every((r) => r.aprons.length === 2 && r.aprons.every((m) => !m.visible)));
+  W.setBridges(1 - Ap - 1e-9);
+  ok('...not even the moment the last road lands',
+    R.every((r) => r.grow > 0.999 && r.aprons.every((m) => !m.visible)));
+  W.setBridges(1 - Ap * 0.5);
+  ok('...and then it fades in, round every gate at once',
+    R.every((r) => r.aprons.every((m) => m.visible && m.material.reveal > 0 && m.material.reveal < 1)));
+  ok('...as the far clouds go', R.every((r) => slotW(3 + r.id * 3) > 0 && slotW(3 + r.id * 3) < 1));
+  W.setBridges(1);
+  ok('...whole, with no cloud left at either end of any road',
+    R.every((r) => r.aprons.every((m) => m.material.reveal === 1)
+      && slotW(1 + r.id * 3) === 0 && slotW(3 + r.id * 3) === 0));
   /* "Some of the bridges can construct slower than the other bridges": the
      longest takes the whole window and the rest land a little early. */
   ok('...then the longest road takes all of the time there is, and the rest land just before it',
@@ -29591,9 +29721,11 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
 
   /* --- THE FAR WORLDS --------------------------------------------------
      "Make them appear and construct in a more cool way... through the clouds
-     ... as if the clouds act as a masking portal... We should make the islands
-     appear when they are in view of the camera in the cutscene... if the
-     island is not in the camera frustum... it can just enable in." */
+     ... as if the clouds act as a masking portal". Then: "formed out of very
+     large clouds and they 'shoot through' the clouds to make it more abrupt
+     and grandiose ... while the clouds that spawned them are fading away,
+     then the waterfall starts forming so that shortly after the clouds fade
+     away, the islands are in place and the waterfalls are full." */
   {
     const F = W.farIsles;
     F.hideAll();
@@ -29601,45 +29733,43 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     ok('the far islands are not there before the ending — not even under a clear sky',
       !F.group.visible && !F.anyShown);
     ok('...out on the horizon, clear of the arena, with water falling off them',
-      F.isles.length >= 5
-      && F.isles.every((i) => Math.hypot(i.x, i.z) > 400
+      F.isles.length === FAR_PLACES.length
+      && F.isles.every((i) => Math.hypot(i.x, i.z) > 380
         && Math.hypot(i.x - W.arenaCentre.x, i.z - W.arenaCentre.z) > 300)
       && !!F.meshes.water && !!F.meshes.points && !!F.meshes.portal);
-    const cam = new THREE.PerspectiveCamera(54, 16 / 9, 0.1, 4000);
-    const aimAt = (s) => {
-      cam.position.set(s.x * 0.5, s.y + 40, s.z * 0.5);
-      cam.lookAt(s.x, s.y, s.z);
-      cam.updateMatrixWorld();
-      cam.updateProjectionMatrix();
-    };
-    const s0 = F.isles[0];
-    cam.position.set(s0.x * 0.5, s0.y + 40, s0.z * 0.5);
-    cam.lookAt(s0.x * 2, s0.y + 900, s0.z * 2);
-    cam.updateMatrixWorld();
-    ok('...an island the camera cannot see does not start', F.startVisible(cam) === 0 && !F.anyShown);
-    aimAt(s0);
-    ok('...one it can see does, and alone',
-      F.startVisible(cam) === 1 && F.isles.filter((s) => s.started).length === 1);
-    ok('...and never two on one frame, so they arrive as a sequence', F.startVisible(cam) === 0);
-    const started = F.isles.find((s) => s.started);
-    const U = () => F.U.uIsle.value[started.slot];
-    F.update(FAR.reveal * 0.35);
-    ok('...coming UP THROUGH its cloud — below the cloud\'s plane, not drawn yet',
-      U().x > 0 && U().x < FAR.rise && U().y > -1e8 && U().z < 1,
+    ok('...one for the truck across the town and four for the wide shot',
+      F.of('A').length === 1 && F.of('B').length === 4);
+    F.show('B', -0.01);
+    ok('...none of them before its mark', !F.anyShown);
+    const s = F.of('B')[0];
+    const U = () => F.U.uIsle.value[s.slot];
+    const P = () => F.portalMat.uniformsRef.uSlotA.value[s.slot].w;
+    F.show('B', FAR.show * 0.3);
+    ok('...a cloud gathering first, with nothing in it yet',
+      P() > 0.5 && U().z === 0 && Math.abs(U().x - FAR.rise) < 1e-6, `cloud ${P().toFixed(2)}`);
+    F.show('B', FAR.show * 0.43);
+    ok('...then the island SHOOTS up through it — below the cloud\'s plane, not drawn yet',
+      U().x > 0 && U().x < FAR.rise * 0.7 && U().y > -1e8 && U().z === 1 && P() > 0.9,
       `${U().x.toFixed(1)} below, clip at ${U().y.toFixed(1)}`);
-    ok('...its water not falling yet', started.fall === 0);
-    F.update(FAR.reveal);
-    ok('...then standing in the sky, whole, and its waterfall forming',
-      U().x === 0 && U().y < -1e8 && started.fall > 0 && started.fall < 1,
-      `fall ${started.fall.toFixed(2)}`);
-    F.update(FAR.fall + 1);
-    ok('...into a waterfall that has reached the cloud sea', started.fall === 1);
+    ok('...fast: its whole rise in a fifth of the show',
+      (FAR.shoot[1] - FAR.shoot[0]) * FAR.show <= 0.4 && FAR.rise >= 80);
+    ok('...its water not falling yet', s.fall === 0);
+    F.show('B', FAR.show * 0.75);
+    ok('...then standing, the cloud going, and the water forming AS it goes',
+      Math.abs(U().x) < 1 && P() > 0 && P() < 0.9 && s.fall > 0 && s.fall < 1,
+      `cloud ${P().toFixed(2)}, fall ${s.fall.toFixed(2)}`);
+    F.show('B', FAR.show + FAR.gap * 4);
+    ok('...and then whole: no cloud at all, and a waterfall reaching the cloud sea',
+      F.of('B').every((i) => i.reveal === 1 && i.fall === 1
+        && F.portalMat.uniformsRef.uSlotA.value[i.slot].w === 0));
+    ok('...the others a beat behind it, not all on one frame',
+      FAR.gap > 0 && FarIsles.span(4) > FAR.show);
     F.revealAll();
     ok('...and the ones nobody saw are simply there when the roads are, water and all',
-      F.isles.every((s) => s.started && s.reveal === 1 && s.fall === 1));
+      F.isles.every((i) => i.started && i.reveal === 1 && i.fall === 1));
     F.hideAll();
     W.setBridges(1);
-    ok('...which is what finishing the roads does', F.isles.every((s) => s.reveal === 1));
+    ok('...which is what finishing the roads does', F.isles.every((i) => i.reveal === 1));
   }
   W.setSky(0, 1);
   W.openArena(hadArena);
@@ -29944,7 +30074,12 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     setBridges: (p) => sent.push({ p, share: fakeW.snakeGateShare }),
     setSky() {},
     prepareSnakeWay() { pumped++; if (pumped > 3) fakeW.snakeWay = {}; return !!fakeW.snakeWay; },
-    farIsles: { startVisible: () => { looked.push(now); return 0; }, hideAll() {} },
+    farIsles: {
+      show: (shot, t, dur) => looked.push({ shot, t, dur, now }),
+      of: (shot) => FAR_PLACES.filter((p) => p.shot === shot),
+      hideAll() {},
+    },
+    gateSpan: () => SNAKE.gateEach + SNAKE_LINKS.length * SNAKE.gateStep,
   };
   let now = 0;
   const S = new SummonScene({ world: null, audio: null });
@@ -29976,16 +30111,27 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
   const tB = S._at(B[0]);
   const tC = S._at(S._nextCut(B[0]));
   const fa = (t) => (t - tA) / (tB - tA);
-  ok('...the far islands start at 10-20% of the first pan',
-    fa(T.isle) >= 0.1 && fa(T.isle) <= 0.2, `${(fa(T.isle) * 100).toFixed(0)}%`);
-  ok('...the gates after them, finished by half-way',
-    T.gate0 > T.isle && Math.abs(fa(T.road0) - 0.5) < 1e-6, `${(fa(T.gate0) * 100).toFixed(0)}%-50%`);
-  ok('...and the roads from half-way through it to 90-95% of the second',
-    (T.end - tB) / (tC - tB) >= 0.9 && (T.end - tB) / (tC - tB) <= 0.95,
+  /* "When the 'There is nothing left standing' scene begins, we should have
+     one of the islands in the background already start to appear ... after
+     5% of the cutscene has been played." */
+  ok('...the first far island starts 5% into the first pan',
+    Math.abs(fa(T.isle) - 0.05) < 1e-6, `${(fa(T.isle) * 100).toFixed(1)}%`);
+  ok('...the gates with it, and as long as their slower show takes',
+    Math.abs(T.gate0 - T.isle) < 0.1 && Math.abs(T.road0 - T.gate0 - fakeW.gateSpan()) < 1e-9,
+    `${(T.road0 - T.gate0).toFixed(2)}s of gates`);
+  ok('...then the roads, all at once, to 90% of the second',
+    Math.abs((T.end - tB) / (tC - tB) - SNAKE_OF_SHOT) < 1e-9 && SNAKE_OF_SHOT >= 0.85,
     `${(((T.end - tB) / (tC - tB)) * 100).toFixed(0)}% of the wide shot`);
-  ok('...which is growth on screen for most of both pans, not a blink',
-    T.end - T.road0 > 0.6 * (tC - tA) && T.end - T.road0 > 3,
-    `${(T.end - T.road0).toFixed(2)}s of ${(tC - tA).toFixed(2)}s`);
+  ok('...which is still growth on screen, not a blink',
+    T.end - T.road0 >= 2, `${(T.end - T.road0).toFixed(2)}s`);
+  ok('...then the ground round the gates, fading in once they have all landed',
+    Math.abs(T.apron - T.end - SNAKE_APRON) < 1e-9 && SNAKE_APRON >= 0.4);
+  /* "The islands should be fully formed and the clouds faded at least 2
+     seconds before the ending of this scene before the next 'the elders
+     called it mischief' scene." */
+  ok('...and the wide shot\'s islands all finished 2 seconds before its cut',
+    T.isleB + FarIsles.span(4, FAR.show) <= tC - 2 + 1e-9,
+    `done ${(tC - T.isleB - FarIsles.span(4, FAR.show)).toFixed(2)}s before the cut`);
   sent.length = 0;
   let early = 0;
   for (let t = 0; t <= tC + 1; t += 1 / 30) {
@@ -29996,11 +30142,69 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
   ok('...nothing before the gates\' mark', early === 0);
   const atRoad = sent.filter((x) => x.p <= x.share + 1e-9);
   ok('...the gates alone up to the roads\' mark — the split is the scene\'s own',
-    atRoad.length > 10 && Math.abs(sent[0].share - (T.road0 - T.gate0) / (T.end - T.gate0)) < 1e-9);
+    atRoad.length > 10 && Math.abs(sent[0].share - (T.road0 - T.gate0) / (T.apron - T.gate0)) < 1e-9
+    && Math.abs(fakeW.snakeApronShare - (T.apron - T.end) / (T.apron - T.gate0)) < 1e-9);
   ok('...growing, not appearing, and done by the end of its window',
     sent.length > 60 && sent.every((x, i) => i === 0 || x.p >= sent[i - 1].p) && sent.at(-1).p === 1);
-  ok('...and the islands are looked for only while the camera is on those two pans',
-    looked.length > 30 && looked.every((t) => t >= T.isle - 1e-9 && t < T.stop));
+  ok('...and each pan\'s islands are driven off the scene\'s clock, from their own mark',
+    looked.some((l) => l.shot === 'A') && looked.some((l) => l.shot === 'B')
+    && looked.every((l) => l.now < T.stop
+      && Math.abs(l.t - (l.now - (l.shot === 'A' ? T.isle : T.isleB))) < 1e-9
+      && l.dur === (l.shot === 'A' ? FAR.showFirst : FAR.show)));
+  /* --- ...AND EACH FAR ISLAND IS IN THE SHOT IT IS FOR -----------------
+     "They are far away and in the corner of the screen and hard to notice" —
+     so `FAR_PLACES` were solved against the two pans' lenses, and this plays
+     the real ending over a real world and projects every one of them back
+     through the camera that is drawing, every frame of its shot. Inside the
+     letterbox (|y| < 0.82), off the edges, and in the middle half of the
+     frame's width on average, not its corner. */
+  {
+    const RW = new World(new THREE.Scene());
+    let x0 = Infinity; let x1 = -Infinity; let z0 = Infinity; let z1 = -Infinity;
+    for (const isl of RW.islands) {
+      if (isl.kind === 'arena') continue;
+      x0 = Math.min(x0, isl.x - isl.radius); x1 = Math.max(x1, isl.x + isl.radius);
+      z0 = Math.min(z0, isl.z - isl.radius); z1 = Math.max(z1, isl.z + isl.radius);
+    }
+    const RS = new SummonScene({ scene: null, world: RW, audio: null });
+    RS.start('finale', new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2), Math.max(x1 - x0, z1 - z0) / 2);
+    for (const bt of RS.script) if (bt.clip != null) bt.dur = bt.clip + TAIL;
+    RS.camera.aspect = 16 / 9;
+    RS.camera.updateProjectionMatrix();
+    const RT = RS._snakeTimes();
+    const seen = { A: [], B: [] };
+    for (let i = 0; i < 60 * 16 && RS.active && RS._now() < RT.stop; i++) {
+      RS.update(1 / 60);
+      const shot = RS._shot === A[0] ? 'A' : RS._shot === B[0] ? 'B' : null;
+      if (!shot) continue;
+      RS.camera.updateMatrixWorld();
+      for (const s of RW.farIsles.of(shot)) {
+        const v = new THREE.Vector3(s.x, s.y, s.z).project(RS.camera);
+        seen[shot].push({ s, x: v.x, y: v.y, z: v.z, now: RS._now() });
+      }
+    }
+    const inFrame = (o) => o.z < 1 && Math.abs(o.x) < 0.85 && o.y > 0.3 && o.y < 0.8;
+    const bad = (k) => seen[k].filter((o) => !inFrame(o));
+    ok('the truck\'s far island is in its sky for the whole shot, top left, clear of the letterbox',
+      seen.A.length > 60 && bad('A').length === 0,
+      `${seen.A.length - bad('A').length}/${seen.A.length} in frame`
+      + (seen.A.length ? `, at (${seen.A[0].x.toFixed(2)}, ${seen.A[0].y.toFixed(2)})` : ''));
+    ok('...already there when its show starts, 5% in',
+      seen.A.some((o) => Math.abs(o.now - RT.isle) < 0.05 && inFrame(o)));
+    const meanX = seen.B.length ? seen.B.reduce((n, o) => n + Math.abs(o.x), 0) / seen.B.length : 9;
+    ok('...and the wide shot\'s four are in ITS sky, nearer the middle than the corners',
+      seen.B.length > 60 && bad('B').length === 0 && meanX < 0.5,
+      `${seen.B.length - bad('B').length}/${seen.B.length} in frame, mean |x| ${meanX.toFixed(2)}`);
+    const first = RW.farIsles.of('B').map((s) => seen.B.find((o) => o.s === s));
+    let closest = Infinity;
+    for (let i = 0; i < first.length; i++) {
+      for (let j = i + 1; j < first.length; j++) {
+        if (first[i] && first[j]) closest = Math.min(closest, Math.hypot(first[i].x - first[j].x, first[i].y - first[j].y));
+      }
+    }
+    ok('...spread across it, not stacked on one another', closest > 0.2, `closest pair ${closest.toFixed(2)} apart`);
+    RS.finish();
+  }
   S.script.forEach((b, i) => { b.dur = floors[i]; });
   S.world = null;
   S.finish();
@@ -30020,21 +30224,489 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
   if (hadDocB) globalThis.document = prevDoc; else delete globalThis.document;
 }
 
+/* --- THE ARENA ROAD'S SHOT LIST ------------------------------------------------
+   "When players are climbing the bridge to the arena, we should have some
+   cinematic camera angle shots to show off the new floating islands to the
+   sides, show off the arena as we are circling it ... and show a nice view of
+   the Main island ... The camera angle shots should be pre-planned."
+
+   Each shot is replayed up its own stretch of the road through the real
+   projection, asking what it is FOR: her and its landmark both in frame — in a
+   full-width pane and a half-width one — with no island and no deck of any of
+   the seven roads between the lens and either, and the lens itself clear of
+   every deck. The solver that chose the numbers asked exactly this. */
+console.log('\n--- the arena road is shot, not orbited ---');
+{
+  const hadDocR = 'document' in globalThis;
+  const prevDocR = globalThis.document;
+  if (!hadDocR) globalThis.document = domStub();
+  const RW = new World(new THREE.Scene());
+  RW.openArena(true);
+  const roads = RW.buildSnakeWay().roads;
+  const road = roads.find((r) => r.arena);
+  const M = road.marks;
+  const names = ['arena', 'doors', 'home', 'isle'];
+  ok('the arena road carries its landmarks, resolved from the world',
+    !!M && names.every((n) => Number.isFinite(M[n]?.x) && Number.isFinite(M[n]?.y) && Number.isFinite(M[n]?.z))
+      && M.arena.x === RW.arenaIsland.x && M.doors.z === RW.arenaDoors.z,
+    JSON.stringify(M));
+  /* THE FLOATING ISLAND IS THE ONE THE ROAD PASSES — measured, not picked. */
+  const nearest = (f) => Math.min(...road.pts.map((p) => Math.hypot(p.x - f.x, p.z - f.z)));
+  const isles = RW.farIsles.isles;
+  ok('...its floating island the one nearest the road',
+    isles.every((f) => nearest(f) >= nearest(M.isle) - 1e-6), `${M.isle.x},${M.isle.z} at ${nearest(M.isle).toFixed(0)}`);
+  ok('every shot looks at a landmark the road has, in order up the road from its first step',
+    ARENA_RIDE.every((s) => names.includes(s.at)) && ARENA_RIDE[0].from === 0
+      && ARENA_RIDE.every((s, i) => i === 0 || s.from - ARENA_RIDE[i - 1].from >= 0.08),
+    ARENA_RIDE.map((s) => `${s.name}@${s.from}`).join(' '));
+
+  const FOV = 38;
+  const cam = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.5, 4000);
+  const v = new THREE.Vector3();
+  const rock = (x, y, z, except) => {
+    for (const isl of RW.islands) {
+      if (isl === except) continue;
+      const dd = Math.hypot(x - isl.x, z - isl.z);
+      if (dd > isl.radius) continue;
+      const g = isl.heightAt(x, z);
+      if (g != null && y < g && y > g - isl.radius * 0.8 * (1 - (dd / isl.radius) ** 2)) return true;
+    }
+    return roads.some((r) => {
+      const d = r.locate(x, z, y + 2.2, r.halfW + 0.6, 0);
+      return d && d.y >= y - 0.6 && d.y <= y + 2.2;
+    });
+  };
+  const clearLine = (a, b, skip, except) => {
+    const L = a.distanceTo(b);
+    const n = Math.max(8, Math.ceil(L / 1.5));
+    for (let k = 1; k < n; k++) {
+      const t = k / n;
+      if (L * (1 - t) < skip) break;
+      if (rock(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, except)) return false;
+    }
+    return true;
+  };
+  const lensClear = (c, s) => roads.every((r) => r.pts.every((p) => Math.hypot(p.x - c.x, p.y - c.y, p.z - c.z)
+    >= (r === road && Math.abs(p.s - s) < 25 ? 2.6 : 6)));
+  for (const [i, sh] of ARENA_RIDE.entries()) {
+    const u1 = ARENA_RIDE[i + 1]?.from ?? 0.985;
+    const own = sh.at === 'arena' ? RW.arenaIsland : sh.at === 'home' ? RW.islands[0] : null;
+    const T = M[sh.at];
+    let good = 0;
+    let n = 0;
+    let low = 0;
+    for (let u = sh.from + (sh.blend ?? ARENA_BLEND); u < u1; u += 0.004) {
+      const f = road.frameAt(u * road.length);
+      const P = shotPose(sh, M, f, 0, FOV);
+      cam.position.set(P.x, P.y, P.z);
+      cam.lookAt(P.lx, P.ly, P.lz);
+      let fine = true;
+      for (const asp of [16 / 9, 0.89]) {
+        cam.aspect = asp;
+        cam.updateProjectionMatrix();
+        cam.updateMatrixWorld();
+        v.set(f.x, f.y + 1.3, f.z).project(cam);
+        fine &&= v.z < 1 && Math.abs(v.x) < 0.8 && v.y > -0.75 && v.y < 0.6;
+        v.set(T.x, T.y, T.z).project(cam);
+        fine &&= v.z < 1 && Math.abs(v.x) < 0.85 && v.y > -0.6 && v.y < 0.82;
+      }
+      const c = cam.position.clone();
+      fine &&= clearLine(c, new THREE.Vector3(f.x, f.y + 1.3, f.z), 2.5, null)
+        && clearLine(c, new THREE.Vector3(T.x, T.y, T.z), 6, own) && lensClear(c, u * road.length);
+      good += fine;
+      n++;
+      /* A LANDMARK'S OWN ROCK IS NOT COUNTED IN ITS WAY — which is how the
+         first opening passed while showing nothing but the arena's keel. So
+         the arena is only ever looked at from above its own floor. */
+      if (sh.at === 'arena' && f.y < M.arena.y - 2) low++;
+    }
+    ok(`${sh.name}: her and the ${sh.at} in frame, in a whole pane and a half one, nothing in the way`,
+      n > 10 && good === n, `${good}/${n}`);
+    if (sh.at === 'arena') ok(`...and the ring is seen from above, never its keel from below`, low === 0, `${low}`);
+  }
+  let out = 0;
+  let seen = 0;
+  for (let u = 0; u < 0.985; u += 0.002) {
+    const f = road.frameAt(u * road.length);
+    const P = arenaRidePose(road, u * road.length, f, 0, FOV);
+    cam.position.set(P.x, P.y, P.z);
+    cam.lookAt(P.lx, P.ly, P.lz);
+    cam.aspect = 0.89;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    v.set(f.x, f.y + 1.3, f.z).project(cam);
+    seen++;
+    if (!(v.z < 1 && Math.abs(v.x) < 0.9 && Math.abs(v.y) < 0.85)) out++;
+  }
+  ok('she is in frame the whole way up, through every move between shots', out === 0, `${out} of ${seen} off`);
+  /* NO LURCH. A frame at a run is 0.47 units of road; the lens may travel
+     four times that and turn four degrees, no more. The half-orbit into
+     `home` was 5.6 degrees a frame over the standard blend. */
+  {
+    let prev = null;
+    let far = 0;
+    let turn = 0;
+    for (let s = 0; s < road.length * 0.985; s += 14 / 30) {
+      const P = arenaRidePose(road, s, road.frameAt(s), 0, FOV);
+      if (prev) {
+        far = Math.max(far, Math.hypot(P.x - prev.x, P.y - prev.y, P.z - prev.z));
+        const a = new THREE.Vector3(P.lx - P.x, P.ly - P.y, P.lz - P.z);
+        const b = new THREE.Vector3(prev.lx - prev.x, prev.ly - prev.y, prev.lz - prev.z);
+        turn = Math.max(turn, (a.angleTo(b) * 180) / Math.PI);
+      }
+      prev = P;
+    }
+    ok('...and it never lurches: at most two units and four degrees a frame at a run',
+      far < 2 && turn < 4, `${far.toFixed(2)} units, ${turn.toFixed(2)} degrees`);
+  }
+
+  /* AND THE RIDE CAMERA ACTUALLY USES IT — going up the arena road, and only
+     then. The real SnakeCam, laid over a follow camera, for three seconds. */
+  const ride = (r, s, dir) => {
+    const sc = new SnakeCam();
+    const c = new THREE.PerspectiveCamera(FOV, 1, 0.5, 4000);
+    const f = r.frameAt(s);
+    const look = new THREE.Vector3(f.x, f.y + 1.3, f.z);
+    for (let k = 0; k < 90; k++) {
+      c.position.set(f.x, f.y + 8, f.z + 16);
+      c.up.set(0, 1, 0);
+      c.lookAt(look);
+      sc.apply(1 / 30, { road: r, s, dir, x: f.x, y: f.y, z: f.z, spread: 0 }, c, look, RW.islands);
+    }
+    const P = arenaRidePose(road, s, f, 0, FOV);
+    return c.position.distanceTo(new THREE.Vector3(P.x, P.y, P.z));
+  };
+  const sMid = road.length * 0.55;
+  const up = ride(road, sMid, 1);
+  const down = ride(road, sMid, -1);
+  ok('the ride camera goes to the planned shot going up the arena road',
+    up < 0.5, `${up.toFixed(2)} from the plan`);
+  ok('...and still orbits coming down it — the plan is the climb\'s',
+    down > 3, `${down.toFixed(1)} from the plan`);
+  if (hadDocR) globalThis.document = prevDocR; else delete globalThis.document;
+}
+
 /* --- THE MUSIC ON THE ROADS -------------------------------------------------
    "Some specific music is playing while on the bridges heading to the
    islands", and on the arena's, "his preferred song". */
 {
+  const msrc0 = () => stripComments(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'))
+    .replace(/\s+/g, ' ');
   ok('Snake Way has a piece of its own, and it slithers', !!MUSIC.snake && MUSIC.snake.glide === true);
   ok('...and leaves the one koto bassline to the storm dragon', !MUSIC.snake.bass);
-  ok('Mr Satan\'s road plays HIS, an authored song rather than a wander',
-    MUSIC.satan?.tune === 'strut');
+  ok('Mr Satan\'s road plays HIS, an authored song rather than a wander — the kung-fu disco now',
+    MUSIC.satan?.tune === 'kungfu');
+  /* "The music is funny, let's save it as a backup." */
+  ok('...and the strut it replaced is kept whole, as the backup',
+    MUSIC.satanStrut?.tune === 'strut' && MUSIC.satanStrut.beat === 0.25 && MUSIC.satanStrut.root === 130.81);
   const asrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
   ok('...which is an original, and says why it is not the song that was asked for',
-    /NOT THAT SONG/.test(asrc) && /_tuneStep\(t, step, M\)/.test(asrc));
+    /NOT THAT SONG/.test(asrc) && /_tuneStep\(t, step, M\)/.test(asrc)
+      && /STILL NOT THOSE SONGS/.test(asrc));
+  ok('...and every tune a piece names is one somebody wrote',
+    Object.values(MUSIC).filter((m) => m.tune).every((m) => ({ strut: '_strutStep', kungfu: '_kungfuStep', saucer: '_saucerStep' })[m.tune]
+      && new RegExp(`${({ strut: '_strutStep', kungfu: '_kungfuStep', saucer: '_saucerStep' })[m.tune]}\\(t, step, M\\) \\{`).test(asrc)));
+  /* "...have that Gold Saucer music play when the player gets off the snake
+     bridge and onto the arena, before they join the arena and the arena music
+     plays." An original funfair, in the arena's key so the fight resolves out
+     of it rather than changing key under them. */
+  ok('the arena island has a funfair of its own, in the arena theme\'s key',
+    MUSIC.saucer?.tune === 'saucer' && MUSIC.saucer.root === MUSIC.arena.root);
+  ok('...played there whenever there is no match, and the fight\'s own piece from the picker on',
+    /const isl = this\._islandTrack\(dt\); if \(isl === 'arena' && !this\.inMatch\) return 'saucer'; return isl;/.test(msrc0()));
   const msrc = stripComments(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'))
     .replace(/\s+/g, ' ');
   ok('...and a kitten on a road hears it — his outranking the plain one',
     /if \(this\.players\.some\(\(p\) => p\.snakeRide\?\.road\.arena\)\) return 'satan'; if \(this\.players\.some\(\(p\) => p\.snakeRide\)\) return 'snake';/.test(msrc));
+}
+
+/* ===========================================================================
+   THE ARENA'S FRONT DOOR — and the way back out of it.
+
+   "The arena entrance is a bit bland and boring with just a Torii gate ...
+   dragon snakes around the entrance of the arena with giant arena doors that
+   are closed ... Mr. Satan appear infront of the arena doors ... a red carpet
+   that leads to where the snake bridge is ... large elevated flaming lanterns."
+   And: "if the players started the fight at the entrance of the arena, it
+   should return them there", out through those doors, the winners hopping and
+   the rest on stretchers, past him holding his Charge pose.
+
+   None of it can be seen from the town, and the scene only plays after a
+   tournament walked into from the carpet — so every property below is one a
+   change could break for weeks without anybody standing in the right place.
+=========================================================================== */
+console.log('\n--- the arena doors, the carpet and the way back out ---');
+{
+  const hadDoc = 'document' in globalThis;
+  const prevDoc = globalThis.document;
+  if (!hadDoc) globalThis.document = domStub();
+  const W = new World(new THREE.Scene());
+  const isl = W.arenaIsland;
+  const D = W.arenaDoors;
+  const S = W.arenaDoorStand;
+  const C = W.arenaCarpet;
+
+  /* --- THE BUILDING --- */
+  ok('the doorway in the grandstand and the doors that fill it are one number',
+    ENTRANCE.gap === ARENA_DOOR_GAP && ENTRANCE.doorW * 2 > ARENA_DOOR_GAP,
+    `${ENTRANCE.gap} vs ${ARENA_DOOR_GAP}, leaves ${ENTRANCE.doorW * 2}`);
+  ok('two door leaves, and they are not there until the arena is',
+    W.arenaDoorLeaves?.length === 2 && W.arenaDoorLeaves.every((l) => !l.mesh.visible)
+      && !!W.arenaFlames && !W.arenaFlames.visible);
+  W.openArena(true);
+  ok('...and are, once it is — the lantern fire with them',
+    W.arenaDoorLeaves.every((l) => l.mesh.visible) && W.arenaFlames.visible
+      && W.arenaFires.length === ENTRANCE.lanterns.length,
+    `${W.arenaFires?.length} fires`);
+  ok('shut, the doors are solid — nobody walks through a closed door into the ring',
+    W.arenaDoorSolids.length === 2 && W.arenaDoorSolids.every((s) => !s.off)
+      && W.arenaDoorSolids.every((s) => W.solids.includes(s)));
+  W.setArenaDoors(true, true);
+  const leafBox = new THREE.Box3();
+  const swung = W.arenaDoorLeaves.map((l) => {
+    l.mesh.updateMatrixWorld(true);
+    return leafBox.setFromObject(l.mesh).clone();
+  });
+  ok('...open, they are not',
+    W.arenaDoorSolids.every((s) => s.off), W.arenaDoorSolids.map((s) => s.off).join());
+  /* INWARD, because the first cut swung them OUT, through the spot he waits
+     on. Every point of an open leaf is on the ring's side of the hinge line. */
+  ok('they swing INTO the arena, never out over his mark',
+    swung.every((bx) => bx.max.z <= D.z + 0.6) && S.z > D.z + 3,
+    swung.map((bx) => (bx.max.z - D.z).toFixed(2)).join(', '));
+  ok('...one each way — a pair of doors, not two leaves turned the same way',
+    Math.sign(W.arenaDoorLeaves[0].mesh.rotation.y) === -Math.sign(W.arenaDoorLeaves[1].mesh.rotation.y)
+      && Math.abs(Math.abs(W.arenaDoorLeaves[0].mesh.rotation.y) - ENTRANCE.doorOpen) < 1e-6);
+  W.setArenaDoors(false, true);
+  ok('...and shut again, solid again', W.arenaDoorSolids.every((s) => !s.off)
+    && W.arenaDoorLeaves.every((l) => Math.abs(l.mesh.rotation.y) < 1e-6));
+
+  /* THE CARPET RUNS FROM THE DOORS TO THE ROAD, and nothing stands on it. */
+  const localZ1 = C.z1 - isl.z;
+  ok('the red carpet reaches through the doorway at one end and past the torii at the other',
+    C.z0 - isl.z <= ENTRANCE.doorZ - 10 && localZ1 >= A_RING + A_GATE + 10,
+    `${(C.z0 - isl.z).toFixed(1)} .. ${localZ1.toFixed(1)}`);
+  const onCarpet = W.solids.filter((s) => s.r && !W.arenaDoorSolids.includes(s)
+    && s.z > C.z0 + 1 && s.z < C.z1 && Math.abs(s.x - C.x) < C.half + s.r
+    && Math.hypot(s.x - isl.x, s.z - isl.z) > A_RING + 6);
+  ok('...with no lantern, column or pillar standing on it', onCarpet.length === 0,
+    onCarpet.map((s) => `${s.x.toFixed(1)},${s.z.toFixed(1)}`).join(' '));
+  const inStand = W.solids.filter((s) => !s.off && s.r && Math.hypot(s.x - S.x, s.z - S.z) < s.r + 0.6);
+  ok('Mr Satan\'s mark in front of the doors is not inside anything', inStand.length === 0,
+    inStand.map((s) => `${s.x.toFixed(1)},${s.z.toFixed(1)} r${s.r}`).join(' '));
+
+  /* --- THE SCENE, AS A PLAN ---
+     The four endings a tournament can have: a duel, one against three, two
+     against two, and a draw nobody won. */
+  const X = new ArenaExit({ world: W, audio: null });
+  const casts = { duel: [true, false], ffa: [true, false, false, false],
+    teams: [true, true, false, false], draw: [false, false] };
+  for (const [name, won] of Object.entries(casts)) {
+    const P = X.plan({ won });
+    const kinds = P.actors.map((a) => a.kind);
+    /* A DRAW HAS NO LOSERS EITHER. Nobody was beaten, so nobody is carried
+       and nobody celebrates: they walk out. */
+    const want = won.some(Boolean) ? won.map((w) => (w ? 'hop' : 'carry')) : won.map(() => 'walk');
+    ok(`${name}: ${won.some(Boolean) ? 'the winners hop out and the rest are carried' : 'nobody lost, so nobody is carried — they walk'}`,
+      won.every((_, i) => P.actors.find((a) => a.seat === i)?.kind === want[i]),
+      kinds.join());
+    const carried = P.actors.filter((a) => a.kind === 'carry');
+    /* "when they walk past him, he puts his arms up ... hold the pose for a
+       few seconds before going back to normal before the cutscene fades out" */
+    ok(`${name}: his arms go up as they reach him, stay up past the last, and come down before the fade`,
+      P.chargeAt <= P.first + 1e-6 && P.chargeOff - P.last >= 2
+        && P.end - P.chargeOff >= EXIT.fadeOut + 0.5
+        && carried.every((a) => a.passAt >= P.chargeAt && a.passAt <= P.chargeOff),
+      `up ${P.chargeAt.toFixed(2)} last ${P.last.toFixed(2)} down ${P.chargeOff.toFixed(2)} end ${P.end.toFixed(2)}`);
+    ok(`${name}: three shots, in order, none shorter than two seconds`,
+      P.shots.map((s) => s.id).join() === 'doors,along,him'
+        && P.shots.every((s, i) => (P.shots[i + 1]?.from ?? P.end) - s.from >= 2),
+      P.shots.map((s) => `${s.id}@${s.from.toFixed(2)}`).join(' '));
+  }
+
+  /* --- THE THREE LENSES, REPLAYED ---
+     `SHOTS` was SOLVED against these four casts (docs/notes/story.md), and
+     this replays them through the real projection with the entrance's static
+     occluders. Each asks what its shot is FOR. The actors are left out as
+     occluders on purpose: a stretcher crossing the foreground is staging, and
+     the solver weighed it; a lantern in the way is a bug. */
+  const cam = new THREE.PerspectiveCamera(46, 16 / 9, 0.1, 4000);
+  const g0 = D.y;
+  const L = (x, z) => ({ x: isl.x + x, z: isl.z + z });
+  const cyl = [];
+  for (const [x, z] of ENTRANCE.lanterns) cyl.push({ ...L(x, z), r: 1.75, y1: g0 + 11.8 });
+  for (const [x, z] of ENTRANCE.columns) cyl.push({ ...L(x, z), r: 2.2, y1: g0 + 15.5 });
+  const tz = A_RING + A_GATE;
+  const posts = [-1, 1].map((s) => ({ ...L(s * 3.3, tz), r: 0.55, y1: g0 + 9.8 }));
+  cyl.push(...posts);
+  const behind = (a, p) => cyl.some((c) => {
+    const dx = p.x - a.x; const dz = p.z - a.z; const fx = a.x - c.x; const fz = a.z - c.z;
+    const A = dx * dx + dz * dz; const B = 2 * (fx * dx + fz * dz); const Cc = fx * fx + fz * fz - c.r * c.r;
+    const disc = B * B - 4 * A * Cc;
+    if (disc < 0 || A < 1e-9) return false;
+    return [(-B - Math.sqrt(disc)) / (2 * A), (-B + Math.sqrt(disc)) / (2 * A)]
+      .some((u) => u > 0.02 && u < 0.97 && a.y + (p.y - a.y) * u < c.y1);
+  });
+  const v = new THREE.Vector3();
+  const framed = () => v.z < 1 && Math.abs(v.x) < 0.92 && v.y > -0.76 && v.y < 0.8;
+  const seen = (p) => { v.set(p.x, p.y, p.z).project(cam); return framed() && !behind(cam.position, p); };
+  const tally = { doors: [0, 0], along: [0, 0], him: [0, 0] };
+  let postSplit = 0;
+  for (const won of Object.values(casts)) {
+    const P = X.plan({ won });
+    X.plan_ = P;
+    P.shots.forEach((s, i) => {
+      const t1 = P.shots[i + 1]?.from ?? P.end;
+      const T = tally[s.id];
+      for (let t = s.from; t < t1; t += 0.1) {
+        X.pose(s.id, t, s.from, cam);
+        cam.updateMatrixWorld();
+        if (s.id === 'doors') {
+          for (const sx of [-1, 1]) for (const y of [0.3, 12]) {
+            v.set(D.x + sx * 6.3, g0 + y, D.z + 0.6).project(cam);
+            T[1]++; if (framed()) T[0]++;
+          }
+        } else if (s.id === 'along') {
+          const zc = X.alongZ(t);
+          for (const a of P.actors) {
+            if (a.kind !== 'carry' || t < a.at) continue;
+            const w = X.where(a, t);
+            if (Math.abs(w.z - zc) >= 5) continue;
+            T[1]++; if (seen({ x: w.x, y: g0 + EXIT.catH * EXIT.pawK + 0.5, z: w.z })) T[0]++;
+          }
+        } else {
+          for (const y of [0.3, 4.6, 8.6]) { T[1]++; if (seen({ x: S.x, y: g0 + y, z: S.z })) T[0]++; }
+        }
+      }
+      if (s.id === 'him') {
+        X.pose('him', t1, s.from, cam);
+        cam.updateMatrixWorld();
+        for (const p of posts) { v.set(p.x, g0 + 4, p.z).project(cam); if (v.z < 1 && Math.abs(v.x) < 0.6) postSplit++; }
+      }
+    });
+  }
+  const pc = ([a, n]) => (n ? (100 * a) / n : 0);
+  /* The bars are the solved lenses' own numbers (see the labels' readouts)
+     with a margin under them, over all four casts at 0.1s. */
+  ok('the doors shot has the whole doorway in frame from first frame to last',
+    pc(tally.doors) === 100, `${pc(tally.doors).toFixed(1)}% of ${tally.doors[1]}`);
+  ok('the side-on shot sees each stretcher as it passes him, past the lanterns and the columns',
+    pc(tally.along) >= 95 && tally.along[1] > 100, `${pc(tally.along).toFixed(1)}% of ${tally.along[1]}`);
+  ok('the shot on him has his feet, his face and his bubble, with nothing standing in front',
+    pc(tally.him) >= 97, `${pc(tally.him).toFixed(1)}% of ${tally.him[1]}`);
+  /* The second solve. It scored well straight down the carpet, and the
+     screenshot had the torii's right post down the middle of the picture. */
+  ok('...and no torii post down the middle of it', postSplit === 0, `${postSplit}`);
+
+  /* AND THE SIDE SHOT BECOMES THE SHOT ON HIM WITHOUT A JUMP. They ended four
+     units apart and on the same side: the same picture, twitched. */
+  {
+    const P = X.plan({ won: [true, false, false] });
+    X.plan_ = P;
+    const at = P.shots[2].from;
+    X.pose('along', at - 1e-4, P.shots[1].from, cam);
+    const a = cam.position.clone();
+    X.pose('him', at, at, cam);
+    const b = cam.position.clone();
+    X.pose('him', at + EXIT.himBlend + 0.01, at, cam);
+    const c = cam.position.clone();
+    ok('the side-on shot moves into the one on him rather than cutting',
+      a.distanceTo(b) < 0.05 && c.distanceTo(b) > 1, `${a.distanceTo(b).toFixed(3)} then ${c.distanceTo(b).toFixed(2)}`);
+  }
+
+  /* --- THE BEARERS' ANGLES ARE MEASURED --- The sheet's ten views are not an
+     even 36 degrees apart: its profiles sit in columns 3 and 7, so an even
+     grid drew them three-quarter at exactly the angle a stretcher is carried
+     past a camera. */
+  {
+    X.catArt = { texture: new THREE.Texture(), cols: CAT_VIEWS.length, rows: 2, contentScale: 1, pad: 0 };
+    const bb = X._bearer();
+    const eye = new THREE.PerspectiveCamera();
+    eye.position.set(0, 0, 10);
+    let col = -1;
+    const set = bb._setCell.bind(bb);
+    bb._setCell = (c, r, f) => { col = c; set(c, r, f); };
+    const pick = (deg) => { bb.facing = (deg * Math.PI) / 180; X._faceBearer(bb, eye); return col; };
+    const got = [0, 90, 180, 270, 45].map(pick);
+    ok('a bearer seen side-on is drawn in profile, from the measured columns',
+      got.join() === '0,3,5,7,2', got.join());
+  }
+
+  /* --- PLAYED, AND SKIPPED --- with the real Mr Satan and stub kittens. */
+  {
+    const satan = new MrSatan({ texture: new THREE.Texture(), contentScale: 1, pad: 0 }, { x: 0, y: 0, z: 0 });
+    satan.setChargeArt({ texture: new THREE.Texture(), contentScale: 1, pad: 0 });
+    const kitten = (i) => ({
+      position: new THREE.Vector3(C.x + i, g0, C.z1 - 12),
+      group: { visible: true, position: new THREE.Vector3() },
+      spriteSpec: { texture: new THREE.Texture(), opts: { cols: 8, rows: 4 } },
+      sprite: { mat: { color: new THREE.Color(1, 1, 1) } },
+      anim: { idle: 0, walk: 1, jump: 2 }, height: 2.9,
+      velocity: new THREE.Vector3(1, 0, 0), facing: 2,
+    });
+    for (const at of [0.5, 5, 9.5, 99]) {
+      const kids = [kitten(0), kitten(1), kitten(2)];
+      const scene = new THREE.Scene();
+      const Y = new ArenaExit({ world: W, audio: null });
+      W.setArenaDoors(true, true);
+      satan.group.visible = false;
+      const on = Y.start({ players: kids, won: [true, false, false], satan, scene });
+      if (at === 0.5) {
+        ok('the scene starts with the doors shut, the kittens hidden and him on his mark — and shown',
+          on && W.arenaDoorWant === 0 && W.arenaDoorSolids.every((s) => !s.off)
+            && kids.every((k) => !k.group.visible) && satan.group.visible
+            && satan.position.distanceTo(new THREE.Vector3(S.x, S.y, S.z)) < 1e-6);
+      }
+      let charged = false;
+      let opened = false;
+      while (Y.active && Y.t < at) {
+        Y.update(1 / 30);
+        charged ||= satan.pose === 'charge';
+        opened ||= W.arenaDoorWant === 1;
+      }
+      if (at === 99) {
+        ok('played through, the doors opened and his arms went up and came back down',
+          opened && charged && satan.pose === 'idle', `${opened} ${charged} ${satan.pose}`);
+      }
+      Y.skip();
+      const P = Y.plan_;
+      const marks = P.actors.every((a) => {
+        const k = kids[a.seat];
+        return Math.abs(k.position.z - a.z1) < 1e-6
+          && Math.abs(k.position.x - (a.x1 + (a.kind === 'carry' ? -1.2 : 0))) < 1e-6;
+      });
+      ok(`${at === 99 ? 'finished' : `skipped at ${at}s`}: everybody standing on her mark, the doors closing behind, his line and pose his own again`,
+        !Y.active && marks && kids.every((k) => k.group.visible && k.facing === 0 && k.velocity.lengthSq() === 0)
+          && W.arenaDoorWant === 0 && satan.pose === 'idle' && satan.line === '' && !Y.root.visible
+          && Y.root.children.length === 0);
+    }
+  }
+
+  /* --- THE GAME SIDE, READ OFF main.js --- A Game does not boot headless,
+     so these read its source; each names the behaviour it pins. */
+  {
+    const m = stripComments(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')).replace(/\s+/g, ' ');
+    ok('a party already on the arena island walks in — no griffin',
+      /this\.arenaFrom = this\.partyAtArena \? 'gate' : 'town'; if \(this\.arenaFrom === 'gate'\) \{ this\.travel = 'out'; this\._arrive\(\); return; \}/.test(m));
+    ok('...and "already there" means every kitten on the island, and none of them mounted',
+      /this\.players\.every\(\(p\) => !p\.mount && !p\.rideAlong && Math\.hypot\(p\.position\.x - isl\.x, p\.position\.z - isl\.z\) < isl\.radius\)/.test(m));
+    const leave = m.slice(m.indexOf('leaveArena({ cheer = true } = {}) {'), m.indexOf('_goHome() {'));
+    const iStart = leave.indexOf('this.arenaExit.start(');
+    ok('the tournament is torn down BEFORE the parade starts, so a skip cannot leave it half-standing',
+      iStart > 0 && ['T?.finish()', 'this.satanBlast?.reset()', 'this.quest.onReturn()']
+        .every((s) => { const i = leave.indexOf(s); return i > 0 && i < iStart; }));
+    ok('...a match called off from the doors gets no parade and no griffin',
+      /_goHome\(\) \{ if \(this\.arenaFrom === 'gate'\) \{ this\.leaveArena\(\{ cheer: false \}\); return; \}/.test(m)
+        && /if \(on && cheer\) return;/.test(leave));
+    ok('...and is told where it is, but never that a griffin is taking it anywhere',
+      /const fromGate = this\.arenaFrom === 'gate'; this\._goHome\(\); if \(!fromGate\) this\.toast\('Match called off/.test(m));
+    ok('the scene is skippable the one way every scene is',
+      /this\.arenaExit\?\.active/.test(m) && /arenaExit\??\.skip\(\)/.test(m));
+    const a = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+    ok('the doors have a sound of their own', /case 'doors':/.test(a));
+  }
+
+  if (hadDoc) globalThis.document = prevDoc; else delete globalThis.document;
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150
