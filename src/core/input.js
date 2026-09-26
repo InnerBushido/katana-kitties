@@ -603,6 +603,20 @@ class PadState {
        orbs to be asked the question. */
     this.rx = 0;
     this.ry = 0;
+    /* --- AND THE D-PAD'S OWN UP/DOWN, APART FROM THE STICK ----------------
+       `my` is the stick PLUS the d-pad, which is right for walking — both are
+       "she wants to go that way". It is wrong for exactly one screen: Help,
+       where the stick scrolls the page and the arrow buttons were asked to
+       "move between buttons, like it used to do before we added the joystick
+       adjustments". Telling the two apart needs the d-pad on its own, so it is
+       carried alongside and `MenuNav` is the only reader.
+
+       A PAD'S D-PAD ONLY. Not the keyboard: WASD and the arrows are a keyboard
+       player's ONLY direction, so on Help they have to scroll the page the way
+       the stick does, or the prose between two topics goes back to being
+       unreachable. A sideways Joy-Con has no d-pad (it is her face cluster) and
+       reads 0 here, which is why the stick path cannot need this. */
+    this.dpadY = 0;
     this.held = Object.fromEntries(ACTIONS.map((a) => [a, false]));
     this.prev = { ...this.held };
     /** What was driving this slot last frame — device AND the right to drive
@@ -2184,6 +2198,8 @@ export class InputManager {
       /* The same two, straight off the device. See `PadState.rx`. */
       let rawx = 0;
       let rawy = 0;
+      /* The d-pad alone. See `PadState.dpadY`. */
+      let dpy = 0;
       const next = Object.fromEntries(ACTIONS.map((a) => [a, false]));
 
       if (bnd.touch && this.touch) {
@@ -2218,6 +2234,7 @@ export class InputManager {
            the same answer the keyboard gets, for the same reason. */
         rawx = r.ax + (r.dpad ? r.dpad[0] : 0);
         rawy = r.ay + (r.dpad ? r.dpad[1] : 0);
+        dpy = r.dpad ? r.dpad[1] : 0;
         for (const a of ACTIONS) next[a] = !!r[a];
         /* ...AND HER SECOND HAND, IF NOBODY ELSE IS ON IT. See
            `_spareHandPass`: player 1 on a pad with WASD going spare reads both.
@@ -2286,6 +2303,7 @@ export class InputManager {
         my = 0;
         rawx = 0;
         rawy = 0;
+        dpy = 0;
         for (const a of ACTIONS) next[a] = false;
       }
 
@@ -2297,6 +2315,7 @@ export class InputManager {
       }
       st.mx = mx;
       st.my = my;
+      st.dpadY = dpy;
       /* AND THE RAW PAIR, CLAMPED THE SAME WAY AND DEADZONED NOT AT ALL. It
          is suppressed by a remap capture along with everything else, which is
          why it is taken from `rawx`/`rawy` rather than re-read from the

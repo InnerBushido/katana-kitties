@@ -227,9 +227,11 @@ export class MenuNav {
     if (hand) ps.push(hand);
     let x = 0;
     let y = 0;
+    let dpad = 0;
     for (const p of ps) {
       if (Math.abs(p.mx) > Math.abs(x)) x = p.mx;
       if (Math.abs(p.my) > Math.abs(y)) y = p.my;
+      if (Math.abs(p.dpadY ?? 0) > Math.abs(dpad)) dpad = p.dpadY;
     }
     const anyButton = panel.id === 'title';
     const confirms = anyButton
@@ -248,6 +250,9 @@ export class MenuNav {
     return {
       x: Math.abs(x) > NAV_DEAD ? Math.sign(x) : 0,
       y: Math.abs(y) > NAV_DEAD ? Math.sign(y) : 0,
+      /* WAS THAT UP/DOWN AN ARROW BUTTON? Only `read` asks: there the stick
+         moves the page and the d-pad moves between buttons. See `_stepItem`. */
+      button: Math.abs(dpad) > NAV_DEAD,
       confirm: ps.some((p) => confirms.some((a) => p.pressed(a))),
       back: !anyButton && ps.some((p) => p.pressed('interact')),
       /**
@@ -375,15 +380,48 @@ export class MenuNav {
     }
     if (mode === 'scroll' && dy) this._scroll(panel, dy);
     if (reading) {
-      if (dy) this._scroll(panel, dy, READ_FRAC);
-      /* EVERY FRAME, NOT ONLY THE ONES WITH A STICK IN THEM. The rule is
-         "whatever is nearest the middle of the page is selected", and a mouse
-         wheel and a finger drag scroll this box too — a ring that followed the
-         stick and ignored the wheel would be two cursors disagreeing about the
-         same page. */
-      const near = this._nearest(panel, items);
-      if (near !== i) this.game.audio?.play('menu');
-      i = near;
+      const box = panel.querySelector('.panel');
+      const was = i;
+      /* THREE THINGS CAN MOVE THIS PAGE AND EACH ONE SETTLES THE SELECTION
+         ITS OWN WAY.
+
+         THE ARROW BUTTONS step to the next button and centre it — "when you
+         press up/down on arrow buttons, it will move between buttons, like it
+         used to do before we added the joystick adjustments".
+
+         THE STICK scrolls the page, and never past the next button — see
+         `_scrollItem`.
+
+         A WHEEL OR A FINGER is the page moving under something this class did
+         not do. It is told apart by the scroll position not being where this
+         class last LEFT it, and it derives the selection from the middle of the
+         page as before: a ring that ignored the wheel would be two cursors
+         disagreeing about the same page. The frame a panel opens counts as one,
+         which is what puts a re-opened Help on its first topic rather than on
+         last time's row.
+
+         WHY THE SELECTION IS NO LONGER RE-DERIVED EVERY FRAME, which is what
+         this did until a stick "sometimes jumped over submenu items and made
+         them not selectable". A derived selection can only ever be something
+         that can reach the middle of the box — and anything in the top or
+         bottom half-screen of the page cannot, because the page cannot scroll
+         far enough to bring it there. Measured on the real panel with "Clan
+         abilities" open: its sub-topics are 40-odd pixels apart and a stick
+         step is 15% of the box, so they were stepped over mid-page as well. */
+      /* ASKED AS "NOT WITHIN A PIXEL", NOT "MORE THAN A PIXEL OFF". With no
+         remembered position the difference is NaN, and `NaN > 1` is false — so
+         the first way of writing this read "nowhere" as "exactly where I left
+         it" and kept a selection from a page that was no longer there. Found by
+         a test harness that reset the position to NaN and watched the ring
+         stay on BACK at the top of the page. */
+      const moved = justOpened || !box || !(Math.abs(box.scrollTop - this._readTop) <= 1)
+        || this._readPanel !== panel.id;
+      if (dy && nav.button) i = this._stepItem(panel, items, i, dy);
+      else if (dy) i = this._scrollItem(panel, items, moved ? this._nearest(panel, items) : i, dy);
+      else if (moved) i = this._nearest(panel, items);
+      if (i !== was) this.game.audio?.play('menu');
+      this._readTop = box?.scrollTop;
+      this._readPanel = panel.id;
     }
     // Left/right only edits a value on a vertical list; on a horizontal one it
     // is the cursor, and there is nothing there with a value anyway.
@@ -480,6 +518,101 @@ export class MenuNav {
       if (d < bestD) { bestD = d; best = k; }
     }
     return best;
+  }
+
+  /** Where an item's middle is, in the page's own coordinates — the same
+   *  number whatever the page is scrolled to, which is what lets a step ask
+   *  "how far would I have to move to put this in the middle". */
+  _centreOf(box, el) {
+    const r = box.getBoundingClientRect?.();
+    const b = el?.getBoundingClientRect?.();
+    if (!b) return null;
+    return b.top - (r ? r.top : 0) + box.scrollTop + b.height / 2;
+  }
+
+  /** The scrollTop that puts `el` in the middle of the box, as near as the
+   *  page allows. */
+  _centring(box, el) {
+    const c = this._centreOf(box, el);
+    if (c == null) return null;
+    return Math.max(0, Math.min(c - box.clientHeight / 2,
+      box.scrollHeight - box.clientHeight));
+  }
+
+  /**
+   * THE STICK: SCROLL THE PAGE, BUT NEVER PAST THE NEXT BUTTON.
+   *
+   * Reported from play: "Using the joystick makes the screen pan in steps,
+   * sometimes jumping over submenu items and making them not selectable. I
+   * think a simple solution is to make it jump/step but if it 'jumps over' a
+   * button, then it will jump/step less and only move the amount to where it
+   * actually selects the button."
+   *
+   * WHICH IS WHAT THIS DOES. If putting the next button in the middle of the
+   * box is no more than one step away, the page moves exactly that far and
+   * the button is selected; otherwise the page moves a whole step and the
+   * selection follows the middle of the page between the two, as it always
+   * did. The page can never carry the middle past a button it has not
+   * selected, so a button cannot be stepped over — however close together
+   * they are, and however large a step is.
+   *
+   * AND IT SELECTS THE NEXT BUTTON EVEN WHEN THE PAGE CANNOT MOVE, which is
+   * the half of the report that was not about step size. A button in the top
+   * half-screen of the page cannot be brought to the middle, because the page
+   * is already at its top; "no further than one step" is then zero pixels, so
+   * the selection moves and the page stays. Same at the bottom — which is also
+   * what makes BACK, under the last topic, reachable without a pin.
+   *
+   * NEVER BACKWARDS. A button the page is already past (its centring point is
+   * behind where the page is) is selected where it stands: moving the page
+   * UP on a press of DOWN would read as the stick being reversed.
+   */
+  _scrollItem(panel, items, i, dir) {
+    const box = panel.querySelector('.panel');
+    if (!box) return i;
+    const from = box.scrollTop;
+    const step = Math.max(SCROLL_STEP, box.clientHeight * READ_FRAC);
+    const k = i + dir;
+    const want = k >= 0 && k < items.length ? this._centring(box, items[k]) : null;
+    if (want == null) {
+      /* Nothing further that way: the page may still have prose below the last
+         button (or above the first), and the stick is how it is read. */
+      box.scrollTop = from + dir * step;
+      return i;
+    }
+    if (dir * (want - from) <= step) {
+      box.scrollTop = dir > 0 ? Math.max(from, want) : Math.min(from, want);
+      return k;
+    }
+    box.scrollTop = from + dir * step;
+    /* BETWEEN THE TWO, THE MIDDLE OF THE PAGE DECIDES — the rule from the
+       report before this one, kept, and now only ever asked of these two. */
+    const mid = box.scrollTop + box.clientHeight / 2;
+    const ci = this._centreOf(box, items[i]);
+    const ck = this._centreOf(box, items[k]);
+    return ci != null && Math.abs(ck - mid) < Math.abs(ci - mid) ? k : i;
+  }
+
+  /**
+   * THE ARROW BUTTONS: THE NEXT BUTTON, CENTRED.
+   *
+   * "Use the arrow buttons on the controller and have it when you press
+   * up/down on arrow buttons, it will move between buttons... But, we should
+   * not assume player has the arrow buttons, as on joycons, they only have
+   * joystick" — which is why this is a second way in and not a replacement:
+   * `_scrollItem` has to reach every button on its own.
+   *
+   * It wraps, like every `vertical` list, and it CENTRES rather than asking
+   * `scrollIntoView` for 'nearest', so what she reads next is the prose under
+   * the button she landed on rather than a header on the bottom edge of the
+   * screen.
+   */
+  _stepItem(panel, items, i, dir) {
+    const k = (i + dir + items.length) % items.length;
+    const box = panel.querySelector('.panel');
+    const want = box ? this._centring(box, items[k]) : null;
+    if (want != null) box.scrollTop = want;
+    return k;
   }
 
   /**
