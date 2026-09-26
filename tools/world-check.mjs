@@ -21160,6 +21160,61 @@ console.log('\n--- one press is not enough, and one player drives ---');
         rows2.indexOf(nav7.focusEl.get('panel-help')) === 0,
         `${rows2.indexOf(nav7.focusEl.get('panel-help'))}`);
 
+      /* --- 9. AN OPENED TOPIC GOES TO THE TOP, AND THE RING STAYS ON IT -----
+         "Whenever opening a category in the Help menu, it should scroll so
+         that the new category is at the top of the screen."
+
+         `Game._helpToTop` lifted out of main.js and run against a card that
+         answers `getBoundingClientRect` from the box's live scroll, the way a
+         browser's does. */
+      {
+        const MS = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+        const from = MS.indexOf('  _helpToTop(card) {');
+        const body = MS.slice(from + 2, MS.indexOf('\n  }', from) + 4);
+        const GAP = +(/const HELP_TOP_GAP = (\d+);/.exec(MS)?.[1] ?? NaN);
+        const toTop = new Function('HELP_TOP_GAP', 'document',
+          `return function ${body};`)(GAP, { getElementById: () => panel2 });
+        const BOX_AT = 100;
+        const card = (at) => ({
+          closest: () => box2,
+          querySelector: () => rows2[at.row],
+          getBoundingClientRect: () => ({ top: BOX_AT + at.y - box2.scrollTop }),
+        });
+        const kept = [];
+        const self = { menuNav: { keep: (p, el) => kept.push([p, el]) } };
+        const realRect = box2.getBoundingClientRect;
+        box2.getBoundingClientRect = () => ({ top: BOX_AT, height: H });
+        box2.scrollTop = 0;
+        toTop.call(self, card({ y: 1140, row: 4 }));
+        ok('an opened topic is scrolled to the top of the box, a ring-width below it',
+          GAP > 0 && box2.scrollTop === 1140 - GAP, `${box2.scrollTop}`);
+        ok('...and MenuNav is told the move was asked for, with its header selected',
+          kept.length === 1 && kept[0][0] === panel2 && kept[0][1] === rows2[4]);
+        /* THE LAST TOPIC CANNOT GO ALL THE WAY, and the page clamps rather
+           than inventing blank space under it. */
+        toTop.call(self, card({ y: 2300, row: 11 }));
+        ok('...as high as the page allows for one near the bottom',
+          box2.scrollTop === DOC2 - H);
+        box2.getBoundingClientRect = realRect;
+
+        /* KEEP IS WHAT STOPS THE JUMP READING AS A WHEEL. Without it the next
+           frame re-derives the ring from the middle of the page. */
+        const nav9 = new MenuNav(navGame([fakePad()]));
+        nav9.update(1);
+        box2.scrollTop = 1140 - GAP;
+        nav9.keep(panel2, rows2[4]);
+        nav9.update(1);
+        ok('...and the next frame leaves the ring on the header she opened',
+          rows2.indexOf(nav9.focusEl.get('panel-help')) === 4,
+          `${rows2.indexOf(nav9.focusEl.get('panel-help'))}`);
+        box2.scrollTop = 900;
+        nav9.update(1);
+        ok('...while a wheel afterwards still hands it to the middle of the page',
+          rows2.indexOf(nav9.focusEl.get('panel-help')) === oldPick(900));
+        ok('...and it happens on OPENING only, on the toggle that sees both accordion cards settled',
+          /addEventListener\('toggle', \(\) => \{\s*if \(card\.open\) this\._helpToTop\(card\);/.test(MS));
+      }
+
       /* --- 8. THE ARROW BUTTONS STEP BETWEEN BUTTONS, AND CENTRE THEM -------
          "When you press up/down on arrow buttons, it will move between
          buttons, like it used to do before we added the joystick adjustments.

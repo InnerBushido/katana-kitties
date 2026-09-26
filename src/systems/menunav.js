@@ -520,6 +520,33 @@ export class MenuNav {
     return best;
   }
 
+  /**
+   * "I moved this page on purpose, and THIS is what should be selected."
+   *
+   * For a scroll this class did not make but ASKED FOR, which today is one
+   * thing: a Help topic opening and being brought to the top
+   * (`Game._helpToTop`). Without this, `update` reads the jump as a wheel and
+   * re-derives the selection from the middle of the page. That is right for
+   * a wheel and wrong here: the ring would leave the header she just pressed
+   * JUMP on and land on something she did not choose.
+   *
+   * An element that is not a cursor stop (a mouse opened a topic this list
+   * does not know) still records the position, so the ring stays where it
+   * was rather than jumping.
+   */
+  keep(panel, el) {
+    const box = panel?.querySelector('.panel');
+    if (!box) return;
+    this._readTop = box.scrollTop;
+    this._readPanel = panel.id;
+    const items = this.items(panel);
+    const k = el ? items.indexOf(el) : -1;
+    if (k >= 0) {
+      this.index.set(panel.id, k);
+      this.focusEl.set(panel.id, el);
+    }
+  }
+
   /** Where an item's middle is, in the page's own coordinates — the same
    *  number whatever the page is scrolled to, which is what lets a step ask
    *  "how far would I have to move to put this in the middle". */

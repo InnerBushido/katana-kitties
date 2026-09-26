@@ -260,6 +260,11 @@ const WARN_STACK = 2;
  *  written at all. */
 const HUD_STACK_GAP = 6;
 
+/** How far below the top of the Help box an opened topic lands, in CSS px:
+ *  enough for the pad's focus ring, which is drawn outside the summary. See
+ *  `_helpToTop`. */
+const HELP_TOP_GAP = 10;
+
 
 
 /* HOW FAR BACK THE DOJO CAMERA SITS, and it is a different answer on a phone.
@@ -2058,6 +2063,46 @@ class Game {
    * jumps its own clip to the front of the queue, so a section she goes
    * straight to never sits blank waiting for the ones above it.
    */
+  /**
+   * A Help topic that has just opened is scrolled to the top of the box.
+   *
+   * REPORTED: "Whenever opening a category in the Help menu, it should scroll
+   * so that the new category is at the top of the screen."
+   *
+   * WHAT IT WAS DOING INSTEAD: nothing. The page stayed where it was. Open a
+   * topic near the bottom and its header sat on the bottom edge with everything
+   * it opened below the fold. Open one BELOW a topic that was already open, and
+   * the `name` accordion shut the one above, so the page collapsed under her
+   * thumb and the header she had just pressed jumped up to wherever the
+   * collapse left it. Both are fixed by the same move, and sub-topics
+   * (`help-sub`) get it too: a sub-topic is the category she opened as well.
+   *
+   * ON `toggle`, WHICH IS WHY IT IS RIGHT ABOUT THE ACCORDION. `toggle` is
+   * queued and fires after BOTH cards have changed state, so the collapse
+   * above is already in the layout this measures. A `click` handler would
+   * measure the page before the other card shut.
+   *
+   * INSTANT, NOT SMOOTH. `MenuNav` tells its own scrolling apart from a wheel
+   * or a finger by where it last left the page, and a smooth scroll is sixty
+   * positions it did not leave. So this hands the finished position to
+   * `MenuNav.keep`, with the header as the selection. Otherwise the next frame
+   * would read the jump as a wheel and move the ring off the topic she just
+   * pressed, onto whatever landed in the middle.
+   *
+   * `HELP_TOP_GAP` above the card, so the pad's focus ring still shows: it is
+   * drawn OUTSIDE the summary. As high as the page allows: the last topic on
+   * a short page cannot reach the top, and `scrollTop` clamps rather than
+   * leaving blank space under it.
+   */
+  _helpToTop(card) {
+    const box = card.closest('.panel');
+    if (!box || box.scrollHeight <= box.clientHeight) return;
+    const at = card.getBoundingClientRect().top - box.getBoundingClientRect().top;
+    box.scrollTop += at - HELP_TOP_GAP;
+    const head = card.querySelector(':scope > summary');
+    this.menuNav?.keep(document.getElementById('panel-help'), head);
+  }
+
   _warmHelpClips() {
     if (this._helpClipsWired) return;   // once is enough; a second open is a cache hit anyway
     this._helpClipsWired = true;
@@ -2098,6 +2143,7 @@ class Game {
     let restarts = 0;
     document.querySelectorAll('#panel-help details.help-card').forEach((card) => {
       card.addEventListener('toggle', () => {
+        if (card.open) this._helpToTop(card);
         if (card.open) card.querySelectorAll('img[data-help-gif], img[loading]').forEach(load);
         restarts++;
         card.querySelectorAll('img[data-help-gif]').forEach((img) => {
