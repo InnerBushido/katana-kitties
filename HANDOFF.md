@@ -515,6 +515,19 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**An opened Help topic scrolls to the top of the box.** One branch,
+`feature/help-open-scrolls-to-top`. *"Whenever opening a category in the Help
+menu, it should scroll so that the new category is at the top of the
+screen."*
+
+- **What it does.** On `toggle`, an opened topic or sub-topic lands 10px from
+  the top of the box. Measuring on `toggle` means the accordion has already shut
+  the old topic, so its collapse is accounted for.
+- **The ring stays put.** `MenuNav.keep` records the move as one it asked for,
+  so the ring stays on the header she opened instead of re-deriving from the
+  middle of the page.
+- The full account is in [input.md](docs/notes/input.md).
+
 **The Help page's stick no longer steps over buttons, and the d-pad steps
 between them.** One branch, `bugfix/help-stick-steps`. *"Using the joystick
 makes the screen pan in steps, sometimes jumping over submenu items and making

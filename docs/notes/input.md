@@ -207,6 +207,43 @@ false` before driving anything there. The browser pane also throttles the game
 loop when it is not in front (4 frames in 2 seconds), so call
 `menuNav.update(0.12)` directly rather than waiting on frames.
 
+### An opened topic goes to the top
+
+> Whenever opening a category in the Help menu, it should scroll so that the
+> new category is at the top of the screen.
+
+**Before this, the page did not move at all.** Opening a topic near the bottom
+left its header on the bottom edge, with everything it opened below the fold.
+Opening one below a topic that was already open was worse. The `name` accordion
+shut the upper topic, the page collapsed, and the header she had just pressed
+jumped up to wherever the collapse left it.
+
+**`Game._helpToTop`, on `toggle`, when a card opens.** It covers top-level
+topics and sub-topics alike. It puts the card `HELP_TOP_GAP` (10px) below the
+top of the box, which leaves room for the pad's focus ring, drawn outside the
+summary. `toggle` fires after both accordion cards have changed state, so the
+collapse above is already in the layout it measures. A `click` handler would
+measure the page before the other card shut.
+
+**It scrolls instantly and tells `MenuNav` it did** (`MenuNav.keep`). MenuNav
+tells a wheel from its own scrolling by where it last left the page. Without
+`keep`, the next frame reads the jump as a wheel and moves the ring off the
+header she just pressed, onto whatever landed mid-page. A smooth scroll would
+be sixty such positions, which is why it is instant.
+
+**Measured at 1280x720.** Every case lands at 10px with the ring on the header
+that was opened:
+
+- *Clans* from the top.
+- *The arena* below an open topic.
+- *On a phone* above an open topic.
+- *Saving*, the last topic, which the page's height only just allows.
+- The *rare orbs* sub-topic.
+
+**Harness trap, the second one.** The DualSense on this machine is live in the
+browser pane. Help closed twice between scripts, with the ring on BACK, and
+nobody at the keyboard. It was not the code.
+
 **THE SHARED CAMERA IS UPDATED EVERY FRAME, SPLIT OR NOT.** This is the whole
 fix for the jarring rejoin. The block lerps `sharedTarget`/`sharedDist` toward
 their targets, and it used to sit inside `if (this.merged)` — so while the
