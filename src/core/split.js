@@ -622,7 +622,8 @@ const MAP_WIDE = 0.42;
 const MAP_TALL = 0.41;
 /** ...and inside the Dojo, where the map shares the screen with the board. */
 const MAP_DOJO = 0.33;
-/** ...and again when a phone is split side by side. See below. */
+/** ...and again for any phone half that is not a quadrant — side by side OR
+ *  stacked, measured off the SCREEN's height. See `mapWidth`. */
 const MAP_SPLIT = 0.67;
 /** AND EVERY PHONE MAP IS THIS MUCH BIGGER THAN THOSE THREE FRACTIONS SAY.
  *  "The mini-maps on Mobile are a bit too small, let's increase their size by
@@ -638,8 +639,9 @@ const MAP_SPLIT = 0.67;
  *  rather than assumed: the cap is the binding term in all four cases, so the
  *  `MAP_MAX` ceiling and the `MAP_WIDE` fraction never clip the increase.
  *  844x390 merged, 300 / 354 / 160 -> the cap. Side by side, 422x390:
- *  300 / 177 / 129. Stacked, 844x195: 300 / 354 / 96. In the Dojo, merged:
- *  300 / 354 / 129. The nearest of those to being clipped is the side-by-side
+ *  300 / 177 / 129. Stacked, 844x195: 300 / 354 / 96 when this was written,
+ *  and 129 since a stacked half was given the side-by-side half's map (see
+ *  `mapWidth`). In the Dojo, merged: 300 / 354 / 129. The nearest of those to being clipped is the side-by-side
  *  one and it has 37% of headroom, so this factor is not quietly a no-op on
  *  some phone shape nobody tested. */
 export const MAP_TOUCH_UP = 1.2;
@@ -751,6 +753,12 @@ export const MAP_QUAD_DOWN = 0.75;
    `paneH` halved, so the cap halved with it, and cutting a 195px pane's map
    by another third leaves 54px of unreadable islands. One rule, applied
    where the thing it corrects for is actually happening. */
+/* ...AND A STACKED HALF NOW GETS THE SIDE-BY-SIDE HALF'S MAP, WHICH IS NOT THE
+   DOUBLE CUT THE PARAGRAPH ABOVE REFUSES. That refused `MAP_SPLIT` of the
+   PANE's height, which for a 195px strip is 54px. What a stacked strip gets
+   now is `MAP_SPLIT` of the SCREEN's height — the same 129 its side-by-side
+   twin has always had — because "two halves of one phone" was reported to
+   want one map size, not two. See `mapWidth`. */
 
 /* ===========================================================================
    AND WHICH PANES GET THE TWO MINIMAPS.
@@ -1104,17 +1112,91 @@ export function mapWidth({
   mathUp = false, solo = false,
 }) {
   const fullHeight = paneH > screenH * 0.75;
-  const cap = touch
-    ? paneH * (mathUp ? MAP_DOJO : MAP_TALL) * (merged || !fullHeight ? 1 : MAP_SPLIT)
-      * MAP_TOUCH_UP
-    : Infinity;
   /* SHORT OF THE SCREEN ON BOTH AXES — see MAP_QUAD_DOWN for the table. The
      same 0.75 `fullHeight` uses, asked of the other axis too, so there is one
      idea of "this pane is most of the screen that way" in this function
      rather than two that can drift. */
   const quadrant = !fullHeight && paneW <= screenW * 0.75;
+  /* ON A PHONE, EVERY HALF OF THE SCREEN GETS THE SAME MAP — and it is the
+     SCREEN's height that says how big, not the pane's.
+
+     REPORTED: "when there are two players in split-screen (taking up half the
+     screen each), the minimap is too small, should be the same size as when
+     there are 3 players and 2 are in 1 split screen. This should use similar
+     logic to what we are using on pc/web as the smallest minimap is for when
+     players are in a quarter quadrant splitscreen, and be bigger when not in
+     that small splitscreen."
+
+     THE COMPARISON IN THAT REPORT ONLY HAPPENS WITH THE SPLIT SET TO STACKED,
+     and it took computing every phone layout to see it. At 844x390: two
+     players stacked are two 844x193 strips and got a 95px map, because the
+     cap below was a fraction of the PANE's height and a stacked pane has half
+     of it. Three players with two together are NOT stacked — `splitLayout`
+     gives an uneven pair side by side columns, 521 and 320 across and both
+     full height — and those got 129. Same "half the screen each", a third
+     less map. Side by side, the two-player split was already 129.
+
+     THE DESKTOP RULE, ASKED ON A PHONE. `MAP_QUAD_DOWN` says a quadrant is the
+     only pane that gives room back, and on a desktop every other split pane
+     keeps the unsplit map. A phone's unsplit map is 192 and no half-pane can
+     hold that, so a phone's version of "the big one" is the side-by-side
+     half's 129 — `MAP_SPLIT` of the screen — and now a stacked half gets it
+     too. A quadrant keeps its own height-based cap and the quarter off, so
+     it is exactly what it was; merged is exactly what it was; side by side is
+     `paneH === screenH` and so bit-identical. Only a stacked strip and the
+     pair's strip over two quadrants move, 95 -> 129. */
+  const phoneBasis = merged || quadrant ? paneH : screenH * MAP_SPLIT;
+  const cap = touch
+    ? phoneBasis * (mathUp ? MAP_DOJO : MAP_TALL) * MAP_TOUCH_UP
+    : Infinity;
   return Math.min(MAP_MAX, paneW * MAP_WIDE, cap)
     * (solo && quadrant ? MAP_QUAD_DOWN : 1);
+}
+
+/* ===========================================================================
+   AND HOW MUCH OF A PANE A PHONE'S PANE CARD MAY TAKE.
+
+   Here for the reason `mapWidth` is: pane arithmetic, assertable without a
+   Game, a DOM or a layout engine. `Inspector.layout` is the only caller.
+=========================================================================== */
+
+/**
+ * The rectangle a kitten's own card (AT THE DEALER, LOOK AT MY ORBS) is drawn
+ * over — her pane, or on a phone never more than a side-by-side half of it.
+ *
+ * REPORTED FROM A PHONE: "we should likely make the size of this screen the
+ * size it is when there are 2 players and screen gets split in half, as
+ * currently it is too zoomed in and user can't see most of the orbs. Should
+ * also consider making the 'at the dealer' UI to match this smaller UI style
+ * as currently it is too large."
+ *
+ * THE CARD IS SIZED OFF ITS RECTANGLE, SO THE RECTANGLE IS THE FIX. Every
+ * length on the card is `--u`, which is `min(1cqw, 1.78cqh)` of the box it is
+ * in (see `.pc-inner` in style.css). At one player that box was the whole
+ * 844x390 phone, `1.78cqh` won at 6.94px, and the type came out 17.4px — the
+ * size a previous note asked for when the floor was 9px, and now "too zoomed
+ * in" from the other side: nine orbs in 390px of height at that size is four
+ * on screen. Two players side by side get a 420px pane and `1cqw` of 4.2, which
+ * is the card that was asked for. Handing a lone kitten that same rectangle,
+ * centred, gets her that card byte for byte, rather than re-deriving a unit
+ * that would drift from it the next time either one is tuned.
+ *
+ * FULL-HEIGHT PANES ONLY. A stacked strip (844x193) and a quadrant are already
+ * sized by their height — `1.78cqh` is the smaller term there — and cutting
+ * their width as well would only make the same type wrap into fewer rows.
+ * The chooser is the same card, so "match this smaller UI style" is the same
+ * rectangle and needs nothing of its own. A desktop keeps its pane.
+ *
+ * @param v      the pane, in viewport coordinates (origin bottom-left)
+ * @param W,H    the frame
+ * @param touch  is this a phone
+ * @returns {{x:number, y:number, w:number, h:number}} same coordinates as `v`
+ */
+export function cardRect(v, W, H, touch = false, gap = 3) {
+  if (!touch || !v || v.h < H * 0.75) return v;
+  const half = splitLayout(2, W, H, gap, 'vertical')[0];
+  if (v.w <= half.w) return v;
+  return { x: v.x + Math.round((v.w - half.w) / 2), y: v.y, w: half.w, h: v.h };
 }
 
 /* ===========================================================================

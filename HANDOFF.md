@@ -515,6 +515,37 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Six notes from a phone: a banner under the badges, a rack that scrolls, a
+profile at half size, a round pip, one map size per half, and a card with a way
+out.** One branch, `mixed/six-phone-fixes`. The full account, with every
+measurement, is the sixth pass in [mobile.md](docs/notes/mobile.md).
+
+- **RYUUSEKI IS HERE hangs under the scoreboard's real bottom, and comes down
+  once he has been ridden.** Every `top` under the scoreboard was measured
+  against a one-row scoreboard, and clan labels wrap it onto two rows.
+  `_stackUnderScores` measures it on a ResizeObserver and only ever pushes the
+  tally and toasts down (four sworn at 1280x720: 64 → 87). Two players on a
+  desktop are byte-identical. On a phone, two players' toasts move 72 → 78,
+  because the tally is 28px tall, not 19, and was touching them.
+- **The orb rack no longer blocks the profile's scroll.** It was
+  `overscroll-behavior: contain` on a box with nothing to scroll. Measured with a
+  wheel: 0px vs 300px.
+- **A phone's profile is drawn at `zoom: 0.5`**, cards only. Four kittens fit on
+  one screen, 503 of 503. Quest type stays at 7.5px on screen and the quest box
+  shrinks from 11em to 5em instead.
+- **The scoreboard paints over the minimap** (z 4 against 3).
+- **The pip is a circle that shrinks** (`aspect-ratio: 1`; 7x11 → 9.8x9.8).
+- **The score is never smaller than the name** (phone 14/16).
+- **Every phone pane that is not a quadrant gets the side-by-side half's map.**
+  A stacked two-player split goes 95 → 129, which changes a two-player layout
+  deliberately, as asked. **Open:** the stacked bottom pane's map sits under
+  the face cluster, as it already did at 95.
+- **The dealer / orbs card has ◀ LEAVE / ◀ BACK on it**, running INTERACT's own
+  `_back`. On a phone a lone kitten's card is the side-by-side half's 420px
+  (`cardRect`), which puts 6 of 10 orbs on screen instead of 2.
+- Also fixed: the debug wreck's roll check went red about 1 run in 100 (1.06%
+  over 200,000 simulated wrecks). It asserts a spread now.
+
 **Three fixes from an afternoon: a warning nobody could read, a panda nobody
 could feed, and a camera that would not let go.** One branch,
 `mixed/three-fixes`. All three were reported as UI or feel and all three turned

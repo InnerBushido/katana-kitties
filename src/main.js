@@ -253,6 +253,13 @@ function warnLevel(frac) {
    paragraph in every pane now. */
 const WARN_STACK = 2;
 
+/** THE LEAST ROOM BETWEEN THE SCOREBOARD AND WHAT HANGS UNDER IT, in CSS px.
+ *  A floor, not a position: `_stackUnderScores` only ever pushes the tally and
+ *  the toasts DOWN to clear it, and where the stylesheet already leaves more
+ *  than this — every two-player layout it was measured against — nothing is
+ *  written at all. */
+const HUD_STACK_GAP = 6;
+
 
 
 /* HOW FAR BACK THE DOJO CAMERA SITS, and it is a different answer on a phone.
@@ -686,7 +693,25 @@ class Game {
     window.addEventListener('resize', () => {
       this._updateRotateGate();
       this.touchPad?.reflow();
+      /* The scoreboard's SIZE is watched below; its `top` is a media query
+         and a safe-area inset, and only a resize moves those. */
+      this._stackUnderScores();
     });
+    /* WATCHED, NOT POLLED. What moves the scoreboard's bottom edge is a
+       clan badge wrapping onto a second line, a fifth kitten's badge, the
+       touch-ui class going on or off and a font arriving late — four events in
+       four places, and a ResizeObserver hears every one of them without being
+       told about any. `#balls` is watched as well because showing it, hiding it
+       and changing its words all change how far down the toasts have to go.
+       Optional, because a browser without it still has the stylesheet's own
+       numbers, which is where this was before. */
+    if (typeof ResizeObserver === 'function') {
+      this._stackObs = new ResizeObserver(() => this._stackUnderScores());
+      for (const sel of ['.scoreboard', '#balls']) {
+        const el = document.querySelector(sel);
+        if (el) this._stackObs.observe(el);
+      }
+    }
     /* COMING BACK FROM ANOTHER TAB IS NOT A PERFORMANCE EVENT. A hidden tab has
        its animation frames throttled to about half a hertz; every one of those
        is recorded as a two-second frame, and the auto-downgrade read a ring
@@ -6229,7 +6254,19 @@ class Game {
   _updateBallHud() {
     const el = document.getElementById('balls');
     if (!el) return;
-    const up = !(this.ballsHeld === 0 && !this.ryu);
+    /* AND IT GOES AWAY ONCE HE HAS BEEN RIDDEN. "After players talk to and ride
+       Ryuuseki, this message should stop appearing." RYUUSEKI IS HERE is an
+       errand — go to the torii — and an errand that has been run is a line of
+       HUD saying something nobody needs any more, for the rest of the game,
+       in the strip under the scoreboard. `rodeRyu` rather than `ryu.ridden`
+       because it is the latch: set once, saved, and true after she has climbed
+       off again. There is no talking to him without the summoning scene that
+       puts him there, so "talked to and ridden" is `rodeRyu` alone.
+       Remembered in `_ballsRode` so the frame loop can ask whether it changed
+       without repainting the tally sixty times a second. */
+    const rode = !!this.quest?.rodeRyu;
+    this._ballsRode = rode;
+    const up = !(this.ballsHeld === 0 && !this.ryu) && !rode;
     el.classList.toggle('hidden', !up);
     /* TOASTS HAVE TO GET OUT FROM UNDER IT. On a phone both live in the strip
        under the scoreboard, and the tally is the one that APPEARS — so the
@@ -6241,6 +6278,60 @@ class Game {
     el.textContent = this.ryu
       ? 'RYUUSEKI IS HERE'
       : `★ ${this.ballsHeld} / ${BALL_COUNT}`;
+  }
+
+  /**
+   * Hang the dragon-ball tally and the toasts under the scoreboard's REAL
+   * bottom edge.
+   *
+   * REPORTED: "Sometimes, the 'Ryuuseki is here' text is overlaying on top of
+   * the top UI for names/score, should be placed where the dragon balls
+   * counter was, since that was correct placement of that for the UI."
+   *
+   * IT IS THE SAME ELEMENT IN THE SAME PLACE — `#balls` has only ever had one
+   * `top` — and that is the bug. Every number under the scoreboard in
+   * style.css (46, 64, 88, 112, the phone's 44 / 62 / 72) was measured against
+   * ONE scoreboard: a single row of badges at a known party size. Measured at
+   * 713x422 with four kittens, the row is 38px tall and ends at 52; the tally
+   * starts at 46. And a clan WRAPS a badge's label onto a second line, which
+   * is the "sometimes": the star counter was on screen before anybody swore
+   * anywhere, and RYUUSEKI IS HERE is on screen after — so the counter always
+   * looked right and the banner, in the same spot, did not.
+   *
+   * SO THE STYLESHEET'S NUMBER IS A FLOOR AND THE SCOREBOARD IS MEASURED. Each
+   * box is put back on its stylesheet `top`, and pushed down only if that is
+   * above the scoreboard's bottom plus `HUD_STACK_GAP` — so a taller row moves
+   * everything under it rather than being drawn through. The tally sets the
+   * floor for the toasts in turn.
+   *
+   * TWO PLAYERS ON A DESKTOP ARE BYTE-IDENTICAL (1280x720: nothing written,
+   * tally 64, toasts 112). TWO ON A PHONE ARE NOT, AND WERE WRONG: the phone's
+   * toasts-under-tally number, 72, assumed a tally about 19px tall; it measures
+   * 28 (44..72), so the first toast sat touching its bottom edge. They now
+   * start at 78. That is the only two-player number that moves.
+   *
+   * ON EVENTS, NOT PER FRAME: a ResizeObserver over the scoreboard and the
+   * tally, plus the window's resize. See the constructor.
+   */
+  _stackUnderScores() {
+    const sb = document.querySelector('.scoreboard')?.getBoundingClientRect();
+    const boxes = ['balls', 'toasts'].map((id) => document.getElementById(id));
+    /* NO SCOREBOARD ON SCREEN, NO OPINION. While `#hud` is hidden everything
+       measures zero, and a floor of six pixels would pin both boxes to the
+       top of the screen for the moment the HUD comes back. */
+    if (!sb || !(sb.height > 0)) {
+      for (const el of boxes) if (el) el.style.top = '';
+      return;
+    }
+    let floor = sb.bottom + HUD_STACK_GAP;
+    for (const el of boxes) {
+      if (!el) continue;
+      el.style.top = '';
+      if (el.classList.contains('hidden')) continue;
+      const at = el.getBoundingClientRect();
+      if (at.top < floor) el.style.top = `${Math.ceil(floor)}px`;
+      floor = Math.max(floor, el.getBoundingClientRect().bottom + HUD_STACK_GAP);
+    }
   }
 
   /**
@@ -8914,6 +9005,10 @@ class Game {
        and four ways into them — asking here, every frame, is cheaper than
        finding all four. */
     if (this.ryu?.ridden) this.quest.rodeRyu = true;
+    /* ...AND THE MOMENT IT BECOMES TRUE, BY ANY OF THE FOUR WAYS, THE BANNER
+       SAYING HE IS HERE COMES DOWN. Asked here rather than at each of them for
+       the reason the line above gives. */
+    if (!!this.quest.rodeRyu !== !!this._ballsRode) this._updateBallHud();
 
     /* --- inside a grotto: take the roof off and look down into it ---
 

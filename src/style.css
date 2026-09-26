@@ -1050,6 +1050,35 @@ body.touch-ui .pc-inner { --u: min(1cqw, 1.78cqh); }
   padding-top: calc(0.5 * var(--u));
 }
 .pc-foot b, .pc-head b { color: var(--gold); }
+/* THE WAY OUT, ON THE CARD. See `Inspector._back` for why it could not stay on
+   the pad: `#pane-cards` is above the face cluster while a card is up, and the
+   ACTION button is in the corner a card covers. The foot becomes a row so the
+   button and the line naming the pad's keys can share it. */
+.pc-foot {
+  display: flex;
+  align-items: center;
+  gap: calc(1 * var(--u));
+  flex-wrap: wrap;
+}
+.pc-back {
+  flex: none;
+  font-family: 'Bangers', cursive;
+  font-size: 1.2em;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  background: var(--me, var(--gold));
+  border: calc(0.3 * var(--u)) solid var(--ink);
+  border-radius: calc(0.8 * var(--u));
+  box-shadow: 0 calc(0.4 * var(--u)) 0 var(--ink);
+  padding: calc(0.5 * var(--u)) calc(1.4 * var(--u));
+  cursor: pointer;
+  pointer-events: auto;
+}
+.pc-back:active { transform: translateY(calc(0.4 * var(--u))); box-shadow: none; }
+/* A THUMB IS NOT A CURSOR. The card's `--u` is about four pixels on a phone,
+   and a button built from it alone would be about twenty tall — so on touch
+   it has a floor that a finger can find, in the same spirit as `.kd-slot`'s. */
+body.touch-ui .pc-back { min-height: 32px; min-width: 76px; }
 
 /* --- the chooser --- */
 .pc-row {
@@ -1290,6 +1319,24 @@ body.touch-ui .pc-inner { --u: min(1cqw, 1.78cqh); }
   display: flex;
   align-items: stretch;
   gap: 10px;
+  /* IN FRONT OF THE MINIMAP. "On Mobile, the mini-map is appearing above the
+     top UI with name/scores of players. It should appear behind it."
+
+     THE OVERLAP WAS A DECISION AND THE ORDER WAS AN ACCIDENT. `_drawMaps`
+     puts a phone's shared map hard into the top-left corner and says, in as
+     many words, that a name reaching across to clip it "is a better trade
+     than giving up the corner permanently". Four badges with clan labels do
+     reach it. But `.map-box` carries `z-index: 3` and this carried none, and
+     a positioned box with `auto` paints under every positioned sibling that
+     has a number — so the trade was made the wrong way round, and the map
+     sat on the scores it had agreed to go under.
+
+     4: over the map's 3, under the tally and the join card at 6 and the
+     warnings at 8, which is the order world-check pins. NOTHING BEHIND IT
+     STOPS TAKING TAPS — the whole of `#hud` is `pointer-events: none`, so a
+     thumb on the corner of the map that a badge is drawn over still turns
+     the map, which is the rule about UI behind UI the right way round. */
+  z-index: 4;
 }
 /* The badges either side of the mischief counter. One each at two players,
    two each at four — and they mirror which side of the screen that player's
@@ -1327,6 +1374,29 @@ body.touch-ui .pc-inner { --u: min(1cqw, 1.78cqh); }
   height: 20px;
   border-radius: 50%;
   border: 3px solid var(--ink);
+  /* A CIRCLE THAT MAY SHRINK, NEVER AN OVAL. "When player is in a clan, on
+     mobile, the circle in the top UI with their name is being squished and
+     becomes an oval instead of a circle. Should always be a circle, can become
+     smaller if space is getting tight."
+
+     MEASURED AT 844x390 WITH FOUR KITTENS SWORN: each pip was 7x11. The
+     scoreboard is absolutely positioned with `left: 50%` and no right edge,
+     so it is laid out in HALF the screen — 422px for a row that wants over a
+     thousand once the clan labels are in it — and a flex row that does not
+     fit shrinks its items. The pip is an empty span, so its minimum content
+     width is nothing: it gave up its width first and kept its 20px of height.
+
+     SO THE WIDTH IS WHAT FLEXES AND THE HEIGHT FOLLOWS IT. `flex-shrink` is
+     left on, which is "can become smaller"; `height: auto` with an
+     `aspect-ratio` makes the height whatever the width came out as, which is
+     "always a circle"; and a floor so a very long clan label cannot take the
+     one mark that says which kitten this is down to a dot. 8px was tried first
+     and measured at 7px on screen under the phone's `scale(0.7)`, which IS a
+     dot; 14 is about ten on screen, half the unsqueezed pip. */
+  flex: 0 1 auto;
+  height: auto;
+  aspect-ratio: 1;
+  min-width: 14px;
 }
 .score { box-shadow: 0 4px 0 var(--ink), inset 0 0 0 4px var(--seat, transparent); }
 /* The pip colour is written on from `styleCss` when the badge is built, so
@@ -1365,7 +1435,7 @@ body.touch-ui .pc-inner { --u: min(1cqw, 1.78cqh); }
   /* Still bigger than the old full-size pip: the tightening is about fitting
      four badges in a narrow window, and shrinking the one part of the badge
      that answers "which one am I" would undo the reason it grew. */
-  .hud-four .score .pip { width: 16px; height: 16px; border-width: 2px; }
+  .hud-four .score .pip { width: 16px; height: auto; border-width: 2px; }
   .hud-four .score { box-shadow: 0 4px 0 var(--ink), inset 0 0 0 3px var(--seat, transparent); }
 }
 .score .nm { font-family: 'Bangers', cursive; letter-spacing: 1.5px; font-size: 17px; }
@@ -4237,6 +4307,48 @@ body.touch-ui .kd-row .kd-dim {
    grow to match. */
 body.touch-ui .kd-quests { --q: 15px; }
 body.touch-ui .kd-quests ul { max-height: 11em; }
+
+/* --- THE CHARACTER PROFILE ON A PHONE IS DRAWN AT HALF SIZE ----------------
+   "It seems everything is still too zoomed in, we should be able to show all
+   the kotodama orbs on the screen and buttons without needing to scroll
+   up/down. I'd say, lets zoom out this screen by twice as much. This way,
+   maybe we can fit 4 players on this screen, all at once, which is more
+   ideal. Will likely need to make the text in Quests section smaller to fit
+   better with smaller screen."
+
+   `zoom: 0.5`, ON THE CARDS AND NOT THE PANEL. "Twice as much" is the note,
+   and one declaration keeps it one decision: every length inside a card — the
+   type, the rack, the gaps, the name — comes out half, in proportion, without
+   thirty rules each re-tuned by hand and drifting. The heading, the help line
+   and OFFER / CONFIRM / CLOSE are outside `#kd-body` and keep their size,
+   because "and buttons" is part of what has to be visible and they are the
+   things a thumb has to hit.
+
+   MEASURED AT 844x390, FOUR KITTENS SWORN: before, four 380x624 cards in two
+   rows, 1258px of content in a 252px box — five screenfuls, the bottom pair
+   never on screen with the top. With the zoom alone, four across at 189x311,
+   still 59px over. The rest is the lines below, and after them the body's
+   scroll height EQUALS its height, 503 of 503: four kittens, every orb, every
+   button, no scrolling.
+
+   THE QUESTS GOT SMALLER BY GIVING UP HEIGHT, NOT TYPE. At half size the
+   quest text is already 7.5px on screen, and a smaller `--q` would put it
+   under the size anything a nine-year-old reads should go. What was big was
+   the box: 11em of it is 165px, the tallest thing on the card. 5em holds two
+   quests and scrolls inside itself — it has been a scroller since the note
+   that made it one.
+
+   The rack's `--slot` comes down so the slots are 36px on screen rather than
+   growing into the width the zoom freed; the steppers go UP so they are still
+   22px targets after halving. On a phone shorter than 390px it will scroll
+   again, and that is the escape hatch `#kd-body` has always been. */
+body.touch-ui .kd-panel.kd-cards > #kd-body { zoom: 0.5; }
+body.touch-ui .kd-cards .kd-slots { --slot: 72px; }
+body.touch-ui .kd-cards .kd-quests { margin-top: 6px; padding-top: 4px; }
+body.touch-ui .kd-cards .kd-quests ul { max-height: 5em; }
+body.touch-ui .kd-cards .kd-meta { margin-bottom: 4px; }
+body.touch-ui .kd-cards .kd-detail { margin-top: 6px; }
+body.touch-ui .kd-cards .kd-step { width: 44px; height: 44px; font-size: 24px; }
 /* "the game has ended", said once beside the heading. Darker than the heading
    it sits on rather than bigger: it is a state, not a warning. */
 .kd-q-over { color: #b4432c; font-weight: 700; opacity: 1; margin-left: 6px; }
@@ -4456,7 +4568,23 @@ body.touch-ui .kd-quests ul { max-height: 11em; }
   aspect-ratio: 4 / var(--slot-rows);
   overflow-y: auto;
   scrollbar-width: none;
-  overscroll-behavior: contain;
+  /* AND IT PASSES A DRAG IT CANNOT USE ON TO THE PANEL. No `overscroll-behavior:
+     contain` here, and this is the one that was reported: "On Mobile, when
+     opening the Character Profile screen, I still can't scroll up/down when
+     pressing and holding on the Kotodama orbs section, the scrolling
+     functionality is being blocked."
+
+     `contain` was copied from `#kd-body`, where it is right — the outer
+     scroller must not rubber-band the page. On THIS box it is the bug, because
+     at eight orbs this box has nothing to scroll (the note above: that is the
+     point of the aspect-ratio slack), and a scroll container that cannot move
+     and may not hand the gesture on is a wall. The card is two rows of orbs
+     tall, so the wall was most of the card.
+
+     MEASURED IN THE RUNNING GAME, with the body scrollable and a wheel over the
+     middle of the rack: `#kd-body.scrollTop` stays at 0 with `contain` and goes
+     to 300 without it; the same wheel over the kitten's name went to 300 either
+     way. `world-check` pins that the rack does not contain. */
 }
 .kd-slots::-webkit-scrollbar { display: none; }
 
@@ -4940,7 +5068,21 @@ body.touch-ui #touch-pad.scene .tp-pause {
 .mischief, .mischief b { white-space: nowrap; }
 body.touch-ui .mischief { font-size: 11px; padding: 3px 8px; }
 body.touch-ui .score { font-size: 11px; }
-body.touch-ui .score b { font-size: 13px; }
+/* THE SCORE IS NEVER SMALLER THAN THE NAME. "We should keep the score text to
+   be at least as big as the players name, if not bigger, as it is as important
+   if not more to see the score than the name."
+
+   ON A PHONE IT WAS SMALLER AND ALWAYS HAD BEEN: this rule took the score to
+   13px and nothing took the name anywhere, so it kept the desktop's 17 — or,
+   at three and four players, the four-player tightening's 14, because that
+   query is on WIDTH and a phone is under a thousand pixels wide. A 13px score
+   beside a 17px name reads as a caption to it.
+
+   14 AND 16 ARE THE FOUR-PLAYER TIGHTENING'S OWN PAIR, which is already the
+   row that was tuned to fit four badges across; the desktop's 17 and 20 are
+   the same proportion. `world-check` asserts score >= name for all three. */
+body.touch-ui .score .nm { font-size: 14px; }
+body.touch-ui .score b { font-size: 16px; }
 
 /* The dragon-ball tally: 35-50% smaller, and out from under the scoreboard. */
 body.touch-ui #balls {

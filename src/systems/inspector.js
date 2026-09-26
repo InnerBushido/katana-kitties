@@ -1,6 +1,7 @@
 import { POWER_ORBS, ORB_BY_ID, MAX_EQUIPPED, countsOf } from '../entities/powerorb.js';
 import { MAX_PLAYERS, cssFor } from '../core/palette.js';
 import { onTap } from '../core/tap.js';
+import { cardRect } from '../core/split.js';
 
 /* ---------------------------------------------------------------------------
    THE PERSONAL CARD — one kitten's own screen, inside her own pane.
@@ -236,11 +237,34 @@ export class Inspector {
     if (pad.pressed('start')) { pad.consume?.('start'); this.closeOne(index); return; }
     if (pad.pressed('interact')) {
       pad.consume?.('interact');
-      if (c.state === 'look') { c.state = 'choose'; c.i = 1; c._sig = ''; this.game.audio?.play('menu'); }
-      else this.closeOne(index);
+      this._back(index);
       return;
     }
     if (pad.pressed('jump')) { pad.consume?.('jump'); this._choose(index); }
+  }
+
+  /**
+   * INTERACT, or a tap on the card's own BACK button: out one level, then shut.
+   *
+   * ONE BODY FOR BOTH, so the button and the press cannot come to mean two
+   * different things. Reported from a phone: "we need a way to click 'back'
+   * when on these pages. The Action button can do it, but it is hidden behind
+   * the UI." It is, and on purpose — `#pane-cards` sits ABOVE the pad while a
+   * card is up (z 8 against 7, see style.css) so that the stick's catchment
+   * stops swallowing the drags meant for the shelf, and the face cluster is in
+   * the bottom-right corner of exactly the pane a card covers. Lifting the
+   * button back over the card would re-open that bug; the way out belongs ON
+   * the card instead, where the thing it closes is.
+   */
+  _back(index) {
+    const c = this.cards[index];
+    if (!c?.state) return;
+    if (c.state === 'look') {
+      c.state = 'choose';
+      c.i = 1;
+      c._sig = '';
+      this.game.audio?.play('menu');
+    } else this.closeOne(index);
   }
 
   /** JUMP, or a tap on a row. */
@@ -331,6 +355,12 @@ export class Inspector {
          cluster pass. Hiding for a frame is right; guessing a rectangle would
          put her card over somebody else's game. */
       if (!v) { if (c.el) c.el.style.display = 'none'; continue; }
+      /* ON A PHONE, NEVER MORE THAN A SIDE-BY-SIDE HALF. The card is sized off
+         the box it is in, so a lone kitten's whole-screen box printed it at
+         17px — "too zoomed in... user can't see most of the orbs". `cardRect`
+         in core/split.js hands her the rectangle two side-by-side players get,
+         centred in her pane, and everything on the card follows from it. */
+      const r = cardRect(v, W, H, !!this.game.device?.touchPrimary);
       if (!c.el) {
         c.el = document.createElement('div');
         c.el.className = 'pane-card';
@@ -339,10 +369,10 @@ export class Inspector {
         c._sig = '';
       }
       c.el.style.display = '';
-      c.el.style.left = `${v.x}px`;
-      c.el.style.top = `${H - v.y - v.h}px`;
-      c.el.style.width = `${v.w}px`;
-      c.el.style.height = `${v.h}px`;
+      c.el.style.left = `${r.x}px`;
+      c.el.style.top = `${H - r.y - r.h}px`;
+      c.el.style.width = `${r.w}px`;
+      c.el.style.height = `${r.h}px`;
       /* HER colour, read off the kitten. `styleCss(i)` was a seat number
          standing in for a style index and came out wrong the moment anybody
          used the character picker — see `cssFor` in core/palette.js. */
@@ -385,7 +415,8 @@ export class Inspector {
     return `<div class="pc-inner">
       <div class="pc-head"><span class="pc-who">${p.name}</span> AT THE DEALER</div>
       ${rows}
-      <div class="pc-foot">JUMP <b>choose</b> · INTERACT <b>leave</b></div>
+      <div class="pc-foot">${this._backButton(index, 'LEAVE')}
+        <span>JUMP <b>choose</b> · INTERACT <b>leave</b></span></div>
     </div>`;
   }
 
@@ -464,9 +495,23 @@ export class Inspector {
         · <b>${p.score}</b> points · ${owned.length}/${MAX_EQUIPPED} worn</div>
       <div class="pc-slots${anyLit ? ' picking' : ''}">${slots.join('')}</div>
       <div class="pc-list" data-list="${index}">${rows}</div>
-      <div class="pc-foot">buy <b>${K?.price ?? '—'}</b> · sell <b>${K?.sellPrice ?? '—'}</b>
-        — INTERACT <b>back</b></div>
+      <div class="pc-foot">${this._backButton(index, 'BACK')}
+        <span>buy <b>${K?.price ?? '—'}</b> · sell <b>${K?.sellPrice ?? '—'}</b>
+        — INTERACT <b>back</b></span></div>
     </div>`;
+  }
+
+  /**
+   * The way out, as a thing you can touch.
+   *
+   * IT SAYS WHAT IT DOES, per the sixth non-negotiable: LEAVE on the chooser,
+   * where it closes the card, and BACK on her orbs, where it returns to the
+   * three choices. Drawn on EVERY device, not only a phone — a mouse had no way
+   * out of this card either, and a control that exists on one kind of machine
+   * and not the other is how the two drift.
+   */
+  _backButton(index, word) {
+    return `<button type="button" class="pc-back" data-back="${index}">◀ ${word}</button>`;
   }
 
   /**
@@ -494,6 +539,15 @@ export class Inspector {
   _bindTaps() {
     if (!this.host) return;
     onTap(this.host, (target) => {
+      /* BACK FIRST. It sits in the foot, which is not a row, so the order
+         only matters if a future layout ever nests one inside the other — and
+         then the button has to win, because it is the way out. */
+      const back = target.closest?.('[data-back]');
+      if (back) {
+        const i = Number(back.dataset.back);
+        if (this.cards[i]?.state) { this._back(i); if (this.cards[i].state) this._paintCard(i); }
+        return;
+      }
       const row = target.closest?.('[data-row]');
       if (!row) return;
       const i = Number(row.dataset.side);
