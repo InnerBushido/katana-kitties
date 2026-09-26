@@ -57,13 +57,17 @@ export const MERGE_OUT = 46;   // and stop sharing it beyond this
  *                  existing pairing harder to break, never to create one.
  * @param mergeIn   link two players closer than this
  * @param mergeOut  keep an EXISTING link until they are further apart than this
+ * @param lanes     per player, or null: two players whose lanes differ are
+ *                  never linked. Snake Way's ride camera is a lane — see
+ *                  `Game._snakeLanes`. Left out, or all null, every answer is
+ *                  the one this function always gave.
  *
  * @returns { groups, of }
  *   groups — arrays of player indices, each sorted, the outer array sorted by
  *            first member so player 1's group is always the first pane
  *   of     — player index -> her group's lowest member. Feed it back as `prev`.
  */
-export function clusterPlayers({ pts, solo = [], prev = null, mergeIn, mergeOut }) {
+export function clusterPlayers({ pts, solo = [], prev = null, mergeIn, mergeOut, lanes = null }) {
   const n = pts.length;
   const parent = Array.from({ length: n }, (_, i) => i);
 
@@ -95,6 +99,13 @@ export function clusterPlayers({ pts, solo = [], prev = null, mergeIn, mergeOut 
          changes at four players is that it now costs one pane instead of
          collapsing the whole screen: the two on the ground keep sharing. */
       if (solo[i] || solo[j]) continue;
+      /* A KITTEN ON A ROAD WITH THE RIDE CAMERA IS ON ANOTHER STAGE. Two
+         sisters standing together are one pane; one of them two seconds up
+         Snake Way is watching a different film, and her pane is hers — until
+         her sister boards the same road beside her, and then they share it
+         again. The same shape of rule as `solo`, one level finer: a lane can
+         be shared, `solo` never is. */
+      if (lanes && (lanes[i] ?? null) !== (lanes[j] ?? null)) continue;
       const d = Math.hypot(pts[i].x - pts[j].x, pts[i].z - pts[j].z);
       /* HYSTERESIS IS ONLY EVER STICKINESS. `prev` can hold a pair together out
          to `mergeOut`; it can never pull one together, or a group would be able

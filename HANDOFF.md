@@ -515,6 +515,37 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Snake Way: after the ending, gold roads join the islands through the
+clouds.** Branch `feature/snake-way-bridges`. [world.md](docs/notes/world.md)
+has the design and [story.md](docs/notes/story.md) the shot.
+
+- **Six generated roads** from home to each island, with a torii at each end and
+  a snake's head at the far one. They are **built in the ending's wide shot**
+  (the `snake: true` row), and up whole on skip, replay and load.
+- **Riding one:**
+  - the stick she boarded with means onward for the whole road, whatever the
+    camera does;
+  - she is clamped to the deck and glides at ×1.35;
+  - she can jump off the side.
+- **The ride camera** orbits her: chase, side, front, over. It is shared by a
+  group on one road and splits off a lone rider after 2.5 s. A sister who
+  boards close behind joins at once.
+- **Seven far islands with waterfalls** rise out of the clouds with the dawn.
+- **Measured in the running game:**
+  - the roads grow across 1.97 s of the 2.13 s wide shot;
+  - riding at 14.2 u/s;
+  - two riders share one pane;
+  - the split lands at 2.5 s.
+- **Still open, for Richard:**
+  - The sky after the ending is still the director-approved clear morning.
+    `out/trailer/shots/s01.png` is a sunset, and matching it would be a palette
+    change to `setSky`'s dawn.
+  - The roads are not on the minimap.
+  - A pre-ending ruin of each road, broken stubs at the gates, would foreshadow
+    them.
+  - A kitten inside a road's cloud bank is hidden for a moment. That is "through
+    the clouds", but the puffs could thin when the lens is inside them.
+
 **A Help topic she closes keeps the ring, as one she opens does.** One
 branch, `bugfix/help-ring-stays-on-topic`.
 
@@ -2840,7 +2871,7 @@ are about to touch, not all of them.
 | [dragon-hunt.md](docs/notes/dragon-hunt.md) | the seven locks, the grottos, the spire, Ryuuseki |
 | [endgame.md](docs/notes/endgame.md) | the ending, the Awakening, the eight orbs, the economy, the Cross Slash rebalance, **and `/tuning.html`** — the balance page every ability's numbers are edited on |
 | [story.md](docs/notes/story.md) | the cutscene, the leaders, the shrine scenes, the scene viewer |
-| [world.md](docs/notes/world.md) | the clans and their buffs; the panda |
+| [world.md](docs/notes/world.md) | the clans and their buffs; the panda; Snake Way |
 | [art.md](docs/notes/art.md) · [audio.md](docs/notes/audio.md) | atlas cells; the synthesised music |
 | [voices.md](docs/notes/voices.md) | **which ElevenLabs preset is which character**, with the ids; how the castings were verified; why Ryuuseki's is lost; why there is no style prompt; why per-line pitch cannot identify a voice |
 | [consent.md](docs/notes/consent.md) | why nothing irreversible happens on one press — the confirm dialog and why it has no primary, the per-side trade questions, the two-stage name entry, who drives a menu, and the vJoy button that started the game by itself |

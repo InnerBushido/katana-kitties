@@ -720,6 +720,34 @@ fades in and out with over `CUT_FADE` 0.34s centred on the cut. `world-check`
 asserts there are exactly three of them and that none lands inside the naming
 shots, where a blink would eat a word.
 
+### `snake` — the roads grow across the wide shot
+
+> "During the ending cutscene, while viewing the entire islands (when the sky is
+> changing), it shows the bridges being constructed, magically, from the main
+> island, to the smaller islands."
+
+That shot is the `wide` row on "on any", the first one that holds the whole
+archipelago while the sky turns, so it carries `snake: true`. That is a field
+like `sky`, not a `cue`. `cue` is `FinaleShow`'s phase, and a phase named after
+something it does not draw is one it would have to learn to ignore. The decision
+is made when the scene is accepted (`bridgeWant = 1`, non-negotiable 7). The
+growing is **held** until the row cues, then timed off the row's own span:
+`SNAKE_OF_SHOT` (0.92) of the time to the next cut, measured the way
+`heap-raise` measures its wave. The last road therefore lands while the frame is
+still wide. Re-time the line and the build re-times itself: measured at 1.97 s
+of a 2.13 s shot.
+
+- **Growth is `drawRange` over a mesh whose triangles run from the home end**,
+  so a road half built is exactly the first half of the road.
+- **The roads start one after another, `SNAKE.stagger` apart, and all finish
+  together.**
+- **A glowing tip runs out ahead of the gold.** That is the "magically".
+- **Gates and heads pop up with a little overshoot.**
+- **A replay with the roads already up does not knock them down to build them
+  again**, just as the sky does not go back to the storm.
+- **Skipping finishes them outright.** See [world.md](world.md) for why a
+  half-grown road may never be ground.
+
 ### Nothing in the table is a coordinate
 
 `_markFinale` resolves every name once, at the top of the scene. `dojo` and

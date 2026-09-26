@@ -13,6 +13,10 @@ import { Prop } from '../entities/prop.js';
 import { ClanShrine } from '../entities/shrine.js';
 import { DragonBall, ISLAND_LOCKS } from '../entities/dragonball.js';
 import { DRAGON_SPOTS } from '../entities/dragon.js';
+import {
+  SNAKE, SNAKE_LINKS, SnakeRoad, findLandings, windRoad, buildRoadMesh, buildSnakeHead,
+  toriiScale, buildSnakeClouds, buildFarIsles, waterTexture,
+} from './snakeway.js';
 
 /* ---------------------------------------------------------------------------
    The world: a cluster of floating islands under a sunset sky, with one
@@ -349,6 +353,252 @@ export class World {
     this._buildDistantScenery();
     this._buildPetals();
     this._buildClouds();
+    this._buildFarIsles();
+    /* SNAKE WAY IS BUILT THE FIRST TIME IT IS WANTED, NOT HERE. It does not
+       exist until the ending, winding six roads is a third of a second of
+       solving, and most sessions never see the ending — so it is paid at the
+       ending (or on loading a save from after it), by `setBridges`. The
+       answer is the same whenever it is asked: it reads nothing that play
+       changes (props by their `home`, solids, the fixed dragon perches). */
+    this.snakeWay = null;
+    /** True once the roads are finished and are ground. See `setBridges`. */
+    this.snakeOpen = false;
+    this.bridgeT = 0;
+  }
+
+  /* ------------------------------ snake way ------------------------------ */
+
+  /**
+   * Wind and build the roads. Idempotent; returns the built set.
+   * See `world/snakeway.js` for how a road is worked out and why.
+   *
+   * THE ORDER IS PART OF THE ANSWER. Roads are laid one at a time, each kept
+   * clear of the ones before it, and the south side of the home island is
+   * crowded — the town gate, two dragon perches, a road. Laid steepest first,
+   * the ash road took the one stretch of rim the bamboo road can leave from and
+   * the bamboo road could not be wound at all ("touches another road"). The
+   * bamboo road has the fewest ways out, so it goes first; the rest in order
+   * of how high they climb. `world-check` builds them and asserts every road
+   * came out with no fault, so a change that crowds one out is a failed check.
+   */
+  buildSnakeWay() {
+    if (this.snakeWay) return this.snakeWay;
+    const home = this.islands[0];
+    const avoid = DRAGON_SPOTS.map((d) => ({ x: d.x, z: d.z, r: 8 }));
+    const roads = [];
+    const others = [];
+    for (const name of SNAKE_LINKS) {
+      const isl = this.islands.find((i) => i.kind === name || (!i.kind && i.biome === name));
+      if (!isl) continue;
+      /* Two roads never leave from the same stretch of rim — a second gate
+         beside the first is one gate with two roads out of it. */
+      const spaced = avoid.concat(roads.map((r) => ({ x: r.pts[0].x, z: r.pts[0].z, r: 16 })));
+      const As = findLandings(this, home, isl, spaced);
+      const Bs = findLandings(this, isl, home, avoid);
+      if (!As.length || !Bs.length) continue;
+      const w = windRoad(As, Bs, this.islands, others);
+      if (!w) continue;
+      others.push(w.pts);
+      const road = new SnakeRoad(roads.length, w.pts, home, isl, this.islands);
+      road.name = name;
+      road.faults = w.faults;
+      road.landA = w.A;
+      road.landB = w.B;
+      roads.push(road);
+    }
+
+    const group = new THREE.Group();
+    group.visible = false;
+    this.scene.add(group);
+    const mat = toonVertexMat();
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0xffe7a0, transparent: true, opacity: 0.9, toneMapped: false,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    for (const road of roads) {
+      const built = buildRoadMesh(road);
+      const mesh = new THREE.Mesh(built.geometry, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      group.add(mesh);
+      road.mesh = mesh;
+      road.perSeg = built.perSeg;
+      road.segs = built.segs;
+      road.capIdx = built.caps;
+
+      /* The growing tip: a knot of light that runs out ahead of the gold.
+         It is the "magically" in "constructed, magically". */
+      const glow = new THREE.Mesh(new THREE.IcosahedronGeometry(2.2, 1), glowMat);
+      glow.visible = false;
+      group.add(glow);
+      road.glow = glow;
+
+      /* A torii at each end, facing along the road, posts outside the rails.
+         `transformParts` turns local +x onto (cos ry, -sin ry), and the beams
+         want to lie across the road — along its right-hand normal. */
+      const gates = [];
+      for (const end of [0, road.pts.length - 1]) {
+        const p = road.pts[end];
+        const ry = Math.atan2(-p.tx, -p.tz);
+        const parts = transformParts(buildTorii(toriiScale()), p.x, p.y - 0.45, p.z, ry);
+        const m = new THREE.Mesh(mergeParts(parts), mat);
+        m.castShadow = true;
+        const g = new THREE.Group();
+        g.add(m);
+        m.position.set(-p.x, -(p.y - 0.45), -p.z);
+        g.position.set(p.x, p.y - 0.45, p.z);
+        g.scale.setScalar(0.001);
+        group.add(g);
+        gates.push(g);
+        /* The posts are solids — you walk through a torii, not through its
+           posts — but only once it exists. `off` is the flag
+           `resolveSolids` already honours (Mr Satan's is the other). */
+        const hl = Math.hypot(p.tx, p.tz) || 1;
+        const rx = -p.tz / hl;
+        const rz = p.tx / hl;
+        const half = 2.2 * toriiScale();
+        for (const s of [-1, 1]) {
+          this.solids.push({ x: p.x + rx * half * s, z: p.z + rz * half * s, r: 0.6, off: true, snake: true });
+        }
+      }
+      road.gates = gates;
+
+      /* The head, at the far end, beside the landing and looking back down
+         the road it is the end of. */
+      const e = road.pts[road.pts.length - 1];
+      const hl = Math.hypot(e.tx, e.tz) || 1;
+      const rx = -e.tz / hl;
+      const rz = e.tx / hl;
+      const side = road.id % 2 ? -1 : 1;
+      const hx = e.x + rx * side * (SNAKE.halfW + 4.5) - (e.tx / hl) * 3;
+      const hz = e.z + rz * side * (SNAKE.halfW + 4.5) - (e.tz / hl) * 3;
+      const hg = road.to.heightAt(hx, hz) ?? e.y;
+      const face = Math.atan2(-e.tx, -e.tz);
+      const headMesh = new THREE.Mesh(mergeParts(buildSnakeHead(road.id)), mat);
+      headMesh.castShadow = true;
+      const head = new THREE.Group();
+      head.add(headMesh);
+      head.position.set(hx, hg - 0.2, hz);
+      head.rotation.y = face;
+      head.scale.setScalar(0.001);
+      group.add(head);
+      road.head = head;
+      this.solids.push({ x: hx, z: hz, r: 3.2, off: true, snake: true });
+
+      this.platforms.push(road.platform());
+    }
+
+    const cloudMat = new THREE.MeshBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 0, fog: true,
+    });
+    const cloudParts = buildSnakeClouds(roads);
+    const clouds = cloudParts.length ? new THREE.Mesh(mergeParts(cloudParts), cloudMat) : null;
+    if (clouds) {
+      clouds.frustumCulled = false;
+      clouds.visible = false;
+      this.scene.add(clouds);
+    }
+    this.snakeWay = { roads, group, clouds, cloudMat };
+    return this.snakeWay;
+  }
+
+  /**
+   * How far the roads have grown, 0..1 across all of them — the one number
+   * the ending drives and a save restores.
+   *
+   * STAGGERED, NOT TOGETHER: road k starts `SNAKE.stagger` of the way in after
+   * road k-1, and all of them finish at 1. Growth is `drawRange` over a mesh
+   * whose triangles are in order from the home end (`buildRoadMesh`), so a
+   * road half built is exactly the first half of the road. The gates at the
+   * home end come up as its road starts; the far gate and the head come up as
+   * it lands.
+   *
+   * GROUND ONLY AT 1. A road half grown is a picture in a cutscene, and a deck
+   * a kitten could step onto and run off the unbuilt end of is a trap.
+   */
+  setBridges(p) {
+    p = Math.max(0, Math.min(1, p ?? 0));
+    if (p <= 0 && !this.snakeWay) { this.bridgeT = 0; return; }
+    const W = this.buildSnakeWay();
+    this.bridgeT = p;
+    W.group.visible = p > 0;
+    const n = W.roads.length;
+    const span = 1 + SNAKE.stagger * Math.max(0, n - 1);
+    const ease = (t) => 1 - Math.pow(1 - t, 3);
+    W.roads.forEach((road, k) => {
+      const q = Math.max(0, Math.min(1, (p * span - SNAKE.stagger * k)));
+      road.grow = q;
+      const segs = Math.round(road.segs * ease(q));
+      road.mesh.visible = q > 0;
+      /* The start cap is first in the buffer after the body in `buildRoadMesh`,
+         so a partial road shows body only and the end cap arrives with 1. */
+      road.mesh.geometry.setDrawRange(0, q >= 1 ? Infinity : segs * road.perSeg);
+      /* Gates and head pop up with a little overshoot, the way a thing that
+         has been conjured arrives. */
+      const pop = (t) => {
+        if (t <= 0) return 0.001;
+        if (t >= 1) return 1;
+        const u = t - 1;
+        return 1 + 2.70158 * u * u * u + 1.70158 * u * u;
+      };
+      road.gates[0].scale.setScalar(pop(q * 6));
+      const land = q >= 1 ? 1 : Math.max(0, (ease(q) - 0.9) / 0.1);
+      road.gates[1].scale.setScalar(pop(land));
+      road.head.scale.setScalar(pop(land));
+      const tip = road.pts[Math.min(road.pts.length - 1, segs)];
+      road.glow.visible = q > 0 && q < 1;
+      if (road.glow.visible) road.glow.position.set(tip.x, tip.y + 0.4, tip.z);
+    });
+    const open = p >= 1;
+    if (open !== this.snakeOpen) {
+      this.snakeOpen = open;
+      for (const s of this.solids) if (s.snake) s.off = !open;
+    }
+  }
+
+  /** The deck under (x, z) on any road, or null — for whoever needs the road
+   *  itself rather than a height (the player's ride, the ride camera). */
+  snakeAt(x, z, fromY = Infinity, halfW = SNAKE.halfW) {
+    if (!this.snakeOpen || !this.snakeWay) return null;
+    let best = null;
+    for (const road of this.snakeWay.roads) {
+      const b = road.box;
+      if (x < b.x0 - halfW || x > b.x1 + halfW || z < b.z0 - halfW || z > b.z1 + halfW) continue;
+      const hit = road.locate(x, z, fromY, halfW);
+      if (hit && (!best || hit.y > best.y)) best = { ...hit, road };
+    }
+    return best;
+  }
+
+  /* ----------------------------- far islands ----------------------------- */
+
+  /**
+   * The new worlds on the horizon. See `buildFarIsles`. One merged mesh for
+   * the land and one per waterfall, all in a group that `setSky` lifts out of
+   * the clouds with the dawn.
+   */
+  _buildFarIsles() {
+    const { land, falls, isles } = buildFarIsles([
+      { x: this.arenaCentre.x, z: this.arenaCentre.z, r: 300 },
+    ]);
+    const group = new THREE.Group();
+    group.visible = false;
+    const mesh = new THREE.Mesh(mergeParts(land), toonVertexMat({ fog: true }));
+    mesh.frustumCulled = false;
+    group.add(mesh);
+    const tex = waterTexture();
+    const waterMat = new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, opacity: 0.92, fog: true,
+      side: THREE.DoubleSide, depthWrite: false,
+    });
+    for (const g of falls) {
+      const m = new THREE.Mesh(g, waterMat);
+      m.frustumCulled = false;
+      group.add(m);
+    }
+    this.scene.add(group);
+    this.farIsles = { group, isles, tex, mat: waterMat };
   }
 
   /**
@@ -1048,6 +1298,21 @@ export class World {
       this.clouds.mesh.visible = dawn > 0.002;
       this.clouds.mat.opacity = dawn * 0.94;
     }
+    /* THE ROADS' CLOUDS AND THE NEW ISLANDS COME WITH THE MORNING. The banks
+       fade in like the shelves above; the far islands RISE, out of the cloud
+       sea below the archipelago, so the ending's wide shot of the sky
+       clearing has somewhere new coming up in it. Eased so they arrive rather
+       than slide. */
+    const W = this.snakeWay;
+    if (W?.clouds) {
+      W.clouds.visible = dawn > 0.002;
+      W.cloudMat.opacity = dawn * 0.9;
+    }
+    if (this.farIsles) {
+      const k = 1 - Math.pow(1 - dawn, 3);
+      this.farIsles.group.visible = dawn > 0.002;
+      this.farIsles.group.position.y = -260 * (1 - k);
+    }
     this.scene.fog.color.copy(D.fog).lerp(N.fog, dusk).lerp(M.fog, dawn);
     this.scene.fog.near = THREE.MathUtils.lerp(
       THREE.MathUtils.lerp(D.fogNear, N.fogNear, dusk), M.fogNear, dawn,
@@ -1252,6 +1517,9 @@ export class World {
     const over = best?.island ?? null;
     for (const p of this.platforms) {
       if (p.arena && !this.arenaOpen) continue;
+      /* Snake Way is not ground until the ending has finished building it —
+         the arena's rule, for the arena's reason. */
+      if (p.snake && !this.snakeOpen) continue;
       if (x < p.x0 || x > p.x1 || z < p.z0 || z > p.z1) continue;
       /* ROUND DECKS ARE A SECOND TEST, NOT A SECOND LOOP. The shrine dais is a
          disc, and inscribing a square in it — which is what the sky shards do
@@ -1279,7 +1547,10 @@ export class World {
          one number for the whole rectangle; everything below uses the local
          height, including the one-way test — which is what stops her being
          snapped up through the middle of the arch from the riverbed. */
-      const py = p.yAt ? p.yAt(x, z) : p.y;
+      const py = p.yAt ? p.yAt(x, z, fromY) : p.y;
+      /* A road's box is the box round a winding snake, and most of it is sky:
+         a `yAt` that finds no deck under the point says so with null. */
+      if (py == null) continue;
       /* How far you may step UP onto this deck from below. 0.4 is a lip you
          walk over; the shrine's outer step is half a unit of deliberate
          stonework and asks for its own. A deck you can stand on and cannot
@@ -2384,6 +2655,11 @@ export class World {
        0.006 rad/s: fast enough that the ending is visibly alive, slow
        enough that nobody watches the whole sky rotate. */
     if (this.clouds?.mesh.visible) this.clouds.mesh.rotation.y += dt * 0.006;
+    /* The waterfalls fall — the streak texture scrolls down the sheet. */
+    if (this.farIsles?.group.visible) this.farIsles.tex.offset.y += dt * 0.9;
+    for (const road of this.snakeWay?.roads ?? []) {
+      if (road.glow.visible) road.glow.scale.setScalar(1 + Math.sin(this.time * 14 + road.id) * 0.25);
+    }
   }
 
   /** Push a position out of any solid it's inside. Returns the corrected xz. */

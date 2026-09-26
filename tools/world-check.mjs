@@ -29,8 +29,10 @@ import { DragonBall, BALL_COUNT, PICKUP_RADIUS, LOCKS, ISLAND_LOCKS } from '../s
 import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_BACK, HOVER, RYU_MOUTH, RYU_CAM } from '../src/entities/ryuuseki.js';
 import {
   SCRIPTS, DUSK_DEEP, DUSK_FALL, DAWN_RISE, DAWN_DEEP, SummonScene, BEAT_ACTS,
-  FINALE_SHOTS, MUSIC_CUES, say,
+  FINALE_SHOTS, MUSIC_CUES, say, SNAKE_RISE,
 } from '../src/systems/summonscene.js';
+import { SNAKE, SNAKE_LINKS } from '../src/world/snakeway.js';
+import { snakePose, SnakeCam, SNAKE_MOVE } from '../src/systems/snakecam.js';
 import { Announcer } from '../src/systems/announce.js';
 import { FinaleTide } from '../src/systems/finaletide.js';
 import { FinaleShow } from '../src/systems/finaleshow.js';
@@ -23437,7 +23439,12 @@ console.log('\n--- one press is not enough, and one player drives ---');
        line in `landmarks` would simply be missing from the model, which is a
        thing no screenshot of the model would tell you. */
     const wsrc = readFileSync(new URL('../src/world/world.js', import.meta.url), 'utf8');
-    const built = (wsrc.match(/buildTorii\(/g) ?? []).length;
+    /* LESS SNAKE WAY'S GATES, which are the one torii that is meant to be
+       missing from the model: they are built after the ending, and the model
+       is the archipelago BEFORE the roads (Patchfur is telling the story of
+       how they were lost). They are the calls sized by `toriiScale()`, and
+       the SNAKE WAY section counts them against the roads instead. */
+    const built = (wsrc.match(/buildTorii\((?!toriiScale)/g) ?? []).length;
     ok('...and there is one entry for every torii the world builds',
       L.filter((m) => m.kind === 'torii').length === built,
       `${L.filter((m) => m.kind === 'torii').length} listed, ${built} built`);
@@ -26531,6 +26538,34 @@ console.log('\n--- one press is not enough, and one player drives ---');
       held === 2 && G2.players[0].powerOrbs.join() === worn.join());
   }
 
+  /* --- SNAKE WAY IS PART OF THE AFTERNOON ------------------------------
+     The ending builds it and nothing takes it down, so a save from after the
+     ending has to come back with it — up, whole and walkable, not grown
+     again. And a save from BEFORE Snake Way existed has no field for it, so
+     the dawn it does carry says whether the ending had happened. */
+  {
+    const G = fakeGame(W2, 1);
+    G.summonScene.bridgeWant = 1;
+    G.summonScene.dawnWant = DAWN_DEEP;
+    const snap = snapshot(G);
+    ok('a save from after the ending remembers Snake Way', snap.sky.bridges === 1);
+    const G2 = fakeGame(W2, 1);
+    restore(G2, snap);
+    ok('...and loading it puts every road back up, whole and walkable',
+      G2.summonScene.bridges === 1 && W2.snakeOpen && W2.bridgeT === 1);
+    const old = JSON.parse(JSON.stringify(snap));
+    delete old.sky.bridges;
+    W2.setBridges(0);
+    restore(fakeGame(W2, 1), old);
+    ok('...and a save older than the roads, taken after the ending, gets the roads the ending built',
+      W2.snakeOpen);
+    old.sky.dawn = 0;
+    const G4 = fakeGame(W2, 1);
+    restore(G4, old);
+    ok('...while one from before the ending has none',
+      G4.summonScene.bridges === 0 && !W2.snakeOpen && W2.bridgeT === 0);
+  }
+
   if (!hadDocS) delete globalThis.document;
 
   /* --- 7. IT NEVER ASKS, AND IT DOES NOT START STRAIGHT AWAY ------------
@@ -29135,6 +29170,506 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     ok('...and on a phone it is a target a thumb can find',
       (px(rule('body.touch-ui .pc-back'), 'min-height') ?? 0) >= 32);
   }
+}
+
+/* ===========================================================================
+   SNAKE WAY — the roads the islands used to be joined by, which the ending
+   builds and nothing takes down.
+
+   "After the ending cutscene, should add some of the Dragonball Z bridges
+   (Snake Way) ... having staircases going through the clouds, connecting the
+   islands, as a new way that the players can traverse to the islands."
+
+   The roads are GENERATED — landings found on each rim, a winding solved to
+   fit the climb — so every property below is one a change to an island, a
+   dragon perch or a house could quietly break: a road that now runs through a
+   hillside, a landing on a barrel, a grade a kitten cannot run up. None of
+   that shows in a screenshot of the town, because the roads are not there
+   until the end of the game.
+=========================================================================== */
+{
+  /* A DOCUMENT FOR THE PLAYERS BELOW — a Label measures its text on a
+     canvas — put back the way it was found. */
+  const hadDocW = 'document' in globalThis;
+  const prevDocW = globalThis.document;
+  if (!hadDocW) globalThis.document = domStub();
+  const W = new World(new THREE.Scene());
+  const props0 = W.props.length;
+  const sig0 = worldSig(W);
+
+  /* LAZY, because it is a third of a second of solving that only a finished
+     game needs, and every other boot would pay it. */
+  ok('Snake Way is not built with the world — only the ending needs it',
+    W.snakeWay == null && W.snakeOpen === false);
+  W.setBridges(0);
+  ok('...and asking for none of it still builds none of it', W.snakeWay == null);
+
+  const Sw = W.buildSnakeWay();
+  const R = Sw.roads;
+  ok('six roads, from home to every island the old roads reached',
+    R.length === SNAKE_LINKS.length && SNAKE_LINKS.every((n) => R.some((r) => r.name === n)),
+    R.map((r) => r.name).join(' '));
+  ok('...and not one of them has a fault',
+    R.every((r) => !r.faults.length),
+    R.filter((r) => r.faults.length).map((r) => `${r.name}:${r.faults.join('|')}`).join(' ') || 'none');
+  {
+    let worst = 0;
+    let where = '';
+    for (const r of R) {
+      for (let i = 1; i < r.pts.length; i++) {
+        const a = r.pts[i - 1];
+        const b = r.pts[i];
+        const h = Math.hypot(b.x - a.x, b.z - a.z);
+        if (h < 1e-6) continue;
+        const g = Math.abs(b.y - a.y) / h;
+        if (g > worst) { worst = g; where = r.name; }
+      }
+    }
+    /* THE GRADE IS THE GENERATOR'S OWN LIMIT, measured on the laid points
+       rather than trusted from the solver — the ramp's eased shoulders are the
+       part that could overshoot it. */
+    ok('...and nowhere steeper than a kitten can run up',
+      worst <= SNAKE.grade + 0.02, `${worst.toFixed(3)} on ${where}`);
+  }
+  ok('...each leaving from the home island and arriving on its own',
+    R.every((r) => {
+      const a = r.pts[0];
+      const b = r.pts.at(-1);
+      return Math.hypot(a.x - r.from.x, a.z - r.from.z) < r.from.radius
+        && Math.hypot(b.x - r.to.x, b.z - r.to.z) < r.to.radius;
+    }));
+  {
+    /* ON THE GROUND AT BOTH ENDS. A landing hanging over the grass is a step
+       she has to jump to get on; one under it is a deck the grass grows
+       through. The raise is SNAKE's +0.45 over the highest tuft. */
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const r of R) {
+      for (const p of [r.pts[0], r.pts.at(-1)]) {
+        const g = W.heightAt(p.x, p.z)?.y;
+        if (g == null) { lo = -Infinity; continue; }
+        lo = Math.min(lo, p.y - g);
+        hi = Math.max(hi, p.y - g);
+      }
+    }
+    ok('...and both ends sit on the ground there, not over it',
+      lo > -0.05 && hi < 1.2, `${lo.toFixed(2)}..${hi.toFixed(2)} over the ground`);
+  }
+  ok('...with a torii at each end and the snake’s head at the far one',
+    R.every((r) => r.gates?.length === 2 && !!r.head));
+  {
+    /* THE ONE TORII THE TOWN'S MODEL LEAVES OUT (see the landmark count), and
+       the reason it may: it is built here, per road, and nowhere else. */
+    const wsrc = readFileSync(new URL('../src/world/world.js', import.meta.url), 'utf8');
+    ok('...and those gates are the only torii not in the landmarks',
+      (wsrc.match(/buildTorii\(toriiScale\(\)/g) ?? []).length === 1);
+  }
+
+  /* --- GROUND ONLY WHEN IT IS FINISHED ---------------------------------
+     A road half grown is a picture in a cutscene. A deck she could step onto
+     and run off the unbuilt end of is a trap, so it is not ground at all
+     until `setBridges(1)` — the arena's rule. */
+  const mid = (r) => r.frameAt(r.length / 2);
+  W.setBridges(0.5);
+  ok('half grown, no road is ground yet',
+    R.every((r) => {
+      const m = mid(r);
+      const g = W.heightAt(m.x, m.z, m.y + 1);
+      return !g || Math.abs(g.y - m.y) > 0.5;
+    }) && !W.snakeOpen);
+  ok('...and no gate post or snake is in anybody’s way yet',
+    W.solids.filter((s) => s.snake).length >= R.length * 4
+    && W.solids.filter((s) => s.snake).every((s) => s.off));
+  ok('...and it IS half grown — a prefix of every road drawn, from the home end',
+    R.every((r) => r.mesh.visible && r.grow > 0 && r.grow < 1)
+    && R.every((r, k) => k === 0 || R[k - 1].grow >= r.grow));
+  W.setBridges(1);
+  {
+    let bad = 0;
+    let worst = '';
+    for (const r of R) {
+      for (let s = 2; s < r.length - 2; s += 3) {
+        const f = r.frameAt(s);
+        const g = W.heightAt(f.x, f.z, f.y + 0.3);
+        if (!g || Math.abs(g.y - f.y) > 0.25) {
+          bad++;
+          worst ||= `${r.name} s=${s.toFixed(0)} deck ${f.y.toFixed(2)} got ${g?.y?.toFixed(2)}`;
+        }
+      }
+    }
+    ok('built, every road is ground along the whole of its length',
+      bad === 0 && W.snakeOpen, worst || 'every 3 units');
+  }
+  ok('...and one-way: a kitten underneath is not snapped up through it',
+    R.every((r) => {
+      const m = mid(r);
+      const g = W.heightAt(m.x, m.z, m.y - 4);
+      return !g || g.y < m.y - 1;
+    }));
+  ok('...as wide as it looks and no wider',
+    R.every((r) => {
+      const m = mid(r);
+      const rx = -m.tz / Math.hypot(m.tx, m.tz);
+      const rz = m.tx / Math.hypot(m.tx, m.tz);
+      const on = W.heightAt(m.x + rx * (SNAKE.halfW - 0.3), m.z + rz * (SNAKE.halfW - 0.3), m.y + 0.3);
+      const off = r.locate(m.x + rx * (SNAKE.halfW + 1), m.z + rz * (SNAKE.halfW + 1), m.y + 0.3);
+      return on && Math.abs(on.y - m.y) < 0.3 && !off;
+    }));
+  ok('...and it knows which road it is',
+    R.every((r) => { const m = mid(r); return W.snakeAt(m.x, m.z, m.y + 1)?.road === r; }));
+  ok('...and now the gates and the snakes are solid',
+    W.solids.filter((s) => s.snake).every((s) => !s.off));
+  /* NOTHING ABOUT THE WORLD A SAVE KNOWS HAS MOVED — no prop, no island. The
+     roads are scenery and ground, never mischief. */
+  ok('...and building them changed nothing a save knows the world by',
+    W.props.length === props0 && worldSig(W) === sig0, `${sig0} -> ${worldSig(W)}`);
+
+  /* --- THE FAR WORLDS -------------------------------------------------- */
+  W.setSky(0, 0);
+  ok('the far islands are not there before the ending', !W.farIsles.group.visible);
+  W.setSky(0, 1);
+  ok('...and after it they have risen out of the clouds, all the way',
+    W.farIsles.group.visible && Math.abs(W.farIsles.group.position.y) < 0.01);
+  W.setSky(0, 0.3);
+  ok('...having come UP, rather than faded in where they stand',
+    W.farIsles.group.position.y < -50, W.farIsles.group.position.y.toFixed(1));
+  ok('...out on the horizon, clear of the arena, with water falling off them',
+    W.farIsles.isles.length >= 5
+    && W.farIsles.isles.every((i) => Math.hypot(i.x, i.z) > 400
+      && Math.hypot(i.x - W.arenaCentre.x, i.z - W.arenaCentre.z) > 300)
+    && W.farIsles.group.children.length > W.farIsles.isles.length);
+  W.setSky(0, 1);
+
+  /* --- THE RIDE ---------------------------------------------------------
+     "The input direction that is being pressed to go up (when starting the
+     bridge climbing sequence) should continue to be the button/direction
+     they need to press to continue going in that direction, regardless of
+     where the camera is pointing or rotated."
+     Asked of a real Player on the real road with ONE stick held the whole
+     way, while her camera yaw is spun under her — the thing a camera-relative
+     stick could not survive — and the frost road, because it bends. */
+  const HUSH_R = { leaderFor: () => ({ met: true }), sfx() {}, toast() {}, onJoinClan() {} };
+  const road = R.find((r) => r.name === 'frost');
+  const mkRider = () => new Player({
+    texture: new THREE.Texture(), index: 0,
+    spawn: new THREE.Vector3(), cols: 8, rows: 4, mirror: false,
+  });
+  const onto = (p, s) => {
+    const f = road.frameAt(s);
+    p.position.set(f.x, f.y, f.z);
+    p.velocity.set(0, 0, 0);
+    p.onGround = true;
+    return f;
+  };
+  const stickFor = (p, f, sign = 1) => {
+    const { fwd, right } = p._basis();
+    let mx = (f.tx * right.x + f.tz * right.z) * sign;
+    let my = -(f.tx * fwd.x + f.tz * fwd.z) * sign;
+    const l = Math.hypot(mx, my) || 1;
+    mx /= l; my /= l;
+    return { mx, my, down: () => false, pressed: () => false };
+  };
+  {
+    const p = mkRider();
+    const f0 = onto(p, 6);
+    const pad = stickFor(p, f0);
+    let boardedAt = -1;
+    let back = 0;
+    let latMax = 0;
+    let fell = false;
+    let sMax = 0;
+    let lastS = null;
+    let stick0 = null;
+    let stickSame = true;
+    let t = 0;
+    const dt = 1 / 60;
+    for (let k = 0; k < 60 * 40; k++) {
+      p.camYaw += 0.05;
+      p.update(dt, pad, W, [], HUSH_R);
+      t += dt;
+      const Rd = p.snakeRide;
+      if (!Rd) { if (boardedAt >= 0) break; continue; }
+      if (boardedAt < 0) { boardedAt = k; stick0 = { ...Rd.stick }; }
+      if (Rd.stick.x !== stick0.x || Rd.stick.y !== stick0.y) stickSame = false;
+      if (lastS != null && Rd.s < lastS - 0.5) back++;
+      lastS = Rd.s;
+      sMax = Math.max(sMax, Rd.s);
+      const hit = road.locate(p.position.x, p.position.z, p.position.y + 0.6);
+      if (p.onGround && hit) latMax = Math.max(latMax, Math.abs(hit.lat));
+      const f = road.frameAt(Rd.s);
+      if (p.position.y < f.y - 1) fell = true;
+      if (Rd.s > road.length - 10) break;
+    }
+    ok('a kitten stepping onto a road is on it', boardedAt >= 0 && boardedAt < 10, `frame ${boardedAt}`);
+    ok('...and one stick, held, takes her the whole way while the camera spins',
+      sMax > road.length - 12, `${sMax.toFixed(0)} of ${road.length.toFixed(0)} in ${t.toFixed(1)}s`);
+    ok('...never sliding back down it', back === 0, `${back} slips`);
+    ok('...never falling off the side', !fell);
+    ok('...running straight up the middle of it', latMax <= SNAKE.lock + 0.05,
+      `${latMax.toFixed(2)} off centre, of ${SNAKE.lock}`);
+    ok('...and the direction that means onward is the one she boarded with, the whole way',
+      stickSame);
+    /* THE GLIDE. Faster than walking the same distance on grass — "glide
+       smoothly to the island". Walking is 10.5/s. */
+    ok('...and faster than walking — she glides', (sMax - 6) / t > 10.5 * 1.15,
+      `${((sMax - 6) / t).toFixed(1)} u/s`);
+  }
+  {
+    /* LOCKED TO THE SURFACE. A stick held half into the side the whole way —
+       both sides, because a clamp that only works on one is the kind of bug
+       that passes the other half of the time — reaches the rail and stays
+       on it, and still gets to the top. The line up the middle above
+       never tested the rail at all (0.31 off centre). */
+    for (const side of [1, -1]) {
+      const p = mkRider();
+      const f0 = onto(p, 6);
+      const on = stickFor(p, f0);
+      const ang = side * 0.9;
+      const pad = {
+        ...on,
+        mx: on.mx * Math.cos(ang) - on.my * Math.sin(ang),
+        my: on.mx * Math.sin(ang) + on.my * Math.cos(ang),
+      };
+      let latMax = 0;
+      let sMax = 0;
+      let off = false;
+      /* BOARDED STRAIGHT, THEN LEANED. Boarding with the diagonal already
+         held would make the diagonal her ONWARD — that is the rule, the
+         direction she got on with is the one that keeps her going — and she
+         would run up the middle leaning on nothing. */
+      for (let k = 0; k < 10 && !p.snakeRide; k++) p.update(1 / 60, on, W, [], HUSH_R);
+      for (let k = 0; k < 60 * 40; k++) {
+        p.update(1 / 60, pad, W, [], HUSH_R);
+        if (!p.snakeRide) { off = true; break; }
+        sMax = Math.max(sMax, p.snakeRide.s);
+        const hit = road.locate(p.position.x, p.position.z, p.position.y + 0.6);
+        if (p.onGround && hit) latMax = Math.max(latMax, Math.abs(hit.lat));
+        if (p.snakeRide.s > road.length - 10) break;
+      }
+      ok(`...and pushed into the ${side > 0 ? 'right' : 'left'} rail, held on it all the way up`,
+        !off && latMax > SNAKE.lock - 0.3 && latMax <= SNAKE.lock + 0.05 && sMax > road.length - 12,
+        `${latMax.toFixed(2)} of ${SNAKE.lock}, ${sMax.toFixed(0)} of ${road.length.toFixed(0)}`);
+    }
+  }
+  {
+    const p = mkRider();
+    const f = onto(p, road.length / 2);
+    p.update(1 / 60, stickFor(p, f), W, [], HUSH_R);
+    const s0 = p.snakeRide?.s ?? 0;
+    const down = { ...stickFor(p, f), mx: 0, my: 0 };
+    const up = stickFor(p, f);
+    down.mx = -up.mx; down.my = -up.my;
+    for (let k = 0; k < 90; k++) p.update(1 / 60, down, W, [], HUSH_R);
+    ok('...the opposite way on the stick brings her back down', (p.snakeRide?.s ?? s0) < s0 - 5,
+      `${s0.toFixed(1)} -> ${p.snakeRide?.s?.toFixed(1)}`);
+
+    /* A JUMP ALONG THE ROAD IS STILL THE RIDE; OFF THE SIDE IT ISN'T. */
+    const g = onto(p, road.length / 2);
+    p.update(1 / 60, up, W, [], HUSH_R);
+    p.velocity.y = 9;
+    p.onGround = false;
+    p.position.y = g.y + 0.6;
+    p.update(1 / 60, up, W, [], HUSH_R);
+    ok('...a jump along the road keeps the ride — and the camera — going', !!p.snakeRide);
+    const rx = -g.tz / Math.hypot(g.tx, g.tz);
+    const rz = g.tx / Math.hypot(g.tx, g.tz);
+    p.position.set(g.x + rx * 16, g.y - 12, g.z + rz * 16);
+    p.onGround = false;
+    p.velocity.set(0, -5, 0);
+    p.update(1 / 60, up, W, [], HUSH_R);
+    ok('...but falling off the side ends it, and the camera goes back to normal',
+      p.snakeRide == null);
+  }
+
+  /* --- THE RIDE CAMERA ------------------------------------------------- */
+  {
+    const start = { rel: 0.4, pitch: 0.5, dist: 30 };
+    let prev = snakePose(0, start);
+    let turned = 0;
+    let jump = 0;
+    let backward = 0;
+    let finite = true;
+    let pLo = Infinity;
+    let pHi = -Infinity;
+    for (let t = 1 / 60; t < 30; t += 1 / 60) {
+      const P = snakePose(t, start);
+      if (![P.rel, P.pitch, P.dist, P.ahead, P.roll].every(Number.isFinite)) finite = false;
+      const d = P.rel - prev.rel;
+      turned += d;
+      jump = Math.max(jump, Math.abs(d), Math.abs(P.pitch - prev.pitch), Math.abs(P.dist - prev.dist) / 10);
+      if (t > SNAKE_MOVE && d < -1e-9) backward++;
+      if (t > SNAKE_MOVE) { pLo = Math.min(pLo, P.pitch); pHi = Math.max(pHi, P.pitch); }
+      prev = P;
+    }
+    ok('the ride camera swings all the way round her, like a rollercoaster', turned > 1.5 * Math.PI,
+      `${(turned * 180 / Math.PI).toFixed(0)}° in 30s`);
+    ok('...and never cuts — every frame is a small step from the last', finite && jump < 0.05,
+      jump.toFixed(4));
+    ok('...and always the same way round once it has started', backward === 0, `${backward} frames back`);
+    ok('...and never under her or straight down on her', pLo >= 0 && pHi < 1.2,
+      `${pLo.toFixed(2)}..${pHi.toFixed(2)}`);
+    const nearly = snakePose(SNAKE_MOVE, { rel: -0.3, pitch: 0.4, dist: 30 });
+    ok('...and a camera already nearly behind her takes the short way there, not an orbit',
+      Math.abs(nearly.rel) < 1e-6, nearly.rel.toFixed(3));
+  }
+  {
+    /* NEVER INSIDE AN ISLAND. Walked at both ends of every road for a full
+       cycle of shots, which is where the low side shot swings under the rim. */
+    const cam = new THREE.PerspectiveCamera(38, 1, 0.5, 4000);
+    const look = new THREE.Vector3();
+    let low = Infinity;
+    let at = '';
+    let C = null;
+    for (const r of R) {
+      for (const [s, dir] of [[2, 1], [r.length - 2, -1]]) {
+        C = new SnakeCam();
+        const f = r.frameAt(s);
+        for (let t = 0; t < 16; t += 1 / 30) {
+          look.set(f.x, f.y + 1.3, f.z);
+          cam.up.set(0, 1, 0);
+          cam.position.set(f.x + 20, f.y + 14, f.z + 20);
+          cam.lookAt(look);
+          C.apply(1 / 30, { road: r, s, dir, x: f.x, y: f.y, z: f.z, spread: 0 }, cam, look, W.islands);
+          for (const isl of W.islands) {
+            if (Math.hypot(cam.position.x - isl.x, cam.position.z - isl.z) > isl.radius) continue;
+            const g = isl.heightAt(cam.position.x, cam.position.z);
+            if (g != null && cam.position.y - g < low) { low = cam.position.y - g; at = `${r.name} s=${s.toFixed(0)}`; }
+          }
+        }
+      }
+    }
+    ok('...and the lens is never inside an island at either end of any road', low > 1.5,
+      `${low.toFixed(2)} over the ground at ${at}`);
+    const look2 = look.clone();
+    for (let t = 0; t < 4; t += 1 / 30) {
+      cam.up.set(0, 1, 0);
+      cam.position.set(look2.x + 20, look2.y + 14, look2.z + 20);
+      cam.lookAt(look2);
+      C.apply(1 / 30, null, cam, look2, W.islands);
+    }
+    ok('...and when she gets off it lets go completely — no roll left in the lens',
+      !C.live && cam.up.x === 0 && cam.up.y === 1 && cam.up.z === 0
+      && cam.position.x === look2.x + 20);
+    /* FIFTH NON-NEGOTIABLE, AT THE CAMERA. Every rig carries one of these and
+       applies it every frame; off the roads it must not touch a thing. */
+    const idle = new SnakeCam();
+    cam.position.set(1, 2, 3);
+    cam.up.set(0, 1, 0);
+    cam.lookAt(0, 0, 0);
+    const q = cam.quaternion.clone();
+    idle.apply(1 / 60, null, cam, new THREE.Vector3(), W.islands);
+    ok('...and a camera nobody on a road is in is left exactly as it was',
+      cam.position.x === 1 && cam.position.y === 2 && cam.position.z === 3 && cam.quaternion.equals(q));
+  }
+
+  /* --- WHO SHARES THE RIDE CAMERA --------------------------------------
+     "If all players are running up together, they all share the same
+     animated camera ... if all players are nearby each other, and only 1 is
+     climbing up, then after 2 - 3 seconds of climbing up, they get their own
+     camera ... others can join that camera sequence if they also join and
+     are close enough." */
+  {
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    let same = true;
+    for (let k = 0; k < 400; k++) {
+      const n = 2 + (k % 3);
+      const pts = Array.from({ length: n }, () => ({ x: rnd() * 120 - 60, z: rnd() * 120 - 60 }));
+      const solo = pts.map(() => rnd() < 0.1);
+      const a = clusterPlayers({ pts, solo, mergeIn: MERGE_IN, mergeOut: MERGE_OUT });
+      const b = clusterPlayers({ pts, solo, mergeIn: MERGE_IN, mergeOut: MERGE_OUT, lanes: pts.map(() => null) });
+      if (JSON.stringify(a) !== JSON.stringify(b)) same = false;
+    }
+    ok('off the roads the ride changes no pane anywhere — two players keep the game they know', same,
+      '400 layouts');
+    const two = [{ x: 0, z: 0 }, { x: 5, z: 0 }];
+    const panes = (lanes) => clusterPlayers({ pts: two, mergeIn: MERGE_IN, mergeOut: MERGE_OUT, lanes }).groups.length;
+    ok('...a kitten in the ride camera gets her own pane with her sister beside her', panes([3, null]) === 2);
+    ok('...two in the same road’s ride share one', panes([3, 3]) === 1);
+    ok('...and two on different roads do not', panes([3, 4]) === 2);
+
+    const M = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    const from = M.indexOf('  _snakeLanes() {');
+    const body = M.slice(from + 2, M.indexOf('\n  }', from) + 4);
+    const lanesOf = new Function('SNAKE', 'MERGE_OUT', `return function ${body};`)(SNAKE, MERGE_OUT);
+    const rd = { id: 2 };
+    const kit = (x, t) => ({ position: { x, z: 0 }, snakeRide: t == null ? null : { road: rd, t } });
+    const L = (...players) => JSON.stringify(lanesOf.call({ players }));
+    ok('...and the wait before it splits off is the two or three seconds asked for',
+      SNAKE.splitT >= 2 && SNAKE.splitT <= 3, `${SNAKE.splitT}s`);
+    ok('...before which she stays in the pane she set off from',
+      L(kit(0, SNAKE.splitT - 0.1), kit(4, null)) === '[null,null]');
+    ok('...and after which the ride is hers', L(kit(0, SNAKE.splitT + 0.1), kit(4, null)) === '[2,null]');
+    ok('...and a sister who gets on close behind her joins it at once, without waiting her own turn',
+      L(kit(0, SNAKE.splitT + 1), kit(-6, 0.1)) === '[2,2]');
+    ok('...but one who gets on a long way behind does wait', L(kit(0, SNAKE.splitT + 1), kit(-80, 0.1)) === '[2,null]');
+    ok('...and a party who set off together are still one party when it starts',
+      L(kit(0, SNAKE.splitT + 0.1), kit(3, SNAKE.splitT + 0.1)) === '[2,2]');
+    ok('...and nobody on a road is nobody in a lane', L(kit(0, null), kit(3, null)) === '[null,null]');
+  }
+  if (hadDocW) globalThis.document = prevDocW; else delete globalThis.document;
+}
+
+/* --- AND THE ENDING THAT BUILDS THEM ----------------------------------------
+   "It shows the bridges being constructed, magically, from the main island, to
+   the smaller islands, during the cutscene while the camera is panning and
+   showing all/mostly all the islands." Held until that shot, timed off it, and
+   finished outright if the ending is skipped. */
+{
+  const prevDoc = globalThis.document;
+  const hadDocB = 'document' in globalThis;
+  const base = domStub();
+  globalThis.document = {
+    ...base,
+    createElement: (...a) => base.createElement(...a),
+    getElementById: () => ({
+      classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+      style: { setProperty() {} },
+      textContent: '', width: 150, height: 150,
+      getContext: () => new Proxy({}, { get: () => () => ({ addColorStop() {} }), set: () => true }),
+    }),
+  };
+  const sent = [];
+  const fakeW = { setBridges: (p) => sent.push(p), setSky() {} };
+  const S = new SummonScene({ world: null, audio: null });
+  S.start('finale', { x: 0, y: 0, z: 0 });
+  ok('the ending decides the roads the moment it is accepted',
+    S.bridgeWant === 1 && S.bridges === 0 && S.bridgeHold === true);
+  S.world = fakeW;
+  S.updateSky(10);
+  ok('...but does not grow them on its first frame', S.bridges === 0);
+  const rows = FINALE_SHOTS.filter((sh) => sh.snake);
+  ok('...it waits for exactly one shot, a real cut, and a WIDE one',
+    rows.length === 1 && !rows[0].keep && rows[0].at === 'wide', `${rows.length} rows`);
+  const floors = S.script.map((b) => b.dur);
+  for (const b of S.script) if (b.clip != null) b.dur = b.clip + TAIL;
+  const nx = S._nextCut(rows[0]);
+  const span = nx ? S._at(nx) - S._at(rows[0]) : SNAKE_RISE;
+  S._cue(rows[0]);
+  let t = 0;
+  while (S.bridges < 1 && t < 30) { S.updateSky(1 / 30); t += 1 / 30; }
+  S.script.forEach((b, i) => { b.dur = floors[i]; });
+  ok('...and they are all built before that shot cuts away, but not in a blink',
+    S.bridges === 1 && t < span && t > span * 0.6,
+    `${t.toFixed(2)}s of a ${span.toFixed(2)}s shot`);
+  ok('...growing, not appearing', sent.length > 20 && sent.every((v, i) => i === 0 || v >= sent[i - 1])
+    && sent.at(-1) === 1);
+  S.world = null;
+  S.finish();
+  if (S.played) S.played.finale = false;
+  S.start('finale', { x: 0, y: 0, z: 0 });
+  ok('...an ending watched again does not knock them down to build them twice',
+    S.bridges === 1 && S.bridgeHold === false);
+  S.finish();
+  S.resetSky();
+  ok('...a restart takes them down', S.bridges === 0 && S.bridgeWant === 0);
+  if (S.played) S.played.finale = false;
+  S.start('finale', { x: 0, y: 0, z: 0 });
+  S.finish();
+  ok('...and an ending skipped before that shot leaves them up, whole — never half a road to run off',
+    S.bridges === 1);
+  S.resetSky();
+  if (hadDocB) globalThis.document = prevDoc; else delete globalThis.document;
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

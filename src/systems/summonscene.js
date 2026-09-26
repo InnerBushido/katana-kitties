@@ -58,6 +58,23 @@ export const DUSK_LIFT = 1.6;
 export const DAWN_RISE = 12;
 export const DAWN_DEEP = 1;
 
+/**
+ * How much of its own shot Snake Way takes to grow, and how fast it grows if
+ * nothing has timed it (a save, the scene viewer skipping ahead).
+ *
+ * "During the ending cutscene, while viewing the entire islands (when the sky
+ * is changing), it shows the bridges being constructed, magically, from the
+ * main island, to the smaller islands, during the cutscene while the camera is
+ * panning and showing all/mostly all the islands." That shot is the `wide` row
+ * on "on any" — the first one with the whole archipelago in it — and it is
+ * three seconds long. The build is timed off it, measured from the table the
+ * way `heap-raise` measures its wave to the shove: 0.92 of it, so the last
+ * road lands with the frame still wide and the whole network is the picture
+ * the shot ends on. Re-time the line and the build re-times itself.
+ */
+export const SNAKE_OF_SHOT = 0.92;
+export const SNAKE_RISE = 5;
+
 /* --- WHERE THE SPEAKER STANDS ---------------------------------------------
    THE INTRO'S COMPOSITION, VERBATIM, AND ONE DERIVED NUMBER. The opening
    cutscene parks whoever is talking 17 units in front of a 42° camera, 3.4
@@ -699,9 +716,15 @@ export const FINALE_SHOTS = [
      it moves at the speed that was asked for, and it starts that much further
      along the same path, so the frame the line ends on — the archipelago,
      most of the islands in it — is the frame it always ended on. */
+  /* `snake` — AND SNAKE WAY GROWS OUT ACROSS IT. "While viewing the entire
+     islands (when the sky is changing), it shows the bridges being
+     constructed, magically, from the main island, to the smaller islands."
+     This is the one shot in the ending that holds the whole archipelago while
+     the sky turns, so it is where the roads go out — timed to finish just
+     before the cut. See `SNAKE_OF_SHOT`. */
   {
     beat: 0, from: say(0, 'on any'), off: 2, at: 'wide', a: 1.463, dist: 1.1925, high: 0.66,
-    turn: 0.097, in: -0.0608, lin: true, stage: false, cue: null,
+    turn: 0.097, in: -0.0608, lin: true, stage: false, cue: null, snake: true,
   },
 
   /* --- LINE 2: "The elders called it mischief..." ------------------------
@@ -1164,6 +1187,14 @@ export class SummonScene {
      *  on an object somebody might forget to clear. */
     this.dawn = 0;
     this.dawnWant = 0;
+    /* SNAKE WAY RIDES BESIDE THE DAWN, and for the same reason it is a fact
+       about the run rather than about a scene: the ending decides it, it does
+       not go back, and only a restart unmakes it. Held like the sky until the
+       shot that shows it; see `SNAKE_OF_SHOT`. */
+    this.bridges = 0;
+    this.bridgeWant = 0;
+    this.bridgeHold = false;
+    this.bridgeRate = 1 / SNAKE_RISE;
 
     this.camera = new THREE.PerspectiveCamera(54, 16 / 9, 0.1, 4000);
     this._look = new THREE.Vector3();
@@ -1339,6 +1370,11 @@ export class SummonScene {
     if (which === 'finale') {
       this.duskWant = 0;
       this.dawnWant = DAWN_DEEP;
+      /* ...AND THE ROADS, decided now and shown on their shot. A replay of an
+         ending whose roads are already up does not knock them down to build
+         them again — the sky does not go back to the storm either. */
+      this.bridgeWant = 1;
+      this.bridgeHold = this.bridges < 1;
       /* ...AND HOLDS IT THERE UNTIL THE LINE THAT SHOWS IT. See `sky` on the
          shot table: the targets are set now, on acceptance, and the easing
          toward them waits for the row that carries `sky`. */
@@ -1975,6 +2011,15 @@ export class SummonScene {
   _cue(shot) {
     this.show?.cue(shot.cue ?? null);
     if (shot.sky) this.skyHold = false;
+    /* A FIELD, NOT A CUE, like `sky` — `cue` is `FinaleShow`'s phase, and a
+       phase named for something it does not draw would be a phase it has to
+       learn to ignore. */
+    if (shot.snake) {
+      const nx = this._nextCut(shot);
+      const span = nx ? this._at(nx) - this._at(shot) : SNAKE_RISE;
+      this.bridgeRate = 1 / Math.max(0.5, span * SNAKE_OF_SHOT);
+      this.bridgeHold = false;
+    }
     /* THE ENDING'S THREE ACTS, CUT WHERE THE PICTURE CUTS. See `MUSIC.finale`,
        `finaleCross` and `finaleOpen` in core/audio.js for what each one is and
        why there are three. The scene only ever states WHICH; `Game._wantedTrack`
@@ -2091,6 +2136,13 @@ export class SummonScene {
     /* ...AND THE SKY IS LET GO, so an ending skipped before its `sky` row still
        turns into the morning it promised rather than holding the storm. */
     this.skyHold = false;
+    /* ...AND THE ROADS ARE FINISHED, NOT LET GO. A sky easing on after the box
+       closes is weather; a road still growing is a thing she could run onto
+       the unbuilt end of — `World.setBridges` makes them ground only at 1 —
+       so on the skip path they are simply up. */
+    this.bridgeHold = false;
+    this.bridges = this.bridgeWant;
+    this.world?.setBridges(this.bridges);
     /* ...AND THE STAGE COMES DOWN WITH IT, on the skip path as much as the
        end. Everything `FinaleShow` builds lives in the game's own scene graph:
        a model of the archipelago left behind on the Dojo floor would be there
@@ -2123,6 +2175,10 @@ export class SummonScene {
     this.dawnWant = 0;
     this.dawn = 0;
     this.skyHold = false;
+    this.bridgeWant = 0;
+    this.bridges = 0;
+    this.bridgeHold = false;
+    this.world?.setBridges(0);
   }
 
   /**
@@ -2139,6 +2195,7 @@ export class SummonScene {
   updateSky(dt) {
     /* HELD, NOT FROZEN AT A VALUE. The targets are already the morning; this
        only stops the sky moving toward them until the ending says so. */
+    this._updateBridges(dt);
     if (this.skyHold) {
       this.world?.setSky(this.dusk, this.dawn);
       return this.dusk;
@@ -2153,6 +2210,18 @@ export class SummonScene {
     else this.dawn = Math.max(this.dawnWant, this.dawn - dRate);
     this.world?.setSky(this.dusk, this.dawn);
     return this.dusk;
+  }
+
+  /** Grow Snake Way toward what the run says it should be. Only ever up —
+   *  `resetSky` is what takes it down, and it does that on the spot. */
+  _updateBridges(dt) {
+    if (!this.bridgeHold && this.bridges < this.bridgeWant) {
+      this.bridges = Math.min(this.bridgeWant, this.bridges + dt * this.bridgeRate);
+    }
+    if (this.bridges !== this._bridgesSent) {
+      this._bridgesSent = this.bridges;
+      this.world?.setBridges(this.bridges);
+    }
   }
 
   /**

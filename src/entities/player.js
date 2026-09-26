@@ -7,6 +7,8 @@ import { ANGEL_ALPHA } from './angel.js';
 import { styleFor } from '../core/palette.js';
 import { tune } from '../core/tuning.js';
 import { Label } from '../core/label.js';
+import { SNAKE } from '../world/snakeway.js';
+import { SnakeCam } from '../systems/snakecam.js';
 
 /* ---------------------------------------------------------------------------
    A Katana Kitty and the camera that follows it.
@@ -1095,6 +1097,12 @@ export class Player {
     this.focus = null;
     this.focusT = 0;
     this.camYaw = CAM_YAW;
+    /* SNAKE WAY. `snakeRide` is null off the roads, and on one:
+       { road, s, dir, t, stick } — which road, how far along, which way she is
+       going along it, how long she has been on, and the stick direction that
+       means ONWARD for the whole ride. See `_snakeWish`. */
+    this.snakeRide = null;
+    this.snakeCam = new SnakeCam();
   }
 
   /** @param {{centre: THREE.Vector3, dist: number, pitch: number}|null} f */
@@ -2413,6 +2421,11 @@ export class Player {
       .addScaledVector(right, pad.mx)
       .addScaledVector(fwd, -pad.my);
 
+    /* --- ON SNAKE WAY THE STICK MEANS ONWARD, NOT A COMPASS POINT ---
+       See `_snakeWish`. Before `moving` is decided, because it rewrites the
+       wish that decides it. */
+    if (this.snakeRide) this._snakeWish(pad, wish);
+
     let moving = wish.lengthSq() > 0.0001;
     if (moving) {
       wish.normalize();
@@ -2463,8 +2476,11 @@ export class Player {
        collisions, same slope snapping, so nothing about the world has to know
        she is on it. */
     const rideK = this.pandaMount ? PANDA_SPEED : 1;
+    /* THE GLIDE. On a road, and only with her feet on it — a kitten jumping
+       off the side leaves at the speed she was running, not at the road's. */
+    const glideK = this.snakeRide && this.onGround ? SNAKE.glide : 1;
     const target = wish.multiplyScalar(
-      moving ? (sprinting ? SPRINT_SPEED : WALK_SPEED) * speedK * rideK : 0
+      moving ? (sprinting ? SPRINT_SPEED : WALK_SPEED) * speedK * rideK * glideK : 0
     );
     /* Acceleration is scaled by the square root of the speed jump, not by the
        speed jump itself. At the flat ground figure a panda needs nearly two
@@ -2790,6 +2806,8 @@ export class Player {
 
     // Time spent genuinely airborne, for the animation to threshold against.
     this.airTime = this.onGround ? 0 : (this.airTime ?? 0) + dt;
+
+    this._stepSnake(dt, pad, g);
 
     /* `footClimb` — did she get where she is under her own power?
        Written here rather than at each of the four places a mount is taken,
@@ -5591,6 +5609,143 @@ export class Player {
     }
   }
 
+  /* ------------------------------ snake way ------------------------------ */
+
+  /**
+   * Turn the stick into a direction ALONG THE ROAD, in place.
+   *
+   * "The input direction that is being pressed to go up (when starting the
+   * bridge climbing sequence) should continue to be the button/direction they
+   * need to press to continue going in that direction, regardless of where
+   * the camera is pointing or rotated."
+   *
+   * Two reasons the ordinary rule cannot do that. The ride camera orbits her,
+   * so "up on the stick is away from the camera" would change what up means
+   * every two seconds. And even under a fixed camera the road WINDS — the ash
+   * road turns through more than a right angle — so holding one compass
+   * direction runs her into the rail halfway round the first bend. So the
+   * stick is read against the direction she pressed to board (`stick`), in
+   * STICK space: how much of what she is pressing is that direction is how
+   * fast she goes on along the road, wherever the road goes; the opposite
+   * brings her back down it; and the part across it moves her across the
+   * deck, gently while she is standing on it (the rails are there) and freely
+   * in the air, which is how she jumps off.
+   */
+  _snakeWish(pad, wish) {
+    const R = this.snakeRide;
+    const f = R.road.frameAt(R.s);
+    const hl = Math.hypot(f.tx, f.tz) || 1;
+    const tx = (f.tx / hl) * R.dir;
+    const tz = (f.tz / hl) * R.dir;
+    const mx = pad.mx ?? 0;
+    const my = pad.my ?? 0;
+    if (mx * mx + my * my < 1e-4) { wish.set(0, 0, 0); return; }
+    const along = mx * R.stick.x + my * R.stick.y;
+    // Right of `stick`, in stick space where y runs DOWN the screen.
+    const side = mx * -R.stick.y + my * R.stick.x;
+    const sideK = this.onGround ? 0.35 : 1;
+    // Right of travel in the world is (-tz, tx).
+    wish.set(tx * along - tz * side * sideK, 0, tz * along + tx * side * sideK);
+  }
+
+  /**
+   * On a road, off a road, and the rails — after the ground has been found.
+   *
+   * SHE IS ON A ROAD WHEN HER FEET ARE ON ITS DECK, and she stays on it in the
+   * air as long as she is still over it: a jump along the road is still the
+   * ride, and the camera keeps swinging. Going far enough off the side, or
+   * dropping well below the deck, ends it — "if they fall, or jump off, then it
+   * will zoom out like normal" — and so does landing on anything else.
+   *
+   * THE RAILS ARE A CLAMP, NOT A WALL. A kitten standing on the deck is held
+   * inside `SNAKE.lock` of the centre line, and the part of her velocity that
+   * was taking her over the side is dropped. "Locked to the smooth surface."
+   * Airborne she is not held, or jumping off would be impossible.
+   */
+  _stepSnake(dt, pad, g) {
+    const road = g?.platform?.snake;
+    const onRoad = road && this.onGround && !this.mount && !this.rideAlong && !this.carried;
+    if (onRoad) {
+      const hit = road.locate(this.position.x, this.position.z, this.position.y + 0.6);
+      if (hit) {
+        if (!this.snakeRide || this.snakeRide.road !== road) this._boardSnake(road, hit, pad);
+        const R = this.snakeRide;
+        R.s = hit.s;
+        R.t += dt;
+        if (Math.abs(hit.lat) > SNAKE.lock) {
+          const over = hit.lat - Math.sign(hit.lat) * SNAKE.lock;
+          const rx = -hit.tz;
+          const rz = hit.tx;
+          this.position.x -= rx * over;
+          this.position.z -= rz * over;
+          const vr = this.velocity.x * rx + this.velocity.z * rz;
+          if (vr * Math.sign(hit.lat) > 0) {
+            this.velocity.x -= rx * vr;
+            this.velocity.z -= rz * vr;
+          }
+        }
+        return;
+      }
+    }
+    const R = this.snakeRide;
+    if (!R) return;
+    if (this.onGround || this.mount || this.rideAlong || this.carried) {
+      this.snakeRide = null;
+      return;
+    }
+    const near = R.road.locate(this.position.x, this.position.z, Infinity, SNAKE.halfW + 6);
+    if (near && this.position.y > near.y - 10) {
+      R.s = near.s;
+      R.t += dt;
+      return;
+    }
+    this.snakeRide = null;
+  }
+
+  /**
+   * Step onto a road: which way she is going, and which stick means onward.
+   *
+   * THE STICK SHE IS PRESSING, IF SHE IS PRESSING ONWARD — that is the whole
+   * request, the button she used to get on is the button that keeps her going.
+   * If she is not (she landed on it from a jump, or walked on at an angle),
+   * it is the stick that points along the road through the camera she can see
+   * right now, which is the one a kid would reach for.
+   */
+  _boardSnake(road, hit, pad) {
+    const { fwd, right } = this._basis();
+    const mx = pad?.mx ?? 0;
+    const my = pad?.my ?? 0;
+    const wx = right.x * mx - fwd.x * my;
+    const wz = right.z * mx - fwd.z * my;
+    const dir = Math.sign(this.velocity.x * hit.tx + this.velocity.z * hit.tz)
+      || Math.sign(wx * hit.tx + wz * hit.tz)
+      || (hit.s < road.length / 2 ? 1 : -1);
+    const dx = hit.tx * dir;
+    const dz = hit.tz * dir;
+    // The stick that the camera maps onto (dx, dz): mx = D.right, my = -(D.fwd).
+    let sx = dx * right.x + dz * right.z;
+    let sy = -(dx * fwd.x + dz * fwd.z);
+    const m = Math.hypot(mx, my);
+    if (m > 0.3) {
+      const px = mx / m;
+      const py = my / m;
+      const l0 = Math.hypot(sx, sy) || 1;
+      if ((px * sx + py * sy) / l0 > 0.2) { sx = px; sy = py; }
+    }
+    const l = Math.hypot(sx, sy) || 1;
+    this.snakeRide = { road, s: hit.s, dir, t: 0, stick: { x: sx / l, y: sy / l } };
+  }
+
+  /** What the ride camera needs to frame her alone, or null off the roads. */
+  snakeSubject() {
+    const R = this.snakeRide;
+    if (!R || this.mount || this.rideAlong) return null;
+    return {
+      road: R.road, s: R.s, dir: R.dir,
+      x: this.position.x, y: this.position.y, z: this.position.z, spread: 0,
+    };
+  }
+
   _updateCamera(dt) {
     // Look slightly ahead of the kitten so you can see where you're going.
     const flying = !!(this.mount || this.rideAlong);
@@ -5729,5 +5884,8 @@ export class Player {
 
     this.camera.position.copy(this.camTarget).add(this._offset);
     this.camera.lookAt(this.camTarget);
+    /* AND THE RIDE ON TOP, when she is on a road. It is a layer over the pose
+       above, not a replacement for it — see `SnakeCam`. */
+    this.snakeCam.apply(dt, this.snakeSubject(), this.camera, this.camTarget);
   }
 }
