@@ -338,9 +338,10 @@ export class ArenaQuest {
         // Either of them may say yes once both are standing there.
         if (this.bothHere && pads.some((pad, i) => near[i] && pad.pressed('interact'))) {
           this.stage = 'boarding';
-          /* `sat_doors` has no recording yet, so it is a card with no voice —
-             `Announcer` gives a clipless line its silent duration. "Climb on"
-             is the one thing he must not say here. */
+          /* Two recordings of one sentence with one phrase changed: "Climb on"
+             is the one thing he must not say at his own doors. The card and
+             the clip are ONE string each (docs/notes/voices.md) — change a
+             word here and the mp3 has to be re-rendered with it. */
           if (here) {
             this.announcer?.say('sat_doors',
               'Excellent! In you go, kittens! The World Martial Arts Tournament awaits!');

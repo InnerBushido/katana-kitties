@@ -661,10 +661,32 @@ at the gate"):
 | --- | --- | --- | --- |
 | climb | 0 | the floating isle | behind her, the road climbing away towards it, the frost island beside |
 | home | 0.13 | the main island | in front of her, above, looking back down the road at the town |
-| rise | 0.33 | the ring | wide and high, down across the rim into the whole arena |
+| tower | 0.28 | the arena, 20 above its floor | low and pulled out, up past her at the stands, his booth and the gate roof on the skyline — arrived by 0.33 |
+| rise | 0.36 | the ring | wide and high, down across the rim into the whole arena — arrived by 0.39 |
 | ring | 0.46 | the ring | from outside the lap, over her shoulder and down into the arena as she circles it |
 | vista | 0.62 | the far isle off her left | down the east side, the pagoda-and-waterfall isle (445, 121) behind the autumn and dusk islands |
-| doors | 0.88 | the doors | low behind her, down the carpet through the road's torii — arrived by 0.93 |
+| doors | 0.80 | the doors | low behind her, the torii side-on and then down the carpet — arrived by 0.85 |
+
+**Third pass, from play.** Richard: "We are currently showing the arena too
+late ... make that transition happen earlier", and "the 'looking at the arena
+gate' needs to happen sooner, it is happening too late currently, making the
+camera swing around in a weird way". Each note came with two screenshots, of
+where it should happen and of where it did. Their positions were read off
+the minimap in the corner of each, to within 2 units of the road: the arena
+should start at 0.29 and was mid-move at 0.356. The doors' "should" shot has
+no minimap, so the doors shot was rendered along the road until the torii's
+angle and size matched it, which was at 0.80. The "did" shot is at 0.918.
+
+- **The arena from below is its skyline.** The second pass held the arena back
+  to 0.33 because nothing earlier can see INTO the ring. Richard did not ask
+  for that. `tower` is a new row with `ay: 20`, which raises the aim to 20
+  above the ring's floor. Aimed at the floor, `rise`'s lens at 0.30 saw 0 of
+  80 points round the top edge of the stands: the frame was rock. `tower`
+  sees 44 to 46 there. A check holds it at 30 or more over its whole stretch.
+- **The weird swing was a half turn.** The turn round her from the far isle to
+  the doors is 141° at 0.80, 174° at 0.85 and 166° at 0.88. The old move
+  started almost exactly a half turn away, where either way round is equally
+  short. A check holds the start under 155°.
 
 The old `isle` (0.27, a second look at the floating isle) and `gate` (0.70, the
 doors coming round) are gone. **Coming down** ("the first shot we see leaving
@@ -678,14 +700,15 @@ reverse them"), read from the top:
 | isle | 0.13 | the floating isle | the second last |
 | last | 0 | the main island | the last |
 
-- **`rise` does not start at 0.27, where `isle` did.** There she is 20 units
+- **`rise` does not start at 0.27, where `isle` did** (second pass; `tower`
+  now covers 0.28, see above). There she is 20 units
   under the ring's floor, and every lens that keeps her in frame sees the rock
   under the rim and the back of the stands. A check now counts a 5 × 5 grid on
   the fighting floor that each lens can see past the stands (tier by tier) and
   every island's rock, **including the arena's own**. That count was 0 of 25
   at 0.36 and before for every distance and height tried, up to 34 and 18, and
-  15 of 25 from 0.38 at 34 / 18. So `rise` moves in from 0.33 and has arrived
-  by 0.38. `ring` takes over at 0.46, not 0.42, where it saw 1 of 25. The
+  15 of 25 from 0.38 at 34 / 18. So `rise` moved in from 0.33 and had arrived
+  by 0.38; it is 0.36, arrived by 0.39, now. `ring` takes over at 0.46, not 0.42, where it saw 1 of 25. The
   lens-above-the-floor check alone had passed the 0.27 version.
 - **The vista isle is measured, not picked**: the far isle nearest square to
   her LEFT, from the middle of the east side. The first rule, 45° left, picked
@@ -890,8 +913,8 @@ read −0.93.
 **At his doors there is no griffin.** A party standing on the arena island
 (`Game.partyAtArena`: every kitten on it, none mounted) walks straight in:
 `_arrive` without the ride. His yes is `sat_doors` ("In you go, kittens!"), never
-`sat_board`'s "Climb on". It has no recording yet, so it plays as a card
-with no voice.
+`sat_board`'s "Climb on". Harrison recorded it on the card's exact string
+(5.04 s for twelve words, his usual 2.4 a second).
 `arenaFrom = 'gate'` is remembered, because it decides the way out: the doors
 and the parade (`systems/arenaexit.js`, docs/notes/story.md), not the griffin.
 

@@ -1843,7 +1843,12 @@ truck's row:
 > can be jumping around."
 
 `systems/arenaexit.js`. It plays only when the fight was started from the doors
-(`arenaFrom === 'gate'`). A called-off match from the doors gets no parade:
+(`arenaFrom === 'gate'`). **The x-ray is off in it.** Richard: "we can
+usually see the xray effect from the players that are hidden during the
+cutscene". The real kittens are hidden, and every x-ray material was still
+cutting for where they stood. Every scene's lens now passes `scene` to
+`Game._renderView`, which closes every cut for that frame (`_clearXray`).
+A called-off match from the doors gets no parade:
 everyone is set on the parade's end marks, and a toast says where they are.
 
 - **State changes on accept, not on finish.** `leaveArena` tears the tournament

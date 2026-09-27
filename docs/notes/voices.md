@@ -37,7 +37,7 @@ the `voice_id` below. About **0.15 credits a line**.
 | **Galemane** | Windwhisker. Maine Coon. | **Onyx** | `8911390e-4b59-459b-ba84-19010917e1df` | `wind` `shrine_wind` |
 | **Snowmantle** | Icewhisker. Himalayan. | **Imogen** | `3811e986-0891-47cf-a1f5-78a1d62a547a` | `ice` `shrine_ice` |
 | **Bambooheart** | Pandapaw. Ragdoll. | **Hana** | `c25f78a0-714e-42af-8da3-a399cef94968` | `panda` `shrine_panda` |
-| **Mr. Satan** | the tournament, and the trailer. The only insincere voice in the game. | **Harrison** | `573e5163-59b3-4926-aab1-951ef2985f81` | all thirty-three `sat_*` — the six bare numbers `sat_n0`–`sat_n5` and the four cues of the last fifteen seconds among them; **and six of the trailer's fourteen lines** (1-3, 9, 10, 13) |
+| **Mr. Satan** | the tournament, and the trailer. The only insincere voice in the game. | **Harrison** | `573e5163-59b3-4926-aab1-951ef2985f81` | all thirty-four `sat_*` — the six bare numbers `sat_n0`–`sat_n5` and the four cues of the last fifteen seconds among them; **and six of the trailer's fourteen lines** (1-3, 9, 10, 13) |
 | **the trailer voice** | not in the game at all. The straight narrator Mr. Satan interrupts — and the one who has to say "right meow" with a straight face. | **Desmond** | `563f728c-e249-5a85-97ab-8461e8c09da6` | **six trailer lines** — 4-8 and the sign-off |
 | **Ryuuseki** | the dragon the seven stars call. | **unresolved — see below** | — | `summon1` `summon2` |
 | *(the thing in the dark)* | three seconds of the trailer — and, since the Cross Slash rebalance, four sounds in the game | **not a voice at all** | [tools/kitten-cackle.mjs](../../tools/kitten-cackle.mjs) | trailer line 12, `cross0`-`cross3` |
@@ -54,7 +54,7 @@ above, because a character has ONE voice and therefore ONE folder:
 
 ```
 voice/
-  satan/      33 clips, every `sat_*`
+  satan/      34 clips, every `sat_*`
   patchfur/   18 — the intro, the ending, and the last-hunt countdown
   leaders/    12 — the six chiefs, a bare take and a shrine take each
   ryuuseki/    2 — `summon1` `summon2`
