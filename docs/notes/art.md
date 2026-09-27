@@ -420,3 +420,28 @@ muzzle entirely.
 handles), which is why `fillSealedHoles` over every sheet now touches ten
 rather than eight. It never runs on them: the board draws them straight onto
 its canvas and they never pass through `loadSpriteAtlas`.
+
+## Payne — five masters, and why there are two of her
+
+All Higgsfield `gpt_image_2_5` on flat magenta, with **her own photos as image
+references** (a real person; see [payne.md](payne.md)). They are baked by
+`sprite-bake` with `chroma: true`.
+
+| master | ships as | size | what it is |
+| --- | --- | --- | --- |
+| `payne_town.png` | `payne/town.png` | 768 | **In town:** wearing the Gundam helmet. Generated *wearing* it, because the separate helmet layer did not sit well on her head ("it seems to not fit well on her head, we may want to generate a photo with her wearing it") |
+| `payne_held.png` | `payne/held.png` | 768 | **After the Awakening:** her face, the helmet under one arm. There was a second take with both hands on the helmet; it was kept outside the repo in case Richard prefers it |
+| `payne_base.png` | `payne/base.png` | 768 | her whole body, no helmet. Nothing draws it yet. Richard asked for it so she can be made playable or an opponent later |
+| `payne_helmet.png` | `payne/helmet.png` | 512 | the helmet alone, as a separate layer, for the same reason |
+| `payne_sweep.png` | `payne/sweep.png` | 640 | the Goblin Sweep, drawn on her trick card |
+
+**The portrait crops are measured**, as `[x, y, size]` in `PAYNE_ART`: the
+town pose at `[258, 6, 230]` (the helmet) and the held pose at `[283, 14, 210]`
+(her face). The hint card uses one or the other depending on
+`kotodama.awakened`, so her face stays hidden until the ending, in the card as
+well as in the world.
+
+**Three of them have sealed holes** (an arm against her body), which is why
+the fill-everything count in world-check is thirteen. None is ever filled:
+she is a billboard off `_loadSprite` and a crop on a canvas, and neither asks
+for `fillHoles`.

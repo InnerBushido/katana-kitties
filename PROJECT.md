@@ -74,8 +74,8 @@ are not decoration; see the non-negotiables in [CLAUDE.md](CLAUDE.md).
 | **Play it** | **https://katana-kitties.vercel.app** — public, no login, nothing to install |
 | **Code** | **https://github.com/InnerBushido/katana-kitties** — **public** (`gh repo view` says so; this line said "private" until 30 Aug 2026 and was wrong) |
 | **Stack** | Vite 8 + three.js 0.185. Static build, no backend, no database, no env vars |
-| **First load** | ~30MB across 39 files, then cached. Sprites 30MB in repo, help clips 21MB, voices 6.4MB, plus 14MB of art masters that are NOT shipped (`docs/art-masters/`) |
-| **Size** | ~216 props, 6 clans, 7 dragon balls, 8 Powerup Kotodama, 18 Help clips, 62 voice files |
+| **First load** | ~30MB across 39 files, then cached. Sprites 30MB in repo, help clips 21MB, voices 11MB, plus 30MB of art masters that are NOT shipped (`docs/art-masters/`) |
+| **Size** | ~216 props, 6 clans, 7 dragon balls, 8 Powerup Kotodama, 18 Help clips, 111 voice files |
 
 ---
 
@@ -363,6 +363,7 @@ mark is derived too: it means the number was read out of a `tune()` table, so a
 | **dash** ✎ | dmg 15 · knock 19 · lift 5.0 · reach 3.9 | slash while sprinting |
 | **air** ✎ | dmg 14 · knock 13 · lift 7.5 · reach 3.7 | slash in the air |
 | **tri / dive / charge** ✎ | the three power-orb moves | entries in the same table, so they cannot leak out of the ring |
+| **sweep** ✎ | dmg 8 · knock 8 · lift 7.5 · reach 4.4 | Payne's Goblin Sweep: sprint held, stick still, attack. A full circle |
 <!-- /doc-sync:numbers -->
 
 **MISCHIEF is the spine**: 80% opens the tournament, 100% wakes the Powerup
@@ -557,6 +558,13 @@ files** — and deleting them is real and cheap, because `kitten-cackle.mjs` wit
 no reference synthesises its own ladder, and `Audio.play` falls through to
 synthesised stand-ins after that. Three levels of degradation, on purpose.
 
+**Payne is a real person, and she has not signed off yet.** The quest-giver in
+the market is a fighter from Belegarth Medieval Combat Society, drawn as a
+goblin cat with her permission. **Richard is sending her the finished result
+for her final approval.** Until she has approved her likeness and her 39 lines,
+a public release that includes her waits. Her photos went to Higgsfield as
+image references and nowhere else. → [payne.md](docs/notes/payne.md)
+
 **`out/` is a local-only repo with no remote, deliberately.** It holds generated
 artwork and trailer working files, 9MB+ of PNG that Vite would never ship. The
 *tools* are what is versioned, not their output.
@@ -660,6 +668,7 @@ you are about to change that area, and not before.
 | [performance.md](docs/notes/performance.md) | why frame time is a straight line in pixels, and what is measured *not* to be a cause |
 | [audio.md](docs/notes/audio.md) | the synthesised sound set and a piece of music per island |
 | [voices.md](docs/notes/voices.md) | **the voice registry** — which preset is which character, with ids |
+| [payne.md](docs/notes/payne.md) | **Payne, the quest-giver**: her quest chain, the opt-in hints and teases, the hint card, the helmet and her face, the Goblin Sweep, and her whole script. **A real person's likeness, pending her approval** |
 | [consent.md](docs/notes/consent.md) | why nothing irreversible happens on one press |
 | [rules.md](docs/notes/rules.md) | the gameplay invariants in full, with the measurements behind them |
 | [gotchas.md](docs/notes/gotchas.md) | the traps that cost real time and are not obvious from the code |

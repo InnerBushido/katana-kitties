@@ -524,8 +524,8 @@ footer b { color: var(--text); }
     <tbody>
       <tr><th>Stack</th><td>Vite 8 + three.js 0.185. Static build — no backend, no database, no environment variables.</td></tr>
       <tr><th>First load</th><td class="num">~30 MB across 39 files, then cached</td></tr>
-      <tr><th>In the repo</th><td class="num">30 MB sprites · 21 MB help clips · 6.4 MB voices · 20 MB trailer (opt-in) · 14 MB art masters, not shipped</td></tr>
-      <tr><th>The world</th><td class="num">216 props · 6 clans · 7 dragon balls · 8 Powerup Kotodama · 15 help clips · 69 voice lines</td></tr>
+      <tr><th>In the repo</th><td class="num">30 MB sprites · 21 MB help clips · 11 MB voices · 20 MB trailer (opt-in) · 30 MB art masters, not shipped</td></tr>
+      <tr><th>The world</th><td class="num">216 props · 6 clans · 7 dragon balls · 8 Powerup Kotodama · 18 help clips · 111 voice lines</td></tr>
       <tr><th>Thresholds</th><td><b>80%</b> mischief opens the tournament. <b>100%</b> wakes the Kotodama and gets the ending.</td></tr>
     </tbody>
   </table></div>
@@ -807,6 +807,7 @@ git push origin alpha</code></pre>
       <tr><td><b>dash</b> <b>✎</b></td><td class="num">dmg 15 · knock 19 · lift 5.0 · reach 3.9</td><td>slash while sprinting</td></tr>
       <tr><td><b>air</b> <b>✎</b></td><td class="num">dmg 14 · knock 13 · lift 7.5 · reach 3.7</td><td>slash in the air</td></tr>
       <tr><td><b>tri / dive / charge</b> <b>✎</b></td><td class="num">the three power-orb moves</td><td>entries in the same table, so they cannot leak out of the ring</td></tr>
+      <tr><td><b>sweep</b> <b>✎</b></td><td class="num">dmg 8 · knock 8 · lift 7.5 · reach 4.4</td><td>Payne's Goblin Sweep: sprint held, stick still, attack. A full circle</td></tr>
     </tbody>
 </table></div>
 <!-- /doc-sync:numbers -->
@@ -1184,6 +1185,12 @@ git push origin alpha</code></pre>
       synthesises its own version without a reference, and the audio layer falls through to
       synthesised stand-ins after that. Three levels of degradation, on purpose, because the ninth
       non-negotiable says the game must work with the whole voice folder deleted.</p>
+    <p><b>Payne is a real person, and she has not signed off yet.</b> The quest-giver in the
+      market is a fighter from Belegarth Medieval Combat Society, drawn as a goblin cat with her
+      permission. Richard is sending her the finished result <b>for her final approval</b>. Until
+      she has approved her likeness and her 39 lines, a public release that includes her waits.
+      Her photos went to Higgsfield as image references and nowhere else.
+      <code>docs/notes/payne.md</code></p>
   </div>
 </section>
 
@@ -1282,6 +1289,7 @@ git push origin alpha</code></pre>
     <div><code>performance.md</code><span>Why frame time is a straight line in pixels — and what is measured <em>not</em> to be a cause</span></div>
     <div><code>audio.md</code><span>The synthesised sound set, and a piece of music per island</span></div>
     <div><code>voices.md</code><span>The voice registry — which preset is which character, with ids</span></div>
+    <div><code>payne.md</code><span>Payne, the quest-giver: her quest chain, opt-in hints, the Goblin Sweep, her script — a real person's likeness, pending her approval</span></div>
     <div><code>consent.md</code><span>Why nothing irreversible happens on one press</span></div>
     <div><code>rules.md</code><span>The gameplay invariants in full, with the measurements behind them</span></div>
     <div><code>gotchas.md</code><span>The traps that cost real time and are not obvious from the code</span></div>

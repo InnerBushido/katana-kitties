@@ -217,7 +217,27 @@ export const ATTACKS = tune('ATTACKS', {
   },
   dive: { dmg: DIVE.dmg, knock: DIVE.knock, lift: DIVE.lift, reach: DIVE.radius, arc: -1 },
   charge: { dmg: CHARGE.dmg, knock: CHARGE.knock, lift: CHARGE.lift, reach: CHARGE.radius, arc: -0.6 },
+  /* THE GOBLIN SWEEP, PAYNE'S SECRET MOVE, AND A ROW HERE FOR THE REASON
+     EVERY OTHER ROW IS. Richard: "Maybe she can teach the players some 'trick'
+     moves later ... once they have completed their quests and have gained
+     some fighting experience in the arena." It is taught in the town and
+     works in the town — on barrels. On a kitten it works only where
+     `Game.strikePlayers` says a round is live, and `world-check` swings a full
+     one next to her sister with the tournament off and asserts zero damage.
+
+     `arc: -1` IS THE WHOLE MOVE: a full circle, which nothing else a kitten
+     does on foot has. It pays for that with a short reach, a weak hit and
+     `SWEEP_COOL`, so it is the answer to being surrounded, never a better
+     slash. */
+  sweep: { dmg: 8, knock: 8, lift: 7.5, reach: 4.4, arc: -1 },
 });
+
+/** Seconds before the Goblin Sweep can be thrown again. Not a row above:
+ *  `ATTACKS` is the shape of a HIT, and `tune()` only takes keys the defaults
+ *  have, so a wait added to one row would be a key no other row carries. */
+export const SWEEP_COOL = 4;
+/** How long her spin lasts, and so how long she is planted for. */
+export const SWEEP_SPIN = 0.34;
 
 /* THE DIVE AND THE CHARGE ARE STILL DERIVED, and tuning either table works:
    `DIVE`/`CHARGE` are folded before this file is evaluated, so editing
@@ -609,6 +629,17 @@ export class Player {
      *  to know a NEW one began, which a clock alone cannot say: two dodges in
      *  a row with a frame between them look identical to `dodgeT > 0`. */
     this.dodgeSeq = 0;
+    /** THE GOBLIN SWEEP'S CLOCKS. `sweepT` is the spin (she is planted and
+     *  her facing is turned for her), `sweepCool` the wait, and `sweepSeq`
+     *  counts up once per sweep for `systems/sweepfx.js`, for the reason
+     *  `dodgeSeq` does: two sweeps with one frame between them look the same
+     *  to a clock. `sweepFace` is the facing she had at the press and gets
+     *  back at the end, so a sweep never leaves her looking somewhere she did
+     *  not choose. */
+    this.sweepT = 0;
+    this.sweepCool = 0;
+    this.sweepSeq = 0;
+    this.sweepFace = 0;
     /* --- WHAT HER CLAN IS WORTH IN THE RING ---
 
        TWO POWERS, ONE SHAPE, AND EVERY CLOCK HERE IS READ BY A POLLER.
@@ -2209,6 +2240,11 @@ export class Player {
     this.dodgeT = 0;
     this.dodgeLockT = 0;
     if (!keepWaits) this.dodgeCool = 0;
+    /* The sweep with them, for the same reasons: a spin that survived a round
+       reset would turn her on her starting post. `sweepSeq` only counts up. */
+    if (this.sweepT > 0) this.facing = this.sweepFace;
+    this.sweepT = 0;
+    if (!keepWaits) this.sweepCool = 0;
     this.dodgeTarget = null;
     this.dodgePlaced = false;
     this.dodgeAimed = false;
@@ -2529,6 +2565,9 @@ export class Player {
        facing above is set from the stick BEFORE this, which is what lets her
        aim the teleport with the same push that would have walked her. */
     if (this.dodgePlanted) { wish.set(0, 0, 0); moving = false; }
+    /* The Goblin Sweep plants her for its spin: she is turning on the spot,
+       and a spin that drifted with the stick would be a dash nobody pressed. */
+    if (this.sweepT > 0) { wish.set(0, 0, 0); moving = false; }
 
     const sprinting = pad.down('sprint') && moving;
     const buff = this.clan?.buff;
@@ -2725,6 +2764,27 @@ export class Player {
            sprint attack is the one two kids already know from the barrels. */
         this.attackTimer = 0.26;
         this._startCharge(hud);
+      } else if (this.payne?.sweep && this.onGround && pad.down('sprint')
+          && Math.abs(pad.mx) + Math.abs(pad.my) <= 0.2) {
+        /* THE GOBLIN SWEEP: SPRINT HELD, STICK STILL, ATTACK. Payne's line:
+           "Hold run, stand really still... and swing!" It sits below the
+           charge, which needs the stick PUSHED, so the two can never both
+           match one press; and above the Cross Slash's hold-detector, which
+           would otherwise swallow the press of anybody wearing that orb.
+           Holding sprint with the stick still did nothing at all before this,
+           which is why it was free — nobody's standing slash moves.
+
+           A SWEEP STILL COOLING IS SAID OUT LOUD, sixth non-negotiable:
+           otherwise she presses, nothing spins, and it reads as the move
+           being broken. She gets the refusal blip and the wait in words. */
+        if (this.sweepCool > 0) {
+          hud?.sfx('deny');
+          hud?.toast?.(`${this.name}'s Goblin Sweep is back in ${Math.ceil(this.sweepCool)}s`, this.index);
+        } else {
+          this.attackTimer = 0.26;
+          this.attackCooldown = SWEEP_SPIN + 0.1;
+          this._doSweep(world, hud);
+        }
       } else if (deferred) {
         /* The kind is read from the pad AT THE MOMENT OF THE PRESS, not
            recomputed later — and now it has to be STORED, because the swing it
@@ -2778,6 +2838,16 @@ export class Player {
       hud?.sfx('deny');
     }
     if (this.attackTimer > 0) this.attackTimer -= dt;
+    this.sweepCool = Math.max(0, this.sweepCool - dt);
+    if (this.sweepT > 0) {
+      /* TWO FULL TURNS IN `SWEEP_SPIN`, then her own facing back. It is the
+         sprite sheet's eight directions that make this read as a spin, so it
+         is a spin with no new art at all. */
+      this.sweepT = Math.max(0, this.sweepT - dt);
+      this.facing = this.sweepT > 0
+        ? this.sweepFace + (1 - this.sweepT / SWEEP_SPIN) * Math.PI * 4
+        : this.sweepFace;
+    }
 
     /* --- 瞬 Flash Step: sprint held, interact pressed ---
        TESTED BEFORE THE DIVE AND IT SPENDS THE PRESS. Both moves live on
@@ -4750,6 +4820,37 @@ export class Player {
       hud?.onMischief(this, p);
     }
     return fresh;
+  }
+
+  /**
+   * Payne's Goblin Sweep: every prop in a circle round her, and every kitten
+   * in it WHERE THE GATE SAYS SO. `_doSlash` with the arc test taken out,
+   * rather than a flag on it, because the slash's -0.25 is written in there
+   * as a literal that ten comments lean on.
+   */
+  _doSweep(world, hud) {
+    const A = ATTACKS.sweep;
+    // Her reach buffs grow it as they grow every blade: same ratio.
+    const reach = A.reach * this._reach() / BASE_REACH;
+    const dir = new THREE.Vector2(Math.sin(this.facing), Math.cos(this.facing));
+    this.sweepFace = this.facing;
+    this.sweepT = SWEEP_SPIN;
+    this.sweepCool = SWEEP_COOL;
+    this.sweepSeq++;
+    hud?.sfx('sweep');
+    hud?.strikePlayers?.(this, 'sweep', this._reach(), dir);
+    hud?.strikeCritters?.(this, reach);
+    let hits = 0;
+    for (const p of world.props) {
+      const dx = p.group.position.x - this.position.x;
+      const dz = p.group.position.z - this.position.z;
+      const dy = p.group.position.y - this.position.y;
+      if (Math.hypot(dx, dz) > reach || Math.abs(dy) > 3) continue;
+      this._knockProp(p, dx, dz, 1.15, world, hud);
+      hits++;
+    }
+    if (hits) this.squash = 0.6;
+    return hits;
   }
 
   _doSlash(world, hud, kind = 'stand') {

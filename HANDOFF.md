@@ -515,6 +515,27 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Payne, the quest-giver.** Branch `feature/payne-quest-giver`.
+[payne.md](docs/notes/payne.md) has the design, every note quoted, and the
+script.
+
+- **She is a real person, and her approval is pending.** Richard is sending
+  her the result. Her likeness and all 39 lines are hers to sign off.
+- **In the market at (-10, 24).** INTERACT opens her card: the next quest in
+  Richard's order (Icewhisker saved for last among the oaths), the three
+  tag-alongs, the hints toggle, the Character Profile, and the trick.
+- **Hints and teases are opt-in.** After two minutes stuck she sends a card
+  with her face to that kitten's pane, above the warning strip, and marks the
+  step on the map and in the world. Her three teases: a cub carried too long,
+  lost in a grotto, and hopping at the sky star without the triple jump
+  (which marks Shadowtail's hall).
+- **Her face comes out at the Awakening**, and the helmet goes under her arm.
+- **The Goblin Sweep**, taught after all six quests are settled and three
+  arena rounds: SPRINT held, stick still, ATTACK. A full circle. It hurts
+  kittens only in a live round, through the one gate.
+- **Open:** nobody has played it. The stuck timings are first guesses. The
+  alternative held pose is kept outside the repo.
+
 **The big screen outside the arena.** Branch `feature/arena-billboard`.
 [tournament.md](docs/notes/tournament.md) has the design and every note quoted,
 under **The big screen**; [art.md](docs/notes/art.md) has the six new poses.

@@ -1379,6 +1379,11 @@ export class Tournament {
        decides who starts the next one full. */
     this._lastWinner = winnerSide;
     if (winnerSide >= 0) this.wins[winnerSide] = (this.wins[winnerSide] ?? 0) + 1;
+    /* EVERY KITTEN IN THE RING HAS NOW FOUGHT ONE MORE ROUND, won or lost —
+       Payne's trick asks for "some fighting experience in the arena", and
+       counting only wins would lock the youngest out of it. See
+       `TRICK_ROUNDS` in systems/payne.js. */
+    this.game.payne?.onRound(this.game.players);
     /* THE ROUND ENDS ON A BELL. The gong at the top of a round is the one sound
        in the game that STARTS something and it had no answer: a round simply
        stopped, with a banner. Reported as wanting one. Lower and longer than

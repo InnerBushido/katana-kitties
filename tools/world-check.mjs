@@ -2909,6 +2909,18 @@ console.log('\n--- the panda in the ring ---');
     ok('the panda\'s swipe asks the gate rather than hitting anybody itself',
       asked.includes('claw'), asked.join(' '));
   }
+  {
+    /* THIRD NON-NEGOTIABLE: a sweep in the market square, sister right behind. */
+    const a2 = mkP(0, 0);
+    const b2 = mkP(1, -2);
+    b2.position.y = a2.position.y;
+    const dir = { x: 1, y: 0 };
+    strikePlayers.call(mkGame([a2, b2], { tournament: { fighting: false } }), a2, 'sweep', BASE_REACH, dir);
+    ok('a sweep outside a live round does nothing to her sister', b2.hp === b2.maxHp && !b2.ko);
+    strikePlayers.call(mkGame([a2, b2]), a2, 'sweep', BASE_REACH, dir);
+    ok('...and in the ring it reaches the one BEHIND her', b2.hp < b2.maxHp,
+      `${b2.maxHp - b2.hp} dealt`);
+  }
 
   /* --- THE THREE OUTCOMES, EXACTLY AS THEY WERE ASKED FOR ---------------
 
@@ -5667,6 +5679,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     // ...and so is the big screen's art (systems/arenaboard.js).
     'kittens/ember/champion.png', 'kittens/frost/champion.png',
     'satan/flex_zyzz.png', 'satan/flex_biceps.png', 'satan/flex_trophy.png', 'satan/flex_kiss.png',
+    // ...and Payne, the quest-giver (systems/payne.js): five chroma-keyed masters.
+    'payne/base.png', 'payne/held.png', 'payne/helmet.png', 'payne/sweep.png', 'payne/town.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -5806,9 +5820,15 @@ console.log('\n--- background removal keeps the drawn whites ---');
        ever be filled, because the board draws them straight onto its canvas
        and they never go through `loadSpriteAtlas`, which is the only thing
        that can ask for the fill. */
-    ok('turning the fill on for every sheet would repaint ten of them',
-      touched.length === 10 && touched.includes('beasts/dragon_sheet.png')
-      && touched.includes('kittens/frost/champion.png') && touched.includes('satan/flex_trophy.png'),
+    /* THIRTEEN SINCE PAYNE: her town pose, her bare base and the sweep all
+       close a gap between an arm and her body (a paw on her hip, the sword arm
+       across her). Measured by this loop, then written down. None of them is
+       filled either: she is a billboard off `_loadSprite` and a crop on a
+       canvas, and neither asks for `fillHoles`. */
+    ok('turning the fill on for every sheet would repaint thirteen of them',
+      touched.length === 13 && touched.includes('beasts/dragon_sheet.png')
+      && touched.includes('kittens/frost/champion.png') && touched.includes('satan/flex_trophy.png')
+      && ['base', 'sweep', 'town'].every((n) => touched.includes(`payne/${n}.png`)),
       touched.join(' '));
     ok('...so exactly one sheet in the game asks for it',
       (mainSrc.match(/fillHoles: true/g) || []).length === 1
@@ -21553,7 +21573,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
      cannot be imported into this file, and a check that only exercised
      `Minimap.draw` would pass forever on a game that never passes him in. */
   ok('main.js hands the map its Ryuuseki',
-    /\.draw\(this\.players, this\.dragons, this\.kotodama, this\.satan,\s+this\.ryu, this\._seekMarkFor\(members\)\)/
+    /\.draw\(this\.players, this\.dragons, this\.kotodama, this\.satan,\s+this\.ryu, this\._seekMarkFor\(members\),/
       .test(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')));
 
   const RYU_AT = { x: SATAN_TOWN.x + 60, y: 30, z: SATAN_TOWN.z - 40 };
@@ -31989,6 +32009,287 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
   }
 
   if (hadDoc) globalThis.document = prevDoc; else delete globalThis.document;
+}
+
+/* ==========================================================================
+   PAYNE, THE QUEST-GIVER, AND HER GOBLIN SWEEP (systems/payne.js)
+
+   Richard: "Have quests given in this order: 1. Panda Keeper 2. Six Oaths ...
+   3. Student of the Circle 4. Dragon Pilot 5. Beam Gunner 6. The Very Last
+   One." Everything she says is decided by `nextStep`, which is pure, so these
+   put a kitten in a state and ask; and her watcher only QUEUES lines, so the
+   stuck clock and the teases run here against the real world.
+   ========================================================================== */
+{
+  console.log('\n--- Payne ---');
+  const PN = await import('../src/systems/payne.js');
+  const { payneSpot, payneWidth, WARN_UP } = await import('../src/core/split.js');
+  const { ATTACKS: AT, SWEEP_COOL, SWEEP_SPIN, BASE_REACH: BR } = await import('../src/entities/player.js');
+
+  ok('her six are in Richard\'s order',
+    PN.CHAIN.join() === 'panda,clans,dojo,pilot,rider,last', PN.CHAIN.join(' '));
+  ok('...and the tag-alongs are the three he named',
+    PN.TAG_ALONG.join() === 'mischief,balls,orbs');
+
+  /* EVERY LINE IS A FILE AND EVERY FILE IS A LINE. The text is the line and
+     the voice falls back (ninth non-negotiable), so a missing mp3 is silence
+     rather than a crash — which is exactly why nobody would notice it. */
+  const vdir = new URL('../public/voice/payne/', import.meta.url);
+  const files = readdirSync(vdir).filter((f) => f.endsWith('.mp3')).map((f) => f.slice(0, -4)).sort();
+  const ids = Object.keys(PN.PAYNE_LINES).sort();
+  ok('every one of her lines is recorded, and nothing else is',
+    files.join() === ids.join(), `${ids.length} lines, ${files.length} files`);
+  ok('...and she can call all four kittens by name, both ways',
+    ['ember', 'frost', 'storm', 'blossom'].every((n) => PN.PAYNE_LINES[`payne_hey_${n}`] && PN.PAYNE_LINES[`payne_oi_${n}`]));
+  ok('every step of every quest has a hint line',
+    Object.values(PN.STEP_LINE).every((id) => PN.PAYNE_LINES[id]));
+  ok('...and the audio router sends her to her own folder',
+    /\[\/\^payne_\/, 'payne'\]/.test(readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8')));
+  ok('"more than 2 minutes", twice: stuck and the baby panda',
+    PN.STUCK_FIRST === 120 && PN.CUB_TEASE === 120);
+
+  /* --- the chain, walked --- */
+  const done = new Set();
+  const feats = { open: true, has: (_p, id) => done.has(id), claimed: {}, ledger: () => ({}) };
+  const g = { world, feats, ballsHeld: 0, ryu: null, _toriiSpot: () => ({ x: 0, y: 0, z: -46 }) };
+  const hallOf = (id) => world.clanHalls.find((h) => h.clan.id === id);
+  const kid = (x = 0, z = 34) => ({
+    name: 'Ember', style: { name: 'Ember' }, index: 0,
+    position: new THREE.Vector3(x, 0, z), clansSworn: new Set(), payne: PN.blankPayne(),
+    onGround: true, maxJumps: 2,
+  });
+  const at = (s, o) => s?.target && Math.hypot(s.target.x - o.x, s.target.z - o.z) < 1e-6;
+
+  const k = kid();
+  let s = PN.nextStep(g, k);
+  ok('the first thing she asks for is Pandapaw', s?.quest === 'panda' && s.key === 'pandapaw' && at(s, hallOf('panda')));
+  k.clansSworn.add('panda');
+  s = PN.nextStep(g, k);
+  const cane = s?.target && world.props.find((p) => p.kind === 'bamboo' && !p.scored
+    && Math.hypot(p.group.position.x - s.target.x, p.group.position.z - s.target.z) < 1e-6);
+  ok('...then the nearest bamboo still standing', s?.key === 'bamboo' && !!cane);
+  done.add('panda');
+  s = PN.nextStep(g, k);
+  ok('Six Oaths comes second, and points at a hall she has not sworn at',
+    s?.quest === 'clans' && s.key === 'shrine' && !!world.clanHalls.find((h) => at(s, h) && !k.clansSworn.has(h.clan.id)));
+
+  /* ICEWHISKER LAST, EVEN WHEN SHE IS STANDING IN HER HALL. "with Sense
+     Mischief being the last one if not yet visited". */
+  const ice = hallOf('ice');
+  const onIce = kid(ice.x, ice.z);
+  onIce.clansSworn.add('panda');
+  s = PN.nextStep(g, onIce);
+  ok('Icewhisker is saved for last even from her own doorstep', s?.key === 'shrine' && !at(s, ice));
+  for (const c of CLANS) if (c.id !== 'ice') onIce.clansSworn.add(c.id);
+  s = PN.nextStep(g, onIce);
+  ok('...and named when she is the only one left', s?.key === 'ice' && at(s, ice) && s.line === 'payne_h_ice');
+
+  done.add('clans');
+  s = PN.nextStep(g, k);
+  ok('then the Dojo, at its centre', s?.quest === 'dojo' && at(s, world.dojoCentre));
+  done.add('dojo');
+  s = PN.nextStep(g, k);
+  ok('then the dragon balls, the nearest one first', s?.quest === 'pilot' && s.key === 'ball'
+    && !!world.dragonBalls.find((b) => !b.taken && at(s, b.position)));
+  g.ballsHeld = 7;
+  ok('...with all seven, the torii', PN.nextStep(g, k)?.key === 'torii');
+  g.ryu = { position: { x: 5, y: 30, z: 5 } };
+  ok('...with the dragon up, his front seat', PN.nextStep(g, k)?.key === 'ryu_front');
+  done.add('pilot');
+  ok('then his back seat', PN.nextStep(g, k)?.key === 'ryu_back');
+  feats.claimed.rider = 'Frost';
+  ok('a Beam Gunner another kitten won is TAKEN, and she moves on',
+    PN.questState(g, k, 'rider') === 'taken' && PN.nextStep(g, k)?.quest === 'last');
+  feats.open = false;
+  ok('after the Awakening every door is shut and she has no next step',
+    PN.questState(g, k, 'last') === 'closed' && PN.nextStep(g, k) === null && PN.settledCount(g, k) === 6);
+
+  /* THE TRICK IS ALL SIX SETTLED AND THREE ROUNDS — both halves. */
+  k.payne.rounds = PN.TRICK_ROUNDS - 1;
+  ok('the Goblin Sweep wants three rounds', !PN.trickReady(g, k));
+  k.payne.rounds = PN.TRICK_ROUNDS;
+  ok('...and gives itself up after them', PN.trickReady(g, k));
+  feats.open = true; done.clear();
+  k.payne.rounds = 99;
+  ok('...but no number of rounds buys it without her quests', !PN.trickReady(g, k));
+
+  /* --- the save --- */
+  const full = { ...PN.blankPayne(), met: true, hints: true, sweep: true, rounds: 4, told: true };
+  ok('her ledger survives a save exactly', JSON.stringify(PN.cleanPayne(JSON.parse(JSON.stringify(full)))) === JSON.stringify(full));
+  ok('...and a broken one loads as a blank one, never a NaN',
+    JSON.stringify(PN.cleanPayne({ rounds: 'x', sweep: 'yes', junk: 1 }))
+      === JSON.stringify({ ...PN.blankPayne(), sweep: true })
+    && PN.cleanPayne(null).rounds === 0 && PN.cleanPayne({ rounds: -3 }).rounds === 0);
+
+  /* --- the watcher: opt-in, two minutes, then a tease --- */
+  const said = (P) => P.queue.flatMap((q) => q.ids);
+  const run = (P, p, secs) => { for (let t = 0; t < secs; t += 0.25) P._watch(p, 0.25, false); };
+  {
+    const P = new PN.Payne(g);
+    const q = kid(); q.clansSworn.add('panda'); q.payne.met = true;
+    run(P, q, 400);
+    ok('with hints off she says nothing, however long it takes', said(P).length === 0, said(P).join(' '));
+    q.payne.hints = true;
+    const P2 = new PN.Payne(g);
+    run(P2, q, 119);
+    ok('with hints on, nothing for the first two minutes', said(P2).length === 0);
+    run(P2, q, 2);
+    ok('...then the hint, with her name', said(P2).join() === 'payne_hey_ember,payne_h_bamboo', said(P2).join(' '));
+    ok('...and the step goes on her map', !!P2.goalFor(q) && at({ target: P2.goalFor(q) }, P2.step(q).target));
+    P2.queue = [];
+    run(P2, q, 120);
+    ok('the second time she teases first, and still helps',
+      said(P2).join() === 'payne_oi_ember,payne_t_slow,payne_h_bamboo', said(P2).join(' '));
+    P2.queue = [];
+    q.bambooCut = 1;
+    run(P2, q, 119);
+    ok('any progress starts the two minutes again', said(P2).length === 0);
+
+    const R = new PN.Payne(g);
+    const r = kid(); r.name = 'Sparkles'; r.clansSworn.add('panda'); r.payne.met = true; r.payne.hints = true;
+    run(R, r, 121);
+    ok('a renamed kitten gets her real name in text and no wrong name in the voice',
+      said(R).join() === 'payne_h_bamboo' && /Sparkles/.test(R.queue[0]?.text ?? ''));
+
+    const N = new PN.Payne(g);
+    const n = kid();
+    run(N, n, PN.INVITE_AT[1] + 1);
+    ok('a kitten who never met her is invited, twice at most',
+      said(N).filter((id) => id === 'payne_invite').length >= 1 && N._s(n).invites === 2);
+    ok('...and gets no hint she never asked for', !said(N).some((id) => /_h_|_t_/.test(id)));
+  }
+  {
+    /* THE TRIPLE-JUMP TEASE: hopping at the sky star with two jumps. */
+    const sky = world.dragonBalls.find((b) => b.lock === 'sky');
+    ok('there is a star behind the triple jump to tease about', !!sky);
+    const P = new PN.Payne(g);
+    const j = kid(sky.position.x + 3, sky.position.z);
+    done.add('panda'); done.add('clans'); done.add('dojo');
+    j.payne.met = true; j.payne.hints = true;
+    for (let i = 0; i < PN.JUMP_TEASE; i++) {
+      j.onGround = true; P._watch(j, 0.1, false);
+      j.onGround = false; P._watch(j, 0.1, false);
+    }
+    ok(`${PN.JUMP_TEASE} hops under it with two jumps and she laughs`, said(P).includes('payne_t_jump'));
+    const sh = hallOf('shadow');
+    ok('...and marks Shadowtail, not the star', at({ target: P.goalFor(j) }, sh));
+    j.maxJumps = 3;
+    P._watch(j, 0.1, false);
+    ok('...until she has the third jump', !P.goalFor(j) || !at({ target: P.goalFor(j) }, sh));
+    done.clear();
+  }
+
+  /* --- her card sits ABOVE the warning strip, inside its own pane --- */
+  {
+    const H = 720;
+    const panes = [
+      [{ x: 0, y: 0, w: 1280, h: 720 }],
+      [{ x: 0, y: 0, w: 640, h: 720 }, { x: 640, y: 0, w: 640, h: 720 }],
+      [0, 1, 2, 3].map((i) => ({ x: (i % 2) * 640, y: (i < 2 ? 360 : 0), w: 640, h: 360 })),
+    ];
+    let bad = [];
+    for (const set of panes) {
+      for (const v of set) {
+        const w = payneWidth(v.w);
+        const sp = payneSpot({ v, H, w });
+        const top = H - v.y - v.h;
+        const warnTop = top + v.h * WARN_UP;
+        if (!(sp.bottom < warnTop && sp.bottom - sp.maxH >= top - 0.5
+          && sp.left >= v.x && sp.left + w <= v.x + v.w)) bad.push(JSON.stringify({ v, sp, w }));
+      }
+    }
+    ok('Payne\'s card clears the warning and stays in its pane at 1, 2 and 4', bad.length === 0, bad.join(' '));
+  }
+
+  /* --- THE GOBLIN SWEEP --- */
+  ok('the sweep is a row in ATTACKS, a full circle', AT.sweep && AT.sweep.arc === -1);
+  ok('...shorter and weaker than a dash, so it is never the better swing',
+    AT.sweep.dmg < AT.dash.dmg && AT.sweep.reach < AT.dash.reach + 1);
+  line('sweep', `dmg ${AT.sweep.dmg} reach ${AT.sweep.reach} wait ${SWEEP_COOL}s spin ${SWEEP_SPIN}s`);
+
+  /* A Player draws a name label, which measures text on a canvas; the
+     section above this one takes the stub away when it finishes. */
+  const hadDocK = 'document' in globalThis;
+  const prevDocK = globalThis.document;
+  if (!hadDocK) globalThis.document = domStub();
+  const gy = world.heightAt(0, 40).y;
+  const mkK = (i, x) => new Player({
+    texture: new THREE.Texture(), index: i, cols: 8, rows: 4, mirror: false,
+    spawn: new THREE.Vector3(x, gy, 40), name: i ? 'Frost' : 'Ember',
+  });
+  /* A world with no props of its own, so no barrel of the real town is
+     knocked over by a check. `Object.create` keeps every method. */
+  const bare = Object.create(world);
+  bare.props = [];
+  const settle = (p) => { for (let i = 0; i < 30; i++) p.update(1 / 60, PADK(), bare, [], null); };
+  const PADK = (over = {}) => ({
+    mx: 0, my: 0, down: () => false, pressed: () => false, doubled: () => false, ...over,
+  });
+  const SWEEP = PADK({ down: (b) => b === 'sprint', pressed: (b) => b === 'attack' });
+  const toasts = [];
+  const hudK = { sfx: () => {}, toast: (t) => toasts.push(t), onMischief: () => {}, strikePlayers: () => {} };
+
+  const a = mkK(0, 0);
+  settle(a);
+  a.update(1 / 60, SWEEP, bare, [], hudK);
+  ok('without Payne\'s lesson, sprint-still-attack is the ordinary slash', a.sweepSeq === 0);
+  a.payne = { ...PN.blankPayne(), sweep: true };
+  a.attackCooldown = 0;
+  const faced = a.facing;
+  a.update(1 / 60, SWEEP, bare, [], hudK);
+  ok('with it, the same press is a Goblin Sweep', a.sweepSeq === 1 && a.sweepT > 0);
+  for (let i = 0; i < 40; i++) a.update(1 / 60, PADK(), bare, [], hudK);
+  ok('...she spins and ends facing where she was', a.sweepT === 0 && Math.abs(a.facing - faced) < 1e-9);
+  a.update(1 / 60, SWEEP, bare, [], hudK);
+  ok('a second one inside the wait is refused OUT LOUD', a.sweepSeq === 1 && toasts.some((t) => /Goblin Sweep/.test(t)),
+    toasts.join(' | '));
+  for (let t = 0; t < SWEEP_COOL; t += 1 / 20) a.update(1 / 20, PADK(), bare, [], hudK);
+  a.update(1 / 60, SWEEP, bare, [], hudK);
+  ok('...and allowed after it', a.sweepSeq === 2);
+  a.attackCooldown = 0; a.sweepCool = 0;
+  const seq = a.sweepSeq;
+  a.update(1 / 60, PADK({ mx: 1, down: (b) => b === 'sprint', pressed: (b) => b === 'attack' }), bare, [], hudK);
+  ok('pushing the stick is still a dash, never a sweep', a.sweepSeq === seq);
+
+  /* IT KNOCKS WHAT IS BEHIND HER, and it asks the one gate about kittens. */
+  {
+    const b = mkK(0, 0);
+    b.facing = 0;
+    const knocked = [];
+    const prop = (x, z) => ({
+      kind: 'barrel', points: 10, scored: false,
+      group: { position: new THREE.Vector3(b.position.x + x, b.position.y, b.position.z + z) },
+      knock() { knocked.push(this); return true; },
+    });
+    const r = AT.sweep.reach;
+    const w = Object.create(world);
+    w.props = [prop(0, -r * 0.9), prop(r * 0.9, 0), prop(0, r * 0.9), prop(0, -r - 0.5)];
+    const asked = [];
+    b._doSweep(w, { ...hudK, strikePlayers: (_a, kind) => asked.push(kind) });
+    ok('the sweep knocks over what is BEHIND her as well as in front',
+      knocked.length === 3 && knocked.includes(w.props[0]), `${knocked.length} of 3`);
+    ok('...and not what is past its reach', !knocked.includes(w.props[3]));
+    ok('...and asks the gate rather than hurting anybody itself', asked.join() === 'sweep');
+  }
+
+  /* THE RING DRAWS THE FIRST SWEEP. Found in the browser: the rig is built on
+     the frame of her first sweep and was seeded from her count, so that one
+     sweep was never seen as new and drew nothing. */
+  {
+    const { SweepFx } = await import('../src/systems/sweepfx.js');
+    const fx = new SweepFx(new THREE.Scene());
+    const kitten = { sweepSeq: 0, position: new THREE.Vector3(), style: { colour: 0xff8800 }, _reach: () => BR };
+    fx.update(1 / 60, [kitten]);
+    ok('a kitten who has never swept costs the ring nothing', fx.rigs.size === 0);
+    kitten.sweepSeq = 1;
+    fx.update(1 / 60, [kitten]);
+    const rig = fx.rigs.get(kitten);
+    ok('...and her very first sweep draws it', !!rig && rig.mesh.visible);
+    for (let i = 0; i < 60; i++) fx.update(1 / 60, [kitten]);
+    ok('...out to the sweep\'s real reach, the hitbox', Math.abs(rig.reach - AT.sweep.reach) < 1e-9);
+    ok('...and then it is gone', !rig.mesh.visible);
+  }
+  if (hadDocK) globalThis.document = prevDocK; else delete globalThis.document;
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

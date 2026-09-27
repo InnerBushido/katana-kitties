@@ -1338,3 +1338,56 @@ export function warnSpot({ v, H, w }) {
     top: Math.round(cssTop + v.h * WARN_UP),
   };
 }
+
+/* ===========================================================================
+   AND WHERE PAYNE'S MESSAGE SITS: ON TOP OF THE WARNING, NEVER UNDER IT.
+
+   Richard: "This is placed above or below 'bamboo' warning message or any
+   other warning message that appears." The warning strip's TOP edge is fixed
+   at `WARN_UP` of its pane and it grows downward (`WARN_FIT` caps how far), so
+   the one edge that never moves is that top edge — and a card whose BOTTOM is
+   pinned just above it can never be overlapped by a warning of any length.
+   Below would have meant measuring the warning first, every time it changed.
+
+   Same pane, same width rule, same centre as the strip, so the two read as one
+   column of messages in that kitten's window rather than as two things that
+   happen to be near each other.
+=========================================================================== */
+
+/** Gap between the bottom of Payne's card and the top of the warning strip. */
+export const PAYNE_GAP = 8;
+
+/** The most of a pane's height her card may take. `WARN_UP` minus a margin,
+ *  so the card cannot reach up past the top of its own pane — which is the
+ *  failure that would put her message in the window above. Asserted. */
+export const PAYNE_FIT = WARN_UP - 0.06;
+
+/** Her card is narrower than a warning: one face and two lines, not a
+ *  sentence and a half across the whole pane. */
+export const PAYNE_MAX_W = 560;
+
+/** How wide her card is in this pane, in CSS pixels. */
+export function payneWidth(paneW) {
+  return Math.max(1, Math.min(PAYNE_MAX_W, paneW * WARN_PANE_W));
+}
+
+/**
+ * Where her card goes in this pane.
+ *
+ * @param v  the pane, in WebGL bottom-left origin
+ * @param H  the whole frame's height
+ * @param w  the card's width, from `payneWidth`
+ * @returns {{left: number, bottom: number, maxH: number}} CSS page coordinates:
+ *   `bottom` is the y of the card's BOTTOM edge measured from the top of the
+ *   page (the caller sets `top` to it and translates the card up by its own
+ *   height), and `maxH` is the height it must not exceed.
+ */
+export function payneSpot({ v, H, w }) {
+  const cssTop = H - v.y - v.h;
+  const warnTop = cssTop + v.h * WARN_UP;
+  return {
+    left: Math.round(v.x + (v.w - w) / 2),
+    bottom: Math.round(warnTop - PAYNE_GAP),
+    maxH: Math.max(0, Math.floor(v.h * PAYNE_FIT - PAYNE_GAP)),
+  };
+}

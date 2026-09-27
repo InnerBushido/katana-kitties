@@ -155,6 +155,8 @@ const NUMBERS = () => [
   ['*air*', TUNE, hit(attack('air')), 'slash in the air'],
   ['*tri / dive / charge*', TUNE, 'the three power-orb moves',
     'entries in the same table, so they cannot leak out of the ring'],
+  ['*sweep*', TUNE, hit(attack('sweep')),
+    "Payne's Goblin Sweep: sprint held, stick still, attack. A full circle"],
 ];
 
 /** How a key code reads to somebody looking at a keyboard. */

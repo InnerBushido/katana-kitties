@@ -34,6 +34,7 @@ import { MenuNav } from './systems/menunav.js';
 import { Cutscene } from './systems/cutscene.js';
 import { Trailer } from './systems/trailer.js';
 import { CrossFx } from './systems/crossfx.js';
+import { SweepFx } from './systems/sweepfx.js';
 import { DodgeFx } from './systems/dodgefx.js';
 import { ClanFx } from './systems/clanfx.js';
 import { Confirm } from './systems/confirm.js';
@@ -66,6 +67,7 @@ import { ORB_IDS, CROSS } from './entities/powerorb.js';
 import { ProfileScreen } from './systems/profile.js';
 import { Feats } from './systems/feats.js';
 import { Inspector } from './systems/inspector.js';
+import { Payne, PAYNE_CLIPS, PAYNE_TOWN } from './systems/payne.js';
 
 /* ---------------------------------------------------------------------------
    Katana Kitties — main loop.
@@ -693,6 +695,8 @@ class Game {
        argument: a poller over the kittens' own clocks, so no way of the move
        ending has to remember to tell it. See systems/dodgefx.js. */
     this.dodgeFx = new DodgeFx(this.scene);
+    /* ...and Payne's Goblin Sweep, the same poller shape over `sweepSeq`. */
+    this.sweepFx = new SweepFx(this.scene);
 
     /* THE TWO CLAN POWERS THE RING GAVE BACK TO ICEWHISKER AND WINDWHISKER:
        the mark 盗 Steal Mischief puts on somebody, and the inhale and cone of
@@ -1100,6 +1104,14 @@ class Game {
       if (!p) continue;
       if (busy || p.mount || p.rideAlong || p.pandaMount || p.angel
         || this.inspector?.busy(p.index)) { p.setCallout(null); continue; }
+      /* PAYNE FIRST. She is in the market and no shrine is, so the two can
+         never both be true — but if a future layout ever put her by one, the
+         person standing in front of you is the thing the button reaches. */
+      if (this.payne?.canTalk(p)) {
+        const pk = this.input.promptFor(p.index, 'interact');
+        p.setCallout(pk ? `[${pk}]  TALK TO PAYNE` : null);
+        continue;
+      }
       const hall = this.world?.clanHallNear(p.position.x, p.position.z);
       if (!hall || p.clan?.id === hall.clan.id) { p.setCallout(null); continue; }
       const key = this.input.promptFor(p.index, 'interact');
@@ -1290,6 +1302,17 @@ class Game {
       () => ({ texture: placeholderCatAtlas(), cols: 4, rows: 1, aspect: 1 }),
     )));
     this.leaderArt = Object.fromEntries(leaderNames.map((n, i) => [n, leaderArt[i]]));
+    /* PAYNE, THE QUEST GIVER — two drawings, the helmet on (all afternoon) and
+       the helmet under her arm (from the Awakening, the face reveal). A
+       missing drawing leaves her out of the market rather than taking the boot
+       down; her messages still work without her standing anywhere. */
+    const [payneTown, payneHeld] = await Promise.all(['town', 'held'].map((n) => this._loadSprite(
+      `/sprites/payne/${n}.png`, 1, 1, () => ({ texture: null }),
+    )));
+    this.payneArt = { town: payneTown?.texture?.image ? payneTown : null,
+      held: payneHeld?.texture?.image ? payneHeld : null };
+    this.payne = new Payne(this);
+    await this.payne.loadArt();
 
     setLoad('Raising the floating islands…');
     await frame();
@@ -1314,6 +1337,7 @@ class Game {
     this.dragonArt = dragonTex ?? null;
     this._spawnPickups();
     this._spawnLeaders();
+    this._spawnPayne();
 
     setLoad('Writing the story…');
     await frame();
@@ -1416,6 +1440,11 @@ class Game {
          the list cannot drift from the lines it is buffering. */
       ...Object.fromEntries(Object.keys(HUNT_LINES).map((id) => [id, voicePath(id)])),
       sat_board: voicePath('sat_board'),
+      /* PAYNE'S, IN THE SAME BUFFER. Her card is her own, but her voice is
+         the one voice this game has — `Audio.speak` — and a hint fetched at
+         the moment she opens her mouth is two minutes of waiting spoiled by a
+         second of silence. Ids from `PAYNE_LINES`, so the list cannot drift. */
+      ...PAYNE_CLIPS,
       /* His yes AT HIS DOORS, where there is no griffin to climb on. Recorded
          in Harrison's preset on the exact card string; it played silent as a
          card for a pass, which is what the check beside `popIn` now forbids. */
@@ -2081,6 +2110,19 @@ class Game {
       // the trigger ring, which is the whole 6.4-unit dais.
       this.world.solids.push({ x: L.position.x, z: L.position.z, r: 0.85 });
     }
+  }
+
+  /**
+   * Stand Payne in the market — see systems/payne.js. Across the road from
+   * where Mr. Satan will stand, so the two grown-ups who want something from
+   * you are both on the way into town, and in front of the kittens from their
+   * very first frame (they start at z 34, facing it).
+   */
+  _spawnPayne() {
+    if (!this.payne || !this.payneArt?.town) return;
+    const spot = this.world.findOpenSpot(PAYNE_TOWN.x, PAYNE_TOWN.z, 3)
+      ?? { x: PAYNE_TOWN.x, z: PAYNE_TOWN.z };
+    this.payne.spawn(this.payneArt.town, this.payneArt.held, spot);
   }
 
   _spawnPickups() {
@@ -3174,6 +3216,7 @@ class Game {
     /* And no target ring welded to somebody who is about to be a different
        kitten, for exactly the reason above. */
     this.dodgeFx?.reset();
+    this.sweepFx?.reset();
     /* ...and no mark on a kitten nobody is hunting, and no flame hanging in
        the air over a deck with no fight on it. */
     this.clanFx?.reset();
@@ -3263,6 +3306,9 @@ class Game {
     /* And every quest un-done, with its gold token. A restart is a new game,
        and a promise of an orb carried over from the old one is a free orb. */
     this.feats?.reset();
+    /* And nobody has met Payne. Her marks, timers and trick go with the
+       quests they were about. */
+    this.payne?.reset();
     /* And the debug purse, or a restart would hand the world's money to the
        next kitten who joins a game where nothing has been knocked over yet. */
     this._debugPurse = null;
@@ -4134,6 +4180,21 @@ class Game {
       if (!p) continue;
       const t = p.seekTarget;
       if (t && !t.scored) return t;
+    }
+    return null;
+  }
+
+  /**
+   * Where Payne has told THIS PANE to go, or null — the first of its kittens
+   * who has a mark. Same shape as `_seekMarkFor`, and for the same reason: two
+   * sisters sharing a pane get the first answer, not an average of two.
+   */
+  _payneGoalFor(members) {
+    if (!this.payne) return null;
+    for (const i of members) {
+      const p = this.players[i];
+      const goal = p && this.payne.goalFor(p);
+      if (goal) return { ...goal, colour: cssFor(p.style) };
     }
     return null;
   }
@@ -8943,6 +9004,25 @@ class Game {
       return;
     }
 
+    /* WALK UP TO PAYNE AND PRESS INTERACT — the dealer's pattern exactly,
+       below, and every reason it gives holds here: the kitten who PRESSED is
+       the one who talks, somebody with a card up is closing it rather than
+       opening another, and the press is spent where it was answered so it
+       cannot also swear an oath or swing a katana further down the frame.
+       Not during a fight: `tournament.active` is the arena, and Payne is in
+       the market. */
+    if (!this.paused && this.payne && !this.tournament?.active && !this._sceneActive()) {
+      const talker = this.players.find(
+        (p) => this.input.players[p.index]?.pressed('interact')
+          && !this.inspector.busy(p.index)
+          && this.payne.canTalk(p)
+      );
+      if (talker) {
+        this.inspector.openPayne(talker.index);
+        this.input.players[talker.index]?.consume('interact');
+      }
+    }
+
     /* Walk up to the dealer and press interact. Guarded on `paused` so the
        prompt cannot fire through the pause menu, and on the ground state
        inside `shopperNear` so you cannot shop from a dragon. */
@@ -9180,6 +9260,9 @@ class Game {
     }
     this.kotodama.update(dt);
     this.feats.update(dt);
+    /* After the quests, so a quest earned this frame has already moved her
+       next step on before she looks at whether anybody is stuck. */
+    this.payne?.update(dt);
     for (const pk of this.pickups) {
       if (pk.taken) continue;
       pk.update(dt);
@@ -9319,6 +9402,7 @@ class Game {
        a second in the smoke and then drops, and a drop needs a floor to find.
        See `systems/dodgefx.js`. */
     this.dodgeFx?.update(dt, this.players, this.world);
+    this.sweepFx?.update(dt, this.players);
     /* AND THE CLAN POWERS LAST OF THE THREE, for the same reason dodgefx runs
        after crossfx: the mark is drawn on the kitten it is following, and by
        here every position this frame is settled. */
@@ -10472,7 +10556,7 @@ class Game {
       this.maps[i].focusIndex = shared ? null : members[0];
       this.maps[i].focusOn = members;
       this.maps[i].draw(this.players, this.dragons, this.kotodama, this.satan,
-        this.ryu, this._seekMarkFor(members));
+        this.ryu, this._seekMarkFor(members), this._payneGoalFor(members), this.payne);
     }
 
     this._drawMathBoard(panes, groups, W, H, mathUp);
@@ -10482,6 +10566,9 @@ class Game {
        wanted per frame, and this returns before it asks the layout anything
        unless a warning is actually up. */
     this._placeWarnings();
+    /* ...and Payne's card, which sits on top of the warning and so moves with
+       exactly the same things. */
+    this.payne?.layout();
   }
 
   /**
@@ -12083,6 +12170,7 @@ class Game {
     this.kotodama.faceCamera(camera);
     for (const d of this.dragons) d.faceCamera(camera);
     for (const L of this.leaders ?? []) L.faceCamera(camera);
+    this.payne?.faceCamera(camera);
     this.cutscene?.faceCamera(camera);
     for (const s of this.world.shrines) s.faceCamera(camera);
     for (const pk of this.pickups) if (!pk.taken) pk.faceCamera(camera);

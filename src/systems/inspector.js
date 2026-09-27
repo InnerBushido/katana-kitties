@@ -85,10 +85,19 @@ const CHOICES = [
   },
 ];
 
+/** The three states that are Payne's card rather than the dealer's. Her card
+ *  is THIS card — same host, same pane, same pad rules — because every rule
+ *  `#pane-cards` has learned about a phone (the stacking order, the pad going
+ *  dim behind it, the way out on the card) is a rule her card needs too, and a
+ *  second host would have had to learn them all again. What she SAYS and what
+ *  her rows DO live in systems/payne.js; this file only drives the cursor. */
+const PAYNE_STATES = new Set(['payne', 'payneQuests', 'payneTrick']);
+const isPayne = (state) => PAYNE_STATES.has(state);
+
 /** One player's card. Never shared; there is one of these per seat. */
 class Card {
   constructor() {
-    /** null | 'choose' | 'look' */
+    /** null | 'choose' | 'look' | 'payne' | 'payneQuests' | 'payneTrick' */
     this.state = null;
     this.i = 0;
     this.hold = 0;
@@ -144,12 +153,31 @@ export class Inspector {
    * over a pane that no longer belongs to anybody is a rectangle nobody can
    * dismiss, which is the same rule `update` already enforces.
    */
-  reopen(index, row = 0) {
+  reopen(index, row = 0, state = 'choose') {
     const c = this.cards[index];
     if (!c || c.state || !this.game.players[index]) return;
-    c.state = 'choose';
-    c.i = Math.max(0, Math.min(row, CHOICES.length - 1));
+    /* WHICHEVER CARD SHE CAME FROM. The trade window is reachable from the
+       dealer AND from Payne, and BACK out of it lands on the one she opened
+       it from — the same two-layers-in-one-press bug the dealer had, the
+       other way round. */
+    c.state = state === 'payne' ? 'payne' : 'choose';
+    c.i = Math.max(0, Math.min(row, this._rowCount(index) - 1));
     c._sig = '';
+  }
+
+  /**
+   * Open Payne's card for one kitten — she has walked up to her and pressed
+   * INTERACT. The same card the dealer's chooser is, in her pane, with her pad.
+   */
+  openPayne(index) {
+    const c = this.cards[index];
+    const p = this.game.players[index];
+    if (!c || c.state || !p || !this.game.payne) return;
+    c.state = 'payne';
+    c.i = 0;
+    c._sig = '';
+    this.game.audio?.play('menu');
+    this.game.payne.greet(p);
   }
 
   closeOne(index) {
@@ -259,6 +287,21 @@ export class Inspector {
   _back(index) {
     const c = this.cards[index];
     if (!c?.state) return;
+    if (c.state === 'payneQuests' || c.state === 'payneTrick') {
+      /* Back to her three questions, with the cursor on the row that got her
+         here — so a second press of JUMP does the same thing again. */
+      c.i = c.state === 'payneQuests' ? 0 : 3;
+      c.state = 'payne';
+      c._sig = '';
+      this.game.audio?.play('menu');
+      return;
+    }
+    if (c.state === 'payne') {
+      const p = this.game.players[index];
+      if (p) this.game.payne?.choose(p, 'bye');
+      this.closeOne(index);
+      return;
+    }
     if (c.state === 'look') {
       c.state = 'choose';
       c.i = 1;
@@ -270,6 +313,7 @@ export class Inspector {
   /** JUMP, or a tap on a row. */
   _choose(index) {
     const c = this.cards[index];
+    if (isPayne(c.state)) { this._choosePayne(index); return; }
     if (c.state !== 'choose') return;
     const pick = CHOICES[c.i];
     if (!pick) return;
@@ -311,8 +355,42 @@ export class Inspector {
     this.game.profile.open('shop', { shopper });
   }
 
+  /** JUMP on Payne's card. Her rows decide what happens; the one row that is
+   *  a hand-over — the trade window — is done here, the dealer's way. */
+  _choosePayne(index) {
+    const c = this.cards[index];
+    const p = this.game.players[index];
+    const P = this.game.payne;
+    if (!p || !P) return;
+    if (c.state === 'payneTrick') return;
+    let key;
+    if (c.state === 'payneQuests') key = P.questAct(c.i);
+    else key = P.rows(p)[c.i]?.key;
+    if (!key) return;
+    if (key === 'back') { this._back(index); return; }
+    if (key === 'profile') {
+      /* THE SAME DOOR THE DEALER HAS ONTO IT, and the same reason every card
+         comes down: it freezes the world for everybody. It remembers her card
+         so BACK lands here — see `reopen`. */
+      const row = c.i;
+      this.closeAll();
+      this.game.profile.open('profile', { backTo: { index, row, state: 'payne' } });
+      return;
+    }
+    const next = P.choose(p, key);
+    this.game.audio?.play('menu');
+    if (!next) { this.closeOne(index); return; }
+    if (next !== c.state) c.i = 0;
+    c.state = next;
+    c._sig = '';
+  }
+
   _rowCount(index) {
     const c = this.cards[index];
+    if (isPayne(c.state)) {
+      const p = this.game.players[index];
+      return p && this.game.payne ? this.game.payne.rowCount(p, c.state) : 0;
+    }
     if (c.state === 'choose') return CHOICES.length;
     /* THE SHELF IS THE LIST, AND HER OWN SLOTS ARE A HEADER ABOVE IT. Every
        orb she can own is on the shelf whether the dealer has one or not, so
@@ -388,14 +466,24 @@ export class Inspector {
     const p = this.game.players[index];
     if (!c.el || !p) return;
     const K = this.game.kotodama;
+    const P = this.game.payne;
+    /* HER CARD CHANGES WITH WHAT SHE IS SAYING AND WITH THE WORLD — a cane
+       cut moves the NEXT line, a sister riding Ryuuseki changes a row — so
+       her half of the signature is the step and the words, not the orbs. */
+    const pay = isPayne(c.state) && P
+      ? [P.speaking(p) ?? '', JSON.stringify(P.ledger(p)), P.step(p)?.where ?? '',
+        P.revealed, (this.game.players ?? []).map((q) => q?.feats?.got?.length ?? 0).join(',')].join('|')
+      : '';
     const sig = [
       c.state, c.i, p.powerOrbs.join(','), p.score,
-      POWER_ORBS.map((s) => K?.stock?.[s.id] ?? 0).join(','),
+      POWER_ORBS.map((s) => K?.stock?.[s.id] ?? 0).join(','), pay,
     ].join('#');
     if (sig === c._sig) return;
     c._sig = sig;
-    c.el.innerHTML = c.state === 'choose'
-      ? this._chooseMarkup(index) : this._lookMarkup(index);
+    c.el.innerHTML = isPayne(c.state) && P
+      ? P.markup(index, c.state, c.i, (i, w) => this._backButton(i, w))
+      : c.state === 'choose' ? this._chooseMarkup(index) : this._lookMarkup(index);
+    if (isPayne(c.state)) P?.drawFace(c.el.querySelector('.pn-face'));
     /* WALK THE CURSOR BACK INTO VIEW. Nine orbs do not fit in a quarter pane
        at a readable size (see `.pc-list` in style.css), and the markup is
        rebuilt from scratch on every change — so the list is scrolled to the
@@ -555,7 +643,7 @@ export class Inspector {
       const c = this.cards[i];
       if (!c?.state || !Number.isFinite(k)) return;
       if (c.i !== k) { c.i = k; this.game.audio?.play('menu'); }
-      if (c.state === 'choose') this._choose(i);
+      if (c.state === 'choose' || isPayne(c.state)) this._choose(i);
       this._paintCard(i);
     });
   }
