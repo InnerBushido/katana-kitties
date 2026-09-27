@@ -9259,6 +9259,7 @@ class Game {
        watched vanish for nothing. */
     this.menagerie?.update(dt, this.players);
     this.tournament?.update(dt, this.input.players);
+    this._arenaDoorman();
     /* AFTER the tournament, so the blast reads the positions the round has
        already finished moving — a kitten thrown onto the box on this frame is
        up there for this frame's notice test, not next frame's.
@@ -11877,6 +11878,60 @@ class Game {
    * `s.arena`, which turns the arena's stonework off while the arena is shut —
    * one idea, one skip, one line in `resolveSolids`.
    */
+  /**
+   * THE ARENA'S DOORS LET A KITTEN OUT, AND NOBODY IN.
+   *
+   * "If a player somehow gets stuck in the arena outside of combat, then maybe
+   * we make it that if they get near the front doors (if they are behind the
+   * doors) they open to let them pass through before closing and not allowing
+   * them to enter again." The stands are a wall now (World.arenaWallAt), so a
+   * kitten left inside with no tournament to end — a match called off at the
+   * wrong moment, a sister seated after the rest were walked out — would
+   * otherwise be in a box.
+   *
+   * OUTSIDE OF COMBAT ONLY: never while a tournament, its pickers, a ride or
+   * the exit parade is running, because between rounds the fighters are
+   * inside on purpose. It opens for a kitten on the INSIDE within `LET_OUT`
+   * of the doors, and shuts once nobody is inside that stretch or in the
+   * doorway itself — and only doors it opened, so the parade's are its own.
+   * The doorway is one-way the whole time it is open (World.arenaWallAt), and
+   * a kitten who walks into that from outside is TOLD so, once, rather than
+   * stopped by nothing she can see.
+   */
+  _arenaDoorman() {
+    const W = this.world;
+    const A = W?.arenaWall;
+    if (!A || !W.arenaOpen || !W.setArenaDoors) return;
+    const LET_OUT = 8;
+    const busy = !!(this.inMatch || this.travel || this.arenaExit?.active);
+    let want = false;
+    let doorway = false;
+    for (const [i, p] of this.players.entries()) {
+      const lx = p.position.x - A.x;
+      const lz = p.position.z - A.z;
+      const column = Math.abs(lx) < A.gap && lz > 0;
+      if (column && p.arenaSide === 'in' && lz > A.doorZ - LET_OUT) want = true;
+      if (column && lz > A.inner && lz < A.doorZ + 4) doorway = true;
+      if (p.doorRefused) {
+        p.doorRefused = false;
+        if (W.arenaDoorT > 0.08 && !this._toldDoor?.has(i)) {
+          (this._toldDoor ??= new Set()).add(i);
+          this.toast('These doors only open to let kittens OUT — ask Mr. Satan for a tournament to go in', i);
+        }
+      } else if (!column || lz > A.doorZ + 8) this._toldDoor?.delete(i);
+    }
+    if (!busy && want && !this._lettingOut) {
+      this._lettingOut = true;
+      W.setArenaDoors(true);
+      // The parade's own door sound — the same doors, so the same noise.
+      this.audio?.play?.('doors');
+    } else if (this._lettingOut && !want && !doorway) {
+      this._lettingOut = false;
+      W.setArenaDoors(false);
+      this.audio?.play?.('doors');
+    }
+  }
+
   _syncSatanSolid() {
     const s = this.satanSolid;
     if (!s) return;

@@ -68,6 +68,10 @@ import { cloudPuff, mergeSlotted, puffMaterial } from './snakeway.js';
    a thing on the horizon.
 --------------------------------------------------------------------------- */
 
+/** The far waterfall and its spray draw before this, and every cloud mesh
+ *  nearer the lens than a far island draws at or after 1 — see `water`. */
+export const FAR_BEFORE_CLOUD = 0.5;
+
 export const FAR = {
   /** Seconds, cloud to finished waterfall — THE SAME FOR EVERY ISLAND. "When
    *  the islands in the background spawn in on the next camera angle ... it
@@ -480,7 +484,18 @@ export class FarIsles {
     Object.assign(waterMat.uniforms, W);
     const water = new THREE.Mesh(concat(fallGeos, ['position', 'fall', 'across', 'isle', 'drop']), waterMat);
     water.frustumCulled = false;
-    water.renderOrder = 2;
+    /* BEFORE EVERY CLOUD, not after them. "The waterfalls on the floating
+       islands appear to be appearing in front of the clouds instead of behind
+       them." They were never behind these clouds: the white band across the
+       fall in that screenshot is a Snake Way bank beside the road, a few
+       dozen units from the lens and hundreds nearer than the island, that
+       happened to line up with its rim. Neither writes depth, so draw order
+       IS the depth test, and the banks were 1 and the water was 2 — so the
+       water painted over a cloud it was behind. Every cloud a kitten can be
+       looking through is nearer than every far island (they stand 440 out
+       and the roads do not), so drawing the water first is right from
+       anywhere she can stand; world-check measures that it stays so. */
+    water.renderOrder = FAR_BEFORE_CLOUD;
     this.group.add(water);
 
     /* --- the spray --- */
@@ -573,7 +588,8 @@ export class FarIsles {
     sprayMat.uniforms.uGrow = W.uGrow;
     const points = new THREE.Points(sg, sprayMat);
     points.frustumCulled = false;
-    points.renderOrder = 3;
+    // The spray is the water's, and is behind the same clouds.
+    points.renderOrder = FAR_BEFORE_CLOUD + 0.1;
     this.group.add(points);
 
     /* --- the portals --- */

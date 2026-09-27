@@ -647,18 +647,59 @@ time.
 > like it currently is."
 
 **The orbit is keyed to time, so what it shows depends on when you look, not
-where you are.** Going UP the arena road, `SnakeCam` now plays `ARENA_RIDE`
-instead: six shots, each owning a stretch of the road as a fraction of its
-length. Coming down, and on every other road, it still orbits.
+where you are.** On the arena road `SnakeCam` plays a shot list instead, each
+shot owning a stretch of the road as a fraction of its length: `ARENA_RIDE`
+going up, `ARENA_RIDE_DOWN` coming down. Every other road still orbits.
+
+**Going up** (second pass, after Richard's notes: "on the 3rd camera shot,
+rather than looking at the floating islands again ... looking at the arena
+already as we are near the top of it. Then we can stop looking at the arena a
+bit earlier to look over at the other islands in the distance before looking
+at the gate"):
 
 | shot | from | looks at | what it is |
 | --- | --- | --- | --- |
 | climb | 0 | the floating isle | behind her, the road climbing away towards it, the frost island beside |
 | home | 0.13 | the main island | in front of her, above, looking back down the road at the town |
-| isle | 0.27 | the floating isle | from inside the lap, looking out past her at it |
-| ring | 0.42 | the ring | from outside the lap, over her shoulder and down into the arena as she circles it |
-| gate | 0.70 | the doors | down the east side, the entrance coming round |
-| doors | 0.90 | the doors | low behind her, down the carpet through the road's torii |
+| rise | 0.33 | the ring | wide and high, down across the rim into the whole arena |
+| ring | 0.46 | the ring | from outside the lap, over her shoulder and down into the arena as she circles it |
+| vista | 0.62 | the far isle off her left | down the east side, the pagoda-and-waterfall isle (445, 121) behind the autumn and dusk islands |
+| doors | 0.88 | the doors | low behind her, down the carpet through the road's torii — arrived by 0.93 |
+
+The old `isle` (0.27, a second look at the floating isle) and `gate` (0.70, the
+doors coming round) are gone. **Coming down** ("the first shot we see leaving
+the arena is towards the main island ... for the last two camera shots ...
+reverse them"), read from the top:
+
+| shot | from | looks at | what it is |
+| --- | --- | --- | --- |
+| leave | 0.88 | the main island | the first thing out of the doors: the town, the sky and the islands round it |
+| vista, ring, rise | 0.62, 0.46, 0.38 | as going up | the climb's own rows |
+| isle | 0.13 | the floating isle | the second last |
+| last | 0 | the main island | the last |
+
+- **`rise` does not start at 0.27, where `isle` did.** There she is 20 units
+  under the ring's floor, and every lens that keeps her in frame sees the rock
+  under the rim and the back of the stands. A check now counts a 5 × 5 grid on
+  the fighting floor that each lens can see past the stands (tier by tier) and
+  every island's rock, **including the arena's own**. That count was 0 of 25
+  at 0.36 and before for every distance and height tried, up to 34 and 18, and
+  15 of 25 from 0.38 at 34 / 18. So `rise` moves in from 0.33 and has arrived
+  by 0.38. `ring` takes over at 0.46, not 0.42, where it saw 1 of 25. The
+  lens-above-the-floor check alone had passed the 0.27 version.
+- **The vista isle is measured, not picked**: the far isle nearest square to
+  her LEFT, from the middle of the east side. The first rule, 45° left, picked
+  the one dead ahead, because the road is already turning onto the hook there.
+  A check holds it on her left for the whole settled shot (11°–90°).
+- **A move keeps the way round it chose at its start.** Coming down, the
+  floating isle's shot and `rise` are on opposite sides of her. Taking the
+  shorter way round each frame flipped sides in mid-move: 10 units and 28° in
+  one frame at 0.283.
+- **The aim is blended as a point beside her.** Each shot's own look point is
+  20 units down its ray. That is short of her for a far lens and past her for a
+  near one, so blending `rise` (34 out) into `isle` (16 out) lost her off the
+  frame edge for nine frames. Where each ray passes nearest her is always near
+  her, so blending those points holds her in frame both ways.
 
 - **Every shot is one shape**, an over-the-shoulder at a landmark. The lens
   stands `dist` out on her far side from the landmark, swung `off` degrees,
@@ -677,14 +718,14 @@ length. Coming down, and on every other road, it still orbits.
   bottom of the road the arena is 140 units up the sight line, and the 38°
   lens is 97 units high there, so the frame was a brown wall. It passed every
   number, because a landmark's own rock is not counted as in its way. Now the
-  opening looks at the floating isle, and a check holds every shot of the ring
-  above the ring's floor.
+  opening looks at the floating isle, and a check holds every lens looking at
+  the ring above the ring's floor, and seeing into it (above).
 - **Changes of shot are moves, not cuts.** She is steering. The move is round
   her as bearing / pitch / distance, over `ARENA_BLEND` (about 1.5 s). The three
-  big swings (behind to in front, round to face out of the lap, over to face
-  into it) take about 3 s each (`blend: 0.05` on their rows). Over the
-  standard blend they peaked at 5.6, 4.2 and 4.3° a frame. The worst frame on
-  the whole road is now 2.79°, and the check's bar is 4.
+  big swings take about 3 s each (`blend: 0.05` on their rows). Over the
+  standard blend they peaked at 5.6, 4.2 and 4.3° a frame, and the swing from
+  the vista to the doors at 5.8°. The worst frame is now 2.96° going up and
+  2.80° coming down. The check's bar is 4.
 - **A coin in her paws still takes the lens back to her**, as on every road.
   That is her moment (`snakeSubject`), and the plan resumes after it.
 
@@ -736,6 +777,15 @@ adds `uIsle.xy` to x/z. The column writes no depth and the land does, which is
 the whole masking trick. `FAR.gather / emerge / pour / clear` are fractions of
 `FAR.show` (4.8 s). [story.md](story.md) has the clock these sit in.
 
+**The waterfalls draw BEFORE the road clouds** (`FAR_BEFORE_CLOUD`, 0.5, and
+the spray at 0.6). Richard: "the waterfalls on the floating islands appear to
+be appearing in front of the clouds instead of behind them". Transparents are
+sorted by `renderOrder` first, and the water was 1. That is the same band as
+the Snake Way cloud puffs, so a bank of cloud near the lens was drawn under a
+waterfall 500 units behind it. The check projects 375 lenses along the roads
+and island rims. It counts cloud points drawn over an isle: 771k, and none of
+them are further away than the isle.
+
 ### The arena road
 
 > "Make it wider so all 4 players can run on it together (maybe twice as wide)
@@ -778,6 +828,64 @@ place he has not opened yet.
 - **The torii stays**, now as the front of the approach.
 - **Mr Satan waits at `arenaDoorStand`**, in front of the doors, not at the
   torii.
+
+**The stands are a wall** (`World.arenaWallAt`). Richard: "players can't
+passthrough the walls unless they get knocked out of the arena during combat".
+The stands used to be one circle collider per side, with the four corners open:
+the runs stopped short of each other and left a slot you could see and walk
+through. Now:
+
+- The runs close their corners.
+- The wall is a square band, `inner` 39.3 to `outer` 49.5 and 9.5 high
+  (`arenaStandBand`, out of the same `ARENA_STANDS` numbers `buildArena`
+  draws). Its one opening is the doorway.
+- **Which side she is on is read off where she WAS**, and nothing crosses the
+  doors' line inward, open or shut. The tournament puts its fighters on their
+  marks; nobody walks in.
+- Measured with a real kitten walking into it: held at 38.55 from inside, and
+  at 50.25 from outside, at every side and corner. 333 of 333 rays from the
+  floor meet the stands.
+- **The record board sits inside the west stands' band.** It is still drawn,
+  but nobody can walk behind the stands' inner face to reach it.
+
+**Thrown over it, not through it.** "Pushed upward (if they are still moving
+upward after the hit) and over the wall ... if they are hit hard enough." At
+the wall a flung kitten (`hitT`, `ko` or `blastT`) is asked two things: is she
+still rising, and is she going at least `WALL.vault` (14) across the ground?
+If yes, she is lifted to clear the top by 1.2 and sent on at no less than 15.
+She then stays `vaulting`, with the stick off and the throw's drag on, until
+she lands. The first cut ended the vault when the stun ran out, which handed
+the stick back in mid-air. Measured:
+
+| throw | result |
+| --- | --- |
+| hard | ends 52.5 out, peaks 10.5 up, 0 frames inside the band |
+| light | stopped, and ends at 36.6 |
+| hard, already falling | stopped, and ends at 38.6 |
+
+**The doors let a kitten OUT, and nobody in** (`Game._arenaDoorman`). "If a
+player somehow gets stuck in the arena outside of combat ... they open to let
+them pass through before closing and not allowing them to enter again."
+
+- Outside a tournament, its pickers, a ride or the exit parade, the doors open
+  for a kitten inside within 8 of them. They shut once nobody is in that
+  stretch or in the doorway, and they only ever shut doors they opened.
+- A kitten walking in from outside while they are open is stopped at the line
+  and told once: "These doors only open to let kittens OUT".
+- A panda ridden into the wall is held by it too, with no vault.
+
+**The gatehouse roof has an underside** (`pagodaSoffit`). Richard: "we can see
+through the bottom of it as if it is a 1-sided polygon". It is a second sheet
+0.3 under the tiles, facing down, with an eave band joining the two edges. Rays
+up from under it meet a ceiling 91 of 91 times; it was 25 of 91 before. Rays
+down still meet the red tile 91 of 91.
+
+**The lion at the home end of the arena road faced away from you** ("Mr. Satan
+statue to the entrance of the snake way bridge on the main island is
+backwards"). It had one `+ Math.PI` too many. A check now reads every
+guardian's facing off its own mesh, from the centroid of its front vertices,
+and wants it pointing the way you come at it. All of them read 1.00. This one
+read −0.93.
 
 **At his doors there is no griffin.** A party standing on the arena island
 (`Game.partyAtArena`: every kitten on it, none mounted) walks straight in:

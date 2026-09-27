@@ -394,6 +394,68 @@ export function pagodaRoof(hw, hd, height, opts = {}) {
   return geo;
 }
 
+/**
+ * The UNDERSIDE of a `pagodaRoof` built with the same numbers: the same
+ * sheet, `thick` lower and facing DOWN, with a band round the eaves joining
+ * the two — the roof's thickness. The roof alone is one sheet facing up and
+ * out, so from below it is not there at all, which a roof on four walls never
+ * shows and a roof on two pillars over a doorway does.
+ *
+ * A PARALLEL SHEET, NOT A FLAT CEILING: a fan from the eaves to a point in
+ * the middle lifts its corners in a straight line where the roof lifts them
+ * as a power, so the fan came up through the red at every corner.
+ */
+export function pagodaSoffit(hw, hd, height, opts = {}, thick = 0.3) {
+  const { overhang = 0.45, cornerLift = 0.55, rings = 6, perSide = 6 } = opts;
+  const positions = [];
+  const indices = [];
+  const rows = [];
+  const lift = (p, t) => cornerLift * p.corner * Math.pow(1 - t, 2.2);
+  let ring0 = null;
+  for (let i = 0; i <= rings; i++) {
+    const t = i / rings;
+    const scale = 1 - t;
+    const y = height * Math.pow(t, 1.75) - thick;
+    const ring = squareRing(
+      Math.max(0.001, hw * (1 + overhang) * scale),
+      Math.max(0.001, hd * (1 + overhang) * scale),
+      perSide
+    );
+    if (i === 0) ring0 = ring;
+    const row = [];
+    for (const p of ring) {
+      row.push(positions.length / 3);
+      positions.push(p.x, y + lift(p, t), p.z);
+    }
+    rows.push(row);
+  }
+  const n = rows[0].length;
+  // The roof's own winding, reversed: these face down and in.
+  for (let i = 0; i < rings; i++) {
+    for (let j = 0; j < n; j++) {
+      const j2 = (j + 1) % n;
+      indices.push(rows[i][j], rows[i][j2], rows[i + 1][j2]);
+      indices.push(rows[i][j], rows[i + 1][j2], rows[i + 1][j]);
+    }
+  }
+  const apex = positions.length / 3;
+  positions.push(0, height - thick + 0.02, 0);
+  for (let j = 0; j < n; j++) indices.push(rows[rings][j], rows[rings][(j + 1) % n], apex);
+  // The band round the eaves, from the roof's edge down to this one's.
+  const top = positions.length / 3;
+  for (const p of ring0) positions.push(p.x, lift(p, 0), p.z);
+  for (let j = 0; j < n; j++) {
+    const j2 = (j + 1) % n;
+    indices.push(rows[0][j], top + j, top + j2);
+    indices.push(rows[0][j], top + j2, rows[0][j2]);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
 function box(w, h, d, color, x = 0, y = 0, z = 0, ry = 0) {
   const g = new THREE.BoxGeometry(w, h, d);
   paint(g, color);
@@ -1268,6 +1330,30 @@ export const ARENA_GATE = 34;
 /** Half-width of the gap in the front (+z) stands where the arena's doors are
  *  — the gatehouse in world/arenagate.js fills it, and reads it from here. */
 export const ARENA_DOOR_GAP = 10.5;
+/**
+ * The stands: three tiers of benching all round, `d0` out from the ring's
+ * edge, each `step` further out and `yStep` taller, `w` deep, with a `stripe`
+ * of seat colour on top. One set of numbers because two things read them —
+ * `buildArena` draws them and `arenaStandBand` turns them into the WALL a
+ * kitten cannot walk through (World.arenaWallAt).
+ */
+export const ARENA_STANDS = { d0: 13, step: 3.4, w: 3.4, y0: 1.1, yStep: 1.7, tiers: 3, stripe: 0.5 };
+/**
+ * The stands as a wall, arena-local: a square band from `inner` to `outer`
+ * (a Chebyshev distance from the ring's centre — they are squares), `top`
+ * high at the back row. The front's doorway is NOT in it: that is
+ * `ARENA_DOOR_GAP` either side of the axis, and the gatehouse's pillars and
+ * doors close it.
+ */
+export function arenaStandBand() {
+  const S = ARENA_STANDS;
+  const last = S.tiers - 1;
+  return {
+    inner: ARENA_RING + S.d0 - S.w / 2,
+    outer: ARENA_RING + S.d0 + last * S.step + S.w / 2,
+    top: (S.y0 + last * S.yStep) * 2 + S.stripe,
+  };
+}
 /** How far the ring's deck stands above the island under it. */
 export const ARENA_RISE = 2.4;
 /**
@@ -1469,15 +1555,23 @@ export function buildArena() {
      crowd the ring or block a camera that has to see two fighters at once.
      They are solid, which matters: without them a knockback sends a kitten
      out across an empty island and the arena stops being a room. */
+  /* THE CORNERS ARE CLOSED. Every run used to stop at R + 11 + 3.5 per
+     tier, which is short of the next side's inner face, and left a slot
+     through the stands at all four corners you could see the island
+     through — and walk out of, once the stands became a wall. Now the front
+     and back runs reach out to the far edge of their own tier and the two
+     sides stop at the near edge of it, so each tier is a closed square with
+     nothing overlapping (two seat stripes on one spot would fight). */
+  const ST = ARENA_STANDS;
   for (let side = 0; side < 4; side++) {
     const a = (side * Math.PI) / 2;
     const nx = Math.round(Math.sin(a));
     const nz = Math.round(Math.cos(a));
-    for (let tier = 0; tier < 3; tier++) {
-      const d = R + 13 + tier * 3.4;
-      const y = 1.1 + tier * 1.7;
-      const len = R * 2 + 22 + tier * 7;
-      const w = 3.4;
+    for (let tier = 0; tier < ST.tiers; tier++) {
+      const d = R + ST.d0 + tier * ST.step;
+      const y = ST.y0 + tier * ST.yStep;
+      const w = ST.w;
+      const len = (nz ? d + w / 2 : d - w / 2) * 2;
       /* THE FRONT STANDS ARE TWO BLOCKS, with the arena's front door between
          them — `ENTRANCE.gap` either side of the axis, filled by the
          gatehouse in world/arenagate.js. Every other side is one block. */
@@ -1492,9 +1586,9 @@ export function buildArena() {
         g.translate(nx * d + (nz ? c : 0), y, nz * d + (nz ? 0 : c));
         parts.push(g);
         // A stripe of seated colour on top, so the stands don't read as crates.
-        const s = new THREE.BoxGeometry(nz ? l - 1 : 1.2, 0.5, nz ? 1.2 : l - 1);
+        const s = new THREE.BoxGeometry(nz ? l - 1 : 1.2, ST.stripe, nz ? 1.2 : l - 1);
         paint(s, [PALETTE.tileIndigo, PALETTE.tileRed, PALETTE.tileGreen][tier]);
-        s.translate(nx * d + (nz ? c : 0), y * 2 + 0.25, nz * d + (nz ? 0 : c));
+        s.translate(nx * d + (nz ? c : 0), y * 2 + ST.stripe / 2, nz * d + (nz ? 0 : c));
         parts.push(s);
       }
       /* The collider stays one circle in the middle of each run, as it always

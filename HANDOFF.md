@@ -515,6 +515,26 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**The arena's walls, the lion, the waterfalls, the roof, and the road's
+cameras both ways.** Branch `mixed/arena-road-walls-six`.
+[world.md](docs/notes/world.md) quotes every note, under the arena's front
+door, the far islands and the road's shot list.
+
+- **The stands are a wall.** The corners are closed. Nobody walks through it, a
+  hard enough hit still rising goes over it, and the doors let a stuck kitten
+  out and nobody in.
+- **The home lion faces you.** The waterfalls draw behind the road clouds. The
+  gatehouse roof has an underside.
+- **Up:** the third shot is the arena, then the far isles off her left, then
+  the doors. **Down:** the main island first, the floating isle second last,
+  the main island last.
+- **Open:**
+  - The arena is not the third shot as early as 0.27. Nothing there can see
+    into it (0 of 25 floor points), so it arrives at 0.38.
+  - The record board is inside the wall's band, so it cannot be walked behind.
+  - The vault's numbers are arithmetic plus a headless throw, not a four-kitten
+    round.
+
 **The ending's islands come toward you, and make a noise.** Branch
 `mixed/ending-isles-sfx`. [story.md](docs/notes/story.md) has every note
 quoted, with its number.
