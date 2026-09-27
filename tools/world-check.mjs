@@ -95,7 +95,7 @@ import { drawOrb } from '../src/entities/powerorb.js';
 import { CrossFx, sealStage, SIDES_BY_CUT } from '../src/systems/crossfx.js';
 import { DodgeFx, ringTexture } from '../src/systems/dodgefx.js';
 import { ClanFx } from '../src/systems/clanfx.js';
-import { ATTACKS, COMBAT, BASE_REACH, MAX_HP, DAZE_TIME } from '../src/entities/player.js';
+import { ATTACKS, COMBAT, BASE_REACH, MAX_HP, DAZE_TIME, SWEEP_UP } from '../src/entities/player.js';
 import {
   Tournament, WINS_NEEDED, MAX_ROUNDS, FEAST_TIME, REGEN_FRAC, OUT_FLOOR,
 } from '../src/systems/tournament.js';
@@ -2772,8 +2772,8 @@ console.log('\n--- the panda in the ring ---');
     const from = msrc.indexOf('{', at + 1) + 1;
     const body = msrc.slice(from, msrc.indexOf('\n  }\n', from));
     // eslint-disable-next-line no-new-func
-    return new Function('ATTACKS', 'COMBAT', 'PANDA', 'BASE_REACH', 'Panda', 'tierFor',
-      `return function (${args}) {${body}\n};`)(ATTACKS, COMBAT, PANDA, BASE_REACH, Panda, tierFor);
+    return new Function('ATTACKS', 'COMBAT', 'PANDA', 'BASE_REACH', 'Panda', 'tierFor', 'SWEEP_UP',
+      `return function (${args}) {${body}\n};`)(ATTACKS, COMBAT, PANDA, BASE_REACH, Panda, tierFor, SWEEP_UP);
   };
   const strikePlayers = lift('strikePlayers(attacker, kind, reach, dir, spent = null)',
     'attacker, kind, reach, dir, spent = null');
@@ -2914,12 +2914,50 @@ console.log('\n--- the panda in the ring ---');
     const a2 = mkP(0, 0);
     const b2 = mkP(1, -2);
     b2.position.y = a2.position.y;
+    a2.onGround = b2.onGround = true;
     const dir = { x: 1, y: 0 };
     strikePlayers.call(mkGame([a2, b2], { tournament: { fighting: false } }), a2, 'sweep', BASE_REACH, dir);
     ok('a sweep outside a live round does nothing to her sister', b2.hp === b2.maxHp && !b2.ko);
     strikePlayers.call(mkGame([a2, b2]), a2, 'sweep', BASE_REACH, dir);
     ok('...and in the ring it reaches the one BEHIND her', b2.hp < b2.maxHp,
       `${b2.maxHp - b2.hp} dealt`);
+
+    /* "The sweep attack should only work on players that are touching the
+       ground next to the player, if they jump and are in the air, it should
+       not work. Also, the attack should not scale in length with longer
+       katana abilities or kotodama powerups." Each half, both ways. */
+    const sweepAt = (setup, reach = BASE_REACH) => {
+      const s = mkP(0, 0);
+      const t = mkP(1, -2);
+      t.position.y = s.position.y;
+      s.onGround = t.onGround = true;
+      setup?.(s, t);
+      strikePlayers.call(mkGame([s, t]), s, 'sweep', reach, { x: 1, y: 0 });
+      return t.maxHp - t.hp;
+    };
+    ok('a kitten in the air is not swept, even right beside her',
+      sweepAt((s, t) => { t.onGround = false; t.position.y += 0.4; }) === 0);
+    ok('...nor one who has only just left the ground',
+      sweepAt((s, t) => { t.onGround = false; }) === 0);
+    ok('...nor one standing on a ledge above her',
+      sweepAt((s, t) => { t.position.y += SWEEP_UP + 0.3; }) === 0);
+    ok('...but a step is still "next to"',
+      sweepAt((s, t) => { t.position.y += SWEEP_UP * 0.5; }) > 0);
+    {
+      const pet = new Panda(art, { owner: null, tier: 1 });
+      ok('...and a kitten up on her panda is not on the ground',
+        sweepAt((s, t) => { pet.owner = t; t.panda = pet; t.pandaMount = pet; pet.rider = t; }) === 0);
+    }
+    const past = ATTACKS.sweep.reach + 0.8;
+    ok('no reach buff lengthens it: a kitten just past the ring stays up, Long Cut or not',
+      sweepAt((s, t) => { t.position.x = s.position.x - past; t.position.z = s.position.z; }, BASE_REACH * 1.6) === 0);
+    ok('...where the same buff DOES lengthen a standing slash (so the test can fail)',
+      (() => {
+        const s = mkP(0, 0); const t = mkP(1, 0);
+        t.position.set(s.position.x + ATTACKS.stand.reach * 1.4, s.position.y, s.position.z);
+        strikePlayers.call(mkGame([s, t]), s, 'stand', BASE_REACH * 1.6, { x: 1, y: 0 });
+        return t.hp < t.maxHp;
+      })());
   }
 
   /* --- THE THREE OUTCOMES, EXACTLY AS THEY WERE ASKED FOR ---------------
@@ -17374,9 +17412,12 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
      a `help-arena` card, so an expander carrying `help-arena` would close the
      card it lives in the instant it opened. `help-rare` is its own group for
      exactly the reason `help-arena` is. */
+  /* FOURTEEN, AND A FOURTH GROUP: "Ask Payne" lives inside "Quests &
+     achievements", which is a top-level `help` card, so it gets `help-quests`
+     for the reason the other three have theirs. */
   ok('...and every sub-card is in its parent\'s own accordion group',
-    subs.length === 13
-    && subs.every((n) => n === 'help-move' || n === 'help-arena' || n === 'help-rare'),
+    subs.length === 14
+    && subs.every((n) => ['help-move', 'help-arena', 'help-rare', 'help-quests'].includes(n)),
     `${subs.length}: ${[...new Set(subs)].join(', ')}`);
   ok('...and the two expanders are the ones in the third group',
     subs.filter((n) => n === 'help-rare').length === 2);
@@ -30689,7 +30730,10 @@ console.log('\n--- the big screen outside the arena ---');
   {
     const road = BW.buildSnakeWay().roads.find((r) => r.arena);
     const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.5, 4000);
-    const fake = { group: { visible: true }, B: Bd, _seen: 0, _seenDist: Infinity };
+    /* `audience: true` because a kitten riding this road IS the audience —
+       `Game` sets it from `snakeRide.road.arena`. The same poses with nobody
+       on the road are asked below. */
+    const fake = { group: { visible: true }, B: Bd, _seen: 0, _seenDist: Infinity, audience: true };
     const inView = [];
     for (let u = 0.3; u <= 0.44; u += 0.01) {
       const K = road.frameAt(u * road.length);
@@ -30704,6 +30748,18 @@ console.log('\n--- the big screen outside the arena ---');
     const frac = inView.reduce((a, b2) => a + b2, 0) / inView.length;
     ok('the ride up the arena road sees it, and `see` says so', frac >= 0.8,
       `${(frac * 100).toFixed(0)}% of u 0.30..0.44`);
+    /* ...AND THE SAME LENS WITH NOBODY THERE SETS NOTHING OFF. The ring's
+       cameras look west over the stands at exactly this glass. */
+    {
+      const empty = { ...fake, audience: false, _seen: 0 };
+      const K = road.frameAt(0.36 * road.length);
+      const P = arenaRidePose(road, 0.36 * road.length, K, 0, 38, 1);
+      cam.position.set(P.x, P.y, P.z);
+      cam.lookAt(P.lx, P.ly, P.lz);
+      cam.updateMatrixWorld();
+      ArenaBoard.prototype.see.call(empty, cam);
+      ok('...but a lens looking at it with no audience sets off nothing', empty._seen === 0);
+    }
     // ...and the town's walking camera does not: no fireworks for a board
     // nobody is looking at.
     cam.position.set(-30, 30, 30);
@@ -30909,6 +30965,40 @@ console.log('\n--- the big screen outside the arena ---');
     }
     ok('...and exactly nothing anywhere else, so two players\' camera never moves for it',
       leaks === 0 && n > 100, `${leaks} of ${n} ground samples`);
+  }
+
+  /* --- NOT DURING A MATCH ---
+     "Camera is zooming out weirdly during the arena battle during feast, it
+     may be affected by the billboard next to the arena we added." It was: the
+     ground samples above are all honest, but an ANGEL in the feast flies, and
+     can fly out over the wall into the zone, and the merged camera takes the
+     strongest weight in the group. The game's own `_boardWeight` is lifted
+     out of main.js and asked, so this runs the shipped rule. */
+  {
+    const src = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+    const at0 = src.indexOf('\n  _boardWeight(p) {');
+    const from = src.indexOf('{', at0 + 1) + 1;
+    const body = src.slice(from, src.indexOf('\n  }\n', from));
+    // eslint-disable-next-line no-new-func
+    const weight = new Function('boardZoneWeight', `return function (p) {${body}\n};`)(boardZoneWeight);
+    const game = (active) => ({ world: { arenaBoard: Bd, arenaOpen: true }, tournament: { active } });
+    const kit = (angel = false) => ({ position: at(3), angel });
+    ok('the board\'s shot is there for a visitor', weight.call(game(false), kit()) === 1);
+    ok('...and gone while a match is on, whoever is standing there', weight.call(game(true), kit()) === 0);
+    ok('...and never for an angel, who can fly anywhere over the arena', weight.call(game(false), kit(true)) === 0);
+
+    /* --- AND THE FIREWORKS NEED AN AUDIENCE ---
+       "The fireworks are also going off on the billboard when it shouldn't
+       be, that should only happen if players are on the snake way bridge or
+       infront of the billboard." A lens that can see the glass is no longer
+       enough; `see` asks for `audience` first, and `Game` sets it from those
+       two places and nothing else. */
+    const ab = readFileSync(new URL('../src/systems/arenaboard.js', import.meta.url), 'utf8');
+    const seeBody = ab.slice(ab.indexOf('  see(camera) {'), ab.indexOf('  update(dt) {'));
+    ok('the fireworks ask for an audience before a lens',
+      /if \(!this\.group\.visible \|\| !camera \|\| !this\.audience\) return;/.test(seeBody));
+    ok('...which is a kitten on the arena road or in the board\'s zone, with no match on',
+      /this\.arenaBoard\.audience = !this\.tournament\?\.active\s*&& this\.players\.some\(\(p\) => !!p\?\.snakeRide\?\.road\?\.arena \|\| this\._boardWeight\(p\) > 0\);/.test(src));
   }
 }
 
@@ -32201,6 +32291,72 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
     ok('Payne\'s card clears the warning and stays in its pane at 1, 2 and 4', bad.length === 0, bad.join(' '));
   }
 
+  /* --- HER SIZE: her helmet at least a kitten's head ---
+     "Payne looks too small in the town, should be 1.5x's bigger at least,
+     her helmet should be as big as a regular players head at least." Her
+     side is re-measured here off the shipped PNG; the kitten's head only
+     exists in the browser's atlas and is the number written beside it. */
+  {
+    const T = readPNG(new URL('../public/sprites/payne/town.png', import.meta.url));
+    let y0 = -1; let y1 = -1; const rows = [];
+    for (let y = 0; y < T.h; y++) {
+      let a = -1; let z = -1;
+      for (let x = 0; x < T.w; x++) if (T.d[(y * T.w + x) * 4 + 3] > 60) { if (a < 0) a = x; z = x; }
+      rows.push(a < 0 ? 0 : z - a + 1);
+      if (a >= 0) { if (y0 < 0) y0 = y; y1 = y; }
+    }
+    const H = y1 - y0 + 1;
+    // The helmet is the top fifth of her; below it the shoulders start (the
+    // widest row jumps from ~180 to ~250 between 0.2 and 0.3 of her height).
+    const helm = Math.max(...rows.slice(y0, y0 + Math.floor(H * 0.2)));
+    const frac = helm / H;
+    const drawn = frac * PN.PAYNE_HEIGHT;
+    line('Payne\'s helmet vs a kitten\'s head', `${drawn.toFixed(2)} vs ${PN.KITTEN_HEAD_W} wide (${helm}/${H} px)`);
+    ok('her helmet is at least as wide as a kitten\'s head', drawn >= PN.KITTEN_HEAD_W);
+    ok('...and she is at least 1.5x the 3.7 she was', PN.PAYNE_HEIGHT >= 3.7 * 1.5);
+    ok('...and the fraction in the code is the one on the file', Math.abs(frac - PN.HELMET_FRAC) < 0.03,
+      `${frac.toFixed(3)} vs ${PN.HELMET_FRAC.toFixed(3)}`);
+  }
+
+  /* --- HER BUBBLE, NOW SHE IS TALL ---
+     At 6.0 the old bubble (height + 2.2) sat off the top of the screen, and
+     beside her head it covered the kitten's own TALK TO PAYNE prompt. So it
+     hangs level with her face and goes away at talking range. The shipped
+     `_updateNpc` runs on a stand-in with no canvas behind it. */
+  {
+    const mkB = () => ({ visible: false, material: { opacity: 0 }, position: { y: 0 },
+      scale: { x: 1, setScalar(v) { this.x = v; } } });
+    const fake = (d) => {
+      const q = kid(0, 34 + d); q.payne.met = true;
+      return {
+        group: { position: { y: 0 } }, game: { ...g, players: [q], kotodama: null }, position: new THREE.Vector3(0, 0, 34),
+        _reveal() {}, ledger: (p) => p.payne, bubbles: [mkB(), mkB()], show: 0, t: 0,
+      };
+    };
+    const settle = (f) => { for (let i = 0; i < 60; i++) PN.Payne.prototype._updateNpc.call(f, 1 / 30); return f; };
+    const across = settle(fake(8));
+    const close = settle(fake(PN.TALK_R - 0.5));
+    const top = Math.max(...across.bubbles.map((x) => x.position.y));
+    ok('her bubble shows from across the square', across.bubbles.some((x) => x.visible));
+    ok('...level with her face, below the top of her helmet',
+      top < PN.PAYNE_HEIGHT && top > PN.PAYNE_HEIGHT * 0.6, `${top.toFixed(2)} of ${PN.PAYNE_HEIGHT}`);
+    ok('...and is gone at talking range, where the prompt says it instead',
+      close.bubbles.every((x) => !x.visible));
+  }
+
+  /* --- NO INVITATION WHEN THE QUESTS ARE OVER ---
+     "Payne is calling for players that just spawned to see her, even though
+     the Quests are over." */
+  {
+    const P = new PN.Payne(g);
+    const late = kid();
+    feats.open = false;
+    run(P, late, PN.INVITE_AT[1] + 5);
+    feats.open = true;
+    ok('a kitten seated after the ending is not invited to quests that are over',
+      !said(P).includes('payne_invite'), said(P).join(' '));
+  }
+
   /* --- THE GOBLIN SWEEP --- */
   ok('the sweep is a row in ATTACKS, a full circle', AT.sweep && AT.sweep.arc === -1);
   ok('...shorter and weaker than a dash, so it is never the better swing',
@@ -32227,7 +32383,14 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
   });
   const SWEEP = PADK({ down: (b) => b === 'sprint', pressed: (b) => b === 'attack' });
   const toasts = [];
-  const hudK = { sfx: () => {}, toast: (t) => toasts.push(t), onMischief: () => {}, strikePlayers: () => {} };
+  /* The wait is said through `toast`'s COMBO slot (one live line, rewritten),
+     so the stub reads the combo's text when there is one, and counts how many
+     distinct lines were opened. */
+  const combos = new Set();
+  const hudK = {
+    sfx: () => {}, onMischief: () => {}, strikePlayers: () => {},
+    toast: (t, i, c) => { toasts.push(c ? c.text(1, 0) : t); if (c) combos.add(`${i}:${c.key}`); },
+  };
 
   const a = mkK(0, 0);
   settle(a);
@@ -32243,6 +32406,11 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
   a.update(1 / 60, SWEEP, bare, [], hudK);
   ok('a second one inside the wait is refused OUT LOUD', a.sweepSeq === 1 && toasts.some((t) => /Goblin Sweep/.test(t)),
     toasts.join(' | '));
+  /* "it should stack the message or delete the previous message so it does
+     not spam the screen": ten mashes are one line. */
+  for (let i = 0; i < 10; i++) { a.attackCooldown = 0; a.update(1 / 60, SWEEP, bare, [], hudK); }
+  ok('...and mashing it is one message rewritten, never a pile',
+    combos.size === 1 && toasts.every((t) => !t || /Goblin Sweep: back in \d+s/.test(t)), [...combos].join());
   for (let t = 0; t < SWEEP_COOL; t += 1 / 20) a.update(1 / 20, PADK(), bare, [], hudK);
   a.update(1 / 60, SWEEP, bare, [], hudK);
   ok('...and allowed after it', a.sweepSeq === 2);
@@ -32270,6 +32438,16 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
       knocked.length === 3 && knocked.includes(w.props[0]), `${knocked.length} of 3`);
     ok('...and not what is past its reach', !knocked.includes(w.props[3]));
     ok('...and asks the gate rather than hurting anybody itself', asked.join() === 'sweep');
+
+    /* ...AND HER BUFFS DO NOT GROW IT ON SCENERY EITHER. */
+    const knocked2 = [];
+    const w2 = Object.create(world);
+    w2.props = [{ ...prop(0, 0), group: { position: new THREE.Vector3(b.position.x + r + 0.6, b.position.y, b.position.z) },
+      knock() { knocked2.push(this); return true; } }];
+    b._reach = () => BASE_REACH * 1.6;
+    b.sweepCool = 0;
+    b._doSweep(w2, hudK);
+    ok('...and a Long Cut kitten\'s sweep reaches no further', knocked2.length === 0);
   }
 
   /* THE RING DRAWS THE FIRST SWEEP. Found in the browser: the rig is built on

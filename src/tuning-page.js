@@ -206,8 +206,9 @@ const GROUPS = {
       charge: 'The charge’s strike. Mirrors CHARGE.',
       sweep: 'PAYNE’S GOBLIN SWEEP — a full circle round her (Arc -1), taught '
         + 'after her quests and three arena rounds. Short and weak on purpose: '
-        + 'it is the answer to being surrounded, not a better slash. The 4s '
-        + 'wait is SWEEP_COOL in player.js.',
+        + 'it is the answer to being surrounded, not a better slash. No reach buff '
+        + 'grows it, and it only finds kittens with their feet on the ground — '
+        + 'jumping it is the counter. The 4s wait is SWEEP_COOL in player.js.',
       claw: 'THE PANDA’S SWIPE, and it has no Damage row on purpose — the '
         + 'animal hits for `stand` × PANDA.dmgK, so tune the standing slash '
         + 'and the claw follows it. Reach and Arc come from the same claw '

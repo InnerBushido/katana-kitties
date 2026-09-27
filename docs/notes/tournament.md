@@ -605,7 +605,14 @@ the flash, the glow, the two searchlights and the fireworks (one pooled
 
 **Fireworks only when somebody can see it.** `Game._renderView` calls
 `ArenaBoard.see(camera)` for every lens it draws: the glass's middle in that
-frustum, the lens on the front side, within 320 units. Loudest on Mr. Satan's
+frustum, the lens on the front side, within 320 units. **And only with an
+audience.** *"The fireworks are also going off on the billboard when it
+shouldn't be, that should only happen if players are on the snake way bridge
+or infront of the billboard."* A lens that can see the glass was not enough:
+the ring's cameras look west over the stands straight at it. `see` now returns
+first unless `audience` is set, and `Game` sets that from two places only: a
+kitten riding the arena road (`snakeRide.road.arena`) or standing in the
+board's zone (`_boardWeight > 0`), with no match on. Loudest on Mr. Satan's
 slides and the ads (*"especially when it mentions Mr. Satan"*), a volley when a
 champion comes up. The pops are a synthesised `firework` in audio.js, scaled by
 how far the nearest viewer is.
@@ -622,6 +629,17 @@ cropped off for exactly that reason. The merged rig blends the same shot with
 its own `boardT`. The weight is exactly zero everywhere else (sampled over every
 island), so two players' camera does not change anywhere but in front of the
 board.
+
+**Never during a match, and never for an angel.** *"Camera is zooming out
+weirdly during the arena battle during feast, it may be affected by the
+billboard next to the arena we added."* It was. Every ground sample was
+honest, but the loser in the feast is an angel with her own leash, the ring's
+half plus `ANGEL_ROAM` (26) from its centre. That carries her west over the
+stands, past the glass, into the zone. The merged rig takes the strongest
+weight in the group, so one angel pulled everybody's camera out to frame the
+board. `Game._boardWeight` answers 0 while `tournament.active` (card through
+leaving) or for an angel. world-check lifts the shipped method out of main.js
+and asks it all three ways.
 
 ### Mr Satan
 

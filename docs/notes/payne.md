@@ -53,8 +53,34 @@ in [`systems/sweepfx.js`](../../src/systems/sweepfx.js), and the move in
 ## Where she is and what she does
 
 - **In the market at (-10, 24)**, west of Mr. Satan, on `findOpenSpot`. A
-  solid r 0.85, a bouncing idle, and a bubble over her head: an invitation for
-  a kitten who has not met her, then "Stuck? Need a hint?".
+  solid r 1.25, a bouncing idle, and a bubble beside her head: an invitation
+  for a kitten who has not met her, then "Stuck? Need a hint?".
+- **She is 6.0 tall, not 3.7.** *"Payne looks too small in the town, should be
+  1.5x's bigger at least, her helmet should be as big as a regular players
+  head at least."* Measured, not reasoned. A kitten's head is 1.42 wide (the
+  atlas's head band at the 2.9 kitten height, read in the browser). Her helmet
+  is 184 of her 753 px (`HELMET_FRAC`, re-read off `town.png` by world-check),
+  so it is 1.47 wide at 6.0. 1.5 x 3.7 = 5.55 would have left the helmet at
+  1.36, smaller than a head, so the helmet sets the size, not the 1.5x.
+  `TALK_R` went 4.6 -> 5.2 and the shadow scales with her.
+- **The bubble is BESIDE her head, level with her face (`BUBBLE_Y` = 0.84 of
+  her height), and slides along each lens's own right vector.** Kept over her
+  head at 6.0, its top was at NDC y 1.07-1.13 at every talking distance: off
+  the screen. Moved beside her, it then covered the kitten's TALK TO PAYNE
+  prompt at 3.5 units. So it **hides inside `TALK_R`**, where the prompt says
+  the same thing. After: top at NDC 0.64-0.78. world-check runs the shipped
+  `_updateNpc` for both halves.
+- **No invitation once the quests are over.** *"Payne is calling for players
+  that just spawned to see her, even though the Quests are over."* A kitten
+  seated after the Awakening had never met her, and the invite branch asked
+  only `met`. Now it also needs a next step (`nextStep` is null once
+  `feats.open` shuts). Checked with a late kitten over the whole invite window.
+- **She is in Help** as a sub-card, **Ask Payne**, inside *Quests &
+  achievements*, in its own accordion group `help-quests`. It is a sub-card
+  rather than more prose because the parent card has a reading budget
+  world-check holds it to. The picture is her town pose, helmet on (her face is
+  the ending's reveal), cut by `tools/help-portraits.mjs` from the
+  already-keyed `town.png` with no flood fill.
 - **INTERACT near her opens her card**, through the Inspector's per-pane card
   machinery, so one player drives it and the screen says who
   (non-negotiable 7). Rows:
@@ -155,7 +181,25 @@ playable or an opponent later, as Richard asked.
   asserts zero damage, then swings one in the ring and asserts it reaches the
   kitten *behind* her.
 - **4 s wait (`SWEEP_COOL`).** A press during the wait gets the refusal blip
-  and a toast with the seconds left.
+  and ONE line that says the seconds left. *"...should stack the message or
+  delete the previous message so it does not spam the screen."* It goes through
+  `toast`'s combo slot (key `sweepwait`), which rewrites one live line per
+  kitten in place. The refusal still says so (non-negotiable 6); mashing it
+  eleven times in the browser left one toast.
+- **Feet on the ground, next to her, or it misses.** *"The sweep attack should
+  only work on players that are touching the ground next to the player, if
+  they jump and are in the air, it should not work."* `strikePlayers` asks, for
+  `sweep` only: the target is `onGround`, not riding, and within `SWEEP_UP`
+  (0.6) of the sweeper's height. The ordinary strike band is 3.4, which lets a
+  slash catch a kitten mid-hop; that is right for a slash and wrong for a
+  sweep. **Jumping is the counter**, and the tuning page says so.
+- **Its reach never grows.** *"...the attack should not scale in length with
+  longer katana abilities or kotodama powerups."* `_doSweep` uses
+  `ATTACKS.sweep.reach` rather than her buffed `_reach()`, passes `BASE_REACH`
+  to the gate, and the gate treats `sweep` like `claw` (clan multiplier 1). The
+  ring in `sweepfx` is the same unbuffed number, so the ring is still the
+  hitbox. world-check tests a Long Cut kitten at 1.6x, with a control proving
+  the same buff does lengthen a standing slash.
 - **The spin is her facing turned twice around** over `SWEEP_SPIN`: the sprite
   sheet's eight directions make it read as a spin with no new art. Her own
   facing comes back at the end, and she is planted for it.

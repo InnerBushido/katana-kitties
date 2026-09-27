@@ -188,6 +188,21 @@ CLANS.forEach(([id, art], ci) => {
     onCanvas(resample(sym, sbox, sw, sh), SYM, SYM, false));
 });
 
+/* AND PAYNE, for the quest card ("We should add information about Payne to
+   the Help Quests & Achievements section"). HER TOWN POSE ONLY, helmet on:
+   her face is the ending's reveal, and a Help page that showed it would spoil
+   it for anybody who opened Help first. NOT KEYED AGAIN — `payne/town.png`
+   ships already chroma-keyed by sprite-bake, and flooding a keyed sheet is
+   exactly what ate Mr. Satan's shoulders (see world-check, "A SHEET THAT
+   ARRIVES KEYED"). Same height as a leader, cropped to her own ink. */
+{
+  const src = readPNG('public/sprites/payne/town.png');
+  const box = inkBox(src);
+  const w = Math.max(1, Math.round(box.w * (LEADER_H / box.h)));
+  console.log('\nPayne -> public/help/payne.png');
+  say('public/help/payne.png', resample(src, box, w, LEADER_H));
+}
+
 const before = CLANS.reduce((n, [id, art]) => n
   + readFileSync(`public/sprites/leaders/${art}.png`).length
   + readFileSync(`public/sprites/clans/${id}.png`).length, 0);

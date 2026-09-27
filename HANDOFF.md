@@ -535,6 +535,16 @@ script.
   kittens only in a live round, through the one gate.
 - **Open:** nobody has played it. The stuck timings are first guesses. The
   alternative held pose is kept outside the repo.
+- **Richard's first fixes** (branch `mixed/payne-fixes-arena-camera`):
+  - She is 6.0 tall, so her helmet (1.47) is wider than a kitten's head (1.42).
+  - Her bubble sits beside her head and hides at talking range.
+  - A kitten seated after the ending is no longer invited.
+  - Help has an **Ask Payne** sub-card.
+  - The sweep's wait is one rewritten line.
+  - The sweep hits only grounded kittens within 0.6 of her height, and no buff lengthens it.
+  - The big screen's camera zone is off during a match and for angels. That
+    was the feast's zoom-out.
+  - Its fireworks need a kitten on the arena road or in front of it.
 
 **The big screen outside the arena.** Branch `feature/arena-billboard`.
 [tournament.md](docs/notes/tournament.md) has the design and every note quoted,
