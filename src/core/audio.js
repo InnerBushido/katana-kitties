@@ -1275,6 +1275,30 @@ export class Audio {
         this._tone({ type: 'square', from: semi(26), dur: 0.05, gain: 0.055 * v });
         this._tone({ type: 'square', from: semi(33), dur: 0.07, gain: 0.04 * v, delay: 0.05 });
         break;
+      /* --- 返 RIPOSTE: THE GUARD GOING UP, AND THE CATCH ---
+
+         STEEL, NOT GLASS AND NOT SMOKE. The ward's family is sine bells on
+         the scale root and the Flash Step's is square waves and filtered
+         noise; all three live on neighbouring buttons, and the one thing a
+         girl must never have to work out is which of them she just fired.
+         These are INHARMONIC partials — two tones a ratio of 2.76 apart, the
+         way a struck bar rings rather than a string — which is the sound of a
+         blade meeting a blade and nothing else in this table.
+
+         `parryup` is short and quiet: the stance is a guess, and four of them
+         in a scrap must not be four alarms. `parry` is the loudest thing a
+         sword does in this game, because it is the one moment somebody's read
+         was RIGHT, and that deserves to be heard across the ring. */
+      case 'parryup':
+        this._noise({ from: 2400, to: 5200, dur: 0.1, gain: 0.22 * v, q: 3.2 });
+        this._tone({ type: 'triangle', from: semi(36), dur: 0.08, gain: 0.05 * v, delay: 0.04 });
+        break;
+      case 'parry':
+        this._tone({ type: 'triangle', from: semi(40), to: semi(39), dur: 0.42, gain: 0.2 * v });
+        this._tone({ type: 'sine', from: semi(40) * 2.76, dur: 0.24, gain: 0.08 * v });
+        this._tone({ type: 'square', from: semi(28), to: semi(22), dur: 0.06, gain: 0.08 * v });
+        this._noise({ from: 8000, to: 2600, dur: 0.12, gain: 0.3 * v, type: 'highpass', q: 0.9 });
+        break;
       case 'powerorb':
         /* Bigger than `orb`, and it has to be: the plain one was a pickup, this
            one changes how she moves for the rest of the game. Same bell an

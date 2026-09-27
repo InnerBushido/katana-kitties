@@ -808,6 +808,7 @@ git push origin alpha</code></pre>
       <tr><td><b>air</b> <b>✎</b></td><td class="num">dmg 14 · knock 13 · lift 7.5 · reach 3.7</td><td>slash in the air</td></tr>
       <tr><td><b>tri / dive / charge</b> <b>✎</b></td><td class="num">the three power-orb moves</td><td>entries in the same table, so they cannot leak out of the ring</td></tr>
       <tr><td><b>sweep</b> <b>✎</b></td><td class="num">dmg 8 · knock 8 · lift 7.5 · reach 4.4</td><td>Payne's Goblin Sweep: sprint held, stick still, attack. A full circle</td></tr>
+      <tr><td><b>riposte</b> <b>✎</b></td><td class="num">dmg 12 · knock 16 · lift 5 · reach 4.6</td><td>返 Riposte's answer: a parry that catches a blow from in front throws this back at once</td></tr>
     </tbody>
 </table></div>
 <!-- /doc-sync:numbers -->
@@ -1060,12 +1061,15 @@ git push origin alpha</code></pre>
       </tr>
       <tr>
         <td><b>A help picture that isn't filmed yet</b></td>
-        <td>Draws the still that holds <b>瞬 Flash Step</b>'s cell in the abilities grid until its
-          clip is shot. It reads the jade out of the orb roster and the kitten out of the player
-          palette, so it cannot drift from the game, and it stamps <b>PLACEHOLDER</b> in its own
-          corner: everything else on that page is an engine capture, and a drawing must never pass
-          for one. Swapping in the clip is a single attribute in the markup.</td>
-        <td><code>help-blink-placeholder.mjs</code></td>
+        <td>Draws the stills that hold <b>瞬 Flash Step</b>'s and <b>返 Riposte</b>'s cells in the
+          abilities grid until their clips are shot. They read the orb's colour out of the roster
+          and the kittens out of the player palette, so they cannot drift from the game, and each
+          stamps <b>PLACEHOLDER</b> in its own corner: everything else on that page is an engine
+          capture, and a drawing must never pass for one. Both draw with one shared, dependency-free
+          rasteriser, and lifting it out left the first picture byte-identical. Swapping in a clip is
+          a single attribute in the markup.</td>
+        <td><code>help-blink-placeholder.mjs</code>, <code>help-riposte-placeholder.mjs</code>,
+          <code>placeholder-raster.mjs</code></td>
       </tr>
       <tr>
         <td><b>Making the shipped art smaller than the art that made it</b></td>

@@ -515,6 +515,25 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Three more rare orbs: 遠 Far Step, 返 Riposte, 間 Long Parry.** Branch
+`feature/rare-orbs-reach-parry`, **not on alpha, not merged** — Richard asked
+for them to stay out until the Payne work has been played.
+[endgame.md](docs/notes/endgame.md) has the design and his words.
+
+- **遠 Far Step** (stacks, needs 瞬): the Flash Step's Lock Range is 1.5x with
+  one and 2x with two — lock-on, aimed hop and slip-away all read it.
+- **返 Riposte**: in a live round, stand still, HOLD Interact, push the stick.
+  A blow from the front half is caught and answered; from behind it lands.
+  Hangs her in the air. Drops a live 壁 Ward. A quick tap is still the clan
+  power / dive; a long hold with no push tells her how.
+- **間 Long Parry** (stacks, needs 返): the window is 1.5x per orb.
+- The Help grid's sixth cell is a PLACEHOLDER drawing until a clip is filmed.
+- **The published project page is one line behind** (the placeholder-tools row).
+  Republish it to the same URL when this branch merges, then
+  `npm run artifact -- --stamp`. Until then `world-check` has those two reds.
+- **Open:** nobody has played it; every number is a first guess on the balance
+  page.
+
 **Payne, the quest-giver.** Branch `feature/payne-quest-giver`.
 [payne.md](docs/notes/payne.md) has the design, every note quoted, and the
 script.

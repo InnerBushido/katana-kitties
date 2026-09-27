@@ -1430,6 +1430,135 @@ seconds rather than one and a half, because the joke is not for the kitten who
 threw it — she is busy — it is for her sister on the other half of the screen,
 who looks over a few seconds later.
 
+## 遠 Far Step, 返 Riposte and 間 Long Parry — three more at the dealer's
+
+Branch `feature/rare-orbs-reach-parry`, asked for together and kept **off
+alpha** until Richard says so. His words, the three of them:
+
+> "increases the potency of the teleporting ability … by 1.5x's as much … This
+> orb is stackable, so with two orbs equipped, it is now 2x's as much as the
+> 1.5x is applied to the original maximum range known as "Lock range""
+
+> "if the player executing the riposte is facing the player and executes it
+> within a small duration of time of when the attack happens, then they can
+> block the attack and instantly throw an attack of their own … standing
+> still, then holds down the Action button and moves the joystick in a certain
+> direction … within a 180 degree of the riposte angle direction (infront of
+> the player doing the riposte and not behind them) … should disable the
+> players shield if active. Can also be activated when in the air, if so,
+> velocity of player is zero and gravity is turned off until the technique is
+> finished."
+
+> "another Kotodama orb that is stackable and that increases the potency of the
+> parry ability by increasing the timing/window of the ability by 1.5x's"
+
+All three are `shopOnly`, `priceK` 2.5, like 守 and 瞬. The two boosters are
+`stack` with `needs:` the orb they boost and a shelf of two, which is exactly
+守 Long Guard's shape — so `world-check`'s generic booster rule ("alone it
+changes nothing; beside the orb it names it changes something") covers them
+without a line written for either.
+
+**1.5x AND 2x ARE ONE RULE: `1 + 0.5n` OF THE SHIPPED NUMBER, NOT 1.5ⁿ.** "The
+1.5x is applied to the original" is additive, so two is 2.0 and not 2.25.
+`lockRangeFor(far)` is the only place it is computed, and `aggregate` puts the
+answer on `power.blink.range`; every place that used to read `DODGE.range`
+directly — the lock-on search, the aimed hop, the flee — now asks
+`_lockRange()`. The flee is the same range times `selfK`, so Far Step moves the
+slip-away as well as the lock, which is what "how far the player can teleport"
+means. Measured on the ground with the shipped table: 10 → 15 → 20 m of lock.
+`farK` is on the balance page.
+
+**THE RIPOSTE IS ONLY IN A LIVE ROUND.** Outside one `strikePlayers` answers no
+to every blow, so there is nothing to parry, and ACTION means an oath, a dealer
+or a goblin out there. Holding the press back where it could never become a
+parry would only have delayed those.
+
+**THE GESTURE SHARES A BUTTON, SO IT HAS TO GIVE IT BACK.** ACTION in the ring
+is already the clan power on the ground and the dive in the air. So a press
+with the stick still *starts a hold* (`parryPend`) and nothing else, and the
+hold has three endings, all of which say something:
+
+- the stick pushed past `push` → the stance, facing where it was pushed;
+- let go inside `tap` (0.25 s) → **the press it would have been without 返** —
+  `_parryTap` hands it to the clan power or the dive, asked the same questions
+  `_updateGround` asks. A kitten wearing 返 has lost nothing she had;
+- held longer and let go with no push → a toast saying how the move goes, as
+  an instruction (sixth non-negotiable). A button held for a second that did
+  nothing would read as broken.
+
+A kitten who is already running and presses ACTION gets her clan power on the
+press, exactly as before: "standing still" is `still` of stick, the Goblin
+Sweep's reading of the same words.
+
+**IN THE STANCE SHE IS A STATUE, IN THE AIR TOO.** `parryAt` pins velocity the
+way `dodgePlanted` does and `_gravityK` returns 0 for it — the lever the Flash
+Step and the Cross Slash's hang already use, for the reason written there:
+refusing to accelerate composes, and writing `velocity.y = 0` every frame
+fought whatever else wrote to it. No jump, no swing, no mount, no Flash Step
+while it runs.
+
+**THE GATE ASKS, AND ONLY THE GATE.** `Player.parries(from)` is a dot product
+against `parryDir` not below zero — the half-plane in front, 180° exactly, and
+a blow from where she stands counts as in front (a dive can land from straight
+above). `Game.strikePlayers` asks it after the partner test, so parrying your
+own sister in a 2v2 is not a way to hit her with a sword, and before the Cross
+Slash's catch, so a parried cut holds nobody. A caught blow is `spent` and
+queued; the answers go out **after the loop**, each one a fresh pass through
+the gate with `ATTACKS.riposte` (12 dmg, reach 4.6 scaled by her own reach, so
+a Riverclaw's long blade can still out-reach it). Non-negotiable 3 is intact:
+the answer is an ordinary gated hit.
+
+**ONE CATCH PER STANCE ENDS EVERY CHAIN.** `riposte` shuts the window before it
+swings, so if two kittens both parry, the answer to the answer lands. Without
+that a pair of 返 could bounce one blow between them forever on one frame.
+
+**GUESS WRONG AND YOU STAND THERE.** A window that runs out empty becomes
+`recover` (0.35 s) with the blade down, then `cool` (1.2 s). A right guess does
+not pay the whiff: the answer swing *is* her recovery (`RIPOSTE_SWING`). Taking
+a hit in any of it ends it and starts the wait.
+
+**THE WARD GOES DOWN THROUGH `_dropWard`**, not by clearing a flag — the Flash
+Step's reason: she pays the ordinary wait and the overtime rule gets its say.
+The ward's tail is still protecting her for a fifth of a second, which is fine,
+because the gate asks the parry first.
+
+**THE FLOOR SAYS THE RULE.** `systems/parryfx.js` lays a half-disc in her
+colour, rimmed in the orb's steel, over the side she is covering — the same
+poller trick as `dodgefx`, over `parrySeq` and `parryHitSeq`. `world-check`
+projects its geometry and pins that the covered half is the half `parries`
+says yes to, because a guard drawn on the wrong side would be a lie about the
+one thing the move is.
+
+**間 IS `1 + 0.5n` OF THE WINDOW**, for 遠's reason: 0.35 → 0.525 → 0.70 s.
+
+**THE PICTURE.** The Help grid's sixth cell is a drawing, stamped PLACEHOLDER,
+for the Flash Step's reason. `tools/help-riposte-placeholder.mjs` shares its
+rasteriser with the blink still through `tools/placeholder-raster.mjs`; the
+lift was checked by re-rendering `blink.png` and comparing bytes — identical,
+which meant keeping one floating-point expression in its original order.
+
+**WHAT WENT WRONG ON THE WAY**, so it is not walked into again:
+
+- The boost for the parry was first called `timing`. `kanaFor(id)` hashes the
+  id to a kana slice and `timing` landed on the same slice as `parry`, so two
+  orbs drew the same glyph on the ring. It is `longparry` now, and the roster
+  check that caught it is the one to trust.
+- The gesture checks first failed because a freshly built `Player` is not
+  `onGround` on frame one, so the press went to the dive. The test kittens
+  settle for twenty frames before the button goes down.
+- The first placeholder had the lunging sister's blade drawn twice (the shared
+  'blade' pose puts one inside the silhouette) and a guard fill built from
+  overlapping discs that stacked to invisible-or-solid. The arm is fur and the
+  blade is steel now, and the fill is one pass of `px`.
+- The Help card's body is capped at 750 characters by `world-check`. Five orbs
+  fit in 633 by giving each one line and letting the three boosters share one
+  warning; "the dealer keeps two of each" went, because it was never true of
+  the moves.
+
+**OPEN:** nobody has played it. `window`, `recover`, `cool` and the answer's
+numbers are first guesses, all on the balance page. The Help cell wants a
+filmed clip.
+
 ## The screens had to learn that eight was two different numbers
 
 There were eight kinds of orb and eight slots, so every screen drew eight of

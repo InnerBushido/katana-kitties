@@ -35,6 +35,7 @@ import { Cutscene } from './systems/cutscene.js';
 import { Trailer } from './systems/trailer.js';
 import { CrossFx } from './systems/crossfx.js';
 import { SweepFx } from './systems/sweepfx.js';
+import { ParryFx } from './systems/parryfx.js';
 import { DodgeFx } from './systems/dodgefx.js';
 import { ClanFx } from './systems/clanfx.js';
 import { Confirm } from './systems/confirm.js';
@@ -697,6 +698,7 @@ class Game {
     this.dodgeFx = new DodgeFx(this.scene);
     /* ...and Payne's Goblin Sweep, the same poller shape over `sweepSeq`. */
     this.sweepFx = new SweepFx(this.scene);
+    this.parryFx = new ParryFx(this.scene);
 
     /* THE TWO CLAN POWERS THE RING GAVE BACK TO ICEWHISKER AND WINDWHISKER:
        the mark 盗 Steal Mischief puts on somebody, and the inhale and cone of
@@ -3217,6 +3219,7 @@ class Game {
        kitten, for exactly the reason above. */
     this.dodgeFx?.reset();
     this.sweepFx?.reset();
+    this.parryFx?.reset();
     /* ...and no mark on a kitten nobody is hunting, and no flame hanging in
        the air over a deck with no fight on it. */
     this.clanFx?.reset();
@@ -6096,6 +6099,12 @@ class Game {
       if (dot < A.arc) return null;
       return { dx, dz, dist };
     };
+    /* 返 RIPOSTE'S ANSWERS, thrown AFTER this loop and never inside it. An
+       answer is a swing, and a swing is a pass through this function; making
+       it from in here would nest a second loop over `this.players` inside the
+       first, with the first one's `spent` and half-finished panda arithmetic
+       still live around it. Queued, it is simply the next swing. */
+    const answers = [];
 
     for (const target of this.players) {
       if (target === attacker || target.ko) continue;
@@ -6161,7 +6170,7 @@ class Game {
          but not on HER ground. */
       const swept = kind !== 'sweep'
         || (target.onGround && !riding && Math.abs(target.position.y - attacker.position.y) <= SWEEP_UP);
-      const found = (doneHer || !swept) ? null : reaches(at);
+      let found = (doneHer || !swept) ? null : reaches(at);
       /* HER PANDA IS A SECOND BODY IN THE RING, and `fighter` is the whole of
          the question of whether it may be hit: grown, standing, and not
          already knocked down. A cub is never a target — it is the size of a
@@ -6225,6 +6234,34 @@ class Game {
            half-second daze for the length of the cone. */
         if (found) spent?.add(target);
         continue;
+      }
+      /* --- 返 RIPOSTE: CAUGHT, AND ANSWERED ---
+         "If an attack happens during the riposte, within a 180 degree of the
+         riposte angle direction (infront of the player doing the riposte and
+         not behind them), then the block and automatic attack are executed."
+         `Player.parries` is the whole of that question — her window, and the
+         half-plane in front of her — and this is the one place it is asked,
+         because this is the one place a blow is ever about to be spent.
+
+         BELOW THE PARTNER TEST, ON PURPOSE. A partner's swing is a daze, not
+         an attack, and a 2v2 where parrying your own sister answered her with
+         a sword would turn the one rule that protects partners into a way to
+         hit one.
+
+         ONLY HER BODY IS PARRIED. A kitten in her stance is never riding
+         (`_parryFree`), but her grown panda can be standing beside her and be
+         inside the same swing; it takes its share as it always did. Every
+         KIND of blow is caught — the Cross Slash's catch included, which is
+         why this is above that branch: a parried cut holds nobody.
+
+         SPENT, so a Dragon Breath held on her is stopped by the parry for this
+         bite and not re-tried on the same frame; the window shuts in
+         `riposte`, so the next bite finds her in her answer swing and lands. */
+      if (found && target.parries?.(attacker.position)) {
+        spent?.add(target);
+        answers.push([target, attacker]);
+        found = null;
+        if (!beast) continue;
       }
 
       /* --- A CUT OF THE CROSS SLASH CATCHES HER, IT DOES NOT HIT HER ---
@@ -6356,6 +6393,15 @@ class Game {
 
       /* LAST, so the collapse cannot change any of the answers above. */
       if (beast && target.panda.hp <= 0) this._pandaDown(target);
+    }
+    /* THE ANSWERS, and the words. A blow that did nothing reads as broken
+       (sixth non-negotiable), so the kitten whose blow was caught is told, as
+       an instruction: the parry has a back, and that is the way round it.
+       The parrying kitten's own "返 RIPOSTE!" is over her head, where all
+       four panes can see it. */
+    for (const [who, foe] of answers) {
+      this.toast(`${who.name} parried you — get round behind her!`, foe.index);
+      who.riposte(foe, this);
     }
   }
 
@@ -9453,6 +9499,7 @@ class Game {
        See `systems/dodgefx.js`. */
     this.dodgeFx?.update(dt, this.players, this.world);
     this.sweepFx?.update(dt, this.players, this.payne?.sweeper);
+    this.parryFx?.update(dt, this.players);
     /* AND THE CLAN POWERS LAST OF THE THREE, for the same reason dodgefx runs
        after crossfx: the mark is drawn on the kitten it is following, and by
        here every position this frame is settled. */

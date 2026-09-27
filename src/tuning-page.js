@@ -102,6 +102,25 @@ const GROUPS = {
       aimDead: ['Nudge deadzone', 'TWO ORBS ONLY. How far off centre the stick has to be before an aimed Flash Step counts it as a direction at all. It is deliberately far smaller than the walking deadzone (0.22): walking has to survive a worn Joy-Con drifting on its own for an hour, and this is read for a tenth of a second during a move somebody is deliberately making, so a nudge is allowed to be a nudge.', '×', 0.01, 0.2, 0.01],
       aimNear: ['Nudge band', 'TWO ORBS ONLY. Under this, she lands at Backstab distance and nowhere else — one band, no interpolation, so the smallest real push has a definite answer. Above it, the push is scaled from Backstab distance out to the full pivot radius.', '×', 0.05, 0.6, 0.01],
       nearK: ['Backstab distance', 'TWO ORBS ONLY. The closest an aimed Flash Step will put her to the kitten she pivoted around, as a fraction of a standing sword\u2019s reach. Under 1 means she arrives already inside her own swing — which is the entire point of buying the second orb.', '×', 0.3, 1.5, 0.05],
+      farK: ['Far Step, per orb', '遠 FAR STEP ONLY — the rare booster that needs a Flash Step. How much of the Lock range above each orb adds: 0.5 is the ask, one orb 1.5×, two 2× (additive, never compounded). It stretches the whole move — who she can lock, where an aimed landing can go, and the flee, which is still Flee distance × the stretched range. Zero makes the orb do nothing.', '×', 0, 2, 0.05],
+    },
+  },
+  PARRY: {
+    title: 'Riposte (the rare one)',
+    blurb: 'The twelfth orb, and a read rather than a wall. Standing still, '
+      + 'HOLD Interact and push the stick: she plants, facing the push, and a '
+      + 'blow from the half of the world in front of her is stopped and '
+      + 'answered with ATTACKS.riposte. From behind it is an ordinary hit. In '
+      + 'the air she hangs — no velocity, no gravity — until it is over. Only '
+      + 'in a live round; outside one, Interact means what it always did.',
+    fields: {
+      window: ['Window', 'How long the guard is up and catching. The whole move is this number: a blow from in front inside it is parried. 間 Long Parry multiplies it.', 's', 0.05, 1.5, 0.01],
+      recover: ['Whiff recovery', 'How long she stands there, blade down, when the window ran out with nothing in it. The cost of guessing wrong — at zero the move is free to throw on every exchange and stops being a read. A parry that CATCHES skips this: the answer swing is her recovery.', 's', 0, 1.5, 0.05],
+      cool: ['Wait', 'Before she can parry again. Charged when the move ENDS, so a long window cannot eat its own wait.', 's', 0, 6, 0.1],
+      tap: ['Tap length', 'Let go of Interact inside this without pushing the stick and the press is handed back to the clan power (or the dive, in the air), exactly as if she had no Riposte. Held longer with no push, she is told how the move goes.', 's', 0.05, 0.8, 0.01],
+      still: ['Standing still', 'How much stick at the press still counts as standing still. Above it, Interact is the clan power on the press, as it always was.', '×', 0, 0.6, 0.01],
+      push: ['Push', 'How far the stick has to go while Interact is held for it to be the parry — and its direction is the guard\u2019s. Past the walking deadzone on purpose, so a thumb resting on the stick is not a parry.', '×', 0.1, 1, 0.05],
+      longK: ['Long Parry, per orb', '間 LONG PARRY ONLY — the rare booster that needs a Riposte. How much of the Window each orb adds: 0.5 is the ask, one orb 1.5×, two 2×. Zero makes the orb do nothing.', '×', 0, 2, 0.05],
     },
   },
   /* NOT AN ABILITY — a gag, and the one table on this page that belongs to
@@ -204,6 +223,10 @@ const GROUPS = {
       tri: 'ONE CUT of the Cross Slash. Deliberately feeble — nine damage and a nudge — because the cuts HOLD rather than throw. All the force lives in CROSS.knock.',
       dive: 'The power dive’s strike. Mirrors DIVE.',
       charge: 'The charge’s strike. Mirrors CHARGE.',
+      riposte: '返 RIPOSTE’S ANSWER — the swing she throws the instant a parry '
+        + 'catches, aimed straight at whoever she caught. A little longer than a '
+        + 'standing slash, so every ordinary blow comes from inside it; a longer '
+        + 'blade than this (Riverclaw and Long Cuts) is parried but not answered.',
       sweep: 'PAYNE’S GOBLIN SWEEP — a full circle round her (Arc -1), taught '
         + 'after her quests and three arena rounds. Short and weak on purpose: '
         + 'it is the answer to being surrounded, not a better slash. No reach buff '

@@ -219,6 +219,10 @@ src/
              dodgefx (the Flash Step's target ring, its smoke, and the silly
                thing left standing in it - the same poller trick, over
                Player.dodgeSeq)
+             parryfx (返 Riposte's guard: a half-disc on the floor over the
+               side she is covering, and a burst when it catches — over
+               Player.parrySeq / parryHitSeq. The half-disc IS the rule: a
+               blow from that side is caught, from the flat side it is not)
   entities/  player  dragon  ryuuseki  panda  critter  angel  leader  satan
              griffin  orb  powerorb  dragonball  prop  shrine  stall
              clanpower (what an OATH is worth in the ring — 盗 Steal Mischief
@@ -260,10 +264,11 @@ tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
              and the traps that have cost takes. `shots/*.js` is one file per
              clip — the only thing that can ever re-cut one.
              help-portraits.mjs (the clan leaders on the Help page)
-             help-blink-placeholder.mjs (the drawn still holding the Flash
-               Step's cell in the abilities grid until its clip is filmed -
-               it stamps PLACEHOLDER on itself because everything else on
-               that page is an engine capture)
+             help-blink-placeholder.mjs  help-riposte-placeholder.mjs (the
+               drawn stills holding the Flash Step's and the Riposte's cells in
+               the abilities grid until their clips are filmed - each stamps
+               PLACEHOLDER on itself because everything else on that page is an
+               engine capture. Both draw with placeholder-raster.mjs)
              kitten-cackle.mjs (the trailer's demon, and `--game` for the
                Cross Slash's four graded purrs — see docs/notes/voices.md,
                which carries the licensing decision attached to them)

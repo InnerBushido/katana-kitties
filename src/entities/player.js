@@ -1,7 +1,7 @@
 ﻿import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
 import { PANDA_SPEED, PANDA_JUMP, CLAW } from './panda.js';
-import { aggregate, WARD, AEGIS, DIVE, CROSS, CHARGE, DODGE } from './powerorb.js';
+import { aggregate, WARD, AEGIS, DIVE, CROSS, CHARGE, DODGE, PARRY } from './powerorb.js';
 import { STEAL, DBREATH, BreathTally, arenaPowerFor } from './clanpower.js';
 import { ANGEL_ALPHA } from './angel.js';
 import { styleFor } from '../core/palette.js';
@@ -230,7 +230,31 @@ export const ATTACKS = tune('ATTACKS', {
      `SWEEP_COOL`, so it is the answer to being surrounded, never a better
      slash. */
   sweep: { dmg: 8, knock: 8, lift: 7.5, reach: 4.4, arc: -1 },
+  /* 返 RIPOSTE'S ANSWER. "Block the attack and instantly throw an attack of
+     their own" — so it is a swing, through the one gate, with a row here like
+     every other swing, and nothing about it can land outside a live round.
+
+     A LITTLE LONGER THAN A STANDING SLASH (4.6 against 3.4), because it is
+     aimed at a kitten who has just proved she is within reach of HER: every
+     ordinary blow in the game (dash 3.9, air 3.7, the Goblin Sweep 4.4) comes
+     from inside it, so the answer lands. What it does NOT do is reach
+     whoever parried it: a Riverclaw kitten with three Long Cuts pokes from
+     further than this, and against her the block still holds and the answer
+     falls short. That is her longer blade doing what she bought it for, and it
+     is visible — the arc is drawn — rather than an answer that lands on
+     somebody standing eight metres away. It grows with HER reach like any
+     slash (`clanK` in `Game.strikePlayers`), so a Long Cut on the parrying
+     side closes the gap again.
+
+     THE DAMAGE IS A LITTLE OVER A SLASH (12 against 10), because a read that
+     was right should pay more than a button that was pressed; the knockback
+     is a dash's, near enough, because the point of the answer is SPACE. */
+  riposte: { dmg: 12, knock: 16, lift: 5, reach: 4.6, arc: -0.1 },
 });
+
+/** How long 返 Riposte's answer swing holds her: the attack pose's own 0.26,
+ *  which is how long every ordinary slash shows its blade. */
+const RIPOSTE_SWING = 0.26;
 
 /** Seconds before the Goblin Sweep can be thrown again. Not a row above:
  *  `ATTACKS` is the shape of a HIT, and `tune()` only takes keys the defaults
@@ -644,6 +668,26 @@ export class Player {
     this.sweepCool = 0;
     this.sweepSeq = 0;
     this.sweepFace = 0;
+    /** 返 RIPOSTE'S CLOCKS, and a poller reads them, as it reads every move's.
+     *  `parryT` is the live window: a blow from in front of `parryDir` while it
+     *  runs is stopped and answered. `parryRecT` is the tail — a whiff's
+     *  recovery, or the answer swing's own time — and she is planted and
+     *  weightless through both (`parryAt`). `parryCool` is the wait, charged
+     *  when the move ENDS. `parryPend`/`parryHeld` are the gesture: ACTION
+     *  went down with the stick still, and the push has not come yet.
+     *  `parrySeq` counts stances and `parryHitSeq` blows caught, for
+     *  `systems/parryfx.js`, for the reason `dodgeSeq` counts. `parryWin` is
+     *  the window this stance started with, so the drawing can show how much
+     *  of it is left without re-asking the orbs. */
+    this.parryT = 0;
+    this.parryRecT = 0;
+    this.parryCool = 0;
+    this.parryDir = 0;
+    this.parryWin = 0;
+    this.parryPend = false;
+    this.parryHeld = 0;
+    this.parrySeq = 0;
+    this.parryHitSeq = 0;
     /* --- WHAT HER CLAN IS WORTH IN THE RING ---
 
        TWO POWERS, ONE SHAPE, AND EVERY CLOCK HERE IS READ BY A POLLER.
@@ -1620,6 +1664,12 @@ export class Player {
        back to her. `dodgePlanted` is the vanish AND the lock; `dodgeAt` is
        only the vanish, which is why this moved. */
     if (this.dodgePlanted) return 0;
+    /* 返 RIPOSTE IN THE AIR HANGS: "velocity of player is zero and gravity is
+       turned off until the technique is finished". The whole of it — the
+       window, and the recovery or the answer after it — because a kitten who
+       parried a jump-slash and then dropped out from under her own answer
+       would swing at the air where her sister used to be. */
+    if (this.parryAt) return 0;
     /* CAUGHT MID-AIR AND STAYING THERE. Weightless is not a detail of the
        hold, it IS the hold — a kitten who keeps falling while the other three
        cuts land is a kitten the other three cuts miss, which is the bug the
@@ -1984,6 +2034,15 @@ export class Player {
          `_clearSpecials`, which also leaves it alone. */
     }
 
+    /* --- AND A BLOW FROM BEHIND ENDS A PARRY ---
+       It only gets here when the parry did not catch it: from the half of
+       the world she was not facing ("not behind them"), or after the window.
+       She is thrown like anybody, and the pin that held her still has to
+       come off FIRST, or it zeroes the throw on the next frame and she takes
+       the damage standing still — being hit has to look like being hit. The
+       wait is charged, because the move was spent. */
+    if (this.parryAt || this.parryPend) this._endParry();
+
     this.hitT = HIT_STUN;
     this.invulnT = INVULN;
     this.flashT = 0.3;
@@ -2261,6 +2320,15 @@ export class Player {
        round's first hit on a kitten who was never marked would take one of her
        Kotodama off her. The sequence counters are NOT cleared: the effects tell
        one use from the next by them, exactly as they do for `dodgeSeq`. */
+    /* 返 RIPOSTE WITH THEM, wait and all, for the Flash Step's reason: a
+       stance that survived a round reset would plant her on her starting post
+       and parry the first blow of the next round for free. The sequence
+       counters only count up. */
+    this.parryT = 0;
+    this.parryRecT = 0;
+    this.parryPend = false;
+    this.parryHeld = 0;
+    if (!keepWaits) this.parryCool = 0;
     this.stealTarget = null;
     this.stealMarkT = 0;
     this.breathChargeT = 0;
@@ -2551,7 +2619,11 @@ export class Player {
          `_commitDodge` had just set to look at whoever she pivoted around: she
          would arrive behind her sister staring at the far wall, which is the
          one thing the move promises not to do. */
-      if (!this.dodgePlanted) this.facing = Math.atan2(wish.x, wish.z);
+      /* ...and neither may a 返 Riposte's. She is facing the push that
+         started it, and that facing IS the half of the world she is
+         guarding; a thumb drifting afterwards would swing her guard round
+         behind her while she stands still. */
+      if (!this.dodgePlanted && !this.parryAt) this.facing = Math.atan2(wish.x, wish.z);
     }
     /* PLANTED, BUT NOT POINTED. Her FEET are taken and her aim is not, and
        the order of these two lines is what does it: the facing above is set
@@ -2572,6 +2644,12 @@ export class Player {
     /* The Goblin Sweep plants her for its spin: she is turning on the spot,
        and a spin that drifted with the stick would be a dash nobody pressed. */
     if (this.sweepT > 0) { wish.set(0, 0, 0); moving = false; }
+    /* 返 RIPOSTE PLANTS HER, and so does the half-second of the gesture
+       before it. "Standing still, then holds down the Action button and moves
+       the joystick": while ACTION is held and the push has not come, a nudge
+       too small to count as the push must not walk her, or the move that
+       starts from standing still starts from a shuffle. */
+    if (this.parryAt || this.parryPend) { wish.set(0, 0, 0); moving = false; }
 
     const sprinting = pad.down('sprint') && moving;
     const buff = this.clan?.buff;
@@ -2616,7 +2694,11 @@ export class Player {
        So during the stun the movement accel is skipped entirely and the
        throw decays on its own gentle drag instead. Gravity is untouched, so
        she still falls, still lands, and still slides to a stop. */
-    if (this.dodgePlanted) {
+    if (this.dodgePlanted || this.parryAt) {
+      /* (返 RIPOSTE shares this pin: "velocity of player is zero ... until the
+         technique is finished", on the ground and in the air alike. A blow
+         from BEHIND ends the parry in `hurt` before the throw is written, so
+         the pin never eats a knockback.) */
       /* NOTHING MOVES HER WHILE SHE IS NOT THERE — AND NOTHING MOVES HER WHILE
          SHE IS GETTING HER FEET BACK. "Velocity set to zero before, during,
          and at the end of the ability", so it is pinned every frame rather
@@ -2665,7 +2747,7 @@ export class Player {
        wearing three of them has six. The count is read wherever jumps are
        refilled, so landing restores all of them however many that is. */
     this.maxJumps = (buff?.jumps ?? 2) + this.power.jumps;
-    if (pad.pressed('jump') && !this.busy && !this.dodgePlanted && !this.arenaBreathAt) {
+    if (pad.pressed('jump') && !this.busy && !this.dodgePlanted && !this.arenaBreathAt && !this.parryAt) {
       if (this.coyote > 0 || this.jumpsLeft > 1) {
         this.velocity.y = JUMP_V * jumpK;
         this.jumpsLeft = Math.max(1, this.jumpsLeft - 1);
@@ -2755,7 +2837,7 @@ export class Player {
     const deferred = !!this.power.tri && !this.pandaMount
       && !hud?.critterHold?.(this);
     if (pad.pressed('attack') && this.attackCooldown <= 0 && !this.busy
-        && !this.arenaBreathAt) {
+        && !this.arenaBreathAt && !this.parryAt) {
       if (this.pandaMount) {
         this.attackTimer = 0.26;
         this.attackCooldown = 0.45;
@@ -2886,7 +2968,23 @@ export class Player {
        in this same frame. There is no clan hall in the sky and the branch
        would find nothing today — which is exactly the kind of "it happens not
        to matter yet" that this project keeps re-inventing the bug out of. */
-    const clanned = !dodged && pad.pressed('interact') && this.onGround
+    /* --- 返 Riposte: still, ACTION held, stick pushed ---
+       AFTER THE FLASH STEP, which wants SPRINT as well and so is never this
+       gesture; BEFORE the clan power and the dive, which both fire on the
+       PRESS — and the press is the one thing this move cannot decide on,
+       because the push that says "parry" comes after it. So with 返 worn, in
+       a live round, a press with the stick still is HELD BACK: a push makes it
+       a parry, and a quick release hands it to whichever of those two it
+       would have been (`_parryTap`). Everybody without the orb, and everybody
+       outside the ring, never reaches the hold — `_parryInput` returns false
+       before it looks at anything — so ACTION is bit-identical for them
+       (fifth non-negotiable).
+       IT SPENDS THE PRESS, for `gotchas.md § UI FALL-THROUGH`'s first shape:
+       the oath branch below reads `interact` again this frame. */
+    const parrying = !dodged && this._parryInput(dt, pad, hud);
+    if (parrying) pad.consume?.('interact');
+
+    const clanned = !dodged && !parrying && pad.pressed('interact') && this.onGround
       && this._startClanPower(pad, hud);
     if (clanned) pad.consume?.('interact');
 
@@ -2894,8 +2992,8 @@ export class Player {
        Airborne only, which is what keeps `interact` free for the oath and the
        stall: neither of those is reachable off the floor, so the two meanings
        of the button can never both be live at once. */
-    if (this.power.dive && !dodged && !clanned && pad.pressed('interact') && !this.onGround
-        && !this.diving && !this.busy && !this.dodgePlanted) {
+    if (this.power.dive && !dodged && !clanned && !parrying && pad.pressed('interact') && !this.onGround
+        && !this.diving && !this.busy && !this.dodgePlanted && !this.parryAt) {
       this._startDive(hud);
     }
 
@@ -2988,7 +3086,7 @@ export class Player {
        bubble or climbed onto a dragon would be one button doing two things
        in the same half second. The lock's tail is included for the same
        reason the stick is: the move is not over until she can walk. */
-    if (pad.pressed('mount') && !this.dodgePlanted) {
+    if (pad.pressed('mount') && !this.dodgePlanted && !this.parryAt) {
       if (this.pandaMount) {
         const p = this.pandaMount;
         this.pandaMount = null;
@@ -3189,6 +3287,10 @@ export class Player {
        only sequencer here that MOVES her, so running it after the ward's
        clocks keeps "where is she" and "what is she wearing" in one order. */
     this._stepDodge(dt, pad, world, hud);
+    /* 返 Riposte's clocks. Second, and it moves nothing — but a parry that
+       ends this frame has to be over before the ward below is asked whether
+       it may pop. */
+    this._stepParry(dt);
     /* ...and the clan powers next, because the breath can END this frame and
        everything below it — the ward, the charge — has to see a kitten who is
        no longer breathing rather than one who still is. */
@@ -3807,12 +3909,25 @@ export class Player {
    * @param {?Player} t whoever the reticle is on, or null
    */
   _dodgeFar(t) {
-    if (!t) return DODGE.range * DODGE.selfK;
-    if (this.power.blink?.aim) return DODGE.range;
+    if (!t) return this._lockRange() * DODGE.selfK;
+    if (this.power.blink?.aim) return this._lockRange();
     const now = Math.hypot(
       t.position.x - this.dodgeFrom.x, t.position.z - this.dodgeFrom.z,
     );
     return Math.min(this.dodgeD0, now);
+  }
+
+  /**
+   * Her Lock range: `DODGE.range`, stretched by every 遠 Far Step she wears.
+   *
+   * ASKED OF THE ORBS, NEVER OF THE TABLE, in all three places the move
+   * measures a distance — the reticle, the aimed landing and the flee — so a
+   * Far Step kitten's reticle, her ring and her landing cannot disagree about
+   * how far she goes. `?? DODGE.range` is a stub pad's `power` with no 瞬 on
+   * it, which never reaches here in play and must not NaN if it does.
+   */
+  _lockRange() {
+    return this.power.blink?.range ?? DODGE.range;
   }
 
   _dodgeSpotFor(pad, world) {
@@ -3909,7 +4024,7 @@ export class Player {
       const dz = q.position.z - this.position.z;
       const d = Math.hypot(dx, dz);
       const dot = d > 0.001 ? (dx * fx + dz * fz) / d : 1;
-      const inSight = d <= DODGE.range && dot >= cosArc;
+      const inSight = d <= this._lockRange() && dot >= cosArc;
       const inSwing = d <= swing && dot >= ATTACKS.stand.arc;
       if (!inSight && !inSwing) continue;
       if (dot > bestDot + 1e-4 || (Math.abs(dot - bestDot) <= 1e-4 && d < bestD)) {
@@ -3950,6 +4065,8 @@ export class Player {
        land in an empty space, an animal pinned under a paw that has gone. */
     if (this.mount || this.rideAlong || this.pandaMount) return false;
     if (this.ko || this.angel || this.busy || this.eatT > 0) return false;
+    /* A PARRY OWNS HER UNTIL IT IS OVER, the way a charge does. */
+    if (this.parryAt || this.parryPend) return false;
 
     const hall = world?.clanHallNear?.(this.position.x, this.position.z);
     if (hall && this.clan?.id !== hall.clan.id) return false;
@@ -4027,12 +4144,211 @@ export class Player {
    * keeps and for the same reason: every one of those already owns her for the
    * next second. A kitten on her panda is holding the reins with both paws.
    */
+  /**
+   * 返 RIPOSTE: can this press start the gesture?
+   *
+   * THE RING ONLY. Outside a live round nothing can reach her to be parried
+   * — `Game.strikePlayers` answers no to every blow — and ACTION means other
+   * things out there: an oath, a dealer, a goblin. Holding a press back where
+   * it could never become a parry would only delay those, so it is not held.
+   *
+   * STANDING STILL is `still` of stick, the Goblin Sweep's "stick still" read
+   * the same way. A kitten already running who presses ACTION means the
+   * clan power, and gets it on the press exactly as she always did.
+   */
+  _parryArmed(pad, hud) {
+    if (!this.power.parry || !hud?.arenaLive?.(this)) return false;
+    if (Math.hypot(pad?.mx ?? 0, pad?.my ?? 0) > PARRY.still) return false;
+    return this._parryFree();
+  }
+
+  /** Nothing else owns her: the same list the Flash Step refuses on, plus the
+   *  moves that already pin her. */
+  _parryFree() {
+    if (this.mount || this.rideAlong || this.pandaMount || this.heldBy) return false;
+    if (this.ko || this.angel || this.busy || this.eatT > 0) return false;
+    if (this.dodgePlanted || this.arenaBreathAt || this.diving || this.sweepT > 0) return false;
+    return !this.parryAt;
+  }
+
+  /**
+   * The gesture, one frame of it. Returns true while it owns ACTION.
+   *
+   * THREE WAYS OUT OF THE HOLD, AND ALL THREE SAY SOMETHING:
+   *   the push      the parry, in the direction pushed (or a refusal toast if
+   *                 it is still coming back — sixth non-negotiable);
+   *   a quick tap   handed back to the clan power or the dive, so a kitten
+   *                 wearing 返 has lost nothing she had (`_parryTap`);
+   *   a long hold   let go with no push: nothing to hand back that she could
+   *                 have meant, so she is told how the move goes. A button
+   *                 held for a second that silently does nothing reads as
+   *                 broken.
+   * And a fourth that is not hers: the round ends or something takes her
+   * (`_parryFree`), and the hold just goes, as every other move does.
+   */
+  _parryInput(dt, pad, hud) {
+    if (!this.parryPend) {
+      if (!pad?.pressed?.('interact') || !this._parryArmed(pad, hud)) return false;
+      this.parryPend = true;
+      this.parryHeld = 0;
+      return true;
+    }
+    if (!this.power.parry || !hud?.arenaLive?.(this) || !this._parryFree()) {
+      this.parryPend = false;
+      return false;
+    }
+    this.parryHeld += dt;
+    if (Math.hypot(pad?.mx ?? 0, pad?.my ?? 0) >= PARRY.push) {
+      this.parryPend = false;
+      this._startParry(this._stickHeading(pad), hud);
+      return true;
+    }
+    if (!pad?.down?.('interact')) {
+      this.parryPend = false;
+      if (this.parryHeld < PARRY.tap) {
+        this._parryTap(pad, hud);
+      } else {
+        hud?.sfx?.('deny');
+        hud?.toast?.('', this.index, {
+          key: 'parryhow', add: 0,
+          text: () => '返 Riposte: HOLD Interact, then PUSH the stick at them',
+        });
+      }
+    }
+    return true;
+  }
+
+  /**
+   * A quick tap that turned out not to be a parry: do what it would have done.
+   * The clan power on the ground, the dive in the air — the two things
+   * `_updateGround` would have handed this press to without 返, asked the
+   * same questions they ask there.
+   */
+  _parryTap(pad, hud) {
+    if (this.onGround) {
+      this._startClanPower(pad, hud);
+    } else if (this.power.dive && !this.diving && !this.busy && !this.dodgePlanted) {
+      this._startDive(hud);
+    }
+  }
+
+  /**
+   * Into the stance, facing `heading`.
+   *
+   * THE WARD GOES DOWN, as asked: "executing this technique should disable
+   * the players shield if active". Through `_dropWard` rather than by
+   * clearing the flag, for the Flash Step's reason — she pays the ordinary
+   * wait, and the overtime rule still gets to ask its question. Its tail
+   * (`WARD.tail`) is still protecting her for a fifth of a second, and that is
+   * fine: the gate asks the parry first, so a blow from in front is parried
+   * rather than absorbed.
+   */
+  _startParry(heading, hud) {
+    if (heading == null) return false;
+    if (this.parryCool > 0) {
+      hud?.sfx?.('deny');
+      const left = Math.ceil(this.parryCool * 10) / 10;
+      hud?.toast?.('', this.index, {
+        key: 'parrywait', add: 0, text: () => `返 Riposte: back in ${left.toFixed(1)}s`,
+      });
+      return false;
+    }
+    if (this.wardOn) this._dropWard(hud, 'parry');
+    this.parryWin = this.power.parry?.window ?? PARRY.window;
+    this.parryT = this.parryWin;
+    this.parryRecT = 0;
+    this.parryDir = heading;
+    this.facing = heading;
+    this.velocity.set(0, 0, 0);
+    this.parrySeq++;
+    hud?.sfx?.('parryup');
+    return true;
+  }
+
+  /**
+   * Does her live parry catch a blow thrown from `from`?
+   *
+   * "Within a 180 degree of the riposte angle direction (infront of the
+   * player doing the riposte and not behind them)": the half-plane in front
+   * of `parryDir`, which is a dot product not below zero. Only the WINDOW
+   * catches — a whiff's recovery is the price of guessing wrong and catches
+   * nothing. Asked by `Game.strikePlayers` and by nothing else.
+   *
+   * A BLOW FROM EXACTLY WHERE SHE STANDS IS IN FRONT. There is no direction
+   * to be behind in, and the dive (radius, `arc: -1`) can land from straight
+   * above her: a kitten who parried upward at a falling sister is right.
+   */
+  parries(from) {
+    if (!(this.parryT > 0) || !from) return false;
+    const dx = from.x - this.position.x;
+    const dz = from.z - this.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.001) return true;
+    return (dx * Math.sin(this.parryDir) + dz * Math.cos(this.parryDir)) / d >= 0;
+  }
+
+  /**
+   * Caught one: stop, turn on `foe`, and answer.
+   *
+   * CALLED BY THE GATE AFTER IT HAS FINISHED WITH THE BLOW IT CAUGHT, not
+   * from inside its loop, so the answer swing is a fresh pass through
+   * `strikePlayers` rather than a second one nested in the first. The window
+   * closes here, before the answer goes out, which is what makes a chain of
+   * parries end: every kitten can catch ONE blow per stance, so an answer
+   * that is itself parried is answered by somebody whose own window is now
+   * shut.
+   *
+   * THE ANSWER IS HER RECOVERY. `parryRecT` becomes the swing's own time, so
+   * she is planted until the blade has been thrown and then free — she guessed
+   * right, and a right guess must not also cost the whiff's standing still.
+   */
+  riposte(foe, hud) {
+    this.parryT = 0;
+    this.parryRecT = RIPOSTE_SWING;
+    this.parryHitSeq++;
+    if (foe?.position) {
+      const dx = foe.position.x - this.position.x;
+      const dz = foe.position.z - this.position.z;
+      if (Math.hypot(dx, dz) > 0.001) this.facing = Math.atan2(dx, dz);
+    }
+    this.parryDir = this.facing;
+    this.attackTimer = RIPOSTE_SWING;
+    this.attackCooldown = Math.max(this.attackCooldown, 0.36);
+    hud?.sfx?.('parry');
+    hud?.sfx?.('slash');
+    this.setCallout('返 RIPOSTE!', 1.2);
+    const dir = new THREE.Vector2(Math.sin(this.facing), Math.cos(this.facing));
+    hud?.strikePlayers?.(this, 'riposte', this._reach(), dir);
+  }
+
+  /** The move is over, one way or another: clocks off, wait on. */
+  _endParry() {
+    const was = this.parryAt;
+    this.parryT = 0;
+    this.parryRecT = 0;
+    this.parryPend = false;
+    if (was) this.parryCool = PARRY.cool;
+  }
+
+  _stepParry(dt) {
+    this.parryCool = Math.max(0, this.parryCool - dt);
+    if (this.parryT > 0) {
+      this.parryT = Math.max(0, this.parryT - dt);
+      /* A WHIFF: the window ran out with nothing in it. Blade down, and she
+         stands there for `recover` — the cost of the wrong guess. */
+      if (this.parryT === 0) this.parryRecT = PARRY.recover;
+    } else if (this.parryRecT > 0) {
+      this.parryRecT = Math.max(0, this.parryRecT - dt);
+      if (this.parryRecT === 0) this.parryCool = PARRY.cool;
+    }
+  }
+
   _startClanPower(pad, hud) {
     const power = arenaPowerFor(this.clan);
     if (!power) return false;
     if (!hud?.arenaLive?.(this)) return false;
     if (this.mount || this.rideAlong || this.pandaMount) return false;
-    if (this.ko || this.angel || this.busy || this.eatT > 0 || this.dodgeAt) return false;
+    if (this.ko || this.angel || this.busy || this.eatT > 0 || this.dodgeAt || this.parryAt) return false;
     return power.id === 'steal' ? this._startSteal(hud) : this._startArenaBreath(hud);
   }
 
@@ -4528,6 +4844,10 @@ export class Player {
    * asked separately by the stick, the jump, the dive and the mount button.
    */
   get dodgePlanted() { return this.dodgeT > 0 || this.dodgeLockT > 0; }
+
+  /** True while a 返 Riposte owns her: the window, then the whiff's recovery
+   *  or the answer swing. Planted and weightless throughout. */
+  get parryAt() { return this.parryT > 0 || this.parryRecT > 0; }
 
   /**
    * Commit to a charge.
@@ -5322,6 +5642,13 @@ export class Player {
        is what turns a held pose into a cat working at something. */
     if (this.eatT > 0) this.sprite.row = a.attack;
     else if (this.attackTimer > 0) this.sprite.row = a.attack;
+    /* 返 RIPOSTE'S STANCE IS THE ATTACK ROW, HELD: blade up and in front of
+       her, which is what a guard is. No new row — see the note below on why
+       no kitten sheet gets one — and the half-disc `parryfx` lays on the
+       floor is what says WHICH half she is guarding. A whiff's recovery drops
+       back to whatever she would otherwise be showing: the blade coming down
+       is the tell that the window has closed. */
+    else if (this.parryT > 0) this.sprite.row = a.attack;
     else if (this.mount || airborne) this.sprite.row = a.jump;
     else if (this.pandaMount) this.sprite.row = a.idle;
     else if (speed > 0.9) this.sprite.row = a.walk;
