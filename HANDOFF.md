@@ -515,6 +515,24 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**The ending's islands come toward you, and make a noise.** Branch
+`mixed/ending-isles-sfx`. [story.md](docs/notes/story.md) has every note
+quoted, with its number.
+
+- **Island A** comes out whole through a cloud column at 5.43 s (was 6.44 s).
+- **Gates**: 1 s after it, all started within 0.5 s, nearest first. They are
+  now ranked by the truck's lens; they used to be ranked by the previous shot's.
+- **The truck is tilted 10°.** The empty bottom band went from 27–28% to
+  5.2–6.5%.
+- **The wide shot's islands** take 4.8 s each: cloud, then island, then water.
+  They are done 0.59 s before the cut. The wide shot is 5.9 s now (was 3.1 s),
+  from a 2.8 s rest after Patchfur's line.
+- **A sound per gate and per island the lens sees**, about 8 dB under the
+  voice.
+- **Open:** the 2.8 s rest is a guess at pacing that nobody has sat through. The
+  dusk gate is off the right of the truck, so it is neither seen nor heard.
+  The quieter levels are arithmetic, not a fresh render.
+
 **The arena's front door, and six notes from Richard.** Branch
 `mixed/arena-entrance-six`. [world.md](docs/notes/world.md) has the entrance,
 the road's shot list and the music, and [story.md](docs/notes/story.md) has the

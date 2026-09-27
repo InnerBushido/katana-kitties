@@ -40,13 +40,26 @@ import { cloudPuff, mergeSlotted, puffMaterial } from './snakeway.js';
    strip of open sky each has (see `FAR_PLACES`) — and `world-check` projects
    them back through the same lenses to prove they are still there.
 
-   AND THEY SHOOT THROUGH THEIR CLOUDS NOW, rather than rising: "formed out of
+   AND THEY SHOT UP THROUGH THEIR CLOUDS, rather than rising: "formed out of
    very large clouds and they 'shoot through' the clouds to make it more
-   abrupt and grandiose ... while the clouds that spawned them are fading
-   away, then the waterfall starts forming". The ending drives each pan's
-   islands off its own clock (`show`), so a skip or a scrub lands on the frame
-   it should; the two behind the wide shot's lens never put on a show at all,
-   and are simply put up by `revealAll` with the roads.
+   abrupt and grandiose". The ending drives each pan's islands off its own
+   clock (`show`), so a skip or a scrub lands on the frame it should; the two
+   behind the wide shot's lens never put on a show at all, and are simply put
+   up by `revealAll` with the roads.
+
+   AND NOW THEY COME OUT OF THE CLOUD TOWARD YOU, WHOLE. "Instead of growing
+   downward after fading in, it can just already be a full solid 3D object and
+   can just spawn/fade-in in a forward direction through the clouds like a
+   monolithic mountain appearing infront of the clouds, we will need more
+   clouds on the bottom to cover up the entire shape of the cone shaped
+   island." So there is no cut plane and no rise any more. The cloud is a
+   COLUMN, grass to keel tip, standing behind where the island will be; the
+   island starts inside and behind it and is pushed out along the line to the
+   lens that is watching it (`show`'s `cam`), ending in front of it. The puffs
+   do not write depth and the land does, so what shows is exactly the part of
+   the island that has come through — which is the whole effect, and needed no
+   trick of its own. Then, and only then: "have the waterfall begin flowing
+   once the island stops moving and while clouds are fading away".
 
    FOUR DRAW CALLS FOR ALL SEVEN. Land, water, spray and portals are each one
    merged mesh, and each vertex knows which island it belongs to (`isle`); a
@@ -56,34 +69,35 @@ import { cloudPuff, mergeSlotted, puffMaterial } from './snakeway.js';
 --------------------------------------------------------------------------- */
 
 export const FAR = {
-  /** Seconds, cloud to finished waterfall, for an island in the WIDE shot.
-   *  Short because of where it has to fit: the pull-out is 3.1s and "the
-   *  islands should be fully formed and the clouds faded at least 2 seconds
-   *  before the ending of this scene", so everything an eye sees - the shot
-   *  up, the cloud going, the water - is inside its first second and a bit. */
-  show: 1.6,
-  /** ...and for the one in the truck across the town, which has three
-   *  seconds to itself and is the first new thing the ending shows. */
-  showFirst: 2.4,
-  /** The shape of a show, as fractions of it. The cloud gathers; the island
-   *  SHOOTS up through it — an ease-out-back, so it overshoots and settles
-   *  rather than drifting to a stop; the cut plane drops away under cover of
-   *  the cloud so the keel is there; the cloud fades; and the water, which
-   *  starts as the island lands, is full as the last of the cloud goes. */
-  gather: [0, 0.38],
-  shoot: [0.38, 0.58],
-  unclip: [0.52, 0.62],
-  clear: [0.58, 0.92],
-  pour: [0.52, 1],
-  /** Between two islands of the same pan starting. Small: four of them
-   *  going up almost together is the "grandiose" in the note, and the
-   *  whole pan's set has to be done 2s before the cut. */
-  gap: 0.04,
-  /** How far below its grass the portal's plane sits. */
-  waist: 3,
-  /** How far an island shoots up through its portal. Twice what it rose
-   *  when it rose slowly; it covers it in a third of the time. */
-  rise: 90,
+  /** Seconds, cloud to finished waterfall — THE SAME FOR EVERY ISLAND. "When
+   *  the islands in the background spawn in on the next camera angle ... it
+   *  should probably take 3x's as long for them to completely spawn in. Use
+   *  similar timing to the first island spawning in." They were 1.6s, and the
+   *  truck's 2.4; one number now, three times the wide shot's old one. */
+  show: 4.8,
+  /** The shape of a show, as fractions of it, in the order the note gives:
+   *  "first spawn the clouds (user should see the clouds spawning in)" — about
+   *  a second; "then have the island come out from behind the clouds (this
+   *  should take at least a second or two)" — two; "then have the waterfall
+   *  begin flowing once the island stops moving and while clouds are fading
+   *  away" — the last 1.8s, water from the very frame it stops. */
+  gather: [0, 0.21],
+  emerge: [0.21, 0.625],
+  /** ...fading in over the first part of the push, a dither rather than an
+   *  alpha, so the edges the cloud does not quite cover never pop. */
+  fadeIn: [0.21, 0.4],
+  clear: [0.66, 0.96],
+  pour: [0.625, 1],
+  /** Between two islands of the same pan starting — a cascade you can count,
+   *  and each one's sound its own (see `SummonScene._sfxFar`). */
+  gap: 0.12,
+  /** How far each is pushed toward the lens, and how far behind its resting
+   *  place the cloud column stands, both in island radii. The column is a
+   *  radius and a bit across on every side of its own middle, so an island
+   *  starting 2.4 back has its front inside the cloud and its back behind it:
+   *  the lens sees cloud, and then island coming through cloud. */
+  push: 2.4,
+  bank: 1.2,
 };
 
 /**
@@ -125,11 +139,8 @@ export const FAR_PLACES = [
 const MAX = 8;
 const sm = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
 const win = (t, w) => sm((t - w[0]) / (w[1] - w[0]));
-/** An ease-out-back: past 1 and back. The "abrupt" of a thing shot upward. */
-const back = (t) => {
-  t = Math.max(0, Math.min(1, t)) - 1;
-  return 1 + 2.2 * t * t * t + 1.2 * t * t;
-};
+/** An ease-out: a heavy thing slowing to a stop. No overshoot — "monolithic". */
+const out3 = (t) => { t = 1 - Math.max(0, Math.min(1, t)); return 1 - t * t * t; };
 
 /** Where the islands are and what each is — `FAR_PLACES`, dressed. The
  *  dressing (house or pagoda, where the trees go) is seeded off the index, so
@@ -208,6 +219,9 @@ export class FarIsles {
     this.isles = L.map((s, k) => ({
       x: s.x, y: s.y, z: s.z, r: s.r, slot: k, shot: s.shot,
       started: false, t: 0, dur: FAR.show, reveal: 0, fall: 0, driven: false,
+      /* The way to the lens that watched it arrive, flat. Decided on the first
+         frame of its show and kept, so a panning camera does not steer it. */
+      fx: 0, fz: 1, aimed: false,
     }));
 
     const landGeos = [];
@@ -333,21 +347,27 @@ export class FarIsles {
       emit(1, 60);
       emit(2, 26);
 
-      /* THE PORTAL: a VERY LARGE bank of cloud where the island's waist
-         will be — "formed out of very large clouds" — built round its own
-         origin so the slot can grow it from nothing. It was a disc of
-         sixteen puffs a third of the island across, and it read as a ring
-         of cotton wool round something rising; this is a cloud the island
-         is hidden IN, twice its width and piled up above its grass, so what
-         comes out of it has come from somewhere. */
+      /* THE PORTAL: a COLUMN of cloud the whole height of the island, grass
+         to the tip of its keel — "we will need more clouds on the bottom to
+         cover up the entire shape of the cone shaped island". It was a bank
+         at the waist, which hid an island rising through it and would hide
+         half of one coming out of it. It narrows as it goes down, the way the
+         keel does, and it is round, so it hides the island from whichever
+         side the lens is on; built round the grass's height at its own
+         origin, so the slot can grow it from nothing. */
       const puffs = [];
-      for (let j = 0; j < 22; j++) {
+      const keelTip = 4 + r * 2.1;
+      const NP = 40;
+      for (let j = 0; j < NP; j++) {
         const q = (a) => valueNoise(k * 53 + j, a, 29);
-        const a = (j / 22) * Math.PI * 2 * 3 + q(1) * 0.8;
-        const d = r * (j < 6 ? q(2) * 0.5 : 0.55 + q(2) * 0.85);
-        const rad = r * (0.45 + q(3) * 0.4);
-        const g = cloudPuff(rad, k * 71 + j, 0.58);
-        g.translate(Math.cos(a) * d, (q(4) - 0.35) * r * 0.55, Math.sin(a) * d);
+        const f = (j + q(5) * 0.8) / NP;
+        const dy = r * 0.45 - f * (keelTip + r * 0.45);
+        const wide = r * (1.2 - f * 0.6);
+        const a = j * 2.39996 + q(1) * 0.6;
+        const d = wide * (0.25 + q(2) * 0.75);
+        const rad = r * (0.5 + q(3) * 0.3) * (1 - f * 0.35);
+        const g = cloudPuff(rad, k * 71 + j, 0.8);
+        g.translate(Math.cos(a) * d, dy, Math.sin(a) * d);
         puffs.push(g);
       }
       portals.push({ parts: puffs, slot: k });
@@ -356,9 +376,9 @@ export class FarIsles {
     /* --- the land --- */
     const landMat = toonVertexMat({ fog: true });
     const U = {
-      /* per island: x = how far it has still to rise, y = the portal's plane
-         (nothing below it is drawn), z = how far it has faded in */
-      uIsle: { value: Array.from({ length: MAX }, () => new THREE.Vector4(0, -1e9, 0, 0)) },
+      /* per island: xy = how far it still has to come, on x and z; z = how far
+         it has faded in */
+      uIsle: { value: Array.from({ length: MAX }, () => new THREE.Vector4(0, 0, 0, 0)) },
     };
     landMat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, U);
@@ -366,24 +386,20 @@ export class FarIsles {
         .replace('#include <common>', `#include <common>
           attribute float isle;
           uniform vec4 uIsle[${MAX}];
-          varying vec3 vFarW;
-          varying vec2 vFarClip;`)
+          varying float vFarFade;`)
         .replace('#include <begin_vertex>', `#include <begin_vertex>
           int farI = int(isle + 0.5);
-          transformed.y -= uIsle[farI].x;
-          vFarClip = uIsle[farI].yz;`)
-        .replace('#include <project_vertex>', `#include <project_vertex>
-          vFarW = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+          transformed.xz += uIsle[farI].xy;
+          vFarFade = uIsle[farI].z;`);
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>
-          varying vec3 vFarW;
-          varying vec2 vFarClip;`)
+          varying float vFarFade;`)
         .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-          /* Below the portal is not there yet, and the plane is soft for a
-             few units so it breaks up like cloud rather than being sliced. */
+          /* Faded in as a dither, not an alpha: the land stays opaque and
+             keeps writing depth, which is what lets the cloud it is coming
+             through cover exactly the part of it still inside. */
           float farDn = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-          if (vFarW.y < vFarClip.x - farDn * 5.0) discard;
-          if (farDn > vFarClip.y) discard;`);
+          if (farDn > vFarFade) discard;`);
     };
     landMat.customProgramCacheKey = () => 'far-isle-land';
     const land = new THREE.Mesh(concat(landGeos, ['position', 'normal', 'color', 'isle']), landMat);
@@ -591,11 +607,24 @@ export class FarIsles {
    * @param shot 'A' or 'B' — see `FAR_PLACES`
    * @param t    seconds since the first of them started
    * @param dur  seconds one island's show lasts
+   * @param cam  where the lens that SHOWS it is — what "forward" means. Only
+   *             its own shot passes one, and the first one passed is kept, so
+   *             a pan does not steer it. Until then it faces the middle of the
+   *             world: the truck's island gathers its cloud under the shot
+   *             BEFORE the truck, whose lens is looking at a bamboo grove.
    */
-  show(shot, t, dur = FAR.show) {
+  show(shot, t, dur = FAR.show, cam = null) {
     this.of(shot).forEach((s, i) => {
       const u = t - i * FAR.gap;
       if (u < 0 && !s.driven) return;
+      if (!s.aimed) {
+        const dx = (cam ? cam.x : 0) - s.x;
+        const dz = (cam ? cam.z : 0) - s.z;
+        const L = Math.hypot(dx, dz) || 1;
+        s.fx = dx / L;
+        s.fz = dz / L;
+        s.aimed = !!cam;
+      }
       s.driven = true;
       s.started = true;
       s.dur = dur;
@@ -627,7 +656,7 @@ export class FarIsles {
 
   /** None of them: a restart. */
   hideAll() {
-    for (const s of this.isles) { s.started = false; s.t = 0; s.driven = false; s.dur = FAR.show; }
+    for (const s of this.isles) { s.started = false; s.t = 0; s.driven = false; s.aimed = false; s.dur = FAR.show; }
     this.group.visible = false;
     this._step(0);
   }
@@ -651,27 +680,32 @@ export class FarIsles {
     this._apply();
   }
 
+  /** How far into coming out of its cloud an island is, 0..1 — 0 until the
+   *  cloud has gathered, 1 once it has stopped. What the ending's sound and
+   *  `world-check` both ask. */
+  static emerged(reveal) {
+    return Math.max(0, Math.min(1, (reveal - FAR.emerge[0]) / (FAR.emerge[1] - FAR.emerge[0])));
+  }
+
   _apply() {
     for (const s of this.isles) {
       const r = s.reveal;
-      const plane = s.y - FAR.waist;
-      /* SHOT UP THROUGH THE CLOUD, not floated: the whole rise in a fifth of
-         the show, overshooting and settling. Everything below the cloud's
-         plane is not drawn until the plane drops away under cover of it. */
-      const u = (r - FAR.shoot[0]) / (FAR.shoot[1] - FAR.shoot[0]);
-      const rise = !s.started ? 1e5 : r >= 1 ? 0 : FAR.rise * (1 - back(u));
-      const drop = win(r, FAR.unclip);
-      const clip = r >= 1 ? -1e9 : plane - drop * (s.r * 2.4 + 12);
-      // Solid the moment it breaks the surface - the cloud is the fade.
-      const fade = s.started && u > 0 ? 1 : 0;
-      this.U.uIsle.value[s.slot].set(rise, clip, r >= 1 ? 1.01 : fade, 0);
+      /* PUSHED OUT OF THE CLOUD TOWARD THE LENS, easing to a stop, whole the
+         entire way: nothing is cut off it and nothing grows. `back` is how
+         far it still has to come, in world units along `fx, fz`. */
+      const e = r >= 1 ? 1 : out3(FarIsles.emerged(r));
+      const back = s.started ? (1 - e) * FAR.push * s.r : 0;
+      const fade = !s.started ? 0 : r >= 1 ? 1.01 : win(r, FAR.fadeIn) * 1.01;
+      this.U.uIsle.value[s.slot].set(-s.fx * back, -s.fz * back, fade, 0);
       this.W.uGrow.value[s.slot] = s.fall;
-      /* The cloud gathers, swelling as it comes, holds while the island goes
-         through it, and is GONE — not a skirt left round the waist: "then
-         the clouds would fade out". */
+      /* The column gathers, swelling as it comes, holds while the island
+         comes through it, and is GONE: "while clouds are fading away". It
+         stands behind the island's resting place, so the island ends in front
+         of it — "like a monolithic mountain appearing infront of the clouds". */
       const gather = win(r, FAR.gather);
       const pf = s.started && r < 1 ? gather * (1 - win(r, FAR.clear)) : 0;
-      this.portalMat.slot(s.slot, s.x, plane, s.z, pf, 0.6 + 0.4 * gather);
+      this.portalMat.slot(s.slot, s.x - s.fx * FAR.bank * s.r, s.y, s.z - s.fz * FAR.bank * s.r,
+        pf, 0.6 + 0.4 * gather);
     }
   }
 }

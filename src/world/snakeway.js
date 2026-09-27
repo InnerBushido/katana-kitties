@@ -79,10 +79,14 @@ export const SNAKE = {
    *  x's as long": it was 0.5s; the torii itself now forms over about 1.1s of
    *  this, which is 2.2 times. */
   gateEach: 1.75,
-  /** Seconds between one gate starting and the next, nearest the camera
-   *  first. "The rate at which all the torii gates are spawned can also be 2
-   *  or 3x's as long": it was 0.07s; 0.17 is 2.5 times. */
-  gateStep: 0.17,
+  /** Seconds from the first gate starting to the LAST one starting, nearest
+   *  the camera first, spread evenly however many there are. "We can have the
+   *  torii gates spawn in faster together so that they all start to be spawned
+   *  in, in about 0.5s keeping the staggered spawn in, but make it more
+   *  uniform". It was a fixed 0.17s between each, a second for seven — which
+   *  had been asked for as "2 or 3x's as long" than 0.07, and was then too
+   *  slow. Each gate still takes its own `gateEach` to form. */
+  gateAll: 0.5,
   /** One gate's show, as fractions of `gateEach`: the cloud gathers, the
    *  torii forms out of it, and only once it is whole does the cloud go —
    *  "after the torii gates are done spawning into existence, then the clouds

@@ -831,8 +831,9 @@ export class World {
    * until the arena is open, and a turn kept for it would be a gap in the
    * middle of the sequence where nothing happens.
    *
-   * In seconds the windows are `SNAKE.gateEach` long and `SNAKE.gateStep`
-   * apart; as fractions of the phase they are that over the whole span, so
+   * In seconds the windows are `SNAKE.gateEach` long, and their starts are
+   * spread evenly over `SNAKE.gateAll`; as fractions of the phase they are
+   * that over the whole span, so
    * `SummonScene` only has to make the phase the length `gateSpan` says.
    */
   _gateWindows(W) {
@@ -846,8 +847,9 @@ export class World {
       })
       : shown;
     const span = this.gateSpan(order.length);
+    const step = order.length > 1 ? SNAKE.gateAll / (order.length - 1) : 0;
     order.forEach((road, i) => {
-      const s = (i * SNAKE.gateStep) / span;
+      const s = (i * step) / span;
       road.gateWin = [s, s + SNAKE.gateEach / span];
       road.gateRank = i;
     });
@@ -864,7 +866,7 @@ export class World {
         ? this.snakeWay.roads.filter((r) => !r.arena || this.arenaOpen).length
         : SNAKE_LINKS.length + (this.arenaOpen ? 1 : 0);
     }
-    return SNAKE.gateEach + Math.max(0, n - 1) * SNAKE.gateStep;
+    return SNAKE.gateEach + (n > 1 ? SNAKE.gateAll : 0);
   }
 
   /** The roads' posts and statues are solid while the road they belong to is
