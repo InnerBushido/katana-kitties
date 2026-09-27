@@ -520,7 +520,7 @@ is listed here is untested-by-players, not untested-by-machine.
 script.
 
 - **She is a real person, and her approval is pending.** Richard is sending
-  her the result. Her likeness and all 39 lines are hers to sign off.
+  her the result. Her likeness and all 45 lines are hers to sign off.
 - **In the market at (-10, 24).** INTERACT opens her card: the next quest in
   Richard's order (Icewhisker saved for last among the oaths), the three
   tag-alongs, the hints toggle, the Character Profile, and the trick.
@@ -545,6 +545,18 @@ script.
   - The big screen's camera zone is off during a match and for angels. That
     was the feast's zoom-out.
   - Its fireworks need a kitten on the arena road or in front of it.
+- **Richard's second fixes** (branch `mixed/payne-last-one-ryuuseki-gate`):
+  - The cave tease is 35 s.
+  - Her bubble's tail comes out of its side and points at her helmet.
+  - A sister's BYE no longer cuts off what Payne is saying to somebody else.
+    BYE is the least of what she says.
+  - The Very Last One: the first MARK IT pins one prop and waits once it is
+    down. Then she sends you to Icewhisker until you hold the oath. Then a
+    temper, then a Goblin Sweep of her own: no damage, a gag through
+    `Player.blast`.
+  - Six new Pixie lines, pending Payne's approval with the rest.
+  - **Ryuuseki is summoned only by a kitten on her own feet on the home
+    island.** Flying a dragon over the torii used to call him down.
 
 **The big screen outside the arena.** Branch `feature/arena-billboard`.
 [tournament.md](docs/notes/tournament.md) has the design and every note quoted,

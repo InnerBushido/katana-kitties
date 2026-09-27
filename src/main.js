@@ -6636,7 +6636,7 @@ class Game {
     if (!this.ryuArt) return;
     const at = this._toriiSpot();
     for (const p of this.players) {
-      if (Math.hypot(p.position.x - at.x, p.position.z - at.z) >= 46) continue;
+      if (!this._canSummonRyu(p, at)) continue;
       if (!this._spawnRyuuseki()) return;
       /* AND HERE IS THE ROAR, on the frame he is built and one line before the
          camera cuts to him. Moved off `_onAllBalls` on the report quoted up
@@ -6652,6 +6652,29 @@ class Game {
       this.summonScene.start('summon', this.ryu.position.clone(), this.ryu.quad * 0.85);
       return;
     }
+  }
+
+  /**
+   * Is this kitten summoning him? Near the torii, ON THE HOME ISLAND, ON HER
+   * OWN FEET.
+   *
+   * Reported: "Ryuuseki shouldn't be summoned unless the player summoning
+   * them is on the main island on the ground, not flying." It was a flat
+   * 46-unit circle round the torii and nothing else, so a kitten flying a
+   * dragon anywhere over it - at any height - called him down from the air.
+   * MEASURED: every point in that circle is home ground, so the flying half
+   * is the one that was biting; the island half is kept because the rule as
+   * Richard said it has both, and a later change to the circle or the island
+   * must not quietly bring back a summons from somewhere else. The ritual is
+   * walking up to the gate: `onGround` and not carried by anything that flies, and the
+   * ground under her is `islands[0]`, which `heightAt` reports even with a
+   * bridge deck on top.
+   */
+  _canSummonRyu(p, at = this._toriiSpot()) {
+    if (!p || Math.hypot(p.position.x - at.x, p.position.z - at.z) >= 46) return false;
+    if (!p.onGround || p.mount || p.rideAlong || p.carried || p.angel || p.snakeRide) return false;
+    const under = this.world.heightAt(p.position.x, p.position.z);
+    return !!under && under.island === this.world.islands[0];
   }
 
   onRyuMount(player, seat) {
@@ -9429,7 +9452,7 @@ class Game {
        a second in the smoke and then drops, and a drop needs a floor to find.
        See `systems/dodgefx.js`. */
     this.dodgeFx?.update(dt, this.players, this.world);
-    this.sweepFx?.update(dt, this.players);
+    this.sweepFx?.update(dt, this.players, this.payne?.sweeper);
     /* AND THE CLAN POWERS LAST OF THE THREE, for the same reason dodgefx runs
        after crossfx: the mark is drawn on the kitten it is following, and by
        here every position this frame is settled. */

@@ -76,9 +76,11 @@ export const STUCK_AGAIN = 120;
 export const STUCK_MAX = 3;
 /** "having a baby panda for too long, like, more than 2 minutes". */
 export const CUB_TEASE = 120;
-/** A grotto is a maze a kitten walks through in under a minute when she knows
- *  the way. Seventy-five seconds inside one with its star still there is lost. */
-export const MAZE_TEASE = 75;
+/** Seconds inside a grotto whose star is still there before she calls it lost.
+ *  It was 75, reasoned as "a maze she walks through in under a minute when she
+ *  knows the way". Richard: "Lets change the 'Lost in a cave' timing to be
+ *  35secs." A nine-year-old who is lost knows it long before 75. */
+export const MAZE_TEASE = 35;
 /** Take-offs near the sky shards, without a third jump, before she laughs. One
  *  or two is a kitten trying; four is a kitten who has not worked out why. */
 export const JUMP_TEASE = 4;
@@ -99,6 +101,19 @@ export const TALK_R = 5.2;
 /** Her solid. Grew with her: at 6.0 tall a 0.85 disc let a kitten stand
  *  inside her skirt. */
 export const PAYNE_SOLID = 1.25;
+/** HER OWN GOBLIN SWEEP, on a kitten who will not stop asking. See `askLast`.
+ *  `reach` is talking range and a bit, because the kitten she is sweeping was
+ *  standing at her card a moment ago and may have stepped back since. The ring
+ *  she draws is this reach: the ring is the hitbox, as it is for a kitten's.
+ *  `knock` / `lift` are a gag's, not a fight's: well under Mr. Satan's 34 / 16,
+ *  well over a real sweep's 8 / 7.5 - "send them flying backwards". */
+export const PAYNE_SHOVE = { reach: 6.4, knock: 15, lift: 9 };
+/** How long her spin takes: twice round, a shade slower than a kitten's
+ *  `SWEEP_SPIN`, because she is bigger and she means it. */
+export const PAYNE_SPIN = 0.5;
+/** ...and how long her bubble stays down afterwards: the length of her
+ *  complaint, near enough. */
+export const PAYNE_HUFF = 10;
 /** "once they have completed their quests and have gained some fighting
  *  experience in the arena" — rounds FOUGHT, not won: the youngest sister is
  *  learning the trick too. */
@@ -133,9 +148,13 @@ export const HELMET_FRAC = 184 / 753;
  *  talking distance: off the screen, under the HUD chip. Her helmet's top is at
  *  0.57-0.70, so the bubble moves to her side, level with her face. */
 const BUBBLE_Y = PAYNE_HEIGHT * 0.84;
+/** Where the tail's POINT goes, and the bubble hangs off it: level with her
+ *  helmet, just outside its edge. `BUBBLE_Y` was the bubble's middle, and its
+ *  tail came out of the bottom and pointed at the grass beside her. */
+export const BUBBLE_TIP = { y: PAYNE_HEIGHT * 0.86, out: KITTEN_HEAD_W * 0.55 + 0.35 };
 /** How far out from her middle the bubble's near edge sits: clear of her
  *  helmet and the sword over her shoulder. */
-const BUBBLE_GAP = 1.5;
+const BUBBLE_GAP = BUBBLE_TIP.out;
 const _right = new THREE.Vector3();
 /** Held after her last word, the announcer's rule. */
 const HOLD_TAIL = 0.9;
@@ -220,6 +239,24 @@ export const PAYNE_LINES = {
   payne_h_ryu_back: "The back seat's free! Climb on behind the pilot and fire that beam!",
   payne_h_last: "Something's still standing! I put the nearest one on your map. Smash it!",
 
+  /* THE VERY LAST ONE, asked about again and again — `askLast`. Richard:
+     "...Payne should tell the player that she should go to Icewhisker and get
+     the Sense Mischief ability..." and then, to a kitten who HAS it, "Are you
+     serious with me? You already have Sense Mischief ability, you know where
+     you need to go!" with "some extra funny comments and complaints... maybe
+     she can even swear in goblin speak". The goblin is nonsense on purpose:
+     the audience is nine and younger. */
+  payne_last_ice: 'Psst. Goblin secret! Icewhisker has a trick called Sense Mischief. It points right at '
+    + 'the nearest thing still standing! Go and swear to her, out on the frozen island. I marked her on your map.',
+  payne_last_ice2: "Icewhisker! Frozen island! She's STILL on your map. Go, go, go!",
+  payne_last_mad1: 'Are you serious with me? You already have the Sense Mischief ability! You know where you '
+    + "need to go! ... Snargle-blarg! Fizzwick-GRUNKLE-bonk! ... Hmph. That's goblin. Don't repeat it.",
+  payne_last_mad2: 'AGAIN?! Okay. Look. See the arrow? The big, pointy, floaty ARROW? It points at the '
+    + "mischief. That is its WHOLE JOB! ... Grrrrr... Blorka-snazz-FRAZZLE-flumph! ... Right. That's it. "
+    + 'Goblin... SWEEEEP!',
+  payne_last_mad3: 'You AGAIN?! Nope. Nope, nope, nope! Zibble-GRONK! Goblin... SWEEEEP!',
+  payne_last_swept: 'And STAY swept! Follow the ARROW! ... Kittens. Honestly. I have a helmet to polish, you know.',
+
   /* The teases — "like goblins like to do". */
   payne_t_cub: "Still carrying a baby panda around? Aww, it's cute. It's also HUNGRY! "
     + "There's bamboo on your map.",
@@ -261,13 +298,20 @@ export const CLAN_ISLE = {
  *  not make her say them again. */
 export const blankPayne = () => ({
   met: false, hints: false, sweep: false, rounds: 0, told: false, teased: false,
+  /* The Very Last One's conversation, which has a memory — `askLast`. How many
+     times she has pressed MARK IT on that quest, whether she has been sent to
+     Icewhisker, and how many times Payne has lost her temper since. Saved, so
+     a load does not hand a kitten who has been swept a fresh, patient Payne. */
+  lastAsks: 0, iceTold: false, mad: 0,
 });
+
+const count = (n) => (Number.isFinite(n) && n > 0 ? Math.floor(n) : 0);
 
 export function cleanPayne(r) {
   const b = blankPayne();
   if (!r || typeof r !== 'object') return b;
-  for (const k of ['met', 'hints', 'sweep', 'told', 'teased']) b[k] = !!r[k];
-  b.rounds = Number.isFinite(r.rounds) && r.rounds > 0 ? Math.floor(r.rounds) : 0;
+  for (const k of ['met', 'hints', 'sweep', 'told', 'teased', 'iceTold']) b[k] = !!r[k];
+  for (const k of ['rounds', 'lastAsks', 'mad']) b[k] = count(r[k]);
   return b;
 }
 
@@ -512,6 +556,15 @@ export class Payne {
     this.host = typeof document !== 'undefined' ? document.getElementById('payne-hints') : null;
     this.cardEls = [];
     this.beacons = new Map();
+    /* HER SWEEP'S RING IS A KITTEN'S RING. `SweepFx` polls anything with a
+       position and a `sweepSeq`, so she is handed to it as one more sweeper
+       rather than growing a second ring that could drift from the first. */
+    this.sweeper = {
+      position: null, sweepSeq: 0, sweepReach: PAYNE_SHOVE.reach, style: { colour: 0xfff4dd },
+    };
+    this.spinT = 0;
+    /** Seconds she is still in a huff after sweeping somebody. */
+    this.huffT = 0;
   }
 
   ledger(p) { return payneOf(p); }
@@ -550,6 +603,7 @@ export class Payne {
     const g = this.game;
     const ground = g.world?.heightAt?.(spot.x, spot.z);
     this.position = new THREE.Vector3(spot.x, ground ? ground.y : 0, spot.z);
+    this.sweeper.position = this.position;
     this.group = new THREE.Group();
     this.group.position.copy(this.position);
     const mk = (art) => {
@@ -579,7 +633,7 @@ export class Payne {
        once you have met her the invitation is the wrong sentence. */
     this.bubbles = ['Heyyy! I\'m Payne.\nQuests and hints —\ncome and talk to me!',
       'Stuck? Need a hint?\nCome and talk to me!'].map((text) => {
-      const { texture, aspect } = bubbleTexture(text, PAYNE_WHO.colour);
+      const { texture, aspect, tip } = bubbleTexture(text, PAYNE_WHO.colour, { tail: 'left' });
       const BH = 2.8;
       const m = new THREE.Mesh(new THREE.PlaneGeometry(BH * aspect, BH), new THREE.MeshBasicMaterial({
         map: texture, transparent: true, opacity: 0, depthWrite: false, depthTest: false,
@@ -587,6 +641,8 @@ export class Payne {
       }));
       m.position.y = BUBBLE_Y;
       m.userData.w = BH * aspect;
+      /* Where the tail's point is, from the bubble's middle, unscaled. */
+      m.userData.tipY = BH * (0.5 - tip.v);
       m.renderOrder = 24;
       m.visible = false;
       this.group.add(m);
@@ -653,20 +709,29 @@ export class Payne {
       }
       if (d < TALK_R) talking = true;
     }
-    if (talking) near = false;
+    /* ...AND NOT WHILE SHE IS IN A HUFF. Measured in the browser: the frame
+       after she swept a kitten across the square, her bubble offered that
+       same kitten "Stuck? Need a hint? Come and talk to me!". */
+    this.huffT = Math.max(0, this.huffT - dt);
+    if (talking || this.huffT > 0) near = false;
     this.show += ((near ? 1 : 0) - this.show) * Math.min(1, dt * 5);
     this.bubbles.forEach((b, i) => {
       const on = (i === 0) === !anyMet;
       b.visible = on && this.show > 0.02;
       b.material.opacity = this.show;
       b.scale.setScalar(0.7 + this.show * 0.3);
-      b.position.y = BUBBLE_Y + Math.sin(this.t * 1.6) * 0.16;
+      b.position.y = BUBBLE_TIP.y - (b.userData.tipY ?? 0) * b.scale.x + Math.sin(this.t * 1.6) * 0.16;
     });
     /* A goblin does not stand still. Faster and bouncier than a leader's
        breathing, because that is who she is. */
     const s = this.revealed ? this.heldSprite : this.townSprite;
+    /* HER SWEEP IS A SPIN, TWICE ROUND, the way a kitten's is her facing
+       turned twice round: she has one front-facing drawing, so the turn is the
+       card narrowing to its edge and opening again, mirrored on the back half. */
+    this.spinT = Math.max(0, this.spinT - dt);
+    const spin = this.spinT > 0 ? Math.cos((1 - this.spinT / PAYNE_SPIN) * Math.PI * 4) : 1;
     if (s) {
-      s.mesh.scale.set(1 - Math.sin(this.t * 2.4) * 0.015, 1 + Math.sin(this.t * 2.4) * 0.022, 1);
+      s.mesh.scale.set((1 - Math.sin(this.t * 2.4) * 0.015) * spin, 1 + Math.sin(this.t * 2.4) * 0.022, 1);
       s.mesh.rotation.z = Math.sin(this.t * 1.1) * 0.035;
     }
     this.group.position.y = this.position.y + Math.abs(Math.sin(this.t * 1.2)) * 0.06;
@@ -716,6 +781,11 @@ export class Payne {
        at Pandapaw moves her to a different step and the old mark goes. */
     if (s.mark && (!step || s.mark !== `${step.quest}:${step.key}`)) s.mark = null;
     if (s.override && (s.override.until?.(p) || (s.override.t -= dt) <= 0)) s.override = null;
+    /* The Very Last One's marks have no clock (they last until the prop goes
+       over, or until she has the arrow), so they go with the QUEST: after the
+       Awakening an Icewhisker mark on a kitten who never went back would
+       otherwise stand on her map all evening. */
+    if (s.override?.quest === 'last' && step?.quest !== 'last') s.override = null;
     if (quiet || g.inspector?.busy?.(p.index)) return;
 
     /* --- the two once-only lines, for anybody who has met her --- */
@@ -760,7 +830,7 @@ export class Payne {
          does not help is just being mean. */
       if (s.count === 2) this.say(p, ['payne_t_slow', step.line], 'oi');
       else this.say(p, [step.line], 'hey');
-      s.mark = `${step.quest}:${step.key}`;
+      this.markNow(p);
     }
 
     /* --- the three teases Richard named --- */
@@ -812,7 +882,7 @@ export class Payne {
   goalFor(p) {
     if (!p) return null;
     const s = this._s(p);
-    if (s.override) return { x: s.override.x, z: s.override.z };
+    if (s.override) return { x: s.override.x, z: s.override.z, y: s.override.y };
     if (s.mark) {
       const step = this.step(p);
       if (step?.target && s.mark === `${step.quest}:${step.key}`) return step.target;
@@ -828,8 +898,126 @@ export class Payne {
     s.step = null;             // solve it fresh: she is asking about NOW
     const step = this.step(p);
     if (!step?.target) return false;
+    if (step.quest === 'last') return this._pinLast(p, step);
     s.mark = `${step.quest}:${step.key}`;
     return true;
+  }
+
+  /**
+   * THE VERY LAST ONE IS MARKED ONE PROP AT A TIME, AND THE MARK DOES NOT MOVE.
+   *
+   * Richard: "it should only show the 'next' closest mischief if they ask to
+   * 'mark it on my map', but once knocked over, it should wait for the player
+   * to 'mark it on my map' again before showing it again." Every other step's
+   * mark FOLLOWS the step (the next cane, the next star), which is right for
+   * those and was wrong here: the 'last' step's target is the nearest standing
+   * prop, so her mark hopped to the next one on every knock and became a
+   * second Sense Mischief, the very thing Icewhisker's oath is for. Pinned to
+   * the prop, and gone when it goes over.
+   */
+  _pinLast(p, step = this.step(p)) {
+    const pr = p.seekTarget && !p.seekTarget.scored ? p.seekTarget : null;
+    if (!pr || !step?.target) return false;
+    const s = this._s(p);
+    s.mark = null;
+    const at = pr.group.position;
+    s.override = { x: at.x, z: at.z, y: at.y, t: Infinity, until: () => !!pr.scored, prop: pr, quest: 'last' };
+    return true;
+  }
+
+  /**
+   * MARK IT ON MY MAP, on the Very Last One. The conversation has a memory:
+   *
+   *   1st ask                   the nearest standing prop, pinned (`_pinLast`)
+   *   then, without the buff    "go and see Icewhisker" - and her hall is
+   *                             marked until she HAS Sense Mischief
+   *   then, with the buff       she loses her temper, once
+   *   and again after that      she loses it properly, and sweeps her
+   *
+   * Richard's note, in order: "After the first time the player asks ... Payne
+   * should tell the player that she should go to Icewhisker and get the Sense
+   * Mischief ability, from then on, the 'mark it on my map' can show where
+   * Icewhisker is and can stay on her until the player has Sense Mischief
+   * ability. If they ask ... again ... have Payne get angry in a funny way ...
+   * If the player asks her again after that, she can say some more funny
+   * stuff and then she can use the 'sweep' ability on the player and send them
+   * flying backwards and cancelling the conversation with her (although her
+   * voice and complaints should finish even if dialog is ended)."
+   *
+   * THE BUFF IS `clan.buff.seek`, THE OATH SHE HOLDS NOW, not `clansSworn`:
+   * every kitten on this quest has sworn to Icewhisker once (the clans quest
+   * comes first), and the arrow belongs to whoever is sworn to her TODAY.
+   *
+   * @returns the card state to stay on
+   */
+  askLast(p) {
+    const g = this.game;
+    const L = this.ledger(p);
+    const s = this._s(p);
+    const seek = !!p.clan?.buff?.seek;
+    const first = !L.lastAsks;
+    L.lastAsks += 1;
+    if (first) {
+      if (this._pinLast(p)) {
+        this.say(p, ['payne_h_last'], null, { card: false, now: true });
+        g.toast?.(`Payne marked the nearest mischief on ${p.name}'s map`, p.index);
+      } else {
+        L.lastAsks = 0;       // nothing to mark is not an ask
+        g.toast?.('Nothing standing near enough to mark — read the quest card', p.index);
+      }
+      return 'payneQuests';
+    }
+    if (!seek) {
+      const h = (g.world?.clanHalls ?? []).find((x) => x.clan.id === 'ice');
+      if (h) {
+        s.mark = null;
+        s.override = { x: h.x, z: h.z, t: Infinity, until: (q) => !!q.clan?.buff?.seek, quest: 'last' };
+      }
+      this.say(p, [L.iceTold ? 'payne_last_ice2' : 'payne_last_ice'], null, { card: false, now: true });
+      L.iceTold = true;
+      g.toast?.(`Payne marked Icewhisker on ${p.name}'s map`, p.index);
+      return 'payneQuests';
+    }
+    L.mad += 1;
+    if (L.mad === 1) {
+      this.say(p, ['payne_last_mad1'], null, { card: false, now: true, keep: true });
+      g.toast?.("Payne won't mark it — you have Sense Mischief!", p.index);
+      return 'payneQuests';
+    }
+    /* THE SWEEP LANDS ON THE LAST WORD, "SWEEEEP!", which is the end of the
+       clip: `after` fires when her clip finishes, not when the card's hold
+       does. KEEP: nothing this kitten presses meanwhile (BYE included) can cut
+       her off - "her voice and complaints should finish even if dialog is
+       ended". */
+    this.say(p, [L.mad === 2 ? 'payne_last_mad2' : 'payne_last_mad3'], null, {
+      card: false, now: true, keep: true, after: () => this.goblinSweep(p),
+    });
+    return 'payneQuests';
+  }
+
+  /**
+   * She sweeps one kitten. NOT COMBAT, and it never asks the gate: no damage,
+   * no knockout, no score, nothing knocked over - `Player.blast`, Mr. Satan's
+   * gag's own door, with a gag's numbers (non-negotiable 3). Nothing of the
+   * town goes over either: the MISCHIEF counter is the kittens', and the Very
+   * Last One is a race a goblin must never be able to win for somebody.
+   */
+  goblinSweep(p) {
+    const g = this.game;
+    this.spinT = PAYNE_SPIN;
+    this.huffT = PAYNE_HUFF;
+    this.sweeper.sweepSeq += 1;
+    g.sfx?.('sweep');
+    /* HER CARD COMES DOWN WHETHER OR NOT THE SWEEP CATCHES HER - the
+       conversation is over either way - and with no BYE line: the goodbye is
+       the sweep, and what she says next is the complaint. */
+    g.inspector?.closePayne?.(p.index);
+    const near = this.position && g.players?.includes(p) && !p.ko
+      && !p.mount && !p.rideAlong && !p.carried && !p.angel
+      && flat(p.position, this.position) <= PAYNE_SHOVE.reach;
+    if (near) p.blast?.(this.position, { knock: PAYNE_SHOVE.knock, lift: PAYNE_SHOVE.lift });
+    this.say(p, ['payne_last_swept'], null, { card: true, now: true, keep: true });
+    return near;
   }
 
   /** A round of fighting just ended for these kittens. Called at the end of
@@ -851,8 +1039,13 @@ export class Payne {
    * @param o.now  jump the queue and cut off anything of HERS mid-sentence —
    *               the kitten has just pressed a button at her, and an answer
    *               that arrives after an old hint has finished is no answer.
+   * @param o.low  a goodbye: said only if nobody else is being talked to, and
+   *               cut by anybody's next line. See below.
+   * @param o.keep nothing this kitten presses can cut it off (the rant).
+   * @param o.after called once, when the last clip has been SAID (or, with no
+   *               voice, when the text has had its time) - the sweep's cue.
    */
-  say(p, lines, call = 'hey', { card = true, now = false } = {}) {
+  say(p, lines, call = 'hey', { card = true, now = false, low = false, keep = false, after = null } = {}) {
     if (!p) return;
     const ids = [];
     /* HER NAME ONLY WHEN THE NAME IS THE ONE SHE RECORDED. A name is typed in
@@ -866,10 +1059,25 @@ export class Payne {
     const body = lines.filter((id) => PAYNE_LINES[id]);
     ids.push(...body);
     const text = [callText, ...body.map((id) => PAYNE_LINES[id])].filter(Boolean).join(' ');
-    const item = { p, ids, text, card, k: 0, t: 0, el: null, clipT: 0, dur: 0 };
+    const item = { p, ids, text, card, low, keep, after, k: 0, t: 0, el: null, clipT: 0, dur: 0, hadClip: false };
     if (now) {
-      this.queue = this.queue.filter((q) => q.p !== p || q.card);
-      if (this.current) this._end(true);
+      /* ONE KITTEN'S PRESS NEVER CUTS ANOTHER KITTEN OFF. Reported: "If Payne
+         is talking to another player, and someone closes dialog box with
+         Payne, it cancels the speech for the other player. It shouldn't do
+         that and the other players dialog that appears should take preference
+         over Payne's exit voice." `now` used to end whatever was current,
+         whoever it was for, so a sister's BYE ate the answer her sister had
+         just asked for. Now `now` cuts only this kitten's own words (and not
+         a `keep` rant), and waits at the head of the queue otherwise.
+         A GOODBYE IS THE LEAST OF WHAT SHE SAYS: it is dropped outright when
+         somebody else is being talked to or waiting, and anybody's next line
+         cuts one that is playing. "Go make some mischief!" after the kitten
+         has walked off is not worth a sister's answer waiting for it. */
+      const cur = this.current;
+      const others = (cur && cur.p !== p && !cur.low) || this.queue.some((q) => q.p !== p && !q.low);
+      if (low && (others || cur?.keep)) return null;
+      this.queue = this.queue.filter((q) => (q.p !== p || q.card || q.keep) && !q.low);
+      if (cur && (cur.low || (cur.p === p && !cur.keep))) this._end(true);
       this.queue.unshift(item);
     } else {
       /* ONE WAITING MESSAGE PER KITTEN. Two hints queued for the same girl
@@ -900,6 +1108,16 @@ export class Payne {
       const clipDone = !el || el.ended || cut || c.clipT > (c.clipDur ?? 0) + 4;
       if (clipDone) {
         if (!cut && c.k < c.ids.length) { this._play(c); return; }
+        /* ITS CUE, ONCE: on the last word when there was a voice, and after
+           the text's own time when there was not - a sweep that fired the
+           instant a silent card appeared would land before it was read. */
+        if (c.after && (c.hadClip || c.t >= c.dur - HOLD_TAIL)) {
+          const f = c.after;
+          c.after = null;
+          c.keep = false;
+          f();
+          return;
+        }
         if (c.t >= c.dur) this._end(false);
       }
       return;
@@ -925,9 +1143,16 @@ export class Payne {
   _play(c) {
     const g = this.game;
     while (c.k < c.ids.length) {
-      const clip = g.announcer?.clip?.(c.ids[c.k++]);
+      /* THE INDEX MOVES ON ITS OWN LINE. `a?.clip?.(ids[k++])` short-circuits
+         the ARGUMENTS too when there is no announcer, so `k` never moved and
+         this loop never ended: found by world-check the first time anything
+         ran her voice with no clips loaded, which is exactly the fallback
+         non-negotiable 9 promises. */
+      const id = c.ids[c.k++];
+      const clip = g.announcer?.clip?.(id);
       if (!clip) continue;
       c.el = g.audio?.speak?.(clip.el) ?? null;
+      c.hadClip = true;
       c.clipT = 0;
       c.clipDur = clip.dur;
       return;
@@ -1157,6 +1382,8 @@ export class Payne {
         return 'payneQuests';
       }
       case 'mark': {
+        this._s(p).step = null;
+        if (this.step(p)?.quest === 'last') return this.askLast(p);
         const ok = this.markNow(p);
         if (ok) {
           const step = this.step(p);
@@ -1197,7 +1424,7 @@ export class Payne {
       }
       case 'bye':
       default:
-        this.say(p, ['payne_bye'], null, { card: false, now: true });
+        this.say(p, ['payne_bye'], null, { card: false, now: true, low: true });
         return null;
     }
   }
