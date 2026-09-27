@@ -837,6 +837,25 @@ same world-space x-ray the grottos use — `buildArena` sorts the corner posts a
 the whole announcer's box into a second merged mesh, and `openArena` shows and
 hides it with everything else.
 
+**And its front door.** Richard: "The xray shader for most of the items at
+the entrance of the arena are not being applied, only happening for the snake
+pillar next to the doors. We should turn on the xray shader for most of these,
+with a thinner one for the thinner torii gate." Two causes.
+
+- **Pile.** The four stacked lanterns were in the solid pile with the carpet.
+  They are now a mesh of their own on the arena's x-ray material, at
+  `XRAY_K.stacked` 0.7. They keep their shadows: these are towers on an open
+  carpet in the sun, not posts on a shaded deck.
+- **Material.** The road's arena-end torii and its two lions are Snake Way
+  pieces, one `dissolveMat` each, and had no x-ray at all.
+  `dissolveMat({ xray: true })` starts from `xrayVertexMat` and chains the
+  dissolve onto its patch. The torii is at `XRAY_K.torii` 0.3 and the lions
+  at `XRAY_K.guardian` 0.6. They sit in `world.arenaEntranceXray`, which
+  `_aimArenaXray` cuts with the arena and `_clearXray` closes.
+- **Reach.** `ARENA_XRAY_OUT` was 40 past the ring's deck, and the lanterns
+  are 34 and 43 out, the torii 49 and the lions 51. It is 60 now. The island's
+  rim is 63, so a kitten who has fallen off still stops carving.
+
 **It found a four-player bug on the way in.** The material's cut list was
 `MAX = 2`, written when two was the whole game — so kittens three and four were
 never cut for, in the grottos either. It is four now, and the two-player result

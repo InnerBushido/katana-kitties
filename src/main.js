@@ -389,6 +389,17 @@ const CAVE_PITCH = 0.82;
  * end of flight, and drops the high tour.
  */
 const TOWN_XRAY_FAR = 120;
+/**
+ * How far out past the ring's deck (`World.arenaOutBy`) a kitten is still cut
+ * for by the arena's x-ray. It was 40, which reached the stands and his booth
+ * and the dragon columns (27 out) and stopped there. Measured: the lanterns
+ * are 34 and 43 out, the road's torii 49 and its lions 51, so a kitten among
+ * them was never cut for, and one just past them on the road, which is where
+ * they stand between her and a lens, even less. 60 reaches the first few
+ * units of the road, and the island's rim is 63 out, so a kitten who has
+ * fallen off still stops carving.
+ */
+const ARENA_XRAY_OUT = 60;
 
 /** How long the triple slash's burst lives. Longer than `hitSpark`'s 0.26 by
  *  design: this one has to cover a kitten switching from frozen to flying, and
@@ -1408,6 +1419,10 @@ class Game {
          in Harrison's preset on the exact card string; it played silent as a
          card for a pass, which is what the check beside `popIn` now forbids. */
       sat_doors: voicePath('sat_doors'),
+      /* The exit parade's two, PLAYED rather than said: they are in his own
+         bubble over the procession, not on the card (`ArenaExit.update`). */
+      sat_parade1: voicePath('sat_parade1'),
+      sat_parade2: voicePath('sat_parade2'),
       sat_r1: voicePath('sat_r1'),
       sat_r2: voicePath('sat_r2'),
       sat_r3: voicePath('sat_r3'),
@@ -6681,6 +6696,7 @@ class Game {
       this.quest.onReturn();
       const on = this.arenaExit.start({
         players: this.players, won, satan: this.satan, scene: this.scene,
+        announcer: this.announcer,
       });
       if (on && cheer) return;
       /* No parade: the same marks the parade ends on, now — `finish` is the
@@ -11747,6 +11763,7 @@ class Game {
     const w = this.world;
     const mats = [
       w.arenaSeeThrough?.material,
+      ...(w.arenaEntranceXray ?? []).map((m) => m.material),
       w.snakeWay?.puffMat,
       ...(w.townXray ?? []).map((m) => m.material),
       ...(w.outlyingXray ?? []).map((m) => m.material),
@@ -11861,7 +11878,10 @@ class Game {
    */
   _aimArenaXray(camera) {
     const mesh = this.world.arenaSeeThrough;
-    if (!mesh?.visible) return;
+    /* AND THE FRONT DOOR'S OTHER HALF: the road's torii and lions there, one
+       material each. Their lanterns share `mesh`'s material. */
+    const gates = this.world.arenaEntranceXray ?? [];
+    if (!mesh?.visible && !gates.some((m) => m.visible)) return;
     const seen = [];
     /* EVERY CUT CARRIES THE FLOOR ITS SUBJECT IS STANDING ON. Reported from
        play: "fix the x-ray issue where we can see through the ground (ceiling
@@ -11885,18 +11905,20 @@ class Game {
     for (const p of this.players) {
       if (seen.length >= 4) break;
       /* GENEROUS, AND MEASURED ON THE SAME SQUARE THE RING IS. `arenaOutBy`
-         is negative inside the deck and grows as she leaves it; +40 reaches
-         the stands and the announcer's box behind them, which is where the
-         two things this exists for actually are. A kitten who has fallen off
-         the island entirely is past it and stops carving. */
-      if (R && this.world.arenaOutBy(p.position.x, p.position.z) > 40) continue;
+         is negative inside the deck and grows as she leaves it; the stands
+         and his box are inside 30 of it, and the front door's lanterns,
+         torii and lions out to 51 — `ARENA_XRAY_OUT` is 60, a little way
+         down the road past them. A kitten who has
+         fallen off the island entirely is past it and stops carving. */
+      if (R && this.world.arenaOutBy(p.position.x, p.position.z) > ARENA_XRAY_OUT) continue;
       seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
       /* AND A KITTEN WHO CLIMBS ONTO HIS BOX GETS THE SAME PROTECTION, which
          is not hypothetical - getting up there is half of what debug `5` and
          the temper gag are about. Her feet are wherever she is standing. */
       floors.push(p.position.y - 0.05);
     }
-    mesh.material.setCuts?.(camera.position, seen, floors);
+    mesh?.material.setCuts?.(camera.position, seen, floors);
+    for (const m of gates) m.material.setCuts?.(camera.position, seen, floors);
   }
 
   /**
@@ -11946,7 +11968,10 @@ class Game {
       const lx = p.position.x - A.x;
       const lz = p.position.z - A.z;
       const column = Math.abs(lx) < A.gap && lz > 0;
-      if (column && p.arenaSide === 'in' && lz > A.doorZ - LET_OUT) want = true;
+      /* INSIDE THE DOORS' LINE, as well as on the inside by her record: the
+         record is only kept near the wall, and the exit parade set kittens
+         down fifty-seven units out still carrying the fight's 'in'. */
+      if (column && p.arenaSide === 'in' && lz < A.doorZ && lz > A.doorZ - LET_OUT) want = true;
       if (column && lz > A.inner && lz < A.doorZ + 4) doorway = true;
       if (p.doorRefused) {
         p.doorRefused = false;

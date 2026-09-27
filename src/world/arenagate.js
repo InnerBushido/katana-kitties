@@ -320,6 +320,7 @@ export function flameMaterial() {
  *
  * @returns {{
  *   parts: THREE.BufferGeometry[],      // merged into the arena's solid mesh
+ *   lanterns: THREE.BufferGeometry[],   // the four stacked lanterns, x-rayed
  *   seeThrough: THREE.BufferGeometry[], // the gatehouse: tall and in front of
  *                                       // the +z cameras, so it gets cut
  *   solids: object[],                   // the pillars and lanterns
@@ -403,14 +404,19 @@ export function buildArenaEntrance() {
     solids.push({ x, z, r: 2.8, top: E.columnH + 1.3 });
   }
 
-  /* --- the lanterns --- */
+  /* --- the lanterns ---
+     A PILE OF THEIR OWN, for the x-ray: twelve units of stone and paper
+     that a kitten walking up the carpet disappears behind, and they were in
+     the solid pile with the carpet. `World._buildArena` gives them the
+     see-through material at a strength of their own. */
   const fires = [];
+  const lanterns = [];
   for (const [x, z] of E.lanterns) {
     const L = stackedLantern(x, z);
-    parts.push(...L.parts);
+    lanterns.push(...L.parts);
     fires.push(L.fire);
     solids.push({ x, z, r: 2.0, top: L.fire.y });
   }
 
-  return { parts, seeThrough, solids, doors, doorSolids, fires };
+  return { parts, seeThrough, lanterns, solids, doors, doorSolids, fires };
 }

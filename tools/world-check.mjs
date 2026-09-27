@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import { execFile } from 'node:child_process';
-import { World, CLANS } from '../src/world/world.js';
+import { World, CLANS, XRAY_K } from '../src/world/world.js';
 import { Dragon, BREEDS, DRAGON_SPOTS } from '../src/entities/dragon.js';
 import { Billboard, xrayVertexMat } from '../src/core/gfx.js';
 import { Player, CALLOUT_WIDEST, BLESS_STRETCH, WALL } from '../src/entities/player.js';
@@ -19757,11 +19757,13 @@ console.log('\n--- seeing through the arena ---');
      vermillion columns hanging over open sky where the arena will be. */
   const wasOpen = world.arenaOpen;
   world.openArena(true);
-  ok('opening the arena shows both meshes',
-    world.arenaProps.visible === true && world.arenaSeeThrough.visible === true);
+  ok('opening the arena shows both meshes, and its lanterns',
+    world.arenaProps.visible === true && world.arenaSeeThrough.visible === true
+      && world.arenaLanterns.visible === true);
   world.openArena(false);
-  ok('...and shutting it hides both',
-    world.arenaProps.visible === false && world.arenaSeeThrough.visible === false);
+  ok('...and shutting it hides all three',
+    world.arenaProps.visible === false && world.arenaSeeThrough.visible === false
+      && world.arenaLanterns.visible === false);
   world.openArena(wasOpen);
 
   /* --- AND THE TOWN, WHICH IS WHERE THEY ACTUALLY PLAY ------------------
@@ -19885,7 +19887,10 @@ console.log('\n--- seeing through the arena ---');
   /* HE GOES IN FIRST. Four kittens plus Mr Satan is five names for four slots,
      and he is the one everybody is looking at. */
   const aimAt = msrc.indexOf('_aimArenaXray(camera) {');
-  const aim = msrc.slice(aimAt, aimAt + 1400);
+  /* THE WHOLE METHOD, not a fixed 1400 characters of it: a comment added
+     above the loop pushed the loop out of a fixed window and this failed on
+     text, not behaviour. */
+  const aim = msrc.slice(aimAt, msrc.indexOf('\n  }\n', aimAt));
   ok('...and Mr. Satan is added before the kittens',
     aimAt > 0 && aim.indexOf('this.satan') < aim.indexOf('for (const p of this.players)'));
   ok('...and it stops at four', /seen\.length >= 4/.test(aim));
@@ -19905,8 +19910,8 @@ console.log('\n--- seeing through the arena ---');
       const at = msrc.indexOf(`\n  ${sig} {`);
       const from = msrc.indexOf('{', at + 1) + 1;
       // eslint-disable-next-line no-new-func
-      return at > 0 ? new Function('THREE', 'TOWN_XRAY_FAR',
-        `return function (${args}) {${msrc.slice(from, msrc.indexOf('\n  }\n', from))}\n};`)(THREE, 120) : null;
+      return at > 0 ? new Function('THREE', 'TOWN_XRAY_FAR', 'ARENA_XRAY_OUT',
+        `return function (${args}) {${msrc.slice(from, msrc.indexOf('\n  }\n', from))}\n};`)(THREE, 120, 60) : null;
     };
     const names = [['_aimXray(camera, members = null, scene = false)', 'camera, members = null, scene = false'],
       ['_clearXray(camera)', 'camera'], ['_aimArenaXray(camera)', 'camera'],
@@ -31248,6 +31253,118 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
      screenshot had the torii's right post down the middle of the picture. */
   ok('...and no torii post down the middle of it', postSplit === 0, `${postSplit}`);
 
+  /* --- THE CHAMPIONS IN FRONT OF HIM --- Richard: "lets have the first 2
+     winning players walking/jumping infront of Mr. Satan, not behind him, we
+     can have them walk behind if more than 2 winners ... because they are
+     champions and should be infront." The second winner's mark was (2.6, 3.0)
+     from his: she crossed his line 1.6 behind him and finished 2.6 behind.
+     Replayed through both lenses that film them, in camera space: wherever
+     one of the first two winners and he share a stretch of the screen, she is
+     the nearer of the two. Half-widths: his sprite 1.6, hers 0.8. */
+  {
+    const inCam = (p) => p.applyMatrix4(cam.matrixWorldInverse);
+    const his = new THREE.Vector3();
+    const hers = new THREE.Vector3();
+    let shared = 0;
+    const behindHim = [];
+    const marks = [];
+    for (const [name, won] of Object.entries(casts)) {
+      if (!won.some(Boolean)) continue;
+      const P = X.plan({ won });
+      X.plan_ = P;
+      const champs = P.actors.filter((a) => a.kind === 'hop').slice(0, 2);
+      P.shots.forEach((s, i) => {
+        if (s.id === 'doors') return;
+        const t1 = P.shots[i + 1]?.from ?? P.end;
+        for (let t = s.from; t < t1; t += 0.1) {
+          X.pose(s.id, t, s.from, cam);
+          cam.updateMatrixWorld();
+          inCam(his.set(S.x, g0 + 4.3, S.z));
+          for (const a of champs) {
+            if (t < a.at) continue;
+            const w = X.where(a, t);
+            inCam(hers.set(w.x, g0 + 1.4, w.z));
+            if (hers.z > -0.5 || his.z > -0.5) continue;
+            const gap = Math.abs(hers.x / -hers.z - his.x / -his.z);
+            if (gap > 0.8 / -hers.z + 1.6 / -his.z) continue;
+            shared++;
+            if (-hers.z >= -his.z) behindHim.push(`${name} seat ${a.seat} ${s.id}@${t.toFixed(1)}`);
+          }
+        }
+      });
+      /* AND WHERE SHE ENDS UP, from the lens that holds on them to the end. */
+      X.pose('him', P.end, P.shots[2].from, cam);
+      for (const a of champs) {
+        const lead = cam.position.distanceTo(new THREE.Vector3(S.x, cam.position.y, S.z))
+          - cam.position.distanceTo(new THREE.Vector3(a.x1, cam.position.y, a.z1));
+        if (!(a.x1 < S.x && lead > 1)) marks.push(`${name} seat ${a.seat} ${lead.toFixed(1)}`);
+      }
+    }
+    ok('the first two winners pass IN FRONT of him — wherever they cross him on screen, she is the nearer',
+      behindHim.length === 0 && shared > 20, behindHim.slice(0, 4).join('; ') || `${shared} crossings, all in front`);
+    ok('...and finish on the lens side of him, more than a unit nearer it than he is',
+      marks.length === 0, marks.join('; '));
+    ok('...a third and fourth may go behind, and the marks say so',
+      EXIT.round.length === 4 && EXIT.round.slice(0, 2).every(([dx]) => dx < 0));
+  }
+
+  /* --- HIS VOICE --- "Seems we didn't generate Mr. Satans voice for the
+     post-fight cutscene when entering from the gate." Two lines in his own
+     bubble, now recorded; the plan is timed to the recordings, read off the
+     files here rather than typed — a re-recording that runs longer than the
+     gap it was given is the case this is for. */
+  {
+    /* MPEG audio, frame by frame: ID3v2 skipped, then every frame header's
+       sample count over its rate. No decoder, no dependency. */
+    const mp3Seconds = (buf) => {
+      let i = 0;
+      if (buf.toString('latin1', 0, 3) === 'ID3') {
+        i = 10 + ((buf[6] & 0x7f) << 21 | (buf[7] & 0x7f) << 14 | (buf[8] & 0x7f) << 7 | (buf[9] & 0x7f));
+      }
+      const BR1 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
+      const BR2 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
+      const SR = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
+      let secs = 0;
+      while (i + 4 <= buf.length) {
+        if (buf[i] !== 0xff || (buf[i + 1] & 0xe0) !== 0xe0) { i++; continue; }
+        const ver = (buf[i + 1] >> 3) & 3;
+        const bri = buf[i + 2] >> 4;
+        const sri = (buf[i + 2] >> 2) & 3;
+        if (ver === 1 || ((buf[i + 1] >> 1) & 3) !== 1 || bri === 0 || bri === 15 || sri === 3) { i++; continue; }
+        const rate = SR[ver][sri];
+        const spf = ver === 3 ? 1152 : 576;
+        const len = Math.floor(((spf / 8) * (ver === 3 ? BR1 : BR2)[bri] * 1000) / rate) + ((buf[i + 2] >> 1) & 1);
+        secs += spf / rate;
+        i += len;
+      }
+      return secs;
+    };
+    const dur = EXIT.voices.map((id) => {
+      const f = new URL(`../public/voice/satan/${id}.mp3`, import.meta.url);
+      return existsSync(f) ? mp3Seconds(readFileSync(f)) : 0;
+    });
+    /* ffprobe says 3.12 and 4.40; the frame walk counts the Xing frame too. */
+    ok('both of his parade lines are recorded, as the lengths they were measured at',
+      Math.abs(dur[0] - 3.12) < 0.1 && Math.abs(dur[1] - 4.40) < 0.1, dur.map((d) => d.toFixed(2)).join(' '));
+    const late = [];
+    for (const [name, won] of Object.entries(casts)) {
+      X.lineDur = dur;
+      const P = X.plan({ won });
+      X.lineDur = undefined;
+      const Q = X.plan({ won });
+      if (P.lineAt[1] < P.lineAt[0] + dur[0] + 0.2) late.push(`${name}: line 2 at ${P.lineAt[1].toFixed(2)}`);
+      if (P.end - EXIT.fadeOut < P.lineAt[1] + dur[1] + 0.2) late.push(`${name}: fade at ${(P.end - EXIT.fadeOut).toFixed(2)}`);
+      if (P.lineAt[1] < Q.lineAt[1] || P.end < Q.end) late.push(`${name}: sooner than without a voice`);
+    }
+    ok('his second line waits for the first to be said, and the fade for the second',
+      late.length === 0, late.join('; '));
+    const m0 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('...and both are loaded with the rest of his voice',
+      EXIT.voices.every((id) => m0.includes(`${id}: voicePath('${id}'),`)));
+    ok('...and the game hands the scene the announcer that holds them',
+      /this\.arenaExit\.start\(\{[^}]*announcer: this\.announcer,/.test(m0));
+  }
+
   /* AND THE SIDE SHOT BECOMES THE SHOT ON HIM WITHOUT A JUMP. They ended four
      units apart and on the same side: the same picture, twitched. */
   {
@@ -31329,6 +31446,176 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
         !Y.active && marks && kids.every((k) => k.group.visible && k.facing === 0 && k.velocity.lengthSq() === 0)
           && W.arenaDoorWant === 0 && satan.pose === 'idle' && satan.line === '' && !Y.root.visible
           && Y.root.children.length === 0);
+    }
+
+    /* --- NOTHING OF HIS OVER HIS OWN SCENE --- "If Mr. Satan voice is still
+       queued up before the cutscene, we can end the queue and just play his
+       voice for this new cutscene." The real Announcer, a line on its card
+       and two behind it, as the round's end leaves it. */
+    {
+      /* The card's elements: `domStub` hands out none, and the Announcer
+         writes its line into them. */
+      const docWas = globalThis.document;
+      const mkEl = () => ({
+        textContent: '', style: { setProperty() {} },
+        classList: { add() {}, remove() {}, toggle() {} },
+        replaceChildren() {}, appendChild() {}, getContext: () => null,
+      });
+      globalThis.document = { ...docWas, getElementById: () => mkEl() };
+      const spoke = [];
+      let stopped = 0;
+      const audio = { speak: (el) => { spoke.push(el.id); return el; }, stopSpeaking: () => { stopped++; }, play() {} };
+      const ann = new Announcer({ audio });
+      ann.clips.set('sat_parade1', { el: { id: 1 }, dur: 3.12 });
+      ann.clips.set('sat_parade2', { el: { id: 2 }, dur: 4.4 });
+      ann.say('sat_win1', 'a');
+      ann.update(0);
+      ann.say('sat_over', 'b');
+      ann.say('sat_again', 'c');
+      const Y = new ArenaExit({ world: W, audio });
+      W.setArenaDoors(true, true);
+      Y.start({ players: [kitten(0), kitten(1)], won: [true, false], satan, scene: new THREE.Scene(), announcer: ann });
+      ok('the parade silences him: his card comes down, the voice stops and the queue behind it is gone',
+        ann.hushed && !ann.active && ann.queue.length === 0 && stopped === 1, `${ann.hushed} ${ann.active} ${ann.queue.length} ${stopped}`);
+      ann.say('sat_mid', 'd');
+      ok('...and nothing new queues up behind it', ann.queue.length === 0);
+      ok('...and the plan is timed to the clips it holds', Math.abs(Y.plan_.lineAt[1] - (EXIT.firstOut + 3.12 + EXIT.lineGap)) < 1e-6
+        || Y.plan_.lineAt[1] > EXIT.firstOut + 3.12 + EXIT.lineGap, Y.plan_.lineAt.map((x) => x.toFixed(2)).join(' '));
+      while (Y.active && Y.t < Y.plan_.lineAt[1] + 0.2) Y.update(1 / 30);
+      ok('...and both his lines are PLAYED, in order, each once', spoke.join() === '1,2', spoke.join());
+      const before = stopped;
+      Y.skip();
+      ok('a skip cuts him off with it', stopped === before + 1);
+      ok('...and lets the announcer talk again', ann.hushed === false);
+
+      /* THE ENDING'S HUSH IS NOT THE PARADE'S TO LIFT. */
+      ann.hush(true);
+      const Z = new ArenaExit({ world: W, audio });
+      W.setArenaDoors(true, true);
+      Z.start({ players: [kitten(0), kitten(1)], won: [true, false], satan, scene: new THREE.Scene(), announcer: ann });
+      Z.skip();
+      ok('...but a hush it found in place is still in place after it', ann.hushed === true);
+      ann.hush(false);
+      globalThis.document = docWas;
+    }
+
+    /* --- THE DOORS STAY SHUT BEHIND THEM --- "After cutscene is over and
+       players have left the arena, the doors to the arena should close
+       post-fight." They closed, and `_arenaDoorman` opened them again: the
+       kittens' `arenaSide` is only kept near the wall, so it still said 'in'
+       from the fight fifty-seven units out. The shipped method, lifted. */
+    {
+      const src = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+      const at = src.indexOf('\n  _arenaDoorman() {');
+      const from = src.indexOf('{', at + 1) + 1;
+      // eslint-disable-next-line no-new-func
+      const doorman = at > 0 ? new Function(`return function () {${src.slice(from, src.indexOf('\n  }\n', from))}\n};`)() : null;
+      ok('the doorman is where this check thinks it is', !!doorman);
+      if (doorman) {
+        const kids = [kitten(0), kitten(1), kitten(2)];
+        const Y = new ArenaExit({ world: W, audio: null });
+        W.setArenaDoors(true, true);
+        Y.start({ players: kids, won: [true, false, false], satan, scene: new THREE.Scene() });
+        for (const k of kids) k.arenaSide = 'in';
+        Y.skip();
+        ok('the parade puts every kitten down OUTSIDE, by her record too', kids.every((k) => k.arenaSide === 'out'));
+        const game = { world: W, players: kids, arenaExit: Y, toast() {}, audio: null, doorman };
+        const settle = () => { for (let f = 0; f < 90; f++) game.doorman(); };
+        settle();
+        ok('...and the doors stay shut behind them', W.arenaDoorWant === 0 && !game._lettingOut);
+        /* AND IF THE RECORD IS STALE ANYWAY — the other half of the fix. */
+        for (const k of kids) k.arenaSide = 'in';
+        settle();
+        ok('...even for a kitten out on the carpet whose record still says inside',
+          W.arenaDoorWant === 0 && !game._lettingOut);
+        /* THE CONTROL: this rule must still let a kitten who IS inside out. */
+        const A = W.arenaWall;
+        kids[0].position.set(A.x, kids[0].position.y, A.z + A.doorZ - 3);
+        game.doorman();
+        ok('...while one really inside, at the doors, is still let out', W.arenaDoorWant === 1 && game._lettingOut);
+        kids[0].position.set(A.x, kids[0].position.y, A.z + A.doorZ + 30);
+        kids[0].arenaSide = 'out';
+        game.doorman();
+        ok('...and they shut again once she is through', W.arenaDoorWant === 0 && !game._lettingOut);
+      }
+    }
+  }
+
+  /* --- THE FRONT DOOR IS X-RAYED --- "The xray shader for most of the items
+     at the entrance of the arena are not being applied, only happening for
+     the snake pillar next to the doors. We should turn on the xray shader for
+     most of these, with a thinner one for the thinner torii gate." The
+     lanterns were in the solid pile, and the road's arena-end torii and lions
+     are dissolve materials of their own that were in no x-ray pile at all. */
+  {
+    W.openArena(true);
+    W.buildSnakeWay();
+    const kOf = (m) => m.geometry.getAttribute('xrayK')?.array[0] ?? 0;
+    const width = (m) => { m.geometry.computeBoundingBox(); const bb = m.geometry.boundingBox; return Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z); };
+    const ent = [...W.arenaEntranceXray].sort((a, b) => width(b) - width(a));
+    const [torii, ...lions] = ent;
+    ok('the lanterns are cut by the arena\'s own x-ray, and keep their shadows',
+      W.arenaLanterns?.material === W.arenaSeeThrough.material && kOf(W.arenaLanterns) === Math.fround(XRAY_K.stacked)
+        && W.arenaLanterns.castShadow === true);
+    ok('the road\'s torii at the doors and both its lions are x-ray materials',
+      ent.length === 3 && ent.every((m) => typeof m.material.setCuts === 'function'
+        && m.material.customProgramCacheKey() === 'snake-dissolve-xray'), `${ent.length}`);
+    ok('...the torii thinner than the lanterns and lions, as asked',
+      kOf(torii) === Math.fround(XRAY_K.torii) && lions.every((m) => kOf(m) === Math.fround(XRAY_K.guardian))
+        && XRAY_K.torii < XRAY_K.guardian && XRAY_K.torii < XRAY_K.stacked,
+      [torii, ...lions].map(kOf).join(' '));
+    const xrayed = [];
+    W.scene.traverse((o) => { if (o.material?.customProgramCacheKey?.() === 'snake-dissolve-xray') xrayed.push(o); });
+    ok('...and no other road\'s gate or statue took the x-ray with it',
+      xrayed.length === 3 && xrayed.every((o) => ent.includes(o)), `${xrayed.length}`);
+
+    /* AIMED: the shipped method, a kitten standing just down the road from
+       each thing, and every material records whether it was cut for her. */
+    const src = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+    const reach = Number(src.match(/const ARENA_XRAY_OUT = (\d+);/)?.[1]);
+    const lift = (sig, args) => {
+      const at = src.indexOf(`\n  ${sig} {`);
+      const from = src.indexOf('{', at + 1) + 1;
+      // eslint-disable-next-line no-new-func
+      return at > 0 ? new Function('THREE', 'ARENA_XRAY_OUT',
+        `return function (${args}) {${src.slice(from, src.indexOf('\n  }\n', from))}\n};`)(THREE, reach) : null;
+    };
+    const aim = lift('_aimArenaXray(camera)', 'camera');
+    const clear = lift('_clearXray(camera)', 'camera');
+    ok('the arena\'s aimer is where this check thinks it is', !!aim && !!clear && reach > 0);
+    if (aim && clear) {
+      const cuts = new Map();
+      const mats = [W.arenaSeeThrough.material, ...ent.map((m) => m.material)];
+      const was = mats.map((m) => m.setCuts);
+      mats.forEach((m, i) => { m.setCuts = (c, pts, fl) => { cuts.set(m, (pts ?? []).length); return was[i].call(m, c, pts, fl); }; });
+      const cam = { position: new THREE.Vector3() };
+      const miss = [];
+      const centre = (m) => { m.updateWorldMatrix(true, false); const c = new THREE.Vector3(); m.geometry.boundingBox.getCenter(c); return c.applyMatrix4(m.matrixWorld); };
+      const spots = [
+        ...ENTRANCE.lanterns.map(([x, z]) => ['lantern', W.arenaSeeThrough.material, W.arenaIsland.x + x, W.arenaIsland.z + z]),
+        ...ent.map((m) => { const c = centre(m); return [m === torii ? 'torii' : 'lion', m.material, c.x, c.z]; }),
+      ];
+      for (const [what, mat, x, z] of spots) {
+        cuts.clear();
+        const g = W.heightAt(x, z + 2.5)?.y ?? W.arenaDoors.y;
+        const who = { world: W, satan: null, players: [{ position: new THREE.Vector3(x, g, z + 2.5) }] };
+        cam.position.set(x, g + 6, z + 16);
+        aim.call(who, cam);
+        if (!(cuts.get(mat) > 0)) miss.push(`${what} (${W.arenaOutBy(x, z + 2.5).toFixed(1)} out)`);
+      }
+      ok('a kitten just past each lantern, the torii and the lions is cut for, through each',
+        miss.length === 0 && spots.length === ENTRANCE.lanterns.length + 3, miss.join(', ') || `${spots.length} places`);
+      /* AND NOT FOR A KITTEN WHO HAS FALLEN OFF THE ISLAND. */
+      cuts.clear();
+      const I = W.arenaIsland;
+      aim.call({ world: W, satan: null, players: [{ position: new THREE.Vector3(I.x, I.y ?? 0, I.z + I.radius + 5) }] }, cam);
+      ok('...and not for one past the island\'s rim', [...cuts.values()].every((n) => n === 0),
+        `${W.arenaOutBy(I.x, I.z + I.radius + 5).toFixed(1)} out`);
+      /* A SCENE CLOSES THEM WITH THE REST. */
+      aim.call({ world: W, satan: null, players: [{ position: new THREE.Vector3(spots[0][2], D.y, spots[0][3] + 2.5) }] }, cam);
+      clear.call({ world: W }, cam);
+      ok('...and a scene\'s lens closes every one of them', mats.every((m) => cuts.get(m) === 0));
+      mats.forEach((m, i) => { m.setCuts = was[i]; });
     }
   }
 
