@@ -727,6 +727,15 @@ up by `revealAll`, with no show and no cost. Measured in the pane: the first
 starts at 5.87 s, inside the "There is nothing left" pan (the brief asked for at
 least one on that camera), and the rest during the wide shot.
 
+**Superseded for the two ending shots**, on Richard's "like a monolithic
+mountain appearing infront of the clouds". A driven isle no longer rises through
+a clip plane. It is aimed once at the lens that will see it, and its cloud is a
+COLUMN from grass to keel tip rather than a disc at the waist. It starts
+`FAR.push` radii behind that column and comes forward whole: the vertex shader
+adds `uIsle.xy` to x/z. The column writes no depth and the land does, which is
+the whole masking trick. `FAR.gather / emerge / pour / clear` are fractions of
+`FAR.show` (4.8 s). [story.md](story.md) has the clock these sit in.
+
 ### The arena road
 
 > "Make it wider so all 4 players can run on it together (maybe twice as wide)

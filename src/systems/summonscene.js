@@ -102,8 +102,8 @@ export const SNAKE_RISE = 5;
  *    5% of the cutscene has been played." `isle` is 0.05 of the truck, and
  *    the island is the one `FAR_PLACES` puts in that shot's sky.
  *  - The gates start almost with it (`gate0`) and are SLOWER, one after
- *    another nearest the camera first — `SNAKE.gateEach`, `gateStep`. Their
- *    phase is however long that makes it (about 2.8s for seven), not a
+ *    another nearest the camera first — `SNAKE.gateEach`, `gateAll`. Their
+ *    phase is however long that makes it (2.25s now, for any number), not a
  *    fraction, because the note was a speed.
  *  - "Once all of the torii gates are spawned ... then we can start to have
  *    all of the bridges start to be formed ... at the same time". `road0` is
@@ -116,15 +116,36 @@ export const SNAKE_RISE = 5;
  *    `SNAKE_APRON` seconds, which run into the next shot on purpose: that is
  *    the town again, and the home gates are in it.
  */
-export const SNAKE_TIMES = { isle: 0.05, gate0: 0.04 };
+export const SNAKE_TIMES = { isleOut: 0.02, gateLag: 1.0, isleBIn: 0.15 };
+
+/* AND RE-DIRECTED AGAIN, on the same three shots:
+ *
+ *  - "...maybe we can have it start to appear a second or two earlier". The
+ *    truck's island is now OUT OF ITS CLOUD ON THE CUT — `isleOut` is 2% into
+ *    the truck, which is when it starts coming forward; its cloud has gathered
+ *    under the shot before, where no lens is on it. It used to break the
+ *    surface 1.07s in.
+ *  - "The torii gates spawning in ... should start spawning in a second later
+ *    so that player has time to see the island in the background spawning in
+ *    first." `gateLag` is from the island starting to come out.
+ *  - The wide shot's islands start `isleBIn` after the cut — "user should see
+ *    the clouds spawning in" — and must be done `ISLES_CLEAR` before the next
+ *    one. At three times as long that does not fit in the 3.1s the wide shot
+ *    was, which is why `done1` has a `rest`.
+ */
 
 /** Seconds the ground round the gates takes to fade in, after the roads. */
 export const SNAKE_APRON = 0.7;
 
-/** How long before the wide shot's cut its islands must be finished — "at
- *  least 2 seconds before the ending of this scene", and a hair more so a
- *  rounding error cannot put it under. */
-export const ISLES_CLEAR = 2.05;
+/** How long before the wide shot's cut its islands must be finished — "it
+ *  should all finish at least 0.5s before the end of the camera panning
+ *  before the next camera cut". (It was 2s, when they took 1.6.) */
+export const ISLES_CLEAR = 0.5;
+
+/** How long a beat is, from how long its line is. `rest` is silence the line
+ *  itself does not have — see `done1`. ONE PLACE, because a beat's length
+ *  is what every cut in the ending is a fraction of. */
+export const beatLen = (b, voice) => voice + TAIL + (b.rest ?? 0);
 
 /** Milliseconds a frame the ending spends winding the roads before it needs
  *  them. See `World.prepareSnakeWay`. It was 3, and in Firefox on an Intel
@@ -281,6 +302,14 @@ export const SCRIPTS = {
   finale: [
     {
       id: 'done1', who: 'Patchfur', sub: 'Calico', voice: voicePath('done1'), dur: 7.5,
+      /* A REST AFTER THE LINE, before "The elders called it mischief": the
+         wide shot holds the archipelago while it is conjured. Its islands now
+         take `FAR.show` each (4.8s, "3x's as long"), four of them `FAR.gap`
+         apart, starting `SNAKE_TIMES.isleBIn` after the cut and done
+         `ISLES_CLEAR` before the next — 5.81s, where the shot was 3.10. The
+         pan crosses the same path it always did, so it is slower rather than
+         anywhere new; the islands were solved against that path. */
+      rest: 2.8,
       text: 'Every barrel. Every lantern. Every last cane of bamboo. There is nothing left standing on any of these islands that you two have not put your paws through.',
       clip: 10.16,
       runs: [
@@ -639,6 +668,11 @@ export const say = (beat, phrase, tail = false) => {
   return Math.min(0.999, Math.max(0, (t0 + f * (t1 - t0)) / clip));
 };
 
+const SFX_V = new THREE.Vector3();
+/** The conjuring sounds' volumes — see `SummonScene._sfxConjured`. */
+export const SFX_GATE = 0.5;
+export const SFX_ISLE = 0.4;
+
 export const FINALE_SHOTS = [
   /* --- LINE 1: "Every barrel. Every lantern. Every last cane of bamboo." ---
      Asked for outright: "the camera should actually have a rotating shot on
@@ -753,6 +787,15 @@ export const FINALE_SHOTS = [
     lift: 0.11, turn: 0, pan: 0.46, in: 0, lin: true, stage: false, cue: null, sky: true,
     /* `gates` — THE ROADS START HERE, not on the wide shot. See `SNAKE_TIMES`. */
     gates: true,
+    /* `tilt` — AND THE LENS IS PITCHED UP, degrees about its own x. "We
+       should angle the camera up more during this part ... so that we can see
+       all the torii gates and more of the islands in the background, probably
+       like a 10 degree upward rotation on local x-rotation, as currently about
+       1/4 of the bottom of the screen is mostly empty, should only be like 10%
+       or less." Measured on the rendered frame, rows at the bottom of the
+       letterbox that are four-fifths haze or keel: 27-28% of it through the
+       whole truck, and the far gates' tops in the top bar. See world-check. */
+    tilt: 10,
   },
   /* ...AND OUT, far enough that the archipelago is the frame. "Zoom out to show
      all the area and all the knocked over mischief, and also zoom out far
@@ -1315,7 +1358,7 @@ export class SummonScene {
         if (ok && Number.isFinite(el.duration) && el.duration > 0) {
           b.el = el;
           b.voiceDur = el.duration;
-          b.dur = el.duration + TAIL;
+          b.dur = beatLen(b, el.duration);
           b.typeRate = b.text.length / Math.max(0.6, el.duration * 0.72);
         } else {
           b.el = null;
@@ -1442,6 +1485,10 @@ export class SummonScene {
       this.bridgeHold = this.bridges < 1;
       this.snakeLive = this.bridges < 1;
       this._gateRanked = false;
+      this._heard = new Set();
+      this._gateNote = -1;
+      this._isleNote = -1;
+      this.sfxLog = [];
       /* ...AND HOLDS IT THERE UNTIL THE LINE THAT SHOWS IT. See `sky` on the
          shot table: the targets are set now, on acceptance, and the easing
          toward them waits for the row that carries `sky`. */
@@ -1977,23 +2024,26 @@ export class SummonScene {
     const nx = this._nextCut(B);
     const tC = nx && this.script[nx.beat] ? this._at(nx) : tB + SNAKE_RISE;
     const lenA = Math.max(0.5, tB - tA);
-    const gate0 = tA + lenA * SNAKE_TIMES.gate0;
+    /* The truck's island comes OUT at `isleOut`, so its show starts the
+       gathering of its cloud that long earlier — under the shot before. */
+    const out = tA + lenA * SNAKE_TIMES.isleOut;
+    const gate0 = out + SNAKE_TIMES.gateLag;
     const end = tB + (tC - tB) * SNAKE_OF_SHOT;
     /* The gates take as long as they take, but never so long the roads get
        less than two seconds to grow in: a line re-timed shorter squeezes the
        gates, not the roads to a blink. */
     const span = this.world?.gateSpan?.() ?? 2.8;
     const road0 = Math.min(gate0 + span, end - 2);
-    /* THE WIDE SHOT'S ISLANDS, SOLVED BACKWARDS. Their shot up through the
-       cloud should land just after the cut — the cloud gathers off screen in
-       the truck, where they are not in frame — unless that would finish the
-       last of them later than `ISLES_CLEAR` before the cut, in which case
-       the cut-off wins. */
+    /* THE WIDE SHOT'S ISLANDS START ON SCREEN, clouds first, just after the
+       cut — unless that would finish the last of them later than
+       `ISLES_CLEAR` before the next cut, in which case the cut-off wins and
+       they start earlier. `done1`'s `rest` is what keeps that from happening. */
     const nB = this.world?.farIsles?.of('B').length ?? 4;
-    const shootAt = FAR.shoot[0] * FAR.show;
-    const isleB = Math.min(tB + 0.03 - shootAt, tC - ISLES_CLEAR - FarIsles.span(nB, FAR.show));
+    const isleB = Math.min(tB + SNAKE_TIMES.isleBIn, tC - ISLES_CLEAR - FarIsles.span(nB, FAR.show));
     return {
-      isle: tA + lenA * SNAKE_TIMES.isle,
+      isle: out - FAR.emerge[0] * FAR.show,
+      isleOut: out,
+      truck: tA,
       isleB,
       gate0,
       road0,
@@ -2343,8 +2393,13 @@ export class SummonScene {
         /* NEAREST THE CAMERA FIRST, decided once, by the lens that is
            looking at them when they start: "the first one spawning in being
            closest to the camera". Ranked before the first gate is due, as
-           soon as the roads exist to be ranked. */
-        if (!this._gateRanked && W.snakeWay && now >= T.gate0 - 0.25) {
+           soon as the roads exist to be ranked — AND NEVER BEFORE THE TRUCK
+           IS ON SCREEN. It was ranked a quarter second before the first gate,
+           which was 0.12s before the cut to the truck, so the order was
+           nearest the BAMBOO GROVE's lens: "make it more uniform so that the
+           torii gates closer to camera spawn in first and furthest spawn in
+           last". */
+        if (!this._gateRanked && W.snakeWay && now >= Math.max(T.truck, T.gate0 - 0.25)) {
           this._gateRanked = true;
           const c = this.camera.position;
           W.snakeGateRank = [...(W.snakeWay.roads ?? [])]
@@ -2363,8 +2418,11 @@ export class SummonScene {
            `setBridges(1)`. */
         const F = W.farIsles;
         if (F && now < T.stop) {
-          if (now >= T.isle) F.show('A', now - T.isle, FAR.showFirst);
-          if (now >= T.isleB) F.show('B', now - T.isleB, FAR.show);
+          /* "Forward" is toward the lens of the shot that shows them, so each
+             is handed the camera only once that shot is up. */
+          const cam = this.camera.position;
+          if (now >= T.isle) F.show('A', now - T.isle, FAR.show, this._shot?.gates ? cam : null);
+          if (now >= T.isleB) F.show('B', now - T.isleB, FAR.show, this._shot?.snake ? cam : null);
         }
       }
     } else if (!this.bridgeHold && this.bridges < this.bridgeWant) {
@@ -2373,6 +2431,63 @@ export class SummonScene {
     if (this.bridges !== this._bridgesSent) {
       this._bridgesSent = this.bridges;
       this.world?.setBridges(this.bridges);
+    }
+    if (this.snakeLive && this.active && W?.snakeWay) this._sfxConjured(W);
+  }
+
+  /**
+   * A SOUND FOR EACH THING THE ENDING CONJURES IN FRONT OF THE LENS.
+   *
+   * "When the torii gates and islands that spawn in, infront of the camera,
+   * and that are visible, there can be a sound played for each one, but don't
+   * make it too annoying since there will be several sound effects playing
+   * quickly." So each is heard once, on the frame it starts to appear — a
+   * gate as its torii starts forming, an island as it starts coming out of
+   * its cloud — and only if it is inside the letterbox right then; the dusk
+   * gate forms off the right of the truck and is not heard at all.
+   *
+   * NOT ANNOYING BY BEING MUSIC. Seven gates in half a second are seven
+   * notes, so each gate takes the NEXT note of a pentatonic run in the order
+   * they are heard (`gateform`'s `k`) and the set is one harp sweep rather
+   * than seven pings; the islands are a low swell each, a tone apart, under
+   * the voice. `sfxLog` is what `world-check` reads back.
+   *
+   * AND UNDER HER, MEASURED. Both land while Patchfur is talking — the gates
+   * on "...standing on any of these islands", the islands on "...put your
+   * paws through" — and her line plays at full scale (0.153 RMS over the
+   * clip). Rendered offline at the default sfx volume, the loudest 400ms of
+   * the seven gates at their real spacing was 0.099 at a volume of 0.8, and
+   * of the four islands 0.122: 4dB and 2dB under her. `SFX_GATE` and
+   * `SFX_ISLE` bring both to about 0.06, 8dB under — each note still heard,
+   * none of them over a word.
+   */
+  _sfxConjured(W) {
+    const cam = this.camera;
+    const heard = (this._heard ??= new Set());
+    const seen = (x, y, z) => {
+      SFX_V.set(x, y, z).project(cam);
+      return SFX_V.z < 1 && Math.abs(SFX_V.x) < 0.95 && Math.abs(SFX_V.y) < 0.82;
+    };
+    const now = this._now();
+    for (const r of W.snakeWay.roads ?? []) {
+      /* DRAWN, not merely forming: a road that is not showing (the arena's,
+         while it is shut) keeps a `gateT` that rises with the phase, and was
+         heard — a note for a gate nobody could see. */
+      if (!(r.gateT > 0) || !r.gates?.[0]?.visible || heard.has(r)) continue;
+      heard.add(r);
+      const p = r.pts[0];
+      if (!seen(p.x, p.y + 4, p.z)) continue;
+      const k = this._gateNote = (this._gateNote ?? -1) + 1;
+      this.audio?.play('gateform', SFX_GATE, k);
+      this.sfxLog?.push({ what: 'gate', id: r.id, k, now });
+    }
+    for (const s of W.farIsles?.isles ?? []) {
+      if (!s.driven || !(FarIsles.emerged(s.reveal) > 0) || heard.has(s)) continue;
+      heard.add(s);
+      if (!seen(s.x, s.y, s.z)) continue;
+      const k = this._isleNote = (this._isleNote ?? -1) + 1;
+      this.audio?.play('islerise', SFX_ISLE, k);
+      this.sfxLog?.push({ what: 'isle', id: s.slot, k, now });
     }
   }
 
@@ -2485,6 +2600,7 @@ export class SummonScene {
     const k = Math.min(1, this.t / Math.max(0.001, b.dur));
     const ease = 1 - (1 - k) * (1 - k);
     const F = this.focus;
+    let tilt = 0;
     if (this.which === 'summon') {
       /* Circling, from below. 1.55x his own size fits the whole creature with
          air around it; the dolly-in is a fraction of that rather than a fixed
@@ -2601,6 +2717,7 @@ export class SummonScene {
         this._look.z += rz;
       }
       this.stageWant = shot.stage ? 1 : 0;
+      tilt = shot.tilt ?? 0;
     } else if (this.which === 'satanAnnounce' || this.which === 'satanOpen') {
       /* HIS SHOTS ARE ABOUT THE PLACE, NOT ABOUT HIM. He is a billboard
          standing in a town square and there is no framing of a flat drawing
@@ -2630,6 +2747,10 @@ export class SummonScene {
       this._look.set(F.x, F.y + 4, F.z);
     }
     this.camera.lookAt(this._look);
+    /* A PITCH ON TOP OF THE AIM, about the lens's own x — `tilt` on the
+       table. After `lookAt`, so what the row aims at stays what it aims at
+       and the frame simply looks higher. */
+    if (tilt) this.camera.rotateX((tilt * Math.PI) / 180);
     this.camera.updateMatrixWorld(true);
     this._parkStage(dt);
     /* THE TIDE RUNS ON THE WORLD, SO IT DOES NOT CARE WHERE THE CAMERA IS —

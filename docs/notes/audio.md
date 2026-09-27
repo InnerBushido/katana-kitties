@@ -34,6 +34,32 @@ Three things to know before touching it:
   cue peaks 0.17–0.72, and 14 at once (the voice cap) hits 0.83 without
   clipping.
 
+### The ending's gates and islands — a run, not a rattle
+
+> "a sound played for each one, but don't make it too annoying since there will
+> be several sound effects playing quickly."
+
+Five gates start inside 0.5 s and five islands inside 5 s, so the problem is
+the pile-up and not any one sound. Two decisions deal with it:
+
+- **`gateform` is one note of a run.** `play(name, vol, k)` takes a step, and
+  step `k` is degree `k` of a major pentatonic, rising an octave every five.
+  Five gates heard in order are one harp sweep, and a pentatonic cannot clash
+  with itself, however they overlap. Under the note is a soft noise sweep
+  (600→2200 Hz) for the cloud.
+- **`islerise` is slow.** Lowpassed noise swells 140→520 Hz over 1.3 s, and two
+  low bells a fifth apart come in at 0.9 s, when the island is well under way.
+  It is a swell, so a second one arriving under the first thickens it rather
+  than restarting it.
+
+Levels were measured by rendering, as RMS of the loudest 400 ms window at
+default volume. The voice line is 0.153 (whole clip). One gate is 0.044 and one
+island 0.068. Seven gates at 0.8 were 0.099 and four islands 0.122, which is too
+close to the voice. So `SFX_GATE` is 0.5 and `SFX_ISLE` 0.4 (`summonscene.js`),
+which gives roughly 0.06 per run, about 8 dB under the voice. The 0.06 is by
+arithmetic from the single-sound renders, not re-rendered. world-check pins
+both levels below the voice's.
+
 ---
 
 ## A piece of music per island, and one per dragon

@@ -1745,19 +1745,90 @@ the header of `systems/summonscene.js`:
   off the town to make room. It is in frame 206/206 samples, at (−0.47, 0.70),
   from 5.0% in.
 - **The torii come up with it, slower, nearest the camera first**:
-  `SNAKE.gateEach` and `gateStep`, 2.77 s for seven. That is a length, not a
+  `SNAKE.gateEach` and `gateStep` (now `gateAll` — see the next section),
+  2.77 s for seven. That is a length, not a
   fraction, because the note was about speed.
 - **"Once all of the torii gates are spawned ... all of the bridges ... at the
   same time"**: every road starts on the gates' end and is done at 90% of the
   wide shot. It is 2.44 s of growth, not a blink.
 - **The islands shoot up through their clouds** (an ease-out-back, so they
-  overshoot) instead of rising. The wide shot's four are in its sky, mean |x|
+  overshoot) instead of rising. *Replaced by the next section: they come
+  forward, whole.* The wide shot's four are in its sky, mean |x|
   0.38, closest pair 0.31 apart. Their start is solved backwards from **"fully
   formed and the clouds faded at least 2 seconds before the ending of this
   scene"**: they are done 2.05 s before the cut.
 - **The ground round the gates fades in after the roads land** (`SNAKE_APRON`,
   0.7 s, `snakeWay.apronShare`). It runs into the next shot on purpose: that
   shot is the town again, and the home gates are in it.
+
+## The ending, again: islands that come toward you, gates on one beat, a sound for each
+
+Richard's next note on the same beat, quoted in `SNAKE_TIMES`, `FAR` and the
+truck's row:
+
+- **"it can just already be a full solid 3D object and can just spawn/fade-in
+  in a forward direction through the clouds like a monolithic mountain"**. The
+  isles no longer rise or clip at a waist. Each one is aimed at the lens that
+  will see it (`show(..., cam)`, once) and starts `FAR.push` radii BEHIND its
+  cloud, then comes forward along that line on an ease-out cubic with the whole
+  shape drawn. The cloud is transparent and writes no depth, and the land does,
+  so the part still behind the cloud is hidden by the cloud and the part in
+  front covers it. That gives "through the clouds" without a clip plane.
+- **"we will need more clouds on the bottom to cover up the entire shape of the
+  cone shaped island"**: the portal is a column of 40 puffs, from the grass
+  down to the keel tip (`4 + r*2.1`). It is ≥1.3r wide at every height, and
+  world-check asserts that. The first cut was 1.25r, so the cloud was widened
+  rather than the check loosened.
+- **"start to appear a second or two earlier"**: island A comes out at 2% of
+  the truck (5.43 s), not 5% (6.44 s). Its cloud has already gathered under the
+  previous shot, where it is off-screen. It is in frame 191/191 samples, at
+  (−0.45, 0.33).
+- **"start spawning in a second later ... all start to be spawned in, in about
+  0.5s ... closer to camera spawn in first"**: `gateLag` 1.0 s after the island,
+  and `SNAKE.gateAll` 0.5 s spread evenly over the rank. This shows 6.43–6.93 s
+  in the browser.
+  **The rank was wrong, and not because of the stagger.** It was taken on the
+  first frame of the gate window from whatever lens was live, and early in the
+  truck that was still the grove shot's. So "nearest first" meant nearest to the
+  previous camera. It is now ranked no earlier than the truck's first frame.
+- **"a 10 degree upward rotation on local x"**: the truck row carries `tilt: 10`,
+  applied with `rotateX` after `lookAt`, so the move itself is unchanged. The
+  empty bottom band was measured 27–28% of the letterboxed frame (a row counts as
+  empty when under 20% of it is anything but haze and keel). With the tilt it is
+  5.2–6.5%. Every gate that forms inside the frame's width forms inside the
+  letterbox. **Dusk does not**: it is off the right side for the whole truck, and
+  no tilt fixes a horizontal miss. It is not heard either (below).
+- **"3x's as long ... first spawn the clouds ... at least a second or two ...
+  waterfall once the island stops moving and while clouds are fading ... 0.5s
+  before ... the next camera cut"**: `FAR.show` is 4.8 s, 3× the old 1.6 s.
+  The fractions of that time are:
+
+  | phase | span of `FAR.show` | time |
+  | --- | --- | --- |
+  | gather (cloud only) | 0–0.21 | 1.0 s |
+  | emerge | 0.21–0.625 | 2.0 s |
+  | pour | 0.625 on | from the moment it stops |
+  | cloud clears | 0.66–0.96 | |
+
+  This did not fit the wide shot: four islands `FAR.gap` apart need 5.16 s
+  and 0.5 s of margin, and the shot was 3.10 s. **So `done1` has a 2.8 s
+  `rest`** after Patchfur's line (`beatLen = voice + TAIL + rest`), and the wide
+  shot is 5.9 s. Its path is the same and therefore slower. If that reads as
+  dead air, the knob is the rest and `FAR.show` together. The first B island
+  starts 0.15 s into the shot and the last is done 0.59 s before the cut.
+  In the pane: the columns gather at 9.7 s, the islands are out by 11.3 s, and
+  the water pours and the cloud has gone by 14.0 s.
+- **"a sound played for each one, but don't make it too annoying"**:
+  `_sfxConjured` projects each gate's first post (+4 up) and each driven island
+  through the live lens, and plays once per thing the frame actually shows. The
+  frame is |x| < 0.95 and |y| < 0.82, which is the letterbox. The sounds are
+  `gateform` and `islerise` in [audio.md](audio.md). The gate notes climb
+  a pentatonic scale in the order they are heard, so five gates in half a second
+  are one run and not five pings. A gate off-frame is a skipped beat, not a
+  nudged one: 0@6.63 1@6.73 2@6.93 3@7.03 4@7.13. **The arena's gate was
+  heard while the arena was shut**: its road keeps a rising `gateT` while it is
+  not drawn. So a gate now has to be DRAWN as well as forming, and that is
+  checked.
 
 ## The arena exit
 

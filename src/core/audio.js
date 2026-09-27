@@ -682,8 +682,10 @@ export class Audio {
   /**
    * @param {string} name
    * @param {number} vol 0..1 — pass a distance-based value for far-off events
+   * @param {number} k   which one of a run this is, for the sounds that are
+   *                     played in runs and step through a scale (`gateform`)
    */
-  play(name, vol = 1) {
+  play(name, vol = 1, k = 0) {
     if (!this.ready || vol <= 0.02) return;
     // Cheap voice cap: a dragon strafing a market can fire a lot of these.
     if (this._voices > 14) return;
@@ -927,6 +929,49 @@ export class Audio {
         this._tone({ type: 'sine', from: 70, to: 38, dur: 0.5, gain: 0.34 * v, delay: 1.5 });
         this._noise({ from: 600, to: 120, dur: 0.3, gain: 0.2 * v, q: 0.7, delay: 1.5 });
         break;
+      case 'gateform': {
+        /* A TORII FORMING OUT OF ITS CLOUD in the ending — "a sound played for
+           each one, but don't make it too annoying since there will be several
+           sound effects playing quickly". So it is barely a sound: a breath of
+           air and one soft chime, and the `k`th of them is the `k`th note of a
+           major pentatonic run, so seven gates in half a second are one harp
+           sweep up rather than seven of the same ping. Quiet: it is under a
+           voice and a piece of music. */
+        const deg = [0, 2, 4, 7, 9];
+        const n = deg[k % 5] + 12 * Math.floor(k / 5);
+        this._noise({ from: 600, to: 2200, dur: 0.32, gain: 0.05 * v, q: 0.6 });
+        this._tone({ type: 'sine', from: semi(12 + n), dur: 0.9, gain: 0.075 * v, delay: 0.02 });
+        this._tone({ type: 'triangle', from: semi(24 + n), dur: 0.35, gain: 0.02 * v, delay: 0.02 });
+        break;
+      }
+      case 'islerise': {
+        /* A FAR ISLAND COMING OUT OF ITS CLOUD: a swell, not a hit — it takes
+           two seconds to come out, so the sound takes about that to arrive.
+           A low rumble of cloud opening up, and under it a soft low bell a
+           tone higher for each island after the first, so four of them read
+           as four. `_noise` has a fixed attack, so the swell is built here. */
+        const ctx = this.ctx;
+        const t = ctx.currentTime;
+        const src = ctx.createBufferSource();
+        src.buffer = this._noiseBuf;
+        src.loop = true;
+        const f = ctx.createBiquadFilter();
+        f.type = 'lowpass';
+        f.Q.value = 0.8;
+        f.frequency.setValueAtTime(140, t);
+        f.frequency.exponentialRampToValueAtTime(520, t + 1.6);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.16 * v, t + 1.3);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
+        src.connect(f).connect(g).connect(this.sfxBus);
+        src.start(t);
+        src.stop(t + 2.45);
+        const step = [0, 2, 4, 7][k % 4];
+        this._tone({ type: 'sine', from: semi(-12 + step), dur: 2.2, gain: 0.07 * v, delay: 0.9 });
+        this._tone({ type: 'sine', from: semi(-5 + step), dur: 1.8, gain: 0.035 * v, delay: 0.9, detune: 6 });
+        break;
+      }
       case 'gong':
         /* FIGHT. The one sound in the game that starts something. A big
            struck bell: fundamental, fifth and octave together with a noise

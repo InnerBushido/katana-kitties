@@ -31,6 +31,7 @@ import { Ryuuseki, GUNNER_BEAMS, PILOT_BEAMS, BEAM, RYU_SIZE, FAN, AIM_ARC, RYU_
 import {
   SCRIPTS, DUSK_DEEP, DUSK_FALL, DAWN_RISE, DAWN_DEEP, SummonScene, BEAT_ACTS,
   FINALE_SHOTS, MUSIC_CUES, say, SNAKE_RISE, SNAKE_TIMES, SNAKE_OF_SHOT, SNAKE_APRON, ISLES_CLEAR,
+  beatLen, SFX_GATE, SFX_ISLE,
 } from '../src/systems/summonscene.js';
 import { SNAKE, SNAKE_LINKS, SNAKE_ARENA, COIN_CANES } from '../src/world/snakeway.js';
 import { FAR, FAR_PLACES, FarIsles } from '../src/world/farisles.js';
@@ -21970,7 +21971,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
     /* ON THE RECORDING'S CLOCK. `dur` in Node is the authored floor and not the
        line — see the crossing's pacing check, where that cost a whole pass. */
     const floors = S.script.map((b) => b.dur);
-    for (const b of S.script) if (b.clip != null) b.dur = b.clip + TAIL;
+    for (const b of S.script) if (b.clip != null) b.dur = beatLen(b, b.clip);
     const at = S._at(skyRows[0]);
     /* ...AND PUT BACK. `script` IS the shared table, not a copy: left written,
        this made the crossing's "not the floor the table ships with" check read
@@ -22006,7 +22007,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
      and FROM THE SHOT IT STARTS ON, now that it no longer starts at zero, on
      the recordings' own lengths rather than the authored floors. */
   const firstTwo = SCRIPTS.finale.slice(0, 2)
-    .reduce((a, b) => a + (b.clip != null ? b.clip + TAIL : (b.dur ?? 7)), 0);
+    .reduce((a, b) => a + (b.clip != null ? beatLen(b, b.clip) : (b.dur ?? 7)), 0);
   const skyRow = FINALE_SHOTS.find((sh) => sh.sky);
   const skyAt = skyRow ? skyRow.from * (SCRIPTS.finale[skyRow.beat].clip + TAIL)
     + (skyRow.off ?? 0) : 0;
@@ -25102,7 +25103,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
          two-second lead has nothing to lead from. */
       const scr = D.script;
       const floors = scr.map((b) => b.dur);
-      for (const b of scr) if (b.clip != null) b.dur = b.clip + TAIL;
+      for (const b of scr) if (b.clip != null) b.dur = beatLen(b, b.clip);
       const pushRow = FINALE_SHOTS.find((sh) => sh.into != null);
       let lastB1 = null;
       let lookB1 = null;
@@ -29445,13 +29446,14 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     R.every((r) => slotW(1 + r.id * 3) === 0),
     R.map((r) => slotW(1 + r.id * 3).toFixed(2)).join(' '));
   /* "The torii gates should take a bit longer to spawn in ... maybe 2 or 3
-     x's as long ... and also the rate at which all the torii gates are
-     spawned can also be 2 or 3x's as long". It was a 0.5s gate, 0.07s apart. */
+     x's as long". It was a 0.5s gate. And then, of the spacing: "we can have
+     the torii gates spawn in faster together so that they all start to be
+     spawned in, in about 0.5s keeping the staggered spawn in, but make it
+     more uniform". It was 0.17s apart, a second for seven. */
   {
     const formS = SNAKE.gateEach * (SNAKE.gateForm[1] - SNAKE.gateForm[0]);
-    ok('...each forming 2-3 times as slowly as it did, and 2-3 times as far apart',
-      formS >= 1.0 && formS <= 1.5 && SNAKE.gateStep >= 0.14 && SNAKE.gateStep <= 0.21,
-      `${formS.toFixed(2)}s each, ${SNAKE.gateStep}s apart`);
+    ok('...each forming 2-3 times as slowly as it did',
+      formS >= 1.0 && formS <= 1.5, `${formS.toFixed(2)}s each`);
     ok('...and a cloud is only thinned once its torii is whole',
       SNAKE.gateClear[0] >= SNAKE.gateForm[1]);
   }
@@ -29465,6 +29467,13 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     ok('...one after another in the order the ending ranks them',
       got.join() === want.join() && R.every((r, i) => i === 0 || r.gateWin[0] !== R[0].gateWin[0]),
       got.join());
+    const span = W.gateSpan();
+    const starts = [...R].map((r) => r.gateWin[0] * span).sort((a, c) => a - c);
+    const steps = starts.slice(1).map((s, i) => s - starts[i]);
+    ok('...every one of them started inside half a second, evenly — not one second, unevenly',
+      starts.at(-1) - starts[0] <= 0.5 + 1e-9 && starts.at(-1) - starts[0] >= 0.4
+      && steps.every((d) => Math.abs(d - steps[0]) < 1e-9),
+      `${(starts.at(-1) - starts[0]).toFixed(2)}s from first to last, ${steps[0].toFixed(3)}s apart`);
     W.snakeGateRank = null;
     W.openArena(false);
     W.setBridges(G * 0.3);
@@ -29739,26 +29748,66 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
       && !!F.meshes.water && !!F.meshes.points && !!F.meshes.portal);
     ok('...one for the truck across the town and four for the wide shot',
       F.of('A').length === 1 && F.of('B').length === 4);
-    F.show('B', -0.01);
+    /* AND THEN: "instead of growing downward after fading in, it can just
+       already be a full solid 3D object and can just spawn/fade-in in a
+       forward direction through the clouds like a monolithic mountain
+       appearing infront of the clouds, we will need more clouds on the bottom
+       to cover up the entire shape of the cone shaped island." And for the
+       wide shot's: "3x's as long ... first spawn the clouds (user should see
+       the clouds spawning in), then have the island come out from behind the
+       clouds (this should take at least a second or two), then have the
+       waterfall begin flowing once the island stops moving and while clouds
+       are fading away". */
+    const lens = { x: 900, y: 300, z: 40 };
+    F.show('B', -0.01, FAR.show, lens);
     ok('...none of them before its mark', !F.anyShown);
     const s = F.of('B')[0];
     const U = () => F.U.uIsle.value[s.slot];
-    const P = () => F.portalMat.uniformsRef.uSlotA.value[s.slot].w;
-    F.show('B', FAR.show * 0.3);
-    ok('...a cloud gathering first, with nothing in it yet',
-      P() > 0.5 && U().z === 0 && Math.abs(U().x - FAR.rise) < 1e-6, `cloud ${P().toFixed(2)}`);
-    F.show('B', FAR.show * 0.43);
-    ok('...then the island SHOOTS up through it — below the cloud\'s plane, not drawn yet',
-      U().x > 0 && U().x < FAR.rise * 0.7 && U().y > -1e8 && U().z === 1 && P() > 0.9,
-      `${U().x.toFixed(1)} below, clip at ${U().y.toFixed(1)}`);
-    ok('...fast: its whole rise in a fifth of the show',
-      (FAR.shoot[1] - FAR.shoot[0]) * FAR.show <= 0.4 && FAR.rise >= 80);
-    ok('...its water not falling yet', s.fall === 0);
-    F.show('B', FAR.show * 0.75);
-    ok('...then standing, the cloud going, and the water forming AS it goes',
-      Math.abs(U().x) < 1 && P() > 0 && P() < 0.9 && s.fall > 0 && s.fall < 1,
-      `cloud ${P().toFixed(2)}, fall ${s.fall.toFixed(2)}`);
-    F.show('B', FAR.show + FAR.gap * 4);
+    const P = () => F.portalMat.uniformsRef.uSlotA.value[s.slot];
+    const away = () => Math.hypot(U().x, U().y);
+    const toLens = () => (U().x * (lens.x - s.x) + U().y * (lens.z - s.z)) / Math.hypot(lens.x - s.x, lens.z - s.z);
+    ok('...three times as long as they took, and the same for every island',
+      FAR.show >= 1.6 * 3 - 1e-9 && FAR.showFirst === undefined, `${FAR.show}s`);
+    F.show('B', FAR.show * FAR.gather[1] * 0.6, FAR.show, lens);
+    ok('...clouds first, on their own — the island not drawn yet',
+      P().w > 0.3 && U().z === 0 && s.fall === 0, `cloud ${P().w.toFixed(2)}`);
+    ok('...for about a second — long enough to be seen spawning in',
+      (FAR.gather[1] - FAR.gather[0]) * FAR.show >= 0.8, `${((FAR.gather[1] - FAR.gather[0]) * FAR.show).toFixed(2)}s`);
+    ok('...the island waiting BEHIND the cloud, on the far side of it from the lens',
+      Math.abs(away() - FAR.push * s.r) < 1e-6 && toLens() < -0.99 * away()
+      && Math.hypot(P().x - s.x, P().z - s.z) > 0.5 * s.r,
+      `${away().toFixed(0)} back of an island ${s.r} across`);
+    /* THE COLUMN COVERS THE CONE. Read off the merged mesh: every vertex of
+       this island's cloud, built round the slot's origin at grass height. */
+    {
+      const g = F.meshes.portal.geometry;
+      const pos = g.attributes.position;
+      const sl = g.attributes.slot;
+      let y0 = Infinity; let y1 = -Infinity; let wMax = 0;
+      for (let v = 0; v < pos.count; v++) {
+        if (Math.round(sl.getX(v)) !== s.slot) continue;
+        y0 = Math.min(y0, pos.getY(v)); y1 = Math.max(y1, pos.getY(v));
+        wMax = Math.max(wMax, Math.hypot(pos.getX(v), pos.getZ(v)));
+      }
+      const tip = 4 + s.r * 2.1;
+      ok('...a cloud the whole height of the island, grass to the tip of its keel, and wider than it',
+        y0 <= -tip && y1 >= s.r * 0.4 && wMax >= s.r * 1.3,
+        `cloud ${y1.toFixed(0)} to ${y0.toFixed(0)}, keel tip at ${(-tip).toFixed(0)}; ${wMax.toFixed(0)} wide of ${s.r}`);
+    }
+    const mid = (FAR.emerge[0] + FAR.emerge[1]) / 2;
+    F.show('B', FAR.show * mid, FAR.show, lens);
+    ok('...then coming out of it toward the lens, WHOLE — faded in and nothing cut off it',
+      U().z > 1 && away() > 0 && away() < FAR.push * s.r && P().w > 0.9 && s.fall === 0,
+      `${away().toFixed(0)} still to come, cloud ${P().w.toFixed(2)}`);
+    ok('...over at least a second and a half',
+      (FAR.emerge[1] - FAR.emerge[0]) * FAR.show >= 1.5, `${((FAR.emerge[1] - FAR.emerge[0]) * FAR.show).toFixed(2)}s`);
+    ok('...and the water only once it has stopped, while the cloud goes',
+      FAR.pour[0] >= FAR.emerge[1] && FAR.clear[0] >= FAR.emerge[1] && FAR.clear[0] < FAR.pour[1]);
+    F.show('B', FAR.show * 0.8, FAR.show, lens);
+    ok('...then standing where it stands, the cloud going, and the water forming AS it goes',
+      away() < 1e-6 && P().w > 0 && P().w < 0.9 && s.fall > 0 && s.fall < 1,
+      `cloud ${P().w.toFixed(2)}, fall ${s.fall.toFixed(2)}`);
+    F.show('B', FAR.show + FAR.gap * 4, FAR.show, lens);
     ok('...and then whole: no cloud at all, and a waterfall reaching the cloud sea',
       F.of('B').every((i) => i.reveal === 1 && i.fall === 1
         && F.portalMat.uniformsRef.uSlotA.value[i.slot].w === 0));
@@ -30079,7 +30128,7 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
       of: (shot) => FAR_PLACES.filter((p) => p.shot === shot),
       hideAll() {},
     },
-    gateSpan: () => SNAKE.gateEach + SNAKE_LINKS.length * SNAKE.gateStep,
+    gateSpan: () => SNAKE.gateEach + SNAKE.gateAll,
   };
   let now = 0;
   const S = new SummonScene({ world: null, audio: null });
@@ -30088,7 +30137,11 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     S.bridgeWant === 1 && S.bridges === 0 && S.bridgeHold === true && S.snakeLive === true);
   S.world = fakeW;
   const floors = S.script.map((b) => b.dur);
-  for (const b of S.script) if (b.clip != null) b.dur = b.clip + TAIL;
+  /* SIZED AS `load()` SIZES THEM, voice and all. Without `voiceDur` a cut is
+     a fraction of the whole beat, tail and rest included — which was a few
+     hundredths off while every beat's padding was the same 1.5s, and was 2.5s
+     off the moment `done1` got a rest. */
+  for (const b of S.script) if (b.clip != null) { b.dur = beatLen(b, b.clip); b.voiceDur = b.clip; }
   const setNow = (t) => {
     now = t;
     let i = 0;
@@ -30112,13 +30165,20 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
   const tC = S._at(S._nextCut(B[0]));
   const fa = (t) => (t - tA) / (tB - tA);
   /* "When the 'There is nothing left standing' scene begins, we should have
-     one of the islands in the background already start to appear ... after
-     5% of the cutscene has been played." */
-  ok('...the first far island starts 5% into the first pan',
-    Math.abs(fa(T.isle) - 0.05) < 1e-6, `${(fa(T.isle) * 100).toFixed(1)}%`);
-  ok('...the gates with it, and as long as their slower show takes',
-    Math.abs(T.gate0 - T.isle) < 0.1 && Math.abs(T.road0 - T.gate0 - fakeW.gateSpan()) < 1e-9,
-    `${(T.road0 - T.gate0).toFixed(2)}s of gates`);
+     one of the islands in the background already start to appear". Then:
+     "...maybe we can have it start to appear a second or two earlier". It
+     broke its cloud 1.07s into the truck; it is coming out of it on the cut,
+     its cloud having gathered under the shot before. */
+  ok('...the truck\'s far island coming out of its cloud as the truck opens',
+    T.isleOut >= tA && T.isleOut - tA <= 0.1 && T.isle < tA
+    && Math.abs(T.isleOut - T.isle - FAR.emerge[0] * FAR.show) < 1e-9,
+    `${(T.isleOut - tA).toFixed(2)}s in (${(fa(T.isleOut) * 100).toFixed(1)}%)`);
+  /* "The torii gates spawning in, with the clouds, should start spawning in a
+     second later so that player has time to see the island in the background
+     spawning in first." */
+  ok('...the gates a second after it, and as long as their show takes',
+    Math.abs(T.gate0 - T.isleOut - 1) < 1e-9 && Math.abs(T.road0 - T.gate0 - fakeW.gateSpan()) < 1e-9,
+    `${(T.gate0 - T.isleOut).toFixed(2)}s after, ${(T.road0 - T.gate0).toFixed(2)}s of gates`);
   ok('...then the roads, all at once, to 90% of the second',
     Math.abs((T.end - tB) / (tC - tB) - SNAKE_OF_SHOT) < 1e-9 && SNAKE_OF_SHOT >= 0.85,
     `${(((T.end - tB) / (tC - tB)) * 100).toFixed(0)}% of the wide shot`);
@@ -30126,12 +30186,15 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     T.end - T.road0 >= 2, `${(T.end - T.road0).toFixed(2)}s`);
   ok('...then the ground round the gates, fading in once they have all landed',
     Math.abs(T.apron - T.end - SNAKE_APRON) < 1e-9 && SNAKE_APRON >= 0.4);
-  /* "The islands should be fully formed and the clouds faded at least 2
-     seconds before the ending of this scene before the next 'the elders
-     called it mischief' scene." */
-  ok('...and the wide shot\'s islands all finished 2 seconds before its cut',
-    T.isleB + FarIsles.span(4, FAR.show) <= tC - 2 + 1e-9,
-    `done ${(tC - T.isleB - FarIsles.span(4, FAR.show)).toFixed(2)}s before the cut`);
+  /* "Have it first spawn the clouds (user should see the clouds spawning
+     in) ... it should all finish at least 0.5s before the end of the camera
+     panning before the next camera cut." Three times as long does not fit the
+     3.1s the wide shot was, so `done1` rests; this is what the rest is for. */
+  ok('...and the wide shot\'s islands start ON it, and are all done half a second before its cut',
+    T.isleB >= tB && T.isleB - tB <= 0.3 && ISLES_CLEAR >= 0.5
+    && T.isleB + FarIsles.span(4, FAR.show) <= tC - 0.5 + 1e-9,
+    `from ${(T.isleB - tB).toFixed(2)}s in, done ${(tC - T.isleB - FarIsles.span(4, FAR.show)).toFixed(2)}s `
+    + `before the cut, of a ${(tC - tB).toFixed(2)}s shot`);
   sent.length = 0;
   let early = 0;
   for (let t = 0; t <= tC + 1; t += 1 / 30) {
@@ -30150,7 +30213,7 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     looked.some((l) => l.shot === 'A') && looked.some((l) => l.shot === 'B')
     && looked.every((l) => l.now < T.stop
       && Math.abs(l.t - (l.now - (l.shot === 'A' ? T.isle : T.isleB))) < 1e-9
-      && l.dur === (l.shot === 'A' ? FAR.showFirst : FAR.show)));
+      && l.dur === FAR.show));
   /* --- ...AND EACH FAR ISLAND IS IN THE SHOT IT IS FOR -----------------
      "They are far away and in the corner of the screen and hard to notice" —
      so `FAR_PLACES` were solved against the two pans' lenses, and this plays
@@ -30168,29 +30231,109 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     }
     const RS = new SummonScene({ scene: null, world: RW, audio: null });
     RS.start('finale', new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2), Math.max(x1 - x0, z1 - z0) / 2);
-    for (const bt of RS.script) if (bt.clip != null) bt.dur = bt.clip + TAIL;
+    for (const bt of RS.script) if (bt.clip != null) { bt.dur = beatLen(bt, bt.clip); bt.voiceDur = bt.clip; }
     RS.camera.aspect = 16 / 9;
     RS.camera.updateProjectionMatrix();
     const RT = RS._snakeTimes();
     const seen = { A: [], B: [] };
-    for (let i = 0; i < 60 * 16 && RS.active && RS._now() < RT.stop; i++) {
+    /* ...AND WHAT THE LENS DID WITH THE GATES AND THE SOUND. Each gate as it
+       starts forming: in the frame or not, top and foot; and the pitch of the
+       truck's lens off its own aim. */
+    const gateSeen = new Map();
+    const tilts = [];
+    const vv = new THREE.Vector3();
+    const inBox = (x, y, z) => { vv.set(x, y, z).project(RS.camera); return vv.z < 1 && Math.abs(vv.x) < 0.95 && Math.abs(vv.y) < 0.82; };
+    for (let i = 0; i < 60 * 20 && RS.active && RS._now() < RT.stop; i++) {
+      /* BOTH HALVES OF A FRAME, as `Game` runs them: the roads, the far
+         islands and their sounds are all `updateSky`'s. With `update` alone
+         this played the ending over a world that never built a road. */
       RS.update(1 / 60);
+      RS.updateSky(1 / 60);
       const shot = RS._shot === A[0] ? 'A' : RS._shot === B[0] ? 'B' : null;
       if (!shot) continue;
       RS.camera.updateMatrixWorld();
+      if (shot === 'A') {
+        const fwd = new THREE.Vector3();
+        RS.camera.getWorldDirection(fwd);
+        const aim = RS._look.clone().sub(RS.camera.position).normalize();
+        tilts.push(((Math.asin(fwd.y) - Math.asin(aim.y)) * 180) / Math.PI);
+        for (const r of RW.snakeWay?.roads ?? []) {
+          if (!(r.gateT > 0) || !r.gates[0].visible || gateSeen.has(r)) continue;
+          const bx = new THREE.Box3().setFromObject(r.gates[0]);
+          const p = r.pts[0];
+          gateSeen.set(r, {
+            name: r.name,
+            foot: inBox(p.x, p.y, p.z), top: inBox(p.x, bx.max.y, p.z),
+            side: Math.abs(vv.x) >= 0.95,
+            heard: RS.sfxLog.some((l) => l.what === 'gate' && l.id === r.id),
+          });
+        }
+      }
       for (const s of RW.farIsles.of(shot)) {
         const v = new THREE.Vector3(s.x, s.y, s.z).project(RS.camera);
         seen[shot].push({ s, x: v.x, y: v.y, z: v.z, now: RS._now() });
       }
     }
+    /* "Probably like a 10 degree upward rotation on local x-rotation, as
+       currently about 1/4 of the bottom of the screen is mostly empty, should
+       only be like 10% or less". Measured in the browser on the rendered
+       frame — rows at the foot of the letterbox that are four-fifths haze or
+       keel — 27-28% of it before, 5.2-6.5% at 10 degrees, all through the
+       truck. Pixels cannot be read here; the pitch can. */
+    ok('the truck across the town is pitched up 10 degrees on its own x, the whole shot',
+      tilts.length > 60 && tilts.every((d) => Math.abs(d - 10) < 0.5),
+      `${Math.min(...tilts).toFixed(2)} to ${Math.max(...tilts).toFixed(2)} degrees`);
+    /* "...so that we can see all the torii gates": every gate that forms inside
+       the frame's width forms with its top clear of the letterbox. The one
+       off the side (dusk, off the truck's right) is not a thing a pitch can
+       fix, and is not heard. */
+    const gs = [...gateSeen.values()];
+    const across = gs.filter((o) => !o.side);
+    ok('...and every gate that forms inside its width forms whole inside the letterbox, top and foot',
+      gs.length >= 6 && across.length >= 5 && across.every((o) => o.foot && o.top),
+      gs.map((o) => `${o.name}:${o.side ? 'side' : o.top && o.foot ? 'in' : 'CUT'}`).join(' '));
+    /* "When the torii gates and islands that spawn in, infront of the camera,
+       and that are visible, there can be a sound played for each one". */
+    ok('...one sound for each gate the lens sees form, and none for one it does not',
+      gs.every((o) => o.heard === (o.foot && !o.side)),
+      gs.map((o) => `${o.name}:${o.heard ? 'heard' : '-'}`).join(' '));
+    const gl = RS.sfxLog.filter((l) => l.what === 'gate');
+    const il = RS.sfxLog.filter((l) => l.what === 'isle');
+    ok('...each the next note of a run, so seven are one sweep and not seven pings',
+      gl.every((l, i) => l.k === i) && gl.length >= 5,
+      gl.map((l) => `${l.k}@${l.now.toFixed(2)}`).join(' '));
+    /* "...more uniform": every note lands on the even grid the gates start on
+       — a gate off the side is a skipped beat, not a nudged one. Within two
+       of this loop's frames. */
+    {
+      const shown = RW.snakeWay.roads.filter((r) => r.gates[0].visible);
+      const step = SNAKE.gateAll / (shown.length - 1);
+      const off = gl.map((l) => { const q = (l.now - gl[0].now) / step; return Math.abs(q - Math.round(q)) * step; });
+      ok('...on an even beat, a skipped one where a gate is out of frame',
+        off.every((d) => d <= 2 / 60 + 1e-9), `${step.toFixed(3)}s apart, worst ${Math.max(...off).toFixed(3)}s off`);
+    }
+    ok('...and never a note for a road that is not there — the arena\'s, while it is shut',
+      !RW.arenaOpen && !RS.sfxLog.some((l) => l.what === 'gate' && RW.snakeWay.roads[l.id]?.arena),
+      RS.sfxLog.filter((l) => l.what === 'gate').map((l) => RW.snakeWay.roads[l.id]?.name).join(' '));
+    ok('...and one for each far island as it starts to come out of its cloud, in the shot that shows it',
+      il.length === 5 && il.every((l, i) => l.k === i)
+      && Math.abs(il[0].now - RT.isleOut) < 0.05
+      && il.slice(1).every((l) => l.now > RT.wide),
+      il.map((l) => `${l.id}@${l.now.toFixed(2)}`).join(' '));
+    ok('...each heard once only', new Set(RS.sfxLog.map((l) => `${l.what}${l.id}`)).size === RS.sfxLog.length);
+    /* AND UNDER HER. Rendered offline in the browser at the default volume:
+       at 0.8 the seven gates' loudest 400ms was 0.099 RMS and the four
+       islands' 0.122, against her line's 0.153 — 4 and 2dB under a voice
+       still talking. These bring both to about 0.06. */
+    ok('...quiet under the voice they play over', SFX_GATE <= 0.5 && SFX_ISLE <= 0.4);
     const inFrame = (o) => o.z < 1 && Math.abs(o.x) < 0.85 && o.y > 0.3 && o.y < 0.8;
     const bad = (k) => seen[k].filter((o) => !inFrame(o));
     ok('the truck\'s far island is in its sky for the whole shot, top left, clear of the letterbox',
       seen.A.length > 60 && bad('A').length === 0,
       `${seen.A.length - bad('A').length}/${seen.A.length} in frame`
       + (seen.A.length ? `, at (${seen.A[0].x.toFixed(2)}, ${seen.A[0].y.toFixed(2)})` : ''));
-    ok('...already there when its show starts, 5% in',
-      seen.A.some((o) => Math.abs(o.now - RT.isle) < 0.05 && inFrame(o)));
+    ok('...in frame the moment it starts coming out, as the truck opens',
+      seen.A.some((o) => Math.abs(o.now - RT.isleOut) < 0.05 && inFrame(o)));
     const meanX = seen.B.length ? seen.B.reduce((n, o) => n + Math.abs(o.x), 0) / seen.B.length : 9;
     ok('...and the wide shot\'s four are in ITS sky, nearer the middle than the corners',
       seen.B.length > 60 && bad('B').length === 0 && meanX < 0.5,
@@ -30205,7 +30348,7 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     ok('...spread across it, not stacked on one another', closest > 0.2, `closest pair ${closest.toFixed(2)} apart`);
     RS.finish();
   }
-  S.script.forEach((b, i) => { b.dur = floors[i]; });
+  S.script.forEach((b, i) => { b.dur = floors[i]; delete b.voiceDur; });
   S.world = null;
   S.finish();
   if (S.played) S.played.finale = false;
