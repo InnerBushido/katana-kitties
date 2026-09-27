@@ -60,8 +60,18 @@ export const EXIT = {
   /** Bearers: half the spacing between the two, the paw height as a fraction
    *  of the cat, and the cat's height (a kitten is 2.9). */
   bearHalf: 2.35, pawK: 0.34, catH: 2.75,
-  /** Where the winners finish, relative to his mark: round him, in front. */
-  round: [[-2.8, 2.6], [2.6, 3.0], [-0.4, 4.6], [-5.2, 1.4]],
+  /** Where the winners finish, relative to his mark.
+   *  THE FIRST TWO IN FRONT OF HIM, one either side. Richard: "lets have the
+   *  first 2 winning players walking/jumping infront of Mr. Satan, not behind
+   *  him, we can have them walk behind if more than 2 winners ... because
+   *  they are champions and should be infront." The second one's mark used
+   *  to be (2.6, 3.0), on the far side of him from both lenses that film
+   *  them: she crossed his line 1.6 behind him and finished 2.6 behind. Both
+   *  marks now stand 3 toward the `him` lens (bearing -60) and 2.4 either
+   *  side of its line to him, so neither covers him, and both are on the
+   *  lens side (-x) of him for the side-on shot. A third and fourth go
+   *  behind, clear of him. */
+  round: [[-1.4, 3.6], [-3.8, -0.6], [2.6, 3.0], [1.4, -3.4]],
   /** He holds the charge this long after the last of them has gone by. */
   /** Seconds the side-on shot takes to become the one on him — see `pose`. */
   himBlend: 1.4,
@@ -73,6 +83,11 @@ export const EXIT = {
     'Make way, make way!\nHere come the CHAMPIONS!',
     '...and the bravest little fighters\nI ever saw. *sniff* Such HEART!',
   ],
+  /** ...and their recordings, Harrison's preset on the same two strings
+   *  (the line break is layout). 3.12 s and 4.40 s. */
+  voices: ['sat_parade1', 'sat_parade2'],
+  /** A breath between his two lines, and after the second before the fade. */
+  lineGap: 0.3,
 };
 
 /**
@@ -239,7 +254,16 @@ export class ArenaExit {
     const first = Math.min(...actors.map((a) => a.passAt));
     const last = Math.max(...actors.map((a) => a.passAt + (a.kind === 'carry' ? E.bearHalf / a.speed : 0)));
     const chargeOff = last + E.holdAfter;
-    const end = chargeOff + E.settle + E.fadeOut;
+    /* HIS LINES ARE TIMED TO HIS VOICE when there is one. The second waited
+       only for the last of them to reach him, and a draw's walkers reach him
+       3.4 s after the first line starts, which is shorter than it is said
+       in. So the second starts once the first has been SAID, and the fade
+       waits for the second to be. `lineDur` is the two clips' lengths, from
+       the announcer's buffers; with no files it is zeros and this is the
+       scene it was. */
+    const [d0, d1] = this.lineDur ?? [0, 0];
+    const lineAt = [E.firstOut, Math.max(last - 0.6, d0 ? E.firstOut + d0 + E.lineGap : 0)];
+    const end = Math.max(chargeOff + E.settle + E.fadeOut, d1 ? lineAt[1] + d1 + E.lineGap + E.fadeOut : 0);
     /* THE SHOTS, keyed to the procession rather than to the clock:
          doors   — three-quarter on the doors with him in it, until the first
                    stretcher (or the last winner) has cleared the doorway;
@@ -250,7 +274,7 @@ export class ArenaExit {
     const cutAlong = Math.min(first - 0.4, lead.at + (D.z + 2 - lead.z0) / lead.speed);
     const cutHim = Math.max(cutAlong + 2.5, last + 0.3);
     return {
-      actors, first, last, chargeAt: first, chargeOff, end,
+      actors, first, last, chargeAt: first, chargeOff, end, lineAt,
       shots: [
         { id: 'doors', from: 0 },
         { id: 'along', from: Math.max(E.doorAt + 1.6, cutAlong) },
@@ -302,10 +326,22 @@ export class ArenaExit {
    * @param {object} o.satan      the real Mr Satan
    * @param {THREE.Scene} o.scene
    */
-  start({ players, won, satan, scene }) {
+  start({ players, won, satan, scene, announcer = null }) {
     if (this.active || !this.world.arenaDoors) return false;
     this.players = players;
     this.satan = satan;
+    /* HIS VOICE IS THE SCENE'S, AND NOTHING ELSE OF HIS PLAYS OVER IT.
+       Richard: "If Mr. Satan voice is still queued up before the cutscene, we
+       can end the queue and just play his voice for this new cutscene." The
+       round's last calls (`sat_win1`, `sat_over`, ...) are queued as the
+       tournament ends, which is the frame this starts on. `hush` empties the
+       queue, stops the line in his mouth and refuses new ones until
+       `finish` — whatever it was set to before is put back, so a parade
+       can never lift the ending's hush. */
+    this.announcer = announcer;
+    this._hushWas = announcer?.hushed ?? false;
+    announcer?.hush(true);
+    this.lineDur = EXIT.voices.map((id) => announcer?.clip(id)?.dur ?? 0);
     this.plan_ = this.plan({ won });
     this.t = 0;
     this.active = true;
@@ -407,10 +443,23 @@ export class ArenaExit {
       /* Facing the road home — the way the camera behind her looks. */
       p.facing = 0;
       p.group.visible = true;
+      /* OUTSIDE, SAID OUTRIGHT. Her side of the stands' wall is read off where
+         she WAS (`World.arenaWallAt`), and it is only asked within a few
+         units of the wall — every mark here is further out than that, so it
+         kept saying 'in' from the fight, and `Game._arenaDoorman` opened the
+         doors again to let her out. "After cutscene is over and players have
+         left the arena, the doors to the arena should close post-fight." */
+      p.arenaSide = 'out';
     }
     this.satan?.setPose?.('idle', 'exit');
     W.setArenaDoors(false);
     this.satan?.setLine('');
+    /* A SKIP CUTS HIM OFF WITH IT, and a watch has already heard him out. */
+    if (this._voice) {
+      this.audio?.stopSpeaking?.();
+      this._voice = null;
+    }
+    if (this.announcer && !this._hushWas) this.announcer.hush(false);
     if (this.el) {
       this.el.classList.add('hidden');
       this.boxEl.style.visibility = '';
@@ -485,11 +534,13 @@ export class ArenaExit {
       S.update?.(dt, this.lineI >= 0 ? [{ position: S.position }] : []);
     }
 
-    /* --- the two lines --- */
-    const lineI = t >= P.last - 0.6 ? 1 : t >= E.firstOut ? 0 : -1;
+    /* --- the two lines, said as well as shown --- */
+    const lineI = t >= P.lineAt[1] ? 1 : t >= P.lineAt[0] ? 0 : -1;
     if (lineI !== this.lineI) {
       this.lineI = lineI;
       this.satan?.setLine(lineI < 0 ? '' : E.lines[lineI]);
+      const clip = lineI < 0 ? null : this.announcer?.clip(E.voices[lineI]);
+      if (clip) this._voice = this.audio?.speak?.(clip.el) ?? null;
     }
 
     if (this.fadeEl) {

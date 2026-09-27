@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { paint, toonVertexMat } from '../core/gfx.js';
+import { paint, toonVertexMat, xrayVertexMat } from '../core/gfx.js';
 import { PALETTE, mergeParts, valueNoise } from './build.js';
 
 /* ---------------------------------------------------------------------------
@@ -1991,10 +1991,18 @@ export function puffMaterial({ billow = 0.45, wave = 0.3 } = {}) {
  * compile. At `reveal` 1 the test is skipped outright, so a finished gate
  * costs nothing it did not cost before.
  */
-export function dissolveMat() {
-  const mat = toonVertexMat();
+export function dissolveMat({ xray = false } = {}) {
+  /* `xray`: THE X-RAY UNDER THE DISSOLVE, for the arena road's torii and
+     lions at the arena's door. "The xray shader for most of the items at the
+     entrance of the arena are not being applied" — they are drawn with this,
+     one material each, and so were never in any x-ray pile. The x-ray's own
+     patch runs first and leaves every include it patched in place, so the
+     dissolve's patch below finds the same lines either way. */
+  const mat = xray ? xrayVertexMat() : toonVertexMat();
+  const base = xray ? mat.onBeforeCompile : null;
   const u = { uReveal: { value: 0 } };
-  mat.onBeforeCompile = (shader) => {
+  mat.onBeforeCompile = (shader, renderer) => {
+    base?.(shader, renderer);
     Object.assign(shader.uniforms, u);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
@@ -2022,7 +2030,7 @@ export function dissolveMat() {
           gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1.0, 0.86, 0.45), disEdge);
         }`);
   };
-  mat.customProgramCacheKey = () => 'snake-dissolve';
+  mat.customProgramCacheKey = () => (xray ? 'snake-dissolve-xray' : 'snake-dissolve');
   Object.defineProperty(mat, 'reveal', {
     get: () => u.uReveal.value,
     set: (v) => { u.uReveal.value = v; },

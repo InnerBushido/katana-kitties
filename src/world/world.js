@@ -61,6 +61,13 @@ export const XRAY_K = {
   lantern: 0.25,
   /** An open gate hides nothing but the two uprights. */
   torii: 0.3,
+  /** The arena's four stacked fire lanterns: twelve units of stone post and
+   *  paper, four times a kitten, and she is behind one for most of the walk
+   *  up the carpet. Under a house, over a garden lantern. */
+  stacked: 0.7,
+  /** Mr Satan's lions at the road's arena end: a statue on a plinth, about
+   *  her height again. */
+  guardian: 0.6,
   /** A trunk is a post; you can already see round it. */
   trunk: 0.25,
   /** The bushy part, which is what a kitten actually vanishes behind. */
@@ -302,6 +309,9 @@ export class World {
      * in three different places and none of them knows about the others.
      */
     this.outlyingXray = [];
+    /** The arena road's torii and lions at the arena's door — one x-ray
+     *  dissolve material each (`dissolveMat`), aimed with the arena's own. */
+    this.arenaEntranceXray = [];
     /** Road corridors: no grass, flowers or rocks grow through paving. */
     /**
      * The built things that are NOT solids and NOT props — the torii and the
@@ -553,7 +563,11 @@ export class World {
         const ry = Math.atan2(-p.tx, -p.tz);
         const ts = toriiScale(hw);
         const parts = transformParts(road.arena ? buildSatanTorii(ts) : buildTorii(ts), p.x, p.y - 0.45, p.z, ry);
-        const gm = new THREE.Mesh(mergeParts(parts), dissolveMat());
+        /* THE ARENA'S END IS PART OF ITS FRONT DOOR, and is cut with it —
+           thinly: "with a thinner one for the thinner torii gate". */
+        const atDoor = road.arena && end === 1;
+        const gm = new THREE.Mesh(mergeParts(atDoor ? xrayStrength(parts, XRAY_K.torii) : parts), dissolveMat({ xray: atDoor }));
+        if (atDoor) this.arenaEntranceXray.push(gm);
         gm.castShadow = false;
         gm.receiveShadow = true;
         gm.visible = false;
@@ -628,9 +642,10 @@ export class World {
       const rz = e.tx / hl;
       const face = Math.atan2(-e.tx, -e.tz);
       road.heads = [];
-      const statue = (parts, x, z, ry, isl, r) => {
+      const statue = (parts, x, z, ry, isl, r, xk = 0) => {
         const hg = isl.heightAt(x, z) ?? e.y;
-        const m = new THREE.Mesh(mergeParts(parts), dissolveMat());
+        const m = new THREE.Mesh(mergeParts(xk ? xrayStrength(parts, xk) : parts), dissolveMat({ xray: xk > 0 }));
+        if (xk) this.arenaEntranceXray.push(m);
         m.castShadow = false;
         const g = new THREE.Group();
         g.add(m);
@@ -648,7 +663,7 @@ export class World {
         for (const side of [-1, 1]) {
           const x = e.x + rx * side * (hw + 4.2) - (e.tx / hl) * 2;
           const z = e.z + rz * side * (hw + 4.2) - (e.tz / hl) * 2;
-          statue(buildSatanLion(road.id + side), x, z, face, road.to, 2.4);
+          statue(buildSatanLion(road.id + side), x, z, face, road.to, 2.4, XRAY_K.guardian);
         }
         /* FACING THE TOWN, which is back down the tangent from the road's
            first point: the tangent runs up the road, toward the arena. It had
@@ -1435,6 +1450,20 @@ export class World {
     this.scene.add(seeMesh);
     this.arenaSeeThrough = seeMesh;
 
+    /* THE STACKED LANTERNS, in the same material and a mesh of their own so
+       they KEEP THEIR SHADOWS. The rule above drops a see-through thing's
+       shadow; that was for four posts on a deck already in shade, and these
+       are four towers on an open carpet in the sun, where a missing shadow
+       is what would read as the bug. A cut lantern goes on casting its whole
+       shadow, which is what the town's x-rayed houses already do. */
+    transformParts(ent.lanterns, isl.x, g, isl.z, 0, 1);
+    const lanternMesh = new THREE.Mesh(mergeParts(xrayStrength(ent.lanterns, XRAY_K.stacked)), seeMesh.material);
+    lanternMesh.castShadow = true;
+    lanternMesh.receiveShadow = true;
+    lanternMesh.visible = false;
+    this.scene.add(lanternMesh);
+    this.arenaLanterns = lanternMesh;
+
     /* THE DOORS, one mesh a leaf, each placed ON ITS HINGE so a yaw swings it
        and nothing else. They share the see-through material: they stand in
        the wall of the stands, where the rest of the gatehouse is cut, and a
@@ -1578,6 +1607,7 @@ export class World {
        the arena will be, which is the exact failure the comment above is
        about. `world-check` pins the two visibilities equal. */
     if (this.arenaSeeThrough) this.arenaSeeThrough.visible = on;
+    if (this.arenaLanterns) this.arenaLanterns.visible = on;
     /* The doors and the fire are the front door's moving parts, and exist
        exactly when the rest of it does. */
     for (const L of this.arenaDoorLeaves ?? []) L.mesh.visible = on;

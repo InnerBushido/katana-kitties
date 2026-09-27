@@ -283,3 +283,20 @@ within 2 units of the road, read with two known islands for scale. Where
 there is no map, render the shot along the path until a landmark's angle and
 size match the screenshot.
 *Lesson: read the position off the screenshot. Don't guess "a bit earlier".*
+
+**"The doors should close post-fight" and they did, for one frame.** The
+scene closed them on finish, and the game's own door rule opened them again on
+the next frame. It read each kitten's inside/outside flag, which is only
+refreshed near the wall, and the scene had set them down far outside still
+flagged 'in' from the fight.
+*Lesson: a scene that teleports actors must also write every piece of state
+that is normally kept by walking, such as side, zone or last-safe spot. After
+the scene, run the game's own rules for a few seconds in the check, not only
+the scene's.*
+
+**A queued line talked over the scene's first words.** The round's last calls
+are queued on the frame the scene starts. The announcer hush existed already,
+for the ending, and the parade had simply never asked for it.
+*Lesson: a scene that has its own voice owns the audio for its length. Hush
+everything else on start, and restore the previous state on finish rather than
+clearing it, so a scene nested in a bigger one cannot undo that one's hush.*

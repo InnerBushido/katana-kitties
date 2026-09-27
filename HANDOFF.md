@@ -515,6 +515,23 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**The parade's voice, champions in front, the doors shut after, and the front
+door x-rayed.** Branch `mixed/parade-voices-doors-xray`.
+
+- **`sat_parade1` and `sat_parade2`** are recorded (Harrison, 3.12 s and
+  4.40 s) and PLAYED over his bubble. The parade hushes the announcer's queue
+  for its length. [story.md](docs/notes/story.md).
+- **The first two winners finish in front of him**, either side of the `him`
+  lens's line to him. 92 on-screen crossings are checked, and all are in
+  front.
+- **The doors stay shut after the parade.** The kittens' stale `arenaSide`
+  'in' had the doorman reopening them.
+- **The lanterns, the road's arena-end torii (thin, 0.3) and its lions
+  (0.6)** are x-rayed, and the arena's reach is 60.
+  [tournament.md](docs/notes/tournament.md).
+- **Open:** nobody has heard `*sniff*` in `sat_parade2` to confirm it is
+  spoken as a word.
+
 **Mr. Satan's doors line, no x-ray in scenes, the climb's arena and gate
 sooner.** Branch `mixed/parade-voice-ride-earlier`.
 

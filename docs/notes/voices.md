@@ -54,7 +54,7 @@ above, because a character has ONE voice and therefore ONE folder:
 
 ```
 voice/
-  satan/      34 clips, every `sat_*`
+  satan/      36 clips, every `sat_*`
   patchfur/   18 — the intro, the ending, and the last-hunt countdown
   leaders/    12 — the six chiefs, a bare take and a shrine take each
   ryuuseki/    2 — `summon1` `summon2`
@@ -280,6 +280,18 @@ two were never going to be the same sentence. The other two have no such excuse.
 Neither is a bug any player has reported, and each would cost either a re-record
 (0.15 credits) or a longer card. Written down so the next session does not have
 to re-measure them.
+
+## Mr Satan's parade lines are played, not said
+
+`sat_parade1` *"Make way, make way! Here come the CHAMPIONS!"* (3.12 s) and
+`sat_parade2` *"...and the bravest little fighters I ever saw. \*sniff\* Such
+HEART!"* (4.40 s) are the exit parade's two. They are in his speech bubble over
+the procession, not on the card, so `ArenaExit` plays them through
+`Announcer.clip` and hushes the card for the length of the scene. Both were
+recorded on the bubble's exact string, line break aside. The `*sniff*` went
+to the model as written. The pause structure suggests it is spoken as a word,
+but nobody has listened for it yet.
+[story.md](story.md) has the timing.
 
 ## Patchfur is on a clock exactly once, and it is measurable
 

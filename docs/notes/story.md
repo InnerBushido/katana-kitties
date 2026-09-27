@@ -1869,6 +1869,41 @@ everyone is set on the parade's end marks, and a toast says where they are.
   last, and come down before the fade.** The check asks that of all four casts.
 - **His lines are his bubble, not the dialogue box.** On an 824×422 pane the
   box covered the procession, which is exactly where it is.
+- **...and they are recorded.** Richard: "Seems we didn't generate Mr. Satans
+  voice for the post-fight cutscene ... If Mr. Satan voice is still queued up
+  before the cutscene, we can end the queue and just play his voice for this
+  new cutscene." `sat_parade1` (3.12 s) and `sat_parade2` (4.40 s) are
+  PLAYED through `Announcer.clip`, not said on a card. `start` hushes the
+  announcer: the round's last calls (`sat_win1`, `sat_over`) are queued on the
+  frame the parade starts, and the hush empties the queue, stops the line in
+  his mouth and refuses new ones. `finish` lifts it only if it was not already
+  hushed, so the ending's hush survives. The plan is timed to the clips: the
+  second line starts once the first has been said, and the fade waits for the
+  second. A draw's walkers reach him 3.4 s after the first line, which is
+  shorter than it takes to say. `world-check` reads both lengths off the mp3
+  frames.
+- **The first two winners finish IN FRONT of him.** Richard: "lets have the
+  first 2 winning players walking/jumping infront of Mr. Satan, not behind
+  him ... because they are champions and should be infront." The second mark
+  was (2.6, 3.0) from his, on the far side of him from both lenses. She
+  crossed his line 1.6 behind him and finished 2.6 behind. Both marks now
+  stand 3 toward the `him` lens and 2.4 either side of its line to him. A
+  third and fourth go behind, which he allowed. The check replays `along` and
+  `him` in camera space. Wherever one of the first two shares a stretch of
+  screen with him, she must be nearer: 92 crossings, all in front. The old
+  marks fail it.
+- **The doors stay shut after it.** "After cutscene is over and players have
+  left the arena, the doors to the arena should close post-fight." They
+  closed, and `Game._arenaDoorman` opened them again on the next frame. The
+  cause is `arenaSide`, which `World.arenaWallAt` keeps only within about 53
+  of the arena's centre. The marks are 57 to 70 out, so every kitten still
+  said 'in' from the fight, and 'in' within 8 of the doors means "let her
+  out". Two fixes:
+  - `finish` sets 'out';
+  - the doorman also requires her to be inside the doors' line.
+
+  The check runs the lifted doorman both ways, with a control kitten really
+  inside.
 
 **Three shots, solved** (`SHOTS`), scored against the real entrance for a duel,
 one against three, two against two and a draw.
