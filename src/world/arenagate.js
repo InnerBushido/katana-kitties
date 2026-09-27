@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { paint } from '../core/gfx.js';
-import { PALETTE, pagodaRoof, ARENA_DOOR_GAP } from './build.js';
+import { PALETTE, pagodaRoof, pagodaSoffit, ARENA_DOOR_GAP } from './build.js';
 import { buildSnakeHead } from './snakeway.js';
 
 /* ---------------------------------------------------------------------------
@@ -364,10 +364,22 @@ export function buildArenaEntrance() {
   // The plaque, gold on black, on the lintel's face.
   seeThrough.push(box(7.2, 2.3, 0.4, PALETTE.gold, 0, E.pillarH - 0.5, E.pillarZ + E.pillarD / 2 + 0.55));
   seeThrough.push(box(6.4, 1.6, 0.2, 0x1a1210, 0, E.pillarH - 0.5, E.pillarZ + E.pillarD / 2 + 0.8));
-  const roof = pagodaRoof(spanW / 2 + 0.6, E.pillarD / 2 + 1.2, 4.2, { overhang: 1.1, cornerLift: 1.0 });
+  const roofOpts = { overhang: 1.1, cornerLift: 1.0 };
+  const roof = pagodaRoof(spanW / 2 + 0.6, E.pillarD / 2 + 1.2, 4.2, roofOpts);
   paint(roof, PALETTE.tileRed);
   roof.translate(0, E.pillarH + 1.4, E.pillarZ);
   seeThrough.push(roof);
+  /* AND ITS UNDERSIDE. "Underneath the giant roof of the front door gate of
+     the arena, seems we can see through the bottom of it as if it is a
+     1-sided polygon." It was: the roof is one sheet facing up and out, and
+     the dark slab under it covers the lintel, not the 1.1x overhang, so a
+     kitten walking in under it looked up through the eaves at the sky. Dark
+     timber, the colour of the slab it meets, so it reads as the roof's
+     thickness and not as a second red roof upside down. */
+  const soffit = pagodaSoffit(spanW / 2 + 0.6, E.pillarD / 2 + 1.2, 4.2, roofOpts);
+  paint(soffit, PALETTE.woodDark);
+  soffit.translate(0, E.pillarH + 1.4, E.pillarZ);
+  seeThrough.push(soffit);
   // The sill the doors close onto.
   parts.push(box(E.doorW * 2, 0.3, 1.2, PALETTE.stone, 0, 0.15, E.doorZ));
 

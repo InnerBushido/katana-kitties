@@ -228,3 +228,29 @@ subject read as a jump cut, not a cut.** Neither shot was wrong alone.
 *Lesson: when two shots share a side and nearly share a position, one should
 MOVE into the other (from its last frame, fov included), and a check should pin
 that the join is continuous.*
+
+**The "seen from above its floor" check passed a shot of the back of the
+stands.** The fix for the keel above was a check that the lens is above the
+landmark's floor. A later shot aimed at the same arena from lower on the road,
+with a lens just above the floor, and the check passed. But the island's rim
+and the grandstand stood between the lens and the ring, so none of the ring
+was visible.
+*Lesson: a proxy for "can see it" gets gamed by the next shot. Measure the thing
+itself: count points on the subject's surface that the lens can actually see,
+with every occluder included (the landmark's own rock too, now that the target
+points are on its surface), and set the bar off the worst good frame.*
+
+**Blending two shots' look points lost the subject mid-move.** Each shot's aim
+was stored as a point a fixed 20 units down its ray. For a far lens that point
+is in front of the subject; for a near lens it is past her. Blending the two
+aimed the middle of the move off to one side, and she left the frame for nine
+frames.
+*Lesson: blend the aim as a point the subject defines, such as where each ray
+passes closest to her. Then every blend of the two is near her too.*
+
+**"Take the shorter way round" flipped sides in the middle of a half-turn.**
+Two shots on opposite sides of a moving subject are nearly 180 degrees apart.
+Which way is shorter changes as she moves, and at the frame where it flipped,
+the lens jumped 10 units and turned 28 degrees.
+*Lesson: decide the direction of an orbit once, where the move starts, and hold
+it for the whole move.*

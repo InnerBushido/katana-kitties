@@ -1241,9 +1241,21 @@ export class Panda {
 
     /* Shove it out of houses and tree trunks the same way the kittens are.
        Without this it walks through the town and the illusion goes with it. */
+    const wasX = this.position.x - this.velocity.x * dt;
+    const wasZ = this.position.z - this.velocity.z * dt;
     const fixed = world.resolveSolids(this.position.x, this.position.z, this.spec.size * 0.22);
     this.position.x = fixed.x;
     this.position.z = fixed.z;
+    /* And the arena's stands, which are a wall now: a kitten riding one must
+       not walk it through where she could not walk herself. No vault — a
+       panda is never thrown. */
+    const w = world.arenaWallAt?.(this.position.x, this.position.z, this.position.y,
+      this.spec.size * 0.22, { x: wasX, z: wasZ, side: this.arenaSide });
+    if (w) {
+      this.arenaSide = w.side;
+      this.position.x = w.x;
+      this.position.z = w.z;
+    }
 
     /* Glued to the ground, not falling onto it. A pet is never the thing you
        want doing interesting physics — if it walks off a rim, it stops at the

@@ -28,6 +28,21 @@ const CAM_PITCH_GROUND = 0.66;
 const CAM_PITCH_AIR = 0.60;
 
 const GRAVITY = 26;
+/**
+ * The stands are a wall (World.arenaWallAt), and a thrown kitten goes over it
+ * rather than through it: "if they are still moving upward after the hit ...
+ * pushed upward and over the wall ... if they are hit hard enough". Both
+ * halves are asked AT THE WALL: still rising, and at least `vault` a second
+ * across the ground. Then she is lifted to clear its top by `lift` and sent
+ * on at no less than `clear`.
+ *
+ * THE NUMBERS ARE THE BAND'S. It is 10.2 deep and 9.5 high. Lifted from a
+ * kitten's height to clear it, she is above it for about 1.1s, and under the
+ * 0.7/s drag a thrown kitten carries (`hitT`) that crosses 10.2 + her radius
+ * from 14.3 a second — so `vault` is 14, and `clear` makes sure a throw that
+ * only just qualified does not come down on the benches.
+ */
+export const WALL = { vault: 14, clear: 15, lift: 1.2 };
 const WALK_SPEED = 10.5;
 const SPRINT_SPEED = 17;
 const ACCEL = 60;
@@ -1742,6 +1757,11 @@ export class Player {
        kitten held in the middle of a triple slash may not act, and no movement
        mode has to learn what a triple slash is to know that. */
     if (this.hitT > 0 || this.stunT > 0 || this.ko || this.heldBy) pad = FROZEN_PAD;
+    /* ...AND GOING OVER THE ARENA'S STANDS. The throw that started it is what
+       carries her over, and the hit-stun that came with it is shorter than
+       the trip: with the stick back in her paws halfway up the inside of the
+       wall, a kitten who is not pushing anything stops dead over the benches. */
+    if (this.vaulting) pad = FROZEN_PAD;
 
     /* NO POWER MOVE SURVIVES GETTING ON AN ANIMAL. `_stepSpecials` only runs
        inside the ground controller, so a ward popped a frame before mounting
@@ -1785,6 +1805,55 @@ export class Player {
    * @param {{x:number,z:number}} from where the blow came from
    * @param {{knock:number, lift:number}} force
    */
+  /**
+   * The arena's stands, as a wall — see `World.arenaWallAt` and `WALL`.
+   * Walking, she is stopped at it and loses the part of her speed that was
+   * going into it (keeping it would be a kitten grinding against a face
+   * every frame). Thrown hard enough while still rising, she is lifted up the
+   * inside of it and on over the top, and stays `vaulting` until she has
+   * landed or is clear.
+   */
+  _arenaWall(world, wasX, wasZ, hud) {
+    const flung = this.hitT > 0 || this.ko || this.blastT > 0;
+    /* Over until she lands. NOT until the hit-stun runs out, which is shorter
+       than the trip: that version lifted her up the inside of the wall and
+       then, stun over, held her against it and dropped her back in. */
+    if (this.vaulting && this.onGround) this.vaulting = false;
+    const w = world.arenaWallAt?.(this.position.x, this.position.z, this.position.y, this.radius,
+      { x: wasX, z: wasZ, side: this.vaulting ? 'over' : this.arenaSide });
+    if (!w) return;
+    this.arenaSide = w.side === 'over' ? 'in' : w.side;
+    if (w.side === 'out' && this.vaulting && !w.blocked) this.vaulting = false;
+    if (!w.blocked) return;
+    const hs = Math.hypot(this.velocity.x, this.velocity.z);
+    if (!this.vaulting && flung && w.side === 'in' && this.velocity.y > 0 && hs >= WALL.vault) {
+      this.vaulting = true;
+      this.velocity.y = Math.max(this.velocity.y,
+        Math.sqrt(2 * GRAVITY * Math.max(0, w.top + WALL.lift - this.position.y)));
+      if (hs < WALL.clear) {
+        this.velocity.x *= WALL.clear / hs;
+        this.velocity.z *= WALL.clear / hs;
+      }
+    }
+    const nx = w.x - this.position.x;
+    const nz = w.z - this.position.z;
+    this.position.x = w.x;
+    this.position.z = w.z;
+    /* HELD, NOT STOPPED, while she goes over: her speed is what carries her
+       across once she is above it. Otherwise the part of it into the face
+       goes, and she slides along it. */
+    if (this.vaulting) return;
+    const nl = Math.hypot(nx, nz);
+    if (nl > 1e-6) {
+      const into = -(this.velocity.x * nx + this.velocity.z * nz) / nl;
+      if (into > 0) {
+        this.velocity.x += (nx / nl) * into;
+        this.velocity.z += (nz / nl) * into;
+      }
+    }
+    if (w.door) this.doorRefused = true;
+  }
+
   hurt(dmg, from, force, hud) {
     /* NOT THERE, SO NOT HIT — AND NOT EVEN BY THE RING-OUT. `force.pierce`
        gets through a ward because a bubble stops blades and not the edge of
@@ -2528,7 +2597,7 @@ export class Player {
       this.velocity.x = this.chargeDir.x * CHARGE.speed;
       this.velocity.z = this.chargeDir.y * CHARGE.speed;
       this.velocity.y = 0;
-    } else if (this.hitT > 0 || this.ko) {
+    } else if (this.hitT > 0 || this.ko || this.vaulting) {
       const drag = Math.min(1, dt * (this.onGround ? 3.4 : 0.7));
       this.velocity.x -= this.velocity.x * drag;
       this.velocity.z -= this.velocity.z * drag;
@@ -2759,6 +2828,7 @@ export class Player {
     );
     this.position.x = fixed.x;
     this.position.z = fixed.z;
+    this._arenaWall(world, wasX, wasZ, hud);
 
     /* How far we actually travelled across the ground this frame â€” including
        any shove out of a tree or a wall, which can be a lot further than

@@ -7,7 +7,7 @@ import {
   buildGrotto, buildSpire, buildShards, SPIRE_H,
   buildArena, ARENA_RING, ARENA_RISE, ARENA_OUT, ARENA_POSTS, postsFor, xrayStrength,
   SHRINE_STEPS, SHRINE_GATE,
-  ARENA_BOOTH, ARENA_BOARD, ARENA_GATE,
+  ARENA_BOOTH, ARENA_BOARD, ARENA_GATE, ARENA_DOOR_GAP, arenaStandBand,
 } from './build.js';
 import { Prop } from '../entities/prop.js';
 import { ClanShrine } from '../entities/shrine.js';
@@ -650,12 +650,18 @@ export class World {
           const z = e.z + rz * side * (hw + 4.2) - (e.tz / hl) * 2;
           statue(buildSatanLion(road.id + side), x, z, face, road.to, 2.4);
         }
+        /* FACING THE TOWN, which is back down the tangent from the road's
+           first point: the tangent runs up the road, toward the arena. It had
+           a `+ Math.PI` on the end, which turned it round to face up the road
+           — "Mr. Satan statue to the entrance of the snake way bridge on the
+           main island is backwards" — so that a kitten walking up to the road
+           was looking at his cape. world-check measures the muzzle now. */
         const s0 = road.pts[0];
         const h0 = Math.hypot(s0.tx, s0.tz) || 1;
         statue(buildSatanLion(road.id + 7),
           s0.x + (-s0.tz / h0) * (hw + 4.2) - (s0.tx / h0) * 3,
           s0.z + (s0.tx / h0) * (hw + 4.2) - (s0.tz / h0) * 3,
-          Math.atan2(-s0.tx, -s0.tz) + Math.PI, road.from, 2.4).userData.home = true;
+          Math.atan2(-s0.tx, -s0.tz), road.from, 2.4).userData.home = true;
       } else {
         const side = road.id % 2 ? -1 : 1;
         const hx = e.x + rx * side * (hw + 4.5) - (e.tx / hl) * 3;
@@ -992,6 +998,14 @@ export class World {
    *   home   the middle of the main island, on its grass
    *   isle   the floating island nearest the road — measured over the whole
    *          road, not picked, so it is the one the road actually passes
+   *   vista  the floating island off her LEFT down the east side of the lap —
+   *          "look over at the other islands in the distance ... off to the
+   *          left of the path". Measured from the middle of that stretch: the
+   *          one nearest SQUARE to her left. (Nearest 45 degrees left was
+   *          tried and picked the isle dead ahead, because the road is already
+   *          turning right onto the hook there — heading -26 at 0.77.) Framed
+   *          behind the autumn and dusk islands, so the shot has something in
+   *          it before the ending too
    */
   _arenaRideMarks(road, home) {
     const isl = this.arenaIsland;
@@ -1006,7 +1020,17 @@ export class World {
         if (d < near) { near = d; isle = f; }
       }
     }
+    const f = road.frameAt(road.length * 0.77);
+    const ahead = Math.atan2(f.tx, f.tz);
+    let vista = isle;
+    let off = Infinity;
+    for (const s of shown) {
+      const a = Math.atan2(s.x - f.x, s.z - f.z) - (ahead + Math.PI / 2);
+      const d = Math.abs(Math.atan2(Math.sin(a), Math.cos(a)));
+      if (d < off) { off = d; vista = s; }
+    }
     return {
+      vista: vista ? { x: vista.x, y: vista.y, z: vista.z } : { x: home.x, y: 0, z: home.z },
       arena: { x: isl.x, y: g, z: isl.z },
       doors: D ? { x: D.x, y: D.y + 6, z: D.z } : { x: isl.x, y: g + 6, z: isl.z },
       home: { x: home.x, y: home.heightAt(home.x, home.z) ?? 0, z: home.z },
@@ -1471,6 +1495,8 @@ export class World {
       });
     }
 
+    /** The stands, as the wall `arenaWallAt` makes of them. */
+    this.arenaWall = { x: isl.x, z: isl.z, y: g, ...arenaStandBand(), gap: ARENA_DOOR_GAP, doorZ: ENTRANCE.doorZ };
     /** The fighting deck, in world coordinates. The tournament reads this. */
     this.arenaRing = {
       x: isl.x, z: isl.z, y: g + ARENA_RISE, half: ARENA_RING, out: ARENA_OUT,
@@ -3206,6 +3232,81 @@ export class World {
    * A solid with a `top` stops pushing once you are standing above it. Solids
    * without one are unchanged and still infinite, which is right for a tree.
    */
+  /**
+   * THE STANDS ARE A WALL, and the front door is the only way through it.
+   *
+   * "In the arena, players can't passthrough the walls unless they get
+   * knocked out of the arena during combat." They could walk through them
+   * anywhere: the stands' only colliders were one circle in the middle of
+   * each run, and the corners were open. A circle cannot be a wall, so this
+   * is a square band, `inner` to `outer`, with the front doorway (`gap`
+   * either side of the axis) left open for the pillars and the doors to
+   * close.
+   *
+   * WHICH SIDE SHE IS ON DECIDES EVERYTHING, and it is read off where she
+   * WAS: inside, she is kept inside the square and the doorway's tunnel;
+   * outside, she is kept outside the band and the doorway's mouth, and she
+   * may never cross the doors' line inward — even open. Nothing walks in:
+   * the tournament puts its fighters on their marks. `was.side` is only
+   * consulted while she was IN the wall, where the position says nothing,
+   * and `'over'` is a kitten being thrown out over it (Player, `vaulting`).
+   *
+   * Above `top` it has nothing to say — a kitten on a griffin, a dragon, or
+   * flying over it after a big enough hit.
+   *
+   * @returns null when the wall is nowhere near, else
+   *   { x, z, side, blocked, top, door } — where she may be, which side she
+   *   is on, whether the wall stopped her, how high it is, and whether what
+   *   stopped her was the doorway's line from outside.
+   */
+  arenaWallAt(x, z, y, r, was) {
+    const A = this.arenaWall;
+    if (!A || !this.arenaOpen) return null;
+    const lx = x - A.x;
+    const lz = z - A.z;
+    const px = was.x - A.x;
+    const pz = was.z - A.z;
+    const cheb = (a, c) => Math.max(Math.abs(a), Math.abs(c));
+    const far = A.outer + r + 3;
+    if (cheb(lx, lz) > far && cheb(px, pz) > far) return null;
+    const region = (a, c) => {
+      if (c > 0 && Math.abs(a) < A.gap && c > A.inner) return c < A.doorZ ? 'in' : 'out';
+      const k = cheb(a, c);
+      return k <= A.inner ? 'in' : k >= A.outer ? 'out' : 'wall';
+    };
+    const prev = region(px, pz);
+    const now = region(lx, lz);
+    let side = prev === 'wall' ? (was.side ?? 'out') : prev;
+    if (was.side === 'over') side = now === 'out' || prev === 'out' ? 'out' : 'over';
+    const top = A.y + A.top;
+    if (y >= top) return { x, z, side, blocked: false, top, door: false };
+
+    let nx = lx;
+    let nz = lz;
+    let door = false;
+    const clamp = (v, m) => Math.max(-m, Math.min(m, v));
+    if (side === 'in' || (side === 'over' && prev === 'in')) {
+      if (pz > A.inner - r && Math.abs(px) < A.gap && pz > 0) {
+        // In the doorway's tunnel: its sides are the stands.
+        nx = clamp(lx, A.gap - r);
+      } else if (!(lz > 0 && Math.abs(lx) < A.gap - r)) {
+        nx = clamp(lx, A.inner - r);
+        nz = clamp(lz, A.inner - r);
+      }
+    } else {
+      const mouth = Math.abs(px) < A.gap && pz > A.inner;
+      if (mouth || (lz > 0 && Math.abs(lx) < A.gap - r && lz > A.inner)) {
+        if (lz < A.outer + r) nx = clamp(lx, A.gap - r);
+        if (lz < A.doorZ + r) { nz = A.doorZ + r; door = true; }
+      } else if (cheb(lx, lz) < A.outer + r) {
+        if (Math.abs(lx) >= Math.abs(lz)) nx = Math.sign(lx || 1) * (A.outer + r);
+        else nz = Math.sign(lz || 1) * (A.outer + r);
+      }
+    }
+    const blocked = nx !== lx || nz !== lz;
+    return { x: A.x + nx, z: A.z + nz, side, blocked, top, door: door && blocked };
+  }
+
   resolveSolids(x, z, radius, fromY = Infinity) {
     for (const s of this.solids) {
       /* The arena's stonework does not exist while the tournament is shut,

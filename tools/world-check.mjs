@@ -11,11 +11,11 @@
 --------------------------------------------------------------------------- */
 
 import * as THREE from 'three';
-import { Worker } from 'node:worker_threads';
+import { execFile } from 'node:child_process';
 import { World, CLANS } from '../src/world/world.js';
 import { Dragon, BREEDS, DRAGON_SPOTS } from '../src/entities/dragon.js';
 import { Billboard, xrayVertexMat } from '../src/core/gfx.js';
-import { Player, CALLOUT_WIDEST, BLESS_STRETCH } from '../src/entities/player.js';
+import { Player, CALLOUT_WIDEST, BLESS_STRETCH, WALL } from '../src/entities/player.js';
 import {
   Panda, PANDA, PANDA_TIERS, PANDA_SPEED, CLAW, tierFor, toNextTier, FULL_PANDA_COST,
 } from '../src/entities/panda.js';
@@ -35,13 +35,13 @@ import {
 } from '../src/systems/summonscene.js';
 import { SNAKE, SNAKE_LINKS, SNAKE_ARENA, COIN_CANES } from '../src/world/snakeway.js';
 import { FAR, FAR_PLACES, FarIsles } from '../src/world/farisles.js';
-import { snakePose, SnakeCam, SNAKE_MOVE, ARENA_RIDE, ARENA_BLEND, shotPose, arenaRidePose } from '../src/systems/snakecam.js';
+import { snakePose, SnakeCam, SNAKE_MOVE, ARENA_RIDE, ARENA_RIDE_DOWN, ARENA_BLEND, shotPose, arenaRidePose } from '../src/systems/snakecam.js';
 import { Announcer } from '../src/systems/announce.js';
 import { FinaleTide } from '../src/systems/finaletide.js';
 import { FinaleShow } from '../src/systems/finaleshow.js';
-import { buildBridge, mergeParts as mergeBuilt } from '../src/world/build.js';
-import { ARENA_DOOR_GAP, ARENA_RING as A_RING, ARENA_GATE as A_GATE } from '../src/world/build.js';
-import { ENTRANCE } from '../src/world/arenagate.js';
+import { buildBridge, mergeParts as mergeBuilt, PALETTE as BUILD_PALETTE } from '../src/world/build.js';
+import { ARENA_DOOR_GAP, ARENA_RING as A_RING, ARENA_GATE as A_GATE, ARENA_STANDS } from '../src/world/build.js';
+import { ENTRANCE, buildArenaEntrance } from '../src/world/arenagate.js';
 import { ArenaExit, EXIT, CAT_VIEWS } from '../src/systems/arenaexit.js';
 import {
   SAVE_VERSION, MAX_SAVES, AUTOSAVE_EVERY, AUTOSAVE_AFTER,
@@ -29269,19 +29269,22 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
      collection landing inside a slice is THIS process's cost, not the game's
      — a browser tab's heap is a fraction of it. Subtracting the collector's
      reported pauses got it to 12-24ms, which is a coin flip against any bar
-     worth having. A worker thread is a fresh isolate with a fresh heap, which
-     is what a tab is; the roads below are still wound in this one. */
+     worth having. A worker thread was the next try — a fresh isolate with a
+     fresh heap — and it was still a coin flip, just a slower one: 26-33ms on
+     7 of 8 runs of HEAD, against 5.8-6.9ms for the same builds run on their
+     own. A worker shares this process, and its collector with it. So it is a
+     CHILD PROCESS now, which is what a tab is — 6.6-14.3ms over ten full
+     runs of this file, under the same bar of 25. The roads below are still
+     wound in this one. */
   const sliceRun = await new Promise((resolve) => {
-    const w = new Worker(`
-      const { parentPort, workerData } = require('node:worker_threads');
-      (async () => {
-        const THREE = await import(workerData.three);
+    const code = `
+        const THREE = await import(process.env.KK_THREE);
         const cv = () => ({ width: 1, height: 1, getContext: () => new Proxy({}, {
           get: (_, k) => (k === 'measureText' ? () => ({ width: 10 })
             : String(k).startsWith('create') ? () => ({ addColorStop() {} }) : () => {}),
           set: () => true }) });
         globalThis.document = { createElement: cv, getElementById: () => null };
-        const { World } = await import(workerData.world);
+        const { World } = await import(process.env.KK_WORLD);
         /* EACH SLICE'S BEST OF TWO BUILDS. One build alone was a coin flip:
            the slowest slices are 5-7ms on their own and 20-37ms here, with
            the rest of this file's heap being collected alongside, and the
@@ -29302,17 +29305,17 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
           best = best ? best.map((t, i) => Math.min(t, times[i] ?? t)) : times;
         }
         const times = [...best].sort((a, b) => b - a);
-        parentPort.postMessage({ built, slices: best.length, worst: times[0] });
-      })().catch((e) => parentPort.postMessage({ error: String(e) }));
-    `, {
-      eval: true,
-      workerData: {
-        three: import.meta.resolve('three'),
-        world: new URL('../src/world/world.js', import.meta.url).href,
-      },
+        process.stdout.write(JSON.stringify({ built, slices: best.length, worst: times[0] }));
+    `;
+    execFile(process.execPath, ['--input-type=module', '-e', code], {
+      env: { ...process.env,
+        KK_THREE: import.meta.resolve('three'),
+        KK_WORLD: new URL('../src/world/world.js', import.meta.url).href },
+      maxBuffer: 1 << 20,
+    }, (err, out) => {
+      if (err) { resolve({ error: String(err) }); return; }
+      try { resolve(JSON.parse(out)); } catch (e) { resolve({ error: `${e}: ${out}` }); }
     });
-    w.once('message', (m) => { resolve(m); w.terminate(); });
-    w.once('error', (e) => resolve({ error: String(e) }));
   });
   const slices = sliceRun.slices ?? 0;
   const worstSlice = sliceRun.worst ?? Infinity;
@@ -29416,6 +29419,44 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     ok('...and the arena\'s gates are Mr Satan\'s torii, guarded by his lion',
       /road\.arena \? buildSatanTorii\(ts\) : buildTorii\(ts\)/.test(wsrc)
       && /buildSatanLion\(/.test(wsrc));
+  }
+  {
+    /* EVERY GUARDIAN FACES THE WAY YOU COME AT IT: the far end's back down its
+       road, the home end's out at the town. "Mr. Satan statue to the entrance
+       of the snake way bridge on the main island is backwards" — it had been
+       turned by an extra half turn and faced up the road. MEASURED OFF THE
+       MESH, not off `rotation.y`: the muzzle is the middle of every vertex
+       within 0.3 of the front of the model — one vertex alone was a
+       moustache tip and read 0.93 — carried into the world, and its
+       direction from the statue's own centre is the facing. */
+    const facing = (g) => {
+      g.updateMatrixWorld(true);
+      const pos = g.userData.mesh.geometry.attributes.position;
+      let top = -Infinity;
+      for (let i = 0; i < pos.count; i++) top = Math.max(top, pos.getZ(i));
+      const m = new THREE.Vector3();
+      let n = 0;
+      for (let i = 0; i < pos.count; i++) {
+        if (pos.getZ(i) < top - 0.3) continue;
+        m.x += pos.getX(i); m.y += pos.getY(i); m.z += pos.getZ(i); n++;
+      }
+      m.multiplyScalar(1 / n).applyMatrix4(g.userData.mesh.matrixWorld);
+      const dx = m.x - g.position.x; const dz = m.z - g.position.z;
+      const l = Math.hypot(dx, dz) || 1;
+      return [dx / l, dz / l];
+    };
+    const rows = [];
+    for (const r of R) {
+      for (const h of r.heads ?? []) {
+        const p = h.userData.home ? r.pts[0] : r.pts.at(-1);
+        const hl = Math.hypot(p.tx, p.tz) || 1;
+        const [fx, fz] = facing(h);
+        rows.push({ what: `${r.name}${h.userData.home ? ':home' : ''}`, dot: -(fx * p.tx + fz * p.tz) / hl });
+      }
+    }
+    ok('...and every guardian faces the way you come at it — the home end\'s lion out at the town',
+      rows.length >= R.length + 2 && rows.some((q) => q.what.endsWith(':home')) && rows.every((q) => q.dot > 0.95),
+      rows.map((q) => `${q.what} ${q.dot.toFixed(2)}`).join(' '));
   }
 
   /* --- GROUND ONLY WHEN IT IS FINISHED ---------------------------------
@@ -29748,6 +29789,47 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
       && !!F.meshes.water && !!F.meshes.points && !!F.meshes.portal);
     ok('...one for the truck across the town and four for the wide shot',
       F.of('A').length === 1 && F.of('B').length === 4);
+    /* "The waterfalls on the floating islands appear to be appearing in front
+       of the clouds instead of behind them." Transparent and depth-blind, so
+       draw order is the depth test: the water has to be drawn before any
+       cloud that can stand between it and the lens. MEASURED FROM THE LENS,
+       not from the middle of the world — by radius the road clouds reach 477
+       and the far isles start at 329, which proves nothing either way. From a
+       lens every sixth point along every road and round every island's rim,
+       every road-cloud vertex that lands on a far island in the picture is
+       NEARER than it, so drawing the water first is right from anywhere she
+       can stand. */
+    {
+      const pos = W.snakeWay.puffs.geometry.attributes.position;
+      const lenses = [];
+      for (const r of W.snakeWay.roads) for (let k = 0; k < r.pts.length; k += 6) lenses.push({ x: r.pts[k].x, y: r.pts[k].y + 6, z: r.pts[k].z });
+      for (const isl of W.islands) {
+        for (let a = 0; a < 8; a++) {
+          const x = isl.x + Math.sin(a) * isl.radius * 0.8;
+          const z = isl.z + Math.cos(a) * isl.radius * 0.8;
+          lenses.push({ x, y: (isl.heightAt(x, z)?.y ?? 0) + 8, z });
+        }
+      }
+      let over = 0;
+      let behind = 0;
+      for (const L of lenses) {
+        for (const s of F.isles) {
+          const dI = Math.hypot(s.x - L.x, s.y - L.y, s.z - L.z);
+          const cosA = Math.cos(Math.asin(Math.min(1, (s.r * 1.4) / dI)));
+          for (let i = 0; i < pos.count; i += 3) {
+            const vx = pos.getX(i) - L.x; const vy = pos.getY(i) - L.y; const vz = pos.getZ(i) - L.z;
+            const d = Math.hypot(vx, vy, vz);
+            if ((vx * (s.x - L.x) + vy * (s.y - L.y) + vz * (s.z - L.z)) / (d * dI) < cosA) continue;
+            over++;
+            if (d > dI - s.r * 1.4) behind++;
+          }
+        }
+      }
+      ok('...their waterfalls drawn before the road clouds, which are in front of them from anywhere she can stand',
+        over > 1000 && behind === 0 && F.meshes.water.renderOrder < W.snakeWay.puffs.renderOrder
+        && F.meshes.points.renderOrder < W.snakeWay.puffs.renderOrder,
+        `${lenses.length} lenses, ${over} cloud points over an island, ${behind} behind one; water ${F.meshes.water.renderOrder}, spray ${F.meshes.points.renderOrder}, clouds ${W.snakeWay.puffs.renderOrder}`);
+    }
     /* AND THEN: "instead of growing downward after fading in, it can just
        already be a full solid 3D object and can just spawn/fade-in in a
        forward direction through the clouds like a monolithic mountain
@@ -30388,7 +30470,7 @@ console.log('\n--- the arena road is shot, not orbited ---');
   const roads = RW.buildSnakeWay().roads;
   const road = roads.find((r) => r.arena);
   const M = road.marks;
-  const names = ['arena', 'doors', 'home', 'isle'];
+  const names = ['arena', 'doors', 'home', 'isle', 'vista'];
   ok('the arena road carries its landmarks, resolved from the world',
     !!M && names.every((n) => Number.isFinite(M[n]?.x) && Number.isFinite(M[n]?.y) && Number.isFinite(M[n]?.z))
       && M.arena.x === RW.arenaIsland.x && M.doors.z === RW.arenaDoors.z,
@@ -30398,10 +30480,43 @@ console.log('\n--- the arena road is shot, not orbited ---');
   const isles = RW.farIsles.isles;
   ok('...its floating island the one nearest the road',
     isles.every((f) => nearest(f) >= nearest(M.isle) - 1e-6), `${M.isle.x},${M.isle.z} at ${nearest(M.isle).toFixed(0)}`);
-  ok('every shot looks at a landmark the road has, in order up the road from its first step',
-    ARENA_RIDE.every((s) => names.includes(s.at)) && ARENA_RIDE[0].from === 0
-      && ARENA_RIDE.every((s, i) => i === 0 || s.from - ARENA_RIDE[i - 1].from >= 0.08),
-    ARENA_RIDE.map((s) => `${s.name}@${s.from}`).join(' '));
+  /* "look over at the other islands in the distance ... off to the left of
+     the path we are on" — the whole time that shot is up, not at one point. */
+  {
+    const vi = ARENA_RIDE.findIndex((s) => s.at === 'vista');
+    const rel = [];
+    const vb = ARENA_RIDE[vi].blend ?? ARENA_BLEND;
+    for (let u = ARENA_RIDE[vi].from + vb; u < ARENA_RIDE[vi + 1].from; u += 0.01) {
+      const f = road.frameAt(u * road.length);
+      const a = Math.atan2(M.vista.x - f.x, M.vista.z - f.z) - Math.atan2(f.tx, f.tz);
+      rel.push((Math.atan2(Math.sin(a), Math.cos(a)) * 180) / Math.PI);
+    }
+    ok('...its distant island off to her LEFT all the way down the east side',
+      isles.some((f) => f.x === M.vista.x && f.z === M.vista.z) && rel.every((d) => d > 0 && d < 120),
+      `${M.vista.x},${M.vista.z}; ${Math.min(...rel).toFixed(0)}..${Math.max(...rel).toFixed(0)} degrees left`);
+  }
+  for (const [label, plan] of [['up', ARENA_RIDE], ['down', ARENA_RIDE_DOWN]]) {
+    ok(`every shot ${label} looks at a landmark the road has, in order up the road from its first step`,
+      plan.every((s) => names.includes(s.at)) && plan[0].from === 0
+        && plan.every((s, i) => i === 0 || s.from - plan[i - 1].from >= 0.08),
+      plan.map((s) => `${s.name}@${s.from}`).join(' '));
+  }
+  /* THE ORDER RICHARD ASKED FOR, in so many words. Up: "on the 3rd camera
+     shot ... looking at the arena already", then "the other islands in the
+     distance before looking at the gate". Down: "the first shot we see
+     leaving the arena is towards the main island", then "the 2nd last shot
+     ... the floating islands in the distance", then "the final shot before
+     reaching the main island ... the main island again". */
+  const upOrder = ARENA_RIDE.map((s) => s.at).filter((a, i, all) => a !== all[i - 1]);
+  ok('going up: the third shot is the arena, then the far islands, then the doors',
+    upOrder.slice(2).join() === 'arena,vista,doors', upOrder.join());
+  const downOrder = [...ARENA_RIDE_DOWN].reverse().map((s) => s.at).filter((a, i, all) => a !== all[i - 1]);
+  ok('coming down: the main island first, the floating island second last, the main island last',
+    downOrder[0] === 'home' && downOrder.at(-2) === 'isle' && downOrder.at(-1) === 'home', downOrder.join());
+  const same = (a, b) => ['at', 'off', 'dist', 'h', 'ky'].every((k) => a[k] === b[k]);
+  ok('...and the rest of the way down is the climb\'s own shots, not new ones',
+    ARENA_RIDE_DOWN.slice(2, -1).every((s) => ARENA_RIDE.some((u) => u.name === s.name && same(u, s))),
+    ARENA_RIDE_DOWN.slice(2, -1).map((s) => s.name).join());
 
   const FOV = 38;
   const cam = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.5, 4000);
@@ -30431,14 +30546,59 @@ console.log('\n--- the arena road is shot, not orbited ---');
   };
   const lensClear = (c, s) => roads.every((r) => r.pts.every((p) => Math.hypot(p.x - c.x, p.y - c.y, p.z - c.z)
     >= (r === road && Math.abs(p.s - s) < 25 ? 2.6 : 6)));
-  for (const [i, sh] of ARENA_RIDE.entries()) {
-    const u1 = ARENA_RIDE[i + 1]?.from ?? 0.985;
+  /* HOW MUCH OF THE RING A LENS CAN SEE INTO: a 5x5 grid over the fighting
+     floor, two units up, each point seen if the line to it clears the stands
+     (tier by tier, at their real heights) and every island's rock INCLUDING
+     the arena's own. The lens-above-the-floor test alone passed a `rise`
+     that started at 0.27 and showed the rock under the rim and the back of
+     the stands — 0 of 25 floor points — for the first two seconds of it. */
+  const AW = RW.arenaWall;
+  const standsAt = (x, y, z) => {
+    const ch = Math.max(Math.abs(x - AW.x), Math.abs(z - AW.z));
+    if (ch <= AW.inner || ch >= AW.outer || y < AW.y - 1) return false;
+    const S = ARENA_STANDS;
+    const k = Math.min(S.tiers - 1, Math.max(0, Math.floor((ch - AW.inner) / S.step)));
+    return y < AW.y + (S.y0 + k * S.yStep) * 2 + S.stripe;
+  };
+  const ringSeen = (c) => {
+    let seenPts = 0;
+    for (let a = -2; a <= 2; a++) for (let bb = -2; bb <= 2; bb++) {
+      const t = new THREE.Vector3(AW.x + a * A_RING * 0.4, AW.y + 2, AW.z + bb * A_RING * 0.4);
+      const L = c.distanceTo(t);
+      const m = Math.ceil(L);
+      let clear = true;
+      for (let k = 1; k < m - 1 && clear; k++) {
+        const f = k / m;
+        const x = c.x + (t.x - c.x) * f; const y = c.y + (t.y - c.y) * f; const z = c.z + (t.z - c.z) * f;
+        if (standsAt(x, y, z)) clear = false;
+        for (const isl of RW.islands) {
+          if (!clear) break;
+          const dd = Math.hypot(x - isl.x, z - isl.z);
+          if (dd > isl.radius) continue;
+          const g = isl.heightAt(x, z);
+          if (g != null && y < g - 0.05 && y > g - isl.radius * 0.8 * (1 - (dd / isl.radius) ** 2)) clear = false;
+        }
+      }
+      seenPts += clear;
+    }
+    return seenPts / 25;
+  };
+  /* Each shot is tested over the stretch it is SETTLED on: going up, from the
+     end of the move into it to the next shot's start; coming down, from the
+     next shot's start less the move, down to its own — which for a row the
+     climb shares is a different stretch, so every row is tested both ways. */
+  for (const [label, plan, dir] of [['up', ARENA_RIDE, 1], ['down', ARENA_RIDE_DOWN, -1]]) for (const [i, sh] of plan.entries()) {
+    const bl = sh.blend ?? ARENA_BLEND;
+    const nx = plan[i + 1]?.from ?? 0.985;
+    const u0 = dir > 0 ? sh.from + (i ? bl : 0) : sh.from;
+    const u1 = dir > 0 || !plan[i + 1] ? nx : nx - bl;
     const own = sh.at === 'arena' ? RW.arenaIsland : sh.at === 'home' ? RW.islands[0] : null;
     const T = M[sh.at];
     let good = 0;
     let n = 0;
     let low = 0;
-    for (let u = sh.from + (sh.blend ?? ARENA_BLEND); u < u1; u += 0.004) {
+    let into = 1;
+    for (let u = u0; u < u1; u += 0.002) {
       const f = road.frameAt(u * road.length);
       const P = shotPose(sh, M, f, 0, FOV);
       cam.position.set(P.x, P.y, P.z);
@@ -30460,18 +30620,27 @@ console.log('\n--- the arena road is shot, not orbited ---');
       n++;
       /* A LANDMARK'S OWN ROCK IS NOT COUNTED IN ITS WAY — which is how the
          first opening passed while showing nothing but the arena's keel. So
-         the arena is only ever looked at from above its own floor. */
-      if (sh.at === 'arena' && f.y < M.arena.y - 2) low++;
+         the arena is only ever looked at from above its own floor — the LENS
+         above it, now that the arena is looked at from lower down the road
+         (`rise`, from 0.27) than a kitten standing level with it. */
+      if (sh.at === 'arena' && P.y < M.arena.y + 1) low++;
+      if (sh.at === 'arena') into = Math.min(into, ringSeen(c));
     }
-    ok(`${sh.name}: her and the ${sh.at} in frame, in a whole pane and a half one, nothing in the way`,
+    ok(`${sh.name} (${label}): her and the ${sh.at} in frame, in a whole pane and a half one, nothing in the way`,
       n > 10 && good === n, `${good}/${n}`);
-    if (sh.at === 'arena') ok(`...and the ring is seen from above, never its keel from below`, low === 0, `${low}`);
+    if (sh.at === 'arena') ok(`...and the ring is seen from above, never its keel from below`, low === 0, `${low} of ${n} with the lens under the floor`);
+    /* "Looking at the arena" means seeing INTO it. Measured lows: rise 0.60,
+       ring 0.40 — the bar is under both and far above the 0 that a lens
+       under the rim sees. */
+    if (sh.at === 'arena') ok(`...and sees INTO the ring the whole time, not the back of the stands`,
+      into >= 0.3, `at worst ${(into * 25).toFixed(0)} of 25 floor points`);
   }
+  for (const dir of [1, -1]) {
   let out = 0;
   let seen = 0;
   for (let u = 0; u < 0.985; u += 0.002) {
     const f = road.frameAt(u * road.length);
-    const P = arenaRidePose(road, u * road.length, f, 0, FOV);
+    const P = arenaRidePose(road, u * road.length, f, 0, FOV, dir);
     cam.position.set(P.x, P.y, P.z);
     cam.lookAt(P.lx, P.ly, P.lz);
     cam.aspect = 0.89;
@@ -30481,7 +30650,7 @@ console.log('\n--- the arena road is shot, not orbited ---');
     seen++;
     if (!(v.z < 1 && Math.abs(v.x) < 0.9 && Math.abs(v.y) < 0.85)) out++;
   }
-  ok('she is in frame the whole way up, through every move between shots', out === 0, `${out} of ${seen} off`);
+  ok(`she is in frame the whole way ${dir > 0 ? 'up' : 'down'}, through every move between shots`, out === 0, `${out} of ${seen} off`);
   /* NO LURCH. A frame at a run is 0.47 units of road; the lens may travel
      four times that and turn four degrees, no more. The half-orbit into
      `home` was 5.6 degrees a frame over the standard blend. */
@@ -30490,7 +30659,7 @@ console.log('\n--- the arena road is shot, not orbited ---');
     let far = 0;
     let turn = 0;
     for (let s = 0; s < road.length * 0.985; s += 14 / 30) {
-      const P = arenaRidePose(road, s, road.frameAt(s), 0, FOV);
+      const P = arenaRidePose(road, s, road.frameAt(s), 0, FOV, dir);
       if (prev) {
         far = Math.max(far, Math.hypot(P.x - prev.x, P.y - prev.y, P.z - prev.z));
         const a = new THREE.Vector3(P.lx - P.x, P.ly - P.y, P.lz - P.z);
@@ -30502,9 +30671,10 @@ console.log('\n--- the arena road is shot, not orbited ---');
     ok('...and it never lurches: at most two units and four degrees a frame at a run',
       far < 2 && turn < 4, `${far.toFixed(2)} units, ${turn.toFixed(2)} degrees`);
   }
+  }
 
-  /* AND THE RIDE CAMERA ACTUALLY USES IT — going up the arena road, and only
-     then. The real SnakeCam, laid over a follow camera, for three seconds. */
+  /* AND THE RIDE CAMERA ACTUALLY USES IT — the plan for the way she is
+     going. The real SnakeCam, laid over a follow camera, for three seconds. */
   const ride = (r, s, dir) => {
     const sc = new SnakeCam();
     const c = new THREE.PerspectiveCamera(FOV, 1, 0.5, 4000);
@@ -30516,16 +30686,24 @@ console.log('\n--- the arena road is shot, not orbited ---');
       c.lookAt(look);
       sc.apply(1 / 30, { road: r, s, dir, x: f.x, y: f.y, z: f.z, spread: 0 }, c, look, RW.islands);
     }
-    const P = arenaRidePose(road, s, f, 0, FOV);
+    const P = arenaRidePose(road, s, f, 0, FOV, dir);
     return c.position.distanceTo(new THREE.Vector3(P.x, P.y, P.z));
   };
-  const sMid = road.length * 0.55;
-  const up = ride(road, sMid, 1);
-  const down = ride(road, sMid, -1);
+  /* At 0.95 up it is the doors and down it is `leave`, the main island —
+     two different shots, so a camera that took the wrong plan fails. */
+  const sTop = road.length * 0.95;
+  const up = ride(road, sTop, 1);
+  const down = ride(road, sTop, -1);
+  const wrong = (() => {
+    const f = road.frameAt(sTop);
+    const a = arenaRidePose(road, sTop, f, 0, FOV, 1);
+    const b = arenaRidePose(road, sTop, f, 0, FOV, -1);
+    return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  })();
   ok('the ride camera goes to the planned shot going up the arena road',
     up < 0.5, `${up.toFixed(2)} from the plan`);
-  ok('...and still orbits coming down it — the plan is the climb\'s',
-    down > 3, `${down.toFixed(1)} from the plan`);
+  ok('...and to the OTHER plan coming down it — "the first shot we see leaving the arena is towards the main island"',
+    down < 0.5 && wrong > 10, `${down.toFixed(2)} from the plan, which is ${wrong.toFixed(1)} from the climb's`);
   if (hadDocR) globalThis.document = prevDocR; else delete globalThis.document;
 }
 
@@ -30593,6 +30771,41 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
   ok('the doorway in the grandstand and the doors that fill it are one number',
     ENTRANCE.gap === ARENA_DOOR_GAP && ENTRANCE.doorW * 2 > ARENA_DOOR_GAP,
     `${ENTRANCE.gap} vs ${ARENA_DOOR_GAP}, leaves ${ENTRANCE.doorW * 2}`);
+  {
+    /* "Underneath the giant roof of the front door gate of the arena, seems
+       we can see through the bottom of it as if it is a 1-sided polygon."
+       RAYS, against front faces only, which is what the renderer draws: up
+       from a kitten's head at every point under the eaves, each must meet a
+       face that looks DOWN at her; and down from above, the first face met
+       must still be red tile — so the underside neither leaves a hole nor
+       comes up through the roof at its kicked-up corners. */
+    const g = mergeBuilt(buildArenaEntrance().seeThrough);
+    const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.FrontSide }));
+    mesh.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster();
+    const col = g.attributes.color;
+    const red = new THREE.Color(BUILD_PALETTE.tileRed);
+    const spanW = (ENTRANCE.pillarX + ENTRANCE.pillarW / 2) * 2 + 1.2;
+    const ex = (spanW / 2 + 0.6) * 2.1 * 0.96;
+    const ez = (ENTRANCE.pillarD / 2 + 1.2) * 2.1 * 0.96;
+    let n = 0; let seenUp = 0; let redDown = 0;
+    for (let i = 0; i <= 12; i++) {
+      for (let k = 0; k <= 6; k++) {
+        const x = -ex + (2 * ex * i) / 12;
+        const z = ENTRANCE.pillarZ - ez + (2 * ez * k) / 6;
+        n++;
+        ray.set(new THREE.Vector3(x, 2, z), new THREE.Vector3(0, 1, 0));
+        const up = ray.intersectObject(mesh)[0];
+        if (up && up.face.normal.y < 0) seenUp++;
+        ray.set(new THREE.Vector3(x, 60, z), new THREE.Vector3(0, -1, 0));
+        const dn = ray.intersectObject(mesh)[0];
+        const c = dn && new THREE.Color(col.getX(dn.face.a), col.getY(dn.face.a), col.getZ(dn.face.a));
+        if (c && Math.abs(c.r - red.r) + Math.abs(c.g - red.g) + Math.abs(c.b - red.b) < 0.02) redDown++;
+      }
+    }
+    ok('the gatehouse roof has an underside — solid from below, and still all tile from above',
+      seenUp === n && redDown === n, `${seenUp}/${n} rays up meet a ceiling, ${redDown}/${n} down meet the tile`);
+  }
   ok('two door leaves, and they are not there until the arena is',
     W.arenaDoorLeaves?.length === 2 && W.arenaDoorLeaves.every((l) => !l.mesh.visible)
       && !!W.arenaFlames && !W.arenaFlames.visible);
@@ -30623,6 +30836,138 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
   W.setArenaDoors(false, true);
   ok('...and shut again, solid again', W.arenaDoorSolids.every((s) => !s.off)
     && W.arenaDoorLeaves.every((l) => Math.abs(l.mesh.rotation.y) < 1e-6));
+
+  /* --- THE STANDS ARE A WALL ---
+     "In the arena, players can't passthrough the walls unless they get knocked
+     out of the arena during combat ... pushed upward (if they are still moving
+     upward after the hit) and over the wall ... if they are hit hard enough."
+     All of it with a REAL kitten on the real world, running into it. */
+  {
+    const A = W.arenaWall;
+    const cheb = (p) => Math.max(Math.abs(p.position.x - A.x), Math.abs(p.position.z - A.z));
+    const kit = (lx, lz) => {
+      const y = W.heightAt(A.x + lx, A.z + lz)?.y ?? A.y;
+      const p = new Player({ texture: new THREE.Texture(), index: 0,
+        spawn: new THREE.Vector3(A.x + lx, y, A.z + lz), cols: 8, rows: 4, mirror: false });
+      return p;
+    };
+    /* A STICK HELD TOWARD A COMPASS POINT, read off her own basis at the moment
+       she reads it: the stick is camera-relative and her camera's yaw is
+       rewritten every update, so a pad worked out once up front steers her 45
+       degrees off — which is how the first cut of this check sent a kitten
+       aimed at the front stands diagonally into the doorway instead. */
+    const steer = (p, dx, dz) => {
+      const l = Math.hypot(dx, dz) || 1;
+      return {
+        get mx() { const { right } = p._basis(); return (dx * right.x + dz * right.z) / l; },
+        get my() { const { fwd } = p._basis(); return -(dx * fwd.x + dz * fwd.z) / l; },
+        down: () => false, pressed: () => false,
+      };
+    };
+    const run = (p, pad, sec, each = null) => {
+      for (let i = 0; i < sec * 60; i++) { p.update(1 / 60, pad, W, [], null); each?.(p); }
+    };
+    ok('the stands are one band all round: 39.3 to 49.5 out, 9.5 high at the back',
+      Math.abs(A.inner - 39.3) < 1e-6 && Math.abs(A.outer - 49.5) < 1e-6 && Math.abs(A.top - 9.5) < 1e-6,
+      `${A.inner} .. ${A.outer}, ${A.top} high`);
+
+    /* Walking into it from inside, at every side and both corners the old
+       stands left open. Each run is 4s of pushing, and every one of them must
+       have REACHED the wall — a kitten who never got there proves nothing. */
+    const inside = [[20, -36, 0, -1], [-36, 10, -1, 0], [36, -15, 1, 0], [18, 36, 0, 1],
+      [34, 34, 1, 1], [-34, -34, -1, -1], [-34, 34, -1, 1]];
+    const inRes = inside.map(([lx, lz, dx, dz]) => {
+      const p = kit(lx, lz);
+      let most = 0;
+      run(p, steer(p, dx, dz), 4, (q) => { most = Math.max(most, cheb(q)); });
+      return { most, reached: most > A.inner - p.radius - 0.3 };
+    });
+    ok('a kitten walking at the stands from inside is stopped at them — every side and every corner',
+      inRes.every((r) => r.reached && r.most <= A.inner + 1e-6),
+      inRes.map((r) => r.most.toFixed(2)).join(' '));
+    // West is off the record board's middle: the board's own collider stops her short of the stands there.
+    const outside = [[20, -56, 0, 1], [-56, 22, 1, 0], [56, 20, -1, 0], [-25, 56, 0, -1],
+      [56, 56, -1, -1], [-56, -56, 1, 1]];
+    const outRes = outside.map(([lx, lz, dx, dz]) => {
+      const p = kit(lx, lz);
+      let least = Infinity;
+      run(p, steer(p, dx, dz), 4, (q) => { least = Math.min(least, cheb(q)); });
+      return { least, reached: least < A.outer + p.radius + 0.3 };
+    });
+    ok('...and from outside, including the corners that used to be open slots',
+      outRes.every((r) => r.reached && r.least >= A.outer - 1e-6),
+      outRes.map((r) => r.least.toFixed(2)).join(' '));
+
+    /* THE CORNERS ARE SHUT IN THE PICTURE TOO: a wall that stops her at a gap
+       she can see through is the wall lying. Rays out from the floor at knee
+       height, every degree round, must meet the stands before they leave the
+       band — bar the doorway. */
+    W.arenaProps.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster();
+    let rays = 0; let met = 0; const open = [];
+    for (let deg = 0; deg < 360; deg += 1) {
+      const a = (deg * Math.PI) / 180;
+      const dx = Math.sin(a); const dz = Math.cos(a);
+      const k = 37 / Math.max(Math.abs(dx), Math.abs(dz));
+      if (dz > 0 && Math.abs(dx * (A.outer / Math.max(Math.abs(dx), Math.abs(dz)))) < A.gap + 1) continue;
+      rays++;
+      ray.set(new THREE.Vector3(A.x + dx * k, A.y + 1, A.z + dz * k), new THREE.Vector3(dx, 0, dz));
+      ray.far = (A.outer / Math.max(Math.abs(dx), Math.abs(dz))) - k + 0.5;
+      if (ray.intersectObject(W.arenaProps, true).length) met++; else open.push(deg);
+    }
+    ok('...and the stands are drawn closed all the way round, corners included',
+      met === rays, `${met}/${rays} rays meet them; open at ${open.join(',')}`);
+
+    /* THE DOORWAY: shut, a wall; open, a way OUT and never a way in. */
+    const door = (lz, dz, openIt) => {
+      W.setArenaDoors(openIt, true);
+      const p = kit(0, lz);
+      let refused = false;
+      run(p, steer(p, 0, dz), 4, (q) => { refused ||= !!q.doorRefused; });
+      W.setArenaDoors(false, true);
+      return { z: p.position.z - A.z, refused };
+    };
+    const shutOut = door(44, 1, false);
+    const openOut = door(44, 1, true);
+    const openIn = door(60, -1, true);
+    ok('from inside the doorway, shut doors keep her in and open ones let her out',
+      shutOut.z < A.doorZ && openOut.z > A.doorZ + 3, `${shutOut.z.toFixed(1)} / ${openOut.z.toFixed(1)} vs ${A.doorZ}`);
+    ok('...and open doors do NOT let anybody back in — and say so',
+      openIn.z >= A.doorZ && openIn.refused, `${openIn.z.toFixed(2)}, told: ${openIn.refused}`);
+
+    /* THROWN. A real hit, from the real `hurt`, toward the north stands from
+       the middle of the lower floor. `track` asserts the thing Richard asked
+       for: whenever she is over the band she is ABOVE it. */
+    const throwAt = (lz, knock, lift) => {
+      const p = kit(20, lz);
+      p.hurt(1, { x: p.position.x, z: p.position.z + 2 }, { knock, lift }, null);
+      let through = 0; let peak = -Infinity;
+      run(p, steer(p, 0, 0), 4, (q) => {
+        const c = cheb(q);
+        if (c > A.inner && c < A.outer && q.position.y < A.y + A.top - 1e-6) through++;
+        peak = Math.max(peak, q.position.y - A.y);
+      });
+      return { c: cheb(p), through, peak, vy: 0 };
+    };
+    const hard = throwAt(-34, 26, 16);
+    const soft = throwAt(-34, 9, 3.5);
+    const falling = throwAt(-30, 26, 3);
+    ok('a hard hit, still rising at the stands, goes up and OVER them — never through',
+      hard.c > A.outer && hard.through === 0 && hard.peak > A.top,
+      `ends ${hard.c.toFixed(1)} out, peak ${hard.peak.toFixed(1)}, ${hard.through} frames in the wall`);
+    ok('...a light one is stopped by them and comes down inside',
+      soft.c <= A.inner + 1e-6 && soft.through === 0, `ends ${soft.c.toFixed(1)} out`);
+    ok('...and so is a hard one that has already started to fall — "if they are still moving upward"',
+      falling.c <= A.inner + 1e-6 && falling.through === 0, `ends ${falling.c.toFixed(1)} out`);
+    ok('the vault\'s bar is the wall\'s own geometry: 14 a second clears 10.2 deep under the throw\'s drag',
+      WALL.vault >= 14 && WALL.clear > WALL.vault);
+
+    /* NOT WHILE THE ARENA IS SHUT: its stonework does not exist, and neither
+       does its wall. */
+    W.openArena(false);
+    ok('...and there is no wall while there is no arena', W.arenaWallAt(A.x, A.z + 44, A.y, 0.75, { x: A.x, z: A.z + 30 }) === null);
+    W.openArena(true);
+  }
 
   /* THE CARPET RUNS FROM THE DOORS TO THE ROAD, and nothing stands on it. */
   const localZ1 = C.z1 - isl.z;
