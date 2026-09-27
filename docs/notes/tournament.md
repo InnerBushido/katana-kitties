@@ -71,8 +71,10 @@ you are *taken* to. Before Mr Satan opens it there is nothing out there at all:
   mesh alone left the ring deck standable — a solid stone square floating in
   empty sky, which is a far worse bug than an arena you can reach early because
   it looks like the world is broken;
-- **solids too.** The record board has no `top`, which makes it an *infinite
-  cylinder*: it would have shoved a kitten flying past the empty coordinates.
+- **solids too.** The big screen's two posts, the doorway's pillars and the
+  booth are solids, and they would have shoved a kitten walking past the empty
+  coordinates. (The old sign's disc had no `top` at all — an *infinite
+  cylinder*. It is gone; see **The big screen**.)
 
 `world-check` asserts all four, shut and open, and that it can be shut again —
 which is what `restart` does.
@@ -547,6 +549,79 @@ front does nothing rather than wrapping, which would put the cursor at the far
 end of a name she is halfway through. **Either player drives it**, like the pause
 menu: the winner types her own name and this screen cannot know which pad she is
 holding.
+
+### The big screen
+
+Richard: *"there is a white banister along the wall on the southwest side ...
+make it extend down more so that it takes up most of the wall and is a fairly
+large white banister or Digital Display surface"* — with the champions on it,
+Mr. Satan where nobody has won, his flexing "advertisements" in between,
+honourable mentions for less time, fireworks when somebody is looking, and the
+camera zooming out for a kitten who walks up to it. And: *"There is also a
+strange collider around it"*.
+
+**The collider was two things.** The old sign (17x9, plaster, on the back
+tier, facing the ring, never drawn on) had an r 8.4 disc that bulged seven
+units out of the stands' outside face. And every run of the stands still carried
+one collision circle in its middle from before the stands became a square wall
+(`arenaStandBand` / `World.arenaWallAt`); the back tier's r 4.6 circle stuck 2.9
+units out of the wall in the middle of every side, which on the west is right in
+front of the board. Both are gone. The wall does the job, and the board's only
+colliders are its two posts, r 0.85.
+
+**Where it is.** `ARENA_BOARD` in `world/build.js`: 32x18 (16:9, the canvas is
+1280x720), hanging on the west stands' OUTER face and facing out (-x), from 1.5
+over the island to a cap at 21.3. West because the walking camera is always at
+-x/+z of what it watches, and because the arena road climbs past that side: from
+the ride camera's real poses the glass is in frame and 25–40% of the frame
+across from u 0.32 to 0.44 (the `tower` shot), so Richard's ride timings did not
+move.
+
+**The cap height is a limit, not a look.** A live round's camera pitches at
+0.52 from -x/+z, so a fighter in the deck's north-west corner is seen along a
+line that crosses the west wall at y 23. The first cap stood at 23.1; world-check
+found 6 sight lines of 3920 grazing it that nobody had reasoned about. 21.3
+clears the lowest ring pitch with two units spare, and the check replays every
+deck spot at every ring pitch and distance.
+
+**The cycle** (`buildSlides`, pure): per league in `BOARD_MODES` order, its
+champion (8s), then #2 and #3 if there are any (4s), or Mr. Satan's made-up
+record if the league is empty (7s: *"The Undefeatable Champ! Don't even
+try!"*, a joke per league, and a score over 44 million against a real ceiling
+of about 180 thousand); then one of his four ads (4.5s), never the same twice
+running. A win jumps the screen straight to its league's champion. Rows now
+keep `cat` (the kitten) and `mates`; an old row has neither and draws as a
+silhouette with a question mark.
+
+**`BOARD_MODES` had been missing 2v1v1** since that league existed. Its wins
+were saved and then never shown by the pause menu's board or wiped by the debug
+row, which both walk that list. world-check now pins it to the tournament's
+`MODES`.
+
+**Only the canvas is a texture upload, and only on a slide change.** The
+bulbs (an InstancedMesh chase), the ticker (a texture scrolled by its offset),
+the flash, the glow, the two searchlights and the fireworks (one pooled
+`THREE.Points`) all move without one.
+
+**Fireworks only when somebody can see it.** `Game._renderView` calls
+`ArenaBoard.see(camera)` for every lens it draws: the glass's middle in that
+frustum, the lens on the front side, within 320 units. Loudest on Mr. Satan's
+slides and the ads (*"especially when it mentions Mr. Satan"*), a volley when a
+champion comes up. The pops are a synthesised `firework` in audio.js, scaled by
+how far the nearest viewer is.
+
+**The camera near it** is a zone, `boardZoneWeight`: 1 up to 28 units in
+front of the glass and 24 to either side, easing to 0 over 8 more, 0 for
+anybody 14 up (a griffin) or with the arena shut. `boardShot` fits a fixed yaw
+(-PI/2, square to the glass) and pitch (0.2) to the glass's four corners and
+every kitten's feet and head at the pane's own aspect. The per-player camera
+takes it through `setFocus`, with a new `aim` flag. The Dojo's focus only
+nudges the look-at toward its centre after the follow has pulled it back to her,
+so the two settle in between; the first render of the board had its top
+cropped off for exactly that reason. The merged rig blends the same shot with
+its own `boardT`. The weight is exactly zero everywhere else (sampled over every
+island), so two players' camera does not change anywhere but in front of the
+board.
 
 ### Mr Satan
 

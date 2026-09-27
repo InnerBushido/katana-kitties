@@ -392,3 +392,31 @@ measured angle of each column: 0, 28, 55, 90, 135, 180, 225, 270, 310, 345.
 `_faceBearer` picks the nearest one, instead of `Billboard`'s even grid. The
 eyes were the measure: 0.00, 0.10, 0.14, 0.24 of a head off centre across
 columns 0–3, none at all on 4–6, and −0.21, −0.11, 0.00 across 7–9.
+
+## The big screen's art — champion poses and Mr. Satan's flexes
+
+Six masters in `docs/art-masters/`, all Higgsfield `gpt_image_2_5` on flat
+magenta, baked by `sprite-bake` with `chroma: true` to 640x640. The board's
+canvas is 1280x720, so a pose is never drawn bigger than about 600.
+
+- `ember_champion.png`, `frost_champion.png` → `kittens/<sheet>/champion.png`.
+  One per SHEET: Storm and Blossom are these through their style's `recolour`
+  at runtime, like their walk sheets. Each was prompted with that kitten's
+  `bless.png` as the image reference, so they are on-model.
+- `satan_flex_zyzz/biceps/trophy/kiss.png` → `satan/flex_*.png`. Prompted
+  with his own `satan.png` as the ONLY image reference. Richard sent photos of a
+  real bodybuilder for the pose; those were described in words and never
+  uploaded anywhere.
+
+**The face crop for the honourable mentions is measured**:
+`CHAMP_ART[sheet].face` in `systems/arenaboard.js`, `[x, y, size]` on the 640
+file. Ember is `[190, 8, 276]` and Frost `[164, 38, 290]`. Both poses have a
+fist raised above the head, so the top of the ink is a paw, and a crop taken
+from there would have framed the paw, not the face. Found by cropping the
+proof and looking, twice. world-check asserts the box is mostly ink and its
+muzzle entirely.
+
+**Two of them have sealed holes** (Frost's paw on her hip, the trophy's
+handles), which is why `fillSealedHoles` over every sheet now touches ten
+rather than eight. It never runs on them: the board draws them straight onto
+its canvas and they never pass through `loadSpriteAtlas`.

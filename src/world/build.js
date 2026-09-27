@@ -1392,7 +1392,38 @@ export const ARENA_OUT = 1.1;
  * in the foreground.
  */
 export const ARENA_BOOTH = { x: 0, z: -(ARENA_RING + 8) };
-export const ARENA_BOARD = { x: -(ARENA_RING + 20), z: 0 };
+/**
+ * The big screen: the record board, on the OUTSIDE of the west stands.
+ *
+ * IT USED TO BE A 17x9 PLASTER SIGN PERCHED ON THE BACK TIER, facing the ring,
+ * with nothing ever drawn on it, and an r 8.4 collision disc round it. From
+ * outside, that disc bulged seven units out of the stands' wall along seventeen
+ * units of it, which is the "strange collider" Richard walked into. Nothing
+ * needed it: the stands are already a wall (`arenaStandBand`).
+ *
+ * NOW IT HANGS ON THE STANDS' WEST OUTER FACE AND FACES OUT (-x). Richard:
+ * "make it extend down more so that it takes up most of the wall and is a
+ * fairly large white banister or Digital Display surface". West because the
+ * camera is fixed at -x/+z of whatever it watches, so a face turned to -x is
+ * seen three-quarter-on by every walking camera, and because the arena road
+ * climbs past this side. Measured from the road with a mock plane of this
+ * size: its front is visible from u 0.16 to 0.44, and it is fully in frame
+ * and about 30% of the frame at u 0.32 to 0.44, which is the `tower` shot.
+ *
+ * `x` is the SCREEN's plane, arena-local. `w` x `h` is 16:9 because the canvas
+ * behind it is 1280x720; `y0` is its bottom edge over the island. The runtime
+ * half (the canvas, the bulbs, the fireworks) is systems/arenaboard.js.
+ */
+export const ARENA_BOARD = (() => {
+  const face = arenaStandBand().outer;
+  /* `top` IS THE CAP'S, AND IT IS A LIMIT. The ring camera sits at -x/+z of
+     the fight at pitch 0.52, so a fighter in the deck's north-west corner is
+     seen along a line that crosses this wall at y 23. The first cap stood at
+     23.1 and grazed it — world-check found 6 sight lines of 3920 that had not
+     been reasoned about. 21.3 leaves that line two units clear. */
+  const w = 32; const h = 18; const y0 = 1.5;
+  return { x: -(face + 0.56), z: 0, w, h, y0, face: -face, top: y0 + h + 1.8 };
+})();
 
 /**
  * The four corners a fighter can be posted at, as fractions of the ring.
@@ -1591,9 +1622,14 @@ export function buildArena() {
         s.translate(nx * d + (nz ? c : 0), y * 2 + ST.stripe / 2, nz * d + (nz ? 0 : c));
         parts.push(s);
       }
-      /* The collider stays one circle in the middle of each run, as it always
-         was — except the front, whose middle is now a doorway. */
-      if (side !== 0) solids.push({ x: nx * d, z: nz * d, r: tier === 2 ? 4.6 : 3.2, top: y * 2 + 0.5 });
+      /* NO CIRCLE PER RUN ANY MORE. Each run used to carry one collision
+         circle in its middle, kept "as it always was" when the stands became
+         a square wall (`arenaStandBand`, World.arenaWallAt). The wall does the
+         whole job, and the back tier's r 4.6 circle stuck 2.9 units OUT of the
+         wall's outside face in the middle of every side — on the west, right
+         in front of the big screen, as half of the "strange collider around
+         it" Richard walked into. The other half was the old sign's own r 8.4
+         disc. `world-check` pins that nothing of the arena is round there. */
     }
   }
 
@@ -1652,26 +1688,42 @@ export function buildArena() {
   solids.push({ x: B.x, z: B.z, r: 5.2, top: 6.7 });
   platforms.push({ x0: B.x - 5, x1: B.x + 5, z0: B.z - 2.8, z1: B.z + 2.8, y: 6.7 });
 
-  /* --- the record board ---
-     The leaderboard exists as a real object in the world as well as on the
-     HUD. A score that only lives in a menu is a score a nine-year-old forgets
-     she has; a board she can walk up to and stand in front of is a thing she
-     can show her sister. The names themselves are drawn on a canvas label at
-     runtime — see ArenaBoard. */
-  /* Built along Z and thin in X, because it stands on the WEST side and has
-     to face the ring across +x. Its own axes rather than a rotation of the
-     north-facing version: `box` takes a yaw, but every offset below would
-     then need rotating with it, and a board whose posts are 90 degrees out
-     from its face is exactly the sort of thing that looks fine until you walk
-     round it. */
+  /* --- the record board: the big screen on the west stands' outside ---
+     The frame only. The screen, its bulbs and its fireworks are drawn at
+     runtime by systems/arenaboard.js, which reads the same `ARENA_BOARD`.
+     Built along Z and thin in X, because it hangs on the WEST face and looks
+     out across -x. Its own axes rather than a rotated north-facing version:
+     every offset below would then need rotating with it, and a board whose
+     posts are 90 degrees out from its face looks fine until you walk round it. */
   const D = ARENA_BOARD;
-  for (const sz of [-1, 1]) {
-    parts.push(box(1.1, 9, 1.1, PALETTE.woodDark, D.x, 4.5, D.z + sz * 7.6));
+  const F = D.face;                       // the stands' outer face, arena-local x
+  const yMid = D.y0 + D.h / 2;
+  // The lacquered back the screen is set into, a little bigger than the screen.
+  parts.push(box(0.5, D.h + 1.4, D.w + 1.4, PALETTE.woodDark, F - 0.25, yMid, D.z));
+  // A plinth under it, stone like the stands' footings.
+  parts.push(box(0.7, D.y0 - 0.2, D.w + 1.4, PALETTE.stone, F - 0.35, (D.y0 - 0.2) / 2, D.z));
+  // Gold trim round the glass. The bulbs sit on it (arenaboard.js).
+  for (const sy of [-1, 1]) {
+    parts.push(box(0.22, 0.42, D.w + 0.84, PALETTE.gold, F - 0.6, yMid + sy * (D.h / 2 + 0.21), D.z));
+    parts.push(box(0.22, D.h, 0.42, PALETTE.gold, F - 0.6, yMid, D.z + sy * (D.w / 2 + 0.21)));
   }
-  parts.push(box(0.9, 9.4, 17, PALETTE.plaster, D.x, 8.2, D.z));
-  parts.push(box(1.4, 1.0, 18, PALETTE.tileRed, D.x, 13.3, D.z));
-  parts.push(box(1.4, 0.5, 18, PALETTE.gold, D.x, 3.4, D.z));
-  solids.push({ x: D.x, z: D.z, r: 8.4, top: 13.8 });
+  // Two vermillion posts, taller than the board, and a tiled cap across them.
+  const postZ = D.w / 2 + 1.3;
+  const postH = D.top - 0.8;
+  for (const sz of [-1, 1]) {
+    parts.push(box(1.2, postH, 1.2, PALETTE.vermillion, F - 0.45, postH / 2, D.z + sz * postZ));
+    parts.push(box(1.5, 0.4, 1.5, PALETTE.gold, F - 0.45, 0.2, D.z + sz * postZ));
+  }
+  parts.push(box(2.0, 1.0, D.w + 5.2, PALETTE.tileRed, F - 0.4, postH + 0.3, D.z));
+  parts.push(box(2.2, 0.3, D.w + 5.6, PALETTE.gold, F - 0.4, postH - 0.35, D.z));
+  /* COLLIDERS: THE TWO POSTS AND NOTHING ELSE. The screen, trim and plinth
+     stand at most 0.7 proud of the stands, and the stands' wall already holds
+     a kitten `r` (0.75) off the face, so they need nothing of their own. The
+     posts stand a metre proud, so they get a circle each, the size of the post
+     and no bigger. `top` is the cap: a kitten on a griffin passes over. */
+  for (const sz of [-1, 1]) {
+    solids.push({ x: F - 0.45, z: D.z + sz * postZ, r: 0.85, top: postH + 0.8, board: true });
+  }
 
   /* The way in: a torii on the fighters' axis, so the approach from the
      griffin's landing side is framed exactly like the great torii at home. */

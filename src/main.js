@@ -53,6 +53,7 @@ import { Menagerie } from './systems/menagerie.js';
 import { AngelForm } from './entities/angel.js';
 import { ArenaQuest, SATAN_TOWN, MILESTONES } from './systems/arenaquest.js';
 import { SatanBlast } from './systems/satanblast.js';
+import { ArenaBoard, boardZoneWeight, boardShot, BOARD_VIEW } from './systems/arenaboard.js';
 import { loadBoard, clearBoard, BOARD_MODES } from './systems/leaderboard.js';
 import {
   listSaves, putSave, dropSave, clearSaves, snapshot, describe, restore,
@@ -1750,6 +1751,10 @@ class Game {
       game: this, world: this.world, satan: this.satan, announcer: this.announcer,
     });
     this.scene.add(this.satanBlast.fx);
+    /* The big screen on the arena's west wall: the record board as a thing in
+       the world, cycling every league's champion, Mr. Satan's made-up records
+       and his adverts. Inert (hidden, no fireworks) while the arena is shut. */
+    this.arenaBoard = new ArenaBoard({ world: this.world, scene: this.scene, audio: this.audio });
     /* The Powerup Kotodama, and the screen the girls swap them on. Both are
        built at boot and inert until 100% mischief — `Kotodama.awakened` is the
        one flag that says whether any of it exists, and the update loop, the
@@ -9292,6 +9297,9 @@ class Game {
       !!this.tournament?.active && !!this.satan?.group.visible && !this.travel,
     );
     this.announcer?.update(dt);
+    /* AFTER every camera has been drawn once more, which is when `see` has
+       said whether anybody can look at the board. */
+    this.arenaBoard?.update(dt);
     this._updateSparks(dt);
     /* AFTER the tournament, because the tournament is what ends a round, and a
        round ending is one of the ways a triple slash stops being run. Asking
@@ -9391,6 +9399,28 @@ class Game {
            nothing; this is an ordinary follow camera that has been tilted over
            far enough to see past the wall. */
         p.setFocus({ centre: p.position, dist: CAVE_DIST, pitch: CAVE_PITCH });
+      } else if (!p.mount && this._boardWeight(p) > 0) {
+        /* THE BIG SCREEN. "If players walk near or around the board, have the
+           camera zoom out so they can see the board clearly and watch it while
+           being around it." The weight is the zone's (1 in front of the glass,
+           easing to 0 over its edge), so walking in is a blend; focusT then
+           eases on top of it, as it does for the Dojo.
+           THE SHOT IS ALREADY FITTED TO HER PANE'S ASPECT, so the pane-widen
+           that `_updateCamera` multiplies every distance by is divided back
+           out here — paying it twice would frame a narrow pane further back
+           than it needs. */
+        const w = this._boardWeight(p);
+        const shot = boardShot(this.world.arenaBoard, [p.position], p.camera.fov, p.camera.aspect);
+        const pw = Number.isFinite(p.paneWiden) ? Math.max(1, p.paneWiden) : 1;
+        (p._boardCentre ??= new THREE.Vector3())
+          .set(p.position.x, p.position.y + 1.4, p.position.z).lerp(shot.centre, w);
+        p.setFocus({
+          centre: p._boardCentre,
+          aim: true,
+          dist: THREE.MathUtils.lerp(26, shot.dist / pw, w),
+          pitch: THREE.MathUtils.lerp(0.66, shot.pitch, w),
+          yaw: THREE.MathUtils.lerp(-Math.PI * 0.25, shot.yaw, w),
+        });
       } else p.setFocus(null);
     }
     /* AND THE BOARD IS PLACED ON THE FRAME IT APPEARS, not up to 50ms later.
@@ -11045,6 +11075,14 @@ class Game {
 
   /** How far back a camera may EVER sit: the distance that fits one whole
    *  island across this pane. See the note at its one call site. */
+  /** How much of the big screen's shot this kitten gets, 0..1. See
+   *  `boardZoneWeight`; one place asks it so the two cameras cannot disagree. */
+  _boardWeight(p) {
+    if (!p?.position) return 0;
+    return boardZoneWeight(this.world.arenaBoard, this.world.arenaOpen,
+      p.position.x, p.position.y, p.position.z);
+  }
+
   _maxViewDist(fovDeg, aspect) {
     const span = this._islandSpan();
     if (!(span > 0)) return Infinity;   // degrade to the old behaviour
@@ -11525,6 +11563,29 @@ class Game {
         spread: dist, fovDeg: rig.camera.fov, aspect,
       }));
 
+      /* THE BIG SCREEN AGAIN, HERE, because when they are together this is
+         the camera that draws — the trap this file has fallen into four
+         times. The strongest weight in the group decides: one girl walking up
+         to the board is the pair getting the view, and the fit includes every
+         kitten in the group, so her sister is not cropped for it. Exactly 0
+         everywhere but in front of the board, and nothing below runs then. */
+      let boardW = 0;
+      for (const i of members) {
+        const p = this.players[i];
+        if (p && !p.mount) boardW = Math.max(boardW, this._boardWeight(p));
+      }
+      rig.boardT = (rig.boardT ?? 0) + (boardW - (rig.boardT ?? 0)) * Math.min(1, dt * 2.2);
+      if (rig.boardT < 0.001) rig.boardT = 0;
+      if (rig.boardT > 0) {
+        const shot = boardShot(
+          this.world.arenaBoard,
+          members.map((i) => this.players[i]?.position).filter(Boolean),
+          rig.camera.fov, aspect
+        );
+        want.lerp(shot.centre, rig.boardT);
+        wantDist = THREE.MathUtils.lerp(wantDist, shot.dist, rig.boardT);
+      }
+
       /* THE STAR SHOT AGAIN, BECAUSE THIS IS THE CAMERA THAT DRAWS WHEN
          MERGED. `Player.holdAloft` pulls the per-player camera in, and when
          the girls are together — which is most of the time, and is exactly
@@ -11655,6 +11716,10 @@ class Game {
 
       let yaw = THREE.MathUtils.lerp(-Math.PI * 0.25, 0, ft);
       let pitch = ring ? ring.pitch : THREE.MathUtils.lerp(0.66, DOJO_PITCH, ft);
+      if (rig.boardT > 0) {
+        yaw = THREE.MathUtils.lerp(yaw, BOARD_VIEW.yaw, rig.boardT);
+        pitch = THREE.MathUtils.lerp(pitch, BOARD_VIEW.pitch, rig.boardT);
+      }
 
       /* THE GROTTO AGAIN, HERE, BECAUSE THIS IS THE CAMERA THAT DRAWS WHEN
          THEY ARE TOGETHER — and inside a 21-unit room they always are. The
@@ -12193,6 +12258,8 @@ class Game {
     camera.updateProjectionMatrix();
     this._faceAll(camera);
     this._aimXray(camera, members, scene);
+    // Can this lens see the big screen? Its fireworks only go off if one can.
+    this.arenaBoard?.see(camera);
     this.renderer.setViewport(x, y, w, h);
     this.renderer.setScissor(x, y, w, h);
     this.renderer.setScissorTest(true);

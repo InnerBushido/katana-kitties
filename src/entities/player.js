@@ -5848,6 +5848,15 @@ export class Player {
       aim.z + this.velocity.z * lead
     );
     const follow = flying ? 3.2 : 7.5;
+    /* A FOCUS THAT OWNS THE AIM. The Dojo's focus only nudges the target
+       toward its centre, after this line has already pulled it back to her
+       — so the two settle in a tug of war, somewhere between. For the Dojo
+       that is the design (it follows her round the circle). The big screen
+       outside the arena FITS its shot to a centre, and a target left short of
+       that centre cropped the top of the board off in the first render. So a
+       focus with `aim` moves what she is followed TO, by how far into it she
+       is, and the follow rate is unchanged. */
+    if (this.focus?.aim && this.focusT > 0.001 && !flying) want.lerp(this.focus.centre, this.focusT);
     this.camTarget.lerp(want, Math.min(1, dt * follow));
 
     // Distance grows with speed and altitude â€” that's the Dragon Ball Z zoom.

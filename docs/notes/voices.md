@@ -289,8 +289,13 @@ HEART!"* (4.40 s) are the exit parade's two. They are in his speech bubble over
 the procession, not on the card, so `ArenaExit` plays them through
 `Announcer.clip` and hushes the card for the length of the scene. Both were
 recorded on the bubble's exact string, line break aside. The `*sniff*` went
-to the model as written. The pause structure suggests it is spoken as a word,
-but nobody has listened for it yet.
+to the model as written, and **it is PERFORMED, not read**. Richard, having
+heard it: "Sniff turned out really well." So a short stage direction between
+asterisks, inside the one string the card and the recording share, is a
+working way to direct Harrison's preset. It is the first one in the cast.
+Keep it to a sound a person makes (a sniff, a gasp, a laugh). A direction
+about HOW to say a line has not been tried, and the rule two sections up
+still holds that there is no style prompt.
 [story.md](story.md) has the timing.
 
 ## Patchfur is on a clock exactly once, and it is measurable
