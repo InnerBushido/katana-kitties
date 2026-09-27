@@ -32,6 +32,14 @@ words** | **what it's for**.
 - Voice: read the project's voice registry before generating a line (one
   preset per character, pinned by id). Measure the generated clip; don't assume
   its length.
+- **A stage direction in asterisks can be performed.** `...I ever saw.
+  *sniff* Such HEART!`, sent to an ElevenLabs preset voice as written, came
+  back as a real sniff and not the word. The director: "Sniff turned out
+  really well." Put it inside the ONE string the subtitle and the recording
+  share, so the card shows it as a stage direction too. It has only been
+  shown to work for a sound a person makes (a sniff); a direction about HOW
+  to read a line is untested. Listen before shipping the first one of a kind,
+  and write down which voice did what with it.
 
 ## Taking notes from a watch-through
 

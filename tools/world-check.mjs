@@ -139,7 +139,11 @@ import {
 } from '../src/systems/tournament.js';
 import { worldSpawnCount, WORLD_PER_PLAYER } from '../src/systems/kotodama.js';
 import {
-  scoreOf, loadBoard, saveResult, clearBoard, BOARD_SIZE,
+  ArenaBoard, buildSlides, SLIDE_DUR, SATAN_RECORDS, SATAN_ADS, SATAN_TAGLINE, CHAMP_ART,
+  SATAN_POSES, BOARD_VIEW, boardZoneWeight, boardShot, slideHype, catStyle, NEW_FOR_MS,
+} from '../src/systems/arenaboard.js';
+import {
+  scoreOf, loadBoard, saveResult, clearBoard, BOARD_SIZE, BOARD_MODES,
   NameEntry, NAME_MIN, NAME_MAX, ALPHABET,
 } from '../src/systems/leaderboard.js';
 
@@ -4777,11 +4781,14 @@ console.log('\n--- the arena is SHUT until it is opened ---');
      looks like the world is broken. */
   ok('and no invisible deck to land on',
     world.heightAt(R.x, R.z, R.y + 1) == null);
-  /* ...and the record board is a solid with NO `top`, i.e. an infinite
-     cylinder, which would shove a kitten flying past the empty coordinates. */
-  const shoved = world.resolveSolids(world.arenaBoard.x, world.arenaBoard.z, 0.75, 400);
-  ok('and no invisible walls to be shoved by',
-    Math.hypot(shoved.x - world.arenaBoard.x, shoved.z - world.arenaBoard.z) < 0.001);
+  /* ...and the big screen's posts are solids, which would shove a kitten
+     walking past the empty coordinates of an arena that is not there. */
+  const boardPosts = world.solids.filter((s) => s.board);
+  ok('and no invisible walls to be shoved by', boardPosts.length === 2
+    && boardPosts.every((s) => {
+      const shoved = world.resolveSolids(s.x, s.z + s.r * 0.5, 0.75, world.arenaBoard.ground + 0.1);
+      return Math.hypot(shoved.x - s.x, shoved.z - s.z - s.r * 0.5) < 0.001;
+    }));
 
   world.openArena(true);
   ok('opening it puts real ground there', world.heightAt(A.x, A.z) != null);
@@ -5657,6 +5664,9 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'kittens/ember/warp.png', 'kittens/frost/warp.png',
     // Chroma-keyed off magenta by sprite-bake, so it ships already cut out.
     'hospital/cat.png',
+    // ...and so is the big screen's art (systems/arenaboard.js).
+    'kittens/ember/champion.png', 'kittens/frost/champion.png',
+    'satan/flex_zyzz.png', 'satan/flex_biceps.png', 'satan/flex_trophy.png', 'satan/flex_kiss.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -5791,8 +5801,14 @@ console.log('\n--- background removal keeps the drawn whites ---');
       const im = readPNG(new URL(f, dir));
       if (fillSealedHoles(im.d, im.w, im.h) > 0) touched.push(f);
     }
-    ok('turning the fill on for every sheet would repaint eight of them',
-      touched.length === 8 && touched.includes('beasts/dragon_sheet.png'),
+    /* TEN SINCE THE BIG SCREEN: Frost's champion and Mr. Satan's trophy pose
+       both have sealed holes (an arm akimbo, a cup's handles). Neither can
+       ever be filled, because the board draws them straight onto its canvas
+       and they never go through `loadSpriteAtlas`, which is the only thing
+       that can ask for the fill. */
+    ok('turning the fill on for every sheet would repaint ten of them',
+      touched.length === 10 && touched.includes('beasts/dragon_sheet.png')
+      && touched.includes('kittens/frost/champion.png') && touched.includes('satan/flex_trophy.png'),
       touched.join(' '));
     ok('...so exactly one sheet in the game asks for it',
       (mainSrc.match(/fillHoles: true/g) || []).length === 1
@@ -6056,9 +6072,12 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
     const posesOf = (c) => spriteFiles(`kittens/${c}/`)
       .map((f) => f.slice(`kittens/${c}/`.length))
       .filter((f) => !f.startsWith('grid')).sort().join(' ');
-    ok('...with the same five poses drawn for each of them',
+    /* SIX SINCE THE BIG SCREEN: `champion.png` is the pose the record board
+       outside the arena draws her in, and Storm and Blossom reach for it
+       through the same recolour as everything else. */
+    ok('...with the same six poses drawn for each of them',
       posesOf('ember') === posesOf('frost')
-      && posesOf('ember').split(' ').length === 5, posesOf('ember'));
+      && posesOf('ember').split(' ').length === 6, posesOf('ember'));
   }
 
   /* --- and nothing else in public/ is quietly enormous ----------------------
@@ -30547,6 +30566,332 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
    full-width pane and a half-width one — with no island and no deck of any of
    the seven roads between the lens and either, and the lens itself clear of
    every deck. The solver that chose the numbers asked exactly this. */
+console.log('\n--- the big screen outside the arena ---');
+/* Richard: "there is a white banister along the wall on the southwest side
+   ... make it extend down more so that it takes up most of the wall ... put
+   the first place winning players face ... cycle for every different winning
+   player for every different category ... Mr. Satan if there are no winning
+   players ... Honorable Mentions ... for less time ... fireworks and sparks
+   ... when players are viewing it ... If players walk near or around the
+   board, have the camera zoom out ... There is also a strange collider around
+   it". One check per clause, each asking what the clause is FOR. */
+{
+  const BW = new World(new THREE.Scene());
+  BW.openArena(true);
+  const Bd = BW.arenaBoard;
+  const Wl = BW.arenaWall;
+
+  /* --- the collider --- */
+  /* THE STRANGE COLLIDER WAS AN r 8.4 DISC round the old sign, bulging seven
+     units out of the stands' wall. Nothing of the arena near the board is
+     that big now, and the only solids there are the two posts. */
+  const nearBoard = BW.solids.filter((s) => s.arena && Math.hypot(s.x - Bd.x, s.z - Bd.z) < 24);
+  ok('the big screen has no disc collider round it, only its two posts',
+    nearBoard.length === 2 && nearBoard.every((s) => s.board && s.r < 1.2),
+    nearBoard.map((s) => `r${s.r}`).join(' '));
+  /* ...so a kitten walking along the front of it is stopped by the WALL, at
+     the wall, and not a step further out than anywhere else on that side. */
+  {
+    let worst = 0;
+    const r = 0.75;
+    const x0 = Wl.x - Wl.outer - r;         // where the wall itself holds her
+    for (let z = -Bd.w / 2 + 1; z <= Bd.w / 2 - 1; z += 1) {
+      const q = BW.resolveSolids(x0, Bd.z + z, r, Bd.ground + 0.1);
+      worst = Math.max(worst, Math.hypot(q.x - x0, q.z - Bd.z - z));
+    }
+    ok('...so walking along its face nothing pushes her off the wall', worst < 0.001, `${worst.toFixed(3)}`);
+  }
+
+  /* --- the size and the place --- */
+  ok('it hangs on the OUTSIDE of the west stands, facing out',
+    Bd.face === Wl.x - Wl.outer && Bd.x < Bd.face && Bd.face - Bd.x < 0.7,
+    `glass ${(Bd.face - Bd.x).toFixed(2)} proud of the wall`);
+  ok('"takes up most of the wall": from near the ground to past the top of the stands',
+    Bd.bottom - Bd.ground < 2 && Bd.bottom + Bd.h > Bd.ground + Wl.top && Bd.w >= 30
+      && Math.abs(Bd.z - Wl.z) + Bd.w / 2 + 1.5 < Wl.outer,
+    `${Bd.w}x${Bd.h}, ${(Bd.bottom - Bd.ground).toFixed(1)} up, the stands ${Wl.top} high`);
+  ok('...16:9, like the canvas painted onto it', Math.abs(Bd.w / Bd.h - 16 / 9) < 0.01);
+  ok('...and nowhere to be walked into while the arena is shut', (() => {
+    BW.openArena(false);
+    const posts = BW.solids.filter((s) => s.board);
+    const moved = posts.some((s) => {
+      const q = BW.resolveSolids(s.x, s.z, 0.75, Bd.ground + 0.1);
+      return q.x !== s.x || q.z !== s.z;
+    });
+    BW.openArena(true);
+    return !moved;
+  })());
+
+  /* --- and NOT in front of the fight ---
+     It is 18 units tall now and stands over the west stands, and the camera
+     is always at -x/+z of the ring — so it has to be proved to be beside
+     every sight line to a fighter rather than across one. Every deck spot,
+     every ring-rig pose from a close push-in to the feast's 96-unit wide. */
+  {
+    const R = BW.arenaRing;
+    const top = Bd.top;                              // the cap
+    const half = Bd.w / 2 + 2.9;                     // posts and cap overhang
+    let crossings = 0; let lines = 0;
+    for (let fx = -26; fx <= 26; fx += 4) {
+      for (let fz = -26; fz <= 26; fz += 4) {
+        const F = { x: R.x + fx, y: R.y + 1.4, z: R.z + fz };
+        /* 0.52 is a live round's pitch, 0.56 the feast's, 0.60 the card's
+           (Tournament.cameraWant); 0.5 is margin under the lowest. Not 0.4:
+           nothing in the ring pitches that low, and at 0.4 a corner line
+           crosses at y 18, which no board over the stands could clear. */
+        for (const dist of [40, 60, 80, 96, 110]) {
+          for (const pitch of [0.5, 0.52, 0.56, 0.6, 0.7, 0.9]) {
+            const C = {
+              x: F.x - Math.SQRT1_2 * Math.cos(pitch) * dist,
+              y: F.y + Math.sin(pitch) * dist,
+              z: F.z + Math.SQRT1_2 * Math.cos(pitch) * dist,
+            };
+            lines++;
+            if (C.x >= Bd.face) continue;                // never west of it: cannot cross
+            const t = (Bd.face - C.x) / (F.x - C.x);
+            if (t < 0 || t > 1) continue;
+            const y = C.y + (F.y - C.y) * t;
+            const z = C.z + (F.z - C.z) * t;
+            if (y < top && Math.abs(z - Bd.z) < half) crossings++;
+          }
+        }
+      }
+    }
+    ok('...and never between the ring camera and a fighter', crossings === 0 && lines > 1000,
+      `${crossings} of ${lines} sight lines`);
+  }
+
+  /* --- seen from the road, which is where it is for --- */
+  /* "This will be mainly only viewable when players are on the Snake Way
+     bridge heading towards the arena". Replayed up the road through the ride
+     camera's REAL poses: the glass is in frame and square enough to read
+     through the stretch the placement was measured on, and `see` says so. */
+  {
+    const road = BW.buildSnakeWay().roads.find((r) => r.arena);
+    const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.5, 4000);
+    const fake = { group: { visible: true }, B: Bd, _seen: 0, _seenDist: Infinity };
+    const inView = [];
+    for (let u = 0.3; u <= 0.44; u += 0.01) {
+      const K = road.frameAt(u * road.length);
+      const P = arenaRidePose(road, u * road.length, K, 0, 38, 1);
+      cam.position.set(P.x, P.y, P.z);
+      cam.lookAt(P.lx, P.ly, P.lz);
+      cam.updateMatrixWorld();
+      fake._seen = 0;
+      ArenaBoard.prototype.see.call(fake, cam);
+      inView.push(fake._seen ? 1 : 0);
+    }
+    const frac = inView.reduce((a, b2) => a + b2, 0) / inView.length;
+    ok('the ride up the arena road sees it, and `see` says so', frac >= 0.8,
+      `${(frac * 100).toFixed(0)}% of u 0.30..0.44`);
+    // ...and the town's walking camera does not: no fireworks for a board
+    // nobody is looking at.
+    cam.position.set(-30, 30, 30);
+    cam.lookAt(0, 0, 0);
+    cam.updateMatrixWorld();
+    fake._seen = 0;
+    ArenaBoard.prototype.see.call(fake, cam);
+    const townSees = fake._seen;
+    // ...nor a lens behind the stands, inside the arena, looking out at its back.
+    cam.position.set(Bd.face + 20, Bd.y, Bd.z);
+    cam.lookAt(Bd.x - 10, Bd.y, Bd.z);
+    cam.updateMatrixWorld();
+    fake._seen = 0;
+    ArenaBoard.prototype.see.call(fake, cam);
+    ok('...and the town, and its own back, do not', !townSees && !fake._seen);
+    ok('...and nobody at all, while it is hidden', (() => {
+      const f2 = { ...fake, group: { visible: false }, _seen: 0 };
+      cam.position.set(Bd.x - 40, Bd.y, Bd.z);
+      cam.lookAt(Bd.x, Bd.y, Bd.z);
+      cam.updateMatrixWorld();
+      ArenaBoard.prototype.see.call(f2, cam);
+      return f2._seen === 0;
+    })());
+  }
+
+  /* --- the slides --- */
+  const realMax = scoreOf({ wins: 20, dealt: 50000, taken: 0, seconds: 0, rounds: 20, maxHp: 1000 });
+  {
+    const S = buildSlides({});
+    const leagues = S.filter((s) => s.kind === 'satan').map((s) => s.mode);
+    ok('an empty board is Mr. Satan in every league', leagues.join() === BOARD_MODES.join()
+      && S.every((s) => s.kind === 'satan' || s.kind === 'ad'), leagues.join(' '));
+    ok('...with records nobody could really set ("ridiculous")',
+      S.filter((s) => s.kind === 'satan').every((s) => s.rec.score > realMax * 100),
+      `his smallest ${Math.min(...Object.values(SATAN_RECORDS).map((r) => r.score))} against a real ceiling of ${realMax}`);
+    ok('...a joke of its own for every league, and the headline Richard wrote',
+      BOARD_MODES.every((m) => SATAN_RECORDS[m]?.joke)
+        && new Set(BOARD_MODES.map((m) => SATAN_RECORDS[m].joke)).size === BOARD_MODES.length
+        && SATAN_TAGLINE.join(' ') === 'THE UNDEFEATABLE CHAMP! DON\'T EVEN TRY!');
+    ok('...and a pose he has art for, every time',
+      [...Object.values(SATAN_RECORDS), ...SATAN_ADS].every((r) => SATAN_POSES[r.pose]
+        && existsSync(new URL(`../public${SATAN_POSES[r.pose]}`, import.meta.url))));
+  }
+  {
+    const row = (name, score, cat, at = 0) => ({ name, score, wins: 2, dealt: 100, taken: 10, seconds: 60, at, cat, mates: [] });
+    const now = 1e12;
+    const S = buildSlides({
+      duel: [row('ABE', 3000, 'Ember', now - 1000), row('BEA', 2000, 'Frost'), row('CAT', 1000, null), row('DOT', 500, 'Storm')],
+      pairs: [row('EVE', 2500, 'Blossom', now - NEW_FOR_MS - 1)],
+    }, now);
+    const kinds = S.map((s) => `${s.kind}:${s.mode ?? s.ad}`).join(' ');
+    ok('a league with winners is its champion, then her #2 and #3, then an ad',
+      kinds.startsWith('champ:duel hm:duel ad:0 ') && S[1].rows.map((r) => r.name).join() === 'BEA,CAT', kinds);
+    ok('...a league with one winner has no honourable mentions',
+      /champ:pairs ad:\d/.test(kinds) && !kinds.includes('hm:pairs'));
+    ok('...and the others stay Mr. Satan\'s', S.filter((s) => s.kind === 'satan').length === BOARD_MODES.length - 2);
+    ok('the honourable mentions are up for less time than the champion',
+      SLIDE_DUR.hm < SLIDE_DUR.champ && S[1].dur === SLIDE_DUR.hm && S[0].dur === SLIDE_DUR.champ);
+    ok('an ad between every league, and never the same one twice running',
+      S.every((s, i) => i === 0 || s.kind !== 'champ' && s.kind !== 'satan' || S[i - 1].kind === 'ad')
+        && S.filter((s) => s.kind === 'ad').every((s, i, all) => i === 0 || s.ad !== all[i - 1].ad));
+    ok('a win from today wears NEW!, and yesterday\'s does not',
+      S[0].fresh === true && S.find((s) => s.mode === 'pairs').fresh === false);
+    ok('the board is loudest about Mr. Satan',
+      slideHype({ kind: 'satan' }) > slideHype({ kind: 'champ' }, 5)
+        && slideHype({ kind: 'ad' }) > slideHype({ kind: 'hm' }) && slideHype(null) === 0);
+  }
+
+  /* --- the rows remember WHO won --- */
+  ok('the record board has a table for every league the tournament runs',
+    BOARD_MODES.slice().sort().join() === MODES.map((m) => m.id).sort().join(),
+    `${BOARD_MODES.join(' ')} against ${MODES.map((m) => m.id).join(' ')}`);
+  {
+    clearBoard();
+    saveResult({ name: 'ZIG', score: 900, wins: 1, dealt: 1, taken: 1, seconds: 1, cat: 'Storm', mates: ['Frost', 'Godzilla'] }, 'pairs');
+    saveResult({ name: 'OLD', score: 800, wins: 1, dealt: 1, taken: 1, seconds: 1 }, 'pairs');
+    saveResult({ name: 'BAD', score: 700, wins: 1, dealt: 1, taken: 1, seconds: 1, cat: 'Godzilla' }, 'pairs');
+    const r = loadBoard('pairs');
+    ok('a row keeps its kitten and her teammates, and a bad name degrades to none',
+      r[0].cat === 'Storm' && r[0].mates.join() === 'Frost' && r[1].cat === null && r[2].cat === null,
+      JSON.stringify(r.map((x) => [x.cat, x.mates])));
+    saveResult({ name: 'TRI', score: 700, wins: 1, dealt: 1, taken: 1, seconds: 1 }, 'two_one_one');
+    clearBoard();
+    ok('...and wiping the board wipes 2v1v1 too, which it used to miss',
+      loadBoard('two_one_one').length === 0 && loadBoard('pairs').length === 0);
+    // The REAL commit, on a fake tournament: it files the winner's kitten.
+    let refreshed = null;
+    const fakeT = {
+      winner: { style: { name: 'Blossom' }, dmgDealt: 50.4, dmgTaken: 9.6 },
+      winners: null, entry: { name: 'MOO' }, score: 1234, wins: [2, 0], sideOf: () => 0,
+      fightTime: 61.2, boardKey: 'ffa', audio: null,
+      game: { arenaBoard: { refresh: (m) => { refreshed = m; } } },
+    };
+    fakeT.winners = [fakeT.winner, { style: { name: 'Ember' } }];
+    Tournament.prototype._commit.call(fakeT);
+    const f = loadBoard('ffa')[0];
+    ok('a signed win is filed under the kitten who won it, and the screen jumps to it',
+      f?.cat === 'Blossom' && f.mates.join() === 'Ember' && refreshed === 'ffa',
+      JSON.stringify(f));
+    clearBoard();
+  }
+
+  /* --- the art --- */
+  ok('every kitten has a champion pose, through her own sheet',
+    PLAYER_STYLE.every((s) => CHAMP_ART[s.sheet]
+      && existsSync(new URL(`../public${CHAMP_ART[s.sheet].src}`, import.meta.url))));
+  ok('an old row with no kitten is a mystery, not a crash', catStyle(null) === null && catStyle('Frost')?.sheet === 'frost');
+  /* THE FACE CROP IS MEASURED. A face is solid ink: the box should be nearly
+     all opaque, its middle (the muzzle) entirely, and it must not run off
+     the art. The fist over her head is why the top of the silhouette could
+     not be used — so the box also has to NOT start at the topmost ink. */
+  for (const [sheet, art] of Object.entries(CHAMP_ART)) {
+    const { w, h, d } = readPNG(new URL(`../public${art.src}`, import.meta.url));
+    const [fx, fy, fs] = art.face;
+    let op = 0; let mid = 0; let midN = 0;
+    for (let y = fy; y < fy + fs; y++) {
+      for (let x = fx; x < fx + fs; x++) {
+        const a = d[(y * w + x) * 4 + 3];
+        if (a > 200) op++;
+        if (Math.abs(x - fx - fs / 2) < fs * 0.12 && Math.abs(y - fy - fs * 0.6) < fs * 0.12) { midN++; if (a > 200) mid++; }
+      }
+    }
+    ok(`${sheet}'s champion face crop is on her face`,
+      w === 640 && h === 640 && fx >= 0 && fy >= 0 && fx + fs <= w && fy + fs <= h
+        && op / (fs * fs) > 0.7 && mid === midN,
+      `${(100 * op / (fs * fs)).toFixed(0)}% ink, muzzle ${mid}/${midN}`);
+  }
+
+  /* --- the camera --- */
+  const at = (front, dz = 0, dy = 0.1) => ({ x: Bd.face - front, y: Bd.ground + dy, z: Bd.z + dz });
+  const wAt = (p, open = true) => boardZoneWeight(Bd, open, p.x, p.y, p.z);
+  ok('walking up to the glass gets the board\'s shot, all of it',
+    wAt(at(3)) === 1 && wAt(at(BOARD_VIEW.reach - 1, 10)) === 1);
+  ok('...and nobody else does: inside the stands, far off, off to the side, flying, or with it shut',
+    wAt(at(-5)) === 0 && wAt(at(BOARD_VIEW.reach + BOARD_VIEW.fade + 1)) === 0
+      && wAt(at(5, BOARD_VIEW.side + BOARD_VIEW.fade + 1)) === 0
+      && wAt(at(5, 0, BOARD_VIEW.ceiling + 2)) === 0 && wAt(at(5), false) === 0);
+  {
+    let prev = 1; let mono = true;
+    for (let f = 0; f < BOARD_VIEW.reach + BOARD_VIEW.fade + 2; f += 0.5) {
+      const w = wAt(at(f)); if (w > prev + 1e-9) mono = false; prev = w;
+    }
+    ok('...eased out over its edge rather than cut', mono && wAt(at(BOARD_VIEW.reach + BOARD_VIEW.fade / 2)) > 0.2
+      && wAt(at(BOARD_VIEW.reach + BOARD_VIEW.fade / 2)) < 0.8);
+  }
+  /* "so they can see the board clearly and watch it while being around it":
+     through the REAL projection, at a wide pane and the 62/38 column, every
+     corner of the glass AND her are in frame, and the glass is big in it. */
+  {
+    const cam = new THREE.PerspectiveCamera(38, 1, 0.5, 4000);
+    const fails = [];
+    let smallest = 1;
+    for (const aspect of [16 / 9, 0.68]) {
+      for (const [f, dz] of [[2, 0], [10, -14], [20, 18], [BOARD_VIEW.reach, 0], [6, BOARD_VIEW.side]]) {
+        const K = at(f, dz, 0);
+        const S = boardShot(Bd, [K], 38, aspect);
+        cam.aspect = aspect;
+        cam.updateProjectionMatrix();
+        cam.position.set(
+          S.centre.x + Math.sin(S.yaw) * Math.cos(S.pitch) * S.dist,
+          S.centre.y + Math.sin(S.pitch) * S.dist,
+          S.centre.z + Math.cos(S.yaw) * Math.cos(S.pitch) * S.dist);
+        cam.lookAt(S.centre);
+        cam.updateMatrixWorld();
+        const pts = [[Bd.face, Bd.bottom, Bd.z - Bd.w / 2], [Bd.face, Bd.bottom + Bd.h, Bd.z + Bd.w / 2],
+          [Bd.face, Bd.bottom, Bd.z + Bd.w / 2], [Bd.face, Bd.bottom + Bd.h, Bd.z - Bd.w / 2],
+          [K.x, K.y, K.z], [K.x, K.y + 3, K.z]];
+        const ndc = pts.map(([x, y, z]) => new THREE.Vector3(x, y, z).project(cam));
+        if (!ndc.every((v) => Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1 && v.z < 1)) fails.push(`${aspect.toFixed(2)}@${f},${dz}`);
+        const span = Math.abs(ndc[1].x - ndc[0].x) / 2;
+        smallest = Math.min(smallest, span);
+        // The camera is on HER side of the board, with her between.
+        if (!(cam.position.x < K.x)) fails.push(`behind her ${f},${dz}`);
+      }
+    }
+    ok('the board\'s shot holds the whole glass and her, wide pane or narrow', fails.length === 0, fails.join(' ') || 'all');
+    ok('...with the glass at least a third of the frame across', smallest > 0.33, `${(smallest * 100).toFixed(0)}%`);
+  }
+  {
+    // Looking at it square: the shot's yaw puts the lens at -x, facing the glass.
+    const S = boardShot(Bd, [at(8)], 38, 16 / 9);
+    ok('...looking straight at the glass rather than past it',
+      Math.abs(Math.sin(S.yaw) + 1) < 1e-9 && S.pitch < 0.66);
+  }
+  {
+    /* BIT-IDENTITY AWAY FROM IT (non-negotiable 5): the two camera paths in
+       main.js run nothing unless this weight is above zero, so check it is
+       exactly zero everywhere two kittens can stand that is not in front of
+       the board — every island's ground, sampled. */
+    let leaks = 0; let n = 0;
+    for (const isl of BW.islands) {
+      for (let k = 0; k < 40; k++) {
+        const a = (k / 40) * Math.PI * 2;
+        const r = isl.radius * ((k % 4) + 1) / 5;
+        const x = isl.x + Math.cos(a) * r; const z = isl.z + Math.sin(a) * r;
+        const y = BW.heightAt(x, z)?.y;
+        if (y == null) continue;
+        n++;
+        const inFront = BW.arenaOpen && Bd.face - x > -1 && Bd.face - x < BOARD_VIEW.reach + BOARD_VIEW.fade
+          && Math.abs(z - Bd.z) < BOARD_VIEW.side + BOARD_VIEW.fade;
+        if (!inFront && boardZoneWeight(Bd, true, x, y, z) !== 0) leaks++;
+      }
+    }
+    ok('...and exactly nothing anywhere else, so two players\' camera never moves for it',
+      leaks === 0 && n > 100, `${leaks} of ${n} ground samples`);
+  }
+}
+
 console.log('\n--- the arena road is shot, not orbited ---');
 {
   const hadDocR = 'document' in globalThis;

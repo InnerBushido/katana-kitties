@@ -1507,6 +1507,8 @@ export class World {
         x: isl.x + s.x, z: isl.z + s.z, r: s.r,
         top: s.top == null ? undefined : g + s.top,
         arena: true,
+        // The big screen's two posts, so a check can find them by name.
+        ...(s.board ? { board: true } : {}),
       });
     }
     /* Tagged `arena`, and `heightAt` skips them while the tournament is shut.
@@ -1540,7 +1542,13 @@ export class World {
       x: isl.x + p.x, z: isl.z + p.z, y: g + ARENA_RISE,
     }));
     this.arenaBooth = { x: isl.x + ARENA_BOOTH.x, y: g + 6.7, z: isl.z + ARENA_BOOTH.z };
-    this.arenaBoard = { x: isl.x + ARENA_BOARD.x, y: g + 4.2, z: isl.z + ARENA_BOARD.z };
+    /** The big screen's centre, in the world, and its size. `y` is the middle
+     *  of the glass; `face` is the stands' outer face. See systems/arenaboard.js. */
+    this.arenaBoard = {
+      x: isl.x + ARENA_BOARD.x, y: g + ARENA_BOARD.y0 + ARENA_BOARD.h / 2, z: isl.z + ARENA_BOARD.z,
+      w: ARENA_BOARD.w, h: ARENA_BOARD.h, bottom: g + ARENA_BOARD.y0, ground: g,
+      face: isl.x + ARENA_BOARD.face, top: g + ARENA_BOARD.top,
+    };
     /* Where the griffin sets both kittens down: IN FRONT OF THE TORII, on the
        side it is approached from, so the walk in goes THROUGH the gate.
 
@@ -3341,7 +3349,7 @@ export class World {
     for (const s of this.solids) {
       /* The arena's stonework does not exist while the tournament is shut,
          for the same reason its ground does not. A solid with no `top` is an
-         INFINITE cylinder — the record board is one — so leaving these live
+         INFINITE cylinder — the record board's disc was one — so leaving these live
          would let a kitten flying past the empty coordinates be shoved
          sideways by a building that has not been built. */
       if (s.arena && !this.arenaOpen) continue;

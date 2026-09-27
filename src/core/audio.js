@@ -972,6 +972,15 @@ export class Audio {
         this._tone({ type: 'sine', from: semi(-5 + step), dur: 1.8, gain: 0.035 * v, delay: 0.9, detune: 6 });
         break;
       }
+      case 'firework':
+        /* The big screen's rockets bursting (systems/arenaboard.js). A thump
+           and a crackle, quiet, and only while somebody can see the board —
+           the caller scales it by how far away that somebody is. */
+        this._tone({ type: 'sine', from: 140, to: 50, dur: 0.22, gain: 0.22 * v });
+        this._noise({ from: 2400, to: 500, dur: 0.35, gain: 0.2 * v, q: 0.7 });
+        this._noise({ from: 5200, to: 3000, dur: 0.06, gain: 0.1 * v, q: 3, delay: 0.12 });
+        this._noise({ from: 4800, to: 2600, dur: 0.06, gain: 0.08 * v, q: 3, delay: 0.21 });
+        break;
       case 'gong':
         /* FIGHT. The one sound in the game that starts something. A big
            struck bell: fundamental, fifth and octave together with a noise

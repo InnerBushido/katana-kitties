@@ -107,6 +107,20 @@ const WORK = [
      can be carried at her hips. Generated on magenta, same column order as
      Ember's sheet (0 front, 2-3 facing right, 5 back, 7 facing left). */
   { file: 'hospital_cat.png', out: 'hospital/cat.png', to: [1792, 1013], chroma: true },
+  /* The arena's record board (src/systems/arenaboard.js). One champion pose
+     per SHEET, not per kitten: Storm and Blossom are Ember and Frost
+     recoloured at runtime with their style's `recolour`, exactly as their
+     walk sheets are. Mr. Satan's four are the board's "advertisements", and
+     were prompted from his own satan.png as the only image reference — the
+     photos Richard sent for the pose were described in words, never uploaded.
+     640 because the board's canvas is 1280x720 and a pose is drawn at most
+     ~600 tall on it; the 1024 masters would be downloaded for nothing. */
+  { file: 'ember_champion.png', out: 'kittens/ember/champion.png', to: [640, 640], chroma: true },
+  { file: 'frost_champion.png', out: 'kittens/frost/champion.png', to: [640, 640], chroma: true },
+  { file: 'satan_flex_zyzz.png', out: 'satan/flex_zyzz.png', to: [640, 640], chroma: true },
+  { file: 'satan_flex_biceps.png', out: 'satan/flex_biceps.png', to: [640, 640], chroma: true },
+  { file: 'satan_flex_trophy.png', out: 'satan/flex_trophy.png', to: [640, 640], chroma: true },
+  { file: 'satan_flex_kiss.png', out: 'satan/flex_kiss.png', to: [640, 640], chroma: true },
 ];
 
 /* ========================================================================== */

@@ -1989,7 +1989,13 @@ export class Tournament {
       dealt: Math.round(w.dmgDealt),
       taken: Math.round(w.dmgTaken),
       seconds: Math.round(this.fightTime),
+      /* WHO SHE IS, not only what she typed. The big screen outside the
+         arena draws the champion, and the three letters she spelled are the
+         player's name, not the kitten's. */
+      cat: w.style?.name ?? null,
+      mates: (this.winners ?? []).filter((p) => p !== w).map((p) => p.style?.name).filter(Boolean),
     }, this.boardKey);
+    this.game.arenaBoard?.refresh(this.boardKey);
     this.board = saved.rows;
     this.rank = saved.rank;
     this.audio?.play('clan');

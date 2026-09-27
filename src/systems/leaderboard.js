@@ -24,6 +24,8 @@
    permanently on top of a board she is not really competing on. The duel keeps
    the ORIGINAL key so every tournament the girls have already won is still
    there; only the new leagues get new tables. */
+import { PLAYER_STYLE } from '../core/palette.js';
+
 const KEY = 'kk.arena.board.v2';
 const keyFor = (mode = 'duel') => (mode === 'duel' ? KEY : `${KEY}.${mode}`);
 /** How many rows the board keeps. The brief asked for the top ten. */
@@ -92,12 +94,26 @@ export function loadBoard(mode = 'duel') {
         taken: Number.isFinite(r.taken) ? Math.round(r.taken) : 0,
         seconds: Number.isFinite(r.seconds) ? Math.round(r.seconds) : 0,
         at: Number.isFinite(r.at) ? r.at : 0,
+        /* WHICH KITTEN WON IT, for the big screen outside the arena, which
+           draws her. Rows written before it existed have none and come back
+           as `null`, which the screen draws as a mystery silhouette: an old
+           win is still a win, it just does not know whose face it had. A name
+           this build has no kitten for degrades the same way. */
+        cat: catName(r.cat),
+        /* Her teammates, for a team league. Same rule, one bad name at a time. */
+        mates: Array.isArray(r.mates) ? r.mates.map(catName).filter(Boolean).slice(0, 3) : [],
       }))
       .sort((a, b) => b.score - a.score)
       .slice(0, BOARD_SIZE);
   } catch {
     return [];
   }
+}
+
+/** A kitten's name if this build has that kitten, else null. */
+const CATS = new Set(PLAYER_STYLE.map((s) => s.name));
+function catName(c) {
+  return typeof c === 'string' && CATS.has(c) ? c : null;
 }
 
 /**
@@ -134,8 +150,14 @@ export function clearBoard(mode = null) {
 
 /** Every league that can have a board. Kept here rather than imported from
  *  `tournament.js` so clearing one does not drag the whole tournament into
- *  the leaderboard's dependencies. */
-export const BOARD_MODES = ['duel', 'ffa', 'pairs', 'two_one', 'three_one'];
+ *  the leaderboard's dependencies.
+ *
+ *  `two_one_one` WAS MISSING for as long as 2v1v1 existed. Its wins were
+ *  saved (under their own key, by `boardKey`) and then never shown in the
+ *  pause menu's board and never wiped by the debug row, because both walk
+ *  this list. Found while building the big screen, which walks it too.
+ *  `world-check` now pins this list to the tournament's `MODES`. */
+export const BOARD_MODES = ['duel', 'ffa', 'pairs', 'two_one', 'three_one', 'two_one_one'];
 
 /* ---------------------------------------------------------------------------
    Entering a name on a joystick.

@@ -55,6 +55,24 @@ new camera framed an empty patch.
 *Lesson: stand people on marks, swing off-axis about 66°, and move what is
 drawn.*
 
+**A new prop that "obviously" cleared every ring camera did not.** The big
+screen's cap was 23.1 high on the west stands, and the reasoning was that the
+ring cameras sit at -x/+z looking down at the deck, so the cap is behind them.
+A check replayed every deck spot at every real ring pitch and distance: 6 of
+3,920 sight lines went through it, all from the deck's north-west corner at
+pitch 0.52. The cap came down to 21.3.
+*Lesson: when you put something in a place the gameplay camera passes, replay
+the gameplay camera's real sight lines against it. Don't argue that it is
+behind them.*
+
+**A fitted shot came out with its top cropped off.** The shot was fitted
+exactly, but the character's own follow camera pulled the look-at back to her
+every frame, while the focus only nudged it toward the fitted centre. The two
+settled in between. Fix: an `aim` flag, so the focus overrides the look-at
+after the follow instead of competing with it.
+*Lesson: when a fitted shot is off, check what else writes the same value
+that frame before refitting.*
+
 ## Timing
 
 **Everything was timed against placeholder durations.** In the headless

@@ -515,6 +515,28 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**The big screen outside the arena.** Branch `feature/arena-billboard`.
+[tournament.md](docs/notes/tournament.md) has the design and every note quoted,
+under **The big screen**; [art.md](docs/notes/art.md) has the six new poses.
+
+- **The "strange collider" was two things**, and both are gone: the old sign's
+  r 8.4 disc, and one circle per run of the stands left over from before they
+  were a wall (the back tier's stuck 2.9 out of the wall). The board's only
+  colliders are its two posts.
+- **A 32x18 screen on the west stands' outer face**, facing out, with a cap
+  low enough (21.3) that no live-round camera looks across it. It cycles each
+  league's champion (8 s), #2 and #3 (4 s), and Mr. Satan's made-up record
+  where nobody has won. His four flexing ads play in between.
+- **Fireworks, searchlights and pops** only when some pane can see it. They
+  are loudest on his slides. From the arena road's real ride poses it is in
+  frame from u 0.32 to 0.44.
+- **The camera near it** fits the glass and every kitten square-on, and eases
+  in over 8 units. Its weight is exactly zero anywhere else.
+- **Found on the way:** the 2v1v1 league was never shown on the pause menu's
+  board or wiped. `BOARD_MODES` is now pinned to `MODES`.
+- **Open:** nobody has played it, seen the fireworks at real speed, or heard
+  the pops. The champion slides have only been seen with fake rows.
+
 **The parade's voice, champions in front, the doors shut after, and the front
 door x-rayed.** Branch `mixed/parade-voices-doors-xray`.
 
@@ -529,8 +551,8 @@ door x-rayed.** Branch `mixed/parade-voices-doors-xray`.
 - **The lanterns, the road's arena-end torii (thin, 0.3) and its lions
   (0.6)** are x-rayed, and the arena's reach is 60.
   [tournament.md](docs/notes/tournament.md).
-- **Open:** nobody has heard `*sniff*` in `sat_parade2` to confirm it is
-  spoken as a word.
+- ~~Open: nobody has heard `*sniff*`.~~ Richard has: "Sniff turned out really
+  well". It is performed, not read. See voices.md.
 
 **Mr. Satan's doors line, no x-ray in scenes, the climb's arena and gate
 sooner.** Branch `mixed/parade-voice-ride-earlier`.
@@ -563,7 +585,8 @@ door, the far islands and the road's shot list.
 - **Open:**
   - ~~The arena is not the third shot as early as 0.27.~~ It is now, as
     `tower` from 0.28 (above).
-  - The record board is inside the wall's band, so it cannot be walked behind.
+  - ~~The record board is inside the wall's band, so it cannot be walked
+    behind.~~ It is the big screen now, on the wall's outside face (above).
   - The vault's numbers are arithmetic plus a headless throw, not a four-kitten
     round.
 
