@@ -13,7 +13,7 @@ import {
 } from './core/device.js';
 import { TouchPad, wardLatchExpired } from './core/touchpad.js';
 import { World, CLANS } from './world/world.js';
-import { Player, ATTACKS, COMBAT, BASE_REACH, MAX_HP, KO_TIME } from './entities/player.js';
+import { Player, ATTACKS, COMBAT, BASE_REACH, MAX_HP, KO_TIME, SWEEP_UP } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from './core/palette.js';
 import {
   splitLayout, mapWidth, mapSpot, mathSharedWidth, assignMaps, nearestMap, keyMaps,
@@ -6033,7 +6033,13 @@ class Game {
        real reach. It is right on its own terms as well: Riverclaw's oath is
        about the blade she is holding, and while she is on a panda she is not
        holding it. */
-    const clanK = kind === 'claw' ? 1 : reach / BASE_REACH;
+    /* ...NOR PAYNE'S GOBLIN SWEEP, for a reason of its own: "the attack should
+       not scale in length with longer katana abilities or kotodama
+       powerups." It is a circle round her feet, not a blade, and a circle that
+       grew with every Long Cut orb would stop being the short answer to being
+       surrounded and become the best swing in the game. Forced here, like the
+       claw, so no caller can hand it a buffed reach by accident. */
+    const clanK = (kind === 'claw' || kind === 'sweep') ? 1 : reach / BASE_REACH;
     const range = A.reach * clanK;
     /* Juuji stacks make each of the three cuts hit harder rather than adding
        a fourth. Four cuts is a different move; the same three landing for more
@@ -6145,7 +6151,17 @@ class Game {
           z: target.position.z,
         }
         : target.position;
-      const found = doneHer ? null : reaches(at);
+      /* THE GOBLIN SWEEP ONLY FINDS FEET ON THE GROUND. "The sweep attack
+         should only work on players that are touching the ground next to the
+         player, if they jump and are in the air, it should not work." It is a
+         sweep at ankle height, so jumping it is the counter — and that is what
+         makes a full circle fair. A rider is up on her animal, not on the
+         ground, so she is out of it too (the animal itself is not). `SWEEP_UP`
+         is "next to": a kitten standing on a ledge above her is on the ground
+         but not on HER ground. */
+      const swept = kind !== 'sweep'
+        || (target.onGround && !riding && Math.abs(target.position.y - attacker.position.y) <= SWEEP_UP);
+      const found = (doneHer || !swept) ? null : reaches(at);
       /* HER PANDA IS A SECOND BODY IN THE RING, and `fighter` is the whole of
          the question of whether it may be hit: grown, standing, and not
          already knocked down. A cub is never a target — it is the size of a
@@ -9382,6 +9398,17 @@ class Game {
     this.announcer?.update(dt);
     /* AFTER every camera has been drawn once more, which is when `see` has
        said whether anybody can look at the board. */
+    /* THE FIREWORKS NEED AN AUDIENCE, NOT JUST A LENS. Reported: "The
+       fireworks are also going off on the billboard when it shouldn't be,
+       that should only happen if players are on the snake way bridge or
+       infront of the billboard." They used to fire whenever any pane could
+       see the glass, and a ring camera looking west over the stands can. Now
+       a kitten has to be riding the arena's road or standing in the board's
+       zone, and `see` still asks that a lens is actually showing it. */
+    if (this.arenaBoard) {
+      this.arenaBoard.audience = !this.tournament?.active
+        && this.players.some((p) => !!p?.snakeRide?.road?.arena || this._boardWeight(p) > 0);
+    }
     this.arenaBoard?.update(dt);
     this._updateSparks(dt);
     /* AFTER the tournament, because the tournament is what ends a round, and a
@@ -11166,6 +11193,17 @@ class Game {
    *  `boardZoneWeight`; one place asks it so the two cameras cannot disagree. */
   _boardWeight(p) {
     if (!p?.position) return 0;
+    /* NOT WHILE A MATCH IS ON, AND NEVER FOR AN ANGEL. Reported: "Camera is
+       zooming out weirdly during the arena battle during feast, it may be
+       affected by the billboard next to the arena we added." It was. The
+       zone is outside the west stands and a kitten on the deck can never be
+       in it, which is why the first pass called it safe; but in the FEAST the
+       kitten who lost the round is an angel who can fly "anywhere you like
+       over the arena", out over the wall and into the zone, and the merged
+       rig takes the STRONGEST weight in the group, so her sister's fight
+       zoomed out with her. The board is for visiting, and during a match
+       nobody is visiting it. */
+    if (this.tournament?.active || p.angel) return 0;
     return boardZoneWeight(this.world.arenaBoard, this.world.arenaOpen,
       p.position.x, p.position.y, p.position.z);
   }

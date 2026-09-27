@@ -3,9 +3,9 @@
 
    One flat ring per kitten that snaps out from her feet to the sweep's real
    reach and fades, in Payne's green with the kitten's own colour inside it.
-   THE RING IS THE HITBOX: its outer edge is `ATTACKS.sweep.reach` scaled by
-   the same ratio `_doSweep` uses, so a barrel just outside it visibly stays
-   up (eighth non-negotiable read across to combat, as `ATTACKS.claw` does).
+   THE RING IS THE HITBOX: its outer edge is `ATTACKS.sweep.reach`, which is
+   all `_doSweep` uses (no buff grows it), so a barrel just outside it visibly
+   stays up (eighth non-negotiable read across to combat, as `ATTACKS.claw` does).
 
    A POLLER, like crossfx, dodgefx and clanfx, and for their reason: it reads
    `sweepSeq` and nothing in player.js knows it exists. A new number is a new
@@ -17,7 +17,7 @@
 --------------------------------------------------------------------------- */
 
 import * as THREE from 'three';
-import { ATTACKS, BASE_REACH } from '../entities/player.js';
+import { ATTACKS } from '../entities/player.js';
 
 /** Payne's green, the colour of her card border and her map diamond. */
 const GOBLIN = 0x7fd35a;
@@ -69,7 +69,7 @@ export class SweepFx {
       if (seq !== r.seq) {
         r.seq = seq;
         r.t = OUT + FADE;
-        r.reach = ATTACKS.sweep.reach * (p._reach?.() ?? BASE_REACH) / BASE_REACH;
+        r.reach = ATTACKS.sweep.reach;   // unbuffed, as the sweep is
       }
       if (r.t <= 0) { r.mesh.visible = false; continue; }
       r.t = Math.max(0, r.t - dt);

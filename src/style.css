@@ -5618,3 +5618,14 @@ body.touch-ui .ph-text { font-size: 13px; }
 body.touch-ui .pn-face { width: calc(8 * var(--u)); height: calc(8 * var(--u)); }
 body.touch-ui .pn-trick img { width: calc(16 * var(--u)); }
 body.touch-ui .pn-list { gap: 0; }
+
+/* --- Payne in Help: her picture beside four short lines --------------------
+   Her picture stands at the left like a clan leader's on the clan cards, at
+   half the file's 119x240 so it stays sharp on a 2x screen. */
+.payne-help { display: flex; gap: 12px; align-items: flex-start; }
+.payne-help-pic { flex: none; width: 60px; height: auto; margin-top: 6px; }
+.payne-help-text { min-width: 0; }
+/* A LANDSCAPE PHONE IS SHORT, NOT NARROW, and the picture is the tall thing
+   here: smaller, so four lines of text are not pushed below the fold by a
+   goblin. */
+body.touch-ui .payne-help-pic { width: 44px; }

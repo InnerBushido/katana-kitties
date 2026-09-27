@@ -95,16 +95,48 @@ export const INVITE_MARK = 60;
  *  on the way into the market from where the kittens start. */
 export const PAYNE_TOWN = { x: -10, z: 24 };
 /** How close to talk to her. The dealer's stall is 5; she is one person. */
-export const TALK_R = 4.6;
+export const TALK_R = 5.2;
+/** Her solid. Grew with her: at 6.0 tall a 0.85 disc let a kitten stand
+ *  inside her skirt. */
+export const PAYNE_SOLID = 1.25;
 /** "once they have completed their quests and have gained some fighting
  *  experience in the arena" — rounds FOUGHT, not won: the youngest sister is
  *  learning the trick too. */
 export const TRICK_ROUNDS = 3;
 /** "she can hint at (once they have completed some quests)". Half of six. */
 export const TEASE_AFTER = 3;
-/** How tall she stands. A kitten is 2.9 and a clan leader 4.2; a goblin is a
- *  grown-up who is not a very tall one. */
-export const PAYNE_HEIGHT = 3.7;
+/** How tall she stands, and it is set by her HELMET, not by her height.
+ *
+ *  Richard, after seeing her: "Payne looks too small in the town, should be
+ *  1.5x's bigger at least, her helmet should be as big as a regular players
+ *  head at least." She was 3.7, reasoned as "a grown-up who is not a very tall
+ *  one" beside a 2.9 kitten — and a kitten is a chibi, nearly half head, so a
+ *  realistically proportioned goblin a head taller still had a helmet the size
+ *  of a kitten's muzzle. MEASURED off the loaded art:
+ *
+ *    kitten    head 161 px of a 329 px figure, drawn 2.9  -> 1.42 wide
+ *    Payne     helmet 184 px of a 753 px figure, drawn 3.7 -> 0.90 wide
+ *
+ *  so 6.0 puts the helmet at 1.47, just over a kitten's head, and is 1.62x
+ *  what she was. `world-check` re-measures her side off `payne/town.png` and
+ *  holds it against `KITTEN_HEAD_W`. */
+export const PAYNE_HEIGHT = 6.0;
+/** A kitten's head, measured in the browser off Ember's atlas cell (see
+ *  above). A number and not a measurement at runtime because the atlas only
+ *  exists in a browser; the check says where it came from. */
+export const KITTEN_HEAD_W = 1.42;
+/** Payne's town art, measured: the helmet's widest row as a fraction of her
+ *  figure's height. world-check re-derives this from the PNG. */
+export const HELMET_FRAC = 184 / 753;
+/** HER BUBBLE HANGS BESIDE HER HEAD, NOT OVER IT. At 6.0 tall a bubble over
+ *  her head (it was height + 2.2) put its top at NDC y 1.07-1.13 at every
+ *  talking distance: off the screen, under the HUD chip. Her helmet's top is at
+ *  0.57-0.70, so the bubble moves to her side, level with her face. */
+const BUBBLE_Y = PAYNE_HEIGHT * 0.84;
+/** How far out from her middle the bubble's near edge sits: clear of her
+ *  helmet and the sword over her shoulder. */
+const BUBBLE_GAP = 1.5;
+const _right = new THREE.Vector3();
 /** Held after her last word, the announcer's rule. */
 const HOLD_TAIL = 0.9;
 /** A message with no clip at all holds by its length — the toast's rule. */
@@ -535,7 +567,7 @@ export class Payne {
     this.heldSprite = heldArt ? mk(heldArt) : null;
     if (this.heldSprite) this.heldSprite.visible = false;
 
-    const sg = new THREE.CircleGeometry(0.85, 18);
+    const sg = new THREE.CircleGeometry(0.85 * PAYNE_HEIGHT / 3.7, 18);
     sg.rotateX(-Math.PI / 2);
     this.shadow = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({
       color: 0x2a1830, transparent: true, opacity: 0.34, depthWrite: false,
@@ -553,7 +585,8 @@ export class Payne {
         map: texture, transparent: true, opacity: 0, depthWrite: false, depthTest: false,
         toneMapped: false, side: THREE.DoubleSide,
       }));
-      m.position.y = PAYNE_HEIGHT + 2.2;
+      m.position.y = BUBBLE_Y;
+      m.userData.w = BH * aspect;
       m.renderOrder = 24;
       m.visible = false;
       this.group.add(m);
@@ -562,7 +595,7 @@ export class Payne {
     this.show = 0;
     g.scene?.add(this.group);
     /* A SOLID, the leaders' size, so a kitten cannot stand inside her. */
-    g.world?.solids?.push({ x: spot.x, z: spot.z, r: 0.85 });
+    g.world?.solids?.push({ x: spot.x, z: spot.z, r: PAYNE_SOLID });
   }
 
   /** Could this kitten talk to her right now? On foot, near, nothing up. */
@@ -576,7 +609,18 @@ export class Payne {
     if (!this.group) return;
     this.townSprite?.faceCamera(camera);
     this.heldSprite?.faceCamera(camera);
-    for (const b of this.bubbles ?? []) b.quaternion.copy(camera.quaternion);
+    /* BESIDE HER HEAD, ON THIS LENS'S RIGHT. Each pane turns the bubble
+       to itself and slides it along its OWN right vector, so four cameras
+       from four sides all see it next to her rather than behind her. */
+    _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    _right.y = 0;
+    if (_right.lengthSq() > 1e-6) _right.normalize();
+    for (const b of this.bubbles ?? []) {
+      b.quaternion.copy(camera.quaternion);
+      const off = BUBBLE_GAP + (b.userData.w ?? 4) * b.scale.x * 0.5;
+      b.position.x = _right.x * off;
+      b.position.z = _right.z * off;
+    }
   }
 
   /** The face reveal: from the Awakening on, the helmet is under her arm. */
@@ -595,20 +639,28 @@ export class Payne {
     this._reveal(!!g.kotodama?.awakened);
     let near = false;
     let anyMet = true;
+    /* AND GONE ONCE SOMEBODY IS CLOSE ENOUGH TO TALK. The bubble is an
+       invitation from across the square; at talking range the kitten's own
+       "TALK TO PAYNE" prompt says the same thing, and beside her head the
+       bubble sat right on top of it (measured in the browser at 3.5 units). */
+    let talking = false;
     for (const p of g.players ?? []) {
       if (!p || p.mount) continue;
-      if (flat(p.position, this.position) < 11) {
+      const d = flat(p.position, this.position);
+      if (d < 11) {
         near = true;
         if (!this.ledger(p).met) anyMet = false;
       }
+      if (d < TALK_R) talking = true;
     }
+    if (talking) near = false;
     this.show += ((near ? 1 : 0) - this.show) * Math.min(1, dt * 5);
     this.bubbles.forEach((b, i) => {
       const on = (i === 0) === !anyMet;
       b.visible = on && this.show > 0.02;
       b.material.opacity = this.show;
       b.scale.setScalar(0.7 + this.show * 0.3);
-      b.position.y = PAYNE_HEIGHT + 2.2 + Math.sin(this.t * 1.6) * 0.16;
+      b.position.y = BUBBLE_Y + Math.sin(this.t * 1.6) * 0.16;
     });
     /* A goblin does not stand still. Faster and bouncier than a leader's
        breathing, because that is who she is. */
@@ -675,8 +727,15 @@ export class Payne {
       this.say(p, ['payne_trick_tease'], 'hey');
     }
 
-    /* --- never met: tell her Payne exists, twice at most --- */
+    /* --- never met: tell her Payne exists, twice at most ---
+       AND ONLY WHILE SHE HAS A QUEST TO GIVE. Reported: "Payne is calling for
+       players that just spawned to see her, even though the Quests are over."
+       A kitten seated after the Awakening has every door shut (`nextStep` is
+       null), and "I've got quests for you!" was a promise with nothing behind
+       it. `step` is the same answer her card would give, so the invitation
+       cannot disagree with what she says when you arrive. */
     if (!L.met) {
+      if (!step) return;
       s.playT += dt;
       if (s.invites < INVITE_AT.length && s.playT >= INVITE_AT[s.invites]) {
         s.invites += 1;

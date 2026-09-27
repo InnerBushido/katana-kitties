@@ -238,6 +238,10 @@ export const ATTACKS = tune('ATTACKS', {
 export const SWEEP_COOL = 4;
 /** How long her spin lasts, and so how long she is planted for. */
 export const SWEEP_SPIN = 0.34;
+/** How far above or below her a kitten may stand and still be swept. The
+ *  strike window every other swing uses is `COMBAT.strikeHeight` (3.4) and
+ *  that is a blade's; a sweep is at her feet. A step is fine, a ledge is not. */
+export const SWEEP_UP = 0.6;
 
 /* THE DIVE AND THE CHARGE ARE STILL DERIVED, and tuning either table works:
    `DIVE`/`CHARGE` are folded before this file is evaluated, so editing
@@ -2778,8 +2782,18 @@ export class Player {
            otherwise she presses, nothing spins, and it reads as the move
            being broken. She gets the refusal blip and the wait in words. */
         if (this.sweepCool > 0) {
+          /* ONE MESSAGE, UPDATED, NEVER A PILE. Reported: "should not show a
+             message when it is recharging, or if it does, it should stack the
+             message or delete the previous message so it does not spam the
+             screen." The first cut toasted every press, and a kid who is
+             mashing presses a lot. It still SAYS so (sixth non-negotiable),
+             but through `toast`'s combo slot: one live line per kitten,
+             rewritten in place with the seconds left. */
           hud?.sfx('deny');
-          hud?.toast?.(`${this.name}'s Goblin Sweep is back in ${Math.ceil(this.sweepCool)}s`, this.index);
+          const left = Math.ceil(this.sweepCool);
+          hud?.toast?.('', this.index, {
+            key: 'sweepwait', add: 0, text: () => `Goblin Sweep: back in ${left}s`,
+          });
         } else {
           this.attackTimer = 0.26;
           this.attackCooldown = SWEEP_SPIN + 0.1;
@@ -4830,15 +4844,18 @@ export class Player {
    */
   _doSweep(world, hud) {
     const A = ATTACKS.sweep;
-    // Her reach buffs grow it as they grow every blade: same ratio.
-    const reach = A.reach * this._reach() / BASE_REACH;
+    /* ITS OWN REACH, AND NOTHING GROWS IT: "the attack should not scale in
+       length with longer katana abilities or kotodama powerups." The first
+       cut multiplied by `_reach()` like a blade; `Game.strikePlayers` now
+       ignores the reach it is handed for a sweep, and so does this. */
+    const reach = A.reach;
     const dir = new THREE.Vector2(Math.sin(this.facing), Math.cos(this.facing));
     this.sweepFace = this.facing;
     this.sweepT = SWEEP_SPIN;
     this.sweepCool = SWEEP_COOL;
     this.sweepSeq++;
     hud?.sfx('sweep');
-    hud?.strikePlayers?.(this, 'sweep', this._reach(), dir);
+    hud?.strikePlayers?.(this, 'sweep', BASE_REACH, dir);
     hud?.strikeCritters?.(this, reach);
     let hits = 0;
     for (const p of world.props) {

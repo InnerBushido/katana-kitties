@@ -328,6 +328,9 @@ export class ArenaBoard {
     this.hype = 0;
     this._seen = 0;
     this._seenDist = Infinity;
+    /** Is anybody here to watch? Set by `Game` every frame. False until it
+     *  says otherwise, so a board with no game driving it stays quiet. */
+    this.audience = false;
     this._rocketT = 0;
     this._fountT = 0;
     this._clock = 0;
@@ -540,7 +543,9 @@ export class ArenaBoard {
    * side of it, and close enough to make it out.
    */
   see(camera) {
-    if (!this.group.visible || !camera) return;
+    /* ...AND ONLY WITH AN AUDIENCE: a kitten on the arena road or in front of
+       the glass. `Game` sets it each frame; see the note where it does. */
+    if (!this.group.visible || !camera || !this.audience) return;
     const B = this.B;
     if (camera.position.x > B.face - 1) return;           // behind the stands
     const d = camera.position.distanceTo(_v.set(B.x, B.y, B.z));
