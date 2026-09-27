@@ -254,3 +254,32 @@ Which way is shorter changes as she moves, and at the frame where it flipped,
 the lens jumped 10 units and turned 28 degrees.
 *Lesson: decide the direction of an orbit once, where the move starts, and hold
 it for the whole move.*
+
+**A check held the director's shot back.** "Looking at the arena" was written
+as a check that the lens can see INTO the ring. Nothing could before 0.38, so
+the arena shot was put off until then. The director, after playing it: "we
+are currently showing the arena too late". From below, the arena he meant was
+its skyline: the stands and the gate roof over the rock. The ring's floor was
+never what he asked to see. A lens aimed at the floor from there saw 0 of 80
+points on the stands' top edge, a frame of rock. The same lens aimed 20 above
+the floor saw 44.
+*Lesson: a purpose check is a reading of the brief, and it can be the wrong
+reading. When the check forces the shot away from where the director asked,
+say so, and ask what the shot is FOR at that spot before moving it. Where the
+subject is above the lens, what the director sees is its silhouette, so aim at
+that.*
+
+**"The camera swings round in a weird way" was a half turn.** The move to the
+next shot started where that shot was 166 to 174 degrees round the subject.
+There, the two ways round are nearly the same length, and a small change in
+the road picks the other one. Starting the move 0.08 of the road earlier made
+it 141 degrees, which is only one way round.
+*Lesson: measure the swing at the move's start. Keep it well short of 180
+degrees: move the start until it is, and check it with a bar.*
+
+**The director's screenshots are measurements.** A screenshot of "trigger it
+here" carries its own position: the minimap in the corner puts the subject to
+within 2 units of the road, read with two known islands for scale. Where
+there is no map, render the shot along the path until a landmark's angle and
+size match the screenshot.
+*Lesson: read the position off the screenshot. Don't guess "a bit earlier".*

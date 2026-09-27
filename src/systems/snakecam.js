@@ -159,17 +159,20 @@ function nextKey(prev, i) {
             because a landmark's own rock is not counted in its way.
      home   the climb — in front of her and above, looking back past her and
             down the road to the main island and the islands round it.
+     tower  the west side, still under the rim — low and pulled out, looking
+            up past her at the arena on the skyline: the stands, his booth,
+            the gate's roof. Richard cut the second look at the floating
+            island (`isle`, 0.27) that was here.
      rise   the top of the west side — wide and high, over her shoulder
-            and down across the rim into the whole arena. Richard cut the
-            second look at the floating island (`isle`, 0.27) that was here.
+            and down across the rim into the whole arena.
      ring   the back of the lap — from outside the loop, over her shoulder
             and down into the ring, turning with her as she circles.
      vista  down the east side — out past her left shoulder at the far
             islands, with the autumn and dusk islands in front of them.
-     doors  the hook onto the carpet — low behind her, the torii, the lanterns
-            and the shut doors ahead.
+     doors  the last of the east side and the hook onto the carpet — low
+            behind her, the torii, the lanterns and the shut doors ahead.
    (`gate`, the doors coming round down the east side, was 0.70 to 0.90; the
-   vista has that stretch now and the doors keep only the hook.)
+   vista had that stretch, and gave its last 0.08 back to the doors.)
 --------------------------------------------------------------------------- */
 export const ARENA_RIDE = [
   { name: 'climb', from: 0, at: 'isle', off: -15, dist: 14, h: 3, ky: -0.45 },
@@ -182,29 +185,44 @@ export const ARENA_RIDE = [
      it would be better to be looking at the arena already as we are near the
      top of it." This was `isle` (0.27) and then `ring` (0.42).
 
-     NOT FROM 0.27. There she is 20 units under the ring's floor, and every
-     lens that keeps her in frame sees the rock under the rim and the back
-     of the stands — 0 of 25 points on the fighting floor, for every
-     distance and height tried up to 34 and 18. The first that sees in is
-     0.38 (15 of 25), so `rise` starts at 0.33 and has arrived by 0.38, and
-     `home` holds until then. Wide and high because it is the first sight of
-     the whole arena; `ring` takes over, close, once the road is level with
-     it — at 0.46 rather than 0.42, which saw 1 of 25.
+     TWO SHOTS, BECAUSE THE ROAD IS BELOW THE RING AND THEN LEVEL WITH IT.
+     The first pass started the arena at 0.33 (arrived 0.38), because before
+     0.38 no lens that keeps her in frame sees INTO the ring — 0 of 25 floor
+     points, every distance and height tried up to 34 and 18. Richard, after
+     playing it: "We are currently showing the arena too late ... we should
+     make that transition happen earlier", with a screenshot at 0.29 (read
+     off his minimap) for where it should start, and one at 0.356 for where
+     it did. So seeing into it was the wrong bar for the first sight of it:
+     `tower` is the arena from BELOW, from 0.28 — low, pulled out past her,
+     aimed 20 above the ring's floor (`ay`) so the stands, his booth and the
+     gate's roof stand on the skyline over the rim. Aimed at the floor like
+     `rise`, the same lens at 0.30 was a frame of rock with the stands cut
+     off along its top edge. Then `rise`, wide and high into the whole
+     ring, from 0.36, arrived by 0.39 where the first lens can see in (15 of
+     25 at 0.38); `ring` takes over, close, once the road is level with it —
+     at 0.46 rather than 0.42, which saw 1 of 25.
      Both hand over EARLIER at the far end — 0.62, where the road comes round
      onto the east side: "we can stop looking at the arena a bit earlier". */
-  { name: 'rise', from: 0.33, at: 'arena', off: -30, dist: 34, h: 18, ky: -0.45, blend: 0.05 },
+  { name: 'tower', from: 0.28, at: 'arena', ay: 20, off: -30, dist: 40, h: 8, ky: -0.45, blend: 0.05 },
+  { name: 'rise', from: 0.36, at: 'arena', off: -30, dist: 34, h: 18, ky: -0.45, blend: 0.03 },
   { name: 'ring', from: 0.46, at: 'arena', off: 0, dist: 16, h: 5, ky: -0.3 },
   /* NEW: the islands off to her left down the east side. "look over at the
      other islands in the distance before looking at the gate to the arena."
      Starts where his screenshot of the arena beside the road was taken. */
   { name: 'vista', from: 0.62, at: 'vista', off: 0, dist: 16, h: 4, ky: -0.3, blend: 0.05 },
-  /* ...and back to the doors where his second screenshot was, on the hook:
-     the move starts at 0.88 and has arrived at 0.93. Not a 0.93 start —
-     the far island is behind her by then (157 degrees round at 0.92), so
-     the swing to the doors is most of a half turn, and in the standard move
-     it peaked at 5.8 degrees a frame. The old `gate` (0.70, down the east
-     side) is what `vista` replaced. */
-  { name: 'doors', from: 0.88, at: 'doors', off: 0, dist: 14, h: 2.5, ky: -0.3, blend: 0.05 },
+  /* ...and back to the doors, from 0.80. It was 0.88 (arrived 0.93), and
+     Richard: "the 'looking at the arena gate' needs to happen sooner, it is
+     happening too late currently, making the camera swing around in a weird
+     way", with a screenshot at 0.80 for where it should trigger (matched by
+     rendering the doors shot along the road: the torii's angle and size
+     agree there) and one at 0.918 for where it was turning.
+     THE WEIRD SWING WAS MEASURED, NOT GUESSED. The turn from the far island
+     to the doors, round her, is 141 degrees at 0.80, 166 at 0.88 and 174 at
+     0.85 — so the old move started almost exactly a half turn away, where
+     either way round is as short as the other. From 0.80 it is one way
+     round and 35 degrees shy of the fence. The old `gate` (0.70, down the
+     east side) is what `vista` replaced. */
+  { name: 'doors', from: 0.80, at: 'doors', off: 0, dist: 14, h: 2.5, ky: -0.3, blend: 0.05 },
 ];
 /* ---------------------------------------------------------------------------
    AND COMING DOWN. "When going down the snake way bridge from the arena, let's
@@ -230,7 +248,7 @@ export const ARENA_RIDE_DOWN = [
      coming DOWN, the stretch above a shot's start is the one it is settled
      on, and from 0.27 to 0.32 she is ten units under the ring's floor —
      the keel again, "ring seen from above" failing 12 of 38. */
-  { ...RIDE_ROW('rise'), from: 0.38 },
+  { ...RIDE_ROW('rise'), from: 0.38, blend: 0.05 },
   RIDE_ROW('ring'),
   RIDE_ROW('vista'),
   { name: 'leave', from: 0.88, at: 'home', off: 0, dist: 18, h: 12, ky: -0.45 },
@@ -248,7 +266,11 @@ const DEG = Math.PI / 180;
  * @returns {{x:number, y:number, z:number, lx:number, ly:number, lz:number}}
  */
 export function shotPose(sh, marks, K, spread = 0, fov = 38) {
-  const T = marks[sh.at];
+  /* `ay` RAISES THE AIM above the landmark: `tower` looks up at the arena
+     from under its rim, where the ring's floor itself is hidden and the
+     thing to frame is what stands on it. */
+  const M = marks[sh.at];
+  const T = sh.ay ? { x: M.x, y: M.y + sh.ay, z: M.z } : M;
   const kx = K.x;
   const ky = K.y + 1.3;
   const kz = K.z;

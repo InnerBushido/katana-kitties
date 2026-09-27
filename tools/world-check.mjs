@@ -5131,12 +5131,35 @@ console.log('\n--- Mr. Satan has a voice ---');
     missing.map((b) => b.id).join(' '));
 
   const popIn = [...MILESTONES.map((m) => m.id),
-    'sat_board', 'sat_r1', 'sat_r2', 'sat_r3', 'sat_fight', 'sat_ko', 'sat_over',
+    'sat_board', 'sat_doors', 'sat_r1', 'sat_r2', 'sat_r3', 'sat_fight', 'sat_ko', 'sat_over',
     'sat_win1', 'sat_win2'];
   const missingPop = popIn.filter(
     (id) => !existsSync(new URL(`../public${voicePath(id)}`, import.meta.url))
   );
   ok('every pop-in line has one too', missingPop.length === 0, missingPop.join(' '));
+
+  /* EVERY LINE HE SAYS BY NAME IS BUFFERED. `popIn` above is a list somebody
+     remembered to write; `sat_doors` was said for a whole pass without being
+     in it or in `Game`'s preload map, and `Announcer` plays a line it has no
+     buffer for as a silent card, so nothing noticed. This one reads every
+     `announcer.say('id'` in src/ and asks for each in the map `main.js`
+     hands `announcer.load`. */
+  {
+    const srcDir = new URL('../src/', import.meta.url);
+    const walk = (u) => readdirSync(u, { withFileTypes: true }).flatMap((e) => (e.isDirectory()
+      ? walk(new URL(`${e.name}/`, u)) : e.name.endsWith('.js') ? [readFileSync(new URL(e.name, u), 'utf8')] : []));
+    const said = [...new Set([...walk(srcDir).join('\n')
+      .matchAll(/announcer\??\.say\(\s*'([A-Za-z0-9_]+)'/g)].map((m) => m[1]))];
+    const mainSrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    const loadMap = mainSrc.slice(mainSrc.indexOf('await this.announcer.load({'));
+    /* ONE IS SILENT ON PURPOSE: `sat_bug` picks one of `BUG_LINES` at random,
+       and one clip cannot be every card (menagerie.js says so). A new entry
+       here needs the same kind of reason, not a missing file. */
+    const SILENT_BY_DESIGN = ['sat_bug'];
+    const unbuffered = said.filter((id) => !SILENT_BY_DESIGN.includes(id) && !loadMap.slice(0, loadMap.indexOf('\n    });')).includes(`${id}: voicePath('${id}')`));
+    ok('every line he says by name is buffered, so none plays as a silent card',
+      said.length >= 15 && unbuffered.length === 0, unbuffered.join(' ') || `${said.length} ids`);
+  }
 
   /* One round call per round the tournament can actually reach. Three rounds
      and two recordings is a final round that opens in silence. */
@@ -19849,7 +19872,7 @@ console.log('\n--- seeing through the arena ---');
       /setCuts\?\.\(camera\.position, seen, floors\)/.test(body));
   }
   ok('the arena cut is aimed per view, like the grottos',
-    /_aimXray\(camera, members = null\) \{\n    this\._aimArenaXray\(camera\);/.test(msrc));
+    /_aimXray\(camera, members = null, scene = false\) \{[\s\S]*?\n    this\._aimArenaXray\(camera\);/.test(msrc));
   /* AND SO IS THE TOWN'S, WHICH IS THE ONE THAT NEEDED THE EXTRA ARGUMENT.
      "Enable the x-ray shader when the player goes behind buildings or trees."
      A grotto filters by "is she near this dome"; the town has no such filter,
@@ -19866,6 +19889,65 @@ console.log('\n--- seeing through the arena ---');
   ok('...and Mr. Satan is added before the kittens',
     aimAt > 0 && aim.indexOf('this.satan') < aim.indexOf('for (const p of this.players)'));
   ok('...and it stops at four', /seen\.length >= 4/.test(aim));
+
+  /* A SCENE'S LENS CUTS FOR NOBODY. Richard, of the parade out of the arena:
+     "we can usually see the xray effect from the players that are hidden
+     during the cutscene ... shouldn't be shown during the cutscene, only
+     during gameplay." The scene hides the kittens and draws its own actors,
+     and every aimer cut for `this.players` wherever they stood — so the
+     stands behind the parade had holes in them for nobody.
+     THE SHIPPED METHODS, LIFTED AND RUN on a world of recording materials: a
+     gameplay frame must open cuts (or this passes by cutting nothing ever),
+     and a scene frame must close every one, including those a gameplay frame
+     just opened in the same materials. */
+  {
+    const liftM = (sig, args) => {
+      const at = msrc.indexOf(`\n  ${sig} {`);
+      const from = msrc.indexOf('{', at + 1) + 1;
+      // eslint-disable-next-line no-new-func
+      return at > 0 ? new Function('THREE', 'TOWN_XRAY_FAR',
+        `return function (${args}) {${msrc.slice(from, msrc.indexOf('\n  }\n', from))}\n};`)(THREE, 120) : null;
+    };
+    const names = [['_aimXray(camera, members = null, scene = false)', 'camera, members = null, scene = false'],
+      ['_clearXray(camera)', 'camera'], ['_aimArenaXray(camera)', 'camera'],
+      ['_aimTownXray(camera, members)', 'camera, members'], ['_aimCloudXray(camera, members)', 'camera, members']];
+    const fns = names.map(([s, a]) => liftM(s, a));
+    ok('the x-ray aimers are where this check thinks they are', fns.every(Boolean));
+    if (fns.every(Boolean)) {
+      const open = new Map();
+      const mat = (name) => ({ name, setCuts: (cam, pts) => open.set(name, (pts ?? []).length) });
+      const mesh = (name) => ({ material: mat(name), visible: true });
+      const G = { x: 0, z: 0, r: 10, walls: mesh('grotto walls'), roof: mesh('grotto roof') };
+      const stub = {
+        world: {
+          arenaSeeThrough: mesh('arena stands'), arenaRing: null, arenaOutBy: () => 0,
+          townXray: [mesh('town')], outlyingXray: [mesh('other islands')], grottos: [G],
+          snakeWay: { puffMat: mat('road clouds'), puffs: { visible: true } },
+        },
+        satan: null,
+        players: [0, 1].map((i) => ({ position: new THREE.Vector3(i * 3, 2, 5), group: { visible: false } })),
+      };
+      [stub._aimXray, stub._clearXray, stub._aimArenaXray, stub._aimTownXray, stub._aimCloudXray] = fns;
+      const cam = { position: new THREE.Vector3(0, 10, 30) };
+      stub._aimXray(cam, [0, 1]);
+      const played = [...open.values()];
+      stub._aimXray(cam, [0, 1], true);
+      const scened = [...open.entries()].filter(([, n]) => n > 0).map(([k]) => k);
+      ok('a gameplay frame opens a cut in every x-ray material for her',
+        open.size === 6 && played.every((n) => n > 0), JSON.stringify(played));
+      ok('...and a scene\'s lens closes every one of them, for kittens it has hidden',
+        scened.length === 0, scened.join(', ') || `${open.size} closed`);
+    }
+    /* AND EVERY SCENE ASKS FOR IT. The rule is worth nothing on a lens that
+       does not pass it; five scenes and the title's fly-over own the screen,
+       and the split-screen draw is the one call that must NOT. */
+    const lenses = ['cutscene', 'summonScene', 'arenaExit', 'shrineScene', 'griffin'];
+    const bare = lenses.filter((n) => !msrc.includes(`this._renderView(this.${n}.camera, 0, 0,\n        ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true);`));
+    ok('...and every scene, the griffin\'s flight and the title pass it', bare.length === 0
+      && msrc.includes('this._renderView(cam, 0, 0, size.x, size.y, null, true);'), bare.join(' ') || 'all six');
+    ok('...and the players\' own panes never do',
+      msrc.includes('this._renderView(cam, v.x, v.y, v.w, v.h, groups[i]);'));
+  }
 }
 
   delete globalThis.document;
@@ -30498,7 +30580,8 @@ console.log('\n--- the arena road is shot, not orbited ---');
   for (const [label, plan] of [['up', ARENA_RIDE], ['down', ARENA_RIDE_DOWN]]) {
     ok(`every shot ${label} looks at a landmark the road has, in order up the road from its first step`,
       plan.every((s) => names.includes(s.at)) && plan[0].from === 0
-        && plan.every((s, i) => i === 0 || s.from - plan[i - 1].from >= 0.08),
+        // 1e-9: 0.36 - 0.28 is 0.07999999999999996 in a double
+        && plan.every((s, i) => i === 0 || s.from - plan[i - 1].from >= 0.08 - 1e-9),
       plan.map((s) => `${s.name}@${s.from}`).join(' '));
   }
   /* THE ORDER RICHARD ASKED FOR, in so many words. Up: "on the 3rd camera
@@ -30513,7 +30596,33 @@ console.log('\n--- the arena road is shot, not orbited ---');
   const downOrder = [...ARENA_RIDE_DOWN].reverse().map((s) => s.at).filter((a, i, all) => a !== all[i - 1]);
   ok('coming down: the main island first, the floating island second last, the main island last',
     downOrder[0] === 'home' && downOrder.at(-2) === 'isle' && downOrder.at(-1) === 'home', downOrder.join());
-  const same = (a, b) => ['at', 'off', 'dist', 'h', 'ky'].every((k) => a[k] === b[k]);
+  /* WHERE RICHARD SAID, read off his screenshots. The arena: "we should start
+     showing the arena" at the one taken at 0.29 (his minimap puts her 0.8
+     units off the road there), and it was starting at 0.33, arriving 0.38 —
+     his other screenshot is mid-move, at 0.356. The gate: "needs to happen
+     sooner" than 0.918, his screenshot of it turning, and should trigger at
+     his other one — 0.80, found by rendering the doors shot along the road
+     until the torii's angle and size matched it. */
+  const firstArena = ARENA_RIDE.find((s) => s.at === 'arena');
+  const doorsRow = ARENA_RIDE.find((s) => s.at === 'doors');
+  ok('going up, the arena comes into shot by where Richard asked — 0.29, not 0.33',
+    firstArena.from <= 0.29 && firstArena.from + (firstArena.blend ?? ARENA_BLEND) <= 0.34,
+    `${firstArena.name} from ${firstArena.from}`);
+  ok('...and the gate from where his screenshot was — 0.80, not 0.88',
+    doorsRow.from <= 0.80 && doorsRow.from >= 0.76, `${doorsRow.name} from ${doorsRow.from}`);
+  /* "MAKING THE CAMERA SWING AROUND IN A WEIRD WAY." The turn round her from
+     the far island to the doors is 141 degrees at 0.80 and 174 at 0.85: the
+     old start, 0.88 (166), was nearly a half turn, where the two ways round
+     are the same length. A move must start well clear of that fence. */
+  {
+    const vista = ARENA_RIDE.find((s) => s.at === 'vista');
+    const K = road.frameAt(doorsRow.from * road.length);
+    const brg = (sh) => { const P = shotPose(sh, M, K, 0, 38); return Math.atan2(P.x - K.x, P.z - K.z); };
+    const sw = Math.abs(Math.atan2(Math.sin(brg(doorsRow) - brg(vista)), Math.cos(brg(doorsRow) - brg(vista)))) * 180 / Math.PI;
+    ok('...and the swing to it starts well short of a half turn, so it goes one clear way round',
+      sw < 155, `${sw.toFixed(0)} degrees at ${doorsRow.from}`);
+  }
+  const same = (a, b) => ['at', 'ay', 'off', 'dist', 'h', 'ky'].every((k) => a[k] === b[k]);
   ok('...and the rest of the way down is the climb\'s own shots, not new ones',
     ARENA_RIDE_DOWN.slice(2, -1).every((s) => ARENA_RIDE.some((u) => u.name === s.name && same(u, s))),
     ARENA_RIDE_DOWN.slice(2, -1).map((s) => s.name).join());
@@ -30583,6 +30692,46 @@ console.log('\n--- the arena road is shot, not orbited ---');
     }
     return seenPts / 25;
   };
+  /* THE STANDS' TOP EDGE, 20 points a side, seen if in frame and no island's
+     rock — the arena's own included — is between it and the lens. */
+  const skyEdge = [];
+  {
+    const R = AW.outer - 0.3;
+    for (let k = 0; k < 20; k++) {
+      const t = -R + (2 * R * (k + 0.5)) / 20;
+      for (const [ex, ez] of [[t, -R], [t, R], [-R, t], [R, t]]) skyEdge.push(new THREE.Vector3(AW.x + ex, AW.y + AW.top, AW.z + ez));
+    }
+  }
+  const skylineSeen = (cm) => {
+    let worst = Infinity;
+    for (const asp of [16 / 9, 0.89]) {
+      cm.aspect = asp;
+      cm.updateProjectionMatrix();
+      cm.updateMatrixWorld();
+      let seen = 0;
+      for (const p of skyEdge) {
+        v.copy(p).project(cm);
+        if (!(v.z < 1 && Math.abs(v.x) < 1 && Math.abs(v.y) < 1)) continue;
+        const L = cm.position.distanceTo(p);
+        let clear = true;
+        for (let s = 1; s < L - 1.5 && clear; s += 1) {
+          const f = s / L;
+          const x = cm.position.x + (p.x - cm.position.x) * f;
+          const y = cm.position.y + (p.y - cm.position.y) * f;
+          const z = cm.position.z + (p.z - cm.position.z) * f;
+          for (const isl of RW.islands) {
+            const dd = Math.hypot(x - isl.x, z - isl.z);
+            if (dd > isl.radius) continue;
+            const g = isl.heightAt(x, z);
+            if (g != null && y < g - 0.05 && y > g - isl.radius * 0.8 * (1 - (dd / isl.radius) ** 2)) { clear = false; break; }
+          }
+        }
+        seen += clear;
+      }
+      worst = Math.min(worst, seen);
+    }
+    return worst;
+  };
   /* Each shot is tested over the stretch it is SETTLED on: going up, from the
      end of the move into it to the next shot's start; coming down, from the
      next shot's start less the move, down to its own — which for a row the
@@ -30593,11 +30742,15 @@ console.log('\n--- the arena road is shot, not orbited ---');
     const u0 = dir > 0 ? sh.from + (i ? bl : 0) : sh.from;
     const u1 = dir > 0 || !plan[i + 1] ? nx : nx - bl;
     const own = sh.at === 'arena' ? RW.arenaIsland : sh.at === 'home' ? RW.islands[0] : null;
-    const T = M[sh.at];
+    const T = sh.ay ? { x: M[sh.at].x, y: M[sh.at].y + sh.ay, z: M[sh.at].z } : M[sh.at];
+    /* A ROW WITH `ay` looks UP at the arena from under its rim (`tower`), so
+       it answers a different question from the two that look INTO it. */
+    const intoRing = sh.at === 'arena' && !sh.ay;
     let good = 0;
     let n = 0;
     let low = 0;
     let into = 1;
+    let sky = 80;
     for (let u = u0; u < u1; u += 0.002) {
       const f = road.frameAt(u * road.length);
       const P = shotPose(sh, M, f, 0, FOV);
@@ -30623,17 +30776,26 @@ console.log('\n--- the arena road is shot, not orbited ---');
          the arena is only ever looked at from above its own floor — the LENS
          above it, now that the arena is looked at from lower down the road
          (`rise`, from 0.27) than a kitten standing level with it. */
-      if (sh.at === 'arena' && P.y < M.arena.y + 1) low++;
-      if (sh.at === 'arena') into = Math.min(into, ringSeen(c));
+      if (intoRing && P.y < M.arena.y + 1) low++;
+      if (intoRing) into = Math.min(into, ringSeen(c));
+      if (sh.ay) sky = Math.min(sky, skylineSeen(cam));
     }
     ok(`${sh.name} (${label}): her and the ${sh.at} in frame, in a whole pane and a half one, nothing in the way`,
       n > 10 && good === n, `${good}/${n}`);
-    if (sh.at === 'arena') ok(`...and the ring is seen from above, never its keel from below`, low === 0, `${low} of ${n} with the lens under the floor`);
+    if (intoRing) ok(`...and the ring is seen from above, never its keel from below`, low === 0, `${low} of ${n} with the lens under the floor`);
     /* "Looking at the arena" means seeing INTO it. Measured lows: rise 0.60,
        ring 0.40 — the bar is under both and far above the 0 that a lens
        under the rim sees. */
-    if (sh.at === 'arena') ok(`...and sees INTO the ring the whole time, not the back of the stands`,
+    if (intoRing) ok(`...and sees INTO the ring the whole time, not the back of the stands`,
       into >= 0.3, `at worst ${(into * 25).toFixed(0)} of 25 floor points`);
+    /* FROM BELOW, THE ARENA IS WHAT STANDS ON ITS RIM. Richard's "showing
+       the arena" at 0.29 — where no lens can see into the ring — is its
+       skyline: the stands' top edge over the rock. Measured, of 80 points
+       round that edge, worst of both pane shapes: `tower` 44-46 on its
+       stretch, and `rise`'s lens at 0.30 sees 0, which is the frame of rock
+       it was. The bar is under the one and far over the other. */
+    if (sh.ay) ok(`...and from under the rim, the stands stand on the skyline — not a frame of rock`,
+      sky >= 30, `at worst ${sky} of 80 points on the stands' top edge`);
   }
   for (const dir of [1, -1]) {
   let out = 0;

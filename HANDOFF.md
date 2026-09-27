@@ -515,6 +515,21 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Mr. Satan's doors line, no x-ray in scenes, the climb's arena and gate
+sooner.** Branch `mixed/parade-voice-ride-earlier`.
+
+- **`sat_doors` has Harrison's voice**, recorded on the card's exact string.
+  It is 5.04 s for twelve words. A new check makes sure every line he says by
+  name is loaded; `sat_bug` is exempted by name because it is random.
+- **A scene's lens cuts for nobody.** The parade, every other scene, the
+  griffin's flight and the title's fly-over pass `scene` to `_renderView`, and
+  every x-ray material is closed for that frame. The check runs the shipped
+  methods.
+- **Up the arena road:** `tower`, a new shot of the arena from below, starts at
+  0.28 (Richard's 0.29), and the doors start at 0.80 (was 0.88).
+  [world.md](docs/notes/world.md) has both screenshots' positions.
+- **Open:** nobody has played the new timings yet.
+
 **The arena's walls, the lion, the waterfalls, the roof, and the road's
 cameras both ways.** Branch `mixed/arena-road-walls-six`.
 [world.md](docs/notes/world.md) quotes every note, under the arena's front
@@ -529,8 +544,8 @@ door, the far islands and the road's shot list.
   the doors. **Down:** the main island first, the floating isle second last,
   the main island last.
 - **Open:**
-  - The arena is not the third shot as early as 0.27. Nothing there can see
-    into it (0 of 25 floor points), so it arrives at 0.38.
+  - ~~The arena is not the third shot as early as 0.27.~~ It is now, as
+    `tower` from 0.28 (above).
   - The record board is inside the wall's band, so it cannot be walked behind.
   - The vault's numbers are arithmetic plus a headless throw, not a four-kitten
     round.
@@ -578,8 +593,8 @@ exit scene and the ending's new clock.
 - **The ending**: a far island at 5% of the truck, slower gates, roads after
   the gates, and islands done 2.05 s before the wide shot's cut. The ground
   round the gates follows the roads.
-- **Open:** `sat_doors` has no voice yet (Harrison's preset, docs/notes/voices.md),
-  and nobody has played the parade with a real four.
+- **Open:** nobody has played the parade with a real four. (`sat_doors` has
+  its voice now.)
 
 **Snake Way, eleven notes from Richard.** Branch `mixed/snake-way-eleven`.
 [world.md](docs/notes/world.md) has each one, [story.md](docs/notes/story.md)

@@ -1404,6 +1404,10 @@ class Game {
          the list cannot drift from the lines it is buffering. */
       ...Object.fromEntries(Object.keys(HUNT_LINES).map((id) => [id, voicePath(id)])),
       sat_board: voicePath('sat_board'),
+      /* His yes AT HIS DOORS, where there is no griffin to climb on. Recorded
+         in Harrison's preset on the exact card string; it played silent as a
+         card for a pass, which is what the check beside `popIn` now forbids. */
+      sat_doors: voicePath('sat_doors'),
       sat_r1: voicePath('sat_r1'),
       sat_r2: voicePath('sat_r2'),
       sat_r3: voicePath('sat_r3'),
@@ -8724,7 +8728,7 @@ class Game {
       for (const s of this.world.shrines) s.update(dt, []);
       for (const L of this.leaders) L.update(dt, []);
       this._renderView(this.cutscene.camera, 0, 0,
-        ...this.renderer.getSize(new THREE.Vector2()).toArray());
+        ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true);
       return;
     }
 
@@ -8808,7 +8812,7 @@ class Game {
       this._warmSnake();
       this._primeFinale();
       this._renderView(this.summonScene.camera, 0, 0,
-        ...this.renderer.getSize(new THREE.Vector2()).toArray());
+        ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true);
       return;
     }
 
@@ -8833,7 +8837,7 @@ class Game {
       this.announcer?.update(dt);
       this._updateMusic(dt);
       this._renderView(this.arenaExit.camera, 0, 0,
-        ...this.renderer.getSize(new THREE.Vector2()).toArray());
+        ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true);
       return;
     }
 
@@ -8871,7 +8875,7 @@ class Game {
         for (const o of p.featOrbs ?? []) o.update(dt, p.position);
       }
       this._renderView(this.shrineScene.camera, 0, 0,
-        ...this.renderer.getSize(new THREE.Vector2()).toArray());
+        ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true);
       return;
     }
 
@@ -8902,7 +8906,7 @@ class Game {
          that. */
       this._updateMusic(dt);
       this._renderView(this.griffin.camera, 0, 0,
-        ...this.renderer.getSize(new THREE.Vector2()).toArray());
+        ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true);
       return;
     }
 
@@ -11691,7 +11695,22 @@ class Game {
    * wall from every angle, and the building looks perforated for no reason
    * anybody watching can see.
    */
-  _aimXray(camera, members = null) {
+  _aimXray(camera, members = null, scene = false) {
+    /* A SCENE'S LENS CUTS FOR NOBODY. Richard, of the parade out of the
+       arena: "in the background of the cutscene, we can usually see the xray
+       effect from the players that are hidden during the cutscene ... it is
+       distracting and shouldn't be shown during the cutscene, only during
+       gameplay." Every aimer below cuts for `this.players` wherever they
+       are, and a scene hides them (`p.group.visible = false`) and draws its
+       own actors — so the arena's stands and the town's roofs had holes
+       bored in them for kittens nobody could see. The x-ray exists so she
+       can find HERSELF behind a wall, and in a scene there is no her to
+       find: the director framed the shot. Every scene and the griffin's
+       flight pass `scene`, and so does the title's fly-over. */
+    if (scene) {
+      this._clearXray(camera);
+      return;
+    }
     this._aimArenaXray(camera);
     this._aimTownXray(camera, members);
     this._aimCloudXray(camera, members);
@@ -11717,6 +11736,23 @@ class Game {
       G.walls.material.setCuts(camera.position, seen);
       G.roof.material.setCuts?.(camera.position, seen);
     }
+  }
+
+  /**
+   * Every x-ray material in the world, with no cut open in it. The lists are
+   * the ones the aimers below walk, so a material one of them cuts is a
+   * material this closes.
+   */
+  _clearXray(camera) {
+    const w = this.world;
+    const mats = [
+      w.arenaSeeThrough?.material,
+      w.snakeWay?.puffMat,
+      ...(w.townXray ?? []).map((m) => m.material),
+      ...(w.outlyingXray ?? []).map((m) => m.material),
+      ...(w.grottos ?? []).flatMap((G) => [G.walls.material, G.roof.material]),
+    ];
+    for (const m of mats) m?.setCuts?.(camera.position, []);
   }
 
   /**
@@ -12126,12 +12162,12 @@ class Game {
     }
   }
 
-  _renderView(camera, x, y, w, h, members = null) {
+  _renderView(camera, x, y, w, h, members = null, scene = false) {
     if (w < 2 || h < 2) return;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     this._faceAll(camera);
-    this._aimXray(camera, members);
+    this._aimXray(camera, members, scene);
     this.renderer.setViewport(x, y, w, h);
     this.renderer.setScissor(x, y, w, h);
     this.renderer.setScissorTest(true);
@@ -12273,7 +12309,7 @@ class Game {
     for (const d of this.dragons) d.update(dt, this.world, []);
     this.dojo?.update(dt, []);
     const size = this.renderer.getSize(new THREE.Vector2());
-    this._renderView(cam, 0, 0, size.x, size.y);
+    this._renderView(cam, 0, 0, size.x, size.y, null, true);
   }
 
   _resize() {
