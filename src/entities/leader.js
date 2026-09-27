@@ -160,7 +160,15 @@ export function leaderSpot(hall, world) {
    character who speaks to you in the world should look the same doing it
    whoever they are, and a second hand-rolled speech balloon is how two
    things that mean the same thing end up looking different. */
-export function bubbleTexture(text, color) {
+/* `tail: 'left'` is Payne's. Her bubble hangs BESIDE her head (at 6.0 tall a
+   bubble over it is off the top of the screen - see payne.js), and a tail on
+   the bottom edge of a bubble beside her pointed at the empty ground next to
+   her: reported as "Payne's speech bubble is not where she is standing, may
+   be pointing to her old location before the resize". So the tail can come
+   out of the left edge instead, and `tip` says where its point is, as a
+   fraction of the canvas, for the caller to hang it on her head. Everybody
+   else keeps the tail underneath, byte for byte. */
+export function bubbleTexture(text, color, { tail = 'down' } = {}) {
   const LINE = 40;
   const lines = text.split('\n');
   const cv = document.createElement('canvas');
@@ -169,30 +177,44 @@ export function bubbleTexture(text, color) {
   const w = Math.max(...lines.map((l) => g0.measureText(l).width));
   const PAD = 34;
   const TAIL = 30;
-  cv.width = Math.ceil(w + PAD * 2);
-  cv.height = Math.ceil(lines.length * LINE * 1.28 + PAD * 2 + TAIL);
+  const side = tail === 'left';
+  const X0 = side ? TAIL : 0;
+  cv.width = Math.ceil(w + PAD * 2 + X0);
+  cv.height = Math.ceil(lines.length * LINE * 1.28 + PAD * 2 + (side ? 0 : TAIL));
 
   const g = cv.getContext('2d');
   const W = cv.width;
-  const H = cv.height - TAIL;
+  const H = side ? cv.height : cv.height - TAIL;
   const r = 26;
+  /* The side tail's point, near the TOP of the box, so the bubble hangs DOWN
+     from her helmet beside her shoulders. With the point two-thirds down, the
+     box rose above her head and its top ran under the scoreboard at the
+     distance the bubble shows from (measured at 8 units in the browser). */
+  const TY = Math.max(r + 18, H * 0.3);
 
   /* Rounded box plus a tail, drawn as one path so the outline runs round the
      whole thing — a separately stroked tail leaves a seam across the point
      where it meets the box, which at this size is very visible. */
   g.beginPath();
-  g.moveTo(r, 0);
+  g.moveTo(X0 + r, 0);
   g.lineTo(W - r, 0);
   g.quadraticCurveTo(W, 0, W, r);
   g.lineTo(W, H - r);
   g.quadraticCurveTo(W, H, W - r, H);
-  g.lineTo(W * 0.42 + 26, H);
-  g.lineTo(W * 0.40, H + TAIL);
-  g.lineTo(W * 0.42 - 4, H);
-  g.lineTo(r, H);
-  g.quadraticCurveTo(0, H, 0, H - r);
-  g.lineTo(0, r);
-  g.quadraticCurveTo(0, 0, r, 0);
+  if (!side) {
+    g.lineTo(W * 0.42 + 26, H);
+    g.lineTo(W * 0.40, H + TAIL);
+    g.lineTo(W * 0.42 - 4, H);
+  }
+  g.lineTo(X0 + r, H);
+  g.quadraticCurveTo(X0, H, X0, H - r);
+  if (side) {
+    g.lineTo(X0, TY + 16);
+    g.lineTo(3, TY + 4);
+    g.lineTo(X0, TY - 14);
+  }
+  g.lineTo(X0, r);
+  g.quadraticCurveTo(X0, 0, X0 + r, 0);
   g.closePath();
   g.fillStyle = 'rgba(28,17,24,0.90)';
   g.fill();
@@ -204,12 +226,13 @@ export function bubbleTexture(text, color) {
   g.font = `600 ${LINE}px Nunito, sans-serif`;
   g.fillStyle = '#fff4dd';
   g.textBaseline = 'top';
-  lines.forEach((l, i) => g.fillText(l, PAD, PAD + i * LINE * 1.28));
+  lines.forEach((l, i) => g.fillText(l, X0 + PAD, PAD + i * LINE * 1.28));
 
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
-  return { texture: tex, aspect: cv.width / cv.height };
+  const tip = side ? { u: 0, v: (TY + 4) / cv.height } : { u: 0.40, v: 1 };
+  return { texture: tex, aspect: cv.width / cv.height, tip };
 }
 
 export class ClanLeader {

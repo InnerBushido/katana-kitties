@@ -561,7 +561,7 @@ synthesised stand-ins after that. Three levels of degradation, on purpose.
 **Payne is a real person, and she has not signed off yet.** The quest-giver in
 the market is a fighter from Belegarth Medieval Combat Society, drawn as a
 goblin cat with her permission. **Richard is sending her the finished result
-for her final approval.** Until she has approved her likeness and her 39 lines,
+for her final approval.** Until she has approved her likeness and her 45 lines,
 a public release that includes her waits. Her photos went to Higgsfield as
 image references and nowhere else. → [payne.md](docs/notes/payne.md)
 

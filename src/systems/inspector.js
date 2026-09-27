@@ -190,6 +190,13 @@ export class Inspector {
     this.game.audio?.play('menu');
   }
 
+  /** Take down this kitten's card only if it is PAYNE's - her Goblin Sweep
+   *  ends the conversation, and must not close a dealer's card the kitten
+   *  opened after walking off. No BYE: the sweep is the goodbye. */
+  closePayne(index) {
+    if (isPayne(this.cards[index]?.state)) this.closeOne(index);
+  }
+
   /** Everything down, silently. For restart, quit, and the tournament. */
   closeAll() {
     for (const c of this.cards) {

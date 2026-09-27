@@ -32204,7 +32204,8 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
   ok('...but no number of rounds buys it without her quests', !PN.trickReady(g, k));
 
   /* --- the save --- */
-  const full = { ...PN.blankPayne(), met: true, hints: true, sweep: true, rounds: 4, told: true };
+  const full = { ...PN.blankPayne(), met: true, hints: true, sweep: true, rounds: 4, told: true,
+    lastAsks: 5, iceTold: true, mad: 2 };
   ok('her ledger survives a save exactly', JSON.stringify(PN.cleanPayne(JSON.parse(JSON.stringify(full)))) === JSON.stringify(full));
   ok('...and a broken one loads as a blank one, never a NaN',
     JSON.stringify(PN.cleanPayne({ rounds: 'x', sweep: 'yes', junk: 1 }))
@@ -32269,6 +32270,189 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
     done.clear();
   }
 
+  /* --- LOST IN A CAVE: 35 seconds ---
+     "Lets change the 'Lost in a cave' timing to be 35secs." */
+  {
+    const cave = world.dragonBalls.find((x) => x.lock === 'cave' && world.grottoAt(x.position.x, x.position.z));
+    ok('there is a grotto with a star in it to be lost in', !!cave);
+    if (cave) {
+      const P = new PN.Payne(g);
+      const c = kid(cave.position.x, cave.position.z);
+      c.clansSworn.add('panda'); c.payne.met = true; c.payne.hints = true;
+      run(P, c, 34);
+      const early = said(P).includes('payne_t_maze');
+      run(P, c, 1.5);
+      ok('lost in a cave: nothing at 34s, the tease by 35', !early && said(P).includes('payne_t_maze'),
+        said(P).join(' '));
+    }
+  }
+
+  /* --- ONE KITTEN'S PRESS NEVER CUTS ANOTHER'S ANSWER OFF ---
+     "If Payne is talking to another player, and someone closes dialog box
+     with Payne, it cancels the speech for the other player. It shouldn't do
+     that and the other players dialog that appears should take preference
+     over Payne's exit voice." Run with no voice at all, so every line holds
+     for its text's own length. */
+  {
+    const a = kid(); a.index = 0; a.name = 'Ember';
+    const c = kid(); c.index = 1; c.name = 'Frost'; c.style = { name: 'Frost' };
+    const g2 = { ...g, players: [a, c] };
+    const P = new PN.Payne(g2);
+    const tick = (s) => { for (let t = 0; t < s; t += 0.1) P._voice(0.1, false); };
+    P.say(a, ['payne_q_panda'], null, { card: false, now: true });
+    tick(0.2);
+    const hers = P.current;
+    const bye = P.say(c, ['payne_bye'], null, { card: false, now: true, low: true });
+    tick(0.2);
+    ok('her sister\'s BYE does not cut Ember off', P.current === hers);
+    ok('...and is dropped rather than said over her or after her', bye === null && !P.queue.some((q) => q.p === c));
+    P.say(c, ['payne_q_clans'], null, { card: false, now: true });
+    tick(0.2);
+    ok('her sister\'s own question waits its turn instead of cutting in',
+      P.current === hers && P.queue[0]?.p === c);
+    P.clear();
+    P.say(c, ['payne_bye'], null, { card: false, now: true, low: true });
+    tick(0.2);
+    ok('a goodbye with nobody else talking is said', P.current?.p === c && P.current.low);
+    P.say(a, ['payne_q_panda'], null, { card: false, now: true });
+    tick(0.2);
+    ok('...and anybody\'s next line cuts it short', P.current?.p === a && !P.current.low);
+    P.clear();
+    P.say(a, ['payne_last_mad1'], null, { card: false, now: true, keep: true });
+    tick(0.2);
+    const rant = P.current;
+    const b2 = P.say(a, ['payne_bye'], null, { card: false, now: true, low: true });
+    P.say(a, ['payne_q_panda'], null, { card: false, now: true });
+    tick(0.2);
+    ok('her rant is never cut by her own presses - "her voice and complaints should finish"',
+      P.current === rant && b2 === null && P.queue[0]?.ids?.includes('payne_q_panda'));
+  }
+
+  /* --- THE VERY LAST ONE, ASKED AGAIN AND AGAIN ---
+     Richard's note, as a conversation: the nearest prop, pinned and gone
+     once it goes over; then Icewhisker until she has Sense Mischief; then a
+     temper; then a sweep. Walked end to end with the shipped methods. */
+  {
+    for (const id of ['panda', 'clans', 'dojo', 'pilot', 'rider']) done.add(id);
+    const k = kid(-10, 28);
+    k.index = 0;
+    k.payne.met = true;
+    const standing = world.props.filter((x) => !x.scored).slice(0, 2);
+    const prop = { scored: false, group: { position: standing[0].group.position.clone() } };
+    k.seekTarget = prop;
+    const blasts = [];
+    k.blast = (from, f) => blasts.push(f);
+    k.hp = 100; const hp0 = k.hp;
+    const closed = [];
+    const toasts = [];
+    const g3 = {
+      ...g, players: [k], toast: (t) => toasts.push(t), sfx: () => {},
+      inspector: { closePayne: (i) => closed.push(i) },
+    };
+    const P = new PN.Payne(g3);
+    P.position = new THREE.Vector3(-10, 0, 24);
+    P.sweeper.position = P.position;
+    const heard = [];
+    const ask = () => { P.queue = []; P.current = null; P.choose(k, 'mark'); heard.push(...said(P)); return said(P); };
+    const tick = (s) => { for (let t = 0; t < s; t += 0.1) { P._voice(0.1, false); P._watch(k, 0.1, false); } };
+    ok('this kitten is on the Very Last One', PN.nextStep(g3, k)?.quest === 'last');
+
+    let s1 = ask();
+    const goal1 = P.goalFor(k);
+    ok('first MARK IT: the nearest mischief, on her map', s1.includes('payne_h_last')
+      && goal1 && Math.hypot(goal1.x - prop.group.position.x, goal1.z - prop.group.position.z) < 1e-6);
+    k.seekTarget = { scored: false, group: { position: standing[1].group.position.clone() } };
+    P._watch(k, 0.1, false);
+    const goal1b = P.goalFor(k);
+    ok('...and the mark does NOT hop to the next nearest while it is still standing',
+      goal1b && Math.hypot(goal1b.x - prop.group.position.x, goal1b.z - prop.group.position.z) < 1e-6);
+    prop.scored = true;
+    P._watch(k, 0.1, false);
+    ok('...and once it is knocked over the map waits for her to ask again', P.goalFor(k) === null);
+
+    const s2 = ask();
+    const ice = hallOf('ice');
+    ok('second MARK IT, without the arrow: "go to Icewhisker"', s2.includes('payne_last_ice')
+      && at({ target: P.goalFor(k) }, ice), s2.join(' '));
+    tick(30);
+    ok('...and Icewhisker stays on her map', at({ target: P.goalFor(k) }, ice));
+    const s3 = ask();
+    ok('...asked again, a shorter nudge and the same mark', s3.includes('payne_last_ice2') && at({ target: P.goalFor(k) }, ice));
+    k.clan = { buff: { seek: true } };
+    P._watch(k, 0.1, false);
+    ok('...until she HAS Sense Mischief, and then the mark is gone', P.goalFor(k) === null);
+
+    const s4 = ask();
+    ok('asked with the arrow over her head: "Are you serious with me?"', s4.includes('payne_last_mad1')
+      && blasts.length === 0 && closed.length === 0 && P.goalFor(k) === null);
+    ok('...a refusal that says so', toasts.some((t) => /won't mark/.test(t)));
+
+    P.queue = []; P.current = null;
+    const says = [];
+    const sayWas = P.say.bind(P);
+    P.say = (q, ids, ...rest) => { says.push(...ids); return sayWas(q, ids, ...rest); };
+    P.choose(k, 'mark');
+    const mad2 = said(P);
+    ok('asked AGAIN: the big one', mad2.includes('payne_last_mad2'));
+    tick(0.5);
+    ok('...and nothing happens before her last word', blasts.length === 0 && closed.length === 0);
+    tick(40);
+    ok('...then she SWEEPS her, backwards and up', blasts.length === 1
+      && blasts[0].knock === PN.PAYNE_SHOVE.knock && blasts[0].lift === PN.PAYNE_SHOVE.lift);
+    ok('...which ends the conversation', closed.join() === '0');
+    ok('...and she keeps complaining after it, in her own pane', says.includes('payne_last_swept'), says.join(' '));
+    ok('...with her own ring, as wide as her reach', P.sweeper.sweepSeq === 1 && P.sweeper.sweepReach === PN.PAYNE_SHOVE.reach);
+    ok('...and not one point of damage: a gag, not a fight', k.hp === hp0 && !k.ko);
+    ok('...and she is in too much of a huff to offer anybody a hint for a while', P.huffT > 0);
+
+    /* A kitten who has stepped out of reach is not swept, but it still ends. */
+    const far = kid(-10, 24 + PN.PAYNE_SHOVE.reach + 2);
+    far.index = 0; far.blast = () => blasts.push('far');
+    g3.players = [far];
+    closed.length = 0;
+    P.goblinSweep(far);
+    ok('out of her reach, nobody flies - the card still comes down', !blasts.includes('far') && closed.join() === '0');
+    ok('...and a flying kitten is never swept out of the sky',
+      (() => { const f = kid(-10, 27); f.mount = {}; f.blast = () => blasts.push('mount'); g3.players = [f];
+        P.goblinSweep(f); return !blasts.includes('mount'); })());
+
+    /* The goodbye does not cut her. */
+    const L = k.payne;
+    ok('her ledger remembers the conversation', L.lastAsks === 5 && L.iceTold && L.mad === 2);
+    done.clear();
+  }
+
+  /* --- RYUUSEKI IS SUMMONED ON FOOT, ON THE HOME ISLAND ---
+     "Ryuuseki shouldn't be summoned unless the player summoning them is on
+     the main island on the ground, not flying." The shipped
+     `_canSummonRyu` is lifted out of main.js and asked. */
+  {
+    const src = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+    const at0 = src.indexOf('\n  _canSummonRyu(p, at = this._toriiSpot()) {');
+    const from = src.indexOf('{', at0 + 1) + 1;
+    const body = src.slice(from, src.indexOf('\n  }\n', from));
+    // eslint-disable-next-line no-new-func
+    const can = new Function(`return function (p, at) {${body}\n};`)();
+    const G = { world, _toriiSpot: () => ({ x: 0, y: 0, z: -46 }) };
+    const T = G._toriiSpot();
+    const gt = world.heightAt(T.x, T.z + 8);
+    const walker = (x, z) => ({ position: { x, y: 0, z }, onGround: true });
+    ok('a kitten walking up to the torii summons him', can.call(G, walker(T.x, T.z + 8), T) && !!gt);
+    ok('...not one flying a dragon past it', !can.call(G, { ...walker(T.x, T.z + 8), mount: {} }, T));
+    ok('...nor one in mid-air over it', !can.call(G, { ...walker(T.x, T.z + 8), onGround: false }, T));
+    ok('...nor one carried by the griffin, or riding behind a pilot',
+      !can.call(G, { ...walker(T.x, T.z + 8), carried: true }, T)
+      && !can.call(G, { ...walker(T.x, T.z + 8), rideAlong: {} }, T));
+    /* THE ISLAND RULE, ASKED WHERE IT CAN BITE. Every point inside the old
+       46-unit circle measures as home ground (sampled: 0 of 192 off it), so
+       nothing there can test it; a walker on another island's ground next to
+       a torii put THERE can. */
+    const other = world.islands.find((i) => i !== world.islands[0] && i.kind !== 'arena');
+    const oh = other && world.heightAt(other.x, other.z);
+    ok('...nor one standing on any other island', !!oh && oh.island === other
+      && !can.call(G, walker(other.x, other.z), { x: other.x + 5, z: other.z }));
+  }
+
   /* --- her card sits ABOVE the warning strip, inside its own pane --- */
   {
     const H = 720;
@@ -32324,7 +32508,7 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
      hangs level with her face and goes away at talking range. The shipped
      `_updateNpc` runs on a stand-in with no canvas behind it. */
   {
-    const mkB = () => ({ visible: false, material: { opacity: 0 }, position: { y: 0 },
+    const mkB = () => ({ visible: false, material: { opacity: 0 }, position: { y: 0 }, userData: { tipY: -0.45 },
       scale: { x: 1, setScalar(v) { this.x = v; } } });
     const fake = (d) => {
       const q = kid(0, 34 + d); q.payne.met = true;
@@ -32336,6 +32520,22 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
     const settle = (f) => { for (let i = 0; i < 60; i++) PN.Payne.prototype._updateNpc.call(f, 1 / 30); return f; };
     const across = settle(fake(8));
     const close = settle(fake(PN.TALK_R - 0.5));
+    /* WHERE THE TAIL POINTS, not where the bubble's middle is. "Payne's speech
+       bubble is not where she is standing, may be pointing to her old
+       location before the resize": the tail came out of the bottom of a
+       bubble hung BESIDE her and pointed at the grass. It comes out of the
+       side now, and its point is put on her helmet. */
+    const lit = across.bubbles.find((x) => x.visible);
+    const tipAt = lit ? lit.position.y + lit.userData.tipY * lit.scale.x : NaN;
+    const helm = [PN.PAYNE_HEIGHT * (1 - PN.HELMET_FRAC), PN.PAYNE_HEIGHT];
+    ok('her bubble\'s tail points at her helmet',
+      Math.abs(tipAt - PN.BUBBLE_TIP.y) <= 0.17 && PN.BUBBLE_TIP.y > helm[0] && PN.BUBBLE_TIP.y < helm[1],
+      `tip ${tipAt.toFixed(2)}, helmet ${helm.map((v) => v.toFixed(2)).join('..')}`);
+    ok('...from just outside its edge, not from inside her',
+      PN.BUBBLE_TIP.out > PN.KITTEN_HEAD_W / 2 && PN.BUBBLE_TIP.out < PN.KITTEN_HEAD_W * 1.2);
+    ok('...because her bubble is the one with its tail on the side',
+      /bubbleTexture\(text, PAYNE_WHO\.colour, \{ tail: 'left' \}\)/.test(
+        readFileSync(new URL('../src/systems/payne.js', import.meta.url), 'utf8')));
     const top = Math.max(...across.bubbles.map((x) => x.position.y));
     ok('her bubble shows from across the square', across.bubbles.some((x) => x.visible));
     ok('...level with her face, below the top of her helmet',

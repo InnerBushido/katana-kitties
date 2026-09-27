@@ -14,6 +14,10 @@
 
    The ring lies flat, so four cameras from four sides all see it right, and
    it is one mesh per kitten, built the first time she sweeps and reused.
+
+   PAYNE IS ONE MORE SWEEPER (`update`'s `extra`): when a kitten will not stop
+   asking her for the Very Last One she sweeps HER, and her ring is this ring
+   at her own `sweepReach`, rather than a second drawing of the same thing.
 --------------------------------------------------------------------------- */
 
 import * as THREE from 'three';
@@ -60,29 +64,34 @@ export class SweepFx {
     return r;
   }
 
-  update(dt, players) {
-    for (const p of players ?? []) {
-      const seq = p.sweepSeq ?? 0;
-      let r = this.rigs.get(p);
-      if (!r && !seq) continue;          // never swept: allocate nothing
-      r ??= this._rig(p);
-      if (seq !== r.seq) {
-        r.seq = seq;
-        r.t = OUT + FADE;
-        r.reach = ATTACKS.sweep.reach;   // unbuffed, as the sweep is
-      }
-      if (r.t <= 0) { r.mesh.visible = false; continue; }
-      r.t = Math.max(0, r.t - dt);
-      const age = OUT + FADE - r.t;
-      const grow = Math.min(1, age / OUT);
-      const s = r.reach * (0.25 + 0.75 * (1 - (1 - grow) ** 3));
-      const a = age < OUT ? 0.9 : 0.9 * (r.t / FADE);
-      r.mesh.visible = true;
-      r.mesh.position.set(p.position.x, p.position.y + 0.12, p.position.z);
-      r.mesh.scale.setScalar(s);
-      r.mesh.material.opacity = a;
-      r.inner.material.opacity = a * 0.8;
+  /** @param extra one more sweeper that is not a kitten - Payne, whose own
+   *  sweep has a reach of its own (`sweepReach`). */
+  update(dt, players, extra = null) {
+    for (const p of players ?? []) this._one(dt, p);
+    if (extra?.position) this._one(dt, extra);
+  }
+
+  _one(dt, p) {
+    const seq = p.sweepSeq ?? 0;
+    let r = this.rigs.get(p);
+    if (!r && !seq) return;            // never swept: allocate nothing
+    r ??= this._rig(p);
+    if (seq !== r.seq) {
+      r.seq = seq;
+      r.t = OUT + FADE;
+      r.reach = p.sweepReach ?? ATTACKS.sweep.reach;   // unbuffed, as the sweep is
     }
+    if (r.t <= 0) { r.mesh.visible = false; return; }
+    r.t = Math.max(0, r.t - dt);
+    const age = OUT + FADE - r.t;
+    const grow = Math.min(1, age / OUT);
+    const s = r.reach * (0.25 + 0.75 * (1 - (1 - grow) ** 3));
+    const a = age < OUT ? 0.9 : 0.9 * (r.t / FADE);
+    r.mesh.visible = true;
+    r.mesh.position.set(p.position.x, p.position.y + 0.12, p.position.z);
+    r.mesh.scale.setScalar(s);
+    r.mesh.material.opacity = a;
+    r.inner.material.opacity = a * 0.8;
   }
 
   reset() {

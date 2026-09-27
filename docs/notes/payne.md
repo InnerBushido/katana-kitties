@@ -55,6 +55,17 @@ in [`systems/sweepfx.js`](../../src/systems/sweepfx.js), and the move in
 - **In the market at (-10, 24)**, west of Mr. Satan, on `findOpenSpot`. A
   solid r 1.25, a bouncing idle, and a bubble beside her head: an invitation
   for a kitten who has not met her, then "Stuck? Need a hint?".
+- **Her bubble's tail comes out of its SIDE and points at her helmet.**
+  Reported: *"Payne's speech bubble is not where she is standing, may be
+  pointing to her old location before the resize."* It was: the bubble had
+  moved beside her head, but its tail still came out of the bottom and pointed
+  at the grass beside her. `bubbleTexture(..., { tail: 'left' })` puts the tail
+  on the side (every other character keeps theirs underneath, byte for byte)
+  and returns where its point is. Payne hangs the bubble by that point at
+  `BUBBLE_TIP`, on her helmet just outside its edge. The point is near the
+  bubble's TOP, so the box hangs down beside her shoulders. With the point two
+  thirds down, the box ran under the scoreboard at 8 units, measured in the
+  browser.
 - **She is 6.0 tall, not 3.7.** *"Payne looks too small in the town, should be
   1.5x's bigger at least, her helmet should be as big as a regular players
   head at least."* Measured, not reasoned. A kitten's head is 1.42 wide (the
@@ -107,7 +118,68 @@ in [`systems/sweepfx.js`](../../src/systems/sweepfx.js), and the move in
     once all seven stars are held; otherwise the nearest star, with its lock's
     own hint.
   - **The Very Last One:** `seekTarget`, the same prop the minimap and
-    Icewhisker's chevron already point at.
+    Icewhisker's chevron already point at. **Its mark is pinned and its
+    MARK IT is a conversation** (below).
+
+## The Very Last One, asked again and again
+
+Richard: *"it should only show the 'next' closest mischief if they ask to
+'mark it on my map', but once knocked over, it should wait for the player to
+'mark it on my map' again before showing it again."* Then the Icewhisker
+detour, a temper, and a sweep. `askLast` runs it:
+
+| ask | she | her map |
+| --- | --- | --- |
+| 1st | `h_last` | the nearest standing prop, **pinned** (`_pinLast`). It does not hop to the next one; it goes when that prop goes over, and the map waits for the next ask |
+| after that, **without** Sense Mischief | `last_ice`, then `last_ice2` | Icewhisker's hall, **until she holds the oath** |
+| after that, **with** it | `last_mad1`: *"Are you serious with me? You already have the Sense Mischief ability!"* plus goblin | nothing: she has the arrow |
+| and again | `last_mad2` (then `last_mad3` every time after) | her card is closed and she is swept |
+
+- **Every other step's mark FOLLOWS the step** (the next cane, the next star).
+  On this one that made her mark a second Sense Mischief, hopping to the next
+  prop on every knock. So it is an `override` pinned to one prop.
+- **"Has Sense Mischief" is `clan.buff.seek`, the oath she holds NOW.** Every
+  kitten on this quest has sworn to Icewhisker once already, because the clans
+  quest comes first. The arrow belongs to whoever is sworn to her today.
+- **The stuck hint (hints on) pins one prop too**, as a single ask would, and
+  does not advance the conversation. So does turning hints on.
+- **The sweep lands on her last word.** `say(..., { after })` fires when the
+  clip ends ("...Goblin... SWEEEEP!", 22.6 s into `last_mad2`, measured in the
+  browser), not when the card's hold does. With no voice it fires after the
+  text's own time.
+- **It is a gag, not combat.** She calls `Player.blast`, Mr. Satan's door, with
+  `PAYNE_SHOVE` (knock 15, lift 9 against his 34 / 16): no damage, no
+  knockout, no score, and nothing in the town goes over. The MISCHIEF counter
+  is the kittens', and the Very Last One is a race a goblin must never be able
+  to win for somebody. Non-negotiable 3 is untouched.
+- **Out of reach (`PAYNE_SHOVE.reach` 6.4), nobody flies**, and never a kitten
+  on a dragon. The card still comes down, because the conversation is over.
+- **Her ring is a kitten's ring.** `SweepFx` takes `payne.sweeper` as one more
+  sweeper, with its own `sweepReach`. She spins by her billboard narrowing and
+  mirroring twice (`PAYNE_SPIN`). Afterwards she is in a huff (`PAYNE_HUFF`,
+  10 s) and her bubble does not offer anybody a hint. The first time it ran,
+  the frame after the sweep said "Stuck? Need a hint? Come and talk to me!"
+- **Her voice finishes even when the dialog ends.** The rants are `keep`, so
+  nothing the kitten presses, BYE included, can cut them off. What she says
+  after the sweep (`last_swept`) goes to the kitten's pane as a card.
+
+## Who she is talking to wins
+
+Reported: *"If Payne is talking to another player, and someone closes dialog
+box with Payne, it cancels the speech for the other player. It shouldn't do
+that and the other players dialog that appears should take preference over
+Payne's exit voice."* `say(..., { now })` used to end whatever was current,
+whoever it was for. Now:
+
+- **`now` cuts only this kitten's own words**, and never a `keep` rant.
+  Otherwise it waits at the head of the queue.
+- **BYE is `low`.** It is dropped outright if anybody else is being talked to
+  or waiting, and anybody's next line cuts one that is playing.
+- *Found on the way:* `_play` read `g.announcer?.clip?.(ids[k++])`. Optional
+  chaining skips the arguments too, so with no announcer `k` never moved and
+  the loop never ended. The game always has an announcer, so only world-check's
+  first voice-less run could find it. That is exactly the fallback
+  non-negotiable 9 promises.
 
 ## Hints, teases, and why they are opt-in
 
@@ -121,8 +193,9 @@ in [`systems/sweepfx.js`](../../src/systems/sweepfx.js), and the move in
   world.
 - **The three teases Richard named**, and the other two are opt-in as well:
   - **A cub carried for 120 s** without growing.
-  - **75 s in a grotto** whose star is still there. The tease is the wall-hand
-    trick.
+  - **35 s in a grotto** whose star is still there (`MAZE_TEASE`; it was 75,
+    and Richard: *"Lets change the 'Lost in a cave' timing to be 35secs."*).
+    The tease is the wall-hand trick.
   - **Four hops near the sky star with only two jumps.** Her mark then points
     at **Shadowtail's hall** rather than the star, because what the kitten
     cannot find is the reason she cannot reach it. The mark holds until she has
@@ -211,7 +284,7 @@ playable or an opponent later, as Richard asked.
 
 ## The script
 
-Pixie, `voice_id 0178ef57-ada4-43d9-992b-8d9221045bb4`. All 39 lines, in
+Pixie, `voice_id 0178ef57-ada4-43d9-992b-8d9221045bb4`. All 45 lines, in
 `public/voice/payne/`, are **for Payne's approval** along with her likeness.
 The text is `PAYNE_LINES`, and the text is the line: the voice falls back
 (non-negotiable 9), and world-check requires every line to have a file and
@@ -251,10 +324,22 @@ every file to have a line.
 | `trick_teach` | Okay. Secret goblin move. Hold run, stand really still... and swing! That's the Goblin Sweep. Everything around you goes flying! |
 | `hints_on` | Hints on! If you get stuck, I'll find you. Goblins always find you. |
 | `hints_off` | Hints off! Big kitten. I'll be right here if you need me. |
+| `last_ice` | Psst. Goblin secret! Icewhisker has a trick called Sense Mischief. It points right at the nearest thing still standing! Go and swear to her, out on the frozen island. I marked her on your map. |
+| `last_ice2` | Icewhisker! Frozen island! She's STILL on your map. Go, go, go! |
+| `last_mad1` | Are you serious with me? You already have the Sense Mischief ability! You know where you need to go! ... Snargle-blarg! Fizzwick-GRUNKLE-bonk! ... Hmph. That's goblin. Don't repeat it. |
+| `last_mad2` | AGAIN?! Okay. Look. See the arrow? The big, pointy, floaty ARROW? It points at the mischief. That is its WHOLE JOB! ... Grrrrr... Blorka-snazz-FRAZZLE-flumph! ... Right. That's it. Goblin... SWEEEEP! |
+| `last_mad3` | You AGAIN?! Nope. Nope, nope, nope! Zibble-GRONK! Goblin... SWEEEEP! |
+| `last_swept` | And STAY swept! Follow the ARROW! ... Kittens. Honestly. I have a helmet to polish, you know. |
+
+**The goblin is nonsense on purpose.** Richard asked for her to *"swear in
+goblin speak (whatever that sounds like!)"*, and the audience is nine and
+younger, so every "swear" is a made-up word that means nothing in any language.
+The six `last_*` lines are the second batch. They were cast on the same Pixie
+preset, and are as pending her approval as the first 39.
 
 ## What is saved
 
-`p.payne` = `{met, hints, sweep, rounds, told, teased}`, in the cast row like
+`p.payne` = `{met, hints, sweep, rounds, told, teased, lastAsks, iceTold, mad}`, in the cast row like
 everything else a kitten owns, so a girl who leaves and comes back still knows
 the Sweep. `cleanPayne` gives a blank ledger rather than a NaN for anything
 malformed. The timers are deliberately **not** saved: a load is a fresh two
@@ -262,8 +347,8 @@ minutes, and that is what "stuck" means.
 
 ## Open
 
-- **Payne's approval** of her likeness and all 39 lines.
-- **Nobody has played it.** The stuck timings (2 min, 75 s in a cave, four
+- **Payne's approval** of her likeness and all 45 lines.
+- **Nobody has played it.** The stuck timings (2 min, 35 s in a cave, four
   hops) are Richard's numbers or first guesses, not tuned by watching a kid.
 - The alternative held pose (both hands on the helmet) is kept outside the repo
   in case Richard prefers it.
