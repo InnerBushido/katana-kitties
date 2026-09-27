@@ -190,6 +190,13 @@ src/
                box", so a map in every pane makes its second half unreachable
                and not one line of the assignment had to change)
              menunav  trailer (the opt-in video player)
+             payne (the quest-giver in the market — a REAL PERSON, pending her
+               approval of the likeness and the script. `nextStep` is pure and
+               decides everything she says; hints and teases are OPT-IN; the
+               card sits above the warning strip via `payneSpot` in split.js.
+               docs/notes/payne.md)
+             sweepfx (the Goblin Sweep's ring - the poller trick again, over
+               Player.sweepSeq; the sweep itself is `ATTACKS.sweep`)
              finaletide (what is BEHIND Patchfur at the ending: one measured
                corner of the town standing itself back up while she talks and
                going over again on the end of her clause. It moves meshes and

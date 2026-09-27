@@ -333,7 +333,7 @@ export class ProfileScreen {
     if (!this.fromPause) this.game.clock.getDelta();
     /* AFTER the panel is down and the clock is square, so the card is put back
        over a game that is already running again. */
-    if (back && backTo) this.game.inspector?.reopen(backTo.index, backTo.row);
+    if (back && backTo) this.game.inspector?.reopen(backTo.index, backTo.row, backTo.state);
   }
 
   /* ------------------------------- input --------------------------------- */

@@ -83,6 +83,7 @@ work out by playing.
 **The game** ·
 [The story](#the-story) ·
 [Meet the clan leaders](#meet-the-clan-leaders) ·
+[Ask Payne](#ask-payne) ·
 [Collect the seven dragon balls](#collect-the-seven-dragon-balls) ·
 [Raise a panda](#raise-a-panda) ·
 [The Powerup Kotodama](#the-powerup-kotodama)
@@ -286,6 +287,21 @@ stops you, fills the screen and tells you who she is — out loud, in her own
 voice. It happens once per leader, Start skips it, and **you can't swear
 to a clan you haven't met**, so the introduction is the way in rather than
 something in the way.
+
+## Ask Payne
+
+There's a goblin in the market with a robot helmet on her head. That's
+**Payne**, and she's the best quest-giver in the whole sky (she says so). Walk
+up and press **interact**. She'll tell you your next quest, show you which ones
+you've done, and let you race your sisters for most mischief, most dragon balls
+and most orbs.
+
+Turn **hints on** and she'll keep an eye on you. If you're stuck for two
+minutes, she pops up on your screen, calls you by name and marks where to go on
+your map. She'll also laugh at you a bit. That's goblins.
+
+Finish her quests, win some fights in the arena, and she'll teach you a
+**secret goblin move**. Ask her what it is.
 
 ## Collect the seven dragon balls
 

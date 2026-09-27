@@ -1,6 +1,7 @@
 import { PLAYER_STYLE } from '../core/palette.js';
 import { CLANS } from '../world/world.js';
 import { MILESTONES } from './arenaquest.js';
+import { cleanPayne } from './payne.js';
 
 /* ---------------------------------------------------------------------------
    SAVED GAMES — the afternoon, written down every half minute.
@@ -393,6 +394,9 @@ export function castRow(p, here = true) {
     feats: p.feats ? {
       ...p.feats, got: [...p.feats.got], paid: [...p.feats.paid],
     } : null,
+    /* Her history with Payne — met, hints on, the trick, rounds fought. See
+       systems/payne.js. Copied for the same reason `feats` is. */
+    payne: p.payne ? { ...p.payne } : null,
   };
 }
 
@@ -414,7 +418,8 @@ export function castRow(p, here = true) {
 export function meaningful(row) {
   return !!(row && (row.score || row.orbs?.length || row.clan || row.sworn?.length
     || row.cut || row.raised || row.fedFrom != null || row.plain
-    || row.feats?.got?.length || row.feats?.mischief || row.feats?.balls));
+    || row.feats?.got?.length || row.feats?.mischief || row.feats?.balls
+    || row.payne?.sweep || row.payne?.rounds));
 }
 
 /**
@@ -464,6 +469,9 @@ export function applyCast(game, p, row) {
     for (let k = 0; k < n; k++) game._giveOrb(p, { quiet: true });
   }
   game.feats?.applyRow(p, row.feats);
+  /* An old row has no `payne` and comes back as a kitten who has not met her
+     — which is true of every save taken before she existed. */
+  p.payne = cleanPayne(row.payne);
   return true;
 }
 

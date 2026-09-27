@@ -400,6 +400,9 @@ const VOICE_FOLDERS = [
   [/^summon/, 'ryuuseki'],
   [/^cross/, 'kittens'],
   [/^(sky|break|close|elder\d|balls\d|done\d|hunt)/, 'patchfur'],
+  /* Payne, the quest giver — every one of her ids starts with her name, so
+     the rule cannot catch anybody else's. See systems/payne.js. */
+  [/^payne_/, 'payne'],
 ];
 
 export const voicePath = (id) => {
@@ -738,6 +741,15 @@ export class Audio {
           });
         }
         this._tone({ type: 'sawtooth', from: 130, to: 58, dur: 0.22, gain: 0.13 * v });
+        break;
+      case 'sweep':
+        /* PAYNE'S GOBLIN SWEEP: a whoosh that goes ALL the way round. The
+           slash is one bright falling sweep; this is two of them rising and
+           falling in turn, so the ear hears the circle, with a thump under
+           it for her foot planting. */
+        this._noise({ from: 900, to: 3200, dur: 0.16, gain: 0.55 * v, q: 1.8 });
+        this._noise({ from: 3200, to: 800, dur: 0.18, gain: 0.55 * v, q: 1.8, delay: 0.15 });
+        this._tone({ type: 'triangle', from: 140, to: 60, dur: 0.16, gain: 0.2 * v });
         break;
       case 'breath':
         // A long exhale that opens up and closes again.

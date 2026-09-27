@@ -181,8 +181,15 @@ export class Minimap {
    *        same question — able to disagree with the chevron floating over the
    *        barrel in the world, which is the one thing it must never do. See
    *        `systems/lasthunt.js` for when it is non-null.
+   * @param goal where Payne has told this pane to go — `{x, z, colour}` or
+   *        null. See `Payne.goalFor`. A RING WITH HER COLOUR IN IT, green:
+   *        different from the last-hunt crosshair because it means something
+   *        different ("go here next", not "this exact barrel"), and the two
+   *        can be on one map at once.
+   * @param payne the Payne guide, for her own mark in the market
    */
-  draw(players, dragons, kotodama = null, satan = null, ryu = null, seek = null) {
+  draw(players, dragons, kotodama = null, satan = null, ryu = null, seek = null,
+    goal = null, payne = null) {
     const focus = this.focusIndex != null && players[this.focusIndex]
       ? players[this.focusIndex].position
       : midpointOf(this.focusOn?.map((i) => players[i]).filter(Boolean) ?? players);
@@ -436,6 +443,28 @@ export class Minimap {
       c.stroke();
     }
 
+    /* --- PAYNE, in the market ---
+       A DIAMOND, BECAUSE SHE IS A THING YOU WALK UP TO AND PRESS A BUTTON AT —
+       the dealer's shape — and GREEN, because that is her colour everywhere
+       (her card, her beam, her bubble). Always on: she is the person a kid
+       who is lost is supposed to be able to find. */
+    if (payne?.position) {
+      const x = this._px(payne.position.x);
+      const y = this._py(payne.position.z);
+      const s = 4.5 * this.dpr;
+      c.beginPath();
+      c.moveTo(x, y - s);
+      c.lineTo(x + s, y);
+      c.lineTo(x, y + s);
+      c.lineTo(x - s, y);
+      c.closePath();
+      c.fillStyle = '#7fd35a';
+      c.fill();
+      c.lineWidth = 1.6 * this.dpr;
+      c.strokeStyle = '#1c1016';
+      c.stroke();
+    }
+
     /* --- MR. SATAN, once he is really standing somewhere ---
        HE IS AN INSTRUCTION, WHICH IS WHY HE IS ON HERE AT ALL. Every other
        mark on this map is a place; he is the only PERSON, and he is on it
@@ -546,6 +575,31 @@ export class Minimap {
         c.stroke();
       }
       c.lineCap = 'butt';
+    }
+
+    /* --- WHERE PAYNE SAID TO GO ---
+       A pulsing green ring with the kitten's own colour in the middle, so a
+       shared pane can tell whose hint it is. On the same `_t` as every other
+       pulse here. Before the kittens, like every landmark. */
+    if (goal && Number.isFinite(goal.x) && Number.isFinite(goal.z)) {
+      const x = this._px(goal.x);
+      const y = this._py(goal.z);
+      const beat = 0.5 + Math.sin((this._t ?? 0) * 2.1) * 0.5;
+      const s = (6 + beat * 4) * this.dpr;
+      for (const [col, w] of [['#1c1016', 4.5], ['#7fd35a', 2.4]]) {
+        c.strokeStyle = col;
+        c.lineWidth = w * this.dpr;
+        c.beginPath();
+        c.arc(x, y, s, 0, Math.PI * 2);
+        c.stroke();
+      }
+      c.beginPath();
+      c.arc(x, y, 3.2 * this.dpr, 0, Math.PI * 2);
+      c.fillStyle = goal.colour || '#7fd35a';
+      c.fill();
+      c.lineWidth = 1.4 * this.dpr;
+      c.strokeStyle = '#1c1016';
+      c.stroke();
     }
 
     // --- the kitties, drawn last so they're never hidden ---

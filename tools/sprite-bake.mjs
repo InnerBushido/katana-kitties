@@ -121,6 +121,28 @@ const WORK = [
   { file: 'satan_flex_biceps.png', out: 'satan/flex_biceps.png', to: [640, 640], chroma: true },
   { file: 'satan_flex_trophy.png', out: 'satan/flex_trophy.png', to: [640, 640], chroma: true },
   { file: 'satan_flex_kiss.png', out: 'satan/flex_kiss.png', to: [640, 640], chroma: true },
+  /* PAYNE, THE QUEST GIVER — a real person, Payne of Belegarth, who said yes
+     to being in the game and approves the result. Her photos WERE uploaded as
+     references, with her permission (unlike the bodybuilder photos above).
+     Five masters, and the split is Richard's: "we will want to generate her
+     whole body ... that we can use to expand on", so `base` is her with her
+     face showing and nothing in her hands, kept for the day she becomes a
+     fighter; `helmet` is the Gundam helmet ON ITS OWN, for the face reveal at
+     the ending where she holds it; `town` is her wearing it, which is how she
+     stands in the market all afternoon ("the helmet ... will be her starting
+     pose in the town"); `sweep` is the trick she teaches, and it shows her
+     face because she can only teach it after the ending — see
+     systems/payne.js; and `held` is the ending itself, the helmet off and
+     under her arm ("she can be holding the helmet instead of wearing it"),
+     generated off `base` and `helmet` as references so it is the same girl
+     and the same helmet. A pasted helmet layer was tried first and did not sit on
+     her head; the model drawing her wearing it did. 768 for the two she is
+     drawn big in (the town billboard and the portrait crop off it). */
+  { file: 'payne_town.png', out: 'payne/town.png', to: [768, 768], chroma: true },
+  { file: 'payne_base.png', out: 'payne/base.png', to: [768, 768], chroma: true },
+  { file: 'payne_helmet.png', out: 'payne/helmet.png', to: [512, 512], chroma: true },
+  { file: 'payne_sweep.png', out: 'payne/sweep.png', to: [640, 640], chroma: true },
+  { file: 'payne_held.png', out: 'payne/held.png', to: [768, 768], chroma: true },
 ];
 
 /* ========================================================================== */
