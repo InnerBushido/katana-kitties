@@ -445,3 +445,20 @@ well as in the world.
 the fill-everything count in world-check is thirteen. None is ever filled:
 she is a billboard off `_loadSprite` and a crop on a canvas, and neither asks
 for `fillHoles`.
+
+## The Goblin Sweep pose, and the Riposte stance
+
+Higgsfield `gpt_image_2_5` on flat magenta, one per sheet, each prompted with
+that kitten's own `bless.png` as the only reference. Storm and Blossom are
+recoloured by `Game` like every other single pose. Payne's sweep was
+described in words and never used as a reference; her likeness is hers.
+
+- `ember_sweep.png` / `frost_sweep.png` → `kittens/<sheet>/sweep.png`, 768.
+  She wears it while `sweepT` runs (0.34 s) and not a frame longer, since she
+  is free to move the frame it ends. The spin is the quad's width following
+  the cosine of the turn. It is floored at a third so it never goes edge-on
+  to nothing, because this material alpha-tests. world-check measures four
+  flips per sweep.
+- `ember_riposte.png` / `frost_riposte.png` are the counter stance, katana
+  across the body with a glint. **They belong to the Riposte orb on
+  `feature/rare-orbs-reach-parry`** and are wired there, not here.

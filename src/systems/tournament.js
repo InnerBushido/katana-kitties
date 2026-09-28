@@ -119,6 +119,100 @@ export const MODES = [
 export const MODE_BY_ID = Object.fromEntries(MODES.map((m) => [m.id, m]));
 
 /* ---------------------------------------------------------------------------
+   THE ROLL CALL — Mr. Satan names who is actually fighting.
+
+   Reported: "Announcer says 'Round 1, ember versus frost' Let's only use this
+   if it actually is ember versus frost, otherwise, lets say something else".
+   It said it over every match in the game — Storm against Blossom, a 2v2, a
+   free-for-all of four — because `sat_r1` is one recording of one sentence.
+
+   So the card is BUILT, out of pieces he recorded one at a time, the way it
+   was suggested: "having a voice of every fighters name, and then interjecting
+   it where appropriate ... 'Ember and Frost versus Blossom and Storm' For a 2v2
+   ... 2v1v1 can be 'Ember and Frost versus Blossom and also versus Storm'".
+   The whole recorded line is KEPT for the one match it is true of — Ember
+   against Frost — because a single performance beats a spliced one, and that
+   is the match two sisters play most.
+
+   ONE LIST, TWO OUTPUTS. `rollCall` returns the clip ids AND the card text
+   from the same walk over the same pieces, so the words on screen cannot drift
+   from the words he says — the rule voices.md calls "the card and the
+   recording have to be ONE string". The pieces are cut by
+   tools/capture/satan-rollcall.mjs.
+--------------------------------------------------------------------------- */
+/** Every roll-call clip, and the words each one says on the card. */
+export const ROLL_WORDS = {
+  sat_rc_r1: 'ROUND 1!',
+  sat_rc_r2: 'ROUND 2!',
+  sat_rc_ember: 'Ember',
+  sat_rc_frost: 'Frost',
+  sat_rc_blossom: 'Blossom',
+  sat_rc_storm: 'Storm',
+  sat_rc_and_ember: 'and Ember',
+  sat_rc_and_frost: 'and Frost',
+  sat_rc_and_blossom: 'and Blossom',
+  sat_rc_and_storm: 'and Storm',
+  sat_rc_vs: 'versus',
+  sat_rc_alsovs: 'and ALSO versus',
+  sat_rc_marks: '— fighters, take your marks!',
+};
+
+/**
+ * What Mr. Satan calls at the start of round `round`, for fighters whose
+ * kittens are `names` and who fight on `sides` (one entry per fighter).
+ *
+ *   duel        ROUND 1! Storm versus Blossom — fighters, take your marks!
+ *   2v2         ... Ember and Frost versus Blossom and Storm — ...
+ *   3v1         ... Ember, Frost and Blossom versus Storm — ...
+ *   2v1v1       ... Ember and Frost versus Blossom and ALSO versus Storm — ...
+ *   free-for-all  Ember versus Frost versus Blossom versus Storm
+ *
+ * Ember against Frost, on their own, is `sat_r1` / `sat_r2` — the recording
+ * the card always had. A name, or a round, with no piece recorded for it
+ * falls back to the round and the marks with nobody named, which is never
+ * wrong; a card that named the wrong cat is what this replaced.
+ *
+ * @returns {{ids: string|string[], text: string}}
+ */
+export function rollCall(round, names, sides) {
+  const bySide = [];
+  names.forEach((n, i) => { (bySide[sides[i]] ??= []).push(n); });
+  const groups = bySide.filter((g) => g?.length);
+  const key = (n) => String(n ?? '').toLowerCase();
+  if (round <= 2 && groups.length === 2 && groups.every((g) => g.length === 1)
+    && groups.map((g) => key(g[0])).sort().join() === 'ember,frost') {
+    return { ids: `sat_r${round}`, text: `ROUND ${round}! Ember versus Frost — fighters, take your marks!` };
+  }
+  const intro = `sat_rc_r${round}`;
+  const bare = ROLL_WORDS[intro]
+    ? { ids: [intro, 'sat_rc_marks'], text: `${ROLL_WORDS[intro]} Fighters, take your marks!` }
+    : { ids: `sat_r${Math.min(round, 2)}`, text: `ROUND ${round}! Fighters, take your marks!` };
+  if (!ROLL_WORDS[intro] || groups.some((g) => g.some((n) => !ROLL_WORDS[`sat_rc_${key(n)}`]))) return bare;
+
+  /* "AND ALSO VERSUS" is for the loner after a PAIR in a three-sided match —
+     it is the words that say she is not on anybody's side. A free-for-all is
+     all loners, and "versus, versus, versus" is already the right sentence. */
+  const also = groups.length >= 3 && groups.some((g) => g.length > 1);
+  const ids = [intro];
+  groups.forEach((g, s) => {
+    if (s > 0) ids.push(also && s === groups.length - 1 ? 'sat_rc_alsovs' : 'sat_rc_vs');
+    g.forEach((n, j) => ids.push(j > 0 && j === g.length - 1 ? `sat_rc_and_${key(n)}` : `sat_rc_${key(n)}`));
+  });
+  ids.push('sat_rc_marks');
+  /* The card is the same walk. A comma between names that are not the last
+     of their side ("Ember, Frost and Blossom"), a space everywhere else. */
+  let text = '';
+  ids.forEach((id, i) => {
+    const w = ROLL_WORDS[id];
+    const next = ids[i + 1];
+    text += w;
+    const listed = /^sat_rc_(?!r\d|and_|vs|alsovs|marks)/.test(id) && /^sat_rc_(?!r\d|and_|vs|alsovs|marks)/.test(next ?? '');
+    text += listed ? ', ' : (next ? ' ' : '');
+  });
+  return { ids, text };
+}
+
+/* ---------------------------------------------------------------------------
    WHO IS ON MY SIDE — the one question a team match did not answer.
 
    In a 2v2 there was nothing on screen or in the world that said who your
@@ -210,8 +304,18 @@ export function handicapFor(sides, on = true) {
 export const WINS_NEEDED = 2;
 export const MAX_ROUNDS = 3;
 
-/** Seconds the round card holds before the countdown starts. */
-const CARD_TIME = 3.4;
+/** Seconds the round card holds before the countdown starts — AT LEAST. It
+ *  also waits for him to finish talking; see the `card` beat. */
+export const CARD_TIME = 3.4;
+/** ...but never longer than this, whatever is in his queue. A line that
+ *  never ends (a `play()` the browser refused, a card another system keeps
+ *  refilling) must not hold four kittens on their marks forever. His longest
+ *  round line is 7.6s; this is well past it and short of "is it broken?". */
+export const CARD_MAX = 14;
+/** A press in the first this-many seconds of the card is not a skip: it is
+ *  the press that started the round (the league picker confirms on JUMP), or
+ *  a kid still mashing from the feast. See UI FALL-THROUGH in gotchas.md. */
+export const CALL_SKIP_AFTER = 0.5;
 /** Seconds of "3 … 2 … 1 …". One a second, so the ticks land on the numbers. */
 const COUNT_FROM = 3;
 /** Held on the knockout before the next round is set up. */
@@ -1168,9 +1272,14 @@ export class Tournament {
     });
 
     const last = this.round === MAX_ROUNDS;
-    this.announcer?.say(`sat_r${this.round}`, last
-      ? 'FINAL ROUND! Everything comes down to this one!'
-      : `ROUND ${this.round}! Ember versus Frost — fighters, take your marks!`);
+    /* WHO IS FIGHTING, BY NAME — see `rollCall`. The kitten's name, not the
+       seat's: the voice has a clip per cat, and a player called anything else
+       is still one of the four cats. The final round names nobody, as it
+       always has; by then everybody knows. */
+    const call = rollCall(this.round,
+      this.game.players.map((p) => p.style?.name ?? p.name), this.sides);
+    if (last) this.announcer?.say(`sat_r${this.round}`, 'FINAL ROUND! Everything comes down to this one!');
+    else this.announcer?.say(call.ids, call.text);
     this._banner(last ? 'FINAL ROUND' : `ROUND ${this.round}`, 'round');
   }
 
@@ -1437,8 +1546,10 @@ export class Tournament {
       case 'card':
       case 'count':
         /* Straight to the gong. `t` is what both of those states are waiting
-           on, so this lands in `live` through the same line the wait does. */
-        this.t = this.state === 'card' ? CARD_TIME : COUNT_FROM;
+           on, so this lands in `live` through the same line the wait does —
+           and his round line is cut, since the card waits on it now. */
+        if (this.state === 'card') this.announcer?.cut?.();
+        this.t = this.state === 'card' ? CARD_MAX : COUNT_FROM;
         return 'skipped to FIGHT!';
       case 'live': {
         const how = this.callRound(why);
@@ -1502,6 +1613,27 @@ export class Tournament {
     return 'clock run out';
   }
 
+  /**
+   * Cut his round line short and start the count — a fighter pressed JUMP,
+   * ATTACK or Escape during the card. False outside the card, so Escape falls
+   * through to the pause menu everywhere else.
+   */
+  skipCall() {
+    if (this.state !== 'card' || this.t < CALL_SKIP_AFTER) return false;
+    this._startCount();
+    return true;
+  }
+
+  /** Card over, count on: whatever he is still saying goes, and so does his
+   *  card — he has finished (or been cut off), and the words sitting in the
+   *  corner through "3, 2, 1" are the screen space the note was about. */
+  _startCount() {
+    this.announcer?.cut?.();
+    this.state = 'count';
+    this.t = 0;
+    this._counted = COUNT_FROM + 1;
+  }
+
   /** The `ko` beat's pending banner-and-line, run NOW. Shared by the update
    *  loop's own timer and by both debug keys, so a skipped ceremony is the
    *  same ceremony, arriving early. */
@@ -1529,13 +1661,33 @@ export class Tournament {
     this._catchFallers();
 
     switch (this.state) {
-      case 'card':
-        if (this.t >= CARD_TIME) {
-          this.state = 'count';
-          this.t = 0;
-          this._counted = COUNT_FROM + 1;
+      case 'card': {
+        /* THE ROUND WAITS FOR HIM TO FINISH. It used to wait 3.4s and then
+           count three, and his round lines are 5.7 to 7.6 seconds long, so
+           the count ran out while he was still talking and FIGHT! queued up
+           behind him: "the fight has already started before he says 'Fight'
+           and then the text goes away. ... We should delay the fight to not
+           start until all the voice speech is done before starting the match
+           and aligning the 'Fight' voice/text with the fight start."
+
+           AND ANY FIGHTER CAN CUT HIM OFF. "User can speed this up by
+           pressing esc/jump/swing buttons" — JUMP or ATTACK on anybody's pad,
+           and Escape on the keyboard (`Game`'s keydown asks `skipCall`). It is
+           not the scene rule (Escape / Start only, seventh non-negotiable)
+           because this is not a scene: nothing is lost by it but the rest of
+           a sentence, the fighters are frozen so the press does nothing else,
+           and the press that STARTED the round is kept out by
+           `CALL_SKIP_AFTER`. It skips to the COUNT, not to the fight — the
+           three seconds are what tell everybody it is about to start. */
+        if (this.t >= CALL_SKIP_AFTER
+          && (pads ?? []).some((p) => p?.pressed?.('jump') || p?.pressed?.('attack'))) {
+          this.skipCall();
+          break;
         }
+        const talking = !!this.announcer?.talking;
+        if ((this.t >= CARD_TIME && !talking) || this.t >= CARD_MAX) this._startCount();
         break;
+      }
 
       case 'count': {
         /* One tick a second, fired on the SECOND it belongs to rather than
@@ -1565,7 +1717,13 @@ export class Tournament {
           this._onTheClock = false;
           this._koHold = KO_HOLD;
           this.audio?.play('gong');
-          this.announcer?.say('sat_fight', 'FIGHT!');
+          /* NOW, AND GONE WITH THE BANNER. `interrupt` rather than `say`: the
+             word IS the start, so nothing may be ahead of it in the queue,
+             and its card leaves a beat after the word does rather than 0.9s
+             later — "if we have Fight text on screen, then remove it fairly
+             quickly after the fight has started". */
+          if (this.announcer?.interrupt) this.announcer.interrupt('sat_fight', 'FIGHT!', null, { tail: 0.15 });
+          else this.announcer?.say('sat_fight', 'FIGHT!');
           this._banner('FIGHT!', 'fight');
         }
         break;

@@ -38,6 +38,13 @@ const SLIDE = 0.32;
 const HOLD_TAIL = 0.9;
 /** Used when there is no recorded clip at all (a clone with no /voice). */
 const SILENT_DUR = 3.2;
+/**
+ * The breath between two pieces of a line said in pieces — the roll call
+ * (`rollCall` in tournament.js). The pieces are trimmed to the word by
+ * tools/capture/satan-rollcall.mjs, so this is ALL the space there is between
+ * "EMBER!" and "VERSUS!": a ring announcer's beat, not a sentence's run-on.
+ */
+export const ROLL_GAP = 0.12;
 
 export class Announcer {
   /**
@@ -69,7 +76,15 @@ export class Announcer {
     this.queue = [];
     this.current = null;
     this.t = 0;
+    /** How long the card stays after the last word — `HOLD_TAIL`, unless the
+     *  line asked for less (`interrupt`). */
+    this.tail = HOLD_TAIL;
     this.voiceEl = null;
+    /** The pieces of a line still to be said after `voiceEl`, and how long
+     *  the current one is — see `say` with an array. */
+    this.seq = [];
+    this.pieceDur = 0;
+    this._gapT = 0;
 
     /** Preloaded clips by id. Filled by `load`. */
     this.clips = new Map();
@@ -77,6 +92,25 @@ export class Announcer {
 
   /** True while a card is on screen. */
   get active() { return !!this.current; }
+
+  /**
+   * True while he still has something to SAY — a line in his mouth, or one
+   * waiting. Not `active`: the card holds `HOLD_TAIL` past his last word so it
+   * can be read, and a round that waited on the card would stand there for
+   * nearly a second of silence. See `Tournament`'s card beat.
+   */
+  get talking() {
+    if (this.queue.length) return true;
+    if (!this.current) return false;
+    if (this.seq.length) return true;
+    /* THE VOICE ITSELF when it is playing — the same test `update` ends the
+       card on — and the clock when it is not (no clip, or a `play()` the
+       browser has not started yet). */
+    const el = this.voiceEl;
+    if (el?.ended) return false;
+    if (el && el.currentTime > 0) return el.currentTime < this.pieceDur - 0.06;
+    return this.t < this.dur - this.tail;
+  }
 
   /**
    * Buffer every line at boot.
@@ -119,7 +153,11 @@ export class Announcer {
    * off mid-word three times is worse than hearing him three times, and
    * dropping the later ones loses the one that actually opens the arena.
    *
-   * @param {string} id   key into the preloaded clips
+   * @param {string|string[]} id  key into the preloaded clips — or several,
+   *        said back to back `ROLL_GAP` apart, on the one card. ALL OR
+   *        NOTHING: a line missing one of its pieces is a sentence with a hole
+   *        in it (a roll call with a name left out), so it plays silent on the
+   *        clock like any line with no clip at all.
    * @param {string} text what he says, on screen
    * @param {?{name: string, sub: string, art: object, colour: string}} who
    *        the speaker, when it is not the announcer this was built as. The
@@ -129,6 +167,49 @@ export class Announcer {
   say(id, text, who = null) {
     if (this.hushed) return;
     this.queue.push({ id, text, who });
+  }
+
+  /**
+   * Stop him NOW: the voice, the card and everything queued behind it.
+   *
+   * THE ONE PLACE A LINE IS CUT OFF ON PURPOSE, apart from `hush`. `say`
+   * queues rather than interrupting because the things that make him talk
+   * come in bursts; the round card is the opposite case — the girls are
+   * standing on their marks waiting for him to finish, and asked for exactly
+   * this: "User can speed this up by pressing esc/jump/swing buttons so they
+   * don't have to wait for all his long speech to end before starting the
+   * match, it will just cutoff his voice in that case".
+   *
+   * @returns {boolean} whether there was anything to cut
+   */
+  cut() {
+    const had = !!this.current || this.queue.length > 0;
+    this.queue.length = 0;
+    if (this.current) {
+      this.audio?.stopSpeaking();
+      this._end();
+    }
+    return had;
+  }
+
+  /**
+   * Say this line NOW, over whatever he was saying, and take the card down
+   * `tail` seconds after the last word.
+   *
+   * FOR "FIGHT!", WHICH IS A SIGNAL AND NOT A SENTENCE. Queued, it was said
+   * after the round had started — "Mr. Satans voice is lagging behind the
+   * 'Fight' timing, his text is on screen still (taking up precious UI screen
+   * space on mobile) and the fight has already started before he says 'Fight'"
+   * — because his round line (6.2s) was still playing when the count ran out.
+   * The round now waits for him (see the card beat), so there is normally
+   * nothing to cut; this is the guarantee that the word and the gong are one
+   * moment even when something else did get in. And the short tail is the
+   * other half of the note: the card is gone as soon as the word is.
+   */
+  interrupt(id, text, who = null, { tail = HOLD_TAIL } = {}) {
+    if (this.hushed) return;
+    this.cut();
+    this._start({ id, text, who, tail });
   }
 
   /**
@@ -233,14 +314,25 @@ export class Announcer {
        and not three rules that have to be kept in step. */
     this.el.style.setProperty('--an-accent', who.colour ?? 'var(--gold)');
 
-    const clip = this.clips.get(item.id);
-    this.dur = clip ? clip.dur + HOLD_TAIL : SILENT_DUR;
-    this.voiceEl = clip ? (this.audio?.speak(clip.el) ?? null) : null;
+    const ids = Array.isArray(item.id) ? item.id : [item.id];
+    const clips = ids.map((id) => this.clips.get(id));
+    const whole = clips.length > 0 && clips.every(Boolean);
+    this.tail = item.tail ?? HOLD_TAIL;
+    this.dur = whole
+      ? clips.reduce((s, c) => s + c.dur, 0) + ROLL_GAP * (clips.length - 1) + this.tail
+      : SILENT_DUR;
+    this.pieceDur = whole ? clips[0].dur : 0;
+    this.voiceEl = whole ? (this.audio?.speak(clips[0].el) ?? null) : null;
+    /* Only queued behind a voice that actually started — with no audio there
+       is nothing to chain off, and the clock above carries the card. */
+    this.seq = this.voiceEl ? clips.slice(1) : [];
+    this._gapT = 0;
   }
 
   _end() {
     this.current = null;
     this.voiceEl = null;
+    this.seq = [];
     this.el.classList.add('hidden');
     this.el.classList.remove('in');
   }
@@ -252,6 +344,21 @@ export class Announcer {
     }
     this.t += dt;
 
+    /* THE NEXT PIECE, once this one has finished and a beat has passed.
+       Polled rather than hung off `ended`, like everything else here, so a
+       cut or a hush between pieces has nothing left behind to fire. */
+    if (this.seq.length && this.voiceEl
+      && (this.voiceEl.ended || (this.voiceEl.currentTime > 0 && this.voiceEl.currentTime >= this.pieceDur - 0.01))) {
+      this._gapT += dt;
+      if (this._gapT >= ROLL_GAP) {
+        this._gapT = 0;
+        const next = this.seq.shift();
+        this.pieceDur = next.dur;
+        this.voiceEl = this.audio?.speak(next.el) ?? null;
+        if (!this.voiceEl) this.seq = [];
+      }
+    }
+
     /* Ends on the LINE, not on the clock — the same rule the cutscene beats
        follow. A card that vanishes while he is still talking is worse here
        than in a scene, because there is no dialogue box left behind to read:
@@ -259,7 +366,8 @@ export class Announcer {
        covers a `play()` the browser refused, which never starts at all. */
     const el = this.voiceEl;
     const playing = el && !el.ended && el.currentTime > 0;
-    const spoken = !el || el.ended || (el.currentTime > 0 && el.currentTime >= this.dur - HOLD_TAIL - 0.06);
+    const spoken = !this.seq.length
+      && (!el || el.ended || (el.currentTime > 0 && el.currentTime >= this.pieceDur - 0.06));
     const over = this.t >= this.dur && (spoken || !playing);
     if (over || this.t > this.dur + 6) this._end();
   }

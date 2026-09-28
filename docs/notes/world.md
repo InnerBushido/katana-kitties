@@ -1011,3 +1011,18 @@ field, so the dawn it does carry says whether the ending had happened. Loaded
 roads are put up whole, never grown again, because the growing belongs to the
 ending. Adding no props was a hard constraint: `worldSig` counts them, and one
 more would refuse every existing save.
+
+## The Snake Way re-reads the camera when you let go
+
+*"if player lets go of the direction keys, or if the joystick goes back to
+center, then it will re-orient the input based on the direction the camera is
+facing"*. The bridge used to lock the stick to the path for the whole
+crossing, which is right while you hold it and wrong once the camera has
+swung round.
+
+`_snakeWish` counts how long the stick has been at rest. After `SNAKE.rebind`
+(0.1 s), the next push is re-read against the camera by `_snakeOnward`, the
+same function that reads the first push on boarding, and that direction is
+then held relative to the bridge as before. The 0.1 s is there so a stick
+passing through centre on the way from left to right does not count as
+letting go.
