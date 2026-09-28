@@ -2683,6 +2683,20 @@ four synthesised stand-ins, so deleting them costs nothing but polish — see
 
 ## Mobile — the road to a phone
 
+**The seventh pass (Richard's "Some mobile fixes")** is written up in
+[mobile.md](docs/notes/mobile.md):
+
+- **Maps:** the one-screen map is a tenth smaller and clears the stick, and a
+  split phone's maps sit in the top outer corners.
+- **Title:** a phone builds nothing until PLAY. The title is black, and going
+  back to the main menu is a real reload.
+- **Settings:** every row is remembered (`kk.settings`).
+- **Ring camera:** fitted through the lens into the space the HUD and thumbs
+  leave, so both kittens stay in view.
+- **Feast:** keeps one closer zoom and follows the kitten who can eat.
+- **Open:** during the feast, should the camera follow a phone player who is
+  the angel?
+
 **Where it stands:** the deployed build already boots and renders on a Galaxy
 S24 Ultra. It has **no touch input at all**, and in landscape the minimap and the
 maths board eat the width. The reasoning for everything below —

@@ -11,13 +11,18 @@ import {
   detect as detectDevice, readOverride, writeOverride, QUALITY, effectivePixelRatio,
   autoQualityVerdict, AUTO_GRACE_MS,
 } from './core/device.js';
+import { readPrefs, writePref } from './core/prefs.js';
+
+/** sessionStorage: the intro has played in this tab. See `toTitle`. */
+const INTRO_SEEN_KEY = 'kk.introSeen';
 import { TouchPad, wardLatchExpired } from './core/touchpad.js';
 import { World, CLANS } from './world/world.js';
 import { Player, ATTACKS, COMBAT, BASE_REACH, MAX_HP, KO_TIME, SWEEP_UP } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from './core/palette.js';
 import {
   splitLayout, mapWidth, mapSpot, mathSharedWidth, assignMaps, nearestMap, keyMaps,
-  fitDistance, stablePanes, paneSeats, outOfShot, framedMembers, paneWiden,
+  fitDistance, stablePanes, paneSeats, outOfShot, framedMembers, paneWiden, cornerSpot,
+  fitShot,
   warnSpot, warnWidth, WARN_FIT,
 } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
@@ -574,6 +579,18 @@ class Game {
        See `_claimMenu` — this is the whole of the one-cursor rule. */
     this.menuOwner = null;
     this.merged = true;
+    /* ON A PHONE THE WORLD IS NOT BUILT UNTIL PLAY — see `boot`. Decided once,
+       off the device the page loaded on, because it decides what `boot` does
+       and a boot only happens once. */
+    this._lazyWorld = !!this.device.touchPrimary;
+    /** Set at the very end of `_buildWorld`. `this.world` is not the same
+     *  question: it is assigned a third of the way through the build. */
+    this._worldReady = false;
+    /* An empty party until `_spawnPlayers`, so the title screen's own
+       helpers (`_checkMenuOwner`, `_applyMath`) have a list to read. On a
+       desktop that took the length of `boot`; on a phone the title screen can
+       be up for as long as she likes with no world under it. */
+    this.players = [];
     /* The defaults come from the device, not from a literal, so a phone opens
        on the low tier and unsplit without a kid having to find Settings. Every
        one of them is still a setting she can change. On a desktop `profileFor`
@@ -592,6 +609,30 @@ class Game {
          looking at, and at two players the two answers are the same screen. */
       maps: 'each',
     };
+    /* ...AND THEN WHATEVER SHE CHOSE LAST TIME, OVER THE TOP. Reported from a
+       phone: "when switching settings like 'Split screen' or 'On screen stick'
+       these should be saved for the game, so that player doesn't need to keep
+       changing this whenever they play the game." Every row here used to be
+       re-seeded from the device at each boot, and on a phone the main menu is
+       now a reload (see `toTitle`), so a row that did not survive one did not
+       survive the title screen either. Only the rows she has TOUCHED are
+       stored — see core/prefs.js — so the rest keep following the device.
+
+       A STORED QUALITY IS A HUMAN'S OPINION, so it turns the auto-downgrade
+       off exactly as picking it in the panel does: "a setting that argues
+       back with the person using it is worse than no setting."
+
+       The stick is not here because it was never lost: it has its own key in
+       core/device.js, read at boot because the render tier depends on it. */
+    this._prefs = readPrefs();
+    for (const k of ['split', 'dir', 'quality', 'math', 'maps']) {
+      if (this._prefs[k] !== undefined) this.settings[k] = this._prefs[k];
+    }
+    if (this._prefs.quality !== undefined) this._autoQuality = false;
+    if (this._prefs.padmode !== undefined) this.input.padMode = this._prefs.padmode;
+    if (this._prefs.joycon !== undefined) this.input.joyconRotation = this._prefs.joycon;
+    if (this._prefs.sfx !== undefined) this.audio.setSfxVolume(this._prefs.sfx / 100);
+    if (this._prefs.music !== undefined) this.audio.setMusicVolume(this._prefs.music / 100);
     /* THE MATHS OVERLAY IS OFF BY DEFAULT ON A PHONE, and it turns itself on
        when she walks into the Dojo — see `_updateMathForDojo`. It is not a
        demotion of the feature: on a 6-inch screen the orb's working sits on top
@@ -1256,7 +1297,88 @@ class Game {
 
   /* ------------------------------- boot --------------------------------- */
 
+  /**
+   * The title screen — and, EXCEPT ON A PHONE, the world behind it.
+   *
+   * "On Mobile, seems the main menu is infront of the started game while the
+   * game is idling on the main menu screen. Ideally, the game should not be
+   * started and not in cache until the player presses the Play button and
+   * gameplay is started. This way, when player returns to the Main Menu
+   * again, then the game cache is reset and reloaded. The background should
+   * be black behind the Main Menu instead of seeing the gameplay in the
+   * background."
+   *
+   * WHAT HE SAW: the title art is letterboxed, and on a 2.16 phone the bars
+   * either side of it are the fly-over (`_renderTitleIdle`) — the whole
+   * archipelago built, lit and drawn every frame behind a menu, on the device
+   * that can least afford it.
+   *
+   * SO ON A PHONE `boot` STOPS AT THE TITLE. Nothing is loaded, nothing is
+   * built and nothing is drawn; `#title` is black (`body.touch-ui #title`).
+   * The world is built by `_worldThen` the first time something needs it —
+   * PLAY, or LOAD A SAVED GAME — behind the same loading screen a desktop
+   * shows at boot. And going back to the main menu is a real page reload
+   * (see `toTitle`), which is the only way to hand a phone its memory back:
+   * a world "reset" in place is still a world held.
+   *
+   * A DESKTOP IS UNCHANGED, fly-over and all. The kids' title art over the
+   * living world is the game's front door there, and nothing was reported.
+   */
   async boot() {
+    this._resize();
+    this._applyQuality();
+    if (!this._lazyWorld) await this._buildWorld();
+    this._showTitle();
+  }
+
+  /** Loading screen down, title up, and the loop running. */
+  _showTitle() {
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('title').classList.remove('hidden');
+    this.state = 'title';
+    /* ...AND LOAD A SAVED GAME APPEARS ON IT, but only on a machine that has
+       one. See `_refreshTitleLoad`. */
+    this._refreshTitleLoad();
+    /* What survives the phone's trip back to the title — see `toTitle`. */
+    try {
+      if (sessionStorage.getItem(INTRO_SEEN_KEY)) this.introPlayed = true;
+    } catch { /* private mode: the intro may play again, which is the old rule */ }
+    this.renderer.setAnimationLoop(() => this._tick());
+  }
+
+  /**
+   * Run `fn` with the world built — building it first, behind the loading
+   * screen, if this is a phone that has not needed it yet.
+   *
+   * THE LOOP STOPS WHILE IT BUILDS. `_buildWorld` hands out frames to repaint
+   * the loading text, and a tick landing in one of them would find a world
+   * with islands and no kittens. Nothing on the title needs a frame while the
+   * loading screen covers it.
+   *
+   * A SECOND PRESS WHILE IT BUILDS IS DROPPED, not queued: PLAY mashed four
+   * times is one game, and the loading screen is over the button anyway.
+   */
+  _worldThen(fn) {
+    if (this._worldReady) { fn(); return; }
+    if (this._building) return;
+    this._building = true;
+    this.renderer.setAnimationLoop(null);
+    document.getElementById('loading').classList.remove('hidden');
+    this._buildWorld().then(() => {
+      this._building = false;
+      document.getElementById('loading').classList.add('hidden');
+      this.clock.getDelta();   // the build's seconds are not a frame
+      this.renderer.setAnimationLoop(() => this._tick());
+      fn();
+    }, (err) => {
+      console.error(err);
+      const el = document.getElementById('load-text');
+      if (el) el.textContent = `Something broke: ${err.message}`;
+    });
+  }
+
+  /** Every sprite, the world, and everybody in it. What `boot` used to be. */
+  async _buildWorld() {
     const setLoad = (t) => {
       const el = document.getElementById('load-text');
       if (el) el.textContent = t;
@@ -1832,16 +1954,10 @@ class Game {
     document.getElementById('mtotal').textContent = `0 / ${this.world.mischiefTotal}`;
 
     this._resize();
+    /* AGAIN, NOW THERE IS A SUN: the call in `boot` ran before the world
+       existed on a phone, so the shadow map was never sized. */
     this._applyQuality();
-
-    document.getElementById('loading').classList.add('hidden');
-    document.getElementById('title').classList.remove('hidden');
-    this.state = 'title';
-    /* ...AND LOAD A SAVED GAME APPEARS ON IT, but only on a machine that has
-       one. See `_refreshTitleLoad`. */
-    this._refreshTitleLoad();
-
-    this.renderer.setAnimationLoop(() => this._tick());
+    this._worldReady = true;
   }
 
   async _loadSprite(url, views, rows, fallback) {
@@ -2340,7 +2456,10 @@ class Game {
         if (a === 'help') { show('panel-help'); this._warmHelpClips(); }
         if (a === 'settings') { this._refreshPads(); show('panel-settings'); }
         if (a === 'board') { this._paintBoard(); show('panel-board'); }
-        if (a === 'saves') { this._paintSaves(); show('panel-saves'); }
+        /* THE LIST NEEDS THE WORLD — every row is scored against it (how far
+           through, and whether it was saved from a different build) — so on a
+           phone the list is where the build happens when LOAD comes first. */
+        if (a === 'saves') this._worldThen(() => { this._paintSaves(); show('panel-saves'); });
         /* The three groups the pause menu was cut into. They carry no state of
            their own — every row inside is the same `data-action` it was when
            it sat in the pause menu — so opening one is only a `show`. */
@@ -2446,6 +2565,10 @@ class Game {
       el.value = this.settings[key];
       el.addEventListener('change', () => {
         this.settings[key] = el.value;
+        /* Remembered for next time — see core/prefs.js. The row's id and the
+           setting's key are the same word for all five, which is what lets
+           this be one line rather than five. */
+        writePref(key, el.value);
         after?.();
       });
     };
@@ -2463,6 +2586,8 @@ class Game {
        answered from a layout that no longer existed. Same argument as the
        maths row below: the menu is over a frozen world you can see. */
     bind('set-dir', 'dir', () => {
+      /* Stored either way; with no world there are no boxes to move. */
+      if (!this._worldReady) return;
       this._mapT = 1;        // ...and un-throttle it, so it lands this frame
       this._drawMaps();
     });
@@ -2473,6 +2598,7 @@ class Game {
        row above about why it cannot wait for the next unpause — the pause menu
        is over a frozen world with the maps still on screen behind it. */
     bind('set-maps', 'maps', () => {
+      if (!this._worldReady) return;
       this._buildHud();
       this._mapT = 1;
       this._drawMaps();
@@ -2608,20 +2734,31 @@ class Game {
 
     const jc = document.getElementById('set-joycon');
     jc.value = this.input.joyconRotation;
-    jc.addEventListener('change', () => { this.input.joyconRotation = jc.value; });
+    jc.addEventListener('change', () => {
+      this.input.joyconRotation = jc.value;
+      writePref('joycon', jc.value);
+    });
 
     /* Volume sliders. Both preview themselves as you drag — a volume control
        you can't hear while setting is a guessing game, especially for a kid. */
-    const vol = (id, apply, preview) => {
+    const vol = (id, key, apply, preview) => {
       const el = document.getElementById(id);
+      /* THE SLIDER STARTS WHERE THE SOUND IS. It used to start at the
+         markup's 75 and 40 because the sound always did too; with the level
+         remembered (see core/prefs.js) a slider at 75 over a game playing at
+         20 would be the panel lying about the one thing it shows. */
+      if (this._prefs[key] !== undefined) el.value = String(this._prefs[key]);
       el.addEventListener('input', () => {
         this.audio.resume();
         apply(el.value / 100);
         preview?.();
       });
+      /* On `change`, the release, and not on every `input` step of a drag:
+         one write per decision rather than forty. */
+      el.addEventListener('change', () => writePref(key, Number(el.value)));
     };
-    vol('set-sfx', (v) => this.audio.setSfxVolume(v), () => this.audio.play('menu'));
-    vol('set-music', (v) => {
+    vol('set-sfx', 'sfx', (v) => this.audio.setSfxVolume(v), () => this.audio.play('menu'));
+    vol('set-music', 'music', (v) => {
       this.audio.setMusicVolume(v);
       /* Turning it back up must resume THIS island's piece, not the home
          theme. `startMusic()` defaults to 'play', which was harmless when that
@@ -2635,6 +2772,7 @@ class Game {
     pm.value = this.input.padMode;
     pm.addEventListener('change', () => {
       this.input.padMode = pm.value;
+      writePref('padmode', pm.value);
       this._refreshPads();
     });
 
@@ -3406,6 +3544,19 @@ class Game {
   }
 
   toTitle() {
+    /* ON A PHONE, A RELOAD. "when player returns to the Main Menu again, then
+       the game cache is reset and reloaded." `restart` puts every prop back
+       and keeps every mesh, texture and sound in memory for a world nobody is
+       looking at; a reload is the one reset that gives them back, and the
+       title it lands on builds nothing until PLAY (see `boot`). Nothing is
+       lost that the in-place path keeps: the record board, the saves and the
+       settings are all in localStorage, and "the intro has played" is carried
+       in sessionStorage by `startPlay`. The dialog in front of this already
+       says the game ends. */
+    if (this._lazyWorld) {
+      window.location.reload();
+      return;
+    }
     this.restart();
     this.setPaused(false);
     document.getElementById('hud').classList.add('hidden');
@@ -3778,6 +3929,10 @@ class Game {
       return;
     }
 
+    /* A PHONE BUILDS THE WORLD HERE — after the trailer question, so the
+       question is asked over the black title rather than after a wait. */
+    if (!this._worldReady) { this._worldThen(() => this.startPlay()); return; }
+
     this._enterPlay();
 
     /* The story, once per session. It plays here rather than on the title
@@ -3787,6 +3942,9 @@ class Game {
        pause menu has a button for people who want it again. */
     if (this.cutscene && !this.introPlayed) {
       this.introPlayed = true;
+      /* "Once per session" has to survive the phone's reload to the title,
+         which is what sessionStorage is: this tab, until it is closed. */
+      try { sessionStorage.setItem(INTRO_SEEN_KEY, '1'); } catch { /* see _showTitle */ }
       this.cutscene.play();
     } else {
       // _updateMusic takes it from here; this just avoids a silent first frame.
@@ -4486,6 +4644,12 @@ class Game {
        toggle that also took the keys away would make the panel a thing you had
        to leave open to use the keys it documents. */
     if (!this._debugArmed && code !== 'Backquote') return;
+    /* A PHONE'S TITLE HAS NO WORLD (see `boot`), and every row below reaches
+       into one. The panel says so in its own first line, since a toast is part
+       of the HUD and the HUD is not up on the title. `8` is the exception: the
+       frame cost is a fact about the page, and a black title is exactly the
+       baseline worth reading. */
+    if (!this._worldReady && code !== 'Backquote' && code !== 'Digit8') return;
 
     /* --- THE DIGITS RUN IN THE ORDER AN AFTERNOON DOES ---
        Asked for as: "let's organize the Debug Menu items so they are in
@@ -5824,6 +5988,8 @@ class Game {
 
     el.innerHTML = `
       <b>DEBUG</b> <span class="k">\`</span> closes
+      ${this._worldReady ? '' : '<div class="dbg-sep">NO WORLD YET — a phone builds it on PLAY. '
+        + 'Only 8 works until then.</div>'}
       <div class="dbg-sep">THE AFTERNOON, IN ORDER — 1 to 7</div>
       ${row('Digit1', `knock over ${this._batchLabel()} of the mischief`)}
       ${row('Digit2', 'THE ENDGAME — ending, arena, orbs, purses')}
@@ -7761,6 +7927,7 @@ class Game {
        narration is not one a girl resuming her afternoon should sit through. */
     if (this.state !== 'play') {
       this.introPlayed = true;
+      try { sessionStorage.setItem(INTRO_SEEN_KEY, '1'); } catch { /* see _showTitle */ }
       this._enterPlay();
       this.audio.startMusic(this._wantedTrack(0) ?? 'play');
     }
@@ -10612,6 +10779,9 @@ class Game {
     const groups = this.groups?.length ? this.groups : [this.players.map((_, i) => i)];
     const panes = this._panes(W, H, groups);
     const owner = this._mapPanes(groups);
+    /* What already sits in a top corner, measured once per draw and only if a
+       phone's split map asks — see `cornerSpot`. */
+    let cornerBlocks = null;
 
     for (let i = 0; i < this.maps.length; i++) {
       const box = document.getElementById(`map-box-${i}`);
@@ -10702,7 +10872,15 @@ class Game {
            the board is at the far end of the same pane rather than under the
            map. `top`/`left` only, so a stale `bottom` or `right` from the
            merged branch above cannot pin the box to two edges at once. */
-        const spot = mapSpot({ v, W, H, size, pad: 14, hint: HINT_CLEAR });
+        /* ON A PHONE, THE TOP OUTER CORNER — see `cornerSpot`. "the minimaps
+           are not in the corners of the screen ... lets move it there or make
+           it work somehow to use the limited screen space better." Null for a
+           pane that does not reach the top of the screen, and in the Dojo,
+           where `_drawMathBoard` can take a pane's top outer corner for the
+           board; both keep the seam rule below. */
+        const spot = (this.device.touchPrimary && !mathUp
+          && cornerSpot({ v, W, H, size, avoid: cornerBlocks ??= this._cornerBlocks() }))
+          || mapSpot({ v, W, H, size, pad: 14, hint: HINT_CLEAR });
         box.style.right = 'auto';
         box.style.bottom = 'auto';
         box.style.left = `${spot.left}px`;
@@ -10778,6 +10956,25 @@ class Game {
     /* ...and Payne's card, which sits on top of the warning and so moves with
        exactly the same things. */
     this.payne?.layout();
+  }
+
+  /**
+   * The page rects a phone's corner map must not land on: the pause button
+   * and the scoreboard. MEASURED, for the reason `mapSpot`'s `clear` is — the
+   * scoreboard is a row of badges whose width moves with the party, and the
+   * pause button's size is the stylesheet's to decide. A hidden element has a
+   * zero rect and is dropped, so a phone with the stick switched off (no pad,
+   * no pause button) gets the true corner.
+   */
+  _cornerBlocks() {
+    const out = [];
+    for (const sel of ['#touch-pad .tp-pause', '.scoreboard']) {
+      const r = document.querySelector(sel)?.getBoundingClientRect();
+      if (r && r.width > 0 && r.height > 0) {
+        out.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+      }
+    }
+    return out;
   }
 
   /**
@@ -11976,6 +12173,28 @@ class Game {
           : Math.max(ring.dist * widen, fitDistance({
             spread: dist, fovDeg: rig.camera.fov, aspect,
           }));
+        /* A PHONE'S RING SHOT IS FITTED THROUGH THE LENS — see `fitShot` and
+           `RING_DIST` in tournament.js. It REPLACES the floor above rather
+           than joining it: that floor is a width fitted to the whole screen,
+           and the fit already holds every fighter inside the part of the screen
+           the HUD and the thumbs leave. The yaw is the one drawn below, asked
+           here so the two cannot disagree. */
+        if (ring.fit) {
+          const s = fitShot({
+            pts: ring.fit.pts,
+            target: ring,
+            yaw: THREE.MathUtils.lerp(-Math.PI * 0.25, 0, ft),
+            pitch: ring.pitch,
+            fovDeg: rig.camera.fov,
+            aspect,
+            box: ring.fit.box,
+            air: ring.fit.air,
+            minDist: ring.dist * widen,
+            maxDist: ring.fit.max,
+          });
+          want.set(s.x, s.y, s.z);
+          wantDist = s.dist;
+        }
       }
 
       /* AND NEVER FURTHER BACK THAN THE WHOLE WORLD.
@@ -12699,6 +12918,8 @@ class Game {
 
   /** Slow drifting fly-over behind the title screen. */
   _renderTitleIdle(dt) {
+    /* NO WORLD, NO FLY-OVER — a phone's title is black (see `boot`). */
+    if (!this._worldReady) return;
     this._titleT = (this._titleT ?? 0) + dt;
     const t = this._titleT * 0.06;
     const cam = this.sharedCamera;

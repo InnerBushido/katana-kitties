@@ -116,6 +116,20 @@ html, body {
 /* -------------------------------- title ---------------------------------- */
 
 #title { overflow: hidden; }
+/* BLACK BEHIND THE MENU ON A PHONE. "The background should be black behind
+   the Main Menu instead of seeing the gameplay in the background."
+
+   WHAT READ AS GAMEPLAY WAS TWO THINGS, and both are gone on a phone. The
+   world really was built and flown over behind the menu — a phone now builds
+   it on PLAY instead (see `Game.boot`). And the bars either side of the
+   letterboxed art were `.title-art` below: the painting blown up 112% and
+   blurred 26px to fill a 2.16 screen, which on a six-inch panel looks exactly
+   like a scene moving behind the menu. So on a phone that layer is not drawn
+   and the bars are this: black. The art itself (`.title-art-main`, `contain`)
+   is untouched — the second non-negotiable. A desktop keeps its blurred fill;
+   nothing was reported there. */
+body.touch-ui #title { background: #000; }
+body.touch-ui #title .title-art { display: none; }
 
 /* Two layers: a blown-up blurred copy fills whatever shape the window is,
    and the real art sits on top at `contain` so the logo is never cropped.

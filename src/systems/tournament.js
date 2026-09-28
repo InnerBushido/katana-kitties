@@ -517,11 +517,71 @@ const OUT_DAMAGE = 30;
    it takes the same treatment by hand: 68 holds all 56 units of stone AND the
    dragon thirty units above it (vertical coverage is 0.689*d, so 47 units).
 
-   THE DESKTOP PAIR IS THE OLD EXPRESSION, DIGIT FOR DIGIT. Invariant 5. */
+   THE DESKTOP PAIR IS THE OLD EXPRESSION, DIGIT FOR DIGIT. Invariant 5.
+
+   --- AND THEN THE PHONE WAS PLAYED, AND THE LINE ABOVE WAS THE WRONG FIT ---
+   "On Mobile, the camera is not keeping both kittens in view in the arena, it
+   is too zoomed in when they are separated and it's also hard to see the
+   animals in the arena as a result. The camera should be more zoomed in on
+   mobile, and the angle is good, but we need to make sure to keep both
+   kittens in view if they get separated and should have some viewing
+   distance on the edges left/right so player can see animals if they are
+   nearby."
+
+   THE ARITHMETIC ABOVE IS ALL ABOUT WIDTH, and width was never what cropped
+   anybody. The camera looks down the ring at a fixed yaw, so two kittens far
+   apart in DEPTH are far apart on the screen's VERTICAL axis — the short one,
+   on a phone — and on a phone the top 20% of that axis is the health bars
+   (measured: `#arena-hud` ends at y=76 of 390) and the bottom quarter is
+   thumbs. Measured the old way at 844x390: fighters 56 units apart down the
+   ring asked for 51 and got it, and one of them was under the stick. The
+   `max: 66` cap made it worse, since a corner-to-corner fit down the ring
+   needs about 100.
+
+   SO A PHONE ASKS THE REAL QUESTION. `cameraWant` hands main.js the fighters
+   (`fit`), and `fitShot` in core/split.js finds the closest distance at which
+   every one of them, head and feet, projects inside the part of the screen
+   the HUD and the thumbs leave — `TOUCH_BOX` — sliding the aim so they are
+   centred in it. `min` is now only the close-up that a fight with nobody
+   apart sits at: 20, closer than the old 26 ("more zoomed in"). `air` is the
+   "viewing distance on the edges left/right", in world units either side of
+   every fighter. `max` is 120, above the desktop's 104, because the fit is
+   the thing that decides now and a cap under it is a kitten off screen:
+   measured, two fighters in opposite corners DOWN the ring (79 apart, the
+   longest gap the deck has) need about 106 at 844x390, and the whole-island
+   ceiling in `_updateRig` still bounds a kitten who has fallen out of the
+   world.
+
+   THE FEAST GOT THE SAME TREATMENT — see `cameraWant`. */
 const RING_DIST = {
   desktop: { min: 52, max: 104, base: 46, k: 0.8 },
-  touch: { min: 26, max: 66, base: 20, k: 0.6, feast: 68 },
+  touch: { min: 20, max: 120, air: 6, feast: 34, feastAir: 10 },
 };
+
+/* THE PART OF A LANDSCAPE PHONE THE FIGHT CAN BE SEEN IN, in NDC. Measured at
+   844x390 with the ring's HUD up: the health bars end at y=76, so heads stay
+   under 1 - 2*76/390 = 0.61. The stick's ring rests at y=228-320 on the left
+   and the face buttons fill x=620-828 from y=207 on the right; feet stay above
+   y=292 (-0.5), which is between the two at the only place a near fighter is
+   put — the middle, since the fit centres the group. The sides leave the
+   outer 7% as margin on top of `air`. */
+export const TOUCH_BOX = { l: -0.86, r: 0.86, b: -0.5, t: 0.61 };
+
+/** Where a set of kittens is on average, on the ground plane and in height. */
+function centroidOf(ps) {
+  const n = ps.length || 1;
+  return {
+    x: ps.reduce((s, p) => s + p.position.x, 0) / n,
+    y: ps.reduce((s, p) => s + p.position.y, 0) / n,
+    z: ps.reduce((s, p) => s + p.position.z, 0) / n,
+  };
+}
+
+/** A kitten as `fitShot` wants her: feet, and how tall. 2.9 is the kittens'
+ *  height (`Player` is built with it) and is the fallback for a stand-in. */
+function fitPoint(p) {
+  return { x: p.position.x, y: p.position.y, z: p.position.z, h: p.height ?? 2.9 };
+}
 
 /* THE SHOT ON MR. SATAN when the clock is what ended the round. Asked for:
    "when timer gets to Zero on a match, can have the camera zoom in on Mr.
@@ -2272,9 +2332,46 @@ export class Tournament {
        those two frames the empty air between them. Fixed, high and wide, and
        it never moves for fifteen seconds, which is also the calmest the screen
        gets all match. */
+    /* ON A PHONE THE FEAST FOLLOWS THE KITTENS WHO CAN EAT. "during the feast,
+       the camera is too zoomed out and player can't see if there are any
+       animals on the bottom of the screen. Maybe we can keep the camera at the
+       same zoom level, but need to track the player when they move to
+       bottom/top of the arena, so that they can see the animals and area
+       around them, even if they jump out of the arena bounding area, they
+       should still be tracked."
+
+       The fixed wide shot below holds the whole deck, and on a phone that is
+       56 units of stone at a size where a rat is a few pixels — with the near
+       edge of the deck, where the animals were, under the thumbs. So a phone
+       gets ONE zoom for the whole feast (`feast`, about half the old 68) and
+       the camera goes where SHE goes, through the same `fitShot` as the fight:
+       no clamp to the deck, so a kitten who jumps off the stone after a rat
+       is still in the middle of the picture.
+
+       THE EATERS, NOT THE ANGEL. The kitten who lost the round is flying
+       "anywhere you like over the arena" and cannot eat; framing her too would
+       pull the camera back out to wherever she flew, which is the zoomed-out
+       shot this replaces. If nobody can eat (both went down together) it
+       frames everybody, so there is always somebody to follow. `air` is wider
+       than the fight's: the whole point is the animals around her. */
     if (this.state === 'feast') {
+      if (touch) {
+        const eaters = all.filter((p) => !p.angel);
+        const who = eaters.length ? eaters : all;
+        const c = centroidOf(who);
+        return {
+          x: c.x, y: c.y + 2.4, z: c.z,
+          dist: RING_DIST.touch.feast, pitch: 0.56,
+          fit: {
+            pts: who.map(fitPoint),
+            air: RING_DIST.touch.feastAir,
+            box: TOUCH_BOX,
+            max: RING_DIST.touch.max,
+          },
+        };
+      }
       return {
-        x: R.x, y: R.y + 9, z: R.z, dist: touch ? RING_DIST.touch.feast : 96, pitch: 0.56,
+        x: R.x, y: R.y + 9, z: R.z, dist: 96, pitch: 0.56,
       };
     }
 
@@ -2282,10 +2379,34 @@ export class Tournament {
        centroid. With every fighter in one corner, a pure centroid camera
        looks at that corner and three quarters of the screen is the island
        outside the ring. */
+    const pitch = this.state === 'card' ? 0.60 : 0.52;
+    /* A PHONE FITS THE FIGHTERS THROUGH THE LENS — see `RING_DIST`. No pull
+       toward the middle of the ring: that pull is what put a fighter at the
+       bottom edge when both were on one side of it, and the fit centres the
+       group in the part of the screen that is free. The knocked-out kitten
+       lying outside the ring is left out, by the rule the rig already uses
+       (`outOfShot`), or the camera would sit back to frame a body. */
+    if (touch) {
+      const framed = all.filter((p) => !this.game._camIgnores?.(p));
+      const who = framed.length ? framed : all;
+      const c = centroidOf(who);
+      return {
+        x: c.x, y: R.y + 2.4, z: c.z,
+        dist: RING_DIST.touch.min,
+        pitch,
+        fit: {
+          pts: who.map(fitPoint),
+          air: RING_DIST.touch.air,
+          box: TOUCH_BOX,
+          max: RING_DIST.touch.max,
+        },
+      };
+    }
+
     const midX = mid.x;
     const midZ = mid.z;
     const k = 0.42;
-    const D = touch ? RING_DIST.touch : RING_DIST.desktop;
+    const D = RING_DIST.desktop;
     return {
       x: midX + (R.x - midX) * k,
       y: R.y + 2.4,
@@ -2302,7 +2423,7 @@ export class Tournament {
          the same reason the grotto camera could not simply tilt over a wall.
          The round card is a fraction higher so the whole ring reads once,
          before the fight makes the middle of it the only thing that matters. */
-      pitch: this.state === 'card' ? 0.60 : 0.52,
+      pitch,
     };
   }
 
