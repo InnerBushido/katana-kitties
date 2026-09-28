@@ -786,6 +786,11 @@ export class Payne {
        Awakening an Icewhisker mark on a kitten who never went back would
        otherwise stand on her map all evening. */
     if (s.override?.quest === 'last' && step?.quest !== 'last') s.override = null;
+    /* NOTHING LEFT TO HINT AT, SO HINTS ARE OFF — see `rows`, which stops
+       offering the switch at the same moment. Written down rather than only
+       hidden, so a save taken after the ending does not carry a switch that
+       is on and can never be reached again. */
+    if (L.hints && !currentQuest(g, p)) L.hints = false;
     if (quiet || g.inspector?.busy?.(p.index)) return;
 
     /* --- the two once-only lines, for anybody who has met her --- */
@@ -1336,14 +1341,24 @@ export class Payne {
     const left = CHAIN.length - settledCount(g, p);
     if (left > 0) need.push(`finish my quests (${CHAIN.length - left} of ${CHAIN.length})`);
     if (L.rounds < TRICK_ROUNDS) need.push(`fight ${TRICK_ROUNDS} rounds in the arena (${L.rounds} of ${TRICK_ROUNDS})`);
+    /* NO HINTS ROW ONCE HER LIST IS SETTLED. Asked: "When talking to Payne,
+       after the Ending Cutscene, does having hint on/off do anything? If not,
+       we should turn hints off and disable this option or remove it from
+       Payne's menu." It did nothing: every hint and tease is a step of
+       `nextStep`, and after the Awakening every quest is closed, so the
+       watcher returned before the switch was ever read. Removed rather than
+       greyed — a row that does nothing reads as broken (sixth non-negotiable),
+       and there is no instruction a locked row could give her. The card is
+       closed during the ending, so no row slides out from under a cursor. */
+    const hintsRow = currentQuest(g, p) ? [{
+      key: 'hints', title: L.hints ? 'HINTS: ON — TURN THEM OFF' : 'HINTS: OFF — TURN THEM ON',
+      blurb: L.hints
+        ? "She'll find you when you're stuck for two minutes, and mark the way on your map."
+        : "Turn on, and she'll find you if you're stuck for two minutes and mark the way on your map.",
+    }] : [];
     return [
       { key: 'quests', title: "WHAT'S MY NEXT QUEST?", blurb: 'Your quest list, and where to go next.' },
-      {
-        key: 'hints', title: L.hints ? 'HINTS: ON — TURN THEM OFF' : 'HINTS: OFF — TURN THEM ON',
-        blurb: L.hints
-          ? "She'll find you when you're stuck for two minutes, and mark the way on your map."
-          : "Turn on, and she'll find you if you're stuck for two minutes and mark the way on your map.",
-      },
+      ...hintsRow,
       {
         key: 'profile', title: 'CHARACTER PROFILE',
         blurb: 'Your quests and orbs, and trading. Everybody stops and gets their own cursor.',

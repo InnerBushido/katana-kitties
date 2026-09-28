@@ -2243,3 +2243,75 @@ flash, are still additive and are one object each, so nothing piles up.
 
 Both powers' numbers live in `clanpower.js` behind `tune()`, so they are edited
 on `/tuning.html` with a sentence each, like everything else.
+
+## The third pass of arena fixes: the call, the board, the way back
+
+Branch `mixed/bridge-steer-fight-call-billboard`.
+
+### FIGHT! was late, because the card did not wait for him
+
+*"Mr. Satans voice is lagging behind the 'Fight' timing, his text is on screen
+still ... the fight has already started before he says 'Fight'."* His round
+lines are 5.7-7.6 seconds, and the card held 3.4 before a 3-second count, so
+FIGHT! queued behind a sentence that was still going when the gong went.
+
+- The card now holds until `Announcer.talking` is false, from `CARD_TIME`
+  (3.4) up to a ceiling of `CARD_MAX` (14).
+- FIGHT! goes through `Announcer.interrupt` with a 0.15 s tail, so the word
+  and the gong are one frame and the card is gone within a second.
+- **A press skips him** (jump or swing, after `CALL_SKIP_AFTER` = 0.5 s, so the
+  JUMP that confirmed the league is not read as a skip), and so does Escape.
+  This is not a scene, so the seventh non-negotiable's "Escape or Start only"
+  does not bind it. What protects it is the grace period.
+
+### He names who is actually fighting
+
+*"Announcer says 'Round 1, ember versus frost' Let's only use this if it
+actually is ember versus frost."* `rollCall` builds the card from thirteen
+pieces recorded one at a time: `ROUND ONE!`, each name, `and <NAME>!`,
+`VERSUS!`, `and ALSO versus!` and the marks line. Richard proposed the
+2v1v1 wording himself. `Announcer.say` takes an array and plays the pieces
+`ROLL_GAP` (0.12 s) apart on one card.
+
+- Ember against Frost keeps the whole recorded `sat_r1`/`sat_r2`: one
+  performance beats a splice, and it is the match two sisters play most.
+- The card's words and the clip list come from one walk over `ROLL_WORDS`.
+  world-check walks every league with every cast, 312 calls.
+- Measured in the browser: a three-way free-for-all runs about 8.2 s.
+- If any piece is missing, the whole line plays silent on the clock. A roll
+  call with a hole in it is worse than none.
+
+### The big screen
+
+- **Slides:** they stay up longer (`SLIDE_DUR`: champion 12, honourable
+  mention 8, Satan 9.5, ad 8.5), and an ad comes after every `ADS_EVERY` = 2
+  ladders instead of after each one.
+- **Fireworks:** *"hard to see as the camera is only zoomed in on the
+  advertisement"*. They were bursting about 17 units above a shot that fits
+  the glass. Now it is one volley per slide, and each rocket is aimed at a
+  point over an upper corner of the glass. world-check projects those points
+  through the fitted shot. The bang is quieter and lower.
+- **Ticker:** *"Todays forecast: 100"* was really "100% CHANCE OF MR. SATAN",
+  cut at the texture's wrap seam. `tickerLayout` now lays whole items only,
+  and the forecast is *HOT AND MUSCLEY*.
+
+### A way back out of the pickers
+
+*"there is no way to 'back out' to the previous screen after choosing a fight
+type, at least not on mobile"*. Escape and Start used to open the pause menu
+underneath the picker, and that menu could not be driven, because MenuNav
+gives `panel-league` precedence.
+
+`Game._pickerBack` handles it now. Escape, a pad's Start, the touch pad's
+Start and B all reach it, and so do two buttons:
+
+- **From the sides screen:** back goes to the leagues, and the cursor lands on
+  the league you had chosen. No question is asked.
+- **From the leagues:** the screen before is the town, so it asks *FLY BACK
+  TO TOWN?* with the cursor on NO, PICK A FIGHT.
+- **The sides screen's BACK button sits above the columns,** so it never has
+  to be scrolled to on an 844x390 phone. It is not a `.menu-btn`, because
+  MenuNav would take over the four cursors.
+- **B is spent** when it takes the sides screen back, so the league list that
+  opens on the same frame cannot read that press as its own BACK row. That is
+  UI FALL-THROUGH, see gotchas.md.

@@ -18,7 +18,8 @@ import { recolourPixels } from '../core/spritesheet.js';
      get in a tournament) ... 'The Undefeatable Champ! Don't even try!'" — the
      SATAN slide stands in for an empty league (`SATAN_RECORDS`).
    - "different images of him flexing as 'advertisement' on the panel between
-     tournament winner announcements" — an AD slide after every league.
+     tournament winner announcements" — an AD slide after every SECOND league
+     (`ADS_EVERY`); it was every league, and was asked back down.
    - "'Honorable Mentions' ... #2 and #3 with shortened information, just their
      names, and an image of their face, and have it on the screen for less
      time" — the HM slide, 4s against the champion's 8 (`SLIDE_DUR`).
@@ -42,8 +43,19 @@ import { recolourPixels } from '../core/spritesheet.js';
 
 /** How long each kind of slide stays up, in seconds. The honourable mentions
  *  are "on the screen for less time" than the champion — `world-check` pins
- *  that ordering, not the numbers. */
-export const SLIDE_DUR = { champ: 8, hm: 4, satan: 7, ad: 4.5 };
+ *  that ordering, not the numbers.
+ *
+ *  LONGER, FROM PLAY: "make them last at least 3-5 seconds longer so that
+ *  players can read them ... make the 'players' ladder score and information
+ *  stay up for 3-5 seconds longer as well. The placeholder ladder information
+ *  can stay up 2-3 seconds longer". So +4 on the ad and on both kittens'
+ *  slides, +2.5 on Mr. Satan's stand-in record. They were 8 / 4 / 7 / 4.5. */
+export const SLIDE_DUR = { champ: 12, hm: 8, satan: 9.5, ad: 8.5 };
+
+/** An ad after this many leagues, not after each one. "We should also not
+ *  show them as often. Let's do it after every 2 ladders, then an
+ *  advertisement is shown." Six leagues is three ads a lap. */
+export const ADS_EVERY = 2;
 
 /** A result this recent wears a NEW! badge. A day: the girls come back to a
  *  board with last night's win still flagged, and not last month's. */
@@ -148,8 +160,11 @@ export function leagueName(mode) {
  * The cycle, as data. Pure, so `world-check` can read it without a canvas.
  *
  * PER LEAGUE: its champion then the honourable mentions (if there are any),
- * or Mr. Satan's made-up record if nobody has won it — and then an ad. The
- * ads walk `SATAN_ADS` in order so consecutive ones are never the same pose.
+ * or Mr. Satan's made-up record if nobody has won it — and after every
+ * `ADS_EVERY`th league, an ad. The last league always closes on one, so the
+ * lap wrapping round never puts more than `ADS_EVERY` leagues between two.
+ * The ads walk `SATAN_ADS` in order so consecutive ones are never the same
+ * pose.
  *
  * @param {Record<string, object[]>} boards league id -> rows, best first
  */
@@ -168,8 +183,11 @@ export function buildSlides(boards = {}, now = Date.now()) {
     } else {
       out.push({ kind: 'satan', mode, rec: SATAN_RECORDS[mode] ?? SATAN_RECORDS.duel, dur: SLIDE_DUR.satan });
     }
-    out.push({ kind: 'ad', ad: ad % SATAN_ADS.length, dur: SLIDE_DUR.ad });
-    ad++;
+    const n = BOARD_MODES.indexOf(mode) + 1;
+    if (n % ADS_EVERY === 0 || n === BOARD_MODES.length) {
+      out.push({ kind: 'ad', ad: ad % SATAN_ADS.length, dur: SLIDE_DUR.ad });
+      ad++;
+    }
   }
   return out;
 }
@@ -314,6 +332,58 @@ const CH = 720;
 const TICK_H = 58;
 const MAX_SPARKS = 900;
 
+/**
+ * THE FIREWORKS, AS A VOLLEY PER SLIDE AND AIMED INTO THE SHOT.
+ *
+ * Reported: "The fireworks sound around the advertisement is a bit annoying,
+ * also they are hard to see as the camera is only zoomed in on the
+ * advertisement and not on the top where the fireworks are shot out from."
+ * Both were true and they were one bug. The rockets went up off the cap at
+ * 22-30 u/s and burst about seventeen units ABOVE it — and `boardShot` fits
+ * the glass with a tenth to spare, so every burst was out of frame. What was
+ * left was the sound: on an ad slide a rocket every half second, a bang each,
+ * for four and a half seconds, heard and never seen.
+ *
+ * So a slide gets ONE volley, when it comes up (or when somebody arrives to
+ * watch it), sized by how loud the slide is — none for the honourable
+ * mentions. Each rocket goes up from the foot of the board beside the glass
+ * and is AIMED: its launch velocity is solved to reach a point over one of
+ * the glass's upper corners, a few units in front of it, in `fly` seconds.
+ * `world-check` projects those points through the real fitted shot at three
+ * pane shapes. And the shells are smaller, so a burst frames the corner of
+ * the ad rather than covering it.
+ */
+export const FIREWORKS = {
+  /** Rockets per volley, by slide kind. */
+  volley: { ad: 4, satan: 4, champ: 3, hm: 0 },
+  /** Seconds between rockets in a volley. */
+  gap: 0.3,
+  /** Seconds from launch to burst. */
+  fly: [0.8, 1.0],
+  /** Where they burst: height up the glass, as a fraction of it... */
+  up: [0.62, 0.9],
+  /** ...how far out from the middle, as a fraction of its width... */
+  out: [0.28, 0.42],
+  /** ...and how far in front of the face. */
+  front: 3.5,
+  /** A shell's speed. It was 11-14; with the drag of 1.6 that is a ball
+   *  about eight units across, over a glass thirty-two wide. */
+  shell: [6, 7.5],
+};
+
+/**
+ * Where a rocket from `side` (+1 / -1) bursts, for two numbers in 0..1.
+ * Pure, so the check can walk it without a canvas.
+ */
+export function burstPoint(B, side, a, c) {
+  const F = FIREWORKS;
+  return {
+    x: B.face - F.front,
+    y: B.bottom + B.h * (F.up[0] + (F.up[1] - F.up[0]) * a),
+    z: B.z + side * B.w * (F.out[0] + (F.out[1] - F.out[0]) * c),
+  };
+}
+
 export class ArenaBoard {
   /**
    * @param {{ world, scene, audio? }} o
@@ -331,7 +401,8 @@ export class ArenaBoard {
     /** Is anybody here to watch? Set by `Game` every frame. False until it
      *  says otherwise, so a board with no game driving it stays quiet. */
     this.audience = false;
-    this._rocketT = 0;
+    /** The slide the last volley was fired for — one volley a slide. */
+    this._volleyFor = null;
     this._fountT = 0;
     this._clock = 0;
     this.art = { cats: {}, satan: {} };
@@ -506,10 +577,6 @@ export class ArenaBoard {
     this.t = 0;
     this.flash.material.opacity = 0.55;
     this._paint();
-    // A champion comes up to a volley.
-    if (this.slide?.kind === 'champ' && this.hype > 0.1) {
-      for (let k = 0; k < 3; k++) this._rocket(k * 0.18);
-    }
   }
 
   /* ------------------------------ the art ------------------------------- */
@@ -600,11 +667,16 @@ export class ArenaBoard {
       b.mesh.material.opacity = 0.12 + 0.3 * Math.max(this.hype, 0.25) + 0.2 * loud;
     }
 
-    // Fireworks while somebody is watching. "Especially when it mentions Mr.
-    // Satan": the rocket rate follows the slide's hype.
+    /* ONE VOLLEY A SLIDE, for whoever is watching — see FIREWORKS. On the
+       slide changing, and on somebody arriving partway through one: the
+       latch is the slide, so a kitten walking up in the middle of an ad
+       still gets it, and it is not fired twice. */
+    if (this.hype > 0.6 && slide && this._volleyFor !== slide) {
+      this._volleyFor = slide;
+      this._volley(slide);
+    }
+    // The fountains at its feet: silent, and inside the shot.
     if (loud > 0.05) {
-      this._rocketT -= dt * (0.35 + 1.4 * loud);
-      if (this._rocketT <= 0) { this._rocketT = 0.6 + Math.random() * 0.5; this._rocket(0); }
       this._fountT += dt * 55 * loud;
       while (this._fountT >= 1) { this._fountT -= 1; this._fountain(); }
     }
@@ -626,25 +698,43 @@ export class ArenaBoard {
 
   /* ---------------------------- the fireworks --------------------------- */
 
-  _rocket(delay = 0) {
+  /** A slide's rockets, alternating sides, `gap` apart. */
+  _volley(slide) {
+    const n = FIREWORKS.volley[slide?.kind] ?? 0;
+    const first = Math.random() < 0.5 ? -1 : 1;
+    for (let k = 0; k < n; k++) this._rocket(k * FIREWORKS.gap, k % 2 ? -first : first);
+  }
+
+  /**
+   * One rocket, from the foot of the board on `side`, AIMED at a burst point
+   * (`burstPoint`) it reaches in `fly` seconds under the same gravity
+   * `_sparks` applies to it: v = d / T, plus g T / 2 upward.
+   */
+  _rocket(delay = 0, side = Math.random() < 0.5 ? -1 : 1) {
     const B = this.B;
-    const sz = Math.random() < 0.5 ? -1 : 1;
+    const F = FIREWORKS;
+    const T = F.fly[0] + (F.fly[1] - F.fly[0]) * Math.random();
+    const x0 = B.face - 1.2;
+    const y0 = B.bottom + 0.2;
+    const z0 = B.z + side * (B.w / 2 + 1.3);
+    const to = burstPoint(B, side, Math.random(), Math.random());
     this.parts.push({
-      x: B.face - 1.2, y: B.top, z: B.z + sz * (B.w / 2 - 2 + Math.random() * 3),
-      vx: -2 - Math.random() * 3, vy: 22 + Math.random() * 8, vz: -sz * (1 + Math.random() * 3),
-      life: 0.9 + Math.random() * 0.35 + delay, max: 2, r: 1, g: 0.9, b: 0.6, rocket: true, wait: delay,
+      x: x0, y: y0, z: z0,
+      vx: (to.x - x0) / T, vy: (to.y - y0) / T + 0.5 * 9.8 * T, vz: (to.z - z0) / T,
+      life: T + delay, max: 2, r: 1, g: 0.9, b: 0.6, rocket: true, wait: delay,
     });
   }
 
   _burst(p) {
     const hue = Math.random();
-    const n = 70;
+    const n = 60;
+    const [v0, v1] = FIREWORKS.shell;
     for (let i = 0; i < n && this.parts.length < MAX_SPARKS; i++) {
       // Points on a sphere, a shell rather than a blob.
       const u = Math.random() * 2 - 1;
       const a = Math.random() * Math.PI * 2;
       const s = Math.sqrt(1 - u * u);
-      const v = 11 + Math.random() * 3;
+      const v = v0 + Math.random() * (v1 - v0);
       _c.setHSL((hue + (i % 3) * 0.08) % 1, 1, 0.6);
       this.parts.push({
         x: p.x, y: p.y, z: p.z, vx: s * Math.cos(a) * v, vy: u * v, vz: s * Math.sin(a) * v,
@@ -668,7 +758,8 @@ export class ArenaBoard {
   _boom(p) {
     if (!this.audio || !this._lastSeenDist) return;
     const d = this._lastSeenDist;
-    const vol = Math.max(0, 1 - d / 240) * 0.55;
+    /* Quieter than it was (0.55): four of these a slide, under the voice. */
+    const vol = Math.max(0, 1 - d / 240) * 0.3;
     if (vol > 0.03) this.audio.play('firework', vol);
   }
 
@@ -814,26 +905,72 @@ export class ArenaBoard {
     const H = this.tickCanvas.height;
     c.fillStyle = '#12060a';
     c.fillRect(0, 0, W, H);
-    const bits = ['WORLD MARTIAL ARTS TOURNAMENT'];
-    for (const s of this.slides) {
-      if (s.kind === 'champ') bits.push(`${leagueName(s.mode)}: ${s.row.name} (${s.row.cat ?? '?'}) ${fmt(s.row.score)}`);
-      if (s.kind === 'satan') bits.push(`${leagueName(s.mode)}: MR. SATAN, OBVIOUSLY`);
-    }
-    bits.push('TODAY\'S FORECAST: 100% CHANCE OF MR. SATAN', 'PLEASE DO NOT FEED THE CHAMPION');
     c.font = '40px Bangers, sans-serif';
     c.textBaseline = 'middle';
-    let x = 20;
-    let i = 0;
-    // Fill the whole strip, round and round, so the wrap has no gap in it.
-    while (x < W) {
-      const t = `★ ${bits[i % bits.length]}  `;
+    const lay = tickerLayout(tickerBits(this.slides), (t) => c.measureText(t).width, W);
+    lay.forEach(({ text: t, x }, i) => {
       c.fillStyle = i % 2 ? '#ffd66b' : '#ffffff';
       c.fillText(t, x, H / 2 + 2);
-      x += c.measureText(t).width;
-      i++;
-    }
+    });
     this.tickTex.needsUpdate = true;
   }
+}
+
+/**
+ * What the ticker says, in order.
+ *
+ * THE FORECAST IS A JOKE NOW, NOT A NUMBER. It read "TODAY'S FORECAST: 100%
+ * CHANCE OF MR. SATAN", and what reached the screen was "Todays forecast:
+ * 100" — which looks like a temperature, and was asked about as one: "what
+ * does this mean? Is this like temperature? May be better to place a joke in
+ * here rather than mock weather data, for instance, can say 'Hot and
+ * Muscley'". So it is his, word for word.
+ */
+export function tickerBits(slides = []) {
+  const bits = ['WORLD MARTIAL ARTS TOURNAMENT'];
+  for (const s of slides) {
+    if (s.kind === 'champ') bits.push(`${leagueName(s.mode)}: ${s.row.name} (${s.row.cat ?? '?'}) ${fmt(s.row.score)}`);
+    if (s.kind === 'satan') bits.push(`${leagueName(s.mode)}: MR. SATAN, OBVIOUSLY`);
+  }
+  bits.push('TODAY\'S FORECAST: HOT AND MUSCLEY', 'TOMORROW: EVEN MUSCLIER', 'PLEASE DO NOT FEED THE CHAMPION');
+  return bits;
+}
+
+/**
+ * Where each item goes on a strip `W` wide that wraps onto itself.
+ *
+ * WHOLE ITEMS ONLY. The strip used to be filled "round and round" until the
+ * pen passed its right edge, so the last item was drawn straight off the end
+ * of the canvas and cut — and the texture wraps there, so the cut was on
+ * screen once a lap. That is where the forecast lost everything after "100".
+ * Now it lays as many WHOLE items as fit and shares what is left over out
+ * between the gaps, so the seam lands in a gap like every other gap.
+ *
+ * @param {string[]} bits
+ * @param {(t: string) => number} measure  the canvas's own measureText
+ * @returns {{text: string, x: number, w: number}[]}
+ */
+export function tickerLayout(bits, measure, W) {
+  if (!bits.length) return [];
+  const items = [];
+  let used = 0;
+  for (let i = 0; ; i++) {
+    const text = `★ ${bits[i % bits.length]}`;
+    const w = measure(text);
+    const gap = measure('  ');
+    if (items.length && used + w + gap > W) break;
+    if (!items.length && w + gap > W) { items.push({ text, w }); used = w + gap; break; }
+    items.push({ text, w });
+    used += w + gap;
+    if (i > 1000) break;
+  }
+  const gap = measure('  ') + Math.max(0, W - used) / items.length;
+  let x = gap / 2;
+  for (const it of items) {
+    it.x = x;
+    x += it.w + gap;
+  }
+  return items;
 }
 
 /* --------------------------- canvas helpers ----------------------------- */

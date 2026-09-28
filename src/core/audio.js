@@ -985,13 +985,16 @@ export class Audio {
         break;
       }
       case 'firework':
-        /* The big screen's rockets bursting (systems/arenaboard.js). A thump
-           and a crackle, quiet, and only while somebody can see the board —
-           the caller scales it by how far away that somebody is. */
-        this._tone({ type: 'sine', from: 140, to: 50, dur: 0.22, gain: 0.22 * v });
-        this._noise({ from: 2400, to: 500, dur: 0.35, gain: 0.2 * v, q: 0.7 });
-        this._noise({ from: 5200, to: 3000, dur: 0.06, gain: 0.1 * v, q: 3, delay: 0.12 });
-        this._noise({ from: 4800, to: 2600, dur: 0.06, gain: 0.08 * v, q: 3, delay: 0.21 });
+        /* The big screen's rockets bursting (systems/arenaboard.js). A soft
+           distant thump and a short fizzle, and only while somebody can see
+           the board — the caller scales it by how far away that somebody is.
+           "The fireworks sound around the advertisement is a bit annoying":
+           it was a brighter bang with two sharp 5kHz ticks after it, every
+           half second. It is lower now, the ticks are one faint one, and the
+           board fires a volley a slide rather than a stream (FIREWORKS). */
+        this._tone({ type: 'sine', from: 110, to: 42, dur: 0.3, gain: 0.16 * v });
+        this._noise({ from: 1500, to: 300, dur: 0.4, gain: 0.11 * v, q: 0.7 });
+        this._noise({ from: 3200, to: 2000, dur: 0.08, gain: 0.03 * v, q: 2, delay: 0.16 });
         break;
       case 'gong':
         /* FIGHT. The one sound in the game that starts something. A big

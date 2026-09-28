@@ -274,6 +274,10 @@ tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
                silence, the numbers are pinned to the seconds they name and
                each shout between them is squeezed only as far as its own gap
                demands. Also cuts the six bare numbers.)
+             satan-rollcall.mjs (the round card's pieces, `sat_rc_*` - each
+               name, VERSUS, "and ALSO versus" - trimmed to the word by
+               measured silence. `rollCall` in tournament.js strings them
+               together for whoever is actually fighting)
              steam-art.mjs (the Steam shelf and the icons, from title_art.png)
              trailer-score.mjs  trailer-vo.mjs  trailer-cut.sh
              brush-kanji.mjs  voice-measure.mjs

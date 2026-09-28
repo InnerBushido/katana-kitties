@@ -48,7 +48,7 @@ import { Griffin } from './entities/griffin.js';
 import { Announcer } from './systems/announce.js';
 import { LastHunt, HUNT_LINES } from './systems/lasthunt.js';
 import {
-  Tournament, MODE_BY_ID, modesFor, teamColour, teamName, NO_SIDE,
+  Tournament, MODE_BY_ID, modesFor, teamColour, teamName, NO_SIDE, ROLL_WORDS,
 } from './systems/tournament.js';
 import { Menagerie } from './systems/menagerie.js';
 import { AngelForm } from './entities/angel.js';
@@ -1455,6 +1455,10 @@ class Game {
       sat_parade2: voicePath('sat_parade2'),
       sat_r1: voicePath('sat_r1'),
       sat_r2: voicePath('sat_r2'),
+      /* THE ROLL CALL'S PIECES — "Storm! VERSUS! Blossom!" — for every match
+         `sat_r1` is not true of. Ids from `ROLL_WORDS`, so the list cannot
+         drift from the card it is said on. See `rollCall`. */
+      ...Object.fromEntries(Object.keys(ROLL_WORDS).map((id) => [id, voicePath(id)])),
       sat_r3: voicePath('sat_r3'),
       sat_fight: voicePath('sat_fight'),
       sat_feast: voicePath('sat_feast'),
@@ -1611,6 +1615,13 @@ class Game {
          first sheets generated with real alpha rather than keyed off white. */
       ['ember_scared', 'kittens/ember/scared.png', false],
       ['frost_scared', 'kittens/frost/scared.png', false],
+      /* THE GOBLIN SWEEP — crouched, a leg out, the swoosh round her ankles,
+         worn for the spin of the trick Payne teaches. "generate a 'sweep trip'
+         image/animation for the players ... and have that play when the player
+         does the sweep ability". Two files, four kittens, like every pose
+         above; generated on magenta and keyed by `sprite-bake`. */
+      ['ember_sweep', 'kittens/ember/sweep.png', false],
+      ['frost_sweep', 'kittens/frost/sweep.png', false],
       /* THE CONJURED INSECT. Loaded with the other animals because it is one,
          and kept out of the ordinary lottery by a flag on its spec rather than
          by anything here — see `Menagerie.species`. No `_shock` sheet: a
@@ -1740,6 +1751,15 @@ class Game {
       if (!s.recolour) return base;
       const a = recolourAtlas(base, s.recolour);
       console.log(`[art] ${s.name} scared pose ← ${s.sheet}_scared recoloured`);
+      return a;
+    });
+    /* AND A SIXTH, FOR THE GOBLIN SWEEP. By STYLE, never by slot. */
+    this.sweepArt = PLAYER_STYLE.map((s) => {
+      const base = s.sheet === 'ember' ? critterArt.ember_sweep : critterArt.frost_sweep;
+      if (!base) return null;
+      if (!s.recolour) return base;
+      const a = recolourAtlas(base, s.recolour);
+      console.log(`[art] ${s.name} sweep pose ← ${s.sheet}_sweep recoloured`);
       return a;
     });
 
@@ -2012,6 +2032,7 @@ class Game {
        ending's crowd and is per STYLE like the other three — `this.roster[i]`
        and not `i`, because a seat is not a cat. */
     p.setScaredArt(this.scaredArt?.[this.roster[p.index]] ?? null);
+    p.setSweepArt(this.sweepArt?.[this.roster[p.index]] ?? null);
   }
 
   /**
@@ -2701,6 +2722,22 @@ class Game {
       if (e.code === 'KeyZ' && this.state === 'play') this._zoomMapKey(0);
       if (e.code === 'KeyX' && this.state === 'play' && !this.merged) this._zoomMapKey(1);
       if (this.state === 'play') this._debugKey(e.code);
+      /* ESCAPE CUTS MR. SATAN'S ROUND LINE SHORT, and does nothing else while
+         it does — see `Tournament.skipCall`. Outside the round card it answers
+         false and Escape is the pause key as always. */
+      if (e.code === 'Escape' && this.state === 'play' && !this.paused
+        && !this._overlayOpen() && this.tournament?.skipCall?.()) {
+        e.preventDefault();
+        return;
+      }
+      /* ...AND IT BACKS OUT OF THE ARENA'S PICKERS — see `_pickerBack`. Only
+         with no question up: with one, the branch below answers it NO. */
+      if (e.code === 'Escape' && this.state === 'play' && !this.paused
+        && !this.confirm.active && (this.leaguePicking || this.teamPicking)) {
+        this._pickerBack();
+        e.preventDefault();
+        return;
+      }
       if (e.code === 'Escape') {
         /* THE QUESTION IS ANSWERED BEFORE ANYTHING ELSE READS ESCAPE, and it
            is answered NO. It is the most modal thing on screen, it is sitting
@@ -7278,6 +7315,17 @@ class Game {
   _rememberPlayer(p, over = {}) {
     if (!p?.style?.name) return false;
     const row = { ...castRow(p, false), ...over };
+    /* A CAT PASSED OVER IN THE PICKER HAS NOT BEEN PLAYED YET. Scrolling
+       through the cats seats each in turn and writes each back as she goes,
+       from the join spot she was shown at — which would spend a loaded
+       kitten's saved place on a girl who only looked at her. Until the pick
+       is confirmed, her row keeps the save's own spot. */
+    const prev = this.sessionCast.get(p.style.name);
+    if (prev?.fromSave && this.picking?.index === p.index) {
+      row.fromSave = true;
+      row.at = prev.at;
+      row.facing = prev.facing;
+    }
     if (!meaningful(row)) return false;
     this.sessionCast.set(p.style.name, row);
     /* AND HER ANIMAL IS PARKED, NOT DROPPED. See `_parkedPandas`: the row above
@@ -7418,6 +7466,33 @@ class Game {
     const row = this.sessionCast.get(p?.style?.name);
     if (!row) return false;
     applyCast(this, p, row);
+    return true;
+  }
+
+  /**
+   * A kitten sitting down out of a loaded save goes back where the save had
+   * her — ONCE. See `fromSave` in `restore`: the rows still waiting for a
+   * seat when a save was loaded carry it, and a girl who dropped out and came
+   * back later does not, so she still lands beside the party.
+   *
+   * AT THE PICKER'S CONFIRM, not at the seat. A join seats a cat and then
+   * lets her scroll to another, and every cat on the way is a re-seat; the
+   * place belongs to the one she chose.
+   *
+   * THE LOAD'S OWN NUMBERS, exactly as `restore` places the seated ones, so a
+   * kitten loaded now and one loaded a minute later stand where one save says.
+   */
+  _placeFromSave(p) {
+    const row = this.sessionCast.get(p?.style?.name);
+    if (!row?.fromSave) return false;
+    row.fromSave = false;
+    const at = row.at;
+    if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return false;
+    p.position.set(at[0], at[1], at[2]);
+    p.group?.position.copy(p.position);
+    p.camTarget?.copy(p.position);
+    p.velocity?.set(0, 0, 0);
+    if (Number.isFinite(row.facing)) p.facing = row.facing;
     return true;
   }
 
@@ -7711,14 +7786,18 @@ class Game {
    * player 1 the only one who can pick the league locks three other kids out of
    * the decision about what they are all about to play.
    */
-  _openLeaguePicker(leagues) {
+  _openLeaguePicker(leagues, was = null) {
     const panel = document.getElementById('panel-league');
     const list = document.getElementById('league-list');
     if (!panel || !list) { this.tournament.begin(leagues[0]?.id); return; }
     list.textContent = '';
+    /* BACK FROM THE SIDES LANDS ON THE LEAGUE SHE CAME FROM — `was` — rather
+       than at the top of the list, so "I meant 2v2, not three-against-one" is
+       one step of the stick and not a hunt. */
+    const on = Math.max(0, leagues.findIndex((m) => m.id === was));
     leagues.forEach((m, i) => {
       const b = document.createElement('button');
-      b.className = `menu-btn${i === 0 ? ' primary' : ''}`;
+      b.className = `menu-btn${i === on ? ' primary' : ''}`;
       b.innerHTML = `${m.name}<span class="lg-blurb">${m.blurb}</span>`;
       b.addEventListener('click', () => {
         panel.classList.add('hidden');
@@ -7727,6 +7806,15 @@ class Game {
       });
       list.appendChild(b);
     });
+    /* AND A WAY BACK OUT OF IT. `.back` is what MenuNav's B presses, so a pad
+       has it for free; Escape and Start reach it through `_pickerBack`. It
+       ASKS, because there is nowhere nearer to go back to than the town — see
+       `_pickerBack` — and the default answer is no (seventh non-negotiable). */
+    const back = document.createElement('button');
+    back.className = 'menu-btn back';
+    back.textContent = '◀ BACK — FLY HOME TO TOWN';
+    back.addEventListener('click', () => this._pickerBack());
+    list.appendChild(back);
     panel.classList.remove('hidden');
     /* The fighters are frozen while it is up — `Tournament.frozen` is false
        here because no tournament has started yet, so this is the flag that
@@ -7808,6 +7896,13 @@ class Game {
     };
     this.teamPicking = true;
     panel.classList.remove('hidden');
+    /* Bound once, on the first open, rather than per open — a listener added
+       every time would go back once per visit on a single tap. */
+    const back = document.getElementById('tp-back');
+    if (back && !back.dataset.bound) {
+      back.dataset.bound = '1';
+      back.addEventListener('click', () => this._pickerBack());
+    }
     this._paintTeamPicker();
   }
 
@@ -7855,6 +7950,49 @@ class Game {
     help.classList.toggle('tp-bad', !ok);
   }
 
+  /**
+   * One step back out of the arena's pickers. True if it did something.
+   *
+   * Asked for: "at the arena and before a fight, during the menu selection,
+   * there is no way to 'back out' to the previous screen after choosing a
+   * fight type, at least not on mobile, there should be a way to back out, by
+   * either pressing esc/start buttons or by selecting a 'back' button." There
+   * was none at all: the sides screen had no button, Escape and Start opened
+   * the pause menu UNDERNEATH it (MenuNav gives `panel-league` precedence, so
+   * that menu could not even be driven), and the only way out of a league
+   * chosen by mistake was to leave the ring from the pause menu and fly back.
+   *
+   * FROM THE SIDES, BACK IS THE LEAGUES — nothing has been decided that
+   * cannot be decided again, so it simply goes; no question. FROM THE LEAGUES
+   * THE SCREEN BEFORE IS THE TOWN, eight seconds of griffin away, so that one
+   * asks, with the cursor on NO. It is reached from Escape, a pad's or the
+   * touch pad's Start, B on either screen, and the button on each.
+   */
+  _pickerBack() {
+    if (this.confirm?.active) return false;
+    if (this.teamPicking) {
+      const was = this.teamPick?.mode?.id ?? null;
+      document.getElementById('panel-teams')?.classList.add('hidden');
+      this.teamPicking = false;
+      this.teamPick = null;
+      this.sfx('menu');
+      this._openLeaguePicker(modesFor(this.players.length), was);
+      return true;
+    }
+    if (this.leaguePicking) {
+      this.confirm.ask({
+        title: 'FLY BACK TO TOWN?',
+        body: 'Nobody has fought yet, so nothing is lost. Mr. Satan will '
+          + 'run it again whenever you come back.',
+        no: 'NO, PICK A FIGHT',
+        yes: 'YES, FLY HOME',
+        onYes: () => this.quitMatch(),
+      });
+      return true;
+    }
+    return false;
+  }
+
   /** "two against two", in words, for the line that says why JUMP is refused. */
   _shapeWords(mode) {
     const counts = {};
@@ -7895,6 +8033,18 @@ class Game {
       T.prev[i] = dir;
     });
     if (moved) this._paintTeamPicker();
+
+    /* B IS BACK, as it is on every screen MenuNav drives — this one is not
+       driven by MenuNav (one cursor per kitten, see `_openTeamPicker`), so it
+       has to say so itself. Anybody's B, like anybody's JUMP. SPENT, so the
+       league list that opens under it this frame cannot read the same press
+       as its own BACK row and ask to fly everybody home. */
+    const back = this.players.findIndex((_, i) => this.input.players[i]?.pressed?.('interact'));
+    if (back >= 0) {
+      this.input.players[back].consume?.('interact');
+      this._pickerBack();
+      return;
+    }
 
     if (!this.tournament._validSeats(T.seats, this.players.length, T.mode)) return;
     if (!this.players.some((_, i) => (
@@ -9145,6 +9295,14 @@ class Game {
          eaten here rather than left to fall through, because the result
          screen's own pads read `jump` and not `start`: letting it through
          would toast AND do nothing, twice a frame. */
+    } else if (asked >= 0 && !this.paused && (this.leaguePicking || this.teamPicking)) {
+      /* START BACKS OUT OF THE ARENA'S PICKERS rather than pausing under them
+         — see `_pickerBack`. On a phone the touch pad's corner button is the
+         only Start there is, and it was the one press that could never leave.
+         With the question up it is eaten: the dialog is answered with B or a
+         tap, and Start toggling a pause behind it would be a second screen. */
+      if (!this.confirm.active) this._pickerBack();
+      this.input.players[asked].consume?.('start');
     } else if (asked >= 0) {
       const opening = !this.paused;
       this.setPaused(opening);
@@ -10179,6 +10337,7 @@ class Game {
     }
     if (pad?.pressed?.('jump')) {
       const p = this.players[index];
+      this._placeFromSave(p);
       this.picking = null;
       card?.classList.add('hidden');
       this.sfx('clan');

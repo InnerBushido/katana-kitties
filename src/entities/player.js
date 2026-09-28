@@ -1152,9 +1152,10 @@ export class Player {
     this.focusT = 0;
     this.camYaw = CAM_YAW;
     /* SNAKE WAY. `snakeRide` is null off the roads, and on one:
-       { road, s, dir, t, stick } — which road, how far along, which way she is
-       going along it, how long she has been on, and the stick direction that
-       means ONWARD for the whole ride. See `_snakeWish`. */
+       { road, s, dir, t, stick, rest } — which road, how far along, which way
+       she is going along it, how long she has been on, the stick direction
+       that means ONWARD until she lets go, and how long the stick has been
+       at rest. See `_snakeWish`. */
     this.snakeRide = null;
     this.snakeCam = new SnakeCam();
   }
@@ -1433,6 +1434,41 @@ export class Player {
     this.group.add(this.scaredPose);
   }
 
+  /**
+   * Give her the GOBLIN SWEEP drawing: crouched low, one leg out, a swoosh
+   * round her ankles — Payne's trick, on the kitten who learned it.
+   *
+   * WORN FOR THE SPIN AND NOT A FRAME LONGER. `sweepT` is the whole of it:
+   * she is planted while it runs (`wish` is zeroed) and free the frame it
+   * ends, so a pose that outlived it would slide a crouching cat across the
+   * floor. 0.34s is short, which is why the drawing is also TURNED — see the
+   * sweep branch in `_updateFeedback`.
+   *
+   * SAME SHAPE AS `setWarpArt` and the rest: one front-facing cell that never
+   * mirrors by heading. The spin is shown by turning the quad, not by
+   * pretending the drawing has a facing.
+   *
+   * @param {?object} art loaded atlas, or null — a missing sheet costs the
+   *        pose and nothing else. The trip, the ring (`systems/sweepfx.js`)
+   *        and the sound are all code; she spins in her ordinary drawing, as
+   *        she did before this existed. Ninth non-negotiable.
+   */
+  setSweepArt(art) {
+    if (!art?.texture) return;
+    if (this.sweepPose) this.group.remove(this.sweepPose);
+    const quad = this.height / (art.contentScale || 1);
+    this.sweepPose = new Billboard(art.texture, {
+      cols: 1,
+      rows: 1,
+      mirror: false,
+      width: quad,
+      height: quad,
+      footOffset: (art.pad ?? 0) * quad,
+    });
+    this.sweepPose.visible = false;
+    this.group.add(this.sweepPose);
+  }
+
   /* ------------------------ Powerup Kotodama ---------------------------- */
 
   /**
@@ -1702,6 +1738,7 @@ export class Player {
     if (this.warpPose?.visible) this.warpPose.faceCamera(camera);
     if (this.breathPose?.visible) this.breathPose.faceCamera(camera);
     if (this.scaredPose?.visible) this.scaredPose.faceCamera(camera);
+    if (this.sweepPose?.visible) this.sweepPose.faceCamera(camera);
 
     /* THE HEALTH BAR IS A FLAT QUAD AND HAS TO BE TURNED, like the leaders'
        speech bubbles are. It is parented to `group`, which never rotates, so
@@ -2537,7 +2574,7 @@ export class Player {
     /* --- ON SNAKE WAY THE STICK MEANS ONWARD, NOT A COMPASS POINT ---
        See `_snakeWish`. Before `moving` is decided, because it rewrites the
        wish that decides it. */
-    if (this.snakeRide) this._snakeWish(pad, wish);
+    if (this.snakeRide) this._snakeWish(pad, wish, dt);
 
     let moving = wish.lengthSq() > 0.0001;
     if (moving) {
@@ -2768,7 +2805,7 @@ export class Player {
            sprint attack is the one two kids already know from the barrels. */
         this.attackTimer = 0.26;
         this._startCharge(hud);
-      } else if (this.payne?.sweep && this.onGround && pad.down('sprint')
+      } else if (this.payne?.sweep && this.sweepCool <= 0 && this.onGround && pad.down('sprint')
           && Math.abs(pad.mx) + Math.abs(pad.my) <= 0.2) {
         /* THE GOBLIN SWEEP: SPRINT HELD, STICK STILL, ATTACK. Payne's line:
            "Hold run, stand really still... and swing!" It sits below the
@@ -2778,27 +2815,18 @@ export class Player {
            Holding sprint with the stick still did nothing at all before this,
            which is why it was free — nobody's standing slash moves.
 
-           A SWEEP STILL COOLING IS SAID OUT LOUD, sixth non-negotiable:
-           otherwise she presses, nothing spins, and it reads as the move
-           being broken. She gets the refusal blip and the wait in words. */
-        if (this.sweepCool > 0) {
-          /* ONE MESSAGE, UPDATED, NEVER A PILE. Reported: "should not show a
-             message when it is recharging, or if it does, it should stack the
-             message or delete the previous message so it does not spam the
-             screen." The first cut toasted every press, and a kid who is
-             mashing presses a lot. It still SAYS so (sixth non-negotiable),
-             but through `toast`'s combo slot: one live line per kitten,
-             rewritten in place with the seconds left. */
-          hud?.sfx('deny');
-          const left = Math.ceil(this.sweepCool);
-          hud?.toast?.('', this.index, {
-            key: 'sweepwait', add: 0, text: () => `Goblin Sweep: back in ${left}s`,
-          });
-        } else {
-          this.attackTimer = 0.26;
-          this.attackCooldown = SWEEP_SPIN + 0.1;
-          this._doSweep(world, hud);
-        }
+           A SWEEP STILL COOLING IS JUST A SWING. `sweepCool` is in the
+           condition, so the press falls through to whatever it would have
+           been without Payne's lesson — the Cross Slash's hold if she wears
+           it, the ordinary slash if not. "If the player has the trip ability,
+           and the trip ability is recharging, then the player should just do a
+           normal slash as if they didn't have the ability." It used to refuse
+           with a blip and a "back in Ns" line, which in a fight is a press
+           that throws nothing; this is not a refusal at all, so the sixth
+           non-negotiable has nothing to say. */
+        this.attackTimer = 0.26;
+        this.attackCooldown = SWEEP_SPIN + 0.1;
+        this._doSweep(world, hud);
       } else if (deferred) {
         /* The kind is read from the pad AT THE MOMENT OF THE PRESS, not
            recomputed later — and now it has to be STORED, because the swing it
@@ -5653,6 +5681,33 @@ export class Player {
       }
     }
 
+    /* --- the Goblin Sweep: down low, leg out, and round she goes ---
+
+       THE SPIN IS THE QUAD TURNING. The drawing is one front view, so the two
+       full turns `sweepT` makes of her FACING (see `_updateMovement`) would
+       show nothing on it at all. Instead its width follows the cosine of the
+       turn, flipping sign each half — a card spun on its edge, which is what a
+       paper cutout doing a leg sweep looks like. Floored at a third of its
+       width so the edge-on frames never vanish; this material alpha-tests,
+       and a quad a pixel wide is a kitten gone for a frame.
+
+       BEFORE THE FRIGHT, so being caught in a Cross Slash still wins: a sweep
+       cannot start while she is held, but one can be spinning on the frame a
+       sister's first cut lands. */
+    if (this.sweepPose) {
+      const spinning = this.sweepT > 0 && !this.ko;
+      this.sweepPose.visible = spinning;
+      if (spinning) {
+        this.sprite.mesh.visible = false;
+        const turn = (1 - this.sweepT / SWEEP_SPIN) * Math.PI * 4;
+        const c = Math.cos(turn);
+        this.sweepPose.mesh.scale.set(Math.sign(c || 1) * Math.max(1 / 3, Math.abs(c)), 1, 1);
+        this.sweepPose.mesh.rotation.z = 0;
+        this.sweepPose.mat.color.copy(mat.color);
+        this.sweepPose.mat.opacity = mat.opacity;
+      }
+    }
+
     /* --- caught in a Cross Slash: paws up, and wait for it ---
 
        AFTER EVERY OTHER POSE AND BEFORE THE VANISH, and this one really can
@@ -5822,8 +5877,20 @@ export class Player {
    * brings her back down it; and the part across it moves her across the
    * deck, gently while she is standing on it (the rails are there) and freely
    * in the air, which is how she jumps off.
+   *
+   * LET GO, AND THE NEXT PUSH IS READ THROUGH THE CAMERA AGAIN. The lock was
+   * the first half of the request; the second, a playtest later, was "if
+   * player lets go of the direction keys, or if the joystick goes back to
+   * center, then it will re-orient the input based on the direction the
+   * camera is facing ... If the player then holds the button of the new
+   * direction, it will then move in that direction relative to the bridge".
+   * So `stick` is re-taken once the stick has rested `SNAKE.rebind`: the
+   * direction that means onward becomes the one that is onward on the screen
+   * she is looking at NOW, and from the first frame of the new push it is
+   * locked to the road again exactly as boarding locks it. A stick held the
+   * whole way never rests, so the first half is untouched.
    */
-  _snakeWish(pad, wish) {
+  _snakeWish(pad, wish, dt = 0) {
     const R = this.snakeRide;
     const f = R.road.frameAt(R.s);
     const hl = Math.hypot(f.tx, f.tz) || 1;
@@ -5831,7 +5898,13 @@ export class Player {
     const tz = (f.tz / hl) * R.dir;
     const mx = pad.mx ?? 0;
     const my = pad.my ?? 0;
-    if (mx * mx + my * my < 1e-4) { wish.set(0, 0, 0); return; }
+    if (mx * mx + my * my < 1e-4) {
+      R.rest = (R.rest ?? 0) + dt;
+      wish.set(0, 0, 0);
+      return;
+    }
+    if ((R.rest ?? 0) >= SNAKE.rebind) R.stick = this._snakeOnward(tx, tz);
+    R.rest = 0;
     const along = mx * R.stick.x + my * R.stick.y;
     // Right of `stick`, in stick space where y runs DOWN the screen.
     const side = mx * -R.stick.y + my * R.stick.x;
@@ -5915,11 +5988,7 @@ export class Player {
     const dir = Math.sign(this.velocity.x * hit.tx + this.velocity.z * hit.tz)
       || Math.sign(wx * hit.tx + wz * hit.tz)
       || (hit.s < road.length / 2 ? 1 : -1);
-    const dx = hit.tx * dir;
-    const dz = hit.tz * dir;
-    // The stick that the camera maps onto (dx, dz): mx = D.right, my = -(D.fwd).
-    let sx = dx * right.x + dz * right.z;
-    let sy = -(dx * fwd.x + dz * fwd.z);
+    let { x: sx, y: sy } = this._snakeOnward(hit.tx * dir, hit.tz * dir);
     const m = Math.hypot(mx, my);
     if (m > 0.3) {
       const px = mx / m;
@@ -5928,7 +5997,20 @@ export class Player {
       if ((px * sx + py * sy) / l0 > 0.2) { sx = px; sy = py; }
     }
     const l = Math.hypot(sx, sy) || 1;
-    this.snakeRide = { road, s: hit.s, dir, t: 0, stick: { x: sx / l, y: sy / l } };
+    this.snakeRide = { road, s: hit.s, dir, t: 0, stick: { x: sx / l, y: sy / l }, rest: 0 };
+  }
+
+  /**
+   * The stick that her camera maps onto the world direction (dx, dz), as a
+   * unit vector in stick space (y runs DOWN the screen): mx = D.right,
+   * my = -(D.fwd). Boarding and every let-go ask it the same question.
+   */
+  _snakeOnward(dx, dz) {
+    const { fwd, right } = this._basis();
+    const sx = dx * right.x + dz * right.z;
+    const sy = -(dx * fwd.x + dz * fwd.z);
+    const l = Math.hypot(sx, sy) || 1;
+    return { x: sx / l, y: sy / l };
   }
 
   /** What the ride camera needs to frame her alone, or null off the roads. */
