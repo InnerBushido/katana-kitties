@@ -37,7 +37,7 @@ the `voice_id` below. About **0.15 credits a line**.
 | **Galemane** | Windwhisker. Maine Coon. | **Onyx** | `8911390e-4b59-459b-ba84-19010917e1df` | `wind` `shrine_wind` |
 | **Snowmantle** | Icewhisker. Himalayan. | **Imogen** | `3811e986-0891-47cf-a1f5-78a1d62a547a` | `ice` `shrine_ice` |
 | **Bambooheart** | Pandapaw. Ragdoll. | **Hana** | `c25f78a0-714e-42af-8da3-a399cef94968` | `panda` `shrine_panda` |
-| **Mr. Satan** | the tournament, and the trailer. The only insincere voice in the game. | **Harrison** | `573e5163-59b3-4926-aab1-951ef2985f81` | all thirty-four `sat_*` — the six bare numbers `sat_n0`–`sat_n5` and the four cues of the last fifteen seconds among them; **and six of the trailer's fourteen lines** (1-3, 9, 10, 13) |
+| **Mr. Satan** | the tournament, and the trailer. The only insincere voice in the game. | **Harrison** | `573e5163-59b3-4926-aab1-951ef2985f81` | all `sat_*` — the thirteen roll-call pieces `sat_rc_*`, the six bare numbers `sat_n0`–`sat_n5` and the four cues of the last fifteen seconds among them; **and six of the trailer's fourteen lines** (1-3, 9, 10, 13) |
 | **Payne** | the quest-giver in the market. A goblin cat, and a real person who agreed to be in the game — [payne.md](payne.md). Cheerful, cheeky, teases. | **Pixie** | `0178ef57-ada4-43d9-992b-8d9221045bb4` | all forty-five `payne_*`, including "Heyyy, …!" and "Oi! …!" for each of the four kittens |
 | **the trailer voice** | not in the game at all. The straight narrator Mr. Satan interrupts — and the one who has to say "right meow" with a straight face. | **Desmond** | `563f728c-e249-5a85-97ab-8461e8c09da6` | **six trailer lines** — 4-8 and the sign-off |
 | **Ryuuseki** | the dragon the seven stars call. | **unresolved — see below** | — | `summon1` `summon2` |
@@ -55,7 +55,7 @@ above, because a character has ONE voice and therefore ONE folder:
 
 ```
 voice/
-  satan/      36 clips, every `sat_*`
+  satan/      49 clips, every `sat_*`
   patchfur/   18 — the intro, the ending, and the last-hunt countdown
   leaders/    12 — the six chiefs, a bare take and a shrine take each
   ryuuseki/    2 — `summon1` `summon2`
@@ -533,3 +533,26 @@ flag that decides, and `world-check` drives both directions, because a tick that
 *also* plays underneath his voice is two clocks disagreeing out loud. With no
 `sat_zero.mp3` the round does not wait for a shout that cannot happen: the bell
 rings straight away, as it always did.
+
+## The roll call is said in pieces, on purpose
+
+`sat_rc_*`, thirteen clips cut by
+[tools/capture/satan-rollcall.mjs](../../tools/capture/satan-rollcall.mjs)
+from the takes in `tools/capture/satan-takes/rollcall/`. All are Harrison.
+Tournament.md has the design; this is the recording.
+
+**One render per piece is not the countdown's mistake.** The countdown had to
+escalate across a line, and eleven isolated renders could not do that. A ring
+announcer calling a card barks each name as its own event, so a clip per word
+is how the genre sounds anyway. The partner joins are rendered with their
+"and" (`and FROST!`), so the join has a real lead-in.
+
+**The cutter trims by measured silence.** The first cut used `silenceremove`
+and trimmed nothing off half the takes. ElevenLabs leaves a click 0.1-0.2 s
+after the word, after a quarter-second of silence, so the reversed filter met
+sound at once and stopped. The tail is now cut at the last silence of at least
+0.12 s whenever less than 0.25 s of junk follows it. That keeps the dash pause
+inside "Fighters — take your marks!".
+
+Cost: 13 renders at 0.15 credits. Four of the first batch hit a 429 and were
+resubmitted.

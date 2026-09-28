@@ -4686,6 +4686,23 @@ body.touch-ui .kd-cards .kd-step { width: 44px; height: 44px; font-size: 24px; }
 /* Why JUMP is refused, in the same red the health bar uses for trouble. A
    confirm that silently does nothing is the failure this game keeps naming. */
 .tp-bad { color: #d62b20; font-weight: bold; }
+/* BACK TO THE LEAGUES — see `Game._pickerBack`. Ink on paper like the rest of
+   the screen, and deliberately smaller than the columns: it is the way out,
+   not the thing the screen is for. */
+.tp-back {
+  display: block;
+  margin: 0 0 8px;
+  padding: 6px 12px;
+  font-family: 'Bangers', cursive;
+  font-size: 16px;
+  letter-spacing: 1.4px;
+  color: var(--ink);
+  background: var(--paper-2);
+  border: 3px solid var(--ink);
+  border-radius: 9px;
+  cursor: pointer;
+}
+.tp-back:hover { background: var(--paper); }
 
 /* ========================= the on-screen pad =============================
    Drawn in the same ink-and-paper language as everything else, and sized for a
@@ -5222,6 +5239,10 @@ body.touch-ui #an-text { font-size: 12px; line-height: 1.3; }
 body.touch-ui #arena-result,
 body.touch-ui #panel-league .panel,
 body.touch-ui #panel-teams .panel { padding: 10px 14px; }
+/* A THUMB'S WORTH OF BUTTON, and the heading gives the height back: on an
+   844x390 phone the way out and the four columns have to share one screen. */
+body.touch-ui .tp-back { min-height: 40px; padding: 8px 14px; font-size: 15px; margin-bottom: 4px; }
+body.touch-ui #panel-teams h2 { font-size: 22px; margin-bottom: 6px; }
 body.touch-ui #arena-banner { font-size: 34px; }
 
 /* THE RESULTS SCREEN HAS TO FIT A KEYPAD NOW, on a screen 390px tall. Everything

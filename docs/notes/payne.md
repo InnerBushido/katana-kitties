@@ -353,3 +353,18 @@ minutes, and that is what "stuck" means.
 - The alternative held pose (both hands on the helmet) is kept outside the repo
   in case Richard prefers it.
 - More tricks. The chain is built so a second one is a row, not a system.
+
+## After the ending, and the sweep while it recharges
+
+- **The hints row goes away after the Awakening.** *"does having hint on/off
+  do anything? If not, we should turn hints off and disable this option or
+  remove it from Payne's menu."* It did nothing: every hint is a step of
+  `nextStep`, and after the ending there is no next step. The row is removed
+  rather than greyed out, because a row that does nothing reads as broken.
+  `_watch` also writes the switch off, so a save taken after the ending does
+  not carry a switch that is on and can never be reached.
+- **A sweep still recharging is an ordinary swing.** *"the player should just
+  do a normal slash as if they didn't have the ability."* It used to refuse
+  with a blip and a "back in Ns" line, which in a fight is a press that throws
+  nothing. `sweepCool` is now in the condition, so the press falls through to
+  whatever it would otherwise have been.

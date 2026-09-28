@@ -1887,6 +1887,11 @@
          keeps its own cursors. -->
     <div id="panel-teams" class="screen overlay hidden">
       <div class="panel">
+        <!-- THE WAY BACK IS AT THE TOP, not under the columns: four sides wrap
+             onto two lines on a phone and the panel scrolls, and a way out
+             that has to be scrolled to is a screen with no way out. It is not
+             a `.menu-btn` for the same reason nothing here is (see above). -->
+        <button id="tp-back" class="tp-back" type="button">&#9664; BACK &mdash; PICK A DIFFERENT FIGHT</button>
         <h2 id="tp-title">PICK YOUR SIDE</h2>
         <div id="tp-body" class="tp-body"></div>
         <p class="note" id="tp-help"></p>

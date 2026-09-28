@@ -2230,3 +2230,16 @@ that one is about a fifteen-unit rock ending up in shot of a camera that frames
 the whole diagram from 104 back, and it wants the margin the camera trigger just
 gave up. The two were the same 52 by coincidence and are now different on
 purpose, with a check and a comment either side saying so.
+
+## A sister who joins a loaded game lands where the save had her
+
+*"When a player spawns in from a saved game (if they were already playing)
+they should spawn into their previously saved position."* Every tier opens on
+one kitten, so a two-kitten save seats one, and her sister used to join a
+minute later at the join spot.
+
+`restore` now marks each waiting cast row `fromSave`. The picker's confirm
+calls `_placeFromSave`, which puts her on the row's `at` and `facing`, once.
+Scrolling past her own cat in the picker re-seats her and writes the row back
+from the join spot. `_rememberPlayer` keeps the saved spot through that, so
+the scroll cannot spend it.

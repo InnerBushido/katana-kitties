@@ -434,6 +434,9 @@ export function meaningful(row) {
  * she comes back beside the party, at the join spot her sisters can see, rather
  * than being teleported to whatever hillside she was on when she put the
  * controller down.
+ *
+ * EXCEPT THE FIRST TIME SHE IS SEATED OUT OF A LOADED SAVE, and that is not
+ * decided here either: see `fromSave` in `restore` and `Game._placeFromSave`.
  */
 export function applyCast(game, p, row) {
   if (!p || !row) return false;
@@ -892,9 +895,20 @@ export function restore(game, snap) {
      cast, so the moment somebody picks up a fourth controller (or swaps to
      that cat in the picker) `Game._recallPlayer` hands her back her score, her
      clan, her oaths and her panda. Nothing is dropped; it is waiting. */
+  /* `fromSave` ON THE ONES STILL WAITING FOR A SEAT. Every tier opens on one
+     kitten now, so loading a two-kitten afternoon seats ONE — and her sister,
+     picking up the second controller a minute later, was put at the join
+     spot like any rejoin: "When a player spawns in from a saved game (if they
+     were already playing) they should spawn into their previously saved
+     position". A kitten sitting down out of the save IS being loaded, late;
+     it is a girl who put her controller down mid-afternoon who comes back to
+     the party. So the row carries the difference, `Game._placeFromSave`
+     spends it once, at the picker's confirm, and every row written after
+     that (a drop-out, a swap) is written without it. */
+  const waiting = new Set(rows.map((r) => r.style));
   game.sessionCast = new Map();
   for (const r of snap.players ?? []) {
-    if (r?.style) game.sessionCast.set(r.style, { ...r, here: false });
+    if (r?.style) game.sessionCast.set(r.style, { ...r, here: false, fromSave: waiting.has(r.style) });
   }
 
   putOrbs();

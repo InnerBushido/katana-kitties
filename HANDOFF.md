@@ -577,6 +577,30 @@ script.
   - **Ryuuseki is summoned only by a kitten on her own feet on the home
     island.** Flying a dragon over the torii used to call him down.
 
+**Richard's third batch** (branch `mixed/bridge-steer-fight-call-billboard`).
+[tournament.md](docs/notes/tournament.md) has the arena half.
+
+- **The Snake Way re-aims to the camera when you let go.** It rebinds after
+  0.1 s with the stick at rest.
+- **A sister joining a loaded game lands where the save had her.**
+- **FIGHT! is on time.** The round waits for his line. A jump, swing or Escape
+  skips it, and FIGHT! interrupts.
+- **He names the real fighters.** There are 13 new Harrison clips, and
+  *Ember versus Frost* is used only for Ember against Frost.
+- **The big screen:**
+  - Slides stay up longer, with an ad every two ladders.
+  - One aimed, quieter volley of fireworks per slide.
+  - The ticker's forecast is *HOT AND MUSCLEY* and is no longer cut.
+- **Payne after the ending** has no hints row.
+- **A recharging Goblin Sweep is a plain slash.**
+- **The arena pickers have a way back.** It works from Escape, Start, B or a
+  BACK button, and leaving to town asks first.
+- **The Goblin Sweep has a pose** for all four kittens.
+- **Open:**
+  - Nobody has heard the roll call.
+  - The Riposte stance is generated (`ember_riposte` / `frost_riposte`) but
+    lives with the unmerged orbs on `feature/rare-orbs-reach-parry`.
+
 **The big screen outside the arena.** Branch `feature/arena-billboard`.
 [tournament.md](docs/notes/tournament.md) has the design and every note quoted,
 under **The big screen**; [art.md](docs/notes/art.md) has the six new poses.

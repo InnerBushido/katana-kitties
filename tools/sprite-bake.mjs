@@ -117,6 +117,16 @@ const WORK = [
      ~600 tall on it; the 1024 masters would be downloaded for nothing. */
   { file: 'ember_champion.png', out: 'kittens/ember/champion.png', to: [640, 640], chroma: true },
   { file: 'frost_champion.png', out: 'kittens/frost/champion.png', to: [640, 640], chroma: true },
+  /* THE GOBLIN SWEEP, on the kitten who learned it from Payne: crouched, one
+     leg out, a swoosh round her ankles. "let's also generate a 'sweep trip'
+     image/animation for the players similar to public/sprites/payne sweep
+     ability and have that play when the player does the sweep ability". One
+     per SHEET again — Storm and Blossom are these recoloured by `Game`. Each
+     was prompted with that kitten's own `bless.png` as the only reference.
+     768 like the other single poses (`inhale`, `warp`, `scared`), because it
+     is drawn at her full height in the world and not on the board. */
+  { file: 'ember_sweep.png', out: 'kittens/ember/sweep.png', to: [768, 768], chroma: true },
+  { file: 'frost_sweep.png', out: 'kittens/frost/sweep.png', to: [768, 768], chroma: true },
   { file: 'satan_flex_zyzz.png', out: 'satan/flex_zyzz.png', to: [640, 640], chroma: true },
   { file: 'satan_flex_biceps.png', out: 'satan/flex_biceps.png', to: [640, 640], chroma: true },
   { file: 'satan_flex_trophy.png', out: 'satan/flex_trophy.png', to: [640, 640], chroma: true },

@@ -36,7 +36,7 @@ import {
 import { SNAKE, SNAKE_LINKS, SNAKE_ARENA, COIN_CANES } from '../src/world/snakeway.js';
 import { FAR, FAR_PLACES, FarIsles } from '../src/world/farisles.js';
 import { snakePose, SnakeCam, SNAKE_MOVE, ARENA_RIDE, ARENA_RIDE_DOWN, ARENA_BLEND, shotPose, arenaRidePose } from '../src/systems/snakecam.js';
-import { Announcer } from '../src/systems/announce.js';
+import { Announcer, ROLL_GAP } from '../src/systems/announce.js';
 import { FinaleTide } from '../src/systems/finaletide.js';
 import { FinaleShow } from '../src/systems/finaleshow.js';
 import { buildBridge, mergeParts as mergeBuilt, PALETTE as BUILD_PALETTE } from '../src/world/build.js';
@@ -100,6 +100,7 @@ import { ATTACKS, COMBAT, BASE_REACH, MAX_HP, DAZE_TIME, SWEEP_UP } from '../src
 import { ParryFx, yawFor, guardGeometry, GUARD_R } from '../src/systems/parryfx.js';
 import {
   Tournament, WINS_NEEDED, MAX_ROUNDS, FEAST_TIME, REGEN_FRAC, OUT_FLOOR,
+  CARD_TIME, CARD_MAX,
 } from '../src/systems/tournament.js';
 import {
   Critter, CRITTERS, CRITTER_BY_ID, EAT_TIME, MOUTH_TIME, CATCH_RADIUS, STUN_TIME,
@@ -137,12 +138,12 @@ import { Label, labelCacheStats } from '../src/core/label.js';
 import {
   MODES, MODE_BY_ID, modesFor, handicapFor, HANDICAP_MAX, NO_SIDE, ROUND_LIMIT,
   WARN_AT, COUNT_AT, COUNT_MID, COUNT_LAST, ZERO_BEAT, ROUND_OVER_LINE,
-  teamColour, teamName,
+  teamColour, teamName, rollCall, ROLL_WORDS,
 } from '../src/systems/tournament.js';
 import { worldSpawnCount, WORLD_PER_PLAYER } from '../src/systems/kotodama.js';
 import {
-  ArenaBoard, buildSlides, SLIDE_DUR, SATAN_RECORDS, SATAN_ADS, SATAN_TAGLINE, CHAMP_ART,
-  SATAN_POSES, BOARD_VIEW, boardZoneWeight, boardShot, slideHype, catStyle, NEW_FOR_MS,
+  ArenaBoard, buildSlides, SLIDE_DUR, ADS_EVERY, SATAN_RECORDS, SATAN_ADS, SATAN_TAGLINE, CHAMP_ART,
+  SATAN_POSES, BOARD_VIEW, boardZoneWeight, boardShot, slideHype, catStyle, NEW_FOR_MS, FIREWORKS, burstPoint, tickerBits, tickerLayout,
 } from '../src/systems/arenaboard.js';
 import {
   scoreOf, loadBoard, saveResult, clearBoard, BOARD_SIZE, BOARD_MODES,
@@ -5988,6 +5989,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'satan/flex_zyzz.png', 'satan/flex_biceps.png', 'satan/flex_trophy.png', 'satan/flex_kiss.png',
     // ...and Payne, the quest-giver (systems/payne.js): five chroma-keyed masters.
     'payne/base.png', 'payne/held.png', 'payne/helmet.png', 'payne/sweep.png', 'payne/town.png',
+    // ...and the kittens' own Goblin Sweep, chroma-keyed like Payne's.
+    'kittens/ember/sweep.png', 'kittens/frost/sweep.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -6402,9 +6405,11 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
     /* SIX SINCE THE BIG SCREEN: `champion.png` is the pose the record board
        outside the arena draws her in, and Storm and Blossom reach for it
        through the same recolour as everything else. */
-    ok('...with the same six poses drawn for each of them',
+    /* SEVEN SINCE THE GOBLIN SWEEP: `sweep.png` is worn for the spin of the
+       trick Payne teaches. */
+    ok('...with the same seven poses drawn for each of them',
       posesOf('ember') === posesOf('frost')
-      && posesOf('ember').split(' ').length === 6, posesOf('ember'));
+      && posesOf('ember').split(' ').length === 7, posesOf('ember'));
   }
 
   /* --- and nothing else in public/ is quietly enormous ----------------------
@@ -14328,6 +14333,211 @@ console.log('\n--- the three power moves ---');
     const card = beat('card');
     ok('...and in the round card it skips to the count',
       card.said !== null && card.T.t > 0, `${card.said}`);
+    /* --- 🔔 FIGHT! IS SAID WHEN THE FIGHT STARTS, AND NOT AFTER ------------
+       "Mr. Satans voice is lagging behind the 'Fight' timing, his text is on
+       screen still ... the fight has already started before he says 'Fight'
+       and then the text goes away." His round line is 6.24s and the card
+       used to hold 3.4 before a 3s count, so FIGHT! queued behind him. The
+       real Announcer, on a real Tournament, frame by frame. */
+    {
+      const docWas = globalThis.document;
+      const mkEl = () => ({
+        textContent: '', className: '', style: { setProperty() {} },
+        classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+        replaceChildren() {}, appendChild() {}, getContext: () => null,
+        addEventListener() {}, removeEventListener() {},
+        querySelector: () => null, querySelectorAll: () => [],
+      });
+      globalThis.document = { ...docWas, getElementById: () => mkEl() };
+      let stopped = 0;
+      const R1 = 6.24;
+      const mkCall = (r1 = R1) => {
+        const ann = new Announcer({ audio: { speak: (el) => el, stopSpeaking: () => { stopped++; }, play() {} } });
+        ann.clips.set('sat_r1', { el: { id: 'sat_r1' }, dur: r1 });
+        ann.clips.set('sat_fight', { el: { id: 'sat_fight' }, dur: 0.96 });
+        const e = mk([100, 100, 100, 100]);
+        /* On the arena floor, where `_catchFallers` has nothing to do. */
+        const ring = world.arenaRing ?? { x: 0, y: 0, z: 0 };
+        e.players.forEach((p) => {
+          p.position = new THREE.Vector3(ring.x, ring.y, ring.z);
+          p.velocity = new THREE.Vector3();
+        });
+        e.T.announcer = ann;
+        e.T.state = 'card';
+        e.T.t = 0;
+        ann.say('sat_r1', 'ROUND 1! fighters, take your marks!');
+        return { T: e.T, ann };
+      };
+      const step = (c, pads = []) => { c.ann.update(1 / 60); c.T.update(1 / 60, pads); };
+      const c = mkCall();
+      let clock = 0;
+      let countAt = -1;
+      let liveAt = -1;
+      let fightUp = false;
+      let fightGone = -1;
+      for (let k = 0; k < 60 * 20; k++) {
+        step(c);
+        clock += 1 / 60;
+        if (countAt < 0 && c.T.state === 'count') countAt = clock;
+        if (liveAt < 0 && c.T.state === 'live') {
+          liveAt = clock;
+          fightUp = c.ann.current?.id === 'sat_fight' && c.ann.queue.length === 0;
+        }
+        if (liveAt >= 0 && fightGone < 0 && !c.ann.active) { fightGone = clock; break; }
+      }
+      ok('🔔 the round card waits for his line to finish before the count',
+        countAt >= R1 - 0.05 && countAt < R1 + 0.2 && countAt > CARD_TIME, `count at ${countAt.toFixed(2)}s, line ${R1}s`);
+      ok('...so FIGHT! is on his card on the very frame the round goes live',
+        fightUp, `live at ${liveAt.toFixed(2)}s`);
+      ok('...and the card is gone about a second after the fight starts, not two',
+        fightGone > 0 && fightGone - liveAt < 1.25, `${(fightGone - liveAt).toFixed(2)}s`);
+      /* A PRESS CUTS HIM OFF — but not the press that started the round. */
+      const s = mkCall();
+      const jumpPad = [{ pressed: (a) => a === 'jump' }];
+      const swingPad = [{ pressed: (a) => a === 'attack' }];
+      step(s, jumpPad);
+      ok('...the JUMP that confirmed the league does not skip his line',
+        s.T.state === 'card' && s.ann.active);
+      for (let k = 0; k < 40; k++) step(s);
+      const before = stopped;
+      step(s, swingPad);
+      ok('...but a swing a moment later cuts him off and starts the count',
+        s.T.state === 'count' && !s.ann.active && stopped === before + 1, `${s.T.state} ${stopped - before}`);
+      ok('...and Escape asks the same thing, and is refused outside the card',
+        s.T.skipCall() === false
+        && /e\.code === 'Escape' && this\.state === 'play' && !this\.paused\s*&& !this\._overlayOpen\(\) && this\.tournament\?\.skipCall\?\.\(\)/.test(msrc)
+        && msrc.indexOf('this.tournament?.skipCall?.()') < msrc.indexOf("if (this.confirm.active) { this.confirm.close()"));
+      /* A LINE THAT NEVER ENDS DOES NOT HOLD FOUR KITTENS ON THEIR MARKS. */
+      const h = mkCall(120);
+      let hung = -1;
+      for (let k = 0; k < 60 * 30 && hung < 0; k++) { step(h); if (h.T.state === 'count') hung = h.T.t; }
+      ok('...and a line that never ends lets the round go at CARD_MAX',
+        h.T.state === 'count' && CARD_MAX > 7.6 + 1 && CARD_MAX < 20);
+
+      /* --- 📣 HE NAMES WHO IS ACTUALLY FIGHTING ------------------------------
+         "Announcer says 'Round 1, ember versus frost' Let's only use this if it
+         actually is ember versus frost, otherwise, lets say something else".
+         Every league, every way the four cats can be dealt into it. */
+      const CATS = ['Ember', 'Frost', 'Blossom', 'Storm'];
+      const perms = (xs, k) => (k === 0 ? [[]] : xs.flatMap((x, i) => perms(xs.filter((_, j) => j !== i), k - 1).map((r) => [x, ...r])));
+      const shipped = new Set(readdirSync(new URL('../public/voice/satan/', import.meta.url)).map((f) => f.replace(/\.mp3$/, '')));
+      let calls = 0;
+      const lies = [];
+      for (const m of MODES) {
+        for (const n of m.players) {
+          for (const cast of perms(CATS, n)) {
+            for (const round of [1, 2]) {
+              const sides = m.sides(n);
+              const c = rollCall(round, cast, sides);
+              const ids = [].concat(c.ids);
+              calls++;
+              const duelEF = n === 2 && [...cast].sort().join() === 'Ember,Frost';
+              const bad = (/Ember versus Frost —/.test(c.text) && !duelEF && n === 2)
+                || (n === 2 && !duelEF && ids.includes(`sat_r${round}`))
+                || cast.some((cat) => (c.text.match(new RegExp(`\\b${cat}\\b`, 'g')) ?? []).length !== 1)
+                || !c.text.startsWith(`ROUND ${round}!`)
+                || ids.some((id) => !shipped.has(id))
+                /* ONE STRING: the card is the pieces' words, in order. */
+                || (Array.isArray(c.ids) && c.text.replace(/,/g, '') !== c.ids.map((id) => ROLL_WORDS[id]).join(' ').replace(/,/g, ''));
+              if (bad) lies.push(`${m.id} ${cast.join('/')} r${round}: ${c.text} [${ids.join(' ')}]`);
+            }
+          }
+        }
+      }
+      ok(`📣 every league, every cast (${calls} calls): he names exactly who is fighting`,
+        lies.length === 0 && calls > 100, lies.slice(0, 2).join(' || '));
+      ok('...and Ember against Frost keeps the one whole recording it always had',
+        rollCall(1, ['Frost', 'Ember'], [0, 1]).ids === 'sat_r1' && rollCall(2, ['Ember', 'Frost'], [0, 1]).ids === 'sat_r2');
+      ok('...the pair and the two loners get "and ALSO versus", as asked',
+        /Ember and Frost versus Blossom and ALSO versus Storm/.test(rollCall(1, CATS, [0, 0, 1, 2]).text)
+        && !/ALSO/.test(rollCall(1, CATS, [0, 1, 2, 3]).text));
+      ok('...a cat with no recording is named by nobody rather than wrongly',
+        rollCall(1, ['Ember', 'Whiskers'], [0, 1]).text === 'ROUND 1! Fighters, take your marks!');
+      ok('...every piece is buffered at boot, off the same list',
+        /\.\.\.Object\.fromEntries\(Object\.keys\(ROLL_WORDS\)\.map\(\(id\) => \[id, voicePath\(id\)\]\)\)/.test(msrc));
+      const tsrc = readFileSync(new URL('../src/systems/tournament.js', import.meta.url), 'utf8');
+      ok('...and the round card is what asks for it',
+        /const call = rollCall\(this\.round,\s*this\.game\.players\.map\(\(p\) => p\.style\?\.name \?\? p\.name\), this\.sides\);/.test(tsrc)
+        && /else this\.announcer\?\.say\(call\.ids, call\.text\);/.test(tsrc));
+
+      /* THE PIECES ARE SAID ONE AFTER ANOTHER, on one card, and the round
+         waits for the LAST of them — `talking` is what the card beat asks. */
+      {
+        const said = [];
+        let hushedAt = -1;
+        const ann = new Announcer({ audio: {
+          speak: (el) => { const v = { ...el, currentTime: 0, ended: false }; said.push(v); return v; },
+          stopSpeaking: () => { hushedAt = said.length; }, play() {},
+        } });
+        const call = rollCall(1, ['Storm', 'Blossom'], [0, 1]);
+        for (const id of call.ids) ann.clips.set(id, { el: { id }, dur: 0.5 });
+        ann.say(call.ids, call.text);
+        let clock = 0;
+        let quietAt = -1;
+        const gaps = [];
+        let lastEnd = 0;
+        for (let k = 0; k < 60 * 8; k++) {
+          ann.update(1 / 60);
+          clock += 1 / 60;
+          const v = said[said.length - 1];
+          if (v && !v.ended) {
+            if (v.currentTime === 0 && said.length > 1 && !v._at) { v._at = clock; gaps.push(clock - lastEnd); }
+            v.currentTime += 1 / 60;
+            if (v.currentTime >= 0.5) { v.ended = true; lastEnd = clock; }
+          }
+          if (quietAt < 0 && !ann.talking) quietAt = clock;
+        }
+        ok('📣 the pieces are said in order, on the one card',
+          said.map((v) => v.id).join() === call.ids.join() && ann.current === null,
+          said.map((v) => v.id).join(' '));
+        ok(`...a beat apart (ROLL_GAP ${ROLL_GAP}s), not run together and not a pause`,
+          gaps.length === call.ids.length - 1 && /* One frame either way: the gap is counted in whole frames. */
+          gaps.every((g) => g >= ROLL_GAP - 1 / 60 && g < ROLL_GAP + 0.05),
+          gaps.map((g) => g.toFixed(3)).join(' '));
+        const whole = call.ids.length * 0.5 + (call.ids.length - 1) * ROLL_GAP;
+        ok('...and he is still talking until the last word, which is what the round waits on',
+          /* `talking` lets go 0.06s before the last sample, as it always has. */
+          quietAt >= whole - 0.1 && quietAt < whole + 0.2, `${quietAt.toFixed(2)}s of ${whole.toFixed(2)}s`);
+        /* A SKIP BETWEEN TWO PIECES LEAVES NOTHING TO FIRE LATER. */
+        said.length = 0;
+        ann.say(call.ids, call.text);
+        for (let k = 0; k < 40; k++) {
+          ann.update(1 / 60);
+          const v = said[said.length - 1];
+          if (v && !v.ended) { v.currentTime += 1 / 60; if (v.currentTime >= 0.5) v.ended = true; }
+        }
+        const n0 = said.length;
+        ann.cut();
+        for (let k = 0; k < 120; k++) ann.update(1 / 60);
+        ok('...and cutting him off mid-roll-call stops the rest of it too',
+          n0 >= 1 && n0 < call.ids.length && said.length === n0 && !ann.talking && !ann.active, `${n0} then ${said.length}`);
+        /* A HOLE IN THE SENTENCE IS NOT SAID. */
+        said.length = 0;
+        ann.clips.delete('sat_rc_blossom');
+        ann.say(call.ids, call.text);
+        ann.update(1 / 60);
+        ok('...and a roll call missing one of its pieces goes silent on the clock, not with a gap',
+          said.length === 0 && ann.active);
+        void hushedAt;
+      }
+      /* THE CUTTER TRIMS THE AIR AND NOT THE WORDS. Measured silences off two
+         of the real takes: "FROST!" has 0.38s of silence and then a 15ms click
+         (the thing `silenceremove` could not see past), and "Fighters — take
+         your marks!" has the dash's pause in the middle of it. */
+      {
+        const { wordSpan, TAKES } = await import('./capture/satan-rollcall.mjs');
+        const frost = wordSpan([[0.642, 0.674], [0.724, 1.105]], 1.12);
+        const marks = wordSpan([[0.82, 1.029], [1.868, 1.914]], 2.08);
+        ok('📣 the roll-call cutter cuts the click after the silence, not the word',
+          Math.abs(frost[1] - 0.764) < 1e-6 && frost[0] === 0, frost.join());
+        ok('...and leaves the pause INSIDE a line alone',
+          marks[0] === 0 && marks[1] === 2.08, marks.join());
+        ok('...and cuts a clip for every piece the card can say, and no other',
+          TAKES.map((t) => t[1]).sort().join() === Object.keys(ROLL_WORDS).sort().join());
+      }
+      globalThis.document = docWas;
+    }
+
     /* THE RESULTS SCREEN IS THE ONE IT MUST NOT TOUCH. It is waiting for a
        kitten to type a name, and a debug key that answers for her is a debug
        key that skips the one screen a player has to answer. */
@@ -20483,7 +20693,10 @@ console.log('\n--- one press is not enough, and one player drives ---');
        screen's own pads read `jump`, not `start`, so letting the press fall
        through would toast and still do nothing. */
     const padAt = main.indexOf('if (asked >= 0 && this.inspector.busy(asked))');
-    const padStart = padAt < 0 ? '' : main.slice(padAt, padAt + 900);
+    /* TO THE PAUSE ITSELF, not a fixed 900 characters: the arena pickers'
+       own Start branch (`_pickerBack`) sits between the two now, and a
+       fixed window stopped short of the thing it was measuring against. */
+    const padStart = padAt < 0 ? '' : main.slice(padAt, main.indexOf('this.setPaused(opening)', padAt) + 30);
     ok("a pad's START is refused over it too",
       /_menuRefused\(asked\)/.test(padStart));
     ok('...before the branch that would have opened the menu',
@@ -26932,6 +27145,59 @@ console.log('\n--- one press is not enough, and one player drives ---');
       G3.sessionCast.size === 4
       && snap.players.every((r) => G3.sessionCast.has(r.style)),
       `${G3.sessionCast.size} in the cast`);
+
+    /* --- AND ONE SAT DOWN LATE GOES WHERE THE SAVE HAD HER ------------------
+       "When a player spawns in from a saved game (if they were already
+       playing) they should spawn into their previously saved position". Every
+       tier opens on one kitten, so a two-kitten save loads ONE and her sister
+       joins a minute later — and was put at the join spot. The shipped
+       `_placeFromSave` and `_rememberPlayer`, lifted and run against this
+       load's own cast. */
+    {
+      const gsrc = main.replace(/\r\n/g, '\n');
+      const liftG = (sig, args) => {
+        const at0 = gsrc.indexOf(`\n  ${sig} {`);
+        ok(`${sig.split('(')[0]} is where this check thinks it is`, at0 > 0);
+        // PAST THE SIGNATURE, not to the first brace: `over = {}` has one.
+        const from = at0 + `\n  ${sig} {`.length;
+        const body = gsrc.slice(from, gsrc.indexOf('\n  }\n', from));
+        // eslint-disable-next-line no-new-func
+        return new Function('castRow', 'meaningful', `return function (${args}) {${body}\n};`)(castRow, meaningful);
+      };
+      const place = liftG('_placeFromSave(p)', 'p');
+      const remember = liftG('_rememberPlayer(p, over = {})', 'p, over = {}');
+      const late0 = snap.players.find((r) => !G3.players.some((p) => p.style.name === r.style));
+      /* A SPOT OF ITS OWN: this fixture's kittens were all saved standing on
+         the origin, where a check that she was put back proves nothing. */
+      const late = G3.sessionCast.get(late0.style);
+      late.at = [12.5, 3.25, -40];
+      const seatedRow = snap.players.find((r) => G3.players.some((p) => p.style.name === r.style));
+      ok('🧭 a kitten still waiting when the save loaded is marked to be put back',
+        G3.sessionCast.get(late.style).fromSave === true
+        && G3.sessionCast.get(seatedRow.style).fromSave === false);
+      const host = { sessionCast: G3.sessionCast, picking: null, _parkedPandas: new Map() };
+      const kit = new Player({ texture: new THREE.Texture(sheet), index: 2, height: 2.9, cols: 4, rows: 3 });
+      kit.style = { ...kit.style, name: late.style };
+      kit.position.set(1, 2, 3);
+      /* SHE SCROLLS PAST HER OWN CAT IN THE PICKER FIRST — the re-seat writes
+         her back from the join spot, and that must not cost the saved one. */
+      host.picking = { index: 2 };
+      remember.call(host, kit);
+      ok('...scrolling past her in the picker does not spend it',
+        G3.sessionCast.get(late.style).fromSave === true
+        && G3.sessionCast.get(late.style).at.join() === late.at.join());
+      host.picking = null;
+      const put = place.call(host, kit);
+      ok('...and the pick puts her on the spot the save had her',
+        put && Math.hypot(kit.position.x - late.at[0], kit.position.y - late.at[1], kit.position.z - late.at[2]) < 1e-6,
+        `${kit.position.toArray().map((n) => n.toFixed(1))} vs ${late.at}`);
+      kit.position.set(1, 2, 3);
+      ok('...ONCE: after that she is a kitten like any other, and a rejoin lands with the party',
+        place.call(host, kit) === false && kit.position.x === 1);
+      const main2 = gsrc.slice(gsrc.indexOf('  _updatePicker('), gsrc.indexOf('this.toast(`${p.name} joined the game!`'));
+      ok('...and it is the picker\'s confirm that asks, nothing earlier',
+        /pressed\?\.\('jump'\)\) \{\s*const p = this\.players\[index\];\s*this\._placeFromSave\(p\);/.test(main2));
+    }
     /* AND A SEAT'S CAT IS NEVER HANDED SOMEBODY ELSE'S AFTERNOON. The first
        version fell back to "the first row nobody has claimed", so a game whose
        seats held two cats that were not in the save seated two strangers on
@@ -30538,6 +30804,57 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     }
   }
   {
+    /* LET GO, AND THE CAMERA DECIDES AGAIN. "If player lets go of the
+       direction keys, or if the joystick goes back to center, then it will
+       re-orient the input based on the direction the camera is facing ... If
+       the player then holds the button of the new direction, it will then
+       move in that direction relative to the bridge." Boarded, carried a
+       quarter of the road while the camera turns 1.5 rad under her, then:
+       a dither shorter than `rebind` changes nothing; a real let-go makes
+       SCREEN-UP the direction that is onward on the screen right now; and
+       from there, held, it is locked to the road again while the camera
+       keeps turning. */
+    const p = mkRider();
+    const f0 = onto(p, 6);
+    const on = stickFor(p, f0);
+    for (let k = 0; k < 60 * 3; k++) { p.camYaw += 0.008; p.update(1 / 60, on, W, [], HUSH_R); }
+    const Rd = p.snakeRide;
+    const held = Rd && { ...Rd.stick };
+    const rest = { ...on, mx: 0, my: 0 };
+    const upScr = { ...on, mx: 0, my: -1 };
+    p.update(1 / 60, rest, W, [], HUSH_R);
+    p.update(1 / 60, rest, W, [], HUSH_R);
+    p.update(1 / 60, on, W, [], HUSH_R);
+    ok('🌉 a stick that only dithers through centre keeps the road it boarded with',
+      !!Rd && p.snakeRide === Rd && Rd.stick.x === held.x && Rd.stick.y === held.y);
+    for (let k = 0; k < Math.ceil(SNAKE.rebind * 60) + 2; k++) p.update(1 / 60, rest, W, [], HUSH_R);
+    /* The camera has swung a long way while she stood there — the whole
+       reason to re-read it. */
+    p.camYaw += 1.2;
+    const hit = road.locate(p.position.x, p.position.z, p.position.y + 0.6);
+    const want = p._snakeOnward(hit.tx * Rd.dir / Math.hypot(hit.tx, hit.tz), hit.tz * Rd.dir / Math.hypot(hit.tx, hit.tz));
+    p.update(1 / 60, upScr, W, [], HUSH_R);
+    const re = { ...Rd.stick };
+    ok('...but let go, and the next push is onward-as-the-screen-shows-it-now',
+      Math.hypot(re.x - want.x, re.y - want.y) < 0.02 && Math.hypot(re.x - held.x, re.y - held.y) > 0.3,
+      `(${re.x.toFixed(2)}, ${re.y.toFixed(2)}) wanted (${want.x.toFixed(2)}, ${want.y.toFixed(2)}), was (${held.x.toFixed(2)}, ${held.y.toFixed(2)})`);
+    const w = new THREE.Vector3();
+    p._snakeWish(upScr, w, 1 / 60);
+    const { fwd } = p._basis();
+    ok('...so screen-up moves her up the screen', w.x * fwd.x + w.z * fwd.z > 0,
+      `${(w.x * fwd.x + w.z * fwd.z).toFixed(2)} along the camera's forward`);
+    let same = true;
+    const s1 = Rd.s;
+    for (let k = 0; k < 60 * 2; k++) {
+      p.camYaw += 0.03;
+      p.update(1 / 60, upScr, W, [], HUSH_R);
+      if (Rd.stick.x !== re.x || Rd.stick.y !== re.y) same = false;
+    }
+    ok('...and held, it is locked to the road again while the camera turns',
+      same && p.snakeRide === Rd && Rd.s > s1 + 5,
+      `${s1.toFixed(0)} -> ${Rd.s.toFixed(0)}`);
+  }
+  {
     const p = mkRider();
     const f = onto(p, road.length / 2);
     p.update(1 / 60, stickFor(p, f), W, [], HUSH_R);
@@ -31165,18 +31482,60 @@ console.log('\n--- the big screen outside the arena ---');
       pairs: [row('EVE', 2500, 'Blossom', now - NEW_FOR_MS - 1)],
     }, now);
     const kinds = S.map((s) => `${s.kind}:${s.mode ?? s.ad}`).join(' ');
-    ok('a league with winners is its champion, then her #2 and #3, then an ad',
-      kinds.startsWith('champ:duel hm:duel ad:0 ') && S[1].rows.map((r) => r.name).join() === 'BEA,CAT', kinds);
+    ok('a league with winners is its champion, then her #2 and #3, and the ad waits for the second league',
+      kinds.startsWith(`champ:duel hm:duel satan:${BOARD_MODES[1]} ad:0 `) && S[1].rows.map((r) => r.name).join() === 'BEA,CAT', kinds);
     ok('...a league with one winner has no honourable mentions',
-      /champ:pairs ad:\d/.test(kinds) && !kinds.includes('hm:pairs'));
+      /champ:pairs (satan|champ):/.test(kinds) && !kinds.includes('hm:pairs'));
     ok('...and the others stay Mr. Satan\'s', S.filter((s) => s.kind === 'satan').length === BOARD_MODES.length - 2);
     ok('the honourable mentions are up for less time than the champion',
       SLIDE_DUR.hm < SLIDE_DUR.champ && S[1].dur === SLIDE_DUR.hm && S[0].dur === SLIDE_DUR.champ);
-    ok('an ad between every league, and never the same one twice running',
-      S.every((s, i) => i === 0 || s.kind !== 'champ' && s.kind !== 'satan' || S[i - 1].kind === 'ad')
-        && S.filter((s) => s.kind === 'ad').every((s, i, all) => i === 0 || s.ad !== all[i - 1].ad));
+    /* "Let's do it after every 2 ladders, then an advertisement is shown."
+       Counted round the LAP, wrap included: the gaps between ads, in
+       leagues, are all exactly `ADS_EVERY`. */
+    const gaps = [];
+    let run = 0;
+    for (const s of [...S, ...S]) {
+      if (s.kind === 'champ' || s.kind === 'satan') run++;
+      if (s.kind === 'ad') { gaps.push(run); run = 0; }
+    }
+    ok('an ad after every second league, the lap round included, and never the same one twice running',
+      ADS_EVERY === 2 && gaps.slice(1).every((g) => g === ADS_EVERY)
+        && S.filter((s) => s.kind === 'ad').length === Math.ceil(BOARD_MODES.length / ADS_EVERY)
+        && S.filter((s) => s.kind === 'ad').every((s, i, all) => i === 0 || s.ad !== all[i - 1].ad),
+      gaps.join(' '));
+    /* LONGER, and by what was asked: "at least 3-5 seconds longer" on the
+       ads and the kittens' slides, "2-3 seconds longer" on his stand-ins. */
+    ok('...and every slide is up long enough to read, by the amounts asked for',
+      SLIDE_DUR.ad - 4.5 >= 3 && SLIDE_DUR.ad - 4.5 <= 5
+        && SLIDE_DUR.champ - 8 >= 3 && SLIDE_DUR.champ - 8 <= 5
+        && SLIDE_DUR.hm - 4 >= 3 && SLIDE_DUR.hm - 4 <= 5
+        && SLIDE_DUR.satan - 7 >= 2 && SLIDE_DUR.satan - 7 <= 3,
+      JSON.stringify(SLIDE_DUR));
     ok('a win from today wears NEW!, and yesterday\'s does not',
       S[0].fresh === true && S.find((s) => s.mode === 'pairs').fresh === false);
+    /* --- THE TICKER: A JOKE, AND NEVER CUT IN HALF ---
+       "it says 'Todays forecast: 100', what does this mean? ... may be better
+       to place a joke in here rather than mock weather data, for instance,
+       can say 'Hot and Muscley' ... Also, the text is cut-off at the last
+       zero". The strip is 4096 wide and wraps, and it used to be filled past
+       its edge, so one item a lap was sliced at the seam. At two measuring
+       widths — the font can fall back to a wider face before Bangers lands. */
+    const bits = tickerBits(S);
+    ok('the ticker\'s forecast is Richard\'s joke, and not a number that reads as a temperature',
+      bits.includes('TODAY\'S FORECAST: HOT AND MUSCLEY') && !bits.some((t) => /FORECAST.*\d/.test(t)));
+    const cuts = [];
+    for (const px of [17, 23]) {
+      const lay = tickerLayout(bits, (t) => t.length * px, 4096);
+      const ends = lay.map((it) => it.x + it.w);
+      const gaps = lay.slice(1).map((it, i) => it.x - ends[i]);
+      const seam = 4096 - ends[ends.length - 1] + lay[0].x;
+      if (!(lay[0].x > 0 && ends[ends.length - 1] <= 4096
+        && gaps.every((g) => Math.abs(g - gaps[0]) < 1e-6) && Math.abs(seam - gaps[0]) < 1e-6)) {
+        cuts.push(`${px}px: first ${lay[0].x.toFixed(0)}, last ends ${ends[ends.length - 1].toFixed(0)}, seam ${seam.toFixed(0)} vs ${gaps[0]?.toFixed(0)}`);
+      }
+    }
+    ok('...and every item on the strip is whole, with the wrap just one more even gap',
+      cuts.length === 0, cuts.join(' | ') || 'both widths');
     ok('the board is loudest about Mr. Satan',
       slideHype({ kind: 'satan' }) > slideHype({ kind: 'champ' }, 5)
         && slideHype({ kind: 'ad' }) > slideHype({ kind: 'hm' }) && slideHype(null) === 0);
@@ -31291,6 +31650,81 @@ console.log('\n--- the big screen outside the arena ---');
     }
     ok('the board\'s shot holds the whole glass and her, wide pane or narrow', fails.length === 0, fails.join(' ') || 'all');
     ok('...with the glass at least a third of the frame across', smallest > 0.33, `${(smallest * 100).toFixed(0)}%`);
+
+    /* --- 🎆 THE FIREWORKS GO OFF WHERE THE SHOT CAN SEE THEM ----------------
+       "they are hard to see as the camera is only zoomed in on the
+       advertisement and not on the top where the fireworks are shot out
+       from." They burst about seventeen units over the cap, and this shot
+       fits the glass with a tenth to spare. Now every burst point, and most
+       of every shell, through the same lens, at the same pane shapes. */
+    const out = [];
+    let shellIn = 0;
+    let shellN = 0;
+    for (const aspect of [16 / 9, 0.68]) {
+      for (const [f, dz] of [[2, 0], [10, -14], [20, 18]]) {
+        const K = at(f, dz, 0);
+        const S = boardShot(Bd, [K], 38, aspect);
+        cam.aspect = aspect;
+        cam.updateProjectionMatrix();
+        cam.position.set(
+          S.centre.x + Math.sin(S.yaw) * Math.cos(S.pitch) * S.dist,
+          S.centre.y + Math.sin(S.pitch) * S.dist,
+          S.centre.z + Math.cos(S.yaw) * Math.cos(S.pitch) * S.dist);
+        cam.lookAt(S.centre);
+        cam.updateMatrixWorld();
+        const R = FIREWORKS.shell[1] / 1.6;
+        for (const side of [-1, 1]) {
+          for (const a of [0, 0.5, 1]) {
+            for (const c of [0, 0.5, 1]) {
+              const q = burstPoint(Bd, side, a, c);
+              const v = new THREE.Vector3(q.x, q.y, q.z).project(cam);
+              if (!(Math.abs(v.x) <= 0.95 && Math.abs(v.y) <= 0.95 && v.z < 1)) out.push(`${aspect.toFixed(2)} ${side} ${a},${c}`);
+              for (let k = 0; k < 12; k++) {
+                const ang = (k / 12) * Math.PI * 2;
+                const s = new THREE.Vector3(q.x, q.y + Math.sin(ang) * R, q.z + Math.cos(ang) * R).project(cam);
+                shellN++;
+                if (Math.abs(s.x) <= 1 && Math.abs(s.y) <= 1) shellIn++;
+              }
+            }
+          }
+        }
+      }
+    }
+    ok('🎆 every firework bursts inside the board\'s own shot, wide pane or narrow',
+      out.length === 0, out.slice(0, 4).join(' | ') || '108 of 108');
+    ok('...and nearly all of every shell is in frame too',
+      shellIn / shellN >= 0.9, `${((shellIn / shellN) * 100).toFixed(0)}% of ${shellN}`);
+    /* AIMED, AND IT GETS THERE: the shipped `_rocket` flown under the same
+       gravity `_sparks` gives it, to the frame it bursts on. */
+    let miss = 0;
+    for (let k = 0; k < 20; k++) {
+      const fk = { B: Bd, parts: [] };
+      ArenaBoard.prototype._rocket.call(fk, 0, k % 2 ? 1 : -1);
+      const p = fk.parts[0];
+      const dt = 1 / 60;
+      for (;;) {
+        p.life -= dt;
+        if (p.life <= 0) break;
+        p.vy -= 9.8 * dt;
+        p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      }
+      const side = k % 2 ? 1 : -1;
+      const lo = burstPoint(Bd, side, 0, 0);
+      const hi = burstPoint(Bd, side, 1, 1);
+      const inside = Math.abs(p.x - lo.x) < 0.6
+        && p.y > Math.min(lo.y, hi.y) - 0.6 && p.y < Math.max(lo.y, hi.y) + 0.6
+        && p.z > Math.min(lo.z, hi.z) - 0.6 && p.z < Math.max(lo.z, hi.z) + 0.6;
+      if (!inside) miss++;
+    }
+    ok('...each rocket is aimed, and bursts where it was aimed', miss === 0, `${miss} of 20 wide`);
+    /* AND ONE VOLLEY A SLIDE, NOT A STREAM. "The fireworks sound around the
+       advertisement is a bit annoying": a bang every half second on every
+       ad. A bang is a burst, and a burst is a rocket. */
+    const vol = (kind) => { const fk = { B: Bd, parts: [], _rocket(d, s) { this.parts.push(s); } }; ArenaBoard.prototype._volley.call(fk, { kind }); return fk.parts; };
+    const abSrc = readFileSync(new URL('../src/systems/arenaboard.js', import.meta.url), 'utf8');
+    ok('...one volley a slide — four bangs on an ad, none on the honourable mentions — from both sides',
+      vol('ad').length === 4 && vol('hm').length === 0 && new Set(vol('ad')).size === 2
+        && !/_rocketT/.test(abSrc) && /this\._volleyFor !== slide/.test(abSrc));
   }
   {
     // Looking at it square: the shot's yaw puts the lens at -x, facing the glass.
@@ -32547,6 +32981,22 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
   feats.open = false;
   ok('after the Awakening every door is shut and she has no next step',
     PN.questState(g, k, 'last') === 'closed' && PN.nextStep(g, k) === null && PN.settledCount(g, k) === 6);
+  /* --- AND THE HINTS SWITCH GOES WITH THEM ---
+     "does having hint on/off do anything? If not, we should turn hints off
+     and disable this option or remove it from Payne's menu." It did not:
+     with no next step the watcher returns before it reads the switch. */
+  {
+    const P = new PN.Payne(g);
+    const on = kid(); on.payne.met = true; on.payne.hints = true;
+    const keysAfter = P.rows(on).map((r) => r.key);
+    for (let t = 0; t < 1; t += 0.25) P._watch(on, 0.25, false);
+    feats.open = true;
+    const keysBefore = P.rows(on).map((r) => r.key);
+    feats.open = false;
+    ok('after the ending her card has no hints row, and the switch is turned off',
+      !keysAfter.includes('hints') && keysBefore.includes('hints') && on.payne.hints === false,
+      `${keysAfter.join(',')} / before: ${keysBefore.join(',')}`);
+  }
 
   /* THE TRICK IS ALL SIX SETTLED AND THREE ROUNDS — both halves. */
   k.payne.rounds = PN.TRICK_ROUNDS - 1;
@@ -32957,17 +33407,60 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
   ok('with it, the same press is a Goblin Sweep', a.sweepSeq === 1 && a.sweepT > 0);
   for (let i = 0; i < 40; i++) a.update(1 / 60, PADK(), bare, [], hudK);
   ok('...she spins and ends facing where she was', a.sweepT === 0 && Math.abs(a.facing - faced) < 1e-9);
+  a.attackCooldown = 0;
   a.update(1 / 60, SWEEP, bare, [], hudK);
-  ok('a second one inside the wait is refused OUT LOUD', a.sweepSeq === 1 && toasts.some((t) => /Goblin Sweep/.test(t)),
-    toasts.join(' | '));
-  /* "it should stack the message or delete the previous message so it does
-     not spam the screen": ten mashes are one line. */
+  /* A SWING, NOT A REFUSAL. "If the player has the trip ability, and the
+     trip ability is recharging, then the player should just do a normal
+     slash as if they didn't have the ability." It used to blip and say
+     "back in Ns" — a press that threw nothing, mid-fight. */
+  ok('a second one inside the wait is an ordinary slash, not a spin',
+    a.sweepSeq === 1 && a.sweepT === 0 && a.attackTimer > 0 && !toasts.some((t) => /Goblin Sweep/.test(t)),
+    `${a.sweepSeq} ${a.attackTimer.toFixed(2)} ${toasts.join(' | ')}`);
   for (let i = 0; i < 10; i++) { a.attackCooldown = 0; a.update(1 / 60, SWEEP, bare, [], hudK); }
-  ok('...and mashing it is one message rewritten, never a pile',
-    combos.size === 1 && toasts.every((t) => !t || /Goblin Sweep: back in \d+s/.test(t)), [...combos].join());
+  ok('...and mashing it is ten slashes and no message at all',
+    a.sweepSeq === 1 && combos.size === 0, [...combos].join());
   for (let t = 0; t < SWEEP_COOL; t += 1 / 20) a.update(1 / 20, PADK(), bare, [], hudK);
   a.update(1 / 60, SWEEP, bare, [], hudK);
   ok('...and allowed after it', a.sweepSeq === 2);
+
+  /* --- AND SHE LOOKS LIKE SHE IS DOING IT ---
+     "generate a 'sweep trip' image/animation for the players similar to
+     public/sprites/payne sweep ability and have that play when the player
+     does the sweep ability". The real Player, with a pose handed to her the
+     way `_dressPlayer` does it, frame by frame through one spin. */
+  {
+    const k = mkK(1, 6);
+    settle(k);
+    k.setSweepArt({ texture: new THREE.Texture(), contentScale: 1, pad: 0 });
+    k.payne = { ...PN.blankPayne(), sweep: true };
+    k.attackCooldown = 0;
+    let frames = 0; let posed = 0; let thinnest = 9; let flips = 0; let lastSign = 0;
+    k.update(1 / 60, SWEEP, bare, [], hudK);
+    while (k.sweepT > 0 && frames < 120) {
+      frames++;
+      if (k.sweepPose.visible && !k.sprite.mesh.visible) posed++;
+      const sx = k.sweepPose.mesh.scale.x;
+      thinnest = Math.min(thinnest, Math.abs(sx));
+      if (lastSign && Math.sign(sx) !== lastSign) flips++;
+      lastSign = Math.sign(sx);
+      k.update(1 / 60, PADK(), bare, [], hudK);
+    }
+    ok('🌀 a kitten who sweeps wears the sweep pose for the whole spin',
+      frames > 10 && posed === frames, `${posed}/${frames} frames`);
+    ok('...and it turns (two full turns is four flips), never going edge-on to nothing',
+      flips >= 3 && thinnest >= 1 / 3 - 1e-9, `${flips} flips, thinnest ${thinnest.toFixed(2)}`);
+    k.update(1 / 60, PADK(), bare, [], hudK);
+    ok('...and not a frame after it, so no crouching cat slides across the floor',
+      !k.sweepPose.visible && k.sprite.mesh.visible);
+    const m = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    const files = ['ember', 'frost'].map((s) => `kittens/${s}/sweep.png`);
+    ok('...all four kittens have it: two drawings, recoloured by STYLE for Storm and Blossom',
+      files.every((f) => existsSync(new URL(`../public/sprites/${f}`, import.meta.url)))
+      && files.every((f) => m.includes(`'${f}', false]`))
+      && /this\.sweepArt = PLAYER_STYLE\.map\(\(s\) => \{\s*const base = s\.sheet === 'ember' \? critterArt\.ember_sweep : critterArt\.frost_sweep;[\s\S]{0,120}if \(!s\.recolour\) return base;\s*const a = recolourAtlas\(base, s\.recolour\);/.test(m)
+      && /p\.setSweepArt\(this\.sweepArt\?\.\[this\.roster\[p\.index\]\] \?\? null\);/.test(m)
+      && PLAYER_STYLE.length === 4 && PLAYER_STYLE.every((s) => s.sheet === 'ember' || s.sheet === 'frost'));
+  }
   a.attackCooldown = 0; a.sweepCool = 0;
   const seq = a.sweepSeq;
   a.update(1 / 60, PADK({ mx: 1, down: (b) => b === 'sprint', pressed: (b) => b === 'attack' }), bare, [], hudK);
@@ -33022,6 +33515,118 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
     ok('...and then it is gone', !rig.mesh.visible);
   }
   if (hadDocK) globalThis.document = prevDocK; else delete globalThis.document;
+}
+
+/* --- A WAY BACK OUT OF THE ARENA'S PICKERS ---------------------------------
+   "there is no way to 'back out' to the previous screen after choosing a fight
+   type, at least not on mobile, there should be a way to back out, by either
+   pressing esc/start buttons or by selecting a 'back' button." The shipped
+   `_pickerBack`, `_openLeaguePicker` and `_updateTeamPicker`, lifted and run
+   against a stub document, and the three keys that reach them read off the
+   source. */
+console.log('\n--- backing out of the arena pickers ---');
+{
+  const src = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const liftB = (sig, args) => {
+    const at0 = src.indexOf(`\n  ${sig} {`);
+    ok(`${sig.split('(')[0]} is where this check thinks it is`, at0 > 0);
+    const from = at0 + `\n  ${sig} {`.length;
+    const body = src.slice(from, src.indexOf('\n  }\n', from));
+    // eslint-disable-next-line no-new-func
+    return new Function('modesFor', 'document', `return function (${args}) {${body}\n};`);
+  };
+  // A document with just enough in it: the two panels, the list, the button.
+  const els = {};
+  const mk = (id) => {
+    const cls = new Set(['hidden']);
+    const kids = [];
+    const e = {
+      id, dataset: {}, textContent: '', innerHTML: '', className: '', kids, clicks: [],
+      classList: { add: (c) => cls.add(c), remove: (c) => cls.delete(c), contains: (c) => cls.has(c), toggle() {} },
+      addEventListener: (t, f) => { if (t === 'click') e.clicks.push(f); },
+      appendChild: (k) => kids.push(k),
+      click: () => e.clicks.forEach((f) => f()),
+    };
+    Object.defineProperty(e, 'textContent', {
+      get: () => e._t ?? '', set: (v) => { e._t = v; if (v === '') kids.length = 0; },
+    });
+    return e;
+  };
+  for (const id of ['panel-league', 'league-list', 'panel-teams', 'tp-back']) els[id] = mk(id);
+  const doc = { getElementById: (id) => els[id] ?? null, createElement: () => mk('') };
+  const back = liftB('_pickerBack()', '')(modesFor, doc);
+  const openL = liftB('_openLeaguePicker(leagues, was = null)', 'leagues, was = null')(modesFor, doc);
+  const updT = liftB('_updateTeamPicker()', '')(modesFor, doc);
+
+  const pad = () => {
+    const p = { mx: 0, held: new Set(), edge: new Set(), spent: [] };
+    p.down = (a) => p.held.has(a);
+    p.pressed = (a) => p.edge.has(a);
+    p.consume = (a) => { p.spent.push(a); p.edge.delete(a); };
+    return p;
+  };
+  const asked = [];
+  const G = {
+    players: [{ index: 0 }, { index: 1 }, { index: 2 }, { index: 3 }],
+    input: { players: [pad(), pad(), pad(), pad()] },
+    confirm: { active: false, ask(o) { asked.push(o); this.active = true; } },
+    tournament: { _validSeats: () => false, begin() { G.begun = true; } },
+    sfx() {}, _paintTeamPicker() {}, _afterLeague() {},
+    leaguePicking: false, teamPicking: false, teamPick: null,
+  };
+  G._openLeaguePicker = openL;
+  G._pickerBack = back;
+  const leagues = modesFor(4);
+  const pairs = leagues.find((m) => m.id === 'pairs') ?? leagues[2];
+
+  // On the sides screen, having picked a teamed league.
+  G.teamPicking = true;
+  G.teamPick = { mode: pairs, seats: [-1, -1, -1, -1], sides: 2, prev: [0, 0, 0, 0], jumpArmed: [true, true, true, true] };
+  els['panel-teams'].classList.remove('hidden');
+  G.input.players[2].edge.add('interact');
+  updT.call(G);
+  ok('B on the sides screen goes back to the leagues',
+    !G.teamPicking && G.teamPick === null && els['panel-teams'].classList.contains('hidden')
+    && G.leaguePicking && !els['panel-league'].classList.contains('hidden'));
+  ok('...spending the press, so the league list cannot read it as ITS back row',
+    G.input.players[2].spent.includes('interact') && asked.length === 0);
+  const rows = els['league-list'].kids;
+  const prim = rows.findIndex((r) => /\bprimary\b/.test(r.className));
+  ok('...landing on the league she came from, not the top of the list',
+    prim >= 0 && leagues[prim]?.id === pairs.id, `${prim} of ${leagues.map((m) => m.id)}`);
+  const last = rows[rows.length - 1];
+  ok('...and the league list has a BACK row MenuNav\'s B will press, saying where it goes',
+    /\bmenu-btn\b/.test(last?.className) && /\bback\b/.test(last?.className)
+    && /TOWN/.test(last?.textContent), last?.className);
+
+  // From the leagues, back is the town: it ASKS.
+  last.click();
+  const q = asked[0];
+  ok('back from the leagues asks before flying anybody home',
+    asked.length === 1 && G.leaguePicking && !G.begun);
+  ok('...in words that say what each answer DOES (sixth and seventh non-negotiables)',
+    q && !/^(yes|no)$/i.test(q.yes) && !/^(yes|no)$/i.test(q.no) && /PICK/.test(q.no) && /HOME/.test(q.yes),
+    q && `${q.no} / ${q.yes}`);
+  ok('...and a second back with the question up does nothing twice',
+    back.call(G) === false && asked.length === 1);
+  G.confirm.active = false;
+  G.leaguePicking = false;
+  ok('...and outside the pickers it answers false, so Escape still pauses', back.call(G) === false);
+
+  // The three ways in.
+  ok('Escape reaches it, only with no question up (which Escape answers NO)',
+    /e\.code === 'Escape' && this\.state === 'play' && !this\.paused\s*&& !this\.confirm\.active && \(this\.leaguePicking \|\| this\.teamPicking\)\) \{\s*this\._pickerBack\(\);/.test(src));
+  ok('...a pad\'s or the touch pad\'s Start reaches it instead of pausing under the picker',
+    /\} else if \(asked >= 0 && !this\.paused && \(this\.leaguePicking \|\| this\.teamPicking\)\) \{[\s\S]{0,600}?this\._pickerBack\(\);\s*this\.input\.players\[asked\]\.consume\?\.\('start'\);/.test(src)
+    && src.indexOf('asked >= 0 && !this.paused && (this.leaguePicking') < src.indexOf('} else if (asked >= 0) {'));
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const teams = html.slice(html.indexOf('id="panel-teams"'), html.indexOf('id="tp-body"'));
+  ok('...and the sides screen has a BACK button, ABOVE the columns so a phone never scrolls to it',
+    /<button id="tp-back"[^>]*>[^<]*BACK[^<]*FIGHT/.test(teams), teams.slice(0, 80));
+  ok('...which is not a .menu-btn, or MenuNav would take the four cursors over',
+    !/id="tp-back"[^>]*menu-btn/.test(teams));
+  ok('...and has a phone rule of its own', /body\.touch-ui \.tp-back \{[^}]*min-height/.test(css));
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

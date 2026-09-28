@@ -64,6 +64,15 @@ export const SNAKE = {
    *  own pane and the ride camera. "After 2 - 3 seconds of climbing up, they
    *  get their own camera with the camera sequence." */
   splitT: 2.5,
+  /** Seconds the stick must rest at centre before the next push is read
+   *  through the camera again rather than against the direction she boarded
+   *  with (`Player._snakeWish`). "If player lets go of the direction keys, or
+   *  if the joystick goes back to center, then it will re-orient the input
+   *  based on the direction the camera is facing." Not zero: a kid holding a
+   *  stick lightly dips in and out of its deadzone, and every dip re-reading
+   *  the orbiting camera is the bug the lock was made to fix. Six frames is
+   *  shorter than any deliberate let-go and longer than a dither. */
+  rebind: 0.1,
   /** Each road starts growing this fraction of the whole build after the one
    *  before it, so they go out one after another rather than as one flash. */
   stagger: 0.12,
