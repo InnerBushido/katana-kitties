@@ -1249,7 +1249,7 @@ export class ProfileScreen {
   /**
    * The footer's own buttons, and they are not a convenience.
    *
-   * THIS PANEL COVERS THE TOUCH PAD. `.overlay` is z-index 20 and `#touch-pad`
+   * THIS PANEL COVERS THE TOUCH PAD. `.overlay` is z-index 50 and `#touch-pad`
    * is 7, so while this screen is up every on-screen button is underneath it —
    * JUMP, ATTACK and INTERACT are all drawn and all unreachable. On a phone that
    * left no way to offer, no way to confirm and no way out, which is exactly

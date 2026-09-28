@@ -43,6 +43,7 @@ import { SweepFx } from './systems/sweepfx.js';
 import { DodgeFx } from './systems/dodgefx.js';
 import { ClanFx } from './systems/clanfx.js';
 import { Confirm } from './systems/confirm.js';
+import { onTap } from './core/tap.js';
 import { ShrineScene, SCENE_RADIUS } from './systems/shrinescene.js';
 import { ArenaExit } from './systems/arenaexit.js';
 import { SummonScene } from './systems/summonscene.js';
@@ -8072,7 +8073,121 @@ class Game {
       back.dataset.bound = '1';
       back.addEventListener('click', () => this._pickerBack());
     }
+    /* AND A FINGER CAN DO WHAT A STICK DOES. "On mobile, at the arena, for
+       2v2 battle, there is no way to push the player onto the team with mobile
+       input as the joystick and buttons are covered up by the UI ... the touch
+       input can just push the player to the next category, every time the
+       name is touched on input and it will cycle between teams when clicked."
+
+       BOUND ONCE, ON THE TWO THINGS THAT OUTLIVE A PAINT. `#tp-body` is
+       rebuilt by `innerHTML` on every move, so the names are found by
+       delegation, off `data-i`, and never hold a listener of their own.
+
+       `onTap`, NOT `click`, AND THE ROWS ARE NOT BUTTONS. A button she tapped
+       keeps the focus, and the next Space on the keyboard — which is a
+       kitten's JUMP — would click it again as well as jumping: one press read
+       twice, the first shape of the fall-through in gotchas.md. A pointer
+       down and up in the same place is the only thing that moves anybody from
+       here, and a drag across the columns to scroll them moves nobody. */
+    const body = document.getElementById('tp-body');
+    if (body && !body.dataset.bound) {
+      body.dataset.bound = '1';
+      onTap(body, (t) => {
+        const row = t?.closest?.('.tp-cat');
+        if (row) this._teamTap(+row.dataset.i);
+      });
+    }
+    const fight = document.getElementById('tp-fight');
+    if (fight && !fight.dataset.bound) {
+      fight.dataset.bound = '1';
+      onTap(fight, () => this._teamFight());
+    }
+    /* THE COLUMNS HOLD THE HEIGHT THEY OPEN AT, so a tap cannot slide the
+       screen under the finger that made it. Measured at 844x390 before: the
+       panel is centred, so taking Ember out of NO TEAM made the tallest column
+       one row shorter and moved every row on the screen down 28px — the next
+       tap on "the top name" landed on the NO TEAM heading, and could as easily
+       have landed on a sister (gotchas.md, UI FALL-THROUGH, the third shape).
+       Everybody opens in NO TEAM, which is the tallest the columns can ever
+       be (four sides wrapping onto two lines still hold n rows between them),
+       so the height it opens at is the most it will ever need. */
+    if (body) body.style.minHeight = '';
     this._paintTeamPicker();
+    if (body && body.offsetHeight) body.style.minHeight = `${body.offsetHeight}px`;
+  }
+
+  /**
+   * A name was tapped: SHE moves one side along, exactly as her stick moving
+   * right would move her — NO TEAM, RED, BLUE (and GOLD), and round to NO TEAM
+   * again. One rule for both, so the row a finger walks is the row a stick
+   * walks. Anybody's name, by anybody: a phone is one screen with the whole
+   * sofa round it, and this is the only way the sisters on pads that are also
+   * covered could be moved at all.
+   */
+  _teamTap(i) {
+    const T = this.teamPick;
+    if (!T || !Number.isInteger(i) || i < 0 || i >= T.seats.length) return false;
+    const span = T.sides + 1;
+    T.seats[i] = ((T.seats[i] + 2 + span) % span) - 1;
+    this.sfx('menu');
+    this._paintTeamPicker();
+    return true;
+  }
+
+  /**
+   * FIGHT! from a finger — what anybody's JUMP does, for the phone whose JUMP
+   * is under this panel. A refusal says so, and says what would fix it, in
+   * the words the help line uses (sixth non-negotiable): a button that did
+   * nothing would read as a broken screen to a kid who has just sorted four
+   * sisters into two teams.
+   *
+   * THE PANEL SAYS IT, NOT A TOAST. Measured at 844x390: a toast is made, at
+   * y 79-99, and drawn BEHIND this panel — `#toasts` has no stacking of its
+   * own and the panel is an `.overlay` — so the first cut of this refused in
+   * silence. Lifting every toast in the game over every panel would be a
+   * change to a hundred screens for one button; the red line under the
+   * columns already says exactly this, so the refusal brings it into view and
+   * makes it jump.
+   */
+  _teamFight() {
+    const T = this.teamPick;
+    if (!T) return false;
+    if (!this.tournament._validSeats(T.seats, this.players.length, T.mode)) {
+      const help = document.getElementById('tp-help');
+      if (help) {
+        help.scrollIntoView?.({ block: 'nearest' });
+        help.classList.remove('tp-flash');
+        void help.offsetWidth;   // restart the animation on a second tap
+        help.classList.add('tp-flash');
+      }
+      this.sfx('menu');
+      return false;
+    }
+    this._startTeams();
+    return true;
+  }
+
+  /** Close the picker and start the league on the sides it holds. */
+  _startTeams() {
+    const T = this.teamPick;
+    document.getElementById('panel-teams')?.classList.add('hidden');
+    this.teamPicking = false;
+    const { mode, seats } = T;
+    this.teamPick = null;
+    this.tournament.begin(mode.id, seats);
+  }
+
+  /** What is keeping the sides from being legal, as an instruction. */
+  _teamPickWhy(T) {
+    const touch = !!this.device?.touchPrimary;
+    const waiting = T.seats.filter((s) => s === NO_SIDE).length;
+    if (waiting) {
+      return touch
+        ? `Everybody has to pick — tap each name to put her on a side (${waiting} still to choose)`
+        : `Everybody has to pick — push your own stick LEFT or RIGHT (${waiting} still to choose)`;
+    }
+    return `${T.mode.name} needs ${this._shapeWords(T.mode)} — `
+      + (touch ? 'tap a name to move somebody across' : 'move somebody across');
   }
 
   _paintTeamPicker() {
@@ -8083,10 +8198,14 @@ class Game {
     document.getElementById('tp-title').textContent = `${T.mode.name} — PICK YOUR SIDE`;
     const ok = this.tournament._validSeats(T.seats, this.players.length, T.mode);
 
+    /* `data-i` IS HER SEAT, which is what `_teamTap` moves. On a phone the
+       prompt on her row is the gesture that works there — the stick's arrows
+       are drawn under this panel. */
+    const touch = !!this.device?.touchPrimary;
     const cat = (p) => `
-      <div class="tp-cat" style="--me:${styleCss(this.roster[p.index])}">
+      <div class="tp-cat" data-i="${this.players.indexOf(p)}" style="--me:${styleCss(this.roster[p.index])}">
         <span class="tp-pip"></span><span class="tp-name">${escapeHtml(p.name)}</span>
-        <span class="tp-keys">◀ ▶</span>
+        <span class="tp-keys">${touch ? 'TAP ▶' : '◀ ▶'}</span>
       </div>`;
     /* THE UNDECIDED COLUMN IS FIRST, and it is a column rather than an absence.
        Everybody starts in it (see `_openTeamPicker`), so it is where a kid
@@ -8112,11 +8231,13 @@ class Game {
        real problem. Two different failures wearing one sentence is how a
        refusal stops being read. */
     help.textContent = ok
-      ? 'Push your own stick LEFT and RIGHT to change sides · JUMP to fight'
-      : waiting.length
-        ? `Everybody has to pick — push your own stick LEFT or RIGHT (${waiting.length} still to choose)`
-        : `${T.mode.name} needs ${this._shapeWords(T.mode)} — move somebody across`;
+      ? (touch ? 'Tap a name to move her to the next side · FIGHT! to start'
+        : 'Push your own stick LEFT and RIGHT to change sides · JUMP to fight')
+      : this._teamPickWhy(T);
     help.classList.toggle('tp-bad', !ok);
+    /* THE BUTTON SAYS WHETHER IT WILL GO. Dimmed while the sides are wrong —
+       and still tappable, because a tap on it is how a kid asks why. */
+    document.getElementById('tp-fight')?.classList.toggle('off', !ok);
   }
 
   /**
@@ -8219,11 +8340,7 @@ class Game {
     if (!this.players.some((_, i) => (
       T.jumpArmed[i] && this.input.players[i]?.pressed('jump')
     ))) return;
-    document.getElementById('panel-teams')?.classList.add('hidden');
-    this.teamPicking = false;
-    const { mode, seats } = T;
-    this.teamPick = null;
-    this.tournament.begin(mode.id, seats);
+    this._startTeams();
   }
 
   /** More than one league has been won: a headed table each. */

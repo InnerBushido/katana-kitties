@@ -33827,6 +33827,154 @@ console.log('\n--- mobile: nothing behind the main menu ---');
     /this\.players = \[\];\s*\/\* ON A PHONE|this\._worldReady = false;[\s\S]{0,500}this\.players = \[\];/.test(m));
 }
 
+console.log('\n=== SIDES BY TOUCH, A FLAT HUD AT FOUR, AND THE MENUS IN FRONT ===');
+{
+  const raw = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8')
+    .replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const tsrc = readFileSync(new URL('../src/systems/tournament.js', import.meta.url), 'utf8');
+  const lift = (sig) => {
+    const from = raw.indexOf(`\n  ${sig} {`);
+    const end = raw.indexOf('\n  }\n', from + 1);
+    return from < 0 || end < 0 ? null : raw.slice(from + 3, end + 4);
+  };
+
+  /* --- 1. A FINGER PICKS THE SIDES ---
+     "On mobile, at the arena, for 2v2 battle, there is no way to push the
+     player onto the team with mobile input as the joystick and buttons are
+     covered up by the UI ... the touch input can just push the player to the
+     next category, every time the name is touched on input and it will cycle
+     between teams when clicked."
+
+     THE SHIPPED METHODS, lifted out of main.js, on the real `_validSeats`. A
+     2v2 sorted by nothing but taps has to reach `begin` with the sides the
+     taps made, and FIGHT! before that has to refuse where it can be seen. */
+  {
+    const src = ['_teamTap(i)', '_teamFight()', '_startTeams()', '_teamPickWhy(T)'].map(lift);
+    ok('the team picker\'s touch methods are where this check thinks they are', src.every(Boolean));
+    if (src.every(Boolean)) {
+      // eslint-disable-next-line no-eval
+      const M = eval(`({${src.join(',\n')}})`);
+      const els = {};
+      const mkEl = () => {
+        const classes = new Set();
+        const e = { classes, scrolled: 0, offsetWidth: 1,
+          classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c) } };
+        e.scrollIntoView = () => { e.scrolled++; };
+        return e;
+      };
+      const docWas = globalThis.document;
+      globalThis.document = { getElementById: (id) => (els[id] ??= mkEl()) };
+      try {
+        const began = [];
+        const G = {
+          ...M,
+          players: [{}, {}, {}, {}],
+          device: { touchPrimary: true },
+          teamPick: { mode: MODE_BY_ID.pairs, seats: [NO_SIDE, NO_SIDE, NO_SIDE, NO_SIDE], sides: 2 },
+          teamPicking: true,
+          tournament: { _validSeats: (s, n, m) => Tournament.prototype._validSeats.call({ mode: null }, s, n, m), begin: (id, s) => began.push([id, s.join()]) },
+          sfx() {}, toast() {}, _paintTeamPicker() {},
+          _shapeWords: () => 'two against two',
+        };
+        ok('...FIGHT! with nobody picked is refused, and does not start anything',
+          G._teamFight() === false && began.length === 0 && G.teamPicking);
+        ok('...and it says why ON THE PANEL: the help line is scrolled to and made to jump',
+          els['tp-help']?.scrolled === 1 && els['tp-help'].classes.has('tp-flash'));
+        ok('...in words a phone can act on',
+          /tap each name/.test(G._teamPickWhy(G.teamPick)));
+        const walk = [];
+        for (let k = 0; k < 3; k++) { G._teamTap(0); walk.push(G.teamPick.seats[0]); }
+        ok('a tap moves her one side along and round to NO TEAM again, as her stick would',
+          walk.join() === `0,1,${NO_SIDE}`, walk.join());
+        ok('...and a tap that is not a kitten moves nobody',
+          G._teamTap(9) === false && G._teamTap(NaN) === false);
+        [0, 1, 2, 2, 3, 3].forEach((i) => G._teamTap(i));
+        ok('...so six taps sort four kittens into a 2v2', G.teamPick.seats.join() === '0,0,1,1', G.teamPick.seats.join());
+        ok('...and FIGHT! then starts it on exactly those sides',
+          G._teamFight() === true && began.length === 1 && began[0].join('|') === 'pairs|0,0,1,1'
+            && G.teamPicking === false && G.teamPick === null, JSON.stringify(began));
+      } finally {
+        globalThis.document = docWas;
+      }
+    }
+    /* HOW IT IS WIRED, which the lift cannot see. */
+    const open = lift('_openTeamPicker(mode, defaults)') ?? '';
+    ok('names and FIGHT! answer a pointer tap, never a click a keyboard could send',
+      /onTap\(body,/.test(open) && /onTap\(fight, \(\) => this\._teamFight\(\)\)/.test(open)
+        && !/body\.addEventListener\('click'/.test(open) && !/fight\.addEventListener\('click'/.test(open));
+    ok('...and the names are rows, not focusable buttons',
+      /<div class="tp-cat" data-i=/.test(raw) && !/<button[^>]*tp-cat/.test(raw));
+    ok('...and JUMP still confirms through the same door the button does',
+      (raw.match(/this\._startTeams\(\);/g) ?? []).length === 2);
+    /* THE SCREEN CANNOT SLIDE UNDER HER FINGER. Measured before: taking Ember
+       out of NO TEAM moved every row down 28px, and the next tap on the top
+       name hit the heading. */
+    ok('the columns hold the height they opened at',
+      /body\.style\.minHeight = `\$\{body\.offsetHeight\}px`/.test(open)
+        && open.indexOf("body.style.minHeight = ''") < open.indexOf('this._paintTeamPicker();'));
+    ok('...and on a phone the panel is pinned to the top rather than centred',
+      /body\.touch-ui #panel-teams \{ place-items: start center; \}/.test(css));
+    ok('FIGHT! is on the phone\'s top row, beside BACK, and not drawn on a desktop',
+      /<div class="tp-bar">\s*<button id="tp-back"[^]*?<div id="tp-fight"/.test(html)
+        && /\n\.tp-fight \{ display: none; \}/.test(css)
+        && /\nbody\.touch-ui \.tp-fight \{\n  display: flex;/.test(css)
+        && /\n\.tp-bar \{ display: contents; \}/.test(css));
+  }
+
+  /* --- 2. FOUR FIGHTERS ON A PHONE ARE ONE ROW ---
+     "On mobile, when there are 4 players in the arena, the names/health are
+     being stacked ontop of each other instead of being staggered horizontally
+     ... minimize how much vertical real estate everything in the UI takes up."
+     Measured at 844x390, a 2v2: the HUD ran y 14-121 before and 4-44 after,
+     ending at x 782 against the pause button's 790. */
+  {
+    const three4 = 'body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"])';
+    const r = (sel) => {
+      const at = css.indexOf('\n' + sel + ' {');
+      return at < 0 ? '' : css.slice(at, css.indexOf('}', at));
+    };
+    ok('the HUD says how many are fighting, where a stylesheet can match it',
+      /this\.hudEl\.setAttribute\?\.\('data-n', String\(players\.length\)\)/.test(tsrc));
+    ok('at three and four on a phone a side\'s fighters stand side by side',
+      /display: flex;/.test(r(`${three4} .ah-side`)) && /flex-wrap: wrap;/.test(r(`${three4} .ah-side`))
+        && /flex: 1 0 100%;/.test(r(`${three4} .ah-team`))
+        && new RegExp(`\\n${three4.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\.ah-f \\{ flex: 1 1 0;`).test(css));
+    ok('...a size down, and short of the pause button at both ends',
+      /height: 10px;/.test(r(`${three4} .ah-bar`)) && /width: min\(900px, calc\(100vw - 124px\)\);/.test(r(three4)));
+    ok('...and at two it is the HUD they know: no phone rule reaches it',
+      !/body\.touch-ui #arena-hud(?![^{]*data-n="[34]")[^{]*\{/.test(css) && !/data-n="[12]"/.test(css));
+  }
+
+  /* --- 3. THE MENUS ARE IN FRONT OF EVERYTHING THE GAME DRAWS ---
+     "On mobile, when in the Menu screen, in the arena, the players health and
+     names are appearing infront of the Menu screen UI, the menu screen should
+     be infront of everything." The arena's whole layer was 34-44 and every
+     menu 20-32. */
+  {
+    const z = (sel) => {
+      const m = new RegExp(`\\n${sel.replace(/[.*+?^${}()|[\]\\#]/g, '\\$&')}(?:,\\n[^{]*)? \\{[^}]*?z-index: (\\d+)`).exec(css);
+      return m ? +m[1] : null;
+    };
+    const play = ['#arena-winners', '#arena-hud', '#arena-countdown', '#arena-banner', '#announce', '#award']
+      .map((s) => [s, z(s)]);
+    const menus = [['.overlay', z('.overlay')], ['#panel-help', /#panel-help \{ z-index: (\d+)/.exec(css)?.[1]],
+      ['#panel-trailer', z('#panel-trailer')], ['#panel-confirm', /#panel-confirm \{ z-index: (\d+)/.exec(css)?.[1]]]
+      .map(([s, v]) => [s, v == null ? null : +v]);
+    const top = Math.max(...play.map(([, v]) => v ?? 99));
+    ok('every menu is drawn over everything the arena draws in play',
+      menus.every(([, v]) => v != null && v > top) && play.every(([, v]) => v != null),
+      [...play, ...menus].map(([s, v]) => `${s} ${v}`).join(', '));
+    ok('...keeping their own order: pause, then what opens from it, then are-you-sure',
+      menus.map(([, v]) => v).every((v, i, a) => !i || v > a[i - 1]));
+    ok('...and still under the cutscene and the results screen, as they were',
+      menus.every(([, v]) => v < 60) && z('#cutscene') === 60 && z('#arena-result') === 60);
+    ok('...and the rotate-your-phone gate is still over the lot',
+      z('#rotate-gate') > Math.max(60, ...menus.map(([, v]) => v)));
+  }
+}
+
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150
    and 71) because it was only ever counted by hand — and counting the output by
    hand gets it wrong too: labels longer than the 42-char pad push the status

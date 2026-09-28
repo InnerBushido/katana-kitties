@@ -78,6 +78,15 @@ neighbour: the seventh non-negotiable's default answer is no, and the honest
 answer to "the thing you were pointing at no longer exists" is not "here is what
 took its place, press again".
 
+**A finger is a cursor that cannot follow anything.** The team picker's names
+are tapped, and a tap moves the kitten to another column, so the list rebuilds
+under the finger every time. It was also centred, so a column getting shorter
+moved the whole panel: measured at 844x390, one tap moved every row down 28px
+and the next tap on "the top name" hit the heading. For touch, the answer is
+that nothing above the thing tapped may move. `_openTeamPicker` holds the
+columns at the height they open at, a phone pins the panel to the top, and
+FIGHT! is above the columns rather than under them.
+
 ### Designing a new screen? Ask these four
 
 1. **Does anything here act on a press?** Then it consumes that press, and it
