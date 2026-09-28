@@ -2683,6 +2683,16 @@ four synthesised stand-ins, so deleting them costs nothing but polish — see
 
 ## Mobile — the road to a phone
 
+**The ninth pass (Richard's "Fixes")** is in [mobile.md](docs/notes/mobile.md):
+
+- **Team picker:** tapping a name moves her to the next side, and a phone has
+  a FIGHT! button beside BACK. The decision behind it: every screen takes
+  touch, and the touch pad stays behind menus.
+- **Arena HUD:** at three and four on a phone, a side's fighters sit side by
+  side; the HUD is 40px tall instead of 107.
+- **Menus:** the whole menu band now draws above the arena's HUD, the
+  announcer and the award card.
+
 **The eighth pass (Richard's "More mobile fixes")** is in
 [mobile.md](docs/notes/mobile.md):
 

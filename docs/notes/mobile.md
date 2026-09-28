@@ -1607,3 +1607,85 @@ When there are 3 players, we can use the entire screen width, split by 3."*
   three: three across with no empty column, three whole quests.
 - **Three is three across as a rule,** not as a consequence of 844px being wide
   enough: `repeat(3, minmax(0, 1fr))`, and the same for four.
+
+## The ninth pass: the sides by touch, a flat HUD at four, and the menus in front
+
+Richard's "Fixes", measured at 844x390 in the desktop's touch test mode.
+
+### The sides are picked by tapping names
+
+*"On mobile, at the arena, for 2v2 battle, there is no way to push the player
+onto the team with mobile input as the joystick and buttons are covered up by
+the UI. This is a common problem we are running into on UI screens for mobile,
+so we need to decide whether it makes sense to have the player joystick
+buttons infront of the UI ... or whether to make sure every UI screen has
+mobile input that works with touch input, like this screen needs. An easy
+solution here is, that the touch input can just push the player to the next
+category, every time the name is touched on input and it will cycle between
+teams when clicked."*
+
+- **The decision: every screen takes touch; the pad stays behind menus.**
+  Putting the stick and buttons in front would make whatever panel they sit
+  on unclickable underneath them (the house rule about UI behind UI). The
+  profile, the results keypad and the pause menu already work this way; the
+  team picker was the one left.
+- **Tapping a name moves her one side along:** NO TEAM, RED, BLUE (GOLD) and
+  round again. This is the same step as her stick moving right (`_teamTap`).
+  Anybody may tap anybody, because the sisters on pads are covered too.
+- **FIGHT! is a button on a phone**, top right beside BACK. It stays dimmed
+  until the sides are legal and is still tappable then. A tap while locked
+  scrolls to the red help line and shakes it: a toast is made, but it draws
+  behind the panel, so the first cut refused silently.
+- **Taps go through `onTap` and the names are not `<button>`s,** so a focused
+  name can never be clicked again by a keyboard Space (a kitten's JUMP).
+- **The screen cannot slide under her finger.** Measured before: taking Ember
+  out of NO TEAM re-centred the panel and moved every row down 28px, and the
+  next tap on the top name landed on the heading. The columns now hold the
+  height they open at (everybody starts in NO TEAM, the tallest they can be),
+  and a phone pins the panel to the top. After: seven real taps in a row each
+  landed on the kitten aimed at, and FIGHT! started a 2v2 on 0,0,1,1.
+- **Rows are tighter on a phone** (30px targets), so the help line is on
+  screen at 390px tall.
+- **Desktop is unchanged.** There is no FIGHT! button, BACK and the title are
+  where they were, and the text is the stick wording. A mouse click on a name
+  now also moves her.
+
+### Four fighters' health is one row on a phone
+
+*"On mobile, when there are 4 players in the arena, the names/health are being
+stacked ontop of each other instead of being staggered horizontally like they
+are on pc/web. We need to make sure the UI fits well for mobile and minimize
+how much vertical real estate everything in the UI takes up."*
+
+- **Measured, 2v2:** the HUD ran from y 14 to 121, a team line and two
+  stacked fighters on each side. That is 27% of the screen, over the far half
+  of the ring, and its right end ran under the pause button.
+- **A 2v2 stacks on a desktop too.** What looks horizontal there is the
+  free-for-all, where every kitten is her own column. The phone had no HUD
+  rules at all.
+- **At three and four on a phone** (`data-n` on `#arena-hud`), a side's
+  fighters stand side by side under one team line, with 13px names, 10px bars
+  and a smaller round box. The HUD is narrowed by the pause button's width at
+  both ends, so it stays centred.
+- **After:** the HUD runs y 4–44 and ends at x 782, against the pause button's
+  790.
+- **At two, nothing changes** (fifth non-negotiable), and world-check pins
+  that no phone rule reaches it.
+
+### The pause menu was behind the health bars
+
+*"On mobile, when in the Menu screen, in the arena, the players health and
+names are appearing infront of the Menu screen UI, the menu screen should be
+infront of everything."*
+
+- **Cause:** every menu was z-index 20–32, and the arena's layer (the round's
+  winners, the HUD, the countdown, the banner, Mr Satan's card, the award
+  card) is 34–44.
+- **Fix:** the menu band moves up as one, keeping its order: overlays 50,
+  Settings and Help 54, the trailer 56, are-you-sure 58. The cutscene and
+  results screen stay above at 60, and the rotate-your-phone gate goes to 70
+  so it is still over everything.
+- **The band, not the arena's layer.** Pushing the arena under 20 would have
+  put Mr Satan's card under the league picker on a desktop as well.
+- Measured in the paused arena: every probe point hits `#panel-pause`, and
+  the bars sit behind its blur.

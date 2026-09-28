@@ -74,7 +74,7 @@ html, body {
    panel on top and makes them look like they never opened. This has to beat
    `.overlay`'s own z-index of 20, which all three panels share. */
 #panel-settings,
-#panel-help { z-index: 24; }
+#panel-help { z-index: 54; }
 
 /* ------------------------------- loading --------------------------------- */
 
@@ -423,7 +423,24 @@ body.touch-ui .options-label {
 
 /* ------------------------------- panels ---------------------------------- */
 
-.overlay { background: rgba(16, 9, 20, 0.78); backdrop-filter: blur(6px); z-index: 20; }
+/* THE MENUS ARE A BAND OF THEIR OWN, ABOVE EVERYTHING THE GAME DRAWS IN PLAY.
+   "On mobile, when in the Menu screen, in the arena, the players health and
+   names are appearing infront of the Menu screen UI, the menu screen should be
+   infront of everything."
+
+   They were 20-32 and the arena's layer is 34-44 — the round's winners, the
+   health bars, the last fifteen seconds, the banner, Mr Satan's card and the
+   award card — so all of it was drawn over the pause menu, and on a phone,
+   where the pause panel is the whole height of the screen, straight over its
+   rows. The whole band moves up as one, keeping its own order: an overlay 50,
+   Settings and Help 54 (opened FROM pause), the trailer 56, are-you-sure 58.
+   Still under the cutscene box and the results screen at 60, which were above
+   them before and are not menus a pause can open over.
+
+   THE BAND, NOT THE ARENA'S LAYER. Pushing the arena's numbers under 20
+   instead would have put Mr Satan's card under the league picker as well,
+   and that is a desktop screen nobody asked to change. */
+.overlay { background: rgba(16, 9, 20, 0.78); backdrop-filter: blur(6px); z-index: 50; }
 
 .panel {
   width: min(780px, 90vw);
@@ -3403,6 +3420,68 @@ body.touch-ui .aw-cap { font-size: 12px; padding-bottom: 12px; }
 }
 @keyframes feastTick { 50% { opacity: 0.55; } }
 
+/* --- THE ARENA HUD ON A PHONE, AT THREE AND FOUR --------------------------
+   "On mobile, when there are 4 players in the arena, the names/health are
+   being stacked ontop of each other instead of being staggered horizontally
+   like they are on pc/web. We need to make sure the UI fits well for mobile
+   and minimize how much vertical real estate everything in the UI takes up."
+
+   MEASURED AT 844x390, A 2v2: the HUD ran from y 14 to 121 — a team header,
+   then two 40px fighters stacked under it, on each side — which is 27% of the
+   screen, over the far half of the ring. Its right end also ran under the
+   pause button (790-832 x 10-52).
+
+   A SIDE'S FIGHTERS STAND SIDE BY SIDE, under one team line, which is what a
+   free-for-all already looks like on every screen (each kitten is her own
+   column there). Everything is drawn a size down: 13px names, 10px bars.
+
+   NARROWER BY THE PAUSE BUTTON ON EACH SIDE, so it is still centred on the
+   round box.
+
+   THREE AND FOUR ONLY. At two this HUD is the one they know — fifth
+   non-negotiable — and `data-n` is written by `Tournament._paintHud`. */
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) {
+  top: 4px;
+  gap: 8px;
+  width: min(900px, calc(100vw - 124px));
+}
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) .ah-wing { gap: 8px; }
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) .ah-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  column-gap: 8px;
+  border-top-width: 2px;
+  padding-top: 1px;
+}
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) .ah-team {
+  flex: 1 0 100%;
+  gap: 4px;
+  font-size: 11px;
+  letter-spacing: 1.2px;
+}
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) .ah-swatch { width: 9px; height: 9px; border-width: 2px; }
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) .ah-pips { gap: 3px; }
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) .ah-pips i { width: 9px; height: 9px; border-width: 2px; }
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) .ah-f { flex: 1 1 0; min-width: 0; margin-top: 1px; }
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) .ah-name {
+  font-size: 13px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) .ah-bar {
+  height: 10px;
+  margin-top: 1px;
+  border-width: 2px;
+  border-radius: 5px;
+}
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) .ah-pow { margin-top: 0; font-size: 10px; letter-spacing: 0.8px; }
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) .ah-mid { padding: 2px 8px; border-width: 2px; border-radius: 7px; }
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) .ah-clock { font-size: 17px; }
+body.touch-ui #arena-hud:is([data-n="3"], [data-n="4"]) .ah-round { font-size: 10px; letter-spacing: 1px; }
+
 /* --- THE LAST FIFTEEN SECONDS --------------------------------------------
    Directly under the round box, which is at top:14px and about 66 tall. It is
    the one place on this screen both girls are already looking, and it keeps
@@ -4912,6 +4991,60 @@ body.touch-ui .kd-panel.kd-cards[data-cards="4"] > #kd-body { grid-template-colu
   cursor: pointer;
 }
 .tp-back:hover { background: var(--paper); }
+/* FIGHT! BESIDE IT, ON A PHONE ONLY. A pad and a keyboard confirm with JUMP,
+   which is the rule this screen was built on; a phone's JUMP is drawn under
+   the panel, so it gets the button, and a desktop's screen is exactly what it
+   was — the bar is not a box there and the button is not drawn. */
+.tp-bar { display: contents; }
+.tp-fight { display: none; }
+body.touch-ui #panel-teams .tp-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+body.touch-ui #panel-teams .tp-bar .tp-back { margin: 0; }
+body.touch-ui .tp-fight {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 6px 22px;
+  font-family: 'Bangers', cursive;
+  font-size: 20px;
+  letter-spacing: 2px;
+  color: var(--ink);
+  background: var(--gold);
+  border: 3px solid var(--ink);
+  border-radius: 9px;
+  box-shadow: 0 3px 0 var(--ink);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+/* NOT READY YET, and still a button: tapping it is how she finds out why
+   (a toast, in the help line's words). */
+body.touch-ui .tp-fight.off { opacity: 0.45; box-shadow: none; }
+/* EVERY NAME IS A BUTTON ON A PHONE — see `Game._teamTap`. `manipulation` so
+   a quick second tap is a second tap and not the start of a double-tap zoom. */
+body.touch-ui .tp-cat { cursor: pointer; touch-action: manipulation; user-select: none; }
+body.touch-ui .tp-cat:active { background: var(--paper-2); }
+/* THE WHOLE SCREEN ON ONE PHONE SCREEN, SO THE REFUSAL CAN BE SEEN. Measured
+   at 844x390 with all four still in NO TEAM: the help line started below the
+   fold. The rows keep a 30px target and give up their air; the headings come
+   down a little. */
+body.touch-ui #panel-teams .tp-body { margin: 4px 0 2px; gap: 10px; }
+body.touch-ui #panel-teams .tp-side { padding: 4px 8px 7px; }
+body.touch-ui #panel-teams .tp-head { font-size: 17px; margin-bottom: 1px; }
+body.touch-ui #panel-teams .tp-cat { margin-top: 4px; padding: 2px 7px; min-height: 30px; }
+body.touch-ui #panel-teams #tp-help { margin: 4px 0 0; }
+/* AND PINNED TO THE TOP ON A PHONE, because the help line under the columns
+   changes length with what is wrong, and a centred panel would move the names
+   by half of that on every tap. See `Game._openTeamPicker`. */
+body.touch-ui #panel-teams { place-items: start center; }
+body.touch-ui #panel-teams .panel { margin-top: max(6px, env(safe-area-inset-top, 0px)); }
+@keyframes tpFlash { 0%, 100% { transform: none; } 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+.tp-flash { animation: tpFlash 0.36s ease; }
 
 /* ========================= the on-screen pad =============================
    Drawn in the same ink-and-paper language as everything else, and sized for a
@@ -5099,7 +5232,7 @@ body.touch-ui .kd-panel.kd-cards[data-cards="4"] > #kd-body { grid-template-colu
 #rotate-gate {
   position: fixed;
   inset: 0;
-  z-index: 40;              /* over everything, including scenes */
+  z-index: 70;              /* over everything, including scenes and the menus (50-58) */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5653,7 +5786,7 @@ body:not(.touch-ui) #debug-corner { display: none; }
 .menu-btn.small:focus-visible { box-shadow: 0 6px 0 var(--ink); }
 
 #panel-trailer {
-  z-index: 30;               /* over the pause menu it can be opened from */
+  z-index: 56;               /* over the pause menu it can be opened from */
   background: #000;
   /* FLEX-CENTRE, not the shared grid. A flex container hands its child a
      definite cross-size (this fixed panel's own viewport height), which is what
@@ -5761,7 +5894,7 @@ body.touch-ui .trailer-hint .menu-btn.small {
    Narrow, because it holds one question and two answers and a dialog as wide
    as the pause menu reads as another page of it rather than as something that
    has stopped you. */
-#panel-confirm { z-index: 32; }
+#panel-confirm { z-index: 58; }
 .confirm-panel { max-width: 520px; }
 
 /* The yes button on a confirm dialog. Vermillion like `.primary` but it is

@@ -1829,7 +1829,15 @@
              onto two lines on a phone and the panel scrolls, and a way out
              that has to be scrolled to is a screen with no way out. It is not
              a `.menu-btn` for the same reason nothing here is (see above). -->
-        <button id="tp-back" class="tp-back" type="button">&#9664; BACK &mdash; PICK A DIFFERENT FIGHT</button>
+        <!-- FIGHT! IS UP HERE TOO, on a phone only (a pad has JUMP), and for
+             the same reason as BACK plus one more: every tap on a name moves
+             her to another column and the columns change height, so a button
+             UNDER them would slide up into the place a finger was just
+             tapping. See Game._openTeamPicker. -->
+        <div class="tp-bar">
+          <button id="tp-back" class="tp-back" type="button">&#9664; BACK &mdash; PICK A DIFFERENT FIGHT</button>
+          <div id="tp-fight" class="tp-fight off" role="button">FIGHT! &#9654;</div>
+        </div>
         <h2 id="tp-title">PICK YOUR SIDE</h2>
         <div id="tp-body" class="tp-body"></div>
         <p class="note" id="tp-help"></p>

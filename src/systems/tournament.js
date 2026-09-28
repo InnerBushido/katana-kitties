@@ -2986,6 +2986,10 @@ export class Tournament {
         + `<span class="ah-round">ROUND ${this.round}</span>`;
     }
 
+    /* HOW MANY ARE FIGHTING, for the phone's stylesheet: at three and four
+       a side's fighters stand side by side rather than stacked. See "THE
+       ARENA HUD ON A PHONE, AT THREE AND FOUR" in style.css. */
+    this.hudEl.setAttribute?.('data-n', String(players.length));
     this.hudEl.innerHTML = `
       <div class="ah-wing">${left.map((s) => sideBlock(s, 'l')).join('')}</div>
       <div class="ah-mid">${mid}</div>
