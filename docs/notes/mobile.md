@@ -1341,3 +1341,147 @@ Measured, one player on a phone:
 - **Before:** 844 wide, 17.4px type, 2 of 10 orbs on screen.
 - **After:** 420 wide at x 212, 10.5px type, 6 of 10 orbs on screen.
 - The ACTION button (x 770–828) is now outside the card.
+
+## The seventh pass: six notes, and the fight camera fitted through the lens
+
+Richard's "Some mobile fixes", all measured at 844x390 in the desktop's touch
+test mode.
+
+### The one-screen map was 20px from the stick
+
+*"the minimap UI is slightly too big when on full screen with 1 player, maybe
+10% too big or we need to bring the bottom upward so it does not interfere
+with the mobile joystick below it. When in split screen with 2 players, it is
+fine."*
+
+- **Measured:** the merged map was 192px, from y=16 to y=208. The stick's ring
+  rests from y=228.
+- **Change:** `MAP_MERGED_PHONE = 0.9` in `mapWidth`, for merged panes only.
+  The map is 173px and ends at y=189, so the gap doubles to 39px.
+- **Split halves are untouched,** as asked. The Dojo's merged map, under the
+  pause button, gets the same tenth off. It was the one already overlapping:
+  its bottom was at y=212 against the face buttons' top at y=207.
+
+### A split phone's maps were in the middle, not the corners
+
+*"the minimaps are not in the corners of the screen ... Is there a reason it
+isn't in the corner like because of UI?"*
+
+- **The reason was a desktop one.** `mapSpot` hugs the seam so two girls on a
+  sofa can read each other's map.
+- **On a phone** that put two 129px maps at the bottom middle. They sat over the
+  ground in front of both kittens, and between the two thumbs.
+- **Change:** `cornerSpot` puts each half's map in its **top outer corner**.
+  Bottom corners are thumbs, which is why the merged phone map was already
+  top-left.
+- **What it avoids** is measured by `Game._cornerBlocks`: the pause button and
+  the scoreboard. It slides inward past the pause button, so the maps sit at
+  8,8 and 653,8, level with each other. If there is no room beside the button,
+  the map drops under it.
+- **Scope:** only panes that reach the top of the screen, and not in the Dojo,
+  whose board can take that corner. Stacked and quadrant phone splits keep the
+  seam rule.
+
+### Nothing behind the main menu, and a reload to get back to it
+
+*"the game should not be started and not in cache until the player presses
+the Play button ... when player returns to the Main Menu again, then the game
+cache is reset and reloaded. The background should be black"*
+
+**What read as gameplay was two things:**
+
+- **The world** really was built at boot and flown over behind the menu.
+- **The side bars** beside the letterboxed art were `.title-art`, the painting
+  blurred 26px and blown up 112%. On a phone that looks exactly like a scene
+  moving behind the menu.
+
+**What changed:**
+
+- **Boot on a phone** (`_lazyWorld`, decided off `touchPrimary`) stops at the
+  title. `.title-art` is not drawn there, so the bars are black.
+- **`_worldThen`** builds the world behind the loading screen on PLAY (after
+  the trailer question) or on LOAD A SAVED GAME. The save list is scored against
+  the world. The loop is stopped while it builds, and a second press is dropped.
+- **`toTitle` on a phone is `location.reload()`,** the only reset that hands the
+  memory back.
+- **What a reload would otherwise lose:**
+  - the record board, the saves and the settings were already in localStorage;
+  - "the intro has played" now rides in `sessionStorage`, so it is still once
+    per tab;
+  - a paired controller presses A again to rejoin, as at any boot.
+- **Guards while there is no world:**
+  - the Split direction and Minimaps rows store their value and do not rebuild
+    the HUD;
+  - the debug rows say `NO WORLD YET` in the panel itself, since toasts live in
+    the hidden HUD. Only `8` (frame cost) works before PLAY.
+
+A desktop is unchanged, fly-over and all.
+
+### Settings are remembered
+
+*"when switching settings like 'Split screen' or 'On screen stick' these should
+be saved for the game"*
+
+- **The stick was already saved** (`kk.device.override`, read at boot for the
+  render tier), and still is.
+- **The rest was in memory only:** split, direction, minimaps, maths, quality,
+  both volumes, and the two Joy-Con rows. They are now saved by `core/prefs.js`
+  under `kk.settings`.
+- **Only rows she changed are written,** so the others keep following the device
+  default.
+- **Every value is checked against the markup's own options** on the way in and
+  on the way out. world-check pins the two lists together.
+- **A stored quality turns the auto-downgrade off,** exactly as picking it
+  does.
+
+### The ring camera was fitted to the wrong axis
+
+*"the camera is not keeping both kittens in view in the arena, it is too
+zoomed in when they are separated ... The camera should be more zoomed in on
+mobile, and the angle is good, but we need to make sure to keep both kittens
+in view if they get separated and should have some viewing distance on the
+edges left/right"*
+
+**Why the old rule cropped:**
+
+- `20 + sep * 0.6` was a width fit. The ring is watched down a fixed yaw, so
+  fighters apart in **depth** are apart **vertically** on screen, which is the
+  short axis on a phone.
+- The top 20% of that axis is the health bars (`#arena-hud` ends at y=76). The
+  bottom quarter is thumbs.
+- `max: 66` then capped the distance under what a split down the ring needs.
+- Measured: a 56-unit gap down the ring put one fighter under the stick.
+
+**The fix:**
+
+- `fitShot` in `core/split.js` fits every fighter's head and feet into
+  `TOUCH_BOX` (NDC −0.86..0.86 across, −0.5..0.61 up) through the real
+  projection.
+- It uses an exact interval test per axis, then a bisection on distance, and
+  slides the aim so the group is centred in the free box.
+- A pair split sideways gets 6 world units of air on each side.
+- The angle is unchanged.
+- The close-up floor is 20 (was 26), and the cap is 120.
+
+**Measured, gap to distance:** 0→20, 6→20, 23→35, 57 across→54, 57 down→77,
+79 corner-to-corner down→106.
+
+world-check projects every one of them through a three.js camera and asserts
+all heads and feet are inside the box. The desktop rig is byte-identical.
+
+### The feast was a still of the whole deck
+
+*"during the feast, the camera is too zoomed out and player can't see if there
+are any animals on the bottom of the screen. Maybe we can keep the camera at
+the same zoom level, but need to track the player ... even if they jump out
+of the arena bounding area, they should still be tracked."*
+
+- **One zoom, 34** (was a fixed 68 on the ring's centre). The camera follows the
+  kittens who can **eat**, through the same `fitShot`, with 10 units of air.
+- **No clamp to the deck,** so she stays centred off the edge of the stone.
+- **Not the angel:** framing the round's loser flying overhead would pull back
+  out to wherever she went. If nobody can eat, it frames everybody.
+- **Measured live:** Ember at the near corner, the far corner and off the deck
+  was centred each time at dist 34.
+- **Open:** if the phone's own player is the angel, the camera follows her
+  sister rather than her. Say if the angel should be followed instead.

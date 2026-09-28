@@ -605,6 +605,116 @@ export function fitDistance({ spread, fovDeg, aspect, margin = FIT_MARGIN }) {
   return ((spread / 2) * margin) / (halfV * aspect);
 }
 
+/**
+ * THE SHOT THAT PUTS EVERY GIVEN POINT INSIDE A GIVEN PART OF THE SCREEN,
+ * through the real projection. The phone's ring camera — see `RING_DIST` in
+ * systems/tournament.js for the report it answers.
+ *
+ * WHY NOT `fitDistance`. That one asks "how far back until a spread this wide
+ * fits across the frame", which is a horizontal question about a width. The
+ * ring is watched from above at a fixed yaw, so two fighters apart in DEPTH
+ * are apart on the screen's VERTICAL axis, which it cannot see; and on a
+ * phone the top 20% of the screen is the health bars and the bottom quarter
+ * is thumbs, so "on screen" is not the question either. This asks the one
+ * that is: at this yaw and pitch, what is the closest distance at which every
+ * point projects inside `box`, and where does the aim have to slide to so
+ * they are centred in it?
+ *
+ * IT IS EXACT, NOT A SEARCH OVER CAMERAS. With the angles fixed, sliding the
+ * aim across the camera's own right/up plane does not change any point's
+ * depth, so for a trial distance each axis is an interval test — every point
+ * says which slides keep it inside the box, and the shot exists if the
+ * intervals meet. That test only gets easier with distance, so the closest
+ * distance is a bisection, and the slide is the middle of the meeting
+ * intervals: the group centred in the box, not in the screen.
+ *
+ * `air` is the "some viewing distance on the edges left/right so player can
+ * see animals if they are nearby" — each point is widened by that many world
+ * units along the camera's horizontal right, both ways.
+ *
+ * @param pts      [{x, y, z, h}] feet, and how tall — the head must fit too
+ * @param target   {x, y, z} the aim before sliding
+ * @param yaw,pitch the rig's angles: the camera sits at target +
+ *                 (sin yaw cos pitch, sin pitch, cos yaw cos pitch) * dist
+ * @param box      {l, r, b, t} in NDC, -1..1
+ * @returns {{ x, y, z, dist, fits: boolean }} `fits` is false only when even
+ *          `maxDist` cannot hold them, in which case it is the best at max
+ */
+export function fitShot({
+  pts, target, yaw, pitch, fovDeg, aspect, box, air = 0, minDist, maxDist,
+}) {
+  const cp = Math.cos(pitch);
+  // Forward (target -> away from the camera), and three.js's lookAt basis.
+  const f = { x: -Math.sin(yaw) * cp, y: -Math.sin(pitch), z: -Math.cos(yaw) * cp };
+  const rl = Math.hypot(f.z, f.x) || 1;
+  const r = { x: -f.z / rl, y: 0, z: f.x / rl };
+  const u = {
+    x: r.y * f.z - r.z * f.y,
+    y: r.z * f.x - r.x * f.z,
+    z: r.x * f.y - r.y * f.x,
+  };
+  const dot = (a, v) => a.x * v.x + a.y * v.y + a.z * v.z;
+  const tanV = Math.tan((fovDeg * Math.PI) / 360);
+  const tanH = tanV * aspect;
+
+  const cam = [];
+  for (const p of pts ?? []) {
+    for (const [dy, side] of [[0, -1], [0, 1], [p.h ?? 0, -1], [p.h ?? 0, 1]]) {
+      const rel = {
+        x: p.x + r.x * air * side - target.x,
+        y: p.y + dy - target.y,
+        z: p.z + r.z * air * side - target.z,
+      };
+      cam.push({ x: dot(rel, r), y: dot(rel, u), z: dot(rel, f) });
+    }
+  }
+  if (!cam.length) {
+    return { x: target.x, y: target.y, z: target.z, dist: minDist, fits: true };
+  }
+
+  /* For distance d: the slide `s` along each axis that keeps every point in
+     [lo, hi] of the box is  x - hi * depth * tan <= s <= x - lo * depth * tan. */
+  const span = (d) => {
+    let xLo = -Infinity; let xHi = Infinity; let yLo = -Infinity; let yHi = Infinity;
+    for (const c of cam) {
+      const depth = Math.max(0.5, d + c.z);
+      xLo = Math.max(xLo, c.x - box.r * depth * tanH);
+      xHi = Math.min(xHi, c.x - box.l * depth * tanH);
+      yLo = Math.max(yLo, c.y - box.t * depth * tanV);
+      yHi = Math.min(yHi, c.y - box.b * depth * tanV);
+    }
+    return { xLo, xHi, yLo, yHi, ok: xLo <= xHi && yLo <= yHi };
+  };
+
+  let dist = minDist;
+  let s = span(dist);
+  let fits = true;
+  if (!s.ok) {
+    s = span(maxDist);
+    if (!s.ok) {
+      dist = maxDist;
+      fits = false;
+    } else {
+      let lo = minDist; let hi = maxDist;
+      for (let k = 0; k < 40; k++) {
+        const mid = (lo + hi) / 2;
+        if (span(mid).ok) hi = mid; else lo = mid;
+      }
+      dist = hi;
+      s = span(dist);
+    }
+  }
+  const sx = (s.xLo + s.xHi) / 2;
+  const sy = (s.yLo + s.yHi) / 2;
+  return {
+    x: target.x + r.x * sx + u.x * sy,
+    y: target.y + r.y * sx + u.y * sy,
+    z: target.z + r.z * sx + u.z * sy,
+    dist,
+    fits,
+  };
+}
+
 /* ===========================================================================
    HOW BIG THE MINIMAP IS.
 
@@ -700,6 +810,29 @@ export const MAP_TOUCH_UP = 1.2;
  * other direction, and the same one twice is careless.
  */
 export const MAP_QUAD_DOWN = 0.75;
+
+/**
+ * AND A TENTH OFF THE ONE MAP A PHONE SHOWS WHEN THE SCREEN IS NOT SPLIT.
+ *
+ * "On Mobile, the minimap UI is slightly too big when on full screen with 1
+ * player, maybe 10% too big or we need to bring the bottom upward so it does
+ * not interfere with the mobile joystick below it. When in split screen with 2
+ * players, it is fine."
+ *
+ * MEASURED AT 844x390 before the change: the merged map is 192px square at
+ * the top-left, from y=16 to y=208, and the stick's ring rests from y=228 —
+ * twenty pixels of screen between the bottom of the map and the top of the
+ * thing her thumb is on. At 0.9 the map is 173 and ends at y=189, which is
+ * the gap doubled; and "bring the bottom upward" is the same edit read the
+ * other way, since the top is already hard into the corner.
+ *
+ * MERGED ONLY, because "in split screen with 2 players, it is fine": a split
+ * phone half is `MAP_SPLIT` of the screen and does not move. And the Dojo's
+ * merged map takes it too — it sits under the pause button on the right,
+ * where the same measurement put its bottom at y=212 against the face
+ * buttons' top at y=207, so it was the one already overlapping.
+ */
+export const MAP_MERGED_PHONE = 0.9;
 
 /* A map must fit the pane it is in. At a flat 32vw a quadrant's map ate
    most of a quarter-screen; sized against the PANE it stays the same
@@ -1090,6 +1223,77 @@ export function mapSpot({
   };
 }
 
+/**
+ * A PHONE'S SPLIT MAP GOES IN THE TOP OUTER CORNER OF ITS PANE.
+ *
+ * "On Mobile, on split screen with 2 players, the minimaps are not in the
+ * corners of the screen. I think we can make it work better if we move the
+ * minimaps closer to the corner of the screen. Is there a reason it isn't in
+ * the corner like because of UI? If not, then lets move it there or make it
+ * work somehow to use the limited screen space better."
+ *
+ * THERE WAS A REASON, AND IT IS A DESKTOP ONE. `mapSpot` hugs the seam so the
+ * two girls on a sofa can each read their sister's map; that is what put a
+ * phone's two maps side by side at the bottom middle, 129px each, straight
+ * over the ground in front of both kittens and between the two thumbs. On a
+ * phone both BOTTOM corners belong to thumbs (the stick's catchment is the
+ * bottom-left 46% x 78%, the face buttons fill the bottom-right), which is
+ * why the merged phone map already lives top-left. So a phone half does what
+ * the merged phone map does: the TOP corner on its own outside edge.
+ *
+ * `avoid` IS WHAT IS ALREADY IN A CORNER, MEASURED BY THE CALLER: the pause
+ * button in the top-right and the scoreboard across the top middle. A map
+ * that would land on one slides inward past it, and if that runs out of pane
+ * it drops below it instead. Measured at 844x390: the pause button is
+ * 790-832 x 10-52, so the right half's map lands at 653-782 beside it, level
+ * with the left half's map at 8-137, and the scoreboard (275-569 at two
+ * players) is clear of both by 84px.
+ *
+ * ONLY A PANE THAT REACHES THE TOP OF THE SCREEN. A lower pane's top edge is
+ * the seam, which is not a corner of the screen; it returns null and the
+ * caller keeps `mapSpot`'s answer, so stacked and quadrant phone splits are
+ * exactly what they were.
+ *
+ * @param v      the pane, in WebGL bottom-left origin
+ * @param W,H    the whole frame
+ * @param size   the map, square
+ * @param pad    gap from the edges and from anything avoided
+ * @param avoid  page rects `{left, top, right, bottom}` not to land on
+ * @returns {?{ left: number, top: number }} null when this rule does not apply
+ */
+export function cornerSpot({ v, W, H, size, pad = 8, avoid = [] }) {
+  const cssTop = H - v.y - v.h;
+  if (cssTop > 2) return null;
+  const fullW = v.w >= W - 2;
+  const hugLeft = fullW || v.x + v.w / 2 < W / 2;
+  const inPane = (l, t) => l >= v.x - 0.5 && l + size <= v.x + v.w + 0.5
+    && t + size <= cssTop + v.h + 0.5;
+  const hit = (l, t) => avoid.find((r) => r && l < r.right && l + size > r.left
+    && t < r.bottom && t + size > r.top);
+  const corner = hugLeft ? v.x + pad : v.x + v.w - pad - size;
+
+  /* INWARD FIRST, SO BOTH MAPS STAY LEVEL. Beside the pause button reads as
+     the same row as the other half's map; under it would put the two maps at
+     two heights for no reason a player can see. */
+  let left = corner;
+  const top = cssTop + pad;
+  for (let k = 0; k <= avoid.length; k++) {
+    const r = hit(left, top);
+    if (!r) return inPane(left, top) ? { left, top } : null;
+    left = hugLeft ? r.right + pad : r.left - pad - size;
+    if (!inPane(left, top)) break;
+  }
+  /* ...AND BELOW IT WHEN THERE IS NO ROOM BESIDE IT, the rule the merged
+     Dojo map already follows under the pause button. */
+  let down = top;
+  for (let k = 0; k <= avoid.length; k++) {
+    const r = hit(corner, down);
+    if (!r) return inPane(corner, down) ? { left: corner, top: down } : null;
+    down = r.bottom + pad;
+  }
+  return null;
+}
+
 /** How wide the minimap box is, in CSS pixels. Pure, so `world-check` can
  *  assert it — this is layout arithmetic and `_drawMaps` only writes the
  *  result to `style.width`.
@@ -1148,6 +1352,7 @@ export function mapWidth({
   const phoneBasis = merged || quadrant ? paneH : screenH * MAP_SPLIT;
   const cap = touch
     ? phoneBasis * (mathUp ? MAP_DOJO : MAP_TALL) * MAP_TOUCH_UP
+      * (merged ? MAP_MERGED_PHONE : 1)
     : Infinity;
   return Math.min(MAP_MAX, paneW * MAP_WIDE, cap)
     * (solo && quadrant ? MAP_QUAD_DOWN : 1);

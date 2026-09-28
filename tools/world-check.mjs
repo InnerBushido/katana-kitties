@@ -98,7 +98,7 @@ import { ClanFx } from '../src/systems/clanfx.js';
 import { ATTACKS, COMBAT, BASE_REACH, MAX_HP, DAZE_TIME, SWEEP_UP } from '../src/entities/player.js';
 import {
   Tournament, WINS_NEEDED, MAX_ROUNDS, FEAST_TIME, REGEN_FRAC, OUT_FLOOR,
-  CARD_TIME, CARD_MAX,
+  CARD_TIME, CARD_MAX, TOUCH_BOX,
 } from '../src/systems/tournament.js';
 import {
   Critter, CRITTERS, CRITTER_BY_ID, EAT_TIME, MOUTH_TIME, CATCH_RADIUS, STUN_TIME,
@@ -118,9 +118,12 @@ import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   cardRect,
   paneSeats, outOfShot, framedMembers, OUT_DROP, paneWiden, BIG_PANE_IN,
-  mathSharedWidth, MATH_SHARED_W, MAP_TOUCH_UP, MAP_QUAD_DOWN,
-  warnSpot, warnWidth, WARN_UP, WARN_FIT, WARN_MAX_W,
+  mathSharedWidth, MATH_SHARED_W, MAP_TOUCH_UP, MAP_QUAD_DOWN, MAP_MERGED_PHONE,
+  warnSpot, warnWidth, WARN_UP, WARN_FIT, WARN_MAX_W, cornerSpot, fitShot,
 } from '../src/core/split.js';
+import {
+  PREFS_KEY, PREF_CHOICES, PREF_LEVELS, readPrefs, writePref,
+} from '../src/core/prefs.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../src/core/cluster.js';
 import { recolourPixels, liftWindow } from '../src/core/spritesheet.js';
 import { postsFor } from '../src/world/build.js';
@@ -14317,21 +14320,90 @@ console.log('\n--- the three power moves ---');
     /* IT STILL OPENS UP. "Zoom in" that could not pull back would crop a
        fighter the moment the two of them ran to opposite corners, which is the
        trap the desktop rig was written to avoid in the first place. */
+    /* THE DISTANCE THAT DECIDES ON A PHONE IS THE FITTED ONE — `cameraWant`'s
+       `dist` is only the close-up floor now, and `fitShot` widens from it
+       exactly as `_updateRig` does. See `RING_DIST` in tournament.js. */
+    const PHONE_ASPECT = 844 / 390;
+    const lens = (want, aspect = PHONE_ASPECT) => fitShot({
+      pts: want.fit.pts, target: want, yaw: -Math.PI / 4, pitch: want.pitch, fovDeg: 38,
+      aspect, box: want.fit.box, air: want.fit.air, minDist: want.dist, maxDist: want.fit.max,
+    });
     const wide = [at(R.x - 28, R.z - 28), at(R.x + 28, R.z + 28)];
     ok('...and still opens up when they run to opposite corners',
-      phoneRig(wide).dist > phoneRig(close).dist * 2.4,
-      `${phoneRig(wide).dist} vs ${phoneRig(close).dist}`);
-    /* THE FIT, NOT A FEELING. At full spread the fighters must actually reach
-       the edges of a 2.16 screen rather than sitting in the middle of it:
-       ground width is 2 * d * aspect * tan(19deg), and the pair plus a little
-       air has to be most of that. */
+      lens(phoneRig(wide)).dist > lens(phoneRig(close)).dist * 2.4,
+      `${lens(phoneRig(wide)).dist.toFixed(1)} vs ${lens(phoneRig(close)).dist.toFixed(1)}`);
+    /* THE FIT, NOT A FEELING — and asked of the real projection, which is
+       the only place "in view" means anything. A three.js camera is put where
+       `_updateRig` would put it and every fighter's feet and head are projected
+       through it: they must land inside `TOUCH_BOX`, the part of a phone the
+       health bars and the thumbs leave, at every separation the deck allows —
+       across the screen, down it, and corner to corner both ways. Down the
+       ring is the case that was reported: "not keeping both kittens in view
+       ... when they are separated", measured under the old rule at a
+       56-unit gap as one fighter under the stick. */
     {
-      const d = phoneRig(wide).dist;
-      const across = 2 * d * 2.16 * Math.tan((38 / 2) * Math.PI / 180);
-      const sep = Math.hypot(56, 56);
-      ok('...with the widest pair filling most of the phone screen',
-        sep / across > 0.75 && sep / across < 1,
-        `${(sep / across * 100).toFixed(0)}% of the frame`);
+      const pose = (want) => {
+        const s = lens(want);
+        const cam = new THREE.PerspectiveCamera(38, PHONE_ASPECT, 0.5, 4000);
+        const yaw = -Math.PI / 4;
+        cam.position.set(
+          s.x + Math.sin(yaw) * Math.cos(want.pitch) * s.dist,
+          s.y + Math.sin(want.pitch) * s.dist,
+          s.z + Math.cos(yaw) * Math.cos(want.pitch) * s.dist,
+        );
+        cam.lookAt(s.x, s.y, s.z);
+        cam.updateMatrixWorld();
+        return { s, cam };
+      };
+      const inBox = (cam, p) => [0, 2.9].every((dy) => {
+        const v = new THREE.Vector3(p.position.x, p.position.y + dy, p.position.z).project(cam);
+        return v.x >= TOUCH_BOX.l - 1e-6 && v.x <= TOUCH_BOX.r + 1e-6
+          && v.y >= TOUCH_BOX.b - 1e-6 && v.y <= TOUCH_BOX.t + 1e-6 && v.z < 1;
+      });
+      let worst = null;
+      const spreads = [];
+      for (const [a, b2] of [
+        [[0, 0], [0, 0]], [[-3, 0], [3, 0]], [[-20, -20], [20, 20]], [[-28, -28], [28, 28]],
+        [[-8, 8], [8, -8]], [[-20, 20], [20, -20]], [[-28, 28], [28, -28]], [[0, 28], [0, -28]],
+        [[-28, 0], [28, 0]], [[20, 20], [24, 24]], [[-24, 24], [-20, 20]],
+      ]) {
+        const ps = [at(R.x + a[0], R.z + a[1]), at(R.x + b2[0], R.z + b2[1])];
+        const { s, cam } = pose(phoneRig(ps));
+        spreads.push(`${Math.round(Math.hypot(a[0] - b2[0], a[1] - b2[1]))}:${s.dist.toFixed(0)}`);
+        if (!s.fits || !ps.every((p) => inBox(cam, p))) worst ??= `${a} / ${b2} at ${s.dist.toFixed(1)}`;
+      }
+      // `line` is a fighter row in this block, so the helper is spelled out.
+      console.log('phone ring: gap -> distance'.padEnd(42) + spreads.join(' '));
+      ok('...with EVERY fighter, head and feet, inside the part of the phone the HUD and thumbs leave',
+        !worst, worst ?? '');
+      /* AND CLOSER THAN IT WAS WHEN NOBODY IS APART: "The camera should be
+         more zoomed in on mobile". 26 was the old floor. */
+      ok('...and a close exchange closer than the old 26',
+        lens(phoneRig(close)).dist < 26, `${lens(phoneRig(close)).dist}`);
+      /* "some viewing distance on the edges left/right": the fit holds `air`
+         world units past the outermost fighter on both sides, so a pair
+         across the screen does not sit on its edges. */
+      {
+        const across = [at(R.x - 20, R.z - 20), at(R.x + 20, R.z + 20)];
+        const { cam } = pose(phoneRig(across));
+        const xs = across.map((p) => new THREE.Vector3(p.position.x, p.position.y, p.position.z).project(cam).x);
+        ok('...and air to the left and right of a pair split across the screen',
+          Math.max(...xs.map(Math.abs)) < TOUCH_BOX.r - 0.08, xs.map((x) => x.toFixed(2)).join(' '));
+      }
+      /* THE KNOCKED-OUT KITTEN LYING OUTSIDE IS NOT FRAMED. The rig's own rule
+         (`outOfShot`) is asked, through the same adapter main.js uses. */
+      {
+        const T = new Tournament({
+          game: {
+            players: [at(R.x, R.z), at(R.x + 80, R.z)], toast() {}, sfx() {},
+            device: { touchPrimary: true }, _camIgnores: (p) => p.position.x > R.x + 50,
+          },
+          world, audio: null, announcer: null,
+        });
+        T.state = 'live';
+        ok('...leaving out a kitten the rig has stopped following',
+          T.cameraWant().fit.pts.length === 1);
+      }
     }
     /* THE DESKTOP PAIR IS UNTOUCHED, and a rig with no `device` at all — which
        is every existing caller in this file — takes the desktop path. Invariant
@@ -14391,6 +14463,50 @@ console.log('\n--- the three power moves ---');
     ok('...and the same when he is in the world but not on screen',
       satanRig('ko', true, { position: booth, group: { visible: false } })
         .fitPlayers !== false);
+
+    /* --- ON A PHONE THE FEAST FOLLOWS THE KITTEN WHO CAN EAT ---
+       "during the feast, the camera is too zoomed out and player can't see if
+       there are any animals on the bottom of the screen. Maybe we can keep the
+       camera at the same zoom level, but need to track the player when they
+       move to bottom/top of the arena ... even if they jump out of the arena
+       bounding area, they should still be tracked." */
+    const feastRig = (pts, touch = true) => {
+      const T = new Tournament({
+        game: { players: pts, toast() {}, sfx() {}, device: { touchPrimary: touch } },
+        world, audio: null, announcer: null,
+      });
+      T.state = 'feast';
+      return T.cameraWant();
+    };
+    const eater = (x, z) => ({ position: { x, y: R.y, z }, ko: false, angel: false });
+    const angel = (x, z) => ({ position: { x, y: R.y + 30, z }, ko: false, angel: true });
+    {
+      const shots = [[-22, 22], [22, -22], [0, 0], [-40, 40]].map(([x, z]) => {
+        const want = feastRig([eater(R.x + x, R.z + z), angel(R.x + 30, R.z - 30)]);
+        return { want, s: lens(want) };
+      });
+      ok('a phone\'s feast keeps ONE zoom wherever she goes — about half the old 68',
+        shots.every(({ s }) => Math.abs(s.dist - shots[0].s.dist) < 1e-9)
+        && shots[0].s.dist <= 40, shots.map(({ s }) => s.dist.toFixed(1)).join(' '));
+      ok('...and it frames the kitten who can eat, not the angel flying overhead',
+        shots.every(({ want }) => want.fit.pts.length === 1 && want.fit.pts[0].y === R.y));
+      /* TRACKED, with no clamp to the deck: the aim moves as far as she does,
+         including 57 units out from the middle of the ring (the last shot,
+         well off the stone). */
+      const moved = Math.hypot(shots[3].s.x - shots[2].s.x, shots[3].s.z - shots[2].s.z);
+      ok('...and follows her all the way, off the edge of the deck too',
+        Math.abs(moved - Math.hypot(40, 40)) < 3, `${moved.toFixed(1)} of ${Math.hypot(40, 40).toFixed(1)}`);
+      const both = feastRig([angel(R.x, R.z), angel(R.x + 5, R.z)]);
+      ok('...and with nobody able to eat it frames everybody rather than nothing',
+        both.fit.pts.length === 2);
+      ok('...and a desktop keeps its fixed wide shot of the whole deck',
+        feastRig([eater(R.x - 22, R.z + 22)], false).dist === 96
+        && !feastRig([eater(R.x - 22, R.z + 22)], false).fit);
+    }
+    const msrc3 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('main.js lets the lens fit replace the width floor, with the yaw it draws',
+      /if \(ring\.fit\) \{\s*const s = fitShot\(\{[\s\S]{0,120}yaw: THREE\.MathUtils\.lerp\(-Math\.PI \* 0\.25, 0, ft\),[\s\S]{0,300}want\.set\(s\.x, s\.y, s\.z\);\s*wantDist = s\.dist;/.test(msrc3)
+      && /let yaw = THREE\.MathUtils\.lerp\(-Math\.PI \* 0\.25, 0, ft\);/.test(msrc3));
   }
 
   /* --- THE MENAGERIE'S PER-PLAYER ARRAYS ---
@@ -15061,8 +15177,12 @@ console.log('\n--- the minimap fits its pane ---');
      vertical split, so the height cap does not either — the same 160px map,
      now in half the width, twice over. */
   const vert = { paneW: PW / 2, paneH: PH, screenH: PH, touch: true, merged: false };
+  /* AGAINST THE MERGED MAP BEFORE ITS OWN TENTH CAME OFF (`MAP_MERGED_PHONE`,
+     "slightly too big when on full screen with 1 player ... When in split
+     screen with 2 players, it is fine") — the split half did not move, so the
+     third is still a third of what the merged map was. */
   ok('a side-by-side split shrinks the phone map by a third',
-    Math.abs(mapWidth(vert) / mapWidth({ ...full, touch: true }) - 0.67) < 1e-9,
+    Math.abs(mapWidth(vert) / (mapWidth({ ...full, touch: true }) / MAP_MERGED_PHONE) - 0.67) < 1e-9,
     `${mapWidth(vert).toFixed(1)} vs ${mapWidth({ ...full, touch: true }).toFixed(1)}`);
   /* AND A STACKED SPLIT DOES NOT TAKE THE CUT TWICE. `paneH` already halved, so
      the height cap already halved with it; a second third leaves 54px of
@@ -27672,7 +27792,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
        is what both moves the boxes and records them, and the pause branch
        returns before the tail of `_tickBody` ever calls it. */
     const dAt = m.indexOf("bind('set-dir', 'dir'");
-    const dir = dAt < 0 ? '' : m.slice(dAt, dAt + 200);
+    const dir = dAt < 0 ? '' : m.slice(dAt, dAt + 400);
     ok('changing the split direction moves the maps on the spot',
       /_drawMaps\(\)/.test(dir) && /_mapT = 1/.test(dir));
   }
@@ -28933,7 +29053,7 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
   ok('...read where the HUD is built, and nowhere else',
     /const nMaps = this\.settings\.maps === 'two' \? Math\.min\(n, 2\) : n;/.test(M));
   ok('...and changing it rebuilds the HUD and redraws immediately',
-    /bind\('set-maps', 'maps', \(\) => \{ this\._buildHud\(\); this\._mapT = 1; this\._drawMaps\(\); \}\)/
+    /bind\('set-maps', 'maps', \(\) => \{ if \(!this\._worldReady\) return; this\._buildHud\(\); this\._mapT = 1; this\._drawMaps\(\); \}\)/
       .test(Mc));
   for (const panes of [1, 2]) {
     const sizes = Array.from({ length: panes }, () => 1);
@@ -29561,9 +29681,9 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     const quad = splitLayout(4, W, H, 3, 'vertical')[0];
     ok('...while a quadrant\'s map is exactly what it was',
       Math.abs(mw(quad, true) - quad.h * 0.41 * MAP_TOUCH_UP * 0.75) < 1e-9);
-    ok('...and a lone kitten\'s is exactly what it was',
+    ok('...and a lone kitten\'s is exactly what it was, less its own tenth (see below)',
       Math.abs(mapWidth({ paneW: W, paneH: H, screenH: H, screenW: W, touch: true })
-        - H * 0.41 * MAP_TOUCH_UP) < 1e-9);
+        - H * 0.41 * MAP_TOUCH_UP * MAP_MERGED_PHONE) < 1e-9);
     ok('...and a desktop does not know any of this happened',
       mapWidth({ paneW: 1920, paneH: 538, screenH: 1080, screenW: 1920, merged: false, solo: true }) === 300);
   }
@@ -33273,6 +33393,172 @@ console.log('\n--- backing out of the arena pickers ---');
   ok('...which is not a .menu-btn, or MenuNav would take the four cursors over',
     !/id="tp-back"[^>]*menu-btn/.test(teams));
   ok('...and has a phone rule of its own', /body\.touch-ui \.tp-back \{[^}]*min-height/.test(css));
+}
+
+/* ===========================================================================
+   RICHARD'S MOBILE FIXES — the map, the title, the settings, the corners.
+   (The arena and the feast are with the rest of the ring camera, above.)
+=========================================================================== */
+console.log('\n--- mobile: the one-screen map clears the stick ---');
+{
+  /* "the minimap UI is slightly too big when on full screen with 1 player,
+     maybe 10% too big or we need to bring the bottom upward so it does not
+     interfere with the mobile joystick below it." Measured at 844x390: the
+     map sits at y=16 and the stick's ring rests from y=228. */
+  const W = 844; const H = 390;
+  const merged = mapWidth({ paneW: W, paneH: H, screenH: H, screenW: W, touch: true });
+  const before = H * 0.41 * MAP_TOUCH_UP;
+  const top = Math.round(H * 0.02) + 8;
+  line('merged phone map, before / now', `${before.toFixed(0)} / ${merged.toFixed(0)}px, bottom at y=${(top + merged).toFixed(0)}`);
+  ok('a phone\'s one-screen map is a tenth smaller', Math.abs(merged / before - 0.9) < 1e-9);
+  ok('...which doubles the gap to the stick\'s ring at 844x390',
+    228 - (top + merged) >= 2 * (228 - (top + before)) - 1, `${(228 - (top + merged)).toFixed(0)}px`);
+  const half = splitLayout(2, W, H, 3, 'vertical')[0];
+  ok('...and a split half is untouched: "When in split screen with 2 players, it is fine"',
+    Math.abs(mapWidth({ paneW: half.w, paneH: half.h, screenH: H, screenW: W, touch: true, merged: false, solo: true })
+      - H * 0.67 * 0.41 * MAP_TOUCH_UP) < 1e-9);
+  ok('...and a desktop does not know about it',
+    mapWidth({ paneW: 1920, paneH: 1080, screenH: 1080 }) === 300);
+}
+
+console.log('\n--- mobile: a split map goes in its corner ---');
+{
+  /* "the minimaps are not in the corners of the screen ... lets move it there
+     or make it work somehow to use the limited screen space better." The
+     rects are the ones measured at 844x390 with two players up. */
+  const W = 844; const H = 390; const size = 129;
+  const pause = { left: 790, top: 10, right: 832, bottom: 52 };
+  const score = { left: 275, top: 6, right: 569, bottom: 34 };
+  const [a, bb] = splitLayout(2, W, H, 3, 'vertical');
+  const L = cornerSpot({ v: a, W, H, size, avoid: [pause, score] });
+  const Rr = cornerSpot({ v: bb, W, H, size, avoid: [pause, score] });
+  const [left, right] = a.x < bb.x ? [L, Rr] : [Rr, L];
+  const overlaps = (s, r) => s.left < r.right && s.left + size > r.left && s.top < r.bottom && s.top + size > r.top;
+  line('844x390 side by side: the two maps', `${left.left},${left.top} and ${right.left},${right.top}`);
+  ok('side by side on a phone, the left half\'s map is in the top-left corner',
+    left.left === 8 && left.top === 8);
+  ok('...and the right half\'s is top-right, beside the pause button, level with it',
+    right.top === left.top && right.left + size <= pause.left - 8 + 1e-9
+    && right.left + size >= pause.left - 8 - 1e-9);
+  ok('...on neither the pause button nor the scoreboard',
+    ![left, right].some((s) => overlaps(s, pause) || overlaps(s, score)));
+  /* THE BOTTOM OF THE SCREEN IS THUMBS, which is the whole reason for the top.
+     The face buttons start at y=207 on the right; both maps end above it. */
+  ok('...and both clear of the thumbs below', left.top + size < 207 && right.top + size < 207);
+  /* NO PAUSE BUTTON (the stick switched off), NO SLIDE: the true corner. */
+  const bare = cornerSpot({ v: a.x > bb.x ? a : bb, W, H, size, avoid: [score] });
+  ok('...and with the stick switched off the right map takes the true corner',
+    bare.left === W - 8 - size);
+  /* A SCOREBOARD TOO WIDE TO SLIDE PAST drops it under the pause button. */
+  const wideScore = { left: 200, top: 6, right: 800, bottom: 34 };
+  const under = cornerSpot({ v: a.x > bb.x ? a : bb, W, H, size, avoid: [pause, wideScore] });
+  ok('...and a scoreboard in the way puts it under the pause button instead of on it',
+    under && under.left === W - 8 - size && under.top >= pause.bottom + 8 && under.top >= wideScore.bottom);
+  /* A PANE WHOSE TOP IS THE SEAM IS NOT A CORNER, so it keeps `mapSpot`. */
+  const [up, low] = splitLayout(2, W, H, 3, 'horizontal');
+  const lower = (H - up.y - up.h) > (H - low.y - low.h) ? up : low;
+  ok('...and a lower stacked pane is left to the seam rule', cornerSpot({ v: lower, W, H, size, avoid: [] }) === null);
+  const m = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('...asked only on a phone, and not in the Dojo, whose board can take that corner',
+    /this\.device\.touchPrimary && !mathUp\s*&& cornerSpot\(\{ v, W, H, size, avoid: cornerBlocks \?\?= this\._cornerBlocks\(\) \}\)\)\s*\|\| mapSpot\(/.test(m));
+}
+
+console.log('\n--- mobile: the settings are remembered ---');
+{
+  /* "when switching settings like 'Split screen' or 'On screen stick' these
+     should be saved for the game". A stand-in for localStorage, so the check
+     reads what the game would write. */
+  const mem = () => {
+    const d = new Map();
+    return { getItem: (k) => (d.has(k) ? d.get(k) : null), setItem: (k, v) => d.set(k, String(v)), removeItem: (k) => d.delete(k), d };
+  };
+  const s = mem();
+  ok('nothing chosen reads as nothing, so every row follows the device', Object.keys(readPrefs(s)).length === 0);
+  writePref('split', 'always', s);
+  writePref('music', 15, s);
+  const back = readPrefs(s);
+  ok('a row she changed comes back after a reload', back.split === 'always' && back.music === 15);
+  ok('...and only that row: the others stay unwritten', Object.keys(back).length === 2);
+  ok('a value the row cannot hold is refused on the way out', writePref('split', 'sometimes', s) === false
+    && readPrefs(s).split === 'always');
+  s.setItem(PREFS_KEY, JSON.stringify({ split: 'sometimes', dir: 'horizontal', music: 400, bogus: 1 }));
+  const junk = readPrefs(s);
+  ok('...and on the way in: an edited or stale value falls back to the default',
+    junk.dir === 'horizontal' && !('split' in junk) && !('music' in junk) && !('bogus' in junk));
+  s.setItem(PREFS_KEY, '{not json');
+  ok('...and a file that is not JSON at all reads as nothing chosen', Object.keys(readPrefs(s)).length === 0);
+  ok('...and with no storage at all (private mode) it answers empty and writes nothing',
+    Object.keys(readPrefs(null)).length === 0 && writePref('split', 'never', null) === false);
+
+  /* THE LISTS MATCH THE MARKUP, row for row, or an option added to the panel
+     would be refused here and silently not persist. */
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const optsOf = (id) => {
+    const at = html.indexOf(`id="${id}"`);
+    const sel = html.slice(at, html.indexOf('</select>', at));
+    return [...sel.matchAll(/<option value="([^"]+)"/g)].map((x) => x[1]);
+  };
+  const rows = { split: 'set-split', dir: 'set-dir', maps: 'set-maps', math: 'set-math', quality: 'set-quality', padmode: 'set-padmode', joycon: 'set-joycon' };
+  const bad = Object.entries(rows).filter(([k, id]) => optsOf(id).join() !== PREF_CHOICES[k].join());
+  ok('every select row in Settings is remembered, with exactly the options the panel offers',
+    !bad.length && Object.keys(rows).length === Object.keys(PREF_CHOICES).length,
+    bad.map(([k, id]) => `${k}: ${optsOf(id)} vs ${PREF_CHOICES[k]}`).join('; '));
+  ok('...and both volume sliders', PREF_LEVELS.join() === 'sfx,music'
+    && /id="set-sfx" type="range" min="0" max="100"/.test(html) && /id="set-music" type="range" min="0" max="100"/.test(html));
+
+  const m = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('...read over the device defaults at boot, only for the rows she touched',
+    /this\._prefs = readPrefs\(\);\s*for \(const k of \['split', 'dir', 'quality', 'math', 'maps'\]\) \{\s*if \(this\._prefs\[k\] !== undefined\) this\.settings\[k\] = this\._prefs\[k\];/.test(m));
+  ok('...a stored quality turning the auto-downgrade off, like picking it does',
+    /if \(this\._prefs\.quality !== undefined\) this\._autoQuality = false;/.test(m));
+  ok('...and every row writes when it changes',
+    /this\.settings\[key\] = el\.value;[\s\S]{0,300}writePref\(key, el\.value\);/.test(m)
+    && /writePref\('joycon', jc\.value\)/.test(m) && /writePref\('padmode', pm\.value\)/.test(m)
+    && /el\.addEventListener\('change', \(\) => writePref\(key, Number\(el\.value\)\)\);/.test(m));
+  /* THE STICK WAS ALREADY KEPT, on its own key, and still is. */
+  const dsrc = readFileSync(new URL('../src/core/device.js', import.meta.url), 'utf8');
+  ok('...and the on-screen stick keeps its own key, read at boot',
+    /localStorage\.setItem\(OVERRIDE_KEY, mode\)/.test(dsrc) && /writeOverride\(tc\.value\)/.test(m));
+}
+
+console.log('\n--- mobile: nothing behind the main menu ---');
+{
+  /* "the game should not be started and not in cache until the player presses
+     the Play button ... when player returns to the Main Menu again, then the
+     game cache is reset and reloaded. The background should be black behind
+     the Main Menu". */
+  const m = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const mc = stripComments(m).replace(/\s+/g, ' ');
+  ok('a phone boots to the title without building the world',
+    /this\._lazyWorld = !!this\.device\.touchPrimary;/.test(m)
+    && /async boot\(\) \{ this\._resize\(\); this\._applyQuality\(\); if \(!this\._lazyWorld\) await this\._buildWorld\(\); this\._showTitle\(\); \}/.test(mc));
+  ok('...and builds it on PLAY, after the trailer question',
+    /if \(!this\._worldReady\) \{ this\._worldThen\(\(\) => this\.startPlay\(\)\); return; \}/.test(mc)
+    && mc.indexOf('this._trailerOfferDue()) {') < mc.indexOf('this._worldThen(() => this.startPlay())'));
+  ok('...or on LOAD A SAVED GAME, whose list is scored against the world',
+    /if \(a === 'saves'\) this\._worldThen\(\(\) => \{ this\._paintSaves\(\); show\('panel-saves'\); \}\);/.test(mc));
+  ok('...behind the loading screen, with the loop stopped and a second press dropped',
+    /_worldThen\(fn\) \{ if \(this\._worldReady\) \{ fn\(\); return; \} if \(this\._building\) return; this\._building = true; this\.renderer\.setAnimationLoop\(null\); document\.getElementById\('loading'\)\.classList\.remove\('hidden'\);/.test(mc));
+  ok('...and `_worldReady` is the last thing the build sets',
+    /this\._applyQuality\(\); this\._worldReady = true; \}/.test(mc));
+  ok('back to the main menu on a phone is a real reload',
+    /toTitle\(\) \{ if \(this\._lazyWorld\) \{ window\.location\.reload\(\); return; \} this\.restart\(\);/.test(mc));
+  ok('...which does not replay the intro: "once per session" is carried in sessionStorage',
+    (m.match(/sessionStorage\.setItem\(INTRO_SEEN_KEY, '1'\)/g) || []).length === 2
+    && /if \(sessionStorage\.getItem\(INTRO_SEEN_KEY\)\) this\.introPlayed = true;/.test(m));
+  ok('the title draws no fly-over with no world under it',
+    /_renderTitleIdle\(dt\) \{ if \(!this\._worldReady\) return;/.test(mc));
+  ok('...and on a phone its background is black, with the blurred fill not drawn',
+    /body\.touch-ui #title \{ background: #000; \}/.test(css)
+    && /body\.touch-ui #title \.title-art \{ display: none; \}/.test(css));
+  ok('the settings rows that rebuild the HUD wait for a world',
+    /bind\('set-dir', 'dir', \(\) => \{ if \(!this\._worldReady\) return;/.test(mc));
+  ok('...and so do the debug rows, which say so in the panel, bar the frame cost',
+    /if \(!this\._worldReady && code !== 'Backquote' && code !== 'Digit8'\) return;/.test(m)
+    && /NO WORLD YET/.test(m));
+  ok('...and the title\'s helpers have an empty party to read before there is one',
+    /this\.players = \[\];\s*\/\* ON A PHONE|this\._worldReady = false;[\s\S]{0,500}this\.players = \[\];/.test(m));
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

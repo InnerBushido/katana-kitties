@@ -154,7 +154,11 @@ authentication — fine at home, not fine in a café. Stop the server after.
 
 On the phone: **landscape** (portrait is gated with a message), the on-screen
 pad, and the debug panel — **five taps in the top-left corner** within 600ms,
-because a phone has no `` ` `` key. → [mobile.md](docs/notes/mobile.md)
+because a phone has no `` ` `` key. **A phone builds nothing until PLAY**: the
+title is black with no world behind it, the world is built behind the loading
+screen when PLAY (or LOAD A SAVED GAME) is pressed, and going back to the main
+menu is a real page reload. So on a phone the debug rows only work once a game
+has started. → [mobile.md](docs/notes/mobile.md)
 
 ### On a phone — the hosted build
 
@@ -729,8 +733,9 @@ orbs** where she left them — dropping out keeps everything, and the way to
 leave orbs for somebody else is the **DROP HER ORBS** row beside each kitten's
 DROP OUT. An orb left lying in the town is saved with its coordinates and comes
 back on the same spot. Dropping out also writes a save immediately, since the
-party and the orb positions both just moved. The record board, the controller calibration and the stick
-setting survive a reload the same way. All of it is `localStorage`, so
+party and the orb positions both just moved. The record board, the controller calibration, the stick
+setting and every other row of *Settings* (`kk.settings`, only the rows
+somebody changed) survive a reload the same way. All of it is `localStorage`, so
 none of it follows a child to a phone, to a second machine, or past a cleared
 cache — which is the half of the problem an account would solve and the reason
 this is still on the list. Accounts and hosted progress are a much easier
