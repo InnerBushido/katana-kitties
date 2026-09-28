@@ -1624,6 +1624,12 @@ class Game {
          above; generated on magenta and keyed by `sprite-bake`. */
       ['ember_sweep', 'kittens/ember/sweep.png', false],
       ['frost_sweep', 'kittens/frost/sweep.png', false],
+      /* 返 RIPOSTE'S STANCE — planted wide, the katana level across her,
+         worn while her guard is up. "the player will go into a 'charging'
+         stance with their katana and if they are attacked while in the
+         stance, then they will do the counter attack". */
+      ['ember_riposte', 'kittens/ember/riposte.png', false],
+      ['frost_riposte', 'kittens/frost/riposte.png', false],
       /* THE CONJURED INSECT. Loaded with the other animals because it is one,
          and kept out of the ordinary lottery by a flag on its spec rather than
          by anything here — see `Menagerie.species`. No `_shock` sheet: a
@@ -1762,6 +1768,15 @@ class Game {
       if (!s.recolour) return base;
       const a = recolourAtlas(base, s.recolour);
       console.log(`[art] ${s.name} sweep pose ← ${s.sheet}_sweep recoloured`);
+      return a;
+    });
+    /* AND A SEVENTH, FOR 返 RIPOSTE'S GUARD. By STYLE, never by slot. */
+    this.riposteArt = PLAYER_STYLE.map((s) => {
+      const base = s.sheet === 'ember' ? critterArt.ember_riposte : critterArt.frost_riposte;
+      if (!base) return null;
+      if (!s.recolour) return base;
+      const a = recolourAtlas(base, s.recolour);
+      console.log(`[art] ${s.name} riposte pose ← ${s.sheet}_riposte recoloured`);
       return a;
     });
 
@@ -2035,6 +2050,7 @@ class Game {
        and not `i`, because a seat is not a cat. */
     p.setScaredArt(this.scaredArt?.[this.roster[p.index]] ?? null);
     p.setSweepArt(this.sweepArt?.[this.roster[p.index]] ?? null);
+    p.setRiposteArt(this.riposteArt?.[this.roster[p.index]] ?? null);
   }
 
   /**

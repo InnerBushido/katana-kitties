@@ -127,6 +127,15 @@ const WORK = [
      is drawn at her full height in the world and not on the board. */
   { file: 'ember_sweep.png', out: 'kittens/ember/sweep.png', to: [768, 768], chroma: true },
   { file: 'frost_sweep.png', out: 'kittens/frost/sweep.png', to: [768, 768], chroma: true },
+  /* 返 RIPOSTE'S STANCE: feet planted wide, the katana held level across her
+     body with a glint running up the edge. "when the player is holding the
+     Action button, the player will go into a 'charging' stance with their
+     katana". Same brief as the sweep — one per sheet, her own `bless.png` the
+     only reference, 768. The blade points to the drawing's RIGHT in both, and
+     that is measured by world-check rather than trusted from this sentence,
+     because the Billboard mirrors it by `artFacesRight`. */
+  { file: 'ember_riposte.png', out: 'kittens/ember/riposte.png', to: [768, 768], chroma: true },
+  { file: 'frost_riposte.png', out: 'kittens/frost/riposte.png', to: [768, 768], chroma: true },
   { file: 'satan_flex_zyzz.png', out: 'satan/flex_zyzz.png', to: [640, 640], chroma: true },
   { file: 'satan_flex_biceps.png', out: 'satan/flex_biceps.png', to: [640, 640], chroma: true },
   { file: 'satan_flex_trophy.png', out: 'satan/flex_trophy.png', to: [640, 640], chroma: true },

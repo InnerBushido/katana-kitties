@@ -3389,6 +3389,97 @@ console.log('\n--- the panda in the ring ---');
         !k.parryAt && toasts.includes('parrywait'));
     }
     {
+      /* --- AND SHE LOOKS LIKE IT: THE STANCE ---
+         "when the player is holding the Action button, the player will go
+         into a 'charging' stance with their katana and if they are attacked
+         while in the stance, then they will do the counter attack". The pose
+         is worn exactly while a blow WOULD be caught — the window — and not
+         in the hold before the push, which catches nothing. A pose that
+         promised a counter it would not throw is the lie this checks for. */
+      const { k, hud } = kid(['parry']);
+      k.setRiposteArt({ texture: new THREE.Texture(), contentScale: 1, pad: 0 });
+      const look = () => { k._updateFeedback(1 / 60, world); return k.ripostePose.visible && !k.sprite.mesh.visible; };
+      tick(k, pad({ tap: ['interact'], hold: ['interact'] }), hud);
+      tick(k, pad({ hold: ['interact'] }), hud, 5);
+      const inPend = k.parryPend && look();
+      tick(k, pad({ mx: 1, hold: ['interact'] }), hud);
+      let frames = 0; let worn = 0; let caught = 0;
+      while (k.parryT > 0 && frames < 600) {
+        frames++;
+        if (look()) worn++;
+        if (k.parries(k.position.clone().add(new THREE.Vector3(Math.sin(k.parryDir), 0, Math.cos(k.parryDir))))) caught++;
+        tick(k, pad({ mx: 1, hold: ['interact'] }), hud);
+      }
+      line('返 the stance worn', `${worn}/${frames} frames of the window, a blow caught on ${caught}`);
+      ok('返 she wears the stance for the WHOLE window, which is every frame a blow from in front is caught',
+        frames > 10 && worn === frames && caught === frames, `${worn}/${caught}/${frames}`);
+      ok('...and not in the hold before the push, which catches nothing yet', !inPend);
+      ok('...and not in a whiff\'s recovery: her own drawing coming back is the tell',
+        k.parryRecT > 0 && !look() && k.sprite.mesh.visible);
+
+      /* CAUGHT: the answer is the ordinary blade, "just a regular attack". */
+      const c = kid(['parry']);
+      c.k.setRiposteArt({ texture: new THREE.Texture(), contentScale: 1, pad: 0 });
+      tick(c.k, pad({ tap: ['interact'], hold: ['interact'] }), c.hud);
+      tick(c.k, pad({ mx: 1, hold: ['interact'] }), c.hud);
+      c.k._updateFeedback(1 / 60, world);
+      const upBefore = c.k.ripostePose.visible;
+      const foe = mkP(0, 0);
+      foe.position.set(c.k.position.x + 2, c.k.position.y, c.k.position.z);
+      const struck = [];
+      c.k.riposte(foe, { ...c.hud, strikePlayers: (who, kind) => struck.push(kind) });
+      c.k._updateFeedback(1 / 60, world);
+      ok('...a blow caught in it drops the stance for the answer swing, thrown through the one gate',
+        upBefore && !c.k.ripostePose.visible && c.k.sprite.mesh.visible && c.k.attackTimer > 0
+        && struck.join() === 'riposte', struck.join());
+
+      /* IT FACES THE HALF SHE IS GUARDING. Lens on +Z, so screen-right is +X:
+         guarding +X shows the drawing as drawn, guarding -X mirrors it. */
+      const cam = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 500);
+      const side = (dir) => {
+        c.k.parryT = 0.2;
+        c.k.parryDir = dir;
+        c.k._updateFeedback(1 / 60, world);
+        c.k.group.updateMatrixWorld(true);
+        cam.position.set(c.k.position.x, c.k.position.y + 6, c.k.position.z + 20);
+        c.k.ripostePose.faceCamera(cam);
+        return Math.sign(c.k.ripostePose.tex.repeat.x);
+      };
+      ok('...facing the side she is guarding: the blade on the right for a guard to screen-right, mirrored for the left',
+        side(Math.PI / 2) === 1 && side(-Math.PI / 2) === -1 && side(Math.PI / 2) === 1);
+    }
+    {
+      /* THE ART'S FACING IS MEASURED, NOT TRUSTED (eighth non-negotiable).
+         `setRiposteArt` says `artFacesRight: true`; that is only true if the
+         blade actually sticks out to the right of each baked drawing. Top 35%
+         of the rows, where the blade is and the tail is not: measured 0.279 /
+         0.954 for Ember and 0.245 / 0.944 for Frost, so the right-hand reach
+         beats the left by 0.23 and 0.19. The bar is 0.1. */
+      const reach = [];
+      for (const s of ['ember', 'frost']) {
+        const { w, h, d } = readPNG(new URL(`../public/sprites/kittens/${s}/riposte.png`, import.meta.url));
+        let lo = w; let hi = -1;
+        for (let y = 0; y < Math.floor(h * 0.35); y++) {
+          for (let x = 0; x < w; x++) {
+            if (d[(y * w + x) * 4 + 3] > 128) { lo = Math.min(lo, x); hi = Math.max(hi, x); }
+          }
+        }
+        reach.push({ s, left: 0.5 - lo / w, right: hi / w - 0.5 });
+      }
+      const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+      ok('返 both stance drawings hold the blade out to the RIGHT, which is what the Billboard is told',
+        reach.every((r) => r.right - r.left > 0.1)
+        && /setRiposteArt\(art\) \{[\s\S]{0,400}mirror: true,\s*artFacesRight: true,/.test(psrc),
+        reach.map((r) => `${r.s} ${r.left.toFixed(2)}/${r.right.toFixed(2)}`).join(' '));
+      const m = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+      const files = ['ember', 'frost'].map((s) => `kittens/${s}/riposte.png`);
+      ok('...and all four kittens have it: two drawings, recoloured by STYLE for Storm and Blossom',
+        files.every((f) => existsSync(new URL(`../public/sprites/${f}`, import.meta.url)))
+        && files.every((f) => m.includes(`'${f}', false]`))
+        && /this\.riposteArt = PLAYER_STYLE\.map\(\(s\) => \{\s*const base = s\.sheet === 'ember' \? critterArt\.ember_riposte : critterArt\.frost_riposte;[\s\S]{0,120}if \(!s\.recolour\) return base;\s*const a = recolourAtlas\(base, s\.recolour\);/.test(m)
+        && /p\.setRiposteArt\(this\.riposteArt\?\.\[this\.roster\[p\.index\]\] \?\? null\);/.test(m));
+    }
+    {
       /* IN THE AIR: "velocity of player is zero and gravity is turned off
          until the technique is finished". */
       const { k, hud } = kid(['parry']);
@@ -5991,6 +6082,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'payne/base.png', 'payne/held.png', 'payne/helmet.png', 'payne/sweep.png', 'payne/town.png',
     // ...and the kittens' own Goblin Sweep, chroma-keyed like Payne's.
     'kittens/ember/sweep.png', 'kittens/frost/sweep.png',
+    // ...and 返 Riposte's stance.
+    'kittens/ember/riposte.png', 'kittens/frost/riposte.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -6135,8 +6228,13 @@ console.log('\n--- background removal keeps the drawn whites ---');
        across her). Measured by this loop, then written down. None of them is
        filled either: she is a billboard off `_loadSprite` and a crop on a
        canvas, and neither asks for `fillHoles`. */
-    ok('turning the fill on for every sheet would repaint thirteen of them',
-      touched.length === 13 && touched.includes('beasts/dragon_sheet.png')
+    /* FOURTEEN SINCE 返 RIPOSTE'S STANCE: Frost holds the katana level across
+       her body with both paws, and the arms and the hilt close a gap against
+       her robe; Ember's, measured by the same loop, closes none. Not filled either — a
+       single-pose billboard off `_loadSprite`, like the sweep. */
+    ok('turning the fill on for every sheet would repaint fourteen of them',
+      touched.length === 14 && touched.includes('beasts/dragon_sheet.png')
+      && touched.includes('kittens/frost/riposte.png')
       && touched.includes('kittens/frost/champion.png') && touched.includes('satan/flex_trophy.png')
       && ['base', 'sweep', 'town'].every((n) => touched.includes(`payne/${n}.png`)),
       touched.join(' '));
@@ -6406,10 +6504,10 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
        outside the arena draws her in, and Storm and Blossom reach for it
        through the same recolour as everything else. */
     /* SEVEN SINCE THE GOBLIN SWEEP: `sweep.png` is worn for the spin of the
-       trick Payne teaches. */
-    ok('...with the same seven poses drawn for each of them',
+       trick Payne teaches. EIGHT SINCE 返 RIPOSTE: `riposte.png` is her guard. */
+    ok('...with the same eight poses drawn for each of them',
       posesOf('ember') === posesOf('frost')
-      && posesOf('ember').split(' ').length === 7, posesOf('ember'));
+      && posesOf('ember').split(' ').length === 8, posesOf('ember'));
   }
 
   /* --- and nothing else in public/ is quietly enormous ----------------------

@@ -1869,3 +1869,32 @@ last line of the tuning section reports whether `tuning.json` is empty or how
 many tables it is overriding — every check in the run reads the *tuned* values,
 and a run that passes while nobody noticed the balance was not the documented
 one is a bad afternoon later.
+
+### 返 Riposte's stance: worn while the guard is up
+
+*"Let's generate an image of the player for the Riposte ability so that, when
+the player is holding the Action button, the player will go into a 'charging'
+stance with their katana and if they are attacked while in the stance, then
+they will do the counter attack, which can just be a regular attack back at
+the attacking player."*
+
+- **The pose is worn for the window (`parryT > 0`) and for nothing else.**
+  The hold before the push is not a guard: `parries` asks `parryT`, so a blow
+  landing then is not caught. Dressing that hold in a stance that promises a
+  counter would make the drawing lie about the move. The push is when her
+  guard goes up, so that is when she looks it. world-check pins it: worn on
+  22 of 22 window frames, a blow from in front caught on the same 22, and
+  worn on none of the hold before the push.
+- **The counter is the one already there.** `riposte()` closes the window and
+  throws `ATTACKS.riposte` through `Game.strikePlayers`, the one gate. It is
+  drawn in the ordinary attack row, so it reads as "a regular attack back".
+  Its damage stays at 12 against a slash's 10, as the orb's design set it; say
+  if it should be a plain 10.
+- **A whiff drops the pose.** Her own drawing coming back during the recovery
+  is the tell that the window closed empty.
+- **It trembles a hair** (`rotation.z`, ±0.012 rad): the "charging" part, on a
+  drawing that is otherwise still.
+- **It mirrors to the side she guards.** See [art.md](art.md).
+- **Open:** if the HOLD alone should guard, with no push, that is a change to
+  the gesture Richard specified for the orb. It is not done here. The pose
+  would then move with it, one line in `_updateFeedback`.

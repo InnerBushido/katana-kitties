@@ -527,6 +527,10 @@ for them to stay out until the Payne work has been played.
   Hangs her in the air. Drops a live 壁 Ward. A quick tap is still the clan
   power / dive; a long hold with no push tells her how.
 - **間 Long Parry** (stacks, needs 返): the window is 1.5x per orb.
+- **返 has a stance drawing** for all four kittens (`riposte.png`). She wears
+  it while her guard is up, mirrored to the side she guards, and the counter
+  is the ordinary attack row. [endgame.md](docs/notes/endgame.md) explains
+  why it isn't worn during the hold before the push.
 - The Help grid's sixth cell is a PLACEHOLDER drawing until a clip is filmed.
 - **The published project page is one line behind** (the placeholder-tools row).
   Republish it to the same URL when this branch merges, then
@@ -598,8 +602,8 @@ script.
 - **The Goblin Sweep has a pose** for all four kittens.
 - **Open:**
   - Nobody has heard the roll call.
-  - The Riposte stance is generated (`ember_riposte` / `frost_riposte`) but
-    lives with the unmerged orbs on `feature/rare-orbs-reach-parry`.
+  - The Riposte stance is wired on `feature/rare-orbs-reach-parry` with the
+    unmerged orbs; see that entry.
 
 **The big screen outside the arena.** Branch `feature/arena-billboard`.
 [tournament.md](docs/notes/tournament.md) has the design and every note quoted,

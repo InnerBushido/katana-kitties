@@ -1513,6 +1513,49 @@ export class Player {
     this.group.add(this.sweepPose);
   }
 
+  /**
+   * Give her 返 RIPOSTE'S STANCE: feet wide, the katana held level across
+   * her body, a glint on the edge.
+   *
+   * WORN FOR THE WINDOW AND NOTHING ELSE — `parryT > 0`, the one span in
+   * which a blow from in front is caught. Richard asked for it "when the
+   * player is holding the Action button", and the hold BEFORE the push is
+   * not yet a guard: nothing is caught in it (`parries` asks `parryT`), and a
+   * pose that promised a counter it was not going to throw would be the
+   * kind of lie the first non-negotiable is about. The push is the moment
+   * her guard is up, so it is the moment she looks it. The answer swing
+   * (`riposte`) closes the window, so the counter is drawn in the ordinary
+   * attack row — "can just be a regular attack back" — and a whiff's
+   * recovery drops back to her own drawing, which is the tell.
+   *
+   * UNLIKE THE OTHER SINGLE POSES IT MIRRORS. The warp, the breath and the
+   * sweep are front views with nothing pointing anywhere; this one has a
+   * blade out to one side, and the side she is guarding is the whole point
+   * of the move. `mirror: true` on a one-column Billboard is exactly that —
+   * `faceCamera` flips the cell by `facing` with its own hysteresis — and
+   * `artFacesRight` is MEASURED by world-check off the baked sheet (the blade
+   * reaches 0.95 of the width to the right against 0.28 to the left).
+   *
+   * @param {?object} art loaded atlas, or null — the stance falls back to
+   *        the attack row held, which is what it was before this existed.
+   */
+  setRiposteArt(art) {
+    if (!art?.texture) return;
+    if (this.ripostePose) this.group.remove(this.ripostePose);
+    const quad = this.height / (art.contentScale || 1);
+    this.ripostePose = new Billboard(art.texture, {
+      cols: 1,
+      rows: 1,
+      mirror: true,
+      artFacesRight: true,
+      width: quad,
+      height: quad,
+      footOffset: (art.pad ?? 0) * quad,
+    });
+    this.ripostePose.visible = false;
+    this.group.add(this.ripostePose);
+  }
+
   /* ------------------------ Powerup Kotodama ---------------------------- */
 
   /**
@@ -1789,6 +1832,7 @@ export class Player {
     if (this.breathPose?.visible) this.breathPose.faceCamera(camera);
     if (this.scaredPose?.visible) this.scaredPose.faceCamera(camera);
     if (this.sweepPose?.visible) this.sweepPose.faceCamera(camera);
+    if (this.ripostePose?.visible) this.ripostePose.faceCamera(camera);
 
     /* THE HEALTH BAR IS A FLAT QUAD AND HAS TO BE TURNED, like the leaders'
        speech bubbles are. It is parented to `group`, which never rotates, so
@@ -6032,6 +6076,24 @@ export class Player {
         this.sweepPose.mesh.rotation.z = 0;
         this.sweepPose.mat.color.copy(mat.color);
         this.sweepPose.mat.opacity = mat.opacity;
+      }
+    }
+
+    /* --- 返 Riposte: the guard is up ---
+       `parryT` and not `parryAt`: the window, not the whiff's recovery and
+       not the answer swing (see `setRiposteArt`). It faces `parryDir`, the
+       half she is guarding, and trembles a hair — the "charging" Richard
+       asked for, on a pose that is otherwise perfectly still. BEFORE THE
+       FRIGHT, like the sweep, so a Cross Slash's hold still wins. */
+    if (this.ripostePose) {
+      const guarding = this.parryT > 0 && !this.ko;
+      this.ripostePose.visible = guarding;
+      if (guarding) {
+        this.sprite.mesh.visible = false;
+        this.ripostePose.facing = this.parryDir;
+        this.ripostePose.mesh.rotation.z = Math.sin(this.parryT * 70) * 0.012;
+        this.ripostePose.mat.color.copy(mat.color);
+        this.ripostePose.mat.opacity = mat.opacity;
       }
     }
 

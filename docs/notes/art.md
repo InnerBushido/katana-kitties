@@ -460,5 +460,13 @@ described in words and never used as a reference; her likeness is hers.
   to nothing, because this material alpha-tests. world-check measures four
   flips per sweep.
 - `ember_riposte.png` / `frost_riposte.png` are the counter stance, katana
-  across the body with a glint. **They belong to the Riposte orb on
-  `feature/rare-orbs-reach-parry`** and are wired there, not here.
+  across the body with a glint, `kittens/<sheet>/riposte.png` at 768. They
+  belong to the Riposte orb, on `feature/rare-orbs-reach-parry`
+  ([endgame.md](endgame.md) has when she wears it). **This is the one single
+  pose that MIRRORS**: the blade sticks out to one side, and which side she is
+  guarding is the move. So its Billboard is `mirror: true` and
+  `artFacesRight: true`. The facing is measured off the baked sheets by
+  world-check: in the top 35% of the rows the blade reaches 0.45 (Ember) and
+  0.44 (Frost) of the width right of centre, against 0.22 and 0.26 to the left. Frost's
+  closes a sealed pocket (both paws on the hilt against her robe). It is
+  recorded in the fill inventory, now fourteen, and not filled.
