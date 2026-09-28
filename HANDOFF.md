@@ -2683,6 +2683,20 @@ four synthesised stand-ins, so deleting them costs nothing but polish — see
 
 ## Mobile — the road to a phone
 
+**The eighth pass (Richard's "More mobile fixes")** is in
+[mobile.md](docs/notes/mobile.md):
+
+- **Announcer:** one line along a phone's bottom edge, words up as they are
+  said, the oldest cut off the left. On a desktop it is centred, higher, 23px
+  and two lines at most. The desktop's big sizes had never applied (a rule
+  order bug) and now do.
+- **Ring camera:** leads a jumping kitten by the rig's own lag, so a jump
+  stays in frame (head 0.73 → 0.35 in NDC).
+- **Name entry:** the keypad keeps its scroll on every letter.
+- **Profile:** at one or two, the orb's text sits beside the rack and four
+  quests show in bigger type; at three or four the footer is half height, and
+  three is always three across.
+
 **The seventh pass (Richard's "Some mobile fixes")** is written up in
 [mobile.md](docs/notes/mobile.md):
 

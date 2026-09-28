@@ -606,6 +606,20 @@ export function fitDistance({ spread, fovDeg, aspect, margin = FIT_MARGIN }) {
 }
 
 /**
+ * HOW FAST THE SHARED CAMERA CATCHES UP WITH WHERE IT WANTS TO BE, per second:
+ * the aim, and the distance. `_updateRig` in main.js eases toward its goal by
+ * `dt * rate` a frame, which is a first-order lag, so a subject moving at
+ * speed `v` is followed `v / rate` behind for as long as it keeps moving.
+ *
+ * NAMED HERE BECAUSE A SECOND FILE HAS TO KNOW THEM. The phone's ring shot
+ * (`fitPoint` in tournament.js) frames a kitten where the camera will be when
+ * it has caught up, and that is a function of these two numbers; written out
+ * twice, somebody retunes the camera's feel and the jump comes back.
+ */
+export const RIG_AIM_RATE = 6;
+export const RIG_DIST_RATE = 4;
+
+/**
  * THE SHOT THAT PUTS EVERY GIVEN POINT INSIDE A GIVEN PART OF THE SCREEN,
  * through the real projection. The phone's ring camera — see `RING_DIST` in
  * systems/tournament.js for the report it answers.
