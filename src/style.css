@@ -1516,15 +1516,6 @@ body.touch-ui .pc-back { min-height: 32px; min-width: 76px; }
     letter-spacing: 2.5px;
   }
 
-  #announce {
-    max-width: min(680px, 56vw);
-    padding: 13px 22px 13px 13px;
-    gap: 15px;
-    border-radius: 16px;
-  }
-  #an-portrait { width: 88px; height: 88px; border-radius: 12px; }
-  #an-name { font-size: 21px; letter-spacing: 1.9px; }
-  #an-text { font-size: 17px; line-height: 1.38; }
 }
 
 /* Live sin/cos board — shown while a kitten is inside the Unit Circle Dojo. */
@@ -2851,26 +2842,50 @@ body.touch-ui #panel-help .help-shot-pair img { max-height: 58vh; }
 /* ONE ACCENT PER SPEAKER. The card is Mr Satan's gold by default and Patchfur's
    parchment when she is the one counting — see `Announcer.say`'s third
    argument. Three rules read this and nothing else has to know. */
+/* CENTRED AND OFF THE BOTTOM ON A DESKTOP. "Just have it higher up on
+   pc/web as we don't want it all the way on the bottom as may be harder to
+   read." It was bottom-left, 18px up, in the corner of the first pane; it is
+   one card for the whole sofa, so it goes in the middle, a ninth of the
+   screen up. `translate` rather than `transform` for the centring, because
+   the slide-in animates `transform` and would throw the centring away for
+   the length of the animation.
+
+   A PHONE HAS ITS OWN RULE AND IT IS NOTHING LIKE THIS — one line along the
+   bottom edge. See `body.touch-ui #announce`. */
 #announce {
   --an-accent: var(--gold);
   position: absolute;
-  left: 18px;
-  bottom: 18px;
+  left: 50%;
+  translate: -50% 0;
+  bottom: 11vh;
   z-index: 40;
   display: flex;
   align-items: center;
   gap: 12px;
-  max-width: min(560px, 52vw);
+  /* `max-content` AND a `max-width`, not a `max-width` alone. An absolute box
+     that shrinks to fit is offered only the room to the right of its `left`,
+     and `left: 50%` is half the screen: measured at 1920, the card stopped at
+     960 wide with a 1180 max-width it could never reach. */
+  width: max-content;
+  max-width: min(760px, 88vw);
   padding: 10px 18px 10px 10px;
   background: rgba(29, 18, 22, 0.94);
   border: 4px solid var(--an-accent);
   border-radius: 14px;
   box-shadow: 0 6px 0 rgba(0, 0, 0, 0.5);
-  transform: translateX(0);
+  transform: translateY(0);
   opacity: 1;
+  /* It never takes the input (see announce.js), and on a phone it lies across
+     the stick's catchment. */
+  pointer-events: none;
 }
 #announce.in { animation: anIn 0.34s cubic-bezier(0.34, 1.56, 0.64, 1); }
-@keyframes anIn { from { transform: translateX(-24px); opacity: 0; } }
+@keyframes anIn { from { transform: translateY(18px); opacity: 0; } }
+/* A WORD HE HAS NOT SAID YET HOLDS ITS PLACE AND IS NOT DRAWN, so a desktop
+   card is its final size from the first word and the lines do not reflow as
+   it fills. See `REVEAL_WORDS` in announce.js. The phone takes it out of the
+   line instead. */
+#an-text .un { visibility: hidden; }
 #an-portrait {
   width: 72px;
   height: 72px;
@@ -2886,9 +2901,38 @@ body.touch-ui #panel-help .help-shot-pair img { max-height: 58vh; }
   color: var(--an-accent);
 }
 #an-text {
-  font-size: 14.5px;
+  font-size: 15.5px;
   line-height: 1.35;
   color: var(--paper);
+}
+
+/* THE BIG SCREEN'S CARD, AND IT HAS TO COME AFTER THE RULES ABOVE. It used
+   to live in the `min-width: 1001px` block beside `#balls`, 1400 lines up, at
+   the same specificity as the base rules here — so the base rules, being
+   later, won every property it set, and at 1920 the card was the 560px, 14.5px
+   one it was written to replace. Measured while checking this pass: computed
+   `font-size` 15.5px and `max-width` 760px at 1920x1080 with that block in
+   place. It had never applied, which is the likeliest reason "should be bigger
+   to be more readable on PC/Web" was a note at all. `world-check` now pins it
+   below the base rule. */
+@media (min-width: 1001px) {
+  /* "For PC/Web, we can keep the multiple sentences length on the screen,
+     but make the text bigger and take up more horizontal space, as we should
+     be able to fit it all on the screen with no more than 2 sentences worth."
+
+     TWO LINES AT 23px, MEASURED. The longest thing this card says is Mr
+     Satan's taunt, 93 characters; at 1920 the card is 1180 wide and its text
+     column about 1010, so every line he has fits in two. At 1280 (80vw is
+     1024) the taunt is three lines. */
+  #announce {
+    max-width: min(1180px, 80vw);
+    padding: 14px 26px 14px 14px;
+    gap: 18px;
+    border-radius: 18px;
+  }
+  #an-portrait { width: 100px; height: 100px; border-radius: 13px; }
+  #an-name { font-size: 25px; letter-spacing: 2px; }
+  #an-text { font-size: 23px; line-height: 1.36; }
 }
 
 /* --- the award card at the ending ----------------------------------------
@@ -4367,6 +4411,157 @@ body.touch-ui .kd-cards .kd-quests ul { max-height: 5em; }
 body.touch-ui .kd-cards .kd-meta { margin-bottom: 4px; }
 body.touch-ui .kd-cards .kd-detail { margin-top: 6px; }
 body.touch-ui .kd-cards .kd-step { width: 44px; height: 44px; font-size: 24px; }
+
+/* The rack and the column beside it are only boxes on a phone with room for
+   them (below). Everywhere else they are not there at all, and the card is the
+   same stack of rows it has always been. */
+.kd-rack,
+.kd-side { display: contents; }
+
+/* --- THE PROFILE ON A PHONE, BY HOW MANY ----------------------------------
+   "On Mobile, when on Character Profile screen, if there are less than 3
+   players, we should move the text that is under the kotodama orbs to the
+   right of the kotodama orbs (since there is empty space there) and move the
+   Quests information upwards so that it is directly under the kotodama orbs
+   and so we can see more of the quests. Currently, it only shows two quests
+   worth on screen and the text is very small. So let's show at least 4 quests
+   and increase the text size ... When there are 4 players, we can keep it
+   like it currently is as that is the most ideal way to do it, but in that
+   case, let's make the bottom row with the offer/confirm/close buttons about
+   half the size and decrease that entire bottom UI height size by half ...
+   When there are 3 players, we can use the entire screen width, split by 3."
+
+   MEASURED AT 844x390 BEFORE, two kittens: each card 383x250, and of that the
+   rack took 83px on the left third, the points, the orb's name and the offer
+   line took another 63px UNDER it with the right two thirds of the rack's row
+   empty, and the quests got a 38px box at 7.5px type: two quests.
+
+   THE QUESTS TAKE WHATEVER IS LEFT, at every count. The panel is pinned to
+   the height the phone allows (it was already 371 of 390) so that the card
+   has a height to share out, and the list is the flexible part of it rather
+   than a box quoted in `em`. A fixed box was the right size at exactly one
+   party size and one phone; this is the right size at all of them, and the
+   old `5em` stays the least it can shrink to. `#kd-body` still scrolls if a
+   short phone cannot fit even that. */
+body.touch-ui .kd-panel.kd-cards { height: 96vh; }
+body.touch-ui .kd-panel.kd-cards > #kd-body {
+  grid-auto-rows: minmax(0, 1fr);
+  align-items: stretch;
+}
+body.touch-ui .kd-cards .kd-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* ONLY THE LIST GIVES. Everything else keeps its height, and it has to be
+   said: the rack is a scroller, whose automatic minimum height is ZERO, so in
+   a column that is short of room it was the first thing squeezed. Measured at
+   four kittens: the rack cut to one row and a half while the quests held
+   theirs. */
+body.touch-ui .kd-cards .kd-card :is(.kd-name, .kd-clan, .kd-meta, .kd-ask,
+  .kd-slots, .kd-points, .kd-detail, .kd-state) { flex-shrink: 0; }
+body.touch-ui .kd-cards .kd-quests {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+body.touch-ui .kd-cards .kd-quests ul {
+  flex: 1 1 auto;
+  min-height: 5em;
+  max-height: none;
+}
+
+/* ONE OR TWO: THE ORB'S TEXT GOES BESIDE THE RACK. The rack is four orbs
+   wide on a card that is twice that, so the score line, the points row, the
+   orb's name and what she is offering sit in the empty half of the rack's own
+   rows, and the quests start directly under the orbs. The quest type goes up
+   by a third (7.5px on screen to 10) with the room that frees.
+
+   A GRID ON THE CARD, NOT A ROW AROUND THE RACK. The score line (`.kd-meta`)
+   is above the rack in the markup, and on a desktop it has to stay there;
+   areas can move it beside the rack here without the desktop's order
+   changing, which a wrapper could not. `.kd-rack` and `.kd-side` stay
+   `contents`. The last row is the only flexible one, so every row above it is
+   exactly its content and the quest list gets the rest. Measured at 844x390,
+   two kittens: the list went from a 38px box to 116px, three quests to four,
+   with the rack the same 166x83 it was. */
+body.touch-ui .kd-cards:is([data-cards="1"], [data-cards="2"]) .kd-card {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto auto auto auto minmax(0, 1fr);
+  grid-template-areas:
+    "name name"
+    "clan clan"
+    "ask ask"
+    "slots meta"
+    "slots points"
+    "slots detail"
+    "slots state"
+    "quests quests";
+  column-gap: 20px;
+  align-content: stretch;
+}
+.kd-cards .kd-card > .kd-name { grid-area: name; }
+.kd-cards .kd-card > .kd-clan { grid-area: clan; }
+.kd-cards .kd-card > .kd-ask { grid-area: ask; }
+.kd-cards .kd-card > .kd-meta { grid-area: meta; }
+.kd-cards .kd-card .kd-slots { grid-area: slots; }
+.kd-cards .kd-card .kd-points { grid-area: points; }
+.kd-cards .kd-card .kd-detail { grid-area: detail; }
+.kd-cards .kd-card .kd-state { grid-area: state; }
+.kd-cards .kd-card > .kd-quests { grid-area: quests; }
+/* THE RACK KEEPS ITS OWN WIDTH. In a block it is as wide as its `max-width`
+   allows; in a `max-content` column its `minmax(0, 1fr)` orbs have no content
+   width to offer, and they came out 106px across instead of 166. It is given
+   the width it always had, by the same sum. */
+body.touch-ui .kd-cards:is([data-cards="1"], [data-cards="2"]) .kd-slots {
+  width: calc(4 * var(--slot) + 3 * var(--slot-gap) + 2 * var(--slot-halo));
+  align-self: start;
+}
+body.touch-ui .kd-cards:is([data-cards="1"], [data-cards="2"]) .kd-meta { margin: 4px 0 0; }
+body.touch-ui .kd-cards:is([data-cards="1"], [data-cards="2"]) .kd-points { margin-top: 4px; }
+body.touch-ui .kd-cards:is([data-cards="1"], [data-cards="2"]) .kd-quests { --q: 20px; }
+/* A HAIR TIGHTER BETWEEN LINES, which is what makes it four. At 1.25 a quest
+   was 28px on screen and the list 111px: 3.96 of them. At 1.12 it is 25px. */
+body.touch-ui .kd-cards:is([data-cards="1"], [data-cards="2"]) .kd-quest { line-height: 1.12; }
+/* AND ONE IS AS WIDE AS TWO, on a phone. The desktop sizes the panel by the
+   cards in it, so one kitten gets a 422px column in the middle of an 844px
+   screen, and measured there the footer could not fit its sentence beside
+   three buttons: it stacked, 120px tall, and left the quest list 51px — two
+   quests, which is what this pass was asked to end. At the two-card width the
+   footer is one row, exactly as it is at two, and her one card has the whole
+   screen to lay the rack and its text side by side in. */
+body.touch-ui .kd-panel.kd-cards[data-cards="1"] { max-width: max(420px, 100vw); }
+
+/* THREE OR FOUR: THE FOOTER AT HALF HEIGHT. Measured at four: the footer was
+   54px of a 390px screen, a two-line help sentence beside three 46px buttons.
+   The buttons come down to half and the help sentence to the size of the
+   type in the cards; everything it gives back goes to the quest lists above,
+   by the rule before this one. The buttons are 27px targets, which is the
+   trade Richard asked for; they are at the bottom edge where a thumb already
+   rests. */
+body.touch-ui .kd-cards:is([data-cards="3"], [data-cards="4"]) .kd-foot .kd-help {
+  font-size: 9px;
+  line-height: 1.25;
+  margin-top: 3px;
+  padding-top: 3px;
+}
+body.touch-ui .kd-cards:is([data-cards="3"], [data-cards="4"]) .kd-close,
+body.touch-ui .kd-cards:is([data-cards="3"], [data-cards="4"]) .kd-act {
+  margin-top: 3px;
+  padding: 3px 11px;
+  font-size: 13px;
+  border-width: 2px;
+  border-radius: 7px;
+  box-shadow: 0 2px 0 var(--ink);
+}
+/* AND THREE IS THREE ACROSS, ALWAYS. `auto-fit` already makes it that at
+   844, but it is a consequence of the width there and not a rule: a narrower
+   phone that fits two 260px tracks and not three would wrap the third card
+   onto a row of its own with a card's width of nothing beside it. */
+body.touch-ui .kd-panel.kd-cards[data-cards="3"] > #kd-body { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+body.touch-ui .kd-panel.kd-cards[data-cards="4"] > #kd-body { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 /* "the game has ended", said once beside the heading. Darker than the heading
    it sits on rather than bigger: it is a state, not a warning. */
 .kd-q-over { color: #b4432c; font-weight: 700; opacity: 1; margin-left: 6px; }
@@ -5239,11 +5434,79 @@ body.touch-ui #cs-name { font-size: 15px; letter-spacing: 1px; }
 body.touch-ui #cs-text { font-size: 12px; line-height: 1.3; }
 body.touch-ui .cs-bar { height: 7vh; }
 
-/* The announcer card gets the same treatment for the same reason. */
-body.touch-ui #announce { width: min(92vw, 560px); padding: 7px 11px; }
-body.touch-ui #an-portrait { width: 56px; height: 56px; flex: 0 0 56px; }
-body.touch-ui #an-name { font-size: 14px; }
-body.touch-ui #an-text { font-size: 12px; line-height: 1.3; }
+/* --- THE ANNOUNCER ON A PHONE IS ONE LINE ALONG THE BOTTOM ----------------
+   "the text shown in the arena takes up too much of the screen real estate,
+   we should try to make the text take up the entire width of the screen and
+   be as far to the bottom of the screen as possible ... We should reduce the
+   text UI so that it only takes up 1 sentence length of the screen ... If we
+   can't fit it all on screen with 1 sentence length, then can truncate or
+   cutoff the older text that has already been spoken."
+
+   MEASURED AT 844x390: it was a 560x90 box, three lines of 12px beside a 56px
+   portrait, sitting over the fight. The lowest thing on the touch pad is the
+   JUMP button, whose bottom is y=342; everything below that is 48px of screen
+   the full width across. The card is 34px tall and sits in it, 5px off the
+   edge, so it covers the ground under the fighters' feet and none of the pad.
+
+   ONE LINE, NEWEST WORDS AT THE RIGHT. Every voiced line is revealed as it is
+   said (announce.js), an unsaid word is out of the line altogether, and the
+   row is `justify-content: flex-end` with an auto margin on the line: while
+   it fits, the margin takes the slack and the line sits on the left; once it
+   does not, an auto margin counts as zero and the overflow goes off the LEFT
+   edge, which is the older words. `.over` is set from the layout and fades
+   that edge so a cut word reads as cut and not as a typo.
+
+   THE SUBTITLE GOES. "MR. SATAN · World Champion" is a third of the line; the
+   name alone, in his colour, says whose it is.
+
+   `pointer-events: none` is on the base rule, and here it is load-bearing:
+   the stick's catchment is the bottom-left 46% x 78% of the screen and this
+   lies across it. */
+body.touch-ui #announce {
+  left: 8px;
+  right: 8px;
+  width: auto;
+  translate: none;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 5px);
+  max-width: none;
+  gap: 8px;
+  padding: 2px 10px 2px 2px;
+  border-width: 2px;
+  border-radius: 9px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5);
+}
+body.touch-ui #an-portrait {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-width: 2px;
+  border-radius: 6px;
+}
+body.touch-ui #announce .an-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+body.touch-ui #an-name { flex: none; font-size: 15px; letter-spacing: 1px; white-space: nowrap; }
+body.touch-ui #an-name .an-sub { display: none; }
+body.touch-ui #an-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 15px;
+  line-height: 1.3;
+}
+body.touch-ui #an-text .an-line { flex: none; margin-right: auto; }
+body.touch-ui #an-text .un { display: none; }
+body.touch-ui #an-text.over {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 2.4em);
+  mask-image: linear-gradient(to right, transparent, #000 2.4em);
+}
 
 /* ===================== full-screen panels ===============================
    The clan-joining card and the dragon-ball card are the two that a kid sees

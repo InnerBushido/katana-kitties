@@ -1085,6 +1085,12 @@ export class ProfileScreen {
     el.classList.toggle('kd-cards', n != null);
     if (n != null) el.style.setProperty('--kd-cards', String(Math.max(1, n)));
     else el.style.removeProperty('--kd-cards');
+    /* THE SAME COUNT AS AN ATTRIBUTE, because a phone lays the cards out
+       differently by it (one or two cards put the orb's text beside the rack;
+       three or four halve the footer) and a custom property cannot be matched
+       by a selector. See "THE PROFILE ON A PHONE, BY HOW MANY" in style.css. */
+    if (n != null) el.setAttribute?.('data-cards', String(Math.max(1, n)));
+    else el.removeAttribute?.('data-cards');
   }
 
   /**
@@ -1437,10 +1443,14 @@ export class ProfileScreen {
       ${this._clanMarkup(player)}
       <div class="kd-meta">${player.score} pts · ${owned.length}/${MAX_EQUIPPED} orbs</div>
       ${this._askMarkup(index)}
-      <div class="kd-slots" data-slots>${slots.join('')}</div>
-      ${this.mode === 'profile' ? pointsRow : ''}
-      <div class="kd-detail">${detail}</div>
-      <div class="kd-state">${state}</div>
+      <div class="kd-rack">
+        <div class="kd-slots" data-slots>${slots.join('')}</div>
+        <div class="kd-side">
+          ${this.mode === 'profile' ? pointsRow : ''}
+          <div class="kd-detail">${detail}</div>
+          <div class="kd-state">${state}</div>
+        </div>
+      </div>
       ${this._questMarkup(quests, index)}
     </div>`;
   }

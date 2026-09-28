@@ -36,7 +36,7 @@ import {
 import { SNAKE, SNAKE_LINKS, SNAKE_ARENA, COIN_CANES } from '../src/world/snakeway.js';
 import { FAR, FAR_PLACES, FarIsles } from '../src/world/farisles.js';
 import { snakePose, SnakeCam, SNAKE_MOVE, ARENA_RIDE, ARENA_RIDE_DOWN, ARENA_BLEND, shotPose, arenaRidePose } from '../src/systems/snakecam.js';
-import { Announcer, ROLL_GAP } from '../src/systems/announce.js';
+import { Announcer, ROLL_GAP, REVEAL_WORDS, REVEAL_LEAD, revealPlan, revealCount } from '../src/systems/announce.js';
 import { FinaleTide } from '../src/systems/finaletide.js';
 import { FinaleShow } from '../src/systems/finaleshow.js';
 import { buildBridge, mergeParts as mergeBuilt, PALETTE as BUILD_PALETTE } from '../src/world/build.js';
@@ -120,6 +120,7 @@ import {
   paneSeats, outOfShot, framedMembers, OUT_DROP, paneWiden, BIG_PANE_IN,
   mathSharedWidth, MATH_SHARED_W, MAP_TOUCH_UP, MAP_QUAD_DOWN, MAP_MERGED_PHONE,
   warnSpot, warnWidth, WARN_UP, WARN_FIT, WARN_MAX_W, cornerSpot, fitShot,
+  RIG_AIM_RATE, RIG_DIST_RATE,
 } from '../src/core/split.js';
 import {
   PREFS_KEY, PREF_CHOICES, PREF_LEVELS, readPrefs, writePref,
@@ -13724,6 +13725,27 @@ console.log('\n--- the three power moves ---');
       !/\.ar-win\.p\d/.test(css));
     ok('...the frame and the name read one colour, set once on the card',
       (css.match(/var\(--champ/g) || []).length >= 2);
+
+    /* "every time I click a letter on touch, the screen scrolls/jumps to the
+       top ... screen should just stay put." Every letter rebuilds the box,
+       and the box is what scrolls; the real `_paintResult`, with the markup
+       swapped for one that does what `innerHTML` does to a scroller — hands
+       back a new one at the top. */
+    {
+      const box = (top) => ({ scrollTop: top });
+      let current = box(212);
+      const was = { el: T.resultEl, paint: T._paintResultMarkup };
+      T.resultEl = { scrollTop: 30, querySelector: (s) => (s === '.ar-box' ? current : null) };
+      T._paintResultMarkup = () => { current = box(0); T.resultEl.scrollTop = 0; };
+      T._paintResult();
+      ok('typing a letter on the results screen leaves the keypad where she was scrolled to',
+        current.scrollTop === 212 && T.resultEl.scrollTop === 30, `${current.scrollTop} ${T.resultEl.scrollTop}`);
+      T.resultEl = was.el;
+      T._paintResultMarkup = was.paint;
+      ok('...and the markup is only ever painted through that, so no press can skip it',
+        (src.match(/this\._paintResultMarkup\(\)/g) ?? []).length === 1
+          && (src.match(/this\._paintResult\(\)/g) ?? []).length >= 4);
+    }
   }
 
   /* --- A TURNAROUND SHEET'S FACE IS MEASURED, NOT COMPUTED --------------
@@ -14404,6 +14426,74 @@ console.log('\n--- the three power moves ---');
         ok('...leaving out a kitten the rig has stopped following',
           T.cameraWant().fit.pts.length === 1);
       }
+
+      /* --- A JUMP, FOLLOWED THROUGH THE RIG'S OWN LAG ---
+         "when players are jumping upwards in the arena, the camera doesn't
+         seem to be tracking them and keeping them in the camera frame".
+         Every still frame above passes, and so did the jump: `fitShot` asked
+         for the right shot at every instant of it. What failed was the
+         camera getting there, because `_updateRig` EASES toward the shot, so
+         this replays a jump at 60fps through exactly that easing
+         (`RIG_AIM_RATE`, `RIG_DIST_RATE`) and projects her REAL head, not
+         the stretched one the fit is handed, through the camera as it
+         actually is on each frame. Gravity is the kittens' 26.
+
+         Measured in the browser at 844x390 before the fix: a 9-unit jump put
+         her head at 0.73, into the health bars. After it, 0.35. The second
+         run hides her velocity from the fit, which is the code before the
+         fix, and has to FAIL: a check that passes both ways is not asking
+         about the lead at all. */
+      {
+        const jump = (vy0, second, hide = false) => {
+          const A = at(R.x - 8, R.z);
+          const B = at(R.x + 8, R.z);
+          A.velocity = { x: 0, y: 0, z: 0 };
+          const seen = { position: A.position, ko: false, get velocity() { return hide ? { y: 0 } : A.velocity; } };
+          const settle = lens(phoneRig([seen, B]));
+          const tgt = new THREE.Vector3(settle.x, settle.y, settle.z);
+          let dist = settle.dist;
+          const cam = new THREE.PerspectiveCamera(38, PHONE_ASPECT, 0.5, 4000);
+          const yaw = -Math.PI / 4;
+          const dt = 1 / 60;
+          let head = -9;
+          let feet = 9;
+          let doubled = false;
+          A.velocity.y = vy0;
+          for (let i = 0; i < 240; i++) {
+            A.velocity.y -= 26 * dt;
+            A.position.y += A.velocity.y * dt;
+            if (second && !doubled && A.velocity.y < 2) { A.velocity.y = second; doubled = true; }
+            if (A.position.y <= R.y && i > 2) { A.position.y = R.y; A.velocity.y = 0; }
+            const want = phoneRig([seen, B]);
+            const s = lens(want);
+            tgt.lerp(new THREE.Vector3(s.x, s.y, s.z), Math.min(1, dt * RIG_AIM_RATE));
+            dist += (s.dist - dist) * Math.min(1, dt * RIG_DIST_RATE);
+            cam.position.set(
+              tgt.x + Math.sin(yaw) * Math.cos(want.pitch) * dist,
+              tgt.y + Math.sin(want.pitch) * dist,
+              tgt.z + Math.cos(yaw) * Math.cos(want.pitch) * dist,
+            );
+            cam.lookAt(tgt);
+            cam.updateMatrixWorld();
+            head = Math.max(head, new THREE.Vector3(A.position.x, A.position.y + 2.9, A.position.z).project(cam).y);
+            for (const p of [A, B]) {
+              feet = Math.min(feet, new THREE.Vector3(p.position.x, p.position.y, p.position.z).project(cam).y);
+            }
+            if (A.position.y === R.y && i > 20) break;
+          }
+          return { head, feet };
+        };
+        const cases = [['a jump', 11.2, 0], ['a double jump', 11.2, 11.2], ['a launch twice that', 22, 0]];
+        const runs = cases.map(([name, v, s2]) => ({ name, ...jump(v, s2) }));
+        console.log('phone ring: jump -> highest head, lowest feet'.padEnd(48)
+          + runs.map((r) => `${r.name} ${r.head.toFixed(2)}/${r.feet.toFixed(2)}`).join(' · '));
+        const bad = runs.find((r) => r.head > TOUCH_BOX.t + 0.02 || r.feet < TOUCH_BOX.b - 0.02);
+        ok('a kitten jumping in the ring stays in the phone\'s free box the whole way up, through the camera\'s lag',
+          !bad, bad ? `${bad.name}: head ${bad.head.toFixed(2)}, feet ${bad.feet.toFixed(2)}` : '');
+        const blind = jump(22, 0, true);
+        ok('...and without the lead (the fit blind to her speed) the same launch leaves it, so the lead is what does it',
+          blind.head > TOUCH_BOX.t + 0.02, blind.head.toFixed(2));
+      }
     }
     /* THE DESKTOP PAIR IS UNTOUCHED, and a rig with no `device` at all — which
        is every existing caller in this file — takes the desktop path. Invariant
@@ -14446,6 +14536,11 @@ console.log('\n--- the three power moves ---');
     const msrc2 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
     ok('...and main.js honours that rather than flooring it anyway',
       /ring\.fitPlayers === false \? ring\.dist \* widen/.test(msrc2));
+    /* THE JUMP CHECK ABOVE REPLAYS THE RIG'S EASING FROM THE NAMED RATES, so
+       they have to be the rates the rig actually eases at. */
+    ok('the shared rig eases at the named rates the ring fit leads by',
+      msrc2.includes('rig.target.lerp(want, Math.min(1, dt * RIG_AIM_RATE));')
+      && msrc2.includes('rig.dist += (wantDist - rig.dist) * Math.min(1, dt * RIG_DIST_RATE);'));
 
     /* A KNOCKOUT IS DELIBERATELY NOT IN THIS. The thing worth looking at there
        is the kitten who just went down, and cutting to the announcer throws
@@ -25470,6 +25565,128 @@ console.log('\n--- one press is not enough, and one player drives ---');
     }
   }
 
+  /* --- HIS WORDS GO UP AS HE SAYS THEM -----------------------------------
+     "We should also have the text 'appear on screen as it is spoken' so that
+     we don't have so much text on the screen needlessly ... [on PC/Web] should
+     appear on the screen as the text is spoken, at least for the longer text
+     boxes spoken more than 10 or so words long."
+
+     THE REAL CLASS, ON A DOM STUB THAT BUILDS ELEMENTS, with a voice whose
+     playhead this check moves by hand. What is asserted is the thing a player
+     sees: how many words are NOT `.un` at each moment. A phone reveals every
+     voiced line; a desktop only a long one; a line with no voice is shown
+     whole, because there is no playhead to follow and a card that typed
+     itself out against nothing would be a guess about how fast he talks. */
+  {
+    const plan = revealPlan('a bb  ccc');
+    ok('a line\'s reveal plan is one entry per word, from the start',
+      plan.length === 3 && plan[0].at === 0 && plan.every((x, i) => !i || x.at > plan[i - 1].at)
+        && plan.every((x) => x.at < 1), plan.map((x) => x.at.toFixed(2)).join(' '));
+    const counts = [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1].map((p) => revealCount(plan, p));
+    ok('...and the words it puts up never go down and end at all of them, never at none',
+      counts[0] === 1 && counts.at(-1) === 3 && counts.every((k, i) => !i || k >= counts[i - 1]),
+      counts.join(' '));
+
+    const docWas = globalThis.document;
+    const mkEl = () => {
+      const e = {
+        textContent: '', className: '', children: [], style: { setProperty() {} },
+        classes: new Set(), clientWidth: 400, scrollWidth: 0,
+        getContext: () => null,
+        appendChild(c) { this.children.push(c); return c; },
+        replaceChildren(...c) { this.children = c; },
+      };
+      e.classList = {
+        add: (c) => e.classes.add(c), remove: (c) => e.classes.delete(c),
+        toggle: (c, on) => (on ? e.classes.add(c) : e.classes.delete(c)),
+      };
+      return e;
+    };
+    const els = {};
+    globalThis.document = {
+      getElementById: (id) => (els[id] ??= mkEl()),
+      createElement: () => mkEl(),
+    };
+    try {
+      const run = ({ touch, text, voiced = 3, lineWidth = 0 }) => {
+        for (const k of Object.keys(els)) delete els[k];
+        let voice = null;
+        const audio = {
+          speak: () => (voice = { currentTime: 0, ended: false }),
+          stopSpeaking() {}, play() {},
+        };
+        const A = new Announcer({ audio, touch: () => touch });
+        if (voiced) A.clips.set('l', { el: {}, dur: voiced });
+        A.say('l', text);
+        A.update(0);
+        const shown = () => (A._spans ?? []).filter((s) => s.className !== 'un').length;
+        const at = [shown()];
+        if (A._line) A._line.scrollWidth = lineWidth;
+        for (let k = 1; k <= voiced * 30 + 30; k++) {
+          if (voice) voice.currentTime = Math.min(voiced, k / 30);
+          if (voice && k / 30 >= voiced) voice.ended = true;
+          A.update(1 / 30);
+          at.push(shown());
+          if (!A.active) break;
+        }
+        return { at, words: A._plan.length, over: els['an-text'].classes.has('over'), A };
+      };
+      const long = 'Hey, you! Yes, YOU, the kitten with the sword! Do you know who I am? I am the WORLD CHAMPION!';
+      const short = 'DOWN! Oh, that had to hurt!';
+      const rising = (r) => r.at.every((k, i) => !i || k >= r.at[i - 1]);
+      const p = run({ touch: true, text: short });
+      ok('a phone puts a voiced line up a word at a time, even a short one',
+        p.at[0] < p.words && Math.max(...p.at) === p.words && rising(p), p.at.filter((k, i) => !i || k !== p.at[i - 1]).join(' '));
+      const halfway = p.at[Math.round(30 * 3 * REVEAL_LEAD / 2)];
+      ok('...and is part of the way through it half way through the clip',
+        halfway > 1 && halfway < p.words, `${halfway} of ${p.words}`);
+      const d = run({ touch: false, text: long });
+      ok(`a desktop does the same with a line longer than ${REVEAL_WORDS} words`,
+        d.words > REVEAL_WORDS && d.at[0] < d.words && Math.max(...d.at) === d.words && rising(d), `${d.at[0]} -> ${d.words}`);
+      const s = run({ touch: false, text: short });
+      ok('...and shows a short one whole, the moment it is up',
+        s.words <= REVEAL_WORDS && s.at.every((k) => k === s.words), s.at[0]);
+      const q = run({ touch: true, text: long, voiced: 0 });
+      ok('...and a line with no voice is shown whole on a phone too, having nothing to keep time with',
+        q.at.every((k) => k === q.words), q.at[0]);
+      const o = run({ touch: true, text: long, lineWidth: 900 });
+      ok('a phone line wider than the card fades its older end, and a line that fits does not',
+        o.over && !p.over);
+    } finally {
+      globalThis.document = docWas;
+    }
+
+    /* THE CARD ITSELF. On a phone: one line, full width, below the pad, newest
+       words at the right; on a desktop, the big-screen sizes actually
+       APPLYING — they had never won against the base rule, which sat 1400
+       lines after them at the same specificity. */
+    const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    const block = (sel, from = 0) => {
+      const at = css.indexOf('\n' + sel + ' {', from);
+      return at < 0 ? '' : css.slice(at, css.indexOf('}', at));
+    };
+    const tc = block('body.touch-ui #announce');
+    const tt = block('body.touch-ui #an-text');
+    ok('a phone\'s announcer is one line across the whole width, on the bottom edge',
+      /left: 8px;/.test(tc) && /right: 8px;/.test(tc) && /max-width: none;/.test(tc)
+        && /bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ 5px\);/.test(tc)
+        && /white-space: nowrap;/.test(tt) && /overflow: hidden;/.test(tt)
+        && /justify-content: flex-end;/.test(tt));
+    ok('...with an unsaid word out of the line on a phone and holding its place on a desktop',
+      /\nbody\.touch-ui #an-text \.un \{ display: none; \}/.test(css)
+        && /\n#an-text \.un \{ visibility: hidden; \}/.test(css));
+    const base = block('#announce');
+    ok('...and the card never takes a touch, since on a phone it lies across the stick',
+      /pointer-events: none;/.test(base));
+    ok('a desktop card is centred and can grow to its full width',
+      /left: 50%;/.test(base) && /translate: -50% 0;/.test(base) && /width: max-content;/.test(base));
+    const baseText = css.indexOf('\n#an-text {');
+    const big = css.indexOf('#an-text { font-size: 23px;');
+    ok('...and the big-screen sizes come AFTER the base rules, so they win',
+      baseText > 0 && big > baseText, `${big} vs ${baseText}`);
+  }
+
   /* --- AND IT HAS ITS OWN MUSIC, WHICH MOVES WITH THE PICTURE -------------
      "We should play some nice ending cutscene music, specifically for the
      ending cutscene, the music could match some of the actions being shown on
@@ -29709,11 +29926,60 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     ok('...the cards only: the heading and OFFER / CONFIRM / CLOSE keep their size',
       !/body\.touch-ui \.kd-panel(\.kd-cards)? \{[^}]*zoom/.test(css)
         && !/\.kd-foot[^{]*\{[^}]*zoom/.test(css));
-    const q = /body\.touch-ui \.kd-cards \.kd-quests ul \{ max-height: ([\d.]+)em; \}/.exec(css);
-    ok('...and the quests give up height, not type, to fit',
-      q && +q[1] < 11 && /body\.touch-ui \.kd-quests \{ --q: 15px; \}/.test(css), q?.[1]);
+    /* THE QUESTS TAKE WHAT IS LEFT. They were a 5em box; "let's show at
+       least 4 quests" made them the flexible part of a card pinned to the
+       phone's height, with 5em as the least they shrink to. Measured at
+       844x390: four quests at one and two kittens, three at three, two at
+       four, and `#kd-body` scrolling at none of them. */
+    const fill = rule('body.touch-ui .kd-cards .kd-quests ul') ?? '';
+    const all = rules('body.touch-ui .kd-cards .kd-quests ul');
+    ok('...and the quests take the height the card has left, never less than 5em',
+      all.some((r) => /flex: 1 1 auto;/.test(r) && /min-height: 5em;/.test(r) && /max-height: none;/.test(r))
+        && /body\.touch-ui \.kd-panel\.kd-cards \{ height: 96vh; \}/.test(css)
+        && /body\.touch-ui \.kd-quests \{ --q: 15px; \}/.test(css), fill);
+    /* AND NOTHING ELSE ON THE CARD SHRINKS TO PAY FOR THEM. The rack is a
+       scroller, whose automatic minimum height is zero: the first cut of this
+       let the column squeeze it to a row and a half at four kittens. */
+    ok('...paid for by the quests alone: the orb rack is never squeezed to make room',
+      /body\.touch-ui \.kd-cards \.kd-card :is\([^)]*\.kd-slots[^)]*\) \{ flex-shrink: 0; \}/.test(css));
     ok('...and the points steppers grow so they survive the halving as targets',
       (px(rule('body.touch-ui .kd-cards .kd-step'), 'width') ?? 0) * 0.5 >= 20);
+
+    /* "if there are less than 3 players, we should move the text that is
+       under the kotodama orbs to the right of the kotodama orbs ... When
+       there are 4 players ... make the bottom row with the offer/confirm/close
+       buttons about half the size ... When there are 3 players, we can use
+       the entire screen width, split by 3." */
+    const prof = src('../src/systems/profile.js');
+    ok('the profile tells the stylesheet how many cards it laid out, as something a selector can match',
+      /el\.setAttribute\?\.\('data-cards', String\(Math\.max\(1, n\)\)\)/.test(prof)
+        && /el\.removeAttribute\?\.\('data-cards'\)/.test(prof));
+    ok('...and the rack and the text beside it are one row, which is a box only where there is room',
+      /<div class="kd-rack">\s*<div class="kd-slots" data-slots>/.test(prof)
+        && /<div class="kd-side">/.test(prof)
+        && /\n\.kd-rack,\r?\n\.kd-side \{ display: contents; \}/.test(css));
+    const few = 'body.touch-ui .kd-cards:is([data-cards="1"], [data-cards="2"])';
+    const areas = rule(few + ' .kd-card') ?? '';
+    ok('at one or two, the orb\'s text is beside the rack and the quests directly under it',
+      /"slots meta"/.test(areas) && /"slots detail"/.test(areas) && /"quests quests"/.test(areas)
+        && areas.indexOf('"slots state"') < areas.indexOf('"quests quests"'), areas.replace(/\s+/g, ' '));
+    ok('...in bigger quest type than the four-card card has',
+      (px(rule(few + ' .kd-quests'), '--q') ?? 0) > 15);
+    ok('...and one kitten gets the width two do, so her footer is one row too',
+      /body\.touch-ui \.kd-panel\.kd-cards\[data-cards="1"\] \{ max-width: max\(420px, 100vw\); \}/.test(css));
+    const many = 'body.touch-ui .kd-cards:is([data-cards="3"], [data-cards="4"])';
+    /* CRLF: this block reads the stylesheet as it is on disk. */
+    const btn = css.split(`${many} .kd-close,`)[1]?.split('}')[0] ?? '';
+    const fullBtn = /\n\.kd-close,\r?\n\.kd-act \{[^}]*/.exec(css)?.[0] ?? '';
+    ok('at three or four, the footer\'s buttons are cut down to about half',
+      /padding: 3px 11px;/.test(btn) && (px(btn, 'font-size') ?? 99) <= 14, btn.replace(/\s+/g, ' '));
+    ok('...and the help sentence beside them to card size',
+      (px(rule(`${many} .kd-foot .kd-help`), 'font-size') ?? 99) <= 10);
+    ok('three is three across and four is four across, whatever the phone\'s width',
+      /\[data-cards="3"\] > #kd-body \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/.test(css)
+        && /\[data-cards="4"\] > #kd-body \{ grid-template-columns: repeat\(4, minmax\(0, 1fr\)\); \}/.test(css));
+    ok('...and none of it reaches a desktop', !/\n\.kd-cards\[data-cards|\n\.kd-panel\.kd-cards\[data-cards/.test(css)
+      && !fullBtn.includes('3px 11px'));
   }
 
   /* --- 6. A PHONE'S OWN CARD IS A HALF, AND IT HAS A WAY OUT -------------

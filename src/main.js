@@ -22,7 +22,7 @@ import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from './core/pa
 import {
   splitLayout, mapWidth, mapSpot, mathSharedWidth, assignMaps, nearestMap, keyMaps,
   fitDistance, stablePanes, paneSeats, outOfShot, framedMembers, paneWiden, cornerSpot,
-  fitShot,
+  fitShot, RIG_AIM_RATE, RIG_DIST_RATE,
   warnSpot, warnWidth, WARN_FIT,
 } from './core/split.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
@@ -1538,7 +1538,9 @@ class Game {
         .catch(() => null),
     ]);
 
-    this.announcer = new Announcer({ audio: this.audio });
+    /* `touch` IS A GETTER, not a value: the card reads it per line, and the
+       on-screen-stick setting can change what this device is mid-game. */
+    this.announcer = new Announcer({ audio: this.audio, touch: () => !!this.device?.touchPrimary });
     this.announcer.art = satanArt;
     /* PATCHFUR SHARES HIS CARD. She counts the last five pieces of mischief
        down over it — see `systems/lasthunt.js`, and the note at the top of
@@ -12237,8 +12239,8 @@ class Game {
         rig.dist = wantDist;
         rig.seeded = true;
       }
-      rig.target.lerp(want, Math.min(1, dt * 6));
-      rig.dist += (wantDist - rig.dist) * Math.min(1, dt * 4);
+      rig.target.lerp(want, Math.min(1, dt * RIG_AIM_RATE));
+      rig.dist += (wantDist - rig.dist) * Math.min(1, dt * RIG_DIST_RATE);
 
       let yaw = THREE.MathUtils.lerp(-Math.PI * 0.25, 0, ft);
       let pitch = ring ? ring.pitch : THREE.MathUtils.lerp(0.66, DOJO_PITCH, ft);

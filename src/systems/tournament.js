@@ -3,6 +3,7 @@ import { arenaPowerFor } from '../entities/clanpower.js';
 import { scoreOf, saveResult, loadBoard, NameEntry, ALPHABET, NAME_MAX } from './leaderboard.js';
 import { styleCss, cssFor } from '../core/palette.js';
 import { drawPortrait } from './cutscene.js';
+import { RIG_DIST_RATE } from '../core/split.js';
 
 /* ---------------------------------------------------------------------------
    The World Martial Arts Tournament.
@@ -577,10 +578,40 @@ function centroidOf(ps) {
   };
 }
 
-/** A kitten as `fitShot` wants her: feet, and how tall. 2.9 is the kittens'
- *  height (`Player` is built with it) and is the fallback for a stand-in. */
+/**
+ * A kitten as `fitShot` wants her: feet, and how tall. 2.9 is the kittens'
+ * height (`Player` is built with it) and is the fallback for a stand-in.
+ *
+ * STRETCHED BY WHERE SHE IS GOING. "when players are jumping upwards in the
+ * arena, the camera doesn't seem to be tracking them and keeping them in the
+ * camera frame, the camera should follow the players and if they move
+ * upwards, the camera should keep them in frame and move upwards with them or
+ * zoom out to keep them in frame as they go higher up."
+ *
+ * THE FIT WAS RIGHT AND THE CAMERA WAS LATE. Measured at 844x390, two kittens
+ * 16 apart and one jumping: at every frame `fitShot` asked for a shot with her
+ * head inside `TOUCH_BOX`, and the aim it asked for rose with her. But the rig
+ * EASES there (`RIG_AIM_RATE`), and a kitten going up at ten units a second
+ * was followed a unit and a half behind, so her head went to 0.73 on the way
+ * up, into the health bars (the box stops at 0.61). The camera arrived after
+ * she had started falling again.
+ *
+ * So the fit is handed her height plus how far she will have gone by the time
+ * the camera catches up (her vertical speed over `RIG_DIST_RATE`, the slower of
+ * the rig's two rates), and on the way down the same below her feet. It frames
+ * where she WILL be, the rig's lag brings it to where she IS, and a kitten
+ * standing still is exactly what she was.
+ */
 function fitPoint(p) {
-  return { x: p.position.x, y: p.position.y, z: p.position.z, h: p.height ?? 2.9 };
+  const vy = Number.isFinite(p.velocity?.y) ? p.velocity.y : 0;
+  const up = Math.max(0, vy) / RIG_DIST_RATE;
+  const down = Math.min(0, vy) / RIG_DIST_RATE;
+  return {
+    x: p.position.x,
+    y: p.position.y + down,
+    z: p.position.z,
+    h: (p.height ?? 2.9) + up - down,
+  };
 }
 
 /* THE SHOT ON MR. SATAN when the clock is what ended the round. Asked for:
@@ -3059,8 +3090,38 @@ export class Tournament {
     drawPortrait(cv, art, cssFor(p.style), { col: 0, row: 0, measure: true });
   }
 
+  /**
+   * Paint the results screen, and leave it scrolled where she had it.
+   *
+   * "when inputting text on the screen after the arena fight, every time I
+   * click a letter on touch, the screen scrolls/jumps to the top, which is
+   * annoying, screen should just stay put."
+   *
+   * THE SCROLLER IS REBUILT ON EVERY LETTER. `_paintResultMarkup` replaces the
+   * whole `innerHTML` (see `_bindResultTaps` for why that is the design), and
+   * on a phone the thing that scrolls is `.ar-box` INSIDE it: the champion's
+   * card, the slots, a 38-key pad and the board do not fit in 390px, so she
+   * scrolls down to the keypad, taps a letter, and gets a brand new `.ar-box`
+   * at `scrollTop` 0. The keypad she was pressing is now below the fold.
+   *
+   * CARRIED ACROSS, NOT PATCHED AROUND. Re-painting only the slots would fix
+   * the letters and leave DEL, OK, YES and NO to do it again; the scroll is
+   * read off the box that is about to go and written onto the one that
+   * replaces it, whatever caused the paint. The outer overlay is carried too,
+   * since a short window scrolls that instead.
+   */
   _paintResult() {
     if (!this.resultEl) return;
+    const box = this.resultEl.querySelector?.('.ar-box');
+    const inner = box?.scrollTop ?? 0;
+    const outer = this.resultEl.scrollTop ?? 0;
+    this._paintResultMarkup();
+    const next = this.resultEl.querySelector?.('.ar-box');
+    if (next && inner) next.scrollTop = inner;
+    if (outer) this.resultEl.scrollTop = outer;
+  }
+
+  _paintResultMarkup() {
     /* A PHONE GETS BUTTONS FOR EVERY INSTRUCTION THIS SCREEN GIVES — see
        `_bindResultTaps` for why the ones it used to name are unreachable. Gated
        on the device rather than rendered always and hidden by CSS, so the

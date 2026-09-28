@@ -1485,3 +1485,125 @@ of the arena bounding area, they should still be tracked."*
   was centred each time at dist 34.
 - **Open:** if the phone's own player is the angel, the camera follows her
   sister rather than her. Say if the angel should be followed instead.
+
+## The eighth pass: the caption, a jump, a keypad and the profile
+
+Richard's "More mobile fixes", measured at 844x390 in the desktop's touch test
+mode. The caption half was also measured at 1920x1080.
+
+### The announcer is one line on a phone, and bigger on a desktop
+
+*"On Mobile, the text shown in the arena takes up too much of the screen real
+estate, we should try to make the text take up the entire width of the screen
+and be as far to the bottom of the screen as possible. We should also have the
+text "appear on screen as it is spoken" ... We should reduce the text UI so
+that it only takes up 1 sentence length of the screen ... If we can't fit it
+all on screen with 1 sentence length, then can truncate or cutoff the older
+text that has already been spoken. For PC/Web ... make the text bigger and take
+up more horizontal space ... no more than 2 sentences worth. Just have it
+higher up on pc/web ... should appear on the screen as the text is spoken, at
+least for the longer text boxes spoken more than 10 or so words long."*
+
+- **It is one card, not an arena card.** `#announce` carries every Mr Satan
+  line and Patchfur's countdown, so this changes all of them.
+- **Phone, before:** a 560x90 box, three lines of 12px beside a 56px portrait,
+  over the fight.
+- **Phone, after:** one line, 8px from each side and 5px off the bottom, at
+  x 8–836, y 349–385. The lowest touch control (JUMP) ends at y=342, so it
+  covers none of the pad. 15px type, a 28px portrait, the name without "World
+  Champion".
+- **Newest words at the right, oldest cut off the left.** The text row is
+  `justify-content: flex-end` with an auto margin on the line, so a line that
+  fits sits on the left and one that does not overflows off the left edge.
+  `.over` fades that edge; it is set from the layout, not a character count.
+- **Revealed as spoken:** `revealPlan` gives each word a place in the line,
+  `revealCount` says how many are up, and the clock is the voice's own
+  playhead, as in the cutscenes. The reveal finishes at 72% of the clip
+  (`REVEAL_LEAD`), because the recording trails off after the last word.
+  Measured: the 16-word feast line reveals over about 4s of its 5.68s.
+- **Which lines reveal:** a phone reveals every voiced line; a desktop only
+  lines over `REVEAL_WORDS` (10). A line with no voice is shown whole, since
+  there is no playhead to keep time with.
+- **Desktop:** centred and 11vh up instead of bottom-left, 1180px max, 23px
+  text, 100px portrait. Mr Satan's 93-character taunt is two lines at 1920
+  (card x 370–1550, clear of the minimap at 1615). An unsaid word keeps its
+  place (`visibility: hidden`), so the card is its final size from the first
+  word and does not reflow.
+- **The old big-screen sizes had never applied.** They sat in the
+  `min-width: 1001px` block 1400 lines above the base `#announce` rules, at the
+  same specificity, so the base rules won. Measured at 1920 with the old block:
+  15.5px text and a 760px card. They now live in their own block after the
+  base rules, and world-check pins the order.
+- **`width: max-content`**, because an absolute box with `left: 50%` is only
+  offered half the screen to shrink into: the card stopped at 960 wide.
+
+### The ring camera was late on a jump
+
+*"On mobile, when players are jumping upwards in the arena, the camera doesn't
+seem to be tracking them and keeping them in the camera frame ... move upwards
+with them or zoom out to keep them in frame as they go higher up."*
+
+- **Solo was fine** (head 0.1–0.29 in NDC through a jump): a group of one draws
+  with her own camera.
+- **Two kittens, measured before:** her head reached 0.73, into the health bars
+  (`TOUCH_BOX` stops at 0.61). `fitShot` asked for the right shot on every
+  frame; the shared rig **eases** there (`dt * 6` on the aim, `dt * 4` on the
+  distance), which is a lag of speed/rate. A kitten rising at 10 units/s was
+  followed about 1.5 units behind.
+- **Fix:** `fitPoint` hands the fit her height stretched by her vertical speed
+  over `RIG_DIST_RATE`, upward on the way up and below her feet on the way
+  down. It frames where she will be, and the lag brings it to where she is.
+  A kitten standing still is unchanged.
+- **The rates are named** (`RIG_AIM_RATE`, `RIG_DIST_RATE` in split.js) and
+  main.js uses them, so a retune cannot quietly bring the bug back.
+- **Measured after,** replayed at 60fps through the rig's real easing: a jump
+  0.20, a double jump 0.32, a launch at twice the speed 0.35. The same launch
+  with the lead removed has to fail the box, and does.
+
+### The name keypad jumped to the top on every letter
+
+*"when inputting text on the screen after the arena fight, every time I click
+a letter on touch, the screen scrolls/jumps to the top, which is annoying,
+screen should just stay put."*
+
+- **Cause:** every press rebuilds the results screen by `innerHTML`, and on a
+  phone the thing that scrolls is `.ar-box` inside it. A new box starts at
+  `scrollTop` 0, and the keypad she was pressing is below the fold.
+- **Fix:** `_paintResult` reads the scroll off the box about to go and writes
+  it onto the one that replaces it (and the overlay's own, for a short
+  window). Every paint goes through it, so DEL, OK, YES and NO keep their
+  place too.
+- **Checked in world-check, not live,** to keep test names off the record
+  board.
+
+### The profile, by how many are playing
+
+*"if there are less than 3 players, we should move the text that is under the
+kotodama orbs to the right of the kotodama orbs ... and move the Quests
+information upwards ... show at least 4 quests and increase the text size ...
+When there are 4 players, we can keep it like it currently is ... but ... make
+the bottom row with the offer/confirm/close buttons about half the size ...
+When there are 3 players, we can use the entire screen width, split by 3."*
+
+- **`data-cards` on the panel** (set by `_sizeToCards`), because a custom
+  property cannot be matched by a selector. The rack and the text beside it
+  are wrapped in `.kd-rack` / `.kd-side`, which are `display: contents`
+  everywhere except where a phone lays them out.
+- **The quests take what is left** at every count: the panel is pinned to 96vh,
+  the card is a column, and the quest list is its flexible part (5em minimum).
+  Everything else on the card is `flex-shrink: 0`. The first cut let the
+  column squeeze the orb rack, a scroller with a zero automatic minimum, to a
+  row and a half at four.
+- **One or two:** a grid with the rack on the left, points, orb name and offer
+  line to its right, and the quests straight underneath. Quest type 15 → 20
+  (7.5 → 10px on screen), line-height 1.12. Measured at two: four quests
+  visible (was two), `#kd-body` 505/505.
+- **One is as wide as two.** At the desktop's one-card width (422px) the footer
+  stacked 120px tall and left two quests. At the two-card width the footer is
+  one row and one kitten gets four quests.
+- **Three or four:** buttons 46 → 23px tall, help sentence at 9px; the footer is
+  30px (was 54). Measured at four: the rack whole (166/166) and the quest
+  list 56px tall (was 38), still two whole quests with the third showing. At
+  three: three across with no empty column, three whole quests.
+- **Three is three across as a rule,** not as a consequence of 844px being wide
+  enough: `repeat(3, minmax(0, 1fr))`, and the same for four.

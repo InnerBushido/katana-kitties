@@ -46,15 +46,86 @@ const SILENT_DUR = 3.2;
  */
 export const ROLL_GAP = 0.12;
 
+/* ---------------------------------------------------------------------------
+   THE WORDS APPEAR AS HE SAYS THEM.
+
+   "we should also have the text 'appear on screen as it is spoken' so that we
+   don't have so much text on the screen needlessly ... [on PC/Web it] should
+   appear on the screen as the text is spoken, at least for the longer text
+   boxes spoken more than 10 or so words long."
+
+   A WORD AT A TIME, NOT A LETTER. The cutscene types letters because its box
+   is a fixed size and the words reflow inside it; this card is one line on a
+   phone and a letter-by-letter crawl across the end of that line reads as a
+   progress bar rather than as speech.
+
+   ON THE VOICE'S OWN PLAYHEAD, and only when there IS a voice. A line with no
+   clip plays silent on the clock (`SILENT_DUR`), and revealing that on a timer
+   would be inventing a pace nobody is speaking at, so it is shown whole. The
+   clock the reveal reads is the audio's `currentTime` once it has started, for
+   the reason `cutscene.js` gives at its own `typeRate`: a line that starts
+   late must type late with it, or the words finish and sit there while he is
+   still talking.
+
+   A PHONE REVEALS EVERY VOICED LINE; a desktop only the ones longer than
+   `REVEAL_WORDS`. The phone's card is ONE line (see `body.touch-ui #announce`)
+   and keeps the newest words at its right-hand end, so anything that does not
+   fit is the oldest words sliding off the left, which only reads right if the
+   words arrive in the order he says them. A desktop card holds two lines, and
+   a short line popping in whole is how it has always read. */
+export const REVEAL_WORDS = 10;
+/**
+ * The fraction of the clip the words are spread over: they are all up by 72%
+ * of the way through it. The same ratio the cutscene types at (`typeRate` in
+ * cutscene.js), for the same reason: a recording runs past its last word (a
+ * shout held, a breath, a trailing laugh), and words that finish with the
+ * audio lag behind the mouth for the whole line.
+ */
+export const REVEAL_LEAD = 0.72;
+
+/**
+ * Each word of a line, and how far through the line (0..1, by characters) it
+ * STARTS. Characters rather than word count because "FIFTEEN" takes longer to
+ * say than "a", and the recording is all the timing there is.
+ * @param {string} text
+ * @returns {{w: string, at: number}[]}
+ */
+export function revealPlan(text) {
+  const words = String(text ?? '').split(/\s+/).filter(Boolean);
+  const total = Math.max(1, words.join(' ').length);
+  let at = 0;
+  return words.map((w) => {
+    const x = { w, at: at / total };
+    at += w.length + 1;
+    return x;
+  });
+}
+
+/**
+ * How many words are up at `progress` (0..1 through the spoken part). Never
+ * fewer than one: a card that slides in empty reads as a card with nothing to
+ * say, and the first word is the one he has just opened his mouth on.
+ */
+export function revealCount(plan, progress) {
+  if (!plan?.length) return 0;
+  let k = 0;
+  while (k < plan.length && plan[k].at <= progress + 1e-9) k++;
+  return Math.max(1, k);
+}
+
 export class Announcer {
   /**
    * @param {object} o
    * @param {Audio} o.audio
    * @param {string} o.name    who is talking
    * @param {string} o.sub     their subtitle
+   * @param {() => boolean} [o.touch]  is this a phone: the one-line card, and
+   *        every voiced line revealed as it is said. A getter because the
+   *        device can be switched in Settings without a reload.
    */
-  constructor({ audio, name = 'MR. SATAN', sub = 'World Champion' }) {
+  constructor({ audio, name = 'MR. SATAN', sub = 'World Champion', touch = () => false }) {
     this.audio = audio;
+    this.touch = touch;
     this.name = name;
     this.sub = sub;
     this.art = null;
@@ -85,6 +156,21 @@ export class Announcer {
     this.seq = [];
     this.pieceDur = 0;
     this._gapT = 0;
+
+    /* THE REVEAL (see `REVEAL_WORDS`). `_plan` is the line's words, `_spans`
+       the element per word (null when the host has no DOM to build them in,
+       in which case the line is plain text and shown whole), `_shown` how many
+       are up, `_voiceTotal` the seconds of recording the words are spread
+       over and `_spokenBefore` the seconds of it already said by pieces that
+       have finished. */
+    this._plan = [];
+    this._spans = null;
+    this._line = null;
+    this._shown = -1;
+    this._reveal = false;
+    this._touch = false;
+    this._voiceTotal = 0;
+    this._spokenBefore = 0;
 
     /** Preloaded clips by id. Filled by `load`. */
     this.clips = new Map();
@@ -289,8 +375,10 @@ export class Announcer {
        built as. A line with no speaker is Mr Satan's, which is every line this
        card carried before Patchfur started using it. */
     const who = item.who ?? { name: this.name, sub: this.sub, art: this.art, colour: '#ffd24a' };
-    this.textEl.textContent = item.text;
-    this.nameEl.textContent = `${who.name}  ·  ${who.sub}`;
+    this._touch = !!this.touch?.();
+    this._plan = revealPlan(item.text);
+    this._spans = this._paintWords(item.text);
+    this._setName(who);
     this.el.classList.remove('hidden');
     this.el.classList.add('in');
 
@@ -327,6 +415,96 @@ export class Announcer {
        is nothing to chain off, and the clock above carries the card. */
     this.seq = this.voiceEl ? clips.slice(1) : [];
     this._gapT = 0;
+
+    this._voiceTotal = this.voiceEl ? clips.reduce((s, c) => s + c.dur, 0) : 0;
+    this._spokenBefore = 0;
+    this._reveal = !!this._spans && this._voiceTotal > 0
+      && (this._touch || this._plan.length > REVEAL_WORDS);
+    this._shown = -1;
+    this._showWords(this._reveal ? revealCount(this._plan, 0) : this._plan.length);
+  }
+
+  /**
+   * The line as one element per word, inside one `.an-line`.
+   *
+   * THE SPACE GOES INSIDE THE WORD AFTER IT, so a word that is not up yet
+   * takes its space with it. On a phone an unsaid word is `display: none`, and
+   * a bare space left between two of them would still be measured into the
+   * line: the newest word would sit a space short of the right-hand edge.
+   *
+   * ONE WRAPPER, because the phone's card is a flex row anchored at its END
+   * (the newest words), and a flex container drops the whitespace between its
+   * children: words as direct children would be run together.
+   *
+   * Degrades to plain text wherever the host cannot build elements (the
+   * check suite's stubs, for one), and a plain-text line is simply shown whole.
+   */
+  _paintWords(text) {
+    const el = this.textEl;
+    if (!el) return null;
+    const doc = globalThis.document;
+    const line = typeof el.replaceChildren === 'function' ? doc?.createElement?.('span') : null;
+    if (!line || typeof line.appendChild !== 'function') {
+      el.textContent = text;
+      this._line = null;
+      return null;
+    }
+    line.className = 'an-line';
+    const spans = this._plan.map((x, i) => {
+      const s = doc.createElement('span');
+      s.textContent = (i ? ' ' : '') + x.w;
+      line.appendChild(s);
+      return s;
+    });
+    el.replaceChildren(line);
+    this._line = line;
+    return spans;
+  }
+
+  /**
+   * Who is talking. The subtitle is its own element so a phone can drop it:
+   * one line of card has no room for "World Champion", and the name alone, in
+   * his colour, already says whose line it is.
+   */
+  _setName(who) {
+    const el = this.nameEl;
+    if (!el) return;
+    const doc = globalThis.document;
+    const a = typeof el.replaceChildren === 'function' ? doc?.createElement?.('span') : null;
+    const s = a ? doc.createElement('span') : null;
+    if (!a || !s || typeof a.appendChild !== 'function') {
+      el.textContent = `${who.name}  ·  ${who.sub}`;
+      return;
+    }
+    a.className = 'an-who';
+    a.textContent = who.name;
+    s.className = 'an-sub';
+    s.textContent = `  ·  ${who.sub}`;
+    el.replaceChildren(a, s);
+  }
+
+  /** Put the first `k` words up. Only touches the DOM when `k` changes. */
+  _showWords(k) {
+    if (!this._spans || k === this._shown) return;
+    this._shown = k;
+    this._spans.forEach((s, i) => { s.className = i < k ? '' : 'un'; });
+    /* THE FADE ON THE LEFT, and only when there is something cut off to fade.
+       Asked of the layout rather than guessed from a character count: the
+       card's width is the phone's width and the type is a webfont. */
+    if (this._touch && this._line && this.textEl?.classList) {
+      const over = this._line.scrollWidth > this.textEl.clientWidth + 1;
+      this.textEl.classList.toggle('over', over);
+    }
+  }
+
+  /** Seconds of recording said so far, across every piece of the line. */
+  _spokenClock() {
+    const el = this.voiceEl;
+    /* The cutscene's rule: the audio's own playhead once it is moving, and
+       the card's clock until then (a `play()` the browser has not started, or
+       one it refused). */
+    if (el && el.currentTime > 0) return this._spokenBefore + Math.min(el.currentTime, this.pieceDur);
+    return Math.max(this._spokenBefore, this.t);
   }
 
   _end() {
@@ -353,6 +531,7 @@ export class Announcer {
       if (this._gapT >= ROLL_GAP) {
         this._gapT = 0;
         const next = this.seq.shift();
+        this._spokenBefore += this.pieceDur;
         this.pieceDur = next.dur;
         this.voiceEl = this.audio?.speak(next.el) ?? null;
         if (!this.voiceEl) this.seq = [];
@@ -368,6 +547,10 @@ export class Announcer {
     const playing = el && !el.ended && el.currentTime > 0;
     const spoken = !this.seq.length
       && (!el || el.ended || (el.currentTime > 0 && el.currentTime >= this.pieceDur - 0.06));
+    if (this._reveal) {
+      this._showWords(spoken ? this._plan.length
+        : revealCount(this._plan, this._spokenClock() / (this._voiceTotal * REVEAL_LEAD)));
+    }
     const over = this.t >= this.dur && (spoken || !playing);
     if (over || this.t > this.dur + 6) this._end();
   }
