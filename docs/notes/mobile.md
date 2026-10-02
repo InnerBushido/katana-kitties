@@ -1483,8 +1483,18 @@ of the arena bounding area, they should still be tracked."*
   out to wherever she went. If nobody can eat, it frames everybody.
 - **Measured live:** Ember at the near corner, the far corner and off the deck
   was centred each time at dist 34.
-- **Open:** if the phone's own player is the angel, the camera follows her
-  sister rather than her. Say if the angel should be followed instead.
+- **Answered later: the angel is followed too, up to a cap.** *"camera
+  should follow angels as well on mobile, doesn't hurt to zoom out a bit to
+  keep all players on screen, but if the angel flies too far away, then no
+  need to zoom out so far ... especially to be able to see the rats. But
+  should be zoomed out a bit anyways."*
+  - The floor is 40 (was 34).
+  - The angels are `fitShot`'s `extra`: they are framed only while that shot
+    is no further back than 64 (`RING_DIST.touch.feastAngel`). Past that the
+    camera lets her go and the eater keeps the 40 shot.
+  - Measured at 844x390, eater in the middle: an angel 12 up and 14 away is
+    framed at 49. One 30 up and 40 away needs 79+, so she is let go and the
+    shot is the eater's own 40.
 
 ## The eighth pass: the caption, a jump, a keypad and the profile
 
