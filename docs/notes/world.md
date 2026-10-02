@@ -1026,3 +1026,34 @@ same function that reads the first push on boarding, and that direction is
 then held relative to the bridge as before. The 0.1 s is there so a stick
 passing through centre on the way from left to right does not count as
 letting go.
+
+### ...through the camera she can SEE, and only once she has gone somewhere
+
+*"seems to currently reset to the 'default' directions that the default
+camera has, but really needs to be dependent on the direction of the camera on
+the camera on the bridge ... player may need to make some progress towards the
+forward or backwards direction of the bridge before the input locks the player
+in the direction they need to go in."*
+
+- **The cause.** The re-read used `camYaw`, the follow camera's heading.
+  `SnakeCam` is laid over the rig camera after that camera has been placed
+  by `camYaw`, so on a road the screen faces wherever the ride camera
+  swung. Measured live: ride camera 2.76 rad, `camYaw` -0.79. That is about
+  200 degrees apart, so the old code read W as backwards.
+- **`viewYaw`.** `Game._render` writes, for every kitten in a pane, the
+  heading of the lens that drew that pane. `Player._viewBasis()` reads it,
+  falling back to `camYaw` when it is not set yet. `_boardSnake`,
+  `_snakeOnward` and the free push below all use it.
+- **The free push.** After a let-go, `R.free = { s0 }` and she walks
+  screen-relative like anywhere else until she has covered `SNAKE.settle`
+  (1.5) of road, either way. Whatever she is pressing then is locked as
+  "keep going that way", signed by which way she went.
+- **Measured live** (3 fps in the browser pane): a fresh W after the board
+  went up the road and locked 1.8 units on. In world-check the lock comes at
+  1.68, and the stick stays locked while the view turns.
+- **Side-on is not a dead end.** When the ride camera is side-on, up and down
+  on the stick push her into the rail and she barely moves (0.6 in 4.8 s,
+  live), so nothing locks until she pushes left or right. That is the "walks
+  like anywhere else" half working as asked, not a bug. If a kid gets stuck
+  there, projecting the free push onto the road at full speed is the next
+  thing to try.

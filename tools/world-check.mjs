@@ -30858,55 +30858,86 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     }
   }
   {
-    /* LET GO, AND THE CAMERA DECIDES AGAIN. "If player lets go of the
-       direction keys, or if the joystick goes back to center, then it will
-       re-orient the input based on the direction the camera is facing ... If
-       the player then holds the button of the new direction, it will then
-       move in that direction relative to the bridge." Boarded, carried a
-       quarter of the road while the camera turns 1.5 rad under her, then:
-       a dither shorter than `rebind` changes nothing; a real let-go makes
-       SCREEN-UP the direction that is onward on the screen right now; and
-       from there, held, it is locked to the road again while the camera
-       keeps turning. */
-    const p = mkRider();
-    const f0 = onto(p, 6);
-    const on = stickFor(p, f0);
-    for (let k = 0; k < 60 * 3; k++) { p.camYaw += 0.008; p.update(1 / 60, on, W, [], HUSH_R); }
-    const Rd = p.snakeRide;
-    const held = Rd && { ...Rd.stick };
-    const rest = { ...on, mx: 0, my: 0 };
-    const upScr = { ...on, mx: 0, my: -1 };
-    p.update(1 / 60, rest, W, [], HUSH_R);
-    p.update(1 / 60, rest, W, [], HUSH_R);
-    p.update(1 / 60, on, W, [], HUSH_R);
-    ok('🌉 a stick that only dithers through centre keeps the road it boarded with',
-      !!Rd && p.snakeRide === Rd && Rd.stick.x === held.x && Rd.stick.y === held.y);
-    for (let k = 0; k < Math.ceil(SNAKE.rebind * 60) + 2; k++) p.update(1 / 60, rest, W, [], HUSH_R);
-    /* The camera has swung a long way while she stood there — the whole
-       reason to re-read it. */
-    p.camYaw += 1.2;
-    const hit = road.locate(p.position.x, p.position.z, p.position.y + 0.6);
-    const want = p._snakeOnward(hit.tx * Rd.dir / Math.hypot(hit.tx, hit.tz), hit.tz * Rd.dir / Math.hypot(hit.tx, hit.tz));
-    p.update(1 / 60, upScr, W, [], HUSH_R);
-    const re = { ...Rd.stick };
-    ok('...but let go, and the next push is onward-as-the-screen-shows-it-now',
-      Math.hypot(re.x - want.x, re.y - want.y) < 0.02 && Math.hypot(re.x - held.x, re.y - held.y) > 0.3,
-      `(${re.x.toFixed(2)}, ${re.y.toFixed(2)}) wanted (${want.x.toFixed(2)}, ${want.y.toFixed(2)}), was (${held.x.toFixed(2)}, ${held.y.toFixed(2)})`);
-    const w = new THREE.Vector3();
-    p._snakeWish(upScr, w, 1 / 60);
-    const { fwd } = p._basis();
-    ok('...so screen-up moves her up the screen', w.x * fwd.x + w.z * fwd.z > 0,
-      `${(w.x * fwd.x + w.z * fwd.z).toFixed(2)} along the camera's forward`);
-    let same = true;
-    const s1 = Rd.s;
-    for (let k = 0; k < 60 * 2; k++) {
-      p.camYaw += 0.03;
-      p.update(1 / 60, upScr, W, [], HUSH_R);
-      if (Rd.stick.x !== re.x || Rd.stick.y !== re.y) same = false;
-    }
-    ok('...and held, it is locked to the road again while the camera turns',
-      same && p.snakeRide === Rd && Rd.s > s1 + 5,
-      `${s1.toFixed(0)} -> ${Rd.s.toFixed(0)}`);
+    /* LET GO, AND THE CAMERA THAT DREW HER DECIDES AGAIN. "If player lets
+       go of the direction keys, or if the joystick goes back to center, then
+       it will re-orient the input based on the direction the camera is facing
+       ... If the player then holds the button of the new direction, it will
+       then move in that direction relative to the bridge."
+
+       AND THEN, A PLAYTEST LATER: "seems to currently reset to the 'default'
+       directions that the default camera has, but really needs to be
+       dependent on the direction of the camera on the bridge ... player may
+       need to make some progress towards the forward or backwards direction
+       of the bridge before the input locks the player in the direction they
+       need to go in."
+
+       So the lens that DREW her (`viewYaw`, the ride camera's heading) is set
+       well away from `camYaw` here, which is what the bridge actually does:
+       `camYaw` is the follow camera's and the ride camera is laid over it.
+       Screen-up on the ride camera is put 50 degrees off up-the-road (or off
+       down-the-road), and `camYaw` 2 rad away from that, where reading it
+       would walk her the wrong way. */
+    const run = (backward) => {
+      const p = mkRider();
+      const f0 = onto(p, road.length / 2);
+      const on = stickFor(p, f0);
+      for (let k = 0; k < 60 * 2; k++) { p.camYaw += 0.008; p.update(1 / 60, on, W, [], HUSH_R); }
+      const Rd = p.snakeRide;
+      const held = Rd && { ...Rd.stick };
+      const rest = { ...on, mx: 0, my: 0 };
+      const upScr = { ...on, mx: 0, my: -1 };
+      p.update(1 / 60, rest, W, [], HUSH_R);
+      p.update(1 / 60, rest, W, [], HUSH_R);
+      p.update(1 / 60, on, W, [], HUSH_R);
+      const dithered = !!Rd && p.snakeRide === Rd && !Rd.free && Rd.stick.x === held.x && Rd.stick.y === held.y;
+      for (let k = 0; k < Math.ceil(SNAKE.rebind * 60) + 2; k++) p.update(1 / 60, rest, W, [], HUSH_R);
+      const fr = road.frameAt(Rd.s);
+      const hl = Math.hypot(fr.tx, fr.tz);
+      const sgn = (backward ? -1 : 1) * Rd.dir;
+      const onYaw = Math.atan2((-fr.tx / hl) * sgn, (-fr.tz / hl) * sgn);
+      p.viewYaw = onYaw + 0.87;
+      p.camYaw = p.viewYaw + 2;
+      const w = new THREE.Vector3();
+      p._snakeWish(upScr, w, 1 / 60);
+      const vf = p._viewBasis().fwd;
+      const cf = p._basis().fwd;
+      const free1 = !!Rd.free;
+      const s0 = Rd.s;
+      let lockedAt = null;
+      let stick = null;
+      let same = true;
+      let s1 = s0;
+      for (let k = 0; k < 60 * 2; k++) {
+        p.viewYaw += lockedAt == null ? 0 : 0.03;
+        p.update(1 / 60, upScr, W, [], HUSH_R);
+        if (p.snakeRide !== Rd) break;
+        if (lockedAt == null && !Rd.free) { lockedAt = Rd.s; stick = { ...Rd.stick }; }
+        if (stick && (Rd.stick.x !== stick.x || Rd.stick.y !== stick.y)) same = false;
+        s1 = Rd.s;
+      }
+      return { dithered, w, vf, cf, free1, s0, s1, lockedAt, same, stick, upScr, dir: Rd.dir };
+    };
+    const fwdRun = run(false);
+    ok('🌉 a stick that only dithers through centre keeps the road it boarded with', fwdRun.dithered);
+    ok('...but let go, and the next push walks her up the screen SHE IS LOOKING AT — the ride camera, not the default one',
+      fwdRun.free1 && fwdRun.w.dot(fwdRun.vf) > 0.99 && fwdRun.w.dot(fwdRun.cf) < 0,
+      `along the ride camera ${fwdRun.w.dot(fwdRun.vf).toFixed(2)}, along camYaw ${fwdRun.w.dot(fwdRun.cf).toFixed(2)}`);
+    ok(`...and it is locked to the road only once she has made ${SNAKE.settle} units of progress along it`,
+      fwdRun.lockedAt != null && Math.abs(fwdRun.lockedAt - fwdRun.s0) >= SNAKE.settle
+        && Math.abs(fwdRun.lockedAt - fwdRun.s0) < SNAKE.settle + 1.5,
+      fwdRun.lockedAt == null ? 'never locked' : `${(fwdRun.lockedAt - fwdRun.s0).toFixed(2)} along`);
+    ok('...to the stick she is holding, and from there, held, it stays locked while the ride camera turns',
+      fwdRun.same && Math.abs(fwdRun.stick.x - fwdRun.upScr.mx) < 1e-9 && Math.abs(fwdRun.stick.y - fwdRun.upScr.my) < 1e-9
+        && (fwdRun.s1 - fwdRun.s0) * fwdRun.dir > 8,
+      `${fwdRun.s0.toFixed(0)} -> ${fwdRun.s1.toFixed(0)}`);
+    const backRun = run(true);
+    ok('...and when the screen\'s up is DOWN the bridge, that push takes her down it and keeps her going down',
+      backRun.lockedAt != null && backRun.same && (backRun.s1 - backRun.s0) * backRun.dir < -8
+        && Math.abs(backRun.stick.x + backRun.upScr.mx) < 1e-9 && Math.abs(backRun.stick.y + backRun.upScr.my) < 1e-9,
+      `${backRun.s0.toFixed(0)} -> ${backRun.s1.toFixed(0)}`);
+    const msrcV = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('...and the game tells each kitten which way the lens that drew her faces',
+      /cam\.getWorldDirection\(_viewDir\);[\s\S]{0,260}p\.viewYaw = Math\.atan2\(-_viewDir\.x, -_viewDir\.z\);/.test(msrcV));
   }
   {
     const p = mkRider();

@@ -440,6 +440,9 @@ const JOIN_APART = 3;
  */
 const START_JITTER = 1;
 
+/** Scratch for `_render`'s per-pane heading (see `Player._viewBasis`). */
+const _viewDir = new THREE.Vector3();
+
 class Game {
   constructor() {
     this.canvas = document.getElementById('game');
@@ -12974,6 +12977,20 @@ class Game {
          is recorded here because here is the only place that knows it, and
          next to `_paneSeats` because the two are read together. */
       for (const m of groups[i] ?? []) (this._paneCamOf ??= [])[m] = cam ?? null;
+      /* AND WHICH WAY THAT LENS FACES, for the one control that has to be
+         read through it rather than through her own `camYaw`: Snake Way,
+         where the ride camera is laid over this one after it was placed. See
+         `Player._viewBasis`. A lens looking straight down has no heading and
+         leaves the last one. */
+      if (cam) {
+        cam.getWorldDirection(_viewDir);
+        if (Math.hypot(_viewDir.x, _viewDir.z) > 1e-3) {
+          for (const m of groups[i] ?? []) {
+            const p = this.players[m];
+            if (p) p.viewYaw = Math.atan2(-_viewDir.x, -_viewDir.z);
+          }
+        }
+      }
     });
     /* WRITTEN ONCE, HERE, AT THE END OF THE FRAME. `_panes` is asked the same
        question by the HUD and the minimaps as well, and if any of them updated

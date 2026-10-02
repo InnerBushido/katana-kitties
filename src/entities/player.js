@@ -1721,8 +1721,24 @@ export class Player {
   /** Camera-relative basis, so "up on the stick" is always "away from you".
    *  Uses the live camera yaw, so movement stays correct while the camera
    *  swings round to square up with the dojo's axes. */
-  _basis() {
-    const y = this.camYaw;
+  /**
+   * The ground basis of the camera that actually DREW her last frame, which
+   * is not always `camYaw`'s. On Snake Way the ride camera (`SnakeCam`) is
+   * laid over whichever camera draws her pane after that camera has been
+   * placed by `camYaw`, so the screen she is looking at faces wherever the
+   * ride camera swung to - and a stick read through `camYaw` there is read
+   * through a camera she cannot see. Richard: "seems to currently reset to
+   * the 'default' directions that the default camera has, but really needs
+   * to be dependent on the direction of the camera on the bridge". `viewYaw`
+   * is written by `Game._render` off the lens that drew her; with none yet
+   * (the first frame, the check suite) it is `camYaw`.
+   */
+  _viewBasis() {
+    return this._basis(Number.isFinite(this.viewYaw) ? this.viewYaw : this.camYaw);
+  }
+
+  _basis(yaw = this.camYaw) {
+    const y = yaw;
     const fwd = new THREE.Vector3(-Math.sin(y), 0, -Math.cos(y)).normalize();
     const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
     return { fwd, right };
@@ -5884,11 +5900,22 @@ export class Player {
    * center, then it will re-orient the input based on the direction the
    * camera is facing ... If the player then holds the button of the new
    * direction, it will then move in that direction relative to the bridge".
-   * So `stick` is re-taken once the stick has rested `SNAKE.rebind`: the
-   * direction that means onward becomes the one that is onward on the screen
-   * she is looking at NOW, and from the first frame of the new push it is
-   * locked to the road again exactly as boarding locks it. A stick held the
-   * whole way never rests, so the first half is untouched.
+   * So once the stick has rested `SNAKE.rebind`, the next push is read
+   * through the screen she is looking at NOW - the camera that drew her,
+   * `_viewBasis`, which on a road is the ride camera and not `camYaw`'s.
+   * Reading `camYaw` there is what "seems to currently reset to the 'default'
+   * directions" was: the re-read happened, against a camera she could not
+   * see.
+   *
+   * AND IT IS NOT LOCKED UNTIL IT HAS GONE SOMEWHERE. "player may need to
+   * make some progress towards the forward or backwards direction of the
+   * bridge before the input locks the player in the direction they need to
+   * go in." For the first `SNAKE.settle` of road after a let-go she walks the
+   * way the stick points on that screen, like anywhere else; once she has
+   * covered it, up the road or down it, whatever she is pressing at that
+   * moment is locked as "keep going that way" (`stick`, signed by which way
+   * she went) and the camera can swing as it likes. A stick held the whole
+   * way never rests, so the first half is untouched.
    */
   _snakeWish(pad, wish, dt = 0) {
     const R = this.snakeRide;
@@ -5903,8 +5930,20 @@ export class Player {
       wish.set(0, 0, 0);
       return;
     }
-    if ((R.rest ?? 0) >= SNAKE.rebind) R.stick = this._snakeOnward(tx, tz);
+    if ((R.rest ?? 0) >= SNAKE.rebind) R.free = { s0: R.s };
     R.rest = 0;
+    if (R.free) {
+      const gone = (R.s - R.free.s0) * R.dir;
+      if (Math.abs(gone) < SNAKE.settle) {
+        const { fwd, right } = this._viewBasis();
+        wish.set(right.x * mx - fwd.x * my, 0, right.z * mx - fwd.z * my);
+        return;
+      }
+      const m = Math.hypot(mx, my) || 1;
+      const way = Math.sign(gone) || 1;
+      R.stick = { x: (way * mx) / m, y: (way * my) / m };
+      R.free = null;
+    }
     const along = mx * R.stick.x + my * R.stick.y;
     // Right of `stick`, in stick space where y runs DOWN the screen.
     const side = mx * -R.stick.y + my * R.stick.x;
@@ -5980,7 +6019,7 @@ export class Player {
    * right now, which is the one a kid would reach for.
    */
   _boardSnake(road, hit, pad) {
-    const { fwd, right } = this._basis();
+    const { fwd, right } = this._viewBasis();
     const mx = pad?.mx ?? 0;
     const my = pad?.my ?? 0;
     const wx = right.x * mx - fwd.x * my;
@@ -5997,7 +6036,7 @@ export class Player {
       if ((px * sx + py * sy) / l0 > 0.2) { sx = px; sy = py; }
     }
     const l = Math.hypot(sx, sy) || 1;
-    this.snakeRide = { road, s: hit.s, dir, t: 0, stick: { x: sx / l, y: sy / l }, rest: 0 };
+    this.snakeRide = { road, s: hit.s, dir, t: 0, stick: { x: sx / l, y: sy / l }, rest: 0, free: null };
   }
 
   /**
@@ -6006,7 +6045,7 @@ export class Player {
    * my = -(D.fwd). Boarding and every let-go ask it the same question.
    */
   _snakeOnward(dx, dz) {
-    const { fwd, right } = this._basis();
+    const { fwd, right } = this._viewBasis();
     const sx = dx * right.x + dz * right.z;
     const sy = -(dx * fwd.x + dz * fwd.z);
     const l = Math.hypot(sx, sy) || 1;
