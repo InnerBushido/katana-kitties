@@ -1,4 +1,4 @@
-import { POWER_ORBS, ORB_BY_ID, ORB_IDS, MAX_EQUIPPED, countsOf } from '../entities/powerorb.js';
+import { POWER_ORBS, ORB_BY_ID, ORB_IDS, MAX_EQUIPPED, MAX_BAG, countsOf } from '../entities/powerorb.js';
 import { MAX_PLAYERS, cssFor } from '../core/palette.js';
 import { dragGuard } from '../core/tap.js';
 
@@ -31,6 +31,17 @@ import { dragGuard } from '../core/tap.js';
    A fourth would be a fourth thing to explain to a nine-year-old, and the two
    things this screen has to teach are "that one is mine" and "we both have to
    say yes".
+
+   AND TWO TABS UNDER THE RACK — QUESTS and INVENTORY. Richard: "Make the menu
+   navigation selection be able to select the two tabs but skip its content
+   unless the player clicks into the tab, then selection can step into it ...
+   if they don't click into it, then skip all the items within it when
+   navigating this screen. They have to 'back out of' the inventory screen to
+   return to the Character Profile screen navigation." So the tab HEADERS are
+   cursor rows, after points; JUMP on one steps inside it (`Side.inside`);
+   inside, the stick only moves within the tab and INTERACT is the one way
+   back out to the headers. The three buttons keep their meanings — JUMP
+   picks, INTERACT backs out one layer — and a tab is one more layer.
 --------------------------------------------------------------------------- */
 
 /** Stick deflection before a nudge counts, and how fast a held stick repeats. */
@@ -97,6 +108,14 @@ class Side {
      */
     this.armed = false;
     this.armT = 0;
+    /** Which tab's content is drawn under her rack — the last header her
+     *  cursor stood on. Kept across a re-open: it is where she left it. */
+    this.tab = null;
+    /** The tab she has stepped INTO, or null. While set, her stick and JUMP
+     *  belong to that tab and nothing else on the card. */
+    this.inside = null;
+    /** Her cursor inside the INVENTORY tab: 0-7 the worn row, 8-23 the bag. */
+    this.inv = 0;
   }
 
   reset() {
@@ -114,6 +133,21 @@ class Side {
     this.armed = false;
     this.armT = 0;
   }
+}
+
+/**
+ * One step of the INVENTORY tab's cursor over its 8-wide grid: row 0 is what
+ * she wears, rows 1 and 2 her bag. It WRAPS along a row and STOPS at the top
+ * and bottom — inside a tab the stick never leaves it ("They have to 'back
+ * out of' the inventory screen"), so the edges are walls, and a row wraps
+ * because a wall at its end would be a corner a kid pushes into for nothing.
+ */
+export function invStep(at, dx, dy) {
+  const cols = MAX_EQUIPPED;
+  const rows = 1 + Math.ceil(MAX_BAG / cols);
+  const r = Math.max(0, Math.min(rows - 1, Math.floor(at / cols) + dy));
+  const c = ((at % cols) + dx + cols) % cols;
+  return r * cols + c;
 }
 
 /** How much one nudge of the stick moves a points offer. Coarse on purpose:
@@ -219,7 +253,8 @@ export class ProfileScreen {
       const act = e.target.closest('[data-act]');
       if (act) {
         const i = Number(act.dataset.side);
-        if (act.dataset.act === 'offer') this._offerHere(i);
+        if (act.dataset.act === 'back') this._leaveTab(i);
+        else if (act.dataset.act === 'offer') this._offerHere(i);
         else if (act.dataset.act === 'confirm') this._confirmHere(i);
         else if (act.dataset.act === 'buy') this._buyHere(i);
         else if (act.dataset.act === 'sell') this._sellHere(i);
@@ -234,6 +269,39 @@ export class ProfileScreen {
       const step = e.target.closest('[data-pts]');
       if (step) {
         this._bumpPoints(Number(step.dataset.side), Number(step.dataset.pts));
+        this._sig = '';
+        this._paint();
+        return;
+      }
+
+      /* A TAB HEADER IS OPENED BY A TAP, and an inventory slot is pressed by
+         one — the same two things the stick-and-JUMP route does, through the
+         same functions, so a thumb cannot reach a rule a pad cannot. A tap on
+         a slot in a tab she has not stepped into steps her in first: her
+         finger is already inside it. */
+      const tab = e.target.closest('[data-tab]');
+      if (tab) {
+        const index = Number(tab.dataset.side);
+        const side = this.sides[index];
+        if (!side || side.pending) return;
+        side.i = Number(tab.dataset.slot);
+        this._enterTab(index, tab.dataset.tab);
+        this._sig = '';
+        this._paint();
+        return;
+      }
+      const inv = e.target.closest('[data-inv]');
+      if (inv) {
+        const index = Number(inv.dataset.side);
+        const side = this.sides[index];
+        if (!side || side.pending) return;
+        if (side.inside !== 'inventory') {
+          const k = this._tabs(index).indexOf('inventory');
+          side.i = this._pointsRow(index) + 1 + k;
+          this._enterTab(index, 'inventory');
+        }
+        side.inv = Number(inv.dataset.inv);
+        this._invHere(index);
         this._sig = '';
         this._paint();
         return;
@@ -300,7 +368,10 @@ export class ProfileScreen {
     /* The kitten who walked up to the counter is in from the first frame; she
        asked for this screen and should not have to ask twice. */
     this.joined = new Set(shopper ? [shopper.index] : []);
-    for (const s of this.sides) { s.reset(); s.disarm(); }
+    /* OUTSIDE EVERY TAB, on every open: a screen that opened with her stick
+       already captured by a tab she cannot see she is in would be the dead
+       stick the sixth non-negotiable is about. */
+    for (const s of this.sides) { s.reset(); s.disarm(); s.inside = null; }
     this.sides.forEach((s, i) => {
       s.i = Math.min(s.i, Math.max(0, this._rowCount(i) - 1));
     });
@@ -418,6 +489,10 @@ export class ProfileScreen {
       return;
     }
 
+    /* INSIDE A TAB, THE TAB HAS HER — stick, JUMP and INTERACT — and nothing
+       below this line runs. See `_driveTab`. */
+    if (side.inside && this.mode === 'profile') { this._driveTab(index, pad, dt); return; }
+
     /* ON THE POINTS ROW, LEFT AND RIGHT CHANGE THE AMOUNT and up and down
        still move the cursor. Splitting the axes is what lets one row carry a
        value without a second control to explain — the same trick `MenuNav`
@@ -426,36 +501,23 @@ export class ProfileScreen {
     const onPoints = this._onPoints(index);
     const raw = (!onPoints && Math.abs(pad.mx) > NAV_DEAD) ? Math.sign(pad.mx)
       : Math.abs(pad.my) > NAV_DEAD ? Math.sign(pad.my) : 0;
-    let step = 0;
-    if (raw === 0) side.hold = 0;
-    else if (side.hold !== raw) { side.hold = raw; side.repeatT = REPEAT_DELAY; step = raw; }
-    else {
-      side.repeatT -= dt;
-      if (side.repeatT <= 0) { side.repeatT = REPEAT_RATE; step = raw; }
-    }
+    const step = this._repeat(side, raw, dt);
     if (step && rows > 0) {
-      /* ON THE QUEST LIST, UP AND DOWN SCROLL IT UNTIL IT RUNS OUT, and only
-         then move the cursor off. A nested scroller, which is the same shape
-         the points row already uses on the other axis: one row carries a value
-         the stick changes, and the cursor leaves it when there is nothing left
-         to change. The list is twice the size it was and shows about four
-         quests, so without this there are five a stick could never read.
-
-         IT LEAVES AT THE END RATHER THAN TRAPPING HER. `_scrollQuests` answers
-         false when the box is already at that end — or has nothing to scroll
-         at all — so a push at the bottom wraps to the top of her card exactly
-         as it did before this existed. A row you cannot get out of is worse
-         than a row you cannot get into. */
-      if (this._onQuests(index) && this._scrollQuests(index, step)) {
-        this.game.audio?.play('menu');
-      } else {
-        side.i = (side.i + step + rows) % rows;
-        /* WHOSE CURSOR MOVED, for `_followCursors`. Only a STICK sets it: a tap
-           put the row under her finger, so it is on screen by definition, and
-           scrolling to it could only move it out from under somebody else. */
-        this._moved = index;
-        this.game.audio?.play('menu');
-      }
+      /* THE QUEST LIST IS NOT A ROW ANY MORE — IT IS BEHIND ITS TAB. It used
+         to be the last row, scrolled by up and down until it ran out; now the
+         cursor stops on the QUESTS header and steps OVER the list, and only
+         JUMP takes her in. "skip all the items within it when navigating this
+         screen." */
+      side.i = (side.i + step + rows) % rows;
+      /* LANDING ON A HEADER SHOWS THAT TAB. It does not open it — the content
+         is there to be seen, and the stick goes straight on past it. */
+      const at = this._tabAt(index);
+      if (at) side.tab = at;
+      /* WHOSE CURSOR MOVED, for `_followCursors`. Only a STICK sets it: a tap
+         put the row under her finger, so it is on screen by definition, and
+         scrolling to it could only move it out from under somebody else. */
+      this._moved = index;
+      this.game.audio?.play('menu');
     }
 
     if (onPoints && Math.abs(pad.mx) > NAV_DEAD) {
@@ -479,6 +541,136 @@ export class ProfileScreen {
 
     if (this.mode === 'shop') this._shopButtons(index, pad);
     else this._tradeButtons(index, pad, side);
+  }
+
+  /**
+   * A held stick, as steps: one on the push, then `REPEAT_DELAY`, then one
+   * every `REPEAT_RATE`. `code` is any non-zero value that names the
+   * direction; a change of it is a new push.
+   */
+  _repeat(side, code, dt) {
+    if (code === 0) { side.hold = 0; return 0; }
+    if (side.hold !== code) { side.hold = code; side.repeatT = REPEAT_DELAY; return code; }
+    side.repeatT -= dt;
+    if (side.repeatT <= 0) { side.repeatT = REPEAT_RATE; return code; }
+    return 0;
+  }
+
+  /**
+   * Her stick and buttons while she is INSIDE a tab.
+   *
+   * "They have to 'back out of' the inventory screen to return to the
+   * Character Profile screen navigation." So the stick never leaves: at the
+   * edge of the grid, or the end of the quest list, a push does nothing. The
+   * way out is INTERACT — the button that already means "back one layer" on
+   * this screen — and START still closes the whole thing (read in `_drive`,
+   * above this). ATTACK and SPRINT are the trade's; pressed in here they SAY
+   * how to get back to the trade instead of doing nothing (sixth
+   * non-negotiable).
+   */
+  _driveTab(index, pad, dt) {
+    const side = this.sides[index];
+    if (pad.pressed('interact')) { this._leaveTab(index); return; }
+    if (pad.pressed('attack') || pad.pressed('sprint')) {
+      this._say(`INTERACT to step back out of ${side.inside.toUpperCase()} first`);
+      this.game.audio?.play('deny');
+      return;
+    }
+    if (side.inside === 'quests') {
+      const raw = Math.abs(pad.my) > NAV_DEAD ? Math.sign(pad.my) : 0;
+      const step = this._repeat(side, raw, dt);
+      if (step && this._scrollQuests(index, step)) this.game.audio?.play('menu');
+      if (pad.pressed('jump')) {
+        this._say('The quests — push the stick UP and DOWN to read them all, INTERACT to step back out');
+        this.game.audio?.play('menu');
+      }
+      return;
+    }
+    /* THE GRID: left and right along a row, up and down between the worn row
+       and the two bag rows. Coded ±2 sideways and ±1 up/down so the repeat can
+       tell a turn from a held push. */
+    const code = Math.abs(pad.mx) > NAV_DEAD && Math.abs(pad.mx) >= Math.abs(pad.my)
+      ? 2 * Math.sign(pad.mx)
+      : Math.abs(pad.my) > NAV_DEAD ? Math.sign(pad.my) : 0;
+    const step = this._repeat(side, code, dt);
+    if (step) {
+      const was = side.inv;
+      side.inv = invStep(side.inv, Math.abs(step) === 2 ? Math.sign(step) : 0,
+        Math.abs(step) === 1 ? step : 0);
+      if (side.inv !== was) {
+        this._moved = index;
+        this.game.audio?.play('menu');
+      }
+    }
+    if (pad.pressed('jump')) this._invHere(index);
+  }
+
+  /** Step INTO a tab: JUMP on its header, or a tap on it. */
+  _enterTab(index, tab) {
+    const side = this.sides[index];
+    const p = this.game.players[index];
+    if (!side || !p || !this._tabs(index).includes(tab)) return;
+    side.tab = tab;
+    side.inside = tab;
+    side.hold = 0;
+    /* INTO THE BAG IF THERE IS ANYTHING IN IT — it is what the tab is for —
+       and onto her first worn orb otherwise. */
+    if (tab === 'inventory') side.inv = (p.orbBag?.length ? MAX_EQUIPPED : 0);
+    this._moved = index;
+    this.game.audio?.play('menu');
+  }
+
+  /** ...and back out to the headers. INTERACT, or BACK on a phone. */
+  _leaveTab(index) {
+    const side = this.sides[index];
+    if (!side?.inside) return;
+    side.inside = null;
+    side.hold = 0;
+    this._moved = index;
+    this.game.audio?.play('menu');
+  }
+
+  /**
+   * JUMP inside the INVENTORY tab: a worn orb goes in the bag, a bagged one is
+   * put on. Neither is irreversible — the same press takes it back — so
+   * neither asks (seventh non-negotiable is about what cannot be undone).
+   */
+  _invHere(index) {
+    const p = this.game.players[index];
+    const side = this.sides[index];
+    const K = this.game.kotodama;
+    if (!p || !side || !K) return;
+    const k = side.inv;
+    const worn = k < MAX_EQUIPPED;
+    const id = worn ? p.powerOrbs[k] : p.orbBag?.[k - MAX_EQUIPPED];
+    const why = worn ? K.stow(p, k) : K.wear(p, k - MAX_EQUIPPED);
+    if (why) {
+      this._say(why);
+      this.game.audio?.play('deny');
+      return;
+    }
+    this._orbsMoved(index);
+    const name = ORB_BY_ID[id]?.name ?? 'it';
+    this._say(worn ? `${p.name} put ${name} in her bag` : `${p.name} is wearing ${name}`);
+    this.game.audio?.play('menu');
+  }
+
+  /**
+   * Her neck changed while a trade might be on the table, so the table is
+   * cleared. `Side.offers` are ROW numbers on her neck, and taking one orb
+   * off shuffles every row after it: leaving the pile would leave her
+   * offering whatever slid into those places. And anybody who had said yes to
+   * a trade with her said it to different terms — the consent rule the offer
+   * and the points steppers already follow, one step further along.
+   */
+  _orbsMoved(index) {
+    const side = this.sides[index];
+    side.offers.clear();
+    side.ready = false;
+    side.sure = false;
+    for (const sd of this.sides.slice(0, this.game.players.length)) {
+      if (sd.pending?.kind === 'trade') { sd.pending = null; sd.sure = false; }
+    }
   }
 
   _tradeButtons(index, pad, side) {
@@ -514,9 +706,12 @@ export class ProfileScreen {
        double-reading a press.
        IT SAYS WHAT THE ROW IS FOR rather than blipping a refusal: there is
        nothing wrong with the press, she is simply on a list. */
-    if (this._onQuests(index)) {
-      this._say('The quests — push the stick UP and DOWN to read them all');
-      this.game.audio?.play('menu');
+    /* A TAB HEADER IS OPENED, NOT OFFERED. It used to be the quest list
+       itself sitting here as a row, and JUMP on it only said what it was; now
+       JUMP is the way in. */
+    const tab = this._tabAt(index);
+    if (tab) {
+      this._enterTab(index, tab);
       return;
     }
     if (this._onPoints(index)) {
@@ -613,7 +808,7 @@ export class ProfileScreen {
     const player = this.game.players[index];
     const K = this.game.kotodama;
     const id = ORB_IDS[this.sides[index].i];
-    if (!player.powerOrbs.includes(id)) {
+    if (!K.has(player, id)) {
       this._say(`${player.name} has no ${ORB_BY_ID[id].name} to sell`);
       this.game.audio?.play('deny');
       return;
@@ -726,7 +921,7 @@ export class ProfileScreen {
       K.buy(player, q.id);
       this._say(`Bought ${ORB_BY_ID[q.id].name}`);
     } else if (q.kind === 'sell') {
-      if (!player.powerOrbs.includes(q.id)) {
+      if (!K.has(player, q.id)) {
         this._say(`${player.name} has no ${ORB_BY_ID[q.id].name} to sell`);
         this.game.audio?.play('deny');
         return true;
@@ -957,7 +1152,30 @@ export class ProfileScreen {
        where it was: the orbs keep their indices and so does the points row.
        Only a card that HAS quests grows one, so a party with the feature off
        or a kitten before the list exists comes out unchanged. */
-    return this._pointsRow(index) + 1 + (this._hasQuests(index) ? 1 : 0);
+    /* ...AND NOW THOSE LAST ROWS ARE TAB HEADERS — QUESTS (if she has a
+       list) and INVENTORY — and the content under them is not rows at all
+       until she steps in. See `_tabs`. */
+    return this._pointsRow(index) + 1 + this._tabs(index).length;
+  }
+
+  /** The tabs on her card, in the order the cursor meets them. */
+  _tabs(index) {
+    return this._hasQuests(index) ? ['quests', 'inventory'] : ['inventory'];
+  }
+
+  /** The tab header her cursor is on, or null. */
+  _tabAt(index) {
+    if (this.mode !== 'profile') return null;
+    const k = this.sides[index].i - this._pointsRow(index) - 1;
+    return k >= 0 ? (this._tabs(index)[k] ?? null) : null;
+  }
+
+  /** Which tab's content her card is showing: the last header she stood on,
+   *  or the first there is. */
+  _shownTab(index) {
+    const tabs = this._tabs(index);
+    const t = this.sides[index]?.inside ?? this.sides[index]?.tab;
+    return tabs.includes(t) ? t : tabs[0];
   }
 
   /** Which row index the points row is — the one after the last orb. */
@@ -984,9 +1202,10 @@ export class ProfileScreen {
     return this.mode === 'profile' && this.sides[index].i === this._pointsRow(index);
   }
 
-  /** ...and true when it is holding the quest list. */
+  /** ...and true when she has stepped into the quest list. Not when her cursor
+   *  is on its header: the header only shows it. */
   _onQuests(index) {
-    return this.mode === 'profile' && this.sides[index].i > this._pointsRow(index);
+    return this.mode === 'profile' && this.sides[index].inside === 'quests';
   }
 
   /* -------------------------------- paint -------------------------------- */
@@ -1044,9 +1263,21 @@ export class ProfileScreen {
          `partySize`, because the thing the width has to fit is the markup on
          screen and those are two facts that could drift. */
       this._sizeToCards(this.game.players.length);
+      /* WHILE SOMEBODY IS INSIDE A TAB, THE FOOTER SAYS WHAT HER BUTTONS DO
+         THERE — and names her, because her sisters' buttons still mean the
+         trade. Their sentence is the one on her card's header row. */
+      const live = this.sides.slice(0, this.game.players.length);
+      const inInv = live.map((s, i) => (s.inside === 'inventory' ? this.game.players[i]?.name : null)).filter(Boolean);
+      const inQ = live.map((s, i) => (s.inside === 'quests' ? this.game.players[i]?.name : null)).filter(Boolean);
+      const tabKeys = inInv.length
+        ? `${inInv.join(' and ')}: stick <b>pick an orb</b> · JUMP <b>wear it / put it in the bag</b>`
+          + ' · INTERACT <b>step back out</b>'
+        : inQ.length
+          ? `${inQ.join(' and ')}: ▲ ▼ <b>read the quests</b> · INTERACT <b>step back out</b>`
+          : null;
       this.help.innerHTML = this._flashT > 0
         ? `<em>${this._flash}</em>`
-        : keys ?? 'JUMP <b>offer this orb</b> (as many as you like)'
+        : keys ?? tabKeys ?? 'JUMP <b>offer this orb</b> (as many as you like)'
           + ' · ATTACK <b>confirm</b> · SPRINT <b>drop them</b>'
           + ' · INTERACT <b>take them all back</b>'
           + ' — <b>both</b> must confirm';
@@ -1242,7 +1473,9 @@ export class ProfileScreen {
     if (i == null || !this.body) return;
     const sel = this.mode === 'shop'
       ? `.kd-shelf .kd-row[data-slot="${this.sides[i].i}"]`
-      : `.kd-card.kd-p${i} [data-slot="${this.sides[i].i}"]`;
+      : this.sides[i].inside === 'inventory'
+        ? `.kd-card.kd-p${i} [data-inv="${this.sides[i].inv}"]`
+        : `.kd-card.kd-p${i} [data-slot="${this.sides[i].i}"]`;
     this.body.querySelector(sel)?.scrollIntoView({ block: 'nearest' });
   }
 
@@ -1271,7 +1504,7 @@ export class ProfileScreen {
        the row it had before — the same class of miss as a join being invisible
        (see `_signature`). */
     const sig = `${this.mode}|${i}|${this.sides[i]?.ready}|${!!this.sides[i]?.pending}`
-      + `|${this.sides[i]?.offers.size ?? 0}`;
+      + `|${this.sides[i]?.offers.size ?? 0}|${this.sides[i]?.inside ?? ''}`;
     if (sig === this._actionSig) return;
     this._actionSig = sig;
     /* EMPTIED WHILE SHE IS BEING ASKED. The YES/NO pair lives in her card, next
@@ -1282,6 +1515,14 @@ export class ProfileScreen {
     if (this.sides[i]?.pending) { this.actions.innerHTML = ''; return; }
     const btn = (act, label, cls = '') =>
       `<button type="button" class="kd-act ${cls}" data-act="${act}" data-side="${i}">${label}</button>`;
+    /* INSIDE A TAB THE ONLY FOOTER BUTTON IS THE WAY BACK OUT. The slots in
+       the tab are pressed by tapping them; OFFER and CONFIRM down here would
+       act on a trade she has stepped away from. "They have to 'back out of'
+       the inventory screen" — and a phone has no INTERACT to do it with. */
+    if (this.sides[i]?.inside && this.mode === 'profile') {
+      this.actions.innerHTML = btn('back', '◀ BACK');
+      return;
+    }
     this.actions.innerHTML = this.mode === 'shop'
       ? btn('buy', 'BUY') + btn('sell', 'SELL')
       : btn('offer', 'OFFER') + btn('confirm', this.sides[i]?.ready ? 'UNCONFIRM' : 'CONFIRM', 'go')
@@ -1311,12 +1552,13 @@ export class ProfileScreen {
     const K = this.game.kotodama;
     return [
       this.mode,
-      this.game.players.map((p) => `${p.powerOrbs.join(',')}|${p.score}|${p.clan?.id ?? ''}`).join(';'),
+      this.game.players.map((p) => `${p.powerOrbs.join(',')}|${(p.orbBag ?? []).join(',')}|${p.score}|${p.clan?.id ?? ''}`).join(';'),
       /* The offers are a SET, so they are spelled out rather than stringified
          — `${set}` is "[object Set]" for every possible pile, and the screen
          would have stopped repainting the moment the second orb was picked. */
       this.sides.map((s) => `${s.i}/${[...s.offers].sort().join('+')}`
-        + `/${s.points}/${s.ready}/${s.sure}/${s.pending?.text ?? ''}`).join(';'),
+        + `/${s.points}/${s.ready}/${s.sure}/${s.pending?.text ?? ''}`
+        + `/${s.tab ?? ''}/${s.inside ?? ''}/${s.inv}`).join(';'),
       this.mode === 'shop' ? ORB_IDS.map((id) => K.stock[id]).join(',') : '',
       /* WITHOUT THIS A JOIN IS INVISIBLE. Nothing else on the signature moves
          when a kitten presses MOUNT — her cursor was already 0 and her purse
@@ -1441,7 +1683,7 @@ export class ProfileScreen {
     return `<div class="${cls}" ${me}>
       <div class="kd-name">${player.name}${starTag}</div>
       ${this._clanMarkup(player)}
-      <div class="kd-meta">${player.score} pts · ${owned.length}/${MAX_EQUIPPED} orbs</div>
+      <div class="kd-meta">${player.score} pts · ${owned.length}/${MAX_EQUIPPED} orbs${player.orbBag?.length ? ` · ${player.orbBag.length} in bag` : ''}</div>
       ${this._askMarkup(index)}
       <div class="kd-rack">
         <div class="kd-slots" data-slots>${slots.join('')}</div>
@@ -1451,8 +1693,95 @@ export class ProfileScreen {
           <div class="kd-state">${state}</div>
         </div>
       </div>
-      ${this._questMarkup(quests, index)}
+      ${this._tabsMarkup(player, quests, index)}
     </div>`;
+  }
+
+  /**
+   * The two tabs under the rack: their headers, which are cursor rows, and
+   * the content of whichever is showing, which is not — until she steps in.
+   *
+   * THE HEADERS ARE REAL BUTTONS carrying `data-slot`, so `_followCursors`
+   * finds them like any other row and a tap opens them (`_bindTaps`).
+   * `on` is the tab being shown, `cursor` her cursor on the header, `inside`
+   * the one she has stepped into — three different facts, three classes.
+   */
+  _tabsMarkup(player, quests, index) {
+    const side = this.sides[index];
+    const tabs = this._tabs(index);
+    const shown = this._shownTab(index);
+    const at = side.inside ? null : this._tabAt(index);
+    const first = this._pointsRow(index) + 1;
+    const stars = quests.filter((q) => q.star).length;
+    const bag = player.orbBag?.length ?? 0;
+    const label = {
+      quests: `QUESTS${stars ? ` <span class="kd-stars">★${stars}</span>` : ''}`,
+      inventory: `INVENTORY <span class="kd-tab-n">${bag}/${MAX_BAG}</span>`,
+    };
+    const heads = tabs.map((t, k) => {
+      const cls = ['kd-tab', t === shown ? 'on' : '', t === at ? 'cursor' : '',
+        side.inside === t ? 'inside' : ''].filter(Boolean).join(' ');
+      return `<button type="button" class="${cls}" data-side="${index}" `
+        + `data-slot="${first + k}" data-tab="${t}">${label[t]}</button>`;
+    }).join('');
+    /* THE INSTRUCTION SITS ON THE HEADER ROW, and only while her cursor is on
+       a header — the moment the sentence is true for the stick in her hands. */
+    const hint = at ? `<span class="kd-tab-hint">JUMP to open</span>` : '';
+    const body = shown === 'quests'
+      ? this._questMarkup(quests, index)
+      : this._invMarkup(player, index);
+    return `<div class="kd-tabs${side.inside ? ' inside' : ''}">`
+      + `<div class="kd-tab-row">${heads}${hint}</div>${body}</div>`;
+  }
+
+  /**
+   * THE INVENTORY TAB: the eight she is wearing, and the sixteen in her bag.
+   *
+   * BOTH ROWS, BECAUSE THE ONE THING THIS TAB DOES IS MOVE AN ORB BETWEEN
+   * THEM. The rack above already shows what she wears; repeating it here is
+   * what lets one JUMP mean "this one goes the other way" on whichever row she
+   * is on, with nothing to explain about where it went — it lands in the
+   * other row, in sight.
+   *
+   * `data-inv` is the cell's index in `Side.inv`'s numbering, which is what a
+   * tap hands `_invHere`. The cells are not `data-slot`: they are not rows of
+   * the card, and the cursor never lands on one from outside.
+   */
+  _invMarkup(player, index) {
+    const side = this.sides[index];
+    const inside = side.inside === 'inventory';
+    const worn = player.powerOrbs;
+    const bag = player.orbBag ?? [];
+    const cell = (id, k) => {
+      const spec = id ? ORB_BY_ID[id] : null;
+      const cls = ['kd-slot', 'kd-inv-slot', spec ? 'full' : 'empty',
+        inside && side.inv === k ? 'cursor' : ''].filter(Boolean).join(' ');
+      const style = spec ? ` style="--orb:#${spec.color.toString(16).padStart(6, '0')}"` : '';
+      return `<div class="${cls}"${style} data-side="${index}" data-inv="${k}">`
+        + `<span>${spec ? spec.kanji : ''}</span></div>`;
+    };
+    const wornCells = [];
+    for (let k = 0; k < MAX_EQUIPPED; k++) wornCells.push(cell(worn[k], k));
+    const bagCells = [];
+    for (let k = 0; k < MAX_BAG; k++) bagCells.push(cell(bag[k], MAX_EQUIPPED + k));
+    /* WHAT IS UNDER HER CURSOR, AND WHAT JUMP WILL DO TO IT — in words, on the
+       line under the grid. Sixth non-negotiable: the press is described before
+       it is made. */
+    let detail = '<span class="kd-dim">Orbs past eight go in the bag. JUMP to open, then JUMP on an orb to move it.</span>';
+    if (inside) {
+      const k = side.inv;
+      const id = k < MAX_EQUIPPED ? worn[k] : bag[k - MAX_EQUIPPED];
+      const spec = id ? ORB_BY_ID[id] : null;
+      detail = spec
+        ? `<b>${spec.name}</b> · ${spec.label} — JUMP <b>${k < MAX_EQUIPPED ? 'put it in the bag' : 'wear it'}</b>`
+        : '<span class="kd-dim">Empty slot</span>';
+    }
+    return `<div class="kd-inv${inside ? ' cursor' : ''}" data-inv-box>`
+      + `<div class="kd-inv-head">WEARING ${worn.length}/${MAX_EQUIPPED}</div>`
+      + `<div class="kd-inv-grid">${wornCells.join('')}</div>`
+      + `<div class="kd-inv-head">BAG ${bag.length}/${MAX_BAG}</div>`
+      + `<div class="kd-inv-grid">${bagCells.join('')}</div>`
+      + `<div class="kd-inv-detail">${detail}</div></div>`;
   }
 
   /**
@@ -1496,13 +1825,15 @@ export class ProfileScreen {
        The scrollable element is the `<ul>` and the ring is on the block around
        it, so the outline does not scroll away with the rows. */
     const on = index >= 0 && this._onQuests(index) ? ' cursor' : '';
-    const slot = index >= 0 ? ` data-side="${index}" data-slot="${this._pointsRow(index) + 1}"` : '';
+    /* NO `data-slot` ANY MORE: the cursor row is the QUESTS header in
+       `_tabsMarkup`, and the list is what is behind it. */
+    const slot = '';
     /* AND THE HEADING SAYS THE LIST MOVES. A box that scrolls and does not say
        so is a box a kid reads the top four rows of and concludes is the whole
        list — sixth non-negotiable again, in its quieter form. Only while her
        cursor is actually on it, because that is the only time the instruction
        is true for the stick in her hands. */
-    const how = on ? ' <span class="kd-q-over">▲ ▼ to read</span>' : '';
+    const how = on ? ' <span class="kd-q-over">▲ ▼ to read · INTERACT to step out</span>' : '';
     return `<div class="kd-quests${on}"${slot}>`
       + `<div class="kd-q-head">QUESTS — orbs at the ending${ended}${how}</div>`
       + `<ul data-quests>${rows.join('')}</ul></div>`;
@@ -1639,7 +1970,8 @@ export class ProfileScreen {
       const named = [...here].sort((x, y) => (
         (x === this.shopper ? 1 : 0) - (y === this.shopper ? 1 : 0)
       ));
-      const count = (q) => q.powerOrbs.filter((x) => x === spec.id).length;
+      /* WORN AND BAGGED — it is what she could sell him. */
+      const count = (q) => [...q.powerOrbs, ...(q.orbBag ?? [])].filter((x) => x === spec.id).length;
       /* THE PRICE IS ON THE ROW WHEN IT IS NOT THE SHELF PRICE. The header
          line says "buy 650 / sell 488" and that is true of eight of the nine;
          printing every row's price would repeat one number nine times to say

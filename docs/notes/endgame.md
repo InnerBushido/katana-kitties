@@ -1676,6 +1676,71 @@ dealer is one shelf of full-width rows whose HEIGHT is what matters; narrowing
 it makes the list longer, which is the exact direction the two-scrollers bug
 came from.
 
+## A bag of sixteen, and the two tabs that show it
+
+Richard: *"make a tab for the Quests section in the Character Profile screen
+and also add a new tab for Inventory and let's add a new inventory system.
+Make the menu navigation selection be able to select the two tabs but skip its
+content unless the player clicks into the tab, then selection can step into
+it. For now, can just have 16 slots for players to carry kotodama orbs, if
+they have more than 8 Kotodama orbs already equipped, the orb should get
+stored to their inventory ... They have to 'back out of' the inventory screen
+to return to the Character Profile screen navigation."*
+
+### The bag
+
+- **`player.orbBag`, at most `MAX_BAG` (16).** It is carried and not worn, so
+  no buff, no ring and no steal reads it. `MAX_CARRIED` is the 24 of both
+  together.
+- **`Kotodama.give` puts the ninth in the bag** instead of refusing it, and
+  says so in the toast. Every way in goes through it: pickup, purchase, trade,
+  a quest paid at the ceremony, a stolen orb going home. Only the twenty-fifth
+  is refused.
+- **Every "is she full?" check asks about 24 now**: the pickup, `buyRefusal`,
+  `trade`'s overflow check and `feats.pay`. That last one overturns an older
+  note ("let's not award them one if they already have 8").
+- **The bag counts as hers to give up.** `has` / `takeAny` look in it, so
+  `sell`, `settleLoans` and `reclaimFrom` reach it, the bag first: a spare
+  doing nothing goes before a buff. A stolen orb a thief moved into her bag
+  still goes home at the gong, which `world-check` checks. The pause menu's
+  DROP HER ORBS drops the bag too.
+- **The save carries it** (`castRow.bag`). `applyCast` filters out unknown
+  ids and caps the list at 16, and a row from before the bag existed loads as
+  an empty bag.
+
+### The tabs
+
+- **The tab headers are cursor rows.** The rows run orbs, points, QUESTS,
+  INVENTORY. `_tabAt` says which header the cursor is on, and standing on one
+  shows its content (`Side.tab`) without opening it.
+- **The quest list stopped being a row.** It used to be the card's last row,
+  scrolled until it ran out and then wrapped. Now the stick steps over it.
+- **`Side.inside` is the tab she has stepped into.** JUMP on a header (or a
+  tap) sets it, and `_driveTab` then owns her stick and JUMP. The edges are
+  walls (`invStep`): a row wraps sideways, and the top and bottom stop her.
+  INTERACT is the one way out, the button that already means "back one
+  layer" here. On a phone the footer is a single BACK button while she is
+  inside. ATTACK and SPRINT are refused in words, because they belong to the
+  trade.
+- **The inventory shows both rows**, the eight worn and the sixteen bagged.
+  The one thing it does is move an orb to the other row, and the moved orb
+  lands in sight. Neither move is irreversible, so neither asks.
+- **Moving an orb clears the trade table** (`_orbsMoved`). Offers are row
+  numbers on her neck, and a stow shuffles them. A sister's yes was given to
+  the old terms, so it is cleared too.
+- **A phone.**
+  - The tabs wrapper is the flexible block now. The inventory scrolls inside
+    itself, so the BACK button stays on screen.
+  - Measured at 844x390 with two kittens: the card body was 497 tall with
+    497 of content (no scroll), the inventory a 102px box scrolling 302px
+    of grid, and each slot 32px on screen.
+
+**A trap for the next session.** After hot reloads in the browser pane, the
+profile's taps did nothing. `_bindTaps` guards on `el._bound`, and an earlier
+Game from before a hot reload had bound `#panel-profile` with its own `mode`
+stuck at null. A full reload fixed it, and the click path was fine. Reload
+before believing a dead tap here.
+
 ## The balance page
 
 **`npm run dev`, then open `/tuning.html`.** Every ability's numbers, one

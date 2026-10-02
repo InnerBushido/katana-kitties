@@ -506,6 +506,10 @@ export class Player {
        Anything that edits the array in place gets a kitten whose maximum
        health and whose displayed inventory disagree. */
     this.powerOrbs = [];
+    /** Orbs she is CARRYING and not wearing — the INVENTORY tab's sixteen
+     *  slots (`MAX_BAG`). Nothing reads a buff off it; it is replaced, never
+     *  edited in place, by `Kotodama.give` / `wear` / `stow` and the save. */
+    this.orbBag = [];
     /** Folded buff totals. Never null: an empty list aggregates to the
      *  identity, so every read site is `this.power.speed` with no `?? 1`. */
     this.power = aggregate([]);

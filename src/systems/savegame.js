@@ -2,6 +2,7 @@ import { PLAYER_STYLE } from '../core/palette.js';
 import { CLANS } from '../world/world.js';
 import { MILESTONES } from './arenaquest.js';
 import { cleanPayne } from './payne.js';
+import { ORB_BY_ID, MAX_BAG } from '../entities/powerorb.js';
 
 /* ---------------------------------------------------------------------------
    SAVED GAMES — the afternoon, written down every half minute.
@@ -338,6 +339,9 @@ export function castRow(p, here = true) {
     clan: p.clan?.id ?? null,
     sworn: [...(p.clansSworn ?? [])],
     orbs: [...(p.powerOrbs ?? [])],
+    /* HER BAG — the INVENTORY tab's sixteen. A row without it is a save from
+       before the bag existed, and reads as an empty one. */
+    bag: [...(p.orbBag ?? [])],
     cut: p.bambooCut ?? 0,
     fedFrom: p.pandaFedFrom ?? null,
     raised: !!p.raisedPanda,
@@ -416,7 +420,7 @@ export function castRow(p, here = true) {
  * whatever this says: she is there, holding a controller.
  */
 export function meaningful(row) {
-  return !!(row && (row.score || row.orbs?.length || row.clan || row.sworn?.length
+  return !!(row && (row.score || row.orbs?.length || row.bag?.length || row.clan || row.sworn?.length
     || row.cut || row.raised || row.fedFrom != null || row.plain
     || row.feats?.got?.length || row.feats?.mischief || row.feats?.balls
     || row.payne?.sweep || row.payne?.rounds));
@@ -449,6 +453,12 @@ export function applyCast(game, p, row) {
   if (p.clanRing) p.clanRing.material.color.set(p.clan?.color ?? p.style.colour);
   game._updateClanBadge?.(p);
   p.setPowerOrbs?.(row.orbs ?? []);
+  /* THE BAG IS FILTERED AND CAPPED, the one thing on this row that is a list
+     the game will index by slot: an id this build does not know would draw an
+     empty-looking slot that JUMP calls empty, and a hand-edited thirty-orb bag
+     would draw past the sixteen the tab has room for. */
+  p.orbBag = (Array.isArray(row.bag) ? row.bag : [])
+    .filter((id) => ORB_BY_ID[id]).slice(0, MAX_BAG);
   game.syncOrbMeshes?.(p);
   p.bambooCut = row.cut ?? 0;
   p.pandaFedFrom = row.fedFrom ?? null;

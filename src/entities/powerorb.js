@@ -59,6 +59,22 @@ import { tune } from '../core/tuning.js';
 export const MAX_EQUIPPED = 8;
 
 /**
+ * ...and a BAG of this many more, which is not worn and does nothing.
+ *
+ * Richard: "For now, can just have 16 slots for players to carry kotodama
+ * orbs, if they have more than 8 Kotodama orbs already equipped, the orb
+ * should get stored to their inventory." So the eight is still what she
+ * WEARS — every buff, the ring round her shoulder, what a 盗 steal can knock
+ * off her — and the bag is where the ninth goes instead of being refused.
+ * `player.orbBag` is the list; the Character Profile's INVENTORY tab moves an
+ * orb between the two.
+ */
+export const MAX_BAG = 16;
+
+/** Everything one kitten can hold, worn and bagged together. */
+export const MAX_CARRIED = MAX_EQUIPPED + MAX_BAG;
+
+/**
  * The ten.
  *
  * `kanji` is what the orb prints on itself and what the profile screen shows;

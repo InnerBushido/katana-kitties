@@ -1,5 +1,5 @@
 import { Orb } from '../entities/orb.js';
-import { ORB_BY_ID, MAX_EQUIPPED, drawOrb } from '../entities/powerorb.js';
+import { ORB_BY_ID, MAX_CARRIED, drawOrb } from '../entities/powerorb.js';
 import { BALL_COUNT } from '../entities/dragonball.js';
 import { CLANS } from '../world/world.js';
 import { cssFor } from '../core/palette.js';
@@ -487,7 +487,7 @@ export class Feats {
        reads as the game forgetting her. */
     if (refused.length) {
       sentences.push(`There was no room for ${refused.length === 1 ? 'one more' : `${refused.length} more`} — `
-        + `she is already wearing ${MAX_EQUIPPED}.`);
+        + `she is already carrying ${MAX_CARRIED}.`);
     }
     const text = sentences.join(' ');
     const hold = Math.min(CARD_MAX,
@@ -572,7 +572,11 @@ export class Feats {
     const L = this.ledger(p);
     if (!L.got.includes(id) || L.paid.includes(id)) return null;
     L.paid.push(id);
-    if ((p.powerOrbs?.length ?? 0) >= MAX_EQUIPPED) {
+    /* ...EXCEPT THAT A FULL NECK IS NOT FULL ANY MORE. "if they have more
+       than 8 Kotodama orbs already equipped, the orb should get stored to
+       their inventory" — so the ninth goes in her bag through `give`, and
+       only a kitten carrying all `MAX_CARRIED` is turned down. */
+    if ((p.powerOrbs?.length ?? 0) + (p.orbBag?.length ?? 0) >= MAX_CARRIED) {
       this.syncTokens(p);
       return { refused: true };
     }
