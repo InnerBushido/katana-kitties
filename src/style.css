@@ -4457,6 +4457,79 @@ body.touch-ui .kd-row .kd-dim {
 body.touch-ui .kd-quests { --q: 15px; }
 body.touch-ui .kd-quests ul { max-height: 11em; }
 
+/* --- THE TABS: QUESTS and INVENTORY -----------------------------------------
+   "make a tab for the Quests section in the Character Profile screen and also
+   add a new tab for Inventory". The headers are the cursor rows; the box under
+   them is whichever tab is showing, and the quests box keeps every rule it had
+   above because it is the same `.kd-quests` inside a wrapper.
+
+   THE HEADERS LOOK LIKE TABS AND RING LIKE ROWS. `.on` is the tab showing (a
+   filled tab joined to the box under it), `.cursor` is her cursor on the
+   header (her colour, the same ring as a slot), `.inside` is the one she has
+   stepped into (gold, the same "holding it" ring the quest box wears). */
+.kd-tabs { margin-top: 10px; }
+.kd-tab-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  border-bottom: 2px solid rgba(29, 18, 22, 0.25);
+  padding: 0 4px;
+}
+.kd-tab {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: inherit;
+  background: rgba(29, 18, 22, 0.06);
+  border: 2px solid rgba(29, 18, 22, 0.25);
+  border-bottom: none;
+  border-radius: 9px 9px 0 0;
+  padding: 5px 12px 4px;
+  margin-bottom: -2px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: box-shadow 0.12s ease;
+}
+.kd-tab.on { background: #fffaf2; opacity: 1; border-color: rgba(29, 18, 22, 0.45); }
+.kd-tab.cursor { box-shadow: 0 0 0 3px var(--me); }
+.kd-tab.inside { box-shadow: 0 0 0 3px var(--gold, #f5c341); }
+.kd-tab-n { font-weight: 600; opacity: 0.7; margin-left: 2px; }
+.kd-tab-hint { margin-left: auto; font-size: 13px; color: #b4432c; font-weight: 700; padding-bottom: 5px; }
+/* The quests box was the card's last block with a rule of its own above it;
+   under a tab row that rule is the tab row's. */
+.kd-tabs .kd-quests { margin-top: 0; border-top: none; padding-top: 8px; }
+
+/* THE INVENTORY: one row of eight she wears, two rows of eight in the bag.
+   Eight columns that SHARE the card's width (`minmax(0, 1fr)`) and are capped
+   at `--inv` each, so the same markup fits a 353px four-player card and a
+   728px one without a second layout. The cells borrow `.kd-slot` — the same
+   orb, the same dashed empty ring, the same cursor — at a smaller size. The
+   grid carries a halo for the cursor's ring for the reason `.kd-slots` does. */
+.kd-inv { --inv: 44px; padding-top: 8px; }
+.kd-inv.cursor {
+  outline: 3px solid var(--gold, #f5c341);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+.kd-inv-head { font-size: 13px; letter-spacing: 0.08em; opacity: 0.8; margin: 4px 0 2px; }
+.kd-inv-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  max-width: calc(8 * var(--inv) + 7 * 6px + 12px);
+}
+.kd-inv-slot { font-size: 14px; border-width: 2px; }
+.kd-inv-slot.full { border-width: 2px; }
+.kd-inv-slot.cursor { transform: scale(1.12); box-shadow: 0 0 0 3px var(--me); }
+.kd-inv-detail { margin-top: 4px; font-size: 14px; min-height: 1.4em; }
+
+/* A PHONE: bigger cells (the card is drawn at half size, see below — 64 is
+   32 on screen) and smaller words, the tab strip a thumb can still hit. */
+body.touch-ui .kd-inv { --inv: 64px; }
+body.touch-ui .kd-tab { font-size: 18px; padding: 8px 16px 6px; }
+
 /* --- THE CHARACTER PROFILE ON A PHONE IS DRAWN AT HALF SIZE ----------------
    "It seems everything is still too zoomed in, we should be able to show all
    the kotodama orbs on the screen and buttons without needing to scroll
@@ -4553,6 +4626,24 @@ body.touch-ui .kd-cards .kd-quests {
   display: flex;
   flex-direction: column;
 }
+/* AND THE TABS ARE THE FLEXIBLE BLOCK NOW, with the box under the strip
+   taking what is left: the quest list as before, and the inventory scrolling
+   inside itself when a short phone cannot fit three rows of orbs. The pad's
+   cursor is walked into view by `_followCursors`; a finger drags it. */
+body.touch-ui .kd-cards .kd-tabs {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+body.touch-ui .kd-cards .kd-tab-row { flex-shrink: 0; }
+body.touch-ui .kd-cards .kd-inv {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: clip;
+  overscroll-behavior: contain;
+}
 body.touch-ui .kd-cards .kd-quests ul {
   flex: 1 1 auto;
   min-height: 5em;
@@ -4597,7 +4688,8 @@ body.touch-ui .kd-cards:is([data-cards="1"], [data-cards="2"]) .kd-card {
 .kd-cards .kd-card .kd-points { grid-area: points; }
 .kd-cards .kd-card .kd-detail { grid-area: detail; }
 .kd-cards .kd-card .kd-state { grid-area: state; }
-.kd-cards .kd-card > .kd-quests { grid-area: quests; }
+.kd-cards .kd-card > .kd-quests,
+.kd-cards .kd-card > .kd-tabs { grid-area: quests; }
 /* THE RACK KEEPS ITS OWN WIDTH. In a block it is as wide as its `max-width`
    allows; in a `max-content` column its `minmax(0, 1fr)` orbs have no content
    width to offer, and they came out 106px across instead of 166. It is given

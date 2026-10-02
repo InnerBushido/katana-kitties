@@ -1,5 +1,5 @@
 import {
-  POWER_ORBS, ORB_BY_ID, ORB_IDS, WORLD_ORB_IDS, MAX_EQUIPPED,
+  POWER_ORBS, ORB_BY_ID, ORB_IDS, WORLD_ORB_IDS, MAX_EQUIPPED, MAX_BAG, MAX_CARRIED,
   PowerOrb, PowerOrbPickup,
   orbPrice, orbSellPrice, orbPriceFor, orbSellPriceFor, stockFor,
 } from '../entities/powerorb.js';
@@ -365,25 +365,105 @@ export class Kotodama {
   /* ----------------------------- inventory ------------------------------- */
 
   /**
-   * Put an orb on a kitten.
+   * Put an orb on a kitten — or, if she is already wearing eight, in her bag.
    *
-   * @returns {boolean} false when she is already carrying eight — and the
-   *   caller has to handle that, because every path into here can fail: a
-   *   pickup she walks over, a purchase she has paid for, half of a trade.
-   *   Silently dropping the ninth is how you take a girl's 650 points and
-   *   give her nothing.
+   * THE NINTH GOES IN THE BAG NOW, AND IS NOT REFUSED. "if they have more
+   * than 8 Kotodama orbs already equipped, the orb should get stored to their
+   * inventory." Every path into here — a pickup, a purchase, half of a trade,
+   * a quest paid at the ceremony, a stolen orb going home — gets that for
+   * free, which is why it is here and not at any of them.
+   *
+   * @returns {boolean} false only when the bag is full as well (`MAX_CARRIED`)
+   *   — and the caller has to handle that, because every path into here can
+   *   fail. Silently dropping the twenty-fifth is how you take a girl's 650
+   *   points and give her nothing.
    */
   give(player, id, { quiet = false } = {}) {
     if (!ORB_BY_ID[id]) return false;
-    if (player.powerOrbs.length >= MAX_EQUIPPED) return false;
-    player.setPowerOrbs([...player.powerOrbs, id]);
-    this.game.syncOrbMeshes(player);
+    const spec = ORB_BY_ID[id];
+    if (player.powerOrbs.length < MAX_EQUIPPED) {
+      player.setPowerOrbs([...player.powerOrbs, id]);
+      this.game.syncOrbMeshes(player);
+      if (!quiet) {
+        this.game.sfx('powerorb');
+        this.game.toast(`${player.name} awakened ${spec.name} — ${spec.blurb}`, player.index);
+      }
+      return true;
+    }
+    const bag = player.orbBag ?? [];
+    if (bag.length >= MAX_BAG) return false;
+    player.orbBag = [...bag, id];
+    /* IT SAYS WHERE IT WENT. An orb that vanished into a bag nobody knew she
+       had reads as the pickup being eaten — sixth non-negotiable, and the
+       sentence names the tab that will show it to her. */
     if (!quiet) {
-      const spec = ORB_BY_ID[id];
       this.game.sfx('powerorb');
-      this.game.toast(`${player.name} awakened ${spec.name} — ${spec.blurb}`, player.index);
+      this.game.toast(`${player.name} found ${spec.name} — she is wearing ${MAX_EQUIPPED}, `
+        + 'so it went in her bag (Character Profile ▸ INVENTORY)', player.index);
     }
     return true;
+  }
+
+  /** Every orb she has, worn and bagged. */
+  carried(player) {
+    return (player?.powerOrbs?.length ?? 0) + (player?.orbBag?.length ?? 0);
+  }
+
+  /** Has she got one of these anywhere — on her or in her bag? */
+  has(player, id) {
+    return !!player && (player.powerOrbs.includes(id) || (player.orbBag ?? []).includes(id));
+  }
+
+  /**
+   * Take ONE copy off her from wherever she has it, THE BAG FIRST.
+   *
+   * The bag first because it is the spare: selling one back, or a stolen orb
+   * going home, should not take a buff off her that an identical orb doing
+   * nothing in her bag could have paid for instead.
+   */
+  takeAny(player, id) {
+    const bag = player?.orbBag ?? [];
+    const at = bag.indexOf(id);
+    if (at >= 0) {
+      player.orbBag = bag.filter((_, k) => k !== at);
+      return true;
+    }
+    return this.take(player, id);
+  }
+
+  /**
+   * Bag ▸ neck: wear the orb in bag slot `k`. The INVENTORY tab's JUMP.
+   *
+   * @returns {?string} why not, or null when it moved. A refusal is a
+   *   sentence the screen prints as it is (sixth non-negotiable).
+   */
+  wear(player, k) {
+    const bag = player?.orbBag ?? [];
+    const id = bag[k];
+    if (!id) return 'That slot is empty — JUMP on an orb in her bag to wear it';
+    if (player.powerOrbs.length >= MAX_EQUIPPED) {
+      return `${player.name} is wearing ${MAX_EQUIPPED} — JUMP on one of those to put it in the bag first`;
+    }
+    player.orbBag = bag.filter((_, j) => j !== k);
+    player.setPowerOrbs([...player.powerOrbs, id]);
+    this.game.syncOrbMeshes(player);
+    return null;
+  }
+
+  /** Neck ▸ bag: take off worn slot `k` and carry it. The other half of `wear`. */
+  stow(player, k) {
+    const id = player?.powerOrbs?.[k];
+    if (!id) return 'That slot is empty — JUMP on an orb in her bag to wear it';
+    const bag = player.orbBag ?? [];
+    if (bag.length >= MAX_BAG) {
+      return `${player.name}'s bag is full — sell or drop one first`;
+    }
+    const next = [...player.powerOrbs];
+    next.splice(k, 1);
+    player.setPowerOrbs(next);
+    player.orbBag = [...bag, id];
+    this.game.syncOrbMeshes(player);
+    return null;
   }
 
   /** Take ONE copy off her. Returns false if she hasn't got one. */
@@ -420,7 +500,9 @@ export class Kotodama {
   /** Why a purchase would fail, or null if it would go through. */
   buyRefusal(player, id) {
     if (!(this.stock[id] > 0)) return 'The dealer has none left.';
-    if (player.powerOrbs.length >= MAX_EQUIPPED) return `${player.name} can only wear ${MAX_EQUIPPED}.`;
+    if (this.carried(player) >= MAX_CARRIED) {
+      return `${player.name} is carrying ${MAX_CARRIED} — her bag is full too.`;
+    }
     const cost = this.priceOf(id);
     if (player.score < cost) return `${cost - player.score} more points needed.`;
     return null;
@@ -431,10 +513,12 @@ export class Kotodama {
     const cost = this.priceOf(id);
     player.score -= cost;
     this.stock[id]--;
+    const worn = player.powerOrbs.length;
     this.give(player, id, { quiet: true });
     this.game.sfx('coin');
     this.game.onScoreChanged(player);
-    this.game.toast(`${player.name} bought ${ORB_BY_ID[id].name} for ${cost}`, player.index);
+    this.game.toast(`${player.name} bought ${ORB_BY_ID[id].name} for ${cost}`
+      + (worn >= MAX_EQUIPPED ? ' — it went in her bag' : ''), player.index);
     return true;
   }
 
@@ -450,7 +534,8 @@ export class Kotodama {
    */
   sell(player, id) {
     const paid = this.sellPriceOf(id);
-    if (!this.take(player, id)) return false;
+    /* OUT OF THE BAG FIRST — see `takeAny`. */
+    if (!this.takeAny(player, id)) return false;
     player.score += paid;
     this.stock[id] = (this.stock[id] ?? 0) + 1;
     this.game.sfx('coin');
@@ -504,9 +589,12 @@ export class Kotodama {
     };
     if (!owns(a, A) || !owns(b, B)) return false;
 
-    const aAfter = a.powerOrbs.length - A.length + B.length;
-    const bAfter = b.powerOrbs.length - B.length + A.length;
-    if (aAfter > MAX_EQUIPPED || bAfter > MAX_EQUIPPED) return false;
+    /* WORN AND BAGGED TOGETHER. The piles are offered off her neck, and what
+       arrives past eight goes in the bag (`give`), so the only overflow left
+       is the one where the bag is full too. */
+    const aAfter = this.carried(a) - A.length + B.length;
+    const bAfter = this.carried(b) - B.length + A.length;
+    if (aAfter > MAX_CARRIED || bAfter > MAX_CARRIED) return false;
 
     /* BOTH SIDES EMPTY OUT BEFORE EITHER FILLS UP. Interleaving the loops
        would reintroduce the overflow this function exists to prevent, one
@@ -573,11 +661,14 @@ export class Kotodama {
     if (!player || !list.length) return 0;
     let n = 0;
     for (const id of list) {
-      if (!player.powerOrbs.includes(id)) continue;
+      if (!this.has(player, id)) continue;
       const pk = this.dropInWorld(id, player.position, n + 1);
       if (!pk) continue;
       pk.shyOf = player;
-      this.take(player, id);
+      /* WORN FIRST HERE, the other way round from `takeAny`. Both callers
+         name what they mean: the profile's pile is rows off her neck, and the
+         pause menu's DROP HER ORBS hands over the neck and then the bag. */
+      if (!this.take(player, id)) this.takeAny(player, id);
       n += 1;
     }
     if (n) this.game.sfx('orb');
@@ -718,13 +809,13 @@ export class Kotodama {
         this.scene.remove(loose.group);
       } else {
         const holder = this.game.players.find(
-          (q) => q !== owner && q.powerOrbs.includes(id)
+          (q) => q !== owner && this.has(q, id)
         );
         /* SOLD, OR OTHERWISE NOWHERE. The dealer takes returns (`sell` puts it
            back on the shelf), so the orb still exists — it is on the shelf, and
            this takes it off again. Only if the shelf has none either is there
            genuinely nothing to give back, and that cannot happen from a sale. */
-        if (holder) this.take(holder, id);
+        if (holder) this.takeAny(holder, id);
         else if (this.stock[id] > 0) this.stock[id] -= 1;
         else continue;
       }
@@ -775,8 +866,8 @@ export class Kotodama {
     const back = [];
     for (const loan of this.loans) {
       const { id, owner } = loan;
-      if (owner === who || !who.powerOrbs.includes(id)) { keep.push(loan); continue; }
-      this.take(who, id);
+      if (owner === who || !this.has(who, id)) { keep.push(loan); continue; }
+      this.takeAny(who, id);
       /* A FULL OWNER GETS IT AT HER FEET, and an owner who has ALSO left gets
          it on the ground where the thief was standing. `give` refuses at eight
          and it has to; silently dropping the ninth is how somebody ends a
@@ -840,11 +931,11 @@ export class Kotodama {
            happened to walk over it; doing nothing at all reads as a broken
            collectible. Rate-limited, or standing on one is forty toasts a
            second — the same rule the locked stars follow. */
-        if (p.powerOrbs.length >= MAX_EQUIPPED) {
+        if (this.carried(p) >= MAX_CARRIED) {
           if ((this._fullT ?? 0) <= 0) {
             this._fullT = 3;
             this.game.toast(
-              `${p.name} is carrying ${MAX_EQUIPPED} — drop one at the stall first`, p.index
+              `${p.name} is carrying ${MAX_CARRIED} — sell one at the stall first`, p.index
             );
           }
           continue;
@@ -997,4 +1088,4 @@ export function buildWornOrbs(ids) {
   return ids.map((id, i) => new PowerOrb(ORB_BY_ID[id], i, ids.length));
 }
 
-export { MAX_EQUIPPED, POWER_ORBS, ORB_BY_ID, ORB_IDS, WORLD_ORB_IDS };
+export { MAX_EQUIPPED, MAX_BAG, MAX_CARRIED, POWER_ORBS, ORB_BY_ID, ORB_IDS, WORLD_ORB_IDS };

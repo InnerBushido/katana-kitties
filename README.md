@@ -636,8 +636,9 @@ quick blessing pose, as a promise. When the Kotodama wake there is an **award
 ceremony**: one kitten at a time, all of her gold orbs turn into real ones at
 once, she holds the blessing pose with her own camera pushed in on her, and a
 card names every orb she won in its own colour. Nobody flies to the arena until
-the last kitten has had her turn. Anything done after 100% doesn't count, and a
-kitten already wearing eight is told on her card that there was no room.
+the last kitten has had her turn. Anything done after 100% doesn't count. A
+kitten already wearing eight gets hers in her **bag**; only one whose bag is
+full as well is told on her card that there was no room.
 
 | quest | who | how |
 | --- | --- | --- |
@@ -660,7 +661,9 @@ quest you'd be paid for if the game ended now.
 The old orbs dissolve. From then on there are **eight kinds** hidden around the
 islands, and you can wear up to **eight at once** — they stack, so two Gale
 orbs make you twice as much faster, and a kitten in a full set is visibly
-wrapped in them.
+wrapped in them. Anything you pick up, buy or are given past eight goes in
+your **bag**, which holds **sixteen more**. A bagged orb does nothing until
+you put it on.
 
 | | orb | what it does |
 | --- | --- | --- |
@@ -688,8 +691,8 @@ earned knocking things over — but he is expensive on purpose: every point in
 the world is 4550, so a fair split buys you *three* orbs. He keeps **four each
 of Gale, Long Cut, Adamant and Leap** — the four worth stacking — and **one
 each of the four moves**. Four of anything costs 2600, which is more than you
-will ever have. Selling gives you 75% back, and it is the only way to get back
-under eight slots.
+will ever have. Selling gives you 75% back, and he takes a spare out of your
+bag before he takes one off you.
 
 **So you trade.** Open **CHARACTER PROFILE** from the pause menu and you each
 get your own cursor, in your own colour: pick the orb you're offering, and you
@@ -704,6 +707,19 @@ an orb off your sister, or just hand her the points to go and buy her own.
 has her own cursor and her own offer; when exactly two of you have pressed
 confirm, that's the trade. A third confirm is refused rather than guessed at —
 nobody ends up giving an orb to somebody she didn't agree to give it to.
+
+**Under the points row are two tabs: QUESTS and INVENTORY.** The stick stops on
+each tab's name and skips what's inside it. Press **jump** on a tab to step
+into it, and **interact** to step back out:
+
+- In **QUESTS**, up and down read the list.
+- In **INVENTORY** you see the eight you're wearing and the sixteen in your
+  bag. Press **jump** on an orb to move it to the other row: off you and into
+  the bag, or out of the bag and on.
+
+On a phone, tap a tab to open it, tap an orb to move it, and press **BACK** to
+step out. Moving an orb takes back anything you'd put on the trade table,
+because the orbs it was offering have moved.
 
 ## Raise a panda
 

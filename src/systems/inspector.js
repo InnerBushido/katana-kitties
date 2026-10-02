@@ -492,7 +492,7 @@ export class Inspector {
         P.revealed, (this.game.players ?? []).map((q) => q?.feats?.got?.length ?? 0).join(',')].join('|')
       : '';
     const sig = [
-      c.state, c.i, p.powerOrbs.join(','), p.score,
+      c.state, c.i, p.powerOrbs.join(','), (p.orbBag ?? []).join(','), p.score,
       POWER_ORBS.map((s) => K?.stock?.[s.id] ?? 0).join(','), pay,
     ].join('#');
     if (sig === c._sig) return;
@@ -597,7 +597,7 @@ export class Inspector {
 
     return `<div class="pc-inner">
       <div class="pc-head"><span class="pc-who">${p.name}</span>
-        · <b>${p.score}</b> points · ${owned.length}/${MAX_EQUIPPED} worn</div>
+        · <b>${p.score}</b> points · ${owned.length}/${MAX_EQUIPPED} worn${p.orbBag?.length ? ` · ${p.orbBag.length} in her bag` : ''}</div>
       <div class="pc-slots${anyLit ? ' picking' : ''}">${slots.join('')}</div>
       <div class="pc-list" data-list="${index}">${rows}</div>
       <div class="pc-foot">${this._backButton(index, 'BACK')}

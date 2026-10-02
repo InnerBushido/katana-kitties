@@ -10474,7 +10474,9 @@ class Game {
            row that is a precondition sits above the row it is a precondition
            for, and a thumbstick going down the list meets them in that order.
            It is also the safer of the two to land on by accident. */
-        const worn = this.players[i].powerOrbs?.length ?? 0;
+        /* WORN AND BAGGED: "drop her orbs" means every orb she has, and an
+           orb left in her bag would be the one her sister came for. */
+        const worn = (this.players[i].powerOrbs?.length ?? 0) + (this.players[i].orbBag?.length ?? 0);
         if (worn) wrap.appendChild(this._orbDropButton(i, worn));
 
         const b = document.createElement('button');
@@ -10572,7 +10574,7 @@ class Game {
         onYes: () => {
           /* THE LIST IS COPIED. `drop` takes them off her as it goes, so
              handing it the live array is iterating a thing while emptying it. */
-          const n = this.kotodama?.drop(p, [...(p.powerOrbs ?? [])]) ?? 0;
+          const n = this.kotodama?.drop(p, [...(p.powerOrbs ?? []), ...(p.orbBag ?? [])]) ?? 0;
           if (!n) {
             this.toast('Nowhere to put them down here — try somewhere flatter',
               p.index);

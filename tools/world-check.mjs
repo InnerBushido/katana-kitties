@@ -79,7 +79,7 @@ import {
 import { readPNG, blobs, writePNG, writeICO } from './png.mjs';
 import { DEFAULTS, OVERRIDES, __mergeForTest as fold } from '../src/core/tuning.js';
 import {
-  POWER_ORBS, ORB_IDS, WORLD_ORB_IDS, SHOP_ONLY_IDS, MAX_EQUIPPED,
+  POWER_ORBS, ORB_IDS, WORLD_ORB_IDS, SHOP_ONLY_IDS, MAX_EQUIPPED, MAX_BAG, MAX_CARRIED,
   aggregate, countsOf, orbPrice, orbSellPrice, orbPriceFor, orbSellPriceFor,
   WARD, AEGIS, DIVE, CROSS, CHARGE, DODGE, wardFor,
   stockFor, STOCK_STACKABLE, STOCK_UNIQUE,
@@ -8084,7 +8084,7 @@ console.log('\n--- half a second of not being there ---');
        back, and the refusal to delete an orb it cannot find ground for. A
        second copy of that here would get one of the three subtly wrong. */
     ok('...and it puts them down the one way the game puts orbs down',
-      /this\.kotodama\?\.drop\(p, \[\.\.\.\(p\.powerOrbs \?\? \[\]\)\]\)/.test(obBody));
+      /this\.kotodama\?\.drop\(p, \[\.\.\.\(p\.powerOrbs \?\? \[\]\), \.\.\.\(p\.orbBag \?\? \[\]\)\]\)/.test(obBody));
     /* SEVENTH NON-NEGOTIABLE. They are anyone's the moment she walks away. */
     ok('...and asks first, in words that say what happens to them',
       /confirm\.ask/.test(obBody) && /NO, SHE KEEPS THEM/.test(obBody));
@@ -8323,14 +8323,23 @@ console.log('\n--- half a second of not being there ---');
   const [A, B] = aw.players;
   A.setPowerOrbs([]);
   B.setPowerOrbs([]);
+  A.orbBag = [];
+  B.orbBag = [];
   for (let i = 0; i < MAX_EQUIPPED; i++) K.give(A, 'swift');
-  ok(`a kitten carries at most ${MAX_EQUIPPED}`, A.powerOrbs.length === MAX_EQUIPPED);
-  ok('...and the ninth is REFUSED rather than dropped', K.give(A, 'leap') === false
-    && A.powerOrbs.length === MAX_EQUIPPED);
-
+  ok(`a kitten WEARS at most ${MAX_EQUIPPED}`, A.powerOrbs.length === MAX_EQUIPPED);
+  /* "if they have more than 8 Kotodama orbs already equipped, the orb should
+     get stored to their inventory" — the ninth used to be refused here. */
+  ok('...and the ninth goes in her BAG rather than being refused',
+    K.give(A, 'leap') === true && A.powerOrbs.length === MAX_EQUIPPED && A.orbBag.join() === 'leap');
   A.score = price;
-  ok('a full kitten cannot buy either', K.buyRefusal(A, 'leap') !== null);
+  ok('a kitten wearing eight can still buy, into her bag', K.buyRefusal(A, 'leap') === null);
+  while (A.orbBag.length < MAX_BAG) K.give(A, 'leap', { quiet: true });
+  ok(`...until she is carrying ${MAX_CARRIED}, and then the next is REFUSED rather than dropped`,
+    K.give(A, 'charge') === false && K.carried(A) === MAX_CARRIED && !A.orbBag.includes('charge'));
+  ok('a kitten carrying all she can cannot buy either, and is told her bag is full',
+    /bag is full/.test(K.buyRefusal(A, 'leap') ?? ''));
   ok('...and her points are still hers', A.score === price);
+  A.orbBag = [];
 
   A.setPowerOrbs(['swift', 'ward']);
   B.setPowerOrbs(['leap']);
@@ -8351,13 +8360,21 @@ console.log('\n--- half a second of not being there ---');
      more often than not by the time they are trading, and the naive
      "give hers to him, give his to her" overflows on the first half and
      leaves one of them a copy down with nothing to show for it. */
+  /* ...AND "FULL" IS ALL TWENTY-FOUR NOW. A gift to a kitten wearing eight
+     goes in her bag; only a kitten whose bag is full too turns it down. */
   B.setPowerOrbs(Array(MAX_EQUIPPED).fill('vigor'));
   A.setPowerOrbs(['charge']);
+  ok('a gift to a kitten wearing eight goes in her bag',
+    K.trade(A, 'charge', B, null) && B.orbBag.join() === 'charge'
+      && B.powerOrbs.length === MAX_EQUIPPED && A.powerOrbs.length === 0);
+  A.setPowerOrbs(['charge']);
+  B.orbBag = Array(MAX_BAG).fill('leap');
   const bBefore = [...B.powerOrbs];
-  ok('a gift into a full kitten is refused', K.trade(A, 'charge', B, null) === false);
+  ok('a gift into a kitten carrying all she can is refused', K.trade(A, 'charge', B, null) === false);
   ok('...and neither side lost anything', A.powerOrbs.length === 1
-    && B.powerOrbs.join() === bBefore.join());
+    && B.powerOrbs.join() === bBefore.join() && B.orbBag.length === MAX_BAG);
   ok('a SWAP with a full kitten still works', K.trade(A, 'charge', B, 'vigor'));
+  B.orbBag = [];
 
   /* --- A PILE FOR A PILE ---------------------------------------------------
      One orb per trade meant the thing the girls actually do here — the older
@@ -8407,12 +8424,15 @@ console.log('\n--- half a second of not being there ---');
      wrong: emptying both sides before filling either is what makes it true. */
   A.setPowerOrbs(['swift', 'ward', 'leap']);
   B.setPowerOrbs(Array(MAX_EQUIPPED - 1).fill('vigor'));
+  B.orbBag = Array(MAX_BAG - 1).fill('leap');
   const overA = [...A.powerOrbs];
   const overB = [...B.powerOrbs];
-  ok('a pile that would leave somebody carrying nine is refused',
+  ok(`a pile that would leave somebody carrying ${MAX_CARRIED + 1} is refused`,
     K.trade(A, ['swift', 'ward', 'leap'], B, []) === false);
   ok('...and neither side lost anything to the attempt',
-    A.powerOrbs.join() === overA.join() && B.powerOrbs.join() === overB.join());
+    A.powerOrbs.join() === overA.join() && B.powerOrbs.join() === overB.join()
+      && B.orbBag.length === MAX_BAG - 1);
+  B.orbBag = [];
   ok('two empty piles are refused, like two empty offers',
     K.trade(A, [], B, []) === false);
 
@@ -16890,7 +16910,9 @@ console.log('\n--- 盗 the theft itself, and the loan behind it ---');
     k.give(victim, 'ward', { quiet: true });
     k.knockLoose(thief, victim);
     for (const id of ORB_IDS.slice(0, MAX_EQUIPPED)) k.give(victim, id, { quiet: true });
-    ok('...she really is full', victim.powerOrbs.length === MAX_EQUIPPED);
+    /* AND HER BAG — wearing eight is not full any more, the ninth goes in it. */
+    victim.orbBag = Array(MAX_BAG).fill('swift');
+    ok('...she really is full', k.carried(victim) === MAX_CARRIED);
     const before = k.pickups.filter((pk) => !pk.taken).length;
     k.settleLoans();
     ok('a full owner gets it at her feet instead of losing it',
@@ -18592,6 +18614,9 @@ console.log('\n--- a trade is agreed twice, by two people ---');
     innerHTML: '', textContent: '',
     classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
     addEventListener() {},
+    /* Finds nothing. A stick move leaves `_moved` set for the next paint to
+       walk into view, and the tab checks below move sticks. */
+    querySelector: () => null,
   });
   const nodes = {
     'panel-profile': el(), 'kd-body': el(), 'kd-title': el(), 'kd-help': el(),
@@ -18662,6 +18687,188 @@ console.log('\n--- a trade is agreed twice, by two people ---');
     const ps = new ProfileScreen(g);
     return { g, ps, players };
   };
+
+  /* --- THE BAG, AND THE TWO TABS THAT SHOW IT ------------------------------
+     Richard: "make a tab for the Quests section in the Character Profile
+     screen and also add a new tab for Inventory and let's add a new inventory
+     system. Make the menu navigation selection be able to select the two tabs
+     but skip its content unless the player clicks into the tab, then
+     selection can step into it. For now, can just have 16 slots for players
+     to carry kotodama orbs, if they have more than 8 Kotodama orbs already
+     equipped, the orb should get stored to their inventory ... They have to
+     'back out of' the inventory screen to return to the Character Profile
+     screen navigation."
+
+     DRIVEN, NOT GREPPED: a real `Player`, a real `Kotodama`, the real screen
+     and a pad that presses one thing a frame. */
+  {
+    const { invStep } = await import('../src/systems/profile.js');
+    ok('the inventory cursor wraps along a row of eight',
+      invStep(7, 1, 0) === 0 && invStep(8, -1, 0) === 15);
+    ok('...and stops at the top and bottom instead of leaving the tab',
+      invStep(3, 0, -1) === 3 && invStep(19, 0, 1) === 19 && invStep(3, 0, 1) === 11);
+
+    const quests = [{ feat: { title: 'Six oaths', how: 'swear six' }, star: true, paid: false, note: '' }];
+    const { g, ps, players } = mk(['swift', 'ward'], []);
+    const [E] = players;
+    E.orbBag = [];
+    g.feats = { status: () => quests, open: true };
+    const toasts = [];
+    g.toast = (t) => toasts.push(t);
+    const K = g.kotodama;
+
+    /* --- the bag itself --- */
+    for (const id of ['leap', 'leap', 'vigor', 'vigor', 'charge', 'swift']) K.give(E, id, { quiet: true });
+    ok('the first eight go on her neck, and her bag stays empty', E.powerOrbs.length === MAX_EQUIPPED && E.orbBag.join() === '');
+    K.give(E, 'ward');
+    ok('...the ninth', E.powerOrbs.length === MAX_EQUIPPED && E.orbBag.join() === 'ward');
+    ok('...and the toast says where it went, and where to look for it',
+      /went in her bag/.test(toasts.at(-1) ?? '') && /INVENTORY/.test(toasts.at(-1) ?? ''), toasts.at(-1));
+    ok('wearing a ninth is refused in words that say what to do instead',
+      /JUMP on one of those/.test(K.wear(E, 0) ?? ''));
+    const hp0 = E.maxHp;
+    const vig = E.powerOrbs.indexOf('vigor');
+    ok('a worn orb can be put in the bag...', K.stow(E, vig) === null
+      && E.powerOrbs.length === MAX_EQUIPPED - 1 && E.orbBag.join() === 'ward,vigor');
+    ok('...and taking a Vigor off really takes its health with it', E.maxHp < hp0, `${hp0} -> ${E.maxHp}`);
+    ok('...and a bagged one put back on', K.wear(E, 1) === null
+      && E.powerOrbs.length === MAX_EQUIPPED && E.orbBag.join() === 'ward' && E.maxHp === hp0);
+    const carried0 = K.carried(E);
+    E.orbBag = ['swift'];
+    const wornSwift = E.powerOrbs.filter((x) => x === 'swift').length;
+    K.sell(E, 'swift');
+    ok('selling one takes the spare out of her BAG before a worn one off her neck',
+      E.orbBag.length === 0 && E.powerOrbs.filter((x) => x === 'swift').length === wornSwift);
+    E.orbBag = ['ward'];
+    ok('...and the dealer counts what is in her bag as hers to sell', K.has(E, 'ward') && carried0 === K.carried(E));
+
+    /* A STOLEN ORB GOES HOME FROM WHEREVER THE THIEF PUT IT. The profile can
+       move it into her bag in the middle of a match, and `settleLoans` used
+       to look only at necks. */
+    const [, F] = players;
+    F.setPowerOrbs([]);
+    F.orbBag = ['aegis'];
+    E.setPowerOrbs(['swift']);
+    K.loans = [{ id: 'aegis', owner: E }];
+    K.settleLoans();
+    ok('a stolen orb in the thief\'s BAG still goes home at the gong',
+      F.orbBag.length === 0 && E.powerOrbs.includes('aegis'));
+
+    /* --- the screen --- */
+    E.setPowerOrbs(['swift', 'ward']);
+    E.orbBag = ['leap'];
+    F.setPowerOrbs(['vigor']);
+    F.orbBag = [];
+    ps.open('profile');
+    const S = ps.sides[0];
+    const idle = { mx: 0, my: 0, pressed: () => false, down: () => false };
+    const stick = (mx, my) => ({ mx, my, pressed: () => false, down: () => false });
+    const frame = (pad) => { ps._drive(0, pad, 1 / 60); ps._drive(0, idle, 1 / 60); };
+    frame(idle);
+    const pts = ps._pointsRow(0);
+    ok('the card has a QUESTS tab and an INVENTORY tab after the points row',
+      ps._tabs(0).join() === 'quests,inventory' && ps._rowCount(0) === pts + 3);
+    S.i = 0;
+    const walk = [];
+    let scrolled = 0;
+    /* The stub document cannot scroll; the count is the point. */
+    ps._scrollQuests = () => { scrolled++; return true; };
+    for (let k = 0; k < ps._rowCount(0); k++) { frame(stick(0, 1)); walk.push(S.i); }
+    ok('the stick walks the orbs, the points, the QUESTS header, the INVENTORY header, and round',
+      walk.join() === [1, 2, 3, 4, 0].join(), walk.join());
+    ok('...and steps OVER both tabs\' content: no quest scrolled, no inventory entered',
+      scrolled === 0 && S.inside === null);
+    S.tab = null;
+    ok('...with the first tab showing before she has stood on either', ps._shownTab(0) === 'quests');
+    S.i = pts + 1;
+    frame(stick(0, 1));
+    ok('landing on a header SHOWS that tab without opening it',
+      S.tab === 'inventory' && ps._shownTab(0) === 'inventory' && S.inside === null);
+    const card0 = ps._cardMarkup(E, 0);
+    ok('...and the card says JUMP opens it, on the header row',
+      /data-tab="quests"/.test(card0) && /data-tab="inventory"/.test(card0) && /kd-tab-hint/.test(card0));
+    ok('...and draws all eight worn and all sixteen bag slots', (card0.match(/data-inv="/g) || []).length === MAX_CARRIED);
+
+    frame(press('jump'));
+    ok('JUMP on the INVENTORY header steps INTO it, onto her bag',
+      S.inside === 'inventory' && S.inv === MAX_EQUIPPED && S.i === pts + 2);
+    const row = S.i;
+    frame(stick(0, 1));
+    ok('inside, the stick moves within the tab and the card\'s cursor stays put',
+      S.inv === MAX_EQUIPPED * 2 && S.i === row);
+    frame(stick(0, 1));
+    ok('...and the bottom of the bag is a wall, not a way out', S.inv === MAX_EQUIPPED * 2 && S.inside === 'inventory');
+    frame(stick(0, -1)); frame(stick(0, -1)); frame(stick(0, -1));
+    ok('...and so is the top', S.inv === 0 && S.inside === 'inventory');
+    frame(press('attack'));
+    ok('ATTACK inside a tab is refused in words, and confirms nothing',
+      /INTERACT to step back out/.test(ps._flash) && !S.ready);
+    frame(press('jump'));
+    ok('JUMP on a worn orb puts it in her bag', E.powerOrbs.join() === 'ward' && E.orbBag.join() === 'leap,swift',
+      `${E.powerOrbs} | ${E.orbBag}`);
+    ok('...and says so', /put Swift/i.test(ps._flash) || /in her bag/.test(ps._flash), ps._flash);
+    S.inv = MAX_EQUIPPED;
+    frame(press('jump'));
+    ok('JUMP on a bagged orb puts it on', E.powerOrbs.join() === 'ward,leap' && E.orbBag.join() === 'swift');
+    frame(press('interact'));
+    ok('INTERACT steps back out, onto the header she went in by', S.inside === null && S.i === row);
+    frame(stick(0, -1));
+    ok('...and the stick is the card\'s again', S.i === row - 1);
+
+    /* THE QUESTS TAB: in by JUMP, the list scrolls, out by INTERACT. */
+    S.i = pts + 1;
+    frame(press('jump'));
+    ok('JUMP on the QUESTS header steps into the list', S.inside === 'quests' && ps._onQuests(0));
+    scrolled = 0;
+    frame(stick(0, 1));
+    ok('...where the stick scrolls it and does not move her cursor', scrolled === 1 && S.i === pts + 1);
+    frame(press('interact'));
+    ok('...and INTERACT brings her back out', S.inside === null && !ps._onQuests(0));
+
+    /* CONSENT: moving an orb clears the table. Offers are rows on her neck,
+       and a sister's yes was to the old terms. */
+    S.i = 0;
+    frame(press('jump'));
+    frame(press('attack'));
+    ok('(she offers an orb and confirms)', S.offers.size === 1 && S.ready);
+    S.i = pts + 2;
+    frame(press('jump'));
+    S.inv = 0;
+    frame(press('jump'));
+    ok('putting an orb in her bag takes her offer and her confirm off the table',
+      S.offers.size === 0 && !S.ready && !S.sure);
+
+    ps.close();
+    ps.open('profile');
+    ok('a fresh open starts outside every tab', S.inside === null);
+    ps.close();
+
+    /* THE BAG IS IN THE SAVE, and a row holding only a bag still counts. */
+    E.orbBag = ['ward', 'leap'];
+    const row1 = castRow(E);
+    ok('a save row carries her bag', row1.bag?.join() === 'ward,leap');
+    ok('...and a kitten whose only orbs are in her bag is remembered',
+      meaningful({ bag: ['ward'] }) && !meaningful({ bag: [] }));
+    E.orbBag = [];
+    g.feats = null;          // the stub above has no ledger for `applyCast` to hand rows to
+    applyCast(g, E, { ...row1, bag: ['ward', 'nope', ...Array(30).fill('leap')] });
+    ok('...and a load puts it back, without ids this build does not know and never past sixteen',
+      E.orbBag.length === MAX_BAG && E.orbBag[0] === 'ward' && !E.orbBag.includes('nope'));
+    applyCast(g, E, { ...row1, bag: undefined });
+    ok('...and a save from before the bag existed loads as an empty one', Array.isArray(E.orbBag) && E.orbBag.length === 0);
+
+    /* A PHONE: the tabs and the inventory have their own `body.touch-ui` rules,
+       and the inventory scrolls inside itself rather than pushing the footer
+       — the BACK button is a phone's only way out of the tab — off the screen. */
+    const cssI = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+    ok('the tabs have a phone rule, and the inventory scrolls inside itself there',
+      /body\.touch-ui \.kd-tab \{/.test(cssI) && /body\.touch-ui \.kd-inv \{/.test(cssI)
+        && /body\.touch-ui \.kd-cards \.kd-inv \{[^}]*overflow-y: auto/.test(cssI)
+        && /body\.touch-ui \.kd-cards \.kd-tabs \{[^}]*flex: 1 1 auto/.test(cssI));
+    ok('...and the phone footer is only BACK while she is inside a tab',
+      /if \(this\.sides\[i\]\?\.inside && this\.mode === 'profile'\) \{\s*this\.actions\.innerHTML = btn\('back'/
+        .test(readFileSync(new URL('../src/systems/profile.js', import.meta.url), 'utf8')));
+  }
 
   /* --- WHAT CLAN SHE IS IN, ON HER OWN CARD ---
      It was already on this screen and nobody could see it: the clan name was
@@ -28461,19 +28668,35 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
       g.feats.show === null && g.feats.ceremonyBusy === false);
   }
 
-  /* --- a full neck is refused on the card, and never asked again --- */
+  /* --- a full neck is not full: the quest prize goes in her bag --- */
   {
     const g = mkGame();
     const [E] = g.players;
     E.setPowerOrbs(Array(8).fill('swift'));
+    E.orbBag = [];
     E.feats = { ...blankFeats(), got: ['clans', 'pilot'] };
     g.kotodama.awakened = true;
     g.feats.update(CEREMONY_LEAD + 0.1);
-    ok('a kitten already wearing eight is not given a ninth',
-      E.powerOrbs.length === 8 && E.feats.paid.length === 2);
+    for (let k = 0; k < 40 && g.feats.show; k++) g.feats.update(1);
+    ok('a kitten already wearing eight is paid INTO HER BAG, not turned down',
+      E.powerOrbs.length === 8 && E.orbBag.length === 2 && E.feats.paid.length === 2,
+      `worn ${E.powerOrbs.length}, bag ${E.orbBag.length}`);
+  }
+
+  /* --- a kitten carrying all she can is refused on the card, and never asked again --- */
+  {
+    const g = mkGame();
+    const [E] = g.players;
+    E.setPowerOrbs(Array(8).fill('swift'));
+    E.orbBag = Array(MAX_BAG).fill('swift');
+    E.feats = { ...blankFeats(), got: ['clans', 'pilot'] };
+    g.kotodama.awakened = true;
+    g.feats.update(CEREMONY_LEAD + 0.1);
+    ok(`a kitten already carrying ${MAX_CARRIED} is not given one more`,
+      E.powerOrbs.length === 8 && E.orbBag.length === MAX_BAG && E.feats.paid.length === 2);
     const said = g.feats.show?.card.sentences.join(' ') ?? '';
     ok('...and her card says so, once, rather than once per orb',
-      /no room for 2 more/.test(said) && /already wearing 8/.test(said), said);
+      /no room for 2 more/.test(said) && new RegExp(`already carrying ${MAX_CARRIED}`).test(said), said);
     ok('...and names both quests she won anyway',
       /Six oaths/.test(said) && /Dragon pilot/.test(said));
     for (let k = 0; k < 40; k++) g.feats.update(1);

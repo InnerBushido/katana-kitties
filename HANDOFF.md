@@ -558,6 +558,14 @@ script.
   - **Ryuuseki is summoned only by a kitten on her own feet on the home
     island.** Flying a dragon over the torii used to call him down.
 
+**The Character Profile has QUESTS and INVENTORY tabs, and a bag of 16**
+(branch `feature/profile-inventory-tabs`).
+
+- An orb past the eighth goes in the bag; only the twenty-fifth is refused.
+- The cursor stops on the tab headers and skips their content. JUMP steps
+  in, and INTERACT (or BACK on a phone) steps out.
+- Details are in [endgame.md](docs/notes/endgame.md), "A bag of sixteen".
+
 **Richard's third batch** (branch `mixed/bridge-steer-fight-call-billboard`).
 [tournament.md](docs/notes/tournament.md) has the arena half.
 
