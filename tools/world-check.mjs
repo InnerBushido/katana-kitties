@@ -14349,6 +14349,7 @@ console.log('\n--- the three power moves ---');
     const lens = (want, aspect = PHONE_ASPECT) => fitShot({
       pts: want.fit.pts, target: want, yaw: -Math.PI / 4, pitch: want.pitch, fovDeg: 38,
       aspect, box: want.fit.box, air: want.fit.air, minDist: want.dist, maxDist: want.fit.max,
+      extra: want.fit.extra, extraMax: want.fit.extraMax,
     });
     const wide = [at(R.x - 28, R.z - 28), at(R.x + 28, R.z + 28)];
     ok('...and still opens up when they run to opposite corners',
@@ -14583,8 +14584,27 @@ console.log('\n--- the three power moves ---');
       ok('a phone\'s feast keeps ONE zoom wherever she goes — about half the old 68',
         shots.every(({ s }) => Math.abs(s.dist - shots[0].s.dist) < 1e-9)
         && shots[0].s.dist <= 40, shots.map(({ s }) => s.dist.toFixed(1)).join(' '));
-      ok('...and it frames the kitten who can eat, not the angel flying overhead',
-        shots.every(({ want }) => want.fit.pts.length === 1 && want.fit.pts[0].y === R.y));
+      ok('...and it always frames the kitten who can eat; an angel 30 up and 42 away is let go',
+        shots.every(({ want, s }) => want.fit.pts.length === 1 && want.fit.pts[0].y === R.y
+          && want.fit.extra.length === 1 && s.extra === false));
+      /* "camera should follow angels as well on mobile, doesn't hurt to zoom
+         out a bit to keep all players on screen, but if the angel flies too
+         far away, then no need to zoom out so far ... especially to be able
+         to see the rats." */
+      const lowAngel = (dx, dy, dz) => ({ position: { x: R.x + dx, y: R.y + dy, z: R.z + dz }, ko: false, angel: true });
+      const near = lens(feastRig([eater(R.x, R.z), lowAngel(10, 12, -10)]));
+      ok('an angel close by and low IS framed with her sister, a little further back',
+        near.extra === true && near.dist > 40 && near.dist <= 64, near.dist.toFixed(1));
+      const far = lens(feastRig([eater(R.x, R.z), lowAngel(28, 30, -28)]));
+      const alone = lens(feastRig([eater(R.x, R.z)]));
+      ok('...and one who flies off is let go, and the eater keeps the close shot she hunts rats in',
+        far.extra === false && Math.abs(far.dist - alone.dist) < 1e-9 && Math.hypot(far.x - alone.x, far.z - alone.z) < 1e-9,
+        `${far.dist.toFixed(1)} vs ${alone.dist.toFixed(1)}`);
+      ok('...the zoom never passes the angel\'s cap to keep her, wherever she flies',
+        [[0, 34, 0], [20, 16, -20], [-30, 8, 30], [45, 20, 0]].every(([x, y, z]) => {
+          const s = lens(feastRig([eater(R.x - 10, R.z + 10), lowAngel(x, y, z)]));
+          return s.extra ? s.dist <= 64 : Math.abs(s.dist - alone.dist) < 1e-9;
+        }));
       /* TRACKED, with no clamp to the deck: the aim moves as far as she does,
          including 57 units out from the middle of the ring (the last shot,
          well off the stone). */
@@ -14599,8 +14619,10 @@ console.log('\n--- the three power moves ---');
         && !feastRig([eater(R.x - 22, R.z + 22)], false).fit);
     }
     const msrc3 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('...and main.js hands the angel and her cap to the lens',
+      /extra: ring\.fit\.extra,\s*extraMax: ring\.fit\.extraMax,/.test(msrc3));
     ok('main.js lets the lens fit replace the width floor, with the yaw it draws',
-      /if \(ring\.fit\) \{\s*const s = fitShot\(\{[\s\S]{0,120}yaw: THREE\.MathUtils\.lerp\(-Math\.PI \* 0\.25, 0, ft\),[\s\S]{0,300}want\.set\(s\.x, s\.y, s\.z\);\s*wantDist = s\.dist;/.test(msrc3)
+      /if \(ring\.fit\) \{\s*const s = fitShot\(\{[\s\S]{0,120}yaw: THREE\.MathUtils\.lerp\(-Math\.PI \* 0\.25, 0, ft\),[\s\S]{0,400}want\.set\(s\.x, s\.y, s\.z\);\s*wantDist = s\.dist;/.test(msrc3)
       && /let yaw = THREE\.MathUtils\.lerp\(-Math\.PI \* 0\.25, 0, ft\);/.test(msrc3));
   }
 

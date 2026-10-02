@@ -562,7 +562,7 @@ const OUT_DAMAGE = 30;
    THE FEAST GOT THE SAME TREATMENT — see `cameraWant`. */
 const RING_DIST = {
   desktop: { min: 52, max: 104, base: 46, k: 0.8 },
-  touch: { min: 20, max: 120, air: 6, feast: 34, feastAir: 10 },
+  touch: { min: 20, max: 120, air: 6, feast: 40, feastAir: 10, feastAngel: 64 },
 };
 
 /* THE PART OF A LANDSCAPE PHONE THE FIGHT CAN BE SEEN IN, in NDC. Measured at
@@ -2385,22 +2385,41 @@ export class Tournament {
        no clamp to the deck, so a kitten who jumps off the stone after a rat
        is still in the middle of the picture.
 
-       THE EATERS, NOT THE ANGEL. The kitten who lost the round is flying
-       "anywhere you like over the arena" and cannot eat; framing her too would
-       pull the camera back out to wherever she flew, which is the zoomed-out
-       shot this replaces. If nobody can eat (both went down together) it
-       frames everybody, so there is always somebody to follow. `air` is wider
-       than the fight's: the whole point is the animals around her. */
+       THE EATERS ALWAYS, AND THE ANGEL WHEN SHE IS CLOSE ENOUGH. Richard,
+       asked whether a phone player who is the angel should be followed:
+       "camera should follow angels as well on mobile, doesn't hurt to zoom out
+       a bit to keep all players on screen, but if the angel flies too far
+       away, then no need to zoom out so far as we want the player running
+       around and eating to be able to see what they are doing, especially to
+       be able to see the rats. But should be zoomed out a bit anyways so
+       player can see where the animals are in the arena."
+
+       So the floor is `feast` 40 (was 34: "zoomed out a bit anyways"), every
+       kitten who can eat is fitted, and the angels are `extra` — framed only
+       while the shot that holds them is no further back than `feastAngel`,
+       64. Past that the camera lets her go and stays on the eater at 40,
+       because a rat is what she is looking for. MEASURED at 844x390 with
+       the eater in the middle of the ring (`fitShot`): an angel 8 units up
+       anywhere near her costs nothing; 16 up and 14 away costs 46-59; 24 up
+       and 28 away needs 79 and is let go; at the ceiling (34 up) she is let
+       go unless she is right overhead and on the near side.
+
+       If nobody can eat (both went down together) it frames everybody, so
+       there is always somebody to follow. `air` is wider than the fight's: the
+       whole point is the animals around her. */
     if (this.state === 'feast') {
       if (touch) {
         const eaters = all.filter((p) => !p.angel);
         const who = eaters.length ? eaters : all;
+        const angels = eaters.length ? all.filter((p) => p.angel) : [];
         const c = centroidOf(who);
         return {
           x: c.x, y: c.y + 2.4, z: c.z,
           dist: RING_DIST.touch.feast, pitch: 0.56,
           fit: {
             pts: who.map(fitPoint),
+            extra: angels.map(fitPoint),
+            extraMax: RING_DIST.touch.feastAngel,
             air: RING_DIST.touch.feastAir,
             box: TOUCH_BOX,
             max: RING_DIST.touch.max,

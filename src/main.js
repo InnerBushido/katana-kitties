@@ -12345,6 +12345,8 @@ class Game {
             air: ring.fit.air,
             minDist: ring.dist * widen,
             maxDist: ring.fit.max,
+            extra: ring.fit.extra,
+            extraMax: ring.fit.extraMax,
           });
           want.set(s.x, s.y, s.z);
           wantDist = s.dist;

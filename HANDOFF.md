@@ -2683,6 +2683,11 @@ four synthesised stand-ins, so deleting them costs nothing but polish — see
 
 ## Mobile — the road to a phone
 
+**The feast follows the angel too, on a phone,** while keeping her costs no
+more than distance 64; past that it stays on the kitten eating, at 40 (was 34).
+See "The feast was a still of the whole deck" in
+[mobile.md](docs/notes/mobile.md).
+
 **The tenth pass (Richard's "quick fixes")** is in
 [mobile.md](docs/notes/mobile.md) and [payne.md](docs/notes/payne.md):
 

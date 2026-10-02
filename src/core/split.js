@@ -651,12 +651,26 @@ export const RIG_DIST_RATE = 4;
  * @param yaw,pitch the rig's angles: the camera sits at target +
  *                 (sin yaw cos pitch, sin pitch, cos yaw cos pitch) * dist
  * @param box      {l, r, b, t} in NDC, -1..1
- * @returns {{ x, y, z, dist, fits: boolean }} `fits` is false only when even
- *          `maxDist` cannot hold them, in which case it is the best at max
+ * @param extra    more points that are framed ONLY IF they fit by `extraMax`
+ *                 (the feast's angel): the shot with them when it is no
+ *                 further back than that, otherwise the shot without them
+ * @returns {{ x, y, z, dist, fits: boolean, extra?: boolean }} `fits` is false
+ *          only when even `maxDist` cannot hold them, in which case it is the
+ *          best at max; `extra` says whether `extra` made it into the shot
  */
 export function fitShot({
   pts, target, yaw, pitch, fovDeg, aspect, box, air = 0, minDist, maxDist,
+  extra = null, extraMax = maxDist,
 }) {
+  if (extra?.length) {
+    const all = fitShot({
+      pts: [...(pts ?? []), ...extra], target, yaw, pitch, fovDeg, aspect, box, air,
+      minDist, maxDist: Math.min(extraMax, maxDist),
+    });
+    if (all.fits) return { ...all, extra: true };
+    const own = fitShot({ pts, target, yaw, pitch, fovDeg, aspect, box, air, minDist, maxDist });
+    return { ...own, extra: false };
+  }
   const cp = Math.cos(pitch);
   // Forward (target -> away from the camera), and three.js's lookAt basis.
   const f = { x: -Math.sin(yaw) * cp, y: -Math.sin(pitch), z: -Math.cos(yaw) * cp };
