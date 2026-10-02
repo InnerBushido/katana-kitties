@@ -73,6 +73,13 @@ export const SNAKE = {
    *  the orbiting camera is the bug the lock was made to fix. Six frames is
    *  shorter than any deliberate let-go and longer than a dither. */
   rebind: 0.1,
+  /** How far along the road (either way) a new push after a let-go walks her
+   *  by the screen before it is locked to the road. Richard: "player may
+   *  need to make some progress towards the forward or backwards direction
+   *  of the bridge before the input locks the player in the direction they
+   *  need to go in." A second's tenth at the glide; long enough that the
+   *  lock is taken from a push that has visibly gone somewhere. */
+  settle: 1.5,
   /** Each road starts growing this fraction of the whole build after the one
    *  before it, so they go out one after another rather than as one flash. */
   stagger: 0.12,

@@ -563,6 +563,9 @@ script.
 
 - **The Snake Way re-aims to the camera when you let go.** It rebinds after
   0.1 s with the stick at rest.
+  - It now reads the ride camera she can see (`viewYaw`), not `camYaw`.
+  - It locks only after 1.5 units of progress
+    ([world.md](docs/notes/world.md)).
 - **A sister joining a loaded game lands where the save had her.**
 - **FIGHT! is on time.** The round waits for his line. A jump, swing or Escape
   skips it, and FIGHT! interrupts.
