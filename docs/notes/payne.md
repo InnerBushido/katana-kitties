@@ -368,3 +368,35 @@ minutes, and that is what "stuck" means.
   with a blip and a "back in Ns" line, which in a fight is a press that throws
   nothing. `sweepCool` is now in the condition, so the press falls through to
   whatever it would otherwise have been.
+
+## She lets go of a kitten who walks off, and does not say a thing twice
+
+Richard: *"Payne is queuing up menu selection voices even though the player
+already exited the menu, we should not queue up voice like that. We can queue
+up voice between multiple people talking to her, but if the player stops
+talking to her, should cancel that queue for the player that left. She should
+not repeat herself, if she just said something to someone, she shouldn't
+repeat the same thing again for the other player. If she says players
+specific name, then that counts as a new voice speech and doesn't count as
+being repeated."*
+
+- **How the queue leaked.** A press at her card waits behind a sister's answer
+  (`now` never cuts another kitten off). BYE is dropped outright while
+  somebody else is being talked to, and it was dropped *before* it cleared the
+  kitten's own waiting answers. START and the trade window never went through
+  BYE at all. So an answer she had walked away from was said to nobody, after
+  her sister's.
+- **`Payne.leave(p)`** drops her waiting menu answers and stops one she is
+  part-way through. Every way off the card calls it: `Inspector.closeOne` and
+  `closeAll` both go through `_leftPayne`. What survives is a goodbye
+  (`low`), a rant (`keep`, because her voice and complaints should finish),
+  and a hint for her pane (`card`, which is about the world and not this
+  menu).
+- **"Just said" is `SAID_RECENTLY`, 30 seconds per clip.** A repeat at her
+  card is shown on the asker's card for its reading time (`caption`) and never
+  queued, so it cannot hold up a sister's answer that is not a repeat. A
+  queued message that has become a repeat by the time its turn comes is
+  filtered then. Her name clips (`payne_hey_*`, `payne_oi_*`) are never a
+  repeat, so "Heyyy, Frost!" is said and the line after it is read. Lines with
+  a cue (`after`, the sweep) are never filtered: the sweep lands on a word
+  that has to be heard.

@@ -161,6 +161,15 @@ const HOLD_TAIL = 0.9;
 /** A message with no clip at all holds by its length — the toast's rule. */
 const SILENT_BASE = 2.6;
 const SILENT_PER_CHAR = 0.05;
+/** How long a clip she has just said stays "just said". Richard: "She should
+ *  not repeat herself, if she just said something to someone, she shouldn't
+ *  repeat the same thing again for the other player. If she says players
+ *  specific name, then that counts as a new voice speech and doesn't count as
+ *  being repeated." Half a minute is two sisters at her card at once; a kitten
+ *  who comes back later to ask again hears it again. */
+export const SAID_RECENTLY = 30;
+/** "Heyyy, Ember!" and "Oi! Frost!" - a NAME is never a repeat. */
+const isNameClip = (id) => /^payne_(hey|oi)_/.test(id);
 
 /** Her card's dressing. Goblin green — nothing else in the HUD is green, and
  *  "which of the grown-ups is this" is answered by colour everywhere else
@@ -545,6 +554,11 @@ export class Payne {
     /** Messages waiting their turn, and the one being said. */
     this.queue = [];
     this.current = null;
+    /** Clip id -> `this.t` when she last started saying it. See `SAID_RECENTLY`. */
+    this.said = new Map();
+    /** Kitten -> { text, until }: words shown on her card WITHOUT the voice,
+     *  because the voice would be a repeat. Never queued - see `say`. */
+    this.caption = new Map();
     /** Raw images for her face, filled by `loadArt`. */
     this.img = {};
     /** The billboards in the market. Built by `spawn`. */
@@ -1065,6 +1079,11 @@ export class Payne {
     ids.push(...body);
     const text = [callText, ...body.map((id) => PAYNE_LINES[id])].filter(Boolean).join(' ');
     const item = { p, ids, text, card, low, keep, after, k: 0, t: 0, el: null, clipT: 0, dur: 0, hadClip: false };
+    /* SHE HAS JUST SAID THIS, so it is read, not said - and not queued, so a
+       sister's answer that is a repeat never holds up one that is not. Only
+       an answer at her own card (`card: false`) and never one with a cue:
+       the sweep lands on the rant's last word, which has to be heard. */
+    const repeat = !card && !after && ids.length > 0 && ids.every((id) => this._saidRecently(id));
     if (now) {
       /* ONE KITTEN'S PRESS NEVER CUTS ANOTHER KITTEN OFF. Reported: "If Payne
          is talking to another player, and someone closes dialog box with
@@ -1083,6 +1102,7 @@ export class Payne {
       if (low && (others || cur?.keep)) return null;
       this.queue = this.queue.filter((q) => (q.p !== p || q.card || q.keep) && !q.low);
       if (cur && (cur.low || (cur.p === p && !cur.keep))) this._end(true);
+      if (repeat) { this._captionFor(item); return item; }
       this.queue.unshift(item);
     } else {
       /* ONE WAITING MESSAGE PER KITTEN. Two hints queued for the same girl
@@ -1093,8 +1113,51 @@ export class Payne {
     return item;
   }
 
-  /** What she is saying to this kitten right now, for her own card. */
-  speaking(p) { return this.current?.p === p ? this.current.text : null; }
+  /** What she is saying to this kitten right now, for her own card - or the
+   *  words of a repeat she is showing her rather than saying again. */
+  speaking(p) {
+    if (this.current?.p === p) return this.current.text;
+    const c = this.caption.get(p);
+    return c && this.t < c.until ? c.text : null;
+  }
+
+  /** Has she started saying this clip in the last `SAID_RECENTLY` seconds? */
+  _saidRecently(id) {
+    if (isNameClip(id)) return false;
+    const at = this.said.get(id);
+    return at != null && this.t - at < SAID_RECENTLY;
+  }
+
+  /** Show a message's words on her card for as long as they take to read. */
+  _captionFor(c) {
+    this.caption.set(c.p, { text: c.text, until: this.t + SILENT_BASE + c.text.length * SILENT_PER_CHAR });
+  }
+
+  /**
+   * This kitten has stopped talking to her - BYE, START, the sweep, a card
+   * taken down for the trade window. Richard: "Payne is queuing up menu
+   * selection voices even though the player already exited the menu, we
+   * should not queue up voice like that. We can queue up voice between
+   * multiple people talking to her, but if the player stops talking to her,
+   * should cancel that queue for the player that left."
+   *
+   * HOW IT HAPPENED: a press at her card waits behind a sister's answer
+   * (`now` never cuts another kitten off), and BYE is dropped outright while
+   * somebody else is being talked to - BEFORE it got as far as clearing her
+   * own waiting answers. So the answer she had already walked away from was
+   * said, to nobody, after her sister's.
+   *
+   * WHAT SURVIVES: a goodbye (`low`, cut by anybody anyway), a rant (`keep`:
+   * "her voice and complaints should finish even if dialog is ended"), and a
+   * hint for her pane (`card`), which is about the world and not this menu.
+   */
+  leave(p) {
+    if (!p) return;
+    this.queue = this.queue.filter((q) => q.p !== p || q.card || q.keep || q.low);
+    const cur = this.current;
+    if (cur && cur.p === p && !cur.card && !cur.keep && !cur.low) this._end(true);
+    this.caption.delete(p);
+  }
 
   _voice(dt, quiet) {
     const g = this.game;
@@ -1133,6 +1196,13 @@ export class Payne {
     if (quiet && this.queue[0].card) return;
     const c = this.queue.shift();
     if (!(g.players ?? []).includes(c.p)) return;
+    /* A REPEAT BY THE TIME IT CAME UP - she said it to a sister while this
+       one waited. Her name stays (it is never a repeat); the rest is read. An
+       answer with nothing left to say is shown on her card and lets the next
+       one start, rather than holding the queue for its reading time. */
+    if (!c.after) c.ids = c.ids.filter((id) => !this._saidRecently(id));
+    if (!c.ids.length && !c.card && !c.after) { this._captionFor(c); return; }
+    this.caption.delete(c.p);
     this.current = c;
     /* How long the card holds: every clip she has, back to back, plus the
        tail — or the text's own length when there are no clips at all. */
@@ -1157,6 +1227,7 @@ export class Payne {
       const clip = g.announcer?.clip?.(id);
       if (!clip) continue;
       c.el = g.audio?.speak?.(clip.el) ?? null;
+      this.said.set(id, this.t);
       c.hadClip = true;
       c.clipT = 0;
       c.clipDur = clip.dur;
@@ -1177,6 +1248,8 @@ export class Payne {
   clear() {
     this.queue.length = 0;
     this._end(true);
+    this.said.clear();
+    this.caption.clear();
   }
 
   /** A restart: nobody has met her. */

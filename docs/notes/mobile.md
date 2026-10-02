@@ -1689,3 +1689,66 @@ infront of everything."*
   put Mr Satan's card under the league picker on a desktop as well.
 - Measured in the paused arena: every probe point hits `#panel-pause`, and
   the bars sit behind its blur.
+
+## The tenth pass: the desktop caption, the way out, and a roll call that holds still
+
+Richard's "quick fixes". Two of the four are about the desktop, and they
+live here because the announcer card's history does.
+
+### The desktop caption is a strip along the bottom
+
+*"The Arena messages are too big and are disruptive in the middle of the
+screen for web/pc ... put on the bottom of the screen and make it mostly the
+width of the screen, so it is only 1 or 2 sentences long maximum. Currently
+goes to 3 or 4 sentences and is near the middle of the screen which is
+distracting."*
+
+- **The eighth pass overshot.** "Bigger and higher" became 23px type in a box
+  up to 1180 wide, sitting 11vh up the screen.
+- **Now:** `bottom: max(14px, 2.4vh)`, up to the screen's width less 64px,
+  20px type and a 64px portrait.
+- **Measured, with the 93-character taunt:**
+
+  | Width | Before | Now |
+  | --- | --- | --- |
+  | 1920 | 2 lines, card 136px tall, top at y 825 | 1 line, 88px, top at y 966 |
+  | 1280 | 2 lines | 1 line |
+  | 1024 | — | 2 lines |
+
+- The phone's one-line card is untouched.
+
+### Back out to the entrance, or fly home
+
+*"Talking to Mr. Satan at the arena front gate, it says 'Fly home' when
+should say 'Return to Entrance' ... Maybe let's have option for both, but
+default to the one that initiated the conversation."*
+
+- **The bug was a label.** A party that met him at the doors already left
+  through them (`leaveArena`); the league picker said FLY HOME TO TOWN
+  anyway.
+- **Two rows now.** The one matching `arenaFrom` comes first and is the
+  `.back` that B, Escape and Start press. Each asks first, with
+  words that say what YES does. `quitMatch(to)` sets `arenaFrom`, which is
+  what chooses the doors or the griffin.
+- **Measured in the game:** a party flown in that picked RETURN TO THE
+  ENTRANCE was put down 9 units from the doors.
+- **Smaller fixes:** with no doors in the world there is no door row, and the
+  results screen says BACK TO THE ENTRANCE when that is where JUMP goes.
+
+### The roll call holds still
+
+*"When saying the players names in the tournament, the text appearing on
+screen is jumping around with the voice ... If we can't get the text synced
+with the voice when it is being said, then just show all the text at once"*
+
+- **The cause.** The reveal read one clock across the whole pieced line.
+  Between pieces that clock was the card's own `t`, which counts the gaps and
+  the frames before each `play()` starts. When the next name's playhead moved,
+  it fell back to the seconds actually said. So words went up in each gap and
+  came down again.
+- **The fix.** It is synced rather than shown whole. `rollCall` returns
+  `pieces` (each clip's word count), and each clip's words go up across its
+  own playhead and none before it starts. A pieced line without `pieces` is
+  shown whole, and the count never goes down (`_showWords`).
+- **Measured on the real clips** (a three-way FREE FOR ALL, 12 words): each
+  name comes up 30ms after its clip starts, in 18 steps, and none goes down.

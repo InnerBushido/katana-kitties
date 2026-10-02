@@ -7062,7 +7062,7 @@ class Game {
    * `_ride` refuses a second journey while one is in the air; turning the
    * animal round mid-flight is a state nothing else in this file has to handle.
    */
-  quitMatch() {
+  quitMatch(to = null) {
     if (!this.inMatch || this.travel) return;
     this.setPaused(false);
     document.getElementById('panel-league')?.classList.add('hidden');
@@ -7070,6 +7070,12 @@ class Game {
     this.leaguePicking = false;
     this.teamPicking = false;
     this.teamPick = null;
+    /* WHERE THEY ASKED TO GO, which need not be where they came from: the
+       league picker offers both (see `_openLeaguePicker`). `arenaFrom` is
+       what `leaveArena` reads to choose the doors or the griffin, so the
+       choice is made by setting it. */
+    if (to === 'town') this.arenaFrom = 'town';
+    else if (to === 'gate' && this._waysOut().includes('gate')) this.arenaFrom = 'gate';
     /* Asked before `_goHome`, which forgets it. The doors say their own. */
     const fromGate = this.arenaFrom === 'gate';
     this._goHome();
@@ -7976,15 +7982,27 @@ class Game {
       });
       list.appendChild(b);
     });
-    /* AND A WAY BACK OUT OF IT. `.back` is what MenuNav's B presses, so a pad
-       has it for free; Escape and Start reach it through `_pickerBack`. It
-       ASKS, because there is nowhere nearer to go back to than the town — see
-       `_pickerBack` — and the default answer is no (seventh non-negotiable). */
-    const back = document.createElement('button');
-    back.className = 'menu-btn back';
-    back.textContent = '◀ BACK — FLY HOME TO TOWN';
-    back.addEventListener('click', () => this._pickerBack());
-    list.appendChild(back);
+    /* AND A WAY BACK OUT OF IT — TWO, AND THE ONE THEY CAME BY IS THE BACK.
+       Richard: "Talking to Mr. Satan at the arena front gate, it says 'Fly
+       home' when should say 'Return to Entrance' or something like that.
+       Maybe let's have option for both, but default to the one that initiated
+       the conversation. That way players can choose where they go back to."
+
+       It said FLY HOME and then walked them out of the doors: a party that
+       met him at the gate leaves through it (`leaveArena`), so the button was
+       wrong about what it did. Now there is a row for each way, and the one
+       that matches how they arrived (`arenaFrom`) comes first and is the
+       `.back` - what MenuNav's B presses, and what Escape and Start reach
+       through `_pickerBack`. The other is an ordinary row. Each ASKS, with the
+       default answer no (seventh non-negotiable). No doors in the world, no
+       door row: a button that cannot go where it says is worse than none. */
+    for (const [i, to] of this._waysOut().entries()) {
+      const back = document.createElement('button');
+      back.className = i === 0 ? 'menu-btn back' : 'menu-btn';
+      back.textContent = to === 'gate' ? '◀ BACK — RETURN TO THE ENTRANCE' : '◀ BACK — FLY HOME TO TOWN';
+      back.addEventListener('click', () => this._pickerBack(to));
+      list.appendChild(back);
+    }
     panel.classList.remove('hidden');
     /* The fighters are frozen while it is up — `Tournament.frozen` is false
        here because no tournament has started yet, so this is the flag that
@@ -8258,7 +8276,7 @@ class Game {
    * asks, with the cursor on NO. It is reached from Escape, a pad's or the
    * touch pad's Start, B on either screen, and the button on each.
    */
-  _pickerBack() {
+  _pickerBack(to = null) {
     if (this.confirm?.active) return false;
     if (this.teamPicking) {
       const was = this.teamPick?.mode?.id ?? null;
@@ -8270,17 +8288,34 @@ class Game {
       return true;
     }
     if (this.leaguePicking) {
-      this.confirm.ask({
+      const ways = this._waysOut();
+      const way = ways.includes(to) ? to : ways[0];
+      this.confirm.ask(way === 'gate' ? {
+        title: 'BACK OUT TO THE ENTRANCE?',
+        body: 'Nobody has fought yet, so nothing is lost. Mr. Satan will '
+          + 'run it again whenever you talk to him at the doors.',
+        no: 'NO, PICK A FIGHT',
+        yes: 'YES, BACK TO THE ENTRANCE',
+        onYes: () => this.quitMatch(way),
+      } : {
         title: 'FLY BACK TO TOWN?',
         body: 'Nobody has fought yet, so nothing is lost. Mr. Satan will '
           + 'run it again whenever you come back.',
         no: 'NO, PICK A FIGHT',
         yes: 'YES, FLY HOME',
-        onYes: () => this.quitMatch(),
+        onYes: () => this.quitMatch(way),
       });
       return true;
     }
     return false;
+  }
+
+  /** The ways out of the league picker, the one they came in by first: out
+   *  of the doors ('gate') only when the world has doors to walk out of. */
+  _waysOut() {
+    const doors = !!(this.world?.arenaDoors && this.arenaExit);
+    if (!doors) return ['town'];
+    return this.arenaFrom === 'gate' ? ['gate', 'town'] : ['town', 'gate'];
   }
 
   /** "two against two", in words, for the line that says why JUMP is refused. */

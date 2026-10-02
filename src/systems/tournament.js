@@ -173,7 +173,9 @@ export const ROLL_WORDS = {
  * falls back to the round and the marks with nobody named, which is never
  * wrong; a card that named the wrong cat is what this replaced.
  *
- * @returns {{ids: string|string[], text: string}}
+ * @returns {{ids: string|string[], text: string, pieces?: number[]}} `pieces`
+ *   is how many of the card's words each clip says, so the card can put each
+ *   name up as he says it - see `Announcer._start`.
  */
 export function rollCall(round, names, sides) {
   const bySide = [];
@@ -186,7 +188,7 @@ export function rollCall(round, names, sides) {
   }
   const intro = `sat_rc_r${round}`;
   const bare = ROLL_WORDS[intro]
-    ? { ids: [intro, 'sat_rc_marks'], text: `${ROLL_WORDS[intro]} Fighters, take your marks!` }
+    ? { ids: [intro, 'sat_rc_marks'], text: `${ROLL_WORDS[intro]} Fighters, take your marks!`, pieces: [wordsIn(ROLL_WORDS[intro]), 4] }
     : { ids: `sat_r${Math.min(round, 2)}`, text: `ROUND ${round}! Fighters, take your marks!` };
   if (!ROLL_WORDS[intro] || groups.some((g) => g.some((n) => !ROLL_WORDS[`sat_rc_${key(n)}`]))) return bare;
 
@@ -210,8 +212,12 @@ export function rollCall(round, names, sides) {
     const listed = /^sat_rc_(?!r\d|and_|vs|alsovs|marks)/.test(id) && /^sat_rc_(?!r\d|and_|vs|alsovs|marks)/.test(next ?? '');
     text += listed ? ', ' : (next ? ' ' : '');
   });
-  return { ids, text };
+  /* A comma rides on the word before it, so each piece is exactly as many
+     of the card's words as its own text has. */
+  return { ids, text, pieces: ids.map((id) => wordsIn(ROLL_WORDS[id])) };
 }
+
+const wordsIn = (s) => String(s).split(/\s+/).filter(Boolean).length;
 
 /* ---------------------------------------------------------------------------
    WHO IS ON MY SIDE — the one question a team match did not answer.
@@ -1370,7 +1376,7 @@ export class Tournament {
     const call = rollCall(this.round,
       this.game.players.map((p) => p.style?.name ?? p.name), this.sides);
     if (last) this.announcer?.say(`sat_r${this.round}`, 'FINAL ROUND! Everything comes down to this one!');
-    else this.announcer?.say(call.ids, call.text);
+    else this.announcer?.say(call.ids, call.text, null, { pieces: call.pieces });
     this._banner(last ? 'FINAL ROUND' : `ROUND ${this.round}`, 'round');
   }
 
@@ -3146,9 +3152,13 @@ export class Tournament {
         <button class="ne-key wide" data-ne="del">DEL</button>
         <button class="ne-key wide go" data-ne="ok">OK</button>
       </div>` : '';
+    /* THE WAY OUT IT WILL ACTUALLY TAKE. A party that walked in through the
+       doors leaves through them (`Game.leaveArena`), and "FLY HOME" over a
+       walk to the entrance is the screen being wrong about what JUMP does. */
+    const out = this.game.arenaFrom === 'gate' ? 'BACK TO THE ENTRANCE' : 'FLY HOME';
     const flyHome = touch
-      ? '<button class="ar-go" data-ne="home">FLY HOME</button>'
-      : '<p class="ar-hint">PRESS JUMP TO FLY HOME</p>';
+      ? `<button class="ar-go" data-ne="home">${out}</button>`
+      : `<p class="ar-hint">PRESS JUMP TO ${out === 'FLY HOME' ? 'FLY HOME' : 'GO BACK TO THE ENTRANCE'}</p>`;
     const rows = this.board.map((r, i) => `
       <tr class="${i === this.rank ? 'me' : ''}">
         <td class="lb-rank">${i + 1}</td>
