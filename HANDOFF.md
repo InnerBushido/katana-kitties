@@ -2683,6 +2683,17 @@ four synthesised stand-ins, so deleting them costs nothing but polish — see
 
 ## Mobile — the road to a phone
 
+**The tenth pass (Richard's "quick fixes")** is in
+[mobile.md](docs/notes/mobile.md) and [payne.md](docs/notes/payne.md):
+
+- **The desktop announcer** is a strip along the bottom edge, one line at
+  1280 and up.
+- **The league picker** offers RETURN TO THE ENTRANCE and FLY HOME, with the
+  way they came in as the default.
+- **The roll call** puts each name up with the clip that says it.
+- **Payne** drops a kitten's waiting answers when she leaves the card, and
+  does not say a line twice within 30s; names are never repeats.
+
 **The ninth pass (Richard's "Fixes")** is in [mobile.md](docs/notes/mobile.md):
 
 - **Team picker:** tapping a name moves her to the next side, and a phone has

@@ -14132,7 +14132,7 @@ console.log('\n--- the three power moves ---');
       const tsrc = readFileSync(new URL('../src/systems/tournament.js', import.meta.url), 'utf8');
       ok('...and the round card is what asks for it',
         /const call = rollCall\(this\.round,\s*this\.game\.players\.map\(\(p\) => p\.style\?\.name \?\? p\.name\), this\.sides\);/.test(tsrc)
-        && /else this\.announcer\?\.say\(call\.ids, call\.text\);/.test(tsrc));
+        && /else this\.announcer\?\.say\(call\.ids, call\.text, null, \{ pieces: call\.pieces \}\);/.test(tsrc));
 
       /* THE PIECES ARE SAID ONE AFTER ANOTHER, on one card, and the round
          waits for the LAST of them — `talking` is what the card beat asks. */
@@ -25682,7 +25682,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('a desktop card is centred and can grow to its full width',
       /left: 50%;/.test(base) && /translate: -50% 0;/.test(base) && /width: max-content;/.test(base));
     const baseText = css.indexOf('\n#an-text {');
-    const big = css.indexOf('#an-text { font-size: 23px;');
+    const big = css.indexOf('#an-text { font-size: 20px;');
     ok('...and the big-screen sizes come AFTER the base rules, so they win',
       baseText > 0 && big > baseText, `${big} vs ${baseText}`);
   }
@@ -33586,7 +33586,8 @@ console.log('\n--- backing out of the arena pickers ---');
   };
   for (const id of ['panel-league', 'league-list', 'panel-teams', 'tp-back']) els[id] = mk(id);
   const doc = { getElementById: (id) => els[id] ?? null, createElement: () => mk('') };
-  const back = liftB('_pickerBack()', '')(modesFor, doc);
+  const back = liftB('_pickerBack(to = null)', 'to = null')(modesFor, doc);
+  const waysOut = liftB('_waysOut()', '')(modesFor, doc);
   const openL = liftB('_openLeaguePicker(leagues, was = null)', 'leagues, was = null')(modesFor, doc);
   const updT = liftB('_updateTeamPicker()', '')(modesFor, doc);
 
@@ -33608,6 +33609,7 @@ console.log('\n--- backing out of the arena pickers ---');
   };
   G._openLeaguePicker = openL;
   G._pickerBack = back;
+  G._waysOut = waysOut;
   const leagues = modesFor(4);
   const pairs = leagues.find((m) => m.id === 'pairs') ?? leagues[2];
 
@@ -33972,6 +33974,271 @@ console.log('\n=== SIDES BY TOUCH, A FLAT HUD AT FOUR, AND THE MENUS IN FRONT ==
       menus.every(([, v]) => v < 60) && z('#cutscene') === 60 && z('#arena-result') === 60);
     ok('...and the rotate-your-phone gate is still over the lot',
       z('#rotate-gate') > Math.max(60, ...menus.map(([, v]) => v)));
+  }
+}
+
+console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, AND A ROLL CALL THAT HOLDS STILL ===');
+{
+  const PN = await import('../src/systems/payne.js');
+  const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const isrc = readFileSync(new URL('../src/systems/inspector.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const tsrc = readFileSync(new URL('../src/systems/tournament.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8')
+    .replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  /* --- 1. PAYNE ---
+     "Payne is queuing up menu selection voices even though the player already
+     exited the menu ... if the player stops talking to her, should cancel
+     that queue for the player that left. She should not repeat herself ...
+     If she says players specific name, then that counts as a new voice
+     speech and doesn't count as being repeated."
+     THE REAL CLASS, with every clip present and a voice whose playhead this
+     check ends by hand. */
+  {
+    const kid = (index, name) => ({ index, name, style: { name }, payne: PN.blankPayne() });
+    const a = kid(0, 'Ember');
+    const c = kid(1, 'Frost');
+    const voices = [];
+    const g = {
+      players: [a, c],
+      announcer: { clip: (id) => ({ el: { id }, dur: 1 }), active: false, queue: [] },
+      audio: { _speaking: null, speak(el) { const v = { ...el, currentTime: 0, ended: false }; voices.push(v); return v; }, stopSpeaking() {} },
+    };
+    const P = new PN.Payne(g);
+    const tick = (s = 0.2) => { for (let t = 0; t < s; t += 0.1) { P.t += 0.1; P._voice(0.1, false); } };
+    const endClip = () => { if (P.current?.el) P.current.el.ended = true; };
+
+    P.say(a, ['payne_q_panda'], null, { card: false, now: true });
+    tick();
+    const hers = P.current;
+    ok('Payne answers Ember out loud', hers?.p === a && voices.at(-1)?.id === 'payne_q_panda');
+    const rep = P.say(c, ['payne_q_panda'], null, { card: false, now: true });
+    tick();
+    ok('...and when Frost asks the same thing, she is SHOWN it rather than told it again',
+      P.current === hers && !P.queue.some((q) => q.p === c) && voices.filter((v) => v.id === 'payne_q_panda').length === 1
+        && P.speaking(c) === rep?.text);
+    P.say(c, ['payne_q_clans'], null, { card: false, now: true });
+    tick();
+    ok('a new question from Frost waits its turn behind Ember', P.current === hers && P.queue[0]?.p === c);
+    const bye = P.say(c, ['payne_bye'], null, { card: false, now: true, low: true });
+    ok('...her BYE, with her sister being talked to, is dropped as before', bye === null);
+    P.leave(c);
+    ok('...and LEAVING drops the answer she walked away from, so it is never said to nobody',
+      !P.queue.some((q) => q.p === c) && P.current === hers);
+    /* Three seconds: a card holds at least `SILENT_BASE` (2.6s) even when its
+       clip is one second long. */
+    endClip(); tick(3);
+    ok('...so when Ember\'s answer ends, Payne is quiet', P.current === null
+      && !voices.some((v) => v.id === 'payne_q_clans'));
+
+    P.say(c, ['payne_q_panda'], 'hey', { card: false, now: true });
+    tick();
+    ok('her NAME is never a repeat: "Heyyy, Frost!" is said and the repeat after it is read',
+      P.current?.p === c && P.current.ids.join() === 'payne_hey_frost'
+        && voices.at(-1)?.id === 'payne_hey_frost' && /Frost/.test(P.current.text) && P.current.text.length > 'Heyyy, Frost!'.length);
+    endClip(); tick(3);
+
+    P.t += PN.SAID_RECENTLY + 1;
+    P.say(c, ['payne_q_panda'], null, { card: false, now: true });
+    tick();
+    ok(`...and after ${PN.SAID_RECENTLY}s it is not "just said" any more: asked again, said again`,
+      P.current?.p === c && voices.at(-1)?.id === 'payne_q_panda');
+    endClip(); tick(3);
+
+    P.clear();
+    P.say(a, ['payne_q_dojo'], null, { card: false, now: true });
+    tick();
+    const now1 = P.current;
+    P.say(c, ['payne_h_bamboo'], 'hey');
+    P.say(c, ['payne_last_mad1'], null, { card: false, now: true, keep: true });
+    P.say(c, ['payne_q_pilot'], null, { card: false, now: true });
+    P.leave(c);
+    ok('leaving keeps what was never this menu\'s: her rant ("her voice and complaints should finish") and a hint for her pane',
+      P.current === now1 && P.queue.some((q) => q.p === c && q.keep) && P.queue.some((q) => q.p === c && q.card)
+        && !P.queue.some((q) => q.p === c && q.ids.includes('payne_q_pilot')));
+    P.clear();
+    P.say(c, ['payne_q_pilot'], null, { card: false, now: true });
+    tick();
+    P.leave(c);
+    ok('...and her own answer, mid-sentence, stops when she walks off', P.current === null);
+
+    ok('EVERY way off her card goes through `leave`: BYE, START, the sweep and the trade window',
+      /\n  closeOne\(index\) \{\n    const c = this\.cards\[index\];\n    if \(!c\?\.state\) return;\n    this\._leftPayne\(index\);/.test(isrc)
+        && /closeAll\(\) \{\n    for \(const \[i, c\] of this\.cards\.entries\(\)\) \{\n      this\._leftPayne\(i\);/.test(isrc)
+        && /if \(p && isPayne\(this\.cards\[index\]\?\.state\)\) this\.game\.payne\?\.leave\?\.\(p\);/.test(isrc));
+  }
+
+  /* --- 2. THE ANNOUNCER IS A STRIP ALONG THE BOTTOM OF A DESKTOP ---
+     "The Arena messages are too big and are disruptive in the middle of the
+     screen for web/pc ... put on the bottom of the screen and make it mostly
+     the width of the screen, so it is only 1 or 2 sentences long maximum."
+     Measured in the browser pane with Mr Satan's 93-character taunt: one line
+     at 1920 and at 1280 (two before), two at 1024, and the card 88px tall
+     (136 before) sitting on the bottom edge rather than 11vh up. See the
+     tenth pass in docs/notes/mobile.md. */
+  {
+    const block = (sel) => {
+      const at = css.indexOf('\n' + sel + ' {');
+      return at < 0 ? '' : css.slice(at, css.indexOf('}', at));
+    };
+    const base = block('#announce');
+    /* The big-screen block is the one AFTER the base `#an-text` rule - the
+       order the previous pass pinned, because before that it never applied. */
+    const bigAt = css.indexOf('@media (min-width: 1001px)', css.indexOf('\n#an-text {'));
+    const big = bigAt < 0 ? '' : css.slice(bigAt, css.indexOf('\n}', bigAt));
+    ok('a desktop announcer sits on the bottom edge, not a ninth of the way up',
+      /bottom: max\(14px, 2\.4vh\);/.test(base) && !/bottom: 11vh;/.test(base));
+    ok('...and runs out to the width of the screen, less a margin',
+      /max-width: calc\(100vw - 48px\);/.test(base) && /max-width: min\(1760px, calc\(100vw - 64px\)\);/.test(big));
+    ok('...in a smaller face, with the portrait a stamp rather than a headshot',
+      /#an-text \{ font-size: 20px; line-height: 1\.3; \}/.test(big) && /#an-portrait \{ width: 64px; height: 64px;/.test(big));
+  }
+
+  /* --- 3. THE WAY OUT IS THE WAY THEY CAME IN, AND THE OTHER ONE TOO ---
+     "Talking to Mr. Satan at the arena front gate, it says 'Fly home' when
+     should say 'Return to Entrance' ... Maybe let's have option for both, but
+     default to the one that initiated the conversation." */
+  {
+    const lift = (sig) => {
+      const from = msrc.indexOf(`\n  ${sig} {`);
+      const end = msrc.indexOf('\n  }\n', from + 1);
+      return from < 0 || end < 0 ? null : msrc.slice(from + 3, end + 4);
+    };
+    const src = ['_openLeaguePicker(leagues, was = null)', '_pickerBack(to = null)', '_waysOut()', 'quitMatch(to = null)'].map(lift);
+    ok('the league picker\'s ways out are where this check thinks they are', src.every(Boolean));
+    if (src.every(Boolean)) {
+      // eslint-disable-next-line no-eval
+      const M = eval(`({${src.join(',\n')}})`);
+      const mk = () => {
+        const cls = new Set();
+        const e = { className: '', textContent: '', kids: [], clicks: [],
+          classList: { add: (x) => cls.add(x), remove: (x) => cls.delete(x) },
+          addEventListener: (t, f) => { if (t === 'click') e.clicks.push(f); },
+          appendChild: (k) => e.kids.push(k) };
+        return e;
+      };
+      const els = { 'panel-league': mk(), 'league-list': mk(), 'panel-teams': mk() };
+      const docWas = globalThis.document;
+      globalThis.document = { getElementById: (id) => els[id] ?? null, createElement: mk };
+      try {
+        const party = (from) => {
+          els['league-list'].kids.length = 0;
+          const asked = [];
+          const G = {
+            ...M, arenaFrom: from, world: { arenaDoors: {} }, arenaExit: {}, players: [{}, {}, {}],
+            leaguePicking: false, teamPicking: false, travel: null, inMatch: true,
+            confirm: { active: false, ask: (o) => asked.push(o) },
+            setPaused() {}, toast() {}, sfx() {}, _afterLeague() {},
+            _goHome() { G.wentBy = G.arenaFrom; },
+            tournament: { begin() {} },
+          };
+          G._openLeaguePicker(modesFor(3));
+          const outs = els['league-list'].kids.filter((k) => /BACK/.test(k.textContent));
+          return { G, asked, outs };
+        };
+        const gate = party('gate');
+        ok('met at the doors: two ways out, RETURN TO THE ENTRANCE first and the one B presses',
+          gate.outs.length === 2 && /ENTRANCE/.test(gate.outs[0].textContent) && /\bback\b/.test(gate.outs[0].className)
+            && /TOWN/.test(gate.outs[1].textContent) && !/\bback\b/.test(gate.outs[1].className),
+          gate.outs.map((o) => `${o.className}: ${o.textContent}`).join(' | '));
+        gate.G._pickerBack();
+        ok('...so Escape or B asks about the ENTRANCE, in words that say what YES does',
+          /ENTRANCE/.test(gate.asked[0]?.yes) && /PICK/.test(gate.asked[0]?.no));
+        gate.asked[0].onYes();
+        ok('...and walks them out of the doors', gate.G.wentBy === 'gate');
+        const g2 = party('gate');
+        g2.outs[1].clicks[0]();
+        g2.asked[0].onYes();
+        ok('...while the other row still flies them home, if that is what they want',
+          /HOME/.test(g2.asked[0].yes) && g2.G.wentBy === 'town');
+        const town = party('town');
+        ok('flown in on the griffin: FLY HOME first and the default, the doors second',
+          town.outs.length === 2 && /TOWN/.test(town.outs[0].textContent) && /\bback\b/.test(town.outs[0].className)
+            && /ENTRANCE/.test(town.outs[1].textContent));
+        town.outs[1].clicks[0]();
+        town.asked[0].onYes();
+        ok('...and the doors row walks a griffin party out of the doors', town.G.wentBy === 'gate');
+        const none = party('gate');
+        none.G.world = {};
+        els['league-list'].kids.length = 0;
+        none.G._openLeaguePicker(modesFor(3));
+        const lone = els['league-list'].kids.filter((k) => /BACK/.test(k.textContent));
+        ok('...and a world with no doors offers no door', lone.length === 1 && /TOWN/.test(lone[0].textContent));
+      } finally {
+        globalThis.document = docWas;
+      }
+    }
+    ok('the results screen names the way out JUMP will really take',
+      /const out = this\.game\.arenaFrom === 'gate' \? 'BACK TO THE ENTRANCE' : 'FLY HOME';/.test(tsrc));
+  }
+
+  /* --- 4. THE ROLL CALL HOLDS STILL ---
+     "When saying the players names in the tournament, the text appearing on
+     screen is jumping around with the voice ... If we can't get the text
+     synced with the voice when it is being said, then just show all the text
+     at once". Seven pieces of different lengths, with a play() that takes
+     five frames to start every time - which is what made the old clock fall
+     back. Recorded: how many words are up, and which piece is speaking. */
+  {
+    const docWas = globalThis.document;
+    const mkEl = () => {
+      const e = {
+        textContent: '', className: '', children: [], style: { setProperty() {} },
+        classes: new Set(), clientWidth: 400, scrollWidth: 0, getContext: () => null,
+        appendChild(k) { this.children.push(k); return k; },
+        replaceChildren(...k) { this.children = k; },
+      };
+      e.classList = { add: (x) => e.classes.add(x), remove: (x) => e.classes.delete(x),
+        toggle: (x, on) => (on ? e.classes.add(x) : e.classes.delete(x)) };
+      return e;
+    };
+    const els = {};
+    globalThis.document = { getElementById: (id) => (els[id] ??= mkEl()), createElement: () => mkEl() };
+    try {
+      const CATS = ['Ember', 'Frost', 'Blossom', 'Storm'];
+      const call = rollCall(1, CATS, [0, 0, 1, 1]);
+      const words = call.text.split(/\s+/).filter(Boolean).length;
+      ok('a 2v2 roll call says how many of its words each clip says, and they add up to the card',
+        Array.isArray(call.pieces) && call.pieces.length === call.ids.length
+          && call.pieces.reduce((s, k) => s + k, 0) === words, `${call.pieces} = ${words}`);
+      const lens = { sat_rc_r1: 0.8, sat_rc_vs: 0.45, sat_rc_marks: 1.7 };
+      const play = ({ touch, pieces }) => {
+        const said = [];
+        const audio = { speak: (el) => { const v = { ...el, currentTime: 0, ended: false, wait: 5 }; said.push(v); return v; }, stopSpeaking() {}, play() {} };
+        const A = new Announcer({ audio, touch: () => touch });
+        for (const id of call.ids) A.clips.set(id, { el: { id }, dur: lens[id] ?? 0.55 });
+        A.say(call.ids, call.text, null, pieces ? { pieces } : {});
+        const frames = [];
+        for (let k = 0; k < 60 * 12 && (k === 0 || A.current); k++) {
+          const v = said.at(-1);
+          if (v && !v.ended) {
+            if (v.wait > 0) v.wait--;
+            else { v.currentTime += 1 / 60; if (v.currentTime >= (lens[v.id] ?? 0.55)) v.ended = true; }
+          }
+          A.update(1 / 60);
+          const shown = (A._spans ?? []).filter((s) => s.className !== 'un').length;
+          frames.push({ shown, piece: said.length - 1, t: said.at(-1)?.currentTime ?? 0, ended: !!said.at(-1)?.ended });
+        }
+        return frames;
+      };
+      const cum = call.pieces.map((_, i) => call.pieces.slice(0, i + 1).reduce((s, k) => s + k, 0));
+      for (const touch of [true, false]) {
+        const f = play({ touch, pieces: call.pieces });
+        const where = touch ? 'a phone' : 'a desktop';
+        ok(`📣 on ${where}, the roll call's words only ever go UP — nothing comes down and goes up again`,
+          f.every((x, i) => !i || x.shown >= f[i - 1].shown), f.map((x) => x.shown).filter((k, i, a) => !i || k !== a[i - 1]).join(' '));
+        ok('...no name is up before the clip that says it has started',
+          f.every((x) => x.shown <= cum[x.piece]), JSON.stringify(f.find((x) => x.shown > cum[x.piece])));
+        ok('...every word of a piece is up by the time it has been said',
+          f.every((x) => !x.ended || x.shown >= cum[x.piece]));
+        ok('...and the line ends whole', f.at(-1).shown === words || f.some((x) => x.shown === words));
+      }
+      const blind = play({ touch: true, pieces: null });
+      ok('a pieced line that does not say whose words are whose is shown whole from the first frame',
+        blind.every((x) => x.shown === words));
+    } finally {
+      globalThis.document = docWas;
+    }
   }
 }
 

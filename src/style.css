@@ -2859,13 +2859,23 @@ body.touch-ui #panel-help .help-shot-pair img { max-height: 58vh; }
 /* ONE ACCENT PER SPEAKER. The card is Mr Satan's gold by default and Patchfur's
    parchment when she is the one counting — see `Announcer.say`'s third
    argument. Three rules read this and nothing else has to know. */
-/* CENTRED AND OFF THE BOTTOM ON A DESKTOP. "Just have it higher up on
-   pc/web as we don't want it all the way on the bottom as may be harder to
-   read." It was bottom-left, 18px up, in the corner of the first pane; it is
-   one card for the whole sofa, so it goes in the middle, a ninth of the
-   screen up. `translate` rather than `transform` for the centring, because
-   the slide-in animates `transform` and would throw the centring away for
-   the length of the animation.
+/* A SUBTITLE STRIP ALONG THE BOTTOM ON A DESKTOP, centred, as wide as the
+   screen allows, and never more than two lines.
+
+   IT HAS MOVED TWICE, AND THIS IS THE SECOND. It was bottom-left, 18px up, in
+   the corner of the first pane; then "Just have it higher up on pc/web" put it
+   in the middle, a ninth of the screen up, at 23px in a box 1180 wide at most.
+   Richard, after playing that: "The Arena messages are too big and are
+   disruptive in the middle of the screen for web/pc ... put on the bottom of
+   the screen and make it mostly the width of the screen, so it is only 1 or 2
+   sentences long maximum. Currently goes to 3 or 4 sentences and is near the
+   middle of the screen which is distracting." So: the bottom edge, a smaller
+   face and a box up to the screen's width less a margin, which is what turns
+   four lines into one or two (measured: `world-check`'s "A SUBTITLE STRIP").
+
+   `translate` rather than `transform` for the centring, because the slide-in
+   animates `transform` and would throw the centring away for the length of
+   the animation.
 
    A PHONE HAS ITS OWN RULE AND IT IS NOTHING LIKE THIS — one line along the
    bottom edge. See `body.touch-ui #announce`. */
@@ -2874,7 +2884,7 @@ body.touch-ui #panel-help .help-shot-pair img { max-height: 58vh; }
   position: absolute;
   left: 50%;
   translate: -50% 0;
-  bottom: 11vh;
+  bottom: max(14px, 2.4vh);
   z-index: 40;
   display: flex;
   align-items: center;
@@ -2884,8 +2894,8 @@ body.touch-ui #panel-help .help-shot-pair img { max-height: 58vh; }
      and `left: 50%` is half the screen: measured at 1920, the card stopped at
      960 wide with a 1180 max-width it could never reach. */
   width: max-content;
-  max-width: min(760px, 88vw);
-  padding: 10px 18px 10px 10px;
+  max-width: calc(100vw - 48px);
+  padding: 8px 18px 8px 8px;
   background: rgba(29, 18, 22, 0.94);
   border: 4px solid var(--an-accent);
   border-radius: 14px;
@@ -2933,23 +2943,21 @@ body.touch-ui #panel-help .help-shot-pair img { max-height: 58vh; }
    to be more readable on PC/Web" was a note at all. `world-check` now pins it
    below the base rule. */
 @media (min-width: 1001px) {
-  /* "For PC/Web, we can keep the multiple sentences length on the screen,
-     but make the text bigger and take up more horizontal space, as we should
-     be able to fit it all on the screen with no more than 2 sentences worth."
-
-     TWO LINES AT 23px, MEASURED. The longest thing this card says is Mr
-     Satan's taunt, 93 characters; at 1920 the card is 1180 wide and its text
-     column about 1010, so every line he has fits in two. At 1280 (80vw is
-     1024) the taunt is three lines. */
+  /* WIDE AND LOW, NOT BIG. The pass before this one made the card bigger
+     ("make the text bigger and take up more horizontal space") and it came
+     back as too big and in the way: 23px in a box 1180 wide, a ninth of the
+     screen up. The type comes down to 20px and the box goes out to the
+     screen's width less 64px, so the width does the work the size was doing.
+     The portrait is a stamp beside the words, not a headshot. */
   #announce {
-    max-width: min(1180px, 80vw);
-    padding: 14px 26px 14px 14px;
-    gap: 18px;
-    border-radius: 18px;
+    max-width: min(1760px, calc(100vw - 64px));
+    padding: 8px 22px 8px 8px;
+    gap: 14px;
+    border-radius: 14px;
   }
-  #an-portrait { width: 100px; height: 100px; border-radius: 13px; }
-  #an-name { font-size: 25px; letter-spacing: 2px; }
-  #an-text { font-size: 23px; line-height: 1.36; }
+  #an-portrait { width: 64px; height: 64px; border-radius: 10px; }
+  #an-name { font-size: 20px; letter-spacing: 1.8px; }
+  #an-text { font-size: 20px; line-height: 1.3; }
 }
 
 /* --- the award card at the ending ----------------------------------------

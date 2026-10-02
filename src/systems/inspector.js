@@ -183,11 +183,20 @@ export class Inspector {
   closeOne(index) {
     const c = this.cards[index];
     if (!c?.state) return;
+    this._leftPayne(index);
     c.state = null;
     c.i = 0;
     c._sig = '';
     if (c.el) { c.el.remove(); c.el = null; }
     this.game.audio?.play('menu');
+  }
+
+  /** Her card is coming down: whatever she asked Payne and is still waiting
+   *  to hear is dropped, EVERY way out - BYE, START, the sweep, the trade
+   *  window. See `Payne.leave`. */
+  _leftPayne(index) {
+    const p = this.game.players?.[index];
+    if (p && isPayne(this.cards[index]?.state)) this.game.payne?.leave?.(p);
   }
 
   /** Take down this kitten's card only if it is PAYNE's - her Goblin Sweep
@@ -199,7 +208,8 @@ export class Inspector {
 
   /** Everything down, silently. For restart, quit, and the tournament. */
   closeAll() {
-    for (const c of this.cards) {
+    for (const [i, c] of this.cards.entries()) {
+      this._leftPayne(i);
       c.state = null;
       c.i = 0;
       c._sig = '';

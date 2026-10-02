@@ -249,10 +249,13 @@ export class Announcer {
    *        the speaker, when it is not the announcer this was built as. The
    *        card is dressed from this — name, subtitle, portrait and the one
    *        accent colour the border, the portrait frame and the name share.
+   * @param {number[]} [o.pieces] for a line said in several clips: how many of
+   *        its words each clip says, in order. With it the words go up as the
+   *        clip that says them plays; without it a pieced line is shown whole.
    */
-  say(id, text, who = null) {
+  say(id, text, who = null, { pieces = null } = {}) {
     if (this.hushed) return;
-    this.queue.push({ id, text, who });
+    this.queue.push({ id, text, who, pieces });
   }
 
   /**
@@ -418,7 +421,41 @@ export class Announcer {
 
     this._voiceTotal = this.voiceEl ? clips.reduce((s, c) => s + c.dur, 0) : 0;
     this._spokenBefore = 0;
+    /* A LINE SAID IN PIECES IS REVEALED PIECE BY PIECE, OR NOT AT ALL.
+       Richard: "When saying the players names in the tournament, the text
+       appearing on screen is jumping around with the voice ... If we can't get
+       the text synced with the voice when it is being said, then just show all
+       the text at once".
+
+       WHAT JUMPED: the reveal read ONE clock across the whole roll call, and
+       between two pieces that clock was the card's own `t` - which counts the
+       gaps and the moment before each `play()` starts - until the next clip's
+       playhead moved, when it fell back to the seconds actually said. So words
+       went up during each gap and came down again as the next name began, and
+       a name came up by its share of the CHARACTERS, which is nothing like its
+       share of the time ("Ember" is one word and a whole clip).
+
+       NOW each clip owns its own words (`pieces`, from `rollCall`), which go
+       up across that clip's own playhead and never before it starts. A pieced
+       line that does not say which words are whose is shown whole; and in
+       every case the count only ever goes up (`_showWords`). */
+    this._piece = 0;
+    this._pieces = null;
+    if (clips.length > 1 && this.voiceEl) {
+      const n = item.pieces;
+      const fits = Array.isArray(n) && n.length === clips.length
+        && n.reduce((s, k) => s + k, 0) === this._plan.length;
+      if (fits) {
+        let from = 0;
+        this._pieces = n.map((k) => {
+          const sub = { from, plan: revealPlan(this._plan.slice(from, from + k).map((x) => x.w).join(' ')) };
+          from += k;
+          return sub;
+        });
+      }
+    }
     this._reveal = !!this._spans && this._voiceTotal > 0
+      && (clips.length === 1 || !!this._pieces)
       && (this._touch || this._plan.length > REVEAL_WORDS);
     this._shown = -1;
     this._showWords(this._reveal ? revealCount(this._plan, 0) : this._plan.length);
@@ -483,8 +520,11 @@ export class Announcer {
     el.replaceChildren(a, s);
   }
 
-  /** Put the first `k` words up. Only touches the DOM when `k` changes. */
+  /** Put the first `k` words up. Only touches the DOM when `k` changes.
+   *  NEVER FEWER THAN ARE UP ALREADY while a line is being revealed: a word
+   *  that goes up and comes down again is the "jumping around" this replaced. */
   _showWords(k) {
+    if (this._reveal && this._shown > 0) k = Math.max(k, this._shown);
     if (!this._spans || k === this._shown) return;
     this._shown = k;
     this._spans.forEach((s, i) => { s.className = i < k ? '' : 'un'; });
@@ -495,6 +535,22 @@ export class Announcer {
       const over = this._line.scrollWidth > this.textEl.clientWidth + 1;
       this.textEl.classList.toggle('over', over);
     }
+  }
+
+  /** How many words should be up now. One clip: by the line's characters
+   *  across its playhead. Several: every word of the pieces already said, and
+   *  this piece's own words across ITS playhead - none of them before it has
+   *  started, all of them once it has ended (the gap before the next). */
+  _revealNow() {
+    if (!this._pieces) {
+      return revealCount(this._plan, this._spokenClock() / (this._voiceTotal * REVEAL_LEAD));
+    }
+    const p = this._pieces[Math.min(this._piece, this._pieces.length - 1)];
+    const el = this.voiceEl;
+    const at = el && el.currentTime > 0 ? Math.min(el.currentTime, this.pieceDur) : 0;
+    const said = el && (el.ended || at >= this.pieceDur - 0.01) ? p.plan.length
+      : at > 0 ? revealCount(p.plan, at / (this.pieceDur * REVEAL_LEAD)) : (this._piece ? 0 : 1);
+    return p.from + said;
   }
 
   /** Seconds of recording said so far, across every piece of the line. */
@@ -532,6 +588,7 @@ export class Announcer {
         this._gapT = 0;
         const next = this.seq.shift();
         this._spokenBefore += this.pieceDur;
+        this._piece += 1;
         this.pieceDur = next.dur;
         this.voiceEl = this.audio?.speak(next.el) ?? null;
         if (!this.voiceEl) this.seq = [];
@@ -548,8 +605,7 @@ export class Announcer {
     const spoken = !this.seq.length
       && (!el || el.ended || (el.currentTime > 0 && el.currentTime >= this.pieceDur - 0.06));
     if (this._reveal) {
-      this._showWords(spoken ? this._plan.length
-        : revealCount(this._plan, this._spokenClock() / (this._voiceTotal * REVEAL_LEAD)));
+      this._showWords(spoken ? this._plan.length : this._revealNow());
     }
     const over = this.t >= this.dur && (spoken || !playing);
     if (over || this.t > this.dur + 6) this._end();
