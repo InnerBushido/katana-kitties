@@ -4,6 +4,17 @@ import { bubbleTexture } from '../entities/leader.js';
 import { mergeParts } from '../world/build.js';
 import { SimWorld, SIM, HOLO, toSim } from '../world/simworld.js';
 import { MathDojo } from './mathdojo.js';
+import { aggregate, ORB_BY_ID } from '../entities/powerorb.js';
+import { buildWornOrbs } from './kotodama.js';
+import { TrainingGate, Shards } from './dream/targets.js';
+import { makeSimHud } from './dream/simhud.js';
+import { DreamProgress } from './dream/progress.js';
+import { Drill } from './dream/drill.js';
+import { Gallery } from './dream/gallery.js';
+import { TrialHall } from './dream/hall.js';
+import { Rundown } from './dream/rundown.js';
+import { ISLANDS, islandCentre } from './dream/islands.js';
+import { SimBar } from './dream/holo.js';
 
 /* ---------------------------------------------------------------------------
    LIONHEART'S DREAM DOJO — the VR arcade north-east of the Turning Circle.
@@ -97,8 +108,11 @@ export const LION_LINES = {
   idle: 'The Dream Dojo — VR training!\nJump across the stones\nand come and try it!',
   honor: 'Like my sword? Her name is HONOR.\nBeat me in the simulator someday…\nand maybe I\'ll share my Honor with you.',
   send: '%n! Tube %t is yours.\nStep in — I\'ll do the rest!',
-  sim: 'You\'re jacked in! This is my Dream Dojo.\nWalk the bridge to the Turning Circle.\nTo jack out, stand on your ring.',
+  sim: 'You\'re jacked in! This is my Dream Dojo.\nCross a bridge to an island to train.\nTo jack out, stand on your ring.',
   simIdle: 'Everything in here is light.\nNothing you break in here\nis broken out there.',
+  /* Said once per visit to a kitten wearing orbs. `%k` is how many. */
+  rundown: '%n — you\'re wearing %k Kotodama!\nTalk to me for a rundown\nof what each one does.',
+  islands: 'Left bridge: the KOTODAMA GALLERY.\nRight bridge: the CLAN TRIAL HALL.\nTry everything — it\'s all on loan!',
 };
 
 /* ------------------------------ shaders ---------------------------------- */
@@ -368,6 +382,20 @@ export class DreamDojo {
     this._said = new Map();
     this._domeHit = 0;
     this._toastAt = new Map();
+    /** The holograms a kitten's blade can find in here — see dream/targets.js. */
+    this.gate = new TrainingGate();
+    /** Stars, bests and flags, per kitten, for good. `localStorage` may throw
+     *  just being READ in a locked-down frame, so it is asked inside a try. */
+    let store = null;
+    try { store = globalThis.localStorage ?? null; } catch { store = null; }
+    this.progress = new DreamProgress(store);
+    /** Player index -> her live drill, or nothing. */
+    this.drills = [];
+    /** Player index -> her open rundown, or nothing. */
+    this.rundowns = [];
+    /** Every pad in the simulator that answers INTERACT (pedestals, shrines). */
+    this.stations = [];
+    this._hintAt = new Map();
   }
 
   /* ----------------------------- the island ------------------------------- */
@@ -541,8 +569,9 @@ export class DreamDojo {
     this.bubbleShow = 0;
   }
 
-  _bubble(text) {
-    let m = this.bubbles.get(text);
+  _bubble(text, holo = false) {
+    const map = holo ? this.holoBubbles : this.bubbles;
+    let m = map.get(text);
     if (m) return m;
     const { texture, aspect, tip } = bubbleTexture(text, '#ff3b3b', { tail: 'left' });
     const BH = 3.0;
@@ -554,9 +583,15 @@ export class DreamDojo {
     m.userData.tipY = BH * (0.5 - tip.v);
     m.renderOrder = 24;
     m.visible = false;
-    this.lion.add(m);
-    this.bubbles.set(text, m);
+    (holo ? this.holoLion : this.lion).add(m);
+    map.set(text, m);
     return m;
+  }
+
+  /** Have the HOLOGRAM say something — the one a kitten in the sim can see. */
+  holoSay(text, secs = 6) {
+    this.holoText = text;
+    this.holoUntil = this.t + secs;
   }
 
   /** Have him say something for a while. Text only until his voice exists. */
@@ -679,8 +714,14 @@ export class DreamDojo {
     if (s?.phase && s.phase !== 'sim') return null;
     if (this.realmOf(p) === 'sim') {
       if (this.onPort(p)) return `[${key}]  JACK OUT`;
-      if (this.canTalk(p)) return `[${key}]  TALK TO LIONHEART`;
-      return null;
+      // The card says which button turns it; a callout under it is the same
+      // words a second time, drawn on top of its last line.
+      if (this.rundowns[p.index]) return null;
+      if (this.canTalk(p)) {
+        return p.powerOrbs?.length ? `[${key}]  RUNDOWN OF YOUR KOTODAMA` : `[${key}]  TALK TO LIONHEART`;
+      }
+      const st = this.stationAt(p);
+      return st ? st.prompt(p, key) : null;
     }
     if (this.canTalk(p)) return `[${key}]  TRAIN WITH LIONHEART`;
     const k = this.tubeAt(p);
@@ -704,7 +745,23 @@ export class DreamDojo {
     if (s?.phase && s.phase !== 'sim') return false;
     if (this.realmOf(p) === 'sim') {
       if (this.onPort(p)) { this._begin(p, 'derez'); return true; }
-      if (this.canTalk(p)) { this.say(LION_LINES.sim, 7); g.sfx?.('menu'); return true; }
+      const rd = this.rundowns[p.index];
+      if (rd) {
+        if (!rd.next()) this._closeRundown(p);
+        return true;
+      }
+      if (this.canTalk(p)) {
+        if (p.powerOrbs?.length) this._openRundown(p);
+        else this.holoSay(LION_LINES.islands, 8);
+        g.sfx?.('menu');
+        return true;
+      }
+      const st = this.stationAt(p);
+      if (st) {
+        st.interact(p);
+        g.sfx?.('menu');
+        return true;
+      }
       return false;
     }
     const talk = this.canTalk(p);
@@ -780,6 +837,33 @@ export class DreamDojo {
       }
     });
     this._buildHoloLion();
+    this.shards = new Shards(this.sim.root);
+    this.simHud = makeSimHud(g, this);
+    /* THE TRAINING ISLANDS, raised with the layer — under the rain, on the
+       first jack-in, like the rest of it. */
+    this.isles = {};
+    for (const key of ['gallery', 'hall']) this.isles[key] = this._raiseIsland(key);
+    this.gallery = new Gallery(this, this.isles.gallery);
+    this.hall = new TrialHall(this, this.isles.hall);
+    this.stations = [...this.gallery.stations, ...this.hall.stations];
+  }
+
+  /**
+   * One island off the holo-Dojo: its deck, a data bridge from the Dojo's
+   * rim, and its name over it. Returns where it is, in the layer, with `fwd`
+   * pointing from the bridge across the island.
+   */
+  _raiseIsland(key) {
+    const spec = ISLANDS[key];
+    const dc = this.game.world.dojoCentre;
+    const c = islandCentre(dc, this.layout.u, spec);
+    const seed = [...key].reduce((a, ch) => a + ch.charCodeAt(0), 0);
+    this.sim.addDisc({ x: c.x, z: c.z, r: spec.r, y: c.y, name: key, grid: 2, seed });
+    const from = { x: dc.x + c.dir.x * 47, z: dc.z + c.dir.z * 47, y: dc.y };
+    const to = { x: c.x - c.dir.x * (spec.r - 2), z: c.z - c.dir.z * (spec.r - 2), y: c.y };
+    this.sim.addBridge(from, to, { wobble: 3, waves: 1, name: `${key} bridge` });
+    this.sim.addSign(c.x + c.dir.x * (spec.r - 2), c.y + 12, c.z + c.dir.z * (spec.r - 2), spec.kanji, spec.name);
+    return { key, x: c.x, y: c.y, z: c.z, r: spec.r, fwd: c.dir };
   }
 
   /** Lionheart, in light, at his own spot on the port. */
@@ -799,12 +883,18 @@ export class DreamDojo {
     this.holoLion.position.set(p.x, ARCADE.y, p.z);
     this.holoLion.add(b);
     this.holoLionSprite = b;
+    /* HIS OWN BUBBLES. The real Lionheart's hang off the real Lionheart, in a
+       reality nobody in here can see — so everything he says in the sim is
+       said by the hologram. Stage one said its welcome to the wrong one. */
+    this.holoBubbles = new Map();
+    this.holoShow = 0;
     this.game.scene.add(this.holoLion);
     this.sim.solids.push({ x: L.lion.x, z: L.lion.z, r: 1.25 });
   }
 
   /** Move her (and her camera) across the boundary, by exactly the offset. */
   _cross(p, toSimNow) {
+    if (!toSimNow) this._leaveSim(p);
     const k = toSimNow ? 1 : -1;
     const dx = SIM.dx * k;
     const dz = SIM.dz * k;
@@ -819,6 +909,14 @@ export class DreamDojo {
     const s = this.st[p.index];
     p.dreamAnchor = toSimNow ? s.anchor.clone() : null;
     s.proxy = null;
+    if (toSimNow) {
+      this.refillSim(p);
+      /* THE INVITATION, ONCE A VISIT. A kitten wearing orbs is told there is
+         a rundown; she is never put through one she did not ask for. */
+      if (p.powerOrbs?.length) {
+        this.holoSay(LION_LINES.rundown.replace('%n', p.name).replace('%k', String(p.powerOrbs.length)), 8);
+      }
+    }
   }
 
   _onFall(p) {
@@ -864,6 +962,8 @@ export class DreamDojo {
   drop(i) {
     const s = this.st[i];
     if (!s) return;
+    const p = this.game.players?.[i];
+    if (p && this.realmOf(p) === 'sim') this._leaveSim(p);
     s.puppet?.removeFromParent();
     s.visor?.removeFromParent();
     this.st[i] = null;
@@ -953,7 +1053,7 @@ export class DreamDojo {
             g.sfx?.('rez');
             if (!this._welcomed) {
               this._welcomed = true;
-              this.say(LION_LINES.sim, 7);
+              this.holoSay(LION_LINES.sim, 7);
             }
           }
           break;
@@ -1008,6 +1108,7 @@ export class DreamDojo {
       }
     }
 
+    this._updateTraining(dt);
     this._updateRez(dt);
     this._updatePuppets(dt);
     this._updateTubes(dt);
@@ -1017,6 +1118,271 @@ export class DreamDojo {
       this.sim.update(dt);
       const inside = (g.players ?? []).filter((p) => p && this.realmOf(p) === 'sim');
       this.simDojo?.update(dt, inside);
+    }
+  }
+
+  /* ----------------------------- training -------------------------------- */
+
+  /** The Game as a kitten in here sees it — see dream/simhud.js. */
+  hudFor(p) {
+    return this.realmOf(p) === 'sim' && this.simHud ? this.simHud : this.game;
+  }
+
+  /** `Game.strikePlayers`, for a kitten in the sim: holograms only. */
+  onStrike(attacker, kind, reach, dir, spent = null) {
+    return this.gate.strike(attacker, kind, reach, dir, spent);
+  }
+
+  simKittens() {
+    return (this.game.players ?? []).filter((p) => p && this.realmOf(p) === 'sim');
+  }
+
+  /** Her button for an action, the way her callout prints it. */
+  key(p, action) {
+    return this.game.input?.promptFor?.(p.index, action) ?? action.toUpperCase();
+  }
+
+  /** A kitten's drawing for a holo-kitten to wear — anybody's will do. */
+  kittenSpec() {
+    for (const p of this.game.players ?? []) if (p?.spriteSpec?.texture) return p.spriteSpec;
+    return null;
+  }
+
+  /** A drill telling her how — throttled, so a held button is one toast. */
+  hint(p, text) {
+    const last = this._hintAt.get(p.index) ?? -99;
+    if (this.t - last < 1.8) return;
+    this._hintAt.set(p.index, this.t);
+    this.game.toast?.(`${p.name} — ${text}`, p.index);
+  }
+
+  /** Her station, if she is standing on one.
+   *
+   *  NONE WHILE HER DRILL IS RUNNING. INTERACT is the drill's button then —
+   *  it is the clan power, the dive, the Flash Step — and the Windwhisker
+   *  trial's holo-kittens stand a breath away from the shrine she started it
+   *  at, so a station that still answered would restart the trial on the
+   *  very press it was teaching. Once the drill has ended, she can go again. */
+  stationAt(p) {
+    if (this.realmOf(p) !== 'sim') return null;
+    const dr = this.drills[p.index];
+    if (dr && (dr.state === 'ready' || dr.state === 'live')) return null;
+    const q = this._flatPos(p);
+    for (const st of this.stations) {
+      if (Math.hypot(q.x - st.x, q.z - st.z) < st.r && Math.abs(p.position.y - st.y) < 2) return st;
+    }
+    return null;
+  }
+
+  /**
+   * LEND HER ORBS, for as long as she is in here.
+   *
+   * THE LOAN NEVER TOUCHES `powerOrbs`. It is folded into `p.power` (every
+   * buff reads that) and into the worn ring (so she can SEE it), and
+   * `powerOrbs` — what the save, the trade screen, the dealer and a 盗 steal
+   * all read — is exactly what it was. `_leaveSim` puts `power` back from it.
+   *
+   * IT TOPS UP BY COUNT. `ids` says how many of each kind the drill wants her
+   * to have; what she wears counts toward it and only the shortfall is lent.
+   * Long Guard asks for a PAIR, and a kitten who owns one Nagamori is lent the
+   * second — the first cut skipped any kind she owned at all, so she ran the
+   * beam on one and could not pass it.
+   */
+  lend(p, ids) {
+    const s = this.st[p.index];
+    if (!s) return;
+    s.loans ??= [];
+    const fresh = [];
+    for (const id of new Set(ids)) {
+      const want = ids.filter((x) => x === id).length;
+      const own = (p.powerOrbs ?? []).filter((x) => x === id).length;
+      let have = own + s.loans.filter((x) => x === id).length;
+      while (have < want) { s.loans.push(id); have++; fresh.push(id); }
+    }
+    this._applyKit(p, true);
+    if (fresh.length) {
+      const names = [...new Set(fresh)].map((id) => ORB_BY_ID[id]?.name ?? id).join(', ');
+      this.game.toast?.(`${p.name} borrowed ${names} — only in the simulator`, p.index);
+      this.game.sfx?.('powerorb');
+    }
+  }
+
+  /** `p.power` and the worn ring, from her real orbs plus her loans. */
+  _applyKit(p, force = false) {
+    const s = this.st[p.index];
+    const ids = [...(p.powerOrbs ?? []), ...(s?.loans ?? [])];
+    const sig = ids.join(',');
+    if (!force && s?.kitSig === sig) return;
+    if (s) s.kitSig = sig;
+    p.power = aggregate(ids);
+    this._syncMeshes(p, ids);
+  }
+
+  /** `Game.syncOrbMeshes`, but for a list that is not `powerOrbs`. */
+  _syncMeshes(p, ids) {
+    if (!p.orbRoot) return;
+    for (const o of p.wornOrbs ?? []) p.orbRoot.remove(o.group);
+    p.wornOrbs = buildWornOrbs(ids);
+    for (const o of p.wornOrbs) {
+      o.setMathVisible?.(this.game.mathVisible);
+      p.orbRoot.add(o.group);
+    }
+  }
+
+  /**
+   * SWEAR TO A CLAN, FOR AS LONG AS SHE IS IN HERE.
+   *
+   * Her real clan is kept on `p.dreamOath.was` — the first time only, so two
+   * trial oaths in a row still remember the REAL one — and `castRow` saves
+   * that, never this. Nothing the real game hangs off an oath runs: no
+   * `onJoinClan`, no cheer, no panda, no quest.
+   */
+  swearFor(p, clan) {
+    p.dreamOath ??= { was: p.clan ?? null };
+    if (p.clan?.id !== clan.id) {
+      p.clan = clan;
+      p.clanRing?.material.color.set(clan.color);
+      this.game.toast?.(`${p.name} swore to ${clan.name} — only in the simulator`, p.index);
+      this.game.sfx?.('clan');
+    }
+  }
+
+  /** Everything sim-only comes off her: drill, rundown, loans, oath, bar. */
+  _leaveSim(p) {
+    const s = this.st[p.index];
+    const d = this.drills[p.index];
+    if (d) { d.dispose(); this.drills[p.index] = null; }
+    this._closeRundown(p);
+    if (s) { s.loans = []; s.kitSig = null; }
+    p.power = aggregate(p.powerOrbs ?? []);
+    if (this.game.syncOrbMeshes) this.game.syncOrbMeshes(p);
+    else this._syncMeshes(p, p.powerOrbs ?? []);
+    if (p.dreamOath) {
+      p.clan = p.dreamOath.was;
+      p.dreamOath = null;
+      p.clanRing?.material.color.set(p.clan?.color ?? p.style?.colour ?? 0xffffff);
+    }
+    // A mark on a hologram means nothing out there.
+    if (p.stealTarget && !this.game.players?.includes(p.stealTarget)) p._endMark?.(null);
+    s?.bar?.removeFromParent();
+  }
+
+  startDrill(p, spec, at) {
+    this._closeRundown(p);
+    const old = this.drills[p.index];
+    if (old) old.dispose();
+    this.drills[p.index] = new Drill(this, p, spec, at);
+  }
+
+  /** Write a result down — returns what changed, for the card. */
+  award(p, id, stars, score, lowerIsBetter) {
+    return this.progress.award(p.style?.name ?? p.name, id, stars, score, { lowerIsBetter });
+  }
+
+  _openRundown(p) {
+    this._closeRundown(p);
+    this.rundowns[p.index] = new Rundown(this, p);
+  }
+
+  _closeRundown(p) {
+    const r = this.rundowns[p.index];
+    if (!r) return;
+    r.dispose();
+    this.rundowns[p.index] = null;
+    this.progress.setFlag(p.style?.name ?? p.name, 'rundown');
+  }
+
+  /* --- the SIM bar --- */
+
+  simMax(p) { return p.power?.hp ?? 100; }
+
+  simFrac(p) {
+    const s = this.st[p.index];
+    return s ? Math.max(0, s.simHp ?? this.simMax(p)) / this.simMax(p) : 1;
+  }
+
+  refillSim(p) {
+    const s = this.st[p.index];
+    if (!s) return;
+    s.simHp = this.simMax(p);
+    s.iframes = 0;
+  }
+
+  /**
+   * A hologram hit her. NOT `hurt` — her health is the ring's and this is not
+   * the ring. Same order of questions `hurt` asks, though, so the lesson is
+   * the real one: a Flash Step is untouchable, a Ward blocks (and a blow
+   * costs the Ward exactly what it costs in the arena, through her own
+   * `_wardTakeHit`), and a fresh hit is followed by a moment of grace.
+   *
+   * @returns {'none'|'dodged'|'blocked'|'immune'|'hit'}
+   */
+  simHit(p, { dmg = 10, push = null, src = 'laser', hold = false } = {}) {
+    const s = this.st[p.index];
+    if (!s || this.realmOf(p) !== 'sim') return 'none';
+    if (p.dodgeAt) return 'dodged';
+    if (p.warded) {
+      // A held beam is blocked by the bubble being UP; it does not break it.
+      if (hold) p.wardFlash = 0.25;
+      else p._wardTakeHit?.(this.simHud);
+      return 'blocked';
+    }
+    if ((s.iframes ?? 0) > 0) return 'immune';
+    s.simHp = (s.simHp ?? this.simMax(p)) - dmg;
+    s.iframes = 0.6;
+    p.flashT = 0.3;
+    /* A NUDGE, NOT A THROW. Six units a second and a hop: enough that walking
+       into a wall of light reads as being stopped by it, and far short of
+       what would carry a kitten off an island from anywhere on its floor. */
+    if (push) {
+      p.velocity.x = push.x * 6;
+      p.velocity.z = push.z * 6;
+      p.velocity.y = Math.max(p.velocity.y, 3);
+    }
+    this.game.sfx?.('hit');
+    if (s.simHp <= 0) this._simCatch(p);
+    return 'hit';
+  }
+
+  /** Her bar ran out: the simulator catches her, and what she was doing stops. */
+  _simCatch(p) {
+    const d = this.drills[p.index];
+    if (d && (d.state === 'live' || d.state === 'ready')) d.fail('SIM bar empty — the simulator caught you');
+    this.refillSim(p);
+    const s = this.st[p.index];
+    s.rezT = 0;
+    this.game.sfx?.('rez');
+  }
+
+  _updateTraining(dt) {
+    this.shards?.update(dt);
+    for (const p of this.game.players ?? []) {
+      if (!p) continue;
+      const s = this.st[p.index];
+      const inside = this.realmOf(p) === 'sim';
+      if (!s || !inside) continue;
+      s.iframes = Math.max(0, (s.iframes ?? 0) - dt);
+      // Her real orbs can change in here (the profile's INVENTORY tab).
+      this._applyKit(p);
+      const d = this.drills[p.index];
+      if (d && !d.update(dt)) { d.dispose(); this.drills[p.index] = null; }
+      const r = this.rundowns[p.index];
+      if (r && !this.canTalk(p)) this._closeRundown(p);
+      // The bar shows when it is not full, or while a drill could take it.
+      const max = this.simMax(p);
+      s.simHp = Math.min(s.simHp ?? max, max);
+      const show = s.simHp < max - 0.5 || !!this.drills[p.index]?.lasers.length || !!this.drills[p.index]?.bolts.length;
+      if (show && !s.bar) {
+        s.bar = new SimBar({ w: 2.4, h: 0.24 });
+        s.bar.position.y = (p.height ?? 2.6) + 1.2;
+      }
+      if (s.bar) {
+        if (show && !s.bar.parent) p.group.add(s.bar);
+        if (!show && s.bar.parent) s.bar.removeFromParent();
+        s.bar.setFrac(s.simHp / max, dt);
+      }
+      // A slow refill when nothing is trying to hit her.
+      if (!this.drills[p.index] && s.simHp < max) s.simHp = Math.min(max, s.simHp + dt * 12);
     }
   }
 
@@ -1232,6 +1598,30 @@ export class DreamDojo {
       m.position.y = LION_HEIGHT * 0.9 - (m.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
     }
     if (want) this._lastBubble = want;
+
+    /* THE HOLOGRAM'S OWN LINES: whatever it was last asked to say, else the
+       pitch to anybody standing near it in here. */
+    if (this.holoLion) {
+      let nearSim = false;
+      for (const p of this.simKittens()) {
+        const q = this._flatPos(p);
+        if (Math.hypot(q.x - this.layout.lion.x, q.z - this.layout.lion.z) < 20) nearSim = true;
+      }
+      let ht = null;
+      if (this.holoText && this.t < this.holoUntil) ht = this.holoText;
+      // Quiet while he is giving a rundown: the card IS him talking, and a
+      // bubble beside it lands on top of it in a quarter pane.
+      else if (nearSim && !this.rundowns.some(Boolean)) ht = Math.floor(this.t / 9) % 2 ? LION_LINES.simIdle : LION_LINES.islands;
+      const hw = ht ? this._bubble(ht, true) : null;
+      this.holoShow += ((hw ? 1 : 0) - this.holoShow) * Math.min(1, dt * 5);
+      for (const [, m] of this.holoBubbles) {
+        const on = m === hw || (m === this._lastHolo && !hw);
+        m.visible = on && this.holoShow > 0.02;
+        m.material.opacity = this.holoShow * 0.92;
+        m.position.y = LION_HEIGHT * 0.9 - (m.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
+      }
+      if (hw) this._lastHolo = hw;
+    }
   }
 
   /* ------------------------------ rendering ------------------------------- */
@@ -1275,7 +1665,21 @@ export class DreamDojo {
       if (s.visor?.parent) head(p, p.group, s.visor);
     }
     this.simDojo?.faceCamera?.(camera);
-    if (this.sim && camera.position.x > SIM.dx * 0.5) this.sim.faceCamera(camera);
+    if (this.sim && camera.position.x > SIM.dx * 0.5) {
+      this.sim.faceCamera(camera);
+      this.gallery?.faceCamera(camera);
+      this.hall?.faceCamera(camera);
+      for (const d of this.drills) d?.faceCamera(camera);
+      for (const r of this.rundowns) r?.faceCamera(camera);
+      for (const s of this.st) s?.bar?.faceCamera(camera);
+      for (const [, m] of this.holoBubbles ?? []) {
+        if (!m.visible) continue;
+        m.quaternion.copy(camera.quaternion);
+        const off = 1.4 + (m.userData.w ?? 4) * 0.5;
+        m.position.x = _right.x * off;
+        m.position.z = _right.z * off;
+      }
+    }
   }
 
   /** How strong the phase is in a pane — the strongest of its kittens. */

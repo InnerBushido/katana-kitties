@@ -5,9 +5,11 @@ of the Dojo of the Turning Circle with four holographic tubes on it. A kitten
 walks into hers, a visor comes down, she floats, and her view goes over into a
 **simulator**: another reality in the same place. Lionheart runs it.
 
-Stage 1 is built: the realm system, the arcade, the tubes, jacking in and out,
-the holo-Dojo hub, and Lionheart himself. The training modes are stages 2–5 (the
-plan is at the bottom of this file) and have not been written yet.
+Stages 1 and 2 are built. Stage 1 is the realm system, the arcade, the tubes,
+jacking in and out, the holo-Dojo hub, and Lionheart himself. Stage 2 is the
+first two training islands, the **Kotodama Gallery** and the **Clan Trial
+Hall**, plus Lionheart's **rundown** of the orbs she wears. Stages 3–5 are at
+the bottom of this file.
 
 ## Richard's brief, in his words
 
@@ -128,6 +130,145 @@ A scene that frames "the kittens" must find them in the real world.
 - **The visor** sits at `height * VISOR_Y` (0.80). This was checked by eye on
   Ember mid-rise: it is on her eyes.
 
+## Stage 2 — the Gallery, the Trial Hall and the rundown
+
+Richard: *"After the Kotodama orbs awaken, then when the player enters the
+holographic arena, they can be prompted to have a rundown of all their
+currently equipped Kotodama orbs and they will be walked through and explained
+what each one does and teach them how to use it."* And: *"they can also apply
+different Clan abilities here."*
+
+### The islands
+
+**One table places every island** (`dream/islands.js`). Each is a spoke off
+the holo-Dojo, at an angle measured from the port, so "the first two are
+either side of where you came in" is a fact about the layout. A wobbling data
+bridge runs from the hub's rim to each island. `world-check`:
+- measures every pair for a clear gap (the tightest is the hub and the port at
+  32 units);
+- walks each bridge's own path, a step at a time, for gaps and ledges (worst
+  step 0.04).
+
+All ten islands are in the table now, so a later stage cannot drop one on top
+of another.
+
+### The training gate — how a blade in here finds anything
+
+**The Player is not told.** `Player.update` is handed a `hud` (the Game) and
+asks it who it may hit. A kitten in the sim is handed `makeSimHud` instead, a
+`Proxy` of the Game (`dream/simhud.js`):
+- `strikePlayers` → `TrainingGate.strike`, which can only find **holograms**;
+- `arenaLive` → yes, so the two clan powers that only work in a live round
+  (盗 Steal and 息 Breath) can finally be practised;
+- `players` → the holo-kittens, so a 盗 mark can only ever choose one of them;
+- `onMischief`, `strikeCritters` and `strikeWards` do nothing.
+
+`TrainingGate.strike` copies the real gate's geometry: the reach scaling, the
+height window and the arc test. That way a cut that would land in the ring
+lands here, and one that wouldn't, doesn't. Every target has an **owner**, so
+four sisters can run four drills on one floor without finishing each other's.
+
+**Non-negotiable 3 holds.** No round is ever live while anybody is in here,
+because `update` pulls everybody out first. And `world-check` fails if
+anything under `dream/` calls `hurt()`.
+
+### Loans and trial oaths — nothing is lost
+
+**A lent orb is in `p.power` and the worn ring, never in `powerOrbs`**
+(`DreamDojo.lend`). Everything that saves, trades, deals or steals reads
+`powerOrbs`, so nothing outside the sim can see a loan.
+- **Loans top up by count.** The Long Guard drill asks for two Nagamori, and a
+  kitten who owns one is lent the second.
+- **Leaving the sim gives it all back** (`_leaveSim`, called from `_cross` and
+  `drop`): her power is rebuilt from her own orbs, along with her ring, her
+  real clan, any drill and rundown, and her SIM bar.
+
+**A trial oath keeps her real clan on `p.dreamOath.was`**, the first time only,
+so two trials in a row still remember the real one. `castRow` saves
+`dreamOath.was`, the same way it saves `dreamAnchor` over her position. A
+trial oath never calls `onJoinClan`, so no cheer, no panda and no quest.
+
+### The SIM bar
+
+Holograms hit her **SIM bar** (`simHit`), never her health. It asks the same
+questions `hurt` does, in the same order:
+- a Flash Step is untouchable;
+- a Ward blocks, and a blow costs the Ward exactly what it costs in the ring,
+  through her own `_wardTakeHit`;
+- a fresh hit is followed by 0.6s of grace.
+
+When the bar is empty the simulator catches her and her drill stops, saying so.
+A hit is a **nudge** (6 u/s and a hop) **away from the nearest point of the
+beam**. The first cut threw her at 9 u/s, away from the beam's *end*, which
+carried her sideways along the Flash Step wall and, once, off the gallery mid
+drill. `world-check` pins both the direction and the size.
+
+### The drills
+
+A drill is a goal, a clock and her own holograms (`dream/drill.js`). Its card
+hangs over her head, and every way it ends says so:
+- a win;
+- the clock running out;
+- she walks off the floor;
+- her bar empties.
+
+Stars go into `DreamProgress` the moment she earns them. While her drill runs:
+- the pedestal and shrine cards step out of the way;
+- the stations stop answering INTERACT, because it is the drill's button then
+  (the Windwhisker shrine is a breath from its holo-kittens).
+
+**Every drill is a gate on what it teaches, and the numbers are measured.**
+The thresholds are exported, and `world-check` checks them against the real
+reach and the real jump:
+
+| drill | the number | bare | with it |
+| --- | --- | --- | --- |
+| 斬 Long Cut | ring 4.3 | cuts from 4.00 | 5.02 |
+| 河 Riverclaw | ring 5.4 | the Long Cut orb 5.02 | sworn 6.72 |
+| 跳 Leap | ledge 5.0 | two jumps land 4.60 | three 7.01 |
+| 影 Shadowtail | star 6.8 | two jumps 4.60 | sworn 9.14 |
+| 守 Long Guard | beam 2.44s | a Ward is up 2.20s | two lent, 3.40s |
+
+**The Long Guard drill was rebuilt twice.**
+1. **A stream of bolts could not be passed by anybody.** Every bolt is a blow,
+   and `WARD.hits` (2) blows smash any bubble. Now it is one **held** beam,
+   which asks only whether the bubble is up (`simHit(..., {hold})`).
+2. **One lent Nagamori left 0.36s of slack.** In the browser, a raise 0.39s
+   before the beam fired lost the last two frames. It now lends a pair, which
+   gives 0.96s, while the beam stays 0.24s past anything a bare Ward can do.
+
+A three-jump chain is **full, full, then ×0.86**. Only the *last* jump is
+weak. The first comments said 5.98 for three jumps, which was wrong.
+
+### The rundown
+
+**Lionheart offers, never forces.** Once per visit he says she is wearing N
+Kotodama and that he will run through them. If she talks to him, she gets one
+card per kind over her own head, in the order she wears them:
+- what the orb is and how many she has;
+- what that many does, using the orb's own `detail`, the same sentence the
+  profile prints;
+- which of *her* buttons does it.
+
+Then comes her real clan's ring power. **It reads her real orbs, not her
+loans.** INTERACT turns the page and walking away closes it.
+
+While the rundown is open:
+- the hologram stops talking, because his bubble would land on the card;
+- the callout hides, because the card already names the button.
+
+**The hologram has his own bubbles.** In stage 1 the welcome hung off the
+*real* Lionheart, in a reality no kitten in the sim could see.
+
+### What persists
+
+`kk.dreamdojo.v1`, per kitten (by name) and permanent. It holds stars, bests
+(lower is better for times), flags, and day and week keys for the rotation in
+stage 5. Stars only go up. A corrupt store starts empty instead of throwing,
+and no storage at all just means a session that forgets. The debug panel's
+**wipe the DREAM DOJO stars** row has no key, asks first, and shows the count
+in its button.
+
 ## Voice
 
 Lionheart has **no recorded lines yet**, and his bubbles are text only.
@@ -145,8 +286,8 @@ When a voice exists, register it in [voices.md](voices.md) with its id.
 
 ## Still to build (stages 2–5)
 
-1. **Kotodama Gallery**, the rundown of her equipped orbs, and the Clan Trial
-   Hall.
+1. ~~**Kotodama Gallery**, the rundown of her equipped orbs, and the Clan Trial
+   Hall.~~ Built (stage 2, above).
 2. **Tameshigiri** and **Kata Trace**. Kata Trace is the startup's core.
 3. **Bridges and light-cycles**, Kudamono Storm, Sine Gauntlet, Holo-Sentries,
    and Bamboo Infiltration.
@@ -157,5 +298,6 @@ When a voice exists, register it in [voices.md](voices.md) with its id.
    enemies tougher than three hits.
 
 **Non-negotiable 3 holds in all of them.** Anything that hits in the sim is a
-training dummy in `SimWorld.props`, and `world-check` fails if
-`dreamdojo.js` / `simworld.js` ever call `hurt` or `strikePlayers`.
+hologram on the `TrainingGate`, reached through the sim's own hud. `world-check`
+fails if anything under `dream/` calls `hurt`, or if `dreamdojo.js` or
+`simworld.js` calls `strikePlayers`.

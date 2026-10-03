@@ -577,6 +577,80 @@ export class SimWorld {
     return deck;
   }
 
+  /**
+   * A floor a drill puts up and takes down again — a ledge, a floating step.
+   * A disc deck like any other while it stands, so `heightAt` needs no idea
+   * that it is temporary; `removeTempDisc` takes the deck AND its drawing
+   * away together, so a kitten can never stand on something she cannot see.
+   */
+  addTempDisc({ x, z, r, y, colour = HOLO.cyan, name = 'step' }) {
+    const deck = new DiscDeck({ x, z, r, y, name });
+    deck.temp = true;
+    this.decks.push(deck);
+    const grp = new THREE.Group();
+    const slab = new THREE.Mesh(
+      new THREE.CylinderGeometry(r, r * 0.9, 0.5, 32),
+      new THREE.MeshBasicMaterial({ color: 0x0a2230, transparent: true, opacity: 0.8 })
+    );
+    slab.position.set(x, y - 0.25, z);
+    const rim = new THREE.Mesh(
+      new THREE.TorusGeometry(r - 0.08, 0.08, 6, 48),
+      new THREE.MeshBasicMaterial({ color: colour, toneMapped: false })
+    );
+    rim.rotation.x = Math.PI / 2;
+    rim.position.set(x, y + 0.03, z);
+    // A thin stalk of light down to nothing, so it reads as hanging there.
+    const stalk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.06, 6, 6),
+      new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: 0.35, toneMapped: false })
+    );
+    stalk.position.set(x, y - 3.5, z);
+    grp.add(slab, rim, stalk);
+    this.root.add(grp);
+    deck._grp = grp;
+    return deck;
+  }
+
+  removeTempDisc(deck) {
+    const i = this.decks.indexOf(deck);
+    if (i >= 0) this.decks.splice(i, 1);
+    deck._grp?.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
+    deck._grp?.removeFromParent();
+  }
+
+  /**
+   * An island's name hanging over it: kanji and English, turned to the lens.
+   * Every island has one, because in a void every island looks like every
+   * other until something says which this is.
+   */
+  addSign(x, y, z, kanji, name, colour = HOLO.cyan) {
+    const cv = document.createElement('canvas');
+    cv.width = 1024;
+    cv.height = 320;
+    const g = cv.getContext('2d');
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = '700 150px "Noto Serif JP", serif';
+    g.shadowColor = '#ff4fd8';
+    g.shadowBlur = 26;
+    g.fillStyle = '#ff7fe4';
+    g.fillText(kanji, 512, 120);
+    g.font = '900 72px Nunito, sans-serif';
+    g.shadowColor = `#${new THREE.Color(colour).getHexString()}`;
+    g.fillStyle = '#d6feff';
+    g.fillText(name, 512, 258);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(13, 13 * 320 / 1024), new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide,
+    }));
+    m.position.set(x, y, z);
+    m.renderOrder = 8;
+    this.root.add(m);
+    (this.signs ??= []).push(m);
+    return m;
+  }
+
   /** A data bridge between two points ({x, z, y}), wobbling like Snake Way. */
   addBridge(a, b, { halfW = 2.2, wobble = 3.5, waves = 1, name = '' } = {}) {
     const pts = snakePath(a, b, { wobble, waves });
@@ -658,5 +732,10 @@ export class SimWorld {
   /** Before a sim pane draws: put the sky on this lens. */
   faceCamera(camera) {
     this.sky.position.set(camera.position.x - SIM.dx, camera.position.y, camera.position.z - SIM.dz);
+    // Signs turn about Y only — one that tips back is a sign on a hinge.
+    _se.setFromQuaternion(camera.quaternion, 'YXZ');
+    for (const s of this.signs ?? []) s.rotation.set(0, _se.y, 0);
   }
 }
+
+const _se = new THREE.Euler();

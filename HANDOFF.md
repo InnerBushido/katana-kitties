@@ -515,9 +515,28 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
-**The Dream Dojo, Lionheart's VR arcade — stage 1 of 5.** Branch
-`feature/dream-dojo-vr`. [dreamdojo.md](docs/notes/dreamdojo.md) has the
-design and Richard's brief, quoted.
+**The Dream Dojo, Lionheart's VR arcade — stage 2 of 5.** Stage 1 is on
+branch `feature/dream-dojo-vr` and stage 2 on `feature/dream-dojo-gallery`,
+both merged into local main and not pushed.
+[dreamdojo.md](docs/notes/dreamdojo.md) has the design and Richard's brief,
+quoted.
+
+- **Stage 2 built:**
+  - The **Kotodama Gallery**: ten pedestals, ten drills, each lending its orb
+    for the drill only.
+  - The **Clan Trial Hall**: six holo-leaders, six trials, each a trial oath
+    that never touches her real clan.
+  - Lionheart's **rundown** of the orbs she wears.
+  - The SIM bar, and stars per kitten, kept for good, with a keyless,
+    asks-first debug wipe.
+- **Stage 2 verified in the browser** by driving the real input:
+  - Gale run to three stars.
+  - The Long Cut post refused at 3.0 and cut at 4.7.
+  - Long Guard held through the beam.
+  - One real Dragon Breath catching all three holo-kittens.
+  - A real 盗 mark, then a hit, knocking the orb loose.
+  - A trial oath saved as her real clan and restored when she left.
+  - The rundown paging through her kit.
 
 - **Built:**
   - The pad NE of the Dojo, the two stones (a real jump) and the dome that
@@ -537,8 +556,10 @@ design and Richard's brief, quoted.
   - **Lionheart has no voice.** Cloning Richard's voice fails with "Voice limit
     reached" while the account lists no custom voices. A prepared 2:48 cut sits
     beside his recording in `Design Ideas/`.
-  - Stages 2–5 (Gallery, Kata Trace, the modes, ranks, Shadow Lionheart) and
-    the VR kitten sheets are not started.
+  - Nobody has played stage 2 either. The drill numbers are measured but the
+    *difficulty* has not been tried on a nine-year-old.
+  - Stages 3–5 (Kata Trace, the modes, ranks, Shadow Lionheart) and the VR
+    kitten sheets are not started.
 
 **Payne, the quest-giver.** Branch `feature/payne-quest-giver`.
 [payne.md](docs/notes/payne.md) has the design, every note quoted, and the

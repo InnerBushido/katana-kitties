@@ -695,6 +695,7 @@ git push origin alpha</code></pre>
       <tr><td><kbd>R</kbd><kbd>U</kbd></td><td>Step WASD · step the arrows round the kittens sharing that set — her, her sister, then <b>both at once</b></td></tr>
       <tr><td><i>no key</i></td><td><b>Wipe the RECORD BOARD</b> — every league, on this device</td></tr>
       <tr><td><i>no key</i></td><td><b>Wipe the SAVED GAMES</b> — every saved play session, kept ones included</td></tr>
+      <tr><td><i>no key</i></td><td><b>Wipe the DREAM DOJO stars</b> — every kitten's simulator stars and best times</td></tr>
     </tbody>
   </table></div>
 
@@ -1302,7 +1303,7 @@ git push origin alpha</code></pre>
     <div><code>audio.md</code><span>The synthesised sound set, and a piece of music per island</span></div>
     <div><code>voices.md</code><span>The voice registry — which preset is which character, with ids</span></div>
     <div><code>payne.md</code><span>Payne, the quest-giver: her quest chain, opt-in hints, the Goblin Sweep, her script — a real person's likeness, pending her approval</span></div>
-    <div><code>dreamdojo.md</code><span>The Dream Dojo, Lionheart's VR arcade: the simulator as a second reality in the same place, the tubes, and the training modes still to build. Lionheart is Richard, likeness approved</span></div>
+    <div><code>dreamdojo.md</code><span>The Dream Dojo, Lionheart's VR arcade: the simulator as a second reality in the same place, the tubes, the training gate that lets a blade in there find holograms only, the Gallery and Trial Hall (orbs and oaths lent, never given), and the modes still to build. Lionheart is Richard, likeness approved</span></div>
     <div><code>consent.md</code><span>Why nothing irreversible happens on one press</span></div>
     <div><code>rules.md</code><span>The gameplay invariants in full, with the measurements behind them</span></div>
     <div><code>gotchas.md</code><span>The traps that cost real time and are not obvious from the code</span></div>
@@ -1382,7 +1383,8 @@ git push origin alpha</code></pre>
       <b>and her orbs</b> where she left them — dropping out keeps everything, and the way to leave
       orbs for somebody else is the <b>DROP HER ORBS</b> row beside each kitten's DROP OUT. An orb
       left lying in the town is saved with its coordinates and comes back on the same spot. Dropping
-      out also writes a save immediately, since the party and the orb positions both just moved. The record board, the controller calibration, the stick setting
+      out also writes a save immediately, since the party and the orb positions both just moved. The record board, the controller calibration, the stick setting,
+      the Dream Dojo's stars (<code>kk.dreamdojo.v1</code>, per kitten)
       and every other row of <i>Settings</i> (<code>kk.settings</code>, only the rows somebody changed)
       survive a reload the same way. All of it is <code>localStorage</code>, so none of it follows a
       child to a phone, to a second machine, or past a cleared cache — which is the half of the

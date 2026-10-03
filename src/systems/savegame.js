@@ -338,7 +338,10 @@ export function castRow(p, here = true) {
        standing in her tube, never at her coordinates in the void. */
     at: ['x', 'y', 'z'].map((k) => +(p.dreamAnchor ?? p.position)[k].toFixed(2)),
     facing: +(p.facing ?? 0).toFixed(3),
-    clan: p.clan?.id ?? null,
+    /* `dreamOath.was` FIRST, for the same reason as `dreamAnchor`: a trial
+       oath in the Clan Trial Hall is the simulator's, and a save taken while
+       she is trying Riverclaw on must remember the clan she really swore. */
+    clan: (p.dreamOath ? p.dreamOath.was : p.clan)?.id ?? null,
     sworn: [...(p.clansSworn ?? [])],
     orbs: [...(p.powerOrbs ?? [])],
     /* HER BAG — the INVENTORY tab's sixteen. A row without it is a save from
