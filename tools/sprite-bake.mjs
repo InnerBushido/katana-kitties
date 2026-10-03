@@ -153,6 +153,16 @@ const WORK = [
   { file: 'payne_helmet.png', out: 'payne/helmet.png', to: [512, 512], chroma: true },
   { file: 'payne_sweep.png', out: 'payne/sweep.png', to: [640, 640], chroma: true },
   { file: 'payne_held.png', out: 'payne/held.png', to: [768, 768], chroma: true },
+  /* LIONHEART runs the VR arcade north-east of the Dojo (systems/dreamdojo.js)
+     and is Richard himself, so the likeness is his to approve and he did:
+     "OK to use my images. Maybe just base the look on the red Samurai Kitten
+     style ... red and black hair ... Lionheart doesn't need to look old!".
+     The visor pushed up on his forehead is the arcade's headset, and the
+     great sword on his back is HONOR, the teaser he will not hand over yet.
+     The apron is red and black checker with a cat crest and NO lettering: the
+     real bandana it is drawn from carries words in its checker that must
+     never be reproduced. 768 like Payne's town pose, for the same reason. */
+  { file: 'lionheart_town.png', out: 'lionheart/town.png', to: [768, 768], chroma: true },
 ];
 
 /* ========================================================================== */
