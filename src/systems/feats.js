@@ -21,7 +21,8 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => (
    game already had exactly one of these, unnamed: whoever collected the most
    plain orbs is handed a Powerup Kotodama at 100% (`Kotodama.awaken`). This
    file is the other eight, and the list the Help page and the profile screen
-   both read, so all nine are described in one place.
+   both read, so all ten are described in one place. (The tenth came later,
+   from the Dream Dojo — see `shadow` below.)
 
    EARNED BEFORE THE END, PAID AT THE END. Nothing here is a Powerup Kotodama
    before 100% mischief, because none exist before 100% mischief — the whole
@@ -110,7 +111,7 @@ export const CARD_MAX = 12;
 export const TOKEN_COLOR = 0xffc93c;
 
 /**
- * The nine. `who` is 'each' (every kitten can have it), 'one' (the first to
+ * The ten. `who` is 'each' (every kitten can have it), 'one' (the first to
  * do it has it) or 'most' (whoever leads at the end — ties share).
  *
  * `title` is what the checklist says; `how` is the instruction, written as an
@@ -134,6 +135,18 @@ export const FEATS = [
     short: 'Panda keeper', how: 'Raise a panda until it is fully grown.' },
   { id: 'pilot', who: 'each', icon: '🐉', title: 'Dragon pilot',
     short: 'Dragon pilot', how: 'Fly Ryuuseki from the front seat.' },
+  /* THE TENTH (listed with the four everybody can do, which it is one of),
+     AND THE ONLY ONE THE DOOR DOES NOT SHUT ON. Lionheart has
+     promised it since the Dream Dojo opened — "Beat me in the simulator
+     someday… and maybe I'll share my Honor with you" — and the simulator's
+     final exam (dream/shadow.js) asks for KENSHI 2nd Class first, which is an
+     afternoon of stars on its own. A kitten who gets there after the ending
+     has not missed a deadline she was never told about, so `late` lets it be
+     earned after the Awakening; the ceremony is already running then, and
+     `_ceremony` pays it on her next turn like any other unpaid quest. Before
+     the Awakening it is a gold token like the other nine. */
+  { id: 'shadow', who: 'each', icon: '🦁', title: "Lionheart's Honor", late: true,
+    short: "Lionheart's Honor", how: 'Beat Shadow Lionheart in the Dream Dojo.' },
   { id: 'rider', who: 'one', icon: '🎯', title: 'Beam gunner',
     short: 'Beam gunner',
     how: `Be the first to ride Ryuuseki's second seat for ${RIDER_NEED} seconds.` },
@@ -217,7 +230,7 @@ export class Feats {
    */
   earn(p, id, { delay = 0, atEnd = false } = {}) {
     if (!p || !FEAT_BY_ID[id]) return false;
-    if (!this.open && !atEnd) return false;
+    if (!this.open && !atEnd && !FEAT_BY_ID[id].late) return false;
     const L = this.ledger(p);
     if (L.got.includes(id)) return false;
     L.got.push(id);

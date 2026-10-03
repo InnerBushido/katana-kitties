@@ -515,13 +515,42 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
-**The Dream Dojo, Lionheart's VR arcade — stage 4 of 5.** Stage 1 is on
-branch `feature/dream-dojo-vr`, stage 2 on `feature/dream-dojo-gallery`,
-stage 3 on `feature/dream-dojo-kata`, and stage 4 on
-`feature/dream-dojo-highway`. All four are merged into local main and not
-pushed.
+**The Dream Dojo, Lionheart's VR arcade — stage 5 of 5.** Each stage is on its
+own branch:
+
+| stage | branch |
+| --- | --- |
+| 1 | `feature/dream-dojo-vr` |
+| 2 | `feature/dream-dojo-gallery` |
+| 3 | `feature/dream-dojo-kata` |
+| 4 | `feature/dream-dojo-highway` |
+| 5 | `feature/dream-dojo-school` |
+
+All five are merged into local main and not pushed.
 [dreamdojo.md](docs/notes/dreamdojo.md) has the design and Richard's brief,
 quoted.
+
+- **Stage 5 built:**
+  - The **Arena School**: a practice round for each tournament mode, under the
+    arena's own rules. `decideOnTime` and `purseSplit` are now shared with
+    tournament.js.
+  - A scoreboard that explains *why* someone is ahead.
+  - **The Feast**: stun, hold still, hold attack.
+  - **KENSHI ranks**: 24★ for 2nd Class; 60★ *and* the Shadow for 1st.
+  - The foil **Fighter Card**.
+  - **Daily and weekly training** picked by the date.
+  - **Shadow Lionheart**, the co-op boss. Every telegraph is the same shape as
+    its hit test, he is staged upstage of her, and his fight has its own
+    camera focus.
+  - The win pays the **tenth quest**. It is the one quest that counts after
+    the Awakening (`late`). **That exception is Richard's to confirm.**
+- **Stage 5 verified in the browser:**
+  - The Feast and Tag Team went live.
+  - The duel board read correctly.
+  - The Shadow fight ran from the kiosk to the win, through the real Feats.
+- **Still open, after a cost preflight:**
+  - VR kitten sheets for all four kittens, plus a Shadow combat sheet.
+  - The Lionheart voice audition.
 
 - **Stage 4 built:**
   - The **data highways and light cycles** to the two far islands.

@@ -47,7 +47,7 @@ export class DataHighway {
    * Lay a highway from the hub's rim (`from`) to an island's (`to`) and put a
    * cycle pad at each end. Returns the road.
    */
-  add(key, name, from, to) {
+  add(key, name, from, to, back = 'HOLO-DOJO') {
     const sim = this.dream.sim;
     const deck = sim.addBridge(from, to, { halfW: 3.2, wobble: 0.8, waves: 1, name: `${key} highway` });
     const pts = deck.pts;
@@ -75,7 +75,7 @@ export class DataHighway {
       road.cum.push(road.cum[i - 1] + Math.hypot(b.x - a.x, b.z - a.z));
     }
     road.length = road.cum[road.cum.length - 1];
-    for (const [end, way, to2] of [[road.A, 1, name], [road.B, -1, 'HOLO-DOJO']]) {
+    for (const [end, way, to2] of [[road.A, 1, name], [road.B, -1, back]]) {
       const k = new Kiosk(this.dream, {
         x: end.x, z: end.z, y: end.y, r: 2.0, colour: HOLO.gold, kanji: '光', title: 'LIGHT CYCLE', near: 6,
         card: () => [
