@@ -6,12 +6,13 @@ import { HoloPanel } from './holo.js';
 import { Target, holoSolid, holoMat } from './targets.js';
 import { starsFor } from './progress.js';
 import { rankOf, atLeast, RANKS, SHADOW_RANK } from './rank.js';
+import { VOICE_TAIL } from './lionvoice.js';
 
 /* ---------------------------------------------------------------------------
    SHADOW LIONHEART — 影. The final exam, and the only one they sit together.
 
    Lionheart's line at the arcade has promised this since stage one: "Beat me
-   in the simulator someday… and maybe I'll share my Honor with you." Here he
+   in the simulator someday, and you'll earn a share of my HONOR!" Here he
    is, in shadow, nine units tall, with a blade to match — and the reward is
    the one thing the Dream Dojo pays into the real world: the TENTH QUEST
    (feats.js), a Powerup Kotodama at the award ceremony.
@@ -93,10 +94,24 @@ export function poseCell(act) {
  * to do with it. It is SAID first and the stars and the quest toast follow
  * `secs` later — but only the SHOWING waits. The result, the flag and the
  * quest are all committed on the frame he breaks (non-negotiable 7: nothing
- * hangs off a line finishing), so a kitten who jacks out mid-sentence still
+ * hangs off a line finishing), so a kitten who disconnects mid-sentence still
  * has everything she won.
  */
-export const HANDOVER = { line: 'My honor, my dreams…\nthey\'re yours now.', secs: 4 };
+export const HANDOVER = { line: 'My honor, my dreams…\nthey\'re yours now.', secs: 4, voice: 'lion_handover' };
+
+/**
+ * EVERYTHING ELSE HE SAYS ALOUD IN HERE. One table, so the bubble and the
+ * recording are the same string by construction — the bubble is handed the
+ * text, and `LionVoice` looks the recording up BY that text. Two copies of a
+ * line is how Mr. Satan's taunt ended up four words long over eight seconds
+ * of speech (docs/notes/voices.md). The losing line is not here: it names
+ * why she lost and how much of his bar was left, and no recording can.
+ */
+export const SHADOW_LINES = {
+  hello: { line: 'So you have come to fight my SHADOW.\nShow me what the Dojo taught you!', voice: 'lion_shadow_hello' },
+  cross: { line: 'Not bad! Now… the CROSS SLASH.\nWatch for the X!', voice: 'lion_shadow_cross' },
+  prize: { line: 'You beat my SHADOW!\nAs promised — a share of my HONOR.', voice: 'lion_prize' },
+};
 
 /* ------------------------------ the shapes -------------------------------- */
 
@@ -365,7 +380,7 @@ export class ShadowFight {
       p.velocity?.set?.(0, 0, 0);
     }
     this._join(p, true);
-    this._say('So you have come to fight my SHADOW.\nShow me what the Dojo taught you!', 4);
+    this._say(SHADOW_LINES.hello.line, 4);
     this.dream.game.sfx?.('gong');
   }
 
@@ -440,9 +455,14 @@ export class ShadowFight {
     return true;
   }
 
+  /** Show a line over him, and say it if it is one of the recorded ones. The
+   *  card stays up for as long as the recording runs, whichever is longer —
+   *  Barrett takes his time, and a card that left before he finished was the
+   *  bug this project keeps finding in announcers. */
   _say(text, secs = 3) {
+    const d = this.dream.voice?.speak(text, this.dream.t) ?? 0;
     this.say = text;
-    this.sayT = secs;
+    this.sayT = Math.max(secs, d > 0 ? d + VOICE_TAIL : 0);
   }
 
   _won() {
@@ -475,7 +495,7 @@ export class ShadowFight {
   /** The stars, after the hand-over line. The facts were settled in `_won`. */
   _tellPrize() {
     const g = this.dream.game;
-    this._say('You beat my SHADOW!\nAs promised — a share of my HONOR.', 7);
+    this._say(SHADOW_LINES.prize.line, 7);
     for (const { p, text } of this.paid) if (g.players?.includes(p)) g.toast?.(text, p.index);
     this.paid = [];
   }
@@ -550,7 +570,7 @@ export class ShadowFight {
     if (this.t >= SHADOW_T) { this._lost('Time!'); return; }
     if (this.phase === 1 && b.hp / b.maxHits <= PHASE2) {
       this.phase = 2;
-      this._say('Not bad! Now… the CROSS SLASH.\nWatch for the X!', 3.5);
+      this._say(SHADOW_LINES.cross.line, 3.5);
     }
     this._think(dt);
   }
@@ -719,7 +739,7 @@ export class ShadowFight {
       );
     } else this.panel.position.set(b.local.x, b.local.y + SHADOW_H + 2.6, b.local.z);
     const lines = [{ text: '影 SHADOW LIONHEART', size: 1.9, color: 0xc89bff, glow: true, jp: true }];
-    if (this.sayT > 0 && this.say) {
+    if (this.say && (this.sayT > 0 || this.dream.voice?.saying(this.say))) {
       for (const l of this.say.split('\n')) lines.push({ text: l, size: 1.4 });
     } else if (this.state === 'live') {
       const left = Math.max(0, SHADOW_T - this.t);
@@ -766,7 +786,7 @@ export class ShadowFight {
     this.boss?.faceCamera(camera, veil);
   }
 
-  /** Everybody out (a reset, a jack-out of the last one): no fight left half-run. */
+  /** Everybody out (a reset, the last one disconnecting): no fight left half-run. */
   dispose() { this._reset(); }
 }
 

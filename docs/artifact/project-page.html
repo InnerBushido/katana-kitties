@@ -1058,6 +1058,21 @@ git push origin alpha</code></pre>
         <td><code>capture/satan-rollcall.mjs</code></td>
       </tr>
       <tr>
+        <td><b>Lionheart's lines</b></td>
+        <td>Cuts his nine clips out of the raw takes. Same rule as the countdown: shortened by
+          closing dead air, <em>never</em> by speeding him up — every pause is capped at 0.45s,
+          which took the islands line from 22.2s to 18.9s. Each take is a render of its card's
+          text exactly; change a card and its clip is stale.</td>
+        <td><code>capture/lionheart-vo.mjs</code></td>
+      </tr>
+      <tr>
+        <td><b>How long an MP3 is</b></td>
+        <td>Dependency-free: walks the frames, so the checks can ask whether a card outlasts its
+          real recording without a browser or ffprobe. Reads a few hundredths long — the safe
+          side for that question.</td>
+        <td><code>mp3.mjs</code></td>
+      </tr>
+      <tr>
         <td><b>Sound &amp; music</b></td>
         <td>Fully synthesised in code — a sound set, and a piece of music per island. The MP3s are
           the only audio <em>files</em>, and the game falls back to synthesised blips without them.</td>
@@ -1173,12 +1188,15 @@ git push origin alpha</code></pre>
       </tr>
       <tr>
         <td><b>ElevenLabs</b></td>
-        <td>The voice cast. <b>No separate account</b> — reached through Higgsfield.
+        <td>The voice cast, generated through Higgsfield from ElevenLabs' presets.
           <b>Preflight the cost rather than trusting a figure</b> (<code>get_cost: true</code>);
-          long quoted at ≈0.15 a line, measured at 0.30 on 13 Sep 2026. More than four lines in
-          one batch hits a rate limit — the over-spill is resubmitted and nothing is charged for
-          a submission that failed.</td>
-        <td>0.30 credits a line</td>
+          long quoted at ≈0.15 a line, measured at 0.30 on 13 Sep 2026. Batches hit a rate limit
+          — at three lines on 3 Oct — so submit two at a time; nothing is charged for a submission
+          that failed. <b>Richard also has his own ElevenLabs account</b> (Starter, since Oct 2026),
+          made to clone his voice for Lionheart. The clone works through its own connector, not
+          through Higgsfield, and he turned it down as not sounding like him — so nothing in the
+          game uses that account. Lionheart is the Barrett preset.</td>
+        <td>0.30 credits a line; own account ≈$6/month</td>
       </tr>
       <tr>
         <td><b>Steam</b></td>

@@ -6,7 +6,7 @@ walks into hers, a visor comes down, she floats, and her view goes over into a
 **simulator**: another reality in the same place. Lionheart runs it.
 
 Stages 1 and 2 are built. Stage 1 is the realm system, the arcade, the tubes,
-jacking in and out, the holo-Dojo hub, and Lionheart himself. Stage 2 is the
+connecting and disconnecting, the holo-Dojo hub, and Lionheart himself. Stage 2 is the
 first two training islands, the **Kotodama Gallery** and the **Clan Trial
 Hall**, plus Lionheart's **rundown** of the orbs she wears. Stages 3–5 are at
 the bottom of this file.
@@ -85,7 +85,7 @@ units off its edge, is a map of a place she is not in.
 | --- | --- | --- |
 | walk | until there | a synthetic pad (`walkPad`, built from `p._basis()`) walks her to her own tube |
 | rise | 1.8 | visor on, she floats up `FLOAT_H`, the tube lights in her colour, the rain starts |
-| jack | 0.7 | full rain and flash, then **cross** |
+| link | 0.7 | full rain and flash, then **cross** |
 | rez | 1.4 | she resolves on her port in the sim (the `REZ` shader over her sprite) |
 | sim | — | she walks freely, and her puppet hangs in the real tube mirroring her row and facing |
 | derez | 1.1 | ...then **cross** back |
@@ -658,7 +658,7 @@ It is `HANDOVER` in `shadow.js`. It is said alone for 4 s, and only then come
 "You beat my SHADOW! As promised — a share of my HONOR.", the stars toast and
 the quest's card. **Only the telling waits.** The stars, the flag and the quest
 are all committed on the frame he breaks; `feats.earn` is given
-`{delay: HANDOVER.secs}`, which delays only the payout card. A kitten who jacks
+`{delay: HANDOVER.secs}`, which delays only the payout card. A kitten who disconnects
 out mid-sentence still has everything (non-negotiable 7). Measured in the
 browser: his line at 0 s, the quest toast at 4.00 s, the stars at 4.01 s and the
 HONOR line at 4.03 s.
@@ -726,23 +726,15 @@ blow reads as landed. The tell is the drawing as much as the red on the floor.
 
 ## Voice
 
-Lionheart has **no recorded lines yet**, and his bubbles are text only.
-Richard's own voice is in `Design Ideas/Lionheart - Dream Dojo/Richard Voice for
-Cloning/`. There is also a 2:48 cut of the two liveliest stretches,
-loudness-normalised, because the clone limit is three minutes. The liveliest
-stretches measure LRA 13.6 and 12.9 LU, against about 6 for the middle.
-Richard asked for "a bit more energy ... I sound a bit sad/monotone". Higgsfield
-has no style prompt, so the energy has to come from that choice of source
-material and from how the lines are written.
-
-**Cloning failed twice with "Voice limit reached"** while the account listed
-**no** custom voices. That is a plan or workspace limit, not a slot to free up.
-When a voice exists, register it in [voices.md](voices.md) with its id.
-
-**Three presets are auditioning now** (Dylan, Kevin and Miles) on the Honor line
-and the hand-over. The numbers and the six takes are in
-[voices.md](voices.md#lionheart-is-being-auditioned-and-nothing-is-wired-yet).
-Nothing is wired until Richard picks.
+Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips
+in `public/voice/lionheart/`. Every line he says aloud is a render of exactly
+its card, and the card stays up until he has finished. Richard's own clone was
+made and turned down; Barrett won on "the smoothest and cool/confident anime
+sounding voice", with one caveat that became a writing rule — **not too
+seductive**, so his lines are loud, practical and arcade-owner, and nobody
+"jacks out": she **connects** and **disconnects**. The whole casting, the
+cutter and the gating are in
+[voices.md](voices.md#lionheart-is-barrett-and-the-wording-is-half-the-casting).
 
 ## Still to build (stages 2–5)
 
@@ -759,8 +751,8 @@ Nothing is wired until Richard picks.
    Shadow.~~ Built. This is the "do both" look: the visor in the real world,
    the headset sheet in the sim. `Player.setSimLook` swaps the Billboard's look
    on the cross and puts back the exact home texture and geometry on the way
-   out ([art.md](art.md)). ~~The Lionheart voice audition~~ has been rendered
-   and is **waiting on Richard's pick**. ~~Health bars only on enemies tougher
+   out ([art.md](art.md)). ~~The Lionheart voice audition~~ is done:
+   **Barrett**, nine lines, wired (see Voice, above). ~~Health bars only on enemies tougher
    than three hits~~: done, `maxHits > 3` gets a SimBar.
 
 **Non-negotiable 3 holds in all of them.** Anything that hits in the sim is a

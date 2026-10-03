@@ -34844,8 +34844,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   ok('...and its camera crosses with it instead of panning the void',
     /rig\.target\.x \+= SIM\.dx \* k;/.test(mm));
   const au = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
-  ok('jacking in and out has its own sounds',
-    ['jackin', 'jackout', 'rez', 'visor'].every((n) => au.includes(`case '${n}':`)));
+  ok('connecting and disconnecting have their own sounds',
+    ['connect', 'disconnect', 'rez', 'visor'].every((n) => au.includes(`case '${n}':`)));
 }
 
 /* ==========================================================================
@@ -35635,7 +35635,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     D.st[0] = { phase: 'sim', t: 0 };
     const cut = run(1, 1.5);
     D.st[0] = { phase: 'sim', t: 0 };
-    ok('...and a ride cut short (jacked out mid-highway) leaves her ON the highway, off the cycle',
+    ok('...and a ride cut short (disconnected mid-highway) leaves her ON the highway, off the cycle',
       cut.offDeck === 0 && !D.highway.riding(0) && cut.cycleGone && cut.t < 2,
       `${cut.t.toFixed(2)} ${D.highway.riding(0)}`);
     ok('the ride is a trapezoid of speed: 0 at the start, the whole road at the end, never past it',
@@ -36790,6 +36790,175 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     delete her.feats;
   }
   scene.remove(sim.root);
+}
+
+/* ==========================================================================
+   LIONHEART'S VOICE (systems/dream/lionvoice.js) — Barrett, nine clips.
+
+   Three things can go wrong here without anything LOOKING wrong. The card and
+   the recording can be two sentences (Mr. Satan's taunt was, for a release).
+   The card can leave while he is still talking — every one of his clips is
+   longer than the line's old bubble time, the islands line by eleven seconds.
+   And a loop of ambient lines voiced every nine seconds is a man repeating
+   himself at a child. These ask all three, against the real clips' real
+   lengths, read off the files by tools/mp3.mjs rather than typed in here.
+   ========================================================================== */
+{
+  console.log('\n--- Lionheart\'s voice ---');
+  if (!globalThis.document) globalThis.document = domStub();
+  const DD = await import('../src/systems/dreamdojo.js');
+  const SH = await import('../src/systems/dream/shadow.js');
+  const LV = await import('../src/systems/dream/lionvoice.js');
+  const { mp3Duration } = await import('./mp3.mjs');
+  const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
+
+  /* "Let's not use the term 'Jacked out' or 'Jacking out' as it sounds
+     inappropriate" — Richard. It was on the prompts, the sounds and a phase
+     name, so it is checked everywhere a neighbour could copy it back from.
+     COMMENTS ARE STRIPPED FIRST: the one place the word may stay is the
+     comment over LION_LINES that quotes him saying so, and the first cut of
+     this check failed on exactly that. */
+  const srcFiles = (dir) => readdirSync(new URL(dir, import.meta.url), { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? srcFiles(`${dir}${e.name}/`) : e.name.endsWith('.js') ? [`${dir}${e.name}`] : []));
+  const jacked = [...srcFiles('../src/'), '../README.md']
+    .filter((f) => /jack(?!et)/i.test(f.endsWith('.md') ? read(f)
+      : read(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')));
+  ok('nobody "jacks" in or out — she connects and disconnects',
+    jacked.length === 0, jacked.join(' ') || 'clean');
+  const dd = read('../src/systems/dreamdojo.js');
+  ok('...and the prompts say so in those words',
+    dd.includes('DISCONNECT`') && dd.includes('CONNECT`') && /'disconnect'/.test(dd) && /'connect'/.test(dd));
+
+  /* EVERY ID HE IS GIVEN IS A FILE, IN HIS FOLDER, AND NOTHING ELSE IS THERE. */
+  const pairs = [
+    ...Object.entries(DD.LION_VOICE).map(([k, id]) => [DD.LION_LINES[k], id, k]),
+    ...Object.entries(SH.SHADOW_LINES).map(([k, l]) => [l.line, l.voice, `shadow.${k}`]),
+    [SH.HANDOVER.line, SH.HANDOVER.voice, 'handover'],
+  ];
+  ok('every recorded line of his is a line he actually has',
+    Object.keys(DD.LION_VOICE).every((k) => typeof DD.LION_LINES[k] === 'string'));
+  ok('...and the two that name a kitten are not recorded, because no recording can',
+    !DD.LION_VOICE.send && !DD.LION_VOICE.rundown && /%n/.test(DD.LION_LINES.send) && /%n/.test(DD.LION_LINES.rundown));
+  ok('...and the audio router sends him to his own folder',
+    voicePath('lion_idle') === '/voice/lionheart/lion_idle.mp3');
+  const lionDir = new URL('../public/voice/lionheart/', import.meta.url);
+  const onDisk = readdirSync(lionDir).filter((f) => f.endsWith('.mp3')).map((f) => f.slice(0, -4)).sort();
+  const ids = [...new Set(pairs.map(([, id]) => id))].sort();
+  ok('every one of his lines is recorded, and nothing else is in his folder',
+    onDisk.join() === ids.join(), `${ids.length} lines, ${onDisk.length} files`);
+  ok('...and no two of his lines share a recording, or a text',
+    ids.length === pairs.length && new Set(pairs.map(([t]) => t)).size === pairs.length);
+
+  /* THE CARD AND THE CLIP ARE THE SAME SENTENCE — as far as a check without
+     ears can tell. A clip filed under the wrong line shows as a speaking rate
+     no person has. Barrett measures 1.5 words a second at his slowest (the
+     islands line, which pauses on every island) and 2.9 at his quickest (the
+     sim's idle line), so 1.2-4.5 is generous and a swapped clip is not. */
+  const secs = {};
+  for (const id of ids) secs[id] = mp3Duration(new URL(`${id}.mp3`, lionDir)).secs;
+  const rates = pairs.map(([t, id, k]) => [k, t.split(/\s+/).length / secs[id]]);
+  const odd = rates.filter(([, r]) => r < 1.2 || r > 4.5);
+  ok('each clip is about as long as the words on its card',
+    odd.length === 0, rates.map(([k, r]) => `${k} ${r.toFixed(1)}w/s`).join(' '));
+
+  /* "My honor, my dreams… they're yours now." — and only then the prize. The
+     prize line follows HANDOVER.secs after the win whatever the clip does, so
+     the clip has to be done by then, with room for the last word to land. */
+  ok('his hand-over line has finished before he says what she won',
+    secs.lion_handover <= SH.HANDOVER.secs - 0.25, `${secs.lion_handover.toFixed(2)}s of ${SH.HANDOVER.secs}s`);
+
+  /* --- the gating, against a fake speaker with the real clip lengths --- */
+  const speaker = () => ({
+    _speaking: null,
+    speak(el) { if (this._speaking) this._speaking.paused = true; el.paused = false; el.ended = false; this._speaking = el; },
+  });
+  const voice = (audio) => {
+    const v = new LV.LionVoice(() => audio, pairs.map(([t, id]) => [t, id]));
+    for (const id of ids) v.els.set(id, { duration: secs[id], paused: true, ended: false });
+    return v;
+  };
+  const end = (a) => { if (a._speaking) a._speaking.ended = true; };
+
+  {
+    const a = speaker();
+    const v = new LV.LionVoice(() => a, pairs.map(([t, id]) => [t, id]));
+    let threw = false;
+    let d = -1;
+    try { v.load(); d = v.speak(DD.LION_LINES.sim, 0); } catch { threw = true; }
+    ok('with no <audio> to be had he is a bubble, the way he always was',
+      !threw && d === 0 && a._speaking === null && v.els.size === 0);
+    const none = new LV.LionVoice(() => null, pairs.map(([t, id]) => [t, id]));
+    ok('...and with no Audio at all, too', none.speak(DD.LION_LINES.sim, 0) === 0);
+  }
+  {
+    const a = speaker();
+    const v = voice(a);
+    const d = v.speak(DD.LION_LINES.sim, 0);
+    ok('a line somebody asked for is said, and says how long it runs',
+      d === secs.lion_sim && a._speaking === v.els.get('lion_sim') && v.saying(DD.LION_LINES.sim));
+    ok('...and a line with a name in it is a bubble only',
+      v.speak(DD.LION_LINES.send.replace('%n', 'Ember').replace('%t', '1'), 1) === 0 && a._speaking === v.els.get('lion_sim'));
+    end(a);
+    ok('...and once it has ended he is no longer saying it', !v.saying(DD.LION_LINES.sim));
+
+    // Somebody ELSE is talking: Patchfur, Payne, the announcer.
+    const other = { paused: false, ended: false };
+    a._speaking = other;
+    ok('he never talks over another character — not even when asked',
+      v.speak(SH.SHADOW_LINES.hello.line, 2) === 0 && a._speaking === other && !other.paused);
+    ok('...and his ambient lines wait for them too',
+      v.speak(DD.LION_LINES.idle, 2, { ambient: true }) === 0 && a._speaking === other);
+    other.ended = true;
+  }
+  {
+    const a = speaker();
+    const v = voice(a);
+    const t0 = 100;
+    const said = (t, line) => v.speak(line, t, { ambient: true }) > 0;
+    const first = said(t0, DD.LION_LINES.idle);
+    const overHimself = said(t0 + 3, DD.LION_LINES.honor);
+    end(a);
+    const tooSoon = said(t0 + LV.AMBIENT_GAP - 1, DD.LION_LINES.honor);
+    const next = said(t0 + LV.AMBIENT_GAP, DD.LION_LINES.honor);
+    end(a);
+    const sameAgain = said(t0 + 2 * LV.AMBIENT_GAP + 1, DD.LION_LINES.idle);
+    const sameLater = said(t0 + LV.REPEAT_GAP, DD.LION_LINES.idle);
+    ok('an ambient line is said, then nothing over it, then nothing for AMBIENT_GAP',
+      first && !overHimself && !tooSoon && next, `${first} ${overHimself} ${tooSoon} ${next}`);
+    ok('...and the same ambient line waits REPEAT_GAP for itself',
+      !sameAgain && sameLater, `${sameAgain} ${sameLater}`);
+    end(a);
+    ok('...while a line somebody asked for cuts in over his own ambient one',
+      said(t0 + 400, DD.LION_LINES.simIdle) && v.speak(SH.SHADOW_LINES.hello.line, t0 + 401) > 0
+      && a._speaking === v.els.get('lion_shadow_hello'));
+  }
+
+  /* --- the bubbles outlast him --- */
+  {
+    const a = speaker();
+    const D = new DD.DreamDojo({ players: [], world, audio: a });
+    const v = D.voice;
+    for (const id of ids) v.els.set(id, { duration: secs[id], paused: true, ended: false });
+    ok('the Dojo builds his voice out of the very strings its cards show',
+      pairs.every(([t, id]) => v.idOf(t) === id));
+    D.t = 10;
+    D.holoSay(DD.LION_LINES.sim, 7);
+    ok('the welcome card stays up until he has finished saying it, not for its old seven seconds',
+      D.holoUntil >= 10 + secs.lion_sim + LV.VOICE_TAIL - 1e-9 && D.holoUntil > 17, (D.holoUntil - 10).toFixed(2));
+    end(a);
+    D.say(DD.LION_LINES.send.replace('%n', 'Ember').replace('%t', '1'), 5);
+    ok('...and a card with nothing recorded keeps the time it was given', Math.abs(D.sayUntil - 15) < 1e-9);
+    const fight = { dream: { voice: v, t: 0 }, say: null, sayT: 0 };
+    SH.ShadowFight.prototype._say.call(fight, SH.SHADOW_LINES.hello.line, 4);
+    ok('...and so does the Shadow\'s, over his own lines',
+      fight.say === SH.SHADOW_LINES.hello.line
+      && Math.abs(fight.sayT - (secs.lion_shadow_hello + LV.VOICE_TAIL)) < 1e-9, fight.sayT.toFixed(2));
+    /* The number `speak` returns is 0 for a clip whose metadata has not
+       arrived, so the cards ALSO ask whether he is still saying it. */
+    ok('...and every card that shows his words asks whether he is still saying them',
+      (dd.match(/this\.voice\.saying\(this\.(say|holo)Text\)/g) ?? []).length === 2
+      && /this\.dream\.voice\?\.saying\(this\.say\)/.test(read('../src/systems/dream/shadow.js')));
+  }
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

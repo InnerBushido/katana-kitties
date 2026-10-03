@@ -20,7 +20,7 @@ import { Post, Tile, Mat } from './targets.js';
    orb is the difference between failing and passing — the numbers in each
    comment are the measurement that makes it so.
 
-   A LOAN, NOT A GIFT. The orb is hers until she jacks out, and only in here:
+   A LOAN, NOT A GIFT. The orb is hers until she disconnects, and only in here:
    `DreamDojo.lend` folds it into `p.power` and her worn ring and never into
    `powerOrbs`, so it cannot be traded, saved, stolen in the ring or sold.
    Nothing is lost (4) and nothing is duplicated.
