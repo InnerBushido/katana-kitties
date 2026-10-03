@@ -14,6 +14,11 @@ import { Gallery } from './dream/gallery.js';
 import { TrialHall } from './dream/hall.js';
 import { TameshigiriRange } from './dream/range.js';
 import { KataHall } from './dream/kata.js';
+import { DataHighway } from './dream/highway.js';
+import { KudamonoStorm } from './dream/storm.js';
+import { SineGauntlet } from './dream/sine.js';
+import { HoloSentries } from './dream/sentries.js';
+import { BambooInfiltration } from './dream/bamboo.js';
 import { Rundown } from './dream/rundown.js';
 import { ISLANDS, islandCentre } from './dream/islands.js';
 import { SimBar } from './dream/holo.js';
@@ -116,7 +121,7 @@ export const LION_LINES = {
   rundown: '%n — you\'re wearing %k Kotodama!\nTalk to me for a rundown\nof what each one does.',
   /* The spokes in the order she meets them walking round from the port
      (dream/islands.js): +38 and +78 are on her left, -38 and -78 her right. */
-  islands: 'Left: the GALLERY, then the TAMESHIGIRI RANGE.\nRight: the TRIAL HALL, then KATA TRACE.\nTry everything — it\'s all on loan!',
+  islands: 'Left: GALLERY, RANGE, then KUDAMONO STORM.\nRight: TRIAL HALL, KATA, then the SINE GAUNTLET.\nThe far two? Take a LIGHT CYCLE!',
 };
 
 /* ------------------------------ shaders ---------------------------------- */
@@ -664,6 +669,9 @@ export class DreamDojo {
     if (!s?.phase) return pad;
     if (s.phase === 'walk') return s.walkPad ?? dead;
     if (s.phase === 'sim') {
+      // On a light cycle she is cargo: a stick still pushed must not steer
+      // her off the highway (highway.js).
+      if (this.highway?.riding(i)) return dead;
       /* A DRILL MAY WATCH HER BUTTONS — Kata Trace has to know the moment
          she pressed jump, not the moment her feet left the floor. Watching
          only: `pressed` is a pure edge test, and this never consumes one. */
@@ -724,6 +732,7 @@ export class DreamDojo {
     const s = this.st[p.index];
     if (s?.phase && s.phase !== 'sim') return null;
     if (this.realmOf(p) === 'sim') {
+      if (this.highway?.riding(p.index)) return null;
       if (this.onPort(p)) return `[${key}]  JACK OUT`;
       // The card says which button turns it; a callout under it is the same
       // words a second time, drawn on top of its last line.
@@ -755,6 +764,9 @@ export class DreamDojo {
     const s = this.st[p.index];
     if (s?.phase && s.phase !== 'sim') return false;
     if (this.realmOf(p) === 'sim') {
+      // Swallowed, not refused: a press mid-ride is her hand still on the
+      // button she rode off with, and it must not reach anything else.
+      if (this.highway?.riding(p.index)) return true;
       if (this.onPort(p)) { this._begin(p, 'derez'); return true; }
       const rd = this.rundowns[p.index];
       if (rd) {
@@ -853,13 +865,22 @@ export class DreamDojo {
     /* THE TRAINING ISLANDS, raised with the layer — under the rain, on the
        first jack-in, like the rest of it. */
     this.isles = {};
-    for (const key of ['gallery', 'hall', 'range', 'kata']) this.isles[key] = this._raiseIsland(key);
+    this.highway = new DataHighway(this);
+    for (const key of ['gallery', 'hall', 'range', 'kata', 'storm', 'sine', 'sentries', 'bamboo']) {
+      this.isles[key] = this._raiseIsland(key);
+    }
     this.gallery = new Gallery(this, this.isles.gallery);
     this.hall = new TrialHall(this, this.isles.hall);
     this.range = new TameshigiriRange(this, this.isles.range);
     this.kata = new KataHall(this, this.isles.kata);
+    this.storm = new KudamonoStorm(this, this.isles.storm);
+    this.sine = new SineGauntlet(this, this.isles.sine);
+    this.sentries = new HoloSentries(this, this.isles.sentries);
+    this.bamboo = new BambooInfiltration(this, this.isles.bamboo);
     this.stations = [...this.gallery.stations, ...this.hall.stations,
-      ...this.range.stations, ...this.kata.stations];
+      ...this.range.stations, ...this.kata.stations,
+      ...this.storm.stations, ...this.sine.stations,
+      ...this.sentries.stations, ...this.bamboo.stations, ...this.highway.stations];
   }
 
   /**
@@ -875,7 +896,10 @@ export class DreamDojo {
     this.sim.addDisc({ x: c.x, z: c.z, r: spec.r, y: c.y, name: key, grid: 2, seed });
     const from = { x: dc.x + c.dir.x * 47, z: dc.z + c.dir.z * 47, y: dc.y };
     const to = { x: c.x - c.dir.x * (spec.r - 2), z: c.z - c.dir.z * (spec.r - 2), y: c.y };
-    this.sim.addBridge(from, to, { wobble: 3, waves: 1, name: `${key} bridge` });
+    // The far islands are a DATA HIGHWAY instead — still a walkable bridge,
+    // with a light cycle at each end (highway.js).
+    if (spec.cycle) this.highway.add(key, spec.name, from, to);
+    else this.sim.addBridge(from, to, { wobble: 3, waves: 1, name: `${key} bridge` });
     this.sim.addSign(c.x + c.dir.x * (spec.r - 2), c.y + 12, c.z + c.dir.z * (spec.r - 2), spec.kanji, spec.name);
     return { key, x: c.x, y: c.y, z: c.z, r: spec.r, fwd: c.dir };
   }
@@ -1269,6 +1293,7 @@ export class DreamDojo {
   /** Everything sim-only comes off her: drill, rundown, loans, oath, bar. */
   _leaveSim(p) {
     const s = this.st[p.index];
+    this.highway?.stop(p);
     const d = this.drills[p.index];
     if (d) { d.dispose(); this.drills[p.index] = null; }
     this._closeRundown(p);
@@ -1690,6 +1715,11 @@ export class DreamDojo {
       this.hall?.faceCamera(camera);
       this.range?.faceCamera(camera);
       this.kata?.faceCamera(camera);
+      this.storm?.faceCamera(camera);
+      this.sine?.faceCamera(camera);
+      this.sentries?.faceCamera(camera);
+      this.bamboo?.faceCamera(camera);
+      this.highway?.faceCamera(camera);
       for (const d of this.drills) d?.faceCamera(camera);
       for (const r of this.rundowns) r?.faceCamera(camera);
       for (const s of this.st) s?.bar?.faceCamera(camera);

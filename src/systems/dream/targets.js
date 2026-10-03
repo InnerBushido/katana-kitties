@@ -187,14 +187,14 @@ export class Shards {
 
 /* ------------------------------- targets --------------------------------- */
 
-const holoMat = (colour, opacity = 0.55) => new THREE.MeshBasicMaterial({
+export const holoMat = (colour, opacity = 0.55) => new THREE.MeshBasicMaterial({
   color: colour, transparent: true, opacity, depthWrite: false, toneMapped: false,
   blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
 });
 const edgeMat = (colour) => new THREE.LineBasicMaterial({ color: colour, transparent: true, opacity: 0.95, toneMapped: false });
 
 /** A wireframe shell plus a soft fill: the look of everything solid in here. */
-function holoSolid(geo, colour, fill = 0.22) {
+export function holoSolid(geo, colour, fill = 0.22) {
   const grp = new THREE.Group();
   const m = new THREE.Mesh(geo, holoMat(colour, fill));
   m.material.userData.base = fill;

@@ -1238,6 +1238,26 @@ export class Audio {
       case 'miss':
         this._tone({ type: 'sine', from: 140, to: 90, dur: 0.14, gain: 0.18 * v });
         break;
+      /* THE ARCADE'S STAGE FOUR. `cycle` is a light cycle pulling away: two
+         saws a fifth apart climbing together, so it reads as an ENGINE and
+         not as the islerise sweep it would otherwise be mistaken for. `zap`
+         is a sentry's shot leaving the barrel, short and high so four of them
+         staggered never pile into a drone. `spotted` is a watcher's alarm —
+         two quick notes falling, the "uh-oh" every stealth game uses, and NOT
+         `hurt`, because being seen in the bamboo costs time, not health. */
+      case 'cycle':
+        this._tone({ type: 'sawtooth', from: 70, to: 220, dur: 0.7, gain: 0.07 * v });
+        this._tone({ type: 'sawtooth', from: 105, to: 330, dur: 0.7, gain: 0.05 * v });
+        this._noise({ from: 900, to: 2600, dur: 0.6, gain: 0.05 * v, q: 1.2 });
+        break;
+      case 'zap':
+        this._tone({ type: 'square', from: semi(24), to: semi(12), dur: 0.09, gain: 0.06 * v });
+        this._noise({ from: 6000, to: 3000, dur: 0.05, gain: 0.05 * v, type: 'highpass', q: 0.8 });
+        break;
+      case 'spotted':
+        this._tone({ type: 'triangle', from: semi(16), dur: 0.12, gain: 0.2 * v });
+        this._tone({ type: 'triangle', from: semi(9), dur: 0.22, gain: 0.2 * v, delay: 0.13 });
+        break;
       case 'wardup':
         this._tone({ type: 'sine', from: semi(7), to: semi(19), dur: 0.26, gain: 0.17 * v });
         this._tone({ type: 'triangle', from: semi(19), dur: 0.5, gain: 0.07 * v, delay: 0.1 });

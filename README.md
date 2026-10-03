@@ -342,6 +342,24 @@ Inside, bridges lead off the glowing Dojo to floating islands:
   step here, cut, jump, guard. Then **you** do it back, on the beat. There's a
   new one **every day** and a longer one **every week**. Everybody gets the same
   one, so you can compare. Get two stars and it speeds up.
+- **Kudamono Storm.** Fruit flies at you from the edge. A ring on the floor
+  shows where it'll land, so cut it before it gets there. Leave the purple ones
+  alone: they're viruses!
+- **The Sine Gauntlet.** Laser bars go up and down, and your card shows the sum
+  that says how high each one is. A high bar you walk under, a low one you
+  jump, and one in the middle you wait for. On level 2 the wave travels, so
+  ride it.
+
+The two islands furthest out have **light cycles**. Stand on the 光 pad, press
+**interact**, and zoom down the highway leaving a trail of light. You can walk
+it too.
+
+- **Holo-Sentries.** Four turrets and a shielded core, and they shoot back. An
+  eye that goes white is about to fire: step aside, or put your Ward up.
+- **Bamboo Infiltration.** Sneak through the bamboo to the scroll. The orange
+  cones are where the watchers are looking. Bamboo blocks them, so hide behind
+  it and go when the cone swings away. Get seen and it's back to your last
+  lantern.
 
 Every drill gives up to **three stars**, and the game remembers them for each
 kitten. If you're wearing Kotodama when you jack in, Lionheart offers a

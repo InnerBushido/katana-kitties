@@ -121,11 +121,17 @@ export class Drill {
   /** Fire a bolt from a layer point at her. */
   bolt(from, o = {}) {
     const p = this.p;
-    const to = {
+    return this.boltTo(from, {
       x: p.position.x - SIM.dx,
       y: p.position.y + (p.height ?? 2.6) * 0.5,
       z: p.position.z - SIM.dz,
-    };
+    }, o);
+  }
+
+  /** Fire a bolt from a layer point at another — the sentries' core fans a
+   *  burst of three, and only the middle one is aimed at her. */
+  boltTo(from, to, o = {}) {
+    const p = this.p;
     const b = new Bolt({
       parent: this.root, owner: p.index, from, to,
       onHit: (q, bolt) => {

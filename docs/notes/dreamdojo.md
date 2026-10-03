@@ -400,6 +400,163 @@ kata, per day or week. Progress ids look like `kata.daily.2026-10-03.L2`.
 - ONE SWING cut 4 with one press from a guessed spot.
 - COMBO 60 chained 6, then dropped to 0 after 2.5s idle.
 
+## Stage 4 — the far islands
+
+Four more islands and the roads to them. The two nearer ones (**Kudamono
+Storm** 果物 at +116°, **Sine Gauntlet** 正弦 at −116°) have bridges like the
+rest. The two far ones (**Holo-Sentries** 番兵 at +150°, **Bamboo
+Infiltration** 忍 at −150°, 250 out) are `cycle: true` in `islands.js` and get a
+**data highway** instead. Lionheart's line now names six and says "the far
+two? Take a LIGHT CYCLE!"
+
+### 光 The data highway and the light cycles (`dream/highway.js`)
+
+Richard's brief was "a tron-style motorcycle". A highway is laid in place of
+the bridge by `_raiseIsland` when the spec says `cycle`: a wide ribbon deck
+with a gold lane line, and a 光 pad at each end. Each pad is three units back
+onto solid floor, so getting off is never getting off onto the seam.
+
+- **The highway is still a bridge.** A kitten can walk it, and a ride cut short
+  leaves her on a floor. The ride's path *is* the deck's own polyline, so it
+  never goes anywhere the deck is not (non-negotiable 4).
+- **A ride is cargo, like the griffin.** While she rides, `padFor` hands her
+  the dead pad, INTERACT is swallowed and no prompt shows. The highway sets her
+  position every frame after the players have ticked. `_leaveSim` stops a ride.
+- **Speed is a trapezoid:** 0.6s up, cruise at 55 u/s, 0.6s down. The road
+  arrives at exactly `L`, never past it. 185 units takes 3.9s, against 17s on
+  foot.
+- **The look has to read from BEHIND**, because that is where the camera
+  rides. The first cut was a dark box with torus wheels and a 1.1-tall trail
+  wall. All of it was edge-on to a chase camera, so a ride looked like a
+  kitten sliding along with two thin lines behind her. Now the cycle has:
+  - a lit fairing with its edges drawn;
+  - a tail-light bar;
+  - an under-glow on the deck;
+  - a trail that lies flat on the road as well as standing up.
+
+  She sits `SEAT` (0.5) above the deck. The cycle lives in the layer, not in
+  her group.
+
+### 果物 Kudamono Storm (`dream/storm.js`)
+
+Holo-fruit is lobbed from six rim barrels. Cut it before it lands; leave the
+purple 毒 viruses (−3, a SIM hit, and a hint the first time). The run lasts
+45s. A throw comes every 1.4s at first and every 0.55s by the end, sometimes in
+pairs. Stars at 10 / 20 / 28 points.
+
+- **Every lob is aimed.** It is solved for a point within `LAND_R` (2.6) of
+  where she stands when it leaves the barrel, and pulled in if that would
+  miss the deck. A **ring on the floor marks the landing**, and it tightens as
+  the fruit falls. It is drawn at the point the lob was solved for.
+- **The arc is flat, and that was a fix.** A standing slash reaches 4.0
+  above her feet: the gate's `strikeHeight` 3.4 plus a fruit's `hitUp` 0.6.
+  The first cut (G 6, 2.3–2.8s) peaked near 5.8 and spent **0.36s** of its fall
+  in reach, so the header's 0.8s `CUT_WINDOW` was a claim the code did not
+  keep. Now G is 4, the flight lasts 2.1–2.6s, and the arc peaks at 4.5 at
+  most. Measured: ≥ 0.87s in reach over 300 throws. 2.2–2.7s measured 0.80,
+  right on the line, so the range was moved again rather than shaved.
+
+### 正弦 The Sine Gauntlet (`dream/sine.js`)
+
+Richard: "y = A·sin(ωt+φ) shown live". Four walled lanes, one kitten each.
+Each lane has six laser bars, and bar *n* stands at **y = C + A·sin(ωt − kn)**.
+At the top of its swing she walks under it. At the bottom she jumps it. In
+between, it hits her.
+
+| level | wave | the idea |
+| --- | --- | --- |
+| L1 | 2.0 + 1.6·sin(1.6t) | k = 0 — every bar together, a standing wave |
+| L2 | 2.0 + 1.6·sin(1.8t − 0.8n) | the crest travels down the lane slower than she walks: ride it |
+| L3 | 2.0 + 1.7·sin(2.4t + 0.9n) | the crest comes AT her, faster |
+
+- **Non-negotiable 1, the third time.** `barHeight` is the one function that
+  does all three of these:
+  - places each beam;
+  - draws its oscilloscope on the wall (the newest point *is* the bar's end,
+    so the wave flows out of the laser);
+  - prints `bar n=0: 2.0 + 1.6·sin(128°) = 3.25 → WALK UNDER` on her card.
+
+  `world-check` reads all three back: 0.005 apart at most, which is the
+  printed rounding.
+- **The thresholds come from the laser's own hit test.** Her body is feet+0.2
+  to feet+0.85·h, and the beam reaches 0.75. So `UNDER` is 3.0, and `JUMPABLE`
+  is 1.6 against a single hop's apex of 2.41.
+- **The stars are measured.** A search over (place, time) finds the fastest a
+  kitten walking 7 u/s **who never jumps** gets from the kiosk to the far end
+  untouched:
+
+  | level | fastest | 3★ |
+  | --- | --- | --- |
+  | L1 | 9.2s | 11.5s |
+  | L2 | 6.5s | 8.2s |
+  | L3 | 14.5s | 18s |
+
+  Riding the crest beats waiting for it, which is L2's lesson. Three stars is
+  about 1.25× the search, so it takes the wave *and* a jump. `world-check`
+  re-runs the search and holds the bands between 1.15× and 1.5×. Two stars on
+  a level opens the next.
+- A lane somebody is running refuses her sister in words and sends her to
+  another.
+
+### 番兵 Holo-Sentries (`dream/sentries.js`)
+
+The first thing in here that shoots back. Four sentries stand round a core in
+her own quarter of the island, one quarter per seat. Each fires a bolt at
+where she *was*, staggered so no two fire on one beat. The core sits under a
+shield until the last sentry is down, then fires fans of three. Stars at 80s /
+50s / 32s.
+
+- **Every shot is told first**: the eye swells and goes white for `TELL`
+  (0.7s). Measured: 0.70s for each sentry, first shots 0.65s apart.
+- **Richard's bar rule holds without being said.** The sentries take three hits
+  and wear no bar. The core takes eight and wears one.
+- **The shield refuses in words** and counts the sentries left.
+- `Drill.boltTo(from, to)` was added for the fan, since only its middle bolt
+  is aimed at her.
+
+### 忍 Bamboo Infiltration (`dream/bamboo.js`)
+
+Through a seeded holo-bamboo forest to the scroll 巻, past four watchers whose
+sight sweeps **θ(t) = θ₀ + S·sin(ωt + φ)** (a sine again, on purpose). Seen for
+0.35s and she is caught. That sends her back to her last lit lantern for +10s,
+and it says so. A catch costs time, never the run. The score is the clock
+plus 10 for each sighting, with stars at 90s / 55s / 36s. There is no time
+limit: leaving the island is the way out.
+
+- **The forest is generated from a seed and a route**, never by hand. Clumps
+  fill the island except a corridor round the route. `world-check` measures
+  1.2 units of clearance either side of a kitten.
+- **The first layout could not be crossed, and a search proved it.** The path
+  runs *along* each watcher's sweep. His cone is therefore always somewhere
+  between her and the far side, and passing through it takes about 2.2s
+  against a 0.35s catch. A greedy bot got stuck; a time-expanded search over
+  (place, time) found no way through at **any** start time. **The fix is one
+  hide per stretch**, a clump between each watcher and the middle of his path.
+  Its shadow is the stepping stone: in while he looks away, wait, then out
+  while he looks the other way. The search now finds the scroll unseen in
+  16–25s at a walk from every start time, and 3★ (36s) is 1.4× the worst.
+- **The lanterns were inside the cones** about 20% of the time in the first
+  layout. The checkpoint she was sent back to could catch her again. Each
+  sweep now stops `WATCH.margin` short of its stretch's corners. `world-check`
+  asserts the start, the kiosk and every lantern are **never** seen.
+- **The cone on the floor is clipped by the bamboo.** Each of its 28 rays is
+  `sightReach` long: the first clump `seenBy` would call in the way. So the
+  shadow behind a clump is drawn exactly where she is safe. `world-check`
+  reads every ray's end back through the mesh's transform: just inside is
+  seen, just past is not. That is 0 wrong of 540 rays, 274 of them cut short
+  by bamboo.
+
+### Stage 4 verified in the browser
+
+- A real E press on the hub pad rode the highway to the sentries. The ride
+  ended 0.00 from the far pad, and the ride back landed on the hub pad.
+- The Sine Gauntlet went live with its traces. Her card read the working for
+  bar 0 at 128°.
+- The storm lobbed fruit from the barrels. A sentry's eye was caught white,
+  the core was shielded, and a bolt took 12 off her SIM bar.
+- Bamboo: SPOTTED sent her to the start with +10s on her card. The first
+  lantern lit in her colour, and the cones lie clipped by the canes.
+
 ## Voice
 
 Lionheart has **no recorded lines yet**, and his bubbles are text only.
@@ -421,8 +578,8 @@ When a voice exists, register it in [voices.md](voices.md) with its id.
    Hall.~~ Built (stage 2, above).
 2. ~~**Tameshigiri** and **Kata Trace**. Kata Trace is the startup's core.~~
    Built (stage 3, above).
-3. **Bridges and light-cycles**, Kudamono Storm, Sine Gauntlet, Holo-Sentries,
-   and Bamboo Infiltration.
+3. ~~**Bridges and light-cycles**, Kudamono Storm, Sine Gauntlet, Holo-Sentries,
+   and Bamboo Infiltration.~~ Built (stage 4, above).
 4. **Arena School**, ranks (剣士 KENSHI and up), the holographic Fighter Card,
    the daily and weekly rotation, and the **Shadow Lionheart** boss.
 5. **VR kitten sheets** for all four kittens (the "do both" look: the visor in
