@@ -35292,6 +35292,540 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   scene.remove(sim.root);
 }
 
+/* ==========================================================================
+   THE DREAM DOJO, STAGE 4 — THE FAR ISLANDS
+   (systems/dream/highway.js, storm.js, sine.js, sentries.js, bamboo.js)
+
+   Every one of these is a claim that would look fine broken: a light cycle
+   that drops her off the deck, a fruit she could never have reached, a bar
+   whose printed y is not where the beam is, a sentry that fires with no
+   tell, and a bamboo route that cannot be crossed at all — which is what the
+   first layout was, found by the search below and not by a playtest.
+   ========================================================================== */
+{
+  console.log('\n--- the Dream Dojo: the far islands ---');
+  if (!globalThis.document) globalThis.document = domStub();
+  const DD = await import('../src/systems/dreamdojo.js');
+  const SW = await import('../src/world/simworld.js');
+  const TG = await import('../src/systems/dream/targets.js');
+  const PR = await import('../src/systems/dream/progress.js');
+  const ISL = await import('../src/systems/dream/islands.js');
+  const HW = await import('../src/systems/dream/highway.js');
+  const ST = await import('../src/systems/dream/storm.js');
+  const SN = await import('../src/systems/dream/sine.js');
+  const SE = await import('../src/systems/dream/sentries.js');
+  const BM = await import('../src/systems/dream/bamboo.js');
+  const RG = await import('../src/systems/dream/range.js');
+  const KT = await import('../src/systems/dream/kata.js');
+  const PL = await import('../src/entities/player.js');
+  const { isleSpot } = await import('../src/systems/dream/kiosk.js');
+  const dc = world.dojoCentre;
+  const L = DD.arcadeLayout(dc);
+  const scene = new THREE.Scene();
+  const sim = new SW.SimWorld(scene, {
+    dojo: { x: dc.x, y: dc.y, z: dc.z },
+    arcade: { x: DD.ARCADE.x, z: DD.ARCADE.z, y: DD.ARCADE.y, r: DD.ARCADE.r },
+    ports: L.tubes,
+  });
+  const fakeGame = {
+    world, scene, players: [], toasts: [], sounds: [],
+    toast(t) { this.toasts.push(t); }, sfx(s) { this.sounds.push(s); },
+    input: { promptFor: () => 'E' },
+  };
+  const D = new DD.DreamDojo(fakeGame);
+  D.layout = L;
+  D.sim = sim;
+  D.shards = { burst() {} };
+  D.progress = new PR.DreamProgress(null);
+  D.isles = {};
+  D.highway = new HW.DataHighway(D);
+  const KEYS = ['gallery', 'hall', 'range', 'kata', 'storm', 'sine', 'sentries', 'bamboo'];
+  for (const key of KEYS) D.isles[key] = D._raiseIsland(key);
+  D.range = new RG.TameshigiriRange(D, D.isles.range);
+  D.kata = new KT.KataHall(D, D.isles.kata);
+  D.storm = new ST.KudamonoStorm(D, D.isles.storm);
+  D.sine = new SN.SineGauntlet(D, D.isles.sine);
+  D.sentries = new SE.HoloSentries(D, D.isles.sentries);
+  D.bamboo = new BM.BambooInfiltration(D, D.isles.bamboo);
+  const named = (name, list) => list.map((s, i) => Object.assign(s, { name: `${name} ${i}` }));
+  D.stations = [...named('range', D.range.stations), ...named('kata', D.kata.stations), ...named('storm', D.storm.stations),
+    ...named('sine', D.sine.stations), ...named('sentries', D.sentries.stations), ...named('bamboo', D.bamboo.stations),
+    ...named('highway', D.highway.stations)];
+  const spawn = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
+  const mk = (index) => new PL.Player({ texture: new THREE.Texture(), index, spawn: spawn.clone(), cols: 8, rows: 4, mirror: false });
+  const her = mk(0);
+  const sis = mk(1);
+  fakeGame.players = [her, sis];
+  her.realm = 'sim'; sis.realm = 'sim';
+  D.st[0] = { phase: 'sim', t: 0 };
+  D.st[1] = { phase: 'sim', t: 0 };
+  const put = (p, q, y) => { p.position.set(q.x + SW.SIM.dx, y ?? q.y, q.z + SW.SIM.dz); p.velocity?.set(0, 0, 0); };
+  const floorAt = (x, z, y) => sim.heightAt(x + SW.SIM.dx, z + SW.SIM.dz, y + 0.45);
+
+  /* --- the map: eight islands, every crossing clear of every other island --- */
+  {
+    const ddSrc = readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8');
+    const raised = /for \(const key of \[([^\]]+)\]\)[^\n]*\n\s*this\.isles\[key\] = this\._raiseIsland/.exec(ddSrc)?.[1] ?? '';
+    ok('the real Dream Dojo raises all eight islands this block checks', KEYS.every((k) => raised.includes(`'${k}'`)), raised);
+    ok('...and builds a module on each of the four new ones, with its pads in the station list',
+      ['KudamonoStorm', 'SineGauntlet', 'HoloSentries', 'BambooInfiltration'].every((c) => ddSrc.includes(`new ${c}(this, this.isles.`))
+      && ['storm', 'sine', 'sentries', 'bamboo', 'highway'].every((k) => ddSrc.includes(`...this.${k}.stations`)));
+    ok('光 the far two are reached by a data highway, the near six by a bridge',
+      D.highway.roads.map((r) => r.key).sort().join() === 'bamboo,sentries'
+      && KEYS.every((k) => !!ISL.ISLANDS[k].cycle === D.highway.roads.some((r) => r.key === k)),
+      D.highway.roads.map((r) => r.key).join());
+    let worst = Infinity;
+    let where = '';
+    for (const key of KEYS) {
+      const I = D.isles[key];
+      const from = { x: dc.x + I.fwd.x * 47, z: dc.z + I.fwd.z * 47 };
+      const to = { x: I.x - I.fwd.x * (I.r - 2), z: I.z - I.fwd.z * (I.r - 2) };
+      for (let u = 0; u <= 1; u += 0.01) {
+        const x = from.x + (to.x - from.x) * u; const z = from.z + (to.z - from.z) * u;
+        for (const other of KEYS) {
+          if (other === key) continue;
+          const O = D.isles[other];
+          const gap = Math.hypot(x - O.x, z - O.z) - O.r - 3.2;
+          if (gap < worst) { worst = gap; where = `${key} over ${other}`; }
+        }
+      }
+      for (const other of KEYS) {
+        if (other === key) continue;
+        const O = D.isles[other];
+        const gap = Math.hypot(I.x - O.x, I.z - O.z) - I.r - O.r;
+        if (gap < worst) { worst = gap; where = `${key} and ${other}`; }
+      }
+    }
+    ok('...and no island, bridge or highway crosses another island', worst > 2, `${worst.toFixed(1)} (${where})`);
+    // Every station on a floor, and no two pads overlapping.
+    let off = []; let close = Infinity; let pair = '';
+    for (const s of D.stations) if (!floorAt(s.x, s.z, s.y)) off.push(`${s.x.toFixed(0)},${s.z.toFixed(0)}`);
+    for (let i = 0; i < D.stations.length; i++) for (let j = i + 1; j < D.stations.length; j++) {
+      const a = D.stations[i]; const b = D.stations[j];
+      const g = Math.hypot(a.x - b.x, a.z - b.z) - a.r - b.r;
+      if (g < close) { close = g; pair = `${a.name} / ${b.name}`; }
+    }
+    ok('every pad on the far islands stands on a floor', off.length === 0, off.join(' '));
+    ok('...and no two pads overlap — the first cut put a light-cycle pad on top of two kiosks',
+      close > 0.4, `${close.toFixed(2)} (${pair})`);
+  }
+
+  /* --- 光 a highway is a bridge: walked end to end with nothing missing --- */
+  for (const road of D.highway.roads) {
+    let gap = -1; let step = 0; let y = road.A.y;
+    for (let s = 0; s <= road.length; s += 0.4) {
+      const q = HW.pointAt(road.path, road.cum, s);
+      const h = floorAt(q.x, q.z, y);
+      if (!h) { if (gap < 0) gap = s; continue; }
+      step = Math.max(step, Math.abs(h.y - y));
+      y = h.y;
+    }
+    ok(`光 the ${road.key} highway is walked end to end without a gap or a ledge`, gap < 0 && step <= 0.4,
+      gap >= 0 ? `gap at ${gap.toFixed(1)} of ${road.length.toFixed(0)}` : `worst step ${step.toFixed(2)}`);
+  }
+
+  /* --- 光 a ride: on the deck all the way, and off at the far pad --- */
+  {
+    const road = D.highway.roads.find((r) => r.key === 'bamboo');
+    const run = (way, cutAt = Infinity) => {
+      const start = way > 0 ? road.A : road.B;
+      put(her, start);
+      D.highway.ride(her, road, way);
+      const dead = D.padFor(0, { live: true }, { dead: true })?.dead === true;
+      const swallowed = D.interact(her) === true && D.prompt(her, 'E') === null;
+      let t = 0; let offDeck = 0; let nan = false; let fell = 0;
+      while (D.highway.riding(0) && t < 30) {
+        D.highway.update(1 / 60);
+        t += 1 / 60;
+        const q = her.position;
+        if (!Number.isFinite(q.x + q.y + q.z)) nan = true;
+        const h = floorAt(q.x - SW.SIM.dx, q.z - SW.SIM.dz, q.y - HW.SEAT);
+        if (!h) offDeck++;
+        else if (D.highway.riding(0)) fell = Math.max(fell, Math.abs(h.y + HW.SEAT - q.y));
+        if (t >= cutAt) D._leaveSim(her);
+      }
+      const end = way > 0 ? road.B : road.A;
+      return { t, offDeck, nan, fell, dead, swallowed,
+        miss: Math.hypot(her.position.x - SW.SIM.dx - end.x, her.position.z - SW.SIM.dz - end.z),
+        cycleGone: !sim.root.getObjectByName('light-cycle') };
+    };
+    const out = run(1);
+    ok('光 a light-cycle ride never leaves the deck, never NaNs, and stops at the far pad',
+      out.offDeck === 0 && !out.nan && out.fell < 0.05 && out.miss < 0.05 && out.cycleGone,
+      `off ${out.offDeck} nan ${out.nan} fell ${out.fell.toFixed(2)} miss ${out.miss.toFixed(2)}`);
+    ok('...in about the time its card promises, and well under the walk',
+      Math.abs(out.t - HW.rideTime(road.length)) < 0.05 && out.t < road.length / 10.5 / 2,
+      `${out.t.toFixed(2)}s vs walk ${(road.length / 10.5).toFixed(1)}s`);
+    ok('...while she rides her stick is dead, INTERACT is swallowed and no prompt shows', out.dead && out.swallowed);
+    const back = run(-1);
+    ok('...and back again lands on the hub pad', back.miss < 0.05 && back.offDeck === 0, back.miss.toFixed(2));
+    D.st[0] = { phase: 'sim', t: 0 };
+    const cut = run(1, 1.5);
+    D.st[0] = { phase: 'sim', t: 0 };
+    ok('...and a ride cut short (jacked out mid-highway) leaves her ON the highway, off the cycle',
+      cut.offDeck === 0 && !D.highway.riding(0) && cut.cycleGone && cut.t < 2,
+      `${cut.t.toFixed(2)} ${D.highway.riding(0)}`);
+    ok('the ride is a trapezoid of speed: 0 at the start, the whole road at the end, never past it',
+      HW.rideDistance(0, 4, 200) === 0 && Math.abs(HW.rideDistance(4, 4, 200) - 200) < 1e-9
+      && HW.rideDistance(5, 4, 200) === 200
+      && [...Array(41).keys()].every((k) => HW.rideDistance(k / 10, 4, 200) <= HW.rideDistance((k + 1) / 10, 4, 200) + 1e-9));
+  }
+
+  /* --- 果物 every lob lands where it was aimed, on the deck, slowly enough --- */
+  {
+    const I = D.isles.storm;
+    put(her, { x: I.x, z: I.z, y: I.y });
+    D.storm.kiosk.station.interact(her);
+    const d = D.drills[0];
+    d.update(1.5);
+    ok('果物 the storm starts from its kiosk', d.state === 'live', d.state);
+    d.spec.tick = () => {};          // only the throws below, not the drill's own
+    let worstMiss = 0; let offIsle = 0; let shortWindow = Infinity; let n = 0; let markMiss = 0; let markLeft = 0;
+    for (let k = 0; k < 300; k++) {
+      const a = (k * 2.399) % (Math.PI * 2); const r = Math.sqrt((k % 17) / 17) * (I.r - 1);
+      put(her, { x: I.x + Math.cos(a) * r, z: I.z + Math.sin(a) * r, y: I.y });
+      const kind = ['momo', 'mikan', 'nashi', 'suika', 'virus'][k % 5];
+      const f = D.storm.throwAt(d, kind);
+      // In reach of a standing slash: the gate's own height test (targets.js).
+      const reachY = PL.COMBAT.strikeHeight + f.hitUp;
+      let low = 0; let wasLow = false;
+      for (let s = 0; s < 600 && f.live; s++) {
+        f.update(1 / 120);
+        // Only the fall that ends in the landing — not the climb out of the barrel.
+        if (f.vel.y < 0 && f.local.y - I.y <= reachY) { low += 1 / 120; wasLow = true; }
+      }
+      n++;
+      worstMiss = Math.max(worstMiss, Math.hypot(f.local.x - f.o.aim.x, f.local.z - f.o.aim.z));
+      // The ring on the floor is where it came down, inside the ring's hole.
+      markMiss = Math.max(markMiss, Math.hypot(f.local.x - f.mark.position.x, f.local.z - f.mark.position.z));
+      if (Math.hypot(f.o.aim.x - I.x, f.o.aim.z - I.z) > I.r - 1.9) offIsle++;
+      shortWindow = Math.min(shortWindow, low);
+      D.gate.remove(f); f.dispose(); d.targets.splice(d.targets.indexOf(f), 1);
+      if (f.mark.parent) markLeft++;
+    }
+    ok('果物 every fruit marks where it will land, and comes down inside the mark', markMiss < 0.6, markMiss.toFixed(3));
+    ok('...and the mark goes with the fruit', markLeft === 0, String(markLeft));
+    ok(`果物 ${n} lobs land where they were aimed`, worstMiss < 0.3, worstMiss.toFixed(3));
+    ok('...never off the island, from anywhere she stands', offIsle === 0, String(offIsle));
+    ok('...and every one spends at least CUT_WINDOW low enough to slash', shortWindow >= ST.CUT_WINDOW,
+      `${shortWindow.toFixed(2)}s`);
+    // A real cut, through the real gate, scores; a virus cut costs and says so.
+    put(her, { x: I.x, z: I.z, y: I.y });
+    her.facing = 0;
+    const f = d.target(ST.Fruit, { x: I.x, y: I.y + 1.2, z: I.z + 1.2, kind: 'momo', vel: { x: 0, y: 0, z: 0 }, floorY: I.y - 50,
+      onBreak: (t) => d.spec.onCut(d, t) });
+    D.onStrike(her, 'stand', PL.BASE_REACH, { x: 0, y: 1 });
+    ok('果物 a fruit in front of her blade is cut through the training gate, and scores', !f.live && d.points === 1,
+      `${f.live} ${d.points}`);
+    d.points = 5;
+    D.t += 10;
+    fakeGame.toasts.length = 0;
+    d.spec.onCut(d, { kind: ST.FRUIT.virus });
+    ok('果物 a virus cut is minus three, and she is told why', d.points === 2 && fakeGame.toasts.some((t) => /VIRUS/.test(t)),
+      `${d.points} ${fakeGame.toasts.join(' | ')}`);
+    d.dispose(); D.drills[0] = null;
+  }
+
+  /* --- 正弦 the printed y is the beam and the trace --- */
+  {
+    const I = D.isles.sine;
+    const lane = D.sine.lanes[0];
+    put(her, D.sine.kiosks[0]);
+    D.sine.kiosks[0].station.interact(her);
+    const d = D.drills[0];
+    let worst = 0; let cardOk = true;
+    for (let f = 0; f < 600; f++) {
+      d.update(1 / 60);
+      if (d.state !== 'live') continue;
+      for (let n = 0; n < SN.GATES.length; n++) {
+        const w = SN.gateWorking(d.spec.level, d.t, n);
+        const printed = Number(/= ([-\d.]+)$/.exec(w.text)?.[1]);
+        worst = Math.max(worst, Math.abs(printed - (d.bars[n].a.y - I.y)), Math.abs(d.bars[n].a.y - d.bars[n].b.y),
+          Math.abs(d.traces[n].dot.position.y - d.bars[n].a.y));
+      }
+      const lines = d.spec.paint(d).map((x) => x.text);
+      if (!lines.includes(SN.gateWorking(d.spec.level, d.t, 0).text)) cardOk = false;
+    }
+    ok('正弦 every bar\'s printed y, its beam and its oscilloscope dot are the same number', worst < 0.006, worst.toFixed(4));
+    ok('...and her card shows the working for the next bar, as of this frame', cardOk);
+    // Somebody else's lane says so.
+    D.t += 10;
+    fakeGame.toasts.length = 0;
+    put(sis, D.sine.kiosks[0]);
+    const took = D.sine.begin(sis, lane);
+    ok('正弦 a lane somebody is running refuses her sister in words', took === false && !D.drills[1]
+      && fakeGame.toasts.some((t) => /another/.test(t)), fakeGame.toasts.join(' | '));
+    // High bar: walk under. Low bar at the top of a jump: clear. Middle: hit.
+    const B = d.bars[0];
+    const g = SN.GATES[0];
+    const at = (y) => { B.a.y = I.y + y; B.b.y = I.y + y; };
+    const q = isleSpot(I, g, lane.c);
+    put(her, { x: q.x, z: q.z, y: I.y });
+    at(SN.UNDER);
+    const under = B.distTo(her) >= B.thick + 0.45;
+    at(2.0);
+    const mid = B.distTo(her) < B.thick + 0.45;
+    const src = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+    const jv = Number(/const JUMP_V = ([\d.]+)/.exec(src)?.[1]);
+    const gr = Number(/const GRAVITY = ([\d.]+)/.exec(src)?.[1]);
+    const apex = jv ** 2 / (2 * gr);
+    put(her, { x: q.x, z: q.z, y: I.y + apex });
+    at(SN.JUMPABLE);
+    const jump = B.distTo(her) >= B.thick + 0.45;
+    ok('正弦 a bar at UNDER is walked under, one at JUMPABLE is jumped at the top of a hop, one at the middle hits',
+      under && jump && mid, `${under} ${jump} ${mid} apex ${apex.toFixed(2)}`);
+    ok('...and every level swings across all three, so all three answers come up',
+      SN.LEVELS.every((Lv) => Lv.C + Lv.A >= SN.UNDER && Lv.C - Lv.A <= SN.JUMPABLE));
+    d.dispose(); D.drills[0] = null;
+    // The walls: a kitten (radius 0.75) cannot pass between two posts.
+    const posts = SN.laneWallPosts(I);
+    let gapMax = 0;
+    for (let i = 1; i < posts.length; i++) {
+      if (posts[i].b !== posts[i - 1].b) continue;
+      gapMax = Math.max(gapMax, Math.hypot(posts[i].x - posts[i - 1].x, posts[i].z - posts[i - 1].z) - 2 * posts[i].r);
+    }
+    ok('正弦 the lane walls have no gap a kitten fits through', gapMax < 1.2, gapMax.toFixed(2));
+    ok('...and run the length of every bar, so no bar can be walked round', SN.GATES.every((a) => a > SN.LANE.from && a < SN.LANE.to));
+  }
+
+  /* --- 正弦 the stars are measured: a patient walker who never jumps --- */
+  {
+    const v = 7; const dt = 1 / 60; const ds = v * dt;
+    const A0 = -16; const A1 = SN.LANE.to + 0.6;
+    const N = Math.ceil((A1 - A0) / ds) + 1;
+    const BODY = 0.85 * 2.6; const REACH = 0.3 + 0.45;
+    const hit = (Lv, t, a) => SN.GATES.some((gt, n) => {
+      const y = SN.barHeight(Lv, t, n);
+      const dy = y > BODY ? y - BODY : (y < 0.2 ? 0.2 - y : 0);
+      return Math.hypot(a - gt, dy) < REACH;
+    });
+    const out = [];
+    SN.LEVELS.forEach((Lv, li) => {
+      let reach = new Uint8Array(N); reach[0] = 1; let T = null;
+      for (let k = 1; k < 90 / dt && T == null; k++) {
+        const t = k * dt; const nx = new Uint8Array(N);
+        for (let i = 0; i < N; i++) if (reach[i]) for (const j of [i - 1, i, i + 1]) if (j >= 0 && j < N) nx[j] = 1;
+        for (let i = 0; i < N; i++) if (nx[i] && hit(Lv, t, A0 + i * ds)) nx[i] = 0;
+        reach = nx;
+        if (reach[N - 1]) T = t;
+      }
+      out.push({ li, T, b3: SN.SINE_BANDS[li][2] });
+    });
+    ok('正弦 every level can be walked untouched without ever jumping', out.every((o) => o.T != null),
+      out.map((o) => `L${o.li + 1} ${o.T?.toFixed(1)}s`).join(' '));
+    ok('...and three stars sits 1.15-1.5x above that walker, so it takes the wave AND a jump',
+      out.every((o) => o.T && o.b3 >= o.T * 1.15 && o.b3 <= o.T * 1.5),
+      out.map((o) => `L${o.li + 1} ${o.b3}/${o.T?.toFixed(1)}`).join(' '));
+    ok('...and the travelling crest of L2 is faster to ride than L1\'s standing wave is to wait out', out[1].T < out[0].T,
+      `${out[1].T?.toFixed(1)} vs ${out[0].T?.toFixed(1)}`);
+  }
+
+  /* --- 番兵 sentries: bars only where Richard's rule says, a tell, a shield --- */
+  {
+    const I = D.isles.sentries;
+    put(her, D.sentries.kiosk);
+    D.sentries.kiosk.station.interact(her);
+    const d = D.drills[0];
+    d.update(1.3);
+    ok('番兵 the sentries start from their kiosk', d.state === 'live', d.state);
+    ok('番兵 three-hit sentries wear no bar; the eight-hit core does', d.sentries.every((s) => !s.bar) && !!d.core.bar);
+    // Stand her where she can be shot, and time each sentry's tell before it fires.
+    const c = d.spot(...SE.CORE_AT);
+    put(her, { x: c.x, z: c.z - 4, y: I.y });
+    const firstFire = []; const tellLen = [];
+    const whiteSince = new Map();
+    for (let f = 0; f < 60 * 8; f++) {
+      const before = d.bolts.length;
+      const pre = d.sentries.map((s) => s.clock);
+      d.update(1 / 60);
+      d.sentries.forEach((s, i) => {
+        if (s.eye.material.color.getHex() === 0xffffff && !whiteSince.has(i)) whiteSince.set(i, d.t);
+        if (s.clock < pre[i] && firstFire[i] == null) { firstFire[i] = d.t; tellLen[i] = d.t - (whiteSince.get(i) ?? d.t); }
+      });
+      if (d.bolts.length < before) { /* hit or expired */ }
+    }
+    ok('番兵 every sentry\'s eye turns white at least half a second before it fires',
+      tellLen.length === 4 && tellLen.every((x) => x >= 0.5), tellLen.map((x) => x.toFixed(2)).join(' '));
+    const ff = [...firstFire].sort((a, b) => a - b);
+    ok('...and no two fire on the same beat', ff.every((x, i) => i === 0 || x - ff[i - 1] >= 0.4), ff.map((x) => x.toFixed(2)).join(' '));
+    ok('...and their shots were fired at her', fakeGame.sounds.includes('zap'));
+    // The shield refuses in words; the core falls after the sentries.
+    D.t += 10;
+    fakeGame.toasts.length = 0;
+    const blow = { kind: 'stand', dir: { x: 0, y: 1 } };
+    d.core.hit(blow);
+    ok('番兵 the core under its shield refuses a blade, and says how many sentries are left',
+      d.core.hp === SE.CORE_HITS && fakeGame.toasts.some((t) => /4 left/.test(t)), fakeGame.toasts.join(' | '));
+    for (const s of d.sentries) for (let k = 0; k < SE.SENTRY_HITS; k++) s.hit(blow);
+    d.update(1 / 60);
+    ok('...and drops once the four are down', !d.core.shield.visible && d.count === 4, `${d.core.shield.visible} ${d.count}`);
+    // The core fires a fan of three.
+    const nb = d.bolts.length;
+    d.core.clock = d.core.period - 1 / 120;
+    d.update(1 / 60);
+    ok('番兵 the bare core fires a fan of three', d.bolts.length - nb === 3, String(d.bolts.length - nb));
+    for (let k = 0; k < SE.CORE_HITS; k++) d.core.hit(blow);
+    ok('...and eight blows on it clears the island', d.state === 'won', d.state);
+    d.dispose(); D.drills[0] = null;
+    // Four sisters, four quarters: all on the island, none on another, none on the kiosk.
+    const pts = [];
+    for (let k = 0; k < 4; k++) {
+      const fl = D.sentries.floor({ index: k });
+      const sp = (a, b) => ({ x: fl.x + fl.fwd.x * a - fl.fwd.z * b, z: fl.z + fl.fwd.z * a + fl.fwd.x * b, k });
+      for (const [a, b] of [...SE.SENTRY_AT, SE.CORE_AT]) pts.push(sp(a, b));
+    }
+    let close = Infinity;
+    for (const a of pts) for (const b of pts) if (a.k !== b.k) close = Math.min(close, Math.hypot(a.x - b.x, a.z - b.z));
+    const far = Math.max(...pts.map((q) => Math.hypot(q.x - I.x, q.z - I.z)));
+    const onPad = Math.min(...pts.map((q) => Math.hypot(q.x - D.sentries.kiosk.x, q.z - D.sentries.kiosk.z)));
+    ok('番兵 four kittens get four rings of sentries, apart, on the island, off the kiosk',
+      close > 3 && far < I.r - 2 && onPad > 3, `${close.toFixed(1)} ${far.toFixed(1)}/${I.r} ${onPad.toFixed(1)}`);
+  }
+
+  /* --- 忍 bamboo: the forest leaves the route, and the route can be crossed --- */
+  {
+    const I = D.isles.bamboo;
+    const Ly = D.bamboo.layout;
+    const route = [[-(I.r + 2), 0], ...BM.ROUTE];
+    const segD = (a, b) => {
+      let best = Infinity;
+      for (let i = 0; i < route.length - 1; i++) {
+        const [ax, az] = route[i]; const [bx, bz] = route[i + 1];
+        const ex = bx - ax; const ez = bz - az;
+        const t = Math.max(0, Math.min(1, ((a - ax) * ex + (b - az) * ez) / (ex * ex + ez * ez)));
+        best = Math.min(best, Math.hypot(a - ax - ex * t, b - az - ez * t));
+      }
+      return best;
+    };
+    const tight = Math.min(...Ly.clumps.map((c) => segD(c.a, c.b) - BM.CLUMP_R));
+    ok('忍 no bamboo stands on the route — a kitten fits down it everywhere', tight > 0.75 + 0.2, tight.toFixed(2));
+    ok('...and the forest is a forest', Ly.clumps.length > 80, String(Ly.clumps.length));
+    ok('...and every stretch has its hide', Ly.clumps.filter((c) => c.hide).length === Ly.watchers.length);
+    // Sight: blocked by a clump, bounded by the cone and the range.
+    const w = { a: 0, b: 0, base: 0, S: 0, w: 1, ph: 0 };
+    ok('忍 a watcher sees down his cone, not past it, not beyond his range, not through bamboo',
+      BM.seenBy(w, 0, 6, 0, []) && !BM.seenBy(w, 0, 6, 0, [{ a: 3, b: 0 }])
+      && !BM.seenBy(w, 0, 6, 4, []) && !BM.seenBy(w, 0, BM.WATCH.range + 0.5, 0, []) && !BM.seenBy(w, 0, -6, 0, []));
+    // The cone drawn is the cone asked.
+    let coneOff = 0;
+    for (const t of [0, 1.3, 2.9, 7.1]) {
+      D.bamboo.update(0, t);
+      for (const W of D.bamboo.watchers) {
+        W.grp.updateMatrixWorld(true);
+        const dir = new THREE.Vector3(1, 0, 0).transformDirection(W.grp.matrixWorld);
+        const f = I.fwd;
+        const ang = Math.atan2(-dir.x * f.z + dir.z * f.x, dir.x * f.x + dir.z * f.z);
+        const want = BM.lookAngle(W, t);
+        coneOff = Math.max(coneOff, Math.abs(Math.atan2(Math.sin(ang - want), Math.cos(ang - want))));
+      }
+    }
+    ok('忍 the cone on the floor points where `seenBy` is looking, every frame', coneOff < 1e-6, coneOff.toExponential(1));
+    // ...and each of its rays stops where `seenBy` stops seeing: just short of
+    // the drawn end is seen, just past it is not (the shadow is honest).
+    let liar = 0; let rays = 0; let shadows = 0;
+    for (const t of [0, 1.3, 2.9, 7.1, 11.4]) {
+      D.bamboo.update(0, t);
+      sim.root.updateMatrixWorld(true);
+      for (const W of D.bamboo.watchers) {
+        const pos = W.cone.geometry.attributes.position;
+        const f = I.fwd;
+        for (let j = 1; j < BM.CONE_RAYS; j++) {
+          // The ray's end as DRAWN, through the mesh's own transform, in island terms.
+          const e = sim.root.worldToLocal(W.cone.localToWorld(new THREE.Vector3(pos.getX(j + 1), pos.getY(j + 1), pos.getZ(j + 1))));
+          const ex = e.x - I.x; const ez = e.z - I.z;
+          const ea = ex * f.x + ez * f.z - W.a; const eb = -ex * f.z + ez * f.x - W.b;
+          const r = Math.hypot(ea, eb);
+          const pt = (s) => [W.a + (ea / r) * s, W.b + (eb / r) * s];
+          rays++;
+          if (!BM.seenBy(W, t, ...pt(r - 0.05), Ly.clumps)) liar++;
+          if (r < BM.WATCH.range - 0.05) {
+            shadows++;
+            if (BM.seenBy(W, t, ...pt(r + 0.05), Ly.clumps)) liar++;
+          }
+        }
+      }
+    }
+    ok('...and every ray of it ends where his sight does, so the shadow behind the bamboo is drawn true',
+      liar === 0 && shadows > 0, `${liar} wrong of ${rays} rays, ${shadows} cut short by bamboo`);
+    // Safe spots are safe.
+    const safe = [Ly.start, ...Ly.lanterns, { a: BM.KIOSK_AT[0], b: BM.KIOSK_AT[1] }];
+    let seenSafe = 0;
+    for (let t = 0; t < 40; t += 0.02) for (const s of safe) for (const W of Ly.watchers) if (BM.seenBy(W, t, s.a, s.b, Ly.clumps)) seenSafe++;
+    ok('忍 the start, the kiosk and every lantern are never seen — she is never caught where she is sent back to',
+      seenSafe === 0, String(seenSafe));
+    // The search: (place on the route, time), stepping on, waiting or stepping back,
+    // never seen. The first layout had no way through at ANY start time.
+    const v = 7; const dt = 1 / 20; const ds = v * dt;
+    const pts = [];
+    for (let i = 0; i < BM.ROUTE.length - 1; i++) {
+      const [a0, b0] = BM.ROUTE[i]; const [a1, b1] = BM.ROUTE[i + 1];
+      const n = Math.ceil(Math.hypot(a1 - a0, b1 - b0) / ds);
+      for (let k = 0; k < n; k++) pts.push([a0 + (a1 - a0) * k / n, b0 + (b1 - b0) * k / n]);
+    }
+    pts.push(BM.ROUTE[BM.ROUTE.length - 1]);
+    const N = pts.length;
+    const solve = (t0) => {
+      let reach = new Uint8Array(N); reach[0] = 1;
+      for (let k = 1; k <= 120 / dt; k++) {
+        const t = t0 + k * dt; const nx = new Uint8Array(N);
+        for (let i = 0; i < N; i++) if (reach[i]) for (const j of [i - 1, i, i + 1]) if (j >= 0 && j < N) nx[j] = 1;
+        for (let i = 0; i < N; i++) if (nx[i] && Ly.watchers.some((W) => BM.seenBy(W, t, pts[i][0], pts[i][1], Ly.clumps))) nx[i] = 0;
+        reach = nx;
+        if (reach[N - 1]) return k * dt;
+      }
+      return null;
+    };
+    const times = [0, 2.3, 5, 7.7, 12, 19, 33].map(solve);
+    const worstT = Math.max(...times.map((x) => x ?? Infinity));
+    ok('忍 the scroll can be reached unseen at a walk, whenever she starts', times.every((x) => x != null),
+      times.map((x) => x?.toFixed(1)).join(' '));
+    ok('...and three stars sits 1.2-1.6x above the best sneak from the worst start',
+      BM.BAMBOO_BANDS[2] >= worstT * 1.2 && BM.BAMBOO_BANDS[2] <= worstT * 1.6, `${BM.BAMBOO_BANDS[2]} vs ${worstT.toFixed(1)}`);
+    // Spotted: back to her lantern, on the deck, and told.
+    put(her, D.bamboo.kiosk);
+    D.bamboo.kiosk.station.interact(her);
+    const d = D.drills[0];
+    d.update(1.3);
+    const L1 = Ly.lanterns[0];
+    const lq = isleSpot(I, L1.a, L1.b);
+    put(her, { x: lq.x, z: lq.z, y: I.y });
+    d.update(1 / 60);
+    ok('忍 walking onto a lantern lights it', d.lit === 0, String(d.lit));
+    // Find a moment and a place in the open that watcher 1 sees.
+    let caughtAt = null;
+    for (let t = 0; t < 20 && !caughtAt; t += 0.05) {
+      for (let u = 0.1; u < 0.95 && !caughtAt; u += 0.05) {
+        const [a0, b0] = BM.ROUTE[1]; const [a1, b1] = BM.ROUTE[2];
+        const a = a0 + (a1 - a0) * u; const b = b0 + (b1 - b0) * u;
+        let ok2 = true;
+        for (let h = 0; h <= 0.5; h += 0.05) if (!BM.seenBy(Ly.watchers[1], t + h, a, b, Ly.clumps)) ok2 = false;
+        if (ok2) caughtAt = { t, a, b };
+      }
+    }
+    D.t += 10;
+    fakeGame.toasts.length = 0;
+    const cq = isleSpot(I, caughtAt.a, caughtAt.b);
+    put(her, { x: cq.x, z: cq.z, y: I.y });
+    for (let k = 0; k < 30 && d.spotted === 0; k++) {
+      D.bamboo.update(1 / 60, caughtAt.t + k / 60);
+      d.update(1 / 60);
+    }
+    const back = Math.hypot(her.position.x - SW.SIM.dx - lq.x, her.position.z - SW.SIM.dz - lq.z);
+    ok('忍 seen in the open: caught within half a second, sent back to her lantern, on the floor, and told',
+      d.spotted === 1 && back < 0.01 && !!floorAt(lq.x, lq.z, I.y) && fakeGame.toasts.some((t) => /SPOTTED/.test(t)),
+      `${d.spotted} ${back.toFixed(2)} ${fakeGame.toasts.join(' | ')}`);
+    ok('...and it costs time, not the run', d.state === 'live');
+    const sq = isleSpot(I, Ly.scroll.a, Ly.scroll.b);
+    put(her, { x: sq.x, z: sq.z, y: I.y });
+    const tNow = d.t;
+    d.update(1 / 60);
+    ok('忍 reaching the scroll wins, and the score is the clock plus ten a sighting',
+      d.state === 'won' && Math.abs(d.spec.score(d) - (tNow + 1 / 60 + BM.SPOT_COST)) < 1e-6, `${d.state} ${d.spec.score(d)}`);
+    d.dispose(); D.drills[0] = null;
+  }
+  scene.remove(sim.root);
+}
+
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150
    and 71) because it was only ever counted by hand — and counting the output by
    hand gets it wrong too: labels longer than the 42-char pad push the status

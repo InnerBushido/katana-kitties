@@ -515,13 +515,28 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
-**The Dream Dojo, Lionheart's VR arcade — stage 3 of 5.** Stage 1 is on
-branch `feature/dream-dojo-vr`, stage 2 on `feature/dream-dojo-gallery`, and
-stage 3 on `feature/dream-dojo-kata`. All three are merged into local main and
-not pushed.
+**The Dream Dojo, Lionheart's VR arcade — stage 4 of 5.** Stage 1 is on
+branch `feature/dream-dojo-vr`, stage 2 on `feature/dream-dojo-gallery`,
+stage 3 on `feature/dream-dojo-kata`, and stage 4 on
+`feature/dream-dojo-highway`. All four are merged into local main and not
+pushed.
 [dreamdojo.md](docs/notes/dreamdojo.md) has the design and Richard's brief,
 quoted.
 
+- **Stage 4 built:**
+  - The **data highways and light cycles** to the two far islands.
+  - **Kudamono Storm**: aimed lobs, a landing ring, and viruses.
+  - The **Sine Gauntlet**: y = C + A·sin(ωt − kn) as six bars, a trace and
+    her card, all from one function, on three levels.
+  - **Holo-Sentries**: a tell on every shot and a shielded core.
+  - **Bamboo Infiltration**: sweeping sight cones clipped by the bamboo, hides
+    and lanterns.
+  - Every star band is measured by a search in `world-check`.
+- **Stage 4 verified in the browser:**
+  - A real E press rode the highway and back.
+  - Every drill went live from its kiosk.
+  - A sentry hit her.
+  - Bamboo caught her and sent her back to the start.
 - **Stage 3 built:**
   - The **Tameshigiri Range**: ONE SWING, COMBO 60, and CLEAN CUT (cut at
     (cos θ, sin θ), with the card's numbers and the drawn line from one
