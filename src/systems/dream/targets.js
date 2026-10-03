@@ -43,6 +43,9 @@ export class TrainingGate {
     this.targets = new Set();
     /** Every hologram that can be MARKED — `_arenaTargetFor`'s list in here. */
     this.fighters = [];
+    /** One per call: "most cut in ONE swing" needs to know which blows were
+     *  the same swing, and a Cross Slash is three calls, so three swings. */
+    this.swing = 0;
   }
 
   add(t) {
@@ -67,6 +70,7 @@ export class TrainingGate {
     const A = ATTACKS[kind] ?? ATTACKS.stand;
     const clanK = (kind === 'claw' || kind === 'sweep') ? 1 : reach / BASE_REACH;
     const range = A.reach * clanK;
+    const swing = ++this.swing;
     let n = 0;
     for (const t of [...this.targets]) {
       if (!t.live) continue;
@@ -82,7 +86,7 @@ export class TrainingGate {
       if (dot < A.arc) continue;
       const dmg = (A.dmg ?? ATTACKS.stand.dmg) * (kind === 'tri' ? (attacker.power?.tri?.dmgK ?? 1) : 1);
       const k = dist > 1e-3 ? 1 / dist : 0;
-      if (t.hit({ attacker, kind, dmg, dist, dir: { x: dx * k, z: dz * k } })) {
+      if (t.hit({ attacker, kind, dmg, dist, swing, dir: { x: dx * k, z: dz * k } })) {
         spent?.add?.(t);
         n++;
       }

@@ -34996,6 +34996,302 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   scene.remove(sim.root);
 }
 
+/* ==========================================================================
+   THE DREAM DOJO, STAGE 3 — THE TAMESHIGIRI RANGE AND KATA TRACE
+   (systems/dream/range.js, kata.js)
+
+   The range's stars are a claim about geometry and the clean cut is a claim
+   about cos and sin; the kata is a claim that every one of them, every day,
+   can be done at the fastest tempo. All three would look fine broken.
+   ========================================================================== */
+{
+  console.log('\n--- the Dream Dojo: range and kata ---');
+  if (!globalThis.document) globalThis.document = domStub();
+  const DD = await import('../src/systems/dreamdojo.js');
+  const SW = await import('../src/world/simworld.js');
+  const TG = await import('../src/systems/dream/targets.js');
+  const PR = await import('../src/systems/dream/progress.js');
+  const RG = await import('../src/systems/dream/range.js');
+  const KT = await import('../src/systems/dream/kata.js');
+  const PL = await import('../src/entities/player.js');
+  const dc = world.dojoCentre;
+  const L = DD.arcadeLayout(dc);
+  const scene = new THREE.Scene();
+  const sim = new SW.SimWorld(scene, {
+    dojo: { x: dc.x, y: dc.y, z: dc.z },
+    arcade: { x: DD.ARCADE.x, z: DD.ARCADE.z, y: DD.ARCADE.y, r: DD.ARCADE.r },
+    ports: L.tubes,
+  });
+  const fakeGame = {
+    world, scene, players: [], toasts: [], sounds: [],
+    toast(t) { this.toasts.push(t); }, sfx(s) { this.sounds.push(s); },
+    input: { promptFor: () => 'E' },
+  };
+  const D = new DD.DreamDojo(fakeGame);
+  D.layout = L;
+  D.sim = sim;
+  D.shards = { burst() {} };
+  D.progress = new PR.DreamProgress(null);
+  D.isles = {};
+  for (const key of ['range', 'kata']) {
+    const I = D._raiseIsland(key);
+    D.isles[key] = I;
+    const from = { x: dc.x + I.fwd.x * 47, z: dc.z + I.fwd.z * 47, y: dc.y };
+    const to = { x: I.x - I.fwd.x * (I.r - 2), z: I.z - I.fwd.z * (I.r - 2), y: I.y };
+    const pts = SW.snakePath(from, to, { wobble: 3, waves: 1, n: 160 });
+    let y = dc.y;
+    let gapAt = -1;
+    let worst = 0;
+    pts.forEach((q, i) => {
+      const h = sim.heightAt(q.x + SW.SIM.dx, q.z + SW.SIM.dz, y + 0.45);
+      if (!h) { if (gapAt < 0) gapAt = i; return; }
+      worst = Math.max(worst, Math.abs(h.y - y));
+      y = h.y;
+    });
+    ok(`the ${key} island's bridge is walked end to end without a gap or a ledge`,
+      gapAt < 0 && worst <= 0.4, gapAt >= 0 ? `gap at sample ${gapAt}` : `worst step ${worst.toFixed(2)}`);
+  }
+  D.range = new RG.TameshigiriRange(D, D.isles.range);
+  D.kata = new KT.KataHall(D, D.isles.kata);
+  D.stations = [...D.range.stations, ...D.kata.stations];
+  const spawn = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
+  const mk = (index) => new PL.Player({ texture: new THREE.Texture(), index, spawn: spawn.clone(), cols: 8, rows: 4, mirror: false });
+  const her = mk(0);
+  const sis = mk(1);
+  fakeGame.players = [her, sis];
+  her.realm = 'sim'; sis.realm = 'sim';
+  D.st[0] = { phase: 'sim', t: 0 };
+  D.st[1] = { phase: 'sim', t: 0 };
+
+  /* --- 一閃 ONE SWING: the stars are measured off the real gate ---
+     A kitten at every half-unit round the grove, facing 32 ways, swinging.
+     Measured at a quarter-unit when the grove was chosen (4x4 at 2.4: stand 7,
+     dash 8, sweep 14, charge 5); the half-unit grid here finds the same. */
+  {
+    const root = new THREE.Group();
+    const gate = new TG.TrainingGate();
+    const { n, gap } = RG.GROVE;
+    const canes = [];
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      canes.push(gate.add(new TG.Cane({ parent: root, owner: 0, x: (i - (n - 1) / 2) * gap, y: 0, z: (j - (n - 1) / 2) * gap })));
+    }
+    const best = {};
+    for (const kind of ['stand', 'sweep']) {
+      let b = 0;
+      for (let x = -7; x <= 7; x += 0.5) for (let z = -7; z <= 7; z += 0.5) for (let a = 0; a < 32; a++) {
+        for (const c of canes) { c.live = true; c.hp = 1; }
+        const f = (a / 32) * Math.PI * 2;
+        const att = { index: 0, position: new THREE.Vector3(SW.SIM.dx + x, 0, z), power: {} };
+        b = Math.max(b, gate.strike(att, kind, PL.BASE_REACH, { x: Math.sin(f), y: Math.cos(f) }));
+      }
+      best[kind] = b;
+    }
+    ok('一閃 three stars is in reach of a plain standing slash', best.stand >= RG.SWING_BANDS[2],
+      `best ${best.stand} vs ${RG.SWING_BANDS[2]}`);
+    ok('...without the perfect spot being needed (one cane of slack)', best.stand - RG.SWING_BANDS[2] >= 1, String(best.stand));
+    ok('...and the Goblin Sweep is the better answer, there to be found', best.sweep > best.stand,
+      `${best.sweep} vs ${best.stand}`);
+    ok('...and no swing takes the whole grove', best.sweep < n * n, String(best.sweep));
+  }
+
+  /* --- four sisters, four groves --- */
+  {
+    const pts = [];
+    for (let k = 0; k < 4; k++) {
+      const f = D.range.floor({ index: k });
+      const sp = (a, b) => ({ x: f.x + f.fwd.x * a - f.fwd.z * b, z: f.z + f.fwd.z * a + f.fwd.x * b, k });
+      const { n, gap, ahead } = RG.GROVE;
+      for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) pts.push(sp(ahead + (i - (n - 1) / 2) * gap, (j - (n - 1) / 2) * gap));
+    }
+    let close = Infinity;
+    for (const a of pts) for (const b of pts) if (a.k !== b.k) close = Math.min(close, Math.hypot(a.x - b.x, a.z - b.z));
+    const I = D.isles.range;
+    const far = Math.max(...pts.map((q) => Math.hypot(q.x - I.x, q.z - I.z)));
+    ok('四 four kittens on ONE SWING get four groves, never one on top of another', close > 1.5, close.toFixed(2));
+    ok('...and every cane of all four stands on the island', far < I.r - 2, `${far.toFixed(1)} of ${I.r}`);
+    let onPad = Infinity;
+    for (const k of D.range.kiosks) for (const q of pts) onPad = Math.min(onPad, Math.hypot(q.x - k.x, q.z - k.z) - k.r);
+    ok('...and no grove grows over a kiosk she has to stand on', onPad > 0.6, onPad.toFixed(2));
+  }
+
+  /* --- 角 CLEAN CUT: the numbers on the card are the line in the air --- */
+  {
+    const root = new THREE.Group();
+    const dial = RG.buildDial(root, 0xffffff);
+    let worst = 0;
+    let onAxis = 0;
+    for (const deg of RG.CUT_ANGLES) {
+      const g = RG.cutGeometry(deg);
+      RG.setDial(dial, g, RG.cutGeometry(deg + 97), 0);
+      const pos = dial.gold.geometry.attributes.position;
+      const tipX = pos.getX(1) / RG.CUT_R;
+      const tipY = pos.getY(1) / RG.CUT_R;
+      const m = /\(([-\d.]+), ([-\d.]+)\)/.exec(g.text);
+      const cx = Number(m?.[1]);
+      const sy = Number(m?.[2]);
+      worst = Math.max(worst, Math.abs(cx - tipX), Math.abs(sy - tipY),
+        Math.abs(tipX - Math.cos(deg * Math.PI / 180)), Math.abs(tipY - Math.sin(deg * Math.PI / 180)));
+      if (Math.min(Math.abs(cx), Math.abs(sy)) < 0.4) onAxis++;
+    }
+    ok('角 the gold line ends where its printed (cos θ, sin θ) says, for every target',
+      worst <= 0.005, worst.toFixed(4));
+    ok('...and no target sits on an axis, where one of the two numbers means nothing', onAxis === 0, String(onAxis));
+    const qs = new Set(RG.CUT_ANGLES.map((a) => Math.floor(a / 90)));
+    ok('...and the targets visit all four quadrants, so both signs change', qs.size === 4);
+    ok('angles are compared round the circle, not along a ruler',
+      RG.angleGap(355, 5) === 10 && RG.angleGap(10, 350) === 20 && RG.angleGap(0, 180) === 180);
+  }
+
+  /* --- a clean cut, cut, through the real gate --- */
+  {
+    her.position.set(0, 0, 0);
+    D.range.kiosks[2].station.interact(her);
+    const d = D.drills[0];
+    d.update(1.5);
+    const live = d.state === 'live';
+    const c = d.cane;
+    const stand = d.spot(4.6, 0);
+    her.position.set(stand.x + SW.SIM.dx, stand.y, stand.z + SW.SIM.dz);
+    const f = d.at.fwd;
+    d.blade = (d.angles[0] + 40) % 360;
+    fakeGame.toasts.length = 0;
+    D.onStrike(her, 'stand', PL.BASE_REACH, { x: f.x, y: f.z });
+    const refused = c.live && fakeGame.toasts.some((t) => /°/.test(t) && t.includes(`${d.angles[0]}°`));
+    d.blade = (d.angles[0] + 3) % 360;
+    D.onStrike(her, 'stand', PL.BASE_REACH, { x: f.x, y: f.z });
+    ok('角 a cut off the gold line is refused, and says by how many degrees',
+      live && refused, `${live} ${c.live} ${fakeGame.toasts.join(' | ')}`);
+    ok('...and a cut on it counts', !c.live && d.count === 1, `${c.live} ${d.count}`);
+    d.spec.paint(d);
+    const slash = d.dial.slash.geometry.attributes.position;
+    const want = RG.cutGeometry(d.cutAt).tip;
+    ok('...and the slice is drawn at the angle she cut, through the cane',
+      Math.abs(slash.getX(1) - want.x * 1.35) < 1e-6 && Math.abs(slash.getY(1) - want.y * 1.35) < 1e-6
+      && Math.abs(slash.getX(0) + want.x * 1.35) < 1e-6);
+    d.dispose();
+    D.drills[0] = null;
+  }
+
+  /* --- 型 KATA: a year of them, every one doable --- */
+  {
+    const walk = Number(/const WALK_SPEED = ([\d.]+)/.exec(readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8'))?.[1]);
+    const fastBeat = 60 / Math.max(...KT.TEMPI);
+    ok('型 a beat of travel at the fastest tempo leaves her a quarter of it to look',
+      KT.TRAVEL <= walk * fastBeat * 0.75, `${KT.TRAVEL} vs ${walk} u/s x ${fastBeat}s`);
+    let bad = [];
+    const dailies = new Set();
+    const day0 = new Date(2026, 0, 1);
+    for (let i = 0; i < 366; i++) {
+      const dt = new Date(day0.getFullYear(), 0, 1 + i);
+      for (const kind of ['daily', 'weekly']) {
+        const key = kind === 'daily' ? PR.dayKey(dt) : PR.weekKey(dt);
+        const k = KT.makeKata(kind, key);
+        const again = KT.makeKata(kind, key);
+        const pool = kind === 'weekly' ? ['step', 'cut', 'jump', 'guard'] : ['step', 'cut', 'jump'];
+        const S = k.steps;
+        const why = [];
+        if (JSON.stringify(k) !== JSON.stringify(again)) why.push('not deterministic');
+        if (S.length !== (kind === 'weekly' ? 12 : 8)) why.push(`length ${S.length}`);
+        if (S[0].mark !== 0 || S[0].move === 'step' || S[0].beat !== 0) why.push('bad opening');
+        for (const m of pool) if (!S.some((s) => s.move === m)) why.push(`no ${m}`);
+        for (let j = 1; j < S.length; j++) {
+          const g = S[j].beat - S[j - 1].beat;
+          const a = KT.MARKS[S[j - 1].mark]; const b = KT.MARKS[S[j].mark];
+          if (!pool.includes(S[j].move)) why.push(`move ${S[j].move}`);
+          if (g < 1) why.push(`gap ${g}`);
+          if (Math.hypot(a.x - b.x, a.z - b.z) > KT.TRAVEL * g + 1e-6) why.push(`step ${j} too far`);
+          if (S[j - 1].move === 'guard' && g < 2) why.push(`guard ${j - 1} not given two beats`);
+          if (S[j].move === 'step' && S[j].mark === S[j - 1].mark) why.push(`step ${j} goes nowhere`);
+          if (j >= 2 && S[j].move === S[j - 1].move && S[j].move === S[j - 2].move) why.push(`${S[j].move} x3 at ${j}`);
+        }
+        if (why.length) bad.push(`${kind} ${key}: ${why.join(', ')}`);
+        if (kind === 'daily') dailies.add(JSON.stringify(S));
+      }
+    }
+    ok('型 a year of dailies and weeklies: every kata doable at the fastest tempo', bad.length === 0, bad.slice(0, 3).join(' / '));
+    ok('...and a new daily every day', dailies.size >= 360, String(dailies.size));
+    ok("...and today's is the same kata on every machine (same key, same steps)",
+      JSON.stringify(KT.makeKata('daily', '2026-10-03')) === JSON.stringify(KT.makeKata('daily', '2026-10-03'))
+      && JSON.stringify(KT.makeKata('daily', '2026-10-03')) !== JSON.stringify(KT.makeKata('weekly', '2026-10-03')));
+    ok('two beats\' windows can never overlap, at any tempo',
+      KT.TEMPI.every((bpm) => 2 * KT.windowFor(bpm) < 60 / bpm));
+    ok('grades: dead on is PERFECT, off the mark is at best GOOD, late past the window is a MISS',
+      KT.gradeFor(0, true, 100) === 3 && KT.gradeFor(0, false, 100) === 1 && KT.gradeFor(0.15, true, 100) === 2
+      && KT.gradeFor(KT.windowFor(120) + 0.01, true, 120) === 0);
+  }
+
+  /* --- a kata performed perfectly is three stars; one not performed says so --- */
+  {
+    const fl = D.kata.floors[0];
+    const run = (perform) => {
+      D.drills[0] = null;
+      const startT = D.t;
+      D.t = startT + 100;           // past the hint throttle of the last run
+      D.kata.begin(her, 'daily', fl);
+      const d = D.drills[0];
+      const T = KT.kataTimeline(d.kata);
+      const spb = 60 / d.bpm;
+      const dt = 1 / 120;
+      let ghostOff = 0;
+      const pressed = new Set();
+      for (let f = 0; f < 120 * 120 && (d.state === 'ready' || d.state === 'live'); f++) {
+        const s = d.kata.steps[d.cur];
+        const m = s ? d.marks[d.cur] : fl;
+        if (perform) her.position.set(m.x + SW.SIM.dx, fl.y, m.z + SW.SIM.dz);
+        else her.position.set(fl.x + SW.SIM.dx + 2, fl.y, fl.z + SW.SIM.dz);
+        d.update(dt);
+        if (d.state !== 'live') continue;
+        // The demo is truthful: on each of his beats Lionheart is on the mark.
+        for (let j = 0; j < d.kata.steps.length; j++) {
+          const at = T.demo(d.kata.steps[j]) * spb;
+          if (d.t >= at && d.t - at < dt) {
+            const g = d.ghost.group.position; const q = d.marks[j];
+            ghostOff = Math.max(ghostOff, Math.hypot(g.x - q.x, g.z - q.z));
+          }
+        }
+        if (perform && s && s.move !== 'step' && !pressed.has(d.cur) && d.t >= T.hers(s) * spb) {
+          pressed.add(d.cur);
+          if (s.move === 'cut') D.onStrike(her, 'stand', PL.BASE_REACH, { x: 0, y: 1 });
+          else d.spec.pad(d, { pressed: (a) => a === (s.move === 'jump' ? 'jump' : 'mount') });
+        }
+      }
+      return { d, ghostOff };
+    };
+    const good = run(true);
+    const id = good.d.spec.id;
+    ok('型 a kata danced on every beat and every mark is 100% and three stars',
+      good.d.state === 'won' && good.d.acc === 100 && D.progress.stars(her.style?.name ?? her.name, id) === 3,
+      `${good.d.state} ${good.d.acc}% ${good.d.why ?? ''}`);
+    ok('...and the ghost who showed it was standing on every mark on its beat', good.ghostOff < 0.05, good.ghostOff.toFixed(3));
+    ok('...and two stars on a tempo opens the next one', D.kata.tier(her, 'daily') === 1);
+    const bad = run(false);
+    ok('a kata stood through is a refusal that says the score and what earns a star',
+      bad.d.state === 'failed' && /\d+%/.test(bad.d.why ?? ''), bad.d.why);
+    // Somebody else's floor, mid-kata, says so.
+    D.drills[0] = null;
+    D.kata.begin(her, 'daily', fl);
+    D.drills[0].update(2);
+    fakeGame.toasts.length = 0;
+    const took = D.kata.begin(sis, 'daily', fl);
+    ok("a floor somebody is dancing on refuses her sister in words, and sends her to another",
+      took === false && !D.drills[1] && fakeGame.toasts.some((t) => /another/.test(t)), fakeGame.toasts.join(' | '));
+    D.drills[0].dispose();
+    D.drills[0] = null;
+  }
+
+  /* --- four floors, all on the island, none on another --- */
+  {
+    const I = D.isles.kata;
+    const F = D.kata.floors;
+    let close = Infinity;
+    for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) close = Math.min(close, Math.hypot(F[i].x - F[j].x, F[i].z - F[j].z));
+    const far = Math.max(...D.kata.kiosks.map((k) => Math.hypot(k.x - I.x, k.z - I.z) + k.r));
+    ok('型 four kata floors, each clear of the next', close > 2 * 5.4 + 1, close.toFixed(1));
+    ok('...and every kiosk on the island', far < I.r - 0.5, `${far.toFixed(1)} of ${I.r}`);
+  }
+  scene.remove(sim.root);
+}
+
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150
    and 71) because it was only ever counted by hand — and counting the output by
    hand gets it wrong too: labels longer than the 42-char pad push the status

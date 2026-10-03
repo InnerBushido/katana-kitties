@@ -12,6 +12,8 @@ import { DreamProgress } from './dream/progress.js';
 import { Drill } from './dream/drill.js';
 import { Gallery } from './dream/gallery.js';
 import { TrialHall } from './dream/hall.js';
+import { TameshigiriRange } from './dream/range.js';
+import { KataHall } from './dream/kata.js';
 import { Rundown } from './dream/rundown.js';
 import { ISLANDS, islandCentre } from './dream/islands.js';
 import { SimBar } from './dream/holo.js';
@@ -112,7 +114,9 @@ export const LION_LINES = {
   simIdle: 'Everything in here is light.\nNothing you break in here\nis broken out there.',
   /* Said once per visit to a kitten wearing orbs. `%k` is how many. */
   rundown: '%n — you\'re wearing %k Kotodama!\nTalk to me for a rundown\nof what each one does.',
-  islands: 'Left bridge: the KOTODAMA GALLERY.\nRight bridge: the CLAN TRIAL HALL.\nTry everything — it\'s all on loan!',
+  /* The spokes in the order she meets them walking round from the port
+     (dream/islands.js): +38 and +78 are on her left, -38 and -78 her right. */
+  islands: 'Left: the GALLERY, then the TAMESHIGIRI RANGE.\nRight: the TRIAL HALL, then KATA TRACE.\nTry everything — it\'s all on loan!',
 };
 
 /* ------------------------------ shaders ---------------------------------- */
@@ -659,7 +663,14 @@ export class DreamDojo {
     const s = this.st[i];
     if (!s?.phase) return pad;
     if (s.phase === 'walk') return s.walkPad ?? dead;
-    if (s.phase === 'sim') return pad;
+    if (s.phase === 'sim') {
+      /* A DRILL MAY WATCH HER BUTTONS — Kata Trace has to know the moment
+         she pressed jump, not the moment her feet left the floor. Watching
+         only: `pressed` is a pure edge test, and this never consumes one. */
+      const d = this.drills[i];
+      if (d?.state === 'live') d.spec.pad?.(d, pad);
+      return pad;
+    }
     return dead;
   }
 
@@ -842,10 +853,13 @@ export class DreamDojo {
     /* THE TRAINING ISLANDS, raised with the layer — under the rain, on the
        first jack-in, like the rest of it. */
     this.isles = {};
-    for (const key of ['gallery', 'hall']) this.isles[key] = this._raiseIsland(key);
+    for (const key of ['gallery', 'hall', 'range', 'kata']) this.isles[key] = this._raiseIsland(key);
     this.gallery = new Gallery(this, this.isles.gallery);
     this.hall = new TrialHall(this, this.isles.hall);
-    this.stations = [...this.gallery.stations, ...this.hall.stations];
+    this.range = new TameshigiriRange(this, this.isles.range);
+    this.kata = new KataHall(this, this.isles.kata);
+    this.stations = [...this.gallery.stations, ...this.hall.stations,
+      ...this.range.stations, ...this.kata.stations];
   }
 
   /**
@@ -1130,7 +1144,12 @@ export class DreamDojo {
 
   /** `Game.strikePlayers`, for a kitten in the sim: holograms only. */
   onStrike(attacker, kind, reach, dir, spent = null) {
-    return this.gate.strike(attacker, kind, reach, dir, spent);
+    const n = this.gate.strike(attacker, kind, reach, dir, spent);
+    /* EVERY SWING, EVEN ONE THAT FOUND NOTHING — a kata's CUT is the swing
+       on the beat, and the range's ONE SWING counts what one call reached. */
+    const d = this.drills[attacker.index];
+    if (d?.state === 'live') d.spec.swing?.(d, kind, n, this.gate.swing);
+    return n;
   }
 
   simKittens() {
@@ -1669,6 +1688,8 @@ export class DreamDojo {
       this.sim.faceCamera(camera);
       this.gallery?.faceCamera(camera);
       this.hall?.faceCamera(camera);
+      this.range?.faceCamera(camera);
+      this.kata?.faceCamera(camera);
       for (const d of this.drills) d?.faceCamera(camera);
       for (const r of this.rundowns) r?.faceCamera(camera);
       for (const s of this.st) s?.bar?.faceCamera(camera);

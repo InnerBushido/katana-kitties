@@ -320,7 +320,7 @@ see you.
 Back in the real world, a hologram of you hangs in your tube copying everything
 you do. Press **interact** to jack back out.
 
-Inside, two bridges lead off the glowing Dojo to two floating islands:
+Inside, bridges lead off the glowing Dojo to floating islands:
 
 - **The Kotodama Gallery.** All ten orbs stand on pedestals. Step up to one
   and press **interact** to borrow it and try a little drill made for it:
@@ -332,6 +332,16 @@ Inside, two bridges lead off the glowing Dojo to two floating islands:
   does, including the two powers you can normally only use in the arena:
   **breathing fire** and **stealing an orb**. Your real clan comes back when
   you leave.
+- **The Tameshigiri Range.** Three ways to show off your sword:
+  - **One Swing**: how many bamboo canes can you cut with a single swing?
+    Where you stand is the whole trick.
+  - **Combo 60**: keep cutting posts for a minute without stopping.
+  - **Clean Cut**: a white line goes round a circle. Swing when it lies on
+    the gold line, and your cut is drawn at that angle, with its cos and sin.
+- **Kata Trace.** Lionheart's ghost dances a little routine on nine marks:
+  step here, cut, jump, guard. Then **you** do it back, on the beat. There's a
+  new one **every day** and a longer one **every week**. Everybody gets the same
+  one, so you can compare. Get two stars and it speeds up.
 
 Every drill gives up to **three stars**, and the game remembers them for each
 kitten. If you're wearing Kotodama when you jack in, Lionheart offers a
@@ -340,7 +350,7 @@ does, and which button does it.
 
 Things in there hit your **SIM bar**, not your real health.
 
-The other training games are still being built.
+More islands are still being built.
 
 ## Collect the seven dragon balls
 

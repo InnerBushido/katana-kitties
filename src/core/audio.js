@@ -1211,6 +1211,33 @@ export class Audio {
         this._noise({ from: 5000, to: 2400, dur: 0.03, gain: 0.3 * v, type: 'highpass', q: 0.8 });
         this._tone({ type: 'sine', from: semi(-5), to: semi(7), dur: 0.35, gain: 0.07 * v, delay: 0.03 });
         break;
+      /* KATA TRACE'S METRONOME AND ITS VERDICTS. `beat` is a woodblock — the
+         dojo's own clapper, not a drum kit — and `beatup` is the same block a
+         fifth higher on the first beat of a bar, so the count can be FELT
+         without being read. The three grades rise in pitch with the grade,
+         and a miss is a dull thud rather than a buzzer: a nine-year-old who
+         is a hair late should hear "not quite", not "wrong". */
+      case 'beat':
+        this._tone({ type: 'triangle', from: semi(12), to: semi(10), dur: 0.06, gain: 0.22 * v });
+        this._noise({ from: 3200, to: 1800, dur: 0.025, gain: 0.08 * v, q: 3 });
+        break;
+      case 'beatup':
+        this._tone({ type: 'triangle', from: semi(19), to: semi(17), dur: 0.07, gain: 0.26 * v });
+        this._noise({ from: 4200, to: 2200, dur: 0.03, gain: 0.10 * v, q: 3 });
+        break;
+      case 'perfect':
+        this._tone({ type: 'sine', from: semi(24), dur: 0.09, gain: 0.16 * v });
+        this._tone({ type: 'sine', from: semi(31), dur: 0.16, gain: 0.14 * v, delay: 0.06 });
+        break;
+      case 'great':
+        this._tone({ type: 'sine', from: semi(19), dur: 0.12, gain: 0.15 * v });
+        break;
+      case 'good':
+        this._tone({ type: 'sine', from: semi(12), dur: 0.1, gain: 0.13 * v });
+        break;
+      case 'miss':
+        this._tone({ type: 'sine', from: 140, to: 90, dur: 0.14, gain: 0.18 * v });
+        break;
       case 'wardup':
         this._tone({ type: 'sine', from: semi(7), to: semi(19), dur: 0.26, gain: 0.17 * v });
         this._tone({ type: 'triangle', from: semi(19), dur: 0.5, gain: 0.07 * v, delay: 0.1 });
