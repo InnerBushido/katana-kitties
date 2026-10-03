@@ -5726,6 +5726,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'payne/base.png', 'payne/held.png', 'payne/helmet.png', 'payne/sweep.png', 'payne/town.png',
     // ...and the kittens' own Goblin Sweep, chroma-keyed like Payne's.
     'kittens/ember/sweep.png', 'kittens/frost/sweep.png',
+    // ...and Lionheart, the Dream Dojo's arcade owner (systems/dreamdojo.js).
+    'lionheart/town.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -5870,8 +5872,12 @@ console.log('\n--- background removal keeps the drawn whites ---');
        across her). Measured by this loop, then written down. None of them is
        filled either: she is a billboard off `_loadSprite` and a crop on a
        canvas, and neither asks for `fillHoles`. */
-    ok('turning the fill on for every sheet would repaint thirteen of them',
-      touched.length === 13 && touched.includes('beasts/dragon_sheet.png')
+    /* FOURTEEN SINCE LIONHEART: the arm that holds Honor over his shoulder
+       closes a gap against his head. Measured by this loop; never filled, for
+       Payne's reason — he is a billboard off `_loadSprite`. */
+    ok('turning the fill on for every sheet would repaint fourteen of them',
+      touched.length === 14 && touched.includes('beasts/dragon_sheet.png')
+      && touched.includes('lionheart/town.png')
       && touched.includes('kittens/frost/champion.png') && touched.includes('satan/flex_trophy.png')
       && ['base', 'sweep', 'town'].every((n) => touched.includes(`payne/${n}.png`)),
       touched.join(' '));
@@ -12359,10 +12365,12 @@ console.log('\n--- the three power moves ---');
        teleported. `Player.update` is what calls `resolveSolids`, so syncing
        after the loop shoves a kitten out of where he was LAST frame — three
        hundred units away, for a man who teleports. */
+    /* The needle is the Dream Dojo's form of the call, since the player loop
+       now hands a kitten in the simulator the simulator's world instead. */
+    const moveAt = mn.indexOf('p.update(dt, pad, sim ? this.dream.worldFor(p) : this.world');
     ok('...and it is synced before anybody is asked to collide with it',
-      mn.indexOf('this._syncSatanSolid();')
-        < mn.indexOf('this.players[i].update(dt, pad, this.world'),
-      `${mn.indexOf('this._syncSatanSolid();')} < ${mn.indexOf('this.players[i].update(dt, pad, this.world')}`);
+      moveAt > 0 && mn.indexOf('this._syncSatanSolid();') < moveAt,
+      `${mn.indexOf('this._syncSatanSolid();')} < ${moveAt}`);
   }
 
   console.log('\n--- the clock runs out, out loud ---');
@@ -34516,6 +34524,134 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       globalThis.document = docWas;
     }
   }
+}
+
+/* ==========================================================================
+   THE DREAM DOJO — LIONHEART'S VR ARCADE (systems/dreamdojo.js, world/simworld.js)
+
+   Richard: "VR is a separate reality ... same location, different layer of
+   existence." The simulator is authored in real-world coordinates and drawn
+   twelve thousand units east, so the thing that can go wrong without
+   anything LOOKING wrong is the two realities answering for each other: a
+   kitten in the void standing on the real Dojo, or a real kitten finding a
+   floor where the simulator's deck is. These ask that, plus the jump across
+   ("kittens jump across stepping stones"), and the one guarantee everything
+   four-player has to give: for anybody the arcade has never touched, it is
+   the identity, so two players keep the game they know.
+   ========================================================================== */
+{
+  console.log('\n--- the Dream Dojo ---');
+  const DD = await import('../src/systems/dreamdojo.js');
+  const SW = await import('../src/world/simworld.js');
+  const { ARCADE, DOME_R, TUBE_R, arcadeLayout } = DD;
+  const dc = world.dojoCentre;
+  const L = arcadeLayout(dc);
+
+  /* --- the site --- */
+  ok('the arcade stands on open air — no island was already there',
+    world.heightAt(ARCADE.x, ARCADE.z, 200) == null
+    && L.tubes.every((t) => world.heightAt(t.x, t.z, 200) == null));
+
+  /* THE WAY ACROSS IS A JUMP, AND ONLY A JUMP. The Dojo's rim is measured
+     along the same line the stones sit on; each gap must be wider than a
+     step (so she has to jump) and well inside the ~9 units a walking jump
+     clears, and no stone may sit more than a unit above where she leaves. */
+  let rim = 0;
+  for (let d = 0; d < L.L; d += 0.25) {
+    if (world.heightAt(dc.x + L.u.x * d, dc.z + L.u.z * d, 200)) rim = d; else if (d > 20) break;
+  }
+  const rimY = world.heightAt(dc.x + L.u.x * (rim - 0.5), dc.z + L.u.z * (rim - 0.5), 200)?.y ?? 0;
+  const dOf = (s) => (s.x - dc.x) * L.u.x + (s.z - dc.z) * L.u.z;
+  const hops = [
+    { from: rim, fromY: rimY, to: dOf(L.stones[0]) - L.stones[0].r, toY: L.stones[0].y },
+    { from: dOf(L.stones[0]) + L.stones[0].r, fromY: L.stones[0].y, to: dOf(L.stones[1]) - L.stones[1].r, toY: L.stones[1].y },
+    { from: dOf(L.stones[1]) + L.stones[1].r, fromY: L.stones[1].y, to: L.L - ARCADE.r, toY: ARCADE.y },
+  ];
+  const gaps = hops.map((h) => h.to - h.from);
+  ok('three hops from the Dojo to the pad, every one a jump and none a long one',
+    gaps.every((g) => g > 1.2 && g < 5), gaps.map((g) => g.toFixed(1)).join(' '));
+  ok('...and no step up is more than a unit',
+    hops.every((h) => h.toY - h.fromY <= 1.01), hops.map((h) => (h.toY - h.fromY).toFixed(2)).join(' '));
+  ok('...and the stones stay off the Dojo itself',
+    L.stones.every((s) => world.heightAt(s.x, s.z, 200) == null));
+
+  /* --- the pad --- */
+  const onPad = (q, pad = 0) => Math.hypot(q.x - ARCADE.x, q.z - ARCADE.z) + pad < ARCADE.r;
+  ok('all four tubes stand on the pad, glass and all', L.tubes.every((t) => onPad(t, TUBE_R + 0.5)));
+  const tubeGap = Math.min(...L.tubes.slice(1).map((t, i) => Math.hypot(t.x - L.tubes[i].x, t.z - L.tubes[i].z)));
+  ok('...with room for a kitten between any two', tubeGap > 2 * TUBE_R + 1.2, tubeGap.toFixed(2));
+  ok('Lionheart stands on the pad, clear of every tube',
+    onPad(L.lion, 1) && L.tubes.every((t) => Math.hypot(t.x - L.lion.x, t.z - L.lion.z) > TUBE_R + 2));
+  ok('the dome covers the pad and the tubes', ARCADE.r < DOME_R && L.tubes.every((t) => Math.hypot(t.x - ARCADE.x, t.z - ARCADE.z) + TUBE_R < DOME_R));
+
+  /* --- two realities --- */
+  const scene = new THREE.Scene();
+  const sim = new SW.SimWorld(scene, {
+    dojo: { x: dc.x, y: dc.y, z: dc.z },
+    arcade: { x: ARCADE.x, z: ARCADE.z, y: ARCADE.y, r: ARCADE.r },
+    ports: L.tubes,
+  });
+  const realSpots = [{ x: ARCADE.x, z: ARCADE.z }, { x: dc.x, z: dc.z }, ...L.tubes, L.lion];
+  ok('the simulator never answers for a real-world spot',
+    realSpots.every((q) => sim.heightAt(q.x, q.z, 500) == null));
+  ok('...it answers for the same spot in its own layer, and says so',
+    realSpots.every((q) => { const s = SW.toSim(q.x, q.z); return sim.heightAt(s.x, s.z, 500)?.sim === true; }));
+  ok('...and the real world never answers for the simulator',
+    realSpots.every((q) => { const s = SW.toSim(q.x, q.z); return world.heightAt(s.x, s.z, 500) == null; }));
+  ok('toSim and toReal are each other\'s inverse',
+    realSpots.every((q) => { const r = SW.toReal(SW.toSim(q.x, q.z).x, SW.toSim(q.x, q.z).z); return Math.abs(r.x - q.x) < 1e-9 && Math.abs(r.z - q.z) < 1e-9; }));
+  ok('a fall in the simulator is caught above its own floor, not the real world\'s',
+    sim.fallY === SW.SIM_FALL_Y && sim.fallY > -160 && sim.fallY < ARCADE.y);
+  {
+    const p = { index: 2, position: new THREE.Vector3(), velocity: new THREE.Vector3(9, 9, 9) };
+    sim.respawn(p);
+    const h = sim.heightAt(p.position.x, p.position.z, p.position.y + 1);
+    ok('...and she is put back on her own port, standing on it', !!h?.sim && p.velocity.length() === 0
+      && Math.abs(p.position.x - SW.toSim(L.tubes[2].x, L.tubes[2].z).x) < 1e-6);
+  }
+  ok('a sim deck is a floor and not a lift: nothing is stepped onto from far below',
+    (() => { const s = SW.toSim(ARCADE.x, ARCADE.z); return sim.heightAt(s.x, s.z, ARCADE.y - 6) == null; })());
+  scene.remove(sim.root);
+
+  /* --- two players keep the game they know --- */
+  {
+    const kids = [0, 1].map((i) => ({ index: i, position: new THREE.Vector3(i, 0, 0) }));
+    const D = new DD.DreamDojo({ players: kids, world });
+    const pad = { mx: 0.3, my: -1 };
+    const dead = { mx: 0, my: 0 };
+    ok('untouched, the arcade is the identity: her pad, her world, herself',
+      kids.every((p) => D.padFor(p.index, pad, dead) === pad && D.worldFor(p) === world
+        && D.ownerFor(p) === p && D.realmOf(p) === null && !D.wantsSolo(p) && !D.paneIsSim([p.index])));
+    ok('...and holds no state for a kitten who has never been near a tube',
+      D.st.length === 0 && !D.busy);
+    D.reset();
+    ok('...and a reset leaves it exactly so', D.st.length === 0 && !D.busy);
+  }
+
+  /* --- wiring that lives in the source --- */
+  const src = readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8')
+    + readFileSync(new URL('../src/world/simworld.js', import.meta.url), 'utf8');
+  // Code only: the header comment says, in words, that it never calls it.
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  ok('the simulator never hurts anybody — strikePlayers stays the only gate',
+    !/\.hurt\(|strikePlayers/.test(code));
+  const save = readFileSync(new URL('../src/systems/savegame.js', import.meta.url), 'utf8');
+  ok('a kitten saved in the simulator is saved standing in her tube',
+    /p\.dreamAnchor \?\? p\.position/.test(save));
+  const mm = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('a scene, the tournament, travel and the ending all pull everybody out',
+    /_sceneActive\?\.\(\) \|\| g\.tournament\?\.active \|\| g\.travel \|\| g\._finaleDue/.test(src)
+    && /if \(pull && this\.busy\) this\.exitAll\(\);/.test(src));
+  ok('a new afternoon resets the arcade', /this\.dream\?\.reset\(\);/.test(mm));
+  ok('two realities never share a pane',
+    /const mixed = realms\.some\(\(r\) => r !== realms\[0\]\);/.test(mm) && /if \(!mixed && \(onRyu/.test(mm));
+  ok('...and a pane in the simulator has no map of the archipelago',
+    /&& !this\.dream\?\.paneIsSim\(groups\[pane\]\);/.test(mm));
+  ok('...and its camera crosses with it instead of panning the void',
+    /rig\.target\.x \+= SIM\.dx \* k;/.test(mm));
+  const au = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+  ok('jacking in and out has its own sounds',
+    ['jackin', 'jackout', 'rez', 'visor'].every((n) => au.includes(`case '${n}':`)));
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

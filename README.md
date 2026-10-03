@@ -84,6 +84,7 @@ work out by playing.
 [The story](#the-story) ·
 [Meet the clan leaders](#meet-the-clan-leaders) ·
 [Ask Payne](#ask-payne) ·
+[The Dream Dojo](#the-dream-dojo) ·
 [Collect the seven dragon balls](#collect-the-seven-dragon-balls) ·
 [Raise a panda](#raise-a-panda) ·
 [The Powerup Kotodama](#the-powerup-kotodama)
@@ -302,6 +303,24 @@ your map. She'll also laugh at you a bit. That's goblins.
 
 Finish her quests, win some fights in the arena, and she'll teach you a
 **secret goblin move**. Ask her what it is.
+
+## The Dream Dojo
+
+Out past the **Dojo of the Turning Circle** there's a round pad floating on its
+own, under a glowing dome. Dragons and pandas can't get in, so you'll have to
+**jump across the stepping stones**.
+
+That's **Lionheart's VR arcade**. He's the red samurai cat with the giant
+sword, and the sword is called **Honor**. Talk to him and he'll walk you to
+**your** tube (Ember gets tube 1, Frost tube 2, and so on). Your visor comes
+down, you float up and the world melts into green code. Now you're **in the
+simulator**: the same place, but a different world, where your sisters can't
+see you.
+
+Back in the real world, a hologram of you hangs in your tube copying everything
+you do. Press **interact** to jack back out.
+
+The training games inside are still being built.
 
 ## Collect the seven dragon balls
 
