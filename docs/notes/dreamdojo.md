@@ -269,6 +269,137 @@ and no storage at all just means a session that forgets. The debug panel's
 **wipe the DREAM DOJO stars** row has no key, asks first, and shows the count
 in its button.
 
+## Stage 3 — the Tameshigiri Range and Kata Trace
+
+Two more islands, raised the same way: the **Tameshigiri Range** (試斬, +78°,
+on her left past the Gallery) and **Kata Trace** (型, −78°, on her right past
+the Hall). Lionheart's islands line names all four. Both use `dream/kiosk.js`,
+which is the gallery's pedestal pattern made into one class: a pad to stand
+on, a sign, and a card for the nearest kitten that hides from anyone mid-drill.
+
+**Two hooks were added to the drill**, and both only watch:
+- `spec.swing(d, kind, n, id)` is called from `onStrike` for **every** swing,
+  including one that hits nothing. The gate stamps a swing id, because a Cross
+  Slash is three calls.
+- `spec.pad(d, pad)` is called from `padFor`, so a kata hears the JUMP press
+  itself rather than her feet leaving the floor. `pressed` is a pure edge test
+  and this never consumes it.
+
+`spec.paint` replaces the drill card, and `spec.face` is the drill's own
+`faceCamera`.
+
+### The Tameshigiri Range
+
+| mode | what | score | ★ / ★★ / ★★★ |
+| --- | --- | --- | --- |
+| 一閃 ONE SWING | 16 canes (4×4, 2.4 apart), 30s, they stand back up after 1s | the most cut by ONE swing | 3 / 5 / 6 |
+| 連撃 COMBO 60 | two posts always standing 4–8 units from her, for 60s | the longest chain, each cut within 2.5s of the last | 8 / 20 / 32 |
+| 角 CLEAN CUT | a cane, a unit circle in front of it, a white blade line turning | seconds for five clean cuts | 75s / 40s / 24s |
+
+**ONE SWING's stars are measured off the real gate.** `world-check` stands a
+kitten at every half-unit round the grove, facing 32 ways:
+
+| attack | best | note |
+| --- | --- | --- |
+| standing slash | 7 | three stars is 6, so there is a cane of slack |
+| Goblin Sweep | 14 | there to be found |
+| (dash 8, charge 5) | | measured once, at a quarter-unit |
+
+**Each seat gets her own quarter of the island.** The range's `floor(p)` turns
+`fwd` a quarter per seat. That way four sisters on ONE SWING get four groves,
+not sixteen canes stacked four deep. At `ahead` 7, two neighbouring groves'
+corner canes were **0.28** apart. At 9.2 they are 2.83 apart. The kiosks moved
+to 17 units out, near the bridge, because every other spot was somebody's
+grove.
+
+**CLEAN CUT is non-negotiable 1.** The gold target line, the turning blade
+line, the slice drawn on a clean cut and the `(cos θ, sin θ)` printed on her
+card all come out of one function, `cutGeometry(deg)`. `world-check` checks
+two things:
+- it parses the printed numbers back out of the text and compares them with
+  the tip of the mesh: worst 0.004, which is the rounding to two places;
+- the slice runs from −tip to +tip at the angle she actually cut.
+
+The targets are the twelve non-axis angles from 30° to 330°, chosen so that
+both numbers always mean something and both signs change. A cut more than 12°
+off is refused and **says** both angles. The blade turns at 55°/s in round 1
+and 115°/s in round 5.
+
+### Kata Trace — the core
+
+Four floors at the island's corners. Each floor has nine marks: the middle,
+and eight on a ring at 3.4. Each floor has two kiosks, DAILY and WEEKLY.
+**Any kitten can use any floor**, but a floor somebody is mid-kata on refuses
+in words ("Ember is using this floor — there are four, try another"). There is
+no "floor k is seat k" rule, because nobody would know which one was theirs.
+
+**`makeKata(kind, key)` is pure.** It runs mulberry32 over an FNV-1a hash of
+`daily:2026-10-03` or `weekly:2026-W40`. That means:
+- four sisters do the same kata today and can compare;
+- tomorrow's is a different one without anybody shipping anything.
+
+A random kata on every press was rejected: nobody can get better at a thing
+that changes every time.
+
+| | daily | weekly |
+| --- | --- | --- |
+| steps | 8 | 12 |
+| moves | 歩 STEP · 斬 CUT · 跳 JUMP | + 守 GUARD (a pair of Wards is lent) |
+
+**The generation rules**, each one a way an earlier version was wrong:
+1. It opens on the middle mark with an action, because she is standing there.
+2. A STEP always goes somewhere.
+3. No mark is more than `TRAVEL` × gap from the last. `TRAVEL` is 3.7 units a
+   beat: walking is 10.5 u/s, a beat at 120 BPM is 0.5s, and that leaves her
+   30% of the beat to look and turn.
+4. After a GUARD comes a two-beat gap.
+5. **No move three times running.** The first weekly drawn in the browser was
+   six GUARDs out of twelve, four of them in a row.
+6. Every move in the pool appears at least once. The pass that makes sure of
+   this could at first strand the step after the one it changed: the 7th of
+   February asked for a 4.8-unit stride on one beat. It now checks the step
+   on both sides.
+
+`world-check` walks a year of dailies and weeklies. A one-off run over twenty
+years (14,640 katas) found nothing.
+
+**The run.**
+1. Lionheart's ghost dances it from the kiosk's point of view: two count-in
+   beats, then every step on its beat. She watches from the kiosk.
+2. Then comes her count-in of four beats ("YOUR TURN · to the gold middle
+   mark").
+3. Then she does it back. A gold ring closes on her next mark, the one after
+   is drawn faint, and the move and its button are **on her card** (斬 CUT [F]).
+
+The move first had its own panel over its mark, and it failed both ways:
+- 3.2 units up, a far mark's panel rose into the toast band;
+- 1.4 units up, it stood in front of her, since every action is done on the
+  mark.
+
+**The judge.**
+- **Timing:** within 0.10s is PERFECT, 0.18s GREAT, and up to the window
+  (0.35s, capped at 0.45 of a beat so two beats' windows never overlap) GOOD.
+- **Off the mark:** standing more than 1.2 from the mark caps the grade at
+  GOOD rather than throwing it away.
+- **A STEP** is judged at its beat by distance: 0.6 / 0.9 / 1.2.
+- **A miss** is the `miss` thud, not a buzzer.
+
+Accuracy is the points over three per step. 50 / 75 / 90% gives one, two or
+three stars. Below 50% it ends with the score and "Watch him again!".
+
+**Tempo tiers** are 80, 100 and 120 BPM. Two stars on one opens the next, per
+kata, per day or week. Progress ids look like `kata.daily.2026-10-03.L2`.
+
+**Verified in the browser:**
+- A daily done with real F and Space presses on the beat: 100% at 100 BPM,
+  and again at 120.
+- Lionheart's ghost on every mark on his beat: 0.001 off, measured in
+  `world-check`.
+- CLEAN CUT refused a real swing 60° off and cut one at 236° against a 240°
+  target.
+- ONE SWING cut 4 with one press from a guessed spot.
+- COMBO 60 chained 6, then dropped to 0 after 2.5s idle.
+
 ## Voice
 
 Lionheart has **no recorded lines yet**, and his bubbles are text only.
@@ -288,7 +419,8 @@ When a voice exists, register it in [voices.md](voices.md) with its id.
 
 1. ~~**Kotodama Gallery**, the rundown of her equipped orbs, and the Clan Trial
    Hall.~~ Built (stage 2, above).
-2. **Tameshigiri** and **Kata Trace**. Kata Trace is the startup's core.
+2. ~~**Tameshigiri** and **Kata Trace**. Kata Trace is the startup's core.~~
+   Built (stage 3, above).
 3. **Bridges and light-cycles**, Kudamono Storm, Sine Gauntlet, Holo-Sentries,
    and Bamboo Infiltration.
 4. **Arena School**, ranks (剣士 KENSHI and up), the holographic Fighter Card,

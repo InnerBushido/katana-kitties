@@ -246,9 +246,16 @@ export class Drill {
     return !(this.state === 'won' || this.state === 'failed') || this.endT > 0;
   }
 
-  /** The card over her head: what, how far, how long. */
+  /** The card over her head: what, how far, how long. A drill whose card is
+   *  not "count of goal, seconds left" (a kata, the clean cut's angles) hands
+   *  back its own lines from `spec.paint`, or nothing for the usual card. */
   _paint() {
     const s = this.spec;
+    const own = s.paint?.(this);
+    if (own) {
+      this.panel.set(own, this.state === 'won' ? HOLO.gold : this.colour);
+      return;
+    }
     const lines = [{ text: `${s.kanji ?? ''} ${s.title}`.trim(), size: 2.1, color: this.colour, glow: true }];
     if (this.state === 'ready') {
       lines.push({ text: s.goalText, size: 1.5 });
@@ -271,6 +278,7 @@ export class Drill {
   faceCamera(camera) {
     this.panel.faceCamera(camera);
     for (const t of this.targets) t.faceCamera(camera);
+    this.spec.face?.(this, camera);
   }
 
   /** Everything she was given goes away; nothing of hers is touched. */

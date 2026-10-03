@@ -515,12 +515,24 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
-**The Dream Dojo, Lionheart's VR arcade — stage 2 of 5.** Stage 1 is on
-branch `feature/dream-dojo-vr` and stage 2 on `feature/dream-dojo-gallery`,
-both merged into local main and not pushed.
+**The Dream Dojo, Lionheart's VR arcade — stage 3 of 5.** Stage 1 is on
+branch `feature/dream-dojo-vr`, stage 2 on `feature/dream-dojo-gallery`, and
+stage 3 on `feature/dream-dojo-kata`. All three are merged into local main and
+not pushed.
 [dreamdojo.md](docs/notes/dreamdojo.md) has the design and Richard's brief,
 quoted.
 
+- **Stage 3 built:**
+  - The **Tameshigiri Range**: ONE SWING, COMBO 60, and CLEAN CUT (cut at
+    (cos θ, sin θ), with the card's numbers and the drawn line from one
+    function).
+  - **Kata Trace**: a daily and a weekly kata seeded by the date, Lionheart's
+    ghost demonstrating, her turn judged on the beat, and three tempo tiers.
+- **Stage 3 verified in the browser** with real key presses:
+  - A daily at 100% at 100 and at 120 BPM.
+  - A clean cut refused 60° off and accepted at 236° against 240°.
+  - ONE SWING cut 4 in one press.
+  - COMBO 60 chained 6, then reset.
 - **Stage 2 built:**
   - The **Kotodama Gallery**: ten pedestals, ten drills, each lending its orb
     for the drill only.
