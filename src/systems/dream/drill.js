@@ -19,7 +19,7 @@ import { starsFor } from './progress.js';
      · the clock runs out — "Time! 3 of 5", no stars, the floor clears;
      · she walks off the floor — "stopped: you left the floor";
      · her SIM bar empties — the simulator catches her and it starts over;
-     · she jacks out, or anything pulls everybody out — cleared silently,
+     · she disconnects, or anything pulls everybody out — cleared silently,
        because the thing that pulled her out is already saying something.
 
    NOTHING HANGS OFF A DRILL ENDING but its own cleanup and the stars, which

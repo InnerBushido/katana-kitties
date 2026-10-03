@@ -19,7 +19,7 @@ import { Post, Cane, HoloKitten, BLADE_KINDS } from './targets.js';
    short test that cannot be passed without the clan's own power.
 
    THE OATH IS A COSTUME. Her real clan is kept on `dreamOath.was` and put
-   back the moment she jacks out, however she jacks out; `castRow` saves the
+   back the moment she disconnects, however she leaves; `castRow` saves the
    real one if a save lands while she is in here. Swearing in here never calls
    `onJoinClan`, so no leader cheers, no panda arrives, no quest moves —
    nothing in the archipelago knows she did it.

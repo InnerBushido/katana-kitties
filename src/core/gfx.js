@@ -444,7 +444,7 @@ export class Billboard extends THREE.Object3D {
    * CHARACTER and carries straight across a swap.
    *
    * It exists for the Dream Dojo, where a kitten is redrawn in the arcade's
-   * headset for as long as she is jacked in (`Player.setSimLook`). A second
+   * headset for as long as she is connected (`Player.setSimLook`). A second
    * Billboard toggled visible was the other way, and it is the wrong one: the
    * player code writes `this.sprite` in some forty places a frame — the KO
    * fall, the invulnerable blink, the hit lean — and every one of them would

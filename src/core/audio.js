@@ -403,6 +403,9 @@ const VOICE_FOLDERS = [
   /* Payne, the quest giver — every one of her ids starts with her name, so
      the rule cannot catch anybody else's. See systems/payne.js. */
   [/^payne_/, 'payne'],
+  /* Lionheart, the Dream Dojo's owner — Barrett, cut by
+     tools/capture/lionheart-vo.mjs. Same rule as Payne: his prefix, his folder. */
+  [/^lion_/, 'lionheart'],
 ];
 
 export const voicePath = (id) => {
@@ -1185,18 +1188,18 @@ export class Audio {
          game that is a MACHINE, so these are the only sounds in the game made
          of sawtooth sweeps and stepped glitches rather than koto, wood and
          breath — the ear should know it has left the archipelago before the
-         eye does. `jackin` climbs and `jackout` is the same climb falling, the
+         eye does. `connect` climbs and `disconnect` is the same climb falling, the
          ward's up/down rule again; `rez` is a kitten being drawn in, a fast
          arpeggio up the hirajoshi so it is still this game's key; `visor` is
          the headset seating, a click and a hum. */
-      case 'jackin':
+      case 'connect':
         this._tone({ type: 'sawtooth', from: semi(-12), to: semi(24), dur: 0.9, gain: 0.08 * v });
         this._tone({ type: 'square', from: semi(0), to: semi(12), dur: 0.6, gain: 0.04 * v, delay: 0.2 });
         for (let i = 0; i < 5; i++) {
           this._noise({ from: 2000 + i * 900, to: 4200, dur: 0.04, gain: 0.18 * v, q: 3, delay: 0.25 + i * 0.11 });
         }
         break;
-      case 'jackout':
+      case 'disconnect':
         this._tone({ type: 'sawtooth', from: semi(24), to: semi(-12), dur: 0.8, gain: 0.08 * v });
         for (let i = 0; i < 4; i++) {
           this._noise({ from: 4200 - i * 700, to: 1200, dur: 0.05, gain: 0.16 * v, q: 3, delay: i * 0.12 });

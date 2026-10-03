@@ -561,9 +561,21 @@ quoted.
     turn check.
   - Verified in the browser: the swap and the restore, the pose walk
     0 → 1 → 1 → 2, and the line at 0 s with the prize at 4.0 s.
-- **Waiting on Richard: Lionheart's voice.** Dylan, Kevin and Miles each read
-  the Honor line and the hand-over. The takes and measurements are in
-  [voices.md](docs/notes/voices.md). Nothing is wired until he picks.
+- **Lionheart talks — Barrett.** Picked by Richard over his own ElevenLabs
+  clone, Ken, Alexey and round one's Kevin. Nine clips in
+  `public/voice/lionheart/`, cut by `tools/capture/lionheart-vo.mjs`.
+  - **The lines were rewritten for the voice**: "not too seductive", so
+    loud, practical and arcade-owner. And nobody "jacks out" — she
+    **connects** and **disconnects**, everywhere; `world-check` fails on the
+    word.
+  - `dream/lionvoice.js` looks a clip up **by the bubble's own text**, never
+    talks over another character, gates the ambient lines (30 s apart, the
+    same one 120 s), and every card holds until he has finished.
+  - `tools/mp3.mjs` measures the real clips for the checks.
+  - **Open:** the islands line is 18.9 s even after its pauses were closed.
+    It is the long tour of the map; shortening it means rewriting the card.
+  - [voices.md](docs/notes/voices.md#lionheart-is-barrett-and-the-wording-is-half-the-casting)
+    has the casting, the rule and the gating.
 
 - **Stage 4 built:**
   - The **data highways and light cycles** to the two far islands.
@@ -611,7 +623,7 @@ quoted.
   - The pad NE of the Dojo, the two stones (a real jump) and the dome that
     keeps animals out.
   - Four tubes: tube k is player k's.
-  - The walk, rise, jack and rez sequence, and its reverse.
+  - The walk, rise, link and rez sequence, and its reverse.
   - The simulator, a second reality drawn 12,000 units east with its own
     floors and sky.
   - The holo-Dojo hub, the puppet in the real tube, and Lionheart (take B
@@ -622,9 +634,9 @@ quoted.
     the puppet, and the sim pane drops its minimap.
 - **Open:**
   - Nobody has played it.
-  - **Lionheart has no voice.** Cloning Richard's voice fails with "Voice limit
-    reached" while the account lists no custom voices. A prepared 2:48 cut sits
-    beside his recording in `Design Ideas/`.
+  - ~~**Lionheart has no voice.**~~ He is Barrett now (stage 5, above). The
+    clone of Richard's voice was made on his own ElevenLabs account in the end,
+    and turned down.
   - Nobody has played stage 2 either. The drill numbers are measured but the
     *difficulty* has not been tried on a nine-year-old.
   - ~~Stages 3–5 (Kata Trace, the modes, ranks, Shadow Lionheart) and the VR

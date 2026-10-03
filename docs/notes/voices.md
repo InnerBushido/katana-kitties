@@ -41,7 +41,7 @@ the `voice_id` below. About **0.15 credits a line**.
 | **Payne** | the quest-giver in the market. A goblin cat, and a real person who agreed to be in the game — [payne.md](payne.md). Cheerful, cheeky, teases. | **Pixie** | `0178ef57-ada4-43d9-992b-8d9221045bb4` | all forty-five `payne_*`, including "Heyyy, …!" and "Oi! …!" for each of the four kittens |
 | **the trailer voice** | not in the game at all. The straight narrator Mr. Satan interrupts — and the one who has to say "right meow" with a straight face. | **Desmond** | `563f728c-e249-5a85-97ab-8461e8c09da6` | **six trailer lines** — 4-8 and the sign-off |
 | **Ryuuseki** | the dragon the seven stars call. | **unresolved — see below** | — | `summon1` `summon2` |
-| **Lionheart** | the Dream Dojo's arcade owner, and his Shadow. Young, keen, a showman about his sword. | **auditioning — Dylan, Kevin or Miles; see below** | — | none yet: his bubbles are text |
+| **Lionheart** | the Dream Dojo's arcade owner, and his Shadow. Cool, confident, a showman about his sword — **and never seductive**, which is a rule about the WORDS ([below](#lionheart-is-barrett-and-the-wording-is-half-the-casting)). | **Barrett** | `d603a8cd-3fe1-55e0-9245-617a2589131e` | all nine `lion_*`: `idle` `honor` `sim` `simidle` `islands` in the arcade, `shadow_hello` `shadow_cross` `handover` `prize` in his Shadow's fight |
 | *(the thing in the dark)* | three seconds of the trailer — and, since the Cross Slash rebalance, four sounds in the game | **not a voice at all** | [tools/kitten-cackle.mjs](../../tools/kitten-cackle.mjs) | trailer line 12, `cross0`-`cross3` |
 
 [tools/trailer-vo.mjs](../../tools/trailer-vo.mjs) carries the same four ids it
@@ -51,8 +51,8 @@ generates.
 
 ## One folder per character
 
-`public/voice/` is filed by who is speaking — the same five names as the table
-above, because a character has ONE voice and therefore ONE folder:
+`public/voice/` is filed by who is speaking — one name per character in the
+table above, because a character has ONE voice and therefore ONE folder:
 
 ```
 voice/
@@ -62,6 +62,7 @@ voice/
   ryuuseki/    2 — `summon1` `summon2`
   kittens/     4 — `cross0`-`cross3`, the Cross Slash's verdict
   payne/      45 — every `payne_*`: quests, hints, teases, the trick, the names, the Very Last One's temper
+  lionheart/   9 — every `lion_*`: the arcade, the hologram in the sim, and his Shadow
 ```
 
 Asked for after play: *"we have a lot of art, voices, sprites, help assets and
@@ -172,49 +173,100 @@ the table says.
 seven-star hunt, and a new voice on one of them is worse than the hole in this
 table.
 
-## Lionheart is being auditioned, and nothing is wired yet
+## Lionheart is Barrett, and the wording is half the casting
 
-Richard's brief was **energetic and young-male**. His own voice, the intended
-long-term source, cannot be cloned on this account ("Voice limit reached", twice,
-with no custom voices listed; see [dreamdojo.md](dreamdojo.md#voice)), so three
-presets read two lines. One is the Honor line from the arcade, and the other is
-the hand-over, which he says when the Shadow falls:
+Three rounds. **Dylan, Kevin and Miles** read the Honor line and the hand-over
+first; Richard's verdict was that only Kevin was usable, "the others are
+garbage", and that he wanted it "more anime and cool sounding and less
+nerdy/anti-social sounding". **Richard's own voice** was then cloned on his own
+ElevenLabs account (`13AqoeTdHEhNNcI6ljuH`, "Richard Voice") and rendered
+through its MCP — Higgsfield cannot use it, see [PROJECT.md §8](../../PROJECT.md)
+— against **Barrett**, **Ken** and **Alexey** on three lines each. His verdict:
 
-> Like my sword? Her name is HONOR. Beat me in the simulator someday… and maybe
-> I'll share my Honor with you.
->
-> My honor, my dreams… they're yours now.
+> The voices generated of me don't really sound too good and sounds quite
+> different than my real voice. Out of all of them I'd go with the Barrett
+> voice, it has the smoothest and cool/confident anime sounding voice out of
+> all of them, only potential problem with it, is we don't want it too sound
+> too seductive, so need to be careful with the wording.
+
+So the clone is **not used anywhere**, and every take of every round is kept in
+[tools/capture/lionheart-takes/audition/](../../tools/capture/lionheart-takes/audition/),
+sorted by Richard into `Final Voices/`, `Candidates/` and `Garbage/`. **Except
+`Final Voices/Richard/`, which is on his disk and deliberately not in git**: it
+is a clone of a real person's voice, and the repository is public.
+
+| preset | `voice_id` | |
+| --- | --- | --- |
+| **Barrett** | `d603a8cd-3fe1-55e0-9245-617a2589131e` | **cast** |
+| Ken | `ceee41dc-0ee8-59a7-b3e8-2744116fcb5e` | round 3 |
+| Alexey | `7c2133e5-68ab-511f-9aed-9a67664382b1` | round 3 |
+| Kevin | `f1373f24-3b96-433f-9a68-e595810ef608` | round 1, "usable" |
+| Dylan | `b847bc29-f184-583a-8ad9-d1f1e16d1a60` | round 1 |
+| Miles | `e18664a7-ee4f-5273-acf8-533eb24cd366` | round 1 |
+
+**He is far deeper than the brief that started this.** The first brief was
+"energetic and young-male"; what won sits an octave under it:
 
 ```
                     f0Hz   range(st)  dyn(dB)   secs
-honor   Dylan        162       16.6     20.1   6.64
-honor   Kevin        151       29.3     17.3   6.16
-honor   Miles        216       19.1     25.6   7.76
-handover Dylan       125       12.4     21.2   2.72
-handover Kevin       118       17.6     15.7   2.80
-handover Miles       190       21.0     22.9   3.36
+honor   Barrett       87       11.1     30.1   8.43   (the shipped cut)
+handover Barrett      86        4.4     24.5   3.47
+honor   Kevin        151       29.3     17.3   6.16   (round 1, for scale)
 ```
 
-| preset | `voice_id` |
-| --- | --- |
-| Dylan | `b847bc29-f184-583a-8ad9-d1f1e16d1a60` |
-| Kevin | `f1373f24-3b96-433f-9a68-e595810ef608` |
-| Miles | `e18664a7-ee4f-5273-acf8-533eb24cd366` |
+### Smooth is the voice; seductive is the script
 
-All six takes are kept in
-[tools/capture/lionheart-takes/audition/](../../tools/capture/lionheart-takes/audition/).
-A fourth preset, **Cody** (`1ffcdbb3-078b-5491-959d-359e3021e917`), failed to
-render and is not in the running. Harrison and Desmond were left out on purpose,
-because one voice for two characters is the mistake this file exists to prevent.
+A smooth low voice reads as cool on an instruction and as something else on a
+line that is soft, slow and about the listener — and this game's listeners are
+nine. So his lines were **rewritten before they were rendered**, toward shouted,
+practical, arcade-owner things: "VR training!", "Cross a bridge to an island to
+train." Nothing is murmured, nothing is about "you" and "me" alone, and the
+Honor line lost its "and maybe I'll share" — the hesitation was the part that
+read wrong in his voice — for a plain promise: *"Beat me in the simulator
+someday, and you'll earn a share of my HONOR!"*
 
-**Every hand-over take fits its window.** The Shadow's line holds for
-`HANDOVER.secs` = 4 before the prize is told
-([dream/shadow.js](../../src/systems/dream/shadow.js)). The longest take, Miles,
-runs 3.36 s. If the pick is re-rendered, measure it against that number again.
+**Nobody "jacks" in or out.** Richard: "Let's not use the term 'Jacked out' or
+'Jacking out' as it sounds inappropriate." She **connects** and
+**disconnects** — on the prompts, the sounds, the phase names and the comments,
+so nobody copies the word back in from a neighbour. `world-check` fails on it
+anywhere in `src/` or the README, comments aside.
 
-**When Richard picks:** fill in the table row above, render his lines into
-`public/voice/lionheart/`, and wire them so the text bubbles stay as the
-fallback.
+### How the nine clips are made
+
+1. **The take is a render of the card, exactly** — the string in `LION_LINES`
+   or `SHADOW_LINES`, newlines read as spaces. Higgsfield, `text2speech_v2`,
+   Barrett's id, **two at a time** (a third concurrent job got a 429).
+2. The raw take goes in `tools/capture/lionheart-takes/raw/lion_<id>.mp3`.
+3. `node tools/capture/lionheart-vo.mjs` cuts every raw take into
+   `public/voice/lionheart/`: `silencedetect` at -35dB finds the pauses and
+   each one over 0.35s is capped at 0.45s. **No speed change**, the same rule
+   as the countdown. Barrett leaves long silences between sentences; this took
+   the islands line from 22.2s to 18.9s and the rest by 0.3-1.9s each.
+4. `node tools/world-check.mjs` — every id is a file, every file is an id, each
+   clip's words-per-second is human (1.5 to 2.9 measured), and the hand-over
+   is over before the prize is told.
+
+**The two lines with a kitten's name in them (`send`, `rundown`) are not
+recorded and cannot be** — one recording says one name. They stay bubbles. So
+does the Shadow's losing line, which says how much of his bar was left.
+
+### How he speaks in the game
+
+[dream/lionvoice.js](../../src/systems/dream/lionvoice.js) is handed the very
+string a bubble is about to show and looks the clip up **by that text**, so a
+card and its recording cannot be two sentences. Two kinds of line:
+
+- **Asked for** (the welcome on connecting, the Shadow's lines): said at once —
+  unless **another character** is talking, because `Audio.speak` is one
+  speaker and cuts whoever was on. He never talks over Patchfur or Payne.
+- **Ambient** (the two lines he alternates at anybody standing near him):
+  at most one every 30s, the same one at most every 120s, and never over
+  anybody, himself included. Voiced every nine seconds, it was a man
+  repeating himself at a child.
+
+**Every card stays up until he has finished**, whichever is longer of its own
+time and the clip plus 0.6s — and also asks `saying()` each frame, because a
+clip asked for before its metadata arrived reports a length of 0.
 
 ## The castings were checked, not copied
 
@@ -428,6 +480,7 @@ sentence reads as a recording rather than as somebody in the room.
 | his two full-screen moments | Mr. Satan | [src/systems/summonscene.js](../../src/systems/summonscene.js), `SCRIPTS.sat_*` |
 | climbing onto his box — the taunt, and the shout ten seconds later | Mr. Satan | [src/systems/satanblast.js](../../src/systems/satanblast.js), `sat_taunt` and `sat_blast` via [announce.js](../../src/systems/announce.js) |
 | a round decided on the clock, with both fighters still up | Mr. Satan | [src/systems/tournament.js](../../src/systems/tournament.js), `sat_over` — `ROUND_OVER_LINE` |
+| the Dream Dojo — the arcade, the hologram in the sim, and the Shadow's fight | Lionheart | [src/systems/dreamdojo.js](../../src/systems/dreamdojo.js) `LION_LINES`/`LION_VOICE` and [dream/shadow.js](../../src/systems/dream/shadow.js) `SHADOW_LINES`/`HANDOVER`, spoken by [dream/lionvoice.js](../../src/systems/dream/lionvoice.js) |
 | the trailer | the trailer voice and Mr. Satan, trading the microphone; Duskcoat once; a kitten once | [tools/trailer-vo.mjs](../../tools/trailer-vo.mjs) |
 
 ## The last fifteen seconds: four cues, and one of them is a timeline

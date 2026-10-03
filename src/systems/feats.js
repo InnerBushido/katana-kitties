@@ -138,7 +138,7 @@ export const FEATS = [
   /* THE TENTH (listed with the four everybody can do, which it is one of),
      AND THE ONLY ONE THE DOOR DOES NOT SHUT ON. Lionheart has
      promised it since the Dream Dojo opened — "Beat me in the simulator
-     someday… and maybe I'll share my Honor with you" — and the simulator's
+     someday, and you'll earn a share of my HONOR!" — and the simulator's
      final exam (dream/shadow.js) asks for KENSHI 2nd Class first, which is an
      afternoon of stars on its own. A kitten who gets there after the ending
      has not missed a deadline she was never told about, so `late` lets it be

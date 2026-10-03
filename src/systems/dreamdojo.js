@@ -21,7 +21,8 @@ import { HoloSentries } from './dream/sentries.js';
 import { BambooInfiltration } from './dream/bamboo.js';
 import { ArenaSchool } from './dream/school.js';
 import { Ranks } from './dream/rank.js';
-import { ShadowFight } from './dream/shadow.js';
+import { ShadowFight, SHADOW_LINES, HANDOVER } from './dream/shadow.js';
+import { LionVoice, VOICE_TAIL } from './dream/lionvoice.js';
 import { Rundown } from './dream/rundown.js';
 import { ISLANDS, islandCentre } from './dream/islands.js';
 import { SimBar } from './dream/holo.js';
@@ -74,9 +75,9 @@ export const FLOAT_H = 1.6;
 export const SEQ = {
   walkMax: 7,      // auto-walk gives up and places her after this
   rise: 1.8,       // visor on, floating up, a little rain in her pane
-  jack: 0.7,       // the rain fills the pane; she crosses at the end
+  link: 0.7,       // the rain fills the pane; she crosses at the end
   rez: 1.4,        // she is drawn in on the other side
-  derez: 1.1,      // jacking out: drawn away, the rain fills
+  derez: 1.1,      // disconnecting: drawn away, the rain fills
   descend: 1.6,    // back in the tube, floating down, visor off
 };
 
@@ -113,18 +114,48 @@ export function arcadeLayout(dojoCentre) {
 
 /* ------------------------------ the lines -------------------------------- */
 
-/** What he says. `%n` is her name and `%t` her tube number. */
+/**
+ * What he says. `%n` is her name and `%t` her tube number.
+ *
+ * WORDED FOR HIS VOICE. He is Barrett (docs/notes/voices.md), picked as "the
+ * smoothest and cool/confident anime sounding voice" with one warning
+ * attached: "we don't want it to sound too seductive, so need to be careful
+ * with the wording". So a smooth voice gets lines that are plainly about a
+ * sword and a prize: "Like my sword?" was the old opener and is gone, and the
+ * HONOR is something you EARN, not something he shares with you.
+ *
+ * AND NOBODY "JACKS" ANYTHING. Richard's call: "let's not use the term 'jacked
+ * out' or 'jacking out' as it sounds inappropriate". She CONNECTS and
+ * DISCONNECTS — here, on the prompts, on the sounds and in the comments, so
+ * nobody copies the old word back in from a neighbour. world-check fails on
+ * the word anywhere in src/ or the README.
+ *
+ * THE RECORDED ONES ARE `LION_VOICE`, below, and each is a render of exactly
+ * this text with its newlines read as spaces. Change one here and its clip is
+ * stale — tools/capture/lionheart-vo.mjs says how to re-cut it.
+ */
 export const LION_LINES = {
-  idle: 'The Dream Dojo — VR training!\nJump across the stones\nand come and try it!',
-  honor: 'Like my sword? Her name is HONOR.\nBeat me in the simulator someday…\nand maybe I\'ll share my Honor with you.',
-  send: '%n! Tube %t is yours.\nStep in — I\'ll do the rest!',
-  sim: 'You\'re jacked in! This is my Dream Dojo.\nCross a bridge to an island to train.\nTo jack out, stand on your ring.',
+  idle: 'The Dream Dojo — VR training!\nJump across the stones\nand give it a try!',
+  honor: 'See this sword? Her name is HONOR.\nBeat me in the simulator someday,\nand you\'ll earn a share of my HONOR!',
+  send: '%n! Tube %t is yours.\nStep in and get ready!',
+  sim: 'You\'re connected — welcome to my Dream Dojo!\nCross a bridge to an island to train.\nDone for now? Stand on your ring to disconnect.',
   simIdle: 'Everything in here is light.\nNothing you break in here\nis broken out there.',
   /* Said once per visit to a kitten wearing orbs. `%k` is how many. */
   rundown: '%n — you\'re wearing %k Kotodama!\nTalk to me for a rundown\nof what each one does.',
   /* The spokes in the order she meets them walking round from the port
      (dream/islands.js): +38 and +78 are on her left, -38 and -78 her right. */
   islands: 'Left: GALLERY, RANGE, then KUDAMONO STORM.\nRight: TRIAL HALL, KATA, then the SINE GAUNTLET.\nStraight across: the ARENA SCHOOL.\nFar ones? LIGHT CYCLE! The farthest is my SHADOW.',
+};
+
+/* Which of those are recorded, and as what. `send` and `rundown` are not, and
+   cannot be: they say a kitten's name and a number, and a recording can only
+   say one of each. They stay text, like every line did before he had a voice. */
+export const LION_VOICE = {
+  idle: 'lion_idle',
+  honor: 'lion_honor',
+  sim: 'lion_sim',
+  simIdle: 'lion_simidle',
+  islands: 'lion_islands',
 };
 
 /* ------------------------------ shaders ---------------------------------- */
@@ -408,6 +439,15 @@ export class DreamDojo {
     /** Every pad in the simulator that answers INTERACT (pedestals, shrines). */
     this.stations = [];
     this._hintAt = new Map();
+    /** His recorded lines, keyed by the very strings the bubbles show — so a
+     *  card and its recording cannot be two different sentences. The audio is
+     *  asked for late because the game builds it before this but a test
+     *  harness may not build it at all. */
+    this.voice = new LionVoice(() => game?.audio ?? null, [
+      ...Object.entries(LION_VOICE).map(([k, id]) => [LION_LINES[k], id]),
+      ...Object.values(SHADOW_LINES).map((l) => [l.line, l.voice]),
+      [HANDOVER.line, HANDOVER.voice],
+    ]);
   }
 
   /* ----------------------------- the island ------------------------------- */
@@ -600,16 +640,35 @@ export class DreamDojo {
     return m;
   }
 
-  /** Have the HOLOGRAM say something — the one a kitten in the sim can see. */
+  /** Have the HOLOGRAM say something — the one a kitten in the sim can see.
+   *  Aloud too, if the line is a recorded one; the card then stays up until he
+   *  has finished, since the islands line alone runs nineteen seconds. */
   holoSay(text, secs = 6) {
+    this.voice.load();
+    const d = this.voice.speak(text, this.t);
     this.holoText = text;
-    this.holoUntil = this.t + secs;
+    this.holoUntil = this.t + Math.max(secs, d > 0 ? d + VOICE_TAIL : 0);
   }
 
-  /** Have him say something for a while. Text only until his voice exists. */
+  /** Have him say something for a while — aloud if it is a recorded line, and
+   *  as a bubble regardless, which is all a line with a name in it can be. */
   say(text, secs = 6) {
+    this.voice.load();
+    const d = this.voice.speak(text, this.t);
     this.sayText = text;
-    this.sayUntil = this.t + secs;
+    this.sayUntil = this.t + Math.max(secs, d > 0 ? d + VOICE_TAIL : 0);
+  }
+
+  /** An AMBIENT line: voiced only when `LionVoice` says it is time (it gates
+   *  on the gaps and on anybody else talking), and when it IS voiced the
+   *  bubble is pinned to it for the clip — the nine-second swap between his
+   *  two ambient cards would otherwise change the words under his voice. */
+  _ambient(text, holo) {
+    this.voice.load();
+    const d = this.voice.speak(text, this.t, { ambient: true });
+    if (d <= 0) return;
+    if (holo) { this.holoText = text; this.holoUntil = this.t + d + VOICE_TAIL; }
+    else { this.sayText = text; this.sayUntil = this.t + d + VOICE_TAIL; }
   }
 
   /* ------------------------------- queries -------------------------------- */
@@ -736,7 +795,7 @@ export class DreamDojo {
     if (s?.phase && s.phase !== 'sim') return null;
     if (this.realmOf(p) === 'sim') {
       if (this.highway?.riding(p.index)) return null;
-      if (this.onPort(p)) return `[${key}]  JACK OUT`;
+      if (this.onPort(p)) return `[${key}]  DISCONNECT`;
       // The card says which button turns it; a callout under it is the same
       // words a second time, drawn on top of its last line.
       if (this.rundowns[p.index]) return null;
@@ -754,7 +813,7 @@ export class DreamDojo {
       return owner ? `TUBE ${k + 1} IS ${owner.name.toUpperCase()}'S — YOURS IS ${p.index + 1}`
         : `YOUR TUBE IS NUMBER ${p.index + 1}`;
     }
-    return `[${key}]  JACK IN`;
+    return `[${key}]  CONNECT`;
   }
 
   /**
@@ -819,7 +878,7 @@ export class DreamDojo {
   _begin(p, phase) {
     /* THE HEADSET DRAWINGS START LOADING HERE, at the first walk to a tube or
        the first rise, and not at boot: six megabytes of turnaround nobody needs
-       until somebody jacks in, and the walk plus the 1.8s rise covers it. */
+       until somebody connects, and the walk plus the 1.8s rise covers it. */
     this.game.loadSimArt?.();
     const i = p.index;
     const s = (this.st[i] ??= { phase: null, t: 0 });
@@ -839,7 +898,7 @@ export class DreamDojo {
       s.from = p.position.clone();
       s.to = new THREE.Vector3(port.x, ARCADE.y + FLOAT_H, port.z);
       p.pinnedAt = p.position.clone();
-      this.game.sfx?.('jackout');
+      this.game.sfx?.('disconnect');
     }
   }
 
@@ -870,7 +929,7 @@ export class DreamDojo {
     this.shards = new Shards(this.sim.root);
     this.simHud = makeSimHud(g, this);
     /* THE TRAINING ISLANDS, raised with the layer — under the rain, on the
-       first jack-in, like the rest of it. */
+       first connection, like the rest of it. */
     this.isles = {};
     this.highway = new DataHighway(this);
     for (const key of ['gallery', 'hall', 'range', 'kata', 'storm', 'sine', 'sentries', 'bamboo', 'school', 'shadow']) {
@@ -1095,15 +1154,15 @@ export class DreamDojo {
           p.facing = THREE.MathUtils.lerp(p.facing, Math.atan2(-this.layout.u.x, -this.layout.u.z), Math.min(1, dt * 4));
           s.fx = 0.3 * k;
           if (s.t >= SEQ.rise) {
-            s.phase = 'jack';
+            s.phase = 'link';
             s.t = 0;
-            g.sfx?.('jackin');
+            g.sfx?.('connect');
           }
           break;
         }
-        case 'jack': {
-          s.fx = 0.3 + 0.7 * ease(Math.min(1, s.t / SEQ.jack));
-          if (s.t >= SEQ.jack) {
+        case 'link': {
+          s.fx = 0.3 + 0.7 * ease(Math.min(1, s.t / SEQ.link));
+          if (s.t >= SEQ.link) {
             /* THE CROSSING, at the top of the rain. Her puppet takes her place
                in the tube on this same frame, so the real world never shows an
                empty tube with a kitten-shaped gap in the story. */
@@ -1665,8 +1724,11 @@ export class DreamDojo {
       if (Math.hypot(p.position.x - this.lion.position.x, p.position.z - this.lion.position.z) < 26) near = true;
     }
     let text = null;
-    if (this.sayText && this.t < this.sayUntil) text = this.sayText;
-    else if (near) text = this._welcomed && Math.floor(this.t / 9) % 2 ? LION_LINES.honor : LION_LINES.idle;
+    if (this.sayText && (this.t < this.sayUntil || this.voice.saying(this.sayText))) text = this.sayText;
+    else if (near) {
+      text = this._welcomed && Math.floor(this.t / 9) % 2 ? LION_LINES.honor : LION_LINES.idle;
+      this._ambient(text, false);
+    }
     const want = text ? this._bubble(text) : null;
     this.bubbleShow += ((want ? 1 : 0) - this.bubbleShow) * Math.min(1, dt * 5);
     for (const [, m] of this.bubbles) {
@@ -1686,10 +1748,13 @@ export class DreamDojo {
         if (Math.hypot(q.x - this.layout.lion.x, q.z - this.layout.lion.z) < 20) nearSim = true;
       }
       let ht = null;
-      if (this.holoText && this.t < this.holoUntil) ht = this.holoText;
+      if (this.holoText && (this.t < this.holoUntil || this.voice.saying(this.holoText))) ht = this.holoText;
       // Quiet while he is giving a rundown: the card IS him talking, and a
       // bubble beside it lands on top of it in a quarter pane.
-      else if (nearSim && !this.rundowns.some(Boolean)) ht = Math.floor(this.t / 9) % 2 ? LION_LINES.simIdle : LION_LINES.islands;
+      else if (nearSim && !this.rundowns.some(Boolean)) {
+        ht = Math.floor(this.t / 9) % 2 ? LION_LINES.simIdle : LION_LINES.islands;
+        this._ambient(ht, true);
+      }
       const hw = ht ? this._bubble(ht, true) : null;
       this.holoShow += ((hw ? 1 : 0) - this.holoShow) * Math.min(1, dt * 5);
       for (const [, m] of this.holoBubbles) {
