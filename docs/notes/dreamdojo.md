@@ -649,6 +649,24 @@ Kotodama at the award ceremony. It is the only quest marked `late`, so it
 100% doesn't count", because the Dream Dojo is where an afternoon goes after
 the ending.
 
+**He hands it over before he pays.** Richard asked for this line, an homage he
+chose:
+
+> My honor, my dreams… they're yours now.
+
+It is `HANDOVER` in `shadow.js`. It is said alone for 4 s, and only then come
+"You beat my SHADOW! As promised — a share of my HONOR.", the stars toast and
+the quest's card. **Only the telling waits.** The stars, the flag and the quest
+are all committed on the frame he breaks; `feats.earn` is given
+`{delay: HANDOVER.secs}`, which delays only the payout card. A kitten who jacks
+out mid-sentence still has everything (non-negotiable 7). Measured in the
+browser: his line at 0 s, the quest toast at 4.00 s, the stars at 4.01 s and the
+HONOR line at 4.03 s.
+
+**He is drawn in poses** off his own sheet ([art.md](art.md)): guard, slam,
+sweep and cross. He holds a pose for the whole tell **and its recover**, so a
+blow reads as landed. The tell is the drawing as much as the red on the floor.
+
 #### Staging — found in the browser, all of it
 
 - **Pressing the kiosk lost the fight.** The kiosk is 24.04 from the ring's
@@ -721,6 +739,11 @@ material and from how the lines are written.
 **no** custom voices. That is a plan or workspace limit, not a slot to free up.
 When a voice exists, register it in [voices.md](voices.md) with its id.
 
+**Three presets are auditioning now** (Dylan, Kevin and Miles) on the Honor line
+and the hand-over. The numbers and the six takes are in
+[voices.md](voices.md#lionheart-is-being-auditioned-and-nothing-is-wired-yet).
+Nothing is wired until Richard picks.
+
 ## Still to build (stages 2–5)
 
 1. ~~**Kotodama Gallery**, the rundown of her equipped orbs, and the Clan Trial
@@ -732,12 +755,13 @@ When a voice exists, register it in [voices.md](voices.md) with its id.
 4. ~~**Arena School**, ranks (剣士 KENSHI and up), the holographic Fighter Card,
    the daily and weekly rotation, and the **Shadow Lionheart** boss.~~ Built
    (stage 5, above).
-5. **VR kitten sheets** for all four kittens, plus a combat sheet for the
-   Shadow. This is the "do both" look: the visor in the real world, a generated
-   VR sprite in the sim. Generated on magenta, after a cost preflight, and so
-   is the Lionheart voice audition (three energetic young-male presets on the
-   Honor line). ~~Health bars only on enemies tougher than three hits~~: done,
-   `maxHits > 3` gets a SimBar.
+5. ~~**VR kitten sheets** for all four kittens, plus a combat sheet for the
+   Shadow.~~ Built. This is the "do both" look: the visor in the real world,
+   the headset sheet in the sim. `Player.setSimLook` swaps the Billboard's look
+   on the cross and puts back the exact home texture and geometry on the way
+   out ([art.md](art.md)). ~~The Lionheart voice audition~~ has been rendered
+   and is **waiting on Richard's pick**. ~~Health bars only on enemies tougher
+   than three hits~~: done, `maxHits > 3` gets a SimBar.
 
 **Non-negotiable 3 holds in all of them.** Anything that hits in the sim is a
 hologram on the `TrainingGate`, reached through the sim's own hud. `world-check`

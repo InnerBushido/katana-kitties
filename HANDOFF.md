@@ -548,9 +548,22 @@ quoted.
   - The Feast and Tag Team went live.
   - The duel board read correctly.
   - The Shadow fight ran from the kiosk to the win, through the real Feats.
-- **Still open, after a cost preflight:**
-  - VR kitten sheets for all four kittens, plus a Shadow combat sheet.
-  - The Lionheart voice audition.
+- **The simulator's art** (branch `feature/dream-dojo-vr-art`, merged locally):
+  - **Headset sheets** for all four kittens. Ember and Frost are generated, and
+    Storm and Blossom are recoloured from them. They are worn from the cross
+    into the sim, and the exact home look returns on the way out.
+  - A **four-pose Shadow** (guard, slam, sweep, cross), and the pose follows
+    the tell.
+  - His **hand-over line** before the prize: "My honor, my dreams… they're
+    yours now." It plays for 4 s, then the stars and quest are told. Everything
+    is committed the frame he breaks.
+  - [art.md](docs/notes/art.md) covers the attack-row splice and the visor
+    turn check.
+  - Verified in the browser: the swap and the restore, the pose walk
+    0 → 1 → 1 → 2, and the line at 0 s with the prize at 4.0 s.
+- **Waiting on Richard: Lionheart's voice.** Dylan, Kevin and Miles each read
+  the Honor line and the hand-over. The takes and measurements are in
+  [voices.md](docs/notes/voices.md). Nothing is wired until he picks.
 
 - **Stage 4 built:**
   - The **data highways and light cycles** to the two far islands.
@@ -614,8 +627,8 @@ quoted.
     beside his recording in `Design Ideas/`.
   - Nobody has played stage 2 either. The drill numbers are measured but the
     *difficulty* has not been tried on a nine-year-old.
-  - Stages 3–5 (Kata Trace, the modes, ranks, Shadow Lionheart) and the VR
-    kitten sheets are not started.
+  - ~~Stages 3–5 (Kata Trace, the modes, ranks, Shadow Lionheart) and the VR
+    kitten sheets are not started.~~ All built since, above.
 
 **Payne, the quest-giver.** Branch `feature/payne-quest-giver`.
 [payne.md](docs/notes/payne.md) has the design, every note quoted, and the

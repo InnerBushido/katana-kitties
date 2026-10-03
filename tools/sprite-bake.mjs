@@ -163,6 +163,36 @@ const WORK = [
      real bandana it is drawn from carries words in its checker that must
      never be reproduced. 768 like Payne's town pose, for the same reason. */
   { file: 'lionheart_town.png', out: 'lionheart/town.png', to: [768, 768], chroma: true },
+  /* THE SIMULATOR'S KITTENS: the same full turnaround as `grid_v2` / `grid`,
+     wearing the arcade's headset - a translucent cyan visor with the eyes
+     still showing through it, and cyan trim on the gi. Swapped in when she
+     crosses into the Dream Dojo and back out when she leaves
+     (`Player.setSimArt`). ONE PER SHEET, like every pose: Storm and Blossom
+     are these recoloured by `Game`.
+     THE ATTACK ROW IS A SECOND GENERATION, SPLICED IN. The first sheet's
+     attack rows did not turn: Ember's had no right-facing cell at all (fronts
+     where the right profile belongs, a back where the front-left does) and
+     Frost's had a face where the back three-quarter belongs. Each row was
+     regenerated alone, as one strip, off its own sheet as the reference, and
+     pasted under the other three at a MEASURED scale - crown-to-foot of the
+     front and back cells against the idle row's: Ember 0.88 (front 315 vs
+     313px), Frost 0.77 (319 vs 319). The masters are 1560 tall rather than
+     1520 so the pasted row keeps a clear gap above it - the loader clusters
+     rows by connected components and a 7px gap is a merge waiting to happen.
+     2048 wide because ten columns pack at maxAtlas/10 anyway. */
+  { file: 'ember_vr.png', out: 'kittens/ember/vr.png', to: [2048, 1189], chroma: true },
+  { file: 'frost_vr.png', out: 'kittens/frost/vr.png', to: [2048, 1189], chroma: true },
+  /* HIS SHADOW, the simulator's last boss (systems/dream/shadow.js): one row
+     of four, in the order the fight reads them - guard, the overhead SLAM,
+     the low SWEEP wound up, and the CROSS with its X of light. Generated off
+     `lionheart_town.png` so it is the same man; the visor is DOWN here,
+     because this is him inside the machine. Same apron rule: checker and a
+     cat crest, no lettering.
+     THE FOURTH POSE WAS MOVED 200px RIGHT IN THE MASTER, by connected
+     component and not by a vertical cut: the sweep's blade tip (x 2018) ran
+     past the left arm of the X (x 1992), so `findViewBoxes` gave cells 3 and
+     4 a 20px overlap and each would have carried a sliver of the other. */
+  { file: 'lionheart_shadow.png', out: 'lionheart/shadow.png', to: [1925, 768], chroma: true },
 ];
 
 /* ========================================================================== */

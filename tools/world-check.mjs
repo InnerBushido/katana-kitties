@@ -69,7 +69,7 @@ import { tmpdir } from 'node:os';
 import {
   floodBackground, clearSealedPockets, purelyWhite, pocketFloor,
   packMetrics, countInk, alreadyKeyed, KEYED_BORDER_FRAC,
-  fillSealedHoles, chromaKey,
+  fillSealedHoles, chromaKey, findViewBoxes,
 } from '../src/core/spritesheet.js';
 import {
   profileFor as deviceProfileFor, effectivePixelRatio,
@@ -4495,6 +4495,158 @@ for (const [name, cells, cols] of [['ember', em, 10], ['frost', fr, 8]]) {
     `checked ${pairs.length} of 3 pairs; the rest fall between drawn cells`);
 }
 
+console.log('\n--- the simulator\'s drawings ---');
+{
+  /* THE KITTENS IN THE ARCADE'S HEADSET, and his Shadow's four poses. Three
+     things here would look fine in a screenshot and be wrong in play:
+
+     1. A ROW THAT DOES NOT TURN. The first headset sheet's attack rows were
+        exactly that — Ember's had no right-facing cell at all and Frost's had
+        a face where her back belongs — and the idle row of the same sheet was
+        perfect. Each row is measured on its own here.
+     2. A CELL COUNT THAT IS NOT THE DRAWING'S. The loader slices every row
+        with the majority grid; a row pasted in off-grid is sliced through its
+        figures. Counted with the loader's own `findViewBoxes`.
+     3. A SWAP THAT DOES NOT COME BACK. She must leave the sim in exactly the
+        drawing she arrived in — the same texture object, not a lookalike. */
+  const R = (f) => new URL(`../public/sprites/${f}`, import.meta.url);
+  const VR = { ember: { file: 'kittens/ember/vr.png', cols: 10 }, frost: { file: 'kittens/frost/vr.png', cols: 8 } };
+  ok('every kitten has a headset drawing to wear: her sheet\'s vr.png is shipped',
+    PLAYER_STYLE.every((st) => VR[st.sheet] && existsSync(R(VR[st.sheet].file))),
+    PLAYER_STYLE.map((st) => `${st.name}:${st.sheet}`).join(' '));
+
+  /* THE VISOR PROBE. The headset is the only cyan on her head, so where it
+     sits in the head band says which way she is facing, the way the muzzle
+     did for the home sheets (HANDOFF.md) — but measured, every cell, every
+     row. Head band = top 40% of the cell, within 0.3 of a cell either side
+     of the ink of that band. Numbers when it was written, cell 0 to the end:
+       ember idle   +0.01 +0.07 +0.12 +0.17  back back back  -0.18 -0.08 +0.00
+       frost idle   -0.00 +0.06 +0.12 (back) (back) (back) -0.12 -0.07
+     So: the right half of the turn may never show the visor pointing LEFT,
+     the left half never RIGHT, the back cell shows none, and each half has a
+     cell that points clearly its own way. */
+  const probe = (d, w, b) => {
+    const y1 = b.y0 + Math.round(b.h * 0.4);
+    let e = 0; let ex = 0;
+    for (let y = b.y0; y < y1; y++) for (let x = b.x0; x <= b.x1; x++) if (d[(y * w + x) * 4 + 3] >= 128) { e++; ex += x; }
+    const mid = ex / e; const half = b.w * 0.3;
+    let n = 0; let sx = 0; let c = 0; let cx = 0;
+    for (let y = b.y0; y < y1; y++) {
+      for (let x = Math.max(b.x0, Math.round(mid - half)); x <= Math.min(b.x1, Math.round(mid + half)); x++) {
+        const q = (y * w + x) * 4;
+        if (d[q + 3] < 128) continue;
+        n++; sx += x;
+        if (d[q + 1] > 150 && d[q + 2] > 170 && d[q] < 150 && d[q + 1] > d[q] + 50) { c++; cx += x; }
+      }
+    }
+    return { cyan: c / n, dx: c ? (cx / c - sx / n) / b.w : 0 };
+  };
+  for (const [name, v] of Object.entries(VR)) {
+    const { w, h, d } = readPNG(R(v.file));
+    const grid = findViewBoxes({ data: d }, w, h, 'auto', 4);
+    ok(`${name}'s headset sheet is ${v.cols} directions by 4 poses, every row whole`,
+      grid.length === 4 && grid.every((r) => r.length === v.cols && r.every(Boolean)),
+      grid.map((r) => r.length).join('/'));
+    const back = v.cols / 2;
+    grid.forEach((row, ri) => {
+      const m = row.map((b) => probe(d, w, b));
+      const seen = (k) => m[k].cyan >= 0.03;
+      const right = m.slice(1, back); const left = m.slice(back + 1);
+      /* FROST'S ATTACK ROW HOLDS A GLOWING CYAN BLADE BESIDE HER HEAD, the
+         same colour as the visor, and it drags the probe's centre to her
+         blade hand on the right-hand cells (+0.02 where the idle row reads
+         +0.12). The no-contradiction rule still holds there; only the "points
+         clearly right" clause cannot be asked of it, and that row was checked
+         by eye cell by cell against a retake. Every other row is asked. */
+      const bladeOnHead = name === 'frost' && ri === 3;
+      ok(`${name} headset row ${ri} turns the way her home sheet does`,
+        seen(0) && Math.abs(m[0].dx) < 0.06 && !seen(back)
+        && right.every((c) => c.cyan < 0.03 || c.dx > -0.03)
+        && left.every((c) => c.cyan < 0.03 || c.dx < 0.03)
+        && (bladeOnHead || Math.max(...right.map((c) => c.dx)) > 0.08)
+        && Math.min(...left.map((c) => c.dx)) < -0.06,
+        m.map((c) => (c.cyan < 0.03 ? 'back' : c.dx.toFixed(2))).join(' '));
+    });
+  }
+  /* AND THE RULE CATCHES THE SHEET IT WAS WRITTEN FOR. The first Ember attack
+     row drew a LEFT profile in cell 3 (-0.20 against the idle row's +0.17) —
+     the contradiction clause is what fails on it. Pinned with those numbers so
+     the rule cannot be loosened past them. */
+  ok('...and that rule refuses the first attack row\'s left profile on the right',
+    !([0.04, 0.15, 0.17, -0.20].every((dx) => dx > -0.03)));
+
+  // His Shadow: four poses, and only if asked for four.
+  {
+    const { w, h, d } = readPNG(R('lionheart/shadow.png'));
+    const four = findViewBoxes({ data: d }, w, h, 4, 1)[0];
+    const auto = findViewBoxes({ data: d }, w, h, 'auto', 1)[0];
+    const apart = four.every((b, i) => i === 0 || b.x0 > four[i - 1].x1);
+    ok('影 his Shadow sheet is four poses with clear air between every one',
+      four.length === 4 && apart, four.map((b) => `${b.x0}-${b.x1}`).join(' '));
+    /* WHY main.js ASKS FOR FOUR: 'auto' reads it as fewer, because his headband
+       tails and the X of light reach across the gaps. If this ever reads four
+       on its own the explicit count is still right, so only the reason is
+       pinned, not a failure. */
+    ok('...which is why main.js loads it with views 4, not auto',
+      auto.length < 4 && /lionheart\/shadow\.png', 4, 1,/.test(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')),
+      `auto reads ${auto.length}`);
+  }
+
+  // The swap itself, on a real Player.
+  {
+    const tex = (w, h) => Object.assign(new THREE.Texture(), { image: { width: w, height: h } });
+    const home = tex(3072, 1536);
+    const p = new Player({ texture: home, index: 0, spawn: new THREE.Vector3(), cols: 8, rows: 4,
+      mirror: false, height: 2.85, contentScale: 0.8, pad: 0.06 });
+    const homeGeo = p.sprite.mesh.geometry;
+    const homeMap = p.sprite.mat.map;
+    const quad0 = p.sprite.height;
+    p.setSimLook(true);
+    ok('with no headset drawing yet she stays in her own, and says she wants it',
+      p.sprite.mat.map === homeMap && p.simLook === true);
+    const vrTex = tex(2048, 2048);
+    p.setSimArt({ texture: vrTex, cols: 10, rows: 4, contentScale: 0.7, pad: 0.06 });
+    ok('...and the moment it lands she is put into it', p.sprite.cols === 10
+      && p.sprite.mat.map !== homeMap && p.sprite.mat.map.image === vrTex.image);
+    ok('...at the same height she is drawn at at home, off the new sheet\'s own packing',
+      Math.abs(p.sprite.height - 2.85 / 0.7) < 1e-9 && Math.abs(quad0 - 2.85 / 0.8) < 1e-9,
+      `${p.sprite.height.toFixed(3)} vs ${quad0.toFixed(3)}`);
+    p.sprite.row = 3; p.sprite.facing = Math.PI / 2;
+    p.sprite.faceCamera({ position: new THREE.Vector3(0, 0, 100) });
+    ok('...facing the same way: right is the right profile, cell 2 of 10, on her attack row',
+      Math.round(p.sprite.tex.offset.x * 10) === 2 && Math.round((1 - p.sprite.tex.offset.y) * 4) === 4);
+    p.setSimLook(false);
+    ok('...and out again she is in EXACTLY her own drawing: the same texture and quad, not copies',
+      p.sprite.mat.map === homeMap && p.sprite.mesh.geometry === homeGeo && p.sprite.cols === 8 && p.sprite.height === quad0);
+    const q = new Player({ texture: home, index: 1, spawn: new THREE.Vector3(), cols: 8, rows: 4, mirror: false });
+    q.setSimArt({ texture: vrTex, cols: 4, rows: 1 });
+    q.setSimLook(true);
+    ok('a one-row headset sheet is refused rather than worn — she keeps her four poses',
+      q.sprite.mat.map === q._homeLook.tex && q.sprite.rows === 4);
+  }
+
+  // The wiring: loaded on the first tube, handed to every seat, crossed with her.
+  {
+    const flat = (f) => stripComments(readFileSync(new URL(f, import.meta.url), 'utf8')).replace(/\s+/g, ' ');
+    const m = flat('../src/main.js');
+    const dd = flat('../src/systems/dreamdojo.js');
+    ok('the headset sheets load lazily, both of them, recoloured by STYLE like the home ones',
+      /loadSimArt\(\) \{/.test(m) && m.includes("'/sprites/kittens/ember/vr.png', 'auto', 4")
+      && m.includes("'/sprites/kittens/frost/vr.png', 'auto', 4")
+      && /this\.simArt = PLAYER_STYLE\.map\(/.test(m) && /recolourAtlas\(b, s\.recolour\)/.test(m));
+    ok('...not at boot: nothing in _buildWorld asks for them',
+      !/_buildWorld[\s\S]*?vr\.png[\s\S]*?_spawnPlayers\(ember, frost\)/.test(m));
+    ok('...a kitten seated later is handed hers, and a load that lands late hands everybody theirs',
+      /p\.setSimArt\(this\.simArt\?\.\[styleIndex\] \?\? null\)/.test(m)
+      && /this\.players\.forEach\(\(p, i\) => p\?\.setSimArt\(this\.simArt\[this\.roster\[i\]\] \?\? null\)\)/.test(m));
+    ok('...the walk to a tube starts the load, crossing in puts it on, and every way out takes it off',
+      /_begin\(p, phase\) \{ this\.game\.loadSimArt\?\.\(\);/.test(dd)
+      && /if \(toSimNow\) p\.setSimLook\?\.\(true\);/.test(dd)
+      && /_leaveSim\(p\) \{ const s = this\.st\[p\.index\]; p\.setSimLook\?\.\(false\);/.test(dd)
+      && /if \(!toSimNow\) this\._leaveSim\(p\);/.test(dd));
+  }
+}
+
 /* ===========================================================================
    THE WORLD MARTIAL ARTS TOURNAMENT
 
@@ -5728,6 +5880,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'kittens/ember/sweep.png', 'kittens/frost/sweep.png',
     // ...and Lionheart, the Dream Dojo's arcade owner (systems/dreamdojo.js).
     'lionheart/town.png',
+    // ...and the simulator's drawings: the two headset turnarounds and his Shadow.
+    'kittens/ember/vr.png', 'kittens/frost/vr.png', 'lionheart/shadow.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -5875,9 +6029,15 @@ console.log('\n--- background removal keeps the drawn whites ---');
     /* FOURTEEN SINCE LIONHEART: the arm that holds Honor over his shoulder
        closes a gap against his head. Measured by this loop; never filled, for
        Payne's reason — he is a billboard off `_loadSprite`. */
-    ok('turning the fill on for every sheet would repaint fourteen of them',
-      touched.length === 14 && touched.includes('beasts/dragon_sheet.png')
+    /* SIXTEEN SINCE THE SIMULATOR: Frost's headset sheet (her blade arm
+       against her body in the attack row) and his Shadow (both arms over his
+       head in the slam). Measured by this loop; never filled, because both come
+       through `Game.loadSimArt` and `_loadSprite`, which do not ask for it.
+       Ember's headset sheet closes nothing. */
+    ok('turning the fill on for every sheet would repaint sixteen of them',
+      touched.length === 16 && touched.includes('beasts/dragon_sheet.png')
       && touched.includes('lionheart/town.png')
+      && touched.includes('kittens/frost/vr.png') && touched.includes('lionheart/shadow.png')
       && touched.includes('kittens/frost/champion.png') && touched.includes('satan/flex_trophy.png')
       && ['base', 'sweep', 'town'].every((n) => touched.includes(`payne/${n}.png`)),
       touched.join(' '));
@@ -6142,7 +6302,7 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
        one file on the floor. */
     const posesOf = (c) => spriteFiles(`kittens/${c}/`)
       .map((f) => f.slice(`kittens/${c}/`.length))
-      .filter((f) => !f.startsWith('grid')).sort().join(' ');
+      .filter((f) => !f.startsWith('grid') && f !== 'vr.png').sort().join(' ');
     /* SIX SINCE THE BIG SCREEN: `champion.png` is the pose the record board
        outside the arena draws her in, and Storm and Blossom reach for it
        through the same recolour as everything else. */
@@ -6159,7 +6319,11 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
      name appearing here means somebody has dropped a full-resolution export
      into the game, which is exactly how the dragons got there. */
   const HEAVY = 1.5 * 1024 * 1024;
-  const GRIDS = ['kittens/frost/grid.png', 'kittens/ember/grid_v2.png'];
+  /* ...AND THE TWO HEADSET TURNAROUNDS, which are the same forty cells again
+     at 2048 wide. They are not part of a first load: `Game.loadSimArt` fetches
+     them on the first walk to a tube. */
+  const GRIDS = ['kittens/frost/grid.png', 'kittens/ember/grid_v2.png',
+    'kittens/frost/vr.png', 'kittens/ember/vr.png'];
   const shipped = spriteFiles();
   const over = shipped
     .filter((f) => statSync(new URL(`../public/sprites/${f}`, import.meta.url)).size > HEAVY)
@@ -35877,7 +36041,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     world, scene, players: [], toasts: [], sounds: [],
     toast(t) { this.toasts.push(t); }, sfx(s) { this.sounds.push(s); },
     input: { promptFor: () => 'E', players: [0, 1].map((i) => ({ down: (a) => a === 'attack' && held[i] })) },
-    feats: { open: true, earned: [], earn(p, id) { this.earned.push(`${p.index}:${id}`); return true; } },
+    feats: { open: true, earned: [], delays: [], earn(p, id, o) { this.earned.push(`${p.index}:${id}`); this.delays.push(o?.delay ?? 0); return true; } },
   };
   const D = new DD.DreamDojo(fakeGame);
   D.layout = L;
@@ -36538,18 +36702,70 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     F.update(1 / 60);
     ok('影 at half his bar he goes to phase two, and says the Cross Slash is coming', F.phase === 2 && /CROSS SLASH/.test(F.say));
 
-    // The win: stars, the flag, the tenth quest.
+    // His poses: one cell per thing he is doing, and held through the recover.
+    {
+      const P = SH.POSE;
+      const walk = [
+        [{ kind: 'idle' }, P.guard], [{ kind: 'tell', what: 'slam' }, P.slam], [{ kind: 'recover', what: 'slam' }, P.slam],
+        [{ kind: 'tell', what: 'sweep' }, P.sweep], [{ kind: 'recover', what: 'sweep' }, P.sweep],
+        [{ kind: 'tell', what: 'cross' }, P.cross], [{ kind: 'recover', what: 'cross' }, P.cross], [null, P.guard],
+      ];
+      ok('影 his drawing is the thing he is doing: wound up for the tell, held through the recover',
+        walk.every(([a, c]) => SH.poseCell(a) === c) && new Set(Object.values(P)).size === 4,
+        walk.map(([a]) => SH.poseCell(a)).join(''));
+      /* AND THE RECOVER SAYS WHAT IT IS RECOVERING FROM. It did not, and a
+         recover without `what` would snap him back to guard on the frame the
+         blade lands. Read off a real strike, both kinds. */
+      const act0 = F.act;
+      F._choose(her, 3, 'sweep'); const sw = F.act; F._strike(sw); for (const mm of sw.meshes) mm.removeFromParent();
+      const afterSweep = F.act.what;
+      F._choose(her, 6, 'cross'); const cr = F.act; F._strike(cr); for (const mm of cr.meshes) mm.removeFromParent();
+      const afterCross = F.act.what;
+      F.update(1 / 60);
+      ok('...a real strike leaves a recover that names its blow, and the live boss wears it',
+        afterSweep === 'sweep' && afterCross === 'cross' && B.pose === P.cross, `${afterSweep} ${afterCross} pose ${B.pose}`);
+      F.act = act0; B.open = 0; D.st[0].simHp = D.simMax(her); D.st[1].simHp = D.simMax(sis);
+      const posed = new SH.ShadowBoss({ parent: new THREE.Group(), x: 0, y: 0, z: 0, owner: null,
+        art: { texture: new THREE.Texture(), cols: 4, rows: 1, contentScale: 1, pad: 0 }, shards: D.shards, hits: 3 });
+      posed.facing = { x: 1, z: 0 };
+      posed.pose = P.sweep;
+      posed.faceCamera(new THREE.PerspectiveCamera());
+      const town = new SH.ShadowBoss({ parent: new THREE.Group(), x: 0, y: 0, z: 0, owner: null,
+        art: { texture: new THREE.Texture(), cols: 1, rows: 1, contentScale: 1, pad: 0 }, shards: D.shards, hits: 3 });
+      ok('...on his own sheet the cell is the pose whichever way he faces, and HONOR is the drawn one only',
+        Math.round(posed.sprite.tex.offset.x * 4) === P.sweep && !posed.bladeGrp.visible
+        && town.bladeGrp.visible && town.sprite.cols === 1);
+      ok('...and without it he is still Lionheart\'s town drawing tinted into a shadow, the way he shipped',
+        !town.posed && town.tint === 0x7a3cff
+        && /art: this\.dream\.game\?\.shadowArt \?\? this\.dream\.lionArt/.test(readFileSync(new URL('../src/systems/dream/shadow.js', import.meta.url), 'utf8')));
+      posed.dispose?.(); town.dispose?.();
+    }
+
+    // The win: the hand-over line FIRST, then the stars — but everything is decided at once.
     fakeGame.feats.earned.length = 0;
+    fakeGame.feats.delays.length = 0;
     fakeGame.toasts.length = 0;
     F.t = 120;
     B.hp = 1;
     B.hit(blow);
     const st = D.progress.stars(nameOf(her), 'shadow');
-    ok('影 beating him pays both kittens: stars, the flag their rank needs, and the tenth quest',
+    ok('影 beating him decides everything on the spot: stars, the flag their rank needs, and the tenth quest',
       F.state === 'won' && st >= 1 && D.progress.flag(nameOf(her), 'shadow') && D.progress.flag(nameOf(sis), 'shadow')
-      && [...fakeGame.feats.earned].sort().join() === '0:shadow,1:shadow'
-      && fakeGame.toasts.filter((t) => /Powerup Kotodama/.test(t)).length === 2,
+      && [...fakeGame.feats.earned].sort().join() === '0:shadow,1:shadow',
       `${F.state} ${st} ${fakeGame.feats.earned.join()}`);
+    /* "Have Lionheart say 'My honor, my dreams... they're yours now.' after
+       defeating him and before receiving his reward" — Richard. Said on the
+       frame he breaks; nobody is told what they won until it is over. */
+    ok('...and the first thing anybody hears is his hand-over line, with nobody told their prize over it',
+      F.say === SH.HANDOVER.line && /yours now/.test(F.say)
+      && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0
+      && fakeGame.feats.delays.every((dl) => dl === SH.HANDOVER.secs), `${F.say} | ${fakeGame.toasts.join(' / ')}`);
+    for (let f = 0; f < Math.floor(60 * SH.HANDOVER.secs) - 6; f++) F.update(1 / 60);
+    const quietDuring = fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0 && F.say === SH.HANDOVER.line;
+    for (let f = 0; f < 12; f++) F.update(1 / 60);
+    ok('...then the stars, the quest news and "a share of my HONOR", once his line has had its time',
+      quietDuring && fakeGame.toasts.filter((t) => /Powerup Kotodama/.test(t)).length === 2 && /HONOR/.test(F.say),
+      `${quietDuring} ${fakeGame.toasts.length}`);
     ok('...and her catch cost her time on her score', D.progress.best(nameOf(her), 'shadow') === 120 + SH.CATCH_COST
       && D.progress.best(nameOf(sis), 'shadow') === 120, `${D.progress.best(nameOf(her), 'shadow')} ${D.progress.best(nameOf(sis), 'shadow')}`);
     for (let f = 0; f < 60 * 8; f++) F.update(1 / 60);

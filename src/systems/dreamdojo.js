@@ -817,6 +817,10 @@ export class DreamDojo {
   /* ----------------------------- the sequence ----------------------------- */
 
   _begin(p, phase) {
+    /* THE HEADSET DRAWINGS START LOADING HERE, at the first walk to a tube or
+       the first rise, and not at boot: six megabytes of turnaround nobody needs
+       until somebody jacks in, and the walk plus the 1.8s rise covers it. */
+    this.game.loadSimArt?.();
     const i = p.index;
     const s = (this.st[i] ??= { phase: null, t: 0 });
     s.phase = phase;
@@ -957,6 +961,11 @@ export class DreamDojo {
     if (p.pinnedAt) { p.pinnedAt.x += dx; p.pinnedAt.z += dz; }
     p.group.position.copy(p.position);
     p.realm = toSimNow ? 'sim' : null;
+    /* AND HER DRAWING CROSSES WITH HER: in the headset for as long as she is
+       in here (`_leaveSim` takes it off, on every way out). The tube puppet
+       keeps her home drawing and its own visor plane — it is her body in the
+       real world, not her in the sim. */
+    if (toSimNow) p.setSimLook?.(true);
     /* AND A SAVE TAKEN NOW SAYS SHE IS IN HER TUBE. `castRow` reads this
        before `position`, so nobody ever loads a game standing in the void. */
     const s = this.st[p.index];
@@ -1309,6 +1318,7 @@ export class DreamDojo {
   /** Everything sim-only comes off her: drill, rundown, loans, oath, bar. */
   _leaveSim(p) {
     const s = this.st[p.index];
+    p.setSimLook?.(false);
     this.highway?.stop(p);
     const d = this.drills[p.index];
     if (d) { d.dispose(); this.drills[p.index] = null; }
